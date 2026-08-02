@@ -12,6 +12,22 @@
  * The public ports carry a `ctx` (tenancy); the concrete admit/recall take injected
  * `deps`. The factory closes over the storage store + a source resolver + a read
  * source, and exposes the ctx surface. Deterministic, provider-neutral, no LLM.
+ *
+ * D11 ENFORCEABILITY FRONTIER (§9.3 — what `promoteNote` does NOT guarantee, stated
+ * like the verifyVerbatim / event_shaped caveats). graphify enforces only the
+ * STRUCTURAL contract: the note is `pending`, TWO verdict references are present and
+ * DISTINCT (structural independence = two different artefacts), an independence
+ * attestation is present, the tenancy matches, and on pass it APPENDS the accepted
+ * note + audit stamp (D12 append-and-fold). graphify NEVER reads or re-judges the
+ * CONTENT of the verdicts — they are references, so:
+ *   - the SUBSTANTIVE consensus (both legs GO, high-grade, truly independent) is
+ *     enforced by the h2a ORCHESTRATION (conductor-launched, author-excluded);
+ *   - it is made AUDITABLE by the recorded refs (a third party resolves them);
+ *   - verdict SIGNATURES (the `signed` tier h2a owns) close authenticity — an audit
+ *     proves it, not just "cited";
+ *   - "caller != author" (separation of powers) is enforced by the orchestration and
+ *     auditable via the leg identity IN the verdicts; graphify knows only the tenancy
+ *     (ctx.principal), NOT the individual agent, so this is NOT enforced gate-side.
  */
 import {
   admitMemoryNote,
@@ -48,11 +64,31 @@ export interface MemoryAppendStore {
   appendTombstone?: GraphStore["appendTombstone"];
 }
 
+/** A stored note as read back for the D11 promotion checks. */
+export type MemoryNoteRecord = Record<string, unknown> & {
+  id: string;
+  review_status?: unknown;
+  principal_owner?: unknown;
+};
+
+/**
+ * Deps that ENABLE the D11 `promoteNote` body (§9.3). Absent ⇒ `promoteNote`
+ * returns an honest not-configured refusal (a producer may be admit-only).
+ */
+export interface MemoryPromotionDeps {
+  /** Read a note by id for the promotion checks; `null` when it does not exist. */
+  loadNote: (noteId: string) => (MemoryNoteRecord | null) | Promise<MemoryNoteRecord | null>;
+  /** Clock for the `promoted_at` stamp (injected for determinism/tests). */
+  now?: () => number;
+}
+
 export interface MemoryProducerDeps {
   /** The storage store whose D5 append port receives admitted notes / tombstones. */
   store: MemoryAppendStore;
   /** Resolve a cited source locator to its raw text for `verifyVerbatim` (§4). */
   resolveSource: (ref: string) => string | null;
+  /** OPTIONAL: enables the D11 `promoteNote` body; absent ⇒ honest not-configured refusal. */
+  promotion?: MemoryPromotionDeps;
 }
 
 export interface MemoryRecallDeps {
@@ -103,18 +139,63 @@ export function createMemoryProducer(deps: MemoryProducerDeps): MemoryProducerPo
     },
 
     async promoteNote(
-      _noteId: string,
-      _evidence: PromotionEvidence,
-      _ctx: MemoryContext,
+      noteId: string,
+      evidence: PromotionEvidence,
+      ctx: MemoryContext,
     ): Promise<PromotionOutcome> {
-      // D11 promotion is NOT yet cabled: its body co-specs against memory's
-      // double-consensus orchestration, still converging h2a-side (§9.3). Refuse
-      // honestly (discriminated) rather than fabricate an unverified promotion.
-      return {
-        promoted: false,
-        reason:
-          "promoteNote (D11) is not yet cabled: it awaits the memory-side double-consensus orchestration convergence (§9.3)",
+      // The D11 body enforces the STRUCTURAL contract only (§9.3 / frontier E in the
+      // header): it never re-reads or re-judges the CONTENT of the two verdicts —
+      // those are REFERENCES; the substantive consensus is enforced by the h2a
+      // orchestration and made AUDITABLE by the recorded refs. Absent promotion
+      // deps ⇒ this producer is admit-only.
+      const promotion = deps.promotion;
+      if (!promotion) {
+        return { promoted: false, reason: "promoteNote is not configured on this producer (no promotion.loadNote dep)" };
+      }
+      const now = promotion.now ?? (() => Date.now());
+
+      // D.1 — the note must exist and be `pending` (only asserted-pending notes enter D11).
+      const note = await promotion.loadNote(noteId);
+      if (!note) return { promoted: false, reason: `note not found: ${noteId}` };
+      if (note.review_status !== "pending") {
+        return { promoted: false, reason: "note is not review_status:'pending' (D11 promotes only pending notes)" };
+      }
+      // D.4 — tenancy: the promoting principal must own the note (§3.6).
+      if (ctx.principal_owner !== note.principal_owner) {
+        return { promoted: false, reason: "ctx.principal_owner does not match note.principal_owner (§3.6)" };
+      }
+      // D.2 — two verdict references, present and DISTINCT (structural independence =
+      // two different artefacts). graphify does NOT read their content.
+      const { leg1_verdict_ref, leg2_verdict_ref, independence_attestation } = evidence;
+      if (typeof leg1_verdict_ref !== "string" || leg1_verdict_ref.length === 0 ||
+          typeof leg2_verdict_ref !== "string" || leg2_verdict_ref.length === 0) {
+        return { promoted: false, reason: "both leg1_verdict_ref and leg2_verdict_ref are required" };
+      }
+      if (leg1_verdict_ref === leg2_verdict_ref) {
+        return { promoted: false, reason: "the two verdict references must be DISTINCT (structural independence — two different artefacts)" };
+      }
+      // D.3 — the independence attestation reference must be present (well-formed).
+      if (typeof independence_attestation !== "string" || independence_attestation.length === 0) {
+        return { promoted: false, reason: "independence_attestation is required" };
+      }
+
+      // Pass — append the accepted note (D12 append-and-fold: the prior `pending`
+      // version stays in the journal, folded out at projection) with the audit
+      // stamp recording the two refs + attestation + provenance + who/when.
+      const accepted: Record<string, unknown> = {
+        ...note,
+        review_status: "accepted",
+        promotion: {
+          leg1_verdict_ref,
+          leg2_verdict_ref,
+          independence_attestation,
+          promoted_at: now(),
+          promoted_by: ctx.principal_owner,
+          provenance: note.provenance,
+        },
       };
+      await appendNode(accepted);
+      return { promoted: true, id: note.id };
     },
 
     async requestTombstone(
