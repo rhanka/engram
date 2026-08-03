@@ -15,6 +15,29 @@
 
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 
+// Secret-bearing ENVIRONMENT ASSIGNMENTS, i.e. the `NAME=VALUE` shape emitted by
+// `printenv` / `env` / `docker inspect` / a k8s Secret dump.
+//
+// WHY THIS EXISTS (2026-07-30). An agent ran `kubectl exec … -- printenv | grep -iE
+// 's3|aws'` meaning to list variable NAMES; `printenv` emits `NAME=VALUE`, so the
+// grep matched whole lines and live OVH Object Storage credentials landed in a
+// transcript in clear. The generic pattern below did not fire: it requires
+// `secret`/`api_key` IMMEDIATELY before the `=`, and `S3_SECRET_KEY=` has a `_KEY`
+// in between. `S3_ACCESS_KEY=`, `AWS_SECRET_ACCESS_KEY=` and `POSTGRES_PASSWORD=`
+// all sailed through.
+//
+// We match on the SUFFIX of the name, not on it merely containing a word: that is
+// the actual naming convention (`*_SECRET`, `*_TOKEN`, `*_KEY`…) and it keeps
+// identifiers like `secretName=sentropic-postgres` readable — a Secret's NAME is
+// diagnostic, its VALUE never is. `_KEY` is in the list because env vars ending in
+// `_KEY` are overwhelmingly credentials; the cost is that `PUBLIC_KEY=` gets masked
+// too, which is the safe direction to be wrong in.
+//
+// The NAME is preserved on purpose: "which variable leaked" is the whole diagnostic
+// value, and keeping it means a reader never needs the original to understand.
+const SECRET_ENV_ASSIGNMENT_RE =
+  /\b([A-Za-z][A-Za-z0-9_]*_(?:SECRETS?|PASSWORD|PASSWD|PWD|TOKEN|CREDENTIALS?|KEY)|SECRETS?|PASSWORD|PASSWD|TOKEN|CREDENTIALS?)\s*=\s*\S+/gi;
+
 // Common secret shapes: gh_/github_pat_, sk-/api keys, JWT-ish, long hex blobs,
 // and explicit token=… / Authorization: Bearer … assignments.
 const TOKEN_PATTERNS: RegExp[] = [
@@ -56,6 +79,9 @@ export function redact(text: string, home = ""): string {
   let out = redactHome(text, home);
   out = out.replace(URL_CREDENTIALS_RE, "$1<token>@");
   out = out.replace(EMAIL_RE, "<email>");
+  // Runs before TOKEN_PATTERNS so the variable name survives instead of being
+  // swallowed by the coarser `token|secret|…=` rule.
+  out = out.replace(SECRET_ENV_ASSIGNMENT_RE, "$1=<token>");
   for (const re of TOKEN_PATTERNS) out = out.replace(re, "<token>");
   return out;
 }
