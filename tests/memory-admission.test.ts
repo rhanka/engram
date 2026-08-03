@@ -174,3 +174,37 @@ describe("requestTombstone — authority check at admission (§3.5)", () => {
     expect(appendTombstone).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("admitMemoryNote — extension passthrough invariant (seam-B fix (i) guard)", () => {
+  // seam-B fix (i): h2a puts its author SIGNATURE (and any unknown key) into the
+  // note's `[key:string]` extension; graphify stores it OPAQUE, and the #148
+  // double-consensus ceremony re-reads the signature from the STORED note at
+  // round-3 to derive a TRUSTED authorId (separation of powers vs self-promotion).
+  // That only holds while admission passes unknown keys through VERBATIM. This
+  // pins the `...note` spread (memory-admission.ts:170) so a future whitelist/pick
+  // refactor cannot SILENTLY drop the signature. Additive — no behaviour change.
+  it("passes UNKNOWN extension keys (e.g. sig / authored_by) to appendNode verbatim, beside the fixed fields", async () => {
+    const d = deps();
+    const sig = { alg: "ed25519", by: "claude:author:abc", value: "BASE64_SIGNATURE" };
+    const note = validNote({
+      sig,
+      authored_by: "claude:author:abc",
+      opaque_blob: "keep-me-verbatim",
+    } as Partial<MemoryNoteInput>);
+
+    const out = await admitMemoryNote(note, d);
+    expect(out.admitted).toBe(true);
+    expect(d.appendNode).toHaveBeenCalledTimes(1);
+
+    const appended = (d.appendNode as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<string, unknown>;
+    // UNKNOWN extension keys survive VERBATIM through to the store...
+    expect(appended.sig).toEqual(sig);
+    expect(appended.authored_by).toBe("claude:author:abc");
+    expect(appended.opaque_blob).toBe("keep-me-verbatim");
+    // ...ALONGSIDE the store-fixed admission fields (not instead of them).
+    expect(appended.trust).toBe("asserted");
+    expect(appended.review_status).toBe("pending");
+    expect(appended.reconcilable).toBe(false);
+    expect(typeof appended.id).toBe("string");
+  });
+});
