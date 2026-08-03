@@ -39,8 +39,17 @@ export const MEMORY_PRODUCER_PORT_VERSION = 1 as const;
 
 export type MemoryKind = "context" | "decision" | "evidence";
 export type MemoryScope = "private" | "capitalised";
-/** The three trust tiers carried forward unchanged (§1); a MemoryNote is `asserted`. */
-export type TrustTier = "earned" | "asserted" | "signed";
+/**
+ * The canonical trust-tier union — the SINGLE source for the `trust` field
+ * across the memory contract, ontology nodes (`OntologyNodeTrustTier` derives
+ * from this), and agent-stats (§1). `earned` = ranked git ground-truth;
+ * `asserted` = a gated `MemoryNote`; `signed` = Ed25519 identity (h2a, out of
+ * scope here); `unverified` = provenance NOT established (e.g. h2a coordination
+ * evidence) — a distinct tier, never folded into `asserted`, since that would
+ * fabricate provenance the data does not carry (the M2 principle). Three lots
+ * once spelled three vocabularies for this one field; this union is the one.
+ */
+export type TrustTier = "earned" | "asserted" | "signed" | "unverified";
 
 /** The structural event anchor (§9.4) — what makes `event_shaped` a code check. */
 export interface MemoryEventAnchor {

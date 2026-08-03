@@ -27,6 +27,7 @@
 import { pathToTilde } from "./normalize.js";
 import type { SessionFact } from "./types.js";
 import type { GitCommitMeta } from "./correlate.js";
+import type { TrustTier } from "../memory-producer-port.js";
 
 export const PROJECT_GRAPH_SCHEMA = "graphify.agent-stats.project-graph/v1";
 
@@ -260,7 +261,7 @@ const COMMUNITY_LABELS: Record<string, string> = {
 
 const H2A_REGISTRY_PROVENANCE = ".h2a/registry/instances.jsonl";
 const H2A_COORDINATION_SCOPE = "workspace-local";
-const H2A_COORDINATION_TRUST = "unverified";
+const H2A_COORDINATION_TRUST: TrustTier = "unverified";
 
 /** A reversible, collision-free graph id for an h2a instance id. */
 function coordinationEvidenceNodeId(instanceId: string): string {
