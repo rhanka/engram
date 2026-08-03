@@ -584,3 +584,36 @@ describe("buildProjectGraph — hybrid git skeleton", () => {
     expect(sess.agent_kind).toBe("claude");
   });
 });
+
+describe("buildProjectGraph — F9 earned-tier stamping (owner policy, additive)", () => {
+  // Owner policy (F9 GO): git-evidence ground-truth {Project, Repo, Session,
+  // Branch, Commit} = `earned`; Agent is NOT in the set; coordination keeps
+  // `unverified`. Stamping is ADDITIVE — it declares NO type in-force (the
+  // fail-closed-on-untagged posture stays owner-gated per type).
+  const g = buildProjectGraph({
+    identity: sentropicIdentity,
+    sessions: [
+      mkSession({
+        factId: "claude:e1",
+        sessionId: "e1",
+        cwds: ["~/src/graphify"],
+        branches: ["main", "feat/x"],
+        commitShas: ["abc1234", "def5678"],
+      }),
+    ],
+  });
+
+  it("stamps `earned` on every git-evidence node type", () => {
+    for (const type of ["Project", "Repo", "Session", "Branch", "Commit"]) {
+      const ns = g.nodes.filter((n) => n.node_type === type);
+      expect(ns.length, `expected at least one ${type} node`).toBeGreaterThan(0);
+      for (const n of ns) expect(n.trust, `${type} ${String(n.label)}`).toBe("earned");
+    }
+  });
+
+  it("does NOT stamp `earned` on Agent (outside the owner's git-evidence set)", () => {
+    const agents = g.nodes.filter((n) => n.node_type === "Agent");
+    expect(agents.length).toBeGreaterThan(0);
+    for (const n of agents) expect(n.trust).not.toBe("earned");
+  });
+});
