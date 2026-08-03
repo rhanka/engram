@@ -383,3 +383,24 @@ instant), not TRUTH.
 Nothing here is implemented until the durable ratification record + the storage
 gate, and the storage/exec owners of the touched surfaces consent. This §9.4 is
 reversible design (spec, not code). Reversible until then.
+
+### 9.5 What the producer REQUIRES of the backend — storage precondition + endpoint order (F10/F11)
+
+Unlike §9.4, this is REALIZED contract (§5 landed), stated so the first h2a
+integrator learns it here, not from a runtime failure.
+
+The §9.4 entry points reach storage through the versioned append CAPABILITY
+(§5), and that capability is NOT ubiquitous — §2 "no new store" means "no new
+store TYPE", not "every backend serves memory". Concretely: **a memory backend
+MUST declare `capabilities.append` (version 1), and today that is Postgres
+ALONE** (`src/storage/postgres.ts`). The `file`, `neo4j`, `spanner`, and
+`pgvector` adapters do NOT implement it, so on any of them the FIRST
+`admitMemoryNote` fails at `appendNode` — noisily, but only at RUNTIME. Deploying
+agent memory therefore REQUIRES a Postgres backend until another adapter declares
+the capability; a precondition, not a fallback. And the append capability carries
+`requiresExistingEndpoints: true` (STRICT referential integrity): `appendEdge`
+REFUSES an edge whose endpoints are not already stored (`postgres.ts`: "edge is
+refused (requiresExistingEndpoints). Append the node(s) first."). The producer's
+write order is therefore fixed — **nodes first, then the edges that cite them** —
+and an integrator that emits an edge before its endpoints gets a refusal, never a
+dangling link.
