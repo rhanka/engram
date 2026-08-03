@@ -26,7 +26,8 @@ export type MemoryScope = "private" | "capitalised";
 export interface MemoryEventAnchor {
   /** The instant it happened (epoch-ms or turn count). REQUIRED — a generalization has none. */
   at: number;
-  /** A closed event-kind aligned to `memory_kind`. */
+  /** A DESCRIPTIVE event-kind aligned to `memory_kind` — required as a non-empty
+   * string, NOT a gate-closed set (the closed, enforced enum is `memory_kind`). */
   kind: string;
   /** A structured locator, shared with `provenance.source`. */
   ref: string;
