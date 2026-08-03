@@ -39,6 +39,52 @@ reporting and no-provider `init`/template-wiki fallbacks (`#1000`–`#1003`). It
 does not change the AGPL design-only disposition: the UX principles remain
 deferred references, and no code, template, or provider stack is adopted.
 
+### Source re-lock (2026-08-02) — the window is open, nothing is classified yet
+
+All three sources have drifted since the 2026-07-22 lock. Observed by
+`git ls-remote`, which is the standing authority; local tag pointers are never
+used for a parity claim.
+
+| Source | 2026-07-22 lock | Observed 2026-08-02 | Drift |
+| --- | --- | --- | --- |
+| Python `v8` (parity authority) | `82c46e5` | **`00efd6e7`** | **112 commits** |
+| Python stable tag | `v0.9.23` `c83085cf` | **`v0.9.32`** `00efd6e7` | 9 releases |
+| CRG `main` (additive ref) | `6ce25b4` | **`1a010dee`** | head moved |
+| Repowise `main` (design-only) | `210b8fa` | **`008799a0`** | head moved |
+
+**Every documented stable tag is confirmed unmoved**, which is worth stating
+because this document has been bitten by a retag before. Verified by
+dereferencing rather than by eye: for an annotated tag `git ls-remote --tags`
+returns the *tag object* sha on `refs/tags/X` and the *commit* on
+`refs/tags/X^{}`, so comparing the undereferenced line against a recorded commit
+manufactures a phantom retag. Dereferenced: `v0.9.23` → `c83085cf` ✓,
+`v2.3.7` → `6a1ee1c` ✓, `v0.34.0` → `741e129` ✓ (the latter is a lightweight tag,
+and `vscode-v0.5.0` sits on that same commit — two tags on one commit, not a
+rename).
+
+First-pass shape of the 112-commit Python window, by conventional-commit prefix
+(no merges):
+
+| Prefix | Count |
+| --- | --- |
+| `fix` | 73 |
+| `chore` | 18 |
+| `test` | 11 |
+| `docs` | 6 |
+| `feat` | 2 |
+| `refactor` | 1 |
+| `perf` | 1 |
+
+The 18 `chore` entries are release/bump-shaped and are the release-only
+candidates. The actionable surface is therefore ~77 rows before any Python-only
+exclusion.
+
+**This row opens the window; it does not classify it.** No commit has been
+assigned a `port` / `must-audit` / `defer` / `reject` bucket, no TS reproducer
+has been run, and no port is proposed. A source lock has never been a mandate to
+port. The per-commit census for `82c46e5..00efd6e7` remains open work under the
+Track F rules.
+
 Embedding neutrality is specified but externally blocked. The published
 `@sentropic/llm-mesh@0.10.0` and `@sentropic/llm-gateway@0.9.0` tarballs expose
 generation/streaming and gateway routing only: no embedding request/response,
