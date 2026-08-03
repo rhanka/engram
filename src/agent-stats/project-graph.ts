@@ -263,6 +263,14 @@ const H2A_REGISTRY_PROVENANCE = ".h2a/registry/instances.jsonl";
 const H2A_COORDINATION_SCOPE = "workspace-local";
 const H2A_COORDINATION_TRUST: TrustTier = "unverified";
 
+/**
+ * Git-evidence ground-truth node types stamped `earned` (F9, owner GO): ranked
+ * evidence, not re-writable as ordinary memory (§1). `Agent` is deliberately
+ * OUTSIDE the set (not in the owner's policy); coordination stays `unverified`.
+ */
+const EARNED_NODE_TYPES: ReadonlySet<string> = new Set(["Project", "Repo", "Session", "Branch", "Commit"]);
+const EARNED_TRUST: TrustTier = "earned";
+
 /** A reversible, collision-free graph id for an h2a instance id. */
 function coordinationEvidenceNodeId(instanceId: string): string {
   return `coordination_evidence${Array.from(instanceId, (char) => `_${char.codePointAt(0)!.toString(16)}`).join("")}`;
@@ -854,6 +862,20 @@ export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph 
   }
 
   const nodeList = Array.from(nodes.values());
+
+  // F9 (owner GO): PRODUCE the `earned` tier on git-evidence ground-truth nodes.
+  // Additive + first-write-wins: a node already declaring a tier (e.g.
+  // coordination `unverified`) is left untouched, and Agent — outside the
+  // owner's set — is never stamped. This declares NO type in-force; the
+  // fail-closed-on-untagged posture (violatesTrustTier) stays owner-gated per
+  // type, pending measured impact. Stamping alone only activates the
+  // both-sides-tagged rejection the §1 invariant already intends.
+  for (const n of nodeList) {
+    if (n.trust === undefined && EARNED_NODE_TYPES.has(n.node_type)) {
+      n.trust = EARNED_TRUST;
+    }
+  }
+
   const topology = `n=${nodeList.length};e=${links.length}`;
 
   return {
