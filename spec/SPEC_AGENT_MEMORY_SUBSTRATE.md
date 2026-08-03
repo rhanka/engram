@@ -370,7 +370,7 @@ authors no memory (hard gate).
 
 **The event anchor (the crux — what makes `event_shaped` structural, not
 prose).** The note carries `event: { at: <typed REQUIRED instant>, kind:
-<closed event-kind aligned to memory_kind>, ref: <structured locator> }`. `at`
+<descriptive event-kind aligned to memory_kind>, ref: <structured locator> }`. `at`
 is required: a generalization ("always X") has no single `at` → structurally
 non-fillable → refused (this IS the §3.3.2 check, deterministic because
 structural). `ref` is the SAME locator as the §4 provenance — `verifyVerbatim`
