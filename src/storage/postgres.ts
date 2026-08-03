@@ -31,6 +31,7 @@ import type {
   GraphGroupCounts,
   GraphLayoutPosition,
   GraphNodeInput,
+  GraphNodeRecord,
   GraphPushOptions,
   GraphPushResult,
   GraphStore,
@@ -39,6 +40,8 @@ import type {
   GraphTimeWindow,
   GraphTombstoneInput,
   GraphTombstoneOutcome,
+  GraphTombstoneRecord,
+  MemoryNoteListQuery,
   GraphTimeWindowEdge,
   GraphTimeWindowNode,
   GraphTimeWindowOptions,
@@ -267,6 +270,60 @@ function temporalNodeFromRow(row: Record<string, unknown>): GraphTimeWindowNode 
     delete node.t_end;
   }
   return node;
+}
+
+/**
+ * Reconstruct a {@link GraphNodeRecord} from a graph_nodes row for the memory
+ * read-back. Mirror of {@link temporalNodeFromRow}: the persisted props bag is the
+ * base, and the CANONICAL fields (`node_type`, `community`, `label`) are lifted from
+ * the typed provider columns, never a spoofable prop. This is the exact inverse of
+ * the append path — which stores `node_type` in the `type` column and everything
+ * else in props (buildPropsBag omits NODE_SCHEMA_COLS).
+ */
+function nodeRecordFromRow(row: Record<string, unknown>): GraphNodeRecord {
+  const props = parseProps(row.props);
+  const id = String(row.id);
+  const record: GraphNodeRecord = { ...props, id };
+  // Canonical fields come from typed provider columns, never spoofable props.
+  delete record.node_type;
+  delete record.community;
+  if (typeof row.label === "string" && row.label.length > 0) record.label = row.label;
+  if (typeof row.type === "string" && row.type.length > 0) record.node_type = row.type;
+  if (row.community != null) {
+    const community = Number(row.community);
+    if (Number.isFinite(community)) record.community = community;
+  }
+  return record;
+}
+
+/** Reconstruct a {@link GraphTombstoneRecord} from a graph_tombstones journal row. */
+function tombstoneRecordFromRow(row: Record<string, unknown>): GraphTombstoneRecord {
+  const reason = typeof row.reason === "string" ? row.reason : undefined;
+  // `t` is a bigint column — the driver may hand it back as a string.
+  const rawT = row.t;
+  const t =
+    typeof rawT === "number" && Number.isFinite(rawT)
+      ? rawT
+      : rawT != null && Number.isFinite(Number(rawT))
+        ? Number(rawT)
+        : undefined;
+  const base = {
+    ...(t !== undefined ? { t } : {}),
+    ...(reason !== undefined ? { reason } : {}),
+  };
+  if (String(row.target_kind) === "edge") {
+    const relation = typeof row.edge_relation === "string" ? row.edge_relation : "";
+    return {
+      target: {
+        kind: "edge",
+        source: String(row.edge_source),
+        target: String(row.edge_target),
+        ...(relation.length > 0 ? { relation } : {}),
+      },
+      ...base,
+    };
+  }
+  return { target: { kind: "node", id: String(row.node_id) }, ...base };
 }
 
 function temporalEdgeFromRow(row: Record<string, unknown>): GraphTimeWindowEdge {
@@ -966,6 +1023,10 @@ export async function createPostgresGraphStore(
         requiresExistingEndpoints: true,
         tombstone: true,
       },
+      // Read-back for the agent-memory operational slice (§9.5, Postgres-only).
+      // Declared with the three methods (M4): postgres reads what the append path
+      // wrote and folds tombstones out of every read-back, so it never no-ops.
+      readback: { version: 1, tombstoneFolded: true },
     },
 
     async verifyConnection(): Promise<void> {
@@ -1438,6 +1499,100 @@ export async function createPostgresGraphStore(
         [slug, target.kind, nodeId, edgeSource, edgeTarget, edgeRelation, t, reason],
       );
       return { applied: (res.rowCount ?? 0) > 0 };
+    },
+
+    // -----------------------------------------------------------------------
+    // Read-back (§9.5, Postgres-only) — the read mirror of the append path. Every
+    // node read-back folds tombstones out (nodeLiveClause), so an erased memory
+    // note never surfaces, consistent with the append erasure path (§3.5, A2).
+    // -----------------------------------------------------------------------
+
+    async loadNode(
+      id: string,
+      options: GraphAppendOptions = {},
+    ): Promise<GraphNodeRecord | null> {
+      await ensureSchema();
+      const slug = options.namespace ?? citySlug;
+      const res = await pool.query(
+        `SELECT n.id, n.label, n.type, n.community, n.props FROM ${q(NODE_TABLE)} n ` +
+          `WHERE n.city_slug = $1 AND n.id = $2 AND ${nodeLiveClause("n.id", "$1")} ` +
+          `LIMIT 1`,
+        [slug, id],
+      );
+      const row = res.rows?.[0];
+      return row ? nodeRecordFromRow(row) : null;
+    },
+
+    async listMemoryNotes(
+      query: MemoryNoteListQuery = {},
+      options: GraphAppendOptions = {},
+    ): Promise<GraphNodeRecord[]> {
+      await ensureSchema();
+      const slug = options.namespace ?? citySlug;
+      const params: unknown[] = [slug];
+      // node_type is stored in the typed `type` column (resolveNodeType), so a
+      // MemoryNote is `type = 'MemoryNote'`. nodeLiveClause reuses $1 (city_slug).
+      const clauses: string[] = [
+        `n.city_slug = $1`,
+        `n.type = 'MemoryNote'`,
+        nodeLiveClause("n.id", "$1"),
+      ];
+      // Tenancy VISIBILITY superset: shared (capitalised) OR owned by the requester.
+      // recall re-applies isVisibleTo, so this narrows the scan without widening.
+      if (typeof query.principalOwner === "string" && query.principalOwner.length > 0) {
+        params.push(query.principalOwner);
+        clauses.push(
+          `(n.props->>'scope' = 'capitalised' OR n.props->>'principal_owner' = $${params.length})`,
+        );
+      }
+      if (query.scopes && query.scopes.length > 0) {
+        params.push([...query.scopes]);
+        clauses.push(`n.props->>'scope' = ANY($${params.length})`);
+      }
+      // Time-window overlap — mirrors overlapsTemporalWindow / queryWindow: `t` is a
+      // finite number <= until; a present `t_end` must be a finite number that is
+      // >= t and >= since. Applied only when a bound is supplied.
+      const hasSince = typeof query.sinceMs === "number" && Number.isFinite(query.sinceMs);
+      const hasUntil = typeof query.untilMs === "number" && Number.isFinite(query.untilMs);
+      if (hasSince || hasUntil) {
+        const nodeStart = temporalNumberExpression("n.props", "t");
+        const nodeEnd = temporalNumberExpression("n.props", "t_end");
+        clauses.push(`jsonb_typeof(n.props->'t') = 'number'`);
+        clauses.push(`(${nodeStart}) IS NOT NULL`);
+        if (hasUntil) {
+          params.push(query.untilMs);
+          clauses.push(`(${nodeStart}) <= $${params.length}`);
+        }
+        let sinceClause = "";
+        if (hasSince) {
+          params.push(query.sinceMs);
+          sinceClause = ` AND (${nodeEnd}) >= $${params.length}`;
+        }
+        clauses.push(
+          `(NOT (n.props ? 't_end') OR (jsonb_typeof(n.props->'t_end') = 'number' ` +
+            `AND (${nodeEnd}) IS NOT NULL AND (${nodeEnd}) >= (${nodeStart})${sinceClause}))`,
+        );
+      }
+      const res = await pool.query(
+        `SELECT n.id, n.label, n.type, n.community, n.props FROM ${q(NODE_TABLE)} n ` +
+          `WHERE ${clauses.join(" AND ")} ORDER BY n.id ASC`,
+        params,
+      );
+      return (res.rows ?? []).map(nodeRecordFromRow);
+    },
+
+    async loadTombstones(
+      options: GraphAppendOptions = {},
+    ): Promise<GraphTombstoneRecord[]> {
+      await ensureSchema();
+      const slug = options.namespace ?? citySlug;
+      const res = await pool.query(
+        `SELECT target_kind, node_id, edge_source, edge_target, edge_relation, t, reason ` +
+          `FROM ${q(TOMBSTONE_TABLE)} WHERE city_slug = $1 ` +
+          `ORDER BY target_kind ASC, node_id ASC, edge_source ASC, edge_target ASC, edge_relation ASC`,
+        [slug],
+      );
+      return (res.rows ?? []).map(tombstoneRecordFromRow);
     },
 
     async clear(options?: string | PostgresClearOptions): Promise<void> {

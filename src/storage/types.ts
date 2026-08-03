@@ -91,6 +91,18 @@ export interface GraphStoreCapabilities {
    * immediate on every surface the backend serves.
    */
   append?: GraphStoreAppendCapability;
+  /**
+   * Optional, VERSIONED read-back capability (agent-memory operational slice —
+   * SPEC_AGENT_MEMORY_SUBSTRATE §9.5, Postgres-only). The mirror of `append`: it
+   * lets the memory factory's injected deps READ what the append path wrote —
+   * `loadNode` (one node by id), `listMemoryNotes` (live `MemoryNote` nodes scoped
+   * by tenancy + time-window) and `loadTombstones` (the append-only erasure
+   * journal). Absent on backends that cannot fold tombstones out of these reads
+   * (they omit BOTH this descriptor and the three methods — never a silent no-op,
+   * mirror of `append`/M4). Every read-back folds tombstoned targets out at read
+   * time, consistent with the `append` erasure path (§3.5, carries A2).
+   */
+  readback?: GraphStoreReadbackCapability;
 }
 
 /** Versioned descriptor for the optional group-by aggregate capability (LOT 1). */
@@ -350,6 +362,72 @@ export interface GraphTombstoneOutcome {
   applied: boolean;
 }
 
+/**
+ * Versioned descriptor for the optional read-back capability (agent-memory
+ * operational slice — §9.5, Postgres-only). The three read-back methods and this
+ * descriptor travel together (mirror of `append`/M4): a backend either declares it
+ * AND implements all three with real effect, or omits both entirely — never a
+ * present-but-empty method. A backend that cannot fold tombstones out of its reads
+ * MUST NOT declare `readback`.
+ */
+export interface GraphStoreReadbackCapability {
+  /** Schema/behaviour version of the read-back contract; consumers gate on it. */
+  version: 1;
+  /** v1 folds tombstoned targets out of EVERY read-back (mirror of
+   * `append.tombstone`, §3.5 A2): a tombstoned node never surfaces through
+   * `loadNode`/`listMemoryNotes`. */
+  tombstoneFolded: true;
+}
+
+/**
+ * A node read back from the store (agent-memory read-back). Plain data — no
+ * graphology dep — the read mirror of {@link GraphNodeInput}, so a consumer (the
+ * memory seam) reconstructs a `MemoryNote` without importing storage internals. The
+ * canonical `node_type` comes from the typed provider column, never a spoofable
+ * prop; every persisted pass-through attribute (memory_kind, subject, t, scope,
+ * provenance, event, trust, review_status, …) rides alongside.
+ */
+export interface GraphNodeRecord {
+  id: string;
+  label?: string;
+  node_type?: string;
+  community?: number;
+  /** Provider-neutral pass-through attributes read back from the props bag. */
+  [key: string]: unknown;
+}
+
+/**
+ * Query scoping a {@link GraphStore.listMemoryNotes} read (tenancy + time-window).
+ * All fields are optional — an empty query lists every live `MemoryNote`. The
+ * tenancy filter is a pushed-down VISIBILITY SUPERSET (`scope='capitalised'` OR
+ * `principal_owner` match); the recall surface (memory-recall) remains the tenancy
+ * authority and re-applies it, so this only narrows the scan, never widens what a
+ * principal can see. The time-window overlap mirrors the shared `t`/`t_end` predicate.
+ */
+export interface MemoryNoteListQuery {
+  /** Restrict to notes VISIBLE to this principal (`capitalised` OR owned by it). */
+  principalOwner?: string;
+  /** Restrict to these `scope` values (e.g. `['capitalised']`); omitted = any scope. */
+  scopes?: readonly string[];
+  /** Inclusive lower bound (epoch-ms); `null`/omitted leaves that side open. */
+  sinceMs?: number | null;
+  /** Inclusive upper bound (epoch-ms); `null`/omitted leaves that side open. */
+  untilMs?: number | null;
+}
+
+/**
+ * A tombstone as read back from the append-only journal (§3.5). The read mirror of
+ * {@link GraphTombstoneInput}; `reason` carries the erasure authority the append
+ * path wrote (the memory seam rides `principal_owner` there).
+ */
+export interface GraphTombstoneRecord {
+  target: GraphTombstoneTarget;
+  /** Epoch-ms of the erasure event, when the journal row carried one. */
+  t?: number;
+  /** Reason/authority for the erasure recorded at append time. */
+  reason?: string;
+}
+
 export interface GraphPushResult {
   nodes: number;
   edges: number;
@@ -467,6 +545,28 @@ export interface GraphStore {
     tombstone: GraphTombstoneInput,
     options?: GraphAppendOptions,
   ): Promise<GraphTombstoneOutcome>;
+  /**
+   * Capability-gated (readback) single-node read by id. Present ONLY with
+   * `capabilities.readback`. Returns the reconstructed node record, or `null` when
+   * the id does not exist OR has been tombstoned (folded out at read time, §3.5).
+   */
+  loadNode?(id: string, options?: GraphAppendOptions): Promise<GraphNodeRecord | null>;
+  /**
+   * Capability-gated (readback) list of live `MemoryNote` nodes, scoped by tenancy
+   * + time-window and folded of tombstones. Present ONLY with `capabilities.readback`.
+   * The recall surface stays the tenancy/temporal authority — this narrows the scan
+   * (a visibility SUPERSET), it does not widen what a principal may see.
+   */
+  listMemoryNotes?(
+    query?: MemoryNoteListQuery,
+    options?: GraphAppendOptions,
+  ): Promise<GraphNodeRecord[]>;
+  /**
+   * Capability-gated (readback) read of the append-only tombstone journal (§3.5).
+   * Present ONLY with `capabilities.readback`. Returns every tombstone for the
+   * namespace so a projection can fold them out.
+   */
+  loadTombstones?(options?: GraphAppendOptions): Promise<GraphTombstoneRecord[]>;
   close(): Promise<void>;
 }
 
