@@ -783,3 +783,66 @@ export type {
   StudioRenderSceneNode,
   StudioRenderStyleBuffers,
 } from "./studio-render-buffers.js";
+
+// ---------------------------------------------------------------------------
+// Agent-memory surface (SPEC_AGENT_MEMORY_SUBSTRATE §9.4/§5). The whole contract
+// a host/h2a codes against: the data-pure PORT (types + shape pre-flight, the
+// canonical source for the shared note/tenancy/outcome types), the ctx-carrying
+// FACTORY functions that cable the port to storage + admission/recall, the pure
+// recall surface the factory closes over, and the storage APPEND types the
+// cabling needs (GraphNodeInput / GraphTombstoneInput / GraphStoreAppendCapability).
+// Anti-cycle preserved: h2a imports these SIGNATURES only; graphify imports no h2a.
+// ---------------------------------------------------------------------------
+export { MEMORY_PRODUCER_PORT_VERSION, validateMemoryNoteShape } from "./memory-producer-port.js";
+export type {
+  MemoryPort,
+  MemoryProducerPort,
+  MemoryRecallPort,
+  MemoryContext,
+  MemoryNoteInput,
+  MemoryKind,
+  MemoryScope,
+  TrustTier,
+  MemoryEventAnchor,
+  MemoryProvenance,
+  AdmissionOutcome,
+  PromotionOutcome,
+  PromotionEvidence,
+  TombstoneTarget,
+  TombstoneAuthorization,
+  TombstoneOutcome,
+  MemoryRecallQuery,
+  RecalledMemoryNoteView,
+  MemoryRecallResultView,
+  ShapeCheck,
+} from "./memory-producer-port.js";
+export {
+  createMemoryProducer,
+  createMemoryRecall,
+  createMemoryPort,
+} from "./memory-factory.js";
+export type {
+  MemoryProducerDeps,
+  MemoryRecallDeps,
+  MemoryPromotionDeps,
+  MemoryAppendStore,
+  MemoryNoteRecord,
+} from "./memory-factory.js";
+export { recallMemory, MEMORY_RECALL_SCHEMA } from "./memory-recall.js";
+export type {
+  MemoryRecallContext,
+  MemoryRecallOptions,
+  MemoryRecallInput,
+  MemoryRecallResult,
+  RecalledMemoryNote,
+  MemoryTombstone,
+} from "./memory-recall.js";
+export type {
+  GraphNodeInput,
+  GraphEdgeInput,
+  GraphTombstoneInput,
+  GraphTombstoneTarget,
+  GraphAppendOutcome,
+  GraphTombstoneOutcome,
+  GraphStoreAppendCapability,
+} from "./storage/types.js";
