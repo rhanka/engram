@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type { ProfileState } from "./configured-dataprep.js";
+import type { TrustTier } from "./memory-producer-port.js";
 import type { NormalizedOntologyProfile, OntologyStatus } from "./types.js";
 
 export const ONTOLOGY_PATCH_SCHEMA = "graphify_ontology_patch_v1";
@@ -51,10 +52,6 @@ export interface OntologyPatchNode {
   /**
    * Provenance TIER of the node (memory contract §3.4, backed by M2).
    *
-   * `earned` — established by the pipeline from evidence in the corpus.
-   * `asserted` — stated by an outside party (a memory note, a manual claim)
-   * without the corpus having earned it.
-   *
    * The distinction exists so an assertion can never quietly take over a node
    * the corpus earned. Optional: a node that does not carry it has an UNKNOWN
    * tier, which is not the same as `earned` — see `violatesTrustTier`.
@@ -62,8 +59,26 @@ export interface OntologyPatchNode {
   trust?: OntologyNodeTrustTier;
 }
 
-/** Provenance tiers a node may declare. See `OntologyPatchNode.trust`. */
-export type OntologyNodeTrustTier = "earned" | "asserted";
+/**
+ * Provenance tiers a node may declare. See `OntologyPatchNode.trust`.
+ *
+ * DERIVED, never redeclared. `TrustTier` is owned by the memory producer port
+ * (`earned` | `asserted` | `signed`); `unverified` is the tier agent-stats
+ * stamps on coordination evidence. Spelling a narrower list here is what went
+ * wrong before: three lots landed three vocabularies for one field name, so the
+ * type system declared two values while the system produced four. Nothing broke
+ * at runtime — `violatesTrustTier` compares strings, and string inequality does
+ * not care how many members the union has — but the FIRST exhaustive handling
+ * of a tier, or the first new tier, would have silently ignored `signed` and
+ * `unverified`. Widening this alias is a declaration fix with no behavioural
+ * consequence, which is precisely why it must be done before behaviour depends
+ * on it.
+ *
+ * `unverified` is spelled here rather than in `TrustTier` only because that
+ * union belongs to another owner; the end state is one union carrying all four,
+ * at which point this becomes a bare alias.
+ */
+export type OntologyNodeTrustTier = TrustTier | "unverified";
 
 export interface OntologyPatchRelation {
   id?: string;
