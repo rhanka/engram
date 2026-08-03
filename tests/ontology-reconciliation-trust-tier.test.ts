@@ -125,3 +125,38 @@ describe("inter-tier rejection — an assertion never merges with what the corpu
     expect(neitherTagged.candidates).toHaveLength(1);
   });
 });
+
+describe("the tier vocabulary is the WHOLE vocabulary, not the two this file first knew", () => {
+  // Three lots landed three spellings of one field: TrustTier
+  // (earned|asserted|signed) in the memory producer port, a narrower
+  // earned|asserted here, and a bare "unverified" stamped by agent-stats. The
+  // guard compares strings, so nothing broke — but the type declared two while
+  // the system produced four. These cases pin the other two as first-class, so
+  // a future tier cannot be added while quietly ignoring them.
+
+  it("rejects SIGNED against EARNED", () => {
+    const queue = queueOf([
+      node("signed", "Irene Adler", { trust: "signed" }),
+      node("earned", "Irene Adler", { trust: "earned" }),
+    ]);
+    expect(queue.candidates).toHaveLength(0);
+  });
+
+  it("rejects UNVERIFIED against ASSERTED", () => {
+    const queue = queueOf([
+      node("unverified", "Irene Adler", { trust: "unverified" }),
+      node("asserted", "Irene Adler", { trust: "asserted" }),
+    ]);
+    expect(queue.candidates).toHaveLength(0);
+  });
+
+  it("still pairs two nodes of the SAME tier, for each of the four", () => {
+    for (const tier of ["earned", "asserted", "signed", "unverified"] as const) {
+      const queue = queueOf([
+        node("l", "Irene Adler", { trust: tier }),
+        node("r", "Irene Adler", { trust: tier }),
+      ]);
+      expect(queue.candidates, `same-tier pair should survive for ${tier}`).toHaveLength(1);
+    }
+  });
+});
