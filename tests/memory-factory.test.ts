@@ -17,7 +17,9 @@ import {
   createMemoryProducer,
   createMemoryRecall,
   createMemoryPort,
+  createMemoryPortForStore,
   type MemoryAppendStore,
+  type MemoryOperationalStore,
 } from "../src/memory-factory.js";
 import type { MemoryNoteInput } from "../src/memory-producer-port.js";
 
@@ -218,5 +220,80 @@ describe("createMemoryPort — the whole port cabled (write + read)", () => {
     const port = createMemoryPort({ store, resolveSource, loadGraph: async () => ({ nodes: [] }) });
     expect((await port.admitMemoryNote(note(), ctx)).admitted).toBe(true);
     expect((await port.recallMemory({ asOf: T }, ctx)).notes).toEqual([]);
+  });
+});
+
+/** A fake OPERATIONAL store (append + read-back) backed by mutable arrays, so a
+ * test can round-trip through the SAME store and seed tombstones live. */
+function operationalStore() {
+  const stored: Record<string, unknown>[] = [];
+  const tombstones: { target: unknown; reason?: string; t?: number }[] = [];
+  const store = {
+    capabilities: {
+      append: { version: 1, upsert: true, requiresExistingEndpoints: true, tombstone: true },
+      readback: { version: 1, tombstoneFolded: true },
+    },
+    appendNode: vi.fn(async (n: Record<string, unknown>) => {
+      const i = stored.findIndex((s) => s.id === n.id);
+      if (i >= 0) { stored[i] = n; return { created: false }; }
+      stored.push(n);
+      return { created: true };
+    }),
+    appendTombstone: vi.fn(async () => ({ applied: true })),
+    loadNode: vi.fn(async (id: string) => stored.find((n) => n.id === id) ?? null),
+    listMemoryNotes: vi.fn(async () => stored.filter((n) => n.node_type === "MemoryNote")),
+    loadTombstones: vi.fn(async () => tombstones),
+  };
+  return { store: store as unknown as MemoryOperationalStore, stored, tombstones };
+}
+
+describe("createMemoryPortForStore — one MemoryPort over a real store (append + read-back)", () => {
+  it("round-trips through the SAME store: admit writes, recall reads it back", async () => {
+    const { store } = operationalStore();
+    const port = createMemoryPortForStore(store, { resolveSource });
+    const admit = await port.admitMemoryNote(note(), ctx);
+    expect(admit.admitted).toBe(true);
+    expect(store.appendNode).toHaveBeenCalledTimes(1);
+    const recall = await port.recallMemory({ asOf: T }, ctx);
+    expect(store.listMemoryNotes).toHaveBeenCalled();
+    expect(recall.projection).toBe("notes-only");
+    expect(recall.notes.map((n) => n.id)).toEqual([admit.admitted ? admit.id : ""]);
+  });
+
+  it("promoteNote reads the pending note from the store via loadNode", async () => {
+    const { store, stored } = operationalStore();
+    stored.push({
+      id: "mem:p", node_type: "MemoryNote", review_status: "pending",
+      principal_owner: OWNER, provenance: { cited: "x", source: "ref:A" },
+    });
+    const port = createMemoryPortForStore(store, { resolveSource, now: () => T });
+    const out = await port.promoteNote(
+      "mem:p",
+      { leg1_verdict_ref: "v:1", leg2_verdict_ref: "v:2", independence_attestation: "att:1" },
+      ctx,
+    );
+    expect(store.loadNode).toHaveBeenCalledWith("mem:p");
+    expect(out.promoted).toBe(true);
+  });
+
+  it("folds a tombstoned note out at recall (loadTombstones, reason = principal_owner)", async () => {
+    const { store, tombstones } = operationalStore();
+    const port = createMemoryPortForStore(store, { resolveSource });
+    const a = await port.admitMemoryNote(note(), ctx);
+    const b = await port.admitMemoryNote(note({ t: T + 1, event: { at: T + 1, kind: "k2", ref: "ref:A" } }), ctx);
+    const bId = b.admitted ? b.id : "";
+    tombstones.push({ target: { kind: "node", id: bId }, reason: OWNER, t: T + 2 });
+    const recall = await port.recallMemory({ window: { sinceMs: null, untilMs: null } }, ctx);
+    const ids = recall.notes.map((n) => n.id);
+    expect(ids).toContain(a.admitted ? a.id : "");
+    expect(ids).not.toContain(bId);
+  });
+
+  it("REFUSES (M4) to cable a store missing append OR read-back capability", () => {
+    const { store } = operationalStore();
+    const noReadback = { ...store, capabilities: { append: store.capabilities.append } } as unknown as MemoryOperationalStore;
+    expect(() => createMemoryPortForStore(noReadback, { resolveSource })).toThrow(/readback/i);
+    const noAppend = { ...store, capabilities: { readback: store.capabilities.readback } } as unknown as MemoryOperationalStore;
+    expect(() => createMemoryPortForStore(noAppend, { resolveSource })).toThrow(/append/i);
   });
 });
