@@ -80,15 +80,28 @@ function isValidSubject(s: unknown): boolean {
   return s === "agent-work" || isHumanSubject(s);
 }
 
-/** Stable content-addressed id for a note (deterministic, no clock/random). */
+/**
+ * Stable content-addressed id over the note's IDENTITY fields (deterministic, no
+ * clock/random). It must distinguish notes that DIFFER, or the append upsert
+ * silently overwrites one with the other (P0 F-A): a `context` and a `decision`
+ * note sharing an anchor+citation are DISTINCT records, so `memory_kind`,
+ * `event.kind`, `t_end`, `provenance.source` and `scope` all participate. The
+ * volatile `[key:string]` extension (e.g. a signature) is deliberately EXCLUDED so
+ * a re-admit of identical content stays idempotent (same content → same id).
+ */
 function memoryNoteId(note: MemoryNoteInput): string {
   const canonical = JSON.stringify([
     note.principal_owner,
     note.subject,
+    note.memory_kind,
+    note.t,
+    note.t_end ?? null,
+    note.event?.kind,
     note.event?.ref,
     note.event?.at,
     note.provenance?.cited,
-    note.t,
+    note.provenance?.source,
+    note.scope,
   ]);
   return `mem:${createHash("sha256").update(canonical).digest("hex").slice(0, 16)}`;
 }
