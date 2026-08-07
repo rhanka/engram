@@ -51,7 +51,13 @@ import type {
   TombstoneOutcome,
   TombstoneTarget,
 } from "./memory-producer-port.js";
-import type { GraphStore, GraphNodeInput, GraphStoreAppendCapability, GraphTombstoneInput } from "./storage/types.js";
+import type {
+  GraphStore,
+  GraphNodeInput,
+  GraphStoreAppendCapability,
+  GraphStoreReadbackCapability,
+  GraphTombstoneInput,
+} from "./storage/types.js";
 
 /**
  * The storage surface the producer needs — the D5 append side only, as a STRUCTURAL
@@ -238,4 +244,81 @@ export function createMemoryRecall(deps: MemoryRecallDeps): MemoryRecallPort {
 /** Cable the WHOLE memory port (write-side + read-side) behind one surface. */
 export function createMemoryPort(deps: MemoryProducerDeps & MemoryRecallDeps): MemoryPort {
   return { ...createMemoryProducer(deps), ...createMemoryRecall(deps) };
+}
+
+/**
+ * The read-back surface recall + promotion need — the operational-slice read
+ * mirror of the append port (`capabilities.readback` v1). Structural subset so a
+ * real `GraphStore` satisfies it and a test supplies a fake without a live backend.
+ */
+export interface MemoryReadbackStore {
+  capabilities: { readback?: GraphStoreReadbackCapability };
+  loadNode?: GraphStore["loadNode"];
+  listMemoryNotes?: GraphStore["listMemoryNotes"];
+  loadTombstones?: GraphStore["loadTombstones"];
+}
+
+/** A store that can both APPEND (write) and READ BACK (recall/promote) memory. */
+export type MemoryOperationalStore = MemoryAppendStore & MemoryReadbackStore;
+
+/**
+ * Cable a REAL store (append + read-back) into the WHOLE ctx-carrying `MemoryPort`
+ * — the operational slice. `admitMemoryNote` writes through the append port;
+ * `recallMemory` reads through `listMemoryNotes`; `promoteNote` reads the pending
+ * note through `loadNode`. The store is the single source of truth; graphify
+ * authors nothing (§3.2).
+ *
+ * M4 guard: BOTH capabilities must be declared v1 with real methods, or we throw —
+ * a port bound to a store that would silently no-op a write OR return nothing on
+ * read is exactly the "success without effect" the contract forbids (§5).
+ *
+ * `loadGraph` is ctx-less by the `MemoryRecallDeps` contract, so it lists the
+ * tenancy VISIBILITY SUPERSET (`listMemoryNotes`) and `recallMemory` RE-APPLIES the
+ * authoritative §3.6 filter — the store scan only narrows, never widens, what a
+ * principal can see.
+ */
+export function createMemoryPortForStore(
+  store: MemoryOperationalStore,
+  opts: { resolveSource: (ref: string) => string | null; now?: () => number },
+): MemoryPort {
+  if (
+    store.capabilities.append?.version !== 1 ||
+    typeof store.appendNode !== "function" ||
+    typeof store.appendTombstone !== "function"
+  ) {
+    throw new Error(
+      "createMemoryPortForStore requires a store declaring capabilities.append (D5 v1) with real appendNode + appendTombstone (§5)",
+    );
+  }
+  if (
+    store.capabilities.readback?.version !== 1 ||
+    typeof store.loadNode !== "function" ||
+    typeof store.listMemoryNotes !== "function" ||
+    typeof store.loadTombstones !== "function"
+  ) {
+    throw new Error(
+      "createMemoryPortForStore requires a store declaring capabilities.readback (v1) with real loadNode + " +
+        "listMemoryNotes + loadTombstones — recall/promote read what append wrote",
+    );
+  }
+  const loadNode = store.loadNode;
+  const listMemoryNotes = store.listMemoryNotes;
+  const loadTombstones = store.loadTombstones;
+
+  return createMemoryPort({
+    store,
+    resolveSource: opts.resolveSource,
+    promotion: {
+      loadNote: async (noteId: string) => (await loadNode(noteId)) as MemoryNoteRecord | null,
+      now: opts.now,
+    },
+    // ctx-less by contract → list the visibility SUPERSET; recallMemory re-applies §3.6.
+    loadGraph: async () => ({ nodes: (await listMemoryNotes()) as unknown as Record<string, unknown>[] }),
+    loadTombstones: async () =>
+      (await loadTombstones()).map((rec) => ({
+        // the append path rode the memory tombstone's `principal_owner` as the audit `reason`.
+        target: rec.target as MemoryTombstone["target"],
+        principal_owner: typeof rec.reason === "string" ? rec.reason : "",
+      })),
+  });
 }

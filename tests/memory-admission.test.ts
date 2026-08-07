@@ -208,3 +208,30 @@ describe("admitMemoryNote — extension passthrough invariant (seam-B fix (i) gu
     expect(typeof appended.id).toBe("string");
   });
 });
+
+describe("admitMemoryNote — content-addressed id over IDENTITY fields (P0 F-A: no silent clobber)", () => {
+  // The id must distinguish notes that DIFFER; else the append upsert silently
+  // overwrites one with the other. Two notes sharing owner+subject+anchor+cited+t
+  // but a different `memory_kind` (context vs decision) are DISTINCT records.
+  it("gives DISTINCT ids to notes differing only in memory_kind — both stored, neither clobbered", async () => {
+    const ids: string[] = [];
+    const d = deps({ appendNode: vi.fn(async (n: Record<string, unknown>) => { ids.push(String(n.id)); return { created: true }; }) });
+    const a = await admitMemoryNote(validNote({ memory_kind: "context" }), d);
+    const b = await admitMemoryNote(validNote({ memory_kind: "decision" }), d);
+    expect(a.admitted && b.admitted).toBe(true);
+    expect(a.admitted ? a.id : "a").not.toBe(b.admitted ? b.id : "b");
+    expect(new Set(ids).size).toBe(2);
+  });
+
+  it("gives DISTINCT ids to notes differing only in event.kind", async () => {
+    const a = await admitMemoryNote(validNote({ event: { at: T, kind: "k1", ref: "ref:A" } }), deps());
+    const b = await admitMemoryNote(validNote({ event: { at: T, kind: "k2", ref: "ref:A" } }), deps());
+    expect(a.admitted ? a.id : "a").not.toBe(b.admitted ? b.id : "b");
+  });
+
+  it("gives the SAME id to a re-admit of identical content (idempotent, not a duplicate row)", async () => {
+    const a = await admitMemoryNote(validNote(), deps());
+    const b = await admitMemoryNote(validNote(), deps());
+    expect(a.admitted ? a.id : "a").toBe(b.admitted ? b.id : "b");
+  });
+});
