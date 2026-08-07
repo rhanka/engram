@@ -820,12 +820,15 @@ export {
   createMemoryProducer,
   createMemoryRecall,
   createMemoryPort,
+  createMemoryPortForStore,
 } from "./memory-factory.js";
 export type {
   MemoryProducerDeps,
   MemoryRecallDeps,
   MemoryPromotionDeps,
   MemoryAppendStore,
+  MemoryReadbackStore,
+  MemoryOperationalStore,
   MemoryNoteRecord,
 } from "./memory-factory.js";
 export { recallMemory, MEMORY_RECALL_SCHEMA } from "./memory-recall.js";
