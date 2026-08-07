@@ -79,11 +79,58 @@ The 18 `chore` entries are release/bump-shaped and are the release-only
 candidates. The actionable surface is therefore ~77 rows before any Python-only
 exclusion.
 
-**This row opens the window; it does not classify it.** No commit has been
-assigned a `port` / `must-audit` / `defer` / `reject` bucket, no TS reproducer
-has been run, and no port is proposed. A source lock has never been a mandate to
-port. The per-commit census for `82c46e5..00efd6e7` remains open work under the
-Track F rules.
+### Per-commit census of `82c46e5..00efd6e7` (2026-08-02)
+
+112 commits, no merges. 24 are `chore`/`docs` (release bumps, changelog, README)
+and carry no TS obligation. The 88 remaining were read and bucketed below.
+
+**What this census is, exactly.** Each row is classified from the upstream commit
+subject and its issue refs, cross-read against the TS surface as this document
+already records it. **No TS reproducer has been run for any row, and nothing here
+is a decision to port.** A row in `port?` means "the subsystem exists in TS and
+the described defect plausibly reproduces" — it is a candidate for a bounded lot,
+not a verdict. Promoting any row requires the Track F cycle: a failing TS test
+first, then the fix. The buckets are therefore `port?` / `must-audit` / `n-a`.
+
+| Cluster | Count | Bucket | Commits |
+| --- | --- | --- | --- |
+| Node-id / path canonicalization | 8 | **`port?`** | `f6711336` absolute-path id-leak class, `4d9d64b2` out-of-root import targets, `d16510ed` regex-rescue targets, `8adb261d` legacy alias fold + absolute-derived semantic ids, `334cff61` portable stat-index keys, `c5d43271` cached-id re-anchor, `d91a987a` stamp `target_file`, `3c332ba7` `.tsx` parsed with TSX grammar (absolute-slug leak) |
+| Module resolution | 1 | **`port?`** | `9be34595` honor `jsconfig.json` + `compilerOptions.baseUrl` |
+| Query / CLI / explain | 4 | **`port?`** | `875c7df8` render every edge between visited nodes, `50be9dcd` recover direction from `_src`/`_tgt`, `2ca565ac` ambiguous name no longer resolves arbitrarily, `6d6b674b` preserve edge direction in merge-graphs |
+| JS/TS extractor | 3 | **`port?`** | `d7cb5b1b` exported scalar bindings, `51b7b9f3` shadow closure params from `indirect_call`, `f6742bb6` exclude class refs from `indirect_call` |
+| Perf / dedup | 2 | **`port?`** | `0c01da19` remove O(nodes × components) scan from remap construction, `e395ff9b` merge cross-file concept nodes on normalized label |
+| Build / watch incremental | 9 | `must-audit` | `97656fae` tier-aware merge, `c2624787` + `e8436b41` inherit `directed`, `144a3ff8` manifest target dir, `2099873a` refuse overwriting unreadable graph, `6d42c48f` stale community labels, `137dcf23` `--no-cluster` merges, `498b76ba` viz cap, `2f78439f` raw edges-keyed graphs + alive-file pruning |
+| Detect / ignore / manifest | 8 | `must-audit` | `1b93c086` + `1cdbf48c` prune scoping, `8046334f` `.env.example` templates, `7e955d22` UTF-8 BOM ignore files, `072698a1` + `06e59783` NFC manifest keys (macOS), `36b5e770` sensitive-file filter, `0d1f25c2` dead `.graphifyinclude` |
+| Export / Obsidian | 2 | `must-audit` | `829224ac` all-dots label fallback, `f74c6326` leading-dot labels hidden |
+| Serve / MCP bounds | 1 | `must-audit` | `b4865ffc` bound multi-project graph contexts (follow-up to the ported `9e7fbcb`) |
+| Build robustness / labels | 2 | `must-audit` | `a2dc3d9c` coerce non-string node ids, `b1eadad0` normalize whitespace before truncating rationale labels (TS has `_extractJsRationale` from `6d3a6f1`) |
+| Language extractors, grammar-gated | 18 | `must-audit` | ruby `00efd6e7`; C#/Kotlin `4a9613f7` (both in one commit) `f99f8d70` `0858954d`; Go `38684349` `773250ad`; Scala `6deb27f2`; Swift `d1f303e2` `33aa89c7`; SQL `c8163d83` `ffa2a247`; bash `44241dd1` `4710b864` `0019fc4d` `bdcae25a`; XAML `2da192db`; Python decorators `794cf9eb` `fbc24c7d` |
+| Python runtime / packaging / hooks | 19 | **`n-a`** | MCP SDK 1.x/2.x + pip caps `576d5cbb` `50008cdf` `6d81a829`; bedrock/botocore `ffc6dc02` `a428378a` `d47f3ea1`; process pool `556e615c`; Windows/interpreter hooks `3bac3df6` `ca3113ac` `e1e041b0` `0da6929e` `cfe15f91`; install/skill paths `bdf62ce2` `bdb67885` `05ee5689`; skillgen `8658cc31` `65b81bfa`; misc `9eb76ace` `911d5817` |
+| Test-only companions | 11 | *(follows its parent row)* | `1a7be303` `788c6488` `952b477a` `753a6ac2` `52e1ed40` `c18ec817` `6107f145` `8d8005b8` `eebf030f` `ce9ea7d7` `26cac419` — each is the upstream test for a `fix` already bucketed above (same issue refs); they carry no independent decision, but a lot that ports its parent should port its test too |
+
+Roll-up: **18 `port?`** · **40 `must-audit`** · **19 `n-a`** · **11 test-only** ·
+**24 release-only** = **112**.
+
+**The counts are derived, not asserted.** They come from explicit per-sha lists
+run through a partition check that fails loudly if any commit is missed or
+double-counted; the check reports `112/112, total and disjoint`. This matters
+because the first hand-written version of this roll-up was wrong on three of five
+figures — it claimed 49 `must-audit` and 21 `n-a`, and omitted the test-only
+category entirely. Counting 112 rows by eye across a dozen clusters is exactly
+the kind of arithmetic that should never be trusted to a reading pass.
+
+Two observations worth carrying into whichever lot comes first. The node-id /
+path-canonicalization cluster is the largest coherent one and lands squarely on
+code this document has just re-verified, so it is the natural first lot. And
+`0c01da19` is the only row with a stated complexity claim (an O(nodes ×
+components) scan removed from remap construction) — if it reproduces in the TS
+remap path it is a performance defect rather than a correctness one, which
+changes how it should be tested.
+
+The grammar-gated cluster stays `must-audit` for a reason recorded earlier in
+this document: several optional tree-sitter WASM grammars are absent from this
+sandbox, so those rows cannot be verified by live extraction here and must not be
+classified by reading alone.
 
 Embedding neutrality is specified but externally blocked. The published
 `@sentropic/llm-mesh@0.10.0` and `@sentropic/llm-gateway@0.9.0` tarballs expose
