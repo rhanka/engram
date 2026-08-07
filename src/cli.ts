@@ -5863,6 +5863,61 @@ export async function main(): Promise<void> {
       }
     });
 
+  const memoryCmd = program
+    .command("memory")
+    .description("Agent-memory admit/recall against the operational store (Postgres append + read-back, §9.5)");
+
+  memoryCmd
+    .command("admit")
+    .description("Admit ONE caller-built MemoryNote (JSON via --file or stdin) as review_status:pending")
+    .option("--file <path>", "Path to the note JSON; omit to read from stdin")
+    .option("--store <id>", "Store backend id (default: GRAPHIFY_STORE; needs GRAPHIFY_POSTGRES_URL)")
+    .option("--config <path>", "Graphify config path")
+    .option("--json", "Emit JSON")
+    .action(async (opts) => {
+      try {
+        const { runMemoryAdmitCommand } = await import("./memory-cli.js");
+        const res = await runMemoryAdmitCommand({
+          ...(opts.file ? { file: String(opts.file) } : {}),
+          ...(opts.store ? { store: String(opts.store) } : {}),
+          ...(opts.config ? { config: String(opts.config) } : {}),
+        });
+        console.log(opts.json ? JSON.stringify(res.json) : res.text);
+        if (!res.ok) process.exit(1);
+      } catch (error) {
+        console.error(`error: ${error instanceof Error ? error.message : String(error)}`);
+        process.exit(1);
+      }
+    });
+
+  memoryCmd
+    .command("recall")
+    .description("Recall the MemoryNotes visible to --principal at --as-of (T6) or --since/--until (T5)")
+    .requiredOption("--principal <id>", "principal_owner performing the recall (tenancy, §3.6)")
+    .option("--as-of <timestamp>", "T6 point recall: epoch-ms or ISO-8601 with an explicit Z/UTC offset")
+    .option("--since <timestamp>", "T5 window lower bound: epoch-ms or ISO-8601 (UTC)")
+    .option("--until <timestamp>", "T5 window upper bound: epoch-ms or ISO-8601 (UTC)")
+    .option("--store <id>", "Store backend id (default: GRAPHIFY_STORE; needs GRAPHIFY_POSTGRES_URL)")
+    .option("--config <path>", "Graphify config path")
+    .option("--json", "Emit JSON")
+    .action(async (opts) => {
+      try {
+        const { runMemoryRecallCommand } = await import("./memory-cli.js");
+        const res = await runMemoryRecallCommand({
+          principal: String(opts.principal),
+          ...(opts.asOf !== undefined ? { asOf: String(opts.asOf) } : {}),
+          ...(opts.since !== undefined ? { since: String(opts.since) } : {}),
+          ...(opts.until !== undefined ? { until: String(opts.until) } : {}),
+          ...(opts.store ? { store: String(opts.store) } : {}),
+          ...(opts.config ? { config: String(opts.config) } : {}),
+        });
+        console.log(opts.json ? JSON.stringify(res.json) : res.text);
+      } catch (error) {
+        console.error(`error: ${error instanceof Error ? error.message : String(error)}`);
+        process.exit(1);
+      }
+    });
+
   program
     .command("time-slice")
     .description(
