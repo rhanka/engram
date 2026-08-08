@@ -127,6 +127,45 @@ components) scan removed from remap construction) — if it reproduces in the TS
 remap path it is a performance defect rather than a correctness one, which
 changes how it should be tested.
 
+### Node-id lot resolved (2026-08-08): 7 of its 8 rows do not reproduce in TS
+
+The node-id / path-canonicalization cluster was promoted above as the natural
+first lot. It was then **instrumented before being ported**, on the Track F rule
+that a fix for a defect which does not reproduce cannot be written as a failing
+test. **Seven of the eight rows do not reproduce.** No port was made, and
+therefore no node id moved.
+
+Method: a baseline extraction over a stable pure-code corpus (372 nodes, 729
+edges), then an adversarial corpus built to trigger each defect on purpose — an
+out-of-root import `../../outside/shared`, a `.tsx` file, and an absolute scan
+root. Observed with the shipped binary, not read from source.
+
+| Row | Status in TS | Evidence |
+| --- | --- | --- |
+| `3c332ba7` `.tsx` absolute-slug leak | **does not reproduce** | ids emitted are `widget`, `widget_widget`, `widget_usewidget` — the TSX grammar is already selected, no slug leak |
+| `f6711336` absolute-path id-leak class | **does not reproduce** | every id is a relative stem (`plain_plainfn`, `usesoutside_a`) even though the scan root is an absolute path |
+| `d16510ed` regex-rescue target ids | **does not reproduce** | there is **no regex import-rescue path in TS at all**; on hard parse failure `extract` returns `{nodes: [], edges: []}`, and tree-sitter's error tolerance recovers the rest inside the AST — a deliberately malformed file still yielded `broken`, `broken_ok` and a correct `broken -> real` import edge |
+| `d91a987a` stamp `target_file` | **not an id concern** | it sets an attribute, not an identifier |
+| `8adb261d` re-key absolute-derived semantic ids | **no surface** | requires semantic nodes carrying absolute-derived ids; the published graphs contain zero, and a code-only extraction produces none |
+| `334cff61` portable stat-index keys | **no-op cold** | cache-key change; identical output on a cold extraction |
+| `c5d43271` cached-id re-anchor | **no-op cold** | same |
+
+The eighth row is different in kind and is **not** reclassified:
+
+`4d9d64b2` (out-of-root import/include targets) describes a **behavioural
+divergence, not a shared bug**. Upstream canonicalizes the out-of-root target and
+keeps it; TS **drops the edge entirely** — measured: the adversarial import
+produced no import edge at all. Porting it would *add* nodes and edges rather
+than repair malformed ones, which enlarges the graph surface. That is a **product
+decision** (do we want out-of-root targets represented?) and it is flagged to the
+owner as a future option, with the current TS behaviour as the default. It stays
+`must-audit` and must not be ported by parity reflex.
+
+The lot therefore closes as documentation plus one open product question, rather
+than as the multi-day port it was projected to be. Nothing here says the upstream
+fixes are wrong — they repair real defects in Python. It says the TypeScript
+extractor built its ids differently and did not inherit that defect class.
+
 The grammar-gated cluster stays `must-audit` for a reason recorded earlier in
 this document: several optional tree-sitter WASM grammars are absent from this
 sandbox, so those rows cannot be verified by live extraction here and must not be
