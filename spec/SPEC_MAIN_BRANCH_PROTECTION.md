@@ -1,6 +1,13 @@
 # SPEC — Branch protection on `main`
 
-Status: **design, awaiting conductor validation — NOT applied**
+Status: **RATIFIED by the owner 2026-08-08 — still NOT applied** (apply is sequenced
+after the lane becomes PR-based; see §3)
+
+Both open arbitrations were decided as proposed: **0 approvals** and
+**`enforce_admins: false`**. The §2 table below records the reasoning that was on the
+table when that call was made, including the arguments against — those do not stop
+being true now that the decision went the other way, and they are what to re-read if
+the rule ever needs revisiting.
 
 Date: 2026-08-08 · Baseline `main` = `64708bee` · Repo `rhanka/graphify`
 
