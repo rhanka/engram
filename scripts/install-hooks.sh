@@ -9,7 +9,13 @@
 set -eu
 
 cd "$(dirname "$0")/.."
-git config core.hooksPath hooks
+
+# ABSOLU, jamais relatif. Un chemin relatif est resolu par git depuis la racine du
+# WORKTREE COURANT, donc chaque worktree chercherait son propre hooks/ : ceux dont
+# la branche checked-out ne porte pas encore le fichier pointeraient un repertoire
+# inexistant et seraient NON GARDES, sans le moindre message. Avec le chemin
+# absolu du checkout primaire, les worktrees partagent le meme hooks/ versionne.
+git config core.hooksPath "$PWD/hooks"
 chmod +x hooks/* 2>/dev/null || true
 
 printf 'hooks actives depuis %s/hooks\n' "$PWD"
