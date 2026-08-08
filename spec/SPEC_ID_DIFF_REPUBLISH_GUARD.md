@@ -1,6 +1,6 @@
 # SPEC — Id-diff guard on republication
 
-Status: **design, awaiting validation — no implementation**
+Status: **design VALIDATED 2026-08-08 — no implementation; blocking mode awaits owner ratification at wire-time**
 
 Date: 2026-08-08
 
@@ -87,6 +87,35 @@ id-diff vs published:  +14 added   -2 removed   3 MOVED
 - Attribute diffing (labels, descriptions, positions). Those change constantly
   and legitimately; folding them in would drown the signal.
 - Any automatic remediation. The guard reports; a human decides.
+
+## 7bis. Decided (2026-08-08, conductor) — fail-closed with override
+
+§7 below is **settled**. It is kept as written because it records the reasoning
+the decision was made against, but the decision itself is:
+
+**Block republication when `moved != 0`, with a documented override.**
+
+The counter-argument in §7 won: a report nobody reads is worth nothing
+*precisely because* republication is automatic — which is the entire premise of
+the pre-mortem this spec answers. A reporting-only guard would restate the
+problem rather than solve it.
+
+Three mechanisms retire the day-one and false-positive risk that motivated my
+"report first" recommendation:
+
+1. **First run writes the baseline and cannot fire.** There is nothing to compare
+   against, so the guard is inert on the run that introduces it.
+2. **Documented override** for intentional moves — a canonicalization the owner
+   has accepted must be able to ship without disabling the guard.
+3. **Blocking is enabled only once the §2 anchor is validated.** Until the
+   implementation proves `(label, source_file)` is unique and stable, the guard
+   degrades to report-only. The anchor assumption gates the blocking behaviour,
+   not just the quality of the diff.
+
+**Owner ratification is required at wire-time, not now.** This guard gates the
+owner's releases, so switching it to blocking is their call — taken when the
+guard is actually wired, against a validated anchor and observed data, rather
+than in the abstract today.
 
 ## 7. Open question — the one this spec does not decide
 
