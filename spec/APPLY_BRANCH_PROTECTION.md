@@ -19,12 +19,12 @@ the job was renamed, and naming it here would deadlock every merge.
 
 ## The command
 
-`APPROVALS` and `ENFORCE_ADMINS` are the owner's two open arbitrations. Substitute,
-do not guess.
+Both arbitrations are **ratified by the owner** (2026-08-08): 0 approvals, admins not
+enforced. The values below are final, not placeholders.
 
 ```sh
-# APPROVALS      : 0 (conductor gate is the review) | 1 (a human clicks per merge)
-# ENFORCE_ADMINS : false (keeps the admin-merge-on-quota escape) | true (binds admins too)
+# RATIFIED: 0 approvals — a PR is still required; the conductor gate is the review.
+# RATIFIED: enforce_admins false — keeps the admin-merge-on-quota-flake escape hatch.
 APPROVALS=0
 ENFORCE_ADMINS=false
 
