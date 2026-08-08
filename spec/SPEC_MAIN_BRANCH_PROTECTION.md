@@ -34,10 +34,15 @@ Owner decision: branch protection is the real close; the local hook
 for the context indefinitely; there is no timeout. Two ways to fall in:
 
 1. naming a check that does not exist (typo, renamed job);
-2. naming a check that exists but only runs on **tags/releases** — that is exactly
-   what `publish`, `publish-graph`, `post-publish-check`, `release-guard` and
-   `deploy` are here. They are release-driven (npm publish is tag-driven in this
-   repo), so a PR would never produce them.
+2. naming a check that exists but only runs on **tags/releases**.
+
+**Correction, measured on PR #298 (2026-08-08).** This document first claimed that
+`publish`, `publish-graph`, `post-publish-check` and `release-guard` "would never be
+produced on a PR". That is **wrong**: they *are* produced, with conclusion
+`skipped`. They stay out of the required set anyway, so the ruleset does not change —
+but the reason is "we do not want release jobs gating merges", not "they never
+appear". Keeping the wrong reason would have taught the next reader a false rule
+about how GitHub reports skipped jobs.
 
 **Therefore, before applying: open one throwaway PR and read the check names it
 actually produces.** Require only names observed on that PR. This is the single
