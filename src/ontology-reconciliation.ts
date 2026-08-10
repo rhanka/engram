@@ -98,6 +98,8 @@ export interface OntologyReconciliationCandidateQueue {
    * conditional block would hide the narrowing every corpus actually takes.
    */
   tier_exclusion: OntologyReconciliationTierExclusionDisclosure;
+  /** ALWAYS present, same reasoning as the two above. */
+  precision_guard: OntologyReconciliationPrecisionGuardDisclosure;
   candidates: OntologyReconciliationCandidate[];
 }
 
@@ -292,6 +294,45 @@ interface OntologyReconciliationTrustTierGateDisclosure {
   pairs_both_tagged: number;
   pairs_one_side_tagged: number;
   pairs_rejected: number;
+}
+
+const PRECISION_GUARD_CRITERION =
+  "EXACT-tier pairs sharing a normalized term, retracted by a precision guard "
+  + "(role-noun collision, opposite gender/relation, place containment, address/serial divergence); "
+  + "fuzzy-tier retractions are NOT counted -- see `scope`";
+
+const PRECISION_GUARD_SCOPE =
+  "exact tier only: the fuzzy tier applies the same guard BEFORE matching, so its "
+  + "retraction count depends on how many pairs the enumeration offers and would not "
+  + "mean the same under a blocking index as under a cross product";
+
+/**
+ * What the precision guard retracted from the EXACT tier, stamped on the queue.
+ *
+ * The guard removes pairs that share a normalized term — pairs the exact tier
+ * would otherwise have emitted — so it is a narrowing and it declares itself
+ * like the others.
+ *
+ * SCOPED TO THE EXACT TIER, on purpose, and the limit is published rather than
+ * hidden. In the exact tier the guard fires only after `sharedTerms.length > 0`,
+ * and blocking is lossless on shared terms, so the count means the same under
+ * either enumeration and the golden can compare it. In the fuzzy tier the same
+ * guard fires BEFORE `fuzzyMatchVariants`, so it also retracts pairs that would
+ * never have matched; that count rises with the number of pairs offered and
+ * would differ between a blocking index and a cross product.
+ *
+ * Counting it anyway would have meant either stripping a second field from the
+ * golden — the gesture the strip list exists to keep rare — or reordering the
+ * production check for the convenience of a measurement, which is not a reason
+ * to move a guard. An undeclared partial count is the defect; a declared one is
+ * a fact a reader can act on.
+ *
+ * ABSENT on a queue means the artefact predates this block, not zero.
+ */
+interface OntologyReconciliationPrecisionGuardDisclosure {
+  criterion: string;
+  scope: string;
+  exact_pairs_retracted: number;
 }
 
 const TIER_EXCLUSION_CRITERION =
@@ -1892,6 +1933,7 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
   // Accumulates across BOTH tiers: the guard runs in the lexical loop and again
   // in the structural one, and the queue declares what it retracted overall.
   const trustTierGate = emptyTrustTierGate();
+  let exactPairsRetracted = 0;
   const comparableNodes = memoizeComparableNodes(context.nodes, normalizers, fuzzyEnabled, fuzzyThreshold);
   const fuzzyTierEligibility = fuzzyEnabled ? fuzzyTierEligibilityDisclosure(comparableNodes) : undefined;
   const tokenIdfs = fuzzyMinimumSharedTokenIdf === undefined ? undefined : fuzzyTokenIdfs(comparableNodes);
@@ -1939,7 +1981,14 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
     );
 
     if (sharedTerms.length > 0) {
-      if (rejectReason) continue;
+      if (rejectReason) {
+        // Counted HERE and not at the guard's computation above: this is where
+        // it retracts a pair the exact tier would have emitted, and only pairs
+        // sharing a term reach it — which is what makes the figure mean the
+        // same under blocking as under a cross product.
+        exactPairsRetracted += 1;
+        continue;
+      }
       // Exact tier: shared normalized term (label/alias/normalized_term).
       emittedPairs.add(pairKey);
       candidates.push({
@@ -2110,6 +2159,11 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
     ...(fuzzyTierEligibility ? { fuzzy_tier_eligibility: fuzzyTierEligibility } : {}),
     trust_tier_gate: trustTierGate,
     tier_exclusion: tierExclusionDisclosure(context.nodes, fuzzyExcludeTypes),
+    precision_guard: {
+      criterion: PRECISION_GUARD_CRITERION,
+      scope: PRECISION_GUARD_SCOPE,
+      exact_pairs_retracted: exactPairsRetracted,
+    },
     candidates: capped,
   };
 }
