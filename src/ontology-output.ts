@@ -144,6 +144,20 @@ interface ProvenanceCoverage {
  * measured" indistinguishable — the exact confusion this block exists to end.
  * Zero is a finding and it gets published.
  *
+ * ABSENT on a manifest therefore means the artefact was produced BEFORE this
+ * block existed. It does not mean nothing was anchored, and it is not a zero.
+ *
+ * KNOWN FALSE POSITIVE, accepted: the test is `ref.includes("#")`, while
+ * `sourceRef` emits the bare file when there is no location. A source path that
+ * itself contains `#` is therefore counted as anchored without carrying a span.
+ * It matters more than its rarity suggests — every corpus measured so far sits
+ * at zero, so a single such path would make the figure non-zero and simulate the
+ * beginnings of anchoring on the very number meant to separate "nothing is
+ * anchored" from "nobody measured". Not worked around here: deriving from the
+ * input instead would report what we believe we wrote rather than what we
+ * wrote. Revisit if refs ever become structured (`{file, location?}`) rather
+ * than `#`-joined.
+ *
  * No `share`: both operands are here and a stored ratio is redundant state that
  * can drift away from them. The division belongs to the reader.
  *
