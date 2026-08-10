@@ -382,16 +382,45 @@ function naiveQueue(
     generated_at: options.generatedAt ?? new Date().toISOString(),
     candidate_count: capped.length,
     ...(fuzzyTierEligibility ? { fuzzy_tier_eligibility: fuzzyTierEligibility } : {}),
+    // Reimplemented here rather than stripped from the comparison, because this
+    // disclosure counts NODES: its value does not depend on how pairs are
+    // enumerated, so the two paths must agree on it and the golden should say
+    // so. Contrast `trust_tier_gate`, which reports what the guard examined and
+    // therefore differs by construction.
+    tier_exclusion: {
+      criterion: "node types denied the FUZZY and STRUCTURAL tiers; the exact tier still runs on them",
+      excluded_types: [...fuzzyExcludeTypes].sort(),
+      nodes_excluded: value.nodes.filter((n) => n.type !== undefined && fuzzyExcludeTypes.has(n.type)).length,
+      nodes_total: value.nodes.length,
+    },
     candidates: capped,
   };
 }
 
 /**
- * The golden proves the two enumerations EMIT the same candidates. It cannot
- * compare `trust_tier_gate`, which reports how many pairs the inter-tier guard
- * examined: blocking exists precisely to examine fewer, so asserting that block
- * identical would assert that blocking does nothing. Stripped explicitly rather
- * than silently, and the pruning it hides is asserted on its own below.
+ * FIELDS STRIPPED FROM THE GOLDEN — enumerated, one line each.
+ *
+ * Stripping a field from a comparison removes something from a check exactly as
+ * a filter removes a pair from a queue, so it declares itself the same way:
+ * owner, motive, and the assertion that catches what the strip stopped
+ * catching. Without the list, the destructure below is a gesture anyone can
+ * copy the next time a field breaks the golden — legitimate here, wrong for a
+ * field that ought to match.
+ *
+ *   `trust_tier_gate`  · owner: graphify-ontology
+ *      motive: `naiveQueue` does not compute it, so the comparison would fail
+ *              unconditionally and for a reason unrelated to blocking; and it
+ *              reports how many pairs the guard EXAMINED, which blocking exists
+ *              to reduce — asserting it identical would assert blocking is inert.
+ *      caught by: "prunes what the golden can no longer compare" (below) plus
+ *              the dedicated disclosure file.
+ *
+ * NOT stripped, and the contrast is the point:
+ *
+ *   `tier_exclusion`   · counts NODES, so its value does not depend on how
+ *      pairs are enumerated. The oracle reimplements it and the golden compares
+ *      it. A path-invariant field belongs in the comparison; reaching for the
+ *      strip here would have hidden a real divergence.
  */
 function emittedPayload(queue: OntologyReconciliationCandidateQueue): string {
   const { trust_tier_gate: _gate, ...rest } = queue as OntologyReconciliationCandidateQueue &
