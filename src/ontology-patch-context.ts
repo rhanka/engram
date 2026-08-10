@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 
 import type { ProfileState } from "./configured-dataprep.js";
 import { safeExecGit } from "./git.js";
-import type { OntologyPatchContext } from "./ontology-patch.js";
+import type { OntologyNodeTrustTier, OntologyPatchContext } from "./ontology-patch.js";
 import type {
   NormalizedOntologyProfile,
   NormalizedProjectConfig,
@@ -31,6 +31,34 @@ function stringValue(value: unknown): string | null {
 
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+const ONTOLOGY_NODE_TRUST_TIERS: ReadonlySet<string> = new Set<OntologyNodeTrustTier>([
+  "earned",
+  "asserted",
+  "signed",
+  "unverified",
+]);
+
+/**
+ * Provenance tier read back from `nodes.json`, VALIDATED rather than relayed.
+ *
+ * This loader reprojects arbitrary JSON onto a whitelist, so an unrecognised
+ * value has to go somewhere. It goes to `undefined`, and the direction matters:
+ * `violatesTrustTier` compares strings and returns false as soon as EITHER side
+ * is undefined, so falling back is FAIL-OPEN — it adds no rejection and leaves
+ * the candidate queue exactly as it was. Relaying an unknown string would do the
+ * opposite: it would manufacture a FICTIONAL tier mismatch between two nodes and
+ * silently drop that pair, which is the class of defect the queue's disclosure
+ * discipline exists to prevent.
+ *
+ * The field itself must stay on the whitelist: omitting it drops a declared tier
+ * at load time without a word, so the §3.4 invariant would read as dormant while
+ * the corpus actually carried tiers.
+ */
+function trustTierValue(value: unknown): OntologyNodeTrustTier | undefined {
+  const tier = stringValue(value);
+  return tier !== null && ONTOLOGY_NODE_TRUST_TIERS.has(tier) ? (tier as OntologyNodeTrustTier) : undefined;
 }
 
 function evidenceRefsFromSources(value: unknown): Set<string> {
@@ -85,6 +113,7 @@ export function loadOntologyPatchContext(profileStatePath: string): OntologyPatc
         label: stringValue(node.label) ?? undefined,
         type: stringValue(node.type) ?? undefined,
         status: stringValue(node.status) ?? undefined,
+        trust: trustTierValue(node.trust),
         aliases: stringArray(node.aliases),
         normalized_terms: stringArray(node.normalized_terms),
         source_refs: stringArray(node.source_refs),
