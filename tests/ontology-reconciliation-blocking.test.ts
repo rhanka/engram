@@ -439,6 +439,21 @@ function naiveQueue(
  *      pairs are enumerated. The oracle reimplements it and the golden compares
  *      it. A path-invariant field belongs in the comparison; reaching for the
  *      strip here would have hidden a real divergence.
+ *
+ *   `precision_guard`  · counts EXACT-tier retractions only. The guard fires
+ *      there after `sharedTerms.length > 0`, and blocking is lossless on shared
+ *      terms, so the count is invariant too. Its fuzzy-tier twin fires before
+ *      matching and would NOT be — which is why the field names that boundary
+ *      instead of counting both.
+ *
+ * KNOWN COUPLING, deliberate. The oracle hardcodes the expected `criterion` and
+ * `scope` literals rather than importing the constants. That IS the check: an
+ * oracle importing the production constant would stop verifying it and only
+ * confirm that a value equals itself. The cost is that changing a criterion
+ * requires updating the copy here — and the cost is self-announcing, because the
+ * golden goes red until you do. That redness is correct: changing the words a
+ * consumer reads should force someone to re-confirm what the oracle expects.
+ * Mirror the new text here; do not reach for a shared constant.
  */
 function emittedPayload(queue: OntologyReconciliationCandidateQueue): string {
   const { trust_tier_gate: _gate, ...rest } = queue as OntologyReconciliationCandidateQueue &
