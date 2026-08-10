@@ -114,7 +114,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        provider: ["anthropic", "openai", "gemini", "mistral", "cohere"]
+        # gemini retiré du CI : gemini-3.1-pro exige un projet Google facturé
+        # (free tier = limit 0). Non testé en CI ; reste dispo comme provider produit.
+        provider: ["anthropic", "openai", "mistral", "cohere"]
     steps:
       - uses: actions/checkout@v4
 
