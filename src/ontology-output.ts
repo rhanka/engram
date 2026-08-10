@@ -121,6 +121,45 @@ function sourceRef(file: string | undefined, location: string | undefined): stri
   return [location ? `${file}#${location}` : file];
 }
 
+/** Separator `sourceRef` writes between a source file and its in-document location. */
+const SOURCE_SPAN_SEPARATOR = "#";
+
+const PROVENANCE_COVERAGE_CRITERION = "source_refs carries a citation span (file#location)";
+
+interface ProvenanceCoverage {
+  criterion: string;
+  anchored: number;
+  total: number;
+}
+
+/**
+ * How many emitted nodes carry a POSITIONAL anchor, stamped on the manifest.
+ *
+ * Read off the emitted `source_refs`, not off the upstream `source_location`
+ * that produced them: the artefact is what a consumer reads, so measuring the
+ * input would report what we believe we wrote rather than what we wrote.
+ *
+ * Deliberately UNCONDITIONAL, unlike `hierarchies_path` next to it. A coverage
+ * figure that disappeared at zero would make "nothing is anchored" and "nobody
+ * measured" indistinguishable — the exact confusion this block exists to end.
+ * Zero is a finding and it gets published.
+ *
+ * No `share`: both operands are here and a stored ratio is redundant state that
+ * can drift away from them. The division belongs to the reader.
+ *
+ * This is a STATISTIC, never a guard input. Nothing may branch on it. If a
+ * decision ever needs to, it goes through the declared-filter discipline —
+ * enumerated list, owner, motive, pinning test — rather than being promoted by
+ * drift.
+ */
+function provenanceCoverage(nodes: readonly CompiledNode[]): ProvenanceCoverage {
+  return {
+    criterion: PROVENANCE_COVERAGE_CRITERION,
+    anchored: nodes.filter((node) => node.source_refs.some((ref) => ref.includes(SOURCE_SPAN_SEPARATOR))).length,
+    total: nodes.length,
+  };
+}
+
 function writeJson(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(value, null, 2) + "\n", "utf-8");
@@ -435,6 +474,7 @@ export function compileOntologyOutputs(options: CompileOntologyOutputsOptions): 
     relation_count: relations.length,
     wiki_page_count: wikiPageCount,
     source_graph: ".graphify/graph.json",
+    provenance_coverage: provenanceCoverage(nodes),
   };
 
   if (hasHierarchies) {
