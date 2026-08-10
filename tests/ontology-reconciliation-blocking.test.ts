@@ -217,6 +217,7 @@ function naiveQueue(
   const fuzzyExcludeTypes = new Set(options.fuzzyExcludeTypes ?? DEFAULT_FUZZY_EXCLUDE_TYPES);
   const normalizers = compileNormalizerByNodeType(value.profile);
   const candidates: OntologyReconciliationCandidate[] = [];
+  let exactPairsRetracted = 0;
   const emittedPairs = new Set<string>();
   const comparableNodes = value.nodes
     .filter((entry) => entry.type && nodeTerms(entry).length > 0)
@@ -243,7 +244,13 @@ function naiveQueue(
       const rejectReason = differentEntityReason(left, right);
 
       if (sharedTerms.length > 0) {
-        if (rejectReason) continue;
+        if (rejectReason) {
+          // Independently recomputed, like `tier_exclusion`: the count is over
+          // pairs sharing a term, which blocking enumerates losslessly, so the
+          // two paths must agree and the golden compares it.
+          exactPairsRetracted += 1;
+          continue;
+        }
         const normalize = normalizers[left.type] ?? normalizeTerm;
         const canonicalLabel = canonical.label ? normalize(canonical.label) : null;
         const candidateLabel = candidate.label ? normalize(candidate.label) : null;
@@ -392,6 +399,17 @@ function naiveQueue(
       excluded_types: [...fuzzyExcludeTypes].sort(),
       nodes_excluded: value.nodes.filter((n) => n.type !== undefined && fuzzyExcludeTypes.has(n.type)).length,
       nodes_total: value.nodes.length,
+    },
+    precision_guard: {
+      criterion:
+        "EXACT-tier pairs sharing a normalized term, retracted by a precision guard "
+        + "(role-noun collision, opposite gender/relation, place containment, address/serial divergence); "
+        + "fuzzy-tier retractions are NOT counted -- see `scope`",
+      scope:
+        "exact tier only: the fuzzy tier applies the same guard BEFORE matching, so its "
+        + "retraction count depends on how many pairs the enumeration offers and would not "
+        + "mean the same under a blocking index as under a cross product",
+      exact_pairs_retracted: exactPairsRetracted,
     },
     candidates: capped,
   };
