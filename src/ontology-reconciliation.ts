@@ -93,6 +93,11 @@ export interface OntologyReconciliationCandidateQueue {
    * block existed. It does not mean the guard was inert, and it is not a zero.
    */
   trust_tier_gate: OntologyReconciliationTrustTierGateDisclosure;
+  /**
+   * ALWAYS present, same reasoning: the exclusion is on by default, so a
+   * conditional block would hide the narrowing every corpus actually takes.
+   */
+  tier_exclusion: OntologyReconciliationTierExclusionDisclosure;
   candidates: OntologyReconciliationCandidate[];
 }
 
@@ -287,6 +292,52 @@ interface OntologyReconciliationTrustTierGateDisclosure {
   pairs_both_tagged: number;
   pairs_one_side_tagged: number;
   pairs_rejected: number;
+}
+
+const TIER_EXCLUSION_CRITERION =
+  "node types denied the FUZZY and STRUCTURAL tiers; the exact tier still runs on them";
+
+/**
+ * Which node types are barred from the weaker tiers, stamped on the queue.
+ *
+ * This narrowing is ON BY DEFAULT — `DEFAULT_FUZZY_EXCLUDE_TYPES` applies
+ * whenever the option is absent — so it shapes every corpus, unlike the opt-in
+ * bucket cap that declares itself right next to it. The repo declared its
+ * opt-in loss and said nothing about its default one; that asymmetry is the
+ * wrong way round, since the default path is the one every corpus takes.
+ *
+ * The mitigation is published with the loss rather than left for the reader to
+ * discover: these types keep the EXACT tier. Saying only "excluded" would
+ * overstate it into "invisible to reconciliation", which is false.
+ *
+ * Counted over NODES, not over skipped pairs. The node population is the same
+ * whichever way pairs are enumerated, so this figure means the same thing under
+ * the blocking index and under a cross product — a pair count would not, and
+ * would silently turn the losslessness golden into an assertion that blocking
+ * does nothing.
+ *
+ * ABSENT on a queue means the artefact predates this block, not that nothing
+ * was excluded.
+ */
+interface OntologyReconciliationTierExclusionDisclosure {
+  criterion: string;
+  excluded_types: string[];
+  nodes_excluded: number;
+  nodes_total: number;
+}
+
+function tierExclusionDisclosure(
+  nodes: readonly OntologyPatchNode[],
+  excludedTypes: ReadonlySet<string>,
+): OntologyReconciliationTierExclusionDisclosure {
+  return {
+    criterion: TIER_EXCLUSION_CRITERION,
+    // The list ACTUALLY in force, so an override is visible rather than the
+    // reader having to assume the default constant.
+    excluded_types: [...excludedTypes].sort(),
+    nodes_excluded: nodes.filter((node) => node.type !== undefined && excludedTypes.has(node.type)).length,
+    nodes_total: nodes.length,
+  };
 }
 
 function emptyTrustTierGate(): OntologyReconciliationTrustTierGateDisclosure {
@@ -2058,6 +2109,7 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
     ...(blockingIndex.fuzzyBucketCap ? { fuzzy_blocking_cap: blockingIndex.fuzzyBucketCap } : {}),
     ...(fuzzyTierEligibility ? { fuzzy_tier_eligibility: fuzzyTierEligibility } : {}),
     trust_tier_gate: trustTierGate,
+    tier_exclusion: tierExclusionDisclosure(context.nodes, fuzzyExcludeTypes),
     candidates: capped,
   };
 }
