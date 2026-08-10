@@ -100,6 +100,11 @@ export interface OntologyReconciliationCandidateQueue {
   tier_exclusion: OntologyReconciliationTierExclusionDisclosure;
   /** ALWAYS present, same reasoning as the two above. */
   precision_guard: OntologyReconciliationPrecisionGuardDisclosure;
+  /**
+   * ALWAYS present. `candidate_count` reports what SURVIVED the cap, so without
+   * this block a full queue and a truncated one read alike.
+   */
+  output_truncation: OntologyReconciliationOutputTruncationDisclosure;
   candidates: OntologyReconciliationCandidate[];
 }
 
@@ -294,6 +299,57 @@ interface OntologyReconciliationTrustTierGateDisclosure {
   pairs_both_tagged: number;
   pairs_one_side_tagged: number;
   pairs_rejected: number;
+}
+
+const OUTPUT_TRUNCATION_CRITERION =
+  "candidates ranked by score then dropped beyond the cap; `dropped` counts what "
+  + "ranking placed below the cut, and `candidate_count` is what survived it";
+
+/**
+ * What the final cap threw away, stamped on the queue.
+ *
+ * This is the LAST narrowing of the pipeline and the widest by far: everything
+ * upstream trims pairs that were unlikely to matter, while this one discards
+ * ranked candidates purely because a fixed number of them fit. On a corpus of
+ * a few hundred thousand pairs, the overwhelming majority of what the tiers
+ * produced never reaches the queue at all.
+ *
+ * Until now `candidate_count` reported the count AFTER the cut, so a reader
+ * seeing 200 could not tell a corpus that produced exactly 200 candidates from
+ * one that produced hundreds of thousands and lost the rest — the same
+ * indistinguishability that put every other narrowing on this path under a
+ * stamp.
+ *
+ * `dropped` is invariant: the blocking index is lossless on EMITTED candidates,
+ * which is the whole of A2-1, so the pre-cap population is the same under either
+ * enumeration. The golden therefore compares this block and the oracle
+ * recomputes it — no strip.
+ *
+ * No pre-cap total: `candidate_count + dropped` gives it, and a third stored
+ * number could drift from the two beside it.
+ *
+ * `cap` is null when nothing was capped, which is not the same as a cap of zero.
+ *
+ * ABSENT on a queue means the artefact predates this block, not that nothing was
+ * dropped.
+ */
+interface OntologyReconciliationOutputTruncationDisclosure {
+  criterion: string;
+  cap: number | null;
+  dropped: number;
+}
+
+function outputTruncationDisclosure(
+  produced: number,
+  emitted: number,
+  cap: number,
+): OntologyReconciliationOutputTruncationDisclosure {
+  const capped = Number.isFinite(cap) && cap >= 0;
+  return {
+    criterion: OUTPUT_TRUNCATION_CRITERION,
+    cap: capped ? cap : null,
+    dropped: produced - emitted,
+  };
 }
 
 const PRECISION_GUARD_CRITERION =
@@ -2164,6 +2220,7 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
       scope: PRECISION_GUARD_SCOPE,
       exact_pairs_retracted: exactPairsRetracted,
     },
+    output_truncation: outputTruncationDisclosure(candidates.length, capped.length, cap),
     candidates: capped,
   };
 }

@@ -411,6 +411,16 @@ function naiveQueue(
         + "mean the same under a blocking index as under a cross product",
       exact_pairs_retracted: exactPairsRetracted,
     },
+    // Recomputed independently, like the two above: the pre-cap population is
+    // the same under either enumeration (blocking is lossless on emitted
+    // candidates), so the two paths must agree on what the cap threw away.
+    output_truncation: {
+      criterion:
+        "candidates ranked by score then dropped beyond the cap; `dropped` counts what "
+        + "ranking placed below the cut, and `candidate_count` is what survived it",
+      cap: Number.isFinite(cap) && cap >= 0 ? cap : null,
+      dropped: candidates.length - capped.length,
+    },
     candidates: capped,
   };
 }
