@@ -83,6 +83,16 @@ export interface OntologyReconciliationCandidateQueue {
    * the eligibility criterion is then inapplicable.
    */
   fuzzy_tier_eligibility?: OntologyReconciliationFuzzyTierEligibilityDisclosure;
+  /**
+   * ALWAYS present, unlike the two disclosures above. They are conditional on a
+   * mechanism running at all; this guard always runs, so omitting it at zero
+   * would leave "ran and retracted nothing" indistinguishable from "did not
+   * run" — the very ambiguity a queue disclosure exists to remove.
+   *
+   * ABSENT on a queue therefore means the artefact was produced BEFORE this
+   * block existed. It does not mean the guard was inert, and it is not a zero.
+   */
+  trust_tier_gate: OntologyReconciliationTrustTierGateDisclosure;
   candidates: OntologyReconciliationCandidate[];
 }
 
@@ -242,6 +252,68 @@ function exactNodeTerms(node: OntologyPatchNode, normalizers: NormalizerByNodeTy
 function violatesTrustTier(left: OntologyPatchNode, right: OntologyPatchNode): boolean {
   if (left.trust === undefined || right.trust === undefined) return false;
   return left.trust !== right.trust;
+}
+
+const TRUST_TIER_GATE_CRITERION =
+  "pairs reaching the inter-tier guard, after the type and partition guards; " +
+  "rejected when BOTH sides declare a provenance tier and the tiers differ";
+
+/**
+ * What the inter-tier guard (§3.4) did, stamped on the emitted queue.
+ *
+ * The guard RETRACTS pairs the enumeration had already produced, so it owes the
+ * same disclosure as the bucket cap beside it: an undeclared narrowing makes a
+ * queue that is missing candidates indistinguishable from a clean corpus.
+ *
+ * A single count would not survive its own zero. `pairs_rejected: 0` covers two
+ * opposite findings — no pair ever had both sides tagged (the guard had no
+ * DOMAIN), or pairs were tagged on both sides and agreed (a property of the
+ * corpus). Only the first is a coverage defect, and they call for opposite
+ * follow-ups, so the domain is published beside the outcome.
+ *
+ * `pairs_one_side_tagged` is the FAIL-OPEN population: pairs the guard let
+ * through solely because a tier was missing. It is collected because it falls
+ * out of the same loop, and it is the impact figure the untagged-tier hole says
+ * it is waiting for. It is NOT actioned here: making an absent tier fail closed
+ * stays with the owner.
+ *
+ * `pairs_evaluated` counts what THIS guard saw, downstream of the type and
+ * partition guards — deliberately not the blocking index total, which would
+ * include pairs the guard never received.
+ */
+interface OntologyReconciliationTrustTierGateDisclosure {
+  criterion: string;
+  pairs_evaluated: number;
+  pairs_both_tagged: number;
+  pairs_one_side_tagged: number;
+  pairs_rejected: number;
+}
+
+function emptyTrustTierGate(): OntologyReconciliationTrustTierGateDisclosure {
+  return {
+    criterion: TRUST_TIER_GATE_CRITERION,
+    pairs_evaluated: 0,
+    pairs_both_tagged: 0,
+    pairs_one_side_tagged: 0,
+    pairs_rejected: 0,
+  };
+}
+
+/**
+ * Applies the guard and tallies it in one call, so the counter cannot drift
+ * from the rule: the verdict still comes from `violatesTrustTier` alone.
+ */
+function rejectsOnTrustTier(
+  gate: OntologyReconciliationTrustTierGateDisclosure,
+  left: OntologyPatchNode,
+  right: OntologyPatchNode,
+): boolean {
+  gate.pairs_evaluated += 1;
+  if (left.trust !== undefined && right.trust !== undefined) gate.pairs_both_tagged += 1;
+  else if (left.trust !== undefined || right.trust !== undefined) gate.pairs_one_side_tagged += 1;
+  const rejected = violatesTrustTier(left, right);
+  if (rejected) gate.pairs_rejected += 1;
+  return rejected;
 }
 
 function violatesPartitionScope(
@@ -1766,6 +1838,9 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
 
   const candidates: OntologyReconciliationCandidate[] = [];
   const emittedPairs = new Set<string>();
+  // Accumulates across BOTH tiers: the guard runs in the lexical loop and again
+  // in the structural one, and the queue declares what it retracted overall.
+  const trustTierGate = emptyTrustTierGate();
   const comparableNodes = memoizeComparableNodes(context.nodes, normalizers, fuzzyEnabled, fuzzyThreshold);
   const fuzzyTierEligibility = fuzzyEnabled ? fuzzyTierEligibilityDisclosure(comparableNodes) : undefined;
   const tokenIdfs = fuzzyMinimumSharedTokenIdf === undefined ? undefined : fuzzyTokenIdfs(comparableNodes);
@@ -1789,7 +1864,7 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
     // Inter-tier rejection (§3.4): an asserted claim never merges with an
     // earned node, whatever their labels look like. Same standing as the
     // partition guard, and applied before EITHER lexical tier can emit.
-    if (violatesTrustTier(left, right)) continue;
+    if (rejectsOnTrustTier(trustTierGate, left, right)) continue;
 
     const sharedTerms = rightMemo.exactTerms.filter((term) => leftMemo.exactTermSet.has(term));
 
@@ -1908,7 +1983,7 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
       // Inter-tier rejection (§3.4) applies to the structural tier too: shared
       // neighbours are even weaker evidence than a shared label, so they must
       // not be allowed to bridge tiers either.
-      if (violatesTrustTier(left, right)) continue;
+      if (rejectsOnTrustTier(trustTierGate, left, right)) continue;
 
       const { canonical, candidate } = chooseCanonicalPair(left, right);
       const pairKey = `${canonical.id}|${candidate.id}`;
@@ -1982,6 +2057,7 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
     candidate_count: capped.length,
     ...(blockingIndex.fuzzyBucketCap ? { fuzzy_blocking_cap: blockingIndex.fuzzyBucketCap } : {}),
     ...(fuzzyTierEligibility ? { fuzzy_tier_eligibility: fuzzyTierEligibility } : {}),
+    trust_tier_gate: trustTierGate,
     candidates: capped,
   };
 }
