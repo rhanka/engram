@@ -1,0 +1,26 @@
+#!/bin/sh
+# Refuse writes to refs/heads/main that did not come through the gate.
+#
+# reference-transaction rather than pre-merge-commit: pre-merge-commit never runs
+# for a fast-forward merge, because no merge commit is created. That is the whole
+# hole this guards — a local `git merge` of a branch that is ahead moves main with
+# no hook in sight. reference-transaction sees every ref update, including that one.
+#
+# Only "prepared" can still be refused. "committed" and "aborted" are after the
+# fact, so they are ignored in silence rather than re-reported.
+#
+# Escape hatch: GRAPHIFY_GATE=1 for tooled merges that are themselves gated.
+# This hook guards against the accident. The authority is branch protection on
+# the remote — a local hook cannot bind a clone that does not have it.
+
+[ "$1" = "prepared" ] || exit 0
+[ "${GRAPHIFY_GATE:-}" = "1" ] && exit 0
+
+while read -r old new ref; do
+	[ "$ref" = "refs/heads/main" ] || continue
+	echo "refus: ecriture directe sur main ($old -> $new)." >&2
+	echo "main passe par une PR. Pour un merge outille: GRAPHIFY_GATE=1" >&2
+	exit 1
+done
+
+exit 0
