@@ -386,6 +386,19 @@ function naiveQueue(
   };
 }
 
+/**
+ * The golden proves the two enumerations EMIT the same candidates. It cannot
+ * compare `trust_tier_gate`, which reports how many pairs the inter-tier guard
+ * examined: blocking exists precisely to examine fewer, so asserting that block
+ * identical would assert that blocking does nothing. Stripped explicitly rather
+ * than silently, and the pruning it hides is asserted on its own below.
+ */
+function emittedPayload(queue: OntologyReconciliationCandidateQueue): string {
+  const { trust_tier_gate: _gate, ...rest } = queue as OntologyReconciliationCandidateQueue &
+    Record<string, unknown>;
+  return JSON.stringify(rest);
+}
+
 function expectGolden(
   nodes: OntologyPatchNode[],
   relations: OntologyPatchRelation[] = [],
@@ -398,8 +411,8 @@ function expectGolden(
       ...options,
       ...(structural ? { structural: true } : {}),
     };
-    expect(JSON.stringify(generateOntologyReconciliationCandidates(value, fixedOptions))).toBe(
-      JSON.stringify(naiveQueue(value, fixedOptions)),
+    expect(emittedPayload(generateOntologyReconciliationCandidates(value, fixedOptions))).toBe(
+      emittedPayload(naiveQueue(value, fixedOptions)),
     );
   }
 }
@@ -500,15 +513,30 @@ describe("ontology reconciliation lexical blocking", () => {
     ]);
     const options = { generatedAt, fuzzy: false };
     const oracle = naiveQueue(value, options);
-    expect(JSON.stringify(generateOntologyReconciliationCandidates(value, options))).toBe(JSON.stringify(oracle));
+    expect(emittedPayload(generateOntologyReconciliationCandidates(value, options))).toBe(emittedPayload(oracle));
 
     const index = buildOntologyReconciliationLexicalBlockingIndex(value, options);
     const bucket = [...index.exact.values()].find((entry) => entry.includes(0) && entry.includes(1));
     expect(bucket).toBeDefined();
     bucket!.splice(bucket!.indexOf(1), 1);
     expect(enumerateOntologyReconciliationBlockedPairs(value, options, index)).toEqual(new Set());
-    expect(JSON.stringify(generateOntologyReconciliationCandidatesWithLexicalBlockingIndexForTest(value, options, index)))
-      .not.toBe(JSON.stringify(oracle));
+    expect(emittedPayload(generateOntologyReconciliationCandidatesWithLexicalBlockingIndexForTest(value, options, index)))
+      .not.toBe(emittedPayload(oracle));
+  });
+
+  it("prunes what the golden can no longer compare: the guard sees fewer pairs than the cross product", () => {
+    // The golden strips `trust_tier_gate` because blocking changes it by design.
+    // That difference is the point of the whole lot, so it is asserted here
+    // rather than left unchecked: without this, stripping the block would be a
+    // silent loosening of the falsifiability guard.
+    const nodes = Array.from({ length: 40 }, (_, index) =>
+      node(`n${index}`, index % 2 === 0 ? `Shared Label ${index % 4}` : `Lonely Label ${index}`));
+    const crossProductPairs = (nodes.length * (nodes.length - 1)) / 2;
+
+    const gate = generateOntologyReconciliationCandidates(context(nodes), { generatedAt }).trust_tier_gate;
+
+    expect(gate.pairs_evaluated).toBeGreaterThan(0);
+    expect(gate.pairs_evaluated).toBeLessThan(crossProductPairs);
   });
 
   it("uses the <= 0.5 single-token fallback without changing either tier configuration", () => {
