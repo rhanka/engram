@@ -8,14 +8,16 @@
 
 import { closeSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { safeExecGit } from "../git.js";
+// The staged h2a module may use Graphify's generic git/PR helpers, but nothing
+// in Graphify imports this module back.
+import { safeExecGit } from "../../../src/git.js";
 import { resolveIdentity } from "./identity.js";
 import { parseAgyChats } from "./agy-chat.js";
 import { parseClaudeTranscript } from "./claude-transcript.js";
 import { parseCodexRollout } from "./codex-rollout.js";
 import { correlate, detectCommitConflicts, type CommitConflict, type GitCommitMeta, type PrMergeMeta } from "./correlate.js";
 import { indexTrackItems, loadTrackItems, type TrackIndex, type TrackItem } from "./track-join.js";
-import { getPullRequestMerge, listPullRequests, type CommandRunner } from "../pr.js";
+import { getPullRequestMerge, listPullRequests, type CommandRunner } from "../../../src/pr.js";
 import {
   discoverAgy,
   discoverClaude,
@@ -52,7 +54,7 @@ import {
   saveFacts,
   type AgentStore,
 } from "./store.js";
-import { githubRepoFromRemote } from "../pr.js";
+import { githubRepoFromRemote } from "../../../src/pr.js";
 import { parseWpLabel, prUrlInRepo } from "./git-evidence.js";
 import {
   buildProjectGraph,
