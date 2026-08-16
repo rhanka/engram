@@ -2,9 +2,10 @@
   /**
    * TIME-SCRUB playback control (opt-in, 2D, additive). A slider + play/pause
    * over the scene's temporal range (#234 `t`, epoch-ms). Moving the cursor
-   * FILTERS the displayed graph to elements with `t <= cursor` — the filtering
-   * itself lives in graphAdapter.applyTimeFilter and flows through the SAME scene
-   * → render path the weak-link / group-by filters use (no renderer API).
+   * FILTERS the displayed graph by closed `[t, t_end]` membership at the cursor;
+   * untimed elements are excluded while the filter is active. The filtering itself
+   * lives in graphAdapter.applyTimeFilter and flows through the SAME scene → render
+   * path the weak-link / group-by filters use (no renderer API).
    *
    * Hides itself (renders nothing) when `range` is null — i.e. no node/edge in
    * the scene carries a `t`, so the control is a strict no-op on non-temporal
