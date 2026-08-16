@@ -19,6 +19,8 @@
     "dual-as-of.ts",
     "memory-store.ts",
     "engine.ts",
+    "recall.ts",
+    "migration.ts",
     "projection.ts",
     "service.ts",
     "sqlite.ts",
