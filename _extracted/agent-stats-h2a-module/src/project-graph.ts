@@ -27,7 +27,9 @@
 import { pathToTilde } from "./normalize.js";
 import type { SessionFact } from "./types.js";
 import type { GitCommitMeta } from "./correlate.js";
-import type { TrustTier } from "../memory-producer-port.js";
+
+/** The h2a module's own projection labels; these are not a memory contract. */
+type ProjectionTrust = "earned" | "unverified";
 
 export const PROJECT_GRAPH_SCHEMA = "graphify.agent-stats.project-graph/v1";
 
@@ -78,7 +80,7 @@ export interface SessionInput {
    * TODO(agent-stats temporal — deferred lots): only session-level start/end is
    * projected for T0. The finer per-action timestamps are STILL dropped at this
    * boundary — `GitAction.timestamp` and `EvidenceSnippet.timestamp`
-   * (src/agent-stats/types.ts) plus the git committer-date are NOT carried — so
+   * (types.ts) plus the git committer-date are NOT carried — so
    * DERIVED Branch / Commit / Agent spans stay out of scope. Widen SessionInput
    * with those per-action timestamps when the derived-span lots land.
    */
@@ -261,7 +263,7 @@ const COMMUNITY_LABELS: Record<string, string> = {
 
 const H2A_REGISTRY_PROVENANCE = ".h2a/registry/instances.jsonl";
 const H2A_COORDINATION_SCOPE = "workspace-local";
-const H2A_COORDINATION_TRUST: TrustTier = "unverified";
+const H2A_COORDINATION_TRUST: ProjectionTrust = "unverified";
 
 /**
  * Git-evidence ground-truth node types stamped `earned` (F9, owner GO): ranked
@@ -269,7 +271,7 @@ const H2A_COORDINATION_TRUST: TrustTier = "unverified";
  * OUTSIDE the set (not in the owner's policy); coordination stays `unverified`.
  */
 const EARNED_NODE_TYPES: ReadonlySet<string> = new Set(["Project", "Repo", "Session", "Branch", "Commit"]);
-const EARNED_TRUST: TrustTier = "earned";
+const EARNED_TRUST: ProjectionTrust = "earned";
 
 /** A reversible, collision-free graph id for an h2a instance id. */
 function coordinationEvidenceNodeId(instanceId: string): string {

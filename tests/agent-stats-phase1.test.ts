@@ -17,14 +17,14 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { parseCodexRollout } from "../src/agent-stats/codex-rollout.js";
-import { normalizeCodex } from "../src/agent-stats/normalize.js";
-import { correlate, type PrMergeMeta } from "../src/agent-stats/correlate.js";
+import { parseCodexRollout } from "../_extracted/agent-stats-h2a-module/src/codex-rollout.js";
+import { normalizeCodex } from "../_extracted/agent-stats-h2a-module/src/normalize.js";
+import { correlate, type PrMergeMeta } from "../_extracted/agent-stats-h2a-module/src/correlate.js";
 import {
   indexTrackItems,
   loadTrackItems,
   parseTrackLedger,
-} from "../src/agent-stats/track-join.js";
+} from "../_extracted/agent-stats-h2a-module/src/track-join.js";
 import { getPullRequestMerge, type CommandRunner } from "../src/pr.js";
 import {
   collectPrMerges,
@@ -32,9 +32,9 @@ import {
   formatWpView,
   prNumberFromUrl,
   wpAgentStats,
-} from "../src/agent-stats/index.js";
-import type { H2aInstance } from "../src/agent-stats/registry.js";
-import type { SessionFact } from "../src/agent-stats/types.js";
+} from "../_extracted/agent-stats-h2a-module/src/index.js";
+import type { H2aInstance } from "../_extracted/agent-stats-h2a-module/src/registry.js";
+import type { SessionFact } from "../_extracted/agent-stats-h2a-module/src/types.js";
 
 const tempDirs: string[] = [];
 afterEach(() => {
