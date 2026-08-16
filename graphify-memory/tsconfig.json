@@ -21,6 +21,9 @@
     "engine.ts",
     "projection.ts",
     "service.ts",
+    "sqlite.ts",
+    "sqlite-native.d.ts",
+    "node-fs.d.ts",
     "node-crypto.d.ts"
   ]
 }

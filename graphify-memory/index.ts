@@ -27,10 +27,17 @@ export {
   type InMemoryCanonicalMemoryStoreOptionsV1,
   type InMemoryCanonicalMemoryStoreV1,
   type InMemoryRecoveryCheckpointV1,
+  type InMemoryStoreStateV1,
   type MemoryJournalCheckpointV1,
   type MemoryJournalEventV1,
   type MemoryJournalTailV1,
 } from "./memory-store.js";
+export {
+  openFencedSqliteCanonicalMemoryStoreV1,
+  type FencedSqliteCanonicalMemoryStoreV1,
+  type FencedSqliteMemoryStoreOptionsV1,
+  type RevocableMemorySnapshotV1,
+} from "./sqlite.js";
 export {
   applyPortOwnedRedaction,
   authorizeOperation,

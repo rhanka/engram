@@ -94,15 +94,27 @@ export interface InMemoryRecoveryCheckpointV1 extends MemoryJournalCheckpointV1 
   outbox: ReadonlyArray<ProjectionBatchV1>;
 }
 
+/** Complete serializable state used by durable canonical-store adapters. */
+export interface InMemoryStoreStateV1 {
+  journal: ReadonlyArray<MemoryJournalEventV1>;
+  controls: ReadonlyArray<PendingControlV1>;
+  envelopes: ReadonlyArray<SealedCandidateEnvelopeV1>;
+  records: ReadonlyArray<MemoryRecordV2>;
+  lexical: ReadonlyArray<{ record_id: string; document: import("./contracts/index.js").AcceptedLexicalDocumentV1 }>;
+  outbox: ReadonlyArray<ProjectionBatchV1>;
+}
+
 export interface InMemoryCanonicalMemoryStoreOptionsV1 {
   clock: ClockPort;
   store_id?: string;
   recovery?: { checkpoint: InMemoryRecoveryCheckpointV1; tail?: MemoryJournalTailV1 };
+  persistence?: InMemoryStoreStateV1;
 }
 
 export interface InMemoryCanonicalMemoryStoreV1 extends CanonicalMemoryStorePort {
   exportCheckpointForRecovery(through_cursor: Cursor, journal?: ReadonlyArray<MemoryJournalEventV1>): Result<InMemoryRecoveryCheckpointV1>;
   exportTailForRecovery(after_cursor: Cursor): Result<MemoryJournalTailV1>;
+  exportStateForPersistence(): Result<InMemoryStoreStateV1>;
   canonicalStateDigest(): Result<Digest>;
 }
 
@@ -365,6 +377,17 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
   #checkpoint?: InMemoryRecoveryCheckpointV1;
 
   constructor(private readonly options: InMemoryCanonicalMemoryStoreOptionsV1) {
+    const persistence = options.persistence;
+    if (persistence !== undefined) {
+      this.#journal = persistence.journal.map(clone);
+      persistence.records.forEach((record) => this.#records.set(record.record_id, clone(record)));
+      persistence.controls.forEach((control) => this.#controls.set(control.candidate_id, clone(control)));
+      persistence.envelopes.forEach((sealed) => this.#envelopes.set(sealed.candidate_id, clone(sealed)));
+      persistence.lexical.forEach(({ record_id, document }) => this.#lexical.set(record_id, clone(document)));
+      this.#outbox = persistence.outbox.map(clone);
+      this.#rebuildIntentIndex();
+      return;
+    }
     const recovery = options.recovery;
     if (recovery === undefined) return;
     this.#checkpoint = clone(recovery.checkpoint);
@@ -509,12 +532,12 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
     if (duplicate.value !== undefined) return this.#receipt("request_admission", duplicate.value, input.outcome === "accept" ? input.record.record_digest : undefined);
     if (control === undefined || control.state !== "pending") return refusal("request_admission", "ILLEGAL_TRANSITION", "admission requires a pending candidate");
     if (input.outcome === "accept") {
-      const valid = validateMemoryRecord(input.record);
-      if (!valid.ok) return { ok: false, error: { ...valid.error, operation: "request_admission" } };
       const existing = this.#records.get(input.record.record_id);
       if (existing !== undefined && existing.record_digest !== input.record.record_digest) {
         return refusal("request_admission", "DIGEST_CONFLICT", "record id is already bound to another immutable blob");
       }
+      const valid = validateMemoryRecord(input.record);
+      if (!valid.ok) return { ok: false, error: { ...valid.error, operation: "request_admission" } };
       const current = this.#foldAtCurrent();
       if (!current.ok) return current;
       if (current.value.records.find((record) => record.record_id === input.record.record_id)?.state === "tombstoned") {
@@ -837,6 +860,22 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
   canonicalStateDigest(): Result<Digest> {
     const folded = this.#readiness("admin");
     return folded.ok ? { ok: true, value: folded.value.canonical_state_digest } : folded;
+  }
+
+  exportStateForPersistence(): Result<InMemoryStoreStateV1> {
+    const ready = this.#readiness("admin");
+    if (!ready.ok) return ready;
+    return {
+      ok: true,
+      value: {
+        journal: this.#journal.map(clone),
+        controls: [...this.#controls.values()].map(clone),
+        envelopes: [...this.#envelopes.values()].map(clone),
+        records: [...this.#records.values()].map(clone),
+        lexical: [...this.#lexical.entries()].map(([record_id, document]) => ({ record_id, document: clone(document) })),
+        outbox: this.#outbox.map(clone),
+      },
+    };
   }
 
   async close(): Promise<Result<{ closed: true }>> {

@@ -51,12 +51,12 @@
 
 ## Lot 4 — Fenced SQLite Canonical Store
 
-- [ ] Add the declared native driver/lock helper, local-filesystem probe, kernel lock, durable epoch, revocable leases, detached copies, atomic promotion transaction, accepted lexical table, outbox, and capability receipts.
-- [ ] RED: `tests/canonical-memory-store.test.ts > rolls back blob+journal+state+fts+outbox at every injected failpoint`.
-- [ ] RED: `tests/canonical-memory-store.test.ts > same id with different full digest is refused without writes`.
-- [ ] RED: `tests/sqlite-memory-broker.native.test.ts > second process is refused and stale epoch fails before its first SQL statement`.
-- [ ] RED: `tests/sqlite-memory-broker.native.test.ts > lock loss before commit rolls back and revokes active readers`.
-- [ ] RED: `tests/sqlite-memory-broker.native.test.ts > detached ranking and backup copies never retain the active WAL` (native lane mandatory Linux/macOS/Windows).
+- [x] Add the declared native driver/lock helper, local-filesystem probe, kernel lock, durable epoch, revocable leases, detached copies, atomic promotion transaction, accepted lexical table, outbox, and capability receipts.
+- [x] RED: `tests/canonical-memory-store.test.ts > rolls back blob+journal+state+fts+outbox at every injected failpoint`.
+- [x] RED: `tests/canonical-memory-store.test.ts > same id with different full digest is refused without writes`.
+- [x] RED: `tests/sqlite-memory-broker.native.test.ts > second process is refused and stale epoch fails before its first SQL statement`.
+- [x] RED: `tests/sqlite-memory-broker.native.test.ts > lock loss before commit rolls back and revokes active readers`.
+- [x] RED: `tests/sqlite-memory-broker.native.test.ts > detached ranking and backup copies never retain the active WAL` (native lane mandatory Linux/macOS/Windows).
 
 ## Lot 5 — Assertion Reconciliation
 

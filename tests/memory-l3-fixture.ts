@@ -2,6 +2,7 @@ import {
   createInMemoryCanonicalMemoryStoreV1,
   createMemoryPortV2,
   receiptDigest,
+  type CanonicalMemoryStorePort,
   type Digest,
   type MemoryEngineDependenciesV2,
 } from "../graphify-memory/index.js";
@@ -34,10 +35,13 @@ export function captureRequest(idempotencyKey: string, sequence: string, text = 
   };
 }
 
-export function createL3Memory(decision: "accept" | "reject" | "adjudication_required" = "accept") {
+export function createL3Memory(
+  decision: "accept" | "reject" | "adjudication_required" = "accept",
+  canonicalStore?: CanonicalMemoryStorePort,
+) {
   const plaintext = new Map<string, string>();
   const destroyed: string[] = [];
-  const store = createInMemoryCanonicalMemoryStoreV1({ clock: { now: () => NOW } });
+  const store = canonicalStore ?? createInMemoryCanonicalMemoryStoreV1({ clock: { now: () => NOW } });
   const authorization = {
     version: 1 as const,
     async authorize(request: { operation: string; resource_digest: Digest }) {
