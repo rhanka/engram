@@ -125,6 +125,7 @@ describe("buildStudioScene — shared temporal/layout/snapshot contract", () => 
         "layout_id",
         "layout_dims",
         "snapshot_id",
+        "temporal",
       ]),
       nodes: withTemporal.nodes.map((n) => strip(n as Record<string, unknown>, ["t", "t_end"])),
       edges: withTemporal.edges.map((e) => strip(e as Record<string, unknown>, ["t", "t_end"])),
