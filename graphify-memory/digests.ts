@@ -13,6 +13,27 @@ function digest(domain: string, value: unknown): Digest {
   return `sha256:${hash.digest("hex")}` as Digest;
 }
 
+/**
+ * Derives a receipt digest from every normalized receipt field other than the
+ * digest field itself. Receipt kinds are protocol names, never authority
+ * vocabulary.
+ */
+export function receiptDigest(kind: string, receipt: Record<string, unknown>, digestField = "receipt_digest"): Digest {
+  const bound = { ...receipt };
+  delete bound[digestField];
+  return digest(`graphify-memory/${kind}/v1\0`, bound);
+}
+
+/** Binds an opaque policy-evidence reference without interpreting its content. */
+export function policyEvidenceDigest(policyEvidenceRef: string): Digest {
+  return digest("graphify-memory/policy-evidence/v1\0", { policy_evidence_ref: policyEvidenceRef });
+}
+
+/** Binds an authorization request's operation and data-only resource carrier. */
+export function authorizationResourceDigest(operation: string, resource: Record<string, unknown>): Digest {
+  return digest("graphify-memory/authorization-resource/v1\0", { operation, resource });
+}
+
 /** Digest of caller-submitted, immutable knowledge fields only. */
 export function knowledgePayloadDigest(payload: CandidatePayloadV2 | Record<string, unknown>): Digest {
   return digest(PAYLOAD_DOMAIN, payload);
