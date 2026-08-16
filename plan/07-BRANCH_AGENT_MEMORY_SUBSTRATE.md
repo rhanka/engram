@@ -25,9 +25,9 @@
 
 ## Lot 1 — Closed Temporal Contract
 
-- [ ] Implement the inclusive `[t,t_end]` contract once across recall predicates, store queries, time slice, scene, and the browser renderer; define untimed active-filter behavior and `sceneTimeRange`.
-- [ ] RED: `tests/temporal-boundary-contract.test.ts > keeps t_end===cursor and drops t_end<cursor on recall/store/slice/renderer`.
-- [ ] RED: `tests/temporal-boundary-contract.test.ts > active filter drops untimed elements and scene range includes finite t_end` (renderer at baseline is the behavioral RED).
+- [x] Implement the inclusive `[t,t_end]` contract once across recall predicates, store queries, time slice, scene, and the browser renderer; define untimed active-filter behavior and `sceneTimeRange`.
+- [x] RED: `tests/temporal-boundary-contract.test.ts > keeps t_end===cursor and drops t_end<cursor on recall/store/slice/renderer`.
+- [x] RED: `tests/temporal-boundary-contract.test.ts > active filter drops untimed elements and scene range includes finite t_end` (renderer at baseline is the behavioral RED).
 
 ## Lot 2 — Exact Records, Ports, Digests, Bi-Temporal Query
 
