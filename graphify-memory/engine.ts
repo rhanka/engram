@@ -8,6 +8,7 @@ import {
   recordIdFromDigest,
 } from "./digests.js";
 import { isCanonicalCursor, validateCandidatePayload } from "./validation.js";
+import { executeRecall } from "./recall.js";
 import type {
   AdmissionDecisionEnvelopeV1,
   AdmissionOutcomeV1,
@@ -18,6 +19,7 @@ import type {
   AuthorizationRequestV1,
   AuthorizationResultV1,
   CandidatePayloadV2,
+  CapitalisationRequestV1,
   CaptureAcknowledgementV1,
   CaptureRequestV2,
   Digest,
@@ -30,7 +32,9 @@ import type {
   LifecycleCommandV1,
   LifecycleReceiptV1,
   ProjectionBatchV1,
+  RecallRequestV2,
   RedactionDirectiveV1,
+  RedactionResultV1,
   Result,
   TrustBindingV1,
 } from "./contracts/index.js";
@@ -591,15 +595,89 @@ async function foldedStateForCommand(dependencies: MemoryEngineDependenciesV2, c
   }
 }
 
+function validateRecallRequest(input: unknown, now: string): Result<RecallRequestV2> {
+  const value = normalizeObject(input);
+  const request = optionalExactObject(value, ["query", "purpose_ref", "authorization", "capability_policy", "budgets"], ["as_of", "page"]);
+  if (request === undefined || typeof request.query !== "string") return refusal("recall_current", "INVALID_SCHEMA", "recall request is not exact");
+  const queryBytes = new TextEncoder().encode(request.query).byteLength;
+  if (queryBytes < 1 || queryBytes > 8192 || !isOpaque(request.purpose_ref)) return refusal("recall_current", "INVALID_SCHEMA", "recall query or purpose is out of bounds");
+  const authorization = optionalExactObject(request.authorization, ["credential"], ["context_ref"]);
+  const policy = exactObject(request.capability_policy, ["minimum_channels", "network"]);
+  const budgets = exactObject(request.budgets, ["max_candidates", "max_results", "max_packet_bytes", "deadline_at"]);
+  if (authorization === undefined || typeof authorization.credential !== "string" || (Object.hasOwn(authorization, "context_ref") && !isOpaque(authorization.context_ref))
+    || policy === undefined || !["lexical", "lexical_and_semantic"].includes(String(policy.minimum_channels)) || !["forbid", "allow"].includes(String(policy.network))
+    || budgets === undefined) return refusal("recall_current", "INVALID_SCHEMA", "recall carriers are invalid");
+  const inRange = (candidate: unknown, min: number, max: number) => typeof candidate === "number" && Number.isSafeInteger(candidate) && candidate >= min && candidate <= max;
+  if (!inRange(budgets.max_candidates, 1, 2000) || !inRange(budgets.max_results, 1, 100) || !inRange(budgets.max_packet_bytes, 1, 1_048_576) || !isInstant(budgets.deadline_at)) {
+    return refusal("recall_current", "INVALID_SCHEMA", "recall budgets are out of bounds");
+  }
+  if (compareInstants(now, budgets.deadline_at as string) >= 0) return refusal("recall_current", "DEADLINE_EXCEEDED", "recall deadline elapsed before ranking");
+  if (Object.hasOwn(request, "as_of")) {
+    const asOf = optionalExactObject(request.as_of, [], ["valid_time", "system_cursor"]);
+    if (asOf === undefined || (Object.hasOwn(asOf, "valid_time") && !Number.isSafeInteger(asOf.valid_time)) || (Object.hasOwn(asOf, "system_cursor") && !isCanonicalCursor(asOf.system_cursor))) {
+      return refusal("recall_current", "INVALID_SCHEMA", "recall as_of carrier is invalid");
+    }
+  }
+  if (Object.hasOwn(request, "page")) {
+    const page = optionalExactObject(request.page, ["size"], ["cursor"]);
+    if (page === undefined || !inRange(page.size, 1, 50) || (Object.hasOwn(page, "cursor") && !isOpaque(page.cursor))) {
+      return refusal("recall_current", "INVALID_SCHEMA", "recall page carrier is invalid");
+    }
+  }
+  return { ok: true, value: request as unknown as RecallRequestV2 };
+}
+
+function validateCapitalisationRequest(input: unknown, now: string): Result<CapitalisationRequestV1> {
+  const value = normalizeObject(input);
+  const request = exactObject(value, ["idempotency_key", "source_record_id", "target_scope_ref", "purpose_ref", "retention", "authorization", "deadline_at"]);
+  if (request === undefined || !isOpaque(request.idempotency_key) || new TextEncoder().encode(request.idempotency_key as string).byteLength < 16
+    || !isOpaque(request.source_record_id) || !isOpaque(request.target_scope_ref) || !isOpaque(request.purpose_ref) || !isInstant(request.deadline_at)) {
+    return refusal("propose_capitalisation", "INVALID_SCHEMA", "capitalisation request is not exact");
+  }
+  const retention = optionalExactObject(request.retention, ["derivative_rule"], ["expires_at"]);
+  const authorization = optionalExactObject(request.authorization, ["credential"], ["context_ref"]);
+  if (retention === undefined || !["retain", "make-ineligible"].includes(String(retention.derivative_rule)) || (Object.hasOwn(retention, "expires_at") && !isInstant(retention.expires_at))
+    || authorization === undefined || typeof authorization.credential !== "string" || (Object.hasOwn(authorization, "context_ref") && !isOpaque(authorization.context_ref))) {
+    return refusal("propose_capitalisation", "INVALID_SCHEMA", "capitalisation carriers are invalid");
+  }
+  if (compareInstants(now, request.deadline_at as string) >= 0) return refusal("propose_capitalisation", "DEADLINE_EXCEEDED", "capitalisation deadline elapsed before commit");
+  return { ok: true, value: request as unknown as CapitalisationRequestV1 };
+}
+
+function validateRedactionResult(input: unknown): RedactionResultV1 | undefined {
+  const value = normalizeObject(input);
+  const result = exactObject(value, ["payload", "source_record_digest", "output_payload_digest", "policy_version", "receipt_digest"]);
+  if (result === undefined || !isDigest(result.source_record_digest) || !isDigest(result.output_payload_digest) || !isOpaque(result.policy_version) || !isDigest(result.receipt_digest)) return undefined;
+  return result as unknown as RedactionResultV1;
+}
+
 /** L2 coordination only: it validates/seals pending capture and delegates durability to the canonical store. */
 export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): MemoryPortV2 {
   const cancelled = new Set<string>();
   const capturedContent = new Map<string, Digest>();
   const admissionOutcomes = new Map<string, AdmissionOutcomeV1>();
 
-  return {
+  const port: MemoryPortV2 = {
     version: 2,
-    capabilities: async () => unavailable("admin"),
+    capabilities: async () => {
+      try {
+        const readiness = await dependencies.canonical_store.readiness();
+        if (!readiness.ok) return operationFailure("admin", readiness);
+        const backend = readiness.value.backend;
+        if (backend !== "sqlite" && backend !== "postgres") return unavailable("admin", "canonical backend does not support the published capability descriptor");
+        const semantic = dependencies.semantic_projection !== undefined && dependencies.vector_projection !== undefined;
+        const body = {
+          contract_version: 2 as const,
+          profiles: (semantic ? ["offline_lexical_v1", "semantic_v1"] : ["offline_lexical_v1"]) as ReadonlyArray<"offline_lexical_v1" | "semantic_v1">,
+          canonical_backends: [backend] as ReadonlyArray<"sqlite" | "postgres">,
+          max_candidates: 2000 as const,
+          max_results: 100 as const,
+        };
+        return { ok: true, value: { ...body, receipt_digest: receiptDigest("capability-descriptor", body) } };
+      } catch {
+        return unavailable("admin", "canonical store did not return a readiness receipt");
+      }
+    },
     validate: (payload) => {
       const validated = validateCandidatePayload(payload);
       return validated.ok ? { ok: true, value: { payload_digest: validated.value.payload_digest } } : operationFailure("capture", validated);
@@ -837,9 +915,124 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
         },
       };
     },
-    recall: async () => unavailable("recall_current"),
-    proposeCapitalisation: async () => unavailable("propose_capitalisation"),
+    recall: async (input) => {
+      const now = dependencies.clock?.now();
+      if (!isInstant(now)) return unavailable("recall_current", "clock did not supply a canonical instant");
+      const validated = validateRecallRequest(input, now);
+      if (!validated.ok) return validated;
+      const request = validated.value;
+      const resource = {};
+      const authorization = await authorizeOperation(dependencies.authorization, {
+        operation: "recall_current",
+        resource,
+        resource_digest: authorizationResourceDigest("recall_current", resource),
+        context: request.authorization,
+        issued_at: now,
+        deadline_at: request.budgets.deadline_at,
+      }, undefined, now);
+      if (!authorization.ok) return authorization;
+      return executeRecall(dependencies, { request, authorization: authorization.value, now });
+    },
+    proposeCapitalisation: async (input): Promise<Result<CaptureAcknowledgementV1>> => {
+      const now = dependencies.clock?.now();
+      if (!isInstant(now)) return unavailable("propose_capitalisation", "clock did not supply a canonical instant");
+      const validated = validateCapitalisationRequest(input, now);
+      if (!validated.ok) return validated;
+      const request = validated.value;
+      // Authorize the source read independently of the target capture (SPEC §5.5).
+      const sourceResource = { record_id: request.source_record_id };
+      const sourceAuthorization = await authorizeOperation(dependencies.authorization, {
+        operation: "recall_current",
+        resource: sourceResource,
+        resource_digest: authorizationResourceDigest("recall_current", sourceResource),
+        context: request.authorization,
+        issued_at: now,
+        deadline_at: request.deadline_at,
+      }, undefined, now);
+      if (!sourceAuthorization.ok) return operationFailure("propose_capitalisation", sourceAuthorization as Result<never>);
+      let sourceRecord: MemoryRecordV2;
+      try {
+        const readiness = await dependencies.canonical_store.readiness();
+        if (!readiness.ok) return operationFailure("propose_capitalisation", readiness);
+        const read = await dependencies.canonical_store.readRecord({
+          record_id: request.source_record_id,
+          system_as_of: readiness.value.high_water_cursor,
+          authorization_receipt_digest: sourceAuthorization.value.receipt_digest,
+        });
+        if (!read.ok) return operationFailure("propose_capitalisation", read);
+        if (read.value.scope_ref !== sourceAuthorization.value.scope_ref) return refusal("propose_capitalisation", "UNAUTHORIZED", "authorization scope does not bind the source record");
+        sourceRecord = read.value;
+      } catch {
+        return unavailable("propose_capitalisation", "canonical store did not return a typed source record");
+      }
+      if (sourceRecord.scope_ref === request.target_scope_ref) return refusal("propose_capitalisation", "ILLEGAL_TRANSITION", "capitalisation must target a different scope");
+      // Authorize the target capture and obtain the port-owned redaction directive.
+      const targetResource = { scope_ref: request.target_scope_ref, source_record_id: request.source_record_id };
+      const targetAuthorization = await authorizeOperation(dependencies.authorization, {
+        operation: "capture",
+        resource: targetResource,
+        resource_digest: authorizationResourceDigest("capture", targetResource),
+        context: request.authorization,
+        issued_at: now,
+        deadline_at: request.deadline_at,
+      }, request.target_scope_ref, now);
+      if (!targetAuthorization.ok) return operationFailure("propose_capitalisation", targetAuthorization as Result<never>);
+      let redaction: RedactionResultV1;
+      try {
+        const redacted = await dependencies.authorization.redact({
+          source_record: sourceRecord,
+          target_scope_ref: request.target_scope_ref,
+          directive: targetAuthorization.value.redaction,
+          authorization_receipt_digest: targetAuthorization.value.receipt_digest,
+        });
+        if (!redacted.ok) return operationFailure("propose_capitalisation", redacted);
+        const validRedaction = validateRedactionResult(redacted.value);
+        if (validRedaction === undefined) return refusal("propose_capitalisation", "INVALID_SCHEMA", "redaction result is not exact");
+        redaction = validRedaction;
+      } catch {
+        return unavailable("propose_capitalisation", "authorization port did not return a typed redaction");
+      }
+      const sanitized = validateCandidatePayload(redaction.payload);
+      if (!sanitized.ok) return operationFailure("propose_capitalisation", sanitized);
+      const transformReceipt = receiptDigest("capitalisation-transform", {
+        source_record_id: request.source_record_id,
+        source_record_digest: sourceRecord.record_digest,
+        target_scope_ref: request.target_scope_ref,
+        redaction_receipt_digest: redaction.receipt_digest,
+      });
+      const derivativePayload: CandidatePayloadV2 = {
+        ...sanitized.value.payload,
+        scope_ref: request.target_scope_ref,
+        purpose_ref: request.purpose_ref,
+        retention: request.retention,
+        reconciliation: { family_refs: [] },
+        derivation: {
+          source_record_ids: [request.source_record_id],
+          transform_ref: "graphify-memory:capitalise:v1",
+          transform_receipt_digest: transformReceipt,
+        },
+      };
+      const captureRequest = {
+        schema_version: 2 as const,
+        idempotency_key: request.idempotency_key,
+        payload: derivativePayload,
+        evidence: {
+          evidence_ref: `capitalise:${request.source_record_id}`,
+          evidence_digest: transformReceipt,
+          citation_ids: derivativePayload.citations.map((citation) => citation.citation_id),
+        },
+        authorization: request.authorization,
+        source_order: { source_ref: `capitalise:${request.source_record_id}`, sequence: "0" },
+        deadline_at: request.deadline_at,
+        cancellation_ref: `capitalise:${request.idempotency_key}`,
+      };
+      return operationFailure("propose_capitalisation", await port.capture(captureRequest) as Result<never>) as Result<CaptureAcknowledgementV1>;
+    },
     invalidateProjections: async () => unavailable("projection_invalidate"),
-    readiness: async () => unavailable("admin"),
+    readiness: async () => {
+      const readiness = await dependencies.canonical_store.readiness();
+      return readiness.ok ? readiness : operationFailure("admin", readiness);
+    },
   };
+  return port;
 }

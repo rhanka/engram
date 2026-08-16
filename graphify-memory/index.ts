@@ -97,4 +97,21 @@ export {
   type ReconciliationProposalIdentityV1,
   type ReconciliationRecordStatusV1,
 } from "./assertion-family-registry.js";
+export {
+  executeRecall,
+  OFFLINE_PROFILE,
+  SEMANTIC_PROFILE,
+  PROFILE_VERSION,
+  OFFLINE_FORMULA_REF,
+  SEMANTIC_FORMULA_REF,
+  TOKENIZER_VERSION,
+} from "./recall.js";
+export {
+  migrateRetainedNeutralRecordsV1,
+  type MigratedNeutralRecordV1,
+  type MigrationExclusionEntryV1,
+  type MigrationExclusionReason,
+  type MigrationLedgerV1,
+  type RetainedNeutralRecordV1,
+} from "./migration.js";
 export type * from "./contracts/index.js";
