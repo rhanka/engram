@@ -37,6 +37,7 @@ import type { SerializedGraphData } from "./graph.js";
 import { assertGraphJsonFileSize, assertGraphJsonSize } from "./graph-size-guard.js";
 import { resolveGraphInputPath } from "./paths.js";
 import { loadProjectConfig } from "./project-config.js";
+import { TEMPORAL_INTERVAL_CONVENTION } from "./temporal-interval.js";
 import { overlapsTemporalWindow, parseRecallTimestamp } from "./temporal-recall.js";
 import type { NormalizedProjectConfig, OntologyCitation } from "./types.js";
 
@@ -61,6 +62,8 @@ export interface GraphTimeSliceWindow {
   until: number | null;
   since_iso: string | null;
   until_iso: string | null;
+  /** Closed valid-time convention used by every temporal projection. */
+  interval_convention: typeof TEMPORAL_INTERVAL_CONVENTION;
   /** `t <= until AND (t_end absent OR t_end >= since)`; a point is `t_end === t`. */
   predicate: "inclusive-overlap";
   /** No numeric `t` means no span, so the element cannot overlap the window. */
@@ -238,6 +241,7 @@ export function sliceGraphByTime(
     until,
     since_iso: isoOrNull(since),
     until_iso: isoOrNull(until),
+    interval_convention: TEMPORAL_INTERVAL_CONVENTION,
     predicate: "inclusive-overlap",
     untimed: "excluded",
     edges: "endpoint-induced",

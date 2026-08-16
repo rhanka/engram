@@ -96,7 +96,7 @@ describe("sliceGraphByTime — shared temporal membership", () => {
     expect(result.counts.nodes).toEqual({ total: 6, retained: 1 });
   });
 
-  it("supports half-open windows on either side", () => {
+  it("supports an unbounded side of the closed interval", () => {
     const source = graph({
       nodes: [
         { id: "early", t: T0 - HOUR, t_end: T0 - HOUR },
@@ -203,6 +203,7 @@ describe("sliceGraphByTime — emitted document", () => {
       until: T0 + HOUR,
       since_iso: new Date(T0).toISOString(),
       until_iso: new Date(T0 + HOUR).toISOString(),
+      interval_convention: "closed-v1",
       predicate: "inclusive-overlap",
       untimed: "excluded",
       edges: "endpoint-induced",

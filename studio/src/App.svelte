@@ -329,7 +329,7 @@
   );
   // Apply the mask BEFORE the time filter (D5): Solo union > stored Hidden > Normal.
   const visibleScene = $derived(applyVisibilityToScene(baseScene, displayHiddenIds));
-  // Time-scrub: filter the (visibility-masked) scene to elements with `t <= cursor`.
+  // Time-scrub: filter the visibility-masked scene by closed `[t, t_end]` membership.
   // With the default cursor (null = OFF) and no visibility override this returns the
   // base scene UNCHANGED, so the default view is byte-identical to before.
   const scene = $derived(applyTimeFilter(visibleScene, viewerState.options.timeCursor));

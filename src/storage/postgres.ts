@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import { mkdirSync, readFileSync } from "node:fs";
 import type Graph from "graphology";
 import { toJson } from "../export.js";
+import { TEMPORAL_INTERVAL_CONVENTION } from "../temporal-interval.js";
 import type {
   GraphAppendOptions,
   GraphAppendOutcome,
@@ -1407,6 +1408,7 @@ export async function createPostgresGraphStore(
       );
 
       return {
+        interval_convention: TEMPORAL_INTERVAL_CONVENTION,
         nodes: (nodeResult.rows ?? []).map(temporalNodeFromRow),
         edges: (edgeResult.rows ?? []).map(temporalEdgeFromRow),
       };
