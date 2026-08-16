@@ -39,6 +39,10 @@ export {
   type RevocableMemorySnapshotV1,
 } from "./sqlite.js";
 export {
+  openPostgresCanonicalMemoryStoreV1,
+  type PostgresMemoryStoreOptionsV1,
+} from "./postgres.js";
+export {
   applyPortOwnedRedaction,
   authorizeOperation,
   createMemoryPortV2,
