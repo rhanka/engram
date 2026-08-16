@@ -17,6 +17,9 @@
     "schemas.ts",
     "validation.ts",
     "dual-as-of.ts",
+    "engine.ts",
+    "projection.ts",
+    "service.ts",
     "node-crypto.d.ts"
   ]
 }
