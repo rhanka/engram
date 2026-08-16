@@ -62,4 +62,15 @@ export {
 export {
   hasProjectionEnvelope,
 } from "./projection.js";
+export {
+  createAssertionFamilyRegistryV1,
+  evaluateReconciliationEligibilityV1,
+  reconciliationProposalIdV1,
+  sortReconciliationProposals,
+  RECONCILIATION_BINARY_STATUS_FAMILY_ID,
+  RECONCILIATION_REGISTRY_ID,
+  type AssertionFamilyRegistryOptionsV1,
+  type ReconciliationProposalIdentityV1,
+  type ReconciliationRecordStatusV1,
+} from "./assertion-family-registry.js";
 export type * from "./contracts/index.js";
