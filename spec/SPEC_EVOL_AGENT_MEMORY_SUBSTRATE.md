@@ -1139,6 +1139,8 @@ The Postgres adapter owns a direct, declared `pg` runtime dependency and impleme
 
 Postgres 16 and 17 are the L6 matrix. `managed-service` remains unavailable if parity differs or the adapter lacks a required capability receipt. pgvector remains optional behind `VectorProjectionPort` and does not affect canonical parity.
 
+Both local canonical adapters (SQLite and Postgres) persist a mutation as a `DELETE` of every canonical table followed by a full re-`INSERT` of the folded state, i.e. an `O(total-state)` write amplification per mutation (storage-lane L4 review, observation O3). This is accepted for the local and single-node managed paths and is the declared **write-amplification ceiling** for the managed/cloud path: incremental (per-event) persistence is a later managed-service concern and is deliberately out of scope for L6b, whose gate is cross-backend canonical parity, not write throughput.
+
 ### D10 — Bounded current projection; history never inflates `graph.json`
 
 `graph.json` is one bounded current graph projection, not canonical history and not “graph plus projection.” It may contain only current accepted projection envelopes, citation references, and projection metadata. It never contains record bodies, pending data, journal events, tombstone history, rank receipts, authorization receipts, backup material, or vectors.
