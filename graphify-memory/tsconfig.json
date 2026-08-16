@@ -17,6 +17,7 @@
     "schemas.ts",
     "validation.ts",
     "dual-as-of.ts",
+    "memory-store.ts",
     "engine.ts",
     "projection.ts",
     "service.ts",

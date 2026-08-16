@@ -42,12 +42,12 @@
 
 ## Lot 3 — In-Memory Journal, Quarantine, And Fold
 
-- [ ] Implement in-memory canonical store, dense hash-chained journal, encrypted pending control, lifecycle table, fold, idempotency, expiry, dispute, supersession, rewind, terminal tombstone, complete checkpoint, and projection outbox.
-- [ ] RED: `tests/memory-journal-replay.test.ts > checkpoint-tail and genesis yield the same canonical state digest`.
-- [ ] RED: `tests/memory-journal-replay.test.ts > tombstoned record cannot be resurrected by rewind or later accept`.
-- [ ] RED: `tests/memory-journal-replay.test.ts > gap hash break missing blob or digest drift stops readiness`.
-- [ ] RED: `tests/memory-lifecycle.test.ts > every unlisted transition fails before cursor allocation and pending/disputed/historical visibility follows authorization`.
-- [ ] RED: `tests/memory-quarantine.test.ts > pending plaintext is absent from every non-envelope surface and rejected key destruction is idempotent`.
+- [x] Implement in-memory canonical store, dense hash-chained journal, encrypted pending control, lifecycle table, fold, idempotency, expiry, dispute, supersession, rewind, terminal tombstone, complete checkpoint, and projection outbox.
+- [x] RED: `tests/memory-journal-replay.test.ts > checkpoint-tail and genesis yield the same canonical state digest`.
+- [x] RED: `tests/memory-journal-replay.test.ts > tombstoned record cannot be resurrected by rewind or later accept`.
+- [x] RED: `tests/memory-journal-replay.test.ts > gap hash break missing blob or digest drift stops readiness`.
+- [x] RED: `tests/memory-lifecycle.test.ts > every unlisted transition fails before cursor allocation and pending/disputed/historical visibility follows authorization`.
+- [x] RED: `tests/memory-quarantine.test.ts > pending plaintext is absent from every non-envelope surface and rejected key destruction is idempotent`.
 
 ## Lot 4 — Fenced SQLite Canonical Store
 
