@@ -22,7 +22,9 @@
     "projection.ts",
     "service.ts",
     "sqlite.ts",
+    "postgres.ts",
     "sqlite-native.d.ts",
+    "pg.d.ts",
     "node-fs.d.ts",
     "node-crypto.d.ts"
   ]

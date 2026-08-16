@@ -18,6 +18,10 @@
     "./sqlite": {
       "types": "./dist/sqlite.d.ts",
       "import": "./dist/sqlite.js"
+    },
+    "./postgres": {
+      "types": "./dist/postgres.d.ts",
+      "import": "./dist/postgres.js"
     }
   },
   "files": [
@@ -30,6 +34,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
-    "fs-ext": "^2.1.1"
+    "fs-ext": "^2.1.1",
+    "pg": "^8.23.0"
   }
 }
