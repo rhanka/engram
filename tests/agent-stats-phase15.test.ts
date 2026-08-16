@@ -20,15 +20,15 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { parseClaudeTranscript } from "../src/agent-stats/claude-transcript.js";
-import { parseCodexRollout } from "../src/agent-stats/codex-rollout.js";
-import { normalizeClaude, normalizeCodex } from "../src/agent-stats/normalize.js";
-import { correlate, type PrMergeMeta } from "../src/agent-stats/correlate.js";
-import { aggregate } from "../src/agent-stats/stats.js";
-import { indexTrackItems, parseTrackLedger } from "../src/agent-stats/track-join.js";
-import { redact } from "../src/agent-stats/redact.js";
-import { discoverClaude, repoSlug } from "../src/agent-stats/discover.js";
-import { loadCursors, resolveStore, saveCursors } from "../src/agent-stats/store.js";
+import { parseClaudeTranscript } from "../_extracted/agent-stats-h2a-module/src/claude-transcript.js";
+import { parseCodexRollout } from "../_extracted/agent-stats-h2a-module/src/codex-rollout.js";
+import { normalizeClaude, normalizeCodex } from "../_extracted/agent-stats-h2a-module/src/normalize.js";
+import { correlate, type PrMergeMeta } from "../_extracted/agent-stats-h2a-module/src/correlate.js";
+import { aggregate } from "../_extracted/agent-stats-h2a-module/src/stats.js";
+import { indexTrackItems, parseTrackLedger } from "../_extracted/agent-stats-h2a-module/src/track-join.js";
+import { redact } from "../_extracted/agent-stats-h2a-module/src/redact.js";
+import { discoverClaude, repoSlug } from "../_extracted/agent-stats-h2a-module/src/discover.js";
+import { loadCursors, resolveStore, saveCursors } from "../_extracted/agent-stats-h2a-module/src/store.js";
 import type { CommandRunner } from "../src/pr.js";
 import {
   collectPrMerges,
@@ -37,9 +37,9 @@ import {
   formatWpView,
   syncAgentStats,
   wpAgentStats,
-} from "../src/agent-stats/index.js";
-import type { H2aInstance } from "../src/agent-stats/registry.js";
-import type { FileCursor, SessionFact } from "../src/agent-stats/types.js";
+} from "../_extracted/agent-stats-h2a-module/src/index.js";
+import type { H2aInstance } from "../_extracted/agent-stats-h2a-module/src/registry.js";
+import type { FileCursor, SessionFact } from "../_extracted/agent-stats-h2a-module/src/types.js";
 
 const tempDirs: string[] = [];
 afterEach(() => {

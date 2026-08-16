@@ -3,21 +3,21 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { parseClaudeTranscript } from "../src/agent-stats/claude-transcript.js";
-import { parseCodexRollout } from "../src/agent-stats/codex-rollout.js";
-import { parseAgyChat } from "../src/agent-stats/agy-chat.js";
-import { normalizeClaude, normalizeCodex, pathToTilde } from "../src/agent-stats/normalize.js";
-import { correlate } from "../src/agent-stats/correlate.js";
-import { redact, redactExcerpt } from "../src/agent-stats/redact.js";
-import { classifyGitVerb, scrapeGroundTruth, emptyGroundTruth, parseWpLabel } from "../src/agent-stats/git-evidence.js";
-import { matchInstance, type H2aInstance } from "../src/agent-stats/registry.js";
-import { resolveIdentity } from "../src/agent-stats/identity.js";
+import { parseClaudeTranscript } from "../_extracted/agent-stats-h2a-module/src/claude-transcript.js";
+import { parseCodexRollout } from "../_extracted/agent-stats-h2a-module/src/codex-rollout.js";
+import { parseAgyChat } from "../_extracted/agent-stats-h2a-module/src/agy-chat.js";
+import { normalizeClaude, normalizeCodex, pathToTilde } from "../_extracted/agent-stats-h2a-module/src/normalize.js";
+import { correlate } from "../_extracted/agent-stats-h2a-module/src/correlate.js";
+import { redact, redactExcerpt } from "../_extracted/agent-stats-h2a-module/src/redact.js";
+import { classifyGitVerb, scrapeGroundTruth, emptyGroundTruth, parseWpLabel } from "../_extracted/agent-stats-h2a-module/src/git-evidence.js";
+import { matchInstance, type H2aInstance } from "../_extracted/agent-stats-h2a-module/src/registry.js";
+import { resolveIdentity } from "../_extracted/agent-stats-h2a-module/src/identity.js";
 import {
   computeAgentStats,
   listSessions,
   syncAgentStats,
   formatStatsTable,
-} from "../src/agent-stats/index.js";
+} from "../_extracted/agent-stats-h2a-module/src/index.js";
 
 const tempDirs: string[] = [];
 afterEach(() => {

@@ -14,11 +14,11 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { parseAgyChat, parseAgyChats } from "../src/agent-stats/agy-chat.js";
-import { correlate, detectCommitConflicts, type PrMergeMeta } from "../src/agent-stats/correlate.js";
-import { emptyGroundTruth } from "../src/agent-stats/git-evidence.js";
-import { agyProjectHash, factInRepo, makeRepoScope, normalizeAgy } from "../src/agent-stats/normalize.js";
-import { computeAgentStats, syncAgentStats } from "../src/agent-stats/index.js";
+import { parseAgyChat, parseAgyChats } from "../_extracted/agent-stats-h2a-module/src/agy-chat.js";
+import { correlate, detectCommitConflicts, type PrMergeMeta } from "../_extracted/agent-stats-h2a-module/src/correlate.js";
+import { emptyGroundTruth } from "../_extracted/agent-stats-h2a-module/src/git-evidence.js";
+import { agyProjectHash, factInRepo, makeRepoScope, normalizeAgy } from "../_extracted/agent-stats-h2a-module/src/normalize.js";
+import { computeAgentStats, syncAgentStats } from "../_extracted/agent-stats-h2a-module/src/index.js";
 import {
   AGENT_STATS_SCHEMA,
   SESSIONS_SCHEMA,
@@ -28,10 +28,10 @@ import {
   filterReportAgents,
   formatReportMarkdown,
   formatReportText,
-} from "../src/agent-stats/report.js";
-import { aggregate, formatStatsTable } from "../src/agent-stats/stats.js";
-import type { H2aInstance } from "../src/agent-stats/registry.js";
-import type { AgentStatsRow, CorrelationLink, SessionFact } from "../src/agent-stats/types.js";
+} from "../_extracted/agent-stats-h2a-module/src/report.js";
+import { aggregate, formatStatsTable } from "../_extracted/agent-stats-h2a-module/src/stats.js";
+import type { H2aInstance } from "../_extracted/agent-stats-h2a-module/src/registry.js";
+import type { AgentStatsRow, CorrelationLink, SessionFact } from "../_extracted/agent-stats-h2a-module/src/types.js";
 
 const tempDirs: string[] = [];
 afterEach(() => {

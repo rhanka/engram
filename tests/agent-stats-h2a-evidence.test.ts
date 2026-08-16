@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { mkdtempSync } from "node:fs";
 
-import { buildProjectGraphForIdentity } from "../src/agent-stats/index.js";
-import { buildProjectGraph, type ProjectIdentity, type SessionInput } from "../src/agent-stats/project-graph.js";
-import { loadWorkspaceLocalH2aInstances } from "../src/agent-stats/registry.js";
+import { buildProjectGraphForIdentity } from "../_extracted/agent-stats-h2a-module/src/index.js";
+import { buildProjectGraph, type ProjectIdentity, type SessionInput } from "../_extracted/agent-stats-h2a-module/src/project-graph.js";
+import { loadWorkspaceLocalH2aInstances } from "../_extracted/agent-stats-h2a-module/src/registry.js";
 import { filterTemporalWindow } from "../src/temporal-recall.js";
 
 const tempDirs: string[] = [];
