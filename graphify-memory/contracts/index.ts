@@ -105,7 +105,7 @@ export type MemoryErrorCode =
   | "NOT_FOUND" | "ALREADY_TERMINAL" | "DEADLINE_EXCEEDED" | "CANCELLED"
   | "CAPABILITY_UNAVAILABLE" | "STORE_UNAVAILABLE" | "FENCE_LOST"
   | "CURSOR_GAP" | "JOURNAL_CORRUPT" | "BLOB_MISSING"
-  | "PROJECTION_STALE" | "RANKING_UNAVAILABLE" | "STALE_PAGE"
+  | "PROJECTION_STALE" | "PROJECTION_OVERSIZED" | "RANKING_UNAVAILABLE" | "STALE_PAGE"
   | "REGISTRY_VERSION_UNAVAILABLE" | "BACKUP_INVALID" | "RESTORE_REFUSED";
 
 export interface MemoryErrorV1 {
@@ -559,6 +559,53 @@ export interface ProjectedVectorV2 {
 
 export type ProjectedObjectV2 = ProjectedNodeV2 | ProjectedEdgeV2 | ProjectedVectorV2;
 
+/**
+ * One current-graph projection object. It carries only a current accepted
+ * projection envelope and citation references; never a record body, pending
+ * material, journal event, or trust receipt.
+ */
+export interface BoundedProjectionObjectV1 {
+  node_id: string;
+  projection: MemoryProjectionEnvelopeV2;
+  citation_refs: ReadonlyArray<OpaqueRef>;
+}
+
+/** The bounded `graph.json`-style current projection. History never inflates it. */
+export interface BoundedCurrentProjectionV1 {
+  schema_version: 1;
+  projection_schema_version: 1;
+  high_water_cursor: Cursor;
+  projection_cursor: Cursor;
+  objects: ReadonlyArray<BoundedProjectionObjectV1>;
+  projection_digest: Digest;
+}
+
+export type ProjectionOmissionReason =
+  | "pending" | "rejected" | "withdrawn" | "accepted_disputed"
+  | "historical" | "expired" | "trust_invalid" | "tombstoned";
+
+/** A bounded export never silently drops current entries; omission is always by an explicit reason. */
+export interface BoundedProjectionExportV1 {
+  schema_version: 1;
+  projection_schema_version: 1;
+  high_water_cursor: Cursor;
+  projection_cursor: Cursor;
+  included_count: number;
+  omitted_total: number;
+  omitted_by_reason: Record<ProjectionOmissionReason, number>;
+  raw_byte_size: number;
+  raw_byte_ceiling: number;
+  projection: BoundedCurrentProjectionV1;
+  projection_digest: Digest;
+  export_digest: Digest;
+}
+
+/** One derived projection surface (FTS, nodes, edges, vectors, caches, aggregates, exports). */
+export interface ProjectionInvalidationSurfaceV1 {
+  readonly projection_id: OpaqueRef;
+  invalidate(batch: ProjectionBatchV1): Promise<Result<{ projection_id: OpaqueRef; cursor: Cursor; digest: Digest }>>;
+}
+
 export interface CanonicalStoreCapabilitiesV1 {
   atomic_promotion: true;
   dense_cursor: true;
@@ -730,7 +777,10 @@ export interface LogicalBackupManifestV1 {
   excluded_counts: { pending: number; rejected: number; withdrawn: number; derived_projections: number };
   records_root_digest: Digest;
   journal_root_digest: Digest;
+  state_digest: Digest;
   terminal_ledger_digest: Digest;
+  object_ref: OpaqueRef;
+  ciphertext_digest: Digest;
   key_receipt_digest: Digest;
   object_receipt_digest: Digest;
   manifest_digest: Digest;

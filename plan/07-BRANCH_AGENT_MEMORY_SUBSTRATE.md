@@ -67,12 +67,12 @@
 
 ## Lot 6 — Bounded Projection, Recovery, Backup, Postgres Parity
 
-- [ ] Implement bounded current projection, deterministic size fixture, complete local checkpoints, portable logical backup/restore, projection invalidation cascade, the Postgres canonical adapter, and cross-backend state/receipt parity.
-- [ ] RED: `tests/memory-projection-bound.test.ts > raw projection at cap passes and cap plus one byte fails without silent omission`.
-- [ ] RED: `tests/memory-projection-cascade.test.ts > tombstone invalidates FTS nodes edges vectors caches aggregates and exports through one cursor receipt`.
-- [ ] RED: `tests/memory-backup.test.ts > detached logical backup excludes pending rejected FTS and projections yet restore preserves terminal dominance and state digest`.
-- [ ] RED: `tests/canonical-memory-store.parity.test.ts > SQLite and Postgres produce identical canonical state digests for the lifecycle corpus`.
-- [ ] RED: `tests/postgres-memory-store.native.test.ts > promotion is atomic and generation mismatch fails before mutation` (Postgres 16 + 17 matrix).
+- [ ] Implement bounded current projection, deterministic size fixture, complete local checkpoints, portable logical backup/restore, projection invalidation cascade, the Postgres canonical adapter, and cross-backend state/receipt parity. (L6a — bounded projection, size fixture, logical backup/restore, cascade — landed backend-agnostic; L6b — Postgres adapter + parity — pending.)
+- [x] RED→green (L6a): `tests/memory-projection-bound.test.ts > raw projection at cap passes and cap plus one byte fails without silent omission`.
+- [x] RED→green (L6a): `tests/memory-projection-cascade.test.ts > tombstone invalidates FTS nodes edges vectors caches aggregates and exports through one cursor receipt`.
+- [x] RED→green (L6a): `tests/memory-backup.test.ts > detached logical backup excludes pending rejected FTS and projections yet restore preserves terminal dominance and state digest`.
+- [ ] RED (L6b): `tests/canonical-memory-store.parity.test.ts > SQLite and Postgres produce identical canonical state digests for the lifecycle corpus`.
+- [ ] RED (L6b): `tests/postgres-memory-store.native.test.ts > promotion is atomic and generation mismatch fails before mutation` (Postgres 16 + 17 matrix).
 
 ## Lot 7 — Accepted-Only Ranking, Revalidation, Migration Closure
 
