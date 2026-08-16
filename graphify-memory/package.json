@@ -1,0 +1,23 @@
+{
+  "name": "graphify-memory",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./contracts": {
+      "types": "./contracts/dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "contracts/dist"
+  ],
+  "scripts": {
+    "build": "npm --prefix contracts run build && tsc -p tsconfig.json",
+    "typecheck": "npm --prefix contracts run typecheck && tsc --noEmit -p tsconfig.json"
+  }
+}
