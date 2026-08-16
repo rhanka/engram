@@ -76,15 +76,15 @@
 
 ## Lot 7 — Accepted-Only Ranking, Revalidation, Migration Closure
 
-- [ ] Implement the accepted lexical DTO adapter, offline + semantic profiles, recency/profile receipts, induced eligibility graph, vector allowlist, final revalidation/redaction, bounded pagination, activity-source ingestion, migration of retained neutral records, and proof no compatibility surface remains.
-- [ ] RED: `tests/memory-ranking-offline.test.ts > offline profile reads only accepted FTS and revalidation removes a stale hit`.
-- [ ] RED: `tests/memory-ranking-offline.test.ts > formula profile version bounds receipt and tie order are deterministic`.
-- [ ] RED: `tests/memory-ranking-semantic.test.ts > removed neighbour has zero contribution after induced-subgraph PPR`.
-- [ ] RED: `tests/memory-ranking-semantic.test.ts > semantic requirement returns typed unavailable and never raw lexical fallback`.
-- [ ] RED: `tests/memory-ranking-pagination.test.ts > all pages pin one profile and dual-as-of pair`.
-- [ ] RED: `tests/memory-capitalisation.test.ts > sanitized derivative has a new scope re-enters pending and exposes no cross-scope edge or lineage without permission`.
-- [ ] RED: `tests/memory-migration.test.ts > retained neutral records preserve digests/time/citations or emit an explicit exclusion ledger`.
-- [ ] RED: `tests/memory-v1-removal.test.ts > packed artifact and repository contain no compatibility API after migration`.
+- [x] Implement the accepted lexical DTO adapter, offline + semantic profiles, recency/profile receipts, induced eligibility graph, vector allowlist, final revalidation/redaction, bounded pagination, activity-source ingestion, migration of retained neutral records, and proof no compatibility surface remains.
+- [x] RED: `tests/memory-ranking-offline.test.ts > offline profile reads only accepted FTS and revalidation removes a stale hit`.
+- [x] RED: `tests/memory-ranking-offline.test.ts > formula profile version bounds receipt and tie order are deterministic`.
+- [x] RED: `tests/memory-ranking-semantic.test.ts > removed neighbour has zero contribution after induced-subgraph PPR`.
+- [x] RED: `tests/memory-ranking-semantic.test.ts > semantic requirement returns typed unavailable and never raw lexical fallback`.
+- [x] RED: `tests/memory-ranking-pagination.test.ts > all pages pin one profile and dual-as-of pair`.
+- [x] RED: `tests/memory-capitalisation.test.ts > sanitized derivative has a new scope re-enters pending and exposes no cross-scope edge or lineage without permission`.
+- [x] RED: `tests/memory-migration.test.ts > retained neutral records preserve digests/time/citations or emit an explicit exclusion ledger`.
+- [x] RED: `tests/memory-v1-removal.test.ts > packed artifact and repository contain no compatibility API after migration`.
 
 ## Feedback Loop
 
