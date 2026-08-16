@@ -63,6 +63,26 @@ export {
   hasProjectionEnvelope,
 } from "./projection.js";
 export {
+  MEMORY_PROJECTION_RAW_BYTE_CEILING,
+  boundedProjectionEnvelopeV2,
+  buildBoundedCurrentProjectionV1,
+  exportBoundedCurrentProjectionV1,
+  measureRawProjectionBytesV1,
+  syntheticBoundedProjectionInputAtBytesV1,
+  type BoundedProjectionEntryV1,
+  type BoundedProjectionInputV1,
+} from "./bounded-projection.js";
+export {
+  runProjectionInvalidationCascadeV1,
+  type ProjectionInvalidationCascadeInputV1,
+  type ProjectionInvalidationCascadeResultV1,
+} from "./projection-cascade.js";
+export {
+  createLogicalMemoryBackupV1,
+  type LogicalBackupStoreV1,
+  type LogicalMemoryBackupDependenciesV1,
+} from "./logical-backup.js";
+export {
   createAssertionFamilyRegistryV1,
   evaluateReconciliationEligibilityV1,
   reconciliationProposalIdV1,
