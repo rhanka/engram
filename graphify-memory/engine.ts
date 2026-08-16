@@ -10,6 +10,7 @@ import {
 import { isCanonicalCursor, validateCandidatePayload } from "./validation.js";
 import type {
   AdmissionDecisionEnvelopeV1,
+  AdmissionOutcomeV1,
   AdmissionPolicy,
   AdmissionPolicyRequestV1,
   AuthorizationAllowedV1,
@@ -25,6 +26,10 @@ import type {
   MemoryOperation,
   MemoryPortV2,
   MemoryRecordV2,
+  MemoryState,
+  LifecycleCommandV1,
+  LifecycleReceiptV1,
+  ProjectionBatchV1,
   RedactionDirectiveV1,
   Result,
   TrustBindingV1,
@@ -80,6 +85,10 @@ function normalizeObject(value: unknown): JsonObject | undefined {
   } catch {
     return undefined;
   }
+}
+
+function defined<T extends Record<string, unknown>>(value: T): T {
+  return Object.fromEntries(Object.entries(value).filter(([, field]) => field !== undefined)) as T;
 }
 
 function compareInstants(left: string, right: string): number {
@@ -461,7 +470,7 @@ function validPendingSnapshot(input: unknown, candidateId: string): input is { c
 }
 
 function admissionEvent(candidateId: string, record: MemoryRecordV2, authorizationReceipt: Digest, decision: AdmissionDecisionEnvelopeV1) {
-  const body = {
+  const body = defined({
     schema_version: 2 as const,
     event_id: `admission:${candidateId}`,
     cursor: "0",
@@ -474,7 +483,7 @@ function admissionEvent(candidateId: string, record: MemoryRecordV2, authorizati
     authorization_receipt_digest: authorizationReceipt,
     admission_decision: decision,
     previous_event_digest: ZERO_DIGEST,
-  };
+  });
   return { ...body, event_digest: receiptDigest("event", body) };
 }
 
@@ -495,10 +504,98 @@ function lexicalDocument(record: MemoryRecordV2) {
   };
 }
 
+function lifecycleCommandIsExact(input: unknown): input is LifecycleCommandV1 {
+  const value = normalizeObject(input);
+  if (value === undefined || !isOpaque(value.event_id) || !isOpaque(value.reason_ref) || !isInstant(value.deadline_at) || typeof value.operation !== "string") return false;
+  const authorization = optionalExactObject(value.authorization, ["credential"], ["context_ref"]);
+  const anchor = exactObject(value.event_anchor, ["occurred_at", "kind_ref", "provenance_ref", "provenance_digest"]);
+  if (authorization === undefined || typeof authorization.credential !== "string" || (Object.hasOwn(authorization, "context_ref") && !isOpaque(authorization.context_ref))
+    || anchor === undefined || !isInstant(anchor.occurred_at) || !isOpaque(anchor.kind_ref) || !isOpaque(anchor.provenance_ref) || !isDigest(anchor.provenance_digest)) return false;
+  const common = ["operation", "event_id", "reason_ref", "event_anchor", "authorization", "deadline_at"];
+  const candidate = ["reject", "withdraw"];
+  const singleRecord = ["dispute", "resolve_dispute", "expire", "mark_non_current", "trust_invalidate", "tombstone"];
+  const related = ["supersede", "rewind"];
+  const keys = Object.keys(value);
+  if (candidate.includes(value.operation)) {
+    return keys.length === common.length + 1 && keys.every((key) => common.includes(key) || key === "candidate_id") && isOpaque(value.candidate_id);
+  }
+  if (singleRecord.includes(value.operation)) {
+    return keys.every((key) => common.includes(key) || key === "record_id" || key === "valid_effective_at") && isOpaque(value.record_id)
+      && (!Object.hasOwn(value, "valid_effective_at") || (typeof value.valid_effective_at === "number" && Number.isSafeInteger(value.valid_effective_at)));
+  }
+  return related.includes(value.operation)
+    && keys.every((key) => common.includes(key) || key === "record_id" || key === "related_record_id" || key === "valid_effective_at")
+    && isOpaque(value.record_id) && isOpaque(value.related_record_id)
+    && (!Object.hasOwn(value, "valid_effective_at") || (typeof value.valid_effective_at === "number" && Number.isSafeInteger(value.valid_effective_at)));
+}
+
+function lifecycleTarget(operation: LifecycleCommandV1["operation"]): MemoryState {
+  if (operation === "reject") return "rejected";
+  if (operation === "withdraw") return "withdrawn";
+  if (operation === "dispute") return "accepted_disputed";
+  if (operation === "resolve_dispute" || operation === "rewind") return "accepted_current";
+  if (operation === "supersede" || operation === "mark_non_current") return "historical";
+  if (operation === "expire") return "expired";
+  if (operation === "trust_invalidate") return "trust_invalid";
+  return "tombstoned";
+}
+
+function lifecycleAuthorizationOperation(operation: LifecycleCommandV1["operation"]): MemoryOperation {
+  return operation === "dispute" || operation === "resolve_dispute" ? "mark_non_current" : operation;
+}
+
+function lifecycleEvent(command: LifecycleCommandV1, now: string, fromState: MemoryState | undefined, authorizationReceipt: Digest) {
+  const body = defined({
+    schema_version: 2 as const,
+    event_id: command.event_id,
+    cursor: "0",
+    recorded_at: now,
+    operation: command.operation,
+    candidate_id: "candidate_id" in command ? command.candidate_id : undefined,
+    record_id: "record_id" in command ? command.record_id : undefined,
+    related_record_id: "related_record_id" in command ? command.related_record_id : undefined,
+    from_state: fromState,
+    to_state: lifecycleTarget(command.operation),
+    valid_effective_at: "valid_effective_at" in command ? command.valid_effective_at : undefined,
+    authorization_receipt_digest: authorizationReceipt,
+    reason_ref: command.reason_ref,
+    event_anchor: command.event_anchor,
+    previous_event_digest: ZERO_DIGEST,
+  });
+  return { ...body, event_digest: receiptDigest("event", body) };
+}
+
+function lifecycleProjectionBatch(command: LifecycleCommandV1): ProjectionBatchV1 {
+  const recordId = "record_id" in command ? command.record_id : undefined;
+  const body = {
+    from_cursor_exclusive: "0",
+    through_cursor_inclusive: "0",
+    records: [],
+    removals: recordId === undefined ? [] : [{ record_id: recordId, reason_ref: command.reason_ref }],
+  };
+  return { ...body, batch_digest: receiptDigest("projection-batch", body) };
+}
+
+async function foldedStateForCommand(dependencies: MemoryEngineDependenciesV2, command: LifecycleCommandV1): Promise<Result<MemoryState | undefined>> {
+  try {
+    const journal = await dependencies.canonical_store.readJournal({ after: "0", limit: 2_000 });
+    if (!journal.ok) return operationFailure(command.operation, journal);
+    const targetId = "record_id" in command ? command.record_id : command.candidate_id;
+    let state: MemoryState | undefined;
+    for (const event of journal.value) {
+      if (("record_id" in command && event.record_id === targetId) || ("candidate_id" in command && event.candidate_id === targetId)) state = event.to_state;
+    }
+    return { ok: true, value: state };
+  } catch {
+    return unavailable(command.operation, "canonical store did not return a journal");
+  }
+}
+
 /** L2 coordination only: it validates/seals pending capture and delegates durability to the canonical store. */
 export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): MemoryPortV2 {
   const cancelled = new Set<string>();
   const capturedContent = new Map<string, Digest>();
+  const admissionOutcomes = new Map<string, AdmissionOutcomeV1>();
 
   return {
     version: 2,
@@ -579,6 +676,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       const now = dependencies.clock?.now();
       if (!isInstant(now)) return unavailable("request_admission", "clock did not supply a canonical instant");
       if (Date.parse(now) >= Date.parse(input.deadline_at)) return refusal("request_admission", "DEADLINE_EXCEEDED", "admission deadline elapsed before decision");
+      const previousOutcome = admissionOutcomes.get(input.candidate_id);
+      if (previousOutcome !== undefined) return { ok: true, value: previousOutcome };
       const resource = { candidate_id: input.candidate_id };
       const authorization = await authorizeOperation(dependencies.authorization, {
         operation: "request_admission",
@@ -668,22 +767,76 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
             event: event as never,
           });
         if (!applied.ok) return operationFailure("request_admission", applied);
-        return {
-          ok: true,
-          value: {
-            status: decision.value.decision === "accept" ? "accepted" : "rejected",
-            candidate_id: input.candidate_id,
-            ...(decision.value.decision === "accept" ? { record_id: record.record_id } : {}),
-            cursor: applied.value.cursor,
-            decision_receipt_digest: decision.value.receipt_digest,
-            transaction_receipt_digest: applied.value.receipt_digest,
-          },
+        const value: AdmissionOutcomeV1 = {
+          status: decision.value.decision === "accept" ? "accepted" : "rejected",
+          candidate_id: input.candidate_id,
+          ...(decision.value.decision === "accept" ? { record_id: record.record_id } : {}),
+          cursor: applied.value.cursor,
+          decision_receipt_digest: decision.value.receipt_digest,
+          transaction_receipt_digest: applied.value.receipt_digest,
         };
+        const destroyed = await dependencies.crypto.destroy({ key_ref: pending.value.sealed.key_ref, idempotency_key: `destroy:${input.candidate_id}` });
+        if (!destroyed.ok) return operationFailure("request_admission", destroyed);
+        admissionOutcomes.set(input.candidate_id, value);
+        return { ok: true, value };
       } catch {
         return unavailable("request_admission", "admission dependencies did not return typed results");
       }
     },
-    transition: async () => unavailable("reject"),
+    transition: async (input): Promise<Result<LifecycleReceiptV1>> => {
+      if (!lifecycleCommandIsExact(input)) return refusal("reject", "INVALID_SCHEMA", "lifecycle command is not exact");
+      const now = dependencies.clock?.now();
+      if (!isInstant(now)) return unavailable(input.operation, "clock did not supply a canonical instant");
+      if (Date.parse(now) >= Date.parse(input.deadline_at)) return refusal(input.operation, "DEADLINE_EXCEEDED", "lifecycle deadline elapsed before transition");
+      const authorizationOperation = lifecycleAuthorizationOperation(input.operation);
+      const resource = "record_id" in input ? { record_id: input.record_id } : { candidate_id: input.candidate_id };
+      const authorization = await authorizeOperation(dependencies.authorization, {
+        operation: authorizationOperation,
+        resource,
+        resource_digest: authorizationResourceDigest(authorizationOperation, resource),
+        context: input.authorization,
+        issued_at: now,
+        deadline_at: input.deadline_at,
+      }, undefined, now);
+      if (!authorization.ok) return { ok: false, error: { ...authorization.error, operation: input.operation } };
+      if ("record_id" in input) {
+        try {
+          const readiness = await dependencies.canonical_store.readiness();
+          if (!readiness.ok) return operationFailure(input.operation, readiness);
+          const record = await dependencies.canonical_store.readRecord({
+            record_id: input.record_id,
+            system_as_of: readiness.value.high_water_cursor,
+            authorization_receipt_digest: authorization.value.receipt_digest,
+          });
+          if (!record.ok) return operationFailure(input.operation, record);
+          if (record.value.scope_ref !== authorization.value.scope_ref) return refusal(input.operation, "UNAUTHORIZED", "authorization scope does not bind the lifecycle record");
+        } catch {
+          return unavailable(input.operation, "canonical store did not return a typed record");
+        }
+      }
+      const fromState = await foldedStateForCommand(dependencies, input);
+      if (!fromState.ok) return fromState;
+      const event = lifecycleEvent(input, now, fromState.value, authorization.value.receipt_digest);
+      const applied = await dependencies.canonical_store.applyLifecycle({
+        command: input,
+        event: event as never,
+        projection_batch: lifecycleProjectionBatch(input),
+      });
+      if (!applied.ok) return operationFailure(input.operation, applied);
+      return {
+        ok: true,
+        value: {
+          event_id: input.event_id,
+          operation: input.operation,
+          from_state: fromState.value ?? ("candidate_id" in input ? "pending" : lifecycleTarget(input.operation)),
+          to_state: lifecycleTarget(input.operation),
+          cursor: applied.value.cursor,
+          event_digest: applied.value.event_digest,
+          authorization_receipt_digest: authorization.value.receipt_digest,
+          transaction_receipt_digest: applied.value.receipt_digest,
+        },
+      };
+    },
     recall: async () => unavailable("recall_current"),
     proposeCapitalisation: async () => unavailable("propose_capitalisation"),
     invalidateProjections: async () => unavailable("projection_invalidate"),
