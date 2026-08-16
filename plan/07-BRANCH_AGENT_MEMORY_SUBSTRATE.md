@@ -31,14 +31,14 @@
 
 ## Lot 2 — Exact Records, Ports, Digests, Bi-Temporal Query
 
-- [ ] Publish all §4–§5 DTOs/signatures/typed errors/schemas; implement exact validation, JCS/domain-separated digests, authorization binding, verifier binding, capture seam, dual-as-of carrier, local-administrator interfaces, and data-pure projection carriers.
-- [ ] RED: `tests/memory-contract-schema.test.ts > exact schema rejects every additional property and binds primary component event citation payload and record digests`.
-- [ ] RED: `tests/memory-authz.test.ts > deny expired revoked mismatched or caller-supplied authorization and apply port-owned field omission`.
-- [ ] RED: `tests/memory-trust.test.ts > caller cannot self-label earned or signed and revoked receipt is ineligible`.
-- [ ] RED: `tests/memory-admission-envelope.test.ts > engine validates only the six bound policy fields and no evaluation shape is exported`.
-- [ ] RED: `tests/memory-capture.test.ts > exact duplicate acknowledges and digest conflict writes nothing`.
-- [ ] RED: `tests/memory-dual-as-of.test.ts > valid and system axes vary independently at inclusive boundaries`.
-- [ ] RED: `tests/local-administrator.test.ts > fresh standalone service denies until explicit credential bootstrap and old receipts fail after rotation`.
+- [x] Publish all §4–§5 DTOs/signatures/typed errors/schemas; implement exact validation, JCS/domain-separated digests, authorization binding, verifier binding, capture seam, dual-as-of carrier, local-administrator interfaces, and data-pure projection carriers.
+- [x] RED: `tests/memory-contract-schema.test.ts > exact schema rejects every additional property and binds primary component event citation payload and record digests`.
+- [x] RED: `tests/memory-authz.test.ts > deny expired revoked mismatched or caller-supplied authorization and apply port-owned field omission`.
+- [x] RED: `tests/memory-trust.test.ts > caller cannot self-label earned or signed and revoked receipt is ineligible`.
+- [x] RED: `tests/memory-admission-envelope.test.ts > engine validates only the six bound policy fields and no evaluation shape is exported`.
+- [x] RED: `tests/memory-capture.test.ts > exact duplicate acknowledges and digest conflict writes nothing`.
+- [x] RED: `tests/memory-dual-as-of.test.ts > valid and system axes vary independently at inclusive boundaries`.
+- [x] RED: `tests/local-administrator.test.ts > fresh standalone service denies until explicit credential bootstrap and old receipts fail after rotation`.
 
 ## Lot 3 — In-Memory Journal, Quarantine, And Fold
 

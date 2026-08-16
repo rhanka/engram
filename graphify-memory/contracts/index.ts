@@ -444,6 +444,12 @@ export interface PendingControlV1 {
   policy_version: string;
 }
 
+/** Encrypted pending material is returned only through the canonical-store seam. */
+export interface PendingCandidateSnapshotV1 {
+  control: PendingControlV1;
+  sealed: SealedCandidateEnvelopeV1;
+}
+
 export interface CanonicalTransactionReceiptV1 {
   operation: MemoryOperation;
   cursor: Cursor;
@@ -519,6 +525,36 @@ export interface ProjectionRecordV1 {
   citation_refs: ReadonlyArray<OpaqueRef>;
 }
 
+/** Data-only provenance that every graph, edge, or vector projection carries. */
+export interface MemoryProjectionEnvelopeV2 {
+  schema_version: 2;
+  record_id: string;
+  record_digest: Digest;
+  scope_ref: OpaqueRef;
+  valid_time: ValidIntervalV1;
+  projection_cursor: Cursor;
+  envelope_digest: Digest;
+}
+
+export interface ProjectedNodeV2 {
+  node_id: string;
+  projection: MemoryProjectionEnvelopeV2;
+}
+
+export interface ProjectedEdgeV2 {
+  edge_id: string;
+  source_node_id: string;
+  target_node_id: string;
+  projection: MemoryProjectionEnvelopeV2;
+}
+
+export interface ProjectedVectorV2 {
+  vector_id: string;
+  projection: MemoryProjectionEnvelopeV2;
+}
+
+export type ProjectedObjectV2 = ProjectedNodeV2 | ProjectedEdgeV2 | ProjectedVectorV2;
+
 export interface CanonicalStoreCapabilitiesV1 {
   atomic_promotion: true;
   dense_cursor: true;
@@ -555,6 +591,10 @@ export interface CanonicalMemoryStorePort {
     sealed: SealedCandidateEnvelopeV1;
     capture_event: LifecycleEventV2;
   }): Promise<Result<CanonicalTransactionReceiptV1>>;
+  readPending(input: {
+    candidate_id: string;
+    authorization_receipt_digest: Digest;
+  }): Promise<Result<PendingCandidateSnapshotV1>>;
   applyAdmission(input: AdmissionStoreInputV1): Promise<Result<CanonicalTransactionReceiptV1>>;
   applyLifecycle(input: {
     command: LifecycleCommandV1;
