@@ -423,6 +423,10 @@ export interface LifecycleEventV2 {
   admission_decision?: AdmissionDecisionEnvelopeV1;
   reason_ref?: OpaqueRef;
   event_anchor?: LifecycleEventAnchorV1;
+  /** L3 journal spelling; equal to previous_event_digest when emitted. */
+  previous_event_hash?: Digest;
+  /** L3 journal spelling; equal to event_digest when emitted. */
+  event_hash?: Digest;
   previous_event_digest: Digest;
   event_digest: Digest;
 }

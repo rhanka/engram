@@ -19,6 +19,19 @@ export {
 } from "./validation.js";
 export { isVisibleAtDualAsOf, type DualAsOfV1 } from "./dual-as-of.js";
 export {
+  createInMemoryCanonicalMemoryStoreV1,
+  foldMemoryJournalV1,
+  memoryJournalEventHashV1,
+  type CurrentnessIntervalV1,
+  type FoldedMemoryStateV1,
+  type InMemoryCanonicalMemoryStoreOptionsV1,
+  type InMemoryCanonicalMemoryStoreV1,
+  type InMemoryRecoveryCheckpointV1,
+  type MemoryJournalCheckpointV1,
+  type MemoryJournalEventV1,
+  type MemoryJournalTailV1,
+} from "./memory-store.js";
+export {
   applyPortOwnedRedaction,
   authorizeOperation,
   createMemoryPortV2,
