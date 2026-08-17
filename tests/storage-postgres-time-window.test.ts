@@ -270,6 +270,7 @@ describe("Postgres queryWindow capability and contract", () => {
     await store.pushGraph(G, communities, { mode: "replace" });
 
     const window = await store.queryWindow(100, 200);
+    expect(window.interval_convention).toBe("closed-v1");
     expect(window.nodes.map((node) => node.id)).toEqual(["open", "spanning", "left", "right"]);
     expect(window.edges.map((edge) => edge.relation)).toEqual(["conducted-by", "produced"]);
 

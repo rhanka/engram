@@ -15,6 +15,11 @@ import { resolveGraphInputPath } from "./paths.js";
 import { loadProjectConfig } from "./project-config.js";
 import { resolveStoreConfig } from "./storage/config.js";
 import { resolveGraphStore } from "./storage/registry.js";
+import {
+  TEMPORAL_INTERVAL_CONVENTION,
+  closedTemporalBounds,
+  overlapsClosedTemporalWindow,
+} from "./temporal-interval.js";
 import type {
   GraphStore,
   GraphStoreConfig,
@@ -67,6 +72,7 @@ export type TemporalRecallSource =
 
 export interface TemporalRecallResult extends GraphTimeWindow {
   schema: typeof TEMPORAL_RECALL_SCHEMA;
+  interval_convention: typeof TEMPORAL_INTERVAL_CONVENTION;
   asOfMs: number;
   asOfIso: string;
   source: TemporalRecallSource;
@@ -126,39 +132,24 @@ export function parseRecallTimestamp(value: string | number): number {
   return assertEpochRange(parsed);
 }
 
-function hasOwn(record: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(record, key);
-}
-
 function temporalBounds(
   record: Record<string, unknown>,
   fromMs: number,
   toMs: number,
 ): { t: number; tEnd?: number } | undefined {
-  const t = record.t;
-  if (typeof t !== "number" || !Number.isFinite(t) || t > toMs) return undefined;
-  if (!hasOwn(record, "t_end")) return { t };
-
-  const tEnd = record.t_end;
-  if (
-    typeof tEnd !== "number" ||
-    !Number.isFinite(tEnd) ||
-    tEnd < t ||
-    tEnd < fromMs
-  ) {
-    return undefined;
-  }
-  return { t, tEnd };
+  const bounds = closedTemporalBounds(record);
+  if (!bounds || !overlapsClosedTemporalWindow(record, fromMs, toMs)) return undefined;
+  return bounds;
 }
 
 /**
- * The shared T5/T6 record-level membership predicate: `t <= toMs AND (t_end
- * absent OR t_end >= fromMs)`, with untimed, malformed and inverted spans
- * excluded.
+ * The shared closed-v1 record-level membership predicate: `t <= toMs AND
+ * (t_end absent OR t_end >= fromMs)`, with untimed, malformed and inverted
+ * spans excluded.
  *
  * Exported so the file-backend build-time window (SPEC §3(a)) slices with the
  * exact same semantics instead of keeping a second, drifting copy. Infinite
- * bounds are accepted here (a half-open slice); the T5 store port still
+ * bounds are accepted here for an unbounded side; the T5 store port still
  * requires finite ordered bounds.
  */
 export function overlapsTemporalWindow(
@@ -166,7 +157,7 @@ export function overlapsTemporalWindow(
   fromMs: number,
   toMs: number,
 ): boolean {
-  return temporalBounds(record, fromMs, toMs) !== undefined;
+  return overlapsClosedTemporalWindow(record, fromMs, toMs);
 }
 
 function canonicalTemporalNode(
@@ -255,7 +246,7 @@ function sortWindow(window: GraphTimeWindow): GraphTimeWindow {
       compareText(a.target, b.target) ||
       compareText(a.relation, b.relation),
   );
-  return { nodes, edges };
+  return { interval_convention: TEMPORAL_INTERVAL_CONVENTION, nodes, edges };
 }
 
 /**
@@ -355,6 +346,7 @@ export async function recallAsOf(
       const snapshot = await store.readSnapshotMeta().catch(() => undefined);
       return {
         schema: TEMPORAL_RECALL_SCHEMA,
+        interval_convention: TEMPORAL_INTERVAL_CONVENTION,
         asOfMs,
         asOfIso,
         source: {
@@ -385,6 +377,7 @@ export async function recallAsOf(
   const provenance = raw.graph?.provenance;
   return {
     schema: TEMPORAL_RECALL_SCHEMA,
+    interval_convention: TEMPORAL_INTERVAL_CONVENTION,
     asOfMs,
     asOfIso,
     source: {

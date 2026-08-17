@@ -1,0 +1,895 @@
+/**
+ * WP9 agent-stats → PROJECT/CONVERSATION graph.
+ *
+ * Turns agent-stats session facts into a graphify `graph.json` (node-link
+ * format) the studio can render: nodes = project / repos / sessions / agents /
+ * branches / commits; edges = rename-lineage, belongs-to, touched-branch,
+ * produced, commit-parent, branch-head, derived-from. Repo/project lanes are
+ * node attributes, not hub edges, so decluttering relation edges cannot collapse
+ * the layout lanes.
+ *
+ * RENAME RECONCILIATION (the core of this module):
+ *   agent-stats keys repo identity off the cwd *path* and does not persist the
+ *   git remote, so a repo that was renamed/moved on disk fragments into several
+ *   path identities (e.g. `~/src/sentropic` → `~/src/graphify` → `/tmp/regraphify`).
+ *   This builder reconciles those fragments into ONE canonical project node via
+ *   a `ProjectIdentity` (a canonical id + an ordered list of path/remote
+ *   aliases). Each distinct cwd root becomes a `repo` node; repo nodes that
+ *   match an alias of the same identity are linked `belongs-to` the single
+ *   project node, and consecutive aliases are chained with `rename-lineage`
+ *   edges so the rename history is itself visible in the graph.
+ *
+ * This module is pure (no fs/network): it takes already-parsed `SessionFact`s
+ * (or the equivalent sessions-report rows) plus a `ProjectIdentity`, and returns
+ * a `SerializedGraphData` object ready to be JSON-stringified to a graph.json.
+ */
+
+import { pathToTilde } from "./normalize.js";
+import type { SessionFact } from "./types.js";
+import type { GitCommitMeta } from "./correlate.js";
+
+/** The h2a module's own projection labels; these are not a memory contract. */
+type ProjectionTrust = "earned" | "unverified";
+
+export const PROJECT_GRAPH_SCHEMA = "graphify.agent-stats.project-graph/v1";
+
+/** One project's identity, reconciling every disk path it has lived at. */
+export interface ProjectIdentity {
+  /** Stable canonical id for the reconciled project (e.g. "sentropic"). */
+  canonicalId: string;
+  /** Human label for the project node. */
+  label: string;
+  /**
+   * Ordered rename lineage. Each alias is a path PREFIX (tilde- or
+   * absolute-form, as stored on the facts' `cwds`) or a remote "owner/name".
+   * Order is chronological (oldest first) so `rename-lineage` edges chain the
+   * history. The FIRST alias whose prefix a cwd matches wins.
+   */
+  aliases: ProjectAlias[];
+}
+
+export interface ProjectAlias {
+  /** Display name for this incarnation (e.g. "sentropic", "graphify"). */
+  name: string;
+  /**
+   * cwd path prefixes that identify this incarnation. A session whose cwd
+   * equals or sits under any of these prefixes is attributed to this alias.
+   * Tilde-form (`~/src/sentropic`) and absolute-form both accepted.
+   */
+  pathPrefixes: string[];
+  /** Optional git remote "owner/name" for this incarnation (cross-path key). */
+  remote?: string;
+}
+
+/** Minimal session shape the builder needs (subset of SessionFact). */
+export interface SessionInput {
+  factId: string;
+  host: string;
+  sessionId: string;
+  agentId: string;
+  cwds: string[];
+  startedAt?: string;
+  endedAt?: string;
+  /**
+   * Session start/end as epoch-MILLISECONDS — the projection of the ISO
+   * `startedAt`/`endedAt`. T0 temporal slice: these feed the shared scene
+   * contract's `t`/`t_end` (epoch-ms; see src/studio-scene.ts) on the session
+   * node and on the edges that session OWNS. Carried HERE — the projection
+   * boundary — because finer timestamps are otherwise dropped crossing it.
+   *
+   * TODO(agent-stats temporal — deferred lots): only session-level start/end is
+   * projected for T0. The finer per-action timestamps are STILL dropped at this
+   * boundary — `GitAction.timestamp` and `EvidenceSnippet.timestamp`
+   * (types.ts) plus the git committer-date are NOT carried — so
+   * DERIVED Branch / Commit / Agent spans stay out of scope. Widen SessionInput
+   * with those per-action timestamps when the derived-span lots land.
+   */
+  startedAtMs?: number;
+  endedAtMs?: number;
+  branches: string[];
+  commitShas: string[];
+  prUrls: string[];
+  tokensTotal: number;
+  filesTouched: number;
+  parentThreadId?: string;
+}
+
+/**
+ * A selected h2a registry identity safe for graph projection. The loader only
+ * supplies ids matched to an in-project session from the local registry; no
+ * raw h2a record, workspace path, envelope, or binding crosses this boundary.
+ */
+export interface H2aCoordinationEvidence {
+  instanceId: string;
+}
+
+/** Node in the node-link graph (matches graphify GraphNode minimal subset). */
+interface GraphNodeOut {
+  id: string;
+  label: string;
+  file_type: "code" | "document" | "concept" | "rationale";
+  source_file: string;
+  community: number;
+  community_name: string;
+  node_type: string;
+  [key: string]: unknown;
+}
+
+interface GraphEdgeOut {
+  source: string;
+  target: string;
+  relation: string;
+  confidence: "EXTRACTED" | "INFERRED";
+  source_file: string;
+  weight?: number;
+  [key: string]: unknown;
+}
+
+export interface ProjectGraph {
+  directed: boolean;
+  multigraph: false;
+  graph: { provenance?: unknown; community_labels: Record<string, string> };
+  topology_signature: string;
+  nodes: GraphNodeOut[];
+  links: GraphEdgeOut[];
+  hyperedges: never[];
+}
+
+export interface BuildProjectGraphOptions {
+  identity: ProjectIdentity;
+  sessions: SessionInput[];
+  /**
+   * Read-only h2a registry identities selected by the project loader. Only an
+   * existing Agent with an exactly matching id can receive an evidence node.
+   */
+  h2aCoordinationEvidence?: H2aCoordinationEvidence[];
+  /** Include commit nodes (one per distinct attributed sha). Default true. */
+  includeCommits?: boolean;
+  /** Include branch nodes. Default true. */
+  includeBranches?: boolean;
+  /**
+   * T2 temporal ground-truth: git-log commits (only `sha` + `committedAtMs` are
+   * read). When supplied, a Commit node whose sha matches gets a point-in-time
+   * `t` (= committer-date) and the derived Branch / Agent / Project spans widen
+   * to include it. Absent / unmatched commits stay timeless (no `t` key), so the
+   * graph is byte-identical to the pre-T2 output. Structurally satisfied by
+   * `readGitCommits()` output (GitCommitMeta[]).
+   */
+  commits?: Pick<GitCommitMeta, "sha" | "parentShas" | "subject" | "committedAtMs">[];
+  /** Branch heads for the git skeleton: branch/ref name -> head commit sha. */
+  branchHeads?: { name: string; sha: string }[];
+  /** Emit non-visual compatibility hubs/edges. Default true for API back-compat; CLI disables unless --hub-edges. */
+  includeHubEdges?: boolean;
+  /** Provenance to stamp on graph.graph.provenance. */
+  provenance?: unknown;
+}
+
+/**
+ * Parse an ISO-8601 timestamp to epoch-MILLISECONDS, or `undefined` when the
+ * input is absent or unparseable. The single conversion point for the T0
+ * temporal projection (ISO `startedAt`/`endedAt` → scene-contract `t`/`t_end`).
+ */
+export function isoToEpochMs(iso: string | undefined): number | undefined {
+  if (!iso) return undefined;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : undefined;
+}
+
+/** Project the rich SessionFact onto the minimal SessionInput. */
+export function sessionFactToInput(fact: SessionFact, agentId: string): SessionInput {
+  const branches = new Set<string>();
+  for (const b of fact.branchesObserved) if (b && b !== "HEAD") branches.add(b);
+  for (const b of fact.groundTruth.branches) if (b && b !== "HEAD") branches.add(b);
+  return {
+    factId: fact.factId,
+    host: fact.host,
+    sessionId: fact.sessionId,
+    agentId,
+    cwds: fact.cwds,
+    startedAt: fact.startedAt,
+    endedAt: fact.endedAt,
+    startedAtMs: isoToEpochMs(fact.startedAt),
+    endedAtMs: isoToEpochMs(fact.endedAt),
+    branches: Array.from(branches).sort(),
+    commitShas: Array.from(new Set(fact.groundTruth.commitShas.map((s) => s.slice(0, 7)))).sort(),
+    prUrls: Array.from(new Set(fact.groundTruth.prUrls)),
+    tokensTotal: fact.tokens.total ?? 0,
+    filesTouched: fact.filesTouched.length,
+    parentThreadId: fact.parent?.parentThreadId,
+  };
+}
+
+/** Normalize tilde and trailing slashes for prefix comparison. */
+function normPath(p: string): string {
+  return p.replace(/\/+$/, "");
+}
+
+/**
+ * Resolve which rename-lineage alias a cwd belongs to. Returns the alias index
+ * (into identity.aliases) of the first alias whose prefix the cwd matches, or
+ * -1 if none. Worktree subpaths (`<root>/.worktrees/x`, `<root>/.claude/...`)
+ * resolve to the alias whose prefix is the longest match.
+ */
+export function aliasForCwd(identity: ProjectIdentity, cwd: string): number {
+  // Session cwds arrive tilde-redacted (privacy), while pathPrefixes are
+  // supplied raw. Normalize BOTH sides — the cwdInRepo idiom — so membership
+  // does not depend on whether the paths happen to sit under the real home
+  // directory. Comparing a `~`-form cwd to an absolute prefix silently drops
+  // the session.
+  const c = pathToTilde(normPath(cwd));
+  let best = -1;
+  let bestLen = -1;
+  identity.aliases.forEach((alias, i) => {
+    for (const prefix of alias.pathPrefixes) {
+      const p = pathToTilde(normPath(prefix));
+      if ((c === p || c.startsWith(p + "/")) && p.length > bestLen) {
+        best = i;
+        bestLen = p.length;
+      }
+    }
+  });
+  return best;
+}
+
+/** A session's primary alias = the alias of its first matching cwd. */
+function sessionAlias(identity: ProjectIdentity, session: SessionInput): number {
+  for (const cwd of session.cwds) {
+    const i = aliasForCwd(identity, cwd);
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+
+const PROJECT_COMMUNITY = 0;
+const COMMUNITY = {
+  project: 0,
+  repo: 1,
+  agent: 2,
+  session: 3,
+  branch: 4,
+  commit: 5,
+  coordinationEvidence: 6,
+} as const;
+
+const COMMUNITY_LABELS: Record<string, string> = {
+  "0": "Project",
+  "1": "Repo (rename lineage)",
+  "2": "Agent",
+  "3": "Conversation / session",
+  "4": "Branch",
+  "5": "Commit",
+  "6": "Coordination evidence",
+};
+
+const H2A_REGISTRY_PROVENANCE = ".h2a/registry/instances.jsonl";
+const H2A_COORDINATION_SCOPE = "workspace-local";
+const H2A_COORDINATION_TRUST: ProjectionTrust = "unverified";
+
+/**
+ * Git-evidence ground-truth node types stamped `earned` (F9, owner GO): ranked
+ * evidence, not re-writable as ordinary memory (§1). `Agent` is deliberately
+ * OUTSIDE the set (not in the owner's policy); coordination stays `unverified`.
+ */
+const EARNED_NODE_TYPES: ReadonlySet<string> = new Set(["Project", "Repo", "Session", "Branch", "Commit"]);
+const EARNED_TRUST: ProjectionTrust = "earned";
+
+/** A reversible, collision-free graph id for an h2a instance id. */
+function coordinationEvidenceNodeId(instanceId: string): string {
+  return `coordination_evidence${Array.from(instanceId, (char) => `_${char.codePointAt(0)!.toString(16)}`).join("")}`;
+}
+
+/** Compare strings by Unicode code point rather than locale-specific collation. */
+function codePointCompare(a: string, b: string): number {
+  const left = Array.from(a);
+  const right = Array.from(b);
+  for (let i = 0; i < left.length && i < right.length; i++) {
+    const delta = left[i]!.codePointAt(0)! - right[i]!.codePointAt(0)!;
+    if (delta !== 0) return delta;
+  }
+  return left.length - right.length;
+}
+
+function nodeId(kind: string, key: string): string {
+  // Deterministic, filesystem-safe id.
+  return `${kind}_${key}`.replace(/[^A-Za-z0-9_]/g, "_").toLowerCase();
+}
+
+/** Provenance tag for the T0 session-derived temporal stamp (`t`/`t_end`). */
+const SESSION_TIME_SRC = "session.started_at";
+
+/** T2 provenance: a Commit node's `t` came from its git committer-date. */
+const COMMIT_TIME_SRC = "git.committer_date";
+
+/**
+ * T2 provenance: a container node's span (`t`/`t_end`) was DERIVED as the
+ * [min, max] envelope of its owned children's timestamps (not measured
+ * directly). See the derived-span second pass in {@link buildProjectGraph}.
+ */
+const DERIVED_SPAN_SRC = "derived.children_span";
+
+/**
+ * Shared-scene-contract temporal stamp (epoch-ms). `t`/`t_end` are allowlisted
+ * by src/studio-scene.ts and flow through to the studio scene; `t_src` is
+ * graph-only provenance (NOT in the scene allowlist) recording where `t` came
+ * from. Spread onto a node/edge object — empty `{}` adds NO keys, so a timeless
+ * element stays byte-identical.
+ */
+interface TemporalStamp {
+  /** Interval START, epoch-ms (scene contract `t`). */
+  t?: number;
+  /** Interval END, epoch-ms (scene contract `t_end`); omitted when open-ended. */
+  t_end?: number;
+  /** Provenance of the stamp (graph-only; not carried into the scene). */
+  t_src?: string;
+}
+
+/**
+ * T0 temporal stamp for a SESSION and every edge that session OWNS (the edges
+ * whose `source` is the session node). `t` = session start, `t_end` = session
+ * end WHEN KNOWN. An open (still-running) session gets a `t` but NO `t_end` —
+ * it is an open interval, deliberately NOT a point-in-time `t_end === t`.
+ * Returns `{}` when the session carries no start timestamp, so a timeless
+ * session (and its edges) stay byte-identical (no `t` key emitted).
+ *
+ * DEDUP / FIRST-TOUCH: edges are deduped by `source|target|relation` (see
+ * `addEdge`), so a stamp follows first-touch semantics. For these session-owned
+ * edges that is unambiguous — the `source` IS the owning session node, so the
+ * triple is unique per session and the only emission carries that session's `t`.
+ */
+function sessionTemporal(s: SessionInput): TemporalStamp {
+  const startMs = s.startedAtMs ?? isoToEpochMs(s.startedAt);
+  if (startMs === undefined) return {};
+  const endMs = s.endedAtMs ?? isoToEpochMs(s.endedAt);
+  const stamp: TemporalStamp = { t: startMs, t_src: SESSION_TIME_SRC };
+  if (endMs !== undefined) stamp.t_end = endMs;
+  return stamp;
+}
+
+/**
+ * T2 derived span: the [min, max] envelope over a node's owned children's
+ * timestamps. Pools EVERY known bound (a child's `t` and `t_end`) and returns
+ * `t` = earliest (FIRST activity), `t_end` = latest (LAST activity) — i.e. the
+ * outer hull of the children's intervals. An open-interval child (a running
+ * session: `t` but no `t_end`) contributes only its start, since that is its
+ * only known bound. Returns `{}` (NO keys) when no child carries a timestamp,
+ * so a container with only timeless children stays byte-identical (no `t`).
+ * Order-independent (pure min/max) → deterministic regardless of child order.
+ */
+function envelope(bounds: Iterable<number | undefined>): TemporalStamp {
+  let lo: number | undefined;
+  let hi: number | undefined;
+  for (const v of bounds) {
+    if (typeof v !== "number" || !Number.isFinite(v)) continue;
+    if (lo === undefined || v < lo) lo = v;
+    if (hi === undefined || v > hi) hi = v;
+  }
+  if (lo === undefined) return {};
+  return { t: lo, t_end: hi, t_src: DERIVED_SPAN_SRC };
+}
+
+/**
+ * Build the project/conversation graph from reconciled session inputs.
+ *
+ * Only sessions that match an alias of the given identity are included — this is
+ * what "start with just the sentropic repo, rename-aware" means: feed the
+ * sentropic identity (with its sentropic/graphify/regraphify aliases) and every
+ * session across those paths collapses into one project.
+ */
+export function buildProjectGraph(opts: BuildProjectGraphOptions): ProjectGraph {
+  const { identity } = opts;
+  const includeCommits = opts.includeCommits !== false;
+  const includeBranches = opts.includeBranches !== false;
+  const includeHubEdges = opts.includeHubEdges !== false;
+
+  // T2: index git committer-dates by 7-char sha prefix (the form sessions print
+  // and `sessionFactToInput` stores). FIRST-TOUCH on collision — a duplicate
+  // prefix keeps the first date — but the value is git ground-truth, NOT session
+  // order, so a Commit node's `t` is deterministic regardless of which session
+  // happened to create the node first.
+  const commitTimeBySha7 = new Map<string, number>();
+  const commitMetaBySha7 = new Map<string, Pick<GitCommitMeta, "sha" | "parentShas" | "subject" | "committedAtMs">>();
+  for (const c of opts.commits ?? []) {
+    const k = c.sha.slice(0, 7).toLowerCase();
+    if (!commitMetaBySha7.has(k)) commitMetaBySha7.set(k, c);
+    if (c.committedAtMs === undefined) continue;
+    if (!commitTimeBySha7.has(k)) commitTimeBySha7.set(k, c.committedAtMs);
+  }
+
+  const nodes = new Map<string, GraphNodeOut>();
+  const links: GraphEdgeOut[] = [];
+  const linkSeen = new Set<string>();
+
+  const addNode = (n: GraphNodeOut) => {
+    if (!nodes.has(n.id)) nodes.set(n.id, n);
+    return n.id;
+  };
+  const addEdge = (e: GraphEdgeOut) => {
+    // Deduped by source|target|relation: the FIRST emission wins, any later
+    // duplicate is dropped — so a temporal stamp (t/t_end) on the edge follows
+    // FIRST-TOUCH semantics (see sessionTemporal).
+    const k = `${e.source}|${e.target}|${e.relation}`;
+    if (linkSeen.has(k)) return;
+    linkSeen.add(k);
+    links.push(e);
+  };
+
+  // 1. The single canonical PROJECT node.
+  const projectNodeId = addNode({
+    id: nodeId("project", identity.canonicalId),
+    label: identity.label,
+    file_type: "concept",
+    source_file: `agent-stats://project/${identity.canonicalId}`,
+    community: PROJECT_COMMUNITY,
+    community_name: COMMUNITY_LABELS["0"]!,
+    node_type: "Project",
+    canonical_id: identity.canonicalId,
+    aliases: identity.aliases.map((a) => a.name),
+  });
+
+  // 2. REPO nodes, one per rename-lineage alias, chained by rename-lineage.
+  const repoNodeIds: string[] = [];
+  identity.aliases.forEach((alias) => {
+    const id = addNode({
+      id: nodeId("repo", alias.name),
+      label: alias.name,
+      file_type: "concept",
+      source_file: alias.pathPrefixes[0] ?? `agent-stats://repo/${alias.name}`,
+      community: COMMUNITY.repo,
+      community_name: COMMUNITY_LABELS["1"]!,
+      node_type: "Repo",
+      path_prefixes: alias.pathPrefixes,
+      remote: alias.remote,
+      project: identity.canonicalId,
+      repo: alias.name,
+      lane: alias.name,
+    });
+    repoNodeIds.push(id);
+    // Compatibility-only semantic edge. The lane model does NOT depend on it.
+    if (includeHubEdges) {
+      addEdge({
+        source: id,
+        target: projectNodeId,
+        relation: "belongs-to",
+        confidence: "EXTRACTED",
+        source_file: "agent-stats://reconcile",
+        weight: 1,
+      });
+    }
+  });
+  // Chain the rename history: alias[i] --rename-lineage--> alias[i+1].
+  for (let i = 0; i + 1 < repoNodeIds.length; i++) {
+    addEdge({
+      source: repoNodeIds[i]!,
+      target: repoNodeIds[i + 1]!,
+      relation: "rename-lineage",
+      confidence: "INFERRED",
+      source_file: "agent-stats://reconcile",
+      weight: 2,
+      lineage_order: i,
+    });
+  }
+
+  // 3. SESSION / AGENT / BRANCH / COMMIT nodes from each in-identity session.
+  const agentSessions = new Map<string, number>();
+  const agentNodeIdByAgentId = new Map<string, string>();
+  const agentIdByNodeId = new Map<string, string>();
+  const ambiguousAgentIds = new Set<string>();
+  const sessionNodeBySessionId = new Map<string, string>();
+  // T0 temporal stamp per session, reused for the session-owned derived-from
+  // edge built in step 4 (which is sourced from the CHILD session node).
+  const temporalBySessionId = new Map<string, TemporalStamp>();
+
+  for (const s of opts.sessions) {
+    const aliasIdx = sessionAlias(identity, s);
+    if (aliasIdx < 0) continue; // not part of this project's lineage
+    const repoNodeId = repoNodeIds[aliasIdx]!;
+
+    // T0 temporal: the session's own [t, t_end) span, reused on every edge the
+    // session owns (worked-in / conducted-by / touched-branch / produced and the
+    // derived-from in step 4). Empty {} when the session has no start timestamp.
+    const temporal = sessionTemporal(s);
+    temporalBySessionId.set(s.sessionId, temporal);
+
+    // session node
+    const sessId = addNode({
+      id: nodeId("session", s.factId),
+      label: `${s.host}:${s.sessionId.slice(0, 8)}`,
+      file_type: "document",
+      source_file: `agent-stats://session/${s.factId}`,
+      community: COMMUNITY.session,
+      community_name: COMMUNITY_LABELS["3"]!,
+      node_type: "Session",
+      host: s.host,
+      session_id: s.sessionId,
+      started_at: s.startedAt,
+      ended_at: s.endedAt,
+      tokens_total: s.tokensTotal,
+      files_touched: s.filesTouched,
+      commit_count: s.commitShas.length,
+      branch_count: s.branches.length,
+      project: identity.canonicalId,
+      repo: identity.aliases[aliasIdx]?.name,
+      lane: identity.aliases[aliasIdx]?.name,
+      agent_kind: s.host,
+      ...temporal,
+    });
+    sessionNodeBySessionId.set(s.sessionId, sessId);
+
+    // Compatibility-only semantic edge. Repo membership is now carried by node
+    // attributes (`project` / `repo` / `lane`) so decluttering edges preserves lanes.
+    if (includeHubEdges) {
+      addEdge({
+        source: sessId,
+        target: repoNodeId,
+        relation: "worked-in",
+        confidence: "EXTRACTED",
+        source_file: "agent-stats://session",
+        weight: 1,
+        ...temporal,
+      });
+    }
+
+    // agent node + conducted-by edge
+    const agentNodeId = nodeId("agent", s.agentId);
+    const agentIdAlreadyAtNode = agentIdByNodeId.get(agentNodeId);
+    if (agentIdAlreadyAtNode && agentIdAlreadyAtNode !== s.agentId) {
+      // `nodeId()` predates this projection and normalizes punctuation. Do not
+      // attach security-relevant evidence when that lossy form is ambiguous.
+      ambiguousAgentIds.add(agentIdAlreadyAtNode);
+      ambiguousAgentIds.add(s.agentId);
+    } else {
+      agentIdByNodeId.set(agentNodeId, s.agentId);
+    }
+    const agentId = addNode({
+      id: agentNodeId,
+      label: s.agentId,
+      file_type: "concept",
+      source_file: `agent-stats://agent/${s.agentId}`,
+      community: COMMUNITY.agent,
+      community_name: COMMUNITY_LABELS["2"]!,
+      node_type: "Agent",
+      host: s.host,
+      agent_kind: s.host,
+    });
+    agentNodeIdByAgentId.set(s.agentId, agentId);
+    agentSessions.set(agentId, (agentSessions.get(agentId) ?? 0) + 1);
+    if (includeHubEdges) {
+      addEdge({
+        source: sessId,
+        target: agentId,
+        relation: "conducted-by",
+        confidence: "EXTRACTED",
+        source_file: "agent-stats://session",
+        weight: 1,
+        ...temporal,
+      });
+    }
+
+    // branches
+    if (includeBranches) {
+      for (const b of s.branches) {
+        const bId = addNode({
+          id: nodeId("branch", `${identity.canonicalId}__${b}`),
+          label: b,
+          file_type: "rationale",
+          source_file: `agent-stats://branch/${b}`,
+          community: COMMUNITY.branch,
+          community_name: COMMUNITY_LABELS["4"]!,
+          node_type: "Branch",
+          project: identity.canonicalId,
+          repo: identity.aliases[aliasIdx]?.name,
+          lane: identity.aliases[aliasIdx]?.name,
+        });
+        addEdge({
+          source: sessId,
+          target: bId,
+          relation: "touched-branch",
+          confidence: "EXTRACTED",
+          source_file: "agent-stats://session",
+          weight: 1,
+          ...temporal,
+        });
+      }
+    }
+
+    // commits (ground-truth shas the session printed)
+    if (includeCommits) {
+      for (const sha of s.commitShas) {
+        // T2: a commit is a POINT in time — stamp `t` = `t_end` = its git
+        // committer-date (epoch-ms) when known. Setting `t_end === t` (vs
+        // omitting it) is the scene contract's point-in-time form and
+        // disambiguates a commit from an OPEN session (which omits `t_end` to
+        // mean "still running"). No matching git date → `{}` → no `t` key.
+        const sha7 = sha.slice(0, 7).toLowerCase();
+        const meta = commitMetaBySha7.get(sha7);
+        const ct = commitTimeBySha7.get(sha7);
+        const commitStamp: TemporalStamp =
+          ct !== undefined ? { t: ct, t_end: ct, t_src: COMMIT_TIME_SRC } : {};
+        const cId = addNode({
+          id: nodeId("commit", meta?.sha ?? sha),
+          label: (meta?.sha ?? sha).slice(0, 7),
+          file_type: "code",
+          source_file: `agent-stats://commit/${sha}`,
+          community: COMMUNITY.commit,
+          community_name: COMMUNITY_LABELS["5"]!,
+          node_type: "Commit",
+          sha: meta?.sha ?? sha,
+          subject: meta?.subject,
+          project: identity.canonicalId,
+          repo: identity.aliases[aliasIdx]?.name,
+          lane: identity.aliases[aliasIdx]?.name,
+          ...commitStamp,
+        });
+        addEdge({
+          source: sessId,
+          target: cId,
+          relation: "produced",
+          confidence: "EXTRACTED",
+          source_file: "agent-stats://ground-truth",
+          weight: 1,
+          ...temporal,
+        });
+      }
+    }
+  }
+
+  // 4. READ-ONLY h2a coordination evidence. This represents only a local
+  // registry record already selected while resolving an in-project session;
+  // it does not claim that the record is authentic, current, or knowledge.
+  // Registry order cannot affect the graph, and no temporal anchor is
+  // invented for an undated coordination record.
+  const coordinationIds = Array.from(
+    new Set(
+      (opts.h2aCoordinationEvidence ?? [])
+        .map((evidence) => evidence.instanceId)
+        .filter((instanceId): instanceId is string => typeof instanceId === "string" && instanceId.length > 0),
+    ),
+  ).sort(codePointCompare);
+  for (const instanceId of coordinationIds) {
+    if (ambiguousAgentIds.has(instanceId)) continue;
+    const agentNodeId = agentNodeIdByAgentId.get(instanceId);
+    if (!agentNodeId) continue;
+    const evidenceNodeId = addNode({
+      id: coordinationEvidenceNodeId(instanceId),
+      label: "h2a registry evidence",
+      file_type: "rationale",
+      source_file: H2A_REGISTRY_PROVENANCE,
+      community: COMMUNITY.coordinationEvidence,
+      community_name: COMMUNITY_LABELS["6"]!,
+      node_type: "CoordinationEvidence",
+      evidence_type: "h2a-instance-registry",
+      instance_id: instanceId,
+      provenance: H2A_REGISTRY_PROVENANCE,
+      scope: H2A_COORDINATION_SCOPE,
+      trust: H2A_COORDINATION_TRUST,
+    });
+    addEdge({
+      source: agentNodeId,
+      target: evidenceNodeId,
+      relation: "registered-in",
+      confidence: "EXTRACTED",
+      source_file: H2A_REGISTRY_PROVENANCE,
+      weight: 1,
+      provenance: H2A_REGISTRY_PROVENANCE,
+      scope: H2A_COORDINATION_SCOPE,
+      trust: H2A_COORDINATION_TRUST,
+    });
+  }
+
+  // 5. HYBRID GIT SKELETON: recent git DAG + session-produced commits.
+  // Commits come from the bounded git-log window plus any session shas the loader
+  // forced in. This is the real branch/commit ossature: commit -> parent and
+  // branch -> head commit. Branch/session attachment remains `touched-branch`.
+  if (includeCommits) {
+    for (const c of opts.commits ?? []) {
+      const sha7 = c.sha.slice(0, 7).toLowerCase();
+      const ct = commitTimeBySha7.get(sha7);
+      const commitStamp: TemporalStamp =
+        ct !== undefined ? { t: ct, t_end: ct, t_src: COMMIT_TIME_SRC } : {};
+      // addNode() is first-write-wins, and git-log order is NEWEST-first: a
+      // commit is usually created as an UNDATED `%P` parent stub of its child
+      // BEFORE its own log line is processed. Enrich the pre-existing node in
+      // place so the T2 committer-date stamp (and subject) still land on it —
+      // otherwise almost every skeleton commit silently loses `t`.
+      const existingSelf = nodes.get(nodeId("commit", c.sha));
+      if (existingSelf) {
+        if (existingSelf["subject"] === undefined && c.subject !== undefined) {
+          existingSelf["subject"] = c.subject;
+        }
+        if (existingSelf["t"] === undefined && ct !== undefined) Object.assign(existingSelf, commitStamp);
+      }
+      const cId = addNode({
+        id: nodeId("commit", c.sha),
+        label: c.sha.slice(0, 7),
+        file_type: "code",
+        source_file: `git://commit/${c.sha}`,
+        community: COMMUNITY.commit,
+        community_name: COMMUNITY_LABELS["5"]!,
+        node_type: "Commit",
+        sha: c.sha,
+        subject: c.subject,
+        project: identity.canonicalId,
+        repo: identity.aliases.at(-1)?.name,
+        lane: identity.aliases.at(-1)?.name,
+        skeleton: true,
+        ...commitStamp,
+      });
+      for (const parent of c.parentShas ?? []) {
+        const pId = addNode({
+          id: nodeId("commit", parent),
+          label: parent.slice(0, 7),
+          file_type: "code",
+          source_file: `git://commit/${parent}`,
+          community: COMMUNITY.commit,
+          community_name: COMMUNITY_LABELS["5"]!,
+          node_type: "Commit",
+          sha: parent,
+          project: identity.canonicalId,
+          repo: identity.aliases.at(-1)?.name,
+          lane: identity.aliases.at(-1)?.name,
+          skeleton: true,
+        });
+        addEdge({
+          source: cId,
+          target: pId,
+          relation: "commit-parent",
+          confidence: "EXTRACTED",
+          source_file: "git://log",
+          weight: 3,
+        });
+      }
+    }
+  }
+  if (includeBranches) {
+    for (const h of opts.branchHeads ?? []) {
+      const bId = addNode({
+        id: nodeId("branch", `${identity.canonicalId}__${h.name}`),
+        label: h.name,
+        file_type: "rationale",
+        source_file: `git://branch/${h.name}`,
+        community: COMMUNITY.branch,
+        community_name: COMMUNITY_LABELS["4"]!,
+        node_type: "Branch",
+        project: identity.canonicalId,
+        repo: identity.aliases.at(-1)?.name,
+        lane: identity.aliases.at(-1)?.name,
+        head_sha: h.sha,
+        skeleton: true,
+      });
+      const cId = addNode({
+        id: nodeId("commit", h.sha),
+        label: h.sha.slice(0, 7),
+        file_type: "code",
+        source_file: `git://commit/${h.sha}`,
+        community: COMMUNITY.commit,
+        community_name: COMMUNITY_LABELS["5"]!,
+        node_type: "Commit",
+        sha: h.sha,
+        project: identity.canonicalId,
+        repo: identity.aliases.at(-1)?.name,
+        lane: identity.aliases.at(-1)?.name,
+        skeleton: true,
+      });
+      addEdge({
+        source: bId,
+        target: cId,
+        relation: "branch-head",
+        confidence: "EXTRACTED",
+        source_file: "git://for-each-ref",
+        weight: 4,
+      });
+    }
+  }
+
+  // 6. derived-from edges between sessions (codex sub-agent lineage).
+  for (const s of opts.sessions) {
+    if (!s.parentThreadId) continue;
+    const childNode = sessionNodeBySessionId.get(s.sessionId);
+    const parentNode = sessionNodeBySessionId.get(s.parentThreadId);
+    if (childNode && parentNode && childNode !== parentNode) {
+      addEdge({
+        source: childNode,
+        target: parentNode,
+        relation: "derived-from",
+        confidence: "INFERRED",
+        source_file: "agent-stats://parentage",
+        weight: 1,
+        // Owned by the CHILD (source) session: the derivation exists because the
+        // child declared a parent, so it carries the child session's t/t_end.
+        ...(temporalBySessionId.get(s.sessionId) ?? {}),
+      });
+    }
+  }
+
+  // 7. T2 DERIVED-SPAN second pass — pure over the structure built above, so the
+  //    builder stays deterministic. Container nodes get t = min / t_end = max
+  //    (FIRST / LAST activity) over their owned children's timestamps:
+  //      • Branch  ← the sessions that touched it (touched-branch) PLUS the
+  //                  commits those sessions produced — a branch's span covers
+  //                  both its sessions' intervals and its commits' points;
+  //      • Agent   ← the sessions it conducted (conducted-by);
+  //      • Project ← every in-identity session (global envelope; cheap, single
+  //                  project node).
+  //    A container with no timestamped child gets NO `t` key (byte-identical
+  //    back-compat). This stamps NODES ONLY — no new EDGE timestamps are
+  //    introduced, so the T0 edge dedup / first-touch semantics are untouched.
+  const nodeBound = (id: string, key: "t" | "t_end"): number | undefined => {
+    const v = nodes.get(id)?.[key];
+    return typeof v === "number" ? v : undefined;
+  };
+  const producedBySession = new Map<string, string[]>(); // session → commit ids
+  const sessionsByBranch = new Map<string, string[]>(); //  branch  → session ids
+  const sessionsByAgent = new Map<string, string[]>(); //   agent   → session ids
+  const pushTo = (m: Map<string, string[]>, k: string, v: string) => {
+    const arr = m.get(k);
+    if (arr) arr.push(v);
+    else m.set(k, [v]);
+  };
+  for (const e of links) {
+    if (e.relation === "produced") pushTo(producedBySession, e.source, e.target);
+    else if (e.relation === "touched-branch") pushTo(sessionsByBranch, e.target, e.source);
+    else if (e.relation === "conducted-by") pushTo(sessionsByAgent, e.target, e.source);
+  }
+  const applySpan = (id: string, stamp: TemporalStamp) => {
+    if (stamp.t === undefined) return; // no timestamped child → stay timeless
+    const n = nodes.get(id);
+    if (!n) return;
+    n.t = stamp.t;
+    if (stamp.t_end !== undefined) n.t_end = stamp.t_end;
+    n.t_src = stamp.t_src;
+  };
+  // Every in-identity session's bounds, collected once for the Project envelope.
+  const allSessionBounds: (number | undefined)[] = [];
+  for (const n of nodes.values()) {
+    if (n.node_type !== "Session") continue;
+    allSessionBounds.push(nodeBound(n.id, "t"), nodeBound(n.id, "t_end"));
+  }
+  for (const n of nodes.values()) {
+    if (n.node_type === "Branch") {
+      const bounds: (number | undefined)[] = [];
+      for (const sid of sessionsByBranch.get(n.id) ?? []) {
+        bounds.push(nodeBound(sid, "t"), nodeBound(sid, "t_end"));
+        for (const cid of producedBySession.get(sid) ?? []) bounds.push(nodeBound(cid, "t"));
+      }
+      applySpan(n.id, envelope(bounds));
+    } else if (n.node_type === "Agent") {
+      const bounds: (number | undefined)[] = [];
+      for (const sid of sessionsByAgent.get(n.id) ?? []) {
+        bounds.push(nodeBound(sid, "t"), nodeBound(sid, "t_end"));
+      }
+      applySpan(n.id, envelope(bounds));
+    } else if (n.node_type === "Project") {
+      applySpan(n.id, envelope(allSessionBounds));
+    }
+  }
+
+  const nodeList = Array.from(nodes.values());
+
+  // F9 (owner GO): PRODUCE the `earned` tier on git-evidence ground-truth nodes.
+  // Additive + first-write-wins: a node already declaring a tier (e.g.
+  // coordination `unverified`) is left untouched, and Agent — outside the
+  // owner's set — is never stamped. This declares NO type in-force; the
+  // fail-closed-on-untagged posture (violatesTrustTier) stays owner-gated per
+  // type, pending measured impact. Stamping alone only activates the
+  // both-sides-tagged rejection the §1 invariant already intends.
+  for (const n of nodeList) {
+    if (n.trust === undefined && EARNED_NODE_TYPES.has(n.node_type)) {
+      n.trust = EARNED_TRUST;
+    }
+  }
+
+  const topology = `n=${nodeList.length};e=${links.length}`;
+
+  return {
+    directed: true,
+    multigraph: false,
+    graph: {
+      provenance: opts.provenance,
+      community_labels: COMMUNITY_LABELS,
+    },
+    topology_signature: topology,
+    nodes: nodeList,
+    links,
+    hyperedges: [],
+  };
+}
