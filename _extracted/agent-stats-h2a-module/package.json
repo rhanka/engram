@@ -1,0 +1,10 @@
+{
+  "name": "agent-stats-h2a-module-staging",
+  "private": true,
+  "type": "module",
+  "description": "Extracted h2a-coupled agent activity module; not published from Graphify.",
+  "exports": {
+    "./api": "./src/index.ts",
+    "./cli": "./src/cli.ts"
+  }
+}

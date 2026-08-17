@@ -15,8 +15,8 @@ import {
   PROJECT_GRAPH_SCHEMA,
   type ProjectIdentity,
   type SessionInput,
-} from "../src/agent-stats/project-graph.js";
-import type { SessionFact } from "../src/agent-stats/types.js";
+} from "../_extracted/agent-stats-h2a-module/src/project-graph.js";
+import type { SessionFact } from "../_extracted/agent-stats-h2a-module/src/types.js";
 import { buildStudioScene } from "../src/studio-scene.js";
 
 const sentropicIdentity: ProjectIdentity = {
