@@ -5,6 +5,7 @@
  * source. Signatures here are normative for the storage layer.
  */
 import type Graph from "graphology";
+import type { TemporalIntervalConvention } from "../temporal-interval.js";
 
 /**
  * NORMATIVE — what a capability means, and what it deliberately does NOT mean.
@@ -215,6 +216,8 @@ export interface GraphTimeWindowEdge {
 
 /** Result of a temporal overlap query. Untimed/invalid elements are excluded. */
 export interface GraphTimeWindow {
+  /** Present on native temporal projections; all use the closed-v1 convention. */
+  interval_convention?: TemporalIntervalConvention;
   nodes: GraphTimeWindowNode[];
   edges: GraphTimeWindowEdge[];
 }

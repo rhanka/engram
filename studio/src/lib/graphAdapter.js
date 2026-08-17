@@ -21,6 +21,11 @@
  */
 
 import { computeLayout } from "@graphify/graph-layout";
+import {
+  closedTemporalBounds,
+  closedTemporalProjectionMetadata,
+  isActiveAtClosedTemporalCursor,
+} from "../../../src/temporal-interval.ts";
 
 // Single source of truth for community/group → colour. The legend swatch
 // (computeCommunityStats below) and the canvas node fill (graphRendererPayload)
@@ -530,7 +535,7 @@ export function buildScene(graph, options = {}) {
   });
 
   const cstats = communityStats(graph);
-  return {
+  const scene = {
     nodes,
     edges: sceneEdges,
     // BUG B: the SINGLE source of truth community → colour map, emitted in the
@@ -549,6 +554,10 @@ export function buildScene(graph, options = {}) {
       communityCount: cstats.liveCount,
     },
   };
+  if ([...nodes, ...sceneEdges].some((element) => closedTemporalBounds(element) !== undefined)) {
+    scene.temporal = closedTemporalProjectionMetadata();
+  }
+  return scene;
 }
 
 /**
@@ -718,9 +727,10 @@ function finiteTime(value) {
 }
 
 /**
- * Temporal bounds of a scene — the [min, max] of every finite `t` (#234) across
- * nodes AND edges. Returns null when NO element carries a finite `t`; the
- * time-scrub control reads this to HIDE itself (no-op on non-temporal graphs).
+ * Temporal bounds of a scene — the minimum finite start and maximum finite end
+ * (falling back to start for an open end) across nodes AND edges. Returns null
+ * when NO element carries a valid closed interval; the time-scrub control then
+ * hides itself (no-op on non-temporal graphs).
  * @param {{ nodes?: object[], edges?: object[] } | null | undefined} scene
  * @returns {{ min: number, max: number } | null}
  */
@@ -730,10 +740,11 @@ export function sceneTimeRange(scene) {
   let max = -Infinity;
   const scan = (items) => {
     for (const it of items ?? []) {
-      const t = finiteTime(it && it.t);
-      if (t === null) continue;
-      if (t < min) min = t;
-      if (t > max) max = t;
+      const bounds = closedTemporalBounds(it);
+      if (!bounds) continue;
+      if (bounds.t < min) min = bounds.t;
+      const end = bounds.tEnd ?? bounds.t;
+      if (end > max) max = end;
     }
   };
   scan(scene.nodes);
@@ -743,11 +754,13 @@ export function sceneTimeRange(scene) {
 
 /**
  * Time-scrub filter — restrict a scene to what is visible AT a cursor instant
- * (epoch-ms). An element is shown iff it is UNTIMED (no finite `t` — timeless
- * scaffolding) OR its `t` ≤ cursor; an edge additionally needs both endpoints
- * visible. Mirrors {@link applyWeakFilter}: it takes the FULL scene and returns
- * a NEW scene with the same node attributes but a filtered node/edge set +
- * updated stats, re-fed through the SAME render path (no renderer API).
+ * (epoch-ms). With an active filter, an element is shown exactly when its valid
+ * interval contains the cursor under closed-v1 `[t, t_end]` semantics; untimed,
+ * malformed, and inverted elements are excluded. An edge additionally needs
+ * both endpoints visible. Mirrors {@link applyWeakFilter}: it takes the FULL
+ * scene and returns a NEW scene with the same node attributes but a filtered
+ * node/edge set + updated stats, re-fed through the SAME render path (no renderer
+ * API).
  *
  * A null / non-finite cursor is the OFF state → the scene is returned UNCHANGED
  * (the same object), so the default view stays byte-identical until the user
@@ -762,15 +775,12 @@ export function applyTimeFilter(scene, cursor) {
   const c = finiteTime(cursor);
   if (c === null) return scene;
 
-  const visibleByTime = (t) => {
-    const ft = finiteTime(t);
-    return ft === null || ft <= c;
-  };
+  const visibleByTime = (element) => isActiveAtClosedTemporalCursor(element, c);
 
-  const nodes = (scene.nodes ?? []).filter((n) => visibleByTime(n && n.t));
+  const nodes = (scene.nodes ?? []).filter((node) => visibleByTime(node));
   const keptIds = new Set(nodes.map((n) => n.id));
   const edges = (scene.edges ?? []).filter(
-    (e) => keptIds.has(e.source) && keptIds.has(e.target) && visibleByTime(e && e.t),
+    (edge) => keptIds.has(edge.source) && keptIds.has(edge.target) && visibleByTime(edge),
   );
 
   return {

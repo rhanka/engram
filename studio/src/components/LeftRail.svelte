@@ -600,9 +600,9 @@
       Show weak (inferred) links
     </label>
 
-    <!-- Time-scrub (opt-in): hidden unless the scene carries temporal `t` (#234).
-         Moving the cursor filters the graph to elements with t ≤ cursor via the
-         existing scene → render path (graphAdapter.applyTimeFilter). -->
+    <!-- Time-scrub (opt-in): hidden unless the scene carries a valid temporal interval.
+         Moving the cursor filters by closed [t, t_end] membership via the existing
+         scene → render path (graphAdapter.applyTimeFilter). -->
     <TimeScrub range={timeRange} cursor={timeCursor} onSetCursor={onSetTimeCursor} />
 
     <!-- B2 (per-item): group-by is NOT a separate axis sub-menu anymore — every

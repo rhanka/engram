@@ -1,0 +1,40 @@
+{
+  "name": "graphify-memory",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./contracts": {
+      "types": "./contracts/dist/index.d.ts"
+    },
+    "./service": {
+      "types": "./dist/service.d.ts",
+      "import": "./dist/service.js"
+    },
+    "./sqlite": {
+      "types": "./dist/sqlite.d.ts",
+      "import": "./dist/sqlite.js"
+    },
+    "./postgres": {
+      "types": "./dist/postgres.d.ts",
+      "import": "./dist/postgres.js"
+    }
+  },
+  "files": [
+    "dist",
+    "contracts/dist"
+  ],
+  "scripts": {
+    "build": "npm --prefix contracts run build && tsc -p tsconfig.json",
+    "typecheck": "npm --prefix contracts run typecheck && tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "fs-ext": "^2.1.1",
+    "pg": "^8.23.0"
+  }
+}
