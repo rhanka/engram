@@ -40,7 +40,7 @@
     "test:pipeline": "vitest run tests/pipeline.test.ts",
     "test:all": "vitest run && npm run test:smoke",
     "prepublishOnly": "npm run build && node scripts/assert-studio-app.mjs && npm test",
-    "postinstall": "npm --prefix graphify-memory install --no-audit --no-fund"
+    "postinstall": "node -e \"if(require('fs').existsSync('graphify-memory/package.json'))require('child_process').execSync('npm --prefix graphify-memory install --no-audit --no-fund',{stdio:'inherit'})\""
   },
   "keywords": [
     "claude",
