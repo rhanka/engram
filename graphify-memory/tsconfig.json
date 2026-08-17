@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "outDir": "./dist",
+    "rootDir": "."
+  },
+  "include": [
+    "index.ts",
+    "canonical-json.ts",
+    "digests.ts",
+    "schemas.ts",
+    "validation.ts",
+    "dual-as-of.ts",
+    "memory-store.ts",
+    "engine.ts",
+    "recall.ts",
+    "migration.ts",
+    "projection.ts",
+    "service.ts",
+    "sqlite.ts",
+    "postgres.ts",
+    "sqlite-native.d.ts",
+    "pg.d.ts",
+    "node-fs.d.ts",
+    "node-crypto.d.ts"
+  ]
+}

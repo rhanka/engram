@@ -52,6 +52,12 @@
  * and the SPA parity (graphAdapter.js buildScene) are unaffected.
  */
 
+import {
+  closedTemporalBounds,
+  closedTemporalProjectionMetadata,
+  type TemporalProjectionMetadata,
+} from "./temporal-interval.js";
+
 // ---------------------------------------------------------------------------
 // Input shapes (loose — we only read the fields the adapter reads).
 // ---------------------------------------------------------------------------
@@ -181,6 +187,8 @@ export interface StudioScene {
    */
   communityColors: Record<string, string>;
   stats: StudioSceneStats;
+  /** Stamped when this scene carries one or more valid temporal intervals. */
+  temporal?: TemporalProjectionMetadata;
   /**
    * Shared scene contract (additive, opt-in) — identity of the precomputed
    * layout these node x/y(/z) coordinates came from. Carried through from the
@@ -766,6 +774,9 @@ export function buildStudioScene(
   if (layoutId) scene.layout_id = layoutId;
   const layoutDims = graph?.layout_dims;
   if (layoutDims === 2 || layoutDims === 3) scene.layout_dims = layoutDims;
+  if ([...nodes, ...sceneEdges].some((element) => closedTemporalBounds(element) !== undefined)) {
+    scene.temporal = closedTemporalProjectionMetadata();
+  }
 
   return scene;
 }

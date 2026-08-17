@@ -9,7 +9,7 @@ const T0 = Date.UTC(1887, 2, 1);
 const T1 = Date.UTC(1891, 4, 4);
 const T2 = Date.UTC(1893, 11, 1);
 
-/** A scene with temporal `t` (#234) on nodes + edges, plus one UNTIMED node. */
+/** A scene with closed temporal spans on nodes + edges, plus one untimed node. */
 function temporalScene() {
   return {
     nodes: [
@@ -48,30 +48,27 @@ describe("sceneTimeRange — control visibility source", () => {
   });
 });
 
-describe("applyTimeFilter — filter the displayed graph to t <= cursor", () => {
-  it("keeps elements with t <= cursor (and untimed), drops t > cursor", () => {
+describe("applyTimeFilter — closed temporal interval membership", () => {
+  it("keeps elements whose closed interval contains the cursor and drops untimed elements", () => {
     const filtered = applyTimeFilter(temporalScene(), T1);
     const ids = filtered.nodes.map((n: { id: string }) => n.id).sort();
-    // a (T0) and b (T1) are <= cursor; u is untimed (kept); c (T2) is dropped.
-    expect(ids).toEqual(["a", "b", "u"]);
-    // Edges: a-b (T1) kept; b-c (T2) dropped (and endpoint c gone); a-u (untimed) kept.
+    // a (T0) and b (T1) contain the cursor; untimed u and future c are dropped.
+    expect(ids).toEqual(["a", "b"]);
+    // a-b contains the cursor; b-c is future and a-u is untimed.
     const edgeKeys = filtered.edges
       .map((e: { source: string; target: string }) => `${e.source}-${e.target}`)
       .sort();
-    expect(edgeKeys).toEqual(["a-b", "a-u"]);
+    expect(edgeKeys).toEqual(["a-b"]);
     // Stats reflect the filtered subset.
-    expect(filtered.stats.nodeCount).toBe(3);
-    expect(filtered.stats.edgeCount).toBe(2);
+    expect(filtered.stats.nodeCount).toBe(2);
+    expect(filtered.stats.edgeCount).toBe(1);
   });
 
-  it("drops an edge whose endpoint is filtered out even if the edge is untimed", () => {
+  it("drops an untimed edge even when both endpoints would otherwise be visible", () => {
     const filtered = applyTimeFilter(temporalScene(), T0);
     const ids = filtered.nodes.map((n: { id: string }) => n.id).sort();
-    expect(ids).toEqual(["a", "u"]); // only T0 + untimed survive
-    // a-b drops (b gone), b-c drops, a-u survives (both endpoints present).
-    expect(filtered.edges.map((e: { source: string; target: string }) => `${e.source}-${e.target}`)).toEqual([
-      "a-u",
-    ]);
+    expect(ids).toEqual(["a"]); // only T0 contains the cursor
+    expect(filtered.edges).toEqual([]);
   });
 
   it("a null / non-finite cursor is OFF — returns the SAME scene unchanged", () => {
@@ -81,9 +78,9 @@ describe("applyTimeFilter — filter the displayed graph to t <= cursor", () => 
     expect(applyTimeFilter(scene, Number.NaN)).toBe(scene);
   });
 
-  it("at the max cursor every element is visible (whole graph)", () => {
+  it("at the max cursor all timed elements are visible while untimed scaffolding remains excluded", () => {
     const filtered = applyTimeFilter(temporalScene(), T2);
-    expect(filtered.nodes).toHaveLength(4);
-    expect(filtered.edges).toHaveLength(3);
+    expect(filtered.nodes).toHaveLength(3);
+    expect(filtered.edges).toHaveLength(2);
   });
 });
