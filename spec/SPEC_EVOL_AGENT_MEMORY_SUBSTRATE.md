@@ -14,7 +14,7 @@ The capability is published as the independent package `graphify-memory`, rooted
 
 - `graphify-memory/contracts`: data-only DTOs, port signatures, errors, and receipts; it has no runtime imports;
 - `graphify-memory`: the engine and pure algorithms; it depends only on `contracts` and injected ports;
-- `graphify-memory/service`: the neutral service host and local administration surface;
+- `graphify-memory/integration`: the neutral integration surface an external host instantiates — factories, types, and ports only. It carries no process, listener, supervisor, signal handler, credential store, or consumer import, and confers no server semantics; the external host, not graphify, supplies any process, supervision, or transport;
 - `graphify-memory/sqlite` and `graphify-memory/postgres`: canonical-store adapters with their driver dependencies isolated from `contracts` and the engine.
 
 The package has no dependency on the existing root entrypoint, graphology, a coordination library, an identity library, a design system, or a model-routing library. The root entrypoint may depend on `graphify-memory`; the reverse edge is forbidden. Projection bridges may depend on both sides but are not re-exported by `graphify-memory`.
@@ -31,26 +31,36 @@ The hard boundary is accepted only when all of the following hold:
 
 An import-only test is insufficient. L0 must scan the packed tarball, its dependency lock closure, emitted declarations, generated schemas, source maps, fixtures, and examples.
 
-### D2 — Exactly three neutral deployment modes
+### D2 — Exactly two neutral deployment modes
 
 | Mode | Process boundary | Canonical store | Administrative provider |
 |---|---|---|---|
-| `embedded-local` | engine in the caller process | SQLite adapter | injected neutral ports |
-| `standalone-service` | graphify-owned local service | SQLite adapter | graphify local administrator |
-| `managed-service` | independently supervised service | Postgres adapter | injected neutral ports |
+| `embedded-local` | engine and adapter in the caller process (library); no server | SQLite adapter | injected neutral ports (incl. injected `AdminProviderPort`) |
+| `external-host` | engine and adapters instantiated in an external host process via injected ports; graphify provides no server, supervisor, or listener | SQLite adapter (single-node) or Postgres adapter | injected neutral ports (host-supplied `AdminProviderPort`) |
 
-No other mode name is normative. A projection backend is not a canonical-memory backend. `managed-service` is not supported until the Postgres canonical-store parity gate in L6 passes.
+No other mode name is normative. `standalone-service` and `managed-service` are retired. `cluster-mesh`, `nu`, and `h2a` are integration material, outside this specification's normative text. A projection backend is not a canonical-memory backend. Backend selection (SQLite or Postgres) is host configuration, not a mode. `external-host` is strictly graphify's process boundary — not a deployment model; supervision, high availability, and networking are orthogonal host profiles (D-B). The `external-host` Postgres backend is not supported until the Postgres canonical-store parity gate in L6 passes.
 
-The graphify local administrator implements the same `AuthorizationPort`, `AdmissionPolicy`, `EvidenceVerifierPort`, `CryptoPort`, and maintenance interfaces as any injected provider:
+Any injected `AdminProviderPort` (§5.10) — together with the `AuthorizationPort`, `AdmissionPolicy`, `EvidenceVerifierPort`, `CryptoPort`, and maintenance interfaces it configures — MUST satisfy these six normative requirements, in `embedded-local` and `external-host` alike:
 
-- bootstrap is default-deny; a new store has no usable authority;
-- initialization requires an exclusive local console, an empty administration state, the active storage fence, and an explicit `admin init` operation;
-- a random 256-bit credential is placed in the operating-system credential store, or in a user-selected file created atomically with owner-only permissions when no credential store is available; credentials are never accepted from command-line arguments, environment variables, logs, or ordinary configuration files;
+- bootstrap is default-deny: a new store has no usable authority; `AdminProviderPort.bootstrap` requires an empty administration state and confers authority only through an explicit bootstrap operation, before any valid receipt exists;
 - authorization receipts live for at most five minutes and bind the current authorization epoch;
-- rotation creates a new credential and atomically increments the epoch; revocation records a credential digest and increments the epoch; all earlier receipts then fail revalidation;
+- rotation creates a new credential binding and atomically increments the epoch; revocation records a credential digest and increments the epoch; all earlier receipts then fail revalidation;
 - loss of the credential has no bypass path. Recovery is a separate, explicitly authorized restore operation using a verified backup manifest;
-- local admission may be configured by policy, but Graphify sees only the decision envelope in §5.3;
-- local redaction defaults to the minimal allowlist and omits derivation lineage unless an explicit policy allows it.
+- admission may be configured by policy, but Graphify sees only the six-field decision envelope in §5.3;
+- redaction defaults to the minimal allowlist and omits derivation lineage unless an explicit policy allows it.
+
+The host — never graphify — carries two custody obligations:
+
+- the random 256-bit credential is placed in the operating-system credential store, or in a user-selected file created atomically with owner-only permissions when no credential store is available; credentials are never accepted from command-line arguments, environment variables, logs, or ordinary configuration files;
+- console bootstrap runs on an exclusive local console and only under the active storage fence.
+
+### D-A — SQLite `external-host` is single-node; multi-node requires Postgres
+
+SQLite `external-host` is single-node only. The D8 fence (`flock` kernel lock, `storage_epoch`) is local-node; the D8 filesystem refusals (NFS, SMB, FUSE, removable, unknown) bind the external host, which MUST place the `.db` on a supported local filesystem. Separate nodes hold separate `.db` files and do not share canonical state. Multi-node therefore requires the Postgres backend. A movable local filesystem attached exclusively with drain, attach, and digest verification is a closed alternative and is out of scope for v1.
+
+### D-B — Graphify makes no supervision or availability guarantee
+
+Graphify gives no supervision, high-availability, or reachability guarantee. `external-host` is a process boundary only. Process supervision, restart, networking, and high availability are host obligations expressed as a host deployment profile, outside graphify's contract. Wire delivery of receipts to remote consumers is likewise a host obligation and never an API graphify exposes; if graphify exposed it, graphify would again be a server.
 
 ### D3 — One canonical journal; all search surfaces are projections
 
@@ -86,7 +96,7 @@ These commits are evidence/intake pins, not a claim that their combined tree is 
 
 **System time** states when Graphify recorded knowledge of a fact. A writer allocates a gap-free unsigned 64-bit journal cursor, represented in JSON as a canonical decimal string without leading zeroes. An event is visible at `system_as_of = s` iff `event.cursor <= s`; the boundary is inclusive. `recorded_at` is a writer-assigned RFC 3339 UTC instant with millisecond precision, monotonically non-decreasing with cursor, but the cursor is the ordering authority. Events with equal `recorded_at` remain ordered by cursor.
 
-A dual-as-of read first folds exactly the events with cursor `<= system_as_of`, then applies valid-time membership at `valid_as_of`. Defaults are captured once at the start of a recall sequence: `system_as_of` defaults to the current high-water cursor and `valid_as_of` defaults to the service clock at that cursor. The first page receipt pins both values; later pages must reuse them or fail with `STALE_PAGE`. No event recorded after `system_as_of` may affect eligibility, reconciliation, ranking, redaction, or projection inputs for that read.
+A dual-as-of read first folds exactly the events with cursor `<= system_as_of`, then applies valid-time membership at `valid_as_of`. Defaults are captured once at the start of a recall sequence: `system_as_of` defaults to the current high-water cursor and `valid_as_of` defaults to the engine clock (`ClockPort`) at that cursor. The first page receipt pins both values; later pages must reuse them or fail with `STALE_PAGE`. No event recorded after `system_as_of` may affect eligibility, reconciliation, ranking, redaction, or projection inputs for that read.
 
 Supersession, non-current marking, rewind, expiry, trust invalidation, and tombstone act on system time from their journal cursor. A transition may also carry `valid_effective_at`; when present, it changes valid-currentness at and after that closed valid-time boundary. Tombstone dominates every state at and after its system cursor, regardless of valid time. A read at an earlier system cursor remains reconstructible when retention permits it.
 
@@ -256,7 +266,9 @@ export type Result<T> =
   | { ok: false; error: MemoryErrorV1 };
 ```
 
-Unknown errors are mapped to `STORE_UNAVAILABLE` or `CAPABILITY_UNAVAILABLE`, never exposed as an untyped throw across a public port. Validation may throw only for programmer misuse of the in-process interface; service and storage boundaries always return `Result`.
+Unknown errors are mapped to `STORE_UNAVAILABLE` or `CAPABILITY_UNAVAILABLE`, never exposed as an untyped throw across a public port. Validation may throw only for programmer misuse of the in-process interface; host and storage boundaries always return `Result`.
+
+The `admin` operation dispatches to the injected `AdminProviderPort` (§5.10): it bootstraps, rotates, or revokes administrative authority. Graphify defines no built-in administrator; `admin init` is exactly `AdminProviderPort.bootstrap` under an active storage fence. The operation is default-deny — Graphify refuses `admin` with `UNAUTHORIZED` until that port returns a valid receipt, and refuses with `CAPABILITY_UNAVAILABLE` when no `AdminProviderPort` is injected.
 
 ### 5.2 AuthorizationPort — opaque input, normalized result
 
@@ -768,6 +780,26 @@ export interface CanonicalMemoryStorePort {
   close(): Promise<Result<{ closed: true }>>;
 }
 
+// (new in this amendment) A production CanonicalMemoryStorePort is not constructed directly by
+// the host: it is acquired through a graphify-owned factory that takes the storage fence at
+// construction. The host runs the factory in-process as a library and never re-implements the
+// broker. See the fenced-store lifecycle contract below.
+export interface FencedStoreConstructionV1 {
+  store_id: OpaqueRef;                          // canonical store identity (opaque: real path or DSN reference)
+  backend: "sqlite" | "postgres";
+  deadline_at: Instant;
+}
+
+export interface CanonicalMemoryStoreFactoryV1 {
+  readonly version: 1;
+  readonly adapter_id: OpaqueRef;               // graphify-owned adapter identity
+  readonly adapter_version: string;
+  // Acquires the storage fence and returns a live fenced store, or fails (FENCE_LOST /
+  // STORE_UNAVAILABLE) when a live holder already exists. The returned receipt from
+  // readiness() carries the attested adapter binding (§5.9).
+  acquire(input: FencedStoreConstructionV1): Promise<Result<CanonicalMemoryStorePort>>;
+}
+
 export type AdmissionStoreInputV1 =
   | {
       outcome: "accept";
@@ -789,6 +821,15 @@ export type AdmissionStoreInputV1 =
 Promotion is one store transaction: authenticate and revalidate receipts; verify envelope, payload, and record digests; insert the immutable blob; append the journal event; update folded state; insert the accepted-only lexical document; enqueue the projection batch; destroy or retire the pending key; commit; then return the transaction receipt. An injected failpoint at any step must leave all six surfaces unchanged. Rejection atomically changes only candidate control and destroys its body key; it never creates a lexical or projection row.
 
 The store is the final eligibility authority. Rank order is never authorization. Every ranked id is revalidated against canonical state, dual time, retention, trust receipt, tombstone ledger, and a freshly revalidated authorization receipt immediately before packet materialization.
+
+**Fenced-store lifecycle contract (new in this amendment).** In `external-host`, the host reuses the graphify fenced broker as a library; the `flock` (D8, SQLite) or store-generation advisory lock (D9, Postgres) is held by the host process that runs the graphify broker code, never by a host re-implementation. Beyond `close()`, the port carries this normative lifecycle:
+
+- **Acquisition at construction.** `CanonicalMemoryStoreFactoryV1.acquire` takes the storage fence when the store is constructed; it refuses if a live holder already exists. This is the two-halves acquisition acceptance in L4, and it remains graphify-owned.
+- **Single-broker-instance rule.** At most one live broker instance per store per process. A second live holder — in-process or cross-process — is refused, not queued.
+- **Write serialization.** The acquired instance serializes all mutating operations behind the fence; concurrent writers are refused, never interleaved.
+- **Reader-lease revocation.** The acquired instance owns reader leases; detached snapshot and backup readers hold finite, revocable leases tied to the current `storage_epoch` and are revoked on fence transition.
+- **`FENCE_LOST` is terminal.** On lock loss or epoch mismatch the instance returns `FENCE_LOST` and performs no further SQL. Graphify never silently re-acquires: the host MUST discard the instance and reconstruct a fresh one (host restart) to obtain a new fence.
+- **No unfenced fallback.** The unfenced pure-SQL variant is forbidden (§5.9). A store that cannot present a fresh fenced capability receipt refuses every fencing-dependent operation with `CAPABILITY_UNAVAILABLE`; it never degrades to raw SQL. Host process supervision and restart are host obligations (D-B).
 
 ### 5.8 Projection ports remain data-pure
 
@@ -934,6 +975,10 @@ export interface OperationalCapabilityReceiptV1 {
   storage_epoch: Cursor;
   high_water_cursor: Cursor;
   capabilities: CanonicalStoreCapabilitiesV1;
+  adapter_id: OpaqueRef;                        // (new in this amendment) graphify-owned adapter identity
+  adapter_version: string;                      // (new in this amendment) adapter release version
+  adapter_build_digest: Digest;                 // (new in this amendment) digest of the adapter implementation/build
+  attestation_signature: string;               // (new in this amendment) signature over receipt_digest, verifiable against adapter_id; binds identity + version + store
   issued_at: Instant;
   expires_at: Instant;
   receipt_digest: Digest;
@@ -947,6 +992,7 @@ export interface MemoryEngineDependenciesV2 {
   canonical_store: CanonicalMemoryStorePort;
   authorization: AuthorizationPort;
   admission_policy: AdmissionPolicy;
+  admin_provider?: AdminProviderPort;           // (new in this amendment) dispatch target of MemoryOperation "admin"; absent = default-deny
   evidence_verifier?: EvidenceVerifierPort;
   crypto: CryptoPort;
   activity_sources: ReadonlyArray<ActivityEvidenceSource>;
@@ -970,6 +1016,53 @@ A local recovery checkpoint is a complete fold checkpoint: it includes encrypted
 Portable logical backup is distinct. It uses a detached, cursor-pinned snapshot and an allowlist. It includes every retained accepted current, disputed, and historical record needed for the supported dual-as-of window, plus terminal ledgers required to prevent resurrection. It excludes pending/rejected/withdrawn envelopes, FTS, graph/vector projections, caches, and aggregates. `BackupKeyPort` seals each logical object before `BackupObjectPort` receives it; the object provider never receives plaintext, and Graphify never interprets the key or target reference. Restore verifies schema versions, manifest digest, exclusion counts, roots, key and object receipts, terminal dominance, and replay equivalence before readiness.
 
 Operations that require fencing, revocable readers, detached snapshots, accepted-only lexical input, or bounded cancellation refuse with `CAPABILITY_UNAVAILABLE` when a fresh capability receipt lacks them. There is no unfenced, raw-FTS, stale-projection, or unranked fallback.
+
+**Capability attestation (new in this amendment).** In production, `CanonicalStoreCapabilitiesV1.fenced_single_writer` is not a self-asserted boolean: a caller cannot claim fencing by setting a flag. A production `external-host` store is admitted for fencing-dependent operations only when it was constructed through a graphify-owned `CanonicalMemoryStoreFactoryV1` (§5.7) **or** presents an attested `OperationalCapabilityReceiptV1` whose `attestation_signature` binds the graphify-owned adapter identity, adapter version, and store (`adapter_id`, `adapter_version`, `adapter_build_digest`, `store_id`, `storage_epoch`). A custom or test store may still assert `fenced_single_writer`, but a bare boolean can never satisfy production fencing without that bound attestation. Because the factory arm is only enforceable when the factory itself emits the bound attestation, the attested `OperationalCapabilityReceiptV1` is the single verification path: readiness verifies the signature against the adapter identity and rejects a receipt whose adapter binding, store, or epoch does not match the live store, exactly as an unfenced store is rejected.
+
+### 5.10 AdminProviderPort — neutral bootstrap, rotation, revocation
+
+```ts
+export interface AdminBootstrapRequestV1 {
+  store_id: OpaqueRef;                          // canonical store this authority governs
+  storage_epoch: Cursor;                        // must equal the active fence epoch
+  admin_credential_ref: OpaqueRef;              // opaque host-custodied reference; never a raw secret
+  deadline_at: Instant;
+}
+
+export interface AdminRotateRequestV1 {
+  store_id: OpaqueRef;
+  current_authorization_epoch: Cursor;
+  authorization: AuthorizationContextV1;
+  deadline_at: Instant;
+}
+
+export interface AdminRevokeRequestV1 {
+  store_id: OpaqueRef;
+  current_authorization_epoch: Cursor;
+  credential_digest: Digest;                    // credential binding to revoke
+  authorization: AuthorizationContextV1;
+  deadline_at: Instant;
+}
+
+export interface AdminEpochReceiptV1 {
+  store_id: OpaqueRef;
+  operation: "bootstrap" | "rotate" | "revoke";
+  authorization_epoch: Cursor;                  // new/current epoch after the operation
+  credential_digest: Digest;                    // digest of the credential binding; never the secret
+  issued_at: Instant;
+  expires_at: Instant;                          // at most five minutes after issued_at
+  receipt_digest: Digest;
+}
+
+export interface AdminProviderPort {
+  readonly version: 1;
+  bootstrap(request: AdminBootstrapRequestV1): Promise<Result<AdminEpochReceiptV1>>;
+  rotate(request: AdminRotateRequestV1): Promise<Result<AdminEpochReceiptV1>>;
+  revoke(request: AdminRevokeRequestV1): Promise<Result<AdminEpochReceiptV1>>;
+}
+```
+
+`AdminProviderPort` is a neutral injected interface (new in this amendment): it is the appellable contract that `MemoryOperation."admin"` dispatches to (§5.1), replacing the retired built-in local administrator. Both `embedded-local` and `external-host` supply it by injection; graphify ships no default administrator and never interprets the credential behind `admin_credential_ref`. Every `AdminProviderPort` MUST satisfy the six normative requirements in D2 (default-deny before the first valid receipt; ≤5-minute receipts bound to the authorization epoch; atomic rotation/revocation epoch increment invalidating earlier receipts; no credential-loss bypass; the six-field admission envelope of §5.3; minimal-allowlist redaction defaults). `bootstrap` succeeds only on an empty administration state and only under an active storage fence (`storage_epoch` must equal the active fence), and confers authority solely through that explicit operation. The 256-bit credential custody and the exclusive local console remain host obligations (D2); they are never part of this port's payload.
 
 ## 6. Reconciliation
 
@@ -1116,7 +1209,7 @@ After either ranker orders ids, `CanonicalMemoryStorePort.revalidate` removes st
 
 ### D8 — SQLite is the local canonical store
 
-The SQLite adapter owns a direct, declared `better-sqlite3` runtime dependency and refuses an absent driver. It supports only local APFS, ext4, XFS, Btrfs, NTFS, and ReFS filesystems. NFS, SMB, FUSE, removable, and unknown filesystem types are refused unless a later specification and native conformance suite add them.
+The SQLite adapter owns a direct, declared `better-sqlite3` runtime dependency and refuses an absent driver. It supports only local APFS, ext4, XFS, Btrfs, NTFS, and ReFS filesystems. NFS, SMB, FUSE, removable, and unknown filesystem types are refused unless a later specification and native conformance suite add them. In `external-host`, these filesystem refusals bind the host: SQLite `external-host` is single-node, the host MUST place the `.db` on a supported local filesystem, and multi-node requires the Postgres backend (D-A).
 
 A bundled graphify-owned N-API lock helper implements non-blocking `flock(LOCK_EX|LOCK_NB)` on POSIX and `LockFileEx(LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY)` on Windows. Lock identity is the canonical real path of the database plus `.graphify-memory.lock`; symlink, case, device, and inode/file-index aliases are normalized and checked before open.
 
@@ -1133,13 +1226,13 @@ Kernel release after process death permits a new owner, which increments the epo
 
 The native two-process test uses the real driver and lock helper on every supported operating system. It is mandatory and cannot skip because a driver, helper, or filesystem probe is missing.
 
-### D9 — Postgres parity is required for managed service
+### D9 — Postgres parity is required for the `external-host` Postgres backend
 
 The Postgres adapter owns a direct, declared `pg` runtime dependency and implements the same public canonical port with one database transaction for blob, journal, state, accepted lexical index, and outbox. It does **not** use a sequence for the logical cursor: the transaction locks a singleton high-water row, computes `next = current + 1`, uses `next` for the journal event, and updates the row in the same transaction; rollback therefore advances neither row nor cursor and cannot create a gap. A store-generation row and transaction-scoped advisory lock fence administrative ownership; every mutation checks generation before its first statement and before commit. Accepted-only lexical queries, dual-as-of folds, tombstone dominance, idempotency conflicts, projection outbox, checkpoint manifest, logical backup, and every receipt must match SQLite canonical state digests for the same conformance trace.
 
-Postgres 16 and 17 are the L6 matrix. `managed-service` remains unavailable if parity differs or the adapter lacks a required capability receipt. pgvector remains optional behind `VectorProjectionPort` and does not affect canonical parity.
+Postgres 16 and 17 are the L6 matrix. The `external-host` Postgres backend remains unavailable if parity differs or the adapter lacks a required capability receipt. pgvector remains optional behind `VectorProjectionPort` and does not affect canonical parity.
 
-Both local canonical adapters (SQLite and Postgres) persist a mutation as a `DELETE` of every canonical table followed by a full re-`INSERT` of the folded state, i.e. an `O(total-state)` write amplification per mutation (storage-lane L4 review, observation O3). This is accepted for the local and single-node managed paths and is the declared **write-amplification ceiling** for the managed/cloud path: incremental (per-event) persistence is a later managed-service concern and is deliberately out of scope for L6b, whose gate is cross-backend canonical parity, not write throughput.
+Both canonical adapters (SQLite and Postgres) persist a mutation as a `DELETE` of every canonical table followed by a full re-`INSERT` of the folded state, i.e. an `O(total-state)` write amplification per mutation (storage-lane L4 review, observation O3). This is accepted for the `embedded-local` and single-node `external-host` paths and is the declared **write-amplification ceiling** for the `external-host` Postgres backend: incremental (per-event) persistence is a later `external-host` concern and is deliberately out of scope for L6, whose gate is cross-backend canonical parity, not write throughput.
 
 ### D10 — Bounded current projection; history never inflates `graph.json`
 
@@ -1155,7 +1248,7 @@ Every lot follows: add or adapt the minimal interface so the test compiles; capt
 |---|---|---|
 | **L0 — baseline, package boundary, extraction** | Pin target/intakes; create `graphify-memory/contracts`; physically extract legacy activity and memory compatibility surfaces; remove every organization-scoped dependency/importing bridge from the repository or relocate it to a separately owned adapter package; establish one-way package/export graph. | `tests/memory-neutrality.test.ts > packed dependency/import closure is one-way and emitted d.ts/schema uses only the normative vocabulary`; `tests/memory-neutrality.test.ts > evaluator and topology-shaped public objects are rejected even without forbidden imports`; `tests/memory-activity-boundary.test.ts > activity reaches capture only through ActivityEvidenceSource`; `tests/memory-v1-removal.test.ts > no legacy memory export, schema, source-authority header, CLI, or packed file remains`. Baseline fails on real manifest/source/emitted-shape evidence, not missing modules. |
 | **L1 — closed temporal contract** | Implement D4 once across recall predicates, store queries, time slice, scene, and renderer; define active-filter untimed behavior and `sceneTimeRange`. | `tests/temporal-boundary-contract.test.ts > keeps t_end===cursor and drops t_end<cursor on recall/store/slice/renderer`; `tests/temporal-boundary-contract.test.ts > active filter drops untimed elements and scene range includes finite t_end`. The renderer at the target baseline supplies the behavioral RED. |
-| **L2 — exact records, ports, digests, bi-temporal query** | Publish all §4–§5 DTOs/signatures/errors/schemas; implement exact validation, JCS/domain digests, authorization binding, verifier binding, capture seam, dual-as-of carrier, local administrator interfaces, and data-pure projection carriers. | `tests/memory-contract-schema.test.ts > exact schema rejects every additional property and binds primary component event citation payload and record digests`; `tests/memory-authz.test.ts > deny expired revoked mismatched or caller-supplied authorization and apply port-owned field omission`; `tests/memory-trust.test.ts > caller cannot self-label earned or signed and revoked receipt is ineligible`; `tests/memory-admission-envelope.test.ts > engine validates only the six bound policy fields and no evaluation shape is exported`; `tests/memory-capture.test.ts > exact duplicate acknowledges and digest conflict writes nothing`; `tests/memory-dual-as-of.test.ts > valid and system axes vary independently at inclusive boundaries`; `tests/local-administrator.test.ts > fresh standalone service denies until explicit credential bootstrap and old receipts fail after rotation`. |
+| **L2 — exact records, ports, digests, bi-temporal query** | Publish all §4–§5 DTOs/signatures/errors/schemas; implement exact validation, JCS/domain digests, authorization binding, verifier binding, capture seam, dual-as-of carrier, injected `AdminProviderPort` interfaces, and data-pure projection carriers. | `tests/memory-contract-schema.test.ts > exact schema rejects every additional property and binds primary component event citation payload and record digests`; `tests/memory-authz.test.ts > deny expired revoked mismatched or caller-supplied authorization and apply port-owned field omission`; `tests/memory-trust.test.ts > caller cannot self-label earned or signed and revoked receipt is ineligible`; `tests/memory-admission-envelope.test.ts > engine validates only the six bound policy fields and no evaluation shape is exported`; `tests/memory-capture.test.ts > exact duplicate acknowledges and digest conflict writes nothing`; `tests/memory-dual-as-of.test.ts > valid and system axes vary independently at inclusive boundaries`; `tests/admin-provider.test.ts > fresh store denies until explicit AdminProviderPort bootstrap and old receipts fail after rotation`. |
 | **L3 — in-memory journal, quarantine, and fold** | Implement in-memory canonical store, dense hash-chained journal, encrypted pending control, lifecycle table, fold, idempotency, expiry, dispute, supersession, rewind, terminal tombstone, complete checkpoint, and projection outbox. | `tests/memory-journal-replay.test.ts > checkpoint-tail and genesis yield the same canonical state digest`; `tests/memory-journal-replay.test.ts > tombstoned record cannot be resurrected by rewind or later accept`; `tests/memory-lifecycle.test.ts > every unlisted transition fails before cursor allocation and pending/disputed/historical visibility follows authorization`; `tests/memory-quarantine.test.ts > pending plaintext is absent from every non-envelope surface and rejected key destruction is idempotent`; `tests/memory-journal-replay.test.ts > gap hash break missing blob or digest drift stops readiness`. |
 | **L4 — fenced SQLite canonical store** | Add declared native driver/helper, local-filesystem probe, kernel lock, durable epoch, revocable leases, detached copies, atomic promotion transaction, accepted lexical table, outbox, and capability receipts. | `tests/canonical-memory-store.test.ts > rolls back blob+journal+state+fts+outbox at every injected failpoint`; `tests/canonical-memory-store.test.ts > same id with different full digest is refused without writes`; `tests/sqlite-memory-broker.native.test.ts > second process is refused and stale epoch fails before its first SQL statement`; `tests/sqlite-memory-broker.native.test.ts > lock loss before commit rolls back and revokes active readers`; `tests/sqlite-memory-broker.native.test.ts > detached ranking and backup copies never retain the active WAL`. Native lane is mandatory on Linux, macOS, and Windows. |
 | **L5 — assertion reconciliation** | Implement descriptors, occurrence keys, pure comparators, eligibility preconditions, stable proposal identity/order, version drift behavior, and authorized application of proposals. | `tests/assertion-family-registry.test.ts > same-family same-scope same-trust opt-in is required before proposing`; `tests/assertion-family-registry.test.ts > identity similarity alone proposes nothing and ambiguous ties require adjudication`; `tests/assertion-family-registry.test.ts > replay uses stored registry version while a new version creates a new proposal id`. |
@@ -1173,7 +1266,7 @@ L0–L7 are serial. L2 contracts precede L3 state, L3 precedes L4 persistence, a
 | canonical state | in-memory, SQLite, Postgres | lifecycle corpus yields identical state, event, snapshot, and transaction receipt digests; all illegal transitions no-write |
 | SQLite ownership | real native driver/helper on Linux, macOS, Windows and each allowed local filesystem available in CI | two-process exclusion, epoch fencing, crash takeover, lock-loss rollback, reader revocation, detached copy; zero skips |
 | Postgres parity | Postgres 16 and 17 | atomic failpoints, dense logical journal, accepted-only lexical, replay, backup, and canonical digest parity green |
-| admission/trust/authz | local administrator plus deterministic injected fakes | only bound receipts act; stronger trust cannot be self-labelled; expiry/revocation deny; policy object exposes only the six-field envelope |
+| admission/trust/authz | injected `AdminProviderPort` (host-supplied) plus deterministic injected fakes | only bound receipts act; stronger trust cannot be self-labelled; expiry/revocation deny; policy object exposes only the six-field envelope |
 | recall | both profiles; all canonical backends | accepted-only candidates, bounded inputs, pinned formulas/profile, semantic induction, final revalidation, redaction, pagination, and receipts match goldens |
 | lifecycle/cascade | all canonical and projection fakes plus one live graph and vector adapter | terminal tombstone removes influence and visibility from every surface through one acknowledged cursor; no resurrection |
 | recovery/backup | SQLite and Postgres | genesis equals checkpoint-tail canonical digest; logical restore equals export-scope digest; exclusions and external blobs verify |
@@ -1202,9 +1295,9 @@ The two independent reviews' required neutral additions are folded as follows:
 
 ## 12. Final non-goals and owner-open state
 
-Graphify does not define identity, persona, role, evaluator roster, authorship, authority topology, credential semantics outside its local administrator, capture trigger selection, external object/key providers, or integration mapping. It does not infer truth from identity resolution, use ranking as authorization, expose pending content through recall, mutate scope in place, or keep canonical history in `graph.json`.
+Graphify does not define identity, persona, role, evaluator roster, authorship, authority topology, credential semantics outside its injected `AdminProviderPort`, capture trigger selection, external object/key providers, or integration mapping. It does not infer truth from identity resolution, use ranking as authorization, expose pending content through recall, mutate scope in place, or keep canonical history in `graph.json`.
 
-There are no unresolved owner decisions in this evol. Implementation, migration evidence, dependency extraction, package publication availability, and mandatory CI execution remain unfinished engineering work, not owner-policy questions.
+This amendment (external-host backend) supersedes the prior closure that this evol carried no unresolved owner decisions: it settles decisions **D-A** (SQLite `external-host` is single-node; multi-node requires Postgres) and **D-B** (graphify makes no supervision or availability guarantee; `external-host` is a process boundary only) on their recommended defaults, which the owner may override, and it adds the external-host contract — the two neutral deployment modes of D2, the fenced-store factory and lifecycle of §5.7, the capability attestation of §5.9, and the injected `AdminProviderPort` of §5.10. The concrete attestation-binding fields added to `OperationalCapabilityReceiptV1` close residual O5 at drafting level and remain open to owner refinement. Implementation, migration evidence, dependency extraction, package publication availability, and mandatory CI execution remain unfinished engineering work, not owner-policy questions.
 
 ## Appendix A — Evidence ledger (non-normative)
 
