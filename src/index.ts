@@ -492,6 +492,8 @@ export { validateUrl, safeFetch, safeFetchText, validateGraphPath, sanitizeLabel
 export { DEFAULT_GRAPHIFY_STATE_DIR, LEGACY_GRAPHIFY_STATE_DIR, NEXT_GRAPHIFY_STATE_DIR, resolveGraphifyPaths, defaultGraphPath, legacyGraphPath, resolveGraphInputPath, defaultManifestPath, defaultTranscriptsDir } from "./paths.js";
 export { createGraph, isDirectedGraph, loadGraphFromData, serializeGraph } from "./graph.js";
 export { resolveGitContext, safeExecGit, safeGitRevParse } from "./git.js";
+export { getPullRequestMerge, listPullRequests, githubRepoFromRemote } from "./pr.js";
+export type { CommandRunner } from "./pr.js";
 export { lifecyclePaths, readLifecycleMetadata, refreshLifecycleMetadata, markLifecycleStale, markLifecycleAnalyzed, planLifecyclePrune } from "./lifecycle.js";
 export type { GitContext } from "./git.js";
 export type { WorktreeMetadata, BranchMetadata, LifecycleMetadata, RefreshLifecycleOptions, PrunePlan, PruneCandidate } from "./lifecycle.js";
