@@ -353,7 +353,8 @@ function outputTruncationDisclosure(
 }
 
 const PRECISION_GUARD_CRITERION =
-  "EXACT-tier pairs sharing a normalized term, retracted by a precision guard "
+  "EXACT-tier pairs sharing a normalized term: `exact_pairs_offered` is how many reached the "
+  + "guard, `exact_pairs_retracted` how many it took back "
   + "(role-noun collision, opposite gender/relation, place containment, address/serial divergence); "
   + "fuzzy-tier retractions are NOT counted -- see `scope`";
 
@@ -383,11 +384,28 @@ const PRECISION_GUARD_SCOPE =
  * to move a guard. An undeclared partial count is the defect; a declared one is
  * a fact a reader can act on.
  *
+ * CARRIES ITS DENOMINATOR, because a lone count does not survive its own zero.
+ * `exact_pairs_retracted: 0` reads identically whether the guard was never
+ * offered a pair — nothing shared a term, so there was nothing to judge — or was
+ * offered thousands and took none of them back. Those are opposite facts about
+ * the corpus, and a reader deciding whether this guard earns its place needs to
+ * tell them apart.
+ *
+ * The denominator counts what THIS guard saw: it is incremented where the guard
+ * stands, downstream of the type, partition and §3.4 rejections that run first.
+ * Counting exact pairs before those would err in the REASSURING direction — the
+ * same retraction over a larger base reads as a smaller loss — and a
+ * mis-positioned denominator is worse than none, because it looks like a
+ * measurement. It is invariant for the reason the numerator is: it counts pairs
+ * that already share a term, which blocking enumerates losslessly. What the
+ * exact tier emitted is `offered - retracted`, recoverable and stored nowhere.
+ *
  * ABSENT on a queue means the artefact predates this block, not zero.
  */
 interface OntologyReconciliationPrecisionGuardDisclosure {
   criterion: string;
   scope: string;
+  exact_pairs_offered: number;
   exact_pairs_retracted: number;
 }
 
@@ -1989,6 +2007,7 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
   // Accumulates across BOTH tiers: the guard runs in the lexical loop and again
   // in the structural one, and the queue declares what it retracted overall.
   const trustTierGate = emptyTrustTierGate();
+  let exactPairsOffered = 0;
   let exactPairsRetracted = 0;
   const comparableNodes = memoizeComparableNodes(context.nodes, normalizers, fuzzyEnabled, fuzzyThreshold);
   const fuzzyTierEligibility = fuzzyEnabled ? fuzzyTierEligibilityDisclosure(comparableNodes) : undefined;
@@ -2037,6 +2056,10 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
     );
 
     if (sharedTerms.length > 0) {
+      // The denominator, incremented BEFORE the verdict so it counts what the
+      // guard was offered rather than what it let through, and HERE rather than
+      // upstream so it counts only what reached this guard.
+      exactPairsOffered += 1;
       if (rejectReason) {
         // Counted HERE and not at the guard's computation above: this is where
         // it retracts a pair the exact tier would have emitted, and only pairs
@@ -2218,6 +2241,7 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
     precision_guard: {
       criterion: PRECISION_GUARD_CRITERION,
       scope: PRECISION_GUARD_SCOPE,
+      exact_pairs_offered: exactPairsOffered,
       exact_pairs_retracted: exactPairsRetracted,
     },
     output_truncation: outputTruncationDisclosure(candidates.length, capped.length, cap),

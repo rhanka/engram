@@ -71,6 +71,78 @@ describe("precision_guard disclosure", () => {
     expect(guard.criterion.length).toBeGreaterThan(0);
   });
 
+  it("carries a denominator, because a lone count does not survive its own zero", () => {
+    // The two zeros a single figure cannot tell apart. Both report
+    // `exact_pairs_retracted: 0`; they are opposite facts about the corpus, and
+    // only the denominator separates them.
+    const nothingOffered = guardOf([
+      withTerms("a", "Irene Adler", ["irene adler"]),
+      withTerms("b", "Mycroft Holmes", ["mycroft holmes"]),
+    ]);
+    const offeredAndKept = guardOf([
+      withTerms("a", "Irene Adler", ["irene adler"]),
+      withTerms("b", "Irene Adler", ["irene adler"]),
+    ]);
+
+    expect(nothingOffered.exact_pairs_retracted).toBe(0);
+    expect(offeredAndKept.exact_pairs_retracted).toBe(0);
+
+    // Nothing shared a term: the guard was never asked to judge anything.
+    expect(nothingOffered.exact_pairs_offered).toBe(0);
+    // A pair reached the guard and it let the pair through.
+    expect(offeredAndKept.exact_pairs_offered).toBe(1);
+  });
+
+  it("is emitted unconditionally: the denominator is present at zero too", () => {
+    // A disclosure that vanished at zero would move the ambiguity rather than
+    // lift it — absence must keep meaning "this artefact predates the block".
+    const guard = guardOf([withTerms("a", "Irene Adler", ["irene adler"])]);
+
+    expect(guard.exact_pairs_offered).toBe(0);
+    expect(guard.exact_pairs_retracted).toBe(0);
+    expect(Object.keys(guard)).toContain("exact_pairs_offered");
+  });
+
+  it("counts what THIS guard saw, downstream of the guards that run before it", () => {
+    // The failure mode a denominator invites: counting every exact pair in the
+    // corpus instead of the ones actually offered here. It would err in the
+    // REASSURING direction — the same retraction over a larger base reads as a
+    // smaller loss — and a wrong denominator looks like a measurement, which is
+    // worse than none.
+    //
+    // These two share a term AND would be retracted by the precision guard, but
+    // the §3.4 inter-tier rejection fires first and they never reach it. A
+    // denominator counted upstream would report 1 offered; counted where the
+    // guard stands, it reports 0.
+    const guard = guardOf([
+      { ...withTerms("a", "Narrator (Watson)", ["narrator", "watson"]), trust: "earned" },
+      { ...withTerms("b", "Narrator (Bunny Manders)", ["narrator", "bunny manders"]), trust: "asserted" },
+    ]);
+
+    expect(guard.exact_pairs_offered).toBe(0);
+    expect(guard.exact_pairs_retracted).toBe(0);
+  });
+
+  it("lets the reader recover what the exact tier emitted, and stores it nowhere", () => {
+    // `offered - retracted` is what survived the guard. Storing that third
+    // number would let it drift out of step with the two it derives from.
+    const nodes = [
+      withTerms("a", "Narrator (Watson)", ["narrator", "watson"]),
+      withTerms("b", "Narrator (Bunny Manders)", ["narrator", "bunny manders"]),
+      withTerms("c", "Irene Adler", ["irene adler"]),
+      withTerms("d", "Irene Adler", ["irene adler"]),
+    ];
+    const queue = generateOntologyReconciliationCandidates(context(nodes), { generatedAt });
+    const guard = queue.precision_guard;
+
+    expect(guard.exact_pairs_offered).toBe(2);
+    expect(guard.exact_pairs_retracted).toBe(1);
+    expect(queue.candidates.filter((candidate) => candidate.tier === "exact").length).toBe(
+      guard.exact_pairs_offered - guard.exact_pairs_retracted,
+    );
+    expect(Object.keys(guard)).not.toContain("exact_pairs_emitted");
+  });
+
   it("does not count a pair it let through", () => {
     // NON-VACUITY of the count itself: a counter that incremented on every
     // shared term would report 1 here, where the pair is legitimately emitted.
