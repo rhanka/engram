@@ -4,6 +4,12 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.18.0 (2026-09-03)
+
+- **First published release since 0.17.1.** The `0.17.2` version was assigned (2026-06-24) but never published; `0.18.0` ships its changes (documented below) together with the additions since.
+- **Public `pr.ts` helpers.** `getPullRequestMerge`, `listPullRequests`, `githubRepoFromRemote` and the `CommandRunner` type are now exported from the package root, so a consumer can import them from `@sentropic/graphify` instead of reaching into `src/`. Additive and backward-compatible; `pr.ts` is self-contained (no internal imports).
+- **Pluggable layout registry (opt-in).** A typed layout registry with a 2D Variant-A typed layer, opt-in, with no change to the default renderer.
+
 ## 0.17.2 (2026-06-24)
 
 - **Mistral OCR v4 default.** Bumps `mistral-ocr` to `^0.1.3` and pins Graphify's default PDF OCR model to `mistral-ocr-4-0` instead of the moving `mistral-ocr-latest` alias. `GRAPHIFY_PDF_OCR_MODEL` still overrides the model when needed.
