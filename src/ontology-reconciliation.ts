@@ -83,6 +83,28 @@ export interface OntologyReconciliationCandidateQueue {
    * the eligibility criterion is then inapplicable.
    */
   fuzzy_tier_eligibility?: OntologyReconciliationFuzzyTierEligibilityDisclosure;
+  /**
+   * ALWAYS present, unlike the two disclosures above. They are conditional on a
+   * mechanism running at all; this guard always runs, so omitting it at zero
+   * would leave "ran and retracted nothing" indistinguishable from "did not
+   * run" — the very ambiguity a queue disclosure exists to remove.
+   *
+   * ABSENT on a queue therefore means the artefact was produced BEFORE this
+   * block existed. It does not mean the guard was inert, and it is not a zero.
+   */
+  trust_tier_gate: OntologyReconciliationTrustTierGateDisclosure;
+  /**
+   * ALWAYS present, same reasoning: the exclusion is on by default, so a
+   * conditional block would hide the narrowing every corpus actually takes.
+   */
+  tier_exclusion: OntologyReconciliationTierExclusionDisclosure;
+  /** ALWAYS present, same reasoning as the two above. */
+  precision_guard: OntologyReconciliationPrecisionGuardDisclosure;
+  /**
+   * ALWAYS present. `candidate_count` reports what SURVIVED the cap, so without
+   * this block a full queue and a truncated one read alike.
+   */
+  output_truncation: OntologyReconciliationOutputTruncationDisclosure;
   candidates: OntologyReconciliationCandidate[];
 }
 
@@ -242,6 +264,222 @@ function exactNodeTerms(node: OntologyPatchNode, normalizers: NormalizerByNodeTy
 function violatesTrustTier(left: OntologyPatchNode, right: OntologyPatchNode): boolean {
   if (left.trust === undefined || right.trust === undefined) return false;
   return left.trust !== right.trust;
+}
+
+const TRUST_TIER_GATE_CRITERION =
+  "pairs reaching the inter-tier guard, after the type and partition guards; " +
+  "rejected when BOTH sides declare a provenance tier and the tiers differ";
+
+/**
+ * What the inter-tier guard (§3.4) did, stamped on the emitted queue.
+ *
+ * The guard RETRACTS pairs the enumeration had already produced, so it owes the
+ * same disclosure as the bucket cap beside it: an undeclared narrowing makes a
+ * queue that is missing candidates indistinguishable from a clean corpus.
+ *
+ * A single count would not survive its own zero. `pairs_rejected: 0` covers two
+ * opposite findings — no pair ever had both sides tagged (the guard had no
+ * DOMAIN), or pairs were tagged on both sides and agreed (a property of the
+ * corpus). Only the first is a coverage defect, and they call for opposite
+ * follow-ups, so the domain is published beside the outcome.
+ *
+ * `pairs_one_side_tagged` is the FAIL-OPEN population: pairs the guard let
+ * through solely because a tier was missing. It is collected because it falls
+ * out of the same loop, and it is the impact figure the untagged-tier hole says
+ * it is waiting for. It is NOT actioned here: making an absent tier fail closed
+ * stays with the owner.
+ *
+ * `pairs_evaluated` counts what THIS guard saw, downstream of the type and
+ * partition guards — deliberately not the blocking index total, which would
+ * include pairs the guard never received.
+ */
+interface OntologyReconciliationTrustTierGateDisclosure {
+  criterion: string;
+  pairs_evaluated: number;
+  pairs_both_tagged: number;
+  pairs_one_side_tagged: number;
+  pairs_rejected: number;
+}
+
+const OUTPUT_TRUNCATION_CRITERION =
+  "candidates ranked by score then dropped beyond the cap; `dropped` counts what "
+  + "ranking placed below the cut, and `candidate_count` is what survived it";
+
+/**
+ * What the final cap threw away, stamped on the queue.
+ *
+ * This is the LAST narrowing of the pipeline and the widest by far: everything
+ * upstream trims pairs that were unlikely to matter, while this one discards
+ * ranked candidates purely because a fixed number of them fit. On a corpus of
+ * a few hundred thousand pairs, the overwhelming majority of what the tiers
+ * produced never reaches the queue at all.
+ *
+ * Until now `candidate_count` reported the count AFTER the cut, so a reader
+ * seeing 200 could not tell a corpus that produced exactly 200 candidates from
+ * one that produced hundreds of thousands and lost the rest — the same
+ * indistinguishability that put every other narrowing on this path under a
+ * stamp.
+ *
+ * `dropped` is invariant: the blocking index is lossless on EMITTED candidates,
+ * which is the whole of A2-1, so the pre-cap population is the same under either
+ * enumeration. The golden therefore compares this block and the oracle
+ * recomputes it — no strip.
+ *
+ * No pre-cap total: `candidate_count + dropped` gives it, and a third stored
+ * number could drift from the two beside it.
+ *
+ * `cap` is null when nothing was capped, which is not the same as a cap of zero.
+ *
+ * ABSENT on a queue means the artefact predates this block, not that nothing was
+ * dropped.
+ */
+interface OntologyReconciliationOutputTruncationDisclosure {
+  criterion: string;
+  cap: number | null;
+  dropped: number;
+}
+
+function outputTruncationDisclosure(
+  produced: number,
+  emitted: number,
+  cap: number,
+): OntologyReconciliationOutputTruncationDisclosure {
+  const capped = Number.isFinite(cap) && cap >= 0;
+  return {
+    criterion: OUTPUT_TRUNCATION_CRITERION,
+    cap: capped ? cap : null,
+    dropped: produced - emitted,
+  };
+}
+
+const PRECISION_GUARD_CRITERION =
+  "EXACT-tier pairs sharing a normalized term: `exact_pairs_offered` is how many reached the "
+  + "guard, `exact_pairs_retracted` how many it took back "
+  + "(role-noun collision, opposite gender/relation, place containment, address/serial divergence); "
+  + "fuzzy-tier retractions are NOT counted -- see `scope`";
+
+const PRECISION_GUARD_SCOPE =
+  "exact tier only: the fuzzy tier applies the same guard BEFORE matching, so its "
+  + "retraction count depends on how many pairs the enumeration offers and would not "
+  + "mean the same under a blocking index as under a cross product";
+
+/**
+ * What the precision guard retracted from the EXACT tier, stamped on the queue.
+ *
+ * The guard removes pairs that share a normalized term — pairs the exact tier
+ * would otherwise have emitted — so it is a narrowing and it declares itself
+ * like the others.
+ *
+ * SCOPED TO THE EXACT TIER, on purpose, and the limit is published rather than
+ * hidden. In the exact tier the guard fires only after `sharedTerms.length > 0`,
+ * and blocking is lossless on shared terms, so the count means the same under
+ * either enumeration and the golden can compare it. In the fuzzy tier the same
+ * guard fires BEFORE `fuzzyMatchVariants`, so it also retracts pairs that would
+ * never have matched; that count rises with the number of pairs offered and
+ * would differ between a blocking index and a cross product.
+ *
+ * Counting it anyway would have meant either stripping a second field from the
+ * golden — the gesture the strip list exists to keep rare — or reordering the
+ * production check for the convenience of a measurement, which is not a reason
+ * to move a guard. An undeclared partial count is the defect; a declared one is
+ * a fact a reader can act on.
+ *
+ * CARRIES ITS DENOMINATOR, because a lone count does not survive its own zero.
+ * `exact_pairs_retracted: 0` reads identically whether the guard was never
+ * offered a pair — nothing shared a term, so there was nothing to judge — or was
+ * offered thousands and took none of them back. Those are opposite facts about
+ * the corpus, and a reader deciding whether this guard earns its place needs to
+ * tell them apart.
+ *
+ * The denominator counts what THIS guard saw: it is incremented where the guard
+ * stands, downstream of the type, partition and §3.4 rejections that run first.
+ * Counting exact pairs before those would err in the REASSURING direction — the
+ * same retraction over a larger base reads as a smaller loss — and a
+ * mis-positioned denominator is worse than none, because it looks like a
+ * measurement. It is invariant for the reason the numerator is: it counts pairs
+ * that already share a term, which blocking enumerates losslessly. What the
+ * exact tier emitted is `offered - retracted`, recoverable and stored nowhere.
+ *
+ * ABSENT on a queue means the artefact predates this block, not zero.
+ */
+interface OntologyReconciliationPrecisionGuardDisclosure {
+  criterion: string;
+  scope: string;
+  exact_pairs_offered: number;
+  exact_pairs_retracted: number;
+}
+
+const TIER_EXCLUSION_CRITERION =
+  "node types denied the FUZZY and STRUCTURAL tiers; the exact tier still runs on them";
+
+/**
+ * Which node types are barred from the weaker tiers, stamped on the queue.
+ *
+ * This narrowing is ON BY DEFAULT — `DEFAULT_FUZZY_EXCLUDE_TYPES` applies
+ * whenever the option is absent — so it shapes every corpus, unlike the opt-in
+ * bucket cap that declares itself right next to it. The repo declared its
+ * opt-in loss and said nothing about its default one; that asymmetry is the
+ * wrong way round, since the default path is the one every corpus takes.
+ *
+ * The mitigation is published with the loss rather than left for the reader to
+ * discover: these types keep the EXACT tier. Saying only "excluded" would
+ * overstate it into "invisible to reconciliation", which is false.
+ *
+ * Counted over NODES, not over skipped pairs. The node population is the same
+ * whichever way pairs are enumerated, so this figure means the same thing under
+ * the blocking index and under a cross product — a pair count would not, and
+ * would silently turn the losslessness golden into an assertion that blocking
+ * does nothing.
+ *
+ * ABSENT on a queue means the artefact predates this block, not that nothing
+ * was excluded.
+ */
+interface OntologyReconciliationTierExclusionDisclosure {
+  criterion: string;
+  excluded_types: string[];
+  nodes_excluded: number;
+  nodes_total: number;
+}
+
+function tierExclusionDisclosure(
+  nodes: readonly OntologyPatchNode[],
+  excludedTypes: ReadonlySet<string>,
+): OntologyReconciliationTierExclusionDisclosure {
+  return {
+    criterion: TIER_EXCLUSION_CRITERION,
+    // The list ACTUALLY in force, so an override is visible rather than the
+    // reader having to assume the default constant.
+    excluded_types: [...excludedTypes].sort(),
+    nodes_excluded: nodes.filter((node) => node.type !== undefined && excludedTypes.has(node.type)).length,
+    nodes_total: nodes.length,
+  };
+}
+
+function emptyTrustTierGate(): OntologyReconciliationTrustTierGateDisclosure {
+  return {
+    criterion: TRUST_TIER_GATE_CRITERION,
+    pairs_evaluated: 0,
+    pairs_both_tagged: 0,
+    pairs_one_side_tagged: 0,
+    pairs_rejected: 0,
+  };
+}
+
+/**
+ * Applies the guard and tallies it in one call, so the counter cannot drift
+ * from the rule: the verdict still comes from `violatesTrustTier` alone.
+ */
+function rejectsOnTrustTier(
+  gate: OntologyReconciliationTrustTierGateDisclosure,
+  left: OntologyPatchNode,
+  right: OntologyPatchNode,
+): boolean {
+  gate.pairs_evaluated += 1;
+  if (left.trust !== undefined && right.trust !== undefined) gate.pairs_both_tagged += 1;
+  else if (left.trust !== undefined || right.trust !== undefined) gate.pairs_one_side_tagged += 1;
+  const rejected = violatesTrustTier(left, right);
+  if (rejected) gate.pairs_rejected += 1;
+  return rejected;
 }
 
 function violatesPartitionScope(
@@ -1766,6 +2004,11 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
 
   const candidates: OntologyReconciliationCandidate[] = [];
   const emittedPairs = new Set<string>();
+  // Accumulates across BOTH tiers: the guard runs in the lexical loop and again
+  // in the structural one, and the queue declares what it retracted overall.
+  const trustTierGate = emptyTrustTierGate();
+  let exactPairsOffered = 0;
+  let exactPairsRetracted = 0;
   const comparableNodes = memoizeComparableNodes(context.nodes, normalizers, fuzzyEnabled, fuzzyThreshold);
   const fuzzyTierEligibility = fuzzyEnabled ? fuzzyTierEligibilityDisclosure(comparableNodes) : undefined;
   const tokenIdfs = fuzzyMinimumSharedTokenIdf === undefined ? undefined : fuzzyTokenIdfs(comparableNodes);
@@ -1789,7 +2032,7 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
     // Inter-tier rejection (§3.4): an asserted claim never merges with an
     // earned node, whatever their labels look like. Same standing as the
     // partition guard, and applied before EITHER lexical tier can emit.
-    if (violatesTrustTier(left, right)) continue;
+    if (rejectsOnTrustTier(trustTierGate, left, right)) continue;
 
     const sharedTerms = rightMemo.exactTerms.filter((term) => leftMemo.exactTermSet.has(term));
 
@@ -1813,7 +2056,18 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
     );
 
     if (sharedTerms.length > 0) {
-      if (rejectReason) continue;
+      // The denominator, incremented BEFORE the verdict so it counts what the
+      // guard was offered rather than what it let through, and HERE rather than
+      // upstream so it counts only what reached this guard.
+      exactPairsOffered += 1;
+      if (rejectReason) {
+        // Counted HERE and not at the guard's computation above: this is where
+        // it retracts a pair the exact tier would have emitted, and only pairs
+        // sharing a term reach it — which is what makes the figure mean the
+        // same under blocking as under a cross product.
+        exactPairsRetracted += 1;
+        continue;
+      }
       // Exact tier: shared normalized term (label/alias/normalized_term).
       emittedPairs.add(pairKey);
       candidates.push({
@@ -1908,7 +2162,7 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
       // Inter-tier rejection (§3.4) applies to the structural tier too: shared
       // neighbours are even weaker evidence than a shared label, so they must
       // not be allowed to bridge tiers either.
-      if (violatesTrustTier(left, right)) continue;
+      if (rejectsOnTrustTier(trustTierGate, left, right)) continue;
 
       const { canonical, candidate } = chooseCanonicalPair(left, right);
       const pairKey = `${canonical.id}|${candidate.id}`;
@@ -1982,6 +2236,15 @@ function generateOntologyReconciliationCandidatesWithBlockingIndex(
     candidate_count: capped.length,
     ...(blockingIndex.fuzzyBucketCap ? { fuzzy_blocking_cap: blockingIndex.fuzzyBucketCap } : {}),
     ...(fuzzyTierEligibility ? { fuzzy_tier_eligibility: fuzzyTierEligibility } : {}),
+    trust_tier_gate: trustTierGate,
+    tier_exclusion: tierExclusionDisclosure(context.nodes, fuzzyExcludeTypes),
+    precision_guard: {
+      criterion: PRECISION_GUARD_CRITERION,
+      scope: PRECISION_GUARD_SCOPE,
+      exact_pairs_offered: exactPairsOffered,
+      exact_pairs_retracted: exactPairsRetracted,
+    },
+    output_truncation: outputTruncationDisclosure(candidates.length, capped.length, cap),
     candidates: capped,
   };
 }
