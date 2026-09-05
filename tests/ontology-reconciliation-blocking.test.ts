@@ -217,6 +217,8 @@ function naiveQueue(
   const fuzzyExcludeTypes = new Set(options.fuzzyExcludeTypes ?? DEFAULT_FUZZY_EXCLUDE_TYPES);
   const normalizers = compileNormalizerByNodeType(value.profile);
   const candidates: OntologyReconciliationCandidate[] = [];
+  let exactPairsOffered = 0;
+  let exactPairsRetracted = 0;
   const emittedPairs = new Set<string>();
   const comparableNodes = value.nodes
     .filter((entry) => entry.type && nodeTerms(entry).length > 0)
@@ -243,7 +245,17 @@ function naiveQueue(
       const rejectReason = differentEntityReason(left, right);
 
       if (sharedTerms.length > 0) {
-        if (rejectReason) continue;
+        // Denominator, recomputed the same way and for the same reason: it
+        // counts pairs offered to the guard, and only term-sharing pairs are
+        // offered, so blocking and the cross product must agree on it too.
+        exactPairsOffered += 1;
+        if (rejectReason) {
+          // Independently recomputed, like `tier_exclusion`: the count is over
+          // pairs sharing a term, which blocking enumerates losslessly, so the
+          // two paths must agree and the golden compares it.
+          exactPairsRetracted += 1;
+          continue;
+        }
         const normalize = normalizers[left.type] ?? normalizeTerm;
         const canonicalLabel = canonical.label ? normalize(canonical.label) : null;
         const candidateLabel = candidate.label ? normalize(candidate.label) : null;
@@ -382,8 +394,88 @@ function naiveQueue(
     generated_at: options.generatedAt ?? new Date().toISOString(),
     candidate_count: capped.length,
     ...(fuzzyTierEligibility ? { fuzzy_tier_eligibility: fuzzyTierEligibility } : {}),
+    // Reimplemented here rather than stripped from the comparison, because this
+    // disclosure counts NODES: its value does not depend on how pairs are
+    // enumerated, so the two paths must agree on it and the golden should say
+    // so. Contrast `trust_tier_gate`, which reports what the guard examined and
+    // therefore differs by construction.
+    tier_exclusion: {
+      criterion: "node types denied the FUZZY and STRUCTURAL tiers; the exact tier still runs on them",
+      excluded_types: [...fuzzyExcludeTypes].sort(),
+      nodes_excluded: value.nodes.filter((n) => n.type !== undefined && fuzzyExcludeTypes.has(n.type)).length,
+      nodes_total: value.nodes.length,
+    },
+    precision_guard: {
+      criterion:
+        "EXACT-tier pairs sharing a normalized term: `exact_pairs_offered` is how many reached the "
+        + "guard, `exact_pairs_retracted` how many it took back "
+        + "(role-noun collision, opposite gender/relation, place containment, address/serial divergence); "
+        + "fuzzy-tier retractions are NOT counted -- see `scope`",
+      scope:
+        "exact tier only: the fuzzy tier applies the same guard BEFORE matching, so its "
+        + "retraction count depends on how many pairs the enumeration offers and would not "
+        + "mean the same under a blocking index as under a cross product",
+      exact_pairs_offered: exactPairsOffered,
+      exact_pairs_retracted: exactPairsRetracted,
+    },
+    // Recomputed independently, like the two above: the pre-cap population is
+    // the same under either enumeration (blocking is lossless on emitted
+    // candidates), so the two paths must agree on what the cap threw away.
+    output_truncation: {
+      criterion:
+        "candidates ranked by score then dropped beyond the cap; `dropped` counts what "
+        + "ranking placed below the cut, and `candidate_count` is what survived it",
+      cap: Number.isFinite(cap) && cap >= 0 ? cap : null,
+      dropped: candidates.length - capped.length,
+    },
     candidates: capped,
   };
+}
+
+/**
+ * FIELDS STRIPPED FROM THE GOLDEN — enumerated, one line each.
+ *
+ * Stripping a field from a comparison removes something from a check exactly as
+ * a filter removes a pair from a queue, so it declares itself the same way:
+ * owner, motive, and the assertion that catches what the strip stopped
+ * catching. Without the list, the destructure below is a gesture anyone can
+ * copy the next time a field breaks the golden — legitimate here, wrong for a
+ * field that ought to match.
+ *
+ *   `trust_tier_gate`  · owner: graphify-ontology
+ *      motive: `naiveQueue` does not compute it, so the comparison would fail
+ *              unconditionally and for a reason unrelated to blocking; and it
+ *              reports how many pairs the guard EXAMINED, which blocking exists
+ *              to reduce — asserting it identical would assert blocking is inert.
+ *      caught by: "prunes what the golden can no longer compare" (below) plus
+ *              the dedicated disclosure file.
+ *
+ * NOT stripped, and the contrast is the point:
+ *
+ *   `tier_exclusion`   · counts NODES, so its value does not depend on how
+ *      pairs are enumerated. The oracle reimplements it and the golden compares
+ *      it. A path-invariant field belongs in the comparison; reaching for the
+ *      strip here would have hidden a real divergence.
+ *
+ *   `precision_guard`  · counts EXACT-tier retractions only. The guard fires
+ *      there after `sharedTerms.length > 0`, and blocking is lossless on shared
+ *      terms, so the count is invariant too. Its fuzzy-tier twin fires before
+ *      matching and would NOT be — which is why the field names that boundary
+ *      instead of counting both.
+ *
+ * KNOWN COUPLING, deliberate. The oracle hardcodes the expected `criterion` and
+ * `scope` literals rather than importing the constants. That IS the check: an
+ * oracle importing the production constant would stop verifying it and only
+ * confirm that a value equals itself. The cost is that changing a criterion
+ * requires updating the copy here — and the cost is self-announcing, because the
+ * golden goes red until you do. That redness is correct: changing the words a
+ * consumer reads should force someone to re-confirm what the oracle expects.
+ * Mirror the new text here; do not reach for a shared constant.
+ */
+function emittedPayload(queue: OntologyReconciliationCandidateQueue): string {
+  const { trust_tier_gate: _gate, ...rest } = queue as OntologyReconciliationCandidateQueue &
+    Record<string, unknown>;
+  return JSON.stringify(rest);
 }
 
 function expectGolden(
@@ -398,8 +490,8 @@ function expectGolden(
       ...options,
       ...(structural ? { structural: true } : {}),
     };
-    expect(JSON.stringify(generateOntologyReconciliationCandidates(value, fixedOptions))).toBe(
-      JSON.stringify(naiveQueue(value, fixedOptions)),
+    expect(emittedPayload(generateOntologyReconciliationCandidates(value, fixedOptions))).toBe(
+      emittedPayload(naiveQueue(value, fixedOptions)),
     );
   }
 }
@@ -500,15 +592,30 @@ describe("ontology reconciliation lexical blocking", () => {
     ]);
     const options = { generatedAt, fuzzy: false };
     const oracle = naiveQueue(value, options);
-    expect(JSON.stringify(generateOntologyReconciliationCandidates(value, options))).toBe(JSON.stringify(oracle));
+    expect(emittedPayload(generateOntologyReconciliationCandidates(value, options))).toBe(emittedPayload(oracle));
 
     const index = buildOntologyReconciliationLexicalBlockingIndex(value, options);
     const bucket = [...index.exact.values()].find((entry) => entry.includes(0) && entry.includes(1));
     expect(bucket).toBeDefined();
     bucket!.splice(bucket!.indexOf(1), 1);
     expect(enumerateOntologyReconciliationBlockedPairs(value, options, index)).toEqual(new Set());
-    expect(JSON.stringify(generateOntologyReconciliationCandidatesWithLexicalBlockingIndexForTest(value, options, index)))
-      .not.toBe(JSON.stringify(oracle));
+    expect(emittedPayload(generateOntologyReconciliationCandidatesWithLexicalBlockingIndexForTest(value, options, index)))
+      .not.toBe(emittedPayload(oracle));
+  });
+
+  it("prunes what the golden can no longer compare: the guard sees fewer pairs than the cross product", () => {
+    // The golden strips `trust_tier_gate` because blocking changes it by design.
+    // That difference is the point of the whole lot, so it is asserted here
+    // rather than left unchecked: without this, stripping the block would be a
+    // silent loosening of the falsifiability guard.
+    const nodes = Array.from({ length: 40 }, (_, index) =>
+      node(`n${index}`, index % 2 === 0 ? `Shared Label ${index % 4}` : `Lonely Label ${index}`));
+    const crossProductPairs = (nodes.length * (nodes.length - 1)) / 2;
+
+    const gate = generateOntologyReconciliationCandidates(context(nodes), { generatedAt }).trust_tier_gate;
+
+    expect(gate.pairs_evaluated).toBeGreaterThan(0);
+    expect(gate.pairs_evaluated).toBeLessThan(crossProductPairs);
   });
 
   it("uses the <= 0.5 single-token fallback without changing either tier configuration", () => {
