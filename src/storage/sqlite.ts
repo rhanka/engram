@@ -42,6 +42,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
+import { TEMPORAL_INTERVAL_CONVENTION } from "../temporal-interval.js";
 import type Graph from "graphology";
 import type {
   GraphAppendOptions,
@@ -833,6 +834,7 @@ export async function createSqliteGraphStore(
         .all(bind);
 
       return {
+        interval_convention: TEMPORAL_INTERVAL_CONVENTION,
         nodes: nodeRows.map(temporalNodeFromRow),
         edges: edgeRows.map(temporalEdgeFromRow),
       };
