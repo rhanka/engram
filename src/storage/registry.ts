@@ -11,6 +11,7 @@ import { createFileGraphStore } from "./file.js";
 import { createNeo4jGraphStore } from "./neo4j.js";
 import { createPostgresGraphStore } from "./postgres.js";
 import { createSpannerGraphStore } from "./spanner.js";
+import { createSqliteGraphStore } from "./sqlite.js";
 import type { GraphStore, GraphStoreConfig, StoreTestDeps } from "./types.js";
 
 export interface GraphStoreFactory {
@@ -108,6 +109,20 @@ registerGraphStoreFactory({
     }
     return createPostgresGraphStore(
       config as Parameters<typeof createPostgresGraphStore>[0],
+      deps,
+    );
+  },
+});
+
+registerGraphStoreFactory({
+  id: "sqlite",
+  requiredPackage: "better-sqlite3",
+  async create(config: GraphStoreConfig, deps?: StoreTestDeps): Promise<GraphStore> {
+    if (!config.target) {
+      throw new Error("sqlite store requires config.target (path of the SQLite database file)");
+    }
+    return createSqliteGraphStore(
+      config as Parameters<typeof createSqliteGraphStore>[0],
       deps,
     );
   },
