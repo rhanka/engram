@@ -91,7 +91,7 @@
     "@sentropic/llm-mesh": "^0.1.0",
     "ai": "^6.0.175",
     "commander": "^14.0.3",
-    "csv-parse": "^6.2.1",
+    "csv-parse": "^7.0.2",
     "graphology": "^0.26.0",
     "graphology-communities-louvain": "^2.0.1",
     "graphology-metrics": "^2.1.0",
