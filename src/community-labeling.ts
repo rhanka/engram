@@ -37,7 +37,9 @@ import {
   DIRECT_LLM_PROVIDERS,
   directProviderCredentialEnv,
   isDirectLlmProvider,
+  textClientToCallLlm,
   type DirectLlmProvider,
+  type TextJsonGenerationClient,
 } from "./llm-execution.js";
 import {
   detectTextLanguage,
@@ -349,6 +351,9 @@ export function detectLabelingBackend(): DirectLlmProvider | null {
  */
 export type CallLlmFn = (prompt: string, maxTokens: number) => Promise<string>;
 
+/** Port schema label for community-label JSON — the implicit output shape made explicit. */
+const COMMUNITY_LABELS_SCHEMA = "graphify_community_labels_v1";
+
 /**
  * Build the default `callLlm` for a given provider/model using the same AI SDK
  * path as `createDirectTextJsonClient`. Lazy-imports avoid loading heavy SDKs
@@ -421,6 +426,14 @@ export interface LabelCommunitiesOptions {
    */
   callLlm?: CallLlmFn;
   /**
+   * Inject an already-constructed TextJsonGenerationClient (the mesh client, in
+   * radar's live wiring) — the single instance-injection shape shared with the
+   * other text-JSON consumers. When present it drives the direct path; the
+   * per-call token budget flows through as the port's `maxOutputTokens`. This
+   * path is NOT retried (parity with the existing single-shot labeling call).
+   */
+  textClient?: TextJsonGenerationClient;
+  /**
    * Output language for community names (field report ia-aero). "auto"
    * (default) → detect per community from its sampled node labels; an explicit
    * code ("fr", "en", …) forces one language. Injected into the naming prompt.
@@ -477,7 +490,9 @@ export async function labelCommunities(
 
   const maxTokens = Math.min(40 + 16 * labeledCids.length, 4096);
 
-  const callLlm = options.callLlm ?? (await makeDefaultCallLlm(options.provider, options.model));
+  const callLlm = options.textClient
+    ? textClientToCallLlm(options.textClient, COMMUNITY_LABELS_SCHEMA)
+    : (options.callLlm ?? (await makeDefaultCallLlm(options.provider, options.model)));
   const text = await callLlm(prompt, maxTokens);
   const parsed = parseLabelResponse(text, labeledCids);
   for (const [cid, name] of parsed) labels.set(cid, name);
@@ -553,6 +568,13 @@ export interface GenerateCommunityLabelsOptions {
    * Pass a mock here in tests to avoid network calls.
    */
   callLlm?: CallLlmFn;
+  /**
+   * Inject an already-constructed TextJsonGenerationClient (the mesh client, in
+   * radar's live wiring). Like an injected `callLlm`, its presence is a
+   * programmatic opt-in to the direct path; the client carries the per-call
+   * `maxOutputTokens` budget and graphify never sees its transport.
+   */
+  textClient?: TextJsonGenerationClient;
   /** Suppress stderr messages about missing backend / errors. */
   quiet?: boolean;
   /**
@@ -635,14 +657,14 @@ export async function generateCommunityLabels(
           // backend / API key (incl. a discovered `.env`) must NOT silently
           // switch to direct. An INJECTED `callLlm` is a programmatic direct
           // opt-in and still resolves to direct; a detected `provider` does not.
-          options.callLlm
+          options.callLlm || options.textClient
           ? "direct"
           : "assistant";
 
   // ---------------------------------------------------------------------------
   // ASSISTANT MODE — no API key, emit instruction file + ingest answer.
   // ---------------------------------------------------------------------------
-  if (resolvedMode === "assistant" && !options.callLlm) {
+  if (resolvedMode === "assistant" && !options.callLlm && !options.textClient) {
     const instructionDir = options.instructionDir ?? join(".graphify", LABEL_INSTRUCTIONS_DIR);
 
     // Build prompt lines (needed for both ingest and emit paths).
@@ -707,7 +729,7 @@ export async function generateCommunityLabels(
   // ---------------------------------------------------------------------------
   // DIRECT MODE — API key or injected callLlm.
   // ---------------------------------------------------------------------------
-  if (!provider && !options.callLlm) {
+  if (!provider && !options.callLlm && !options.textClient) {
     // Should not reach here in normal flow, but guard defensively for forced
     // `--label-mode direct` without a configured backend.
     if (!options.quiet) {
@@ -725,6 +747,7 @@ export async function generateCommunityLabels(
       model: options.model,
       gods: options.gods,
       callLlm: options.callLlm,
+      ...(options.textClient ? { textClient: options.textClient } : {}),
       ...(options.labelLang !== undefined ? { labelLang: options.labelLang } : {}),
       ...(options.corpusDefaultLang !== undefined ? { corpusDefaultLang: options.corpusDefaultLang } : {}),
     });
