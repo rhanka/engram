@@ -1,0 +1,41 @@
+#!/bin/sh
+#
+# commit-msg -- anti-attribution-trailer guard.
+#
+# Refuses the commit when the message carries an attribution trailer the
+# repository owner disallows:
+#   * a line whose stripped (leading/trailing whitespace removed), lowercased
+#     form begins with "co-authored-by:" or "claude-session:", or
+#   * any line containing "generated with claude code" (any case).
+#
+# No third-party dependency; POSIX sh + git only. graphify-neutral: it imports
+# nothing from the application and knows nothing about h2a.
+
+set -u
+
+msg_file=$1
+
+# Mirror what git itself keeps: cut the verbose "scissors" diff section
+# (everything git strips on its own) and drop comment lines, so a diff body or
+# a comment pasted below the message cannot cause a false positive.
+kept=$(sed -e '/^#.*>8/,$d' "$msg_file" | git stripspace --strip-comments)
+
+fail() {
+	echo "commit-msg: forbidden attribution trailer detected in the commit message." >&2
+	echo "  Offending line:" >&2
+	printf '    %s\n' "$1" >&2
+	echo "" >&2
+	echo "  Remove any 'Co-Authored-By:' / 'Claude-Session:' line and any" >&2
+	echo "  'Generated with Claude Code' text before committing." >&2
+	exit 1
+}
+
+# Anchored at line start, leading whitespace tolerated, case-insensitive.
+hit=$(printf '%s\n' "$kept" | grep -niE '^[[:space:]]*(co-authored-by:|claude-session:)' | head -n 1)
+[ -n "$hit" ] && fail "$hit"
+
+# Substring match anywhere on a line, case-insensitive.
+hit=$(printf '%s\n' "$kept" | grep -niE 'generated with claude code' | head -n 1)
+[ -n "$hit" ] && fail "$hit"
+
+exit 0
