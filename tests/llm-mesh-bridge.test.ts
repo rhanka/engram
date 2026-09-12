@@ -33,8 +33,8 @@ describe("A3 llm-mesh bridge scaffold", () => {
   it("meshTextJsonClient exposes the graphify TextJsonGenerationClient shape", () => {
     const mesh = createGraphifyMesh();
     const client = meshTextJsonClient(mesh, {
-      defaultProvider: "anthropic",
-      defaultModel: "claude-sonnet-4-6",
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
     });
     // Minimal shape contract: mode = "mesh", provider/model carried through.
     // End-to-end generate() requires real adapter clients, exercised in the
@@ -45,10 +45,18 @@ describe("A3 llm-mesh bridge scaffold", () => {
     expect(typeof client.generateJson).toBe("function");
   });
 
-  it("meshTextJsonClient defaults to anthropic provider when none specified", () => {
+  it("meshTextJsonClient requires an explicit provider and model — it never defaults to anthropic", () => {
     const mesh = createGraphifyMesh();
-    const client = meshTextJsonClient(mesh);
-    expect(client.provider).toBe("anthropic");
-    expect(client.model).toBeUndefined();
+    // No silent provider/model default: graphify must not invent a provider
+    // (wrong keyring entry) or an empty modelId (audit lie). Absent -> throw.
+    expect(() => meshTextJsonClient(mesh, {} as never)).toThrow(/provider/i);
+    expect(() => meshTextJsonClient(mesh, { provider: "anthropic" } as never)).toThrow(/model/i);
+  });
+
+  it("meshTextJsonClient carries an explicit non-anthropic provider through (no hardcoded default)", () => {
+    const mesh = createGraphifyMesh();
+    const client = meshTextJsonClient(mesh, { provider: "openai", model: "gpt-4.1" });
+    expect(client.provider).toBe("openai");
+    expect(client.model).toBe("gpt-4.1");
   });
 });

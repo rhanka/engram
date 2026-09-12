@@ -488,8 +488,8 @@ describe("assistant-mode generation behavior", () => {
     });
 
     const meshClient = meshTextJsonClient(mesh, {
-      defaultProvider: "anthropic",
-      defaultModel: "claude-sonnet-4-6",
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
     });
 
     const graph = mkGraph();
