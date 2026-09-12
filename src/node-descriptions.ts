@@ -43,7 +43,9 @@ import {
   DIRECT_LLM_PROVIDERS,
   directProviderCredentialEnv,
   isDirectLlmProvider,
+  textClientToCallLlm,
   type DirectLlmProvider,
+  type TextJsonGenerationClient,
 } from "./llm-execution.js";
 import {
   AUTO_LANGUAGE,
@@ -804,6 +806,9 @@ export function detectDescriptionBackend(): DirectLlmProvider | null {
 
 export type CallLlmFn = (prompt: string, maxTokens: number) => Promise<string>;
 
+/** Port schema label for node-description JSON — the implicit output shape made explicit. */
+const NODE_DESCRIPTIONS_SCHEMA = "graphify_node_descriptions_v1";
+
 async function makeDefaultCallLlm(
   provider: DirectLlmProvider,
   model?: string,
@@ -866,6 +871,14 @@ export interface DescribeNodesOptions {
   maxNodes?: number;
   batchSize?: number;
   callLlm?: CallLlmFn;
+  /**
+   * Inject an already-constructed TextJsonGenerationClient (e.g. the mesh client
+   * radar adapts via `meshTextJsonClient`) — the single instance-injection shape
+   * shared with direct semantic extraction and wiki `clients.mesh`. When present
+   * it drives the direct path verbatim; the per-batch token budget flows through
+   * as the port's `maxOutputTokens` and the existing retry policy is preserved.
+   */
+  textClient?: TextJsonGenerationClient;
   /** Only rank/describe nodes whose `description` attr is empty/absent. */
   onlyMissing?: boolean;
   /**
@@ -909,7 +922,9 @@ export async function describeNodes(
   const targetIds = ranked.slice(0, maxNodes > 0 ? maxNodes : ranked.length);
   if (targetIds.length === 0) return out;
 
-  const callLlm = options.callLlm ?? (await makeDefaultCallLlm(options.provider, options.model));
+  const callLlm = options.textClient
+    ? textClientToCallLlm(options.textClient, NODE_DESCRIPTIONS_SCHEMA)
+    : (options.callLlm ?? (await makeDefaultCallLlm(options.provider, options.model)));
   const promptOptions: BuildNodeDescriptionPromptOptions = {
     descriptionLang: options.descriptionLang,
     corpusDefaultLang: options.corpusDefaultLang ?? null,
@@ -956,6 +971,13 @@ export interface GenerateNodeDescriptionsOptions {
   batchSize?: number;
   /** Injectable LLM caller. Pass a mock in tests to avoid network calls. */
   callLlm?: CallLlmFn;
+  /**
+   * Inject an already-constructed TextJsonGenerationClient (the mesh client, in
+   * radar's live wiring). Like an injected `callLlm`, its presence is a
+   * programmatic opt-in to the direct path; the client carries the per-call
+   * `maxOutputTokens` budget and graphify never sees its transport.
+   */
+  textClient?: TextJsonGenerationClient;
   /** Suppress stderr messages about missing backend / errors. */
   quiet?: boolean;
   /**
@@ -1139,7 +1161,8 @@ export async function generateNodeDescriptions(
   options: GenerateNodeDescriptionsOptions = {},
 ): Promise<GenerateNodeDescriptionsResult> {
   let provider: DirectLlmProvider | null = null;
-  const backendConfigured = (): boolean => provider !== null || Boolean(options.callLlm);
+  const backendConfigured = (): boolean =>
+    provider !== null || Boolean(options.callLlm) || Boolean(options.textClient);
 
   const skip = (
     source: DescriptionSource,
@@ -1191,14 +1214,14 @@ export async function generateNodeDescriptions(
           // must NOT silently switch to direct. An INJECTED `callLlm` is a
           // programmatic direct opt-in (tests / embedders) and still resolves
           // to direct — a detected `provider` alone does not.
-          options.callLlm
+          options.callLlm || options.textClient
           ? "direct"
           : "assistant";
 
   // ---------------------------------------------------------------------------
   // ASSISTANT MODE — no API key, emit instruction files + ingest answers.
   // ---------------------------------------------------------------------------
-  if (resolvedMode === "assistant" && !options.callLlm) {
+  if (resolvedMode === "assistant" && !options.callLlm && !options.textClient) {
     const instructionDir = options.instructionDir ?? join(".graphify", DESCRIPTION_INSTRUCTIONS_DIR);
 
     // Step 1: try to ingest already-completed answer files first.
@@ -1290,7 +1313,7 @@ export async function generateNodeDescriptions(
   // ---------------------------------------------------------------------------
   // DIRECT MODE — API key or injected callLlm.
   // ---------------------------------------------------------------------------
-  if (!provider && !options.callLlm) {
+  if (!provider && !options.callLlm && !options.textClient) {
     // Should not reach here in normal flow (assistant mode handles the no-key
     // case), but guard defensively for forced `--description-mode direct`
     // without a configured backend.
@@ -1313,6 +1336,7 @@ export async function generateNodeDescriptions(
       ...(options.maxNodes !== undefined ? { maxNodes: options.maxNodes } : {}),
       ...(options.batchSize !== undefined ? { batchSize: options.batchSize } : {}),
       ...(options.callLlm ? { callLlm: options.callLlm } : {}),
+      ...(options.textClient ? { textClient: options.textClient } : {}),
       ...(options.onlyMissing !== undefined ? { onlyMissing: options.onlyMissing } : {}),
       ...(options.citationCap !== undefined ? { citationCap: options.citationCap } : {}),
       ...(options.citationsByNode ? { citationsByNode: options.citationsByNode } : {}),

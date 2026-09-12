@@ -6,6 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import Graph from "graphology";
+import { writeFileSync } from "node:fs";
 
 import {
   applySalientCommunityLabels,
@@ -17,6 +18,7 @@ import {
   type CallLlmFn,
 } from "../src/community-labeling.js";
 import type { GodNodeEntry } from "../src/types.js";
+import type { TextJsonGenerationClient } from "../src/llm-execution.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -227,6 +229,74 @@ describe("detectLabelingBackend", () => {
 // ---------------------------------------------------------------------------
 // labelCommunities (with mocked callLlm)
 // ---------------------------------------------------------------------------
+
+describe("labelCommunities mesh-parity (A): default-path maxTokens, textClient injection, no-retry", () => {
+  it("default path passes the per-call maxTokens Math.min(40 + 16*cids, 4096) to callLlm", async () => {
+    const G = mkGraph();
+    let seenMaxTokens = -1;
+    const callLlm: CallLlmFn = async (_prompt, maxTokens) => {
+      seenMaxTokens = maxTokens;
+      return JSON.stringify({ "0": "Auth", "1": "Orders" });
+    };
+    await labelCommunities(G, communities, { provider: "anthropic", gods, callLlm });
+    // 2 communities in the fixture -> Math.min(40 + 16*2, 4096) = 72.
+    expect(seenMaxTokens).toBe(Math.min(40 + 16 * communities.size, 4096));
+  });
+
+  it("routes through an injected textClient (mesh-injectable) with maxOutputTokens", async () => {
+    const G = mkGraph();
+    let calls = 0;
+    let seenMax: number | undefined = undefined;
+    const textClient: TextJsonGenerationClient = {
+      mode: "mesh",
+      provider: "injected",
+      async generateJson(input) {
+        calls += 1;
+        seenMax = input.maxOutputTokens;
+        if (input.outputPath) {
+          writeFileSync(
+            input.outputPath,
+            JSON.stringify({ "0": "Mesh Auth", "1": "Mesh Orders" }),
+            "utf-8",
+          );
+        }
+        return {
+          status: "completed",
+          provider: "injected",
+          mode: "mesh",
+          ...(input.outputPath ? { outputPath: input.outputPath } : {}),
+          audit: {},
+        };
+      },
+    };
+    const labels = await labelCommunities(G, communities, { provider: "anthropic", gods, textClient });
+    // The injected client was used verbatim — no direct backend was built.
+    expect(calls).toBe(1);
+    expect(labels.get(0)).toBe("Mesh Auth");
+    expect(labels.get(1)).toBe("Mesh Orders");
+    // Per-call budget reached the port as maxOutputTokens (ceiling-to-honor).
+    expect(seenMax).toBe(Math.min(40 + 16 * communities.size, 4096));
+  });
+
+  it("does NOT retry the injected textClient path (parity with the single-shot labeling call)", async () => {
+    const G = mkGraph();
+    let calls = 0;
+    const textClient: TextJsonGenerationClient = {
+      mode: "mesh",
+      provider: "injected",
+      async generateJson() {
+        calls += 1;
+        // "503" is transient by node-descriptions' taxonomy, but community
+        // labeling has always been single-shot: it must propagate, not retry.
+        throw new Error("503 service unavailable");
+      },
+    };
+    await expect(
+      labelCommunities(G, communities, { provider: "anthropic", gods, textClient }),
+    ).rejects.toThrow("503 service unavailable");
+    expect(calls).toBe(1);
+  });
+});
 
 describe("labelCommunities", () => {
   it("happy path: returns LLM labels for all communities", async () => {
