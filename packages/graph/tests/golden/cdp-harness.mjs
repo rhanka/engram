@@ -132,11 +132,66 @@ async function waitDevtools(port) {
   throw new Error("Chrome devtools endpoint did not come up");
 }
 
+/**
+ * Read the port Chrome actually bound, from the `DevToolsActivePort` file it
+ * writes into its profile directory.
+ *
+ * Chrome is launched with `--remote-debugging-port=0`, so the OS assigns and
+ * binds a free port atomically. Nothing here guesses a port, so two concurrent
+ * test files can no longer pick the same one and end up driving the same page.
+ *
+ * The failure mode is deliberate: if Chrome dies before writing the file we
+ * reject at once with its exit code and whatever it put on stderr, rather than
+ * polling an endpoint that will never answer. Trading a race for a blind wait
+ * would be no improvement.
+ */
+async function readDevToolsPort(chrome, profile) {
+  const portFile = path.join(profile, "DevToolsActivePort");
+  let stderr = "";
+  if (chrome.stderr) chrome.stderr.on("data", (c) => (stderr += c));
+
+  let exited = null;
+  chrome.once("exit", (code, signal) => {
+    exited = { code, signal };
+  });
+
+  for (let i = 0; i < 80; i += 1) {
+    if (exited) {
+      throw new Error(
+        `Chrome exited before writing DevToolsActivePort (code=${exited.code}, ` +
+          `signal=${exited.signal})${stderr ? ": " + stderr.trim().slice(-400) : ""}`,
+      );
+    }
+    let raw;
+    try {
+      raw = fs.readFileSync(portFile, "utf8");
+    } catch {
+      await new Promise((r) => setTimeout(r, 50));
+      continue;
+    }
+    // The file's first line is the port. Chrome writes it non-atomically, so a
+    // partial read is expected and simply retried rather than treated as fatal.
+    const first = raw.split("\n", 1)[0].trim();
+    if (!/^[0-9]+$/.test(first)) {
+      await new Promise((r) => setTimeout(r, 50));
+      continue;
+    }
+    const port = Number.parseInt(first, 10);
+    if (!Number.isInteger(port) || port <= 0) {
+      throw new Error(`DevToolsActivePort holds an unusable port: ${JSON.stringify(first)}`);
+    }
+    return port;
+  }
+  throw new Error(
+    `Chrome never wrote a usable DevToolsActivePort in ${portFile}` +
+      (stderr ? `: ${stderr.trim().slice(-400)}` : ""),
+  );
+}
+
 export async function openOracle() {
   const WebSocket = require("ws");
   const chromeBin = findChrome();
   const { server, port: httpPort } = await startServer();
-  const cdpPort = 9400 + Math.floor(Math.random() * 400);
   const profile = path.join(
     GRAPH_PKG,
     ".graphify-cdp-prof-" + process.pid + "-" + Date.now(),
@@ -168,14 +223,15 @@ export async function openOracle() {
       "--hide-scrollbars",
       "--force-device-scale-factor=1", // we drive DPR via canvas backing store
       "--disable-lcd-text", // grayscale AA -> more cross-runner-stable text
-      `--remote-debugging-port=${cdpPort}`,
+      "--remote-debugging-port=0", // the OS assigns a free port; see readDevToolsPort
       `--user-data-dir=${profile}`,
       "--window-size=1024,1024",
       "about:blank",
     ],
-    { stdio: "ignore" },
+    { stdio: ["ignore", "ignore", "pipe"] },
   );
 
+  const cdpPort = await readDevToolsPort(chrome, profile);
   const pageInfo = await waitDevtools(cdpPort);
   const ws = new WebSocket(pageInfo.webSocketDebuggerUrl, {
     perMessageDeflate: false,
@@ -301,6 +357,20 @@ export async function openOracle() {
     }
     try {
       chrome.kill("SIGKILL");
+      // Wait for the process to actually go before deleting its profile.
+      // SIGKILL is not instantaneous, and removing the directory underneath a
+      // still-running Chrome leaves both a live process and a half-deleted
+      // profile behind — residue that shows up as flakiness in later runs. The
+      // cap keeps close() from hanging if the process never reports exiting.
+      if (chrome.exitCode === null && chrome.signalCode === null) {
+        await new Promise((resolve) => {
+          const done = setTimeout(resolve, 2000);
+          chrome.once("exit", () => {
+            clearTimeout(done);
+            resolve();
+          });
+        });
+      }
     } catch {
       /* ignore */
     }
