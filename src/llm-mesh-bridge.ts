@@ -100,10 +100,19 @@ export interface MeshTextJsonClientOptions {
    * direct/assistant/batch in the same audit pipeline.
    */
   mode?: "mesh";
-  /** Default provider id used when a request does not pin one. */
-  defaultProvider?: ProviderId;
-  /** Default model id used when a request does not pin one. */
-  defaultModel?: string;
+  /**
+   * Provider id the mesh routes to. REQUIRED — graphify embeds no default
+   * provider: a silent "anthropic" fallback would misroute the request (wrong
+   * keyring entry, wrong audit trail) and hide a caller misconfiguration. The
+   * radar-side assembler that owns the keyring picks the provider; graphify only
+   * carries it through.
+   */
+  provider: ProviderId;
+  /**
+   * Model id the mesh routes to. REQUIRED for the same reason as `provider`: an
+   * empty modelId is a silent lie about which model actually ran.
+   */
+  model: string;
 }
 
 /**
@@ -121,16 +130,31 @@ export interface MeshTextJsonClientOptions {
  */
 export function meshTextJsonClient(
   mesh: LlmMesh,
-  options: MeshTextJsonClientOptions = {},
+  options: MeshTextJsonClientOptions,
 ): TextJsonGenerationClient {
-  const provider = options.defaultProvider ?? "anthropic";
+  // Fail loud, never default: graphify must not invent a provider or model. A
+  // silent "anthropic"/"" fallback would misroute to the wrong keyring entry and
+  // lie in the audit trail about what actually ran. The radar-side assembler
+  // that owns the keyring is the one that picks these.
+  if (!options?.provider) {
+    throw new Error(
+      "meshTextJsonClient: an explicit provider is required — graphify does not default to a provider. Pass { provider, model }.",
+    );
+  }
+  if (!options.model) {
+    throw new Error(
+      "meshTextJsonClient: an explicit model is required — an empty modelId would misreport which model ran. Pass { provider, model }.",
+    );
+  }
+  const provider = options.provider;
+  const model = options.model;
   return {
     mode: "mesh",
     provider,
-    ...(options.defaultModel ? { model: options.defaultModel } : {}),
+    model,
     async generateJson(input: TextJsonGenerationInput): Promise<TextJsonGenerationResult> {
       const request: GenerateRequest = {
-        model: { providerId: provider, modelId: options.defaultModel ?? "" },
+        model: { providerId: provider, modelId: model },
         messages: [
           {
             role: "system",
@@ -159,12 +183,12 @@ export function meshTextJsonClient(
         status: "completed",
         provider,
         mode: "mesh",
-        ...(options.defaultModel ? { model: options.defaultModel } : {}),
+        model,
         ...(input.outputPath ? { outputPath: input.outputPath } : {}),
         audit: {
           mesh: true,
           providerId: provider,
-          modelId: options.defaultModel ?? null,
+          modelId: model,
         },
       };
     },
