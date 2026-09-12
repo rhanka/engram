@@ -785,3 +785,4 @@ export type {
   StudioRenderSceneNode,
   StudioRenderStyleBuffers,
 } from "./studio-render-buffers.js";
+export { createGraphifyMesh } from "./llm-mesh-bridge.js";
