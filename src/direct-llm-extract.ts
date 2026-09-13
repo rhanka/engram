@@ -6,7 +6,9 @@ import type { Extraction } from "./types.js";
 import {
   createDirectTextJsonClient,
   defaultDirectLlmModel,
+  parseJsonFromLlmText,
   type DirectLlmProvider,
+  type TextJsonGenerationClient,
 } from "./llm-execution.js";
 import { validateExtraction } from "./validate.js";
 
@@ -50,6 +52,14 @@ export interface PackSemanticFilesOptions {
 export interface DirectSemanticClientOptions {
   provider: DirectLlmProvider;
   model?: string;
+  /**
+   * Inject an already-constructed TextJsonGenerationClient (e.g. the mesh
+   * client radar adapts via `meshTextJsonClient`) — the same instance-injection
+   * shape as `wiki-description-generation` `clients.mesh`. When present it is
+   * used verbatim; otherwise the direct-backend client is built from
+   * provider/model. graphify never sees the underlying transport.
+   */
+  textClient?: TextJsonGenerationClient;
 }
 
 function toPortableRelative(root: string, filePath: string): string {
@@ -177,7 +187,10 @@ export function createDirectSemanticExtractionClient(
 ): DirectSemanticExtractionClient {
   const provider = options.provider;
   const model = options.model?.trim() || defaultDirectLlmModel(provider);
-  const textClient = createDirectTextJsonClient({ provider, model });
+  // Instance injection (parity with wiki `clients.mesh`): use the caller's
+  // client verbatim when provided; otherwise build the direct backend. graphify
+  // never sees the injected client's transport.
+  const textClient = options.textClient ?? createDirectTextJsonClient({ provider, model });
   return {
     provider,
     model,
@@ -187,12 +200,24 @@ export function createDirectSemanticExtractionClient(
         `graphify-direct-semantic-${process.pid}-${Date.now()}-${input.chunkIndex}.json`,
       );
       try {
+        const validateResponse = (text: string): void => {
+          const candidate = parseJsonFromLlmText(text) as Partial<Extraction>;
+          const candidateErrors = validateExtraction(candidate);
+          if (candidateErrors.length > 0) {
+            throw new Error(
+              `Direct semantic extraction returned invalid Graphify JSON:\n${candidateErrors.join("\n")}`,
+            );
+          }
+        };
         await textClient.generateJson({
           schema: "graphify_extraction_v1",
           prompt: buildExtractionPrompt(input),
           outputPath,
+          validateResponse,
         });
-        const parsed = JSON.parse(readFileSync(outputPath, "utf-8")) as Partial<Extraction>;
+        const parsed = parseJsonFromLlmText(
+          readFileSync(outputPath, "utf-8"),
+        ) as Partial<Extraction>;
         const errors = validateExtraction(parsed);
         if (errors.length > 0) {
           throw new Error(`Direct semantic extraction returned invalid Graphify JSON:\n${errors.join("\n")}`);

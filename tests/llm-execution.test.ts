@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { normalizeProjectConfig } from "../src/project-config.js";
+import { normalizeProjectConfig, validateProjectConfig } from "../src/project-config.js";
 import {
   createDirectTextJsonClient,
   createAssistantTextJsonClient,
@@ -99,7 +99,7 @@ describe("LLM execution ports", () => {
     );
   });
 
-  it("fails fast for mesh mode without adapter config", () => {
+  it("lets mesh mode through preflight, since no config can validate it", () => {
     const root = makeTempDir();
     const config = normalizeProjectConfig(
       {
@@ -111,9 +111,30 @@ describe("LLM execution ports", () => {
       join(root, "graphify.yaml"),
     );
 
-    expect(() => preflightLlmExecution(config.llm_execution, "vision_json")).toThrow(
-      "llm_execution.mesh.adapter is required for mesh mode",
-    );
+    // The old check demanded a non-empty `mesh.adapter`, but that string was
+    // resolved against nothing: any value passed. Mesh mode is now satisfied by
+    // an injected client, which preflight cannot see, so it must not pretend to
+    // validate it here. The fail-closed lives in createGraphifyMesh().
+    expect(() =>
+      preflightLlmExecution(config.llm_execution, "vision_json"),
+    ).not.toThrow();
+  });
+
+  it("rejects a config still carrying llm_execution.mesh.adapter", () => {
+    const root = makeTempDir();
+
+    // Normalisation is field by field, so dropping `mesh.adapter` from the
+    // policy would make an existing config key vanish without a word — the same
+    // silent-acceptance defect being removed, moved one level up. A config that
+    // sets it has to be told, not ignored.
+    const errors = validateProjectConfig({
+      version: 1,
+      profile: { path: "graphify/profile.yaml" },
+      inputs: { corpus: ["raw"] },
+      llm_execution: { mode: "mesh", mesh: { adapter: "anything-at-all" } },
+    } as never);
+
+    expect(errors.join("\n")).toContain("llm_execution.mesh.adapter");
   });
 
   it("fails fast for direct mode without provider or credentials", () => {
@@ -213,6 +234,51 @@ describe("LLM execution ports", () => {
     expect(result.instructionPath).toBe(join(root, "vision-json-generic_image_caption_v1.md"));
     expect(readFileSync(result.instructionPath, "utf-8")).toContain(".graphify/image.png");
     expect(existsSync(result.instructionPath)).toBe(true);
+  });
+
+  it("lets a per-call maxOutputTokens override the one fixed at construction", async () => {
+    generateTextMock.mockResolvedValue({
+      text: "{\"nodes\":[],\"edges\":[],\"hyperedges\":[],\"input_tokens\":1,\"output_tokens\":2}",
+      finishReason: "stop",
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+    });
+    process.env.OPENAI_API_KEY = "test-key";
+    const client = createDirectTextJsonClient({
+      provider: "openai",
+      model: "gpt-5.5",
+      maxOutputTokens: 1024,
+    });
+
+    await client.generateJson({
+      schema: "graphify_extraction_v1",
+      prompt: "small output",
+      maxOutputTokens: 64,
+    });
+
+    // The mesh path already forwarded the per-call cap; this one dropped it, so
+    // the same call was capped or not depending on the mode, silently.
+    expect(generateTextMock).toHaveBeenCalledWith(expect.objectContaining({
+      maxOutputTokens: 64,
+    }));
+  });
+
+  it("refuses to run the call when a per-call maxOutputTokens is unusable", async () => {
+    generateTextMock.mockResolvedValue({
+      text: "{}",
+      finishReason: "stop",
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+    });
+    process.env.OPENAI_API_KEY = "test-key";
+    generateTextMock.mockClear();
+    const client = createDirectTextJsonClient({ provider: "openai", model: "gpt-5.5" });
+
+    // Falling back to the construction default — or worse, to no cap at all —
+    // would run an unbounded call that nobody asked for. The bill is where you
+    // would find out.
+    await expect(
+      client.generateJson({ schema: "s", prompt: "p", maxOutputTokens: 0 }),
+    ).rejects.toThrow("maxOutputTokens must be a positive integer");
+    expect(generateTextMock).not.toHaveBeenCalled();
   });
 
   it("uses Vercel AI SDK for direct text JSON generation without writing secrets", async () => {
