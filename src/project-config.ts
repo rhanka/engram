@@ -285,6 +285,11 @@ export function validateProjectConfig(config: GraphifyProjectConfig): string[] {
   ) {
     errors.push("llm_execution.mode must be one of assistant, direct, batch, mesh, off");
   }
+  if (asRecord(llmExecution.mesh).adapter !== undefined) {
+    errors.push(
+      "llm_execution.mesh.adapter is no longer read: it named nothing, since graphify has no adapter registry to resolve it against. Mesh mode takes an injected client built with createGraphifyMesh() instead. Remove the key.",
+    );
+  }
   if (outputs.state_dir !== undefined && typeof outputs.state_dir !== "string") {
     errors.push("outputs.state_dir must be a path string");
   }
@@ -325,7 +330,6 @@ export function normalizeProjectConfig(
   const textJson = asRecord(llmExecution.text_json);
   const visionJson = asRecord(llmExecution.vision_json);
   const llmBatch = asRecord(llmExecution.batch);
-  const llmMesh = asRecord(llmExecution.mesh);
   const outputs = asRecord(config.outputs) as GraphifyOutputPolicy;
   const ontologyOutput = asRecord(outputs.ontology) as GraphifyProjectOntologyOutputPolicy;
   const reconciliation = asRecord(ontologyOutput.reconciliation) as GraphifyProjectOntologyReconciliationPolicy;
@@ -392,9 +396,6 @@ export function normalizeProjectConfig(
       batch: {
         provider: asString(llmBatch.provider) ?? "",
         completion_window: asString(llmBatch.completion_window) ?? "24h",
-      },
-      mesh: {
-        adapter: asString(llmMesh.adapter) ?? "",
       },
     },
     outputs: {

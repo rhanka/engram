@@ -445,7 +445,7 @@ describe("assistant-mode generation behavior", () => {
   });
 
   it("A-final: drives generation via the @sentropic/llm-mesh bridge in mode mesh", async () => {
-    // End-to-end proof that the A3 scaffold (src/llm-mesh-bridge.ts) wires
+    // End-to-end proof that the routed bridge (src/llm-mesh-bridge.ts) wires
     // into generateWikiDescriptionSidecars without source changes: a host
     // builds a mesh with a stub adapter, wraps it as a TextJsonGenerationClient
     // via meshTextJsonClient(), injects it as clients.mesh, and the
@@ -461,7 +461,7 @@ describe("assistant-mode generation behavior", () => {
       generate: async () => ({
         id: "stub-response",
         providerId: "anthropic" as const,
-        modelId: "claude-sonnet-4-6",
+        modelId: "claude-sonnet-5",
         message: {
           role: "assistant" as const,
           content: [{
@@ -470,6 +470,7 @@ describe("assistant-mode generation behavior", () => {
           }],
         },
         text: '{"status":"generated","description":"AlphaService wired through the @sentropic/llm-mesh bridge.","evidence_refs":["src/alpha.ts"],"confidence":0.91}',
+        toolCalls: [],
         usage: { inputTokens: 0, outputTokens: 0 },
         finishReason: "stop" as const,
       }),
@@ -480,6 +481,38 @@ describe("assistant-mode generation behavior", () => {
     const stubAdapter = new AnthropicAdapter({ client: stubClient as never });
 
     const mesh = createGraphifyMesh({
+      routingSubject: {
+        principalRef: "principal:test",
+        ownerScopeRef: "owner:test",
+      },
+      createRoutePlanner: (runtime) => ({
+        plan: async (_subject, input) => ({
+          planRef: "plan-wiki-test",
+          expiresAt: "2030-01-01T00:00:00.000Z",
+          candidateRefs: ["candidate-wiki-test"],
+          policy: {} as never,
+          councilRevision: "council-test",
+          diagnostics: [{
+            candidateRef: "candidate-wiki-test",
+            diagnosticAccountRef: "account-test",
+            requestedModel: input.requestedModel,
+            actualProviderId: "anthropic",
+            actualModelId: "claude-sonnet-5",
+            actualTransportProviderId: "anthropic",
+            reason: "exact",
+            cacheContinuityRisk: false,
+          }],
+        }),
+        prepareAttempt: async () => ({
+          attemptRef: "attempt-wiki-test",
+          generate: (request) => runtime.generate(request),
+          stream: (request) => runtime.stream(request),
+          recordOutcome: async () => {},
+          markCommitted: async () => {},
+          complete: async () => {},
+          releaseCancelled: async () => {},
+        }),
+      }) as never,
       adapters: { anthropic: stubAdapter },
       authResolver: async () => ({
         material: { type: "direct-token" as const, token: "stub-token" },
@@ -488,8 +521,8 @@ describe("assistant-mode generation behavior", () => {
     });
 
     const meshClient = meshTextJsonClient(mesh, {
-      defaultProvider: "anthropic",
-      defaultModel: "claude-sonnet-4-6",
+      provider: "anthropic",
+      model: "claude-sonnet-5",
     });
 
     const graph = mkGraph();
@@ -515,7 +548,7 @@ describe("assistant-mode generation behavior", () => {
       generator: {
         mode: "mesh",
         provider: "anthropic",
-        model: "claude-sonnet-4-6",
+        model: "claude-sonnet-5",
       },
     });
     expect(result.index.nodes["alpha"]?.status).toBe("generated");
