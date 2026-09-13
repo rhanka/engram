@@ -17,7 +17,7 @@ const optionalRuntimeDeps = [
 
 export default defineConfig([
   {
-    entry: { index: "src/index.ts" },
+    entry: { index: "src/index.ts", "llm-mesh": "src/llm-mesh.ts" },
     format: ["esm", "cjs"],
     dts: true,
     sourcemap: true,

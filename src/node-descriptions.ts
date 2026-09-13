@@ -781,6 +781,14 @@ function parseDescriptionResponse(text: string, validIds: Set<string>): Map<stri
   return out;
 }
 
+function validateDescriptionResponse(text: string): void {
+  const cleaned = text.replace(FENCE_RE, "").trim();
+  const parsed: unknown = JSON.parse(cleaned);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("description response is not a JSON object");
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Auto-detect (mirrors detectLabelingBackend)
 // ---------------------------------------------------------------------------
@@ -922,8 +930,8 @@ export async function describeNodes(
   const targetIds = ranked.slice(0, maxNodes > 0 ? maxNodes : ranked.length);
   if (targetIds.length === 0) return out;
 
-  const callLlm = options.textClient
-    ? textClientToCallLlm(options.textClient, NODE_DESCRIPTIONS_SCHEMA)
+  const defaultCallLlm = options.textClient
+    ? undefined
     : (options.callLlm ?? (await makeDefaultCallLlm(options.provider, options.model)));
   const promptOptions: BuildNodeDescriptionPromptOptions = {
     descriptionLang: options.descriptionLang,
@@ -940,6 +948,13 @@ export async function describeNodes(
     const prompt = buildNodeDescriptionPrompt(contexts, promptOptions);
     const validIds = new Set(batch);
     const maxTokens = Math.min(120 + 48 * batch.length, 8192);
+    const callLlm = options.textClient
+      ? textClientToCallLlm(
+        options.textClient,
+        NODE_DESCRIPTIONS_SCHEMA,
+        validateDescriptionResponse,
+      )
+      : defaultCallLlm!;
     const text = await callLlmWithRetry(callLlm, prompt, maxTokens);
     const parsed = parseDescriptionResponse(text, validIds);
     for (const [id, description] of parsed) out.set(id, description);

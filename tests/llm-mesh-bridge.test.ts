@@ -291,6 +291,52 @@ describe("graphify llm-mesh bridge", () => {
     expect(second.complete).toHaveBeenCalledOnce();
   });
 
+  it("records invalid content as failed and falls back before crediting a route", async () => {
+    const invalidResponse: GenerateResponse = {
+      ...generateResponse,
+      id: "response-invalid",
+      message: { role: "assistant", content: "not JSON" },
+      text: "not JSON",
+    };
+    const first = routeAttempt(async () => invalidResponse, undefined, "candidate-0");
+    const second = routeAttempt(async () => generateResponse, undefined, "candidate-1");
+    const planner = routePlanner([first, second]);
+    const client = meshTextJsonClient(createGraphifyMesh({
+      routingSubject,
+      createRoutePlanner: () => planner,
+    }), {
+      provider: "openai",
+      model: "gpt-5.5",
+    });
+    const outputPath = join(makeTempDir(), "validated.json");
+
+    await expect(client.generateJson({
+      schema: "graphify_test_v1",
+      prompt: "Return valid JSON",
+      outputPath,
+      validateResponse: (text) => {
+        JSON.parse(text);
+      },
+    })).resolves.toMatchObject({ status: "completed" });
+
+    expect(readFileSync(outputPath, "utf-8")).toBe(generateResponse.text);
+    expect(first.complete).not.toHaveBeenCalled();
+    expect(first.recordOutcome).toHaveBeenCalledWith(
+      {
+        reason: "invalid-request",
+        retryable: true,
+        healthScope: "route",
+      },
+      {
+        inputTokens: 12,
+        outputTokens: 4,
+        estimated: false,
+      },
+    );
+    expect(second.generate).toHaveBeenCalledOnce();
+    expect(second.complete).toHaveBeenCalledOnce();
+  });
+
   it("records a non-retryable failure and rethrows without trying another candidate", async () => {
     const failure = new Error("arbitrary provider failure");
     const first = routeAttempt(async () => {
