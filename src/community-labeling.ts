@@ -491,7 +491,11 @@ export async function labelCommunities(
   const maxTokens = Math.min(40 + 16 * labeledCids.length, 4096);
 
   const callLlm = options.textClient
-    ? textClientToCallLlm(options.textClient, COMMUNITY_LABELS_SCHEMA)
+    ? textClientToCallLlm(
+      options.textClient,
+      COMMUNITY_LABELS_SCHEMA,
+      (text) => { parseLabelResponse(text, labeledCids); },
+    )
     : (options.callLlm ?? (await makeDefaultCallLlm(options.provider, options.model)));
   const text = await callLlm(prompt, maxTokens);
   const parsed = parseLabelResponse(text, labeledCids);

@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 /**
  * Bridge between graphify's TextJsonGenerationClient contract and a routed
  * @sentropic/llm-mesh runtime. The host supplies routing identity, planner,
@@ -55,6 +57,24 @@ export interface CreateGraphifyMeshOptions {
    * resolver below throws as soon as the runtime tries to resolve auth.
    */
   authResolver?: AuthResolver;
+}
+
+/** Consumer-owned validation that runs inside the route-attempt lifecycle. */
+export type GraphifyMeshResponseValidator = (
+  response: GenerateResponse,
+) => void | Promise<void>;
+
+/**
+ * LlmMesh with an explicit deferred-completion path for schema-aware callers.
+ * `generateValidated` does not credit an attempt until `validateResponse`
+ * accepts its response. Graphify owns the attempt lifecycle; the consumer owns
+ * the response schema and signals invalid content by throwing or rejecting.
+ */
+export interface GraphifyMesh extends LlmMesh {
+  generateValidated(
+    request: GenerateRequest,
+    validateResponse: GraphifyMeshResponseValidator,
+  ): Promise<GenerateResponse>;
 }
 
 /**
@@ -296,6 +316,28 @@ function routeAttemptUsage(response: GenerateResponse): RouteAttemptUsage | unde
   };
 }
 
+class MeshResponseValidationFailure extends Error {
+  readonly validationError: unknown;
+  readonly usage: RouteAttemptUsage | undefined;
+
+  constructor(validationError: unknown, usage: RouteAttemptUsage | undefined) {
+    super("Graphify mesh response validation failed", { cause: validationError });
+    this.name = "MeshResponseValidationFailure";
+    this.validationError = validationError;
+    this.usage = usage;
+  }
+}
+
+const invalidResponseClassification: RouteFailureClassification = {
+  // llm-mesh 0.19 has no invalid-response reason. `invalid-request` with a
+  // route-only scope records terminal failure without poisoning account,
+  // transport, or provider-model health; retryable permits only the remaining
+  // candidates in this already-bounded plan.
+  reason: "invalid-request",
+  retryable: true,
+  healthScope: "route",
+};
+
 function abortReason(signal: AbortSignal): unknown {
   if (signal.reason !== undefined) return signal.reason;
   return Object.assign(new Error("The operation was aborted"), { name: "AbortError" });
@@ -311,7 +353,7 @@ function abortReason(signal: AbortSignal): unknown {
  * `ownerScopeRef`. The host likewise supplies its auth resolver; graphify never
  * opens or locates the host's vault.
  */
-export function createGraphifyMesh(options: CreateGraphifyMeshOptions): LlmMesh {
+export function createGraphifyMesh(options: CreateGraphifyMeshOptions): GraphifyMesh {
   const defaultAdapters = createDefaultProviderAdapters();
   const overrides = options.adapters ?? {};
   // Replace any default adapter by its override match on providerId.
@@ -334,58 +376,85 @@ export function createGraphifyMesh(options: CreateGraphifyMeshOptions): LlmMesh 
   });
   const planner = options.createRoutePlanner(runtime);
 
+  const generateRouted = async (
+    request: GenerateRequest,
+    validateResponse?: GraphifyMeshResponseValidator,
+  ): Promise<GenerateResponse> => {
+    if (request.signal?.aborted) throw abortReason(request.signal);
+
+    const plan = await planner.plan(
+      options.routingSubject,
+      routePlanInput(request),
+    );
+    const requestId = request.metadata?.correlationId?.trim() || randomUUID();
+
+    for (const [attemptIndex, candidateRef] of plan.candidateRefs.entries()) {
+      const attempt = await planner.prepareAttempt(
+        options.routingSubject,
+        plan.planRef,
+        candidateRef,
+        requestId,
+        attemptIndex,
+      );
+
+      if (request.signal?.aborted) {
+        await attempt.releaseCancelled();
+        throw abortReason(request.signal);
+      }
+
+      try {
+        const response = await attempt.generate(request);
+        const usage = routeAttemptUsage(response);
+        if (validateResponse) {
+          try {
+            await validateResponse(response);
+          } catch (error) {
+            throw new MeshResponseValidationFailure(error, usage);
+          }
+        }
+        await attempt.complete(usage);
+        return response;
+      } catch (error) {
+        const validationFailure = error instanceof MeshResponseValidationFailure
+          ? error
+          : undefined;
+        const classification = validationFailure
+          ? invalidResponseClassification
+          : classifyRouteFailure(
+            isNormalizedProviderError(error)
+              ? error
+              : normalizeProviderError(
+                requestProviderId(request, plan, candidateRef),
+                error,
+              ),
+            request.signal,
+          );
+
+        if (classification.reason === "cancelled") {
+          await attempt.releaseCancelled();
+        } else if (validationFailure) {
+          await attempt.recordOutcome(classification, validationFailure.usage);
+        } else {
+          await attempt.recordOutcome(classification);
+        }
+
+        const hasMoreCandidates = attemptIndex + 1 < plan.candidateRefs.length;
+        if (!classification.retryable || !hasMoreCandidates) {
+          throw validationFailure?.validationError ?? error;
+        }
+      }
+    }
+
+    throw new Error("Graphify mesh: route planner returned no candidates");
+  };
+
   return {
     listProviders: runtime.listProviders,
     listModels: runtime.listModels,
-    async generate(request: GenerateRequest): Promise<GenerateResponse> {
-      if (request.signal?.aborted) throw abortReason(request.signal);
-
-      const plan = await planner.plan(
-        options.routingSubject,
-        routePlanInput(request),
-      );
-      const requestId = request.metadata?.correlationId?.trim() || randomUUID();
-
-      for (const [attemptIndex, candidateRef] of plan.candidateRefs.entries()) {
-        const attempt = await planner.prepareAttempt(
-          options.routingSubject,
-          plan.planRef,
-          candidateRef,
-          requestId,
-          attemptIndex,
-        );
-
-        if (request.signal?.aborted) {
-          await attempt.releaseCancelled();
-          throw abortReason(request.signal);
-        }
-
-        try {
-          const response = await attempt.generate(request);
-          await attempt.complete(routeAttemptUsage(response));
-          return response;
-        } catch (error) {
-          const normalized = isNormalizedProviderError(error)
-            ? error
-            : normalizeProviderError(
-              requestProviderId(request, plan, candidateRef),
-              error,
-            );
-          const classification = classifyRouteFailure(normalized, request.signal);
-
-          if (classification.reason === "cancelled") {
-            await attempt.releaseCancelled();
-          } else {
-            await attempt.recordOutcome(classification);
-          }
-
-          const hasMoreCandidates = attemptIndex + 1 < plan.candidateRefs.length;
-          if (!classification.retryable || !hasMoreCandidates) throw error;
-        }
-      }
-
-      throw new Error("Graphify mesh: route planner returned no candidates");
-    },
+    generate: (request: GenerateRequest) => generateRouted(request),
+    generateValidated: (request, validateResponse) => (
+      generateRouted(request, validateResponse)
+    ),
     async stream(): Promise<never> {
       throw new Error("Graphify mesh: routed streaming is not supported yet");
     },
@@ -412,6 +481,10 @@ export interface MeshTextJsonClientOptions {
    * empty modelId is a silent lie about which model actually ran.
    */
   model: string;
+}
+
+function hasValidatedGenerate(mesh: LlmMesh): mesh is GraphifyMesh {
+  return typeof (mesh as Partial<GraphifyMesh>).generateValidated === "function";
 }
 
 /**
@@ -470,8 +543,16 @@ export function meshTextJsonClient(
           ? { maxOutputTokens: input.maxOutputTokens }
           : {}),
       };
-      const response = await mesh.generate(request);
+      const validateResponse = input.validateResponse
+        ? (response: GenerateResponse) => input.validateResponse!(response.text ?? "")
+        : undefined;
+      const response = validateResponse && hasValidatedGenerate(mesh)
+        ? await mesh.generateValidated(request, validateResponse)
+        : await mesh.generate(request);
       const text = response.text ?? "";
+      if (input.validateResponse && !hasValidatedGenerate(mesh)) {
+        await input.validateResponse(text);
+      }
       // Mirror direct-backend behaviour: when an outputPath is provided,
       // graphify-side helpers expect the raw JSON written to disk so the
       // surrounding sidecar wrapper logic can read it back.

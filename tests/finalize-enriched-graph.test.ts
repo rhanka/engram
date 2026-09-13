@@ -21,6 +21,7 @@ import { tmpdir } from "node:os";
 import { finalizeEnrichedGraphBuild } from "../src/finalize-enriched-graph.js";
 import { generateNodeDescriptions, type CallLlmFn } from "../src/node-descriptions.js";
 import { generateCommunityLabels } from "../src/community-labeling.js";
+import type { TextJsonGenerationClient } from "../src/llm-execution.js";
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -251,6 +252,93 @@ describe("finalizeEnrichedGraphBuild — no-key emit parity", () => {
     // never a community-label prompt.
     expect(descCalls.length).toBeGreaterThan(0);
     expect(descCalls.every((p) => !/community/iu.test(p) || /^- "/mu.test(p))).toBe(true);
+  });
+
+  it("a description-only text client never receives label prompts", async () => {
+    clearProviderKeys();
+    const G = mkCodeGraph();
+    const communities = singleCommunity(G);
+    const labels = genericLabels(communities);
+    const stateDir = mkStateDir();
+    const seen: Array<{ schema: string; prompt: string }> = [];
+    const descriptionTextClient: TextJsonGenerationClient = {
+      mode: "mesh",
+      provider: "injected-description-client",
+      async generateJson(input) {
+        seen.push({ schema: input.schema, prompt: input.prompt });
+        const ids = [...input.prompt.matchAll(/^- "([^"]+)":/gmu)].map((match) => match[1]!);
+        const body = JSON.stringify(
+          Object.fromEntries(ids.map((id) => [id, `Describes ${id}.`])),
+        );
+        if (input.outputPath) writeFileSync(input.outputPath, body, "utf-8");
+        return {
+          status: "completed",
+          provider: "injected-description-client",
+          mode: "mesh",
+          ...(input.outputPath ? { outputPath: input.outputPath } : {}),
+          audit: {},
+        };
+      },
+    };
+
+    const result = await finalizeEnrichedGraphBuild({
+      graph: G,
+      communities,
+      labels,
+      graphPath: join(stateDir, "graph.json"),
+      stateDir,
+      labelsPath: join(stateDir, ".graphify_labels.json"),
+      force: true,
+      descriptionTextClient,
+    });
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every(({ schema }) => schema === "graphify_node_descriptions_v1")).toBe(true);
+    expect(seen.every(({ prompt }) => !prompt.includes("You are naming clusters"))).toBe(true);
+    expect(result.labelSource).toBe("assistant");
+    expect(result.descriptionsComplete).toBe(true);
+  });
+
+  it("a label text client reaches only the label producer", async () => {
+    clearProviderKeys();
+    const G = mkCodeGraph();
+    const communities = singleCommunity(G);
+    const labels = genericLabels(communities);
+    const stateDir = mkStateDir();
+    const schemas: string[] = [];
+    const labelTextClient: TextJsonGenerationClient = {
+      mode: "mesh",
+      provider: "injected-label-client",
+      async generateJson(input) {
+        schemas.push(input.schema);
+        if (input.outputPath) {
+          writeFileSync(input.outputPath, JSON.stringify({ "0": "Graph Builders" }), "utf-8");
+        }
+        return {
+          status: "completed",
+          provider: "injected-label-client",
+          mode: "mesh",
+          ...(input.outputPath ? { outputPath: input.outputPath } : {}),
+          audit: {},
+        };
+      },
+    };
+
+    const result = await finalizeEnrichedGraphBuild({
+      graph: G,
+      communities,
+      labels,
+      graphPath: join(stateDir, "graph.json"),
+      stateDir,
+      labelsPath: join(stateDir, ".graphify_labels.json"),
+      force: true,
+      describe: false,
+      labelTextClient,
+    });
+
+    expect(result.labelSource).toBe("llm");
+    expect(labels.get(0)).toBe("Graph Builders");
+    expect(schemas).toEqual(["graphify_community_labels_v1"]);
   });
 
   it("--no-description skips the description stage but still writes the graph", async () => {

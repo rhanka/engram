@@ -16,6 +16,15 @@ export interface TextJsonGenerationInput {
   prompt: string;
   outputPath?: string;
   /**
+   * Consumer-owned acceptance check for the raw model text. A generating
+   * client MUST run this before it reports successful completion. Rejecting or
+   * throwing marks that response as failed; a routed client may then try its
+   * next already-planned candidate, while a non-routed client propagates the
+   * validation error. The client transports the callback but does not interpret
+   * the schema itself. Non-generating assistant clients ignore it.
+   */
+  validateResponse?: (text: string) => void | Promise<void>;
+  /**
    * Optional per-call cap on the number of output (completion) tokens the model
    * may generate, sized by the caller from the expected response (e.g. a batch
    * size or a community count). Same family as `schema`: `schema` constrains the
@@ -133,6 +142,7 @@ export interface TextJsonGenerationClient {
 export function textClientToCallLlm(
   client: TextJsonGenerationClient,
   schema: string,
+  validateResponse?: TextJsonGenerationInput["validateResponse"],
 ): (prompt: string, maxTokens: number) => Promise<string> {
   return async (prompt: string, maxTokens: number): Promise<string> => {
     const outputPath = join(
@@ -140,7 +150,13 @@ export function textClientToCallLlm(
       `graphify-textjson-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}.json`,
     );
     try {
-      await client.generateJson({ schema, prompt, outputPath, maxOutputTokens: maxTokens });
+      await client.generateJson({
+        schema,
+        prompt,
+        outputPath,
+        maxOutputTokens: maxTokens,
+        ...(validateResponse ? { validateResponse } : {}),
+      });
       return readFileSync(outputPath, "utf-8");
     } finally {
       try {
@@ -394,9 +410,9 @@ export function preflightLlmExecution(
     return;
   }
   if (policy.mode === "mesh") {
-    if (!policy.mesh.adapter) {
-      throw new Error("llm_execution.mesh.adapter is required for mesh mode");
-    }
+    // Nothing in config can validate mesh mode: the old adapter string was
+    // resolved against no registry. Mesh execution is reachable only through
+    // explicit programmatic construction and client injection.
     return;
   }
 }
@@ -507,10 +523,24 @@ export function createDirectTextJsonClient(options: DirectTextJsonClientOptions)
         import("ai"),
         resolveDirectModel(provider, model),
       ]);
+      // The per-call contract wins over the construction default. Validate it
+      // here without changing resolveMaxOutputTokens(), whose invalid-env
+      // behavior is intentionally separate.
+      const requestedCap = input.maxOutputTokens;
+      if (
+        requestedCap !== undefined &&
+        (!Number.isFinite(requestedCap) || !Number.isInteger(requestedCap) || requestedCap <= 0)
+      ) {
+        throw new Error(
+          `maxOutputTokens must be a positive integer, received ${JSON.stringify(requestedCap)}. ` +
+            "Refusing to generate without the requested cap.",
+        );
+      }
+      const effectiveCap = requestedCap ?? maxOutputTokens;
       const result = await generateText({
         model: resolvedModel as never,
         temperature,
-        ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+        ...(effectiveCap !== undefined ? { maxOutputTokens: effectiveCap } : {}),
         system: [
           "You are Graphify's JSON extraction backend.",
           "Return only valid JSON matching the requested schema.",
@@ -523,6 +553,7 @@ export function createDirectTextJsonClient(options: DirectTextJsonClientOptions)
         ].join("\n"),
       });
       const parsed = parseJsonFromLlmText(result.text);
+      if (input.validateResponse) await input.validateResponse(result.text);
       if (input.outputPath) {
         mkdirSync(dirname(input.outputPath), { recursive: true });
         writeFileSync(input.outputPath, JSON.stringify(parsed, null, 2), "utf-8");

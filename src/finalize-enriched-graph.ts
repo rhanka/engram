@@ -35,7 +35,10 @@ import {
 } from "./node-descriptions.js";
 import { persistGraphWithCitations } from "./export.js";
 import type { CitationAggregateMap } from "./citations.js";
-import type { DirectLlmProvider } from "./llm-execution.js";
+import type {
+  DirectLlmProvider,
+  TextJsonGenerationClient,
+} from "./llm-execution.js";
 import type { GodNodeEntry } from "./types.js";
 
 type CallLlmFn = (prompt: string, maxTokens?: number) => Promise<string>;
@@ -79,6 +82,8 @@ export interface FinalizeEnrichedGraphBuildOptions {
    * label stage into direct mode with label prompts.
    */
   labelCallLlm?: CallLlmFn;
+  /** Injectable text-JSON client for the LABEL stage only. */
+  labelTextClient?: TextJsonGenerationClient;
 
   // --- Description stage knobs --------------------------------------------
   descriptionBackend?: DirectLlmProvider | string | null;
@@ -89,6 +94,8 @@ export interface FinalizeEnrichedGraphBuildOptions {
   citationCap?: CitationCap;
   /** Injectable LLM caller for the DESCRIPTION stage only (tests). */
   descriptionCallLlm?: CallLlmFn;
+  /** Injectable text-JSON client for the DESCRIPTION stage only. */
+  descriptionTextClient?: TextJsonGenerationClient;
 
   // --- Citation writer knobs ----------------------------------------------
   /** Inline top-K cap for `graph.json` citations (default policy when omitted). */
@@ -141,6 +148,7 @@ export async function finalizeEnrichedGraphBuild(
       ...(options.labelModel ? { model: options.labelModel } : {}),
       ...(options.labelMode ? { mode: options.labelMode } : {}),
       ...(options.labelCallLlm ? { callLlm: options.labelCallLlm } : {}),
+      ...(options.labelTextClient ? { textClient: options.labelTextClient } : {}),
       gods: options.gods ?? [],
       instructionDir: join(stateDir, "label-instructions"),
     });
@@ -166,6 +174,9 @@ export async function finalizeEnrichedGraphBuild(
       ...(options.descriptionMode ? { mode: options.descriptionMode } : {}),
       ...(options.citationCap !== undefined ? { citationCap: options.citationCap } : {}),
       ...(options.descriptionCallLlm ? { callLlm: options.descriptionCallLlm } : {}),
+      ...(options.descriptionTextClient
+        ? { textClient: options.descriptionTextClient }
+        : {}),
       instructionDir: join(stateDir, "description-instructions"),
     });
     descriptionsComplete = result.coverage.described >= result.coverage.describable;
