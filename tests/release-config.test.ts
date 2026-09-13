@@ -16,7 +16,7 @@ describe("release configuration", () => {
     expect(lock.name).toBe("@sentropic/graphify");
     expect(lock.version).toBe("0.18.0");
     expect(lock.packages?.[""]?.version).toBe("0.18.0");
-    expect(changelog).toContain("## 0.18.0 (2026-09-12)");
+    expect(changelog).toContain("## 0.18.0 (2026-09-13)");
   });
 
   it("runs the main TypeScript CI test matrix on Node 20, 22, and 24", () => {
