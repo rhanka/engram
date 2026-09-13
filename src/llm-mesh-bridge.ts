@@ -328,6 +328,16 @@ class MeshResponseValidationFailure extends Error {
   }
 }
 
+class MeshRequestCancellation extends Error {
+  readonly reason: unknown;
+
+  constructor(reason: unknown) {
+    super("Graphify mesh request was cancelled", { cause: reason });
+    this.name = "MeshRequestCancellation";
+    this.reason = reason;
+  }
+}
+
 const invalidResponseClassification: RouteFailureClassification = {
   // llm-mesh 0.19 has no invalid-response reason. `invalid-request` with a
   // route-only scope records terminal failure without poisoning account,
@@ -404,17 +414,30 @@ export function createGraphifyMesh(options: CreateGraphifyMeshOptions): Graphify
 
       try {
         const response = await attempt.generate(request);
+        if (request.signal?.aborted) {
+          throw new MeshRequestCancellation(abortReason(request.signal));
+        }
         const usage = routeAttemptUsage(response);
         if (validateResponse) {
           try {
             await validateResponse(response);
           } catch (error) {
+            if (request.signal?.aborted) {
+              throw new MeshRequestCancellation(abortReason(request.signal));
+            }
             throw new MeshResponseValidationFailure(error, usage);
           }
+        }
+        if (request.signal?.aborted) {
+          throw new MeshRequestCancellation(abortReason(request.signal));
         }
         await attempt.complete(usage);
         return response;
       } catch (error) {
+        if (error instanceof MeshRequestCancellation) {
+          await attempt.releaseCancelled();
+          throw error.reason;
+        }
         const validationFailure = error instanceof MeshResponseValidationFailure
           ? error
           : undefined;
@@ -432,6 +455,7 @@ export function createGraphifyMesh(options: CreateGraphifyMeshOptions): Graphify
 
         if (classification.reason === "cancelled") {
           await attempt.releaseCancelled();
+          throw request.signal?.aborted ? abortReason(request.signal) : error;
         } else if (validationFailure) {
           await attempt.recordOutcome(classification, validationFailure.usage);
         } else {
@@ -499,6 +523,12 @@ function hasValidatedGenerate(mesh: LlmMesh): mesh is GraphifyMesh {
  * `outputPath` file when one is provided, mirroring the
  * direct-backend client behaviour so callers do not need a separate
  * code path.
+ *
+ * Calls without `input.validateResponse` can wrap any `LlmMesh`. Calls with a
+ * validator require the `GraphifyMesh` returned by `createGraphifyMesh()`,
+ * because only its `generateValidated()` capability runs validation before the
+ * route attempt is completed. A plain mesh is rejected before `mesh.generate`
+ * is called rather than validating an already-credited response.
  */
 export function meshTextJsonClient(
   mesh: LlmMesh,
@@ -543,16 +573,23 @@ export function meshTextJsonClient(
           ? { maxOutputTokens: input.maxOutputTokens }
           : {}),
       };
-      const validateResponse = input.validateResponse
-        ? (response: GenerateResponse) => input.validateResponse!(response.text ?? "")
-        : undefined;
-      const response = validateResponse && hasValidatedGenerate(mesh)
-        ? await mesh.generateValidated(request, validateResponse)
-        : await mesh.generate(request);
-      const text = response.text ?? "";
-      if (input.validateResponse && !hasValidatedGenerate(mesh)) {
-        await input.validateResponse(text);
+      let response: GenerateResponse;
+      if (input.validateResponse) {
+        if (!hasValidatedGenerate(mesh)) {
+          throw new Error(
+            "meshTextJsonClient: input.validateResponse requires the GraphifyMesh returned by " +
+            "createGraphifyMesh(), because its generateValidated() capability validates before " +
+            "route completion.",
+          );
+        }
+        response = await mesh.generateValidated(
+          request,
+          (generated) => input.validateResponse!(generated.text ?? ""),
+        );
+      } else {
+        response = await mesh.generate(request);
       }
+      const text = response.text ?? "";
       // Mirror direct-backend behaviour: when an outputPath is provided,
       // graphify-side helpers expect the raw JSON written to disk so the
       // surrounding sidecar wrapper logic can read it back.
