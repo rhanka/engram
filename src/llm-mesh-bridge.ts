@@ -568,7 +568,11 @@ export function meshTextJsonClient(
           },
           {
             role: "user",
-            content: input.prompt,
+            content: [
+              `Schema: ${input.schema}`,
+              "",
+              input.prompt,
+            ].join("\n"),
           },
         ],
         responseFormat: { type: "json-object" },
