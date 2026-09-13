@@ -5,9 +5,10 @@ import { tmpdir } from "node:os";
 import type { Extraction } from "./types.js";
 import {
   createDirectTextJsonClient,
-  type TextJsonGenerationClient,
   defaultDirectLlmModel,
+  parseJsonFromLlmText,
   type DirectLlmProvider,
+  type TextJsonGenerationClient,
 } from "./llm-execution.js";
 import { validateExtraction } from "./validate.js";
 
@@ -200,7 +201,7 @@ export function createDirectSemanticExtractionClient(
       );
       try {
         const validateResponse = (text: string): void => {
-          const candidate = JSON.parse(text) as Partial<Extraction>;
+          const candidate = parseJsonFromLlmText(text) as Partial<Extraction>;
           const candidateErrors = validateExtraction(candidate);
           if (candidateErrors.length > 0) {
             throw new Error(
@@ -214,7 +215,9 @@ export function createDirectSemanticExtractionClient(
           outputPath,
           validateResponse,
         });
-        const parsed = JSON.parse(readFileSync(outputPath, "utf-8")) as Partial<Extraction>;
+        const parsed = parseJsonFromLlmText(
+          readFileSync(outputPath, "utf-8"),
+        ) as Partial<Extraction>;
         const errors = validateExtraction(parsed);
         if (errors.length > 0) {
           throw new Error(`Direct semantic extraction returned invalid Graphify JSON:\n${errors.join("\n")}`);
