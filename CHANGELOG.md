@@ -4,7 +4,7 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
-## 0.18.0 (2026-09-12)
+## 0.18.0 (2026-09-13)
 
 - **Routed LLM mesh integration.** Graphify can construct an owner-bound `@sentropic/llm-mesh` runtime, adapt it to the shared `TextJsonGenerationClient`, and classify transport, provider, rate-limit, authentication, request, and cancellation failures for bounded candidate fallback. Consumer-owned response validation now runs before route completion, so malformed JSON records a failed attempt and can fall back instead of crediting the route as healthy.
 - **ESM-only mesh entry point.** Mesh values (`createGraphifyMesh`, `meshTextJsonClient`, `classifyRouteFailure`, `textClientToCallLlm`) and option types (`CreateGraphifyMeshOptions`, `MeshTextJsonClientOptions`) ship from `@sentropic/graphify/llm-mesh` with real declarations. The package root no longer imports the ESM-only mesh dependency, preserving `require("@sentropic/graphify")`; the mesh subpath intentionally has no CommonJS `require` condition.

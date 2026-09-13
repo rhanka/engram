@@ -119,8 +119,6 @@ llm_execution:
   batch:
     provider: env:GRAPHIFY_BATCH_PROVIDER
     completion_window: 24h
-  mesh:
-    adapter: env:GRAPHIFY_LLM_MESH_ADAPTER
 ```
 
 Rules:
@@ -128,7 +126,8 @@ Rules:
 - `mode: assistant` is valid without provider credentials.
 - `mode: direct` requires a supported provider and provider credential environment variable.
 - `mode: batch` requires a provider adapter and credentials.
-- `mode: mesh` requires an adapter package or local module.
+- `mode: mesh` requires an explicitly injected `TextJsonGenerationClient`; config does not resolve an adapter package or module. `llm_execution.mesh.adapter` is rejected. Construct the runtime with `createGraphifyMesh`, wrap it with `meshTextJsonClient` from the ESM-only `@sentropic/graphify/llm-mesh` subpath, and inject it into the intended stage.
+- Response validation belongs to the consumer and runs before routed completion. Validation-bearing calls require a mesh exposing `generateValidated`, as returned by `createGraphifyMesh`; a plain `LlmMesh` is rejected before generation for those calls.
 - `env:NAME` references are resolved at runtime and never written back with secret values.
 - Model names are never implied by Graphify core.
 
