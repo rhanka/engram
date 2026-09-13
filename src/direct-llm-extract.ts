@@ -199,10 +199,20 @@ export function createDirectSemanticExtractionClient(
         `graphify-direct-semantic-${process.pid}-${Date.now()}-${input.chunkIndex}.json`,
       );
       try {
+        const validateResponse = (text: string): void => {
+          const candidate = JSON.parse(text) as Partial<Extraction>;
+          const candidateErrors = validateExtraction(candidate);
+          if (candidateErrors.length > 0) {
+            throw new Error(
+              `Direct semantic extraction returned invalid Graphify JSON:\n${candidateErrors.join("\n")}`,
+            );
+          }
+        };
         await textClient.generateJson({
           schema: "graphify_extraction_v1",
           prompt: buildExtractionPrompt(input),
           outputPath,
+          validateResponse,
         });
         const parsed = JSON.parse(readFileSync(outputPath, "utf-8")) as Partial<Extraction>;
         const errors = validateExtraction(parsed);
