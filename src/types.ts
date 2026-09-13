@@ -428,7 +428,6 @@ export interface NormalizedLlmExecutionPolicy {
   text_json: { model: string };
   vision_json: { primary_model: string; deep_model: string };
   batch: { provider: string; completion_window: string };
-  mesh: { adapter: string };
 }
 
 export interface NormalizedOutputPolicy {

@@ -536,6 +536,11 @@ export type {
   DirectSemanticFile,
   PackSemanticFilesOptions,
 } from "./direct-llm-extract.js";
+export { finalizeEnrichedGraphBuild } from "./finalize-enriched-graph.js";
+export type {
+  FinalizeEnrichedGraphBuildOptions,
+  FinalizeEnrichedGraphBuildResult,
+} from "./finalize-enriched-graph.js";
 export type { LlmExecutionMode } from "./llm-execution.js";
 export { buildFirstHopSummary, firstHopSummaryToText } from "./summary.js";
 export type { FirstHopSummary, FirstHopHub, FirstHopCommunity, FirstHopSummaryOptions } from "./summary.js";

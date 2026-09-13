@@ -163,7 +163,7 @@ jobs:
         run: |
           mkdir /tmp/smoke-test && cd /tmp/smoke-test
           npm init -y --silent
-          npm install "${{ github.workspace }}/${{ env.TARBALL }}"
+          npm install "${{ github.workspace }}/${{ env.TARBALL }}" typescript@6.0.3 @types/node@25.8.0
 
       - name: Verify CLI from installed package
         run: |
@@ -172,19 +172,9 @@ jobs:
           npx graphify --version | grep -qE '^[0-9]+\.[0-9]+'
           echo "CLI works from installed package"
 
-      - name: Verify library exports
+      - name: Verify CommonJS root and ESM-only mesh subpath
         run: |
-          cd /tmp/smoke-test
-          node -e "
-            const g = require('@sentropic/graphify');
-            const expected = ['validateExtraction', 'buildFromJson', 'cluster', 'godNodes', 'generateReport', 'toJson', 'buildStaticStudio'];
-            for (const fn of expected) {
-              if (typeof g[fn] !== 'function') {
-                throw new Error('Missing export: ' + fn);
-              }
-            }
-            console.log('All exports verified');
-          "
+          ./scripts/check-packed-surface.sh --installed /tmp/smoke-test
 
       - name: Verify skill files are bundled
         run: |

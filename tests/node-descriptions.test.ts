@@ -13,6 +13,8 @@ import {
   type CallLlmFn,
   type NodeContext,
 } from "../src/node-descriptions.js";
+import { writeFileSync } from "node:fs";
+import type { TextJsonGenerationClient } from "../src/llm-execution.js";
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -375,6 +377,63 @@ describe("isTransientBackendError", () => {
     const err = new Error("request failed");
     (err as { cause?: unknown }).cause = new Error("ECONNRESET");
     expect(isTransientBackendError(err)).toBe(true);
+  });
+});
+
+describe("describeNodes mesh-parity (A): default-path retry + maxTokens, and textClient injection", () => {
+  it("default path retries a transient failure AND passes the per-batch maxTokens unchanged", async () => {
+    const G = mkCodeGraph();
+    let calls = 0;
+    const seen: Array<{ maxTokens: number; batchLen: number }> = [];
+    const result = await describeNodes(G, {
+      provider: "anthropic",
+      callLlm: async (prompt, maxTokens) => {
+        calls += 1;
+        const batchLen = [...prompt.matchAll(/^- "([^"]+)":/gmu)].length;
+        seen.push({ maxTokens, batchLen });
+        if (calls < 2) throw new Error("rate limit exceeded"); // transient
+        const ids = [...prompt.matchAll(/^- "([^"]+)":/gmu)].map((m) => m[1]!);
+        return JSON.stringify(Object.fromEntries(ids.map((id) => [id, `desc ${id}`])));
+      },
+    });
+    // Retry preserved on the default path: one transient failure then success.
+    expect(calls).toBe(2);
+    // maxTokens is the variable per-batch budget, passed identically on every
+    // attempt (including the retry) — never dropped, never constant-flattened.
+    expect(seen[0]!.maxTokens).toBe(Math.min(120 + 48 * seen[0]!.batchLen, 8192));
+    expect(seen[1]!.maxTokens).toBe(seen[0]!.maxTokens);
+    expect(result.get("src_a_resolveconfig")).toBe("desc src_a_resolveconfig");
+  });
+
+  it("routes through an injected textClient (mesh-injectable) with the per-batch maxOutputTokens", async () => {
+    const G = mkCodeGraph();
+    let calls = 0;
+    const seen: Array<{ maxOutputTokens: number | undefined; batchLen: number }> = [];
+    const textClient: TextJsonGenerationClient = {
+      mode: "mesh",
+      provider: "injected",
+      async generateJson(input) {
+        calls += 1;
+        const batchLen = [...input.prompt.matchAll(/^- "([^"]+)":/gmu)].length;
+        seen.push({ maxOutputTokens: input.maxOutputTokens, batchLen });
+        const ids = [...input.prompt.matchAll(/^- "([^"]+)":/gmu)].map((m) => m[1]!);
+        const json = JSON.stringify(Object.fromEntries(ids.map((id) => [id, `mesh ${id}`])));
+        if (input.outputPath) writeFileSync(input.outputPath, json, "utf-8");
+        return {
+          status: "completed",
+          provider: "injected",
+          mode: "mesh",
+          ...(input.outputPath ? { outputPath: input.outputPath } : {}),
+          audit: {},
+        };
+      },
+    };
+    const result = await describeNodes(G, { provider: "anthropic", textClient });
+    // The injected client was used verbatim — no direct backend was built.
+    expect(calls).toBe(1);
+    expect(result.get("src_a_resolveconfig")).toBe("mesh src_a_resolveconfig");
+    // The per-call token budget reached the port as maxOutputTokens (ceiling-to-honor).
+    expect(seen[0]!.maxOutputTokens).toBe(Math.min(120 + 48 * seen[0]!.batchLen, 8192));
   });
 });
 

@@ -4,10 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  createDirectSemanticExtractionClient,
   extractSemanticFilesDirectParallel,
   packSemanticFilesByTokenBudget,
   type DirectSemanticExtractionClient,
 } from "../src/direct-llm-extract.js";
+import type { TextJsonGenerationClient } from "../src/llm-execution.js";
 
 describe("direct LLM semantic extraction", () => {
   it("packs files by token budget while keeping every file accounted for", () => {
@@ -81,5 +83,73 @@ describe("direct LLM semantic extraction", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("uses an injected textClient (mesh-injectable) instead of building the direct backend", async () => {
+    let called = 0;
+    const injected = {
+      mode: "mesh" as const,
+      provider: "injected",
+      async generateJson(input: { schema: string; prompt: string; outputPath?: string }) {
+        called++;
+        if (input.outputPath) {
+          writeFileSync(
+            input.outputPath,
+            JSON.stringify({
+              nodes: [{ id: "n1", label: "L", file_type: "document", source_file: "f.md" }],
+              edges: [],
+            }),
+            "utf-8",
+          );
+        }
+        return { model: "injected-model" };
+      },
+    };
+    const client = createDirectSemanticExtractionClient({
+      provider: "anthropic",
+      model: "m",
+      textClient: injected as never,
+    });
+    const out = await client.extractChunk({
+      chunkIndex: 0,
+      chunkCount: 1,
+      files: [{ path: "/tmp/f.md", relativePath: "f.md", text: "content" }],
+    });
+    // The injected client was used verbatim — no direct backend was built.
+    expect(called).toBe(1);
+    expect(out.nodes?.[0]?.id).toBe("n1");
+  });
+
+  it("accepts fenced JSON consistently through validation and mesh-written output", async () => {
+    const fenced = '```json\n{"nodes":[],"edges":[]}\n```';
+    const textClient: TextJsonGenerationClient = {
+      mode: "mesh",
+      provider: "injected",
+      model: "injected-model",
+      async generateJson(input) {
+        await input.validateResponse?.(fenced);
+        if (!input.outputPath) throw new Error("test requires an output path");
+        writeFileSync(input.outputPath, fenced, "utf-8");
+        return {
+          status: "completed",
+          provider: "injected",
+          mode: "mesh",
+          model: "injected-model",
+          outputPath: input.outputPath,
+          audit: {},
+        };
+      },
+    };
+    const client = createDirectSemanticExtractionClient({
+      provider: "anthropic",
+      model: "m",
+      textClient,
+    });
+
+    await expect(client.extractChunk({
+      chunkIndex: 0,
+      chunkCount: 1,
+      files: [{ path: "/tmp/f.md", relativePath: "f.md", text: "content" }],
+    })).resolves.toMatchObject({ nodes: [], edges: [] });
   });
 });
