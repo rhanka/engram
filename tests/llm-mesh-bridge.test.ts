@@ -355,6 +355,28 @@ describe("graphify llm-mesh bridge", () => {
     expect(second.complete).toHaveBeenCalledOnce();
   });
 
+  it("does not retry generation or record a provider failure when completion bookkeeping fails", async () => {
+    const error = Object.assign(new Error("accounting unavailable"), { status: 503 });
+    const first = routeAttempt(async () => generateResponse);
+    first.complete = vi.fn(async () => { throw error; });
+    const second = routeAttempt(async () => generateResponse, undefined, "candidate-1");
+    const mesh = createGraphifyMesh({
+      routingSubject,
+      createRoutePlanner: () => routePlanner([first, second]),
+    });
+
+    await expect(mesh.generate({
+      providerId: "openai",
+      modelId: "gpt-5.5",
+      messages: [{ role: "user", content: "hello" }],
+    })).rejects.toBe(error);
+
+    expect(first.complete).toHaveBeenCalledOnce();
+    expect(first.recordOutcome).not.toHaveBeenCalled();
+    expect(first.releaseCancelled).not.toHaveBeenCalled();
+    expect(second.generate).not.toHaveBeenCalled();
+  });
+
   it("records a non-retryable failure and rethrows without trying another candidate", async () => {
     const failure = new Error("arbitrary provider failure");
     const first = routeAttempt(async () => {

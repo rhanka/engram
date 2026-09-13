@@ -412,6 +412,7 @@ export function createGraphifyMesh(options: CreateGraphifyMeshOptions): Graphify
         throw abortReason(request.signal);
       }
 
+      let completionStarted = false;
       try {
         const response = await attempt.generate(request);
         if (request.signal?.aborted) {
@@ -431,9 +432,11 @@ export function createGraphifyMesh(options: CreateGraphifyMeshOptions): Graphify
         if (request.signal?.aborted) {
           throw new MeshRequestCancellation(abortReason(request.signal));
         }
+        completionStarted = true;
         await attempt.complete(usage);
         return response;
       } catch (error) {
+        if (completionStarted) throw error;
         if (error instanceof MeshRequestCancellation) {
           await attempt.releaseCancelled();
           throw error.reason;
