@@ -162,7 +162,7 @@ describe("graphify llm-mesh bridge", () => {
     expect(typeof client.generateJson).toBe("function");
   });
 
-  it("meshTextJsonClient forwards a flat provider/model selection and maxOutputTokens", async () => {
+  it("meshTextJsonClient forwards provider/model, schema, prompt and maxOutputTokens", async () => {
     const generate = vi.fn(async (_request: GenerateRequest) => generateResponse);
     const client = meshTextJsonClient(fakeMesh(generate), {
       provider: "openai",
@@ -183,6 +183,9 @@ describe("graphify llm-mesh bridge", () => {
       responseFormat: { type: "json-object" },
     });
     expect(generate.mock.calls[0]?.[0]).not.toHaveProperty("model");
+    const userMessage = generate.mock.calls[0]?.[0].messages.find((message) => message.role === "user");
+    expect(userMessage?.content).toContain("Schema: graphify_test_v1");
+    expect(userMessage?.content).toContain("Return JSON");
   });
 
   it("meshTextJsonClient writes the generated JSON to outputPath", async () => {
