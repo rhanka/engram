@@ -215,6 +215,24 @@ describe("graphify llm-mesh bridge", () => {
     expect(client.model).toBe("gpt-5.5");
   });
 
+  it("fails before generation when response validation is requested from a plain LlmMesh", async () => {
+    const generate = vi.fn(async () => generateResponse);
+    const client = meshTextJsonClient(fakeMesh(generate), {
+      provider: "openai",
+      model: "gpt-5.5",
+    });
+
+    await expect(client.generateJson({
+      schema: "graphify_test_v1",
+      prompt: "Return valid JSON",
+      validateResponse: (text) => {
+        JSON.parse(text);
+      },
+    })).rejects.toThrow(/createGraphifyMesh.*generateValidated/i);
+
+    expect(generate).not.toHaveBeenCalled();
+  });
+
   it("runs plan then prepareAttempt then generate then complete for one candidate", async () => {
     const events: string[] = [];
     const attempt = routeAttempt(async () => generateResponse, events, "candidate-0");
@@ -382,6 +400,58 @@ describe("graphify llm-mesh bridge", () => {
 
     expect(attempt.releaseCancelled).toHaveBeenCalledOnce();
     expect(attempt.recordOutcome).not.toHaveBeenCalled();
+  });
+
+  it("releases once and propagates the signal reason when cancelled during generation", async () => {
+    const controller = new AbortController();
+    const reason = new Error("caller stopped generation");
+    const first = routeAttempt(async () => {
+      controller.abort(reason);
+      return generateResponse;
+    });
+    const second = routeAttempt(async () => generateResponse, undefined, "candidate-1");
+    const mesh = createGraphifyMesh({
+      routingSubject,
+      createRoutePlanner: () => routePlanner([first, second]),
+    });
+
+    await expect(mesh.generate({
+      providerId: "openai",
+      modelId: "gpt-5.5",
+      messages: [{ role: "user", content: "hello" }],
+      signal: controller.signal,
+    })).rejects.toBe(reason);
+
+    expect(first.releaseCancelled).toHaveBeenCalledOnce();
+    expect(first.complete).not.toHaveBeenCalled();
+    expect(first.recordOutcome).not.toHaveBeenCalled();
+    expect(second.generate).not.toHaveBeenCalled();
+  });
+
+  it("releases once and propagates the signal reason when cancelled during async validation", async () => {
+    const controller = new AbortController();
+    const reason = new Error("caller stopped validation");
+    const first = routeAttempt(async () => generateResponse);
+    const second = routeAttempt(async () => generateResponse, undefined, "candidate-1");
+    const mesh = createGraphifyMesh({
+      routingSubject,
+      createRoutePlanner: () => routePlanner([first, second]),
+    });
+
+    await expect(mesh.generateValidated({
+      providerId: "openai",
+      modelId: "gpt-5.5",
+      messages: [{ role: "user", content: "hello" }],
+      signal: controller.signal,
+    }, async () => {
+      await Promise.resolve();
+      controller.abort(reason);
+    })).rejects.toBe(reason);
+
+    expect(first.releaseCancelled).toHaveBeenCalledOnce();
+    expect(first.complete).not.toHaveBeenCalled();
+    expect(first.recordOutcome).not.toHaveBeenCalled();
+    expect(second.generate).not.toHaveBeenCalled();
   });
 
   it("uses the fail-closed requireAuthResolver when no authResolver is supplied", async () => {
