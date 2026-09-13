@@ -9,6 +9,7 @@ import {
   packSemanticFilesByTokenBudget,
   type DirectSemanticExtractionClient,
 } from "../src/direct-llm-extract.js";
+import type { TextJsonGenerationClient } from "../src/llm-execution.js";
 
 describe("direct LLM semantic extraction", () => {
   it("packs files by token budget while keeping every file accounted for", () => {
@@ -117,5 +118,38 @@ describe("direct LLM semantic extraction", () => {
     // The injected client was used verbatim — no direct backend was built.
     expect(called).toBe(1);
     expect(out.nodes?.[0]?.id).toBe("n1");
+  });
+
+  it("accepts fenced JSON consistently through validation and mesh-written output", async () => {
+    const fenced = '```json\n{"nodes":[],"edges":[]}\n```';
+    const textClient: TextJsonGenerationClient = {
+      mode: "mesh",
+      provider: "injected",
+      model: "injected-model",
+      async generateJson(input) {
+        await input.validateResponse?.(fenced);
+        if (!input.outputPath) throw new Error("test requires an output path");
+        writeFileSync(input.outputPath, fenced, "utf-8");
+        return {
+          status: "completed",
+          provider: "injected",
+          mode: "mesh",
+          model: "injected-model",
+          outputPath: input.outputPath,
+          audit: {},
+        };
+      },
+    };
+    const client = createDirectSemanticExtractionClient({
+      provider: "anthropic",
+      model: "m",
+      textClient,
+    });
+
+    await expect(client.extractChunk({
+      chunkIndex: 0,
+      chunkCount: 1,
+      files: [{ path: "/tmp/f.md", relativePath: "f.md", text: "content" }],
+    })).resolves.toMatchObject({ nodes: [], edges: [] });
   });
 });
