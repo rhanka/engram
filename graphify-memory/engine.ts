@@ -125,7 +125,9 @@ function normalizeAdminDenial(result: Result<AdminEpochReceiptV1>): Result<Admin
  * fault is transient. Never `UNAUTHORIZED` and never `denial: true` — an exception declared no authorization
  * decision, so mapping it to a denial would re-introduce the inference clause (d) excluded. Never the raw error
  * text — a fixed generic message only (D2 minimal redaction: `String(e)` could leak a credential ref, path, or DSN).
- * This wraps ONLY the provider call, never the surrounding engine/fence logic, so an engine bug is not masked.
+ * This wraps the provider call AND the normalisation of its result; a throw from either — a thrown exception, or
+ * a malformed `Result` that fails normalisation — is treated as a provider fault. It does NOT wrap the
+ * surrounding engine/fence logic, so an engine bug is never masked as a provider fault.
  */
 async function callAdminProvider(call: () => Promise<Result<AdminEpochReceiptV1>>): Promise<Result<AdminEpochReceiptV1>> {
   try {
