@@ -38,6 +38,14 @@ describe("graphify-memory/integration surface (§1 D1, R1e)", () => {
       const o = v as Record<string, unknown>;
       return typeof o.bootstrap === "function" && typeof o.rotate === "function" && typeof o.revoke === "function";
     };
+    // Positive control: the loop below would pass VACUOUSLY if the namespace emptied (exports moved or the
+    // import path changed — tsc does not catch an export move), so anchor on a known export first.
+    // The anchor is itself name-based: if createMemoryPortV2 is ever legitimately renamed/removed this control
+    // reddens for an unrelated reason (a false alarm, never a false green) — then UPDATE the anchor symbol here,
+    // never delete the control, or the vacuity it guards reopens.
+    expect(integration.createMemoryPortV2).toBeDefined();
+    // Limit: the factory arm is NAME-based (/^create.*Admin.../) — a differently-named provider factory would
+    // pass. Behaviour-based detection is not generically feasible; human review is the net for that gap.
     for (const [name, value] of Object.entries(integration)) {
       expect(isProviderShape(value), `${name} must not be an AdminProviderPort instance`).toBe(false);
       expect(/^create.*Admin(istrator|Provider)/.test(name) && typeof value === "function", `${name} must not be an admin-provider/administrator factory`).toBe(false);
