@@ -8,7 +8,7 @@ import {
   recordIdFromDigest,
 } from "./digests.js";
 import { isCanonicalCursor, validateAdminOperationRequest, validateCandidatePayload } from "./validation.js";
-import { verifyCapabilityAttestation } from "./attestation.js";
+import { verifyStoreProvenance } from "./store-factory.js";
 import { executeRecall } from "./recall.js";
 import type {
   AdminEpochReceiptV1,
@@ -691,10 +691,10 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
   const capturedContent = new Map<string, Digest>();
   const admissionOutcomes = new Map<string, AdmissionOutcomeV1>();
 
-  // §5.9: obtain a FRESH readiness receipt and verify its capability attestation against the expected adapter
-  // identity BEFORE admitting any fencing-dependent operation. Verification runs in the engine, never delegated
-  // to the store's own readiness(). Called once PER OP on purpose — the receipt must be fresh (§5.9 l.1041/1047),
-  // so the result is deliberately NOT memoised across operations; do not add a cache here.
+  // §5.9: obtain a FRESH readiness receipt and verify the store's PROVENANCE (in-process factory mark + declared-
+  // identity lockstep, verifyStoreProvenance) BEFORE admitting any fencing-dependent operation. The check runs in
+  // the engine, never delegated to the store's own readiness(). Called once PER OP on purpose — the receipt must
+  // be fresh (§5.9 l.1041/1047), so the result is deliberately NOT memoised across operations; do not add a cache.
   const admitFenced = async (operation: MemoryOperation): Promise<Result<OperationalCapabilityReceiptV1>> => {
     let readiness: Result<OperationalCapabilityReceiptV1>;
     try {
@@ -703,7 +703,9 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       return unavailable(operation, "canonical store did not return a readiness receipt");
     }
     if (!readiness.ok) return operationFailure(operation, readiness);
-    return verifyCapabilityAttestation(readiness.value, dependencies.attestation_verifier, operation);
+    // §5.9: admit a production store only via in-process provenance (built by this module's fenced factory) +
+    // declared-identity lockstep — never a self-asserted flag. Non-production ("memory") is admitted unmarked.
+    return verifyStoreProvenance(dependencies.canonical_store, readiness.value, operation);
   };
 
   const port: MemoryPortV2 = {

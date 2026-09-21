@@ -45,10 +45,12 @@ export {
 } from "./postgres.js";
 export {
   createCanonicalMemoryStoreFactoryV1,
+  isFencedFactoryStoreV1,
+  verifyStoreProvenance,
+  GRAPHIFY_MEMORY_ADAPTER_IDENTITY,
   type CanonicalMemoryStoreFactoryOptionsV1,
   type FencedStoreOpenerV1,
 } from "./store-factory.js";
-export { attestationReceiptDigest, createCapabilityAttestationPairV1, verifyCapabilityAttestation } from "./attestation.js";
 export {
   assertAdminProviderConformance,
   type AdminProviderConformanceCasesV1,

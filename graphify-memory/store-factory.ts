@@ -1,98 +1,124 @@
-import { attestationReceiptDigest } from "./attestation.js";
 import type {
   CanonicalMemoryStoreFactoryV1,
   CanonicalMemoryStorePort,
-  CapabilityAttestationSignerV1,
+  CapabilityAttestationIdentityV1,
   FencedStoreConstructionV1,
   MemoryOperation,
   OperationalCapabilityReceiptV1,
   Result,
 } from "./contracts/index.js";
 
-function storeUnavailable<T>(operation: MemoryOperation, message: string): Result<T> {
-  return { ok: false, error: { code: "STORE_UNAVAILABLE", operation, message, retryable: false } };
+function refuse<T>(operation: MemoryOperation, code: "STORE_UNAVAILABLE" | "CAPABILITY_UNAVAILABLE", message: string): Result<T> {
+  return { ok: false, error: { code, operation, message, retryable: false } };
+}
+
+/**
+ * §5.9: the compiled adapter identity of THIS graphify-memory module build. It is a STORE-INDEPENDENT source of
+ * truth — not derived from host configuration, which is the answer to the attestation tautology (a host that
+ * misconfigures the store cannot also make its declared identity self-consistent against this constant). A
+ * duplicate package (a second module instance) carries a distinct copy of this constant AND a distinct factory
+ * registry below, so a cross-instance store is detected. `adapter_build_digest` is a build-time constant.
+ */
+export const GRAPHIFY_MEMORY_ADAPTER_IDENTITY: CapabilityAttestationIdentityV1 = {
+  adapter_id: "graphify-memory/fenced-store",
+  adapter_version: "1",
+  adapter_build_digest: "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+};
+
+/**
+ * Module-private provenance registry — the in-process mark. A store built by THIS module's factory (after taking
+ * the fence) is a member; a store from a duplicate module instance is not a member of THIS registry. This is the
+ * only detector of §5.9 threat 3 ("never took the fence"), which a copyable string cannot prove.
+ */
+const fencedFactoryStores = new WeakSet<CanonicalMemoryStorePort>();
+
+/** True iff `store` was built by a fenced-store factory of THIS graphify-memory module instance. */
+export function isFencedFactoryStoreV1(store: CanonicalMemoryStorePort): boolean {
+  return fencedFactoryStores.has(store);
+}
+
+/**
+ * §5.9 provenance admission for a fencing-dependent operation. A non-production ("memory") store is admitted with
+ * no mark. A production (sqlite/postgres) store is admitted only when (a) it was built by THIS module's fenced
+ * factory (in-process membership — detects a duplicate package / a store that never took the fence) AND (b) its
+ * receipt's declared adapter identity equals this module's compiled identity (version/build lockstep). No key,
+ * no signature: the trust boundary is deployment topology, not cryptography.
+ */
+export function verifyStoreProvenance(
+  store: CanonicalMemoryStorePort,
+  receipt: OperationalCapabilityReceiptV1,
+  operation: MemoryOperation,
+): Result<OperationalCapabilityReceiptV1> {
+  if (receipt.backend === "memory") return { ok: true, value: receipt };
+  if (!fencedFactoryStores.has(store)) {
+    return refuse(operation, "CAPABILITY_UNAVAILABLE", "canonical store was not built by this graphify-memory module instance (duplicate package, or a store that never took the fence?)");
+  }
+  if (receipt.adapter_id !== GRAPHIFY_MEMORY_ADAPTER_IDENTITY.adapter_id
+    || receipt.adapter_version !== GRAPHIFY_MEMORY_ADAPTER_IDENTITY.adapter_version
+    || receipt.adapter_build_digest !== GRAPHIFY_MEMORY_ADAPTER_IDENTITY.adapter_build_digest) {
+    return refuse(operation, "CAPABILITY_UNAVAILABLE", "canonical store declares an adapter identity that does not match this graphify-memory build");
+  }
+  return { ok: true, value: receipt };
 }
 
 /** Constructs a fenced CanonicalMemoryStorePort, taking the storage fence (kernel flock / store-generation lock) at construction. */
 export type FencedStoreOpenerV1 = (input: FencedStoreConstructionV1) => Promise<Result<CanonicalMemoryStorePort>>;
 
 export interface CanonicalMemoryStoreFactoryOptionsV1 {
-  /**
-   * Host-provided signer (§5.9). Its `identity` is the SINGLE source of the factory's adapter binding:
-   * `adapter_id`/`adapter_version` are derived from it, and the acquired store's `readiness()` emits an
-   * attestation bound to that identity + signed by it — so the emitted receipt and the expected identity
-   * cannot diverge. graphify holds no key.
-   */
-  readonly attestation_signer: CapabilityAttestationSignerV1;
   /** Graphify wires its own sqlite/postgres openers here; the factory never re-implements the broker (§5.7). */
   readonly open: FencedStoreOpenerV1;
 }
 
 /**
- * Graphify-owned fenced-store factory (§5.7). Enforces the single-broker-instance rule: at most one
- * live broker instance per store per process. A second live holder — in-process (this registry) or
- * cross-process (the opener's kernel flock / store-generation lock) — is refused with STORE_UNAVAILABLE,
- * never queued. The in-process holder is released on graceful close(). FENCE_LOST stays terminal: the
- * factory never silently re-acquires; the host discards the instance and reconstructs a fresh one.
+ * Graphify-owned fenced-store factory (§5.7). Enforces the single-broker-instance rule (a second live holder is
+ * refused STORE_UNAVAILABLE, never queued; released on graceful close()). It also stamps each acquired store with
+ * this module's in-process provenance mark (§5.9) and makes readiness() declare this module's compiled adapter
+ * identity; the underlying sqlite/postgres opener stays ignorant of both.
  */
-export function createCanonicalMemoryStoreFactoryV1(
-  options: CanonicalMemoryStoreFactoryOptionsV1,
-): CanonicalMemoryStoreFactoryV1 {
+export function createCanonicalMemoryStoreFactoryV1(options: CanonicalMemoryStoreFactoryOptionsV1): CanonicalMemoryStoreFactoryV1 {
   const liveHolders = new Set<string>();
-  const signer = options.attestation_signer;
 
   return {
     version: 1,
-    adapter_id: signer.identity.adapter_id,
-    adapter_version: signer.identity.adapter_version,
+    adapter_id: GRAPHIFY_MEMORY_ADAPTER_IDENTITY.adapter_id,
+    adapter_version: GRAPHIFY_MEMORY_ADAPTER_IDENTITY.adapter_version,
     async acquire(input: FencedStoreConstructionV1): Promise<Result<CanonicalMemoryStorePort>> {
       // in-process half of the single-broker rule: a second live holder is refused, never queued.
       if (liveHolders.has(input.store_id)) {
-        return storeUnavailable("admin", "a live broker instance already exists for this store in-process (single-broker rule; not queued)");
+        return refuse("admin", "STORE_UNAVAILABLE", "a live broker instance already exists for this store in-process (single-broker rule; not queued)");
       }
-      // reserve before opening so a concurrent acquire for the same store cannot slip past the check.
-      liveHolders.add(input.store_id);
+      liveHolders.add(input.store_id); // reserve before opening so a concurrent acquire cannot slip past the check.
       let opened: Result<CanonicalMemoryStorePort>;
       try {
-        // the opener takes the storage fence at construction; a cross-process holder makes it refuse STORE_UNAVAILABLE.
-        opened = await options.open(input);
+        opened = await options.open(input); // the opener takes the storage fence; a cross-process holder makes it refuse.
       } catch {
         liveHolders.delete(input.store_id);
-        return storeUnavailable("admin", "fenced store construction failed before taking the storage fence");
+        return refuse("admin", "STORE_UNAVAILABLE", "fenced store construction failed before taking the storage fence");
       }
       if (!opened.ok) {
         liveHolders.delete(input.store_id); // a failed acquisition holds no fence — free the in-process slot.
         return opened;
       }
-      return { ok: true, value: withAttestationAndRelease(opened.value, signer, () => liveHolders.delete(input.store_id)) };
+      const marked = withProvenanceAndRelease(opened.value, () => liveHolders.delete(input.store_id));
+      fencedFactoryStores.add(marked); // stamp the store the engine will hold, AFTER the fence was taken.
+      return { ok: true, value: marked };
     },
   };
 }
 
 /**
- * Wraps an acquired store so that (a) `readiness()` emits a signed attestation bound to the signer's identity —
- * §5.9 emission: strip the adapter's own digest/signature, add the 3 identity fields BEFORE digesting, compute
- * the canonical attestationReceiptDigest, then attach `attestation_signature = signer.sign(digest)`; signed on
- * EVERY call, never memoised, and the underlying opener stays ignorant of attestation — and (b) the in-process
- * holder is released on graceful `close()`. Every other member passes through untouched.
+ * Wraps an acquired store so that (a) `readiness()` declares this module's compiled adapter identity (no
+ * signature, no digest) and (b) the in-process holder is released on graceful `close()`. Every other member
+ * passes through untouched. The wrapped instance (not the raw store) is the one stamped into the registry.
  */
-function withAttestationAndRelease(store: CanonicalMemoryStorePort, signer: CapabilityAttestationSignerV1, release: () => void): CanonicalMemoryStorePort {
+function withProvenanceAndRelease(store: CanonicalMemoryStorePort, release: () => void): CanonicalMemoryStorePort {
   return new Proxy(store, {
     get(target, prop, receiver) {
       if (prop === "readiness") {
         return async (): Promise<Result<OperationalCapabilityReceiptV1>> => {
           const base = await target.readiness();
           if (!base.ok) return base;
-          const { receipt_digest: _priorDigest, attestation_signature: _priorSignature, ...rest } = base.value;
-          const bound: OperationalCapabilityReceiptV1 = {
-            ...rest,
-            adapter_id: signer.identity.adapter_id,
-            adapter_version: signer.identity.adapter_version,
-            adapter_build_digest: signer.identity.adapter_build_digest,
-            receipt_digest: base.value.receipt_digest,
-          };
-          const digest = attestationReceiptDigest(bound);
-          return { ok: true, value: { ...bound, receipt_digest: digest, attestation_signature: signer.sign(digest) } };
+          return { ok: true, value: { ...base.value, adapter_id: GRAPHIFY_MEMORY_ADAPTER_IDENTITY.adapter_id, adapter_version: GRAPHIFY_MEMORY_ADAPTER_IDENTITY.adapter_version, adapter_build_digest: GRAPHIFY_MEMORY_ADAPTER_IDENTITY.adapter_build_digest } };
         };
       }
       if (prop === "close") {

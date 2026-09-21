@@ -59,7 +59,6 @@ export function captureRequest(idempotencyKey: string, sequence: string, text = 
 export function createL3Memory(
   decision: "accept" | "reject" | "adjudication_required" = "accept",
   canonicalStore?: CanonicalMemoryStorePort,
-  attestationVerifier?: unknown,
 ) {
   const plaintext = new Map<string, string>();
   const destroyed: string[] = [];
@@ -123,7 +122,6 @@ export function createL3Memory(
     crypto,
     activity_sources: [],
     clock: { now: () => NOW },
-    attestation_verifier: attestationVerifier,
   } as unknown as MemoryEngineDependenciesV2);
   return { memory, store, destroyed };
 }
