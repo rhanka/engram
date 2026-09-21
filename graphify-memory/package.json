@@ -11,6 +11,10 @@
     "./contracts": {
       "types": "./contracts/dist/index.d.ts"
     },
+    "./integration": {
+      "types": "./dist/integration.d.ts",
+      "import": "./dist/integration.js"
+    },
     "./sqlite": {
       "types": "./dist/sqlite.d.ts",
       "import": "./dist/sqlite.js"
