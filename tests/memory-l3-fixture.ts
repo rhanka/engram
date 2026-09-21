@@ -11,6 +11,27 @@ export const NOW = "2026-08-16T12:34:56.789Z";
 export const DEADLINE = "2026-08-16T12:40:00.000Z";
 export const DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as Digest;
 
+/**
+ * A fresh capability receipt for a non-production ("memory") canonical store. It carries NO attestation block
+ * or signature (§5.9 l.1049: non-production stores omit attestation), so the engine's §5.9 gate admits it
+ * transparently. Minimal fake stores return this from readiness() so fencing-dependent ops pass the gate.
+ */
+export function memoryReadinessReceipt() {
+  return {
+    ok: true as const,
+    value: {
+      store_id: "store:memory",
+      backend: "memory" as const,
+      storage_epoch: "0",
+      high_water_cursor: "0",
+      capabilities: { atomic_promotion: true, dense_cursor: true, accepted_only_lexical: true, fenced_single_writer: false, revocable_active_store: false, detached_snapshot: false, bounded_cancellation: false, backend: "memory" as const },
+      issued_at: NOW,
+      expires_at: DEADLINE,
+      receipt_digest: DIGEST,
+    },
+  };
+}
+
 export function captureRequest(idempotencyKey: string, sequence: string, text = "memory body") {
   return {
     schema_version: 2 as const,
@@ -38,6 +59,7 @@ export function captureRequest(idempotencyKey: string, sequence: string, text = 
 export function createL3Memory(
   decision: "accept" | "reject" | "adjudication_required" = "accept",
   canonicalStore?: CanonicalMemoryStorePort,
+  attestationVerifier?: unknown,
 ) {
   const plaintext = new Map<string, string>();
   const destroyed: string[] = [];
@@ -101,6 +123,7 @@ export function createL3Memory(
     crypto,
     activity_sources: [],
     clock: { now: () => NOW },
+    attestation_verifier: attestationVerifier,
   } as unknown as MemoryEngineDependenciesV2);
   return { memory, store, destroyed };
 }
