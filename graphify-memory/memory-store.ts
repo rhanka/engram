@@ -1,6 +1,7 @@
 import { canonicalizeJcs, normalizeCanonicalJson } from "./canonical-json.js";
 import { memoryRecordDigest, receiptDigest } from "./digests.js";
 import { isVisibleAtDualAsOf } from "./dual-as-of.js";
+import { markInMemoryStoreV1 } from "./store-factory.js";
 import { isCanonicalCursor, validateMemoryRecord } from "./validation.js";
 import type {
   AcceptedCandidateSnapshotV1,
@@ -906,5 +907,9 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
 
 /** Backend-agnostic L3 canonical implementation. It deliberately declares no SQLite fencing capabilities. */
 export function createInMemoryCanonicalMemoryStoreV1(options: InMemoryCanonicalMemoryStoreOptionsV1): InMemoryCanonicalMemoryStoreV1 {
-  return new InMemoryCanonicalStore(options);
+  const store = new InMemoryCanonicalStore(options);
+  // §5.9: stamp the module's in-process in-memory mark so a host that opted into `allow_unfenced_memory_store`
+  // can run this neutral store unfenced; without the mark, no self-declared "memory" receipt bypasses the fence.
+  markInMemoryStoreV1(store);
+  return store;
 }
