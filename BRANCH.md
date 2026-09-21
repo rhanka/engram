@@ -1,121 +1,22 @@
-# feat/wp5-graph-time-slice (off main @ a7d605a)
+# feat/agent-memory-312-obligations — external-host amendment (#312) obligations
 
-## Lot 4 - §3(a) File-Backend Build-Time Window
+Base: `origin/main` 1a723695. Scope: **embedded-local** (external-host activation out of scope until the operating agreement is signed, §12 W-C/ARCH-06; the obligations still bind embedded-local). Test-first; ≤150 lines/commit; selective staging; boxes checked in the commit; no AI attribution; no merge without review + owner gate.
 
-- [x] Ship the specified-but-unimplemented §3(a) window as `graphify time-slice`:
-      `--since`/`--until` slice an emitted `graph.json` and stamp `graph.window`.
-- [x] Reuse the T5/T6 membership predicate as a single exported implementation
-      (`overlapsTemporalWindow`) instead of a second, drifting copy — inclusive
-      overlap, open-ended missing `t_end`, `t_end === t` points, and
-      untimed/malformed exclusion all unchanged.
-- [x] Keep the output a re-emittable, loadable `graph.json`: edges/hyperedges are
-      additionally endpoint-induced (counted separately), `topology_signature` is
-      recomputed, and retained records are carried verbatim in source order.
-- [x] Fail closed on a graph with no `t` anywhere; never write over the source graph;
-      dry run unless `--out`; `--force` for an existing destination.
-- [x] Focused tests (`tests/graph-time-slice.test.ts`, `tests/cli-graph-time-slice.test.ts`),
-      `npm run lint`, `npm run build`, and a CLI end-to-end smoke composing the slice
-      with `graphify summary --graph` and `graphify recall --graph`.
+## R1a — contracts (data-only DTOs + shape validator)
+- [x] DTOs (§5.10/§5.7/§5.9): `AdminProviderPort`, `AdminBootstrapRequestV1`/`AdminRotateRequestV1`/`AdminRevokeRequestV1`, `AdminEpochReceiptV1`, `AdminOperationRequestV1`, `CanonicalMemoryStoreFactoryV1`+`FencedStoreConstructionV1`, `AttestationSignature`+attestation fields on `OperationalCapabilityReceiptV1`, `admin_provider?` on `MemoryEngineDependenciesV2`.
+- [ ] `validateAdminOperationRequest` shape gate + RED→GREEN `tests/memory-admin-contract.test.ts`.
 
-**Deliberately NOT done (the parent leaf stays in progress; T6 remains the
-boundary):** no build/watch/merge wiring of the flag, no sliced `citations.json`
-sidecar, no §2 `timeline` scene block, no second store adapter, no authored
-memory / persona / h2a knowledge envelope, no caller-selected namespace, no
-pagination. `.track/**` was NOT written from this worktree: the designated main
-checkout is concurrently owned by another agent and Track is append-only /
-single-writer.
+## R1b — `MemoryPortV2.admin` entry point + dispatch  [PENDING]
+- [ ] admin() on MemoryPortV2 + engine dispatch: `FENCE_LOST` (bad/absent storage_epoch before dispatch) · dispatch bootstrap|rotate|revoke · `UNAUTHORIZED` on provider denial · `CAPABILITY_UNAVAILABLE` when no `admin_provider`. `tests/memory-admin-entry.test.ts`.
 
----
+## R1c — `CanonicalMemoryStoreFactoryV1.acquire` (fence-at-construction, single-broker refusal)  [PENDING]
+- [ ] `tests/canonical-store-factory.test.ts`.
 
-# main
+## R1d — capability attestation verification in `createMemoryPortV2`  [PENDING]
+- [ ] `tests/capability-attestation.test.ts`.
 
-## Objective
+## R1e — `graphify-memory/integration` surface (factories/types/ports only)  [PENDING]
+- [ ] `tests/integration-surface-neutrality.test.ts`.
 
-- [x] Advance Track leaf `01KW89F63YJXN551TEXZCE2ZHB` with the highest coherent T5 slice: a provider-neutral temporal `queryWindow` port plus a Postgres implementation.
-- [x] Preserve the shipped temporal representation: `t` is epoch-ms start, missing `t_end` is open-ended, and `t_end === t` is a point.
-- [x] Deliver T6 as a read-only **temporal graph recall** surface: `recall --as-of` delegates to `queryWindow(t,t)` for a configured capable store, otherwise filters `graph.json` deterministically.
-- [x] Preserve configured-store failure/capability visibility, configured namespace isolation, unverified provenance attributes, and distinct file/store snapshot disclosure.
-- [x] Deliver T7 as a read-only projection of strictly local h2a registry coordination evidence in `agent-stats project-graph`, with explicit unverified provenance and no temporal or knowledge semantics.
-- [x] Keep MemoryNote/authored-memory, persona policy, h2a knowledge envelopes, pagination, namespace selection, and non-Postgres store adapters explicitly pending.
-
-## Scope / Guardrails
-
-- [x] Keep `.graphify/graph.json` as source of truth and GraphStore backends as opt-in mirrors.
-- [x] Keep temporal membership provider-neutral: inclusive overlap, untimed/malformed records excluded, namespace parameterized, and node/edge membership evaluated independently.
-- [x] Preserve unrelated dirty Studio, graph, Track, remote-job, and golden-output work; never reset, clean, publish, or stage it.
-
-## Branch Scope Boundaries
-
-**Allowed Paths (implementation scope)**
-
-  - `BRANCH.md`
-  - `spec/SPEC_AGENTSTATS_TIMEORIENTED.md`
-  - `src/storage/types.ts`
-  - `src/storage/postgres.ts`
-  - `src/temporal-recall.ts`
-  - `src/cli.ts`
-  - `src/index.ts`
-  - `src/agent-stats/registry.ts`
-  - `src/agent-stats/project-graph.ts`
-  - `src/agent-stats/index.ts`
-  - `tests/storage-postgres-time-window.test.ts`
-  - `tests/temporal-recall.test.ts`
-  - `tests/cli-temporal-recall.test.ts`
-  - `tests/agent-stats-h2a-evidence.test.ts`
-
-**Forbidden Paths**
-
-  - `src/storage/vector/**`
-  - `src/llm-mesh-bridge.ts`
-  - `package.json`
-  - `**/package-lock.json`
-  - `UPSTREAM_GAP.md`
-  - `spec/SPEC_EVOL_WP6_PLATFORM_PARITY.md`
-  - `studio/**`
-  - other GraphStore adapters, authored-memory/persona write commands, h2a product envelopes, and npm publication
-
-**Conditional Paths**
-
-  - `.track/**` — BR05-EX1: Track CLI writes/imports only from this designated main checkout; preserve the pre-existing log tail.
-  - `.graphify/graph.json` — BR05-EX2: required `npx graphify hook-rebuild` only; preserve pre-existing changes.
-  - `.graphify/GRAPH_REPORT.md` — BR05-EX2: required `npx graphify hook-rebuild` only; preserve pre-existing changes.
-
-## Plan / TODO
-
-- [x] **Lot 0 - Contract, Plan, And Track**
-  - [x] Reconcile the draft spec with shipped T0/T2 semantics: open-ended missing `t_end`, explicit point `t_end === t`, inclusive overlap, malformed-span exclusion, independent edge membership.
-  - [x] Record two independent adversarial reviews and the WP5/WP6 h2a scope boundary.
-  - [x] Import this plan and mark the existing Knowledge-time leaf in progress without claiming T6 or h2a knowledge completion.
-  - [x] Gate: `track validate`, current-main branch/scope checks, and no changes outside Allowed/Conditional paths attributable to this slice.
-
-- [x] **Lot 1 - Temporal Store Port And Postgres**
-  - [x] Add optional `capabilities.queryWindow` plus typed, flattened provider-neutral time-window node/edge results and namespace-only options.
-  - [x] Implement Postgres `queryWindow(fromMs, toMs, options)` with finite ordered bounds, parameterized namespace, safe JSONB numeric expressions, and inclusive open-span overlap.
-  - [x] Add safe numeric expression indexes for `t` and `t_end` on both node and edge mirrors without migrating or reinterpreting stored props.
-  - [x] Add a fake-driver round-trip suite for boundaries, open spans, points, malformed/untimed exclusion, namespace isolation, canonical records, capability pairing, schema qualification, parameterization, and `graphWindow` coexistence.
-  - [x] Run focused storage tests, `npm run lint`, `npm run build`, harness verification, two-peer consensus review, and `npx graphify hook-rebuild`.
-  - [x] Record exact test/build evidence in Track while leaving the parent leaf in progress for T6, h2a knowledge, non-Postgres adapters, and pagination.
-
-- [x] **Lot 2 - T6 Read-Only Temporal Graph Recall**
-  - [x] Specify `graphify.temporal-recall/v1`, strict epoch-ms / timezone-explicit ISO parsing, source selection, deterministic ordering, and unpaged/snapshot disclosures.
-  - [x] Add a provider-neutral `recallAsOf` API and `graphify recall --as-of <timestamp>` CLI; configured stores must expose the T5 capability/method pair and receive no caller-controlled namespace override.
-  - [x] Add the pure `graph.json` overlap fallback only for the no-store-configured path, preserving pass-through attributes/provenance without asserting trust or induced-subgraph closure.
-  - [x] Test inclusive boundaries, points, open spans, malformed/inverted exclusion, independent edges, deterministic sorting, timestamp parsing, file/store selection, configured namespace use, capability/error/no-fallback behavior, JSON purity, and human rendering.
-  - [x] Run focused T5/T6 tests, lint, build, harness verification, two-peer consensus review, and `npx graphify hook-rebuild`.
-  - [x] Record exact evidence in Track; leave the parent leaf in progress for authored-memory/persona policy, a versioned h2a knowledge contract, pagination, namespace authorization, and other backends.
-
-- [x] **Lot 3 - T7 Local H2A Coordination Evidence Projection**
-  - [x] Project only an exact local, non-symlinked h2a registry record that was actually matched to an in-project session; filter parent/foreign workspaces, malformed entries, and normalized-id collisions.
-  - [x] Emit deterministic `CoordinationEvidence` / `registered-in` records with fixed `provenance`, `scope: workspace-local`, and `trust: unverified`; serialize no raw workspace or h2a record fields.
-  - [x] Keep evidence timeless and outside derived spans, `recall --as-of`, h2a envelopes, namespace selection, pagination, and all write paths.
-  - [x] Test local registry validation, symlink rejection, de-duplication/order, matched-session gating, raw-field redaction, id collision fail-closed behavior, and `t`/`t_end` neutrality.
-  - [x] Gate: focused agent-stats tests, lint, build, graph hook rebuild, static scope verification, and two-peer adversarial review.
-
-## Feedback Loop
-
-- [ ] BLOCKER: any requested change to WP6-owned vector/LLM/package/spec paths requires coordination with `codex:graphify:46788d039b48` before editing.
-- [ ] BLOCKER: a real Postgres live round-trip remains gated on `GRAPHIFY_TEST_POSTGRES_URL`; the driver-injected suite is the local authority when that environment is absent.
-- [ ] HUMAN GATE: authored/personal memory requires owner/data-controller approval for privacy, access, retention, deletion, authorship, and persona semantics plus a ratified versioned h2a body contract.
-- [ ] HUMAN GATE: exposing caller-selected namespaces or cross-workspace results requires consumer-owner authorization design; T6 reads only the selected store's configured namespace.
-- [ ] HUMAN GATE: any h2a knowledge/envelope, binding, presence, inbox, run, or write/read semantic requires a ratified versioned product contract; T7 consumes only local registry coordination evidence.
-- [ ] BLOCKER: any npm publish, merge, or remote push requires separate owner authorization and is outside this task.
+## R1f — retire `createLocalAdministratorV1` + rework local-administrator + v1-removal  [PENDING]
+- [ ] `tests/memory-v1-removal.test.ts`.

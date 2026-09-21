@@ -810,6 +810,11 @@ export interface OperationalCapabilityReceiptV1 {
   storage_epoch: Cursor;
   high_water_cursor: Cursor;
   capabilities: CanonicalStoreCapabilitiesV1;
+  // (new in this amendment) attestation block, §5.9: all four present or all absent; present => engine MUST verify.
+  adapter_id?: OpaqueRef;
+  adapter_version?: string;
+  adapter_build_digest?: Digest;
+  attestation_signature?: AttestationSignature;
   issued_at: Instant;
   expires_at: Instant;
   receipt_digest: Digest;
@@ -914,6 +919,66 @@ export interface RecallPacketV2 {
   packet_digest: Digest;
 }
 
+export type AttestationSignature = string; // NFC ASCII "<alg>:<base64url>" detached signature over receipt_digest; verified by the engine against adapter_id (§5.9). Not a content digest.
+
+export interface FencedStoreConstructionV1 {
+  store_id: OpaqueRef;
+  backend: "sqlite" | "postgres";
+  deadline_at: Instant;
+}
+
+export interface CanonicalMemoryStoreFactoryV1 {
+  readonly version: 1;
+  readonly adapter_id: OpaqueRef;
+  readonly adapter_version: string;
+  acquire(input: FencedStoreConstructionV1): Promise<Result<CanonicalMemoryStorePort>>;
+}
+
+export interface AdminBootstrapRequestV1 {
+  store_id: OpaqueRef;
+  storage_epoch: Cursor;
+  admin_credential_ref: OpaqueRef;
+  deadline_at: Instant;
+}
+
+export interface AdminRotateRequestV1 {
+  store_id: OpaqueRef;
+  current_authorization_epoch: Cursor;
+  authorization: AuthorizationContextV1;
+  deadline_at: Instant;
+}
+
+export interface AdminRevokeRequestV1 {
+  store_id: OpaqueRef;
+  current_authorization_epoch: Cursor;
+  credential_digest: Digest;
+  authorization: AuthorizationContextV1;
+  deadline_at: Instant;
+}
+
+export interface AdminEpochReceiptV1 {
+  store_id: OpaqueRef;
+  storage_epoch: Cursor;
+  operation: "bootstrap" | "rotate" | "revoke";
+  authorization_epoch: Cursor;
+  credential_digest: Digest;
+  issued_at: Instant;
+  expires_at: Instant;
+  receipt_digest: Digest;
+}
+
+export type AdminOperationRequestV1 =
+  | { operation: "bootstrap"; bootstrap: AdminBootstrapRequestV1 }
+  | { operation: "rotate"; rotate: AdminRotateRequestV1 }
+  | { operation: "revoke"; revoke: AdminRevokeRequestV1 };
+
+export interface AdminProviderPort {
+  readonly version: 1;
+  bootstrap(request: AdminBootstrapRequestV1): Promise<Result<AdminEpochReceiptV1>>;
+  rotate(request: AdminRotateRequestV1): Promise<Result<AdminEpochReceiptV1>>;
+  revoke(request: AdminRevokeRequestV1): Promise<Result<AdminEpochReceiptV1>>;
+}
+
 export interface MemoryPortV2 {
   readonly version: 2;
   capabilities(): Promise<Result<CapabilityDescriptorV1>>;
@@ -932,6 +997,7 @@ export interface MemoryEngineDependenciesV2 {
   canonical_store: CanonicalMemoryStorePort;
   authorization: AuthorizationPort;
   admission_policy: AdmissionPolicy;
+  admin_provider?: AdminProviderPort;
   evidence_verifier?: EvidenceVerifierPort;
   crypto: CryptoPort;
   activity_sources: ReadonlyArray<ActivityEvidenceSource>;
