@@ -114,6 +114,9 @@ export interface MemoryErrorV1 {
   message: string;
   retryable: boolean;
   error_receipt_digest?: Digest;
+  // §5.10: an AdminProviderPort MUST set denial:true on an authorization denial, and MUST NOT set it on any
+  // failure that is not an authorization decision. §5.5(d): the engine maps denial:true to code UNAUTHORIZED.
+  denial?: true;
 }
 
 export type Result<T> =

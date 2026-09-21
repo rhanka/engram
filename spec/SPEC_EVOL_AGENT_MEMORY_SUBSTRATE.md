@@ -276,7 +276,7 @@ export type Result<T> =
 
 Unknown errors are mapped to `STORE_UNAVAILABLE` or `CAPABILITY_UNAVAILABLE`, never exposed as an untyped throw across a public port. Validation may throw only for programmer misuse of the in-process interface; host and storage boundaries always return `Result`.
 
-The `admin` operation is the graphify-mediated entry point (`MemoryPortV2.admin`, §5.5) through which administrative authority reaches the injected `AdminProviderPort` (§5.10): it bootstraps, rotates, or revokes that authority. Graphify defines no built-in administrator; `admin init` is exactly `AdminProviderPort.bootstrap` under an active storage fence. The operation's outcome **is** the port's `AdminEpochReceiptV1` (new in this amendment): no pre-existing valid receipt is required, so first-store bootstrap does not deadlock. A port denial — the injected provider refusing the operation — is surfaced as `UNAUTHORIZED`; when no `AdminProviderPort` is injected, `admin` refuses with `CAPABILITY_UNAVAILABLE`. Because the host reaches administrative authority only through this entry point, the checks below (fence validity, dispatch, denial mapping) are performed by graphify, not by a host that calls `AdminProviderPort` directly.
+The `admin` operation is the graphify-mediated entry point (`MemoryPortV2.admin`, §5.5) through which administrative authority reaches the injected `AdminProviderPort` (§5.10): it bootstraps, rotates, or revokes that authority. Graphify defines no built-in administrator; `admin init` is exactly `AdminProviderPort.bootstrap` under an active storage fence. The operation's outcome **is** the port's `AdminEpochReceiptV1` (new in this amendment): no pre-existing valid receipt is required, so first-store bootstrap does not deadlock. A provider-declared authorization denial (`error.denial === true`, §5.10) is mapped by the engine to `UNAUTHORIZED`; when no `AdminProviderPort` is injected, `admin` refuses with `CAPABILITY_UNAVAILABLE`. Because the host reaches administrative authority only through this entry point, the checks below (fence validity, dispatch, denial mapping) are performed by graphify, not by a host that calls `AdminProviderPort` directly.
 
 ### 5.2 AuthorizationPort — opaque input, normalized result
 
@@ -607,8 +607,8 @@ Capitalisation never changes the source record's scope or state. The engine auth
 - **(a)** if no `admin_provider` is injected (§5.9 dependencies), refuse with `CAPABILITY_UNAVAILABLE` before any other check;
 - **(b)** for `operation: "bootstrap"` (`admin init`), require an active storage fence and validate that the request's `storage_epoch` equals the live fence epoch reported by the canonical store's fresh capability receipt (§5.9); on mismatch or absent fence, refuse with `FENCE_LOST` before any dispatch;
 - **(c)** dispatch the carried sub-request to `AdminProviderPort.bootstrap`, `AdminProviderPort.rotate`, or `AdminProviderPort.revoke` per the discriminant;
-- **(d)** surface a port denial — the injected provider refusing the operation — as `UNAUTHORIZED`;
-- **(e)** on success, return the port's `AdminEpochReceiptV1` as the operation's outcome; no pre-existing valid receipt is required for `bootstrap`, so first-store bootstrap cannot deadlock. Other typed failures surface with their own code.
+- **(d)** map a provider-declared authorization denial to `UNAUTHORIZED`: the engine maps `error.denial === true` (§5.10) to `UNAUTHORIZED`; the mapping is mechanical and total — the engine does not reclassify a decision it did not make, it only maps the provider-declared flag to the code; every other failure surfaces with its own code (e);
+- **(e)** on success, return the port's `AdminEpochReceiptV1` as the operation's outcome; no pre-existing valid receipt is required for `bootstrap`, so first-store bootstrap cannot deadlock. Other typed failures surface with their own code (their `error.denial` is absent).
 
 ### 5.6 Lifecycle journal and closed state machine
 
