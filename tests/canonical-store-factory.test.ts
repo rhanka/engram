@@ -1,0 +1,81 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  createCanonicalMemoryStoreFactoryV1,
+  type CanonicalMemoryStorePort,
+  type FencedStoreConstructionV1,
+  type Result,
+} from "../graphify-memory/index.js";
+
+const construction = (store_id: string): FencedStoreConstructionV1 => ({ store_id, backend: "sqlite", deadline_at: "2026-09-20T12:05:00.000Z" });
+
+const okStore = (onClose?: () => void): Result<CanonicalMemoryStorePort> =>
+  ({ ok: true, value: { version: 1, async close() { onClose?.(); return { ok: true as const, value: { closed: true as const } }; } } as unknown as CanonicalMemoryStorePort });
+
+function makeFactory() {
+  const openCalls: FencedStoreConstructionV1[] = [];
+  const closes: string[] = [];
+  let open: (input: FencedStoreConstructionV1) => Promise<Result<CanonicalMemoryStorePort>> = async (input) => okStore(() => closes.push(input.store_id));
+  const factory = createCanonicalMemoryStoreFactoryV1({
+    adapter_id: "adapter:graphify-sqlite",
+    adapter_version: "1",
+    open: async (input) => { openCalls.push(input); return open(input); },
+  });
+  return { factory, openCalls, closes, setOpen: (o: typeof open) => { open = o; } };
+}
+
+describe("CanonicalMemoryStoreFactoryV1.acquire (§5.7)", () => {
+  it("takes the fence at construction and returns a live fenced store", async () => {
+    const { factory, openCalls } = makeFactory();
+    expect((await factory.acquire(construction("store:a"))).ok).toBe(true);
+    expect(openCalls).toHaveLength(1);
+    expect(factory.version).toBe(1);
+    expect(factory.adapter_id).toBe("adapter:graphify-sqlite");
+  });
+
+  it("refuses a second live in-process holder with STORE_UNAVAILABLE, not queued (opener not re-invoked)", async () => {
+    const { factory, openCalls } = makeFactory();
+    expect((await factory.acquire(construction("store:a"))).ok).toBe(true);
+    const second = await factory.acquire(construction("store:a"));
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.error.code).toBe("STORE_UNAVAILABLE");
+    expect(openCalls).toHaveLength(1);
+  });
+
+  it("releases the in-process holder on close, allowing re-acquire", async () => {
+    const { factory, closes } = makeFactory();
+    const first = await factory.acquire(construction("store:a"));
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(await first.value.close()).toEqual({ ok: true, value: { closed: true } });
+    expect(closes).toEqual(["store:a"]);
+    expect((await factory.acquire(construction("store:a"))).ok).toBe(true);
+  });
+
+  it("tracks holders per store — distinct stores acquire independently", async () => {
+    const { factory } = makeFactory();
+    expect((await factory.acquire(construction("store:a"))).ok).toBe(true);
+    expect((await factory.acquire(construction("store:b"))).ok).toBe(true);
+    expect((await factory.acquire(construction("store:a"))).ok).toBe(false);
+  });
+
+  it("surfaces an opener STORE_UNAVAILABLE (cross-process holder) and leaves no in-process holder", async () => {
+    const { factory, setOpen, openCalls } = makeFactory();
+    setOpen(async () => ({ ok: false, error: { code: "STORE_UNAVAILABLE", operation: "admin", message: "cross-process flock held", retryable: false } }));
+    const first = await factory.acquire(construction("store:a"));
+    expect(first.ok).toBe(false);
+    if (!first.ok) expect(first.error.code).toBe("STORE_UNAVAILABLE");
+    await factory.acquire(construction("store:a"));
+    expect(openCalls).toHaveLength(2);
+  });
+
+  it("maps an opener throw to STORE_UNAVAILABLE and leaks no holder", async () => {
+    const { factory, setOpen } = makeFactory();
+    setOpen(async () => { throw new Error("driver missing"); });
+    const r = await factory.acquire(construction("store:a"));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe("STORE_UNAVAILABLE");
+    setOpen(async () => okStore());
+    expect((await factory.acquire(construction("store:a"))).ok).toBe(true);
+  });
+});

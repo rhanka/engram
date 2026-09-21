@@ -44,6 +44,11 @@ export {
   type PostgresMemoryStoreOptionsV1,
 } from "./postgres.js";
 export {
+  createCanonicalMemoryStoreFactoryV1,
+  type CanonicalMemoryStoreFactoryOptionsV1,
+  type FencedStoreOpenerV1,
+} from "./store-factory.js";
+export {
   applyPortOwnedRedaction,
   authorizeOperation,
   createMemoryPortV2,
