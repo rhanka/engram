@@ -998,12 +998,29 @@ export interface AdminProviderPort {
 // build mismatch, a store that never took the fence) — NOT a malicious in-process host (deployment topology,
 // not cryptography). verifySignature checks the detached attestation_signature over receipt_digest binding the
 // adapter identity + store_id + storage_epoch (receipt_digest is computed WITHOUT receipt_digest AND signature).
+export interface CapabilityAttestationIdentityV1 {
+  readonly adapter_id: OpaqueRef;
+  readonly adapter_version: string;
+  readonly adapter_build_digest: Digest;
+}
+
+// §5.9 host-provided signer: RAW crypto over a graphify-computed digest (graphify holds no key). `identity` is
+// the SINGLE source of the adapter binding — the fenced-store factory derives adapter_id/version from it, so the
+// emitted receipt and the expected identity cannot diverge.
+export interface CapabilityAttestationSignerV1 {
+  readonly identity: CapabilityAttestationIdentityV1;
+  sign(receiptDigest: Digest): AttestationSignature;
+}
+
 export interface CapabilityAttestationVerifierPort {
   readonly version: 1;
   readonly expected_adapter_id: OpaqueRef;
   readonly expected_adapter_version: string;
   readonly expected_adapter_build_digest: Digest;
-  verifySignature(input: { receipt: OperationalCapabilityReceiptV1 }): boolean;
+  // §5.9 PURE crypto only (bytes in, bool out): graphify recomputes and compares the canonical receipt digest in
+  // verifyCapabilityAttestation and passes the bytes here — the host verifier never recomputes the canonical
+  // encoding, so it cannot desync (a desync would falsely reject a valid production store = re-bricking).
+  verifySignature(input: { receipt_digest: Digest; attestation_signature: AttestationSignature }): boolean;
 }
 
 export interface MemoryPortV2 {
