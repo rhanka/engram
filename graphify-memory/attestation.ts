@@ -1,11 +1,17 @@
+import { generateKeyPairSync, sign as cryptoSign, verify as cryptoVerify } from "node:crypto";
 import { receiptDigest } from "./digests.js";
 import type {
+  AttestationSignature,
+  CapabilityAttestationIdentityV1,
+  CapabilityAttestationSignerV1,
   CapabilityAttestationVerifierPort,
   Digest,
   MemoryOperation,
   OperationalCapabilityReceiptV1,
   Result,
 } from "./contracts/index.js";
+
+const ED25519_PREFIX = "ed25519:";
 
 /**
  * §5.9 canonical attestation digest — the SINGLE definition used by BOTH the emitter (the fenced-store factory)
@@ -58,4 +64,37 @@ export function verifyCapabilityAttestation(
     return unattested(operation, "capability attestation signature did not verify against the expected adapter identity");
   }
   return { ok: true, value: receipt };
+}
+
+/**
+ * §5.9 host-opt-in convenience: a MATCHED signer + verifier from ONE Ed25519 key pair and ONE identity, so the
+ * emitted attestation and the expected identity cannot diverge. `keyPair` omitted => an ephemeral pair
+ * (node:crypto, no dependency). graphify holds no long-lived key; the trust boundary is deployment topology
+ * (detect a misconfigured/naive store), not a crypto trust root against a malicious host (§5.9).
+ */
+export function createCapabilityAttestationPairV1(
+  identity: CapabilityAttestationIdentityV1,
+  keyPair: ReturnType<typeof generateKeyPairSync> = generateKeyPairSync("ed25519"),
+): { signer: CapabilityAttestationSignerV1; verifier: CapabilityAttestationVerifierPort } {
+  const signer: CapabilityAttestationSignerV1 = {
+    identity,
+    sign(receiptDigest: Digest): AttestationSignature {
+      return `${ED25519_PREFIX}${cryptoSign(null, Buffer.from(receiptDigest, "utf8"), keyPair.privateKey).toString("base64url")}`;
+    },
+  };
+  const verifier: CapabilityAttestationVerifierPort = {
+    version: 1,
+    expected_adapter_id: identity.adapter_id,
+    expected_adapter_version: identity.adapter_version,
+    expected_adapter_build_digest: identity.adapter_build_digest,
+    verifySignature({ receipt_digest, attestation_signature }): boolean {
+      if (!attestation_signature.startsWith(ED25519_PREFIX)) return false;
+      try {
+        return cryptoVerify(null, Buffer.from(receipt_digest, "utf8"), keyPair.publicKey, Buffer.from(attestation_signature.slice(ED25519_PREFIX.length), "base64url"));
+      } catch {
+        return false;
+      }
+    },
+  };
+  return { signer, verifier };
 }
