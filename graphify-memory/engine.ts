@@ -8,6 +8,7 @@ import {
   recordIdFromDigest,
 } from "./digests.js";
 import { isCanonicalCursor, validateAdminOperationRequest, validateCandidatePayload } from "./validation.js";
+import { verifyCapabilityAttestation } from "./attestation.js";
 import { executeRecall } from "./recall.js";
 import type {
   AdminEpochReceiptV1,
@@ -659,6 +660,21 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
   const capturedContent = new Map<string, Digest>();
   const admissionOutcomes = new Map<string, AdmissionOutcomeV1>();
 
+  // §5.9: obtain a FRESH readiness receipt and verify its capability attestation against the expected adapter
+  // identity BEFORE admitting any fencing-dependent operation. Verification runs in the engine, never delegated
+  // to the store's own readiness(). Called once PER OP on purpose — the receipt must be fresh (§5.9 l.1041/1047),
+  // so the result is deliberately NOT memoised across operations; do not add a cache here.
+  const admitFenced = async (operation: MemoryOperation): Promise<Result<OperationalCapabilityReceiptV1>> => {
+    let readiness: Result<OperationalCapabilityReceiptV1>;
+    try {
+      readiness = await dependencies.canonical_store.readiness();
+    } catch {
+      return unavailable(operation, "canonical store did not return a readiness receipt");
+    }
+    if (!readiness.ok) return operationFailure(operation, readiness);
+    return verifyCapabilityAttestation(readiness.value, dependencies.attestation_verifier, operation);
+  };
+
   const port: MemoryPortV2 = {
     version: 2,
     capabilities: async () => {
@@ -667,6 +683,9 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
         if (!readiness.ok) return operationFailure("admin", readiness);
         const backend = readiness.value.backend;
         if (backend !== "sqlite" && backend !== "postgres") return unavailable("admin", "canonical backend does not support the published capability descriptor");
+        // NOTE (§5.9): capabilities() is a REPORTING surface, not a fencing-dependent operation (§5.9 l.1041
+        // gates "operations that require fencing"), so it is deliberately NOT attestation-gated — a refused
+        // caller must still be able to read the descriptor (which reports fenced_single_writer) to diagnose why.
         const semantic = dependencies.semantic_projection !== undefined && dependencies.vector_projection !== undefined;
         const body = {
           contract_version: 2 as const,
@@ -685,6 +704,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       return validated.ok ? { ok: true, value: { payload_digest: validated.value.payload_digest } } : operationFailure("capture", validated);
     },
     capture: async (input): Promise<Result<CaptureAcknowledgementV1>> => {
+      const admitted = await admitFenced("capture");
+      if (!admitted.ok) return admitted;
       const now = dependencies.clock?.now();
       if (!isInstant(now)) return unavailable("capture", "clock did not supply a canonical instant");
       const checked = validateCaptureRequest(input, now);
@@ -752,6 +773,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       return { ok: true, value: { cancelled: true } };
     },
     requestAdmission: async (input) => {
+      const admitted = await admitFenced("request_admission");
+      if (!admitted.ok) return admitted;
       if (!admissionRequestIsExact(input)) return refusal("request_admission", "INVALID_SCHEMA", "admission request is not exact");
       const now = dependencies.clock?.now();
       if (!isInstant(now)) return unavailable("request_admission", "clock did not supply a canonical instant");
@@ -868,6 +891,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       const now = dependencies.clock?.now();
       if (!isInstant(now)) return unavailable(input.operation, "clock did not supply a canonical instant");
       if (Date.parse(now) >= Date.parse(input.deadline_at)) return refusal(input.operation, "DEADLINE_EXCEEDED", "lifecycle deadline elapsed before transition");
+      const admitted = await admitFenced(input.operation);
+      if (!admitted.ok) return admitted;
       const authorizationOperation = lifecycleAuthorizationOperation(input.operation);
       const resource = "record_id" in input ? { record_id: input.record_id } : { candidate_id: input.candidate_id };
       const authorization = await authorizeOperation(dependencies.authorization, {
@@ -881,11 +906,9 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       if (!authorization.ok) return { ok: false, error: { ...authorization.error, operation: input.operation } };
       if ("record_id" in input) {
         try {
-          const readiness = await dependencies.canonical_store.readiness();
-          if (!readiness.ok) return operationFailure(input.operation, readiness);
           const record = await dependencies.canonical_store.readRecord({
             record_id: input.record_id,
-            system_as_of: readiness.value.high_water_cursor,
+            system_as_of: admitted.value.high_water_cursor,
             authorization_receipt_digest: authorization.value.receipt_digest,
           });
           if (!record.ok) return operationFailure(input.operation, record);
@@ -918,6 +941,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       };
     },
     recall: async (input) => {
+      const admitted = await admitFenced("recall_current");
+      if (!admitted.ok) return admitted;
       const now = dependencies.clock?.now();
       if (!isInstant(now)) return unavailable("recall_current", "clock did not supply a canonical instant");
       const validated = validateRecallRequest(input, now);
@@ -936,6 +961,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       return executeRecall(dependencies, { request, authorization: authorization.value, now });
     },
     proposeCapitalisation: async (input): Promise<Result<CaptureAcknowledgementV1>> => {
+      const admitted = await admitFenced("propose_capitalisation");
+      if (!admitted.ok) return admitted;
       const now = dependencies.clock?.now();
       if (!isInstant(now)) return unavailable("propose_capitalisation", "clock did not supply a canonical instant");
       const validated = validateCapitalisationRequest(input, now);
@@ -954,11 +981,9 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       if (!sourceAuthorization.ok) return operationFailure("propose_capitalisation", sourceAuthorization as Result<never>);
       let sourceRecord: MemoryRecordV2;
       try {
-        const readiness = await dependencies.canonical_store.readiness();
-        if (!readiness.ok) return operationFailure("propose_capitalisation", readiness);
         const read = await dependencies.canonical_store.readRecord({
           record_id: request.source_record_id,
-          system_as_of: readiness.value.high_water_cursor,
+          system_as_of: admitted.value.high_water_cursor,
           authorization_receipt_digest: sourceAuthorization.value.receipt_digest,
         });
         if (!read.ok) return operationFailure("propose_capitalisation", read);
