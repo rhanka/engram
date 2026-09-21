@@ -50,6 +50,10 @@ export {
 } from "./store-factory.js";
 export { verifyCapabilityAttestation } from "./attestation.js";
 export {
+  assertAdminProviderConformance,
+  type AdminProviderConformanceCasesV1,
+} from "./admin-conformance.js";
+export {
   applyPortOwnedRedaction,
   authorizeOperation,
   createMemoryPortV2,

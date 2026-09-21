@@ -15,7 +15,7 @@ describe("graphify-memory/integration surface (§1 D1, R1e)", () => {
 
   it("re-exports only from the neutral internal modules — no driver, node runtime, listener, or consumer import", () => {
     const sources = [...moduleSource.matchAll(/from\s+["']([^"']+)["']/g)].map((m) => m[1]);
-    const allowed = new Set(["./engine.js", "./store-factory.js", "./attestation.js", "./contracts/index.js"]);
+    const allowed = new Set(["./engine.js", "./store-factory.js", "./attestation.js", "./admin-conformance.js", "./contracts/index.js"]);
     expect(sources.filter((s) => !allowed.has(s ?? "")), "integration must import only the neutral engine/factory/attestation/contracts modules").toEqual([]);
     // the driver-bound adapters stay in their own subpaths and confer no server semantics here.
     expect(moduleSource).not.toContain("./sqlite.js");
