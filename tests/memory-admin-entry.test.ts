@@ -1,0 +1,77 @@
+import { describe, expect, it } from "vitest";
+
+import { createMemoryPortV2, type MemoryEngineDependenciesV2, type Result } from "../graphify-memory/index.js";
+
+const NOW = "2026-09-20T12:00:00.000Z";
+const DEADLINE = "2026-09-20T12:04:00.000Z";
+const DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as const;
+const EPOCH = "42";
+
+const receipt = (operation: "bootstrap" | "rotate" | "revoke") =>
+  ({ store_id: "store:s1", storage_epoch: EPOCH, operation, authorization_epoch: "1", credential_digest: DIGEST, issued_at: NOW, expires_at: DEADLINE, receipt_digest: DIGEST });
+
+const code = (r: Result<unknown>) => (r.ok ? "OK" : r.error.code);
+
+function makePort(opts: { provider?: unknown; fenceEpoch?: string; fenceOk?: boolean } = {}) {
+  const calls: string[] = [];
+  const defaultProvider = {
+    version: 1 as const,
+    async bootstrap() { calls.push("bootstrap"); return { ok: true as const, value: receipt("bootstrap") }; },
+    async rotate() { calls.push("rotate"); return { ok: true as const, value: receipt("rotate") }; },
+    async revoke() { calls.push("revoke"); return { ok: true as const, value: receipt("revoke") }; },
+  };
+  const canonical_store = {
+    async readiness() {
+      return opts.fenceOk === false
+        ? { ok: false as const, error: { code: "CAPABILITY_UNAVAILABLE" as const, operation: "admin" as const, message: "no fence", retryable: false } }
+        : { ok: true as const, value: { store_id: "store:s1", backend: "sqlite" as const, storage_epoch: opts.fenceEpoch ?? EPOCH, high_water_cursor: "0", capabilities: {}, issued_at: NOW, expires_at: DEADLINE, receipt_digest: DIGEST } };
+    },
+  };
+  const port = createMemoryPortV2({
+    canonical_store, admin_provider: "provider" in opts ? opts.provider : defaultProvider,
+    authorization: {}, admission_policy: {}, crypto: {}, activity_sources: [], clock: { now: () => NOW },
+  } as unknown as MemoryEngineDependenciesV2);
+  return { port, calls };
+}
+
+const bootstrapReq = (storage_epoch = EPOCH) => ({ operation: "bootstrap" as const, bootstrap: { store_id: "store:s1", storage_epoch, admin_credential_ref: "cred:ref", deadline_at: DEADLINE } });
+const rotateReq = () => ({ operation: "rotate" as const, rotate: { store_id: "store:s1", current_authorization_epoch: EPOCH, authorization: { credential: "c" }, deadline_at: DEADLINE } });
+const revokeReq = () => ({ operation: "revoke" as const, revoke: { store_id: "store:s1", current_authorization_epoch: EPOCH, credential_digest: DIGEST, authorization: { credential: "c" }, deadline_at: DEADLINE } });
+
+describe("MemoryPortV2.admin entry point (§5.5)", () => {
+  it("(a) refuses CAPABILITY_UNAVAILABLE when no admin_provider is injected, before any other check", async () => {
+    const { port, calls } = makePort({ provider: undefined });
+    expect(code(await port.admin(bootstrapReq()))).toBe("CAPABILITY_UNAVAILABLE");
+    expect(calls).toEqual([]);
+  });
+
+  it("(b) refuses FENCE_LOST before any dispatch on a mismatched or absent storage fence", async () => {
+    const mismatch = makePort({ fenceEpoch: "99" });
+    expect(code(await mismatch.port.admin(bootstrapReq("42")))).toBe("FENCE_LOST");
+    expect(mismatch.calls).toEqual([]);
+    const noFence = makePort({ fenceOk: false });
+    expect(code(await noFence.port.admin(bootstrapReq()))).toBe("FENCE_LOST");
+    expect(noFence.calls).toEqual([]);
+  });
+
+  it("(c) dispatches bootstrap|rotate|revoke to the injected provider per discriminant", async () => {
+    const b = makePort(); expect((await b.port.admin(bootstrapReq())).ok).toBe(true); expect(b.calls).toEqual(["bootstrap"]);
+    const ro = makePort(); expect((await ro.port.admin(rotateReq())).ok).toBe(true); expect(ro.calls).toEqual(["rotate"]);
+    const rv = makePort(); expect((await rv.port.admin(revokeReq())).ok).toBe(true); expect(rv.calls).toEqual(["revoke"]);
+  });
+
+  it("(e) bootstrap on empty state needs no prior receipt and returns the provider AdminEpochReceiptV1", async () => {
+    const r = await makePort().port.admin(bootstrapReq());
+    expect(r.ok).toBe(true);
+    if (r.ok) { expect(r.value.operation).toBe("bootstrap"); expect(r.value.storage_epoch).toBe(EPOCH); }
+  });
+
+  it("(d) surfaces a provider denial as UNAUTHORIZED", async () => {
+    const denier = { version: 1 as const, async bootstrap() { return { ok: false as const, error: { code: "UNAUTHORIZED" as const, operation: "admin" as const, message: "denied", retryable: false } }; }, async rotate() { throw new Error("x"); }, async revoke() { throw new Error("x"); } };
+    expect(code(await makePort({ provider: denier }).port.admin(bootstrapReq()))).toBe("UNAUTHORIZED");
+  });
+
+  it("rejects a malformed admin request with INVALID_SCHEMA", async () => {
+    expect(code(await makePort().port.admin({ operation: "bootstrap" } as never))).toBe("INVALID_SCHEMA");
+  });
+});

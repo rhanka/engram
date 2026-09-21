@@ -817,6 +817,7 @@ export interface OperationalCapabilityReceiptV1 {
   attestation_signature?: AttestationSignature;
   issued_at: Instant;
   expires_at: Instant;
+  // §5.9 non-circularity: computed over the receipt WITHOUT receipt_digest AND WITHOUT attestation_signature (the signature is detached over this digest).
   receipt_digest: Digest;
 }
 
@@ -936,7 +937,9 @@ export interface CanonicalMemoryStoreFactoryV1 {
 
 export interface AdminBootstrapRequestV1 {
   store_id: OpaqueRef;
+  // §5.5(b): MUST equal the live storage fence epoch; the engine refuses FENCE_LOST before any dispatch otherwise.
   storage_epoch: Cursor;
+  // graphify never interprets admin_credential_ref (§5.10) — it is opaque and handed to the AdminProviderPort verbatim.
   admin_credential_ref: OpaqueRef;
   deadline_at: Instant;
 }
@@ -960,10 +963,13 @@ export interface AdminEpochReceiptV1 {
   store_id: OpaqueRef;
   storage_epoch: Cursor;
   operation: "bootstrap" | "rotate" | "revoke";
+  // §5.10: the AuthorizationPort revocation_epoch counter — distinct from TrustBindingV1.revocation_epoch AND from storage_epoch (three neighbouring epochs).
   authorization_epoch: Cursor;
   credential_digest: Digest;
   issued_at: Instant;
+  // §5.10: MUST be ≤ 5 min after issued_at and bound to authorization_epoch; rotate/revoke invalidates earlier receipts atomically.
   expires_at: Instant;
+  // §5.9 non-circularity: computed over the receipt WITHOUT receipt_digest.
   receipt_digest: Digest;
 }
 
@@ -972,6 +978,10 @@ export type AdminOperationRequestV1 =
   | { operation: "rotate"; rotate: AdminRotateRequestV1 }
   | { operation: "revoke"; revoke: AdminRevokeRequestV1 };
 
+// §5.10 D2 — the injected administrator replacing the retired built-in. Six normative requirements the types cannot express:
+// (1) default-deny before the first valid receipt; (2) receipts ≤5 min bound to the authorization epoch;
+// (3) rotate/revoke atomically increments the epoch and invalidates earlier receipts; (4) no bypass on credential loss;
+// (5) six-field admission envelope (§5.3); (6) minimal-allowlist redaction. bootstrap succeeds only on EMPTY admin state under an active fence.
 export interface AdminProviderPort {
   readonly version: 1;
   bootstrap(request: AdminBootstrapRequestV1): Promise<Result<AdminEpochReceiptV1>>;
@@ -991,6 +1001,10 @@ export interface MemoryPortV2 {
   proposeCapitalisation(request: CapitalisationRequestV1): Promise<Result<CaptureAcknowledgementV1>>;
   invalidateProjections(request: ProjectionInvalidationRequestV1): Promise<Result<ProjectionInvalidationReceiptV1>>;
   readiness(): Promise<Result<OperationalCapabilityReceiptV1>>;
+  // §5.5: the single graphify-mediated admin entry point. Engine steps: no admin_provider => CAPABILITY_UNAVAILABLE;
+  // shape-invalid => INVALID_SCHEMA; bootstrap => FENCE_LOST unless request.storage_epoch equals the live fence epoch (before dispatch);
+  // then dispatch to admin_provider per discriminant and pass its Result through (a port denial surfaces as UNAUTHORIZED).
+  admin(request: AdminOperationRequestV1): Promise<Result<AdminEpochReceiptV1>>;
 }
 
 export interface MemoryEngineDependenciesV2 {
