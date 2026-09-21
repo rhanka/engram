@@ -813,14 +813,15 @@ export interface OperationalCapabilityReceiptV1 {
   storage_epoch: Cursor;
   high_water_cursor: Cursor;
   capabilities: CanonicalStoreCapabilitiesV1;
-  // (new in this amendment) attestation block, §5.9: all four present or all absent; present => engine MUST verify.
+  // §5.9 declared adapter identity (all three present or all absent). A production store's fenced factory stamps
+  // these from its module's compiled identity; the engine compares them to its own compiled identity, and pairs
+  // that with an in-process provenance mark (§5.9, graphify-memory/store-factory). There is no signature.
   adapter_id?: OpaqueRef;
   adapter_version?: string;
   adapter_build_digest?: Digest;
-  attestation_signature?: AttestationSignature;
   issued_at: Instant;
   expires_at: Instant;
-  // §5.9 non-circularity: computed over the receipt WITHOUT receipt_digest AND WITHOUT attestation_signature (the signature is detached over this digest).
+  // §5.9 non-circularity: computed over the receipt WITHOUT receipt_digest.
   receipt_digest: Digest;
 }
 
@@ -923,8 +924,6 @@ export interface RecallPacketV2 {
   packet_digest: Digest;
 }
 
-export type AttestationSignature = string; // NFC ASCII "<alg>:<base64url>" detached signature over receipt_digest; verified by the engine against adapter_id (§5.9). Not a content digest.
-
 export interface FencedStoreConstructionV1 {
   store_id: OpaqueRef;
   backend: "sqlite" | "postgres";
@@ -992,35 +991,17 @@ export interface AdminProviderPort {
   revoke(request: AdminRevokeRequestV1): Promise<Result<AdminEpochReceiptV1>>;
 }
 
-// §5.9 capability attestation. The engine verifies a production store's fresh receipt against the EXPECTED
-// graphify-owned adapter identity before admitting any fencing-dependent operation; verification is never
-// delegated to the store's own readiness(). Threat scope: detect a misconfigured/naive store (adapter/version/
-// build mismatch, a store that never took the fence) — NOT a malicious in-process host (deployment topology,
-// not cryptography). verifySignature checks the detached attestation_signature over receipt_digest binding the
-// adapter identity + store_id + storage_epoch (receipt_digest is computed WITHOUT receipt_digest AND signature).
+// §5.9 capability attestation, by IN-PROCESS PROVENANCE (not cryptography — the trust boundary is deployment
+// topology, l.1045). A production store is admitted for a fencing-dependent op only when (a) it was built by
+// THIS graphify-memory module's fenced-store factory (an in-process mark; the only detector of "never took the
+// fence") AND (b) its declared adapter identity equals this module's compiled identity. This identity type is
+// the shape of both the compiled constant and the receipt's declared binding; there is NO signer, key, or
+// signature — a host cannot both misconfigure the store and make it self-consistent against a store-independent
+// compiled constant. See graphify-memory/store-factory (GRAPHIFY_MEMORY_ADAPTER_IDENTITY, verifyStoreProvenance).
 export interface CapabilityAttestationIdentityV1 {
   readonly adapter_id: OpaqueRef;
   readonly adapter_version: string;
   readonly adapter_build_digest: Digest;
-}
-
-// §5.9 host-provided signer: RAW crypto over a graphify-computed digest (graphify holds no key). `identity` is
-// the SINGLE source of the adapter binding — the fenced-store factory derives adapter_id/version from it, so the
-// emitted receipt and the expected identity cannot diverge.
-export interface CapabilityAttestationSignerV1 {
-  readonly identity: CapabilityAttestationIdentityV1;
-  sign(receiptDigest: Digest): AttestationSignature;
-}
-
-export interface CapabilityAttestationVerifierPort {
-  readonly version: 1;
-  readonly expected_adapter_id: OpaqueRef;
-  readonly expected_adapter_version: string;
-  readonly expected_adapter_build_digest: Digest;
-  // §5.9 PURE crypto only (bytes in, bool out): graphify recomputes and compares the canonical receipt digest in
-  // verifyCapabilityAttestation and passes the bytes here — the host verifier never recomputes the canonical
-  // encoding, so it cannot desync (a desync would falsely reject a valid production store = re-bricking).
-  verifySignature(input: { receipt_digest: Digest; attestation_signature: AttestationSignature }): boolean;
 }
 
 export interface MemoryPortV2 {
@@ -1046,8 +1027,6 @@ export interface MemoryEngineDependenciesV2 {
   authorization: AuthorizationPort;
   admission_policy: AdmissionPolicy;
   admin_provider?: AdminProviderPort;
-  // §5.9: required for production (sqlite/postgres) fencing-dependent ops; absent for backend "memory" / test fakes.
-  attestation_verifier?: CapabilityAttestationVerifierPort;
   evidence_verifier?: EvidenceVerifierPort;
   crypto: CryptoPort;
   activity_sources: ReadonlyArray<ActivityEvidenceSource>;
