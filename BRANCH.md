@@ -16,8 +16,9 @@ Both ways of making R1a compile with `admin()` present violate the spec, so neit
 - **required `admin()` + a stub** ships a default administrator that §5.10 explicitly retires.
 Deferring the method (not just avoiding a tsc break) is therefore the only spec-faithful option — the interface stays consistent with §5.5/§5.10 until the dispatch lands in R1b.
 
-## R1c — `CanonicalMemoryStoreFactoryV1.acquire` (fence-at-construction, single-broker refusal)  [PENDING]
-- [ ] `tests/canonical-store-factory.test.ts`.
+## R1c — `CanonicalMemoryStoreFactoryV1.acquire` (fence-at-construction, single-broker refusal)  [DONE]
+- [x] `graphify-memory/store-factory.ts` — `createCanonicalMemoryStoreFactoryV1({adapter_id, adapter_version, open})`. The `open` seam takes the storage fence at construction (graphify wires its own sqlite/postgres openers; the factory never re-implements the broker, §5.7). In-process half of the single-broker rule: a live holder for a store_id refuses `STORE_UNAVAILABLE` (not queued, opener not re-invoked); reservation before opening closes the race; released on graceful `close()`; a failed/throwing acquisition frees the slot (holds no fence). Cross-process half is the opener's flock/generation lock. `tests/canonical-store-factory.test.ts` (6 cases). Exported from `index.ts`.
+- Note: attestation binding on the acquired store's `readiness()` receipt is R1d (emission + engine-side verification kept together).
 
 ## R1d — capability attestation verification in `createMemoryPortV2`  [PENDING]
 - [ ] `tests/capability-attestation.test.ts`.
