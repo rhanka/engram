@@ -17,6 +17,10 @@ function nonConformant(message: string): Result<{ conformant: true }> {
  * caller supplies the two scenarios because only it knows how to drive its own provider to each outcome; the
  * harness invokes them and verifies the `denial` invariant in BOTH directions. This tests the PROVIDER (the
  * engine-side mapping of §5.5(d) is a separate, unconditional guarantee in the engine).
+ *
+ * The `{ conformant: true }` verdict is scoped to the supplied `cases` ONLY: it certifies the provider's
+ * denial-flag behavior on exactly those two scenarios, not the provider's entire behavior. Weak or incomplete
+ * cases yield a weak assurance — the harness cannot discover behaviors the caller did not exercise.
  */
 export async function assertAdminProviderConformance(
   provider: AdminProviderPort,
