@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { memoryReadinessReceipt } from "./memory-l3-fixture.js";
+import { embeddedInMemoryStub, memoryReadinessReceipt } from "./memory-l3-fixture.js";
 
 import {
   applyPortOwnedRedaction,
@@ -113,7 +113,8 @@ describe("authorization binding", () => {
 
     let commits = 0;
     const memory = createMemoryPortV2({
-      canonical_store: { async readiness() { return memoryReadinessReceipt(); }, async commitPending() { commits += 1; return { ok: false, error: { code: "STORE_UNAVAILABLE", operation: "capture", message: "unused", retryable: false } }; } },
+      canonical_store: embeddedInMemoryStub({ async readiness() { return memoryReadinessReceipt(); }, async commitPending() { commits += 1; return { ok: false, error: { code: "STORE_UNAVAILABLE", operation: "capture", message: "unused", retryable: false } }; } }),
+      allow_unfenced_memory_store: true,
       clock: { now: () => NOW },
     } as unknown as MemoryEngineDependenciesV2);
     const callerSupplied = await memory.capture({

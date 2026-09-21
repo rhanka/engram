@@ -138,6 +138,8 @@ export function buildMemory(options: FixtureOptions = {}): { memory: MemoryPortV
     admission_policy: policy,
     crypto,
     activity_sources: [],
+    // §5.9: non-production embedded harness — opt into the neutral in-memory store (inert when a fenced store is injected).
+    allow_unfenced_memory_store: true,
     ...(options.semantic ? { semantic_projection: options.semantic } : {}),
     ...(options.vector ? { vector_projection: options.vector } : {}),
     clock,

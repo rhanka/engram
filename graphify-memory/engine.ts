@@ -703,9 +703,10 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       return unavailable(operation, "canonical store did not return a readiness receipt");
     }
     if (!readiness.ok) return operationFailure(operation, readiness);
-    // §5.9: admit a production store only via in-process provenance (built by this module's fenced factory) +
-    // declared-identity lockstep — never a self-asserted flag. Non-production ("memory") is admitted unmarked.
-    return verifyStoreProvenance(dependencies.canonical_store, readiness.value, operation);
+    // §5.9: admit only via the in-process mark — a store built by this module's fenced factory (production), or
+    // this module's neutral in-memory store when the host raised `allow_unfenced_memory_store` (non-production).
+    // The receipt's `backend` string is never consulted; production fails closed. verifyStoreProvenance decides.
+    return verifyStoreProvenance(dependencies.canonical_store, readiness.value, { allowUnfencedMemoryStore: dependencies.allow_unfenced_memory_store === true }, operation);
   };
 
   const port: MemoryPortV2 = {

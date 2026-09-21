@@ -5,7 +5,7 @@ import {
   receiptDigest,
   type MemoryEngineDependenciesV2,
 } from "../graphify-memory/index.js";
-import { memoryReadinessReceipt } from "./memory-l3-fixture.js";
+import { embeddedInMemoryStub, memoryReadinessReceipt } from "./memory-l3-fixture.js";
 
 const DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
@@ -37,7 +37,7 @@ describe("capture seam", () => {
   it("exact duplicate acknowledges and digest conflict writes nothing", async () => {
     const commits: unknown[] = [];
     const memory = createMemoryPortV2({
-      canonical_store: {
+      canonical_store: embeddedInMemoryStub({
         async readiness() { return memoryReadinessReceipt(); },
         async commitPending(input: unknown) {
           commits.push(input);
@@ -45,7 +45,8 @@ describe("capture seam", () => {
           if (commits.length === 2) return { ok: true, value: { cursor: "1", committed_at: "2026-08-16T12:34:56.789Z", outcome: "duplicate_exact" } };
           return { ok: false, error: { code: "DIGEST_CONFLICT", operation: "capture", message: "conflict", retryable: false } };
         },
-      },
+      }),
+      allow_unfenced_memory_store: true,
       authorization: {
         version: 1,
         async authorize(request) {
