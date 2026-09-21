@@ -106,6 +106,18 @@ function operationFailure(operation: MemoryOperation, result: Result<never>): Re
   return result.ok ? result : { ok: false, error: { ...result.error, operation } };
 }
 
+/**
+ * §5.5(d): a conforming AdminProviderPort declares an authorization denial with `denial: true` (§5.10). The
+ * engine maps that flag to code UNAUTHORIZED — mechanically and totally: it does not reclassify a decision it
+ * did not make, it only maps the provider-declared boolean to the code. Every other failure surfaces with its
+ * own code (clause e), so a non-authorization failure (denial absent) passes through unchanged.
+ */
+function normalizeAdminDenial(result: Result<AdminEpochReceiptV1>): Result<AdminEpochReceiptV1> {
+  return !result.ok && result.error.denial === true
+    ? { ok: false, error: { ...result.error, code: "UNAUTHORIZED" } }
+    : result;
+}
+
 function validateRedactionDirective(input: unknown): RedactionDirectiveV1 | undefined {
   const directive = exactObject(input, ["mode", "allowed_fields", "allow_derivation_lineage", "max_packet_bytes"]);
   if (directive === undefined || directive.mode !== "field-allowlist" || typeof directive.allow_derivation_lineage !== "boolean"
@@ -1081,11 +1093,12 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
         if (readiness.value.storage_epoch !== operation.bootstrap.storage_epoch) {
           return refusal("admin", "FENCE_LOST", "bootstrap storage_epoch does not equal the live storage fence epoch");
         }
-        return provider.bootstrap(operation.bootstrap);
+        return normalizeAdminDenial(await provider.bootstrap(operation.bootstrap));
       }
-      // §5.5(c): dispatch to the injected provider per discriminant; its Result passes through (a denial surfaces as UNAUTHORIZED).
-      if (operation.operation === "rotate") return provider.rotate(operation.rotate);
-      if (operation.operation === "revoke") return provider.revoke(operation.revoke);
+      // §5.5(c): dispatch to the injected provider per discriminant; §5.5(d): normalizeAdminDenial maps a
+      // provider-declared denial (denial:true) to UNAUTHORIZED, every other failure keeps its own code (e).
+      if (operation.operation === "rotate") return normalizeAdminDenial(await provider.rotate(operation.rotate));
+      if (operation.operation === "revoke") return normalizeAdminDenial(await provider.revoke(operation.revoke));
       // unreachable: validateAdminOperationRequest admits only bootstrap|rotate|revoke.
       return refusal("admin", "INVALID_SCHEMA", "unsupported admin operation");
     },
