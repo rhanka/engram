@@ -78,9 +78,15 @@ describe("MemoryPortV2.admin entry point (§5.5)", () => {
     if (r.ok) { expect(r.value.operation).toBe("bootstrap"); expect(r.value.storage_epoch).toBe(EPOCH); }
   });
 
-  it("(d) surfaces a provider denial as UNAUTHORIZED", async () => {
-    const denier = { version: 1 as const, async bootstrap() { return { ok: false as const, error: { code: "UNAUTHORIZED" as const, operation: "admin" as const, message: "denied", retryable: false } }; }, async rotate() { throw new Error("x"); }, async revoke() { throw new Error("x"); } };
+  it("(d) normalises a provider denial (denial:true) to UNAUTHORIZED regardless of the provider's own code", async () => {
+    // a conforming provider declares denial:true; the engine maps it to UNAUTHORIZED even from a non-UNAUTHORIZED code.
+    const denier = { version: 1 as const, async bootstrap() { return { ok: false as const, error: { code: "STORE_UNAVAILABLE" as const, operation: "admin" as const, message: "refused", retryable: false, denial: true as const } }; }, async rotate() { throw new Error("x"); }, async revoke() { throw new Error("x"); } };
     expect(code(await makePort({ provider: denier }).port.admin(bootstrapReq()))).toBe("UNAUTHORIZED");
+  });
+
+  it("(e) passes a non-authorization provider failure through with its own code (denial absent)", async () => {
+    const failer = { version: 1 as const, async bootstrap() { return { ok: false as const, error: { code: "STORE_UNAVAILABLE" as const, operation: "admin" as const, message: "store down", retryable: false } }; }, async rotate() { throw new Error("x"); }, async revoke() { throw new Error("x"); } };
+    expect(code(await makePort({ provider: failer }).port.admin(bootstrapReq()))).toBe("STORE_UNAVAILABLE");
   });
 
   it("rejects a malformed admin request with INVALID_SCHEMA", async () => {
