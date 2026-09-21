@@ -7,9 +7,10 @@ import {
   receiptDigest,
   recordIdFromDigest,
 } from "./digests.js";
-import { isCanonicalCursor, validateCandidatePayload } from "./validation.js";
+import { isCanonicalCursor, validateAdminOperationRequest, validateCandidatePayload } from "./validation.js";
 import { executeRecall } from "./recall.js";
 import type {
+  AdminEpochReceiptV1,
   AdmissionDecisionEnvelopeV1,
   AdmissionOutcomeV1,
   AdmissionPolicy,
@@ -31,6 +32,7 @@ import type {
   MemoryState,
   LifecycleCommandV1,
   LifecycleReceiptV1,
+  OperationalCapabilityReceiptV1,
   ProjectionBatchV1,
   RecallRequestV2,
   RedactionDirectiveV1,
@@ -1032,6 +1034,31 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
     readiness: async () => {
       const readiness = await dependencies.canonical_store.readiness();
       return readiness.ok ? readiness : operationFailure("admin", readiness);
+    },
+    admin: async (request): Promise<Result<AdminEpochReceiptV1>> => {
+      const provider = dependencies.admin_provider;
+      // §5.5(a): absent provider refuses before any other check — graphify never ships a default administrator (§5.10).
+      if (provider === undefined) return unavailable("admin", "no admin_provider is injected");
+      const checked = validateAdminOperationRequest(request);
+      if (!checked.ok) return operationFailure("admin", checked);
+      const operation = checked.value;
+      if (operation.operation === "bootstrap") {
+        // §5.5(b): bootstrap requires an active fence whose live epoch equals the request epoch, verified BEFORE dispatch.
+        let readiness: Result<OperationalCapabilityReceiptV1>;
+        try {
+          readiness = await dependencies.canonical_store.readiness();
+        } catch {
+          return refusal("admin", "FENCE_LOST", "canonical store did not return a capability receipt for bootstrap");
+        }
+        if (!readiness.ok) return refusal("admin", "FENCE_LOST", "no active storage fence for bootstrap");
+        if (readiness.value.storage_epoch !== operation.bootstrap.storage_epoch) {
+          return refusal("admin", "FENCE_LOST", "bootstrap storage_epoch does not equal the live storage fence epoch");
+        }
+        return provider.bootstrap(operation.bootstrap);
+      }
+      // §5.5(c): dispatch to the injected provider per discriminant; its Result passes through (a denial surfaces as UNAUTHORIZED).
+      if (operation.operation === "rotate") return provider.rotate(operation.rotate);
+      return provider.revoke(operation.revoke);
     },
   };
   return port;

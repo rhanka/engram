@@ -300,6 +300,8 @@ export function evaluateTrustEligibility(binding: TrustBindingV1, revalidation: 
 }
 
 
+// SHAPE GATE ONLY: checks the discriminant, sub-request presence, non-empty strings and isObj (so it accepts `authorization: {}`).
+// A green result means the request is well-formed, NOT that it is an authorized/valid admin operation — the engine + AdminProviderPort decide that.
 export function validateAdminOperationRequest(input: unknown): Result<AdminOperationRequestV1> {
   const fail = (message: string) => refusal<AdminOperationRequestV1>("admin", "INVALID_SCHEMA", message);
   const isStr = (x: unknown): x is string => typeof x === "string" && x.length > 0;
