@@ -989,6 +989,20 @@ export interface AdminProviderPort {
   revoke(request: AdminRevokeRequestV1): Promise<Result<AdminEpochReceiptV1>>;
 }
 
+// §5.9 capability attestation. The engine verifies a production store's fresh receipt against the EXPECTED
+// graphify-owned adapter identity before admitting any fencing-dependent operation; verification is never
+// delegated to the store's own readiness(). Threat scope: detect a misconfigured/naive store (adapter/version/
+// build mismatch, a store that never took the fence) — NOT a malicious in-process host (deployment topology,
+// not cryptography). verifySignature checks the detached attestation_signature over receipt_digest binding the
+// adapter identity + store_id + storage_epoch (receipt_digest is computed WITHOUT receipt_digest AND signature).
+export interface CapabilityAttestationVerifierPort {
+  readonly version: 1;
+  readonly expected_adapter_id: OpaqueRef;
+  readonly expected_adapter_version: string;
+  readonly expected_adapter_build_digest: Digest;
+  verifySignature(input: { receipt: OperationalCapabilityReceiptV1 }): boolean;
+}
+
 export interface MemoryPortV2 {
   readonly version: 2;
   capabilities(): Promise<Result<CapabilityDescriptorV1>>;
@@ -1012,6 +1026,8 @@ export interface MemoryEngineDependenciesV2 {
   authorization: AuthorizationPort;
   admission_policy: AdmissionPolicy;
   admin_provider?: AdminProviderPort;
+  // §5.9: required for production (sqlite/postgres) fencing-dependent ops; absent for backend "memory" / test fakes.
+  attestation_verifier?: CapabilityAttestationVerifierPort;
   evidence_verifier?: EvidenceVerifierPort;
   crypto: CryptoPort;
   activity_sources: ReadonlyArray<ActivityEvidenceSource>;
