@@ -89,6 +89,19 @@ describe("MemoryPortV2.admin entry point (§5.5)", () => {
     expect(code(await makePort({ provider: failer }).port.admin(bootstrapReq()))).toBe("STORE_UNAVAILABLE");
   });
 
+  it("(R1h/b) converts a throwing provider into a typed POLICY_UNAVAILABLE refusal — admin is total on its Result contract", async () => {
+    const secret = "credential-ref-should-never-leak";
+    const thrower = { version: 1 as const, async bootstrap() { throw new Error(secret); }, async rotate() { throw new Error("x"); }, async revoke() { throw new Error("x"); } };
+    const r = await makePort({ provider: thrower }).port.admin(bootstrapReq());
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe("POLICY_UNAVAILABLE"); // not CAPABILITY_UNAVAILABLE (that is "no provider"), never UNAUTHORIZED
+      expect(r.error.retryable).toBe(false);            // fail-closed
+      expect("denial" in r.error).toBe(false);          // an exception declared no authorization decision
+      expect(r.error.message).not.toContain(secret);    // D2 minimal redaction — never the raw error text
+    }
+  });
+
   it("rejects a malformed admin request with INVALID_SCHEMA", async () => {
     expect(code(await makePort().port.admin({ operation: "bootstrap" } as never))).toBe("INVALID_SCHEMA");
   });

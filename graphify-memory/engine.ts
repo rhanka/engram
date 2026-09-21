@@ -118,6 +118,23 @@ function normalizeAdminDenial(result: Result<AdminEpochReceiptV1>): Result<Admin
     : result;
 }
 
+/**
+ * §5.5/§5.10: invoke one AdminProviderPort operation so `admin` is TOTAL on its `Result` contract. A provider
+ * that throws instead of returning a `Result` surfaces as `POLICY_UNAVAILABLE` (the admin provider is the
+ * authority of the authorization epoch, §5.10). Fail-closed: `retryable: false` — the engine cannot know if the
+ * fault is transient. Never `UNAUTHORIZED` and never `denial: true` — an exception declared no authorization
+ * decision, so mapping it to a denial would re-introduce the inference clause (d) excluded. Never the raw error
+ * text — a fixed generic message only (D2 minimal redaction: `String(e)` could leak a credential ref, path, or DSN).
+ * This wraps ONLY the provider call, never the surrounding engine/fence logic, so an engine bug is not masked.
+ */
+async function callAdminProvider(call: () => Promise<Result<AdminEpochReceiptV1>>): Promise<Result<AdminEpochReceiptV1>> {
+  try {
+    return normalizeAdminDenial(await call());
+  } catch {
+    return refusal("admin", "POLICY_UNAVAILABLE", "admin provider failed");
+  }
+}
+
 function validateRedactionDirective(input: unknown): RedactionDirectiveV1 | undefined {
   const directive = exactObject(input, ["mode", "allowed_fields", "allow_derivation_lineage", "max_packet_bytes"]);
   if (directive === undefined || directive.mode !== "field-allowlist" || typeof directive.allow_derivation_lineage !== "boolean"
@@ -1080,7 +1097,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       if (!checked.ok) return operationFailure("admin", checked);
       const operation = checked.value;
       if (operation.operation === "bootstrap") {
-        // §5.5(b): bootstrap requires an active fence whose live epoch equals the request epoch, verified BEFORE dispatch.
+        // §5.5(b): bootstrap requires an active fence whose live epoch equals the request epoch, verified BEFORE
+        // dispatch. NOT wrapped by callAdminProvider — an engine/store fault here must not be masked as a provider fault.
         let readiness: Result<OperationalCapabilityReceiptV1>;
         try {
           readiness = await dependencies.canonical_store.readiness();
@@ -1093,12 +1111,12 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
         if (readiness.value.storage_epoch !== operation.bootstrap.storage_epoch) {
           return refusal("admin", "FENCE_LOST", "bootstrap storage_epoch does not equal the live storage fence epoch");
         }
-        return normalizeAdminDenial(await provider.bootstrap(operation.bootstrap));
+        return callAdminProvider(() => provider.bootstrap(operation.bootstrap));
       }
       // §5.5(c): dispatch to the injected provider per discriminant; §5.5(d): normalizeAdminDenial maps a
       // provider-declared denial (denial:true) to UNAUTHORIZED, every other failure keeps its own code (e).
-      if (operation.operation === "rotate") return normalizeAdminDenial(await provider.rotate(operation.rotate));
-      if (operation.operation === "revoke") return normalizeAdminDenial(await provider.revoke(operation.revoke));
+      if (operation.operation === "rotate") return callAdminProvider(() => provider.rotate(operation.rotate));
+      if (operation.operation === "revoke") return callAdminProvider(() => provider.revoke(operation.revoke));
       // unreachable: validateAdminOperationRequest admits only bootstrap|rotate|revoke.
       return refusal("admin", "INVALID_SCHEMA", "unsupported admin operation");
     },

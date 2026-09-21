@@ -29,4 +29,18 @@ describe("graphify-memory/integration surface (§1 D1, R1e)", () => {
     expect(moduleSource).not.toContain("service.js");
     expect(moduleSource).not.toContain("LocalAdministrat");
   });
+
+  it("exports no value implementing AdminProviderPort and no admin-provider/administrator factory (Decision B, symbol-level)", () => {
+    // Module-agnostic: the import allowlist cannot tell a harness from a provider lodged in the same module,
+    // so encode Decision B on the exported symbols directly — graphify ships no administrator, only the type.
+    const isProviderShape = (v: unknown): boolean => {
+      if (typeof v !== "object" || v === null) return false;
+      const o = v as Record<string, unknown>;
+      return typeof o.bootstrap === "function" && typeof o.rotate === "function" && typeof o.revoke === "function";
+    };
+    for (const [name, value] of Object.entries(integration)) {
+      expect(isProviderShape(value), `${name} must not be an AdminProviderPort instance`).toBe(false);
+      expect(/^create.*Admin(istrator|Provider)/.test(name) && typeof value === "function", `${name} must not be an admin-provider/administrator factory`).toBe(false);
+    }
+  });
 });
