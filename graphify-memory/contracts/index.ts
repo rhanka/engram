@@ -1027,6 +1027,10 @@ export interface MemoryEngineDependenciesV2 {
   authorization: AuthorizationPort;
   admission_policy: AdmissionPolicy;
   admin_provider?: AdminProviderPort;
+  // §5.9: production is fail-closed — an unfenced store (not built by this build's fenced factory) is refused
+  // unless this is explicitly set for a NON-production embedded fake. Never inferred from the receipt's backend
+  // string (forgeable): a "memory"-labelled store wired in production must not bypass fencing.
+  allow_unfenced_memory_store?: boolean;
   evidence_verifier?: EvidenceVerifierPort;
   crypto: CryptoPort;
   activity_sources: ReadonlyArray<ActivityEvidenceSource>;

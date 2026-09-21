@@ -13,11 +13,10 @@ function refuse<T>(operation: MemoryOperation, code: "STORE_UNAVAILABLE" | "CAPA
 }
 
 /**
- * §5.9: the compiled adapter identity of THIS graphify-memory module build. It is a STORE-INDEPENDENT source of
- * truth — not derived from host configuration, which is the answer to the attestation tautology (a host that
- * misconfigures the store cannot also make its declared identity self-consistent against this constant). A
- * duplicate package (a second module instance) carries a distinct copy of this constant AND a distinct factory
- * registry below, so a cross-instance store is detected. `adapter_build_digest` is a build-time constant.
+ * §5.9: the compiled adapter identity of THIS graphify-memory module build. It is INFORMATIONAL — a store built
+ * by the factory declares it on readiness() so a diagnostic (a duplicate package, a version drift) is legible in
+ * the receipt. It is deliberately NOT the admission test: a copyable string is forgeable, so the gate turns on
+ * the in-process mark below, never on this constant. `adapter_build_digest` is a build-time constant.
  */
 export const GRAPHIFY_MEMORY_ADAPTER_IDENTITY: CapabilityAttestationIdentityV1 = {
   adapter_id: "graphify-memory/fenced-store",
@@ -32,33 +31,55 @@ export const GRAPHIFY_MEMORY_ADAPTER_IDENTITY: CapabilityAttestationIdentityV1 =
  */
 const fencedFactoryStores = new WeakSet<CanonicalMemoryStorePort>();
 
+/**
+ * Module-private registry of the neutral in-memory canonical store (createInMemoryCanonicalMemoryStoreV1). It is
+ * the ONLY thing that makes a store eligible for the unfenced exemption, and only in tandem with the host's
+ * `allow_unfenced_memory_store` opt-in — see verifyStoreProvenance. Membership is by object identity, so a bare
+ * store that merely declares `backend: "memory"` is not a member and cannot bypass the fence.
+ */
+const inMemoryStores = new WeakSet<CanonicalMemoryStorePort>();
+
+/**
+ * INTERNAL (never re-exported from the package barrel, never in package.json `exports`): stamp a store as this
+ * module's neutral in-memory store. createInMemoryCanonicalMemoryStoreV1 calls it on construction; a host cannot
+ * reach it, and even if it could, the mark is inert unless the host also raised `allow_unfenced_memory_store`.
+ */
+export function markInMemoryStoreV1(store: CanonicalMemoryStorePort): void {
+  inMemoryStores.add(store);
+}
+
 /** True iff `store` was built by a fenced-store factory of THIS graphify-memory module instance. */
 export function isFencedFactoryStoreV1(store: CanonicalMemoryStorePort): boolean {
   return fencedFactoryStores.has(store);
 }
 
 /**
- * §5.9 provenance admission for a fencing-dependent operation. A non-production ("memory") store is admitted with
- * no mark. A production (sqlite/postgres) store is admitted only when (a) it was built by THIS module's fenced
- * factory (in-process membership — detects a duplicate package / a store that never took the fence) AND (b) its
- * receipt's declared adapter identity equals this module's compiled identity (version/build lockstep). No key,
- * no signature: the trust boundary is deployment topology, not cryptography.
+ * §5.9 provenance admission for a fencing-dependent operation. Two admit paths, and the decision NEVER reads the
+ * receipt's `backend` string (forgeable):
+ *   1. PRODUCTION — the store was built by THIS module's fenced factory (in-process membership; detects a
+ *      duplicate package / a store that never took the fence) AND its receipt reports a live single-writer fence.
+ *   2. NON-PRODUCTION EXEMPTION — the store is this module's neutral in-memory store (membership) AND the host
+ *      raised `allowUnfencedMemoryStore`. BOTH are required: the flag alone would exempt any unfenced store
+ *      (including a lock-less SQLite writing a real file), and membership alone would let an in-memory store run
+ *      in production. Everything else is refused (production fails closed). No key, no signature: the trust
+ *      boundary is deployment topology, not cryptography.
  */
 export function verifyStoreProvenance(
   store: CanonicalMemoryStorePort,
   receipt: OperationalCapabilityReceiptV1,
+  options: { allowUnfencedMemoryStore: boolean },
   operation: MemoryOperation,
 ): Result<OperationalCapabilityReceiptV1> {
-  if (receipt.backend === "memory") return { ok: true, value: receipt };
-  if (!fencedFactoryStores.has(store)) {
-    return refuse(operation, "CAPABILITY_UNAVAILABLE", "canonical store was not built by this graphify-memory module instance (duplicate package, or a store that never took the fence?)");
+  if (fencedFactoryStores.has(store)) {
+    if (receipt.capabilities.fenced_single_writer !== true) {
+      return refuse(operation, "CAPABILITY_UNAVAILABLE", "factory-built canonical store does not report a live single-writer fence");
+    }
+    return { ok: true, value: receipt };
   }
-  if (receipt.adapter_id !== GRAPHIFY_MEMORY_ADAPTER_IDENTITY.adapter_id
-    || receipt.adapter_version !== GRAPHIFY_MEMORY_ADAPTER_IDENTITY.adapter_version
-    || receipt.adapter_build_digest !== GRAPHIFY_MEMORY_ADAPTER_IDENTITY.adapter_build_digest) {
-    return refuse(operation, "CAPABILITY_UNAVAILABLE", "canonical store declares an adapter identity that does not match this graphify-memory build");
+  if (options.allowUnfencedMemoryStore && inMemoryStores.has(store)) {
+    return { ok: true, value: receipt };
   }
-  return { ok: true, value: receipt };
+  return refuse(operation, "CAPABILITY_UNAVAILABLE", "canonical store was not built by this graphify-memory module instance, and it is not an embedded in-memory store the host opted into via allow_unfenced_memory_store (duplicate package, a store that never took the fence, or an unfenced store in production?)");
 }
 
 /** Constructs a fenced CanonicalMemoryStorePort, taking the storage fence (kernel flock / store-generation lock) at construction. */
