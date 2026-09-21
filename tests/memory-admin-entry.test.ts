@@ -12,7 +12,7 @@ const receipt = (operation: "bootstrap" | "rotate" | "revoke") =>
 
 const code = (r: Result<unknown>) => (r.ok ? "OK" : r.error.code);
 
-function makePort(opts: { provider?: unknown; fenceEpoch?: string; fenceOk?: boolean } = {}) {
+function makePort(opts: { provider?: unknown; fenceEpoch?: string; fenceOk?: boolean; fenceThrow?: boolean } = {}) {
   const calls: string[] = [];
   const defaultProvider = {
     version: 1 as const,
@@ -22,8 +22,9 @@ function makePort(opts: { provider?: unknown; fenceEpoch?: string; fenceOk?: boo
   };
   const canonical_store = {
     async readiness() {
+      if (opts.fenceThrow) throw new Error("store driver crashed");
       return opts.fenceOk === false
-        ? { ok: false as const, error: { code: "CAPABILITY_UNAVAILABLE" as const, operation: "admin" as const, message: "no fence", retryable: false } }
+        ? { ok: false as const, error: { code: "STORE_UNAVAILABLE" as const, operation: "admin" as const, message: "store cannot serve", retryable: false } }
         : { ok: true as const, value: { store_id: "store:s1", backend: "sqlite" as const, storage_epoch: opts.fenceEpoch ?? EPOCH, high_water_cursor: "0", capabilities: {}, issued_at: NOW, expires_at: DEADLINE, receipt_digest: DIGEST } };
     },
   };
@@ -45,13 +46,24 @@ describe("MemoryPortV2.admin entry point (§5.5)", () => {
     expect(calls).toEqual([]);
   });
 
-  it("(b) refuses FENCE_LOST before any dispatch on a mismatched or absent storage fence", async () => {
+  it("(a) checks the provider strictly before the schema — a malformed request with no provider still refuses CAPABILITY_UNAVAILABLE", async () => {
+    const { port } = makePort({ provider: undefined });
+    expect(code(await port.admin({ operation: "bogus" } as never))).toBe("CAPABILITY_UNAVAILABLE");
+  });
+
+  it("(b) asserts FENCE_LOST before any dispatch only on an epoch mismatch", async () => {
     const mismatch = makePort({ fenceEpoch: "99" });
     expect(code(await mismatch.port.admin(bootstrapReq("42")))).toBe("FENCE_LOST");
     expect(mismatch.calls).toEqual([]);
-    const noFence = makePort({ fenceOk: false });
-    expect(code(await noFence.port.admin(bootstrapReq()))).toBe("FENCE_LOST");
-    expect(noFence.calls).toEqual([]);
+  });
+
+  it("(b) propagates the store code and never dispatches when the fence is not ok or throws (STORE_UNAVAILABLE != FENCE_LOST)", async () => {
+    const notOk = makePort({ fenceOk: false });
+    expect(code(await notOk.port.admin(bootstrapReq()))).toBe("STORE_UNAVAILABLE");
+    expect(notOk.calls).toEqual([]);
+    const threw = makePort({ fenceThrow: true });
+    expect(code(await threw.port.admin(bootstrapReq()))).toBe("STORE_UNAVAILABLE");
+    expect(threw.calls).toEqual([]);
   });
 
   it("(c) dispatches bootstrap|rotate|revoke to the injected provider per discriminant", async () => {
