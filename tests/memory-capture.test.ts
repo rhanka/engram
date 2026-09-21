@@ -5,6 +5,7 @@ import {
   receiptDigest,
   type MemoryEngineDependenciesV2,
 } from "../graphify-memory/index.js";
+import { memoryReadinessReceipt } from "./memory-l3-fixture.js";
 
 const DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
@@ -37,6 +38,7 @@ describe("capture seam", () => {
     const commits: unknown[] = [];
     const memory = createMemoryPortV2({
       canonical_store: {
+        async readiness() { return memoryReadinessReceipt(); },
         async commitPending(input: unknown) {
           commits.push(input);
           if (commits.length === 1) return { ok: true, value: { cursor: "1", committed_at: "2026-08-16T12:34:56.789Z" } };

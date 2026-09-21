@@ -3,6 +3,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
+import { memoryReadinessReceipt } from "./memory-l3-fixture.js";
+
 import {
   authorizationResourceDigest,
   createMemoryPortV2,
@@ -99,6 +101,7 @@ describe("admission decision envelope", () => {
     };
     const memory = createMemoryPortV2({
       canonical_store: {
+        async readiness() { return memoryReadinessReceipt(); },
         async commitPending(input: { control: Record<string, unknown>; sealed: Record<string, unknown> }) {
           pending = { control: { ...input.control, created_cursor: "1" }, sealed: input.sealed };
           return { ok: true, value: { cursor: "1", committed_at: NOW, receipt_digest: DIGEST } };
