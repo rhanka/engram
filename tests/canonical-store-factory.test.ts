@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   createCanonicalMemoryStoreFactoryV1,
+  isFencedFactoryStoreV1,
+  GRAPHIFY_MEMORY_ADAPTER_IDENTITY,
   type CanonicalMemoryStorePort,
   type FencedStoreConstructionV1,
   type Result,
@@ -17,20 +19,20 @@ function makeFactory() {
   const closes: string[] = [];
   let open: (input: FencedStoreConstructionV1) => Promise<Result<CanonicalMemoryStorePort>> = async (input) => okStore(() => closes.push(input.store_id));
   const factory = createCanonicalMemoryStoreFactoryV1({
-    // this suite exercises only the broker rule / release, not attestation; a trivial signer suffices.
-    attestation_signer: { identity: { adapter_id: "adapter:graphify-sqlite", adapter_version: "1", adapter_build_digest: ("sha256:" + "a".repeat(64)) as never }, sign: () => "ed25519:test" },
     open: async (input) => { openCalls.push(input); return open(input); },
   });
   return { factory, openCalls, closes, setOpen: (o: typeof open) => { open = o; } };
 }
 
 describe("CanonicalMemoryStoreFactoryV1.acquire (§5.7)", () => {
-  it("takes the fence at construction and returns a live fenced store", async () => {
+  it("takes the fence at construction, returns a live fenced store, and stamps it with this module's provenance mark", async () => {
     const { factory, openCalls } = makeFactory();
-    expect((await factory.acquire(construction("store:a"))).ok).toBe(true);
+    const acquired = await factory.acquire(construction("store:a"));
+    expect(acquired.ok).toBe(true);
+    if (acquired.ok) expect(isFencedFactoryStoreV1(acquired.value)).toBe(true); // §5.9 in-process mark
     expect(openCalls).toHaveLength(1);
     expect(factory.version).toBe(1);
-    expect(factory.adapter_id).toBe("adapter:graphify-sqlite");
+    expect(factory.adapter_id).toBe(GRAPHIFY_MEMORY_ADAPTER_IDENTITY.adapter_id); // derived from the module's compiled identity
   });
 
   it("refuses a second live in-process holder with STORE_UNAVAILABLE, not queued (opener not re-invoked)", async () => {
