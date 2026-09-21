@@ -27,8 +27,8 @@ Deferring the method (not just avoiding a tsc break) is therefore the only spec-
 - [x] R1d-a — contract `CapabilityAttestationVerifierPort` (expected adapter id/version/build_digest + `verifySignature`) + `attestation_verifier?` on `MemoryEngineDependenciesV2` + pure predicate `verifyCapabilityAttestation(receipt, verifier, operation)` in `graphify-memory/attestation.ts`. Rule: `backend "memory"` admitted with no attestation; production (sqlite/postgres) admitted only when the fresh receipt carries a complete attestation block matching the EXPECTED adapter identity and whose detached signature verifies; absent/mismatched/no-verifier/unverifiable ⇒ `CAPABILITY_UNAVAILABLE` (rejected as an unfenced store). `tests/capability-attestation.test.ts` (7 cases, incl. postgres/external-host). Exported from `index.ts`.
 - [ ] R1d-b — wire the predicate into `createMemoryPortV2` BEFORE every fencing-dependent op (shared `admitFenced(operation)` helper over a fresh readiness receipt; never delegated to readiness()). Integration tests per op path.
 
-## R1e — `graphify-memory/integration` surface (factories/types/ports only)  [PENDING]
-- [ ] `tests/integration-surface-neutrality.test.ts`.
+## R1e — `graphify-memory/integration` surface (factories/types/ports only)  [DONE]
+- [x] `graphify-memory/integration.ts` — neutral host-facing surface (§1 D1): re-exports `createMemoryPortV2` (engine factory), `createCanonicalMemoryStoreFactoryV1` (+ option types), `verifyCapabilityAttestation`, and `export type *` from contracts. Driver-free: the concrete sqlite/postgres openers stay in their own subpaths (host passes one to the factory). Decoupled per Decision B — NO reference administrator/provider factory. `./integration` package subpath added. `tests/integration-surface-neutrality.test.ts` (3 cases: factories are runtime functions; imports only the neutral internal modules — no driver/node/listener/consumer import; no retired local-administration re-export).
 
 ## R1f — retire `createLocalAdministratorV1` + rework local-administrator + v1-removal  [PENDING]
 - [ ] `tests/memory-v1-removal.test.ts`.
