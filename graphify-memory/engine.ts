@@ -1048,9 +1048,11 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
         try {
           readiness = await dependencies.canonical_store.readiness();
         } catch {
-          return refusal("admin", "FENCE_LOST", "canonical store did not return a capability receipt for bootstrap");
+          // §5.7 keeps two distinct codes: a throwing store is broken (STORE_UNAVAILABLE), not a lost fence.
+          return refusal("admin", "STORE_UNAVAILABLE", "canonical store threw instead of returning a capability receipt for bootstrap");
         }
-        if (!readiness.ok) return refusal("admin", "FENCE_LOST", "no active storage fence for bootstrap");
+        // propagate the store's own FENCE_LOST/STORE_UNAVAILABLE — the engine asserts FENCE_LOST only on an epoch mismatch.
+        if (!readiness.ok) return operationFailure("admin", readiness);
         if (readiness.value.storage_epoch !== operation.bootstrap.storage_epoch) {
           return refusal("admin", "FENCE_LOST", "bootstrap storage_epoch does not equal the live storage fence epoch");
         }
@@ -1058,7 +1060,9 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       }
       // §5.5(c): dispatch to the injected provider per discriminant; its Result passes through (a denial surfaces as UNAUTHORIZED).
       if (operation.operation === "rotate") return provider.rotate(operation.rotate);
-      return provider.revoke(operation.revoke);
+      if (operation.operation === "revoke") return provider.revoke(operation.revoke);
+      // unreachable: validateAdminOperationRequest admits only bootstrap|rotate|revoke.
+      return refusal("admin", "INVALID_SCHEMA", "unsupported admin operation");
     },
   };
   return port;
