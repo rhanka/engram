@@ -1,9 +1,22 @@
+import { receiptDigest } from "./digests.js";
 import type {
   CapabilityAttestationVerifierPort,
+  Digest,
   MemoryOperation,
   OperationalCapabilityReceiptV1,
   Result,
 } from "./contracts/index.js";
+
+/**
+ * §5.9 canonical attestation digest — the SINGLE definition used by BOTH the emitter (the fenced-store factory)
+ * and the verifier path here, so they cannot desync. It excludes `attestation_signature` (the signature is
+ * detached over this digest) AND `receipt_digest` (non-circularity: the digest does not cover itself), and
+ * covers everything else — including the adapter identity binding.
+ */
+export function attestationReceiptDigest(receipt: OperationalCapabilityReceiptV1): Digest {
+  const { attestation_signature: _signature, ...rest } = receipt;
+  return receiptDigest("operational-capability", rest);
+}
 
 function unattested<T>(operation: MemoryOperation, message: string): Result<T> {
   return { ok: false, error: { code: "CAPABILITY_UNAVAILABLE", operation, message, retryable: false } };
@@ -35,8 +48,13 @@ export function verifyCapabilityAttestation(
     || adapter_build_digest !== verifier.expected_adapter_build_digest) {
     return unattested(operation, "capability receipt adapter binding does not match the expected graphify adapter identity");
   }
-  // the detached signature binds the adapter identity + store_id + storage_epoch; delegate the crypto check only.
-  if (!verifier.verifySignature({ receipt })) {
+  // §5.9: graphify recomputes the canonical digest and compares it to receipt_digest — a field tampered without
+  // re-signing is caught here, before any crypto (graphify owns the canonical encoding on both sides).
+  if (attestationReceiptDigest(receipt) !== receipt.receipt_digest) {
+    return unattested(operation, "capability receipt_digest does not match its canonical attestation digest");
+  }
+  // the host verifier does PURE crypto over the graphify-computed digest: a signature over a different digest fails.
+  if (!verifier.verifySignature({ receipt_digest: receipt.receipt_digest, attestation_signature })) {
     return unattested(operation, "capability attestation signature did not verify against the expected adapter identity");
   }
   return { ok: true, value: receipt };

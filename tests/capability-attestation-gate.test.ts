@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { createL3Memory, lifecycleCommand, DEADLINE, NOW } from "./memory-l3-fixture.js";
-import type { CanonicalMemoryStorePort, CapabilityAttestationVerifierPort, Digest, Result } from "../graphify-memory/index.js";
+import { attestationReceiptDigest } from "../graphify-memory/index.js";
+import type { CanonicalMemoryStorePort, CapabilityAttestationVerifierPort, Digest, OperationalCapabilityReceiptV1, Result } from "../graphify-memory/index.js";
 
 const ATT = ("sha256:" + "a".repeat(64)) as Digest;
 
@@ -9,7 +10,8 @@ const ATT = ("sha256:" + "a".repeat(64)) as Digest;
 function productionStore(): CanonicalMemoryStorePort {
   const reached = { ok: false as const, error: { code: "STORE_UNAVAILABLE" as const, operation: "admin" as const, message: "prod-stub reached", retryable: false } };
   const caps = { atomic_promotion: true, dense_cursor: true, accepted_only_lexical: true, fenced_single_writer: true, revocable_active_store: true, detached_snapshot: true, bounded_cancellation: true, backend: "sqlite" as const };
-  const receipt = { ok: true as const, value: { store_id: "store:prod", backend: "sqlite" as const, storage_epoch: "7", high_water_cursor: "9", capabilities: caps, adapter_id: "adapter:graphify-sqlite", adapter_version: "1", adapter_build_digest: ATT, attestation_signature: "ed25519:x", issued_at: NOW, expires_at: DEADLINE, receipt_digest: ATT } };
+  const value: OperationalCapabilityReceiptV1 = { store_id: "store:prod", backend: "sqlite", storage_epoch: "7", high_water_cursor: "9", capabilities: caps, adapter_id: "adapter:graphify-sqlite", adapter_version: "1", adapter_build_digest: ATT, attestation_signature: "ed25519:x", issued_at: NOW, expires_at: DEADLINE, receipt_digest: ATT };
+  const receipt = { ok: true as const, value: { ...value, receipt_digest: attestationReceiptDigest(value) } };
   return new Proxy({} as CanonicalMemoryStorePort, {
     get(_t, prop) {
       if (prop === "readiness") return async () => receipt;

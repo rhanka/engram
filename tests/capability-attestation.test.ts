@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  attestationReceiptDigest,
   verifyCapabilityAttestation,
   type CapabilityAttestationVerifierPort,
   type Digest,
@@ -14,7 +15,7 @@ const DIGEST = ("sha256:" + "a".repeat(64)) as Digest;
 const SIG = "ed25519:c2ln";
 
 function receipt(overrides: Partial<OperationalCapabilityReceiptV1> = {}): OperationalCapabilityReceiptV1 {
-  return {
+  const base: OperationalCapabilityReceiptV1 = {
     store_id: "store:prod",
     backend: "sqlite",
     storage_epoch: "7",
@@ -29,6 +30,8 @@ function receipt(overrides: Partial<OperationalCapabilityReceiptV1> = {}): Opera
     receipt_digest: DIGEST,
     ...overrides,
   };
+  // a well-formed receipt carries the canonical digest over its own fields (attestation_signature/receipt_digest excluded).
+  return { ...base, receipt_digest: attestationReceiptDigest(base) };
 }
 
 const verifier = (accept = true): CapabilityAttestationVerifierPort => ({
@@ -52,7 +55,13 @@ describe("verifyCapabilityAttestation (§5.9)", () => {
   });
 
   it("admits a non-production (memory) receipt with no attestation block and no verifier", () => {
-    const mem = receipt({ backend: "memory", adapter_id: undefined, adapter_version: undefined, adapter_build_digest: undefined, attestation_signature: undefined });
+    // built directly (not via receipt()): a memory receipt carries no adapter fields, and memory is admitted
+    // before any digest/signature check, so receipt_digest is irrelevant here.
+    const mem: OperationalCapabilityReceiptV1 = {
+      store_id: "store:mem", backend: "memory", storage_epoch: "0", high_water_cursor: "0",
+      capabilities: { atomic_promotion: true, dense_cursor: true, accepted_only_lexical: true, fenced_single_writer: false, revocable_active_store: false, detached_snapshot: false, bounded_cancellation: false, backend: "memory" },
+      issued_at: NOW, expires_at: DEADLINE, receipt_digest: DIGEST,
+    };
     expect(verifyCapabilityAttestation(mem, undefined, "capture").ok).toBe(true);
   });
 
@@ -72,5 +81,12 @@ describe("verifyCapabilityAttestation (§5.9)", () => {
 
   it("rejects a production receipt whose detached signature does not verify", () => {
     expect(code(verifyCapabilityAttestation(receipt(), verifier(false), "capture"))).toBe("CAPABILITY_UNAVAILABLE");
+  });
+
+  it("rejects a production receipt whose receipt_digest no longer matches its fields (tampered without re-digesting)", () => {
+    // graphify recomputes the canonical digest: a field mutated after signing, without re-digesting, is caught
+    // before any crypto — an accepting verifier cannot rescue it.
+    const tampered = { ...receipt(), high_water_cursor: "999" };
+    expect(code(verifyCapabilityAttestation(tampered, verifier(true), "capture"))).toBe("CAPABILITY_UNAVAILABLE");
   });
 });

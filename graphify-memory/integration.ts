@@ -17,8 +17,8 @@ export {
   type FencedStoreOpenerV1,
 } from "./store-factory.js";
 
-// Capability attestation predicate (§5.9), for a host that builds its own attesting store factory.
-export { verifyCapabilityAttestation } from "./attestation.js";
+// Capability attestation predicate + canonical digest (§5.9), for a host that builds its own attesting store factory.
+export { attestationReceiptDigest, verifyCapabilityAttestation } from "./attestation.js";
 
 // §10 conformance harness the host runs against its injected AdminProviderPort (§5.10 denial invariant).
 export {
