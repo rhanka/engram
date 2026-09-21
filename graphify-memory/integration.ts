@@ -20,5 +20,11 @@ export {
 // Capability attestation predicate (§5.9), for a host that builds its own attesting store factory.
 export { verifyCapabilityAttestation } from "./attestation.js";
 
+// §10 conformance harness the host runs against its injected AdminProviderPort (§5.10 denial invariant).
+export {
+  assertAdminProviderConformance,
+  type AdminProviderConformanceCasesV1,
+} from "./admin-conformance.js";
+
 // All data-only DTOs, port signatures, errors, and receipts.
 export type * from "./contracts/index.js";
