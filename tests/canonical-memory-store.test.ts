@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  createCanonicalMemoryStoreFactoryV1,
   openFencedSqliteCanonicalMemoryStoreV1,
   type AdmissionStoreInputV1,
   type FencedSqliteCanonicalMemoryStoreV1,
@@ -19,14 +20,15 @@ function filename(): string {
   return join(workspace, "canonical.sqlite");
 }
 
+// §5.9: acquire through the graphify-owned factory so the store carries this build's in-process provenance mark
+// (its readiness() declares the compiled adapter identity); otherwise the engine's fencing gate refuses it. The
+// marked store passes FencedSqlite-specific methods through, so the cast is safe.
 async function open(filenameValue: string, options: Omit<Parameters<typeof openFencedSqliteCanonicalMemoryStoreV1>[0], "filename" | "clock"> = {}): Promise<FencedSqliteCanonicalMemoryStoreV1> {
-  const opened = await openFencedSqliteCanonicalMemoryStoreV1({ filename: filenameValue, clock: { now: () => NOW }, ...options });
-  expect(opened).toMatchObject({
-    ok: true,
-    value: { capabilities: { atomic_promotion: true, dense_cursor: true, accepted_only_lexical: true, fenced_single_writer: true, revocable_active_store: true } },
-  });
-  if (!opened.ok) throw new Error(opened.error.message);
-  return opened.value;
+  const factory = createCanonicalMemoryStoreFactoryV1({ open: () => openFencedSqliteCanonicalMemoryStoreV1({ filename: filenameValue, clock: { now: () => NOW }, ...options }) });
+  const acquired = await factory.acquire({ store_id: filenameValue, backend: "sqlite", deadline_at: "2026-08-16T12:40:00.000Z" });
+  if (!acquired.ok) throw new Error(acquired.error.message);
+  expect(acquired.value.capabilities).toMatchObject({ atomic_promotion: true, dense_cursor: true, accepted_only_lexical: true, fenced_single_writer: true, revocable_active_store: true });
+  return acquired.value as unknown as FencedSqliteCanonicalMemoryStoreV1;
 }
 
 async function surfaceCounts(filenameValue: string): Promise<Record<string, number>> {
@@ -67,19 +69,30 @@ describe("canonical SQLite memory store", () => {
 
   it("same id with different full digest is refused without writes", async () => {
     const target = filename();
-    const store = await open(target);
     let acceptedInput: AdmissionStoreInputV1 | undefined;
-    const observingStore = new Proxy(store, {
-      get(targetStore, property) {
-        const value = Reflect.get(targetStore, property, targetStore);
-        if (property === "applyAdmission") return async (input: AdmissionStoreInputV1) => {
-          if (input.outcome === "accept") acceptedInput = structuredClone(input);
-          return (value as FencedSqliteCanonicalMemoryStoreV1["applyAdmission"]).call(targetStore, input);
-        };
-        return typeof value === "function" ? value.bind(targetStore) : value;
+    // §5.9: observe applyAdmission INSIDE the factory's open seam, so the factory stamps the observed store with
+    // the provenance mark (wrapping a marked store afterward would drop the mark and the gate would refuse it).
+    const factory = createCanonicalMemoryStoreFactoryV1({
+      open: async () => {
+        const opened = await openFencedSqliteCanonicalMemoryStoreV1({ filename: target, clock: { now: () => NOW } });
+        if (!opened.ok) return opened;
+        const observing = new Proxy(opened.value, {
+          get(targetStore, property) {
+            const value = Reflect.get(targetStore, property, targetStore);
+            if (property === "applyAdmission") return async (input: AdmissionStoreInputV1) => {
+              if (input.outcome === "accept") acceptedInput = structuredClone(input);
+              return (value as FencedSqliteCanonicalMemoryStoreV1["applyAdmission"]).call(targetStore, input);
+            };
+            return typeof value === "function" ? value.bind(targetStore) : value;
+          },
+        });
+        return { ok: true as const, value: observing };
       },
     });
-    const { memory } = createL3Memory("accept", observingStore);
+    const acquired = await factory.acquire({ store_id: target, backend: "sqlite", deadline_at: "2026-08-16T12:40:00.000Z" });
+    if (!acquired.ok) throw new Error(acquired.error.message);
+    const store = acquired.value as unknown as FencedSqliteCanonicalMemoryStoreV1;
+    const { memory } = createL3Memory("accept", store);
     const first = await memory.capture(captureRequest("idempotency-key-digest-one", "1"));
     if (!first.ok || first.value.candidate_id === undefined) throw new Error("first capture failed");
     await expect(memory.requestAdmission({ candidate_id: first.value.candidate_id, authorization: { credential: "credential:l3" }, deadline_at: "2026-08-16T12:40:00.000Z" }))
