@@ -48,6 +48,7 @@ export {
   type CanonicalMemoryStoreFactoryOptionsV1,
   type FencedStoreOpenerV1,
 } from "./store-factory.js";
+export { verifyCapabilityAttestation } from "./attestation.js";
 export {
   applyPortOwnedRedaction,
   authorizeOperation,

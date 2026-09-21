@@ -23,8 +23,9 @@ Deferring the method (not just avoiding a tsc break) is therefore the only spec-
 - [x] `graphify-memory/store-factory.ts` — `createCanonicalMemoryStoreFactoryV1({adapter_id, adapter_version, open})`. The `open` seam takes the storage fence at construction (graphify wires its own sqlite/postgres openers; the factory never re-implements the broker, §5.7). In-process half of the single-broker rule: a live holder for a store_id refuses `STORE_UNAVAILABLE` (not queued, opener not re-invoked); reservation before opening closes the race; released on graceful `close()`; a failed/throwing acquisition frees the slot (holds no fence). Cross-process half is the opener's flock/generation lock. `tests/canonical-store-factory.test.ts` (6 cases). Exported from `index.ts`.
 - Note: attestation binding on the acquired store's `readiness()` receipt is R1d (emission + engine-side verification kept together).
 
-## R1d — capability attestation verification in `createMemoryPortV2`  [PENDING]
-- [ ] `tests/capability-attestation.test.ts`.
+## R1d — capability attestation verification (§5.9)  [predicate DONE · engine wiring PENDING]
+- [x] R1d-a — contract `CapabilityAttestationVerifierPort` (expected adapter id/version/build_digest + `verifySignature`) + `attestation_verifier?` on `MemoryEngineDependenciesV2` + pure predicate `verifyCapabilityAttestation(receipt, verifier, operation)` in `graphify-memory/attestation.ts`. Rule: `backend "memory"` admitted with no attestation; production (sqlite/postgres) admitted only when the fresh receipt carries a complete attestation block matching the EXPECTED adapter identity and whose detached signature verifies; absent/mismatched/no-verifier/unverifiable ⇒ `CAPABILITY_UNAVAILABLE` (rejected as an unfenced store). `tests/capability-attestation.test.ts` (7 cases, incl. postgres/external-host). Exported from `index.ts`.
+- [ ] R1d-b — wire the predicate into `createMemoryPortV2` BEFORE every fencing-dependent op (shared `admitFenced(operation)` helper over a fresh readiness receipt; never delegated to readiness()). Integration tests per op path.
 
 ## R1e — `graphify-memory/integration` surface (factories/types/ports only)  [PENDING]
 - [ ] `tests/integration-surface-neutrality.test.ts`.
