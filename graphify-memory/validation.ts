@@ -1,6 +1,7 @@
 import { normalizeCanonicalJson, type CanonicalJsonValue } from "./canonical-json.js";
 import { knowledgePayloadDigest, memoryRecordDigest, recordIdFromDigest } from "./digests.js";
 import type {
+  AdminOperationRequestV1,
   CandidatePayloadV2,
   Cursor,
   Digest,
@@ -296,4 +297,38 @@ export function evaluateTrustEligibility(binding: TrustBindingV1, revalidation: 
       ? "AUTHORIZATION_EXPIRED"
       : "UNAUTHORIZED";
   return refusal("recall_current", code, `trust receipt is ${revalidation.reason}`);
+}
+
+
+export function validateAdminOperationRequest(input: unknown): Result<AdminOperationRequestV1> {
+  const fail = (message: string) => refusal<AdminOperationRequestV1>("admin", "INVALID_SCHEMA", message);
+  const isStr = (x: unknown): x is string => typeof x === "string" && x.length > 0;
+  const isObj = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null;
+  if (!isObj(input)) return fail("admin request must be an object");
+  switch (input.operation) {
+    case "bootstrap": {
+      const r = input.bootstrap;
+      if (!isObj(r)) return fail("bootstrap sub-request is required");
+      if (!isStr(r.store_id) || !isStr(r.storage_epoch) || !isStr(r.admin_credential_ref) || !isStr(r.deadline_at))
+        return fail("bootstrap requires store_id, storage_epoch, admin_credential_ref, deadline_at");
+      break;
+    }
+    case "rotate": {
+      const r = input.rotate;
+      if (!isObj(r)) return fail("rotate sub-request is required");
+      if (!isStr(r.store_id) || !isStr(r.current_authorization_epoch) || !isObj(r.authorization) || !isStr(r.deadline_at))
+        return fail("rotate requires store_id, current_authorization_epoch, authorization, deadline_at");
+      break;
+    }
+    case "revoke": {
+      const r = input.revoke;
+      if (!isObj(r)) return fail("revoke sub-request is required");
+      if (!isStr(r.store_id) || !isStr(r.current_authorization_epoch) || !isStr(r.credential_digest) || !isObj(r.authorization) || !isStr(r.deadline_at))
+        return fail("revoke requires store_id, current_authorization_epoch, credential_digest, authorization, deadline_at");
+      break;
+    }
+    default:
+      return fail("operation must be one of bootstrap|rotate|revoke");
+  }
+  return { ok: true, value: input as AdminOperationRequestV1 };
 }
