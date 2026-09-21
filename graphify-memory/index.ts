@@ -57,19 +57,6 @@ export {
   type AuthorizationBindingInputV1,
 } from "./engine.js";
 export {
-  createAlwaysActiveLocalAdministrationFenceV1,
-  createFileLocalCredentialSourceV1,
-  createInMemoryLocalAdministrationStateStoreV1,
-  createInMemoryLocalCredentialSourceV1,
-  createLocalAdministratorV1,
-  type LocalAdministrationFenceV1,
-  type LocalAdministrationStateStoreV1,
-  type LocalAdministrationStateV1,
-  type LocalAdministratorOptionsV1,
-  type LocalAdministratorV1,
-  type LocalCredentialSourceV1,
-} from "./service.js";
-export {
   hasProjectionEnvelope,
 } from "./projection.js";
 export {

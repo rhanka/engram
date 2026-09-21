@@ -33,7 +33,7 @@ type PgClientConfig = import("pg").ClientConfig;
  * re-INSERT persistence model.  That is an O(total-state) write amplification
  * per mutation, recorded in spec §8/§9 as the managed/cloud write-amplification
  * ceiling.  It is deliberately not re-architected here: parity with SQLite is
- * the L6b gate, incremental persistence is a later managed-service concern.
+ * the L6b gate, incremental persistence is a later external-host concern.
  */
 type PgFailpoint = "after_blob" | "after_journal" | "after_state" | "after_lexical" | "after_outbox";
 type PgStatement = "blob" | "journal" | "state" | "lexical" | "outbox";
