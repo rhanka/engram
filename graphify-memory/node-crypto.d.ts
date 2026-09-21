@@ -9,9 +9,16 @@ declare module "node:crypto" {
     digest(encoding: "hex"): string;
   }
 
+  interface KeyObject {
+    readonly type: "public" | "private";
+  }
+
   export function createHash(algorithm: "sha256"): Hash;
   export function randomBytes(size: number): BinaryBuffer;
   export function timingSafeEqual(left: BinaryBuffer, right: BinaryBuffer): boolean;
+  export function generateKeyPairSync(type: "ed25519"): { publicKey: KeyObject; privateKey: KeyObject };
+  export function sign(algorithm: null, data: BinaryBuffer, key: KeyObject): BinaryBuffer;
+  export function verify(algorithm: null, data: BinaryBuffer, key: KeyObject, signature: BinaryBuffer): boolean;
   export function createCipheriv(algorithm: "aes-256-gcm", key: BinaryBuffer, iv: BinaryBuffer): {
     setAAD(value: BinaryBuffer): void;
     update(value: string, encoding: "utf8"): BinaryBuffer;

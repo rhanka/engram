@@ -17,8 +17,8 @@ function makeFactory() {
   const closes: string[] = [];
   let open: (input: FencedStoreConstructionV1) => Promise<Result<CanonicalMemoryStorePort>> = async (input) => okStore(() => closes.push(input.store_id));
   const factory = createCanonicalMemoryStoreFactoryV1({
-    adapter_id: "adapter:graphify-sqlite",
-    adapter_version: "1",
+    // this suite exercises only the broker rule / release, not attestation; a trivial signer suffices.
+    attestation_signer: { identity: { adapter_id: "adapter:graphify-sqlite", adapter_version: "1", adapter_build_digest: ("sha256:" + "a".repeat(64)) as never }, sign: () => "ed25519:test" },
     open: async (input) => { openCalls.push(input); return open(input); },
   });
   return { factory, openCalls, closes, setOpen: (o: typeof open) => { open = o; } };
