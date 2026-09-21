@@ -11,6 +11,7 @@ export { CANDIDATE_PAYLOAD_V2_SCHEMA, MEMORY_RECORD_V2_SCHEMA } from "./schemas.
 export {
   evaluateTrustEligibility,
   isCanonicalCursor,
+  validateAdminOperationRequest,
   validateCandidatePayload,
   validateMemoryRecord,
   type MemoryValidationOptions,
