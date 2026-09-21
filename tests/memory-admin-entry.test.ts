@@ -99,6 +99,7 @@ describe("MemoryPortV2.admin entry point (§5.5)", () => {
       expect(r.error.retryable).toBe(false);            // fail-closed
       expect("denial" in r.error).toBe(false);          // an exception declared no authorization decision
       expect(r.error.message).not.toContain(secret);    // D2 minimal redaction — never the raw error text
+      expect(JSON.stringify(r)).not.toContain(secret);  // the WHOLE Result, guarding a future detail:String(e)
     }
   });
 

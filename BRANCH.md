@@ -44,3 +44,10 @@ Deferring the method (not just avoiding a tsc break) is therefore the only spec-
 
 ## Follow-up (tracked, out of R1)
 - `graphify-memory/index.ts` re-exports `./sqlite.js` (which imports `fs-ext`), so the MAIN entry is not driver-free — every consumer fails to load without `fs-ext` (not only SQLite users; explains the 2 non-SQLite pre-existing failures). `integration.ts` IS driver-free. Candidate: make the main entry driver-free (lazy / subpath the sqlite re-export). Pre-existing; g-arch-noted; not in R1h.
+
+## R1i — g-arch R1h review closure (5 one-liners, no behavior change)  [DONE]
+- [x] #5 (the real one) — `integration-surface-neutrality` symbol guard could pass VACUOUSLY if the namespace emptied (exports moved / import path changed; tsc misses it). Added a positive control (`expect(integration.createMemoryPortV2).toBeDefined()`) before the loop + a comment declaring the limit (factory arm is name-based `/^create.*Admin.../`; behaviour-detection not generic; human review is the net).
+- [x] #1 — secret-leak test now also asserts `JSON.stringify(r)` (the WHOLE `Result`) excludes the secret, guarding a future `catch(e){ return {…, detail:String(e)} }`.
+- [x] #2 — `callAdminProvider` JSDoc corrected: wraps the provider call AND the normalisation of its result (a throw from either — exception or malformed `Result` — is a provider fault); still NOT the surrounding engine/fence logic.
+- [x] #3 — §5.5(f) now reads "throws, or returns a value that is not a well-formed `Result`" (the code already classifies a malformed `Result` as `POLICY_UNAVAILABLE`).
+- [x] #4 — §5.10 gains "an `AdminProviderPort` MUST return a `Result` and MUST NOT throw" (grounds §5.5(f); explicit stratification).
