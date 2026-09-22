@@ -11,7 +11,7 @@ import {
 import { dirname } from "node:path";
 
 import { receiptDigest } from "./digests.js";
-import { procLocksFileKeyV1, procLocksHoldsExclusiveFlockV1 } from "./proc-locks.js";
+import { procLocksHoldsExclusiveFlockV1 } from "./proc-locks.js";
 import { markFencedStoreV1 } from "./store-factory.js";
 import {
   createInMemoryCanonicalMemoryStoreV1,
@@ -185,14 +185,17 @@ async function acquireDatabaseFlock(filename: string): Promise<FencedLockV1> {
     }
     // Capture the flocked inode from the fd (bigint: a large XFS/btrfs inode exceeds 2^53 and a number would round).
     const identity = fstatSync(fd, { bigint: true });
-    const majMinIno = procLocksFileKeyV1(identity.dev, identity.ino);
+    // Match the flock by INODE only, never by device: fstat's st_dev (the mount/subvolume dev) differs from the
+    // superblock s_dev the kernel prints in /proc on btrfs, so a device match would brick there; the inode is
+    // identical in both views. fdinfo is per-fd anyway, so this is a sanity check, not the sole discriminator.
+    const inode = identity.ino.toString();
     let held = true;
     const lock: FencedLockV1 = {
       assertHeld: () => held,
       assertKernelHeld: () => {
         if (!held) return false;
         try {
-          return procLocksHoldsExclusiveFlockV1(readFileSync(`/proc/self/fdinfo/${fd}`, "utf8"), { majMinIno });
+          return procLocksHoldsExclusiveFlockV1(readFileSync(`/proc/self/fdinfo/${fd}`, "utf8"), { ino: inode });
         } catch {
           return false; // fdinfo unreadable => cannot prove the fence is live => treat as lost
         }
