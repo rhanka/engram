@@ -50,6 +50,8 @@ describe("native SQLite memory broker", () => {
   it("second process is refused and stale epoch fails before its first SQL statement", async () => {
     const target = filename();
     const helper = join(process.cwd(), "graphify-memory", "node_modules", "fs-ext", "fs-ext.js");
+    // §5.9 v5-b: the fence is a flock on the canonical DB's OWN inode (no more `.lock` sidecar), so the competing
+    // holder must flock the database file itself — that is what makes our open contend and lose.
     const child = spawn(process.execPath, ["--input-type=module", "--eval", `
       const fs = await import("node:fs");
       const flock = await import(${JSON.stringify(helper)});
@@ -57,7 +59,7 @@ describe("native SQLite memory broker", () => {
       flock.flockSync(fd, "exnb");
       process.stdout.write("READY\\n");
       setInterval(() => {}, 1_000);
-    `, `${target}.lock`], { stdio: ["ignore", "pipe", "pipe"] });
+    `, `${target}`], { stdio: ["ignore", "pipe", "pipe"] });
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error("flock holder did not become ready")), 5_000);
       child.stdout?.on("data", (data: Buffer) => {
