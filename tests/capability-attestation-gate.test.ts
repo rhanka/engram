@@ -9,6 +9,8 @@ import {
   type OperationalCapabilityReceiptV1,
   type Result,
 } from "../graphify-memory/index.js";
+// Internal fence mark (barrel does not re-export it) — a test models the opener stamping a store after a real fence.
+import { markFencedStoreV1 } from "../graphify-memory/store-factory.js";
 
 const caps = { atomic_promotion: true as const, dense_cursor: true as const, accepted_only_lexical: true as const, fenced_single_writer: true, revocable_active_store: true, detached_snapshot: true, bounded_cancellation: true, backend: "sqlite" as const };
 const reached = { ok: false as const, error: { code: "STORE_UNAVAILABLE" as const, operation: "admin" as const, message: "prod-stub reached", retryable: false } };
@@ -27,9 +29,18 @@ function bareProductionStore(): CanonicalMemoryStorePort {
   });
 }
 const construction: FencedStoreConstructionV1 = { store_id: "store:prod", backend: "sqlite", deadline_at: DEADLINE };
+/** Factory acquisition over an opener that never took a real fence (no stamp): the wrapper stays unmarked. */
 async function factoryProductionStore(): Promise<CanonicalMemoryStorePort> {
   const factory = createCanonicalMemoryStoreFactoryV1({ open: async () => ({ ok: true, value: bareProductionStore() }) });
   const acquired = await factory.acquire(construction);
+  if (!acquired.ok) throw new Error("acquire failed");
+  return acquired.value;
+}
+
+/** Models the real opener: it took a live fence and stamped the raw store; the factory propagates the mark. */
+async function fencedFactoryProductionStore(): Promise<CanonicalMemoryStorePort> {
+  const factory = createCanonicalMemoryStoreFactoryV1({ open: async () => { const raw = bareProductionStore(); markFencedStoreV1(raw); return { ok: true as const, value: raw }; } });
+  const acquired = await factory.acquire({ ...construction, store_id: "store:fenced" });
   if (!acquired.ok) throw new Error("acquire failed");
   return acquired.value;
 }
@@ -46,9 +57,15 @@ describe("engine gates fencing-dependent ops on store provenance (§5.9, R1d-b +
     expect(code(await memory.proposeCapitalisation({} as never))).toBe("CAPABILITY_UNAVAILABLE");
   });
 
-  it("admits a production op past the gate when the store was built by this module's fenced factory", async () => {
+  it("refuses a factory acquisition whose opener never took a real fence — factory acquisition alone is not a fence (§5.9 threat-3)", async () => {
     const { memory } = createL3Memory("accept", await factoryProductionStore());
-    // gate admitted (marked store) => transition reaches the stubbed production store, not the provenance refusal.
+    // the wrapper is unmarked (nothing stamped the opener's store), so the gate refuses before reaching the store.
+    expect(code(await memory.transition(lifecycleCommand("dispute", "mem_x")))).toBe("CAPABILITY_UNAVAILABLE");
+  });
+
+  it("admits a production op past the gate ONLY when the opener took (and stamped) a real fence", async () => {
+    const { memory } = createL3Memory("accept", await fencedFactoryProductionStore());
+    // gate admitted (fence mark propagated) => transition reaches the stubbed production store, not the refusal.
     expect(code(await memory.transition(lifecycleCommand("dispute", "mem_x")))).toBe("STORE_UNAVAILABLE");
   });
 });

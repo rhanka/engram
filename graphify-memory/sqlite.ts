@@ -12,6 +12,7 @@ import { dirname } from "node:path";
 
 import { receiptDigest } from "./digests.js";
 import { procLocksFileKeyV1, procLocksHoldsExclusiveFlockV1 } from "./proc-locks.js";
+import { markFencedStoreV1 } from "./store-factory.js";
 import {
   createInMemoryCanonicalMemoryStoreV1,
   foldMemoryJournalV1,
@@ -680,7 +681,11 @@ export async function openFencedSqliteCanonicalMemoryStoreV1(options: FencedSqli
       lock.release();
       return { ok: false, error: { ...ready.error, operation: "admin" } };
     }
-    return { ok: true, value: new FencedSqliteStore(options.filename, options, database, lock, epoch, core) };
+    const store = new FencedSqliteStore(options.filename, options, database, lock, epoch, core);
+    // §5.9 v5-b: stamp the store as fence-holding ONLY here — after a real kernel flock on the DB inode, a
+    // /proc-verifiable lock, and the durable epoch advance. The engine's provenance gate admits on this mark.
+    markFencedStoreV1(store);
+    return { ok: true, value: store };
   } catch {
     try { database?.close(); } catch { /* best effort after a failed native open */ }
     lock.release();

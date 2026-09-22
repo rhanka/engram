@@ -12,6 +12,9 @@ import {
   type OperationalCapabilityReceiptV1,
   type Result,
 } from "../graphify-memory/index.js";
+// Internal fence mark (barrel does not re-export it). A test may model the sqlite/postgres opener, which stamps
+// the raw store only after a real kernel fence; the factory then propagates the mark to the wrapper it returns.
+import { markFencedStoreV1 } from "../graphify-memory/store-factory.js";
 
 const NOW = "2026-09-21T12:00:00.000Z";
 const DEADLINE = "2026-09-21T12:05:00.000Z";
@@ -28,9 +31,18 @@ function bareStore(backend: "memory" | "sqlite", declared?: { adapter_id?: strin
 }
 const construction: FencedStoreConstructionV1 = { store_id: "store:prod", backend: "sqlite", deadline_at: DEADLINE };
 
+/** A factory acquisition whose opener NEVER took a real fence (it did not stamp): the §5.9 threat-3 store. */
 async function factoryStore(): Promise<CanonicalMemoryStorePort> {
   const factory = createCanonicalMemoryStoreFactoryV1({ open: async () => ({ ok: true, value: bareStore("sqlite") }) });
   const acquired = await factory.acquire(construction);
+  if (!acquired.ok) throw new Error("acquire failed");
+  return acquired.value;
+}
+
+/** Models the real sqlite/postgres opener: it took a live kernel fence and stamped the raw store, which the factory then propagates to its wrapper. */
+async function fencedFactoryStore(): Promise<CanonicalMemoryStorePort> {
+  const factory = createCanonicalMemoryStoreFactoryV1({ open: async () => { const raw = bareStore("sqlite"); markFencedStoreV1(raw); return { ok: true as const, value: raw }; } });
+  const acquired = await factory.acquire({ ...construction, store_id: "store:fenced" });
   if (!acquired.ok) throw new Error("acquire failed");
   return acquired.value;
 }
@@ -41,12 +53,23 @@ const readinessOf = async (store: CanonicalMemoryStorePort): Promise<Operational
 };
 
 describe("store provenance admission (§5.9, in-process mark)", () => {
-  it("admits a production store built by THIS module's fenced factory (the sense whose absence bricked production)", async () => {
-    const store = await factoryStore();
-    expect(isFencedFactoryStoreV1(store)).toBe(true);
+  it("admits a factory acquisition whose opener took a real fence and stamped it — propagated to the wrapper the engine holds", async () => {
+    const store = await fencedFactoryStore();
+    expect(isFencedFactoryStoreV1(store)).toBe(true); // the opener's mark propagated to the returned proxy
+    expect(code(verifyStoreProvenance(store, await readinessOf(store), PROD, "capture"))).toBe("OK");
+  });
+
+  it("admits on the fence mark alone, NOT on the self-declared fenced_single_writer boolean (retired as an F1-family basis)", async () => {
+    const store = await fencedFactoryStore();
     const receipt = await readinessOf(store);
-    expect(receipt.capabilities.fenced_single_writer).toBe(true);
-    expect(code(verifyStoreProvenance(store, receipt, PROD, "capture"))).toBe("OK");
+    const claimsUnfenced: OperationalCapabilityReceiptV1 = { ...receipt, capabilities: { ...receipt.capabilities, fenced_single_writer: false } };
+    expect(code(verifyStoreProvenance(store, claimsUnfenced, PROD, "capture"))).toBe("OK");
+  });
+
+  it("refuses a factory acquisition whose opener never took a real fence — the wrapper stays unmarked (§5.9 threat-3 store rejected)", async () => {
+    const store = await factoryStore();
+    expect(isFencedFactoryStoreV1(store)).toBe(false); // nothing stamped the raw store, so nothing propagated
+    expect(code(verifyStoreProvenance(store, await readinessOf(store), PROD, "capture"))).toBe("CAPABILITY_UNAVAILABLE");
   });
 
   it("refuses a production store NOT built by this factory — even one self-declaring the correct identity (the mark, not a copyable string, is the proof)", async () => {

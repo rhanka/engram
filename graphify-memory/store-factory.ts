@@ -48,6 +48,18 @@ export function markInMemoryStoreV1(store: CanonicalMemoryStorePort): void {
   inMemoryStores.add(store);
 }
 
+/**
+ * INTERNAL (the package barrel does not re-export it, and package.json `exports` omits ./store-factory, so a host
+ * cannot reach it): stamp a store as having taken THIS build's real kernel writer fence. Only the sqlite/postgres
+ * opener calls it, and ONLY after acquiring a live fence (sqlite flock on the DB inode + /proc proof; postgres
+ * advisory-lock generation). A store that never took the fence is never marked, so the gate refuses it — this is
+ * what makes the §5.9 threat-3 store ("never took the fence") detectable, replacing the retired self-declared
+ * `fenced_single_writer` boolean.
+ */
+export function markFencedStoreV1(store: CanonicalMemoryStorePort): void {
+  fencedFactoryStores.add(store);
+}
+
 /** True iff `store` was built by a fenced-store factory of THIS graphify-memory module instance. */
 export function isFencedFactoryStoreV1(store: CanonicalMemoryStorePort): boolean {
   return fencedFactoryStores.has(store);
@@ -71,9 +83,10 @@ export function verifyStoreProvenance(
   operation: MemoryOperation,
 ): Result<OperationalCapabilityReceiptV1> {
   if (fencedFactoryStores.has(store)) {
-    if (receipt.capabilities.fenced_single_writer !== true) {
-      return refuse(operation, "CAPABILITY_UNAVAILABLE", "factory-built canonical store does not report a live single-writer fence");
-    }
+    // Membership here means the opener took a REAL writer fence and stamped the store (sqlite flock on the DB
+    // inode + /proc proof, or the postgres advisory-lock generation); the store re-proves liveness per op via its
+    // own #fence. We deliberately do NOT gate on receipt.capabilities.fenced_single_writer — a self-declared
+    // boolean is the same forgeable family as the retired backend string (F1). The kernel fence is the trust root.
     return { ok: true, value: receipt };
   }
   if (options.allowUnfencedMemoryStore && inMemoryStores.has(store)) {
@@ -92,9 +105,9 @@ export interface CanonicalMemoryStoreFactoryOptionsV1 {
 
 /**
  * Graphify-owned fenced-store factory (§5.7). Enforces the single-broker-instance rule (a second live holder is
- * refused STORE_UNAVAILABLE, never queued; released on graceful close()). It also stamps each acquired store with
- * this module's in-process provenance mark (§5.9) and makes readiness() declare this module's compiled adapter
- * identity; the underlying sqlite/postgres opener stays ignorant of both.
+ * refused STORE_UNAVAILABLE, never queued; released on graceful close()). It PROPAGATES the opener's §5.9 fence
+ * mark to the wrapper it returns (the opener stamps only after a real kernel fence) and makes readiness() declare
+ * this module's compiled adapter identity; the underlying sqlite/postgres opener owns the fence and the stamp.
  */
 export function createCanonicalMemoryStoreFactoryV1(options: CanonicalMemoryStoreFactoryOptionsV1): CanonicalMemoryStoreFactoryV1 {
   const liveHolders = new Set<string>();
@@ -121,7 +134,10 @@ export function createCanonicalMemoryStoreFactoryV1(options: CanonicalMemoryStor
         return opened;
       }
       const marked = withProvenanceAndRelease(opened.value, () => liveHolders.delete(input.store_id));
-      fencedFactoryStores.add(marked); // stamp the store the engine will hold, AFTER the fence was taken.
+      // §5.9 v5-b: the factory does NOT vouch for the store on its own — it PROPAGATES the opener's fence mark to
+      // the wrapper the engine will hold. The opener (sqlite/postgres) stamps the raw store only after a real
+      // kernel fence, so a store that never took the fence (a bare/fake opener) stays unmarked and is refused.
+      if (fencedFactoryStores.has(opened.value)) fencedFactoryStores.add(marked);
       return { ok: true, value: marked };
     },
   };
