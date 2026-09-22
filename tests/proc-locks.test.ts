@@ -38,23 +38,40 @@ describe("st_dev -> /proc/locks maj:min decoder (§5.9 Linux)", () => {
     // minor 0x100000 with a non-zero major sets bit 32 of dev — beyond any 32-bit shift entirely.
     expect(decodeDevToProcLocksMajMin(mkdev(253, 0x100000))).toBe("fd:100000");
   });
+
+  it("accepts a bigint dev/ino so a large inode routed via fstatSync(fd,{bigint:true}) never loses precision", () => {
+    expect(decodeDevToProcLocksMajMin(64513n)).toBe("fc:01");
+    // 2^53 + 1 is not representable as a JS number (rounds to 2^53); a bigint ino must print exactly.
+    const bigIno = 9007199254740993n;
+    expect(Number(bigIno)).toBe(9007199254740992); // demonstrates the number-path corruption this avoids
+    expect(procLocksFileKeyV1(64513n, bigIno)).toBe("fc:01:9007199254740993");
+  });
 });
 
-describe("/proc/locks held-exclusive-flock matcher (§5.9 liveness proof)", () => {
+describe("held-exclusive-flock matcher (§5.9 liveness proof) — /proc/locks and /proc/self/fdinfo/<fd>", () => {
   const key = procLocksFileKeyV1(170, 918); // "00:aa:918"
-  const held = `1: POSIX  ADVISORY  READ 10 00:aa:5 0 EOF\n2: FLOCK  ADVISORY  WRITE 4242 00:aa:918 0 EOF\n`;
+  const procLocks = `1: POSIX  ADVISORY  READ 10 00:aa:5 0 EOF\n2: FLOCK  ADVISORY  WRITE 4242 00:aa:918 0 EOF\n`;
+  // /proc/self/fdinfo/<fd> attaches the lock to the open-file-description as a "lock:"-prefixed record.
+  const fdinfo = `pos:\t0\nflags:\t02\nmnt_id:\t29\nlock:\t1: FLOCK  ADVISORY  WRITE 4242 fc:01:918 0 EOF\n`;
 
-  it("builds the file key from (dev, ino) the way /proc/locks prints it", () => {
+  it("builds the file key from (dev, ino) the way /proc prints it", () => {
     expect(key).toBe("00:aa:918");
   });
 
-  it("matches our own held exclusive flock line by pid + file key", () => {
-    expect(procLocksHoldsExclusiveFlockV1(held, { pid: 4242, majMinIno: key })).toBe(true);
+  it("matches our held exclusive flock in /proc/locks by pid + file key", () => {
+    expect(procLocksHoldsExclusiveFlockV1(procLocks, { pid: 4242, majMinIno: key })).toBe(true);
+  });
+
+  it("matches a fdinfo `lock:`-prefixed record by file key WITHOUT needing a pid (fdinfo is already our own fd)", () => {
+    const fdKey = procLocksFileKeyV1(64513, 918); // "fc:01:918"
+    expect(procLocksHoldsExclusiveFlockV1(fdinfo, { majMinIno: fdKey })).toBe(true);
+    expect(procLocksHoldsExclusiveFlockV1(fdinfo, { majMinIno: fdKey, pid: 4242 })).toBe(true);
+    expect(procLocksHoldsExclusiveFlockV1(fdinfo, { majMinIno: "fc:01:919" })).toBe(false);
   });
 
   it("refuses a different pid, a different inode, and a POSIX (non-flock) lock on the same file", () => {
-    expect(procLocksHoldsExclusiveFlockV1(held, { pid: 9999, majMinIno: key })).toBe(false);
-    expect(procLocksHoldsExclusiveFlockV1(held, { pid: 4242, majMinIno: "00:aa:919" })).toBe(false);
+    expect(procLocksHoldsExclusiveFlockV1(procLocks, { pid: 9999, majMinIno: key })).toBe(false);
+    expect(procLocksHoldsExclusiveFlockV1(procLocks, { pid: 4242, majMinIno: "00:aa:919" })).toBe(false);
     const posixOnly = `1: POSIX  ADVISORY  WRITE 4242 00:aa:918 0 EOF\n`;
     expect(procLocksHoldsExclusiveFlockV1(posixOnly, { pid: 4242, majMinIno: key })).toBe(false);
   });
