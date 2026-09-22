@@ -187,7 +187,7 @@ async function acquireDatabaseFlock(filename: string): Promise<FencedLockV1> {
     const identity = fstatSync(fd, { bigint: true });
     const majMinIno = procLocksFileKeyV1(identity.dev, identity.ino);
     let held = true;
-    return {
+    const lock: FencedLockV1 = {
       assertHeld: () => held,
       assertKernelHeld: () => {
         if (!held) return false;
@@ -215,6 +215,15 @@ async function acquireDatabaseFlock(filename: string): Promise<FencedLockV1> {
         }
       },
     };
+    // Prove the flock is REALLY recorded by the kernel BEFORE returning — the caller next advances the durable
+    // epoch and writes, so this must fail closed on a non-functional native flock binding (a shim, or a broken
+    // module) whose flockSync returned success without taking a kernel lock. Otherwise such a store would advance
+    // the epoch while a legitimate broker holds the real flock elsewhere, driving THAT broker's next #fence to a
+    // spurious FENCE_LOST — killing the live writer. Throwing here (before any write) refuses it up front.
+    if (!lock.assertKernelHeld() || !lock.assertPathUnmoved()) {
+      throw new Error("the SQLite writer flock is not recorded by /proc/self/fdinfo after flock (a non-functional native flock binding?)");
+    }
+    return lock;
   } catch (error) {
     closeSync(fd); // closing the fd also releases any flock taken above
     throw error;
@@ -646,8 +655,17 @@ export async function openFencedSqliteCanonicalMemoryStoreV1(options: FencedSqli
   let database: NativeDatabase | undefined;
   try {
     lock = await acquireDatabaseFlock(options.filename);
-  } catch {
-    return refusal("admin", "FENCE_LOST", "another live process holds the SQLite writer fence");
+  } catch (error) {
+    // ONLY genuine flock contention (another live holder) is FENCE_LOST. Everything else — the native flock module
+    // absent or non-functional, a network/removable filesystem, an unreadable /proc, the kernel-proof refusal —
+    // is CAPABILITY_UNAVAILABLE with its cause. A catch-all FENCE_LOST would misreport an unfenceable environment
+    // (e.g. fs-ext not built) as a lost fence.
+    const code = (error as { code?: string } | undefined)?.code;
+    if (code === "EAGAIN" || code === "EWOULDBLOCK") {
+      return refusal("admin", "FENCE_LOST", "another live process holds the SQLite writer fence");
+    }
+    const cause = error instanceof Error ? error.message : String(error);
+    return refusal("admin", "CAPABILITY_UNAVAILABLE", `the SQLite writer fence could not be acquired: ${cause}`);
   }
   try {
     const native = await import("better-sqlite3");
