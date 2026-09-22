@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { receiptDigest } from "./digests.js";
+import { markFencedStoreV1 } from "./store-factory.js";
 import {
   createInMemoryCanonicalMemoryStoreV1,
   foldMemoryJournalV1,
@@ -473,7 +474,11 @@ export async function openPostgresCanonicalMemoryStoreV1(options: PostgresMemory
       await client.end();
       return { ok: false, error: { ...ready.error, operation: "admin" } };
     }
-    return { ok: true, value: new PostgresCanonicalStore(options, client, advisoryKey, generation, core) };
+    const store = new PostgresCanonicalStore(options, client, advisoryKey, generation, core);
+    // §5.9 v5-b: stamp as fence-holding only after the session advisory-lock generation fence is held (the
+    // postgres analogue of the sqlite flock). The engine's provenance gate admits on this mark, not on a boolean.
+    markFencedStoreV1(store);
+    return { ok: true, value: store };
   } catch {
     try { await client.query("ROLLBACK"); } catch { /* no open transaction */ }
     try { await client.end(); } catch { /* best effort */ }

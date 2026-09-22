@@ -10,6 +10,8 @@ import { describe, expect, it } from "vitest";
 const MARKS: ReadonlyArray<{ symbol: string; allowed: ReadonlyArray<string> }> = [
   // store-factory.ts DEFINES it; memory-store.ts is the only production caller.
   { symbol: "markInMemoryStoreV1", allowed: ["graphify-memory/store-factory.ts", "graphify-memory/memory-store.ts"] },
+  // store-factory.ts DEFINES it; only the two fence-taking openers may stamp a store as fence-holding.
+  { symbol: "markFencedStoreV1", allowed: ["graphify-memory/store-factory.ts", "graphify-memory/sqlite.ts", "graphify-memory/postgres.ts"] },
 ];
 
 const ROOTS = ["graphify-memory", "src"];
