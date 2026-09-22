@@ -9,6 +9,9 @@ import {
   type AdmissionStoreInputV1,
   type FencedSqliteCanonicalMemoryStoreV1,
 } from "../graphify-memory/index.js";
+// §5.9 v5-b: the opener stamps the RAW store as fence-holding; when a test wraps it in an observing Proxy, the
+// Proxy is a distinct identity, so the test must propagate the mark to the Proxy or the engine's gate refuses it.
+import { isFencedFactoryStoreV1, markFencedStoreV1 } from "../graphify-memory/store-factory.js";
 import { captureRequest, createL3Memory, NOW } from "./memory-l3-fixture.js";
 
 const workspaces: string[] = [];
@@ -86,6 +89,8 @@ describe("canonical SQLite memory store", () => {
             return typeof value === "function" ? value.bind(targetStore) : value;
           },
         });
+        // propagate the raw store's fence mark to the observing Proxy the factory (and engine) will actually hold.
+        if (isFencedFactoryStoreV1(opened.value)) markFencedStoreV1(observing);
         return { ok: true as const, value: observing };
       },
     });
