@@ -579,6 +579,7 @@ export interface CapabilityDescriptorV1 {
   canonical_backends: ReadonlyArray<"sqlite" | "postgres">;
   max_candidates: 2000;
   max_results: 100;
+  unfenced_memory_store_permitted: boolean;     // (new in this amendment) §5.9: true iff wired with allow_unfenced_memory_store; a true here on a sqlite/postgres descriptor is a production misconfiguration alarm
   receipt_digest: Digest;
 }
 
@@ -1015,6 +1016,8 @@ export interface MemoryEngineDependenciesV2 {
   authorization: AuthorizationPort;
   admission_policy: AdmissionPolicy;
   admin_provider?: AdminProviderPort;           // (new in this amendment) OPTIONAL dispatch target of MemoryPortV2.admin; absence ⇒ admin refuses with CAPABILITY_UNAVAILABLE
+  allow_unfenced_memory_store?: boolean;         // (new in this amendment) §5.9: NON-production opt-in — with a module in-memory store, admits fencing-dependent ops unfenced; never inferred from receipt.backend; strict boolean
+  on_unfenced_memory_store_permitted?: () => void; // (new in this amendment) §5.9: optional observability hook fired once at construction when the flag is set (the package emits no console)
   evidence_verifier?: EvidenceVerifierPort;
   crypto: CryptoPort;
   activity_sources: ReadonlyArray<ActivityEvidenceSource>;
