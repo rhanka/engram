@@ -690,6 +690,9 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
   const cancelled = new Set<string>();
   const capturedContent = new Map<string, Digest>();
   const admissionOutcomes = new Map<string, AdmissionOutcomeV1>();
+  const unfencedMemoryStorePermitted = dependencies.allow_unfenced_memory_store === true;
+  // §5.9 (v5-c): announce the non-production posture once at construction so a host can log/audit it at startup.
+  if (unfencedMemoryStorePermitted) dependencies.on_unfenced_memory_store_permitted?.();
 
   // §5.9: obtain a FRESH readiness receipt and verify the store's PROVENANCE (in-process factory mark + declared-
   // identity lockstep, verifyStoreProvenance) BEFORE admitting any fencing-dependent operation. The check runs in
@@ -727,6 +730,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
           canonical_backends: [backend] as ReadonlyArray<"sqlite" | "postgres">,
           max_candidates: 2000 as const,
           max_results: 100 as const,
+          // §5.9: surface the fence-bypass posture; true on a sqlite/postgres descriptor is a prod misconfiguration.
+          unfenced_memory_store_permitted: unfencedMemoryStorePermitted,
         };
         return { ok: true, value: { ...body, receipt_digest: receiptDigest("capability-descriptor", body) } };
       } catch {
