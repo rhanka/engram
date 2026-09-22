@@ -406,6 +406,10 @@ export interface CapabilityDescriptorV1 {
   canonical_backends: ReadonlyArray<"sqlite" | "postgres">;
   max_candidates: 2000;
   max_results: 100;
+  // §5.9: true iff this engine was wired with `allow_unfenced_memory_store` — the non-production posture that
+  // lets a module in-memory store run unfenced. It is false on a correct production deployment; a `true` here on a
+  // sqlite/postgres descriptor is an operator-visible misconfiguration alarm (the fence-bypass flag is set in prod).
+  unfenced_memory_store_permitted: boolean;
   receipt_digest: Digest;
 }
 
@@ -1031,6 +1035,9 @@ export interface MemoryEngineDependenciesV2 {
   // unless this is explicitly set for a NON-production embedded fake. Never inferred from the receipt's backend
   // string (forgeable): a "memory"-labelled store wired in production must not bypass fencing.
   allow_unfenced_memory_store?: boolean;
+  // §5.9 (v5-c): optional observability hook fired ONCE at engine construction when `allow_unfenced_memory_store`
+  // is set, so a host logs/audits the non-production posture at startup (the neutral package emits no console).
+  on_unfenced_memory_store_permitted?: () => void;
   evidence_verifier?: EvidenceVerifierPort;
   crypto: CryptoPort;
   activity_sources: ReadonlyArray<ActivityEvidenceSource>;
