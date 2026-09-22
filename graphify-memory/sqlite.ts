@@ -1,7 +1,9 @@
 import {
   closeSync,
+  fstatSync,
   mkdirSync,
   openSync,
+  readFileSync,
   rmSync,
   statSync,
   statfsSync,
@@ -9,6 +11,7 @@ import {
 import { dirname } from "node:path";
 
 import { receiptDigest } from "./digests.js";
+import { procLocksFileKeyV1, procLocksHoldsExclusiveFlockV1 } from "./proc-locks.js";
 import {
   createInMemoryCanonicalMemoryStoreV1,
   foldMemoryJournalV1,
@@ -59,8 +62,21 @@ const SQLITE_REJECTED_FILESYSTEM_TYPES = new Set([
 type Failpoint = "after_blob" | "after_journal" | "after_state" | "after_fts" | "after_outbox";
 
 export interface FencedLockV1 {
-  /** A lock is live only while the kernel lock still belongs to this process. */
+  /** In-process fast flag: false once release()/forceFenceLoss ran. Cheap, but NOT a kernel proof on its own. */
   assertHeld(): boolean;
+  /**
+   * Linux kernel liveness proof: /proc/self/fdinfo/<our fd> still shows OUR open-file-description's exclusive
+   * flock on the locked inode. fs-ext (native flock) cannot be faked into forging this kernel line, and fdinfo is
+   * per-fd, so an unrelated fd of the same process holding a flock on the inode does not spoof it (unlike
+   * /proc/locks). Absent or non-matching => the fence is not live.
+   */
+  assertKernelHeld(): boolean;
+  /**
+   * Anti-rename: the DB path still resolves to the very inode we flocked. A `mv other db` after the fence was
+   * taken leaves the OLD (still-flocked) inode owning the writer lock while the path now names a different file;
+   * fdinfo alone cannot see that (it reports our fd's original inode), so this is a SEPARATE check.
+   */
+  assertPathUnmoved(): boolean;
   release(): void;
 }
 
@@ -73,10 +89,6 @@ export interface FencedSqliteMemoryStoreOptionsV1 {
   filename: string;
   clock: ClockPort;
   store_id?: string;
-  /** Test seam; production uses non-blocking kernel flock on `${filename}.lock`. */
-  lock_factory?: (lock_filename: string) => Promise<FencedLockV1>;
-  /** Test seam; production rejects network, removable, FUSE, and unknown filesystems. */
-  filesystem_probe?: (filename: string) => LocalFilesystemProbeResultV1;
   /** Injected only by native atomicity tests.  Throwing rolls back the whole transaction. */
   failpoint?: (stage: Failpoint) => void;
   /** Test seam for proving the mandatory second epoch/fence check before COMMIT. */
@@ -151,15 +163,47 @@ function defaultFilesystemProbe(filename: string): LocalFilesystemProbeResultV1 
   }
 }
 
-async function acquireKernelFlock(lockFilename: string): Promise<FencedLockV1> {
-  mkdirSync(dirname(lockFilename), { recursive: true });
-  const fd = openSync(lockFilename, "a", 0o600);
+/**
+ * Take the writer fence on the canonical database's OWN inode (not a `.lock` sidecar): open a private fd on the
+ * file and hold a non-blocking exclusive flock on it for the store's lifetime. flock is attached to this open-file
+ * description, so a second live holder — in any process — is refused (EAGAIN); SQLite's own fd is separate and
+ * unaffected. Process death releases the flock, so a crash never strands a lock. The returned lock re-proves
+ * liveness against /proc/self/fdinfo/<fd> and rename-safety against the path, per operation.
+ */
+async function acquireDatabaseFlock(filename: string): Promise<FencedLockV1> {
+  mkdirSync(dirname(filename), { recursive: true });
+  const fd = openSync(filename, "a", 0o600); // our own fd on the DB inode; SQLite opens the file on a separate fd
   try {
     const flock = await import("fs-ext");
-    flock.flockSync(fd, "exnb");
+    flock.flockSync(fd, "exnb"); // exclusive, non-blocking: a second live holder throws EAGAIN
+    // Refuse a network/removable/FUSE filesystem on the ACTUAL open file (a lenient dir probe cannot mask it):
+    // flock on NFS/CIFS/FUSE is not a cross-host single-writer fence, so admitting it would be a false guarantee.
+    const fsType = Number(statfsSync(`/proc/self/fd/${fd}`).type);
+    if (SQLITE_REJECTED_FILESYSTEM_TYPES.has(fsType) || !SQLITE_LOCAL_FILESYSTEM_TYPES.has(fsType)) {
+      throw new Error(`fenced SQLite requires a known local filesystem; the open database is on 0x${fsType.toString(16)}`);
+    }
+    // Capture the flocked inode from the fd (bigint: a large XFS/btrfs inode exceeds 2^53 and a number would round).
+    const identity = fstatSync(fd, { bigint: true });
+    const majMinIno = procLocksFileKeyV1(identity.dev, identity.ino);
     let held = true;
     return {
       assertHeld: () => held,
+      assertKernelHeld: () => {
+        if (!held) return false;
+        try {
+          return procLocksHoldsExclusiveFlockV1(readFileSync(`/proc/self/fdinfo/${fd}`, "utf8"), { majMinIno });
+        } catch {
+          return false; // fdinfo unreadable => cannot prove the fence is live => treat as lost
+        }
+      },
+      assertPathUnmoved: () => {
+        try {
+          const now = statSync(filename, { bigint: true });
+          return now.dev === identity.dev && now.ino === identity.ino;
+        } catch {
+          return false; // the path is gone (renamed/deleted) => the fence no longer guards this name
+        }
+      },
       release: () => {
         if (!held) return;
         held = false;
@@ -171,7 +215,7 @@ async function acquireKernelFlock(lockFilename: string): Promise<FencedLockV1> {
       },
     };
   } catch (error) {
-    closeSync(fd);
+    closeSync(fd); // closing the fd also releases any flock taken above
     throw error;
   }
 }
@@ -310,6 +354,18 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
       this.#fenceLost = true;
       this.#revokeReaders();
       return refusal(operation, "FENCE_LOST", "the SQLite writer fence is no longer held");
+    }
+    // (liveness) the kernel still records THIS fd's exclusive flock — an fs-ext shim cannot forge /proc/self/fdinfo.
+    if (!this.lock.assertKernelHeld()) {
+      this.#fenceLost = true;
+      this.#revokeReaders();
+      return refusal(operation, "FENCE_LOST", "the kernel no longer records this process's writer flock on the canonical database");
+    }
+    // (anti-rename) the canonical path still resolves to the flocked inode — a swap leaves the old inode locked.
+    if (!this.lock.assertPathUnmoved()) {
+      this.#fenceLost = true;
+      this.#revokeReaders();
+      return refusal(operation, "FENCE_LOST", "the canonical database path was replaced (rename/swap) since the fence was taken");
     }
     try {
       const row = this.database.prepare("SELECT value FROM memory_meta WHERE key = 'storage_epoch'").get() as StoredRow | undefined;
@@ -576,12 +632,19 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
  * process death releases the flock, so a crash never strands a PID sentinel.
  */
 export async function openFencedSqliteCanonicalMemoryStoreV1(options: FencedSqliteMemoryStoreOptionsV1): Promise<Result<FencedSqliteCanonicalMemoryStoreV1>> {
-  const probe = (options.filesystem_probe ?? defaultFilesystemProbe)(options.filename);
+  // The fence proves liveness against Linux /proc (fdinfo) and refuses a network fs against the open fd; neither
+  // exists on macOS/Windows, so those cannot be supported as a fenced production target — fail closed up front.
+  // Read the platform off globalThis to avoid a global `process` declaration (which would clash with @types/node
+  // in the repo-wide typecheck; the neutral package itself ships no node types, only the node-fs.d.ts shim).
+  if ((globalThis as { process?: { platform?: string } }).process?.platform !== "linux") {
+    return refusal("admin", "CAPABILITY_UNAVAILABLE", "the fenced SQLite canonical store requires Linux kernel lock verification (/proc/self/fdinfo); macOS and Windows are not supported production targets");
+  }
+  const probe = defaultFilesystemProbe(options.filename);
   if (!probe.local) return refusal("admin", "CAPABILITY_UNAVAILABLE", `SQLite canonical storage requires a known local filesystem (${probe.kind})`);
   let lock: FencedLockV1 | undefined;
   let database: NativeDatabase | undefined;
   try {
-    lock = await (options.lock_factory ?? acquireKernelFlock)(`${options.filename}.lock`);
+    lock = await acquireDatabaseFlock(options.filename);
   } catch {
     return refusal("admin", "FENCE_LOST", "another live process holds the SQLite writer fence");
   }
