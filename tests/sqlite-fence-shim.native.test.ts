@@ -33,7 +33,9 @@ describe("native SQLite fence rejects a non-functional flock binding", () => {
 
     // fs-ext.flockSync is mocked to a no-op, so no real kernel lock is taken; /proc/self/fdinfo shows nothing, and
     // the opener's post-flock kernel proof refuses the store before it opens better-sqlite3 or touches the epoch.
-    const opened = await openFencedSqliteCanonicalMemoryStoreV1({ filename: target, clock: { now: () => NOW } });
+    // declare the ephemeral flag so the ephemeral-fs check passes on a tmpfs /tmp and the P1 kernel proof is what
+    // refuses (otherwise the ephemeral refusal would fire first and the cause assertion below would miss).
+    const opened = await openFencedSqliteCanonicalMemoryStoreV1({ filename: target, clock: { now: () => NOW }, allow_ephemeral_filesystem_store: true });
     expect(opened.ok).toBe(false);
     if (opened.ok) throw new Error("expected the shimmed flock to be refused");
     expect(opened.error.code).toBe("CAPABILITY_UNAVAILABLE");

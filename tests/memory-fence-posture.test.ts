@@ -57,4 +57,18 @@ describe("§5.9 unfenced-memory posture is legible (v5-c)", () => {
     engine("true", spy);
     expect(calls).toBe(0);
   });
+
+  it("mirrors the store's ephemeral-filesystem posture into the descriptor", async () => {
+    const withEphemeral = (permitted: boolean): CanonicalMemoryStorePort => {
+      const receipt: OperationalCapabilityReceiptV1 = { ...sqliteReceipt, capabilities: { ...sqliteReceipt.capabilities, ephemeral_filesystem_store_permitted: permitted } };
+      return { version: 1, async readiness() { return { ok: true as const, value: receipt }; }, async close() { return { ok: true as const, value: { closed: true as const } }; } } as unknown as CanonicalMemoryStorePort;
+    };
+    const descriptorFor = async (permitted: boolean) => {
+      const d = await createMemoryPortV2({ canonical_store: withEphemeral(permitted), clock: { now: () => NOW } } as unknown as MemoryEngineDependenciesV2).capabilities();
+      if (!d.ok) throw new Error(`capabilities failed: ${d.error.code}`);
+      return d.value.ephemeral_filesystem_store_permitted;
+    };
+    expect(await descriptorFor(true)).toBe(true);
+    expect(await descriptorFor(false)).toBe(false);
+  });
 });

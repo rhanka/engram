@@ -11,6 +11,7 @@ import {
 import { dirname } from "node:path";
 
 import { receiptDigest } from "./digests.js";
+import { classifyFenceFilesystemV1, SQLITE_LOCAL_FILESYSTEM_TYPES, SQLITE_REJECTED_FILESYSTEM_TYPES } from "./filesystem-fence.js";
 import { procLocksHoldsExclusiveFlockV1 } from "./proc-locks.js";
 import { markFencedStoreV1 } from "./store-factory.js";
 import {
@@ -43,22 +44,6 @@ import type {
 type NativeDatabase = import("better-sqlite3").Database;
 
 const MAX_READER_LEASE_MS = 300_000;
-const SQLITE_LOCAL_FILESYSTEM_TYPES = new Set([
-  0x01021994, // tmpfs
-  0x58465342, // xfs
-  0x794c7630, // overlayfs (container-local Linux filesystems)
-  0x9123683e, // btrfs
-  0xef53, // ext2/3/4
-  0x4253584e, // apfs
-  0x482b, // hfs+
-  0x5346544e, // ntfs
-  0x526653, // refs
-]);
-const SQLITE_REJECTED_FILESYSTEM_TYPES = new Set([
-  0x6969, // nfs
-  0x517b, // cifs/smb
-  0x65735546, // fuse
-]);
 
 type Failpoint = "after_blob" | "after_journal" | "after_state" | "after_fts" | "after_outbox";
 
@@ -90,6 +75,11 @@ export interface FencedSqliteMemoryStoreOptionsV1 {
   filename: string;
   clock: ClockPort;
   store_id?: string;
+  // §5.9: production refuses an EPHEMERAL local filesystem (tmpfs, overlayfs) — a DB there is lost on restart,
+  // contradicting the block-PVC constraint. A NON-production embedded harness opts in here. STRICT boolean: a
+  // string is rejected (same discipline as allow_unfenced_memory_store). Distinct from that flag on purpose — a
+  // "memory" flag must not widen a filesystem decision (the F1 lesson).
+  allow_ephemeral_filesystem_store?: boolean;
   /** Injected only by native atomicity tests.  Throwing rolls back the whole transaction. */
   failpoint?: (stage: Failpoint) => void;
   /** Test seam for proving the mandatory second epoch/fence check before COMMIT. */
@@ -171,18 +161,17 @@ function defaultFilesystemProbe(filename: string): LocalFilesystemProbeResultV1 
  * unaffected. Process death releases the flock, so a crash never strands a lock. The returned lock re-proves
  * liveness against /proc/self/fdinfo/<fd> and rename-safety against the path, per operation.
  */
-async function acquireDatabaseFlock(filename: string): Promise<FencedLockV1> {
+async function acquireDatabaseFlock(filename: string, allowEphemeral: boolean): Promise<FencedLockV1> {
   mkdirSync(dirname(filename), { recursive: true });
   const fd = openSync(filename, "a", 0o600); // our own fd on the DB inode; SQLite opens the file on a separate fd
   try {
     const flock = await import("fs-ext");
     flock.flockSync(fd, "exnb"); // exclusive, non-blocking: a second live holder throws EAGAIN
-    // Refuse a network/removable/FUSE filesystem on the ACTUAL open file (a lenient dir probe cannot mask it):
-    // flock on NFS/CIFS/FUSE is not a cross-host single-writer fence, so admitting it would be a false guarantee.
-    const fsType = Number(statfsSync(`/proc/self/fd/${fd}`).type);
-    if (SQLITE_REJECTED_FILESYSTEM_TYPES.has(fsType) || !SQLITE_LOCAL_FILESYSTEM_TYPES.has(fsType)) {
-      throw new Error(`fenced SQLite requires a known local filesystem; the open database is on 0x${fsType.toString(16)}`);
-    }
+    // Classify the ACTUAL open file's filesystem (a lenient dir probe cannot mask it): refuse a network/removable/
+    // FUSE fs (flock there is not a cross-host fence), an unknown fs, or an ephemeral fs (tmpfs/overlayfs — lost on
+    // restart) unless the host opted in. The verdict names the type in hex; the open() catch surfaces it.
+    const verdict = classifyFenceFilesystemV1(Number(statfsSync(`/proc/self/fd/${fd}`).type), allowEphemeral);
+    if (!verdict.admit) throw new Error(verdict.reason);
     // Capture the flocked inode from the fd (bigint: a large XFS/btrfs inode exceeds 2^53 and a number would round).
     const identity = fstatSync(fd, { bigint: true });
     // Match the flock by INODE only, never by device: fstat's st_dev (the mount/subvolume dev) differs from the
@@ -579,7 +568,8 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
       store_id: this.options.store_id ?? `sqlite:${this.filename}`,
       backend: "sqlite" as const,
       storage_epoch: this.storageEpoch,
-      capabilities: this.capabilities,
+      // §5.9: surface the ephemeral-fs posture in the receipt (readiness()); false on a correct prod deployment.
+      capabilities: { ...this.capabilities, ephemeral_filesystem_store_permitted: this.options.allow_ephemeral_filesystem_store === true },
     };
     return { ok: true, value: { ...fencedBody, receipt_digest: receiptDigest("operational-capability", fencedBody) } };
   }
@@ -657,7 +647,8 @@ export async function openFencedSqliteCanonicalMemoryStoreV1(options: FencedSqli
   let lock: FencedLockV1 | undefined;
   let database: NativeDatabase | undefined;
   try {
-    lock = await acquireDatabaseFlock(options.filename);
+    // STRICT boolean: a string such as "true" does not widen the exemption (same discipline as §5.9's memory flag).
+    lock = await acquireDatabaseFlock(options.filename, options.allow_ephemeral_filesystem_store === true);
   } catch (error) {
     // ONLY genuine flock contention (another live holder) is FENCE_LOST. Everything else — the native flock module
     // absent or non-functional, a network/removable filesystem, an unreadable /proc, the kernel-proof refusal —
