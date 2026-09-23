@@ -25,7 +25,7 @@ function filename(): string {
 // The marked store passes FencedSqlite-specific methods (acquireRevocableSnapshot, forceFenceLossForTesting)
 // through, so the cast is safe.
 async function open(filenameValue: string, options: Omit<Parameters<typeof openFencedSqliteCanonicalMemoryStoreV1>[0], "filename" | "clock"> = {}): Promise<FencedSqliteCanonicalMemoryStoreV1> {
-  const factory = createCanonicalMemoryStoreFactoryV1({ open: () => openFencedSqliteCanonicalMemoryStoreV1({ filename: filenameValue, clock: { now: () => NOW }, ...options }) });
+  const factory = createCanonicalMemoryStoreFactoryV1({ open: () => openFencedSqliteCanonicalMemoryStoreV1({ filename: filenameValue, clock: { now: () => NOW }, allow_ephemeral_filesystem_store: true, ...options }) });
   const acquired = await factory.acquire({ store_id: filenameValue, backend: "sqlite", deadline_at: "2026-08-16T12:40:00.000Z" });
   if (!acquired.ok) throw new Error(acquired.error.message);
   expect(acquired.value.capabilities).toMatchObject({ fenced_single_writer: true, revocable_active_store: true, detached_snapshot: true });
@@ -67,7 +67,7 @@ describe("native SQLite memory broker", () => {
       });
       child.once("error", reject);
     });
-    await expect(openFencedSqliteCanonicalMemoryStoreV1({ filename: target, clock: { now: () => NOW } }))
+    await expect(openFencedSqliteCanonicalMemoryStoreV1({ filename: target, clock: { now: () => NOW }, allow_ephemeral_filesystem_store: true }))
       .resolves.toMatchObject({ ok: false, error: { code: "FENCE_LOST" } });
     child.kill("SIGKILL");
     await once(child, "exit");

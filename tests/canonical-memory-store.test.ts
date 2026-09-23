@@ -27,7 +27,7 @@ function filename(): string {
 // (its readiness() declares the compiled adapter identity); otherwise the engine's fencing gate refuses it. The
 // marked store passes FencedSqlite-specific methods through, so the cast is safe.
 async function open(filenameValue: string, options: Omit<Parameters<typeof openFencedSqliteCanonicalMemoryStoreV1>[0], "filename" | "clock"> = {}): Promise<FencedSqliteCanonicalMemoryStoreV1> {
-  const factory = createCanonicalMemoryStoreFactoryV1({ open: () => openFencedSqliteCanonicalMemoryStoreV1({ filename: filenameValue, clock: { now: () => NOW }, ...options }) });
+  const factory = createCanonicalMemoryStoreFactoryV1({ open: () => openFencedSqliteCanonicalMemoryStoreV1({ filename: filenameValue, clock: { now: () => NOW }, allow_ephemeral_filesystem_store: true, ...options }) });
   const acquired = await factory.acquire({ store_id: filenameValue, backend: "sqlite", deadline_at: "2026-08-16T12:40:00.000Z" });
   if (!acquired.ok) throw new Error(acquired.error.message);
   expect(acquired.value.capabilities).toMatchObject({ atomic_promotion: true, dense_cursor: true, accepted_only_lexical: true, fenced_single_writer: true, revocable_active_store: true });
@@ -77,7 +77,7 @@ describe("canonical SQLite memory store", () => {
     // the provenance mark (wrapping a marked store afterward would drop the mark and the gate would refuse it).
     const factory = createCanonicalMemoryStoreFactoryV1({
       open: async () => {
-        const opened = await openFencedSqliteCanonicalMemoryStoreV1({ filename: target, clock: { now: () => NOW } });
+        const opened = await openFencedSqliteCanonicalMemoryStoreV1({ filename: target, clock: { now: () => NOW }, allow_ephemeral_filesystem_store: true });
         if (!opened.ok) return opened;
         const observing = new Proxy(opened.value, {
           get(targetStore, property) {
