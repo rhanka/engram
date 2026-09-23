@@ -8,11 +8,17 @@ import {
   type FencedStoreConstructionV1,
   type Result,
 } from "../graphify-memory/index.js";
+// §5.9 v5-b: the opener stamps the store as fence-holding only after taking a real kernel fence; the factory then
+// PROPAGATES that mark to the wrapper it returns. This fake opener models a real one that took the fence.
+import { markFencedStoreV1 } from "../graphify-memory/store-factory.js";
 
 const construction = (store_id: string): FencedStoreConstructionV1 => ({ store_id, backend: "sqlite", deadline_at: "2026-09-20T12:05:00.000Z" });
 
-const okStore = (onClose?: () => void): Result<CanonicalMemoryStorePort> =>
-  ({ ok: true, value: { version: 1, async close() { onClose?.(); return { ok: true as const, value: { closed: true as const } }; } } as unknown as CanonicalMemoryStorePort });
+const okStore = (onClose?: () => void): Result<CanonicalMemoryStorePort> => {
+  const store = { version: 1, async close() { onClose?.(); return { ok: true as const, value: { closed: true as const } }; } } as unknown as CanonicalMemoryStorePort;
+  markFencedStoreV1(store); // the opener took the fence; the factory propagates this mark to its wrapper
+  return { ok: true, value: store };
+};
 
 function makeFactory() {
   const openCalls: FencedStoreConstructionV1[] = [];
