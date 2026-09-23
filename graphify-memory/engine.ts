@@ -730,8 +730,9 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
           canonical_backends: [backend] as ReadonlyArray<"sqlite" | "postgres">,
           max_candidates: 2000 as const,
           max_results: 100 as const,
-          // §5.9: surface the fence-bypass posture; true on a sqlite/postgres descriptor is a prod misconfiguration.
+          // §5.9: surface the fence-bypass postures; true on a sqlite/postgres descriptor is a prod misconfiguration.
           unfenced_memory_store_permitted: unfencedMemoryStorePermitted,
+          ephemeral_filesystem_store_permitted: readiness.value.capabilities.ephemeral_filesystem_store_permitted === true,
         };
         return { ok: true, value: { ...body, receipt_digest: receiptDigest("capability-descriptor", body) } };
       } catch {

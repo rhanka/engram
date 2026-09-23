@@ -410,6 +410,7 @@ export interface CapabilityDescriptorV1 {
   // lets a module in-memory store run unfenced. It is false on a correct production deployment; a `true` here on a
   // sqlite/postgres descriptor is an operator-visible misconfiguration alarm (the fence-bypass flag is set in prod).
   unfenced_memory_store_permitted: boolean;
+  ephemeral_filesystem_store_permitted: boolean; // (new in this amendment) §5.9: mirrors the store receipt's ephemeral-fs posture; true on a production descriptor is a misconfiguration alarm
   receipt_digest: Digest;
 }
 
@@ -622,6 +623,10 @@ export interface CanonicalStoreCapabilitiesV1 {
   detached_snapshot: boolean;
   bounded_cancellation: boolean;
   backend: "memory" | "sqlite" | "postgres";
+  // (new in this amendment) §5.9: OPTIONAL — true iff the fenced SQLite store was opened with
+  // allow_ephemeral_filesystem_store (a NON-production opt-in permitting a tmpfs/overlayfs database). Omitted by
+  // stores to which it does not apply; a true here on a production deployment is a misconfiguration alarm.
+  ephemeral_filesystem_store_permitted?: boolean;
 }
 
 export type AdmissionStoreInputV1 =
