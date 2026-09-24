@@ -76,11 +76,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rhanka/graphify.git"
+    "url": "git+https://github.com/rhanka/engram.git"
   },
-  "homepage": "https://github.com/rhanka/graphify",
+  "homepage": "https://github.com/rhanka/engram",
   "bugs": {
-    "url": "https://github.com/rhanka/graphify/issues"
+    "url": "https://github.com/rhanka/engram/issues"
   },
   "engines": {
     "node": ">=20"

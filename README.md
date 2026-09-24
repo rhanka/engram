@@ -1,6 +1,6 @@
 # graphify
 
-[![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=main)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
+[![TypeScript CI](https://github.com/rhanka/engram/actions/workflows/typescript-ci.yml/badge.svg?branch=main)](https://github.com/rhanka/engram/actions/workflows/typescript-ci.yml)
 
 > Engram is a new product: an **agent memory substrate**, rebuilt and repositioned from a knowledge-graph tool. It inherits concepts from the earlier `graphify` project (`@sentropic/graphify`) but is not a continuation of it — names, CLI, env vars, state dirs, schemas, and positioning have changed (see Migration below). Heritage: Engram descends from `graphify`; for the prior line, see the archived `@sentropic/graphify` README and its CHANGELOG. New work targets `engram` only.
 
