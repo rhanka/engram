@@ -1,8 +1,8 @@
-// graphify-memory/integration — the neutral surface an external host instantiates (§1 D1): factories, types,
+// engram-memory/integration — the neutral surface an external host instantiates (§1 D1): factories, types,
 // and ports ONLY. It carries no process, listener, supervisor, signal handler, credential store, or consumer
 // import, and confers no server semantics; the external host — not graphify — supplies any process,
 // supervision, and transport, and the concrete canonical-store opener it passes to the factory
-// (graphify-memory/sqlite or graphify-memory/postgres, whose driver dependencies stay isolated there).
+// (engram-memory/sqlite or engram-memory/postgres, whose driver dependencies stay isolated there).
 //
 // Decision B (§5.10): graphify ships no built-in administrator. The host injects an AdminProviderPort (typed
 // here) — this surface exports no local-administration factory. Store provenance (§5.9) is graphify-owned (the
@@ -17,7 +17,7 @@ export {
   createCanonicalMemoryStoreFactoryV1,
   isFencedFactoryStoreV1,
   verifyStoreProvenance,
-  GRAPHIFY_MEMORY_ADAPTER_IDENTITY,
+  ENGRAM_MEMORY_ADAPTER_IDENTITY,
   type CanonicalMemoryStoreFactoryOptionsV1,
   type FencedStoreOpenerV1,
 } from "./store-factory.js";

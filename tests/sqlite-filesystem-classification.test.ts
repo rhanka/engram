@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyFenceFilesystemV1 } from "../graphify-memory/filesystem-fence.js";
+import { classifyFenceFilesystemV1 } from "../engram-memory/filesystem-fence.js";
 
 const EXT4 = 0xef53;
 const XFS = 0x58465342;

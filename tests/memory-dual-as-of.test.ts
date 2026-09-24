@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isVisibleAtDualAsOf } from "../graphify-memory/index.js";
+import { isVisibleAtDualAsOf } from "../engram-memory/index.js";
 
 describe("dual as-of foundation", () => {
   it("valid and system axes vary independently at inclusive boundaries", () => {
