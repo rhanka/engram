@@ -82,7 +82,7 @@ function codeOnly(source: string): string {
 }
 
 const DIRECT_LEGACY_ENV_READ =
-  /(?:process\s*\.\s*env|(?<![A-Za-z0-9_$.])env)\s*(\?\.\s*|\.\s*|\[\s*["'])GRAPHIFY_[A-Z0-9_]*/;
+  /(?:process\s*\.\s*env|(?<![A-Za-z0-9_$.])env)\s*(\?\.\s*|\.\s*|\[\s*["'`])GRAPHIFY_[A-Z0-9_]*/;
 
 const SRC_ROOT = "src";
 const HELPER = "src/env.ts";
@@ -138,6 +138,13 @@ describe("engram env helper stays the only GRAPHIFY_* reader", () => {
     expect(BARE_LEGACY_IDENTIFIER.test(codeOnly('engramEnv("ENGRAM_STORE", "GRAPHIFY_STORE");'))).toBe(false);
     expect(BARE_LEGACY_IDENTIFIER.test(codeOnly("const script = `GRAPHIFY_CMD=engram\\n`; // GRAPHIFY_NOTE"))).toBe(false);
     expect(BARE_LEGACY_IDENTIFIER.test(codeOnly("const DEFAULT_GRAPHIFY_STATE_DIR = 1;"))).toBe(false);
+  });
+
+  it("catches a template-literal bracket read, plain or interpolated", () => {
+    // The identifier scan blanks template contents, so this form is covered by
+    // the accessor pattern's quote class, which must include the backtick.
+    expect(DIRECT_LEGACY_ENV_READ.test("env[`GRAPHIFY_STORE`]")).toBe(true);
+    expect(DIRECT_LEGACY_ENV_READ.test("process.env[`GRAPHIFY_${suffix}`]")).toBe(true);
   });
 
   it("is not vacuous: src/env.ts still names GRAPHIFY_* keys", () => {
