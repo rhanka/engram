@@ -49,6 +49,7 @@ import { communitiesFromGraph, communityLabelsFromGraph } from "./graph-communit
 import { safeExecGit } from "./git.js";
 import { safeGitRevParse } from "./git.js";
 import { engramEnv } from "./env.js";
+import { schemaIdAccepted } from "./schema-ids.js";
 import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
 import { loadOntologyProfile } from "./ontology-profile.js";
 import { loadProfileRegistries } from "./profile-registry.js";
@@ -326,8 +327,8 @@ function loadWikiDescriptionSidecarIndex(inputPath?: string): WikiDescriptionSid
   if (!isJsonRecord(value)) {
     throw new Error("wiki description sidecar index must be a JSON object");
   }
-  if (value.schema !== "graphify_wiki_description_index_v1") {
-    throw new Error("wiki description sidecar index schema must be graphify_wiki_description_index_v1");
+  if (!schemaIdAccepted(value.schema, "engram_wiki_description_index_v1")) {
+    throw new Error("wiki description sidecar index schema must be engram_wiki_description_index_v1");
   }
   if (!isJsonRecord(value.nodes)) {
     throw new Error("wiki description sidecar index nodes must be an object");
@@ -2750,7 +2751,7 @@ export async function main(): Promise<void> {
     .command("evaluate")
     .description("Measure a link run's occurrences.json against a gold set ($0, deterministic; gate on floors/ceilings)")
     .requiredOption("--run <path>", "occurrences.json produced by graphify link")
-    .requiredOption("--gold <path>", "gold occurrence set (graphify_typed_linking_gold_v1 envelope)")
+    .requiredOption("--gold <path>", "gold occurrence set (engram_typed_linking_gold_v1 envelope)")
     .option("--out <path>", "Write evaluation.json here")
     .option("--profile-state <path>", "Stamp profile_hash + normalizer_hashes from a profile state")
     .option("--corpus <root>", "Corpus root to verify gold raw_span slices (stale-gold detection)")
@@ -4686,7 +4687,7 @@ export async function main(): Promise<void> {
     .option("--config <path>", "graphify.yaml / .graphify/config.yaml containing quality.targets")
     .option("--bundle <path>", "Final bundle directory; defaults to the target bundle_path")
     .option("--manifest <path>", "Resolved target manifest JSON; defaults to <bundle>/resolved-target.json when present")
-    .option("--write-report [path]", "Write graphify_qa_report_v1 JSON; default <bundle>/quality-qa-report.json")
+    .option("--write-report [path]", "Write engram_qa_report_v1 JSON; default <bundle>/quality-qa-report.json")
     .option("--fail-on-error", "Exit non-zero when QA reports errors, even for advisory targets")
     .action(async (opts) => {
       const {
@@ -5847,15 +5848,15 @@ export async function main(): Promise<void> {
   // `answer` — the graph-aware GraphRAG surface (work-stream C, Phase A / C9).
   // Distinct from `query` (degree-sorted text blob) and the token-reduction
   // `benchmark`. Builds the BM25/PPR retrieval core and emits a frozen
-  // graphify_answer_pack_v1 for the host assistant to relevance-test + synthesize.
+  // engram_answer_pack_v1 for the host assistant to relevance-test + synthesize.
   program
     .command("answer <question>")
-    .description("GraphRAG answer pack (BM25 + RRF + PPR) for a question — graphify_answer_pack_v1")
+    .description("GraphRAG answer pack (BM25 + RRF + PPR) for a question — engram_answer_pack_v1")
     .option("--graph <path>", "Path to graph.json", resolveGraphInputPath())
     .option("--budget <n>", "Token budget surfaced in the pack", "2000")
     .option("--neighborhood <n>", "Max PPR neighborhood entries", "20")
     .option("--sub <q...>", "Host multi-query sub-queries (RRF-fused with the main query)")
-    .option("--json", "Emit only the raw graphify_answer_pack_v1 JSON")
+    .option("--json", "Emit only the raw engram_answer_pack_v1 JSON")
     .action(async (question, opts) => {
       const { resolve: res } = await import("node:path");
       const gp = res(opts.graph);

@@ -17,7 +17,7 @@ import {
 } from "./ontology-reconciliation.js";
 
 export interface OntologyRebuildStatusResponse {
-  schema: "graphify_ontology_rebuild_status_v1";
+  schema: "engram_ontology_rebuild_status_v1";
   needs_update: boolean;
   graph_hash: string | null;
   profile_hash: string | null;
@@ -160,7 +160,7 @@ export function getOntologyRebuildStatus(context: OntologyPatchContext): Ontolog
 
   const needsUpdate = existsSync(ontologyNeedsUpdatePath(context));
   return {
-    schema: "graphify_ontology_rebuild_status_v1",
+    schema: "engram_ontology_rebuild_status_v1",
     needs_update: needsUpdate,
     graph_hash: context.graphHash || null,
     profile_hash: context.profile.profile_hash || null,

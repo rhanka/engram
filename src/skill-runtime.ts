@@ -904,7 +904,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
   program
     .command("ontology-patch-validate")
-    .description("Validate a graphify_ontology_patch_v1 JSON file without mutation")
+    .description("Validate a engram_ontology_patch_v1 JSON file without mutation")
     .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
     .requiredOption("--patch <path>", "Ontology patch JSON")
     .action((opts) => {
@@ -916,7 +916,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
   program
     .command("ontology-patch-apply")
-    .description("Dry-run or write-apply a graphify_ontology_patch_v1 JSON file")
+    .description("Dry-run or write-apply a engram_ontology_patch_v1 JSON file")
     .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
     .requiredOption("--patch <path>", "Ontology patch JSON")
     .option("--dry-run", "Preview changed files without mutation")

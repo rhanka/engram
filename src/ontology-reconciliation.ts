@@ -6,9 +6,9 @@ import { compileNormalizerByNodeType } from "./entity-normalizer.js";
 import type { NormalizerByNodeType } from "./entity-normalizer.js";
 import type { OntologyPatchContext, OntologyPatchNode, OntologyPatchRelation } from "./ontology-patch.js";
 
-export const ONTOLOGY_RECONCILIATION_CANDIDATES_SCHEMA = "graphify_ontology_reconciliation_candidates_v1" as const;
+export const ONTOLOGY_RECONCILIATION_CANDIDATES_SCHEMA = "engram_ontology_reconciliation_candidates_v1" as const;
 export const ONTOLOGY_RECONCILIATION_CANDIDATES_RESPONSE_SCHEMA =
-  "graphify_ontology_reconciliation_candidates_response_v1" as const;
+  "engram_ontology_reconciliation_candidates_response_v1" as const;
 
 export type OntologyReconciliationCandidateKind = "entity_match";
 export type OntologyReconciliationCandidateStatus = "candidate";

@@ -52,11 +52,11 @@ const storeOf = (evidence = [evidenceOf()]) => ({
   evidence: { p1: evidence },
 });
 
-describe("graphify_citation_evidence_v1 — the declared surface", () => {
+describe("engram_citation_evidence_v1 — the declared surface", () => {
   it("pins the schema id and the store relpath", () => {
     // These two strings ARE the contract surface. Changing either is a
     // breaking change and must be a deliberate edit here, never a side effect.
-    expect(CITATION_EVIDENCE_SCHEMA).toBe("graphify_citation_evidence_v1");
+    expect(CITATION_EVIDENCE_SCHEMA).toBe("engram_citation_evidence_v1");
     expect(CITATION_EVIDENCE_RELPATH).toBe("ontology/citation-evidence.json");
   });
 
@@ -67,7 +67,7 @@ describe("graphify_citation_evidence_v1 — the declared surface", () => {
   });
 });
 
-describe("graphify_citation_evidence_v1 — the drift guard bites both ways", () => {
+describe("engram_citation_evidence_v1 — the drift guard bites both ways", () => {
   it("the builder emits EXACTLY the declared required fields, no more", () => {
     const emitted = Object.keys(evidenceOf()).sort();
     const declared = [...CITATION_EVIDENCE_REQUIRED_FIELDS].sort();

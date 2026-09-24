@@ -125,7 +125,7 @@ describe("typed-linking normalizer contract", () => {
     expect(nodes[0]?.normalized_terms).toEqual(["café-3", "étage a"]);
     expect(aliases[0]?.normalized).toBe("étage a");
     expect(profile.node_types.Zone).toEqual({ registry: "zones" });
-    expect(profile.profile_hash).toBe("044e4480a0ce56e5ced55655a9c3047d0ec0dd372a370c25ab61e00449578956");
+    expect(profile.profile_hash).toBe("ba6ea1065da7c7a7bf716f68b301f503fc96404f2dcf5f1d97459232c4fd31a4");
 
     const queue = generateOntologyReconciliationCandidates(reconciliationContext(profile, [
       { id: "accented", label: "Café-3", type: "Zone", registry_id: "zones", registry_partition: "compton" },
@@ -216,7 +216,7 @@ describe("typed-linking normalizer contract", () => {
     });
 
     expect(first.node_types.Zone.linking?.normalizer).toMatchObject({
-      contract: "graphify_entity_normalizer_v1",
+      contract: "engram_entity_normalizer_v1",
       builtins: ["case_fold@1"],
       export: "normalizeZoneCode",
     });

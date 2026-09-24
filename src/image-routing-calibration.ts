@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 
+import { schemaIdAccepted } from "./schema-ids.js";
 import type { ImageDataprepManifest } from "./image-dataprep.js";
 
 export type ImageRoutingLabel =
@@ -21,7 +22,7 @@ export interface ImageRoutingLabelEntry {
 }
 
 export interface ImageRoutingLabelsFile {
-  schema: "graphify_image_routing_labels_v1";
+  schema: "engram_image_routing_labels_v1";
   labels: ImageRoutingLabelEntry[];
 }
 
@@ -34,7 +35,7 @@ export interface ImageRoutingRuleBucket {
 }
 
 export interface ImageRoutingRulesFile {
-  schema: "graphify_image_routing_rules_v1";
+  schema: "engram_image_routing_rules_v1";
   decision: ImageRoutingCalibrationDecision;
   routes: {
     skip?: ImageRoutingRuleBucket;
@@ -84,7 +85,7 @@ export interface ImageRoutingCalibrationResult {
 }
 
 export interface ImageRoutingSamplesFile {
-  schema: "graphify_image_routing_samples_v1";
+  schema: "engram_image_routing_samples_v1";
   run_id: string;
   sample_count: number;
   samples: ImageRoutingSample[];
@@ -152,11 +153,11 @@ function normalizeBucket(value: unknown): ImageRoutingRuleBucket {
 
 export function loadImageRoutingLabels(path: string): ImageRoutingLabelsFile {
   const record = asRecord(parseFile(path));
-  if (record.schema !== "graphify_image_routing_labels_v1") {
-    throw new Error("Image routing labels schema must be graphify_image_routing_labels_v1");
+  if (!schemaIdAccepted(record.schema, "engram_image_routing_labels_v1")) {
+    throw new Error("Image routing labels schema must be engram_image_routing_labels_v1");
   }
   return {
-    schema: "graphify_image_routing_labels_v1",
+    schema: "engram_image_routing_labels_v1",
     labels: Array.isArray(record.labels)
       ? record.labels.map((item) => {
         const label = asRecord(item);
@@ -172,12 +173,12 @@ export function loadImageRoutingLabels(path: string): ImageRoutingLabelsFile {
 
 export function loadImageRoutingRules(path: string): ImageRoutingRulesFile {
   const record = asRecord(parseFile(path));
-  if (record.schema !== "graphify_image_routing_rules_v1") {
-    throw new Error("Image routing rules schema must be graphify_image_routing_rules_v1");
+  if (!schemaIdAccepted(record.schema, "engram_image_routing_rules_v1")) {
+    throw new Error("Image routing rules schema must be engram_image_routing_rules_v1");
   }
   const routes = asRecord(record.routes);
   return {
-    schema: "graphify_image_routing_rules_v1",
+    schema: "engram_image_routing_rules_v1",
     decision: String(record.decision ?? "pending_labels") as ImageRoutingCalibrationDecision,
     routes: {
       skip: routes.skip === undefined ? undefined : normalizeBucket(routes.skip),
@@ -222,7 +223,7 @@ export function writeImageRoutingCalibrationSamples(
   const runDir = join(options.outputDir, options.runId);
   const samplesPath = join(runDir, "samples.json");
   const payload: ImageRoutingSamplesFile = {
-    schema: "graphify_image_routing_samples_v1",
+    schema: "engram_image_routing_samples_v1",
     run_id: options.runId,
     sample_count: samples.length,
     samples,

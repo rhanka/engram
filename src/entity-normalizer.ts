@@ -20,7 +20,7 @@ import type {
 } from "./types.js";
 
 /** Contract identifier written into the normalized profile and profile hash. */
-export const ENTITY_NORMALIZER_CONTRACT = "graphify_entity_normalizer_v1" as const;
+export const ENTITY_NORMALIZER_CONTRACT = "engram_entity_normalizer_v1" as const;
 
 /** A synchronous entity-key normalizer compiled for one node type. */
 export type EntityNormalizer = (value: string) => string;

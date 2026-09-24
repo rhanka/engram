@@ -1,5 +1,5 @@
 /**
- * EVOL 2.c — class-hierarchies builder (graphify_ontology_class_hierarchies_v1).
+ * EVOL 2.c — class-hierarchies builder (engram_ontology_class_hierarchies_v1).
  *
  * Pure builder for the SEPARATE, additive `class-hierarchies.json` artifact:
  * the CLASS layer of the ontology. A class hierarchy is a mono-parent tree
@@ -7,7 +7,7 @@
  * entity nodes by their `node_type` (`has_instance`).
  *
  * Contract (frozen consensus, see .graphify/scratch/design-evol.md):
- *   - This module does NOT touch the signed `graphify_scene_hierarchies_v1`
+ *   - This module does NOT touch the signed `engram_scene_hierarchies_v1`
  *     sidecar (src/scene-hierarchies.ts). The class layer is independent.
  *   - Class node ids are SYNTHETIC and namespaced `class:<ClassName>` so they
  *     never collide with raw registry / entity ids.
@@ -233,7 +233,7 @@ function buildOneClassHierarchy(
 }
 
 /**
- * Build the `graphify_ontology_class_hierarchies_v1` artifact from the profile
+ * Build the `engram_ontology_class_hierarchies_v1` artifact from the profile
  * `class_hierarchies` block and the graph nodes. Pure and deterministic (only
  * `generated_at` varies between runs over identical inputs).
  */

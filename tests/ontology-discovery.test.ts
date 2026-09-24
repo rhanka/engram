@@ -71,7 +71,7 @@ describe("ontology discovery workflow", () => {
       maxRegistryRecords: 1,
     });
 
-    expect(sample.schema).toBe("graphify_ontology_discovery_sample_v1");
+    expect(sample.schema).toBe("engram_ontology_discovery_sample_v1");
     expect(sample.files).toHaveLength(1);
     expect(sample.files[0]).toMatchObject({
       id: "sample-file-001",

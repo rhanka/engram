@@ -53,11 +53,11 @@ function stable(
   return rest;
 }
 
-describe("buildClassHierarchies — graphify_ontology_class_hierarchies_v1", () => {
+describe("buildClassHierarchies — engram_ontology_class_hierarchies_v1", () => {
   it("returns the envelope with hierarchies:{} for an empty profile block", () => {
     const artifact = buildClassHierarchies({}, []);
     expect(artifact.schema).toBe(ONTOLOGY_CLASS_HIERARCHIES_SCHEMA);
-    expect(artifact.schema).toBe("graphify_ontology_class_hierarchies_v1");
+    expect(artifact.schema).toBe("engram_ontology_class_hierarchies_v1");
     expect(artifact.hierarchies).toEqual({});
     expect(artifact.graph_hash).toBeNull();
     expect(artifact.profile_hash).toBeNull();

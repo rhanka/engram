@@ -1,5 +1,5 @@
 {
-  "schema": "graphify_ontology_hierarchies_v1",
+  "schema": "engram_ontology_hierarchies_v1",
   "root_ids": [
     "AM"
   ],

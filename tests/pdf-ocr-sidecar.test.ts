@@ -77,7 +77,7 @@ describe("Mistral OCR v4 structured sidecar capture", () => {
     expect(existsSync(ocrPath)).toBe(true);
 
     const sidecar = JSON.parse(readFileSync(ocrPath, "utf-8"));
-    expect(sidecar.schema).toBe("graphify_pdf_ocr_pages_v1");
+    expect(sidecar.schema).toBe("engram_pdf_ocr_pages_v1");
     expect(sidecar.model).toBe("mistral-ocr-4-0");
     expect(sidecar.source_file).toBe(pdfPath);
     expect(sidecar.sha256).toMatch(/^[0-9a-f]{64}$/);

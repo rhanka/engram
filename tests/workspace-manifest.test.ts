@@ -42,14 +42,14 @@ afterEach(() => {
   }
 });
 
-describe("buildWorkspaceManifest — pure builder (graphify_workspace_manifest_v1)", () => {
+describe("buildWorkspaceManifest — pure builder (engram_workspace_manifest_v1)", () => {
   it("stamps the schema id, numeric schema_version, and signed contract", () => {
     const manifest = buildWorkspaceManifest({
       artifacts: [],
       generatedAt: "2026-06-14T00:00:00.000Z",
     });
     expect(manifest.schema).toBe(WORKSPACE_MANIFEST_SCHEMA);
-    expect(manifest.schema).toBe("graphify_workspace_manifest_v1");
+    expect(manifest.schema).toBe("engram_workspace_manifest_v1");
     expect(manifest.schema_version).toBe(WORKSPACE_MANIFEST_SCHEMA_VERSION);
     expect(manifest.schema_version).toBe(1);
     expect(manifest.contract).toBe(WORKSPACE_BUNDLE_CONTRACT);
@@ -176,7 +176,7 @@ describe("emitWorkspaceManifest — owns the I/O, hashes real bytes", () => {
     expect(existsSync(result.path)).toBe(true);
     const onDisk = JSON.parse(readFileSync(result.path, "utf-8"));
     expect(onDisk).toEqual(result.manifest);
-    expect(onDisk.schema).toBe("graphify_workspace_manifest_v1");
+    expect(onDisk.schema).toBe("engram_workspace_manifest_v1");
     expect(onDisk.schema_version).toBe(1);
   });
 
@@ -222,10 +222,10 @@ describe("emitWorkspaceManifest — owns the I/O, hashes real bytes", () => {
     const { manifest } = emitWorkspaceManifest({ bundleDir: dir, generatedAt: "t" });
     const byName = new Map(manifest.artifacts.map((a) => [a.name, a]));
     expect(byName.get("scene-hierarchies")!.schema).toBe(
-      "graphify_scene_hierarchies_v1",
+      "engram_scene_hierarchies_v1",
     );
     expect(byName.get("reconciliation-candidates")!.schema).toBe(
-      "graphify_ontology_reconciliation_candidates_v1",
+      "engram_ontology_reconciliation_candidates_v1",
     );
   });
 

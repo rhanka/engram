@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
+import { schemaIdAccepted } from "./schema-ids.js";
 import type { LlmExecutionMode } from "./llm-execution.js";
 
-export const WIKI_DESCRIPTION_SCHEMA = "graphify_wiki_description_v1" as const;
+export const WIKI_DESCRIPTION_SCHEMA = "engram_wiki_description_v1" as const;
 export const WIKI_DESCRIPTION_PROMPT_VERSION = "wiki-description-v1" as const;
 
 export type WikiDescriptionTargetKind = "node" | "community";
@@ -102,7 +103,7 @@ export interface WikiDescriptionSidecarIndex<
   TNodeId extends string = string,
   TCommunityId extends string = string,
 > {
-  schema: "graphify_wiki_description_index_v1";
+  schema: "engram_wiki_description_index_v1";
   graph_hash: string;
   prompt_version: string;
   nodes: Record<TNodeId, WikiNodeDescriptionSidecar>;
@@ -369,7 +370,7 @@ export function validateWikiDescriptionSidecar(value: unknown): string[] {
   const issues: string[] = [];
   if (!isRecord(value)) return ["wiki description sidecar must be a JSON object"];
 
-  if (value.schema !== WIKI_DESCRIPTION_SCHEMA) {
+  if (!schemaIdAccepted(value.schema, WIKI_DESCRIPTION_SCHEMA)) {
     issues.push(`schema must be ${WIKI_DESCRIPTION_SCHEMA}`);
   }
   if (!isNonEmptyString(value.target_id)) issues.push("target_id is required");

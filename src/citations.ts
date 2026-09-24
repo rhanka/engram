@@ -21,7 +21,7 @@ import type { OntologyCitation } from "./types.js";
 export const CITATIONS_INLINE_TOP_K = 8;
 
 /** Schema tag for the co-derived Level-2 store. */
-export const CITATIONS_SIDECAR_SCHEMA = "graphify_ontology_citations_v1";
+export const CITATIONS_SIDECAR_SCHEMA = "engram_ontology_citations_v1";
 
 /** Relative path (under the graph dir) of the Level-2 keyed store. */
 export const CITATIONS_SIDECAR_RELPATH = "ontology/citations.json";

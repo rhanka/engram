@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
+import { schemaIdAccepted } from "./schema-ids.js";
 import type { ProfileState } from "./configured-dataprep.js";
 import type {
   DetectionResult,
@@ -10,9 +11,9 @@ import type {
   RegistryRecord,
 } from "./types.js";
 
-export const ONTOLOGY_DISCOVERY_SAMPLE_SCHEMA = "graphify_ontology_discovery_sample_v1";
-export const ONTOLOGY_DISCOVERY_PROPOSALS_SCHEMA = "graphify_ontology_discovery_proposals_v1";
-export const ONTOLOGY_PROFILE_DIFF_SCHEMA = "graphify_ontology_profile_diff_v1";
+export const ONTOLOGY_DISCOVERY_SAMPLE_SCHEMA = "engram_ontology_discovery_sample_v1";
+export const ONTOLOGY_DISCOVERY_PROPOSALS_SCHEMA = "engram_ontology_discovery_proposals_v1";
+export const ONTOLOGY_PROFILE_DIFF_SCHEMA = "engram_ontology_profile_diff_v1";
 
 export type OntologyDiscoveryProposalKind =
   | "node_type"
@@ -301,7 +302,7 @@ export function buildOntologyDiscoveryDiff(
   const operations: OntologyProfileDiffOperation[] = [];
   const evidenceRefs = knownEvidenceRefs(sample);
 
-  if (proposalsFile.schema !== ONTOLOGY_DISCOVERY_PROPOSALS_SCHEMA) {
+  if (!schemaIdAccepted(proposalsFile.schema, ONTOLOGY_DISCOVERY_PROPOSALS_SCHEMA)) {
     issues.push({ severity: "error", message: `Unsupported discovery proposals schema: ${proposalsFile.schema}` });
   }
   if (proposalsFile.profile_hash !== profile.profile_hash) {
