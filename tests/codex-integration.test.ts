@@ -46,8 +46,8 @@ describe("Codex integration contract", () => {
     expect(skill).toContain("finalize-update");
     expect(skill).toContain("regenerate the labeled artifacts");
     expect(skill).toContain("--directed");
-    expect(skill).toContain("--graph-out .graphify/graph.json");
-    expect(skill).toContain("engram studio export .graphify/studio");
+    expect(skill).toContain("--graph-out .engram/graph.json");
+    expect(skill).toContain("engram studio export .engram/studio");
     expect(skill).toContain(".graphify_runtime.json");
     expect(skill).toContain("skill-runtime.js");
     expect(skill).toContain("not a Bash command like `engram .`");
@@ -71,7 +71,7 @@ describe("Codex integration contract", () => {
     expect(skill).toContain("profile-validate-extraction");
     expect(skill).toContain("profile-report");
     expect(skill).toContain("fallback to the existing non-profile workflow");
-    expect(skill).toContain(".graphify/branch.json");
+    expect(skill).toContain(".engram/branch.json");
     expect(skill).toContain("engram migrate-state --dry-run");
     expect(skill).not.toContain(".graphify_python");
     expect(skill).not.toContain("python3 -m graphify");
