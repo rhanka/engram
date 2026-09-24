@@ -47,7 +47,7 @@ engram export obsidian --graph .graphify/graph.json --descriptions .graphify/wik
 
 ## What engram is for
 
-engram is built around Andrej Karpathy's /raw folder workflow: drop anything into a folder - papers, tweets, screenshots, code, notes - and get a structured knowledge graph that shows you what you didn't know was connected.
+Engram is built around Andrej Karpathy's /raw folder workflow: drop anything into a folder - papers, tweets, screenshots, code, notes - and get a structured knowledge graph that shows you what you didn't know was connected.
 
 Three things it does that Claude alone cannot:
 1. **Persistent graph** - relationships are stored in `.graphify/graph.json` and survive across sessions. Ask questions weeks later without re-reading everything.
@@ -877,13 +877,13 @@ engram hook status     # check
 
 After every `git commit`, the hook detects which code files changed (via `git diff HEAD~1`), re-runs AST extraction on those files, and rebuilds `graph.json` and `GRAPH_REPORT.md`. Doc/image changes are ignored by the hook - run `/engram --update` manually for those.
 
-If a post-commit hook already exists, engram appends to it rather than replacing it.
+If a post-commit hook already exists, Engram appends to it rather than replacing it.
 
 ---
 
 ## For native CLAUDE.md integration
 
-Run once per project to make engram always-on in Claude Code sessions:
+Run once per project to make Engram always-on in Claude Code sessions:
 
 ```bash
 engram claude install
@@ -942,7 +942,7 @@ Do not add embeddings, databases, a resident LLM backend, or a forked OCR/PDF pi
 - If `.graphify/graph.json` is missing but legacy `graphify-out/graph.json` exists, run `engram migrate-state --dry-run` first. If it reports tracked legacy artifacts, ask before using the recommended `git mv -f graphify-out .engram` and commit message; do not auto-stage or auto-commit.
 - For architecture or codebase questions, when `.graphify/graph.json` exists, first run `engram query "<question>"` (or `engram path "<A>" "<B>"` / `engram explain "<concept>"`); these return a scoped subgraph, usually much smaller than `GRAPH_REPORT.md` or raw grep output.
 - Use `.graphify/wiki/index.md` first when present; read `.graphify/GRAPH_REPORT.md` only for broad architecture review or when `query` / `path` / `explain` do not surface enough context.
-- If `.graphify/needs_update` exists or `.graphify/branch.json` has `"stale": true`, tell the user the graph is stale and run the platform engram command with `--update` before relying on semantic results.
+- If `.graphify/needs_update` exists or `.graphify/branch.json` has `"stale": true`, tell the user the graph is stale and run the platform Engram command with `--update` before relying on semantic results.
 - Before proposing or committing `.graphify` artifacts, run `engram portable-check .graphify`; commit-safe graph artifacts must use repo-relative paths, and never commit `.graphify/branch.json`, `.graphify/worktree.json`, `.graphify/needs_update`, or `.graphify/cache/`. If a repo already tracks any of them, first add them to `.gitignore`, then propose `git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update` and `git rm -r --cached .graphify/cache`; never mutate git state without asking.
 - Git hooks may mark stale state after branch switches, merges, and rewrites. Never delete `.graphify/` automatically; use `engram state prune` only as a non-destructive cleanup preview.
 
