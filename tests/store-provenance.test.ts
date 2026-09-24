@@ -5,16 +5,16 @@ import {
   createInMemoryCanonicalMemoryStoreV1,
   isFencedFactoryStoreV1,
   verifyStoreProvenance,
-  GRAPHIFY_MEMORY_ADAPTER_IDENTITY,
+  ENGRAM_MEMORY_ADAPTER_IDENTITY,
   type CanonicalMemoryStorePort,
   type Digest,
   type FencedStoreConstructionV1,
   type OperationalCapabilityReceiptV1,
   type Result,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 // Internal fence mark (barrel does not re-export it). A test may model the sqlite/postgres opener, which stamps
 // the raw store only after a real kernel fence; the factory then propagates the mark to the wrapper it returns.
-import { markFencedStoreV1 } from "../graphify-memory/store-factory.js";
+import { markFencedStoreV1 } from "../engram-memory/store-factory.js";
 
 const NOW = "2026-09-21T12:00:00.000Z";
 const DEADLINE = "2026-09-21T12:05:00.000Z";
@@ -24,7 +24,7 @@ const code = (r: Result<unknown>) => (r.ok ? "OK" : r.error.code);
 const PROD = { allowUnfencedMemoryStore: false } as const;
 const EMBEDDED = { allowUnfencedMemoryStore: true } as const;
 
-/** A bare store built by NO graphify-memory factory: readiness returns a receipt with the given backend + optional declared identity. */
+/** A bare store built by NO engram-memory factory: readiness returns a receipt with the given backend + optional declared identity. */
 function bareStore(backend: "memory" | "sqlite", declared?: { adapter_id?: string; adapter_version?: string; adapter_build_digest?: Digest }): CanonicalMemoryStorePort {
   const value: OperationalCapabilityReceiptV1 = { store_id: "store:x", backend, storage_epoch: backend === "memory" ? "0" : "7", high_water_cursor: "0", capabilities: caps(backend), ...declared, issued_at: NOW, expires_at: DEADLINE, receipt_digest: ("sha256:" + "0".repeat(64)) as Digest };
   return { version: 1, async readiness() { return { ok: true as const, value }; }, async close() { return { ok: true as const, value: { closed: true as const } }; } } as unknown as CanonicalMemoryStorePort;
@@ -73,11 +73,11 @@ describe("store provenance admission (§5.9, in-process mark)", () => {
   });
 
   it("refuses a production store NOT built by this factory — even one self-declaring the correct identity (the mark, not a copyable string, is the proof)", async () => {
-    const store = bareStore("sqlite", GRAPHIFY_MEMORY_ADAPTER_IDENTITY);
+    const store = bareStore("sqlite", ENGRAM_MEMORY_ADAPTER_IDENTITY);
     expect(isFencedFactoryStoreV1(store)).toBe(false);
     const refused = verifyStoreProvenance(store, await readinessOf(store), PROD, "capture");
     expect(code(refused)).toBe("CAPABILITY_UNAVAILABLE");
-    if (!refused.ok) expect(refused.error.message).toContain("not built by this graphify-memory module instance");
+    if (!refused.ok) expect(refused.error.message).toContain("not built by this engram-memory module instance");
   });
 
   // §5.9 F1: the in-memory exemption is (opt-in flag) AND (module membership) — never the flag alone, never the receipt's backend string.

@@ -43,7 +43,7 @@ describe("legacy memory removal", () => {
   it("packed artifact and repository contain no compatibility API after migration", () => {
     // The neutral migration surface must ship, but no legacy compatibility API may
     // survive it — not in the repository sources and not in the packed engine closure.
-    const memoryPackage = join(root, "graphify-memory");
+    const memoryPackage = join(root, "engram-memory");
     const scanned = [
       ...typeScriptSources(sourceDirectory),
       ...typeScriptSources(memoryPackage),
@@ -78,7 +78,7 @@ describe("legacy memory removal", () => {
   });
 
   it("the retired built-in local administrator family (§5.10) is absent from the package surface and sources", () => {
-    const memoryPackage = join(root, "graphify-memory");
+    const memoryPackage = join(root, "engram-memory");
     // Retired by MEMBERSHIP in the administration family, not by Local* prefix:
     // LocalFilesystemProbeResultV1 (sqlite.ts) is not an admin symbol and stays.
     const retiredAdminFamily = [
@@ -105,6 +105,6 @@ describe("legacy memory removal", () => {
     const leaks = sources.flatMap((file) =>
       retiredVocabulary.filter((token) => file.text.includes(token)).map((token) => `${token} @ ${file.path.slice(root.length + 1)}`),
     );
-    expect(leaks, "no retired admin family symbol or standalone-service/managed-service mode vocabulary may remain in graphify-memory").toEqual([]);
+    expect(leaks, "no retired admin family symbol or standalone-service/managed-service mode vocabulary may remain in engram-memory").toEqual([]);
   });
 });

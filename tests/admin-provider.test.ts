@@ -7,7 +7,7 @@ import {
   type AdminProviderPort,
   type Digest,
   type Result,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 
 // §5.10/§10: the property the retired built-in local administrator once held — "a fresh store denies until an
 // explicit bootstrap, and receipts issued before a rotation stop working" — is, in V2, an obligation ON THE
