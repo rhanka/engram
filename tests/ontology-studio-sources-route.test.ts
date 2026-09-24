@@ -82,7 +82,7 @@ describe("GET /studio/sources/", () => {
       schema: string;
       documents: Record<string, { original: string; bundled: boolean; via: string }>;
     };
-    expect(payload.schema).toBe("graphify_cited_source_provenance_v1");
+    expect(payload.schema).toBe("engram_cited_source_provenance_v1");
     const entry = payload.documents[CITED_MD_REL];
     expect(entry).toBeDefined();
     expect(entry!.original).toBe(originalRel);
