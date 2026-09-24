@@ -22,6 +22,65 @@ import { describe, expect, it } from "vitest";
 //   and help text naming the legacy key.
 // The negative lookbehind keeps `myenv.GRAPHIFY_X`-style identifiers from
 // matching; only a standalone `env` counts.
+//
+// That accessor pattern cannot see a destructured read
+// (`const { GRAPHIFY_X } = process.env`) or a read through an alias
+// (`const e = env; e.GRAPHIFY_X`). BARE_LEGACY_IDENTIFIER closes that class:
+// once comments and the contents of string and template literals are blanked
+// out, any remaining `GRAPHIFY_*` token is code, not text — and outside
+// src/env.ts no code may name a legacy key. The sanctioned
+// `engramEnv("…", "GRAPHIFY_X")` arguments and generated shell text such as
+// `$GRAPHIFY_CMD` live inside literals and are blanked; `*_GRAPHIFY_*`
+// constants are excluded by the identifier boundaries.
+const BARE_LEGACY_IDENTIFIER = /(?<![A-Za-z0-9_$])GRAPHIFY_[A-Z0-9_]*(?![A-Za-z0-9_$])/;
+
+// Blanks // and /* */ comments and the contents of '…', "…" and `…` literals.
+// ${…} substitutions inside template literals are kept as code, so an
+// expression interpolated into a template is still scanned.
+function codeOnly(source: string): string {
+  let out = "";
+  let i = 0;
+  const templateDepth: number[] = [];
+  let braceDepth = 0;
+  const skipQuoted = (quote: string) => {
+    i += 1;
+    while (i < source.length && source[i] !== quote) {
+      if (source[i] === "\\") i += 1;
+      else if (source[i] === "\n") out += "\n";
+      i += 1;
+    }
+    i += 1;
+    out += " ";
+  };
+  const skipTemplate = () => {
+    i += 1;
+    while (i < source.length) {
+      const c = source[i];
+      if (c === "\\") { i += 2; continue; }
+      if (c === "`") { i += 1; out += " "; return; }
+      if (c === "$" && source[i + 1] === "{") { i += 2; templateDepth.push(braceDepth); braceDepth += 1; out += " "; return; }
+      if (c === "\n") out += "\n";
+      i += 1;
+    }
+  };
+  while (i < source.length) {
+    const c = source[i];
+    const n = source[i + 1];
+    if (c === "/" && n === "/") { while (i < source.length && source[i] !== "\n") i += 1; continue; }
+    if (c === "/" && n === "*") { i += 2; while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) { if (source[i] === "\n") out += "\n"; i += 1; } i += 2; continue; }
+    if (c === "'" || c === '"') { skipQuoted(c); continue; }
+    if (c === "`") { skipTemplate(); continue; }
+    if (c === "{") { braceDepth += 1; }
+    if (c === "}") {
+      braceDepth -= 1;
+      if (templateDepth.length && templateDepth[templateDepth.length - 1] === braceDepth) { templateDepth.pop(); skipTemplate(); continue; }
+    }
+    out += c;
+    i += 1;
+  }
+  return out;
+}
+
 const DIRECT_LEGACY_ENV_READ =
   /(?:process\s*\.\s*env|(?<![A-Za-z0-9_$.])env)\s*(\?\.\s*|\.\s*|\[\s*["'])GRAPHIFY_[A-Z0-9_]*/;
 
@@ -65,6 +124,20 @@ describe("engram env helper stays the only GRAPHIFY_* reader", () => {
       DIRECT_LEGACY_ENV_READ.test(readFileSync(file, "utf8")),
     );
     expect(offenders).toEqual([]);
+  });
+
+  it("has no GRAPHIFY_* identifier in code outside src/env.ts (destructuring, aliasing)", () => {
+    const offenders = files.filter((file) => BARE_LEGACY_IDENTIFIER.test(codeOnly(readFileSync(file, "utf8"))));
+    expect(offenders).toEqual([]);
+  });
+
+  it("catches the destructured and aliased read forms, and ignores literals", () => {
+    expect(BARE_LEGACY_IDENTIFIER.test(codeOnly("const { GRAPHIFY_STORE } = process.env;"))).toBe(true);
+    expect(BARE_LEGACY_IDENTIFIER.test(codeOnly("const e = env; const v = e.GRAPHIFY_STORE;"))).toBe(true);
+    expect(BARE_LEGACY_IDENTIFIER.test(codeOnly("const v = `${process.env.GRAPHIFY_STORE}`;"))).toBe(true);
+    expect(BARE_LEGACY_IDENTIFIER.test(codeOnly('engramEnv("ENGRAM_STORE", "GRAPHIFY_STORE");'))).toBe(false);
+    expect(BARE_LEGACY_IDENTIFIER.test(codeOnly("const script = `GRAPHIFY_CMD=engram\\n`; // GRAPHIFY_NOTE"))).toBe(false);
+    expect(BARE_LEGACY_IDENTIFIER.test(codeOnly("const DEFAULT_GRAPHIFY_STATE_DIR = 1;"))).toBe(false);
   });
 
   it("is not vacuous: src/env.ts still names GRAPHIFY_* keys", () => {
