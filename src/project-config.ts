@@ -309,7 +309,7 @@ export function validateProjectConfig(config: GraphifyProjectConfig): string[] {
   }
   if (asRecord(llmExecution.mesh).adapter !== undefined) {
     errors.push(
-      "llm_execution.mesh.adapter is no longer read: it named nothing, since graphify has no adapter registry to resolve it against. Mesh mode takes an injected client built with createGraphifyMesh() instead. Remove the key.",
+      "llm_execution.mesh.adapter is no longer read: it named nothing, since engram has no adapter registry to resolve it against. Mesh mode takes an injected client built with createGraphifyMesh() instead. Remove the key.",
     );
   }
   if (outputs.state_dir !== undefined && typeof outputs.state_dir !== "string") {
@@ -337,7 +337,7 @@ export function normalizeProjectConfig(
 ): NormalizedProjectConfig {
   const errors = validateProjectConfig(config);
   if (errors.length > 0) {
-    throw new Error(`Invalid graphify project config:\n${errors.map((item) => `  - ${item}`).join("\n")}`);
+    throw new Error(`Invalid engram project config:\n${errors.map((item) => `  - ${item}`).join("\n")}`);
   }
 
   const resolvedSourcePath = resolve(sourcePath);

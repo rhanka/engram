@@ -790,7 +790,7 @@ export function renderWorkspaceShell(opts: RenderWorkspaceShellOptions): string 
     "</head>",
     "<body>",
     '<a class="ws-skip-link" href="#central-display">Skip to central display</a>',
-    `<div class="ws-root" role="application" aria-label="Graphify ontology workspace" data-token-source="${tokenSource}">`,
+    `<div class="ws-root" role="application" aria-label="Engram ontology workspace" data-token-source="${tokenSource}">`,
     '<header class="ws-header" role="banner">',
     `<h1>${title}</h1>`,
     '<div class="ws-header-meta">',

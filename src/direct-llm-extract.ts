@@ -295,7 +295,7 @@ export async function extractSemanticFilesDirectParallel(
         chunkErrors.push({ chunkIndex: index, error });
         // eslint-disable-next-line no-console
         console.error(
-          `[graphify extract] chunk ${index + 1}/${chunks.length} failed: ${error.message}`,
+          `[engram extract] chunk ${index + 1}/${chunks.length} failed: ${error.message}`,
         );
       }
     }

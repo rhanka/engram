@@ -181,7 +181,7 @@ export function buildProfileReport(context: ProfileReportContext): string {
   const graphLinks = Array.isArray(context.graph?.links) ? context.graph.links.length : 0;
 
   return [
-    "# Graphify Profile Report",
+    "# Engram Profile Report",
     "",
     ...projectConfigSection(context),
     "",

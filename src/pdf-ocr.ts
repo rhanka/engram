@@ -102,7 +102,7 @@ async function loadMistralOcrModule(): Promise<MistralOcrModule> {
         const detail = error instanceof Error ? error.message : String(error);
         throw new Error(
           "PDF OCR requires the bundled dependency mistral-ocr, but it could not be loaded. " +
-          "Reinstall it globally with `npm install -g @sentropic/graphify`, then retry. " + detail,
+          "Reinstall it globally with `npm install -g @sentropic/engram`, then retry. " + detail,
         );
       });
   }

@@ -135,14 +135,14 @@ export async function validateOllamaBaseUrl(
     parsed = new URL(url);
   } catch {
     if (warn) {
-      console.warn(`[graphify] WARNING: OLLAMA_BASE_URL=${JSON.stringify(url)} is not a parseable URL.`);
+      console.warn(`[engram] WARNING: OLLAMA_BASE_URL=${JSON.stringify(url)} is not a parseable URL.`);
     }
     return;
   }
   if (!ALLOWED_SCHEMES.has(parsed.protocol)) {
     if (warn) {
       console.warn(
-        `[graphify] WARNING: OLLAMA_BASE_URL has unexpected scheme '${parsed.protocol}'; expected http or https.`,
+        `[engram] WARNING: OLLAMA_BASE_URL has unexpected scheme '${parsed.protocol}'; expected http or https.`,
       );
     }
     return;
@@ -160,7 +160,7 @@ export async function validateOllamaBaseUrl(
   if (warn && !isLoopback) {
     const schemeNote = parsed.protocol === "http:" ? " (UNENCRYPTED)" : "";
     console.warn(
-      `[graphify] WARNING: OLLAMA_BASE_URL points to non-loopback host ${JSON.stringify(host)}${schemeNote}. ` +
+      `[engram] WARNING: OLLAMA_BASE_URL points to non-loopback host ${JSON.stringify(host)}${schemeNote}. ` +
         "Your corpus will be sent there.",
     );
   }
@@ -194,7 +194,7 @@ export function providerBaseUrlOk(
   } catch {
     if (warn) {
       console.warn(
-        `[graphify] WARNING: provider ${JSON.stringify(name)} has an unparseable base_url; ignoring.`,
+        `[engram] WARNING: provider ${JSON.stringify(name)} has an unparseable base_url; ignoring.`,
       );
     }
     return false;
@@ -202,7 +202,7 @@ export function providerBaseUrlOk(
   if (!ALLOWED_SCHEMES.has(parsed.protocol)) {
     if (warn) {
       console.warn(
-        `[graphify] WARNING: provider ${JSON.stringify(name)} base_url scheme ${JSON.stringify(parsed.protocol)} is not ` +
+        `[engram] WARNING: provider ${JSON.stringify(name)} base_url scheme ${JSON.stringify(parsed.protocol)} is not ` +
           "http/https; ignoring.",
       );
     }
@@ -218,7 +218,7 @@ export function providerBaseUrlOk(
     literal.startsWith("127.");
   if (warn && parsed.protocol === "http:" && !isLoopback) {
     console.warn(
-      `[graphify] WARNING: provider ${JSON.stringify(name)} sends your corpus to ${JSON.stringify(host)} over plaintext ` +
+      `[engram] WARNING: provider ${JSON.stringify(name)} sends your corpus to ${JSON.stringify(host)} over plaintext ` +
         "http. Use https unless this is a trusted local endpoint.",
     );
   }

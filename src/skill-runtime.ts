@@ -666,7 +666,7 @@ function runtimeInfo(): Record<string, unknown> {
 
 export async function main(argv: string[] = process.argv): Promise<void> {
   const program = new Command();
-  program.name("graphify-skill-runtime");
+  program.name("engram-skill-runtime");
 
   program
     .command("runtime-info")
@@ -677,7 +677,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
   program
     .command("paths")
-    .description("Print the graphify state path contract for a workspace root")
+    .description("Print the engram state path contract for a workspace root")
     .argument("[root]", "Workspace root", ".")
     .action((root) => {
       console.log(JSON.stringify(resolveGraphifyPaths({ root: resolve(root) }), null, 2));
@@ -696,7 +696,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         ? resolve(opts.config)
         : discoverProjectConfig(root).path;
       if (!configPath) {
-        throw new Error(`No graphify project config found under ${root}`);
+        throw new Error(`No engram project config found under ${root}`);
       }
       const projectConfig = loadProjectConfig(configPath);
       const profile = loadOntologyProfile(projectConfig.profile.resolvedPath, { projectConfig });
@@ -719,7 +719,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         ? resolve(opts.config)
         : discoverProjectConfig(root).path;
       if (!configPath) {
-        throw new Error(`No graphify project config found under ${root}`);
+        throw new Error(`No engram project config found under ${root}`);
       }
       const config = loadProjectConfig(configPath);
       const scopeSelection = resolveConfiguredInputScopeSelection(config, opts);
@@ -1009,10 +1009,10 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
   program
     .command("migrate-state")
-    .description("Migrate legacy graphify-out state into .graphify")
+    .description("Migrate legacy graphify-out state into .engram")
     .option("--root <path>", "Workspace root", ".")
     .option("--dry-run", "Print the migration plan without writing files")
-    .option("--force", "Overwrite existing files under .graphify")
+    .option("--force", "Overwrite existing files under .engram")
     .option("--json", "Print JSON output")
     .action(async (opts) => {
       const { migrateGraphifyOut, migrationResultToText } = await import("./migrate-state.js");
@@ -1073,7 +1073,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
   program
     .command("scope-inspect")
-    .description("Inspect resolved Graphify input scope")
+    .description("Inspect resolved Engram input scope")
     .option("--root <path>", "Workspace root", ".")
     .option("--scope <mode>", scopeOptionDescription())
     .option("--all", "Alias for --scope all")

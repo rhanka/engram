@@ -355,7 +355,7 @@ async function loadFreshWikiDescriptionSidecarIndex(
     console.warn(
       `Skipping ${stale.nodes.length} node and ${stale.communities.length} community description(s) ` +
       `that are stale under graph_hash=${currentGraphHash.slice(0, 12)} ` +
-      `prompt_version=${WIKI_DESCRIPTION_PROMPT_VERSION}. Re-generate with graphify wiki describe.`,
+      `prompt_version=${WIKI_DESCRIPTION_PROMPT_VERSION}. Re-generate with engram wiki describe.`,
     );
   }
   return fresh;
@@ -2789,7 +2789,7 @@ export async function main(): Promise<void> {
       const root = resolve(opts.root);
       const configPath = opts.config ? resolve(opts.config) : discoverProjectConfig(root).path;
       if (!configPath) {
-        console.error(`error: no graphify project config found under ${root}`);
+        console.error(`error: no engram project config found under ${root}`);
         process.exit(1);
       }
       const projectConfig = loadProjectConfig(configPath);
@@ -2813,7 +2813,7 @@ export async function main(): Promise<void> {
         ? resolve(opts.config)
         : discoverProjectConfig(root).path;
       if (!configPath) {
-        console.error(`error: no graphify project config found under ${root}`);
+        console.error(`error: no engram project config found under ${root}`);
         process.exit(1);
       }
       const config = loadProjectConfig(configPath);
@@ -2850,14 +2850,14 @@ export async function main(): Promise<void> {
     });
 
   // graphify profile evaluate  (L5)
-  // Deterministic, $0 (no LLM) measurement of a `engram link` run against a
+  // Deterministic, $0 (no LLM) measurement of a `graphify link` run against a
   // hand-labelled gold in the SAME occurrence schema. Emits evaluation.json and
   // a CI gate: exit 0 iff validation + floors + ceilings pass, non-zero
   // otherwise. Precision and unresolved-rate are always reported together.
   profile
     .command("evaluate")
     .description("Measure a link run's occurrences.json against a gold set ($0, deterministic; gate on floors/ceilings)")
-    .requiredOption("--run <path>", "occurrences.json produced by graphify link")
+    .requiredOption("--run <path>", "occurrences.json produced by engram link")
     .requiredOption("--gold <path>", "gold occurrence set (engram_typed_linking_gold_v1 envelope)")
     .option("--out <path>", "Write evaluation.json here")
     .option("--profile-state <path>", "Stamp profile_hash + normalizer_hashes from a profile state")
@@ -3086,8 +3086,8 @@ export async function main(): Promise<void> {
         : discoverProjectConfig(root).path;
       if (!configPath) {
         console.error(
-          `error: no graphify project config found under ${root}. ` +
-          `Create graphify.yaml (or .graphify/config.yaml) first, or pass --config <path>.`,
+          `error: no engram project config found under ${root}. ` +
+          `Create engram.yaml (or .engram/config.yaml) first, or pass --config <path>.`,
         );
         process.exit(1);
       }
@@ -3155,10 +3155,10 @@ export async function main(): Promise<void> {
         const relRoot = profilePath === "." ? "." : profilePath;
         console.log(
           `Next step (LLM, opt-in): run semantic extraction explicitly, for example:\n` +
-          `  graphify extract ${relRoot} --semantic <extraction.json>\n` +
+          `  engram extract ${relRoot} --semantic <extraction.json>\n` +
           `or, for a direct backend (costs tokens):\n` +
-          `  graphify extract ${relRoot} --backend anthropic|openai|gemini|mistral|cohere|ollama\n` +
-          `Then rerun: graphify profile ontology-output --profile-state ${dataprepResult.paths.profile.state} --input <extraction.json> --out-dir ${ontologyOutputDir}`,
+          `  engram extract ${relRoot} --backend anthropic|openai|gemini|mistral|cohere|ollama\n` +
+          `Then rerun: engram profile ontology-output --profile-state ${dataprepResult.paths.profile.state} --input <extraction.json> --out-dir ${ontologyOutputDir}`,
         );
       } else if (!ontologyRan && ontologyConfig.enabled) {
         console.log(
@@ -3273,7 +3273,7 @@ export async function main(): Promise<void> {
   ontology
     .command("serve")
     .description("Start an ontology MCP server; write tools require explicit --write")
-    .requiredOption("--config <path>", "Graphify project config path")
+    .requiredOption("--config <path>", "Engram project config path")
     .option("--write", "Enable ontology mutation tools")
     .option("--graph <path>", "Graph JSON path; defaults to <state_dir>/graph.json")
     .action(async (opts) => {
@@ -3281,7 +3281,7 @@ export async function main(): Promise<void> {
       const profileStatePath = join(projectConfig.outputs.state_dir, "profile", "profile-state.json");
       const graphPath = opts.graph ? resolve(opts.graph) : join(projectConfig.outputs.state_dir, "graph.json");
       if (!existsSync(profileStatePath)) {
-        console.error(`error: profile state not found: ${profileStatePath}. Run graphify profile dataprep first.`);
+        console.error(`error: profile state not found: ${profileStatePath}. Run engram profile dataprep first.`);
         process.exit(1);
       }
       const { serve } = await import("./serve.js");
@@ -3297,17 +3297,17 @@ export async function main(): Promise<void> {
     .command("studio")
     .description(
       "Start a local ontology reconciliation studio API; --write enables patch mutation routes (loopback only). " +
-        "When --store (or GRAPHIFY_STORE / storage.mirrors) names a capable GraphStore that has been " +
+        "When --store (or ENGRAM_STORE / storage.mirrors) names a capable GraphStore that has been " +
         "`engram store push`ed, GET /api/ontology/groups serves O(#groups) counts from the store instead of an " +
         "O(#nodes) client recompute, and GET /api/ontology/window serves a bounded top-N first-paint slice so the " +
         "studio renders without transferring the full multi-MB scene.",
     )
-    .requiredOption("--config <path>", "Graphify project config path")
+    .requiredOption("--config <path>", "Engram project config path")
     .option("--host <host>", "Host to bind", "127.0.0.1")
     .option("--port <port>", "Port to bind; defaults to an ephemeral port")
     .option("--write", "Enable POST /api/ontology/patch/{validate,dry-run,apply} routes (loopback only)")
     .option("--token <token>", "Bearer token for write routes (default: random hex24 generated at startup)")
-    .option("--store <id>", "GraphStore backend id to serve group counts and the first-paint window from (default: GRAPHIFY_STORE or storage.mirrors[0].backend)")
+    .option("--store <id>", "GraphStore backend id to serve group counts and the first-paint window from (default: ENGRAM_STORE or storage.mirrors[0].backend)")
     .option(
       "--sources-root <dir>",
       "Root the cited-source route (GET /studio/sources/<source_file>) resolves relative locators against (default: the parent of the state dir)",
@@ -3316,7 +3316,7 @@ export async function main(): Promise<void> {
       const projectConfig = loadProjectConfig(resolve(opts.config));
       const profileStatePath = join(projectConfig.outputs.state_dir, "profile", "profile-state.json");
       if (!existsSync(profileStatePath)) {
-        console.error(`error: profile state not found: ${profileStatePath}. Run graphify profile dataprep first.`);
+        console.error(`error: profile state not found: ${profileStatePath}. Run engram profile dataprep first.`);
         process.exit(1);
       }
       const { startOntologyStudioServer } = await import("./ontology-studio.js");
@@ -3425,12 +3425,12 @@ export async function main(): Promise<void> {
     .command("push")
     .description(
       "Push the graph to the configured GraphStore in REPLACE mode so it rebuilds the O(#groups) " +
-        "group-by counts + windowed positions. Store = --store, else GRAPHIFY_STORE " +
-        "(+ GRAPHIFY_POSTGRES_URL for postgres), else storage.mirrors[0].backend.",
+        "group-by counts + windowed positions. Store = --store, else ENGRAM_STORE " +
+        "(+ ENGRAM_POSTGRES_URL for postgres), else storage.mirrors[0].backend.",
     )
     .option("--graph <path>", "Path to graph.json (default: --config's state dir, else .graphify/graph.json)")
-    .option("--config <path>", "Graphify project config path (resolves the graph dir + storage.mirrors)")
-    .option("--store <id>", "Store backend id (default: GRAPHIFY_STORE or storage.mirrors[0].backend)")
+    .option("--config <path>", "Engram project config path (resolves the graph dir + storage.mirrors)")
+    .option("--store <id>", "Store backend id (default: ENGRAM_STORE or storage.mirrors[0].backend)")
     .option("--mode <mode>", "Push mode: replace (default; rebuilds the aggregate + positions) or merge", "replace")
     .option("--dry-run", "Plan and report counts without writing to the backend")
     .option(
@@ -3457,8 +3457,8 @@ export async function main(): Promise<void> {
   storeCommand
     .command("status")
     .description("Show the configured GraphStore's capabilities + latest snapshot meta (cheap; no full scan)")
-    .option("--config <path>", "Graphify project config path (resolves storage.mirrors)")
-    .option("--store <id>", "Store backend id (default: GRAPHIFY_STORE or storage.mirrors[0].backend)")
+    .option("--config <path>", "Engram project config path (resolves storage.mirrors)")
+    .option("--store <id>", "Store backend id (default: ENGRAM_STORE or storage.mirrors[0].backend)")
     .action(async (opts) => {
       try {
         const { runStoreStatus } = await import("./store-cli.js");
@@ -3589,7 +3589,7 @@ export async function main(): Promise<void> {
       const graph = buildMerge([fragment], { graphPath });
       toJson(graph, new Map(), graphPath, { force: true });
       console.log(
-        `[graphify build] ingested fragment ${fragmentPath} into ${graphPath}: ` +
+        `[engram build] ingested fragment ${fragmentPath} into ${graphPath}: ` +
         `${graph.order} nodes, ${graph.size} edges`,
       );
     });
@@ -3599,7 +3599,7 @@ export async function main(): Promise<void> {
     .description("Headless extraction for CI/scripts using AST plus optional semantic JSON or direct LLM backend")
     .argument("<inputPath>")
     .option("--semantic <path>", "Path to a provided semantic extraction JSON to merge")
-    .option("--out <path>", "Output workspace root for the generated .graphify state")
+    .option("--out <path>", "Output workspace root for the generated .engram state")
     .option("--backend <name>", "Direct semantic backend: anthropic, openai, gemini, mistral, cohere, ollama, or claude-cli (no API key; writes instructions for the assistant skill)")
     .option("--model <id>", "Direct backend model override")
     .option("--concurrency <n>", "Direct backend semantic chunk concurrency", "4")
@@ -3638,7 +3638,7 @@ export async function main(): Promise<void> {
           import("./portable-artifacts.js"),
         ]);
 
-        console.log(`[graphify extract] scanning ${root}`);
+        console.log(`[engram extract] scanning ${root}`);
         const rawDetection = detect(root, {
           candidateFiles: inventory.candidateFiles,
           candidateRoot: inventory.scope.git_root ?? root,
@@ -3653,7 +3653,7 @@ export async function main(): Promise<void> {
             GWS_EXTENSIONS.has(extname(file).toLowerCase()),
           );
           if (stubs.length > 0) {
-            console.log(`[graphify extract] converting ${stubs.length} Google Workspace shortcut(s)...`);
+            console.log(`[engram extract] converting ${stubs.length} Google Workspace shortcut(s)...`);
             const replacements = new Map<string, string>();
             for (const stub of stubs) {
               try {
@@ -3661,7 +3661,7 @@ export async function main(): Promise<void> {
                 if (sidecar) replacements.set(stub, sidecar);
               } catch (err) {
                 console.warn(
-                  `[graphify extract] Google Workspace conversion skipped for ${stub}: ${err instanceof Error ? err.message : String(err)}`,
+                  `[engram extract] Google Workspace conversion skipped for ${stub}: ${err instanceof Error ? err.message : String(err)}`,
                 );
               }
             }
@@ -3688,14 +3688,14 @@ export async function main(): Promise<void> {
         let astExtraction = ensureCliExtractionShape();
         let diagnostics: Array<{ filePath: string; error: string }> = [];
         if (codeFiles.length > 0) {
-          console.log(`[graphify extract] AST extraction on ${codeFiles.length} code file(s)...`);
+          console.log(`[engram extract] AST extraction on ${codeFiles.length} code file(s)...`);
           const astResult = await extractWithDiagnostics(codeFiles);
           diagnostics = astResult.diagnostics;
           astExtraction = makeExtractionPortable(astResult.extraction, root);
           writeJson(paths.scratch.ast, astExtraction);
           if (diagnostics.length > 0) {
             console.warn(
-              `[graphify extract] AST extraction diagnostics for ${diagnostics.length}/${codeFiles.length} file(s): ` +
+              `[engram extract] AST extraction diagnostics for ${diagnostics.length}/${codeFiles.length} file(s): ` +
               diagnostics.slice(0, 3).map((entry) => `${entry.filePath}: ${entry.error}`).join(" | "),
             );
           }
@@ -3732,7 +3732,7 @@ export async function main(): Promise<void> {
             const instructionsPath = join(paths.stateDir, "scratch", "assistant-extract-instructions.md");
             mkdirSync(dirname(instructionsPath), { recursive: true });
             const lines = [
-              `# Graphify assistant extraction instructions`,
+              `# Engram assistant extraction instructions`,
               ``,
               `Generated by \`engram extract --backend claude-cli\` for ${root}.`,
               ``,
@@ -3767,11 +3767,11 @@ export async function main(): Promise<void> {
             ];
             writeFileSync(instructionsPath, lines.join("\n"), "utf-8");
             console.log(
-              `[graphify extract] --backend claude-cli: no provider API key read; ` +
+              `[engram extract] --backend claude-cli: no provider API key read; ` +
               `wrote assistant instructions to ${instructionsPath}.`,
             );
             console.log(
-              `[graphify extract] Run the engram skill to complete semantic extraction, ` +
+              `[engram extract] Run the engram skill to complete semantic extraction, ` +
               `then re-run extract with --semantic <output>.`,
             );
             // Return cleanly rather than process.exit so the surrounding
@@ -3803,7 +3803,7 @@ export async function main(): Promise<void> {
             const tokenBudget = Number.parseInt(String(opts.tokenBudget), 10);
             const maxConcurrency = Number.parseInt(String(opts.concurrency), 10);
             console.log(
-              `[graphify extract] direct semantic extraction on ${textSemanticFiles.length} file(s) with ${backend}...`,
+              `[engram extract] direct semantic extraction on ${textSemanticFiles.length} file(s) with ${backend}...`,
             );
             semanticExtraction = makeExtractionPortable(
               await extractSemanticFilesDirectParallel(textSemanticFiles, {
@@ -3824,7 +3824,7 @@ export async function main(): Promise<void> {
         if (semanticFileCount > 0 && !opts.semantic && !opts.backend) {
           console.error(
             "error: detected non-code corpus files that require semantic extraction; " +
-            "provide --semantic <path>, pass --backend <provider>, or use the graphify assistant skill/runtime pipeline.",
+            "provide --semantic <path>, pass --backend <provider>, or use the engram assistant skill/runtime pipeline.",
           );
           process.exit(1);
         }
@@ -3833,7 +3833,7 @@ export async function main(): Promise<void> {
         if (opts.cluster === false) {
           writeJson(paths.scratch.extract, merged);
           console.log(
-            `[graphify extract] wrote ${paths.scratch.extract} — ` +
+            `[engram extract] wrote ${paths.scratch.extract} — ` +
             `${merged.nodes.length} nodes, ${merged.edges.length} edges (no clustering)`,
           );
           return;
@@ -3850,7 +3850,7 @@ export async function main(): Promise<void> {
         const G = buildFromJson(merged);
         if (G.order === 0) {
           console.error(
-            "[graphify extract] graph is empty — extraction produced no nodes. " +
+            "[engram extract] graph is empty — extraction produced no nodes. " +
             "Possible causes: all files were skipped or the provided semantic extraction was empty.",
           );
           process.exit(1);
@@ -3929,16 +3929,16 @@ export async function main(): Promise<void> {
         });
 
         console.log(
-          `[graphify extract] wrote ${paths.graph}: ${G.order} nodes, ${G.size} edges, ${communities.size} communities`,
+          `[engram extract] wrote ${paths.graph}: ${G.order} nodes, ${G.size} edges, ${communities.size} communities`,
         );
-        console.log(`[graphify extract] wrote ${paths.scratch.analysis}`);
+        console.log(`[engram extract] wrote ${paths.scratch.analysis}`);
       } catch (err) {
         console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
         process.exit(1);
       }
     });
 
-  const scopeProgram = program.command("scope").description("Inspect resolved Graphify input scope");
+  const scopeProgram = program.command("scope").description("Inspect resolved Engram input scope");
   scopeProgram
     .command("inspect [path]")
     .option("--scope <mode>", scopeOptionDescription())
@@ -3981,19 +3981,19 @@ export async function main(): Promise<void> {
 
   program
     .command("check-update [path]")
-    .description("Report whether .graphify has pending semantic or lifecycle refresh signals")
+    .description("Report whether .engram has pending semantic or lifecycle refresh signals")
     .action(async (checkPath = ".") => {
       const { checkUpdate } = await import("./watch.js");
       const result = checkUpdate(checkPath);
       if (result.current) {
-        console.log(`[graphify check-update] Graph state looks current for ${resolve(checkPath)}.`);
+        console.log(`[engram check-update] Graph state looks current for ${resolve(checkPath)}.`);
         return;
       }
-      console.log(`[graphify check-update] Pending semantic updates in ${resolve(checkPath)}.`);
+      console.log(`[engram check-update] Pending semantic updates in ${resolve(checkPath)}.`);
       for (const reason of result.reasons) {
-        console.log(`[graphify check-update] ${reason}`);
+        console.log(`[engram check-update] ${reason}`);
       }
-      console.log(`[graphify check-update] ${result.recommendedCommand}`);
+      console.log(`[engram check-update] ${result.recommendedCommand}`);
     });
 
   program
@@ -4789,9 +4789,9 @@ export async function main(): Promise<void> {
 
   program
     .command("qa")
-    .description("Evaluate a final Graphify bundle against a configured quality target")
+    .description("Evaluate a final Engram bundle against a configured quality target")
     .requiredOption("--target <id>", "quality.targets.<id> to evaluate")
-    .option("--config <path>", "graphify.yaml / .graphify/config.yaml containing quality.targets")
+    .option("--config <path>", "engram.yaml / .engram/config.yaml containing quality.targets")
     .option("--bundle <path>", "Final bundle directory; defaults to the target bundle_path")
     .option("--manifest <path>", "Resolved target manifest JSON; defaults to <bundle>/resolved-target.json when present")
     .option("--write-report [path]", "Write engram_qa_report_v1 JSON; default <bundle>/quality-qa-report.json")
@@ -4814,7 +4814,7 @@ export async function main(): Promise<void> {
             return discovery.found ? discovery.path : null;
           })();
       if (!configPath) {
-        console.error("error: no graphify config found for quality target");
+        console.error("error: no engram config found for quality target");
         process.exit(1);
       }
       const config = loadQualityTargetsConfig(configPath);
@@ -4850,7 +4850,7 @@ export async function main(): Promise<void> {
 
   const wikiCommand = program
     .command("wiki")
-    .description("Generate and maintain Graphify wiki artifacts");
+    .description("Generate and maintain Engram wiki artifacts");
 
   wikiCommand
     .command("describe")
@@ -5442,7 +5442,7 @@ export async function main(): Promise<void> {
         process.exit(1);
       }
       if (!existsSync(opts.flows)) {
-        console.error(`error: flow artifact not found: ${opts.flows}. Run graphify flows build first.`);
+        console.error(`error: flow artifact not found: ${opts.flows}. Run engram flows build first.`);
         process.exit(1);
       }
       const G = loadGraphFromData(JSON.parse(readFileSync(gp, "utf-8")));
@@ -5764,11 +5764,11 @@ export async function main(): Promise<void> {
     )
     .option(
       "--config <path>",
-      "Graphify config for the state-dir and optional configured store",
+      "Engram config for the state-dir and optional configured store",
     )
     .option(
       "--store <id>",
-      "GraphStore id (default: GRAPHIFY_STORE or storage.mirrors[0].backend)",
+      "GraphStore id (default: ENGRAM_STORE or storage.mirrors[0].backend)",
     )
     .option("--json", "Emit only graphify.temporal-recall/v1 JSON")
     .action(async (opts) => {
@@ -5801,7 +5801,7 @@ export async function main(): Promise<void> {
       "Inclusive upper bound: safe integer epoch-ms or ISO-8601 with an explicit Z/UTC offset",
     )
     .option("--graph <path>", "Explicit source graph.json")
-    .option("--config <path>", "Graphify config supplying the state-dir source")
+    .option("--config <path>", "Engram config supplying the state-dir source")
     .option("--out <path>", "Destination graph.json (omitted: dry run, nothing is written)")
     .option("--force", "Overwrite an existing --out file (never the source graph)")
     .option("--json", "Emit only the graphify.graph-time-slice/v1 report")
@@ -6096,7 +6096,7 @@ export async function main(): Promise<void> {
 
   program
     .command("hook-mark-stale [reason]", { hidden: true })
-    .description("Internal: mark graphify lifecycle state stale (called by git hooks)")
+    .description("Internal: mark engram lifecycle state stale (called by git hooks)")
     .action(async (reason) => {
       const { markLifecycleStale } = await import("./lifecycle.js");
       markLifecycleStale(".", reason ?? "hook");

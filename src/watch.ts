@@ -250,7 +250,7 @@ export async function rebuildCode(
 
     let result: Extraction;
     if (codeFiles.length === 0) {
-      console.log("[graphify watch] No code files found - writing empty graph index.");
+      console.log("[engram watch] No code files found - writing empty graph index.");
       result = {
         nodes: [],
         edges: [],
@@ -263,12 +263,12 @@ export async function rebuildCode(
       result = extracted.extraction;
       if (extracted.diagnostics.length > 0) {
         console.log(
-          `[graphify watch] AST extraction failed for ${extracted.diagnostics.length} file(s): ` +
+          `[engram watch] AST extraction failed for ${extracted.diagnostics.length} file(s): ` +
           `${extracted.diagnostics.slice(0, 3).map((d) => `${d.filePath}: ${d.error}`).join(" | ")}`,
         );
       }
       if (result.nodes.length === 0) {
-        console.log("[graphify watch] Rebuild failed: AST extraction produced no graph nodes.");
+        console.log("[engram watch] Rebuild failed: AST extraction produced no graph nodes.");
         return false;
       }
     }
@@ -374,7 +374,7 @@ export async function rebuildCode(
           if (reused.size > 0) {
             communities = reused;
             console.log(
-              `[graphify watch] Topology unchanged - reusing ${reused.size} existing community assignment(s).`,
+              `[engram watch] Topology unchanged - reusing ${reused.size} existing community assignment(s).`,
             );
           }
         }
@@ -384,7 +384,7 @@ export async function rebuildCode(
     }
     if (options.noCluster) {
       communities = new Map();
-      console.log("[graphify watch] --no-cluster: skipping Louvain clustering.");
+      console.log("[engram watch] --no-cluster: skipping Louvain clustering.");
     }
     if (!communities) {
       communities = cluster(G);
@@ -562,15 +562,15 @@ export async function rebuildCode(
           "utf-8",
         );
         console.log(
-          `[graphify watch] ${pendingMsg} awaiting assistant answers — ` +
-            `fill the batch-*.json / communities.json files in .graphify/ and re-run \`graphify update\`.`,
+          `[engram watch] ${pendingMsg} awaiting assistant answers — ` +
+            `fill the batch-*.json / communities.json files in .graphify/ and re-run \`engram update\`.`,
         );
       } else if (options.markDescribePending === true) {
         // A) Fast git-hook rebuild: no descriptions/labels were run.
         writeFileSync(
           paths.describePending,
           "Graph rebuilt by the fast git hook without descriptions/labels. " +
-            "Run `graphify update --fill-missing` to fill them.\n",
+            "Run `engram update --fill-missing` to fill them.\n",
           "utf-8",
         );
       }
@@ -586,15 +586,15 @@ export async function rebuildCode(
     }
 
     console.log(
-      `[graphify watch] Rebuilt: ${G.order} nodes, ${G.size} edges, ${communities.size} communities`,
+      `[engram watch] Rebuilt: ${G.order} nodes, ${G.size} edges, ${communities.size} communities`,
     );
     console.log(
-      `[graphify watch] graph.json and GRAPH_REPORT.md updated in ${outDir}`,
+      `[engram watch] graph.json and GRAPH_REPORT.md updated in ${outDir}`,
     );
     return true;
   } catch (err) {
     console.log(
-      `[graphify watch] Rebuild failed: ${err instanceof Error ? err.message : err}`,
+      `[engram watch] Rebuild failed: ${err instanceof Error ? err.message : err}`,
     );
     return false;
   }
@@ -654,7 +654,7 @@ export function checkUpdate(root: string): CheckUpdateResult {
       if (unansweredLabels) parts.push("community label instructions");
       reasons.push(
         `assistant-mode work pending: ${parts.join(" + ")} awaiting answers ` +
-          `(fill batch-*.json / communities.json and re-run \`graphify update\`)`,
+          `(fill batch-*.json / communities.json and re-run \`engram update\`)`,
       );
     }
     // When undescribedCount === 0 the orphan files are stale — ignore them.
@@ -681,9 +681,9 @@ export function checkUpdate(root: string): CheckUpdateResult {
     // fix is the idempotent gap-fill or fill+re-run; otherwise full refresh.
     recommendedCommand: onlyPendingDescriptions
       ? unansweredBatches > 0 || unansweredLabels
-        ? "Fill the batch-*.json / communities.json files and re-run `graphify update` to ingest."
-        : "Run `graphify update --fill-missing` to add descriptions + salient labels."
-      : "Run the graphify skill with --update to refresh semantic data.",
+        ? "Fill the batch-*.json / communities.json files and re-run `engram update` to ingest."
+        : "Run `engram update --fill-missing` to add descriptions + salient labels."
+      : "Run the engram skill with --update to refresh semantic data.",
   };
 }
 
@@ -698,14 +698,14 @@ function notifyOnly(watchPath: string): void {
   const flagPath = paths.needsUpdate;
   writeFileSync(flagPath, "1", "utf-8");
   markLifecycleStale(watchPath, "watch-non-code-change");
-  console.log(`\n[graphify watch] New or changed files detected in ${watchPath}`);
+  console.log(`\n[engram watch] New or changed files detected in ${watchPath}`);
   console.log(
-    "[graphify watch] Non-code files changed - semantic re-extraction requires LLM.",
+    "[engram watch] Non-code files changed - semantic re-extraction requires LLM.",
   );
   console.log(
-    "[graphify watch] Run the graphify skill with `--update` to refresh semantic data (for Codex: `$graphify . --update`).",
+    "[engram watch] Run the engram skill with `--update` to refresh semantic data (for Codex: `$engram . --update`).",
   );
-  console.log(`[graphify watch] Flag written to ${flagPath}`);
+  console.log(`[engram watch] Flag written to ${flagPath}`);
 }
 
 function hasNonCode(changedPaths: string[]): boolean {
@@ -809,12 +809,12 @@ export async function watch(
   });
 
   console.log(
-    `[graphify watch] Watching ${resolvedPath} - press Ctrl+C to stop`,
+    `[engram watch] Watching ${resolvedPath} - press Ctrl+C to stop`,
   );
   console.log(
-    "[graphify watch] Code changes rebuild graph automatically. Doc/image changes require a graphify skill `--update` run.",
+    "[engram watch] Code changes rebuild graph automatically. Doc/image changes require an engram skill `--update` run.",
   );
-  console.log(`[graphify watch] Debounce: ${debounce}s`);
+  console.log(`[engram watch] Debounce: ${debounce}s`);
 
   const debounceMs = debounce * 1000;
 
@@ -833,7 +833,7 @@ export async function watch(
     const batch = [...changed];
     changed.clear();
     try {
-      console.log(`\n[graphify watch] ${batch.length} file(s) changed`);
+      console.log(`\n[engram watch] ${batch.length} file(s) changed`);
       if (hasNonCode(batch)) {
         notifyOnly(watchPath);
       } else {
@@ -847,7 +847,7 @@ export async function watch(
 
   // Graceful shutdown
   const cleanup = () => {
-    console.log("\n[graphify watch] Stopped.");
+    console.log("\n[engram watch] Stopped.");
     clearInterval(poll);
     watcher.close();
     releaseRebuildLock(watchPath);
