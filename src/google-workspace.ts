@@ -21,6 +21,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { extname, basename, join, resolve } from "node:path";
+import { engramEnv } from "./env.js";
 
 export const GOOGLE_WORKSPACE_EXTENSIONS = new Set([".gdoc", ".gsheet", ".gslides"]);
 
@@ -49,7 +50,7 @@ export interface ConvertGoogleWorkspaceOptions {
 }
 
 export function googleWorkspaceEnabled(value?: string | null): boolean {
-  const raw = value ?? process.env.GRAPHIFY_GOOGLE_WORKSPACE ?? "";
+  const raw = value ?? engramEnv("ENGRAM_GOOGLE_WORKSPACE", "GRAPHIFY_GOOGLE_WORKSPACE") ?? "";
   const normalized = raw.trim().toLowerCase();
   return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
 }

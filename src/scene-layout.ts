@@ -48,6 +48,7 @@ import type {
   TypedLayerLayoutOptions,
 } from "@sentropic/graph";
 
+import { engramEnv } from "./env.js";
 import { attachLayoutPositions } from "./graph-layout.js";
 import {
   computeHierarchyAwarePositions,
@@ -105,7 +106,7 @@ interface LayoutableScene {
 export function resolveSceneLayoutId(explicit?: string): SceneLayoutId {
   const raw =
     explicit ??
-    (typeof process !== "undefined" && process.env ? process.env.GRAPHIFY_LAYOUT : undefined);
+    (typeof process !== "undefined" && process.env ? engramEnv("ENGRAM_LAYOUT", "GRAPHIFY_LAYOUT") : undefined);
   const value = String(raw ?? "").trim().toLowerCase();
   if (value === "typed-layer") return "typed-layer";
   if (value === "time-oriented") return "time-oriented";
@@ -132,7 +133,7 @@ export function selectDefaultSceneLayoutId(context: {
   const explicitRaw =
     context.explicit ??
     (typeof process !== "undefined" && process.env
-      ? process.env.GRAPHIFY_LAYOUT
+      ? engramEnv("ENGRAM_LAYOUT", "GRAPHIFY_LAYOUT")
       : undefined);
   if (String(explicitRaw ?? "").trim() !== "") {
     return resolveSceneLayoutId(explicitRaw);

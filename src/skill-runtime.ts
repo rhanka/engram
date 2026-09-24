@@ -11,6 +11,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { engramEnv } from "./env.js";
 import { graphDiff, godNodes, surprisingConnections, suggestQuestions } from "./analyze.js";
 import { runBenchmark, printBenchmark } from "./benchmark.js";
 import { saveSemanticCache, checkSemanticCache, type CacheOptions } from "./cache.js";
@@ -1609,14 +1610,14 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .requiredOption("--user <user>")
     .option(
       "--password <password>",
-      "Neo4j password (deprecated flag; prefer GRAPHIFY_NEO4J_PASSWORD env var)",
+      "Neo4j password (deprecated flag; prefer ENGRAM_NEO4J_PASSWORD env var)",
     )
     .option("--directed", "Build a directed graph (preserves source->target)")
     .action(async (opts) => {
-      const password = opts.password ?? process.env.GRAPHIFY_NEO4J_PASSWORD;
+      const password = opts.password ?? engramEnv("ENGRAM_NEO4J_PASSWORD", "GRAPHIFY_NEO4J_PASSWORD");
       if (!password) {
         console.error(
-          "Error: Neo4j password is required. Provide --password <password> or set GRAPHIFY_NEO4J_PASSWORD",
+          "Error: Neo4j password is required. Provide --password <password> or set ENGRAM_NEO4J_PASSWORD",
         );
         process.exit(1);
       }

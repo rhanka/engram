@@ -48,6 +48,7 @@ import { forEachTraversalNeighbor, loadGraphFromData } from "./graph.js";
 import { communitiesFromGraph, communityLabelsFromGraph } from "./graph-communities.js";
 import { safeExecGit } from "./git.js";
 import { safeGitRevParse } from "./git.js";
+import { engramEnv } from "./env.js";
 import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
 import { loadOntologyProfile } from "./ontology-profile.js";
 import { loadProfileRegistries } from "./profile-registry.js";
@@ -3225,7 +3226,7 @@ export async function main(): Promise<void> {
       // full scene). Never blocks the default studio.
       let studioStore: import("./ontology-studio.js").StudioStore | undefined;
       const storeBackendId =
-        opts.store ?? process.env.GRAPHIFY_STORE ?? projectConfig.storage?.mirrors?.[0]?.backend;
+        opts.store ?? engramEnv("ENGRAM_STORE", "GRAPHIFY_STORE") ?? projectConfig.storage?.mirrors?.[0]?.backend;
       if (storeBackendId) {
         try {
           const { resolveStoreConfig } = await import("./storage/config.js");
@@ -5944,7 +5945,7 @@ export async function main(): Promise<void> {
     .option("--all", "Alias for --scope all")
     .action(async (opts) => {
       const { rebuildCode } = await import("./watch.js");
-      const changedFiles = (process.env.GRAPHIFY_CHANGED ?? "")
+      const changedFiles = (engramEnv("ENGRAM_CHANGED", "GRAPHIFY_CHANGED") ?? "")
         .split(/\r?\n/)
         .map((p) => p.trim())
         .filter(Boolean);

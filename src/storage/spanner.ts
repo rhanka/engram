@@ -20,6 +20,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import type Graph from "graphology";
+import { engramEnv } from "../env.js";
 import { spannerDdlLines } from "../export.js";
 import type {
   GraphPushOptions,
@@ -224,11 +225,11 @@ function namespacedDdlStatements(): string[] {
 // ---------------------------------------------------------------------------
 
 export interface SpannerGraphStoreConfig extends GraphStoreConfig {
-  /** GCP project id. Falls back to GRAPHIFY_SPANNER_PROJECT / ADC default. */
+  /** GCP project id. Falls back to ENGRAM_SPANNER_PROJECT / ADC default. */
   project?: string;
-  /** Spanner instance id. Falls back to GRAPHIFY_SPANNER_INSTANCE. */
+  /** Spanner instance id. Falls back to ENGRAM_SPANNER_INSTANCE. */
   instance?: string;
-  /** Spanner database id. Falls back to GRAPHIFY_SPANNER_DATABASE. */
+  /** Spanner database id. Falls back to ENGRAM_SPANNER_DATABASE. */
   database?: string;
 }
 
@@ -288,16 +289,16 @@ export async function createSpannerGraphStore(
   config: SpannerGraphStoreConfig,
   deps?: StoreTestDeps,
 ): Promise<SpannerGraphStore> {
-  const instanceId = config.instance ?? process.env.GRAPHIFY_SPANNER_INSTANCE;
-  const databaseId = config.database ?? process.env.GRAPHIFY_SPANNER_DATABASE;
+  const instanceId = config.instance ?? engramEnv("ENGRAM_SPANNER_INSTANCE", "GRAPHIFY_SPANNER_INSTANCE");
+  const databaseId = config.database ?? engramEnv("ENGRAM_SPANNER_DATABASE", "GRAPHIFY_SPANNER_DATABASE");
   if (!instanceId) {
     throw new Error(
-      "spanner store requires an instance id (config.instance or GRAPHIFY_SPANNER_INSTANCE)",
+      "spanner store requires an instance id (config.instance or ENGRAM_SPANNER_INSTANCE)",
     );
   }
   if (!databaseId) {
     throw new Error(
-      "spanner store requires a database id (config.database or GRAPHIFY_SPANNER_DATABASE)",
+      "spanner store requires a database id (config.database or ENGRAM_SPANNER_DATABASE)",
     );
   }
 
@@ -329,7 +330,7 @@ export async function createSpannerGraphStore(
     );
   }
 
-  const projectId = config.project ?? process.env.GRAPHIFY_SPANNER_PROJECT;
+  const projectId = config.project ?? engramEnv("ENGRAM_SPANNER_PROJECT", "GRAPHIFY_SPANNER_PROJECT");
   const client: SpannerClient = new SpannerCtor(
     projectId ? { projectId } : undefined,
   );
