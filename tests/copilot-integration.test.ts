@@ -54,7 +54,7 @@ describe("Copilot integration contract", () => {
     const readme = readFileSync(new URL("../README.md", import.meta.url), "utf-8");
 
     expect(readme).toContain("GitHub Copilot CLI");
-    expect(readme).toContain("graphify install --platform copilot");
-    expect(readme).toContain("graphify copilot install");
+    expect(readme).toContain("engram install --platform copilot");
+    expect(readme).toContain("engram copilot install");
   });
 });

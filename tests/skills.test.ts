@@ -115,16 +115,16 @@ describe("skill cache examples", () => {
       const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
       expect(content).toContain(".graphify/graph.json");
       expect(content).toContain(".graphify/branch.json");
-      expect(content).toContain("graphify state prune");
-      expect(content).toContain("graphify migrate-state --dry-run");
-      expect(content).toContain("git mv -f graphify-out .graphify");
+      expect(content).toContain("engram state prune");
+      expect(content).toContain("engram migrate-state --dry-run");
+      expect(content).toContain("git mv -f graphify-out .engram");
     }
   });
 
   it("documents portable committed graph artifacts and local lifecycle files", () => {
     for (const relativePath of ALL_SKILL_DOCS) {
       const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
-      expect(content).toContain("graphify portable-check .graphify");
+      expect(content).toContain("engram portable-check .graphify");
       expect(content).toMatch(/never commit [`"]?\.graphify\/branch\.json[`"]?/);
       expect(content).toContain(".graphify/worktree.json");
       expect(content).toContain(".graphify/cache/");
@@ -166,7 +166,7 @@ describe("skill cache examples", () => {
   it("prefers the compact first-hop summary before deep traversal", () => {
     for (const relativePath of ALL_SKILL_DOCS) {
       const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
-      expect(content).toContain("graphify summary --graph .graphify/graph.json");
+      expect(content).toContain("engram summary --graph .graphify/graph.json");
     }
   });
 

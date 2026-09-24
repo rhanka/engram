@@ -127,7 +127,7 @@ describe("C1: checkUpdate detects unanswered description instruction batches", (
     const result = checkUpdate(root);
     expect(result.current).toBe(false);
     expect(result.recommendedCommand).toContain("batch-*.json");
-    expect(result.recommendedCommand).toContain("graphify update");
+    expect(result.recommendedCommand).toContain("engram update");
   });
 });
 

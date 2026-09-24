@@ -85,7 +85,7 @@ describe("review benchmarks", () => {
     expect(result.aggregate.impactedFileF1).toBeGreaterThan(0.8);
 
     const markdown = reviewBenchmarkToMarkdown(result);
-    expect(markdown).toContain("Graphify Review Benchmarks");
+    expect(markdown).toContain("Engram Review Benchmarks");
     expect(markdown).toContain("false positives");
     expect(markdown).toContain("estimated");
   });

@@ -1209,7 +1209,7 @@ describe("MCP stdio server", () => {
           arguments: { changed_files: ["src/beta.ts"] },
         }),
       );
-      expect(commitRecommendation).toContain("Graphify Commit Recommendation");
+      expect(commitRecommendation).toContain("Engram Commit Recommendation");
       expect(commitRecommendation).toContain("Advisory only");
       expect(commitRecommendation).toContain("src/beta.ts");
       expect(commitRecommendation).toContain("Suggested commit groups:");

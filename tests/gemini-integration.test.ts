@@ -97,7 +97,7 @@ describe("Gemini integration contract", () => {
     expect(skill).toContain("alias `/graphify`");
     expect(skill).toContain("runtime-info");
     expect(skill).toContain("finalize-build");
-    expect(skill).toContain("graphify query");
+    expect(skill).toContain("engram query");
     expect(skill).toContain("skill-runtime");
     expect(skill).toContain("prepare-semantic-detect");
     expect(skill).toContain(".graphify_pdf_ocr.json");
@@ -105,11 +105,11 @@ describe("Gemini integration contract", () => {
     expect(skill).toContain("delegated OCR/vision");
     expect(skill).toContain("files.video");
     expect(skill).toContain(".graphify/branch.json");
-    expect(skill).toContain("graphify migrate-state --dry-run");
+    expect(skill).toContain("engram migrate-state --dry-run");
     expect(skill).not.toContain("python3 -m graphify");
 
     expect(readme).toContain("Gemini CLI");
-    expect(readme).toContain("graphify install --platform gemini");
-    expect(readme).toContain("graphify gemini install");
+    expect(readme).toContain("engram install --platform gemini");
+    expect(readme).toContain("engram gemini install");
   });
 });

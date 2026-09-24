@@ -157,7 +157,7 @@ describe("graphify ontology studio --write", () => {
     // at the static Ontology Studio export and embeds no interactive surface.
     expect(result.body).not.toContain("<iframe");
     expect(result.body).toContain("ws-graph-placeholder");
-    expect(result.body).toContain("graphify studio export");
+    expect(result.body).toContain("engram studio export");
     expect(result.body).not.toContain("Read-only reconciliation APIs are available");
 
     // The graph.html artifact route was removed; the studio export replaces it.
