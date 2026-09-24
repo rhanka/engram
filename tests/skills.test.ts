@@ -71,7 +71,8 @@ describe("skill cache examples", () => {
       const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
       expect(content).toContain("Use when user asks any question about a codebase");
       expect(content).toContain("project content, architecture, or file relationships");
-      expect(content).toContain(".graphify/");
+      expect(content).toContain(".engram/");
+      expect(content).toContain("An existing `.graphify/` state dir is still read as a legacy fallback");
     }
   });
 
@@ -110,28 +111,29 @@ describe("skill cache examples", () => {
     }
   });
 
-  it("uses the .graphify state contract and lifecycle guidance", () => {
+  it("uses the .engram state contract and lifecycle guidance", () => {
     for (const relativePath of ALL_SKILL_DOCS) {
       const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
-      expect(content).toContain(".graphify/graph.json");
-      expect(content).toContain(".graphify/branch.json");
+      expect(content).toContain(".engram/graph.json");
+      expect(content).toContain(".engram/branch.json");
       expect(content).toContain("engram state prune");
       expect(content).toContain("engram migrate-state --dry-run");
       expect(content).toContain("git mv -f graphify-out .engram");
+      expect(content).toContain("An existing `.graphify/` state dir is still read as a legacy fallback");
     }
   });
 
   it("documents portable committed graph artifacts and local lifecycle files", () => {
     for (const relativePath of ALL_SKILL_DOCS) {
       const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
-      expect(content).toContain("engram portable-check .graphify");
-      expect(content).toMatch(/never commit [`"]?\.graphify\/branch\.json[`"]?/);
-      expect(content).toContain(".graphify/worktree.json");
-      expect(content).toContain(".graphify/cache/");
+      expect(content).toContain("engram portable-check .engram");
+      expect(content).toMatch(/never commit [`"]?\.engram\/branch\.json[`"]?/);
+      expect(content).toContain(".engram/worktree.json");
+      expect(content).toContain(".engram/cache/");
       expect(content).toContain(
-        "git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update",
+        "git rm --cached .engram/branch.json .engram/worktree.json .engram/needs_update",
       );
-      expect(content).toContain("git rm -r --cached .graphify/cache");
+      expect(content).toContain("git rm -r --cached .engram/cache");
       expect(content).toContain("never mutate git state without asking");
       expect(content).toContain("repo-relative paths");
     }
@@ -140,8 +142,8 @@ describe("skill cache examples", () => {
   it("preserves community labels during cleanup guidance", () => {
     for (const relativePath of ALL_SKILL_DOCS) {
       const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
-      expect(content).not.toMatch(/rm -f[^\n]*\.graphify\/\.graphify_labels\.json/);
-      expect(content).not.toMatch(/Remove-Item[^\n]*\.graphify\/\.graphify_labels\.json/);
+      expect(content).not.toMatch(/rm -f[^\n]*\.engram\/\.graphify_labels\.json/);
+      expect(content).not.toMatch(/Remove-Item[^\n]*\.engram\/\.graphify_labels\.json/);
     }
   });
 
@@ -166,7 +168,7 @@ describe("skill cache examples", () => {
   it("prefers the compact first-hop summary before deep traversal", () => {
     for (const relativePath of ALL_SKILL_DOCS) {
       const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
-      expect(content).toContain("engram summary --graph .graphify/graph.json");
+      expect(content).toContain("engram summary --graph .engram/graph.json");
     }
   });
 
@@ -230,7 +232,7 @@ describe("skill cache examples", () => {
       const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
       expect(content).toContain("Configured Project Profiles");
       expect(content).toContain("graphify.yaml");
-      expect(content).toContain(".graphify/config.yaml");
+      expect(content).toContain(".engram/config.yaml");
       expect(content).toContain("--config");
       expect(content).toContain("--profile");
       expect(content).toContain("profile activation");
@@ -245,7 +247,7 @@ describe("skill cache examples", () => {
       expect(content).toContain("image-batch-import");
       expect(content).toContain("decision: accept_matrix");
       expect(content).toContain("fallback to the existing non-profile workflow");
-      expect(content).toContain(".graphify/.graphify_runtime.json");
+      expect(content).toContain(".engram/.graphify_runtime.json");
       expect(content).toContain('"runtime": "typescript"');
     }
   });
@@ -263,7 +265,7 @@ describe("skill cache examples", () => {
       expect(content).toContain("validate before dry-run");
       expect(content).toContain("dry-run before write");
       expect(content).toContain("warn if the Git worktree is dirty");
-      expect(content).toContain("must not edit `.graphify/graph.json`");
+      expect(content).toContain("must not edit `.engram/graph.json`");
       expect(content).toContain("Public Domain Mystery Sagas");
     }
   });
@@ -309,11 +311,11 @@ describe("skill cache examples", () => {
     expect(content).toContain("/engram <path> --obsidian --obsidian-dir ~/vaults/my-project");
   });
 
-  it("keeps Windows skill scratch artifacts under .graphify with UTF-8 PowerShell writes", () => {
+  it("keeps Windows skill scratch artifacts under .engram with UTF-8 PowerShell writes", () => {
     const content = readFileSync(new URL("../src/skills/skill-windows.md", import.meta.url), "utf-8");
 
-    expect(content).toContain("Out-File -FilePath .graphify/.graphify_detect.json -Encoding utf8");
-    expect(content).not.toContain("> .graphify/.graphify_detect.json");
+    expect(content).toContain("Out-File -FilePath .engram/.graphify_detect.json -Encoding utf8");
+    expect(content).not.toContain("> .engram/.graphify_detect.json");
     expect(content).not.toMatch(/(^|[\s"'`(,>])\.graphify_(detect|ast|extract|semantic|analysis|labels|incremental|old)\.json/);
     expect(content).not.toContain(".graphify_step_");
   });

@@ -104,7 +104,7 @@ describe("Gemini integration contract", () => {
     expect(skill).toContain("Gemini vision");
     expect(skill).toContain("delegated OCR/vision");
     expect(skill).toContain("files.video");
-    expect(skill).toContain(".graphify/branch.json");
+    expect(skill).toContain(".engram/branch.json");
     expect(skill).toContain("engram migrate-state --dry-run");
     expect(skill).not.toContain("python3 -m graphify");
 

@@ -92,8 +92,8 @@ describe("upstream v4 assistant platform installs", () => {
     // M11 (9985940 #1079): global Antigravity skill now lives under ~/.gemini/config/skills/
     const skill = readFileSync(join(home, ".gemini", "config", "skills", "engram", "SKILL.md"), "utf-8");
     expect(skill).toContain("```powershell");
-    expect(skill).toContain("Out-File -FilePath .graphify/.graphify_detect.json -Encoding utf8");
-    expect(skill).not.toContain("$(cat .graphify/.graphify_node)");
+    expect(skill).toContain("Out-File -FilePath .engram/.graphify_detect.json -Encoding utf8");
+    expect(skill).not.toContain("$(cat .engram/.graphify_node)");
   });
 
   it("installs Kiro skill and always-on steering file in the project", async () => {
