@@ -685,7 +685,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
   program
     .command("project-config")
-    .description("Load and normalize a configured Graphify project profile")
+    .description("Load and normalize a configured Engram project profile")
     .option("--root <path>", "Workspace root", ".")
     .option("--config <path>", "Explicit graphify.yaml path")
     .requiredOption("--out <path>", "Path to write normalized project config JSON")

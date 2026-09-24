@@ -1717,7 +1717,7 @@ describe("skill runtime artifact parity", () => {
     expect(prompt.exitCode).toBe(0);
     expect(readFileSync(promptPath, "utf-8")).toContain("Allowed node types");
     expect(discovery.exitCode).toBe(0);
-    expect(readFileSync(discoveryPromptPath, "utf-8")).toContain("Graphify Ontology Discovery Prompt");
+    expect(readFileSync(discoveryPromptPath, "utf-8")).toContain("Engram Ontology Discovery Prompt");
     expect(discoveryDiff.exitCode).toBe(0);
     expect(JSON.parse(readFileSync(discoveryDiffPath, "utf-8")).mutates_profile).toBe(false);
     expect(readFileSync(discoveryReportPath, "utf-8")).toContain("Requires user approval: true");

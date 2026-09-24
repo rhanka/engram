@@ -147,9 +147,9 @@ function writeAssistantInstructions(path: string, manifest: ImageDataprepManifes
   writeFileSync(
     path,
     [
-      "# Graphify Image Dataprep Assistant Instructions",
+      "# Engram Image Dataprep Assistant Instructions",
       "",
-      "Graphify is running image dataprep in assistant mode. Do not call a provider from Graphify runtime.",
+      "Engram is running image dataprep in assistant mode. Do not call a provider from Engram runtime.",
       "",
       `Caption schema: ${config.dataprep.image_analysis.caption_schema}`,
       `Routing profile: ${config.dataprep.image_analysis.routing_profile}`,

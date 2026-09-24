@@ -338,7 +338,7 @@ describe("profile CLI commands", () => {
     expect(validation.exitCode).toBe(0);
     expect(validation.logs.join("\n")).toContain("Valid: yes");
     expect(discovery.exitCode).toBe(0);
-    expect(readFileSync(discoveryPromptPath, "utf-8")).toContain("Graphify Ontology Discovery Prompt");
+    expect(readFileSync(discoveryPromptPath, "utf-8")).toContain("Engram Ontology Discovery Prompt");
     expect(discoveryDiff.exitCode).toBe(0);
     expect(JSON.parse(readFileSync(discoveryDiffPath, "utf-8")).requires_user_approval).toBe(true);
     expect(report.exitCode).toBe(0);

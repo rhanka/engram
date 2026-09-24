@@ -564,7 +564,7 @@ export function meshTextJsonClient(
         messages: [
           {
             role: "system",
-            content: "You are Graphify's JSON extraction backend. Return only valid JSON matching the requested schema. Do not include Markdown prose outside the JSON object.",
+            content: "You are Engram's JSON extraction backend. Return only valid JSON matching the requested schema. Do not include Markdown prose outside the JSON object.",
           },
           {
             role: "user",
