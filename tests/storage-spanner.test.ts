@@ -35,6 +35,8 @@ interface InMemorySpannerState {
   queries: RecordedSql[];
   /** Rows the next database.run() should return (keyed loosely by sql contains). */
   metaRows: Array<Record<string, unknown>>;
+  /** Table names the INFORMATION_SCHEMA probe should report as existing. */
+  existingTables: string[];
   databaseClosed: boolean;
   clientClosed: boolean;
 }
@@ -57,8 +59,12 @@ function makeFakeSpannerModule(state: InMemorySpannerState) {
     },
     run(query: { sql: string; params?: Record<string, unknown> }) {
       state.queries.push({ sql: query.sql, params: query.params });
-      // Return the configured meta rows for a graphify_meta SELECT, else empty.
-      if (query.sql.includes("graphify_meta") && query.sql.includes("SELECT")) {
+      // Table-existence probe: report the configured existing tables.
+      if (query.sql.includes("INFORMATION_SCHEMA")) {
+        return Promise.resolve([state.existingTables.map((table_name) => ({ table_name }))]);
+      }
+      // Return the configured meta rows for a snapshot-meta SELECT, else empty.
+      if ((query.sql.includes("engram_meta") || query.sql.includes("graphify_meta")) && query.sql.includes("SELECT")) {
         return Promise.resolve([state.metaRows]);
       }
       return Promise.resolve([[]]);
@@ -100,6 +106,7 @@ function freshState(): InMemorySpannerState {
     partitionedUpdates: [],
     queries: [],
     metaRows: [],
+    existingTables: [],
     databaseClosed: false,
     clientClosed: false,
   };
@@ -171,12 +178,12 @@ describe("Spanner adapter: batched insertOrUpdate", () => {
     await store.pushGraph(G, new Map(), { batchSize: 500 });
     await store.close();
 
-    const nodeBatches = state.upserts.filter((u) => u.table === "graphify_nodes");
+    const nodeBatches = state.upserts.filter((u) => u.table === "engram_nodes");
     expect(nodeBatches).toHaveLength(3);
     expect(nodeBatches[0].rows.length).toBe(500);
     expect(nodeBatches[1].rows.length).toBe(500);
     expect(nodeBatches[2].rows.length).toBe(200);
-    expect(totalUpsertRows(state, "graphify_nodes")).toBe(1200);
+    expect(totalUpsertRows(state, "engram_nodes")).toBe(1200);
   });
 
   it("batches 1199 edges with batchSize 500", async () => {
@@ -187,9 +194,9 @@ describe("Spanner adapter: batched insertOrUpdate", () => {
     await store.pushGraph(G, new Map(), { batchSize: 500 });
     await store.close();
 
-    const edgeBatches = state.upserts.filter((u) => u.table === "graphify_edges");
+    const edgeBatches = state.upserts.filter((u) => u.table === "engram_edges");
     expect(edgeBatches.length).toBeGreaterThan(0);
-    expect(totalUpsertRows(state, "graphify_edges")).toBe(1199);
+    expect(totalUpsertRows(state, "engram_edges")).toBe(1199);
   });
 
   it("uses the default batch size of 500 when unspecified", async () => {
@@ -200,7 +207,7 @@ describe("Spanner adapter: batched insertOrUpdate", () => {
     await store.pushGraph(G, new Map());
     await store.close();
 
-    const nodeBatches = state.upserts.filter((u) => u.table === "graphify_nodes");
+    const nodeBatches = state.upserts.filter((u) => u.table === "engram_nodes");
     expect(nodeBatches).toHaveLength(2); // ceil(600/500)
   });
 
@@ -235,10 +242,10 @@ describe("Spanner adapter: schema ensure-exists", () => {
 
     expect(state.schemaUpdates.length).toBeGreaterThan(0);
     const flat = state.schemaUpdates.flat().join("\n");
-    expect(flat).toContain("CREATE TABLE graphify_nodes");
-    expect(flat).toContain("CREATE TABLE graphify_edges");
-    expect(flat).toContain("CREATE TABLE graphify_meta");
-    expect(flat).toContain("CREATE PROPERTY GRAPH graphify");
+    expect(flat).toContain("CREATE TABLE engram_nodes");
+    expect(flat).toContain("CREATE TABLE engram_edges");
+    expect(flat).toContain("CREATE TABLE engram_meta");
+    expect(flat).toContain("CREATE PROPERTY GRAPH engram");
     // Namespaced primary keys
     expect(flat).toContain("PRIMARY KEY (namespace, id)");
     expect(flat).toContain("PRIMARY KEY (namespace, source_id, target_id, relation)");
@@ -347,10 +354,10 @@ describe("Spanner adapter: replace mode", () => {
     await store.close();
 
     const nodeDelete = state.partitionedUpdates.find(
-      (p) => p.sql.includes("DELETE FROM graphify_nodes") && p.sql.includes("namespace"),
+      (p) => p.sql.includes("DELETE FROM engram_nodes") && p.sql.includes("namespace"),
     );
     const edgeDelete = state.partitionedUpdates.find(
-      (p) => p.sql.includes("DELETE FROM graphify_edges") && p.sql.includes("namespace"),
+      (p) => p.sql.includes("DELETE FROM engram_edges") && p.sql.includes("namespace"),
     );
     expect(nodeDelete).toBeDefined();
     expect(edgeDelete).toBeDefined();
@@ -375,8 +382,8 @@ describe("Spanner adapter: replace mode", () => {
 // GraphifyMeta stamping + read-back
 // ---------------------------------------------------------------------------
 
-describe("Spanner adapter: GraphifyMeta", () => {
-  it("upserts a graphify_meta row on push", async () => {
+describe("Spanner adapter: snapshot meta", () => {
+  it("upserts an engram_meta row on push", async () => {
     const state = freshState();
     const { G, communities } = contractFixture();
     const store = await makeSpannerStore(state, { namespace: "meta_test" });
@@ -384,7 +391,7 @@ describe("Spanner adapter: GraphifyMeta", () => {
     await store.pushGraph(G, communities);
     await store.close();
 
-    const metaUpsert = state.upserts.find((u) => u.table === "graphify_meta");
+    const metaUpsert = state.upserts.find((u) => u.table === "engram_meta");
     expect(metaUpsert).toBeDefined();
     const row = metaUpsert!.rows[0];
     expect(row.namespace).toBe("meta_test");
@@ -403,7 +410,7 @@ describe("Spanner adapter: GraphifyMeta", () => {
     expect(meta).toBeUndefined();
   });
 
-  it("readSnapshotMeta queries graphify_meta when no local cache exists", async () => {
+  it("readSnapshotMeta queries engram_meta when no local cache exists", async () => {
     const state = freshState();
     state.metaRows = [
       { topology_signature: "n=1;e=0;x|", pushed_at: "2026-06-11T00:00:00.000Z", tool_version: "9.9.9" },
@@ -414,12 +421,60 @@ describe("Spanner adapter: GraphifyMeta", () => {
     await store.close();
 
     const readQuery = state.queries.find(
-      (q) => q.sql.includes("graphify_meta") && q.sql.includes("SELECT"),
+      (q) => q.sql.includes("engram_meta") && q.sql.includes("SELECT"),
     );
     expect(readQuery).toBeDefined();
     expect(meta).toBeDefined();
     expect(meta!.topologySignature).toBe("n=1;e=0;x|");
     expect(meta!.toolVersion).toBe("9.9.9");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Legacy table compat: resolveSpannerTables + legacy-bound store
+// ---------------------------------------------------------------------------
+
+describe("Spanner adapter: legacy graphify_* table compat", () => {
+  it("resolveSpannerTables prefers engram_* when present", async () => {
+    const { resolveSpannerTables } = await import("../src/storage/spanner.js");
+    expect(resolveSpannerTables(["engram_nodes", "graphify_nodes"]).legacy).toBe(false);
+    expect(resolveSpannerTables(["engram_nodes", "graphify_nodes"]).node).toBe("engram_nodes");
+  });
+
+  it("resolveSpannerTables binds legacy graphify_* when only they exist", async () => {
+    const { resolveSpannerTables } = await import("../src/storage/spanner.js");
+    const tables = resolveSpannerTables(["graphify_nodes", "graphify_edges", "graphify_meta"]);
+    expect(tables.legacy).toBe(true);
+    expect(tables.node).toBe("graphify_nodes");
+    expect(tables.edge).toBe("graphify_edges");
+    expect(tables.meta).toBe("graphify_meta");
+  });
+
+  it("resolveSpannerTables defaults to engram_* on a fresh database", async () => {
+    const { resolveSpannerTables } = await import("../src/storage/spanner.js");
+    const tables = resolveSpannerTables([]);
+    expect(tables.legacy).toBe(false);
+    expect(tables.node).toBe("engram_nodes");
+  });
+
+  it("a legacy-only database binds graphify_* tables with a warning and zero renames", async () => {
+    const state = freshState();
+    state.existingTables = ["graphify_nodes", "graphify_edges", "graphify_meta"];
+    const { G, communities } = contractFixture();
+    const warnings: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (msg?: unknown) => { warnings.push(String(msg)); };
+    try {
+      const store = await makeSpannerStore(state, { namespace: "legacy_ns" });
+      await store.pushGraph(G, communities);
+      await store.close();
+    } finally {
+      console.warn = origWarn;
+    }
+
+    expect(state.upserts.some((u) => u.table === "graphify_nodes")).toBe(true);
+    expect(state.upserts.some((u) => u.table === "engram_nodes")).toBe(false);
+    expect(warnings.some((w) => w.includes("legacy graphify_* tables"))).toBe(true);
   });
 });
 
@@ -488,9 +543,9 @@ describe("Spanner adapter: clear", () => {
     const tables = state.partitionedUpdates
       .filter((p) => p.sql.includes("DELETE FROM"))
       .map((p) => p.sql);
-    expect(tables.some((s) => s.includes("graphify_nodes"))).toBe(true);
-    expect(tables.some((s) => s.includes("graphify_edges"))).toBe(true);
-    expect(tables.some((s) => s.includes("graphify_meta"))).toBe(true);
+    expect(tables.some((s) => s.includes("engram_nodes"))).toBe(true);
+    expect(tables.some((s) => s.includes("engram_edges"))).toBe(true);
+    expect(tables.some((s) => s.includes("engram_meta"))).toBe(true);
   });
 });
 

@@ -13,6 +13,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
+import { engramEnv } from "../env.js";
 import type Graph from "graphology";
 import type {
   GraphPushOptions,
@@ -75,7 +76,7 @@ function resolveToolVersion(): string {
       const pkg = JSON.parse(
         readFileSync(join(baseDir, rel, "package.json"), "utf-8"),
       ) as { name?: string; version?: string };
-      if (pkg.name === "@sentropic/graphify" && pkg.version) return pkg.version;
+      if ((pkg.name === "@sentropic/engram" || pkg.name === "@sentropic/graphify") && pkg.version) return pkg.version;
     } catch {
       /* try the next layout */
     }
@@ -137,7 +138,7 @@ export interface Neo4jGraphStoreConfig extends GraphStoreConfig {
   target: string;
   /** Neo4j username; defaults to "neo4j". */
   user?: string;
-  /** Neo4j password; defaults to GRAPHIFY_NEO4J_PASSWORD env var or "". */
+  /** Neo4j password; defaults to ENGRAM_NEO4J_PASSWORD env var or "". */
   password?: string;
   /** Neo4j database name; defaults to the server default. */
   database?: string;
@@ -203,7 +204,7 @@ export async function createNeo4jGraphStore(
 
   const password =
     config.password ??
-    process.env.GRAPHIFY_NEO4J_PASSWORD ??
+    engramEnv("ENGRAM_NEO4J_PASSWORD", "GRAPHIFY_NEO4J_PASSWORD") ??
     "";
   const user = config.user ?? "neo4j";
   const namespace =

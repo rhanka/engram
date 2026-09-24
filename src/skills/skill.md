@@ -1,71 +1,73 @@
 ---
-name: graphify
-description: "any input (code, docs, papers, images) -> knowledge graph -> clustered communities -> static Ontology Studio + JSON + audit report. Use when user asks any question about a codebase, project content, architecture, or file relationships, especially if .graphify/ exists. Provides persistent graph with god nodes, community detection, and BFS/DFS query tools."
-trigger: /graphify
+name: engram
+description: "any input (code, docs, papers, images) -> knowledge graph -> clustered communities -> static Ontology Studio + JSON + audit report. Use when user asks any question about a codebase, project content, architecture, or file relationships, especially if .engram/ exists. Provides persistent graph with god nodes, community detection, and BFS/DFS query tools."
+trigger: /engram
 ---
 
-# /graphify
+# /engram
 
-Turn any folder of files into a navigable knowledge graph with community detection, an honest audit trail, and three outputs: a static Ontology Studio, GraphRAG-ready JSON, and a plain-language GRAPH_REPORT.md.
+> Alias: `/graphify` still triggers this skill (deprecated alias for `/engram`).
+
+Turn any folder of files into a navigable knowledge graph with community detection, a verifiable audit trail, and three outputs: a static Ontology Studio, GraphRAG-ready JSON, and a plain-language GRAPH_REPORT.md.
 
 ## Usage
 
 ```
-/graphify                                             # full pipeline on current directory → Obsidian vault
-/graphify <path>                                      # full pipeline on specific path
-/graphify https://github.com/<owner>/<repo>           # clone repo locally, then run the full pipeline
-/graphify https://github.com/<owner>/<repo> --branch <branch>  # clone a specific branch before graphing
-/graphify <path> --scope auto                         # safe default for code/review repos
-/graphify <path> --scope tracked                      # include newly staged files too
-/graphify <path> --all                                # full recursive folder walk for knowledge bases
-/graphify <path> --directed                           # build directed graph (preserves source→target)
-/graphify <path> --mode deep                          # thorough extraction, richer INFERRED edges
-/graphify <path> --pdf-ocr auto                       # preflight PDFs; OCR scanned/low-text PDFs with mistral-ocr when needed
-/graphify <path> --update                             # incremental - re-extract only new/changed files
-/graphify <path> --cluster-only                       # rerun clustering on existing graph
-graphify studio export .graphify/studio               # build the self-contained static Ontology Studio (open by serving it with any static file server)
-/graphify <path> --svg                                # also export graph.svg (embeds in Notion, GitHub)
-/graphify <path> --graphml                            # export graph.graphml (Gephi, yEd)
-/graphify <path> --neo4j                              # generate .graphify/cypher.txt for Neo4j
-/graphify <path> --neo4j-push bolt://localhost:7687   # push directly to Neo4j
-/graphify <path> --mcp                                # start MCP stdio server for agent access
-/graphify <path> --watch                              # watch folder, auto-rebuild on code changes (no LLM needed)
-/graphify <path> --wiki                               # build agent-crawlable wiki (index.md + one article per community)
-graphify wiki describe --graph .graphify/graph.json --mode assistant --targets all  # opt-in description sidecars
-graphify export wiki --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
-graphify export obsidian --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
-/graphify <path> --obsidian --obsidian-dir ~/vaults/my-project  # write vault to custom path (e.g. existing vault)
-/graphify add <url>                                   # fetch URL, save to ./raw, update graph
-/graphify add <url> --author "Name"                   # tag who wrote it
-/graphify add <url> --contributor "Name"              # tag who added it to the corpus
-/graphify migrate-state --dry-run                    # plan graphify-out -> .graphify migration
-/graphify query "<question>"                          # BFS traversal - broad context
-/graphify query "<question>" --dfs                    # DFS - trace a specific path
-/graphify query "<question>" --budget 1500            # cap answer at N tokens
-/graphify summary --graph .graphify/graph.json        # compact first-hop orientation before deep traversal
-/graphify minimal-context --task "review PR" --graph .graphify/graph.json  # first review call
-/graphify review-delta --files src/auth.ts --graph .graphify/graph.json  # review impact for changed files
-/graphify review-analysis --files src/auth.ts --graph .graphify/graph.json  # blast radius + review views
-/graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json  # advisory commit grouping
-/graphify scope inspect <path> --scope auto           # inspect the resolved file inventory first
-/graphify path "AuthModule" "Database"                # shortest path between two concepts
-/graphify explain "SwinTransformer"                   # plain-language explanation of a node
+/engram                                             # full pipeline on current directory → Obsidian vault
+/engram <path>                                      # full pipeline on specific path
+/engram https://github.com/<owner>/<repo>           # clone repo locally, then run the full pipeline
+/engram https://github.com/<owner>/<repo> --branch <branch>  # clone a specific branch before graphing
+/engram <path> --scope auto                         # safe default for code/review repos
+/engram <path> --scope tracked                      # include newly staged files too
+/engram <path> --all                                # full recursive folder walk for knowledge bases
+/engram <path> --directed                           # build directed graph (preserves source→target)
+/engram <path> --mode deep                          # thorough extraction, richer INFERRED edges
+/engram <path> --pdf-ocr auto                       # preflight PDFs; OCR scanned/low-text PDFs with mistral-ocr when needed
+/engram <path> --update                             # incremental - re-extract only new/changed files
+/engram <path> --cluster-only                       # rerun clustering on existing graph
+engram studio export .engram/studio               # build the self-contained static Ontology Studio (open by serving it with any static file server)
+/engram <path> --svg                                # also export graph.svg (embeds in Notion, GitHub)
+/engram <path> --graphml                            # export graph.graphml (Gephi, yEd)
+/engram <path> --neo4j                              # generate .engram/cypher.txt for Neo4j
+/engram <path> --neo4j-push bolt://localhost:7687   # push directly to Neo4j
+/engram <path> --mcp                                # start MCP stdio server for agent access
+/engram <path> --watch                              # watch folder, auto-rebuild on code changes (no LLM needed)
+/engram <path> --wiki                               # build agent-crawlable wiki (index.md + one article per community)
+engram wiki describe --graph .engram/graph.json --mode assistant --targets all  # opt-in description sidecars
+engram export wiki --graph .engram/graph.json --descriptions .engram/wiki/descriptions.json
+engram export obsidian --graph .engram/graph.json --descriptions .engram/wiki/descriptions.json
+/engram <path> --obsidian --obsidian-dir ~/vaults/my-project  # write vault to custom path (e.g. existing vault)
+/engram add <url>                                   # fetch URL, save to ./raw, update graph
+/engram add <url> --author "Name"                   # tag who wrote it
+/engram add <url> --contributor "Name"              # tag who added it to the corpus
+/engram migrate-state --dry-run                    # plan graphify-out -> .engram migration
+/engram query "<question>"                          # BFS traversal - broad context
+/engram query "<question>" --dfs                    # DFS - trace a specific path
+/engram query "<question>" --budget 1500            # cap answer at N tokens
+/engram summary --graph .engram/graph.json        # compact first-hop orientation before deep traversal
+/engram minimal-context --task "review PR" --graph .engram/graph.json  # first review call
+/engram review-delta --files src/auth.ts --graph .engram/graph.json  # review impact for changed files
+/engram review-analysis --files src/auth.ts --graph .engram/graph.json  # blast radius + review views
+/engram recommend-commits --files src/auth.ts,src/session.ts --graph .engram/graph.json  # advisory commit grouping
+/engram scope inspect <path> --scope auto           # inspect the resolved file inventory first
+/engram path "AuthModule" "Database"                # shortest path between two concepts
+/engram explain "SwinTransformer"                   # plain-language explanation of a node
 ```
 
 ## Input scope policy
 
-- Default to `--scope auto` for codebase and review work. In Git repos this means committed files plus `.graphify/memory/*`.
+- Default to `--scope auto` for codebase and review work. In Git repos this means committed files plus `.engram/memory/*`.
 - Use `--scope tracked` when newly staged files must influence the graph before commit.
 - Use `--all` only when the user clearly wants a knowledge-base style crawl of docs, notes, papers, screenshots, audio, or video.
-- If the repo is dirty or the right scope is unclear, run `graphify scope inspect <path> --scope auto` first and summarize what will be included or excluded.
+- If the repo is dirty or the right scope is unclear, run `engram scope inspect <path> --scope auto` first and summarize what will be included or excluded.
 
-## What graphify is for
+## What engram is for
 
-graphify is built around Andrej Karpathy's /raw folder workflow: drop anything into a folder - papers, tweets, screenshots, code, notes - and get a structured knowledge graph that shows you what you didn't know was connected.
+Engram is built around Andrej Karpathy's /raw folder workflow: drop anything into a folder - papers, tweets, screenshots, code, notes - and get a structured knowledge graph that shows you what you didn't know was connected.
 
 Three things it does that Claude alone cannot:
-1. **Persistent graph** - relationships are stored in `.graphify/graph.json` and survive across sessions. Ask questions weeks later without re-reading everything.
-2. **Honest audit trail** - every edge is tagged EXTRACTED, INFERRED, or AMBIGUOUS. You know what was found vs invented.
+1. **Persistent graph** - relationships are stored in `.engram/graph.json` and survive across sessions. Ask questions weeks later without re-reading everything.
+2. **Verifiable audit trail** - every edge is tagged EXTRACTED, INFERRED, or AMBIGUOUS. You know what was found vs invented.
 3. **Cross-document surprise** - community detection finds connections between concepts in different files that you would never think to ask about directly.
 
 Use it for:
@@ -88,16 +90,16 @@ Follow these steps in order. Do not skip steps.
 GRAPHIFY_BRANCH_FLAG=""
 if the original invocation included --branch <name>, set GRAPHIFY_BRANCH_FLAG="--branch <name>"
 
-LOCAL_PATH=$(graphify clone "INPUT_GITHUB_URL" $GRAPHIFY_BRANCH_FLAG)
+LOCAL_PATH=$(engram clone "INPUT_GITHUB_URL" $GRAPHIFY_BRANCH_FLAG)
 ```
 
 Use `LOCAL_PATH` as the input path for all subsequent commands.
 
-### Step 1 - Ensure graphify is installed
+### Step 1 - Ensure engram is installed
 
 ```bash
-command -v graphify >/dev/null 2>&1 || npm install -g @sentropic/graphify 2>&1 | tail -3
-mkdir -p .graphify
+command -v engram >/dev/null 2>&1 || command -v graphify >/dev/null 2>&1 || npm install -g @sentropic/engram 2>&1 | tail -3
+mkdir -p .engram
 ```
 
 If the install succeeds, print nothing and move straight to Step 2.
@@ -105,7 +107,7 @@ If the install succeeds, print nothing and move straight to Step 2.
 ### Step 2 - Detect files
 
 ```bash
-graphify detect "INPUT_PATH" --scope auto --out .graphify/.graphify_detect.json
+engram detect "INPUT_PATH" --scope auto --out .engram/.graphify_detect.json
 ```
 
 Replace INPUT_PATH with the actual path the user provided. Do NOT cat or print the JSON - read it silently and present a clean summary instead:
@@ -135,22 +137,22 @@ Always run this step. It transcribes audio/video when present, runs local PDF pr
 node -e "
 (async () => {
 const fs = require('fs');
-const { prepareSemanticDetection } = require('@sentropic/graphify');
+const { prepareSemanticDetection } = require('@sentropic/engram');
 
-const detect = JSON.parse(fs.readFileSync('.graphify/.graphify_detect.json', 'utf-8'));
-const analysis = fs.existsSync('.graphify/.graphify_analysis.json')
-  ? JSON.parse(fs.readFileSync('.graphify/.graphify_analysis.json', 'utf-8'))
+const detect = JSON.parse(fs.readFileSync('.engram/.graphify_detect.json', 'utf-8'));
+const analysis = fs.existsSync('.engram/.graphify_analysis.json')
+  ? JSON.parse(fs.readFileSync('.engram/.graphify_analysis.json', 'utf-8'))
   : null;
 
 const { detection: semanticDetect, transcriptPaths, pdfArtifacts } = await prepareSemanticDetection(detect, {
-  transcriptOutputDir: '.graphify/transcripts',
-  pdfOutputDir: '.graphify/converted/pdf',
+  transcriptOutputDir: '.engram/transcripts',
+  pdfOutputDir: '.engram/converted/pdf',
   godNodes: (analysis && analysis.gods) || [],
 });
 
-fs.writeFileSync('.graphify/.graphify_detect_semantic.json', JSON.stringify(semanticDetect, null, 2));
-fs.writeFileSync('.graphify/.graphify_transcripts.json', JSON.stringify(transcriptPaths, null, 2));
-fs.writeFileSync('.graphify/.graphify_pdf_ocr.json', JSON.stringify(pdfArtifacts, null, 2));
+fs.writeFileSync('.engram/.graphify_detect_semantic.json', JSON.stringify(semanticDetect, null, 2));
+fs.writeFileSync('.engram/.graphify_transcripts.json', JSON.stringify(transcriptPaths, null, 2));
+fs.writeFileSync('.engram/.graphify_pdf_ocr.json', JSON.stringify(pdfArtifacts, null, 2));
 console.log('Prepared semantic inputs: ' + transcriptPaths.length + ' transcript(s), ' + pdfArtifacts.filter((item) => item.markdownPath).length + ' PDF sidecar(s)');
 )().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
@@ -160,8 +162,8 @@ console.log('Prepared semantic inputs: ' + transcriptPaths.length + ' transcript
 ```
 
 After semantic preparation:
-- use `.graphify/.graphify_detect_semantic.json` for semantic cache and semantic extraction
-- keep `.graphify/.graphify_detect.json` for corpus summary, manifest, and final reporting
+- use `.engram/.graphify_detect_semantic.json` for semantic cache and semantic extraction
+- keep `.engram/.graphify_detect.json` for corpus summary, manifest, and final reporting
 
 ### Step 3 - Extract entities and relationships
 
@@ -180,9 +182,9 @@ For any code files detected, run AST extraction in parallel with Part B subagent
 ```bash
 node -e "(async () => {
 const fs = require('fs');
-const { collectFiles, extract } = require('@sentropic/graphify');
+const { collectFiles, extract } = require('@sentropic/engram');
 
-const detect = JSON.parse(fs.readFileSync('.graphify/.graphify_detect.json', 'utf-8'));
+const detect = JSON.parse(fs.readFileSync('.engram/.graphify_detect.json', 'utf-8'));
 let codeFiles = [];
 for (const f of (detect.files || {}).code || []) {
     codeFiles = codeFiles.concat(collectFiles(f));
@@ -190,10 +192,10 @@ for (const f of (detect.files || {}).code || []) {
 
 if (codeFiles.length > 0) {
     const result = await extract(codeFiles);
-    fs.writeFileSync('.graphify/.graphify_ast.json', JSON.stringify(result, null, 2));
+    fs.writeFileSync('.engram/.graphify_ast.json', JSON.stringify(result, null, 2));
     console.log(\`AST: \${result.nodes.length} nodes, \${result.edges.length} edges\`);
 } else {
-    fs.writeFileSync('.graphify/.graphify_ast.json', JSON.stringify({nodes:[],edges:[],input_tokens:0,output_tokens:0}));
+    fs.writeFileSync('.engram/.graphify_ast.json', JSON.stringify({nodes:[],edges:[],input_tokens:0,output_tokens:0}));
     console.log('No code files - skipping AST extraction');
 }
 })()"
@@ -206,7 +208,7 @@ if (codeFiles.length > 0) {
 **MANDATORY: You MUST use the Agent tool here. Reading files yourself one-by-one is forbidden - it is 5-10x slower. If you do not use the Agent tool you are doing this wrong.**
 
 Before dispatching subagents, print a timing estimate:
-- Load `total_words` and file counts from `.graphify/.graphify_detect.json`
+- Load `total_words` and file counts from `.engram/.graphify_detect.json`
 - Estimate agents needed: `ceil(uncached_non_code_files / 22)` (chunk size is 20-25)
 - Estimate time: ~45s per agent batch (they run in parallel, so total ≈ 45s × ceil(agents/parallel_limit))
 - Print: "Semantic extraction: ~N files → X agents, estimated ~Ys"
@@ -218,9 +220,9 @@ Before dispatching any subagents, check which files already have cached extracti
 ```bash
 node -e "
 const fs = require('fs');
-const { checkSemanticCache } = require('@sentropic/graphify');
+const { checkSemanticCache } = require('@sentropic/engram');
 
-const detect = JSON.parse(fs.readFileSync('.graphify/.graphify_detect_semantic.json', 'utf-8'));
+const detect = JSON.parse(fs.readFileSync('.engram/.graphify_detect_semantic.json', 'utf-8'));
 const allFiles = [
   ...((detect.files || {}).document || []),
   ...((detect.files || {}).paper || []),
@@ -230,18 +232,18 @@ const allFiles = [
 const [cachedNodes, cachedEdges, cachedHyperedges, uncached] = checkSemanticCache(allFiles);
 
 if (cachedNodes.length || cachedEdges.length || cachedHyperedges.length) {
-    fs.writeFileSync('.graphify/.graphify_cached.json', JSON.stringify({nodes: cachedNodes, edges: cachedEdges, hyperedges: cachedHyperedges}));
+    fs.writeFileSync('.engram/.graphify_cached.json', JSON.stringify({nodes: cachedNodes, edges: cachedEdges, hyperedges: cachedHyperedges}));
 }
-fs.writeFileSync('.graphify/.graphify_uncached.txt', uncached.join('\n'));
+fs.writeFileSync('.engram/.graphify_uncached.txt', uncached.join('\n'));
 console.log(\`Cache: \${allFiles.length - uncached.length} files hit, \${uncached.length} files need extraction\`);
 "
 ```
 
-Only dispatch subagents for files listed in `.graphify/.graphify_uncached.txt`. If all files are cached, skip to Part C directly.
+Only dispatch subagents for files listed in `.engram/.graphify_uncached.txt`. If all files are cached, skip to Part C directly.
 
 **Step B1 - Split into chunks**
 
-Load files from `.graphify/.graphify_uncached.txt`. Split into chunks of 20-25 files each. Each image gets its own chunk (vision needs separate context). PDF sidecar Markdown can reference extracted image artifacts under `.graphify/converted/pdf/*_images/`; when those images contain diagrams, tables, captions, or embedded text that carry meaning, include them as image chunks or describe the delegated OCR/vision output with provenance back to the source PDF. When splitting, group files from the same directory together so related artifacts land in the same chunk and cross-file relationships are more likely to be extracted.
+Load files from `.engram/.graphify_uncached.txt`. Split into chunks of 20-25 files each. Each image gets its own chunk (vision needs separate context). PDF sidecar Markdown can reference extracted image artifacts under `.engram/converted/pdf/*_images/`; when those images contain diagrams, tables, captions, or embedded text that carry meaning, include them as image chunks or describe the delegated OCR/vision output with provenance back to the source PDF. When splitting, group files from the same directory together so related artifacts land in the same chunk and cross-file relationships are more likely to be extracted.
 
 **Step B2 - Dispatch ALL subagents in a single message**
 
@@ -258,7 +260,7 @@ All three in one message. Not three separate messages.
 Each subagent receives this exact prompt (substitute FILE_LIST, CHUNK_NUM, TOTAL_CHUNKS, and DEEP_MODE):
 
 ```
-You are a graphify extraction subagent. Read the files listed and extract a knowledge graph fragment.
+You are an engram extraction subagent. Read the files listed and extract a knowledge graph fragment.
 Output ONLY valid JSON matching the schema below - no explanation, no markdown fences, no preamble.
 
 Files (chunk CHUNK_NUM of TOTAL_CHUNKS):
@@ -324,9 +326,9 @@ Save new results to cache. The `saveSemanticCache` call is wrapped in `validateS
 ```bash
 node -e "
 const fs = require('fs');
-const { saveSemanticCache, validateSemanticFragment, sanitizeSemanticFragment } = require('@sentropic/graphify');
+const { saveSemanticCache, validateSemanticFragment, sanitizeSemanticFragment } = require('@sentropic/engram');
 
-const raw = fs.existsSync('.graphify/.graphify_semantic_new.json') ? JSON.parse(fs.readFileSync('.graphify/.graphify_semantic_new.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
+const raw = fs.existsSync('.engram/.graphify_semantic_new.json') ? JSON.parse(fs.readFileSync('.engram/.graphify_semantic_new.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
 const errors = validateSemanticFragment(raw);
 if (errors.length > 0) {
   console.error('Refusing to cache invalid semantic fragment: ' + errors.slice(0, 3).join('; '));
@@ -338,11 +340,11 @@ console.log(\`Cached \${saved} files\`);
 "
 ```
 
-Merge cached + new results into `.graphify/.graphify_semantic.json`. Each chunk is independently validated; invalid chunks are skipped with a warning rather than crashing the merge (mirrors upstream PR #825):
+Merge cached + new results into `.engram/.graphify_semantic.json`. Each chunk is independently validated; invalid chunks are skipped with a warning rather than crashing the merge (mirrors upstream PR #825):
 ```bash
 node -e "
 const fs = require('fs');
-const { validateSemanticFragment, sanitizeSemanticFragment } = require('@sentropic/graphify');
+const { validateSemanticFragment, sanitizeSemanticFragment } = require('@sentropic/engram');
 
 function loadAndClean(path, label) {
   if (!fs.existsSync(path)) return {nodes:[],edges:[],hyperedges:[]};
@@ -354,8 +356,8 @@ function loadAndClean(path, label) {
   return sanitizeSemanticFragment(raw);
 }
 
-const cached = loadAndClean('.graphify/.graphify_cached.json', 'cached');
-const raw = loadAndClean('.graphify/.graphify_semantic_new.json', 'new');
+const cached = loadAndClean('.engram/.graphify_cached.json', 'cached');
+const raw = loadAndClean('.engram/.graphify_semantic_new.json', 'new');
 
 const allNodes = (cached.nodes || []).concat(raw.nodes || []);
 const allEdges = (cached.edges || []).concat(raw.edges || []);
@@ -371,11 +373,11 @@ const merged = {
     input_tokens: raw.input_tokens || 0,
     output_tokens: raw.output_tokens || 0,
 };
-fs.writeFileSync('.graphify/.graphify_semantic.json', JSON.stringify(merged, null, 2));
+fs.writeFileSync('.engram/.graphify_semantic.json', JSON.stringify(merged, null, 2));
 console.log(\`Extraction complete - \${deduped.length} nodes, \${allEdges.length} edges (\${(cached.nodes||[]).length} from cache, \${(raw.nodes||[]).length} new)\`);
 "
 ```
-Clean up temp files: `rm -f .graphify/.graphify_cached.json .graphify/.graphify_uncached.txt .graphify/.graphify_semantic_new.json .graphify/.graphify_detect_semantic.json .graphify/.graphify_transcripts.json .graphify/.graphify_pdf_ocr.json`
+Clean up temp files: `rm -f .engram/.graphify_cached.json .engram/.graphify_uncached.txt .engram/.graphify_semantic_new.json .engram/.graphify_detect_semantic.json .engram/.graphify_transcripts.json .engram/.graphify_pdf_ocr.json`
 
 #### Part C - Merge AST + semantic into final extraction
 
@@ -383,10 +385,10 @@ The AST side comes from Tree-sitter and is trusted as-is. The semantic side is L
 ```bash
 node -e "
 const fs = require('fs');
-const { sanitizeSemanticFragment } = require('@sentropic/graphify');
+const { sanitizeSemanticFragment } = require('@sentropic/engram');
 
-const ast = JSON.parse(fs.readFileSync('.graphify/.graphify_ast.json', 'utf-8'));
-const sem = sanitizeSemanticFragment(JSON.parse(fs.readFileSync('.graphify/.graphify_semantic.json', 'utf-8')));
+const ast = JSON.parse(fs.readFileSync('.engram/.graphify_ast.json', 'utf-8'));
+const sem = sanitizeSemanticFragment(JSON.parse(fs.readFileSync('.engram/.graphify_semantic.json', 'utf-8')));
 
 const seen = new Set(ast.nodes.map(n => n.id));
 const mergedNodes = [...ast.nodes];
@@ -401,7 +403,7 @@ const merged = {
     input_tokens: sem.input_tokens || 0,
     output_tokens: sem.output_tokens || 0,
 };
-fs.writeFileSync('.graphify/.graphify_extract.json', JSON.stringify(merged, null, 2));
+fs.writeFileSync('.engram/.graphify_extract.json', JSON.stringify(merged, null, 2));
 console.log(\`Merged: \${mergedNodes.length} nodes, \${mergedEdges.length} edges (\${ast.nodes.length} AST + \${sem.nodes.length} semantic)\`);
 "
 ```
@@ -411,17 +413,17 @@ console.log(\`Merged: \${mergedNodes.length} nodes, \${mergedEdges.length} edges
 **Before starting:** if `--directed` was given, replace each `buildFromJson(...)` call in the build/export steps below with `buildFromJson(..., { directed: true })`, and when manually reconstructing `graph.json`, use `new Graph({type: 'directed'})` instead of `undirected`.
 
 ```bash
-mkdir -p .graphify
+mkdir -p .engram
 node -e "
 const fs = require('fs');
-const { buildFromJson } = require('@sentropic/graphify');
-const { cluster, scoreAll } = require('@sentropic/graphify');
-const { godNodes, surprisingConnections, suggestQuestions } = require('@sentropic/graphify');
-const { generateReport } = require('@sentropic/graphify');
-const { toJson } = require('@sentropic/graphify');
+const { buildFromJson } = require('@sentropic/engram');
+const { cluster, scoreAll } = require('@sentropic/engram');
+const { godNodes, surprisingConnections, suggestQuestions } = require('@sentropic/engram');
+const { generateReport } = require('@sentropic/engram');
+const { toJson } = require('@sentropic/engram');
 
-const extraction = JSON.parse(fs.readFileSync('.graphify/.graphify_extract.json', 'utf-8'));
-const detection = JSON.parse(fs.readFileSync('.graphify/.graphify_detect.json', 'utf-8'));
+const extraction = JSON.parse(fs.readFileSync('.engram/.graphify_extract.json', 'utf-8'));
+const detection = JSON.parse(fs.readFileSync('.engram/.graphify_detect.json', 'utf-8'));
 
 const G = buildFromJson(extraction);
 const communities = cluster(G);
@@ -433,8 +435,8 @@ const labels = new Map(Array.from(communities.keys(), cid => [cid, 'Community ' 
 const questions = suggestQuestions(G, communities, labels);
 
 const report = generateReport(G, communities, cohesion, labels, gods, surprises, detection, tokens, '.', {suggestedQuestions: questions});
-fs.writeFileSync('.graphify/GRAPH_REPORT.md', report);
-toJson(G, communities, '.graphify/graph.json');
+fs.writeFileSync('.engram/GRAPH_REPORT.md', report);
+toJson(G, communities, '.engram/graph.json');
 
 const analysis = {
     communities: Object.fromEntries(Array.from(communities.entries(), ([k, v]) => [String(k), v])),
@@ -443,7 +445,7 @@ const analysis = {
     surprises,
     questions,
 };
-fs.writeFileSync('.graphify/.graphify_analysis.json', JSON.stringify(analysis, null, 2));
+fs.writeFileSync('.engram/.graphify_analysis.json', JSON.stringify(analysis, null, 2));
 if (G.order === 0) {
     console.log('ERROR: Graph is empty - extraction produced no nodes.');
     console.log('Possible causes: all files were skipped, binary-only corpus, or extraction failed.');
@@ -459,18 +461,18 @@ Replace INPUT_PATH with the actual path.
 
 ### Step 5 - Label communities and node descriptions (no API key needed)
 
-**`graphify update` handles descriptions + labels automatically.** By default (no API key), it runs in assistant/skill mode:
+**`engram update` handles descriptions + labels automatically.** By default (no API key), it runs in assistant/skill mode:
 
-1. It emits instruction files to `.graphify/description-instructions/` (one per node batch) and `.graphify/label-instructions/communities.md` for the host assistant to fill.
+1. It emits instruction files to `.engram/description-instructions/` (one per node batch) and `.engram/label-instructions/communities.md` for the host assistant to fill.
 2. **You (the host assistant) read those files and write JSON answers** (see below).
-3. A second `graphify update` ingests the completed answers and stamps descriptions + labels onto `graph.json`.
+3. A second `engram update` ingests the completed answers and stamps descriptions + labels onto `graph.json`.
 
-**For community labels**, read `.graphify/label-instructions/communities.md` which lists every community with representative node names. Write 2-5 word names to `.graphify/label-instructions/communities.json`:
+**For community labels**, read `.engram/label-instructions/communities.md` which lists every community with representative node names. Write 2-5 word names to `.engram/label-instructions/communities.json`:
 ```json
 {"0": "Attention Mechanism", "1": "Training Pipeline", "2": "Data Loading"}
 ```
 
-**For node descriptions**, each `.graphify/description-instructions/batch-NNN.md` file lists nodes with their context. Write a one-sentence description per node to the corresponding `batch-NNN.json`:
+**For node descriptions**, each `.engram/description-instructions/batch-NNN.md` file lists nodes with their context. Write a one-sentence description per node to the corresponding `batch-NNN.json`:
 ```json
 {
   "some_node_id": "Resolves the configured ontology profile from graphify.yaml.",
@@ -478,22 +480,22 @@ Replace INPUT_PATH with the actual path.
 }
 ```
 
-Then re-run `graphify update` to ingest:
+Then re-run `engram update` to ingest:
 ```bash
-graphify update .
+engram update .
 ```
 
-**With an API key** (headless/automation), descriptions and labels are generated directly in the same `graphify update` call — no two-step needed. To force assistant mode even with a key: `--description-mode assistant` / `--label-mode assistant`. To force direct mode: `--description-mode direct` / `--label-mode direct`.
+**With an API key** (headless/automation), descriptions and labels are generated directly in the same `engram update` call — no two-step needed. To force assistant mode even with a key: `--description-mode assistant` / `--label-mode assistant`. To force direct mode: `--description-mode direct` / `--label-mode direct`.
 
 **Opt out of either step**: `--no-description` / `--no-label`.
 
-> **REQUIRED before the studio/wiki export — `describe` is NOT optional for a populated studio.** There is an asymmetry to know about: the default `graphify update` flow wires the community-**labels** pass automatically, but the node-**descriptions** pass only fills `graph.json` when you actually complete the assistant two-step (or run with a key). If you skip it, every node ships with `description: null` and the **static studio / wiki export shows empty entity panels silently** (field report ia-aero: 620/620 null descriptions). The export now *warns* on ~0% description coverage and *provisionally* backfills entity panels from each node's extractor `rationale` (clearly marked "provisional" in the studio) — but that is a stop-gap, not a real description.
+> **REQUIRED before the studio/wiki export — `describe` is NOT optional for a populated studio.** There is an asymmetry to know about: the default `engram update` flow wires the community-**labels** pass automatically, but the node-**descriptions** pass only fills `graph.json` when you actually complete the assistant two-step (or run with a key). If you skip it, every node ships with `description: null` and the **static studio / wiki export shows empty entity panels silently** (field report ia-aero: 620/620 null descriptions). The export now *warns* on ~0% description coverage and *provisionally* backfills entity panels from each node's extractor `rationale` (clearly marked "provisional" in the studio) — but that is a stop-gap, not a real description.
 >
 > So, for non-null descriptions, the explicit order is:
 >
-> 1. `graphify update .` (emits `.graphify/description-instructions/` + `.graphify/label-instructions/`).
+> 1. `engram update .` (emits `.engram/description-instructions/` + `.engram/label-instructions/`).
 > 2. Fill **both** the `batch-NNN.json` description answers **and** `communities.json` labels.
-> 3. `graphify update .` again to ingest — OR, on an already-built/curated graph, `graphify describe .` (descriptions) + `graphify label .` (labels) + `graphify cite .` (grounded `node.citations[]`) non-destructively.
+> 3. `engram update .` again to ingest — OR, on an already-built/curated graph, `engram describe .` (descriptions) + `engram label .` (labels) + `engram cite .` (grounded `node.citations[]`) non-destructively.
 > 4. **Then** generate the static Ontology Studio (Step 6). Confirm descriptions landed: a 0%-description studio means Step 5 was skipped — go back and run `describe` (and `cite` for non-null citations).
 
 **Language attention (per source).** Descriptions and community names are written in the **language of each node's SOURCE document**, detected per node from its label + citations (and the community's sampled node names). A 100%-French corpus yields French descriptions and French community names; a mixed corpus gets each node's description in its own source language — never a random FR/EN mix left to the backend's whim. The directive is injected into **every** prompt: the assistant `batch-NNN.md` files (look for the `Write every description in <Language>` line, or per-node `lang=` markers on a mixed batch) AND the direct API path. When you (the host assistant) fill an instruction file, **honor that language directive** — answer in the language the instruction states, per node.
@@ -504,42 +506,42 @@ graphify update .
 
 ```bash
 # Force French descriptions + French community names on a French corpus:
-graphify describe . --description-lang fr
-graphify label    . --label-lang fr
-graphify update   . --description-lang fr --label-lang fr
+engram describe . --description-lang fr
+engram label    . --label-lang fr
+engram update   . --description-lang fr --label-lang fr
 # Default (auto) — detect each source's language:
-graphify describe .
+engram describe .
 ```
 
-**To describe an existing curated graph without re-extraction** (e.g. after manual curation or corpus build), use `graphify describe [path]` — the non-destructive counterpart to `graphify label [path]`:
+**To describe an existing curated graph without re-extraction** (e.g. after manual curation or corpus build), use `engram describe [path]` — the non-destructive counterpart to `engram label [path]`:
 
 ```bash
 # Non-destructive: stamps node.description onto graph.json without re-extracting
-graphify describe .
+engram describe .
 # Only fill missing descriptions (idempotent):
-graphify describe . --fill-missing
+engram describe . --fill-missing
 # Direct mode with API key:
-graphify describe . --description-mode direct --description-backend anthropic
+engram describe . --description-mode direct --description-backend anthropic
 ```
 
-`graphify describe` loads the existing `graph.json`, runs the same description pipeline as `graphify update --description`, and writes back — without touching node IDs, edges, communities, or any other node attributes. Only `description` is added/updated. Use it when `graphify update` would re-extract and destroy a curated graph.
+`engram describe` loads the existing `graph.json`, runs the same description pipeline as `engram update --description`, and writes back — without touching node IDs, edges, communities, or any other node attributes. Only `description` is added/updated. Use it when `engram update` would re-extract and destroy a curated graph.
 
-**Ground citations into the graph — `graphify cite` (alias `ground-citations`).** Symmetric to `describe`/`label`, and like them **opt-in** (NOT auto-run in the default pipeline): it loads the existing `graph.json`, scans the corpus, and grounds per-entity `node.citations[]` entries `{quote, source_file, source_location}` — populating **new** verbatim citations, not just projecting the ones already present. **Heuristic mode is the no-key DEFAULT**; `--mode heuristic|assistant|api` (assistant/api are opt-in recall boosters gated by the SAME verbatim check). It is **anti-hallucination by construction**: every emitted `quote` is a verified verbatim substring of the source text — a quote that cannot be relocated in the source is dropped, never invented. It UNIONS with existing citations (never clobbers) and re-runs the shipped aggregation (count + inline top-K + `.graphify/ontology/citations.json`). **Run it BEFORE the studio/wiki export** so entity panels ship non-null citations.
+**Ground citations into the graph — `engram cite` (alias `ground-citations`).** Symmetric to `describe`/`label`, and like them **opt-in** (NOT auto-run in the default pipeline): it loads the existing `graph.json`, scans the corpus, and grounds per-entity `node.citations[]` entries `{quote, source_file, source_location}` — populating **new** verbatim citations, not just projecting the ones already present. **Heuristic mode is the no-key DEFAULT**; `--mode heuristic|assistant|api` (assistant/api are opt-in recall boosters gated by the SAME verbatim check). It is **anti-hallucination by construction**: every emitted `quote` is a verified verbatim substring of the source text — a quote that cannot be relocated in the source is dropped, never invented. It UNIONS with existing citations (never clobbers) and re-runs the shipped aggregation (count + inline top-K + `.engram/ontology/citations.json`). **Run it BEFORE the studio/wiki export** so entity panels ship non-null citations.
 
 ```bash
 # No-key heuristic grounding (default): verbatim citations into node.citations[]
-graphify cite .
+engram cite .
 # Only fill nodes that have no citations yet (additive second pass):
-graphify cite . --only-missing
+engram cite . --only-missing
 # Restrict to node types and cap per node:
-graphify cite . --types person,concept,reference --top-k 6
+engram cite . --types person,concept,reference --top-k 6
 # Report coverage without writing graph.json / citations.json:
-graphify cite . --dry-run
+engram cite . --dry-run
 # Opt-in LLM recall boost (still verbatim-gated):
-graphify cite . --mode assistant
+engram cite . --mode assistant
 ```
 
-**Citation density per corpus type (no key needed).** `describe`/`update`/`extract`/`watch` auto-tune two citation knobs from the corpus type they read out of `.graphify/.graphify_detect.json` (no extra step): the **describe-prompt cap** (citation snippets grounding each description) and the **inline top-K** (citations kept per node in `graph.json`; the full per-entity tail always lands in `.graphify/ontology/citations.json`). Resolution precedence is **CLI flag > corpus-type default > global default (cap 10, K 8)**. Corpus-type defaults:
+**Citation density per corpus type (no key needed).** `describe`/`update`/`extract`/`watch` auto-tune two citation knobs from the corpus type they read out of `.engram/.graphify_detect.json` (no extra step): the **describe-prompt cap** (citation snippets grounding each description) and the **inline top-K** (citations kept per node in `graph.json`; the full per-entity tail always lands in `.engram/ontology/citations.json`). Resolution precedence is **CLI flag > corpus-type default > global default (cap 10, K 8)**. Corpus-type defaults:
 
 | Corpus type | describe cap | inline K |
 |---|---|---|
@@ -552,31 +554,31 @@ You normally rely on the auto-resolved policy. Override it explicitly per detect
 
 ```bash
 # Long-document / entity corpus: ground on every distinct source.
-graphify describe . --citation-cap all
+engram describe . --citation-cap all
 # Code project: keep descriptions terse.
-graphify describe . --citation-cap 3
+engram describe . --citation-cap 3
 # Bound how many citations ride inline in graph.json (the full tail stays in citations.json):
-graphify extract . --citations-top-k 8
-graphify update  . --citation-cap all --citations-top-k 8
+engram extract . --citations-top-k 8
+engram update  . --citation-cap all --citations-top-k 8
 ```
 
-`--citation-cap <n|all>` is on `describe`/`label`/`update`; `--citations-top-k <n>` is on `extract`/`update`/`watch`; `--description-lang <auto|code>` is on `describe`/`update` and `--label-lang <auto|code>` is on `label`/`update`. All are flag-only overrides (no key, no config file required) — absent, the corpus-type default (citations) or per-source detection (language) applies. To project a pre-feature graph into the new schema without re-extracting (lower-bound counts; re-extract for true exhaustive counts), run `graphify backfill-citations .`.
+`--citation-cap <n|all>` is on `describe`/`label`/`update`; `--citations-top-k <n>` is on `extract`/`update`/`watch`; `--description-lang <auto|code>` is on `describe`/`update` and `--label-lang <auto|code>` is on `label`/`update`. All are flag-only overrides (no key, no config file required) — absent, the corpus-type default (citations) or per-source detection (language) applies. To project a pre-feature graph into the new schema without re-extracting (lower-bound counts; re-extract for true exhaustive counts), run `engram backfill-citations .`.
 
 **Legacy manual label approach** (still works; skip if using the CLI two-step above):
 
-Read `.graphify/.graphify_analysis.json`. For each community key, look at its node labels and write a 2-5 word name. Then regenerate the report:
+Read `.engram/.graphify_analysis.json`. For each community key, look at its node labels and write a 2-5 word name. Then regenerate the report:
 
 ```bash
 node -e "
 const fs = require('fs');
-const { buildFromJson } = require('@sentropic/graphify');
-const { scoreAll } = require('@sentropic/graphify');
-const { godNodes, surprisingConnections, suggestQuestions } = require('@sentropic/graphify');
-const { generateReport } = require('@sentropic/graphify');
+const { buildFromJson } = require('@sentropic/engram');
+const { scoreAll } = require('@sentropic/engram');
+const { godNodes, surprisingConnections, suggestQuestions } = require('@sentropic/engram');
+const { generateReport } = require('@sentropic/engram');
 
-const extraction = JSON.parse(fs.readFileSync('.graphify/.graphify_extract.json', 'utf-8'));
-const detection = JSON.parse(fs.readFileSync('.graphify/.graphify_detect.json', 'utf-8'));
-const analysis = JSON.parse(fs.readFileSync('.graphify/.graphify_analysis.json', 'utf-8'));
+const extraction = JSON.parse(fs.readFileSync('.engram/.graphify_extract.json', 'utf-8'));
+const detection = JSON.parse(fs.readFileSync('.engram/.graphify_detect.json', 'utf-8'));
+const analysis = JSON.parse(fs.readFileSync('.engram/.graphify_analysis.json', 'utf-8'));
 
 const G = buildFromJson(extraction);
 const communities = Object.fromEntries(Object.entries(analysis.communities).map(([k, v]) => [Number(k), v]));
@@ -589,8 +591,8 @@ const labels = LABELS_DICT;
 const questions = suggestQuestions(G, communities, labels);
 
 const report = generateReport(G, communities, cohesion, labels, analysis.gods, analysis.surprises, detection, tokens, '.', {suggestedQuestions: questions});
-fs.writeFileSync('.graphify/GRAPH_REPORT.md', report);
-fs.writeFileSync('.graphify/.graphify_labels.json', JSON.stringify(Object.fromEntries(Object.entries(labels).map(([k, v]) => [String(k), v]))));
+fs.writeFileSync('.engram/GRAPH_REPORT.md', report);
+fs.writeFileSync('.engram/.graphify_labels.json', JSON.stringify(Object.fromEntries(Object.entries(labels).map(([k, v]) => [String(k), v]))));
 console.log('Report updated with community labels');
 "
 ```
@@ -602,46 +604,46 @@ Replace INPUT_PATH with the actual path.
 
 **Generate the static Ontology Studio always.** **Obsidian vault only if `--obsidian` was explicitly given** — skip it otherwise, it generates one file per node.
 
-**Node descriptions from graph.json render automatically** — `graphify update` fills `node.description` on each node (via the description pipeline), and `export wiki`, `export obsidian`, and the static studio export now render those descriptions by default with no extra step. You do NOT need `wiki describe` just to get descriptions in the output.
+**Node descriptions from graph.json render automatically** — `engram update` fills `node.description` on each node (via the description pipeline), and `export wiki`, `export obsidian`, and the static studio export now render those descriptions by default with no extra step. You do NOT need `wiki describe` just to get descriptions in the output.
 
-`graphify wiki describe` is for RICHER multi-sentence, evidence-grounded descriptions generated by an LLM. It is optional and additive: the sidecar fills only the gaps where no `node.description` exists. When both exist, the graph.json `node.description` wins (canonical source of truth).
+`engram wiki describe` is for RICHER multi-sentence, evidence-grounded descriptions generated by an LLM. It is optional and additive: the sidecar fills only the gaps where no `node.description` exists. When both exist, the graph.json `node.description` wins (canonical source of truth).
 
 ```bash
 # Opt-in: richer LLM-generated descriptions (fills gaps; does not override node.description)
-graphify wiki describe --graph .graphify/graph.json --mode assistant --targets all
+engram wiki describe --graph .engram/graph.json --mode assistant --targets all
 # Describe ALL nodes and communities (0 = unlimited):
-graphify wiki describe --graph .graphify/graph.json --mode assistant --targets all --max-nodes 0 --max-communities 0
+engram wiki describe --graph .engram/graph.json --mode assistant --targets all --max-nodes 0 --max-communities 0
 # or, for direct mode:
-graphify wiki describe --graph .graphify/graph.json --mode direct --backend openai --targets all
+engram wiki describe --graph .engram/graph.json --mode direct --backend openai --targets all
 
 # Export: descriptions from graph.json render automatically; pass --descriptions for sidecar enrichment
-graphify export wiki --graph .graphify/graph.json
-graphify export wiki --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
-graphify export obsidian --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
+engram export wiki --graph .engram/graph.json
+engram export wiki --graph .engram/graph.json --descriptions .engram/wiki/descriptions.json
+engram export obsidian --graph .engram/graph.json --descriptions .engram/wiki/descriptions.json
 ```
 
-Sidecars live under `.graphify/wiki/descriptions/` with an index at `.graphify/wiki/descriptions.json`. They record per-node content hashes (unrelated graph.json changes no longer stale the sidecar), prompt/generator provenance, evidence refs, and cache keys; existing generated sidecars may be reused when a fresh generation does not complete. `insufficient_evidence` sidecars render no Description section. This never mutates `.graphify/graph.json`.
+Sidecars live under `.engram/wiki/descriptions/` with an index at `.engram/wiki/descriptions.json`. They record per-node content hashes (unrelated graph.json changes no longer stale the sidecar), prompt/generator provenance, evidence refs, and cache keys; existing generated sidecars may be reused when a fresh generation does not complete. `insufficient_evidence` sidecars render no Description section. This never mutates `.engram/graph.json`.
 
 If `--obsidian` was given:
 
-- If `--obsidian-dir <path>` was also given, use that path as the vault directory. Otherwise default to `.graphify/obsidian`.
+- If `--obsidian-dir <path>` was also given, use that path as the vault directory. Otherwise default to `.engram/obsidian`.
 
 ```bash
 node -e "
 const fs = require('fs');
-const { buildFromJson } = require('@sentropic/graphify');
-const { toWiki, toCanvas } = require('@sentropic/graphify');
+const { buildFromJson } = require('@sentropic/engram');
+const { toWiki, toCanvas } = require('@sentropic/engram');
 
-const extraction = JSON.parse(fs.readFileSync('.graphify/.graphify_extract.json', 'utf-8'));
-const analysis = JSON.parse(fs.readFileSync('.graphify/.graphify_analysis.json', 'utf-8'));
-const labelsRaw = fs.existsSync('.graphify/.graphify_labels.json') ? JSON.parse(fs.readFileSync('.graphify/.graphify_labels.json', 'utf-8')) : {};
+const extraction = JSON.parse(fs.readFileSync('.engram/.graphify_extract.json', 'utf-8'));
+const analysis = JSON.parse(fs.readFileSync('.engram/.graphify_analysis.json', 'utf-8'));
+const labelsRaw = fs.existsSync('.engram/.graphify_labels.json') ? JSON.parse(fs.readFileSync('.engram/.graphify_labels.json', 'utf-8')) : {};
 
 const G = buildFromJson(extraction);
 const communities = Object.fromEntries(Object.entries(analysis.communities).map(([k, v]) => [Number(k), v]));
 const cohesion = Object.fromEntries(Object.entries(analysis.cohesion).map(([k, v]) => [Number(k), v]));
 const labels = Object.fromEntries(Object.entries(labelsRaw).map(([k, v]) => [Number(k), v]));
 
-const obsidianDir = 'OBSIDIAN_DIR';  // replace with --obsidian-dir value, or '.graphify/obsidian' if not given
+const obsidianDir = 'OBSIDIAN_DIR';  // replace with --obsidian-dir value, or '.engram/obsidian' if not given
 
 const n = toWiki(G, communities, obsidianDir, {communityLabels: Object.keys(labels).length ? labels : undefined, cohesion});
 console.log(\`Obsidian vault: \${n} notes in \${obsidianDir}/\`);
@@ -659,11 +661,11 @@ console.log('  _COMMUNITY_* - overview notes with cohesion scores and dataview q
 Generate the static Ontology Studio (always). It bundles the prebuilt studio SPA (`index.html` + `assets/`) with the data artifacts the SPA reads next to it — `graph.json`, `scene.json` (with pre-computed force-layout positions), `entities.json`, `reconciliation-candidates.json`, and `class-hierarchies.json` (the latter only when a profile carries a `class_hierarchies` block):
 
 ```bash
-# Default state dir is .graphify; pass --profile <path> to emit class-hierarchies.json for ontology profiles
-graphify studio export .graphify/studio
+# Default state dir is .engram; pass --profile <path> to emit class-hierarchies.json for ontology profiles
+engram studio export .engram/studio
 ```
 
-The studio scales to large graphs (WebGL render + pre-computed positions), so there is no node-count cap — even oversized graphs export to the studio. To open it, serve the export dir (`.graphify/studio`) with any static file server and load `index.html` in a browser.
+The studio scales to large graphs (WebGL render + pre-computed positions), so there is no node-count cap — even oversized graphs export to the studio. To open it, serve the export dir (`.engram/studio`) with any static file server and load `index.html` in a browser.
 
 ### Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag)
 
@@ -672,11 +674,11 @@ The studio scales to large graphs (WebGL render + pre-computed positions), so th
 ```bash
 node -e "
 const fs = require('fs');
-const { buildFromJson, toCypher } = require('@sentropic/graphify');
+const { buildFromJson, toCypher } = require('@sentropic/engram');
 
-const G = buildFromJson(JSON.parse(fs.readFileSync('.graphify/.graphify_extract.json', 'utf-8')));
-toCypher(G, '.graphify/cypher.txt');
-console.log('cypher.txt written - import with: cypher-shell < .graphify/cypher.txt');
+const G = buildFromJson(JSON.parse(fs.readFileSync('.engram/.graphify_extract.json', 'utf-8')));
+toCypher(G, '.engram/cypher.txt');
+console.log('cypher.txt written - import with: cypher-shell < .engram/cypher.txt');
 "
 ```
 
@@ -686,10 +688,10 @@ console.log('cypher.txt written - import with: cypher-shell < .graphify/cypher.t
 node -e "
 (async () => {
 const fs = require('fs');
-const { buildFromJson, pushToNeo4j } = require('@sentropic/graphify');
+const { buildFromJson, pushToNeo4j } = require('@sentropic/engram');
 
-const extraction = JSON.parse(fs.readFileSync('.graphify/.graphify_extract.json', 'utf-8'));
-const analysis = JSON.parse(fs.readFileSync('.graphify/.graphify_analysis.json', 'utf-8'));
+const extraction = JSON.parse(fs.readFileSync('.engram/.graphify_extract.json', 'utf-8'));
+const analysis = JSON.parse(fs.readFileSync('.engram/.graphify_analysis.json', 'utf-8'));
 const G = buildFromJson(extraction);
 const communities = Object.fromEntries(Object.entries(analysis.communities).map(([k, v]) => [Number(k), v]));
 
@@ -709,17 +711,17 @@ Replace `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` with actual values. Default 
 ```bash
 node -e "
 const fs = require('fs');
-const { buildFromJson, toSvg } = require('@sentropic/graphify');
+const { buildFromJson, toSvg } = require('@sentropic/engram');
 
-const extraction = JSON.parse(fs.readFileSync('.graphify/.graphify_extract.json', 'utf-8'));
-const analysis = JSON.parse(fs.readFileSync('.graphify/.graphify_analysis.json', 'utf-8'));
-const labelsRaw = fs.existsSync('.graphify/.graphify_labels.json') ? JSON.parse(fs.readFileSync('.graphify/.graphify_labels.json', 'utf-8')) : {};
+const extraction = JSON.parse(fs.readFileSync('.engram/.graphify_extract.json', 'utf-8'));
+const analysis = JSON.parse(fs.readFileSync('.engram/.graphify_analysis.json', 'utf-8'));
+const labelsRaw = fs.existsSync('.engram/.graphify_labels.json') ? JSON.parse(fs.readFileSync('.engram/.graphify_labels.json', 'utf-8')) : {};
 
 const G = buildFromJson(extraction);
 const communities = Object.fromEntries(Object.entries(analysis.communities).map(([k, v]) => [Number(k), v]));
 const labels = Object.fromEntries(Object.entries(labelsRaw).map(([k, v]) => [Number(k), v]));
 
-toSvg(G, communities, '.graphify/graph.svg', {communityLabels: Object.keys(labels).length ? labels : undefined});
+toSvg(G, communities, '.engram/graph.svg', {communityLabels: Object.keys(labels).length ? labels : undefined});
 console.log('graph.svg written - embeds in Obsidian, Notion, GitHub READMEs');
 "
 ```
@@ -729,15 +731,15 @@ console.log('graph.svg written - embeds in Obsidian, Notion, GitHub READMEs');
 ```bash
 node -e "
 const fs = require('fs');
-const { buildFromJson, toGraphml } = require('@sentropic/graphify');
+const { buildFromJson, toGraphml } = require('@sentropic/engram');
 
-const extraction = JSON.parse(fs.readFileSync('.graphify/.graphify_extract.json', 'utf-8'));
-const analysis = JSON.parse(fs.readFileSync('.graphify/.graphify_analysis.json', 'utf-8'));
+const extraction = JSON.parse(fs.readFileSync('.engram/.graphify_extract.json', 'utf-8'));
+const analysis = JSON.parse(fs.readFileSync('.engram/.graphify_analysis.json', 'utf-8'));
 
 const G = buildFromJson(extraction);
 const communities = Object.fromEntries(Object.entries(analysis.communities).map(([k, v]) => [Number(k), v]));
 
-toGraphml(G, communities, '.graphify/graph.graphml');
+toGraphml(G, communities, '.engram/graph.graphml');
 console.log('graph.graphml written - open in Gephi, yEd, or any GraphML tool');
 "
 ```
@@ -745,7 +747,7 @@ console.log('graph.graphml written - open in Gephi, yEd, or any GraphML tool');
 ### Step 7d - MCP server (only if --mcp flag)
 
 ```bash
-npx graphify serve .graphify/graph.json
+npx engram serve .engram/graph.json
 ```
 
 This starts a stdio MCP server that exposes tools: `query_graph`, `get_node`, `get_neighbors`, `get_community`, `god_nodes`, `graph_stats`, `shortest_path`. Add to Claude Desktop or any MCP-compatible agent orchestrator so other agents can query the graph live.
@@ -754,9 +756,9 @@ To configure in Claude Desktop, add to `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "graphify": {
+    "engram": {
       "command": "npx",
-      "args": ["graphify", "serve", "/absolute/path/to/.graphify/graph.json"]
+      "args": ["engram", "serve", "/absolute/path/to/.engram/graph.json"]
     }
   }
 }
@@ -764,15 +766,15 @@ To configure in Claude Desktop, add to `claude_desktop_config.json`:
 
 ### Step 8 - Token reduction benchmark (only if total_words > 5000)
 
-If `total_words` from `.graphify/.graphify_detect.json` is greater than 5,000, run:
+If `total_words` from `.engram/.graphify_detect.json` is greater than 5,000, run:
 
 ```bash
 node -e "
 const fs = require('fs');
-const { runBenchmark, printBenchmark } = require('@sentropic/graphify');
+const { runBenchmark, printBenchmark } = require('@sentropic/engram');
 
-const detection = JSON.parse(fs.readFileSync('.graphify/.graphify_detect.json', 'utf-8'));
-const result = runBenchmark('.graphify/graph.json', {corpusWords: detection.total_words});
+const detection = JSON.parse(fs.readFileSync('.engram/.graphify_detect.json', 'utf-8'));
+const result = runBenchmark('.engram/graph.json', {corpusWords: detection.total_words});
 printBenchmark(result);
 "
 ```
@@ -786,16 +788,16 @@ Print the output directly in chat. If `total_words <= 5000`, skip silently - the
 ```bash
 node -e "
 const fs = require('fs');
-const { saveManifest } = require('@sentropic/graphify');
+const { saveManifest } = require('@sentropic/engram');
 
-const detect = JSON.parse(fs.readFileSync('.graphify/.graphify_detect.json', 'utf-8'));
+const detect = JSON.parse(fs.readFileSync('.engram/.graphify_detect.json', 'utf-8'));
 saveManifest(detect.files);
 
-const extract = JSON.parse(fs.readFileSync('.graphify/.graphify_extract.json', 'utf-8'));
+const extract = JSON.parse(fs.readFileSync('.engram/.graphify_extract.json', 'utf-8'));
 const inputTok = extract.input_tokens || 0;
 const outputTok = extract.output_tokens || 0;
 
-const costPath = '.graphify/cost.json';
+const costPath = '.engram/cost.json';
 const cost = fs.existsSync(costPath) ? JSON.parse(fs.readFileSync(costPath, 'utf-8')) : {runs: [], total_input_tokens: 0, total_output_tokens: 0};
 
 cost.runs.push({
@@ -811,13 +813,13 @@ fs.writeFileSync(costPath, JSON.stringify(cost, null, 2));
 console.log(\`This run: \${inputTok.toLocaleString()} input tokens, \${outputTok.toLocaleString()} output tokens\`);
 console.log(\`All time: \${cost.total_input_tokens.toLocaleString()} input, \${cost.total_output_tokens.toLocaleString()} output (\${cost.runs.length} runs)\`);
 "
-rm -f .graphify/.graphify_detect.json .graphify/.graphify_extract.json .graphify/.graphify_ast.json .graphify/.graphify_semantic.json .graphify/.graphify_analysis.json
-rm -f .graphify/needs_update 2>/dev/null || true
+rm -f .engram/.graphify_detect.json .engram/.graphify_extract.json .engram/.graphify_ast.json .engram/.graphify_semantic.json .engram/.graphify_analysis.json
+rm -f .engram/needs_update 2>/dev/null || true
 ```
 
 Tell the user (omit the obsidian line unless --obsidian was given):
 ```
-Graph complete. Outputs in PATH_TO_DIR/.graphify/
+Graph complete. Outputs in PATH_TO_DIR/.engram/
 
   studio/               - static Ontology Studio, serve with any static file server and open index.html
   GRAPH_REPORT.md       - audit report
@@ -838,7 +840,7 @@ Then immediately offer to explore. Pick the single most interesting suggested qu
 
 > "The most interesting question this graph can answer: **[question]**. Want me to trace it?"
 
-If the user says yes, run `/graphify query "[question]"` on the graph and walk them through the answer using the graph structure - which nodes connect, which community boundaries get crossed, what the path reveals. Keep going as long as they want to explore. Each answer should end with a natural follow-up ("this connects to X - want to go deeper?") so the session feels like navigation, not a one-shot report.
+If the user says yes, run `/engram query "[question]"` on the graph and walk them through the answer using the graph structure - which nodes connect, which community boundaries get crossed, what the path reveals. Keep going as long as they want to explore. Each answer should end with a natural follow-up ("this connects to X - want to go deeper?") so the session feels like navigation, not a one-shot report.
 
 The graph is the map. Your job after the pipeline is to be the guide.
 
@@ -851,12 +853,12 @@ Use when you've added or modified files since the last run. Only re-extracts cha
 ```bash
 node -e "
 const fs = require('fs');
-const { detectIncremental } = require('@sentropic/graphify');
+const { detectIncremental } = require('@sentropic/engram');
 
 const result = detectIncremental('INPUT_PATH');
 const newTotal = result.new_total || 0;
 console.log(JSON.stringify(result, null, 2));
-fs.writeFileSync('.graphify/.graphify_incremental.json', JSON.stringify(result));
+fs.writeFileSync('.engram/.graphify_incremental.json', JSON.stringify(result));
 if (newTotal === 0) {
     console.log('No files changed since last run. Nothing to update.');
     process.exit(0);
@@ -872,7 +874,7 @@ node -e "
 const fs = require('fs');
 const path = require('path');
 
-const result = fs.existsSync('.graphify/.graphify_incremental.json') ? JSON.parse(fs.readFileSync('.graphify/.graphify_incremental.json', 'utf-8')) : {};
+const result = fs.existsSync('.engram/.graphify_incremental.json') ? JSON.parse(fs.readFileSync('.engram/.graphify_incremental.json', 'utf-8')) : {};
 const codeExts = new Set(['.py','.ts','.js','.go','.rs','.java','.cpp','.c','.rb','.swift','.kt','.cs','.scala','.php','.cc','.cxx','.hpp','.h','.kts','.lua','.toc']);
 const newFiles = result.new_files || {};
 const allChanged = Object.values(newFiles).flat();
@@ -881,7 +883,7 @@ console.log('code_only:', codeOnly);
 "
 ```
 
-If `code_only` is True: print `[graphify update] Code-only changes detected - skipping semantic extraction (no LLM needed)`, run only Step 3A (AST) on the changed files, skip Step 3B entirely (no subagents), then go straight to merge and Steps 4–8.
+If `code_only` is True: print `[engram update] Code-only changes detected - skipping semantic extraction (no LLM needed)`, run only Step 3A (AST) on the changed files, skip Step 3B entirely (no subagents), then go straight to merge and Steps 4–8.
 
 If `code_only` is False (any changed file is a doc/paper/image/video): first prepare transcripts and PDF sidecars if needed, then run the full Steps 3A–3C pipeline as normal.
 
@@ -891,23 +893,23 @@ When `code_only` is False, run this before Step 3B:
 node -e "
 (async () => {
 const fs = require('fs');
-const { prepareSemanticDetection } = require('@sentropic/graphify');
+const { prepareSemanticDetection } = require('@sentropic/engram');
 
-const detect = JSON.parse(fs.readFileSync('.graphify/.graphify_incremental.json', 'utf-8'));
-const analysis = fs.existsSync('.graphify/.graphify_analysis.json')
-  ? JSON.parse(fs.readFileSync('.graphify/.graphify_analysis.json', 'utf-8'))
+const detect = JSON.parse(fs.readFileSync('.engram/.graphify_incremental.json', 'utf-8'));
+const analysis = fs.existsSync('.engram/.graphify_analysis.json')
+  ? JSON.parse(fs.readFileSync('.engram/.graphify_analysis.json', 'utf-8'))
   : null;
 
 const { detection: semanticDetect, transcriptPaths, pdfArtifacts } = await prepareSemanticDetection(detect, {
-  transcriptOutputDir: '.graphify/transcripts',
-  pdfOutputDir: '.graphify/converted/pdf',
+  transcriptOutputDir: '.engram/transcripts',
+  pdfOutputDir: '.engram/converted/pdf',
   godNodes: (analysis && analysis.gods) || [],
   incremental: true,
 });
 
-fs.writeFileSync('.graphify/.graphify_incremental_semantic.json', JSON.stringify(semanticDetect, null, 2));
-fs.writeFileSync('.graphify/.graphify_transcripts.json', JSON.stringify(transcriptPaths, null, 2));
-fs.writeFileSync('.graphify/.graphify_pdf_ocr.json', JSON.stringify(pdfArtifacts, null, 2));
+fs.writeFileSync('.engram/.graphify_incremental_semantic.json', JSON.stringify(semanticDetect, null, 2));
+fs.writeFileSync('.engram/.graphify_transcripts.json', JSON.stringify(transcriptPaths, null, 2));
+fs.writeFileSync('.engram/.graphify_pdf_ocr.json', JSON.stringify(pdfArtifacts, null, 2));
 console.log('Prepared semantic inputs: ' + transcriptPaths.length + ' transcript(s), ' + pdfArtifacts.filter((item) => item.markdownPath).length + ' PDF sidecar(s)');
 )().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
@@ -916,7 +918,7 @@ console.log('Prepared semantic inputs: ' + transcriptPaths.length + ' transcript
 "
 ```
 
-When re-running Step 3B in update mode, use `.graphify/.graphify_incremental_semantic.json` instead of `.graphify/.graphify_detect_semantic.json`.
+When re-running Step 3B in update mode, use `.engram/.graphify_incremental_semantic.json` instead of `.engram/.graphify_detect_semantic.json`.
 
 Then:
 
@@ -924,20 +926,20 @@ Then:
 node -e "
 const fs = require('fs');
 const Graph = require('graphology');
-const { buildFromJson } = require('@sentropic/graphify');
+const { buildFromJson } = require('@sentropic/engram');
 
 // Load existing graph
-const existingData = JSON.parse(fs.readFileSync('.graphify/graph.json', 'utf-8'));
+const existingData = JSON.parse(fs.readFileSync('.engram/graph.json', 'utf-8'));
 const GExisting = new Graph({type: 'undirected'});
 for (const n of existingData.nodes) { const {id, ...a} = n; GExisting.mergeNode(id, a); }
 for (const l of existingData.links) { const {source, target, ...a} = l; if (GExisting.hasNode(source) && GExisting.hasNode(target)) try { GExisting.mergeEdge(source, target, a); } catch {} }
 
 // Load new extraction
-const newExtraction = JSON.parse(fs.readFileSync('.graphify/.graphify_extract.json', 'utf-8'));
+const newExtraction = JSON.parse(fs.readFileSync('.engram/.graphify_extract.json', 'utf-8'));
 const GNew = buildFromJson(newExtraction);
 
 // Prune nodes from deleted files
-const incremental = JSON.parse(fs.readFileSync('.graphify/.graphify_incremental.json', 'utf-8'));
+const incremental = JSON.parse(fs.readFileSync('.engram/.graphify_incremental.json', 'utf-8'));
 const deleted = new Set(incremental.deleted_files || []);
 if (deleted.size > 0) {
     const toRemove = GExisting.filterNodes((n, a) => deleted.has(a.source_file));
@@ -960,10 +962,10 @@ After Step 4, show the graph diff:
 node -e "
 const fs = require('fs');
 const Graph = require('graphology');
-const { graphDiff, buildFromJson } = require('@sentropic/graphify');
+const { graphDiff, buildFromJson } = require('@sentropic/engram');
 
-const oldData = fs.existsSync('.graphify/.graphify_old.json') ? JSON.parse(fs.readFileSync('.graphify/.graphify_old.json', 'utf-8')) : null;
-const newExtract = JSON.parse(fs.readFileSync('.graphify/.graphify_extract.json', 'utf-8'));
+const oldData = fs.existsSync('.engram/.graphify_old.json') ? JSON.parse(fs.readFileSync('.engram/.graphify_old.json', 'utf-8')) : null;
+const newExtract = JSON.parse(fs.readFileSync('.engram/.graphify_extract.json', 'utf-8'));
 const GNew = buildFromJson(newExtract);
 
 if (oldData) {
@@ -982,25 +984,25 @@ if (oldData) {
 "
 ```
 
-Before the merge step, save the old graph: `cp .graphify/graph.json .graphify/.graphify_old.json`
-Clean up after: `rm -f .graphify/.graphify_old.json .graphify/.graphify_incremental_semantic.json .graphify/.graphify_transcripts.json .graphify/.graphify_pdf_ocr.json`
+Before the merge step, save the old graph: `cp .engram/graph.json .engram/.graphify_old.json`
+Clean up after: `rm -f .engram/.graphify_old.json .engram/.graphify_incremental_semantic.json .engram/.graphify_transcripts.json .engram/.graphify_pdf_ocr.json`
 
 ---
 
 ## For --cluster-only
 
-Skip Steps 1–3. Load the existing graph from `.graphify/graph.json` and re-run clustering:
+Skip Steps 1–3. Load the existing graph from `.engram/graph.json` and re-run clustering:
 
 ```bash
 node -e "
 const fs = require('fs');
 const Graph = require('graphology');
-const { cluster, scoreAll } = require('@sentropic/graphify');
-const { godNodes, surprisingConnections } = require('@sentropic/graphify');
-const { generateReport } = require('@sentropic/graphify');
-const { toJson } = require('@sentropic/graphify');
+const { cluster, scoreAll } = require('@sentropic/engram');
+const { godNodes, surprisingConnections } = require('@sentropic/engram');
+const { generateReport } = require('@sentropic/engram');
+const { toJson } = require('@sentropic/engram');
 
-const data = JSON.parse(fs.readFileSync('.graphify/graph.json', 'utf-8'));
+const data = JSON.parse(fs.readFileSync('.engram/graph.json', 'utf-8'));
 const G = new Graph({type: 'undirected'});
 for (const n of data.nodes) { const {id, ...a} = n; G.mergeNode(id, a); }
 for (const l of data.links) { const {source, target, ...a} = l; if (G.hasNode(source) && G.hasNode(target)) try { G.mergeEdge(source, target, a); } catch {} }
@@ -1016,8 +1018,8 @@ const surprises = surprisingConnections(G, communities);
 const labels = new Map(Array.from(communities.keys(), cid => [cid, 'Community ' + cid]));
 
 const report = generateReport(G, communities, cohesion, labels, gods, surprises, detection, tokens, '.');
-fs.writeFileSync('.graphify/GRAPH_REPORT.md', report);
-toJson(G, communities, '.graphify/graph.json');
+fs.writeFileSync('.engram/GRAPH_REPORT.md', report);
+toJson(G, communities, '.engram/graph.json');
 
 const analysis = {
     communities: Object.fromEntries(Array.from(communities.entries(), ([k, v]) => [String(k), v])),
@@ -1025,7 +1027,7 @@ const analysis = {
     gods,
     surprises,
 };
-fs.writeFileSync('.graphify/.graphify_analysis.json', JSON.stringify(analysis, null, 2));
+fs.writeFileSync('.engram/.graphify_analysis.json', JSON.stringify(analysis, null, 2));
 console.log(\`Re-clustered: \${communities.size} communities\`);
 "
 ```
@@ -1034,7 +1036,7 @@ Then run Steps 5–9 as normal (label communities, generate viz, benchmark, clea
 
 ---
 
-## For /graphify query
+## For /engram query
 
 Two traversal modes - choose based on the question:
 
@@ -1047,22 +1049,22 @@ First check the graph exists:
 ```bash
 node -e "
 const fs = require('fs');
-if (!fs.existsSync('.graphify/graph.json')) {
-    console.log('ERROR: No graph found. Run /graphify <path> first to build the graph.');
+if (!fs.existsSync('.engram/graph.json')) {
+    console.log('ERROR: No graph found. Run /engram <path> first to build the graph.');
     process.exit(1);
 }
 "
 ```
-If it fails, stop and tell the user to run `/graphify <path>` first.
+If it fails, stop and tell the user to run `/engram <path>` first.
 
 ### Step 0 - Constrained query expansion (before traversal)
 
-`graphify query` matches nodes by case-folded substring + IDF - **no stemming, no synonyms, no cross-language match**. When the question uses different vocabulary than the graph labels (user says "обработчик" / graph says "handler"; "authentication" / "Guardian"), the literal matcher returns 0 hits. Expand the query against the **actual graph vocabulary** first - never invent tokens:
+`engram query` matches nodes by case-folded substring + IDF - **no stemming, no synonyms, no cross-language match**. When the question uses different vocabulary than the graph labels (user says "обработчик" / graph says "handler"; "authentication" / "Guardian"), the literal matcher returns 0 hits. Expand the query against the **actual graph vocabulary** first - never invent tokens:
 
 ```bash
 node -e "
 const fs = require('fs');
-const g = JSON.parse(fs.readFileSync('.graphify/graph.json','utf-8'));
+const g = JSON.parse(fs.readFileSync('.engram/graph.json','utf-8'));
 const vocab = new Set();
 for (const n of (g.nodes || [])) {
   for (const c of String(n.label || '').match(/[^\W\d_]+/gu) || []) {
@@ -1071,29 +1073,29 @@ for (const n of (g.nodes || [])) {
     }
   }
 }
-fs.writeFileSync('.graphify/.vocab.txt', [...vocab].sort().join('\n'));
+fs.writeFileSync('.engram/.vocab.txt', [...vocab].sort().join('\n'));
 console.log('vocab: ' + vocab.size + ' tokens');
 "
 ```
 
-Read `.graphify/.vocab.txt`, then pick **up to 12 tokens from that exact list** that match the query intent. Hard constraints:
+Read `.engram/.vocab.txt`, then pick **up to 12 tokens from that exact list** that match the query intent. Hard constraints:
 - Use only tokens present in `.vocab.txt` - do **not** invent tokens.
 - A concept with no plausible vocab token: skip it, no near-synonym from memory.
 - No vocab token matches at all: output an empty list and tell the user the corpus has no relevant vocabulary; do not fabricate a search.
 - Cross-language: e.g. Russian "аутентификация" - look for `auth`, `credential`, `token`, `security` **iff present** in the vocab.
 
-Print the selection before querying (`Query expanded to (from graph vocab, N tokens): [...]`), then run `graphify query` with the joined expanded tokens (keep the original question only for `save-result`).
+Print the selection before querying (`Query expanded to (from graph vocab, N tokens): [...]`), then run `engram query` with the joined expanded tokens (keep the original question only for `save-result`).
 
 Before deep traversal, run the compact first-hop summary and use it to choose the right graph action:
 
 ```bash
-graphify summary --graph .graphify/graph.json
-graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json
-graphify review-analysis --files src/auth.ts --graph .graphify/graph.json
-graphify review-eval --cases .graphify/review-cases.json --graph .graphify/graph.json
+engram summary --graph .engram/graph.json
+engram recommend-commits --files src/auth.ts,src/session.ts --graph .engram/graph.json
+engram review-analysis --files src/auth.ts --graph .engram/graph.json
+engram review-eval --cases .engram/review-cases.json --graph .engram/graph.json
 ```
 
-Load `.graphify/graph.json`, then:
+Load `.engram/graph.json`, then:
 
 1. Find the 1-3 nodes whose label best matches key terms in the question.
 2. Run the appropriate traversal from each starting node.
@@ -1106,7 +1108,7 @@ node -e "
 const fs = require('fs');
 const Graph = require('graphology');
 
-const data = JSON.parse(fs.readFileSync('.graphify/graph.json', 'utf-8'));
+const data = JSON.parse(fs.readFileSync('.engram/graph.json', 'utf-8'));
 const G = new Graph({type: 'undirected'});
 for (const n of data.nodes) { const {id, ...a} = n; G.mergeNode(id, a); }
 for (const l of data.links) { const {source, target, ...a} = l; if (G.hasNode(source) && G.hasNode(target)) try { G.mergeEdge(source, target, a); } catch {} }
@@ -1202,15 +1204,15 @@ After writing the answer, save it back into the graph so it improves future quer
 
 ```bash
 node -e "
-const { saveQueryResult } = require('@sentropic/graphify');
+const { saveQueryResult } = require('@sentropic/engram');
 saveQueryResult({
     question: 'QUESTION',
     answer: 'ANSWER',
-    memoryDir: '.graphify/memory',
+    memoryDir: '.engram/memory',
     queryType: 'query',
     sourceNodes: SOURCE_NODES,  // list of node labels cited, or []
 });
-console.log('Query result saved to .graphify/memory/');
+console.log('Query result saved to .engram/memory/');
 "
 ```
 
@@ -1218,7 +1220,7 @@ Replace `QUESTION` with the question, `ANSWER` with your full answer text, `SOUR
 
 ---
 
-## For /graphify path
+## For /engram path
 
 Find the shortest path between two named concepts in the graph.
 
@@ -1226,13 +1228,13 @@ First check the graph exists:
 ```bash
 node -e "
 const fs = require('fs');
-if (!fs.existsSync('.graphify/graph.json')) {
-    console.log('ERROR: No graph found. Run /graphify <path> first to build the graph.');
+if (!fs.existsSync('.engram/graph.json')) {
+    console.log('ERROR: No graph found. Run /engram <path> first to build the graph.');
     process.exit(1);
 }
 "
 ```
-If it fails, stop and tell the user to run `/graphify <path>` first.
+If it fails, stop and tell the user to run `/engram <path>` first.
 
 ```bash
 node -e "
@@ -1240,7 +1242,7 @@ const fs = require('fs');
 const Graph = require('graphology');
 const { bidirectional } = require('graphology-shortest-path/unweighted');
 
-const data = JSON.parse(fs.readFileSync('.graphify/graph.json', 'utf-8'));
+const data = JSON.parse(fs.readFileSync('.engram/graph.json', 'utf-8'));
 const G = new Graph({type: 'undirected'});
 for (const n of data.nodes) { const {id, ...a} = n; G.mergeNode(id, a); }
 for (const l of data.links) { const {source, target, ...a} = l; if (G.hasNode(source) && G.hasNode(target)) try { G.mergeEdge(source, target, a); } catch {} }
@@ -1294,21 +1296,21 @@ After writing the explanation, save it back:
 
 ```bash
 node -e "
-const { saveQueryResult } = require('@sentropic/graphify');
+const { saveQueryResult } = require('@sentropic/engram');
 saveQueryResult({
     question: 'Path from NODE_A to NODE_B',
     answer: 'ANSWER',
-    memoryDir: '.graphify/memory',
+    memoryDir: '.engram/memory',
     queryType: 'path_query',
     sourceNodes: PATH_NODES,  // list of node labels on the path
 });
-console.log('Path result saved to .graphify/memory/');
+console.log('Path result saved to .engram/memory/');
 "
 ```
 
 ---
 
-## For /graphify explain
+## For /engram explain
 
 Give a plain-language explanation of a single node - everything connected to it.
 
@@ -1316,20 +1318,20 @@ First check the graph exists:
 ```bash
 node -e "
 const fs = require('fs');
-if (!fs.existsSync('.graphify/graph.json')) {
-    console.log('ERROR: No graph found. Run /graphify <path> first to build the graph.');
+if (!fs.existsSync('.engram/graph.json')) {
+    console.log('ERROR: No graph found. Run /engram <path> first to build the graph.');
     process.exit(1);
 }
 "
 ```
-If it fails, stop and tell the user to run `/graphify <path>` first.
+If it fails, stop and tell the user to run `/engram <path>` first.
 
 ```bash
 node -e "
 const fs = require('fs');
 const Graph = require('graphology');
 
-const data = JSON.parse(fs.readFileSync('.graphify/graph.json', 'utf-8'));
+const data = JSON.parse(fs.readFileSync('.engram/graph.json', 'utf-8'));
 const G = new Graph({type: 'undirected'});
 for (const n of data.nodes) { const {id, ...a} = n; G.mergeNode(id, a); }
 for (const l of data.links) { const {source, target, ...a} = l; if (G.hasNode(source) && G.hasNode(target)) try { G.mergeEdge(source, target, a); } catch {} }
@@ -1372,28 +1374,28 @@ After writing the explanation, save it back:
 
 ```bash
 node -e "
-const { saveQueryResult } = require('@sentropic/graphify');
+const { saveQueryResult } = require('@sentropic/engram');
 saveQueryResult({
     question: 'Explain NODE_NAME',
     answer: 'ANSWER',
-    memoryDir: '.graphify/memory',
+    memoryDir: '.engram/memory',
     queryType: 'explain',
     sourceNodes: ['NODE_NAME'],
 });
-console.log('Explanation saved to .graphify/memory/');
+console.log('Explanation saved to .engram/memory/');
 "
 ```
 
 ---
 
-## For /graphify add
+## For /engram add
 
 Fetch a URL and add it to the corpus, then update the graph.
 
 ```bash
 node -e "
 (async () => {
-const { ingest } = require('@sentropic/graphify');
+const { ingest } = require('@sentropic/engram');
 const out = await ingest('URL', './raw', {author: 'AUTHOR', contributor: 'CONTRIBUTOR'});
 console.log(\`Saved to \${out}\`);
 })().catch((e) => {
@@ -1420,19 +1422,19 @@ Supported URL types (auto-detected):
 Start a background watcher that monitors a folder and auto-updates the graph when files change.
 
 ```bash
-npx graphify watch INPUT_PATH --debounce 3
+npx engram watch INPUT_PATH --debounce 3
 ```
 
 Replace INPUT_PATH with the folder to watch. Behavior depends on what changed:
 
 - **Code files only (.py, .ts, .go, etc.):** re-runs AST extraction + rebuild + cluster immediately, no LLM needed. `graph.json` and `GRAPH_REPORT.md` are updated automatically.
-- **Docs, papers, or images:** writes a `.graphify/needs_update` flag and prints a notification to run `/graphify --update` (LLM semantic re-extraction required).
+- **Docs, papers, or images:** writes a `.engram/needs_update` flag and prints a notification to run `/engram --update` (LLM semantic re-extraction required).
 
 Debounce (default 3s): waits until file activity stops before triggering, so a wave of parallel agent writes doesn't trigger a rebuild per file.
 
 Press Ctrl+C to stop.
 
-For agentic workflows: run `--watch` in a background terminal. Code changes from agent waves are picked up automatically between waves. If agents are also writing docs or notes, you'll need a manual `/graphify --update` after those waves.
+For agentic workflows: run `--watch` in a background terminal. Code changes from agent waves are picked up automatically between waves. If agents are also writing docs or notes, you'll need a manual `/engram --update` after those waves.
 
 ---
 
@@ -1441,34 +1443,34 @@ For agentic workflows: run `--watch` in a background terminal. Code changes from
 Install a post-commit hook that auto-rebuilds the graph after every commit. No background process needed - triggers once per commit, works with any editor.
 
 ```bash
-graphify hook install    # install
-graphify hook uninstall  # remove
-graphify hook status     # check
+engram hook install    # install
+engram hook uninstall  # remove
+engram hook status     # check
 ```
 
-After every `git commit`, the hook detects which code files changed (via `git diff HEAD~1`), re-runs AST extraction on those files, and rebuilds `graph.json` and `GRAPH_REPORT.md`. Doc/image changes are ignored by the hook - run `/graphify --update` manually for those.
+After every `git commit`, the hook detects which code files changed (via `git diff HEAD~1`), re-runs AST extraction on those files, and rebuilds `graph.json` and `GRAPH_REPORT.md`. Doc/image changes are ignored by the hook - run `/engram --update` manually for those.
 
-If a post-commit hook already exists, graphify appends to it rather than replacing it.
+If a post-commit hook already exists, Engram appends to it rather than replacing it.
 
 ---
 
 ## For native CLAUDE.md integration
 
-Run once per project to make graphify always-on in Claude Code sessions:
+Run once per project to make Engram always-on in Claude Code sessions:
 
 ```bash
-graphify claude install
+engram claude install
 ```
 
-This writes a `## graphify` section to the local `CLAUDE.md` that instructs Claude to check the graph before answering codebase questions and rebuild it after code changes. No manual `/graphify` needed in future sessions.
+This writes a `## engram` section to the local `CLAUDE.md` that instructs Claude to check the graph before answering codebase questions and rebuild it after code changes. No manual `/engram` needed in future sessions.
 
 ```bash
-graphify claude uninstall  # remove the section
+engram claude uninstall  # remove the section
 ```
 
 ---
 
-## Honesty Rules
+## Verifiability Rules
 
 - Never invent an edge. If unsure, use AMBIGUOUS.
 - Never skip the corpus check warning.
@@ -1478,47 +1480,48 @@ graphify claude uninstall  # remove the section
 
 ## Configured Project Profiles
 
-The profile activation rule is explicit: use this branch only when `graphify.yaml`, `graphify.yml`, `.graphify/config.yaml`, or `.graphify/config.yml` exists, or the invocation includes `--config` or `--profile`. If none is active, fallback to the existing non-profile workflow.
+The profile activation rule is explicit: use this branch only when `graphify.yaml`, `graphify.yml`, `.engram/config.yaml`, or `.engram/config.yml` exists, or the invocation includes `--config` or `--profile`. If none is active, fallback to the existing non-profile workflow.
 
 Configured profile workflow:
-1. Keep the TypeScript runtime proof in `.graphify/.graphify_runtime.json`; it must contain `"runtime": "typescript"`.
+1. Keep the TypeScript runtime proof in `.engram/.graphify_runtime.json`; it must contain `"runtime": "typescript"`.
 2. Run `project-config` to normalize config/profile artifacts.
-3. Run the `configured-dataprep` runtime command to produce `.graphify/profile/profile-state.json`, semantic detection, and registry extraction.
+3. Run the `configured-dataprep` runtime command to produce `.engram/profile/profile-state.json`, semantic detection, and registry extraction.
 4. Run the `profile-prompt` runtime command and use that prompt for assistant semantic extraction.
 5. Run base extraction validation, then the `profile-validate-extraction` runtime command.
-6. Merge `.graphify/profile/registry-extraction.json` with AST and semantic extraction, then finalize through the existing build/report/export runtime commands.
-7. Run the `profile-report` runtime command to write `.graphify/profile/profile-report.md`.
-8. If ontology discovery is requested, run `profile-discovery-sample`, use its prompt to produce `.graphify/ontology/discovery/proposals.json`, then run `profile-discovery-diff`; present the diff/report to the user and wait for approval before any apply step.
+6. Merge `.engram/profile/registry-extraction.json` with AST and semantic extraction, then finalize through the existing build/report/export runtime commands.
+7. Run the `profile-report` runtime command to write `.engram/profile/profile-report.md`.
+8. If ontology discovery is requested, run `profile-discovery-sample`, use its prompt to produce `.engram/ontology/discovery/proposals.json`, then run `profile-discovery-diff`; present the diff/report to the user and wait for approval before any apply step.
 9. If `dataprep.image_analysis.enabled` is true, use `image-calibration-samples` and `image-calibration-replay` for calibration. The assistant may propose labels or rule changes, but TypeScript replay owns acceptance.
 10. For batch image analysis, use `image-batch-export` and `image-batch-import`. A deep-pass export is allowed only when project-owned routing rules declare `decision: accept_matrix`; do not make production route decisions in the assistant.
-11. If the profile declares `outputs.ontology.enabled: true`, run `ontology-output` to compile `.graphify/ontology/` after validated extraction exists.
+11. If the profile declares `outputs.ontology.enabled: true`, run `ontology-output` to compile `.engram/ontology/` after validated extraction exists.
 
 ## Ontology Lifecycle Patches
 
-Use ontology lifecycle commands only when profile artifacts and `.graphify/ontology/` outputs already exist. Review decisions are patches against project-owned sources, not direct graph mutations. Assistants may propose patches, but must validate before dry-run and dry-run before write.
+Use ontology lifecycle commands only when profile artifacts and `.engram/ontology/` outputs already exist. Review decisions are patches against project-owned sources, not direct graph mutations. Assistants may propose patches, but must validate before dry-run and dry-run before write.
 
-- Validate with `ontology-patch-validate --profile-state .graphify/profile/profile-state.json --patch patch.json`.
-- Preview with `ontology-patch-apply --profile-state .graphify/profile/profile-state.json --patch patch.json --dry-run`.
-- Write with `ontology-patch-apply --profile-state .graphify/profile/profile-state.json --patch patch.json --write` only after explicit user approval.
+- Validate with `ontology-patch-validate --profile-state .engram/profile/profile-state.json --patch patch.json`.
+- Preview with `ontology-patch-apply --profile-state .engram/profile/profile-state.json --patch patch.json --dry-run`.
+- Write with `ontology-patch-apply --profile-state .engram/profile/profile-state.json --patch patch.json --write` only after explicit user approval.
 - Always warn if the Git worktree is dirty before proposing a write apply.
-- Agents must not edit `.graphify/graph.json` or derived `.graphify/ontology/*.json` directly.
-- The default MCP server stays read-only; mutation tools require explicit `graphify ontology serve --config graphify.yaml --write`.
-- Use the Public Domain Mystery Sagas repo as an external UAT and UI-mock corpus only; do not add its real corpus as Graphify package fixtures.
+- Agents must not edit `.engram/graph.json` or derived `.engram/ontology/*.json` directly.
+- The default MCP server stays read-only; mutation tools require explicit `engram ontology serve --config graphify.yaml --write`.
+- Use the Public Domain Mystery Sagas repo as an external UAT and UI-mock corpus only; do not add its real corpus as Engram package fixtures.
 
 Do not add embeddings, databases, a resident LLM backend, or a forked OCR/PDF pipeline for this branch.
 
 ## Lifecycle State
 
-- Runtime state lives under `.graphify/`; do not create legacy visible state directories.
-- If `.graphify/graph.json` is missing but legacy `graphify-out/graph.json` exists, run `graphify migrate-state --dry-run` first. If it reports tracked legacy artifacts, ask before using the recommended `git mv -f graphify-out .graphify` and commit message; do not auto-stage or auto-commit.
-- For architecture or codebase questions, when `.graphify/graph.json` exists, first run `graphify query "<question>"` (or `graphify path "<A>" "<B>"` / `graphify explain "<concept>"`); these return a scoped subgraph, usually much smaller than `GRAPH_REPORT.md` or raw grep output.
-- Use `.graphify/wiki/index.md` first when present; read `.graphify/GRAPH_REPORT.md` only for broad architecture review or when `query` / `path` / `explain` do not surface enough context.
-- If `.graphify/needs_update` exists or `.graphify/branch.json` has `"stale": true`, tell the user the graph is stale and run the platform graphify command with `--update` before relying on semantic results.
-- Before proposing or committing `.graphify` artifacts, run `graphify portable-check .graphify`; commit-safe graph artifacts must use repo-relative paths, and never commit `.graphify/branch.json`, `.graphify/worktree.json`, `.graphify/needs_update`, or `.graphify/cache/`. If a repo already tracks any of them, first add them to `.gitignore`, then propose `git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update` and `git rm -r --cached .graphify/cache`; never mutate git state without asking.
-- Git hooks may mark stale state after branch switches, merges, and rewrites. Never delete `.graphify/` automatically; use `graphify state prune` only as a non-destructive cleanup preview.
+- Runtime state lives under `.engram/`; do not create legacy visible state directories.
+- If `.engram/graph.json` is missing but legacy `graphify-out/graph.json` exists, run `engram migrate-state --dry-run` first. If it reports tracked legacy artifacts, ask before using the recommended `git mv -f graphify-out .engram` and commit message; do not auto-stage or auto-commit.
+- For architecture or codebase questions, when `.engram/graph.json` exists, first run `engram query "<question>"` (or `engram path "<A>" "<B>"` / `engram explain "<concept>"`); these return a scoped subgraph, usually much smaller than `GRAPH_REPORT.md` or raw grep output.
+- Use `.engram/wiki/index.md` first when present; read `.engram/GRAPH_REPORT.md` only for broad architecture review or when `query` / `path` / `explain` do not surface enough context.
+- If `.engram/needs_update` exists or `.engram/branch.json` has `"stale": true`, tell the user the graph is stale and run the platform Engram command with `--update` before relying on semantic results.
+- Before proposing or committing `.engram` artifacts, run `engram portable-check .engram`; commit-safe graph artifacts must use repo-relative paths, and never commit `.engram/branch.json`, `.engram/worktree.json`, `.engram/needs_update`, or `.engram/cache/`. If a repo already tracks any of them, first add them to `.gitignore`, then propose `git rm --cached .engram/branch.json .engram/worktree.json .engram/needs_update` and `git rm -r --cached .engram/cache`; never mutate git state without asking.
+- An existing `.graphify/` state dir is still read as a legacy fallback; new writes go to `.engram/`.
+- Git hooks may mark stale state after branch switches, merges, and rewrites. Never delete `.engram/` automatically; use `engram state prune` only as a non-destructive cleanup preview.
 
-Commit recommendation workflow: `graphify recommend-commits` is advisory-only. It may suggest groups and commit messages, but the user remains the actor; do not auto-stage, auto-commit, or mutate branches.
+Commit recommendation workflow: `engram recommend-commits` is advisory-only. It may suggest groups and commit messages, but the user remains the actor; do not auto-stage, auto-commit, or mutate branches.
 
-CRG review workflow: `graphify minimal-context` is the first review call. Keep graph review context within `<=5 graph tool calls` and `<=800` graph-context tokens. If `.graphify/needs_update` exists or `.graphify/branch.json` has `stale=true`, warn and update before trusting semantic review output. Then follow only the compact route: `graphify detect-changes` for risk, `graphify affected-flows` for flow impact, and `graphify review-context` for snippets or radius detail. If `.graphify/flows.json` is missing and flows are needed, run `graphify flows build` first. Explicit `--files`, `--base`, `--head`, or `--staged` inputs override unrelated dirty worktree noise; mention dirty worktrees as a warning and never mutate git state.
+CRG review workflow: `engram minimal-context` is the first review call. Keep graph review context within `<=5 graph tool calls` and `<=800` graph-context tokens. If `.engram/needs_update` exists or `.engram/branch.json` has `stale=true`, warn and update before trusting semantic review output. Then follow only the compact route: `engram detect-changes` for risk, `engram affected-flows` for flow impact, and `engram review-context` for snippets or radius detail. If `.engram/flows.json` is missing and flows are needed, run `engram flows build` first. Explicit `--files`, `--base`, `--head`, or `--staged` inputs override unrelated dirty worktree noise; mention dirty worktrees as a warning and never mutate git state.
 
-Review analysis workflow: `graphify review-analysis` adds blast radius, bridge nodes, test-gap hints, impacted communities, and multimodal/doc safety. `graphify review-eval` is the deterministic evaluation harness for token savings, impacted-file recall, review summary precision, and multimodal regression safety.
+Review analysis workflow: `engram review-analysis` adds blast radius, bridge nodes, test-gap hints, impacted communities, and multimodal/doc safety. `engram review-eval` is the deterministic evaluation harness for token savings, impacted-file recall, review summary precision, and multimodal regression safety.

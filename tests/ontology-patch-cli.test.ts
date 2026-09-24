@@ -176,7 +176,7 @@ describe("ontology patch CLI", () => {
       candidate_count: number;
       candidates: Array<{ candidate_id: string; canonical_id: string; proposed_patch_operation: string }>;
     };
-    expect(queue.schema).toBe("graphify_ontology_reconciliation_candidates_v1");
+    expect(queue.schema).toBe("engram_ontology_reconciliation_candidates_v1");
     expect(queue.candidate_count).toBe(1);
     expect(queue.candidates[0]).toMatchObject({
       candidate_id: "candidate-component",
@@ -309,13 +309,13 @@ describe("ontology patch CLI", () => {
       total: number;
       items: Array<{ source: string; patch: { id: string; operation: string } }>;
     };
-    expect(cliPreview.schema).toBe("graphify_ontology_reconciliation_decision_log_v1");
+    expect(cliPreview.schema).toBe("engram_ontology_reconciliation_decision_log_v1");
     expect(cliPreview.total).toBe(1);
     expect(cliPreview.items[0]).toMatchObject({
       source: "authoritative",
       patch: { id: "patch-synthetic-cli-001", operation: "accept_match" },
     });
-    expect(runtimePreview.schema).toBe("graphify_ontology_reconciliation_decision_log_v1");
+    expect(runtimePreview.schema).toBe("engram_ontology_reconciliation_decision_log_v1");
     expect(runtimePreview.total).toBe(1);
     expect(runtimePreview.items[0]).toMatchObject({
       source: "audit",

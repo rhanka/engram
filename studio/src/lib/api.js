@@ -66,8 +66,9 @@ function staticPath(file) {
 //
 // A `file://` page cannot `fetch()` a sibling JSON: every `file://` is an opaque
 // origin and a cross-origin fetch from `origin: null` is rejected by CORS. The
-// offline single-file export therefore inlines the data into a global
-// `window.__GRAPHIFY_BUNDLE__`, keyed by the SAME filenames the static fallbacks
+// offline single-file export therefore inlines the data into globals
+// `window.__ENGRAM_BUNDLE__` (and the legacy `window.__GRAPHIFY_BUNDLE__`
+// alias, same object), keyed by the SAME filenames the static fallbacks
 // request (`scene.json`, `graph.json`, `entities.json`, ...). Each accessor
 // consults the bundle BEFORE issuing any `fetch` (mirroring the staticBaseProvider
 // indirection above), so on the `file://` first-paint path the scene resolves
@@ -81,35 +82,46 @@ function staticPath(file) {
 const BUNDLE_ABSENT = Symbol("bundle-absent");
 
 /**
+ * The active inlined offline bundle: prefer `window.__ENGRAM_BUNDLE__`, fall
+ * back to the legacy `window.__GRAPHIFY_BUNDLE__` alias (old exports).
+ */
+function activeBundle() {
+  if (typeof window === "undefined") return null;
+  const fresh = window.__ENGRAM_BUNDLE__;
+  if (fresh != null && typeof fresh === "object") return fresh;
+  const legacy = window.__GRAPHIFY_BUNDLE__;
+  if (legacy != null && typeof legacy === "object") return legacy;
+  return null;
+}
+
+/**
  * True when an inlined offline bundle is present (the page is the self-contained
  * `studio.html`). In that mode a `fetch` of a sibling file is doomed over
  * `file://`, so accessors prefer the in-memory bundle and avoid the failing
  * request entirely.
  */
 function bundlePresent() {
-  return (
-    typeof window !== "undefined" &&
-    window.__GRAPHIFY_BUNDLE__ != null &&
-    typeof window.__GRAPHIFY_BUNDLE__ === "object"
-  );
+  return activeBundle() !== null;
 }
 
 /**
- * Read an inlined artifact from `window.__GRAPHIFY_BUNDLE__` by the same bare
+ * Read an inlined artifact from the active bundle by the same bare
  * filename the static fallbacks request (e.g. "scene.json"). Returns the parsed
  * value, or the {@link BUNDLE_ABSENT} sentinel when no bundle is present or the
  * key is missing. NEVER touches the network. Offline bundles are single-model,
  * so keys are flat — the lookup uses the filename, not the model-scoped path.
  */
 function bundleGet(file) {
-  if (!bundlePresent()) return BUNDLE_ABSENT;
-  const value = window.__GRAPHIFY_BUNDLE__[file];
+  const bundle = activeBundle();
+  if (bundle === null) return BUNDLE_ABSENT;
+  const value = bundle[file];
   return value === undefined ? BUNDLE_ABSENT : value;
 }
 
 /** Test seam: clear the inlined offline bundle so each test starts clean. */
 export function __resetBundle() {
   if (typeof window !== "undefined") {
+    delete window.__ENGRAM_BUNDLE__;
     delete window.__GRAPHIFY_BUNDLE__;
   }
 }

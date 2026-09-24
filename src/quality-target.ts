@@ -2,16 +2,25 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { schemaIdAccepted } from "./schema-ids.js";
 
 export const QUALITY_TARGET_CONFIG_CANDIDATES = [
+  "engram.yaml",
+  "engram.yml",
+  join(".engram", "config.yaml"),
+  join(".engram", "config.yml"),
+] as const;
+
+/** Legacy (pre-rename) config filenames, probed after the Engram names. */
+export const LEGACY_QUALITY_TARGET_CONFIG_CANDIDATES = [
   "graphify.yaml",
   "graphify.yml",
   join(".graphify", "config.yaml"),
   join(".graphify", "config.yml"),
 ] as const;
 
-export const CITATION_EXTRACTION_CONTRACT_SCHEMA = "graphify_citation_extraction_contract_v1";
-export const ALL_EXTRACTED_CITATION_CONTRACT_ID = "graphify_all_extracted_entity_citations_v1";
+export const CITATION_EXTRACTION_CONTRACT_SCHEMA = "engram_citation_extraction_contract_v1";
+export const ALL_EXTRACTED_CITATION_CONTRACT_ID = "engram_all_extracted_entity_citations_v1";
 const SCENE_SHAPES = new Set(["box", "diamond", "dot", "hexagon", "roundedbox", "square", "star", "triangle"]);
 
 export type TargetCitationExtractionMode = "all_extracted" | "bounded_sample" | "unknown";
@@ -264,7 +273,10 @@ function normalizeMaxDrop(value: unknown): { max_drop: number } | undefined {
 
 export function discoverQualityTargetsConfig(root: string = "."): QualityTargetDiscoveryResult {
   const resolvedRoot = resolve(root);
-  const searched = QUALITY_TARGET_CONFIG_CANDIDATES.map((candidate) => join(resolvedRoot, candidate));
+  const searched = [
+    ...QUALITY_TARGET_CONFIG_CANDIDATES.map((candidate) => join(resolvedRoot, candidate)),
+    ...LEGACY_QUALITY_TARGET_CONFIG_CANDIDATES.map((candidate) => join(resolvedRoot, candidate)),
+  ];
   for (const candidate of searched) {
     if (existsSync(candidate)) return { found: true, path: candidate, searched };
   }
@@ -429,13 +441,13 @@ export function validateCitationExtractionContractForTarget(
   const errors: string[] = [];
   const extraction = target.citations.extraction;
   if (!extraction.require_producer_proof) return errors;
-  if (contract.schema !== CITATION_EXTRACTION_CONTRACT_SCHEMA) {
-    errors.push("citations.extraction.contract.schema must be graphify_citation_extraction_contract_v1");
+  if (!schemaIdAccepted(contract.schema, CITATION_EXTRACTION_CONTRACT_SCHEMA)) {
+    errors.push("citations.extraction.contract.schema must be engram_citation_extraction_contract_v1");
   }
   if (contract.mode !== extraction.mode) {
     errors.push(`citations.extraction.contract.mode must be ${extraction.mode}`);
   }
-  if (extraction.contract_id !== null && contract.id !== extraction.contract_id) {
+  if (extraction.contract_id !== null && !schemaIdAccepted(extraction.contract_id, contract.id)) {
     errors.push(`citations.extraction.contract.id must be ${extraction.contract_id}`);
   }
   const hash = hashCitationExtractionContract(contract);

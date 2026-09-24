@@ -1,7 +1,7 @@
 /**
  * workspace-bundle-contract-v1 (WP4 G2) — scene hierarchy sidecar builder.
  *
- * Pure builder for the `graphify_scene_hierarchies_v1` artifact
+ * Pure builder for the `engram_scene_hierarchies_v1` artifact
  * (`scene-hierarchies.json`), the AUTONOMOUS hierarchy sidecar of the
  * Workspace Consumption Bundle (frozen contract, signed 2/2):
  *
@@ -35,7 +35,7 @@
 import { buildHierarchyIndex } from "./ontology-hierarchies.js";
 import type { OntologyHierarchyArc } from "./types.js";
 
-export const SCENE_HIERARCHIES_SCHEMA = "graphify_scene_hierarchies_v1";
+export const SCENE_HIERARCHIES_SCHEMA = "engram_scene_hierarchies_v1";
 
 /** LANE 1 — authoritative tree statuses (frozen contract). */
 const TREE_LANE_STATUSES = new Set(["reference", "validated"]);
@@ -126,7 +126,7 @@ export interface BuildSceneHierarchySidecarOptions {
 }
 
 /**
- * Build the `graphify_scene_hierarchies_v1` sidecar. Pure and deterministic:
+ * Build the `engram_scene_hierarchies_v1` sidecar. Pure and deterministic:
  * every list is stably sorted, so identical inputs yield identical artifacts
  * regardless of arc order (only `generated_at` varies).
  */

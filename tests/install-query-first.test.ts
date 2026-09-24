@@ -22,7 +22,7 @@ const bannedReportFirstPatterns = [
 ];
 
 function expectQueryFirst(name: string, text: string): void {
-  expect(text, `${name} should mention graphify query`).toMatch(/graphify query/);
+  expect(text, `${name} should mention graphify/engram query`).toMatch(/(?:graphify|engram) query/);
   for (const pattern of bannedReportFirstPatterns) {
     expect(text, `${name} should not use report-first phrasing: ${pattern}`).not.toMatch(pattern);
   }
@@ -63,17 +63,17 @@ describe("query-first install guidance", () => {
 
     agentsInstall(dir, "opencode");
     expectQueryFirst("AGENTS.md", readFileSync(join(dir, "AGENTS.md"), "utf-8"));
-    expectQueryFirst("OpenCode plugin", readFileSync(join(dir, ".opencode", "plugins", "graphify.js"), "utf-8"));
+    expectQueryFirst("OpenCode plugin", readFileSync(join(dir, ".opencode", "plugins", "engram.js"), "utf-8"));
 
     geminiInstall(dir);
     expectQueryFirst("GEMINI.md", readFileSync(join(dir, "GEMINI.md"), "utf-8"));
 
     cursorInstall(dir);
-    expectQueryFirst("Cursor rule", readFileSync(join(dir, ".cursor", "rules", "graphify.mdc"), "utf-8"));
+    expectQueryFirst("Cursor rule", readFileSync(join(dir, ".cursor", "rules", "engram.mdc"), "utf-8"));
 
     kiroInstall(dir);
-    expectQueryFirst("Kiro steering", readFileSync(join(dir, ".kiro", "steering", "graphify.md"), "utf-8"));
-    expectQueryFirst("Kiro skill", readFileSync(join(dir, ".kiro", "skills", "graphify", "SKILL.md"), "utf-8"));
+    expectQueryFirst("Kiro steering", readFileSync(join(dir, ".kiro", "steering", "engram.md"), "utf-8"));
+    expectQueryFirst("Kiro skill", readFileSync(join(dir, ".kiro", "skills", "engram", "SKILL.md"), "utf-8"));
 
     installClaudeHook(dir);
     const claudeSettings = readFileSync(join(dir, ".claude", "settings.json"), "utf-8");
@@ -131,7 +131,9 @@ describe("query-first install guidance", () => {
       "utf-8",
     );
     kiroInstall(dir);
-    expectQueryFirst("refreshed Kiro steering", readFileSync(join(dir, ".kiro", "steering", "graphify.md"), "utf-8"));
+    expectQueryFirst("refreshed Kiro steering", readFileSync(join(dir, ".kiro", "steering", "engram.md"), "utf-8"));
+    // The legacy steering file is replaced in place, not duplicated.
+    expect(existsSync(join(dir, ".kiro", "steering", "graphify.md"))).toBe(false);
 
     mkdirSync(join(dir, ".claude"), { recursive: true });
     writeFileSync(

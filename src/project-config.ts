@@ -47,11 +47,25 @@ const SECRET_KEY_PATTERNS = [
 const VALID_MIRROR_MODES = new Set(["merge", "replace"]);
 
 const CONFIG_CANDIDATES = [
+  "engram.yaml",
+  "engram.yml",
+  join(".engram", "config.yaml"),
+  join(".engram", "config.yml"),
+] as const;
+
+/** Legacy (pre-rename) config filenames, probed after the Engram names. */
+const LEGACY_CONFIG_CANDIDATES = [
   "graphify.yaml",
   "graphify.yml",
   join(".graphify", "config.yaml"),
   join(".graphify", "config.yml"),
 ] as const;
+
+function isLegacyConfigPath(resolvedPath: string, root: string): boolean {
+  return LEGACY_CONFIG_CANDIDATES.some(
+    (candidate) => join(root, candidate) === resolvedPath,
+  );
+}
 
 const VALID_PDF_OCR_MODES = new Set(["off", "auto", "always", "dry-run"]);
 const VALID_CITATION_MINIMUMS = new Set(["file", "page", "section", "paragraph"]);
@@ -100,10 +114,10 @@ function validateStorageMirror(mirror: Record<string, unknown>, index: number): 
     if (isSecretKey(key)) {
       errors.push(
         `storage.mirrors[${index}]: key "${key}" looks like a secret and is not allowed in YAML config. ` +
-          `Use environment variables instead: GRAPHIFY_NEO4J_PASSWORD, GRAPHIFY_NEO4J_USER, ` +
-          `GRAPHIFY_NEO4J_URI, GRAPHIFY_NEO4J_DATABASE, GRAPHIFY_SPANNER_PROJECT, ` +
-          `GRAPHIFY_SPANNER_INSTANCE, GRAPHIFY_SPANNER_DATABASE, GRAPHIFY_POSTGRES_URL, ` +
-          `GRAPHIFY_POSTGRES_SCHEMA, GRAPHIFY_POSTGRES_SSL`,
+          `Use environment variables instead: ENGRAM_NEO4J_PASSWORD, ENGRAM_NEO4J_USER, ` +
+          `ENGRAM_NEO4J_URI, ENGRAM_NEO4J_DATABASE, ENGRAM_SPANNER_PROJECT, ` +
+          `ENGRAM_SPANNER_INSTANCE, ENGRAM_SPANNER_DATABASE, ENGRAM_POSTGRES_URL, ` +
+          `ENGRAM_POSTGRES_SCHEMA, ENGRAM_POSTGRES_SSL`,
       );
     }
   }
@@ -208,9 +222,17 @@ function parseInputScopeMode(value: unknown, fallback: GraphifyInputScopeMode): 
 
 export function discoverProjectConfig(root: string = "."): ProjectConfigDiscoveryResult {
   const resolvedRoot = resolve(root);
-  const searched = CONFIG_CANDIDATES.map((candidate) => join(resolvedRoot, candidate));
+  const searched = [
+    ...CONFIG_CANDIDATES.map((candidate) => join(resolvedRoot, candidate)),
+    ...LEGACY_CONFIG_CANDIDATES.map((candidate) => join(resolvedRoot, candidate)),
+  ];
   for (const candidate of searched) {
     if (existsSync(candidate)) {
+      if (isLegacyConfigPath(candidate, resolvedRoot)) {
+        console.warn(
+          `[engram] using legacy config ${candidate}; rename it to engram.yaml for new work`,
+        );
+      }
       return { found: true, path: candidate, searched };
     }
   }
@@ -287,7 +309,7 @@ export function validateProjectConfig(config: GraphifyProjectConfig): string[] {
   }
   if (asRecord(llmExecution.mesh).adapter !== undefined) {
     errors.push(
-      "llm_execution.mesh.adapter is no longer read: it named nothing, since graphify has no adapter registry to resolve it against. Mesh mode takes an injected client built with createGraphifyMesh() instead. Remove the key.",
+      "llm_execution.mesh.adapter is no longer read: it named nothing, since engram has no adapter registry to resolve it against. Mesh mode takes an injected client built with createGraphifyMesh() instead. Remove the key.",
     );
   }
   if (outputs.state_dir !== undefined && typeof outputs.state_dir !== "string") {
@@ -315,7 +337,7 @@ export function normalizeProjectConfig(
 ): NormalizedProjectConfig {
   const errors = validateProjectConfig(config);
   if (errors.length > 0) {
-    throw new Error(`Invalid graphify project config:\n${errors.map((item) => `  - ${item}`).join("\n")}`);
+    throw new Error(`Invalid engram project config:\n${errors.map((item) => `  - ${item}`).join("\n")}`);
   }
 
   const resolvedSourcePath = resolve(sourcePath);

@@ -53,7 +53,7 @@ async function waitForAcceptingConnections(pg: typeof import("pg"), connection: 
  * uses a unique name, and is force-removed by `stop()` — call it in a finally.
  */
 export async function startEphemeralPostgres(version: string): Promise<EphemeralPostgresV1> {
-  const container = `graphify-memory-pg-${version}-${process.pid}-${Date.now()}-${counter++}`;
+  const container = `engram-memory-pg-${version}-${process.pid}-${Date.now()}-${counter++}`;
   const run = docker([
     "run", "-d", "--name", container,
     "-e", "POSTGRES_PASSWORD=graphify",

@@ -51,7 +51,7 @@ describe("M11 — antigravity global skill path (9985940 #1079)", () => {
 // M12: antigravity project-scoped install writes rules + workflows
 // ---------------------------------------------------------------------------
 describe("M12 — antigravity project install writes rules and workflows (9a298c5)", () => {
-  it("projectInstall('antigravity') writes .agents/rules/graphify.md", () => {
+  it("projectInstall('antigravity') writes .agents/rules/engram.md", () => {
     const projectDir = mkdtempSync(join(tmpdir(), "graphify-m12-antigrav-"));
     tempDirs.push(projectDir);
 
@@ -63,11 +63,13 @@ describe("M12 — antigravity project install writes rules and workflows (9a298c
       // writeGlobalSkill might fail if no real home dir; ignore.
     }
 
-    const rulesPath = join(projectDir, ".agents", "rules", "graphify.md");
+    const rulesPath = join(projectDir, ".agents", "rules", "engram.md");
     expect(existsSync(rulesPath)).toBe(true);
+    // A legacy graphify rule must not linger next to the new one.
+    expect(existsSync(join(projectDir, ".agents", "rules", "graphify.md"))).toBe(false);
   });
 
-  it("projectInstall('antigravity') writes .agents/workflows/graphify.md", () => {
+  it("projectInstall('antigravity') writes .agents/workflows/engram.md", () => {
     const projectDir = mkdtempSync(join(tmpdir(), "graphify-m12-wf-"));
     tempDirs.push(projectDir);
 
@@ -77,8 +79,9 @@ describe("M12 — antigravity project install writes rules and workflows (9a298c
       // writeGlobalSkill might fail; ignore.
     }
 
-    const workflowPath = join(projectDir, ".agents", "workflows", "graphify.md");
+    const workflowPath = join(projectDir, ".agents", "workflows", "engram.md");
     expect(existsSync(workflowPath)).toBe(true);
+    expect(existsSync(join(projectDir, ".agents", "workflows", "graphify.md"))).toBe(false);
   });
 
   it("projectInstall('antigravity') writes project-local SKILL.md under .agents/", () => {
@@ -91,7 +94,7 @@ describe("M12 — antigravity project install writes rules and workflows (9a298c
       // writeGlobalSkill might fail; ignore.
     }
 
-    const skillPath = join(projectDir, ".agents", "skills", "graphify", "SKILL.md");
+    const skillPath = join(projectDir, ".agents", "skills", "engram", "SKILL.md");
     expect(existsSync(skillPath)).toBe(true);
   });
 });

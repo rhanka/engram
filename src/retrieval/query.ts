@@ -2,7 +2,7 @@
  * In-browser BM25 query (C4) + the seed layer (C5a steps 1–2).
  *
  * Pure compute — no model, no key, no fetch. Consumes a PARSED SearchIndex
- * (from a `file://` fetch, or the inlined `window.__GRAPHIFY_BUNDLE__
+ * (from a `file://` fetch, or the inlined `window.__ENGRAM_BUNDLE__
  * ["search-index.json"]` once work-stream A lands), runs BM25 over it via the
  * SAME `queryTerms` tokenizer the index was built with (index == query), and
  * returns the ranked seed list the shared retrieval core consumes.

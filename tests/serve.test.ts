@@ -865,7 +865,7 @@ describe("MCP stdio server", () => {
           offset: 0,
         },
       })));
-      expect(candidates.schema).toBe("graphify_ontology_reconciliation_candidates_response_v1");
+      expect(candidates.schema).toBe("engram_ontology_reconciliation_candidates_response_v1");
       expect(candidates.total).toBe(1);
       expect(candidates.items).toMatchObject([
         {
@@ -895,7 +895,7 @@ describe("MCP stdio server", () => {
         name: "preview_ontology_decision_log",
         arguments: { limit: 10, offset: 0 },
       })));
-      expect(logPreview.schema).toBe("graphify_ontology_reconciliation_decision_log_v1");
+      expect(logPreview.schema).toBe("engram_ontology_reconciliation_decision_log_v1");
       expect(logPreview.total).toBe(2);
       expect(logPreview.items.map((item: { source: string }) => item.source)).toEqual([
         "authoritative",
@@ -911,7 +911,7 @@ describe("MCP stdio server", () => {
         arguments: {},
       })));
       expect(status).toMatchObject({
-        schema: "graphify_ontology_rebuild_status_v1",
+        schema: "engram_ontology_rebuild_status_v1",
         needs_update: true,
         graph_hash: "graph-hash",
         profile_hash: "profile-hash",
@@ -1012,7 +1012,7 @@ describe("MCP stdio server", () => {
       items: Array<{ id: string; candidate_id: string; canonical_id: string }>;
     };
     expect(candidatesResponse.status).toBe(200);
-    expect(candidates.schema).toBe("graphify_ontology_reconciliation_candidates_response_v1");
+    expect(candidates.schema).toBe("engram_ontology_reconciliation_candidates_response_v1");
     expect(candidates.stale).toBe(true);
     expect(candidates.total).toBe(1);
     expect(candidates.items).toMatchObject([
@@ -1055,7 +1055,7 @@ describe("MCP stdio server", () => {
       items: Array<{ source: string; patch: { id: string; operation: string } }>;
     };
     expect(logResponse.status).toBe(200);
-    expect(log.schema).toBe("graphify_ontology_reconciliation_decision_log_v1");
+    expect(log.schema).toBe("engram_ontology_reconciliation_decision_log_v1");
     expect(log.total).toBe(1);
     expect(log.items).toMatchObject([
       {
@@ -1073,7 +1073,7 @@ describe("MCP stdio server", () => {
     };
     expect(statusResponse.status).toBe(200);
     expect(status).toMatchObject({
-      schema: "graphify_ontology_rebuild_status_v1",
+      schema: "engram_ontology_rebuild_status_v1",
       needs_update: true,
       candidates_match: true,
       decision_log_available: true,
@@ -1188,7 +1188,7 @@ describe("MCP stdio server", () => {
           arguments: { changed_files: ["src/beta.ts"] },
         }),
       );
-      expect(reviewDelta).toContain("Graphify Review Delta");
+      expect(reviewDelta).toContain("Engram Review Delta");
       expect(reviewDelta).toContain("src/beta.ts");
       expect(reviewDelta).toContain("GammaDocs");
       expect(reviewDelta).toContain("Likely test gaps:");
@@ -1199,7 +1199,7 @@ describe("MCP stdio server", () => {
           arguments: { changed_files: ["src/beta.ts"] },
         }),
       );
-      expect(reviewAnalysis).toContain("Graphify Review Analysis");
+      expect(reviewAnalysis).toContain("Engram Review Analysis");
       expect(reviewAnalysis).toContain("Blast radius:");
       expect(reviewAnalysis).toContain("Impacted communities:");
 
@@ -1209,7 +1209,7 @@ describe("MCP stdio server", () => {
           arguments: { changed_files: ["src/beta.ts"] },
         }),
       );
-      expect(commitRecommendation).toContain("Graphify Commit Recommendation");
+      expect(commitRecommendation).toContain("Engram Commit Recommendation");
       expect(commitRecommendation).toContain("Advisory only");
       expect(commitRecommendation).toContain("src/beta.ts");
       expect(commitRecommendation).toContain("Suggested commit groups:");

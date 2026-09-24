@@ -64,23 +64,23 @@ describe("buildProject", () => {
 
     const { buildProject } = await import("../src/pipeline.js");
     const result = await buildProject(dir, { wiki: true });
-    const graphText = readFileSync(join(dir, ".graphify", "graph.json"), "utf-8");
-    const reportText = readFileSync(join(dir, ".graphify", "GRAPH_REPORT.md"), "utf-8");
+    const graphText = readFileSync(join(dir, ".engram", "graph.json"), "utf-8");
+    const reportText = readFileSync(join(dir, ".engram", "GRAPH_REPORT.md"), "utf-8");
 
     expect(result.graph.order).toBe(2);
-    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
-    expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
+    expect(existsSync(join(dir, ".engram", "graph.json"))).toBe(true);
+    expect(existsSync(join(dir, ".engram", "GRAPH_REPORT.md"))).toBe(true);
     // The legacy vis-network graph.html is gone; the visual output is now the
     // static Ontology Studio bundle. The studio emit is best-effort (it needs
     // the prebuilt SPA), so we only assert the legacy artifact is NOT written.
-    expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(false);
-    expect(existsSync(join(dir, ".graphify", "wiki", "index.md"))).toBe(true);
+    expect(existsSync(join(dir, ".engram", "graph.html"))).toBe(false);
+    expect(existsSync(join(dir, ".engram", "wiki", "index.md"))).toBe(true);
     expect(JSON.parse(graphText).nodes[0].source_file).toBe("src/sample.ts");
     expect(graphText).not.toContain(dir);
     expect(reportText).not.toContain(dir);
     expect(reportText).toContain("## Summary");
-    expect(readFileSync(join(dir, ".graphify", ".graphify_detect.json"), "utf-8")).toContain("\"total_files\"");
-    const labelsPath = join(dir, ".graphify", ".graphify_labels.json");
+    expect(readFileSync(join(dir, ".engram", ".graphify_detect.json"), "utf-8")).toContain("\"total_files\"");
+    const labelsPath = join(dir, ".engram", ".graphify_labels.json");
     expect(existsSync(labelsPath)).toBe(true);
     const labels = JSON.parse(readFileSync(labelsPath, "utf-8")) as Record<string, string>;
     expect(Object.keys(labels).length).toBeGreaterThan(0);

@@ -14,17 +14,17 @@ afterEach(() => {
 });
 
 describe("Aider integration contract", () => {
-  it("uses /graphify as the explicit Aider invocation hint", () => {
-    expect(getInvocationExample("aider")).toBe("/graphify .");
+  it("uses /engram as the explicit Aider invocation hint", () => {
+    expect(getInvocationExample("aider")).toBe("/engram .");
   });
 
   it("writes AGENTS.md rules without hook-specific Codex/OpenCode details", () => {
     const section = getAgentsMdSection("aider");
 
-    expect(section).toContain("use the installed `graphify` skill");
-    expect(section).toContain(".graphify/cache/");
+    expect(section).toContain("use the installed `engram` skill");
+    expect(section).toContain(".engram/cache/");
     expect(section).toContain(
-      "git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update",
+      "git rm --cached .engram/branch.json .engram/worktree.json .engram/needs_update",
     );
     expect(section).not.toContain("$graphify");
     expect(section).not.toContain(".codex/hooks.json");
@@ -38,8 +38,8 @@ describe("Aider integration contract", () => {
     agentsInstall(dir, "aider");
 
     const agents = readFileSync(join(dir, "AGENTS.md"), "utf-8");
-    expect(agents).toContain("## graphify");
-    expect(agents).toContain("use the installed `graphify` skill");
+    expect(agents).toContain("## engram");
+    expect(agents).toContain("use the installed `engram` skill");
     expect(existsSync(join(dir, ".codex", "hooks.json"))).toBe(false);
     expect(existsSync(join(dir, "opencode.json"))).toBe(false);
   });
@@ -57,7 +57,7 @@ describe("Aider integration contract", () => {
       process.argv = ["node", "graphify", "install", "--platform", "aider"];
       await main();
 
-      const skillPath = join(home, ".aider", "graphify", "SKILL.md");
+      const skillPath = join(home, ".aider", "engram", "SKILL.md");
       const skill = readFileSync(skillPath, "utf-8");
       expect(skill).toContain("sequential extraction on Aider");
       expect(skill).toContain("Semantic extraction: N files (sequential - Aider)");

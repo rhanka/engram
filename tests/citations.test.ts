@@ -212,7 +212,7 @@ describe("aggregateCitations", () => {
 });
 
 describe("writeCitationsSidecar + computeCitationSignature", () => {
-  it("writes a keyed graphify_ontology_citations_v1 store with count=N and full list", () => {
+  it("writes a keyed engram_ontology_citations_v1 store with count=N and full list", () => {
     const dir = tempDir();
     const G = hubGraph(214);
     const map = aggregateCitations(G);
@@ -224,7 +224,7 @@ describe("writeCitationsSidecar + computeCitationSignature", () => {
       graph_signature: string;
       nodes: Record<string, { count: number; citations: OntologyCitation[] }>;
     };
-    expect(payload.schema).toBe("graphify_ontology_citations_v1");
+    expect(payload.schema).toBe("engram_ontology_citations_v1");
     expect(payload.nodes.sherlock.count).toBe(214);
     expect(payload.nodes.sherlock.citations).toHaveLength(214);
     expect(typeof payload.graph_signature).toBe("string");

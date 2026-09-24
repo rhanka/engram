@@ -5,7 +5,7 @@
  * ontology / hierarchy sidecars). Until now each artifact was emitted
  * independently and there was no single descriptor letting the consumer
  * discover and validate the bundle as a whole. This module produces that
- * descriptor: `workspace-manifest.json` (schema `graphify_workspace_manifest_v1`).
+ * descriptor: `workspace-manifest.json` (schema `engram_workspace_manifest_v1`).
  *
  * Design constraints (mirrors the signed `workspace-bundle-contract-v1`):
  *   - Pure & deterministic: the builder takes the artifact descriptors and
@@ -26,7 +26,7 @@
 
 import { createHash } from "node:crypto";
 
-export const WORKSPACE_MANIFEST_SCHEMA = "graphify_workspace_manifest_v1";
+export const WORKSPACE_MANIFEST_SCHEMA = "engram_workspace_manifest_v1";
 export const WORKSPACE_MANIFEST_FILENAME = "workspace-manifest.json";
 
 /**
@@ -137,7 +137,7 @@ function byteLength(bytes: Buffer | string): number {
 }
 
 /**
- * Build the `graphify_workspace_manifest_v1` descriptor. Pure and
+ * Build the `engram_workspace_manifest_v1` descriptor. Pure and
  * deterministic: identical artifact inputs (same names/paths/schemas/bytes)
  * produce an identical manifest, except for `generated_at` when not pinned.
  *

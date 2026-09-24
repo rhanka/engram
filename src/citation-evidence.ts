@@ -1,5 +1,5 @@
 /**
- * `graphify_citation_evidence_v1` — the grounding audit trail.
+ * `engram_citation_evidence_v1` — the grounding audit trail.
  *
  * When `groundNodeCitations` emits a citation it has already established four
  * things: which term hit, which matcher fired, that the verbatim gate passed,
@@ -17,11 +17,12 @@
  * schema and its guard land first so the shape is pinned before anything
  * depends on it.
  */
+import { schemaIdAccepted } from "./schema-ids.js";
 import { citationKey } from "./citations.js";
 import type { CitationConfidence, OntologyCitation } from "./types.js";
 
 /** Schema tag for the evidence store. */
-export const CITATION_EVIDENCE_SCHEMA = "graphify_citation_evidence_v1";
+export const CITATION_EVIDENCE_SCHEMA = "engram_citation_evidence_v1";
 
 /** Relative path (under the graph dir) of the evidence store. */
 export const CITATION_EVIDENCE_RELPATH = "ontology/citation-evidence.json";
@@ -174,7 +175,7 @@ export function validateCitationEvidenceStore(value: unknown): CitationEvidenceV
   if (!isPlainObject(value)) {
     return { ok: false, problems: ["store: expected an object"] };
   }
-  if (value.schema !== CITATION_EVIDENCE_SCHEMA) {
+  if (!schemaIdAccepted(value.schema, CITATION_EVIDENCE_SCHEMA)) {
     problems.push(`store: schema must be \`${CITATION_EVIDENCE_SCHEMA}\`, got \`${String(value.schema)}\``);
   }
   if (typeof value.graph_signature !== "string") {

@@ -101,7 +101,7 @@ export function emitDescriptionInstructions(
       [
         `# Node Description Batch ${i + 1} of ${batches.length}`,
         "",
-        "Graphify is running in assistant/skill mode (no API key). You are the host",
+        "Engram is running in assistant/skill mode (no API key). You are the host",
         "assistant (Claude Code / Codex / Gemini CLI). Read the prompt below and write",
         "your JSON answer to the answer file.",
         "",
@@ -815,7 +815,7 @@ export function detectDescriptionBackend(): DirectLlmProvider | null {
 export type CallLlmFn = (prompt: string, maxTokens: number) => Promise<string>;
 
 /** Port schema label for node-description JSON — the implicit output shape made explicit. */
-const NODE_DESCRIPTIONS_SCHEMA = "graphify_node_descriptions_v1";
+const NODE_DESCRIPTIONS_SCHEMA = "engram_node_descriptions_v1";
 
 async function makeDefaultCallLlm(
   provider: DirectLlmProvider,
@@ -833,7 +833,7 @@ async function makeDefaultCallLlm(
       temperature: 0,
       maxOutputTokens: maxTokens,
       system: [
-        "You are Graphify's node description backend.",
+        "You are Engram's node description backend.",
         "Return only a valid JSON object mapping node id to a one-sentence description.",
       ].join("\n"),
       prompt,
@@ -1127,7 +1127,7 @@ function reportCoverage(
   if (quiet) return;
   const { describable, described, ungrounded, reasons } = coverage;
   process.stderr.write(
-    `[graphify describe] coverage: ${described}/${describable} describable node(s) described ` +
+    `[engram describe] coverage: ${described}/${describable} describable node(s) described ` +
       `(skipped ${coverage.skipped}; reasons noBackend=${reasons.noBackend} ` +
       `emptyReply=${reasons.emptyReply} error=${reasons.error} optedOut=${reasons.optedOut}).\n`,
   );
@@ -1138,7 +1138,7 @@ function reportCoverage(
     // neither a failure nor a contradiction of the M descriptions that WERE
     // added — they are simply out of scope for description.
     process.stderr.write(
-      `[graphify describe] note: ${ungrounded} additional entity node(s) carry no grounding ` +
+      `[engram describe] note: ${ungrounded} additional entity node(s) carry no grounding ` +
         "(no citations/evidence) and are intentionally left without a description " +
         `(anti-hallucination policy). They are separate from the ${described} node(s) described above ` +
         "and do not count as failures.\n",
@@ -1146,8 +1146,8 @@ function reportCoverage(
   }
   if (backendConfigured && describable > 0 && described < 0.5 * describable) {
     process.stderr.write(
-      `[graphify describe] WARNING low coverage: only ${described}/${describable} describable node(s) ` +
-        "got a description with a backend configured. Re-run with `graphify update --fill-missing` " +
+      `[engram describe] WARNING low coverage: only ${described}/${describable} describable node(s) ` +
+        "got a description with a backend configured. Re-run with `engram update --fill-missing` " +
         "or check your LLM backend / rate limits.\n",
     );
   }
@@ -1205,7 +1205,7 @@ export async function generateNodeDescriptions(
     } else {
       if (!options.quiet) {
         process.stderr.write(
-          `[graphify describe] unknown provider '${options.provider}'; ` +
+          `[engram describe] unknown provider '${options.provider}'; ` +
             `must be one of ${DIRECT_LLM_PROVIDERS.join(", ")}. Skipping descriptions.\n`,
         );
       }
@@ -1269,7 +1269,7 @@ export async function generateNodeDescriptions(
       };
       if (!options.quiet) {
         process.stderr.write(
-          `[graphify describe] assistant mode: ingested ${describedCount} description(s) ` +
+          `[engram describe] assistant mode: ingested ${describedCount} description(s) ` +
             `from ${instructionDir}\n`,
         );
       }
@@ -1304,8 +1304,8 @@ export async function generateNodeDescriptions(
 
     if (!options.quiet) {
       process.stderr.write(
-        `[graphify describe] assistant/skill mode: emitted ${instructionPaths.length} instruction file(s) to ${instructionDir}\n` +
-          `  Fill each batch-NNN.json answer file, then re-run \`graphify update\` to ingest.\n` +
+        `[engram describe] assistant/skill mode: emitted ${instructionPaths.length} instruction file(s) to ${instructionDir}\n` +
+          `  Fill each batch-NNN.json answer file, then re-run \`engram update\` to ingest.\n` +
           `  Answer paths:\n` +
           answerPaths.map((p) => `    ${p}`).join("\n") + "\n",
       );
@@ -1334,7 +1334,7 @@ export async function generateNodeDescriptions(
     // without a configured backend.
     if (!options.quiet) {
       process.stderr.write(
-        "[graphify describe] --description-mode direct requires an API key " +
+        "[engram describe] --description-mode direct requires an API key " +
           `(e.g. ANTHROPIC_API_KEY). Skipping descriptions.\n`,
       );
     }
@@ -1383,7 +1383,7 @@ export async function generateNodeDescriptions(
   } catch (err) {
     if (!options.quiet) {
       process.stderr.write(
-        `[graphify describe] description generation failed (${
+        `[engram describe] description generation failed (${
           err instanceof Error ? err.message : String(err)
         }); continuing without descriptions.\n`,
       );

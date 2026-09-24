@@ -1,20 +1,44 @@
 /**
- * Central path contract for graphify-owned workspace state.
+ * Central path contract for Engram-owned workspace state.
  *
- * The public default is now .graphify/. Legacy graphify-out/ paths are kept
- * as read fallbacks for one compatibility window.
+ * The public default is `.engram/`. Legacy `.graphify/` and `graphify-out/`
+ * paths are kept as implicit/default read fallbacks for the compat window;
+ * new writes always go to `.engram/`.
  */
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+export const DEFAULT_ENGRAM_STATE_DIR = ".engram";
+/** Legacy default state dir (pre-rename product name); read fallback. */
 export const DEFAULT_GRAPHIFY_STATE_DIR = ".graphify";
 export const LEGACY_GRAPHIFY_STATE_DIR = "graphify-out";
 export const NEXT_GRAPHIFY_STATE_DIR = DEFAULT_GRAPHIFY_STATE_DIR;
+/** All known state dir names: new default first, then legacy fallbacks. */
+export const ALL_KNOWN_STATE_DIRS = [
+  DEFAULT_ENGRAM_STATE_DIR,
+  DEFAULT_GRAPHIFY_STATE_DIR,
+  LEGACY_GRAPHIFY_STATE_DIR,
+] as const;
+
+const warnedLegacyDirs = new Set<string>();
+
+/** Clear recorded legacy-dir warnings (tests only). */
+export function clearPathWarningsForTests(): void {
+  warnedLegacyDirs.clear();
+}
+
+function warnLegacyStateDir(dir: string): void {
+  if (warnedLegacyDirs.has(dir)) return;
+  warnedLegacyDirs.add(dir);
+  console.warn(
+    `[engram] using legacy state dir ${dir}; move it to ${DEFAULT_ENGRAM_STATE_DIR}/ or set ENGRAM_STATE_DIR`,
+  );
+}
 
 export interface GraphifyPathOptions {
   /** Workspace root. Defaults to the current process directory. */
   root?: string;
-  /** State directory relative to root, or absolute. Defaults to .graphify. */
+  /** State directory relative to root, or absolute. Defaults to .engram. */
   stateDir?: string;
 }
 
@@ -120,7 +144,7 @@ function statePath(root: string, stateDir: string): string {
 
 export function resolveGraphifyPaths(options: GraphifyPathOptions = {}): GraphifyPaths {
   const root = resolve(options.root ?? ".");
-  const stateDir = statePath(root, options.stateDir ?? DEFAULT_GRAPHIFY_STATE_DIR);
+  const stateDir = statePath(root, options.stateDir ?? DEFAULT_ENGRAM_STATE_DIR);
   const profileDir = join(stateDir, "profile");
   const imageDataprepDir = join(stateDir, "image-dataprep");
   const ontologyOutputDir = join(stateDir, "ontology");
@@ -215,18 +239,33 @@ export function legacyGraphPath(root?: string): string {
   return resolveGraphifyPaths({ root, stateDir: LEGACY_GRAPHIFY_STATE_DIR }).graph;
 }
 
+/** graph.json under the legacy `.graphify/` default (pre-rename). */
+export function graphifyCompatGraphPath(root?: string): string {
+  return resolveGraphifyPaths({ root, stateDir: DEFAULT_GRAPHIFY_STATE_DIR }).graph;
+}
+
 /**
  * Resolve a graph input path for read operations.
  *
- * Explicit user paths are respected. Implicit/default reads prefer .graphify,
- * then fall back to legacy graphify-out if only the old artifact exists.
+ * Explicit user paths are respected verbatim. Implicit/default reads probe
+ * `.engram/` first, then the legacy `.graphify/` and `graphify-out/`
+ * locations (warning once per legacy dir hit). New writes go to `.engram/`
+ * only — this fallback never writes back.
  */
 export function resolveGraphInputPath(graphPath?: string, root?: string): string {
   if (graphPath) return resolve(graphPath);
   const current = defaultGraphPath(root);
   if (existsSync(current)) return current;
+  const compat = graphifyCompatGraphPath(root);
+  if (existsSync(compat)) {
+    warnLegacyStateDir(DEFAULT_GRAPHIFY_STATE_DIR);
+    return compat;
+  }
   const legacy = legacyGraphPath(root);
-  if (existsSync(legacy)) return legacy;
+  if (existsSync(legacy)) {
+    warnLegacyStateDir(LEGACY_GRAPHIFY_STATE_DIR);
+    return legacy;
+  }
   return current;
 }
 

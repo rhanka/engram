@@ -297,7 +297,7 @@ function nodeLine(node: ReviewNode): string {
 
 export function reviewAnalysisToText(analysis: ReviewAnalysis): string {
   const lines = [
-    "Graphify Review Analysis",
+    "Engram Review Analysis",
     "Changed files: " + analysis.changed_files.length,
     "Blast radius: " + analysis.blast_radius.level + " (score " + analysis.blast_radius.score + ")",
     "Impacted files: " + analysis.blast_radius.impacted_files,
@@ -409,7 +409,7 @@ function formatMetric(value: number | null): string {
 
 export function reviewEvaluationToText(result: ReviewEvaluationResult): string {
   const lines = [
-    "Graphify Review Evaluation",
+    "Engram Review Evaluation",
     "Token savings vs naive reads: " + formatMetric(result.aggregate.token_savings_ratio),
     "Impacted-file recall: " + formatMetric(result.aggregate.impacted_file_recall),
     "Review summary precision: " + formatMetric(result.aggregate.review_summary_precision),

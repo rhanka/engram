@@ -34,7 +34,7 @@ import { buildWikiDescriptionPrompt } from "./wiki-description-generation.js";
  * mock `BatchTextJsonClient` and exercise the round-trip in CI.
  */
 
-export const WIKI_DESCRIPTION_BATCH_SCHEMA = "graphify_wiki_description_batch_v1" as const;
+export const WIKI_DESCRIPTION_BATCH_SCHEMA = "engram_wiki_description_batch_v1" as const;
 
 export interface BuildWikiDescriptionBatchOptions {
   graphHash: string;
@@ -201,7 +201,7 @@ export function parseWikiDescriptionBatchResults(
   }
 
   const index: WikiDescriptionSidecarIndex = {
-    schema: "graphify_wiki_description_index_v1",
+    schema: "engram_wiki_description_index_v1",
     graph_hash: options.graphHash,
     prompt_version: promptVersion,
     nodes,

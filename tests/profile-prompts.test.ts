@@ -78,8 +78,8 @@ describe("profile prompt builder", () => {
 
     const prompt = buildProfileValidationPrompt(promptState(), extraction);
 
-    expect(prompt).toContain("Validate this Graphify Extraction against the ontology dataprep profile");
-    expect(prompt).toContain("First apply the base Graphify Extraction schema");
+    expect(prompt).toContain("Validate this Engram Extraction against the ontology dataprep profile");
+    expect(prompt).toContain("First apply the base Engram Extraction schema");
     expect(prompt).toContain("Then apply profile-aware node_type, relation, citation, status, and registry rules");
     expect(prompt).toContain("\"nodes\"");
     expect(prompt).toContain("\"edges\"");
@@ -113,8 +113,8 @@ describe("profile prompt builder", () => {
 
     const prompt = buildProfileDiscoveryPrompt(state, sample);
 
-    expect(prompt).toContain("Graphify Ontology Discovery Prompt");
-    expect(prompt).toContain("graphify_ontology_discovery_proposals_v1");
+    expect(prompt).toContain("Engram Ontology Discovery Prompt");
+    expect(prompt).toContain("engram_ontology_discovery_proposals_v1");
     expect(prompt).toContain("Every proposal stays reviewable");
     expect(prompt).toContain("\"sample_hash\": \"sample-hash\"");
     expect(prompt).toContain("Do not invent customer, partner, project, proprietary ontology, or private domain examples");

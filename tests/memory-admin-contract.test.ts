@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { validateAdminOperationRequest } from "../graphify-memory/index.js";
+import { validateAdminOperationRequest } from "../engram-memory/index.js";
 
 const EPOCH = "42";
 const DEADLINE = "2026-09-20T12:00:00.000Z";

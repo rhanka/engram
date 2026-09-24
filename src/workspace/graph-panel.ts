@@ -82,7 +82,7 @@ function renderViewerSurface(opts: RenderGraphPanelOptions): string {
   return [
     `<div class="ws-graph-placeholder" id="ws-graph-network" style="min-height:${height}px;">`,
     "<p>Interactive graph available via the static Ontology Studio export.</p>",
-    "<p>Run <code>graphify studio export &lt;out&gt;</code> and open the bundle in any static server.</p>",
+    "<p>Run <code>engram studio export &lt;out&gt;</code> and open the bundle in any static server.</p>",
     "</div>",
   ].join("");
 }

@@ -288,7 +288,7 @@ export function deduplicateByLabel(extraction: Extraction): Extraction {
     return extraction;
   }
 
-  console.error(`[graphify] Deduplicated ${remap.size} duplicate node(s) by label.`);
+  console.error(`[engram] Deduplicated ${remap.size} duplicate node(s) by label.`);
 
   const deduplicatedNodes = nodes.filter((node) => resolveRemap(remap, node.id) === node.id);
   const edges = (extraction.edges ?? [])
@@ -323,7 +323,7 @@ export function buildFromJson(extraction: Extraction, options?: BuildOptions): G
         (edge) => edge.source === node.id || edge.target === node.id,
       ).length;
       console.error(
-        `[graphify] WARNING: node '${node.id}' uses field 'source' instead of ` +
+        `[engram] WARNING: node '${node.id}' uses field 'source' instead of ` +
         `'source_file' - ${affectedEdges} edge(s) may be misrouted. Rename the field to ` +
         "'source_file' to silence this warning.",
       );
@@ -337,7 +337,7 @@ export function buildFromJson(extraction: Extraction, options?: BuildOptions): G
   const realErrors = errors.filter((e) => !e.includes("does not match any node id"));
   if (realErrors.length > 0) {
     console.error(
-      `[graphify] Extraction warning (${realErrors.length} issues): ${realErrors[0]}`,
+      `[engram] Extraction warning (${realErrors.length} issues): ${realErrors[0]}`,
     );
   }
 
@@ -551,7 +551,7 @@ export function buildMerge(newChunks: Extraction[], options?: BuildMergeOptions)
     (options?.pruneMissingSources !== undefined && autoPruned > 0);
   if (existingNodeCount > 0 && graph.order < existingNodeCount && !explicitPruneRequested) {
     throw new Error(
-      `graphify: buildMerge would shrink graph from ${existingNodeCount} to ${graph.order} nodes. ` +
+      `engram: buildMerge would shrink graph from ${existingNodeCount} to ${graph.order} nodes. ` +
       "Pass pruneSources explicitly if you intend to remove nodes.",
     );
   }

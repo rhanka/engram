@@ -41,6 +41,7 @@ function repoTagFromGraphPath(
   if (tag !== undefined) return tag;
 
   // Walk up from the graph file to the repo root:
+  // .engram/graph.json        → repoRoot = dirname(dirname(graphPath))
   // .graphify/graph.json      → repoRoot = dirname(dirname(graphPath))
   // graphify-out/graph.json   → repoRoot = dirname(dirname(graphPath))
   // any-other-dir/graph.json  → repoRoot = dirname(graphPath)  (best-effort)
@@ -48,7 +49,7 @@ function repoTagFromGraphPath(
   const grandparent = dirname(parent);
   const parentName = parent.split("/").at(-1) ?? "";
   const repoRoot =
-    parentName === ".graphify" || parentName === "graphify-out"
+    parentName === ".engram" || parentName === ".graphify" || parentName === "graphify-out"
       ? grandparent
       : parent;
 

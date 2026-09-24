@@ -416,7 +416,7 @@ export function requiresLlmProposer(
   return false;
 }
 
-const LLM_SPAN_PROPOSAL_SCHEMA = "graphify_typed_link_span_proposal_v1";
+const LLM_SPAN_PROPOSAL_SCHEMA = "engram_typed_link_span_proposal_v1";
 
 function buildSpanProposalPrompt(request: LlmProposeRequest): string {
   return [
@@ -427,7 +427,7 @@ function buildSpanProposalPrompt(request: LlmProposeRequest): string {
     "- Copy each span EXACTLY as it appears in the SOURCE (same characters, casing, punctuation).",
     `- Propose only spans that are mentions of a ${request.nodeType}.`,
     "- Do NOT invent identifiers, do NOT normalize, do NOT paraphrase or translate.",
-    "- If unsure, omit the span. graphify resolves ids itself; you only propose spans.",
+    "- If unsure, omit the span. engram resolves ids itself; you only propose spans.",
     "",
     'Return JSON of the form: {"spans": [{"raw_span": "<verbatim substring>"}]}.',
     "",
@@ -870,7 +870,7 @@ export function writeEntityLinkingArtifacts(
   writeJson(join(outputDir, "occurrences.json"), result.occurrences);
   writeJson(join(outputDir, "entity-occurrence-summary.json"), summarizeEntityOccurrences(result.occurrences, profile, outputDir));
   writeJson(join(outputDir, "validation.json"), {
-    schema: "graphify_ontology_validation_v1",
+    schema: "engram_ontology_validation_v1",
     issues: result.issues,
   });
 }

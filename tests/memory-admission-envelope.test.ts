@@ -14,7 +14,7 @@ import {
   type AdmissionDecisionEnvelopeV1,
   type AdmissionPolicy,
   type MemoryEngineDependenciesV2,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 
 const DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const NOW = "2026-08-16T12:34:56.789Z";
@@ -60,7 +60,7 @@ describe("admission decision envelope", () => {
       error: { code: "INVALID_DIGEST" },
     });
 
-    const contracts = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../graphify-memory/contracts/index.ts"), "utf8");
+    const contracts = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../engram-memory/contracts/index.ts"), "utf8");
     expect(contracts).not.toMatch(/evaluator|consensus|threshold|persona|role/);
   });
 

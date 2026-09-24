@@ -271,7 +271,7 @@ function dataprepReport(result: ConfiguredDataprepResult): string {
     .map(([registryId, count]) => `- ${registryId}: ${count} records`)
     .join("\n");
   return [
-    `# Graphify Profile Dataprep Report`,
+    `# Engram Profile Dataprep Report`,
     ``,
     `Profile: ${result.profile.id} ${result.profile.version}`,
     `Profile hash: ${result.profile.profile_hash}`,
@@ -300,7 +300,7 @@ function resolveConfigPath(root: string, options: ConfiguredDataprepOptions): st
   if (options.configPath) return resolve(options.configPath);
   const discovery = discoverProjectConfig(root);
   if (!discovery.path) {
-    throw new Error(`No graphify project config found under ${resolve(root)}`);
+    throw new Error(`No engram project config found under ${resolve(root)}`);
   }
   return discovery.path;
 }

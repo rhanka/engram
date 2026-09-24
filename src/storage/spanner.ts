@@ -1,17 +1,18 @@
 /**
  * Spanner GraphStore adapter (SPEC_STORAGE_BACKENDS.md, "Spanner Graph").
  *
- * Live-push mirror of a Graphify graph into Cloud Spanner via batched
+ * Live-push mirror of an Engram graph into Cloud Spanner via batched
  * `insertOrUpdate` mutations (the Table.upsert primitive). The driver
  * (`@google-cloud/spanner`) is NEVER imported statically: it is always
  * supplied through `deps.driverModule` (tests) or the registry's dynamic
  * import (production). Importing this module evaluates no driver.
  *
- * The schema is reused verbatim from `toSpanner()` (`spannerDdlLines()` in
- * export.ts) so the file export and the live schema never drift. The adapter
- * adds a `namespace` column and namespaced primary keys for multi-project
- * isolation, mirroring the neo4j namespace model, plus a `graphify_meta` row
- * carrying the snapshot signature for staleness detection.
+ * On connect the adapter binds the `engram_*` tables when present, else the
+ * legacy `graphify_*` tables (with a warning), else defaults to `engram_*`
+ * for a fresh database. The adapter adds a `namespace` column and namespaced
+ * primary keys for multi-project isolation, mirroring the neo4j namespace
+ * model, plus a snapshot-meta row carrying the snapshot signature for
+ * staleness detection. User tables are never renamed or dropped.
  *
  * `pushGraph` IS the upsert primitive: mode "merge" is a native insertOrUpdate;
  * mode "replace" deletes the namespace rows first, then loads.
@@ -20,7 +21,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import type Graph from "graphology";
-import { spannerDdlLines } from "../export.js";
+import { engramEnv } from "../env.js";
+
 import type {
   GraphPushOptions,
   GraphPushResult,
@@ -34,10 +36,77 @@ import type {
 // Constants
 // ---------------------------------------------------------------------------
 
-const NODE_TABLE = "graphify_nodes";
-const EDGE_TABLE = "graphify_edges";
-const META_TABLE = "graphify_meta";
-const PROPERTY_GRAPH = "graphify";
+/** Current (Engram) Spanner table names — used for all new writes. */
+export const SPANNER_NODE_TABLE = "engram_nodes";
+export const SPANNER_EDGE_TABLE = "engram_edges";
+export const SPANNER_META_TABLE = "engram_meta";
+export const SPANNER_PROPERTY_GRAPH = "engram";
+/** Legacy (pre-rename) Spanner table names — read fallback, never created. */
+export const LEGACY_SPANNER_NODE_TABLE = "graphify_nodes";
+export const LEGACY_SPANNER_EDGE_TABLE = "graphify_edges";
+export const LEGACY_SPANNER_META_TABLE = "graphify_meta";
+export const LEGACY_SPANNER_PROPERTY_GRAPH = "graphify";
+
+export interface SpannerTableNames {
+  node: string;
+  edge: string;
+  meta: string;
+  propertyGraph: string;
+  /** True when bound to the legacy `graphify_*` tables. */
+  legacy: boolean;
+}
+
+const ENGRAM_SPANNER_TABLES: SpannerTableNames = {
+  node: SPANNER_NODE_TABLE,
+  edge: SPANNER_EDGE_TABLE,
+  meta: SPANNER_META_TABLE,
+  propertyGraph: SPANNER_PROPERTY_GRAPH,
+  legacy: false,
+};
+
+const LEGACY_SPANNER_TABLES: SpannerTableNames = {
+  node: LEGACY_SPANNER_NODE_TABLE,
+  edge: LEGACY_SPANNER_EDGE_TABLE,
+  meta: LEGACY_SPANNER_META_TABLE,
+  propertyGraph: LEGACY_SPANNER_PROPERTY_GRAPH,
+  legacy: true,
+};
+
+/**
+ * Resolve which Spanner table set to bind: when the `engram_*` node table
+ * exists use it; else when the legacy `graphify_*` node table exists bind to
+ * the legacy set (with a warning at the call site); else default to the new
+ * set so fresh databases are created under `engram_*`. Never renames or
+ * drops user tables.
+ */
+export function resolveSpannerTables(existingTableNames: Iterable<string>): SpannerTableNames {
+  const existing = new Set(existingTableNames);
+  if (existing.has(SPANNER_NODE_TABLE)) return { ...ENGRAM_SPANNER_TABLES };
+  if (existing.has(LEGACY_SPANNER_NODE_TABLE)) return { ...LEGACY_SPANNER_TABLES };
+  return { ...ENGRAM_SPANNER_TABLES };
+}
+
+/**
+ * Probe a live Spanner database for the node-table name and resolve the
+ * table set to bind. Best-effort: any failure resolves to the new names.
+ */
+async function resolveLiveSpannerTables(database: SpannerDatabase): Promise<SpannerTableNames> {
+  try {
+    const result = await database.run({
+      sql: "SELECT table_name FROM INFORMATION_SCHEMA.TABLES WHERE table_name IN UNNEST(@names)",
+      params: { names: [SPANNER_NODE_TABLE, LEGACY_SPANNER_NODE_TABLE] },
+    });
+    const rows = (
+      Array.isArray(result) ? (result[0] as Array<Record<string, unknown>>) : []
+    ) ?? [];
+    const names = rows
+      .map((row) => row.table_name)
+      .filter((name): name is string => typeof name === "string");
+    return resolveSpannerTables(names);
+  } catch {
+    return resolveSpannerTables([]);
+  }
+}
 
 /** Schema columns lifted into typed Spanner columns; the rest go into props. */
 const NODE_SCHEMA_COLS = ["id", "label", "node_type", "community"];
@@ -66,7 +135,7 @@ function resolveToolVersion(): string {
       const pkg = JSON.parse(
         readFileSync(join(baseDir, rel, "package.json"), "utf-8"),
       ) as { name?: string; version?: string };
-      if (pkg.name === "@sentropic/graphify" && pkg.version) return pkg.version;
+      if ((pkg.name === "@sentropic/engram" || pkg.name === "@sentropic/graphify") && pkg.version) return pkg.version;
     } catch {
       /* try the next layout */
     }
@@ -152,24 +221,18 @@ function chunk<T>(arr: T[], size: number): T[][] {
 }
 
 /**
- * The namespaced live schema: the verbatim `toSpanner()` DDL with a
- * `namespace` column prepended to each table's primary key, plus the
- * `graphify_meta` snapshot table. Returned as individual executable DDL
- * statements (no SQL comments) suitable for `database.updateSchema`.
+ * The namespaced live schema: the `toSpanner()` table shapes with a
+ * `namespace` column prepended to each table's primary key, plus the snapshot
+ * meta table — all under the RESOLVED table names (new `engram_*` or legacy
+ * `graphify_*`). Returned as individual executable DDL statements (no SQL
+ * comments) suitable for `database.updateSchema`.
  */
-function namespacedDdlStatements(): string[] {
-  // Start from the shared file-export DDL so the schema never drifts, then
-  // strip comments/blank lines and re-split into executable statements.
-  const base = spannerDdlLines()
-    .filter((line) => !line.trimStart().startsWith("--"))
-    .join("\n");
-
+export function namespacedDdlStatements(tables: SpannerTableNames = ENGRAM_SPANNER_TABLES): string[] {
   const statements: string[] = [];
 
-  // graphify_nodes — namespaced primary key (namespace, id).
   statements.push(
     [
-      `CREATE TABLE ${NODE_TABLE} (`,
+      `CREATE TABLE ${tables.node} (`,
       "  namespace STRING(MAX) NOT NULL,",
       "  id STRING(MAX) NOT NULL,",
       "  label STRING(MAX),",
@@ -180,10 +243,9 @@ function namespacedDdlStatements(): string[] {
     ].join("\n"),
   );
 
-  // graphify_edges — namespaced primary key.
   statements.push(
     [
-      `CREATE TABLE ${EDGE_TABLE} (`,
+      `CREATE TABLE ${tables.edge} (`,
       "  namespace STRING(MAX) NOT NULL,",
       "  source_id STRING(MAX) NOT NULL,",
       "  target_id STRING(MAX) NOT NULL,",
@@ -194,10 +256,9 @@ function namespacedDdlStatements(): string[] {
     ].join("\n"),
   );
 
-  // graphify_meta — one snapshot row per namespace.
   statements.push(
     [
-      `CREATE TABLE ${META_TABLE} (`,
+      `CREATE TABLE ${tables.meta} (`,
       "  namespace STRING(MAX) NOT NULL,",
       "  topology_signature STRING(MAX),",
       "  pushed_at STRING(MAX),",
@@ -206,15 +267,27 @@ function namespacedDdlStatements(): string[] {
     ].join("\n"),
   );
 
-  // Property graph projection — taken verbatim from the shared DDL (the only
-  // CREATE PROPERTY GRAPH statement in the base text), with its trailing
-  // semicolon stripped for updateSchema.
-  const pgStart = base.indexOf(`CREATE PROPERTY GRAPH ${PROPERTY_GRAPH}`);
-  if (pgStart >= 0) {
-    const pgEnd = base.indexOf(";", pgStart);
-    const pg = base.slice(pgStart, pgEnd >= 0 ? pgEnd : undefined).trim();
-    statements.push(pg);
-  }
+  // Property graph projection over the resolved tables (mirrors the
+  // file-export projection shape in export.ts).
+  statements.push(
+    [
+      `CREATE PROPERTY GRAPH ${tables.propertyGraph}`,
+      "  NODE TABLES (",
+      `    ${tables.node}`,
+      "      KEY (id)",
+      "      LABEL node",
+      "      PROPERTIES (label, node_type, community)",
+      "  )",
+      "  EDGE TABLES (",
+      `    ${tables.edge}`,
+      "      KEY (source_id, target_id, relation)",
+      `      SOURCE KEY (source_id) REFERENCES ${tables.node} (id)`,
+      `      DESTINATION KEY (target_id) REFERENCES ${tables.node} (id)`,
+      "      LABEL edge",
+      "      PROPERTIES (relation, confidence)",
+      "  )",
+    ].join("\n"),
+  );
 
   return statements;
 }
@@ -224,11 +297,11 @@ function namespacedDdlStatements(): string[] {
 // ---------------------------------------------------------------------------
 
 export interface SpannerGraphStoreConfig extends GraphStoreConfig {
-  /** GCP project id. Falls back to GRAPHIFY_SPANNER_PROJECT / ADC default. */
+  /** GCP project id. Falls back to ENGRAM_SPANNER_PROJECT / ADC default. */
   project?: string;
-  /** Spanner instance id. Falls back to GRAPHIFY_SPANNER_INSTANCE. */
+  /** Spanner instance id. Falls back to ENGRAM_SPANNER_INSTANCE. */
   instance?: string;
-  /** Spanner database id. Falls back to GRAPHIFY_SPANNER_DATABASE. */
+  /** Spanner database id. Falls back to ENGRAM_SPANNER_DATABASE. */
   database?: string;
 }
 
@@ -288,16 +361,16 @@ export async function createSpannerGraphStore(
   config: SpannerGraphStoreConfig,
   deps?: StoreTestDeps,
 ): Promise<SpannerGraphStore> {
-  const instanceId = config.instance ?? process.env.GRAPHIFY_SPANNER_INSTANCE;
-  const databaseId = config.database ?? process.env.GRAPHIFY_SPANNER_DATABASE;
+  const instanceId = config.instance ?? engramEnv("ENGRAM_SPANNER_INSTANCE", "GRAPHIFY_SPANNER_INSTANCE");
+  const databaseId = config.database ?? engramEnv("ENGRAM_SPANNER_DATABASE", "GRAPHIFY_SPANNER_DATABASE");
   if (!instanceId) {
     throw new Error(
-      "spanner store requires an instance id (config.instance or GRAPHIFY_SPANNER_INSTANCE)",
+      "spanner store requires an instance id (config.instance or ENGRAM_SPANNER_INSTANCE)",
     );
   }
   if (!databaseId) {
     throw new Error(
-      "spanner store requires a database id (config.database or GRAPHIFY_SPANNER_DATABASE)",
+      "spanner store requires a database id (config.database or ENGRAM_SPANNER_DATABASE)",
     );
   }
 
@@ -329,11 +402,22 @@ export async function createSpannerGraphStore(
     );
   }
 
-  const projectId = config.project ?? process.env.GRAPHIFY_SPANNER_PROJECT;
+  const projectId = config.project ?? engramEnv("ENGRAM_SPANNER_PROJECT", "GRAPHIFY_SPANNER_PROJECT");
   const client: SpannerClient = new SpannerCtor(
     projectId ? { projectId } : undefined,
   );
   const database = client.instance(instanceId).database(databaseId);
+
+  // Bind the table set on connect: prefer `engram_*` when present, else bind
+  // to legacy `graphify_*` with a warning, else default to `engram_*` for a
+  // fresh database. Best-effort: any probe failure also defaults to new.
+  const tables = await resolveLiveSpannerTables(database);
+  if (tables.legacy) {
+    console.warn(
+      `[engram] using legacy graphify_* tables in Spanner database '${databaseId}'; ` +
+        `new writes stay on the legacy tables — no automatic rename is performed`,
+    );
+  }
 
   const namespace = deriveNamespace(config);
   let closed = false;
@@ -341,7 +425,7 @@ export async function createSpannerGraphStore(
 
   // Local snapshot cache: the fake driver in unit tests returns empty query
   // rows, so this is the read-back source there; against a real backend the
-  // meta is also persisted as a graphify_meta row and re-read from it.
+  // meta is also persisted as a snapshot-meta row and re-read from it.
   const localMeta = new Map<string, GraphStoreSnapshotMeta>();
 
   // -------------------------------------------------------------------------
@@ -352,7 +436,7 @@ export async function createSpannerGraphStore(
     if (schemaEnsured) return;
     schemaEnsured = true;
     try {
-      const result = await database.updateSchema(namespacedDdlStatements());
+      const result = await database.updateSchema(namespacedDdlStatements(tables));
       // updateSchema returns [operation]; await its promise() when present so
       // the schema is committed before the first mutation.
       const op = Array.isArray(result) ? result[0] : undefined;
@@ -446,7 +530,7 @@ export async function createSpannerGraphStore(
     toolVersion: string,
   ): Promise<void> {
     const pushedAt = new Date().toISOString();
-    await database.table(META_TABLE).upsert([
+    await database.table(tables.meta).upsert([
       {
         namespace,
         topology_signature: topologySignature,
@@ -463,7 +547,7 @@ export async function createSpannerGraphStore(
 
   async function readMetaFromBackend(): Promise<GraphStoreSnapshotMeta | undefined> {
     const result = await database.run({
-      sql: `SELECT topology_signature, pushed_at, tool_version FROM ${META_TABLE} WHERE namespace = @ns LIMIT 1`,
+      sql: `SELECT topology_signature, pushed_at, tool_version FROM ${tables.meta} WHERE namespace = @ns LIMIT 1`,
       params: { ns: namespace },
     });
     const rows = Array.isArray(result) ? (result[0] as Array<Record<string, unknown>>) : undefined;
@@ -520,13 +604,13 @@ export async function createSpannerGraphStore(
 
       // replace = delete-then-load by namespace.
       if (mode === "replace") {
-        await deleteNamespaceRows(NODE_TABLE, namespace);
-        await deleteNamespaceRows(EDGE_TABLE, namespace);
+        await deleteNamespaceRows(tables.node, namespace);
+        await deleteNamespaceRows(tables.edge, namespace);
       }
 
       const communityMap = buildNodeCommunityMap(communities);
-      await upsertBatched(NODE_TABLE, buildNodeRows(G, communityMap), batchSize);
-      await upsertBatched(EDGE_TABLE, buildEdgeRows(G), batchSize);
+      await upsertBatched(tables.node, buildNodeRows(G, communityMap), batchSize);
+      await upsertBatched(tables.edge, buildEdgeRows(G), batchSize);
 
       await writeMeta(computeTopologySignature(G), resolveToolVersion());
 
@@ -553,9 +637,9 @@ export async function createSpannerGraphStore(
         );
       }
       const targetNamespace = opts.namespace ?? namespace;
-      await deleteNamespaceRows(NODE_TABLE, targetNamespace);
-      await deleteNamespaceRows(EDGE_TABLE, targetNamespace);
-      await deleteNamespaceRows(META_TABLE, targetNamespace);
+      await deleteNamespaceRows(tables.node, targetNamespace);
+      await deleteNamespaceRows(tables.edge, targetNamespace);
+      await deleteNamespaceRows(tables.meta, targetNamespace);
       localMeta.delete(targetNamespace);
     },
 

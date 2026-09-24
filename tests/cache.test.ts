@@ -110,8 +110,8 @@ describe("cache", () => {
     const f = join(tmpDir, "legacy.ts");
     writeFileSync(f, "export const legacy = true;\n");
     const legacyHash = fileHash(f);
-    const legacyCachePath = join(tmpDir, ".graphify", "cache", `${legacyHash}.json`);
-    mkdirSync(join(tmpDir, ".graphify", "cache"), { recursive: true });
+    const legacyCachePath = join(tmpDir, ".engram", "cache", `${legacyHash}.json`);
+    mkdirSync(join(tmpDir, ".engram", "cache"), { recursive: true });
     writeFileSync(legacyCachePath, JSON.stringify({ nodes: [{ id: "legacy" }], edges: [] }), "utf-8");
 
     expect(loadCached(f, tmpDir)).toEqual({ nodes: [{ id: "legacy" }], edges: [] });

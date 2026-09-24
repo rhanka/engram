@@ -115,7 +115,7 @@ describe("GET /api/ontology/search-index.json (work-stream C)", () => {
     expect(result.contentType).toBe("application/json; charset=utf-8");
 
     const payload = JSON.parse(result.body);
-    expect(payload.schema).toBe("graphify_search_index_v1");
+    expect(payload.schema).toBe("engram_search_index_v1");
     // Self-contained substrate: docs + BM25 postings + CSR adjacency ride inline,
     // so the in-browser BM25 + PPR needs neither graph.json nor a second fetch.
     expect(Array.isArray(payload.docs)).toBe(true);

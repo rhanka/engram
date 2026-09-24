@@ -118,7 +118,7 @@ describe("Track G G4 — graph panel", () => {
     // Ontology Studio export instead and never embeds an interactive surface.
     expect(html).not.toContain("<iframe");
     expect(html).toContain("ws-graph-placeholder");
-    expect(html).toContain("graphify studio export");
+    expect(html).toContain("engram studio export");
   });
 
   it("keeps the placeholder bounded with no embedded surface", () => {

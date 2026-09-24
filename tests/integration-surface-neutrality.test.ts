@@ -3,11 +3,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import * as integration from "../graphify-memory/integration.js";
+import * as integration from "../engram-memory/integration.js";
 
-const moduleSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "graphify-memory", "integration.ts"), "utf8");
+const moduleSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "engram-memory", "integration.ts"), "utf8");
 
-describe("graphify-memory/integration surface (§1 D1, R1e)", () => {
+describe("engram-memory/integration surface (§1 D1, R1e)", () => {
   it("exposes the host-facing factories as runtime functions (factories only)", () => {
     expect(typeof integration.createMemoryPortV2).toBe("function");
     expect(typeof integration.createCanonicalMemoryStoreFactoryV1).toBe("function");

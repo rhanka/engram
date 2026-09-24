@@ -109,7 +109,7 @@ describe("profile QA report", () => {
       },
     });
 
-    expect(report).toContain("# Graphify Profile Report");
+    expect(report).toContain("# Engram Profile Report");
     expect(report).toContain("## Project Config Summary");
     expect(report).toContain("raw/manuals");
     expect(report).toContain("## Profile");

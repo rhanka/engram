@@ -420,7 +420,7 @@ export function profileValidationResultToJson(result: ProfileValidationResult): 
 
 export function profileValidationResultToMarkdown(result: ProfileValidationResult): string {
   const lines = [
-    `# Graphify Profile Validation`,
+    `# Engram Profile Validation`,
     ``,
     `Profile: ${result.profile_id} ${result.profile_version}`,
     `Profile hash: ${result.profile_hash}`,

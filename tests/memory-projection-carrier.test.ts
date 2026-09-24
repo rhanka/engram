@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { hasProjectionEnvelope } from "../graphify-memory/index.js";
+import { hasProjectionEnvelope } from "../engram-memory/index.js";
 
 const DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 

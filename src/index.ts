@@ -149,6 +149,7 @@ export {
   ALL_EXTRACTED_CITATION_CONTRACT,
   ALL_EXTRACTED_CITATION_CONTRACT_ID,
   CITATION_EXTRACTION_CONTRACT_SCHEMA,
+  LEGACY_QUALITY_TARGET_CONFIG_CANDIDATES,
   QUALITY_TARGET_CONFIG_CANDIDATES,
   canonicalJson,
   discoverQualityTargetsConfig,
@@ -489,7 +490,8 @@ export {
 } from "./semantic-fragment-validation.js";
 export type { LoadValidatedResult, SemanticFragment } from "./semantic-fragment-validation.js";
 export { validateUrl, safeFetch, safeFetchText, validateGraphPath, sanitizeLabel } from "./security.js";
-export { DEFAULT_GRAPHIFY_STATE_DIR, LEGACY_GRAPHIFY_STATE_DIR, NEXT_GRAPHIFY_STATE_DIR, resolveGraphifyPaths, defaultGraphPath, legacyGraphPath, resolveGraphInputPath, defaultManifestPath, defaultTranscriptsDir } from "./paths.js";
+export { engramEnv, engramEnvNumber, engramEnvBoolean, pushEngramEnv, clearEngramEnvWarningsForTests } from "./env.js";
+export { DEFAULT_ENGRAM_STATE_DIR, ALL_KNOWN_STATE_DIRS, DEFAULT_GRAPHIFY_STATE_DIR, LEGACY_GRAPHIFY_STATE_DIR, NEXT_GRAPHIFY_STATE_DIR, resolveGraphifyPaths, defaultGraphPath, legacyGraphPath, graphifyCompatGraphPath, resolveGraphInputPath, defaultManifestPath, defaultTranscriptsDir, clearPathWarningsForTests } from "./paths.js";
 export { createGraph, isDirectedGraph, loadGraphFromData, serializeGraph } from "./graph.js";
 export { resolveGitContext, safeExecGit, safeGitRevParse } from "./git.js";
 export { getPullRequestMerge, listPullRequests, githubRepoFromRemote } from "./pr.js";

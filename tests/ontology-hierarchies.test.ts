@@ -264,7 +264,7 @@ describe("compileHierarchies", () => {
 describe("buildHierarchyIndex", () => {
   it("returns empty index for empty arcs", () => {
     const idx = buildHierarchyIndex([]);
-    expect(idx.schema).toBe("graphify_ontology_hierarchies_v1");
+    expect(idx.schema).toBe("engram_ontology_hierarchies_v1");
     expect(idx.root_ids).toEqual([]);
     expect(idx.depth).toBe(0);
     expect(idx.ancestor_paths).toEqual({});
@@ -515,7 +515,7 @@ describe("compileOntologyOutputs — hierarchy integration", () => {
     const idx = readJson<{ schema: string; root_ids: string[]; depth: number; ancestor_paths: Record<string, string[]>; cycles: string[][] }>(
       join(outputDir, "hierarchy-index.json"),
     );
-    expect(idx.schema).toBe("graphify_ontology_hierarchies_v1");
+    expect(idx.schema).toBe("engram_ontology_hierarchies_v1");
     expect(idx.root_ids).toContain("root");
     expect(idx.depth).toBe(2);
     expect(idx.ancestor_paths["grandchild"]).toEqual(["root", "child1"]);

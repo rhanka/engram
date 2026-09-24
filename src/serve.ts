@@ -138,7 +138,7 @@ function readGraphData(safePath: string): SerializedGraphData {
     data = JSON.parse(readFileSync(safePath, "utf-8")) as SerializedGraphData;
   } catch (err) {
     throw new Error(
-      `graph.json is corrupted (${err instanceof Error ? err.message : err}). Re-run the graphify skill to rebuild it (for Codex: $graphify .).`,
+      `graph.json is corrupted (${err instanceof Error ? err.message : err}). Re-run the engram skill to rebuild it (for Codex: $engram .).`,
     );
   }
   return data;
@@ -480,7 +480,7 @@ function toolQueryGraph(G: Graph, args: Record<string, unknown>): string {
 /**
  * `answer_graph` (work-stream C, Phase A / C9) — the WITH-RAG-AGENT surface.
  * Builds the BM25/PPR retrieval core over the live graph and returns the frozen
- * `graphify_answer_pack_v1` (mode="agent") for the CALLING agent to relevance-test
+ * `engram_answer_pack_v1` (mode="agent") for the CALLING agent to relevance-test
  * + synthesize. Same assembler code path as the OFFLINE/ONLINE modes (INV-2);
  * `answer` is null for the agent to fill.
  */
@@ -686,7 +686,7 @@ function readMcpResource(
   if (uri === "graphify://report") {
     const reportPath = join(dirname(resolve(graphPath)), "GRAPH_REPORT.md");
     if (!existsSync(reportPath)) {
-      return "GRAPH_REPORT.md not found. Run graphify extract first.";
+      return "GRAPH_REPORT.md not found. Run engram extract first.";
     }
     return readFileSync(reportPath, "utf-8");
   }
@@ -1060,7 +1060,7 @@ export async function serve(
       {
         name: "answer_graph",
         description:
-          "GraphRAG answer pack: BM25 seeds + RRF fusion + Personalized PageRank expansion over the entity graph, grounded on verbatim citation quotes. Returns a graphify_answer_pack_v1 JSON (seeds, PPR-scored neighborhood, connecting paths, communities) with answer:null — the calling agent relevance-tests and synthesizes the final answer over the pack.",
+          "GraphRAG answer pack: BM25 seeds + RRF fusion + Personalized PageRank expansion over the entity graph, grounded on verbatim citation quotes. Returns a engram_answer_pack_v1 JSON (seeds, PPR-scored neighborhood, connecting paths, communities) with answer:null — the calling agent relevance-tests and synthesizes the final answer over the pack.",
         inputSchema: {
           type: "object" as const,
           properties: {
@@ -1247,13 +1247,13 @@ export async function serve(
       {
         name: "validate_ontology_patch",
         description:
-          "Validate a graphify_ontology_patch_v1 object against the active ontology profile and generated ontology artifacts. Does not mutate files.",
+          "Validate a engram_ontology_patch_v1 object against the active ontology profile and generated ontology artifacts. Does not mutate files.",
         inputSchema: {
           type: "object" as const,
           properties: {
             patch: {
               type: "object",
-              description: "graphify_ontology_patch_v1 object",
+              description: "engram_ontology_patch_v1 object",
             },
           },
           required: ["patch"],
@@ -1262,13 +1262,13 @@ export async function serve(
       {
         name: "apply_ontology_patch",
         description:
-          "Dry-run by default, or write-apply a graphify_ontology_patch_v1 object through configured authoritative decision logs and local audit logs.",
+          "Dry-run by default, or write-apply a engram_ontology_patch_v1 object through configured authoritative decision logs and local audit logs.",
         inputSchema: {
           type: "object" as const,
           properties: {
             patch: {
               type: "object",
-              description: "graphify_ontology_patch_v1 object",
+              description: "engram_ontology_patch_v1 object",
             },
             dry_run: {
               type: "boolean",
@@ -1299,7 +1299,7 @@ export async function serve(
       project_path: {
         type: "string",
         description:
-          "Optional absolute path to another graphify project root; routes this call to that project's graph.json. Omit to use the server's default graph.",
+          "Optional absolute path to another engram project root; routes this call to that project's graph.json. Omit to use the server's default graph.",
       },
     };
   }

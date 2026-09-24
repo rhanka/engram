@@ -36,6 +36,15 @@ export default defineConfig([
     external: optionalRuntimeDeps,
   },
   {
+    entry: { "cli-compat": "src/cli-compat.ts" },
+    format: ["esm"],
+    banner: { js: "#!/usr/bin/env node" },
+    sourcemap: false,
+    target: "node20",
+    splitting: false,
+    external: optionalRuntimeDeps,
+  },
+  {
     entry: { "skill-runtime": "src/skill-runtime.ts" },
     format: ["esm"],
     sourcemap: true,
