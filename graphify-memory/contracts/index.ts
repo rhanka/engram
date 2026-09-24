@@ -1001,12 +1001,15 @@ export interface AdminProviderPort {
 }
 
 // §5.9 capability attestation, by IN-PROCESS PROVENANCE (not cryptography — the trust boundary is deployment
-// topology, l.1045). A production store is admitted for a fencing-dependent op only when (a) it was built by
-// THIS graphify-memory module's fenced-store factory (an in-process mark; the only detector of "never took the
-// fence") AND (b) its declared adapter identity equals this module's compiled identity. This identity type is
-// the shape of both the compiled constant and the receipt's declared binding; there is NO signer, key, or
-// signature — a host cannot both misconfigure the store and make it self-consistent against a store-independent
-// compiled constant. See graphify-memory/store-factory (GRAPHIFY_MEMORY_ADAPTER_IDENTITY, verifyStoreProvenance).
+// topology, l.1045). A production store is admitted for a fencing-dependent op ONLY when it is a member of this
+// build's fence-mark registry — a mark the sqlite/postgres OPENER applies after taking a REAL kernel writer fence
+// (sqlite: a flock on the DB inode + a /proc/self/fdinfo liveness proof; postgres: the advisory-lock generation),
+// which the factory propagates to the store it returns. There is NO signer, key, or signature, and NO declared-
+// identity comparison: membership alone is the admission basis (the retired identity check added nothing — a
+// same-module store always matched — and a self-asserted boolean is of the same forgeable family). This identity
+// type remains only as the shape of the receipt's DECLARED adapter identity, which is INFORMATIONAL/diagnostic
+// (a duplicate package or version drift is legible in the receipt), never the admission basis. See
+// graphify-memory/store-factory (verifyStoreProvenance and the internal opener-applied fence mark).
 export interface CapabilityAttestationIdentityV1 {
   readonly adapter_id: OpaqueRef;
   readonly adapter_version: string;
