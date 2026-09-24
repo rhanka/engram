@@ -114,6 +114,9 @@ export interface MemoryErrorV1 {
   message: string;
   retryable: boolean;
   error_receipt_digest?: Digest;
+  // §5.10: an AdminProviderPort MUST set denial:true on an authorization denial, and MUST NOT set it on any
+  // failure that is not an authorization decision. §5.5(d): the engine maps denial:true to code UNAUTHORIZED.
+  denial?: true;
 }
 
 export type Result<T> =
@@ -403,6 +406,11 @@ export interface CapabilityDescriptorV1 {
   canonical_backends: ReadonlyArray<"sqlite" | "postgres">;
   max_candidates: 2000;
   max_results: 100;
+  // §5.9: true iff this engine was wired with `allow_unfenced_memory_store` — the non-production posture that
+  // lets a module in-memory store run unfenced. It is false on a correct production deployment; a `true` here on a
+  // sqlite/postgres descriptor is an operator-visible misconfiguration alarm (the fence-bypass flag is set in prod).
+  unfenced_memory_store_permitted: boolean;
+  ephemeral_filesystem_store_permitted: boolean; // (new in this amendment) §5.9: mirrors the store receipt's ephemeral-fs posture; true on a production descriptor is a misconfiguration alarm
   receipt_digest: Digest;
 }
 
@@ -615,6 +623,10 @@ export interface CanonicalStoreCapabilitiesV1 {
   detached_snapshot: boolean;
   bounded_cancellation: boolean;
   backend: "memory" | "sqlite" | "postgres";
+  // (new in this amendment) §5.9: OPTIONAL — true iff the fenced SQLite store was opened with
+  // allow_ephemeral_filesystem_store (a NON-production opt-in permitting a tmpfs/overlayfs database). Omitted by
+  // stores to which it does not apply; a true here on a production deployment is a misconfiguration alarm.
+  ephemeral_filesystem_store_permitted?: boolean;
 }
 
 export type AdmissionStoreInputV1 =
@@ -810,8 +822,15 @@ export interface OperationalCapabilityReceiptV1 {
   storage_epoch: Cursor;
   high_water_cursor: Cursor;
   capabilities: CanonicalStoreCapabilitiesV1;
+  // §5.9 declared adapter identity (all three present or all absent). A production store's fenced factory stamps
+  // these from its module's compiled identity; the engine compares them to its own compiled identity, and pairs
+  // that with an in-process provenance mark (§5.9, graphify-memory/store-factory). There is no signature.
+  adapter_id?: OpaqueRef;
+  adapter_version?: string;
+  adapter_build_digest?: Digest;
   issued_at: Instant;
   expires_at: Instant;
+  // §5.9 non-circularity: computed over the receipt WITHOUT receipt_digest.
   receipt_digest: Digest;
 }
 
@@ -914,6 +933,89 @@ export interface RecallPacketV2 {
   packet_digest: Digest;
 }
 
+export interface FencedStoreConstructionV1 {
+  store_id: OpaqueRef;
+  backend: "sqlite" | "postgres";
+  deadline_at: Instant;
+}
+
+export interface CanonicalMemoryStoreFactoryV1 {
+  readonly version: 1;
+  readonly adapter_id: OpaqueRef;
+  readonly adapter_version: string;
+  acquire(input: FencedStoreConstructionV1): Promise<Result<CanonicalMemoryStorePort>>;
+}
+
+export interface AdminBootstrapRequestV1 {
+  store_id: OpaqueRef;
+  // §5.5(b): MUST equal the live storage fence epoch; the engine refuses FENCE_LOST before any dispatch otherwise.
+  storage_epoch: Cursor;
+  // graphify never interprets admin_credential_ref (§5.10) — it is opaque and handed to the AdminProviderPort verbatim.
+  admin_credential_ref: OpaqueRef;
+  deadline_at: Instant;
+}
+
+export interface AdminRotateRequestV1 {
+  store_id: OpaqueRef;
+  current_authorization_epoch: Cursor;
+  authorization: AuthorizationContextV1;
+  deadline_at: Instant;
+}
+
+export interface AdminRevokeRequestV1 {
+  store_id: OpaqueRef;
+  current_authorization_epoch: Cursor;
+  credential_digest: Digest;
+  authorization: AuthorizationContextV1;
+  deadline_at: Instant;
+}
+
+export interface AdminEpochReceiptV1 {
+  store_id: OpaqueRef;
+  storage_epoch: Cursor;
+  operation: "bootstrap" | "rotate" | "revoke";
+  // §5.10: the AuthorizationPort revocation_epoch counter — distinct from TrustBindingV1.revocation_epoch AND from storage_epoch (three neighbouring epochs).
+  authorization_epoch: Cursor;
+  credential_digest: Digest;
+  issued_at: Instant;
+  // §5.10: MUST be ≤ 5 min after issued_at and bound to authorization_epoch; rotate/revoke invalidates earlier receipts atomically.
+  expires_at: Instant;
+  // §5.9 non-circularity: computed over the receipt WITHOUT receipt_digest.
+  receipt_digest: Digest;
+}
+
+export type AdminOperationRequestV1 =
+  | { operation: "bootstrap"; bootstrap: AdminBootstrapRequestV1 }
+  | { operation: "rotate"; rotate: AdminRotateRequestV1 }
+  | { operation: "revoke"; revoke: AdminRevokeRequestV1 };
+
+// §5.10 D2 — the injected administrator replacing the retired built-in. Six normative requirements the types cannot express:
+// (1) default-deny before the first valid receipt; (2) receipts ≤5 min bound to the authorization epoch;
+// (3) rotate/revoke atomically increments the epoch and invalidates earlier receipts; (4) no bypass on credential loss;
+// (5) six-field admission envelope (§5.3); (6) minimal-allowlist redaction. bootstrap succeeds only on EMPTY admin state under an active fence.
+export interface AdminProviderPort {
+  readonly version: 1;
+  bootstrap(request: AdminBootstrapRequestV1): Promise<Result<AdminEpochReceiptV1>>;
+  rotate(request: AdminRotateRequestV1): Promise<Result<AdminEpochReceiptV1>>;
+  revoke(request: AdminRevokeRequestV1): Promise<Result<AdminEpochReceiptV1>>;
+}
+
+// §5.9 capability attestation, by IN-PROCESS PROVENANCE (not cryptography — the trust boundary is deployment
+// topology, l.1045). A production store is admitted for a fencing-dependent op ONLY when it is a member of this
+// build's fence-mark registry — a mark the sqlite/postgres OPENER applies after taking a REAL kernel writer fence
+// (sqlite: a flock on the DB inode + a /proc/self/fdinfo liveness proof; postgres: the advisory-lock generation),
+// which the factory propagates to the store it returns. There is NO signer, key, or signature, and NO declared-
+// identity comparison: membership alone is the admission basis (the retired identity check added nothing — a
+// same-module store always matched — and a self-asserted boolean is of the same forgeable family). This identity
+// type remains only as the shape of the receipt's DECLARED adapter identity, which is INFORMATIONAL/diagnostic
+// (a duplicate package or version drift is legible in the receipt), never the admission basis. See
+// graphify-memory/store-factory (verifyStoreProvenance and the internal opener-applied fence mark).
+export interface CapabilityAttestationIdentityV1 {
+  readonly adapter_id: OpaqueRef;
+  readonly adapter_version: string;
+  readonly adapter_build_digest: Digest;
+}
+
 export interface MemoryPortV2 {
   readonly version: 2;
   capabilities(): Promise<Result<CapabilityDescriptorV1>>;
@@ -926,12 +1028,24 @@ export interface MemoryPortV2 {
   proposeCapitalisation(request: CapitalisationRequestV1): Promise<Result<CaptureAcknowledgementV1>>;
   invalidateProjections(request: ProjectionInvalidationRequestV1): Promise<Result<ProjectionInvalidationReceiptV1>>;
   readiness(): Promise<Result<OperationalCapabilityReceiptV1>>;
+  // §5.5: the single graphify-mediated admin entry point. Engine steps: no admin_provider => CAPABILITY_UNAVAILABLE;
+  // shape-invalid => INVALID_SCHEMA; bootstrap => FENCE_LOST unless request.storage_epoch equals the live fence epoch (before dispatch);
+  // then dispatch to admin_provider per discriminant and pass its Result through (a port denial surfaces as UNAUTHORIZED).
+  admin(request: AdminOperationRequestV1): Promise<Result<AdminEpochReceiptV1>>;
 }
 
 export interface MemoryEngineDependenciesV2 {
   canonical_store: CanonicalMemoryStorePort;
   authorization: AuthorizationPort;
   admission_policy: AdmissionPolicy;
+  admin_provider?: AdminProviderPort;
+  // §5.9: production is fail-closed — an unfenced store (not built by this build's fenced factory) is refused
+  // unless this is explicitly set for a NON-production embedded fake. Never inferred from the receipt's backend
+  // string (forgeable): a "memory"-labelled store wired in production must not bypass fencing.
+  allow_unfenced_memory_store?: boolean;
+  // §5.9 (v5-c): optional observability hook fired ONCE at engine construction when `allow_unfenced_memory_store`
+  // is set, so a host logs/audits the non-production posture at startup (the neutral package emits no console).
+  on_unfenced_memory_store_permitted?: () => void;
   evidence_verifier?: EvidenceVerifierPort;
   crypto: CryptoPort;
   activity_sources: ReadonlyArray<ActivityEvidenceSource>;

@@ -6,6 +6,7 @@ import {
   type RevalidationPacketV1,
 } from "../graphify-memory/index.js";
 import { buildMemory, DEADLINE, NOW, recallRequest, seedAccepted } from "./memory-l7-fixture.js";
+import { embeddedInMemoryStub } from "./memory-l3-fixture.js";
 
 /** Forwards to the real store but drops `staleId` at the final revalidation gate,
  * modelling a detached-snapshot hit that canonical state has since invalidated. */
@@ -35,7 +36,9 @@ describe("offline lexical recall", () => {
   it("offline profile reads only accepted FTS and revalidation removes a stale hit", async () => {
     let stale: string | undefined;
     const inner = createInMemoryCanonicalMemoryStoreV1({ clock: { now: () => NOW } });
-    const store = staleRevalidationStore(inner, () => stale);
+    // The behaviour-injecting Proxy is a distinct object identity, so it is not the marked in-memory store `inner`;
+    // declare the wrapper an embedded in-memory fake too (the fixture opts into allow_unfenced_memory_store).
+    const store = embeddedInMemoryStub(staleRevalidationStore(inner, () => stale));
     const { memory } = buildMemory({ store });
 
     const keep = await seedAccepted(memory, "alpha beta gamma retained knowledge");

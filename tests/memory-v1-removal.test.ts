@@ -76,4 +76,35 @@ describe("legacy memory removal", () => {
     expect(migrationModule).not.toContain("createMemoryPortV1");
     expect(migrationModule).not.toContain("AgentMemory");
   });
+
+  it("the retired built-in local administrator family (§5.10) is absent from the package surface and sources", () => {
+    const memoryPackage = join(root, "graphify-memory");
+    // Retired by MEMBERSHIP in the administration family, not by Local* prefix:
+    // LocalFilesystemProbeResultV1 (sqlite.ts) is not an admin symbol and stays.
+    const retiredAdminFamily = [
+      "createLocalAdministratorV1",
+      "createAlwaysActiveLocalAdministrationFenceV1",
+      "createFileLocalCredentialSourceV1",
+      "createInMemoryLocalAdministrationStateStoreV1",
+      "createInMemoryLocalCredentialSourceV1",
+      "LocalAdministratorV1",
+      "LocalAdministratorOptionsV1",
+      "LocalAdministrationFenceV1",
+      "LocalAdministrationStateStoreV1",
+      "LocalAdministrationStateV1",
+      "LocalCredentialSourceV1",
+    ];
+    expect(existsSync(join(memoryPackage, "service.ts")), "the administrator subsystem module must be deleted").toBe(false);
+    const packageIndex = readFileSync(join(memoryPackage, "index.ts"), "utf8");
+    expect(retiredAdminFamily.filter((symbol) => packageIndex.includes(symbol)), "no retired administrator symbol may remain exported").toEqual([]);
+    // Membership check: the non-admin Local* symbol survives (internal to sqlite.ts, not on the public index).
+    expect(readFileSync(join(memoryPackage, "sqlite.ts"), "utf8").includes("LocalFilesystemProbeResultV1")).toBe(true);
+
+    const sources = typeScriptSources(memoryPackage).map((path) => ({ path, text: readFileSync(path, "utf8") }));
+    const retiredVocabulary = [...retiredAdminFamily, "standalone-service", "managed-service"];
+    const leaks = sources.flatMap((file) =>
+      retiredVocabulary.filter((token) => file.text.includes(token)).map((token) => `${token} @ ${file.path.slice(root.length + 1)}`),
+    );
+    expect(leaks, "no retired admin family symbol or standalone-service/managed-service mode vocabulary may remain in graphify-memory").toEqual([]);
+  });
 });
