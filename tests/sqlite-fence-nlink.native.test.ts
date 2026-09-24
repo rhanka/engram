@@ -3,8 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { openFencedSqliteCanonicalMemoryStoreV1 } from "../engram-memory/index.js";
-import { NOW } from "./memory-l3-fixture.js";
+import {
+  createCanonicalMemoryStoreFactoryV1,
+  openFencedSqliteCanonicalMemoryStoreV1,
+  type FencedSqliteCanonicalMemoryStoreV1,
+} from "../engram-memory/index.js";
+import { captureRequest, createL3Memory, NOW } from "./memory-l3-fixture.js";
 
 // §5.9 R2-f: the fenced writer flock is held on the canonical database's OWN inode. That fence only proves
 // single-writer / rename-safety if the inode is reachable by exactly ONE name — a second hard link would let the
@@ -18,6 +22,15 @@ function filename(): string {
   const workspace = mkdtempSync(join(tmpdir(), "engram-memory-nlink-native-"));
   workspaces.push(workspace);
   return join(workspace, "canonical.sqlite");
+}
+
+// Acquire through the graphify-owned factory so the store carries this build's provenance mark and the engine's
+// fencing gate admits it (a raw-opener store is refused by the gate). Mirrors the broker native test's helper.
+async function open(filenameValue: string): Promise<FencedSqliteCanonicalMemoryStoreV1> {
+  const factory = createCanonicalMemoryStoreFactoryV1({ open: () => openFencedSqliteCanonicalMemoryStoreV1({ filename: filenameValue, clock: { now: () => NOW }, allow_ephemeral_filesystem_store: true }) });
+  const acquired = await factory.acquire({ store_id: filenameValue, backend: "sqlite", deadline_at: "2026-08-16T12:40:00.000Z" });
+  if (!acquired.ok) throw new Error(acquired.error.message);
+  return acquired.value as unknown as FencedSqliteCanonicalMemoryStoreV1;
 }
 
 afterEach(() => {
@@ -43,5 +56,23 @@ describe("native SQLite fenced open and hard-link count", () => {
     const refused = await openFencedSqliteCanonicalMemoryStoreV1({ filename: target, clock: { now: () => NOW }, allow_ephemeral_filesystem_store: true });
     expect(refused).toMatchObject({ ok: false, error: { code: "CAPABILITY_UNAVAILABLE" } });
     if (!refused.ok) expect(refused.error.message).toMatch(/hard link/i);
+  });
+
+  it("holds operations open when a hard link appears AFTER open, and refuses only at the next reopen", async () => {
+    // Freezes the open-time (not per-operation) decision: a link created while the fence is held must NOT turn a live
+    // broker's operations into FENCE_LOST (that would kill a writer over a harmless `cp -al`); the refusal is deferred
+    // to the next open, which re-runs the st_nlink check by whatever name is used.
+    const target = filename();
+    const store = await open(target);
+    const { memory } = createL3Memory("accept", store);
+    linkSync(target, `${target}.alias`); // a second hard link appears WHILE the store holds the fence
+    // Operations continue — the per-operation fence proof (kernel flock + path (dev, ino)) is unaffected by nlink.
+    await expect(memory.capture(captureRequest("idempotency-key-post-open-link", "1")))
+      .resolves.toMatchObject({ ok: true });
+    await store.close();
+    // The next open sees st_nlink === 2 and refuses (the deferred, remediable failure).
+    const reopened = await openFencedSqliteCanonicalMemoryStoreV1({ filename: target, clock: { now: () => NOW }, allow_ephemeral_filesystem_store: true });
+    expect(reopened).toMatchObject({ ok: false, error: { code: "CAPABILITY_UNAVAILABLE" } });
+    if (!reopened.ok) expect(reopened.error.message).toMatch(/hard link/i);
   });
 });
