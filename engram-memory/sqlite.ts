@@ -174,6 +174,17 @@ async function acquireDatabaseFlock(filename: string, allowEphemeral: boolean): 
     if (!verdict.admit) throw new Error(verdict.reason);
     // Capture the flocked inode from the fd (bigint: a large XFS/btrfs inode exceeds 2^53 and a number would round).
     const identity = fstatSync(fd, { bigint: true });
+    // §5.9 R2-f: the fenced inode MUST be reachable by exactly one name. A second hard link (st_nlink > 1) means the
+    // same database bytes answer to another path outside the fence's view, which defeats two guarantees at once:
+    // assertPathUnmoved treats "the canonical path is gone" as a lost fence, but an alias keeps the inode alive after
+    // an unlink, so an adversary can unlink+relink the canonical name onto the SAME still-flocked (dev, ino) with the
+    // rename check none the wiser; and release-after-close assumes closing the last fd (or process death) retires the
+    // database, whereas an aliased inode survives to be relinked into place afterwards. nlink is read from the SAME
+    // fstat as the flocked identity, so it races nothing. Refuse here, before any write; the opener maps this throw to
+    // CAPABILITY_UNAVAILABLE (it is not flock contention, so never FENCE_LOST).
+    if (identity.nlink > 1n) {
+      throw new Error(`the canonical database inode has ${identity.nlink} hard links; a fenced store requires exactly one name for the inode (a second link defeats the single-writer rename and release-after-close guarantee)`);
+    }
     // Match the flock by INODE only, never by device: fstat's st_dev (the mount/subvolume dev) differs from the
     // superblock s_dev the kernel prints in /proc on btrfs, so a device match would brick there; the inode is
     // identical in both views. fdinfo is per-fd anyway, so this is a sanity check, not the sole discriminator.
