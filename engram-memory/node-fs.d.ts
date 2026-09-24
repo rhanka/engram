@@ -9,6 +9,8 @@ declare module "node:fs" {
   interface BigIntFileStats {
     readonly dev: bigint;
     readonly ino: bigint;
+    // Hard-link count of the inode; the fence refuses st_nlink > 1 (a multiply-linked canonical database).
+    readonly nlink: bigint;
   }
 
   interface FileSystemStats {
