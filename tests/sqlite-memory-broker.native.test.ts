@@ -13,6 +13,7 @@ import {
 import { captureRequest, createL3Memory, NOW } from "./memory-l3-fixture.js";
 
 const workspaces: string[] = [];
+const children: ReturnType<typeof spawn>[] = [];
 
 function filename(): string {
   const workspace = mkdtempSync(join(tmpdir(), "graphify-memory-sqlite-native-"));
@@ -43,6 +44,7 @@ async function tableCount(filenameValue: string, table: string): Promise<number>
 }
 
 afterEach(() => {
+  while (children.length > 0) { try { children.pop()!.kill("SIGKILL"); } catch { /* already gone */ } }
   while (workspaces.length > 0) rmSync(workspaces.pop()!, { recursive: true, force: true });
 });
 
@@ -129,5 +131,66 @@ describe("native SQLite memory broker", () => {
     await ranking.value.close();
     await backup.value.close();
     await store.close();
+  });
+
+  it("factory acquire refuses a second live holder and FENCE_LOST is terminal with no silent re-acquire, exercised through a minimal external-host harness (graceful close, host crash, restart, stale instance)", async () => {
+    const target = filename();
+    const helper = join(process.cwd(), "graphify-memory", "node_modules", "fs-ext", "fs-ext.js");
+    const epochOf = async (s: FencedSqliteCanonicalMemoryStoreV1): Promise<bigint> => {
+      const r = await s.readiness();
+      if (!r.ok) throw new Error(`readiness failed: ${r.error.code}`);
+      return BigInt(r.value.storage_epoch);
+    };
+    const openRaw = () => openFencedSqliteCanonicalMemoryStoreV1({ filename: target, clock: { now: () => NOW }, allow_ephemeral_filesystem_store: true });
+
+    // (1) graceful close: host A holds the fence; a concurrent second live holder is refused FENCE_LOST; after A
+    // closes gracefully the flock is released, so host B opens and is admitted with an advanced durable epoch.
+    const a = await open(target);
+    const e0 = await epochOf(a);
+    await expect(openRaw()).resolves.toMatchObject({ ok: false, error: { code: "FENCE_LOST" } }); // second live holder refused
+    await a.close();
+    const b = await open(target);
+    expect(await epochOf(b)).toBeGreaterThan(e0);
+    await b.close();
+
+    // (2) host crash: a child process holds the real flock (a live external host); our open contends and loses;
+    // SIGKILL makes the kernel release the flock (no stranded lock), so the next open is admitted.
+    const child = spawn(process.execPath, ["--input-type=module", "--eval", `
+      const fs = await import("node:fs");
+      const flock = await import(${JSON.stringify(helper)});
+      const fd = fs.openSync(process.argv[1], "a", 0o600);
+      flock.flockSync(fd, "exnb");
+      process.stdout.write("READY\\n");
+      setInterval(() => {}, 1_000);
+    `, `${target}`], { stdio: ["ignore", "pipe", "pipe"] });
+    children.push(child);
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("flock holder did not become ready")), 5_000);
+      child.stdout?.on("data", (data: Buffer) => { if (data.toString("utf8").includes("READY")) { clearTimeout(timeout); resolve(); } });
+      child.once("error", reject);
+    });
+    await expect(openRaw()).resolves.toMatchObject({ ok: false, error: { code: "FENCE_LOST" } }); // the live host holds it
+    child.kill("SIGKILL");
+    await once(child, "exit");
+    const afterCrash = await open(target); // the crash released the flock; a new host takes over and is admitted
+
+    // (3) restart: successive opens advance storage_epoch strictly and never reset it to zero.
+    const e1 = await epochOf(afterCrash);
+    await afterCrash.close();
+    const restarted = await open(target);
+    const e2 = await epochOf(restarted);
+    expect(e2).toBeGreaterThan(e1);
+    expect(e1).toBeGreaterThan(0n); // strictly increasing across the crash/restart, never reset
+
+    // (4) stale instance: while this store is live, an intruder advances the durable epoch (dispossession); the
+    // store's next op fails FENCE_LOST, and that is TERMINAL — a second op fails too, with no silent re-acquire.
+    const { memory } = createL3Memory("accept", restarted);
+    const native = await import("../graphify-memory/node_modules/better-sqlite3/lib/index.js");
+    const intruder = new native.default(target);
+    intruder.prepare("UPDATE memory_meta SET value = ? WHERE key = 'storage_epoch'").run("999999");
+    intruder.close();
+    await expect(memory.capture(captureRequest("idempotency-key-stale-1", "1"))).resolves.toMatchObject({ ok: false, error: { code: "FENCE_LOST" } });
+    await expect(memory.capture(captureRequest("idempotency-key-stale-2", "2"))).resolves.toMatchObject({ ok: false, error: { code: "FENCE_LOST" } });
+    await restarted.close();
   });
 });
