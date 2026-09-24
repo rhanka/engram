@@ -100,17 +100,17 @@ describe("Track F F-0816-P2 (row 15) — cluster-only when output dir is missing
     expect(out.nodes.map((n) => n.id).sort()).toEqual(["alpha", "beta"]);
   }, 90_000);
 
-  it("public CLI cluster-only re-creates .graphify/ subdirs when only graph.json survived", async () => {
+  it("public CLI cluster-only re-creates .engram/ subdirs when only graph.json survived", async () => {
     const root = tempProject();
-    // Seed .graphify/graph.json then delete sibling artifacts to mimic the
+    // Seed .engram/graph.json then delete sibling artifacts to mimic the
     // upstream scenario (user archived the rest of the output directory).
-    const stateDir = join(root, ".graphify");
+    const stateDir = join(root, ".engram");
     mkdirSync(stateDir, { recursive: true });
     writeFileSync(join(stateDir, "graph.json"), JSON.stringify(fixtureGraph()), "utf-8");
     // Pre-fix: writeFileSync(report) blew up if any subdir on the path
     // had been removed. Simulate by removing the (otherwise existing)
-    // `.graphify/scratch/` parent the analysis JSON would land under.
-    // We just verify the command completes cleanly when `.graphify/`
+    // `.engram/scratch/` parent the analysis JSON would land under.
+    // We just verify the command completes cleanly when `.engram/`
     // contains only graph.json.
 
     const { main } = await import("../src/cli.js");
@@ -153,7 +153,7 @@ describe("Track F F-0816-P2 (row 15) — cluster-only when output dir is missing
     expect(errors.join("\n")).not.toMatch(/ENOENT|FileNotFound/);
     expect(exitCode).toBe(0);
     expect(existsSync(join(stateDir, "GRAPH_REPORT.md"))).toBe(true);
-    // graph.html ALSO landed; the .graphify/ scratch artifact too.
+    // graph.html ALSO landed; the .engram/ scratch artifact too.
     void dirname; // keep import (used by readability of test); no-op
   });
 });

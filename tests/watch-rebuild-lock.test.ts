@@ -23,7 +23,7 @@ afterEach(() => {
 describe("watch .rebuild.lock lifecycle", () => {
   it("writes a single PID line on acquire and unlinks on release", () => {
     const dir = makeTempDir();
-    const lockPath = join(dir, ".graphify", ".rebuild.lock");
+    const lockPath = join(dir, ".engram", ".rebuild.lock");
 
     expect(acquireRebuildLock(dir)).toBe(true);
     expect(existsSync(lockPath)).toBe(true);
@@ -48,7 +48,7 @@ describe("watch .rebuild.lock lifecycle", () => {
 
   it("overwrites a stale lock left by a dead PID", () => {
     const dir = makeTempDir();
-    const lockPath = join(dir, ".graphify", ".rebuild.lock");
+    const lockPath = join(dir, ".engram", ".rebuild.lock");
 
     mkdirSync(dirname(lockPath), { recursive: true });
     // Use a PID outside the kernel max_pid range on every platform that runs
@@ -68,7 +68,7 @@ describe("watch .rebuild.lock lifecycle", () => {
 
   it("ignores a lock file with garbage contents and overwrites it", () => {
     const dir = makeTempDir();
-    const lockPath = join(dir, ".graphify", ".rebuild.lock");
+    const lockPath = join(dir, ".engram", ".rebuild.lock");
 
     mkdirSync(dirname(lockPath), { recursive: true });
     writeFileSync(lockPath, "not-a-pid\n", "utf-8");
