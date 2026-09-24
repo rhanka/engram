@@ -2,7 +2,7 @@
  * workspace-bundle-contract-v1 (WP4 G2) — scene-hierarchies.json emitter.
  *
  * Writes the STANDALONE `scene-hierarchies.json` artifact (schema
- * `graphify_scene_hierarchies_v1`) next to `scene.json`, decoupled from the
+ * `engram_scene_hierarchies_v1`) next to `scene.json`, decoupled from the
  * (optional) scene per frozen Decision 1:
  *
  *   - The sidecar is emitted IFF `<ontologyOutputDir>/hierarchies.json`

@@ -812,7 +812,7 @@ export interface OntologyNodeTypeLinking {
 
 /** Portable fingerprint of the effective normalizer; runtime paths are absent. */
 export interface EntityNormalizerDescriptor {
-  contract: "graphify_entity_normalizer_v1";
+  contract: "engram_entity_normalizer_v1" | "graphify_entity_normalizer_v1";
   builtins: string[];
   export?: string;
   module_sha256?: string;
@@ -976,7 +976,7 @@ export interface OntologyHierarchyArc {
 
 /** Pre-computed index over a set of OntologyHierarchyArc entries. */
 export interface OntologyHierarchyIndex {
-  schema: "graphify_ontology_hierarchies_v1";
+  schema: "engram_ontology_hierarchies_v1" | "graphify_ontology_hierarchies_v1";
   /** Ids of nodes that have no parent in any arc. */
   root_ids: string[];
   /** Maximum depth across all arcs (0 when arcs is empty). */
@@ -992,13 +992,13 @@ export interface OntologyHierarchyIndex {
 }
 
 // ---------------------------------------------------------------------------
-// Class-hierarchies (EVOL 2.c) — graphify_ontology_class_hierarchies_v1
+// Class-hierarchies (EVOL 2.c) — engram_ontology_class_hierarchies_v1
 // ---------------------------------------------------------------------------
 //
 // A SEPARATE, additive ontology artifact (`class-hierarchies.json`) describing
 // the CLASS layer: a mono-parent class tree (`subclass_of`) whose leaf classes
 // gather the graph's entity nodes by their `node_type` (`has_instance`). It is
-// independent of the signed `graphify_scene_hierarchies_v1` sidecar (which
+// independent of the signed `engram_scene_hierarchies_v1` sidecar (which
 // describes the ENTITY-instance tree); the two never share state. Class node
 // ids are synthetic and namespaced `class:<ClassName>` to avoid colliding with
 // raw registry / entity ids. Entities join leaf classes by their graph/scene
@@ -1019,7 +1019,7 @@ export interface ClassHierarchyClass {
   member_node_types?: string[];
   /**
    * Ids of the REGISTRY hierarchies (`hierarchies:` block → the
-   * `graphify_scene_hierarchies_v1` sidecar) whose forest this class OWNS.
+   * `engram_scene_hierarchies_v1` sidecar) whose forest this class OWNS.
    * The taxonomy stays one tree: a consumer splices each named forest under
    * this class, so a class like `ABP` is the navigable multi-level process
    * tree instead of a node-type dead end. Purely declarative — the compiled
@@ -1124,9 +1124,9 @@ export interface ClassHierarchy {
   unattached_entity_count: number;
 }
 
-export const ONTOLOGY_CLASS_HIERARCHIES_SCHEMA = "graphify_ontology_class_hierarchies_v1";
+export const ONTOLOGY_CLASS_HIERARCHIES_SCHEMA = "engram_ontology_class_hierarchies_v1";
 
-/** The `class-hierarchies.json` artifact (graphify_ontology_class_hierarchies_v1). */
+/** The `class-hierarchies.json` artifact (engram_ontology_class_hierarchies_v1). */
 export interface ClassHierarchiesArtifact {
   schema: typeof ONTOLOGY_CLASS_HIERARCHIES_SCHEMA;
   generated_at: string;

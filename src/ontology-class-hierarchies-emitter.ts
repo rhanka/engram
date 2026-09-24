@@ -2,7 +2,7 @@
  * EVOL 2.c — class-hierarchies.json emitter.
  *
  * Writes the STANDALONE `class-hierarchies.json` artifact (schema
- * `graphify_ontology_class_hierarchies_v1`) into the ontology output dir,
+ * `engram_ontology_class_hierarchies_v1`) into the ontology output dir,
  * mirroring `scene-hierarchies-emitter.ts`:
  *
  *   - The artifact is emitted IFF the profile carries a NON-EMPTY

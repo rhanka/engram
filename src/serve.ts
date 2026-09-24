@@ -480,7 +480,7 @@ function toolQueryGraph(G: Graph, args: Record<string, unknown>): string {
 /**
  * `answer_graph` (work-stream C, Phase A / C9) — the WITH-RAG-AGENT surface.
  * Builds the BM25/PPR retrieval core over the live graph and returns the frozen
- * `graphify_answer_pack_v1` (mode="agent") for the CALLING agent to relevance-test
+ * `engram_answer_pack_v1` (mode="agent") for the CALLING agent to relevance-test
  * + synthesize. Same assembler code path as the OFFLINE/ONLINE modes (INV-2);
  * `answer` is null for the agent to fill.
  */
@@ -1060,7 +1060,7 @@ export async function serve(
       {
         name: "answer_graph",
         description:
-          "GraphRAG answer pack: BM25 seeds + RRF fusion + Personalized PageRank expansion over the entity graph, grounded on verbatim citation quotes. Returns a graphify_answer_pack_v1 JSON (seeds, PPR-scored neighborhood, connecting paths, communities) with answer:null — the calling agent relevance-tests and synthesizes the final answer over the pack.",
+          "GraphRAG answer pack: BM25 seeds + RRF fusion + Personalized PageRank expansion over the entity graph, grounded on verbatim citation quotes. Returns a engram_answer_pack_v1 JSON (seeds, PPR-scored neighborhood, connecting paths, communities) with answer:null — the calling agent relevance-tests and synthesizes the final answer over the pack.",
         inputSchema: {
           type: "object" as const,
           properties: {
@@ -1247,13 +1247,13 @@ export async function serve(
       {
         name: "validate_ontology_patch",
         description:
-          "Validate a graphify_ontology_patch_v1 object against the active ontology profile and generated ontology artifacts. Does not mutate files.",
+          "Validate a engram_ontology_patch_v1 object against the active ontology profile and generated ontology artifacts. Does not mutate files.",
         inputSchema: {
           type: "object" as const,
           properties: {
             patch: {
               type: "object",
-              description: "graphify_ontology_patch_v1 object",
+              description: "engram_ontology_patch_v1 object",
             },
           },
           required: ["patch"],
@@ -1262,13 +1262,13 @@ export async function serve(
       {
         name: "apply_ontology_patch",
         description:
-          "Dry-run by default, or write-apply a graphify_ontology_patch_v1 object through configured authoritative decision logs and local audit logs.",
+          "Dry-run by default, or write-apply a engram_ontology_patch_v1 object through configured authoritative decision logs and local audit logs.",
         inputSchema: {
           type: "object" as const,
           properties: {
             patch: {
               type: "object",
-              description: "graphify_ontology_patch_v1 object",
+              description: "engram_ontology_patch_v1 object",
             },
             dry_run: {
               type: "boolean",

@@ -352,7 +352,7 @@ export function detectLabelingBackend(): DirectLlmProvider | null {
 export type CallLlmFn = (prompt: string, maxTokens: number) => Promise<string>;
 
 /** Port schema label for community-label JSON — the implicit output shape made explicit. */
-const COMMUNITY_LABELS_SCHEMA = "graphify_community_labels_v1";
+const COMMUNITY_LABELS_SCHEMA = "engram_community_labels_v1";
 
 /**
  * Build the default `callLlm` for a given provider/model using the same AI SDK

@@ -14,7 +14,7 @@
  *   organization-units   471 rows →    0 nodes  ← absent
  *
  * That is invisible until something joins ON the registry ids. The
- * `graphify_scene_hierarchies_v1` sidecar does exactly that (D2: arcs are keyed
+ * `engram_scene_hierarchies_v1` sidecar does exactly that (D2: arcs are keyed
  * by raw registry ids and pruned against the scene's `registry_record_id`s), so
  * an under-materialised registry silently collapses its whole forest into
  * `dangling_arc_count` — 1853 dropped ABP arcs, 468 dropped org arcs, an empty

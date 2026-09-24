@@ -14,7 +14,7 @@
 import { createHash } from "node:crypto";
 import type { Bm25Index } from "./retrieval/bm25.js";
 
-export const SEARCH_INDEX_SCHEMA = "graphify_search_index_v1";
+export const SEARCH_INDEX_SCHEMA = "engram_search_index_v1";
 
 /** Per-doc payload — turns a BM25 hit into a grounded pack entry WITHOUT graph.json. */
 export interface SearchIndexDoc {

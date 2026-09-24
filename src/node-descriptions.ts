@@ -815,7 +815,7 @@ export function detectDescriptionBackend(): DirectLlmProvider | null {
 export type CallLlmFn = (prompt: string, maxTokens: number) => Promise<string>;
 
 /** Port schema label for node-description JSON — the implicit output shape made explicit. */
-const NODE_DESCRIPTIONS_SCHEMA = "graphify_node_descriptions_v1";
+const NODE_DESCRIPTIONS_SCHEMA = "engram_node_descriptions_v1";
 
 async function makeDefaultCallLlm(
   provider: DirectLlmProvider,
