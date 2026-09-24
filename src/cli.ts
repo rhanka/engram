@@ -1,5 +1,5 @@
 /**
- * graphify CLI - `graphify install` sets up the AI coding assistant skill.
+ * Engram CLI - `engram install` sets up the AI coding assistant skill.
  */
 import {
   readFileSync,
@@ -597,97 +597,97 @@ interface PlatformConfig {
 export const PLATFORM_CONFIG: Record<string, PlatformConfig> = {
   claude: {
     skill_file: "skill.md",
-    skill_dst: join(".claude", "skills", "graphify", "SKILL.md"),
+    skill_dst: join(".claude", "skills", "engram", "SKILL.md"),
     claude_md: true,
   },
   codex: {
     skill_file: "skill-codex.md",
-    skill_dst: join(".agents", "skills", "graphify", "SKILL.md"),
+    skill_dst: join(".agents", "skills", "engram", "SKILL.md"),
     claude_md: false,
   },
   gemini: {
     skill_file: "skill-gemini.toml",
-    skill_dst: join(".gemini", "commands", "graphify.toml"),
+    skill_dst: join(".gemini", "commands", "engram.toml"),
     claude_md: false,
   },
   opencode: {
     skill_file: "skill-opencode.md",
-    // Global scope: ~/.config/opencode/skills/graphify/SKILL.md (XDG standard path)
-    skill_dst: join(".config", "opencode", "skills", "graphify", "SKILL.md"),
-    // Project scope: .opencode/skills/graphify/SKILL.md (discoverable by OpenCode)
+    // Global scope: ~/.config/opencode/skills/engram/SKILL.md (XDG standard path)
+    skill_dst: join(".config", "opencode", "skills", "engram", "SKILL.md"),
+    // Project scope: .opencode/skills/engram/SKILL.md (discoverable by OpenCode)
     // Fix for upstream #1040: the project path was incorrectly using .config/opencode/
     // instead of .opencode/ when --project was passed.
-    project_skill_dst: join(".opencode", "skills", "graphify", "SKILL.md"),
+    project_skill_dst: join(".opencode", "skills", "engram", "SKILL.md"),
     claude_md: false,
   },
   aider: {
     skill_file: "skill.md",
-    skill_dst: join(".aider", "graphify", "SKILL.md"),
+    skill_dst: join(".aider", "engram", "SKILL.md"),
     claude_md: false,
   },
   copilot: {
     skill_file: "skill.md",
-    skill_dst: join(".copilot", "skills", "graphify", "SKILL.md"),
+    skill_dst: join(".copilot", "skills", "engram", "SKILL.md"),
     claude_md: false,
   },
   claw: {
     skill_file: "skill-claw.md",
-    skill_dst: join(".claw", "skills", "graphify", "SKILL.md"),
+    skill_dst: join(".claw", "skills", "engram", "SKILL.md"),
     claude_md: false,
   },
   droid: {
     skill_file: "skill-droid.md",
-    skill_dst: join(".factory", "skills", "graphify", "SKILL.md"),
+    skill_dst: join(".factory", "skills", "engram", "SKILL.md"),
     claude_md: false,
   },
   trae: {
     skill_file: "skill-trae.md",
-    skill_dst: join(".trae", "skills", "graphify", "SKILL.md"),
+    skill_dst: join(".trae", "skills", "engram", "SKILL.md"),
     claude_md: false,
   },
   "trae-cn": {
     skill_file: "skill-trae.md",
-    skill_dst: join(".trae-cn", "skills", "graphify", "SKILL.md"),
+    skill_dst: join(".trae-cn", "skills", "engram", "SKILL.md"),
     claude_md: false,
   },
   hermes: {
     skill_file: "skill-claw.md",
-    skill_dst: join(".hermes", "skills", "graphify", "SKILL.md"),
+    skill_dst: join(".hermes", "skills", "engram", "SKILL.md"),
     claude_md: false,
   },
   kimi: {
     skill_file: "skill.md",
-    skill_dst: join(".kimi", "skills", "graphify", "SKILL.md"),
+    skill_dst: join(".kimi", "skills", "engram", "SKILL.md"),
     claude_md: false,
   },
   kiro: {
     skill_file: "skill-kiro.md",
-    skill_dst: join(".kiro", "skills", "graphify", "SKILL.md"),
+    skill_dst: join(".kiro", "skills", "engram", "SKILL.md"),
     claude_md: false,
   },
   antigravity: {
     skill_file: "skill.md",
     // Global Antigravity skill dir: ~/.gemini/config/skills/ (port of upstream
     // 9985940 #1079 — was incorrectly ~/.agents/skills/ before this fix).
-    skill_dst: join(".gemini", "config", "skills", "graphify", "SKILL.md"),
+    skill_dst: join(".gemini", "config", "skills", "engram", "SKILL.md"),
     // Project-scoped skill stays in .agents/skills/ (the per-project Antigravity dir).
-    project_skill_dst: join(".agents", "skills", "graphify", "SKILL.md"),
+    project_skill_dst: join(".agents", "skills", "engram", "SKILL.md"),
     claude_md: false,
   },
   "antigravity-windows": {
     skill_file: "skill-windows.md",
-    skill_dst: join(".gemini", "config", "skills", "graphify", "SKILL.md"),
-    project_skill_dst: join(".agents", "skills", "graphify", "SKILL.md"),
+    skill_dst: join(".gemini", "config", "skills", "engram", "SKILL.md"),
+    project_skill_dst: join(".agents", "skills", "engram", "SKILL.md"),
     claude_md: false,
   },
   "vscode-copilot-chat": {
     skill_file: "skill-vscode.md",
-    skill_dst: join(".copilot", "skills", "graphify", "SKILL.md"),
+    skill_dst: join(".copilot", "skills", "engram", "SKILL.md"),
     claude_md: false,
   },
   windows: {
     skill_file: "skill-windows.md",
-    skill_dst: join(".claude", "skills", "graphify", "SKILL.md"),
+    skill_dst: join(".claude", "skills", "engram", "SKILL.md"),
     claude_md: true,
   },
 };
@@ -721,7 +721,7 @@ function resolveGlobalSkillDestination(platformName: string): string {
   }
   const claudeConfigDir = process.env.CLAUDE_CONFIG_DIR;
   if ((canonical === "claude" || canonical === "windows") && claudeConfigDir) {
-    return resolve(claudeConfigDir, "skills", "graphify", "SKILL.md");
+    return resolve(claudeConfigDir, "skills", "engram", "SKILL.md");
   }
   return join(homedir(), cfg.skill_dst);
 }
@@ -731,7 +731,10 @@ function isGraphifyClaudeHook(hook: Record<string, unknown>): boolean {
   if (matcher !== "Glob|Grep" && matcher !== "Bash" && matcher !== "Read|Glob") {
     return false;
   }
-  return JSON.stringify(hook).includes("graphify");
+  const serialized = JSON.stringify(hook);
+  // Matches both the current engram hooks and legacy graphify hooks so
+  // upgrades replace (not duplicate) and uninstall removes either.
+  return serialized.includes("engram") || serialized.includes("graphify");
 }
 
 const SETTINGS_HOOK = {
@@ -740,8 +743,8 @@ const SETTINGS_HOOK = {
     {
       type: "command",
       command:
-        '[ -f .graphify/graph.json ] && ' +
-        "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"graphify: knowledge graph at .graphify/. For focused questions, run `graphify query \\\"<question>\\\"` (scoped subgraph, usually much smaller than GRAPH_REPORT.md) instead of grepping raw files. Read GRAPH_REPORT.md only for broad architecture context.\"}}' " +
+        '( [ -f .engram/graph.json ] || [ -f .graphify/graph.json ] ) && ' +
+        "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"engram: knowledge graph at .engram/. For focused questions, run `engram query \\\"<question>\\\"` (scoped subgraph, usually much smaller than GRAPH_REPORT.md) instead of grepping raw files. Read GRAPH_REPORT.md only for broad architecture context.\"}}' " +
         '|| true',
     },
   ],
@@ -749,18 +752,19 @@ const SETTINGS_HOOK = {
 
 // Read/Glob PreToolUse hook: nudges the agent to use the graph instead of
 // reading source files one by one to answer codebase questions (port of
-// upstream 5cc7ec8 #1114).  Fires only when .graphify/graph.json exists and
-// the target path looks like a source/doc file outside .graphify/.  Every
-// branch fails open so legitimate reads always go through.
+// upstream 5cc7ec8 #1114).  Fires only when .engram/graph.json (or legacy
+// .graphify/graph.json) exists and the target path looks like a source/doc
+// file outside the state dirs.  Every branch fails open so legitimate reads
+// always go through.
 const READ_SETTINGS_HOOK = {
   matcher: "Read|Glob",
   hooks: [
     {
       type: "command",
-      // Uses npx graphify hook-check to stay in the graphify binary; the
+      // Uses npx engram hook-check to stay in the engram binary; the
       // real check is a lightweight shell expression: capture stdin, extract
       // file_path/pattern via node, and emit the additionalContext JSON only
-      // when a graph exists and the target is a source/doc file outside .graphify/.
+      // when a graph exists and the target is a source/doc file outside the state dirs.
       command:
         "HIT=$(node -e \"" +
         "var chunks=[];process.stdin.on('data',function(c){chunks.push(c);});process.stdin.on('end',function(){" +
@@ -769,69 +773,74 @@ const READ_SETTINGS_HOOK = {
         "var t=d.tool_input||d;" +
         "var s=(String(t.file_path||'')+' '+String(t.pattern||'')+String(t.path||'')).toLowerCase().replace(/\\\\\\\\\\\\\\\\/g,'/');" +
         "var exts=['.py','.js','.ts','.tsx','.jsx','.go','.rs','.java','.rb','.c','.h','.cpp','.hpp','.cs','.kt','.swift','.php','.lua','.sh','.md','.rst','.txt','.mdx'];" +
-        "if(!s.includes('.graphify/')&&!s.includes('graphify-out/')&&exts.some(function(e){return s.includes(e);})){process.stdout.write('1');}" +
+        "if(!s.includes('.engram/')&&!s.includes('.graphify/')&&!s.includes('graphify-out/')&&exts.some(function(e){return s.includes(e);})){process.stdout.write('1');}" +
         "}catch(e){}});\" 2>/dev/null || true); " +
-        "if [ \"$HIT\" = 1 ] && [ -f .graphify/graph.json ]; then " +
-        "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"graphify: knowledge graph at .graphify/. For codebase questions, run `graphify query \\\"<question>\\\"` (scoped subgraph) instead of reading source files one by one. Read raw files to modify specific code or debug.\"}}'; " +
+        "if [ \"$HIT\" = 1 ] && ( [ -f .engram/graph.json ] || [ -f .graphify/graph.json ] ); then " +
+        "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"engram: knowledge graph at .engram/. For codebase questions, run `engram query \\\"<question>\\\"` (scoped subgraph) instead of reading source files one by one. Read raw files to modify specific code or debug.\"}}'; " +
         "fi || true",
     },
   ],
 };
 
 const SKILL_REGISTRATION =
-  "\n# graphify\n" +
-  "- **graphify** (`~/.claude/skills/graphify/SKILL.md`) " +
-  "- any input to knowledge graph. Trigger: `/graphify`\n" +
-  "When the user types `/graphify`, invoke the Skill tool " +
-  'with `skill: "graphify"` before doing anything else.\n';
+  "\n# engram\n" +
+  "- **engram** (`~/.claude/skills/engram/SKILL.md`) " +
+  "- any input to knowledge graph. Trigger: `/engram` (alias `/graphify`)\n" +
+  "When the user types `/engram`, invoke the Skill tool " +
+  'with `skill: "engram"` before doing anything else.\n';
+
+/** Legacy (pre-rename) global registration header — still detected/replaced. */
+const SKILL_REGISTRATION_LEGACY_HEADER = "# graphify";
 
 const PORTABLE_GRAPHIFY_RULE =
-  "- Before proposing or committing .graphify artifacts, run `graphify portable-check .graphify`; commit-safe graph artifacts must use repo-relative paths, and never commit .graphify/branch.json, .graphify/worktree.json, .graphify/needs_update, or .graphify/cache/. If a repo already tracks any of them, first add them to .gitignore, then propose `git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update` and `git rm -r --cached .graphify/cache`; never mutate git state without asking";
+  "- Before proposing or committing .engram artifacts, run `engram portable-check .engram`; commit-safe graph artifacts must use repo-relative paths, and never commit .engram/branch.json, .engram/worktree.json, .engram/needs_update, or .engram/cache/. If a repo already tracks any of them, first add them to .gitignore, then propose `git rm --cached .engram/branch.json .engram/worktree.json .engram/needs_update` and `git rm -r --cached .engram/cache`; never mutate git state without asking";
 
-const CLAUDE_MD_SECTION = `## graphify
+const CLAUDE_MD_SECTION = `## engram
 
-This project has a graphify knowledge graph at .graphify/.
+This project has an engram knowledge graph at .engram/.
 
 Rules:
-- For codebase or architecture questions, when \`.graphify/graph.json\` exists, first run \`graphify query "<question>"\` (or \`graphify path "<A>" "<B>"\` / \`graphify explain "<concept>"\`); these return a scoped subgraph, usually much smaller than \`GRAPH_REPORT.md\` or raw grep output
-- If .graphify/wiki/index.md exists, navigate it instead of reading raw files
-- If .graphify/graph.json is missing but graphify-out/graph.json exists, run \`graphify migrate-state --dry-run\` first; if tracked legacy artifacts are reported, ask before using the recommended \`git mv -f graphify-out .graphify\` and commit message
-- If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
-- Before proposing or committing .graphify artifacts, run \`graphify portable-check .graphify\`; commit-safe graph artifacts must use repo-relative paths, and never commit .graphify/branch.json, .graphify/worktree.json, .graphify/needs_update, or .graphify/cache/. If a repo already tracks any of them, first add them to .gitignore, then propose \`git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update\` and \`git rm -r --cached .graphify/cache\`; never mutate git state without asking
-- Before deep graph traversal, prefer \`graphify summary --graph .graphify/graph.json\` for compact first-hop orientation
-- For review impact on changed files, use \`graphify review-delta --graph .graphify/graph.json\` instead of generic traversal
-- Read \`.graphify/GRAPH_REPORT.md\` only for broad architecture review or when \`query\` / \`path\` / \`explain\` do not surface enough context
-- After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
+- For codebase or architecture questions, when \`.engram/graph.json\` exists, first run \`engram query "<question>"\` (or \`engram path "<A>" "<B>"\` / \`engram explain "<concept>"\`); these return a scoped subgraph, usually much smaller than \`GRAPH_REPORT.md\` or raw grep output
+- If .engram/wiki/index.md exists, navigate it instead of reading raw files
+- If .engram/graph.json is missing but graphify-out/graph.json exists, run \`engram migrate-state --dry-run\` first; if tracked legacy artifacts are reported, ask before using the recommended \`git mv -f graphify-out .engram\` and commit message
+- If .engram/needs_update exists or .engram/branch.json has stale=true, warn before relying on semantic results and run /engram . --update when appropriate
+- Before proposing or committing .engram artifacts, run \`engram portable-check .engram\`; commit-safe graph artifacts must use repo-relative paths, and never commit .engram/branch.json, .engram/worktree.json, .engram/needs_update, or .engram/cache/. If a repo already tracks any of them, first add them to .gitignore, then propose \`git rm --cached .engram/branch.json .engram/worktree.json .engram/needs_update\` and \`git rm -r --cached .engram/cache\`; never mutate git state without asking
+- Before deep graph traversal, prefer \`engram summary --graph .engram/graph.json\` for compact first-hop orientation
+- For review impact on changed files, use \`engram review-delta --graph .engram/graph.json\` instead of generic traversal
+- Read \`.engram/GRAPH_REPORT.md\` only for broad architecture review or when \`query\` / \`path\` / \`explain\` do not surface enough context
+- After modifying code files in this session, run \`npx engram hook-rebuild\` to keep the graph current
 `;
 
-const GEMINI_MD_SECTION = `## graphify
+const GEMINI_MD_SECTION = `## engram
 
-This project has a graphify knowledge graph at .graphify/.
+This project has an engram knowledge graph at .engram/.
 
 Rules:
-- For codebase or architecture questions, when \`.graphify/graph.json\` exists, first run \`graphify query "<question>"\` (or \`graphify path "<A>" "<B>"\` / \`graphify explain "<concept>"\`); these return a scoped subgraph, usually much smaller than \`GRAPH_REPORT.md\` or raw grep output
-- If .graphify/wiki/index.md exists, navigate it instead of reading raw files
-- If .graphify/graph.json is missing but graphify-out/graph.json exists, run \`graphify migrate-state --dry-run\` first; if tracked legacy artifacts are reported, ask before using the recommended \`git mv -f graphify-out .graphify\` and commit message
-- If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
-- In Gemini CLI, the reliable explicit custom command is \`/graphify ...\`
-- If the user asks to build, update, query, path, or explain the graph, use the installed \`/graphify\` custom command or the configured \`graphify\` MCP server instead of ad-hoc file traversal
-- Before proposing or committing .graphify artifacts, run \`graphify portable-check .graphify\`; commit-safe graph artifacts must use repo-relative paths, and never commit .graphify/branch.json, .graphify/worktree.json, .graphify/needs_update, or .graphify/cache/. If a repo already tracks any of them, first add them to .gitignore, then propose \`git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update\` and \`git rm -r --cached .graphify/cache\`; never mutate git state without asking
-- Before deep graph traversal, prefer \`graphify summary --graph .graphify/graph.json\` or MCP \`first_hop_summary\` for compact first-hop orientation
-- For review impact on changed files, use \`graphify review-delta --graph .graphify/graph.json\` or MCP \`review_delta\` instead of generic traversal
-- Read \`.graphify/GRAPH_REPORT.md\` only for broad architecture review or when \`query\` / \`path\` / \`explain\` do not surface enough context
-- After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
+- For codebase or architecture questions, when \`.engram/graph.json\` exists, first run \`engram query "<question>"\` (or \`engram path "<A>" "<B>"\` / \`engram explain "<concept>"\`); these return a scoped subgraph, usually much smaller than \`GRAPH_REPORT.md\` or raw grep output
+- If .engram/wiki/index.md exists, navigate it instead of reading raw files
+- If .engram/graph.json is missing but graphify-out/graph.json exists, run \`engram migrate-state --dry-run\` first; if tracked legacy artifacts are reported, ask before using the recommended \`git mv -f graphify-out .engram\` and commit message
+- If .engram/needs_update exists or .engram/branch.json has stale=true, warn before relying on semantic results and run /engram . --update when appropriate
+- In Gemini CLI, the reliable explicit custom command is \`/engram ...\`
+- If the user asks to build, update, query, path, or explain the graph, use the installed \`/engram\` custom command or the configured \`engram\` MCP server instead of ad-hoc file traversal
+- Before proposing or committing .engram artifacts, run \`engram portable-check .engram\`; commit-safe graph artifacts must use repo-relative paths, and never commit .engram/branch.json, .engram/worktree.json, .engram/needs_update, or .engram/cache/. If a repo already tracks any of them, first add them to .gitignore, then propose \`git rm --cached .engram/branch.json .engram/worktree.json .engram/needs_update\` and \`git rm -r --cached .engram/cache\`; never mutate git state without asking
+- Before deep graph traversal, prefer \`engram summary --graph .engram/graph.json\` or MCP \`first_hop_summary\` for compact first-hop orientation
+- For review impact on changed files, use \`engram review-delta --graph .engram/graph.json\` or MCP \`review_delta\` instead of generic traversal
+- Read \`.engram/GRAPH_REPORT.md\` only for broad architecture review or when \`query\` / \`path\` / \`explain\` do not surface enough context
+- After modifying code files in this session, run \`npx engram hook-rebuild\` to keep the graph current
 `;
 
 const GEMINI_MCP_SERVER = {
-  command: "graphify",
-  args: ["serve", ".graphify/graph.json"],
+  command: "engram",
+  args: ["serve", ".engram/graph.json"],
   trust: false,
-  description: "graphify knowledge graph MCP server",
+  description: "engram knowledge graph MCP server",
 };
 
-const OPENCODE_PLUGIN_ENTRY = ".opencode/plugins/graphify.js";
+const OPENCODE_PLUGIN_ENTRY = ".opencode/plugins/engram.js";
+/** Legacy (pre-rename) plugin file — still replaced/removed. */
+const LEGACY_OPENCODE_PLUGIN_ENTRY = ".opencode/plugins/graphify.js";
 const OPENCODE_CONFIG_ENTRY = ".opencode/opencode.json";
-const OPENCODE_PLUGIN_JS = `// graphify OpenCode plugin
+const OPENCODE_PLUGIN_JS = `// engram OpenCode plugin
 // Injects a knowledge graph reminder before bash tool calls when the graph exists.
 import { existsSync } from "fs";
 import { join } from "path";
@@ -842,7 +851,7 @@ export const GraphifyPlugin = async ({ directory }) => {
   return {
     "tool.execute.before": async (input, output) => {
       if (reminded) return;
-      if (!existsSync(join(directory, ".graphify", "graph.json"))) return;
+      if (!existsSync(join(directory, ".engram", "graph.json")) && !existsSync(join(directory, ".graphify", "graph.json"))) return;
 
       if (input.tool === "bash") {
         // Separate with ';' not '&&' — Windows PowerShell 5.1 rejects '&&' as a
@@ -850,7 +859,7 @@ export const GraphifyPlugin = async ({ directory }) => {
         // OpenCode session on Windows. ';' works in PowerShell 5.1, Bash, and
         // POSIX shells alike. Port of upstream 54825b6 (#1646).
         output.args.command =
-          'echo "[graphify] Knowledge graph at .graphify/. For focused questions, run graphify query \\"<question>\\" (scoped subgraph, usually much smaller than GRAPH_REPORT.md) instead of grepping raw files. Read GRAPH_REPORT.md only for broad architecture context." ; ' +
+          'echo "[engram] Knowledge graph at .engram/. For focused questions, run engram query \\"<question>\\" (scoped subgraph, usually much smaller than GRAPH_REPORT.md) instead of grepping raw files. Read GRAPH_REPORT.md only for broad architecture context." ; ' +
           output.args.command;
         reminded = true;
       }
@@ -909,33 +918,33 @@ export function platformInstallPreview(projectDir: string = ".", platformName: s
   const preview = emptyPreview(platformName, "install");
   if (platformName === "claude" || platformName === "windows") {
     preview.writes.push(previewPath(projectDir, "CLAUDE.md"), previewPath(projectDir, ".claude/settings.json"));
-    preview.hooks.push(".claude/settings.json: PreToolUse Bash graphify reminder");
+    preview.hooks.push(".claude/settings.json: PreToolUse Bash engram reminder");
     return preview;
   }
   if (platformName === "gemini") {
     preview.writes.push(previewPath(projectDir, "GEMINI.md"), previewPath(projectDir, ".gemini/settings.json"));
-    preview.hooks.push(".gemini/settings.json: mcpServers.graphify stdio server");
+    preview.hooks.push(".gemini/settings.json: mcpServers.engram stdio server");
     return preview;
   }
   if (platformName === "cursor") {
-    preview.writes.push(previewPath(projectDir, ".cursor/rules/graphify.mdc"));
+    preview.writes.push(previewPath(projectDir, ".cursor/rules/engram.mdc"));
     return preview;
   }
   if (platformName === "antigravity") {
     preview.writes.push(
-      previewPath(projectDir, ".agents/rules/graphify.md"),
-      previewPath(projectDir, ".agents/workflows/graphify.md"),
+      previewPath(projectDir, ".agents/rules/engram.md"),
+      previewPath(projectDir, ".agents/workflows/engram.md"),
     );
     preview.notes.push("No platform hook equivalent; Antigravity rules are the always-on mechanism.");
     return preview;
   }
   if (platformName === "kiro") {
     preview.writes.push(
-      previewPath(projectDir, ".kiro/skills/graphify/SKILL.md"),
-      previewPath(projectDir, ".kiro/skills/graphify/.graphify_version"),
-      previewPath(projectDir, ".kiro/steering/graphify.md"),
+      previewPath(projectDir, ".kiro/skills/engram/SKILL.md"),
+      previewPath(projectDir, ".kiro/skills/engram/.graphify_version"),
+      previewPath(projectDir, ".kiro/steering/engram.md"),
     );
-    preview.notes.push("Kiro steering is always-on; /graphify invokes the project skill.");
+    preview.notes.push("Kiro steering is always-on; /engram invokes the project skill.");
     return preview;
   }
   if (platformName === "vscode-copilot-chat") {
@@ -947,10 +956,10 @@ export function platformInstallPreview(projectDir: string = ".", platformName: s
   preview.writes.push(previewPath(projectDir, "AGENTS.md"));
   if (platformName === "codex") {
     preview.writes.push(previewPath(projectDir, ".codex/hooks.json"));
-    preview.hooks.push(".codex/hooks.json: PreToolUse Bash graphify hook-check");
+    preview.hooks.push(".codex/hooks.json: PreToolUse Bash engram hook-check");
   } else if (platformName === "opencode") {
     preview.writes.push(previewPath(projectDir, OPENCODE_PLUGIN_ENTRY), previewPath(projectDir, OPENCODE_CONFIG_ENTRY));
-    preview.hooks.push(".opencode/opencode.json: tool.execute.before graphify plugin");
+    preview.hooks.push(".opencode/opencode.json: tool.execute.before engram plugin");
   } else {
     preview.notes.push("No platform hook equivalent; AGENTS.md is the always-on mechanism.");
   }
@@ -972,7 +981,7 @@ export function globalSkillInstallPreview(platformName: string): InstallMutation
 }
 
 function printMutationPreview(preview: InstallMutationPreview): void {
-  console.log("Preview: graphify " + preview.platform + " " + preview.action + " will touch:");
+  console.log("Preview: engram " + preview.platform + " " + preview.action + " will touch:");
   if (preview.writes.length > 0) {
     console.log("  writes:");
     for (const item of preview.writes) console.log("  - " + item);
@@ -991,52 +1000,79 @@ function printMutationPreview(preview: InstallMutationPreview): void {
   }
 }
 
-const MD_MARKER = "## graphify";
-const CURSOR_RULE_ENTRY = ".cursor/rules/graphify.mdc";
+const MD_MARKER = "## engram";
+/** Legacy (pre-rename) install section marker — still replaced/removed. */
+const MD_MARKER_LEGACY = "## graphify";
+
+/** True when a CLAUDE.md/GEMINI.md carries either the new or legacy section. */
+function hasMdSection(content: string): boolean {
+  return content.includes(MD_MARKER) || content.includes(MD_MARKER_LEGACY);
+}
+
+/**
+ * Replace the install section in place, matching the new marker first then
+ * the legacy marker (upgrade path), appending only when neither is present.
+ */
+function replaceOrAppendMdSection(content: string, section: string): string {
+  if (content.includes(MD_MARKER)) return replaceOrAppendSection(content, MD_MARKER, section);
+  if (content.includes(MD_MARKER_LEGACY)) return replaceOrAppendSection(content, MD_MARKER_LEGACY, section);
+  return replaceOrAppendSection(content, MD_MARKER, section);
+}
+
+/** Strip either the new or the legacy install section. */
+function removeMdSection(content: string): string {
+  return content.replace(/\n*## (engram|graphify)\n[\s\S]*?(?=\n## |\s*$)/, "").trim();
+}
+const CURSOR_RULE_ENTRY = ".cursor/rules/engram.mdc";
 const CURSOR_RULE = `---
-description: graphify knowledge graph context
+description: engram knowledge graph context
 alwaysApply: true
 ---
 
-This project has a graphify knowledge graph at .graphify/.
+This project has an engram knowledge graph at .engram/.
 
-- For codebase or architecture questions, when \`.graphify/graph.json\` exists, first run \`graphify query "<question>"\` (or \`graphify path "<A>" "<B>"\` / \`graphify explain "<concept>"\`); these return a scoped subgraph, usually much smaller than \`GRAPH_REPORT.md\` or raw grep output
-- If .graphify/wiki/index.md exists, navigate it instead of reading raw files
-- If .graphify/graph.json is missing but graphify-out/graph.json exists, run \`graphify migrate-state --dry-run\` first; if tracked legacy artifacts are reported, ask before using the recommended \`git mv -f graphify-out .graphify\` and commit message
-- If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
-- Read \`.graphify/GRAPH_REPORT.md\` only for broad architecture review or when \`query\` / \`path\` / \`explain\` do not surface enough context
-- After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
+- For codebase or architecture questions, when \`.engram/graph.json\` exists, first run \`engram query "<question>"\` (or \`engram path "<A>" "<B>"\` / \`engram explain "<concept>"\`); these return a scoped subgraph, usually much smaller than \`GRAPH_REPORT.md\` or raw grep output
+- If .engram/wiki/index.md exists, navigate it instead of reading raw files
+- If .engram/graph.json is missing but graphify-out/graph.json exists, run \`engram migrate-state --dry-run\` first; if tracked legacy artifacts are reported, ask before using the recommended \`git mv -f graphify-out .engram\` and commit message
+- If .engram/needs_update exists or .engram/branch.json has stale=true, warn before relying on semantic results and run /engram . --update when appropriate
+- Read \`.engram/GRAPH_REPORT.md\` only for broad architecture review or when \`query\` / \`path\` / \`explain\` do not surface enough context
+- After modifying code files in this session, run \`npx engram hook-rebuild\` to keep the graph current
 `;
 
-const ANTIGRAVITY_RULE_PATH = join(".agents", "rules", "graphify.md");
-const ANTIGRAVITY_WORKFLOW_PATH = join(".agents", "workflows", "graphify.md");
+const ANTIGRAVITY_RULE_PATH = join(".agents", "rules", "engram.md");
+const ANTIGRAVITY_WORKFLOW_PATH = join(".agents", "workflows", "engram.md");
+/** Legacy (pre-rename) Antigravity outputs — still removed on uninstall. */
+const LEGACY_ANTIGRAVITY_PATHS = [
+  join(".agents", "rules", "graphify.md"),
+  join(".agents", "workflows", "graphify.md"),
+];
 const ANTIGRAVITY_RULE = `---
-description: graphify knowledge graph context
+description: engram knowledge graph context
 ---
 
-## graphify
+## engram
 
-This project has a graphify knowledge graph at .graphify/.
+This project has an engram knowledge graph at .engram/.
 
 Rules:
-- For codebase or architecture questions, when \`.graphify/graph.json\` exists, first run \`graphify query "<question>"\` (or \`graphify path "<A>" "<B>"\` / \`graphify explain "<concept>"\`); these return a scoped subgraph, usually much smaller than \`GRAPH_REPORT.md\` or raw grep output
-- If .graphify/wiki/index.md exists, navigate it instead of reading raw files
-- If .graphify/graph.json is missing but graphify-out/graph.json exists, run \`graphify migrate-state --dry-run\` before relying on legacy state
-- If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run /graphify . --update when appropriate
-- If the graphify MCP server is active, prefer graph tools like \`query_graph\`, \`get_node\`, and \`shortest_path\` for architecture navigation
-- Read \`.graphify/GRAPH_REPORT.md\` only for broad architecture review or when \`query\` / \`path\` / \`explain\` do not surface enough context
-- After modifying code files in this session, run \`npx graphify hook-rebuild\` to keep the graph current
+- For codebase or architecture questions, when \`.engram/graph.json\` exists, first run \`engram query "<question>"\` (or \`engram path "<A>" "<B>"\` / \`engram explain "<concept>"\`); these return a scoped subgraph, usually much smaller than \`GRAPH_REPORT.md\` or raw grep output
+- If .engram/wiki/index.md exists, navigate it instead of reading raw files
+- If .engram/graph.json is missing but graphify-out/graph.json exists, run \`engram migrate-state --dry-run\` before relying on legacy state
+- If .engram/needs_update exists or .engram/branch.json has stale=true, warn before relying on semantic results and run /engram . --update when appropriate
+- If the engram MCP server is active, prefer graph tools like \`query_graph\`, \`get_node\`, and \`shortest_path\` for architecture navigation
+- Read \`.engram/GRAPH_REPORT.md\` only for broad architecture review or when \`query\` / \`path\` / \`explain\` do not surface enough context
+- After modifying code files in this session, run \`npx engram hook-rebuild\` to keep the graph current
 `;
 
 const ANTIGRAVITY_WORKFLOW = `---
-command: /graphify
+command: /engram
 description: Turn any folder of files into a navigable knowledge graph
 ---
 
-# Workflow: graphify
+# Workflow: engram
 
 ## Steps
-Follow the graphify skill installed at ~/.gemini/config/skills/graphify/SKILL.md to run the full TypeScript-backed pipeline.
+Follow the engram skill installed at ~/.gemini/config/skills/engram/SKILL.md to run the full TypeScript-backed pipeline.
 
 If no path argument is given, use \`.\` (current directory).
 `;
@@ -1045,18 +1081,20 @@ const KIRO_STEERING = `---
 inclusion: always
 ---
 
-graphify: A knowledge graph of this project lives in \`.graphify/\`. For codebase or architecture questions, when \`.graphify/graph.json\` exists, first run \`graphify query "<question>"\` (or \`graphify path "<A>" "<B>"\` / \`graphify explain "<concept>"\`); these return a scoped subgraph, usually much smaller than \`GRAPH_REPORT.md\` or raw grep output. If \`.graphify/wiki/index.md\` exists, navigate it for deep questions. Read \`.graphify/GRAPH_REPORT.md\` only for broad architecture review or when \`query\` / \`path\` / \`explain\` do not surface enough context. Prefer graph structure over raw grep when graph context is current.
+engram: A knowledge graph of this project lives in \`.engram/\`. For codebase or architecture questions, when \`.engram/graph.json\` exists, first run \`engram query "<question>"\` (or \`engram path "<A>" "<B>"\` / \`engram explain "<concept>"\`); these return a scoped subgraph, usually much smaller than \`GRAPH_REPORT.md\` or raw grep output. If \`.engram/wiki/index.md\` exists, navigate it for deep questions. Read \`.engram/GRAPH_REPORT.md\` only for broad architecture review or when \`query\` / \`path\` / \`explain\` do not surface enough context. Prefer graph structure over raw grep when graph context is current.
 `;
 
-const KIRO_STEERING_MARKER = "graphify: A knowledge graph of this project";
+const KIRO_STEERING_MARKER = "engram: A knowledge graph of this project";
+/** Legacy (pre-rename) steering marker — still triggers a refresh. */
+const KIRO_STEERING_MARKER_LEGACY = "graphify: A knowledge graph of this project";
 
-const VSCODE_INSTRUCTIONS_SECTION = `## graphify
+const VSCODE_INSTRUCTIONS_SECTION = `## engram
 
-For codebase or architecture questions, when \`.graphify/graph.json\` exists, first run \`graphify query "<question>"\` (or \`graphify path "<A>" "<B>"\` / \`graphify explain "<concept>"\`); these return a scoped subgraph, usually much smaller than \`GRAPH_REPORT.md\` or raw grep output.
-If \`.graphify/wiki/index.md\` exists, navigate it for deep questions.
-If \`.graphify/graph.json\` is missing but \`graphify-out/graph.json\` exists, run \`graphify migrate-state --dry-run\` before relying on legacy state.
-Read \`.graphify/GRAPH_REPORT.md\` only for broad architecture review or when \`query\` / \`path\` / \`explain\` do not surface enough context.
-Type \`/graphify\` in Copilot Chat to build or update the knowledge graph.
+For codebase or architecture questions, when \`.engram/graph.json\` exists, first run \`engram query "<question>"\` (or \`engram path "<A>" "<B>"\` / \`engram explain "<concept>"\`); these return a scoped subgraph, usually much smaller than \`GRAPH_REPORT.md\` or raw grep output.
+If \`.engram/wiki/index.md\` exists, navigate it for deep questions.
+If \`.engram/graph.json\` is missing but \`graphify-out/graph.json\` exists, run \`engram migrate-state --dry-run\` before relying on legacy state.
+Read \`.engram/GRAPH_REPORT.md\` only for broad architecture review or when \`query\` / \`path\` / \`explain\` do not surface enough context.
+Type \`/engram\` in Copilot Chat to build or update the knowledge graph.
 `;
 
 const AIDER_SEMANTIC_SECTION = `#### Part B - Semantic extraction (sequential extraction on Aider)
@@ -1074,33 +1112,33 @@ Before reading any docs, papers, or images, check which files already have cache
 \`\`\`bash
 node -e "
 const fs = require('fs');
-const { checkSemanticCache } = require('@sentropic/graphify');
+const { checkSemanticCache } = require('@sentropic/engram');
 
-const detect = JSON.parse(fs.readFileSync('.graphify/.graphify_detect.json', 'utf-8'));
+const detect = JSON.parse(fs.readFileSync('.engram/.graphify_detect.json', 'utf-8'));
 const allFiles = Object.values(detect.files).flat();
 
 const [cachedNodes, cachedEdges, cachedHyperedges, uncached] = checkSemanticCache(allFiles);
 
 if (cachedNodes.length || cachedEdges.length || cachedHyperedges.length) {
-    fs.writeFileSync('.graphify/.graphify_cached.json', JSON.stringify({nodes: cachedNodes, edges: cachedEdges, hyperedges: cachedHyperedges}));
+    fs.writeFileSync('.engram/.graphify_cached.json', JSON.stringify({nodes: cachedNodes, edges: cachedEdges, hyperedges: cachedHyperedges}));
 }
-fs.writeFileSync('.graphify/.graphify_uncached.txt', uncached.join('\\n'));
+fs.writeFileSync('.engram/.graphify_uncached.txt', uncached.join('\\n'));
 console.log(\`Cache: \${allFiles.length - uncached.length} files hit, \${uncached.length} files need extraction\`);
 "
 \`\`\`
 
-Only extract files listed in \`.graphify/.graphify_uncached.txt\`. If all files are cached, skip to Part C directly.
+Only extract files listed in \`.engram/.graphify_uncached.txt\`. If all files are cached, skip to Part C directly.
 
 **Step B1 - Split into chunks**
 
-Load files from \`.graphify/.graphify_uncached.txt\`. Split them into logical batches of 20-25 files, but process them sequentially on Aider. Keep files from the same directory together. Each image still deserves focused attention because vision context is expensive.
+Load files from \`.engram/.graphify_uncached.txt\`. Split them into logical batches of 20-25 files, but process them sequentially on Aider. Keep files from the same directory together. Each image still deserves focused attention because vision context is expensive.
 
 **Step B2 - Sequential extraction (Aider)**
 
 Process each uncached file one at a time. For each file:
 
 1. Read the file contents.
-2. Extract nodes, edges, and hyperedges using the same graphify rules:
+2. Extract nodes, edges, and hyperedges using the same engram rules:
    - EXTRACTED: relationship explicit in source (import, call, citation, "see section 3.2")
    - INFERRED: reasonable inference (shared structure, implied dependency)
    - AMBIGUOUS: uncertain - flag it instead of omitting it
@@ -1113,7 +1151,7 @@ Process each uncached file one at a time. For each file:
    - \`confidence_score\` is REQUIRED on every edge: EXTRACTED=1.0, INFERRED=0.6-0.9, AMBIGUOUS=0.1-0.3
 3. Accumulate the results across all files.
 
-Write the accumulated result to \`.graphify/.graphify_semantic_new.json\` using this exact schema:
+Write the accumulated result to \`.engram/.graphify_semantic_new.json\` using this exact schema:
 
 \`\`\`json
 {"nodes":[{"id":"filestem_entityname","label":"Human Readable Name","file_type":"code|document|paper|image","source_file":"relative/path","source_location":null,"source_url":null,"captured_at":null,"author":null,"contributor":null}],"edges":[{"source":"node_id","target":"node_id","relation":"calls|implements|references|cites|conceptually_related_to|shares_data_with|semantically_similar_to|rationale_for","confidence":"EXTRACTED|INFERRED|AMBIGUOUS","confidence_score":1.0,"source_file":"relative/path","source_location":null,"weight":1.0}],"hyperedges":[{"id":"snake_case_id","label":"Human Readable Label","nodes":["node_id1","node_id2","node_id3"],"relation":"participate_in|implement|form","confidence":"EXTRACTED|INFERRED","confidence_score":0.75,"source_file":"relative/path"}],"input_tokens":0,"output_tokens":0}
@@ -1128,22 +1166,22 @@ Save new results to cache:
 \`\`\`bash
 node -e "
 const fs = require('fs');
-const { saveSemanticCache } = require('@sentropic/graphify');
+const { saveSemanticCache } = require('@sentropic/engram');
 
-const raw = fs.existsSync('.graphify/.graphify_semantic_new.json') ? JSON.parse(fs.readFileSync('.graphify/.graphify_semantic_new.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
+const raw = fs.existsSync('.engram/.graphify_semantic_new.json') ? JSON.parse(fs.readFileSync('.engram/.graphify_semantic_new.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
 const saved = saveSemanticCache(raw.nodes || [], raw.edges || [], raw.hyperedges || []);
 console.log(\`Cached \${saved} files\`);
 "
 \`\`\`
 
-Merge cached + new results into \`.graphify/.graphify_semantic.json\`:
+Merge cached + new results into \`.engram/.graphify_semantic.json\`:
 
 \`\`\`bash
 node -e "
 const fs = require('fs');
 
-const cached = fs.existsSync('.graphify/.graphify_cached.json') ? JSON.parse(fs.readFileSync('.graphify/.graphify_cached.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
-const fresh = fs.existsSync('.graphify/.graphify_semantic_new.json') ? JSON.parse(fs.readFileSync('.graphify/.graphify_semantic_new.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
+const cached = fs.existsSync('.engram/.graphify_cached.json') ? JSON.parse(fs.readFileSync('.engram/.graphify_cached.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
+const fresh = fs.existsSync('.engram/.graphify_semantic_new.json') ? JSON.parse(fs.readFileSync('.engram/.graphify_semantic_new.json', 'utf-8')) : {nodes:[],edges:[],hyperedges:[]};
 
 const allNodes = [...cached.nodes, ...(fresh.nodes || [])];
 const allEdges = [...cached.edges, ...(fresh.edges || [])];
@@ -1157,7 +1195,7 @@ for (const node of allNodes) {
   dedupedNodes.push(node);
 }
 
-fs.writeFileSync('.graphify/.graphify_semantic.json', JSON.stringify({
+fs.writeFileSync('.engram/.graphify_semantic.json', JSON.stringify({
   nodes: dedupedNodes,
   edges: allEdges,
   hyperedges: allHyperedges,
@@ -1169,7 +1207,7 @@ console.log(\`Extraction complete - \${dedupedNodes.length} nodes, \${allEdges.l
 "
 \`\`\`
 
-Clean up temp files: \`rm -f .graphify/.graphify_cached.json .graphify/.graphify_uncached.txt .graphify/.graphify_semantic_new.json\``;
+Clean up temp files: \`rm -f .engram/.graphify_cached.json .engram/.graphify_uncached.txt .engram/.graphify_semantic_new.json\``;
 
 // ---------------------------------------------------------------------------
 // Skill resolution
@@ -1205,7 +1243,7 @@ function loadSkillContent(platformName: string): string {
 
   const skillSrc = findSkillFile(cfg.skill_file);
   if (!skillSrc) {
-    console.error(`error: ${cfg.skill_file} not found in package - reinstall graphify`);
+    console.error(`error: ${cfg.skill_file} not found in package - reinstall engram`);
     process.exit(1);
   }
 
@@ -1230,13 +1268,15 @@ function uninstallSkill(platformName: string): void {
 
   const skillDst = resolveGlobalSkillDestination(platformName);
   const removed: string[] = [];
-  if (existsSync(skillDst)) {
-    unlinkSync(skillDst);
-    removed.push(`skill removed: ${skillDst}`);
-  }
-  const versionFile = join(dirname(skillDst), ".graphify_version");
-  if (existsSync(versionFile)) {
-    unlinkSync(versionFile);
+  for (const target of [skillDst, ...legacySkillDestinations(skillDst)]) {
+    if (existsSync(target)) {
+      unlinkSync(target);
+      removed.push(`skill removed: ${target}`);
+    }
+    const versionFile = join(dirname(target), ".graphify_version");
+    if (existsSync(versionFile)) {
+      unlinkSync(versionFile);
+    }
   }
   for (let dir = dirname(skillDst); dir !== dirname(dir); dir = dirname(dir)) {
     try {
@@ -1249,7 +1289,7 @@ function uninstallSkill(platformName: string): void {
 }
 
 export function uninstallAll(projectDir: string = ".", options: { purge?: boolean } = {}): void {
-  console.log("Uninstalling graphify from all detected platforms...");
+  console.log("Uninstalling engram from all detected platforms...");
 
   // skipSkillTree=true: the for-loop below removes all skills including claude.
   claudeUninstall(projectDir, { skipSkillTree: true });
@@ -1267,7 +1307,7 @@ export function uninstallAll(projectDir: string = ".", options: { purge?: boolea
   }
 
   if (options.purge === true) {
-    for (const relativePath of [".graphify", "graphify-out"]) {
+    for (const relativePath of [".engram", ".graphify", "graphify-out"]) {
       const target = join(projectDir, relativePath);
       if (existsSync(target)) {
         rmSync(target, { recursive: true, force: true });
@@ -1278,38 +1318,38 @@ export function uninstallAll(projectDir: string = ".", options: { purge?: boolea
     }
   }
 
-  console.log("Done. Run `npm uninstall -g @sentropic/graphify` to remove the package itself.");
+  console.log("Done. Run `npm uninstall -g @sentropic/engram` to remove the package itself.");
 }
 
 export function getInvocationExample(platformName: string): string {
-  return platformName === "codex" ? "$graphify ." : "/graphify .";
+  return platformName === "codex" ? "$engram ." : "/engram .";
 }
 
 export function getAgentsMdSection(platformName: string): string {
   const lines = [
-    "## graphify",
+    "## engram",
     "",
-    "This project has a graphify knowledge graph at .graphify/.",
+    "This project has an engram knowledge graph at .engram/.",
     "",
     "Rules:",
-    "- For codebase or architecture questions, when `.graphify/graph.json` exists, first run `graphify query \"<question>\"` (or `graphify path \"<A>\" \"<B>\"` / `graphify explain \"<concept>\"`); these return a scoped subgraph, usually much smaller than `GRAPH_REPORT.md` or raw grep output",
-    "- If .graphify/wiki/index.md exists, navigate it instead of reading raw files",
-    "- If .graphify/graph.json is missing but graphify-out/graph.json exists, run `graphify migrate-state --dry-run` first; if tracked legacy artifacts are reported, ask before using the recommended `git mv -f graphify-out .graphify` and commit message",
-    "- If .graphify/needs_update exists or .graphify/branch.json has stale=true, warn before relying on semantic results and run the graphify skill with --update when appropriate",
-    "- If the user asks to build, update, query, path, or explain the graph, use the installed `graphify` skill instead of ad-hoc file traversal",
+    "- For codebase or architecture questions, when `.engram/graph.json` exists, first run `engram query \"<question>\"` (or `engram path \"<A>\" \"<B>\"` / `engram explain \"<concept>\"`); these return a scoped subgraph, usually much smaller than `GRAPH_REPORT.md` or raw grep output",
+    "- If .engram/wiki/index.md exists, navigate it instead of reading raw files",
+    "- If .engram/graph.json is missing but graphify-out/graph.json exists, run `engram migrate-state --dry-run` first; if tracked legacy artifacts are reported, ask before using the recommended `git mv -f graphify-out .engram` and commit message",
+    "- If .engram/needs_update exists or .engram/branch.json has stale=true, warn before relying on semantic results and run the engram skill with --update when appropriate",
+    "- If the user asks to build, update, query, path, or explain the graph, use the installed `engram` skill instead of ad-hoc file traversal",
     PORTABLE_GRAPHIFY_RULE,
-    "- Before deep graph traversal, prefer `graphify summary --graph .graphify/graph.json` for compact first-hop orientation",
-    "- For review impact on changed files, use `graphify review-delta --graph .graphify/graph.json` instead of generic traversal",
-    "- Read `.graphify/GRAPH_REPORT.md` only for broad architecture review or when `query` / `path` / `explain` do not surface enough context",
-    "- After modifying code files in this session, run `npx graphify hook-rebuild` to keep the graph current",
+    "- Before deep graph traversal, prefer `engram summary --graph .engram/graph.json` for compact first-hop orientation",
+    "- For review impact on changed files, use `engram review-delta --graph .engram/graph.json` instead of generic traversal",
+    "- Read `.engram/GRAPH_REPORT.md` only for broad architecture review or when `query` / `path` / `explain` do not surface enough context",
+    "- After modifying code files in this session, run `npx engram hook-rebuild` to keep the graph current",
   ];
   if (platformName === "codex") {
     lines.splice(
       7,
       0,
-      "- In Codex, the reliable explicit skill invocation is `$graphify ...`; do not rely on `/graphify ...`",
-      "- `$graphify ...` is a Codex skill trigger, not a Bash subcommand like `graphify .`",
-      "- A successful TypeScript-backed Codex build should leave `.graphify/.graphify_runtime.json` with `runtime: typescript`",
+      "- In Codex, the reliable explicit skill invocation is `$engram ...`; do not rely on `/engram ...`",
+      "- `$engram ...` is a Codex skill trigger, not a Bash subcommand like `engram .`",
+      "- A successful TypeScript-backed Codex build should leave `.engram/.graphify_runtime.json` with `runtime: typescript`",
     );
   }
   return lines.join("\n") + "\n";
@@ -1333,16 +1373,20 @@ function installGeminiMcp(projectDir: string): void {
   }
 
   const mcpServers = (settings.mcpServers ?? {}) as Record<string, unknown>;
-  const existing = mcpServers.graphify as Record<string, unknown> | undefined;
+  const existing = mcpServers.engram as Record<string, unknown> | undefined;
   if (JSON.stringify(existing) === JSON.stringify(GEMINI_MCP_SERVER)) {
-    console.log("  .gemini/settings.json  ->  graphify MCP already registered (no change)");
+    console.log("  .gemini/settings.json  ->  engram MCP already registered (no change)");
     return;
   }
 
-  mcpServers.graphify = GEMINI_MCP_SERVER;
+  // Replace a legacy graphify MCP entry in place so upgrades do not leave both.
+  if ("graphify" in mcpServers && !("engram" in mcpServers)) {
+    delete mcpServers.graphify;
+  }
+  mcpServers.engram = GEMINI_MCP_SERVER;
   settings.mcpServers = mcpServers;
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
-  console.log("  .gemini/settings.json  ->  graphify MCP server registered");
+  console.log("  .gemini/settings.json  ->  engram MCP server registered");
 }
 
 function uninstallGeminiMcp(projectDir: string): void {
@@ -1357,8 +1401,9 @@ function uninstallGeminiMcp(projectDir: string): void {
   }
 
   const mcpServers = { ...((settings.mcpServers ?? {}) as Record<string, unknown>) };
-  if (!("graphify" in mcpServers)) return;
+  if (!("engram" in mcpServers) && !("graphify" in mcpServers)) return;
 
+  delete mcpServers.engram;
   delete mcpServers.graphify;
   if (Object.keys(mcpServers).length === 0) {
     delete settings.mcpServers;
@@ -1366,39 +1411,48 @@ function uninstallGeminiMcp(projectDir: string): void {
     settings.mcpServers = mcpServers;
   }
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
-  console.log("  .gemini/settings.json  ->  graphify MCP server removed");
+  console.log("  .gemini/settings.json  ->  engram MCP server removed");
 }
 
 export function cursorInstall(projectDir: string = "."): void {
   printMutationPreview(platformInstallPreview(projectDir, "cursor"));
-  const rulePath = join(projectDir, ".cursor", "rules", "graphify.mdc");
+  const rulePath = join(projectDir, ".cursor", "rules", "engram.mdc");
+  // Replace a legacy install in place so upgrades do not leave both files.
+  const legacyRulePath = join(projectDir, ".cursor", "rules", "graphify.mdc");
+  if (!existsSync(rulePath) && existsSync(legacyRulePath)) {
+    unlinkSync(legacyRulePath);
+  }
   mkdirSync(dirname(rulePath), { recursive: true });
   if (existsSync(rulePath)) {
     const content = readFileSync(rulePath, "utf-8");
     if (content === CURSOR_RULE) {
-      console.log(`graphify rule already current at ${resolve(rulePath)} (no change)`);
+      console.log(`engram rule already current at ${resolve(rulePath)} (no change)`);
     } else {
       writeFileSync(rulePath, CURSOR_RULE, "utf-8");
-      console.log(`graphify rule refreshed at ${resolve(rulePath)}`);
+      console.log(`engram rule refreshed at ${resolve(rulePath)}`);
     }
   } else {
     writeFileSync(rulePath, CURSOR_RULE, "utf-8");
-    console.log(`graphify rule written to ${resolve(rulePath)}`);
+    console.log(`engram rule written to ${resolve(rulePath)}`);
   }
   console.log();
   console.log("Cursor will now always include the knowledge graph context.");
-  console.log("Run `$graphify .` or `/graphify .` in your assistant first if you have not built the graph yet.");
+  console.log("Run `$engram .` or `/engram .` in your assistant first if you have not built the graph yet.");
 }
 
 export function cursorUninstall(projectDir: string = "."): void {
-  const rulePath = join(projectDir, ".cursor", "rules", "graphify.mdc");
-  if (!existsSync(rulePath)) {
-    console.log("No graphify Cursor rule found - nothing to do");
-    return;
-  }
+  const rulePath = join(projectDir, ".cursor", "rules", "engram.mdc");
+  const legacyRulePath = join(projectDir, ".cursor", "rules", "graphify.mdc");
   const { unlinkSync } = require("node:fs");
-  unlinkSync(rulePath);
-  console.log(`graphify Cursor rule removed from ${resolve(rulePath)}`);
+  let removed = false;
+  for (const target of [rulePath, legacyRulePath]) {
+    if (existsSync(target)) {
+      unlinkSync(target);
+      console.log(`engram Cursor rule removed from ${resolve(target)}`);
+      removed = true;
+    }
+  }
+  if (!removed) console.log("No engram Cursor rule found - nothing to do");
 }
 
 /**
@@ -1412,14 +1466,14 @@ function _antigravityWriteRulesWorkflows(projectDir: string): void {
   if (existsSync(rulePath)) {
     const content = readFileSync(rulePath, "utf-8");
     if (content === ANTIGRAVITY_RULE) {
-      console.log(`graphify Antigravity rule already current at ${resolve(rulePath)} (no change)`);
+      console.log(`engram Antigravity rule already current at ${resolve(rulePath)} (no change)`);
     } else {
       writeFileSync(rulePath, ANTIGRAVITY_RULE, "utf-8");
-      console.log(`graphify Antigravity rule refreshed at ${resolve(rulePath)}`);
+      console.log(`engram Antigravity rule refreshed at ${resolve(rulePath)}`);
     }
   } else {
     writeFileSync(rulePath, ANTIGRAVITY_RULE, "utf-8");
-    console.log(`graphify Antigravity rule written to ${resolve(rulePath)}`);
+    console.log(`engram Antigravity rule written to ${resolve(rulePath)}`);
   }
 
   const workflowPath = join(projectDir, ANTIGRAVITY_WORKFLOW_PATH);
@@ -1427,14 +1481,14 @@ function _antigravityWriteRulesWorkflows(projectDir: string): void {
   if (existsSync(workflowPath)) {
     const content = readFileSync(workflowPath, "utf-8");
     if (content === ANTIGRAVITY_WORKFLOW) {
-      console.log(`graphify Antigravity workflow already current at ${resolve(workflowPath)} (no change)`);
+      console.log(`engram Antigravity workflow already current at ${resolve(workflowPath)} (no change)`);
     } else {
       writeFileSync(workflowPath, ANTIGRAVITY_WORKFLOW, "utf-8");
-      console.log(`graphify Antigravity workflow refreshed at ${resolve(workflowPath)}`);
+      console.log(`engram Antigravity workflow refreshed at ${resolve(workflowPath)}`);
     }
   } else {
     writeFileSync(workflowPath, ANTIGRAVITY_WORKFLOW, "utf-8");
-    console.log(`graphify Antigravity workflow written to ${resolve(workflowPath)}`);
+    console.log(`engram Antigravity workflow written to ${resolve(workflowPath)}`);
   }
 }
 
@@ -1446,15 +1500,15 @@ export function antigravityInstall(projectDir: string = "."): void {
 
   console.log();
   console.log("Antigravity will now check the knowledge graph before answering codebase questions.");
-  console.log("Run /graphify first to build or update the graph.");
+  console.log("Run /engram first to build or update the graph.");
 }
 
 export function antigravityUninstall(projectDir: string = "."): void {
-  for (const relativePath of [ANTIGRAVITY_RULE_PATH, ANTIGRAVITY_WORKFLOW_PATH]) {
+  for (const relativePath of [ANTIGRAVITY_RULE_PATH, ANTIGRAVITY_WORKFLOW_PATH, ...LEGACY_ANTIGRAVITY_PATHS]) {
     const target = join(projectDir, relativePath);
     if (existsSync(target)) {
       unlinkSync(target);
-      console.log(`graphify Antigravity file removed from ${resolve(target)}`);
+      console.log(`engram Antigravity file removed from ${resolve(target)}`);
     }
   }
   uninstallSkill("antigravity");
@@ -1463,39 +1517,47 @@ export function antigravityUninstall(projectDir: string = "."): void {
 export function kiroInstall(projectDir: string = "."): void {
   printMutationPreview(platformInstallPreview(projectDir, "kiro"));
 
-  const skillPath = join(projectDir, ".kiro", "skills", "graphify", "SKILL.md");
+  const skillPath = join(projectDir, ".kiro", "skills", "engram", "SKILL.md");
   mkdirSync(dirname(skillPath), { recursive: true });
   writeFileSync(skillPath, loadSkillContent("kiro"), "utf-8");
   writeFileSync(join(dirname(skillPath), ".graphify_version"), VERSION, "utf-8");
-  console.log(`  .kiro/skills/graphify/SKILL.md  ->  /graphify skill`);
+  console.log(`  .kiro/skills/engram/SKILL.md  ->  /engram skill`);
 
-  const steeringPath = join(projectDir, ".kiro", "steering", "graphify.md");
+  const steeringPath = join(projectDir, ".kiro", "steering", "engram.md");
+  const legacySteeringPath = join(projectDir, ".kiro", "steering", "graphify.md");
   mkdirSync(dirname(steeringPath), { recursive: true });
+  // Replace a legacy steering file in place so upgrades do not leave both.
+  if (!existsSync(steeringPath) && existsSync(legacySteeringPath)) {
+    unlinkSync(legacySteeringPath);
+  }
   if (existsSync(steeringPath)) {
     const content = readFileSync(steeringPath, "utf-8");
     if (content === KIRO_STEERING) {
-      console.log("  .kiro/steering/graphify.md  ->  already current");
-    } else if (content.includes(KIRO_STEERING_MARKER)) {
+      console.log("  .kiro/steering/engram.md  ->  already current");
+    } else if (content.includes(KIRO_STEERING_MARKER) || content.includes(KIRO_STEERING_MARKER_LEGACY)) {
       writeFileSync(steeringPath, KIRO_STEERING, "utf-8");
-      console.log("  .kiro/steering/graphify.md  ->  graphify steering refreshed");
+      console.log("  .kiro/steering/engram.md  ->  engram steering refreshed");
     } else {
       writeFileSync(steeringPath, KIRO_STEERING, "utf-8");
-      console.log("  .kiro/steering/graphify.md  ->  always-on steering written");
+      console.log("  .kiro/steering/engram.md  ->  always-on steering written");
     }
   } else {
     writeFileSync(steeringPath, KIRO_STEERING, "utf-8");
-    console.log("  .kiro/steering/graphify.md  ->  always-on steering written");
+    console.log("  .kiro/steering/engram.md  ->  always-on steering written");
   }
 
   console.log();
   console.log("Kiro will now read the knowledge graph before every conversation.");
-  console.log("Use /graphify to build or update the graph.");
+  console.log("Use /engram to build or update the graph.");
 }
 
 export function kiroUninstall(projectDir: string = "."): void {
   const targets = [
+    join(projectDir, ".kiro", "skills", "engram", "SKILL.md"),
+    join(projectDir, ".kiro", "skills", "engram", ".graphify_version"),
     join(projectDir, ".kiro", "skills", "graphify", "SKILL.md"),
     join(projectDir, ".kiro", "skills", "graphify", ".graphify_version"),
+    join(projectDir, ".kiro", "steering", "engram.md"),
     join(projectDir, ".kiro", "steering", "graphify.md"),
   ];
   let removed = 0;
@@ -1507,6 +1569,7 @@ export function kiroUninstall(projectDir: string = "."): void {
     }
   }
   for (const dir of [
+    join(projectDir, ".kiro", "skills", "engram"),
     join(projectDir, ".kiro", "skills", "graphify"),
     join(projectDir, ".kiro", "skills"),
     join(projectDir, ".kiro", "steering"),
@@ -1518,7 +1581,7 @@ export function kiroUninstall(projectDir: string = "."): void {
       // Keep non-empty platform directories.
     }
   }
-  if (removed === 0) console.log("No graphify Kiro files found - nothing to do");
+  if (removed === 0) console.log("No engram Kiro files found - nothing to do");
 }
 
 export function vscodeInstall(projectDir: string = "."): void {
@@ -1530,14 +1593,14 @@ export function vscodeInstall(projectDir: string = "."): void {
   mkdirSync(dirname(instructionsPath), { recursive: true });
   if (existsSync(instructionsPath)) {
     const content = readFileSync(instructionsPath, "utf-8");
-    const updated = replaceOrAppendSection(content, MD_MARKER, VSCODE_INSTRUCTIONS_SECTION);
+    const updated = replaceOrAppendMdSection(content, VSCODE_INSTRUCTIONS_SECTION);
     writeFileSync(instructionsPath, updated, "utf-8");
     if (updated === content) {
       console.log(`  .github/copilot-instructions.md  ->  already current (no change)`);
-    } else if (content.includes(MD_MARKER)) {
-      console.log(`  .github/copilot-instructions.md  ->  graphify section refreshed`);
+    } else if (hasMdSection(content)) {
+      console.log(`  .github/copilot-instructions.md  ->  engram section refreshed`);
     } else {
-      console.log(`  .github/copilot-instructions.md  ->  graphify section added`);
+      console.log(`  .github/copilot-instructions.md  ->  engram section added`);
     }
   } else {
     writeFileSync(instructionsPath, VSCODE_INSTRUCTIONS_SECTION, "utf-8");
@@ -1545,8 +1608,8 @@ export function vscodeInstall(projectDir: string = "."): void {
   }
 
   console.log();
-  console.log("VS Code Copilot Chat configured. Type /graphify in the chat panel to build the graph.");
-  console.log("For GitHub Copilot CLI in a terminal, use: graphify copilot install");
+  console.log("VS Code Copilot Chat configured. Type /engram in the chat panel to build the graph.");
+  console.log("For GitHub Copilot CLI in a terminal, use: engram copilot install");
 }
 
 export function vscodeUninstall(projectDir: string = "."): void {
@@ -1554,11 +1617,11 @@ export function vscodeUninstall(projectDir: string = "."): void {
   const instructionsPath = join(projectDir, ".github", "copilot-instructions.md");
   if (!existsSync(instructionsPath)) return;
   const content = readFileSync(instructionsPath, "utf-8");
-  if (!content.includes(MD_MARKER)) return;
-  const cleaned = content.replace(/\n*## graphify\n[\s\S]*?(?=\n## |\s*$)/, "").trim();
+  if (!hasMdSection(content)) return;
+  const cleaned = removeMdSection(content);
   if (cleaned) {
     writeFileSync(instructionsPath, cleaned + "\n", "utf-8");
-    console.log(`  graphify section removed from ${resolve(instructionsPath)}`);
+    console.log(`  engram section removed from ${resolve(instructionsPath)}`);
   } else {
     unlinkSync(instructionsPath);
     console.log(`  ${resolve(instructionsPath)}  ->  deleted (was empty after removal)`);
@@ -1572,13 +1635,20 @@ function installOpenCodePlugin(projectDir: string): void {
     return;
   }
 
-  const pluginPath = join(projectDir, ".opencode", "plugins", "graphify.js");
+  const pluginPath = join(projectDir, OPENCODE_PLUGIN_ENTRY);
   mkdirSync(dirname(pluginPath), { recursive: true });
   writeFileSync(pluginPath, OPENCODE_PLUGIN_JS, "utf-8");
+  // Replace a legacy install in place so upgrades do not leave both files.
+  const legacyPluginPath = join(projectDir, LEGACY_OPENCODE_PLUGIN_ENTRY);
+  if (pluginPath !== legacyPluginPath && existsSync(legacyPluginPath)) {
+    unlinkSync(legacyPluginPath);
+  }
   console.log(`  ${OPENCODE_PLUGIN_ENTRY}  ->  tool.execute.before hook written`);
 
   const { config, sourcePath } = loadOpenCodeConfig(projectDir);
-  const plugins = Array.isArray(config.plugin) ? [...config.plugin] : [];
+  const plugins = (Array.isArray(config.plugin) ? [...config.plugin] : []).filter(
+    (entry) => entry !== LEGACY_OPENCODE_PLUGIN_ENTRY,
+  );
   const alreadyRegistered = plugins.includes(OPENCODE_PLUGIN_ENTRY);
   if (!alreadyRegistered) {
     plugins.push(OPENCODE_PLUGIN_ENTRY);
@@ -1598,10 +1668,12 @@ function installOpenCodePlugin(projectDir: string): void {
 }
 
 function uninstallOpenCodePlugin(projectDir: string): void {
-  const pluginPath = join(projectDir, ".opencode", "plugins", "graphify.js");
-  if (existsSync(pluginPath)) {
-    unlinkSync(pluginPath);
-    console.log(`  ${OPENCODE_PLUGIN_ENTRY}  ->  removed`);
+  for (const entry of [OPENCODE_PLUGIN_ENTRY, LEGACY_OPENCODE_PLUGIN_ENTRY]) {
+    const pluginPath = join(projectDir, entry);
+    if (existsSync(pluginPath)) {
+      unlinkSync(pluginPath);
+      console.log(`  ${entry}  ->  removed`);
+    }
   }
 
   const configPath = existsSync(opencodeConfigPath(projectDir))
@@ -1617,9 +1689,10 @@ function uninstallOpenCodePlugin(projectDir: string): void {
   }
 
   const plugins = Array.isArray(config.plugin) ? [...config.plugin] : [];
-  if (!plugins.includes(OPENCODE_PLUGIN_ENTRY)) return;
-
-  const filtered = plugins.filter((entry) => entry !== OPENCODE_PLUGIN_ENTRY);
+  const filtered = plugins.filter(
+    (entry) => entry !== OPENCODE_PLUGIN_ENTRY && entry !== LEGACY_OPENCODE_PLUGIN_ENTRY,
+  );
+  if (filtered.length === plugins.length) return;
   if (filtered.length === 0) {
     delete config.plugin;
   } else {
@@ -1648,13 +1721,21 @@ function writeGlobalSkill(platformName: string): string {
   mkdirSync(dirname(skillDst), { recursive: true });
   writeFileAtomic(skillDst, loadSkillContent(platformName));
   writeFileSync(join(dirname(skillDst), ".graphify_version"), VERSION, "utf-8");
+  // Replace a legacy skill file in place so upgrades do not leave both names.
+  for (const legacyDst of legacySkillDestinations(skillDst)) {
+    if (existsSync(legacyDst)) unlinkSync(legacyDst);
+    const legacyVersion = join(dirname(legacyDst), ".graphify_version");
+    if (legacyVersion !== join(dirname(skillDst), ".graphify_version") && existsSync(legacyVersion)) {
+      unlinkSync(legacyVersion);
+    }
+  }
   console.log(`  skill installed  ->  ${skillDst}`);
 
   if (cfg.claude_md) {
     const claudeMd = join(homedir(), ".claude", "CLAUDE.md");
     if (existsSync(claudeMd)) {
       const content = readFileSync(claudeMd, "utf-8");
-      if (content.includes("graphify")) {
+      if (content.includes("# engram") || content.includes(SKILL_REGISTRATION_LEGACY_HEADER)) {
         console.log(`  CLAUDE.md        ->  already registered (no change)`);
       } else {
         writeFileSync(claudeMd, content.trimEnd() + SKILL_REGISTRATION, "utf-8");
@@ -1681,21 +1762,21 @@ function installSkill(platformName: string): void {
   console.log(`  ${getInvocationExample(platformName)}`);
   if (platformName === "codex") {
     console.log();
-    console.log("Codex explicit skill calls use `$graphify`, not `/graphify`.");
-    console.log("`$graphify ...` is a Codex skill trigger, not a Bash command like `graphify .`.");
-    console.log("A successful TypeScript Codex run should leave .graphify/.graphify_runtime.json");
+    console.log("Codex explicit skill calls use `$engram`, not `/engram`.");
+    console.log("`$engram ...` is a Codex skill trigger, not a Bash command like `engram .`.");
+    console.log("A successful TypeScript Codex run should leave .engram/.graphify_runtime.json");
     console.log("with runtime=typescript.");
   }
   console.log();
 }
 
 // ---------------------------------------------------------------------------
-// Project-scoped install (`graphify install --project`).
+// Project-scoped install (`engram install --project`).
 //
 // Ported from upstream PR #931 (safishamsi/graphify commit b347492):
 // instead of installing the skill into the user's home directory, write it
-// into the *current project* (e.g. `<repo>/.claude/skills/graphify/SKILL.md`
-// or `<repo>/.agents/skills/graphify/SKILL.md`) so the install travels with
+// into the *current project* (e.g. `<repo>/.claude/skills/engram/SKILL.md`
+// or `<repo>/.agents/skills/engram/SKILL.md`) so the install travels with
 // the repo for all collaborators.
 //
 // Notes on the TS port:
@@ -1807,11 +1888,11 @@ function removeProjectClaudeMdRegistration(projectDir: string): void {
   const claudeMd = join(projectDir, ".claude", "CLAUDE.md");
   if (!existsSync(claudeMd)) return;
   const content = readFileSync(claudeMd, "utf-8");
-  if (!content.includes("# graphify")) return;
-  const cleaned = content.replace(/\n*# graphify\n[\s\S]*?(?=\n# |\s*$)/, "").trimEnd();
+  if (!content.includes("# engram") && !content.includes(SKILL_REGISTRATION_LEGACY_HEADER)) return;
+  const cleaned = content.replace(/\n*# (engram|graphify)\n[\s\S]*?(?=\n# |\s*$)/, "").trimEnd();
   if (cleaned) {
     writeFileSync(claudeMd, cleaned + "\n", "utf-8");
-    console.log(`  CLAUDE.md        ->  graphify skill registration removed from ${claudeMd}`);
+    console.log(`  CLAUDE.md        ->  engram skill registration removed from ${claudeMd}`);
   } else {
     unlinkSync(claudeMd);
     console.log(`  CLAUDE.md        ->  deleted ${claudeMd}`);
@@ -1819,18 +1900,18 @@ function removeProjectClaudeMdRegistration(projectDir: string): void {
 }
 
 function writeProjectClaudeSkillRegistration(projectDir: string): void {
-  // Mirrors upstream `_skill_registration(".claude/skills/graphify/SKILL.md")`.
+  // Mirrors upstream `_skill_registration(".claude/skills/engram/SKILL.md")`.
   const projectRegistration =
-    "\n# graphify\n" +
-    "- **graphify** (`.claude/skills/graphify/SKILL.md`) " +
-    "- any input to knowledge graph. Trigger: `/graphify`\n" +
-    "When the user types `/graphify`, invoke the Skill tool " +
-    'with `skill: "graphify"` before doing anything else.\n';
+    "\n# engram\n" +
+    "- **engram** (`.claude/skills/engram/SKILL.md`) " +
+    "- any input to knowledge graph. Trigger: `/engram` (alias `/graphify`)\n" +
+    "When the user types `/engram`, invoke the Skill tool " +
+    'with `skill: "engram"` before doing anything else.\n';
 
   const claudeMd = join(projectDir, ".claude", "CLAUDE.md");
   if (existsSync(claudeMd)) {
     const content = readFileSync(claudeMd, "utf-8");
-    if (content.includes("graphify")) {
+    if (content.includes("# engram") || content.includes("# graphify")) {
       console.log(`  CLAUDE.md        ->  already registered (no change)`);
     } else {
       writeFileSync(claudeMd, content.trimEnd() + projectRegistration, "utf-8");
@@ -1970,7 +2051,7 @@ export function projectUninstall(platformName: string, projectDir: string = ".")
 }
 
 export function projectUninstallAll(projectDir: string = "."): void {
-  console.log("Uninstalling project-scoped graphify files...\n");
+  console.log("Uninstalling project-scoped engram files...\n");
   for (const platformName of Object.keys(PLATFORM_CONFIG)) {
     projectUninstall(platformName, projectDir);
   }
@@ -2050,18 +2131,18 @@ function claudeInstall(projectDir: string = "."): void {
   const target = join(projectDir, "CLAUDE.md");
   if (existsSync(target)) {
     const content = readFileSync(target, "utf-8");
-    const updated = replaceOrAppendSection(content, MD_MARKER, CLAUDE_MD_SECTION);
+    const updated = replaceOrAppendMdSection(content, CLAUDE_MD_SECTION);
     writeFileSync(target, updated, "utf-8");
     if (updated === content) {
-      console.log(`graphify section already current in ${resolve(target)}`);
-    } else if (content.includes(MD_MARKER)) {
-      console.log(`graphify section refreshed in ${resolve(target)}`);
+      console.log(`engram section already current in ${resolve(target)}`);
+    } else if (hasMdSection(content)) {
+      console.log(`engram section refreshed in ${resolve(target)}`);
     } else {
-      console.log(`graphify section written to ${resolve(target)}`);
+      console.log(`engram section written to ${resolve(target)}`);
     }
   } else {
     writeFileSync(target, CLAUDE_MD_SECTION, "utf-8");
-    console.log(`graphify section written to ${resolve(target)}`);
+    console.log(`engram section written to ${resolve(target)}`);
   }
   installClaudeHook(projectDir);
   console.log();
@@ -2075,13 +2156,13 @@ function claudeUninstall(projectDir: string = ".", { skipSkillTree = false }: { 
     console.log("No CLAUDE.md found in current directory - nothing to do");
   } else {
     const content = readFileSync(target, "utf-8");
-    if (!content.includes(MD_MARKER)) {
-      console.log("graphify section not found in CLAUDE.md - nothing to do");
+    if (!hasMdSection(content)) {
+      console.log("engram section not found in CLAUDE.md - nothing to do");
     } else {
-      const cleaned = content.replace(/\n*## graphify\n[\s\S]*?(?=\n## |\s*$)/, "").trim();
+      const cleaned = removeMdSection(content);
       if (cleaned) {
         writeFileSync(target, cleaned + "\n", "utf-8");
-        console.log(`graphify section removed from ${resolve(target)}`);
+        console.log(`engram section removed from ${resolve(target)}`);
       } else {
         const { unlinkSync } = require("node:fs");
         unlinkSync(target);
@@ -2090,7 +2171,7 @@ function claudeUninstall(projectDir: string = ".", { skipSkillTree = false }: { 
     }
   }
   uninstallClaudeHook(projectDir);
-  // Remove the global skill tree (~/.claude/skills/graphify/) so the whole
+  // Remove the global skill tree (~/.claude/skills/engram/) so the whole
   // installed skill is cleaned up, not just the CLAUDE.md section (port of
   // upstream e35b0ac — claude_uninstall was orphaning the skill tree before).
   // skipSkillTree=true is used by uninstallAll which removes all skills via
@@ -2105,26 +2186,26 @@ export function geminiInstall(projectDir: string = "."): void {
   const target = join(projectDir, "GEMINI.md");
   if (existsSync(target)) {
     const content = readFileSync(target, "utf-8");
-    const updated = replaceOrAppendSection(content, MD_MARKER, GEMINI_MD_SECTION);
+    const updated = replaceOrAppendMdSection(content, GEMINI_MD_SECTION);
     writeFileSync(target, updated, "utf-8");
     if (updated === content) {
-      console.log(`graphify section already current in ${resolve(target)}`);
-    } else if (content.includes(MD_MARKER)) {
-      console.log(`graphify section refreshed in ${resolve(target)}`);
+      console.log(`engram section already current in ${resolve(target)}`);
+    } else if (hasMdSection(content)) {
+      console.log(`engram section refreshed in ${resolve(target)}`);
     } else {
-      console.log(`graphify section written to ${resolve(target)}`);
+      console.log(`engram section written to ${resolve(target)}`);
     }
   } else {
     writeFileSync(target, GEMINI_MD_SECTION, "utf-8");
-    console.log(`graphify section written to ${resolve(target)}`);
+    console.log(`engram section written to ${resolve(target)}`);
   }
   installGeminiMcp(projectDir);
   console.log();
   console.log("Gemini CLI will now check the knowledge graph before answering");
-  console.log("codebase questions and can access graphify via the configured MCP server.");
+  console.log("codebase questions and can access engram via the configured MCP server.");
   console.log();
-  console.log("Note: install the `/graphify` custom command globally with");
-  console.log("`graphify install --platform gemini` if you have not done that yet.");
+  console.log("Note: install the `/engram` custom command globally with");
+  console.log("`engram install --platform gemini` if you have not done that yet.");
 }
 
 export function geminiUninstall(projectDir: string = "."): void {
@@ -2133,13 +2214,13 @@ export function geminiUninstall(projectDir: string = "."): void {
     console.log("No GEMINI.md found in current directory - nothing to do");
   } else {
     const content = readFileSync(target, "utf-8");
-    if (!content.includes(MD_MARKER)) {
-      console.log("graphify section not found in GEMINI.md - nothing to do");
+    if (!hasMdSection(content)) {
+      console.log("engram section not found in GEMINI.md - nothing to do");
     } else {
-      const cleaned = content.replace(/\n*## graphify\n[\s\S]*?(?=\n## |\s*$)/, "").trim();
+      const cleaned = removeMdSection(content);
       if (cleaned) {
         writeFileSync(target, cleaned + "\n", "utf-8");
-        console.log(`graphify section removed from ${resolve(target)}`);
+        console.log(`engram section removed from ${resolve(target)}`);
       } else {
         const { unlinkSync } = require("node:fs");
         unlinkSync(target);
@@ -2167,21 +2248,25 @@ export function installCodexHook(projectDir: string): void {
 
   const hooks = (existing.hooks ?? {}) as Record<string, unknown>;
   const preTool = (hooks.PreToolUse ?? []) as Array<Record<string, unknown>>;
-  const filtered = preTool.filter((h) => !JSON.stringify(h).includes("graphify"));
+  // Drop both the current engram hook and legacy graphify hooks (replace, not duplicate).
+  const filtered = preTool.filter((h) => {
+    const serialized = JSON.stringify(h);
+    return !serialized.includes("engram") && !serialized.includes("graphify");
+  });
 
   filtered.push({
     matcher: "Bash",
     hooks: [
       {
         type: "command",
-        command: "graphify hook-check",
+        command: "engram hook-check",
       },
     ],
   });
   hooks.PreToolUse = filtered;
   existing.hooks = hooks;
   writeFileSync(hooksPath, JSON.stringify(existing, null, 2), "utf-8");
-  console.log(`  .codex/hooks.json  ->  PreToolUse hook registered (graphify hook-check)`);
+  console.log(`  .codex/hooks.json  ->  PreToolUse hook registered (engram hook-check)`);
 }
 
 function uninstallCodexHook(projectDir: string): void {
@@ -2191,7 +2276,10 @@ function uninstallCodexHook(projectDir: string): void {
   try { existing = JSON.parse(readFileSync(hooksPath, "utf-8")); } catch { return; }
   const hooks = (existing.hooks ?? {}) as Record<string, unknown>;
   const preTool = (hooks.PreToolUse ?? []) as Array<Record<string, unknown>>;
-  const filtered = preTool.filter((h) => !JSON.stringify(h).includes("graphify"));
+  const filtered = preTool.filter((h) => {
+    const serialized = JSON.stringify(h);
+    return !serialized.includes("engram") && !serialized.includes("graphify");
+  });
   (hooks as Record<string, unknown>).PreToolUse = filtered;
   existing.hooks = hooks;
   writeFileSync(hooksPath, JSON.stringify(existing, null, 2), "utf-8");
@@ -2204,18 +2292,18 @@ export function agentsInstall(projectDir: string, platformName: string): void {
   const section = getAgentsMdSection(platformName);
   if (existsSync(target)) {
     const content = readFileSync(target, "utf-8");
-    const updated = replaceOrAppendSection(content, MD_MARKER, section);
+    const updated = replaceOrAppendMdSection(content, section);
     writeFileSync(target, updated, "utf-8");
     if (updated === content) {
-      console.log(`graphify section already current in ${resolve(target)}`);
-    } else if (content.includes(MD_MARKER)) {
-      console.log(`graphify section refreshed in ${resolve(target)}`);
+      console.log(`engram section already current in ${resolve(target)}`);
+    } else if (hasMdSection(content)) {
+      console.log(`engram section refreshed in ${resolve(target)}`);
     } else {
-      console.log(`graphify section written to ${resolve(target)}`);
+      console.log(`engram section written to ${resolve(target)}`);
     }
   } else {
     writeFileSync(target, section, "utf-8");
-    console.log(`graphify section written to ${resolve(target)}`);
+    console.log(`engram section written to ${resolve(target)}`);
   }
 
   if (platformName === "codex") {
@@ -2240,13 +2328,13 @@ function agentsUninstall(projectDir: string, platformName: string): void {
     console.log("No AGENTS.md found in current directory - nothing to do");
   } else {
     const content = readFileSync(target, "utf-8");
-    if (!content.includes(MD_MARKER)) {
-      console.log("graphify section not found in AGENTS.md - nothing to do");
+    if (!hasMdSection(content)) {
+      console.log("engram section not found in AGENTS.md - nothing to do");
     } else {
-      const cleaned = content.replace(/\n*## graphify\n[\s\S]*?(?=\n## |\s*$)/, "").trim();
+      const cleaned = removeMdSection(content);
       if (cleaned) {
         writeFileSync(target, cleaned + "\n", "utf-8");
-        console.log(`graphify section removed from ${resolve(target)}`);
+        console.log(`engram section removed from ${resolve(target)}`);
       } else {
         const { unlinkSync } = require("node:fs");
         unlinkSync(target);
@@ -2265,17 +2353,32 @@ function agentsUninstall(projectDir: string, platformName: string): void {
 // Check skill versions
 // ---------------------------------------------------------------------------
 
+/**
+ * Legacy skill destinations replaced by `skillDst` on upgrade (and removed
+ * on uninstall): `skills/engram/SKILL.md` supersedes `skills/graphify/SKILL.md`,
+ * `commands/engram.toml` supersedes `commands/graphify.toml`.
+ */
+function legacySkillDestinations(skillDst: string): string[] {
+  if (skillDst.endsWith("skills/engram/SKILL.md")) {
+    return [skillDst.replace("skills/engram/SKILL.md", "skills/graphify/SKILL.md")];
+  }
+  if (skillDst.endsWith("commands/engram.toml")) {
+    return [skillDst.replace("commands/engram.toml", "commands/graphify.toml")];
+  }
+  return [];
+}
+
 function checkSkillVersion(skillDst: string): void {
   const versionFile = join(dirname(skillDst), ".graphify_version");
   if (!existsSync(versionFile)) return;
   if (!existsSync(skillDst)) {
-    console.log("  warning: skill dir exists but SKILL.md is missing. Run 'graphify install' to repair.");
+    console.log("  warning: skill dir exists but SKILL.md is missing. Run 'engram install' to repair.");
     return;
   }
   const installed = readFileSync(versionFile, "utf-8").trim();
   if (installed !== VERSION) {
     console.log(
-      `  warning: skill is from graphify ${installed}, package is ${VERSION}. Run 'graphify install' to update.`,
+      `  warning: skill is from engram ${installed}, package is ${VERSION}. Run 'engram install' to update.`,
     );
   }
 }
@@ -2369,9 +2472,13 @@ export async function main(): Promise<void> {
 
   const program = new Command();
   program
-    .name("graphify")
-    .description("AI coding assistant skill - turn any folder into a queryable knowledge graph")
-    .version(VERSION);
+    .name("engram")
+    .description("Engram — agent memory substrate: turn any folder into a queryable knowledge graph")
+    .version(VERSION)
+    .addHelpText(
+      "after",
+      "\nCompat: the `graphify` bin, GRAPHIFY_* env vars, .graphify/ state dir, graphify.yaml, graphify_*_v1 schema ids, and graphify_* tables remain accepted as deprecated aliases.",
+    );
 
   program
     .command("install")
@@ -2390,8 +2497,8 @@ export async function main(): Promise<void> {
 
   program
     .command("uninstall")
-    .description("Remove graphify from all detected platform integrations")
-    .option("--purge", "Also delete .graphify/ and graphify-out/")
+    .description("Remove engram from all detected platform integrations")
+    .option("--purge", "Also delete .engram/, .graphify/ and graphify-out/")
     .option("--project", "Remove only project-scoped install files")
     .option("--platform <platform>", "Target platform (project-scoped uninstall)")
     .action((opts) => {
@@ -2410,14 +2517,14 @@ export async function main(): Promise<void> {
   for (const cmd of ["claude"]) {
     const sub = program.command(cmd).description(`${cmd} skill management`);
     sub.command("install")
-      .description(`Write graphify section to CLAUDE.md + PreToolUse hook`)
+      .description(`Write engram section to CLAUDE.md + PreToolUse hook`)
       .option("--project", "Install into the current project")
       .action((opts) => {
         if (opts.project === true) projectInstall("claude", ".");
         else claudeInstall();
       });
     sub.command("uninstall")
-      .description(`Remove graphify section from CLAUDE.md + PreToolUse hook`)
+      .description(`Remove engram section from CLAUDE.md + PreToolUse hook`)
       .option("--project", "Remove only project-scoped install files")
       .action((opts) => {
         if (opts.project === true) projectUninstall("claude", ".");
@@ -2428,14 +2535,14 @@ export async function main(): Promise<void> {
   for (const cmd of ["gemini"]) {
     const sub = program.command(cmd).description(`${cmd} skill management`);
     sub.command("install")
-      .description("Write graphify section to GEMINI.md + project MCP config")
+      .description("Write engram section to GEMINI.md + project MCP config")
       .option("--project", "Install into the current project")
       .action((opts) => {
         if (opts.project === true) projectInstall("gemini", ".");
         else geminiInstall();
       });
     sub.command("uninstall")
-      .description("Remove graphify section from GEMINI.md + project MCP config")
+      .description("Remove engram section from GEMINI.md + project MCP config")
       .option("--project", "Remove only project-scoped install files")
       .action((opts) => {
         if (opts.project === true) projectUninstall("gemini", ".");
@@ -2446,14 +2553,14 @@ export async function main(): Promise<void> {
   {
     const sub = program.command("cursor").description("cursor skill management");
     sub.command("install")
-      .description("Write .cursor/rules/graphify.mdc")
+      .description("Write .cursor/rules/engram.mdc")
       .option("--project", "Install into the current project")
       .action((opts) => {
         if (opts.project === true) projectInstall("cursor", ".");
         else cursorInstall();
       });
     sub.command("uninstall")
-      .description("Remove .cursor/rules/graphify.mdc")
+      .description("Remove .cursor/rules/engram.mdc")
       .option("--project", "Remove only project-scoped install files")
       .action((opts) => {
         if (opts.project === true) projectUninstall("cursor", ".");
@@ -2464,14 +2571,14 @@ export async function main(): Promise<void> {
   {
     const sub = program.command("copilot").description("copilot skill management");
     sub.command("install")
-      .description("Copy graphify skill to ~/.copilot/skills")
+      .description("Copy engram skill to ~/.copilot/skills")
       .option("--project", "Install into the current project")
       .action((opts) => {
         if (opts.project === true) projectInstall("copilot", ".");
         else installSkill("copilot");
       });
     sub.command("uninstall")
-      .description("Remove graphify skill from ~/.copilot/skills")
+      .description("Remove engram skill from ~/.copilot/skills")
       .option("--project", "Remove only project-scoped install files")
       .action((opts) => {
         if (opts.project === true) projectUninstall("copilot", ".");
@@ -2538,10 +2645,10 @@ export async function main(): Promise<void> {
     sub.command("install")
       .description(
         cmd === "codex"
-          ? "Write graphify section to AGENTS.md + PreToolUse hook"
+          ? "Write engram section to AGENTS.md + PreToolUse hook"
           : cmd === "opencode"
-            ? "Write graphify section to AGENTS.md + tool.execute.before plugin"
-            : "Write graphify section to AGENTS.md",
+            ? "Write engram section to AGENTS.md + tool.execute.before plugin"
+            : "Write engram section to AGENTS.md",
       )
       .option("--project", "Install into the current project")
       .action((opts) => {
@@ -2555,10 +2662,10 @@ export async function main(): Promise<void> {
     sub.command("uninstall")
       .description(
         cmd === "codex"
-          ? "Remove graphify section from AGENTS.md + PreToolUse hook"
+          ? "Remove engram section from AGENTS.md + PreToolUse hook"
           : cmd === "opencode"
-            ? "Remove graphify section from AGENTS.md + plugin"
-            : "Remove graphify section from AGENTS.md",
+            ? "Remove engram section from AGENTS.md + plugin"
+            : "Remove engram section from AGENTS.md",
       )
       .option("--project", "Remove only project-scoped install files")
       .action((opts) => {
@@ -2573,10 +2680,10 @@ export async function main(): Promise<void> {
 
   program
     .command("migrate-state")
-    .description("Migrate legacy graphify-out state into .graphify")
+    .description("Migrate legacy graphify-out state into .engram")
     .option("--root <path>", "Workspace root", ".")
     .option("--dry-run", "Print the migration plan without writing files")
-    .option("--force", "Overwrite existing files under .graphify")
+    .option("--force", "Overwrite existing files under .engram")
     .option("--json", "Print JSON output")
     .action(async (opts) => {
       const { migrateGraphifyOut, migrationResultToText } = await import("./migrate-state.js");
@@ -2603,7 +2710,7 @@ export async function main(): Promise<void> {
     console.log(status("."));
   });
 
-  const state = program.command("state").description("Graphify local state metadata");
+  const state = program.command("state").description("Engram local state metadata");
   state.command("status").description("Print branch/worktree lifecycle metadata").action(async () => {
     const { readLifecycleMetadata, refreshLifecycleMetadata } = await import("./lifecycle.js");
     const metadata = readLifecycleMetadata(".") ?? refreshLifecycleMetadata(".");
@@ -2614,7 +2721,7 @@ export async function main(): Promise<void> {
     console.log(JSON.stringify(planLifecyclePrune("."), null, 2));
   });
 
-  // Agent-stats commands are registered by the extracted h2a module, not Graphify.
+  // Agent-stats commands are registered by the extracted h2a module, not Engram core.
   function registerPrCommands(name: "pr" | "prs"): void {
     program.command(`${name} [selector]`)
       .description("Inspect local GitHub pull requests through gh and git worktree data")
@@ -2743,7 +2850,7 @@ export async function main(): Promise<void> {
     });
 
   // graphify profile evaluate  (L5)
-  // Deterministic, $0 (no LLM) measurement of a `graphify link` run against a
+  // Deterministic, $0 (no LLM) measurement of a `engram link` run against a
   // hand-labelled gold in the SAME occurrence schema. Emits evaluation.json and
   // a CI gate: exit 0 iff validation + floors + ceilings pass, non-zero
   // otherwise. Precision and unresolved-rate are always reported together.
@@ -3191,7 +3298,7 @@ export async function main(): Promise<void> {
     .description(
       "Start a local ontology reconciliation studio API; --write enables patch mutation routes (loopback only). " +
         "When --store (or GRAPHIFY_STORE / storage.mirrors) names a capable GraphStore that has been " +
-        "`graphify store push`ed, GET /api/ontology/groups serves O(#groups) counts from the store instead of an " +
+        "`engram store push`ed, GET /api/ontology/groups serves O(#groups) counts from the store instead of an " +
         "O(#nodes) client recompute, and GET /api/ontology/window serves a bounded top-N first-paint slice so the " +
         "studio renders without transferring the full multi-MB scene.",
     )
@@ -3627,7 +3734,7 @@ export async function main(): Promise<void> {
             const lines = [
               `# Graphify assistant extraction instructions`,
               ``,
-              `Generated by \`graphify extract --backend claude-cli\` for ${root}.`,
+              `Generated by \`engram extract --backend claude-cli\` for ${root}.`,
               ``,
               `No provider API key was read or persisted: this backend defers semantic`,
               `extraction to the calling Claude Code session (or any other graphify`,
@@ -3636,9 +3743,9 @@ export async function main(): Promise<void> {
               ``,
               `## Next step`,
               ``,
-              `Run the graphify skill so it can read the detection roots below, write`,
+              `Run the engram skill so it can read the detection roots below, write`,
               `the merged extraction JSON to \`${paths.scratch.semantic}\`, then call`,
-              `\`graphify extract --semantic <that path>\` (or finish the assemble /`,
+              `\`engram extract --semantic <that path>\` (or finish the assemble /`,
               `cluster steps directly).`,
               ``,
               `## Text semantic files (${textSemanticFiles.length})`,
@@ -3664,7 +3771,7 @@ export async function main(): Promise<void> {
               `wrote assistant instructions to ${instructionsPath}.`,
             );
             console.log(
-              `[graphify extract] Run the graphify skill to complete semantic extraction, ` +
+              `[graphify extract] Run the engram skill to complete semantic extraction, ` +
               `then re-run extract with --semantic <output>.`,
             );
             // Return cleanly rather than process.exit so the surrounding
@@ -3930,10 +4037,10 @@ export async function main(): Promise<void> {
       const projectConfigDiscovery = discoverProjectConfig(updatePath);
       if (projectConfigDiscovery.found) {
         console.warn(
-          `WARNING: ${projectConfigDiscovery.path} detected — \`graphify update\` is WRONG for this project type. ` +
+          `WARNING: ${projectConfigDiscovery.path} detected — \`engram update\` is WRONG for this project type. ` +
           `It only rebuilds the code-mode graph and silently ignores all profile inputs (corpus files, registries, ontology). ` +
-          `For a corpus/profile project use: \`graphify profile build ${updatePath}\` (deterministic, no LLM) ` +
-          `followed by \`graphify extract --semantic <path> --backend <provider>\` for semantic extraction. ` +
+          `For a corpus/profile project use: \`engram profile build ${updatePath}\` (deterministic, no LLM) ` +
+          `followed by \`engram extract --semantic <path> --backend <provider>\` for semantic extraction. ` +
           `Continuing in code-only mode — profile outputs will NOT be updated.`,
         );
       }
@@ -3987,7 +4094,7 @@ export async function main(): Promise<void> {
         console.error("Nothing to update or rebuild failed - check output above.");
         process.exit(1);
       }
-      console.log("Code graph updated. For doc/paper/image changes run the graphify skill with --update.");
+      console.log("Code graph updated. For doc/paper/image changes run the engram skill with --update.");
     });
 
   program
@@ -4031,7 +4138,7 @@ export async function main(): Promise<void> {
       const root = resolve(clusterPath);
       const paths = resolveGraphifyPaths({ root });
       if (!existsSync(paths.graph)) {
-        console.error(`error: no graph found at ${paths.graph} - run /graphify first`);
+        console.error(`error: no graph found at ${paths.graph} - run /engram first`);
         process.exit(1);
       }
 
@@ -4121,7 +4228,7 @@ export async function main(): Promise<void> {
   // ---------------------------------------------------------------------------
   // graphify label <path>
   // Force-regenerate community names with the configured LLM backend and
-  // refresh the report/HTML. Mirrors upstream c8b329d `graphify label`.
+  // refresh the report/HTML. Mirrors upstream c8b329d `engram label`.
   // ---------------------------------------------------------------------------
   program
     .command("label [path]")
@@ -4135,7 +4242,7 @@ export async function main(): Promise<void> {
       const root = resolve(labelPath);
       const paths = resolveGraphifyPaths({ root });
       if (!existsSync(paths.graph)) {
-        console.error(`error: no graph found at ${paths.graph} - run /graphify first`);
+        console.error(`error: no graph found at ${paths.graph} - run /engram first`);
         process.exit(1);
       }
 
@@ -4260,7 +4367,7 @@ export async function main(): Promise<void> {
   // ---------------------------------------------------------------------------
   program
     .command("describe [path]")
-    .description("Generate node.description on an existing graph.json without re-extracting (non-destructive counterpart to `graphify label`)")
+    .description("Generate node.description on an existing graph.json without re-extracting (non-destructive counterpart to `engram label`)")
     .option("--description-backend <provider>", "LLM provider (default: auto-detect from API keys)")
     .option("--description-model <id>", "LLM model override")
     .option("--description-mode <mode>", "Execution mode: assistant (default, no key) or direct (API key)", "")
@@ -4271,7 +4378,7 @@ export async function main(): Promise<void> {
       const root = resolve(describePath);
       const paths = resolveGraphifyPaths({ root });
       if (!existsSync(paths.graph)) {
-        console.error(`error: no graph found at ${paths.graph} - run /graphify first`);
+        console.error(`error: no graph found at ${paths.graph} - run /engram first`);
         process.exit(1);
       }
 
@@ -4391,7 +4498,7 @@ export async function main(): Promise<void> {
       const root = resolve(backfillPath);
       const paths = resolveGraphifyPaths({ root });
       if (!existsSync(paths.graph)) {
-        console.error(`error: no graph found at ${paths.graph} - run /graphify first`);
+        console.error(`error: no graph found at ${paths.graph} - run /engram first`);
         process.exit(1);
       }
       mkdirSync(paths.stateDir, { recursive: true });
@@ -4561,7 +4668,7 @@ export async function main(): Promise<void> {
       const root = resolve(citePath);
       const paths = resolveGraphifyPaths({ root });
       if (!existsSync(paths.graph)) {
-        console.error(`error: no graph found at ${paths.graph} - run /graphify first`);
+        console.error(`error: no graph found at ${paths.graph} - run /engram first`);
         process.exit(1);
       }
       mkdirSync(paths.stateDir, { recursive: true });
@@ -4838,7 +4945,7 @@ export async function main(): Promise<void> {
 
   const exportCommand = program
     .command("export")
-    .description("Export an existing graph into wiki, Obsidian, SVG, GraphML, Spanner, or Neo4j Cypher artifacts (the interactive visual is `graphify studio export`)");
+    .description("Export an existing graph into wiki, Obsidian, SVG, GraphML, Spanner, or Neo4j Cypher artifacts (the interactive visual is `engram studio export`)");
 
   exportCommand
     .command("wiki")
@@ -5191,7 +5298,7 @@ export async function main(): Promise<void> {
           contributor: opts.contributor ?? null,
         });
         console.log(`Saved to ${outPath}`);
-        console.log("Run the graphify skill with --update to update the graph.");
+        console.log("Run the engram skill with --update to update the graph.");
       } catch (err) {
         console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
         process.exit(1);
@@ -5484,7 +5591,7 @@ export async function main(): Promise<void> {
     .option("--max-nodes <n>", "Maximum impacted nodes", "80")
     .option("--max-chains <n>", "Maximum high-risk chains", "8")
     .option("--depth <n>", "BFS depth on the import graph (1..5, default 1)", "1")
-    .option("--affected", "Emit only the affected-files list (one path per line); equivalent to upstream `graphify affected` on the review-delta surface")
+    .option("--affected", "Emit only the affected-files list (one path per line); equivalent to upstream `engram affected` on the review-delta surface")
     .action(async (files, opts) => {
       const changedFiles = [
         ...files,
@@ -5971,7 +6078,7 @@ export async function main(): Promise<void> {
         // would still fire a live label LLM round-trip on every commit whenever
         // an API key is in env. `markDescribePending: true` then writes a
         // `.graphify_describe_pending` marker so the next describe+label-producing
-        // `graphify update` (default-on) fills them in, and `check-update`
+        // `engram update` (default-on) fills them in, and `check-update`
         // surfaces the marker as a nudge. This still honours "descriptions +
         // labels on EVERY graph": the hook-rebuilt graph is guaranteed a
         // follow-up fill rather than shipping silently bare.
@@ -6010,9 +6117,9 @@ export async function main(): Promise<void> {
       process.exit(0);
     });
 
-  // Upstream 2209a9c: treat `graphify <path>` (bare path with no subcommand)
-  // as `graphify extract <path>`. Common when following the PowerShell note
-  // in README (`graphify .`) or copy-pasting skill invocations.
+  // Upstream 2209a9c: treat `engram <path>` (bare path with no subcommand)
+  // as `engram extract <path>`. Common when following the PowerShell note
+  // in README (`engram .`) or copy-pasting skill invocations.
   // Only rewrite when the first positional arg looks like a filesystem path
   // and is not a registered subcommand — we leave other unknown commands to
   // commander's normal "unknown command" error.

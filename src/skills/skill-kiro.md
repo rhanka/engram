@@ -1,28 +1,30 @@
 ---
-name: graphify
+name: engram
 description: "any input (code, docs, papers, images) -> knowledge graph -> clustered communities -> HTML + JSON + audit report. Use when user asks any question about a codebase, project content, architecture, or file relationships, especially if .graphify/ exists. Provides persistent graph with god nodes, community detection, and BFS/DFS query tools."
-trigger: /graphify
+trigger: /engram
 ---
 
-# /graphify
+# /engram
+
+> Alias: `/graphify` still triggers this skill (deprecated alias for `/engram`).
 
 Use graphify to build, update, and query the project knowledge graph stored in `.graphify/`.
 
 ## Usage
 
 ```bash
-/graphify .
-/graphify . --update
-/graphify . --cluster-only
-/graphify . --pdf-ocr auto
-/graphify . --wiki
+/engram .
+/engram . --update
+/engram . --cluster-only
+/engram . --pdf-ocr auto
+/engram . --wiki
 graphify wiki describe --graph .graphify/graph.json --mode assistant --targets all
 graphify export wiki --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
 graphify export obsidian --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
-/graphify query "architecture question"
-/graphify summary --graph .graphify/graph.json
-/graphify minimal-context --task "review PR" --graph .graphify/graph.json
-/graphify review-delta --graph .graphify/graph.json
+/engram query "architecture question"
+/engram summary --graph .graphify/graph.json
+/engram minimal-context --task "review PR" --graph .graphify/graph.json
+/engram review-delta --graph .graphify/graph.json
 ```
 
 ## Rules
@@ -32,7 +34,7 @@ graphify export obsidian --graph .graphify/graph.json --descriptions .graphify/w
 - For architecture or codebase questions, when `.graphify/graph.json` exists, first run `graphify query "<question>"` (or `graphify path "<A>" "<B>"` / `graphify explain "<concept>"`); read `.graphify/GRAPH_REPORT.md` only for broad architecture review or when those commands don't surface enough context.
 - If `.graphify/wiki/index.md` exists, navigate the wiki for deep questions.
 - If `.graphify/graph.json` is missing but `graphify-out/graph.json` exists, run `graphify migrate-state --dry-run` before relying on legacy state.
-- If `.graphify/needs_update` exists or `.graphify/branch.json` has `stale=true`, warn before relying on semantic results and run `/graphify . --update` when appropriate.
+- If `.graphify/needs_update` exists or `.graphify/branch.json` has `stale=true`, warn before relying on semantic results and run `/engram . --update` when appropriate.
 - Wiki descriptions are explicit opt-in: first run `graphify wiki describe --graph .graphify/graph.json --mode assistant --targets all` or `--mode direct --backend <provider>`, then render wiki or Obsidian with `--descriptions .graphify/wiki/descriptions.json`. Sidecars live under `.graphify/wiki/descriptions/`, record graph hash, prompt/generator provenance, evidence refs, and cache keys, may reuse existing generated sidecars, omit `insufficient_evidence` descriptions from rendered pages, and never mutate `.graphify/graph.json`.
 - `graphify cite .` (alias `ground-citations`) grounds per-entity `node.citations[]` (`{quote, source_file, source_location}`) by scanning the corpus — heuristic + no-key by default (`--mode heuristic|assistant|api`), anti-hallucination (every quote a verified verbatim substring of the source), opt-in and symmetric to `describe`/`label`. Run it BEFORE the studio/wiki export for non-null citations.
 - Before proposing or committing `.graphify` artifacts, run `graphify portable-check .graphify`; commit-safe graph artifacts must use repo-relative paths, and never commit `.graphify/branch.json`, `.graphify/worktree.json`, `.graphify/needs_update`, or `.graphify/cache/`. If a repo already tracks any of them, first add them to `.gitignore`, then propose `git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update` and `git rm -r --cached .graphify/cache`; never mutate git state without asking.
@@ -76,8 +78,8 @@ Do not add embeddings, databases, a resident LLM backend, or a forked OCR/PDF pi
 ## Minimal Execution
 
 ```bash
-command -v graphify >/dev/null 2>&1 || npm install -g @sentropic/graphify
+command -v engram >/dev/null 2>&1 || command -v graphify >/dev/null 2>&1 || npm install -g @sentropic/engram
 graphify . --wiki
 ```
 
-Kiro also receives `.kiro/steering/graphify.md` with `inclusion: always`, so graph context is available before each conversation.
+Kiro also receives `.kiro/steering/engram.md` with `inclusion: always`, so graph context is available before each conversation.

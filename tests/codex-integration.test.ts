@@ -14,21 +14,21 @@ afterEach(() => {
 });
 
 describe("Codex integration contract", () => {
-  it("uses $graphify as the explicit Codex invocation hint", () => {
-    expect(getInvocationExample("codex")).toBe("$graphify .");
-    expect(getInvocationExample("claude")).toBe("/graphify .");
+  it("uses $engram as the explicit Codex invocation hint", () => {
+    expect(getInvocationExample("codex")).toBe("$engram .");
+    expect(getInvocationExample("claude")).toBe("/engram .");
   });
 
   it("writes Codex-specific AGENTS instructions", () => {
     const section = getAgentsMdSection("codex");
 
-    expect(section).toContain("use the installed `graphify` skill");
-    expect(section).toContain("`$graphify ...`");
+    expect(section).toContain("use the installed `engram` skill");
+    expect(section).toContain("`$engram ...`");
     expect(section).toContain("not a Bash subcommand");
     expect(section).toContain(".graphify_runtime.json");
-    expect(section).toContain(".graphify/cache/");
+    expect(section).toContain(".engram/cache/");
     expect(section).toContain(
-      "git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update",
+      "git rm --cached .engram/branch.json .engram/worktree.json .engram/needs_update",
     );
     expect(section).not.toContain("CLAUDE.md");
   });
@@ -37,7 +37,8 @@ describe("Codex integration contract", () => {
     const skill = readFileSync(new URL("../src/skills/skill-codex.md", import.meta.url), "utf-8");
     const readme = readFileSync(new URL("../README.md", import.meta.url), "utf-8");
 
-    expect(skill).toContain("trigger: $graphify");
+    expect(skill).toContain("trigger: $engram");
+    expect(skill).toContain("`$graphify` still triggers this skill");
     expect(skill).toContain("### Step 2 - Detect files");
     expect(skill).toContain("$graphify <path> --directed");
     expect(skill).toContain("GRAPHIFY_DIRECTED_FLAG");
@@ -133,7 +134,7 @@ describe("Codex integration contract", () => {
       (entry.hooks ?? []).map((hook) => hook.command ?? "")
     );
 
-    expect(commands.filter((command) => command.includes("graphify"))).toHaveLength(1);
+    expect(commands.filter((command) => command === "engram hook-check")).toHaveLength(1);
     expect(commands.some((command) => command.includes("stale graphify hook"))).toBe(false);
     expect(commands.some((command) => command.includes("unrelated hook"))).toBe(true);
   });
@@ -149,7 +150,7 @@ describe("Codex integration contract", () => {
     };
     const command = hooks.hooks?.PreToolUse?.[0]?.hooks?.[0]?.command ?? "";
 
-    expect(command).toBe("graphify hook-check");
+    expect(command).toBe("engram hook-check");
     expect(command).not.toContain("permissionDecision");
     expect(command).not.toContain("systemMessage");
     expect(command).not.toContain("additionalContext");

@@ -1,12 +1,14 @@
 ---
-name: graphify
+name: engram
 description: "any input (code, docs, papers, images) -> knowledge graph -> clustered communities -> static Ontology Studio + JSON + audit report. Use when user asks any question about a codebase, project content, architecture, or file relationships, especially if .graphify/ exists. Provides persistent graph with god nodes, community detection, and BFS/DFS query tools."
-trigger: $graphify
+trigger: $engram
 ---
 
-# $graphify
+# $engram
 
-Turn any folder of files into a navigable knowledge graph with community detection, an honest audit trail, and three outputs: a static Ontology Studio, GraphRAG-ready JSON, and a plain-language `GRAPH_REPORT.md`.
+> Alias: `$graphify` still triggers this skill (deprecated alias for `$engram`).
+
+Turn any folder of files into a navigable knowledge graph with community detection, a verifiable audit trail, and three outputs: a static Ontology Studio, GraphRAG-ready JSON, and a plain-language `GRAPH_REPORT.md`.
 
 This Codex skill is **TypeScript-backed**. Before calling the run successful, confirm [.graphify/.graphify_runtime.json](.graphify/.graphify_runtime.json) exists and contains `"runtime": "typescript"`.
 
@@ -60,12 +62,12 @@ $graphify explain "SwinTransformer"                   # explain one node and its
 - Use `--all` only when the user clearly wants a knowledge-base crawl across docs, notes, papers, screenshots, audio, or video.
 - If the repo is dirty or the right scope is unclear, run `graphify scope inspect <path> --scope auto` first and summarize the included and excluded counts.
 
-In Codex, prefer `$graphify ...` as the explicit invocation. Do not rely on `/graphify ...`, which is Claude syntax. `$graphify` is a Codex skill trigger, not a Bash command like `graphify .`.
+In Codex, prefer `$graphify ...` as the explicit invocation. Do not rely on `/engram ...`, which is Claude syntax. `$graphify` is a Codex skill trigger, not a Bash command like `graphify .`.
 
 Install flow for Codex:
 
 ```bash
-npm install -g @sentropic/graphify
+npm install -g @sentropic/engram
 graphify install --platform codex
 graphify codex install
 ```
@@ -92,12 +94,12 @@ Replace `INPUT_PATH` with `LOCAL_PATH` for all subsequent commands.
 ### Step 1 - Resolve the installed TypeScript runtime
 
 ```bash
-GRAPHIFY_BIN=$(command -v graphify 2>/dev/null || true)
+GRAPHIFY_BIN=$(command -v engram 2>/dev/null || command -v graphify 2>/dev/null || true)
 NODE_BIN=$(command -v node 2>/dev/null || true)
 
 if [ -z "$GRAPHIFY_BIN" ]; then
   echo "ERROR: graphify is not installed. Install the TypeScript package first."
-  echo "Run: npm install -g @sentropic/graphify"
+  echo "Run: npm install -g @sentropic/engram"
   exit 1
 fi
 
@@ -260,7 +262,7 @@ If there are multiple chunks:
 Use this extraction prompt, whether you apply it locally or inside subagents:
 
 ```text
-You are a graphify extraction subagent. Read the files listed and extract a knowledge graph fragment.
+You are an engram extraction subagent. Read the files listed and extract a knowledge graph fragment.
 Output ONLY valid JSON matching the schema below - no explanation, no markdown fences, no preamble.
 
 Files (chunk CHUNK_NUM of TOTAL_CHUNKS):

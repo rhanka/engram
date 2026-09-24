@@ -1,10 +1,10 @@
 {
-  "name": "@sentropic/graphify",
+  "name": "@sentropic/engram",
   "version": "0.18.0",
   "publishConfig": {
     "access": "public"
   },
-  "description": "AI coding assistant skill (Claude Code, Codex, Gemini CLI, Kimi Code, GitHub Copilot CLI, Aider, OpenCode, OpenClaw) - turn any folder of code, docs, papers, images, or audio/video transcripts into a queryable knowledge graph",
+  "description": "Engram — agent memory substrate (descends from graphify): AI coding assistant skill (Claude Code, Codex, Gemini CLI, Kimi Code, GitHub Copilot CLI, Aider, OpenCode, OpenClaw) - turn any folder of code, docs, papers, images, or audio/video transcripts into a queryable knowledge graph",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -21,7 +21,8 @@
     }
   },
   "bin": {
-    "graphify": "./dist/cli.js"
+    "engram": "./dist/cli.js",
+    "graphify": "./dist/cli-compat.js"
   },
   "files": [
     "dist",
@@ -47,6 +48,9 @@
     "postinstall": "node -e \"if(require('fs').existsSync('graphify-memory/package.json'))require('child_process').execSync('npm --prefix graphify-memory install --no-audit --no-fund',{stdio:'inherit'})\""
   },
   "keywords": [
+    "engram",
+    "agent-memory",
+    "graphify",
     "claude",
     "claude-code",
     "codex",
