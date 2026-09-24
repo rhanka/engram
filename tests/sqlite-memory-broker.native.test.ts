@@ -43,8 +43,15 @@ async function tableCount(filenameValue: string, table: string): Promise<number>
   }
 }
 
-afterEach(() => {
-  while (children.length > 0) { try { children.pop()!.kill("SIGKILL"); } catch { /* already gone */ } }
+afterEach(async () => {
+  // Deterministic teardown: SIGKILL every spawned child AND await its exit before removing the workspace, so a
+  // still-live flock holder cannot outlast the test or race the rmSync below. A child already reaped inline
+  // (exitCode/signalCode set) is skipped so the await never hangs on an exit event that already fired.
+  for (const child of children.splice(0)) {
+    if (child.exitCode === null && child.signalCode === null) {
+      try { child.kill("SIGKILL"); await once(child, "exit"); } catch { /* already gone */ }
+    }
+  }
   while (workspaces.length > 0) rmSync(workspaces.pop()!, { recursive: true, force: true });
 });
 
@@ -62,6 +69,7 @@ describe("native SQLite memory broker", () => {
       process.stdout.write("READY\\n");
       setInterval(() => {}, 1_000);
     `, `${target}`], { stdio: ["ignore", "pipe", "pipe"] });
+    children.push(child); // safety net: afterEach reaps it even if the assertion below throws before the inline kill
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error("flock holder did not become ready")), 5_000);
       child.stdout?.on("data", (data: Buffer) => {
