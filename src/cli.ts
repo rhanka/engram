@@ -53,7 +53,7 @@ import { discoverProjectConfig, loadProjectConfig } from "./project-config.js";
 import { loadOntologyProfile } from "./ontology-profile.js";
 import { loadProfileRegistries } from "./profile-registry.js";
 import { normalizeLanguageSelection } from "./description-language.js";
-import { DEFAULT_GRAPHIFY_STATE_DIR, defaultManifestPath, resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
+import { DEFAULT_ENGRAM_STATE_DIR, defaultManifestPath, resolveGraphInputPath, resolveGraphifyPaths } from "./paths.js";
 import { normalizeSearchText, scoreSearchText } from "./search.js";
 import { makeGraphPortable, projectRootLabel, scanPortableGraphifyArtifacts } from "./portable-artifacts.js";
 import { loadOntologyPatchContext } from "./ontology-patch-context.js";
@@ -4975,7 +4975,7 @@ export async function main(): Promise<void> {
     .description(
       "Bundle the prebuilt studio SPA + data artifacts into <out> as a self-contained static studio (openable via any static server)",
     )
-    .option("--state <dir>", "graphify state dir (must contain graph.json)", DEFAULT_GRAPHIFY_STATE_DIR)
+    .option("--state <dir>", "engram state dir (must contain graph.json)", DEFAULT_ENGRAM_STATE_DIR)
     .option("--profile <path>", "Optional ontology profile YAML; emits class-hierarchies.json when the profile carries a class_hierarchies block")
     .option("--no-single-file", "Skip the self-contained studio.html; emit only the multi-file bundle")
     .option("--full-offline", "Inline graph.json + entities.json into studio.html too (not just the scene) so the offline studio needs zero network")
@@ -4984,7 +4984,7 @@ export async function main(): Promise<void> {
     .option("--sources-root <dir>", "Root the relative source_file locators resolve against (default: the parent of --state)")
     .action(async (out, opts) => {
       try {
-        const stateDir = resolve(opts.state ?? DEFAULT_GRAPHIFY_STATE_DIR);
+        const stateDir = resolve(opts.state ?? DEFAULT_ENGRAM_STATE_DIR);
         const outDir = resolve(out);
         const { buildStaticStudio, StudioSpaNotBuiltError } = await import("./studio-export.js");
         try {
