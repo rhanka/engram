@@ -551,7 +551,7 @@ export function buildMerge(newChunks: Extraction[], options?: BuildMergeOptions)
     (options?.pruneMissingSources !== undefined && autoPruned > 0);
   if (existingNodeCount > 0 && graph.order < existingNodeCount && !explicitPruneRequested) {
     throw new Error(
-      `graphify: buildMerge would shrink graph from ${existingNodeCount} to ${graph.order} nodes. ` +
+      `engram: buildMerge would shrink graph from ${existingNodeCount} to ${graph.order} nodes. ` +
       "Pass pruneSources explicitly if you intend to remove nodes.",
     );
   }

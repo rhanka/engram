@@ -57,7 +57,7 @@ describe("review delta", () => {
   it("formats stable text for assistants", () => {
     const text = reviewDeltaToText(buildReviewDelta(makeGraph(), ["src/payment.ts"]));
 
-    expect(text).toContain("Graphify Review Delta");
+    expect(text).toContain("Engram Review Delta");
     expect(text).toContain("Changed files: 1");
     expect(text).toContain("docs/payment.md");
     expect(text).toContain("PaymentGateway");

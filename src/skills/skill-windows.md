@@ -746,7 +746,7 @@ console.log('code_only:', codeOnly);
 "
 ```
 
-If `code_only` is True: print `[graphify update] Code-only changes detected - skipping semantic extraction (no LLM needed)`, run only Step 3A (AST) on the changed files, skip Step 3B entirely (no subagents), then go straight to merge and Steps 4–8.
+If `code_only` is True: print `[engram update] Code-only changes detected - skipping semantic extraction (no LLM needed)`, run only Step 3A (AST) on the changed files, skip Step 3B entirely (no subagents), then go straight to merge and Steps 4–8.
 
 If `code_only` is False (any changed file is a doc/paper/image/video): first prepare transcripts and PDF sidecars if needed, then run the full Steps 3A–3C pipeline as normal.
 
@@ -1290,9 +1290,9 @@ engram claude uninstall  # remove the section
 
 ### PowerShell 5.1: Vertical scrolling stops working
 
-If vertical scrolling breaks in PowerShell after running graphify, this is caused by ANSI escape sequences from the `graspologic` library. Graphify v0.3.10+ suppresses this output, but if you still see the issue:
+If vertical scrolling breaks in PowerShell after running engram, this is caused by ANSI escape sequences from the `graspologic` library. Engram v0.3.10+ suppresses this output, but if you still see the issue:
 
-1. **Upgrade graphify**: `npm install -g @sentropic/engram`
+1. **Upgrade Engram**: `npm install -g @sentropic/engram`
 2. **Use Windows Terminal** instead of the legacy PowerShell console — Windows Terminal handles ANSI codes correctly
 3. **Reset your terminal**: close and reopen PowerShell
 4. **Skip graspologic**: uninstall it (`pip uninstall graspologic`) and engram will fall back to NetworkX's built-in Louvain algorithm, which produces no ANSI output

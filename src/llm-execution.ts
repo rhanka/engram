@@ -427,7 +427,7 @@ export function createAssistantTextJsonClient(options: AssistantLlmClientOptions
       writeInstruction(instructionPath, [
         `# Text JSON Generation: ${input.schema}`,
         "",
-        "Graphify is running in assistant mode. Do not call an external provider from Graphify runtime.",
+        "Engram is running in assistant mode. Do not call an external provider from Engram runtime.",
         "",
         "## Prompt",
         "",
@@ -458,7 +458,7 @@ export function createAssistantVisionJsonClient(options: AssistantLlmClientOptio
       writeInstruction(instructionPath, [
         `# Vision JSON Analysis: ${input.schema}`,
         "",
-        "Graphify is running in assistant mode. Inspect the listed image artifacts with the active assistant.",
+        "Engram is running in assistant mode. Inspect the listed image artifacts with the active assistant.",
         "",
         "## Image Artifacts",
         "",
@@ -543,7 +543,7 @@ export function createDirectTextJsonClient(options: DirectTextJsonClientOptions)
         temperature,
         ...(effectiveCap !== undefined ? { maxOutputTokens: effectiveCap } : {}),
         system: [
-          "You are Graphify's JSON extraction backend.",
+          "You are Engram's JSON extraction backend.",
           "Return only valid JSON matching the requested schema.",
           "Do not include Markdown prose outside the JSON object.",
         ].join("\n"),
