@@ -88,13 +88,25 @@ export function engramEnvBoolean(
  * returned restore function runs), then restore both keys to their previous
  * values. Both the new and the legacy key are written so nested readers —
  * old or new — observe the override.
+ *
+ * Never use this for a variable carrying a secret (DSN, key, token,
+ * password): the value would be duplicated into the legacy key of the child
+ * environment, doubling secret exposure and risking a leak through legacy
+ * log/plumbing paths. Secret overrides must write the single exact key the
+ * child reads. The guard below refuses secret-like key names.
  */
+const SECRET_LIKE_KEY = /(KEY|TOKEN|SECRET|PASSWORD|DSN|URL)/;
 export function pushEngramEnv(
   newKey: string,
   legacyKey: string | undefined,
   value: string | undefined,
   env: NodeJS.ProcessEnv = process.env,
 ): () => void {
+  if (SECRET_LIKE_KEY.test(newKey) || (legacyKey !== undefined && SECRET_LIKE_KEY.test(legacyKey))) {
+    throw new Error(
+      `pushEngramEnv refuses secret-carrying keys (${newKey}); write the single exact key instead`,
+    );
+  }
   const prevNew = env[newKey];
   const prevOld = legacyKey !== undefined ? env[legacyKey] : undefined;
   const restore = (): void => {
