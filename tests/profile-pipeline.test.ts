@@ -119,7 +119,7 @@ describe("profile synthetic end-to-end pipeline", () => {
       validationResult: profileValidation,
       graph: graphJson,
     });
-    expect(report).toContain("# Graphify Profile Report");
+    expect(report).toContain("# Engram Profile Report");
     expect(report).toContain("Synthetic filter replacement");
   });
 });

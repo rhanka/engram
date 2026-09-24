@@ -185,7 +185,7 @@ describe("wiki description prompt generation", () => {
     expect(prompt).toContain("[calls] GammaEngine");
     expect(prompt).toContain("[uses] BetaRepository");
     expect(prompt.indexOf("[calls]") < prompt.indexOf("[uses]"));
-    expect(prompt).toContain("Return JSON fields that Graphify will wrap into engram_wiki_description_v1");
+    expect(prompt).toContain("Return JSON fields that Engram will wrap into engram_wiki_description_v1");
   });
 });
 
