@@ -7,7 +7,7 @@ import {
   openFencedSqliteCanonicalMemoryStoreV1,
   openPostgresCanonicalMemoryStoreV1,
   type CanonicalMemoryStorePort,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 import { captureRequest, createL3Memory, lifecycleCommand, DEADLINE, DIGEST, NOW } from "./memory-l3-fixture.js";
 import { dockerAvailable, postgresImageAvailable, startEphemeralPostgres } from "./postgres-ephemeral.js";
 
@@ -102,7 +102,7 @@ const sqliteWorkspaces: string[] = [];
 const stops: Array<() => void> = [];
 
 async function sqliteDigests(): Promise<ParityDigestsV1> {
-  const workspace = mkdtempSync(join(tmpdir(), "graphify-memory-parity-sqlite-"));
+  const workspace = mkdtempSync(join(tmpdir(), "engram-memory-parity-sqlite-"));
   sqliteWorkspaces.push(workspace);
   const filename = join(workspace, "canonical.sqlite");
   const writer = await openFencedSqliteCanonicalMemoryStoreV1({ filename, clock: { now: () => NOW }, store_id: "parity" });

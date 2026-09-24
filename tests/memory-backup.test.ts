@@ -8,7 +8,7 @@ import {
   type BackupKeyPort,
   type BackupObjectPort,
   type Digest,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 import { captureRequest, createL3Memory, lifecycleCommand, NOW } from "./memory-l3-fixture.js";
 
 const DEADLINE = "2026-08-16T12:40:00.000Z";

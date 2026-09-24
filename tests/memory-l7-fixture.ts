@@ -10,7 +10,7 @@ import {
   type SemanticProjectionPort,
   type ValidIntervalV1,
   type VectorProjectionPort,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 
 export const NOW = "2026-08-16T12:34:56.789Z";
 export const DEADLINE = "2026-08-16T12:40:00.000Z";

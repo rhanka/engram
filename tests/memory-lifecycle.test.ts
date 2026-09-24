@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { receiptDigest } from "../graphify-memory/index.js";
+import { receiptDigest } from "../engram-memory/index.js";
 import { DIGEST, NOW, captureRequest, createL3Memory, lifecycleCommand } from "./memory-l3-fixture.js";
 
 describe("memory lifecycle", () => {

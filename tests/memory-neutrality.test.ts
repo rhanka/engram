@@ -39,7 +39,7 @@ function memoryPackageFiles(directory: string): string[] {
 }
 
 function packedMemoryClosure(): string[] {
-  const memoryRoot = join(root, "graphify-memory");
+  const memoryRoot = join(root, "engram-memory");
   return memoryPackageFiles(memoryRoot).map((path) => readFileSync(path, "utf8"));
 }
 
@@ -48,7 +48,7 @@ describe("memory neutrality", () => {
     const consumerNamespace = "@sen" + "tropic/";
     const closure = [
       ...packedMemoryClosure(),
-      emittedDeclaration("graphify-memory/contracts/index.ts"),
+      emittedDeclaration("engram-memory/contracts/index.ts"),
     ];
     const forbiddenIdentifiers = [
       consumerNamespace,
