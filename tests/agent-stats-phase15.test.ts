@@ -76,7 +76,7 @@ describe("ground truth is gated on git-verb inputs (spoof resistance)", () => {
     ].join("\n");
   }
 
-  const FOREIGN = "[feat/foreign 1234567] stolen subject\nhttps://github.com/rhanka/graphify/pull/777";
+  const FOREIGN = "[feat/foreign 1234567] stolen subject\nhttps://github.com/rhanka/engram/pull/777";
 
   it("claude: cat/grep of a foreign transcript does NOT acquire shas or PR urls", () => {
     for (const cmd of ["cat ~/.claude/projects/other/x.jsonl", "grep -r commit ci.log", "tail -n 50 build.log"]) {
@@ -302,7 +302,7 @@ describe("rank-2 pr-merge hardening", () => {
     const runner: CommandRunner = {
       run(command, args) {
         calls.push(`${command} ${args.join(" ")}`);
-        if (command === "git") return "https://github.com/rhanka/graphify.git";
+        if (command === "git") return "https://github.com/rhanka/engram.git";
         if (args[1] === "list") return JSON.stringify([]);
         return JSON.stringify({ number: 99, headRefName: "feat/wp9", mergeCommit: { oid: "9".repeat(40) }, commits: [] });
       },
@@ -322,14 +322,14 @@ describe("rank-2 pr-merge hardening", () => {
       models: [],
       tokens: { input: 0, output: 0, cached: 0, total: 0 },
       gitActions: [{ verb: "commit", command: "git commit" }],
-      groundTruth: { commitShas: [], branches: [], shaBranch: {}, prUrls: ["https://github.com/rhanka/graphify/pull/130"] },
+      groundTruth: { commitShas: [], branches: [], shaBranch: {}, prUrls: ["https://github.com/rhanka/engram/pull/130"] },
       branchesObserved: ["feat/wp9"],
       filesTouched: [],
       evidence: [],
     };
     const runner: CommandRunner = {
       run(command, args) {
-        if (command === "git") return "git@github.com:rhanka/graphify.git";
+        if (command === "git") return "git@github.com:rhanka/engram.git";
         if (args[1] === "list") return JSON.stringify([]);
         return JSON.stringify({ number: 130, headRefName: "feat/wp9", mergeCommit: { oid: "1".repeat(40) }, commits: [] });
       },

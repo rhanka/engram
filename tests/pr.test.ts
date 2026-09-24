@@ -29,10 +29,10 @@ function fakeRunner(responses: Record<string, unknown>): CommandRunner {
 
 describe("pull request inspection", () => {
   it("parses GitHub origin remotes for gh --repo scoping", () => {
-    expect(githubRepoFromRemote("https://github.com/rhanka/graphify.git")).toBe("rhanka/graphify");
-    expect(githubRepoFromRemote("git@github.com:rhanka/graphify.git")).toBe("rhanka/graphify");
-    expect(githubRepoFromRemote("ssh://git@github.com/rhanka/graphify.git")).toBe("rhanka/graphify");
-    expect(githubRepoFromRemote("https://example.com/rhanka/graphify.git")).toBeUndefined();
+    expect(githubRepoFromRemote("https://github.com/rhanka/engram.git")).toBe("rhanka/engram");
+    expect(githubRepoFromRemote("git@github.com:rhanka/engram.git")).toBe("rhanka/engram");
+    expect(githubRepoFromRemote("ssh://git@github.com/rhanka/engram.git")).toBe("rhanka/engram");
+    expect(githubRepoFromRemote("https://example.com/rhanka/engram.git")).toBeUndefined();
   });
 
   it("lists pull requests from gh JSON", () => {
@@ -61,8 +61,8 @@ describe("pull request inspection", () => {
 
   it("scopes gh calls to the origin GitHub repository when available", () => {
     const runner = fakeRunner({
-      "git remote get-url origin": "https://github.com/rhanka/graphify.git",
-      "gh pr list --repo rhanka/graphify --state open --limit 2 --json number,title,state,isDraft,headRefName,baseRefName,author,url,mergeable,mergeStateStatus,reviewDecision,updatedAt": [
+      "git remote get-url origin": "https://github.com/rhanka/engram.git",
+      "gh pr list --repo rhanka/engram --state open --limit 2 --json number,title,state,isDraft,headRefName,baseRefName,author,url,mergeable,mergeStateStatus,reviewDecision,updatedAt": [
         {
           number: 52,
           title: "Track G4.5",
