@@ -342,7 +342,7 @@ describe("profile CLI commands", () => {
     expect(discoveryDiff.exitCode).toBe(0);
     expect(JSON.parse(readFileSync(discoveryDiffPath, "utf-8")).requires_user_approval).toBe(true);
     expect(report.exitCode).toBe(0);
-    expect(readFileSync(reportPath, "utf-8")).toContain("# Graphify Profile Report");
+    expect(readFileSync(reportPath, "utf-8")).toContain("# Engram Profile Report");
     expect(ontology.exitCode).toBe(0);
     expect(ontology.logs.join("\n")).toContain("Ontology outputs");
     expect(existsSync(join(ontologyDir, "manifest.json"))).toBe(true);
@@ -432,7 +432,7 @@ describe("check-update CLI", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.logs.join("\n")).toContain("Pending semantic updates");
-    expect(result.logs.join("\n")).toContain("graphify skill with --update");
+    expect(result.logs.join("\n")).toContain("engram skill with --update");
   });
 
   it("reports when graph state is current", async () => {

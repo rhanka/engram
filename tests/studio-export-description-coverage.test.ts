@@ -21,11 +21,11 @@ import {
 import { __resetGraphDescriptionCache } from "../src/studio-assets.js";
 
 describe("lowDescriptionCoverageWarning (pure threshold)", () => {
-  it("warns at 0% coverage and points to graphify describe", () => {
+  it("warns at 0% coverage and points to engram describe", () => {
     const msg = lowDescriptionCoverageWarning({ total: 620, described: 0, provisional: 0 });
     expect(msg).not.toBeNull();
     expect(msg).toMatch(/0\/620/);
-    expect(msg).toMatch(/graphify describe/);
+    expect(msg).toMatch(/engram describe/);
   });
 
   it("mentions provisional rationale fills when present (both signals surfaced)", () => {
@@ -33,7 +33,7 @@ describe("lowDescriptionCoverageWarning (pure threshold)", () => {
     expect(msg).not.toBeNull();
     // The fallback filled it AND describe is still recommended.
     expect(msg).toMatch(/596 node\(s\) were filled provisionally/);
-    expect(msg).toMatch(/graphify describe/);
+    expect(msg).toMatch(/engram describe/);
   });
 
   it("is silent on healthy coverage", () => {
@@ -86,7 +86,7 @@ describe("buildStaticStudio description-coverage integration", () => {
       onWarning: (m) => warnings.push(m),
     });
     expect(result.descriptionCoverage).toEqual({ total: 10, described: 0, provisional: 10 });
-    const hint = warnings.find((m) => /graphify describe/.test(m));
+    const hint = warnings.find((m) => /engram describe/.test(m));
     expect(hint).toBeDefined();
     expect(hint).toMatch(/10 node\(s\) were filled provisionally/);
   });
@@ -106,6 +106,6 @@ describe("buildStaticStudio description-coverage integration", () => {
       onWarning: (m) => warnings.push(m),
     });
     expect(result.descriptionCoverage).toEqual({ total: 10, described: 10, provisional: 0 });
-    expect(warnings.find((m) => /graphify describe/.test(m))).toBeUndefined();
+    expect(warnings.find((m) => /engram describe/.test(m))).toBeUndefined();
   });
 });

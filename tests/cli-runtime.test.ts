@@ -732,7 +732,7 @@ describe("public CLI runtime command parity", () => {
     const result = await runCli(["extract", ".", "--out", outDir], dir);
 
     expect(result.exitCode).toBe(0);
-    expect(result.logs.join("\n")).toContain("[graphify extract] wrote");
+    expect(result.logs.join("\n")).toContain("[engram extract] wrote");
     expect(existsSync(join(outDir, ".engram", "graph.json"))).toBe(true);
     expect(existsSync(join(outDir, ".engram", "GRAPH_REPORT.md"))).toBe(true);
     expect(existsSync(join(outDir, ".engram", ".graphify_analysis.json"))).toBe(true);
@@ -775,7 +775,7 @@ describe("public CLI runtime command parity", () => {
     const instructionsPath = join(dir, ".engram", "scratch", "assistant-extract-instructions.md");
     expect(existsSync(instructionsPath)).toBe(true);
     const instructions = readFileSync(instructionsPath, "utf-8");
-    expect(instructions).toContain("# Graphify assistant extraction instructions");
+    expect(instructions).toContain("# Engram assistant extraction instructions");
     expect(instructions).toContain("docs/guide.md");
     expect(instructions).toContain("No provider API key was read or persisted");
 
@@ -825,7 +825,7 @@ describe("public CLI runtime command parity", () => {
     };
 
     expect(result.exitCode).toBe(0);
-    expect(result.logs.join("\n")).toContain("[graphify extract] wrote");
+    expect(result.logs.join("\n")).toContain("[engram extract] wrote");
     expect(graph.nodes.some((node) => node.label === "Guide")).toBe(true);
   });
 
@@ -1022,7 +1022,7 @@ describe("public CLI runtime command parity", () => {
       expect(check.exitCode).toBe(0);
       const out = check.logs.join("\n");
       expect(out).toContain("without descriptions/labels");
-      expect(out).toContain("graphify update --fill-missing");
+      expect(out).toContain("engram update --fill-missing");
     });
   });
 
@@ -1050,7 +1050,7 @@ describe("public CLI runtime command parity", () => {
       expect(check.exitCode).toBe(0);
       const out = check.logs.join("\n");
       expect(out).not.toContain("without descriptions/labels");
-      expect(out).not.toContain("graphify update --fill-missing");
+      expect(out).not.toContain("engram update --fill-missing");
     });
   });
 
@@ -1724,7 +1724,7 @@ describe("skill runtime artifact parity", () => {
     expect(validation.exitCode).toBe(0);
     expect(JSON.parse(validation.logs.join("\n")).valid).toBe(true);
     expect(report.exitCode).toBe(0);
-    expect(readFileSync(reportPath, "utf-8")).toContain("# Graphify Profile Report");
+    expect(readFileSync(reportPath, "utf-8")).toContain("# Engram Profile Report");
     expect(readFileSync(reportPath, "utf-8")).toContain("equipment-maintenance-demo");
     expect(ontology.exitCode).toBe(0);
     expect(ontology.logs.join("\n")).toContain("Ontology outputs");
