@@ -145,7 +145,7 @@ export function registerAgentStatsCommands(program: Command): void {
         label: "Sentropic / Graphify",
         aliases: [
           { name: "sentropic", pathPrefixes: ["~/src/sentropic"], remote: "rhanka/sentropic" },
-          { name: "graphify", pathPrefixes: ["~/src/graphify"], remote: "rhanka/graphify" },
+          { name: "graphify", pathPrefixes: ["~/src/graphify"], remote: "rhanka/engram" },
           { name: "regraphify", pathPrefixes: ["/tmp/regraphify", "/tmp/regraphify-brigham"] },
         ],
         repoRootForRegistry: repoRoot,

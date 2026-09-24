@@ -3,11 +3,11 @@ import {
   createGraphifyMesh,
   meshTextJsonClient,
   textClientToCallLlm,
-} from "@sentropic/graphify/llm-mesh";
+} from "@sentropic/engram/llm-mesh";
 import type {
   CreateGraphifyMeshOptions,
   MeshTextJsonClientOptions,
-} from "@sentropic/graphify/llm-mesh";
+} from "@sentropic/engram/llm-mesh";
 
 const values: readonly Function[] = [
   classifyRouteFailure,

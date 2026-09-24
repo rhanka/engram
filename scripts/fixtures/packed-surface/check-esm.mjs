@@ -1,7 +1,7 @@
 import {
   createGraphifyMesh,
   meshTextJsonClient,
-} from "@sentropic/graphify/llm-mesh";
+} from "@sentropic/engram/llm-mesh";
 
 if (typeof createGraphifyMesh !== "function") {
   throw new Error("Missing ESM mesh export: createGraphifyMesh");
