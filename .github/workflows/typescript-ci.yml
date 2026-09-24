@@ -168,9 +168,10 @@ jobs:
       - name: Verify CLI from installed package
         run: |
           cd /tmp/smoke-test
-          npx graphify --help | grep -q "Usage:"
-          npx graphify --version | grep -qE '^[0-9]+\.[0-9]+'
-          echo "CLI works from installed package"
+          npx engram --help | grep -q "Usage:"
+          npx engram --version | grep -qE '^[0-9]+\.[0-9]+'
+          npx graphify --version 2>/dev/null | grep -qE '^[0-9]+\.[0-9]+'
+          echo "CLI works from installed package (engram, and the legacy graphify alias)"
 
       - name: Verify CommonJS root and ESM-only mesh subpath
         run: |
@@ -179,12 +180,12 @@ jobs:
       - name: Verify skill files are bundled
         run: |
           cd /tmp/smoke-test
-          SKILL_COUNT=$(find node_modules/@sentropic/graphify/src/skills -name "*.md" | wc -l)
+          SKILL_COUNT=$(find node_modules/@sentropic/engram/src/skills -name "*.md" | wc -l)
           if [ "$SKILL_COUNT" -lt 7 ]; then
             echo "Expected 7+ skill files, found $SKILL_COUNT"
             exit 1
           fi
-          test -f node_modules/@sentropic/graphify/src/skills/skill-gemini.toml
+          test -f node_modules/@sentropic/engram/src/skills/skill-gemini.toml
           echo "$SKILL_COUNT skill files bundled"
 
   # Release guard: tags must point to code already merged in the product branch.
@@ -267,20 +268,20 @@ jobs:
         run: |
           mkdir /tmp/post-publish && cd /tmp/post-publish
           npm init -y --silent
-          npm install @sentropic/graphify@latest
+          npm install @sentropic/engram@latest
 
       - name: Verify CLI
         run: |
           cd /tmp/post-publish
-          npx graphify --help | grep -q "Usage:"
-          npx graphify --version
+          npx engram --help | grep -q "Usage:"
+          npx engram --version
           echo "Post-publish CLI verification passed"
 
       - name: Verify library
         run: |
           cd /tmp/post-publish
           node -e "
-            const g = require('@sentropic/graphify');
+            const g = require('@sentropic/engram');
             console.log('Exports:', Object.keys(g).filter(k => typeof g[k] === 'function').join(', '));
             // Quick functional test: build a graph from inline extraction
             const ext = {
@@ -300,7 +301,7 @@ jobs:
       - name: Verify skill install
         run: |
           cd /tmp/post-publish
-          npx graphify install --platform claude || true
+          npx engram install --platform claude || true
           echo "Skill install command executed"
 
   # NOTE: the `@sentropic/graph` sub-package is NO LONGER published from this

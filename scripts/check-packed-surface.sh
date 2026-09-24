@@ -16,7 +16,7 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ "${1:-}" == "--installed" ]]; then
-  if [[ $# -ne 2 || ! -d "$2/node_modules/@sentropic/graphify" ]]; then
+  if [[ $# -ne 2 || ! -d "$2/node_modules/@sentropic/engram" ]]; then
     echo "usage: $0 --installed <clean-install-directory>" >&2
     exit 2
   fi
@@ -27,7 +27,7 @@ else
     exit 2
   fi
 
-  temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/graphify-packed-surface.XXXXXX")"
+  temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/engram-packed-surface.XXXXXX")"
   installed_dir="$temporary_root/consumer"
   mkdir "$installed_dir"
 

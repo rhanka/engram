@@ -1,4 +1,4 @@
-const graphify = require("@sentropic/graphify");
+const engram = require("@sentropic/engram");
 
 const expected = [
   "validateExtraction",
@@ -10,13 +10,13 @@ const expected = [
   "buildStaticStudio",
 ];
 for (const name of expected) {
-  if (typeof graphify[name] !== "function") {
+  if (typeof engram[name] !== "function") {
     throw new Error(`Missing root export: ${name}`);
   }
 }
 
 try {
-  require("@sentropic/graphify/llm-mesh");
+  require("@sentropic/engram/llm-mesh");
   throw new Error("CommonJS mesh subpath unexpectedly resolved");
 } catch (error) {
   if (error && error.message === "CommonJS mesh subpath unexpectedly resolved") throw error;
