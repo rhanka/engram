@@ -169,6 +169,30 @@ describe("quality target config", () => {
     expect(found.path).toBe(join(root, "graphify.yaml"));
   });
 
+  it("prefers engram.yaml over legacy graphify.yaml", () => {
+    const root = tempDir();
+    writeFileSync(join(root, "graphify.yaml"), "quality: {}\n", "utf-8");
+    writeFileSync(join(root, "engram.yaml"), "quality: {}\n", "utf-8");
+
+    const found = discoverQualityTargetsConfig(root);
+
+    expect(found.found).toBe(true);
+    expect(found.path).toBe(join(root, "engram.yaml"));
+  });
+
+  it("discovers .engram/config.yaml before legacy .graphify/config.yaml", () => {
+    const root = tempDir();
+    mkdirSync(join(root, ".graphify"), { recursive: true });
+    mkdirSync(join(root, ".engram"), { recursive: true });
+    writeFileSync(join(root, ".graphify", "config.yaml"), "quality: {}\n", "utf-8");
+    writeFileSync(join(root, ".engram", "config.yaml"), "quality: {}\n", "utf-8");
+
+    const found = discoverQualityTargetsConfig(root);
+
+    expect(found.found).toBe(true);
+    expect(found.path).toBe(join(root, ".engram", "config.yaml"));
+  });
+
   it("rejects data-only chrome self comparison", () => {
     const root = tempDir();
     const configPath = join(root, "graphify.yaml");
