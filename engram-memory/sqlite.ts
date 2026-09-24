@@ -174,16 +174,18 @@ async function acquireDatabaseFlock(filename: string, allowEphemeral: boolean): 
     if (!verdict.admit) throw new Error(verdict.reason);
     // Capture the flocked inode from the fd (bigint: a large XFS/btrfs inode exceeds 2^53 and a number would round).
     const identity = fstatSync(fd, { bigint: true });
-    // §5.9 R2-f: the fenced inode MUST be reachable by exactly one name. A second hard link (st_nlink > 1) means the
-    // same database bytes answer to another path outside the fence's view, which defeats two guarantees at once:
-    // assertPathUnmoved treats "the canonical path is gone" as a lost fence, but an alias keeps the inode alive after
-    // an unlink, so an adversary can unlink+relink the canonical name onto the SAME still-flocked (dev, ino) with the
-    // rename check none the wiser; and release-after-close assumes closing the last fd (or process death) retires the
-    // database, whereas an aliased inode survives to be relinked into place afterwards. nlink is read from the SAME
-    // fstat as the flocked identity, so it races nothing. Refuse here, before any write; the opener maps this throw to
-    // CAPABILITY_UNAVAILABLE (it is not flock contention, so never FENCE_LOST).
+    // §5.9 R2-f: refuse a canonical database whose inode has more than one name (st_nlink > 1), checked once here at
+    // open. SQLite derives the -wal / -shm / -journal sidecar names from the PATH it opens, so two hard links to one
+    // inode give the SAME database two independent sidecar sets: a reopen through the other name loses a WAL that was
+    // never checkpointed, and a foreign SQLite client reaching the inode by the alias writes past the -shm lock table
+    // this fence relies on. A symlink (SQLite resolves it to the canonical path) and a bind mount (one directory
+    // entry, one inode, one sidecar set) do NOT split the sidecars — which is why st_nlink is the exact and only
+    // signal. This is an OPEN-time check, deliberately NOT per-operation: while this store holds the fence the split
+    // is inert (it owns the WAL), and FENCE_LOST is terminal, so re-checking per op would kill a live writer over a
+    // harmless `cp -al` backup; the hazard is only at REOPEN, and the next open re-runs this check by whatever name is
+    // used. nlink is read from the SAME fstat as the flocked identity, so it races nothing.
     if (identity.nlink > 1n) {
-      throw new Error(`the canonical database inode has ${identity.nlink} hard links; a fenced store requires exactly one name for the inode (a second link defeats the single-writer rename and release-after-close guarantee)`);
+      throw new Error(`the canonical database ${filename} has ${identity.nlink} hard links to its inode; SQLite keeps its -wal/-shm/-journal sidecars per path, so a second name loses the WAL on reopen and lets a foreign client bypass the -shm locks. List the aliases with: find <mountpoint> -xdev -samefile ${filename} — then keep the name that has a ${filename}-wal beside it, never delete that -wal, remove the other hard links, and restart`);
     }
     // Match the flock by INODE only, never by device: fstat's st_dev (the mount/subvolume dev) differs from the
     // superblock s_dev the kernel prints in /proc on btrfs, so a device match would brick there; the inode is
@@ -670,7 +672,7 @@ export async function openFencedSqliteCanonicalMemoryStoreV1(options: FencedSqli
       return refusal("admin", "FENCE_LOST", "another live process holds the SQLite writer fence");
     }
     const cause = error instanceof Error ? error.message : String(error);
-    return refusal("admin", "CAPABILITY_UNAVAILABLE", `the SQLite writer fence could not be acquired: ${cause}`);
+    return refusal("admin", "CAPABILITY_UNAVAILABLE", `the SQLite writer fence was refused: ${cause}`);
   }
   try {
     const native = await import("better-sqlite3");
