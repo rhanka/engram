@@ -7,9 +7,11 @@ import {
   receiptDigest,
   recordIdFromDigest,
 } from "./digests.js";
-import { isCanonicalCursor, validateCandidatePayload } from "./validation.js";
+import { isCanonicalCursor, validateAdminOperationRequest, validateCandidatePayload } from "./validation.js";
+import { verifyStoreProvenance } from "./store-factory.js";
 import { executeRecall } from "./recall.js";
 import type {
+  AdminEpochReceiptV1,
   AdmissionDecisionEnvelopeV1,
   AdmissionOutcomeV1,
   AdmissionPolicy,
@@ -31,6 +33,7 @@ import type {
   MemoryState,
   LifecycleCommandV1,
   LifecycleReceiptV1,
+  OperationalCapabilityReceiptV1,
   ProjectionBatchV1,
   RecallRequestV2,
   RedactionDirectiveV1,
@@ -101,6 +104,37 @@ function compareInstants(left: string, right: string): number {
 
 function operationFailure(operation: MemoryOperation, result: Result<never>): Result<never> {
   return result.ok ? result : { ok: false, error: { ...result.error, operation } };
+}
+
+/**
+ * §5.5(d): a conforming AdminProviderPort declares an authorization denial with `denial: true` (§5.10). The
+ * engine maps that flag to code UNAUTHORIZED — mechanically and totally: it does not reclassify a decision it
+ * did not make, it only maps the provider-declared boolean to the code. Every other failure surfaces with its
+ * own code (clause e), so a non-authorization failure (denial absent) passes through unchanged.
+ */
+function normalizeAdminDenial(result: Result<AdminEpochReceiptV1>): Result<AdminEpochReceiptV1> {
+  return !result.ok && result.error.denial === true
+    ? { ok: false, error: { ...result.error, code: "UNAUTHORIZED" } }
+    : result;
+}
+
+/**
+ * §5.5/§5.10: invoke one AdminProviderPort operation so `admin` is TOTAL on its `Result` contract. A provider
+ * that throws instead of returning a `Result` surfaces as `POLICY_UNAVAILABLE` (the admin provider is the
+ * authority of the authorization epoch, §5.10). Fail-closed: `retryable: false` — the engine cannot know if the
+ * fault is transient. Never `UNAUTHORIZED` and never `denial: true` — an exception declared no authorization
+ * decision, so mapping it to a denial would re-introduce the inference clause (d) excluded. Never the raw error
+ * text — a fixed generic message only (D2 minimal redaction: `String(e)` could leak a credential ref, path, or DSN).
+ * This wraps the provider call AND the normalisation of its result; a throw from either — a thrown exception, or
+ * a malformed `Result` that fails normalisation — is treated as a provider fault. It does NOT wrap the
+ * surrounding engine/fence logic, so an engine bug is never masked as a provider fault.
+ */
+async function callAdminProvider(call: () => Promise<Result<AdminEpochReceiptV1>>): Promise<Result<AdminEpochReceiptV1>> {
+  try {
+    return normalizeAdminDenial(await call());
+  } catch {
+    return refusal("admin", "POLICY_UNAVAILABLE", "admin provider failed");
+  }
 }
 
 function validateRedactionDirective(input: unknown): RedactionDirectiveV1 | undefined {
@@ -656,6 +690,27 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
   const cancelled = new Set<string>();
   const capturedContent = new Map<string, Digest>();
   const admissionOutcomes = new Map<string, AdmissionOutcomeV1>();
+  const unfencedMemoryStorePermitted = dependencies.allow_unfenced_memory_store === true;
+  // §5.9 (v5-c): announce the non-production posture once at construction so a host can log/audit it at startup.
+  if (unfencedMemoryStorePermitted) dependencies.on_unfenced_memory_store_permitted?.();
+
+  // §5.9: obtain a FRESH readiness receipt and verify the store's PROVENANCE (in-process factory mark + declared-
+  // identity lockstep, verifyStoreProvenance) BEFORE admitting any fencing-dependent operation. The check runs in
+  // the engine, never delegated to the store's own readiness(). Called once PER OP on purpose — the receipt must
+  // be fresh (§5.9 l.1041/1047), so the result is deliberately NOT memoised across operations; do not add a cache.
+  const admitFenced = async (operation: MemoryOperation): Promise<Result<OperationalCapabilityReceiptV1>> => {
+    let readiness: Result<OperationalCapabilityReceiptV1>;
+    try {
+      readiness = await dependencies.canonical_store.readiness();
+    } catch {
+      return unavailable(operation, "canonical store did not return a readiness receipt");
+    }
+    if (!readiness.ok) return operationFailure(operation, readiness);
+    // §5.9: admit only via the in-process mark — a store built by this module's fenced factory (production), or
+    // this module's neutral in-memory store when the host raised `allow_unfenced_memory_store` (non-production).
+    // The receipt's `backend` string is never consulted; production fails closed. verifyStoreProvenance decides.
+    return verifyStoreProvenance(dependencies.canonical_store, readiness.value, { allowUnfencedMemoryStore: dependencies.allow_unfenced_memory_store === true }, operation);
+  };
 
   const port: MemoryPortV2 = {
     version: 2,
@@ -665,6 +720,9 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
         if (!readiness.ok) return operationFailure("admin", readiness);
         const backend = readiness.value.backend;
         if (backend !== "sqlite" && backend !== "postgres") return unavailable("admin", "canonical backend does not support the published capability descriptor");
+        // NOTE (§5.9): capabilities() is a REPORTING surface, not a fencing-dependent operation (§5.9 l.1041
+        // gates "operations that require fencing"), so it is deliberately NOT attestation-gated — a refused
+        // caller must still be able to read the descriptor (which reports fenced_single_writer) to diagnose why.
         const semantic = dependencies.semantic_projection !== undefined && dependencies.vector_projection !== undefined;
         const body = {
           contract_version: 2 as const,
@@ -672,6 +730,9 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
           canonical_backends: [backend] as ReadonlyArray<"sqlite" | "postgres">,
           max_candidates: 2000 as const,
           max_results: 100 as const,
+          // §5.9: surface the fence-bypass postures; true on a sqlite/postgres descriptor is a prod misconfiguration.
+          unfenced_memory_store_permitted: unfencedMemoryStorePermitted,
+          ephemeral_filesystem_store_permitted: readiness.value.capabilities.ephemeral_filesystem_store_permitted === true,
         };
         return { ok: true, value: { ...body, receipt_digest: receiptDigest("capability-descriptor", body) } };
       } catch {
@@ -683,6 +744,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       return validated.ok ? { ok: true, value: { payload_digest: validated.value.payload_digest } } : operationFailure("capture", validated);
     },
     capture: async (input): Promise<Result<CaptureAcknowledgementV1>> => {
+      const admitted = await admitFenced("capture");
+      if (!admitted.ok) return admitted;
       const now = dependencies.clock?.now();
       if (!isInstant(now)) return unavailable("capture", "clock did not supply a canonical instant");
       const checked = validateCaptureRequest(input, now);
@@ -750,6 +813,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       return { ok: true, value: { cancelled: true } };
     },
     requestAdmission: async (input) => {
+      const admitted = await admitFenced("request_admission");
+      if (!admitted.ok) return admitted;
       if (!admissionRequestIsExact(input)) return refusal("request_admission", "INVALID_SCHEMA", "admission request is not exact");
       const now = dependencies.clock?.now();
       if (!isInstant(now)) return unavailable("request_admission", "clock did not supply a canonical instant");
@@ -866,6 +931,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       const now = dependencies.clock?.now();
       if (!isInstant(now)) return unavailable(input.operation, "clock did not supply a canonical instant");
       if (Date.parse(now) >= Date.parse(input.deadline_at)) return refusal(input.operation, "DEADLINE_EXCEEDED", "lifecycle deadline elapsed before transition");
+      const admitted = await admitFenced(input.operation);
+      if (!admitted.ok) return admitted;
       const authorizationOperation = lifecycleAuthorizationOperation(input.operation);
       const resource = "record_id" in input ? { record_id: input.record_id } : { candidate_id: input.candidate_id };
       const authorization = await authorizeOperation(dependencies.authorization, {
@@ -879,11 +946,9 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       if (!authorization.ok) return { ok: false, error: { ...authorization.error, operation: input.operation } };
       if ("record_id" in input) {
         try {
-          const readiness = await dependencies.canonical_store.readiness();
-          if (!readiness.ok) return operationFailure(input.operation, readiness);
           const record = await dependencies.canonical_store.readRecord({
             record_id: input.record_id,
-            system_as_of: readiness.value.high_water_cursor,
+            system_as_of: admitted.value.high_water_cursor,
             authorization_receipt_digest: authorization.value.receipt_digest,
           });
           if (!record.ok) return operationFailure(input.operation, record);
@@ -916,6 +981,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       };
     },
     recall: async (input) => {
+      const admitted = await admitFenced("recall_current");
+      if (!admitted.ok) return admitted;
       const now = dependencies.clock?.now();
       if (!isInstant(now)) return unavailable("recall_current", "clock did not supply a canonical instant");
       const validated = validateRecallRequest(input, now);
@@ -934,6 +1001,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       return executeRecall(dependencies, { request, authorization: authorization.value, now });
     },
     proposeCapitalisation: async (input): Promise<Result<CaptureAcknowledgementV1>> => {
+      const admitted = await admitFenced("propose_capitalisation");
+      if (!admitted.ok) return admitted;
       const now = dependencies.clock?.now();
       if (!isInstant(now)) return unavailable("propose_capitalisation", "clock did not supply a canonical instant");
       const validated = validateCapitalisationRequest(input, now);
@@ -952,11 +1021,9 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       if (!sourceAuthorization.ok) return operationFailure("propose_capitalisation", sourceAuthorization as Result<never>);
       let sourceRecord: MemoryRecordV2;
       try {
-        const readiness = await dependencies.canonical_store.readiness();
-        if (!readiness.ok) return operationFailure("propose_capitalisation", readiness);
         const read = await dependencies.canonical_store.readRecord({
           record_id: request.source_record_id,
-          system_as_of: readiness.value.high_water_cursor,
+          system_as_of: admitted.value.high_water_cursor,
           authorization_receipt_digest: sourceAuthorization.value.receipt_digest,
         });
         if (!read.ok) return operationFailure("propose_capitalisation", read);
@@ -1032,6 +1099,37 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
     readiness: async () => {
       const readiness = await dependencies.canonical_store.readiness();
       return readiness.ok ? readiness : operationFailure("admin", readiness);
+    },
+    admin: async (request): Promise<Result<AdminEpochReceiptV1>> => {
+      const provider = dependencies.admin_provider;
+      // §5.5(a): absent provider refuses before any other check — graphify never ships a default administrator (§5.10).
+      if (provider === undefined) return unavailable("admin", "no admin_provider is injected");
+      const checked = validateAdminOperationRequest(request);
+      if (!checked.ok) return operationFailure("admin", checked);
+      const operation = checked.value;
+      if (operation.operation === "bootstrap") {
+        // §5.5(b): bootstrap requires an active fence whose live epoch equals the request epoch, verified BEFORE
+        // dispatch. NOT wrapped by callAdminProvider — an engine/store fault here must not be masked as a provider fault.
+        let readiness: Result<OperationalCapabilityReceiptV1>;
+        try {
+          readiness = await dependencies.canonical_store.readiness();
+        } catch {
+          // §5.7 keeps two distinct codes: a throwing store is broken (STORE_UNAVAILABLE), not a lost fence.
+          return refusal("admin", "STORE_UNAVAILABLE", "canonical store threw instead of returning a capability receipt for bootstrap");
+        }
+        // propagate the store's own FENCE_LOST/STORE_UNAVAILABLE — the engine asserts FENCE_LOST only on an epoch mismatch.
+        if (!readiness.ok) return operationFailure("admin", readiness);
+        if (readiness.value.storage_epoch !== operation.bootstrap.storage_epoch) {
+          return refusal("admin", "FENCE_LOST", "bootstrap storage_epoch does not equal the live storage fence epoch");
+        }
+        return callAdminProvider(() => provider.bootstrap(operation.bootstrap));
+      }
+      // §5.5(c): dispatch to the injected provider per discriminant; §5.5(d): normalizeAdminDenial maps a
+      // provider-declared denial (denial:true) to UNAUTHORIZED, every other failure keeps its own code (e).
+      if (operation.operation === "rotate") return callAdminProvider(() => provider.rotate(operation.rotate));
+      if (operation.operation === "revoke") return callAdminProvider(() => provider.revoke(operation.revoke));
+      // unreachable: validateAdminOperationRequest admits only bootstrap|rotate|revoke.
+      return refusal("admin", "INVALID_SCHEMA", "unsupported admin operation");
     },
   };
   return port;
