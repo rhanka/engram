@@ -520,19 +520,27 @@ export function escapeBundleJsonLiteral(jsonText: string): string {
 }
 
 /**
- * Build the inline classic `<script>` that sets `window.__GRAPHIFY_BUNDLE__` from
+ * Dual bundle-key constants: the exporter writes BOTH keys (same object
+ * reference) so old readers keep working; readers prefer the new key.
+ */
+export const ENGRAM_BUNDLE_KEY = "__ENGRAM_BUNDLE__";
+export const LEGACY_BUNDLE_KEY = "__GRAPHIFY_BUNDLE__";
+
+/**
+ * Build the inline classic `<script>` that sets `window.__ENGRAM_BUNDLE__`
+ * (and the legacy `window.__GRAPHIFY_BUNDLE__` alias, same object) from
  * an escaped JSON string. `bundle` is a map keyed by the filenames the api.js
  * static fallbacks request (`scene.json`, optionally `graph.json`/`entities.json`).
  */
 export function buildBundleScript(bundle: Record<string, unknown>): string {
   const jsonText = JSON.stringify(bundle);
   const literal = escapeBundleJsonLiteral(jsonText);
-  return `<script>window.__GRAPHIFY_BUNDLE__ = JSON.parse(${literal});</script>`;
+  return `<script>window.${ENGRAM_BUNDLE_KEY} = window.${LEGACY_BUNDLE_KEY} = JSON.parse(${literal});</script>`;
 }
 
 /**
  * Inject the bundle script into the single-file template BEFORE the app's
- * (inlined) module/boot script, so `window.__GRAPHIFY_BUNDLE__` exists before
+ * (inlined) module/boot script, so `window.__ENGRAM_BUNDLE__` exists before
  * `mount(App)` runs (C4 ordering). Insertion point, in priority order:
  *   1. immediately before the FIRST `<script type="module"` (the boot script);
  *   2. else immediately before the first `<script` of any kind;
@@ -879,7 +887,7 @@ export function buildStaticStudio(
   // 7. studio.html: the self-contained, double-clickable single-file studio
   //    (default-on, additive, AFTER the manifest). Inlines the position-bearing
   //    scene (and, with --full-offline, graph + entities) as an escaped
-  //    window.__GRAPHIFY_BUNDLE__ injected before the inlined boot script. Best-
+  //    window.__ENGRAM_BUNDLE__ injected before the inlined boot script. Best-
   //    effort: a missing single-file template warns and is a no-op (INV-3).
   let studioHtmlPath: string | null = null;
   let studioHtmlBytes: number | null = null;
@@ -889,7 +897,7 @@ export function buildStaticStudio(
     if (!existsSync(templatePath)) {
       warn(
         `studio export: single-file template not found at ${templatePath}; skipping studio.html ` +
-          "(build it with `GRAPHIFY_STUDIO_SINGLEFILE=1 npm run build` / `node scripts/build-studio-app.mjs`).",
+          "(build it with `ENGRAM_STUDIO_SINGLEFILE=1 npm run build` / `node scripts/build-studio-app.mjs`).",
       );
     } else {
       try {
