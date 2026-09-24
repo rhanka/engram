@@ -2,6 +2,8 @@
 
 [![TypeScript CI](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml/badge.svg?branch=main)](https://github.com/rhanka/graphify/actions/workflows/typescript-ci.yml)
 
+> Engram is a new product: an **agent memory substrate**, rebuilt and repositioned from a knowledge-graph tool. It inherits concepts from the earlier `graphify` project (`@sentropic/graphify`) but is not a continuation of it — names, CLI, env vars, state dirs, schemas, and positioning have changed (see Migration below). Heritage: Engram descends from `graphify`; for the prior line, see the archived `@sentropic/graphify` README and its CHANGELOG. New work targets `engram` only.
+
 **graphify turns a corpus into a reconciled, ontology-typed knowledge graph.** Most knowledge isn't documentary — it doesn't live as one fact in one file. It's *entities and relations scattered across sources*: the same person under three names in twenty-five books, a component named one way in a CSV registry and another way in a manual, a case that only makes sense once its evidence, motive, and method are linked. Prose and docs flatten that structure; a knowledge graph keeps it. graphify extracts canonical entities and typed relations, deduplicates and reconciles them across sources under a configurable ontology, and gives you back a queryable graph your assistant — or you, from the terminal — can reason over.
 
 ![Graphify Ontology Studio — Sherlock Holmes selected: ontology-typed knowledge graph of 25 public-domain mystery works, with the entity panel showing description, communities, and relations](docs/assets/studio.png)
