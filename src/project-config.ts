@@ -100,10 +100,10 @@ function validateStorageMirror(mirror: Record<string, unknown>, index: number): 
     if (isSecretKey(key)) {
       errors.push(
         `storage.mirrors[${index}]: key "${key}" looks like a secret and is not allowed in YAML config. ` +
-          `Use environment variables instead: GRAPHIFY_NEO4J_PASSWORD, GRAPHIFY_NEO4J_USER, ` +
-          `GRAPHIFY_NEO4J_URI, GRAPHIFY_NEO4J_DATABASE, GRAPHIFY_SPANNER_PROJECT, ` +
-          `GRAPHIFY_SPANNER_INSTANCE, GRAPHIFY_SPANNER_DATABASE, GRAPHIFY_POSTGRES_URL, ` +
-          `GRAPHIFY_POSTGRES_SCHEMA, GRAPHIFY_POSTGRES_SSL`,
+          `Use environment variables instead: ENGRAM_NEO4J_PASSWORD, ENGRAM_NEO4J_USER, ` +
+          `ENGRAM_NEO4J_URI, ENGRAM_NEO4J_DATABASE, ENGRAM_SPANNER_PROJECT, ` +
+          `ENGRAM_SPANNER_INSTANCE, ENGRAM_SPANNER_DATABASE, ENGRAM_POSTGRES_URL, ` +
+          `ENGRAM_POSTGRES_SCHEMA, ENGRAM_POSTGRES_SSL`,
       );
     }
   }

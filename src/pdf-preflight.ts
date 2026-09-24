@@ -2,6 +2,7 @@ import * as childProcess from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename, extname, resolve } from "node:path";
+import { engramEnv } from "./env.js";
 
 export type PdfOcrMode = "off" | "auto" | "always" | "dry-run";
 export type PdfTextLayerProvider = "unpdf" | "pdftotext" | "none";
@@ -38,7 +39,7 @@ const DEFAULT_MIN_WORDS_PER_PAGE = 25;
 const DEFAULT_MIN_TOTAL_WORDS = 40;
 const IMAGE_MARKER_PATTERN = /\/(?:Image|XObject)\b/g;
 
-export function parsePdfOcrMode(value = process.env.GRAPHIFY_PDF_OCR): PdfOcrMode {
+export function parsePdfOcrMode(value = engramEnv("ENGRAM_PDF_OCR", "GRAPHIFY_PDF_OCR")): PdfOcrMode {
   const normalized = String(value ?? "auto").trim().toLowerCase();
   if (normalized === "" || normalized === "1" || normalized === "true" || normalized === "yes") return "auto";
   if (normalized === "0" || normalized === "false" || normalized === "no") return "off";
@@ -46,7 +47,7 @@ export function parsePdfOcrMode(value = process.env.GRAPHIFY_PDF_OCR): PdfOcrMod
     return normalized;
   }
   throw new Error(
-    "Unsupported GRAPHIFY_PDF_OCR mode \"" + value + "\". Use off, auto, always, or dry-run.",
+    "Unsupported PDF OCR mode \"" + value + "\" (ENGRAM_PDF_OCR, legacy GRAPHIFY_PDF_OCR). Use off, auto, always, or dry-run.",
   );
 }
 

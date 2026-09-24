@@ -14,6 +14,7 @@ import { homedir, platform, tmpdir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { engramEnv, engramEnvBoolean, engramEnvNumber, pushEngramEnv } from "./env.js";
 import { defaultTranscriptsDir } from "./paths.js";
 import { validateUrl } from "./security.js";
 import type { DetectionResult } from "./types.js";
@@ -108,8 +109,9 @@ function runCommand(
 }
 
 function defaultWhisperCacheDir(): string {
-  if (process.env.GRAPHIFY_WHISPER_CACHE_DIR) {
-    return resolve(process.env.GRAPHIFY_WHISPER_CACHE_DIR);
+  const override = engramEnv("ENGRAM_WHISPER_CACHE_DIR", "GRAPHIFY_WHISPER_CACHE_DIR");
+  if (override) {
+    return resolve(override);
   }
   if (platform() === "win32") {
     return join(
@@ -122,11 +124,11 @@ function defaultWhisperCacheDir(): string {
 }
 
 function resolveRequestedModel(modelName?: string): { requested: string; resolved: string } {
-  const requested = modelName ?? process.env.GRAPHIFY_WHISPER_MODEL ?? DEFAULT_MODEL;
+  const requested = modelName ?? engramEnv("ENGRAM_WHISPER_MODEL", "GRAPHIFY_WHISPER_MODEL") ?? DEFAULT_MODEL;
   const resolved = MODEL_ALIASES[requested] ?? requested;
   if (!SUPPORTED_MODELS.has(resolved)) {
     throw new Error(
-      "Unsupported GRAPHIFY_WHISPER_MODEL \"" + requested + "\". " +
+      "Unsupported whisper model \"" + requested + "\" (ENGRAM_WHISPER_MODEL, legacy GRAPHIFY_WHISPER_MODEL). " +
       "Supported local TS faster-whisper models: " + [...SUPPORTED_MODELS].sort().join(", "),
     );
   }
@@ -152,11 +154,11 @@ function validateWhisperModelDir(modelDir: string, resolvedModel: string): void 
 }
 
 function whisperModelRepoId(resolvedModel: string): string {
-  return process.env.GRAPHIFY_WHISPER_MODEL_ID ?? "Systran/faster-whisper-" + resolvedModel;
+  return engramEnv("ENGRAM_WHISPER_MODEL_ID", "GRAPHIFY_WHISPER_MODEL_ID") ?? "Systran/faster-whisper-" + resolvedModel;
 }
 
 function whisperModelRevision(): string {
-  return process.env.GRAPHIFY_WHISPER_MODEL_REVISION ?? "main";
+  return engramEnv("ENGRAM_WHISPER_MODEL_REVISION", "GRAPHIFY_WHISPER_MODEL_REVISION") ?? "main";
 }
 
 function modelDownloadUrl(repoId: string, revision: string, fileName: string): string {
@@ -166,7 +168,7 @@ function modelDownloadUrl(repoId: string, revision: string, fileName: string): s
 function normalizeModelError(detail: string): string {
   if (/HTTP 404|not found/i.test(detail)) {
     return detail + ". The CTranslate2 faster-whisper model file was not found. " +
-      "Set GRAPHIFY_WHISPER_MODEL_ID or GRAPHIFY_WHISPER_MODEL_DIR for a custom model repository/path.";
+      "Set ENGRAM_WHISPER_MODEL_ID or ENGRAM_WHISPER_MODEL_DIR for a custom model repository/path.";
   }
   return detail;
 }
@@ -181,7 +183,7 @@ async function downloadFile(url: string, destination: string): Promise<void> {
 
 async function ensureWhisperArtifacts(modelName?: string): Promise<WhisperArtifacts> {
   const { requested, resolved } = resolveRequestedModel(modelName);
-  const explicitModelDir = process.env.GRAPHIFY_WHISPER_MODEL_DIR;
+  const explicitModelDir = engramEnv("ENGRAM_WHISPER_MODEL_DIR", "GRAPHIFY_WHISPER_MODEL_DIR");
   if (explicitModelDir) {
     const modelDir = resolve(explicitModelDir);
     validateWhisperModelDir(modelDir, resolved);
@@ -253,24 +255,19 @@ async function loadFasterWhisperModule(): Promise<FasterWhisperModule> {
   return fasterWhisperModulePromise;
 }
 
-function envNumber(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : fallback;
+function envNumber(newKey: string, legacyKey: string, fallback: number): number {
+  return engramEnvNumber(newKey, legacyKey, fallback);
 }
 
-function envBoolean(name: string, fallback: boolean): boolean {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  return !["0", "false", "no", "off"].includes(raw.toLowerCase());
+function envBoolean(newKey: string, legacyKey: string, fallback: boolean): boolean {
+  return engramEnvBoolean(newKey, legacyKey, fallback);
 }
 
 async function getWhisperModel(modelName?: string): Promise<{ model: FasterWhisperModel; artifacts: WhisperArtifacts }> {
   const artifacts = await ensureWhisperArtifacts(modelName);
-  const device = process.env.GRAPHIFY_WHISPER_DEVICE ?? "cpu";
-  const deviceIndex = envNumber("GRAPHIFY_WHISPER_DEVICE_INDEX", 0);
-  const computeType = process.env.GRAPHIFY_WHISPER_COMPUTE_TYPE ?? "int8";
+  const device = engramEnv("ENGRAM_WHISPER_DEVICE", "GRAPHIFY_WHISPER_DEVICE") ?? "cpu";
+  const deviceIndex = envNumber("ENGRAM_WHISPER_DEVICE_INDEX", "GRAPHIFY_WHISPER_DEVICE_INDEX", 0);
+  const computeType = engramEnv("ENGRAM_WHISPER_COMPUTE_TYPE", "GRAPHIFY_WHISPER_COMPUTE_TYPE") ?? "int8";
   const cacheKey = [artifacts.modelDir, device, String(deviceIndex), computeType].join("|");
   const existing = modelCache.get(cacheKey);
   if (existing) {
@@ -368,7 +365,7 @@ export async function downloadAudio(url: string, outputDir: string): Promise<str
 export function buildWhisperPrompt(
   godNodes: Array<{ label?: string | null }>,
 ): string {
-  const override = process.env.GRAPHIFY_WHISPER_PROMPT;
+  const override = engramEnv("ENGRAM_WHISPER_PROMPT", "GRAPHIFY_WHISPER_PROMPT");
   if (override) return override;
 
   const labels = godNodes
@@ -399,12 +396,13 @@ export async function transcribe(
     return transcriptPath;
   }
 
-  const prompt = initialPrompt ?? process.env.GRAPHIFY_WHISPER_PROMPT ?? FALLBACK_PROMPT;
-  const requestedModel = process.env.GRAPHIFY_WHISPER_MODEL ?? DEFAULT_MODEL;
+  const prompt = initialPrompt ?? engramEnv("ENGRAM_WHISPER_PROMPT", "GRAPHIFY_WHISPER_PROMPT") ?? FALLBACK_PROMPT;
+  const requestedModel = engramEnv("ENGRAM_WHISPER_MODEL", "GRAPHIFY_WHISPER_MODEL") ?? DEFAULT_MODEL;
   const previousFfmpegPath = process.env.FASTER_WHISPER_FFMPEG_PATH;
-  const shouldRestoreFfmpegPath = previousFfmpegPath === undefined && Boolean(process.env.GRAPHIFY_FFMPEG_BIN);
-  if (shouldRestoreFfmpegPath) {
-    process.env.FASTER_WHISPER_FFMPEG_PATH = process.env.GRAPHIFY_FFMPEG_BIN;
+  const ffmpegBin = engramEnv("ENGRAM_FFMPEG_BIN", "GRAPHIFY_FFMPEG_BIN");
+  const shouldRestoreFfmpegPath = previousFfmpegPath === undefined && Boolean(ffmpegBin);
+  if (shouldRestoreFfmpegPath && ffmpegBin) {
+    process.env.FASTER_WHISPER_FFMPEG_PATH = ffmpegBin;
   }
 
   try {
@@ -413,11 +411,11 @@ export async function transcribe(
     const [segments] = await model.transcribe(
       audioPath,
       {
-        beamSize: envNumber("GRAPHIFY_WHISPER_BEAM_SIZE", 5),
-        vadFilter: envBoolean("GRAPHIFY_WHISPER_VAD_FILTER", true),
+        beamSize: envNumber("ENGRAM_WHISPER_BEAM_SIZE", "GRAPHIFY_WHISPER_BEAM_SIZE", 5),
+        vadFilter: envBoolean("ENGRAM_WHISPER_VAD_FILTER", "GRAPHIFY_WHISPER_VAD_FILTER", true),
         initialPrompt: prompt,
       },
-      process.env.GRAPHIFY_WHISPER_LANGUAGE,
+      engramEnv("ENGRAM_WHISPER_LANGUAGE", "GRAPHIFY_WHISPER_LANGUAGE"),
       "transcribe",
     );
     const transcript = extractTranscriptText(segments, prompt);
@@ -426,7 +424,7 @@ export async function transcribe(
       console.log("  model alias: " + artifacts.requestedModel + " -> " + artifacts.resolvedModel);
     }
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith("Unsupported GRAPHIFY_WHISPER_MODEL")) {
+    if (error instanceof Error && error.message.startsWith("Unsupported whisper model")) {
       throw error;
     }
     const detail = error instanceof Error ? error.message : String(error);
@@ -488,10 +486,9 @@ export async function augmentDetectionWithTranscripts(
     return { detection: nextDetection, transcriptPaths: [], prompt };
   }
 
-  const previousModel = process.env.GRAPHIFY_WHISPER_MODEL;
-  if (options?.whisperModel) {
-    process.env.GRAPHIFY_WHISPER_MODEL = options.whisperModel;
-  }
+  const restoreWhisperModel = options?.whisperModel
+    ? pushEngramEnv("ENGRAM_WHISPER_MODEL", "GRAPHIFY_WHISPER_MODEL", options.whisperModel)
+    : undefined;
 
   try {
     const transcriptPaths = await transcribeAll(
@@ -504,12 +501,6 @@ export async function augmentDetectionWithTranscripts(
     source.document = [...existingDocuments, ...transcriptPaths];
     return { detection: nextDetection, transcriptPaths, prompt };
   } finally {
-    if (options?.whisperModel) {
-      if (previousModel === undefined) {
-        delete process.env.GRAPHIFY_WHISPER_MODEL;
-      } else {
-        process.env.GRAPHIFY_WHISPER_MODEL = previousModel;
-      }
-    }
+    restoreWhisperModel?.();
   }
 }

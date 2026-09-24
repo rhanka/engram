@@ -51,7 +51,7 @@ const DEFAULT_TOP_K = 10;
 // ---------------------------------------------------------------------------
 
 export interface PgVectorStoreConfig extends GraphStoreConfig {
-  /** Full DSN; env-only (GRAPHIFY_POSTGRES_URL). May embed credentials. */
+  /** Full DSN; env-only (ENGRAM_POSTGRES_URL). May embed credentials. */
   connectionString?: string;
   /** Embedding config (provider/model/dimension); dimension drives the schema. */
   embedding?: { provider?: string; model?: string; dimension?: number };
@@ -172,7 +172,7 @@ export async function createPgVectorStore(
   const connectionString = config.connectionString;
   if (!connectionString) {
     throw new Error(
-      "pgvector store requires a connection string (env GRAPHIFY_POSTGRES_URL)",
+      "pgvector store requires a connection string (env ENGRAM_POSTGRES_URL)",
     );
   }
 
