@@ -54,7 +54,13 @@ function pathspecForPrefix(prefix: string): string {
 }
 
 function isGraphifyMemoryPath(path: string): boolean {
-  return path === ".graphify/memory" || path.startsWith(".graphify/memory/");
+  // New `.engram/memory` first, legacy `.graphify/memory` still recognised.
+  return (
+    path === ".engram/memory" ||
+    path.startsWith(".engram/memory/") ||
+    path === ".graphify/memory" ||
+    path.startsWith(".graphify/memory/")
+  );
 }
 
 function walkFiles(dir: string, root: string): string[] {
