@@ -182,14 +182,18 @@ describe("native SQLite memory broker", () => {
     expect(e2).toBeGreaterThan(e1);
     expect(e1).toBeGreaterThan(0n); // strictly increasing across the crash/restart, never reset
 
-    // (4) stale instance: while this store is live, an intruder advances the durable epoch (dispossession); the
-    // store's next op fails FENCE_LOST, and that is TERMINAL — a second op fails too, with no silent re-acquire.
+    // (4) stale instance: an intruder advances the durable epoch (dispossession); the store's next op is FENCE_LOST.
     const { memory } = createL3Memory("accept", restarted);
     const native = await import("../graphify-memory/node_modules/better-sqlite3/lib/index.js");
-    const intruder = new native.default(target);
-    intruder.prepare("UPDATE memory_meta SET value = ? WHERE key = 'storage_epoch'").run("999999");
-    intruder.close();
+    const setDurableEpoch = (value: string) => { const db = new native.default(target); db.prepare("UPDATE memory_meta SET value = ? WHERE key = 'storage_epoch'").run(value); db.close(); };
+    setDurableEpoch("999999");
     await expect(memory.capture(captureRequest("idempotency-key-stale-1", "1"))).resolves.toMatchObject({ ok: false, error: { code: "FENCE_LOST" } });
+    // TERMINAL, no silent re-acquire — the discriminating step: the intruder RESTORES the store's own epoch (e2), so
+    // the live epoch-drift condition no longer holds, yet the next op is STILL FENCE_LOST. This isolates the terminal
+    // `#fenceLost` latch from the live check: WITHOUT the latch (mutation M7) the store would silently re-acquire on
+    // the now-matching epoch and this op would SUCCEED, turning the case red. Restoring the epoch is what makes the
+    // "terminal" half of the title falsifiable rather than a façade.
+    setDurableEpoch(e2.toString());
     await expect(memory.capture(captureRequest("idempotency-key-stale-2", "2"))).resolves.toMatchObject({ ok: false, error: { code: "FENCE_LOST" } });
     await restarted.close();
   });
