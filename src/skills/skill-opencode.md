@@ -19,20 +19,20 @@ Turn any folder of files into a navigable knowledge graph with community detecti
 /engram <path> --pdf-ocr auto                       # preflight PDFs; OCR scanned/low-text PDFs with mistral-ocr when needed
 /engram <path> --update                             # incremental - re-extract only new/changed files
 /engram <path> --cluster-only                       # rerun clustering on existing graph
-graphify studio export .graphify/studio               # build the self-contained static Ontology Studio (open by serving it with any static file server)
+engram studio export .graphify/studio               # build the self-contained static Ontology Studio (open by serving it with any static file server)
 /engram <path> --svg                                # also export graph.svg (embeds in Notion, GitHub)
 /engram <path> --graphml                            # export graph.graphml (Gephi, yEd)
 /engram <path> --neo4j                              # generate .graphify/cypher.txt for Neo4j
 /engram <path> --neo4j-push bolt://localhost:7687   # push directly to Neo4j
 /engram <path> --mcp                                # start MCP stdio server for agent access
 /engram <path> --watch                              # watch folder, auto-rebuild on code changes (no LLM needed)
-graphify wiki describe --graph .graphify/graph.json --mode assistant --targets all  # opt-in description sidecars
-graphify export wiki --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
-graphify export obsidian --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
+engram wiki describe --graph .graphify/graph.json --mode assistant --targets all  # opt-in description sidecars
+engram export wiki --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
+engram export obsidian --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
 /engram add <url>                                   # fetch URL, save to ./raw, update graph
 /engram add <url> --author "Name"                   # tag who wrote it
 /engram add <url> --contributor "Name"              # tag who added it to the corpus
-/engram migrate-state --dry-run                    # plan graphify-out -> .graphify migration
+/engram migrate-state --dry-run                    # plan graphify-out -> .engram migration
 /engram query "<question>"                          # BFS traversal - broad context
 /engram query "<question>" --dfs                    # DFS - trace a specific path
 /engram query "<question>" --budget 1500            # cap answer at N tokens
@@ -47,7 +47,7 @@ graphify export obsidian --graph .graphify/graph.json --descriptions .graphify/w
 
 ## What engram is for
 
-graphify is built around Andrej Karpathy's /raw folder workflow: drop anything into a folder - papers, tweets, screenshots, code, notes - and get a structured knowledge graph that shows you what you didn't know was connected.
+engram is built around Andrej Karpathy's /raw folder workflow: drop anything into a folder - papers, tweets, screenshots, code, notes - and get a structured knowledge graph that shows you what you didn't know was connected.
 
 Three things it does that Claude alone cannot:
 1. **Persistent graph** - relationships are stored in `.graphify/graph.json` and survive across sessions. Ask questions weeks later without re-reading everything.
@@ -430,12 +430,12 @@ Replace INPUT_PATH with the actual path.
 
 ### Step 5 - Label communities and enrich
 
-**Enrichment commands (no API key needed; opt-in, non-destructive).** On a built or curated `graph.json` you can stamp enrichment in place without re-extracting: `graphify describe .` (node descriptions), `graphify label .` (community labels), and `graphify cite .` (grounded citations). `graphify cite` (alias `ground-citations`) scans the corpus and grounds per-entity `node.citations[]` entries `{quote, source_file, source_location}` — populating **new** verbatim citations, not just projecting existing ones. **Heuristic mode is the no-key DEFAULT** (`--mode heuristic|assistant|api`); it is **anti-hallucination** — every emitted `quote` is a verified verbatim substring of the source, and any quote that cannot be relocated is dropped, never invented. It UNIONS with existing citations (never clobbers). Symmetric to `describe`/`label` and, like them, **opt-in** (NOT auto-run). **Run `graphify cite .` BEFORE the studio/wiki export** so entity panels ship non-null citations.
+**Enrichment commands (no API key needed; opt-in, non-destructive).** On a built or curated `graph.json` you can stamp enrichment in place without re-extracting: `engram describe .` (node descriptions), `engram label .` (community labels), and `engram cite .` (grounded citations). `engram cite` (alias `ground-citations`) scans the corpus and grounds per-entity `node.citations[]` entries `{quote, source_file, source_location}` — populating **new** verbatim citations, not just projecting existing ones. **Heuristic mode is the no-key DEFAULT** (`--mode heuristic|assistant|api`); it is **anti-hallucination** — every emitted `quote` is a verified verbatim substring of the source, and any quote that cannot be relocated is dropped, never invented. It UNIONS with existing citations (never clobbers). Symmetric to `describe`/`label` and, like them, **opt-in** (NOT auto-run). **Run `engram cite .` BEFORE the studio/wiki export** so entity panels ship non-null citations.
 
 ```bash
-graphify cite .                 # no-key heuristic grounding (default)
-graphify cite . --only-missing  # additive pass: only nodes with no citations yet
-graphify cite . --dry-run       # report coverage without writing
+engram cite .                 # no-key heuristic grounding (default)
+engram cite . --only-missing  # additive pass: only nodes with no citations yet
+engram cite . --dry-run       # report coverage without writing
 ```
 
 Read `.graphify/.graphify_analysis.json`. For each community key, look at its node labels and write a 2-5 word plain-language name (e.g. "Attention Mechanism", "Training Pipeline", "Data Loading").
@@ -481,12 +481,12 @@ Replace INPUT_PATH with the actual path.
 Wiki descriptions are opt-in and two-step. First generate sidecars, then pass their index into wiki or Obsidian rendering:
 
 ```bash
-graphify wiki describe --graph .graphify/graph.json --mode assistant --targets all
+engram wiki describe --graph .graphify/graph.json --mode assistant --targets all
 # or, for direct mode:
-graphify wiki describe --graph .graphify/graph.json --mode direct --backend openai --targets all
+engram wiki describe --graph .graphify/graph.json --mode direct --backend openai --targets all
 
-graphify export wiki --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
-graphify export obsidian --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
+engram export wiki --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
+engram export obsidian --graph .graphify/graph.json --descriptions .graphify/wiki/descriptions.json
 ```
 
 Sidecars live under `.graphify/wiki/descriptions/` with an index at `.graphify/wiki/descriptions.json`. They record graph hash, prompt/generator provenance, evidence refs, and cache keys; existing generated sidecars may be reused when a fresh generation does not complete. `insufficient_evidence` sidecars render no Description section. This never mutates `.graphify/graph.json`.
@@ -525,7 +525,7 @@ Generate the static Ontology Studio (always). It bundles the prebuilt studio SPA
 
 ```bash
 # Default state dir is .graphify; pass --profile <path> to emit class-hierarchies.json for ontology profiles
-graphify studio export .graphify/studio
+engram studio export .graphify/studio
 ```
 
 The studio scales to large graphs (WebGL render + pre-computed positions), so there is no node-count cap — even oversized graphs export to the studio. To open it, serve the export dir (`.graphify/studio`) with any static file server and load `index.html` in a browser.
@@ -605,7 +605,7 @@ console.log('graph.graphml written - open in Gephi, yEd, or any GraphML tool');
 ### Step 7d - MCP server (only if --mcp flag)
 
 ```bash
-npx graphify serve .graphify/graph.json
+npx engram serve .graphify/graph.json
 ```
 
 This starts a stdio MCP server that exposes tools: `query_graph`, `get_node`, `get_neighbors`, `get_community`, `god_nodes`, `graph_stats`, `shortest_path`. Add to Claude Desktop or any MCP-compatible agent orchestrator so other agents can query the graph live.
@@ -614,9 +614,9 @@ To configure in Claude Desktop, add to `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "graphify": {
+    "engram": {
       "command": "npx",
-      "args": ["graphify", "serve", "/absolute/path/to/.graphify/graph.json"]
+      "args": ["engram", "serve", "/absolute/path/to/.graphify/graph.json"]
     }
   }
 }
@@ -908,7 +908,7 @@ If it fails, stop and tell the user to run `/engram <path>` first.
 
 ### Step 0 - Constrained query expansion (before traversal)
 
-`graphify query` matches nodes by case-folded substring + IDF - **no stemming, no synonyms, no cross-language match**. When the question uses different vocabulary than the graph labels (user says "обработчик" / graph says "handler"; "authentication" / "Guardian"), the literal matcher returns 0 hits. Expand the query against the **actual graph vocabulary** first - never invent tokens:
+`engram query` matches nodes by case-folded substring + IDF - **no stemming, no synonyms, no cross-language match**. When the question uses different vocabulary than the graph labels (user says "обработчик" / graph says "handler"; "authentication" / "Guardian"), the literal matcher returns 0 hits. Expand the query against the **actual graph vocabulary** first - never invent tokens:
 
 ```bash
 node -e "
@@ -933,15 +933,15 @@ Read `.graphify/.vocab.txt`, then pick **up to 12 tokens from that exact list** 
 - No vocab token matches at all: output an empty list and tell the user the corpus has no relevant vocabulary; do not fabricate a search.
 - Cross-language: e.g. Russian "аутентификация" - look for `auth`, `credential`, `token`, `security` **iff present** in the vocab.
 
-Print the selection before querying (`Query expanded to (from graph vocab, N tokens): [...]`), then run `graphify query` with the joined expanded tokens (keep the original question only for `save-result`).
+Print the selection before querying (`Query expanded to (from graph vocab, N tokens): [...]`), then run `engram query` with the joined expanded tokens (keep the original question only for `save-result`).
 
 Before deep traversal, run the compact first-hop summary and use it to choose the right graph action:
 
 ```bash
-graphify summary --graph .graphify/graph.json
-graphify recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json
-graphify review-analysis --files src/auth.ts --graph .graphify/graph.json
-graphify review-eval --cases .graphify/review-cases.json --graph .graphify/graph.json
+engram summary --graph .graphify/graph.json
+engram recommend-commits --files src/auth.ts,src/session.ts --graph .graphify/graph.json
+engram review-analysis --files src/auth.ts --graph .graphify/graph.json
+engram review-eval --cases .graphify/review-cases.json --graph .graphify/graph.json
 ```
 
 Load `.graphify/graph.json`, then:
@@ -1233,7 +1233,7 @@ Supported URL types (auto-detected):
 Start a background watcher that monitors a folder and auto-updates the graph when files change.
 
 ```bash
-npx graphify watch INPUT_PATH --debounce 3
+npx engram watch INPUT_PATH --debounce 3
 ```
 
 Replace INPUT_PATH with the folder to watch. Behavior depends on what changed:
@@ -1254,29 +1254,29 @@ For agentic workflows: run `--watch` in a background terminal. Code changes from
 Install a post-commit hook that auto-rebuilds the graph after every commit. No background process needed - triggers once per commit, works with any editor.
 
 ```bash
-graphify hook install    # install
-graphify hook uninstall  # remove
-graphify hook status     # check
+engram hook install    # install
+engram hook uninstall  # remove
+engram hook status     # check
 ```
 
 After every `git commit`, the hook detects which code files changed (via `git diff HEAD~1`), re-runs AST extraction on those files, and rebuilds `graph.json` and `GRAPH_REPORT.md`. Doc/image changes are ignored by the hook - run `/engram --update` manually for those.
 
-If a post-commit hook already exists, graphify appends to it rather than replacing it.
+If a post-commit hook already exists, engram appends to it rather than replacing it.
 
 ---
 
 ## For native CLAUDE.md integration
 
-Run once per project to make graphify always-on in Claude Code sessions:
+Run once per project to make engram always-on in Claude Code sessions:
 
 ```bash
-graphify claude install
+engram claude install
 ```
 
-This writes a `## graphify` section to the local `CLAUDE.md` that instructs Claude to check the graph before answering codebase questions and rebuild it after code changes. No manual `/engram` needed in future sessions.
+This writes a `## engram` section to the local `CLAUDE.md` that instructs Claude to check the graph before answering codebase questions and rebuild it after code changes. No manual `/engram` needed in future sessions.
 
 ```bash
-graphify claude uninstall  # remove the section
+engram claude uninstall  # remove the section
 ```
 
 ---
@@ -1315,23 +1315,23 @@ Use ontology lifecycle commands only when profile artifacts and `.graphify/ontol
 - Write with `ontology-patch-apply --profile-state .graphify/profile/profile-state.json --patch patch.json --write` only after explicit user approval.
 - Always warn if the Git worktree is dirty before proposing a write apply.
 - Agents must not edit `.graphify/graph.json` or derived `.graphify/ontology/*.json` directly.
-- The default MCP server stays read-only; mutation tools require explicit `graphify ontology serve --config graphify.yaml --write`.
-- Use the Public Domain Mystery Sagas repo as an external UAT and UI-mock corpus only; do not add its real corpus as Graphify package fixtures.
+- The default MCP server stays read-only; mutation tools require explicit `engram ontology serve --config graphify.yaml --write`.
+- Use the Public Domain Mystery Sagas repo as an external UAT and UI-mock corpus only; do not add its real corpus as Engram package fixtures.
 
 Do not add embeddings, databases, a resident LLM backend, or a forked OCR/PDF pipeline for this branch.
 
 ## Lifecycle State
 
 - Runtime state lives under `.graphify/`; do not create legacy visible state directories.
-- If `.graphify/graph.json` is missing but legacy `graphify-out/graph.json` exists, run `graphify migrate-state --dry-run` first. If it reports tracked legacy artifacts, ask before using the recommended `git mv -f graphify-out .graphify` and commit message; do not auto-stage or auto-commit.
-- For architecture or codebase questions, when `.graphify/graph.json` exists, first run `graphify query "<question>"` (or `graphify path "<A>" "<B>"` / `graphify explain "<concept>"`); these return a scoped subgraph, usually much smaller than `GRAPH_REPORT.md` or raw grep output.
+- If `.graphify/graph.json` is missing but legacy `graphify-out/graph.json` exists, run `engram migrate-state --dry-run` first. If it reports tracked legacy artifacts, ask before using the recommended `git mv -f graphify-out .engram` and commit message; do not auto-stage or auto-commit.
+- For architecture or codebase questions, when `.graphify/graph.json` exists, first run `engram query "<question>"` (or `engram path "<A>" "<B>"` / `engram explain "<concept>"`); these return a scoped subgraph, usually much smaller than `GRAPH_REPORT.md` or raw grep output.
 - Use `.graphify/wiki/index.md` first when present; read `.graphify/GRAPH_REPORT.md` only for broad architecture review or when `query` / `path` / `explain` do not surface enough context.
-- If `.graphify/needs_update` exists or `.graphify/branch.json` has `"stale": true`, tell the user the graph is stale and run the platform graphify command with `--update` before relying on semantic results.
-- Before proposing or committing `.graphify` artifacts, run `graphify portable-check .graphify`; commit-safe graph artifacts must use repo-relative paths, and never commit `.graphify/branch.json`, `.graphify/worktree.json`, `.graphify/needs_update`, or `.graphify/cache/`. If a repo already tracks any of them, first add them to `.gitignore`, then propose `git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update` and `git rm -r --cached .graphify/cache`; never mutate git state without asking.
-- Git hooks may mark stale state after branch switches, merges, and rewrites. Never delete `.graphify/` automatically; use `graphify state prune` only as a non-destructive cleanup preview.
+- If `.graphify/needs_update` exists or `.graphify/branch.json` has `"stale": true`, tell the user the graph is stale and run the platform engram command with `--update` before relying on semantic results.
+- Before proposing or committing `.graphify` artifacts, run `engram portable-check .graphify`; commit-safe graph artifacts must use repo-relative paths, and never commit `.graphify/branch.json`, `.graphify/worktree.json`, `.graphify/needs_update`, or `.graphify/cache/`. If a repo already tracks any of them, first add them to `.gitignore`, then propose `git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update` and `git rm -r --cached .graphify/cache`; never mutate git state without asking.
+- Git hooks may mark stale state after branch switches, merges, and rewrites. Never delete `.graphify/` automatically; use `engram state prune` only as a non-destructive cleanup preview.
 
-Commit recommendation workflow: `graphify recommend-commits` is advisory-only. It may suggest groups and commit messages, but the user remains the actor; do not auto-stage, auto-commit, or mutate branches.
+Commit recommendation workflow: `engram recommend-commits` is advisory-only. It may suggest groups and commit messages, but the user remains the actor; do not auto-stage, auto-commit, or mutate branches.
 
-CRG review workflow: `graphify minimal-context` is the first review call. Keep graph review context within `<=5 graph tool calls` and `<=800` graph-context tokens. If `.graphify/needs_update` exists or `.graphify/branch.json` has `stale=true`, warn and update before trusting semantic review output. Then follow only the compact route: `graphify detect-changes` for risk, `graphify affected-flows` for flow impact, and `graphify review-context` for snippets or radius detail. If `.graphify/flows.json` is missing and flows are needed, run `graphify flows build` first. Explicit `--files`, `--base`, `--head`, or `--staged` inputs override unrelated dirty worktree noise; mention dirty worktrees as a warning and never mutate git state.
+CRG review workflow: `engram minimal-context` is the first review call. Keep graph review context within `<=5 graph tool calls` and `<=800` graph-context tokens. If `.graphify/needs_update` exists or `.graphify/branch.json` has `stale=true`, warn and update before trusting semantic review output. Then follow only the compact route: `engram detect-changes` for risk, `engram affected-flows` for flow impact, and `engram review-context` for snippets or radius detail. If `.graphify/flows.json` is missing and flows are needed, run `engram flows build` first. Explicit `--files`, `--base`, `--head`, or `--staged` inputs override unrelated dirty worktree noise; mention dirty worktrees as a warning and never mutate git state.
 
-Review analysis workflow: `graphify review-analysis` adds blast radius, bridge nodes, test-gap hints, impacted communities, and multimodal/doc safety. `graphify review-eval` is the deterministic evaluation harness for token savings, impacted-file recall, review summary precision, and multimodal regression safety.
+Review analysis workflow: `engram review-analysis` adds blast radius, bridge nodes, test-gap hints, impacted communities, and multimodal/doc safety. `engram review-eval` is the deterministic evaluation harness for token savings, impacted-file recall, review summary precision, and multimodal regression safety.
