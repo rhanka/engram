@@ -20,7 +20,7 @@ afterEach(() => {
 function legacyGraphProject(citationCount: number): string {
   const dir = mkdtempSync(join(tmpdir(), "graphify-backfill-cli-"));
   tempDirs.push(dir);
-  const graphDir = join(dir, ".graphify");
+  const graphDir = join(dir, ".engram");
   mkdirSync(graphDir, { recursive: true });
   const citations = [];
   for (let i = 0; i < citationCount; i += 1) {
@@ -80,16 +80,16 @@ describe("graphify backfill-citations", () => {
     const dir = legacyGraphProject(20);
     const { logs } = await runCli(["backfill-citations", dir], dir);
 
-    const graph = JSON.parse(readFileSync(join(dir, ".graphify", "graph.json"), "utf-8")) as {
+    const graph = JSON.parse(readFileSync(join(dir, ".engram", "graph.json"), "utf-8")) as {
       nodes: Array<{ id: string; citations?: unknown[]; citation_count?: number }>;
     };
     const sherlock = graph.nodes.find((n) => n.id === "sherlock")!;
     expect(sherlock.citation_count).toBe(20);
     expect(sherlock.citations).toHaveLength(8); // default K (mixed/global)
 
-    expect(existsSync(join(dir, ".graphify", "ontology", "citations.json"))).toBe(true);
+    expect(existsSync(join(dir, ".engram", "ontology", "citations.json"))).toBe(true);
     const sidecar = JSON.parse(
-      readFileSync(join(dir, ".graphify", "ontology", "citations.json"), "utf-8"),
+      readFileSync(join(dir, ".engram", "ontology", "citations.json"), "utf-8"),
     ) as { nodes: Record<string, { count: number; citations: unknown[] }> };
     expect(sidecar.nodes.sherlock.count).toBe(20);
     expect(sidecar.nodes.sherlock.citations).toHaveLength(20);
@@ -102,10 +102,10 @@ describe("graphify backfill-citations", () => {
   it("is a no-op on a second run (idempotent)", async () => {
     const dir = legacyGraphProject(20);
     await runCli(["backfill-citations", dir], dir);
-    const afterFirst = readFileSync(join(dir, ".graphify", "graph.json"), "utf-8");
+    const afterFirst = readFileSync(join(dir, ".engram", "graph.json"), "utf-8");
 
     const { logs } = await runCli(["backfill-citations", dir], dir);
-    const afterSecond = readFileSync(join(dir, ".graphify", "graph.json"), "utf-8");
+    const afterSecond = readFileSync(join(dir, ".engram", "graph.json"), "utf-8");
 
     expect(afterSecond).toBe(afterFirst); // graph.json untouched
     expect(logs.join("\n")).toMatch(/nothing to backfill/i);
@@ -114,7 +114,7 @@ describe("graphify backfill-citations", () => {
   it("respects --citations-top-k", async () => {
     const dir = legacyGraphProject(20);
     await runCli(["backfill-citations", dir, "--citations-top-k", "3"], dir);
-    const graph = JSON.parse(readFileSync(join(dir, ".graphify", "graph.json"), "utf-8")) as {
+    const graph = JSON.parse(readFileSync(join(dir, ".engram", "graph.json"), "utf-8")) as {
       nodes: Array<{ id: string; citations?: unknown[]; citation_count?: number }>;
     };
     const sherlock = graph.nodes.find((n) => n.id === "sherlock")!;

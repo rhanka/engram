@@ -187,7 +187,7 @@ describe("WP4 ACLP-AM UAT — hierarchy bundle and studio routes", () => {
     const byName = new Map(manifest.artifacts.map((artifact: { name: string }) => [artifact.name, artifact]));
     expect(byName.get("scene-hierarchies")).toMatchObject({
       path: "scene-hierarchies.json",
-      schema: "graphify_scene_hierarchies_v1",
+      schema: "engram_scene_hierarchies_v1",
       present: true,
     });
     expect(byName.get("reconciliation-candidates")).toMatchObject({ present: true });

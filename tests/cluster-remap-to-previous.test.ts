@@ -109,7 +109,7 @@ describeIntegration("cluster-only CLI — remapCommunitiesToPrevious integration
   itIntegration("cluster-only preserves aligned label keys after re-clustering when prior community assignment exists", async () => {
     // Build a minimal graph.json with nodes that have a community attribute
     // and a matching .graphify_labels.json keyed on those cids.
-    const stateDir = join(tmpDir, ".graphify");
+    const stateDir = join(tmpDir, ".engram");
     mkdirSync(stateDir, { recursive: true });
 
     const sentinelA = 4242;

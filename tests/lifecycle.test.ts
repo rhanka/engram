@@ -39,8 +39,8 @@ describe("lifecycle metadata", () => {
     expect(metadata.worktree.lastAnalyzedHead).toBe(head);
     expect(metadata.branch.lastAnalyzedHead).toBe(head);
     expect(metadata.branch.stale).toBe(false);
-    expect(existsSync(join(tmpDir, ".graphify", "worktree.json"))).toBe(true);
-    expect(existsSync(join(tmpDir, ".graphify", "branch.json"))).toBe(true);
+    expect(existsSync(join(tmpDir, ".engram", "worktree.json"))).toBe(true);
+    expect(existsSync(join(tmpDir, ".engram", "branch.json"))).toBe(true);
   });
 
   it("marks stale state and clears it after a successful analyzed run", () => {
@@ -50,13 +50,13 @@ describe("lifecycle metadata", () => {
 
     expect(stale.branch.stale).toBe(true);
     expect(stale.branch.staleReason).toBe("post-merge");
-    expect(existsSync(join(tmpDir, ".graphify", "needs_update"))).toBe(true);
+    expect(existsSync(join(tmpDir, ".engram", "needs_update"))).toBe(true);
 
     const analyzed = markLifecycleAnalyzed(tmpDir);
 
     expect(analyzed.branch.stale).toBe(false);
     expect(analyzed.branch.staleReason).toBeNull();
-    expect(existsSync(join(tmpDir, ".graphify", "needs_update"))).toBe(false);
+    expect(existsSync(join(tmpDir, ".engram", "needs_update"))).toBe(false);
   });
 
   it("resolves linked worktree git directories without assuming .git is a directory", () => {
@@ -80,10 +80,10 @@ describe("lifecycle metadata", () => {
     expect(plan.destructive).toBe(false);
     expect(plan.candidates).toEqual([
       {
-        path: join(tmpDir, ".graphify", "needs_update"),
+        path: join(tmpDir, ".engram", "needs_update"),
         reason: "stale marker exists but no graph artifact is present",
       },
     ]);
-    expect(existsSync(join(tmpDir, ".graphify", "needs_update"))).toBe(true);
+    expect(existsSync(join(tmpDir, ".engram", "needs_update"))).toBe(true);
   });
 });

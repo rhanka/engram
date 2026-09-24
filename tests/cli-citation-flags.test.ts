@@ -23,9 +23,9 @@ function projectWithDetect(
 ): string {
   const root = join(tmpdir(), `graphify-cit-flags-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   cleanupDirs.push(root);
-  mkdirSync(join(root, ".graphify"), { recursive: true });
+  mkdirSync(join(root, ".engram"), { recursive: true });
   if (detect) {
-    writeFileSync(join(root, ".graphify", ".graphify_detect.json"), JSON.stringify(detect), "utf-8");
+    writeFileSync(join(root, ".engram", ".graphify_detect.json"), JSON.stringify(detect), "utf-8");
   }
   return root;
 }
