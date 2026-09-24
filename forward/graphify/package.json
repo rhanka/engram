@@ -1,0 +1,23 @@
+{
+  "name": "@sentropic/graphify",
+  "version": "0.18.0",
+  "description": "Deprecated — graphify has become Engram (@sentropic/engram). Forwarding shim that re-exports and re-runs @sentropic/engram.",
+  "license": "MIT",
+  "deprecated": "graphify has become Engram (@sentropic/engram) — a different product (agent memory substrate), not a rename-in-place. This package is a forwarding shim: install @sentropic/engram and use bin engram, ENGRAM_*, .engram/ instead.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rhanka/engram.git"
+  },
+  "main": "index.js",
+  "bin": {
+    "graphify": "bin.js"
+  },
+  "files": [
+    "index.js",
+    "bin.js",
+    "README.md"
+  ],
+  "dependencies": {
+    "@sentropic/engram": "0.18.0"
+  }
+}

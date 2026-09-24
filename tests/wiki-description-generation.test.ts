@@ -185,7 +185,7 @@ describe("wiki description prompt generation", () => {
     expect(prompt).toContain("[calls] GammaEngine");
     expect(prompt).toContain("[uses] BetaRepository");
     expect(prompt.indexOf("[calls]") < prompt.indexOf("[uses]"));
-    expect(prompt).toContain("Return JSON fields that Graphify will wrap into graphify_wiki_description_v1");
+    expect(prompt).toContain("Return JSON fields that Engram will wrap into engram_wiki_description_v1");
   });
 });
 
@@ -214,9 +214,9 @@ describe("assistant-mode generation behavior", () => {
     expect(result.indexPath).toBe(`${outputDir}.json`);
     const persistedSidecar = JSON.parse(readFileSync(join(outputDir, "alpha.json"), "utf-8")) as Record<string, unknown>;
     const persistedIndex = JSON.parse(readFileSync(`${outputDir}.json`, "utf-8")) as Record<string, unknown>;
-    expect(persistedSidecar.schema).toBe("graphify_wiki_description_v1");
+    expect(persistedSidecar.schema).toBe("engram_wiki_description_v1");
     expect(persistedSidecar.status).toBe("insufficient_evidence");
-    expect(persistedIndex.schema).toBe("graphify_wiki_description_index_v1");
+    expect(persistedIndex.schema).toBe("engram_wiki_description_index_v1");
   });
 
   it("preserves an existing generated sidecar when assistant mode only writes instructions", async () => {
@@ -234,7 +234,7 @@ describe("assistant-mode generation behavior", () => {
     writeFileSync(
       join(outputDir, "alpha.json"),
       JSON.stringify({
-        schema: "graphify_wiki_description_v1",
+        schema: "engram_wiki_description_v1",
         target_id: "alpha",
         target_kind: "node",
         graph_hash: "graph-hash",
@@ -540,7 +540,7 @@ describe("assistant-mode generation behavior", () => {
     expect(result.status).toBe("completed");
     expect(result.targets[0]?.status).toBe("completed");
     expect(result.targets[0]?.sidecar).toMatchObject({
-      schema: "graphify_wiki_description_v1",
+      schema: "engram_wiki_description_v1",
       target_id: "alpha",
       target_kind: "node",
       graph_hash: "graph-mesh-wiring",
@@ -555,7 +555,7 @@ describe("assistant-mode generation behavior", () => {
     expect(result.index.nodes["alpha"]?.description).toContain("@sentropic/llm-mesh bridge");
 
     const persisted = JSON.parse(readFileSync(join(outputDir, "alpha.json"), "utf-8")) as Record<string, unknown>;
-    expect(persisted.schema).toBe("graphify_wiki_description_v1");
+    expect(persisted.schema).toBe("engram_wiki_description_v1");
     expect((persisted.generator as { mode: string }).mode).toBe("mesh");
   });
 
@@ -578,7 +578,7 @@ describe("assistant-mode generation behavior", () => {
     expect(result.status).toBe("completed");
     expect(result.targets[0]?.status).toBe("completed");
     expect(result.targets[0]?.sidecar).toMatchObject({
-      schema: "graphify_wiki_description_v1",
+      schema: "engram_wiki_description_v1",
       target_id: "alpha",
       target_kind: "node",
       graph_hash: "graph-hash",
@@ -590,7 +590,7 @@ describe("assistant-mode generation behavior", () => {
       },
     });
     expect(result.index.nodes["alpha"]?.status).toBe("generated");
-    expect(persisted.schema).toBe("graphify_wiki_description_v1");
+    expect(persisted.schema).toBe("engram_wiki_description_v1");
     expect(persisted.target_id).toBe("alpha");
     expect(persisted.cache_key).toBe(result.index.nodes["alpha"]?.cache_key);
     expect(persistedIndex.nodes).toMatchObject({ alpha: { status: "generated" } });

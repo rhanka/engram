@@ -4,6 +4,10 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## Unreleased — Engram rename (clean break with back-compat aliases)
+
+Product and CLI are now Engram (`@sentropic/engram`, bin `engram`). This is a repositioning as an agent memory substrate, not a `graphify` continuation. Back-compat: the `graphify` bin, `GRAPHIFY_*` env vars, `.graphify/` state dir, `graphify.yaml`, `graphify_*_v1` schema ids, `graphify_*` DB tables, and `window.__GRAPHIFY_BUNDLE__` remain accepted via aliases with deprecation warnings. These aliases are kept for at least two minor versions or 12 months from this release. Heritage: concepts originate in `graphify`; that line is archived under deprecated `@sentropic/graphify`. Migration: prefer `engram`, `ENGRAM_*`, `.engram/` for all new work.
+
 ## 0.18.0 (2026-09-13)
 
 - **Routed LLM mesh integration.** Graphify can construct an owner-bound `@sentropic/llm-mesh` runtime, adapt it to the shared `TextJsonGenerationClient`, and classify transport, provider, rate-limit, authentication, request, and cancellation failures for bounded candidate fallback. Consumer-owned response validation now runs before route completion, so malformed JSON records a failed attempt and can fall back instead of crediting the route as healthy.

@@ -39,7 +39,7 @@ describe("input scope inventory", () => {
     write("src/a.ts", "export const a = 1;\n");
     commit("src/a.ts");
     write("scratch.ts", "export const scratch = true;\n");
-    write(".graphify/memory/question.md", "# Memory\n");
+    write(".engram/memory/question.md", "# Memory\n");
 
     const inventory = inspectInputScope(tmpDir, {
       mode: "auto",
@@ -48,7 +48,7 @@ describe("input scope inventory", () => {
 
     expect(inventory.candidateFiles).toEqual([
       "src/a.ts",
-      ".graphify/memory/question.md",
+      ".engram/memory/question.md",
     ]);
     expect(inventory.scope).toMatchObject({
       requested_mode: "auto",
@@ -65,6 +65,30 @@ describe("input scope inventory", () => {
     });
     expect(inventory.scope.head).toMatch(/^[0-9a-f]{40}$/);
     expect(inventory.scope.recommendation).toContain("--scope all");
+  });
+
+  it("recognises both .engram/memory and legacy .graphify/memory paths, but not near-miss dirs", () => {
+    initRepo();
+    write("src/a.ts", "export const a = 1;\n");
+    commit("src/a.ts");
+    write("scratch.ts", "export const scratch = true;\n");
+    write(".engram/memory/question.md", "# Memory\n");
+    write(".graphify/memory/legacy.md", "# Legacy\n");
+    write(".engram/memoryX/evil.md", "# Not memory\n");
+
+    const inventory = inspectInputScope(tmpDir, {
+      mode: "auto",
+      source: "default-auto",
+    });
+
+    // The new memory dir is appended as a candidate; both memory dirs stay
+    // out of the untracked count (excluded from input scope); the near-miss
+    // dir is ordinary untracked input.
+    expect(inventory.candidateFiles).toEqual([
+      "src/a.ts",
+      ".engram/memory/question.md",
+    ]);
+    expect(inventory.scope.excluded_untracked_count).toBe(2);
   });
 
   it("uses the Git index for tracked inventory", () => {

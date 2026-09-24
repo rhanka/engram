@@ -65,7 +65,7 @@ describe("buildProject WP11 node descriptions", () => {
       },
     });
 
-    const graph = JSON.parse(readFileSync(join(dir, ".graphify", "graph.json"), "utf-8")) as {
+    const graph = JSON.parse(readFileSync(join(dir, ".engram", "graph.json"), "utf-8")) as {
       nodes: Array<{ id: string; description?: string; file_type?: string }>;
     };
     const byId = new Map(graph.nodes.map((n) => [n.id, n]));
@@ -87,7 +87,7 @@ describe("buildProject WP11 node descriptions", () => {
       },
     });
 
-    const graph = JSON.parse(readFileSync(join(dir, ".graphify", "graph.json"), "utf-8")) as {
+    const graph = JSON.parse(readFileSync(join(dir, ".engram", "graph.json"), "utf-8")) as {
       nodes: Array<{ id: string; description?: string }>;
     };
     expect(graph.nodes.every((n) => n.description === undefined)).toBe(true);

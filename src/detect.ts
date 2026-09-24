@@ -7,8 +7,7 @@ import {
 import { join, resolve, extname, basename, relative, sep, dirname, isAbsolute } from "node:path";
 import { createHash } from "node:crypto";
 import {
-  DEFAULT_GRAPHIFY_STATE_DIR,
-  LEGACY_GRAPHIFY_STATE_DIR,
+  ALL_KNOWN_STATE_DIRS,
   defaultManifestPath,
   resolveGraphifyPaths,
 } from "./paths.js";
@@ -459,7 +458,7 @@ const SKIP_DIRS = new Set([
   "venv", ".venv", "env", ".env", "node_modules", "__pycache__", ".git",
   "dist", "build", "target", "out", "site-packages", "lib64",
   ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".eggs",
-  DEFAULT_GRAPHIFY_STATE_DIR, LEGACY_GRAPHIFY_STATE_DIR,
+  ...ALL_KNOWN_STATE_DIRS,
   // git worktree convention (port of upstream PR #947) -- sibling checkouts
   // are always redundant relative to the primary worktree at the scan root.
   ".worktrees",
@@ -885,7 +884,7 @@ function manifestProjectRoot(manifestPath: string, options?: SaveManifestOptions
 
   const manifestDir = resolve(dirname(manifestPath));
   const stateDirName = basename(manifestDir);
-  if (stateDirName === DEFAULT_GRAPHIFY_STATE_DIR || stateDirName === LEGACY_GRAPHIFY_STATE_DIR) {
+  if ((ALL_KNOWN_STATE_DIRS as readonly string[]).includes(stateDirName)) {
     return dirname(manifestDir);
   }
   return process.cwd();

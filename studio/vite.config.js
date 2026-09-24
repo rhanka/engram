@@ -5,14 +5,15 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-// The single-file build is gated by GRAPHIFY_STUDIO_SINGLEFILE=1. It is a
+// The single-file build is gated by ENGRAM_STUDIO_SINGLEFILE=1 (legacy
+// GRAPHIFY_STUDIO_SINGLEFILE). It is a
 // SEPARATE Vite pass (distinct outDir, the vite-plugin-singlefile plugin loaded
 // only when the flag is set) that produces a self-contained HTML with all JS and
 // CSS inlined. The default `npm run build` (flag unset) keeps emitting the
 // MULTI-FILE server bundle (index.html + assets/) BYTE-UNCHANGED — that bundle is
 // the artifact `resolveStudioAppDir()` resolves and the live studio server serves
 // (INV-2 / INV-4). The two builds never overwrite each other (distinct dirs).
-const singleFile = process.env.GRAPHIFY_STUDIO_SINGLEFILE === "1";
+const singleFile = (process.env.ENGRAM_STUDIO_SINGLEFILE ?? process.env.GRAPHIFY_STUDIO_SINGLEFILE) === "1";
 
 // vite-plugin-singlefile is an OPTIONAL dev dependency loaded lazily so the
 // default multi-file build does not require it to be installed.
@@ -20,7 +21,7 @@ async function singleFilePlugins() {
   if (!singleFile) return [];
   const { viteSingleFile } = await import("vite-plugin-singlefile");
   // useRecommendedBuildConfig keeps a single chunk + inlines all assets; the
-  // exporter then injects the window.__GRAPHIFY_BUNDLE__ data script into the
+  // exporter then injects the window.__ENGRAM_BUNDLE__ data script into the
   // resulting self-contained HTML.
   return [viteSingleFile()];
 }

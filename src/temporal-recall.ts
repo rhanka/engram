@@ -10,6 +10,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 
+import { engramEnv } from "./env.js";
 import type { SerializedGraphData } from "./graph.js";
 import { resolveGraphInputPath } from "./paths.js";
 import { loadProjectConfig } from "./project-config.js";
@@ -289,7 +290,7 @@ function selectedStoreId(
   projectConfig: NormalizedProjectConfig | undefined,
   env: NodeJS.ProcessEnv,
 ): string | undefined {
-  return options.store ?? env.GRAPHIFY_STORE ?? projectConfig?.storage?.mirrors?.[0]?.backend;
+  return options.store ?? engramEnv("ENGRAM_STORE", "GRAPHIFY_STORE", env) ?? projectConfig?.storage?.mirrors?.[0]?.backend;
 }
 
 function readTemporalGraph(path: string, deps: TemporalRecallDeps): TemporalSerializedGraph {

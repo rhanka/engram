@@ -77,13 +77,13 @@ if (!run("npm", ["run", "build"], studio) || !existsSync(src)) {
 }
 
 // Second pass: the self-contained single-file template (Blocker 1 fix for the
-// offline `file://` studio). Gated by GRAPHIFY_STUDIO_SINGLEFILE=1, written to a
+// offline `file://` studio). Gated by ENGRAM_STUDIO_SINGLEFILE=1 (legacy GRAPHIFY_STUDIO_SINGLEFILE), written to a
 // distinct dir so the multi-file dist/ above stays byte-unchanged (INV-2/INV-4),
 // then lifted to dist/studio-template.html as a sibling of index.html (resolved
 // by resolveStudioAppDir the same way). Best-effort: a failure here warns but
 // does NOT fail the multi-file build — the offline emit then no-ops (INV-3).
 rmSync(singleFileDist, { recursive: true, force: true });
-if (run("npm", ["run", "build"], studio, { GRAPHIFY_STUDIO_SINGLEFILE: "1" })) {
+if (run("npm", ["run", "build"], studio, { ENGRAM_STUDIO_SINGLEFILE: "1", GRAPHIFY_STUDIO_SINGLEFILE: "1" })) {
   const singleFileIndex = join(singleFileDist, "index.html");
   if (existsSync(singleFileIndex)) {
     cpSync(singleFileIndex, singleFileTemplate);

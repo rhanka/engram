@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
+import { schemaIdAccepted } from "./schema-ids.js";
 
 import {
   CITATION_EXTRACTION_CONTRACT_SCHEMA,
@@ -13,8 +14,8 @@ import {
   type NormalizedQualityTarget,
 } from "./quality-target.js";
 
-export const RESOLVED_TARGET_MANIFEST_SCHEMA = "graphify_resolved_target_v1";
-export const QA_REPORT_SCHEMA = "graphify_qa_report_v1";
+export const RESOLVED_TARGET_MANIFEST_SCHEMA = "engram_resolved_target_v1";
+export const QA_REPORT_SCHEMA = "engram_qa_report_v1";
 export const QA_REPORT_FILENAME = "quality-qa-report.json";
 
 export interface ResolvedTargetArtifact {
@@ -352,7 +353,7 @@ function evaluateManifest(
     return null;
   }
   const manifestHash = sortedJsonHash(manifest);
-  add(checks, manifest.schema !== RESOLVED_TARGET_MANIFEST_SCHEMA, "manifest.schema", "manifest schema must match", {
+  add(checks, !schemaIdAccepted(manifest.schema, RESOLVED_TARGET_MANIFEST_SCHEMA), "manifest.schema", "manifest schema must match", {
     expected: RESOLVED_TARGET_MANIFEST_SCHEMA,
     actual: manifest.schema,
   });
@@ -396,7 +397,7 @@ function evaluateManifest(
       );
       add(
         checks,
-        contract.schema !== CITATION_EXTRACTION_CONTRACT_SCHEMA,
+        !schemaIdAccepted(contract.schema, CITATION_EXTRACTION_CONTRACT_SCHEMA),
         "manifest.citations.contract_schema",
         "manifest contract schema must be structured citation contract",
       );
@@ -762,10 +763,10 @@ function evaluateCitations(
   const sidecarRecord = asRecord(sidecar);
   add(
     checks,
-    sidecarRecord.schema !== "graphify_ontology_citations_v1",
+    !schemaIdAccepted(sidecarRecord.schema, "engram_ontology_citations_v1"),
     "citations.sidecar.schema",
     "citation sidecar schema must match",
-    { expected: "graphify_ontology_citations_v1", actual: sidecarRecord.schema ?? null },
+    { expected: "engram_ontology_citations_v1", actual: sidecarRecord.schema ?? null },
   );
   const expectedSignature = computeGraphCitationSignatureFromJson(graph);
   add(
@@ -793,7 +794,7 @@ function evaluateCitations(
 
 function candidateArrayFromReconciliation(reconciliation: unknown, graph: unknown | null, checks: QualityQaCheck[]): Array<Record<string, unknown>> {
   const rec = asRecord(reconciliation);
-  if (rec.schema === "graphify_ontology_reconciliation_candidates_v1") {
+  if (schemaIdAccepted(rec.schema, "engram_ontology_reconciliation_candidates_v1")) {
     const candidates = Array.isArray(rec.candidates) ? rec.candidates.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null) : [];
     add(
       checks,
@@ -804,7 +805,7 @@ function candidateArrayFromReconciliation(reconciliation: unknown, graph: unknow
     );
     return candidates;
   }
-  if (rec.schema === "graphify_ontology_reconciliation_candidates_response_v1") {
+  if (schemaIdAccepted(rec.schema, "engram_ontology_reconciliation_candidates_response_v1")) {
     const items = Array.isArray(rec.items) ? rec.items.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null) : [];
     const complete = rec.offset === 0 && rec.total === items.length && rec.stale === false;
     add(

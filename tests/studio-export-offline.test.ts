@@ -76,7 +76,7 @@ function makeStateDir(extraNodes: Array<Record<string, unknown>> = []): string {
   return stateDir;
 }
 
-/** Parse window.__GRAPHIFY_BUNDLE__ out of an emitted studio.html (no eval of app). */
+/** Parse the inlined bundle (dual `__ENGRAM_BUNDLE__`/`__GRAPHIFY_BUNDLE__` assignment) out of an emitted studio.html (no eval of app). */
 function readInlinedBundle(html: string): Record<string, unknown> {
   const m = html.match(/window\.__GRAPHIFY_BUNDLE__ = JSON\.parse\((".*?")\);<\/script>/s);
   expect(m, "studio.html must carry the bundle script").not.toBeNull();
@@ -115,8 +115,17 @@ describe("escapeBundleJsonLiteral + injectBundleScript (T4 building blocks)", ()
 
   it("buildBundleScript yields a parseable classic <script>", () => {
     const script = buildBundleScript({ "scene.json": { nodes: [], edges: [] } });
-    expect(script.startsWith("<script>window.__GRAPHIFY_BUNDLE__ = JSON.parse(")).toBe(true);
+    expect(script.startsWith("<script>window.__ENGRAM_BUNDLE__ = window.__GRAPHIFY_BUNDLE__ = JSON.parse(")).toBe(true);
     expect(script.endsWith(");</script>")).toBe(true);
+  });
+
+  it("buildBundleScript binds both keys to the same object", () => {
+    const script = buildBundleScript({ "scene.json": { nodes: [], edges: [] } });
+    const fn = new Function("window", `${script.replace(/<\/?script>/g, "")}; return [window.__ENGRAM_BUNDLE__, window.__GRAPHIFY_BUNDLE__];`);
+    const sandbox: Record<string, unknown> = {};
+    const [fresh, legacy] = fn(sandbox) as [unknown, unknown];
+    expect(fresh).toEqual({ "scene.json": { nodes: [], edges: [] } });
+    expect(legacy).toBe(fresh);
   });
 });
 
@@ -156,7 +165,7 @@ describe("buildStaticStudio single-file emit", () => {
       bm25?: unknown;
       adjacency?: unknown;
     };
-    expect(index.schema).toBe("graphify_search_index_v1");
+    expect(index.schema).toBe("engram_search_index_v1");
     expect(Array.isArray(index.docs)).toBe(true);
     expect(index.docs!.length).toBe(result.searchIndexNodeCount);
     // Self-contained: postings + CSR adjacency ride inline (no graph.json needed).

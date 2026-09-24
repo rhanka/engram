@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { DetectionResult } from "./types.js";
+import { engramEnv } from "./env.js";
 import { extractPdfTextLayer, pdfOcrSidecarStem, parsePdfOcrMode, preflightPdf, type PdfOcrMode, type PdfPreflightResult } from "./pdf-preflight.js";
 import { buildPdfOcrPagesSidecar } from "./pdf-ocr-refs.js";
 
@@ -101,7 +102,7 @@ async function loadMistralOcrModule(): Promise<MistralOcrModule> {
         const detail = error instanceof Error ? error.message : String(error);
         throw new Error(
           "PDF OCR requires the bundled dependency mistral-ocr, but it could not be loaded. " +
-          "Reinstall it globally with `npm install -g @sentropic/graphify`, then retry. " + detail,
+          "Reinstall it globally with `npm install -g @sentropic/engram`, then retry. " + detail,
         );
       });
   }
@@ -202,7 +203,7 @@ async function preparePdf(
 
   try {
     const mistralOcr = await loadMistralOcrModule();
-    const ocrModel = options.model ?? process.env.GRAPHIFY_PDF_OCR_MODEL ?? DEFAULT_OCR_MODEL;
+    const ocrModel = options.model ?? engramEnv("ENGRAM_PDF_OCR_MODEL", "GRAPHIFY_PDF_OCR_MODEL") ?? DEFAULT_OCR_MODEL;
     const conversion = await mistralOcr.convertPdf(resolve(filePath), {
       apiKey,
       model: ocrModel,

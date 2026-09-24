@@ -9,6 +9,7 @@
  * (SPEC_STORAGE_BACKENDS.md, "Secret Handling", "CLI And Config Surface")
  */
 
+import { engramEnv } from "../env.js";
 import type { GraphStoreConfig } from "./types.js";
 import type { NormalizedProjectConfig } from "../types.js";
 
@@ -54,8 +55,8 @@ export interface ResolveStoreConfigInput {
  * precedence chain: CLI flags > env vars > YAML config.
  *
  * @param backendId - The store id (e.g. "neo4j", "file"). When undefined,
- *   GRAPHIFY_STORE is consulted; if that is also absent the returned config
- *   has no backend-specific values.
+ *   ENGRAM_STORE (legacy GRAPHIFY_STORE) is consulted; if that is also absent
+ *   the returned config has no backend-specific values.
  * @param input - Sources to merge.
  * @returns A GraphStoreConfig ready for resolveGraphStore().
  */
@@ -66,7 +67,7 @@ export function resolveStoreConfig(
   const { cliFlags = {}, env = process.env, projectConfig } = input;
 
   // Determine effective backend id
-  const effectiveId = backendId ?? env["GRAPHIFY_STORE"] ?? undefined;
+  const effectiveId = backendId ?? engramEnv("ENGRAM_STORE", "GRAPHIFY_STORE", env) ?? undefined;
 
   // Pull yaml mirror for the effective backend (lowest precedence)
   const yamlMirror = findMirror(projectConfig, effectiveId);
@@ -74,15 +75,15 @@ export function resolveStoreConfig(
   // Build resolved config by merging layers: yaml < env < cli
   const config: GraphStoreConfig = {};
 
-  if (effectiveId === "neo4j" || (!effectiveId && env["GRAPHIFY_NEO4J_URI"])) {
+  if (effectiveId === "neo4j" || (!effectiveId && engramEnv("ENGRAM_NEO4J_URI", "GRAPHIFY_NEO4J_URI", env))) {
     config.target =
       cliFlags.uri ??
-      env["GRAPHIFY_NEO4J_URI"] ??
+      engramEnv("ENGRAM_NEO4J_URI", "GRAPHIFY_NEO4J_URI", env) ??
       yamlMirror?.uri;
 
-    const user = cliFlags.user ?? env["GRAPHIFY_NEO4J_USER"] ?? yamlMirror?.user;
+    const user = cliFlags.user ?? engramEnv("ENGRAM_NEO4J_USER", "GRAPHIFY_NEO4J_USER", env) ?? yamlMirror?.user;
     // Password comes from env only — never from yaml or cliFlags object
-    const password = env["GRAPHIFY_NEO4J_PASSWORD"];
+    const password = engramEnv("ENGRAM_NEO4J_PASSWORD", "GRAPHIFY_NEO4J_PASSWORD", env);
 
     if (user !== undefined || password !== undefined) {
       config.auth = {};
@@ -92,41 +93,41 @@ export function resolveStoreConfig(
 
     config.database =
       cliFlags.database ??
-      env["GRAPHIFY_NEO4J_DATABASE"] ??
+      engramEnv("ENGRAM_NEO4J_DATABASE", "GRAPHIFY_NEO4J_DATABASE", env) ??
       yamlMirror?.database;
   } else if (effectiveId === "spanner") {
     // Spanner authenticates through Application Default Credentials (ADC).
     // No password variable by design.
     config.project =
       cliFlags.project ??
-      env["GRAPHIFY_SPANNER_PROJECT"] ??
+      engramEnv("ENGRAM_SPANNER_PROJECT", "GRAPHIFY_SPANNER_PROJECT", env) ??
       yamlMirror?.project;
 
     config.instance =
       cliFlags.instance ??
-      env["GRAPHIFY_SPANNER_INSTANCE"] ??
+      engramEnv("ENGRAM_SPANNER_INSTANCE", "GRAPHIFY_SPANNER_INSTANCE", env) ??
       yamlMirror?.instance;
 
     config.database =
       cliFlags.database ??
-      env["GRAPHIFY_SPANNER_DATABASE"] ??
+      engramEnv("ENGRAM_SPANNER_DATABASE", "GRAPHIFY_SPANNER_DATABASE", env) ??
       yamlMirror?.database;
   } else if (effectiveId === "postgres" || effectiveId === "pgvector") {
     // Postgres / pgvector. The DSN (connectionString) is a secret — it can
     // embed user:password — so it is read from the environment ONLY and never
     // from YAML or a CLI flag object (SPEC_STORAGE_BACKENDS.md, Secret
     // Handling). Schema and SSL are non-secret and may come from env or YAML.
-    const connectionString = env["GRAPHIFY_POSTGRES_URL"];
+    const connectionString = engramEnv("ENGRAM_POSTGRES_URL", "GRAPHIFY_POSTGRES_URL", env);
     if (connectionString !== undefined) {
       config.connectionString = connectionString;
     }
 
     config.schema =
       cliFlags.schema ??
-      env["GRAPHIFY_POSTGRES_SCHEMA"] ??
+      engramEnv("ENGRAM_POSTGRES_SCHEMA", "GRAPHIFY_POSTGRES_SCHEMA", env) ??
       yamlMirror?.schema;
 
-    const sslRaw = env["GRAPHIFY_POSTGRES_SSL"];
+    const sslRaw = engramEnv("ENGRAM_POSTGRES_SSL", "GRAPHIFY_POSTGRES_SSL", env);
     if (sslRaw !== undefined) {
       config.ssl = sslRaw === "1" || sslRaw.toLowerCase() === "true";
     } else if (yamlMirror?.ssl !== undefined) {

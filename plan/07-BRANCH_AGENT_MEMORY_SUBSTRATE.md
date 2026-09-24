@@ -9,13 +9,13 @@
 
 ## Scope
 
-- [ ] Allowed: new `graphify-memory/contracts` + memory engine modules, `src/memory-*.ts`, `src/retrieval/**`, `src/temporal-recall.ts`, `src/graph-time-slice.ts`, `src/storage/**`, `src/studio-scene.ts`, `studio/src/lib/graphAdapter.js` (temporal renderer defect), `spec/SPEC_EVOL_AGENT_MEMORY_SUBSTRATE.md`, this plan, `tests/**`.
+- [ ] Allowed: new `engram-memory/contracts` + memory engine modules, `src/memory-*.ts`, `src/retrieval/**`, `src/temporal-recall.ts`, `src/graph-time-slice.ts`, `src/storage/**`, `src/studio-scene.ts`, `studio/src/lib/graphAdapter.js` (temporal renderer defect), `spec/SPEC_EVOL_AGENT_MEMORY_SUBSTRATE.md`, this plan, `tests/**`.
 - [ ] Forbidden: any import/type/field/name of a consumer (h2a/Sentropic), any `.h2a` path, `H2aInstance`, coordination types; keeping the legacy activity subsystem inside graphify; merge/push; `.graphify/scratch/**`.
 - [ ] Conditional: removal/relocation of `@sentropic/*` dependencies and importing bridges (required before the neutrality gate can pass); `package.json`/`package-lock.json` for that removal and a coherent post-gate release.
 
 ## Lot 0 — Baseline, Package Boundary, Extraction
 
-- [ ] Pin the target commit + required intake commits; create the `graphify-memory/contracts` package with a one-way export/dependency graph.
+- [ ] Pin the target commit + required intake commits; create the `engram-memory/contracts` package with a one-way export/dependency graph.
 - [ ] Physically extract the legacy activity subsystem (`src/agent-stats/**`, its CLI/exports, registry parsing, identity syntax, role fields, coordination projection) and the legacy memory compatibility surfaces out of graphify.
 - [ ] Remove or relocate every organization-scoped (`@sentropic/*`) dependency and importing bridge from the repository.
 - [ ] RED: `tests/memory-neutrality.test.ts > packed dependency/import closure is one-way and emitted d.ts/schema uses only the normative vocabulary`.

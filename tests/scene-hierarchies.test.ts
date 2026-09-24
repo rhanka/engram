@@ -38,11 +38,11 @@ function stable(sidecar: SceneHierarchySidecar): Omit<SceneHierarchySidecar, "ge
   return rest;
 }
 
-describe("buildSceneHierarchySidecar — graphify_scene_hierarchies_v1", () => {
+describe("buildSceneHierarchySidecar — engram_scene_hierarchies_v1", () => {
   it("returns the envelope with hierarchies:{} for empty arcs", () => {
     const sidecar = buildSceneHierarchySidecar({ arcs: [], sceneNodeIds: ids() });
     expect(sidecar.schema).toBe(SCENE_HIERARCHIES_SCHEMA);
-    expect(sidecar.schema).toBe("graphify_scene_hierarchies_v1");
+    expect(sidecar.schema).toBe("engram_scene_hierarchies_v1");
     expect(sidecar.hierarchies).toEqual({});
     expect(sidecar.graph_hash).toBeNull();
     expect(typeof sidecar.generated_at).toBe("string");

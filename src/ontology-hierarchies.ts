@@ -107,7 +107,7 @@ function columnValue(raw: Record<string, unknown>, column: string): string {
 export function buildHierarchyIndex(arcs: OntologyHierarchyArc[]): OntologyHierarchyIndex {
   if (arcs.length === 0) {
     return {
-      schema: "graphify_ontology_hierarchies_v1",
+      schema: "engram_ontology_hierarchies_v1",
       root_ids: [],
       depth: 0,
       ancestor_paths: {},
@@ -225,7 +225,7 @@ export function buildHierarchyIndex(arcs: OntologyHierarchyArc[]): OntologyHiera
   }
 
   return {
-    schema: "graphify_ontology_hierarchies_v1",
+    schema: "engram_ontology_hierarchies_v1",
     root_ids: root_ids.sort(),
     depth: maxDepth,
     ancestor_paths,

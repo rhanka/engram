@@ -20,20 +20,20 @@ describe("OpenCode integration contract", () => {
 
     agentsInstall(dir, "opencode");
 
-    const plugin = readFileSync(join(dir, ".opencode", "plugins", "graphify.js"), "utf-8");
+    const plugin = readFileSync(join(dir, ".opencode", "plugins", "engram.js"), "utf-8");
     const config = JSON.parse(readFileSync(join(dir, ".opencode", "opencode.json"), "utf-8")) as {
       plugin?: string[];
     };
 
     expect(plugin).toContain("tool.execute.before");
-    expect(plugin).toContain("graphify query");
+    expect(plugin).toContain("engram query");
     expect(plugin).toContain("Read GRAPH_REPORT.md only for broad architecture context");
     // The reminder must be joined with ';', never '&&' — Windows PowerShell 5.1
     // rejects '&&' as a statement separator, breaking the first bash command of
     // every session (upstream 54825b6 #1646).
     expect(plugin).toContain('." ; ');
     expect(plugin).not.toContain('." && ');
-    expect(config.plugin).toEqual([".opencode/plugins/graphify.js"]);
+    expect(config.plugin).toEqual([".opencode/plugins/engram.js"]);
   });
 
   it("merges with existing OpenCode config and stays idempotent", () => {
@@ -55,7 +55,7 @@ describe("OpenCode integration contract", () => {
     };
 
     expect(config.model).toBe("claude-opus-4-5");
-    expect(config.plugin).toEqual([".opencode/plugins/graphify.js"]);
+    expect(config.plugin).toEqual([".opencode/plugins/engram.js"]);
   });
 
   it("migrates an existing root opencode.json into .opencode/opencode.json", () => {
@@ -71,7 +71,7 @@ describe("OpenCode integration contract", () => {
     };
 
     expect(config.model).toBe("legacy-root");
-    expect(config.plugin).toEqual([".opencode/plugins/graphify.js"]);
+    expect(config.plugin).toEqual([".opencode/plugins/engram.js"]);
   });
 
   it("repairs a missing OpenCode plugin when AGENTS.md already exists", () => {
@@ -79,10 +79,10 @@ describe("OpenCode integration contract", () => {
     tempDirs.push(dir);
 
     agentsInstall(dir, "opencode");
-    unlinkSync(join(dir, ".opencode", "plugins", "graphify.js"));
+    unlinkSync(join(dir, ".opencode", "plugins", "engram.js"));
 
     expect(() => agentsInstall(dir, "opencode")).not.toThrow();
-    expect(existsSync(join(dir, ".opencode", "plugins", "graphify.js"))).toBe(true);
+    expect(existsSync(join(dir, ".opencode", "plugins", "engram.js"))).toBe(true);
   });
 
   it("removes the plugin even when AGENTS.md is already gone", async () => {
@@ -104,7 +104,7 @@ describe("OpenCode integration contract", () => {
       process.argv = previousArgv;
     }
 
-    expect(existsSync(join(dir, ".opencode", "plugins", "graphify.js"))).toBe(false);
+    expect(existsSync(join(dir, ".opencode", "plugins", "engram.js"))).toBe(false);
     const config = JSON.parse(readFileSync(join(dir, ".opencode", "opencode.json"), "utf-8")) as {
       plugin?: string[];
     };
@@ -117,7 +117,7 @@ describe("OpenCode integration contract", () => {
     writeFileSync(join(dir, ".opencode"), "");
 
     expect(() => agentsInstall(dir, "opencode")).not.toThrow();
-    expect(existsSync(join(dir, ".opencode", "plugins", "graphify.js"))).toBe(false);
+    expect(existsSync(join(dir, ".opencode", "plugins", "engram.js"))).toBe(false);
     expect(existsSync(join(dir, ".opencode", "opencode.json"))).toBe(false);
   });
 });

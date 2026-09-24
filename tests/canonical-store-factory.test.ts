@@ -3,14 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
   createCanonicalMemoryStoreFactoryV1,
   isFencedFactoryStoreV1,
-  GRAPHIFY_MEMORY_ADAPTER_IDENTITY,
+  ENGRAM_MEMORY_ADAPTER_IDENTITY,
   type CanonicalMemoryStorePort,
   type FencedStoreConstructionV1,
   type Result,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 // §5.9 v5-b: the opener stamps the store as fence-holding only after taking a real kernel fence; the factory then
 // PROPAGATES that mark to the wrapper it returns. This fake opener models a real one that took the fence.
-import { markFencedStoreV1 } from "../graphify-memory/store-factory.js";
+import { markFencedStoreV1 } from "../engram-memory/store-factory.js";
 
 const construction = (store_id: string): FencedStoreConstructionV1 => ({ store_id, backend: "sqlite", deadline_at: "2026-09-20T12:05:00.000Z" });
 
@@ -38,7 +38,7 @@ describe("CanonicalMemoryStoreFactoryV1.acquire (§5.7)", () => {
     if (acquired.ok) expect(isFencedFactoryStoreV1(acquired.value)).toBe(true); // §5.9 in-process mark
     expect(openCalls).toHaveLength(1);
     expect(factory.version).toBe(1);
-    expect(factory.adapter_id).toBe(GRAPHIFY_MEMORY_ADAPTER_IDENTITY.adapter_id); // derived from the module's compiled identity
+    expect(factory.adapter_id).toBe(ENGRAM_MEMORY_ADAPTER_IDENTITY.adapter_id); // derived from the module's compiled identity
   });
 
   it("refuses a second live in-process holder with STORE_UNAVAILABLE, not queued (opener not re-invoked)", async () => {

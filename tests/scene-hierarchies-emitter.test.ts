@@ -78,7 +78,7 @@ describe("emitSceneHierarchies — standalone scene-hierarchies.json (D1)", () =
 
     const onDisk = JSON.parse(readFileSync(result.path!, "utf-8"));
     expect(onDisk).toEqual(result.sidecar);
-    expect(onDisk.schema).toBe("graphify_scene_hierarchies_v1");
+    expect(onDisk.schema).toBe("engram_scene_hierarchies_v1");
     expect(onDisk.graph_hash).toBe("feedface");
     // Raw ids stay lossless join keys on disk.
     expect(onDisk.hierarchies.h.nodes_by_id["AM0104.01"]).toMatchObject({

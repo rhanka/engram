@@ -322,7 +322,7 @@ describe("phase2: agy parser robustness", () => {
   function fixture(hash = "hash-1"): string {
     return loadFixture("agy-tool-calls.jsonl").split("__REPO__").join(REPO).split("__HASH__").join(hash);
   }
-  const OPTS = { scopeRoot: REPO, originRepo: "rhanka/graphify" };
+  const OPTS = { scopeRoot: REPO, originRepo: "rhanka/engram" };
 
   it("splits a multi-session file into one session per header", () => {
     const sessions = parseAgyChats(fixture(), "file-hint", "", OPTS);

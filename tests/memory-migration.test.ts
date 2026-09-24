@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { migrateRetainedNeutralRecordsV1, type Digest, type RetainedNeutralRecordV1 } from "../graphify-memory/index.js";
+import { migrateRetainedNeutralRecordsV1, type Digest, type RetainedNeutralRecordV1 } from "../engram-memory/index.js";
 
 const DIGEST_A = "sha256:1111111111111111111111111111111111111111111111111111111111111111" as Digest;
 const DIGEST_B = "sha256:2222222222222222222222222222222222222222222222222222222222222222" as Digest;

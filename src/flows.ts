@@ -367,7 +367,7 @@ export function writeFlowArtifact(artifact: ReviewFlowArtifact, path: string): v
 export function readFlowArtifact(path: string): ReviewFlowArtifact {
   const artifact = JSON.parse(readFileSync(resolve(path), "utf-8")) as ReviewFlowArtifact;
   if (artifact.version !== FLOW_ARTIFACT_VERSION || !Array.isArray(artifact.flows)) {
-    throw new Error(`Invalid graphify flow artifact: ${path}`);
+    throw new Error(`Invalid engram flow artifact: ${path}`);
   }
   return artifact;
 }

@@ -151,7 +151,7 @@ describe("image dataprep", () => {
     expect(result.enabled).toBe(true);
     expect(result.manifestPath).toBe(join(root, ".graphify", "image-dataprep", "manifest.json"));
     expect(result.assistantInstructionsPath).toBe(join(root, ".graphify", "image-dataprep", "assistant-instructions.md"));
-    expect(readFileSync(result.manifestPath!, "utf-8")).toContain("graphify_image_dataprep_manifest_v1");
+    expect(readFileSync(result.manifestPath!, "utf-8")).toContain("engram_image_dataprep_manifest_v1");
     expect(readFileSync(result.assistantInstructionsPath!, "utf-8")).toContain("generic_image_caption_v1");
   });
 

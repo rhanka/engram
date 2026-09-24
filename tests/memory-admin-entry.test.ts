@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createMemoryPortV2, type MemoryEngineDependenciesV2, type Result } from "../graphify-memory/index.js";
+import { createMemoryPortV2, type MemoryEngineDependenciesV2, type Result } from "../engram-memory/index.js";
 
 const NOW = "2026-09-20T12:00:00.000Z";
 const DEADLINE = "2026-09-20T12:04:00.000Z";

@@ -293,7 +293,7 @@ describe("finalizeEnrichedGraphBuild — no-key emit parity", () => {
     });
 
     expect(seen.length).toBeGreaterThan(0);
-    expect(seen.every(({ schema }) => schema === "graphify_node_descriptions_v1")).toBe(true);
+    expect(seen.every(({ schema }) => schema === "engram_node_descriptions_v1")).toBe(true);
     expect(seen.every(({ prompt }) => !prompt.includes("You are naming clusters"))).toBe(true);
     expect(result.labelSource).toBe("assistant");
     expect(result.descriptionsComplete).toBe(true);
@@ -338,7 +338,7 @@ describe("finalizeEnrichedGraphBuild — no-key emit parity", () => {
 
     expect(result.labelSource).toBe("llm");
     expect(labels.get(0)).toBe("Graph Builders");
-    expect(schemas).toEqual(["graphify_community_labels_v1"]);
+    expect(schemas).toEqual(["engram_community_labels_v1"]);
   });
 
   it("--no-description skips the description stage but still writes the graph", async () => {

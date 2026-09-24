@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   parsePidFromProcStatusV1,
   procLocksHoldsExclusiveFlockV1,
-} from "../graphify-memory/proc-locks.js";
+} from "../engram-memory/proc-locks.js";
 
 describe("held-exclusive-flock matcher (§5.9 liveness proof) — /proc/locks and /proc/self/fdinfo/<fd>, inode-only", () => {
   const procLocks = `1: POSIX  ADVISORY  READ 10 00:aa:5 0 EOF\n2: FLOCK  ADVISORY  WRITE 4242 00:aa:918 0 EOF\n`;

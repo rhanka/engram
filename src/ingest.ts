@@ -467,7 +467,7 @@ if (isDirectExecution) {
     process.exit(1);
   }
   ingest(url, targetDir, author)
-    .then((out) => console.log(`Ready for graphify: ${out}`))
+    .then((out) => console.log(`Ready for engram: ${out}`))
     .catch((err) => {
       console.error(err);
       process.exit(1);

@@ -11,8 +11,8 @@ const GH_LIST_FIELDS =
 const GH_VIEW_FIELDS =
   "number,title,state,isDraft,headRefName,baseRefName,author,url,mergeable,mergeStateStatus,reviewDecision,updatedAt,body,files,commits,statusCheckRollup";
 const GH_MERGE_FIELDS = "number,mergeCommit,commits,headRefName";
-const REMOTE = "https://github.com/rhanka/graphify.git";
-const KEY = "repo:github.com/rhanka/graphify";
+const REMOTE = "https://github.com/rhanka/engram.git";
+const KEY = "repo:github.com/rhanka/engram";
 
 function fakeRunner(responses: Record<string, unknown>): CommandRunner & { calls: string[] } {
   const calls: string[] = [];
@@ -31,15 +31,15 @@ function fakeRunner(responses: Record<string, unknown>): CommandRunner & { calls
 }
 
 function listCommand(limit = 10): string {
-  return `gh pr list --repo rhanka/graphify --state all --limit ${limit} --json ${GH_LIST_FIELDS}`;
+  return `gh pr list --repo rhanka/engram --state all --limit ${limit} --json ${GH_LIST_FIELDS}`;
 }
 
 function viewCommand(number: number): string {
-  return `gh pr view ${number} --repo rhanka/graphify --json ${GH_VIEW_FIELDS}`;
+  return `gh pr view ${number} --repo rhanka/engram --json ${GH_VIEW_FIELDS}`;
 }
 
 function mergeCommand(number: number): string {
-  return `gh pr view ${number} --repo rhanka/graphify --json ${GH_MERGE_FIELDS}`;
+  return `gh pr view ${number} --repo rhanka/engram --json ${GH_MERGE_FIELDS}`;
 }
 
 describe("extractPullRequests", () => {
@@ -65,7 +65,7 @@ describe("extractPullRequests", () => {
           headRefName: "feature/wp9",
           baseRefName: "main",
           author: { login: "dev" },
-          url: "https://github.com/rhanka/graphify/pull/42",
+          url: "https://github.com/rhanka/engram/pull/42",
           mergeStateStatus: "CLEAN",
           reviewDecision: "APPROVED",
           updatedAt: "2026-06-15T10:00:00Z",
@@ -79,7 +79,7 @@ describe("extractPullRequests", () => {
         headRefName: "feature/wp9",
         baseRefName: "main",
         author: { login: "dev" },
-        url: "https://github.com/rhanka/graphify/pull/42",
+        url: "https://github.com/rhanka/engram/pull/42",
         mergeStateStatus: "CLEAN",
         reviewDecision: "APPROVED",
         updatedAt: "2026-06-15T10:00:00Z",
@@ -89,7 +89,7 @@ describe("extractPullRequests", () => {
           {
             name: "unit",
             conclusion: "SUCCESS",
-            detailsUrl: "https://github.com/rhanka/graphify/actions/runs/1",
+            detailsUrl: "https://github.com/rhanka/engram/actions/runs/1",
           },
         ],
       },
@@ -129,7 +129,7 @@ describe("extractPullRequests", () => {
         head_branch: "feature/wp9",
         base_branch: "main",
         author: "dev",
-        url: "https://github.com/rhanka/graphify/pull/42",
+        url: "https://github.com/rhanka/engram/pull/42",
         review_decision: "APPROVED",
         merge_state: "CLEAN",
         updated_at: "2026-06-15T10:00:00Z",
@@ -143,7 +143,7 @@ describe("extractPullRequests", () => {
           {
             name: "unit",
             conclusion: "SUCCESS",
-            url: "https://github.com/rhanka/graphify/actions/runs/1",
+            url: "https://github.com/rhanka/engram/actions/runs/1",
           },
         ],
       }),
@@ -191,7 +191,7 @@ describe("extractPullRequests", () => {
           headRefName: "feature/squash",
           baseRefName: "main",
           author: { login: "dev" },
-          url: "https://github.com/rhanka/graphify/pull/77",
+          url: "https://github.com/rhanka/engram/pull/77",
           mergeStateStatus: "CLEAN",
           updatedAt: "2026-06-15T11:00:00Z",
         },
@@ -204,7 +204,7 @@ describe("extractPullRequests", () => {
         headRefName: "feature/squash",
         baseRefName: "main",
         author: { login: "dev" },
-        url: "https://github.com/rhanka/graphify/pull/77",
+        url: "https://github.com/rhanka/engram/pull/77",
         mergeStateStatus: "CLEAN",
         updatedAt: "2026-06-15T11:00:00Z",
         commits: [{ oid: firstSha }, { oid: secondSha }],

@@ -5,7 +5,7 @@ import {
   createMemoryPortV2,
   type MemoryEngineDependenciesV2,
   type Result,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 import { DEADLINE, lifecycleCommand, NOW } from "./memory-l3-fixture.js";
 
 // §5.9 anti-mutation guard. store-provenance.test.ts proves verifyStoreProvenance in isolation, but nothing drove

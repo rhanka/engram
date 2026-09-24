@@ -11,6 +11,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { engramEnv } from "./env.js";
 import { graphDiff, godNodes, surprisingConnections, suggestQuestions } from "./analyze.js";
 import { runBenchmark, printBenchmark } from "./benchmark.js";
 import { saveSemanticCache, checkSemanticCache, type CacheOptions } from "./cache.js";
@@ -665,7 +666,7 @@ function runtimeInfo(): Record<string, unknown> {
 
 export async function main(argv: string[] = process.argv): Promise<void> {
   const program = new Command();
-  program.name("graphify-skill-runtime");
+  program.name("engram-skill-runtime");
 
   program
     .command("runtime-info")
@@ -676,7 +677,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
   program
     .command("paths")
-    .description("Print the graphify state path contract for a workspace root")
+    .description("Print the engram state path contract for a workspace root")
     .argument("[root]", "Workspace root", ".")
     .action((root) => {
       console.log(JSON.stringify(resolveGraphifyPaths({ root: resolve(root) }), null, 2));
@@ -684,7 +685,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
   program
     .command("project-config")
-    .description("Load and normalize a configured Graphify project profile")
+    .description("Load and normalize a configured Engram project profile")
     .option("--root <path>", "Workspace root", ".")
     .option("--config <path>", "Explicit graphify.yaml path")
     .requiredOption("--out <path>", "Path to write normalized project config JSON")
@@ -695,7 +696,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         ? resolve(opts.config)
         : discoverProjectConfig(root).path;
       if (!configPath) {
-        throw new Error(`No graphify project config found under ${root}`);
+        throw new Error(`No engram project config found under ${root}`);
       }
       const projectConfig = loadProjectConfig(configPath);
       const profile = loadOntologyProfile(projectConfig.profile.resolvedPath, { projectConfig });
@@ -718,7 +719,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         ? resolve(opts.config)
         : discoverProjectConfig(root).path;
       if (!configPath) {
-        throw new Error(`No graphify project config found under ${root}`);
+        throw new Error(`No engram project config found under ${root}`);
       }
       const config = loadProjectConfig(configPath);
       const scopeSelection = resolveConfiguredInputScopeSelection(config, opts);
@@ -903,7 +904,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
   program
     .command("ontology-patch-validate")
-    .description("Validate a graphify_ontology_patch_v1 JSON file without mutation")
+    .description("Validate a engram_ontology_patch_v1 JSON file without mutation")
     .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
     .requiredOption("--patch <path>", "Ontology patch JSON")
     .action((opts) => {
@@ -915,7 +916,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
   program
     .command("ontology-patch-apply")
-    .description("Dry-run or write-apply a graphify_ontology_patch_v1 JSON file")
+    .description("Dry-run or write-apply a engram_ontology_patch_v1 JSON file")
     .requiredOption("--profile-state <path>", "Path to .graphify/profile/profile-state.json")
     .requiredOption("--patch <path>", "Ontology patch JSON")
     .option("--dry-run", "Preview changed files without mutation")
@@ -1008,10 +1009,10 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
   program
     .command("migrate-state")
-    .description("Migrate legacy graphify-out state into .graphify")
+    .description("Migrate legacy graphify-out state into .engram")
     .option("--root <path>", "Workspace root", ".")
     .option("--dry-run", "Print the migration plan without writing files")
-    .option("--force", "Overwrite existing files under .graphify")
+    .option("--force", "Overwrite existing files under .engram")
     .option("--json", "Print JSON output")
     .action(async (opts) => {
       const { migrateGraphifyOut, migrationResultToText } = await import("./migrate-state.js");
@@ -1072,7 +1073,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
   program
     .command("scope-inspect")
-    .description("Inspect resolved Graphify input scope")
+    .description("Inspect resolved Engram input scope")
     .option("--root <path>", "Workspace root", ".")
     .option("--scope <mode>", scopeOptionDescription())
     .option("--all", "Alias for --scope all")
@@ -1609,14 +1610,14 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     .requiredOption("--user <user>")
     .option(
       "--password <password>",
-      "Neo4j password (deprecated flag; prefer GRAPHIFY_NEO4J_PASSWORD env var)",
+      "Neo4j password (deprecated flag; prefer ENGRAM_NEO4J_PASSWORD env var)",
     )
     .option("--directed", "Build a directed graph (preserves source->target)")
     .action(async (opts) => {
-      const password = opts.password ?? process.env.GRAPHIFY_NEO4J_PASSWORD;
+      const password = opts.password ?? engramEnv("ENGRAM_NEO4J_PASSWORD", "GRAPHIFY_NEO4J_PASSWORD");
       if (!password) {
         console.error(
-          "Error: Neo4j password is required. Provide --password <password> or set GRAPHIFY_NEO4J_PASSWORD",
+          "Error: Neo4j password is required. Provide --password <password> or set ENGRAM_NEO4J_PASSWORD",
         );
         process.exit(1);
       }

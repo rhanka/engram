@@ -4,7 +4,7 @@ import {
   createMemoryPortV2,
   receiptDigest,
   type MemoryEngineDependenciesV2,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 import { embeddedInMemoryStub, memoryReadinessReceipt } from "./memory-l3-fixture.js";
 
 const DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

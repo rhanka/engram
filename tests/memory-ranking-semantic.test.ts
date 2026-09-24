@@ -6,7 +6,7 @@ import {
   type SemanticAdjacencyV1,
   type SemanticProjectionPort,
   type VectorProjectionPort,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 import { buildMemory, recallRequest, seedAccepted } from "./memory-l7-fixture.js";
 
 function vectorPort(): VectorProjectionPort {

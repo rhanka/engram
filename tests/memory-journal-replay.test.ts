@@ -5,7 +5,7 @@ import {
   foldMemoryJournalV1,
   memoryJournalEventHashV1,
   type MemoryJournalEventV1,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 import { captureRequest, createL3Memory, lifecycleCommand } from "./memory-l3-fixture.js";
 
 const DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as const;

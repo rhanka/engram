@@ -472,7 +472,7 @@ function chainLine(chain: ReviewChain): string {
 
 export function reviewDeltaToText(delta: ReviewDelta): string {
   const lines = [
-    "Graphify Review Delta",
+    "Engram Review Delta",
     `Changed files: ${delta.changed_files.length}`,
     `Changed nodes: ${delta.changed_nodes.length}`,
     `Impacted nodes: ${delta.impacted_nodes.length}`,
