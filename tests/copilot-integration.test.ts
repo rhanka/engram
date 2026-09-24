@@ -27,11 +27,11 @@ describe("Copilot integration contract", () => {
       process.argv = ["node", "graphify", "copilot", "install"];
       await main();
 
-      const skillPath = join(home, ".copilot", "skills", "graphify", "SKILL.md");
-      const versionPath = join(home, ".copilot", "skills", "graphify", ".graphify_version");
+      const skillPath = join(home, ".copilot", "skills", "engram", "SKILL.md");
+      const versionPath = join(home, ".copilot", "skills", "engram", ".graphify_version");
       expect(existsSync(skillPath)).toBe(true);
       expect(existsSync(versionPath)).toBe(true);
-      expect(readFileSync(skillPath, "utf-8")).toContain("# /graphify");
+      expect(readFileSync(skillPath, "utf-8")).toContain("# /engram");
 
       process.chdir(home);
       process.argv = ["node", "graphify", "copilot", "uninstall"];

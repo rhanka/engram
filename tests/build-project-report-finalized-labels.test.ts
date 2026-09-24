@@ -104,14 +104,14 @@ describe("buildProject GRAPH_REPORT.md reflects FINALIZED community labels", () 
     // Run 1: no answer yet → the label stage emits label-instructions/.
     await buildProject(dir, noDescribe);
 
-    const labelDir = join(dir, ".graphify", "label-instructions");
+    const labelDir = join(dir, ".engram", "label-instructions");
     const instruction = readFileSync(join(labelDir, "communities.md"), "utf-8");
     // The instruction file lists "Community <cid>: ..." for each labeled cid.
     const cids = [...instruction.matchAll(/^Community (\d+):/gmu)].map((m) => Number(m[1]));
     expect(cids.length).toBeGreaterThan(0);
 
     // The first run's report still shows the generic placeholder (no answer yet).
-    const reportPath = join(dir, ".graphify", "GRAPH_REPORT.md");
+    const reportPath = join(dir, ".engram", "GRAPH_REPORT.md");
     const firstReport = readFileSync(reportPath, "utf-8");
     expect(firstReport).toMatch(/Community 0/u);
 
@@ -131,11 +131,11 @@ describe("buildProject GRAPH_REPORT.md reflects FINALIZED community labels", () 
     // The persisted labels JSON also carries the ingested name (the report and
     // the labels store agree).
     const labelsJson = JSON.parse(
-      readFileSync(join(dir, ".graphify", ".graphify_labels.json"), "utf-8"),
+      readFileSync(join(dir, ".engram", ".graphify_labels.json"), "utf-8"),
     ) as Record<string, string>;
     expect(Object.values(labelsJson)).toContain(INGESTED_NAME);
 
     // Sanity: the instruction dir name we relied on actually exists.
-    expect(readdirSync(join(dir, ".graphify")).length).toBeGreaterThan(0);
+    expect(readdirSync(join(dir, ".engram")).length).toBeGreaterThan(0);
   });
 });

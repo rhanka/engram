@@ -895,7 +895,7 @@ describe("MCP stdio server", () => {
         name: "preview_ontology_decision_log",
         arguments: { limit: 10, offset: 0 },
       })));
-      expect(logPreview.schema).toBe("graphify_ontology_reconciliation_decision_log_v1");
+      expect(logPreview.schema).toBe("engram_ontology_reconciliation_decision_log_v1");
       expect(logPreview.total).toBe(2);
       expect(logPreview.items.map((item: { source: string }) => item.source)).toEqual([
         "authoritative",
@@ -911,7 +911,7 @@ describe("MCP stdio server", () => {
         arguments: {},
       })));
       expect(status).toMatchObject({
-        schema: "graphify_ontology_rebuild_status_v1",
+        schema: "engram_ontology_rebuild_status_v1",
         needs_update: true,
         graph_hash: "graph-hash",
         profile_hash: "profile-hash",
@@ -1055,7 +1055,7 @@ describe("MCP stdio server", () => {
       items: Array<{ source: string; patch: { id: string; operation: string } }>;
     };
     expect(logResponse.status).toBe(200);
-    expect(log.schema).toBe("graphify_ontology_reconciliation_decision_log_v1");
+    expect(log.schema).toBe("engram_ontology_reconciliation_decision_log_v1");
     expect(log.total).toBe(1);
     expect(log.items).toMatchObject([
       {
@@ -1073,7 +1073,7 @@ describe("MCP stdio server", () => {
     };
     expect(statusResponse.status).toBe(200);
     expect(status).toMatchObject({
-      schema: "graphify_ontology_rebuild_status_v1",
+      schema: "engram_ontology_rebuild_status_v1",
       needs_update: true,
       candidates_match: true,
       decision_log_available: true,

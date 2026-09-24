@@ -40,9 +40,9 @@ const OCR_MARKDOWN = [
 function citeProject(): string {
   const dir = mkdtempSync(join(tmpdir(), "graphify-cite-cli-"));
   tempDirs.push(dir);
-  const graphDir = join(dir, ".graphify");
+  const graphDir = join(dir, ".engram");
   mkdirSync(join(graphDir, "converted", "pdf"), { recursive: true });
-  // Source lives under .graphify/converted/pdf (the always-searched root).
+  // Source lives under .engram/converted/pdf (the always-searched root).
   writeFileSync(join(graphDir, "converted", "pdf", "paper.md"), OCR_MARKDOWN, "utf-8");
   writeFileSync(
     join(graphDir, "graph.json"),
@@ -50,9 +50,9 @@ function citeProject(): string {
       directed: false,
       graph: {},
       nodes: [
-        { id: "p1", label: "Juliette Mattioli", file_type: "person", source_file: ".graphify/converted/pdf/paper.md", community: 0 },
-        { id: "t1", label: "CATIA V5", file_type: "concept", node_type: "technology", source_file: ".graphify/converted/pdf/paper.md", community: 0 },
-        { id: "x1", label: "Quetzalcoatl Spaceport", file_type: "concept", source_file: ".graphify/converted/pdf/paper.md", community: 0 },
+        { id: "p1", label: "Juliette Mattioli", file_type: "person", source_file: ".engram/converted/pdf/paper.md", community: 0 },
+        { id: "t1", label: "CATIA V5", file_type: "concept", node_type: "technology", source_file: ".engram/converted/pdf/paper.md", community: 0 },
+        { id: "x1", label: "Quetzalcoatl Spaceport", file_type: "concept", source_file: ".engram/converted/pdf/paper.md", community: 0 },
       ],
       links: [],
       community_labels: { "0": "Aero" },
@@ -97,7 +97,7 @@ async function runCli(args: string[], cwd: string) {
 interface GraphNode { id: string; citations?: Array<{ quote?: string; source_file: string; page?: number }>; citation_count?: number }
 
 function readGraph(dir: string): { nodes: GraphNode[] } {
-  return JSON.parse(readFileSync(join(dir, ".graphify", "graph.json"), "utf-8")) as { nodes: GraphNode[] };
+  return JSON.parse(readFileSync(join(dir, ".engram", "graph.json"), "utf-8")) as { nodes: GraphNode[] };
 }
 
 describe("graphify cite", () => {
@@ -130,11 +130,11 @@ describe("graphify cite", () => {
     }
 
     // The Level-2 sidecar was written.
-    expect(existsSync(join(dir, ".graphify", "ontology", "citations.json"))).toBe(true);
+    expect(existsSync(join(dir, ".engram", "ontology", "citations.json"))).toBe(true);
     const sidecar = JSON.parse(
-      readFileSync(join(dir, ".graphify", "ontology", "citations.json"), "utf-8"),
+      readFileSync(join(dir, ".engram", "ontology", "citations.json"), "utf-8"),
     ) as { schema: string; nodes: Record<string, { count: number; citations: unknown[] }> };
-    expect(sidecar.schema).toBe("graphify_ontology_citations_v1");
+    expect(sidecar.schema).toBe("engram_ontology_citations_v1");
     expect(sidecar.nodes.p1?.count).toBeGreaterThan(0);
 
     expect(logs.join("\n")).toMatch(/grounded \d+ verbatim citation/i);
@@ -142,12 +142,12 @@ describe("graphify cite", () => {
 
   it("--dry-run reports coverage without writing", async () => {
     const dir = citeProject();
-    const before = readFileSync(join(dir, ".graphify", "graph.json"), "utf-8");
+    const before = readFileSync(join(dir, ".engram", "graph.json"), "utf-8");
     const { logs } = await runCli(["cite", dir, "--dry-run"], dir);
-    const after = readFileSync(join(dir, ".graphify", "graph.json"), "utf-8");
+    const after = readFileSync(join(dir, ".engram", "graph.json"), "utf-8");
 
     expect(after).toBe(before); // untouched
-    expect(existsSync(join(dir, ".graphify", "ontology", "citations.json"))).toBe(false);
+    expect(existsSync(join(dir, ".engram", "ontology", "citations.json"))).toBe(false);
     expect(logs.join("\n")).toMatch(/dry-run.*would ground/i);
   });
 
@@ -182,7 +182,7 @@ describe("graphify cite", () => {
     // --source value, so the first root was dropped and the node never grounded.
     const dir = mkdtempSync(join(tmpdir(), "graphify-cite-multisrc-"));
     tempDirs.push(dir);
-    const graphDir = join(dir, ".graphify");
+    const graphDir = join(dir, ".engram");
     mkdirSync(graphDir, { recursive: true });
 
     const rootA = join(dir, "rootA");
