@@ -2,6 +2,12 @@
 
 MIT graph rendering primitives for Graphify and other known-position graph UIs.
 
+> **This library now lives in the Sent Tech design system**
+> (<https://github.com/rhanka/sent-tech-design-system>), which is its source of
+> record and its only npm publisher. The copy in this repository is `private` and
+> unpublishable: it is kept as the local build/test source for the Graphify studio
+> renderer. See [PUBLISHING.md](./PUBLISHING.md).
+
 The package is rendering-first: it accepts canonical node order, `Float32Array` positions, and `Uint32Array` indexed edges. Layout physics are deliberately a separate contract so a renderer can consume static coordinates, worker-driven frames, or future Barnes-Hut/WebGPU engines without owning repulsion or pin state.
 
 ## MVP Contract
