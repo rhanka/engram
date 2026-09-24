@@ -35,7 +35,7 @@ describe("install mutation previews", () => {
       resolve("/repo/AGENTS.md"),
       resolve("/repo/.codex/hooks.json"),
     ]);
-    expect(preview.hooks).toEqual([".codex/hooks.json: PreToolUse Bash graphify hook-check"]);
+    expect(preview.hooks).toEqual([".codex/hooks.json: PreToolUse Bash engram hook-check"]);
     expect(JSON.stringify(preview)).not.toContain("graphify-out");
   });
 
@@ -46,14 +46,14 @@ describe("install mutation previews", () => {
       resolve("/repo/GEMINI.md"),
       resolve("/repo/.gemini/settings.json"),
     ]);
-    expect(preview.hooks).toEqual([".gemini/settings.json: mcpServers.graphify stdio server"]);
+    expect(preview.hooks).toEqual([".gemini/settings.json: mcpServers.engram stdio server"]);
   });
 
   it("lists global skill files and version marker", () => {
     const preview = globalSkillInstallPreview("codex");
 
-    expect(preview.writes.some((path) => path.endsWith(".agents/skills/graphify/SKILL.md"))).toBe(true);
-    expect(preview.writes.some((path) => path.endsWith(".agents/skills/graphify/.graphify_version"))).toBe(true);
+    expect(preview.writes.some((path) => path.endsWith(".agents/skills/engram/SKILL.md"))).toBe(true);
+    expect(preview.writes.some((path) => path.endsWith(".agents/skills/engram/.graphify_version"))).toBe(true);
   });
 
   it("uses CLAUDE_CONFIG_DIR for the Claude global skill destination when set", () => {
@@ -63,8 +63,8 @@ describe("install mutation previews", () => {
       const preview = globalSkillInstallPreview("claude");
       expect(preview.writes).toEqual(
         expect.arrayContaining([
-          resolve("/tmp/claude-config/skills/graphify/SKILL.md"),
-          resolve("/tmp/claude-config/skills/graphify/.graphify_version"),
+          resolve("/tmp/claude-config/skills/engram/SKILL.md"),
+          resolve("/tmp/claude-config/skills/engram/.graphify_version"),
         ]),
       );
     } finally {
@@ -78,14 +78,14 @@ describe("install mutation previews", () => {
 
   it("lists upstream v4 platform project files", () => {
     expect(platformInstallPreview("/repo", "antigravity").writes).toEqual([
-      resolve("/repo/.agents/rules/graphify.md"),
-      resolve("/repo/.agents/workflows/graphify.md"),
+      resolve("/repo/.agents/rules/engram.md"),
+      resolve("/repo/.agents/workflows/engram.md"),
     ]);
 
     expect(platformInstallPreview("/repo", "kiro").writes).toEqual([
-      resolve("/repo/.kiro/skills/graphify/SKILL.md"),
-      resolve("/repo/.kiro/skills/graphify/.graphify_version"),
-      resolve("/repo/.kiro/steering/graphify.md"),
+      resolve("/repo/.kiro/skills/engram/SKILL.md"),
+      resolve("/repo/.kiro/skills/engram/.graphify_version"),
+      resolve("/repo/.kiro/steering/engram.md"),
     ]);
 
     expect(platformInstallPreview("/repo", "vscode-copilot-chat").writes).toEqual([
@@ -96,8 +96,8 @@ describe("install mutation previews", () => {
   it("lists global skill files for upstream v4 assistant platforms", () => {
     for (const platformName of ["hermes", "antigravity", "vscode-copilot-chat", "kimi"]) {
       const preview = globalSkillInstallPreview(platformName);
-      expect(preview.writes.some((path) => path.endsWith("skills/graphify/SKILL.md"))).toBe(true);
-      expect(preview.writes.some((path) => path.endsWith("skills/graphify/.graphify_version"))).toBe(true);
+      expect(preview.writes.some((path) => path.endsWith("skills/engram/SKILL.md"))).toBe(true);
+      expect(preview.writes.some((path) => path.endsWith("skills/engram/.graphify_version"))).toBe(true);
     }
   });
 
@@ -105,8 +105,8 @@ describe("install mutation previews", () => {
     const preview = withProcessPlatform("win32", () => globalSkillInstallPreview("antigravity"));
 
     // M11 (9985940 #1079): global Antigravity skill destination changed from
-    // ~/.agents/skills/graphify to ~/.gemini/config/skills/graphify.
-    expect(preview.writes.some((path) => path.includes(`${join(".gemini", "config", "skills", "graphify")}`))).toBe(true);
+    // ~/.agents/skills/graphify to ~/.gemini/config/skills/engram.
+    expect(preview.writes.some((path) => path.includes(`${join(".gemini", "config", "skills", "engram")}`))).toBe(true);
     expect(preview.writes.some((path) => path.includes(`${join(".agent", "skills", "graphify")}`))).toBe(false);
   });
 
@@ -115,8 +115,8 @@ describe("install mutation previews", () => {
 
     expect(preview.writes).toEqual(
       expect.arrayContaining([
-        expect.stringContaining(join(".kimi", "skills", "graphify", "SKILL.md")),
-        expect.stringContaining(join(".kimi", "skills", "graphify", ".graphify_version")),
+        expect.stringContaining(join(".kimi", "skills", "engram", "SKILL.md")),
+        expect.stringContaining(join(".kimi", "skills", "engram", ".graphify_version")),
       ]),
     );
   });
@@ -133,8 +133,8 @@ describe("install mutation previews", () => {
       console.log = originalLog;
     }
 
-    expect(logs[0]).toContain("Preview: graphify codex install will touch:");
+    expect(logs[0]).toContain("Preview: engram codex install will touch:");
     expect(logs.join("\n")).toContain(resolve(dir, "AGENTS.md"));
-    expect(logs.join("\n")).toContain(".codex/hooks.json: PreToolUse Bash graphify hook-check");
+    expect(logs.join("\n")).toContain(".codex/hooks.json: PreToolUse Bash engram hook-check");
   });
 });
