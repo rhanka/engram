@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 
+import { engramEnv } from "./env.js";
 import { validateOllamaBaseUrl } from "./security.js";
 import type { NormalizedLlmExecutionPolicy } from "./types.js";
 
@@ -500,7 +501,7 @@ export function resolveMaxOutputTokens(explicit?: number): number | undefined {
   if (typeof explicit === "number" && Number.isFinite(explicit) && explicit > 0) {
     return explicit;
   }
-  const raw = process.env.GRAPHIFY_MAX_OUTPUT_TOKENS;
+  const raw = engramEnv("ENGRAM_MAX_OUTPUT_TOKENS", "GRAPHIFY_MAX_OUTPUT_TOKENS");
   if (typeof raw !== "string") return undefined;
   const trimmed = raw.trim();
   if (!trimmed) return undefined;

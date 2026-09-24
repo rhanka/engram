@@ -22,6 +22,7 @@ import {
 } from "./detect.js";
 import { inspectInputScope } from "./input-scope.js";
 import { markLifecycleAnalyzed, markLifecycleStale, readLifecycleMetadata } from "./lifecycle.js";
+import { engramEnv } from "./env.js";
 import { safeGitRevParse } from "./git.js";
 import {
   makeDetectionPortable,
@@ -86,7 +87,7 @@ function builtFromCommit(root: string, graphPath: string): string | null {
 }
 
 function changedCodeFilesFromHook(root: string, codeFiles: string[]): string[] | null {
-  const raw = process.env.GRAPHIFY_CHANGED;
+  const raw = engramEnv("ENGRAM_CHANGED", "GRAPHIFY_CHANGED");
   if (!raw || raw.trim().length === 0) return null;
   const changed = new Set(
     raw

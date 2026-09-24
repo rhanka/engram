@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { DetectionResult } from "./types.js";
+import { engramEnv } from "./env.js";
 import { extractPdfTextLayer, pdfOcrSidecarStem, parsePdfOcrMode, preflightPdf, type PdfOcrMode, type PdfPreflightResult } from "./pdf-preflight.js";
 import { buildPdfOcrPagesSidecar } from "./pdf-ocr-refs.js";
 
@@ -202,7 +203,7 @@ async function preparePdf(
 
   try {
     const mistralOcr = await loadMistralOcrModule();
-    const ocrModel = options.model ?? process.env.GRAPHIFY_PDF_OCR_MODEL ?? DEFAULT_OCR_MODEL;
+    const ocrModel = options.model ?? engramEnv("ENGRAM_PDF_OCR_MODEL", "GRAPHIFY_PDF_OCR_MODEL") ?? DEFAULT_OCR_MODEL;
     const conversion = await mistralOcr.convertPdf(resolve(filePath), {
       apiKey,
       model: ocrModel,

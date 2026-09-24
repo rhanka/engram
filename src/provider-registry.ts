@@ -24,6 +24,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import os from "node:os";
 
+import { engramEnv } from "./env.js";
 import { providerBaseUrlOk } from "./security.js";
 
 // ---------------------------------------------------------------------------
@@ -87,7 +88,7 @@ export function loadCustomProviders(
   const localPath = options.localPath ?? localProvidersPath();
 
   const allowLocal =
-    ["1", "true", "yes"].includes((env["GRAPHIFY_ALLOW_LOCAL_PROVIDERS"] ?? "").trim().toLowerCase());
+    ["1", "true", "yes"].includes((engramEnv("ENGRAM_ALLOW_LOCAL_PROVIDERS", "GRAPHIFY_ALLOW_LOCAL_PROVIDERS", env) ?? "").trim().toLowerCase());
 
   // Warn if a project-local file exists but the opt-in flag is absent.
   if (existsSync(localPath) && !allowLocal) {

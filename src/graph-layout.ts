@@ -17,6 +17,7 @@
  * count), so adding/removing a node keeps the rest of the layout in place — the
  * same property the Studio relies on after a reconciliation merge.
  */
+import { engramEnv } from "./env.js";
 
 export interface LayoutGraphNode {
   id: string;
@@ -387,7 +388,7 @@ export function computeLayout(
  */
 export function fastLayoutEnabled(): boolean {
   const raw =
-    typeof process !== "undefined" && process.env ? process.env.GRAPHIFY_FAST_LAYOUT : undefined;
+    typeof process !== "undefined" && process.env ? engramEnv("ENGRAM_FAST_LAYOUT", "GRAPHIFY_FAST_LAYOUT") : undefined;
   if (!raw) return false;
   const v = String(raw).trim().toLowerCase();
   return v === "1" || v === "true" || v === "on" || v === "yes";

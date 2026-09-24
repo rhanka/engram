@@ -12,6 +12,7 @@ import { createNeo4jGraphStore } from "./neo4j.js";
 import { createPostgresGraphStore } from "./postgres.js";
 import { createSpannerGraphStore } from "./spanner.js";
 import { createSqliteGraphStore } from "./sqlite.js";
+import { engramEnv } from "../env.js";
 import type { GraphStore, GraphStoreConfig, StoreTestDeps } from "./types.js";
 
 export interface GraphStoreFactory {
@@ -102,9 +103,9 @@ registerGraphStoreFactory({
   id: "postgres",
   requiredPackage: "pg",
   async create(config: GraphStoreConfig, deps?: StoreTestDeps): Promise<GraphStore> {
-    if (!config.connectionString && !process.env.GRAPHIFY_POSTGRES_URL) {
+    if (!config.connectionString && !engramEnv("ENGRAM_POSTGRES_URL", "GRAPHIFY_POSTGRES_URL")) {
       throw new Error(
-        "postgres store requires a DSN (GRAPHIFY_POSTGRES_URL or config.connectionString)",
+        "postgres store requires a DSN (ENGRAM_POSTGRES_URL or config.connectionString)",
       );
     }
     return createPostgresGraphStore(

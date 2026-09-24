@@ -20,6 +20,7 @@ import { join, resolve } from "node:path";
 
 import type Graph from "graphology";
 
+import { engramEnv } from "./env.js";
 import { loadGraphFromData } from "./graph.js";
 import { communitiesFromGraph } from "./graph-communities.js";
 import { resolveGraphInputPath } from "./paths.js";
@@ -122,9 +123,9 @@ function loadConfig(configPath: string | undefined): NormalizedProjectConfig | u
 }
 
 /**
- * Effective backend id: explicit `--store` > GRAPHIFY_STORE env >
- * storage.mirrors[0].backend. Returns undefined when nothing is configured so
- * the caller can emit a single actionable error.
+ * Effective backend id: explicit `--store` > ENGRAM_STORE env (legacy
+ * GRAPHIFY_STORE) > storage.mirrors[0].backend. Returns undefined when
+ * nothing is configured so the caller can emit a single actionable error.
  */
 export function resolveStoreBackendId(
   opts: { store?: string },
@@ -133,7 +134,7 @@ export function resolveStoreBackendId(
 ): string | undefined {
   return (
     opts.store ??
-    env["GRAPHIFY_STORE"] ??
+    engramEnv("ENGRAM_STORE", "GRAPHIFY_STORE", env) ??
     projectConfig?.storage?.mirrors?.[0]?.backend
   );
 }
@@ -161,8 +162,8 @@ async function openStore(
 }
 
 const NO_STORE_ERROR =
-  "no GraphStore configured. Set GRAPHIFY_STORE (and GRAPHIFY_POSTGRES_URL for " +
-  "the postgres backend), add a storage.mirrors[] entry to your graphify config, " +
+  "no GraphStore configured. Set ENGRAM_STORE (and ENGRAM_POSTGRES_URL for " +
+  "the postgres backend), add a storage.mirrors[] entry to your engram config, " +
   "or pass --store <id>.";
 
 /**

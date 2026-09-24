@@ -5,6 +5,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { createHash } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
 import Graph from "graphology";
+import { engramEnv } from "./env.js";
 import { sanitizeLabel, sanitizeMetadata } from "./security.js";
 import { isDirectedGraph } from "./graph.js";
 import { assertGraphJsonFileSize, assertGraphJsonSize } from "./graph-size-guard.js";
@@ -58,7 +59,7 @@ function todayIso(): string {
  * Never throws — best-effort. Set GRAPHIFY_NO_BACKUP=1 to disable.
  */
 export function backupIfProtected(outDir: string): string | null {
-  if (process.env.GRAPHIFY_NO_BACKUP) return null;
+  if (engramEnv("ENGRAM_NO_BACKUP", "GRAPHIFY_NO_BACKUP")) return null;
   const out = resolve(outDir);
   if (!existsSync(join(out, "graph.json"))) return null;
 
