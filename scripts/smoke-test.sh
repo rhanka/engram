@@ -28,7 +28,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "═══════════════════════════════════════════════════"
-echo "  graphify pre-publish smoke test"
+echo "  engram pre-publish smoke test"
 echo "═══════════════════════════════════════════════════"
 echo ""
 
@@ -64,26 +64,26 @@ echo "  ✓ Installed from tarball"
 echo "Step 5: Verify CLI..."
 
 # --help
-OUTPUT=$(npx graphify --help 2>&1)
+OUTPUT=$(npx engram --help 2>&1)
 echo "$OUTPUT" | grep -q "Usage:" || { echo "  ✗ --help failed"; exit 1; }
-echo "  ✓ graphify --help works"
+echo "  ✓ engram --help works"
 
 # --version
-VERSION=$(npx graphify --version 2>&1)
+VERSION=$(npx engram --version 2>&1)
 echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+' || { echo "  ✗ --version failed"; exit 1; }
-echo "  ✓ graphify --version = $VERSION"
+echo "  ✓ engram --version = $VERSION"
 
 # install (skill copy)
-npx graphify install --platform claude > /dev/null 2>&1
-echo "  ✓ graphify install --platform claude works"
+npx engram install --platform claude > /dev/null 2>&1
+echo "  ✓ engram install --platform claude works"
 
 # hook status (should work even outside a git repo)
-npx graphify hook status 2>&1 | grep -qi "repository\|installed\|not" || true
-echo "  ✓ graphify hook status works"
+npx engram hook status 2>&1 | grep -qi "repository\|installed\|not" || true
+echo "  ✓ engram hook status works"
 
 # ── Step 6: Verify package contents ──────────────────
 echo "Step 6: Verify package contents..."
-PKG_DIR="$INSTALL_DIR/node_modules/@sentropic/graphify"
+PKG_DIR="$INSTALL_DIR/node_modules/@sentropic/engram"
 
 # dist/ should exist
 [ -f "$PKG_DIR/dist/index.js" ] || { echo "  ✗ dist/index.js missing"; exit 1; }
@@ -101,7 +101,7 @@ echo "  ✓ $SKILL_COUNT skill markdown files bundled"
 # ── Step 7: Verify library import ────────────────────
 echo "Step 7: Verify library import..."
 node -e "
-  const g = require('@sentropic/graphify');
+  const g = require('@sentropic/engram');
   const fns = ['validateExtraction', 'buildFromJson', 'cluster', 'godNodes', 'generateReport'];
   for (const fn of fns) {
     if (typeof g[fn] !== 'function') {
