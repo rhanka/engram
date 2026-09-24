@@ -6,10 +6,42 @@ import {
   type Digest,
   type MemoryEngineDependenciesV2,
 } from "../graphify-memory/index.js";
+// §5.9 (test-only): the module's in-process in-memory mark. The package barrel deliberately does not re-export it
+// and package.json `exports` does not expose ./store-factory, so a host cannot reach it — only the in-repo suite,
+// which uses it to declare a bespoke engine stub an embedded in-memory fake (a real in-memory store is marked on
+// construction). Admission still requires the host to raise `allow_unfenced_memory_store` as well.
+import { markInMemoryStoreV1 } from "../graphify-memory/store-factory.js";
+
+/** Test-only: stamp a bespoke stub store as this module's embedded in-memory store, then return it for wiring. */
+export function embeddedInMemoryStub<T extends object>(store: T): T {
+  markInMemoryStoreV1(store as unknown as CanonicalMemoryStorePort);
+  return store;
+}
 
 export const NOW = "2026-08-16T12:34:56.789Z";
 export const DEADLINE = "2026-08-16T12:40:00.000Z";
 export const DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as Digest;
+
+/**
+ * A fresh capability receipt for a non-production ("memory") canonical store. It carries NO attestation block
+ * or signature (§5.9 l.1049: non-production stores omit attestation), so the engine's §5.9 gate admits it
+ * transparently. Minimal fake stores return this from readiness() so fencing-dependent ops pass the gate.
+ */
+export function memoryReadinessReceipt() {
+  return {
+    ok: true as const,
+    value: {
+      store_id: "store:memory",
+      backend: "memory" as const,
+      storage_epoch: "0",
+      high_water_cursor: "0",
+      capabilities: { atomic_promotion: true, dense_cursor: true, accepted_only_lexical: true, fenced_single_writer: false, revocable_active_store: false, detached_snapshot: false, bounded_cancellation: false, backend: "memory" as const },
+      issued_at: NOW,
+      expires_at: DEADLINE,
+      receipt_digest: DIGEST,
+    },
+  };
+}
 
 export function captureRequest(idempotencyKey: string, sequence: string, text = "memory body") {
   return {
@@ -100,6 +132,9 @@ export function createL3Memory(
     admission_policy: policy,
     crypto,
     activity_sources: [],
+    // §5.9: this fixture is a non-production embedded harness — opt into running the neutral in-memory store
+    // unfenced. When a fenced factory store is injected instead, the flag is inert (the fenced path admits it).
+    allow_unfenced_memory_store: true,
     clock: { now: () => NOW },
   } as unknown as MemoryEngineDependenciesV2);
   return { memory, store, destroyed };

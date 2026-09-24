@@ -4,6 +4,13 @@ declare module "node:fs" {
     readonly ino: number;
   }
 
+  // The bigint form (fstatSync/statSync with { bigint: true }) — a large XFS/btrfs inode exceeds 2^53 and would
+  // lose precision as a JS number, so the fence carries dev/ino as bigint end to end.
+  interface BigIntFileStats {
+    readonly dev: bigint;
+    readonly ino: bigint;
+  }
+
   interface FileSystemStats {
     readonly type: number | bigint;
   }
@@ -11,8 +18,11 @@ declare module "node:fs" {
   export function mkdirSync(path: string, options: { recursive: true }): void;
   export function openSync(path: string, flags: "a", mode: number): number;
   export function closeSync(fd: number): void;
+  export function readFileSync(path: string, encoding: "utf8"): string;
   export function rmSync(path: string, options: { force: true }): void;
   export function statSync(path: string): FileStats;
+  export function statSync(path: string, options: { bigint: true }): BigIntFileStats;
+  export function fstatSync(fd: number, options: { bigint: true }): BigIntFileStats;
   export function statfsSync(path: string): FileSystemStats;
 }
 

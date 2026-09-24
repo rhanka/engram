@@ -1,7 +1,9 @@
 import {
   closeSync,
+  fstatSync,
   mkdirSync,
   openSync,
+  readFileSync,
   rmSync,
   statSync,
   statfsSync,
@@ -9,6 +11,9 @@ import {
 import { dirname } from "node:path";
 
 import { receiptDigest } from "./digests.js";
+import { classifyFenceFilesystemV1, SQLITE_LOCAL_FILESYSTEM_TYPES, SQLITE_REJECTED_FILESYSTEM_TYPES } from "./filesystem-fence.js";
+import { procLocksHoldsExclusiveFlockV1 } from "./proc-locks.js";
+import { markFencedStoreV1 } from "./store-factory.js";
 import {
   createInMemoryCanonicalMemoryStoreV1,
   foldMemoryJournalV1,
@@ -39,28 +44,25 @@ import type {
 type NativeDatabase = import("better-sqlite3").Database;
 
 const MAX_READER_LEASE_MS = 300_000;
-const SQLITE_LOCAL_FILESYSTEM_TYPES = new Set([
-  0x01021994, // tmpfs
-  0x58465342, // xfs
-  0x794c7630, // overlayfs (container-local Linux filesystems)
-  0x9123683e, // btrfs
-  0xef53, // ext2/3/4
-  0x4253584e, // apfs
-  0x482b, // hfs+
-  0x5346544e, // ntfs
-  0x526653, // refs
-]);
-const SQLITE_REJECTED_FILESYSTEM_TYPES = new Set([
-  0x6969, // nfs
-  0x517b, // cifs/smb
-  0x65735546, // fuse
-]);
 
 type Failpoint = "after_blob" | "after_journal" | "after_state" | "after_fts" | "after_outbox";
 
 export interface FencedLockV1 {
-  /** A lock is live only while the kernel lock still belongs to this process. */
+  /** In-process fast flag: false once release()/forceFenceLoss ran. Cheap, but NOT a kernel proof on its own. */
   assertHeld(): boolean;
+  /**
+   * Linux kernel liveness proof: /proc/self/fdinfo/<our fd> still shows OUR open-file-description's exclusive
+   * flock on the locked inode. fs-ext (native flock) cannot be faked into forging this kernel line, and fdinfo is
+   * per-fd, so an unrelated fd of the same process holding a flock on the inode does not spoof it (unlike
+   * /proc/locks). Absent or non-matching => the fence is not live.
+   */
+  assertKernelHeld(): boolean;
+  /**
+   * Anti-rename: the DB path still resolves to the very inode we flocked. A `mv other db` after the fence was
+   * taken leaves the OLD (still-flocked) inode owning the writer lock while the path now names a different file;
+   * fdinfo alone cannot see that (it reports our fd's original inode), so this is a SEPARATE check.
+   */
+  assertPathUnmoved(): boolean;
   release(): void;
 }
 
@@ -73,10 +75,11 @@ export interface FencedSqliteMemoryStoreOptionsV1 {
   filename: string;
   clock: ClockPort;
   store_id?: string;
-  /** Test seam; production uses non-blocking kernel flock on `${filename}.lock`. */
-  lock_factory?: (lock_filename: string) => Promise<FencedLockV1>;
-  /** Test seam; production rejects network, removable, FUSE, and unknown filesystems. */
-  filesystem_probe?: (filename: string) => LocalFilesystemProbeResultV1;
+  // §5.9: production refuses an EPHEMERAL local filesystem (tmpfs, overlayfs) — a DB there is lost on restart,
+  // contradicting the block-PVC constraint. A NON-production embedded harness opts in here. STRICT boolean: a
+  // string is rejected (same discipline as allow_unfenced_memory_store). Distinct from that flag on purpose — a
+  // "memory" flag must not widen a filesystem decision (the F1 lesson).
+  allow_ephemeral_filesystem_store?: boolean;
   /** Injected only by native atomicity tests.  Throwing rolls back the whole transaction. */
   failpoint?: (stage: Failpoint) => void;
   /** Test seam for proving the mandatory second epoch/fence check before COMMIT. */
@@ -151,15 +154,49 @@ function defaultFilesystemProbe(filename: string): LocalFilesystemProbeResultV1 
   }
 }
 
-async function acquireKernelFlock(lockFilename: string): Promise<FencedLockV1> {
-  mkdirSync(dirname(lockFilename), { recursive: true });
-  const fd = openSync(lockFilename, "a", 0o600);
+/**
+ * Take the writer fence on the canonical database's OWN inode (not a `.lock` sidecar): open a private fd on the
+ * file and hold a non-blocking exclusive flock on it for the store's lifetime. flock is attached to this open-file
+ * description, so a second live holder — in any process — is refused (EAGAIN); SQLite's own fd is separate and
+ * unaffected. Process death releases the flock, so a crash never strands a lock. The returned lock re-proves
+ * liveness against /proc/self/fdinfo/<fd> and rename-safety against the path, per operation.
+ */
+async function acquireDatabaseFlock(filename: string, allowEphemeral: boolean): Promise<FencedLockV1> {
+  mkdirSync(dirname(filename), { recursive: true });
+  const fd = openSync(filename, "a", 0o600); // our own fd on the DB inode; SQLite opens the file on a separate fd
   try {
     const flock = await import("fs-ext");
-    flock.flockSync(fd, "exnb");
+    flock.flockSync(fd, "exnb"); // exclusive, non-blocking: a second live holder throws EAGAIN
+    // Classify the ACTUAL open file's filesystem (a lenient dir probe cannot mask it): refuse a network/removable/
+    // FUSE fs (flock there is not a cross-host fence), an unknown fs, or an ephemeral fs (tmpfs/overlayfs — lost on
+    // restart) unless the host opted in. The verdict names the type in hex; the open() catch surfaces it.
+    const verdict = classifyFenceFilesystemV1(Number(statfsSync(`/proc/self/fd/${fd}`).type), allowEphemeral);
+    if (!verdict.admit) throw new Error(verdict.reason);
+    // Capture the flocked inode from the fd (bigint: a large XFS/btrfs inode exceeds 2^53 and a number would round).
+    const identity = fstatSync(fd, { bigint: true });
+    // Match the flock by INODE only, never by device: fstat's st_dev (the mount/subvolume dev) differs from the
+    // superblock s_dev the kernel prints in /proc on btrfs, so a device match would brick there; the inode is
+    // identical in both views. fdinfo is per-fd anyway, so this is a sanity check, not the sole discriminator.
+    const inode = identity.ino.toString();
     let held = true;
-    return {
+    const lock: FencedLockV1 = {
       assertHeld: () => held,
+      assertKernelHeld: () => {
+        if (!held) return false;
+        try {
+          return procLocksHoldsExclusiveFlockV1(readFileSync(`/proc/self/fdinfo/${fd}`, "utf8"), { ino: inode });
+        } catch {
+          return false; // fdinfo unreadable => cannot prove the fence is live => treat as lost
+        }
+      },
+      assertPathUnmoved: () => {
+        try {
+          const now = statSync(filename, { bigint: true });
+          return now.dev === identity.dev && now.ino === identity.ino;
+        } catch {
+          return false; // the path is gone (renamed/deleted) => the fence no longer guards this name
+        }
+      },
       release: () => {
         if (!held) return;
         held = false;
@@ -170,8 +207,17 @@ async function acquireKernelFlock(lockFilename: string): Promise<FencedLockV1> {
         }
       },
     };
+    // Prove the flock is REALLY recorded by the kernel BEFORE returning — the caller next advances the durable
+    // epoch and writes, so this must fail closed on a non-functional native flock binding (a shim, or a broken
+    // module) whose flockSync returned success without taking a kernel lock. Otherwise such a store would advance
+    // the epoch while a legitimate broker holds the real flock elsewhere, driving THAT broker's next #fence to a
+    // spurious FENCE_LOST — killing the live writer. Throwing here (before any write) refuses it up front.
+    if (!lock.assertKernelHeld() || !lock.assertPathUnmoved()) {
+      throw new Error("the SQLite writer flock is not recorded by /proc/self/fdinfo after flock (a non-functional native flock binding?)");
+    }
+    return lock;
   } catch (error) {
-    closeSync(fd);
+    closeSync(fd); // closing the fd also releases any flock taken above
     throw error;
   }
 }
@@ -310,6 +356,18 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
       this.#fenceLost = true;
       this.#revokeReaders();
       return refusal(operation, "FENCE_LOST", "the SQLite writer fence is no longer held");
+    }
+    // (liveness) the kernel still records THIS fd's exclusive flock — an fs-ext shim cannot forge /proc/self/fdinfo.
+    if (!this.lock.assertKernelHeld()) {
+      this.#fenceLost = true;
+      this.#revokeReaders();
+      return refusal(operation, "FENCE_LOST", "the kernel no longer records this process's writer flock on the canonical database");
+    }
+    // (anti-rename) the canonical path still resolves to the flocked inode — a swap leaves the old inode locked.
+    if (!this.lock.assertPathUnmoved()) {
+      this.#fenceLost = true;
+      this.#revokeReaders();
+      return refusal(operation, "FENCE_LOST", "the canonical database path was replaced (rename/swap) since the fence was taken");
     }
     try {
       const row = this.database.prepare("SELECT value FROM memory_meta WHERE key = 'storage_epoch'").get() as StoredRow | undefined;
@@ -510,7 +568,8 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
       store_id: this.options.store_id ?? `sqlite:${this.filename}`,
       backend: "sqlite" as const,
       storage_epoch: this.storageEpoch,
-      capabilities: this.capabilities,
+      // §5.9: surface the ephemeral-fs posture in the receipt (readiness()); false on a correct prod deployment.
+      capabilities: { ...this.capabilities, ephemeral_filesystem_store_permitted: this.options.allow_ephemeral_filesystem_store === true },
     };
     return { ok: true, value: { ...fencedBody, receipt_digest: receiptDigest("operational-capability", fencedBody) } };
   }
@@ -576,14 +635,31 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
  * process death releases the flock, so a crash never strands a PID sentinel.
  */
 export async function openFencedSqliteCanonicalMemoryStoreV1(options: FencedSqliteMemoryStoreOptionsV1): Promise<Result<FencedSqliteCanonicalMemoryStoreV1>> {
-  const probe = (options.filesystem_probe ?? defaultFilesystemProbe)(options.filename);
+  // The fence proves liveness against Linux /proc (fdinfo) and refuses a network fs against the open fd; neither
+  // exists on macOS/Windows, so those cannot be supported as a fenced production target — fail closed up front.
+  // Read the platform off globalThis to avoid a global `process` declaration (which would clash with @types/node
+  // in the repo-wide typecheck; the neutral package itself ships no node types, only the node-fs.d.ts shim).
+  if ((globalThis as { process?: { platform?: string } }).process?.platform !== "linux") {
+    return refusal("admin", "CAPABILITY_UNAVAILABLE", "the fenced SQLite canonical store requires Linux kernel lock verification (/proc/self/fdinfo); macOS and Windows are not supported production targets");
+  }
+  const probe = defaultFilesystemProbe(options.filename);
   if (!probe.local) return refusal("admin", "CAPABILITY_UNAVAILABLE", `SQLite canonical storage requires a known local filesystem (${probe.kind})`);
   let lock: FencedLockV1 | undefined;
   let database: NativeDatabase | undefined;
   try {
-    lock = await (options.lock_factory ?? acquireKernelFlock)(`${options.filename}.lock`);
-  } catch {
-    return refusal("admin", "FENCE_LOST", "another live process holds the SQLite writer fence");
+    // STRICT boolean: a string such as "true" does not widen the exemption (same discipline as §5.9's memory flag).
+    lock = await acquireDatabaseFlock(options.filename, options.allow_ephemeral_filesystem_store === true);
+  } catch (error) {
+    // ONLY genuine flock contention (another live holder) is FENCE_LOST. Everything else — the native flock module
+    // absent or non-functional, a network/removable filesystem, an unreadable /proc, the kernel-proof refusal —
+    // is CAPABILITY_UNAVAILABLE with its cause. A catch-all FENCE_LOST would misreport an unfenceable environment
+    // (e.g. fs-ext not built) as a lost fence.
+    const code = (error as { code?: string } | undefined)?.code;
+    if (code === "EAGAIN" || code === "EWOULDBLOCK") {
+      return refusal("admin", "FENCE_LOST", "another live process holds the SQLite writer fence");
+    }
+    const cause = error instanceof Error ? error.message : String(error);
+    return refusal("admin", "CAPABILITY_UNAVAILABLE", `the SQLite writer fence could not be acquired: ${cause}`);
   }
   try {
     const native = await import("better-sqlite3");
@@ -617,7 +693,11 @@ export async function openFencedSqliteCanonicalMemoryStoreV1(options: FencedSqli
       lock.release();
       return { ok: false, error: { ...ready.error, operation: "admin" } };
     }
-    return { ok: true, value: new FencedSqliteStore(options.filename, options, database, lock, epoch, core) };
+    const store = new FencedSqliteStore(options.filename, options, database, lock, epoch, core);
+    // §5.9 v5-b: stamp the store as fence-holding ONLY here — after a real kernel flock on the DB inode, a
+    // /proc-verifiable lock, and the durable epoch advance. The engine's provenance gate admits on this mark.
+    markFencedStoreV1(store);
+    return { ok: true, value: store };
   } catch {
     try { database?.close(); } catch { /* best effort after a failed native open */ }
     lock.release();

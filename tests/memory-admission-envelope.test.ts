@@ -3,6 +3,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
+import { embeddedInMemoryStub, memoryReadinessReceipt } from "./memory-l3-fixture.js";
+
 import {
   authorizationResourceDigest,
   createMemoryPortV2,
@@ -98,14 +100,16 @@ describe("admission decision envelope", () => {
       },
     };
     const memory = createMemoryPortV2({
-      canonical_store: {
+      canonical_store: embeddedInMemoryStub({
+        async readiness() { return memoryReadinessReceipt(); },
         async commitPending(input: { control: Record<string, unknown>; sealed: Record<string, unknown> }) {
           pending = { control: { ...input.control, created_cursor: "1" }, sealed: input.sealed };
           return { ok: true, value: { cursor: "1", committed_at: NOW, receipt_digest: DIGEST } };
         },
         async readPending() { return { ok: true, value: pending }; },
         async applyAdmission() { promotions += 1; throw new Error("adjudication must not promote"); },
-      },
+      }),
+      allow_unfenced_memory_store: true,
       authorization,
       admission_policy: policy,
       crypto: {

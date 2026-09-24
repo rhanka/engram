@@ -11,6 +11,7 @@ export { CANDIDATE_PAYLOAD_V2_SCHEMA, MEMORY_RECORD_V2_SCHEMA } from "./schemas.
 export {
   evaluateTrustEligibility,
   isCanonicalCursor,
+  validateAdminOperationRequest,
   validateCandidatePayload,
   validateMemoryRecord,
   type MemoryValidationOptions,
@@ -43,6 +44,18 @@ export {
   type PostgresMemoryStoreOptionsV1,
 } from "./postgres.js";
 export {
+  createCanonicalMemoryStoreFactoryV1,
+  isFencedFactoryStoreV1,
+  verifyStoreProvenance,
+  GRAPHIFY_MEMORY_ADAPTER_IDENTITY,
+  type CanonicalMemoryStoreFactoryOptionsV1,
+  type FencedStoreOpenerV1,
+} from "./store-factory.js";
+export {
+  assertAdminProviderConformance,
+  type AdminProviderConformanceCasesV1,
+} from "./admin-conformance.js";
+export {
   applyPortOwnedRedaction,
   authorizeOperation,
   createMemoryPortV2,
@@ -50,19 +63,6 @@ export {
   validateAuthorizationAllowed,
   type AuthorizationBindingInputV1,
 } from "./engine.js";
-export {
-  createAlwaysActiveLocalAdministrationFenceV1,
-  createFileLocalCredentialSourceV1,
-  createInMemoryLocalAdministrationStateStoreV1,
-  createInMemoryLocalCredentialSourceV1,
-  createLocalAdministratorV1,
-  type LocalAdministrationFenceV1,
-  type LocalAdministrationStateStoreV1,
-  type LocalAdministrationStateV1,
-  type LocalAdministratorOptionsV1,
-  type LocalAdministratorV1,
-  type LocalCredentialSourceV1,
-} from "./service.js";
 export {
   hasProjectionEnvelope,
 } from "./projection.js";
