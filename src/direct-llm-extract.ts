@@ -142,7 +142,7 @@ function buildExtractionPrompt(input: {
     "```",
   ].join("\n"));
   return [
-    `Extract Graphify semantic graph fragment ${input.chunkIndex + 1}/${input.chunkCount}.`,
+    `Extract Engram semantic graph fragment ${input.chunkIndex + 1}/${input.chunkCount}.`,
     "",
     "Return this exact JSON shape:",
     '{"nodes":[],"edges":[],"hyperedges":[],"input_tokens":0,"output_tokens":0}',
@@ -205,7 +205,7 @@ export function createDirectSemanticExtractionClient(
           const candidateErrors = validateExtraction(candidate);
           if (candidateErrors.length > 0) {
             throw new Error(
-              `Direct semantic extraction returned invalid Graphify JSON:\n${candidateErrors.join("\n")}`,
+              `Direct semantic extraction returned invalid Engram JSON:\n${candidateErrors.join("\n")}`,
             );
           }
         };
@@ -220,7 +220,7 @@ export function createDirectSemanticExtractionClient(
         ) as Partial<Extraction>;
         const errors = validateExtraction(parsed);
         if (errors.length > 0) {
-          throw new Error(`Direct semantic extraction returned invalid Graphify JSON:\n${errors.join("\n")}`);
+          throw new Error(`Direct semantic extraction returned invalid Engram JSON:\n${errors.join("\n")}`);
         }
         return parsed;
       } finally {

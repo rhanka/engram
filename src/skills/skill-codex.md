@@ -495,7 +495,7 @@ node -e "
 ```
 
 If code-only:
-- print `[graphify update] Code-only changes detected - skipping semantic extraction`
+- print `[engram update] Code-only changes detected - skipping semantic extraction`
 - run `extract-ast` with `--incremental`
 - write an empty semantic extraction JSON:
 

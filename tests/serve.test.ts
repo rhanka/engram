@@ -1188,7 +1188,7 @@ describe("MCP stdio server", () => {
           arguments: { changed_files: ["src/beta.ts"] },
         }),
       );
-      expect(reviewDelta).toContain("Graphify Review Delta");
+      expect(reviewDelta).toContain("Engram Review Delta");
       expect(reviewDelta).toContain("src/beta.ts");
       expect(reviewDelta).toContain("GammaDocs");
       expect(reviewDelta).toContain("Likely test gaps:");
@@ -1199,7 +1199,7 @@ describe("MCP stdio server", () => {
           arguments: { changed_files: ["src/beta.ts"] },
         }),
       );
-      expect(reviewAnalysis).toContain("Graphify Review Analysis");
+      expect(reviewAnalysis).toContain("Engram Review Analysis");
       expect(reviewAnalysis).toContain("Blast radius:");
       expect(reviewAnalysis).toContain("Impacted communities:");
 

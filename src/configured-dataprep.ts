@@ -271,7 +271,7 @@ function dataprepReport(result: ConfiguredDataprepResult): string {
     .map(([registryId, count]) => `- ${registryId}: ${count} records`)
     .join("\n");
   return [
-    `# Graphify Profile Dataprep Report`,
+    `# Engram Profile Dataprep Report`,
     ``,
     `Profile: ${result.profile.id} ${result.profile.version}`,
     `Profile hash: ${result.profile.profile_hash}`,
