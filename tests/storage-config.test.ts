@@ -101,7 +101,7 @@ describe("validateProjectConfig – storage block", () => {
     const secretErrors = errors.filter((e) => e.toLowerCase().includes("secret") || e.toLowerCase().includes("password") || e.toLowerCase().includes("env"));
     expect(secretErrors.length).toBeGreaterThan(0);
     // Message must reference env variable
-    expect(secretErrors[0]).toMatch(/GRAPHIFY_/);
+    expect(secretErrors[0]).toMatch(/ENGRAM_/);
   });
 
   it("rejects a storage mirror with 'token' key", () => {
@@ -122,7 +122,7 @@ describe("validateProjectConfig – storage block", () => {
     );
 
     const errors = validateProjectConfig(raw);
-    expect(errors.some((e) => e.toLowerCase().includes("token") || e.toLowerCase().includes("secret") || e.match(/GRAPHIFY_/))).toBe(true);
+    expect(errors.some((e) => e.toLowerCase().includes("token") || e.toLowerCase().includes("secret") || e.match(/ENGRAM_/))).toBe(true);
   });
 
   it("rejects a storage mirror with 'secret' key", () => {
@@ -143,7 +143,7 @@ describe("validateProjectConfig – storage block", () => {
     );
 
     const errors = validateProjectConfig(raw);
-    expect(errors.some((e) => e.match(/GRAPHIFY_/))).toBe(true);
+    expect(errors.some((e) => e.match(/ENGRAM_/))).toBe(true);
   });
 
   it("rejects a storage mirror with 'credential' key", () => {
@@ -164,7 +164,7 @@ describe("validateProjectConfig – storage block", () => {
     );
 
     const errors = validateProjectConfig(raw);
-    expect(errors.some((e) => e.match(/GRAPHIFY_/))).toBe(true);
+    expect(errors.some((e) => e.match(/ENGRAM_/))).toBe(true);
   });
 
   it("rejects a storage mirror with 'pass' key", () => {
@@ -185,7 +185,7 @@ describe("validateProjectConfig – storage block", () => {
     );
 
     const errors = validateProjectConfig(raw);
-    expect(errors.some((e) => e.match(/GRAPHIFY_/))).toBe(true);
+    expect(errors.some((e) => e.match(/ENGRAM_/))).toBe(true);
   });
 
   it("rejects an unknown backend id, listing available ids", () => {

@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node
 import { dirname, join, relative, resolve } from "node:path";
 
 import { resolveGitContext, safeExecGit } from "./git.js";
-import { LEGACY_GRAPHIFY_STATE_DIR, resolveGraphifyPaths } from "./paths.js";
+import { DEFAULT_ENGRAM_STATE_DIR, LEGACY_GRAPHIFY_STATE_DIR, resolveGraphifyPaths } from "./paths.js";
 
 export type MigrationAction = "copy" | "overwrite" | "skip";
 export type MigrationEntryType = "file" | "directory";
@@ -99,7 +99,7 @@ function gitAdvice(root: string, sourceDir: string, targetDir: string): Migratio
       hasCommits: false,
       legacyTrackedCount: 0,
       legacyPath: LEGACY_GRAPHIFY_STATE_DIR,
-      targetPath: ".graphify",
+      targetPath: DEFAULT_ENGRAM_STATE_DIR,
       targetIgnored: false,
       status: [],
       recommendedCommands: [],
@@ -119,13 +119,13 @@ function gitAdvice(root: string, sourceDir: string, targetDir: string): Migratio
 
   if (hasCommits && legacyTrackedCount > 0) {
     recommendedCommands.push("git mv -f " + shellQuote(legacyPath) + " " + shellQuote(targetPath));
-    recommendedCommands.push('git commit -m "chore: migrate graphify state directory"');
+    recommendedCommands.push('git commit -m "chore: migrate graph state directory"');
     notes.push("Tracked legacy graph artifacts detected; use git mv before copying if you want Git history to show a rename.");
     if (targetIgnored) {
-      notes.push(".graphify is ignored by default; git mv -f should only be used when you intentionally track graph artifacts.");
+      notes.push(".engram is ignored by default; git mv -f should only be used when you intentionally track graph artifacts.");
     }
   } else {
-    notes.push("No tracked graphify-out artifacts detected; .graphify is runtime state and normally should stay uncommitted.");
+    notes.push("No tracked graphify-out artifacts detected; .engram is runtime state and normally should stay uncommitted.");
   }
 
   return {

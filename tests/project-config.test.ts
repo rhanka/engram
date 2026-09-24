@@ -31,24 +31,49 @@ afterEach(() => {
 });
 
 describe("project config loader", () => {
-  it("discovers supported config names in documented order", () => {
+  it("discovers engram config names first, legacy graphify names as fallback", () => {
     const root = makeTempDir();
-    mkdirSync(join(root, ".graphify"), { recursive: true });
-    writeFileSync(join(root, ".graphify", "config.yml"), "version: 1\n", "utf-8");
-    writeFileSync(join(root, ".graphify", "config.yaml"), "version: 1\n", "utf-8");
-    writeFileSync(join(root, "graphify.yml"), "version: 1\n", "utf-8");
+    mkdirSync(join(root, ".engram"), { recursive: true });
+    writeFileSync(join(root, ".engram", "config.yml"), "version: 1\n", "utf-8");
+    writeFileSync(join(root, ".engram", "config.yaml"), "version: 1\n", "utf-8");
+    writeFileSync(join(root, "engram.yml"), "version: 1\n", "utf-8");
+    writeFileSync(join(root, "engram.yaml"), "version: 1\n", "utf-8");
+
+    const result = discoverProjectConfig(root);
+
+    expect(result.found).toBe(true);
+    expect(result.path).toBe(join(root, "engram.yaml"));
+    expect(result.searched).toEqual([
+      join(root, "engram.yaml"),
+      join(root, "engram.yml"),
+      join(root, ".engram", "config.yaml"),
+      join(root, ".engram", "config.yml"),
+      join(root, "graphify.yaml"),
+      join(root, "graphify.yml"),
+      join(root, ".graphify", "config.yaml"),
+      join(root, ".graphify", "config.yml"),
+    ]);
+  });
+
+  it("still discovers a legacy-only graphify.yaml checkout", () => {
+    const root = makeTempDir();
     writeFileSync(join(root, "graphify.yaml"), "version: 1\n", "utf-8");
 
     const result = discoverProjectConfig(root);
 
     expect(result.found).toBe(true);
     expect(result.path).toBe(join(root, "graphify.yaml"));
-    expect(result.searched).toEqual([
-      join(root, "graphify.yaml"),
-      join(root, "graphify.yml"),
-      join(root, ".graphify", "config.yaml"),
-      join(root, ".graphify", "config.yml"),
-    ]);
+  });
+
+  it("prefers engram.yaml when both spellings exist", () => {
+    const root = makeTempDir();
+    writeFileSync(join(root, "graphify.yaml"), "version: 1\n", "utf-8");
+    writeFileSync(join(root, "engram.yaml"), "version: 1\n", "utf-8");
+
+    const result = discoverProjectConfig(root);
+
+    expect(result.found).toBe(true);
+    expect(result.path).toBe(join(root, "engram.yaml"));
   });
 
   it("returns a miss with searched paths when no config exists", () => {

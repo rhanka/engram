@@ -8,8 +8,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { resolve as pathResolve, extname, basename, dirname, join } from "node:path";
 import {
-  DEFAULT_GRAPHIFY_STATE_DIR,
-  LEGACY_GRAPHIFY_STATE_DIR,
+  ALL_KNOWN_STATE_DIRS,
   resolveGraphifyPaths,
 } from "./paths.js";
 import {
@@ -242,8 +241,7 @@ export async function rebuildCode(
 
     const allCodeFiles = (rawDetection.files.code ?? []).filter(
       (f: string) =>
-        !f.includes(DEFAULT_GRAPHIFY_STATE_DIR) &&
-        !f.includes(LEGACY_GRAPHIFY_STATE_DIR) &&
+        !ALL_KNOWN_STATE_DIRS.some((dir) => f.includes(dir)) &&
         !f.includes("__pycache__") &&
         !f.includes("node_modules"),
     );
