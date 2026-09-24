@@ -93,10 +93,12 @@ describe("AdminProviderPort rotation/bootstrap conformance (§5.10/§10)", () =>
     if (!faultyVerdict.ok) expect(faultyVerdict.error.message).toContain("superseded by rotation");
   });
 
-  it("the harness leaves the rotation obligation unchecked when the stale case is omitted (verdict scoped to supplied cases)", async () => {
-    // Backward-compatible: a 2-case certification still passes even against the stale-honoring provider, because it
-    // never exercises rotation — this is why a FULL certification must supply staleReceiptAfterRotation.
-    const twoCases: AdminProviderConformanceCasesV1 = { authorizationDenial: cases.authorizationDenial, nonAuthorizationFailure: cases.nonAuthorizationFailure };
-    expect((await assertAdminProviderConformance(staleHonoringProvider(), twoCases)).ok).toBe(true);
+  it("refuses to certify when the mandatory staleReceiptAfterRotation case is omitted — no partial pass", async () => {
+    // model a caller that omitted the now-REQUIRED case (bypassing the type); the harness must refuse, never pass,
+    // so a `{ conformant: true }` can never mean "rotation was not checked".
+    const twoCases = { authorizationDenial: cases.authorizationDenial, nonAuthorizationFailure: cases.nonAuthorizationFailure } as unknown as AdminProviderConformanceCasesV1;
+    const verdict = await assertAdminProviderConformance(referenceProvider(), twoCases);
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.error.message).toContain("staleReceiptAfterRotation");
   });
 });
