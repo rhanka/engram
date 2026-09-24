@@ -8,9 +8,9 @@ import {
   type FencedStoreConstructionV1,
   type OperationalCapabilityReceiptV1,
   type Result,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 // Internal fence mark (barrel does not re-export it) — a test models the opener stamping a store after a real fence.
-import { markFencedStoreV1 } from "../graphify-memory/store-factory.js";
+import { markFencedStoreV1 } from "../engram-memory/store-factory.js";
 
 const caps = { atomic_promotion: true as const, dense_cursor: true as const, accepted_only_lexical: true as const, fenced_single_writer: true, revocable_active_store: true, detached_snapshot: true, bounded_cancellation: true, backend: "sqlite" as const };
 const reached = { ok: false as const, error: { code: "STORE_UNAVAILABLE" as const, operation: "admin" as const, message: "prod-stub reached", retryable: false } };

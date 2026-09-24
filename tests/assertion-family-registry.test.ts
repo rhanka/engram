@@ -9,7 +9,7 @@ import {
   RECONCILIATION_BINARY_STATUS_FAMILY_ID,
   type EvidenceClass,
   type MemoryRecordV2,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 
 const DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as const;
 const ZERO = `sha256:${"0".repeat(64)}` as const;

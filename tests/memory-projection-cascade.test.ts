@@ -4,7 +4,7 @@ import {
   runProjectionInvalidationCascadeV1,
   type ProjectionBatchV1,
   type ProjectionInvalidationSurfaceV1,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 import { captureRequest, createL3Memory, lifecycleCommand } from "./memory-l3-fixture.js";
 
 const DEADLINE = "2026-08-16T12:40:00.000Z";

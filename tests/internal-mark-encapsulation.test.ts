@@ -9,12 +9,12 @@ import { describe, expect, it } from "vitest";
 // exempt (a test helper legitimately marks bespoke embedded fakes). If this fails, a new importer leaked the mark.
 const MARKS: ReadonlyArray<{ symbol: string; allowed: ReadonlyArray<string> }> = [
   // store-factory.ts DEFINES it; memory-store.ts is the only production caller.
-  { symbol: "markInMemoryStoreV1", allowed: ["graphify-memory/store-factory.ts", "graphify-memory/memory-store.ts"] },
+  { symbol: "markInMemoryStoreV1", allowed: ["engram-memory/store-factory.ts", "engram-memory/memory-store.ts"] },
   // store-factory.ts DEFINES it; only the two fence-taking openers may stamp a store as fence-holding.
-  { symbol: "markFencedStoreV1", allowed: ["graphify-memory/store-factory.ts", "graphify-memory/sqlite.ts", "graphify-memory/postgres.ts"] },
+  { symbol: "markFencedStoreV1", allowed: ["engram-memory/store-factory.ts", "engram-memory/sqlite.ts", "engram-memory/postgres.ts"] },
 ];
 
-const ROOTS = ["graphify-memory", "src"];
+const ROOTS = ["engram-memory", "src"];
 const SKIP_DIRS = new Set(["node_modules", "dist", "tests", ".git"]);
 
 function sourceFiles(root: string): string[] {
