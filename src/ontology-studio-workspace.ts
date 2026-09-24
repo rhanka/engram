@@ -400,7 +400,7 @@ function renderReconciliationActionScript(): string {
     "      ? { candidate_id: model.candidateNodeId }",
     "      : { candidate_id: model.candidateNodeId, canonical_id: model.canonicalNodeId };",
     "    return {",
-    "      schema: 'graphify_ontology_patch_v1',",
+    "      schema: 'engram_ontology_patch_v1',",
     "      id: patchId(model.candidateId, action),",
     "      operation,",
     "      status: 'proposed',",
@@ -854,7 +854,7 @@ export function renderOntologyStudioWorkspace(
     const shellHtml = renderWorkspaceShell({
       tokens,
       tokenSource: "fallback",
-      title: "Graphify Ontology Studio",
+      title: "Engram Ontology Studio",
       profileId: context.profile.id,
       writeEnabled: opts.writeEnabled,
       queueEmpty: (model.candidates?.items.length ?? 0) === 0,
@@ -874,7 +874,7 @@ export function renderOntologyStudioWorkspace(
     return renderWorkspaceShell({
       tokens,
       tokenSource: "fallback",
-      title: "Graphify Ontology Studio",
+      title: "Engram Ontology Studio",
       profileId: context.profile.id,
       writeEnabled: opts.writeEnabled,
       state,
@@ -937,7 +937,7 @@ export function renderOntologyStudioWorkspace(
   const shellHtml = renderWorkspaceShell({
     tokens,
     tokenSource: "fallback",
-    title: "Graphify Ontology Studio",
+    title: "Engram Ontology Studio",
     profileId: context.profile.id,
     writeEnabled: opts.writeEnabled,
     queueEmpty: (model.candidates?.items.length ?? 0) === 0,

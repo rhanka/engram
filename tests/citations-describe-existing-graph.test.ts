@@ -105,7 +105,7 @@ describe("F4 e2e: describe --citation-cap all reads citations.json on the existi
 
   function setupProject(inlineK: number, fullCount: number): string {
     const root = tempDir();
-    const stateDir = join(root, ".graphify");
+    const stateDir = join(root, ".engram");
     mkdirSync(stateDir, { recursive: true });
 
     const inline = cites(inlineK);
@@ -155,7 +155,7 @@ describe("F4 e2e: describe --citation-cap all reads citations.json on the existi
   }
 
   function emittedPrompt(root: string): string {
-    const dir = join(root, ".graphify", "description-instructions");
+    const dir = join(root, ".engram", "description-instructions");
     const md = readdirSync(dir).find((f) => f.endsWith(".md"));
     if (!md) return "";
     return readFileSync(join(dir, md), "utf-8");
@@ -176,7 +176,7 @@ describe("F4 e2e: describe --citation-cap all reads citations.json on the existi
   it("falls back to inline (8) when no sidecar is present", async () => {
     const root = setupProject(8, 20);
     // Remove the sidecar so only the inline K-set is available.
-    rmSync(join(root, ".graphify", "ontology", "citations.json"), { force: true });
+    rmSync(join(root, ".engram", "ontology", "citations.json"), { force: true });
     await runDescribe(root, "all");
     expect(countSnippets(emittedPrompt(root))).toBe(8);
   });

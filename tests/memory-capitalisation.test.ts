@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createInMemoryCanonicalMemoryStoreV1, type CanonicalMemoryStorePort } from "../graphify-memory/index.js";
+import { createInMemoryCanonicalMemoryStoreV1, type CanonicalMemoryStorePort } from "../engram-memory/index.js";
 import { AuthorizationRequestLike, buildMemory, DEADLINE, FULL_ALLOWLIST, NOW, recallRequest, seedAccepted } from "./memory-l7-fixture.js";
 
 const SRC = "scope:src";

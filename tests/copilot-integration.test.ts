@@ -27,11 +27,11 @@ describe("Copilot integration contract", () => {
       process.argv = ["node", "graphify", "copilot", "install"];
       await main();
 
-      const skillPath = join(home, ".copilot", "skills", "graphify", "SKILL.md");
-      const versionPath = join(home, ".copilot", "skills", "graphify", ".graphify_version");
+      const skillPath = join(home, ".copilot", "skills", "engram", "SKILL.md");
+      const versionPath = join(home, ".copilot", "skills", "engram", ".graphify_version");
       expect(existsSync(skillPath)).toBe(true);
       expect(existsSync(versionPath)).toBe(true);
-      expect(readFileSync(skillPath, "utf-8")).toContain("# /graphify");
+      expect(readFileSync(skillPath, "utf-8")).toContain("# /engram");
 
       process.chdir(home);
       process.argv = ["node", "graphify", "copilot", "uninstall"];
@@ -54,7 +54,7 @@ describe("Copilot integration contract", () => {
     const readme = readFileSync(new URL("../README.md", import.meta.url), "utf-8");
 
     expect(readme).toContain("GitHub Copilot CLI");
-    expect(readme).toContain("graphify install --platform copilot");
-    expect(readme).toContain("graphify copilot install");
+    expect(readme).toContain("engram install --platform copilot");
+    expect(readme).toContain("engram copilot install");
   });
 });

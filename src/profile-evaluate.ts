@@ -17,10 +17,11 @@
  */
 import { createHash } from "node:crypto";
 
+import { schemaIdAccepted } from "./schema-ids.js";
 import type { TypedEntityOccurrenceV1 } from "./types.js";
 
-export const TYPED_LINKING_GOLD_SCHEMA = "graphify_typed_linking_gold_v1" as const;
-export const TYPED_LINKING_EVALUATION_SCHEMA = "graphify_typed_linking_evaluation_v1" as const;
+export const TYPED_LINKING_GOLD_SCHEMA = "engram_typed_linking_gold_v1" as const;
+export const TYPED_LINKING_EVALUATION_SCHEMA = "engram_typed_linking_evaluation_v1" as const;
 
 /** Field separator for span/identity keys — a code unit that never occurs in a value. */
 const KEY_SEP = String.fromCharCode(31);
@@ -160,7 +161,7 @@ export function parseGold(raw: unknown): TypedLinkingGoldV1 {
     throw new GoldValidationError("GOLD_NOT_ENVELOPE", "gold must be a versioned object envelope, not a bare array");
   }
   const value = raw as Record<string, unknown>;
-  if (value.schema !== TYPED_LINKING_GOLD_SCHEMA) {
+  if (!schemaIdAccepted(value.schema, TYPED_LINKING_GOLD_SCHEMA)) {
     throw new GoldValidationError("GOLD_BAD_SCHEMA", `gold.schema must be "${TYPED_LINKING_GOLD_SCHEMA}"`);
   }
   if (!Array.isArray(value.occurrences)) {

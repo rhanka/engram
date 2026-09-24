@@ -159,7 +159,7 @@ export async function buildProject(
       throw new Error(
         "No supported code files found. The standalone CLI currently builds the AST graph " +
         `from code only; this folder has ${nonCode} doc/paper/image/video file(s). ` +
-        "Use the graphify skill in your assistant for semantic extraction of non-code inputs.",
+        "Use the engram skill in your assistant for semantic extraction of non-code inputs.",
       );
     }
     throw new Error(`No supported code files found under ${rootResolved}.`);
@@ -172,7 +172,7 @@ export async function buildProject(
       message:
         `Skipped ${nonCode} non-code file(s) in standalone AST mode ` +
         `(docs=${fileList(rawDetection, "document").length}, papers=${fileList(rawDetection, "paper").length}, images=${fileList(rawDetection, "image").length}, video=${fileList(rawDetection, "video").length}). ` +
-        "Use the graphify assistant skill for semantic extraction of those inputs.",
+        "Use the engram assistant skill for semantic extraction of those inputs.",
     });
   }
 

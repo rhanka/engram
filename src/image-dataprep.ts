@@ -19,7 +19,7 @@ export interface ImageDataprepArtifact {
 }
 
 export interface ImageDataprepManifest {
-  schema: "graphify_image_dataprep_manifest_v1";
+  schema: "engram_image_dataprep_manifest_v1";
   source_state_hash: string;
   mode: "assistant" | "direct" | "batch" | "mesh" | "off";
   artifact_count: number;
@@ -124,7 +124,7 @@ export function buildImageDataprepManifest(options: BuildImageDataprepManifestOp
   }
 
   return {
-    schema: "graphify_image_dataprep_manifest_v1",
+    schema: "engram_image_dataprep_manifest_v1",
     source_state_hash: sha256(JSON.stringify({
       root: resolve(options.root),
       images,
@@ -147,9 +147,9 @@ function writeAssistantInstructions(path: string, manifest: ImageDataprepManifes
   writeFileSync(
     path,
     [
-      "# Graphify Image Dataprep Assistant Instructions",
+      "# Engram Image Dataprep Assistant Instructions",
       "",
-      "Graphify is running image dataprep in assistant mode. Do not call a provider from Graphify runtime.",
+      "Engram is running image dataprep in assistant mode. Do not call a provider from Engram runtime.",
       "",
       `Caption schema: ${config.dataprep.image_analysis.caption_schema}`,
       `Routing profile: ${config.dataprep.image_analysis.routing_profile}`,

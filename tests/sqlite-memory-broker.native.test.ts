@@ -9,14 +9,14 @@ import {
   createCanonicalMemoryStoreFactoryV1,
   openFencedSqliteCanonicalMemoryStoreV1,
   type FencedSqliteCanonicalMemoryStoreV1,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 import { captureRequest, createL3Memory, NOW } from "./memory-l3-fixture.js";
 
 const workspaces: string[] = [];
 const children: ReturnType<typeof spawn>[] = [];
 
 function filename(): string {
-  const workspace = mkdtempSync(join(tmpdir(), "graphify-memory-sqlite-native-"));
+  const workspace = mkdtempSync(join(tmpdir(), "engram-memory-sqlite-native-"));
   workspaces.push(workspace);
   return join(workspace, "canonical.sqlite");
 }
@@ -34,7 +34,7 @@ async function open(filenameValue: string, options: Omit<Parameters<typeof openF
 }
 
 async function tableCount(filenameValue: string, table: string): Promise<number> {
-  const native = await import("../graphify-memory/node_modules/better-sqlite3/lib/index.js");
+  const native = await import("../engram-memory/node_modules/better-sqlite3/lib/index.js");
   const database = new native.default(filenameValue, { readonly: true, fileMustExist: true });
   try {
     return (database.prepare(`SELECT count(*) AS count FROM ${table}`).get() as { count: number }).count;
@@ -51,7 +51,7 @@ afterEach(() => {
 describe("native SQLite memory broker", () => {
   it("second process is refused and stale epoch fails before its first SQL statement", async () => {
     const target = filename();
-    const helper = join(process.cwd(), "graphify-memory", "node_modules", "fs-ext", "fs-ext.js");
+    const helper = join(process.cwd(), "engram-memory", "node_modules", "fs-ext", "fs-ext.js");
     // §5.9 v5-b: the fence is a flock on the canonical DB's OWN inode (no more `.lock` sidecar), so the competing
     // holder must flock the database file itself — that is what makes our open contend and lose.
     const child = spawn(process.execPath, ["--input-type=module", "--eval", `
@@ -76,7 +76,7 @@ describe("native SQLite memory broker", () => {
 
     const statements: string[] = [];
     const store = await open(target, { on_mutation_statement: (statement) => statements.push(statement) });
-    const native = await import("../graphify-memory/node_modules/better-sqlite3/lib/index.js");
+    const native = await import("../engram-memory/node_modules/better-sqlite3/lib/index.js");
     const intruder = new native.default(target);
     intruder.prepare("UPDATE memory_meta SET value = ? WHERE key = 'storage_epoch'").run("999");
     intruder.close();
@@ -135,7 +135,7 @@ describe("native SQLite memory broker", () => {
 
   it("factory acquire refuses a second live holder and FENCE_LOST is terminal with no silent re-acquire, exercised through a minimal external-host harness (graceful close, host crash, restart, stale instance)", async () => {
     const target = filename();
-    const helper = join(process.cwd(), "graphify-memory", "node_modules", "fs-ext", "fs-ext.js");
+    const helper = join(process.cwd(), "engram-memory", "node_modules", "fs-ext", "fs-ext.js");
     const epochOf = async (s: FencedSqliteCanonicalMemoryStoreV1): Promise<bigint> => {
       const r = await s.readiness();
       if (!r.ok) throw new Error(`readiness failed: ${r.error.code}`);
@@ -184,7 +184,7 @@ describe("native SQLite memory broker", () => {
 
     // (4) stale instance: an intruder advances the durable epoch (dispossession); the store's next op is FENCE_LOST.
     const { memory } = createL3Memory("accept", restarted);
-    const native = await import("../graphify-memory/node_modules/better-sqlite3/lib/index.js");
+    const native = await import("../engram-memory/node_modules/better-sqlite3/lib/index.js");
     const setDurableEpoch = (value: string) => { const db = new native.default(target); db.prepare("UPDATE memory_meta SET value = ? WHERE key = 'storage_epoch'").run(value); db.close(); };
     setDurableEpoch("999999");
     await expect(memory.capture(captureRequest("idempotency-key-stale-1", "1"))).resolves.toMatchObject({ ok: false, error: { code: "FENCE_LOST" } });

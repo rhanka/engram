@@ -44,12 +44,12 @@ function codeIndex() {
 }
 
 describe("answer-pack assembler — schema (T8 / C10)", () => {
-  it("emits a valid graphify_answer_pack_v1 with seeds, PPR neighborhood, paths, grounding, answer:null", () => {
+  it("emits a valid engram_answer_pack_v1 with seeds, PPR neighborhood, paths, grounding, answer:null", () => {
     const index = mysteryIndex();
     const pack = assembleAnswerPack(index, "detective Baker Street");
 
     expect(pack.schema).toBe(ANSWER_PACK_SCHEMA);
-    expect(pack.schema).toBe("graphify_answer_pack_v1");
+    expect(pack.schema).toBe("engram_answer_pack_v1");
     expect(pack.question).toBe("detective Baker Street");
     expect(pack.mode).toBe("offline");
 
@@ -112,7 +112,7 @@ describe("answer-pack quote optionality (T9 / INV-6)", () => {
     const index = codeIndex();
     const pack = assembleAnswerPack(index, "tokenizes source");
 
-    expect(pack.schema).toBe("graphify_answer_pack_v1");
+    expect(pack.schema).toBe("engram_answer_pack_v1");
     expect(pack.neighborhood.length).toBeGreaterThan(0);
     // no neighborhood entry carries a grounding[] (no quotes in this corpus)…
     expect(pack.neighborhood.every((n) => n.grounding === undefined)).toBe(true);
@@ -137,7 +137,7 @@ describe("answer-pack one core, three modes (T10 / INV-2)", () => {
     const agent = assembleAnswerPack(index, "detective", { mode: "agent" });
 
     for (const pack of [offline, online, agent]) {
-      expect(pack.schema).toBe("graphify_answer_pack_v1");
+      expect(pack.schema).toBe("engram_answer_pack_v1");
       expect(Object.keys(pack.retrieval)).toEqual(["seeds", "fusion", "ppr"]);
     }
     // same retrieval substrate across modes (same seeds + PPR ranking).

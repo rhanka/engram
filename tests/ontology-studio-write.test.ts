@@ -157,7 +157,7 @@ describe("graphify ontology studio --write", () => {
     // at the static Ontology Studio export and embeds no interactive surface.
     expect(result.body).not.toContain("<iframe");
     expect(result.body).toContain("ws-graph-placeholder");
-    expect(result.body).toContain("graphify studio export");
+    expect(result.body).toContain("engram studio export");
     expect(result.body).not.toContain("Read-only reconciliation APIs are available");
 
     // The graph.html artifact route was removed; the studio export replaces it.
@@ -349,7 +349,7 @@ describe("graphify ontology studio --write", () => {
         total: number;
         items: Array<{ source: string; patch: { id: string; operation: string; status?: string } }>;
       };
-      expect(replay.schema).toBe("graphify_ontology_reconciliation_decision_log_v1");
+      expect(replay.schema).toBe("engram_ontology_reconciliation_decision_log_v1");
       expect(replay.total).toBeGreaterThanOrEqual(1);
       const authoritative = replay.items.find((item) => item.source === "authoritative");
       const audit = replay.items.find((item) => item.source === "audit");
@@ -427,7 +427,7 @@ describe("graphify ontology studio --write", () => {
         needs_update: boolean;
         decision_log_available: boolean;
       };
-      expect(status.schema).toBe("graphify_ontology_rebuild_status_v1");
+      expect(status.schema).toBe("engram_ontology_rebuild_status_v1");
     } finally {
       started.server.close();
     }

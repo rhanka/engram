@@ -168,7 +168,7 @@ describe("buildLiveProvenance", () => {
       schema: string;
       documents: Record<string, { original: string; via: string; bundled: boolean }>;
     };
-    expect(parsed.schema).toBe("graphify_cited_source_provenance_v1");
+    expect(parsed.schema).toBe("engram_cited_source_provenance_v1");
     expect(count).toBe(1);
     const entry = parsed.documents[".graphify/converted/pdf/report_one_abc123.md"];
     expect(entry).toBeDefined();

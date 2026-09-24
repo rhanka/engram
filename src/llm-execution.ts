@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 
+import { engramEnv } from "./env.js";
 import { validateOllamaBaseUrl } from "./security.js";
 import type { NormalizedLlmExecutionPolicy } from "./types.js";
 
@@ -426,7 +427,7 @@ export function createAssistantTextJsonClient(options: AssistantLlmClientOptions
       writeInstruction(instructionPath, [
         `# Text JSON Generation: ${input.schema}`,
         "",
-        "Graphify is running in assistant mode. Do not call an external provider from Graphify runtime.",
+        "Engram is running in assistant mode. Do not call an external provider from Engram runtime.",
         "",
         "## Prompt",
         "",
@@ -457,7 +458,7 @@ export function createAssistantVisionJsonClient(options: AssistantLlmClientOptio
       writeInstruction(instructionPath, [
         `# Vision JSON Analysis: ${input.schema}`,
         "",
-        "Graphify is running in assistant mode. Inspect the listed image artifacts with the active assistant.",
+        "Engram is running in assistant mode. Inspect the listed image artifacts with the active assistant.",
         "",
         "## Image Artifacts",
         "",
@@ -500,7 +501,7 @@ export function resolveMaxOutputTokens(explicit?: number): number | undefined {
   if (typeof explicit === "number" && Number.isFinite(explicit) && explicit > 0) {
     return explicit;
   }
-  const raw = process.env.GRAPHIFY_MAX_OUTPUT_TOKENS;
+  const raw = engramEnv("ENGRAM_MAX_OUTPUT_TOKENS", "GRAPHIFY_MAX_OUTPUT_TOKENS");
   if (typeof raw !== "string") return undefined;
   const trimmed = raw.trim();
   if (!trimmed) return undefined;
@@ -542,7 +543,7 @@ export function createDirectTextJsonClient(options: DirectTextJsonClientOptions)
         temperature,
         ...(effectiveCap !== undefined ? { maxOutputTokens: effectiveCap } : {}),
         system: [
-          "You are Graphify's JSON extraction backend.",
+          "You are Engram's JSON extraction backend.",
           "Return only valid JSON matching the requested schema.",
           "Do not include Markdown prose outside the JSON object.",
         ].join("\n"),

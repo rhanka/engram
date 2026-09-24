@@ -190,7 +190,7 @@ describe("pr.getPullRequestMerge (gh runner mock)", () => {
   it("parses number, mergeCommit oid, commit oids, and headRefName", () => {
     const runner: CommandRunner = {
       run(command, args) {
-        if (command === "git") return "https://github.com/rhanka/graphify/x.git";
+        if (command === "git") return "https://github.com/rhanka/engram/x.git";
         // gh pr view <n> --json number,mergeCommit,commits,headRefName
         expect(args[0]).toBe("pr");
         expect(args).toContain("number,mergeCommit,commits,headRefName");
@@ -215,7 +215,7 @@ describe("pr.getPullRequestMerge (gh runner mock)", () => {
   it("returns undefined mergeCommit for an unmerged PR", () => {
     const runner: CommandRunner = {
       run(command) {
-        if (command === "git") return "git@github.com:rhanka/graphify.git";
+        if (command === "git") return "git@github.com:rhanka/engram.git";
         return JSON.stringify({ number: 200, headRefName: "feat/x", commits: [], mergeCommit: null });
       },
     };
@@ -240,7 +240,7 @@ describe("agent-stats collectPrMerges (gh runner mock, no live gh)", () => {
     } as SessionFact;
     const runner: CommandRunner = {
       run(command, args) {
-        if (command === "git") return "https://github.com/rhanka/graphify.git";
+        if (command === "git") return "https://github.com/rhanka/engram.git";
         if (args[1] === "list") {
           return JSON.stringify([{ number: 130, title: "wp9", state: "MERGED", isDraft: false, headRefName: "feat/wp9", baseRefName: "main" }]);
         }
@@ -254,7 +254,7 @@ describe("agent-stats collectPrMerges (gh runner mock, no live gh)", () => {
   });
 
   it("prNumberFromUrl extracts the PR number", () => {
-    expect(prNumberFromUrl("https://github.com/rhanka/graphify/pull/119")).toBe(119);
+    expect(prNumberFromUrl("https://github.com/rhanka/engram/pull/119")).toBe(119);
     expect(prNumberFromUrl("not a url")).toBeUndefined();
   });
 });

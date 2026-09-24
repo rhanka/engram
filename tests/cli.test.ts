@@ -126,7 +126,7 @@ describe("CLI platform-scoped version checks", () => {
     const previousHome = process.env.HOME;
     process.env.HOME = dir;
     try {
-      const skillDir = join(dir, ".agents", "skills", "graphify");
+      const skillDir = join(dir, ".agents", "skills", "engram");
       mkdirSync(skillDir, { recursive: true });
       writeFileSync(join(skillDir, ".graphify_version"), "0.0.1", "utf-8");
 
@@ -152,8 +152,8 @@ describe("CLI platform-scoped version checks", () => {
       const result = await runCli(["install", "opencode"], dir);
 
       expect(result.exitCode).toBe(0);
-      expect(existsSync(join(dir, ".config", "opencode", "skills", "graphify", "SKILL.md"))).toBe(true);
-      expect(existsSync(join(dir, ".claude", "skills", "graphify", "SKILL.md"))).toBe(false);
+      expect(existsSync(join(dir, ".config", "opencode", "skills", "engram", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(dir, ".claude", "skills", "engram", "SKILL.md"))).toBe(false);
     } finally {
       if (previousHome === undefined) {
         delete process.env.HOME;
@@ -175,8 +175,8 @@ describe("CLI platform-scoped version checks", () => {
 
       expect(result.exitCode).toBe(1);
       expect(result.errors.join("\n")).toContain("specify install platform only once");
-      expect(existsSync(join(dir, ".config", "opencode", "skills", "graphify", "SKILL.md"))).toBe(false);
-      expect(existsSync(join(dir, ".agents", "skills", "graphify", "SKILL.md"))).toBe(false);
+      expect(existsSync(join(dir, ".config", "opencode", "skills", "engram", "SKILL.md"))).toBe(false);
+      expect(existsSync(join(dir, ".agents", "skills", "engram", "SKILL.md"))).toBe(false);
     } finally {
       if (previousHome === undefined) {
         delete process.env.HOME;
@@ -195,7 +195,7 @@ describe("CLI platform-scoped version checks", () => {
       const result = await runCli(["install", "--platform", "kimi"], dir);
 
       expect(result.exitCode).toBe(0);
-      expect(existsSync(join(dir, ".kimi", "skills", "graphify", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(dir, ".kimi", "skills", "engram", "SKILL.md"))).toBe(true);
     } finally {
       if (previousHome === undefined) {
         delete process.env.HOME;
@@ -338,11 +338,11 @@ describe("profile CLI commands", () => {
     expect(validation.exitCode).toBe(0);
     expect(validation.logs.join("\n")).toContain("Valid: yes");
     expect(discovery.exitCode).toBe(0);
-    expect(readFileSync(discoveryPromptPath, "utf-8")).toContain("Graphify Ontology Discovery Prompt");
+    expect(readFileSync(discoveryPromptPath, "utf-8")).toContain("Engram Ontology Discovery Prompt");
     expect(discoveryDiff.exitCode).toBe(0);
     expect(JSON.parse(readFileSync(discoveryDiffPath, "utf-8")).requires_user_approval).toBe(true);
     expect(report.exitCode).toBe(0);
-    expect(readFileSync(reportPath, "utf-8")).toContain("# Graphify Profile Report");
+    expect(readFileSync(reportPath, "utf-8")).toContain("# Engram Profile Report");
     expect(ontology.exitCode).toBe(0);
     expect(ontology.logs.join("\n")).toContain("Ontology outputs");
     expect(existsSync(join(ontologyDir, "manifest.json"))).toBe(true);
@@ -422,17 +422,17 @@ describe("profile CLI commands", () => {
 });
 
 describe("check-update CLI", () => {
-  it("reports pending semantic updates from .graphify/needs_update", async () => {
+  it("reports pending semantic updates from .engram/needs_update", async () => {
     const dir = mkdtempSync(join(tmpdir(), "graphify-cli-check-update-"));
     tempDirs.push(dir);
-    mkdirSync(join(dir, ".graphify"), { recursive: true });
-    writeFileSync(join(dir, ".graphify", "needs_update"), "1\n", "utf-8");
+    mkdirSync(join(dir, ".engram"), { recursive: true });
+    writeFileSync(join(dir, ".engram", "needs_update"), "1\n", "utf-8");
 
     const result = await runCli(["check-update", "."], dir);
 
     expect(result.exitCode).toBe(0);
     expect(result.logs.join("\n")).toContain("Pending semantic updates");
-    expect(result.logs.join("\n")).toContain("graphify skill with --update");
+    expect(result.logs.join("\n")).toContain("engram skill with --update");
   });
 
   it("reports when graph state is current", async () => {

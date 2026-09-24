@@ -2,11 +2,12 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type { ProfileState } from "./configured-dataprep.js";
+import { schemaIdAccepted } from "./schema-ids.js";
 import type { NormalizedOntologyProfile, OntologyStatus } from "./types.js";
 
-export const ONTOLOGY_PATCH_SCHEMA = "graphify_ontology_patch_v1";
+export const ONTOLOGY_PATCH_SCHEMA = "engram_ontology_patch_v1";
 export const ONTOLOGY_RECONCILIATION_DECISION_LOG_SCHEMA =
-  "graphify_ontology_reconciliation_decision_log_v1" as const;
+  "engram_ontology_reconciliation_decision_log_v1" as const;
 
 export type OntologyPatchOperation =
   | "accept_match"
@@ -105,7 +106,7 @@ export interface OntologyPatchIssue {
 }
 
 export interface OntologyPatchValidationResult {
-  schema: "graphify_ontology_patch_validation_v1";
+  schema: "engram_ontology_patch_validation_v1";
   patch_id: string | null;
   valid: boolean;
   issues: OntologyPatchIssue[];
@@ -123,7 +124,7 @@ export interface OntologyPatchApplyOptions {
 }
 
 export interface OntologyPatchApplyResult {
-  schema: "graphify_ontology_patch_apply_v1";
+  schema: "engram_ontology_patch_apply_v1";
   patch_id: string | null;
   valid: boolean;
   issues: OntologyPatchIssue[];
@@ -507,14 +508,14 @@ export function validateOntologyPatch(value: unknown, context: OntologyPatchCont
   const patch = normalizeOntologyPatch(value);
   if (!patch) {
     return {
-      schema: "graphify_ontology_patch_validation_v1",
+      schema: "engram_ontology_patch_validation_v1",
       patch_id: null,
       valid: false,
       issues: [{ severity: "error", message: "patch is not a valid ontology patch object" }],
     };
   }
 
-  if (patch.schema !== ONTOLOGY_PATCH_SCHEMA) addError(issues, `schema must be ${ONTOLOGY_PATCH_SCHEMA}`);
+  if (!schemaIdAccepted(patch.schema, ONTOLOGY_PATCH_SCHEMA)) addError(issues, `schema must be ${ONTOLOGY_PATCH_SCHEMA}`);
   if (!patch.id) addError(issues, "id is required");
   if (!patch.reason) addError(issues, "reason is required");
   if (!patch.author) addError(issues, "author is required");
@@ -526,7 +527,7 @@ export function validateOntologyPatch(value: unknown, context: OntologyPatchCont
   if (context.dirtyWorktree) addWarning(issues, "Git worktree is dirty; review local changes before non-dry-run apply");
 
   return {
-    schema: "graphify_ontology_patch_validation_v1",
+    schema: "engram_ontology_patch_validation_v1",
     patch_id: patch.id,
     valid: issues.every((issue) => issue.severity !== "error"),
     issues,
@@ -626,7 +627,7 @@ export function applyOntologyPatch(
   const valid = issues.every((issue) => issue.severity !== "error");
   const files = patch ? changedFiles(context, patch).filter((file) => file.path.length > 0) : [];
   const result: OntologyPatchApplyResult = {
-    schema: "graphify_ontology_patch_apply_v1",
+    schema: "engram_ontology_patch_apply_v1",
     patch_id: validation.patch_id,
     valid,
     issues,

@@ -57,15 +57,15 @@ describe("upstream v4 assistant platform installs", () => {
   it("installs Google Antigravity rules, workflow, and global skill", async () => {
     const { home, project } = await runCliInTemp(["antigravity", "install"]);
 
-    expect(existsSync(join(project, ".agents", "rules", "graphify.md"))).toBe(true);
-    expect(existsSync(join(project, ".agents", "workflows", "graphify.md"))).toBe(true);
+    expect(existsSync(join(project, ".agents", "rules", "engram.md"))).toBe(true);
+    expect(existsSync(join(project, ".agents", "workflows", "engram.md"))).toBe(true);
     // M11 (9985940 #1079): global Antigravity skill now lives under ~/.gemini/config/skills/
-    expect(existsSync(join(home, ".gemini", "config", "skills", "graphify", "SKILL.md"))).toBe(true);
-    expect(existsSync(join(home, ".gemini", "config", "skills", "graphify", ".graphify_version"))).toBe(true);
-    expect(readFileSync(join(project, ".agents", "rules", "graphify.md"), "utf-8")).toContain("---");
-    expect(readFileSync(join(project, ".agents", "rules", "graphify.md"), "utf-8")).toContain("description: graphify knowledge graph context");
-    expect(readFileSync(join(project, ".agents", "workflows", "graphify.md"), "utf-8")).toContain("---");
-    expect(readFileSync(join(project, ".agents", "workflows", "graphify.md"), "utf-8")).toContain("command: /graphify");
+    expect(existsSync(join(home, ".gemini", "config", "skills", "engram", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(home, ".gemini", "config", "skills", "engram", ".graphify_version"))).toBe(true);
+    expect(readFileSync(join(project, ".agents", "rules", "engram.md"), "utf-8")).toContain("---");
+    expect(readFileSync(join(project, ".agents", "rules", "engram.md"), "utf-8")).toContain("description: engram knowledge graph context");
+    expect(readFileSync(join(project, ".agents", "workflows", "engram.md"), "utf-8")).toContain("---");
+    expect(readFileSync(join(project, ".agents", "workflows", "engram.md"), "utf-8")).toContain("command: /engram");
   });
 
   it("reinstalls Google Antigravity without duplicating frontmatter", async () => {
@@ -73,13 +73,13 @@ describe("upstream v4 assistant platform installs", () => {
 
     await runCliWithEnvironment(["antigravity", "install"], home, project);
 
-    const rule = readFileSync(join(project, ".agents", "rules", "graphify.md"), "utf-8");
-    const workflow = readFileSync(join(project, ".agents", "workflows", "graphify.md"), "utf-8");
+    const rule = readFileSync(join(project, ".agents", "rules", "engram.md"), "utf-8");
+    const workflow = readFileSync(join(project, ".agents", "workflows", "engram.md"), "utf-8");
 
     expect(rule.match(/^---$/gm)).toHaveLength(2);
     expect(workflow.match(/^---$/gm)).toHaveLength(2);
-    expect(rule.match(/description: graphify knowledge graph context/g)).toHaveLength(1);
-    expect(workflow.match(/command: \/graphify/g)).toHaveLength(1);
+    expect(rule.match(/description: engram knowledge graph context/g)).toHaveLength(1);
+    expect(workflow.match(/command: \/engram/g)).toHaveLength(1);
   });
 
   it("installs the PowerShell Antigravity skill on Windows", async () => {
@@ -90,27 +90,27 @@ describe("upstream v4 assistant platform installs", () => {
     await withProcessPlatform("win32", () => runCliWithEnvironment(["antigravity", "install"], home, project));
 
     // M11 (9985940 #1079): global Antigravity skill now lives under ~/.gemini/config/skills/
-    const skill = readFileSync(join(home, ".gemini", "config", "skills", "graphify", "SKILL.md"), "utf-8");
+    const skill = readFileSync(join(home, ".gemini", "config", "skills", "engram", "SKILL.md"), "utf-8");
     expect(skill).toContain("```powershell");
-    expect(skill).toContain("Out-File -FilePath .graphify/.graphify_detect.json -Encoding utf8");
-    expect(skill).not.toContain("$(cat .graphify/.graphify_node)");
+    expect(skill).toContain("Out-File -FilePath .engram/.graphify_detect.json -Encoding utf8");
+    expect(skill).not.toContain("$(cat .engram/.graphify_node)");
   });
 
   it("installs Kiro skill and always-on steering file in the project", async () => {
     const { project } = await runCliInTemp(["kiro", "install"]);
 
-    const skillPath = join(project, ".kiro", "skills", "graphify", "SKILL.md");
+    const skillPath = join(project, ".kiro", "skills", "engram", "SKILL.md");
     expect(existsSync(skillPath)).toBe(true);
-    expect(existsSync(join(project, ".kiro", "skills", "graphify", ".graphify_version"))).toBe(true);
+    expect(existsSync(join(project, ".kiro", "skills", "engram", ".graphify_version"))).toBe(true);
     expect(readFileSync(skillPath, "utf-8")).toContain('description: "');
-    expect(readFileSync(join(project, ".kiro", "steering", "graphify.md"), "utf-8")).toContain("inclusion: always");
+    expect(readFileSync(join(project, ".kiro", "steering", "engram.md"), "utf-8")).toContain("inclusion: always");
   });
 
   it("installs VS Code Copilot Chat instructions and global Copilot skill", async () => {
     const { home, project } = await runCliInTemp(["vscode", "install"]);
 
-    expect(readFileSync(join(project, ".github", "copilot-instructions.md"), "utf-8")).toContain("## graphify");
-    expect(existsSync(join(home, ".copilot", "skills", "graphify", "SKILL.md"))).toBe(true);
-    expect(existsSync(join(home, ".copilot", "skills", "graphify", ".graphify_version"))).toBe(true);
+    expect(readFileSync(join(project, ".github", "copilot-instructions.md"), "utf-8")).toContain("## engram");
+    expect(existsSync(join(home, ".copilot", "skills", "engram", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(home, ".copilot", "skills", "engram", ".graphify_version"))).toBe(true);
   });
 });

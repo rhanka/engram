@@ -64,18 +64,18 @@ describe("project-scoped skill installs (upstream b347492 / #931)", () => {
       restore();
     }
 
-    expect(existsSync(join(project, ".claude", "skills", "graphify", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(project, ".claude", "skills", "engram", "SKILL.md"))).toBe(true);
     expect(existsSync(join(project, ".claude", "CLAUDE.md"))).toBe(true);
     // CLAUDE.md (project root) is also written because claudeInstall(project) runs.
     expect(existsSync(join(project, "CLAUDE.md"))).toBe(true);
     // The user home skill is NOT touched.
-    const userSkill = join(homedir(), ".claude", "skills", "graphify", "SKILL.md");
+    const userSkill = join(homedir(), ".claude", "skills", "engram", "SKILL.md");
     const userClaudeMd = join(homedir(), ".claude", "CLAUDE.md");
     // Defensive: we are not pre-populating these; we just assert the project paths
     // are non-empty and the project CLAUDE.md uses a project-relative skill path.
     const projectClaudeMd = readFileSync(join(project, ".claude", "CLAUDE.md"), "utf-8");
-    expect(projectClaudeMd).toContain(".claude/skills/graphify/SKILL.md");
-    expect(projectClaudeMd).not.toContain("~/.claude/skills/graphify/SKILL.md");
+    expect(projectClaudeMd).toContain(".claude/skills/engram/SKILL.md");
+    expect(projectClaudeMd).not.toContain("~/.claude/skills/engram/SKILL.md");
     // Touching user paths would be a bug; we can't assert .not.toBe without
     // depending on the user's actual state, but the project paths above are
     // the contract.
@@ -107,15 +107,15 @@ describe("project-scoped skill installs (upstream b347492 / #931)", () => {
       restore();
     }
 
-    expect(existsSync(join(project, ".agents", "skills", "graphify", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(project, ".agents", "skills", "engram", "SKILL.md"))).toBe(true);
     expect(existsSync(join(project, "AGENTS.md"))).toBe(true);
     expect(existsSync(join(project, ".codex", "hooks.json"))).toBe(true);
 
     const agentsMd = readFileSync(join(project, "AGENTS.md"), "utf-8");
-    expect(agentsMd).toContain("graphify");
+    expect(agentsMd).toContain("engram");
 
     const hooks = readFileSync(join(project, ".codex", "hooks.json"), "utf-8");
-    expect(hooks).toContain("graphify");
+    expect(hooks).toContain("engram");
   });
 
   it("writes OpenCode skill to .opencode/skills/ (not .config/opencode/) in project scope", () => {
@@ -131,9 +131,9 @@ describe("project-scoped skill installs (upstream b347492 / #931)", () => {
       restore();
     }
     // Correct project-scope path
-    expect(existsSync(join(project, ".opencode", "skills", "graphify", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(project, ".opencode", "skills", "engram", "SKILL.md"))).toBe(true);
     // Must NOT write to the global path under project dir
-    expect(existsSync(join(project, ".config", "opencode", "skills", "graphify", "SKILL.md"))).toBe(false);
+    expect(existsSync(join(project, ".config", "opencode", "skills", "engram", "SKILL.md"))).toBe(false);
   });
 
   it("writes Antigravity skill + agents rules into the project", () => {
@@ -144,7 +144,7 @@ describe("project-scoped skill installs (upstream b347492 / #931)", () => {
     } finally {
       restore();
     }
-    expect(existsSync(join(project, ".agents", "skills", "graphify", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(project, ".agents", "skills", "engram", "SKILL.md"))).toBe(true);
   });
 
   it("supports every skill-based platform with a project-scoped install", () => {
@@ -201,7 +201,7 @@ describe("project-scoped skill installs (upstream b347492 / #931)", () => {
     } finally {
       restore();
     }
-    expect(existsSync(join(project, ".agents", "skills", "graphify", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(project, ".agents", "skills", "engram", "SKILL.md"))).toBe(true);
     expect(existsSync(join(project, "AGENTS.md"))).toBe(true);
   });
 
@@ -214,7 +214,7 @@ describe("project-scoped skill installs (upstream b347492 / #931)", () => {
     } finally {
       restore();
     }
-    expect(existsSync(join(project, ".agents", "skills", "graphify", "SKILL.md"))).toBe(false);
+    expect(existsSync(join(project, ".agents", "skills", "engram", "SKILL.md"))).toBe(false);
     expect(existsSync(join(project, "AGENTS.md"))).toBe(false);
     // .codex/hooks.json may still exist but graphify hook must be gone.
     const hooksPath = join(project, ".codex", "hooks.json");
@@ -232,7 +232,7 @@ describe("project-scoped skill installs (upstream b347492 / #931)", () => {
     } finally {
       restore();
     }
-    expect(existsSync(join(project, ".claude", "skills", "graphify", "SKILL.md"))).toBe(false);
+    expect(existsSync(join(project, ".claude", "skills", "engram", "SKILL.md"))).toBe(false);
     expect(existsSync(join(project, ".claude", "CLAUDE.md"))).toBe(false);
   });
 
@@ -245,7 +245,31 @@ describe("project-scoped skill installs (upstream b347492 / #931)", () => {
     } finally {
       restore();
     }
-    expect(existsSync(join(project, ".agents", "skills", "graphify", "SKILL.md"))).toBe(false);
+    expect(existsSync(join(project, ".agents", "skills", "engram", "SKILL.md"))).toBe(false);
+  });
+
+  it("project opencode install replaces a legacy graphify.js plugin file", () => {
+    const project = makeTempDir("graphify-project-opencode-legacy-");
+    const restore = silenceConsole();
+    try {
+      mkdirSync(join(project, ".opencode", "plugins"), { recursive: true });
+      writeFileSync(join(project, ".opencode", "plugins", "graphify.js"), "// legacy\n", "utf-8");
+      writeFileSync(
+        join(project, ".opencode", "opencode.json"),
+        JSON.stringify({ plugin: [".opencode/plugins/graphify.js"] }),
+        "utf-8",
+      );
+      projectInstall("opencode", project);
+    } finally {
+      restore();
+    }
+    expect(existsSync(join(project, ".opencode", "plugins", "engram.js"))).toBe(true);
+    expect(existsSync(join(project, ".opencode", "plugins", "graphify.js"))).toBe(false);
+    const config = JSON.parse(
+      readFileSync(join(project, ".opencode", "opencode.json"), "utf-8"),
+    ) as { plugin?: string[] };
+    expect(config.plugin).toContain(".opencode/plugins/engram.js");
+    expect(config.plugin).not.toContain(".opencode/plugins/graphify.js");
   });
 
   it("project Claude install renders a project-relative SKILL path in .claude/CLAUDE.md", () => {
@@ -257,8 +281,8 @@ describe("project-scoped skill installs (upstream b347492 / #931)", () => {
       restore();
     }
     const claudeMd = readFileSync(join(project, ".claude", "CLAUDE.md"), "utf-8");
-    expect(claudeMd).toContain(".claude/skills/graphify/SKILL.md");
-    expect(claudeMd).not.toContain("~/.claude/skills/graphify/SKILL.md");
+    expect(claudeMd).toContain(".claude/skills/engram/SKILL.md");
+    expect(claudeMd).not.toContain("~/.claude/skills/engram/SKILL.md");
   });
 });
 
@@ -278,7 +302,7 @@ describe("project-scoped install CLI flag parsing (upstream b347492)", () => {
       process.chdir(cwd);
       restore();
     }
-    expect(existsSync(join(project, ".agents", "skills", "graphify", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(project, ".agents", "skills", "engram", "SKILL.md"))).toBe(true);
     expect(existsSync(join(project, "AGENTS.md"))).toBe(true);
     expect(existsSync(join(project, ".codex", "hooks.json"))).toBe(true);
   });

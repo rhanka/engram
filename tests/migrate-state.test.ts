@@ -29,7 +29,7 @@ afterEach(() => {
   }
 });
 
-describe("graphify-out to .graphify migration", () => {
+describe("graphify-out to .engram migration", () => {
   it("reports a no-op when the legacy directory is absent", () => {
     const root = makeTempDir();
 
@@ -40,7 +40,7 @@ describe("graphify-out to .graphify migration", () => {
     expect(migrationResultToText(result)).toContain("no legacy graphify-out directory found");
   });
 
-  it("dry-runs without creating .graphify", () => {
+  it("dry-runs without creating .engram", () => {
     const root = makeTempDir();
     mkdirSync(join(root, "graphify-out", "cache"), { recursive: true });
     writeFileSync(join(root, "graphify-out", "graph.json"), "{}", "utf-8");
@@ -50,37 +50,37 @@ describe("graphify-out to .graphify migration", () => {
 
     expect(result.sourceExists).toBe(true);
     expect(result.copied).toBeGreaterThanOrEqual(2);
-    expect(existsSync(join(root, ".graphify"))).toBe(false);
+    expect(existsSync(join(root, ".engram"))).toBe(false);
     expect(migrationResultToText(result)).toContain("planned writes");
   });
 
-  it("copies missing legacy state without overwriting existing .graphify files", () => {
+  it("copies missing legacy state without overwriting existing .engram files", () => {
     const root = makeTempDir();
     mkdirSync(join(root, "graphify-out", "cache"), { recursive: true });
-    mkdirSync(join(root, ".graphify"), { recursive: true });
+    mkdirSync(join(root, ".engram"), { recursive: true });
     writeFileSync(join(root, "graphify-out", "graph.json"), "legacy", "utf-8");
     writeFileSync(join(root, "graphify-out", "cache", "semantic.json"), "cache", "utf-8");
-    writeFileSync(join(root, ".graphify", "graph.json"), "current", "utf-8");
+    writeFileSync(join(root, ".engram", "graph.json"), "current", "utf-8");
 
     const result = migrateGraphifyOut({ root });
 
-    expect(readFileSync(join(root, ".graphify", "graph.json"), "utf-8")).toBe("current");
-    expect(readFileSync(join(root, ".graphify", "cache", "semantic.json"), "utf-8")).toBe("cache");
+    expect(readFileSync(join(root, ".engram", "graph.json"), "utf-8")).toBe("current");
+    expect(readFileSync(join(root, ".engram", "cache", "semantic.json"), "utf-8")).toBe("cache");
     expect(result.skipped).toBeGreaterThan(0);
     expect(result.copied).toBeGreaterThan(0);
   });
 
-  it("overwrites existing .graphify files only with force", () => {
+  it("overwrites existing .engram files only with force", () => {
     const root = makeTempDir();
     mkdirSync(join(root, "graphify-out"), { recursive: true });
-    mkdirSync(join(root, ".graphify"), { recursive: true });
+    mkdirSync(join(root, ".engram"), { recursive: true });
     writeFileSync(join(root, "graphify-out", "graph.json"), "legacy", "utf-8");
-    writeFileSync(join(root, ".graphify", "graph.json"), "current", "utf-8");
+    writeFileSync(join(root, ".engram", "graph.json"), "current", "utf-8");
 
     const result = migrateGraphifyOut({ root, force: true });
 
     expect(result.overwritten).toBe(1);
-    expect(readFileSync(join(root, ".graphify", "graph.json"), "utf-8")).toBe("legacy");
+    expect(readFileSync(join(root, ".engram", "graph.json"), "utf-8")).toBe("legacy");
   });
 
   it("advises git mv when legacy artifacts are tracked in a committed repo", () => {
@@ -89,7 +89,7 @@ describe("graphify-out to .graphify migration", () => {
     git(root, ["config", "user.email", "graphify@example.test"]);
     git(root, ["config", "user.name", "Graphify Test"]);
     mkdirSync(join(root, "graphify-out"), { recursive: true });
-    writeFileSync(join(root, ".gitignore"), ".graphify/\n", "utf-8");
+    writeFileSync(join(root, ".gitignore"), ".engram/\n", "utf-8");
     writeFileSync(join(root, "graphify-out", "graph.json"), "{}", "utf-8");
     git(root, ["add", ".gitignore", "graphify-out/graph.json"]);
     git(root, ["commit", "-q", "-m", "initial graph state"]);
@@ -105,7 +105,7 @@ describe("graphify-out to .graphify migration", () => {
 
     expect(result.git.hasCommits).toBe(true);
     expect(result.git.legacyTrackedCount).toBe(1);
-    expect(result.git.recommendedCommands[0]).toBe("git mv -f graphify-out .graphify");
-    expect(text).toContain('git commit -m "chore: migrate graphify state directory"');
+    expect(result.git.recommendedCommands[0]).toBe("git mv -f graphify-out .engram");
+    expect(text).toContain('git commit -m "chore: migrate graph state directory"');
   });
 });

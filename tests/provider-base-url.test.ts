@@ -21,7 +21,14 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { providerBaseUrlOk } from "../src/security.js";
-import { loadCustomProviders } from "../src/provider-registry.js";
+import {
+  clearProviderWarningsForTests,
+  globalProvidersPath,
+  legacyGlobalProvidersPath,
+  legacyLocalProvidersPath,
+  loadCustomProviders,
+  localProvidersPath,
+} from "../src/provider-registry.js";
 
 // ---------------------------------------------------------------------------
 // providerBaseUrlOk
@@ -314,5 +321,82 @@ describe("loadCustomProviders (F-0831-P2a / e3993e4 project-local gate)", () => 
         env: {},
       }),
     ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// provider-registry — Engram paths first, legacy `.graphify` fallback
+// ---------------------------------------------------------------------------
+
+describe("provider registry path resolution (engram first, graphify fallback)", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = join(
+      process.env["RUNNER_TEMP"] ?? "/tmp",
+      `graphify-test-provider-paths-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    mkdirSync(tmpDir, { recursive: true });
+    clearProviderWarningsForTests();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    clearProviderWarningsForTests();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("defaults to ~/.engram/providers.json with ~/.graphify fallback", () => {
+    expect(globalProvidersPath()).toContain(join(".engram", "providers.json"));
+    expect(legacyGlobalProvidersPath()).toContain(join(".graphify", "providers.json"));
+    expect(localProvidersPath(tmpDir)).toBe(join(tmpDir, ".engram", "providers.json"));
+    expect(legacyLocalProvidersPath(tmpDir)).toBe(join(tmpDir, ".graphify", "providers.json"));
+  });
+
+  it("prefers the Engram providers file when both spellings exist", () => {
+    const primary = join(tmpDir, "primary.json");
+    const legacy = join(tmpDir, "legacy.json");
+    writeFileSync(
+      primary,
+      JSON.stringify({
+        which: { base_url: "https://primary.example/v1", default_model: "m", env_key: "K" },
+      }),
+    );
+    writeFileSync(
+      legacy,
+      JSON.stringify({
+        which: { base_url: "https://legacy.example/v1", default_model: "m", env_key: "K" },
+      }),
+    );
+
+    const loaded = loadCustomProviders({
+      globalPath: primary,
+      legacyGlobalPath: legacy,
+      localPath: join(tmpDir, "missing-local.json"),
+      env: {},
+    });
+
+    expect(loaded["which"]?.base_url).toBe("https://primary.example/v1");
+  });
+
+  it("reads the legacy providers file with a warning when the Engram file is absent", () => {
+    const legacy = join(tmpDir, "legacy.json");
+    writeFileSync(
+      legacy,
+      JSON.stringify({
+        old: { base_url: "https://legacy.example/v1", default_model: "m", env_key: "K" },
+      }),
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const loaded = loadCustomProviders({
+      globalPath: join(tmpDir, "missing-primary.json"),
+      legacyGlobalPath: legacy,
+      localPath: join(tmpDir, "missing-local.json"),
+      env: {},
+    });
+
+    expect(loaded).toHaveProperty("old");
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/legacy providers file/));
   });
 });

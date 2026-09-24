@@ -58,7 +58,7 @@ describe("review analysis", () => {
     ]);
     expect(analysis.impacted_communities.map((community) => community.label)).toContain("Core Runtime");
     expect(analysis.multimodal_safety.touched_files).toContain("docs/decision.md");
-    expect(text).toContain("Graphify Review Analysis");
+    expect(text).toContain("Engram Review Analysis");
     expect(text).toContain("Blast radius:");
     expect(text).toContain("Multimodal/doc safety:");
   });
@@ -81,7 +81,7 @@ describe("review analysis", () => {
     expect(evaluation.aggregate.impacted_file_recall).toBe(1);
     expect(evaluation.aggregate.review_summary_precision).toBe(1);
     expect(evaluation.aggregate.multimodal_regression_safety).toBe(1);
-    expect(text).toContain("Graphify Review Evaluation");
+    expect(text).toContain("Engram Review Evaluation");
     expect(text).toContain("Token savings vs naive reads:");
   });
 });

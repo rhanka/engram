@@ -6,7 +6,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rhanka/graphify.git",
+    "url": "git+https://github.com/rhanka/engram.git",
     "directory": "packages/graph"
   },
   "type": "module",

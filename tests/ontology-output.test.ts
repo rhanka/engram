@@ -130,7 +130,7 @@ describe("ontology output artifacts", () => {
     expect(result.nodeCount).toBe(2);
     expect(result.relationCount).toBe(1);
     expect(JSON.parse(readFileSync(join(outputDir, "manifest.json"), "utf-8")).schema).toBe(
-      "graphify_ontology_outputs_v1",
+      "engram_ontology_outputs_v1",
     );
     expect(readFileSync(join(outputDir, "nodes.json"), "utf-8")).toContain("Synthetic Component");
     expect(readFileSync(join(outputDir, "aliases.json"), "utf-8")).toContain("component alias");
@@ -232,7 +232,7 @@ describe("ontology output artifacts", () => {
       schema: string;
       issues: Array<{ code: string; severity: string; message: string; refs: string[] }>;
     };
-    expect(validation.schema).toBe("graphify_ontology_validation_v1");
+    expect(validation.schema).toBe("engram_ontology_validation_v1");
     expect(validation.issues.every((issue) => issue.severity === "error" && issue.message.length > 0)).toBe(true);
   });
 
@@ -421,7 +421,7 @@ describe("ontology output artifacts", () => {
       schema: string;
       issues: Array<{ message: string }>;
     };
-    expect(validation.schema).toBe("graphify_ontology_validation_v1");
+    expect(validation.schema).toBe("engram_ontology_validation_v1");
     expect(validation.issues.map((issue) => issue.message)).toContain("alias \"same\" ambiguously attaches to a, b");
     const nodes = JSON.parse(readFileSync(join(outputDir, "nodes.json"), "utf-8")) as Array<{ status: string }>;
     expect(nodes.every((node) => node.status === "needs_review")).toBe(true);

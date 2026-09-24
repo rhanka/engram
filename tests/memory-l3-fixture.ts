@@ -5,12 +5,12 @@ import {
   type CanonicalMemoryStorePort,
   type Digest,
   type MemoryEngineDependenciesV2,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 // §5.9 (test-only): the module's in-process in-memory mark. The package barrel deliberately does not re-export it
 // and package.json `exports` does not expose ./store-factory, so a host cannot reach it — only the in-repo suite,
 // which uses it to declare a bespoke engine stub an embedded in-memory fake (a real in-memory store is marked on
 // construction). Admission still requires the host to raise `allow_unfenced_memory_store` as well.
-import { markInMemoryStoreV1 } from "../graphify-memory/store-factory.js";
+import { markInMemoryStoreV1 } from "../engram-memory/store-factory.js";
 
 /** Test-only: stamp a bespoke stub store as this module's embedded in-memory store, then return it for wiring. */
 export function embeddedInMemoryStub<T extends object>(store: T): T {

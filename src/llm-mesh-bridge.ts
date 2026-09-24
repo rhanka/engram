@@ -543,7 +543,7 @@ export function meshTextJsonClient(
   // that owns the keyring is the one that picks these.
   if (!options?.provider) {
     throw new Error(
-      "meshTextJsonClient: an explicit provider is required — graphify does not default to a provider. Pass { provider, model }.",
+      "meshTextJsonClient: an explicit provider is required — engram does not default to a provider. Pass { provider, model }.",
     );
   }
   if (!options.model) {
@@ -564,7 +564,7 @@ export function meshTextJsonClient(
         messages: [
           {
             role: "system",
-            content: "You are Graphify's JSON extraction backend. Return only valid JSON matching the requested schema. Do not include Markdown prose outside the JSON object.",
+            content: "You are Engram's JSON extraction backend. Return only valid JSON matching the requested schema. Do not include Markdown prose outside the JSON object.",
           },
           {
             role: "user",

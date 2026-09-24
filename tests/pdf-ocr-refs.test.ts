@@ -47,10 +47,10 @@ describe("buildPdfOcrPagesSidecar", () => {
     return sidecar!;
   }
 
-  it("emits the graphify_pdf_ocr_pages_v1 envelope with passthrough metadata", () => {
+  it("emits the engram_pdf_ocr_pages_v1 envelope with passthrough metadata", () => {
     const sidecar = build();
     expect(sidecar.schema).toBe(PDF_OCR_PAGES_SCHEMA);
-    expect(sidecar.schema).toBe("graphify_pdf_ocr_pages_v1");
+    expect(sidecar.schema).toBe("engram_pdf_ocr_pages_v1");
     expect(sidecar.source_file).toBe("/abs/scan.pdf");
     expect(sidecar.sha256).toBe("deadbeef");
     expect(sidecar.model).toBe("mistral-ocr-4-0");

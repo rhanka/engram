@@ -47,7 +47,7 @@ export {
   createCanonicalMemoryStoreFactoryV1,
   isFencedFactoryStoreV1,
   verifyStoreProvenance,
-  GRAPHIFY_MEMORY_ADAPTER_IDENTITY,
+  ENGRAM_MEMORY_ADAPTER_IDENTITY,
   type CanonicalMemoryStoreFactoryOptionsV1,
   type FencedStoreOpenerV1,
 } from "./store-factory.js";

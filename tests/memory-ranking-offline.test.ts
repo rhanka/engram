@@ -4,7 +4,7 @@ import {
   createInMemoryCanonicalMemoryStoreV1,
   type CanonicalMemoryStorePort,
   type RevalidationPacketV1,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 import { buildMemory, DEADLINE, NOW, recallRequest, seedAccepted } from "./memory-l7-fixture.js";
 import { embeddedInMemoryStub } from "./memory-l3-fixture.js";
 

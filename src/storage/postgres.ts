@@ -23,6 +23,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdirSync, readFileSync } from "node:fs";
 import type Graph from "graphology";
+import { engramEnv } from "../env.js";
 import { toJson } from "../export.js";
 import { TEMPORAL_INTERVAL_CONVENTION } from "../temporal-interval.js";
 import type {
@@ -122,7 +123,7 @@ function resolveToolVersion(): string {
       const pkg = JSON.parse(
         readFileSync(join(baseDir, rel, "package.json"), "utf-8"),
       ) as { name?: string; version?: string };
-      if (pkg.name === "@sentropic/graphify" && pkg.version) return pkg.version;
+      if ((pkg.name === "@sentropic/engram" || pkg.name === "@sentropic/graphify") && pkg.version) return pkg.version;
     } catch {
       /* try the next layout */
     }
@@ -568,7 +569,7 @@ export function postgresDdlStatements(schema?: string): string[] {
 
 export interface PostgresGraphStoreConfig extends GraphStoreConfig {
   /**
-   * Full DSN. Populated from env only (GRAPHIFY_POSTGRES_URL) — never YAML,
+   * Full DSN. Populated from env only (ENGRAM_POSTGRES_URL) — never YAML,
    * since a DSN can embed credentials.
    */
   connectionString?: string;
@@ -662,10 +663,10 @@ export async function createPostgresGraphStore(
   deps?: StoreTestDeps,
 ): Promise<PostgresGraphStore> {
   const connectionString =
-    config.connectionString ?? process.env.GRAPHIFY_POSTGRES_URL;
+    config.connectionString ?? engramEnv("ENGRAM_POSTGRES_URL", "GRAPHIFY_POSTGRES_URL");
   if (!connectionString) {
     throw new Error(
-      "postgres store requires a DSN (config.connectionString or GRAPHIFY_POSTGRES_URL)",
+      "postgres store requires a DSN (config.connectionString or ENGRAM_POSTGRES_URL)",
     );
   }
 

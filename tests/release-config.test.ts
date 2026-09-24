@@ -11,9 +11,10 @@ describe("release configuration", () => {
     };
     const changelog = readFileSync(new URL("../CHANGELOG.md", import.meta.url), "utf-8");
 
-    expect(pkg.name).toBe("@sentropic/graphify");
+    expect(pkg.name).toBe("@sentropic/engram");
     expect(pkg.version).toBe("0.18.0");
-    expect(lock.name).toBe("@sentropic/graphify");
+    expect(lock.name).toBe("@sentropic/engram");
+    expect(lock.packages?.[""]?.name).toBe("@sentropic/engram");
     expect(lock.version).toBe("0.18.0");
     expect(lock.packages?.[""]?.version).toBe("0.18.0");
     expect(changelog).toContain("## 0.18.0 (2026-09-13)");

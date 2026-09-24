@@ -273,7 +273,7 @@ function sunflower(index: number, spacing: number): { x: number; y: number } {
 
 /**
  * Compute hierarchy-aware positions for `nodes`, using `hierarchies` (the
- * `graphify_scene_hierarchies_v1` forests, keyed by raw registry id) as the
+ * `engram_scene_hierarchies_v1` forests, keyed by raw registry id) as the
  * structural skeleton.
  *
  * A node joins a forest when its `registry_record_id` (falling back to `id`) is

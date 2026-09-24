@@ -190,7 +190,7 @@ export function buildProfileExtractionPrompt(
   options: ProfilePromptOptions = {},
 ): string {
   return [
-    `# Graphify Ontology Dataprep Extraction Prompt`,
+    `# Engram Ontology Dataprep Extraction Prompt`,
     ``,
     `Profile: ${state.profile.id} ${state.profile.version}`,
     `Profile hash: ${state.profile.profile_hash}`,
@@ -244,10 +244,10 @@ export function buildProfileValidationPrompt(
   options: ProfilePromptOptions = {},
 ): string {
   return [
-    `# Graphify Profile Validation Prompt`,
+    `# Engram Profile Validation Prompt`,
     ``,
-    `Validate this Graphify Extraction against the ontology dataprep profile.`,
-    `First apply the base Graphify Extraction schema.`,
+    `Validate this Engram Extraction against the ontology dataprep profile.`,
+    `First apply the base Engram Extraction schema.`,
     `Then apply profile-aware node_type, relation, citation, status, and registry rules.`,
     ``,
     buildProfileExtractionPrompt(state, options),
@@ -263,7 +263,7 @@ export function buildProfileDiscoveryPrompt(
   options: ProfilePromptOptions = {},
 ): string {
   return [
-    "# Graphify Ontology Discovery Prompt",
+    "# Engram Ontology Discovery Prompt",
     "",
     "Review the synthetic, project-local discovery sample and propose generic ontology profile improvements only when evidence supports them.",
     "Do not edit profile files. Return proposals as JSON only.",
@@ -271,17 +271,17 @@ export function buildProfileDiscoveryPrompt(
     buildProfileExtractionPrompt(state, options),
     "",
     "## Discovery Output Contract",
-    "- Return one JSON object with schema `graphify_ontology_discovery_proposals_v1`.",
+    "- Return one JSON object with schema `engram_ontology_discovery_proposals_v1`.",
     "- Preserve profile_hash and sample_hash exactly.",
     "- proposals[] items require: id, kind, action, path, evidence_refs, confidence, rationale.",
     "- Allowed proposal kinds: node_type, relation_type, registry_binding, hardening_rule.",
     "- Allowed actions: add, update, remove.",
-    "- Every proposal stays reviewable; Graphify will emit a diff and wait for user approval before any apply step.",
+    "- Every proposal stays reviewable; Engram will emit a diff and wait for user approval before any apply step.",
     "- Do not invent customer, partner, project, proprietary ontology, or private domain examples.",
     "",
     "## Expected JSON Skeleton",
     JSON.stringify({
-      schema: "graphify_ontology_discovery_proposals_v1",
+      schema: "engram_ontology_discovery_proposals_v1",
       profile_hash: sample.profile_hash,
       sample_hash: sample.sample_hash,
       generated_by: { mode: "assistant" },

@@ -13,6 +13,7 @@ import {
   TEMPORAL_RECALL_SCHEMA,
   type TemporalRecallOptions,
 } from "../src/temporal-recall.js";
+import { clearEngramEnvWarningsForTests } from "../src/env.js";
 import type { GraphStore, GraphStoreConfig } from "../src/storage/types.js";
 
 const tempDirs: string[] = [];
@@ -245,6 +246,44 @@ describe("temporal recall configured store", () => {
     expect(result.nodes).toEqual([]);
     expect(result.edges).toEqual([]);
     expect(readGraph).not.toHaveBeenCalled();
+  });
+
+  it("honours ENGRAM_STORE for store selection", async () => {
+    clearEngramEnvWarningsForTests();
+    const resolveStore = vi.fn(async () => fakeStore());
+    const result = await recallAsOf(
+      { asOf: 100 },
+      {
+        env: { ENGRAM_STORE: "fake-time" } as NodeJS.ProcessEnv,
+        resolveStore,
+      },
+    );
+    expect(resolveStore).toHaveBeenCalledOnce();
+    expect(resolveStore.mock.calls[0][0]).toBe("fake-time");
+    expect(result.source).toMatchObject({ kind: "store", storeId: "fake-time" });
+  });
+
+  it("keeps GRAPHIFY_STORE as a deprecated fallback for store selection", async () => {
+    clearEngramEnvWarningsForTests();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const resolveStore = vi.fn(async () => fakeStore());
+      const result = await recallAsOf(
+        { asOf: 100 },
+        {
+          env: { GRAPHIFY_STORE: "fake-time" } as NodeJS.ProcessEnv,
+          resolveStore,
+        },
+      );
+      expect(resolveStore).toHaveBeenCalledOnce();
+      expect(resolveStore.mock.calls[0][0]).toBe("fake-time");
+      expect(result.source).toMatchObject({ kind: "store", storeId: "fake-time" });
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("GRAPHIFY_STORE is deprecated"),
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("surfaces capability misses and query failures without file fallback", async () => {

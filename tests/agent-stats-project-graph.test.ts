@@ -24,7 +24,7 @@ const sentropicIdentity: ProjectIdentity = {
   label: "Sentropic / Graphify (project)",
   aliases: [
     { name: "sentropic", pathPrefixes: ["~/src/sentropic", "/home/u/src/sentropic"], remote: "rhanka/sentropic" },
-    { name: "graphify", pathPrefixes: ["~/src/graphify", "/home/u/src/graphify"], remote: "rhanka/graphify" },
+    { name: "graphify", pathPrefixes: ["~/src/graphify", "/home/u/src/graphify"], remote: "rhanka/engram" },
     { name: "regraphify", pathPrefixes: ["/tmp/regraphify"] },
   ],
 };

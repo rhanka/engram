@@ -36,7 +36,7 @@ const tempDirs: string[] = [];
 function makeTempRoot(): string {
   const dir = mkdtempSync(join(tmpdir(), "graphify-c1-check-update-"));
   tempDirs.push(dir);
-  mkdirSync(join(dir, ".graphify"), { recursive: true });
+  mkdirSync(join(dir, ".engram"), { recursive: true });
   return dir;
 }
 
@@ -57,7 +57,7 @@ function writeMinimalGraphJson(
     edges: [],
   };
   writeFileSync(
-    join(root, ".graphify", "graph.json"),
+    join(root, ".engram", "graph.json"),
     JSON.stringify(graphJson),
     "utf-8",
   );
@@ -81,7 +81,7 @@ describe("C1: checkUpdate detects unanswered description instruction batches", (
 
   it("reports pending when batch .md exists without a .json answer", () => {
     const root = makeTempRoot();
-    const descDir = join(root, ".graphify", DESCRIPTION_INSTRUCTIONS_DIR);
+    const descDir = join(root, ".engram", DESCRIPTION_INSTRUCTIONS_DIR);
     mkdirSync(descDir, { recursive: true });
     writeFileSync(join(descDir, "batch-000.md"), "# Batch 1\n", "utf-8");
     // No batch-000.json → unanswered
@@ -94,7 +94,7 @@ describe("C1: checkUpdate detects unanswered description instruction batches", (
 
   it("reports current after all batch .md files have corresponding .json answers (ingest clears)", () => {
     const root = makeTempRoot();
-    const descDir = join(root, ".graphify", DESCRIPTION_INSTRUCTIONS_DIR);
+    const descDir = join(root, ".engram", DESCRIPTION_INSTRUCTIONS_DIR);
     mkdirSync(descDir, { recursive: true });
     writeFileSync(join(descDir, "batch-000.md"), "# Batch 1\n", "utf-8");
     writeFileSync(join(descDir, "batch-000.json"), '{"n1": "desc"}', "utf-8");
@@ -106,7 +106,7 @@ describe("C1: checkUpdate detects unanswered description instruction batches", (
 
   it("counts multiple unanswered batches in the reason", () => {
     const root = makeTempRoot();
-    const descDir = join(root, ".graphify", DESCRIPTION_INSTRUCTIONS_DIR);
+    const descDir = join(root, ".engram", DESCRIPTION_INSTRUCTIONS_DIR);
     mkdirSync(descDir, { recursive: true });
     writeFileSync(join(descDir, "batch-000.md"), "# B0\n", "utf-8");
     writeFileSync(join(descDir, "batch-000.json"), "{}", "utf-8"); // answered
@@ -120,21 +120,21 @@ describe("C1: checkUpdate detects unanswered description instruction batches", (
 
   it("recommendedCommand points at fill+re-run when only batches are pending", () => {
     const root = makeTempRoot();
-    const descDir = join(root, ".graphify", DESCRIPTION_INSTRUCTIONS_DIR);
+    const descDir = join(root, ".engram", DESCRIPTION_INSTRUCTIONS_DIR);
     mkdirSync(descDir, { recursive: true });
     writeFileSync(join(descDir, "batch-000.md"), "# B\n", "utf-8");
 
     const result = checkUpdate(root);
     expect(result.current).toBe(false);
     expect(result.recommendedCommand).toContain("batch-*.json");
-    expect(result.recommendedCommand).toContain("graphify update");
+    expect(result.recommendedCommand).toContain("engram update");
   });
 });
 
 describe("C1: checkUpdate detects unanswered label instructions", () => {
   it("reports pending when communities.md exists without communities.json", () => {
     const root = makeTempRoot();
-    const labelDir = join(root, ".graphify", LABEL_INSTRUCTIONS_DIR);
+    const labelDir = join(root, ".engram", LABEL_INSTRUCTIONS_DIR);
     mkdirSync(labelDir, { recursive: true });
     writeFileSync(join(labelDir, LABEL_INSTRUCTION_FILE), "# Communities\n", "utf-8");
     // No communities.json
@@ -146,7 +146,7 @@ describe("C1: checkUpdate detects unanswered label instructions", () => {
 
   it("reports current when communities.json answer is present", () => {
     const root = makeTempRoot();
-    const labelDir = join(root, ".graphify", LABEL_INSTRUCTIONS_DIR);
+    const labelDir = join(root, ".engram", LABEL_INSTRUCTIONS_DIR);
     mkdirSync(labelDir, { recursive: true });
     writeFileSync(join(labelDir, LABEL_INSTRUCTION_FILE), "# Communities\n", "utf-8");
     writeFileSync(join(labelDir, LABEL_ANSWER_FILE), '{"0": "Auth Flow"}', "utf-8");
@@ -157,8 +157,8 @@ describe("C1: checkUpdate detects unanswered label instructions", () => {
 
   it("reports both description batches AND label instructions when both are pending", () => {
     const root = makeTempRoot();
-    const descDir = join(root, ".graphify", DESCRIPTION_INSTRUCTIONS_DIR);
-    const labelDir = join(root, ".graphify", LABEL_INSTRUCTIONS_DIR);
+    const descDir = join(root, ".engram", DESCRIPTION_INSTRUCTIONS_DIR);
+    const labelDir = join(root, ".engram", LABEL_INSTRUCTIONS_DIR);
     mkdirSync(descDir, { recursive: true });
     mkdirSync(labelDir, { recursive: true });
     writeFileSync(join(descDir, "batch-000.md"), "# B\n", "utf-8");
@@ -179,8 +179,8 @@ describe("C1: --no-description regression — opted-out update does NOT create f
     // No instruction files are emitted → checkUpdate must NOT report pending.
     const root = makeTempRoot();
     // Directories exist but are empty (or don't exist at all).
-    const descDir = join(root, ".graphify", DESCRIPTION_INSTRUCTIONS_DIR);
-    const labelDir = join(root, ".graphify", LABEL_INSTRUCTIONS_DIR);
+    const descDir = join(root, ".engram", DESCRIPTION_INSTRUCTIONS_DIR);
+    const labelDir = join(root, ".engram", LABEL_INSTRUCTIONS_DIR);
     mkdirSync(descDir, { recursive: true });
     mkdirSync(labelDir, { recursive: true });
     // Both dirs exist but have NO .md files → no unanswered instructions.
@@ -196,12 +196,12 @@ describe("C1: --no-description regression — opted-out update does NOT create f
     const root = makeTempRoot();
     // Write the git-hook marker.
     writeFileSync(
-      join(root, ".graphify", ".graphify_describe_pending"),
+      join(root, ".engram", ".graphify_describe_pending"),
       "rebuilt by hook\n",
       "utf-8",
     );
     // Also write an unanswered description batch.
-    const descDir = join(root, ".graphify", DESCRIPTION_INSTRUCTIONS_DIR);
+    const descDir = join(root, ".engram", DESCRIPTION_INSTRUCTIONS_DIR);
     mkdirSync(descDir, { recursive: true });
     writeFileSync(join(descDir, "batch-000.md"), "# B\n", "utf-8");
 
@@ -222,7 +222,7 @@ describe("C1 stale-orphan: checkUpdate is clean when graph is fully described", 
     // Scenario: a prior assistant run left batch-000.md, but a later direct-mode
     // run described all nodes. The orphan .md must NOT cause false pending.
     const root = makeTempRoot();
-    const descDir = join(root, ".graphify", DESCRIPTION_INSTRUCTIONS_DIR);
+    const descDir = join(root, ".engram", DESCRIPTION_INSTRUCTIONS_DIR);
     mkdirSync(descDir, { recursive: true });
     // Orphan: instruction file without a corresponding .json answer
     writeFileSync(join(descDir, "batch-000.md"), "# Batch 1\n", "utf-8");
@@ -240,7 +240,7 @@ describe("C1 stale-orphan: checkUpdate is clean when graph is fully described", 
   it("(R2) orphan batch-*.md present + graph has undescribed nodes → still reports pending", () => {
     // The genuine pending case must still fire even with the new guard.
     const root = makeTempRoot();
-    const descDir = join(root, ".graphify", DESCRIPTION_INSTRUCTIONS_DIR);
+    const descDir = join(root, ".engram", DESCRIPTION_INSTRUCTIONS_DIR);
     mkdirSync(descDir, { recursive: true });
     writeFileSync(join(descDir, "batch-000.md"), "# Batch 1\n", "utf-8");
 
@@ -258,7 +258,7 @@ describe("C1 stale-orphan: checkUpdate is clean when graph is fully described", 
     // When graph.json doesn't exist the state is unknown; we keep the pending
     // signal rather than silently suppressing it.
     const root = makeTempRoot();
-    const descDir = join(root, ".graphify", DESCRIPTION_INSTRUCTIONS_DIR);
+    const descDir = join(root, ".engram", DESCRIPTION_INSTRUCTIONS_DIR);
     mkdirSync(descDir, { recursive: true });
     writeFileSync(join(descDir, "batch-000.md"), "# Batch 1\n", "utf-8");
     // No graph.json written
@@ -273,7 +273,7 @@ describe("C1 stale-orphan: checkUpdate is clean when graph is fully described", 
     // but a stale batch-000.md from a prior run is still on disk.
     // Graph is fully described → must be clean.
     const root = makeTempRoot();
-    const descDir = join(root, ".graphify", DESCRIPTION_INSTRUCTIONS_DIR);
+    const descDir = join(root, ".engram", DESCRIPTION_INSTRUCTIONS_DIR);
     mkdirSync(descDir, { recursive: true });
     writeFileSync(join(descDir, "batch-000.md"), "# Stale\n", "utf-8");
 
@@ -289,7 +289,7 @@ describe("C1 stale-orphan: checkUpdate is clean when graph is fully described", 
   it("(R4b) stale communities.md + fully-described graph → check-update clean", () => {
     // Orphan label instruction file with a fully-described graph.
     const root = makeTempRoot();
-    const labelDir = join(root, ".graphify", LABEL_INSTRUCTIONS_DIR);
+    const labelDir = join(root, ".engram", LABEL_INSTRUCTIONS_DIR);
     mkdirSync(labelDir, { recursive: true });
     writeFileSync(join(labelDir, LABEL_INSTRUCTION_FILE), "# Communities\n", "utf-8");
     // No communities.json (unanswered)
@@ -309,7 +309,7 @@ describe("C1 stale-orphan: checkUpdate is clean when graph is fully described", 
 describe("C1 ingest lifecycle: cleanDescriptionInstructionDir / cleanLabelInstructionDir", () => {
   it("(R5) cleanDescriptionInstructionDir removes batch-*.md and batch-*.json", () => {
     const root = makeTempRoot();
-    const descDir = join(root, ".graphify", DESCRIPTION_INSTRUCTIONS_DIR);
+    const descDir = join(root, ".engram", DESCRIPTION_INSTRUCTIONS_DIR);
     mkdirSync(descDir, { recursive: true });
     writeFileSync(join(descDir, "batch-000.md"), "# B\n", "utf-8");
     writeFileSync(join(descDir, "batch-000.json"), '{"n1": "desc"}', "utf-8");
@@ -324,7 +324,7 @@ describe("C1 ingest lifecycle: cleanDescriptionInstructionDir / cleanLabelInstru
 
   it("(R5b) cleanLabelInstructionDir removes communities.md and communities.json", () => {
     const root = makeTempRoot();
-    const labelDir = join(root, ".graphify", LABEL_INSTRUCTIONS_DIR);
+    const labelDir = join(root, ".engram", LABEL_INSTRUCTIONS_DIR);
     mkdirSync(labelDir, { recursive: true });
     writeFileSync(join(labelDir, LABEL_INSTRUCTION_FILE), "# Communities\n", "utf-8");
     writeFileSync(join(labelDir, LABEL_ANSWER_FILE), '{"0": "Auth"}', "utf-8");
@@ -337,7 +337,7 @@ describe("C1 ingest lifecycle: cleanDescriptionInstructionDir / cleanLabelInstru
 
   it("(R5c) cleanDescriptionInstructionDir is safe when dir does not exist", () => {
     const root = makeTempRoot();
-    const descDir = join(root, ".graphify", "nonexistent-dir");
+    const descDir = join(root, ".engram", "nonexistent-dir");
     // Must not throw
     expect(() => cleanDescriptionInstructionDir(descDir)).not.toThrow();
   });
@@ -346,7 +346,7 @@ describe("C1 ingest lifecycle: cleanDescriptionInstructionDir / cleanLabelInstru
 describe("C1 countUndescribedInGraph", () => {
   it("returns -1 when graph.json does not exist", () => {
     const root = makeTempRoot();
-    const graphPath = join(root, ".graphify", "graph.json");
+    const graphPath = join(root, ".engram", "graph.json");
     const count = countUndescribedInGraph(graphPath);
     expect(count).toBe(-1);
   });
@@ -357,7 +357,7 @@ describe("C1 countUndescribedInGraph", () => {
       { type: "code", signature: "fn a()", description: "Does A." },
       { type: "code", signature: "fn b()", description: "Does B." },
     ]);
-    const graphPath = join(root, ".graphify", "graph.json");
+    const graphPath = join(root, ".engram", "graph.json");
     expect(countUndescribedInGraph(graphPath)).toBe(0);
   });
 
@@ -368,7 +368,7 @@ describe("C1 countUndescribedInGraph", () => {
       { type: "code", signature: "fn d()" }, // no description
       { aliases: ["Entity X"], mentions: ["X"] }, // entity, no description
     ]);
-    const graphPath = join(root, ".graphify", "graph.json");
+    const graphPath = join(root, ".engram", "graph.json");
     expect(countUndescribedInGraph(graphPath)).toBe(2);
   });
 
@@ -376,7 +376,7 @@ describe("C1 countUndescribedInGraph", () => {
     const root = makeTempRoot();
     // Node with no type, no signature, no aliases/mentions/grounding
     writeMinimalGraphJson(root, [{ label: "isolated node" }]);
-    const graphPath = join(root, ".graphify", "graph.json");
+    const graphPath = join(root, ".engram", "graph.json");
     expect(countUndescribedInGraph(graphPath)).toBe(0);
   });
 });

@@ -46,7 +46,7 @@ function makeGraphJson(extraNodeAttrs: Record<string, Record<string, unknown>> =
 
 function setupProjectDir(graphJson: string): string {
   const root = join(tmpdir(), `graphify-describe-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-  const stateDir = join(root, ".graphify");
+  const stateDir = join(root, ".engram");
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(join(stateDir, "graph.json"), graphJson, "utf-8");
   return root;
@@ -160,7 +160,7 @@ describe("graphify describe [path]", () => {
 
   it("adds node.description to existing graph — node count, edge count, community_name set unchanged", async () => {
     root = setupProjectDir(makeGraphJson());
-    const graphPath = join(root, ".graphify", "graph.json");
+    const graphPath = join(root, ".engram", "graph.json");
 
     const before = JSON.parse(readFileSync(graphPath, "utf-8")) as {
       nodes: Array<{ id: string; community_name?: string; description?: string }>;
@@ -207,7 +207,7 @@ describe("graphify describe [path]", () => {
     root = setupProjectDir(makeGraphJson({
       fn_a: { description: "Already described." },
     }));
-    const graphPath = join(root, ".graphify", "graph.json");
+    const graphPath = join(root, ".engram", "graph.json");
 
     const calledForIds: string[] = [];
     const mockCallLlm = async (prompt: string): Promise<string> => {
@@ -235,7 +235,7 @@ describe("graphify describe [path]", () => {
   it("assistant mode emits instruction files then ingests on second run", async () => {
     const { existsSync, readdirSync } = await import("node:fs");
     root = setupProjectDir(makeGraphJson());
-    const stateDir = join(root, ".graphify");
+    const stateDir = join(root, ".engram");
     const instrDir = join(stateDir, "description-instructions");
 
     // First run: force assistant mode → emits instruction files
@@ -273,7 +273,7 @@ describe("graphify describe [path]", () => {
 
   it("direct mode with injected callLlm stamps descriptions", async () => {
     root = setupProjectDir(makeGraphJson());
-    const graphPath = join(root, ".graphify", "graph.json");
+    const graphPath = join(root, ".engram", "graph.json");
 
     const mockCallLlm = async (prompt: string): Promise<string> => {
       const ids = [...prompt.matchAll(/^- "([^"]+)":/gmu)].map((m) => m[1]!);

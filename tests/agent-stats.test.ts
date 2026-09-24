@@ -103,10 +103,10 @@ describe("agent-stats git evidence", () => {
   it("scrapes ground truth (commit shas + PR urls) from tool outputs", () => {
     const acc = emptyGroundTruth();
     scrapeGroundTruth("[wp1-repo-keys 37fbdee] feat: x\n 2 files changed", acc);
-    scrapeGroundTruth("https://github.com/rhanka/graphify/pull/119", acc);
+    scrapeGroundTruth("https://github.com/rhanka/engram/pull/119", acc);
     expect(acc.commitShas).toContain("37fbdee");
     expect(acc.branches).toContain("wp1-repo-keys");
-    expect(acc.prUrls).toContain("https://github.com/rhanka/graphify/pull/119");
+    expect(acc.prUrls).toContain("https://github.com/rhanka/engram/pull/119");
   });
 
   it("parses WP labels from branches and subjects", () => {
@@ -220,7 +220,7 @@ describe("agent-stats end-to-end attribution (WP1 acceptance)", () => {
     const fact = normalizeClaude(parseClaudeTranscript(fixture, "fixture-wp1-0001"));
     expect(fact.cwds[0]).toBe(`${repoRoot}/.claude/worktrees/agent-wp1abc`);
     expect(fact.groundTruth.commitShas).toContain("37fbdee");
-    expect(fact.groundTruth.prUrls).toContain("https://github.com/rhanka/graphify/pull/119");
+    expect(fact.groundTruth.prUrls).toContain("https://github.com/rhanka/engram/pull/119");
     expect(fact.gitActions.some((a) => a.verb === "checkout-b")).toBe(true);
 
     // correlate against an injected git log containing the real wp1 commit.
