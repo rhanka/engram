@@ -223,7 +223,7 @@ describe("T1 — offline studio.html renders over file:// with zero failed reque
       };
 
       const bundlePresent = await evalExpr<boolean>(
-        "typeof window.__GRAPHIFY_BUNDLE__ === 'object' && !!window.__GRAPHIFY_BUNDLE__['scene.json']",
+        "typeof window.__ENGRAM_BUNDLE__ === 'object' && !!window.__ENGRAM_BUNDLE__['scene.json']",
       );
       const appChildren = await evalExpr<number>(
         "document.getElementById('app') ? document.getElementById('app').childElementCount : -1",

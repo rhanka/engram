@@ -123,7 +123,7 @@ function resolveToolVersion(): string {
       const pkg = JSON.parse(
         readFileSync(join(baseDir, rel, "package.json"), "utf-8"),
       ) as { name?: string; version?: string };
-      if (pkg.name === "@sentropic/graphify" && pkg.version) return pkg.version;
+      if ((pkg.name === "@sentropic/engram" || pkg.name === "@sentropic/graphify") && pkg.version) return pkg.version;
     } catch {
       /* try the next layout */
     }

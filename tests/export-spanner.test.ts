@@ -42,11 +42,11 @@ describe("toSpanner DDL", () => {
     expect(existsSync(join(dir, "spanner.ddl.sql"))).toBe(true);
   });
 
-  it("DDL contains CREATE TABLE graphify_nodes with expected columns", () => {
+  it("DDL contains CREATE TABLE engram_nodes with expected columns", () => {
     const dir = tempDir();
     toSpanner(makeGraph(), dir);
     const ddl = readFileSync(join(dir, "spanner.ddl.sql"), "utf-8");
-    expect(ddl).toContain("CREATE TABLE graphify_nodes");
+    expect(ddl).toContain("CREATE TABLE engram_nodes");
     expect(ddl).toContain("id STRING(MAX) NOT NULL");
     expect(ddl).toContain("label STRING(MAX)");
     expect(ddl).toContain("node_type STRING(MAX)");
@@ -55,11 +55,11 @@ describe("toSpanner DDL", () => {
     expect(ddl).toContain("PRIMARY KEY (id)");
   });
 
-  it("DDL contains CREATE TABLE graphify_edges with expected columns", () => {
+  it("DDL contains CREATE TABLE engram_edges with expected columns", () => {
     const dir = tempDir();
     toSpanner(makeGraph(), dir);
     const ddl = readFileSync(join(dir, "spanner.ddl.sql"), "utf-8");
-    expect(ddl).toContain("CREATE TABLE graphify_edges");
+    expect(ddl).toContain("CREATE TABLE engram_edges");
     expect(ddl).toContain("source_id STRING(MAX) NOT NULL");
     expect(ddl).toContain("target_id STRING(MAX) NOT NULL");
     expect(ddl).toContain("relation STRING(MAX)");
@@ -71,11 +71,11 @@ describe("toSpanner DDL", () => {
     const dir = tempDir();
     toSpanner(makeGraph(), dir);
     const ddl = readFileSync(join(dir, "spanner.ddl.sql"), "utf-8");
-    expect(ddl).toContain("CREATE PROPERTY GRAPH graphify");
+    expect(ddl).toContain("CREATE PROPERTY GRAPH engram");
     expect(ddl).toContain("NODE TABLES");
     expect(ddl).toContain("EDGE TABLES");
-    expect(ddl).toContain("graphify_nodes");
-    expect(ddl).toContain("graphify_edges");
+    expect(ddl).toContain("engram_nodes");
+    expect(ddl).toContain("engram_edges");
     expect(ddl).toContain("SOURCE KEY");
     expect(ddl).toContain("DESTINATION KEY");
   });
@@ -97,10 +97,10 @@ describe("toSpanner DML", () => {
     const G = makeGraph();
     toSpanner(G, dir);
     const dml = readFileSync(join(dir, "spanner.dml.sql"), "utf-8");
-    // Each node generates one INSERT OR UPDATE INTO graphify_nodes line
+    // Each node generates one INSERT OR UPDATE INTO engram_nodes line
     const nodeInserts = dml
       .split("\n")
-      .filter((l) => l.includes("INSERT OR UPDATE INTO graphify_nodes"));
+      .filter((l) => l.includes("INSERT OR UPDATE INTO engram_nodes"));
     expect(nodeInserts).toHaveLength(G.order);
   });
 
@@ -111,7 +111,7 @@ describe("toSpanner DML", () => {
     const dml = readFileSync(join(dir, "spanner.dml.sql"), "utf-8");
     const edgeInserts = dml
       .split("\n")
-      .filter((l) => l.includes("INSERT OR UPDATE INTO graphify_edges"));
+      .filter((l) => l.includes("INSERT OR UPDATE INTO engram_edges"));
     expect(edgeInserts).toHaveLength(G.size);
   });
 
