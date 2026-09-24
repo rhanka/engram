@@ -3,11 +3,13 @@
  *
  * Providers are registered in a providers.json file that maps a provider name
  * to its configuration (base_url, default_model, env_key, optional pricing).
- * Two locations are consulted:
+ * Two locations are consulted (Engram paths first, legacy `.graphify` paths
+ * as read fallbacks; new writes go to the Engram paths):
  *
- *   1. ~/.graphify/providers.json  — the user's own file; always trusted.
- *   2. ./.graphify/providers.json  — project-local file that travels with the
- *      repo; gated behind GRAPHIFY_ALLOW_LOCAL_PROVIDERS=1 because it controls
+ *   1. ~/.engram/providers.json  — the user's own file; always trusted.
+ *   2. ./.engram/providers.json  — project-local file that travels with the
+ *      repo; gated behind ENGRAM_ALLOW_LOCAL_PROVIDERS=1 (legacy
+ *      GRAPHIFY_ALLOW_LOCAL_PROVIDERS) because it controls
  *      where the corpus + API key are sent and is a potential exfiltration
  *      channel when a repo is cloned or shared.
  *
@@ -45,14 +47,53 @@ export type CustomProviderMap = Record<string, CustomProviderConfig>;
 // Path helpers
 // ---------------------------------------------------------------------------
 
-/** Path to the user's global providers.json (~/.graphify/providers.json). */
+/** Path to the user's global providers.json (~/.engram/providers.json). */
 export function globalProvidersPath(): string {
+  return resolve(join(os.homedir(), ".engram", "providers.json"));
+}
+
+/** Legacy global providers.json path (~/.graphify/providers.json). */
+export function legacyGlobalProvidersPath(): string {
   return resolve(join(os.homedir(), ".graphify", "providers.json"));
 }
 
-/** Path to the project-local providers.json (./.graphify/providers.json). */
+/** Path to the project-local providers.json (./.engram/providers.json). */
 export function localProvidersPath(root?: string): string {
+  return resolve(join(root ?? ".", ".engram", "providers.json"));
+}
+
+/** Legacy project-local providers.json path (./.graphify/providers.json). */
+export function legacyLocalProvidersPath(root?: string): string {
   return resolve(join(root ?? ".", ".graphify", "providers.json"));
+}
+
+const warnedProviderPaths = new Set<string>();
+
+/** Clear recorded legacy-path warnings (tests only). */
+export function clearProviderWarningsForTests(): void {
+  warnedProviderPaths.clear();
+}
+
+function warnLegacyProvidersPath(used: string, preferred: string): void {
+  if (warnedProviderPaths.has(used)) return;
+  warnedProviderPaths.add(used);
+  console.warn(
+    `[engram] using legacy providers file ${used}; move it to ${preferred}`,
+  );
+}
+
+/**
+ * Resolve the providers.json path to read: the Engram path when it exists,
+ * else the legacy `.graphify` path (with a one-time warning), else the
+ * Engram path (absent — caller treats it as no file).
+ */
+function resolveProvidersPath(preferred: string, legacy: string): string {
+  if (existsSync(preferred)) return preferred;
+  if (existsSync(legacy)) {
+    warnLegacyProvidersPath(legacy, preferred);
+    return legacy;
+  }
+  return preferred;
 }
 
 // ---------------------------------------------------------------------------
@@ -61,10 +102,16 @@ export function localProvidersPath(root?: string): string {
 
 /** Options that override the real filesystem paths and env for testing. */
 export interface LoadCustomProvidersOptions {
-  /** Override global providers.json path (default: ~/.graphify/providers.json). */
+  /** Override global providers.json path (default: ~/.engram/providers.json). */
   globalPath?: string;
-  /** Override project-local providers.json path (default: ./.graphify/providers.json). */
+  /** Override project-local providers.json path (default: ./.engram/providers.json). */
   localPath?: string;
+  /**
+   * Explicit legacy-path overrides. When set, these are probed after the
+   * corresponding primary path, mirroring the default legacy fallback.
+   */
+  legacyGlobalPath?: string;
+  legacyLocalPath?: string;
   /** Override environment variable map (default: process.env). */
   env?: NodeJS.ProcessEnv;
 }
@@ -84,8 +131,18 @@ export function loadCustomProviders(
   options: LoadCustomProvidersOptions = {},
 ): CustomProviderMap {
   const env = options.env ?? process.env;
-  const globalPath = options.globalPath ?? globalProvidersPath();
-  const localPath = options.localPath ?? localProvidersPath();
+  // Explicit primary overrides are honoured verbatim (no fallback probing).
+  // Defaults probe the Engram path first, then the legacy `.graphify` path.
+  const globalPath = options.globalPath !== undefined
+    ? (options.legacyGlobalPath !== undefined
+      ? resolveProvidersPath(options.globalPath, options.legacyGlobalPath)
+      : options.globalPath)
+    : resolveProvidersPath(globalProvidersPath(), options.legacyGlobalPath ?? legacyGlobalProvidersPath());
+  const localPath = options.localPath !== undefined
+    ? (options.legacyLocalPath !== undefined
+      ? resolveProvidersPath(options.localPath, options.legacyLocalPath)
+      : options.localPath)
+    : resolveProvidersPath(localProvidersPath(), options.legacyLocalPath ?? legacyLocalProvidersPath());
 
   const allowLocal =
     ["1", "true", "yes"].includes((engramEnv("ENGRAM_ALLOW_LOCAL_PROVIDERS", "GRAPHIFY_ALLOW_LOCAL_PROVIDERS", env) ?? "").trim().toLowerCase());
@@ -93,8 +150,8 @@ export function loadCustomProviders(
   // Warn if a project-local file exists but the opt-in flag is absent.
   if (existsSync(localPath) && !allowLocal) {
     console.warn(
-      `[graphify] WARNING: ignoring project-local ${localPath} (custom providers control ` +
-        "where your corpus and API key are sent). Set GRAPHIFY_ALLOW_LOCAL_PROVIDERS=1 to load it.",
+      `[engram] WARNING: ignoring project-local ${localPath} (custom providers control ` +
+        "where your corpus and API key are sent). Set ENGRAM_ALLOW_LOCAL_PROVIDERS=1 to load it.",
     );
   }
 

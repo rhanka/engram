@@ -47,11 +47,25 @@ const SECRET_KEY_PATTERNS = [
 const VALID_MIRROR_MODES = new Set(["merge", "replace"]);
 
 const CONFIG_CANDIDATES = [
+  "engram.yaml",
+  "engram.yml",
+  join(".engram", "config.yaml"),
+  join(".engram", "config.yml"),
+] as const;
+
+/** Legacy (pre-rename) config filenames, probed after the Engram names. */
+const LEGACY_CONFIG_CANDIDATES = [
   "graphify.yaml",
   "graphify.yml",
   join(".graphify", "config.yaml"),
   join(".graphify", "config.yml"),
 ] as const;
+
+function isLegacyConfigPath(resolvedPath: string, root: string): boolean {
+  return LEGACY_CONFIG_CANDIDATES.some(
+    (candidate) => join(root, candidate) === resolvedPath,
+  );
+}
 
 const VALID_PDF_OCR_MODES = new Set(["off", "auto", "always", "dry-run"]);
 const VALID_CITATION_MINIMUMS = new Set(["file", "page", "section", "paragraph"]);
@@ -208,9 +222,17 @@ function parseInputScopeMode(value: unknown, fallback: GraphifyInputScopeMode): 
 
 export function discoverProjectConfig(root: string = "."): ProjectConfigDiscoveryResult {
   const resolvedRoot = resolve(root);
-  const searched = CONFIG_CANDIDATES.map((candidate) => join(resolvedRoot, candidate));
+  const searched = [
+    ...CONFIG_CANDIDATES.map((candidate) => join(resolvedRoot, candidate)),
+    ...LEGACY_CONFIG_CANDIDATES.map((candidate) => join(resolvedRoot, candidate)),
+  ];
   for (const candidate of searched) {
     if (existsSync(candidate)) {
+      if (isLegacyConfigPath(candidate, resolvedRoot)) {
+        console.warn(
+          `[engram] using legacy config ${candidate}; rename it to engram.yaml for new work`,
+        );
+      }
       return { found: true, path: candidate, searched };
     }
   }
