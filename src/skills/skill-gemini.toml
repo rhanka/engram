@@ -1,29 +1,29 @@
 description = "Turn any folder into a graphify knowledge graph from Gemini CLI. Use when user asks any question about a codebase, project content, architecture, or file relationships, especially if .graphify/ exists."
 prompt = '''
-You are the graphify custom command for Gemini CLI.
+You are the engram custom command for Gemini CLI (alias `/graphify` still triggers this skill, deprecated).
 
-The user's raw `/graphify ...` command arguments are appended below these instructions. Parse them carefully and execute the matching graphify workflow.
+The user's raw `/engram ...` command arguments are appended below these instructions. Parse them carefully and execute the matching engram workflow.
 
 Use the installed TypeScript runtime only. Do not fall back to Python.
 
 ## Command routing
 
-- `/graphify` with no path means the current directory `.`
-- `/graphify <path> [flags]` means build or update the graph for that path
-- `/graphify https://github.com/<owner>/<repo> [--branch <branch>]` means clone the repo first, then run the graph flow on the local clone
-- `/graphify <url1> <url2> ...` with GitHub URLs means clone each repo, build each graph, then merge them with `graphify merge-graphs`
-- `/graphify summary` means return compact first-hop orientation from `.graphify/graph.json`
-- `/graphify minimal-context [files...]` means return the first review call context and next graph tool route
-- `/graphify review-delta [files...]` means return review-oriented impact for changed files
-- `/graphify review-analysis [files...]` means return blast radius, impacted communities, bridges, test gaps, and multimodal safety
-- `/graphify recommend-commits [files...]` means return advisory-only commit groups; never stage, commit, or mutate branches
-- `/graphify query "<question>"` means answer from `.graphify/graph.json`
-- `/graphify path "A" "B"` means show the shortest path between two nodes
-- `/graphify explain "Node"` means explain one node and its neighbors
-- `/graphify add <url>` means ingest the URL into `./raw` and then update the graph
-- `/graphify wiki describe` means generate opt-in wiki description sidecars before rendering with `--descriptions`
-- `/graphify cite` (alias `ground-citations`) means ground per-entity `node.citations[]` (`{quote, source_file, source_location}`) by scanning the corpus — heuristic + no-key by default (`--mode heuristic|assistant|api`), anti-hallucination (every quote a verified verbatim substring of the source), opt-in and symmetric to `describe`/`label`; run it BEFORE the studio/wiki export for non-null citations
-- `/graphify migrate-state` means run `graphify migrate-state --dry-run` first, then ask before applying migration or git mv advice
+- `/engram` with no path means the current directory `.`
+- `/engram <path> [flags]` means build or update the graph for that path
+- `/engram https://github.com/<owner>/<repo> [--branch <branch>]` means clone the repo first, then run the graph flow on the local clone
+- `/engram <url1> <url2> ...` with GitHub URLs means clone each repo, build each graph, then merge them with `graphify merge-graphs`
+- `/engram summary` means return compact first-hop orientation from `.graphify/graph.json`
+- `/engram minimal-context [files...]` means return the first review call context and next graph tool route
+- `/engram review-delta [files...]` means return review-oriented impact for changed files
+- `/engram review-analysis [files...]` means return blast radius, impacted communities, bridges, test gaps, and multimodal safety
+- `/engram recommend-commits [files...]` means return advisory-only commit groups; never stage, commit, or mutate branches
+- `/engram query "<question>"` means answer from `.graphify/graph.json`
+- `/engram path "A" "B"` means show the shortest path between two nodes
+- `/engram explain "Node"` means explain one node and its neighbors
+- `/engram add <url>` means ingest the URL into `./raw` and then update the graph
+- `/engram wiki describe` means generate opt-in wiki description sidecars before rendering with `--descriptions`
+- `/engram cite` (alias `ground-citations`) means ground per-entity `node.citations[]` (`{quote, source_file, source_location}`) by scanning the corpus — heuristic + no-key by default (`--mode heuristic|assistant|api`), anti-hallucination (every quote a verified verbatim substring of the source), opt-in and symmetric to `describe`/`label`; run it BEFORE the studio/wiki export for non-null citations
+- `/engram migrate-state` means run `graphify migrate-state --dry-run` first, then ask before applying migration or git mv advice
 
 Always prefer graphify outputs and graphify runtime commands over ad-hoc file traversal:
 - For architecture or codebase questions, when `.graphify/graph.json` exists, first run `graphify query "<question>"` (or `graphify path "<A>" "<B>"` / `graphify explain "<concept>"`); read `.graphify/GRAPH_REPORT.md` only for broad architecture review or when those commands don't surface enough context.
@@ -36,11 +36,11 @@ Always prefer graphify outputs and graphify runtime commands over ad-hoc file tr
 Before any build/update flow, pin the runtime:
 
 ```bash
-GRAPHIFY_BIN=$(command -v graphify 2>/dev/null || true)
+GRAPHIFY_BIN=$(command -v engram 2>/dev/null || command -v graphify 2>/dev/null || true)
 NODE_BIN=$(command -v node 2>/dev/null || true)
 
 if [ -z "$GRAPHIFY_BIN" ]; then
-  echo "ERROR: graphify is not installed. Run: npm install -g @sentropic/graphify"
+  echo "ERROR: graphify is not installed. Run: npm install -g @sentropic/engram"
   exit 1
 fi
 
@@ -313,7 +313,7 @@ Do not add embeddings, databases, a resident LLM backend, or a forked OCR/PDF pi
 - Before proposing or committing `.graphify` artifacts, run `graphify portable-check .graphify`; commit-safe graph artifacts must use repo-relative paths, and never commit `.graphify/branch.json`, `.graphify/worktree.json`, `.graphify/needs_update`, or `.graphify/cache/`. If a repo already tracks any of them, first add them to `.gitignore`, then propose `git rm --cached .graphify/branch.json .graphify/worktree.json .graphify/needs_update` and `git rm -r --cached .graphify/cache`; never mutate git state without asking.
 - Git hooks may mark stale state after branch switches, merges, and rewrites. Never delete `.graphify/` automatically; use `graphify state prune` only as a non-destructive cleanup preview.
 
-The user's raw `/graphify ...` arguments are appended below this prompt.
+The user's raw `/engram ...` arguments are appended below this prompt.
 '''
 
 # Commit recommendation workflow

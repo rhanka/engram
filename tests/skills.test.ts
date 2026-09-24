@@ -288,23 +288,25 @@ describe("skill cache examples", () => {
     }
   });
 
-  it("declares frontmatter name 'graphify' in every distributed markdown skill (upstream 54825b6 #1635)", () => {
+  it("declares frontmatter name 'engram' in every distributed markdown skill (upstream 54825b6 #1635)", () => {
     // Claude Code requires the skill folder name to equal the frontmatter
-    // `name`. Every install destination is a `skills/graphify/` folder, so a
-    // suffixed name (e.g. `graphify-windows`) silently breaks discovery.
+    // `name`. Every install destination is a `skills/engram/` folder, so a
+    // suffixed name (e.g. `engram-windows`) silently breaks discovery.
+    // `/graphify` stays as a documented deprecated alias trigger.
     for (const relativePath of DISTRIBUTED_SKILL_DOCS) {
       if (!relativePath.endsWith(".md")) continue;
       const content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
-      expect(content, relativePath).toMatch(/^name: graphify$/m);
+      expect(content, relativePath).toMatch(/^name: engram$/m);
+      expect(content, relativePath).toContain("deprecated alias");
     }
   });
 
   it("keeps the Windows skill usage lines aligned with upstream v0.3.28", () => {
     const content = readFileSync(new URL("../src/skills/skill-windows.md", import.meta.url), "utf-8");
 
-    expect(content).toContain("/graphify <path> --directed");
-    expect(content).toContain("/graphify <path> --wiki");
-    expect(content).toContain("/graphify <path> --obsidian --obsidian-dir ~/vaults/my-project");
+    expect(content).toContain("/engram <path> --directed");
+    expect(content).toContain("/engram <path> --wiki");
+    expect(content).toContain("/engram <path> --obsidian --obsidian-dir ~/vaults/my-project");
   });
 
   it("keeps Windows skill scratch artifacts under .graphify with UTF-8 PowerShell writes", () => {
@@ -319,8 +321,8 @@ describe("skill cache examples", () => {
   it("marks uv and pipx Python detection as not applicable for the TypeScript Windows skill", () => {
     const content = readFileSync(new URL("../src/skills/skill-windows.md", import.meta.url), "utf-8");
 
-    expect(content).toContain("npm install -g @sentropic/graphify");
-    expect(content).toContain("require('@sentropic/graphify')");
+    expect(content).toContain("npm install -g @sentropic/engram");
+    expect(content).toContain("require('@sentropic/engram')");
     expect(content).not.toMatch(/\bFind-GraphifyPython\b|\buv tool\b|\bpipx\b|\.graphify_python|python\.exe|pip install graphifyy/);
   });
 });
