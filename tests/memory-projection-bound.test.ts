@@ -7,7 +7,7 @@ import {
   exportBoundedCurrentProjectionV1,
   measureRawProjectionBytesV1,
   syntheticBoundedProjectionInputAtBytesV1,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 
 describe("bounded current projection", () => {
   it("raw projection at cap passes and cap plus one byte fails without silent omission", () => {

@@ -8,17 +8,17 @@ import {
   openFencedSqliteCanonicalMemoryStoreV1,
   type AdmissionStoreInputV1,
   type FencedSqliteCanonicalMemoryStoreV1,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 // §5.9 v5-b: the opener stamps the RAW store as fence-holding; when a test wraps it in an observing Proxy, the
 // Proxy is a distinct identity, so the test must propagate the mark to the Proxy or the engine's gate refuses it.
-import { isFencedFactoryStoreV1, markFencedStoreV1 } from "../graphify-memory/store-factory.js";
+import { isFencedFactoryStoreV1, markFencedStoreV1 } from "../engram-memory/store-factory.js";
 import { captureRequest, createL3Memory, NOW } from "./memory-l3-fixture.js";
 
 const workspaces: string[] = [];
 const FAILPOINTS = ["after_blob", "after_journal", "after_state", "after_fts", "after_outbox"] as const;
 
 function filename(): string {
-  const workspace = mkdtempSync(join(tmpdir(), "graphify-memory-sqlite-"));
+  const workspace = mkdtempSync(join(tmpdir(), "engram-memory-sqlite-"));
   workspaces.push(workspace);
   return join(workspace, "canonical.sqlite");
 }
@@ -35,7 +35,7 @@ async function open(filenameValue: string, options: Omit<Parameters<typeof openF
 }
 
 async function surfaceCounts(filenameValue: string): Promise<Record<string, number>> {
-  const native = await import("../graphify-memory/node_modules/better-sqlite3/lib/index.js");
+  const native = await import("../engram-memory/node_modules/better-sqlite3/lib/index.js");
   const database = new native.default(filenameValue, { readonly: true, fileMustExist: true });
   try {
     const tables = ["memory_blob", "memory_journal", "memory_state", "accepted_lexical", "accepted_lexical_fts", "memory_outbox"];

@@ -824,7 +824,7 @@ export interface OperationalCapabilityReceiptV1 {
   capabilities: CanonicalStoreCapabilitiesV1;
   // §5.9 declared adapter identity (all three present or all absent). A production store's fenced factory stamps
   // these from its module's compiled identity; the engine compares them to its own compiled identity, and pairs
-  // that with an in-process provenance mark (§5.9, graphify-memory/store-factory). There is no signature.
+  // that with an in-process provenance mark (§5.9, engram-memory/store-factory). There is no signature.
   adapter_id?: OpaqueRef;
   adapter_version?: string;
   adapter_build_digest?: Digest;
@@ -1009,7 +1009,7 @@ export interface AdminProviderPort {
 // same-module store always matched — and a self-asserted boolean is of the same forgeable family). This identity
 // type remains only as the shape of the receipt's DECLARED adapter identity, which is INFORMATIONAL/diagnostic
 // (a duplicate package or version drift is legible in the receipt), never the admission basis. See
-// graphify-memory/store-factory (verifyStoreProvenance and the internal opener-applied fence mark).
+// engram-memory/store-factory (verifyStoreProvenance and the internal opener-applied fence mark).
 export interface CapabilityAttestationIdentityV1 {
   readonly adapter_id: OpaqueRef;
   readonly adapter_version: string;

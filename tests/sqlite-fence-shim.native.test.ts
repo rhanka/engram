@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // vi.mock would not shadow it and the open would fail for the WRONG reason (module-not-found), so we assert the
 // mock was actually called AND that the refusal cause is the /proc/self/fdinfo kernel proof.
 const flockSpy = vi.hoisted(() => vi.fn(() => undefined));
-vi.mock("../graphify-memory/node_modules/fs-ext/fs-ext.js", () => ({ flockSync: flockSpy, default: { flockSync: flockSpy } }));
+vi.mock("../engram-memory/node_modules/fs-ext/fs-ext.js", () => ({ flockSync: flockSpy, default: { flockSync: flockSpy } }));
 
 const NOW = "2026-09-21T12:00:00.000Z";
 const dirs: string[] = [];
@@ -20,9 +20,9 @@ afterEach(() => { while (dirs.length > 0) rmSync(dirs.pop()!, { recursive: true,
 
 describe("native SQLite fence rejects a non-functional flock binding", () => {
   it("refuses the open with CAPABILITY_UNAVAILABLE and advances nothing (the kernel proof runs before any write)", async () => {
-    const { openFencedSqliteCanonicalMemoryStoreV1 } = await import("../graphify-memory/index.js");
-    const native = await import("../graphify-memory/node_modules/better-sqlite3/lib/index.js");
-    const dir = mkdtempSync(join(tmpdir(), "graphify-memory-shim-"));
+    const { openFencedSqliteCanonicalMemoryStoreV1 } = await import("../engram-memory/index.js");
+    const native = await import("../engram-memory/node_modules/better-sqlite3/lib/index.js");
+    const dir = mkdtempSync(join(tmpdir(), "engram-memory-shim-"));
     dirs.push(dir);
     const target = join(dir, "canonical.sqlite");
     // Pre-seed a storage_epoch with a raw connection (no flock) so a mutation by the refused open would be visible.

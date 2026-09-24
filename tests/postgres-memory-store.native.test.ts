@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   openPostgresCanonicalMemoryStoreV1,
   type CanonicalMemoryStorePort,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 import { captureRequest, createL3Memory, DEADLINE, NOW } from "./memory-l3-fixture.js";
 import { dockerAvailable, postgresImageAvailable, startEphemeralPostgres } from "./postgres-ephemeral.js";
 
