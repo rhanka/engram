@@ -5,6 +5,14 @@ import { parse as parseYaml } from "yaml";
 import { schemaIdAccepted } from "./schema-ids.js";
 
 export const QUALITY_TARGET_CONFIG_CANDIDATES = [
+  "engram.yaml",
+  "engram.yml",
+  join(".engram", "config.yaml"),
+  join(".engram", "config.yml"),
+] as const;
+
+/** Legacy (pre-rename) config filenames, probed after the Engram names. */
+export const LEGACY_QUALITY_TARGET_CONFIG_CANDIDATES = [
   "graphify.yaml",
   "graphify.yml",
   join(".graphify", "config.yaml"),
@@ -265,7 +273,10 @@ function normalizeMaxDrop(value: unknown): { max_drop: number } | undefined {
 
 export function discoverQualityTargetsConfig(root: string = "."): QualityTargetDiscoveryResult {
   const resolvedRoot = resolve(root);
-  const searched = QUALITY_TARGET_CONFIG_CANDIDATES.map((candidate) => join(resolvedRoot, candidate));
+  const searched = [
+    ...QUALITY_TARGET_CONFIG_CANDIDATES.map((candidate) => join(resolvedRoot, candidate)),
+    ...LEGACY_QUALITY_TARGET_CONFIG_CANDIDATES.map((candidate) => join(resolvedRoot, candidate)),
+  ];
   for (const candidate of searched) {
     if (existsSync(candidate)) return { found: true, path: candidate, searched };
   }
