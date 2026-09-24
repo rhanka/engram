@@ -250,7 +250,7 @@ export async function runStorePush(
   const graphPath = resolveStoreGraphPath(opts, projectConfig);
   if (!existsSync(graphPath)) {
     throw new Error(
-      `graph file not found: ${graphPath}. Build it first (graphify extract) ` +
+      `graph file not found: ${graphPath}. Build it first (engram extract) ` +
         "or pass --graph <path>.",
     );
   }

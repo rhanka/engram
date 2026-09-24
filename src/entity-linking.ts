@@ -427,7 +427,7 @@ function buildSpanProposalPrompt(request: LlmProposeRequest): string {
     "- Copy each span EXACTLY as it appears in the SOURCE (same characters, casing, punctuation).",
     `- Propose only spans that are mentions of a ${request.nodeType}.`,
     "- Do NOT invent identifiers, do NOT normalize, do NOT paraphrase or translate.",
-    "- If unsure, omit the span. graphify resolves ids itself; you only propose spans.",
+    "- If unsure, omit the span. engram resolves ids itself; you only propose spans.",
     "",
     'Return JSON of the form: {"spans": [{"raw_span": "<verbatim substring>"}]}.',
     "",

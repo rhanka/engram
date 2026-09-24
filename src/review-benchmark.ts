@@ -227,7 +227,7 @@ export function evaluateReviewBenchmarks(
 
 export function reviewBenchmarkToMarkdown(result: ReviewBenchmarkResult): string {
   const lines = [
-    "# Graphify Review Benchmarks",
+    "# Engram Review Benchmarks",
     "",
     "> Token metrics are estimated from graph review text unless backed by actual model usage.",
     "> Flow quality depends on parser/call metadata; weak or undirected metadata can reduce completeness.",

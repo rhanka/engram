@@ -368,7 +368,7 @@ export function buildWikiDescriptionPrompt(
       ...lines,
       "",
       "Output:",
-      `Return JSON fields that Graphify will wrap into ${WIKI_DESCRIPTION_SCHEMA}:`,
+      `Return JSON fields that Engram will wrap into ${WIKI_DESCRIPTION_SCHEMA}:`,
       `{
   \"status\": \"generated\",
   \"description\": \"...\", 
@@ -402,7 +402,7 @@ export function buildWikiDescriptionPrompt(
     ...lines,
     "",
     "Output:",
-    `Return JSON fields that Graphify will wrap into ${WIKI_DESCRIPTION_SCHEMA}:`,
+    `Return JSON fields that Engram will wrap into ${WIKI_DESCRIPTION_SCHEMA}:`,
     `{
   \"status\": \"generated\",
   \"description\": \"...\", 

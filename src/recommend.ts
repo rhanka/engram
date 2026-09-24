@@ -369,7 +369,7 @@ function formatList(values: string[], empty: string = "none"): string[] {
 
 export function commitRecommendationToText(recommendation: CommitRecommendation): string {
   const lines = [
-    "Graphify Commit Recommendation",
+    "Engram Commit Recommendation",
     "Advisory only: no staging, no commits, no branch mutations performed.",
     `Changed files: ${recommendation.changed_files.length}`,
     `Confidence: ${recommendation.confidence}`,

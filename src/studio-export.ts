@@ -279,7 +279,7 @@ export function lowDescriptionCoverageWarning(
   return (
     `studio export: only ${described}/${total} node(s) (~${pct}%) have a real description. ` +
     `A ~0%-description graph almost always means the description pass never ran.${provisionalNote} ` +
-    `Run \`graphify describe .\` (no API key needed — assistant mode) before exporting for non-null descriptions.`
+    `Run \`engram describe .\` (no API key needed — assistant mode) before exporting for non-null descriptions.`
   );
 }
 
