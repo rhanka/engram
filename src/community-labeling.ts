@@ -85,7 +85,7 @@ export function emitLabelInstructions(
     [
       "# Community Labeling",
       "",
-      "Graphify is running in assistant/skill mode (no API key). You are the host",
+      "Engram is running in assistant/skill mode (no API key). You are the host",
       "assistant (Claude Code / Codex / Gemini CLI). Read the community listing below",
       "and write 2-5 word plain-language names for each.",
       ...(languageDirective.length > 0
@@ -106,7 +106,7 @@ export function emitLabelInstructions(
       `{${labeledCids.slice(0, 3).map((cid) => `\n  "${cid}": "Authentication Flow"`).join(",")}\n}`,
       "```",
       "",
-      "Then re-run `graphify update` (or `graphify label`) to ingest the names.",
+      "Then re-run `engram update` (or `engram label`) to ingest the names.",
     ].join("\n") + "\n",
     "utf-8",
   );
@@ -638,7 +638,7 @@ export async function generateCommunityLabels(
     } else {
       if (!options.quiet) {
         process.stderr.write(
-          `[graphify label] unknown provider '${options.provider}'; ` +
+          `[engram label] unknown provider '${options.provider}'; ` +
             `must be one of ${DIRECT_LLM_PROVIDERS.join(", ")}. Using placeholders.\n`,
         );
       }
@@ -687,7 +687,7 @@ export async function generateCommunityLabels(
       }
       if (!options.quiet) {
         process.stderr.write(
-          `[graphify label] assistant mode: ingested ${ingested.size} community name(s) ` +
+          `[engram label] assistant mode: ingested ${ingested.size} community name(s) ` +
             `from ${instructionDir}\n`,
         );
       }
@@ -722,9 +722,9 @@ export async function generateCommunityLabels(
 
     if (!options.quiet) {
       process.stderr.write(
-        `[graphify label] assistant/skill mode: emitted instruction file to ${instructionPath}\n` +
+        `[engram label] assistant/skill mode: emitted instruction file to ${instructionPath}\n` +
           `  Fill ${answerPath} with 2-5 word community names,\n` +
-          `  then re-run \`graphify update\` (or \`graphify label\`) to ingest.\n`,
+          `  then re-run \`engram update\` (or \`engram label\`) to ingest.\n`,
       );
     }
     return { labels: placeholderLabels(communities), source: "assistant" };
@@ -738,7 +738,7 @@ export async function generateCommunityLabels(
     // `--label-mode direct` without a configured backend.
     if (!options.quiet) {
       process.stderr.write(
-        "[graphify label] --label-mode direct requires an API key " +
+        "[engram label] --label-mode direct requires an API key " +
           "(e.g. ANTHROPIC_API_KEY). Using placeholders.\n",
       );
     }
@@ -760,7 +760,7 @@ export async function generateCommunityLabels(
     if (!options.quiet) {
       const msg = err instanceof Error ? err.message : String(err);
       process.stderr.write(
-        `[graphify label] warning: community labeling failed (${msg}); ` +
+        `[engram label] warning: community labeling failed (${msg}); ` +
           "using Community N placeholders.\n",
       );
     }

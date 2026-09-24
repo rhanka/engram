@@ -246,7 +246,7 @@ export function buildOntologyDiscoverySample(
     instructions: [
       "Use this sample only to propose generic ontology profile changes.",
       "Do not mutate profile files from discovery.",
-      "Do not add customer, partner, project, proprietary ontology, or private domain examples to Graphify package fixtures or docs.",
+      "Do not add customer, partner, project, proprietary ontology, or private domain examples to Engram package fixtures or docs.",
       "Every proposal must cite sample evidence_refs and remain needs_review until explicitly approved.",
     ],
   } satisfies Omit<OntologyDiscoverySample, "sample_hash">;
@@ -370,7 +370,7 @@ export function ontologyDiscoveryDiffToMarkdown(diff: OntologyProfileDiff): stri
       `- ${operation.op} ${operation.path} (${operation.review_status}, evidence: ${operation.evidence_refs.join(", ")})`,
     );
   return [
-    "# Graphify Ontology Discovery Diff",
+    "# Engram Ontology Discovery Diff",
     "",
     `Profile hash: ${diff.base_profile_hash}`,
     `Proposal hash: ${diff.proposal_hash}`,

@@ -138,7 +138,7 @@ function readGraphData(safePath: string): SerializedGraphData {
     data = JSON.parse(readFileSync(safePath, "utf-8")) as SerializedGraphData;
   } catch (err) {
     throw new Error(
-      `graph.json is corrupted (${err instanceof Error ? err.message : err}). Re-run the graphify skill to rebuild it (for Codex: $graphify .).`,
+      `graph.json is corrupted (${err instanceof Error ? err.message : err}). Re-run the engram skill to rebuild it (for Codex: $engram .).`,
     );
   }
   return data;
@@ -686,7 +686,7 @@ function readMcpResource(
   if (uri === "graphify://report") {
     const reportPath = join(dirname(resolve(graphPath)), "GRAPH_REPORT.md");
     if (!existsSync(reportPath)) {
-      return "GRAPH_REPORT.md not found. Run graphify extract first.";
+      return "GRAPH_REPORT.md not found. Run engram extract first.";
     }
     return readFileSync(reportPath, "utf-8");
   }
@@ -1299,7 +1299,7 @@ export async function serve(
       project_path: {
         type: "string",
         description:
-          "Optional absolute path to another graphify project root; routes this call to that project's graph.json. Omit to use the server's default graph.",
+          "Optional absolute path to another engram project root; routes this call to that project's graph.json. Omit to use the server's default graph.",
       },
     };
   }

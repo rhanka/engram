@@ -193,7 +193,7 @@ export function migrateGraphifyOut(options: MigrationOptions = {}): GraphifyOutM
 
 export function migrationResultToText(result: GraphifyOutMigrationResult): string {
   const lines: string[] = [];
-  lines.push(result.dryRun ? "graphify state migration dry-run" : "graphify state migration");
+  lines.push(result.dryRun ? "engram state migration dry-run" : "engram state migration");
   lines.push("source: " + result.sourceDir);
   lines.push("target: " + result.targetDir);
 
@@ -239,7 +239,7 @@ export function migrationResultToText(result: GraphifyOutMigrationResult): strin
     }
   }
   if (result.git.status.length > 0) {
-    lines.push("current git status for graphify state:");
+    lines.push("current git status for engram state:");
     for (const line of result.git.status) {
       lines.push("  " + line);
     }

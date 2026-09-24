@@ -125,7 +125,7 @@ export function cleanupStaleNodes(
       }
     }
     console.warn(
-      `[graphify] semantic_cleanup: dropped ${toDrop.length} stale node(s) ` +
+      `[engram] semantic_cleanup: dropped ${toDrop.length} stale node(s) ` +
         `(${droppedEdges} edge(s) removed) — source file(s) no longer present.`,
     );
   }

@@ -141,7 +141,7 @@ export function printBenchmark(result: BenchmarkResult): void {
     return;
   }
 
-  console.log(`\ngraphify token reduction benchmark`);
+  console.log(`\nengram token reduction benchmark`);
   console.log("─".repeat(50));
   console.log(`  Corpus:          ${result.corpus_words!.toLocaleString()} words → ~${result.corpus_tokens!.toLocaleString()} tokens (naive)`);
   console.log(`  Graph:           ${result.nodes!.toLocaleString()} nodes, ${result.edges!.toLocaleString()} edges`);
