@@ -17,8 +17,11 @@ This shim is published separately from the main package and only needs a fresh p
 
 ```bash
 cd forward/graphify
-npm publish            # publishes @sentropic/graphify@<version> as a shim
-npm deprecate @sentropic/graphify@"<version>" "graphify has become Engram (@sentropic/engram)"
+npm publish --access public   # publishes @sentropic/graphify@<version> as a shim
+npm deprecate @sentropic/graphify@"<=0.19.0" "graphify has become Engram (@sentropic/engram) — a different product (agent memory substrate), not a rename-in-place. This package is a forwarding shim: install @sentropic/engram and use bin engram, ENGRAM_*, .engram/ instead."
 ```
+
+Deprecation is applied with `npm deprecate` after publishing — never via a
+`"deprecated"` key in `package.json` (npm ignores that key).
 
 The old npm name is deprecated, never unpublished: existing installs keep resolving.
