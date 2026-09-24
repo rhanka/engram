@@ -4,9 +4,13 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
-## Unreleased — Engram rename (clean break with back-compat aliases)
+## 0.19.0 (2026-09-24)
 
-Product and CLI are now Engram (`@sentropic/engram`, bin `engram`). This is a repositioning as an agent memory substrate, not a `graphify` continuation. Back-compat: the `graphify` bin, `GRAPHIFY_*` env vars, `.graphify/` state dir, `graphify.yaml`, `graphify_*_v1` schema ids, `graphify_*` DB tables, and `window.__GRAPHIFY_BUNDLE__` remain accepted via aliases with deprecation warnings. These aliases are kept for at least two minor versions or 12 months from this release. Heritage: concepts originate in `graphify`; that line is archived under deprecated `@sentropic/graphify`. Migration: prefer `engram`, `ENGRAM_*`, `.engram/` for all new work.
+- **Engram rename (clean break).** Product and CLI are now Engram (`@sentropic/engram`, bin `engram`), repositioned as an agent memory substrate — not a `graphify` continuation. Heritage: concepts originate in `graphify`; that line is archived under deprecated `@sentropic/graphify`.
+- **Back-compat aliases.** The `graphify` bin, `GRAPHIFY_*` env vars, `.graphify/` state dir, `graphify.yaml`, `graphify_*_v1` schema ids, `graphify_*` DB tables, and `window.__GRAPHIFY_BUNDLE__` remain accepted via aliases with deprecation warnings, kept for at least two minor versions or 12 months from this release. Migration: prefer `engram`, `ENGRAM_*`, `.engram/` for all new work.
+- **Memory package rename.** `graphify-memory` is now `engram-memory`; memory contracts ship as `@engram/memory-contracts`.
+- **Repository rename.** `rhanka/graphify` is now `rhanka/engram` (GitHub redirects the old name). GitHub Pages moved from `https://rhanka.github.io/graphify/` to `https://rhanka.github.io/engram/` with no redirect from the old Pages URL.
+- **Forwarding package.** `@sentropic/graphify@0.19.0` is a deprecated forwarding shim that installs and re-exports `@sentropic/engram@0.19.0`; install `@sentropic/engram` instead.
 
 ## 0.18.0 (2026-09-13)
 
