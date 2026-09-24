@@ -57,23 +57,23 @@ describe("validateExtraction", () => {
   });
 
   it("accepts whitelisted cross-profile commit and branch references", () => {
-    expect(isExternalReferenceId("commit:repo:github.com/rhanka/graphify@abc123456789")).toBe(true);
-    expect(isExternalReferenceId("branch:repo:github.com/rhanka/graphify#feature/wp9")).toBe(true);
+    expect(isExternalReferenceId("commit:repo:github.com/rhanka/engram@abc123456789")).toBe(true);
+    expect(isExternalReferenceId("branch:repo:github.com/rhanka/engram#feature/wp9")).toBe(true);
     expect(isExternalReferenceId("missing")).toBe(false);
 
     const errors = validateExtraction({
-      nodes: [{ id: "pr:repo:github.com/rhanka/graphify#42", label: "#42", file_type: "concept", source_file: "gh" }],
+      nodes: [{ id: "pr:repo:github.com/rhanka/engram#42", label: "#42", file_type: "concept", source_file: "gh" }],
       edges: [
         {
-          source: "pr:repo:github.com/rhanka/graphify#42",
-          target: "commit:repo:github.com/rhanka/graphify@abc123456789",
+          source: "pr:repo:github.com/rhanka/engram#42",
+          target: "commit:repo:github.com/rhanka/engram@abc123456789",
           relation: "CONTAINS_COMMIT",
           confidence: "EXTRACTED",
           source_file: "gh",
         },
         {
-          source: "pr:repo:github.com/rhanka/graphify#42",
-          target: "branch:repo:github.com/rhanka/graphify#feature/wp9",
+          source: "pr:repo:github.com/rhanka/engram#42",
+          target: "branch:repo:github.com/rhanka/engram#feature/wp9",
           relation: "FROM_BRANCH",
           confidence: "EXTRACTED",
           source_file: "gh",
