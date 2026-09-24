@@ -41,7 +41,7 @@ function tempProfileProject(): string {
 }
 
 function writeGraph(dir: string): string {
-  const graphDir = join(dir, ".graphify");
+  const graphDir = join(dir, ".engram");
   mkdirSync(graphDir, { recursive: true });
   const graphPath = join(graphDir, "graph.json");
   writeFileSync(
@@ -91,7 +91,7 @@ function writeGraph(dir: string): string {
 }
 
 function writeFlowGraph(dir: string): string {
-  const graphDir = join(dir, ".graphify");
+  const graphDir = join(dir, ".engram");
   mkdirSync(graphDir, { recursive: true });
   const graphPath = join(graphDir, "graph.json");
   writeFileSync(
@@ -113,7 +113,7 @@ function writeFlowGraph(dir: string): string {
 }
 
 function writeLargeGraph(dir: string, nodeCount: number = 5001): string {
-  const graphDir = join(dir, ".graphify");
+  const graphDir = join(dir, ".engram");
   mkdirSync(graphDir, { recursive: true });
   const graphPath = join(graphDir, "graph.json");
   const nodes = Array.from({ length: nodeCount }, (_, index) => ({
@@ -401,7 +401,7 @@ describe("public CLI runtime command parity", () => {
 
     expect(wiki.exitCode).toBe(0);
     expect(wiki.logs.join("\n")).toContain("wiki");
-    expect(existsSync(join(dir, ".graphify", "wiki", "index.md"))).toBe(true);
+    expect(existsSync(join(dir, ".engram", "wiki", "index.md"))).toBe(true);
 
     expect(obsidian.exitCode).toBe(0);
     expect(obsidian.logs.join("\n")).toContain("graph.canvas");
@@ -412,7 +412,7 @@ describe("public CLI runtime command parity", () => {
   it("supports export wiki with validated description sidecars", async () => {
     const dir = tempProject();
     const graphPath = writeGraph(dir);
-    const descriptionsPath = join(dir, ".graphify", "wiki-descriptions.json");
+    const descriptionsPath = join(dir, ".engram", "wiki-descriptions.json");
     const graphHash = createHash("sha256").update(readFileSync(graphPath)).digest("hex");
     const cacheKey = buildWikiDescriptionCacheKey({
       target_id: "community:0",
@@ -463,14 +463,14 @@ describe("public CLI runtime command parity", () => {
     ], dir);
 
     expect(wiki.exitCode).toBe(0);
-    const article = readFileSync(join(dir, ".graphify", "wiki", "Community_0.md"), "utf-8");
+    const article = readFileSync(join(dir, ".engram", "wiki", "Community_0.md"), "utf-8");
     expect(article).toContain("Community 0 contains the source-backed service and repository concepts.");
   });
 
   it("skips stale wiki description sidecars when graph_hash diverges", async () => {
     const dir = tempProject();
     const graphPath = writeGraph(dir);
-    const descriptionsPath = join(dir, ".graphify", "wiki-descriptions.json");
+    const descriptionsPath = join(dir, ".engram", "wiki-descriptions.json");
     writeFileSync(
       descriptionsPath,
       JSON.stringify({
@@ -512,15 +512,15 @@ describe("public CLI runtime command parity", () => {
 
     expect(wiki.exitCode).toBe(0);
     expect(wiki.warnings.join("\n")).toContain("Skipping 0 node and 1 community description");
-    const article = readFileSync(join(dir, ".graphify", "wiki", "Community_0.md"), "utf-8");
+    const article = readFileSync(join(dir, ".engram", "wiki", "Community_0.md"), "utf-8");
     expect(article).not.toContain("STALE description should be skipped.");
   });
 
   it("generates wiki description sidecars through assistant mode", async () => {
     const dir = tempProject();
     const graphPath = writeGraph(dir);
-    const descriptionsDir = join(dir, ".graphify", "wiki", "descriptions");
-    const instructionsDir = join(dir, ".graphify", "wiki", "description-instructions");
+    const descriptionsDir = join(dir, ".engram", "wiki", "descriptions");
+    const instructionsDir = join(dir, ".engram", "wiki", "description-instructions");
 
     const result = await runCli([
       "wiki",
@@ -577,13 +577,13 @@ describe("public CLI runtime command parity", () => {
     const neo4j = await runCli(["export", "neo4j", "--graph", graphPath], dir);
 
     expect(svg.exitCode).toBe(0);
-    expect(readFileSync(join(dir, ".graphify", "graph.svg"), "utf-8")).toContain("<svg");
+    expect(readFileSync(join(dir, ".engram", "graph.svg"), "utf-8")).toContain("<svg");
 
     expect(graphml.exitCode).toBe(0);
-    expect(readFileSync(join(dir, ".graphify", "graph.graphml"), "utf-8")).toContain("<graphml");
+    expect(readFileSync(join(dir, ".engram", "graph.graphml"), "utf-8")).toContain("<graphml");
 
     expect(neo4j.exitCode).toBe(0);
-    expect(readFileSync(join(dir, ".graphify", "cypher.txt"), "utf-8")).toContain("MERGE");
+    expect(readFileSync(join(dir, ".engram", "cypher.txt"), "utf-8")).toContain("MERGE");
   });
 
   it("supports merge-graphs and annotates nodes with their repo of origin", async () => {
@@ -641,8 +641,8 @@ describe("public CLI runtime command parity", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.logs.join("\n")).toContain("Code graph updated");
-    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
-    expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
+    expect(existsSync(join(dir, ".engram", "graph.json"))).toBe(true);
+    expect(existsSync(join(dir, ".engram", "GRAPH_REPORT.md"))).toBe(true);
   });
 
   it("update keeps generic community names (no fail) when no LLM backend is configured", async () => {
@@ -667,7 +667,7 @@ describe("public CLI runtime command parity", () => {
       const result = await runCli(["update", dir], dir);
       expect(result.exitCode).toBe(0);
       const graph = JSON.parse(
-        readFileSync(join(dir, ".graphify", "graph.json"), "utf-8"),
+        readFileSync(join(dir, ".engram", "graph.json"), "utf-8"),
       ) as { nodes: Array<{ community_name?: string | null }> };
       // No backend -> generic "Community N" names retained (never crashes).
       for (const node of graph.nodes) {
@@ -691,7 +691,7 @@ describe("public CLI runtime command parity", () => {
     const result = await runCli(["update", dir, "--no-label", "--no-description"], dir);
     expect(result.exitCode).toBe(0);
     expect(result.logs.join("\n")).toContain("Code graph updated");
-    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
+    expect(existsSync(join(dir, ".engram", "graph.json"))).toBe(true);
   });
 
   it("writes graph freshness metadata and detects stale HEAD drift", async () => {
@@ -704,10 +704,10 @@ describe("public CLI runtime command parity", () => {
 
     const result = await runCli(["update", "."], dir);
     const head = execGit(dir, ["rev-parse", "HEAD"]);
-    const graphJson = JSON.parse(readFileSync(join(dir, ".graphify", "graph.json"), "utf-8")) as {
+    const graphJson = JSON.parse(readFileSync(join(dir, ".engram", "graph.json"), "utf-8")) as {
       graph?: { built_from_commit?: string };
     };
-    const report = readFileSync(join(dir, ".graphify", "GRAPH_REPORT.md"), "utf-8");
+    const report = readFileSync(join(dir, ".engram", "GRAPH_REPORT.md"), "utf-8");
 
     expect(result.exitCode).toBe(0);
     expect(graphJson.graph?.built_from_commit).toBe(head);
@@ -733,10 +733,10 @@ describe("public CLI runtime command parity", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.logs.join("\n")).toContain("[graphify extract] wrote");
-    expect(existsSync(join(outDir, ".graphify", "graph.json"))).toBe(true);
-    expect(existsSync(join(outDir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
-    expect(existsSync(join(outDir, ".graphify", ".graphify_analysis.json"))).toBe(true);
-    expect(existsSync(join(outDir, ".graphify", ".graphify_labels.json"))).toBe(true);
+    expect(existsSync(join(outDir, ".engram", "graph.json"))).toBe(true);
+    expect(existsSync(join(outDir, ".engram", "GRAPH_REPORT.md"))).toBe(true);
+    expect(existsSync(join(outDir, ".engram", ".graphify_analysis.json"))).toBe(true);
+    expect(existsSync(join(outDir, ".engram", ".graphify_labels.json"))).toBe(true);
   });
 
   it("supports extract --no-cluster for raw merged extraction output", async () => {
@@ -748,8 +748,8 @@ describe("public CLI runtime command parity", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.logs.join("\n")).toContain("no clustering");
-    expect(existsSync(join(dir, ".graphify", ".graphify_extract.json"))).toBe(true);
-    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(false);
+    expect(existsSync(join(dir, ".engram", ".graphify_extract.json"))).toBe(true);
+    expect(existsSync(join(dir, ".engram", "graph.json"))).toBe(false);
   });
 
   it("extract --backend claude-cli writes assistant instructions and exits without provider call", async () => {
@@ -770,9 +770,9 @@ describe("public CLI runtime command parity", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.logs.join("\n")).toContain("--backend claude-cli: no provider API key read");
-    expect(result.logs.join("\n")).toContain("graphify skill");
+    expect(result.logs.join("\n")).toContain("engram skill");
 
-    const instructionsPath = join(dir, ".graphify", "scratch", "assistant-extract-instructions.md");
+    const instructionsPath = join(dir, ".engram", "scratch", "assistant-extract-instructions.md");
     expect(existsSync(instructionsPath)).toBe(true);
     const instructions = readFileSync(instructionsPath, "utf-8");
     expect(instructions).toContain("# Graphify assistant extraction instructions");
@@ -780,7 +780,7 @@ describe("public CLI runtime command parity", () => {
     expect(instructions).toContain("No provider API key was read or persisted");
 
     // No direct semantic file should have been produced.
-    expect(existsSync(join(dir, ".graphify", ".graphify_semantic.json"))).toBe(false);
+    expect(existsSync(join(dir, ".engram", ".graphify_semantic.json"))).toBe(false);
   });
 
   it("requires provided semantic extraction for non-code headless corpora", async () => {
@@ -820,7 +820,7 @@ describe("public CLI runtime command parity", () => {
     );
 
     const result = await runCli(["extract", ".", "--semantic", semanticPath], dir);
-    const graph = JSON.parse(readFileSync(join(dir, ".graphify", "graph.json"), "utf-8")) as {
+    const graph = JSON.parse(readFileSync(join(dir, ".engram", "graph.json"), "utf-8")) as {
       nodes: Array<{ label?: string }>;
     };
 
@@ -874,10 +874,10 @@ describe("public CLI runtime command parity", () => {
         const result = await runCli(["extract", ".", "--semantic", semanticPath, "--no-cluster"], dir);
 
         expect(result.exitCode).toBe(0);
-        const manifest = JSON.parse(readFileSync(join(dir, ".graphify", "manifest.json"), "utf-8")) as Record<string, unknown>;
+        const manifest = JSON.parse(readFileSync(join(dir, ".engram", "manifest.json"), "utf-8")) as Record<string, unknown>;
         expect(manifest["notes.gdoc"]).toBeTruthy();
         expect(manifest[join(dir, "notes.gdoc")]).toBeUndefined();
-        expect(Object.keys(manifest).some((file) => file.includes(join(".graphify", "converted")))).toBe(false);
+        expect(Object.keys(manifest).some((file) => file.includes(join(".engram", "converted")))).toBe(false);
       } finally {
         globalThis.fetch = originalFetch;
       }
@@ -897,7 +897,7 @@ describe("public CLI runtime command parity", () => {
     const initial = await runCli(["update", "."], dir);
     expect(initial.exitCode).toBe(0);
 
-    const graphPath = join(dir, ".graphify", "graph.json");
+    const graphPath = join(dir, ".engram", "graph.json");
     const graph = JSON.parse(readFileSync(graphPath, "utf-8")) as {
       nodes: Array<{ id: string; label?: string; source_file?: string; file_type?: string }>;
       links: Array<Record<string, unknown>>;
@@ -943,7 +943,7 @@ describe("public CLI runtime command parity", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.logs.join("\n")).toContain("Code graph updated");
-    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
+    expect(existsSync(join(dir, ".engram", "graph.json"))).toBe(true);
   });
 
   it("rebuilds code but keeps stale semantic state for mixed code and docs hook batches", async () => {
@@ -956,7 +956,7 @@ describe("public CLI runtime command parity", () => {
     const initial = await runCli(["update", "."], dir);
     expect(initial.exitCode).toBe(0);
 
-    writeFileSync(join(dir, ".graphify", "needs_update"), "1\n", "utf-8");
+    writeFileSync(join(dir, ".engram", "needs_update"), "1\n", "utf-8");
     const previousChanged = process.env.GRAPHIFY_CHANGED;
     process.env.GRAPHIFY_CHANGED = ["src/alpha.ts", "docs/guide.md"].join("\n");
     try {
@@ -970,8 +970,8 @@ describe("public CLI runtime command parity", () => {
       }
     }
 
-    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
-    expect(existsSync(join(dir, ".graphify", "needs_update"))).toBe(true);
+    expect(existsSync(join(dir, ".engram", "graph.json"))).toBe(true);
+    expect(existsSync(join(dir, ".engram", "needs_update"))).toBe(true);
   });
 
   it("hook-rebuild is LLM-free (no describe/label round-trip) and leaves a describe-pending marker; check-update nudges the fill", async () => {
@@ -997,7 +997,7 @@ describe("public CLI runtime command parity", () => {
         // ZERO LLM calls: neither descriptions nor labels were generated, so no
         // describe/label network round-trip happened despite the key in env.
         const graph = JSON.parse(
-          readFileSync(join(dir, ".graphify", "graph.json"), "utf-8"),
+          readFileSync(join(dir, ".engram", "graph.json"), "utf-8"),
         ) as { nodes: Array<{ description?: string | null; community_name?: string | null }> };
         for (const node of graph.nodes) {
           expect(node.description == null || node.description === "").toBe(true);
@@ -1013,8 +1013,8 @@ describe("public CLI runtime command parity", () => {
       }
 
       // Fast LLM-free hook rebuild: graph written, but descriptions/labels pending.
-      expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
-      const markerPath = join(dir, ".graphify", ".graphify_describe_pending");
+      expect(existsSync(join(dir, ".engram", "graph.json"))).toBe(true);
+      const markerPath = join(dir, ".engram", ".graphify_describe_pending");
       expect(existsSync(markerPath)).toBe(true);
 
       // check-update surfaces the marker and recommends the gap-fill.
@@ -1038,11 +1038,11 @@ describe("public CLI runtime command parity", () => {
 
       const result = await runCli(["update", ".", "--no-description", "--no-label"], dir);
       expect(result.exitCode).toBe(0);
-      expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
+      expect(existsSync(join(dir, ".engram", "graph.json"))).toBe(true);
 
       // The marker is reserved for the git-hook path (markDescribePending). An
       // explicit user opt-out must NOT leave it behind.
-      const markerPath = join(dir, ".graphify", ".graphify_describe_pending");
+      const markerPath = join(dir, ".engram", ".graphify_describe_pending");
       expect(existsSync(markerPath)).toBe(false);
 
       // check-update must NOT nag about descriptions/labels or --fill-missing.
@@ -1094,8 +1094,8 @@ describe("public CLI runtime command parity", () => {
     writeFileSync(join(dir, "scratch.ts"), "export const scratch = true;\n", "utf-8");
 
     const result = await runCli(["update", ".", "--scope", "committed"], dir);
-    const scopeJson = JSON.parse(readFileSync(join(dir, ".graphify", "scope.json"), "utf-8")) as Record<string, unknown>;
-    const reportText = readFileSync(join(dir, ".graphify", "GRAPH_REPORT.md"), "utf-8");
+    const scopeJson = JSON.parse(readFileSync(join(dir, ".engram", "scope.json"), "utf-8")) as Record<string, unknown>;
+    const reportText = readFileSync(join(dir, ".engram", "GRAPH_REPORT.md"), "utf-8");
 
     expect(result.exitCode).toBe(0);
     expect(scopeJson).toMatchObject({
@@ -1134,8 +1134,8 @@ describe("public CLI runtime command parity", () => {
     writeFileSync(join(dir, "src", "alpha.ts"), "export function alpha() { return 1; }\n", "utf-8");
 
     const result = await runCli(["update", "."], dir);
-    const graphText = readFileSync(join(dir, ".graphify", "graph.json"), "utf-8");
-    const reportText = readFileSync(join(dir, ".graphify", "GRAPH_REPORT.md"), "utf-8");
+    const graphText = readFileSync(join(dir, ".engram", "graph.json"), "utf-8");
+    const reportText = readFileSync(join(dir, ".engram", "GRAPH_REPORT.md"), "utf-8");
     const graph = JSON.parse(graphText) as { nodes: Array<{ source_file?: string }> };
 
     expect(result.exitCode).toBe(0);
@@ -1149,10 +1149,10 @@ describe("public CLI runtime command parity", () => {
     const dir = tempProject();
 
     const result = await runCli(["update", ".", "--force", "--scope", "all"], dir);
-    const graphText = readFileSync(join(dir, ".graphify", "graph.json"), "utf-8");
-    const reportText = readFileSync(join(dir, ".graphify", "GRAPH_REPORT.md"), "utf-8");
+    const graphText = readFileSync(join(dir, ".engram", "graph.json"), "utf-8");
+    const reportText = readFileSync(join(dir, ".engram", "GRAPH_REPORT.md"), "utf-8");
     const graph = JSON.parse(graphText) as { nodes?: unknown[]; links?: unknown[] };
-    const portable = await runCli(["portable-check", ".graphify"], dir, { interceptExit: true });
+    const portable = await runCli(["portable-check", ".engram"], dir, { interceptExit: true });
 
     expect(result.exitCode).toBe(0);
     expect(result.logs.join("\n")).toContain("No code files found");
@@ -1205,9 +1205,9 @@ describe("public CLI runtime command parity", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.logs.join("\n")).toContain("the static studio updated");
-    expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
+    expect(existsSync(join(dir, ".engram", "GRAPH_REPORT.md"))).toBe(true);
     // The legacy vis-network graph.html is no longer emitted.
-    expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(false);
+    expect(existsSync(join(dir, ".engram", "graph.html"))).toBe(false);
   });
 
   it("supports cluster-only on oversized graphs without writing graph.html", async () => {
@@ -1217,9 +1217,9 @@ describe("public CLI runtime command parity", () => {
     const result = await runCli(["cluster-only", dir], dir);
 
     expect(result.exitCode).toBe(0);
-    expect(existsSync(join(dir, ".graphify", "GRAPH_REPORT.md"))).toBe(true);
-    expect(existsSync(join(dir, ".graphify", "graph.json"))).toBe(true);
-    expect(existsSync(join(dir, ".graphify", "graph.html"))).toBe(false);
+    expect(existsSync(join(dir, ".engram", "GRAPH_REPORT.md"))).toBe(true);
+    expect(existsSync(join(dir, ".engram", "graph.json"))).toBe(true);
+    expect(existsSync(join(dir, ".engram", "graph.html"))).toBe(false);
   });
 
   it("update --no-cluster skips Louvain and writes graph.json without communities", async () => {
@@ -1236,7 +1236,7 @@ describe("public CLI runtime command parity", () => {
     expect(result.logs.join("\n")).toContain("--no-cluster");
 
     const graph = JSON.parse(
-      readFileSync(join(dir, ".graphify", "graph.json"), "utf-8"),
+      readFileSync(join(dir, ".engram", "graph.json"), "utf-8"),
     ) as { graph?: { community_labels?: Record<string, string> }; nodes?: Array<{ community: number | null }> };
     // graph still contains nodes/edges but no community assignment.
     expect((graph.nodes ?? []).length).toBeGreaterThan(0);
@@ -1256,7 +1256,7 @@ describe("public CLI runtime command parity", () => {
     const first = await runCli(["update", dir], dir);
     expect(first.exitCode).toBe(0);
     const firstParsed = JSON.parse(
-      readFileSync(join(dir, ".graphify", "graph.json"), "utf-8"),
+      readFileSync(join(dir, ".engram", "graph.json"), "utf-8"),
     ) as { topology_signature?: string; nodes?: Array<{ community: number | null }> };
     expect(firstParsed.topology_signature).toBeDefined();
     expect((firstParsed.nodes ?? []).length).toBeGreaterThan(0);
@@ -1265,7 +1265,7 @@ describe("public CLI runtime command parity", () => {
     expect(second.exitCode).toBe(0);
     expect(second.logs.join("\n")).toContain("Topology unchanged");
     const secondParsed = JSON.parse(
-      readFileSync(join(dir, ".graphify", "graph.json"), "utf-8"),
+      readFileSync(join(dir, ".engram", "graph.json"), "utf-8"),
     ) as { topology_signature?: string };
     expect(secondParsed.topology_signature).toBe(firstParsed.topology_signature);
   });
@@ -1285,7 +1285,7 @@ describe("public CLI runtime command parity", () => {
     expect(first.exitCode).toBe(0);
 
     // Rename a community label and assert it survives the next rebuild.
-    const labelsPath = join(dir, ".graphify", ".graphify_labels.json");
+    const labelsPath = join(dir, ".engram", ".graphify_labels.json");
     expect(existsSync(labelsPath)).toBe(true);
     const initial = JSON.parse(readFileSync(labelsPath, "utf-8")) as Record<string, string>;
     const firstCid = Object.keys(initial)[0]!;
@@ -1298,14 +1298,14 @@ describe("public CLI runtime command parity", () => {
     const persisted = JSON.parse(readFileSync(labelsPath, "utf-8")) as Record<string, string>;
     expect(Object.values(persisted)).toContain("CoreServices");
     const rebuiltGraph = JSON.parse(
-      readFileSync(join(dir, ".graphify", "graph.json"), "utf-8"),
+      readFileSync(join(dir, ".engram", "graph.json"), "utf-8"),
     ) as { graph?: { community_labels?: Record<string, string> } };
     expect(Object.values(rebuiltGraph.graph?.community_labels ?? {})).toContain("CoreServices");
   });
 
   it("preserves renamed community labels across cluster-only rebuilds", async () => {
     const dir = tempProject();
-    const graphDir = join(dir, ".graphify");
+    const graphDir = join(dir, ".engram");
     mkdirSync(graphDir, { recursive: true });
     const graphPath = join(graphDir, "graph.json");
     writeFileSync(
