@@ -317,6 +317,8 @@ graphify sends file contents to your assistant's underlying model API for semant
 
 Graphology + Louvain (`graphology-communities-louvain`) + tree-sitter + vis-network, with regex-backed language fallbacks, `unpdf`, optional `pdftotext`, optional `mistral-ocr`, `officeparser`, `turndown`, the `yt-dlp` + `ffmpeg` + `faster-whisper-ts` transcription path, and optional Vercel AI SDK direct text backends. No Neo4j required; the default HTML output is fully static.
 
+The studio's dense-graph renderer and layout registry come from `@sentropic/graph`, which now lives in and is published from the [Sent Tech design system](https://github.com/rhanka/sent-tech-design-system). The `packages/graph` copy in this repository is private and unpublishable — it is only the local build/test source for the studio (see [packages/graph/PUBLISHING.md](packages/graph/PUBLISHING.md)); the installed CLI resolves the published package from npm.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
