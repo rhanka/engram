@@ -39,7 +39,7 @@ describe("input scope inventory", () => {
     write("src/a.ts", "export const a = 1;\n");
     commit("src/a.ts");
     write("scratch.ts", "export const scratch = true;\n");
-    write(".graphify/memory/question.md", "# Memory\n");
+    write(".engram/memory/question.md", "# Memory\n");
 
     const inventory = inspectInputScope(tmpDir, {
       mode: "auto",
@@ -48,7 +48,7 @@ describe("input scope inventory", () => {
 
     expect(inventory.candidateFiles).toEqual([
       "src/a.ts",
-      ".graphify/memory/question.md",
+      ".engram/memory/question.md",
     ]);
     expect(inventory.scope).toMatchObject({
       requested_mode: "auto",
