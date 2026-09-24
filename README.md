@@ -122,6 +122,8 @@ to the new names, and nothing is renamed in place automatically.
 Moving legacy state: `engram migrate-state --dry-run` plans the
 `graphify-out` → `.engram` move.
 
+State working files keep their `.graphify_*.json` names inside `.engram/` and are never rewritten.
+
 ## The ontology layer
 
 ### Configurable ontology (profiles)
