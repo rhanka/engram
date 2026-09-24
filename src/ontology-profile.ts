@@ -270,7 +270,7 @@ function normalizeOutputs(outputs: unknown): NormalizedOntologyProfileOutputs {
       enabled: ontology.enabled === true,
       artifact_schema: typeof ontology.artifact_schema === "string" && ontology.artifact_schema.trim()
         ? ontology.artifact_schema
-        : "graphify_ontology_outputs_v1",
+        : "engram_ontology_outputs_v1",
       canonical_node_types: asStringArray(ontology.canonical_node_types),
       source_node_types: asStringArray(ontology.source_node_types),
       occurrence_node_types: asStringArray(ontology.occurrence_node_types),

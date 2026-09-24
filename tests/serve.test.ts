@@ -865,7 +865,7 @@ describe("MCP stdio server", () => {
           offset: 0,
         },
       })));
-      expect(candidates.schema).toBe("graphify_ontology_reconciliation_candidates_response_v1");
+      expect(candidates.schema).toBe("engram_ontology_reconciliation_candidates_response_v1");
       expect(candidates.total).toBe(1);
       expect(candidates.items).toMatchObject([
         {
@@ -1012,7 +1012,7 @@ describe("MCP stdio server", () => {
       items: Array<{ id: string; candidate_id: string; canonical_id: string }>;
     };
     expect(candidatesResponse.status).toBe(200);
-    expect(candidates.schema).toBe("graphify_ontology_reconciliation_candidates_response_v1");
+    expect(candidates.schema).toBe("engram_ontology_reconciliation_candidates_response_v1");
     expect(candidates.stale).toBe(true);
     expect(candidates.total).toBe(1);
     expect(candidates.items).toMatchObject([

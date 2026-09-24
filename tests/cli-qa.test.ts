@@ -111,7 +111,7 @@ describe("graphify qa CLI", () => {
 
     expect(result.exitCode).toBe(0);
     const report = JSON.parse(result.logs.join("\n"));
-    expect(report.schema).toBe("graphify_qa_report_v1");
+    expect(report.schema).toBe("engram_qa_report_v1");
     expect(report.status).toBe("passed");
   });
 

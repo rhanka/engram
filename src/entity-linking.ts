@@ -416,7 +416,7 @@ export function requiresLlmProposer(
   return false;
 }
 
-const LLM_SPAN_PROPOSAL_SCHEMA = "graphify_typed_link_span_proposal_v1";
+const LLM_SPAN_PROPOSAL_SCHEMA = "engram_typed_link_span_proposal_v1";
 
 function buildSpanProposalPrompt(request: LlmProposeRequest): string {
   return [
@@ -870,7 +870,7 @@ export function writeEntityLinkingArtifacts(
   writeJson(join(outputDir, "occurrences.json"), result.occurrences);
   writeJson(join(outputDir, "entity-occurrence-summary.json"), summarizeEntityOccurrences(result.occurrences, profile, outputDir));
   writeJson(join(outputDir, "validation.json"), {
-    schema: "graphify_ontology_validation_v1",
+    schema: "engram_ontology_validation_v1",
     issues: result.issues,
   });
 }

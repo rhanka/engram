@@ -5,7 +5,7 @@ import type { CitedSourceRef } from "./types.js";
  * emitted alongside the markdown when Mistral OCR v4 returns a structured
  * response. The sidecar is additive: the markdown sidecar is unchanged.
  */
-export const PDF_OCR_PAGES_SCHEMA = "graphify_pdf_ocr_pages_v1";
+export const PDF_OCR_PAGES_SCHEMA = "engram_pdf_ocr_pages_v1";
 
 /** Normalized 0..1 page fractions, top-left origin: [x0, y0, x1, y1]. */
 export type NormalizedBbox = [number, number, number, number];

@@ -47,7 +47,7 @@ describe("persistGraphWithCitations co-emit", () => {
       schema: string;
       nodes: Record<string, { count: number; citations: unknown[] }>;
     };
-    expect(sidecar.schema).toBe("graphify_ontology_citations_v1");
+    expect(sidecar.schema).toBe("engram_ontology_citations_v1");
     expect(sidecar.nodes.hub.count).toBe(200);
     expect(sidecar.nodes.hub.citations).toHaveLength(200);
   });

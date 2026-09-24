@@ -2,7 +2,7 @@
  * workspace-bundle-contract-v1 (WP4 / F3) — workspace-manifest.json emitter.
  *
  * Writes the bundle descriptor `workspace-manifest.json` (schema
- * `graphify_workspace_manifest_v1`) into the bundle root, alongside the scene
+ * `engram_workspace_manifest_v1`) into the bundle root, alongside the scene
  * + its sidecars. The aclp-am peer consumes the manifest first: it discovers
  * the bundle's artifacts, validates their schema ids, and verifies integrity
  * via the per-artifact sha256 + size_bytes — without out-of-band knowledge of
@@ -11,10 +11,10 @@
  * The bundle (per the signed contract's `bundle_artifacts`) is:
  *   - scene                  scene.json                     (OPTIONAL, F1)
  *   - scene-hierarchies      scene-hierarchies.json         (CORE,
- *                            graphify_scene_hierarchies_v1)
+ *                            engram_scene_hierarchies_v1)
  *   - reconciliation-candidates
  *                            reconciliation-candidates.json
- *                            (graphify_ontology_reconciliation_candidates_v1)
+ *                            (engram_ontology_reconciliation_candidates_v1)
  *   - graph                  graph.json                     (canonical graph)
  *   - entities               entities.json                  (entity sidecars)
  *

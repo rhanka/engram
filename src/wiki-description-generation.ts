@@ -656,7 +656,7 @@ export async function generateWikiDescriptionSidecars(
   const targetCollection = collectWikiDescriptionTargets(graph, options);
   const allTargets: WikiDescriptionTargetContext[] = [...targetCollection.nodes, ...targetCollection.communities];
   const index: WikiDescriptionSidecarIndex = {
-    schema: "graphify_wiki_description_index_v1",
+    schema: "engram_wiki_description_index_v1",
     graph_hash: graphHash,
     prompt_version: promptVersion,
     nodes: {},

@@ -480,7 +480,7 @@ export function compileOntologyOutputs(options: CompileOntologyOutputsOptions): 
   // ---- End hierarchy artefacts ----
 
   const manifest: Record<string, unknown> = {
-    schema: "graphify_ontology_outputs_v1",
+    schema: "engram_ontology_outputs_v1",
     graph_hash: sha256(JSON.stringify(options.extraction)),
     profile_hash: options.profile.profile_hash,
     generated_at: new Date().toISOString(),
@@ -511,11 +511,11 @@ export function compileOntologyOutputs(options: CompileOntologyOutputsOptions): 
   writeJson(join(options.outputDir, "sources.json"), nodes.flatMap((node) => node.source_refs.map((ref) => ({ id: ref, source_file: ref }))));
   writeJson(join(options.outputDir, "occurrences.json"), compiledOccurrences.occurrences);
   writeJson(join(options.outputDir, "validation.json"), {
-    schema: "graphify_ontology_validation_v1",
+    schema: "engram_ontology_validation_v1",
     issues: validationIssues,
   });
   writeJson(join(options.outputDir, "index.json"), {
-    schema: "graphify_ontology_index_v1",
+    schema: "engram_ontology_index_v1",
     entries: nodes.map((node) => ({
       id: node.id,
       type: node.type,

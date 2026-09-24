@@ -34,7 +34,7 @@ import {
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 /** Schema stamp of the emitted `sources/provenance.json`. */
-export const CITED_SOURCE_PROVENANCE_SCHEMA = "graphify_cited_source_provenance_v1";
+export const CITED_SOURCE_PROVENANCE_SCHEMA = "engram_cited_source_provenance_v1";
 
 /**
  * Bundle-relative location of the provenance sidecar. It sits INSIDE `sources/`
@@ -320,7 +320,7 @@ function resolveDocumentOrigin(documentPath: string): ConvertedOrigin | null {
 // ---------------------------------------------------------------------------
 
 /** Schema stamp of `<file>.origin.json`. */
-export const SOURCE_ORIGIN_SCHEMA = "graphify_source_origin_v1";
+export const SOURCE_ORIGIN_SCHEMA = "engram_source_origin_v1";
 
 export interface SourceOriginSidecar {
   schema: string;

@@ -400,7 +400,7 @@ function renderReconciliationActionScript(): string {
     "      ? { candidate_id: model.candidateNodeId }",
     "      : { candidate_id: model.candidateNodeId, canonical_id: model.canonicalNodeId };",
     "    return {",
-    "      schema: 'graphify_ontology_patch_v1',",
+    "      schema: 'engram_ontology_patch_v1',",
     "      id: patchId(model.candidateId, action),",
     "      operation,",
     "      status: 'proposed',",

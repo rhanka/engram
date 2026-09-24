@@ -271,7 +271,7 @@ export function buildProfileDiscoveryPrompt(
     buildProfileExtractionPrompt(state, options),
     "",
     "## Discovery Output Contract",
-    "- Return one JSON object with schema `graphify_ontology_discovery_proposals_v1`.",
+    "- Return one JSON object with schema `engram_ontology_discovery_proposals_v1`.",
     "- Preserve profile_hash and sample_hash exactly.",
     "- proposals[] items require: id, kind, action, path, evidence_refs, confidence, rationale.",
     "- Allowed proposal kinds: node_type, relation_type, registry_binding, hardening_rule.",
@@ -281,7 +281,7 @@ export function buildProfileDiscoveryPrompt(
     "",
     "## Expected JSON Skeleton",
     JSON.stringify({
-      schema: "graphify_ontology_discovery_proposals_v1",
+      schema: "engram_ontology_discovery_proposals_v1",
       profile_hash: sample.profile_hash,
       sample_hash: sample.sample_hash,
       generated_by: { mode: "assistant" },

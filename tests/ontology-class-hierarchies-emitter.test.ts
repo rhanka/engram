@@ -68,7 +68,7 @@ describe("emitClassHierarchies — standalone class-hierarchies.json (EVOL 2.c)"
 
     const onDisk = JSON.parse(readFileSync(result.path!, "utf-8"));
     expect(onDisk).toEqual(result.artifact);
-    expect(onDisk.schema).toBe("graphify_ontology_class_hierarchies_v1");
+    expect(onDisk.schema).toBe("engram_ontology_class_hierarchies_v1");
     expect(onDisk.graph_hash).toBe("feedface");
     expect(onDisk.profile_hash).toBe("p1");
     expect(onDisk.hierarchies.tax.classes_by_id["class:Person"].member_ids).toEqual([

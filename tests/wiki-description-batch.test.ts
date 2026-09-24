@@ -68,7 +68,7 @@ describe("wiki description batch — export contract", () => {
     expect(exportInput.outputPath).toBe(outputPath);
     expect(exportInput.requests).toHaveLength(targets.nodes.length + targets.communities.length);
     expect(exportInput.requests[0]?.id).toBe(targets.nodes[0]?.target_id);
-    expect(exportInput.requests[0]?.schema).toBe("graphify_wiki_description_v1");
+    expect(exportInput.requests[0]?.schema).toBe("engram_wiki_description_v1");
     expect(exportInput.requests[0]?.prompt).toContain("graph_hash: graph-batch-a");
     expect(exportInput.requests[0]?.prompt).toContain(`prompt_version: ${WIKI_DESCRIPTION_PROMPT_VERSION}`);
   });
@@ -111,7 +111,7 @@ describe("wiki description batch — export contract", () => {
     expect(lines).toHaveLength(exportInput.requests.length);
     const first = JSON.parse(lines[0]!) as { id: string; schema: string; prompt: string };
     expect(first.id).toBe(exportInput.requests[0]?.id);
-    expect(first.schema).toBe("graphify_wiki_description_v1");
+    expect(first.schema).toBe("engram_wiki_description_v1");
     expect(first.prompt).toContain("graph_hash: graph-batch-b");
   });
 });
@@ -166,7 +166,7 @@ describe("wiki description batch — parse results", () => {
     });
 
     expect(dropped).toEqual([]);
-    expect(index.schema).toBe("graphify_wiki_description_index_v1");
+    expect(index.schema).toBe("engram_wiki_description_index_v1");
     expect(index.graph_hash).toBe("graph-batch-c");
     expect(index.prompt_version).toBe(WIKI_DESCRIPTION_PROMPT_VERSION);
     expect(Object.keys(index.nodes).sort()).toEqual(["alpha", "beta"]);

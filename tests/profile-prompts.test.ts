@@ -114,7 +114,7 @@ describe("profile prompt builder", () => {
     const prompt = buildProfileDiscoveryPrompt(state, sample);
 
     expect(prompt).toContain("Graphify Ontology Discovery Prompt");
-    expect(prompt).toContain("graphify_ontology_discovery_proposals_v1");
+    expect(prompt).toContain("engram_ontology_discovery_proposals_v1");
     expect(prompt).toContain("Every proposal stays reviewable");
     expect(prompt).toContain("\"sample_hash\": \"sample-hash\"");
     expect(prompt).toContain("Do not invent customer, partner, project, proprietary ontology, or private domain examples");

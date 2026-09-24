@@ -4,7 +4,7 @@
  * This is the LazyGraphRAG embodiment: NO LLM at index time (index cost = the
  * BM25 index), and at query time the one shared retrieval core runs
  * `seed → expand → ground → assemble`, then hands the frozen
- * `graphify_answer_pack_v1` to the HOST assistant for the relevance-test +
+ * `engram_answer_pack_v1` to the HOST assistant for the relevance-test +
  * synthesis it does for free (no key for graphify).
  *
  * It runs the C5a pipeline EXACTLY:
@@ -30,7 +30,7 @@ import { buildSeeds, fusedSeedVector, type FusedSeed, type SeedOptions } from ".
 import { backgroundPageRank, personalizedPageRank, type PprOptions } from "./ppr.js";
 import type { CsrAdjacency, SearchIndex } from "../search-index.js";
 
-export const ANSWER_PACK_SCHEMA = "graphify_answer_pack_v1";
+export const ANSWER_PACK_SCHEMA = "engram_answer_pack_v1";
 
 /**
  * Specificity (lift-over-background) re-rank — the expansion-ranking fix.
@@ -125,7 +125,7 @@ export interface PackCommunity {
   salient: boolean;
 }
 
-/** The frozen cross-mode contract `graphify_answer_pack_v1` (C10). */
+/** The frozen cross-mode contract `engram_answer_pack_v1` (C10). */
 export interface AnswerPack {
   schema: typeof ANSWER_PACK_SCHEMA;
   graph_signature: string;
@@ -227,7 +227,7 @@ function shortestPathCsr(adjacency: CsrAdjacency, N: number, from: number, to: n
 }
 
 /**
- * Assemble a `graphify_answer_pack_v1` for a question over a parsed
+ * Assemble a `engram_answer_pack_v1` for a question over a parsed
  * {@link SearchIndex}. Pure compute — no key, no network, no graph.json. This is
  * the single code path the three modes share (INV-2); the caller chooses the
  * seed source (here BM25 + optional host sub-queries) and the answerer.

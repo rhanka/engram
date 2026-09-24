@@ -210,7 +210,7 @@ export function createDirectSemanticExtractionClient(
           }
         };
         await textClient.generateJson({
-          schema: "graphify_extraction_v1",
+          schema: "engram_extraction_v1",
           prompt: buildExtractionPrompt(input),
           outputPath,
           validateResponse,

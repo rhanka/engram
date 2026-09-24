@@ -554,11 +554,11 @@ describe("public CLI runtime command parity", () => {
       nodes: Record<string, unknown>;
       communities: Record<string, unknown>;
     };
-    expect(index.schema).toBe("graphify_wiki_description_index_v1");
+    expect(index.schema).toBe("engram_wiki_description_index_v1");
     expect(Object.keys(index.nodes)).toEqual(["beta"]);
     expect(Object.keys(index.communities)).toEqual(["0"]);
     const instructionFiles = readdirSync(instructionsDir)
-      .filter((name) => name.includes("graphify_wiki_description"))
+      .filter((name) => name.includes("engram_wiki_description"))
       .sort();
     expect(instructionFiles).toHaveLength(2);
     const instructions = instructionFiles

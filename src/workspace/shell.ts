@@ -43,7 +43,7 @@ import { entityPanelStyles } from "./entity-panel.js";
 
 /**
  * Optional sidecar payload propagated from `.graphify/wiki/descriptions.json`
- * (schema `graphify_wiki_description_v1`). Only the fields needed by the
+ * (schema `engram_wiki_description_v1`). Only the fields needed by the
  * compact description block are typed here so the shell stays decoupled
  * from the full wiki-descriptions API surface.
  */

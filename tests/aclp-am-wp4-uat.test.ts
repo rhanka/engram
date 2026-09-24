@@ -175,7 +175,7 @@ describe("WP4 ACLP-AM UAT — hierarchy bundle and studio routes", () => {
 
     const sceneHierarchies = JSON.parse(readFileSync(join(outDir, "scene-hierarchies.json"), "utf-8"));
     const tree = sceneHierarchies.hierarchies.am_process_tree;
-    expect(sceneHierarchies.schema).toBe("graphify_scene_hierarchies_v1");
+    expect(sceneHierarchies.schema).toBe("engram_scene_hierarchies_v1");
     expect(tree.nodes_by_id["AM0104.01.10.02"]).toMatchObject({
       parent_id: "AM0104.01.10",
       level: 4,
