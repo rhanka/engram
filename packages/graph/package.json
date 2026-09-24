@@ -1,6 +1,7 @@
 {
   "name": "@sentropic/graph",
   "version": "0.2.0",
+  "private": true,
   "description": "Fast WebGL-oriented graph rendering primitives for known-position graphs.",
   "license": "MIT",
   "repository": {
@@ -24,9 +25,6 @@
     "README.md",
     "FEATURES.md"
   ],
-  "publishConfig": {
-    "access": "public"
-  },
   "scripts": {
     "build": "tsup --config tsup.config.ts",
     "test": "vitest run --config vitest.config.ts",
@@ -35,8 +33,7 @@
     "golden:webgl:preflight": "node tests/golden/webgl-preflight.mjs",
     "test:golden:webgl": "npm run golden:build && npm run golden:webgl:preflight && vitest run --config vitest.config.ts tests/golden/",
     "golden:selftest": "npm run golden:build && node tests/golden/cdp-harness.mjs --selftest",
-    "bench": "npm run build && node bench/buffers-bench.mjs",
-    "prepublishOnly": "npm run test && npm run build"
+    "bench": "npm run build && node bench/buffers-bench.mjs"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.0.0",
