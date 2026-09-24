@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assertAdminProviderConformance, type AdminEpochReceiptV1, type AdminProviderConformanceCasesV1, type AdminProviderPort, type Digest, type Result } from "../graphify-memory/index.js";
+import { assertAdminProviderConformance, type AdminEpochReceiptV1, type AdminProviderConformanceCasesV1, type AdminProviderPort, type Digest, type Result } from "../engram-memory/index.js";
 
 const NOW = "2026-09-21T12:00:00.000Z";
 const DEADLINE = "2026-09-21T12:04:00.000Z";

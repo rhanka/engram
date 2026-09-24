@@ -6,7 +6,7 @@ import {
   type Digest,
   type MemoryEngineDependenciesV2,
   type OperationalCapabilityReceiptV1,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 import { DEADLINE, NOW } from "./memory-l3-fixture.js";
 
 // §5.9 (v5-c): the `allow_unfenced_memory_store` posture must be legible, not silent — surfaced in the capability

@@ -13,12 +13,15 @@ function refuse<T>(operation: MemoryOperation, code: "STORE_UNAVAILABLE" | "CAPA
 }
 
 /**
- * §5.9: the compiled adapter identity of THIS graphify-memory module build. It is INFORMATIONAL — a store built
+ * §5.9: the compiled adapter identity of THIS engram-memory module build. It is INFORMATIONAL — a store built
  * by the factory declares it on readiness() so a diagnostic (a duplicate package, a version drift) is legible in
  * the receipt. It is deliberately NOT the admission test: a copyable string is forgeable, so the gate turns on
  * the in-process mark below, never on this constant. `adapter_build_digest` is a build-time constant.
  */
-export const GRAPHIFY_MEMORY_ADAPTER_IDENTITY: CapabilityAttestationIdentityV1 = {
+export const ENGRAM_MEMORY_ADAPTER_IDENTITY: CapabilityAttestationIdentityV1 = {
+  // Engram rename: the adapter_id VALUE is deliberately kept as "graphify-memory/fenced-store" (a stable declared
+  // identity) for back-compat — it is informational (never compared for admission, never in a digest), so a
+  // consumer that read it before the rename still sees the same value. Only the constant's NAME changed.
   adapter_id: "graphify-memory/fenced-store",
   adapter_version: "1",
   adapter_build_digest: "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -60,7 +63,7 @@ export function markFencedStoreV1(store: CanonicalMemoryStorePort): void {
   fencedFactoryStores.add(store);
 }
 
-/** True iff `store` was built by a fenced-store factory of THIS graphify-memory module instance. */
+/** True iff `store` was built by a fenced-store factory of THIS engram-memory module instance. */
 export function isFencedFactoryStoreV1(store: CanonicalMemoryStorePort): boolean {
   return fencedFactoryStores.has(store);
 }
@@ -92,7 +95,7 @@ export function verifyStoreProvenance(
   if (options.allowUnfencedMemoryStore && inMemoryStores.has(store)) {
     return { ok: true, value: receipt };
   }
-  return refuse(operation, "CAPABILITY_UNAVAILABLE", "canonical store was not built by this graphify-memory module instance, and it is not an embedded in-memory store the host opted into via allow_unfenced_memory_store (duplicate package, a store that never took the fence, or an unfenced store in production?)");
+  return refuse(operation, "CAPABILITY_UNAVAILABLE", "canonical store was not built by this engram-memory module instance, and it is not an embedded in-memory store the host opted into via allow_unfenced_memory_store (duplicate package, a store that never took the fence, or an unfenced store in production?)");
 }
 
 /** Constructs a fenced CanonicalMemoryStorePort, taking the storage fence (kernel flock / store-generation lock) at construction. */
@@ -114,8 +117,8 @@ export function createCanonicalMemoryStoreFactoryV1(options: CanonicalMemoryStor
 
   return {
     version: 1,
-    adapter_id: GRAPHIFY_MEMORY_ADAPTER_IDENTITY.adapter_id,
-    adapter_version: GRAPHIFY_MEMORY_ADAPTER_IDENTITY.adapter_version,
+    adapter_id: ENGRAM_MEMORY_ADAPTER_IDENTITY.adapter_id,
+    adapter_version: ENGRAM_MEMORY_ADAPTER_IDENTITY.adapter_version,
     async acquire(input: FencedStoreConstructionV1): Promise<Result<CanonicalMemoryStorePort>> {
       // in-process half of the single-broker rule: a second live holder is refused, never queued.
       if (liveHolders.has(input.store_id)) {
@@ -155,7 +158,7 @@ function withProvenanceAndRelease(store: CanonicalMemoryStorePort, release: () =
         return async (): Promise<Result<OperationalCapabilityReceiptV1>> => {
           const base = await target.readiness();
           if (!base.ok) return base;
-          return { ok: true, value: { ...base.value, adapter_id: GRAPHIFY_MEMORY_ADAPTER_IDENTITY.adapter_id, adapter_version: GRAPHIFY_MEMORY_ADAPTER_IDENTITY.adapter_version, adapter_build_digest: GRAPHIFY_MEMORY_ADAPTER_IDENTITY.adapter_build_digest } };
+          return { ok: true, value: { ...base.value, adapter_id: ENGRAM_MEMORY_ADAPTER_IDENTITY.adapter_id, adapter_version: ENGRAM_MEMORY_ADAPTER_IDENTITY.adapter_version, adapter_build_digest: ENGRAM_MEMORY_ADAPTER_IDENTITY.adapter_build_digest } };
         };
       }
       if (prop === "close") {

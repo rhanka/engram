@@ -12,7 +12,7 @@ import {
   type AuthorizationAllowedV1,
   type AuthorizationPort,
   type MemoryEngineDependenciesV2,
-} from "../graphify-memory/index.js";
+} from "../engram-memory/index.js";
 
 const DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const NOW = "2026-08-16T12:34:56.789Z";
