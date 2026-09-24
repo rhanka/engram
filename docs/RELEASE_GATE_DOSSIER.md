@@ -173,7 +173,7 @@ Linux CI.
 git fetch origin && git switch --detach 4178a51a
 npm audit --json                 # 21 (6 high) — package nodes, incl. contaminated parents
 npm audit --omit=dev --json      # 18 (4 high) — what a consumer installs
-gh api "repos/rhanka/graphify/dependabot/alerts?state=open&per_page=100"
+gh api "repos/rhanka/engram/dependabot/alerts?state=open&per_page=100"
                                  # 28 (10 high) — advisory × manifest, incl. studio/
 ```
 
