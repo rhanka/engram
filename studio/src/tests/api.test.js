@@ -323,11 +323,13 @@ describe("fetchReconciliationCandidates (standalone fallback)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T2 — inlined offline-bundle short-circuit (window.__GRAPHIFY_BUNDLE__).
+// T2 — inlined offline-bundle short-circuit (window.__ENGRAM_BUNDLE__,
+// legacy window.__GRAPHIFY_BUNDLE__).
 // The single-file `studio.html` cannot fetch() over file://; the data is inlined
-// and api.js must serve it from memory WITHOUT issuing any fetch.
+// and api.js must serve it from memory WITHOUT issuing any fetch. The tests
+// below use the LEGACY key, proving old exports still load.
 // ---------------------------------------------------------------------------
-describe("offline bundle short-circuit (window.__GRAPHIFY_BUNDLE__)", () => {
+describe("offline bundle short-circuit (window.__GRAPHIFY_BUNDLE__ legacy key)", () => {
   // A fetch that EXPLODES if ever called, so the no-fetch invariant is proven.
   function throwingFetch() {
     return vi.fn(() => {
@@ -392,5 +394,37 @@ describe("offline bundle short-circuit (window.__GRAPHIFY_BUNDLE__)", () => {
 
     await expect(fetchScene()).resolves.toEqual(scene);
     expect(fetchMock).toHaveBeenCalledWith("/api/ontology/scene.json", expect.anything());
+  });
+});
+
+// T2b — the new `window.__ENGRAM_BUNDLE__` key is preferred; the legacy key
+// still loads when it is the only one present.
+describe("offline bundle short-circuit (window.__ENGRAM_BUNDLE__)", () => {
+  function throwingFetch() {
+    return vi.fn(() => {
+      throw new Error("fetch must not be called when the bundle holds the key");
+    });
+  }
+
+  it("resolves from the new key without fetch", async () => {
+    const scene = { nodes: [{ id: "a", x: 1, y: 2 }], edges: [], stats: { nodeCount: 1 } };
+    window.__ENGRAM_BUNDLE__ = { "scene.json": scene };
+    const fetchMock = throwingFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchScene()).resolves.toEqual(scene);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("prefers the new key when both keys are present", async () => {
+    const fresh = { nodes: [{ id: "new" }], edges: [], stats: { nodeCount: 1 } };
+    const legacy = { nodes: [{ id: "old" }], edges: [], stats: { nodeCount: 1 } };
+    window.__ENGRAM_BUNDLE__ = { "scene.json": fresh };
+    window.__GRAPHIFY_BUNDLE__ = { "scene.json": legacy };
+    const fetchMock = throwingFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchScene()).resolves.toEqual(fresh);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
