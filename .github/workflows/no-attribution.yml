@@ -1,0 +1,61 @@
+name: No attribution trailers
+
+# Blocks attribution trailers the repository owner disallows from re-entering
+# through a pull request. It scans both:
+#   (a) the messages of the commits the PR would add, and
+#   (b) the pull request DESCRIPTION -- the only layer that can see it.
+# Patterns are anchored at the start of a line (leading whitespace / emoji /
+# list markers tolerated) and matched case-insensitively.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    env:
+      # Byte-oriented matching so a multi-byte emoji prefix is consumed as
+      # ordinary non-letters regardless of the runner locale.
+      LC_ALL: C
+      # Anchored at line start; leading non-letters (whitespace, emoji, bullets,
+      # quotes) are skipped so a decorated footer cannot evade the anchor.
+      # Case-insensitivity comes from `grep -i`.
+      PATTERN: '^[^A-Za-z]*(co-authored-by:|claude-session:|generated with)'
+    steps:
+      - name: Check out full PR history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Scan commit messages
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -eu
+          echo "Scanning commit messages in ${BASE_SHA}..${HEAD_SHA}"
+          if git log "${BASE_SHA}..${HEAD_SHA}" --format='%B' \
+               | grep -niE "$PATTERN"; then
+            echo "::error::A commit message in this PR carries a forbidden attribution trailer (Co-Authored-By / Claude-Session / Generated with Claude Code)."
+            exit 1
+          fi
+          echo "OK: no forbidden trailer in the commit messages."
+
+      - name: Scan the pull request description
+        env:
+          # Passed via env (not interpolated into the script) to avoid shell
+          # injection from PR-authored text.
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -eu
+          printf '%s\n' "${PR_BODY:-}" > pr_body.txt
+          if grep -niE "$PATTERN" pr_body.txt; then
+            echo "::error::The pull request description carries a forbidden attribution trailer (Co-Authored-By / Claude-Session / Generated with Claude Code)."
+            exit 1
+          fi
+          echo "OK: no forbidden trailer in the pull request description."
