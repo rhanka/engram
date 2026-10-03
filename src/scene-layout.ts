@@ -38,7 +38,8 @@
 // `src/typed-layer-layout.ts` because the published `@sentropic/graph@^0.1.0`
 // did not export `computeTypedLayerPositions` / `computeTimeOrientedPositions`,
 // which crashed the installed CLI at load — the #238 smoke-test regression. That
-// module is now a thin re-export shim; see packages/graph/PUBLISHING.md.)
+// module is now a thin re-export shim. The package is published from the Sent
+// Tech design system; engram keeps no in-tree copy.)
 import {
   computeTimeOrientedPositions,
   computeTypedLayerPositions,
