@@ -1,5 +1,11 @@
 # SPEC — Git-flow view: branch-label legibility policy
 
+> **Source location.** The `packages/graph/...` paths below name files of the
+> `@sentropic/graph` package, whose source now lives in the Sent Tech design system
+> ([rhanka/sent-tech-design-system](https://github.com/rhanka/sent-tech-design-system),
+> same `packages/graph` directory). Engram no longer carries a copy; it consumes the
+> published package. Line numbers refer to the code as it was when this spec was written.
+
 > Status: **RATIFIED (b) — phases 1+2 together** · Principal decision 2026-07-05, after an
 > Opus 4.8 + Codex (5.5xhigh) double-consensus brainstorm (options dossier presented in
 > writing, nothing pre-applied). Companion to the git-flow renderer lot

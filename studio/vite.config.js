@@ -39,7 +39,10 @@ export default defineConfig(async ({ mode }) => ({
     // Additive condition, test-mode only: the build output is untouched.
     ...(mode === "test" ? { conditions: ["browser"] } : {}),
     alias: {
-      "@sentropic/graph": resolve(here, "../packages/graph/src/index.ts"),
+      // `@sentropic/graph` is NOT aliased: the studio builds against the
+      // published package (studio/package.json), the design system being its
+      // single source and publisher.
+
       // Pure, DOM-free deterministic force layout (honors fx/fy pins). Reused by
       // the reconciliation view to arrange the local subgraph around the pinned
       // twins. Same module the server build/export uses for scene.json.
