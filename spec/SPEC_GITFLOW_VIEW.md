@@ -1,5 +1,11 @@
 # SPEC — Git-flow view (git-graph rendering of the agent-stats project graph)
 
+> **Source location.** The `packages/graph/...` paths below name files of the
+> `@sentropic/graph` package, whose source now lives in the Sent Tech design system
+> ([rhanka/sent-tech-design-system](https://github.com/rhanka/sent-tech-design-system),
+> same `packages/graph` directory). Engram no longer carries a copy; it consumes the
+> published package. Line numbers refer to the code as it was when this spec was written.
+
 > Status: **SHIPPED** — PR [#265](https://github.com/rhanka/graphify/pull/265), merge commit
 > `b32e44f` (`feat(graph): git-flow view — port-based flow edges, merged-as grammar,
 > lane-reuse layout + label legibility policy (P1+P2)`).
