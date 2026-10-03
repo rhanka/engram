@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "version": "0.1.0",
-  "description": "Client Svelte SPA for the Graphify ontology studio. Central graph renders through the local @sentropic/graph canvas renderer.",
+  "description": "Client Svelte SPA for the Graphify ontology studio. Central graph renders through the published @sentropic/graph canvas renderer.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -24,6 +24,7 @@
     "@sentropic/design-system-svelte": "^0.34.69",
     "@sentropic/design-system-themes": "^0.11.0",
     "@sentropic/design-system-tokens": "^0.11.0",
+    "@sentropic/graph": "^0.3.0",
     "pdfjs-dist": "^4.10.38"
   }
 }

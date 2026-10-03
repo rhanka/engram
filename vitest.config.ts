@@ -13,11 +13,11 @@ export default defineConfig({
   // Studio lib files (e.g. graphAdapter.js) imported by root tests use the
   // same source aliases the studio vite build defines, so the root vitest run
   // must resolve them too (otherwise tests/studio-scene.test.ts cannot import
-  // graphAdapter.js → @graphify/graph-layout).
+  // graphAdapter.js → @graphify/graph-layout). `@sentropic/graph` is NOT
+  // aliased: it resolves to the published package from node_modules.
   resolve: {
     alias: {
       "@graphify/graph-layout": resolve(here, "src/graph-layout.ts"),
-      "@sentropic/graph": resolve(here, "packages/graph/src/index.ts"),
     },
   },
 });

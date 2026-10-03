@@ -39,9 +39,9 @@ export const GROUP_PALETTE = [
 // Studio representation-polish remark 1: main-graph edges render semi-
 // transparent by DEFAULT (not opaque) — same #94a3b8 hue as before, now at
 // ~0.5 alpha — so the graph reads less like a solid mesh even before any
-// hover. `#94a3b8` = rgb(148, 163, 184); packages/graph's buildStyleBuffers
+// hover. `#94a3b8` = rgb(148, 163, 184); @sentropic/graph's buildStyleBuffers
 // accepts an [r,g,b,a] ColorInput, so we spell the colour as an array to
-// carry the alpha (studio-only — packages/graph's own defaults/goldens are
+// carry the alpha (studio-only — @sentropic/graph's own defaults/goldens are
 // untouched).
 const EDGE_BASE_OPACITY = 0.5;
 const EDGE_MIN_OPACITY = 0.3;

@@ -1252,8 +1252,8 @@ export function withReconcileEdge(scene, idA, idB) {
 
 // ---- Recon twin spacing (focal box overlap fix) ---------------------------
 //
-// Mirror of the renderer's legacy `shape:box` metrics (packages/graph/src/
-// renderer.ts `boxDimensions`): box height = BOX_BASE_HEIGHT_PX × pixelRatio ×
+// Mirror of the renderer's legacy `shape:box` metrics (@sentropic/graph
+// src/renderer.ts `boxDimensions`): box height = BOX_BASE_HEIGHT_PX × pixelRatio ×
 // zoom DEVICE px, font = height × 12/22, margin = height × 5/22 per side,
 // drawn width = measureText(label, font) + 2 × margin. Positions map world →
 // device px through the camera zoom alone (screen = (world − cam.x) × zoom +

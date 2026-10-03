@@ -78,7 +78,7 @@ function createFakeWebGl2Context() {
     // so a double claiming to be WebGL2 MUST answer uniformMatrix4fv -- a real
     // context does. Omitting it does not weaken the double, it makes render()
     // throw, which is indistinguishable here from the picking regression this
-    // suite exists to catch. The sibling doubles in packages/graph/tests already
+    // suite exists to catch. The sibling doubles in @sentropic/graph's own tests
     // carry it; this one was missed when the renderer left the hand-rolled affine.
     uniformMatrix4fv: () => undefined,
     enableVertexAttribArray: () => undefined,
