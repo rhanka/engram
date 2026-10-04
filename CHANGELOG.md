@@ -4,6 +4,11 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.19.1 (2026-10-04)
+
+- **Published graph renderer.** Depends on the published `@sentropic/graph` 0.3.0 instead of the local copy (#341). The renderer is published from the Sent Tech design system; engram no longer carries `packages/graph`, and the studio and tests resolve the npm package.
+- **Forwarding package.** The `forward/graphify` shim is bumped to 0.19.1 and pins `@sentropic/engram@0.19.1`. It is published separately, not by the tag workflow.
+
 ## 0.19.0 (2026-09-24)
 
 - **Engram rename (clean break).** Product and CLI are now Engram (`@sentropic/engram`, bin `engram`), repositioned as an agent memory substrate — not a `graphify` continuation. Heritage: concepts originate in `graphify`; that line is archived under deprecated `@sentropic/graphify`.
