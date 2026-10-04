@@ -208,21 +208,27 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Wait for npm propagation
-        run: sleep 30
-
-      - name: Install from npm
+      - name: Install the tagged version from npm
+        # Install exactly the version this tag published, never `latest`: a check that installs the
+        # previous release passes without proving anything. Retry while the registry propagates.
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
           mkdir /tmp/post-publish && cd /tmp/post-publish
           npm init -y --silent
-          npm install @sentropic/engram@latest
+          for attempt in $(seq 1 20); do
+            if npm view "@sentropic/engram@${VERSION}" version >/dev/null 2>&1; then break; fi
+            echo "Waiting for @sentropic/engram@${VERSION} on the registry (attempt ${attempt}/20)"
+            sleep 30
+          done
+          npm install "@sentropic/engram@${VERSION}"
 
       - name: Verify CLI
         run: |
           cd /tmp/post-publish
           npx engram --help | grep -q "Usage:"
-          npx engram --version
-          echo "Post-publish CLI verification passed"
+          INSTALLED="$(npx engram --version)"
+          test "${INSTALLED}" = "${GITHUB_REF_NAME#v}" || { echo "::error::installed engram ${INSTALLED}, expected ${GITHUB_REF_NAME#v}"; exit 1; }
+          echo "Post-publish CLI verification passed (${INSTALLED})"
 
       - name: Verify library
         run: |
