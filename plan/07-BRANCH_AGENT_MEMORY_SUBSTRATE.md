@@ -13,15 +13,15 @@
 - [ ] Forbidden: any import/type/field/name of a consumer (h2a/Sentropic), any `.h2a` path, `H2aInstance`, coordination types; keeping the legacy activity subsystem inside graphify; merge/push; `.graphify/scratch/**`.
 - [ ] Conditional: removal/relocation of `@sentropic/*` dependencies and importing bridges (required before the neutrality gate can pass); `package.json`/`package-lock.json` for that removal and a coherent post-gate release.
 
-## Lot 0 — Baseline, Package Boundary, Extraction
+## Lot 0 — Baseline, Package Boundary, Extraction (boxes aligned 2026-10-06 to `c96fc01e` + CI run `37177756444`: `spec/SPEC_MEMORY_FINALIZATION.md` §3.1; remainder in `plan/08-BRANCH_MEMORY_FINALIZATION.md`)
 
-- [ ] Pin the target commit + required intake commits; create the `engram-memory/contracts` package with a one-way export/dependency graph.
-- [ ] Physically extract the legacy activity subsystem (`src/agent-stats/**`, its CLI/exports, registry parsing, identity syntax, role fields, coordination projection) and the legacy memory compatibility surfaces out of graphify.
-- [ ] Remove or relocate every organization-scoped (`@sentropic/*`) dependency and importing bridge from the repository.
-- [ ] RED: `tests/memory-neutrality.test.ts > packed dependency/import closure is one-way and emitted d.ts/schema uses only the normative vocabulary`.
-- [ ] RED: `tests/memory-neutrality.test.ts > evaluator and topology-shaped public objects are rejected even without forbidden imports`.
-- [ ] RED: `tests/memory-activity-boundary.test.ts > activity reaches capture only through ActivityEvidenceSource`.
-- [ ] RED: `tests/memory-v1-removal.test.ts > no legacy memory export, schema, source-authority header, CLI, or packed file remains`.
+- [ ] Pin the target commit + required intake commits; create the `engram-memory/contracts` package with a one-way export/dependency graph. — partial: `engram-memory/contracts` exists and is data-only; the one-way import edge holds by inspection but no test enforces it (plan/08 F5); the rebased intake identities are not recorded in this plan (unverified).
+- [ ] Physically extract the legacy activity subsystem (`src/agent-stats/**`, its CLI/exports, registry parsing, identity syntax, role fields, coordination projection) and the legacy memory compatibility surfaces out of graphify. — partial: `src/agent-stats/**` and `src/memory-*.ts` are gone and the CLI registers no `agent-stats`; the subsystem is still staged in this repository under `_extracted/agent-stats-h2a-module/` with 7 `tests/agent-stats*.test.ts` and `tests/fixtures/agent-stats/` (plan/08 F12, owner decision D-2); `README.md` and `ARCHITECTURE.md` still document it (plan/08 F6).
+- [ ] Remove or relocate every organization-scoped (`@sentropic/*`) dependency and importing bridge from the repository. — not done repo-wide: the root manifest and bridges keep `@sentropic/graph`, `@sentropic/llm-mesh`, `@sentropic/agent-stats-core`, `@sentropic/design-system-*`, and the product itself is `@sentropic/engram` since 0.19.0; the `engram-memory` closure is clean; `tests/memory-neutrality.test.ts` carries an `it.todo`. Scope is owner decision D-1 (plan/08 F11).
+- [ ] RED: `tests/memory-neutrality.test.ts > packed dependency/import closure is one-way and emitted d.ts/schema uses only the normative vocabulary`. — partial: the vocabulary half exists and is green under the real title `memory package packed closure and emitted d.ts/schema use only neutral vocabulary` (cited by the spec §9 L0 row); the one-way import-closure and packed-file-list assertions are missing (plan/08 F5).
+- [x] RED: `tests/memory-neutrality.test.ts > evaluator and topology-shaped public objects are rejected even without forbidden imports`. — no test has this title; subsumed into the single scan above per the spec §9 L0 row (forbidden evaluator/authorship field names; name-based, not structural).
+- [x] RED: `tests/memory-activity-boundary.test.ts > activity reaches capture only through ActivityEvidenceSource`. — green on `c96fc01e`; a static negative check (the engine-side ingestion path is finding X1 of the finalization spec).
+- [x] RED: `tests/memory-v1-removal.test.ts > no legacy memory export, schema, source-authority header, CLI, or packed file remains`. — green on `c96fc01e`.
 
 ## Lot 1 — Closed Temporal Contract
 
