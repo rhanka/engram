@@ -90,13 +90,13 @@ Rationale: F1 first because it executes L6 and is the only lot able to reveal a 
 
 ## F4 — L5a: Registry Conformance Without Contract Change (FIN §3.2.2)
 
-- [ ] RED: `tests/assertion-family-registry.test.ts > proposal_id is SHA-256 over the D5 proposal domain and exactly the seven identity fields`.
-- [ ] GUARD: `tests/assertion-family-registry.test.ts > proposals sort by occurrence key, left id, right id, relation and exact duplicates collapse by id`.
-- [ ] GUARD: `tests/assertion-family-registry.test.ts > an uninstalled family id or version is REGISTRY_VERSION_UNAVAILABLE and proposes nothing`.
-- [ ] GUARD: `tests/assertion-family-registry.test.ts > evaluateReconciliationEligibilityV1 refuses non-current, expired, or dependency-ineligible statuses and status/record id mismatches` (direct call of the exported gate).
-- [ ] GUARD: `tests/assertion-family-registry.test.ts > compare proposes nothing when either record was recorded after comparison_system_as_of` (intrinsic visibility gate of `compare`; `compare` has no lifecycle input, so the lifecycle half is F9's).
-- [ ] GUARD: `tests/assertion-family-registry.test.ts > evidence_citation_ids are the sorted unique union of both primary components' citations`.
-- [ ] Implement: D5 domain in `reconciliationProposalIdV1`; EVOL §6 sentences T5.3 (version coupling) and T5.4 (citation sufficiency); `plan/07` l.64–66 checked (named REDs green since 2026-08-16).
+- [x] RED: `tests/assertion-family-registry.test.ts > proposal_id is SHA-256 over the D5 proposal domain and exactly the seven identity fields`.
+- [x] GUARD: `tests/assertion-family-registry.test.ts > proposals sort by occurrence key, left id, right id, relation and exact duplicates collapse by id`.
+- [x] GUARD: `tests/assertion-family-registry.test.ts > an uninstalled family id or version is REGISTRY_VERSION_UNAVAILABLE and proposes nothing`.
+- [x] GUARD: `tests/assertion-family-registry.test.ts > evaluateReconciliationEligibilityV1 refuses non-current, expired, or dependency-ineligible statuses and status/record id mismatches` (direct call of the exported gate).
+- [x] GUARD: `tests/assertion-family-registry.test.ts > compare proposes nothing when either record was recorded after comparison_system_as_of` (intrinsic visibility gate of `compare`; `compare` has no lifecycle input, so the lifecycle half is F9's).
+- [x] GUARD: `tests/assertion-family-registry.test.ts > evidence_citation_ids are the sorted unique union of both primary components' citations`.
+- [x] Implement: D5 domain in `reconciliationProposalIdV1`; EVOL §6 sentences T5.3 (version coupling) and T5.4 (citation sufficiency); `plan/07` l.64–66 checked (named REDs green since 2026-08-16).
 - Allowed (5): `engram-memory/assertion-family-registry.ts`, `tests/assertion-family-registry.test.ts`, EVOL, `plan/07`, this plan.
 - Forbidden: `engram-memory/contracts/index.ts`, `engram-memory/engine.ts`; relation values and the error label (F8).
 - Gate: `tests/assertion-family-registry.test.ts` green (9 cases); each GUARD's mutation run recorded in the PR; package typecheck; CI.
