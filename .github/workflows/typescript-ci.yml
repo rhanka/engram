@@ -27,6 +27,9 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
+      - name: Native ABI smoke (better-sqlite3 + fs-ext)
+        run: node scripts/check-native-abi.mjs
+
       - name: Build
         run: npm run build
 

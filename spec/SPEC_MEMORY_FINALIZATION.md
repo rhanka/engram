@@ -404,6 +404,7 @@ Status: definition located outside the repository, not ratified → proposed bel
 #### 3.6.6 Acceptance and risks
 
 Acceptance: smoke step green on Node 20/22/24; document present; EVOL wording fixed; D-7(i) recorded.
+Executed (F3, 2026-10-10): `node scripts/check-native-abi.mjs` exit 0 on Node 22.22.1 (ABI 127, linux/x64, glibc 2.43) with both addons loaded, `sqlite_version=3.53.2` and the flock visible in `/proc/self/fdinfo`; `tests/native-abi-smoke.test.ts` 2 passed. CI step added to each `test` matrix job (Node 20/22/24 cover the rest on the PR).
 Risks: node-gyp needs Python at install time — already the case in every CI `test` job (§3.6.2) and in any image that compiles `fs-ext`; the owner rule "no Python in repositories or jobs" must explicitly accept or forbid it (D-7(ii) for CI, gating only F1's merge; D-7(iii) for images, gating no lot of this plan); `better-sqlite3` prebuilds are downloaded at install (network and supply chain at image build); musl images need musl prebuilds or compilation; a later npm default that skips unapproved install scripts would leave the addons unbuilt (`unverified`, detected by the smoke).
 
 ### 3.7 R2-b and R2-c — decision: out of finalization scope
