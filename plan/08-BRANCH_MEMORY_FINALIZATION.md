@@ -1,17 +1,17 @@
 # Memory Engine Finalization (`engram-memory`)
 
-Spec: `spec/SPEC_MEMORY_FINALIZATION.md` (cited **FIN §x**); normative parent `spec/SPEC_EVOL_AGENT_MEMORY_SUBSTRATE.md` (cited **EVOL l.N**). Base: `origin/main` `c96fc01e` (0.19.1), branch `feat/memory-finalization`. Owner decisions D-1…D-11 are listed in FIN §6; review round 1 is dispositioned in FIN §7.
+Spec: `spec/SPEC_MEMORY_FINALIZATION.md` (cited **FIN §x**); normative parent `spec/SPEC_EVOL_AGENT_MEMORY_SUBSTRATE.md` (cited **EVOL l.N**). Base: `origin/main` `c96fc01e` (0.19.1), branch `feat/memory-finalization`. Owner decisions D-1…D-11 are listed in FIN §6 (D-9, D-10, D-11 decided 2026-10-07); review rounds 1–2 are dispositioned in FIN §7–§8.
 
 ## Objective
 
 - [ ] Close the L0–L7 remainder of the memory engine (FIN §1) test-first, one logical change per lot (≤ ~15 files; F12 is a single mechanical deletion and is the only exception).
 - [ ] Execute — not declare — the L6 Postgres parity gate (R2-g) before any contract change lands, and claim only what the lane executes (FIN §3.3.2 T-g4).
-- [ ] Land contract changes (L5b, R2-h, X1; X2 and X4 only under the B options of D-10 and D-11) only after their owner decisions (D-3, D-5, D-8, D-10, D-11).
+- [ ] Land contract changes (L5b, R2-h, X1, X2, X4) only after their owner decisions (D-3, D-5, D-8, D-10, D-11); D-10 B and D-11 B were decided on 2026-10-07, so X2 and X4 are in scope.
 - [ ] No merge, push, tag, publication, or go-live without the owner. Postgres go-live and publication are excluded from this plan.
 
 ## Scope
 
-- [ ] Allowed: `engram-memory/**` (never `node_modules/` or `dist/`), `tests/**`, `.github/workflows/typescript-ci.yml` (new job or steps only), `scripts/check-native-abi.mjs`, `docs/NATIVE_ABI.md`, `spec/SPEC_EVOL_AGENT_MEMORY_SUBSTRATE.md`, `spec/SPEC_MEMORY_FINALIZATION.md`, this plan, `plan/07-BRANCH_AGENT_MEMORY_SUBSTRATE.md` and `BRANCH.md` (checkboxes and annotations; one new R2-i line under D-11 A), `README.md` and `ARCHITECTURE.md` (F6, F12 only), `CHANGELOG.md` (draft entries under `## Unreleased` only).
+- [ ] Allowed: `engram-memory/**` (never `node_modules/` or `dist/`), `tests/**`, `.github/workflows/typescript-ci.yml` (new job or steps only), `scripts/check-native-abi.mjs`, `docs/NATIVE_ABI.md`, `spec/SPEC_EVOL_AGENT_MEMORY_SUBSTRATE.md`, `spec/SPEC_MEMORY_FINALIZATION.md`, this plan, `plan/07-BRANCH_AGENT_MEMORY_SUBSTRATE.md` and `BRANCH.md` (checkboxes and annotations; no R2-i line — that follow-up existed only under D-11 A), `README.md` and `ARCHITECTURE.md` (F6, F12 only), `CHANGELOG.md` (draft entries under `## Unreleased` only).
 - [ ] Forbidden: consumer names, types or paths inside `engram-memory/`; any Python file, script, CI step or image; a new runtime dependency or container image without its owner decision; `src/**` product code; `package.json` and lockfiles; a Dockerfile; `.track/**` writes (single writer: the conductor); merge, push, tag, publish; `.graphify/scratch/**`.
 - [ ] Conditional: deleting `_extracted/**`, `tests/agent-stats*.test.ts`, `tests/fixtures/agent-stats/**` only after the receiving owner confirms the import (D-2); `src/**` and `package.json` only under D-1 option B, which needs its own plan.
 
@@ -42,7 +42,7 @@ Rationale: F1 first because it executes L6 and is the only lot able to reveal a 
 
 - [x] `BRANCH.md`: R2-f checked with evidence and its residual; R2-b and R2-c annotated out of finalization scope (FIN §3.7).
 - [x] `plan/07` Lot 0 boxes aligned to code evidence (FIN §3.1).
-- [x] `spec/SPEC_MEMORY_FINALIZATION.md` and this plan written; amended after review round 1 (FIN §7).
+- [x] `spec/SPEC_MEMORY_FINALIZATION.md` and this plan written; amended after review rounds 1–2 (FIN §7–§8).
 - Allowed: `BRANCH.md`, `plan/07`, FIN, this plan. Forbidden: code, tests, workflows.
 - Gate: conductor review; the conductor commits and imports this plan into Track.
 
@@ -104,10 +104,10 @@ Rationale: F1 first because it executes L6 and is the only lot able to reveal a 
 ## F5 — L0: Enforced Import Closure, Packed File List, Built Exports (FIN §3.1.3 T0.1–T0.3, T0.7)
 
 - [ ] RED: `tests/memory-neutrality.test.ts > the import-closure scanner rejects a forbidden edge in each scanned set: source, generated code, test closure, documentation example` (inline fixtures).
-- [ ] GUARD: `tests/memory-neutrality.test.ts > engram-memory import closure is one-way across sources, generated code, memory tests and fixtures, and documentation examples` — with its in-test wiring control (scanned sets contain `engram-memory/engine.ts`, `engram-memory/contracts/index.ts`, `engram-memory/dist/index.js`, `tests/memory-l3-fixture.ts`) and a mutation run in the PR (a forbidden import added to an `engram-memory` module, never merged).
+- [ ] GUARD: `tests/memory-neutrality.test.ts > engram-memory import closure is one-way across sources, generated code, memory tests and fixtures, and documentation examples` — with its in-test wiring control (scanned sets contain `engram-memory/engine.ts`, `engram-memory/contracts/index.ts`, `engram-memory/dist/index.js`, `tests/memory-l3-fixture.ts`) and a mutation run in the PR (a forbidden import added to an `engram-memory` module, never merged). The mutation run exercises the source set only; the generated-code and test-closure sets rely on the wiring control.
 - [ ] RED: `tests/memory-neutrality.test.ts > packed engram-memory file list and lockfile closure use only neutral vocabulary`.
 - [ ] RED: `tests/memory-package-exports.test.ts > every engram-memory export subpath is built from a module of the package program`.
-- [ ] Implement: the pure scanner over `(path, content)` pairs and its four edge sets (FIN §3.1.3 T0.1 a–d); the directory-wide text scan replaced by the `npm pack --dry-run --json` list plus lockfile package names (the emitted `contracts` declaration check stays); `engram-memory/tsconfig.json` `include` fixed (`integration.ts` added, `service.ts` removed); EVOL D1 layout wording; `plan/07` l.18 and l.21 updated.
+- [ ] Implement: the pure scanner over `(path, content)` pairs, test-local in `tests/memory-neutrality.test.ts` (no new source module), and its four edge sets (FIN §3.1.3 T0.1 a–d); the directory-wide text scan replaced by the `npm pack --dry-run --json` list plus lockfile package names (the emitted `contracts` declaration check stays); `engram-memory/tsconfig.json` `include` fixed (`integration.ts` added, `service.ts` removed); EVOL D1 layout wording; `plan/07` l.18 and l.21 updated.
 - Allowed (7): `tests/memory-neutrality.test.ts`, `tests/memory-package-exports.test.ts`, `engram-memory/tsconfig.json`, EVOL, FIN, `plan/07`, this plan.
 - Forbidden: removing the `it.todo` (F11); `engram-memory` runtime modules; `engram-memory/package.json` exports; fixture files on disk (fixtures are inline strings).
 - Gate: the four cases green; the GUARD's mutation run recorded in the PR; `npm --prefix engram-memory run build` emits `dist/integration.js` and `dist/integration.d.ts`; CI green on Node 20/22/24.
@@ -144,6 +144,7 @@ Rationale: F1 first because it executes L6 and is the only lot able to reveal a 
 
 - [ ] RED: `tests/memory-reconciliation.test.ts > proposeReconciliation reads only, allocates no cursor, and refuses CAPABILITY_UNAVAILABLE without a registry`.
 - [ ] RED: `tests/memory-reconciliation.test.ts > records ineligible at the pinned cursor (tombstoned, expired, trust-invalid, historical) yield an ineligible outcome with no proposal`.
+- [ ] RED: `tests/memory-reconciliation.test.ts > a pair the eligibility gate refuses (missing opt-in, distinct trust classes) yields an ineligible outcome with no proposal, not an error`.
 - [ ] RED: `tests/memory-reconciliation.test.ts > eligibility is decided on the system axis: a refinement whose valid intervals do not overlap is still proposed`.
 - [ ] RED: `tests/memory-reconciliation.test.ts > the outcome binds registry, family, pair, pin, per-record eligibility and proposal under the reconciliation-outcome and reconciliation-eligibility domains`.
 - [ ] RED: `tests/memory-reconciliation.test.ts > an uninstalled registry version refuses reconciliation while recall stays available`.
@@ -154,10 +155,10 @@ Rationale: F1 first because it executes L6 and is the only lot able to reveal a 
 
 ## F10 — L5b-3: Authorized Application, Event Field, Checkpoint Registry Versions (FIN §3.2.3 T5.8–T5.9) — D-3, after F1
 
-- [ ] RED: `tests/memory-reconciliation.test.ts > a dispute or supersede bound to a proposal persists family and registry versions in the event digest, and replay never calls the registry`.
+- [ ] RED: `tests/memory-reconciliation.test.ts > a dispute or supersede bound to a proposal persists family and registry versions in the event digest and in the journal event (visible via readJournal), and replay never calls the registry`.
 - [ ] RED: `tests/memory-reconciliation.test.ts > a forged or mismatched proposal binding is refused before any cursor allocation`.
 - [ ] RED: `tests/memory-journal-replay.test.ts > checkpoint registry_versions lists every registry version bound by journal events through the cursor`.
-- [ ] Implement: binding validation in `transition` (recomputation through T5.7 steps 5–7 with `propose_reconciliation` authorized on both records); the event field bound into `event_digest`; the fold reads stored fields only; `registry_versions` derived in the checkpoint; the parity corpus gains one bound transition; EVOL §5.9 checkpoint sentence; `plan/07` l.63 checked.
+- [ ] Implement: binding validation in `transition` (recomputation through T5.7 steps 5–7 with `propose_reconciliation` authorized on both records); the event field bound into `event_digest`; the same optional field on the journal event, carried by `#intentFromLifecycle` into the journal `event_hash` (no migration: opaque JSON body); the fold reads stored fields only; `registry_versions` derived from the journal field in the checkpoint; the parity corpus gains one bound transition; EVOL §5.9 checkpoint sentence; `plan/07` l.63 checked.
 - Allowed (≤11): `engram-memory/engine.ts`, `engram-memory/memory-store.ts`, `engram-memory/validation.ts`, `engram-memory/sqlite.ts` and `engram-memory/postgres.ts` (only if their checkpoint override drops the field), `tests/memory-reconciliation.test.ts`, `tests/memory-journal-replay.test.ts`, `tests/canonical-memory-store.parity.test.ts`, EVOL, `plan/07`, this plan.
 - Forbidden: running a comparator during fold or replay; changing the digest of an event without a binding.
 - Gate: memory suite green; Linux native lane green; `memory-postgres` green with the extended corpus; existing replay digests unchanged.
@@ -181,8 +182,8 @@ Rationale: F1 first because it executes L6 and is the only lot able to reveal a 
 
 ## F13 — Exit Gate And Registry Closure
 
-- [ ] Every EVOL §10 row green in mandatory CI, or an explicitly declared gap per the decisions (R2-a; D-10 A; D-11 A); zero skips in the Linux native and `memory-postgres` lanes; no `todo` in the memory suites.
-- [ ] EVOL aligned for X5 and X6 (decided in FIN §4) and, when chosen, D-10 A (`invalidateProjections` declared gap) and D-11 A (shipped backup factory, dependency type and manifest; in-memory scope; D8 advice); `BRANCH.md` R2-i added under D-11 A; stale `plan/07` lines fixed (l.59; l.79 per D-8); `BRANCH.md` R2 lines and G1–G4 annotated with their evidence state.
+- [ ] Every EVOL §10 row green in mandatory CI, or an explicitly declared gap per the decisions (R2-a); D-10 B and D-11 B are implemented in X2 and X4, not declared; zero skips in the Linux native and `memory-postgres` lanes; no `todo` in the memory suites.
+- [ ] EVOL aligned for X5 and X6 (decided in FIN §4); no R2-i line (`BRANCH.md` follow-up existed only under D-11 A); stale `plan/07` lines fixed (l.59; l.79 per D-8); `BRANCH.md` R2 lines and G1–G4 annotated with their evidence state.
 - [ ] Two independent non-author reviews (conductor-assigned); findings reconciled.
 - [ ] Owner gate for the merge; release and publication stay separate owner decisions.
 - Allowed: EVOL, FIN, `plan/07`, `BRANCH.md`, this plan.
@@ -198,16 +199,16 @@ Rationale: F1 first because it executes L6 and is the only lot able to reveal a 
 ## Triage Lots (FIN §4)
 
 - [ ] X1 — activity ingestion (D-8 A, shape FIN §4.1): RED `tests/memory-activity-ingestion.test.ts > activity evidence becomes a pending capture through the injected source, idempotent per source, sequence and evidence id, and the source cannot admit`; RED `tests/memory-activity-ingestion.test.ts > changed evidence under the same source, sequence and evidence id is DIGEST_CONFLICT with no write`. Allowed: `engram-memory/contracts/index.ts`, `engram-memory/engine.ts`, `engram-memory/validation.ts`, the new test, EVOL §5.4–§5.5, `plan/07` l.79, this plan. Gate: memory suite green; `memory-activity-boundary` green.
-- [ ] X2 — `invalidateProjections` wiring (only under D-10 B; under D-10 A the declared gap lands in F13): RED `tests/memory-projection-cascade.test.ts > MemoryPortV2.invalidateProjections authorizes projection_invalidate, runs the cascade over the configured surfaces and returns one cursor receipt`. Allowed: `engram-memory/contracts/index.ts`, `engram-memory/engine.ts`, `engram-memory/validation.ts`, the test, EVOL §5.5, this plan. Gate: memory suite green.
-- [ ] X3 — SQLite runtime version gate (D-9 A, after F3 reports the bundled version): RED `tests/sqlite-runtime-version.test.ts > the supported-runtime predicate admits 3.51.3 and later plus the 3.44.6+ and 3.50.7+ backport lines, and refuses the rest` (pure); RED `tests/sqlite-memory-broker.native.test.ts > an open refuses CAPABILITY_UNAVAILABLE when the runtime is below the required minimum` (through an internal seam that can only raise the minimum, never lower it). Allowed: `engram-memory/sqlite.ts`, `tests/sqlite-runtime-version.test.ts`, `tests/sqlite-memory-broker.native.test.ts`, EVOL D8, this plan. Gate: Linux native lane green with zero skips.
-- [ ] X4 — durable-backend logical backup/restore (only under D-11 B; under D-11 A the declared gap lands in F13): design note first (export over `CanonicalMemoryStorePort`, restore target and its contract change), then its own lot with REDs in the native and Postgres lanes. Allowed for the design note: FIN, this plan.
+- [ ] X2 — `invalidateProjections` wiring (D-10 B, decided 2026-10-07; shape FIN §4.2): RED `tests/memory-projection-cascade.test.ts > MemoryPortV2.invalidateProjections authorizes projection_invalidate, runs the cascade over the configured surfaces and returns one cursor receipt`; RED `tests/memory-projection-cascade.test.ts > an unknown projection id is INVALID_SCHEMA and absent surfaces is CAPABILITY_UNAVAILABLE`. Allowed: `engram-memory/contracts/index.ts`, `engram-memory/engine.ts`, `engram-memory/validation.ts`, the test, EVOL §5.5 and §5.9 dependencies, `CHANGELOG.md` (`## Unreleased` entry for the required `authorization` field), this plan. Gate: memory suite green.
+- [ ] X3 — SQLite runtime version gate (D-9 A, decided 2026-10-07, after F3 reports the bundled version): RED `tests/sqlite-runtime-version.test.ts > the supported-runtime predicate admits 3.51.3 and later plus the 3.44.6+ and 3.50.7+ backport lines, and refuses the rest` (pure); RED `tests/sqlite-memory-broker.native.test.ts > an open refuses CAPABILITY_UNAVAILABLE when the runtime is below the required minimum` (through an internal seam that can only raise the minimum, never lower it). Allowed: `engram-memory/sqlite.ts`, `tests/sqlite-runtime-version.test.ts`, `tests/sqlite-memory-broker.native.test.ts`, EVOL D8, this plan. Gate: Linux native lane green with zero skips.
+- [ ] X4 — durable-backend logical backup/restore (D-11 B, decided 2026-10-07; C discarded): export over the public `CanonicalMemoryStorePort` (journal pages via `readJournal` and record reads, no pending material) plus a store import method (contract change), on the SQLite and Postgres stores. RED `tests/sqlite-memory-broker.native.test.ts > a logical backup of a SQLite store restores the same canonical digests`; RED `tests/postgres-memory-store.native.test.ts > a logical backup of a Postgres store restores the same canonical digests` (runs in the F1 lane). Allowed: `engram-memory/contracts/index.ts`, `engram-memory/logical-backup.ts`, `engram-memory/sqlite.ts`, `engram-memory/postgres.ts`, the lane tests, EVOL §5.9 and `recovery/backup`, this plan. Gate: round-trip green in both lanes with digests verified; the pending quarantine holds (no sealed envelope or control leaves through the export).
 
 ## Out Of Scope
 
 - [ ] Postgres go-live and `external-host` activation (owner decision; EVOL governance fallback l.1354).
 - [ ] Publication of `engram-memory` and `@engram/memory-contracts` (release decision).
 - [ ] R2-b and R2-c (FIN §3.7, with reopen conditions); R2-a unless D-6 includes it.
-- [ ] Durable-backend logical backup/restore unless D-11 B; `invalidateProjections` wiring unless D-10 B.
+- [ ] Durable-backend logical backup/restore and `invalidateProjections` wiring are in scope under the decided D-11 B and D-10 B (lots X4, X2).
 - [ ] The persistence write-amplification ceiling (EVOL D9 l.1287).
 
 ## Feedback Loop
