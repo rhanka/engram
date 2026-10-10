@@ -9,7 +9,7 @@ import {
   type CanonicalMemoryStorePort,
 } from "../engram-memory/index.js";
 import { captureRequest, createL3Memory, lifecycleCommand, DEADLINE, DIGEST, NOW } from "./memory-l3-fixture.js";
-import { dockerAvailable, postgresImageAvailable, startEphemeralPostgres } from "./postgres-ephemeral.js";
+import { postgresLaneDecision, startEphemeralPostgres } from "./postgres-ephemeral.js";
 
 const MATRIX = ["16", "17"] as const;
 const AUTHORIZATION = { credential: "credential:l3" } as const;
@@ -105,12 +105,12 @@ async function sqliteDigests(): Promise<ParityDigestsV1> {
   const workspace = mkdtempSync(join(tmpdir(), "engram-memory-parity-sqlite-"));
   sqliteWorkspaces.push(workspace);
   const filename = join(workspace, "canonical.sqlite");
-  const writer = await openFencedSqliteCanonicalMemoryStoreV1({ filename, clock: { now: () => NOW }, store_id: "parity" });
+  const writer = await openFencedSqliteCanonicalMemoryStoreV1({ filename, clock: { now: () => NOW }, store_id: "parity", allow_ephemeral_filesystem_store: true });
   if (!writer.ok) throw new Error(`sqlite open failed: ${writer.error.message}`);
   await applyParityCorpus(writer.value);
   await writer.value.close();
   // Reopen so the digests are folded from durably persisted rows, not process state.
-  const reader = await openFencedSqliteCanonicalMemoryStoreV1({ filename, clock: { now: () => NOW }, store_id: "parity" });
+  const reader = await openFencedSqliteCanonicalMemoryStoreV1({ filename, clock: { now: () => NOW }, store_id: "parity", allow_ephemeral_filesystem_store: true });
   if (!reader.ok) throw new Error(`sqlite reopen failed: ${reader.error.message}`);
   try {
     return await collectParityDigests(reader.value);
@@ -125,27 +125,40 @@ afterEach(() => {
 });
 
 describe("SQLite and Postgres canonical parity", () => {
-  const gate = dockerAvailable() && MATRIX.every(postgresImageAvailable);
-  const maybe = gate ? it : it.skip;
+  const decision = postgresLaneDecision(MATRIX);
+  if (decision.lane === "fail") {
+    const cause = decision.cause;
+    it("postgres lane prerequisites hold in required mode", () => {
+      throw new Error(cause);
+    });
+    return;
+  }
+  const maybe = decision.lane === "run" ? it : it.skip;
 
   maybe("SQLite and Postgres produce identical canonical state digests for the lifecycle corpus", async () => {
     const sqlite = await sqliteDigests();
     for (const version of MATRIX) {
       const postgres = await startEphemeralPostgres(version);
       stops.push(postgres.stop);
-      const writer = await openPostgresCanonicalMemoryStoreV1({ connection: postgres.connection, clock: { now: () => NOW }, store_id: "parity" });
-      expect(writer).toMatchObject({ ok: true, value: { capabilities: { backend: "postgres", atomic_promotion: true, dense_cursor: true, accepted_only_lexical: true, fenced_single_writer: true } } });
-      if (!writer.ok) throw new Error(`postgres ${version} open failed: ${writer.error.message}`);
-      await applyParityCorpus(writer.value);
-      await writer.value.close();
-      // Reopen so the digests fold Postgres-persisted rows, not process state.
-      const reader = await openPostgresCanonicalMemoryStoreV1({ connection: postgres.connection, clock: { now: () => NOW }, store_id: "parity" });
-      if (!reader.ok) throw new Error(`postgres ${version} reopen failed: ${reader.error.message}`);
       try {
-        const digests = await collectParityDigests(reader.value);
-        expect(digests, `postgres:${version} must match SQLite canonical digests`).toEqual(sqlite);
+        const writer = await openPostgresCanonicalMemoryStoreV1({ connection: postgres.connection, clock: { now: () => NOW }, store_id: "parity" });
+        expect(writer).toMatchObject({ ok: true, value: { capabilities: { backend: "postgres", atomic_promotion: true, dense_cursor: true, accepted_only_lexical: true, fenced_single_writer: true } } });
+        if (!writer.ok) throw new Error(`postgres ${version} open failed: ${writer.error.message}`);
+        await applyParityCorpus(writer.value);
+        await writer.value.close();
+        // Reopen so the digests fold Postgres-persisted rows, not process state.
+        const reader = await openPostgresCanonicalMemoryStoreV1({ connection: postgres.connection, clock: { now: () => NOW }, store_id: "parity" });
+        if (!reader.ok) throw new Error(`postgres ${version} reopen failed: ${reader.error.message}`);
+        try {
+          const digests = await collectParityDigests(reader.value);
+          expect(digests, `postgres:${version} must match SQLite canonical digests`).toEqual(sqlite);
+        } finally {
+          await reader.value.close();
+        }
       } finally {
-        await reader.value.close();
+        postgres.stop();
+        const idx = stops.indexOf(postgres.stop);
+        if (idx >= 0) stops.splice(idx, 1);
       }
     }
   }, 180_000);
