@@ -81,9 +81,9 @@ Rationale: F1 first because it executes L6 and is the only lot able to reveal a 
 
 ## F3 — Image ABI: Native Smoke, CI Step, Image-Builder Note (FIN §3.6) — D-7(i)
 
-- [ ] RED: `tests/native-abi-smoke.test.ts > a load error naming another NODE_MODULE_VERSION is classified ABI_MISMATCH and a missing module MODULE_MISSING`.
-- [ ] RED: `tests/native-abi-smoke.test.ts > the smoke verdict matches the platform: exit 0 with both addons loaded and the flock in fdinfo on Linux, PLATFORM_UNSUPPORTED elsewhere` (one case, never skipped).
-- [ ] Implement: `scripts/check-native-abi.mjs` (Node only, exported classifier; addons resolved with `createRequire(engram-memory/package.json)`; `PLATFORM_UNSUPPORTED` before the lock step outside Linux); a step running it in each `test` matrix job right after `npm ci`; `docs/NATIVE_ABI.md`; EVOL l.1260 wording ("N-API binding" → NAN addon compiled at install).
+- [x] RED: `tests/native-abi-smoke.test.ts > a load error naming another NODE_MODULE_VERSION is classified ABI_MISMATCH and a missing module MODULE_MISSING` (observed red 2026-10-10: `Cannot find module '../scripts/check-native-abi.mjs'`, suite failed with 0 tests run).
+- [x] RED: `tests/native-abi-smoke.test.ts > the smoke verdict matches the platform: exit 0 with both addons loaded and the flock in fdinfo on Linux, PLATFORM_UNSUPPORTED elsewhere` (one case, never skipped; same baseline failure).
+- [x] Implement: `scripts/check-native-abi.mjs` (Node only, exported classifier; addons resolved with `createRequire(engram-memory/package.json)`; `PLATFORM_UNSUPPORTED` before the lock step outside Linux); a step running it in each `test` matrix job right after `npm ci`; `docs/NATIVE_ABI.md`; EVOL l.1260 wording ("N-API binding" → NAN addon compiled at install). Gate: both cases green; smoke exit 0 (Node 22.22.1, ABI 127, sqlite_version 3.53.2).
 - Allowed (7): `scripts/check-native-abi.mjs`, `tests/native-abi-smoke.test.ts`, `.github/workflows/typescript-ci.yml`, `docs/NATIVE_ABI.md`, EVOL, FIN, this plan.
 - Forbidden: Python; a Dockerfile; replacing `fs-ext` or `better-sqlite3` (D-7(iii)); refusing on the SQLite version (X3).
 - Gate: smoke step green on Node 20/22/24; both cases green; the printed SQLite version recorded in the PR (input to D-9 and X3). D-7(ii) does not gate F3: the smoke is Node-only and runs inside the existing jobs.
