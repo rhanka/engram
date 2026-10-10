@@ -1,11 +1,15 @@
+import { createHash } from "node:crypto";
 import { expect, it } from "vitest";
 
 import {
+  canonicalizeJcs,
   createAssertionFamilyRegistryV1,
+  evaluateReconciliationEligibilityV1,
   knowledgePayloadDigest,
   memoryRecordDigest,
   reconciliationProposalIdV1,
   recordIdFromDigest,
+  sortReconciliationProposals,
   RECONCILIATION_BINARY_STATUS_FAMILY_ID,
   type EvidenceClass,
   type MemoryRecordV2,
@@ -25,6 +29,7 @@ interface RecordOptions {
   value: "active" | "inactive" | "unknown";
   t?: number;
   cursor?: string;
+  citationIds?: readonly string[];
 }
 
 function buildRecord(options: RecordOptions): MemoryRecordV2 {
@@ -38,19 +43,20 @@ function buildRecord(options: RecordOptions): MemoryRecordV2 {
     t = 1,
     cursor = "1",
   } = options;
+  const citationIds = options.citationIds ?? ["cit1"];
   const payload = {
     schema_version: 2 as const,
     scope_ref: scope,
     purpose_ref: "purpose:test",
     valid_time: { t },
     components: [
-      { component_id: "c1", kind: "decision" as const, text: `${subject}|${predicate}|${value}`, citation_ids: ["cit1"] },
+      { component_id: "c1", kind: "decision" as const, text: `${subject}|${predicate}|${value}`, citation_ids: [...citationIds] },
     ],
     primary_component_id: "c1",
-    primary_event: { at: t, type_ref: "event:test", citation_id: "cit1" },
-    citations: [
-      { citation_id: "cit1", source_ref: "src", locator: { scheme: "document", value: "d#1" }, content_digest: DIGEST },
-    ],
+    primary_event: { at: t, type_ref: "event:test", citation_id: citationIds[0] },
+    citations: citationIds.map((citation_id) => (
+      { citation_id, source_ref: "src", locator: { scheme: "document", value: "d#1" }, content_digest: DIGEST }
+    )),
     retention: { derivative_rule: "retain" as const },
     reconciliation: { family_refs: [...familyRefs] },
   };
@@ -222,4 +228,180 @@ it("replay uses stored registry version while a new version creates a new propos
   expect(again).toMatchObject({ ok: true });
   if (!again.ok || again.value === undefined) throw new Error("expected a proposal");
   expect(again.value.proposal_id).toBe(first.value.proposal_id);
+});
+
+it("proposal_id is SHA-256 over the D5 proposal domain and exactly the seven identity fields", () => {
+  const registry = createAssertionFamilyRegistryV1();
+  const compared = registry.compare(
+    input(buildRecord({ value: "active" }), buildRecord({ value: "inactive" }), "1"),
+  );
+  expect(compared).toMatchObject({ ok: true });
+  if (!compared.ok || compared.value === undefined) throw new Error("expected a proposal");
+  const proposal = compared.value;
+  const identity = {
+    family_id: proposal.family_id,
+    family_version: proposal.family_version,
+    occurrence_key: proposal.occurrence_key,
+    left_record_id: proposal.left_record_id,
+    right_record_id: proposal.right_record_id,
+    relation: proposal.relation,
+    comparison_system_as_of: proposal.comparison_system_as_of,
+  };
+  expect(Object.keys(identity).sort()).toEqual([
+    "comparison_system_as_of",
+    "family_id",
+    "family_version",
+    "left_record_id",
+    "occurrence_key",
+    "relation",
+    "right_record_id",
+  ]);
+  const expected = `sha256:${createHash("sha256")
+    .update("graphify-memory/proposal/v1\0", "utf8")
+    .update(canonicalizeJcs(identity), "utf8")
+    .digest("hex")}`;
+  expect(proposal.proposal_id).toBe(expected);
+  expect(reconciliationProposalIdV1(identity)).toBe(expected);
+});
+
+it("proposals sort by occurrence key, left id, right id, relation and exact duplicates collapse by id", () => {
+  const registry = createAssertionFamilyRegistryV1();
+  const proposeFor = (subject: string) => {
+    const compared = registry.compare(
+      input(buildRecord({ subject, value: "active" }), buildRecord({ subject, value: "inactive" }), "1"),
+    );
+    expect(compared).toMatchObject({ ok: true });
+    if (!compared.ok || compared.value === undefined) throw new Error("expected a proposal");
+    return compared.value;
+  };
+  const first = proposeFor("user:sort-a");
+  const second = proposeFor("user:sort-b");
+
+  const deduped = sortReconciliationProposals([second, first, first]);
+  expect(deduped).toHaveLength(2);
+  const keys = deduped.map((proposal) => proposal.occurrence_key);
+  expect([...keys].sort()).toEqual(keys);
+
+  const contradictsVariant = { ...first, proposal_id: ZERO, relation: "contradicts" as const };
+  const supersedesVariant = { ...first, proposal_id: DIGEST, relation: "supersedes" as const };
+  const byRelation = sortReconciliationProposals([supersedesVariant, contradictsVariant]);
+  expect(byRelation.map((proposal) => proposal.relation)).toEqual(["contradicts", "supersedes"]);
+
+  const leftB = { ...first, proposal_id: ZERO, left_record_id: "mem_b" };
+  const leftA = { ...first, proposal_id: DIGEST, left_record_id: "mem_a" };
+  const byLeft = sortReconciliationProposals([leftB, leftA]);
+  expect(byLeft.map((proposal) => proposal.left_record_id)).toEqual(["mem_a", "mem_b"]);
+
+  const rightB = { ...first, proposal_id: ZERO, right_record_id: "mem_r2" };
+  const rightA = { ...first, proposal_id: DIGEST, right_record_id: "mem_r1" };
+  const byRight = sortReconciliationProposals([rightB, rightA]);
+  expect(byRight.map((proposal) => proposal.right_record_id)).toEqual(["mem_r1", "mem_r2"]);
+});
+
+it("an uninstalled family id or version is REGISTRY_VERSION_UNAVAILABLE and proposes nothing", () => {
+  const registry = createAssertionFamilyRegistryV1();
+  const left = buildRecord({ value: "active" });
+  const right = buildRecord({ value: "inactive" });
+
+  const unknownFamily = registry.compare({
+    family_id: "assertion-family:unknown",
+    family_version: "1",
+    left,
+    right,
+    comparison_system_as_of: "9",
+  });
+  expect(unknownFamily.ok).toBe(false);
+  if (unknownFamily.ok) throw new Error("expected a refusal");
+  expect(unknownFamily.error.code).toBe("REGISTRY_VERSION_UNAVAILABLE");
+
+  const unknownVersion = registry.compare(input(left, right, "999"));
+  expect(unknownVersion.ok).toBe(false);
+  if (unknownVersion.ok) throw new Error("expected a refusal");
+  expect(unknownVersion.error.code).toBe("REGISTRY_VERSION_UNAVAILABLE");
+
+  const unknownKey = registry.occurrenceKey(input(left, right, "999"));
+  expect(unknownKey.ok).toBe(false);
+  if (unknownKey.ok) throw new Error("expected a refusal");
+  expect(unknownKey.error.code).toBe("REGISTRY_VERSION_UNAVAILABLE");
+});
+
+it("evaluateReconciliationEligibilityV1 refuses non-current, expired, or dependency-ineligible statuses and status/record id mismatches", () => {
+  const left = buildRecord({ value: "active" });
+  const right = buildRecord({ value: "inactive" });
+  const comparison = input(left, right, "1");
+  const eligible = {
+    left: { record_id: left.record_id, state: "accepted_current" as const, dependency_eligible: true, unexpired: true },
+    right: { record_id: right.record_id, state: "accepted_current" as const, dependency_eligible: true, unexpired: true },
+  };
+  expect(evaluateReconciliationEligibilityV1(comparison, eligible)).toMatchObject({ ok: true });
+
+  const nonCurrent = evaluateReconciliationEligibilityV1(comparison, {
+    ...eligible,
+    left: { ...eligible.left, state: "historical" as const },
+  });
+  expect(nonCurrent.ok).toBe(false);
+  if (nonCurrent.ok) throw new Error("expected a refusal");
+  expect(nonCurrent.error.code).toBe("INVALID_SCHEMA");
+
+  const expired = evaluateReconciliationEligibilityV1(comparison, {
+    ...eligible,
+    right: { ...eligible.right, unexpired: false },
+  });
+  expect(expired.ok).toBe(false);
+  if (expired.ok) throw new Error("expected a refusal");
+  expect(expired.error.code).toBe("INVALID_SCHEMA");
+
+  const dependencyIneligible = evaluateReconciliationEligibilityV1(comparison, {
+    ...eligible,
+    left: { ...eligible.left, dependency_eligible: false },
+  });
+  expect(dependencyIneligible.ok).toBe(false);
+  if (dependencyIneligible.ok) throw new Error("expected a refusal");
+  expect(dependencyIneligible.error.code).toBe("INVALID_SCHEMA");
+
+  const mismatched = evaluateReconciliationEligibilityV1(comparison, {
+    ...eligible,
+    left: { ...eligible.left, record_id: "mem_wrong" },
+  });
+  expect(mismatched.ok).toBe(false);
+  if (mismatched.ok) throw new Error("expected a refusal");
+  expect(mismatched.error.code).toBe("INVALID_SCHEMA");
+});
+
+it("compare proposes nothing when either record was recorded after comparison_system_as_of", () => {
+  const registry = createAssertionFamilyRegistryV1();
+
+  const leftLate = registry.compare(
+    input(buildRecord({ value: "active", cursor: "10" }), buildRecord({ value: "inactive", cursor: "2" }), "1", "5"),
+  );
+  expect(leftLate).toMatchObject({ ok: true });
+  if (!leftLate.ok) throw new Error("expected ok");
+  expect(leftLate.value).toBeUndefined();
+
+  const rightLate = registry.compare(
+    input(buildRecord({ value: "active", cursor: "2" }), buildRecord({ value: "inactive", cursor: "10" }), "1", "5"),
+  );
+  expect(rightLate).toMatchObject({ ok: true });
+  if (!rightLate.ok) throw new Error("expected ok");
+  expect(rightLate.value).toBeUndefined();
+
+  const bothVisible = registry.compare(
+    input(buildRecord({ value: "active", cursor: "2" }), buildRecord({ value: "inactive", cursor: "3" }), "1", "9"),
+  );
+  expect(bothVisible).toMatchObject({ ok: true });
+  if (!bothVisible.ok || bothVisible.value === undefined) throw new Error("expected a proposal");
+});
+
+it("evidence_citation_ids are the sorted unique union of both primary components' citations", () => {
+  const registry = createAssertionFamilyRegistryV1();
+  const compared = registry.compare(
+    input(
+      buildRecord({ subject: "user:cit", value: "active", citationIds: ["cit-b", "cit-a"] }),
+      buildRecord({ subject: "user:cit", value: "inactive", citationIds: ["cit-b", "cit-c"] }),
+      "1",
+    ),
+  );
+  expect(compared).toMatchObject({ ok: true });
+  if (!compared.ok || compared.value === undefined) throw new Error("expected a proposal");
+  expect(compared.value.evidence_citation_ids).toEqual(["cit-a", "cit-b", "cit-c"]);
 });

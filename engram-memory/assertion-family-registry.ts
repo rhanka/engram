@@ -64,7 +64,7 @@ export interface ReconciliationProposalIdentityV1 {
  */
 export function reconciliationProposalIdV1(identity: ReconciliationProposalIdentityV1): Digest {
   return receiptDigest(
-    "reconciliation-proposal-id",
+    "proposal",
     {
       family_id: identity.family_id,
       family_version: identity.family_version,
