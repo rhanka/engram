@@ -521,6 +521,8 @@ Postgres go-live and `external-host` activation (owner; governance gate); public
 
 ## 6. Owner decisions (options and recommendation)
 
+**Decision record.** 2026-10-06: D-1=A, D-2=A, D-3=A, D-4=A, D-5=A, D-6=A, D-7=A (the (ii) CI toolchain exception and the (iii) builder-stage rule), D-8=A. 2026-10-07: D-9=A, D-10=B, D-11=B. The options below are kept for traceability.
+
 Each decision below can be read on its own. Decided without the owner (decide-and-trace; the owner may override any of them): R2-b and R2-c leave the finalization scope (§3.7); the L5 supersession direction uses split relation values (T5.5: the two alternatives break proposal identity or EVOL's record-id ordering); EVOL is aligned to the code for `PROJECTION_OVERSIZED` (X5) and the placeholder `adapter_build_digest` (X6).
 
 **D-1 — Organization-scoped dependencies.**
