@@ -73,8 +73,8 @@ Rationale: F1 first because it executes L6 and is the only lot able to reveal a 
 
 ## F2 — Readiness Receipt Digest Binds Every Field (FIN §3.4, R2-h-D1)
 
-- [ ] RED: `tests/canonical-store-factory.test.ts > a factory-wrapped readiness receipt_digest binds every field, including the declared adapter identity`.
-- [ ] Implement: the wrapper in `engram-memory/store-factory.ts` recomputes `receipt_digest` (`operational-capability` domain) over the final receipt; correct the comment at l.22–24.
+- [x] RED: `tests/canonical-store-factory.test.ts > a factory-wrapped readiness receipt_digest binds every field, including the declared adapter identity` (observed red 2026-10-10: stale `receipt_digest` `sha256:b9aabd…` vs recomputed `sha256:580453…`).
+- [x] Implement: the wrapper in `engram-memory/store-factory.ts` recomputes `receipt_digest` (`operational-capability` domain) over the final receipt; correct the comment at l.22–24.
 - Allowed (4): `engram-memory/store-factory.ts`, `tests/canonical-store-factory.test.ts`, FIN, this plan.
 - Forbidden: `engram-memory/contracts/index.ts`; the admission logic (`verifyStoreProvenance`).
 - Gate: `npx vitest run tests/canonical-store-factory.test.ts tests/store-provenance.test.ts tests/capability-attestation-gate.test.ts` green; `npm --prefix engram-memory run typecheck` green; CI green including the Linux native lane.
