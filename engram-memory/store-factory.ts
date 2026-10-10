@@ -7,6 +7,7 @@ import type {
   OperationalCapabilityReceiptV1,
   Result,
 } from "./contracts/index.js";
+import { receiptDigest } from "./digests.js";
 
 function refuse<T>(operation: MemoryOperation, code: "STORE_UNAVAILABLE" | "CAPABILITY_UNAVAILABLE", message: string): Result<T> {
   return { ok: false, error: { code, operation, message, retryable: false } };
@@ -20,8 +21,9 @@ function refuse<T>(operation: MemoryOperation, code: "STORE_UNAVAILABLE" | "CAPA
  */
 export const ENGRAM_MEMORY_ADAPTER_IDENTITY: CapabilityAttestationIdentityV1 = {
   // Engram rename: the adapter_id VALUE is deliberately kept as "graphify-memory/fenced-store" (a stable declared
-  // identity) for back-compat — it is informational (never compared for admission, never in a digest), so a
-  // consumer that read it before the rename still sees the same value. Only the constant's NAME changed.
+  // identity) for back-compat — it is informational (never compared for admission) but IS bound by the
+  // factory-recomputed receipt_digest, so a consumer that read it before the rename still sees the same value.
+  // Only the constant's NAME changed.
   adapter_id: "graphify-memory/fenced-store",
   adapter_version: "1",
   adapter_build_digest: "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -147,9 +149,10 @@ export function createCanonicalMemoryStoreFactoryV1(options: CanonicalMemoryStor
 }
 
 /**
- * Wraps an acquired store so that (a) `readiness()` declares this module's compiled adapter identity (no
- * signature, no digest) and (b) the in-process holder is released on graceful `close()`. Every other member
- * passes through untouched. The wrapped instance (not the raw store) is the one stamped into the registry.
+ * Wraps an acquired store so that (a) `readiness()` declares this module's compiled adapter identity and
+ * recomputes `receipt_digest` over the final receipt (no signature) and (b) the in-process holder is released
+ * on graceful `close()`. Every other member passes through untouched. The wrapped instance (not the raw store)
+ * is the one stamped into the registry.
  */
 function withProvenanceAndRelease(store: CanonicalMemoryStorePort, release: () => void): CanonicalMemoryStorePort {
   return new Proxy(store, {
@@ -158,7 +161,10 @@ function withProvenanceAndRelease(store: CanonicalMemoryStorePort, release: () =
         return async (): Promise<Result<OperationalCapabilityReceiptV1>> => {
           const base = await target.readiness();
           if (!base.ok) return base;
-          return { ok: true, value: { ...base.value, adapter_id: ENGRAM_MEMORY_ADAPTER_IDENTITY.adapter_id, adapter_version: ENGRAM_MEMORY_ADAPTER_IDENTITY.adapter_version, adapter_build_digest: ENGRAM_MEMORY_ADAPTER_IDENTITY.adapter_build_digest } };
+          const { receipt_digest: _staleDigest, ...body } = base.value;
+          void _staleDigest;
+          const stamped = { ...body, adapter_id: ENGRAM_MEMORY_ADAPTER_IDENTITY.adapter_id, adapter_version: ENGRAM_MEMORY_ADAPTER_IDENTITY.adapter_version, adapter_build_digest: ENGRAM_MEMORY_ADAPTER_IDENTITY.adapter_build_digest };
+          return { ok: true, value: { ...stamped, receipt_digest: receiptDigest("operational-capability", stamped) } };
         };
       }
       if (prop === "close") {

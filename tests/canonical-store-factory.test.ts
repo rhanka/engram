@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   createCanonicalMemoryStoreFactoryV1,
   isFencedFactoryStoreV1,
+  receiptDigest,
   ENGRAM_MEMORY_ADAPTER_IDENTITY,
   type CanonicalMemoryStorePort,
   type FencedStoreConstructionV1,
+  type OperationalCapabilityReceiptV1,
   type Result,
 } from "../engram-memory/index.js";
 // §5.9 v5-b: the opener stamps the store as fence-holding only after taking a real kernel fence; the factory then
@@ -85,5 +87,54 @@ describe("CanonicalMemoryStoreFactoryV1.acquire (§5.7)", () => {
     if (!r.ok) expect(r.error.code).toBe("STORE_UNAVAILABLE");
     setOpen(async () => okStore());
     expect((await factory.acquire(construction("store:a"))).ok).toBe(true);
+  });
+
+  it("a factory-wrapped readiness receipt_digest binds every field, including the declared adapter identity", async () => {
+    // The raw store computes its own digest over a receipt WITHOUT the adapter identity (as sqlite/postgres do).
+    const body = {
+      store_id: "store:digest",
+      backend: "sqlite" as const,
+      storage_epoch: "7",
+      high_water_cursor: "0",
+      capabilities: {
+        atomic_promotion: true as const,
+        dense_cursor: true as const,
+        accepted_only_lexical: true as const,
+        fenced_single_writer: true,
+        revocable_active_store: true,
+        detached_snapshot: true,
+        bounded_cancellation: true,
+        backend: "sqlite" as const,
+      },
+      issued_at: "2026-09-21T12:00:00.000Z",
+      expires_at: "2026-09-21T12:05:00.000Z",
+    };
+    const raw = {
+      version: 1,
+      async readiness(): Promise<Result<OperationalCapabilityReceiptV1>> {
+        return { ok: true as const, value: { ...body, receipt_digest: receiptDigest("operational-capability", body) } };
+      },
+      async close() { return { ok: true as const, value: { closed: true as const } }; },
+    } as unknown as CanonicalMemoryStorePort;
+    markFencedStoreV1(raw);
+    const factory = createCanonicalMemoryStoreFactoryV1({ open: async () => ({ ok: true as const, value: raw }) });
+    const acquired = await factory.acquire(construction("store:digest"));
+    expect(acquired.ok).toBe(true);
+    if (!acquired.ok) return;
+    const receipt = await acquired.value.readiness();
+    expect(receipt.ok).toBe(true);
+    if (!receipt.ok) return;
+    expect(receipt.value.adapter_id).toBe(ENGRAM_MEMORY_ADAPTER_IDENTITY.adapter_id);
+    expect(receipt.value.adapter_version).toBe(ENGRAM_MEMORY_ADAPTER_IDENTITY.adapter_version);
+    expect(receipt.value.adapter_build_digest).toBe(ENGRAM_MEMORY_ADAPTER_IDENTITY.adapter_build_digest);
+    expect(receipt.value.receipt_digest).toBe(receiptDigest("operational-capability", receipt.value));
+    // Vérifie que le digest a muté par rapport au digest préliminaire du magasin brut
+    const rawAgain = await raw.readiness();
+    expect(rawAgain.ok).toBe(true);
+    if (!rawAgain.ok) return;
+    expect(receipt.value.receipt_digest).not.toBe(rawAgain.value.receipt_digest);
+    // Vérifie qu'une altération de l'identité déclarée invalide le lien
+    const tampered = { ...receipt.value, adapter_id: "tampered/store" };
+    expect(receipt.value.receipt_digest).not.toBe(receiptDigest("operational-capability", tampered));
   });
 });
