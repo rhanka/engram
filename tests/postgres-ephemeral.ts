@@ -21,8 +21,57 @@ export function dockerAvailable(): boolean {
   return probe.status === 0 && probe.stdout.trim().length > 0;
 }
 
+/** Required mode: a closed gate fails the file instead of skipping it. */
+export function isPostgresLaneRequired(): boolean {
+  return process.env.ENGRAM_MEMORY_REQUIRE_POSTGRES === "1";
+}
+
+/**
+ * The image reference for one matrix major. CI sets a digest-pinned
+ * `ENGRAM_MEMORY_POSTGRES_IMAGE_<major>` override; otherwise the harness
+ * uses the local `postgres:<major>` tag.
+ */
+export function postgresImageReference(major: string): string {
+  const override = process.env[`ENGRAM_MEMORY_POSTGRES_IMAGE_${major}`]?.trim();
+  if (override !== undefined && override.length > 0) return override;
+  return `postgres:${major}`;
+}
+
 export function postgresImageAvailable(version: string): boolean {
-  return docker(["image", "inspect", `postgres:${version}`], 15_000).status === 0;
+  return docker(["image", "inspect", postgresImageReference(version)], 15_000).status === 0;
+}
+
+export type PostgresLaneDecisionV1 =
+  | { lane: "run" }
+  | { lane: "skip"; cause: string }
+  | { lane: "fail"; cause: string };
+
+/**
+ * Pure lane decision: with every prerequisite present the lane runs;
+ * otherwise a required lane fails with its cause and an optional lane skips.
+ */
+export function decidePostgresLaneV1(input: {
+  required: boolean;
+  dockerAvailable: boolean;
+  missingImages: readonly string[];
+}): PostgresLaneDecisionV1 {
+  if (input.dockerAvailable && input.missingImages.length === 0) return { lane: "run" };
+  const cause = !input.dockerAvailable
+    ? "the Postgres lane is closed: no working Docker daemon is reachable"
+    : `the Postgres lane is closed: missing image ${input.missingImages.join(", ")}`;
+  return input.required ? { lane: "fail", cause } : { lane: "skip", cause };
+}
+
+/** Probes the environment and returns the lane decision for these majors. */
+export function postgresLaneDecision(majors: readonly string[]): PostgresLaneDecisionV1 {
+  const required = isPostgresLaneRequired();
+  if (!dockerAvailable()) {
+    return decidePostgresLaneV1({ required, dockerAvailable: false, missingImages: [] });
+  }
+  const missing = majors
+    .map((major) => postgresImageReference(major))
+    .filter((reference) => docker(["image", "inspect", reference], 15_000).status !== 0);
+  return decidePostgresLaneV1({ required, dockerAvailable: true, missingImages: missing });
 }
 
 async function waitForAcceptingConnections(pg: typeof import("pg"), connection: string, container: string): Promise<void> {
@@ -53,6 +102,7 @@ async function waitForAcceptingConnections(pg: typeof import("pg"), connection: 
  * uses a unique name, and is force-removed by `stop()` — call it in a finally.
  */
 export async function startEphemeralPostgres(version: string): Promise<EphemeralPostgresV1> {
+  const reference = postgresImageReference(version);
   const container = `engram-memory-pg-${version}-${process.pid}-${Date.now()}-${counter++}`;
   const run = docker([
     "run", "-d", "--name", container,
@@ -60,11 +110,11 @@ export async function startEphemeralPostgres(version: string): Promise<Ephemeral
     "-e", "POSTGRES_DB=graphify",
     "-e", "POSTGRES_USER=postgres",
     "-p", "127.0.0.1:0:5432",
-    `postgres:${version}`,
+    reference,
   ], 120_000);
   if (run.status !== 0) {
     docker(["rm", "-f", container], 30_000);
-    throw new Error(`could not start postgres:${version}: ${run.stderr.trim()}`);
+    throw new Error(`could not start ${reference}: ${run.stderr.trim()}`);
   }
   const stop = () => { docker(["rm", "-f", container], 30_000); };
   try {

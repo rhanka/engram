@@ -52,6 +52,39 @@ jobs:
           node dist/cli.js --version
           node dist/cli.js install --platform claude || true
 
+  memory-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      ENGRAM_MEMORY_REQUIRE_POSTGRES: "1"
+      ENGRAM_MEMORY_POSTGRES_IMAGE_16: "postgres:16@sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d"
+      ENGRAM_MEMORY_POSTGRES_IMAGE_17: "postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Build
+        run: npm run build
+
+      - name: Pull pinned Postgres images
+        run: |
+          docker pull "$ENGRAM_MEMORY_POSTGRES_IMAGE_16"
+          docker pull "$ENGRAM_MEMORY_POSTGRES_IMAGE_17"
+          docker inspect --format '{{range .RepoDigests}}{{.}}{{"\n"}}{{end}}' "$ENGRAM_MEMORY_POSTGRES_IMAGE_16"
+          docker inspect --format '{{range .RepoDigests}}{{.}}{{"\n"}}{{end}}' "$ENGRAM_MEMORY_POSTGRES_IMAGE_17"
+
+      - name: Run Postgres lane in required mode
+        run: npx vitest run --fileParallelism=false tests/canonical-memory-store.parity.test.ts tests/postgres-memory-store.native.test.ts
+
   direct-llm-uat:
     needs: test
     runs-on: ubuntu-latest
