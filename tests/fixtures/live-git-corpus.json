@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "description": "Small offline recipe with symbolic OIDs and byte-exact plumbing oracles. Root OIDs independently checked with Node crypto and Git object serialization. PR refs 1/2/3 model open/closed/merged roots; no GitHub service is queried.",
+  "binaryHex": "000102ff0a",
+  "rawPathHex": "7261772dff2e747874",
+  "history": {
+    "routine": { "main": 257, "pr": 17 },
+    "qualification": { "main": 100001, "pr": 1501 }
+  },
+  "rootOids": {
+    "sha1": "1eb343d59de2f99c0e56de377064834d6f023131",
+    "sha256": "5160ba72360d93602be37e13f5791afd939b0140d64e4af6b72bb1ee2d9cad68"
+  },
+  "oracle": {
+    "refs": "refs/heads/joined-roots\u0000<joinedRoots>\u0000commit\u0000\u0000\nrefs/heads/linked\u0000<main>\u0000commit\u0000\u0000\nrefs/heads/main\u0000<main>\u0000commit\u0000\u0000\nrefs/heads/topic\u0000<right>\u0000commit\u0000\u0000\nrefs/pull/1/head\u0000<right>\u0000commit\u0000\u0000\nrefs/pull/2/head\u0000<left>\u0000commit\u0000\u0000\nrefs/pull/3/head\u0000<merge>\u0000commit\u0000\u0000\nrefs/remotes/origin/HEAD\u0000<root>\u0000commit\u0000\u0000refs/remotes/origin/main\nrefs/remotes/origin/main\u0000<root>\u0000commit\u0000\u0000\nrefs/remotes/origin/topic\u0000<third>\u0000commit\u0000\u0000\nrefs/tags/release\u0000<releaseTag>\u0000tag\u0000<merge>\u0000\nrefs/tags/v0\u0000<root>\u0000commit\u0000\u0000\n",
+    "conflicts": "100644 <base> 1\tconflict.txt\u0000100644 <left> 2\tconflict.txt\u0000100644 <right> 3\tconflict.txt\u0000",
+    "staged": "100644 <staged> 0\tnew.txt\u0000",
+    "rootNames": "A\u0000.env\u0000A\u0000.gitattributes\u0000A\u0000.github/workflows/ci.yml\u0000A\u0000binary.dat\u0000A\u0000conflict.txt\u0000A\u0000deleted.txt\u0000A\u0000filtered.dat\u0000A\u0000link\u0000A\u0000old.txt\u0000A\u0000raw-\u00ff.txt\u0000A\u0000run.sh\u0000A\u0000sparse/omitted.txt\u0000A\u0000tab\tline\n.txt\u0000A\u0000vendor/submodule\u0000",
+    "changes": "M\u0000binary.dat\u0000D\u0000deleted.txt\u0000M\u0000filtered.dat\u0000R100\u0000old.txt\u0000new.txt\u0000M\u0000run.sh\u0000",
+    "numstat": "-\t-\tbinary.dat\u00000\t1\tdeleted.txt\u00001\t1\tfiltered.dat\u00000\t0\t\u0000old.txt\u0000new.txt\u00000\t0\trun.sh\u0000",
+    "filteredPatch": "diff --git a/filtered.dat b/filtered.dat\nindex <filtered>..<filteredChanged> 100644\n--- a/filtered.dat\n+++ b/filtered.dat\n@@ -1 +1 @@\n-raw filtered bytes\n+changed raw filtered bytes\n",
+    "modeChange": ":100644 100755 <script> <script> M\u0000run.sh\u0000",
+    "modes": "120000 blob <link>\tlink\u0000100755 blob <script>\trun.sh\u0000160000 commit <unrelated>\tvendor/submodule\u0000",
+    "worktrees": "worktree <corpus>/repo\u0000HEAD <main>\u0000branch refs/heads/main\u0000\u0000worktree <corpus>/.h2a/jobs/l0/wt\u0000HEAD <merge>\u0000detached\u0000\u0000worktree <corpus>/linked\u0000HEAD <main>\u0000branch refs/heads/linked\u0000\u0000worktree <corpus>/sparse\u0000HEAD <main>\u0000detached\u0000\u0000",
+    "parents.root": "<root>\n",
+    "parents.unrelated": "<unrelated>\n",
+    "parents.merge": "<merge> <left> <right>\n",
+    "parents.octopus": "<octopus> <left> <right> <third>\n",
+    "parents.joinedRoots": "<joinedRoots> <root> <unrelated>\n",
+    "merge.left": "1\t1\tconflict.txt\u0000",
+    "merge.right": "1\t2\tconflict.txt\u0000"
+  }
+}
