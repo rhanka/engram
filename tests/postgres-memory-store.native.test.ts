@@ -57,6 +57,11 @@ describe("native Postgres memory store", () => {
         });
         expect(failStore).toMatchObject({ ok: true, value: { capabilities: { backend: "postgres", fenced_single_writer: true } } });
         if (!failStore.ok) throw new Error(`open ${version} failed: ${failStore.error.message}`);
+        const readiness = await failStore.value.readiness();
+        expect(readiness).toMatchObject({ ok: true });
+        if (!readiness.ok) throw new Error("postgres readiness failed");
+        expect("multiply_linked" in readiness.value).toBe(false);
+        expect((readiness.value as { multiply_linked?: boolean }).multiply_linked).toBeUndefined();
         const failMemory = createL3Memory("accept", failStore.value).memory;
         const pending = await failMemory.capture(captureRequest("native-atomic-promotion", "1"));
         expect(pending).toMatchObject({ ok: true, value: { status: "committed_pending" } });

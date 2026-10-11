@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createL3Memory, lifecycleCommand, DEADLINE, NOW } from "./memory-l3-fixture.js";
+import { createL3Memory, lifecycleCommand, captureRequest, DEADLINE, NOW } from "./memory-l3-fixture.js";
 import {
   createCanonicalMemoryStoreFactoryV1,
   type CanonicalMemoryStorePort,
@@ -66,6 +66,30 @@ describe("engine gates fencing-dependent ops on store provenance (§5.9, R1d-b +
   it("admits a production op past the gate ONLY when the opener took (and stamped) a real fence", async () => {
     const { memory } = createL3Memory("accept", await fencedFactoryProductionStore());
     // gate admitted (fence mark propagated) => transition reaches the stubbed production store, not the refusal.
+    expect(code(await memory.transition(lifecycleCommand("dispute", "mem_x")))).toBe("STORE_UNAVAILABLE");
+  });
+
+  it("a multiply_linked receipt is an alarm: fencing-dependent operations are still admitted", async () => {
+    const factory = createCanonicalMemoryStoreFactoryV1({
+      open: async () => {
+        const raw = new Proxy({} as CanonicalMemoryStorePort, {
+          get(_t, prop) {
+            if (prop === "then") return undefined;
+            if (prop === "readiness") return async () => ({ ok: true as const, value: { ...receipt, multiply_linked: true } });
+            if (prop === "version") return 1;
+            if (prop === "capabilities") return caps;
+            return async () => reached;
+          },
+        });
+        markFencedStoreV1(raw);
+        return { ok: true as const, value: raw };
+      },
+    });
+    const acquired = await factory.acquire({ ...construction, store_id: "store:alarm" });
+    if (!acquired.ok) throw new Error("acquire failed");
+    const { memory } = createL3Memory("accept", acquired.value);
+    expect(code(await memory.capture(captureRequest("idempotency-key-alarm", "1")))).toBe("STORE_UNAVAILABLE");
+    expect(code(await memory.recall(recallRequest()))).toBe("STORE_UNAVAILABLE");
     expect(code(await memory.transition(lifecycleCommand("dispute", "mem_x")))).toBe("STORE_UNAVAILABLE");
   });
 });
