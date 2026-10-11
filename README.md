@@ -256,29 +256,17 @@ Code was Engram's **original use case** and remains a first-class one: a codebas
 
 ## Realization tracking: agent-stats
 
-When several AI agents (Claude Code, Codex, Antigravity/Gemini) work the same repository, git authorship stops telling you who actually built what. `engram agent-stats` indexes the **agentic CLI conversation transcripts** already on your machine — Claude Code project transcripts, Codex rollouts, Antigravity/Gemini chats — and attributes branches, commits, and work packages to the agent sessions that produced them.
-
-Attribution is **evidence-based, never git authorship**: commit SHAs the session actually printed, h2a registry identity, and worktree×branch×time correlation. Facts are stored locally in `.engram/agents/facts.jsonl`.
-
-```bash
-engram agent-stats                  # per-agent table: sessions, tokens, commits, branches, WPs
-engram agent-stats sync             # parse/refresh transcripts (incremental; --full to re-parse)
-engram agent-stats sessions         # parsed sessions with their evidence-based agent identity
-engram agent-stats wp <WP-id>       # conductor view: agents/sessions joined to a Track work package
-```
-
-The `wp` view can additionally attribute merged PRs via the `gh` CLI (skip with `--no-pr` when offline).
+Removed from the engram CLI; the module is awaiting relocation to a separate repository (owner decision D-2, lot F12): this CLI registers no `agent-stats` command. The staging copy remains at `_extracted/agent-stats-h2a-module/` until F12 completes.
 
 ### Git-flow view
 
-The agent-stats project graph can be rendered as a deterministic, GitHub-network-style **git graph**: one horizontal band per repository, the trunk (`main`/`master`/`develop`) on lane 0, commits ordered left→right by topological rank or by real commit time (one global time axis shared across repos), and gitk-style lane reuse so hundreds of branches stay compact — all branches are placed, no top-K. Fork and merge connectors are drawn **port-to-port** as smooth S curves (only merges carry an arrowhead), and agent sessions appear as agent-coloured triangles under the commits they produced. Branch-name pills are governed by a zero-overlap label policy (compaction, priority culling, zoom LOD).
+The project graph can be rendered as a deterministic, GitHub-network-style **git graph**: one horizontal band per repository, the trunk (`main`/`master`/`develop`) on lane 0, commits ordered left→right by topological rank or by real commit time (one global time axis shared across repos), and gitk-style lane reuse so hundreds of branches stay compact — all branches are placed, no top-K. Fork and merge connectors are drawn **port-to-port** as smooth S curves (only merges carry an arrowhead), and agent sessions appear as agent-coloured triangles under the commits they produced. Branch-name pills are governed by a zero-overlap label policy (compaction, priority culling, zoom LOD).
 
 ```bash
-engram agent-stats project-graph --git-since all   # per-repo Commit/Branch/Session DAG
 engram merge-graphs repoA.json repoB.json --out multi.json
 ```
 
-The layout ships in `@sentropic/graph` as the `git-flow` layout (`computeGitFlowPositions`). Reference: [spec/SPEC_GITFLOW_VIEW.md](spec/SPEC_GITFLOW_VIEW.md) (visual grammar, edge styles, API, pipeline) and [spec/SPEC_GITFLOW_LABELS.md](spec/SPEC_GITFLOW_LABELS.md) (label policy). Studio integration is a follow-up lot.
+The layout ships in `@sentropic/graph` as the `git-flow` layout (`computeGitFlowPositions`). Reference: [spec/SPEC_GITFLOW_VIEW.md](spec/SPEC_GITFLOW_VIEW.md) (visual grammar, edge styles, API; its `agent-stats` producer examples are historical — that command was removed from this CLI) and [spec/SPEC_GITFLOW_LABELS.md](spec/SPEC_GITFLOW_LABELS.md) (label policy). Studio integration is a follow-up lot.
 
 ## How it works
 
@@ -335,7 +323,7 @@ For CI/headless text corpora, semantic extraction can be delegated to a direct p
 
 ### Privacy
 
-Engram sends file contents to your assistant's underlying model API for semantic extraction of docs, papers, and images. **Code files are processed locally** via tree-sitter AST — no code contents leave your machine. Audio/video transcription and PDF text preflight run locally; Mistral OCR is the only PDF-specific network call, and only when OCR mode requires it. Agent-stats transcript parsing is **entirely local** — transcripts never leave your machine. No telemetry, usage tracking, or analytics. The only network calls are to your platform's model API during extraction, explicit direct-backend extraction, optional Mistral OCR, the optional `gh` PR lookup in `agent-stats wp`, and any URLs you explicitly ask Engram to ingest.
+Engram sends file contents to your assistant's underlying model API for semantic extraction of docs, papers, and images. **Code files are processed locally** via tree-sitter AST — no code contents leave your machine. Audio/video transcription and PDF text preflight run locally; Mistral OCR is the only PDF-specific network call, and only when OCR mode requires it. The former agent-stats transcript parsing was **entirely local** — transcripts never left the machine (historical note: that subsystem was removed from this CLI). No telemetry, usage tracking, or analytics. The only network calls are to your platform's model API during extraction, explicit direct-backend extraction, optional Mistral OCR, the optional `gh` PR lookup in the former `agent-stats wp` view, and any URLs you explicitly ask Engram to ingest.
 
 ### Tech stack
 
