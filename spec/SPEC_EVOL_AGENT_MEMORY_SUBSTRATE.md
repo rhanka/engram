@@ -130,6 +130,12 @@ record_digest  = SHA-256("graphify-memory/record/v2\0"  || JCS(record_without_re
 event_digest   = SHA-256("graphify-memory/event/v2\0"   || JCS(event_without_event_digest))
 receipt_digest = SHA-256("graphify-memory/<receipt-kind>/v1\0" || JCS(receipt_without_receipt_digest))
 proposal_id    = SHA-256("graphify-memory/proposal/v1\0" || JCS(proposal_identity_fields))
+eligibility_digest = SHA-256("graphify-memory/reconciliation-eligibility/v1\0" || JCS({
+                       comparison_system_as_of,
+                       records: [{ record_id, record_digest, authorization_receipt_digest,
+                                   revalidation_receipt_digest }]  // both records, UTF-8 ascending record_id
+                     }))
+receipt_digest(reconciliation-outcome) = SHA-256("graphify-memory/reconciliation-outcome/v1\0" || JCS(outcome_without_receipt_digest))
 ```
 
 The digest domain-separator prefixes above (and the `scoring_formula_ref` values below) retain the literal string `graphify-memory` after the package was renamed to `engram-memory`: they are hashed/compared byte-for-byte and persisted in existing stores, so changing them would silently invalidate every record, receipt, and profile written before the rename. The prefixes are opaque constants, not the package identifier; only the package name and its module paths were renamed.
@@ -252,7 +258,7 @@ export type MemoryOperation =
   | "reject" | "withdraw" | "dispute" | "resolve_dispute" | "expire" | "supersede"
   | "mark_non_current" | "rewind" | "trust_invalidate" | "tombstone"
   | "recall_current" | "recall_history" | "recall_disputed"
-  | "propose_capitalisation" | "inspect_candidate"
+  | "propose_capitalisation" | "propose_reconciliation" | "inspect_candidate"
   | "projection_invalidate" | "backup" | "restore" | "admin";
 
 export type MemoryErrorCode =
@@ -532,6 +538,7 @@ export interface LifecycleCommandBaseV1 {
   event_anchor: LifecycleEventAnchorV1;       // citation/evidence-bound anchor; distinct from valid_effective_at (an effect boundary, not an anchor)
   authorization: AuthorizationContextV1;
   deadline_at: Instant;
+  reconciliation?: ReconciliationCommandBindingV1; // (new in this amendment) optional proposal binding for dispute, supersede, resolve_dispute
 }
 
 export type LifecycleCommandV1 = LifecycleCommandBaseV1 & (
@@ -577,6 +584,45 @@ export interface ProjectionInvalidationReceiptV1 {
   receipt_digest: Digest;
 }
 
+export interface ReconciliationRequestV1 {
+  family_id: OpaqueRef;
+  family_version: string;
+  left_record_id: string;                  // caller order is free; the outcome normalizes it
+  right_record_id: string;
+  comparison_system_as_of?: Cursor;        // default: readiness high_water_cursor
+  authorization: AuthorizationContextV1;
+  deadline_at: Instant;
+}
+
+export interface ReconciliationOutcomeV1 {
+  registry_id: OpaqueRef;
+  registry_version: string;
+  family_id: OpaqueRef;
+  family_version: string;
+  left_record_id: string;                  // UTF-8 ascending
+  right_record_id: string;
+  comparison_system_as_of: Cursor;
+  eligible: boolean;
+  proposal?: ReconciliationProposalV1;     // present only when eligible and the comparator relates the pair
+  eligibility_digest: Digest;
+  receipt_digest: Digest;
+}
+
+export interface ReconciliationCommandBindingV1 {
+  proposal: ReconciliationProposalV1;
+  registry_id: OpaqueRef;
+  registry_version: string;
+}
+
+export interface ReconciliationEventBindingV1 {
+  proposal_id: Digest;
+  proposal_digest: Digest;
+  family_id: OpaqueRef;
+  family_version: string;
+  registry_id: OpaqueRef;
+  registry_version: string;
+}
+
 export interface CapabilityDescriptorV1 {
   contract_version: 2;
   profiles: ReadonlyArray<"offline_lexical_v1" | "semantic_v1">;
@@ -598,6 +644,7 @@ export interface MemoryPortV2 {
   transition(command: LifecycleCommandV1): Promise<Result<LifecycleReceiptV1>>;
   recall(request: RecallRequestV2): Promise<Result<RecallPacketV2>>;
   proposeCapitalisation(request: CapitalisationRequestV1): Promise<Result<CaptureAcknowledgementV1>>;
+  proposeReconciliation(request: ReconciliationRequestV1): Promise<Result<ReconciliationOutcomeV1>>;
   invalidateProjections(request: ProjectionInvalidationRequestV1): Promise<Result<ProjectionInvalidationReceiptV1>>;
   admin(request: AdminOperationRequestV1): Promise<Result<AdminEpochReceiptV1>>; // (new in this amendment) graphify-mediated admin entry point; dispatches to the injected AdminProviderPort (§5.10). AdminOperationRequestV1, AdminEpochReceiptV1 are defined in §5.10.
   readiness(): Promise<Result<OperationalCapabilityReceiptV1>>;
@@ -642,6 +689,7 @@ export interface LifecycleEventV2 {
   admission_decision?: AdmissionDecisionEnvelopeV1;
   reason_ref?: OpaqueRef;
   event_anchor?: LifecycleEventAnchorV1;      // required for lifecycle-command transitions; capture/accept derive their anchor from the record's event; bound into event_digest
+  reconciliation?: ReconciliationEventBindingV1; // (new in this amendment) optional proposal binding; bound into event_digest
   previous_event_digest: Digest;
   event_digest: Digest;
 }
@@ -1138,7 +1186,11 @@ export interface AssertionFamilyDescriptorV1 {
   descriptor_digest: Digest;
 }
 
-export type ReconciliationRelation = "contradicts" | "supersedes" | "needs_adjudication";
+export type ReconciliationRelation =
+  | "contradicts"
+  | "left_supersedes_right"
+  | "right_supersedes_left"
+  | "needs_adjudication";
 
 export interface ReconciliationProposalV1 {
   proposal_id: Digest;
@@ -1164,7 +1216,7 @@ export interface AssertionFamilyRegistry {
 
 Eligibility to call a family comparator requires the family id in both records' `reconciliation.family_refs`, identical `scope_ref`, identical immutable trust class, matching family, both records eligible at `comparison_system_as_of`, and citations sufficient for the descriptor. For `binary-status`, citations are sufficient exactly when each record's primary component carries at least one citation (guaranteed by record validation); `evidence_citation_ids` is the sorted unique union of both primary components' citation ids. An empty family list is the default opt-out; purpose alone never implies consent. Identity/entity matching scores are never evidence of truth, contradiction, or supersession.
 
-Inputs are ordered by UTF-8 ascending `record_id`; proposal identity is the digest of `(family_id, family_version, occurrence_key, left_record_id, right_record_id, relation, comparison_system_as_of)`. Proposals sort by occurrence key, then left id, right id, relation. Exact duplicate proposals collapse by id. Ambiguous comparison returns `needs_adjudication`; it never chooses last-write-wins. A proposal mutates nothing. An authorized lifecycle event is required to dispute, supersede, or resolve.
+Inputs are ordered by UTF-8 ascending `record_id`; proposal identity is the digest of `(family_id, family_version, occurrence_key, left_record_id, right_record_id, relation, comparison_system_as_of)`. The directional supersession rule (with `left`/`right` in that order): equal assertion values yield no proposal; two distinct concrete values yield `contradicts`; concrete left strictly newer (`valid_time.t`) than unknown right yields `left_supersedes_right`; concrete right strictly newer than unknown left yields `right_supersedes_left`; exactly one unknown side with the concrete side older-or-equal yields `needs_adjudication`. Proposals sort by occurrence key, then left id, right id, relation. Exact duplicate proposals collapse by id. Ambiguous comparison returns `needs_adjudication`; it never chooses last-write-wins. A proposal mutates nothing. An authorized lifecycle event is required to dispute, supersede, or resolve.
 
 Every proposal and resulting event stores the family and registry version. Replay consumes the stored proposal/event and never reruns a newer comparator. Installing a new registry version creates new proposal identities; it does not rewrite old ones. A registry stamps each family descriptor's `version` with its own `registry_version`; installing a new registry version therefore always yields new proposal identities. If a required version is unavailable, reconciliation readiness fails with `REGISTRY_VERSION_UNAVAILABLE`, while ordinary recall remains available if its own capabilities are intact. Trust elevation is a new record, so comparison always uses the immutable trust binding visible at the pinned system cursor.
 

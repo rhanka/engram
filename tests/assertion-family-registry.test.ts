@@ -173,7 +173,7 @@ it("identity similarity alone proposes nothing and ambiguous ties require adjudi
   );
   expect(superseding).toMatchObject({ ok: true });
   if (!superseding.ok) return;
-  expect(superseding.value?.relation).toBe("supersedes");
+  expect(superseding.value?.relation).toBe("left_supersedes_right");
 });
 
 it("replay uses stored registry version while a new version creates a new proposal id", () => {
@@ -283,9 +283,9 @@ it("proposals sort by occurrence key, left id, right id, relation and exact dupl
   expect([...keys].sort()).toEqual(keys);
 
   const contradictsVariant = { ...first, proposal_id: ZERO, relation: "contradicts" as const };
-  const supersedesVariant = { ...first, proposal_id: DIGEST, relation: "supersedes" as const };
+  const supersedesVariant = { ...first, proposal_id: DIGEST, relation: "left_supersedes_right" as const };
   const byRelation = sortReconciliationProposals([supersedesVariant, contradictsVariant]);
-  expect(byRelation.map((proposal) => proposal.relation)).toEqual(["contradicts", "supersedes"]);
+  expect(byRelation.map((proposal) => proposal.relation)).toEqual(["contradicts", "left_supersedes_right"]);
 
   const leftB = { ...first, proposal_id: ZERO, left_record_id: "mem_b" };
   const leftA = { ...first, proposal_id: DIGEST, left_record_id: "mem_a" };
@@ -404,4 +404,73 @@ it("evidence_citation_ids are the sorted unique union of both primary components
   expect(compared).toMatchObject({ ok: true });
   if (!compared.ok || compared.value === undefined) throw new Error("expected a proposal");
   expect(compared.value.evidence_citation_ids).toEqual(["cit-a", "cit-b", "cit-c"]);
+});
+
+it("supersession carries its direction: mirrored refinements yield distinct relations and identities", () => {
+  const registry = createAssertionFamilyRegistryV1();
+
+  const leftNewerActive = buildRecord({ subject: "user:test-0", value: "active", t: 10 });
+  const rightOlderUnknown = buildRecord({ subject: "user:test-0", value: "unknown", t: 5 });
+  expect(leftNewerActive.record_id < rightOlderUnknown.record_id).toBe(true);
+
+  const leftSupersedes = registry.compare(input(leftNewerActive, rightOlderUnknown));
+  expect(leftSupersedes).toMatchObject({ ok: true });
+  if (!leftSupersedes.ok || leftSupersedes.value === undefined) throw new Error("expected a proposal");
+  expect(leftSupersedes.value.relation).toBe("left_supersedes_right");
+  expect(leftSupersedes.value.left_record_id).toBe(leftNewerActive.record_id);
+  expect(leftSupersedes.value.right_record_id).toBe(rightOlderUnknown.record_id);
+
+  const leftOlderUnknown = buildRecord({ subject: "user:dir", value: "unknown", t: 1 });
+  const rightNewerActive = buildRecord({ subject: "user:dir", value: "active", t: 2 });
+  expect(leftOlderUnknown.record_id < rightNewerActive.record_id).toBe(true);
+
+  const rightSupersedes = registry.compare(input(leftOlderUnknown, rightNewerActive));
+  expect(rightSupersedes).toMatchObject({ ok: true });
+  if (!rightSupersedes.ok || rightSupersedes.value === undefined) throw new Error("expected a proposal");
+  expect(rightSupersedes.value.relation).toBe("right_supersedes_left");
+  expect(rightSupersedes.value.left_record_id).toBe(leftOlderUnknown.record_id);
+  expect(rightSupersedes.value.right_record_id).toBe(rightNewerActive.record_id);
+
+  expect(leftSupersedes.value.relation).not.toBe(rightSupersedes.value.relation);
+  expect(leftSupersedes.value.proposal_id).not.toBe(rightSupersedes.value.proposal_id);
+});
+
+it("registry errors are labelled propose_reconciliation, never admin", () => {
+  const registry = createAssertionFamilyRegistryV1();
+  const left = buildRecord({ value: "active" });
+  const right = buildRecord({ value: "inactive" });
+
+  const unknownFamily = registry.compare({
+    family_id: "assertion-family:unknown",
+    family_version: "1",
+    left,
+    right,
+    comparison_system_as_of: "9",
+  });
+  expect(unknownFamily.ok).toBe(false);
+  if (unknownFamily.ok) throw new Error("expected error");
+  expect(unknownFamily.error.operation).toBe("propose_reconciliation");
+  expect(unknownFamily.error.operation).not.toBe("admin");
+
+  const unknownKey = registry.occurrenceKey({
+    family_id: "assertion-family:unknown",
+    family_version: "1",
+    left,
+    right,
+    comparison_system_as_of: "9",
+  });
+  expect(unknownKey.ok).toBe(false);
+  if (unknownKey.ok) throw new Error("expected error");
+  expect(unknownKey.error.operation).toBe("propose_reconciliation");
+  expect(unknownKey.error.operation).not.toBe("admin");
+
+  const comparison = input(left, right, "1");
+  const mismatched = evaluateReconciliationEligibilityV1(comparison, {
+    left: { record_id: "mem_wrong", state: "accepted_current", dependency_eligible: true, unexpired: true },
+    right: { record_id: right.record_id, state: "accepted_current", dependency_eligible: true, unexpired: true },
+  });
+  expect(mismatched.ok).toBe(false);
+  if (mismatched.ok) throw new Error("expected error");
+  expect(mismatched.error.operation).toBe("propose_reconciliation");
+  expect(mismatched.error.operation).not.toBe("admin");
 });
