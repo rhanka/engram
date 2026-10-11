@@ -310,13 +310,13 @@ All cases green (Linux native lane and Postgres lane included); `plan/07` Lot 5 
 #### 3.4.2 Target
 
 - **F2 (no contract change) — DONE (2026-10-10).** The factory wrapper recomputes `receipt_digest` with the `operational-capability` domain over the final receipt, adapter identity included; the comment at `store-factory.ts:22–24` is corrected. A relay can then no longer alter a declared identity without detection.
-- **F7 (contract revision R2-h, D-5; PROPOSED).**
+- **F7 (contract revision R2-h, D-5) — DONE (2026-10-11).**
   - `OperationalCapabilityReceiptV1.multiply_linked?: boolean` — present if and only if `backend === "sqlite"`; `true` iff `fstat` of the fence descriptor reports `nlink > 1n` at that `readiness()` call; absent on memory and Postgres receipts. The name follows EVOL l.1266.
-  - Computed from the fence descriptor through an internal lock method (PROPOSED name `linkCount(): bigint` on the internal `FencedLockV1`), after `#fence` succeeds; an `fstat` failure on that descriptor fails `readiness()` with `STORE_UNAVAILABLE`.
+  - Computed from the fence descriptor through an internal lock method (`linkCount(): bigint` on the internal `FencedLockV1`), after `#fence` succeeds; an `fstat` failure on that descriptor fails `readiness()` with `STORE_UNAVAILABLE`.
   - An alarm, never a refusal: the provenance gate and every operation ignore the field (no `FENCE_LOST`, no `CAPABILITY_UNAVAILABLE` on `true`); the open-time refusal is unchanged; no flag permits a multiply-linked store (EVOL l.1266).
   - Bound by `receipt_digest` (computed after the field is set).
   - Not mirrored in `CapabilityDescriptorV1` (one fresh source, `readiness()`).
-  - **Evolution rule** (proposed addition to EVOL §4, first applied here): "Within a `…V<n>` DTO, an OPTIONAL field may be added only by a dated EVOL amendment stating its presence condition, together with an entry under `## Unreleased` in the repository `CHANGELOG.md` naming the DTO, the field and that condition. The version consequence is set by the release decision: `engram-memory` is private at `0.0.0` and unpublished (`engram-memory/package.json:2–4`). A required field, a removed field, or a changed meaning requires a new `…V<n+1>` DTO." `CHANGELOG.md` has no `## Unreleased` heading today; the first lot that needs one creates it.
+  - **Evolution rule** (addition to EVOL §4, applied here): "Within a `…V<n>` DTO, an OPTIONAL field may be added only by a dated EVOL amendment stating its presence condition, together with an entry under `## Unreleased` in the repository `CHANGELOG.md` naming the DTO, the field and that condition. The version consequence is set by the release decision: `engram-memory` is private at `0.0.0` and unpublished (`engram-memory/package.json:2–4`). A required field, a removed field, or a changed meaning requires a new `…V<n+1>` DTO." `CHANGELOG.md` now has an `## Unreleased` heading created for this lot.
   - The R2-f residual comment (`close()` releases the fence after `database.close()`, `sqlite.ts:632–642`) lands in the same lot, since it touches the same file.
 
 #### 3.4.3 RED tests
