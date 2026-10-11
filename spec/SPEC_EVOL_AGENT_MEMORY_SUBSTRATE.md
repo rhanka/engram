@@ -10,7 +10,7 @@ Except for Appendix A, which is an evidence ledger, every statement in this docu
 
 ### D1 — The capability is an isolated, neutral package
 
-The capability is published as the independent package `engram-memory`, rooted at `packages/memory/`, with these exports:
+The capability is the private package `engram-memory`, rooted at `engram-memory/`, private until a release decision publishes it, with these exports:
 
 - `engram-memory/contracts`: data-only DTOs, port signatures, errors, and receipts; it has no runtime imports;
 - `engram-memory`: the engine and pure algorithms; it depends only on `contracts` and injected ports;
