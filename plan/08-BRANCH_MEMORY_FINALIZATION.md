@@ -114,8 +114,8 @@ Rationale: F1 first because it executes L6 and is the only lot able to reveal a 
 
 ## F6 — L0: Agent-Stats Documentation Drift (FIN §3.1.3 T0.4)
 
-- [ ] RED: `tests/memory-activity-boundary.test.ts > repository docs advertise no agent-stats command the CLI does not register`.
-- [ ] Implement: the agent-stats command examples of `README.md` l.257–281 replaced by a short pointer (the git-flow layout text stays if it holds without them); `ARCHITECTURE.md:32` row replaced; `CHANGELOG.md` history untouched.
+- [x] RED: `tests/memory-activity-boundary.test.ts > repository docs advertise no agent-stats command the CLI does not register`.
+- [x] Implement: the agent-stats command examples of `README.md` l.257–281 replaced by a short pointer (the git-flow layout text stays if it holds without them); `ARCHITECTURE.md:32` row replaced; `CHANGELOG.md` history untouched.
 - Allowed (4): `README.md`, `ARCHITECTURE.md`, `tests/memory-activity-boundary.test.ts`, this plan.
 - Forbidden: `_extracted/**`, `CHANGELOG.md`, `src/**`.
 - Gate: the case green; README change accepted by the product-doc owner.
