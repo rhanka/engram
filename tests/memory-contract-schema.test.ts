@@ -7,6 +7,14 @@ import {
   validateCandidatePayload,
   validateMemoryRecord,
 } from "../engram-memory/index.js";
+import { reconciliationProposalIdV1 } from "../engram-memory/assertion-family-registry.js";
+import type { ReconciliationOutcomeV1, ReconciliationProposalV1 } from "../engram-memory/contracts/index.js";
+import { receiptDigest } from "../engram-memory/digests.js";
+import {
+  validateReconciliationCommandBinding,
+  validateReconciliationOutcome,
+  validateReconciliationRequest,
+} from "../engram-memory/validation.js";
 
 const DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const SCOPE = "scope:case-7";
@@ -113,5 +121,114 @@ describe("MemoryRecordV2 contract", () => {
     expect(memoryRecordDigest({ ...fullRecord, recorded_at: "2026-08-16T12:34:56.790Z" })).not.toBe(
       fullRecord.record_digest,
     );
+  });
+});
+
+function reconciliationProposal(overrides: Partial<ReconciliationProposalV1> = {}): ReconciliationProposalV1 {
+  const fields = {
+    family_id: "assertion-family:binary-status",
+    family_version: "1",
+    occurrence_key: "subject:case-7",
+    left_record_id: "mem_a",
+    right_record_id: "mem_b",
+    relation: "contradicts" as const,
+    comparison_system_as_of: "7",
+    evidence_citation_ids: ["cit-a", "cit-b"],
+    ...overrides,
+  };
+  const proposal = { ...fields, proposal_id: reconciliationProposalIdV1(fields) };
+  return { ...proposal, proposal_digest: receiptDigest("reconciliation-proposal", proposal, "proposal_digest") };
+}
+
+function reconciliationOutcome(overrides: Partial<ReconciliationOutcomeV1> = {}): ReconciliationOutcomeV1 {
+  const proposal = reconciliationProposal();
+  const outcome = {
+    registry_id: "registry:test",
+    registry_version: "1",
+    family_id: proposal.family_id,
+    family_version: proposal.family_version,
+    left_record_id: proposal.left_record_id,
+    right_record_id: proposal.right_record_id,
+    comparison_system_as_of: proposal.comparison_system_as_of,
+    eligible: true,
+    proposal,
+    eligibility_digest: DIGEST,
+    ...overrides,
+  };
+  return { ...outcome, receipt_digest: receiptDigest("reconciliation-outcome", outcome) };
+}
+
+describe("Reconciliation contracts", () => {
+  it("accepts opaque credentials without a byte-length restriction and rejects non-strings", () => {
+    const request = {
+      family_id: "assertion-family:binary-status",
+      family_version: "1",
+      left_record_id: "mem_b",
+      right_record_id: "mem_a",
+      deadline_at: RECORDED_AT,
+    };
+    for (const credential of ["x".repeat(513), "", "é".repeat(257)]) {
+      expect(validateReconciliationRequest({ ...request, authorization: { credential } })).toEqual({
+        ok: true,
+        value: { ...request, authorization: { credential } },
+      });
+    }
+    for (const credential of [null, false, 42, {}, [], undefined]) {
+      expect(validateReconciliationRequest({ ...request, authorization: { credential } })).toMatchObject({
+        ok: false, error: { code: "INVALID_SCHEMA", operation: "propose_reconciliation" },
+      });
+    }
+  });
+
+  it("accepts a matching proposal and eligible or ineligible outcomes without a proposal", () => {
+    const outcome = reconciliationOutcome();
+    expect(validateReconciliationOutcome(outcome)).toEqual({ ok: true, value: outcome });
+    const { proposal: _proposal, ...withoutProposal } = outcome;
+    for (const eligible of [false, true]) {
+      const fields = { ...withoutProposal, eligible };
+      const value = { ...fields, receipt_digest: receiptDigest("reconciliation-outcome", fields) };
+      expect(validateReconciliationOutcome(value)).toEqual({ ok: true, value });
+    }
+  });
+
+  it.each([
+    ["ineligible outcome", { eligible: false }],
+    ["different family", { proposal: reconciliationProposal({ family_id: "assertion-family:other" }) }],
+    ["different family version", { proposal: reconciliationProposal({ family_version: "2" }) }],
+    ["different left record", { proposal: reconciliationProposal({ left_record_id: "mem_0" }) }],
+    ["different right record", { proposal: reconciliationProposal({ right_record_id: "mem_c" }) }],
+    ["different comparison cursor", { proposal: reconciliationProposal({ comparison_system_as_of: "8" }) }],
+  ] satisfies Array<[string, Partial<ReconciliationOutcomeV1>]>)(
+    "rejects an inconsistent reconciliation outcome: %s",
+    (_name, overrides) => {
+      expect(validateReconciliationOutcome(reconciliationOutcome(overrides))).toMatchObject({
+        ok: false, error: { code: "INVALID_SCHEMA", operation: "propose_reconciliation" },
+      });
+    },
+  );
+
+  it.each([
+    ["mem_a", "mem_a", false],
+    ["mem_b", "mem_a", false],
+    ["mem_\u{10000}", "mem_\uE000", false],
+    ["mem_\uE000", "mem_\u{10000}", true],
+  ] satisfies Array<[string, string, boolean]>)("requires distinct UTF-8 ascending outcome record ids: %s / %s", (left_record_id, right_record_id, ok) => {
+    const pair = { left_record_id, right_record_id };
+    const outcome = reconciliationOutcome({ ...pair, proposal: reconciliationProposal(pair) });
+    expect(validateReconciliationOutcome(outcome)).toMatchObject(ok
+      ? { ok: true, value: outcome }
+      : { ok: false, error: { code: "INVALID_SCHEMA", operation: "propose_reconciliation" } });
+  });
+
+  it.each([
+    ["unsorted", ["cit-b", "cit-a"]],
+    ["duplicate", ["cit-a", "cit-a"]],
+  ] satisfies Array<[string, string[]]>)("rejects %s evidence citation ids in outcomes and command bindings", (_name, evidence_citation_ids) => {
+    const proposal = reconciliationProposal({ evidence_citation_ids });
+    expect(validateReconciliationOutcome(reconciliationOutcome({ proposal }))).toMatchObject({
+      ok: false, error: { code: "INVALID_SCHEMA", operation: "propose_reconciliation" },
+    });
+    expect(validateReconciliationCommandBinding({ proposal, registry_id: "registry:test", registry_version: "1" }))
+      .toMatchObject({ ok: false, error: { code: "INVALID_SCHEMA", operation: "dispute" } });
   });
 });
