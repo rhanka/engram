@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createInMemoryCanonicalMemoryStoreV1,
   createMemoryPortV2,
   type CanonicalMemoryStorePort,
   type Digest,
@@ -70,5 +71,14 @@ describe("§5.9 unfenced-memory posture is legible (v5-c)", () => {
     };
     expect(await descriptorFor(true)).toBe(true);
     expect(await descriptorFor(false)).toBe(false);
+  });
+
+  it("memory receipts omit multiply_linked", async () => {
+    const store = createInMemoryCanonicalMemoryStoreV1({ clock: { now: () => NOW } });
+    const receipt = await store.readiness();
+    expect(receipt).toMatchObject({ ok: true });
+    if (!receipt.ok) throw new Error("readiness failed");
+    expect("multiply_linked" in receipt.value).toBe(false);
+    expect((receipt.value as { multiply_linked?: boolean }).multiply_linked).toBeUndefined();
   });
 });

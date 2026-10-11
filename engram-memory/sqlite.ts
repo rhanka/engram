@@ -63,6 +63,7 @@ export interface FencedLockV1 {
    * fdinfo alone cannot see that (it reports our fd's original inode), so this is a SEPARATE check.
    */
   assertPathUnmoved(): boolean;
+  linkCount(): bigint;
   release(): void;
 }
 
@@ -209,6 +210,9 @@ async function acquireDatabaseFlock(filename: string, allowEphemeral: boolean): 
         } catch {
           return false; // the path is gone (renamed/deleted) => the fence no longer guards this name
         }
+      },
+      linkCount: () => {
+        return fstatSync(fd, { bigint: true }).nlink;
       },
       release: () => {
         if (!held) return;
@@ -573,6 +577,12 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
   async readiness(): Promise<Result<OperationalCapabilityReceiptV1>> {
     const fence = this.#fence("admin");
     if (!fence.ok) return fence;
+    let multiply_linked: boolean;
+    try {
+      multiply_linked = this.lock.linkCount() > 1n;
+    } catch {
+      return refusal("admin", "STORE_UNAVAILABLE", "could not determine SQLite database link count from fence descriptor");
+    }
     const readiness = await this.#core.readiness();
     if (!readiness.ok) return readiness;
     const { receipt_digest: _receiptDigest, storage_epoch: _epoch, capabilities: _capabilities, backend: _backend, store_id: _storeId, ...body } = readiness.value;
@@ -581,6 +591,7 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
       store_id: this.options.store_id ?? `sqlite:${this.filename}`,
       backend: "sqlite" as const,
       storage_epoch: this.storageEpoch,
+      multiply_linked,
       // §5.9: surface the ephemeral-fs posture in the receipt (readiness()); false on a correct prod deployment.
       capabilities: { ...this.capabilities, ephemeral_filesystem_store_permitted: this.options.allow_ephemeral_filesystem_store === true },
     };
@@ -636,6 +647,8 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
     try {
       this.database.close();
     } finally {
+      // §5.9 R2-f: release the writer fence (flock un + closeSync of the fence fd) AFTER database.close(),
+      // so SQLite completes all pending WAL/checkpoint operations before the lock on the inode is released.
       this.lock.release();
     }
     return { ok: true, value: { closed: true } };
