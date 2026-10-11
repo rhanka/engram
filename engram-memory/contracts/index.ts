@@ -95,7 +95,7 @@ export type MemoryOperation =
   | "reject" | "withdraw" | "dispute" | "resolve_dispute" | "expire" | "supersede"
   | "mark_non_current" | "rewind" | "trust_invalidate" | "tombstone"
   | "recall_current" | "recall_history" | "recall_disputed"
-  | "propose_capitalisation" | "inspect_candidate"
+  | "propose_capitalisation" | "propose_reconciliation" | "inspect_candidate"
   | "projection_invalidate" | "backup" | "restore" | "admin";
 
 export type MemoryErrorCode =
@@ -350,6 +350,7 @@ export interface LifecycleCommandBaseV1 {
   event_anchor: LifecycleEventAnchorV1;
   authorization: AuthorizationContextV1;
   deadline_at: Instant;
+  reconciliation?: ReconciliationCommandBindingV1;
 }
 
 export type LifecycleCommandV1 = LifecycleCommandBaseV1 & (
@@ -431,6 +432,7 @@ export interface LifecycleEventV2 {
   admission_decision?: AdmissionDecisionEnvelopeV1;
   reason_ref?: OpaqueRef;
   event_anchor?: LifecycleEventAnchorV1;
+  reconciliation?: ReconciliationEventBindingV1;
   /** L3 journal spelling; equal to previous_event_digest when emitted. */
   previous_event_hash?: Digest;
   /** L3 journal spelling; equal to event_digest when emitted. */
@@ -858,7 +860,11 @@ export interface AssertionFamilyDescriptorV1 {
   descriptor_digest: Digest;
 }
 
-export type ReconciliationRelation = "contradicts" | "supersedes" | "needs_adjudication";
+export type ReconciliationRelation =
+  | "contradicts"
+  | "left_supersedes_right"
+  | "right_supersedes_left"
+  | "needs_adjudication";
 
 export interface ReconciliationProposalV1 {
   proposal_id: Digest;
@@ -871,6 +877,45 @@ export interface ReconciliationProposalV1 {
   comparison_system_as_of: Cursor;
   evidence_citation_ids: ReadonlyArray<string>;
   proposal_digest: Digest;
+}
+
+export interface ReconciliationRequestV1 {
+  family_id: OpaqueRef;
+  family_version: string;
+  left_record_id: string;
+  right_record_id: string;
+  comparison_system_as_of?: Cursor;
+  authorization: AuthorizationContextV1;
+  deadline_at: Instant;
+}
+
+export interface ReconciliationOutcomeV1 {
+  registry_id: OpaqueRef;
+  registry_version: string;
+  family_id: OpaqueRef;
+  family_version: string;
+  left_record_id: string;
+  right_record_id: string;
+  comparison_system_as_of: Cursor;
+  eligible: boolean;
+  proposal?: ReconciliationProposalV1;
+  eligibility_digest: Digest;
+  receipt_digest: Digest;
+}
+
+export interface ReconciliationCommandBindingV1 {
+  proposal: ReconciliationProposalV1;
+  registry_id: OpaqueRef;
+  registry_version: string;
+}
+
+export interface ReconciliationEventBindingV1 {
+  proposal_id: Digest;
+  proposal_digest: Digest;
+  family_id: OpaqueRef;
+  family_version: string;
+  registry_id: OpaqueRef;
+  registry_version: string;
 }
 
 export interface AssertionFamilyRegistry {
@@ -1029,6 +1074,7 @@ export interface MemoryPortV2 {
   transition(command: LifecycleCommandV1): Promise<Result<LifecycleReceiptV1>>;
   recall(request: RecallRequestV2): Promise<Result<RecallPacketV2>>;
   proposeCapitalisation(request: CapitalisationRequestV1): Promise<Result<CaptureAcknowledgementV1>>;
+  proposeReconciliation(request: ReconciliationRequestV1): Promise<Result<ReconciliationOutcomeV1>>;
   invalidateProjections(request: ProjectionInvalidationRequestV1): Promise<Result<ProjectionInvalidationReceiptV1>>;
   readiness(): Promise<Result<OperationalCapabilityReceiptV1>>;
   // §5.5: the single graphify-mediated admin entry point. Engine steps: no admin_provider => CAPABILITY_UNAVAILABLE;

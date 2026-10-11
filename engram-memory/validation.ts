@@ -8,6 +8,11 @@ import type {
   MemoryErrorCode,
   MemoryOperation,
   MemoryRecordV2,
+  ReconciliationCommandBindingV1,
+  ReconciliationEventBindingV1,
+  ReconciliationOutcomeV1,
+  ReconciliationProposalV1,
+  ReconciliationRequestV1,
   Result,
   TrustBindingV1,
   TrustRevalidationV1,
@@ -333,4 +338,174 @@ export function validateAdminOperationRequest(input: unknown): Result<AdminOpera
       return fail("operation must be one of bootstrap|rotate|revoke");
   }
   return { ok: true, value: input as AdminOperationRequestV1 };
+}
+
+const RECONCILIATION_RELATIONS = [
+  "contradicts",
+  "left_supersedes_right",
+  "right_supersedes_left",
+  "needs_adjudication",
+] as const;
+
+function isReconciliationRelation(value: unknown): value is (typeof RECONCILIATION_RELATIONS)[number] {
+  return typeof value === "string" && (RECONCILIATION_RELATIONS as readonly string[]).includes(value);
+}
+
+function assertReconciliationProposalShape(value: unknown, name = "proposal"): asserts value is ReconciliationProposalV1 {
+  assertExactKeys(
+    value,
+    name,
+    [
+      "proposal_id",
+      "family_id",
+      "family_version",
+      "occurrence_key",
+      "left_record_id",
+      "right_record_id",
+      "relation",
+      "comparison_system_as_of",
+      "evidence_citation_ids",
+      "proposal_digest",
+    ],
+    [
+      "proposal_id",
+      "family_id",
+      "family_version",
+      "occurrence_key",
+      "left_record_id",
+      "right_record_id",
+      "relation",
+      "comparison_system_as_of",
+      "evidence_citation_ids",
+      "proposal_digest",
+    ],
+  );
+  assertDigest(value.proposal_id, `${name}.proposal_id`);
+  assertOpaque(value.family_id, `${name}.family_id`);
+  assertString(value.family_version, `${name}.family_version`);
+  assertString(value.occurrence_key, `${name}.occurrence_key`);
+  assertString(value.left_record_id, `${name}.left_record_id`);
+  assertString(value.right_record_id, `${name}.right_record_id`);
+  if (!isReconciliationRelation(value.relation)) {
+    throw new SchemaFailure(`${name}.relation is invalid`);
+  }
+  assertCursor(value.comparison_system_as_of, `${name}.comparison_system_as_of`);
+  assertSortedUnique(value.evidence_citation_ids, `${name}.evidence_citation_ids`, 0, Number.MAX_SAFE_INTEGER);
+  assertDigest(value.proposal_digest, `${name}.proposal_digest`);
+}
+
+export function validateReconciliationRequest(input: unknown): Result<ReconciliationRequestV1> {
+  try {
+    const value = normalizeCanonicalJson(input);
+    assertExactKeys(
+      value,
+      "reconciliation_request",
+      ["family_id", "family_version", "left_record_id", "right_record_id", "comparison_system_as_of", "authorization", "deadline_at"],
+      ["family_id", "family_version", "left_record_id", "right_record_id", "authorization", "deadline_at"],
+    );
+    assertOpaque(value.family_id, "family_id");
+    assertString(value.family_version, "family_version");
+    assertString(value.left_record_id, "left_record_id");
+    assertString(value.right_record_id, "right_record_id");
+    if (value.left_record_id === value.right_record_id) {
+      throw new SchemaFailure("left_record_id and right_record_id must be distinct");
+    }
+    if (Object.hasOwn(value, "comparison_system_as_of")) {
+      assertCursor(value.comparison_system_as_of, "comparison_system_as_of");
+    }
+    assertExactKeys(value.authorization, "authorization", ["credential", "context_ref"], ["credential"]);
+    if (typeof value.authorization.credential !== "string") {
+      throw new SchemaFailure("authorization.credential must be a string");
+    }
+    if (Object.hasOwn(value.authorization, "context_ref")) {
+      assertOpaque(value.authorization.context_ref, "authorization.context_ref");
+    }
+    assertInstant(value.deadline_at, "deadline_at");
+    return { ok: true, value: value as unknown as ReconciliationRequestV1 };
+  } catch (error) {
+    return refusal("propose_reconciliation", "INVALID_SCHEMA", error instanceof Error ? error.message : "reconciliation request is invalid");
+  }
+}
+
+export function validateReconciliationOutcome(input: unknown): Result<ReconciliationOutcomeV1> {
+  try {
+    const value = normalizeCanonicalJson(input);
+    assertExactKeys(
+      value,
+      "reconciliation_outcome",
+      ["registry_id", "registry_version", "family_id", "family_version", "left_record_id", "right_record_id", "comparison_system_as_of", "eligible", "proposal", "eligibility_digest", "receipt_digest"],
+      ["registry_id", "registry_version", "family_id", "family_version", "left_record_id", "right_record_id", "comparison_system_as_of", "eligible", "eligibility_digest", "receipt_digest"],
+    );
+    assertOpaque(value.registry_id, "registry_id");
+    assertString(value.registry_version, "registry_version");
+    assertOpaque(value.family_id, "family_id");
+    assertString(value.family_version, "family_version");
+    assertString(value.left_record_id, "left_record_id");
+    assertString(value.right_record_id, "right_record_id");
+    // Hex comparison preserves UTF-8 byte order, including non-BMP identifiers.
+    const leftIdBytes = Buffer.from(value.left_record_id, "utf8").toString("hex");
+    const rightIdBytes = Buffer.from(value.right_record_id, "utf8").toString("hex");
+    if (leftIdBytes >= rightIdBytes) {
+      throw new SchemaFailure("outcome record ids must be distinct and in UTF-8 ascending order");
+    }
+    assertCursor(value.comparison_system_as_of, "comparison_system_as_of");
+    if (typeof value.eligible !== "boolean") {
+      throw new SchemaFailure("eligible must be a boolean");
+    }
+    if (Object.hasOwn(value, "proposal")) {
+      if (!value.eligible) throw new SchemaFailure("an ineligible outcome must not include a proposal");
+      assertReconciliationProposalShape(value.proposal, "reconciliation_outcome.proposal");
+      if (value.proposal.family_id !== value.family_id
+        || value.proposal.family_version !== value.family_version
+        || value.proposal.left_record_id !== value.left_record_id
+        || value.proposal.right_record_id !== value.right_record_id
+        || value.proposal.comparison_system_as_of !== value.comparison_system_as_of) {
+        throw new SchemaFailure("proposal family, record pair and comparison cursor must match the outcome");
+      }
+    }
+    assertDigest(value.eligibility_digest, "eligibility_digest");
+    assertDigest(value.receipt_digest, "receipt_digest");
+    return { ok: true, value: value as unknown as ReconciliationOutcomeV1 };
+  } catch (error) {
+    return refusal("propose_reconciliation", "INVALID_SCHEMA", error instanceof Error ? error.message : "reconciliation outcome is invalid");
+  }
+}
+
+export function validateReconciliationCommandBinding(input: unknown): Result<ReconciliationCommandBindingV1> {
+  try {
+    const value = normalizeCanonicalJson(input);
+    assertExactKeys(
+      value,
+      "reconciliation_command_binding",
+      ["proposal", "registry_id", "registry_version"],
+      ["proposal", "registry_id", "registry_version"],
+    );
+    assertReconciliationProposalShape(value.proposal, "reconciliation_command_binding.proposal");
+    assertOpaque(value.registry_id, "registry_id");
+    assertString(value.registry_version, "registry_version");
+    return { ok: true, value: value as unknown as ReconciliationCommandBindingV1 };
+  } catch (error) {
+    return refusal("dispute", "INVALID_SCHEMA", error instanceof Error ? error.message : "reconciliation command binding is invalid");
+  }
+}
+
+export function validateReconciliationEventBinding(input: unknown): Result<ReconciliationEventBindingV1> {
+  try {
+    const value = normalizeCanonicalJson(input);
+    assertExactKeys(
+      value,
+      "reconciliation_event_binding",
+      ["proposal_id", "proposal_digest", "family_id", "family_version", "registry_id", "registry_version"],
+      ["proposal_id", "proposal_digest", "family_id", "family_version", "registry_id", "registry_version"],
+    );
+    assertDigest(value.proposal_id, "proposal_id");
+    assertDigest(value.proposal_digest, "proposal_digest");
+    assertOpaque(value.family_id, "family_id");
+    assertString(value.family_version, "family_version");
+    assertOpaque(value.registry_id, "registry_id");
+    assertString(value.registry_version, "registry_version");
+    return { ok: true, value: value as unknown as ReconciliationEventBindingV1 };
+  } catch (error) {
+    return refusal("dispute", "INVALID_SCHEMA", error instanceof Error ? error.message : "reconciliation event binding is invalid");
+  }
 }

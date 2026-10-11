@@ -1095,6 +1095,7 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       };
       return operationFailure("propose_capitalisation", await port.capture(captureRequest) as Result<never>) as Result<CaptureAcknowledgementV1>;
     },
+    proposeReconciliation: async () => unavailable("propose_reconciliation"),
     invalidateProjections: async () => unavailable("projection_invalidate"),
     readiness: async () => {
       const readiness = await dependencies.canonical_store.readiness();
