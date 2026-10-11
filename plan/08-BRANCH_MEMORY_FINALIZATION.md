@@ -133,9 +133,9 @@ Rationale: F1 first because it executes L6 and is the only lot able to reveal a 
 
 ## F8 — L5b-1: Reconciliation Contracts And Directional Relation (FIN §3.2.3 T5.5–T5.6) — D-3, after F4
 
-- [ ] RED: `tests/assertion-family-registry.test.ts > supersession carries its direction: mirrored refinements yield distinct relations and identities`.
-- [ ] RED: `tests/assertion-family-registry.test.ts > registry errors are labelled propose_reconciliation, never admin`.
-- [ ] Implement: `ReconciliationRelation` split per T5.5 (`left_supersedes_right | right_supersedes_left`, decided technically); the `MemoryOperation` member; `ReconciliationRequestV1`, `ReconciliationOutcomeV1` and the binding DTOs; optional `reconciliation` on `LifecycleCommandV1` and `LifecycleEventV2`; `MemoryPortV2.proposeReconciliation` declared (the engine refuses `CAPABILITY_UNAVAILABLE` until F9); exact-key validation of the new optional fields; EVOL D5 (the `reconciliation-eligibility` and `reconciliation-outcome` formulas), §5.1, §5.5, §5.6, §6 amended.
+- [x] RED: `tests/assertion-family-registry.test.ts > supersession carries its direction: mirrored refinements yield distinct relations and identities`.
+- [x] RED: `tests/assertion-family-registry.test.ts > registry errors are labelled propose_reconciliation, never admin`.
+- [x] Implement: `ReconciliationRelation` split per T5.5 (`left_supersedes_right | right_supersedes_left`, decided technically); the `MemoryOperation` member; `ReconciliationRequestV1`, `ReconciliationOutcomeV1` and the binding DTOs; optional `reconciliation` on `LifecycleCommandV1` and `LifecycleEventV2`; `MemoryPortV2.proposeReconciliation` declared (the engine refuses `CAPABILITY_UNAVAILABLE` until F9); exact-key validation of the new optional fields; EVOL D5 (the `reconciliation-eligibility` and `reconciliation-outcome` formulas), §5.1, §5.5, §5.6, §6 amended.
 - Allowed (≤9): `engram-memory/contracts/index.ts`, `engram-memory/assertion-family-registry.ts`, `engram-memory/validation.ts`, `engram-memory/engine.ts` (declaration only), `tests/assertion-family-registry.test.ts`, `tests/memory-contract-schema.test.ts` (if the event shape check needs it), EVOL, FIN, this plan.
 - Forbidden: persisting proposals or bindings (F10); any change to the fold.
 - Gate: registry tests green; package typecheck; full memory suite green with unchanged digests for events without a binding.

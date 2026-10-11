@@ -20,10 +20,11 @@ import type {
  * L5 assertion reconciliation over the accepted record/component model. The
  * registry is a versioned set of pure functions and finite tables over closed
  * assertion families. A comparator emits a proposal that mutates nothing: it
- * describes a `contradicts | supersedes | needs_adjudication` relation that an
- * authorized lifecycle event may later act on. Identity/entity similarity is
- * never, on its own, evidence of truth, contradiction, or supersession, and an
- * ambiguous temporal ordering resolves to adjudication, never last-write-wins.
+ * describes a `contradicts | left_supersedes_right | right_supersedes_left | needs_adjudication`
+ * relation that an authorized lifecycle event may later act on. Identity/entity
+ * similarity is never, on its own, evidence of truth, contradiction, or
+ * supersession, and an ambiguous temporal ordering resolves to adjudication, never
+ * last-write-wins.
  *
  * This module is backend-agnostic. It reads only the immutable record fields, so
  * it works identically over the in-memory canonical model and any persistent
@@ -42,7 +43,7 @@ type BinaryStatusValue = (typeof BINARY_STATUS_VALUES)[number];
 const APPLIES_TO_COMPONENT_KINDS: ReadonlyArray<MemoryComponentKind> = ["decision"];
 
 function refusal<T>(code: "REGISTRY_VERSION_UNAVAILABLE" | "INVALID_SCHEMA", message: string): Result<T> {
-  return { ok: false, error: { code, operation: "admin", message, retryable: false } };
+  return { ok: false, error: { code, operation: "propose_reconciliation", message, retryable: false } };
 }
 
 /** The stored, order-invariant fields that a proposal identity binds. */
@@ -157,8 +158,9 @@ function isConcrete(value: BinaryStatusValue): boolean {
  *
  * - equal values agree → no proposal
  * - two distinct concrete values are mutually exclusive → `contradicts`
- * - a concrete value refining an earlier `unknown` → `supersedes`
- * - a refinement whose temporal order is a tie or a regression → `needs_adjudication`
+ * - concrete left strictly newer than unknown right → `left_supersedes_right`
+ * - concrete right strictly newer than unknown left → `right_supersedes_left`
+ * - exactly one unknown side with the concrete side older-or-equal → `needs_adjudication`
  */
 function relateBinaryStatus(
   leftValue: BinaryStatusValue,
@@ -169,10 +171,10 @@ function relateBinaryStatus(
   if (leftValue === rightValue) return undefined;
   if (isConcrete(leftValue) && isConcrete(rightValue)) return "contradicts";
   // Exactly one side is `unknown`; the other is a concrete refinement.
-  const unknownValidTime = leftValue === "unknown" ? leftValidTime : rightValidTime;
-  const concreteValidTime = leftValue === "unknown" ? rightValidTime : leftValidTime;
-  if (concreteValidTime > unknownValidTime) return "supersedes";
-  return "needs_adjudication";
+  if (isConcrete(leftValue)) {
+    return leftValidTime > rightValidTime ? "left_supersedes_right" : "needs_adjudication";
+  }
+  return rightValidTime > leftValidTime ? "right_supersedes_left" : "needs_adjudication";
 }
 
 function familyRefsInclude(record: MemoryRecordV2, familyId: OpaqueRef): boolean {
