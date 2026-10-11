@@ -140,6 +140,8 @@ The payload digest never substitutes for the record digest. Admission binds the 
 
 The TypeScript below is normative. Generated JSON Schemas must be semantically identical and set `additionalProperties: false` on every object. `ReadonlyArray` is serialized as a JSON array. Optional means absent, never `null`, unless `null` is explicitly in the type.
 
+**Evolution rule (2026-10-06 amendment, D-5).** Within a `…V<n>` DTO, an OPTIONAL field may be added only by a dated EVOL amendment stating its presence condition, together with an entry under `## Unreleased` in the repository `CHANGELOG.md` naming the DTO, the field and that condition. The version consequence is set by the release decision: `engram-memory` is private at `0.0.0` and unpublished (`engram-memory/package.json:2–4`). A required field, a removed field, or a changed meaning requires a new `…V<n+1>` DTO.
+
 ```ts
 export type Digest = `sha256:${string}`;
 export type Cursor = string;                 // canonical unsigned-u64 decimal
@@ -1006,6 +1008,10 @@ export interface OperationalCapabilityReceiptV1 {
   adapter_id?: OpaqueRef;                        // graphify-owned adapter identity (declared)
   adapter_version?: string;                      // adapter release version (declared)
   adapter_build_digest?: Digest;                 // digest of the adapter implementation/build (declared)
+  // (2026-10-06 amendment, D-5/R2-h) OPTIONAL hard-link alarm — present iff backend === "sqlite". True iff the
+  // canonical database inode carries more than one link (st_nlink > 1) at readiness() time. Informational alarm
+  // only, never an operational refusal.
+  multiply_linked?: boolean;
   issued_at: Instant;
   expires_at: Instant;
   receipt_digest: Digest;                        // over the receipt WITHOUT receipt_digest (no circularity)
@@ -1261,9 +1267,9 @@ The writer fence is a non-blocking exclusive `flock` (`LOCK_EX|LOCK_NB`) held on
 
 **Deployment constraint (Kubernetes).** Because the fence is a local-node kernel `flock` on the database inode, the canonical `.db` MUST live on node-local block storage: a `PersistentVolumeClaim` bound to a **block** `storageClassName` with `ReadWriteOnce` access, never a networked volume. The in-process network-filesystem refusal enforces this at open regardless of the manifest, but the deployment SHOULD also constrain provisioning — e.g. reject an `nfs.csi.k8s.io` (or other network) provisioner for this PVC — so a misconfigured pod fails to schedule rather than at first write. **NFS and CephFS remain a follow-up:** a shared-filesystem fence needs a different (lease / lock-manager) mechanism and is out of scope here. **Hard-link backups on the live PVC are incompatible:** a `cp -al` or `ln` that adds a second name to the live `.db` inode is refused at the next restart by the open-time `st_nlink` check, so it cannot serve as a backup path — take a detached copy (`VACUUM INTO`) or a logical backup instead. `rsync --link-dest` (it links its own destination tree, a distinct inode) and block-level or COW filesystem snapshots (which add no second name to the database inode) are not affected.
 
-**Declared residuals (single-name fence).** (i) A hard link added *after* a successful open is not detected during the broker's lifetime: the fence itself stays sound (it holds the inode's flock, so no other writer is admitted), but a foreign SQLite client reaching the inode through the alias could write past the `-shm` lock table — a host-misconfiguration class, outside the fence's threat model, and caught at the next reopen by whatever name is used. (ii) A refused open at restart leaves the store unavailable — under Kubernetes a `CrashLoopBackOff` until a human removes the extra link; this is fail-closed and accepted. (iii) On overlayfs `st_nlink` may not represent the underlying inode; this is N-A in production (overlayfs is refused as ephemeral) and is noted only for a harness that opts into an ephemeral filesystem.
+**Declared residuals (single-name fence).** (i) A hard link added *after* a successful open is alerted by `readiness()` via `multiply_linked: true` (R2-h, D-5): the fence itself stays sound (it holds the inode's flock, so no other writer is admitted), but a foreign SQLite client reaching the inode through the alias could write past the `-shm` lock table — a host-misconfiguration class, outside the fence's threat model, and caught at the next reopen by whatever name is used. (ii) A refused open at restart leaves the store unavailable — under Kubernetes a `CrashLoopBackOff` until a human removes the extra link; this is fail-closed and accepted. (iii) On overlayfs `st_nlink` may not represent the underlying inode; this is N-A in production (overlayfs is refused as ephemeral) and is noted only for a harness that opts into an ephemeral filesystem.
 
-**Follow-up R2-h.** A later spec evolution may expose `st_nlink` (or a `multiply_linked` flag) in the `readiness()` receipt so a host can *alert* on a post-open hard link without killing the broker (addressing residual (i) above without a per-operation `FENCE_LOST`). This adds a field to `OperationalCapabilityReceiptV1`, whose objects set `additionalProperties: false`, so it is a contract change — out of scope here and tracked as R2-h. No opt-in flag that would *permit* a multiply-linked store is offered: unlike the ephemeral-filesystem flag it has no legitimate use case (it would turn a loud, remediable refusal into silent corruption), and a flag must not widen a filesystem decision.
+**Follow-up R2-h (executed, 2026-10-06 amendment, D-5).** The `readiness()` receipt exposes `multiply_linked?: boolean` on SQLite stores so a host can *alert* on a post-open hard link without killing the broker (addressing residual (i) above without a per-operation `FENCE_LOST`). This adds an optional field to `OperationalCapabilityReceiptV1`, bound by `receipt_digest`, governed by the §4 evolution rule. No opt-in flag that would *permit* a multiply-linked store is offered: unlike the ephemeral-filesystem flag it has no legitimate use case (it would turn a loud, remediable refusal into silent corruption), and a flag must not widen a filesystem decision.
 
 Writer acquisition is:
 
