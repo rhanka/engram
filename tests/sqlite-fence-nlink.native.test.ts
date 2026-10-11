@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   createCanonicalMemoryStoreFactoryV1,
   openFencedSqliteCanonicalMemoryStoreV1,
+  receiptDigest,
   type FencedSqliteCanonicalMemoryStoreV1,
 } from "../engram-memory/index.js";
 import { captureRequest, createL3Memory, NOW } from "./memory-l3-fixture.js";
@@ -74,5 +75,86 @@ describe("native SQLite fenced open and hard-link count", () => {
     const reopened = await openFencedSqliteCanonicalMemoryStoreV1({ filename: target, clock: { now: () => NOW }, allow_ephemeral_filesystem_store: true });
     expect(reopened).toMatchObject({ ok: false, error: { code: "CAPABILITY_UNAVAILABLE" } });
     if (!reopened.ok) expect(reopened.error.message).toMatch(/hard link/i);
+  });
+
+  it("readiness reports multiply_linked false for a single-named database and true after a post-open hard link, with operations still admitted", async () => {
+    const target = filename();
+    const store = await open(target);
+    const { memory } = createL3Memory("accept", store);
+
+    const initial = await store.readiness();
+    expect(initial).toMatchObject({ ok: true });
+    if (!initial.ok) throw new Error("readiness failed");
+    expect((initial.value as { multiply_linked?: boolean }).multiply_linked).toBe(false);
+
+    linkSync(target, `${target}.alias`);
+
+    const afterLink = await store.readiness();
+    expect(afterLink).toMatchObject({ ok: true });
+    if (!afterLink.ok) throw new Error("readiness failed");
+    expect((afterLink.value as { multiply_linked?: boolean }).multiply_linked).toBe(true);
+
+    await expect(memory.capture(captureRequest("idempotency-key-post-open-alarm", "1")))
+      .resolves.toMatchObject({ ok: true });
+
+    await store.close();
+  });
+
+  it("multiply_linked is bound by receipt_digest", async () => {
+    // 1. Raw SQLite builder receipt (before F2 factory wrapping)
+    const rawTarget = filename();
+    const rawOpened = await openFencedSqliteCanonicalMemoryStoreV1({
+      filename: rawTarget,
+      clock: { now: () => NOW },
+      allow_ephemeral_filesystem_store: true,
+    });
+    expect(rawOpened).toMatchObject({ ok: true });
+    if (!rawOpened.ok) throw new Error("raw open failed");
+    const rawStore = rawOpened.value;
+
+    const rawSingle = await rawStore.readiness();
+    expect(rawSingle).toMatchObject({ ok: true });
+    if (!rawSingle.ok) throw new Error("readiness failed");
+    expect(rawSingle.value.multiply_linked).toBe(false);
+    expect(rawSingle.value.receipt_digest).toBe(receiptDigest("operational-capability", rawSingle.value));
+
+    linkSync(rawTarget, `${rawTarget}.alias`);
+
+    const rawMulti = await rawStore.readiness();
+    expect(rawMulti).toMatchObject({ ok: true });
+    if (!rawMulti.ok) throw new Error("readiness failed");
+    expect(rawMulti.value.multiply_linked).toBe(true);
+    expect(rawMulti.value.receipt_digest).toBe(receiptDigest("operational-capability", rawMulti.value));
+    expect(rawMulti.value.receipt_digest).not.toBe(rawSingle.value.receipt_digest);
+
+    const rawTampered = { ...rawMulti.value, multiply_linked: false };
+    expect(rawMulti.value.receipt_digest).not.toBe(receiptDigest("operational-capability", rawTampered));
+
+    await rawStore.close();
+
+    // 2. Factory-wrapped store receipt (preserves factory coverage)
+    const target = filename();
+    const store = await open(target);
+
+    const single = await store.readiness();
+    expect(single).toMatchObject({ ok: true });
+    if (!single.ok) throw new Error("readiness failed");
+    expect((single.value as { multiply_linked?: boolean }).multiply_linked).toBe(false);
+    expect(single.value.receipt_digest).toBe(receiptDigest("operational-capability", single.value));
+
+    linkSync(target, `${target}.alias`);
+
+    const multi = await store.readiness();
+    expect(multi).toMatchObject({ ok: true });
+    if (!multi.ok) throw new Error("readiness failed");
+    expect((multi.value as { multiply_linked?: boolean }).multiply_linked).toBe(true);
+    expect(multi.value.receipt_digest).toBe(receiptDigest("operational-capability", multi.value));
+
+    expect(multi.value.receipt_digest).not.toBe(single.value.receipt_digest);
+
+    const tampered = { ...multi.value, multiply_linked: false };
+    expect(multi.value.receipt_digest).not.toBe(receiptDigest("operational-capability", tampered));
+
+    await store.close();
   });
 });

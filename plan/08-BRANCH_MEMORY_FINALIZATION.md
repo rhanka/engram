@@ -122,11 +122,11 @@ Rationale: F1 first because it executes L6 and is the only lot able to reveal a 
 
 ## F7 — R2-h: `multiply_linked` In `readiness()` (FIN §3.4) — D-5, after F2
 
-- [ ] RED: `tests/sqlite-fence-nlink.native.test.ts > readiness reports multiply_linked false for a single-named database and true after a post-open hard link, with operations still admitted`.
-- [ ] RED: `tests/sqlite-fence-nlink.native.test.ts > multiply_linked is bound by receipt_digest`.
-- [ ] GUARD: `tests/memory-fence-posture.test.ts > memory receipts omit multiply_linked`; the Postgres omission asserted in `tests/postgres-memory-store.native.test.ts`.
-- [ ] GUARD: `tests/capability-attestation-gate.test.ts > a multiply_linked receipt is an alarm: fencing-dependent operations are still admitted`.
-- [ ] Implement: optional receipt field; internal `linkCount()` on the fence lock; SQLite `readiness()` sets the field after `#fence`; the R2-f residual comment in `close()` (`release()` after `database.close()`); EVOL §4 evolution rule, §5.9 receipt, l.1264, l.1266; a `CHANGELOG.md` entry under `## Unreleased` (heading created if absent; no version bump); `BRANCH.md` R2-h checked.
+- [x] RED: `tests/sqlite-fence-nlink.native.test.ts > readiness reports multiply_linked false for a single-named database and true after a post-open hard link, with operations still admitted`.
+- [x] RED: `tests/sqlite-fence-nlink.native.test.ts > multiply_linked is bound by receipt_digest`.
+- [x] GUARD: `tests/memory-fence-posture.test.ts > memory receipts omit multiply_linked`; the Postgres omission asserted in `tests/postgres-memory-store.native.test.ts`.
+- [x] GUARD: `tests/capability-attestation-gate.test.ts > a multiply_linked receipt is an alarm: fencing-dependent operations are still admitted`.
+- [x] Implement: optional receipt field; internal `linkCount()` on the fence lock; SQLite `readiness()` sets the field after `#fence`; the R2-f residual comment in `close()` (`release()` after `database.close()`); EVOL §4 evolution rule, §5.9 receipt, l.1264, l.1266; a `CHANGELOG.md` entry under `## Unreleased` (heading created if absent; no version bump); `BRANCH.md` R2-h checked.
 - Allowed (11): `engram-memory/contracts/index.ts`, `engram-memory/sqlite.ts`, `tests/sqlite-fence-nlink.native.test.ts`, `tests/memory-fence-posture.test.ts`, `tests/postgres-memory-store.native.test.ts`, `tests/capability-attestation-gate.test.ts`, EVOL, FIN, `CHANGELOG.md`, `BRANCH.md`, this plan.
 - Forbidden: any refusal or `FENCE_LOST` driven by the field; a flag permitting multiply-linked stores; `CapabilityDescriptorV1`; memory or Postgres builders emitting the field; a version change in any `package.json`.
 - Gate: Linux native lane green with zero skips; `memory-postgres` green; package typecheck; CI.

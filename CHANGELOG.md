@@ -4,6 +4,10 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## Unreleased
+
+- **Memory engine: `multiply_linked` receipt field (R2-h).** Adds the optional field `multiply_linked?: boolean` to `OperationalCapabilityReceiptV1` (contracts §5.9). Present if and only if `backend === "sqlite"`; `true` iff the database inode has more than one hard link (`st_nlink > 1`) at `readiness()` time. Informational alarm only, never an operational refusal.
+
 ## 0.19.1 (2026-10-04)
 
 - **Published graph renderer.** Depends on the published `@sentropic/graph` 0.3.0 instead of the local copy (#341). The renderer is published from the Sent Tech design system; engram no longer carries `packages/graph`, and the studio and tests resolve the npm package.

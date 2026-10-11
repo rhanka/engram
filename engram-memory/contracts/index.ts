@@ -828,6 +828,9 @@ export interface OperationalCapabilityReceiptV1 {
   adapter_id?: OpaqueRef;
   adapter_version?: string;
   adapter_build_digest?: Digest;
+  // §5.9 R2-h: OPTIONAL hard-link alarm — present iff backend === "sqlite". True iff the canonical
+  // database inode carries more than one link (st_nlink > 1) at readiness() time. Informational only, never a refusal.
+  multiply_linked?: boolean;
   issued_at: Instant;
   expires_at: Instant;
   // §5.9 non-circularity: computed over the receipt WITHOUT receipt_digest.
