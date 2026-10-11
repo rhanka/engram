@@ -12,6 +12,7 @@
   },
   "include": [
     "index.ts",
+    "integration.ts",
     "canonical-json.ts",
     "digests.ts",
     "schemas.ts",
@@ -22,7 +23,6 @@
     "recall.ts",
     "migration.ts",
     "projection.ts",
-    "service.ts",
     "sqlite.ts",
     "postgres.ts",
     "sqlite-native.d.ts",
