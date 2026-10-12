@@ -99,7 +99,7 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
-      # The delivered package advertises engines >=20.0.0 <25.0.0 and
+      # The delivered package advertises engines ^20.0.0 || ^22.0.0 || ^24.0.0 and
       # os linux; the lane qualifies every advertised runtime major.
       matrix:
         node-version: ["20", "22", "24"]

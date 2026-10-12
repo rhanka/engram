@@ -528,7 +528,7 @@ describe("live package", () => {
       "./contracts": { types: "./dist/contracts.d.ts", import: "./dist/contracts.js" },
       "./integration": { types: "./dist/integration.d.ts", import: "./dist/integration.js" },
     });
-    expect(installedPackageJson.engines).toEqual({ node: ">=20.0.0 <25.0.0" });
+    expect(installedPackageJson.engines).toEqual({ node: "^20.0.0 || ^22.0.0 || ^24.0.0" });
     expect(installedPackageJson.os).toEqual(["linux"]);
 
     // Phase 4: import all three public entries (., /contracts, /integration)
