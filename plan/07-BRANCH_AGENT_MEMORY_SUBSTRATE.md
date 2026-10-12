@@ -60,7 +60,7 @@
 
 ## Lot 5 — Assertion Reconciliation
 
-- [ ] Implement descriptors, occurrence keys, pure comparators, eligibility preconditions, stable proposal identity/order, version-drift behavior, and authorized application of proposals.
+- [x] Implement descriptors, occurrence keys, pure comparators, eligibility preconditions, stable proposal identity/order, version-drift behavior, and authorized application of proposals.
 - [x] RED: `tests/assertion-family-registry.test.ts > same-family same-scope same-trust opt-in is required before proposing`.
 - [x] RED: `tests/assertion-family-registry.test.ts > identity similarity alone proposes nothing and ambiguous ties require adjudication`.
 - [x] RED: `tests/assertion-family-registry.test.ts > replay uses stored registry version while a new version creates a new proposal id`.
