@@ -1,0 +1,95 @@
+{
+  "manifestVersion": 1,
+  "pinnedBy": "engram-live L1b (plan/09-BRANCH_LIVE_GIT_INDEXING.md; spec/SPEC_LIVE_GIT_INDEXING.md §11, A15)",
+  "note": "Every advertised language ships its WASM inside this package (dist/grammars/). scripts/build-live.mjs verifies each pinned sha256 against the source grammar package before copying; an unpinned or tampered grammar is rejected, never silently trusted. Languages without a pinned entry report unavailable AST coverage.",
+  "languages": {
+    "c": {
+      "file": "tree-sitter-c.wasm",
+      "sourcePackage": "tree-sitter-c",
+      "sourceVersion": "0.24.1",
+      "sourcePath": "node_modules/tree-sitter-c/tree-sitter-c.wasm",
+      "sha256": "c852c2a85ebf2beb636aa3b0ef7f7e70458684d74f6741b20dcb296885bed9f9",
+      "bytes": 625918
+    },
+    "cpp": {
+      "file": "tree-sitter-cpp.wasm",
+      "sourcePackage": "tree-sitter-cpp",
+      "sourceVersion": "0.23.4",
+      "sourcePath": "node_modules/tree-sitter-cpp/tree-sitter-cpp.wasm",
+      "sha256": "174eb0deb75b2ec7881bcacda9f995648d8e683956e5c2267e69ab6dc503fcbf",
+      "bytes": 3434931
+    },
+    "go": {
+      "file": "tree-sitter-go.wasm",
+      "sourcePackage": "tree-sitter-go",
+      "sourceVersion": "0.25.0",
+      "sourcePath": "node_modules/tree-sitter-go/tree-sitter-go.wasm",
+      "sha256": "9504573f352b20be7f2f1911754d710622aedc15afff16d5ed8fb5645681aee7",
+      "bytes": 217182
+    },
+    "java": {
+      "file": "tree-sitter-java.wasm",
+      "sourcePackage": "tree-sitter-java",
+      "sourceVersion": "0.23.5",
+      "sourcePath": "node_modules/tree-sitter-java/tree-sitter-java.wasm",
+      "sha256": "4fdeac4ca6ca089f06c6f7e562abcac1733cd465728cc7031ebb73c2019122c4",
+      "bytes": 414641
+    },
+    "javascript": {
+      "file": "tree-sitter-javascript.wasm",
+      "sourcePackage": "tree-sitter-javascript",
+      "sourceVersion": "0.25.0",
+      "sourcePath": "node_modules/tree-sitter-javascript/tree-sitter-javascript.wasm",
+      "sha256": "5fb488d0cabb4775a594bab85682de5ad6ce83c0d6ac997a9f82dd084d571240",
+      "bytes": 411770
+    },
+    "php": {
+      "file": "tree-sitter-php.wasm",
+      "sourcePackage": "tree-sitter-php",
+      "sourceVersion": "0.24.2",
+      "sourcePath": "node_modules/tree-sitter-php/tree-sitter-php.wasm",
+      "sha256": "d4df6a6ff08c87c3ec4f9cbb785fe09998a0cb570e03f57d7b19b3acfb146aa7",
+      "bytes": 1058041
+    },
+    "python": {
+      "file": "tree-sitter-python.wasm",
+      "sourcePackage": "tree-sitter-python",
+      "sourceVersion": "0.25.0",
+      "sourcePath": "node_modules/tree-sitter-python/tree-sitter-python.wasm",
+      "sha256": "16108b50df4ee9a30168794252ab55e7c93bfc5765d7fa0aa3e335752c515f47",
+      "bytes": 457883
+    },
+    "ruby": {
+      "file": "tree-sitter-ruby.wasm",
+      "sourcePackage": "tree-sitter-ruby",
+      "sourceVersion": "0.23.1",
+      "sourcePath": "node_modules/tree-sitter-ruby/tree-sitter-ruby.wasm",
+      "sha256": "09a96427d7c72f0613ed470cd9812223fc4a91d6a9c025c0235cc6bd59ff96f4",
+      "bytes": 2106352
+    },
+    "rust": {
+      "file": "tree-sitter-rust.wasm",
+      "sourcePackage": "tree-sitter-rust",
+      "sourceVersion": "0.24.0",
+      "sourcePath": "node_modules/tree-sitter-rust/tree-sitter-rust.wasm",
+      "sha256": "f65f354215611fd94ad34134b3427eb3d58cbb745df7b6509ba722184db73d57",
+      "bytes": 1102547
+    },
+    "typescript": {
+      "file": "tree-sitter-typescript.wasm",
+      "sourcePackage": "tree-sitter-typescript",
+      "sourceVersion": "0.23.2",
+      "sourcePath": "node_modules/tree-sitter-typescript/tree-sitter-typescript.wasm",
+      "sha256": "778025db5a8be0e70f8ccc3671e486dfeddd048c25d9e8a70c26de2e1bf6f97d",
+      "bytes": 1413849
+    },
+    "tsx": {
+      "file": "tree-sitter-tsx.wasm",
+      "sourcePackage": "tree-sitter-typescript",
+      "sourceVersion": "0.23.2",
+      "sourcePath": "node_modules/tree-sitter-typescript/tree-sitter-tsx.wasm",
+      "sha256": "79e5da75ea62855a0cd67177685f0164eac87d5f630b3cbe1e0a099751ad30f8",
+      "bytes": 1445638
+    }
+  }
+}
