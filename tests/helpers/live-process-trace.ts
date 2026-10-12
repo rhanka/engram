@@ -54,10 +54,10 @@ export class LiveProcessTrace {
     ];
   }
 
-  run(cwd: string, args: string[], input?: Buffer | string, phase: Phase = "setup"): ProcessResult {
+  run(cwd: string, args: readonly string[], input?: Buffer | string, phase: Phase = "setup", env?: NodeJS.ProcessEnv): ProcessResult {
     const argv = [...this.prefix, ...args];
     const result = spawnSync(this.executable, argv, {
-      cwd, env: this.env, input, shell: false, maxBuffer: 16 * 1024 * 1024,
+      cwd, env: env ? { ...this.env, ...env } : this.env, input, shell: false, maxBuffer: 16 * 1024 * 1024,
       timeout: 30_000, killSignal: "SIGKILL",
     });
     if (result.error) throw new Error(`L0 Git subprocess unavailable: ${result.error.message}`);
