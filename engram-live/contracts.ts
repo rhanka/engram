@@ -628,6 +628,303 @@ const WORKTREE_IDENTITY_KEYS: readonly string[] = [
   "identityUncertainty",
 ];
 
+// — L2b: roots, retained DAG and OID completion
+// (spec/SPEC_LIVE_GIT_INDEXING.md §§3–4, 6; plan/09 L2b). Data-pure DTOs,
+// constants and validators only; the engine lives in ./history.js and the
+// ref/repository models in ./refs.js and ./repository.js. Every fact and
+// lookup below is scoped by clone and qualified by OID algorithm.
+
+/**
+ * The follow-up window for branch activity (spec §4). It selects followed
+ * branches only; it never limits commit count, commit age, retained DAG
+ * facts or already acquired PR history, and it never prunes anything.
+ */
+export const ACTIVITY_WINDOW_DAYS = 30;
+
+/** A full ref name's kind, from its name alone. Tags are inventoried but never traversal roots. */
+export type RefKind = "local-branch" | "remote-branch" | "pr-head" | "tag" | "other";
+
+/** Which signal made a root a root (spec §4: record which signal selected it). */
+export type RootSelectionSignal =
+  | "default-branch" // the default branch, even when old
+  | "active-window" // a local or known remote branch active within the window
+  | "pr-head" // a PR head of any state, regardless of age
+  | "worktree-head" // a registered worktree HEAD, including a detached one
+  | "previously-ingested"; // an old root retained for investigation
+
+/** The two activity signals (spec §4): bootstrap tip committer time, or a later observed target change. */
+export type ActivitySignalKind = "bootstrap-committer-time" | "observed-target-change";
+
+/** An OID qualified by its object-format algorithm: equal OIDs under different algorithms are never the same object. */
+export interface QualifiedOid {
+  readonly algorithm: OidAlgorithm;
+  readonly oid: string;
+}
+
+/** Hex length of an OID under one algorithm. */
+export function oidHexLength(algorithm: OidAlgorithm): 40 | 64 {
+  return algorithm === "sha1" ? 40 : 64;
+}
+
+/** Strict algorithm-qualified OID check: lowercase hex of the algorithm's exact length. */
+export function isValidQualifiedOid(value: QualifiedOid): boolean {
+  return (
+    (value.algorithm === "sha1" || value.algorithm === "sha256") &&
+    new RegExp(`^[0-9a-f]{${oidHexLength(value.algorithm)}}$`).test(value.oid)
+  );
+}
+
+export function validateQualifiedOid(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["qualifiedOid must be an object"] };
+  const errors: string[] = [];
+  if (value.algorithm !== "sha1" && value.algorithm !== "sha256") {
+    errors.push('qualifiedOid.algorithm must be "sha1" or "sha256"');
+  }
+  if (typeof value.oid !== "string" || !/^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(value.oid)) {
+    errors.push("qualifiedOid.oid must be a 40 or 64 character lowercase hex string");
+  } else if ((value.algorithm === "sha1" || value.algorithm === "sha256") &&
+    value.oid.length !== oidHexLength(value.algorithm)) {
+    errors.push(`qualifiedOid.oid must have exactly ${oidHexLength(value.algorithm)} hex characters under ${value.algorithm}`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+/**
+ * One host observation of one ref (spec §3: Ref/RefObservation). `observedAt`
+ * is polling time, never activity. `absent` marks a deletion observation: the
+ * ref no longer resolves at this generation. `tipCommitterUnixSeconds` is the
+ * bootstrap activity signal over the observed target; supplying it again on a
+ * later observation of the same target refreshes nothing.
+ */
+export interface RawRefObservationDto {
+  readonly refName: string;
+  /** Observed target OID; empty when `absent` is true. */
+  readonly oid: string;
+  readonly observedAt: number;
+  readonly absent?: boolean;
+  readonly tipCommitterUnixSeconds?: number;
+}
+
+const RAW_REF_OBSERVATION_KEYS: readonly string[] = [
+  "refName", "oid", "observedAt", "absent", "tipCommitterUnixSeconds",
+];
+
+export function validateRawRefObservation(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["ref observation must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, RAW_REF_OBSERVATION_KEYS, "ref observation", errors);
+  if (!isNonEmptyString(value.refName) || hasNul(value.refName) || !value.refName.startsWith("refs/")) {
+    errors.push("ref observation.refName must be a non-empty full ref name starting with \"refs/\" and without NUL");
+  }
+  if (typeof value.oid !== "string" || !/^[0-9a-f]{0,64}$/.test(value.oid)) {
+    errors.push("ref observation.oid must be a lowercase hex string");
+  }
+  if (typeof value.observedAt !== "number" || !Number.isSafeInteger(value.observedAt) || value.observedAt <= 0) {
+    errors.push("ref observation.observedAt must be a positive safe integer (milliseconds)");
+  }
+  if (value.absent !== undefined && typeof value.absent !== "boolean") {
+    errors.push("ref observation.absent, when present, must be a boolean");
+  }
+  if (value.absent === true && value.oid !== "") {
+    errors.push("ref observation.oid must be empty on an absent (deletion) observation");
+  }
+  if (value.tipCommitterUnixSeconds !== undefined &&
+    (typeof value.tipCommitterUnixSeconds !== "number" || !Number.isSafeInteger(value.tipCommitterUnixSeconds))) {
+    errors.push("ref observation.tipCommitterUnixSeconds, when present, must be an integer (unix seconds)");
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+/** The activity provenance of a tracked ref: when it was last really worked on, and how that is known. */
+export interface RefActivityDto {
+  readonly activityAt: number;
+  readonly signal: ActivitySignalKind;
+}
+
+/**
+ * The neutral tracked state of one ref: creation, deletion and recreation are
+ * separate observations (generation bumps once per reappearance after an
+ * absence). `oid` is null exactly while the latest observation is a deletion;
+ * `activity` is never refreshed by merely observing the same target again.
+ */
+export interface TrackedRefDto {
+  readonly refName: string;
+  readonly kind: RefKind;
+  readonly oid: string | null;
+  readonly generation: number;
+  readonly activity: RefActivityDto | null;
+  readonly deletedAt: number | null;
+  readonly lastObservedAt: number;
+}
+
+/** The HEAD of one registered worktree, as the host resolved it. */
+export type WorktreeHead =
+  | { readonly kind: "branch"; readonly refName: string }
+  | { readonly kind: "detached"; readonly oid: string }
+  | { readonly kind: "unborn" };
+
+/** One provenance record of why an OID is a root. */
+export interface RootSourceDto {
+  readonly signal: RootSelectionSignal;
+  readonly refName: string | null;
+  readonly worktreeId: string | null;
+  readonly activityAt: number | null;
+  readonly generation: number | null;
+}
+
+/** A selected history root: one qualified OID plus every provenance source that selected it. */
+export interface SelectedRootDto {
+  readonly qualifiedOid: QualifiedOid;
+  /** Rev expression for the walk: always the observed OID (ref names are mobile provenance, never walk input). */
+  readonly rev: string;
+  readonly sources: readonly RootSourceDto[];
+}
+
+/**
+ * A previously ingested root, retained for investigation whatever later
+ * happens to its ref (expiry, deletion, recreation, force-push). Durable
+ * retention/reconstruction itself is R1's lot; this record is the neutral
+ * retained-root fact the persistence port keeps queryable.
+ */
+export interface RetainedRootDto {
+  readonly cloneId: string;
+  readonly algorithm: OidAlgorithm;
+  readonly oid: string;
+  readonly firstSeenAt: number;
+  readonly firstSignal: RootSelectionSignal;
+  readonly refName: string | null;
+}
+
+/** Authorized author/committer identity of a commit, as recorded in the object. */
+export interface HistoryIdentityDto {
+  readonly name: string;
+  readonly email: string;
+  readonly unixSeconds: number;
+  readonly offsetMinutes: number;
+}
+
+/**
+ * One immutable commit fact of the retained DAG (spec §3 Commit/Parent):
+ * algorithm-qualified OID, tree, ORDERED parents, authorized identities and
+ * message, extraction and policy versions. Shared immutably by every branch,
+ * PR head and worktree that reaches it; there is no commit × branch edge.
+ */
+/**
+ * One changed file of a commit against one ordered parent: the path is kept
+ * as raw bytes (never line-parsed) and the line counts come from numstat
+ * (null when the content is binary or non-textual).
+ */
+export interface HistoryFileChangeDto {
+  readonly path: Uint8Array;
+  readonly previousPath: Uint8Array | null;
+  readonly status: string;
+  readonly statusScore: number | null;
+  readonly oldMode: string;
+  readonly newMode: string;
+  readonly oldOid: string;
+  readonly newOid: string;
+  readonly added: number | null;
+  readonly deleted: number | null;
+}
+
+/** The changed files of one commit against one of its ordered parents. */
+export interface HistoryParentDiffDto {
+  /** -1 means the empty-tree comparison of a parentless (root) commit. */
+  readonly parentIndex: number;
+  readonly files: readonly HistoryFileChangeDto[];
+}
+
+export interface HistoryCommitFactDto {
+  readonly cloneId: string;
+  readonly algorithm: OidAlgorithm;
+  readonly oid: string;
+  readonly tree: string;
+  readonly parents: readonly string[];
+  readonly author: HistoryIdentityDto;
+  readonly committer: HistoryIdentityDto;
+  readonly subject: string;
+  readonly message: Uint8Array;
+  /** Changed files per ordered parent (L2a extraction); part of the durable fact. */
+  readonly parentDiffs: readonly HistoryParentDiffDto[];
+  readonly extractorVersion: string;
+  readonly policyVersion: string;
+}
+
+/**
+ * An extraction checkpoint (spec §6): an OID is marked extracted for one
+ * extraction version only after the required fact set has durable
+ * acknowledgement. A checkpoint is extraction progress, never complete
+ * ancestry by itself: ancestry completeness is the separately derived
+ * frontier (closure over recorded parents). A known-but-partial OID is not
+ * a checkpoint and not a traversal stop.
+ */
+export interface HistoryCheckpointDto {
+  readonly cloneId: string;
+  readonly algorithm: OidAlgorithm;
+  readonly oid: string;
+  readonly tree: string;
+  readonly parents: readonly string[];
+  readonly extractorVersion: string;
+  readonly policyVersion: string;
+}
+
+export interface HistoryCompletionQuery {
+  readonly cloneId: string;
+  readonly algorithm: OidAlgorithm;
+  readonly extractorVersion: string;
+  readonly policyVersion: string;
+}
+
+export interface HistoryCompletionState {
+  /** OIDs extracted for this extractor version (extraction checkpoints). */
+  readonly knownComplete: readonly string[];
+  /**
+   * The checkpoints behind knownComplete, parents included: the engine derives
+   * the ancestry frontier (closure over parents) from these, so a checkpoint
+   * whose parents are not durable never counts as complete ancestry.
+   */
+  readonly checkpoints: readonly HistoryCheckpointDto[];
+  readonly retainedRoots: readonly RetainedRootDto[];
+}
+
+/**
+ * THE injected persistence port (plan/09 L2b: a port, never a base). Engram
+ * defines the contract only; cluster-mesh (L3) and the app implement it. The
+ * interface deliberately exposes no commit × branch edge and no query surface
+ * beyond completion and retained roots: branch membership is derived from the
+ * retained DAG and current refs, never persisted (spec §4).
+ */
+export interface HistoryPersistencePort {
+  loadCompletion(query: HistoryCompletionQuery): Promise<HistoryCompletionState>;
+  persistCommitFact(fact: HistoryCommitFactDto): Promise<{ received: true }>;
+  recordCompletion(checkpoint: HistoryCheckpointDto): Promise<{ received: true }>;
+  recordRetainedRoot(root: RetainedRootDto): Promise<{ received: true }>;
+}
+
+/**
+ * Explicit dag coverage (spec §4, A04): shallow boundaries, missing objects
+ * and inaccessible roots are explicit gaps; a gap never silently degrades
+ * into a current/complete claim.
+ */
+/**
+ * Structured cause of a dag coverage gap: a missing object (an OID the clone
+ * does not hold) versus a grafted shallow boundary (ancestry cut by the host
+ * declaration). Anything else is a protocol failure the caller sees as a
+ * thrown error, never as coverage.
+ */
+export type HistoryCoverageCause = "missing-object" | "shallow-boundary";
+
+export interface HistoryCoverageReportDto {
+  readonly axis: "dag";
+  readonly state: CoverageState;
+  readonly reason: string;
+  readonly cause: HistoryCoverageCause;
+  /** Grafted shallow boundary OIDs (state "partial"). */
+  readonly boundary?: readonly QualifiedOid[];
+  /** Missing object OIDs (state "unavailable"). */
+  readonly missing?: readonly QualifiedOid[];
+}
+
 const PRIVATE_PURGE_REQUEST_KEYS: readonly string[] = [
   "purgePrivateSnapshots",
   "purgeDerivedIndexes",
