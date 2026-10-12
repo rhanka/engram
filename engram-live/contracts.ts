@@ -1035,6 +1035,180 @@ export function validatePrivatePurgeRequest(request: unknown): ValidationResult 
   return { ok: errors.length === 0, errors };
 }
 
+// — R1: private retention of every ingested root
+// (spec/SPEC_LIVE_GIT_INDEXING.md §4, A02/A04; plan/09 R1). Data-pure DTOs,
+// constants and validators only; the engine lives in ./retention.js.
+//
+// Consumer contract for the h2a (H) seat. H owns the private Git object
+// store (live-object-store.ts) and the retention handoff (delegate.ts);
+// engram owns only this data-pure contract plus the pure derivation in
+// ./retention.js. Read this block before implementing the host side.
+//
+// - Private retention: every ingested root (default branch even when old,
+//   active local/remote branches, PR heads of all states, detached worktree
+//   HEADs, previously ingested roots) requires one scoped durable receipt.
+//   No commit-count or commit-age limit exists; nothing is ever erased here.
+// - Requests carry ONLY the algorithm-qualified OID plus its scope and
+//   provenance signal: no file content, no plaintext, no patch, no derived
+//   text. Uncommitted plaintext is never added to the private store.
+// - Receipts are scoped by tenant + clone (never by worktree, never global)
+//   and durable: the host records them through the injected port before any
+//   reconstructible-coverage claim. A missing receipt is an explicit
+//   object-availability gap, never a silent current claim.
+// - Acquisition (H) uses pinned OIDs and private refs, without writing into
+//   the observed clone, without borrowing an alternates store that may be
+//   GC'd, and without invoking repository-controlled programs. If removal
+//   wins the acquisition race, H reports the gap instead of inventing
+//   retention. Quotas pause further work without deleting protected roots.
+// - Receipts expose an opaque coordinated-backup reference (backupRef) for
+//   L8 backup coordination; P1 reuses this facility for PR roots. No raw
+//   private pack is published to Postgres through this contract.
+
+/** The coverage axis retention reports on: object availability, never DAG currency. */
+export const RETENTION_COVERAGE_AXIS = "object-availability" as const;
+
+/** Why a retention coverage gap exists: a required receipt is not durably recorded. */
+export type RetentionCoverageCause = "missing-receipt";
+
+export interface RetentionCoverageReportDto {
+  readonly axis: "object-availability";
+  readonly state: CoverageState;
+  readonly reason: string;
+  readonly cause: RetentionCoverageCause;
+  /** Required OIDs without a scoped durable receipt (state "unavailable"). */
+  readonly missing?: readonly QualifiedOid[];
+}
+
+/**
+ * One scoped retention request: the neutral producer asks the host to
+ * acquire and protect the pinned committed object. Scope is tenant + clone
+ * (clone-scoped, never worktree-scoped, never global). `firstSignal` is the
+ * current pass's first L2b selection source for the OID (sources are
+ * precedence-ordered: default, worktree, PR, window, then retained), and
+ * `refName` carries the current pass's selecting ref when one exists, else
+ * null (detached/retained roots). Neither is the historic first ingestion:
+ * that provenance stays on RetainedRootDto (firstSignal/refName at first
+ * sighting, kept queryable by the history persistence port), so a deleted
+ * ref re-requested as previously-ingested loses no history — the historic
+ * record is read there, not overwritten here.
+ * No content field exists by construction.
+ */
+export interface RetentionRequestDto {
+  readonly scope: LiveScope;
+  readonly algorithm: OidAlgorithm;
+  readonly oid: string;
+  readonly firstSignal: RootSelectionSignal;
+  readonly refName: string | null;
+  readonly requestedAt: number;
+}
+
+/**
+ * One scoped durable receipt: the host confirms the pinned object is
+ * protected in its private store. `backupRef` is the opaque
+ * coordinated-backup reference L8 coordinates (stable per scope/OID);
+ * it carries no content and never publishes a raw pack.
+ */
+export interface RetentionReceiptDto {
+  readonly scope: LiveScope;
+  readonly algorithm: OidAlgorithm;
+  readonly oid: string;
+  readonly receivedAt: number;
+  readonly backupRef: string;
+}
+
+/** The receipt lookup scope: tenant + clone plus the object-format algorithm. */
+export interface RetentionReceiptQuery {
+  readonly scope: LiveScope;
+  readonly algorithm: OidAlgorithm;
+}
+
+const RETENTION_REQUEST_KEYS: readonly string[] = [
+  "scope",
+  "algorithm",
+  "oid",
+  "firstSignal",
+  "refName",
+  "requestedAt",
+];
+
+const RETENTION_RECEIPT_KEYS: readonly string[] = [
+  "scope",
+  "algorithm",
+  "oid",
+  "receivedAt",
+  "backupRef",
+];
+
+const RETENTION_SIGNALS: readonly string[] = [
+  "default-branch",
+  "active-window",
+  "pr-head",
+  "worktree-head",
+  "previously-ingested",
+];
+
+function isRetentionScope(scope: unknown): scope is LiveScope {
+  return validateLiveScope(scope).ok;
+}
+
+export function validateRetentionRequest(request: unknown): ValidationResult {
+  if (!isRecord(request)) return { ok: false, errors: ["retention request must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(request, RETENTION_REQUEST_KEYS, "retention request", errors);
+  const scope = validateLiveScope(request.scope);
+  if (!scope.ok) errors.push(...scope.errors.map((error) => `retention request.scope: ${error}`));
+  else if (isRetentionScope(request.scope) && request.scope.worktree !== undefined) {
+    errors.push("retention request.scope must be clone-scoped: worktree must be absent (retention is per tenant + clone)");
+  }
+  if (request.algorithm !== "sha1" && request.algorithm !== "sha256") {
+    errors.push('retention request.algorithm must be "sha1" or "sha256"');
+  }
+  if (typeof request.oid !== "string" || !/^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(request.oid)) {
+    errors.push("retention request.oid must be a 40 or 64 character lowercase hex string");
+  } else if ((request.algorithm === "sha1" || request.algorithm === "sha256") &&
+    request.oid.length !== oidHexLength(request.algorithm)) {
+    errors.push(`retention request.oid must have exactly ${oidHexLength(request.algorithm)} hex characters under ${request.algorithm}`);
+  }
+  if (typeof request.firstSignal !== "string" || !RETENTION_SIGNALS.includes(request.firstSignal)) {
+    errors.push(`retention request.firstSignal must be one of ${RETENTION_SIGNALS.join(", ")}`);
+  }
+  if (request.refName !== null &&
+    (!isNonEmptyString(request.refName) || hasNul(request.refName) || !request.refName.startsWith("refs/"))) {
+    errors.push('retention request.refName must be null or a non-empty full ref name starting with "refs/" without NUL');
+  }
+  if (typeof request.requestedAt !== "number" || !Number.isSafeInteger(request.requestedAt) || request.requestedAt <= 0) {
+    errors.push("retention request.requestedAt must be a positive safe integer (milliseconds)");
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateRetentionReceipt(receipt: unknown): ValidationResult {
+  if (!isRecord(receipt)) return { ok: false, errors: ["retention receipt must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(receipt, RETENTION_RECEIPT_KEYS, "retention receipt", errors);
+  const scope = validateLiveScope(receipt.scope);
+  if (!scope.ok) errors.push(...scope.errors.map((error) => `retention receipt.scope: ${error}`));
+  else if (isRetentionScope(receipt.scope) && receipt.scope.worktree !== undefined) {
+    errors.push("retention receipt.scope must be clone-scoped: worktree must be absent (retention is per tenant + clone)");
+  }
+  if (receipt.algorithm !== "sha1" && receipt.algorithm !== "sha256") {
+    errors.push('retention receipt.algorithm must be "sha1" or "sha256"');
+  }
+  if (typeof receipt.oid !== "string" || !/^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(receipt.oid)) {
+    errors.push("retention receipt.oid must be a 40 or 64 character lowercase hex string");
+  } else if ((receipt.algorithm === "sha1" || receipt.algorithm === "sha256") &&
+    receipt.oid.length !== oidHexLength(receipt.algorithm)) {
+    errors.push(`retention receipt.oid must have exactly ${oidHexLength(receipt.algorithm)} hex characters under ${receipt.algorithm}`);
+  }
+  if (typeof receipt.receivedAt !== "number" || !Number.isSafeInteger(receipt.receivedAt) || receipt.receivedAt <= 0) {
+    errors.push("retention receipt.receivedAt must be a positive safe integer (milliseconds)");
+  }
+  if (!isNonEmptyString(receipt.backupRef) || hasNul(receipt.backupRef)) {
+    errors.push("retention receipt.backupRef must be a non-empty string without NUL (opaque L8 coordination reference)");
+  }
+  return { ok: errors.length === 0, errors };
+}
+
 export function validateDeclarationRevocation(revocation: unknown): ValidationResult {
   if (!isRecord(revocation)) return { ok: false, errors: ["revocation must be an object"] };
   const errors: string[] = [];
