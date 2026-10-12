@@ -42,8 +42,10 @@ import {
 } from "./node-descriptions.js";
 import {
   cleanLabelInstructionDir,
-  hasUnansweredLabelInstructions,
+  hasUnresolvedLabelInstructions,
+  LABEL_ANSWER_FILE,
   LABEL_INSTRUCTIONS_DIR,
+  type LabelSource,
 } from "./community-labeling.js";
 import { buildCodeFileNodeIdMap, extractGit, mergeExtractions } from "./extract-git.js";
 import type { Extraction, GraphifyInputScopeMode, InputScopeSource } from "./types.js";
@@ -103,8 +105,52 @@ function changedCodeFilesFromHook(root: string, codeFiles: string[]): string[] |
 }
 
 // ---------------------------------------------------------------------------
-// Rebuild pipeline (code-only, no LLM)
+// Rebuild pipeline (code-only, deterministic — LIVE §11 / L1a)
+//
+// `rebuildCode` is the live code-only refresh. By default it performs ZERO
+// model inference, ZERO embeddings, ZERO assistant instruction emission and
+// writes no deferred-enrichment marker. Provider keys, configured enrichers,
+// --force and previously stored vectors/descriptions cannot activate any
+// semantic stage here. Explicit non-live enrichment remains a separate,
+// explicitly requested dispatch: the CLI `engram update` command passes the
+// `enrichment` option group below (never the live watch/hook paths), which
+// restores the salient-label + node-description stages and the
+// describe-pending marker finalization for that command only.
 // ---------------------------------------------------------------------------
+
+/**
+ * Explicit NON-LIVE enrichment request (L1a / LIVE §11). Only the `engram
+ * update` dispatch sets this; the live watch/hook paths never do. Presence of
+ * this group is the ONLY way to reach the semantic stages from `rebuildCode`.
+ */
+export interface RebuildEnrichmentOptions {
+  /** WP11: generate node descriptions before graph.json is written. */
+  describe?: boolean;
+  descriptionBackend?: string;
+  descriptionModel?: string;
+  descriptionMaxNodes?: number;
+  /** `update --fill-missing`: only describe nodes with an empty description. */
+  descriptionOnlyMissing?: boolean;
+  descriptionMode?: "assistant" | "direct";
+  descriptionLang?: string;
+  corpusDefaultLang?: string | null;
+  /** WP12: generate salient community labels after Louvain clustering. */
+  label?: boolean;
+  labelBackend?: string;
+  labelModel?: string;
+  labelMode?: "assistant" | "direct";
+  labelLang?: string;
+  /** Per-node citation cap injected into the description prompt. */
+  citationCap?: number | "all";
+}
+
+// Node attributes stamped by the non-live enrichment workflows (description
+// stage, doc extraction citations) that a live refresh must preserve
+// deterministically when a symbol is re-extracted from the AST with the same
+// id — the fresh extraction rebuilds such nodes from scratch and would
+// otherwise drop prior annotation work (L1a review M3).
+const PRESERVED_ANNOTATION_ATTRS = ["description", "citations"] as const;
+
 
 // topology signature now lives in src/export.ts so watch + toJson agree on
 // the exact same string. Imported lazily inside rebuildCode().
@@ -124,75 +170,6 @@ export async function rebuildCode(
      */
     noCluster?: boolean;
     /**
-     * WP11: generate node descriptions (entity + code) before graph.json is
-     * written. ON by default; CLI `--no-description` sets this false. Degrades
-     * gracefully to a no-op when no LLM backend is configured.
-     */
-    describe?: boolean;
-    descriptionBackend?: string;
-    descriptionModel?: string;
-    descriptionMaxNodes?: number;
-    /**
-     * WP-reliability: only (re)describe nodes whose `description` attr is empty.
-     * Powers `graphify update --fill-missing` — an idempotent gap-fill that does
-     * not re-spend tokens on already-described nodes.
-     */
-    descriptionOnlyMissing?: boolean;
-    /**
-     * Explicit execution mode for descriptions: "assistant" (default when no
-     * key) or "direct" (requires API key). When omitted, auto-selected.
-     */
-    descriptionMode?: "assistant" | "direct";
-    /**
-     * Output language for descriptions (field report ia-aero). "auto" (default)
-     * → detect per source/node; an explicit code ("fr", "en", …) forces one
-     * language for every node. Forwarded to `generateNodeDescriptions`.
-     */
-    descriptionLang?: string;
-    /**
-     * Corpus-level default language (ontology profile `default_language`) used
-     * as the fallback when a node has no detectable language signal.
-     */
-    corpusDefaultLang?: string | null;
-    /**
-     * WP12: generate salient community labels (LLM) by DEFAULT after Louvain
-     * clustering, replacing generic "Community N" names. ON by default; CLI
-     * `--no-label` sets this false. `--no-cluster` implies no labels (there are
-     * no communities). Degrades gracefully (keeps generic names + a stderr note)
-     * when no LLM backend is configured.
-     */
-    label?: boolean;
-    labelBackend?: string;
-    labelModel?: string;
-    /**
-     * Explicit execution mode for community labels: "assistant" (default when no
-     * key) or "direct" (requires API key). When omitted, auto-selected.
-     */
-    labelMode?: "assistant" | "direct";
-    /**
-     * Output language for community names (field report ia-aero). "auto"
-     * (default) → detect per community; an explicit code forces one language.
-     * Forwarded to `applySalientCommunityLabels`.
-     */
-    labelLang?: string;
-    /**
-     * Phase 4: ONLY the fast git-hook rebuild (`hook-rebuild`) sets this true.
-     * It runs LLM-free (`describe: false`, `label: false`) to keep commits
-     * snappy, then drops a `.graphify_describe_pending` marker so the next
-     * describe-producing `graphify update` (default-on) fills the gap and
-     * `check-update` nudges the user. An explicit user `update --no-description`
-     * / `--no-label` must NOT leave this stale marker, so the marker is written
-     * only when THIS flag is set — never merely because `describe === false`.
-     */
-    markDescribePending?: boolean;
-    /**
-     * Per-node citation cap injected into the description prompt. Forwarded to
-     * `generateNodeDescriptions`. Resolved from corpus type by the CLI when a
-     * `--citation-cap` flag is absent; undefined here → the node-descriptions
-     * resolved default (10).
-     */
-    citationCap?: number | "all";
-    /**
      * Inline Level-1 citations kept per node in graph.json (the K-bounded set).
      * Forwarded to `persistGraphWithCitations`. Resolved from corpus type by the
      * CLI when a `--citations-top-k` flag is absent; undefined → the citations
@@ -207,6 +184,21 @@ export async function rebuildCode(
      * Only the fast git-hook rebuild sets this.
      */
     citationsReproject?: boolean;
+    /**
+     * Phase 4 legacy hook contract: ONLY the installed git-hook rebuild
+     * (`hook-rebuild`) sets this true. The live path never does — it writes no
+     * deferred-enrichment marker (LIVE §11). The hook keeps its explicit,
+     * pre-existing `.graphify_describe_pending` nudge for `check-update`.
+     */
+    markDescribePending?: boolean;
+    /**
+     * L1a / LIVE §11: explicit NON-LIVE enrichment request (the `engram
+     * update` dispatch). Absent → the rebuild stays deterministic and
+     * LLM-free (live watch/hook paths never set this). Present → run the
+     * salient-label + node-description stages with these knobs and the
+     * describe-pending marker finalization for this command only.
+     */
+    enrichment?: RebuildEnrichmentOptions;
   } = {},
 ): Promise<boolean> {
   try {
@@ -301,7 +293,19 @@ export async function rebuildCode(
         );
         const newAstIds = new Set(G.nodes());
         existing.forEachNode((nodeId, attrs) => {
-          if (newAstIds.has(nodeId)) return;
+          if (newAstIds.has(nodeId)) {
+            // L1a review M3: the fresh AST extraction rebuilt this node from
+            // scratch, so prior enrichment annotations (description, inline
+            // citations) would be silently dropped — the live path never
+            // re-describes, so nothing would restore them. Preserve them
+            // deterministically for unchanged symbols instead.
+            for (const key of PRESERVED_ANNOTATION_ATTRS) {
+              if (attrs[key] !== undefined && G.getNodeAttribute(nodeId, key) === undefined) {
+                G.setNodeAttribute(nodeId, key, attrs[key]);
+              }
+            }
+            return;
+          }
           G.mergeNode(nodeId, attrs);
         });
         existing.forEachEdge((_edge, attrs, source, target) => {
@@ -399,21 +403,38 @@ export async function rebuildCode(
         graph: G,
       });
 
-    // WP12: salient community labels on by DEFAULT. Run BEFORE the report so
-    // GRAPH_REPORT.md and graph.json both carry the salient names. Skipped when
-    // clustering is off (no communities) or `label === false` (--no-label).
-    // Degrades to generic "Community N" + a stderr note when no LLM backend.
-    if (!options.noCluster && options.label !== false && communities.size > 0) {
+    // L1a / LIVE §11: NO salient-label stage on the live code-only path (the
+    // labels come from `resolveCommunityLabels` — deterministic: persisted
+    // `.graphify_labels.json` or generic "Community N"). The stage runs ONLY
+    // under the explicit non-live `enrichment` request (`engram update`),
+    // before the report so GRAPH_REPORT.md and graph.json both carry the
+    // salient names. Degrades to generic "Community N" + a stderr note when
+    // no LLM backend is configured.
+    // L1a review B2: the label-stage outcome drives the instruction-dir
+    // lifecycle below — unanswered assistant instructions must survive a
+    // descriptions-complete run until the answer is ingested and verified.
+    let labelSource: LabelSource | null = null;
+    if (
+      options.enrichment &&
+      !options.noCluster &&
+      options.enrichment.label !== false &&
+      communities.size > 0
+    ) {
       const { applySalientCommunityLabels } = await import("./community-labeling.js");
       const { source } = await applySalientCommunityLabels(G, communities, labels, {
-        provider: options.labelBackend ?? null,
-        ...(options.labelModel ? { model: options.labelModel } : {}),
-        ...(options.labelMode ? { mode: options.labelMode } : {}),
-        ...(options.labelLang !== undefined ? { labelLang: options.labelLang } : {}),
-        ...(options.corpusDefaultLang ? { corpusDefaultLang: options.corpusDefaultLang } : {}),
+        provider: options.enrichment.labelBackend ?? null,
+        ...(options.enrichment.labelModel ? { model: options.enrichment.labelModel } : {}),
+        ...(options.enrichment.labelMode ? { mode: options.enrichment.labelMode } : {}),
+        ...(options.enrichment.labelLang !== undefined
+          ? { labelLang: options.enrichment.labelLang }
+          : {}),
+        ...(options.enrichment.corpusDefaultLang
+          ? { corpusDefaultLang: options.enrichment.corpusDefaultLang }
+          : {}),
         gods,
         instructionDir: join(paths.stateDir, "label-instructions"),
       });
+      labelSource = source;
       if (source === "llm") {
         // Persist so subsequent cluster-only / update / hook runs reuse the
         // salient names instead of regenerating them.
@@ -443,21 +464,35 @@ export async function rebuildCode(
     const { backupIfProtected } = await import("./export.js");
     backupIfProtected(paths.stateDir);
 
-    // WP11: stamp node descriptions onto G before the JSON write so each
-    // `description` is persisted to graph.json. Skips gracefully (no throw)
-    // when no LLM backend is configured.
+    // L1a / LIVE §11: NO description stage on the live code-only path — no
+    // model inference, no assistant instruction emission, no deferred marker.
+    // The stage runs ONLY under the explicit non-live `enrichment` request
+    // (`engram update`), stamping `description` onto G before the JSON write.
+    // Skips gracefully (no throw) when no LLM backend is configured.
     let descriptionsComplete = false;
-    if (options.describe !== false) {
+    if (options.enrichment && options.enrichment.describe !== false) {
       const { generateNodeDescriptions } = await import("./node-descriptions.js");
       const result = await generateNodeDescriptions(G, {
-        ...(options.descriptionBackend ? { provider: options.descriptionBackend } : {}),
-        ...(options.descriptionModel ? { model: options.descriptionModel } : {}),
-        ...(options.descriptionMaxNodes !== undefined ? { maxNodes: options.descriptionMaxNodes } : {}),
-        ...(options.descriptionOnlyMissing ? { onlyMissing: true } : {}),
-        ...(options.descriptionMode ? { mode: options.descriptionMode } : {}),
-        ...(options.citationCap !== undefined ? { citationCap: options.citationCap } : {}),
-        ...(options.descriptionLang !== undefined ? { descriptionLang: options.descriptionLang } : {}),
-        ...(options.corpusDefaultLang ? { corpusDefaultLang: options.corpusDefaultLang } : {}),
+        ...(options.enrichment.descriptionBackend
+          ? { provider: options.enrichment.descriptionBackend }
+          : {}),
+        ...(options.enrichment.descriptionModel
+          ? { model: options.enrichment.descriptionModel }
+          : {}),
+        ...(options.enrichment.descriptionMaxNodes !== undefined
+          ? { maxNodes: options.enrichment.descriptionMaxNodes }
+          : {}),
+        ...(options.enrichment.descriptionOnlyMissing ? { onlyMissing: true } : {}),
+        ...(options.enrichment.descriptionMode ? { mode: options.enrichment.descriptionMode } : {}),
+        ...(options.enrichment.citationCap !== undefined
+          ? { citationCap: options.enrichment.citationCap }
+          : {}),
+        ...(options.enrichment.descriptionLang !== undefined
+          ? { descriptionLang: options.enrichment.descriptionLang }
+          : {}),
+        ...(options.enrichment.corpusDefaultLang
+          ? { corpusDefaultLang: options.enrichment.corpusDefaultLang }
+          : {}),
         instructionDir: join(paths.stateDir, "description-instructions"),
       });
       // "Complete" = every describable node now has a description. When a backend
@@ -506,44 +541,60 @@ export async function rebuildCode(
     //
     // Two independent signals can create the pending marker:
     //
-    //   A) Fast git-hook rebuild: ran LLM-free (`describe: false`, `label: false`).
-    //      ONLY that path passes `markDescribePending: true` — we drop a marker
-    //      so `check-update` nudges the user. An explicit `update --no-description`
-    //      must NOT set this marker (0.12.0 fix — keeps "opted out" distinct from
-    //      "instructions emitted but not answered").
+    //   A) Fast git-hook rebuild: ran LLM-free (no `enrichment` group). ONLY
+    //      that path passes `markDescribePending: true` — we drop a marker so
+    //      `check-update` nudges the user. An explicit `update --no-description`
+    //      must NOT set this marker (0.12.0 fix — keeps "opted out" distinct
+    //      from "instructions emitted but not answered").
     //
-    //   B) Assistant mode: `update` ran describe/label in assistant mode (no API
-    //      key) and emitted instruction files that have NOT yet been answered.
-    //      This is NEW (C1 fix) — we detect un-answered instruction files directly
-    //      and write the pending marker with an actionable message, independent of
-    //      `markDescribePending`. Clears when a subsequent run ingests the answers.
+    //   B) Assistant mode: the explicit non-live enrichment (`engram update`)
+    //      ran describe/label in assistant mode (no API key) and emitted
+    //      instruction files that have NOT yet been answered. We detect
+    //      un-answered instruction files directly and write the pending marker
+    //      with an actionable message. Clears when a subsequent run ingests
+    //      the answers.
     //
-    // Instruction-file lifecycle (C1 stale-orphan fix): when this run completed
-    // all descriptions, purge every batch-*.md/json and communities.md/json from
-    // the instruction dirs so a leftover orphan from a prior run cannot produce a
-    // permanent false-pending signal on the NEXT check-update. The ingest paths
-    // in node-descriptions.ts / community-labeling.ts already delete consumed
-    // files; this is the safety net for the direct-mode completing path.
+    // The live code-only path (no `enrichment`, no `markDescribePending`) writes
+    // NO marker at all (LIVE §11 / L1a): pre-existing markers from the separate
+    // non-live workflow are left exactly as they are.
     //
-    // A run that completes descriptions (all describable nodes described) clears
-    // any pre-existing marker regardless of which path created it.
+    // Instruction-file lifecycle (C1 stale-orphan fix + L1a review B2):
+    // each instruction dir is purged ONLY when its own stage verified
+    // completion. A descriptions-complete run purges stale orphan description
+    // batches — but MUST NOT purge label instructions whose answer has not
+    // been ingested yet: the label stage has just emitted them (assistant
+    // mode) and the gap-fill re-run is what verifies the answer. Purging them
+    // here would drop pending label work and clear the marker while labels
+    // are still generic. The label dir is purged only when the label stage
+    // succeeded directly (`llm` source, salient names persisted); an ingested
+    // assistant answer self-cleans inside the label stage.
     {
       const descInstructionDir = join(paths.stateDir, DESCRIPTION_INSTRUCTIONS_DIR);
       const labelInstructionDir = join(paths.stateDir, LABEL_INSTRUCTIONS_DIR);
 
       if (descriptionsComplete) {
-        // Completing run: purge any stale orphan instruction files so subsequent
-        // countUnansweredDescriptionBatches / hasUnansweredLabelInstructions calls
-        // return 0/false even if a prior run left leftover .md files.
+        // Completing run: purge any stale orphan description files so a
+        // subsequent countUnansweredDescriptionBatches call returns 0 even if
+        // a prior run left leftover .md files.
         cleanDescriptionInstructionDir(descInstructionDir);
+      }
+      if (labelSource === "llm") {
+        // Direct-mode salient labels landed and were persisted — drop stale
+        // label orphans so they cannot cause a false-pending signal.
         cleanLabelInstructionDir(labelInstructionDir);
       }
 
-      const unansweredBatches = options.describe !== false
+      const unansweredBatches = options.enrichment && options.enrichment.describe !== false
         ? countUnansweredDescriptionBatches(descInstructionDir)
         : 0;
-      const unansweredLabels = options.label !== false && !options.noCluster
-        ? hasUnansweredLabelInstructions(labelInstructionDir)
+      // L1a pending-until-verified: an empty (`{}`) or malformed answer
+      // ingests to zero names, so it must NOT read as "answered" — the
+      // marker clears only after a valid ingestion (which self-cleans the
+      // instruction dir).
+      const unansweredLabels = options.enrichment &&
+          options.enrichment.label !== false &&
+          !options.noCluster
+        ? hasUnresolvedLabelInstructions(labelInstructionDir)
         : false;
       const hasUnansweredAssistantWork = unansweredBatches > 0 || unansweredLabels;
 
@@ -575,6 +626,7 @@ export async function rebuildCode(
         );
       }
     }
+
 
     if (options.clearStale !== false) {
       // Clear stale needs_update flag if present
@@ -638,14 +690,20 @@ export function checkUpdate(root: string): CheckUpdateResult {
   const descInstructionDir = join(paths.stateDir, DESCRIPTION_INSTRUCTIONS_DIR);
   const labelInstructionDir = join(paths.stateDir, LABEL_INSTRUCTIONS_DIR);
   const unansweredBatches = countUnansweredDescriptionBatches(descInstructionDir);
-  const unansweredLabels = hasUnansweredLabelInstructions(labelInstructionDir);
+  // L1a pending-until-verified: a present-but-unverifiable label answer
+  // (`{}` / malformed JSON) is active work, never a stale orphan — it
+  // bypasses the orphan suppression below so `current` stays false until a
+  // valid ingestion lands.
+  const unansweredLabels = hasUnresolvedLabelInstructions(labelInstructionDir);
+  const labelAnswerPresent = existsSync(join(labelInstructionDir, LABEL_ANSWER_FILE));
   if (!describePending && (unansweredBatches > 0 || unansweredLabels)) {
     // Before reporting pending, check whether the graph itself still has
     // undescribed describable nodes. Returns -1 when graph.json is missing or
     // unreadable (treat as "unknown" — do NOT suppress pending in that case).
     // Only suppress when we can positively confirm zero undescribed nodes (=0).
     const undescribedCount = countUndescribedInGraph(paths.graph);
-    if (undescribedCount !== 0) {
+    const activeLabelWork = unansweredLabels && labelAnswerPresent;
+    if (activeLabelWork || undescribedCount !== 0) {
       // undescribedCount > 0: genuine pending (real undescribed nodes exist).
       // undescribedCount < 0 (−1): graph.json absent/unreadable — state unknown,
       //   keep the pending signal rather than silently hiding it.
@@ -710,6 +768,53 @@ function notifyOnly(watchPath: string): void {
 
 function hasNonCode(changedPaths: string[]): boolean {
   return changedPaths.some((p) => !CODE_EXTENSIONS.has(extname(p).toLowerCase()));
+}
+
+// ---------------------------------------------------------------------------
+// Watch batch dispatch (LIVE §11 / L1a)
+// ---------------------------------------------------------------------------
+
+export interface WatchBatchOptions {
+  scope?: GraphifyInputScopeMode;
+  scopeSource?: InputScopeSource;
+  /** Inline Level-1 citations kept per node in graph.json. Default: corpus-resolved. */
+  citationsTopK?: number;
+}
+
+export interface WatchBatchOutcome {
+  /** True when the batch contained code and the deterministic rebuild succeeded. */
+  codeRebuilt: boolean;
+  /** True when the batch contained documents (needs_update flag written). */
+  nonCodeNotified: boolean;
+}
+
+/**
+ * Dispatch one coalesced watch batch. A mixed code/document batch refreshes
+ * the CODE graph deterministically AND flags the documents — it never
+ * collapses into a notification-only pass (LIVE §11: documents in a mixed
+ * batch cannot prevent code refresh or activate semantic extraction). Both
+ * halves run with zero model calls and zero assistant artifacts.
+ */
+export async function rebuildWatchBatch(
+  watchPath: string,
+  changedPaths: string[],
+  options: WatchBatchOptions = {},
+): Promise<WatchBatchOutcome> {
+  const codeChanged = changedPaths.some((p) =>
+    CODE_EXTENSIONS.has(extname(p).toLowerCase()),
+  );
+  const nonCodeChanged = hasNonCode(changedPaths);
+  let codeRebuilt = false;
+  if (codeChanged) {
+    codeRebuilt = await rebuildCode(watchPath, false, options);
+  }
+  if (nonCodeChanged) {
+    // Signal only: the documents still need semantic re-extraction, which is
+    // the separate explicit (non-live) workflow. Runs AFTER the code rebuild
+    // so `clearStale` in rebuildCode cannot erase the flag.
+    notifyOnly(watchPath);
+  }
+  return { codeRebuilt, nonCodeNotified: nonCodeChanged };
 }
 
 // ---------------------------------------------------------------------------
@@ -834,11 +939,7 @@ export async function watch(
     changed.clear();
     try {
       console.log(`\n[engram watch] ${batch.length} file(s) changed`);
-      if (hasNonCode(batch)) {
-        notifyOnly(watchPath);
-      } else {
-        await rebuildCode(watchPath, false, options);
-      }
+      await rebuildWatchBatch(watchPath, batch, options);
     } finally {
       rebuilding = false;
       releaseRebuildLock(watchPath);

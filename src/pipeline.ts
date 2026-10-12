@@ -14,13 +14,13 @@ import { buildFromJson } from "./build.js";
 import { cluster, scoreAll } from "./cluster.js";
 import { godNodes, surprisingConnections, suggestQuestions } from "./analyze.js";
 import { generate } from "./report.js";
-import { backupIfProtected } from "./export.js";
+import { backupIfProtected, persistGraphWithCitations } from "./export.js";
 import { buildStaticStudio, StudioSpaNotBuiltError, removeLegacyGraphViz } from "./studio-export.js";
 import { extractWithDiagnostics, type ExtractionDiagnostic } from "./extract.js";
 import { buildCodeFileNodeIdMap, extractGit, mergeExtractions } from "./extract-git.js";
 import { resolveGraphifyPaths } from "./paths.js";
 import { markLifecycleAnalyzed } from "./lifecycle.js";
-import { resolveCommunityLabels } from "./community-labels.js";
+import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
 import type { GenerateNodeDescriptionsOptions } from "./node-descriptions.js";
 import { finalizeEnrichedGraphBuild } from "./finalize-enriched-graph.js";
 import { safeGitRevParse } from "./git.js";
@@ -58,6 +58,9 @@ export interface BuildProjectOptions {
    * and stamp it onto the node before graph.json is written. ON by default;
    * the CLI `--no-description` flag sets this to `false`. Degrades gracefully
    * to a no-op when no LLM backend is configured.
+   *
+   * L1a / LIVE §11: `live: true` skips the whole semantic finalizer, so
+   * `describe` is inert on the explicit live code-only path.
    */
   describe?: boolean;
   /** Explicit description backend; defaults to auto-detect from API keys. */
@@ -66,6 +69,19 @@ export interface BuildProjectOptions {
   descriptionMaxNodes?: number;
   /** Injectable LLM caller for tests; bypasses real network calls. */
   describeCallLlm?: GenerateNodeDescriptionsOptions["callLlm"];
+  /**
+   * L1a / LIVE §11: explicit opt-in to the deterministic live code-only
+   * execution (no salient labels, no node descriptions, no assistant
+   * instruction emission, no deferred-enrichment marker). Absent → the
+   * pre-existing contract applies: the shared semantic finalizer always runs
+   * (existing `describe:true` + callback calls keep describing as on HEAD).
+   */
+  live?: boolean;
+  /**
+   * Opt out of the salient-label stage of the semantic finalizer —
+   * mirrors `--no-label` (L1a additive; HEAD had no programmatic knob).
+   */
+  label?: boolean;
 }
 
 export interface BuildProjectWarning {
@@ -231,25 +247,38 @@ export async function buildProject(
   // in place with the salient/ingested community names. Generating the report
   // or the suggested questions first would bake GENERIC labels into both
   // artifacts even when salient names (or an ingested answer) resolved.
-  await finalizeEnrichedGraphBuild({
-    graph: G,
-    communities,
-    labels,
-    graphPath,
-    stateDir: paths.stateDir,
-    labelsPath: paths.scratch.labels,
-    gods,
-    ...(options?.describe !== undefined ? { describe: options.describe } : {}),
-    ...(options?.descriptionBackend ? { descriptionBackend: options.descriptionBackend } : {}),
-    ...(options?.descriptionModel ? { descriptionModel: options.descriptionModel } : {}),
-    ...(options?.descriptionMaxNodes !== undefined ? { descriptionMaxNodes: options.descriptionMaxNodes } : {}),
-    // `describeCallLlm` is a DESCRIPTION-only caller; pass it solely to the
-    // description stage. An injected callLlm is a programmatic direct opt-in
-    // (community-labeling.ts:535), so handing it to the label stage too would
-    // silently drive labels into direct mode with label prompts. buildProject
-    // exposes no label caller, so the label stage stays assistant/auto here.
-    ...(options?.describeCallLlm ? { descriptionCallLlm: options.describeCallLlm } : {}),
-  });
+  //
+  // L1a / LIVE §11: the explicit live opt-in (`live: true`) skips the
+  // finalizer — the graph is written directly through the same deterministic
+  // citation-projection writer the finalizer routes through, with labels
+  // resolved from persisted state (zero model calls, zero assistant
+  // artifacts, zero deferred-enrichment markers). Absent → HEAD contract.
+  if (options?.live === true) {
+    persistGraphWithCitations(G, communities, graphPath, {
+      communityLabels: labels,
+    });
+    persistCommunityLabels(labels, paths.scratch.labels);
+  } else {
+    await finalizeEnrichedGraphBuild({
+      graph: G,
+      communities,
+      labels,
+      graphPath,
+      stateDir: paths.stateDir,
+      labelsPath: paths.scratch.labels,
+      gods,
+      ...(options?.describe !== undefined ? { describe: options.describe } : {}),
+      ...(options?.label !== undefined ? { label: options.label } : {}),
+      ...(options?.descriptionBackend ? { descriptionBackend: options.descriptionBackend } : {}),
+      ...(options?.descriptionModel ? { descriptionModel: options.descriptionModel } : {}),
+      ...(options?.descriptionMaxNodes !== undefined ? { descriptionMaxNodes: options.descriptionMaxNodes } : {}),
+      // `describeCallLlm` is a DESCRIPTION-only caller; pass it solely to the
+      // description stage. An injected callLlm is a programmatic direct opt-in
+      // (community-labeling.ts:535), so handing it to the label stage too would
+      // silently drive labels into direct mode with label prompts.
+      ...(options?.describeCallLlm ? { descriptionCallLlm: options.describeCallLlm } : {}),
+    });
+  }
 
   // Report + suggested questions are derived from the FINALIZED labels.
   const questions = suggestQuestions(G, communities, labels);
