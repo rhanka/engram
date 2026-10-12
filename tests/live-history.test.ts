@@ -257,9 +257,9 @@ function observeRefs(box: LiveGitSandbox, repo: string, observedAt: number): Raw
 }
 
 function resolveHead(box: LiveGitSandbox, worktreePath: string): WorktreeHead {
-  const verified = box.probe(worktreePath, ["rev-parse", "--verify", "HEAD"], undefined, "oracle");
+  const verified = box.probe(worktreePath, ["rev-parse", "--verify", "HEAD"], "oracle");
   if (verified.status !== 0) return { kind: "unborn" };
-  const symref = box.probe(worktreePath, ["symbolic-ref", "-q", "HEAD"], undefined, "oracle");
+  const symref = box.probe(worktreePath, ["symbolic-ref", "-q", "HEAD"], "oracle");
   if (symref.status === 0) return { kind: "branch", refName: symref.stdout.toString().trim() };
   return { kind: "detached", oid: verified.stdout.toString().trim() };
 }
