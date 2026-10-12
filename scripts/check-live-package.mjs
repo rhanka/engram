@@ -4,7 +4,7 @@
 // dependency beyond Node builtins, npm and tar.
 //
 // Packs @sentropic/engram-live exactly as it would be delivered and proves:
-//   1. the packed surface is EXACTLY the allowed set (the three built
+//   1. the packed surface is EXACTLY the allowed set (the four built
 //      entries .js/.d.ts/.d.ts.map, one packaged WASM per pinned language,
 //      the pinned grammar manifest, package.json) — no Python source, no
 //      node_modules, no root src/ file, no engram-memory leakage, nothing
@@ -479,7 +479,7 @@ function scanExtractedExecutable(pkgDir, packedSet, path) {
 function runLivePackageCheck() {
 
   // 0. Preconditions: a build must exist (no silent skip).
-  for (const emitted of ["index.js", "contracts.js", "integration.js", "index.d.ts", "contracts.d.ts", "integration.d.ts"]) {
+  for (const emitted of ["index.js", "contracts.js", "registration.js", "integration.js", "index.d.ts", "contracts.d.ts", "registration.d.ts", "integration.d.ts"]) {
     if (!existsSync(join(liveRoot, "dist", emitted))) {
       note(`build missing: engram-live/dist/${emitted} (run node scripts/build-live.mjs first; no skip)`);
     }
@@ -497,7 +497,7 @@ function runLivePackageCheck() {
   const lockJson = JSON.parse(readFileSync(join(liveRoot, "package-lock.json"), "utf8"));
 
   // The EXACT delivered surface: package.json + the pinned grammar manifest +
-  // 9 built dist files + one WASM per pinned language.
+  // 12 built dist files + one WASM per pinned language.
   function expectedPackedPaths(manifestLanguages) {
     return [
       "package.json",
@@ -508,6 +508,9 @@ function runLivePackageCheck() {
       "dist/contracts.js",
       "dist/contracts.d.ts",
       "dist/contracts.d.ts.map",
+      "dist/registration.js",
+      "dist/registration.d.ts",
+      "dist/registration.d.ts.map",
       "dist/integration.js",
       "dist/integration.d.ts",
       "dist/integration.d.ts.map",

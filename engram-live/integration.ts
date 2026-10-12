@@ -304,3 +304,20 @@ export function createLiveFactory(options: CreateLiveFactoryOptions): LiveFactor
 
 /** The advertised grammar matrix of this build, from the pinned manifest data. */
 export const ADVERTISED_GRAMMAR_LANGUAGES: readonly string[] = ADVERTISED_LANGUAGES;
+
+// The canonical identity derivation (L6a, spec §3/§12) is part of the public
+// integration surface: h2a and cluster-mesh mint cloneId/worktreeId/
+// declarationId through exactly these functions, so every seat derives
+// byte-identical opaque ids from identical components. The minting needs
+// node:crypto (sha256), which keeps it out of the data-pure /contracts
+// entry; the derivation itself stays pure and deterministic over its
+// arguments (see ./registration.js).
+export {
+  deriveCloneIdentity,
+  deriveWorktreeIdentity,
+  deriveDeclarationIdentity,
+  type DeclarationIdentityDto,
+  type DeriveCloneIdentityInput,
+  type DeriveWorktreeIdentityInput,
+  type DeriveDeclarationIdentityInput,
+} from "./registration.js";

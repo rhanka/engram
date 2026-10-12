@@ -110,10 +110,24 @@ export interface LiveScope {
   readonly worktree?: string;
 }
 
+/**
+ * Explicit live workspace declaration (L6a). Every declaration carries its
+ * opaque identity triangle: declarationId (unique per declaration, stable
+ * across every revision), plus its cloneId and worktreeId attachment, so a
+ * revocation can target exactly one declaration. Identity uncertainty is
+ * explicit (LIVE §12): an absent hostFingerprint is valid only when
+ * identityUncertainty contains "missing_history". The product binding, when
+ * present, is the complete (serverWorkspaceId, serverIssuer, bindingRevision)
+ * triplet — never a partial binding.
+ */
 export interface WorkspaceDeclarationDto {
   readonly tenant: string;
   readonly principal: string;
-  readonly hostFingerprint: string;
+  readonly hostFingerprint?: string;
+  readonly identityUncertainty: readonly IdentityUncertaintyState[];
+  readonly declarationId: string;
+  readonly cloneId: string;
+  readonly worktreeId: string;
   readonly authorizedRoots: readonly string[];
   readonly liveCapability: "live";
   readonly policyVersion: string;
@@ -177,8 +191,21 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function isNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function hasNul(value: unknown): boolean {
+  return typeof value === "string" && value.includes("\0");
+}
+
+/** Opaque scoped id as minted by the canonical derivation (prefixed, NUL-free). */
+function isOpaqueId(value: unknown, prefix: string): value is string {
+  return isNonEmptyString(value) && !hasNul(value) && value.startsWith(prefix);
+}
+
+function isUncertaintyList(value: unknown): value is readonly IdentityUncertaintyState[] {
+  return Array.isArray(value) && value.every((state) => isIdentityUncertaintyState(state));
 }
 
 // Exact-key enforcement (L6a): every DTO validator rejects unknown keys so
@@ -208,6 +235,10 @@ const WORKSPACE_DECLARATION_KEYS: readonly string[] = [
   "tenant",
   "principal",
   "hostFingerprint",
+  "identityUncertainty",
+  "declarationId",
+  "cloneId",
+  "worktreeId",
   "authorizedRoots",
   "liveCapability",
   "policyVersion",
@@ -221,47 +252,68 @@ export function validateWorkspaceDeclaration(declaration: unknown): ValidationRe
   if (!isRecord(declaration)) return { ok: false, errors: ["declaration must be an object"] };
   const errors: string[] = [];
   rejectUnknownKeys(declaration, WORKSPACE_DECLARATION_KEYS, "declaration", errors);
-  if (!isNonEmptyString(declaration.tenant)) errors.push("declaration.tenant must be a non-empty string");
-  if (!isNonEmptyString(declaration.principal)) errors.push("declaration.principal must be a non-empty string");
-  if (!isNonEmptyString(declaration.hostFingerprint)) {
-    errors.push("declaration.hostFingerprint must be a non-empty string");
+  if (!isNonEmptyString(declaration.tenant) || hasNul(declaration.tenant)) {
+    errors.push("declaration.tenant must be a non-empty string without NUL");
+  }
+  if (!isNonEmptyString(declaration.principal) || hasNul(declaration.principal)) {
+    errors.push("declaration.principal must be a non-empty string without NUL");
+  }
+  if (!isUncertaintyList(declaration.identityUncertainty)) {
+    errors.push(`declaration.identityUncertainty must be an array of uncertainty states (${IDENTITY_UNCERTAINTY_STATES.join(", ")})`);
+  }
+  if (declaration.hostFingerprint !== undefined) {
+    if (!isNonEmptyString(declaration.hostFingerprint) || hasNul(declaration.hostFingerprint)) {
+      errors.push("declaration.hostFingerprint, when present, must be a non-empty string without NUL");
+    }
+  } else if (!isUncertaintyList(declaration.identityUncertainty) ||
+    !(declaration.identityUncertainty as readonly string[]).includes("missing_history")) {
+    errors.push('declaration.hostFingerprint is absent: identityUncertainty must explicitly contain "missing_history" (LIVE §12)');
+  }
+  if (!isOpaqueId(declaration.declarationId, ID_PREFIXES.declaration)) {
+    errors.push(`declaration.declarationId must be a non-empty opaque id starting with "${ID_PREFIXES.declaration}"`);
+  }
+  if (!isOpaqueId(declaration.cloneId, ID_PREFIXES.clone)) {
+    errors.push(`declaration.cloneId must be a non-empty opaque id starting with "${ID_PREFIXES.clone}"`);
+  }
+  if (!isOpaqueId(declaration.worktreeId, ID_PREFIXES.worktree)) {
+    errors.push(`declaration.worktreeId must be a non-empty opaque id starting with "${ID_PREFIXES.worktree}"`);
   }
   if (!Array.isArray(declaration.authorizedRoots) || declaration.authorizedRoots.length === 0) {
     errors.push("declaration.authorizedRoots must be a non-empty array");
-  } else if (declaration.authorizedRoots.some((path: unknown) => !isNonEmptyString(path))) {
-    errors.push("declaration.authorizedRoots entries must be non-empty strings");
+  } else if (declaration.authorizedRoots.some((path: unknown) => !isNonEmptyString(path) || hasNul(path))) {
+    errors.push("declaration.authorizedRoots entries must be non-empty strings without NUL");
   }
   if (declaration.liveCapability !== "live") {
     errors.push('declaration.liveCapability must be the explicit string "live" (bind/upload is not activation)');
   }
-  if (!isNonEmptyString(declaration.policyVersion)) {
-    errors.push("declaration.policyVersion must be a non-empty string");
+  if (declaration.policyVersion !== POLICY_VERSION) {
+    errors.push(`declaration.policyVersion must be the fixed live policy version "${POLICY_VERSION}"`);
   }
-  if (!isNonNegativeInteger(declaration.declarationRevision)) {
-    errors.push("declaration.declarationRevision must be a non-negative integer");
+  if (!isPositiveInteger(declaration.declarationRevision) ||
+    declaration.declarationRevision < INITIAL_DECLARATION_REVISION) {
+    errors.push(`declaration.declarationRevision must be an integer >= ${INITIAL_DECLARATION_REVISION}`);
   }
-  if (declaration.serverWorkspaceId !== undefined && !isNonEmptyString(declaration.serverWorkspaceId)) {
-    errors.push("declaration.serverWorkspaceId, when present, must be a non-empty string");
+  const hasServerWorkspace = declaration.serverWorkspaceId !== undefined;
+  const hasServerIssuer = declaration.serverIssuer !== undefined;
+  const hasBindingRevision = declaration.bindingRevision !== undefined;
+  if (hasServerWorkspace && (!isNonEmptyString(declaration.serverWorkspaceId) || hasNul(declaration.serverWorkspaceId))) {
+    errors.push("declaration.serverWorkspaceId, when present, must be a non-empty string without NUL");
   }
-  if (declaration.serverIssuer !== undefined && !isNonEmptyString(declaration.serverIssuer)) {
-    errors.push("declaration.serverIssuer, when present, must be a non-empty string");
+  if (hasServerIssuer && (!isNonEmptyString(declaration.serverIssuer) || hasNul(declaration.serverIssuer))) {
+    errors.push("declaration.serverIssuer, when present, must be a non-empty string without NUL");
   }
-  if (declaration.bindingRevision !== undefined && !isNonNegativeInteger(declaration.bindingRevision)) {
-    errors.push("declaration.bindingRevision, when present, must be a non-negative integer");
+  if (hasBindingRevision && (!isPositiveInteger(declaration.bindingRevision) ||
+    declaration.bindingRevision < INITIAL_BINDING_REVISION)) {
+    errors.push(`declaration.bindingRevision, when present, must be an integer >= ${INITIAL_BINDING_REVISION}`);
   }
-  // Product live intent binds server/issuer, (serverWorkspaceId,
-  // hostFingerprint) and binding revision together (spec §12): a server
-  // workspace without its binding revision, or an issuer/revision without
-  // the server workspace, is not a valid product binding. Absence of all
-  // three is a valid local-only declaration requiring no enrollment.
-  if (declaration.serverWorkspaceId !== undefined && declaration.bindingRevision === undefined) {
-    errors.push("declaration.bindingRevision is required when declaration.serverWorkspaceId is present");
-  }
-  if (declaration.serverIssuer !== undefined && declaration.serverWorkspaceId === undefined) {
-    errors.push("declaration.serverWorkspaceId is required when declaration.serverIssuer is present");
-  }
-  if (declaration.bindingRevision !== undefined && declaration.serverWorkspaceId === undefined) {
-    errors.push("declaration.serverWorkspaceId is required when declaration.bindingRevision is present");
+  // Product live intent binds the complete server/issuer/revision triplet
+  // (spec §12): a workspace without its issuer or binding revision, an
+  // issuer or revision without the workspace, is not a valid product
+  // binding. Absence of all three is a valid local-only declaration
+  // requiring no enrollment.
+  if ((hasServerWorkspace || hasServerIssuer || hasBindingRevision) &&
+    !(hasServerWorkspace && hasServerIssuer && hasBindingRevision)) {
+    errors.push("the product binding must be the complete serverWorkspaceId + serverIssuer + bindingRevision triplet: a partial binding is not a valid product intent");
   }
   return { ok: errors.length === 0, errors };
 }
@@ -328,22 +380,58 @@ export function classifyDuplicateBatch(
 //   functions with no host state, no storage and no network. Durable state
 //   belongs to the hosts — local h2a state outside source roots plus
 //   app-operated product persistence — independent of the live projection.
+// - Opaque identity triangle: every declaration carries a declarationId
+//   (unique per declaration, stable across revisions) attached to its
+//   cloneId and worktreeId. A revocation names exactly one declaration;
+//   withdrawing a whole clone means revoking each of its declarations,
+//   each revocation naming its exact declarationId.
 // - Workspace fingerprint vs clone identity: the public h2a `ws:`
 //   fingerprint stays on the declaration (hostFingerprint) and is never
 //   the sole clone key. The clone key is the (hostScope, common-dir
-//   project fingerprint, common-dir realpath) triple. Two clones with an
+//   realpath, common-dir project fingerprint) triple. Two clones with an
 //   equal project fingerprint remain distinct; linked worktrees sharing one
 //   common-dir share one clone with isolated worktree identities. The
 //   common-dir realpath is host-local and never published to sentropic:
 //   share only the opaque cloneId.
+// - Identity uncertainty (LIVE §12): a repo without history (unborn HEAD)
+//   or with grafted (shallow) history declares explicit uncertainty
+//   states; a fingerprint may be absent only under "missing_history".
+//   Uncertainty never merges clones: the hostScope + common-dir realpath
+//   key components keep them distinct.
 // - Revisions increment by exactly one, preserve tenant/principal/
-//   hostFingerprint, and revalidate rebinding (a changed serverWorkspaceId
-//   requires a new bindingRevision). The host must additionally refuse to
-//   redirect in-flight collection/publication on rebind.
+//   hostFingerprint, and preserve the product binding unless the binding
+//   itself changes: a revision outside the binding (roots, policy version)
+//   keeps it, while a changed serverWorkspaceId or serverIssuer — or an
+//   explicit revalidation — requires a strictly increasing
+//   bindingRevision (the first binding carries exactly 1). The host must
+//   additionally refuse to redirect in-flight collection/publication on
+//   rebind.
 // - Revocation is a private-purge request: the host stops work, rejects
 //   delayed jobs, and purges private snapshots, derived indexes and
 //   decryptability, while preserving authorized committed history. Purging
 //   never deletes committed facts.
+//
+// FROZEN L6a CONVENTIONS — both seats align on these values:
+// - POLICY_VERSION ("live-git-indexing/1") is the one policy name stamped
+//   on every live declaration; h2a's provisional "live-git-1" retires.
+// - INITIAL_DECLARATION_REVISION (1): the explicit activation itself is
+//   the first revision; there is no revision-0 declaration.
+// - INITIAL_BINDING_REVISION (1): the first product binding carries 1,
+//   and every rebind/revalidation carries a strictly greater
+//   bindingRevision.
+// - Identity uncertainty vocabulary: "missing_history", "shallow_history"
+//   (the labels H already produces under LIVE §12).
+// - Opaque ids are minted ONLY through the canonical derivation below
+//   (canonicalIdKey + the sha256 minting in ./registration.js): the same
+//   inputs give H, S and E byte-identical cloneId/worktreeId/
+//   declarationId. MIGRATION (H): identifiers already persisted by h2a
+//   were hashed from newline-joined "hostScope\nrealpath\nfingerprint"
+//   (clone), "hostScope\ngitDir" (worktree) and
+//   "hostScope\ncommonDirRealpath\nws:" (declaration); that scheme is
+//   ambiguous and diverges from this contract. Re-derive every persisted
+//   id with the canonical derivation and rewrite the local h2a store; no
+//   old id has crossed to sentropic (L6a is not consumed yet), so the
+//   migration is a purely local rewrite with no product-side replay.
 
 /** The only capability value that activates live collection (Q4 A). */
 export const EXPLICIT_LIVE_CAPABILITY = "live" as const;
@@ -386,32 +474,110 @@ export function isRevocationReason(value: unknown): value is RevocationReason {
 }
 
 /**
- * Local clone identity. hostScope bounds the clone to one host;
- * commonDirProjectFingerprint is the project fingerprint computed over the
- * common-dir history with the empty main-worktree component (spec §12);
- * commonDirRealpath is the host-resolved common-dir path (host-local only,
- * never published to sentropic); cloneId is the scoped opaque identifier
- * safe to share; oidAlgorithm records the repository object format.
+ * Explicit identity-coverage uncertainty states (LIVE §12). A repo with no
+ * history (unborn HEAD) declares "missing_history"; a grafted (shallow)
+ * history declares "shallow_history" while keeping its fingerprints, whose
+ * coverage stays uncertain. An absent fingerprint is valid only under
+ * "missing_history"; uncertainty never merges clones.
  */
-export interface CloneIdentityDto {
-  readonly hostScope: string;
-  readonly commonDirProjectFingerprint: string;
-  readonly commonDirRealpath: string;
-  readonly cloneId: string;
-  readonly oidAlgorithm: OidAlgorithm;
+export const IDENTITY_UNCERTAINTY_STATES = ["missing_history", "shallow_history"] as const;
+
+export type IdentityUncertaintyState = (typeof IDENTITY_UNCERTAINTY_STATES)[number];
+
+export function isIdentityUncertaintyState(value: unknown): value is IdentityUncertaintyState {
+  return (
+    typeof value === "string" &&
+    (IDENTITY_UNCERTAINTY_STATES as readonly string[]).includes(value)
+  );
+}
+
+/** First declaration revision: the explicit activation is revision 1. */
+export const INITIAL_DECLARATION_REVISION = 1;
+
+/** First product binding revision; every rebind carries a strictly greater one. */
+export const INITIAL_BINDING_REVISION = 1;
+
+/** The three opaque id kinds minted by the canonical derivation. */
+export const ID_KINDS = ["clone", "worktree", "declaration"] as const;
+
+export type IdKind = (typeof ID_KINDS)[number];
+
+/** Opaque id prefixes; a valid id of a kind starts with its prefix. */
+export const ID_PREFIXES: Readonly<Record<IdKind, string>> = {
+  clone: "clone:",
+  worktree: "wt:",
+  declaration: "decl:",
+};
+
+export function isIdKind(value: unknown): value is IdKind {
+  return (
+    typeof value === "string" &&
+    (ID_KINDS as readonly string[]).includes(value)
+  );
 }
 
 /**
- * Worktree identity: one shared cloneId plus an isolated per-worktree
- * fingerprint, path and resolved git-dir. Linked worktrees share only
- * authorized immutable analyses; index snapshots and context-dependent
- * resolution stay worktree-local (spec §§3, 15).
+ * THE canonical identity serialization shared by every live opaque id
+ * (cloneId, worktreeId, declarationId). Both seats and engram mint ids
+ * from this exact function, so the same identity components always give
+ * the same id on every side. The serialization is unambiguous: a JSON
+ * array of the kind plus the components in order, so no component value
+ * can shift a boundary. NUL is refused outright in every component, so the
+ * ambiguous couples ("a\0b", "c") vs ("a", "b\0c") can never be
+ * constructed. Pure and total over valid inputs; throws on malformed
+ * components so no silent normalization can produce a colliding key.
+ */
+export function canonicalIdKey(kind: IdKind, components: readonly string[]): string {
+  if (!isIdKind(kind)) {
+    throw new Error(`canonicalIdKey requires a known id kind (${ID_KINDS.join(", ")})`);
+  }
+  for (const component of components) {
+    if (typeof component !== "string") {
+      throw new Error("canonicalIdKey requires string components");
+    }
+    if (component.includes("\0")) {
+      throw new Error("canonicalIdKey refuses NUL in identity components");
+    }
+  }
+  return JSON.stringify([kind, ...components]);
+}
+
+/**
+ * Local clone identity. hostScope bounds the clone to one host;
+ * commonDirProjectFingerprint is the project fingerprint computed over the
+ * common-dir history with the empty main-worktree component (spec §12) and
+ * is optional: it may be absent only when identityUncertainty explicitly
+ * contains "missing_history" (LIVE §12) — the hostScope + common-dir
+ * realpath components keep clones distinct even then;
+ * commonDirRealpath is the host-resolved common-dir path (host-local only,
+ * never published to sentropic); cloneId is the scoped opaque identifier
+ * minted from canonicalIdKey and safe to share; oidAlgorithm records the
+ * repository object format.
+ */
+export interface CloneIdentityDto {
+  readonly hostScope: string;
+  readonly commonDirRealpath: string;
+  readonly commonDirProjectFingerprint?: string;
+  readonly cloneId: string;
+  readonly oidAlgorithm: OidAlgorithm;
+  readonly identityUncertainty: readonly IdentityUncertaintyState[];
+}
+
+/**
+ * Worktree identity: one shared cloneId plus its own host-scoped opaque
+ * worktreeId, isolated per-worktree fingerprint, path and resolved
+ * git-dir. Linked worktrees share only authorized immutable analyses;
+ * index snapshots and context-dependent resolution stay worktree-local
+ * (spec §§3, 15). The worktree fingerprint is optional: absent only under
+ * explicit "missing_history" uncertainty (LIVE §12).
  */
 export interface WorktreeIdentityDto {
   readonly cloneId: string;
+  readonly worktreeId: string;
   readonly worktreePath: string;
   readonly gitDir: string;
-  readonly worktreeFingerprint: string;
+  readonly worktreeFingerprint?: string;
+  readonly identityUncertainty: readonly IdentityUncertaintyState[];
 }
 
 /**
@@ -426,10 +592,19 @@ export interface PrivatePurgeRequestDto {
   readonly preserveCommittedHistory: true;
 }
 
-/** Revocation of one declaration revision: purge private state, keep history. */
+/**
+ * Revocation of exactly one declaration: the opaque declarationId names the
+ * single target (stable across that declaration's revisions, unique per
+ * declaration), and cloneId/worktreeId carry its clone/worktree
+ * attachment so the recipient purges the right scope without consulting
+ * ambiguous public values. Withdrawing a whole clone revokes each of its
+ * declarations, one unambiguous revocation each.
+ */
 export interface DeclarationRevocationDto {
+  readonly declarationId: string;
   readonly tenant: string;
-  readonly hostFingerprint: string;
+  readonly cloneId: string;
+  readonly worktreeId: string;
   readonly declarationRevision: number;
   readonly reason: RevocationReason;
   readonly requestPrivatePurge: PrivatePurgeRequestDto;
@@ -437,17 +612,20 @@ export interface DeclarationRevocationDto {
 
 const CLONE_IDENTITY_KEYS: readonly string[] = [
   "hostScope",
-  "commonDirProjectFingerprint",
   "commonDirRealpath",
+  "commonDirProjectFingerprint",
   "cloneId",
   "oidAlgorithm",
+  "identityUncertainty",
 ];
 
 const WORKTREE_IDENTITY_KEYS: readonly string[] = [
   "cloneId",
+  "worktreeId",
   "worktreePath",
   "gitDir",
   "worktreeFingerprint",
+  "identityUncertainty",
 ];
 
 const PRIVATE_PURGE_REQUEST_KEYS: readonly string[] = [
@@ -458,8 +636,10 @@ const PRIVATE_PURGE_REQUEST_KEYS: readonly string[] = [
 ];
 
 const DECLARATION_REVOCATION_KEYS: readonly string[] = [
+  "declarationId",
   "tenant",
-  "hostFingerprint",
+  "cloneId",
+  "worktreeId",
   "declarationRevision",
   "reason",
   "requestPrivatePurge",
@@ -479,39 +659,32 @@ export function normalizeCommonDirRealpath(realpath: string): string {
   return realpath;
 }
 
-/**
- * Canonical clone key binding host scope, project fingerprint and normalized
- * common-dir realpath, NUL-joined so no component boundary is ambiguous.
- * Hosts hash this string (e.g. SHA-256) to mint the opaque cloneId; the
- * canonical key itself stays host-local with the realpath.
- */
-export function canonicalCloneKey(input: {
-  readonly hostScope: string;
-  readonly commonDirProjectFingerprint: string;
-  readonly commonDirRealpath: string;
-}): string {
-  const normalized = normalizeCommonDirRealpath(input.commonDirRealpath);
-  return `${input.hostScope}\0${input.commonDirProjectFingerprint}\0${normalized}`;
-}
-
 export function validateCloneIdentity(identity: unknown): ValidationResult {
   if (!isRecord(identity)) return { ok: false, errors: ["cloneIdentity must be an object"] };
   const errors: string[] = [];
   rejectUnknownKeys(identity, CLONE_IDENTITY_KEYS, "cloneIdentity", errors);
-  if (!isNonEmptyString(identity.hostScope)) errors.push("cloneIdentity.hostScope must be a non-empty string");
-  if (!isNonEmptyString(identity.commonDirProjectFingerprint)) {
-    errors.push("cloneIdentity.commonDirProjectFingerprint must be a non-empty string");
+  if (!isNonEmptyString(identity.hostScope) || hasNul(identity.hostScope)) {
+    errors.push("cloneIdentity.hostScope must be a non-empty string without NUL");
   }
-  if (!isNonEmptyString(identity.commonDirRealpath)) {
-    errors.push("cloneIdentity.commonDirRealpath must be a non-empty string");
+  if (!isNonEmptyString(identity.commonDirRealpath) || hasNul(identity.commonDirRealpath)) {
+    errors.push("cloneIdentity.commonDirRealpath must be a non-empty string without NUL");
   }
-  if (!isNonEmptyString(identity.cloneId)) {
-    errors.push("cloneIdentity.cloneId must be a non-empty string");
-  } else if (!(identity.cloneId as string).startsWith("clone:")) {
-    errors.push('cloneIdentity.cloneId must be a scoped opaque id starting with "clone:"');
+  if (identity.commonDirProjectFingerprint !== undefined &&
+    (!isNonEmptyString(identity.commonDirProjectFingerprint) || hasNul(identity.commonDirProjectFingerprint))) {
+    errors.push("cloneIdentity.commonDirProjectFingerprint, when present, must be a non-empty string without NUL");
+  } else if (identity.commonDirProjectFingerprint === undefined &&
+    (!isUncertaintyList(identity.identityUncertainty) ||
+      !(identity.identityUncertainty as readonly string[]).includes("missing_history"))) {
+    errors.push('cloneIdentity.commonDirProjectFingerprint is absent: identityUncertainty must explicitly contain "missing_history" (LIVE §12)');
+  }
+  if (!isOpaqueId(identity.cloneId, ID_PREFIXES.clone)) {
+    errors.push(`cloneIdentity.cloneId must be a non-empty opaque id starting with "${ID_PREFIXES.clone}"`);
   }
   if (identity.oidAlgorithm !== "sha1" && identity.oidAlgorithm !== "sha256") {
     errors.push('cloneIdentity.oidAlgorithm must be "sha1" or "sha256"');
+  }
+  if (!isUncertaintyList(identity.identityUncertainty)) {
+    errors.push(`cloneIdentity.identityUncertainty must be an array of uncertainty states (${IDENTITY_UNCERTAINTY_STATES.join(", ")})`);
   }
   return { ok: errors.length === 0, errors };
 }
@@ -520,13 +693,28 @@ export function validateWorktreeIdentity(identity: unknown): ValidationResult {
   if (!isRecord(identity)) return { ok: false, errors: ["worktreeIdentity must be an object"] };
   const errors: string[] = [];
   rejectUnknownKeys(identity, WORKTREE_IDENTITY_KEYS, "worktreeIdentity", errors);
-  if (!isNonEmptyString(identity.cloneId)) errors.push("worktreeIdentity.cloneId must be a non-empty string");
-  if (!isNonEmptyString(identity.worktreePath)) {
-    errors.push("worktreeIdentity.worktreePath must be a non-empty string");
+  if (!isOpaqueId(identity.cloneId, ID_PREFIXES.clone)) {
+    errors.push(`worktreeIdentity.cloneId must be a non-empty opaque id starting with "${ID_PREFIXES.clone}"`);
   }
-  if (!isNonEmptyString(identity.gitDir)) errors.push("worktreeIdentity.gitDir must be a non-empty string");
-  if (!isNonEmptyString(identity.worktreeFingerprint)) {
-    errors.push("worktreeIdentity.worktreeFingerprint must be a non-empty string");
+  if (!isOpaqueId(identity.worktreeId, ID_PREFIXES.worktree)) {
+    errors.push(`worktreeIdentity.worktreeId must be a non-empty opaque id starting with "${ID_PREFIXES.worktree}"`);
+  }
+  if (!isNonEmptyString(identity.worktreePath) || hasNul(identity.worktreePath)) {
+    errors.push("worktreeIdentity.worktreePath must be a non-empty string without NUL");
+  }
+  if (!isNonEmptyString(identity.gitDir) || hasNul(identity.gitDir)) {
+    errors.push("worktreeIdentity.gitDir must be a non-empty string without NUL");
+  }
+  if (identity.worktreeFingerprint !== undefined &&
+    (!isNonEmptyString(identity.worktreeFingerprint) || hasNul(identity.worktreeFingerprint))) {
+    errors.push("worktreeIdentity.worktreeFingerprint, when present, must be a non-empty string without NUL");
+  } else if (identity.worktreeFingerprint === undefined &&
+    (!isUncertaintyList(identity.identityUncertainty) ||
+      !(identity.identityUncertainty as readonly string[]).includes("missing_history"))) {
+    errors.push('worktreeIdentity.worktreeFingerprint is absent: identityUncertainty must explicitly contain "missing_history" (LIVE §12)');
+  }
+  if (!isUncertaintyList(identity.identityUncertainty)) {
+    errors.push(`worktreeIdentity.identityUncertainty must be an array of uncertainty states (${IDENTITY_UNCERTAINTY_STATES.join(", ")})`);
   }
   return { ok: errors.length === 0, errors };
 }
@@ -554,12 +742,21 @@ export function validateDeclarationRevocation(revocation: unknown): ValidationRe
   if (!isRecord(revocation)) return { ok: false, errors: ["revocation must be an object"] };
   const errors: string[] = [];
   rejectUnknownKeys(revocation, DECLARATION_REVOCATION_KEYS, "revocation", errors);
-  if (!isNonEmptyString(revocation.tenant)) errors.push("revocation.tenant must be a non-empty string");
-  if (!isNonEmptyString(revocation.hostFingerprint)) {
-    errors.push("revocation.hostFingerprint must be a non-empty string");
+  if (!isOpaqueId(revocation.declarationId, ID_PREFIXES.declaration)) {
+    errors.push(`revocation.declarationId must be a non-empty opaque id starting with "${ID_PREFIXES.declaration}"`);
   }
-  if (!isNonNegativeInteger(revocation.declarationRevision)) {
-    errors.push("revocation.declarationRevision must be a non-negative integer");
+  if (!isNonEmptyString(revocation.tenant) || hasNul(revocation.tenant)) {
+    errors.push("revocation.tenant must be a non-empty string without NUL");
+  }
+  if (!isOpaqueId(revocation.cloneId, ID_PREFIXES.clone)) {
+    errors.push(`revocation.cloneId must be a non-empty opaque id starting with "${ID_PREFIXES.clone}"`);
+  }
+  if (!isOpaqueId(revocation.worktreeId, ID_PREFIXES.worktree)) {
+    errors.push(`revocation.worktreeId must be a non-empty opaque id starting with "${ID_PREFIXES.worktree}"`);
+  }
+  if (!isPositiveInteger(revocation.declarationRevision) ||
+    revocation.declarationRevision < INITIAL_DECLARATION_REVISION) {
+    errors.push(`revocation.declarationRevision must be an integer >= ${INITIAL_DECLARATION_REVISION}`);
   }
   if (!isRevocationReason(revocation.reason)) {
     errors.push(`revocation.reason must be one of ${REVOCATION_REASONS.join(", ")}`);

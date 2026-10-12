@@ -41,6 +41,7 @@ function liveBuildIsFresh(): boolean {
   if (!existsSync(marker)) return false;
   const inputs = [
     "contracts.ts",
+    "registration.ts",
     "integration.ts",
     "index.ts",
     "tsconfig.json",
@@ -182,6 +183,10 @@ const EXERCISE_PROBE = [
   "    tenant: \"local:probe-owner\",",
   "    principal: \"local:probe-principal\",",
   "    hostFingerprint: \"probe-fingerprint\",",
+  "    identityUncertainty: [],",
+  "    declarationId: \"decl:probe\",",
+  "    cloneId: \"clone:probe\",",
+  "    worktreeId: \"wt:probe\",",
   "    authorizedRoots: [\"/probe/worktree\"],",
   "    liveCapability: \"live\",",
   "    policyVersion: contracts.POLICY_VERSION,",
@@ -230,6 +235,10 @@ const GRAMMAR_PROBE = [
   "  tenant: \"local:probe-owner\",",
   "  principal: \"local:probe-principal\",",
   "  hostFingerprint: \"probe-fingerprint\",",
+  "  identityUncertainty: [],",
+  "  declarationId: \"decl:probe\",",
+  "  cloneId: \"clone:probe\",",
+  "  worktreeId: \"wt:probe\",",
   "  authorizedRoots: [\"/probe/worktree\"],",
   "  liveCapability: \"live\",",
   "  policyVersion: contracts.POLICY_VERSION,",
@@ -330,6 +339,61 @@ const GRAMMAR_PROBE = [
   "",
 ].join("\n");
 
+// Protected child probe: the canonical identity derivation (L6a) must be
+// importable from the PUBLIC entries of the installed package — h2a and
+// cluster-mesh call exactly this surface, never an internal path. The
+// probe derives clone/worktree/declaration identities through
+// @sentropic/engram-live/integration and "." and proves determinism and
+// the per-worktree declaration split.
+const DERIVATION_PROBE = [
+  'import * as rootEntry from "@sentropic/engram-live";',
+  'import * as integration from "@sentropic/engram-live/integration";',
+  'const components = {',
+  '  hostScope: "host:probe",',
+  '  commonDirRealpath: "/srv/probe/.git",',
+  '  commonDirProjectFingerprint: "probe-fingerprint",',
+  "  identityUncertainty: [],",
+  '  oidAlgorithm: "sha1",',
+  "};",
+  'const deriveNames = ["deriveCloneIdentity", "deriveWorktreeIdentity", "deriveDeclarationIdentity"];',
+  "const deriveTypes = deriveNames.map((name) => typeof integration[name]);",
+  "const rootDerives = deriveNames.every((name) => typeof rootEntry[name] === \"function\");",
+  "const clone = integration.deriveCloneIdentity(components);",
+  "const cloneAgain = integration.deriveCloneIdentity(components);",
+  "const worktree = integration.deriveWorktreeIdentity({",
+  '  hostScope: "host:probe",',
+  "  clone,",
+  '  worktreePath: "/work/probe",',
+  '  gitDir: "/srv/probe/.git",',
+  '  worktreeFingerprint: "ws:probe",',
+  "  identityUncertainty: [],",
+  "});",
+  "const sibling = integration.deriveWorktreeIdentity({",
+  '  hostScope: "host:probe",',
+  "  clone,",
+  '  worktreePath: "/work/probe-wt",',
+  '  gitDir: "/srv/probe/.git/worktrees/wt",',
+  '  worktreeFingerprint: "ws:probe",',
+  "  identityUncertainty: [],",
+  "});",
+  'const declaration = integration.deriveDeclarationIdentity({ hostScope: "host:probe", clone, worktree });',
+  'const declarationAgain = integration.deriveDeclarationIdentity({ hostScope: "host:probe", clone, worktree });',
+  "const report = {",
+  "  deriveTypes,",
+  "  rootDerives,",
+  "  deterministicClone: cloneAgain.cloneId === clone.cloneId,",
+  "  deterministicDeclaration: declarationAgain.declarationId === declaration.declarationId,",
+  '  cloneIdPrefixed: clone.cloneId.startsWith("clone:"),',
+  '  worktreeIdPrefixed: worktree.worktreeId.startsWith("wt:"),',
+  '  declarationIdPrefixed: declaration.declarationId.startsWith("decl:"),',
+  "  declarationBindsTriangle:",
+  "    declaration.cloneId === clone.cloneId && declaration.worktreeId === worktree.worktreeId,",
+  "  distinctWorktrees: sibling.worktreeId !== worktree.worktreeId,",
+  "};",
+  "console.log(JSON.stringify(report));",
+  "",
+].join("\n");
+
 // Protected child probe (mutation canary): imports and exercises the
 // delivered surface FIRST, then attempts to evaluate Python through
 // node:child_process — the exact escape the review demonstrated. Inside
@@ -356,6 +420,10 @@ const PYTHON_CANARY_PROBE = [
   '    tenant: "local:probe-owner",',
   '    principal: "local:probe-principal",',
   '    hostFingerprint: "probe-fingerprint",',
+  '    identityUncertainty: [],',
+  '    declarationId: "decl:probe",',
+  '    cloneId: "clone:probe",',
+  '    worktreeId: "wt:probe",',
   '    authorizedRoots: ["/probe/worktree"],',
   '    liveCapability: "live",',
   "    policyVersion: contracts.POLICY_VERSION,",
@@ -410,6 +478,7 @@ function packAndInstall(
   writeFileShim(join(installDir, "import-probe.mjs"), IMPORT_PROBE);
   writeFileShim(join(installDir, "exercise-probe.mjs"), EXERCISE_PROBE);
   writeFileShim(join(installDir, "grammar-probe.mjs"), GRAMMAR_PROBE);
+  writeFileShim(join(installDir, "derivation-probe.mjs"), DERIVATION_PROBE);
   writeFileShim(join(installDir, "python-canary-probe.mjs"), PYTHON_CANARY_PROBE);
   return { tmpRoot, installDir, tripwireBin, pythonMarker, tarball, packedPaths, phaseTrace };
 }
@@ -455,6 +524,18 @@ interface GrammarReport {
   invalidManifest: { state: string; reason?: string };
   inherited: Record<string, { state: string; reason?: string; coverageState: string; coverageReason: string }>;
   absent: Record<string, { state: string; reason?: string; coverageState: string; coverageReason: string }>;
+}
+
+interface DerivationReport {
+  deriveTypes: string[];
+  rootDerives: boolean;
+  deterministicClone: boolean;
+  deterministicDeclaration: boolean;
+  cloneIdPrefixed: boolean;
+  worktreeIdPrefixed: boolean;
+  declarationIdPrefixed: boolean;
+  declarationBindsTriangle: boolean;
+  distinctWorktrees: boolean;
 }
 
 // The protected environment every phase runs in — ONE environment, created
@@ -635,6 +716,28 @@ describe("live package", () => {
       expect(absent.coverageState).toBe("unavailable");
       expect(absent.coverageReason ?? "").toContain(name);
     }
+  });
+
+  it("the canonical identity derivation is exported by the public entries of the built package", () => {
+    // A protected child imports the derivation from the PUBLIC entries
+    // (., /integration) of the installed package — never from an internal
+    // path — and derives every opaque id through exactly that surface.
+    const output = runProtectedPhase(process.execPath, ["derivation-probe.mjs"], {
+      cwd: packed.installDir,
+      env: tripwireEnv(packed.tripwireBin),
+    });
+    recordPhaseMarker(packed.phaseTrace, "derivation", packed.pythonMarker);
+    expectNoPython(packed.phaseTrace);
+    const report = JSON.parse(output) as DerivationReport;
+    expect(report.deriveTypes).toEqual(["function", "function", "function"]);
+    expect(report.rootDerives).toBe(true);
+    expect(report.deterministicClone).toBe(true);
+    expect(report.deterministicDeclaration).toBe(true);
+    expect(report.cloneIdPrefixed).toBe(true);
+    expect(report.worktreeIdPrefixed).toBe(true);
+    expect(report.declarationIdPrefixed).toBe(true);
+    expect(report.declarationBindsTriangle).toBe(true);
+    expect(report.distinctWorktrees).toBe(true);
   });
 
   it("a Python call from inside the protected environment is rejected after import and exercise", () => {

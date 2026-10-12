@@ -3,7 +3,8 @@
 //
 // "." re-exports the data-pure contracts and the executable factory seam.
 // Consumers import /contracts at the adapter boundary and /integration for
-// the factory; the releases are staged neutral package → contracts →
+// the factory and the canonical identity derivation (cloneId/worktreeId/
+// declarationId); the releases are staged neutral package → contracts →
 // cluster-mesh → h2a pins (§11).
 
 export * from "./contracts.js";
