@@ -871,6 +871,26 @@ function checkPackageClosure(input: PackageClosureInput): ClosureViolation[] {
   return violations;
 }
 
+// Neutral test closure: an EXPLICIT, controlled list of the tests and
+// helpers that exercise the engram-live package. Root-CLI tests
+// (live-no-llm, live-fixtures, live-worktree-safety, …) stay outside it
+// whatever their tests/live-* name; a future package test or helper joins
+// the closure only by being added to this list on purpose.
+const NEUTRAL_TEST_FILES = new Set([
+  "tests/live-neutrality.test.ts",
+  "tests/live-package.test.ts",
+  "tests/live-helper.ts",
+]);
+
+// Candidate repo paths a relative test import can resolve to (as written,
+// with a .ts extension, and .js rewritten to .ts).
+function neutralTestImportCandidates(fromPath: string, specifier: string): string[] {
+  const resolved = resolveRepoRelative(fromPath, specifier);
+  const candidates = [resolved, `${resolved}.ts`];
+  if (resolved.endsWith(".js")) candidates.push(`${resolved.slice(0, -3)}.ts`);
+  return candidates;
+}
+
 function checkTestFile(file: ScannedFile): ClosureViolation[] {
   const edges = extractEdges(file.content);
   const violations: ClosureViolation[] = [...dynamicViolations(file.path, edges, true)];
@@ -896,9 +916,10 @@ function checkTestFile(file: ScannedFile): ClosureViolation[] {
         }
         continue;
       }
-      const inTests = resolved.startsWith("tests/");
+      const inNeutralClosure = neutralTestImportCandidates(file.path, specifier)
+        .some((candidate) => NEUTRAL_TEST_FILES.has(candidate));
       const inLivePackage = resolved === "engram-live" || resolved.startsWith("engram-live/");
-      if (!inTests && !inLivePackage) {
+      if (!inNeutralClosure && !inLivePackage) {
         violations.push({ path: file.path, specifier, reason: `test ${origin} leaves the neutral test closure -> ${resolved}${indirectSuffix(origin)}` });
       }
       continue;
@@ -955,33 +976,13 @@ function generatedFiles(): ScannedFile[] {
 function testClosureFiles(): ScannedFile[] {
   const allTests = listScannedFiles("tests", [".ts"]);
   const byPath = new Map(allTests.map((file) => [file.path, file]));
-  const closure = new Map<string, ScannedFile>();
-  const queue: ScannedFile[] = [];
-  for (const file of allTests) {
-    const isLiveSuite = /^tests\/live-[^/]*\.test\.ts$/.test(file.path);
-    const mentionsLive = extractEdges(file.content).specifiers.some((specifier) => specifier.includes("engram-live"));
-    if (isLiveSuite || mentionsLive) {
-      closure.set(file.path, file);
-      queue.push(file);
-    }
-  }
-  while (queue.length > 0) {
-    const current = queue.pop() as ScannedFile;
-    for (const specifier of extractEdges(current.content).specifiers) {
-      if (!isRelativeSpecifier(specifier)) continue;
-      const resolved = resolveRepoRelative(current.path, specifier);
-      const candidates = [resolved, `${resolved}.ts`];
-      if (resolved.endsWith(".js")) candidates.push(`${resolved.slice(0, -3)}.ts`);
-      for (const candidate of candidates) {
-        const next = byPath.get(candidate);
-        if (next && !closure.has(candidate)) {
-          closure.set(candidate, next);
-          queue.push(next);
-        }
-      }
-    }
-  }
-  return [...closure.values()];
+  // Exactly the listed files that exist on disk: no tests/live-* pattern
+  // and no engram-live mention heuristic. A listed file that does not
+  // exist yet (a future helper) is simply absent from the scan, never
+  // silently replaced by name matching.
+  return [...NEUTRAL_TEST_FILES]
+    .filter((path) => byPath.has(path))
+    .map((path) => byPath.get(path) as ScannedFile);
 }
 
 function packedLivePaths(): string[] {
@@ -1088,8 +1089,19 @@ describe("live neutrality", () => {
       expect(sha256(readFileSync(assetPath))).toBe(entry.sha256);
     }
 
-    // Tests of the neutral surface stay inside it.
-    expect(testClosureFiles().flatMap(checkTestFile)).toEqual([]);
+    // Tests of the neutral surface stay inside it: the closure is the
+    // explicit NEUTRAL_TEST_FILES list only, and every listed test keeps
+    // its imports inside the package, the listed helpers and the allowed
+    // test backends. The root-CLI live tests (live-no-llm, live-fixtures,
+    // live-worktree-safety) must stay out of the closure whatever their
+    // tests/live-* name.
+    const neutralTests = testClosureFiles();
+    expect(neutralTests.flatMap(checkTestFile)).toEqual([]);
+    const closurePaths = neutralTests.map((file) => file.path);
+    expect(closurePaths).toContain("tests/live-neutrality.test.ts");
+    expect(closurePaths).toContain("tests/live-package.test.ts");
+    expect(closurePaths).not.toContain("tests/live-no-llm.test.ts");
+    expect(closurePaths).not.toContain("tests/live-fixtures.test.ts");
 
     // Runtime smoke: the built entry and contracts actually load, and the
     // advertised languages cannot drift from the pinned manifest.
@@ -1300,6 +1312,13 @@ describe("live neutrality", () => {
       path: "tests/live-helper.ts",
       content: `import { g } from "../engram-live/dist/integration.js";`,
     }], "test")).toEqual([]);
+    // A listed neutral test may not import outside the package and the
+    // listed closure: an unlisted tests/ file (a root-CLI helper or another
+    // tests/live-* test) is rejected even though it sits under tests/.
+    expect(checkImportClosure([{
+      path: "tests/live-package.test.ts",
+      content: `import { f } from "./live-fixtures.js";\nimport { n } from "./live-no-llm.test.js";`,
+    }], "test")).not.toEqual([]);
     // The same loader probes apply to the delivered-package scanner
     // (scripts/check-live-package.mjs): its extractLoadEdges must follow the
     // renamed, aliased and destructured bindings on the packed executables
