@@ -2462,6 +2462,22 @@ function loadProjectDotEnv(): void {
 }
 
 export async function main(): Promise<void> {
+  // H0 (LIVE §7): dispatch the signal-only hook entry BEFORE any
+  // repo-controlled configuration loading. `loadProjectDotEnv()` below loads
+  // a repo-owned `.env`; a repository must never select the live-signal sink
+  // or provoke worktree writes. The sink comes exclusively from the real host
+  // process environment, and emitLiveSignalFromHook additionally refuses any
+  // destination inside the observed worktree (after symlink resolution).
+  // Never throws: hooks stay advisory.
+  if (process.argv[2] === "hook-signal") {
+    const hooks = await import("./hooks.js");
+    if (process.argv[3] === hooks.LIVE_SIGNAL_PROBE_ARG) {
+      process.stdout.write(`${hooks.LIVE_SIGNAL_PROBE_OUTPUT}\n`);
+      return;
+    }
+    hooks.emitLiveSignalFromHook(process.argv[3] ?? "", process.argv[4]);
+    return;
+  }
   loadProjectDotEnv();
   // Only warn for the platform(s) relevant to the current command.
   for (const platformName of getPlatformsToCheck(process.argv.slice(2))) {
