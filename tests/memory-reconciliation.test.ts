@@ -7,8 +7,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   canonicalizeJcs,
   createAssertionFamilyRegistryV1,
+  foldMemoryJournalV1,
+  memoryJournalEventHashV1,
   openFencedSqliteCanonicalMemoryStoreV1,
   openPostgresCanonicalMemoryStoreV1,
+  receiptDigest,
   RECONCILIATION_BINARY_STATUS_FAMILY_ID,
   RECONCILIATION_REGISTRY_ID,
   type CanonicalMemoryStorePort,
@@ -386,4 +389,192 @@ describe("engine proposeReconciliation (L5b)", () => {
     }
     }, 180_000);
   }
+});
+
+describe("engine reconciliation application (L5b-3)", () => {
+  it("a dispute or supersede bound to a proposal persists family and registry versions in the event digest and in the journal event (visible via readJournal), and replay never calls the registry", async () => {
+    const registry = createAssertionFamilyRegistryV1();
+    let compareCalls = 0;
+    const innerCompare = registry.compare.bind(registry);
+    registry.compare = ((input: Parameters<typeof innerCompare>[0]) => {
+      compareCalls += 1;
+      return innerCompare(input);
+    }) as typeof registry.compare;
+    const { memory, store } = buildMemory({ assertionRegistry: registry });
+    const disputeUnknown = await seedAssertion(memory, { value: "unknown", t: 1, subject: "user:10" });
+    const disputeActive = await seedAssertion(memory, { value: "active", t: 2, subject: "user:10" });
+    const supersedeUnknown = await seedAssertion(memory, { value: "unknown", t: 1, subject: "user:11" });
+    const supersedeActive = await seedAssertion(memory, { value: "active", t: 2, subject: "user:11" });
+
+    const disputeOutcome = await memory.proposeReconciliation(reconciliationRequest(disputeUnknown, disputeActive));
+    expect(disputeOutcome.ok).toBe(true);
+    if (!disputeOutcome.ok || disputeOutcome.value.proposal === undefined) return;
+    const disputeProposal = disputeOutcome.value.proposal;
+    expect(["left_supersedes_right", "right_supersedes_left"]).toContain(disputeProposal.relation);
+    const disputeApplied = await memory.transition({
+      operation: "dispute",
+      event_id: "event:bound-dispute",
+      record_id: disputeProposal.left_record_id,
+      reason_ref: "reason:bound",
+      event_anchor: { occurred_at: NOW, kind_ref: "kind:bound", provenance_ref: "provenance:bound", provenance_digest: DIGEST },
+      authorization: { credential: "credential:l7" },
+      deadline_at: DEADLINE,
+      reconciliation: { proposal: disputeProposal, registry_id: RECONCILIATION_REGISTRY_ID, registry_version: "1" },
+    });
+    expect(disputeApplied.ok).toBe(true);
+    if (!disputeApplied.ok) return;
+
+    const supersedeOutcome = await memory.proposeReconciliation(reconciliationRequest(supersedeUnknown, supersedeActive));
+    expect(supersedeOutcome.ok).toBe(true);
+    if (!supersedeOutcome.ok || supersedeOutcome.value.proposal === undefined) return;
+    const supersedeProposal = supersedeOutcome.value.proposal;
+    expect(["left_supersedes_right", "right_supersedes_left"]).toContain(supersedeProposal.relation);
+    const superseded = supersedeProposal.relation === "left_supersedes_right" ? supersedeProposal.right_record_id : supersedeProposal.left_record_id;
+    const successor = supersedeProposal.relation === "left_supersedes_right" ? supersedeProposal.left_record_id : supersedeProposal.right_record_id;
+    const supersedeApplied = await memory.transition({
+      operation: "supersede",
+      event_id: "event:bound-supersede",
+      record_id: superseded,
+      related_record_id: successor,
+      reason_ref: "reason:bound",
+      event_anchor: { occurred_at: NOW, kind_ref: "kind:bound", provenance_ref: "provenance:bound", provenance_digest: DIGEST },
+      authorization: { credential: "credential:l7" },
+      deadline_at: DEADLINE,
+      reconciliation: { proposal: supersedeProposal, registry_id: RECONCILIATION_REGISTRY_ID, registry_version: "1" },
+    });
+    expect(supersedeApplied.ok).toBe(true);
+    if (!supersedeApplied.ok) return;
+
+    const journal = await store.readJournal({ after: "0", limit: 2_000 });
+    expect(journal.ok).toBe(true);
+    if (!journal.ok) return;
+    const disputeEvent = journal.value.find((event) => event.event_id === "event:bound-dispute");
+    const supersedeEvent = journal.value.find((event) => event.event_id === "event:bound-supersede");
+    expect(disputeEvent?.reconciliation).toMatchObject({
+      proposal_id: disputeProposal.proposal_id,
+      proposal_digest: disputeProposal.proposal_digest,
+      family_id: FAMILY,
+      family_version: "1",
+      registry_id: RECONCILIATION_REGISTRY_ID,
+      registry_version: "1",
+    });
+    expect(supersedeEvent?.reconciliation).toMatchObject({
+      proposal_id: supersedeProposal.proposal_id,
+      family_id: FAMILY,
+      registry_id: RECONCILIATION_REGISTRY_ID,
+      registry_version: "1",
+    });
+    expect(disputeEvent?.event_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(supersedeEvent?.event_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+
+    const exported = (store as unknown as { exportStateForPersistence?: () => { ok: boolean; value?: { journal: Array<Record<string, unknown>>; records: Array<Record<string, unknown>> } } }).exportStateForPersistence?.();
+    expect(exported?.ok).toBe(true);
+    const rawDispute = exported?.value?.journal.find((event) => event["event_id"] === "event:bound-dispute") as unknown as Parameters<typeof memoryJournalEventHashV1>[0];
+    expect(rawDispute?.["reconciliation"]).toBeDefined();
+    expect(memoryJournalEventHashV1(rawDispute)).toBe(disputeEvent?.event_digest);
+    const { reconciliation: _dropped, ...withoutBinding } = rawDispute as Record<string, unknown>;
+    expect(memoryJournalEventHashV1(withoutBinding as Parameters<typeof memoryJournalEventHashV1>[0])).not.toBe(disputeEvent?.event_digest);
+    void receiptDigest;
+    void _dropped;
+
+    const callsBeforeReplay = compareCalls;
+    const readiness = await store.readiness();
+    expect(readiness.ok).toBe(true);
+    const checkpoint = await store.checkpoint({ through_cursor: readiness.ok ? readiness.value.high_water_cursor : "0" });
+    expect(checkpoint.ok).toBe(true);
+    if (exported?.value !== undefined) {
+      const refold = foldMemoryJournalV1({ journal: exported.value.journal as never, records: exported.value.records as never });
+      expect(refold.ok).toBe(true);
+    }
+    expect(compareCalls).toBe(callsBeforeReplay);
+    registry.compare = (() => {
+      throw new Error("replay must not call the registry");
+    }) as typeof registry.compare;
+    const replayReadiness = await store.readiness();
+    expect(replayReadiness.ok).toBe(true);
+    const replayCheckpoint = await store.checkpoint({ through_cursor: replayReadiness.ok ? replayReadiness.value.high_water_cursor : "0" });
+    expect(replayCheckpoint.ok).toBe(true);
+  });
+
+  it("a forged or mismatched proposal binding is refused before any cursor allocation", async () => {
+    const { memory, store } = buildMemory({ assertionRegistry: createAssertionFamilyRegistryV1() });
+    const unknown = await seedAssertion(memory, { value: "unknown", t: 1 });
+    const active = await seedAssertion(memory, { value: "active", t: 2 });
+    const outsider = await seedAssertion(memory, { value: "active", t: 3, subject: "user:2" });
+    const outcome = await memory.proposeReconciliation(reconciliationRequest(unknown, active));
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok || outcome.value.proposal === undefined) return;
+    const proposal = outcome.value.proposal;
+    const bound = { proposal, registry_id: RECONCILIATION_REGISTRY_ID, registry_version: "1" };
+    const anchor = { occurred_at: NOW, kind_ref: "kind:bound", provenance_ref: "provenance:bound", provenance_digest: DIGEST };
+
+    async function cursorAndJournal(): Promise<{ cursor: string; length: number }> {
+      const readiness = await memory.readiness();
+      const journal = await store.readJournal({ after: "0", limit: 2_000 });
+      if (!readiness.ok || !journal.ok) throw new Error("fixture failed");
+      return { cursor: readiness.value.high_water_cursor, length: journal.value.length };
+    }
+    function forgedDigest(proposalDigest: Digest): Digest {
+      const tail = proposalDigest.slice("sha256:".length);
+      const flipped = tail.endsWith("0") ? "1" : "0";
+      return `sha256:${tail.slice(0, -1)}${flipped}`;
+    }
+
+    const cases: Array<{ name: string; command: Record<string, unknown>; code: string }> = [
+      {
+        name: "forged digest",
+        command: { operation: "dispute", event_id: "event:forged-digest", record_id: proposal.left_record_id, reason_ref: "reason:bound", event_anchor: anchor, authorization: { credential: "credential:l7" }, deadline_at: DEADLINE, reconciliation: { ...bound, proposal: { ...proposal, proposal_digest: forgedDigest(proposal.proposal_digest) } } },
+        code: "INVALID_DIGEST",
+      },
+      {
+        name: "mismatched pair",
+        command: { operation: "dispute", event_id: "event:mismatched-pair", record_id: outsider, reason_ref: "reason:bound", event_anchor: anchor, authorization: { credential: "credential:l7" }, deadline_at: DEADLINE, reconciliation: bound },
+        code: "ILLEGAL_TRANSITION",
+      },
+      {
+        name: "unknown registry version",
+        command: { operation: "dispute", event_id: "event:unknown-registry", record_id: proposal.left_record_id, reason_ref: "reason:bound", event_anchor: anchor, authorization: { credential: "credential:l7" }, deadline_at: DEADLINE, reconciliation: { ...bound, registry_version: "999" } },
+        code: "REGISTRY_VERSION_UNAVAILABLE",
+      },
+      {
+        name: "supersede swapped direction",
+        command: { operation: "supersede", event_id: "event:swapped-direction", record_id: proposal.relation === "left_supersedes_right" ? proposal.left_record_id : proposal.right_record_id, related_record_id: proposal.relation === "left_supersedes_right" ? proposal.right_record_id : proposal.left_record_id, reason_ref: "reason:bound", event_anchor: anchor, authorization: { credential: "credential:l7" }, deadline_at: DEADLINE, reconciliation: bound },
+        code: "ILLEGAL_TRANSITION",
+      },
+      {
+        name: "tampered relation keeps digest",
+        command: (() => {
+          const inverted = proposal.relation === "left_supersedes_right" ? "right_supersedes_left" : "left_supersedes_right";
+          const tampered = { ...proposal, relation: inverted };
+          return { operation: "supersede", event_id: "event:tampered-relation", record_id: inverted === "left_supersedes_right" ? tampered.right_record_id : tampered.left_record_id, related_record_id: inverted === "left_supersedes_right" ? tampered.left_record_id : tampered.right_record_id, reason_ref: "reason:bound", event_anchor: anchor, authorization: { credential: "credential:l7" }, deadline_at: DEADLINE, reconciliation: { ...bound, proposal: tampered } };
+        })(),
+        code: "INVALID_DIGEST",
+      },
+      {
+        name: "forged proposal id keeps digest",
+        command: { operation: "dispute", event_id: "event:forged-proposal-id", record_id: proposal.left_record_id, reason_ref: "reason:bound", event_anchor: anchor, authorization: { credential: "credential:l7" }, deadline_at: DEADLINE, reconciliation: { ...bound, proposal: { ...proposal, proposal_id: forgedDigest(proposal.proposal_id) } } },
+        code: "INVALID_DIGEST",
+      },
+      {
+        name: "tampered occurrence key keeps digest",
+        command: { operation: "dispute", event_id: "event:tampered-occurrence", record_id: proposal.left_record_id, reason_ref: "reason:bound", event_anchor: anchor, authorization: { credential: "credential:l7" }, deadline_at: DEADLINE, reconciliation: { ...bound, proposal: { ...proposal, occurrence_key: `${proposal.occurrence_key}-tampered` } } },
+        code: "INVALID_DIGEST",
+      },
+      {
+        name: "tampered citations keep digest",
+        command: { operation: "dispute", event_id: "event:tampered-citations", record_id: proposal.left_record_id, reason_ref: "reason:bound", event_anchor: anchor, authorization: { credential: "credential:l7" }, deadline_at: DEADLINE, reconciliation: { ...bound, proposal: { ...proposal, evidence_citation_ids: [...proposal.evidence_citation_ids, "citation:zzz-tampered"].sort() } } },
+        code: "INVALID_DIGEST",
+      },
+    ];
+    for (const testCase of cases) {
+      const before = await cursorAndJournal();
+      const refused = await memory.transition(testCase.command as never);
+      expect(refused.ok, testCase.name).toBe(false);
+      if (refused.ok) continue;
+      expect(refused.error.code, testCase.name).toBe(testCase.code);
+      const after = await cursorAndJournal();
+      expect(after.cursor, `${testCase.name} allocates no cursor`).toBe(before.cursor);
+      expect(after.length, `${testCase.name} writes no journal event`).toBe(before.length);
+    }
+  });
 });

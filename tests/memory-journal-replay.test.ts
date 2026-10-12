@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createAssertionFamilyRegistryV1,
   createInMemoryCanonicalMemoryStoreV1,
   foldMemoryJournalV1,
   memoryJournalEventHashV1,
+  RECONCILIATION_BINARY_STATUS_FAMILY_ID,
+  RECONCILIATION_REGISTRY_ID,
   type MemoryJournalEventV1,
 } from "../engram-memory/index.js";
 import { captureRequest, createL3Memory, lifecycleCommand } from "./memory-l3-fixture.js";
+import { buildMemory, DEADLINE, seedAccepted } from "./memory-l7-fixture.js";
 
 const DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as const;
 const NOW = "2026-08-16T12:34:56.789Z";
@@ -122,5 +126,85 @@ describe("memory journal replay", () => {
       ok: false,
       error: { code: "JOURNAL_CORRUPT" },
     });
+  });
+
+  it("checkpoint registry_versions lists every registry version bound by journal events through the cursor", async () => {
+    const registryV1 = createAssertionFamilyRegistryV1({ registry_version: "1" });
+    const { memory, store } = buildMemory({ assertionRegistry: registryV1 });
+    const empty = await store.checkpoint({ through_cursor: "0" }).catch(() => undefined);
+    void empty;
+    const unknownA = await seedAccepted(memory, "user:checkpoint|status|unknown", { componentKind: "decision", validTime: { t: 1 }, families: [RECONCILIATION_BINARY_STATUS_FAMILY_ID] });
+    const activeA = await seedAccepted(memory, "user:checkpoint|status|active", { componentKind: "decision", validTime: { t: 2 }, families: [RECONCILIATION_BINARY_STATUS_FAMILY_ID] });
+    const outcomeA = await memory.proposeReconciliation({
+      family_id: "assertion-family:binary-status",
+      family_version: "1",
+      left_record_id: unknownA,
+      right_record_id: activeA,
+      authorization: { credential: "credential:l7" },
+      deadline_at: DEADLINE,
+    });
+    expect(outcomeA.ok).toBe(true);
+    if (!outcomeA.ok || outcomeA.value.proposal === undefined) return;
+    const first = await memory.transition({
+      operation: "dispute",
+      event_id: "event:checkpoint-bound-v1",
+      record_id: outcomeA.value.proposal.left_record_id,
+      reason_ref: "reason:checkpoint",
+      event_anchor: { occurred_at: NOW, kind_ref: "kind:checkpoint", provenance_ref: "provenance:checkpoint", provenance_digest: DIGEST },
+      authorization: { credential: "credential:l7" },
+      deadline_at: DEADLINE,
+      reconciliation: { proposal: outcomeA.value.proposal, registry_id: RECONCILIATION_REGISTRY_ID, registry_version: "1" },
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const readinessA = await store.readiness();
+    expect(readinessA.ok).toBe(true);
+    if (!readinessA.ok) return;
+    const cursorA = readinessA.value.high_water_cursor;
+    const checkpointA = await store.checkpoint({ through_cursor: cursorA });
+    expect(checkpointA.ok).toBe(true);
+    if (!checkpointA.ok) return;
+    expect(checkpointA.value.registry_versions).toEqual([{ id: RECONCILIATION_REGISTRY_ID, version: "1" }]);
+
+    const registryV2 = createAssertionFamilyRegistryV1({ registry_version: "2" });
+    const second = buildMemory({ store, assertionRegistry: registryV2 });
+    const unknownB = await seedAccepted(second.memory, "user:checkpoint-b|status|unknown", { componentKind: "decision", validTime: { t: 1 }, families: [RECONCILIATION_BINARY_STATUS_FAMILY_ID] });
+    const activeB = await seedAccepted(second.memory, "user:checkpoint-b|status|active", { componentKind: "decision", validTime: { t: 2 }, families: [RECONCILIATION_BINARY_STATUS_FAMILY_ID] });
+    const outcomeB = await second.memory.proposeReconciliation({
+      family_id: "assertion-family:binary-status",
+      family_version: "2",
+      left_record_id: unknownB,
+      right_record_id: activeB,
+      authorization: { credential: "credential:l7" },
+      deadline_at: DEADLINE,
+    });
+    expect(outcomeB.ok).toBe(true);
+    if (!outcomeB.ok || outcomeB.value.proposal === undefined) return;
+    const appliedB = await second.memory.transition({
+      operation: "dispute",
+      event_id: "event:checkpoint-bound-v2",
+      record_id: outcomeB.value.proposal.left_record_id,
+      reason_ref: "reason:checkpoint",
+      event_anchor: { occurred_at: NOW, kind_ref: "kind:checkpoint", provenance_ref: "provenance:checkpoint", provenance_digest: DIGEST },
+      authorization: { credential: "credential:l7" },
+      deadline_at: DEADLINE,
+      reconciliation: { proposal: outcomeB.value.proposal, registry_id: RECONCILIATION_REGISTRY_ID, registry_version: "2" },
+    });
+    expect(appliedB.ok).toBe(true);
+    if (!appliedB.ok) return;
+    const readinessB = await store.readiness();
+    expect(readinessB.ok).toBe(true);
+    if (!readinessB.ok) return;
+    const checkpointB = await store.checkpoint({ through_cursor: readinessB.value.high_water_cursor });
+    expect(checkpointB.ok).toBe(true);
+    if (!checkpointB.ok) return;
+    expect(checkpointB.value.registry_versions).toEqual([
+      { id: RECONCILIATION_REGISTRY_ID, version: "1" },
+      { id: RECONCILIATION_REGISTRY_ID, version: "2" },
+    ]);
+    const filtered = await store.checkpoint({ through_cursor: cursorA });
+    expect(filtered.ok).toBe(true);
+    if (!filtered.ok) return;
+    expect(filtered.value.registry_versions).toEqual([{ id: RECONCILIATION_REGISTRY_ID, version: "1" }]);
   });
 });
