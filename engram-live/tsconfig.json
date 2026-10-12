@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "typeRoots": ["../node_modules/@types"],
+    "types": ["node"],
+    "outDir": "./dist",
+    "rootDir": "."
+  },
+  "include": [
+    "index.ts",
+    "contracts.ts",
+    "integration.ts"
+  ]
+}
