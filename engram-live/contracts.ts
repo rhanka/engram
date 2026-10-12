@@ -1236,3 +1236,565 @@ export function validateDeclarationRevocation(revocation: unknown): ValidationRe
   if (!purge.ok) errors.push(...purge.errors.map((error) => `revocation.${error}`));
   return { ok: errors.length === 0, errors };
 }
+
+// — P1: all-state GitHub PR synchronization (spec/SPEC_LIVE_GIT_INDEXING.md
+// §§3–5; plan/09 P1). Data-pure DTOs, constants and validators only; the
+// engines live in ./pr-sync.js (pagination/overlap/sweeps, neutral PR/object
+// jobs) and ./pr-attribution.js (pinned historical attribution).
+//
+// Consumer contracts for the H: (h2a transport) and S: (cluster-mesh mapping)
+// seats. H owns the approved installed `gh`/Git executor, host-controlled
+// credentials, private object acquisition into service-owned refs and
+// retention; S owns adapter mappings/receipts when the L3 contract needs
+// PR-specific typed fields. Read this block before implementing either side.
+//
+// - PRs of every state (open, closed, merged) plus drafts (open + isDraft)
+//   are indexed, with no count or age limit and nothing erased: a state
+//   change, a force-push or a merge strategy change is a new pinned
+//   observation, never a substitution or deletion of the previous one.
+// - The GitHub transport is INJECTED (GithubPrTransportPort is implemented by
+//   the host test fake here and by the H executor in production): engram
+//   performs no network call, persists no token, and never invokes a
+//   repository-selected credential helper or executable. Tokens never enter
+//   facts, logs or rows: PR_FACT_FORBIDDEN_KEYS are rejected by validation.
+// - No end of list without proof: a page with hasMore false must carry
+//   endProof "end-of-list"; a page with hasMore true must carry a non-empty
+//   nextCursor. A truncated or unproven sweep fails the pass with an
+//   explicit gap instead of completing.
+// - Metadata and objects advance independently: a metadata cursor success
+//   never completes a failed object job, and metadata receipts never
+//   acknowledge failed private acquisition (canAcknowledgePrObjects in
+//   ./pr-sync.js, consumed by the S mapping).
+// - Attribution is pinned history, not ancestry: pinPrAttribution in
+//   ./pr-attribution.js requires observed head/base bounds plus merge-base
+//   evidence for "complete"; unknown bounds stay "partial" while the
+//   acquired ancestry remains available. No REST commit array proves
+//   exhaustiveness; merge, squash and rebase stay distinguished.
+// - Private acquisition contract for H: acquire only the observed head OID
+//   into PRIVATE_PR_REF_PREFIX service refs inside the private store, verify
+//   the acquired target against the observed OID, and report a moving head
+//   as another observation. Never move refs or touch the user clone index.
+
+/** Every PR state indexed by live (drafts are open + isDraft true). */
+export const PULL_REQUEST_STATES = ["open", "closed", "merged"] as const;
+
+export type PullRequestState = (typeof PULL_REQUEST_STATES)[number];
+
+export function isPullRequestState(value: unknown): value is PullRequestState {
+  return (
+    typeof value === "string" &&
+    (PULL_REQUEST_STATES as readonly string[]).includes(value)
+  );
+}
+
+/** Merge strategies stay distinguished; unknown means not yet evidenced. */
+export const PULL_REQUEST_MERGE_STRATEGIES = ["merge", "squash", "rebase", "unknown"] as const;
+
+export type PullRequestMergeStrategy = (typeof PULL_REQUEST_MERGE_STRATEGIES)[number];
+
+export function isPullRequestMergeStrategy(value: unknown): value is PullRequestMergeStrategy {
+  return (
+    typeof value === "string" &&
+    (PULL_REQUEST_MERGE_STRATEGIES as readonly string[]).includes(value)
+  );
+}
+
+/** Transport failure kinds: each preserves last success with stale coverage. */
+export const PR_SYNC_ERROR_KINDS = ["offline", "auth_required", "rate_limited", "unavailable", "protocol"] as const;
+
+export type PrSyncErrorKind = (typeof PR_SYNC_ERROR_KINDS)[number];
+
+export function isPrSyncErrorKind(value: unknown): value is PrSyncErrorKind {
+  return (
+    typeof value === "string" &&
+    (PR_SYNC_ERROR_KINDS as readonly string[]).includes(value)
+  );
+}
+
+/** Neutral object-job lifecycle, independent of the metadata cursor. */
+export const PR_OBJECT_JOB_STATES = ["pending", "acquired", "failed"] as const;
+
+export type PrObjectJobState = (typeof PR_OBJECT_JOB_STATES)[number];
+
+export function isPrObjectJobState(value: unknown): value is PrObjectJobState {
+  return (
+    typeof value === "string" &&
+    (PR_OBJECT_JOB_STATES as readonly string[]).includes(value)
+  );
+}
+
+/** PR coverage axes (spec §12): metadata, objects and attribution separate. */
+export const PR_COVERAGE_AXES = ["pr-metadata", "object-availability", "pr-attribution"] as const;
+
+export type PrCoverageAxis = (typeof PR_COVERAGE_AXES)[number];
+
+/** Explicit end-of-list proof: the only accepted complete-sweep terminator. */
+export const PR_END_PROOF = "end-of-list" as const;
+
+export type PrEndProof = typeof PR_END_PROOF;
+
+/** Service-owned refs for private PR acquisition (H executor, never the clone). */
+export const PRIVATE_PR_REF_PREFIX = "refs/live-private/pr/";
+
+/** Keys that must never enter a PR fact (tokens stay out of rows/logs). */
+export const PR_FACT_FORBIDDEN_KEYS = ["token", "credential", "secret", "authorization"] as const;
+
+/** A GitHub repository identity (owner + name, no URL, no credential). */
+export interface GithubRepositoryDto {
+  readonly owner: string;
+  readonly repo: string;
+}
+
+/**
+ * One neutral PR observation: identity, all-state state/dates, pinned
+ * head/base observations and merge evidence. Historical bounds are pinned
+ * values, never derived from today's base.
+ */
+export interface PullRequestFactDto {
+  readonly repositoryOwner: string;
+  readonly repositoryRepo: string;
+  readonly number: number;
+  readonly state: PullRequestState;
+  readonly isDraft: boolean;
+  readonly updatedAt: number;
+  readonly headOid: QualifiedOid;
+  readonly headRef: string;
+  readonly baseOid: QualifiedOid;
+  readonly baseRef: string;
+  readonly mergeOid?: QualifiedOid | null;
+  readonly mergeStrategy?: PullRequestMergeStrategy;
+}
+
+/** One transport page item: same shape as the persisted observation. */
+export type PrPageItemDto = PullRequestFactDto;
+
+/**
+ * One GitHub listing page over the INJECTED transport. Termination is
+ * coherent: hasMore false requires endProof AND a null nextCursor (a
+ * continuation cursor with an end proof is contradictory, never complete);
+ * hasMore true requires a non-empty nextCursor and carries no endProof.
+ * page.etag, when present, is the validator for this exact
+ * (repository, filter, cursor) position only, never for another page.
+ */
+export interface PrPageDto {
+  readonly items: readonly PrPageItemDto[];
+  readonly nextCursor: string | null;
+  readonly hasMore: boolean;
+  readonly endProof?: PrEndProof;
+  readonly etag?: string | null;
+}
+
+/**
+ * Durable sync cursor: continuation/retry state with overlap discipline.
+ * Validators stay bound to their position: etagsByCursor maps one ETag per
+ * requested (filter, cursor) position so a conditional retry never sends
+ * page N's validator for page M. lastEtag keeps the most recently seen
+ * validator for hosts that only read a scalar.
+ */
+export interface PrSyncCursorDto {
+  readonly repositoryOwner: string;
+  readonly repositoryRepo: string;
+  readonly updatedAtCursor: number | null;
+  readonly lastSuccessAt: number | null;
+  readonly lastEtag: string | null;
+  readonly etagsByCursor?: Record<string, string> | null;
+  readonly sweepKind: "incremental" | "full";
+  readonly pendingRetry?: {
+    readonly kind: PrSyncErrorKind;
+    readonly attempts: number;
+    readonly nextAfter: number;
+  } | null;
+}
+
+/** One neutral object-acquisition job, independent of the metadata cursor. */
+export interface PrObjectJobDto {
+  readonly repositoryOwner: string;
+  readonly repositoryRepo: string;
+  readonly prNumber: number;
+  readonly headOid: QualifiedOid;
+  readonly state: PrObjectJobState;
+  readonly attempts: number;
+  readonly lastError?: PrSyncErrorKind | null;
+  readonly acquiredOid?: QualifiedOid | null;
+  readonly totalCommits?: number | null;
+  readonly acquiredCommits?: number | null;
+}
+
+/**
+ * Pinned historical attribution, separate from ancestry. "complete" needs
+ * observed head/base bounds plus at least one merge-base OID; anything else
+ * is "partial" while the acquired ancestry stays available. An unknown base
+ * stays an explicit null (never replaced by the head OID): a null baseOid
+ * is always "partial".
+ */
+export interface PrAttributionDto {
+  readonly repositoryOwner: string;
+  readonly repositoryRepo: string;
+  readonly prNumber: number;
+  readonly baseOid: QualifiedOid | null;
+  readonly headOid: QualifiedOid;
+  readonly mergeBaseOids: readonly QualifiedOid[];
+  readonly mergeOid?: QualifiedOid | null;
+  readonly mergeStrategy: PullRequestMergeStrategy;
+  readonly status: "complete" | "partial";
+  readonly reason: string;
+}
+
+/** Explicit PR coverage per axis; unknown is never current. */
+export interface PrCoverageDto {
+  readonly axis: PrCoverageAxis;
+  readonly state: CoverageState;
+  readonly reason: string;
+  readonly lastSuccessAt?: number | null;
+}
+
+/**
+ * Metadata receipt for the S mapping: metadata completion never implies
+ * object completion. S refuses to acknowledge a failed private acquisition.
+ */
+export interface PrMetadataReceiptDto {
+  readonly batchId: string;
+  readonly repositoryOwner: string;
+  readonly repositoryRepo: string;
+  readonly prNumbers: readonly number[];
+  readonly cursor: PrSyncCursorDto;
+  readonly metadataComplete: boolean;
+  readonly objectComplete: boolean;
+}
+
+/** Private acquisition request for the H executor (pinned OID, service ref). */
+export interface PrivateObjectAcquisitionRequestDto {
+  readonly repositoryOwner: string;
+  readonly repositoryRepo: string;
+  readonly prNumber: number;
+  readonly headOid: QualifiedOid;
+  readonly serviceRef: string;
+}
+
+const GITHUB_REPOSITORY_KEYS: readonly string[] = ["owner", "repo"];
+
+export function validateGithubRepository(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["github repository must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, GITHUB_REPOSITORY_KEYS, "github repository", errors);
+  if (!isNonEmptyString(value.owner) || hasNul(value.owner)) {
+    errors.push("github repository.owner must be a non-empty string without NUL");
+  }
+  if (!isNonEmptyString(value.repo) || hasNul(value.repo)) {
+    errors.push("github repository.repo must be a non-empty string without NUL");
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+const PULL_REQUEST_FACT_KEYS: readonly string[] = [
+  "repositoryOwner",
+  "repositoryRepo",
+  "number",
+  "state",
+  "isDraft",
+  "updatedAt",
+  "headOid",
+  "headRef",
+  "baseOid",
+  "baseRef",
+  "mergeOid",
+  "mergeStrategy",
+];
+
+export function validatePullRequestFact(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["PR fact must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, PULL_REQUEST_FACT_KEYS, "PR fact", errors);
+  for (const forbidden of PR_FACT_FORBIDDEN_KEYS) {
+    if (forbidden in value) errors.push(`PR fact must never carry "${forbidden}" (tokens stay out of facts/logs/rows)`);
+  }
+  if (!isNonEmptyString(value.repositoryOwner) || hasNul(value.repositoryOwner)) {
+    errors.push("PR fact.repositoryOwner must be a non-empty string without NUL");
+  }
+  if (!isNonEmptyString(value.repositoryRepo) || hasNul(value.repositoryRepo)) {
+    errors.push("PR fact.repositoryRepo must be a non-empty string without NUL");
+  }
+  if (typeof value.number !== "number" || !Number.isSafeInteger(value.number) || value.number <= 0) {
+    errors.push("PR fact.number must be a positive safe integer");
+  }
+  if (!isPullRequestState(value.state)) {
+    errors.push(`PR fact.state must be one of ${PULL_REQUEST_STATES.join(", ")}`);
+  }
+  if (typeof value.isDraft !== "boolean") {
+    errors.push("PR fact.isDraft must be a boolean (drafts are open + isDraft true)");
+  }
+  if (typeof value.updatedAt !== "number" || !Number.isSafeInteger(value.updatedAt) || value.updatedAt <= 0) {
+    errors.push("PR fact.updatedAt must be a positive safe integer (milliseconds)");
+  }
+  const head = validateQualifiedOid(value.headOid);
+  if (!head.ok) errors.push(...head.errors.map((error) => `PR fact.headOid: ${error}`));
+  if (!isNonEmptyString(value.headRef) || hasNul(value.headRef)) {
+    errors.push("PR fact.headRef must be a non-empty string without NUL");
+  }
+  const base = validateQualifiedOid(value.baseOid);
+  if (!base.ok) errors.push(...base.errors.map((error) => `PR fact.baseOid: ${error}`));
+  if (!isNonEmptyString(value.baseRef) || hasNul(value.baseRef)) {
+    errors.push("PR fact.baseRef must be a non-empty string without NUL");
+  }
+  if (value.mergeOid !== undefined && value.mergeOid !== null) {
+    const merge = validateQualifiedOid(value.mergeOid);
+    if (!merge.ok) errors.push(...merge.errors.map((error) => `PR fact.mergeOid: ${error}`));
+  }
+  if (value.mergeStrategy !== undefined && !isPullRequestMergeStrategy(value.mergeStrategy)) {
+    errors.push(`PR fact.mergeStrategy, when present, must be one of ${PULL_REQUEST_MERGE_STRATEGIES.join(", ")}`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+const PR_PAGE_KEYS: readonly string[] = ["items", "nextCursor", "hasMore", "endProof", "etag"];
+
+export function validatePrPage(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["PR page must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, PR_PAGE_KEYS, "PR page", errors);
+  if (!Array.isArray(value.items)) {
+    errors.push("PR page.items must be an array");
+  } else {
+    value.items.forEach((item: unknown, index: number) => {
+      const checked = validatePullRequestFact(item);
+      if (!checked.ok) errors.push(...checked.errors.map((error) => `PR page.items[${index}]: ${error}`));
+    });
+  }
+  if (value.nextCursor !== null && !isNonEmptyString(value.nextCursor)) {
+    errors.push("PR page.nextCursor must be a non-empty string or null");
+  }
+  if (typeof value.hasMore !== "boolean") {
+    errors.push("PR page.hasMore must be a boolean");
+  }
+  // No end of list without proof, and no contradictory terminator: a page
+  // is complete only with hasMore false, the explicit end-of-list proof and
+  // a null nextCursor. A continuation cursor beside an end proof, or an end
+  // proof on a continuing page, is a protocol failure, never a completion.
+  if (value.hasMore === false && value.endProof !== PR_END_PROOF) {
+    errors.push(`PR page with hasMore false must carry endProof "${PR_END_PROOF}" (no silent end of list)`);
+  }
+  if (value.hasMore === false && value.nextCursor !== null) {
+    errors.push("PR page with hasMore false must carry nextCursor null (a continuation cursor beside an end proof is contradictory)");
+  }
+  if (value.hasMore === true && !isNonEmptyString(value.nextCursor)) {
+    errors.push("PR page with hasMore true must carry a non-empty nextCursor");
+  }
+  if (value.hasMore === true && value.endProof !== undefined) {
+    errors.push("PR page with hasMore true must not carry an endProof (a continuation excludes the end-of-list proof)");
+  }
+  if (value.etag !== undefined && value.etag !== null && !isNonEmptyString(value.etag)) {
+    errors.push("PR page.etag, when present, must be a non-empty string or null");
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+const PR_SYNC_CURSOR_KEYS: readonly string[] = [
+  "repositoryOwner",
+  "repositoryRepo",
+  "updatedAtCursor",
+  "lastSuccessAt",
+  "lastEtag",
+  "etagsByCursor",
+  "sweepKind",
+  "pendingRetry",
+];
+
+export function validatePrSyncCursor(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["PR cursor must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, PR_SYNC_CURSOR_KEYS, "PR cursor", errors);
+  if (!isNonEmptyString(value.repositoryOwner) || hasNul(value.repositoryOwner)) {
+    errors.push("PR cursor.repositoryOwner must be a non-empty string without NUL");
+  }
+  if (!isNonEmptyString(value.repositoryRepo) || hasNul(value.repositoryRepo)) {
+    errors.push("PR cursor.repositoryRepo must be a non-empty string without NUL");
+  }
+  if (value.updatedAtCursor !== null &&
+    (typeof value.updatedAtCursor !== "number" || !Number.isSafeInteger(value.updatedAtCursor) || value.updatedAtCursor <= 0)) {
+    errors.push("PR cursor.updatedAtCursor must be a positive safe integer or null");
+  }
+  if (value.lastSuccessAt !== null &&
+    (typeof value.lastSuccessAt !== "number" || !Number.isSafeInteger(value.lastSuccessAt) || value.lastSuccessAt <= 0)) {
+    errors.push("PR cursor.lastSuccessAt must be a positive safe integer or null");
+  }
+  if (value.lastEtag !== null && value.lastEtag !== undefined && !isNonEmptyString(value.lastEtag)) {
+    errors.push("PR cursor.lastEtag must be a non-empty string or null");
+  }
+  if (value.etagsByCursor !== undefined && value.etagsByCursor !== null) {
+    if (!isRecord(value.etagsByCursor)) {
+      errors.push("PR cursor.etagsByCursor, when present, must be a record of non-empty ETag strings or null");
+    } else {
+      for (const [key, etag] of Object.entries(value.etagsByCursor)) {
+        if (!isNonEmptyString(etag) || hasNul(etag as string)) {
+          errors.push(`PR cursor.etagsByCursor[${key}] must be a non-empty string without NUL`);
+        }
+      }
+    }
+  }
+  if (value.sweepKind !== "incremental" && value.sweepKind !== "full") {
+    errors.push('PR cursor.sweepKind must be "incremental" or "full"');
+  }
+  if (value.pendingRetry !== undefined && value.pendingRetry !== null) {
+    if (!isRecord(value.pendingRetry)) {
+      errors.push("PR cursor.pendingRetry, when present, must be an object or null");
+    } else {
+      if (!isPrSyncErrorKind(value.pendingRetry.kind)) {
+        errors.push(`PR cursor.pendingRetry.kind must be one of ${PR_SYNC_ERROR_KINDS.join(", ")}`);
+      }
+      if (typeof value.pendingRetry.attempts !== "number" || !Number.isSafeInteger(value.pendingRetry.attempts) || value.pendingRetry.attempts <= 0) {
+        errors.push("PR cursor.pendingRetry.attempts must be a positive safe integer");
+      }
+      if (typeof value.pendingRetry.nextAfter !== "number" || !Number.isSafeInteger(value.pendingRetry.nextAfter)) {
+        errors.push("PR cursor.pendingRetry.nextAfter must be a safe integer");
+      }
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+const PR_OBJECT_JOB_KEYS: readonly string[] = [
+  "repositoryOwner",
+  "repositoryRepo",
+  "prNumber",
+  "headOid",
+  "state",
+  "attempts",
+  "lastError",
+  "acquiredOid",
+  "totalCommits",
+  "acquiredCommits",
+];
+
+export function validatePrObjectJob(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["PR object job must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, PR_OBJECT_JOB_KEYS, "PR object job", errors);
+  if (!isNonEmptyString(value.repositoryOwner) || hasNul(value.repositoryOwner)) {
+    errors.push("PR object job.repositoryOwner must be a non-empty string without NUL");
+  }
+  if (!isNonEmptyString(value.repositoryRepo) || hasNul(value.repositoryRepo)) {
+    errors.push("PR object job.repositoryRepo must be a non-empty string without NUL");
+  }
+  if (typeof value.prNumber !== "number" || !Number.isSafeInteger(value.prNumber) || value.prNumber <= 0) {
+    errors.push("PR object job.prNumber must be a positive safe integer");
+  }
+  const head = validateQualifiedOid(value.headOid);
+  if (!head.ok) errors.push(...head.errors.map((error) => `PR object job.headOid: ${error}`));
+  if (!isPrObjectJobState(value.state)) {
+    errors.push(`PR object job.state must be one of ${PR_OBJECT_JOB_STATES.join(", ")}`);
+  }
+  if (typeof value.attempts !== "number" || !Number.isSafeInteger(value.attempts) || value.attempts < 0) {
+    errors.push("PR object job.attempts must be a non-negative safe integer");
+  }
+  if (value.lastError !== undefined && value.lastError !== null && !isPrSyncErrorKind(value.lastError)) {
+    errors.push(`PR object job.lastError, when present, must be one of ${PR_SYNC_ERROR_KINDS.join(", ")}`);
+  }
+  if (value.acquiredOid !== undefined && value.acquiredOid !== null) {
+    const acquired = validateQualifiedOid(value.acquiredOid);
+    if (!acquired.ok) errors.push(...acquired.errors.map((error) => `PR object job.acquiredOid: ${error}`));
+  }
+  for (const field of ["totalCommits", "acquiredCommits"] as const) {
+    const count = (value as Record<string, unknown>)[field];
+    if (count !== undefined && count !== null &&
+      (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0)) {
+      errors.push(`PR object job.${field}, when present, must be a non-negative safe integer (no cap, exact count)`);
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+const PR_ATTRIBUTION_KEYS: readonly string[] = [
+  "repositoryOwner",
+  "repositoryRepo",
+  "prNumber",
+  "baseOid",
+  "headOid",
+  "mergeBaseOids",
+  "mergeOid",
+  "mergeStrategy",
+  "status",
+  "reason",
+];
+
+export function validatePrAttribution(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["PR attribution must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, PR_ATTRIBUTION_KEYS, "PR attribution", errors);
+  if (!isNonEmptyString(value.repositoryOwner) || hasNul(value.repositoryOwner)) {
+    errors.push("PR attribution.repositoryOwner must be a non-empty string without NUL");
+  }
+  if (!isNonEmptyString(value.repositoryRepo) || hasNul(value.repositoryRepo)) {
+    errors.push("PR attribution.repositoryRepo must be a non-empty string without NUL");
+  }
+  if (typeof value.prNumber !== "number" || !Number.isSafeInteger(value.prNumber) || value.prNumber <= 0) {
+    errors.push("PR attribution.prNumber must be a positive safe integer");
+  }
+  // An unknown base stays an explicit null and is always partial; only an
+  // observed base bound can support a complete attribution.
+  if (value.baseOid === null) {
+    if (value.status === "complete") {
+      errors.push('PR attribution with baseOid null must stay "partial" (an unknown bound is never complete)');
+    }
+  } else {
+    const base = validateQualifiedOid(value.baseOid);
+    if (!base.ok) errors.push(...base.errors.map((error) => `PR attribution.baseOid: ${error}`));
+  }
+  const head = validateQualifiedOid(value.headOid);
+  if (!head.ok) errors.push(...head.errors.map((error) => `PR attribution.headOid: ${error}`));
+  if (!Array.isArray(value.mergeBaseOids)) {
+    errors.push("PR attribution.mergeBaseOids must be an array");
+  } else {
+    value.mergeBaseOids.forEach((oid: unknown, index: number) => {
+      const checked = validateQualifiedOid(oid);
+      if (!checked.ok) errors.push(...checked.errors.map((error) => `PR attribution.mergeBaseOids[${index}]: ${error}`));
+    });
+    if (value.status === "complete" && value.mergeBaseOids.length === 0) {
+      errors.push('PR attribution with status "complete" requires at least one merge-base OID (no proof-less completeness)');
+    }
+  }
+  if (value.mergeOid !== undefined && value.mergeOid !== null) {
+    const merge = validateQualifiedOid(value.mergeOid);
+    if (!merge.ok) errors.push(...merge.errors.map((error) => `PR attribution.mergeOid: ${error}`));
+  }
+  if (!isPullRequestMergeStrategy(value.mergeStrategy)) {
+    errors.push(`PR attribution.mergeStrategy must be one of ${PULL_REQUEST_MERGE_STRATEGIES.join(", ")}`);
+  }
+  if (value.status !== "complete" && value.status !== "partial") {
+    errors.push('PR attribution.status must be "complete" or "partial"');
+  }
+  if (!isNonEmptyString(value.reason)) {
+    errors.push("PR attribution.reason must be a non-empty string");
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+const PRIVATE_ACQUISITION_KEYS: readonly string[] = [
+  "repositoryOwner",
+  "repositoryRepo",
+  "prNumber",
+  "headOid",
+  "serviceRef",
+];
+
+export function validatePrivateObjectAcquisitionRequest(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["private acquisition request must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, PRIVATE_ACQUISITION_KEYS, "private acquisition request", errors);
+  if (!isNonEmptyString(value.repositoryOwner) || hasNul(value.repositoryOwner)) {
+    errors.push("private acquisition request.repositoryOwner must be a non-empty string without NUL");
+  }
+  if (!isNonEmptyString(value.repositoryRepo) || hasNul(value.repositoryRepo)) {
+    errors.push("private acquisition request.repositoryRepo must be a non-empty string without NUL");
+  }
+  if (typeof value.prNumber !== "number" || !Number.isSafeInteger(value.prNumber) || value.prNumber <= 0) {
+    errors.push("private acquisition request.prNumber must be a positive safe integer");
+  }
+  const head = validateQualifiedOid(value.headOid);
+  if (!head.ok) errors.push(...head.errors.map((error) => `private acquisition request.headOid: ${error}`));
+  if (!isNonEmptyString(value.serviceRef) || hasNul(value.serviceRef)) {
+    errors.push("private acquisition request.serviceRef must be a non-empty string without NUL");
+  } else if (!(value.serviceRef as string).startsWith(PRIVATE_PR_REF_PREFIX)) {
+    errors.push(`private acquisition request.serviceRef must stay under "${PRIVATE_PR_REF_PREFIX}" (private store only, never the user clone)`);
+  }
+  return { ok: errors.length === 0, errors };
+}
