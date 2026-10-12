@@ -23,6 +23,7 @@ import type {
   ProjectionBatchV1,
   ProjectionInvalidationReceiptV1,
   RecoveryCheckpointManifestV1,
+  ReconciliationEventBindingV1,
   Result,
   SealedCandidateEnvelopeV1,
 } from "./contracts/index.js";
@@ -50,6 +51,7 @@ export interface MemoryJournalEventV1 {
   admission_decision?: LifecycleEventV2["admission_decision"];
   reason_ref?: string;
   event_anchor?: LifecycleEventV2["event_anchor"];
+  reconciliation?: ReconciliationEventBindingV1;
   previous_event_hash: Digest;
   event_hash: Digest;
 }
@@ -792,9 +794,18 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
     return { ok: true, value: this.#journal.filter((event) => cursorCompare(event.cursor, input.after) > 0).slice(0, input.limit).map(lifecycleFromJournal) };
   }
 
-  #manifest(through: Cursor, state: FoldedMemoryStateV1, records: ReadonlyArray<MemoryRecordV2>): RecoveryCheckpointManifestV1 {
+  #manifest(through: Cursor, state: FoldedMemoryStateV1, records: ReadonlyArray<MemoryRecordV2>, journal: ReadonlyArray<MemoryJournalEventV1> = this.#journal): RecoveryCheckpointManifestV1 {
     const policy_versions = [...this.#controls.values()].map((control) => ({ id: control.policy_id, version: control.policy_version }))
       .sort((left, right) => left.id.localeCompare(right.id) || left.version.localeCompare(right.version));
+    const seen = new Map<string, { id: string; version: string }>();
+    for (const event of journal) {
+      if (cursorCompare(event.cursor, through) > 0) continue;
+      const binding = event.reconciliation;
+      if (binding === undefined) continue;
+      const key = JSON.stringify([binding.registry_id, binding.registry_version]);
+      if (!seen.has(key)) seen.set(key, { id: binding.registry_id, version: binding.registry_version });
+    }
+    const registry_versions = [...seen.values()].sort((left, right) => left.id.localeCompare(right.id) || left.version.localeCompare(right.version));
     const blobRoot = receiptDigest("checkpoint-blob-root", { records: records.map((record) => ({ record_id: record.record_id, record_digest: record.record_digest })).sort((a, b) => a.record_id.localeCompare(b.record_id)) });
     const body = {
       schema_version: 1 as const,
@@ -804,7 +815,7 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
       journal_root_digest: state.journal_root_hash,
       blob_root_digest: blobRoot,
       policy_versions,
-      registry_versions: [],
+      registry_versions,
       included_classes: ["pending", "rejected", "withdrawn", "accepted_current", "accepted_disputed", "historical", "expired", "trust_invalid", "tombstoned", "pending_envelope", "journal", "blob_ref"] as const,
       external_blob_refs: [],
     };
@@ -821,7 +832,7 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
     const checkpoint: MemoryJournalCheckpointV1 = { schema_version: 1, high_water_cursor: throughCursor, journal, records, canonical_state_digest: folded.value.canonical_state_digest };
     const controls = [...this.#controls.values()].filter((control) => cursorCompare(control.created_cursor, throughCursor) <= 0).map(clone);
     const envelopes = controls.filter((control) => control.state === "pending").map((control) => this.#envelopes.get(control.candidate_id)).filter((sealed): sealed is SealedCandidateEnvelopeV1 => sealed !== undefined).map(clone);
-    return { ok: true, value: { ...checkpoint, manifest: this.#manifest(throughCursor, folded.value, records), controls, envelopes, lexical: [...this.#lexical.entries()].filter(([recordId]) => referenced.has(recordId)).map(([record_id, document]) => ({ record_id, document: clone(document) })), outbox: this.#outbox.filter((batch) => cursorCompare(batch.through_cursor_inclusive, throughCursor) <= 0).map(clone) } };
+    return { ok: true, value: { ...checkpoint, manifest: this.#manifest(throughCursor, folded.value, records, journal), controls, envelopes, lexical: [...this.#lexical.entries()].filter(([recordId]) => referenced.has(recordId)).map(([record_id, document]) => ({ record_id, document: clone(document) })), outbox: this.#outbox.filter((batch) => cursorCompare(batch.through_cursor_inclusive, throughCursor) <= 0).map(clone) } };
   }
 
   exportTailForRecovery(afterCursor: Cursor): Result<MemoryJournalTailV1> {
@@ -909,6 +920,7 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
       admission_decision: event.admission_decision,
       reason_ref: event.reason_ref,
       event_anchor: event.event_anchor,
+      reconciliation: event.reconciliation,
     }) as Omit<MemoryJournalEventV1, "cursor" | "previous_event_hash" | "event_hash">;
   }
 }
