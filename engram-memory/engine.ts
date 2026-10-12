@@ -7,7 +7,8 @@ import {
   receiptDigest,
   recordIdFromDigest,
 } from "./digests.js";
-import { isCanonicalCursor, validateAdminOperationRequest, validateCandidatePayload } from "./validation.js";
+import { isCanonicalCursor, validateAdminOperationRequest, validateCandidatePayload, validateReconciliationRequest } from "./validation.js";
+import { evaluateReconciliationEligibilityV1 } from "./assertion-family-registry.js";
 import { verifyStoreProvenance } from "./store-factory.js";
 import { executeRecall } from "./recall.js";
 import type {
@@ -38,6 +39,8 @@ import type {
   RecallRequestV2,
   RedactionDirectiveV1,
   RedactionResultV1,
+  ReconciliationOutcomeV1,
+  ReconciliationProposalV1,
   Result,
   TrustBindingV1,
 } from "./contracts/index.js";
@@ -100,6 +103,11 @@ function defined<T extends Record<string, unknown>>(value: T): T {
 
 function compareInstants(left: string, right: string): number {
   return Date.parse(left) - Date.parse(right);
+}
+
+/** UTF-8 byte-order comparison (hex-encoded), the record-id order the reconciliation outcome normalizes to. */
+function utf8AscendingIds(left: string, right: string): [string, string] {
+  return Buffer.from(left, "utf8").toString("hex") < Buffer.from(right, "utf8").toString("hex") ? [left, right] : [right, left];
 }
 
 function operationFailure(operation: MemoryOperation, result: Result<never>): Result<never> {
@@ -1095,7 +1103,110 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       };
       return operationFailure("propose_capitalisation", await port.capture(captureRequest) as Result<never>) as Result<CaptureAcknowledgementV1>;
     },
-    proposeReconciliation: async () => unavailable("propose_reconciliation"),
+    proposeReconciliation: async (input): Promise<Result<ReconciliationOutcomeV1>> => {
+      // T5.7 step 1: fresh readiness and provenance, like every fencing-dependent operation.
+      const admitted = await admitFenced("propose_reconciliation");
+      if (!admitted.ok) return admitted;
+      const now = dependencies.clock?.now();
+      if (!isInstant(now)) return unavailable("propose_reconciliation", "clock did not supply a canonical instant");
+      // Step 2: exact-key validation of the request, distinct record ids.
+      const checked = validateReconciliationRequest(input);
+      if (!checked.ok) return checked;
+      const request = checked.value;
+      if (compareInstants(now, request.deadline_at) >= 0) return refusal("propose_reconciliation", "DEADLINE_EXCEEDED", "reconciliation deadline elapsed before proposal");
+      // Step 3: capability before authorization — no registry, or an uninstalled family/version, refuses.
+      const registry = dependencies.assertion_registry;
+      if (registry === undefined) return unavailable("propose_reconciliation");
+      const installed = registry.descriptors().some((descriptor) => descriptor.family_id === request.family_id && descriptor.version === request.family_version);
+      if (!installed) return refusal("propose_reconciliation", "REGISTRY_VERSION_UNAVAILABLE", "requested assertion family or version is not installed");
+      // Step 4: pin the comparison cursor on the system axis; the request carries no valid_as_of.
+      const pin = request.comparison_system_as_of ?? admitted.value.high_water_cursor;
+      if (!isCanonicalCursor(pin) || BigInt(pin) > BigInt(admitted.value.high_water_cursor)) {
+        return refusal("propose_reconciliation", "STALE_PAGE", "comparison cursor is unavailable");
+      }
+      const [leftId, rightId] = utf8AscendingIds(request.left_record_id, request.right_record_id);
+      // Step 5: per-record authorization, read, and revalidation at the record's own valid start, in UTF-8 ascending id order.
+      const perRecord: Array<{ record: MemoryRecordV2; authorizationReceipt: Digest; revalidationReceipt: Digest; eligible: boolean }> = [];
+      for (const recordId of [leftId, rightId]) {
+        const resource = { record_id: recordId };
+        const authorization = await authorizeOperation(dependencies.authorization, {
+          operation: "propose_reconciliation",
+          resource,
+          resource_digest: authorizationResourceDigest("propose_reconciliation", resource),
+          context: request.authorization,
+          issued_at: now,
+          deadline_at: request.deadline_at,
+        }, undefined, now);
+        if (!authorization.ok) return authorization;
+        try {
+          const read = await dependencies.canonical_store.readRecord({
+            record_id: recordId,
+            system_as_of: pin,
+            authorization_receipt_digest: authorization.value.receipt_digest,
+          });
+          if (!read.ok) return operationFailure("propose_reconciliation", read);
+          if (read.value.scope_ref !== authorization.value.scope_ref) return refusal("propose_reconciliation", "UNAUTHORIZED", "authorization scope does not bind the reconciliation record");
+          // The store stays the final eligibility authority; revalidating each record at its own valid start
+          // makes valid-time membership hold by construction, so the store decides state, tombstone, expiry and trust only.
+          // Pure-read revalidation: no observed expiry, no journal event, no cursor, no outbox, no write transaction.
+          const revalidated = await dependencies.canonical_store.revalidateReadOnly({
+            record_ids: [recordId],
+            valid_as_of: read.value.valid_time.t,
+            system_as_of: pin,
+            authorization_receipt_digest: authorization.value.receipt_digest,
+            operation: "recall_current",
+          });
+          if (!revalidated.ok) return operationFailure("propose_reconciliation", revalidated);
+          perRecord.push({
+            record: read.value,
+            authorizationReceipt: authorization.value.receipt_digest,
+            revalidationReceipt: revalidated.value.receipt_digest,
+            eligible: revalidated.value.eligible_record_ids.includes(recordId),
+          });
+        } catch {
+          return unavailable("propose_reconciliation", "canonical store did not return typed reconciliation results");
+        }
+      }
+      const [left, right] = perRecord;
+      // Step 6: a store refusal or an eligibility-gate refusal yields an ineligible outcome, never an error.
+      const gate = evaluateReconciliationEligibilityV1(
+        { family_id: request.family_id, family_version: request.family_version, left: left.record, right: right.record, comparison_system_as_of: pin },
+        {
+          left: { record_id: left.record.record_id, state: "accepted_current", unexpired: true, dependency_eligible: true },
+          right: { record_id: right.record.record_id, state: "accepted_current", unexpired: true, dependency_eligible: true },
+        },
+      );
+      const eligible = left.eligible && right.eligible && gate.ok;
+      // Step 7: the comparator runs only for an eligible pair.
+      let proposal: ReconciliationProposalV1 | undefined;
+      if (eligible) {
+        const compared = registry.compare({ family_id: request.family_id, family_version: request.family_version, left: left.record, right: right.record, comparison_system_as_of: pin });
+        if (!compared.ok) return operationFailure("propose_reconciliation", compared);
+        proposal = compared.value;
+      }
+      // Step 8: return the digest-bound outcome; no journal write, no cursor allocation.
+      const outcomeWithoutReceipt = defined({
+        registry_id: registry.registry_id,
+        registry_version: registry.registry_version,
+        family_id: request.family_id,
+        family_version: request.family_version,
+        left_record_id: left.record.record_id,
+        right_record_id: right.record.record_id,
+        comparison_system_as_of: pin,
+        eligible,
+        proposal,
+        eligibility_digest: receiptDigest("reconciliation-eligibility", {
+          comparison_system_as_of: pin,
+          records: perRecord.map((entry) => ({
+            record_id: entry.record.record_id,
+            record_digest: entry.record.record_digest,
+            authorization_receipt_digest: entry.authorizationReceipt,
+            revalidation_receipt_digest: entry.revalidationReceipt,
+          })),
+        }),
+      });
+      return { ok: true, value: { ...outcomeWithoutReceipt, receipt_digest: receiptDigest("reconciliation-outcome", outcomeWithoutReceipt) } };
+    },
     invalidateProjections: async () => unavailable("projection_invalidate"),
     readiness: async () => {
       const readiness = await dependencies.canonical_store.readiness();
