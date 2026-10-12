@@ -122,6 +122,8 @@ export interface StreamedCommit {
 export class GitStreamError extends Error {
   readonly phase: GitLaunchPurpose | "assembly";
   readonly batchIndex: number | undefined;
+  /** Counters reached before the failure; attached by the stream when it throws. */
+  partialStats?: GitStreamStats;
 
   constructor(message: string, phase: GitLaunchPurpose | "assembly", batchIndex?: number) {
     super(message);
@@ -685,6 +687,13 @@ export async function* streamGitHistory(options: GitStreamOptions): AsyncGenerat
       );
     }
     return stats;
+  } catch (error) {
+    // A batch failure aborts the stream: attach the counters reached so far
+    // so the caller reports durable progress instead of zeros.
+    if (error instanceof GitStreamError && error.partialStats === undefined) {
+      error.partialStats = { ...stats };
+    }
+    throw error;
   } finally {
     if (!revListClean) {
       // Consumer break, parse error or batch failure: never leave the
