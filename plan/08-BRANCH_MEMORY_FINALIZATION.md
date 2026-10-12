@@ -170,7 +170,7 @@ Rationale: F1 first because it executes L6 and is the only lot able to reveal a 
 
 ## F11 — L0: Organization-Scope Resolution (FIN §3.1.3 T0.6) — D-1
 
-- [ ] Implement (option A): delete the `it.todo` at `tests/memory-neutrality.test.ts:73`; amend the EVOL D1 sentence; `plan/07` l.20 checked with the decision reference.
+- [x] Implement (option A): delete the `it.todo` at `tests/memory-neutrality.test.ts:73`; amend the EVOL D1 sentence; `plan/07` l.20 checked with the decision reference.
 - Allowed (4): `tests/memory-neutrality.test.ts`, EVOL, `plan/07`, this plan.
 - Forbidden: `package.json`, `src/**` (option B needs its own plan).
 - Gate: `memory-neutrality` green with no `todo`; D-1 recorded in FIN §6.
