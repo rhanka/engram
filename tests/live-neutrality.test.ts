@@ -774,7 +774,7 @@ const EXPECTED_EXPORTS: Record<string, { types: string; import: string }> = {
   "./contracts": { types: "./dist/contracts.d.ts", import: "./dist/contracts.js" },
   "./integration": { types: "./dist/integration.d.ts", import: "./dist/integration.js" },
 };
-const EXPECTED_ENGINES = { node: ">=20.0.0 <25.0.0" };
+const EXPECTED_ENGINES = { node: "^20.0.0 || ^22.0.0 || ^24.0.0" };
 const EXPECTED_OS = ["linux"];
 
 function expectedPackedPaths(manifestLanguages: Record<string, { file: string }>): string[] {
