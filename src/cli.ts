@@ -4044,6 +4044,9 @@ export async function main(): Promise<void> {
           `Continuing in code-only mode — profile outputs will NOT be updated.`,
         );
       }
+      // L1a / LIVE §11: `engram update` is the explicit NON-LIVE dispatch.
+      // --no-description / --no-label opt out; with no backend the stages
+      // degrade exactly as before L1a (assistant instructions / generic names).
       const describe = opts.description !== false;
       const labelOn = opts.label !== false && opts.cluster !== false;
       const llmNote = describe && labelOn
@@ -4057,35 +4060,39 @@ export async function main(): Promise<void> {
       const ok = await rebuildCode(updatePath, false, {
         force: Boolean(opts.force),
         noCluster: opts.cluster === false,
-        describe,
-        ...(typeof opts.descriptionBackend === "string" && opts.descriptionBackend.trim()
-          ? { descriptionBackend: opts.descriptionBackend.trim() }
-          : {}),
-        ...(typeof opts.descriptionModel === "string" && opts.descriptionModel.trim()
-          ? { descriptionModel: opts.descriptionModel.trim() }
-          : {}),
-        ...(opts.fillMissing ? { descriptionOnlyMissing: true } : {}),
-        ...(typeof opts.descriptionMode === "string" && (opts.descriptionMode === "assistant" || opts.descriptionMode === "direct")
-          ? { descriptionMode: opts.descriptionMode as "assistant" | "direct" }
-          : {}),
-        descriptionLang: normalizeLanguageSelection(
-          typeof opts.descriptionLang === "string" ? opts.descriptionLang : undefined,
-        ),
-        ...(updateCorpusDefaultLang ? { corpusDefaultLang: updateCorpusDefaultLang } : {}),
-        label: opts.label !== false,
-        ...(typeof opts.labelBackend === "string" && opts.labelBackend.trim()
-          ? { labelBackend: opts.labelBackend.trim() }
-          : {}),
-        ...(typeof opts.labelModel === "string" && opts.labelModel.trim()
-          ? { labelModel: opts.labelModel.trim() }
-          : {}),
-        ...(typeof opts.labelMode === "string" && (opts.labelMode === "assistant" || opts.labelMode === "direct")
-          ? { labelMode: opts.labelMode as "assistant" | "direct" }
-          : {}),
-        labelLang: normalizeLanguageSelection(
-          typeof opts.labelLang === "string" ? opts.labelLang : undefined,
-        ),
-        citationCap: updateCitationPolicy.describeCap,
+        // Explicit non-live enrichment request — the ONLY way `update` reaches
+        // the semantic stages; the live watch/hook paths never set this group.
+        enrichment: {
+          describe,
+          ...(typeof opts.descriptionBackend === "string" && opts.descriptionBackend.trim()
+            ? { descriptionBackend: opts.descriptionBackend.trim() }
+            : {}),
+          ...(typeof opts.descriptionModel === "string" && opts.descriptionModel.trim()
+            ? { descriptionModel: opts.descriptionModel.trim() }
+            : {}),
+          ...(opts.fillMissing ? { descriptionOnlyMissing: true } : {}),
+          ...(typeof opts.descriptionMode === "string" && (opts.descriptionMode === "assistant" || opts.descriptionMode === "direct")
+            ? { descriptionMode: opts.descriptionMode as "assistant" | "direct" }
+            : {}),
+          descriptionLang: normalizeLanguageSelection(
+            typeof opts.descriptionLang === "string" ? opts.descriptionLang : undefined,
+          ),
+          ...(updateCorpusDefaultLang ? { corpusDefaultLang: updateCorpusDefaultLang } : {}),
+          label: opts.label !== false,
+          ...(typeof opts.labelBackend === "string" && opts.labelBackend.trim()
+            ? { labelBackend: opts.labelBackend.trim() }
+            : {}),
+          ...(typeof opts.labelModel === "string" && opts.labelModel.trim()
+            ? { labelModel: opts.labelModel.trim() }
+            : {}),
+          ...(typeof opts.labelMode === "string" && (opts.labelMode === "assistant" || opts.labelMode === "direct")
+            ? { labelMode: opts.labelMode as "assistant" | "direct" }
+            : {}),
+          labelLang: normalizeLanguageSelection(
+            typeof opts.labelLang === "string" ? opts.labelLang : undefined,
+          ),
+          citationCap: updateCitationPolicy.describeCap,
+        },
         citationsTopK: updateCitationPolicy.inlineTopK,
         scope: scopeSelection.mode,
         scopeSource: scopeSelection.source,
@@ -6069,21 +6076,11 @@ export async function main(): Promise<void> {
       const scopeSelection = resolveCliScopeSelection(opts);
       await rebuildCode(".", false, {
         clearStale,
-        // Phase 4 decision: the automatic git-hook rebuild MUST stay fast and
-        // LLM-free — running descriptions + salient labels on every commit means
-        // a blocking network round-trip per commit and a hard API-key dependency
-        // in the commit path (egregiously slow). So we disable BOTH LLM passes
-        // here: `describe: false` AND `label: false`. Without the label opt-out,
-        // `applySalientCommunityLabels` (gated on `options.label !== false`)
-        // would still fire a live label LLM round-trip on every commit whenever
-        // an API key is in env. `markDescribePending: true` then writes a
-        // `.graphify_describe_pending` marker so the next describe+label-producing
-        // `engram update` (default-on) fills them in, and `check-update`
-        // surfaces the marker as a nudge. This still honours "descriptions +
-        // labels on EVERY graph": the hook-rebuilt graph is guaranteed a
-        // follow-up fill rather than shipping silently bare.
-        describe: false,
-        label: false,
+        // L1a / LIVE §11: rebuildCode is the deterministic code-only rebuild —
+        // descriptions and salient labels are no longer reachable from the
+        // live path at all (no LLM passes on the commit path, by construction).
+        // `markDescribePending: true` keeps the explicit legacy git-hook
+        // `.graphify_describe_pending` nudge for `check-update`.
         markDescribePending: true,
         // Re-derive citations.json LLM-free with the no-shrink guard so the
         // fast commit-time rebuild never clobbers a fuller existing sidecar
