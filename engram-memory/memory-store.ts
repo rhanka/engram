@@ -746,6 +746,14 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
   async revalidate(input: Parameters<CanonicalMemoryStorePort["revalidate"]>[0]): Promise<Result<import("./contracts/index.js").RevalidationPacketV1>> {
     const observed = this.#observeExpiry();
     if (!observed.ok) return { ok: false, error: { ...observed.error, operation: input.operation } };
+    return this.#revalidationPacket(input);
+  }
+
+  async revalidateReadOnly(input: Parameters<CanonicalMemoryStorePort["revalidateReadOnly"]>[0]): Promise<Result<import("./contracts/index.js").RevalidationPacketV1>> {
+    return this.#revalidationPacket(input);
+  }
+
+  #revalidationPacket(input: Parameters<CanonicalMemoryStorePort["revalidate"]>[0]): Result<import("./contracts/index.js").RevalidationPacketV1> {
     const ready = this.#readiness(input.operation);
     if (!ready.ok) return ready;
     if (!isCanonicalCursor(input.system_as_of) || cursorCompare(input.system_as_of, ready.value.high_water_cursor) > 0) return refusal(input.operation, "STALE_PAGE", "system cursor is unavailable");
