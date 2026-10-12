@@ -582,16 +582,26 @@ describe("L2a streaming native Git reads", () => {
 
     // Backpressure: with responses withheld, the extractor may not write
     // more object requests than the batch window. Memory is bounded by the
-    // window, not by the commit count.
+    // window, not by the commit count. Only the bound is asserted: the exact
+    // stalled count is a runtime pipe/stream buffer capacity (Node 20 stalls
+    // near ~810 writes where Node 22/24 reach the window on the same kernel),
+    // so an exact count would couple the test to the runtime, not the code.
     let notched: LaunchRecord | undefined;
-    for (let attempt = 0; attempt < 600; attempt += 1) {
+    let stable = 0;
+    let lastWrites = -1;
+    for (let attempt = 0; attempt < 200; attempt += 1) {
       notched = port.launches.find((launch) => launch.purpose === "cat-file");
-      if (notched !== undefined && notched.writes >= window) break;
-      await waitForIdle();
+      const writes = notched?.writes ?? -1;
+      if (writes > 0 && writes === lastWrites) stable += 1;
+      else stable = 0;
+      lastWrites = writes;
+      if (stable >= 3) break;
+      await waitForIdle(50);
     }
-    await waitForIdle();
+    await waitForIdle(50);
     expect(notched, "notched cat-file launch").toBeDefined();
-    expect(notched!.writes).toBe(window);
+    expect(notched!.writes).toBeGreaterThan(0);
+    expect(notched!.writes).toBeLessThanOrEqual(window);
     expect(notched!.writeBytes).toBeLessThan(window * 83);
     port.releaseNotch();
     await consumption;
@@ -1017,7 +1027,11 @@ describe("L2a streaming native Git reads", () => {
     // routine corpus (the >100000-commit tier is the qualification test).
     expect(growth[0]).toBeLessThanOrEqual(128 * 1024 * 1024);
     expect(growth[1]).toBeLessThanOrEqual(128 * 1024 * 1024);
-    expect(growth[1] - growth[0]).toBeLessThanOrEqual(64 * 1024 * 1024);
+    // A GC pass between the two histories can make a raw RSS delta negative
+    // (Node 20 CI measured -101 MB on the small history): a dip is not a
+    // footprint, so the cross-size probe compares non-negative footprints.
+    const footprint = growth.map((value) => Math.max(0, value));
+    expect(footprint[1]! - footprint[0]!).toBeLessThanOrEqual(64 * 1024 * 1024);
   }, 240_000);
 
   // Qualification tier, opt in: LIVE_GIT_QUALIFICATION=1 npx vitest run tests/live-git-stream.test.ts
