@@ -86,7 +86,7 @@ jobs:
           docker inspect --format '{{range .RepoDigests}}{{.}}{{"\n"}}{{end}}' "$ENGRAM_MEMORY_POSTGRES_IMAGE_17"
 
       - name: Run Postgres lane in required mode
-        run: npx vitest run --fileParallelism=false tests/canonical-memory-store.parity.test.ts tests/postgres-memory-store.native.test.ts
+        run: npx vitest run --fileParallelism=false tests/canonical-memory-store.parity.test.ts tests/postgres-memory-store.native.test.ts tests/memory-reconciliation.test.ts
 
   direct-llm-uat:
     needs: test

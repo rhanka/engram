@@ -142,16 +142,21 @@ Rationale: F1 first because it executes L6 and is the only lot able to reveal a 
 
 ## F9 — L5b-2: Engine `proposeReconciliation` (FIN §3.2.3 T5.7, T5.10) — D-3
 
-- [ ] RED: `tests/memory-reconciliation.test.ts > proposeReconciliation reads only, allocates no cursor, and refuses CAPABILITY_UNAVAILABLE without a registry`.
-- [ ] RED: `tests/memory-reconciliation.test.ts > records ineligible at the pinned cursor (tombstoned, expired, trust-invalid, historical) yield an ineligible outcome with no proposal`.
-- [ ] RED: `tests/memory-reconciliation.test.ts > a pair the eligibility gate refuses (missing opt-in, distinct trust classes) yields an ineligible outcome with no proposal, not an error`.
-- [ ] RED: `tests/memory-reconciliation.test.ts > eligibility is decided on the system axis: a refinement whose valid intervals do not overlap is still proposed`.
-- [ ] RED: `tests/memory-reconciliation.test.ts > the outcome binds registry, family, pair, pin, per-record eligibility and proposal under the reconciliation-outcome and reconciliation-eligibility domains`.
-- [ ] RED: `tests/memory-reconciliation.test.ts > an uninstalled registry version refuses reconciliation while recall stays available`.
-- [ ] Implement: the eight steps of T5.7 in `engram-memory/engine.ts` (per-record authorization, read, and revalidation at the record's own valid start; outcome and eligibility digests).
-- Allowed (5): `engram-memory/engine.ts`, `tests/memory-reconciliation.test.ts`, `tests/memory-l7-fixture.ts` (records opted into the family), FIN, this plan.
+- [x] RED: `tests/memory-reconciliation.test.ts > proposeReconciliation reads only, allocates no cursor, and refuses CAPABILITY_UNAVAILABLE without a registry` (observed red 2026-10-11: stub refused `CAPABILITY_UNAVAILABLE` on the registry-present half, `expected false to be true`).
+- [x] RED: `tests/memory-reconciliation.test.ts > records ineligible at the pinned cursor (tombstoned, expired, trust-invalid, historical) yield an ineligible outcome with no proposal` (observed red 2026-10-11: `expected false to be true` — stub refusal).
+- [x] RED: `tests/memory-reconciliation.test.ts > a pair the eligibility gate refuses (missing opt-in, distinct trust classes) yields an ineligible outcome with no proposal, not an error` (observed red 2026-10-11: `expected false to be true` — stub refusal).
+- [x] RED: `tests/memory-reconciliation.test.ts > eligibility is decided on the system axis: a refinement whose valid intervals do not overlap is still proposed` (observed red 2026-10-11: `expected false to be true` — stub refusal).
+- [x] RED: `tests/memory-reconciliation.test.ts > the outcome binds registry, family, pair, pin, per-record eligibility and proposal under the reconciliation-outcome and reconciliation-eligibility domains` (observed red 2026-10-11: `expected false to be true` — stub refusal).
+- [x] RED: `tests/memory-reconciliation.test.ts > an uninstalled registry version refuses reconciliation while recall stays available` (observed red 2026-10-11: `expected 'CAPABILITY_UNAVAILABLE' to be 'REGISTRY_VERSION_UNAVAILABLE'`).
+- [x] Implement: the eight steps of T5.7 in `engram-memory/engine.ts` (per-record authorization, read, and revalidation at the record's own valid start; outcome and eligibility digests); `tests/memory-l7-fixture.ts` seeds records opted into the family, per-record trust classes, an authorization log and an injectable registry.
+- Scope extension (conductor, 2026-10-11): F9 provides a canonical pure-read revalidation (`CanonicalMemoryStorePort.revalidateReadOnly`) without maintenance nor persistence (no observed expiry, no event, no cursor, no outbox, no write transaction), keeping fencing, authorization and store-decided eligibility; covered by D-3=A « contrat complet ».
+- [x] RED: `tests/memory-reconciliation.test.ts > proposeReconciliation leaves journal and cursor unchanged when a pair member retention has expired` (retention expiry reached before the call; journal/cursor/outbox unchanged, `eligible:false`).
+- [x] RED: `tests/memory-reconciliation.test.ts > proposeReconciliation leaves journal and cursor unchanged when an exterior record retention has expired` (exterior expiry; journal/cursor/outbox unchanged, `eligible:true`).
+- [x] RED: `tests/memory-reconciliation.test.ts > proposeReconciliation performs no durable write on SQLite …` (cursor/journal unchanged, `on_mutation_statement` empty).
+- [x] RED: `tests/memory-reconciliation.test.ts > proposeReconciliation performs no durable write on Postgres …` (same, per matrix image).
+- Allowed (10): `engram-memory/engine.ts`, `engram-memory/contracts/index.ts` (store port signature), `engram-memory/memory-store.ts`, `engram-memory/sqlite.ts`, `engram-memory/postgres.ts`, `tests/memory-reconciliation.test.ts`, `tests/memory-l7-fixture.ts` (records opted into the family + `retentionExpiresAt`), `.github/workflows/typescript-ci.yml` (lane `memory-postgres`), FIN, this plan.
 - Forbidden: journal writes; cursor allocation; bypassing `admitFenced` or the authorization calls; a `valid_as_of` request field.
-- Gate: new cases green; full memory suite green; package typecheck.
+- Gate: new cases green; full memory suite green; package typecheck; `ENGRAM_MEMORY_REQUIRE_POSTGRES=1` Postgres lane green.
 
 ## F10 — L5b-3: Authorized Application, Event Field, Checkpoint Registry Versions (FIN §3.2.3 T5.8–T5.9) — D-3, after F1
 
