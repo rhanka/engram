@@ -131,12 +131,19 @@ Start without waiting: **L0, L1a, H0, L1b boundary guards, L4a safety cases, L6a
 
 ## L2a — Streaming Native Git Reads (LIVE §6, A02/A03) — engram
 
-- [ ] RED: `tests/live-git-stream.test.ts > reads more than 1000 commits with subprocess count bounded by batches rather than commits`.
-- [ ] RED: `tests/live-git-stream.test.ts > streamed metadata and changed files match the legacy extractor on its supported domain`.
-- [ ] RED: `tests/live-git-stream.test.ts > native Git oracle preserves root and merge diffs, binaries, modes, renames and path bytes`.
-- [ ] RED: `tests/extract-git.test.ts > default legacy extraction and detection metadata no longer truncate a branch at 200 commits`.
-- [ ] GUARD: `tests/live-git-stream.test.ts > backpressure bounds memory while truncated object records fail without advancing progress`.
-- [ ] Implement: streaming rev-list/cat-file and grouped diff/numstat protocol with byte counts and NUL framing; complete metadata and historical paths independent of today's AST. Remove the legacy implicit 200-commit default and its detection-window claim. Explicit bounded non-live requests may remain labelled partial; live never sends a cap.
+- [x] RED: `tests/live-git-stream.test.ts > reads more than 1000 commits with subprocess count bounded by batches rather than commits`.
+- [x] RED: `tests/live-git-stream.test.ts > streamed metadata and changed files match the legacy extractor on its supported domain`.
+- [x] RED: `tests/live-git-stream.test.ts > native Git oracle preserves root and merge diffs, binaries, modes, renames and path bytes`.
+- [x] RED: `tests/extract-git.test.ts > default legacy extraction and detection metadata no longer truncate a branch at 200 commits`.
+- [x] GUARD: `tests/live-git-stream.test.ts > backpressure bounds memory while truncated object records fail without advancing progress`.
+- [x] RED (Sol tour, blocker 1): `tests/live-git-stream.test.ts > a diff-tree response truncated at any byte fails the pass without advancing progress` — mutation-verified: dropping the `--always`/sentinel accounting turns it red.
+- [x] RED (Sol tour, blocker 2): `tests/live-git-stream.test.ts > discovery streams batch by batch instead of accumulating the whole history` — mutation-verified: an accumulating fillBatch turns it red.
+- [x] RED (Sol tour, majors): `tests/live-git-stream.test.ts > UTF-8 subjects are decoded losslessly and match the Git %s oracle`; `tests/live-git-stream.test.ts > octopus merges over more than eight batches stay inside the LIVE §13 process bound`; `tests/live-git-stream.test.ts > streaming keeps memory bounded across history sizes with a slow consumer`.
+- [x] RED (Sol2 tour, major 1): `tests/live-git-stream.test.ts > a discovery stream cut after a complete line fails the pass even with exit code 0` — mutation-verified: dropping the expected-vs-received count attestation turns it red. Discovery completeness is proven by a `rev-list --count` launch on the same roots (one extra launch per pass, inside the §13 allowance), never by exit code 0.
+- [x] RED (Sol2 tour, major 2): `tests/live-git-stream.test.ts > a single comparison beyond the diff byte bound is refused before publication` — mutation-verified: dropping the diff-tree block byte charge turns it red. Retained raw/numstat bytes are charged against MAX_DIFF_BLOCK_BYTES as they are parsed.
+- [x] RED (Sol2 tour, major 3): `tests/live-git-stream.test.ts > batchCommits below the LIVE §13 batch floor is refused` — mutation-verified: dropping the batchCommits floor turns it red. The window is floored at DEFAULT_COMMIT_BATCH so no accepted configuration can multiply launches past the §13 bound.
+- [x] GUARD (Sol tour, qualification): `LIVE_GIT_QUALIFICATION=1 npx vitest run tests/live-git-stream.test.ts -t "qualification tier"` — 101502 commits, consume-and-discard, RSS growth 78 MB ≤ 192 MB, 205 launches ≤ 8 + 3 × 102 = 314, 102 batches; passed.
+- [x] Implement: streaming rev-list/cat-file and grouped diff/numstat protocol with byte counts and NUL framing; complete metadata and historical paths independent of today's AST. Remove the legacy implicit 200-commit default and its detection-window claim. Explicit bounded non-live requests may remain labelled partial; live never sends a cap.
 - Allowed (9): E:`engram-live/git-stream.ts`, E:`engram-live/git-protocol.ts`, E:`engram-live/contracts.ts`, E:`tests/live-git-stream.test.ts`, E:`tests/helpers/live-git-fixtures.ts`, E:`src/extract-git.ts`, E:`src/types.ts`, E:`tests/extract-git.test.ts`, E:`plan/09-BRANCH_LIVE_GIT_INDEXING.md`.
 - Forbidden: another commit limit, per-commit `git show` loops, a whole-history Graphology object, copying legacy binary/path defects as required behavior or modifying user Git state.
 - Gate: equivalence/oracle/default-legacy cases pass; LIVE §13 process bound is ≤8 + 3 × ceil(C/1000), hence ≤308 launches for 100000 commits and ≤8 for a no-change pass, with ≤4 concurrent Git children. Record malformed-stream recovery/RSS; a metadata-only benchmark without changed files is insufficient.
