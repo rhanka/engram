@@ -7,8 +7,8 @@ import {
   receiptDigest,
   recordIdFromDigest,
 } from "./digests.js";
-import { isCanonicalCursor, validateAdminOperationRequest, validateCandidatePayload, validateReconciliationRequest } from "./validation.js";
-import { evaluateReconciliationEligibilityV1 } from "./assertion-family-registry.js";
+import { isCanonicalCursor, validateAdminOperationRequest, validateCandidatePayload, validateReconciliationCommandBinding, validateReconciliationRequest } from "./validation.js";
+import { evaluateReconciliationEligibilityV1, reconciliationProposalIdV1 } from "./assertion-family-registry.js";
 import { verifyStoreProvenance } from "./store-factory.js";
 import { executeRecall } from "./recall.js";
 import type {
@@ -561,18 +561,28 @@ function lifecycleCommandIsExact(input: unknown): input is LifecycleCommandV1 {
   const candidate = ["reject", "withdraw"];
   const singleRecord = ["dispute", "resolve_dispute", "expire", "mark_non_current", "trust_invalidate", "tombstone"];
   const related = ["supersede", "rewind"];
+  const reconcilable = ["dispute", "resolve_dispute", "supersede"];
   const keys = Object.keys(value);
   if (candidate.includes(value.operation)) {
     return keys.length === common.length + 1 && keys.every((key) => common.includes(key) || key === "candidate_id") && isOpaque(value.candidate_id);
   }
   if (singleRecord.includes(value.operation)) {
-    return keys.every((key) => common.includes(key) || key === "record_id" || key === "valid_effective_at") && isOpaque(value.record_id)
-      && (!Object.hasOwn(value, "valid_effective_at") || (typeof value.valid_effective_at === "number" && Number.isSafeInteger(value.valid_effective_at)));
+    const allowsBinding = reconcilable.includes(value.operation);
+    if (!keys.every((key) => common.includes(key) || key === "record_id" || key === "valid_effective_at" || (allowsBinding && key === "reconciliation"))) return false;
+    if (!isOpaque(value.record_id)) return false;
+    if (Object.hasOwn(value, "valid_effective_at") && !(typeof value.valid_effective_at === "number" && Number.isSafeInteger(value.valid_effective_at))) return false;
+    if (Object.hasOwn(value, "reconciliation") && validateReconciliationCommandBinding(value.reconciliation).ok === false) return false;
+    return true;
   }
-  return related.includes(value.operation)
-    && keys.every((key) => common.includes(key) || key === "record_id" || key === "related_record_id" || key === "valid_effective_at")
-    && isOpaque(value.record_id) && isOpaque(value.related_record_id)
-    && (!Object.hasOwn(value, "valid_effective_at") || (typeof value.valid_effective_at === "number" && Number.isSafeInteger(value.valid_effective_at)));
+  if (related.includes(value.operation)) {
+    const allowsBinding = reconcilable.includes(value.operation);
+    if (!keys.every((key) => common.includes(key) || key === "record_id" || key === "related_record_id" || key === "valid_effective_at" || (allowsBinding && key === "reconciliation"))) return false;
+    if (!isOpaque(value.record_id) || !isOpaque(value.related_record_id)) return false;
+    if (Object.hasOwn(value, "valid_effective_at") && !(typeof value.valid_effective_at === "number" && Number.isSafeInteger(value.valid_effective_at))) return false;
+    if (Object.hasOwn(value, "reconciliation") && validateReconciliationCommandBinding(value.reconciliation).ok === false) return false;
+    return true;
+  }
+  return false;
 }
 
 function lifecycleTarget(operation: LifecycleCommandV1["operation"]): MemoryState {
@@ -590,7 +600,17 @@ function lifecycleAuthorizationOperation(operation: LifecycleCommandV1["operatio
   return operation === "dispute" || operation === "resolve_dispute" ? "mark_non_current" : operation;
 }
 
-function lifecycleEvent(command: LifecycleCommandV1, now: string, fromState: MemoryState | undefined, authorizationReceipt: Digest) {
+function lifecycleEvent(command: LifecycleCommandV1, now: string, fromState: MemoryState | undefined, authorizationReceipt: Digest, recalculated?: { proposal: ReconciliationProposalV1; registry_id: string; registry_version: string }) {
+  const binding = recalculated !== undefined
+    ? {
+      proposal_id: recalculated.proposal.proposal_id,
+      proposal_digest: recalculated.proposal.proposal_digest,
+      family_id: recalculated.proposal.family_id,
+      family_version: recalculated.proposal.family_version,
+      registry_id: recalculated.registry_id,
+      registry_version: recalculated.registry_version,
+    }
+    : undefined;
   const body = defined({
     schema_version: 2 as const,
     event_id: command.event_id,
@@ -606,6 +626,7 @@ function lifecycleEvent(command: LifecycleCommandV1, now: string, fromState: Mem
     authorization_receipt_digest: authorizationReceipt,
     reason_ref: command.reason_ref,
     event_anchor: command.event_anchor,
+    reconciliation: binding,
     previous_event_digest: ZERO_DIGEST,
   });
   return { ...body, event_digest: receiptDigest("event", body) };
@@ -635,6 +656,162 @@ async function foldedStateForCommand(dependencies: MemoryEngineDependenciesV2, c
   } catch {
     return unavailable(command.operation, "canonical store did not return a journal");
   }
+}
+
+/**
+ * T5.8 binding validation, before any cursor allocation. Recomputes the outcome
+ * for the bound proposal's family, version, pair and pin through T5.7 steps 5–7
+ * with `propose_reconciliation` authorized on both records, then checks the
+ * command matches the proposal. Fold and replay never call this: they read the
+ * stored event binding only.
+ */
+async function validateReconciliationBindingForTransition(
+  dependencies: MemoryEngineDependenciesV2,
+  command: LifecycleCommandV1,
+  now: string,
+): Promise<Result<{ proposal: ReconciliationProposalV1; registry_id: string; registry_version: string } | undefined>> {
+  if (!("reconciliation" in command) || command.reconciliation === undefined) return { ok: true, value: undefined };
+  if (command.operation !== "dispute" && command.operation !== "resolve_dispute" && command.operation !== "supersede") {
+    return refusal(command.operation, "INVALID_SCHEMA", "reconciliation binding is allowed only on dispute, resolve_dispute and supersede");
+  }
+  const checked = validateReconciliationCommandBinding(command.reconciliation);
+  if (!checked.ok) return { ok: false, error: { ...checked.error, operation: command.operation } };
+  const binding = checked.value;
+  const proposal = binding.proposal;
+  const registry = dependencies.assertion_registry;
+  if (registry === undefined || registry.registry_id !== binding.registry_id || registry.registry_version !== binding.registry_version) {
+    return refusal(command.operation, "REGISTRY_VERSION_UNAVAILABLE", "bound assertion registry version is not installed");
+  }
+  if (!registry.descriptors().some((descriptor) => descriptor.family_id === proposal.family_id && descriptor.version === proposal.family_version)) {
+    return refusal(command.operation, "REGISTRY_VERSION_UNAVAILABLE", "bound assertion family version is not installed");
+  }
+  const pin = proposal.comparison_system_as_of;
+  if (!isCanonicalCursor(pin)) return refusal(command.operation, "INVALID_DIGEST", "bound comparison cursor is invalid");
+  const [leftId, rightId] = utf8AscendingIds(proposal.left_record_id, proposal.right_record_id);
+  if (leftId !== proposal.left_record_id || rightId !== proposal.right_record_id) {
+    return refusal(command.operation, "INVALID_DIGEST", "bound proposal pair is not in UTF-8 ascending order");
+  }
+  const records = new Map<string, MemoryRecordV2>();
+  const eligible = new Map<string, boolean>();
+  for (const recordId of [leftId, rightId]) {
+    const resource = { record_id: recordId };
+    let authorization: Awaited<ReturnType<typeof authorizeOperation>>;
+    try {
+      authorization = await authorizeOperation(dependencies.authorization, {
+        operation: "propose_reconciliation",
+        resource,
+        resource_digest: authorizationResourceDigest("propose_reconciliation", resource),
+        context: command.authorization,
+        issued_at: now,
+        deadline_at: command.deadline_at,
+      }, undefined, now);
+    } catch {
+      return unavailable(command.operation, "authorization port did not return a typed result");
+    }
+    if (!authorization.ok) return { ok: false, error: { ...authorization.error, operation: command.operation } };
+    let read: Awaited<ReturnType<MemoryEngineDependenciesV2["canonical_store"]["readRecord"]>>;
+    try {
+      read = await dependencies.canonical_store.readRecord({
+        record_id: recordId,
+        system_as_of: pin,
+        authorization_receipt_digest: authorization.value.receipt_digest,
+      });
+    } catch {
+      return unavailable(command.operation, "canonical store did not return a typed record");
+    }
+    if (!read.ok) return refusal(command.operation, "INVALID_DIGEST", "bound proposal pair is not readable at its comparison cursor");
+    if (read.value.scope_ref !== authorization.value.scope_ref) return refusal(command.operation, "UNAUTHORIZED", "authorization scope does not bind the reconciliation record");
+    let revalidated: Awaited<ReturnType<MemoryEngineDependenciesV2["canonical_store"]["revalidateReadOnly"]>>;
+    try {
+      revalidated = await dependencies.canonical_store.revalidateReadOnly({
+        record_ids: [recordId],
+        valid_as_of: read.value.valid_time.t,
+        system_as_of: pin,
+        authorization_receipt_digest: authorization.value.receipt_digest,
+        operation: "recall_current",
+      });
+    } catch {
+      return unavailable(command.operation, "canonical store did not return typed reconciliation results");
+    }
+    if (!revalidated.ok) return refusal(command.operation, "INVALID_DIGEST", "bound proposal pair is not eligible at its comparison cursor");
+    records.set(recordId, read.value);
+    eligible.set(recordId, revalidated.value.eligible_record_ids.includes(recordId));
+  }
+  if (eligible.get(leftId) !== true || eligible.get(rightId) !== true) {
+    return refusal(command.operation, "INVALID_DIGEST", "bound proposal pair is not eligible");
+  }
+  const left = records.get(leftId)!;
+  const right = records.get(rightId)!;
+  const gate = evaluateReconciliationEligibilityV1(
+    { family_id: proposal.family_id, family_version: proposal.family_version, left, right, comparison_system_as_of: pin },
+    {
+      left: { record_id: left.record_id, state: "accepted_current", unexpired: true, dependency_eligible: true },
+      right: { record_id: right.record_id, state: "accepted_current", unexpired: true, dependency_eligible: true },
+    },
+  );
+  if (!gate.ok) return refusal(command.operation, "INVALID_DIGEST", "bound proposal pair fails the eligibility gate");
+  let compared: ReturnType<typeof registry.compare>;
+  try {
+    compared = registry.compare({ family_id: proposal.family_id, family_version: proposal.family_version, left, right, comparison_system_as_of: pin });
+  } catch {
+    return unavailable(command.operation, "assertion registry did not return a typed proposal");
+  }
+  if (!compared.ok) return refusal(command.operation, "INVALID_DIGEST", "bound proposal does not recompute");
+  const recomputed = compared.value;
+  if (recomputed === undefined) return refusal(command.operation, "INVALID_DIGEST", "bound proposal does not recompute");
+  const { proposal_digest: suppliedDigest, ...suppliedBody } = proposal;
+  if (receiptDigest("reconciliation-proposal", suppliedBody as Record<string, unknown>, "proposal_digest") !== suppliedDigest) {
+    return refusal(command.operation, "INVALID_DIGEST", "bound proposal digest does not bind the supplied proposal body");
+  }
+  if (reconciliationProposalIdV1({
+    family_id: proposal.family_id,
+    family_version: proposal.family_version,
+    occurrence_key: proposal.occurrence_key,
+    left_record_id: proposal.left_record_id,
+    right_record_id: proposal.right_record_id,
+    relation: proposal.relation,
+    comparison_system_as_of: proposal.comparison_system_as_of,
+  }) !== proposal.proposal_id) {
+    return refusal(command.operation, "INVALID_DIGEST", "bound proposal id does not bind the supplied proposal body");
+  }
+  const evidenceMatches = proposal.evidence_citation_ids.length === recomputed.evidence_citation_ids.length
+    && proposal.evidence_citation_ids.every((citation, index) => citation === recomputed.evidence_citation_ids[index]);
+  if (proposal.proposal_id !== recomputed.proposal_id
+    || proposal.family_id !== recomputed.family_id
+    || proposal.family_version !== recomputed.family_version
+    || proposal.occurrence_key !== recomputed.occurrence_key
+    || proposal.left_record_id !== recomputed.left_record_id
+    || proposal.right_record_id !== recomputed.right_record_id
+    || proposal.relation !== recomputed.relation
+    || proposal.comparison_system_as_of !== recomputed.comparison_system_as_of
+    || proposal.proposal_digest !== recomputed.proposal_digest
+    || !evidenceMatches) {
+    return refusal(command.operation, "INVALID_DIGEST", "bound proposal does not match the recomputed outcome");
+  }
+  const recalculated = { proposal: recomputed, registry_id: binding.registry_id, registry_version: binding.registry_version };
+  const pair = new Set([recomputed.left_record_id, recomputed.right_record_id]);
+  if (command.operation === "supersede") {
+    if (!pair.has(command.record_id) || !pair.has(command.related_record_id) || command.record_id === command.related_record_id) {
+      return refusal(command.operation, "ILLEGAL_TRANSITION", "bound command record ids are outside the proposal pair");
+    }
+    if (recomputed.relation === "left_supersedes_right") {
+      if (command.record_id !== recomputed.right_record_id || command.related_record_id !== recomputed.left_record_id) {
+        return refusal(command.operation, "ILLEGAL_TRANSITION", "supersede direction does not match the bound proposal");
+      }
+      return { ok: true, value: recalculated };
+    }
+    if (recomputed.relation === "right_supersedes_left") {
+      if (command.record_id !== recomputed.left_record_id || command.related_record_id !== recomputed.right_record_id) {
+        return refusal(command.operation, "ILLEGAL_TRANSITION", "supersede direction does not match the bound proposal");
+      }
+      return { ok: true, value: recalculated };
+    }
+    return refusal(command.operation, "ILLEGAL_TRANSITION", "supersede requires a directional bound proposal");
+  }
+  if (!pair.has(command.record_id)) {
+    return refusal(command.operation, "ILLEGAL_TRANSITION", "bound command record is outside the proposal pair");
+  }
+  return { ok: true, value: recalculated };
 }
 
 function validateRecallRequest(input: unknown, now: string): Result<RecallRequestV2> {
@@ -941,6 +1118,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       if (Date.parse(now) >= Date.parse(input.deadline_at)) return refusal(input.operation, "DEADLINE_EXCEEDED", "lifecycle deadline elapsed before transition");
       const admitted = await admitFenced(input.operation);
       if (!admitted.ok) return admitted;
+      const bound = await validateReconciliationBindingForTransition(dependencies, input, now);
+      if (!bound.ok) return bound;
       const authorizationOperation = lifecycleAuthorizationOperation(input.operation);
       const resource = "record_id" in input ? { record_id: input.record_id } : { candidate_id: input.candidate_id };
       const authorization = await authorizeOperation(dependencies.authorization, {
@@ -967,7 +1146,7 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       }
       const fromState = await foldedStateForCommand(dependencies, input);
       if (!fromState.ok) return fromState;
-      const event = lifecycleEvent(input, now, fromState.value, authorization.value.receipt_digest);
+      const event = lifecycleEvent(input, now, fromState.value, authorization.value.receipt_digest, bound.value ?? undefined);
       const applied = await dependencies.canonical_store.applyLifecycle({
         command: input,
         event: event as never,

@@ -160,10 +160,10 @@ Rationale: F1 first because it executes L6 and is the only lot able to reveal a 
 
 ## F10 — L5b-3: Authorized Application, Event Field, Checkpoint Registry Versions (FIN §3.2.3 T5.8–T5.9) — D-3, after F1
 
-- [ ] RED: `tests/memory-reconciliation.test.ts > a dispute or supersede bound to a proposal persists family and registry versions in the event digest and in the journal event (visible via readJournal), and replay never calls the registry`.
-- [ ] RED: `tests/memory-reconciliation.test.ts > a forged or mismatched proposal binding is refused before any cursor allocation`.
-- [ ] RED: `tests/memory-journal-replay.test.ts > checkpoint registry_versions lists every registry version bound by journal events through the cursor`.
-- [ ] Implement: binding validation in `transition` (recomputation through T5.7 steps 5–7 with `propose_reconciliation` authorized on both records); the event field bound into `event_digest`; the same optional field on the journal event, carried by `#intentFromLifecycle` into the journal `event_hash` (no migration: opaque JSON body); the fold reads stored fields only; `registry_versions` derived from the journal field in the checkpoint; the parity corpus gains one bound transition; EVOL §5.9 checkpoint sentence; `plan/07` l.63 checked.
+- [x] RED: `tests/memory-reconciliation.test.ts > a dispute or supersede bound to a proposal persists family and registry versions in the event digest and in the journal event (visible via readJournal), and replay never calls the registry`.
+- [x] RED: `tests/memory-reconciliation.test.ts > a forged or mismatched proposal binding is refused before any cursor allocation`.
+- [x] RED: `tests/memory-journal-replay.test.ts > checkpoint registry_versions lists every registry version bound by journal events through the cursor`.
+- [x] Implement: binding validation in `transition` (recomputation through T5.7 steps 5–7 with `propose_reconciliation` authorized on both records); the event field bound into `event_digest`; the same optional field on the journal event, carried by `#intentFromLifecycle` into the journal `event_hash` (no migration: opaque JSON body); the fold reads stored fields only; `registry_versions` derived from the journal field in the checkpoint; the parity corpus gains one bound transition; EVOL §5.9 checkpoint sentence; `plan/07` l.63 checked.
 - Allowed (≤11): `engram-memory/engine.ts`, `engram-memory/memory-store.ts`, `engram-memory/validation.ts`, `engram-memory/sqlite.ts` and `engram-memory/postgres.ts` (only if their checkpoint override drops the field), `tests/memory-reconciliation.test.ts`, `tests/memory-journal-replay.test.ts`, `tests/canonical-memory-store.parity.test.ts`, EVOL, `plan/07`, this plan.
 - Forbidden: running a comparator during fold or replay; changing the digest of an event without a binding.
 - Gate: memory suite green; Linux native lane green; `memory-postgres` green with the extended corpus; existing replay digests unchanged.
