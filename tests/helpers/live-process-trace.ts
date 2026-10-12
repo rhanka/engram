@@ -57,10 +57,20 @@ export class LiveProcessTrace {
   run(cwd: string, args: readonly string[], input?: Buffer | string, phase: Phase = "setup", env?: NodeJS.ProcessEnv): ProcessResult {
     const argv = [...this.prefix, ...args];
     const result = spawnSync(this.executable, argv, {
-      cwd, env: env ? { ...this.env, ...env } : this.env, input, shell: false, maxBuffer: 16 * 1024 * 1024,
+      cwd, env: env ? { ...this.env, ...env } : this.env,
+      // Only commands that read stdin receive an input pipe write; read-only
+      // oracle commands get no input so Git can never observe EPIPE on entry.
+      ...(input !== undefined ? { input } : {}),
+      shell: false, maxBuffer: 16 * 1024 * 1024,
       timeout: 30_000, killSignal: "SIGKILL",
     });
-    if (result.error) throw new Error(`L0 Git subprocess unavailable: ${result.error.message}`);
+    // A racing EPIPE while the child already exited must not mask its outcome:
+    // expose the real status and stderr instead of reporting "unavailable".
+    // No retry: the caller decides from the returned status.
+    const epipe = (result.error as NodeJS.ErrnoException | undefined)?.code === "EPIPE";
+    if (result.error && !(epipe && result.status !== null)) {
+      throw new Error(`L0 Git subprocess unavailable: ${result.error.message}`);
+    }
     if (result.status === null) throw new Error(`L0 Git terminated by ${result.signal}`);
     this.launches.push({ executable: this.executable, cwd, args: argv, phase,
       status: result.status, stdoutBytes: result.stdout.length, stderrBytes: result.stderr.length });
