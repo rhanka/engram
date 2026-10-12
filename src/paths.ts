@@ -276,3 +276,24 @@ export function defaultManifestPath(root?: string): string {
 export function defaultTranscriptsDir(root?: string): string {
   return resolveGraphifyPaths({ root }).transcriptsDir;
 }
+
+/** Worktree state dir kind, `.engram/` first. Pure existence probe. */
+export type WorktreeStateKind = "engram" | "graphify" | "graphify-out" | null;
+
+/**
+ * H0 (LIVE §7): recognize engram/legacy state without granting any write
+ * permission. Read-only: never creates, warns through, or writes back to any
+ * state directory.
+ */
+export function detectWorktreeStateKind(root: string): WorktreeStateKind {
+  const resolved = resolve(root);
+  if (existsSync(join(resolved, DEFAULT_ENGRAM_STATE_DIR))) return "engram";
+  if (existsSync(join(resolved, DEFAULT_GRAPHIFY_STATE_DIR))) return "graphify";
+  if (existsSync(join(resolved, LEGACY_GRAPHIFY_STATE_DIR))) return "graphify-out";
+  return null;
+}
+
+/** Read-only `.engram/` recognition for the live-signal path. Never writes. */
+export function hasEngramState(root: string): boolean {
+  return existsSync(join(resolve(root), DEFAULT_ENGRAM_STATE_DIR));
+}
