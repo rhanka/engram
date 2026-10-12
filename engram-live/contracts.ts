@@ -119,6 +119,8 @@ export interface WorkspaceDeclarationDto {
   readonly policyVersion: string;
   readonly declarationRevision: number;
   readonly serverWorkspaceId?: string;
+  readonly serverIssuer?: string;
+  readonly bindingRevision?: number;
 }
 
 export interface FactBatchDto {
@@ -179,9 +181,21 @@ function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
+// Exact-key enforcement (L6a): every DTO validator rejects unknown keys so
+// a misspelled or smuggled field can never pass as a valid declaration,
+// clone, worktree, batch or revocation.
+function rejectUnknownKeys(value: Record<string, unknown>, allowed: readonly string[], path: string, errors: string[]): void {
+  for (const key of Object.keys(value)) {
+    if (!allowed.includes(key)) errors.push(`${path}.${key} is not a known key`);
+  }
+}
+
+const LIVE_SCOPE_KEYS: readonly string[] = ["tenant", "clone", "worktree"];
+
 export function validateLiveScope(scope: unknown): ValidationResult {
   if (!isRecord(scope)) return { ok: false, errors: ["scope must be an object"] };
   const errors: string[] = [];
+  rejectUnknownKeys(scope, LIVE_SCOPE_KEYS, "scope", errors);
   if (!isNonEmptyString(scope.tenant)) errors.push("scope.tenant must be a non-empty string");
   if (!isNonEmptyString(scope.clone)) errors.push("scope.clone must be a non-empty string");
   if (scope.worktree !== undefined && !isNonEmptyString(scope.worktree)) {
@@ -190,9 +204,23 @@ export function validateLiveScope(scope: unknown): ValidationResult {
   return { ok: errors.length === 0, errors };
 }
 
+const WORKSPACE_DECLARATION_KEYS: readonly string[] = [
+  "tenant",
+  "principal",
+  "hostFingerprint",
+  "authorizedRoots",
+  "liveCapability",
+  "policyVersion",
+  "declarationRevision",
+  "serverWorkspaceId",
+  "serverIssuer",
+  "bindingRevision",
+];
+
 export function validateWorkspaceDeclaration(declaration: unknown): ValidationResult {
   if (!isRecord(declaration)) return { ok: false, errors: ["declaration must be an object"] };
   const errors: string[] = [];
+  rejectUnknownKeys(declaration, WORKSPACE_DECLARATION_KEYS, "declaration", errors);
   if (!isNonEmptyString(declaration.tenant)) errors.push("declaration.tenant must be a non-empty string");
   if (!isNonEmptyString(declaration.principal)) errors.push("declaration.principal must be a non-empty string");
   if (!isNonEmptyString(declaration.hostFingerprint)) {
@@ -215,12 +243,44 @@ export function validateWorkspaceDeclaration(declaration: unknown): ValidationRe
   if (declaration.serverWorkspaceId !== undefined && !isNonEmptyString(declaration.serverWorkspaceId)) {
     errors.push("declaration.serverWorkspaceId, when present, must be a non-empty string");
   }
+  if (declaration.serverIssuer !== undefined && !isNonEmptyString(declaration.serverIssuer)) {
+    errors.push("declaration.serverIssuer, when present, must be a non-empty string");
+  }
+  if (declaration.bindingRevision !== undefined && !isNonNegativeInteger(declaration.bindingRevision)) {
+    errors.push("declaration.bindingRevision, when present, must be a non-negative integer");
+  }
+  // Product live intent binds server/issuer, (serverWorkspaceId,
+  // hostFingerprint) and binding revision together (spec §12): a server
+  // workspace without its binding revision, or an issuer/revision without
+  // the server workspace, is not a valid product binding. Absence of all
+  // three is a valid local-only declaration requiring no enrollment.
+  if (declaration.serverWorkspaceId !== undefined && declaration.bindingRevision === undefined) {
+    errors.push("declaration.bindingRevision is required when declaration.serverWorkspaceId is present");
+  }
+  if (declaration.serverIssuer !== undefined && declaration.serverWorkspaceId === undefined) {
+    errors.push("declaration.serverWorkspaceId is required when declaration.serverIssuer is present");
+  }
+  if (declaration.bindingRevision !== undefined && declaration.serverWorkspaceId === undefined) {
+    errors.push("declaration.serverWorkspaceId is required when declaration.bindingRevision is present");
+  }
   return { ok: errors.length === 0, errors };
 }
+
+const FACT_BATCH_KEYS: readonly string[] = [
+  "scope",
+  "producerName",
+  "contractVersion",
+  "policyVersion",
+  "generationId",
+  "batchId",
+  "batchDigest",
+  "facts",
+];
 
 export function validateFactBatch(batch: unknown): ValidationResult {
   if (!isRecord(batch)) return { ok: false, errors: ["batch must be an object"] };
   const errors: string[] = [];
+  rejectUnknownKeys(batch, FACT_BATCH_KEYS, "batch", errors);
   const scope = validateLiveScope(batch.scope);
   if (!scope.ok) errors.push(...scope.errors.map((error) => `batch.scope: ${error}`));
   if (batch.producerName !== PRODUCER_NAME) errors.push(`batch.producerName must be "${PRODUCER_NAME}"`);
@@ -245,4 +305,266 @@ export function classifyDuplicateBatch(
     throw new Error("classifyDuplicateBatch compares the same batch identity only");
   }
   return previous.batchDigest === next.batchDigest ? "idempotent" : "refused";
+}
+
+// — L6a: explicit host declarations and clone identity
+// (spec/SPEC_LIVE_GIT_INDEXING.md §§2–3, 10, 12; plan/09 L6a; owner Q4 A).
+//
+// Consumer contract for the h2a (H) and cluster-mesh/sentropic (S) seats.
+// H owns durable local declarations plus clone/worktree resolution
+// (live-registration.ts, live-declarations.ts, data-pure DTOs); S owns the
+// registration persistence, product declarations and migrations; engram
+// owns only this data-pure contract and the pure functions in
+// ./registration.js. Read this block before implementing either host side.
+//
+// - Explicit opt-in, once per workspace, through h2a/cluster-mesh. Only
+//   liveCapability "live" (EXPLICIT_LIVE_CAPABILITY) activates collection.
+//   Bind, upload, code-workspace creation, session opening or session
+//   ending never activate or remove a declaration
+//   (NON_ACTIVATING_LIFECYCLE_KINDS). Replay of a stored declaration after
+//   projection loss resumes work without renewed activation.
+// - Engram neutrality: this module takes no imports of any kind (no h2a,
+//   no sentropic, no storage driver, no network); registration.ts adds pure
+//   functions with no host state, no storage and no network. Durable state
+//   belongs to the hosts — local h2a state outside source roots plus
+//   app-operated product persistence — independent of the live projection.
+// - Workspace fingerprint vs clone identity: the public h2a `ws:`
+//   fingerprint stays on the declaration (hostFingerprint) and is never
+//   the sole clone key. The clone key is the (hostScope, common-dir
+//   project fingerprint, common-dir realpath) triple. Two clones with an
+//   equal project fingerprint remain distinct; linked worktrees sharing one
+//   common-dir share one clone with isolated worktree identities. The
+//   common-dir realpath is host-local and never published to sentropic:
+//   share only the opaque cloneId.
+// - Revisions increment by exactly one, preserve tenant/principal/
+//   hostFingerprint, and revalidate rebinding (a changed serverWorkspaceId
+//   requires a new bindingRevision). The host must additionally refuse to
+//   redirect in-flight collection/publication on rebind.
+// - Revocation is a private-purge request: the host stops work, rejects
+//   delayed jobs, and purges private snapshots, derived indexes and
+//   decryptability, while preserving authorized committed history. Purging
+//   never deletes committed facts.
+
+/** The only capability value that activates live collection (Q4 A). */
+export const EXPLICIT_LIVE_CAPABILITY = "live" as const;
+
+/**
+ * Lifecycle kinds that never activate or remove a live declaration:
+ * enrollment bind, transcript upload, code-workspace creation and agent
+ * session open/end are distinct capabilities (spec §12).
+ */
+export const NON_ACTIVATING_LIFECYCLE_KINDS = [
+  "bind",
+  "upload",
+  "code-workspace-create",
+  "session-open",
+  "session-end",
+] as const;
+
+export type NonActivatingLifecycleKind = (typeof NON_ACTIVATING_LIFECYCLE_KINDS)[number];
+
+export function isNonActivatingLifecycleKind(value: unknown): value is NonActivatingLifecycleKind {
+  return (
+    typeof value === "string" &&
+    (NON_ACTIVATING_LIFECYCLE_KINDS as readonly string[]).includes(value)
+  );
+}
+
+export const OID_ALGORITHMS = ["sha1", "sha256"] as const;
+
+export type OidAlgorithm = (typeof OID_ALGORITHMS)[number];
+
+export const REVOCATION_REASONS = ["workspace-remove", "owner-request", "policy-withdrawn"] as const;
+
+export type RevocationReason = (typeof REVOCATION_REASONS)[number];
+
+export function isRevocationReason(value: unknown): value is RevocationReason {
+  return (
+    typeof value === "string" &&
+    (REVOCATION_REASONS as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * Local clone identity. hostScope bounds the clone to one host;
+ * commonDirProjectFingerprint is the project fingerprint computed over the
+ * common-dir history with the empty main-worktree component (spec §12);
+ * commonDirRealpath is the host-resolved common-dir path (host-local only,
+ * never published to sentropic); cloneId is the scoped opaque identifier
+ * safe to share; oidAlgorithm records the repository object format.
+ */
+export interface CloneIdentityDto {
+  readonly hostScope: string;
+  readonly commonDirProjectFingerprint: string;
+  readonly commonDirRealpath: string;
+  readonly cloneId: string;
+  readonly oidAlgorithm: OidAlgorithm;
+}
+
+/**
+ * Worktree identity: one shared cloneId plus an isolated per-worktree
+ * fingerprint, path and resolved git-dir. Linked worktrees share only
+ * authorized immutable analyses; index snapshots and context-dependent
+ * resolution stay worktree-local (spec §§3, 15).
+ */
+export interface WorktreeIdentityDto {
+  readonly cloneId: string;
+  readonly worktreePath: string;
+  readonly gitDir: string;
+  readonly worktreeFingerprint: string;
+}
+
+/**
+ * Private-purge request carried by every revocation. All purges are `true`
+ * and committed history is always preserved: there is no field authorizing
+ * deletion of committed facts.
+ */
+export interface PrivatePurgeRequestDto {
+  readonly purgePrivateSnapshots: true;
+  readonly purgeDerivedIndexes: true;
+  readonly revokeDecryptability: true;
+  readonly preserveCommittedHistory: true;
+}
+
+/** Revocation of one declaration revision: purge private state, keep history. */
+export interface DeclarationRevocationDto {
+  readonly tenant: string;
+  readonly hostFingerprint: string;
+  readonly declarationRevision: number;
+  readonly reason: RevocationReason;
+  readonly requestPrivatePurge: PrivatePurgeRequestDto;
+}
+
+const CLONE_IDENTITY_KEYS: readonly string[] = [
+  "hostScope",
+  "commonDirProjectFingerprint",
+  "commonDirRealpath",
+  "cloneId",
+  "oidAlgorithm",
+];
+
+const WORKTREE_IDENTITY_KEYS: readonly string[] = [
+  "cloneId",
+  "worktreePath",
+  "gitDir",
+  "worktreeFingerprint",
+];
+
+const PRIVATE_PURGE_REQUEST_KEYS: readonly string[] = [
+  "purgePrivateSnapshots",
+  "purgeDerivedIndexes",
+  "revokeDecryptability",
+  "preserveCommittedHistory",
+];
+
+const DECLARATION_REVOCATION_KEYS: readonly string[] = [
+  "tenant",
+  "hostFingerprint",
+  "declarationRevision",
+  "reason",
+  "requestPrivatePurge",
+];
+
+/**
+ * Lexical normalization applied to the host-resolved common-dir realpath
+ * before key derivation: trailing slashes are stripped (the filesystem
+ * root alone is kept). The host resolves symlinks to the realpath before
+ * calling; this function performs no I/O.
+ */
+export function normalizeCommonDirRealpath(realpath: string): string {
+  if (realpath.length > 1) {
+    const stripped = realpath.replace(/\/+$/, "");
+    return stripped.length === 0 ? "/" : stripped;
+  }
+  return realpath;
+}
+
+/**
+ * Canonical clone key binding host scope, project fingerprint and normalized
+ * common-dir realpath, NUL-joined so no component boundary is ambiguous.
+ * Hosts hash this string (e.g. SHA-256) to mint the opaque cloneId; the
+ * canonical key itself stays host-local with the realpath.
+ */
+export function canonicalCloneKey(input: {
+  readonly hostScope: string;
+  readonly commonDirProjectFingerprint: string;
+  readonly commonDirRealpath: string;
+}): string {
+  const normalized = normalizeCommonDirRealpath(input.commonDirRealpath);
+  return `${input.hostScope}\0${input.commonDirProjectFingerprint}\0${normalized}`;
+}
+
+export function validateCloneIdentity(identity: unknown): ValidationResult {
+  if (!isRecord(identity)) return { ok: false, errors: ["cloneIdentity must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(identity, CLONE_IDENTITY_KEYS, "cloneIdentity", errors);
+  if (!isNonEmptyString(identity.hostScope)) errors.push("cloneIdentity.hostScope must be a non-empty string");
+  if (!isNonEmptyString(identity.commonDirProjectFingerprint)) {
+    errors.push("cloneIdentity.commonDirProjectFingerprint must be a non-empty string");
+  }
+  if (!isNonEmptyString(identity.commonDirRealpath)) {
+    errors.push("cloneIdentity.commonDirRealpath must be a non-empty string");
+  }
+  if (!isNonEmptyString(identity.cloneId)) {
+    errors.push("cloneIdentity.cloneId must be a non-empty string");
+  } else if (!(identity.cloneId as string).startsWith("clone:")) {
+    errors.push('cloneIdentity.cloneId must be a scoped opaque id starting with "clone:"');
+  }
+  if (identity.oidAlgorithm !== "sha1" && identity.oidAlgorithm !== "sha256") {
+    errors.push('cloneIdentity.oidAlgorithm must be "sha1" or "sha256"');
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateWorktreeIdentity(identity: unknown): ValidationResult {
+  if (!isRecord(identity)) return { ok: false, errors: ["worktreeIdentity must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(identity, WORKTREE_IDENTITY_KEYS, "worktreeIdentity", errors);
+  if (!isNonEmptyString(identity.cloneId)) errors.push("worktreeIdentity.cloneId must be a non-empty string");
+  if (!isNonEmptyString(identity.worktreePath)) {
+    errors.push("worktreeIdentity.worktreePath must be a non-empty string");
+  }
+  if (!isNonEmptyString(identity.gitDir)) errors.push("worktreeIdentity.gitDir must be a non-empty string");
+  if (!isNonEmptyString(identity.worktreeFingerprint)) {
+    errors.push("worktreeIdentity.worktreeFingerprint must be a non-empty string");
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validatePrivatePurgeRequest(request: unknown): ValidationResult {
+  if (!isRecord(request)) return { ok: false, errors: ["requestPrivatePurge must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(request, PRIVATE_PURGE_REQUEST_KEYS, "requestPrivatePurge", errors);
+  if (request.purgePrivateSnapshots !== true) {
+    errors.push("requestPrivatePurge.purgePrivateSnapshots must be true (revocation always purges private snapshots)");
+  }
+  if (request.purgeDerivedIndexes !== true) {
+    errors.push("requestPrivatePurge.purgeDerivedIndexes must be true (revocation always purges derived indexes)");
+  }
+  if (request.revokeDecryptability !== true) {
+    errors.push("requestPrivatePurge.revokeDecryptability must be true (revocation always revokes decryptability)");
+  }
+  if (request.preserveCommittedHistory !== true) {
+    errors.push("requestPrivatePurge.preserveCommittedHistory must be true (revocation never deletes committed history)");
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateDeclarationRevocation(revocation: unknown): ValidationResult {
+  if (!isRecord(revocation)) return { ok: false, errors: ["revocation must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(revocation, DECLARATION_REVOCATION_KEYS, "revocation", errors);
+  if (!isNonEmptyString(revocation.tenant)) errors.push("revocation.tenant must be a non-empty string");
+  if (!isNonEmptyString(revocation.hostFingerprint)) {
+    errors.push("revocation.hostFingerprint must be a non-empty string");
+  }
+  if (!isNonNegativeInteger(revocation.declarationRevision)) {
+    errors.push("revocation.declarationRevision must be a non-negative integer");
+  }
+  if (!isRevocationReason(revocation.reason)) {
+    errors.push(`revocation.reason must be one of ${REVOCATION_REASONS.join(", ")}`);
+  }
+  const purge = validatePrivatePurgeRequest(revocation.requestPrivatePurge);
+  if (!purge.ok) errors.push(...purge.errors.map((error) => `revocation.${error}`));
+  return { ok: errors.length === 0, errors };
 }
