@@ -4,8 +4,8 @@
 // dependency beyond Node builtins and the repository's dev TypeScript.
 //
 // What it does, in order:
-//   1. strict-compiles engram-live (contracts.ts, integration.ts, index.ts)
-//      into engram-live/dist/ with declarations;
+//   1. strict-compiles engram-live (contracts.ts, registration.ts,
+//      integration.ts, index.ts) into engram-live/dist/ with declarations;
 //   2. verifies every grammar pinned in engram-live/grammar-manifest.json
 //      against the source tree: the source file must exist and its sha256
 //      must match the pinned digest — a drifted or tampered grammar aborts
@@ -13,9 +13,9 @@
 //   3. copies the verified WASM bytes into engram-live/dist/grammars/ and
 //      re-verifies the copied digest;
 //   4. removes any stale WASM asset no longer pinned by the manifest;
-//   5. checks the emitted entry surface (index/contracts/integration .js and
-//      .d.ts) and that the packaged manifest matches the advertised
-//      contracts constant.
+//   5. checks the emitted entry surface (index/contracts/registration/
+//      integration .js and .d.ts) and that the packaged manifest matches the
+//      advertised contracts constant.
 //
 // Exit causes: COMPILE_FAILED, MANIFEST_INVALID, SOURCE_MISSING,
 // DIGEST_MISMATCH, OUTPUT_INVALID.
