@@ -127,6 +127,42 @@ export function hasUnansweredLabelInstructions(instructionDir: string): boolean 
 }
 
 /**
+ * L1a pending-until-verified: the label instruction file (`communities.md`)
+ * stays pending work until an answer has been VALIDLY ingested — not merely
+ * when the answer file is present. An empty (`{}`) or malformed
+ * `communities.json` ingests to zero names (see `ingestLabelAnswer`), so the
+ * instruction file, the generic labels and the describe-pending marker must
+ * all survive until a subsequent run ingests at least one valid name (which
+ * self-cleans the directory). A present-but-unverifiable answer is active
+ * work, never a stale orphan.
+ */
+export function hasUnresolvedLabelInstructions(instructionDir: string): boolean {
+  const instructionPath = join(instructionDir, LABEL_INSTRUCTION_FILE);
+  if (!existsSync(instructionPath)) return false;
+  const answerPath = join(instructionDir, LABEL_ANSWER_FILE);
+  if (!existsSync(answerPath)) return true;
+  try {
+    const md = readFileSync(instructionPath, "utf-8");
+    const cids = [...md.matchAll(/^Community (\d+):/gmu)].map((m) => Number(m[1]));
+    if (cids.length > 0) {
+      return ingestLabelAnswer(instructionDir, cids).size === 0;
+    }
+    // No community lines in the instruction file (stub or foreign format):
+    // fall back to a generic validity check — a non-empty JSON object with
+    // at least one non-empty name counts as answered (`{}` / malformed JSON
+    // still read as unresolved).
+    const raw = readFileSync(answerPath, "utf-8").replace(FENCE_RE, "").trim();
+    const data: unknown = JSON.parse(raw);
+    if (data === null || typeof data !== "object" || Array.isArray(data)) return true;
+    return !Object.values(data as Record<string, unknown>).some(
+      (value) => typeof value === "string" && value.trim().length > 0,
+    );
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Try to read the completed answer file written by the assistant. Returns a
  * partial map (cids with valid names); silently returns empty map if the file
  * is missing or malformed.
