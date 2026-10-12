@@ -3,8 +3,10 @@ import {
   createMemoryPortV2,
   knowledgePayloadDigest,
   receiptDigest,
+  type AssertionFamilyRegistry,
   type CanonicalMemoryStorePort,
   type Digest,
+  type EvidenceClass,
   type MemoryEngineDependenciesV2,
   type MemoryPortV2,
   type SemanticProjectionPort,
@@ -40,6 +42,11 @@ export interface FixtureOptions {
   vector?: VectorProjectionPort;
   store?: CanonicalMemoryStorePort;
   clock?: { now: () => string };
+  assertionRegistry?: AssertionFamilyRegistry;
+  /** Records the receipt digest the fake authorization port issued per call, so tests can recompute digests. */
+  authorizationLog?: Array<{ operation: string; resource: unknown; receipt_digest: Digest }>;
+  /** Injects the fixture's evidence verifier, which serves the per-record trust class set by `seedAccepted`. */
+  seededTrustClasses?: boolean;
 }
 
 export function buildMemory(options: FixtureOptions = {}): { memory: MemoryPortV2; store: CanonicalMemoryStorePort } {
@@ -69,7 +76,9 @@ export function buildMemory(options: FixtureOptions = {}): { memory: MemoryPortV
         },
         authentication_receipt_digest: DIGEST,
       };
-      return { ok: true as const, value: { ...body, receipt_digest: receiptDigest("authorization-allowed", body) } };
+      const allowed = { ...body, receipt_digest: receiptDigest("authorization-allowed", body) };
+      options.authorizationLog?.push({ operation: request.operation, resource: request.resource, receipt_digest: allowed.receipt_digest });
+      return { ok: true as const, value: allowed };
     },
     async revalidate(receipt_digest: Digest, checked_at: string) {
       const body = { receipt_digest, checked_at, valid: true, current_revocation_epoch: "0", reason: "valid" as const };
@@ -142,6 +151,8 @@ export function buildMemory(options: FixtureOptions = {}): { memory: MemoryPortV
     allow_unfenced_memory_store: true,
     ...(options.semantic ? { semantic_projection: options.semantic } : {}),
     ...(options.vector ? { vector_projection: options.vector } : {}),
+    ...(options.assertionRegistry ? { assertion_registry: options.assertionRegistry } : {}),
+    ...(options.seededTrustClasses ? { evidence_verifier: seededTrustVerifier() } : {}),
     clock,
   } as unknown as MemoryEngineDependenciesV2);
   return { memory, store };
@@ -151,6 +162,42 @@ export interface SeedOptions {
   scope?: string;
   validTime?: ValidIntervalV1;
   componentKind?: "context" | "decision" | "evidence";
+  /** Reconciliation families the record opts into; `[]` leaves it out of every family. */
+  families?: readonly string[];
+  /** Trust class the fixture's evidence verifier returns for this record (needs `seededTrustClasses`). */
+  trustClass?: EvidenceClass;
+  /** Retention expiry instant (`retention.expires_at`); omitted means no expiry. */
+  retentionExpiresAt?: string;
+}
+
+/** Per-record trust classes served by the fixture's evidence verifier, keyed by the capture's evidence_ref. */
+const seededTrustClassByEvidenceRef = new Map<string, EvidenceClass>();
+
+/** The fixture's evidence verifier: serves the per-record trust class chosen in `seedAccepted`. */
+function seededTrustVerifier() {
+  return {
+    version: 1 as const,
+    verifier_id: "verifier:l7",
+    verifier_version: "1",
+    async classify(request: { payload_digest: Digest; evidence: { evidence_ref: string } }) {
+      const trustClass = seededTrustClassByEvidenceRef.get(request.evidence.evidence_ref) ?? "asserted";
+      const body = {
+        class: trustClass,
+        evidence_digest: DIGEST,
+        verifier_id: "verifier:l7",
+        verifier_version: "1",
+        issued_at: NOW,
+        revocation_epoch: "0",
+      };
+      return {
+        ok: true as const,
+        value: { ...body, receipt_digest: receiptDigest(`${trustClass}-trust`, { ...body, payload_digest: request.payload_digest }) },
+      };
+    },
+    async revalidate() {
+      throw new Error("unused");
+    },
+  };
 }
 
 let sequenceCounter = 0;
@@ -159,6 +206,7 @@ let sequenceCounter = 0;
 export async function seedAccepted(memory: MemoryPortV2, text: string, options: SeedOptions = {}): Promise<string> {
   const sequence = String(sequenceCounter++);
   const scope = options.scope ?? "mem:scope";
+  if (options.trustClass !== undefined) seededTrustClassByEvidenceRef.set(`evidence:${sequence}`, options.trustClass);
   const request = {
     schema_version: 2 as const,
     idempotency_key: `idem-${sequence}-${"0".repeat(16)}`,
@@ -171,8 +219,10 @@ export async function seedAccepted(memory: MemoryPortV2, text: string, options: 
       primary_component_id: `component:${sequence}`,
       primary_event: { at: 1, type_ref: "event:l7", citation_id: `citation:${sequence}` },
       citations: [{ citation_id: `citation:${sequence}`, source_ref: `source:${sequence}`, locator: { scheme: "document", value: `l7#${sequence}` }, content_digest: DIGEST }],
-      retention: { derivative_rule: "retain" as const },
-      reconciliation: { family_refs: [] },
+      retention: options.retentionExpiresAt === undefined
+        ? { derivative_rule: "retain" as const }
+        : { derivative_rule: "retain" as const, expires_at: options.retentionExpiresAt },
+      reconciliation: { family_refs: [...(options.families ?? [])] },
     },
     evidence: { evidence_ref: `evidence:${sequence}`, evidence_digest: DIGEST, citation_ids: [`citation:${sequence}`] },
     authorization: { credential: "credential:l7" },

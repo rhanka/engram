@@ -678,6 +678,12 @@ export interface CanonicalMemoryStorePort {
     max_candidates: number;
   }): Promise<Result<AcceptedCandidateSnapshotV1>>;
   revalidate(input: RevalidationRequestV1): Promise<Result<RevalidationPacketV1>>;
+  /**
+   * Pure-read revalidation for `propose_reconciliation`: same fencing, authorization binding and eligibility
+   * decision as `revalidate`, but without maintenance nor persistence — no observed expiry, no journal event,
+   * no cursor advance, no outbox batch, and (on durable backends) no write transaction.
+   */
+  revalidateReadOnly(input: RevalidationRequestV1): Promise<Result<RevalidationPacketV1>>;
   readJournal(input: { after: Cursor; limit: number }): Promise<Result<ReadonlyArray<LifecycleEventV2>>>;
   checkpoint(input: { through_cursor: Cursor }): Promise<Result<RecoveryCheckpointManifestV1>>;
   nextProjectionBatch(input: { after: Cursor; limit: number }): Promise<Result<ProjectionBatchV1>>;

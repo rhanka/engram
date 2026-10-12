@@ -551,6 +551,11 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
     return this.#transaction(input.operation, (working) => working.revalidate(input));
   }
 
+  async revalidateReadOnly(input: Parameters<CanonicalMemoryStorePort["revalidateReadOnly"]>[0]): Promise<Result<import("./contracts/index.js").RevalidationPacketV1>> {
+    const fence = this.#fence(input.operation);
+    return fence.ok ? this.#core.revalidateReadOnly(input) : fence;
+  }
+
   async readJournal(input: Parameters<CanonicalMemoryStorePort["readJournal"]>[0]): Promise<Result<ReadonlyArray<LifecycleEventV2>>> {
     const fence = this.#fence("admin");
     return fence.ok ? this.#core.readJournal(input) : fence;

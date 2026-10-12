@@ -367,6 +367,10 @@ class PostgresCanonicalStore implements CanonicalMemoryStorePort {
     return this.#transaction(input.operation, (working) => working.revalidate(input));
   }
 
+  async revalidateReadOnly(input: Parameters<CanonicalMemoryStorePort["revalidateReadOnly"]>[0]): Promise<Result<import("./contracts/index.js").RevalidationPacketV1>> {
+    return this.#read(input.operation, () => this.#core.revalidateReadOnly(input));
+  }
+
   async readJournal(input: Parameters<CanonicalMemoryStorePort["readJournal"]>[0]): Promise<Result<ReadonlyArray<LifecycleEventV2>>> {
     return this.#read("admin", () => this.#core.readJournal(input));
   }
