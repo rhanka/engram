@@ -1035,6 +1035,4 @@ describe("memory neutrality", () => {
       "packed engram-memory file list, lockfile closure, emitted declarations, and schemas must not retain consumer identifiers or evaluator/topology shapes",
     ).toEqual([]);
   });
-
-  it.todo("repo-wide @sentropic/* dependency removal is deferred to the parallel @sentropic decouple track");
 });
