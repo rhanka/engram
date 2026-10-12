@@ -88,6 +88,43 @@ jobs:
       - name: Run Postgres lane in required mode
         run: npx vitest run --fileParallelism=false tests/canonical-memory-store.parity.test.ts tests/postgres-memory-store.native.test.ts tests/memory-reconciliation.test.ts
 
+  # L1b neutral live package (plan/09-BRANCH_LIVE_GIT_INDEXING.md; spec/
+  # SPEC_LIVE_GIT_INDEXING.md §§2-3, 11, A06/A15): build the separate
+  # @sentropic/engram-live package, verify the packed deliverable, and run
+  # the neutrality/package suites. Node-only tooling — no Python anywhere.
+  live-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      # The delivered package advertises engines ^20.0.0 || ^22.0.0 || ^24.0.0 and
+      # os linux; the lane qualifies every advertised runtime major.
+      matrix:
+        node-version: ["20", "22", "24"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install dependencies
+        # --ignore-scripts: the root postinstall drives node-gyp native
+        # builds the live-package lane never exercises; the neutral
+        # deliverable must qualify without any native or Python toolchain.
+        run: npm ci --legacy-peer-deps --ignore-scripts
+
+      - name: Build and check the neutral live package
+        run: |
+          node scripts/build-live.mjs
+          node scripts/check-live-package.mjs
+
+      - name: Run live neutrality and package tests
+        run: npx vitest run tests/live-neutrality.test.ts tests/live-package.test.ts
+
   direct-llm-uat:
     needs: test
     runs-on: ubuntu-latest
