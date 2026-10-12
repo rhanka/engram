@@ -6,7 +6,6 @@ import type { Extraction, GitDetectionWindow, GraphEdge, GraphNode, OntologyProf
 
 export const GIT_EXTRACT_ADAPTER_VERSION = "graphify-git/1";
 
-const DEFAULT_MAX_COMMITS = 200;
 const DEFAULT_ACTIVE_WITHIN_DAYS = 30;
 
 export const CODE_GIT_ONTOLOGY_PROFILE: OntologyProfile = {
@@ -112,6 +111,18 @@ function positiveInteger(value: number | undefined, fallback: number): number {
   return Math.max(1, Math.floor(value));
 }
 
+/** An explicitly bounded request: the only case where a commit cap applies. */
+function explicitMaxCommits(options: ExtractGitOptions): number | undefined {
+  if (options.maxCommits === undefined || !Number.isFinite(options.maxCommits)) return undefined;
+  return Math.max(1, Math.floor(options.maxCommits));
+}
+
+/** An explicitly age-bounded request: the only case where an age cap applies. */
+function explicitSinceDays(options: ExtractGitOptions): number | undefined {
+  if (options.sinceDays === undefined || !Number.isFinite(options.sinceDays) || options.sinceDays <= 0) return undefined;
+  return Math.floor(options.sinceDays);
+}
+
 function defaultBranch(root: string, current: string | null): string | null {
   const remoteHead = tryGit(root, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
   if (remoteHead) {
@@ -152,10 +163,14 @@ function discoverBranches(root: string, options: ExtractGitOptions): string[] {
 }
 
 function revList(root: string, branch: string, options: ExtractGitOptions): string[] {
-  const maxCommits = positiveInteger(options.maxCommits, DEFAULT_MAX_COMMITS);
-  const args = ["rev-list", `--max-count=${maxCommits}`];
-  if (options.sinceDays !== undefined && Number.isFinite(options.sinceDays) && options.sinceDays > 0) {
-    args.push(`--since=${Math.floor(options.sinceDays)} days ago`);
+  const args = ["rev-list"];
+  const maxCommits = explicitMaxCommits(options);
+  if (maxCommits !== undefined) {
+    args.push(`--max-count=${maxCommits}`);
+  }
+  const sinceDays = explicitSinceDays(options);
+  if (sinceDays !== undefined) {
+    args.push(`--since=${sinceDays} days ago`);
   }
   args.push(branch);
   const out = tryGit(root, args);
@@ -318,15 +333,19 @@ export function detectGitWindow(root: string = ".", options: ExtractGitOptions =
   const repo = gitRoot(startRoot);
   const head = tryGit(repo, ["rev-parse", "HEAD"]);
   if (!head) return undefined;
+  const maxCommits = explicitMaxCommits(options);
+  const sinceDays = explicitSinceDays(options);
   return {
     source_owner: "git",
     source_hash: head,
     branches: discoverBranches(repo, options),
-    max_commits: positiveInteger(options.maxCommits, DEFAULT_MAX_COMMITS),
+    // No implicit commit window: the field is claimed only by an explicit
+    // bound, and then the history is labelled partial by choice.
+    ...(maxCommits !== undefined ? { max_commits: maxCommits, partial: true } : {}),
+    // An explicit age bound truncates the walk exactly like a count bound,
+    // so it is labelled partial too — never a silent full-history claim.
+    ...(sinceDays !== undefined ? { since_days: sinceDays, partial: true } : {}),
     active_within_days: positiveInteger(options.activeWithinDays, DEFAULT_ACTIVE_WITHIN_DAYS),
-    ...(options.sinceDays !== undefined && Number.isFinite(options.sinceDays) && options.sinceDays > 0
-      ? { since_days: Math.floor(options.sinceDays) }
-      : {}),
   };
 }
 
@@ -391,6 +410,9 @@ export function extractGit(root: string = ".", options: ExtractGitOptions = {}):
   const dedupedEdges = new Map<string, GraphEdge>();
   for (const edge of edges) dedupedEdges.set(edgeKey(edge), edge);
 
+  // An explicit bound — count or age — is the only way this extraction
+  // becomes partial; the default walks the whole reachable history.
+  const boundedByRequest = explicitMaxCommits(options) !== undefined || explicitSinceDays(options) !== undefined;
   return {
     provenance: {
       source_owner: "git",
@@ -398,6 +420,7 @@ export function extractGit(root: string = ".", options: ExtractGitOptions = {}):
       observed_at: options.observedAt ?? new Date().toISOString(),
       source_hash: head,
       adapter_version: GIT_EXTRACT_ADAPTER_VERSION,
+      ...(boundedByRequest ? { partial: true } : {}),
     },
     nodes,
     edges: [...dedupedEdges.values()],
