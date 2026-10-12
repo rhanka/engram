@@ -15,6 +15,7 @@
   "include": [
     "index.ts",
     "contracts.ts",
+    "registration.ts",
     "integration.ts"
   ]
 }
