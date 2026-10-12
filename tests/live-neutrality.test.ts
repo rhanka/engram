@@ -25,6 +25,7 @@ function liveBuildIsFresh(): boolean {
   if (!existsSync(marker)) return false;
   const inputs = [
     "contracts.ts",
+    "registration.ts",
     "integration.ts",
     "index.ts",
     "tsconfig.json",
@@ -787,6 +788,9 @@ function expectedPackedPaths(manifestLanguages: Record<string, { file: string }>
     "dist/contracts.js",
     "dist/contracts.d.ts",
     "dist/contracts.d.ts.map",
+    "dist/registration.js",
+    "dist/registration.d.ts",
+    "dist/registration.d.ts.map",
     "dist/integration.js",
     "dist/integration.d.ts",
     "dist/integration.d.ts.map",
