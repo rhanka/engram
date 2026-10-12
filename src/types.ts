@@ -37,7 +37,10 @@ export interface GitDetectionWindow {
   source_owner: "git";
   source_hash: string;
   branches: string[];
-  max_commits: number;
+  /** Present only for an explicitly bounded request; a live pass never sets it. */
+  max_commits?: number;
+  /** True exactly when the request was explicitly bounded: the history is partial by choice. */
+  partial?: boolean;
   active_within_days: number;
   since_days?: number;
 }
@@ -122,6 +125,8 @@ export interface ExtractionProvenance {
   observed_at: string;
   source_hash: string;
   adapter_version: string;
+  /** True when an explicit bound truncated the extraction; absent for full history. */
+  partial?: boolean;
   ttl?: string;
 }
 
