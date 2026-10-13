@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join, posix } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -866,7 +866,19 @@ describe("memory neutrality", () => {
     }], "doc")).toEqual([]);
   });
 
-  it("SOL61-6: the no-git fallback walks the root with explicit exclusions", () => {
+  it("SOL61-6: the staging module is absent, engram code carries no h2a coupling, and the no-git fallback keeps its exclusions", () => {
+    // F12 (BR08-EX-F12): the h2a staging module has relocated out of this
+    // repository — the fallback coverage pin becomes an absence pin.
+    expect(existsSync(join(root, "_extracted", "agent-stats-h2a-module"))).toBe(false);
+    expect(existsSync(join(root, "_extracted", "agent-stats-h2a-module", "README.md"))).toBe(false);
+    // The neutrality the pin protected stays verified over the real tree:
+    // no h2a coupling in engram-memory sources, by text and by import edge.
+    const staging = "h2" + "a";
+    const coupled = sourceFiles()
+      .filter((file) => file.content.includes(staging))
+      .map((file) => file.path);
+    expect(coupled, "engram-memory sources must carry no h2a coupling").toEqual([]);
+    expect(checkImportClosure(sourceFiles(), "source")).toEqual([]);
     expect(fallbackKeepsPath("README.md")).toBe(true);
     expect(fallbackKeepsPath("_extracted/notes.md")).toBe(true);
     expect(fallbackKeepsPath("docs/guide.md")).toBe(true);
@@ -876,9 +888,9 @@ describe("memory neutrality", () => {
     expect(fallbackKeepsPath("coverage/report.md")).toBe(false);
     const fallbackPaths = fallbackMarkdownPaths();
     expect(fallbackPaths.length).toBeGreaterThan(0);
-    // Root files and _extracted are covered: the former fallback missed them.
+    // Root files stay covered; the relocated staging README is gone.
     expect(fallbackPaths).toContain("README.md");
-    expect(fallbackPaths).toContain("_extracted/agent-stats-h2a-module/README.md");
+    expect(fallbackPaths).not.toContain("_extracted/agent-stats-h2a-module/README.md");
     for (const kept of fallbackPaths) {
       expect(kept.endsWith(".md")).toBe(true);
       expect(fallbackKeepsPath(kept)).toBe(true);

@@ -177,11 +177,12 @@ Rationale: F1 first because it executes L6 and is the only lot able to reveal a 
 
 ## F12 — L0: Staging Module Relocation (FIN §3.1.3 T0.5) — D-2, cross-owner
 
-- [ ] Precondition: the receiving owner has imported `_extracted/agent-stats-h2a-module/`, its six test files, the module half of `tests/agent-stats-extraction.test.ts`, and the fixtures; their commit is the evidence. Without it 30 days after D-2, the conductor brings D-2 back (FIN §6).
-- [ ] GUARD: `tests/memory-activity-boundary.test.ts > the root CLI registers no agent-stats command` (the root half of `tests/agent-stats-extraction.test.ts:17`, moved before the deletion).
-- [ ] RED: `tests/memory-activity-boundary.test.ts > the activity staging module is absent from the repository`.
-- [ ] Implement: move the root-CLI assertion; delete the staging directory, the 7 `tests/agent-stats*.test.ts` files and `tests/fixtures/agent-stats/**`; update the pointer in `README.md` and `ARCHITECTURE.md`; `plan/07` l.19 checked.
+- [x] Precondition: the receiving owner has imported `_extracted/agent-stats-h2a-module/`, its six test files, the module half of `tests/agent-stats-extraction.test.ts`, and the fixtures; their commit is the evidence. — met 2026-10-12: h2a `feat/agent-stats-import` commit `b503d9a7cdae92888f19cdefee404f7461555766` (124/124 tests, provenance engram `e432240f` in the message).
+- [x] GUARD: `tests/memory-activity-boundary.test.ts > the root CLI registers no agent-stats command` (the root half of `tests/agent-stats-extraction.test.ts:17`, moved before the deletion). — green 2026-10-12; dummy-registration mutation seen red, reverted.
+- [x] RED: `tests/memory-activity-boundary.test.ts > the activity staging module is absent from the repository`. — seen red 2026-10-12 (9 staged paths present) before the deletion.
+- [x] Implement: move the root-CLI assertion; delete the staging directory, the 7 `tests/agent-stats*.test.ts` files and `tests/fixtures/agent-stats/**`; update the pointer in `README.md` and `ARCHITECTURE.md`; `plan/07` l.19 checked. — done 2026-10-12: one `git rm` unit (32 files), pointers to h2a `@sentropic/agent-stats` (`b503d9a7`).
 - Allowed: the deletions (one mechanical unit, above 15 files), `tests/memory-activity-boundary.test.ts`, `README.md`, `ARCHITECTURE.md`, `plan/07`, this plan.
+- Exception BR08-EX-F12 (conducteur, 2026-10-12) : F12 étend son Allowed à `tests/memory-neutrality.test.ts` — SOL61-6 épinglait `_extracted/agent-stats-h2a-module/README.md`, que F12 supprime ; SOL61-6 vérifie désormais l'absence du module et l'absence de couplage h2a dans le code engram. Retour arrière : restaurer le test.
 - Forbidden: editing the code being removed; deleting before the receiving import exists; deleting `agent-stats-extraction` before its root assertion lives in `memory-activity-boundary`.
 - Gate: CI green here; the moved tests green in the receiving repository (link in the PR).
 

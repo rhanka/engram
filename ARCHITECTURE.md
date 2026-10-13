@@ -29,7 +29,7 @@ Each stage is a single module with a narrow contract. They communicate through p
 | `src/watch.ts` | `watch(root, debounce)` / `rebuildCode(root)` | directory -> rebuild / update flag |
 | `src/benchmark.ts` | `runBenchmark(graphPath)` | graph file -> corpus vs subgraph token comparison |
 | `src/skill-runtime.ts` | `detect`, `extract-ast`, `finalize-build`, `finalize-update`, etc. | deterministic helper entrypoint for the Codex skill |
-| agent-stats (awaiting relocation) | — | Removed from the engram CLI; the module is awaiting relocation to a separate repository (D-2, lot F12); `src/cli.ts` registers no `agent-stats` command |
+| agent-stats (relocated) | — | Removed from the engram CLI; the module lives in the h2a package `@sentropic/agent-stats` (receiving import h2a commit `b503d9a7`, D-2, lot F12); `src/cli.ts` registers no `agent-stats` command |
 | `src/cli.ts` | packaged `graphify` CLI | user-facing commands |
 
 ## Extraction output schema
