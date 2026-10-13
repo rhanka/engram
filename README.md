@@ -256,7 +256,7 @@ Code was Engram's **original use case** and remains a first-class one: a codebas
 
 ## Realization tracking: agent-stats
 
-Removed from the engram CLI; the module is awaiting relocation to a separate repository (owner decision D-2, lot F12): this CLI registers no `agent-stats` command. The staging copy remains at `_extracted/agent-stats-h2a-module/` until F12 completes.
+Removed from the engram CLI (owner decision D-2, lot F12 complete): this CLI registers no `agent-stats` command. The module now lives in the h2a package `@sentropic/agent-stats` (receiving import: h2a branch `feat/agent-stats-import`, commit `b503d9a7`, 124/124 tests).
 
 ### Git-flow view
 
