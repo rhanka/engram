@@ -241,6 +241,19 @@ export function isStrictBatchId(value: unknown, prefix: string): value is string
   return isStrictScopeId(value) && value.startsWith(prefix) && value.length > prefix.length;
 }
 
+/**
+ * Fixed-width generation identifiers (L4b-2 m9): `gen:` plus exactly
+ * GENERATION_ID_WIDTH zero-padded decimal digits. Lexicographic order is
+ * numeric order (`gen:0000000010` > `gen:0000000009`), so a newer delivery
+ * is never durably rejected as stale. Producers mint monotone ids per
+ * target; the host keeps only the highest accepted generation per target.
+ */
+export const GENERATION_ID_WIDTH = 10;
+
+export function isStrictGenerationId(value: unknown): value is string {
+  return typeof value === "string" && new RegExp(`^gen:[0-9]{${GENERATION_ID_WIDTH}}$`).test(value);
+}
+
 export function validateLiveScope(scope: unknown): ValidationResult {
   if (!isRecord(scope)) return { ok: false, errors: ["scope must be an object"] };
   const errors: string[] = [];
@@ -389,7 +402,7 @@ export function validateFactBatch(batch: unknown): ValidationResult {
   if (batch.policyVersion !== CONTENT_POLICY_VERSION) {
     errors.push(`batch.policyVersion must be "${CONTENT_POLICY_VERSION}"`);
   }
-  if (!isStrictBatchId(batch.generationId, "gen:")) errors.push("batch.generationId must be a strict opaque generation id");
+  if (!isStrictGenerationId(batch.generationId)) errors.push(`batch.generationId must be a fixed-width generation id ("gen:" plus ${GENERATION_ID_WIDTH} zero-padded digits)`);
   if (!isStrictBatchId(batch.batchId, "batch:")) errors.push("batch.batchId must be a strict opaque batch id");
   if (typeof batch.batchDigest !== "string" || !/^[0-9a-f]{64}$/.test(batch.batchDigest)) {
     errors.push("batch.batchDigest must be a 64 character lowercase hex digest");
@@ -1886,7 +1899,11 @@ export function validatePrivateObjectAcquisitionRequest(value: unknown): Validat
 //   highest accepted generation per target, durably rejects any delivery at
 //   or below the held generation, and retires every older generation when it
 //   accepts a newer one; no list/history accessor exists on the port by
-//   construction. Snapshots carry no predecessor pointer.
+//   construction. Snapshots carry no predecessor pointer. The target
+//   includes the diff kind (L4b-2): staged, unstaged and conflict snapshots
+//   hold distinct targets, and generation ids are fixed-width numeric
+//   (`gen:` plus GENERATION_ID_WIDTH digits) so lexicographic order is
+//   numeric order.
 // - Without a protection key: allowed metadata/ranges only, explicit
 //   content_unavailable (CONTENT_UNAVAILABLE) coverage, and the revocation
 //   private-purge request (L6a DeclarationRevocationDto) purges private
@@ -2004,6 +2021,7 @@ export const LOCAL_COVERAGE_REASONS = [
   "content_unavailable:unstable-capture",
   "content_unavailable:unknown-size",
   "content_unavailable:conflict-inventory-mismatch",
+  "content_unavailable:policy-withheld",
   "partial:no-snapshot-payload",
   "current:sealed-latest",
 ] as const;
@@ -2014,11 +2032,12 @@ export function isLocalCoverageReason(value: unknown): value is LocalCoverageRea
   return typeof value === "string" && (LOCAL_COVERAGE_REASONS as readonly string[]).includes(value);
 }
 
-/** Closed snapshot metadata-only reasons (L4b M1: the no-key downgrade reason). */
+/** Closed snapshot metadata-only reasons (L4b M1: the no-key downgrade reason; L4b-2: the secret-exclusion reason). */
 export const LOCAL_SNAPSHOT_METADATA_REASONS = [
   "metadata:unstable-capture",
   "metadata:no-key",
   "metadata:no-payload",
+  "metadata:policy-withheld",
 ] as const;
 
 export type LocalSnapshotMetadataReason = (typeof LOCAL_SNAPSHOT_METADATA_REASONS)[number];
@@ -2119,12 +2138,17 @@ export type SealedSnapshotPayloadDto =
  * Replacement is indexed by target and generation at the sink (L4b M2):
  * the snapshot carries no predecessor pointer, so two concurrent captures
  * can never each retire only their own predecessor and leave two states.
+ * The target includes the diff kind (L4b-2): staged and conflict snapshots
+ * share the "index" axis but hold distinct targets, so a conflict arrival
+ * never replaces the staged state.
  */
 export interface LocalSnapshotDto {
   readonly scope: LiveScope;
   readonly worktreeId: string;
   readonly snapshotId: string;
   readonly kind: "index" | "working-tree";
+  /** Which local comparison this state holds: staged and conflict are distinct index targets. */
+  readonly diffKind: LocalDiffKind;
   readonly capturedAt: number;
   readonly diffDigest: string;
   readonly sealed: SealedSnapshotPayloadDto;
@@ -2183,6 +2207,7 @@ const LOCAL_SNAPSHOT_KEYS: readonly string[] = [
   "worktreeId",
   "snapshotId",
   "kind",
+  "diffKind",
   "capturedAt",
   "diffDigest",
   "sealed",
@@ -2485,6 +2510,20 @@ export function validateLocalSnapshot(snapshot: unknown): ValidationResult {
   }
   if (snapshot.kind !== "index" && snapshot.kind !== "working-tree") {
     errors.push('local snapshot.kind must be "index" or "working-tree"');
+  }
+  if (!isLocalDiffKind(snapshot.diffKind)) {
+    errors.push('local snapshot.diffKind must be one of "staged", "unstaged", "conflict" (staged and conflict hold distinct index targets)');
+  }
+  // MINEUR 2 (Opus tour 2): kind/diffKind pairing — `unstaged` goes with
+  // `working-tree` only; `staged`/`conflict` go with `index` only.
+  if ((snapshot.kind === "index" || snapshot.kind === "working-tree") &&
+    isLocalDiffKind(snapshot.diffKind)) {
+    const coherent =
+      (snapshot.diffKind === "unstaged" && snapshot.kind === "working-tree") ||
+      (snapshot.diffKind !== "unstaged" && snapshot.kind === "index");
+    if (!coherent) {
+      errors.push('local snapshot.kind/diffKind mismatch: "unstaged" pairs with "working-tree" only, "staged"/"conflict" pair with "index" only');
+    }
   }
   if (typeof snapshot.capturedAt !== "number" || !Number.isSafeInteger(snapshot.capturedAt) || snapshot.capturedAt <= 0) {
     errors.push("local snapshot.capturedAt must be a positive safe integer (milliseconds)");
