@@ -298,7 +298,7 @@ export function deriveLocalDiff(input: DeriveLocalDiffInput): LocalDiffDto {
       policyVersion,
       files: [],
       coverage: {
-        axis: input.kind === "staged" ? "index" : "working-tree",
+        axis: input.kind === "unstaged" ? "working-tree" : "index",
         state: "unavailable",
         reason: "content_unavailable:unstable-capture",
         cause: "unstable-capture",
@@ -311,8 +311,19 @@ export function deriveLocalDiff(input: DeriveLocalDiffInput): LocalDiffDto {
     return diff;
   }
 
+  // Conflict declarations outside a conflict derivation are refused
+  // explicitly instead of being silently ignored (coverage would stay
+  // current while declared stages vanish).
+  if (input.kind !== "conflict" && input.conflictStages !== undefined && input.conflictStages.length > 0) {
+    throw new DiffError("conflict stages are refused outside a conflict derivation");
+  }
   const drafts = input.hunkDrafts ?? [];
   const files: LocalFileChangeDto[] = [];
+  // Draft accounting (m6): every draft must attach to a derived file or to
+  // an explicitly excluded path. A draft naming an absent or unchanged path
+  // is refused instead of being silently dropped.
+  const honoredDraftKeys = new Set<string>();
+  const excludedDraftKeys = new Set<string>();
   let conflictCoverage: LocalDiffDto["coverage"];
   if (input.kind === "conflict") {
     // Every conflict step is screened against the endpoint inventories as
@@ -397,9 +408,11 @@ export function deriveLocalDiff(input: DeriveLocalDiffInput): LocalDiffDto {
         }
       }
       if (exclusion !== null) {
+        excludedDraftKeys.add(pathKey(stage.path));
         files.push(excludedFile(stage.path, "conflict", null, null, exclusion, stageOids));
         continue;
       }
+      honoredDraftKeys.add(pathKey(stage.path));
       files.push({
         path: emitPathBytes(stage.path),
         previousPath: null,
@@ -428,11 +441,13 @@ export function deriveLocalDiff(input: DeriveLocalDiffInput): LocalDiffDto {
         // exclusion explicite, jamais un abandon silencieux.
         conflictInventoryMismatch = true;
         const invalid = group[0] as LocalEntryInput;
+        excludedDraftKeys.add(pathKey(invalid.path));
         files.push(excludedFile(invalid.path, "conflict", null, null, "unknown-size"));
         continue;
       }
       conflictInventoryMismatch = true;
       const first = staged[0] as LocalEntryInput;
+      excludedDraftKeys.add(pathKey(first.path));
       files.push(excludedFile(first.path, "conflict", null, null, "unknown-size"));
     }
     if (conflictInventoryMismatch) {
@@ -478,6 +493,7 @@ export function deriveLocalDiff(input: DeriveLocalDiffInput): LocalDiffDto {
       const status: LocalFileChangeDto["status"] =
         oldEntry === null ? "added" : newEntry === null ? "deleted" : "modified";
       if (status === "deleted") {
+        excludedDraftKeys.add(pathKey(path));
         files.push(excludedFile(path, status, oldEntry, null, "deleted"));
         continue;
       }
@@ -487,9 +503,11 @@ export function deriveLocalDiff(input: DeriveLocalDiffInput): LocalDiffDto {
         ? (exclusionOf(newEntry, maxFileBytes) ?? exclusionOf(oldEntry, maxFileBytes))
         : exclusionOf((newEntry ?? oldEntry) as LocalEntryInput, maxFileBytes);
       if (exclusion !== null) {
+        excludedDraftKeys.add(pathKey(path));
         files.push(excludedFile(path, status, oldEntry, newEntry, exclusion));
         continue;
       }
+      honoredDraftKeys.add(pathKey(path));
       files.push({
         path: emitPathBytes(path),
         previousPath: null,
@@ -502,6 +520,12 @@ export function deriveLocalDiff(input: DeriveLocalDiffInput): LocalDiffDto {
         deleted: null,
         hunks: screenHunk(path, drafts),
       });
+    }
+  }
+  for (const draft of drafts) {
+    const key = pathKey(draft.path);
+    if (!honoredDraftKeys.has(key) && !excludedDraftKeys.has(key)) {
+      throw new DiffError("a hunk draft names no derived file: refuse instead of silently dropping the draft");
     }
   }
   files.sort((left, right) => (pathKey(left.path) < pathKey(right.path) ? -1 : 1));
