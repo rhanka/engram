@@ -25,13 +25,14 @@
 // implement the durable and cryptographic sides.
 
 import { createHash } from "node:crypto";
-import { classifyPath, containsSecretText } from "./content-policy.js";
+import { classifyPath, containsSecretText, matchSecretRule, protectedPathRef } from "./content-policy.js";
 import {
   CONTENT_POLICY_VERSION,
   CONTRACT_VERSION,
   PRODUCER_NAME,
   isLocalSealAlgorithm,
   isStrictBatchId,
+  isStrictGenerationId,
   isStrictKeyRef,
   validateDeclarationRevocation,
   validateFactBatch,
@@ -40,11 +41,13 @@ import {
   validateLocalDiff,
   validateLocalSnapshot,
   validateSealedLocalDiff,
+  withheldReasonForSecretRule,
   type DeclarationRevocationDto,
   type FactBatchDto,
   type LiveScope,
   type LocalCoverageReportDto,
   type LocalDiffDto,
+  type LocalDiffKind,
   type LocalSnapshotDto,
 } from "./contracts.js";
 
@@ -135,9 +138,10 @@ export type SealedPayload = SealedSnapshotPayload;
 /**
  * THE injected latest-only store port (a port, never a base). The port
  * exposes no list/history accessor by construction: only the newest state
- * per (scope, worktree, kind) is loadable, which is what makes "no local
- * history" structural rather than promised. No committed-history deletion
- * exists on this port: purge removes private snapshots only.
+ * per (scope, worktreeId, kind, diffKind) is loadable — staged, unstaged
+ * et conflict (toutes ses étapes) hold distinct targets — which is what
+ * makes "no local history" structural rather than promised. No committed-history
+ * deletion exists on this port: purge removes private snapshots only.
  *
  * Replacement is atomic by contract: replaceLatest stores the new snapshot
  * and withdraws the expected superseded one from EVERY persistent surface
@@ -163,6 +167,8 @@ export interface LatestSnapshotQuery {
   readonly scope: LiveScope;
   readonly worktreeId: string;
   readonly kind: "index" | "working-tree";
+  /** Which local comparison is queried: staged and conflict are distinct index targets (L4b-2). */
+  readonly diffKind: LocalDiffKind;
   /** Capture generation that observed this state: lets the host block work predating a purge. */
   readonly generationId: string;
 }
@@ -198,9 +204,12 @@ export interface PurgePrivateReceipt {
  * THE injected fact-sink port: durable receipt of one batch, separate from
  * publication (spec §3). Replacement is indexed by target and generation
  * (L4b M2), never by a predecessor pointer: the target is (scope tenant,
- * scope clone, scope worktree, worktreeId, snapshot kind) and every
- * delivery carries its batch.generationId, which producers mint
- * lexicographically monotone per target. The host MUST keep only the
+ * scope clone, scope worktree, worktreeId, snapshot kind, snapshot
+ * diffKind — staged, unstaged and conflict each hold their own target,
+ * L4b-2; sans snapshot : kind = coverage.axis, diffKind = diff.kind)
+ * and every delivery carries its batch.generationId, which producers
+ * mint fixed-width zero-padded numeric and monotone per target (L4b-2 m9:
+ * lexicographic order is numeric order). The host MUST keep only the
  * highest accepted generation per target: it durably rejects (throws,
  * persists nothing) any delivery whose generationId is less than or equal
  * to the held generation for that target, and accepting a generation G
@@ -208,6 +217,13 @@ export interface PurgePrivateReceipt {
  * (payload bytes, derived indexes, decryptability) in the same operation.
  * A suspended B followed by a delivered C then an arriving B is therefore
  * rejected, keeping the single state C whichever order B and C arrive in.
+ *
+ * Unstable captures (L4b-2 m8): the store and the sink deliberately
+ * diverge. The store keeps the previous valid state untouched (an unstable
+ * capture never replaces the last valid state) while the sink accepts the
+ * unstable lot for its target — retiring the previous holding — so the
+ * instability itself is durably visible with explicit unavailable coverage.
+ * Both sides stay explicit: nothing is silently lost on either.
  */
 export interface FactSinkPort {
   deliver(batch: FactBatchDto): Promise<FactSinkReceipt>;
@@ -428,7 +444,12 @@ function assertSealedProvenance(batch: FactBatchDto): void {
  * protected carrier subsists.
  */
 function assertSinkAdmissible(value: unknown): void {
-  const visit = (node: unknown): void => {
+  // m5: sealed ciphertext of an admitted seal is opaque host output, never
+  // cleartext — it is skipped, so random seal bytes can never false-positive
+  // as a secret signal or a protected path. Protected-path screening
+  // applies to path fields only (`path` / `previousPath`); every other
+  // string/byte field keeps the secret-signal scan.
+  const visit = (node: unknown, key: string | null): void => {
     if (typeof node === "string") {
       if (containsSecretText(node)) {
         throw new SnapshotError("sink-admission-secret-signal");
@@ -440,21 +461,29 @@ function assertSinkAdmissible(value: unknown): void {
         if (containsSecretText(new TextDecoder().decode(node))) {
           throw new SnapshotError("sink-admission-secret-signal");
         }
-        if (classifyPath(node).allowed === false) {
+        if ((key === "path" || key === "previousPath") && classifyPath(node).allowed === false) {
           throw new SnapshotError("sink-admission-protected-path");
         }
       }
       return;
     }
     if (Array.isArray(node)) {
-      for (const item of node) visit(item);
+      for (const item of node) visit(item, null);
       return;
     }
     if (node !== null && typeof node === "object") {
-      for (const item of Object.values(node as Record<string, unknown>)) visit(item);
+      const record = node as Record<string, unknown>;
+      if (record["state"] === "sealed" && admittedSeals.has(node)) {
+        for (const [entryKey, item] of Object.entries(record)) {
+          if (entryKey === "ciphertext") continue;
+          visit(item, entryKey);
+        }
+        return;
+      }
+      for (const [entryKey, item] of Object.entries(record)) visit(item, entryKey);
     }
   };
-  visit(value);
+  visit(value, null);
 }
 
 async function admitToSink(batch: FactBatchDto, sink: FactSinkPort): Promise<FactSinkReceipt> {
@@ -469,14 +498,17 @@ async function admitToSink(batch: FactBatchDto, sink: FactSinkPort): Promise<Fac
   }
   assertSealedProvenance(privateBatch);
   assertSinkAdmissible(privateBatch);
+  // m1: receipt fields are port-owned data and may throw through accessors;
+  // every read stays inside the try and maps to a constant code.
   let receipt: FactSinkReceipt;
   try {
     receipt = await sink.deliver(privateBatch);
-  } catch {
+    if (receipt.batchId !== privateBatch.batchId) {
+      throw new SnapshotError("sink-receipt-mismatch");
+    }
+  } catch (error) {
+    if (error instanceof SnapshotError) throw error;
     throw new SnapshotError("sink-delivery-refused");
-  }
-  if (receipt.batchId !== privateBatch.batchId) {
-    throw new SnapshotError("sink-receipt-mismatch");
   }
   return receipt;
 }
@@ -499,6 +531,67 @@ function checkScope(scope: LiveScope): LiveScope {
  * deliver exactly one batch. Plaintext is sealed before the first
  * persistent write; without a key only metadata is emitted.
  */
+/**
+ * Pre-persistence secret screening of an admitted diff (L4b-2 MAJEUR 1):
+ * runs synchronously at admission, before any protect call. Open hunk
+ * lines carrying a detected secret become explicit `withheld` facts;
+ * secret-bearing paths become protected exclusions with a stable opaque
+ * reference (mirroring derivation); anything else is untouched. The secret
+ * itself never reaches the protection port, the store or the sink.
+ */
+function prescreenAdmittedDiff(admittedDiff: LocalDiffDto): void {
+  const mutable = admittedDiff as unknown as {
+    files: {
+      path: Uint8Array;
+      previousPath: Uint8Array | null;
+      exclusion?: unknown;
+      added: unknown;
+      deleted: unknown;
+      hunks: { payload: unknown }[];
+    }[];
+  };
+  for (const file of mutable.files) {
+    // MAJEUR 2 (Opus tour 1): the current path AND the previous path
+    // (rename) are screened — when either is protected or carries a
+    // secret signal the whole file content is excluded with explicit
+    // coverage, never transmitted to protect. Both present paths become
+    // opaque references so the protected bound never persists raw.
+    // MINEUR 1 (Opus tour 2): shape validation runs before this screen —
+    // only byte views are screened here; any other shape (string, number,
+    // absent) is left for validateLocalDiff, which refuses it as
+    // `invalid-diff`.
+    const pathBlocked =
+      file.path instanceof Uint8Array && classifyPath(file.path).allowed === false;
+    const previousBlocked =
+      file.previousPath instanceof Uint8Array &&
+      classifyPath(file.previousPath).allowed === false;
+    if (pathBlocked || previousBlocked) {
+      file.path = protectedPathRef(file.path);
+      if (file.previousPath !== null) {
+        file.previousPath = protectedPathRef(file.previousPath);
+      }
+      file.exclusion = file.exclusion ?? "protected";
+      file.added = null;
+      file.deleted = null;
+      file.hunks = [];
+      continue;
+    }
+    for (const hunk of file.hunks) {
+      const payload = hunk.payload as { state?: unknown; lines?: unknown };
+      if (payload.state !== "open-lines" || !Array.isArray(payload.lines)) continue;
+      const secretLine = (payload.lines as unknown[]).find(
+        (line) => typeof line === "string" && containsSecretText(line),
+      );
+      if (secretLine !== undefined) {
+        hunk.payload = {
+          state: "withheld",
+          reason: withheldReasonForSecretRule(matchSecretRule(secretLine as string)),
+        };
+      }
+    }
+  }
+}
+
 export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promise<StageLocalSnapshotOutcome> {
   // Admission synchrone (L4b-sol5 Majeur 2) : le lot appelant est copié en
   // profondeur (vues d'octets dupliquées) puis gelé AVANT toute suspension.
@@ -508,18 +601,33 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
   // Majeur 1 : tout contenu `sealed` fourni par l'appelant est refusé ici,
   // avec et sans clé — seul le port de protection scelle, pendant
   // l'admission, et chaque objet scellé est enregistré au registre privé.
+  // m2 : every entry field is frozen into a local before the first await,
+  // so a caller mutating its own input across a suspension changes nothing.
   const admittedDiff = deepCloneAdmitted(input.diff) as LocalDiffDto;
   assertNoCallerSeal(admittedDiff);
+  prescreenAdmittedDiff(admittedDiff);
   deepFreezeAdmitted(admittedDiff);
   const admittedPayload = input.plaintextPayload === null ? null : copyBytesPrivate(input.plaintextPayload);
   const scope = checkScope(input.scope);
-  if (!isStrictBatchId(input.worktreeId, "wt:")) {
+  const worktreeId = input.worktreeId;
+  const snapshotKind = input.kind;
+  const capturedAt = input.capturedAt;
+  const batchId = input.batchId;
+  const generationId = input.generationId;
+  const protection = input.protection;
+  const store = input.store;
+  const sink = input.sink;
+  // L4b-2 MAJEUR 1: a secret-bearing payload is never transmitted to
+  // protect, even sealed. Detection runs here, before the first host call.
+  const payloadWithheldByPolicy =
+    admittedPayload !== null && containsSecretText(new TextDecoder().decode(admittedPayload));
+  if (!isStrictBatchId(worktreeId, "wt:")) {
     throw new SnapshotError("invalid-worktree-id");
   }
-  if (input.kind !== "index" && input.kind !== "working-tree") {
+  if (snapshotKind !== "index" && snapshotKind !== "working-tree") {
     throw new SnapshotError("invalid-kind");
   }
-  if (typeof input.capturedAt !== "number" || !Number.isSafeInteger(input.capturedAt) || input.capturedAt <= 0) {
+  if (typeof capturedAt !== "number" || !Number.isSafeInteger(capturedAt) || capturedAt <= 0) {
     throw new SnapshotError("invalid-captured-at");
   }
   const diffChecked = validateLocalDiff(admittedDiff);
@@ -529,10 +637,10 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
   if (admittedDiff.policyVersion !== CONTENT_POLICY_VERSION) {
     throw new SnapshotError("stale-policy");
   }
-  if (!isStrictBatchId(input.batchId, "batch:")) {
+  if (!isStrictBatchId(batchId, "batch:")) {
     throw new SnapshotError("invalid-batch-id");
   }
-  if (!isStrictBatchId(input.generationId, "gen:")) {
+  if (!isStrictGenerationId(generationId)) {
     throw new SnapshotError("invalid-generation-id");
   }
 
@@ -545,30 +653,58 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
   if ((admittedDiff.scope.worktree ?? null) !== (scope.worktree ?? null)) {
     throw new SnapshotError("foreign-worktree-scope");
   }
-  if (admittedDiff.worktreeId !== input.worktreeId) {
+  if (admittedDiff.worktreeId !== worktreeId) {
     throw new SnapshotError("foreign-worktree");
   }
   const kindMatches =
-    (admittedDiff.kind === "staged" && input.kind === "index") ||
-    (admittedDiff.kind === "unstaged" && input.kind === "working-tree") ||
-    (admittedDiff.kind === "conflict" && input.kind === "index");
+    (admittedDiff.kind === "staged" && snapshotKind === "index") ||
+    (admittedDiff.kind === "unstaged" && snapshotKind === "working-tree") ||
+    (admittedDiff.kind === "conflict" && snapshotKind === "index");
   if (!kindMatches) {
     throw new SnapshotError("foreign-kind");
   }
+  const diffKind: LocalDiffKind = admittedDiff.kind;
 
   // Generation binding BEFORE any suspendable host call: the capture
   // generation is registered through loadLatest before hunk encryption, so
   // a purge across a suspended protect blocks this generation and the
   // resumed capture can never persist afterwards.
+  // m4 + m1-bis: the store-owned previous state is validated and
+  // privately copied inside the try: malformed states, foreign-target
+  // states and throwing accessors are refused with a constant code, and
+  // the caller never shares a reference with the store through the
+  // returned snapshot or the diagnostics.
   let previous: LocalSnapshotDto | null;
   try {
-    previous = await input.store.loadLatest({
+    previous = await store.loadLatest({
       scope,
-      worktreeId: input.worktreeId,
-      kind: input.kind,
-      generationId: input.generationId,
+      worktreeId,
+      kind: snapshotKind,
+      diffKind,
+      generationId,
     });
-  } catch {
+    if (previous !== null) {
+      const previousChecked = validateLocalSnapshot(previous);
+      if (!previousChecked.ok) {
+        throw new SnapshotError("store-load-refused");
+      }
+      // MAJEUR 1 (Opus tour 1): the store holds one latest per full
+      // target (scope, worktreeId, kind, diffKind) — staged, unstaged
+      // et conflict (toutes ses étapes) are distinct tenues. A previous
+      // from another target is refused, never silently retired or
+      // preserved.
+      if (previous.worktreeId !== worktreeId ||
+        previous.kind !== snapshotKind ||
+        previous.diffKind !== diffKind ||
+        previous.scope.tenant !== scope.tenant ||
+        previous.scope.clone !== scope.clone ||
+        ((previous.scope.worktree ?? null) !== (scope.worktree ?? null))) {
+        throw new SnapshotError("store-load-refused");
+      }
+      previous = deepCopyForDelivery(previous) as LocalSnapshotDto;
+    }
+  } catch (error) {
+    if (error instanceof SnapshotError) throw error;
     throw new SnapshotError("store-load-refused");
   }
   // Seal every transient open hunk through the host protection, one call
@@ -587,7 +723,7 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
         withheldHunks += 1;
         hunks.push(hunk);
       } else if (hunk.payload.state === "open-lines") {
-        if (input.protection === null) {
+        if (protection === null) {
           withheldHunks += 1;
           hunks.push({
             startBefore: hunk.startBefore,
@@ -601,24 +737,27 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
           });
           continue;
         }
-        let sealed: SealedSnapshotPayload;
+        // m1: the envelope fields are port-owned data; every read stays
+        // inside the try and maps to a constant code.
+        let hunkSeal: { readonly state: "sealed"; readonly algorithm: string; readonly keyRef: string; readonly ciphertext: Uint8Array };
         try {
-          sealed = await input.protection.protect(
+          const sealed = await protection.protect(
             new TextEncoder().encode(JSON.stringify({ lines: [...hunk.payload.lines] })),
           );
-        } catch {
+          if (!isLocalSealAlgorithm(sealed.algorithm) || !isStrictKeyRef(sealed.keyRef)) {
+            throw new SnapshotError("protection-envelope-shape");
+          }
+          hunkSeal = {
+            state: "sealed" as const,
+            algorithm: sealed.algorithm,
+            keyRef: sealed.keyRef,
+            ciphertext: copyBytesPrivate(sealed.ciphertext),
+          };
+        } catch (error) {
+          if (error instanceof SnapshotError) throw error;
           throw new SnapshotError("protection-hunk-refused");
         }
-        if (!isLocalSealAlgorithm(sealed.algorithm) || !isStrictKeyRef(sealed.keyRef)) {
-          throw new SnapshotError("protection-envelope-shape");
-        }
         sealedHunks += 1;
-        const hunkSeal = {
-          state: "sealed" as const,
-          algorithm: sealed.algorithm,
-          keyRef: sealed.keyRef,
-          ciphertext: copyBytesPrivate(sealed.ciphertext),
-        };
         admittedSeals.add(hunkSeal);
         hunks.push({
           startBefore: hunk.startBefore,
@@ -645,9 +784,10 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
   const snapshotId = `lsnap:${sha256Hex(new TextEncoder().encode(JSON.stringify([
     scope.tenant,
     scope.clone,
-    input.worktreeId,
-    input.kind,
-    input.capturedAt,
+    worktreeId,
+    snapshotKind,
+    diffKind,
+    capturedAt,
     diffDigest,
   ])))}`;
   const excluded = sealedDiff.files.filter((file) => file.exclusion !== undefined).length;
@@ -659,13 +799,13 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
   // as the first latest, superseded by the next valid capture.
   if (unstable && previous !== null) {
     const coverage: LocalCoverageReportDto = {
-      axis: input.kind,
+      axis: snapshotKind,
       state: "unavailable",
       reason: "content_unavailable:unstable-capture",
       cause: "unstable-capture",
     };
     const diagnostics = [
-      `local ${input.kind} capture unstable: preserved ${previous.snapshotId}, ` +
+      `local ${snapshotKind} capture unstable: preserved ${previous.snapshotId}, ` +
       `${sealedDiff.files.length} file fact(s) withheld (${CONTENT_POLICY_VERSION})`,
     ];
     const batch: FactBatchDto = {
@@ -673,18 +813,29 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
       producerName: PRODUCER_NAME,
       contractVersion: CONTRACT_VERSION,
       policyVersion: CONTENT_POLICY_VERSION,
-      generationId: input.generationId,
-      batchId: input.batchId,
-      batchDigest: sha256Hex(toJsonBytes([input.generationId, input.batchId, sealedDiff, coverage])),
+      generationId,
+      batchId,
+      batchDigest: sha256Hex(toJsonBytes([generationId, batchId, sealedDiff, coverage])),
       facts: [sealedDiff, coverage],
     };
-    await admitToSink(batch, input.sink);
+    await admitToSink(batch, sink);
     return { snapshot: previous, coverage, diagnostics, batch };
   }
 
   let sealed: LocalSnapshotDto["sealed"];
   let coverage: LocalCoverageReportDto;
-  if (unstable || input.protection === null) {
+  if (payloadWithheldByPolicy) {
+    // L4b-2 MAJEUR 1: the payload carried a detected secret — it was never
+    // transmitted to protect. Metadata only, with explicit
+    // policy-withheld coverage; zero protect calls downstream either.
+    sealed = { state: "metadata-only", reason: "metadata:policy-withheld" as const };
+    coverage = {
+      axis: snapshotKind,
+      state: "unavailable",
+      reason: "content_unavailable:policy-withheld" as const,
+      cause: "policy-withheld" as const,
+    };
+  } else if (unstable || protection === null) {
     // Metadata-only downgrade: ranges and exclusions alone, explicit
     // content_unavailable coverage, zero protect calls, zero plaintext
     // downstream (the payload is dropped here, never stored).
@@ -693,13 +844,13 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
       : { state: "metadata-only", reason: "metadata:no-key" as const };
     coverage = unstable
       ? {
-        axis: input.kind,
+        axis: snapshotKind,
         state: "unavailable",
         reason: "content_unavailable:unstable-capture" as const,
         cause: "unstable-capture" as const,
       }
       : {
-        axis: input.kind,
+        axis: snapshotKind,
         state: "unavailable",
         reason: "content_unavailable:no-key" as const,
         cause: "missing-key" as const,
@@ -709,29 +860,36 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
     if (admittedPayload === null) {
       envelope = null;
     } else {
+      // m1: the envelope fields are port-owned data; every read stays
+      // inside the try and maps to a constant code.
       try {
-        envelope = await input.protection.protect(admittedPayload);
-      } catch {
+        const returned = await (protection as ContentProtectionPort).protect(admittedPayload);
+        if (!isLocalSealAlgorithm(returned.algorithm) || !isStrictKeyRef(returned.keyRef)) {
+          throw new SnapshotError("protection-envelope-shape");
+        }
+        envelope = {
+          state: "sealed",
+          algorithm: returned.algorithm,
+          keyRef: returned.keyRef,
+          ciphertext: copyBytesPrivate(returned.ciphertext),
+        };
+      } catch (error) {
+        if (error instanceof SnapshotError) throw error;
         throw new SnapshotError("protection-snapshot-refused");
       }
     }
     if (envelope === null) {
       sealed = { state: "metadata-only", reason: "metadata:no-payload" as const };
       coverage = {
-        axis: input.kind,
+        axis: snapshotKind,
         state: "partial",
         reason: "partial:no-snapshot-payload" as const,
       };
     } else {
-      const algorithm = envelope.algorithm;
-      const keyRef = envelope.keyRef;
-      if (!isLocalSealAlgorithm(algorithm) || !isStrictKeyRef(keyRef)) {
-        throw new SnapshotError("protection-envelope-shape");
-      }
-      sealed = { state: "sealed", algorithm, keyRef, ciphertext: copyBytesPrivate(envelope.ciphertext) };
+      sealed = { state: "sealed", algorithm: envelope.algorithm, keyRef: envelope.keyRef, ciphertext: copyBytesPrivate(envelope.ciphertext) };
       admittedSeals.add(sealed);
       coverage = {
-        axis: input.kind,
+        axis: snapshotKind,
         state: "current",
         reason: "current:sealed-latest" as const,
       };
@@ -740,7 +898,7 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
     // unknown-size never yields a current coverage claim.
     if (coverage.state === "current" && sealedDiff.files.some((file) => file.exclusion === "unknown-size")) {
       coverage = {
-        axis: input.kind,
+        axis: snapshotKind,
         state: "unavailable",
         reason: "content_unavailable:unknown-size" as const,
       };
@@ -753,10 +911,11 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
   // key; the sink durably rejects anything at or below what it holds.
   const snapshot: LocalSnapshotDto = {
     scope,
-    worktreeId: input.worktreeId,
+    worktreeId,
     snapshotId,
-    kind: input.kind,
-    capturedAt: input.capturedAt,
+    kind: snapshotKind,
+    diffKind,
+    capturedAt,
     diffDigest,
     sealed,
     policyVersion: CONTENT_POLICY_VERSION,
@@ -780,25 +939,28 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
   // history. A receipt that leaves the predecessor behind refuses success:
   // nothing is delivered and the error (not a success) is announced.
   const sameId = previous !== null && previous.snapshotId === snapshot.snapshotId;
+  // m1: the store receipt fields are port-owned data; every read stays
+  // inside the try and maps to a constant code.
   let replacement: ReplaceLatestReceipt;
   try {
     // Le magasin reçoit une copie privée : il ne partage aucune référence
     // avec le lot livré au sink ni avec le snapshot retourné à l'appelant.
-    replacement = await input.store.replaceLatest(
+    replacement = await store.replaceLatest(
       deepCopyForDelivery(snapshot) as LocalSnapshotDto,
       previous?.snapshotId ?? null,
-      input.generationId,
+      generationId,
     );
-  } catch {
+    if (!sameId && previous !== null &&
+      (!replacement.retiredPrevious || !replacement.revokedDecryptability || !replacement.blockedStaleWork)) {
+      throw new SnapshotError("store-receipt-incomplete");
+    }
+  } catch (error) {
+    if (error instanceof SnapshotError) throw error;
     throw new SnapshotError("store-conflict");
-  }
-  if (!sameId && previous !== null &&
-    (!replacement.retiredPrevious || !replacement.revokedDecryptability || !replacement.blockedStaleWork)) {
-    throw new SnapshotError("store-receipt-incomplete");
   }
 
   const diagnostics = [
-    `local ${input.kind} snapshot ${snapshotId}: ${sealedDiff.files.length} file(s), ${excluded} excluded, ` +
+    `local ${snapshotKind} snapshot ${snapshotId}: ${sealedDiff.files.length} file(s), ${excluded} excluded, ` +
     `${sealedHunks} sealed hunk(s), ${withheldHunks} withheld, coverage ${coverage.state} (${CONTENT_POLICY_VERSION})`,
   ];
   // The lot is reconstructible: the sealed diff (authorized facts, bounds,
@@ -808,13 +970,20 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
     producerName: PRODUCER_NAME,
     contractVersion: CONTRACT_VERSION,
     policyVersion: CONTENT_POLICY_VERSION,
-    generationId: input.generationId,
-    batchId: input.batchId,
-    batchDigest: sha256Hex(toJsonBytes([input.generationId, input.batchId, sealedDiff, snapshot, coverage])),
+    generationId,
+    batchId,
+    batchDigest: sha256Hex(toJsonBytes([generationId, batchId, sealedDiff, snapshot, coverage])),
     facts: [sealedDiff, snapshot, coverage],
   };
-  const receipt = await admitToSink(batch, input.sink);
-  if (!receipt.retiredSuperseded || !receipt.revokedDecryptability) {
+  const receipt = await admitToSink(batch, sink);
+  // m1: the sink receipt fields are port-owned data; the read stays inside
+  // a try and maps to a constant code.
+  try {
+    if (!receipt.retiredSuperseded || !receipt.revokedDecryptability) {
+      throw new SnapshotError("sink-receipt-incomplete");
+    }
+  } catch (error) {
+    if (error instanceof SnapshotError) throw error;
     throw new SnapshotError("sink-receipt-incomplete");
   }
   return { snapshot, coverage, diagnostics, batch };
@@ -834,29 +1003,44 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
  * persist afterwards.
  */
 export async function runUnregisterPurge(input: UnregisterPurgeInput): Promise<UnregisterPurgeOutcome> {
-  const checked = validateDeclarationRevocation(input.revocation);
+  // m3: the caller-owned revocation is deeply copied and frozen before
+  // validation; the host receives the admitted copy only, so a caller
+  // mutating (or accessor-throwing) its own object across the suspension
+  // changes nothing downstream. A throwing accessor maps to a constant.
+  let revocation: DeclarationRevocationDto;
+  try {
+    revocation = deepCloneAdmitted(input.revocation) as DeclarationRevocationDto;
+  } catch {
+    throw new SnapshotError("invalid-revocation");
+  }
+  deepFreezeAdmitted(revocation);
+  const checked = validateDeclarationRevocation(revocation);
   if (!checked.ok) {
     throw new SnapshotError("invalid-revocation", { indices: [checked.errors.length] });
   }
-  const purge = input.revocation.requestPrivatePurge;
+  const purge = revocation.requestPrivatePurge;
   if (purge.purgePrivateSnapshots !== true || purge.purgeDerivedIndexes !== true ||
     purge.revokeDecryptability !== true || purge.preserveCommittedHistory !== true) {
     throw new SnapshotError("revocation-shape");
   }
-  const scope = checkScope({ tenant: input.revocation.tenant, clone: input.revocation.cloneId });
+  const scope = checkScope({ tenant: revocation.tenant, clone: revocation.cloneId });
+  const store = input.store;
+  // m1: the purge receipt fields are port-owned data; every read stays
+  // inside the try and maps to a constant code.
   let result: PurgePrivateReceipt;
   try {
-    result = await input.store.purgePrivate({
+    result = await store.purgePrivate({
       scope,
-      worktreeId: input.revocation.worktreeId,
-      declarationId: input.revocation.declarationId,
-      declarationRevision: input.revocation.declarationRevision,
+      worktreeId: revocation.worktreeId,
+      declarationId: revocation.declarationId,
+      declarationRevision: revocation.declarationRevision,
     });
-  } catch {
+    if (!result.purgedPrivate || !result.blockedOldWork || !result.revokedDecryptability) {
+      throw new SnapshotError("purge-incomplete");
+    }
+  } catch (error) {
+    if (error instanceof SnapshotError) throw error;
     throw new SnapshotError("purge-refused");
-  }
-  if (!result.purgedPrivate || !result.blockedOldWork || !result.revokedDecryptability) {
-    throw new SnapshotError("purge-incomplete");
   }
   return {
     stoppedWork: true,

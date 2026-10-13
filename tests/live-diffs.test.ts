@@ -30,6 +30,7 @@ import {
   type LocalEntryInput,
 } from "../engram-live/diffs.js";
 import {
+  SnapshotError,
   stageLocalSnapshot,
   type FactSinkPort,
   type FactSinkReceipt,
@@ -560,7 +561,7 @@ describe("L4b-sol4 D: les conflits correspondent par chemin, étape et OID", () 
       store: new Sol4DiffStore(),
       sink: new Sol4DiffSink(),
       batchId: "batch:l4b-sol4-conflict-mismatch",
-      generationId: "gen:l4b-sol4-conflict-mismatch",
+      generationId: "gen:0000000005",
     });
     expect(staged.coverage.state).not.toBe("current");
   });
@@ -613,7 +614,7 @@ describe("L4b-sol4 D: les conflits correspondent par chemin, étape et OID", () 
       store: new Sol4DiffStore(),
       sink: new Sol4DiffSink(),
       batchId: "batch:l4b-sol4-conflict-undeclared",
-      generationId: "gen:l4b-sol4-conflict-undeclared",
+      generationId: "gen:0000000006",
     });
     expect(staged.coverage.state).not.toBe("current");
   });
@@ -668,7 +669,7 @@ describe("L4b-sol4 D: les conflits correspondent par chemin, étape et OID", () 
       store: new Sol4DiffStore(),
       sink: new Sol4DiffSink(),
       batchId: "batch:l4b-m3-tip-divergence",
-      generationId: "gen:l4b-m3-tip-divergence",
+      generationId: "gen:0000000004",
     });
     expect(staged.coverage.state).not.toBe("current");
   });
@@ -723,7 +724,7 @@ describe("L4b-sol4 D: les conflits correspondent par chemin, étape et OID", () 
       store: new Sol4DiffStore(),
       sink: new Sol4DiffSink(),
       batchId: "batch:l4b-m3-base-divergence",
-      generationId: "gen:l4b-m3-base-divergence",
+      generationId: "gen:0000000003",
     });
     expect(staged.coverage.state).not.toBe("current");
   });
@@ -857,11 +858,15 @@ describe("L4b-2 explicit staged state", () => {
       const snapshot = batch.facts.find(
         (fact) => typeof (fact as { snapshotId?: unknown }).snapshotId === "string",
       ) as unknown as LocalSnapshotDto | undefined;
+      const diff = batch.facts.find(
+        (fact) => Array.isArray((fact as { files?: unknown }).files),
+      ) as unknown as LocalDiffDto | undefined;
       return [
         batch.scope.tenant,
         batch.scope.clone,
         snapshot?.worktreeId ?? "",
         snapshot?.kind ?? "",
+        snapshot?.diffKind ?? diff?.kind ?? "",
       ].join("|");
     }
     async deliver(batch: FactBatchDto): Promise<FactSinkReceipt> {
@@ -883,8 +888,25 @@ describe("L4b-2 explicit staged state", () => {
 
   class AcceptStore implements LatestSnapshotPort {
     readonly stored: LocalSnapshotDto[] = [];
-    async loadLatest(_query: LatestSnapshotQuery): Promise<LocalSnapshotDto | null> {
-      return this.stored.length > 0 ? this.stored[this.stored.length - 1]! : null;
+    /** Une tenue par cible complète (scope, worktreeId, kind, diffKind) : le staged ne retire jamais le conflit. */
+    readonly holdings = new Map<string, LocalSnapshotDto>();
+    private targetOf(value: {
+      readonly scope: { readonly tenant: string; readonly clone: string; readonly worktree?: string };
+      readonly worktreeId: string;
+      readonly kind: string;
+      readonly diffKind: string;
+    }): string {
+      return [
+        value.scope.tenant,
+        value.scope.clone,
+        value.scope.worktree ?? "",
+        value.worktreeId,
+        value.kind,
+        value.diffKind,
+      ].join("|");
+    }
+    async loadLatest(query: LatestSnapshotQuery): Promise<LocalSnapshotDto | null> {
+      return this.holdings.get(this.targetOf(query)) ?? null;
     }
     async replaceLatest(
       snapshot: LocalSnapshotDto,
@@ -892,6 +914,7 @@ describe("L4b-2 explicit staged state", () => {
       _generationId: string,
     ): Promise<ReplaceLatestReceipt> {
       this.stored.push(snapshot);
+      this.holdings.set(this.targetOf(snapshot), snapshot);
       return { received: true, retiredPrevious: true, revokedDecryptability: true, blockedStaleWork: true };
     }
     async purgePrivate(_query: LatestSnapshotScope): Promise<PurgePrivateReceipt> {
@@ -900,7 +923,7 @@ describe("L4b-2 explicit staged state", () => {
   }
 
   // L4b-2 (rhanka/engram#368): red until fixed — owner split 2026-10-12
-  it.skip("the staged index state stays explicit when a conflict diff arrives", async () => {
+  it("the staged index state stays explicit when a conflict diff arrives", async () => {
     const stagedDiff = deriveLocalDiff({
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
@@ -935,7 +958,7 @@ describe("L4b-2 explicit staged state", () => {
       store,
       sink,
       batchId: "batch:l4b2-staged-kept",
-      generationId: "gen:l4b2-0001",
+      generationId: "gen:0000000001",
     });
     await stageLocalSnapshot({
       scope: SCOPE,
@@ -948,7 +971,7 @@ describe("L4b-2 explicit staged state", () => {
       store,
       sink,
       batchId: "batch:l4b2-conflict-kept",
-      generationId: "gen:l4b2-0002",
+      generationId: "gen:0000000002",
     });
     // L4b-2 : deux cibles tenues, une chacune — le staged ne disparaît pas.
     expect(sink.holdings.size).toBe(2);
@@ -957,5 +980,290 @@ describe("L4b-2 explicit staged state", () => {
     );
     expect(heldKinds).toContain("staged");
     expect(heldKinds).toContain("conflict");
+  });
+
+  it("property: deterministic staged/unstaged/conflict sequences keep one holding per target", async () => {
+    const stagedDiff = (): LocalDiffDto => deriveLocalDiff({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "staged",
+      base: HEAD_ENDPOINT, tip: INDEX_ENDPOINT,
+      baseEntries: [], tipEntries: [entry("src/resolved.ts", "d".repeat(40))],
+    });
+    const unstagedDiff = (): LocalDiffDto => deriveLocalDiff({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "unstaged",
+      base: INDEX_ENDPOINT, tip: WORKTREE_ENDPOINT,
+      baseEntries: [], tipEntries: [entry("src/work.ts", "e".repeat(40))],
+    });
+    const conflictDiff = (): LocalDiffDto => deriveLocalDiff({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "conflict",
+      base: INDEX_ENDPOINT, tip: INDEX_ENDPOINT,
+      baseEntries: [], tipEntries: [],
+      conflictStages: [
+        { path: enc("src/c.ts"), baseOid: "1".repeat(40), oursOid: "2".repeat(40), theirsOid: "3".repeat(40) },
+      ],
+    });
+    const snapshotKindOf = (kind: "staged" | "unstaged" | "conflict"): "index" | "working-tree" =>
+      kind === "unstaged" ? "working-tree" : "index";
+    const sequences: ("staged" | "unstaged" | "conflict")[][] = [
+      ["staged"],
+      ["unstaged"],
+      ["conflict"],
+      ["staged", "conflict"],
+      ["conflict", "staged"],
+      ["staged", "unstaged", "conflict"],
+      ["conflict", "conflict"],
+      ["staged", "staged"],
+      ["conflict", "staged", "conflict"],
+    ];
+    for (const sequence of sequences) {
+      const store = new AcceptStore();
+      const sink = new TargetSink();
+      const lastGen = new Map<string, string>();
+      let step = 0;
+      for (const kind of sequence) {
+        step += 1;
+        const generationId = `gen:${String(step).padStart(10, "0")}`;
+        const diff = kind === "staged" ? stagedDiff() : kind === "unstaged" ? unstagedDiff() : conflictDiff();
+        await stageLocalSnapshot({
+          scope: SCOPE, worktreeId: WORKTREE_ID,
+          kind: snapshotKindOf(kind),
+          capturedAt: 1_700_005_000_000 + step,
+          diff,
+          plaintextPayload: null,
+          protection: null,
+          store,
+          sink,
+          batchId: `batch:l4b2-prop-${sequence.join("-")}-${step}`,
+          generationId,
+        });
+        lastGen.set(kind, generationId);
+      }
+      // One holding per distinct target, each the last staged generation —
+      // a conflict arrival never replaces the staged state, and no loss is
+      // silent: every staged target is held or explicitly excluded. The
+      // store holds the same targets as the sink (MAJEUR 1 Opus tour 1).
+      expect(sink.holdings.size, `sequence ${sequence.join(",")}`).toBe(lastGen.size);
+      expect(store.holdings.size, `sequence ${sequence.join(",")} store`).toBe(lastGen.size);
+      for (const [kind, generationId] of lastGen) {
+        const held = [...sink.holdings.values()].find(
+          (batch) => (batch.facts[0] as unknown as LocalDiffDto).kind === kind,
+        );
+        expect(held, `sequence ${sequence.join(",")} holds ${kind}`).toBeDefined();
+        expect(held?.generationId).toBe(generationId);
+        const stored = [...store.holdings.values()].find(
+          (snapshot) => snapshot.diffKind === kind,
+        );
+        expect(stored, `sequence ${sequence.join(",")} stores ${kind}`).toBeDefined();
+      }
+    }
+  });
+
+  // MAJEUR 1 Opus tour 1 : un previous d'une autre cible est refusé, jamais
+  // retiré ni préservé en silence — stable et instable. Données SYNTHÉTIQUES.
+  // MINEUR 2 Opus tour 2 : le refus est testé sur chaque composante de la
+  // cible (scope tenant/clone/worktree, worktreeId, kind, diffKind).
+  const foreignTargets: readonly {
+    readonly component: string;
+    readonly mutate: (snapshot: LocalSnapshotDto) => LocalSnapshotDto;
+  }[] = [
+      { component: "diffKind", mutate: (snapshot) => snapshot },
+      { component: "worktreeId", mutate: (snapshot) => ({ ...snapshot, worktreeId: "wt:l4b-diffs-other" }) },
+      { component: "kind", mutate: (snapshot) => ({ ...snapshot, kind: "working-tree" as const, diffKind: "unstaged" as const }) },
+      { component: "scope.tenant", mutate: (snapshot) => ({ ...snapshot, scope: { ...snapshot.scope, tenant: "local:other-tenant" } }) },
+      { component: "scope.clone", mutate: (snapshot) => ({ ...snapshot, scope: { ...snapshot.scope, clone: "clone:other" } }) },
+      { component: "scope.worktree", mutate: (snapshot) => ({ ...snapshot, scope: { ...snapshot.scope, worktree: "scope:other" } }) },
+    ];
+  it.each(
+    foreignTargets.flatMap((target) => [false, true].map((unstable) => ({ ...target, unstable }))),
+  )("a previous differing by $component is refused (unstable=$unstable)", async ({ mutate, unstable }) => {
+    const stagedDiff = deriveLocalDiff({
+      scope: SCOPE,
+      worktreeId: WORKTREE_ID,
+      kind: "staged",
+      base: HEAD_ENDPOINT,
+      tip: INDEX_ENDPOINT,
+      baseEntries: [],
+      tipEntries: [entry("src/resolved.ts", "d".repeat(40))],
+    });
+    const firstStore = new AcceptStore();
+    const firstSink = new TargetSink();
+    const first = await stageLocalSnapshot({
+      scope: SCOPE,
+      worktreeId: WORKTREE_ID,
+      kind: "index",
+      capturedAt: 1_700_006_000_000,
+      diff: stagedDiff,
+      plaintextPayload: null,
+      protection: null,
+      store: firstStore,
+      sink: firstSink,
+      batchId: "batch:l4b2-foreign-prev",
+      generationId: "gen:0000000001",
+    });
+    // Magasin menteur : rend un previous hors cible pour une requête conflit.
+    let replaces = 0;
+    const lyingStore: LatestSnapshotPort = {
+      loadLatest: async () => mutate(first.snapshot),
+      replaceLatest: async () => {
+        replaces += 1;
+        return { received: true, retiredPrevious: true, revokedDecryptability: true, blockedStaleWork: true };
+      },
+      purgePrivate: async () => ({ purgedPrivate: true, blockedOldWork: true, revokedDecryptability: true }),
+    };
+    const conflictDiff = deriveLocalDiff({
+      scope: SCOPE,
+      worktreeId: WORKTREE_ID,
+      kind: "conflict",
+      stable: !unstable,
+      base: INDEX_ENDPOINT,
+      tip: INDEX_ENDPOINT,
+      baseEntries: [],
+      tipEntries: [],
+      conflictStages: [
+        { path: enc("src/c.ts"), baseOid: "1".repeat(40), oursOid: "2".repeat(40), theirsOid: "3".repeat(40) },
+      ],
+    });
+    const sink = new TargetSink();
+    const error = await stageLocalSnapshot({
+      scope: SCOPE,
+      worktreeId: WORKTREE_ID,
+      kind: "index",
+      capturedAt: 1_700_006_001_000,
+      diff: conflictDiff,
+      plaintextPayload: null,
+      protection: null,
+      store: lyingStore,
+      sink,
+      batchId: "batch:l4b2-foreign-prev-2",
+      generationId: "gen:0000000002",
+    }).then(() => null, (failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SnapshotError);
+    expect((error as SnapshotError).code).toBe("store-load-refused");
+    expect(sink.batches).toEqual([]);
+    expect(replaces).toBe(0);
+  });
+
+  // MINEUR 1 Opus tour 2 : la validation de forme passe avant le pré-filtre
+  // — un chemin mal formé est refusé en `invalid-diff`, jamais converti en
+  // référence opaque ni remonté en erreur de politique. Données SYNTHÉTIQUES.
+  it("malformed paths are refused as invalid-diff, never prescreened", async () => {
+    const staged = deriveLocalDiff({
+      scope: SCOPE,
+      worktreeId: WORKTREE_ID,
+      kind: "staged",
+      base: HEAD_ENDPOINT,
+      tip: INDEX_ENDPOINT,
+      baseEntries: [],
+      tipEntries: [entry("src/app.ts", "d".repeat(40))],
+    });
+    const variants: readonly { readonly label: string; readonly files: unknown }[] = [
+      { label: "string path", files: staged.files.map((file) => ({ ...file, path: "src/evil.ts" })) },
+      { label: "numeric path", files: staged.files.map((file) => ({ ...file, path: 42 })) },
+      { label: "absent previousPath", files: staged.files.map((file) => ({ ...file, previousPath: undefined })) },
+    ];
+    let step = 0;
+    for (const variant of variants) {
+      step += 1;
+      const store = new AcceptStore();
+      const sink = new TargetSink();
+      const error = await stageLocalSnapshot({
+        scope: SCOPE,
+        worktreeId: WORKTREE_ID,
+        kind: "index",
+        capturedAt: 1_700_007_000_000 + step,
+        diff: { ...staged, files: variant.files } as unknown as LocalDiffDto,
+        plaintextPayload: null,
+        protection: null,
+        store,
+        sink,
+        batchId: `batch:l4b2-malformed-path-${step}`,
+        generationId: `gen:${String(step).padStart(10, "0")}`,
+      }).then(() => null, (failure: unknown) => failure);
+      expect(error, variant.label).toBeInstanceOf(SnapshotError);
+      expect((error as SnapshotError).code, variant.label).toBe("invalid-diff");
+      expect(sink.batches, variant.label).toEqual([]);
+      expect(store.stored, variant.label).toEqual([]);
+    }
+  });
+});
+
+// L4b-2 m6 — entrées ignorées sans signal : un brouillon sans fichier
+// dérivé et des étapes de conflit hors conflit sont refusés explicitement.
+describe("L4b-2 m6 ignored inputs are refused", () => {
+  it("conflict stages outside a conflict derivation throw", () => {
+    expect(() => deriveLocalDiff({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "staged",
+      base: HEAD_ENDPOINT, tip: INDEX_ENDPOINT,
+      baseEntries: [], tipEntries: [entry("src/app.ts", "d".repeat(40))],
+      conflictStages: [
+        { path: enc("src/app.ts"), baseOid: "1".repeat(40), oursOid: "2".repeat(40), theirsOid: "3".repeat(40) },
+      ],
+    })).toThrow();
+  });
+
+  it("hunk drafts on absent, unchanged or unknown paths throw", () => {
+    const draftOn = (path: string) => ({
+      path: enc(path),
+      startBefore: 1, countBefore: 1, startAfter: 1, countAfter: 1,
+      lines: ["+line"],
+    });
+    // Absent path.
+    expect(() => deriveLocalDiff({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "unstaged",
+      base: INDEX_ENDPOINT, tip: WORKTREE_ENDPOINT,
+      baseEntries: [], tipEntries: [entry("src/app.ts", "d".repeat(40))],
+      hunkDrafts: [draftOn("src/ghost.ts")],
+    })).toThrow();
+    // Unchanged path publishes no fact: the draft would vanish silently.
+    expect(() => deriveLocalDiff({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "staged",
+      base: HEAD_ENDPOINT, tip: INDEX_ENDPOINT,
+      baseEntries: [entry("src/app.ts", "c".repeat(40))],
+      tipEntries: [entry("src/app.ts", "c".repeat(40))],
+      hunkDrafts: [draftOn("src/app.ts")],
+    })).toThrow();
+    // Unknown conflict path.
+    expect(() => deriveLocalDiff({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "conflict",
+      base: INDEX_ENDPOINT, tip: INDEX_ENDPOINT,
+      baseEntries: [], tipEntries: [],
+      conflictStages: [
+        { path: enc("src/c.ts"), baseOid: "1".repeat(40), oursOid: "2".repeat(40), theirsOid: "3".repeat(40) },
+      ],
+      hunkDrafts: [draftOn("src/ghost.ts")],
+    })).toThrow();
+  });
+});
+
+// L4b-2 m7 — un conflit instable porte l'axe index, comme le lot.
+describe("L4b-2 m7 unstable conflict axis", () => {
+  it("unstable staged and conflict diffs report the index axis", () => {
+    const staged = deriveLocalDiff({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "staged",
+      base: HEAD_ENDPOINT, tip: INDEX_ENDPOINT,
+      baseEntries: [], tipEntries: [],
+      stable: false,
+      unstableReason: "capture loop raced an index rewrite",
+    });
+    expect(staged.files).toEqual([]);
+    expect(staged.coverage?.axis).toBe("index");
+    expect(staged.coverage?.state).not.toBe("current");
+    const conflict = deriveLocalDiff({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "conflict",
+      base: INDEX_ENDPOINT, tip: INDEX_ENDPOINT,
+      baseEntries: [], tipEntries: [],
+      stable: false,
+      unstableReason: "capture loop raced an index rewrite",
+    });
+    expect(conflict.files).toEqual([]);
+    expect(conflict.coverage?.axis).toBe("index");
+    expect(conflict.coverage?.state).not.toBe("current");
+    const working = deriveLocalDiff({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "unstaged",
+      base: INDEX_ENDPOINT, tip: WORKTREE_ENDPOINT,
+      baseEntries: [], tipEntries: [],
+      stable: false,
+      unstableReason: "capture loop raced a worktree write",
+    });
+    expect(working.coverage?.axis).toBe("working-tree");
   });
 });

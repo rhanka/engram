@@ -141,7 +141,7 @@ export function protectedPathRef(path: Uint8Array): Uint8Array {
 // surface line/entry; a non-match is not proof of safety (host encryption
 // still applies to everything retained).
 
-const SECRET_PATTERNS: readonly { readonly id: string; readonly pattern: RegExp }[] = [
+export const SECRET_PATTERNS: readonly { readonly id: string; readonly pattern: RegExp }[] = [
   { id: "aws-access-key", pattern: /AKIA[0-9A-Z]{16}/ },
   { id: "github-token", pattern: /gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9]{20,}/ },
   { id: "private-key-block", pattern: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/ },
@@ -184,6 +184,8 @@ export interface ScreenedSurfaces {
   readonly searchSnippets: readonly string[];
   readonly contextExcerpts: readonly string[];
   readonly policyVersion: string;
+  /** Entries removed by screening: withheld patch (1 when withheld) plus dropped list entries. */
+  readonly removedEntries: number;
 }
 
 /**
@@ -215,13 +217,25 @@ export function screenBatchSurfaces(input: BatchSurfacesInput): ScreenedSurfaces
       throw new ContentPolicyError("screenBatchSurfaces requires every list surface to be an array of strings");
     }
   }
+  const patchText = input.patchText === null ? null : screenLines(input.patchText);
+  const symbolNames = input.symbolNames.filter((name) => !containsSecretText(name));
+  const citationQuotes = input.citationQuotes.filter((quote) => !containsSecretText(quote));
+  const searchSnippets = input.searchSnippets.filter((snippet) => !containsSecretText(snippet));
+  const contextExcerpts = input.contextExcerpts.filter((excerpt) => !containsSecretText(excerpt));
+  const removedEntries =
+    (input.patchText !== null && patchText === null ? 1 : 0) +
+    (input.symbolNames.length - symbolNames.length) +
+    (input.citationQuotes.length - citationQuotes.length) +
+    (input.searchSnippets.length - searchSnippets.length) +
+    (input.contextExcerpts.length - contextExcerpts.length);
   return {
-    patchText: input.patchText === null ? null : screenLines(input.patchText),
-    symbolNames: input.symbolNames.filter((name) => !containsSecretText(name)),
-    citationQuotes: input.citationQuotes.filter((quote) => !containsSecretText(quote)),
-    searchSnippets: input.searchSnippets.filter((snippet) => !containsSecretText(snippet)),
-    contextExcerpts: input.contextExcerpts.filter((excerpt) => !containsSecretText(excerpt)),
+    patchText,
+    symbolNames,
+    citationQuotes,
+    searchSnippets,
+    contextExcerpts,
     policyVersion: CONTENT_POLICY_VERSION,
+    removedEntries,
   };
 }
 
