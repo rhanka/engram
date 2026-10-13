@@ -20,7 +20,9 @@ import {
   CONTENT_POLICY_VERSION,
   CONTENT_UNAVAILABLE,
   CONTRACT_VERSION,
+  GENERATION_ID_WIDTH,
   LOCAL_DIFF_NORMALIZER_VERSION,
+  isStrictGenerationId,
   validateFactBatch,
   validateLocalDiff,
   validateLocalSnapshot,
@@ -32,6 +34,7 @@ import {
   type LocalSnapshotDto,
 } from "../engram-live/contracts.js";
 import {
+  SECRET_PATTERNS,
   classifyPath,
   containsSecretText,
   scanValuesForLeak,
@@ -125,13 +128,30 @@ class FakeLatestStore implements LatestSnapshotPort {
   readonly purgeQueries: unknown[] = [];
   private readonly knownGenerations = new Set<string>();
   private readonly blockedGenerations = new Set<string>();
+  /** Une tenue par cible complète (scope, worktreeId, kind, diffKind) — staged, unstaged et conflit ne partagent jamais de tenue. */
+  private readonly latest = new Map<string, LocalSnapshotDto>();
+  private targetOf(value: {
+    readonly scope: LiveScope;
+    readonly worktreeId: string;
+    readonly kind: string;
+    readonly diffKind: string;
+  }): string {
+    return [
+      value.scope.tenant,
+      value.scope.clone,
+      value.scope.worktree ?? "",
+      value.worktreeId,
+      value.kind,
+      value.diffKind,
+    ].join("|");
+  }
   purged = 0;
   async loadLatest(query: LatestSnapshotQuery): Promise<LocalSnapshotDto | null> {
     if (this.blockedGenerations.has(query.generationId)) {
       throw new Error("stale generation blocked after purge");
     }
     this.knownGenerations.add(query.generationId);
-    return this.stored.length > 0 ? this.stored[this.stored.length - 1]! : null;
+    return this.latest.get(this.targetOf(query)) ?? null;
   }
   async replaceLatest(
     snapshot: LocalSnapshotDto,
@@ -141,16 +161,19 @@ class FakeLatestStore implements LatestSnapshotPort {
     if (this.blockedGenerations.has(generationId)) {
       throw new Error("stale generation blocked after purge");
     }
-    const current = this.stored.length > 0 ? this.stored[this.stored.length - 1]! : null;
+    const key = this.targetOf(snapshot);
+    const current = this.latest.get(key) ?? null;
     if ((current?.snapshotId ?? null) !== expectedSupersededId) {
       throw new Error("latest replacement conflict: expected predecessor is no longer latest");
     }
     const replaced = current !== null && current.snapshotId !== snapshot.snapshotId;
     if (replaced) {
       this.deleted.push(current.snapshotId);
-      this.stored.pop();
+      const at = this.stored.findIndex((held) => held.snapshotId === current.snapshotId);
+      if (at >= 0) this.stored.splice(at, 1);
     }
     if (current?.snapshotId !== snapshot.snapshotId) this.stored.push(snapshot);
+    this.latest.set(key, snapshot);
     return {
       received: true,
       retiredPrevious: replaced,
@@ -248,8 +271,10 @@ describe("live content policy", () => {
     }
     expect(validateLocalDiff(diff).ok).toBe(true);
 
-    // Persistance scellée AVANT tout stockage : le magasin et le puits ne
-    // voient que du chiffré et des métadonnées, jamais le clair.
+    // Politique AVANT tout stockage (L4b-2 MAJEUR 1) : la charge utile
+    // porte des secrets détectés — aucun appel protect, métadonnées
+    // seulement avec couverture indisponible explicite. Le magasin et le
+    // puits ne voient que des refus explicites, jamais le clair.
     const protection = new FakeProtectionPort();
     const store = new FakeLatestStore();
     const sink = new FakeSink();
@@ -264,11 +289,16 @@ describe("live content policy", () => {
       store,
       sink,
       batchId: "batch:l4b-policy-1",
-      generationId: "gen:l4b-policy-1",
+      generationId: "gen:0000000001",
     });
-    expect(staged.snapshot.sealed.state).toBe("sealed");
+    expect(staged.snapshot.sealed).toEqual({
+      state: "metadata-only",
+      reason: "metadata:policy-withheld",
+    });
+    expect(staged.coverage.state).toBe("unavailable");
+    expect(staged.coverage.cause).toBe("policy-withheld");
     expect(validateLocalSnapshot(staged.snapshot).ok).toBe(true);
-    expect(protection.protectCalls).toHaveLength(1);
+    expect(protection.protectCalls).toEqual([]);
 
     // Q2 B : le remplacement ne garde que le dernier état autorisé —
     // le précédent est désigné remplacé puis supprimé, sans historique.
@@ -283,9 +313,11 @@ describe("live content policy", () => {
       store,
       sink,
       batchId: "batch:l4b-policy-1b",
-      generationId: "gen:l4b-policy-1b",
+      generationId: "gen:0000000002",
     });
     expect(second.batch.generationId > staged.batch.generationId).toBe(true);
+    expect(second.snapshot.sealed.state).toBe("sealed");
+    expect(protection.protectCalls).toHaveLength(1);
     expect(store.deleted).toEqual([staged.snapshot.snapshotId]);
     expect(store.stored.map((s) => s.snapshotId)).toEqual([second.snapshot.snapshotId]);
 
@@ -327,8 +359,9 @@ describe("live content policy", () => {
       ],
     });
 
-    // Sans clé : métadonnées autorisées seulement, aucun appel protect,
-    // couverture content_unavailable explicite.
+    // Secret détecté, avec ou sans clé (L4b-2 MAJEUR 1) : la politique
+    // prime — métadonnées policy-withheld, aucun appel protect, couverture
+    // content_unavailable explicite.
     const store = new FakeLatestStore();
     const sink = new FakeSink();
     const staged = await stageLocalSnapshot({
@@ -342,13 +375,14 @@ describe("live content policy", () => {
       store,
       sink,
       batchId: "batch:l4b-policy-2",
-      generationId: "gen:l4b-policy-2",
+      generationId: "gen:0000000003",
     });
     expect(staged.snapshot.sealed).toEqual({
       state: "metadata-only",
-      reason: "metadata:no-key",
+      reason: "metadata:policy-withheld",
     });
     expect(staged.coverage.state).toBe("unavailable");
+    expect(staged.coverage.cause).toBe("policy-withheld");
     expect(staged.coverage.reason).toContain(CONTENT_UNAVAILABLE);
     expect(validateLocalSnapshot(staged.snapshot).ok).toBe(true);
     const leaked = scanValuesForLeak(
@@ -422,7 +456,7 @@ describe("live content policy", () => {
       store,
       sink,
       batchId: "batch:l4b-minor-m6",
-      generationId: "gen:l4b-minor-m6",
+      generationId: "gen:0000000004",
     });
     expect(staged.snapshot.sealed).toEqual({
       state: "metadata-only",
@@ -470,7 +504,7 @@ describe("live content policy", () => {
       store,
       sink,
       batchId: "batch:l4b-minor-m7",
-      generationId: "gen:l4b-minor-m7",
+      generationId: "gen:0000000005",
     });
     const revocation: DeclarationRevocationDto = {
       declarationId: "decl:l4b-minor-m7",
@@ -523,7 +557,7 @@ describe("live content policy", () => {
       store,
       sink,
       batchId: "batch:l4b-minor-m8a",
-      generationId: "gen:l4b-minor-m8",
+      generationId: "gen:0000000006",
     })).rejects.toThrow();
     const staged: LocalDiffDto = deriveLocalDiff({
       scope: SCOPE,
@@ -545,7 +579,7 @@ describe("live content policy", () => {
       store,
       sink,
       batchId: "batch:l4b-minor-m8b",
-      generationId: "gen:l4b-minor-m8",
+      generationId: "gen:0000000006",
     })).rejects.toThrow();
     expect(sink.batches).toEqual([]);
   });
@@ -596,7 +630,7 @@ describe("live content policy", () => {
       producerName: "engram-live",
       contractVersion: CONTRACT_VERSION,
       policyVersion: CONTENT_POLICY_VERSION,
-      generationId: "gen:l4b-review-m1",
+      generationId: "gen:0000000007",
       batchId: "batch:l4b-review-m1",
       batchDigest: "0".repeat(64),
       facts: [smuggledDiff],
@@ -722,7 +756,7 @@ describe("live content policy", () => {
       store,
       sink,
       batchId: "batch:l4b-review-m3a",
-      generationId: "gen:l4b-review-m3",
+      generationId: "gen:0000000013",
     });
     expect(first.snapshot.snapshotId).toMatch(/^lsnap:/);
     await expect(stageLocalSnapshot({
@@ -736,7 +770,7 @@ describe("live content policy", () => {
       store,
       sink,
       batchId: "batch:l4b-review-m3b",
-      generationId: "gen:l4b-review-m3b",
+      generationId: "gen:0000000014",
     })).rejects.toThrow();
     expect(store.stored).toHaveLength(1);
     expect(store.stored.map((s) => s.snapshotId)).toEqual([first.snapshot.snapshotId]);
@@ -796,7 +830,7 @@ describe("live content policy", () => {
       store,
       sink,
       batchId: "batch:l4b-review-m4a",
-      generationId: "gen:l4b-review-m4",
+      generationId: "gen:0000000015",
     });
     const batchJson = JSON.stringify(sink.batches[0]);
     expect(batchJson).toContain("sealed");
@@ -826,7 +860,7 @@ describe("live content policy", () => {
       store,
       sink,
       batchId: "batch:l4b-review-m4b",
-      generationId: "gen:l4b-review-m4b",
+      generationId: "gen:0000000016",
     });
     expect(second.coverage.state).not.toBe("current");
     expect(second.coverage.cause).toBe("unstable-capture");
@@ -863,7 +897,7 @@ describe("live content policy", () => {
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "index",
       capturedAt: 1_700_000_100_000, diff, plaintextPayload: enc("public"),
       protection: leakingProtect, store: storeA, sink: sinkA,
-      batchId: "batch:l4b-m2-protect", generationId: "gen:l4b-m2-protect",
+      batchId: "batch:l4b-m2-protect", generationId: "gen:0000000008",
     }).then(() => null, (error: unknown) => error);
     expect(failedProtect).not.toBeNull();
     const protectStrings = [
@@ -893,7 +927,7 @@ describe("live content policy", () => {
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "index",
       capturedAt: 1_700_000_101_000, diff: plainDiff, plaintextPayload: null,
       protection: new FakeProtectionPort(), store: new NamingStore(), sink: new FakeSink(),
-      batchId: "batch:l4b-m2-replace", generationId: "gen:l4b-m2-replace",
+      batchId: "batch:l4b-m2-replace", generationId: "gen:0000000009",
     }).then(() => null, (error: unknown) => error);
     expect(failedReplace).not.toBeNull();
     const replaceStrings = [
@@ -942,14 +976,14 @@ describe("live content policy", () => {
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
       capturedAt: 1_700_000_110_000, diff, plaintextPayload: enc("public A"),
       protection, store, sink,
-      batchId: "batch:l4b-m3-a", generationId: "gen:l4b-m3-001",
+      batchId: "batch:l4b-m3-a", generationId: "gen:0000000010",
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
     const stagedB = await stageLocalSnapshot({
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
       capturedAt: 1_700_000_111_000, diff, plaintextPayload: enc("public B"),
       protection, store, sink,
-      batchId: "batch:l4b-m3-b", generationId: "gen:l4b-m3-002",
+      batchId: "batch:l4b-m3-b", generationId: "gen:0000000011",
     });
     releaseA();
     await expect(attemptA).rejects.toThrow();
@@ -1003,7 +1037,7 @@ describe("live content policy", () => {
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "index",
       capturedAt: 1_700_000_120_000, diff: three, plaintextPayload: enc("public"),
       protection, store, sink,
-      batchId: "batch:l4b-m4-conflict", generationId: "gen:l4b-m4-conflict",
+      batchId: "batch:l4b-m4-conflict", generationId: "gen:0000000012",
     });
     expect(staged.coverage.state).not.toBe("current");
   });
@@ -1037,7 +1071,7 @@ describe("live content policy", () => {
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "index",
       capturedAt: 1_700_000_130_000, diff, plaintextPayload: enc("public"),
       protection: suspendedHunkProtection, store, sink,
-      batchId: "batch:l4b-minor-hunk-purge", generationId: "gen:l4b-minor-hunk-purge",
+      batchId: "batch:l4b-minor-hunk-purge", generationId: "gen:0000000037",
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
     const revocation: DeclarationRevocationDto = {
@@ -1083,7 +1117,7 @@ describe("live content policy", () => {
       store,
       sink,
       batchId: "batch:l4b-minor-worktree",
-      generationId: "gen:l4b-minor-worktree",
+      generationId: "gen:0000000038",
     })).rejects.toThrow();
     expect(sink.batches).toEqual([]);
   });
@@ -1162,7 +1196,7 @@ async function sol4SealedExemplar(): Promise<LocalDiffDto> {
     store: new FakeLatestStore(),
     sink: new FakeSink(),
     batchId: "batch:l4b-sol4-exemplar",
-    generationId: "gen:l4b-sol4-exemplar",
+    generationId: "gen:0000000021",
   });
   return outcome.batch.facts[0] as LocalDiffDto;
 }
@@ -1206,6 +1240,8 @@ function sol4Mutators(exemplar: LocalDiffDto): { name: string; mutate: Sol4Mutat
   return mutators;
 }
 
+let sol4AttemptSeq = 0;
+
 async function sol4Attempt(
   mutated: LocalDiffDto,
   protection: ContentProtectionPort | null,
@@ -1213,6 +1249,7 @@ async function sol4Attempt(
   sink: FakeSink,
   tag: string,
 ): Promise<unknown> {
+  sol4AttemptSeq += 1;
   return stageLocalSnapshot({
     scope: sol4Clone(mutated.scope),
     worktreeId: mutated.worktreeId,
@@ -1224,7 +1261,7 @@ async function sol4Attempt(
     store,
     sink,
     batchId: `batch:l4b-sol4-${tag}`,
-    generationId: `gen:l4b-sol4-${tag}`,
+    generationId: `gen:${String(sol4AttemptSeq).padStart(10, "0")}`,
   }).then(
     () => null,
     (error: unknown) => error,
@@ -1302,7 +1339,7 @@ describe("L4b-sol4 A: la porte ne sur-bloque pas les constats explicites", () =>
       store,
       sink,
       batchId: "batch:l4b-sol4-withheld",
-      generationId: "gen:l4b-sol4-withheld",
+      generationId: "gen:0000000025",
     });
     expect(validateFactBatch(outcome.batch).ok).toBe(true);
     expect(sink.batches).toHaveLength(1);
@@ -1389,9 +1426,10 @@ class Sol4AckSink implements FactSinkPort {
         typeof (fact as { axis?: unknown }).axis === "string",
     );
     const kind = snapshot?.kind ?? coverage?.axis ?? "working-tree";
+    const diffKind = snapshot?.diffKind ?? diff?.kind ?? "unstaged";
     const worktree = batch.scope.worktree ?? "";
     const worktreeId = snapshot?.worktreeId ?? diff?.worktreeId ?? "";
-    return `${batch.scope.tenant}|${batch.scope.clone}|${worktree}|${worktreeId}|${kind}`;
+    return `${batch.scope.tenant}|${batch.scope.clone}|${worktree}|${worktreeId}|${kind}|${diffKind}`;
   }
   async deliver(batch: FactBatchDto): Promise<FactSinkReceipt> {
     this.arrived.push(batch.batchId);
@@ -1447,10 +1485,10 @@ describe("L4b-sol4 C: le remplacement suit la génération acceptée par le sink
         batchId,
         generationId,
       }).then((outcome) => outcome.snapshot);
-    await stage(1_700_000_300_000, "batch:l4b-sol4-a", "gen:l4b-sol4-001");
+    await stage(1_700_000_300_000, "batch:l4b-sol4-a", "gen:0000000022");
     sink.failNext = true;
-    await expect(stage(1_700_000_301_000, "batch:l4b-sol4-b", "gen:l4b-sol4-002")).rejects.toThrow();
-    const snapshotC = await stage(1_700_000_302_000, "batch:l4b-sol4-c", "gen:l4b-sol4-003");
+    await expect(stage(1_700_000_301_000, "batch:l4b-sol4-b", "gen:0000000023")).rejects.toThrow();
+    const snapshotC = await stage(1_700_000_302_000, "batch:l4b-sol4-c", "gen:0000000024");
     expect(sink.holdings.size).toBe(1);
     expect([...sink.holdings.values()].map((batch) => batch.batchId)).toEqual(["batch:l4b-sol4-c"]);
     expect(store.stored.map((entry) => entry.snapshotId)).toEqual([snapshotC.snapshotId]);
@@ -1471,7 +1509,7 @@ describe("L4b-sol4 C: le remplacement suit la génération acceptée par le sink
     const acceptedGenerations: string[] = [];
     let lastAccepted: FactBatchDto | null = null;
     for (let step = 0; step < 60; step += 1) {
-      const generationId = `gen:l4b-sol4-prop-${String(step).padStart(3, "0")}`;
+      const generationId = `gen:${String(step).padStart(10, "0")}`;
       const roll = random();
       if (roll >= 0.8 && acceptedGenerations.length > 0) {
         await expect(
@@ -1486,7 +1524,7 @@ describe("L4b-sol4 C: le remplacement suit la génération acceptée par le sink
             store,
             sink,
             batchId: `batch:l4b-sol4-prop-${step}`,
-            generationId: "gen:l4b-sol4-prop-000",
+            generationId: "gen:0000000000",
           }),
         ).rejects.toThrow();
         continue;
@@ -1548,7 +1586,7 @@ async function m1ValidBatch(): Promise<FactBatchDto> {
     store: new FakeLatestStore(),
     sink: new FakeSink(),
     batchId: "batch:l4b-m1-valid",
-    generationId: "gen:l4b-m1-valid",
+    generationId: "gen:0000000033",
   });
   expect(validateFactBatch(outcome.batch).ok).toBe(true);
   return outcome.batch;
@@ -1641,7 +1679,7 @@ describe("L4b-M1: aucun texte libre dans le DTO émis", () => {
           store,
           sink,
           batchId: field === "batchId" ? M1_PRIVATE_CODE : `batch:l4b-m1-${keyMode}-${tag}`,
-          generationId: field === "generationId" ? M1_PRIVATE_CODE : `gen:l4b-m1-${keyMode}-${tag}`,
+          generationId: field === "generationId" ? M1_PRIVATE_CODE : `gen:${String(tag).padStart(10, "0")}`,
         }).then(
           () => null,
           (failure: unknown) => failure,
@@ -1682,7 +1720,7 @@ describe("L4b-mineur: les refus SnapshotError sont des constantes structurées",
         store: new FakeLatestStore(),
         sink: new FakeSink(),
         batchId: "batch:l4b-mineur-scope",
-        generationId: "gen:l4b-mineur-scope",
+        generationId: "gen:0000000017",
       }).then(() => null, (error: unknown) => error),
       stageLocalSnapshot({
         scope: SCOPE,
@@ -1695,7 +1733,7 @@ describe("L4b-mineur: les refus SnapshotError sont des constantes structurées",
         store: new FakeLatestStore(),
         sink: new FakeSink(),
         batchId: "batch:l4b-mineur-diff",
-        generationId: "gen:l4b-mineur-diff",
+        generationId: "gen:0000000018",
       }).then(() => null, (error: unknown) => error),
       stageLocalSnapshot({
         scope: SCOPE,
@@ -1708,7 +1746,7 @@ describe("L4b-mineur: les refus SnapshotError sont des constantes structurées",
         store: new FakeLatestStore(),
         sink: new FakeSink(),
         batchId: "batch:l4b-mineur-reason",
-        generationId: "gen:l4b-mineur-reason",
+        generationId: "gen:0000000019",
       }).then(() => null, (error: unknown) => error),
       stageLocalSnapshot({
         scope: SCOPE,
@@ -1721,7 +1759,7 @@ describe("L4b-mineur: les refus SnapshotError sont des constantes structurées",
         store: new FakeLatestStore(),
         sink: new FakeSink(),
         batchId: "not a batch id",
-        generationId: "gen:l4b-mineur-batch",
+        generationId: "gen:0000000020",
       }).then(() => null, (error: unknown) => error),
       runUnregisterPurge({
         revocation: {
@@ -1787,12 +1825,12 @@ describe("L4b-M2: le sink remplace par cible et génération", () => {
           batchId,
           generationId,
         }).then((outcome) => outcome.snapshot);
-      await stage(1_700_000_700_000, "batch:l4b-m2-a", "gen:l4b-m2-001");
+      await stage(1_700_000_700_000, "batch:l4b-m2-a", "gen:0000000034");
       sink.suspend("batch:l4b-m2-b");
       sink.suspend("batch:l4b-m2-c");
-      const attemptB = stage(1_700_000_701_000, "batch:l4b-m2-b", "gen:l4b-m2-002");
+      const attemptB = stage(1_700_000_701_000, "batch:l4b-m2-b", "gen:0000000035");
       await m2WaitForArrival(sink, "batch:l4b-m2-b");
-      const attemptC = stage(1_700_000_702_000, "batch:l4b-m2-c", "gen:l4b-m2-003");
+      const attemptC = stage(1_700_000_702_000, "batch:l4b-m2-c", "gen:0000000036");
       await m2WaitForArrival(sink, "batch:l4b-m2-c");
       if (order === "BC") {
         sink.release("batch:l4b-m2-b");
@@ -1836,7 +1874,7 @@ describe("L4b-M2: le sink remplace par cible et génération", () => {
     const store = new FakeLatestStore();
     const sink = new Sol4AckSink();
     const batchIdOf = (step: number): string => `batch:l4b-m2c-${String(step).padStart(3, "0")}`;
-    const generationOf = (step: number): string => `gen:l4b-m2c-${String(step).padStart(3, "0")}`;
+    const generationOf = (step: number): string => `gen:${String(step).padStart(10, "0")}`;
     const failing = new Set<number>();
     for (let step = 0; step < STEPS; step += 1) {
       if (random() < 0.2) failing.add(step);
@@ -1982,7 +2020,7 @@ describe("L4b-sol5 Majeur 1 : aucun sealed fourni par l'appelant n'atteint le si
         store,
         sink,
         batchId: `batch:l4b-sol5-sealed-${keyMode}`,
-        generationId: `gen:l4b-sol5-sealed-${keyMode}`,
+        generationId: keyMode === "key" ? "gen:0000000001" : "gen:0000000002",
       }).then(
         () => null,
         (failure: unknown) => failure,
@@ -2039,7 +2077,7 @@ describe("L4b-sol5 Majeur 2 : le lot est copié et gelé à l'admission", () => 
       store,
       sink,
       batchId: "batch:l4b-sol5-frozen",
-      generationId: "gen:l4b-sol5-frozen",
+      generationId: "gen:0000000027",
     });
     await sol5WaitForArrival(sink, "batch:l4b-sol5-frozen");
     // Mutation du DTO d'origine APRÈS admission, avant reprise.
@@ -2080,7 +2118,7 @@ describe("L4b-sol5 Majeur 2 : le lot est copié et gelé à l'admission", () => 
       store: new FakeLatestStore(),
       sink: new FakeSink(),
       batchId: "batch:l4b-sol5-payload",
-      generationId: "gen:l4b-sol5-payload",
+      generationId: "gen:0000000028",
     });
     for (let round = 0; round < 1000 && seen.length === 0; round += 1) {
       await new Promise((resolve) => setTimeout(resolve, 1));
@@ -2115,7 +2153,7 @@ describe("L4b-sol5 mineur : le faux sink vise la même cible sans snapshot", () 
       store,
       sink,
       batchId: "batch:l4b-sol5-target-a",
-      generationId: "gen:l4b-sol5-target-001",
+      generationId: "gen:0000000029",
     });
     const unstable = deriveLocalDiff({
       scope: SCOPE,
@@ -2139,13 +2177,14 @@ describe("L4b-sol5 mineur : le faux sink vise la même cible sans snapshot", () 
       store,
       sink,
       batchId: "batch:l4b-sol5-target-b",
-      generationId: "gen:l4b-sol5-target-002",
+      generationId: "gen:0000000030",
     });
     expect(sink.holdings.size).toBe(1);
     const target = [...sink.holdings.keys()][0]!;
     expect(target).toContain(WORKTREE_ID);
-    expect(target.split("|")).toHaveLength(5);
+    expect(target.split("|")).toHaveLength(6);
     expect(target.split("|")[4]).not.toBe("");
+    expect(target.split("|")[5]).toBe("unstaged");
   });
 });
 
@@ -2242,7 +2281,7 @@ describe("L4b-sol6 variante 1 : les tampons rendus par protect sont isolés", ()
       const sink = new Sol5GateSink();
       const store = new Sol6GateStore();
       const batchId = `batch:l4b-sol6-buffer-${tag}`;
-      const generationId = `gen:l4b-sol6-buffer-${tag}`;
+      const generationId = `gen:${String(tag).padStart(10, "0")}`;
       store.suspend(generationId);
       sink.suspend(batchId);
       const attempt = stageLocalSnapshot({
@@ -2304,7 +2343,7 @@ describe("L4b-sol6 variante 1 : les tampons rendus par protect sont isolés", ()
       store: new FakeLatestStore(),
       sink,
       batchId: "batch:l4b-sol6-returned",
-      generationId: "gen:l4b-sol6-returned",
+      generationId: "gen:0000000031",
     });
     const returnedCipher = (outcome.snapshot.sealed as { ciphertext: Uint8Array }).ciphertext;
     const expected = Array.from(returnedCipher);
@@ -2344,7 +2383,7 @@ describe("L4b-sol6 variante 2 : clé propre __proto__/constructor/prototype refu
           store,
           sink,
           batchId: `batch:l4b-sol6-proto-${tag}`,
-          generationId: `gen:l4b-sol6-proto-${tag}`,
+          generationId: `gen:${String(tag).padStart(10, "0")}`,
         }).then(
           () => null,
           (failure: unknown) => failure,
@@ -2389,7 +2428,7 @@ describe("L4b-sol6 variante 2 : clé propre __proto__/constructor/prototype refu
         store,
         sink,
         batchId: `batch:l4b-sol6-proto-hidden-${tag}`,
-        generationId: `gen:l4b-sol6-proto-hidden-${tag}`,
+        generationId: `gen:${String(tag).padStart(10, "0")}`,
       }).then(
         () => null,
         (failure: unknown) => failure,
@@ -2407,7 +2446,7 @@ describe("L4b-sol6 variante 2 : clé propre __proto__/constructor/prototype refu
 // Données SYNTHÉTIQUES uniquement (sondes P1/P2 de la revue).
 // L4b-2 (rhanka/engram#368): red until fixed — owner split 2026-10-12
 describe("L4b-2 secret exclusion", () => {
-  it.skip("a detected secret is excluded with explicit coverage instead of being sealed and retained", async () => {
+  it("a detected secret is excluded with explicit coverage instead of being sealed and retained", async () => {
     const secret = "AKIAIOSFODNN7SYNTHETIC";
     expect(containsSecretText(secret)).toBe(true);
     const derived = deriveLocalDiff({
@@ -2467,7 +2506,7 @@ describe("L4b-2 secret exclusion", () => {
       store,
       sink,
       batchId: "batch:l4b2-secret-excluded",
-      generationId: "gen:l4b2-secret-excluded",
+      generationId: "gen:0000000032",
     });
     // L4b-2 : aucun appel protect sur le secret, snapshot métadonnées
     // seulement, couverture indisponible explicite.
@@ -2486,5 +2525,843 @@ describe("L4b-2 secret exclusion", () => {
       [secret],
     );
     expect(leaked).toEqual([]);
+  });
+});
+
+// L4b-2 (rhanka/engram#368) — variante paramétrée : chaque surface porteuse
+// d'un secret détecté est exclue avant tout appel protect. Données
+// SYNTHÉTIQUES uniquement.
+describe("L4b-2 secret exclusion on every surface", () => {
+  const SECRET = "AKIAIOSFODNN7SYNTHETIC";
+
+  function cleanUnstagedDiff(withHunk: boolean): LocalDiffDto {
+    return deriveLocalDiff({
+      scope: SCOPE,
+      worktreeId: WORKTREE_ID,
+      kind: "unstaged",
+      base: { label: "index", oid: "b".repeat(40) },
+      tip: { label: "worktree", oid: null },
+      baseEntries: [],
+      tipEntries: [entryLike("src/app.ts", "d".repeat(40))],
+      hunkDrafts: withHunk
+        ? [
+          {
+            path: enc("src/app.ts"),
+            startBefore: 1,
+            countBefore: 1,
+            startAfter: 1,
+            countAfter: 1,
+            lines: ["+clean line"],
+          },
+        ]
+        : [],
+    });
+  }
+
+  function openDiffWithSecretHunk(): LocalDiffDto {
+    const derived = cleanUnstagedDiff(true);
+    const direct = JSON.parse(
+      JSON.stringify(derived, (_key, node: unknown) =>
+        node instanceof Uint8Array ? { $bytes: [...node] } : node,
+      ),
+      (_key, node: unknown) =>
+        node !== null &&
+        typeof node === "object" &&
+        Array.isArray((node as { $bytes?: unknown }).$bytes)
+          ? Uint8Array.from((node as { $bytes: number[] }).$bytes)
+          : node,
+    ) as unknown as LocalDiffDto;
+    const mutable = direct as unknown as {
+      files: { hunks: { payload: { state: string; lines: string[] } }[] }[];
+    };
+    for (const file of mutable.files) {
+      for (const hunk of file.hunks) {
+        if (hunk.payload.state === "open-lines") {
+          hunk.payload.lines = [`const k = "${SECRET}";`];
+        }
+      }
+    }
+    return direct;
+  }
+
+  it("hunk surface: secret open lines are withheld, zero protect calls", async () => {
+    const protection = new FakeProtectionPort();
+    const store = new FakeLatestStore();
+    const sink = new FakeSink();
+    const staged = await stageLocalSnapshot({
+      scope: SCOPE,
+      worktreeId: WORKTREE_ID,
+      kind: "working-tree",
+      capturedAt: 1_700_003_010_000,
+      diff: openDiffWithSecretHunk(),
+      plaintextPayload: null,
+      protection,
+      store,
+      sink,
+      batchId: "batch:l4b2-surface-hunk",
+      generationId: "gen:0000000040",
+    });
+    expect(protection.protectCalls).toEqual([]);
+    const delivered = staged.batch.facts[0] as unknown as LocalDiffDto;
+    expect(delivered.files[0]?.hunks[0]?.payload.state).toBe("withheld");
+    expect(validateFactBatch(staged.batch).ok).toBe(true);
+    expect(scanValuesForLeak(
+      [...collectStrings(store.stored), ...collectStrings(sink.batches)],
+      [SECRET],
+    )).toEqual([]);
+  });
+
+  it("snapshot surface: secret payload is never transmitted, metadata-only policy-withheld", async () => {
+    const protection = new FakeProtectionPort();
+    const store = new FakeLatestStore();
+    const sink = new FakeSink();
+    const staged = await stageLocalSnapshot({
+      scope: SCOPE,
+      worktreeId: WORKTREE_ID,
+      kind: "working-tree",
+      capturedAt: 1_700_003_011_000,
+      diff: cleanUnstagedDiff(false),
+      plaintextPayload: enc(`payload carries ${SECRET}`),
+      protection,
+      store,
+      sink,
+      batchId: "batch:l4b2-surface-snapshot",
+      generationId: "gen:0000000041",
+    });
+    expect(protection.protectCalls).toEqual([]);
+    expect(staged.snapshot.sealed).toEqual({ state: "metadata-only", reason: "metadata:policy-withheld" });
+    expect(staged.coverage).toMatchObject({ state: "unavailable", cause: "policy-withheld" });
+    expect(validateFactBatch(staged.batch).ok).toBe(true);
+    expect(scanValuesForLeak(
+      [...collectStrings(store.stored), ...collectStrings(sink.batches)],
+      [SECRET],
+    )).toEqual([]);
+  });
+
+  it("path surface: secret-bearing path becomes an opaque protected exclusion", async () => {
+    const protection = new FakeProtectionPort();
+    const store = new FakeLatestStore();
+    const sink = new FakeSink();
+    const direct = cleanUnstagedDiff(false);
+    (direct.files[0] as unknown as { path: Uint8Array }).path = enc(`src/${SECRET}.ts`);
+    const staged = await stageLocalSnapshot({
+      scope: SCOPE,
+      worktreeId: WORKTREE_ID,
+      kind: "working-tree",
+      capturedAt: 1_700_003_012_000,
+      diff: direct,
+      plaintextPayload: null,
+      protection,
+      store,
+      sink,
+      batchId: "batch:l4b2-surface-path",
+      generationId: "gen:0000000042",
+    });
+    expect(protection.protectCalls).toEqual([]);
+    const delivered = staged.batch.facts[0] as unknown as LocalDiffDto;
+    expect(delivered.files[0]?.exclusion).toBe("protected");
+    expect(new TextDecoder().decode(delivered.files[0]!.path)).toMatch(/^withheld-path:[0-9a-f]{64}$/);
+    expect(validateFactBatch(staged.batch).ok).toBe(true);
+    expect(scanValuesForLeak(
+      [...collectStrings(store.stored), ...collectStrings(sink.batches)],
+      [SECRET],
+    )).toEqual([]);
+  });
+
+  it("derived surfaces: patch, symbol, citation and context entries are removed with a count", () => {
+    // Note: symbol, citation and context surfaces are not wired to any
+    // protect call yet, so no protection assertion belongs here — the
+    // screened result itself is the whole proof.
+    const screened = screenBatchSurfaces({
+      patchText: `clean\nconst k = "${SECRET}";`,
+      symbolNames: ["add", SECRET],
+      citationQuotes: [`quote of ${SECRET}`],
+      searchSnippets: ["public snippet", `see ${SECRET}`],
+      contextExcerpts: [SECRET, "public context"],
+    });
+    expect(screened.patchText).toBeNull();
+    expect(screened.symbolNames).toEqual(["add"]);
+    expect(screened.citationQuotes).toEqual([]);
+    expect(screened.searchSnippets).toEqual(["public snippet"]);
+    expect(screened.contextExcerpts).toEqual(["public context"]);
+    expect(screened.removedEntries).toBe(5);
+    expect(scanValuesForLeak(
+      [screened.patchText ?? "", ...screened.symbolNames, ...screened.citationQuotes,
+        ...screened.searchSnippets, ...screened.contextExcerpts],
+      [SECRET],
+    )).toEqual([]);
+  });
+});
+
+// Opus tour 1 t1 + MAJEUR 2 — classe complète : chaque motif × chaque
+// surface (hunk, charge, chemin courant, chemin précédent) × {clé, sans
+// clé}. Données SYNTHÉTIQUES uniquement.
+describe("L4b-2 secret matrix on every surface", () => {
+  const CASES: { readonly rule: string; readonly token: string }[] = [
+    { rule: "aws-access-key", token: "AKIAIOSFODNN7SYNTHETIC" },
+    { rule: "github-token", token: "ghp_aaaaaaaaaaaaaaaaaaaa" },
+    { rule: "private-key-block", token: "-----BEGIN PRIVATE KEY-----" },
+    { rule: "credential-assignment", token: "password=synthetic-pw-not-real" },
+    { rule: "credentialed-url", token: "https://user:synthpw@example.invalid/x" },
+  ];
+
+  function matrixDiff(withHunk: boolean): LocalDiffDto {
+    return deriveLocalDiff({
+      scope: SCOPE,
+      worktreeId: WORKTREE_ID,
+      kind: "unstaged",
+      base: { label: "index", oid: "b".repeat(40) },
+      tip: { label: "worktree", oid: null },
+      baseEntries: [],
+      tipEntries: [entryLike("src/app.ts", "d".repeat(40))],
+      hunkDrafts: withHunk
+        ? [
+          {
+            path: enc("src/app.ts"),
+            startBefore: 1,
+            countBefore: 1,
+            startAfter: 1,
+            countAfter: 1,
+            lines: ["+clean line"],
+          },
+        ]
+        : [],
+    });
+  }
+
+  it("every matrix token carries a detected secret signal", () => {
+    // La matrice couvre exactement les motifs de la politique, sans exemple isolé.
+    expect(CASES.map(({ rule }) => rule).sort()).toEqual(
+      SECRET_PATTERNS.map(({ id }) => id).sort(),
+    );
+    for (const { token } of CASES) {
+      expect(containsSecretText(token)).toBe(true);
+    }
+  });
+
+  const rows = CASES.flatMap(({ rule, token }) =>
+    (["hunk", "payload", "path", "previousPath"] as const).flatMap((surface) =>
+      [true, false].map((withKey) => ({ rule, token, surface, withKey })),
+    ),
+  );
+
+  it.each(rows)(
+    "rule $rule surface $surface withKey=$withKey excludes without protect call",
+    async ({ rule, token, surface, withKey }) => {
+      const protection = withKey ? new FakeProtectionPort() : null;
+      const store = new FakeLatestStore();
+      const sink = new FakeSink();
+      const direct = matrixDiff(surface === "hunk" || surface === "previousPath");
+      const mutable = direct as unknown as {
+        files: {
+          path: Uint8Array;
+          previousPath: Uint8Array | null;
+          hunks: { payload: { state: string; lines: string[] } }[];
+        }[];
+      };
+      if (surface === "hunk") {
+        for (const file of mutable.files) {
+          for (const hunk of file.hunks) {
+            if (hunk.payload.state === "open-lines") {
+              hunk.payload.lines = [`carrier ${token} end`];
+            }
+          }
+        }
+      } else if (surface === "path") {
+        mutable.files[0]!.path = enc(`src/${token}.ts`);
+      } else if (surface === "previousPath") {
+        mutable.files[0]!.previousPath = enc(`src/${token}.ts`);
+      }
+      const staged = await stageLocalSnapshot({
+        scope: SCOPE,
+        worktreeId: WORKTREE_ID,
+        kind: "working-tree",
+        capturedAt: 1_700_003_100_000,
+        diff: direct,
+        plaintextPayload: surface === "payload" ? enc(`payload ${token} end`) : null,
+        protection,
+        store,
+        sink,
+        batchId: `batch:l4b2-matrix-${rule}-${surface.toLowerCase()}-${withKey ? "key" : "nokey"}`,
+        generationId: "gen:0000000043",
+      });
+      expect(protection?.protectCalls ?? []).toEqual([]);
+      expect(validateFactBatch(staged.batch).ok).toBe(true);
+      const delivered = staged.batch.facts[0] as unknown as LocalDiffDto;
+      if (surface === "hunk") {
+        expect(delivered.files[0]?.hunks[0]?.payload.state).toBe("withheld");
+      } else if (surface === "payload") {
+        expect(staged.snapshot.sealed).toEqual({ state: "metadata-only", reason: "metadata:policy-withheld" });
+        expect(staged.coverage).toMatchObject({ state: "unavailable", cause: "policy-withheld" });
+      } else {
+        expect(delivered.files[0]?.exclusion).toBe("protected");
+        expect(delivered.files[0]?.added).toBeNull();
+        expect(delivered.files[0]?.deleted).toBeNull();
+        expect(delivered.files[0]?.hunks).toEqual([]);
+        expect(new TextDecoder().decode(delivered.files[0]!.path)).toMatch(/^withheld-path:[0-9a-f]{64}$/);
+        if (surface === "previousPath") {
+          expect(new TextDecoder().decode(delivered.files[0]!.previousPath!)).toMatch(/^withheld-path:[0-9a-f]{64}$/);
+        }
+      }
+      expect(scanValuesForLeak(
+        [...collectStrings(store.stored), ...collectStrings(sink.batches)],
+        [token],
+      )).toEqual([]);
+    },
+  );
+
+  // MAJEUR 2 (sonde N4) : chemin courant, précédent, les deux — un chemin
+  // précédent protégé scelle le contenu comme un chemin courant protégé.
+  it.each(["current", "previous", "both"] as const)(
+    "protected %s path excludes the whole file content",
+    async (position) => {
+      const protection = new FakeProtectionPort();
+      const store = new FakeLatestStore();
+      const sink = new FakeSink();
+      const direct = matrixDiff(true);
+      const file = (direct as unknown as {
+        files: { path: Uint8Array; previousPath: Uint8Array | null }[];
+      }).files[0]!;
+      if (position === "current" || position === "both") file.path = enc(".env.production");
+      if (position === "previous" || position === "both") file.previousPath = enc(".env.staging");
+      const staged = await stageLocalSnapshot({
+        scope: SCOPE,
+        worktreeId: WORKTREE_ID,
+        kind: "working-tree",
+        capturedAt: 1_700_003_101_000,
+        diff: direct,
+        plaintextPayload: null,
+        protection,
+        store,
+        sink,
+        batchId: `batch:l4b2-prevpath-${position}`,
+        generationId: "gen:0000000044",
+      });
+      expect(protection.protectCalls).toEqual([]);
+      const delivered = staged.batch.facts[0] as unknown as LocalDiffDto;
+      expect(delivered.files[0]?.exclusion).toBe("protected");
+      expect(delivered.files[0]?.added).toBeNull();
+      expect(delivered.files[0]?.deleted).toBeNull();
+      expect(delivered.files[0]?.hunks).toEqual([]);
+      expect(new TextDecoder().decode(delivered.files[0]!.path)).toMatch(/^withheld-path:[0-9a-f]{64}$/);
+      if (position !== "current") {
+        expect(new TextDecoder().decode(delivered.files[0]!.previousPath!)).toMatch(/^withheld-path:[0-9a-f]{64}$/);
+      }
+      expect(validateFactBatch(staged.batch).ok).toBe(true);
+      expect(scanValuesForLeak(
+        [...collectStrings(store.stored), ...collectStrings(sink.batches)],
+        [".env.production", ".env.staging"],
+      )).toEqual([]);
+    },
+  );
+});
+
+// L4b-2 m9 — generationId à largeur fixe : l'ordre lexicographique est
+// l'ordre numérique (gen:...10 > gen:...09).
+describe("L4b-2 m9 fixed-width generation order", () => {
+  it("lexicographic order is numeric order and the format is enforced", async () => {
+    expect(GENERATION_ID_WIDTH).toBe(10);
+    expect(isStrictGenerationId("gen:0000000009")).toBe(true);
+    expect(isStrictGenerationId("gen:0000000010")).toBe(true);
+    expect("gen:0000000010" > "gen:0000000009").toBe(true);
+    for (const bad of ["gen:10", "gen:9", "gen:abc", "batch:0000000001", "gen:000000009", "gen:00000000010"]) {
+      expect(isStrictGenerationId(bad)).toBe(false);
+    }
+    const diff = deriveLocalDiff({
+      scope: SCOPE,
+      worktreeId: WORKTREE_ID,
+      kind: "unstaged",
+      base: { label: "index", oid: "b".repeat(40) },
+      tip: { label: "worktree", oid: null },
+      baseEntries: [],
+      tipEntries: [entryLike("src/app.ts", "d".repeat(40))],
+    });
+    const store = new FakeLatestStore();
+    const sink = new FakeSink();
+    const error = await stageLocalSnapshot({
+      scope: SCOPE,
+      worktreeId: WORKTREE_ID,
+      kind: "working-tree",
+      capturedAt: 1_700_003_020_000,
+      diff,
+      plaintextPayload: enc("public"),
+      protection: new FakeProtectionPort(),
+      store,
+      sink,
+      batchId: "batch:l4b2-m9-bad",
+      generationId: "gen:10",
+    }).then(() => null, (failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SnapshotError);
+    expect((error as SnapshotError).code).toBe("invalid-generation-id");
+    expect(sink.batches).toEqual([]);
+    expect(store.stored).toEqual([]);
+  });
+
+  // t2 (Opus tour 1) : gen:…09 puis gen:…10 de bout en bout à travers le
+  // moteur, vers un puits à rejet durable — l'ordre lexicographique porte
+  // la succession, pas deux littéraux comparés. Données SYNTHÉTIQUES.
+  it("successive gen:09 then gen:10 deliveries persist in order with durable rejection", async () => {
+    class RejectingSink implements FactSinkPort {
+      readonly batches: FactBatchDto[] = [];
+      readonly holdings = new Map<string, FactBatchDto>();
+      private targetOf(batch: FactBatchDto): string {
+        const snapshot = batch.facts.find(
+          (fact) => typeof (fact as { snapshotId?: unknown }).snapshotId === "string",
+        ) as unknown as LocalSnapshotDto | undefined;
+        return [
+          batch.scope.tenant,
+          batch.scope.clone,
+          snapshot?.worktreeId ?? "",
+          snapshot?.kind ?? "",
+          snapshot?.diffKind ?? "",
+        ].join("|");
+      }
+      async deliver(batch: FactBatchDto): Promise<FactSinkReceipt> {
+        const target = this.targetOf(batch);
+        const held = this.holdings.get(target);
+        if (held !== undefined && batch.generationId <= held.generationId) {
+          throw new Error("stale generation is durably rejected for its target");
+        }
+        this.batches.push(batch);
+        this.holdings.set(target, batch);
+        return { received: true, batchId: batch.batchId, retiredSuperseded: true, revokedDecryptability: true };
+      }
+    }
+    const freshDiff = (): LocalDiffDto => deriveLocalDiff({
+      scope: SCOPE,
+      worktreeId: WORKTREE_ID,
+      kind: "unstaged",
+      base: { label: "index", oid: "b".repeat(40) },
+      tip: { label: "worktree", oid: null },
+      baseEntries: [],
+      tipEntries: [entryLike("src/app.ts", "d".repeat(40))],
+    });
+    const store = new FakeLatestStore();
+    const sink = new RejectingSink();
+    for (const [step, generationId] of [["09", "gen:0000000009"], ["10", "gen:0000000010"]] as const) {
+      await stageLocalSnapshot({
+        scope: SCOPE,
+        worktreeId: WORKTREE_ID,
+        kind: "working-tree",
+        capturedAt: 1_700_003_021_000 + Number(step),
+        diff: freshDiff(),
+        plaintextPayload: enc(`public ${step}`),
+        protection: new FakeProtectionPort(),
+        store,
+        sink,
+        batchId: `batch:l4b2-m9-${step}`,
+        generationId,
+      });
+    }
+    expect(sink.batches.map((batch) => batch.generationId)).toEqual(["gen:0000000009", "gen:0000000010"]);
+    const held = [...sink.holdings.values()];
+    expect(held).toHaveLength(1);
+    expect(held[0]?.generationId).toBe("gen:0000000010");
+  });
+});
+
+// L4b-2 m1 — un accesseur de port qui jette ne propage jamais son texte :
+// chaque lecture reste dans le try et devient un code constant.
+describe("L4b-2 m1 throwing port accessors map to constant codes", () => {
+  const throwing = (target: object, key: string): void => {
+    Object.defineProperty(target, key, {
+      get(): unknown {
+        throw new Error("private port text must never surface");
+      },
+      enumerable: true,
+      configurable: true,
+    });
+  };
+
+  function openDiff(): LocalDiffDto {
+    return deriveLocalDiff({
+      scope: SCOPE,
+      worktreeId: WORKTREE_ID,
+      kind: "unstaged",
+      base: { label: "index", oid: "b".repeat(40) },
+      tip: { label: "worktree", oid: null },
+      baseEntries: [],
+      tipEntries: [entryLike("src/app.ts", "d".repeat(40))],
+      hunkDrafts: [
+        {
+          path: enc("src/app.ts"),
+          startBefore: 1,
+          countBefore: 1,
+          startAfter: 1,
+          countAfter: 1,
+          lines: ["+clean line"],
+        },
+      ],
+    });
+  }
+
+  it("throwing hunk envelope and snapshot envelope refuse with constants", async () => {
+    const hunkProtection: ContentProtectionPort = {
+      protect: async (): Promise<SealedPayload> => {
+        const envelope = {
+          state: "sealed",
+          algorithm: "fake-seal/1",
+          keyRef: "fake-keyref-1",
+          ciphertext: enc("sealed:12"),
+        };
+        throwing(envelope, "algorithm");
+        return envelope as SealedPayload;
+      },
+    };
+    const store = new FakeLatestStore();
+    const sink = new FakeSink();
+    const hunkError = await stageLocalSnapshot({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
+      capturedAt: 1_700_003_030_000, diff: openDiff(), plaintextPayload: null,
+      protection: hunkProtection, store, sink,
+      batchId: "batch:l4b2-m1-hunk", generationId: "gen:0000000050",
+    }).then(() => null, (failure: unknown) => failure);
+    expect(hunkError).toBeInstanceOf(SnapshotError);
+    expect(SNAPSHOT_ERROR_CODES as readonly string[]).toContain((hunkError as SnapshotError).message);
+    expect(sink.batches).toEqual([]);
+    expect(store.stored).toEqual([]);
+
+    const snapshotProtection: ContentProtectionPort = {
+      protect: async (): Promise<SealedPayload> => {
+        const envelope = {
+          state: "sealed",
+          algorithm: "fake-seal/1",
+          keyRef: "fake-keyref-1",
+          ciphertext: enc("sealed:7"),
+        };
+        throwing(envelope, "keyRef");
+        return envelope as SealedPayload;
+      },
+    };
+    const cleanDiff = deriveLocalDiff({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "unstaged",
+      base: { label: "index", oid: "b".repeat(40) },
+      tip: { label: "worktree", oid: null },
+      baseEntries: [], tipEntries: [entryLike("src/app.ts", "d".repeat(40))],
+    });
+    const storeB = new FakeLatestStore();
+    const sinkB = new FakeSink();
+    const snapshotError = await stageLocalSnapshot({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
+      capturedAt: 1_700_003_031_000, diff: cleanDiff, plaintextPayload: enc("public"),
+      protection: snapshotProtection, store: storeB, sink: sinkB,
+      batchId: "batch:l4b2-m1-snapshot", generationId: "gen:0000000051",
+    }).then(() => null, (failure: unknown) => failure);
+    expect(snapshotError).toBeInstanceOf(SnapshotError);
+    expect(SNAPSHOT_ERROR_CODES as readonly string[]).toContain((snapshotError as SnapshotError).message);
+    expect(sinkB.batches).toEqual([]);
+  });
+
+  it("throwing sink and store receipts refuse with constants", async () => {
+    const cleanDiff = deriveLocalDiff({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "unstaged",
+      base: { label: "index", oid: "b".repeat(40) },
+      tip: { label: "worktree", oid: null },
+      baseEntries: [], tipEntries: [entryLike("src/app.ts", "d".repeat(40))],
+    });
+    class ThrowingSink implements FactSinkPort {
+      readonly batches: FactBatchDto[] = [];
+      async deliver(batch: FactBatchDto): Promise<FactSinkReceipt> {
+        const receipt = {
+          received: true as const,
+          batchId: batch.batchId,
+          retiredSuperseded: true,
+          revokedDecryptability: true,
+        };
+        throwing(receipt, "batchId");
+        return receipt;
+      }
+    }
+    const sinkError = await stageLocalSnapshot({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
+      capturedAt: 1_700_003_032_000, diff: cleanDiff, plaintextPayload: null,
+      protection: null, store: new FakeLatestStore(), sink: new ThrowingSink(),
+      batchId: "batch:l4b2-m1-sink", generationId: "gen:0000000052",
+    }).then(() => null, (failure: unknown) => failure);
+    expect(sinkError).toBeInstanceOf(SnapshotError);
+    expect((sinkError as SnapshotError).code).toBe("sink-delivery-refused");
+
+    class ThrowingStore extends FakeLatestStore {
+      override async replaceLatest(
+        snapshot: LocalSnapshotDto, expected: string | null, generation: string,
+      ): Promise<ReplaceLatestReceipt> {
+        const receipt = await super.replaceLatest(snapshot, expected, generation);
+        throwing(receipt, "retiredPrevious");
+        return receipt;
+      }
+    }
+    // Receipt fields are only read when a previous state exists: pre-stage
+    // once so the second delivery exercises the throwing read.
+    const throwingStore = new ThrowingStore();
+    await stageLocalSnapshot({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
+      capturedAt: 1_700_003_033_000, diff: cleanDiff, plaintextPayload: null,
+      protection: null, store: throwingStore, sink: new FakeSink(),
+      batchId: "batch:l4b2-m1-store-pre", generationId: "gen:0000000053",
+    });
+    const storeError = await stageLocalSnapshot({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
+      capturedAt: 1_700_003_034_000, diff: cleanDiff, plaintextPayload: null,
+      protection: null, store: throwingStore, sink: new FakeSink(),
+      batchId: "batch:l4b2-m1-store", generationId: "gen:0000000054",
+    }).then(() => null, (failure: unknown) => failure);
+    expect(storeError).toBeInstanceOf(SnapshotError);
+    expect((storeError as SnapshotError).code).toBe("store-conflict");
+  });
+
+  // m1-bis (Opus tour 1) : un accesseur jetant sur le previous du magasin
+  // est lu dans le try et devient store-load-refused, sans texte du port.
+  it("throwing previous accessor refuses with store-load-refused", async () => {
+    const store = new FakeLatestStore();
+    await stageLocalSnapshot({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
+      capturedAt: 1_700_003_035_000, diff: openDiff(), plaintextPayload: null,
+      protection: null, store, sink: new FakeSink(),
+      batchId: "batch:l4b2-m1-prev-pre", generationId: "gen:0000000055",
+    });
+    throwing(store.stored[0]!, "snapshotId");
+    const error = await stageLocalSnapshot({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
+      capturedAt: 1_700_003_036_000, diff: openDiff(), plaintextPayload: null,
+      protection: null, store, sink: new FakeSink(),
+      batchId: "batch:l4b2-m1-prev", generationId: "gen:0000000056",
+    }).then(() => null, (failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SnapshotError);
+    expect((error as SnapshotError).code).toBe("store-load-refused");
+    expect((error as SnapshotError).message).toBe("store-load-refused");
+  });
+});
+
+// L4b-2 m2 — l'appelant qui réécrit son entrée pendant loadLatest ne
+// détourne ni la cible ni la génération : tout est gelé avant le premier await.
+describe("L4b-2 m2 entry fields frozen before suspension", () => {
+  it("mutating generationId and kind across loadLatest changes nothing", async () => {
+    const seen: { generationId: string }[] = [];
+    const mutatingInput: {
+      scope: LiveScope;
+      worktreeId: string;
+      kind: "working-tree" | "index";
+      capturedAt: number;
+      diff: LocalDiffDto;
+      plaintextPayload: Uint8Array | null;
+      protection: ContentProtectionPort | null;
+      store: LatestSnapshotPort;
+      sink: FactSinkPort;
+      batchId: string;
+      generationId: string;
+    } = {
+      scope: SCOPE,
+      worktreeId: WORKTREE_ID,
+      kind: "working-tree",
+      capturedAt: 1_700_003_040_000,
+      diff: deriveLocalDiff({
+        scope: SCOPE, worktreeId: WORKTREE_ID, kind: "unstaged",
+        base: { label: "index", oid: "b".repeat(40) },
+        tip: { label: "worktree", oid: null },
+        baseEntries: [], tipEntries: [entryLike("src/app.ts", "d".repeat(40))],
+      }),
+      plaintextPayload: enc("public frozen"),
+      protection: new FakeProtectionPort(),
+      store: new FakeLatestStore(),
+      sink: new FakeSink(),
+      batchId: "batch:l4b2-m2-frozen",
+      generationId: "gen:0000000060",
+    };
+    class MutatingStore extends FakeLatestStore {
+      override async loadLatest(query: LatestSnapshotQuery): Promise<LocalSnapshotDto | null> {
+        mutatingInput.generationId = "gen:0000000099";
+        mutatingInput.kind = "index";
+        mutatingInput.batchId = "batch:l4b2-m2-hijacked";
+        return super.loadLatest(query);
+      }
+      override async replaceLatest(
+        snapshot: LocalSnapshotDto, expected: string | null, generationId: string,
+      ): Promise<ReplaceLatestReceipt> {
+        seen.push({ generationId });
+        return super.replaceLatest(snapshot, expected, generationId);
+      }
+    }
+    mutatingInput.store = new MutatingStore();
+    const staged = await stageLocalSnapshot(mutatingInput);
+    expect(seen).toEqual([{ generationId: "gen:0000000060" }]);
+    expect(staged.snapshot.kind).toBe("working-tree");
+    expect(staged.snapshot.diffKind).toBe("unstaged");
+    expect(staged.batch.batchId).toBe("batch:l4b2-m2-frozen");
+    expect(staged.batch.generationId).toBe("gen:0000000060");
+  });
+});
+
+// L4b-2 m3 — la révocation est copiée avant validation : un accesseur
+// jetant devient une constante, une mutation ne traverse pas.
+describe("L4b-2 m3 revocation copied before validation", () => {
+  function validRevocation(): DeclarationRevocationDto {
+    return {
+      declarationId: "decl:l4b2-m3",
+      tenant: SCOPE.tenant,
+      cloneId: SCOPE.clone,
+      worktreeId: WORKTREE_ID,
+      declarationRevision: 1,
+      reason: "workspace-remove",
+      requestPrivatePurge: {
+        purgePrivateSnapshots: true,
+        purgeDerivedIndexes: true,
+        revokeDecryptability: true,
+        preserveCommittedHistory: true,
+      },
+    };
+  }
+
+  it("throwing worktreeId accessor refuses with a constant, nothing purged", async () => {
+    const revocation = validRevocation() as Record<string, unknown>;
+    Object.defineProperty(revocation, "worktreeId", {
+      get(): unknown {
+        throw new Error("private revocation text must never surface");
+      },
+      enumerable: true,
+      configurable: true,
+    });
+    const store = new FakeLatestStore();
+    const error = await runUnregisterPurge({
+      revocation: revocation as unknown as DeclarationRevocationDto,
+      store,
+    }).then(() => null, (failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SnapshotError);
+    expect(SNAPSHOT_ERROR_CODES as readonly string[]).toContain((error as SnapshotError).message);
+    expect(store.purged).toBe(0);
+    expect(store.purgeQueries).toEqual([]);
+  });
+
+  it("mutating the revocation across purgePrivate changes nothing downstream", async () => {
+    const revocation = validRevocation();
+    const queries: unknown[] = [];
+    const store = new FakeLatestStore();
+    const spying = new Proxy(store, {
+      get(target, key, receiver): unknown {
+        if (key === "purgePrivate") {
+          return async (query: LatestSnapshotScope): Promise<PurgePrivateReceipt> => {
+            (revocation as { worktreeId: string }).worktreeId = "wt:hijacked-during-purge";
+            queries.push(JSON.parse(JSON.stringify(query)));
+            return target.purgePrivate(query);
+          };
+        }
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    const purged = await runUnregisterPurge({ revocation, store: spying });
+    expect(purged.purgedPrivate).toBe(true);
+    expect(queries).toEqual([
+      {
+        scope: SCOPE,
+        worktreeId: WORKTREE_ID,
+        declarationId: "decl:l4b2-m3",
+        declarationRevision: 1,
+      },
+    ]);
+  });
+});
+
+// L4b-2 m4 — le previous du magasin est validé puis copié : un état
+// malformé est refusé, l'objet rendu n'est jamais l'objet du magasin.
+describe("L4b-2 m4 previous state validated and copied", () => {
+  const PRIVATE_TEXT = "private previous text must never surface";
+
+  function cleanDiff(): LocalDiffDto {
+    return deriveLocalDiff({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "unstaged",
+      base: { label: "index", oid: "b".repeat(40) },
+      tip: { label: "worktree", oid: null },
+      baseEntries: [], tipEntries: [entryLike("src/app.ts", "d".repeat(40))],
+    });
+  }
+
+  it("malformed previous is refused before any diagnostic copies it", async () => {
+    class LyingStore extends FakeLatestStore {
+      override async loadLatest(): Promise<LocalSnapshotDto | null> {
+        return { snapshotId: PRIVATE_TEXT } as unknown as LocalSnapshotDto;
+      }
+    }
+    const store = new LyingStore();
+    const sink = new FakeSink();
+    const error = await stageLocalSnapshot({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
+      capturedAt: 1_700_003_050_000, diff: cleanDiff(), plaintextPayload: null,
+      protection: null, store, sink,
+      batchId: "batch:l4b2-m4-lying", generationId: "gen:0000000070",
+    }).then(() => null, (failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SnapshotError);
+    expect((error as SnapshotError).code).toBe("store-load-refused");
+    expect(sink.batches).toEqual([]);
+    const message = error instanceof Error ? error.message : String(error);
+    expect(scanValuesForLeak([message], [PRIVATE_TEXT])).toEqual([]);
+  });
+
+  it("returned snapshot shares no reference with the store", async () => {
+    const store = new FakeLatestStore();
+    const sink = new FakeSink();
+    await stageLocalSnapshot({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
+      capturedAt: 1_700_003_051_000, diff: cleanDiff(), plaintextPayload: null,
+      protection: null, store, sink,
+      batchId: "batch:l4b2-m4-a", generationId: "gen:0000000071",
+    });
+    // Unstable capture: the preserved previous state is returned without a
+    // store write — the exact aliasing case. Mutating it must not touch
+    // the store.
+    const unstable = deriveLocalDiff({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "unstaged",
+      base: { label: "index", oid: "b".repeat(40) },
+      tip: { label: "worktree", oid: null },
+      baseEntries: [], tipEntries: [],
+      stable: false,
+      unstableReason: "capture loop raced an index rewrite",
+    });
+    const preserved = await stageLocalSnapshot({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
+      capturedAt: 1_700_003_052_000, diff: unstable, plaintextPayload: null,
+      protection: null, store, sink,
+      batchId: "batch:l4b2-m4-b", generationId: "gen:0000000072",
+    });
+    const before = JSON.parse(JSON.stringify(store.stored)) as unknown;
+    (preserved.snapshot as unknown as Record<string, unknown>)["capturedAt"] = -1;
+    expect(store.stored).toEqual(before);
+  });
+});
+
+// L4b-2 m5 — le chiffré admis ne fait jamais faux positif : un scellé dont
+// les octets ressemblent à un secret ou à un chemin protégé passe la porte.
+describe("L4b-2 m5 admitted ciphertext never false-positives", () => {
+  it("secret-looking seal bytes are delivered, not refused", async () => {
+    const evil = new TextEncoder().encode("cipher pwd=s3cret\x00tail /x.pem");
+    const protection: ContentProtectionPort = {
+      protect: async (): Promise<SealedPayload> => ({
+        state: "sealed",
+        algorithm: "fake-seal/1",
+        keyRef: "fake-keyref-1",
+        ciphertext: evil,
+      }),
+    };
+    const diff = deriveLocalDiff({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "unstaged",
+      base: { label: "index", oid: "b".repeat(40) },
+      tip: { label: "worktree", oid: null },
+      baseEntries: [], tipEntries: [entryLike("src/app.ts", "d".repeat(40))],
+      hunkDrafts: [
+        {
+          path: enc("src/app.ts"),
+          startBefore: 1, countBefore: 1, startAfter: 1, countAfter: 1,
+          lines: ["+clean line"],
+        },
+      ],
+    });
+    const store = new FakeLatestStore();
+    const sink = new FakeSink();
+    const staged = await stageLocalSnapshot({
+      scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
+      capturedAt: 1_700_003_060_000, diff, plaintextPayload: enc("public"),
+      protection, store, sink,
+      batchId: "batch:l4b2-m5-evil", generationId: "gen:0000000080",
+    });
+    expect(sink.batches).toHaveLength(1);
+    expect(validateFactBatch(staged.batch).ok).toBe(true);
   });
 });
