@@ -30,6 +30,34 @@ describe("activity evidence boundary", () => {
     ).toEqual([]);
   });
 
+  it("the root CLI registers no agent-stats command", () => {
+    // Moved from tests/agent-stats-extraction.test.ts:17 before the F12
+    // staging relocation: the root CLI must not register agent-stats.
+    expect(readFileSync(join(root, "src", "cli.ts"), "utf8")).not.toContain('.command("agent-stats")');
+  });
+
+  it("the activity staging module is absent from the repository", () => {
+    // F12: the h2a staging module has relocated to @sentropic/agent-stats
+    // (h2a import commit b503d9a7); nothing of it remains here.
+    const staged = [
+      join(root, "_extracted", "agent-stats-h2a-module"),
+      join(root, "tests", "fixtures", "agent-stats"),
+      ...[
+        "tests/agent-stats-extraction.test.ts",
+        "tests/agent-stats-h2a-evidence.test.ts",
+        "tests/agent-stats-phase1.test.ts",
+        "tests/agent-stats-phase15.test.ts",
+        "tests/agent-stats-phase2.test.ts",
+        "tests/agent-stats-project-graph.test.ts",
+        "tests/agent-stats.test.ts",
+      ].map((file) => join(root, file)),
+    ];
+    expect(
+      staged.filter((path) => existsSync(path)),
+      "the agent-stats staging module has relocated out of this repository",
+    ).toEqual([]);
+  });
+
   it("repository docs advertise no agent-stats command the CLI does not register", () => {
     // Registered commands come from the CLI source text: src/cli.ts builds its
     // commands with program.command(...), so a static read needs no LLM and no
