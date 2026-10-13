@@ -270,18 +270,30 @@ Start without waiting: **L0, L1a, H0, L1b boundary guards, L4a safety cases, L6a
 
 ## L4b — Diffs And Encrypted Latest Local Content (LIVE §§8, 10, A08/A09) — engram, protection/storage in separate host branches
 
-- [ ] RED: `tests/live-diffs.test.ts > staged unstaged and conflict-stage changes remain distinct with immutable endpoints`.
-- [ ] RED: `tests/live-content-policy.test.ts > emitted batches fake sink calls and producer diagnostics contain no forbidden plaintext or derivatives`.
-- [ ] RED: `tests/live-content-policy.test.ts > absent fake protection keys emit allowed metadata only and unregister requests private payload purge`.
+- [x] RED: `tests/live-diffs.test.ts > staged unstaged and conflict-stage changes remain distinct with immutable endpoints`.
+- [x] RED: `tests/live-content-policy.test.ts > emitted batches fake sink calls and producer diagnostics contain no forbidden plaintext or derivatives`.
+- [x] RED: `tests/live-content-policy.test.ts > absent fake protection keys emit allowed metadata only and unregister requests private payload purge`.
 - [ ] RED: `packages/cluster-mesh/tests/live-content-protection.spec.ts > real SQLite DB WAL search temp logs and backups contain no fixture plaintext and purge revokes decryptability`.
 - [ ] RED: `packages/h2a-runtime/src/gateway-host/live-key-provider.test.ts > keys remain outside the database and missing or revoked keys deny decryption`.
-- [ ] GUARD: `tests/live-diffs.test.ts > binaries large files filtered paths symlinks and unstable captures report explicit exclusions or coverage`.
+- [x] GUARD: `tests/live-diffs.test.ts > binaries large files filtered paths symlinks and unstable captures report explicit exclusions or coverage`.
+- L4b-1 evidence (2026-10-12, `feat/live-git-l4b`, owner split) : partie E: livrée — les 3 RED et le GUARD ci-dessus sont verts ; revues Sol tours 1–6 et Opus tour 7 passées ; conception A–E validée (conforme avec réserves, 2 MAJEURS reportés en L4b-2). Les 2 RED L4b-2 sont écrits et observés rouges, puis marqués `it.skip` en attente du suivi rhanka/engram#368.
 - [ ] Implement: neutral snapshots/diff/hunk/range facts, versioned normalization, deterministic pre-persistence secret/path policy and injected host content protection. Retain the latest authorized encrypted state only, no local history. Apply policy to symbols/citations/search/context as well as patch text. Carry explicit retention/exclusions from GitNexus, strengthened to every surface; implement storage purge/key lifecycle through the host contract.
 - Allowed (7, E): E:`engram-live/snapshots.ts`, E:`engram-live/diffs.ts`, E:`engram-live/content-policy.ts`, E:`engram-live/contracts.ts`, E:`tests/live-diffs.test.ts`, E:`tests/live-content-policy.test.ts`, E:`tests/fixtures/live-private-content.json` (synthetic secrets only).
 - Allowed (3, S): S:`packages/cluster-mesh/src/live-storage/protected-payload.ts`, S:`packages/cluster-mesh/src/live-storage/sqlite.ts`, S:`packages/cluster-mesh/tests/live-content-protection.spec.ts`.
 - Allowed (2, H): H:`packages/h2a-runtime/src/gateway-host/live-key-provider.ts`, H:`packages/h2a-runtime/src/gateway-host/live-key-provider.test.ts`.
 - Forbidden: persist-then-mask, `.gitignore` as secret assurance, raw local plaintext FTS/logs/WAL, local-state history, inferring physical purge from tombstones or publishing private facts under a derived-content label.
 - Gate: E tests only producer batches/sink calls with fake protection ports; no DB or host imports. The S branch executes real SQLite DB/WAL/temp/log/search/backup scans and purge/replacement scenarios; H proves key custody/revocation. All three evidence sets are required, capture instability is visible, committed history survives purge, and L8 adds Postgres/restore evidence.
+
+## L4b-2 — Secret Exclusion And Explicit Staged State (follow-up, rhanka/engram#368) — engram
+
+- [ ] RED: `tests/live-content-policy.test.ts > a detected secret is excluded with explicit coverage instead of being sealed and retained` (dé-skipper : actuellement `it.skip`, rouge observé sur L4b-1).
+- [ ] RED: `tests/live-diffs.test.ts > the staged index state stays explicit when a conflict diff arrives` (dé-skipper : actuellement `it.skip`, rouge observé sur L4b-1).
+- [ ] Implement: avant chaque `protect`, appliquer `containsSecretText` (hunk → `withheld` avec `withheldReasonForSecretRule(matchSecretRule(...))` ; charge utile → pas d'appel `protect`, snapshot `metadata-only` raison `metadata:policy-withheld`, couverture `unavailable` cause `policy-withheld`) ; inclure le type de diff (`staged`/`unstaged`/`conflict`) dans la cible (`LatestSnapshotQuery`, `LocalSnapshotDto`, contrat `FactSinkPort`, faux puits).
+- Allowed (7, E): E:`engram-live/diffs.ts`, E:`engram-live/snapshots.ts`, E:`engram-live/content-policy.ts`, E:`engram-live/contracts.ts`, E:`tests/live-diffs.test.ts`, E:`tests/live-content-policy.test.ts`, E:`plan/09-BRANCH_LIVE_GIT_INDEXING.md`.
+- Forbidden: persist-then-mask, `.gitignore` comme garantie de secret, toute correction hors Allowed.
+- Gate: les 2 RED dé-skippés passent ; `npx vitest run tests/live-diffs.test.ts tests/live-content-policy.test.ts tests/live-worktree-safety.test.ts tests/live-history.test.ts tests/live-fixtures.test.ts tests/live-neutrality.test.ts tests/live-package.test.ts` vert sans skip L4b-2 ; `npx tsc --noEmit -p .` vert ; `git diff --check` propre.
+- Revue : plafond 2 tours.
+- L5 peut démarrer après L4b-1, sans attendre L4b-2.
 
 ## L5 — Versioned Code And Branch Comparisons (LIVE §§3, 6, 8, A04/A08) — engram
 

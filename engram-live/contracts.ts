@@ -212,21 +212,43 @@ function isUncertaintyList(value: unknown): value is readonly IdentityUncertaint
 // a misspelled or smuggled field can never pass as a valid declaration,
 // clone, worktree, batch or revocation.
 function rejectUnknownKeys(value: Record<string, unknown>, allowed: readonly string[], path: string, errors: string[]): void {
+  // Opaque refusal: unknown keys are caller-supplied data and may carry
+  // private text, so the key itself is never interpolated into diagnostics.
   for (const key of Object.keys(value)) {
-    if (!allowed.includes(key)) errors.push(`${path}.${key} is not a known key`);
+    if (!allowed.includes(key)) {
+      void key;
+      errors.push(`${path} carries an unknown key: refused`);
+      return;
+    }
   }
 }
 
 const LIVE_SCOPE_KEYS: readonly string[] = ["tenant", "clone", "worktree"];
 
+/**
+ * Strict opaque scope identifiers (L4b M1: no free text toward the sink).
+ * Lowercase alphanumerics plus `.`, `_`, `:` and `-` only: private code with
+ * spaces, parentheses or braces never validates as an identifier.
+ */
+const STRICT_SCOPE_ID = /^[a-z0-9][a-z0-9._:-]{0,127}$/;
+
+function isStrictScopeId(value: unknown): value is string {
+  return typeof value === "string" && STRICT_SCOPE_ID.test(value);
+}
+
+/** Strict opaque batch/generation/key identifiers: prefixed, charset-closed. */
+export function isStrictBatchId(value: unknown, prefix: string): value is string {
+  return isStrictScopeId(value) && value.startsWith(prefix) && value.length > prefix.length;
+}
+
 export function validateLiveScope(scope: unknown): ValidationResult {
   if (!isRecord(scope)) return { ok: false, errors: ["scope must be an object"] };
   const errors: string[] = [];
   rejectUnknownKeys(scope, LIVE_SCOPE_KEYS, "scope", errors);
-  if (!isNonEmptyString(scope.tenant)) errors.push("scope.tenant must be a non-empty string");
-  if (!isNonEmptyString(scope.clone)) errors.push("scope.clone must be a non-empty string");
-  if (scope.worktree !== undefined && !isNonEmptyString(scope.worktree)) {
-    errors.push("scope.worktree, when present, must be a non-empty string");
+  if (!isStrictScopeId(scope.tenant)) errors.push("scope.tenant must be a strict opaque identifier");
+  if (!isStrictScopeId(scope.clone)) errors.push("scope.clone must be a strict opaque identifier");
+  if (scope.worktree !== undefined && !isStrictScopeId(scope.worktree)) {
+    errors.push("scope.worktree, when present, must be a strict opaque identifier");
   }
   return { ok: errors.length === 0, errors };
 }
@@ -329,6 +351,31 @@ const FACT_BATCH_KEYS: readonly string[] = [
   "facts",
 ];
 
+function validateBatchFact(fact: unknown, index: number): ValidationResult {
+  const path = `batch.facts[${index}]`;
+  if (!isRecord(fact)) return { ok: false, errors: [`${path} must be an object`] };
+  // Sink-bound fact control: every L4b-shaped fact is re-validated at the
+  // batch boundary, so a diff carrying transient clair can never ride into
+  // a sink inside an otherwise valid envelope. Facts of unknown shape
+  // belong to other lots and pass through structurally.
+  if ("files" in fact) {
+    const checked = validateLocalDiffShape(fact, true);
+    if (!checked.ok) return { ok: false, errors: checked.errors.map((error) => `${path}: ${error}`) };
+    return { ok: true, errors: [] };
+  }
+  if ("snapshotId" in fact) {
+    const checked = validateLocalSnapshot(fact);
+    if (!checked.ok) return { ok: false, errors: checked.errors.map((error) => `${path}: ${error}`) };
+    return { ok: true, errors: [] };
+  }
+  if ("axis" in fact && "state" in fact && "reason" in fact) {
+    const checked = validateLocalCoverage(fact);
+    if (!checked.ok) return { ok: false, errors: checked.errors.map((error) => `${path}: ${error}`) };
+    return { ok: true, errors: [] };
+  }
+  return { ok: true, errors: [] };
+}
+
 export function validateFactBatch(batch: unknown): ValidationResult {
   if (!isRecord(batch)) return { ok: false, errors: ["batch must be an object"] };
   const errors: string[] = [];
@@ -339,11 +386,22 @@ export function validateFactBatch(batch: unknown): ValidationResult {
   if (batch.contractVersion !== CONTRACT_VERSION) {
     errors.push(`batch.contractVersion must be ${CONTRACT_VERSION}`);
   }
-  if (!isNonEmptyString(batch.policyVersion)) errors.push("batch.policyVersion must be a non-empty string");
-  if (!isNonEmptyString(batch.generationId)) errors.push("batch.generationId must be a non-empty string");
-  if (!isNonEmptyString(batch.batchId)) errors.push("batch.batchId must be a non-empty string");
-  if (!isNonEmptyString(batch.batchDigest)) errors.push("batch.batchDigest must be a non-empty string");
-  if (!Array.isArray(batch.facts)) errors.push("batch.facts must be an array");
+  if (batch.policyVersion !== CONTENT_POLICY_VERSION) {
+    errors.push(`batch.policyVersion must be "${CONTENT_POLICY_VERSION}"`);
+  }
+  if (!isStrictBatchId(batch.generationId, "gen:")) errors.push("batch.generationId must be a strict opaque generation id");
+  if (!isStrictBatchId(batch.batchId, "batch:")) errors.push("batch.batchId must be a strict opaque batch id");
+  if (typeof batch.batchDigest !== "string" || !/^[0-9a-f]{64}$/.test(batch.batchDigest)) {
+    errors.push("batch.batchDigest must be a 64 character lowercase hex digest");
+  }
+  if (!Array.isArray(batch.facts)) {
+    errors.push("batch.facts must be an array");
+  } else {
+    batch.facts.forEach((fact: unknown, index: number) => {
+      const checked = validateBatchFact(fact, index);
+      if (!checked.ok) errors.push(...checked.errors);
+    });
+  }
   return { ok: errors.length === 0, errors };
 }
 
@@ -1795,6 +1853,649 @@ export function validatePrivateObjectAcquisitionRequest(value: unknown): Validat
     errors.push("private acquisition request.serviceRef must be a non-empty string without NUL");
   } else if (!(value.serviceRef as string).startsWith(PRIVATE_PR_REF_PREFIX)) {
     errors.push(`private acquisition request.serviceRef must stay under "${PRIVATE_PR_REF_PREFIX}" (private store only, never the user clone)`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+// — L4b: diffs and encrypted latest local content
+// (spec/SPEC_LIVE_GIT_INDEXING.md §§8, 10, A08/A09; plan/09 L4b; owner Q2 B).
+// Data-pure DTOs, constants and validators only; the engines live in
+// ./diffs.js (neutral derivation), ./content-policy.js (deterministic
+// pre-persistence secret/path policy) and ./snapshots.js (latest-only
+// staging through the injected protection/store/sink ports).
+//
+// Consumer contract for the S seat (cluster-mesh protected-payload/sqlite)
+// and the H seat (h2a live-key-provider). S and H implement the durable and
+// cryptographic sides; engram owns only this data-pure contract plus the
+// pure derivation. Read this block before implementing either host side.
+//
+// - Neutral snapshots/diff/hunk/range facts with versioned normalization
+//   (LOCAL_DIFF_NORMALIZER_VERSION): staged, unstaged and conflict-stage
+//   diffs are distinct kinds with immutable recorded endpoints
+//   (staged = HEAD → index, unstaged = index → worktree, conflict =
+//   index → index with separate stage 1/2/3 OIDs). An optional cumulative
+//   HEAD → worktree view is never produced here: only the three L4b kinds
+//   validate.
+// - Deterministic pre-persistence secret/path policy (CONTENT_POLICY_VERSION),
+//   applied to EVERY surface — patch text, symbol names, citation quotes,
+//   search snippets, context excerpts — before any batch is assembled or
+//   stored. Persist-then-mask is structurally refused: the sink-bound
+//   validator (validateSealedLocalDiff) rejects transient open hunk lines.
+// - Latest authorized encrypted state only (Q2 B): replacement is indexed
+//   by target and generation at the sink (L4b M2) — the sink keeps only the
+//   highest accepted generation per target, durably rejects any delivery at
+//   or below the held generation, and retires every older generation when it
+//   accepts a newer one; no list/history accessor exists on the port by
+//   construction. Snapshots carry no predecessor pointer.
+// - Without a protection key: allowed metadata/ranges only, explicit
+//   content_unavailable (CONTENT_UNAVAILABLE) coverage, and the revocation
+//   private-purge request (L6a DeclarationRevocationDto) purges private
+//   snapshots, derived indexes and decryptability while preserving
+//   authorized committed history.
+// - .gitignore is never a secrecy guarantee: no gitignore input exists
+//   anywhere in this contract or in the engines; a negation cannot unblock
+//   a protected path.
+// - Binaries, oversized files, filtered paths, protected paths, symlinks,
+//   gitlinks, deletions and unstable captures are explicit exclusions or
+//   coverage, never invented text hunks.
+
+/** Versioned local-diff normalization evidence (spec §8: rename detection and thresholds are versioned evidence). */
+export const LOCAL_DIFF_NORMALIZER_VERSION = "local-diff-normalizer/1";
+
+/** Versioned deterministic content-policy rules stamped on every L4b fact. */
+export const CONTENT_POLICY_VERSION = "live-content-policy/1";
+
+/** Explicit coverage marker when no protection key authorizes local content. */
+export const CONTENT_UNAVAILABLE = "content_unavailable";
+
+/** Files larger than this are excluded before any content read (matches the L4a capture bound). */
+export const LOCAL_MAX_FILE_BYTES = 1_048_576;
+
+/** The three distinct local comparisons (spec §8; GitNexus staged/unstaged/reference distinction). */
+export const LOCAL_DIFF_KINDS = ["staged", "unstaged", "conflict"] as const;
+
+export type LocalDiffKind = (typeof LOCAL_DIFF_KINDS)[number];
+
+export function isLocalDiffKind(value: unknown): value is LocalDiffKind {
+  return (
+    typeof value === "string" &&
+    (LOCAL_DIFF_KINDS as readonly string[]).includes(value)
+  );
+}
+
+/** Immutable recorded endpoint of one local comparison. */
+export const LOCAL_DIFF_ENDPOINT_LABELS = ["HEAD", "index", "worktree", "empty-tree", "oid"] as const;
+
+export type LocalDiffEndpointLabel = (typeof LOCAL_DIFF_ENDPOINT_LABELS)[number];
+
+export interface LocalDiffEndpointDto {
+  readonly label: LocalDiffEndpointLabel;
+  /** Null exactly for the worktree and empty-tree endpoints; otherwise an algorithm hex OID/digest. */
+  readonly oid: string | null;
+}
+
+/** Why a path carries metadata only, never an invented text hunk. */
+export const LOCAL_EXCLUSION_REASONS = [
+  "binary",
+  "oversized",
+  "unknown-size",
+  "filtered",
+  "protected",
+  "symlink",
+  "gitlink",
+  "unstable-capture",
+  "deleted",
+] as const;
+
+export type LocalExclusionReason = (typeof LOCAL_EXCLUSION_REASONS)[number];
+
+/**
+ * Closed withheld reasons (L4b M1: no free text toward the sink).
+ * Secret-rule values name the matched deterministic rule only; the secret
+ * itself never appears. `withheld-no-protection-key` is the no-key
+ * downgrade of a single hunk.
+ */
+export const LOCAL_WITHHELD_REASONS = [
+  "withheld-secret-aws-access-key",
+  "withheld-secret-github-token",
+  "withheld-secret-private-key-block",
+  "withheld-secret-credential-assignment",
+  "withheld-secret-credentialed-url",
+  "withheld-secret-unknown",
+  "withheld-no-protection-key",
+] as const;
+
+export type LocalWithheldReason = (typeof LOCAL_WITHHELD_REASONS)[number];
+
+export function isLocalWithheldReason(value: unknown): value is LocalWithheldReason {
+  return typeof value === "string" && (LOCAL_WITHHELD_REASONS as readonly string[]).includes(value);
+}
+
+/** Closed withheld reason for a matched deterministic secret rule (the secret itself never appears). */
+export function withheldReasonForSecretRule(rule: string | null): LocalWithheldReason {
+  const candidate = `withheld-secret-${rule ?? "unknown"}`;
+  return isLocalWithheldReason(candidate) ? candidate : "withheld-secret-unknown";
+}
+
+/** Closed seal algorithm allowlist (L4b M1: the S seat extends this list by contract amendment). */
+export const LOCAL_SEAL_ALGORITHMS = ["fake-seal/1"] as const;
+
+export type LocalSealAlgorithm = (typeof LOCAL_SEAL_ALGORITHMS)[number];
+
+export function isLocalSealAlgorithm(value: unknown): value is LocalSealAlgorithm {
+  return typeof value === "string" && (LOCAL_SEAL_ALGORITHMS as readonly string[]).includes(value);
+}
+
+/**
+ * Strict opaque key reference (L4b M1: host key custody identifier, never
+ * free text). Charset-closed; the H seat mints values within this charset.
+ */
+export function isStrictKeyRef(value: unknown): value is string {
+  return isStrictScopeId(value);
+}
+
+/**
+ * Closed coverage reasons (L4b M1: no free sentence toward the sink).
+ * Values carrying `content_unavailable` mark the explicit no-content
+ * downgrade (CONTENT_UNAVAILABLE).
+ */
+export const LOCAL_COVERAGE_REASONS = [
+  "content_unavailable:no-key",
+  "content_unavailable:unstable-capture",
+  "content_unavailable:unknown-size",
+  "content_unavailable:conflict-inventory-mismatch",
+  "partial:no-snapshot-payload",
+  "current:sealed-latest",
+] as const;
+
+export type LocalCoverageReason = (typeof LOCAL_COVERAGE_REASONS)[number];
+
+export function isLocalCoverageReason(value: unknown): value is LocalCoverageReason {
+  return typeof value === "string" && (LOCAL_COVERAGE_REASONS as readonly string[]).includes(value);
+}
+
+/** Closed snapshot metadata-only reasons (L4b M1: the no-key downgrade reason). */
+export const LOCAL_SNAPSHOT_METADATA_REASONS = [
+  "metadata:unstable-capture",
+  "metadata:no-key",
+  "metadata:no-payload",
+] as const;
+
+export type LocalSnapshotMetadataReason = (typeof LOCAL_SNAPSHOT_METADATA_REASONS)[number];
+
+export function isLocalSnapshotMetadataReason(value: unknown): value is LocalSnapshotMetadataReason {
+  return (
+    typeof value === "string" && (LOCAL_SNAPSHOT_METADATA_REASONS as readonly string[]).includes(value)
+  );
+}
+
+/** Strict snapshot identity: `lsnap:` plus the 64 hex characters minted at staging. */
+export function isStrictSnapshotId(value: unknown): value is string {
+  return typeof value === "string" && /^lsnap:[0-9a-f]{64}$/.test(value);
+}
+
+/**
+ * Hunk payload states. "open-lines" is transient pre-persistence evidence
+ * only: it never reaches a sink or a store (validateSealedLocalDiff refuses
+ * it). "sealed" is host-encrypted bytes; "withheld" is an explicit refusal.
+ */
+export type LocalHunkPayloadDto =
+  | { readonly state: "open-lines"; readonly lines: readonly string[] }
+  | { readonly state: "sealed"; readonly algorithm: LocalSealAlgorithm; readonly keyRef: string; readonly ciphertext: Uint8Array }
+  | { readonly state: "withheld"; readonly reason: LocalWithheldReason };
+
+export interface LocalHunkDto {
+  readonly startBefore: number;
+  readonly countBefore: number;
+  readonly startAfter: number;
+  readonly countAfter: number;
+  readonly payload: LocalHunkPayloadDto;
+}
+
+export const LOCAL_FILE_STATUSES = ["added", "modified", "deleted", "conflict"] as const;
+
+export type LocalFileStatus = (typeof LOCAL_FILE_STATUSES)[number];
+
+export interface LocalFileChangeDto {
+  /** Raw path bytes, byte-exact (never line-parsed); a protected path stays as metadata with an explicit exclusion while its content is withheld. */
+  readonly path: Uint8Array;
+  readonly previousPath: Uint8Array | null;
+  readonly status: LocalFileStatus;
+  readonly oldMode: string;
+  readonly newMode: string;
+  readonly oldOid: string;
+  readonly newOid: string;
+  /** Numstat line counts; null for binary/non-textual content (spec §8). */
+  readonly added: number | null;
+  readonly deleted: number | null;
+  readonly exclusion?: LocalExclusionReason;
+  /** Conflict stages 1/2/3 as separate facts, present on conflict diffs only. */
+  readonly stageOids?: Readonly<Record<string, string>>;
+  readonly hunks: readonly LocalHunkDto[];
+}
+
+/** Explicit index/working-tree coverage (spec §12; A04/A09). */
+export const LOCAL_COVERAGE_CAUSES = ["unstable-capture", "missing-key", "policy-withheld"] as const;
+
+export type LocalCoverageCause = (typeof LOCAL_COVERAGE_CAUSES)[number];
+
+export interface LocalCoverageReportDto {
+  readonly axis: "index" | "working-tree";
+  readonly state: CoverageState;
+  readonly reason: LocalCoverageReason;
+  readonly cause?: LocalCoverageCause;
+}
+
+/**
+ * One neutral local diff: immutable endpoints, versioned normalization,
+ * policy-screened files. A cumulative HEAD → worktree view is not a valid
+ * L4b kind and never validates.
+ */
+export interface LocalDiffDto {
+  readonly scope: LiveScope;
+  readonly worktreeId: string;
+  readonly kind: LocalDiffKind;
+  readonly base: LocalDiffEndpointDto;
+  readonly tip: LocalDiffEndpointDto;
+  readonly comparedParent?: number | null;
+  readonly mergeBase?: string | null;
+  readonly normalizerVersion: string;
+  readonly policyVersion: string;
+  readonly files: readonly LocalFileChangeDto[];
+  readonly coverage?: LocalCoverageReportDto;
+}
+
+/**
+ * The sealed latest-state payload (Q2 B). "sealed" is host-encrypted bytes
+ * produced BEFORE any persistent write; "metadata-only" is the no-key
+ * downgrade carrying ranges/metadata alone.
+ */
+export type SealedSnapshotPayloadDto =
+  | { readonly state: "sealed"; readonly algorithm: LocalSealAlgorithm; readonly keyRef: string; readonly ciphertext: Uint8Array }
+  | { readonly state: "metadata-only"; readonly reason: LocalSnapshotMetadataReason };
+
+/**
+ * The latest authorized local state only (Q2 B): no history is retained.
+ * Replacement is indexed by target and generation at the sink (L4b M2):
+ * the snapshot carries no predecessor pointer, so two concurrent captures
+ * can never each retire only their own predecessor and leave two states.
+ */
+export interface LocalSnapshotDto {
+  readonly scope: LiveScope;
+  readonly worktreeId: string;
+  readonly snapshotId: string;
+  readonly kind: "index" | "working-tree";
+  readonly capturedAt: number;
+  readonly diffDigest: string;
+  readonly sealed: SealedSnapshotPayloadDto;
+  readonly policyVersion: string;
+}
+
+const LOCAL_DIFF_ENDPOINT_KEYS: readonly string[] = ["label", "oid"];
+
+const LOCAL_HUNK_KEYS: readonly string[] = [
+  "startBefore",
+  "countBefore",
+  "startAfter",
+  "countAfter",
+  "payload",
+];
+
+const OPEN_LINES_PAYLOAD_KEYS: readonly string[] = ["state", "lines"];
+
+const SEALED_HUNK_PAYLOAD_KEYS: readonly string[] = ["state", "algorithm", "keyRef", "ciphertext"];
+
+const WITHHELD_PAYLOAD_KEYS: readonly string[] = ["state", "reason"];
+
+const LOCAL_FILE_CHANGE_KEYS: readonly string[] = [
+  "path",
+  "previousPath",
+  "status",
+  "oldMode",
+  "newMode",
+  "oldOid",
+  "newOid",
+  "added",
+  "deleted",
+  "exclusion",
+  "stageOids",
+  "hunks",
+];
+
+const LOCAL_DIFF_KEYS: readonly string[] = [
+  "scope",
+  "worktreeId",
+  "kind",
+  "base",
+  "tip",
+  "comparedParent",
+  "mergeBase",
+  "normalizerVersion",
+  "policyVersion",
+  "files",
+  "coverage",
+];
+
+const LOCAL_COVERAGE_KEYS: readonly string[] = ["axis", "state", "reason", "cause"];
+
+const LOCAL_SNAPSHOT_KEYS: readonly string[] = [
+  "scope",
+  "worktreeId",
+  "snapshotId",
+  "kind",
+  "capturedAt",
+  "diffDigest",
+  "sealed",
+  "policyVersion",
+];
+
+const SEALED_SNAPSHOT_PAYLOAD_KEYS: readonly string[] = ["state", "algorithm", "keyRef", "ciphertext"];
+
+const METADATA_SNAPSHOT_PAYLOAD_KEYS: readonly string[] = ["state", "reason"];
+
+function isHexOid(value: unknown): value is string {
+  return typeof value === "string" && (/^[0-9a-f]{40}$/.test(value) || /^[0-9a-f]{64}$/.test(value));
+}
+
+function isPathBytes(value: unknown): value is Uint8Array {
+  return value instanceof Uint8Array;
+}
+
+export function validateLocalDiffEndpoint(endpoint: unknown): ValidationResult {
+  if (!isRecord(endpoint)) return { ok: false, errors: ["diff endpoint must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(endpoint, LOCAL_DIFF_ENDPOINT_KEYS, "diff endpoint", errors);
+  if (typeof endpoint.label !== "string" ||
+    !(LOCAL_DIFF_ENDPOINT_LABELS as readonly string[]).includes(endpoint.label)) {
+    errors.push(`diff endpoint.label must be one of ${LOCAL_DIFF_ENDPOINT_LABELS.join(", ")}`);
+  }
+  if (endpoint.label === "worktree" || endpoint.label === "empty-tree") {
+    if (endpoint.oid !== null) {
+      errors.push("diff endpoint.oid must be null for the worktree and empty-tree endpoints");
+    }
+  } else if (!isHexOid(endpoint.oid)) {
+    errors.push("diff endpoint.oid must be a 40 or 64 character lowercase hex string");
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+function validateLocalHunkPayload(payload: unknown, sealed: boolean): ValidationResult {
+  if (!isRecord(payload)) return { ok: false, errors: ["hunk payload must be an object"] };
+  const errors: string[] = [];
+  // Per-variant exact keys (sink-bound proof): a "sealed" payload carrying
+  // a foreign "lines" key is clair under seal and never validates, in either
+  // mode. Shared key sets across variants are what let clair pass.
+  if (payload.state === "open-lines") {
+    rejectUnknownKeys(payload, OPEN_LINES_PAYLOAD_KEYS, "hunk payload", errors);
+    if (sealed) {
+      errors.push("hunk payload \"open-lines\" is transient pre-persistence evidence and never reaches a sink or a store");
+    } else if (!Array.isArray(payload.lines) ||
+      payload.lines.some((line: unknown) => typeof line !== "string" || line.includes("\0"))) {
+      errors.push("hunk payload.lines must be an array of NUL-free strings");
+    }
+  } else if (payload.state === "sealed") {
+    rejectUnknownKeys(payload, SEALED_HUNK_PAYLOAD_KEYS, "hunk payload", errors);
+    if (!isLocalSealAlgorithm(payload.algorithm)) {
+      errors.push(`hunk payload.algorithm must be one of ${LOCAL_SEAL_ALGORITHMS.join(", ")}`);
+    }
+    if (!isStrictKeyRef(payload.keyRef)) {
+      errors.push("hunk payload.keyRef must be a strict opaque key reference");
+    }
+    if (!(payload.ciphertext instanceof Uint8Array) || payload.ciphertext.length === 0) {
+      errors.push("hunk payload.ciphertext must be a non-empty byte array");
+    }
+    if ("lines" in payload) {
+      errors.push("hunk payload.lines is clair and never coexists with a sealed state");
+    }
+  } else if (payload.state === "withheld") {
+    rejectUnknownKeys(payload, WITHHELD_PAYLOAD_KEYS, "hunk payload", errors);
+    if (!isLocalWithheldReason(payload.reason)) {
+      errors.push(`hunk payload.reason must be one of ${LOCAL_WITHHELD_REASONS.join(", ")}`);
+    }
+  } else {
+    errors.push('hunk payload.state must be "open-lines", "sealed" or "withheld"');
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+function validateLocalHunk(hunk: unknown, path: string, sealed: boolean): ValidationResult {
+  if (!isRecord(hunk)) return { ok: false, errors: [`${path} must be an object`] };
+  const errors: string[] = [];
+  rejectUnknownKeys(hunk, LOCAL_HUNK_KEYS, path, errors);
+  for (const bound of ["startBefore", "countBefore", "startAfter", "countAfter"] as const) {
+    const value = hunk[bound];
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+      errors.push(`${path}.${bound} must be a non-negative safe integer (immutable range bound)`);
+    }
+  }
+  const payload = validateLocalHunkPayload(hunk.payload, sealed);
+  if (!payload.ok) errors.push(...payload.errors.map((error) => `${path}.${error}`));
+  return { ok: errors.length === 0, errors };
+}
+
+function validateLocalFileChange(file: unknown, path: string, sealed: boolean): ValidationResult {
+  if (!isRecord(file)) return { ok: false, errors: [`${path} must be an object`] };
+  const errors: string[] = [];
+  rejectUnknownKeys(file, LOCAL_FILE_CHANGE_KEYS, path, errors);
+  if (!isPathBytes(file.path) || file.path.length === 0) {
+    errors.push(`${path}.path must be non-empty raw path bytes`);
+  }
+  if (file.previousPath !== null && (!isPathBytes(file.previousPath) || file.previousPath.length === 0)) {
+    errors.push(`${path}.previousPath must be null or non-empty raw path bytes`);
+  }
+  if (typeof file.status !== "string" ||
+    !(LOCAL_FILE_STATUSES as readonly string[]).includes(file.status)) {
+    errors.push(`${path}.status must be one of ${LOCAL_FILE_STATUSES.join(", ")}`);
+  }
+  for (const mode of ["oldMode", "newMode"] as const) {
+    if (typeof file[mode] !== "string" || !/^[0-7]{6}$/.test(file[mode])) {
+      errors.push(`${path}.${mode} must be a six-digit octal file mode`);
+    }
+  }
+  for (const oid of ["oldOid", "newOid"] as const) {
+    if (!isHexOid(file[oid]) && file[oid] !== "0".repeat(40) && file[oid] !== "0".repeat(64)) {
+      errors.push(`${path}.${oid} must be a hex OID or the zero OID`);
+    }
+  }
+  if (file.added !== null && (typeof file.added !== "number" || !Number.isSafeInteger(file.added) || file.added < 0)) {
+    errors.push(`${path}.added must be null or a non-negative safe integer (null for binary/non-textual content)`);
+  }
+  if (file.deleted !== null && (typeof file.deleted !== "number" || !Number.isSafeInteger(file.deleted) || file.deleted < 0)) {
+    errors.push(`${path}.deleted must be null or a non-negative safe integer (null for binary/non-textual content)`);
+  }
+  if (file.exclusion !== undefined) {
+    if (typeof file.exclusion !== "string" ||
+      !(LOCAL_EXCLUSION_REASONS as readonly string[]).includes(file.exclusion)) {
+      errors.push(`${path}.exclusion must be one of ${LOCAL_EXCLUSION_REASONS.join(", ")}`);
+    }
+    if (Array.isArray(file.hunks) && file.hunks.length > 0) {
+      errors.push(`${path} is excluded: excluded files carry metadata only, never text hunks`);
+    }
+    if (file.added !== null || file.deleted !== null) {
+      errors.push(`${path} is excluded: excluded files carry null numstat counts, never invented counts`);
+    }
+  }
+  if (file.stageOids !== undefined) {
+    if (!isRecord(file.stageOids)) {
+      errors.push(`${path}.stageOids must be an object keyed by conflict stage`);
+    } else {
+      // Opaque refusal: the rejected stage key is caller-supplied data and
+      // may itself carry private text, so it is never interpolated.
+      for (const stage of Object.keys(file.stageOids)) {
+        if (stage !== "1" && stage !== "2" && stage !== "3") {
+          errors.push(`${path}.stageOids carries an unknown conflict stage: only conflict stages 1/2/3 exist`);
+        } else if (!isHexOid((file.stageOids as Record<string, unknown>)[stage])) {
+          errors.push(`${path}.stageOids holds a non-OID value: every present stage must be a hex OID`);
+        }
+      }
+    }
+  }
+  if (!Array.isArray(file.hunks)) {
+    errors.push(`${path}.hunks must be an array`);
+  } else {
+    file.hunks.forEach((hunk: unknown, index: number) => {
+      const checked = validateLocalHunk(hunk, `${path}.hunks[${index}]`, sealed);
+      if (!checked.ok) errors.push(...checked.errors);
+    });
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateLocalCoverage(coverage: unknown): ValidationResult {
+  if (!isRecord(coverage)) return { ok: false, errors: ["diff coverage must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(coverage, LOCAL_COVERAGE_KEYS, "diff coverage", errors);
+  if (coverage.axis !== "index" && coverage.axis !== "working-tree") {
+    errors.push('diff coverage.axis must be "index" or "working-tree"');
+  }
+  if (typeof coverage.state !== "string" ||
+    !["current", "pending", "partial", "stale", "unavailable"].includes(coverage.state)) {
+    errors.push("diff coverage.state must be an explicit coverage state, never an empty success");
+  }
+  if (!isLocalCoverageReason(coverage.reason)) {
+    errors.push(`diff coverage.reason must be one of ${LOCAL_COVERAGE_REASONS.join(", ")}`);
+  }
+  if (coverage.cause !== undefined &&
+    (typeof coverage.cause !== "string" ||
+      !(LOCAL_COVERAGE_CAUSES as readonly string[]).includes(coverage.cause))) {
+    errors.push(`diff coverage.cause must be one of ${LOCAL_COVERAGE_CAUSES.join(", ")}`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+function checkLocalDiffEndpoints(kind: LocalDiffKind, base: LocalDiffEndpointDto, tip: LocalDiffEndpointDto): string[] {
+  if (kind === "staged" && (base.label !== "HEAD" || tip.label !== "index")) {
+    return ['a "staged" diff is HEAD → index only: staged, unstaged and conflict stages never share endpoints'];
+  }
+  if (kind === "unstaged" && (base.label !== "index" || tip.label !== "worktree")) {
+    return ['an "unstaged" diff is index → worktree only: staged, unstaged and conflict stages never share endpoints'];
+  }
+  if (kind === "conflict" && (base.label !== "index" || tip.label !== "index")) {
+    return ['a "conflict" diff is index → index with stage 1/2/3 OIDs only'];
+  }
+  return [];
+}
+
+function validateLocalDiffShape(diff: unknown, sealed: boolean): ValidationResult {
+  if (!isRecord(diff)) return { ok: false, errors: ["local diff must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(diff, LOCAL_DIFF_KEYS, "local diff", errors);
+  const scope = validateLiveScope(diff.scope);
+  if (!scope.ok) errors.push(...scope.errors.map((error) => `local diff.scope: ${error}`));
+  if (!isStrictBatchId(diff.worktreeId, ID_PREFIXES.worktree)) {
+    errors.push(`local diff.worktreeId must be a strict opaque id starting with "${ID_PREFIXES.worktree}"`);
+  }
+  const kindOk = isLocalDiffKind(diff.kind);
+  if (!kindOk) {
+    errors.push(`local diff.kind must be one of ${LOCAL_DIFF_KINDS.join(", ")} (no cumulative HEAD → worktree view validates here)`);
+  }
+  const base = validateLocalDiffEndpoint(diff.base);
+  if (!base.ok) errors.push(...base.errors.map((error) => `local diff.base: ${error}`));
+  const tip = validateLocalDiffEndpoint(diff.tip);
+  if (!tip.ok) errors.push(...tip.errors.map((error) => `local diff.tip: ${error}`));
+  if (kindOk && base.ok && tip.ok) {
+    errors.push(...checkLocalDiffEndpoints(
+      diff.kind as LocalDiffKind,
+      diff.base as LocalDiffEndpointDto,
+      diff.tip as LocalDiffEndpointDto,
+    ));
+  }
+  if (diff.comparedParent !== undefined && diff.comparedParent !== null &&
+    (typeof diff.comparedParent !== "number" || !Number.isSafeInteger(diff.comparedParent) || diff.comparedParent < 0)) {
+    errors.push("local diff.comparedParent, when present, must be null or a non-negative safe integer");
+  }
+  if (diff.mergeBase !== undefined && diff.mergeBase !== null && !isHexOid(diff.mergeBase)) {
+    errors.push("local diff.mergeBase, when present, must be null or a hex OID");
+  }
+  if (diff.normalizerVersion !== LOCAL_DIFF_NORMALIZER_VERSION) {
+    errors.push(`local diff.normalizerVersion must be "${LOCAL_DIFF_NORMALIZER_VERSION}" (normalization is versioned evidence)`);
+  }
+  if (diff.policyVersion !== CONTENT_POLICY_VERSION) {
+    errors.push(`local diff.policyVersion must be "${CONTENT_POLICY_VERSION}"`);
+  }
+  if (!Array.isArray(diff.files)) {
+    errors.push("local diff.files must be an array");
+  } else {
+    diff.files.forEach((file: unknown, index: number) => {
+      const checked = validateLocalFileChange(file, `local diff.files[${index}]`, sealed);
+      if (!checked.ok) errors.push(...checked.errors);
+    });
+  }
+  if (diff.coverage !== undefined) {
+    const coverage = validateLocalCoverage(diff.coverage);
+    if (!coverage.ok) errors.push(...coverage.errors.map((error) => `local diff.${error}`));
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+/** Structural validation of a derived (possibly transient) local diff. */
+export function validateLocalDiff(diff: unknown): ValidationResult {
+  return validateLocalDiffShape(diff, false);
+}
+
+/**
+ * Sink/store-bound validation: transient "open-lines" hunk payloads are
+ * refused, so persist-then-mask cannot validate. Seal through the injected
+ * host protection port first, or withhold explicitly.
+ */
+export function validateSealedLocalDiff(diff: unknown): ValidationResult {
+  return validateLocalDiffShape(diff, true);
+}
+
+function validateSealedSnapshotPayload(payload: unknown): ValidationResult {
+  if (!isRecord(payload)) return { ok: false, errors: ["snapshot sealed payload must be an object"] };
+  const errors: string[] = [];
+  if (payload.state === "sealed") {
+    rejectUnknownKeys(payload, SEALED_SNAPSHOT_PAYLOAD_KEYS, "snapshot sealed payload", errors);
+    if (!isLocalSealAlgorithm(payload.algorithm)) {
+      errors.push(`snapshot sealed payload.algorithm must be one of ${LOCAL_SEAL_ALGORITHMS.join(", ")}`);
+    }
+    if (!isStrictKeyRef(payload.keyRef)) {
+      errors.push("snapshot sealed payload.keyRef must be a strict opaque key reference (host key custody, never in the database)");
+    }
+    if (!(payload.ciphertext instanceof Uint8Array) || payload.ciphertext.length === 0) {
+      errors.push("snapshot sealed payload.ciphertext must be a non-empty byte array");
+    }
+    if ("lines" in payload || "reason" in payload) {
+      errors.push("a sealed snapshot payload carries ciphertext only, never clair or downgrade reasons");
+    }
+  } else if (payload.state === "metadata-only") {
+    rejectUnknownKeys(payload, METADATA_SNAPSHOT_PAYLOAD_KEYS, "snapshot sealed payload", errors);
+    if (!isLocalSnapshotMetadataReason(payload.reason)) {
+      errors.push(`snapshot sealed payload.reason must be one of ${LOCAL_SNAPSHOT_METADATA_REASONS.join(", ")}`);
+    }
+  } else {
+    errors.push('snapshot sealed payload.state must be "sealed" or "metadata-only"');
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+/** Structural validation of the latest authorized local state (Q2 B). */
+export function validateLocalSnapshot(snapshot: unknown): ValidationResult {
+  if (!isRecord(snapshot)) return { ok: false, errors: ["local snapshot must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(snapshot, LOCAL_SNAPSHOT_KEYS, "local snapshot", errors);
+  const scope = validateLiveScope(snapshot.scope);
+  if (!scope.ok) errors.push(...scope.errors.map((error) => `local snapshot.scope: ${error}`));
+  if (!isStrictBatchId(snapshot.worktreeId, ID_PREFIXES.worktree)) {
+    errors.push(`local snapshot.worktreeId must be a strict opaque id starting with "${ID_PREFIXES.worktree}"`);
+  }
+  if (!isStrictSnapshotId(snapshot.snapshotId)) {
+    errors.push("local snapshot.snapshotId must be a strict lsnap hex snapshot id");
+  }
+  if (snapshot.kind !== "index" && snapshot.kind !== "working-tree") {
+    errors.push('local snapshot.kind must be "index" or "working-tree"');
+  }
+  if (typeof snapshot.capturedAt !== "number" || !Number.isSafeInteger(snapshot.capturedAt) || snapshot.capturedAt <= 0) {
+    errors.push("local snapshot.capturedAt must be a positive safe integer (milliseconds)");
+  }
+  if (typeof snapshot.diffDigest !== "string" || !/^[0-9a-f]{64}$/.test(snapshot.diffDigest)) {
+    errors.push("local snapshot.diffDigest must be a 64 character lowercase hex digest of the screened diff");
+  }
+  const sealed = validateSealedSnapshotPayload(snapshot.sealed);
+  if (!sealed.ok) errors.push(...sealed.errors.map((error) => `local snapshot.${error}`));
+  if (snapshot.policyVersion !== CONTENT_POLICY_VERSION) {
+    errors.push(`local snapshot.policyVersion must be "${CONTENT_POLICY_VERSION}"`);
   }
   return { ok: errors.length === 0, errors };
 }
