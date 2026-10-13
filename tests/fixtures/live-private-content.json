@@ -1,0 +1,26 @@
+{
+  "$schema": "live-private-content-fixture",
+  "warning": "SYNTHETIC SECRETS ONLY — every value below is invented for tests and must never grant access to anything. No real credential, token or private key may ever enter this file.",
+  "policyVersion": "live-content-policy/1",
+  "secretPaths": [
+    { "id": "dotenv-root", "path": ".env", "kind": "protected-path" },
+    { "id": "dotenv-prod", "path": "config/.env.production", "kind": "protected-path" },
+    { "id": "rsa-key", "path": "deploy/id_rsa", "kind": "protected-path" },
+    { "id": "tls-key", "path": "certs/tls.key", "kind": "protected-path" },
+    { "id": "pem-bundle", "path": "secrets/bundle.pem", "kind": "protected-path" },
+    { "id": "allowed-source", "path": "src/app.ts", "kind": "allowed-path" },
+    { "id": "allowed-docs", "path": "docs/guide.md", "kind": "allowed-path" }
+  ],
+  "secretTexts": [
+    { "id": "aws-like", "kind": "api-key", "value": "AKIAIOSFODNN7SYNTHETIC" },
+    { "id": "github-like", "kind": "token", "value": "ghp_synthetic0123456789abcdefghijEXAMPLE" },
+    { "id": "rsa-like", "kind": "private-key", "value": "-----BEGIN RSA PRIVATE KEY-----\nSYNTHETIC0SYNTHETIC0SYNTHETIC0SYNTHETIC0\n-----END RSA PRIVATE KEY-----" },
+    { "id": "password-line", "kind": "credential", "value": "db_password = \"synthetic-s3cr3t-not-real\"" },
+    { "id": "connection-string", "kind": "credential", "value": "postgres://tester:synthetic-pw-not-real@localhost:5432/demo" }
+  ],
+  "gitignoreDecoy": "# A .gitignore negation must NEVER unblock a protected path (plan/09 L4b: .gitignore is never a secrecy guarantee).\n!.env\n!deploy/id_rsa\n",
+  "allowedTexts": [
+    { "id": "plain-code", "value": "export function add(left: number, right: number): number {\n  return left + right;\n}\n" },
+    { "id": "plain-docs", "value": "# Guide\n\nThis page documents the public API.\n" }
+  ]
+}
