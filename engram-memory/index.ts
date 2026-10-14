@@ -82,7 +82,11 @@ export {
   type ProjectionInvalidationCascadeResultV1,
 } from "./projection-cascade.js";
 export {
+  backupPublicJournalToStorageV1,
+  backupStorageJournalToPublicV1,
   createLogicalMemoryBackupV1,
+  deriveAcceptedLexicalDocumentsV1,
+  deriveRebuildOutboxBatchV1,
   type LogicalBackupStoreV1,
   type LogicalMemoryBackupDependenciesV1,
 } from "./logical-backup.js";
