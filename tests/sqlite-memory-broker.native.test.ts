@@ -14,6 +14,10 @@ import {
   type FencedSqliteCanonicalMemoryStoreV1,
   type LogicalBackupManifestV1,
 } from "../engram-memory/index.js";
+import {
+  raiseSqliteMinimumVersionForTestingV1,
+  resetSqliteMinimumVersionForTestingV1,
+} from "../engram-memory/sqlite.js";
 import { captureRequest, createL3Memory, lifecycleCommand, NOW } from "./memory-l3-fixture.js";
 
 const X4_DEADLINE = "2026-08-16T12:40:00.000Z";
@@ -527,6 +531,51 @@ describe("native SQLite memory broker", () => {
     if (!sourceSnapshot.ok || !targetSnapshot.ok) throw new Error("x4 atomic snapshot failed");
     expect(targetSnapshot.value.documents).toEqual(sourceSnapshot.value.documents);
     await source.close();
+    await reopened.close();
+  });
+
+  it("an open refuses CAPABILITY_UNAVAILABLE when the runtime is below the required minimum", async () => {
+    // The seam only raises: a floor at or below the default admits nothing new, so it throws.
+    expect(() => raiseSqliteMinimumVersionForTestingV1("3.0.0")).toThrow();
+    expect(() => raiseSqliteMinimumVersionForTestingV1("3.51.3")).toThrow();
+    expect(() => raiseSqliteMinimumVersionForTestingV1("not-a-version")).toThrow();
+    // No lowering happened: the bundled runtime still opens.
+    const probe = await open(filename());
+    await probe.close();
+    // Raised above the bundled runtime, the open is refused before any durable write.
+    raiseSqliteMinimumVersionForTestingV1("99.0.0");
+    try {
+      await expect(openFencedSqliteCanonicalMemoryStoreV1({ filename: filename(), clock: { now: () => NOW }, allow_ephemeral_filesystem_store: true }))
+        .resolves.toMatchObject({ ok: false, error: { code: "CAPABILITY_UNAVAILABLE" } });
+    } finally {
+      resetSqliteMinimumVersionForTestingV1();
+    }
+    // The reset restored the default floor: opens are admitted again.
+    const reopened = await open(filename());
+    await reopened.close();
+  });
+
+  it("a lower second raise never lowers the active floor (ABA 99.0.0 -> 3.51.4)", async () => {
+    // Revue Sol tour 1/3 (MAJEUR) : last-write-wins (comparer au dernier seuil
+    // demandé) réautorisait le runtime embarqué après raise("99.0.0") puis
+    // raise("3.51.4"). Cette variante est réfutée ici : seul le MAXIMUM monotone
+    // des seuils est retenu, et seule une réinitialisation explicite le réarme.
+    resetSqliteMinimumVersionForTestingV1();
+    raiseSqliteMinimumVersionForTestingV1("99.0.0");
+    try {
+      // The bundled runtime is refused under the raised floor.
+      await expect(openFencedSqliteCanonicalMemoryStoreV1({ filename: filename(), clock: { now: () => NOW }, allow_ephemeral_filesystem_store: true }))
+        .resolves.toMatchObject({ ok: false, error: { code: "CAPABILITY_UNAVAILABLE" } });
+      // A lower threshold does not raise: it is refused instead of admitted...
+      expect(() => raiseSqliteMinimumVersionForTestingV1("3.51.4")).toThrow();
+      // ...and the open stays refused until an explicit reset.
+      await expect(openFencedSqliteCanonicalMemoryStoreV1({ filename: filename(), clock: { now: () => NOW }, allow_ephemeral_filesystem_store: true }))
+        .resolves.toMatchObject({ ok: false, error: { code: "CAPABILITY_UNAVAILABLE" } });
+    } finally {
+      resetSqliteMinimumVersionForTestingV1();
+    }
+    // The explicit reset restored the default floor: opens are admitted again.
+    const reopened = await open(filename());
     await reopened.close();
   });
 });

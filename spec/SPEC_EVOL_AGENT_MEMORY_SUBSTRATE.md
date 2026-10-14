@@ -1326,7 +1326,7 @@ The writer fence is a non-blocking exclusive `flock` (`LOCK_EX|LOCK_NB`) held on
 Writer acquisition is:
 
 1. acquire the kernel lock without waiting;
-2. open the database and verify supported SQLite runtime (`>=3.51.3`, or a documented fixed backport `3.44.6`/`3.50.7`);
+2. open the database and verify supported SQLite runtime (`>=3.51.3`, or a documented fixed backport `3.44.6`/`3.50.7`); the `better-sqlite3@12.11.1` bundle reports `3.53.2` (admitted; X3 enforces this at open, refusing with `CAPABILITY_UNAVAILABLE`);
 3. begin an immediate transaction, create/read `storage_epoch`, increment it monotonically, persist and commit it durably;
 4. bind every prepared mutating statement to the acquired epoch;
 5. before the first mutating SQL statement, before every later mutating statement, and immediately before commit, verify both kernel-lock ownership and stored epoch equality;
