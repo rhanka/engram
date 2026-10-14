@@ -8,6 +8,7 @@ import type {
   MemoryErrorCode,
   MemoryOperation,
   MemoryRecordV2,
+  ProjectionInvalidationRequestV1,
   ReconciliationCommandBindingV1,
   ReconciliationEventBindingV1,
   ReconciliationOutcomeV1,
@@ -424,6 +425,34 @@ export function validateReconciliationRequest(input: unknown): Result<Reconcilia
     return { ok: true, value: value as unknown as ReconciliationRequestV1 };
   } catch (error) {
     return refusal("propose_reconciliation", "INVALID_SCHEMA", error instanceof Error ? error.message : "reconciliation request is invalid");
+  }
+}
+
+export function validateProjectionInvalidationRequest(input: unknown): Result<ProjectionInvalidationRequestV1> {
+  try {
+    const value = normalizeCanonicalJson(input);
+    assertExactKeys(
+      value,
+      "projection_invalidation_request",
+      ["through_cursor", "projection_ids", "authorization", "deadline_at"],
+      ["through_cursor", "authorization", "deadline_at"],
+    );
+    assertCursor(value.through_cursor, "through_cursor");
+    if (Object.hasOwn(value, "projection_ids")) {
+      if (!Array.isArray(value.projection_ids)) throw new SchemaFailure("projection_ids must be an array");
+      value.projection_ids.forEach((projectionId, index) => assertOpaque(projectionId, `projection_ids[${index}]`));
+    }
+    assertExactKeys(value.authorization, "authorization", ["credential", "context_ref"], ["credential"]);
+    if (typeof value.authorization.credential !== "string") {
+      throw new SchemaFailure("authorization.credential must be a string");
+    }
+    if (Object.hasOwn(value.authorization, "context_ref")) {
+      assertOpaque(value.authorization.context_ref, "authorization.context_ref");
+    }
+    assertInstant(value.deadline_at, "deadline_at");
+    return { ok: true, value: value as unknown as ProjectionInvalidationRequestV1 };
+  } catch (error) {
+    return refusal("projection_invalidate", "INVALID_SCHEMA", error instanceof Error ? error.message : "projection invalidation request is invalid");
   }
 }
 

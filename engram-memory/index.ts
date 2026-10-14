@@ -77,7 +77,10 @@ export {
   type BoundedProjectionInputV1,
 } from "./bounded-projection.js";
 export {
+  applyProjectionBatchV1,
   runProjectionInvalidationCascadeV1,
+  type ProjectionBatchPublicationInputV1,
+  type ProjectionBatchPublicationV1,
   type ProjectionInvalidationCascadeInputV1,
   type ProjectionInvalidationCascadeResultV1,
 } from "./projection-cascade.js";

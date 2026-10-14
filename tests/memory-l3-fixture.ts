@@ -5,6 +5,7 @@ import {
   type CanonicalMemoryStorePort,
   type Digest,
   type MemoryEngineDependenciesV2,
+  type ProjectionInvalidationSurfaceV1,
 } from "../engram-memory/index.js";
 // §5.9 (test-only): the module's in-process in-memory mark. The package barrel deliberately does not re-export it
 // and package.json `exports` does not expose ./store-factory, so a host cannot reach it — only the in-repo suite,
@@ -70,6 +71,7 @@ export function captureRequest(idempotencyKey: string, sequence: string, text = 
 export function createL3Memory(
   decision: "accept" | "reject" | "adjudication_required" = "accept",
   canonicalStore?: CanonicalMemoryStorePort,
+  projectionSurfaces?: ReadonlyArray<ProjectionInvalidationSurfaceV1>,
 ) {
   const plaintext = new Map<string, string>();
   const destroyed: string[] = [];
@@ -135,6 +137,7 @@ export function createL3Memory(
     // §5.9: this fixture is a non-production embedded harness — opt into running the neutral in-memory store
     // unfenced. When a fenced factory store is injected instead, the flag is inert (the fenced path admits it).
     allow_unfenced_memory_store: true,
+    ...(projectionSurfaces === undefined ? {} : { projection_surfaces: projectionSurfaces }),
     clock: { now: () => NOW },
   } as unknown as MemoryEngineDependenciesV2);
   return { memory, store, destroyed };
