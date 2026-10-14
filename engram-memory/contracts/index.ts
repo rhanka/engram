@@ -685,6 +685,25 @@ export interface CanonicalMemoryStorePort {
    */
   revalidateReadOnly(input: RevalidationRequestV1): Promise<Result<RevalidationPacketV1>>;
   readJournal(input: { after: Cursor; limit: number }): Promise<Result<ReadonlyArray<LifecycleEventV2>>>;
+  /**
+   * D-11 B (lot X4): durable logical-restore import. The payload carries only
+   * the dense journal (public `LifecycleEventV2` pages) and the immutable
+   * record blobs it references — never pending sealed envelopes or controls.
+   * The import rebuilds every store-owned derived surface deterministically
+   * from that canonical pair (accepted-only lexical rows + FTS index, plus one
+   * coalesced projection-rebuild outbox batch covering the restored
+   * `accepted_current` set) inside the same all-or-nothing promotion
+   * transaction, into an EMPTY store only: a non-empty target refuses
+   * `RESTORE_REFUSED`, and a corrupt journal or missing/drifted blob refuses
+   * `BACKUP_INVALID`. When the caller supplies the expected restored cursor
+   * and canonical digest, the store compares them BEFORE commit and rolls back
+   * with `RESTORE_REFUSED` on mismatch, so a refusal never leaves a written
+   * target behind. Implemented by the SQLite and Postgres durable stores; the
+   * in-memory store omits it (its tests rebuild through the persistence
+   * constructor instead), so the member is optional and no existing store
+   * breaks.
+   */
+  importLogicalBackup?(input: LogicalBackupImportInputV1): Promise<Result<LogicalBackupImportReceiptV1>>;
   checkpoint(input: { through_cursor: Cursor }): Promise<Result<RecoveryCheckpointManifestV1>>;
   nextProjectionBatch(input: { after: Cursor; limit: number }): Promise<Result<ProjectionBatchV1>>;
   acknowledgeProjection(input: ProjectionInvalidationReceiptV1): Promise<Result<CanonicalTransactionReceiptV1>>;
@@ -806,6 +825,24 @@ export interface LogicalBackupManifestV1 {
   manifest_digest: Digest;
 }
 
+export interface LogicalBackupImportInputV1 {
+  journal: ReadonlyArray<LifecycleEventV2>;
+  records: ReadonlyArray<MemoryRecordV2>;
+  /**
+   * Expected canonical pair, compared BEFORE commit. On mismatch the import
+   * rolls back with `RESTORE_REFUSED` instead of leaving a written target
+   * behind. Optional so older callers keep compiling.
+   */
+  expected_restored_cursor?: Cursor;
+  expected_canonical_state_digest?: Digest;
+}
+
+export interface LogicalBackupImportReceiptV1 {
+  restored_cursor: Cursor;
+  canonical_state_digest: Digest;
+  receipt_digest: Digest;
+}
+
 export interface MemoryBackupPort {
   readonly version: 1;
   exportLogical(input: {
@@ -821,6 +858,15 @@ export interface MemoryBackupPort {
     source_ref: OpaqueRef;
     decryption_key_ref: OpaqueRef;
     deadline_at: Instant;
+    /**
+     * D-11 B (lot X4): optional durable restore target. When present and the
+     * target implements `importLogicalBackup`, a verified restore WRITES the
+     * journal and record blobs into that store (which must be empty) instead
+     * of only verifying against a discarded in-memory rebuild. Absent, the
+     * call keeps its historical verify-only behaviour so existing in-memory
+     * callers stay green.
+     */
+    target_store?: CanonicalMemoryStorePort;
   }): Promise<Result<{ restored_cursor: Cursor; canonical_state_digest: Digest; receipt_digest: Digest }>>;
 }
 
