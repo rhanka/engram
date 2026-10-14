@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   createInMemoryCanonicalMemoryStoreV1,
   createLogicalMemoryBackupV1,
+  deriveAcceptedLexicalDocumentsV1,
+  deriveRebuildOutboxBatchV1,
   foldMemoryJournalV1,
   receiptDigest,
   type BackupKeyPort,
@@ -161,12 +163,167 @@ describe("logical backup and restore", () => {
       value: { eligible_record_ids: [], removed: [{ record_id: tombstoneRecord, reason: "tombstone" }] },
     });
   });
+
+  it("restored memory recall renders exactly the source recall, in order (classe X4)", async () => {
+    const { memory, store } = createL3Memory();
+    const acceptOne = async (key: string, seq: string, text = "x4c order shared memory body") => {
+      const captured = await memory.capture(captureRequest(key, seq, text));
+      if (!captured.ok || captured.value.candidate_id === undefined) throw new Error(`${key} capture failed`);
+      const admission = await memory.requestAdmission({ candidate_id: captured.value.candidate_id, authorization: { credential: "credential:l3" }, deadline_at: DEADLINE });
+      if (!admission.ok || admission.value.record_id === undefined) throw new Error(`${key} admission failed`);
+      return admission.value.record_id as string;
+    };
+    // Ordre prouvé par au moins 3 courants + les deux recalculs lexicaux
+    // (resolve_dispute, rewind) : 5 courants au total.
+    const survivorA = await acceptOne("idempotency-key-x4c-survivor-a", "11", "x4c order shared alpha meridian");
+    const survivorB = await acceptOne("idempotency-key-x4c-survivor-b", "12", "x4c order shared beta meridian");
+    const survivorC = await acceptOne("idempotency-key-x4c-survivor-c", "13", "x4c order shared gamma meridian");
+    const resolved = await acceptOne("idempotency-key-x4c-resolved", "14", "x4c order shared resolved meridian");
+    await expect(memory.transition(lifecycleCommand("dispute", resolved, "event:x4c-dispute-resolved"))).resolves.toMatchObject({ ok: true });
+    await expect(memory.transition(lifecycleCommand("resolve_dispute", resolved, "event:x4c-resolve"))).resolves.toMatchObject({ ok: true });
+    const successor = await acceptOne("idempotency-key-x4c-successor", "15", "x4c order shared successor meridian");
+    const rewound = await acceptOne("idempotency-key-x4c-rewound", "16", "x4c order shared rewound meridian");
+    await expect(memory.transition(lifecycleCommand("mark_non_current", rewound, "event:x4c-historical-rewound"))).resolves.toMatchObject({ ok: true });
+    await expect(memory.transition({
+      operation: "rewind",
+      event_id: "event:x4c-rewind",
+      record_id: rewound,
+      related_record_id: successor,
+      reason_ref: "reason:rewind",
+      event_anchor: { occurred_at: NOW, kind_ref: "kind:rewind", provenance_ref: "citation:l3", provenance_digest: DIGEST },
+      authorization: { credential: "credential:l3" },
+      deadline_at: DEADLINE,
+    })).resolves.toMatchObject({ ok: true });
+    const survivor = survivorA;
+    const expectedCurrent = [survivorA, survivorB, survivorC, resolved, rewound].sort((a, b) => a.localeCompare(b));
+    const tombstoned = await acceptOne("idempotency-key-x4c-tomb", "17");
+    await expect(memory.transition(lifecycleCommand("tombstone", tombstoned))).resolves.toMatchObject({ ok: true });
+    const disputed = await acceptOne("idempotency-key-x4c-disputed", "18");
+    await expect(memory.transition(lifecycleCommand("dispute", disputed))).resolves.toMatchObject({ ok: true });
+    const historical = await acceptOne("idempotency-key-x4c-historical", "19");
+    await expect(memory.transition(lifecycleCommand("mark_non_current", historical))).resolves.toMatchObject({ ok: true });
+    const expired = await acceptOne("idempotency-key-x4c-expired", "20");
+    await expect(memory.transition(lifecycleCommand("expire", expired))).resolves.toMatchObject({ ok: true });
+    const distrusted = await acceptOne("idempotency-key-x4c-distrust", "21");
+    await expect(memory.transition(lifecycleCommand("trust_invalidate", distrusted))).resolves.toMatchObject({ ok: true });
+    const expectedRemoved = [successor, tombstoned, disputed, historical, expired, distrusted].sort((a, b) => a.localeCompare(b));
+    const pending = await memory.capture(captureRequest("idempotency-key-x4c-pending", "22"));
+    if (!pending.ok) throw new Error("pending capture failed");
+
+    const readiness = await store.readiness();
+    if (!readiness.ok) throw new Error("readiness failed");
+    const through = readiness.value.high_water_cursor;
+    const sourceCheckpoint = await store.checkpoint({ through_cursor: through });
+    if (!sourceCheckpoint.ok) throw new Error("source checkpoint failed");
+    const { key, object, sealedPlaintexts } = backupPorts();
+    const backup = createLogicalMemoryBackupV1({ store, authorization: authorizationPort(), backup_key: key, backup_object: object, clock: { now: () => NOW } });
+    const exported = await backup.exportLogical({ through_cursor: through, authorization: { credential: "credential:l3" }, object_target_ref: "target:x4c", encryption_key_ref: "key:x4c", deadline_at: DEADLINE });
+    expect(exported.ok).toBe(true);
+    if (!exported.ok) return;
+    const restored = await backup.restoreLogical({ manifest: exported.value, authorization: { credential: "credential:l3" }, source_ref: "target:x4c", decryption_key_ref: "key:x4c", deadline_at: DEADLINE });
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) return;
+    expect(sealedPlaintexts).toHaveLength(1);
+
+    const target = createInMemoryCanonicalMemoryStoreV1({ clock: { now: () => NOW }, persistence: rebuildPersistenceFromBackup(sealedPlaintexts[0]!) });
+    // MINEUR 1 : le manifeste de checkpoint() est identique après restauration.
+    const targetCheckpoint = await target.checkpoint({ through_cursor: through });
+    expect(targetCheckpoint.ok).toBe(true);
+    if (!targetCheckpoint.ok) return;
+    expect(targetCheckpoint.value.policy_versions).toEqual(sourceCheckpoint.value.policy_versions);
+    expect(targetCheckpoint.value.policy_versions).toEqual([{ id: "policy:l3", version: "1" }]);
+    {
+      const { manifest_digest: _td, storage_epoch: _te, ...targetBody } = targetCheckpoint.value;
+      const { manifest_digest: _sd, storage_epoch: _se, ...sourceBody } = sourceCheckpoint.value;
+      expect(targetBody).toEqual(sourceBody);
+    }
+    const snapshotInput = { valid_as_of: 1, system_as_of: through, authorization_receipt_digest: DIGEST, max_candidates: 50 } as const;
+    const sourceSnapshot = await store.acceptedSnapshot(snapshotInput);
+    const targetSnapshot = await target.acceptedSnapshot(snapshotInput);
+    expect(sourceSnapshot.ok).toBe(true);
+    expect(targetSnapshot.ok).toBe(true);
+    if (!sourceSnapshot.ok || !targetSnapshot.ok) return;
+    // 5 courants : l'ordre exact est prouvé, pas vrai par construction ; les
+    // autres classes n'y figurent pas (pas de résurrection).
+    expect(sourceSnapshot.value.documents.map((document) => document.record_id)).toEqual(expectedCurrent);
+    expect(sourceSnapshot.value.documents).toHaveLength(5);
+    expect(targetSnapshot.value.documents).toEqual(sourceSnapshot.value.documents);
+    expect(targetSnapshot.value.eligibility_digest).toBe(sourceSnapshot.value.eligibility_digest);
+    expect(targetSnapshot.value.snapshot_digest).toBe(sourceSnapshot.value.snapshot_digest);
+    for (const removed of expectedRemoved) {
+      expect(sourceSnapshot.value.documents.map((document) => document.record_id)).not.toContain(removed);
+    }
+    const sourceJournal = await store.readJournal({ after: "0", limit: 500 });
+    const targetJournal = await target.readJournal({ after: "0", limit: 500 });
+    if (!sourceJournal.ok || !targetJournal.ok) throw new Error("journal read failed");
+    expect(targetJournal.value.map((event) => event.event_digest)).toEqual(sourceJournal.value.map((event) => event.event_digest));
+    const sourceRecord = await store.readRecord({ record_id: survivor, system_as_of: through, authorization_receipt_digest: DIGEST });
+    const targetRecord = await target.readRecord({ record_id: survivor, system_as_of: through, authorization_receipt_digest: DIGEST });
+    expect(targetRecord).toEqual(sourceRecord);
+    const sourceBatch = await store.nextProjectionBatch({ after: "0", limit: 100 });
+    const targetBatch = await target.nextProjectionBatch({ after: "0", limit: 100 });
+    expect(sourceBatch.ok).toBe(true);
+    expect(targetBatch.ok).toBe(true);
+    if (!sourceBatch.ok || !targetBatch.ok) return;
+    expect(targetBatch.value.records.map((record) => record.record_id).sort()).toEqual(expectedCurrent);
+    // MINEUR 6 : le batch de reconstruction porte les retraits (rebuild depuis zéro).
+    expect(targetBatch.value.removals.map((removal) => removal.record_id).sort()).toEqual(expectedRemoved);
+  });
+
+  it("a v1 payload without excluded_counts restores (MINEUR 3)", async () => {
+    const { memory, store } = createL3Memory();
+    const captured = await memory.capture(captureRequest("idempotency-key-x4v-survivor", "31"));
+    if (!captured.ok || captured.value.candidate_id === undefined) throw new Error("v1 capture failed");
+    const admission = await memory.requestAdmission({ candidate_id: captured.value.candidate_id, authorization: { credential: "credential:l3" }, deadline_at: DEADLINE });
+    if (!admission.ok || admission.value.record_id === undefined) throw new Error("v1 admission failed");
+    const readiness = await store.readiness();
+    if (!readiness.ok) throw new Error("v1 readiness failed");
+    const through = readiness.value.high_water_cursor;
+
+    const { key, object, sealedPlaintexts } = backupPorts();
+    const backup = createLogicalMemoryBackupV1({ store, authorization: authorizationPort(), backup_key: key, backup_object: object, clock: { now: () => NOW } });
+    const exported = await backup.exportLogical({ through_cursor: through, authorization: { credential: "credential:l3" }, object_target_ref: "target:x4v", encryption_key_ref: "key:x4v", deadline_at: DEADLINE });
+    expect(exported.ok).toBe(true);
+    if (!exported.ok) return;
+    expect(sealedPlaintexts).toHaveLength(1);
+
+    // Fabrique un payload v1 : même journal/blobs, sans excluded_counts.
+    const v2 = JSON.parse(sealedPlaintexts[0]!) as { journal: unknown[]; records: unknown[]; generation: string; high_water_cursor: string };
+    const v1plaintext = JSON.stringify({ schema_version: 1, generation: v2.generation, high_water_cursor: v2.high_water_cursor, journal: v2.journal, records: v2.records });
+    expect(v1plaintext.includes("excluded_counts")).toBe(false);
+    const sealed = await key.seal({ key_ref: "key:x4v-v1", plaintext: v1plaintext, context_digest: receiptDigest("logical-backup-context", { high_water_cursor: through }) });
+    if (!sealed.ok) throw new Error("v1 seal failed");
+    const put = await object.put({ target_ref: "target:x4v-v1", object_id: `memory:logical-backup:${through}`, ciphertext: sealed.value.ciphertext, ciphertext_digest: sealed.value.ciphertext_digest });
+    if (!put.ok) throw new Error("v1 put failed");
+    const { manifest_digest: _dropped, ...v1body } = {
+      ...exported.value,
+      ciphertext_digest: sealed.value.ciphertext_digest,
+      key_receipt_digest: sealed.value.key_receipt_digest,
+      object_receipt_digest: put.value.object_receipt_digest,
+    };
+    const v1signed = { ...v1body, manifest_digest: receiptDigest("logical-backup-manifest", v1body) };
+
+    const restored = await backup.restoreLogical({ manifest: v1signed, authorization: { credential: "credential:l3" }, source_ref: "target:x4v-v1", decryption_key_ref: "key:x4v-v1", deadline_at: DEADLINE });
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) return;
+    expect(restored.value.restored_cursor).toBe(through);
+    expect(restored.value.canonical_state_digest).toBe(exported.value.state_digest);
+  });
 });
 
 // Helpers that reconstruct persistence from the sealed backup payload to prove independence.
 function rebuildPersistenceFromBackup(plaintext: string) {
-  const payload = JSON.parse(plaintext) as { journal: unknown[]; records: unknown[] };
-  return { journal: payload.journal as never, controls: [], envelopes: [], records: payload.records as never, lexical: [], outbox: [] };
+  const payload = JSON.parse(plaintext) as { journal: never[]; records: never[] };
+  const folded = foldMemoryJournalV1({ journal: payload.journal as never, records: payload.records as never });
+  if (!folded.ok) throw new Error("backup fold failed");
+  return {
+    journal: payload.journal as never,
+    controls: [],
+    envelopes: [],
+    records: payload.records as never,
+    lexical: [...deriveAcceptedLexicalDocumentsV1(folded.value, payload.records as never)],
+    outbox: [...deriveRebuildOutboxBatchV1(folded.value, payload.records as never)],
+  };
 }
 function exportPersistedJournal(store: ReturnType<typeof createInMemoryCanonicalMemoryStoreV1>) {
   const state = store.exportStateForPersistence();

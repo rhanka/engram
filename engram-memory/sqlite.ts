@@ -10,8 +10,10 @@ import {
 } from "node:fs";
 import { dirname } from "node:path";
 
+import { normalizeCanonicalJson } from "./canonical-json.js";
 import { receiptDigest } from "./digests.js";
 import { classifyFenceFilesystemV1, SQLITE_LOCAL_FILESYSTEM_TYPES, SQLITE_REJECTED_FILESYSTEM_TYPES } from "./filesystem-fence.js";
+import { backupPublicJournalToStorageV1, deriveAcceptedLexicalDocumentsV1, deriveRebuildOutboxBatchV1 } from "./logical-backup.js";
 import { procLocksHoldsExclusiveFlockV1 } from "./proc-locks.js";
 import { markFencedStoreV1 } from "./store-factory.js";
 import {
@@ -31,6 +33,8 @@ import type {
   Cursor,
   Digest,
   LifecycleEventV2,
+  LogicalBackupImportInputV1,
+  LogicalBackupImportReceiptV1,
   MemoryOperation,
   MemoryRecordV2,
   OperationalCapabilityReceiptV1,
@@ -123,7 +127,7 @@ interface ActiveReader {
   expires_at_ms: number;
 }
 
-function refusal<T>(operation: MemoryOperation, code: "CAPABILITY_UNAVAILABLE" | "FENCE_LOST" | "STORE_UNAVAILABLE" | "JOURNAL_CORRUPT", message: string): Result<T> {
+function refusal<T>(operation: MemoryOperation, code: "CAPABILITY_UNAVAILABLE" | "FENCE_LOST" | "STORE_UNAVAILABLE" | "JOURNAL_CORRUPT" | "BACKUP_INVALID" | "RESTORE_REFUSED", message: string): Result<T> {
   return { ok: false, error: { code, operation, message, retryable: false } };
 }
 
@@ -559,6 +563,81 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
   async readJournal(input: Parameters<CanonicalMemoryStorePort["readJournal"]>[0]): Promise<Result<ReadonlyArray<LifecycleEventV2>>> {
     const fence = this.#fence("admin");
     return fence.ok ? this.#core.readJournal(input) : fence;
+  }
+
+  /**
+   * D-11 B (lot X4): atomic logical-restore import into an EMPTY store only.
+   * Carries the dense journal plus referenced immutable blobs — never pending
+   * envelopes or controls — and rebuilds every store-owned derived surface
+   * (accepted lexical + FTS, one coalesced projection-rebuild batch) from that
+   * canonical pair in the same transaction. All-or-nothing inside one
+   * promotion transaction: a failpoint throw rolls everything back.
+   */
+  async importLogicalBackup(input: LogicalBackupImportInputV1): Promise<Result<LogicalBackupImportReceiptV1>> {
+    return this.#exclusive("restore", async () => {
+      const fence = this.#fence("restore");
+      if (!fence.ok) return fence;
+      const current = this.#core.exportStateForPersistence();
+      if (!current.ok) return current;
+      if (current.value.journal.length !== 0 || current.value.records.length !== 0
+        || current.value.controls.length !== 0 || current.value.envelopes.length !== 0
+        || current.value.lexical.length !== 0 || current.value.outbox.length !== 0) {
+        return refusal("restore", "RESTORE_REFUSED", "logical backup import refuses a non-empty store");
+      }
+      const converted = backupPublicJournalToStorageV1(input.journal);
+      if (!converted.ok) return { ok: false, error: { ...converted.error, operation: "restore" as MemoryOperation } };
+      const records = (normalizeCanonicalJson(input.records) as unknown as MemoryRecordV2[]).slice()
+        .sort((left, right) => left.record_id.localeCompare(right.record_id));
+      const folded = foldMemoryJournalV1({ journal: converted.value, records });
+      if (!folded.ok) return { ok: false, error: { ...folded.error, operation: "restore" as MemoryOperation, code: "BACKUP_INVALID" as const } };
+      if (input.expected_restored_cursor !== undefined && folded.value.high_water_cursor !== input.expected_restored_cursor) {
+        return refusal("restore", "RESTORE_REFUSED", "restored cursor does not match the backup before commit");
+      }
+      if (input.expected_canonical_state_digest !== undefined && folded.value.canonical_state_digest !== input.expected_canonical_state_digest) {
+        return refusal("restore", "RESTORE_REFUSED", "restored canonical state digest differs from the backup before commit");
+      }
+      const snapshot: InMemoryStoreStateV1 = {
+        journal: converted.value,
+        records,
+        controls: [],
+        envelopes: [],
+        lexical: [...deriveAcceptedLexicalDocumentsV1(folded.value, records)],
+        outbox: [...deriveRebuildOutboxBatchV1(folded.value, records)],
+      };
+      // Validate through a throwaway core BEFORE any durable write.
+      const staged = createInMemoryCanonicalMemoryStoreV1({ clock: this.options.clock, store_id: this.options.store_id, persistence: snapshot });
+      const stagedReady = await staged.readiness();
+      if (!stagedReady.ok) return { ok: false, error: { ...stagedReady.error, operation: "restore" as MemoryOperation, code: "BACKUP_INVALID" as const } };
+      let began = false;
+      try {
+        this.database.exec("BEGIN IMMEDIATE");
+        began = true;
+        const before = this.#fence("restore");
+        if (!before.ok) {
+          this.database.exec("ROLLBACK");
+          return before;
+        }
+        this.#writeState(snapshot);
+        this.options.before_commit?.();
+        const beforeCommit = this.#fence("restore");
+        if (!beforeCommit.ok) {
+          this.database.exec("ROLLBACK");
+          return beforeCommit;
+        }
+        this.database.exec("COMMIT");
+        began = false;
+        this.#core = staged;
+        const body = { restored_cursor: folded.value.high_water_cursor, canonical_state_digest: folded.value.canonical_state_digest };
+        return { ok: true, value: { ...body, receipt_digest: receiptDigest("logical-restore", body) } };
+      } catch {
+        if (began) {
+          try { this.database.exec("ROLLBACK"); } catch { /* the connection is already unwound */ }
+        }
+        return refusal("restore", this.#fenceLost ? "FENCE_LOST" : "STORE_UNAVAILABLE", this.#fenceLost
+          ? "the SQLite writer fence was lost before commit"
+          : "SQLite import transaction rolled back");
+      }
+    });
   }
 
   async checkpoint(input: Parameters<CanonicalMemoryStorePort["checkpoint"]>[0]): Promise<Result<RecoveryCheckpointManifestV1>> {
