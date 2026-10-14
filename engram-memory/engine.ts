@@ -7,7 +7,8 @@ import {
   receiptDigest,
   recordIdFromDigest,
 } from "./digests.js";
-import { isCanonicalCursor, validateAdminOperationRequest, validateCandidatePayload, validateReconciliationCommandBinding, validateReconciliationRequest } from "./validation.js";
+import { isCanonicalCursor, validateAdminOperationRequest, validateCandidatePayload, validateProjectionInvalidationRequest, validateReconciliationCommandBinding, validateReconciliationRequest } from "./validation.js";
+import { applyProjectionBatchV1 } from "./projection-cascade.js";
 import { evaluateReconciliationEligibilityV1, reconciliationProposalIdV1 } from "./assertion-family-registry.js";
 import { verifyStoreProvenance } from "./store-factory.js";
 import { executeRecall } from "./recall.js";
@@ -22,9 +23,11 @@ import type {
   AuthorizationRequestV1,
   AuthorizationResultV1,
   CandidatePayloadV2,
+  CanonicalMemoryStorePort,
   CapitalisationRequestV1,
   CaptureAcknowledgementV1,
   CaptureRequestV2,
+  Cursor,
   Digest,
   MemoryEngineDependenciesV2,
   MemoryErrorCode,
@@ -36,6 +39,8 @@ import type {
   LifecycleReceiptV1,
   OperationalCapabilityReceiptV1,
   ProjectionBatchV1,
+  ProjectionInvalidationReceiptV1,
+  ProjectionInvalidationSurfaceV1,
   RecallRequestV2,
   RedactionDirectiveV1,
   RedactionResultV1,
@@ -875,6 +880,11 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
   const cancelled = new Set<string>();
   const capturedContent = new Map<string, Digest>();
   const admissionOutcomes = new Map<string, AdmissionOutcomeV1>();
+  // X2 tour 4 (MAJEUR-1, normative §4): at most one invalidateProjections cascade runs at a time per port.
+  // Overlapping calls queue on this chain instead of interleaving rounds: a stale batch read by an older
+  // call can never apply after a newer call certified past a tombstone. A rejected call still releases
+  // the chain for the next waiter.
+  let projectionChain: Promise<unknown> = Promise.resolve();
   const unfencedMemoryStorePermitted = dependencies.allow_unfenced_memory_store === true;
   // §5.9 (v5-c): announce the non-production posture once at construction so a host can log/audit it at startup.
   if (unfencedMemoryStorePermitted) dependencies.on_unfenced_memory_store_permitted?.();
@@ -1386,7 +1396,126 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       });
       return { ok: true, value: { ...outcomeWithoutReceipt, receipt_digest: receiptDigest("reconciliation-outcome", outcomeWithoutReceipt) } };
     },
-    invalidateProjections: async () => unavailable("projection_invalidate"),
+    invalidateProjections: async (input): Promise<Result<ProjectionInvalidationReceiptV1>> => {
+      // FIN §4.2 step 1: fresh readiness and provenance, like every fencing-dependent operation.
+      const admitted = await admitFenced("projection_invalidate");
+      if (!admitted.ok) return admitted;
+      const now = dependencies.clock?.now();
+      if (!isInstant(now)) return unavailable("projection_invalidate", "clock did not supply a canonical instant");
+      // Step 2: exact-key validation of the request.
+      const checked = validateProjectionInvalidationRequest(input);
+      if (!checked.ok) return checked;
+      const request = checked.value;
+      if (compareInstants(now, request.deadline_at) >= 0) return refusal("projection_invalidate", "DEADLINE_EXCEEDED", "invalidation deadline elapsed before cascade");
+      // Step 3: capability before authorization — no configured surface refuses.
+      const configured = dependencies.projection_surfaces;
+      if (configured === undefined || configured.length === 0) return unavailable("projection_invalidate");
+      // Step 4: the target cursor must be admitted.
+      if (BigInt(request.through_cursor) > BigInt(admitted.value.high_water_cursor)) {
+        return refusal("projection_invalidate", "STALE_PAGE", "invalidation cursor is unavailable");
+      }
+      // Step 5: authorize projection_invalidate over the store-wide empty resource (backup/restore precedent).
+      const authorized = await authorizeOperation(dependencies.authorization, {
+        operation: "projection_invalidate",
+        resource: {},
+        resource_digest: authorizationResourceDigest("projection_invalidate", {}),
+        context: request.authorization,
+        issued_at: now,
+        deadline_at: request.deadline_at,
+      }, undefined, now);
+      if (!authorized.ok) return authorized;
+      // Step 6: resolve the named subset before any cascade round; an unknown id refuses.
+      const resolved: ProjectionInvalidationSurfaceV1[] = [];
+      if (request.projection_ids !== undefined) {
+        for (const projectionId of request.projection_ids) {
+          const surface = configured.find((entry) => entry.projection_id === projectionId);
+          if (surface === undefined) return refusal("projection_invalidate", "INVALID_SCHEMA", "unknown projection id");
+          resolved.push(surface);
+        }
+        if (resolved.length === 0) return refusal("projection_invalidate", "INVALID_SCHEMA", "no projection surface selected");
+      } else {
+        resolved.push(...configured);
+      }
+      // Step 7: cascade rounds from "0", ONE outbox batch (one journal event) per round, so every
+      // surface applies the canonical journal prefix in total order and a surface's state through a cursor
+      // is a function of that ordered prefix — except records currently tombstoned, which the store
+      // re-emits as removals (normative §1/§6, retroactive tombstone): an older through_cursor can never
+      // roll a surface back past a terminal tombstone. The requested through_cursor is a MINIMUM coverage
+      // (normative §1): rounds run to the admitted high-water mark, so an older request converging a
+      // surface rebuilds it to the head instead of rolling it back. A receipt acks a cursor only when every
+      // round through it was complete on every surface: an incomplete round pins the receipt to the last
+      // complete cursor, says so explicitly, and stops — never advancing past the gap.
+      // X2 tour 4 (MINEUR-1): the target is max(requested through_cursor, admitted high_water_cursor).
+      // X2 tour 5 (P9, normative §6): invisible replay in two phases. Phase 1 walks the outbox to the
+      // target WITHOUT contacting any surface — an interruption here leaves every surface untouched.
+      // Phase 2 publishes the buffered batches in order with no deadline aborts mid-phase, then checks
+      // the deadline ONCE before acknowledging: a call that overran its deadline still converges every
+      // surface (no accepted record ever disappears), yet never certifies success. Surface faults keep
+      // the tour-3 pin-and-recover semantics; only the deadline path is invisible.
+      const target: Cursor = BigInt(request.through_cursor) > BigInt(admitted.value.high_water_cursor)
+        ? request.through_cursor
+        : admitted.value.high_water_cursor;
+      // Phase 1 (private): read-only walk of the outbox to the target.
+      const buffered: ProjectionBatchV1[] = [];
+      let readAfter: Cursor = "0";
+      for (;;) {
+        const roundNow = dependencies.clock?.now();
+        if (!isInstant(roundNow)) return unavailable("projection_invalidate", "clock did not supply a canonical instant");
+        if (compareInstants(roundNow, request.deadline_at) >= 0) return refusal("projection_invalidate", "DEADLINE_EXCEEDED", "invalidation deadline elapsed during cascade");
+        let read: Awaited<ReturnType<CanonicalMemoryStorePort["nextProjectionBatch"]>>;
+        try {
+          read = await dependencies.canonical_store.nextProjectionBatch({ after: readAfter, limit: 1 });
+        } catch {
+          return unavailable("projection_invalidate", "projection cascade did not return a typed result");
+        }
+        // First round with no batch: nothing to invalidate (the store's explicit exhaustion signal — the
+        // only one that denotes outbox exhaustion). A later gap ends the walk; phase 2 publishes what
+        // was read and the receipt states the covered prefix.
+        if (!read.ok) {
+          if (read.error.code === "NOT_FOUND" && buffered.length === 0) return read;
+          break;
+        }
+        buffered.push(read.value);
+        if (BigInt(read.value.through_cursor_inclusive) >= BigInt(target)) break;
+        if (BigInt(read.value.through_cursor_inclusive) <= BigInt(readAfter)) break;
+        readAfter = read.value.through_cursor_inclusive;
+      }
+      // Phase 2 (publication): settle at apply time and drive every buffered batch through the surfaces.
+      let after: Cursor = "0";
+      let covered: ProjectionInvalidationReceiptV1 | undefined;
+      for (const batch of buffered) {
+        let published: Awaited<ReturnType<typeof applyProjectionBatchV1>>;
+        try {
+          published = await applyProjectionBatchV1({ store: dependencies.canonical_store, surfaces: resolved, batch });
+        } catch {
+          return unavailable("projection_invalidate", "projection cascade did not return a typed result");
+        }
+        if (!published.ok) {
+          // A surface NOT_FOUND already arrives as PROJECTION_STALE (tour 3, normative §5): a fault
+          // certifies nothing, so the call fails even when earlier batches published — the caller
+          // recovers them by replay, whose durable cursors survive.
+          return published;
+        }
+        const receipt = published.value.receipt;
+        if (!receipt.complete) {
+          const body = { through_cursor: after, projection_receipts: receipt.projection_receipts, complete: false as const };
+          return { ok: true, value: { ...body, receipt_digest: receiptDigest("projection-invalidation", body) } };
+        }
+        covered = receipt;
+        if (BigInt(covered.through_cursor) >= BigInt(target)) break;
+        if (BigInt(covered.through_cursor) <= BigInt(after)) break;
+        after = covered.through_cursor;
+      }
+      if (covered === undefined) return refusal("projection_invalidate", "NOT_FOUND", "no projection batch is available");
+      // The single certification gate: a call that overran its deadline converged the surfaces above but
+      // publishes nothing — no acknowledgement, no success receipt. The caller retries and converges again.
+      const publicationNow = dependencies.clock?.now();
+      if (!isInstant(publicationNow)) return unavailable("projection_invalidate", "clock did not supply a canonical instant");
+      if (compareInstants(publicationNow, request.deadline_at) >= 0) return refusal("projection_invalidate", "DEADLINE_EXCEEDED", "invalidation deadline elapsed before publication");
+      const acknowledgement = await dependencies.canonical_store.acknowledgeProjection(covered);
+      if (!acknowledgement.ok) return acknowledgement;
+      return { ok: true, value: covered };
+    },
     readiness: async () => {
       const readiness = await dependencies.canonical_store.readiness();
       return readiness.ok ? readiness : operationFailure("admin", readiness);
@@ -1422,6 +1551,15 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       // unreachable: validateAdminOperationRequest admits only bootstrap|rotate|revoke.
       return refusal("admin", "INVALID_SCHEMA", "unsupported admin operation");
     },
+  };
+  // X2 tour 4 (MAJEUR-1, normative §4): serialize invalidations — one cascade in flight per port, the
+  // rest wait on projectionChain. invalidateOnce keeps the exact-key validation, STALE_PAGE, auth and
+  // round semantics below; the wrapper only orders the calls.
+  const invalidateOnce = port.invalidateProjections.bind(port);
+  port.invalidateProjections = (input) => {
+    const run = projectionChain.then(() => invalidateOnce(input));
+    projectionChain = run.catch(() => undefined);
+    return run;
   };
   return port;
 }

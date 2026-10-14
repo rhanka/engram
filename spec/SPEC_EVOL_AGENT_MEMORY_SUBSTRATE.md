@@ -571,11 +571,15 @@ export interface CapitalisationRequestV1 {
   deadline_at: Instant;
 }
 
-export interface ProjectionInvalidationRequestV1 {
+export interface ProjectionInvalidationRequestV1 { // (2026-10-13 amendment, D-10 B)
   through_cursor: Cursor;
-  projection_ids: ReadonlyArray<OpaqueRef>;
+  projection_ids?: ReadonlyArray<OpaqueRef>; // absent = all configured surfaces; present = named subset (was required)
+  authorization: AuthorizationContextV1;     // REQUIRED credential input for projection_invalidate (new required field)
   deadline_at: Instant;
 }
+// Exception to the §4 evolution rule per owner decision D-10 B 2026-10-07: the V1 request name is kept although
+// `authorization` is a new required field and `projection_ids` changed meaning (required → optional, absent = all
+// surfaces), because no working caller exists — every call refused CAPABILITY_UNAVAILABLE.
 
 export interface ProjectionInvalidationReceiptV1 {
   through_cursor: Cursor;
@@ -654,6 +658,8 @@ export interface MemoryPortV2 {
 `CaptureRequestV2` has no trigger-reason field. An external caller may invoke it at any lifecycle point; trigger selection is outside Graphify. Capture can only validate and commit a pending encrypted candidate. Stable idempotency is `(source_ref, sequence, idempotency_key)`: an exact repeat returns `duplicate_exact`; any digest mismatch returns `DIGEST_CONFLICT` with no write. Deadline expiration or cancellation before commit rolls back. An acknowledgement is returned only after the pending transaction is durable.
 
 Capitalisation never changes the source record's scope or state. The engine authorizes source read and target capture separately, asks `AuthorizationPort.redact` for a sanitized payload, creates a distinct cited derivative with canonical private lineage, and sends it through pending admission. Projection builders never create an edge between records with unequal `scope_ref`. Returned packets omit private lineage unless the authorization directive explicitly allows it.
+
+**Projection invalidation (2026-10-13 amendment, D-10 B).** `MemoryPortV2.invalidateProjections` drives the exported `runProjectionInvalidationCascadeV1` over the engine's store and the host-owned `projection_surfaces` (§5.9 dependencies): admit fencing for `projection_invalidate`; exact-key request validation; absent or empty surfaces ⇒ `CAPABILITY_UNAVAILABLE` (capability before authorization); `through_cursor` above the readiness high-water cursor ⇒ `STALE_PAGE`; authorize `projection_invalidate` through the injected `AuthorizationPort` over the store-wide empty resource with the request's `authorization` context (a denial surfaces as `UNAUTHORIZED`; the engine performs no per-record authorization and never self-authorizes); absent `projection_ids` selects all configured surfaces while a present list selects the named subset, else `INVALID_SCHEMA` for an unknown id (checked before any cascade round); calls serialize on one chain per port — at most one cascade in flight, the rest wait (2026-10-14 amendment, D-10 B tour 4, normative §4: overlapping calls never resurrect); each call replays invisibly in two phases (2026-10-14 amendment, D-10 B tour 5, normative §6): phase 1 walks the outbox to the target without contacting any surface, phase 2 publishes the buffered batches in order with no deadline aborts mid-phase and checks the deadline once before acknowledging — an interrupted call converges every surface yet never certifies success, so an accepted record never disappears from a surface; cascade rounds advance from `after_cursor: "0"` to `max(requested through_cursor, admitted high-water cursor)` — the request is a minimum coverage, never a rollback — one outbox batch (one journal event) per round (`limit: 1`), so every surface applies the canonical journal prefix in total order and a surface's state through a cursor is a function of that ordered prefix — except records currently tombstoned, which the store re-emits as removals (`memory:tombstoned`) in every window (2026-10-13 amendment, D-10 B tour 3, normative resume §1/§6): the terminal tombstone applies retroactively, so an older `through_cursor` never resurrects a tombstoned record and is never followed by a re-added copy; a window's content depends on the current tombstoned set, so its `batch_digest` varies for the same `(from, through)` before and after a tombstone; the cascade re-settles each batch at apply time over the journal (tour 4) — a record tombstoned between the read and the apply still lands in `removals`; the deadline is rechecked before every round and in the cascade before acknowledgement (`DEADLINE_EXCEEDED`, tour 4: never after publication); a receipt acks a cursor only when every round through it was complete on every surface — an incomplete round pins `through_cursor` to the last complete cursor with `complete: false` and stops, never advancing past the gap (a first round with no batch passes `NOT_FOUND` through; a later gap returns the last complete receipt as-is, whose `through_cursor` states the covered prefix). A surface `NOT_FOUND` or untyped exception becomes `PROJECTION_STALE` (tour 3, normative resume §5): only the store's explicit exhaustion result denotes outbox exhaustion. A merged multi-batch window (direct cascade callers) folds each record to its last operation in journal order, so adds and removals stay disjoint whatever order a surface applies. The in-store accepted-lexical surface is maintained synchronously by the store itself, not through `projection_surfaces`.
 
 **Graphify-mediated admin entry point (new in this amendment).** `MemoryPortV2.admin` is the single appellable path through which administrative bootstrap, rotation, and revocation reach the injected `AdminProviderPort` (§5.10); the host never calls `AdminProviderPort` directly for a check that must be graphify-mediated, which closes the reopening of O4 (an admin dispatch not appellable through graphify). `AdminOperationRequestV1` (§5.10) is a discriminated union over `bootstrap | rotate | revoke` carrying the corresponding sub-request. The engine's normative behavior is:
 
@@ -1083,6 +1089,7 @@ export interface MemoryEngineDependenciesV2 {
   vector_projection?: VectorProjectionPort;
   semantic_projection?: SemanticProjectionPort;
   assertion_registry?: AssertionFamilyRegistry;
+  projection_surfaces?: ReadonlyArray<ProjectionInvalidationSurfaceV1>; // (2026-10-13 amendment, D-10 B) OPTIONAL host-owned derived surfaces driven by invalidateProjections; absent/empty ⇒ CAPABILITY_UNAVAILABLE
   backup_object?: BackupObjectPort;
   backup_key?: BackupKeyPort;
   clock: ClockPort;

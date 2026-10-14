@@ -10,9 +10,12 @@ import {
   createLogicalMemoryBackupV1,
   openFencedSqliteCanonicalMemoryStoreV1,
   receiptDigest,
+  runProjectionInvalidationCascadeV1,
   type Digest,
   type FencedSqliteCanonicalMemoryStoreV1,
   type LogicalBackupManifestV1,
+  type ProjectionBatchV1,
+  type ProjectionInvalidationSurfaceV1,
 } from "../engram-memory/index.js";
 import {
   raiseSqliteMinimumVersionForTestingV1,
@@ -576,6 +579,97 @@ describe("native SQLite memory broker", () => {
     }
     // The explicit reset restored the default floor: opens are admitted again.
     const reopened = await open(filename());
+    await reopened.close();
+  });
+
+  it("projection outbox survives reopen: the tombstone removal reaches the surface through one cursor receipt", async () => {
+    const target = filename();
+    const store = await open(target);
+    const { memory } = createL3Memory("accept", store);
+    const captured = await memory.capture(captureRequest("idempotency-key-projection-outbox", "1"));
+    if (!captured.ok || captured.value.candidate_id === undefined) throw new Error("capture fixture failed");
+    const admitted = await memory.requestAdmission({ candidate_id: captured.value.candidate_id, authorization: { credential: "credential:l3" }, deadline_at: "2026-08-16T12:40:00.000Z" });
+    if (!admitted.ok || admitted.value.record_id === undefined) throw new Error("admission fixture failed");
+    const recordId = admitted.value.record_id;
+    const tombstoned = await memory.transition(lifecycleCommand("tombstone", recordId));
+    expect(tombstoned.ok).toBe(true);
+    if (!tombstoned.ok) throw new Error("tombstone fixture failed");
+    const tombstoneCursor = tombstoned.value.cursor;
+    await store.close();
+    // The outbox is durable: after reopen, a fenced cascade from "0" still delivers the terminal removal
+    // through the store's fenced nextProjectionBatch and acknowledgeProjection transaction.
+    const reopened = await open(target);
+    const removed: string[] = [];
+    const cascade = await runProjectionInvalidationCascadeV1({
+      store: reopened,
+      surfaces: [{
+        projection_id: "sqlite-probe",
+        async invalidate(batch: ProjectionBatchV1) {
+          for (const removal of batch.removals) removed.push(removal.record_id);
+          return { ok: true as const, value: { projection_id: "sqlite-probe", cursor: batch.through_cursor_inclusive, digest: `sha256:${"0".repeat(64)}` as Digest } };
+        },
+      }],
+      after_cursor: "0",
+      deadline_at: "2026-08-16T12:40:00.000Z",
+    });
+    expect(cascade.ok).toBe(true);
+    if (!cascade.ok) throw new Error("cascade fixture failed");
+    // The terminal tombstone is delivered exactly once — never resurrected by an earlier add in the window.
+    expect(removed.filter((entry) => entry === recordId)).toHaveLength(1);
+    expect(cascade.value.receipt.complete).toBe(true);
+    expect(cascade.value.receipt.through_cursor).toBe(tombstoneCursor);
+    await reopened.close();
+  });
+
+  it("engine invalidateProjections drives the fenced SQLite store: tombstone converges, replay never resurrects", async () => {
+    const target = filename();
+    const store = await open(target);
+    const entries = new Map<string, Digest>();
+    const surface: ProjectionInvalidationSurfaceV1 = {
+      projection_id: "sqlite-engine-probe",
+      async invalidate(batch: ProjectionBatchV1) {
+        for (const record of batch.records) entries.set(record.record_id, record.record_digest);
+        for (const removal of batch.removals) entries.delete(removal.record_id);
+        return { ok: true as const, value: { projection_id: "sqlite-engine-probe", cursor: batch.through_cursor_inclusive, digest: `sha256:${"0".repeat(64)}` as Digest } };
+      },
+    };
+    // X2 tour 4 (MINEUR-5): the engine lane — not the direct cascade — over the fenced SQLite store.
+    const { memory } = createL3Memory("accept", store, [surface]);
+    const captured = await memory.capture(captureRequest("idempotency-key-projection-engine", "1"));
+    if (!captured.ok || captured.value.candidate_id === undefined) throw new Error("capture fixture failed");
+    const admitted = await memory.requestAdmission({ candidate_id: captured.value.candidate_id, authorization: { credential: "credential:l3" }, deadline_at: "2026-08-16T12:40:00.000Z" });
+    if (!admitted.ok || admitted.value.record_id === undefined) throw new Error("admission fixture failed");
+    const recordId = admitted.value.record_id;
+    entries.set(recordId, `sha256:${"0".repeat(64)}` as Digest);
+    const tombstoned = await memory.transition(lifecycleCommand("tombstone", recordId));
+    expect(tombstoned.ok).toBe(true);
+    if (!tombstoned.ok) throw new Error("tombstone fixture failed");
+    const readiness = await memory.readiness();
+    expect(readiness.ok).toBe(true);
+    if (!readiness.ok) throw new Error("readiness fixture failed");
+    const invalidated = await memory.invalidateProjections({
+      through_cursor: readiness.value.high_water_cursor,
+      authorization: { credential: "credential:l3" },
+      deadline_at: "2026-08-16T12:40:00.000Z",
+    });
+    expect(invalidated.ok).toBe(true);
+    if (!invalidated.ok) throw new Error("engine invalidation failed");
+    expect(invalidated.value.complete).toBe(true);
+    expect(entries.has(recordId)).toBe(false);
+    await store.close();
+    // After reopen, a stale projection replayed through the engine lane converges without resurrecting.
+    const reopened = await open(target);
+    entries.set(recordId, `sha256:${"0".repeat(64)}` as Digest);
+    const { memory: revived } = createL3Memory("accept", reopened, [surface]);
+    const replayed = await revived.invalidateProjections({
+      through_cursor: readiness.value.high_water_cursor,
+      authorization: { credential: "credential:l3" },
+      deadline_at: "2026-08-16T12:40:00.000Z",
+    });
+    expect(replayed.ok).toBe(true);
+    if (!replayed.ok) throw new Error("engine replay failed");
+    expect(replayed.value.complete).toBe(true);
+    expect(entries.has(recordId)).toBe(false);
     await reopened.close();
   });
 });
