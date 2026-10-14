@@ -390,7 +390,10 @@ export interface CapitalisationRequestV1 {
 
 export interface ProjectionInvalidationRequestV1 {
   through_cursor: Cursor;
-  projection_ids: ReadonlyArray<OpaqueRef>;
+  // Absent = all configured surfaces; present = the named subset (unknown id ⇒ INVALID_SCHEMA).
+  projection_ids?: ReadonlyArray<OpaqueRef>;
+  // REQUIRED credential input authorizing projection_invalidate (D-10 B); the engine never self-authorizes.
+  authorization: AuthorizationContextV1;
   deadline_at: Instant;
 }
 
@@ -1154,6 +1157,10 @@ export interface MemoryEngineDependenciesV2 {
   vector_projection?: VectorProjectionPort;
   semantic_projection?: SemanticProjectionPort;
   assertion_registry?: AssertionFamilyRegistry;
+  // (D-10 B) OPTIONAL host-owned derived surfaces driven by invalidateProjections (graph, vector, caches,
+  // aggregates, exports, …); the in-store accepted-lexical surface is maintained synchronously by the store
+  // itself. Absent or empty ⇒ invalidateProjections refuses CAPABILITY_UNAVAILABLE.
+  projection_surfaces?: ReadonlyArray<ProjectionInvalidationSurfaceV1>;
   backup_object?: BackupObjectPort;
   backup_key?: BackupKeyPort;
   clock: ClockPort;

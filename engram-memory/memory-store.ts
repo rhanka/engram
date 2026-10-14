@@ -18,9 +18,11 @@ import type {
   MemoryOperation,
   MemoryRecordV2,
   MemoryState,
+  OpaqueRef,
   OperationalCapabilityReceiptV1,
   PendingControlV1,
   ProjectionBatchV1,
+  ProjectionRecordV1,
   ProjectionInvalidationReceiptV1,
   RecoveryCheckpointManifestV1,
   ReconciliationEventBindingV1,
@@ -865,9 +867,54 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
     if (!isCanonicalCursor(input.after) || !Number.isSafeInteger(input.limit) || input.limit < 1) return refusal("projection_invalidate", "INVALID_SCHEMA", "projection range is invalid");
     const batches = this.#outbox.filter((batch) => cursorCompare(batch.through_cursor_inclusive, input.after) > 0).slice(0, input.limit);
     if (batches.length === 0) return refusal("projection_invalidate", "NOT_FOUND", "no projection batch is available");
-    const records = batches.flatMap((batch) => batch.records);
-    const removals = batches.flatMap((batch) => batch.removals);
-    const body = { from_cursor_exclusive: input.after, through_cursor_inclusive: batches[batches.length - 1]!.through_cursor_inclusive, records, removals };
+    // Fold the window in canonical journal order, keeping each record's LAST operation: a record re-added
+    // after a removal ends in records only, a record removed after an add ends in removals only. Adds and
+    // removals are therefore disjoint, so the merged window settles every surface to the same final state
+    // whatever order it applies — and a terminal tombstone is never followed by a re-added copy.
+    const lastKind = new Map<string, "record" | "removal">();
+    const lastRecord = new Map<string, ProjectionRecordV1>();
+    const lastRemoval = new Map<string, { record_id: string; reason_ref: OpaqueRef }>();
+    for (const batch of batches) {
+      for (const record of batch.records) {
+        lastKind.set(record.record_id, "record");
+        lastRecord.set(record.record_id, clone(record));
+      }
+      for (const removal of batch.removals) {
+        lastKind.set(removal.record_id, "removal");
+        lastRemoval.set(removal.record_id, clone(removal));
+      }
+    }
+    const records = [...lastKind.entries()]
+      .filter(([, kind]) => kind === "record")
+      .map(([recordId]) => lastRecord.get(recordId)!)
+      .sort((left, right) => left.record_id.localeCompare(right.record_id));
+    const removals = [...lastKind.entries()]
+      .filter(([, kind]) => kind === "removal")
+      .map(([recordId]) => lastRemoval.get(recordId)!)
+      .sort((left, right) => left.record_id.localeCompare(right.record_id));
+    // X2 resume (tour 3, normative §1/§6): the tombstone is terminal and retroactive. A record that is
+    // tombstoned in the CURRENT folded state can never reappear through an older resume point, so any
+    // window record for such an id is re-emitted as a removal (reason memory:tombstoned) instead. Without
+    // this, replaying the resolve_dispute/rewind re-add batch after convergence resurrects the record on
+    // every surface up to the tombstone round. Ids outside the window are left alone: the batch only
+    // describes its own range.
+    // X2 tour 4 (MINEUR-6): reuse the fold above instead of folding the whole journal twice per batch.
+    // A window's content still depends on the current tombstoned set, so its digest varies for the same
+    // (from, through) before and after a tombstone.
+    const tombstoned = new Set(
+      ready.value.records.filter((entry) => entry.state === "tombstoned").map((entry) => entry.record_id),
+    );
+    let settledRecords = records;
+    let settledRemovals = removals;
+    if (tombstoned.size > 0) {
+      settledRecords = records.filter((record) => !tombstoned.has(record.record_id));
+      const known = new Set(removals.map((removal) => removal.record_id));
+      const retro = [...tombstoned]
+        .filter((recordId) => lastKind.has(recordId) && !known.has(recordId))
+        .map((record_id) => ({ record_id, reason_ref: "memory:tombstoned" }));
+      settledRemovals = [...removals, ...retro].sort((left, right) => left.record_id.localeCompare(right.record_id));
+    }
+    const body = { from_cursor_exclusive: input.after, through_cursor_inclusive: batches[batches.length - 1]!.through_cursor_inclusive, records: settledRecords, removals: settledRemovals };
     return { ok: true, value: { ...body, batch_digest: batchDigest(body) } };
   }
 
