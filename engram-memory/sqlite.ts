@@ -148,6 +148,80 @@ function parse<T>(value: string): T {
   return JSON.parse(value) as T;
 }
 
+/**
+ * D8 acquisition step 2 (lot X3): the supported SQLite runtime is >= 3.51.3,
+ * plus the documented fixed backport lines 3.44.6+ and 3.50.7+. Anything else —
+ * an older line or an unexpected format — is refused at open with
+ * CAPABILITY_UNAVAILABLE. Pure: takes the `sqlite_version()` text, no I/O.
+ */
+const SQLITE_MINIMUM_VERSION_V1 = { major: 3, minor: 51, patch: 3 };
+
+interface SqliteVersionV1 {
+  major: number;
+  minor: number;
+  patch: number;
+}
+
+function parseSqliteVersionV1(version: string): SqliteVersionV1 | undefined {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (match === null) return undefined;
+  const triple = [match[1]!, match[2]!, match[3]!].map(Number);
+  if (triple.some((part) => !Number.isSafeInteger(part))) return undefined;
+  return { major: triple[0]!, minor: triple[1]!, patch: triple[2]! };
+}
+
+function compareSqliteVersionV1(left: SqliteVersionV1, right: SqliteVersionV1): number {
+  return left.major - right.major || left.minor - right.minor || left.patch - right.patch;
+}
+
+function isSupportedParsedSqliteVersionV1(version: SqliteVersionV1): boolean {
+  if (compareSqliteVersionV1(version, SQLITE_MINIMUM_VERSION_V1) >= 0) return true;
+  if (version.major === 3 && version.minor === 44 && version.patch >= 6) return true;
+  if (version.major === 3 && version.minor === 50 && version.patch >= 7) return true;
+  return false;
+}
+
+export function isSupportedSqliteRuntimeVersionV1(version: string): boolean {
+  const parsed = parseSqliteVersionV1(version);
+  return parsed !== undefined && isSupportedParsedSqliteVersionV1(parsed);
+}
+
+let testOnlySqliteMinimumOverrideV1: SqliteVersionV1 | undefined;
+
+/**
+ * Effective test floor: the regulatory default until a test raises it, then
+ * the monotone maximum of every threshold ever raised. Only an explicit
+ * `resetSqliteMinimumVersionForTestingV1` (test teardown) re-arms it.
+ * `openFencedSqliteCanonicalMemoryStoreV1` compares the probed runtime
+ * against this floor.
+ */
+export function effectiveSqliteMinimumVersionForTestingV1(): string {
+  const floor = testOnlySqliteMinimumOverrideV1 ?? SQLITE_MINIMUM_VERSION_V1;
+  return `${floor.major}.${floor.minor}.${floor.patch}`;
+}
+
+/**
+ * Strict-only test seam (D-9 A): raises the required SQLite minimum for the
+ * open-time check, never lowers it. Only a threshold strictly above the
+ * effective floor (the regulatory default, then the maximum of every
+ * threshold ever raised) is admitted; anything at or below it — or an
+ * unparseable version — throws instead of widening admission. Reset with
+ * `resetSqliteMinimumVersionForTestingV1` (test teardown).
+ */
+export function raiseSqliteMinimumVersionForTestingV1(version: string): void {
+  const parsed = parseSqliteVersionV1(version);
+  if (parsed === undefined) throw new Error(`refusing to set the SQLite test minimum to an unparseable version (${version})`);
+  const floor = testOnlySqliteMinimumOverrideV1 ?? SQLITE_MINIMUM_VERSION_V1;
+  if (compareSqliteVersionV1(parsed, floor) <= 0) {
+    throw new Error(`the SQLite test seam only raises the minimum above ${floor.major}.${floor.minor}.${floor.patch} (${version} would not raise it)`);
+  }
+  testOnlySqliteMinimumOverrideV1 = parsed;
+}
+
+export function resetSqliteMinimumVersionForTestingV1(): void {
+  testOnlySqliteMinimumOverrideV1 = undefined;
+}
+
 function defaultFilesystemProbe(filename: string): LocalFilesystemProbeResultV1 {
   try {
     const type = Number(statfsSync(dirname(filename)).type);
@@ -775,6 +849,24 @@ export async function openFencedSqliteCanonicalMemoryStoreV1(options: FencedSqli
     const native = await import("better-sqlite3");
     mkdirSync(dirname(options.filename), { recursive: true });
     database = new native.default(options.filename);
+    // D8 step 2 (X3): refuse an unsupported SQLite runtime BEFORE any schema or
+    // epoch write. An unprobable version fails closed with the same refusal.
+    let runtimeText: unknown;
+    try {
+      runtimeText = (database.prepare("select sqlite_version() as v").get() as StoredRow & { v?: unknown }).v;
+    } catch {
+      runtimeText = undefined;
+    }
+    const runtime = typeof runtimeText === "string" ? parseSqliteVersionV1(runtimeText) : undefined;
+    // Effective floor: the regulatory minimum above, raised to the monotone
+    // maximum of every threshold ever raised (raise() never lowers it).
+    const floor = testOnlySqliteMinimumOverrideV1;
+    if (runtime === undefined || !isSupportedParsedSqliteVersionV1(runtime) || (floor !== undefined && compareSqliteVersionV1(runtime, floor) < 0)) {
+      const seen = typeof runtimeText === "string" ? runtimeText : "unprobed";
+      database.close();
+      lock.release();
+      return refusal("admin", "CAPABILITY_UNAVAILABLE", `unsupported SQLite runtime ${seen}: the fenced store requires >= 3.51.3 or a fixed backport 3.44.6+/3.50.7+`);
+    }
     schema(database);
     database.exec("BEGIN IMMEDIATE");
     const stored = database.prepare("SELECT value FROM memory_meta WHERE key = 'storage_epoch'").get() as StoredRow | undefined;
