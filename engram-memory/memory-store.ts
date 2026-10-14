@@ -795,7 +795,19 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
   }
 
   #manifest(through: Cursor, state: FoldedMemoryStateV1, records: ReadonlyArray<MemoryRecordV2>, journal: ReadonlyArray<MemoryJournalEventV1> = this.#journal): RecoveryCheckpointManifestV1 {
-    const policy_versions = [...this.#controls.values()].map((control) => ({ id: control.policy_id, version: control.policy_version }))
+    // X4: policy_versions is journal-derived (sorted unique admission_decision
+    // policy ids at or below the cursor), like registry_versions below. A
+    // controls-derived list would diverge after a logical restore, which
+    // carries no pending controls by quarantine.
+    const seenPolicy = new Map<string, { id: string; version: string }>();
+    for (const event of journal) {
+      if (cursorCompare(event.cursor, through) > 0) continue;
+      const decision = event.admission_decision;
+      if (decision === undefined) continue;
+      const key = JSON.stringify([decision.policy_id, decision.policy_version]);
+      if (!seenPolicy.has(key)) seenPolicy.set(key, { id: decision.policy_id, version: decision.policy_version });
+    }
+    const policy_versions = [...seenPolicy.values()]
       .sort((left, right) => left.id.localeCompare(right.id) || left.version.localeCompare(right.version));
     const seen = new Map<string, { id: string; version: string }>();
     for (const event of journal) {
