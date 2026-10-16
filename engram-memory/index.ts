@@ -116,6 +116,7 @@ export {
 } from "./recall.js";
 export {
   migrateRetainedNeutralRecordsV1,
+  verifyMigrationExclusionLedgerV1,
   type MigratedNeutralRecordV1,
   type MigrationExclusionEntryV1,
   type MigrationExclusionReason,
