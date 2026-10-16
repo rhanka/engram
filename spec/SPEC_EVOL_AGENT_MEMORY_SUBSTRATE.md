@@ -259,7 +259,7 @@ export type MemoryOperation =
   | "mark_non_current" | "rewind" | "trust_invalidate" | "tombstone"
   | "recall_current" | "recall_history" | "recall_disputed"
   | "propose_capitalisation" | "propose_reconciliation" | "inspect_candidate"
-  | "projection_invalidate" | "backup" | "restore" | "admin";
+  | "projection_invalidate" | "backup" | "restore" | "admin" | "migrate";
 
 export type MemoryErrorCode =
   | "INVALID_SCHEMA" | "INVALID_DIGEST" | "DIGEST_CONFLICT"
@@ -269,7 +269,7 @@ export type MemoryErrorCode =
   | "CAPABILITY_UNAVAILABLE" | "STORE_UNAVAILABLE" | "FENCE_LOST"
   | "CURSOR_GAP" | "JOURNAL_CORRUPT" | "BLOB_MISSING"
   | "PROJECTION_STALE" | "RANKING_UNAVAILABLE" | "STALE_PAGE"
-  | "REGISTRY_VERSION_UNAVAILABLE" | "BACKUP_INVALID" | "RESTORE_REFUSED";
+  | "REGISTRY_VERSION_UNAVAILABLE" | "BACKUP_INVALID" | "RESTORE_REFUSED" | "MIGRATION_LEDGER_INVALID";
 
 export interface MemoryErrorV1 {
   code: MemoryErrorCode;
@@ -1331,6 +1331,44 @@ export interface AdminProviderPort {
 
 `AdminEpochReceiptV1.authorization_epoch` is the same monotonic counter the configured `AuthorizationPort` reports for that store as `revocation_epoch` / `current_revocation_epoch` (§5.2); it is distinct from `TrustBindingV1.revocation_epoch` (a per-binding verifier epoch, §4) and from `storage_epoch` (the storage fence generation, §5.7 / D8).
 
+### 5.11 Host-signed migration exclusion ledger (owner amendment, 2026-10-16)
+
+The host owns signing keys, public-key trust, key identifiers and supported algorithms. The memory package holds no signing key and supplies no default signer. These additive versioned ports are injected into the standalone migration call, not into the canonical store:
+
+```ts
+export interface ExclusionLedgerSignatureV1 {
+  algorithm: string;
+  key_id: OpaqueRef;
+  signature: string; // host-defined encoding (base64 for the Ed25519 conformance host)
+}
+export interface ExclusionLedgerSignerPortV1 {
+  sign(ledger_digest: Digest): Promise<ExclusionLedgerSignatureV1>;
+}
+export interface ExclusionLedgerVerifierPortV1 {
+  verify(ledger_digest: Digest, signature: ExclusionLedgerSignatureV1): Promise<boolean>;
+}
+export interface MigrationExclusionLedgerPortsV1 {
+  exclusion_ledger_signer?: ExclusionLedgerSignerPortV1;
+  exclusion_ledger_verifier?: ExclusionLedgerVerifierPortV1;
+}
+```
+
+`MigrationLedgerV1` retains `generation`, the sorted `migrated` and `excluded` partitions, and `ledger_digest`. This dated amendment adds OPTIONAL `signature?: ExclusionLedgerSignatureV1`, present whenever at least one record is excluded, absent on a lossless migration. Every migrated entry preserves its source reference, record digest, valid interval and citations; every excluded entry names its source reference and deterministic exclusion reason. Their existing domain-separated receipt hashes remain bound by the root:
+
+```text
+ledger_digest = "sha256:" || hex(SHA-256("graphify-memory/migration-ledger/v1\0"
+                || UTF8(JCS({ generation, migrated, excluded }))))
+signature = host.sign(UTF8(ledger_digest))
+```
+
+The signature and root fields are excluded from the root preimage, avoiding recursion. The existing root domain and receipt domains are unchanged. `algorithm`, `key_id` and `signature` are non-empty strings in an exact descriptor. The host verifier MUST enforce the algorithm and trusted-key binding and MUST return false for an unknown key, unsupported algorithm or invalid signature; it must never trust a key supplied by the ledger itself.
+
+`migrateRetainedNeutralRecordsV1(records, generation?, ports?)` now returns `Promise<Result<MigrationLedgerV1>>` (the package is private and unpublished). It validates the record array, generation, source references, canonical data, exact ledger shape and each receipt BEFORE calling a host signer. Malformed input that cannot form a valid ledger returns `INVALID_SCHEMA`, operation `migrate`, `retryable: false`, without signing or rejecting the promise. Records with a defined exclusion reason still enter the excluded partition. With exclusions, it requires both optional ports, signs the root and verifies the resulting ledger before returning success. Missing signer/verifier or a throwing host port returns `CAPABILITY_UNAVAILABLE`, operation `migrate`, `retryable: false`; a missing/malformed signature, unknown key or invalid signature returns `MIGRATION_LEDGER_INVALID`, never a partial successful migration. Without exclusions, migration succeeds without either port and emits no signature. No unsigned exclusion-producing path remains.
+
+`verifyMigrationExclusionLedgerV1(value: unknown, verifier?)` re-reads a detached snapshot, normalizes all strings to NFC, validates the exact ledger shape, recomputes the root and each entry receipt, then verifies the host signature over that recomputed root. Successful verification returns this normalized snapshot. Unsigned, malformed or modified data returns `MIGRATION_LEDGER_INVALID`, operation `migrate`, `retryable: false`. It requires a signature even if the presented exclusions array is empty: stripping the exclusions and signature cannot downgrade a signed ledger to a lossless migration. Missing verifier or a throwing verifier returns `CAPABILITY_UNAVAILABLE`. Host exceptions never leak raw key material or messages. Root integrity alone never certifies an exclusion ledger. As with all detached signatures, the host must select the expected generation/artifact to prevent replay of a different, validly signed ledger.
+
+A reloaded unsigned lossless ledger can be checked only by re-derivation from the complete trusted source and the expected generation: run `migrateRetainedNeutralRecordsV1(source, expectedGeneration)` again, require success with no exclusions, and compare the re-derived `ledger_digest` with the stored digest. Use the re-derived value as the accepted ledger; the stored partitions themselves are untrusted. If the source is unavailable, this unsigned path cannot establish authenticity. Never choose trust solely from the stored `signature` field or empty `excluded` array, and never re-derive from the stored partitions: removing exclusions and the signature and repairing the public root must fail the source comparison. The signed-ledger verifier deliberately continues to reject every unsigned value.
+
 ## 6. Reconciliation
 
 ### D6 — Reconciliation compares assertions; it never deduplicates identity
@@ -1548,7 +1586,7 @@ L0–L7 are serial. L2 contracts precede L3 state, L3 precedes L4 persistence, a
 | lifecycle/cascade | all canonical and projection fakes plus one live graph and vector adapter | terminal tombstone removes influence and visibility from every surface through one acknowledged cursor; no resurrection |
 | recovery/backup | SQLite and Postgres | genesis equals checkpoint-tail canonical digest; logical restore equals the export-scope journal-state AND capture-idempotency roots; exclusions and external blobs verify; durable logical backup/restore (D-11 B, X4): public-port export plus atomic empty-store import on SQLite and Postgres, round-trip verified with identical canonical digests AND identical observable recall (lexical + public reads, same order) — en attente du job CI `memory-postgres` pour la voie Postgres |
 | projection size | deterministic raw-byte fixtures | `52_428_800` bytes accepted; `52_428_801` refused; fixed current cardinality does not grow with journal length |
-| migration/removal | target plus every pinned intake | each retained record is transformed exactly or listed in a signed exclusion ledger; repository and tarball contain no legacy port or activity subsystem |
+| migration/removal | target plus every pinned intake; host Ed25519 signer/verifier (§5.11, 2026-10-16 amendment) | each retained record is transformed exactly or listed in a signed exclusion ledger; verify the domain-separated canonical root and host signature after reload; altered fields (including repaired public hashes), absent/invalid signature and unknown key refuse `MIGRATION_LEDGER_INVALID`; exclusions without a configured signer/verifier refuse `CAPABILITY_UNAVAILABLE`, while lossless migration remains available; repository and tarball contain no legacy port or activity subsystem |
 
 X2b evidence (2026-10-15), **partial / unverified**: local FileGraphStore properties re-read persisted nodes and edges after public cascades, including cross-owner incident/dependent edges; vector guards and transaction refusals have local discriminating tests. Eight local proofs and seven actual-Postgres cases are collected; the pinned Postgres 16/17 CI executions and final Opus review remain pending. The lifecycle/cascade acceptance row above remains unchanged until the real-adapter gate passes. See plan/08 X2b for evidence and contract boundaries.
 
