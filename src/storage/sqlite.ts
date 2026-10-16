@@ -529,7 +529,15 @@ export async function createSqliteGraphStore(
       const driverPackage = ["better", "sqlite3"].join("-");
       sqliteMod = (await import(driverPackage)) as Record<string, unknown>;
     } catch {
-      throw new Error("store 'sqlite' requires better-sqlite3. Run: npm install better-sqlite3");
+      try {
+        const bundledUrl = new URL(
+          "../../engram-memory/node_modules/better-sqlite3/lib/index.js",
+          import.meta.url,
+        ).href;
+        sqliteMod = (await import(bundledUrl)) as Record<string, unknown>;
+      } catch {
+        throw new Error("store 'sqlite' requires better-sqlite3. Run: npm install better-sqlite3");
+      }
     }
   }
 
