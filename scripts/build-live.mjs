@@ -18,7 +18,11 @@
 //      advertised contracts constant.
 //
 // Exit causes: COMPILE_FAILED, MANIFEST_INVALID, SOURCE_MISSING,
-// DIGEST_MISMATCH, OUTPUT_INVALID.
+// DIGEST_MISMATCH, OUTPUT_INVALID, L5_AUDIT_FAILED, USAGE.
+//
+// Modes: no argument runs the full build (compile + L5 seam audit +
+// grammar verification); `--audit-only` runs the L5 seam audit alone and
+// exits 0/1 without compiling. Any other argument is refused (USAGE).
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -50,6 +54,127 @@ function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+// L5 seam audit (plan/09 L5; spec/SPEC_LIVE_GIT_INDEXING.md §8, A08/A13;
+// L5-cache-design R4a/R13 + A1/A13). Static, dependency-free verification
+// that the context-bound analysis seam exists and the neutral closure is
+// intact:
+//
+//   1. engram-live/analysis-cache.ts, code-analysis.ts and comparisons.ts
+//      exist, export their entry symbols, and carry no forbidden edge
+//      (source-root import, storage driver, module loader, model module,
+//      dynamic import, filesystem writes, exit-hook registration, LLM SDK);
+//   2. the reused root extraction exposes the injected seam
+//      (LiveExtractionPorts/cacheStore/grammarWasm through src/extract.ts,
+//      InjectedCacheStore/liveContentKey/liveExtractionKey through
+//      src/cache.ts) with live-strict guards (live !== undefined,
+//      liveNoCache, grammar-bound keys, operation-local scratch) instead of
+//      a source-root default.
+//
+// The audit emits no file: the exact packed surface stays pinned by
+// tests/live-neutrality.test.ts (new L5 modules are source-side neutral
+// logic, not new package entries). Returns true when every check passes.
+function runL5Audit() {
+  const failures = [];
+  const read = (rel) => {
+    try {
+      return readFileSync(join(root, rel), "utf8");
+    } catch {
+      failures.push(`${rel} is missing`);
+      return null;
+    }
+  };
+  const neutralModules = {
+    "engram-live/analysis-cache.ts": ["deriveAnalysisCacheKey", "AnalysisCache"],
+    "engram-live/code-analysis.ts": ["analyzeCode", "repairAffectedCalls"],
+    "engram-live/comparisons.ts": ["compareBranches"],
+  };
+  const forbiddenEdges = [
+    "../src/",
+    "node:sqlite",
+    "node:module",
+    "createRequire",
+    "getBuiltinModule",
+    "better-sqlite3",
+    "mistral",
+    "openai",
+    "anthropic",
+    "await import(",
+    "from \"openai",
+    "from 'openai",
+    "@anthropic",
+    "@mistral",
+    "node:fs",
+    "node:fs/promises",
+    "writeFileSync",
+    "mkdirSync",
+    "renameSync",
+    "process.on(\"exit\"",
+    "process.on('exit'",
+    "beforeExit",
+  ];
+  for (const [rel, symbols] of Object.entries(neutralModules)) {
+    const content = read(rel);
+    if (content === null) continue;
+    for (const symbol of symbols) {
+      if (!content.includes(symbol)) {
+        failures.push(`${rel} must export ${symbol}`);
+      }
+    }
+    for (const edge of forbiddenEdges) {
+      if (edge.startsWith("node:fs") && rel === "engram-live/comparisons.ts" && content.includes("node:crypto")) {
+        // comparisons.ts legitimately imports node:crypto (OID recomputation);
+        // the node:fs ban still applies — check writes, not the crypto import.
+        if (content.includes("node:fs\"") || content.includes("node:fs'") || content.includes("node:fs/promises")) {
+          failures.push(`${rel} carries a forbidden edge "${edge}" (neutral closure)`);
+        }
+        continue;
+      }
+      if (content.includes(edge)) {
+        failures.push(`${rel} carries a forbidden edge "${edge}" (neutral closure)`);
+      }
+    }
+  }
+  const extract = read("src/extract.ts");
+  if (extract !== null) {
+    // Boundary-precise markers: a bare "cacheStore" substring would also
+    // match a renamed field, so the audit requires the exact declarations.
+    for (const symbol of ["LiveExtractionPorts", "readonly cacheStore?:", "readonly grammarWasm?:", "live !== undefined", "liveNoCache", "liveExtractionKey", "liveOperationScope", "resolveLiveLanguage"]) {
+      if (!extract.includes(symbol)) {
+        failures.push(`src/extract.ts must expose the injected L5 seam "${symbol}"`);
+      }
+    }
+    // R13: deterministic resolution/comparison/repair — no model SDK in the
+    // reused live closure either.
+    for (const edge of ["mistral", "openai", "anthropic", "-bedrock", "cohere"]) {
+      if (extract.toLowerCase().includes(edge)) {
+        failures.push(`src/extract.ts carries a forbidden model edge "${edge}" (R13)`);
+      }
+    }
+  }
+  const cache = read("src/cache.ts");
+  if (cache !== null) {
+    for (const symbol of ["InjectedCacheStore", "liveContentKey", "liveExtractionKey", "LIVE_CACHE_SCHEMA_VERSION", "assertValidLiveStore", "liveNoCache"]) {
+      if (!cache.includes(symbol)) {
+        failures.push(`src/cache.ts must expose the injected L5 seam "${symbol}"`);
+      }
+    }
+  }
+  if (failures.length > 0) {
+    for (const failure of failures) console.error(`build-live: L5_AUDIT_FAILED: ${failure}`);
+    return false;
+  }
+  console.log("build-live: L5 seam audit ok — analysis-cache/code-analysis/comparisons neutral, reused extraction seam present");
+  return true;
+}
+
+const cliArgs = process.argv.slice(2);
+if (cliArgs.length > 0) {
+  if (cliArgs.length === 1 && cliArgs[0] === "--audit-only") {
+    process.exit(runL5Audit() ? 0 : 1);
+  }
+  fail("USAGE", `unknown arguments ${JSON.stringify(cliArgs)} (expected no argument or --audit-only)`);
+}
+
 // 1. Strict compile (the repository's devDependency TypeScript).
 const tsc = require.resolve("typescript/bin/tsc");
 const compiled = spawnSync(process.execPath, [tsc, "-p", "tsconfig.json"], {
@@ -63,6 +188,12 @@ for (const emitted of ["index.js", "contracts.js", "integration.js", "index.d.ts
   if (!existsSync(join(distRoot, emitted))) {
     fail("OUTPUT_INVALID", `expected emitted file engram-live/dist/${emitted} is missing`);
   }
+}
+
+// L5 seam audit on every build: the context-bound analysis seam must exist
+// and stay neutral before any grammar asset is trusted.
+if (!runL5Audit()) {
+  fail("L5_AUDIT_FAILED", "context-bound analysis seam is missing or escapes the neutral closure");
 }
 
 // 2. Pinned grammar manifest verification against the source tree.

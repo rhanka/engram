@@ -400,56 +400,6 @@ const DERIVATION_PROBE = [
 // the shared protected environment the tripwire shims must intercept every
 // attempt: nothing is executed, the call fails with exit 127 and the
 // invocation is recorded in the marker.
-const PYTHON_CANARY_PROBE = [
-  'import { spawnSync } from "node:child_process";',
-  'import * as rootEntry from "@sentropic/engram-live";',
-  'import * as contracts from "@sentropic/engram-live/contracts";',
-  'import * as integration from "@sentropic/engram-live/integration";',
-  "const factSinkCalls = [];",
-  "const factory = integration.createLiveFactory({",
-  "  ports: {",
-  "    git: {},",
-  '    filesystem: { readFileBytes: async (path) => { throw new Error("no filesystem access expected: " + path); } },',
-  '    clock: { now: () => 1700000000000 },',
-  "    content: {},",
-  '    factSink: { deliver: async (batch) => { factSinkCalls.push(batch); return { received: true, batchId: "probe-batch" }; } },',
-  "    cache: {},",
-  '    grammarRuntime: { loadLanguage: async () => { throw new Error("no grammar load expected"); } },',
-  "  },",
-  "  declaration: {",
-  '    tenant: "local:probe-owner",',
-  '    principal: "local:probe-principal",',
-  '    hostFingerprint: "probe-fingerprint",',
-  '    identityUncertainty: [],',
-  '    declarationId: "decl:probe",',
-  '    cloneId: "clone:probe",',
-  '    worktreeId: "wt:probe",',
-  '    authorizedRoots: ["/probe/worktree"],',
-  '    liveCapability: "live",',
-  "    policyVersion: contracts.POLICY_VERSION,",
-  "    declarationRevision: 1,",
-  "  },",
-  "});",
-  "const capabilities = factory.describeCapabilities();",
-  'const refs = await factory.runCapability("refs");',
-  "const attempts = {};",
-  'for (const name of ["python", "python3"]) {',
-  '  const result = spawnSync(name, ["-c", "pass"], { encoding: "utf8" });',
-  "  attempts[name] = { status: result.status, errorCode: result.error ? result.error.code : null };",
-  "}",
-  "const report = {",
-  '  hasFactory: typeof rootEntry.createLiveFactory === "function" && typeof integration.createLiveFactory === "function",',
-  "  capabilityCount: capabilities.length,",
-  '  allUnavailable: capabilities.every((capability) => capability.state === "unavailable"),',
-  "  refsState: refs.state,",
-  "  factSinkCalls: factSinkCalls.length,",
-  "  languages: contracts.ADVERTISED_LANGUAGES.slice().sort(),",
-  "  attempts,",
-  "};",
-  "console.log(JSON.stringify(report));",
-  "",
-].join("\n");
-
 // Packs and installs the deliverable exactly as shipped, inside the SAME
 // protected environment (tmpRoot/tripwireBin) the build phase already ran
 // in: pack, install and every later probe phase share one tripwire
@@ -466,11 +416,10 @@ function packAndInstall(
   const installDir = join(tmpRoot, "install");
   mkdirSync(installDir);
   writeFileSync(join(installDir, "package.json"), `${JSON.stringify({ name: "live-install-probe", version: "0.0.0", private: true }, null, 2)}\n`);
-  execFileSync(
-    "npm",
-    ["install", "--no-audit", "--no-fund", "--offline", tarball],
-    { cwd: installDir, env, encoding: "utf8" },
-  );
+  // Owner 2026-10-14: no npm install/ci, even in fixtures. Verify the exact tarball locally.
+  const packageDir = join(installDir, "node_modules", "@sentropic", "engram-live");
+  mkdirSync(packageDir, { recursive: true });
+  execFileSync("tar", ["-xzf", tarball, "-C", packageDir, "--strip-components=1"], { cwd: installDir, env });
   recordPhaseMarker(phaseTrace, "install", pythonMarker);
   // Protected child probes: they import the three public entries and
   // exercise the factory inside the tripwire environment; the canary probe
@@ -479,7 +428,7 @@ function packAndInstall(
   writeFileShim(join(installDir, "exercise-probe.mjs"), EXERCISE_PROBE);
   writeFileShim(join(installDir, "grammar-probe.mjs"), GRAMMAR_PROBE);
   writeFileShim(join(installDir, "derivation-probe.mjs"), DERIVATION_PROBE);
-  writeFileShim(join(installDir, "python-canary-probe.mjs"), PYTHON_CANARY_PROBE);
+
   return { tmpRoot, installDir, tripwireBin, pythonMarker, tarball, packedPaths, phaseTrace };
 }
 
@@ -552,6 +501,8 @@ function tripwireEnv(binDir: string): NodeJS.ProcessEnv {
 }
 
 describe("live package", () => {
+  // Heavyweight setup (tsc build + npm pack + offline install in an
+  // isolated tmpRoot): needs headroom under parallel gate load.
   beforeAll(() => {
     const tmpRoot = mkdtempSync(join(tmpdir(), "engram-live-package-"));
     const binDir = join(tmpRoot, "tripwire-bin");
@@ -567,7 +518,7 @@ describe("live package", () => {
     // the SAME protected environment (one tmpRoot, one tripwire directory,
     // one marker for every phase).
     packed = packAndInstall(env, pythonMarker, phaseTrace, tmpRoot, binDir);
-  });
+  }, 120000);
 
   it("installing and importing the delivered live surface without Python evaluates no database driver or root CLI", async () => {
     // No Python evaluated: the build, pack and install phases each ran in
@@ -740,42 +691,62 @@ describe("live package", () => {
     expect(report.distinctWorktrees).toBe(true);
   });
 
-  it("a Python call from inside the protected environment is rejected after import and exercise", () => {
-    // Mutation canary, run LAST on purpose (it deliberately records the
-    // marker): after the import and exercise phases, code running in the
-    // SAME protected child — same install, same shared tripwire PATH —
-    // attempts to evaluate Python through node:child_process. The
-    // tripwires must intercept every attempt: nothing is executed, each
-    // call fails with exit 127, and the marker records the invocation.
-    const output = runProtectedPhase(process.execPath, ["python-canary-probe.mjs"], {
-      cwd: packed.installDir,
-      env: tripwireEnv(packed.tripwireBin),
-    });
-    const canary = JSON.parse(output) as {
-      hasFactory: boolean;
-      capabilityCount: number;
-      allUnavailable: boolean;
-      refsState: string;
-      factSinkCalls: number;
-      attempts: Record<string, { status: number | null; errorCode: string | null }>;
-    };
-    // The import and exercise ran first, in this same protected child.
-    expect(canary.hasFactory).toBe(true);
-    expect(canary.capabilityCount).toBeGreaterThan(0);
-    expect(canary.allUnavailable).toBe(true);
-    expect(canary.refsState).toBe("unavailable");
-    expect(canary.factSinkCalls).toBe(0);
-    // Every Python attempt is rejected by the tripwire shims: exit 127,
-    // never the interpreter. A reachable system Python would return a
-    // different status and fail this assertion.
-    for (const name of ["python", "python3"]) {
-      expect(
-        canary.attempts[name]?.status,
-        `the "${name}" call must be rejected by the tripwire (got ${JSON.stringify(canary.attempts[name])})`,
-      ).toBe(127);
+  it("L5 source audit and packaged grammar inventory; reused-extraction delivery remains unverified (A6)", () => {
+    // L5 GUARD (plan/09 L5): the reused root extraction exposes the injected
+    // host seam instead of a source-root default, and the isolated build
+    // audits it. No src/* import here: this file stays inside the neutral
+    // test closure; the runtime seam behavior is covered by
+    // tests/live-code-version.test.ts.
+    const extractSource = readFileSync(join(root, "src", "extract.ts"), "utf8");
+    // Boundary-precise markers: a bare "cacheStore" substring would also
+    // match a renamed field, so the guard requires the exact declarations.
+    for (const symbol of ["LiveExtractionPorts", "readonly cacheStore?:", "readonly grammarWasm?:", "liveOperationScope"]) {
+      expect(extractSource, `reused extraction exposes the injected seam "${symbol}"`).toContain(symbol);
     }
-    const marker = existsSync(packed.pythonMarker) ? readFileSync(packed.pythonMarker, "utf8") : null;
-    expect(marker, "the tripwire marker must record the rejected Python attempts").not.toBeNull();
-    expect(marker ?? "").toContain("python");
+    const cacheSource = readFileSync(join(root, "src", "cache.ts"), "utf8");
+    for (const symbol of ["InjectedCacheStore", "liveContentKey"]) {
+      expect(cacheSource, `reused cache exposes the injected seam "${symbol}"`).toContain(symbol);
+    }
+    // Isolated-build audit, fast mode (no compile): exit 0 and names the
+    // audited neutral modules.
+    let auditOutput: string;
+    try {
+      auditOutput = execFileSync(process.execPath, [buildScript, "--audit-only"], { cwd: root, encoding: "utf8" });
+    } catch (error) {
+      throw new Error(`L5 isolated-build audit failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    for (const name of ["analysis-cache", "code-analysis", "comparisons"]) {
+      expect(auditOutput, `isolated-build audit covers ${name}`).toContain(name);
+    }
+    // No root install closure on the reused path: the neutral L5 modules
+    // carry no source-root, driver, loader or model edge.
+    for (const name of ["analysis-cache.ts", "code-analysis.ts", "comparisons.ts"]) {
+      const content = readFileSync(join(liveRoot, name), "utf8");
+      for (const edge of ["../src/", "node:sqlite", "node:module", "createRequire", "better-sqlite3", "mistral-ocr"]) {
+        expect(content, `${name} carries no root-closure edge "${edge}"`).not.toContain(edge);
+      }
+    }
+    // Only verified grammar assets are bundled: every dist grammar file is
+    // pinned by the manifest, no unpinned bundled code.
+    const installedRoot = join(packed.installDir, "node_modules", "@sentropic", "engram-live");
+    const manifest = JSON.parse(readFileSync(join(installedRoot, "grammar-manifest.json"), "utf8")) as {
+      languages: Record<string, { file: string }>;
+    };
+    const pinnedFiles = new Set(Object.values(manifest.languages).map((entry) => entry.file));
+    for (const file of readdirSync(join(installedRoot, "dist", "grammars"))) {
+      expect(pinnedFiles.has(file), `bundled grammar asset "${file}" is pinned by the manifest`).toBe(true);
+    }
+    expect(pinnedFiles.size).toBeGreaterThan(0);
+  });
+
+  it("Python tripwire declarations are fail closed without launching an interpreter", () => {
+    // Owner forbids interpreter-name canaries. This checks declarations only;
+    // runtime interception of a forbidden launch is deliberately not claimed.
+    expectNoPython(packed.phaseTrace);
+    for (const name of ["python", "python3", "python2", "python2.7", "py"]) {
+      const script = readFileSync(join(packed.tripwireBin, name), "utf8");
+      expect(script).toContain("exit 127");
+      expect(script).toContain(packed.pythonMarker);
+    }
   });
 });
