@@ -277,6 +277,7 @@ export interface MemoryErrorV1 {
   message: string;
   retryable: boolean;
   error_receipt_digest?: Digest;
+  denial?: true;
 }
 
 export type Result<T> =
@@ -749,6 +750,8 @@ export interface LifecycleEventV2 {
   reconciliation?: ReconciliationEventBindingV1; // (new in this amendment) optional proposal binding; bound into event_digest
   previous_event_digest: Digest;
   event_digest: Digest;
+  previous_event_hash?: Digest;
+  event_hash?: Digest;
 }
 ```
 
@@ -787,6 +790,8 @@ export interface PendingControlV1 {
   created_cursor: Cursor;
   policy_id: OpaqueRef;
   policy_version: string;
+  capture_content_digest?: Digest;
+  capture_receipt_digest?: Digest;
 }
 
 export interface CanonicalTransactionReceiptV1 {
@@ -1173,7 +1178,8 @@ export interface MemoryBackupPort {
     source_ref: OpaqueRef;
     decryption_key_ref: OpaqueRef;
     deadline_at: Instant;
-  }): Promise<Result<{ restored_cursor: Cursor; canonical_state_digest: Digest; receipt_digest: Digest }>>;
+    target_store?: CanonicalMemoryStorePort;
+  }): Promise<Result<LogicalBackupImportReceiptV1>>;
 }
 
 export interface OperationalCapabilityReceiptV1 {
@@ -1237,6 +1243,16 @@ export declare function createLogicalMemoryBackupV1(dependencies: LogicalMemoryB
 // the spec is corrected and no code changes. `tests/memory-evol-declarations.test.ts`
 // locks the declaration blocks to the code member-for-member, in both
 // directions, so either side drifting turns CI red.
+// (2026-10-16 amendment, coverage-3) Complete the stale declarations without
+// changing runtime behavior: MemoryErrorV1.denial is the provider denial flag
+// already required by §5.10; LifecycleEventV2.previous_event_hash/event_hash
+// carry the optional persisted journal-chain hashes; PendingControlV1's two
+// capture digests bind D-8 A's durable replay acknowledgement. All five remain
+// optional, matching existing stores and callers. MemoryBackupPort.restoreLogical
+// also declares D-11 B's optional target_store and LogicalBackupImportReceiptV1
+// (including capture_idempotency_digest), so durable restore is described fully.
+// The declaration test now checks every EVOL interface's members/optionality
+// and the complete restore signature, rather than two selected interfaces.
 ```
 
 Pending body, citations, locators, validation material, evidence, and candidate digest live inside one `CryptoPort`-sealed envelope. Outside it, the store may persist `PendingControlV1` and the canonical hash-only capture-idempotency registry (identity, content digest, original cursor and optional acknowledgement digests); no plaintext, tokens, snippets, source locator, or derived statistic is allowlisted. Pending, rejected, and withdrawn content is excluded from FTS, graph/vector projections, caches, exports, diagnostics, telemetry, crash dumps, and logical backup.
