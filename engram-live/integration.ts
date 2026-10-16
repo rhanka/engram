@@ -60,7 +60,107 @@ export interface ContentPort {
 
 export interface FactSinkPort {
   /** Durable receipt of a fact batch; separate from publication (spec §3). */
-  deliver(batch: FactBatchDto): Promise<{ received: true; batchId: string }>;
+  deliver(
+    batch: FactBatchDto,
+    fencingToken: ScopeFencingTokenDto,
+  ): Promise<{ received: true; batchId: string; receiptId?: string }>;
+}
+
+/**
+ * Mandatory scope fencing token threaded from E (L6b) across every write,
+ * cursor, and publication port to S (L3a/L3b-S) (Opus Amendment 2).
+ */
+export interface ScopeFencingTokenDto {
+  readonly tokenId: string;
+  readonly scope: LiveScope;
+  readonly epoch: number;
+  readonly epochId: string;
+  readonly declarationRevision: number;
+  readonly projectionIncarnation: string;
+  readonly issuedAt: number;
+  readonly expiresAt: number;
+}
+
+/**
+ * Required S-side storage contract for L3a / L3b-S (Opus Amendment 2):
+ * Every storage write, cursor update, and generation publication MUST atomically
+ * verify the caller's ScopeFencingTokenDto against the active writer lease and
+ * storage-owned projection incarnation P inside the storage transaction.
+ */
+export interface StorageIncarnationPort {
+  incarnation(): string;
+  hasGeneration(incarnation: string, generationId: string): boolean;
+  validateFencingToken(token: ScopeFencingTokenDto, nowMs: number): ValidationResult;
+}
+
+export const REQUIRED_STORAGE_FENCING_CONTRACT = {
+  enforcedByLots: ["L3a", "L3b-S"] as const,
+  requireAtomicLeaseCheckOnFactWrite: true,
+  requireAtomicLeaseCheckOnCursorWrite: true,
+  requireAtomicLeaseCheckOnGenerationPublish: true,
+  requireStorageOwnedIncarnationBinding: true,
+  requireAtomicLeaseCheckOnProgressReadWrite: true,
+  requireAtomicLeaseCheckOnPark: true,
+  requireAtomicLeaseCheckOnRelationRepair: true,
+  requireAtomicLeaseCheckOnMarkerDelete: true,
+  requireSourceAndProjectionEqualityOnGenerationPublish: true,
+  requireSynchronousLeaseRevocationOnShutdown: true,
+} as const;
+
+export function validateScopeFencingToken(
+  candidate: unknown,
+  expectedScope?: LiveScope,
+  expectedIncarnation?: string,
+  nowMs?: number,
+): ValidationResult {
+  const errors: string[] = [];
+  if (typeof candidate !== "object" || candidate === null) {
+    return { ok: false, errors: ["fencing token must be a non-null object"] };
+  }
+  const t = candidate as Partial<ScopeFencingTokenDto>;
+  if (!t.scope || typeof t.scope.tenant !== "string" || typeof t.scope.clone !== "string" || typeof t.scope.worktree !== "string") errors.push("fencing token requires a complete scope");
+  if (!Number.isSafeInteger(t.declarationRevision) || (t.declarationRevision ?? 0) < 1) errors.push("fencing token requires declaration revision");
+  if (typeof t.epochId !== "string" || !t.epochId) errors.push("fencing token requires epoch identity");
+  for(const value of [t.tokenId,t.epochId,t.projectionIncarnation,t.scope?.tenant,t.scope?.clone,t.scope?.worktree])if(typeof value!=="string" || value.length<1 || value.length>1024)errors.push("fencing identity must be bounded");
+  if (typeof t.tokenId !== "string" || t.tokenId.length === 0) {
+    errors.push("fencing token requires a non-empty tokenId");
+  }
+  if (typeof t.epoch !== "number" || !Number.isSafeInteger(t.epoch) || t.epoch < 1) {
+    errors.push("fencing token requires a positive integer epoch");
+  }
+  if (typeof t.projectionIncarnation !== "string" || t.projectionIncarnation.length === 0) {
+    errors.push("fencing token requires a non-empty projectionIncarnation");
+  }
+  if (
+    typeof t.issuedAt !== "number" ||
+    typeof t.expiresAt !== "number" ||
+    !Number.isFinite(t.issuedAt) ||
+    !Number.isFinite(t.expiresAt) ||
+    t.expiresAt <= t.issuedAt
+  ) {
+    errors.push("fencing token requires finite issuedAt < expiresAt");
+  }
+  if (expectedScope !== undefined && t.scope !== undefined) {
+    if (
+      t.scope.tenant !== expectedScope.tenant ||
+      t.scope.clone !== expectedScope.clone ||
+      t.scope.worktree !== expectedScope.worktree
+    ) {
+      errors.push("fencing token scope does not match target scope");
+    }
+  }
+  if (
+    expectedIncarnation !== undefined &&
+    t.projectionIncarnation !== undefined &&
+    t.projectionIncarnation !== expectedIncarnation
+  ) {
+    errors.push("fencing token projectionIncarnation does not match active storage incarnation P");
+  }
+  if (nowMs !== undefined && typeof t.expiresAt === "number" && nowMs >= t.expiresAt) {
+    errors.push("fencing token is expired");
+  }
+  if (nowMs !== undefined && typeof t.issuedAt === "number" && t.issuedAt > nowMs) errors.push("fencing token is not yet valid");
+  return { ok: errors.length === 0, errors };
 }
 
 export interface CachePort {
