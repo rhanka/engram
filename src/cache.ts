@@ -82,6 +82,38 @@ export interface CacheOptions {
   kind?: string;
   namespace?: string;
   profileHash?: string;
+  /**
+   * L5 injected host storage (plan/09 L5; SPEC_LIVE_GIT_INDEXING.md §8).
+   * When present, load/save go through this port with a content-derived key
+   * and never touch the default source-root cache directory. Absent keeps
+   * the legacy filesystem behavior for existing callers — EXCEPT when
+   * liveNoCache is set (live mode without a usable port): then both calls
+   * are explicit no-cache no-ops that never touch the filesystem or stat
+   * index (R4).
+   */
+  store?: InjectedCacheStore | null;
+  /** L5 live explicit no-cache marker (R4): skips every filesystem path. */
+  liveNoCache?: boolean;
+  /** L5 live canonical key precomputed by the caller (R1/R2/R5 binding). */
+  liveKey?: string;
+  /**
+   * L5 expected per-component identity (M1: from liveExtractionBind). The
+   * injected load reuses an entry only when the stored envelope's bind block
+   * is component-wise equal; without it the load is a miss.
+   */
+  liveBind?: Record<string, unknown> | null;
+}
+
+/**
+ * L5 injected host cache port. The host implements bounded, versioned
+ * storage outside every observed worktree; engram derives opaque keys only.
+ * Synchronous by design: the reused extraction loop stays synchronous on
+ * the cache path, matching the legacy loadCached/saveCached contract.
+ */
+export interface InjectedCacheStore {
+  load(key: string): string | null;
+  store(key: string, value: string): void;
+  authorize(scope: LiveScopeBinding): void;
 }
 
 function bodyContent(content: Buffer): Buffer {
@@ -128,23 +160,183 @@ export function fileHash(filePath: string, root: string = "."): string {
     return cached.hash;
   }
 
-  const raw = readFileSync(filePath);
-  const content = extname(filePath).toLowerCase() === ".md" ? bodyContent(raw) : raw;
-  const resolved = absKey;
-  const resolvedRoot = resolve(root);
-  const h = createHash("sha256");
-  h.update(content);
-  h.update("\0");
-  const relativePath = resolved.startsWith(resolvedRoot + "/") || resolved === resolvedRoot
-    ? resolved.slice(resolvedRoot.length).replace(/^\/+/, "") || "."
-    : resolved;
-  h.update(relativePath);
-  const digest = h.digest("hex");
+  const digest = contentDigest(filePath, root, absKey);
 
   statIndex[absKey] = { size, mtime_ns: mtimeNs, hash: digest };
   statIndexDirty = true;
 
   return digest;
+}
+
+/**
+ * Content digest of file bytes + project-relative path (the byte-stable half
+ * of fileHash, without the stat fastpath). Shared by the legacy stat-indexed
+ * fileHash and the L5 injected live key so both schemes hash identical bytes.
+ */
+function contentDigest(filePath: string, root: string, absKey: string): string {
+  const raw = readFileSync(filePath);
+  const content = extname(filePath).toLowerCase() === ".md" ? bodyContent(raw) : raw;
+  const resolvedRoot = resolve(root);
+  const h = createHash("sha256");
+  h.update(content);
+  h.update("\0");
+  const relativePath = absKey.startsWith(resolvedRoot + "/") || absKey === resolvedRoot
+    ? absKey.slice(resolvedRoot.length).replace(/^\/+/, "") || "."
+    : absKey;
+  h.update(relativePath);
+  return h.digest("hex");
+}
+
+/**
+ * L5 live cache key: content-derived only, never size/mtime/topology alone
+ * (plan/09 L5 forbids topology-only or size/mtime-only freshness proofs).
+ * The live path bypasses the stat index entirely — a same-size edit inside
+ * one timestamp tick is a miss here, not a stale hit.
+ */
+export function liveContentKey(filePath: string, root: string = "."): string {
+  return `live:${contentDigest(filePath, root, resolve(filePath))}`;
+}
+
+/** L5 canonical live extraction key schema version (R1: one scheme). */
+export const LIVE_CACHE_SCHEMA_VERSION = "l5-cache/v2";
+
+/** L5 reused-extraction implementation version (R1 A-component). */
+export const LIVE_EXTRACTOR_VERSION = "live-reused-extraction/1";
+
+function canonicalStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(canonicalStringify).join(",")}]`;
+  if (value instanceof Uint8Array) return `{"$bytes":"${Buffer.from(value).toString("base64url")}"}`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([k, v]) => `${JSON.stringify(k)}:${canonicalStringify(v)}`);
+  return `{${entries.join(",")}}`;
+}
+
+/** L5 live scope binding (R1 S-component: tenant + clone, no credentials). */
+export interface LiveScopeBinding {
+  readonly tenant: string;
+  readonly clone: string;
+}
+
+/**
+ * L5 full reused-extraction identity inputs (R1/R2/M1). The key binds the
+ * scope (S), policy (Q), content (B), path (P), language/dialect + grammar
+ * (G), configuration (C), dependencies (D) and implementation (A) — every
+ * resolution input. An entry is reused only when each component is equal
+ * (key match + per-component envelope check in loadCached).
+ */
+export interface LiveExtractionKeyInput {
+  filePath: string;
+  root: string;
+  language: string;
+  dialect: string;
+  dialectVersion: string;
+  grammarDigest: string;
+  grammarAbi: string;
+  extractorVersion?: string;
+  /** REQUIRED (R1 S): absent scope never hits — callers select no-cache. */
+  scope: LiveScopeBinding;
+  /**
+   * M2: the EXACT analyzed buffer (preferred) or its precomputed sha256.
+   * One of the two is required — the live path hashes the pinned buffer it
+   * analyzes, never a second read.
+   */
+  contentBytes?: Uint8Array | null;
+  contentSha256?: string | null;
+  /** REQUIRED (R1 C): tsconfig-chain manifest digest (tagged absence allowed). */
+  configDigest: string;
+  /** R1 D: dependency-manifest digest; not-applicable tag when independent. */
+  dependencyDigest?: string | null;
+  contentPolicyVersion?: string | null;
+  privacyBoundary?: string | null;
+}
+
+function requireLiveScope(scope: unknown): asserts scope is LiveScopeBinding {
+  if (scope === null || typeof scope !== "object") {
+    throw new Error("live scope is required for cache reuse (R1): tenant + clone, otherwise explicit no-cache");
+  }
+  for (const field of ["tenant", "clone"] as const) {
+    const value = (scope as Record<string, unknown>)[field];
+    if (typeof value !== "string" || value.length === 0 || value.includes("\0")) {
+      throw new Error(`live scope.${field} must be a non-empty string without NUL`);
+    }
+  }
+}
+
+/** Canonical per-component identity (the envelope `bind` block and key preimage). */
+export function liveExtractionBind(input: LiveExtractionKeyInput): Record<string, unknown> {
+  requireLiveScope(input.scope);
+  if ((input.contentBytes === undefined || input.contentBytes === null)
+    && (typeof input.contentSha256 !== "string" || input.contentSha256.length === 0)) {
+    throw new Error("live key needs the analyzed bytes or their sha256 (M2: hash exactly the analyzed buffer)");
+  }
+  if (typeof input.configDigest !== "string" || input.configDigest.length === 0) {
+    throw new Error("live key needs a configuration manifest digest (R1 C)");
+  }
+  for (const field of ["language", "dialect", "dialectVersion", "grammarDigest", "grammarAbi"] as const) {
+    if (typeof input[field] !== "string" || (input[field] as string).length === 0) {
+      throw new Error(`live key needs a non-empty ${field} (R1 G)`);
+    }
+  }
+  const absKey = resolve(input.filePath);
+  const resolvedRoot = resolve(input.root);
+  const relativePath = absKey.startsWith(`${resolvedRoot}/`) || absKey === resolvedRoot
+    ? absKey.slice(resolvedRoot.length).replace(/^\/+/, "") || "."
+    : absKey;
+  const contentSha256 = input.contentBytes !== undefined && input.contentBytes !== null
+    ? createHash("sha256").update(input.contentBytes).digest("hex")
+    : input.contentSha256!;
+  return {
+    config: { digest: input.configDigest },
+    content: { sha256: contentSha256 },
+    dependencies: { digest: input.dependencyDigest ?? { $na: true } },
+    dialect: input.dialect,
+    dialectVersion: input.dialectVersion,
+    extractorVersion: input.extractorVersion ?? LIVE_EXTRACTOR_VERSION,
+    grammar: { abi: input.grammarAbi, digest: input.grammarDigest },
+    kind: "reused-extraction",
+    language: input.language,
+    path: relativePath,
+    policy: {
+      contentPolicyVersion: input.contentPolicyVersion ?? { $na: true },
+      privacyBoundary: input.privacyBoundary ?? { $na: true },
+    },
+    schemaVersion: LIVE_CACHE_SCHEMA_VERSION,
+    scope: { clone: input.scope.clone, tenant: input.scope.tenant },
+    syntaxOptions: { $na: true },
+  };
+}
+
+/**
+ * L5 full-identity live extraction key (R1 B+G+S+C+D+Q+A, R2 resolution row).
+ * Binds scope, exact bytes+path, language/dialect, verified grammar digest +
+ * ABI, configuration + dependency manifests, policy and extractor version —
+ * never size/mtime/topology. A null/empty grammar digest MUST NOT hit:
+ * callers treat it as grammar-unavailable before lookup (R5a).
+ */
+export function liveExtractionKey(input: LiveExtractionKeyInput): string {
+  const bind = liveExtractionBind(input);
+  const digest = createHash("sha256").update(canonicalStringify(bind), "utf8").digest("hex");
+  return `l5-cache/v2/reused-extraction/${digest}`;
+}
+
+/** Fail-closed validation for a configured live store port (R4: before work). */
+export function assertValidLiveStore(store: unknown, field = "live.cacheStore"): asserts store is InjectedCacheStore {
+  if (
+    store === null || typeof store !== "object"
+    || typeof (store as InjectedCacheStore).load !== "function"
+    || typeof (store as InjectedCacheStore).store !== "function"
+    || typeof (store as InjectedCacheStore).authorize !== "function"
+  ) {
+    throw new Error(`${field} is malformed: live caching requires an injected host port with authorize/load/store (explicit no-cache otherwise)`);
+  }
+}
+
+/** Explicit live no-cache mode descriptor (R4: omitted/null port). */
+export function liveNoCacheReason(reason: string): { cacheMode: "no-cache"; reason: string } {
+  return { cacheMode: "no-cache", reason };
 }
 
 /** Test-only: clear the in-memory stat index. Do not use from production code. */
@@ -311,6 +503,51 @@ export function loadCached(
   root: string = ".",
   options: CacheOptions = {},
 ): Record<string, unknown> | null {
+  // L5 explicit no-cache (R4): live mode without a usable port never touches
+  // the filesystem or the stat index.
+  if (options.liveNoCache === true) return null;
+  // L5 injected host storage: content-derived key through the port, never a
+  // default-root directory read. Authoritative — no filesystem fallback.
+  const injected = options.store ?? null;
+  if (injected !== null) {
+    assertValidLiveStore(injected);
+    // M1: reuse requires the full identity — key AND per-component envelope
+    // equality. A missing key or bind is a miss, never a legacy fallback.
+    if (typeof options.liveKey !== "string" || options.liveKey.length === 0) return null;
+    if (options.liveBind === undefined || options.liveBind === null) return null;
+    const expectedBind = canonicalStringify(options.liveBind);
+    requireLiveScope(options.liveBind.scope);
+    injected.authorize(options.liveBind.scope);
+    let raw: string | null;
+    try {
+      raw = injected.load(options.liveKey);
+    } catch {
+      return null;
+    }
+    if (raw === null) return null;
+    try {
+      const envelope = JSON.parse(raw) as {
+        schemaVersion?: unknown; kind?: unknown; bind?: unknown;
+        payload?: unknown; payloadDigest?: unknown;
+      };
+      if (envelope === null || typeof envelope !== "object") return null;
+      if (envelope.schemaVersion !== LIVE_CACHE_SCHEMA_VERSION) return null;
+      if (envelope.kind !== "reused-extraction") return null;
+      if (envelope.bind === undefined || canonicalStringify(envelope.bind) !== expectedBind) return null;
+      if (typeof envelope.payloadDigest !== "string" || envelope.payload === undefined) return null;
+      const recomputed = createHash("sha256").update(JSON.stringify(envelope.payload), "utf8").digest("hex");
+      if (recomputed !== envelope.payloadDigest) return null;
+      const result = envelope.payload as Record<string, unknown>;
+      // Zero-node/error payloads are never served as hits (R5/R7).
+      if (typeof result.error === "string" && result.error.length > 0) return null;
+      const nodes = (result as { nodes?: unknown }).nodes;
+      if (!Array.isArray(nodes) || nodes.length === 0) return null;
+      absolutizeSourceFilesIn(result, root);
+      return result;
+    } catch {
+      return null;
+    }
+  }
   let h: string;
   try {
     h = fileHash(filePath, root);
@@ -362,6 +599,53 @@ export function saveCached(
   root: string = ".",
   options: CacheOptions = {},
 ): void {
+  // L5 explicit no-cache (R4): live mode without a usable port never touches
+  // the filesystem or the stat index (no statSync either).
+  if (options.liveNoCache === true) return;
+  // L5 injected host storage: content-derived key through the port, never a
+  // default-root directory write. Authoritative — no filesystem fallback.
+  // A throwing port disables caching and permits recomputation (R4): the
+  // fresh result stays usable, the failure is operational only.
+  const injected = options.store ?? null;
+  if (injected !== null) {
+    assertValidLiveStore(injected);
+    // M1: persist the full-identity envelope (key + per-component bind +
+    // payload digest). Without a key or bind the write is skipped: an
+    // unbound entry must never become a future hit.
+    if (typeof options.liveKey !== "string" || options.liveKey.length === 0) return;
+    if (options.liveBind === undefined || options.liveBind === null) return;
+    requireLiveScope(options.liveBind.scope);
+    injected.authorize(options.liveBind.scope);
+    const hasBuckets = CACHE_BUCKETS.some((b) => Array.isArray(result[b]) && (result[b] as unknown[]).length > 0);
+    const payload: Record<string, unknown> = hasBuckets
+      ? JSON.parse(JSON.stringify(result)) as Record<string, unknown>
+      : result;
+    if (hasBuckets) relativizeSourceFilesIn(payload, root);
+    const envelope = {
+      bind: options.liveBind,
+      kind: "reused-extraction",
+      payload,
+      payloadDigest: createHash("sha256").update(JSON.stringify(payload), "utf8").digest("hex"),
+      schemaVersion: LIVE_CACHE_SCHEMA_VERSION,
+    };
+    const existing = injected.load(options.liveKey);
+    if (existing !== null) {
+      let previous: typeof envelope | null = null;
+      try { previous = JSON.parse(existing); } catch {}
+      if (previous?.schemaVersion === LIVE_CACHE_SCHEMA_VERSION && previous.kind === envelope.kind
+        && canonicalStringify(previous.bind) === canonicalStringify(envelope.bind)
+        && previous.payloadDigest === createHash("sha256").update(JSON.stringify(previous.payload), "utf8").digest("hex")) {
+        if (previous.payloadDigest !== envelope.payloadDigest) throw new Error("derivation-failed: conflicting payloads under one live key");
+        return;
+      }
+    }
+    try {
+      injected.store(options.liveKey, JSON.stringify(envelope));
+    } catch {
+      return;
+    }
+    return;
+  }
   try {
     if (!statSync(filePath).isFile()) {
       return;
