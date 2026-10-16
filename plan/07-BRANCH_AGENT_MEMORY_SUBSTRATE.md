@@ -76,7 +76,7 @@
 
 ## Lot 7 — Accepted-Only Ranking, Revalidation, Migration Closure
 
-- [x] Implement the accepted lexical DTO adapter, offline + semantic profiles, recency/profile receipts, induced eligibility graph, vector allowlist, final revalidation/redaction, bounded pagination, activity-source ingestion, migration of retained neutral records, and proof no compatibility surface remains.
+- [x] Implement the accepted lexical DTO adapter, offline + semantic profiles, recency/profile receipts, induced eligibility graph, vector allowlist, final revalidation/redaction, bounded pagination, activity-source ingestion, migration of retained neutral records, and proof no compatibility surface remains. Activity-source ingestion is implemented through engine `ingestActivity` (X1, D-8 A, reprise du 2026-10-15 ; matrice lifecycle mémoire/SQLite verte, test Postgres collecté pour CI `memory-postgres` ; `tests/memory-activity-ingestion.test.ts`).
 - [x] RED: `tests/memory-ranking-offline.test.ts > offline profile reads only accepted FTS and revalidation removes a stale hit`.
 - [x] RED: `tests/memory-ranking-offline.test.ts > formula profile version bounds receipt and tie order are deterministic`.
 - [x] RED: `tests/memory-ranking-semantic.test.ts > removed neighbour has zero contribution after induced-subgraph PPR`.

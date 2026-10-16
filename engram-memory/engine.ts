@@ -7,12 +7,15 @@ import {
   receiptDigest,
   recordIdFromDigest,
 } from "./digests.js";
-import { isCanonicalCursor, validateAdminOperationRequest, validateCandidatePayload, validateProjectionInvalidationRequest, validateReconciliationCommandBinding, validateReconciliationRequest } from "./validation.js";
+import { isCanonicalCursor, validateActivityEvidencePage, validateActivityIngestionRequest, validateAdminOperationRequest, validateCandidatePayload, validateProjectionInvalidationRequest, validateReconciliationCommandBinding, validateReconciliationRequest } from "./validation.js";
 import { applyProjectionBatchV1 } from "./projection-cascade.js";
 import { evaluateReconciliationEligibilityV1, reconciliationProposalIdV1 } from "./assertion-family-registry.js";
 import { verifyStoreProvenance } from "./store-factory.js";
 import { executeRecall } from "./recall.js";
 import type {
+  ActivityEvidencePageV1,
+  ActivityIngestionItemV1,
+  ActivityIngestionReceiptV1,
   AdminEpochReceiptV1,
   AdmissionDecisionEnvelopeV1,
   AdmissionOutcomeV1,
@@ -478,6 +481,13 @@ function captureEvent(request: CaptureRequestV2, candidateId: string, authorizat
   return { ...body, event_digest: receiptDigest("event", body) };
 }
 
+// D-8 A (lot X1): stable activity idempotency key over (source_id, sequence, evidence_id) only —
+// 73 bytes ("activity:" + 64 hex), inside the 16..256-byte IdempotencyKey bound. evidence_digest is
+// excluded on purpose: changed content under the same key is a DIGEST_CONFLICT with no write, not a capture.
+function activityIdempotencyKey(sourceId: string, sequence: string, evidenceId: string): string {
+  return `activity:${receiptDigest("activity-idempotency", { source_id: sourceId, sequence, evidence_id: evidenceId }).slice("sha256:".length)}`;
+}
+
 function captureContentDigest(payloadDigest: Digest, request: CaptureRequestV2): Digest {
   return receiptDigest("capture-content", {
     payload_digest: payloadDigest,
@@ -485,6 +495,27 @@ function captureContentDigest(payloadDigest: Digest, request: CaptureRequestV2):
     source_order: request.source_order,
     idempotency_key: request.idempotency_key,
   });
+}
+
+// X1 durable idempotence: serialises the (durable pre-check, seal, commit)
+// critical section per candidate identity across all ports of this process, so a
+// concurrent same-key capture always observes the winner's committed control and
+// never seals over it. Entries are released on every path; the map never grows.
+const captureReservations = new Map<string, Promise<void>>();
+
+async function withCaptureReservation<T>(candidateId: string, work: () => Promise<T>): Promise<T> {
+  const prior = captureReservations.get(candidateId) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const chained = prior.then(() => gate);
+  captureReservations.set(candidateId, chained);
+  await prior.catch(() => undefined);
+  try {
+    return await work();
+  } finally {
+    if (captureReservations.get(candidateId) === chained) captureReservations.delete(candidateId);
+    release();
+  }
 }
 
 function admissionRequestIsExact(input: unknown): input is { candidate_id: string; authorization: { credential: string; context_ref?: string }; deadline_at: string } {
@@ -512,11 +543,13 @@ function validPendingSnapshot(input: unknown, candidateId: string): input is { c
   const value = normalizeObject(input);
   const snapshot = exactObject(value, ["control", "sealed"]);
   if (snapshot === undefined) return false;
-  const control = exactObject(snapshot.control, ["candidate_id", "envelope_digest", "state", "created_cursor", "policy_id", "policy_version"]);
+  const control = optionalExactObject(snapshot.control, ["candidate_id", "envelope_digest", "state", "created_cursor", "policy_id", "policy_version"], ["capture_content_digest", "capture_receipt_digest"]);
   const sealed = exactObject(snapshot.sealed, ["candidate_id", "envelope_ref", "envelope_digest", "key_ref", "ciphertext"]);
   return control !== undefined && sealed !== undefined && control.candidate_id === candidateId && sealed.candidate_id === candidateId
     && control.state === "pending" && isDigest(control.envelope_digest) && control.envelope_digest === sealed.envelope_digest
     && isCanonicalCursor(control.created_cursor) && isOpaque(control.policy_id) && isOpaque(control.policy_version)
+    && (!Object.hasOwn(control, "capture_content_digest") || isDigest(control.capture_content_digest))
+    && (!Object.hasOwn(control, "capture_receipt_digest") || isDigest(control.capture_receipt_digest))
     && isOpaque(sealed.envelope_ref) && isOpaque(sealed.key_ref) && typeof sealed.ciphertext === "string";
 }
 
@@ -966,42 +999,157 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       const trust = await classifyTrust(dependencies, payload_digest, request, now);
       if (!trust.ok) return trust;
       try {
-        const sealed = await dependencies.crypto.seal({
-          candidate_id: candidateId,
-          plaintext: canonicalizeJcs(pendingEnvelope(payload, request, authorization.value.receipt_digest, trust.value, now)),
-          context_digest: pendingContextDigest(candidateId),
-        });
-        if (!sealed.ok) return operationFailure("capture", sealed);
-        const committed = await dependencies.canonical_store.commitPending({
-          control: {
+        return await withCaptureReservation(candidateId, async () => {
+          // This read is authoritative across every lifecycle state and port
+          // restart. Only NOT_FOUND permits a first capture; a read failure
+          // must never fall through to sealing over previously stored data.
+          const reader = dependencies.canonical_store.readCaptureIdempotency;
+          if (reader !== undefined) {
+            const seen = await reader.call(dependencies.canonical_store, { candidate_id: candidateId });
+            if (!seen.ok && seen.error.code !== "NOT_FOUND") return operationFailure("capture", seen);
+            if (seen.ok) {
+              const registered = seen.value;
+              if (registered.capture_content_digest !== contentDigest) {
+                return refusal("capture", "DIGEST_CONFLICT", "idempotency identity is already bound to different capture content");
+              }
+              if (!isCanonicalCursor(registered.created_cursor) || !isDigest(registered.capture_receipt_digest)) {
+                return refusal("capture", "JOURNAL_CORRUPT", "capture idempotency acknowledgement is incomplete");
+              }
+              // record_digest is optional on CaptureAcknowledgementV1. A crash
+              // between commit and its supplementary recording never permits
+              // another write, including after the pending key is destroyed.
+              capturedContent.set(candidateId, contentDigest);
+              return { ok: true, value: {
+                status: "duplicate_exact", candidate_id: candidateId,
+                cursor: registered.created_cursor,
+                ...(registered.record_digest === undefined ? {} : { record_digest: registered.record_digest }),
+                transaction_receipt_digest: registered.capture_receipt_digest,
+              } };
+            }
+          }
+          if (cancelled.has(request.cancellation_ref)) return refusal("capture", "CANCELLED", "capture was cancelled before commit");
+          const sealed = await dependencies.crypto.seal({
             candidate_id: candidateId,
-            envelope_digest: sealed.value.envelope_digest,
-            state: "pending",
-            created_cursor: "0",
-            policy_id: dependencies.admission_policy.policy_id,
-            policy_version: dependencies.admission_policy.policy_version,
-          },
-          sealed: sealed.value,
-          capture_event: captureEvent(request, candidateId, authorization.value.receipt_digest, now),
-        });
-        if (!committed.ok) return operationFailure("capture", committed);
-        const receipt = committed.value as typeof committed.value & { outcome?: "committed_pending" | "duplicate_exact" };
-        if (!isCanonicalCursor(receipt.cursor) || !isInstant(receipt.committed_at)) return refusal("capture", "INVALID_SCHEMA", "pending commit did not return a durable receipt");
-        capturedContent.set(candidateId, contentDigest);
-        const record = recordForPending(payload, payload_digest, authorization.value.receipt_digest, trust.value, now, receipt.cursor);
-        return {
-          ok: true,
-          value: {
+            plaintext: canonicalizeJcs(pendingEnvelope(payload, request, authorization.value.receipt_digest, trust.value, now)),
+            context_digest: pendingContextDigest(candidateId),
+          });
+          if (!sealed.ok) return operationFailure("capture", sealed);
+          const committed = await dependencies.canonical_store.commitPending({
+            control: {
+              candidate_id: candidateId, envelope_digest: sealed.value.envelope_digest,
+              state: "pending", created_cursor: "0",
+              policy_id: dependencies.admission_policy.policy_id,
+              policy_version: dependencies.admission_policy.policy_version,
+              capture_content_digest: contentDigest,
+            },
+            sealed: sealed.value,
+            capture_event: captureEvent(request, candidateId, authorization.value.receipt_digest, now),
+          });
+          if (!committed.ok) return operationFailure("capture", committed);
+          // Preserve the V1 direct receipt contract. Some legacy stores also
+          // report an outcome; X1's built-in stores decide replays above.
+          const receipt = committed.value as typeof committed.value & { outcome?: "committed_pending" | "duplicate_exact" };
+          if (!isCanonicalCursor(receipt.cursor) || !isInstant(receipt.committed_at)) return refusal("capture", "INVALID_SCHEMA", "pending commit did not return a durable receipt");
+          capturedContent.set(candidateId, contentDigest);
+          const record = recordForPending(payload, payload_digest, authorization.value.receipt_digest, trust.value, now, receipt.cursor);
+          // Supplementary acknowledgement metadata only: content, original
+          // cursor and fenced receipt are already durable in commitPending.
+          // An interrupted completion cannot weaken replay or conflict checks.
+          try {
+            await dependencies.canonical_store.recordCaptureIdempotency?.({ candidate_id: candidateId, record_digest: record.record_digest });
+          } catch { /* replay remains a pure read of the committed registry */ }
+          return { ok: true, value: {
             status: receipt.outcome === "duplicate_exact" ? "duplicate_exact" : "committed_pending",
-            candidate_id: candidateId,
-            record_digest: record.record_digest,
-            cursor: receipt.cursor,
-            transaction_receipt_digest: receipt.receipt_digest,
-          },
-        };
+            candidate_id: candidateId, record_digest: record.record_digest,
+            cursor: receipt.cursor, transaction_receipt_digest: receipt.receipt_digest,
+          } };
+        });
       } catch {
         return unavailable("capture", "capture dependencies did not return typed results");
       }
+    },
+    // D-8 A (lot X1): host-invoked pull of one activity page. Each item becomes an ordinary pending
+    // capture through port.capture (fencing, authorization, trust classification and idempotency
+    // unchanged); the source can never admit — items stay pending until requestAdmission.
+    ingestActivity: async (input): Promise<Result<ActivityIngestionReceiptV1>> => {
+      const admitted = await admitFenced("capture");
+      if (!admitted.ok) return admitted;
+      const now = dependencies.clock?.now();
+      if (!isInstant(now)) return unavailable("capture", "clock did not supply a canonical instant");
+      const checked = validateActivityIngestionRequest(input);
+      if (!checked.ok) return checked;
+      const request = checked.value;
+      if (compareInstants(now, request.deadline_at) >= 0) return refusal("capture", "DEADLINE_EXCEEDED", "activity ingestion deadline elapsed before the source read");
+      const source = dependencies.activity_sources.find((entry) => entry.source_id === request.source_id);
+      if (source === undefined) return unavailable("capture", "unknown activity source");
+      if (dependencies.canonical_store.readCaptureIdempotency === undefined) return unavailable("capture", "activity ingestion requires durable capture idempotency");
+      let page: ActivityEvidencePageV1;
+      try {
+        const read = await source.read({
+          ...(request.after === undefined ? {} : { after: request.after }),
+          limit: request.limit,
+          ...(request.valid_window === undefined ? {} : { valid_window: request.valid_window }),
+          deadline_at: request.deadline_at,
+          cancellation_ref: request.cancellation_ref,
+        });
+        if (!read.ok) return operationFailure("capture", read);
+        if (read.value.source_id !== request.source_id) return refusal("capture", "INVALID_SCHEMA", "activity page names a different source");
+        const pageChecked = validateActivityEvidencePage(read.value);
+        if (!pageChecked.ok) return pageChecked;
+        page = pageChecked.value;
+      } catch {
+        return unavailable("capture", "activity source did not return a typed page");
+      }
+      const items: ActivityIngestionItemV1[] = [];
+      for (const evidence of page.evidence) {
+        const captured = await port.capture({
+          schema_version: 2,
+          idempotency_key: activityIdempotencyKey(request.source_id, evidence.sequence, evidence.evidence_id),
+          payload: {
+            schema_version: 2,
+            scope_ref: request.scope_ref,
+            purpose_ref: request.purpose_ref,
+            valid_time: evidence.valid_time,
+            components: evidence.components,
+            primary_component_id: evidence.primary_component_id,
+            primary_event: evidence.primary_event,
+            citations: evidence.citations,
+            retention: request.retention,
+            reconciliation: request.reconciliation,
+          },
+          evidence: {
+            evidence_ref: evidence.evidence_id,
+            evidence_digest: evidence.evidence_digest,
+            citation_ids: evidence.citations.map((citation) => citation.citation_id).sort(),
+          },
+          authorization: request.authorization,
+          source_order: { source_ref: request.source_id, sequence: evidence.sequence },
+          deadline_at: request.deadline_at,
+          cancellation_ref: request.cancellation_ref,
+        });
+        // The first failing capture stops the page; earlier items are durable and idempotent, so the
+        // host retries from the same after. Errors already carry the capture operation.
+        if (!captured.ok) return captured;
+        const acknowledgement = captured.value;
+        if (acknowledgement.candidate_id === undefined || acknowledgement.cursor === undefined) {
+          return refusal("capture", "INVALID_SCHEMA", "ingested capture did not return a durable acknowledgement");
+        }
+        items.push({
+          evidence_id: evidence.evidence_id,
+          sequence: evidence.sequence,
+          status: acknowledgement.status === "duplicate_exact" ? "duplicate_exact" : "committed_pending",
+          candidate_id: acknowledgement.candidate_id,
+          cursor: acknowledgement.cursor,
+        });
+      }
+      const body = defined({
+        source_id: request.source_id,
+        source_version: page.source_version,
+        page_digest: page.page_digest,
+        next_after: page.next_after,
+        items,
+      });
+      return { ok: true, value: { ...body, receipt_digest: receiptDigest("activity-ingestion", body) } };
     },
     cancelCapture: async (cancellationRef) => {
       cancelled.add(cancellationRef);

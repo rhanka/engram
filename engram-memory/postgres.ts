@@ -5,6 +5,7 @@ import { receiptDigest } from "./digests.js";
 import { backupPublicJournalToStorageV1, deriveAcceptedLexicalDocumentsV1, deriveRebuildOutboxBatchV1 } from "./logical-backup.js";
 import { markFencedStoreV1 } from "./store-factory.js";
 import {
+  captureIdempotencyDigestV1,
   createInMemoryCanonicalMemoryStoreV1,
   foldMemoryJournalV1,
   type InMemoryCanonicalMemoryStoreV1,
@@ -16,7 +17,10 @@ import type {
   CanonicalMemoryStorePort,
   CanonicalStoreCapabilitiesV1,
   CanonicalTransactionReceiptV1,
+  CaptureIdempotencyRecordV1,
   ClockPort,
+  Cursor,
+  Digest,
   LifecycleEventV2,
   LogicalBackupImportInputV1,
   LogicalBackupImportReceiptV1,
@@ -24,6 +28,7 @@ import type {
   MemoryRecordV2,
   OperationalCapabilityReceiptV1,
   PendingCandidateSnapshotV1,
+  PersistedCaptureIdempotencyV1,
   ProjectionBatchV1,
   ProjectionInvalidationReceiptV1,
   RecoveryCheckpointManifestV1,
@@ -83,6 +88,11 @@ function parse<T>(value: string): T {
   return JSON.parse(value) as T;
 }
 
+// Malformed JSON must reach the core's JOURNAL_CORRUPT gate, not an opaque opener failure.
+function parseCaptureRegistryEntry(value: string): PersistedCaptureIdempotencyV1 {
+  try { return parse(value); } catch { return null as unknown as PersistedCaptureIdempotencyV1; }
+}
+
 function defaultAdvisoryKey(storeId: string): bigint {
   // 60 bits keeps the key comfortably inside the signed int8 advisory-lock space.
   const hex = createHash("sha256").update(`graphify-memory/advisory/${storeId}`, "utf8").digest("hex").slice(0, 15);
@@ -98,6 +108,7 @@ const SCHEMA = `
   CREATE TABLE IF NOT EXISTS memory_state (entity_kind text NOT NULL, entity_id text NOT NULL, state text NOT NULL, body text NOT NULL, PRIMARY KEY(entity_kind, entity_id));
   CREATE TABLE IF NOT EXISTS memory_control (candidate_id text PRIMARY KEY, body text NOT NULL);
   CREATE TABLE IF NOT EXISTS memory_envelope (candidate_id text PRIMARY KEY, body text NOT NULL);
+  CREATE TABLE IF NOT EXISTS memory_capture_idempotency (candidate_id text PRIMARY KEY, body text NOT NULL);
   CREATE TABLE IF NOT EXISTS accepted_lexical (record_id text PRIMARY KEY, record_digest text NOT NULL, body text NOT NULL);
   CREATE TABLE IF NOT EXISTS accepted_lexical_fts (
     record_id text PRIMARY KEY,
@@ -120,6 +131,7 @@ function stateFromRows(rows: {
   records: StoredRow[];
   lexical: StoredRow[];
   outbox: StoredRow[];
+  capture_idempotency: StoredRow[];
 }): InMemoryStoreStateV1 {
   return {
     journal: rows.journal.map((row) => parse(row.body!)),
@@ -128,6 +140,7 @@ function stateFromRows(rows: {
     records: rows.records.map((row) => parse(row.body!)),
     lexical: rows.lexical.map((row) => ({ record_id: row.record_id!, document: parse(row.body!) })),
     outbox: rows.outbox.map((row) => parse(row.body!)),
+    capture_idempotency: rows.capture_idempotency.map((row) => parseCaptureRegistryEntry(row.body!)),
   };
 }
 
@@ -216,14 +229,14 @@ class PostgresCanonicalStore implements CanonicalMemoryStorePort {
   #newWorkingStore(): Result<InMemoryCanonicalMemoryStoreV1> {
     const persisted = this.#core.exportStateForPersistence();
     return persisted.ok
-      ? { ok: true, value: createInMemoryCanonicalMemoryStoreV1({ clock: this.options.clock, store_id: this.options.store_id, persistence: persisted.value }) }
+      ? { ok: true, value: createInMemoryCanonicalMemoryStoreV1({ clock: this.options.clock, store_id: this.options.store_id, storage_epoch: this.generation, persistence: persisted.value }) }
       : persisted;
   }
 
   async #writeState(snapshot: InMemoryStoreStateV1): Promise<void> {
     const folded = foldMemoryJournalV1({ journal: snapshot.journal, records: snapshot.records });
     if (!folded.ok) throw new Error("refusing to persist a corrupt canonical state");
-    for (const table of ["memory_blob", "memory_journal", "memory_state", "memory_control", "memory_envelope", "accepted_lexical", "accepted_lexical_fts", "memory_outbox"]) {
+    for (const table of ["memory_blob", "memory_journal", "memory_state", "memory_control", "memory_envelope", "memory_capture_idempotency", "accepted_lexical", "accepted_lexical_fts", "memory_outbox"]) {
       await this.client.query(`DELETE FROM ${table}`);
     }
 
@@ -250,6 +263,9 @@ class PostgresCanonicalStore implements CanonicalMemoryStorePort {
     }
     for (const envelope of snapshot.envelopes) {
       await this.client.query("INSERT INTO memory_envelope(candidate_id, body) VALUES ($1, $2)", [envelope.candidate_id, json(envelope)]);
+    }
+    for (const entry of snapshot.capture_idempotency ?? []) {
+      await this.client.query("INSERT INTO memory_capture_idempotency(candidate_id, body) VALUES ($1, $2)", [entry.candidate_id, json(entry)]);
     }
     this.options.on_mutation_statement?.("state");
     this.options.failpoint?.("after_state");
@@ -281,6 +297,9 @@ class PostgresCanonicalStore implements CanonicalMemoryStorePort {
       if (!result.ok) return result;
       const snapshot = working.value.exportStateForPersistence();
       if (!snapshot.ok) return snapshot;
+      const currentState = this.#core.exportStateForPersistence();
+      if (!currentState.ok) return currentState;
+      if (json(snapshot.value) === json(currentState.value)) return result;
       let began = false;
       try {
         await this.client.query("BEGIN");
@@ -345,6 +364,18 @@ class PostgresCanonicalStore implements CanonicalMemoryStorePort {
     return this.#transaction("capture", (working) => working.commitPending(input));
   }
 
+  async readCaptureIdempotencyEntries(input: { through_cursor: Cursor }) {
+    return this.#read("backup", () => this.#core.readCaptureIdempotencyEntries(input));
+  }
+
+  async readCaptureIdempotency(input: { candidate_id: string }): Promise<Result<CaptureIdempotencyRecordV1>> {
+    return this.#read("capture", () => this.#core.readCaptureIdempotency(input));
+  }
+
+  async recordCaptureIdempotency(input: { candidate_id: string; record_digest: Digest }): Promise<Result<CaptureIdempotencyRecordV1>> {
+    return this.#transaction("capture", (working) => working.recordCaptureIdempotency(input));
+  }
+
   async readPending(input: Parameters<CanonicalMemoryStorePort["readPending"]>[0]): Promise<Result<PendingCandidateSnapshotV1>> {
     return this.#read("request_admission", () => this.#core.readPending(input));
   }
@@ -396,7 +427,7 @@ class PostgresCanonicalStore implements CanonicalMemoryStorePort {
       if (!current.ok) return current;
       if (current.value.journal.length !== 0 || current.value.records.length !== 0
         || current.value.controls.length !== 0 || current.value.envelopes.length !== 0
-        || current.value.lexical.length !== 0 || current.value.outbox.length !== 0) {
+        || current.value.lexical.length !== 0 || current.value.outbox.length !== 0 || (current.value.capture_idempotency?.length ?? 0) !== 0) {
         return refusal("restore", "RESTORE_REFUSED", "logical backup import refuses a non-empty store");
       }
       const converted = backupPublicJournalToStorageV1(input.journal);
@@ -418,11 +449,18 @@ class PostgresCanonicalStore implements CanonicalMemoryStorePort {
         envelopes: [],
         lexical: [...deriveAcceptedLexicalDocumentsV1(folded.value, records)],
         outbox: [...deriveRebuildOutboxBatchV1(folded.value, records)],
+        capture_idempotency: input.capture_idempotency,
       };
       // Validate through a throwaway core BEFORE any durable write.
-      const staged = createInMemoryCanonicalMemoryStoreV1({ clock: this.options.clock, store_id: this.options.store_id, persistence: snapshot });
+      const staged = createInMemoryCanonicalMemoryStoreV1({ clock: this.options.clock, store_id: this.options.store_id, storage_epoch: this.generation, persistence: snapshot });
       const stagedReady = await staged.readiness();
       if (!stagedReady.ok) return { ok: false, error: { ...stagedReady.error, operation: "restore" as MemoryOperation, code: "BACKUP_INVALID" as const } };
+      const registry = await staged.readCaptureIdempotencyEntries({ through_cursor: folded.value.high_water_cursor });
+      if (!registry.ok) return registry;
+      const registryDigest = captureIdempotencyDigestV1(registry.value);
+      if (input.expected_capture_idempotency_digest !== undefined && registryDigest !== input.expected_capture_idempotency_digest) {
+        return refusal("restore", "RESTORE_REFUSED", "restored capture registry differs from the backup before commit");
+      }
       let began = false;
       try {
         await this.client.query("BEGIN");
@@ -453,7 +491,7 @@ class PostgresCanonicalStore implements CanonicalMemoryStorePort {
         await this.client.query("COMMIT");
         began = false;
         this.#core = staged;
-        const body = { restored_cursor: folded.value.high_water_cursor, canonical_state_digest: folded.value.canonical_state_digest };
+        const body = { restored_cursor: folded.value.high_water_cursor, canonical_state_digest: folded.value.canonical_state_digest, capture_idempotency_digest: registryDigest };
         return { ok: true, value: { ...body, receipt_digest: receiptDigest("logical-restore", body) } };
       } catch {
         if (began) {
@@ -550,9 +588,11 @@ export async function openPostgresCanonicalMemoryStoreV1(options: PostgresMemory
     const records = await client.query<StoredRow>("SELECT body FROM memory_blob ORDER BY record_id");
     const lexical = await client.query<StoredRow>("SELECT record_id, body FROM accepted_lexical ORDER BY record_id");
     const outbox = await client.query<StoredRow>("SELECT body FROM memory_outbox ORDER BY sequence");
+    const captureIdempotency = await client.query<StoredRow>("SELECT body FROM memory_capture_idempotency ORDER BY candidate_id");
     const highwater = await client.query<StoredRow>("SELECT cursor::text AS cursor FROM memory_highwater WHERE id = 1");
     const persisted = checkedStoreState(stateFromRows({
       journal: journal.rows, controls: controls.rows, envelopes: envelopes.rows, records: records.rows, lexical: lexical.rows, outbox: outbox.rows,
+      capture_idempotency: captureIdempotency.rows,
     }));
     if (!persisted.ok) {
       await client.end();
@@ -563,7 +603,7 @@ export async function openPostgresCanonicalMemoryStoreV1(options: PostgresMemory
       await client.end();
       return refusal("admin", "JOURNAL_CORRUPT", "the singleton high-water row disagrees with the durable journal");
     }
-    const core = createInMemoryCanonicalMemoryStoreV1({ clock: options.clock, store_id: options.store_id, persistence: persisted.value });
+    const core = createInMemoryCanonicalMemoryStoreV1({ clock: options.clock, store_id: options.store_id, storage_epoch: generation, persistence: persisted.value });
     const ready = await core.readiness();
     if (!ready.ok) {
       await client.end();

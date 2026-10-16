@@ -3,17 +3,21 @@ import { memoryRecordDigest, receiptDigest } from "./digests.js";
 import { isVisibleAtDualAsOf } from "./dual-as-of.js";
 import { markInMemoryStoreV1 } from "./store-factory.js";
 import { isCanonicalCursor, validateMemoryRecord } from "./validation.js";
+import { backupPublicJournalToStorageV1, deriveAcceptedLexicalDocumentsV1, deriveRebuildOutboxBatchV1 } from "./logical-backup.js";
 import type {
   AcceptedCandidateSnapshotV1,
   AdmissionStoreInputV1,
   CanonicalMemoryStorePort,
   CanonicalStoreCapabilitiesV1,
   CanonicalTransactionReceiptV1,
+  CaptureIdempotencyRecordV1,
   ClockPort,
   Cursor,
   Digest,
   LifecycleCommandV1,
   LifecycleEventV2,
+  LogicalBackupImportInputV1,
+  LogicalBackupImportReceiptV1,
   MemoryErrorCode,
   MemoryOperation,
   MemoryRecordV2,
@@ -21,6 +25,7 @@ import type {
   OpaqueRef,
   OperationalCapabilityReceiptV1,
   PendingControlV1,
+  PersistedCaptureIdempotencyV1,
   ProjectionBatchV1,
   ProjectionRecordV1,
   ProjectionInvalidationReceiptV1,
@@ -89,6 +94,7 @@ export interface MemoryJournalCheckpointV1 {
 export interface MemoryJournalTailV1 {
   journal: ReadonlyArray<MemoryJournalEventV1>;
   records: ReadonlyArray<MemoryRecordV2>;
+  capture_idempotency?: ReadonlyArray<PersistedCaptureIdempotencyV1>;
 }
 
 export interface InMemoryRecoveryCheckpointV1 extends MemoryJournalCheckpointV1 {
@@ -97,6 +103,15 @@ export interface InMemoryRecoveryCheckpointV1 extends MemoryJournalCheckpointV1 
   envelopes: ReadonlyArray<SealedCandidateEnvelopeV1>;
   lexical: ReadonlyArray<{ record_id: string; document: import("./contracts/index.js").AcceptedLexicalDocumentV1 }>;
   outbox: ReadonlyArray<ProjectionBatchV1>;
+  capture_idempotency?: ReadonlyArray<PersistedCaptureIdempotencyV1>;
+}
+
+/** Durable X1 capture-idempotence entry: the recorded acknowledgement per candidate identity. */
+export type { PersistedCaptureIdempotencyV1 } from "./contracts/index.js";
+
+/** The canonical restore identity is (journal state digest, registry root). Order is immaterial. */
+export function captureIdempotencyDigestV1(entries: ReadonlyArray<PersistedCaptureIdempotencyV1>): Digest {
+  return receiptDigest("capture-idempotency", { entries: [...entries].sort((a, b) => a.candidate_id.localeCompare(b.candidate_id)) });
 }
 
 /** Complete serializable state used by durable canonical-store adapters. */
@@ -107,16 +122,25 @@ export interface InMemoryStoreStateV1 {
   records: ReadonlyArray<MemoryRecordV2>;
   lexical: ReadonlyArray<{ record_id: string; document: import("./contracts/index.js").AcceptedLexicalDocumentV1 }>;
   outbox: ReadonlyArray<ProjectionBatchV1>;
+  capture_idempotency?: ReadonlyArray<PersistedCaptureIdempotencyV1>;
 }
 
 export interface InMemoryCanonicalMemoryStoreOptionsV1 {
   clock: ClockPort;
   store_id?: string;
+  /** Durable adapters bind the receipt AND its registry entry before persistence. */
+  storage_epoch?: Cursor;
   recovery?: { checkpoint: InMemoryRecoveryCheckpointV1; tail?: MemoryJournalTailV1 };
   persistence?: InMemoryStoreStateV1;
 }
 
 export interface InMemoryCanonicalMemoryStoreV1 extends CanonicalMemoryStorePort {
+  // Always present on the in-memory core (and its fenced SQLite/Postgres
+  // wrappers); only third-party CanonicalMemoryStorePort implementations may
+  // omit these optional port members; ordinary capture remains compatible.
+  readCaptureIdempotency(input: { candidate_id: string }): Promise<Result<CaptureIdempotencyRecordV1>>;
+  readCaptureIdempotencyEntries(input: { through_cursor: Cursor }): Promise<Result<ReadonlyArray<PersistedCaptureIdempotencyV1>>>;
+  recordCaptureIdempotency(input: { candidate_id: string; record_digest: Digest }): Promise<Result<CaptureIdempotencyRecordV1>>;
   exportCheckpointForRecovery(through_cursor: Cursor, journal?: ReadonlyArray<MemoryJournalEventV1>): Result<InMemoryRecoveryCheckpointV1>;
   exportTailForRecovery(after_cursor: Cursor): Result<MemoryJournalTailV1>;
   exportStateForPersistence(): Result<InMemoryStoreStateV1>;
@@ -372,6 +396,15 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
     backend: "memory",
   };
   #journal: MemoryJournalEventV1[] = [];
+  // X1 durable idempotence registry: candidate identity → clock-independent
+  // content binding + RECORDED acknowledgement (cursor, record digest,
+  // transaction receipt digest). Written on every bound first commit and
+  // completed by the engine once the acknowledgement is built; never deleted
+  // by admission/rejection/envelope destruction (unlike controls and
+  // envelopes). Restored from persisted entries on load, backfilled from
+  // controls for entries predating the recording.
+  #captureIdempotency = new Map<string, { content: Digest; cursor: Cursor; recordDigest?: Digest; receiptDigest?: Digest }>();
+  #captureIdempotencyCorrupt = false;
   #controls = new Map<string, PendingControlV1>();
   #envelopes = new Map<string, SealedCandidateEnvelopeV1>();
   #records = new Map<string, MemoryRecordV2>();
@@ -391,6 +424,7 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
       persistence.lexical.forEach(({ record_id, document }) => this.#lexical.set(record_id, clone(document)));
       this.#outbox = persistence.outbox.map(clone);
       this.#rebuildIntentIndex();
+      this.#restoreCaptureIdempotency(persistence.capture_idempotency);
       return;
     }
     const recovery = options.recovery;
@@ -408,6 +442,68 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
       this.#journal.push(...tail.journal.map(clone));
     }
     this.#rebuildIntentIndex();
+    this.#restoreCaptureIdempotency([
+      ...(recovery.checkpoint.capture_idempotency ?? []),
+      ...(tail?.capture_idempotency ?? []),
+    ]);
+  }
+
+  // Restores the durable registry from persisted entries, then backfills any
+  // bound identity missing from it (entries predating the recording) from its
+  // control. Persisted entries win: they carry the recorded acknowledgement.
+  #restoreCaptureIdempotency(entries: ReadonlyArray<PersistedCaptureIdempotencyV1> | undefined): void {
+    this.#captureIdempotency.clear();
+    if (entries !== undefined && !Array.isArray(entries)) { this.#captureIdempotencyCorrupt = true; return; }
+    for (const entry of entries ?? []) {
+      if (entry === null || typeof entry !== "object" || typeof entry.candidate_id !== "string" || entry.candidate_id.length === 0
+        || !isDigest(entry.content) || !isCanonicalCursor(entry.cursor)
+        || (entry.record_digest !== undefined && !isDigest(entry.record_digest))
+        || (entry.receipt_digest !== undefined && !isDigest(entry.receipt_digest))) {
+        this.#captureIdempotencyCorrupt = true; return;
+      }
+      const event = this.#journal.find(event => event.operation === "capture" && event.candidate_id === entry.candidate_id);
+      const control = this.#controls.get(entry.candidate_id);
+      const prior = this.#captureIdempotency.get(entry.candidate_id);
+      if (event?.cursor !== entry.cursor
+        || (control?.capture_content_digest !== undefined && control.capture_content_digest !== entry.content)
+        || (control?.capture_receipt_digest !== undefined && control.capture_receipt_digest !== entry.receipt_digest)
+        || prior !== undefined) {
+        this.#captureIdempotencyCorrupt = true; return;
+      }
+      this.#captureIdempotency.set(entry.candidate_id, defined({
+        content: entry.content,
+        cursor: entry.cursor,
+        recordDigest: entry.record_digest,
+        receiptDigest: entry.receipt_digest,
+      }));
+    }
+    this.#backfillCaptureIdempotency();
+  }
+
+  #exportCaptureIdempotency(): PersistedCaptureIdempotencyV1[] {
+    return [...this.#captureIdempotency.entries()].map(([candidate_id, entry]) => defined({
+      candidate_id,
+      content: entry.content,
+      cursor: entry.cursor,
+      record_digest: entry.recordDigest,
+      receipt_digest: entry.receiptDigest,
+    }));
+  }
+
+  #backfillCaptureIdempotency(): void {
+    for (const control of this.#controls.values()) {
+      if (control.capture_content_digest === undefined) continue;
+      const known = this.#captureIdempotency.get(control.candidate_id);
+      if (known !== undefined) {
+        if (known.receiptDigest === undefined && control.capture_receipt_digest !== undefined) known.receiptDigest = control.capture_receipt_digest;
+        continue;
+      }
+      this.#captureIdempotency.set(control.candidate_id, defined({
+        content: control.capture_content_digest,
+        cursor: control.created_cursor,
+        receiptDigest: control.capture_receipt_digest,
+      }));
+    }
   }
 
   #rebuildIntentIndex(): void {
@@ -422,6 +518,7 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
 
   #readiness(operation: MemoryOperation): Result<FoldedMemoryStateV1> {
     if (this.#closed) return refusal(operation, "STORE_UNAVAILABLE", "canonical memory store is closed");
+    if (this.#captureIdempotencyCorrupt) return refusal(operation, "JOURNAL_CORRUPT", "capture idempotency registry is malformed or disagrees with its canonical capture");
     if (this.#checkpoint !== undefined) {
       const checkpointFold = foldMemoryJournalV1({ journal: this.#checkpoint.journal, records: this.#checkpoint.records });
       if (!checkpointFold.ok) return { ok: false, error: { ...checkpointFold.error, operation } };
@@ -485,7 +582,7 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
     const body = defined({
       operation,
       cursor: event.cursor,
-      storage_epoch: "0",
+      storage_epoch: this.options.storage_epoch ?? "0",
       record_digest: recordDigest,
       event_digest: event.event_hash,
       state_digest: folded.value.canonical_state_digest,
@@ -497,21 +594,105 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
   }
 
   async commitPending(input: Parameters<CanonicalMemoryStorePort["commitPending"]>[0]): Promise<Result<CanonicalTransactionReceiptV1>> {
+    const ready = this.#readiness("capture");
+    if (!ready.ok) return ready;
     if (input.control.state !== "pending" || input.control.candidate_id !== input.sealed.candidate_id
       || input.control.envelope_digest !== input.sealed.envelope_digest) {
       return refusal("capture", "INVALID_SCHEMA", "pending control and sealed envelope do not exactly bind");
+    }
+    // X1 durable idempotence: the content check runs atomically with the key
+    // reservation, before any journal append, envelope store, or cursor
+    // allocation. The compared binding is clock-independent, so an exact replay
+    // is recognised whatever the wall clock says; any drift is DIGEST_CONFLICT
+    // with no write. Rows without a content binding keep the legacy event-id path.
+    const incomingContent = input.control.capture_content_digest;
+    const registered = this.#captureIdempotency.get(input.control.candidate_id);
+    if (registered !== undefined && incomingContent !== undefined) {
+      if (registered.content !== incomingContent) return refusal("capture", "DIGEST_CONFLICT", "candidate identity is already bound to different capture content");
+      const original = this.#journal.find(event => event.operation === "capture" && event.candidate_id === input.control.candidate_id);
+      return original === undefined
+        ? refusal("capture", "JOURNAL_CORRUPT", "capture idempotency record does not bind a capture event")
+        : this.#receipt("capture", original);
+    }
+    const existing = this.#controls.get(input.control.candidate_id);
+    // A first commit has reserved its control before awaiting its receipt.
+    // Direct V1 callers can overlap in that interval, before the registry is
+    // completed; the reserved binding is already authoritative, without writes.
+    if (existing?.capture_content_digest !== undefined && incomingContent !== undefined) {
+      if (existing.capture_content_digest !== incomingContent) return refusal("capture", "DIGEST_CONFLICT", "candidate identity is already bound to different capture content");
+      const original = this.#journal.find(event => event.operation === "capture" && event.candidate_id === input.control.candidate_id);
+      return original === undefined
+        ? refusal("capture", "JOURNAL_CORRUPT", "pending control does not bind a capture event")
+        : this.#receipt("capture", original);
+    }
+    if (incomingContent !== undefined && this.#journal.some(event => event.operation === "capture" && event.candidate_id === input.control.candidate_id)) {
+      return refusal("capture", "DIGEST_CONFLICT", "capture journal identity has no verifiable content registry (legacy restore)");
     }
     const intent = this.#intentFromLifecycle(input.capture_event, { candidate_id: input.control.candidate_id, to_state: "pending", operation: "capture" });
     const duplicate = this.#findDuplicate(intent);
     if (!duplicate.ok) return { ok: false, error: { ...duplicate.error, operation: "capture" } };
     if (duplicate.value !== undefined) return this.#receipt("capture", duplicate.value);
-    if (this.#controls.has(input.control.candidate_id)) return refusal("capture", "DIGEST_CONFLICT", "candidate identity already exists with different capture data");
+    if (existing !== undefined) return refusal("capture", "DIGEST_CONFLICT", "candidate identity already exists with different capture data");
     const appended = this.#append(intent);
     if (!appended.ok) return { ok: false, error: { ...appended.error, operation: "capture" } };
     const control = { ...clone(input.control), created_cursor: appended.value.event.cursor };
     this.#controls.set(control.candidate_id, control);
     this.#envelopes.set(control.candidate_id, clone(input.sealed));
-    return this.#receipt("capture", appended.value.event);
+    const receipt = await this.#receipt("capture", appended.value.event);
+    if (!receipt.ok) return receipt;
+    const stored = this.#controls.get(control.candidate_id);
+    if (stored !== undefined) stored.capture_receipt_digest = receipt.value.receipt_digest;
+    // The recorded acknowledgement starts here: content, cursor and the first
+    // transaction receipt digest. The engine completes it with the record
+    // digest once the acknowledgement is built (recordCaptureIdempotency).
+    if (incomingContent !== undefined) {
+      this.#captureIdempotency.set(control.candidate_id, defined({
+        content: incomingContent,
+        cursor: control.created_cursor,
+        receiptDigest: receipt.value.receipt_digest,
+      }));
+    }
+    return receipt;
+  }
+
+  async readCaptureIdempotency(input: { candidate_id: string }): Promise<Result<CaptureIdempotencyRecordV1>> {
+    const ready = this.#readiness("capture");
+    if (!ready.ok) return ready;
+    const entry = this.#captureIdempotency.get(input.candidate_id);
+    if (entry === undefined) return this.#journal.some(event => event.operation === "capture" && event.candidate_id === input.candidate_id)
+      ? refusal("capture", "DIGEST_CONFLICT", "capture journal identity has no verifiable content registry (legacy restore)")
+      : refusal("capture", "NOT_FOUND", "capture idempotency record is not available");
+    return {
+      ok: true,
+      value: defined({
+        candidate_id: input.candidate_id,
+        capture_content_digest: entry.content,
+        created_cursor: entry.cursor,
+        record_digest: entry.recordDigest,
+        capture_receipt_digest: entry.receiptDigest,
+      }),
+    };
+  }
+
+  async readCaptureIdempotencyEntries(input: { through_cursor: Cursor }): Promise<Result<ReadonlyArray<PersistedCaptureIdempotencyV1>>> {
+    const ready = this.#readiness("backup");
+    if (!ready.ok) return ready;
+    if (!isCanonicalCursor(input.through_cursor)) return refusal("backup", "INVALID_SCHEMA", "registry backup cursor is invalid");
+    return { ok: true, value: this.#exportCaptureIdempotency().filter(entry => cursorCompare(entry.cursor, input.through_cursor) <= 0)
+      .sort((a, b) => a.candidate_id.localeCompare(b.candidate_id)) };
+  }
+
+  async recordCaptureIdempotency(input: { candidate_id: string; record_digest: Digest }): Promise<Result<CaptureIdempotencyRecordV1>> {
+    const ready = this.#readiness("capture");
+    if (!ready.ok) return ready;
+    if (!isDigest(input.record_digest)) return refusal("capture", "INVALID_SCHEMA", "record digest is not canonical");
+    const entry = this.#captureIdempotency.get(input.candidate_id);
+    if (entry === undefined) return refusal("capture", "NOT_FOUND", "capture idempotency record is not available");
+    if (entry.recordDigest !== undefined && entry.recordDigest !== input.record_digest) {
+      return refusal("capture", "DIGEST_CONFLICT", "capture idempotency record is already bound to a different record digest");
+    }
+    entry.recordDigest = input.record_digest;
+    return this.readCaptureIdempotency({ candidate_id: input.candidate_id });
   }
 
   async readPending(input: Parameters<CanonicalMemoryStorePort["readPending"]>[0]): Promise<Result<{ control: PendingControlV1; sealed: SealedCandidateEnvelopeV1 }>> {
@@ -846,14 +1027,47 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
     const checkpoint: MemoryJournalCheckpointV1 = { schema_version: 1, high_water_cursor: throughCursor, journal, records, canonical_state_digest: folded.value.canonical_state_digest };
     const controls = [...this.#controls.values()].filter((control) => cursorCompare(control.created_cursor, throughCursor) <= 0).map(clone);
     const envelopes = controls.filter((control) => control.state === "pending").map((control) => this.#envelopes.get(control.candidate_id)).filter((sealed): sealed is SealedCandidateEnvelopeV1 => sealed !== undefined).map(clone);
-    return { ok: true, value: { ...checkpoint, manifest: this.#manifest(throughCursor, folded.value, records, journal), controls, envelopes, lexical: [...this.#lexical.entries()].filter(([recordId]) => referenced.has(recordId)).map(([record_id, document]) => ({ record_id, document: clone(document) })), outbox: this.#outbox.filter((batch) => cursorCompare(batch.through_cursor_inclusive, throughCursor) <= 0).map(clone) } };
+    return { ok: true, value: { ...checkpoint, manifest: this.#manifest(throughCursor, folded.value, records, journal), controls, envelopes, lexical: [...this.#lexical.entries()].filter(([recordId]) => referenced.has(recordId)).map(([record_id, document]) => ({ record_id, document: clone(document) })), outbox: this.#outbox.filter((batch) => cursorCompare(batch.through_cursor_inclusive, throughCursor) <= 0).map(clone), capture_idempotency: this.#exportCaptureIdempotency().filter(entry => cursorCompare(entry.cursor, throughCursor) <= 0) } };
   }
 
   exportTailForRecovery(afterCursor: Cursor): Result<MemoryJournalTailV1> {
     if (!isCanonicalCursor(afterCursor)) return refusal("admin", "INVALID_SCHEMA", "tail cursor is invalid");
     const journal = this.#journal.filter((event) => cursorCompare(event.cursor, afterCursor) > 0).map(clone);
     const referenced = new Set(journal.filter((event) => event.record_id !== undefined && event.record_digest !== undefined).map((event) => event.record_id!));
-    return { ok: true, value: { journal, records: [...this.#records.values()].filter((record) => referenced.has(record.record_id)).map(clone) } };
+    return { ok: true, value: { journal, records: [...this.#records.values()].filter((record) => referenced.has(record.record_id)).map(clone), capture_idempotency: this.#exportCaptureIdempotency().filter(entry => cursorCompare(entry.cursor, afterCursor) > 0) } };
+  }
+
+  async importLogicalBackup(input: LogicalBackupImportInputV1): Promise<Result<LogicalBackupImportReceiptV1>> {
+    const ready = this.#readiness("restore");
+    if (!ready.ok) return ready;
+    if (this.#journal.length || this.#records.size || this.#controls.size || this.#envelopes.size
+      || this.#lexical.size || this.#outbox.length || this.#captureIdempotency.size) {
+      return refusal("restore", "RESTORE_REFUSED", "logical backup import refuses a non-empty store");
+    }
+    const converted = backupPublicJournalToStorageV1(input.journal);
+    if (!converted.ok) return { ok: false, error: { ...converted.error, operation: "restore" } };
+    const folded = foldMemoryJournalV1({ journal: converted.value, records: input.records });
+    if (!folded.ok) return { ok: false, error: { ...folded.error, operation: "restore", code: "BACKUP_INVALID" } };
+    const staged = new InMemoryCanonicalStore({ clock: this.options.clock, persistence: {
+      journal: converted.value, records: input.records, controls: [], envelopes: [],
+      lexical: deriveAcceptedLexicalDocumentsV1(folded.value, input.records),
+      outbox: deriveRebuildOutboxBatchV1(folded.value, input.records), capture_idempotency: input.capture_idempotency,
+    } });
+    const stagedReady = staged.#readiness("restore");
+    if (!stagedReady.ok) return { ok: false, error: { ...stagedReady.error, code: "BACKUP_INVALID" } };
+    const registryDigest = captureIdempotencyDigestV1(staged.#exportCaptureIdempotency());
+    if ((input.expected_restored_cursor !== undefined && input.expected_restored_cursor !== folded.value.high_water_cursor)
+      || (input.expected_canonical_state_digest !== undefined && input.expected_canonical_state_digest !== folded.value.canonical_state_digest)
+      || (input.expected_capture_idempotency_digest !== undefined && input.expected_capture_idempotency_digest !== registryDigest)) {
+      return refusal("restore", "RESTORE_REFUSED", "restored canonical state or registry differs from the backup before commit");
+    }
+    // No await between validation and promotion: the in-memory import is atomic.
+    this.#journal = staged.#journal; this.#records = staged.#records; this.#lexical = staged.#lexical;
+    this.#outbox = staged.#outbox; this.#intentByEventId = staged.#intentByEventId;
+    this.#captureIdempotency = staged.#captureIdempotency;
+    const body = { restored_cursor: folded.value.high_water_cursor, canonical_state_digest: folded.value.canonical_state_digest,
+      capture_idempotency_digest: registryDigest };
+    return { ok: true, value: { ...body, receipt_digest: receiptDigest("logical-restore", body) } };
   }
 
   async checkpoint(input: Parameters<CanonicalMemoryStorePort["checkpoint"]>[0]): Promise<Result<RecoveryCheckpointManifestV1>> {
@@ -932,7 +1146,7 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
     const now = this.#now("admin");
     if (!now.ok) return now;
     const expiresAt = new Date(Date.parse(now.value) + 300_000).toISOString();
-    const body = { store_id: this.options.store_id ?? "memory:canonical", backend: "memory" as const, storage_epoch: "0", high_water_cursor: folded.value.high_water_cursor, capabilities: this.capabilities, issued_at: now.value, expires_at: expiresAt };
+    const body = { store_id: this.options.store_id ?? "memory:canonical", backend: "memory" as const, storage_epoch: this.options.storage_epoch ?? "0", high_water_cursor: folded.value.high_water_cursor, capabilities: this.capabilities, issued_at: now.value, expires_at: expiresAt };
     return { ok: true, value: { ...body, receipt_digest: receiptDigest("operational-capability", body) } };
   }
 
@@ -953,6 +1167,7 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
         records: [...this.#records.values()].map(clone),
         lexical: [...this.#lexical.entries()].map(([record_id, document]) => ({ record_id, document: clone(document) })),
         outbox: this.#outbox.map(clone),
+        capture_idempotency: this.#exportCaptureIdempotency(),
       },
     };
   }
