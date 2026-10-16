@@ -13,7 +13,7 @@ import type { DetectionResult } from "../src/types.js";
 const MARKDOWN_BODY = "# OCR markdown\n\nDetected text";
 
 const MOCK_OCR_RESPONSE = {
-  model: "mistral-ocr-4-0",
+  model: "mistral-ocr-latest",
   pages: [
     {
       index: 0,
@@ -78,7 +78,7 @@ describe("Mistral OCR v4 structured sidecar capture", () => {
 
     const sidecar = JSON.parse(readFileSync(ocrPath, "utf-8"));
     expect(sidecar.schema).toBe("engram_pdf_ocr_pages_v1");
-    expect(sidecar.model).toBe("mistral-ocr-4-0");
+    expect(sidecar.model).toBe("mistral-ocr-latest");
     expect(sidecar.source_file).toBe(pdfPath);
     expect(sidecar.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(sidecar.pages).toHaveLength(1);
