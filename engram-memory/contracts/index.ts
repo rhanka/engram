@@ -96,7 +96,7 @@ export type MemoryOperation =
   | "mark_non_current" | "rewind" | "trust_invalidate" | "tombstone"
   | "recall_current" | "recall_history" | "recall_disputed"
   | "propose_capitalisation" | "propose_reconciliation" | "inspect_candidate"
-  | "projection_invalidate" | "backup" | "restore" | "admin";
+  | "projection_invalidate" | "backup" | "restore" | "admin" | "migrate";
 
 export type MemoryErrorCode =
   | "INVALID_SCHEMA" | "INVALID_DIGEST" | "DIGEST_CONFLICT"
@@ -106,7 +106,7 @@ export type MemoryErrorCode =
   | "CAPABILITY_UNAVAILABLE" | "STORE_UNAVAILABLE" | "FENCE_LOST"
   | "CURSOR_GAP" | "JOURNAL_CORRUPT" | "BLOB_MISSING"
   | "PROJECTION_STALE" | "PROJECTION_OVERSIZED" | "RANKING_UNAVAILABLE" | "STALE_PAGE"
-  | "REGISTRY_VERSION_UNAVAILABLE" | "BACKUP_INVALID" | "RESTORE_REFUSED";
+  | "REGISTRY_VERSION_UNAVAILABLE" | "BACKUP_INVALID" | "RESTORE_REFUSED" | "MIGRATION_LEDGER_INVALID";
 
 export interface MemoryErrorV1 {
   code: MemoryErrorCode;
@@ -122,6 +122,28 @@ export interface MemoryErrorV1 {
 export type Result<T> =
   | { ok: true; value: T }
   | { ok: false; error: MemoryErrorV1 };
+
+/** Detached host signature over the UTF-8 bytes of the canonical ledger Digest. */
+export interface ExclusionLedgerSignatureV1 {
+  algorithm: string;
+  key_id: OpaqueRef;
+  signature: string; // host-defined encoding; Ed25519 hosts conventionally use base64
+}
+
+export interface ExclusionLedgerSignerPortV1 {
+  sign(ledger_digest: Digest): Promise<ExclusionLedgerSignatureV1>;
+}
+
+export interface ExclusionLedgerVerifierPortV1 {
+  // MUST reject unknown keys/algorithms as well as invalid signatures. Trust/key custody belongs to the host.
+  verify(ledger_digest: Digest, signature: ExclusionLedgerSignatureV1): Promise<boolean>;
+}
+
+export interface MigrationExclusionLedgerPortsV1 {
+  // Both are required when at least one retained record is excluded; neither is needed for lossless migration.
+  exclusion_ledger_signer?: ExclusionLedgerSignerPortV1;
+  exclusion_ledger_verifier?: ExclusionLedgerVerifierPortV1;
+}
 
 export interface AuthorizationContextV1 {
   credential: string;
