@@ -7,7 +7,10 @@ change, dependency installation, Python, external network call, image pull or pu
   name and optionality. The inventory explicitly rejects the prose matches
   `interface graphify` and `interface so`. The complete `restoreLogical`
   signature additionally locks `target_store` and `LogicalBackupImportReceiptV1`.
-- **B:** each of the six full pins in EVOL §2 is read with `git show pin:path`.
+- **B:** the real records extracted from each of the six full pins in EVOL §2
+  are frozen in one versioned JSON fixture per pin under `memory-pinned-intakes/`.
+  Each file includes the pin SHA, source paths, original Git blob SHAs and exact
+  source bytes, alongside its extracted records (1, 1, 1, 25, 25 and 45 records).
   The historical admission/recall/factory/CLI fixtures execute against their
   pinned modules; admission refusals never enter the corpus. Recall captures
   inputs before filtering, including `live`, `closed-before`, private and
@@ -21,7 +24,13 @@ change, dependency installation, Python, external network call, image pull or pu
   without manufactured V2 digests/citations. All real historical inputs currently
   receive `missing_digest`; expected exclusion and ledger digests use an independent
   sorted-key JSON + SHA-256 reference in the test. This proves explicit exclusion,
-  not a legacy-to-V2 converter. CI checkout retains history for these offline reads.
+  not a legacy-to-V2 converter. The main matrix reads the frozen records without
+  Git and independently re-extracts them from the versioned source bytes, checking
+  their blob hashes and serialized record bytes. A separate provenance suite
+  checks the complete input-test inventory and compares every source byte and
+  blob SHA against the original pin when its history is available. Shallow
+  checkouts explicitly report `non exécuté : historique absent` for that audit;
+  all migration and offline extraction assertions still run.
 - **C:** both profile digests are independently calculated from the pinned
   half-life, tokenizer, BM25F weights, RRF and PPR configuration. Nonempty induced
   adjacency sends every eligible node to C, including its self-loop; an independent
@@ -49,6 +58,13 @@ newly wired suites: **213 passed, zero skipped**, plus **2 passed** in
 The local run maps both matrix slots to the already present `postgres:17-alpine`;
 **only Postgres 17 was executed locally**, with `--pull=never`, and every owned
 container was removed. It does not claim a local Postgres 16 qualification.
+
+Migration fixture follow-up: migration/state/provenance suites **24 passed**;
+declaration and recall suites also pass (their opt-in Postgres case is skipped).
+`npx tsc --noEmit -p .` and `git diff --check` pass. A local `file://` depth-1
+clone with the worktree's existing `node_modules` runs **13 migration tests**;
+only the six history audits skip, each explicitly reporting
+`non exécuté : historique absent`. Temporary clones are removed after execution.
 
 **Unclosed EVOL §10 clause:** the migration ledger carries only a digest, no
 signature. The “signed exclusion ledger” requirement remains unsatisfied and is

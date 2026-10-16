@@ -1,9 +1,9 @@
-/** Offline extraction: only git blobs at the six EVOL intake pins are executed.
+/** Offline extraction: only versioned source blobs at the six EVOL intake pins are executed.
  * Admission refusals never enter the corpus. Recall inputs are captured BEFORE
  * filtering, including closed-before, private, and tombstoned stored fixtures.
  * Shape-only producer examples are not stored records. */
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { posix } from "node:path";
 import ts from "typescript";
@@ -19,14 +19,18 @@ export const INTAKE_PINS = [
 ] as const;
 export type LegacyNode = Record<string, any>;
 export interface PinnedRecord { origin: string; node: LegacyNode; identityCanonical?: string; legacyId: string }
+export interface PinnedSource { path: string; blobSha: string; content: string }
+export interface PinnedIntake { pin: string; sources: PinnedSource[]; records: PinnedRecord[] }
 export const sha256 = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
-export function pinnedBlob(pin: string, path: string): string {
-  return execFileSync("git", ["show", `${pin}:${path}`], { encoding: "utf8", maxBuffer: 8_388_608 });
+export const gitBlobSha = (bytes: Uint8Array): string => createHash("sha1")
+  .update(`blob ${bytes.byteLength}\0`).update(bytes).digest("hex");
+export function readPinnedIntake(pin: string): PinnedIntake {
+  return JSON.parse(readFileSync(new URL(`./memory-pinned-intakes/${pin}.json`, import.meta.url), "utf8"));
 }
 
 /** Literal graph writes and SQL read-back rows are stored fixtures too. Read
  * their pinned expressions without booting storage modules or a database. */
-function storageFixtures(pin: string, files: string[]): Array<{ origin: string; node: LegacyNode }> {
+function storageFixtures(pin: string, files: string[], pinnedBlob: (pin: string, path: string) => string): Array<{ origin: string; node: LegacyNode }> {
   const records: Array<{ origin: string; node: LegacyNode }> = [];
   for (const path of ["tests/storage-postgres-time-window.test.ts", "tests/memory-trusttier-roundtrip.test.ts"]) {
     if (!files.includes(path)) continue;
@@ -63,9 +67,15 @@ function storageFixtures(pin: string, files: string[]): Array<{ origin: string; 
   return records;
 }
 
-export async function extractPinnedRecords(pin: string): Promise<PinnedRecord[]> {
-  const files = execFileSync("git", ["ls-tree", "-r", "--name-only", pin], { encoding: "utf8" }).trim().split("\n");
-  const stored = storageFixtures(pin, files);
+export async function extractPinnedRecords(fixture: PinnedIntake): Promise<PinnedRecord[]> {
+  const { pin, sources } = fixture;
+  const files = sources.map(({ path }) => path);
+  const pinnedBlob = (_pin: string, path: string): string => {
+    const source = sources.find((source) => source.path === path);
+    if (!source) throw new Error(`${pin}: missing versioned source ${path}`);
+    return source.content;
+  };
+  const stored = storageFixtures(pin, files, pinnedBlob);
   if (!files.includes("src/memory-admission.ts")) {
     expect(files.filter((path) => /^src\/memory-/.test(path))).toEqual([]);
     return stored.map(({ origin, node }) => ({ origin, node, legacyId: node.id }));
