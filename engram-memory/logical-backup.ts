@@ -2,6 +2,7 @@ import { canonicalizeJcs, normalizeCanonicalJson } from "./canonical-json.js";
 import { receiptDigest } from "./digests.js";
 import {
   createInMemoryCanonicalMemoryStoreV1,
+  captureIdempotencyDigestV1,
   foldMemoryJournalV1,
   type FoldedMemoryStateV1,
   type InMemoryStoreStateV1,
@@ -21,6 +22,7 @@ import type {
   MemoryOperation,
   MemoryRecordV2,
   MemoryState,
+  PersistedCaptureIdempotencyV1,
   Result,
 } from "./contracts/index.js";
 import { authorizationResourceDigest } from "./digests.js";
@@ -78,7 +80,13 @@ interface BackupPayloadV2 {
   excluded_counts: { pending: number; rejected: number; withdrawn: number; derived_projections: number };
 }
 
-type BackupPayload = BackupPayloadV1 | BackupPayloadV2;
+/** X1: the hash-only registry is canonical state, including quarantined candidates. */
+interface BackupPayloadV3 extends Omit<BackupPayloadV2, "schema_version"> {
+  schema_version: 3;
+  capture_idempotency: ReadonlyArray<PersistedCaptureIdempotencyV1>;
+}
+
+type BackupPayload = BackupPayloadV1 | BackupPayloadV2 | BackupPayloadV3;
 
 /**
  * Deterministic accepted-only lexical derivation — a mirror of the in-memory
@@ -315,9 +323,9 @@ async function authorize(port: AuthorizationPort, operation: "backup" | "restore
 
 /**
  * A detached, portable logical backup. The export carries only the dense
- * journal and the immutable record blobs it references — never pending sealed
+ * journal, immutable record blobs and hash-only capture registry — never pending sealed
  * envelopes or controls — yet a restore folds them back to the identical
- * canonical state digest, preserves terminal tombstone dominance, and
+ * canonical state and registry roots, preserves terminal tombstone dominance, and
  * rebuilds every store-owned derived surface (accepted lexical + FTS, one
  * coalesced projection-rebuild batch) deterministically in the same import
  * transaction.
@@ -391,7 +399,14 @@ export function createLogicalMemoryBackupV1(dependencies: LogicalMemoryBackupDep
       const derived = countDerivedProjections(journal);
       const excluded = { pending: disposition.pending, rejected: disposition.rejected, withdrawn: disposition.withdrawn, derived_projections: derived };
 
-      const payload: BackupPayloadV2 = { schema_version: 2, generation: highWater, high_water_cursor: highWater, journal, records, excluded_counts: excluded };
+      if (typeof dependencies.store.readCaptureIdempotencyEntries !== "function") {
+        return refusal("backup", "CAPABILITY_UNAVAILABLE", "logical backup requires the canonical capture registry export");
+      }
+      const registry = await dependencies.store.readCaptureIdempotencyEntries({ through_cursor: highWater });
+      if (!registry.ok) return registry;
+      const registryDigest = captureIdempotencyDigestV1(registry.value);
+      const payload: BackupPayloadV3 = { schema_version: 3, generation: highWater, high_water_cursor: highWater, journal, records,
+        excluded_counts: excluded, capture_idempotency: registry.value };
       const plaintext = canonicalizeJcs(payload);
       const sealed = await dependencies.backup_key.seal({ key_ref: input.encryption_key_ref, plaintext, context_digest: contextDigest(highWater) });
       if (!sealed.ok) return sealed;
@@ -407,6 +422,7 @@ export function createLogicalMemoryBackupV1(dependencies: LogicalMemoryBackupDep
         records_root_digest: recordsRootDigest(records),
         journal_root_digest: folded.value.journal_root_hash,
         state_digest: folded.value.canonical_state_digest,
+        capture_idempotency_digest: registryDigest,
         terminal_ledger_digest: terminalLedgerDigest(folded.value),
         object_ref: object.value.object_ref,
         ciphertext_digest: sealed.value.ciphertext_digest,
@@ -468,7 +484,7 @@ export function createLogicalMemoryBackupV1(dependencies: LogicalMemoryBackupDep
       } catch {
         return refusal("restore", "BACKUP_INVALID", "logical backup payload is not decodable");
       }
-      if ((payload.schema_version !== 1 && payload.schema_version !== 2) || !Array.isArray(payload.journal) || !Array.isArray(payload.records)
+      if (payload === null || (payload.schema_version !== 1 && payload.schema_version !== 2 && payload.schema_version !== 3) || !Array.isArray(payload.journal) || !Array.isArray(payload.records)
         || typeof payload.generation !== "string" || typeof payload.high_water_cursor !== "string") {
         return refusal("restore", "BACKUP_INVALID", "logical backup payload is malformed");
       }
@@ -501,6 +517,23 @@ export function createLogicalMemoryBackupV1(dependencies: LogicalMemoryBackupDep
 
       const folded = foldMemoryJournalV1({ journal: payload.journal, records: payload.records });
       if (!folded.ok) return { ok: false, error: { ...folded.error, operation: "restore" } };
+      // v1/v2 have no registry and cannot reconstruct content bindings. Their
+      // known journal identities refuse replay before seal/commit. No guessed
+      // acknowledgement or pending envelope is manufactured.
+      const registry = payload.schema_version === 3 ? payload.capture_idempotency : [];
+      if (!Array.isArray(registry) || (payload.schema_version === 3 && !isDigest(manifest.capture_idempotency_digest))
+        || (payload.schema_version !== 3 && manifest.capture_idempotency_digest !== undefined)) {
+        return refusal("restore", "BACKUP_INVALID", "logical backup registry version or digest is malformed");
+      }
+      const checkedRegistry = createInMemoryCanonicalMemoryStoreV1({ clock: dependencies.clock, persistence: {
+        journal: payload.journal, records: payload.records, controls: [], envelopes: [], lexical: [], outbox: [], capture_idempotency: registry,
+      } });
+      const checked = await checkedRegistry.readCaptureIdempotencyEntries({ through_cursor: payload.high_water_cursor });
+      if (!checked.ok) return { ok: false, error: { ...checked.error, operation: "restore", code: "BACKUP_INVALID" } };
+      const registryDigest = captureIdempotencyDigestV1(checked.value);
+      if (payload.schema_version === 3 && registryDigest !== manifest.capture_idempotency_digest) {
+        return refusal("restore", "RESTORE_REFUSED", "restored canonical capture registry differs from the backup");
+      }
       if (folded.value.journal_root_hash !== manifest.journal_root_digest) return refusal("restore", "BACKUP_INVALID", "restored journal root does not match the manifest");
       if (recordsRootDigest(payload.records) !== manifest.records_root_digest) return refusal("restore", "BACKUP_INVALID", "restored record blobs do not match the manifest");
       if (terminalLedgerDigest(folded.value) !== manifest.terminal_ledger_digest) return refusal("restore", "RESTORE_REFUSED", "restored terminal ledger does not preserve tombstone dominance");
@@ -512,17 +545,23 @@ export function createLogicalMemoryBackupV1(dependencies: LogicalMemoryBackupDep
       // written target behind with RESTORE_REFUSED.
       if (input.target_store !== undefined) {
         const target = input.target_store;
-        if (typeof target.importLogicalBackup !== "function") {
-          return refusal("restore", "CAPABILITY_UNAVAILABLE", "restore target cannot import a logical backup");
+        if (typeof target.importLogicalBackup !== "function" || typeof target.readCaptureIdempotencyEntries !== "function") {
+          return refusal("restore", "CAPABILITY_UNAVAILABLE", "restore target cannot import the canonical logical backup and capture registry");
         }
         const imported = await target.importLogicalBackup({
           journal: backupStorageJournalToPublicV1(payload.journal),
           records: payload.records,
+          capture_idempotency: registry,
+          expected_capture_idempotency_digest: registryDigest,
           expected_restored_cursor: manifest.high_water_cursor,
           expected_canonical_state_digest: manifest.state_digest,
         });
         if (!imported.ok) return imported;
-        const receiptBody = { restored_cursor: imported.value.restored_cursor, canonical_state_digest: imported.value.canonical_state_digest };
+        if (imported.value.capture_idempotency_digest !== registryDigest) {
+          return refusal("restore", "RESTORE_REFUSED", "imported canonical capture registry differs from the backup");
+        }
+        const receiptBody = { restored_cursor: imported.value.restored_cursor, canonical_state_digest: imported.value.canonical_state_digest,
+          capture_idempotency_digest: registryDigest };
         return { ok: true, value: { ...receiptBody, receipt_digest: receiptDigest("logical-restore", receiptBody) } };
       }
 
@@ -530,7 +569,7 @@ export function createLogicalMemoryBackupV1(dependencies: LogicalMemoryBackupDep
       const derivedOutbox = deriveRebuildOutboxBatchV1(folded.value, payload.records);
       const store = createInMemoryCanonicalMemoryStoreV1({
         clock: dependencies.clock,
-        persistence: { journal: payload.journal, controls: [], envelopes: [], records: payload.records, lexical: [...derivedLexical], outbox: [...derivedOutbox] },
+        persistence: { journal: payload.journal, controls: [], envelopes: [], records: payload.records, lexical: [...derivedLexical], outbox: [...derivedOutbox], capture_idempotency: registry },
       });
       const readiness = await store.readiness();
       if (!readiness.ok) return { ok: false, error: { ...readiness.error, operation: "restore" } };
@@ -538,7 +577,7 @@ export function createLogicalMemoryBackupV1(dependencies: LogicalMemoryBackupDep
       if (!digest.ok) return digest;
       if (digest.value !== manifest.state_digest) return refusal("restore", "RESTORE_REFUSED", "rebuilt store digest differs from the backup");
 
-      const body = { restored_cursor: payload.high_water_cursor, canonical_state_digest: digest.value };
+      const body = { restored_cursor: payload.high_water_cursor, canonical_state_digest: digest.value, capture_idempotency_digest: registryDigest };
       return { ok: true, value: { ...body, receipt_digest: receiptDigest("logical-restore", body) } };
     },
   };

@@ -17,6 +17,7 @@ import { backupPublicJournalToStorageV1, deriveAcceptedLexicalDocumentsV1, deriv
 import { procLocksHoldsExclusiveFlockV1 } from "./proc-locks.js";
 import { markFencedStoreV1 } from "./store-factory.js";
 import {
+  captureIdempotencyDigestV1,
   createInMemoryCanonicalMemoryStoreV1,
   foldMemoryJournalV1,
   type InMemoryCanonicalMemoryStoreV1,
@@ -29,6 +30,7 @@ import type {
   CanonicalMemoryStorePort,
   CanonicalStoreCapabilitiesV1,
   CanonicalTransactionReceiptV1,
+  CaptureIdempotencyRecordV1,
   ClockPort,
   Cursor,
   Digest,
@@ -39,6 +41,7 @@ import type {
   MemoryRecordV2,
   OperationalCapabilityReceiptV1,
   PendingCandidateSnapshotV1,
+  PersistedCaptureIdempotencyV1,
   ProjectionBatchV1,
   ProjectionInvalidationReceiptV1,
   RecoveryCheckpointManifestV1,
@@ -146,6 +149,11 @@ function json(value: unknown): string {
 
 function parse<T>(value: string): T {
   return JSON.parse(value) as T;
+}
+
+// Malformed JSON must reach the core's JOURNAL_CORRUPT gate, not an opaque opener failure.
+function parseCaptureRegistryEntry(value: string): PersistedCaptureIdempotencyV1 {
+  try { return parse(value); } catch { return null as unknown as PersistedCaptureIdempotencyV1; }
 }
 
 /**
@@ -327,6 +335,7 @@ function schema(database: NativeDatabase): void {
     CREATE TABLE IF NOT EXISTS memory_state (entity_kind TEXT NOT NULL, entity_id TEXT NOT NULL, state TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(entity_kind, entity_id));
     CREATE TABLE IF NOT EXISTS memory_control (candidate_id TEXT PRIMARY KEY, body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS memory_envelope (candidate_id TEXT PRIMARY KEY, body TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS memory_capture_idempotency (candidate_id TEXT PRIMARY KEY, body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS accepted_lexical (record_id TEXT PRIMARY KEY, record_digest TEXT NOT NULL, body TEXT NOT NULL);
     CREATE VIRTUAL TABLE IF NOT EXISTS accepted_lexical_fts USING fts5(record_id UNINDEXED, primary_text, context_text, decision_text, evidence_text, citations_text);
     CREATE TABLE IF NOT EXISTS memory_outbox (sequence INTEGER PRIMARY KEY, body TEXT NOT NULL);
@@ -341,6 +350,7 @@ function stateFromDatabase(database: NativeDatabase): InMemoryStoreStateV1 {
     records: (database.prepare("SELECT body FROM memory_blob ORDER BY record_id").all() as StoredRow[]).map((row) => parse(row.body!)),
     lexical: (database.prepare("SELECT record_id, body FROM accepted_lexical ORDER BY record_id").all() as StoredRow[]).map((row) => ({ record_id: row.id ?? row.record_id!, document: parse(row.body!) })),
     outbox: (database.prepare("SELECT body FROM memory_outbox ORDER BY sequence").all() as StoredRow[]).map((row) => parse(row.body!)),
+    capture_idempotency: (database.prepare("SELECT body FROM memory_capture_idempotency ORDER BY candidate_id").all() as StoredRow[]).map((row) => parseCaptureRegistryEntry(row.body!)),
   };
 }
 
@@ -499,7 +509,7 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
   #newWorkingStore(): Result<InMemoryCanonicalMemoryStoreV1> {
     const persisted = this.#core.exportStateForPersistence();
     return persisted.ok
-      ? { ok: true, value: createInMemoryCanonicalMemoryStoreV1({ clock: this.options.clock, store_id: this.options.store_id, persistence: persisted.value }) }
+      ? { ok: true, value: createInMemoryCanonicalMemoryStoreV1({ clock: this.options.clock, store_id: this.options.store_id, storage_epoch: this.storageEpoch, persistence: persisted.value }) }
       : persisted;
   }
 
@@ -512,6 +522,7 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
     clear("memory_state");
     clear("memory_control");
     clear("memory_envelope");
+    clear("memory_capture_idempotency");
     clear("accepted_lexical");
     clear("accepted_lexical_fts");
     clear("memory_outbox");
@@ -533,6 +544,8 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
     for (const control of snapshot.controls) insertControl.run(control.candidate_id, json(control));
     const insertEnvelope = this.database.prepare("INSERT INTO memory_envelope(candidate_id, body) VALUES (?, ?)");
     for (const envelope of snapshot.envelopes) insertEnvelope.run(envelope.candidate_id, json(envelope));
+    const insertCapture = this.database.prepare("INSERT INTO memory_capture_idempotency(candidate_id, body) VALUES (?, ?)");
+    for (const entry of snapshot.capture_idempotency ?? []) insertCapture.run(entry.candidate_id, json(entry));
     this.options.on_mutation_statement?.("state");
     this.options.failpoint?.("after_state");
 
@@ -559,6 +572,10 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
       if (!result.ok) return result;
       const snapshot = working.value.exportStateForPersistence();
       if (!snapshot.ok) return snapshot;
+      const current = this.#core.exportStateForPersistence();
+      if (!current.ok) return current;
+      // Exact store-level replays are reads too: no SQL write transaction.
+      if (json(snapshot.value) === json(current.value)) return result;
       let began = false;
       try {
         this.database.exec("BEGIN IMMEDIATE");
@@ -604,6 +621,20 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
   async readPending(input: Parameters<CanonicalMemoryStorePort["readPending"]>[0]): Promise<Result<PendingCandidateSnapshotV1>> {
     const fence = this.#fence("request_admission");
     return fence.ok ? this.#core.readPending(input) : fence;
+  }
+
+  async readCaptureIdempotencyEntries(input: { through_cursor: Cursor }) {
+    const fence = this.#fence("backup");
+    return fence.ok ? this.#core.readCaptureIdempotencyEntries(input) : fence;
+  }
+
+  async readCaptureIdempotency(input: { candidate_id: string }): Promise<Result<CaptureIdempotencyRecordV1>> {
+    const fence = this.#fence("capture");
+    return fence.ok ? this.#core.readCaptureIdempotency(input) : fence;
+  }
+
+  async recordCaptureIdempotency(input: { candidate_id: string; record_digest: Digest }): Promise<Result<CaptureIdempotencyRecordV1>> {
+    return this.#transaction("capture", (working) => working.recordCaptureIdempotency(input));
   }
 
   async applyAdmission(input: AdmissionStoreInputV1): Promise<Result<CanonicalTransactionReceiptV1>> {
@@ -655,7 +686,7 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
       if (!current.ok) return current;
       if (current.value.journal.length !== 0 || current.value.records.length !== 0
         || current.value.controls.length !== 0 || current.value.envelopes.length !== 0
-        || current.value.lexical.length !== 0 || current.value.outbox.length !== 0) {
+        || current.value.lexical.length !== 0 || current.value.outbox.length !== 0 || (current.value.capture_idempotency?.length ?? 0) !== 0) {
         return refusal("restore", "RESTORE_REFUSED", "logical backup import refuses a non-empty store");
       }
       const converted = backupPublicJournalToStorageV1(input.journal);
@@ -677,11 +708,18 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
         envelopes: [],
         lexical: [...deriveAcceptedLexicalDocumentsV1(folded.value, records)],
         outbox: [...deriveRebuildOutboxBatchV1(folded.value, records)],
+        capture_idempotency: input.capture_idempotency,
       };
       // Validate through a throwaway core BEFORE any durable write.
-      const staged = createInMemoryCanonicalMemoryStoreV1({ clock: this.options.clock, store_id: this.options.store_id, persistence: snapshot });
+      const staged = createInMemoryCanonicalMemoryStoreV1({ clock: this.options.clock, store_id: this.options.store_id, storage_epoch: this.storageEpoch, persistence: snapshot });
       const stagedReady = await staged.readiness();
       if (!stagedReady.ok) return { ok: false, error: { ...stagedReady.error, operation: "restore" as MemoryOperation, code: "BACKUP_INVALID" as const } };
+      const registry = await staged.readCaptureIdempotencyEntries({ through_cursor: folded.value.high_water_cursor });
+      if (!registry.ok) return registry;
+      const registryDigest = captureIdempotencyDigestV1(registry.value);
+      if (input.expected_capture_idempotency_digest !== undefined && registryDigest !== input.expected_capture_idempotency_digest) {
+        return refusal("restore", "RESTORE_REFUSED", "restored capture registry differs from the backup before commit");
+      }
       let began = false;
       try {
         this.database.exec("BEGIN IMMEDIATE");
@@ -701,7 +739,7 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
         this.database.exec("COMMIT");
         began = false;
         this.#core = staged;
-        const body = { restored_cursor: folded.value.high_water_cursor, canonical_state_digest: folded.value.canonical_state_digest };
+        const body = { restored_cursor: folded.value.high_water_cursor, canonical_state_digest: folded.value.canonical_state_digest, capture_idempotency_digest: registryDigest };
         return { ok: true, value: { ...body, receipt_digest: receiptDigest("logical-restore", body) } };
       } catch {
         if (began) {
@@ -888,7 +926,7 @@ export async function openFencedSqliteCanonicalMemoryStoreV1(options: FencedSqli
       lock.release();
       return persisted;
     }
-    const core = createInMemoryCanonicalMemoryStoreV1({ clock: options.clock, store_id: options.store_id, persistence: persisted.value });
+    const core = createInMemoryCanonicalMemoryStoreV1({ clock: options.clock, store_id: options.store_id, storage_epoch: epoch, persistence: persisted.value });
     const ready = await core.readiness();
     if (!ready.ok) {
       database.close();
