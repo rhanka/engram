@@ -1,0 +1,151 @@
+{
+  "$schema": "live-code-context-fixture",
+  "warning": "SYNTHETIC ONLY — every source snippet, hash and identifier below is invented for L5 tests. No real credential, token or private key may ever enter this file.",
+  "note": "Context corpus for tests/live-code-version.test.ts (plan/09 L5; SPEC_LIVE_GIT_INDEXING.md §§3, 8, A04/A08). Each case varies exactly one context dimension (tree, path, configuration, dependencies, snapshot) over identical blob bytes so cache-identity tests target the breaker class, not an isolated example.",
+  "extractorVersion": "live-code-extraction/1",
+  "dimensions": [
+    "treeOid",
+    "path",
+    "configHash",
+    "dependencyHash",
+    "snapshotId"
+  ],
+  "base": {
+    "language": "typescript",
+    "path": "src/shop/cart.ts",
+    "treeOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "configHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "dependencyHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "variants": [
+    {
+      "id": "tree",
+      "treeOid": "dddddddddddddddddddddddddddddddddddddddd",
+      "path": "src/shop/cart.ts",
+      "configHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "dependencyHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "id": "path",
+      "treeOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "path": "src/shop/basket.ts",
+      "configHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "dependencyHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "id": "config",
+      "treeOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "path": "src/shop/cart.ts",
+      "configHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "dependencyHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "id": "deps",
+      "treeOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "path": "src/shop/cart.ts",
+      "configHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "dependencyHash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    }
+  ],
+  "snapshotVariant": {
+    "id": "snapshot",
+    "treeOid": null,
+    "path": "src/shop/cart.ts",
+    "configHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "dependencyHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "snapshotId": "snap:variant-1",
+    "policyVersion": "live-git-indexing/1"
+  },
+  "contents": {
+    "v1": "export function addItem(cart: Cart, item: Item): Cart {\n  return { ...cart, items: [...cart.items, item] };\n}\n\nexport function total(cart: Cart): number {\n  return cart.items.reduce((sum, item) => sum + item.price, 0);\n}\n",
+    "v2-body-only": "export function addItem(cart: Cart, item: Item): Cart {\n  const items = cart.items.slice();\n  items.push(item);\n  return { ...cart, items };\n}\n\nexport function total(cart: Cart): number {\n  let sum = 0;\n  for (const item of cart.items) sum += item.price;\n  return sum;\n}\n"
+  },
+  "unavailableLanguages": [
+    "lua",
+    "cobol",
+    "not-a-language"
+  ],
+  "unknownBounds": [
+    {
+      "id": "null-bounds",
+      "bounds": null
+    },
+    {
+      "id": "flagged-unknown",
+      "bounds": {
+        "known": false,
+        "missing": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ]
+      }
+    },
+    {
+      "id": "missing-object",
+      "bounds": {
+        "known": false,
+        "missing": [
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      }
+    }
+  ],
+  "verifiedGitOracle": {
+    "gitVersion": "2.53.0",
+    "objectFormat": "sha1",
+    "options": {
+      "algorithm": "histogram",
+      "binaryDetection": true,
+      "renameLimit": 1000,
+      "renameThreshold": 50
+    },
+    "base": "85471c03361c25942106a96b723848206297a498",
+    "tip": "e0cf73eb5b83f24aeea5b3999de2384a0c92f514",
+    "objects": [
+      {
+        "oid": "90be1f3056c4f471f977a28497b8d4b392c55a02",
+        "type": "blob",
+        "bodyB64": "YmVmb3JlCg=="
+      },
+      {
+        "oid": "294186e497a23bf3fbfde12aacc7f720f668fe9a",
+        "type": "blob",
+        "bodyB64": "YWZ0ZXIK"
+      },
+      {
+        "oid": "4c28561e2b524b35fe1fb5b24952ac9ac9d8983b",
+        "type": "tree",
+        "bodyB64": "MTAwNjQ0IGNhcnQudHMAkL4fMFbE9HH5d6KEl7jUs5LFWgI="
+      },
+      {
+        "oid": "ba15468236dc8b96ece17190a6b3852e183aecc1",
+        "type": "tree",
+        "bodyB64": "MTAwNjQ0IGNhcnQudHMAKUGG5JeiO/P7/eEqrMf3IPZo/po="
+      },
+      {
+        "oid": "85471c03361c25942106a96b723848206297a498",
+        "type": "commit",
+        "bodyB64": "dHJlZSA0YzI4NTYxZTJiNTI0YjM1ZmUxZmI1YjI0OTUyYWM5YWM5ZDg5ODNiCmF1dGhvciBMNSA8bDVAZXhhbXBsZS50ZXN0PiA5NDY2ODQ4MDAgKzAwMDAKY29tbWl0dGVyIEw1IDxsNUBleGFtcGxlLnRlc3Q+IDk0NjY4NDgwMCArMDAwMAoKYmFzZQo="
+      },
+      {
+        "oid": "e0cf73eb5b83f24aeea5b3999de2384a0c92f514",
+        "type": "commit",
+        "bodyB64": "dHJlZSBiYTE1NDY4MjM2ZGM4Yjk2ZWNlMTcxOTBhNmIzODUyZTE4M2FlY2MxCnBhcmVudCA4NTQ3MWMwMzM2MWMyNTk0MjEwNmE5NmI3MjM4NDgyMDYyOTdhNDk4CmF1dGhvciBMNSA8bDVAZXhhbXBsZS50ZXN0PiA5NDY2ODQ4MDAgKzAwMDAKY29tbWl0dGVyIEw1IDxsNUBleGFtcGxlLnRlc3Q+IDk0NjY4NDgwMCArMDAwMAoKdGlwCg=="
+      }
+    ],
+    "nativeNumstat": "1\t1\tcart.ts\u0000",
+    "nativeRaw": ":100644 100644 90be1f3056c4f471f977a28497b8d4b392c55a02 294186e497a23bf3fbfde12aacc7f720f668fe9a M\u0000cart.ts\u0000",
+    "changes": [
+      {
+        "beforePath": "cart.ts",
+        "afterPath": "cart.ts",
+        "beforeMode": "100644",
+        "afterMode": "100644",
+        "changeKind": "modified",
+        "binary": false,
+        "insertions": 1,
+        "deletions": 1,
+        "renameEvidence": null
+      }
+    ]
+  }
+}
