@@ -1,4 +1,5 @@
 import { receiptDigest } from "./digests.js";
+import { normalizeCanonicalJson } from "./canonical-json.js";
 import type {
   CitationV1, Digest, ExclusionLedgerSignatureV1, ExclusionLedgerVerifierPortV1,
   MigrationExclusionLedgerPortsV1, OpaqueRef, Result, ValidIntervalV1,
@@ -90,7 +91,7 @@ function classify(record: RetainedNeutralRecordV1): MigrationExclusionReason | u
   return undefined;
 }
 
-function refusal(code: "CAPABILITY_UNAVAILABLE" | "MIGRATION_LEDGER_INVALID", message: string): Result<MigrationLedgerV1> {
+function refusal(code: "INVALID_SCHEMA" | "CAPABILITY_UNAVAILABLE" | "MIGRATION_LEDGER_INVALID", message: string): Result<MigrationLedgerV1> {
   return { ok: false, error: { code, operation: "migrate", message, retryable: false } };
 }
 
@@ -104,6 +105,24 @@ function validSignature(value: unknown): value is ExclusionLedgerSignatureV1 {
     && [value.algorithm, value.key_id, value.signature].every((field) => typeof field === "string" && field.length > 0);
 }
 
+/** Shared by creation (before signing) and re-reading; signatures are checked separately. */
+function validLedgerContent(value: unknown): value is MigrationLedgerV1 {
+  if (!object(value) || !exact(value, ["generation", "migrated", "excluded", "ledger_digest"], ["signature"])
+    || typeof value.generation !== "string" || !Array.isArray(value.migrated) || !Array.isArray(value.excluded)
+    || !isDigest(value.ledger_digest)) return false;
+  const ledger = value as unknown as MigrationLedgerV1;
+  return ledger.ledger_digest === ledgerDigest(ledger)
+    && ledger.migrated.every((entry) => object(entry)
+      && exact(entry, ["source_ref", "record_digest", "valid_time", "citations", "migration_receipt_digest"])
+      && typeof entry.source_ref === "string" && classify(entry) === undefined
+      && entry.migration_receipt_digest === receiptDigest("migration-record", { ...entry }, "migration_receipt_digest"))
+    && ledger.excluded.every((entry) => object(entry)
+      && exact(entry, ["source_ref", "reason", "exclusion_receipt_digest"])
+      && typeof entry.source_ref === "string"
+      && ["missing_digest", "invalid_digest", "missing_valid_time", "invalid_valid_time", "missing_citations", "invalid_citations"].includes(entry.reason)
+      && entry.exclusion_receipt_digest === receiptDigest("migration-exclusion", { ...entry }, "exclusion_receipt_digest"));
+}
+
 /** Re-read an exclusion ledger from untrusted storage. A stripped exclusion partition never bypasses signature verification. */
 export async function verifyMigrationExclusionLedgerV1(
   value: unknown,
@@ -112,25 +131,11 @@ export async function verifyMigrationExclusionLedgerV1(
   let ledger: MigrationLedgerV1;
   try {
     // Isolate storage/caller objects before crossing an asynchronous host boundary.
-    const snapshot: unknown = structuredClone(value);
-    if (!object(snapshot) || !exact(snapshot, ["generation", "migrated", "excluded", "ledger_digest", "signature"])
-      || typeof snapshot.generation !== "string" || !Array.isArray(snapshot.migrated) || !Array.isArray(snapshot.excluded)
-      || !isDigest(snapshot.ledger_digest) || !validSignature(snapshot.signature)) {
-      return refusal("MIGRATION_LEDGER_INVALID", "migration exclusion ledger is malformed or unsigned");
+    const snapshot: unknown = normalizeCanonicalJson(structuredClone(value));
+    if (!validLedgerContent(snapshot) || !validSignature(snapshot.signature)) {
+      return refusal("MIGRATION_LEDGER_INVALID", "migration exclusion ledger is malformed, unsigned or inconsistent");
     }
-    ledger = snapshot as unknown as MigrationLedgerV1;
-    if (ledger.ledger_digest !== ledgerDigest(ledger)
-      || !ledger.migrated.every((entry) => object(entry)
-        && exact(entry, ["source_ref", "record_digest", "valid_time", "citations", "migration_receipt_digest"])
-        && typeof entry.source_ref === "string" && classify(entry) === undefined
-        && entry.migration_receipt_digest === receiptDigest("migration-record", { ...entry }, "migration_receipt_digest"))
-      || !ledger.excluded.every((entry) => object(entry)
-        && exact(entry, ["source_ref", "reason", "exclusion_receipt_digest"])
-        && typeof entry.source_ref === "string"
-        && ["missing_digest", "invalid_digest", "missing_valid_time", "invalid_valid_time", "missing_citations", "invalid_citations"].includes(entry.reason)
-        && entry.exclusion_receipt_digest === receiptDigest("migration-exclusion", { ...entry }, "exclusion_receipt_digest"))) {
-      return refusal("MIGRATION_LEDGER_INVALID", "migration exclusion ledger digest or receipts do not match");
-    }
+    ledger = snapshot;
   } catch {
     return refusal("MIGRATION_LEDGER_INVALID", "migration exclusion ledger is not canonical data");
   }
@@ -152,29 +157,43 @@ export async function migrateRetainedNeutralRecordsV1(
   generation = "1",
   ports: MigrationExclusionLedgerPortsV1 = {},
 ): Promise<Result<MigrationLedgerV1>> {
-  const migrated: MigratedNeutralRecordV1[] = [];
-  const excluded: MigrationExclusionEntryV1[] = [];
-  for (const record of records) {
-    const reason = classify(record);
-    if (reason !== undefined) {
-      const body = { source_ref: record.source_ref, reason };
-      excluded.push({ ...body, exclusion_receipt_digest: receiptDigest("migration-exclusion", body, "exclusion_receipt_digest") });
-      continue;
+  let ledger: MigrationLedgerV1;
+  try {
+    if (!Array.isArray(records as unknown) || typeof generation !== "string") {
+      return refusal("INVALID_SCHEMA", "migration requires a record array and a string generation");
     }
-    // Preserve digest / valid-time / citations byte-for-byte.
-    const body = {
-      source_ref: record.source_ref,
-      record_digest: record.record_digest!,
-      valid_time: structuredClone(record.valid_time!),
-      citations: structuredClone(record.citations!),
-    };
-    migrated.push({ ...body, migration_receipt_digest: receiptDigest("migration-record", body, "migration_receipt_digest") });
+    const migrated: MigratedNeutralRecordV1[] = [];
+    const excluded: MigrationExclusionEntryV1[] = [];
+    for (const record of records) {
+      if (!object(record) || typeof record.source_ref !== "string") {
+        return refusal("INVALID_SCHEMA", "each retained record requires a string source reference");
+      }
+      const source_ref = record.source_ref.normalize("NFC");
+      const reason = classify(record);
+      if (reason !== undefined) {
+        const body = { source_ref, reason };
+        excluded.push({ ...body, exclusion_receipt_digest: receiptDigest("migration-exclusion", body, "exclusion_receipt_digest") });
+        continue;
+      }
+      // Preserve digest / valid-time / citations in their canonical representation.
+      const body = {
+        source_ref,
+        record_digest: record.record_digest!,
+        valid_time: structuredClone(record.valid_time!),
+        citations: structuredClone(record.citations!),
+      };
+      migrated.push({ ...body, migration_receipt_digest: receiptDigest("migration-record", body, "migration_receipt_digest") });
+    }
+    migrated.sort((a, b) => (a.source_ref < b.source_ref ? -1 : a.source_ref > b.source_ref ? 1 : 0));
+    excluded.sort((a, b) => (a.source_ref < b.source_ref ? -1 : a.source_ref > b.source_ref ? 1 : 0));
+    const ledgerBody = { generation, migrated, excluded };
+    const snapshot = normalizeCanonicalJson({ ...ledgerBody, ledger_digest: receiptDigest("migration-ledger", ledgerBody, "ledger_digest") });
+    if (!validLedgerContent(snapshot)) return refusal("INVALID_SCHEMA", "migration ledger content is malformed");
+    ledger = snapshot;
+  } catch {
+    return refusal("INVALID_SCHEMA", "retained records are not canonical migration data");
   }
-  migrated.sort((a, b) => (a.source_ref < b.source_ref ? -1 : a.source_ref > b.source_ref ? 1 : 0));
-  excluded.sort((a, b) => (a.source_ref < b.source_ref ? -1 : a.source_ref > b.source_ref ? 1 : 0));
-  const ledgerBody = { generation, migrated, excluded };
-  const ledger: MigrationLedgerV1 = { ...ledgerBody, ledger_digest: receiptDigest("migration-ledger", ledgerBody, "ledger_digest") };
-  if (excluded.length === 0) return { ok: true, value: ledger };
+  if (ledger.excluded.length === 0) return { ok: true, value: ledger };
   if (!ports.exclusion_ledger_signer || !ports.exclusion_ledger_verifier) {
     return refusal("CAPABILITY_UNAVAILABLE", "excluding retained records requires a host signer and verifier");
   }
