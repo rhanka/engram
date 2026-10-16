@@ -113,9 +113,11 @@ async function seedRecallCorpus(memory: MemoryPortV2): Promise<string[]> {
       deadline_at: DEADLINE,
       cancellation_ref: `cancel:${tag}`,
     });
-    if (!captured.ok || captured.value.candidate_id === undefined) throw new Error(`recall corpus capture ${tag} failed`);
+    if (!captured.ok) throw new Error(`recall corpus capture ${tag} failed: ${captured.error.code} ${captured.error.message} (operation=${captured.error.operation} retryable=${captured.error.retryable})`);
+    if (captured.value.candidate_id === undefined) throw new Error(`recall corpus capture ${tag} failed: no candidate_id (status=${captured.value.status})`);
     const admitted = await memory.requestAdmission({ candidate_id: captured.value.candidate_id, authorization: { credential: "credential:l7" }, deadline_at: DEADLINE });
-    if (!admitted.ok || admitted.value.record_id === undefined) throw new Error(`recall corpus admission ${tag} failed`);
+    if (!admitted.ok) throw new Error(`recall corpus admission ${tag} failed: ${admitted.error.code} ${admitted.error.message} (operation=${admitted.error.operation} retryable=${admitted.error.retryable})`);
+    if (admitted.value.record_id === undefined) throw new Error(`recall corpus admission ${tag} not accepted: status=${admitted.value.status} ${JSON.stringify(admitted.value)}`);
     recordIds.push(admitted.value.record_id);
   }
   return recordIds;
@@ -266,11 +268,16 @@ describe("recall on durable Postgres matches the in-memory reference (CI only)",
   maybe("offline_lexical_v1, semantic_v1, and pagination return identical packets on Postgres 16/17", async () => {
     const reference = await inMemorySuites();
     for (const version of MATRIX) {
-      const postgres = await startEphemeralPostgres(version);
-      stops.push(postgres.stop);
-      try {
-        const suites = {} as BackendSuitesV1;
-        for (const profile of ["offline_lexical_v1", "semantic_v1"] as const) {
+      const suites = {} as BackendSuitesV1;
+      for (const profile of ["offline_lexical_v1", "semantic_v1"] as const) {
+        // One fresh database per profile: both profiles seed the same fixed
+        // idempotency keys, so sharing a database turns the second profile's
+        // captures into duplicate_exact with no seal in its crypto port, and
+        // the follow-up admission fails with NOT_FOUND (nothing pending).
+        // This mirrors sqliteSuites, which uses a fresh file per profile.
+        const postgres = await startEphemeralPostgres(version);
+        stops.push(postgres.stop);
+        try {
           const opened = await openPostgresCanonicalMemoryStoreV1({
             connection: postgres.connection,
             clock: { now: () => NOW },
@@ -284,13 +291,13 @@ describe("recall on durable Postgres matches the in-memory reference (CI only)",
           } finally {
             await opened.value.close();
           }
+        } finally {
+          postgres.stop();
+          const index = stops.indexOf(postgres.stop);
+          if (index >= 0) stops.splice(index, 1);
         }
-        expectSameSuites(suites, reference, `postgres:${version}`);
-      } finally {
-        postgres.stop();
-        const index = stops.indexOf(postgres.stop);
-        if (index >= 0) stops.splice(index, 1);
       }
+      expectSameSuites(suites, reference, `postgres:${version}`);
     }
   }, 180_000);
 });
