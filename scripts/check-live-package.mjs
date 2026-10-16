@@ -525,6 +525,7 @@ function runLivePackageCheck() {
   try {
     packResult = spawnSync("npm", ["pack", "--json", "--pack-destination", tmp], {
       cwd: liveRoot,
+      env: { ...process.env, npm_config_cache: join(tmp, "npm-cache"), npm_config_update_notifier: "false" },
       encoding: "utf8",
     });
     if (packResult.status !== 0) {
