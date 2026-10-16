@@ -22,6 +22,65 @@ import {
   resetSqliteMinimumVersionForTestingV1,
 } from "../engram-memory/sqlite.js";
 import { captureRequest, createL3Memory, lifecycleCommand, NOW } from "./memory-l3-fixture.js";
+import { ACTIVITY_NOW, ACTIVITY_STAGES, activityHarness, assertActivityReplayAfterLogicalRestore, assertActivityReplayAtStage } from "./memory-activity-fixture.js";
+
+describe("X1 lifecycle backend matrix / SQLite", () => {
+  it.each(["malformed digest", "different content", "invalid JSON"])("corrupt registry at open refuses JOURNAL_CORRUPT: %s", async corruption => {
+    const dir = mkdtempSync(join(process.cwd(), ".graphify/scratch/x1-corrupt-"));
+    const filename = join(dir, "memory.sqlite");
+    const open = () => openFencedSqliteCanonicalMemoryStoreV1({ filename, clock: { now: () => ACTIVITY_NOW }, allow_ephemeral_filesystem_store: true });
+    try {
+      const opened = await open();
+      if (!opened.ok) throw new Error(JSON.stringify(opened));
+      const h = activityHarness();
+      expect(await h.build(opened.value).ingestActivity(h.request)).toMatchObject({ ok: true });
+      await opened.value.close();
+      const native = await import("../engram-memory/node_modules/better-sqlite3/lib/index.js");
+      const db = new native.default(filename);
+      try {
+        const row = db.prepare("SELECT body FROM memory_capture_idempotency").get() as { body: string };
+        const entry = JSON.parse(row.body);
+        entry.content = corruption === "malformed digest" ? "invalid" : `sha256:${"b".repeat(64)}`;
+        db.prepare("UPDATE memory_capture_idempotency SET body = ?").run(corruption === "invalid JSON" ? "{" : JSON.stringify(entry));
+      } finally { db.close(); }
+      const reopened = await open();
+      if (reopened.ok) await reopened.value.close();
+      expect(reopened).toMatchObject({ ok: false, error: { code: "JOURNAL_CORRUPT" } });
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("Opus a1: logical restore preserves exact replay and content conflicts without writes", async () => {
+    const dir = mkdtempSync(join(process.cwd(), ".graphify/scratch/x1-restore-"));
+    const stores: FencedSqliteCanonicalMemoryStoreV1[] = [];
+    let mutations = 0;
+    const factory = createCanonicalMemoryStoreFactoryV1({
+      open: async construction => {
+        const opened = await openFencedSqliteCanonicalMemoryStoreV1({ filename: join(dir, construction.store_id + ".sqlite"),
+          clock: { now: () => ACTIVITY_NOW }, allow_ephemeral_filesystem_store: true,
+          on_mutation_statement: () => { mutations++; } });
+        if (opened.ok) stores.push(opened.value);
+        return opened;
+      } });
+    try {
+      const source = await factory.acquire({ store_id: "source", backend: "sqlite", deadline_at: X4_DEADLINE });
+      const target = await factory.acquire({ store_id: "target", backend: "sqlite", deadline_at: X4_DEADLINE });
+      if (!source.ok || !target.ok) throw new Error(JSON.stringify({ source, target }));
+      await assertActivityReplayAfterLogicalRestore(source.value, target.value, () => mutations);
+    } finally { for (const store of stores) await store.close(); rmSync(dir, { recursive: true, force: true }); }
+  });
+  it.each(ACTIVITY_STAGES)("%s: durable reopen, exact replay and isolated content conflicts write nothing", async stage => {
+    const dir = mkdtempSync(join(tmpdir(), "engram-x1-"));
+    let mutations = 0;
+    try {
+      await assertActivityReplayAtStage(async () => {
+        const opened = await openFencedSqliteCanonicalMemoryStoreV1({ filename: join(dir, "memory.sqlite"), clock: { now: () => ACTIVITY_NOW },
+          allow_ephemeral_filesystem_store: true, on_mutation_statement: () => { mutations++; } });
+        if (!opened.ok) throw new Error(JSON.stringify(opened));
+        return opened.value;
+      }, stage, () => mutations);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
 
 const X4_DEADLINE = "2026-08-16T12:40:00.000Z";
 const X4_DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as Digest;
