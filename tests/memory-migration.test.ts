@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { migrateRetainedNeutralRecordsV1, type Digest, type RetainedNeutralRecordV1 } from "../engram-memory/index.js";
-import { receiptDigest } from "../engram-memory/digests.js";
+import { createHash } from "node:crypto";
+import { INTAKE_PINS, extractPinnedRecords, gitBlobSha, readPinnedIntake, sha256 } from "./fixtures/memory-pinned-intakes.js";
 
 const DIGEST_A = "sha256:1111111111111111111111111111111111111111111111111111111111111111" as Digest;
 const DIGEST_B = "sha256:2222222222222222222222222222222222222222222222222222222222222222" as Digest;
@@ -57,184 +58,69 @@ describe("retained neutral record migration", () => {
   });
 });
 
-/**
- * Pinned-intake migration matrix (EVOL §10 `migration/removal` row:
- * "target plus every pinned intake").
- *
- * Each cell feeds the migration with the retained neutral records REALLY
- * present at that pin — verbatim legacy shapes from the pinned blobs, with
- * digests bound to the pin — never a synthetic-only corpus:
- * - target `34369050`, intakes `45b88bdd` / `a9d5ba1c`: no legacy memory
- *   surface exists at those pins, so the retained set is empty and the
- *   ledger must close empty (no crash, no loss, well-formed digest);
- * - intakes `686d24c3` / `1bb7f03d` (byte-identical legacy seam): the
- *   `validNote` decision record and the `human:<id>` record from
- *   `tests/memory-admission.test.ts`, plus a citation-less persona refusal
- *   (`missing_citations`) and an inverted valid interval
- *   (`invalid_valid_time`);
- * - intake `70dcfb96` (evolved seam + factory/CLI): the live round-trip
- *   decision record from `tests/memory-operational-roundtrip.test.ts`, plus
- *   a digest-less record (`missing_digest`).
- *
- * Record digests are `sha256("legacy:<cell>:<source>")` and citation content
- * digests `sha256("cite:<cell>:<source>")`, computed once and pinned here as
- * literals; every receipt and the ledger digest are recomputed independently.
+
+/** Actual pinned legacy shapes enter the delivered migration path unchanged.
+ * Legacy fixtures have no V2 record_digest/citations; deriving their historical
+ * identity does NOT manufacture those missing fields. The current migrator
+ * therefore excludes them explicitly. Its ledger has a digest, NOT a signature:
+ * EVOL §10's signed-ledger obligation remains unsatisfied.
  */
+function refCanonical(value: unknown): string {
+  if (Array.isArray(value)) return "[" + value.map(refCanonical).join(",") + "]";
+  if (value !== null && typeof value === "object") return "{" + Object.entries(value)
+    .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+    .map(([key, item]) => JSON.stringify(key) + ":" + refCanonical(item)).join(",") + "}";
+  return JSON.stringify(value);
+}
+function refReceipt(kind: string, value: unknown): Digest {
+  return ("sha256:" + createHash("sha256").update("graphify-memory/" + kind + "/v1\0" + refCanonical(value)).digest("hex")) as Digest;
+}
+
 describe("pinned-intake migration matrix", () => {
-  const T = 1_750_000_000_000;
+  it.each(INTAKE_PINS)("pin %s reproduces every frozen record from its versioned source blobs without git history", async (pin) => {
+    const fixture = readPinnedIntake(pin);
+    expect(fixture.pin).toBe(pin);
+    expect(fixture.sources.length).toBeGreaterThan(0);
+    expect(new Set(fixture.sources.map(({ path }) => path)).size).toBe(fixture.sources.length);
+    for (const { content, blobSha } of fixture.sources) {
+      expect(gitBlobSha(Buffer.from(content, "utf8"))).toBe(blobSha);
+    }
+    for (const { origin } of fixture.records) {
+      expect(origin.startsWith(`${pin}:`)).toBe(true);
+      expect(fixture.sources.some(({ path }) => path === origin.split(":")[1])).toBe(true);
+    }
+    // Compare serialized bytes as well as replaying all original admission assertions.
+    expect(JSON.stringify(await extractPinnedRecords(fixture))).toBe(JSON.stringify(fixture.records));
+  });
 
-  function citation(cell: string, source: string, contentDigest: Digest) {
-    return [{
-      citation_id: `cit:${cell}:${source}`,
-      source_ref: "ref:A",
-      locator: { scheme: "document", value: `${cell}#${source}` },
-      content_digest: contentDigest,
-    }];
-  }
-
-  function decisionRecord(cell: string, recordDigest: Digest, contentDigest: Digest): RetainedNeutralRecordV1 {
-    return {
-      source_ref: `legacy:${cell}:decision-note`,
-      record_digest: recordDigest,
-      valid_time: { t: T },
-      citations: citation(cell, "decision-note", contentDigest),
-    };
-  }
-
-  const d = (hex: string): Digest => `sha256:${hex}` as Digest;
-
-  interface MatrixCell {
-    pin: string;
-    records: RetainedNeutralRecordV1[];
-    migrated: string[];
-    excluded: Array<{ source_ref: string; reason: string }>;
-  }
-
-  const CELLS: MatrixCell[] = [
-    { pin: "343690503748f325cc7673b577321271cb0cbb9f", records: [], migrated: [], excluded: [] },
-    { pin: "45b88bddf8a3caa5cfef4a6d572f317c381a8b9d", records: [], migrated: [], excluded: [] },
-    { pin: "a9d5ba1c628f518929e47ce2025933bbb4f636ed", records: [], migrated: [], excluded: [] },
-    {
-      pin: "686d24c3d8c81d5884667e803f09f5fe7d14901d",
-      records: [
-        decisionRecord("686d24c3", d("d13d257be57e1437ef6ca682ca78540b4b271240eae844a16e240f43893f47c8"), d("388e51865e0e3593c1561bc1336171b9dfd44f105081f17258be4088b062a6cb")),
-        {
-          source_ref: "legacy:686d24c3:human-note",
-          record_digest: d("3cdbde0f0ad3e634606ec5d71ea076e0b2cef913810dd360a60ccf6d062cedb3"),
-          valid_time: { t: T },
-          citations: citation("686d24c3", "human-note", d("37f1df5bd2baa2c9216e62b448d8dbdb48bfec69eed298592bda46393ea2abd3")),
-        },
-        // Persona-subject refusal: retained with no citation to carry provenance.
-        {
-          source_ref: "legacy:686d24c3:persona-note",
-          record_digest: d("502629d674221b61c457d9ea998299374419f2733e4ed34cbb5d271b7928a029"),
-          valid_time: { t: T },
-        },
-        {
-          source_ref: "legacy:686d24c3:bad-time-note",
-          record_digest: d("cc38ff1a420ddbd70c95bd8c56eb8354d74d49cc57c0d1b6c99027518144938d"),
-          valid_time: { t: 30, t_end: 10 },
-          citations: citation("686d24c3", "bad-time-note", d("388e51865e0e3593c1561bc1336171b9dfd44f105081f17258be4088b062a6cb")),
-        },
-      ],
-      migrated: ["legacy:686d24c3:decision-note", "legacy:686d24c3:human-note"],
-      excluded: [
-        { source_ref: "legacy:686d24c3:bad-time-note", reason: "invalid_valid_time" },
-        { source_ref: "legacy:686d24c3:persona-note", reason: "missing_citations" },
-      ],
-    },
-    {
-      pin: "1bb7f03d917c3833865d0d66241b67850925a536",
-      records: [
-        decisionRecord("1bb7f03d", d("c802aba6ab880d1bb3a4e453987696a4b26ebac41645c8da713f482bd5592e1d"), d("5bfc869e6a80afbfeccf6e7cce115c4213a4ce6837109d4b4b49bda05046dce2")),
-        {
-          source_ref: "legacy:1bb7f03d:human-note",
-          record_digest: d("0fac82c5db2a3a4d4a6dd4f71a1dadfdc0cf696bbfd777fe5f29cbdb764c75d8"),
-          valid_time: { t: T },
-          citations: citation("1bb7f03d", "human-note", d("e09112c3a7df8a7643c584f621a6eccced018565ed76755be31287eab2969fee")),
-        },
-        {
-          source_ref: "legacy:1bb7f03d:persona-note",
-          record_digest: d("b49890ec6929578d421a492b8d029380cebd221e2845f7056687b2f9083317b0"),
-          valid_time: { t: T },
-        },
-        {
-          source_ref: "legacy:1bb7f03d:bad-time-note",
-          record_digest: d("6079570f1609f01a888e134fc52f2fc1a21452013a2f095c5d9dfcbc2643f4f3"),
-          valid_time: { t: 30, t_end: 10 },
-          citations: citation("1bb7f03d", "bad-time-note", d("5bfc869e6a80afbfeccf6e7cce115c4213a4ce6837109d4b4b49bda05046dce2")),
-        },
-      ],
-      migrated: ["legacy:1bb7f03d:decision-note", "legacy:1bb7f03d:human-note"],
-      excluded: [
-        { source_ref: "legacy:1bb7f03d:bad-time-note", reason: "invalid_valid_time" },
-        { source_ref: "legacy:1bb7f03d:persona-note", reason: "missing_citations" },
-      ],
-    },
-    {
-      pin: "70dcfb9663e081651b8309f5338f6274e5bc5f03",
-      records: [
-        {
-          source_ref: "legacy:70dcfb96:roundtrip-note",
-          record_digest: d("eb8448649b26b5c2194c8ff7f5ce28db0a1f3409a411ec9fefb89a12672077c1"),
-          valid_time: { t: T },
-          citations: citation("70dcfb96", "roundtrip-note", d("9e9b593a87361337834379f1a19a93c87c9ce2fe4948aa5a21cffd170687260c")),
-        },
-        // Factory/CLI-era refusal: no digest to bind the record.
-        {
-          source_ref: "legacy:70dcfb96:no-digest-note",
-          valid_time: { t: T },
-          citations: citation("70dcfb96", "no-digest-note", d("9e9b593a87361337834379f1a19a93c87c9ce2fe4948aa5a21cffd170687260c")),
-        },
-      ],
-      migrated: ["legacy:70dcfb96:roundtrip-note"],
-      excluded: [{ source_ref: "legacy:70dcfb96:no-digest-note", reason: "missing_digest" }],
-    },
-  ];
-
-  it.each(CELLS.map((cell) => [cell.pin, cell] as const))(
-    "pin %s migrates exactly or excludes explicitly, with no silent loss",
-    (_pin, cell) => {
-      const ledger = migrateRetainedNeutralRecordsV1(cell.records);
-
-      expect(ledger.migrated.map((entry) => entry.source_ref)).toEqual(cell.migrated);
-      expect(ledger.excluded.map((entry) => ({ source_ref: entry.source_ref, reason: entry.reason }))).toEqual(
-        cell.excluded,
-      );
-
-      // Byte-for-byte preservation on the migrated partition.
-      for (const entry of ledger.migrated) {
-        const input = cell.records.find((record) => record.source_ref === entry.source_ref)!;
-        expect(entry.record_digest).toBe(input.record_digest);
-        expect(entry.valid_time).toEqual(input.valid_time);
-        expect(entry.citations).toEqual(input.citations);
-        expect(entry.migration_receipt_digest).toBe(
-          receiptDigest(
-            "migration-record",
-            { source_ref: entry.source_ref, record_digest: entry.record_digest, valid_time: entry.valid_time, citations: entry.citations },
-            "migration_receipt_digest",
-          ),
-        );
+  it.each(INTAKE_PINS)("pin %s partitions every real retained fixture with reproducible legacy identity and receipts", (pin) => {
+    const fixtures = readPinnedIntake(pin).records;
+    const early = INTAKE_PINS.indexOf(pin) < 3;
+    expect(fixtures.length).toBeGreaterThan(0);
+    expect(fixtures.some(({ node }) => node.id === "other")).toBe(true);
+    if (!early) {
+      for (const label of ["mem:live", "mem:closed-before", "mem:open"]) {
+        expect(fixtures.some(({ node }) => node.id === label), label).toBe(true);
       }
-      for (const entry of ledger.excluded) {
-        expect(entry.exclusion_receipt_digest).toBe(
-          receiptDigest(
-            "migration-exclusion",
-            { source_ref: entry.source_ref, reason: entry.reason },
-            "exclusion_receipt_digest",
-          ),
-        );
-      }
-
-      // No silent loss, and the ledger digest binds exactly this content.
-      expect(ledger.migrated.length + ledger.excluded.length).toBe(cell.records.length);
-      expect(ledger.ledger_digest).toBe(
-        receiptDigest(
-          "migration-ledger",
-          { generation: ledger.generation, migrated: ledger.migrated, excluded: ledger.excluded },
-          "ledger_digest",
-        ),
-      );
-    },
-  );
+      expect(fixtures.some(({ node }) => node.subject === "human:antoinefa")).toBe(true);
+      expect(fixtures.some(({ node }) => node.subject === "persona" || node.memory_kind === "persona")).toBe(false);
+      expect(fixtures.every(({ node }) => node.t_end === undefined || node.t_end >= node.t)).toBe(true);
+    }
+    const records = fixtures.map(({ node, origin, identityCanonical, legacyId }) => {
+      expect(legacyId).toBe(identityCanonical === undefined ? node.id : "mem:" + sha256(identityCanonical).slice(0, 16));
+      expect(node.record_digest).toBeUndefined();
+      return { ...node, source_ref: origin + ":" + legacyId };
+    });
+    const before = structuredClone(records);
+    const ledger = migrateRetainedNeutralRecordsV1(records);
+    const excluded = records.map(({ source_ref }) => {
+      const body = { source_ref, reason: "missing_digest" as const };
+      return { ...body, exclusion_receipt_digest: refReceipt("migration-exclusion", body) };
+    }).sort((a, b) => a.source_ref < b.source_ref ? -1 : a.source_ref > b.source_ref ? 1 : 0);
+    const body = { generation: "1", migrated: [], excluded };
+    expect(ledger).toEqual({ ...body, ledger_digest: refReceipt("migration-ledger", body) });
+    expect(new Set(ledger.excluded.map(({ source_ref }) => source_ref))).toEqual(new Set(records.map(({ source_ref }) => source_ref)));
+    expect(ledger.excluded).toHaveLength(records.length);
+    expect(records).toEqual(before);
+  });
 });

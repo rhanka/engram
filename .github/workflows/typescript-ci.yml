@@ -18,6 +18,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The migration matrix reads the actual historical blobs via git show.
+          fetch-depth: 0
 
       - name: Set up Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
@@ -86,7 +89,7 @@ jobs:
           docker inspect --format '{{range .RepoDigests}}{{.}}{{"\n"}}{{end}}' "$ENGRAM_MEMORY_POSTGRES_IMAGE_17"
 
       - name: Run Postgres lane in required mode
-        run: npx vitest run --fileParallelism=false tests/canonical-memory-store.parity.test.ts tests/postgres-memory-store.native.test.ts tests/memory-reconciliation.test.ts tests/memory-recall-durable-parity.test.ts tests/memory-recall-golden.test.ts tests/storage-postgres-time-window.test.ts
+        run: npx vitest run --fileParallelism=false tests/canonical-memory-store.parity.test.ts tests/postgres-memory-store.native.test.ts tests/memory-reconciliation.test.ts tests/memory-recall-durable-parity.test.ts tests/memory-recall-golden.test.ts tests/storage-postgres-time-window.test.ts tests/temporal-boundary-contract.test.ts
 
       - name: Run X2b real projection cascade lane in required mode
         run: npx vitest run --fileParallelism=false tests/memory-projection-cascade.postgres.test.ts
