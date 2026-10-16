@@ -1,6 +1,8 @@
 import { normalizeCanonicalJson, type CanonicalJsonValue } from "./canonical-json.js";
 import { knowledgePayloadDigest, memoryRecordDigest, recordIdFromDigest } from "./digests.js";
 import type {
+  ActivityEvidencePageV1,
+  ActivityIngestionRequestV1,
   AdminOperationRequestV1,
   CandidatePayloadV2,
   Cursor,
@@ -453,6 +455,82 @@ export function validateProjectionInvalidationRequest(input: unknown): Result<Pr
     return { ok: true, value: value as unknown as ProjectionInvalidationRequestV1 };
   } catch (error) {
     return refusal("projection_invalidate", "INVALID_SCHEMA", error instanceof Error ? error.message : "projection invalidation request is invalid");
+  }
+}
+
+// D-8 A (lot X1): exact-key gate for the host-invoked activity pull. Refusals carry the existing
+// capture operation; no MemoryOperation member is added.
+export function validateActivityIngestionRequest(input: unknown): Result<ActivityIngestionRequestV1> {
+  try {
+    const value = normalizeCanonicalJson(input);
+    assertExactKeys(
+      value,
+      "activity_ingestion_request",
+      ["source_id", "after", "limit", "valid_window", "scope_ref", "purpose_ref", "retention", "reconciliation", "authorization", "deadline_at", "cancellation_ref"],
+      ["source_id", "limit", "scope_ref", "purpose_ref", "retention", "reconciliation", "authorization", "deadline_at", "cancellation_ref"],
+    );
+    assertOpaque(value.source_id, "source_id");
+    if (Object.hasOwn(value, "after")) assertCursor(value.after, "after");
+    if (typeof value.limit !== "number" || !Number.isSafeInteger(value.limit) || value.limit < 1 || value.limit > 500) {
+      throw new SchemaFailure("limit must be an integer 1..500");
+    }
+    if (Object.hasOwn(value, "valid_window")) {
+      assertExactKeys(value.valid_window, "valid_window", ["t", "t_end"], ["t"]);
+      assertSafeEpoch(value.valid_window.t, "valid_window.t");
+      if (Object.hasOwn(value.valid_window, "t_end")) {
+        assertSafeEpoch(value.valid_window.t_end, "valid_window.t_end");
+        if (value.valid_window.t_end < value.valid_window.t) throw new SchemaFailure("valid_window.t_end precedes valid_window.t");
+      }
+    }
+    assertOpaque(value.scope_ref, "scope_ref");
+    assertOpaque(value.purpose_ref, "purpose_ref");
+    assertExactKeys(value.retention, "retention", ["expires_at", "derivative_rule"], ["derivative_rule"]);
+    if (Object.hasOwn(value.retention, "expires_at")) assertInstant(value.retention.expires_at, "retention.expires_at");
+    if (value.retention.derivative_rule !== "retain" && value.retention.derivative_rule !== "make-ineligible") {
+      throw new SchemaFailure("retention.derivative_rule is invalid");
+    }
+    assertExactKeys(value.reconciliation, "reconciliation", ["family_refs"], ["family_refs"]);
+    assertSortedUnique(value.reconciliation.family_refs, "reconciliation.family_refs", 0, 64);
+    assertExactKeys(value.authorization, "authorization", ["credential", "context_ref"], ["credential"]);
+    if (typeof value.authorization.credential !== "string") {
+      throw new SchemaFailure("authorization.credential must be a string");
+    }
+    if (Object.hasOwn(value.authorization, "context_ref")) {
+      assertOpaque(value.authorization.context_ref, "authorization.context_ref");
+    }
+    assertInstant(value.deadline_at, "deadline_at");
+    assertOpaque(value.cancellation_ref, "cancellation_ref");
+    return { ok: true, value: value as unknown as ActivityIngestionRequestV1 };
+  } catch (error) {
+    return refusal("capture", "INVALID_SCHEMA", error instanceof Error ? error.message : "activity ingestion request is invalid");
+  }
+}
+
+// D-8 A (lot X1): source-owned page gate. The source owns the page_digest
+// construction, but the engine touches evidence, per-evidence citations and the
+// echoed page carriers before capture validates the mapped payload — anything
+// malformed there must surface as a typed capture Result, never a throw and
+// never a success. Unknown extra keys stay tolerated: the page is source-owned.
+export function validateActivityEvidencePage(input: unknown): Result<ActivityEvidencePageV1> {
+  try {
+    const value = normalizeCanonicalJson(input);
+    assertObject(value, "activity_page");
+    assertOpaque(value.source_id, "source_id");
+    assertString(value.source_version, "source_version");
+    assertDigest(value.page_digest, "page_digest");
+    if (Object.hasOwn(value, "next_after")) assertCursor(value.next_after, "next_after");
+    if (!Array.isArray(value.evidence)) throw new SchemaFailure("evidence must be an array");
+    value.evidence.forEach((item, index) => {
+      assertObject(item, `evidence[${index}]`);
+      assertOpaque(item.evidence_id, `evidence[${index}].evidence_id`);
+      if (!Array.isArray(item.citations)) throw new SchemaFailure(`evidence[${index}].citations must be an array`);
+      item.citations.forEach((citation, citationIndex) => {
+        assertObject(citation, `evidence[${index}].citations[${citationIndex}]`);
+      });
+    });
+    return { ok: true, value: value as unknown as ActivityEvidencePageV1 };
+  } catch (error) {
+    return refusal("capture", "INVALID_SCHEMA", error instanceof Error ? error.message : "activity evidence page is invalid");
   }
 }
 
