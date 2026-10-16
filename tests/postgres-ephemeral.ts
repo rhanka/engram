@@ -105,7 +105,7 @@ export async function startEphemeralPostgres(version: string): Promise<Ephemeral
   const reference = postgresImageReference(version);
   const container = `engram-memory-pg-${version}-${process.pid}-${Date.now()}-${counter++}`;
   const run = docker([
-    "run", "-d", "--name", container,
+    "run", "--pull=never", "-d", "--name", container,
     "-e", "POSTGRES_PASSWORD=graphify",
     "-e", "POSTGRES_DB=graphify",
     "-e", "POSTGRES_USER=postgres",
