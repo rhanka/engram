@@ -54,10 +54,25 @@ export async function resolveGraphStore(
     try {
       driverModule = await import(factory.requiredPackage);
     } catch {
-      throw new Error(
-        `store '${factory.id}' requires ${factory.requiredPackage}. ` +
-          `Run: npm install ${factory.requiredPackage}`,
-      );
+      if (factory.requiredPackage === "better-sqlite3") {
+        try {
+          const bundledUrl = new URL(
+            "../../engram-memory/node_modules/better-sqlite3/lib/index.js",
+            import.meta.url,
+          ).href;
+          driverModule = await import(bundledUrl);
+        } catch {
+          throw new Error(
+            `store '${factory.id}' requires ${factory.requiredPackage}. ` +
+              `Run: npm install ${factory.requiredPackage}`,
+          );
+        }
+      } else {
+        throw new Error(
+          `store '${factory.id}' requires ${factory.requiredPackage}. ` +
+            `Run: npm install ${factory.requiredPackage}`,
+        );
+      }
     }
     resolvedDeps = { ...deps, driverModule };
   }
