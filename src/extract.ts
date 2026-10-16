@@ -6,11 +6,13 @@
  * of Python's native tree-sitter bindings.
  */
 
-import { readFileSync, readdirSync, lstatSync, realpathSync, existsSync } from "node:fs";
+import { readFileSync as fsRead, readdirSync as fsReadDir, lstatSync as fsLstat, realpathSync as fsRealpath, existsSync as fsExists } from "node:fs";
 import { resolve, basename, extname, dirname, join, relative, sep } from "node:path";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { GraphNode, GraphEdge, Extraction } from "./types.js";
-import { loadCached, saveCached } from "./cache.js";
+import { loadCached, saveCached, liveExtractionKey, liveExtractionBind, LIVE_EXTRACTOR_VERSION, assertValidLiveStore, type InjectedCacheStore, type LiveScopeBinding } from "./cache.js";
 import { makeNodeId } from "./node-id.js";
 import { sanitizeLabel } from "./security.js";
 import { shebangInterpreter } from "./detect.js";
@@ -50,10 +52,28 @@ async function ensureParserInit(): Promise<void> {
   }
 }
 
-function parseText(parser: InstanceType<typeof Parser>, source: string): Tree {
+function parseText(parser: InstanceType<typeof Parser>, source: string, filePath?: string): Tree {
   const tree = parser.parse(source);
   if (!tree) {
     throw new Error("Parser returned null");
+  }
+  // M5b: record recovery-syntax evidence for the live path (R7b). Inside a
+  // live operation the per-file hasError flag decides diagnostics + cache
+  // admission; outside live mode this is a no-op side table.
+  if (filePath !== undefined) {
+    const scope = liveOperationScope.getStore();
+    if (scope !== undefined) {
+      let hasError = false;
+      try {
+        // web-tree-sitter exposes hasError as a boolean getter property.
+        hasError = tree.rootNode.hasError === true;
+      } catch {
+        hasError = true;
+      }
+      const key = resolve(filePath);
+      if (hasError) scope.syntaxErrors.set(key, true);
+      else if (!scope.syntaxErrors.has(key)) scope.syntaxErrors.set(key, false);
+    }
   }
   return tree;
 }
@@ -93,10 +113,254 @@ function resolveGrammarWasm(langName: string): string | null {
 /**
  * Cache of loaded Parser.Language instances keyed by language name.
  * Avoids re-reading WASM files on every file extraction.
+ *
+ * L5 injected entries are keyed `language:sha256(bytes)` so a host-supplied
+ * grammar can never collide with (or leak into) a legacy resolved grammar:
+ * identical pinned bytes share one context-free instance, different bytes
+ * never reuse each other's Language.
  */
 const _languageCache = new Map<string, TreeSitter.Language>();
 
+// ---------------------------------------------------------------------------
+// L5 live injection seam (plan/09 L5; SPEC_LIVE_GIT_INDEXING.md §8).
+//
+// The live engine threads host capabilities through the REUSED extraction
+// without changing any existing caller: `extractWithDiagnostics` / `extract`
+// accept an optional LiveExtractionPorts second argument. Inside a live
+// pass the injected grammar port travels in an AsyncLocalStorage scope, so
+// every per-language extractor (generic and bespoke) resolves through it
+// with no signature change and no cross-context global: the scope value is
+// the host's port for this pass only, and identical pinned bytes share one
+// context-free Language instance keyed by digest.
+// ---------------------------------------------------------------------------
+
+/** L5 injected host cache port (re-exported shape of cache InjectedCacheStore). */
+export type LiveCacheStorePort = InjectedCacheStore;
+
+/** L5 injected host grammar port: verified WASM bytes per language. */
+export interface LiveGrammarWasmPort {
+  bytesFor(language: string): Uint8Array | null;
+}
+
+/** L5 live clone/tenant scope (R1 S-component): required for cache reuse. */
+export interface LiveScopeDto {
+  readonly tenant: string;
+  readonly clone: string;
+}
+
+export interface LiveExtractionPorts {
+  /** Injected host cache storage; absent selects explicit no-cache in live mode. */
+  readonly cacheStore?: LiveCacheStorePort | null;
+  /** Injected host grammar bytes; authoritative inside a live pass. */
+  readonly grammarWasm?: LiveGrammarWasmPort | null;
+  /**
+   * L5 clone/tenant scope (R1/R2). REQUIRED for live cache reuse: without a
+   * scope the live pass still extracts fresh results but never loads or
+   * stores (explicit no-cache) — entries are never shared across clones.
+   */
+  readonly scope?: LiveScopeDto | null;
+  /** Optional caller-supplied dependency-manifest digest (R1 D-component). */
+  readonly dependencyDigest?: string | null;
+  /** Optional content-policy inputs (R1 Q-component). */
+  readonly contentPolicyVersion?: string | null;
+  readonly privacyBoundary?: string | null;
+  /** Host capability bound to one immutable tree or stable capture. No live filesystem fallback. */
+  readonly read?: LiveReadPort | null;
+}
+
+export interface LiveReadPort {
+  readonly context: { readonly kind: "tree"; readonly treeOid: string }
+    | { readonly kind: "snapshot"; readonly worktreeId: string; readonly snapshotKind: string;
+      readonly snapshotId: string; readonly sourceVectorDigest: string };
+  readonly readFileSync: typeof fsRead;
+  readonly existsSync: typeof fsExists;
+  readonly lstatSync: typeof fsLstat;
+  readonly realpathSync: typeof fsRealpath;
+  readonly readdirSync: typeof fsReadDir;
+}
+
+const liveReads = new AsyncLocalStorage<{ port: LiveReadPort; bytes: Map<string, Buffer>;
+  exists: Map<string, boolean>; manifest: Map<string, unknown>; errors: string[] }>();
+function recordedRead<T>(kind: string, path: string, read: () => T, describe: (result: T) => unknown): T {
+  const state = liveReads.getStore();
+  try {
+    const value = read();
+    state?.manifest.set(`${kind}:${path}`, describe(value));
+    return value;
+  } catch (error) {
+    const detail = `${kind}:${path}: ${String(error)}`;
+    state?.errors.push(detail); state?.manifest.set(`${kind}:${path}`, { state: "unknown", detail });
+    throw error;
+  }
+}
+const readFileSync: typeof fsRead = ((path: string, options?: BufferEncoding | { encoding?: BufferEncoding | null }) => {
+  const state = liveReads.getStore();
+  if (!state) return fsRead(path, options as BufferEncoding);
+  const absolute = resolve(String(path));
+  let bytes = state.bytes.get(absolute);
+  if (!bytes) {
+    bytes = recordedRead("read", absolute, () => Buffer.from(state.port.readFileSync(absolute)),
+      value => ({ sha256: createHash("sha256").update(value).digest("hex") }));
+    state.bytes.set(absolute, bytes);
+  }
+  const encoding = typeof options === "string" ? options : options?.encoding;
+  return encoding ? bytes.toString(encoding) : Buffer.from(bytes);
+}) as typeof fsRead;
+const existsSync: typeof fsExists = ((path: string) => {
+  const state = liveReads.getStore(); if (!state) return fsExists(path);
+  const absolute = resolve(String(path));
+  if (!state.exists.has(absolute)) state.exists.set(absolute, recordedRead("probe", absolute,
+    () => state.port.existsSync(absolute), present => ({ state: present ? "present" : "absent" })));
+  return state.exists.get(absolute)!;
+}) as typeof fsExists;
+const lstatSync: typeof fsLstat = ((path: string, options?: unknown) => {
+  const state = liveReads.getStore(); if (!state) return fsLstat(path, options as never);
+  return recordedRead("mode", resolve(String(path)), () => state.port.lstatSync(path, options as never),
+    stat => ({ mode: stat.mode, kind: stat.isFile() ? "file" : stat.isDirectory() ? "directory" : stat.isSymbolicLink() ? "symlink" : "other" }));
+}) as typeof fsLstat;
+const realpathSync: typeof fsRealpath = ((path: string, options?: unknown) => {
+  const state = liveReads.getStore(); if (!state) return fsRealpath(path, options as never);
+  return recordedRead("realpath", resolve(String(path)), () => state.port.realpathSync(path, options as never), value => value);
+}) as typeof fsRealpath;
+const readdirSync: typeof fsReadDir = ((path: string, options?: unknown) => {
+  const state = liveReads.getStore(); if (!state) return fsReadDir(path, options as never);
+  return recordedRead("directory", resolve(String(path)), () => state.port.readdirSync(path, options as never), value => value);
+}) as typeof fsReadDir;
+
+/**
+ * L5 pinned-bytes scope (R6a/M2): per-operation map of absolute path →
+ * exact bytes read once. Source extractors AND tsconfig discovery consult
+ * it first, so the hashed buffer is exactly the analyzed buffer (one
+ * filesystem read per file per operation; in-memory hits after that).
+ */
+const livePinnedBytes = new AsyncLocalStorage<Map<string, Buffer>>();
+
+/** Read the analyzed source text: pinned live bytes first, filesystem otherwise. */
+function readPinnedSourceText(filePath: string): string {
+  const pinned = livePinnedBytes.getStore()?.get(resolve(filePath));
+  if (pinned !== undefined) return pinned.toString("utf-8");
+  return readFileSync(filePath, "utf-8");
+}
+
+/** Read the analyzed source bytes: pinned live bytes first, filesystem otherwise. */
+function readPinnedSourceBytes(filePath: string): Buffer {
+  const pinned = livePinnedBytes.getStore()?.get(resolve(filePath));
+  if (pinned !== undefined) return Buffer.from(pinned);
+  return readFileSync(filePath) as Buffer;
+}
+
+/**
+ * L5 live-mode flag (R4a/R6a): set for the whole live operation, grammar
+ * port may be null (explicit no-grammar → every grammar unavailable, never
+ * a source-root fallback). Operation-local tsconfig scratch lives here too
+ * (R6a): per-operation memo + read/negative-probe manifest, discarded after.
+ */
+const liveOperationScope = new AsyncLocalStorage<{
+  grammar: LiveGrammarWasmPort | null;
+  /** M5b: per-file recovery-syntax evidence (absolute path → hasError). */
+  syntaxErrors: Map<string, boolean>;
+}>();
+const liveTsconfigScope = new AsyncLocalStorage<{ memo: Map<string, TsconfigAliasEntry[]>; reads: string[]; probes: string[] }>();
+
+/** L5 dialect version (R3a A-component): extension/shebang/module-kind mapping. */
+export const LIVE_DIALECT_VERSION = "live-dialect/1";
+/** L5 grammar ABI pin (R1 G-component). */
+export const LIVE_GRAMMAR_ABI = "web-tree-sitter-abi/1";
+
+function interpreterForExtraction(filePath: string): string | null {
+  if (!liveReads.getStore()) return shebangInterpreter(filePath);
+  const firstLine = readPinnedSourceText(filePath).split("\n", 1)[0] ?? "";
+  if (!firstLine.startsWith("#!")) return null;
+  const words = firstLine.slice(2).trim().split(/\s+/);
+  const executable = basename(words[0] ?? "");
+  return executable === "env" ? words.slice(1).find(word => !word.startsWith("-") && !word.includes("=")) ?? null : executable;
+}
+
+/**
+ * L5 versioned dialect/language resolution (R3a): computed BEFORE parsing,
+ * version enters A, output enters the parse key. An extractor needing a
+ * path is a resolution-layer component — the shared parse never receives
+ * path/tree/scope/root.
+ */
+export function resolveLiveLanguage(filePath: string): { language: string; dialect: string } | null {
+  const base = basename(filePath).toLowerCase();
+  if (base.endsWith(".blade.php")) return null;
+  const ext = extname(filePath).toLowerCase();
+  if (!ext) {
+    let interp: string | null = null;
+    try {
+      interp = interpreterForExtraction(filePath);
+    } catch {
+      interp = null;
+    }
+    if (!interp) return null;
+    const mapped: Record<string, string> = {
+      python: "python", python2: "python", python3: "python",
+      node: "javascript", nodejs: "javascript", ruby: "ruby", lua: "lua", php: "php", julia: "julia",
+    };
+    const language = mapped[interp];
+    if (!language) return null;
+    return { language, dialect: `${language}:shebang:${interp}` };
+  }
+  switch (ext) {
+    case ".ts": return { language: "typescript", dialect: "typescript:ts" };
+    case ".mts": return { language: "typescript", dialect: "typescript:mts-module" };
+    case ".cts": return { language: "typescript", dialect: "typescript:cts-commonjs" };
+    case ".tsx": return { language: "tsx", dialect: "tsx:tsx" };
+    case ".js": case ".jsx": case ".mjs": return { language: "javascript", dialect: `javascript:${ext.slice(1)}` };
+    case ".py": return { language: "python", dialect: "python:py" };
+    case ".go": return { language: "go", dialect: "go:go" };
+    case ".rs": return { language: "rust", dialect: "rust:rs" };
+    case ".java": return { language: "java", dialect: "java:java" };
+    case ".c": case ".h": return { language: "c", dialect: `c:${ext.slice(1)}` };
+    case ".cpp": case ".cc": case ".cxx": case ".hpp": return { language: "cpp", dialect: `cpp:${ext.slice(1)}` };
+    case ".rb": return { language: "ruby", dialect: "ruby:rb" };
+    case ".php": return { language: "php", dialect: "php:php" };
+    case ".swift": return { language: "swift", dialect: "swift:swift" };
+    case ".lua": case ".luau": case ".toc": return { language: "lua", dialect: `lua:${ext.slice(1)}` };
+    default: return null;
+  }
+}
+
+/** L5 grammar availability probe recording the requesting unit (R5a). */
+function probeLiveGrammar(port: LiveGrammarWasmPort | null, language: string): { bytes: Uint8Array | null; digest: string | null } {
+  if (port === null) return { bytes: null, digest: null };
+  let bytes: Uint8Array | null = null;
+  try {
+    bytes = port.bytesFor(language) ?? null;
+  } catch {
+    bytes = null;
+  }
+  if (bytes === null || bytes.length === 0) return { bytes: null, digest: null };
+  return { bytes, digest: createHash("sha256").update(bytes).digest("hex") };
+}
+
 async function loadLanguage(langName: string): Promise<TreeSitter.Language | null> {
+  // Live mode (R4a/R5a): authoritative injected port only. A null answer, a
+  // port failure or an absent port means grammar-unavailable — never a
+  // silent fallback to source-tree resolution (resolveGrammarWasm).
+  const liveOp = liveOperationScope.getStore();
+  if (liveOp !== undefined) {
+    const port = liveOp.grammar;
+    let injected: Uint8Array | null = null;
+    try {
+      injected = port !== null ? (port.bytesFor(langName) ?? null) : null;
+    } catch {
+      injected = null;
+    }
+    if (injected === null || injected.length === 0) return null;
+    const digest = createHash("sha256").update(injected).digest("hex");
+    const key = `${langName}:${digest}`;
+    const hit = _languageCache.get(key);
+    if (hit !== undefined) return hit;
+    try {
+      const lang = await TreeSitter.Language.load(injected);
+      _languageCache.set(key, lang);
+      return lang;
+    } catch {
+      return null;
+    }
+  }
   if (_languageCache.has(langName)) return _languageCache.get(langName)!;
   const wasmPath = resolveGrammarWasm(langName);
   if (!wasmPath) return null;
@@ -282,18 +546,88 @@ function stripJsonc(text: string): string {
 
 function readTsconfigDocument(tsconfigPath: string): TsconfigDocument | null {
   try {
-    const raw = readFileSync(tsconfigPath, "utf-8");
+    // M1/R6a: serve manifest-pinned bytes inside a live operation so the
+    // hashed configuration is exactly the analyzed configuration.
+    const pinned = livePinnedBytes.getStore()?.get(resolve(tsconfigPath));
+    const raw = pinned !== undefined ? pinned.toString("utf-8") : readFileSync(tsconfigPath, "utf-8");
     try {
       return JSON.parse(raw) as TsconfigDocument;
     } catch {
       return JSON.parse(stripJsonc(raw)) as TsconfigDocument;
     }
   } catch {
+    unavailableLiveConfiguration(`unreadable or invalid configuration "${tsconfigPath}"`);
     return null;
   }
 }
 
+function unavailableLiveConfiguration(detail: string): void {
+  const state = liveReads.getStore();
+  const error = `configuration-unavailable: ${detail}`;
+  if (state && !state.errors.includes(error)) state.errors.push(error);
+}
+
+/** Node's resolver performs hidden disk reads. Live resolution uses only the
+ * context port, including package metadata, negative probes and every base. */
+function resolvePinnedTsconfigExtendsPath(value: string, fromDir: string): string | null {
+  function file(candidate: string): string | null {
+    return existsSync(candidate) && lstatSync(candidate).isFile() ? candidate : null;
+  }
+  function candidates(path: string): string | null {
+    const paths = extname(path) === ".json" ? [path] : [path, `${path}.json`, join(path, "tsconfig.json")];
+    for (const candidate of paths) { const hit = file(candidate); if (hit) return hit; }
+    return null;
+  }
+  try {
+    if (value.startsWith(".") || value.startsWith("/")) {
+      const hit = candidates(resolve(fromDir, value));
+      if (hit) return hit;
+    } else {
+      const parts = value.split("/");
+      const packageLength = value.startsWith("@") ? 2 : 1;
+      if (parts.length < packageLength || parts.some(part => !part || part === "." || part === ".." || part.includes("\\"))) {
+        unavailableLiveConfiguration(`invalid extends package "${value}"`); return null;
+      }
+      const packageName = parts.slice(0, packageLength).join("/");
+      const subpath = parts.slice(packageLength).join("/");
+      let current = resolve(fromDir);
+      while (true) {
+        const packageDir = join(current, "node_modules", packageName);
+        const metadata = file(join(packageDir, "package.json"));
+        const doc = metadata ? JSON.parse(readFileSync(metadata, "utf8")) as { tsconfig?: unknown; exports?: unknown } : null;
+        // Until NodeNext exports are supported in the pinned resolver, refuse
+        // the package rather than silently selecting an unexported config.
+        if (doc && Object.hasOwn(doc, "exports")) {
+          unavailableLiveConfiguration(`extends "${value}": package exports require unsupported pinned resolution`);
+          return null;
+        }
+        if (subpath) {
+          const hit = candidates(join(packageDir, subpath));
+          if (hit) return hit;
+        } else {
+          if (doc?.tsconfig !== undefined) {
+            if (typeof doc.tsconfig !== "string") throw new Error("invalid package tsconfig field");
+            const hit = candidates(resolve(packageDir, doc.tsconfig));
+            if (hit) return hit;
+            break; // an explicit but unavailable entry is not a default config
+          }
+          const hit = candidates(packageDir);
+          if (hit) return hit;
+        }
+        const parent = dirname(current);
+        if (parent === current) break;
+        current = parent;
+      }
+    }
+  } catch {
+    // Unreadable metadata/configuration is a missing prerequisite, never absence.
+  }
+  unavailableLiveConfiguration(`extends "${value}" from "${fromDir}" cannot be resolved in the pinned context`);
+  return null;
+}
+
 function resolveTsconfigExtendsPath(extendsValue: string, fromDir: string): string | null {
+  if (liveReads.getStore()) return resolvePinnedTsconfigExtendsPath(extendsValue, fromDir);
   const candidateRoots: string[] = [];
   if (extendsValue.startsWith(".") || extendsValue.startsWith("/") || extendsValue.startsWith("..")) {
     candidateRoots.push(resolve(fromDir, extendsValue));
@@ -335,20 +669,47 @@ function resolveTsconfigExtendsPath(extendsValue: string, fromDir: string): stri
   return null;
 }
 
+function liveTsconfigMemo(): Map<string, TsconfigAliasEntry[]> | null {
+  return liveTsconfigScope.getStore()?.memo ?? null;
+}
+
+function recordTsconfigRead(path: string): void {
+  const scope = liveTsconfigScope.getStore();
+  if (scope !== undefined && !scope.reads.includes(path)) scope.reads.push(path);
+}
+
+function recordTsconfigProbe(path: string): void {
+  const scope = liveTsconfigScope.getStore();
+  if (scope !== undefined && !scope.probes.includes(path)) scope.probes.push(path);
+}
+
 function loadTsconfigAliasesFromPath(tsconfigPath: string, seen: Set<string> = new Set()): TsconfigAliasEntry[] {
   const resolvedTsconfigPath = resolve(tsconfigPath);
-  const cached = tsconfigAliasCache.get(resolvedTsconfigPath);
+  // R6a: inside a live operation the memo is operation-local scratch,
+  // discarded after the operation and never shared between concurrent
+  // operations — a forced external miss always reaches current discovery.
+  const scratch = liveTsconfigMemo();
+  const memo = scratch ?? tsconfigAliasCache;
+  const cached = memo.get(resolvedTsconfigPath);
   if (cached) return cached;
-  if (seen.has(resolvedTsconfigPath)) return [];
+  if (seen.has(resolvedTsconfigPath)) {
+    unavailableLiveConfiguration(`cyclic extends at "${resolvedTsconfigPath}"`);
+    return [];
+  }
   seen.add(resolvedTsconfigPath);
+  recordTsconfigRead(resolvedTsconfigPath);
 
   const parsed = readTsconfigDocument(resolvedTsconfigPath);
   if (!parsed) {
-    tsconfigAliasCache.set(resolvedTsconfigPath, []);
+    memo.set(resolvedTsconfigPath, []);
     return [];
   }
 
   const configDir = dirname(resolvedTsconfigPath);
+  if (parsed.extends !== undefined && typeof parsed.extends !== "string"
+    && (!Array.isArray(parsed.extends) || parsed.extends.some(e => typeof e !== "string"))) {
+    unavailableLiveConfiguration(`invalid extends in "${resolvedTsconfigPath}"`);
+  }
   // F-0819-P1 (#1017): TS 5.0 allows `extends` to be an array of base configs,
   // merged left-to-right (later bases win). A bare-string check silently
   // dropped the array form, losing inherited path aliases. Resolve each base in
@@ -362,7 +723,7 @@ function loadTsconfigAliasesFromPath(tsconfigPath: string, seen: Set<string> = n
   for (const ext of extendsList) {
     const extendsPath = resolveTsconfigExtendsPath(ext, configDir);
     if (!extendsPath) continue;
-    for (const entry of loadTsconfigAliasesFromPath(extendsPath, seen)) {
+    for (const entry of loadTsconfigAliasesFromPath(extendsPath, new Set(seen))) {
       merged.set(entry.aliasPrefix, entry);
     }
   }
@@ -377,7 +738,7 @@ function loadTsconfigAliasesFromPath(tsconfigPath: string, seen: Set<string> = n
   }
 
   const aliases = [...merged.values()];
-  tsconfigAliasCache.set(resolvedTsconfigPath, aliases);
+  memo.set(resolvedTsconfigPath, aliases);
   return aliases;
 }
 
@@ -385,7 +746,15 @@ function loadTsconfigAliases(startDir: string): TsconfigAliasEntry[] {
   let current = resolve(startDir);
   while (true) {
     const tsconfigPath = join(current, "tsconfig.json");
-    if (existsSync(tsconfigPath)) {
+    const probeHit = (() => {
+      try {
+        return existsSync(tsconfigPath);
+      } catch {
+        return false;
+      }
+    })();
+    recordTsconfigProbe(tsconfigPath);
+    if (probeHit) {
       return loadTsconfigAliasesFromPath(tsconfigPath);
     }
     const parent = dirname(current);
@@ -2397,8 +2766,8 @@ async function _extractGeneric(
   try {
     const parser = new Parser();
     parser.setLanguage(lang);
-    source = readFileSync(filePath, "utf-8");
-    tree = parseText(parser, source);
+    source = readPinnedSourceText(filePath);
+    tree = parseText(parser, source, filePath);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -3466,8 +3835,8 @@ async function _extractPythonRationale(
   try {
     const parser = new Parser();
     parser.setLanguage(lang);
-    source = readFileSync(filePath, "utf-8");
-    const tree = parseText(parser, source);
+    source = readPinnedSourceText(filePath);
+    const tree = parseText(parser, source, filePath);
     root = tree.rootNode;
   } catch {
     return;
@@ -3633,7 +4002,7 @@ function _extractJsRationale(
 ): void {
   let sourceText: string;
   try {
-    sourceText = readFileSync(filePath, "utf-8");
+    sourceText = readPinnedSourceText(filePath);
   } catch {
     return;
   }
@@ -3759,8 +4128,8 @@ export async function extractJulia(filePath: string, rootDir?: string): Promise<
   try {
     const parser = new Parser();
     parser.setLanguage(lang);
-    source = readFileSync(filePath, "utf-8");
-    tree = parseText(parser, source);
+    source = readPinnedSourceText(filePath);
+    tree = parseText(parser, source, filePath);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -3978,7 +4347,7 @@ function lineForIndex(source: string, index: number): number {
 async function extractRegexBackedCode(filePath: string, rootDir?: string): Promise<ExtractionResult> {
   let source: string;
   try {
-    source = readFileSync(filePath, "utf-8");
+    source = readPinnedSourceText(filePath);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -4092,7 +4461,7 @@ function braceDelta(text: string): number {
 async function extractGroovy(filePath: string, rootDir?: string): Promise<ExtractionResult> {
   let source: string;
   try {
-    source = readFileSync(filePath, "utf-8");
+    source = readPinnedSourceText(filePath);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -4281,7 +4650,7 @@ function sqlStatementBlock(source: string, startIndex: number): string {
 export async function extractSql(filePath: string, rootDir?: string): Promise<ExtractionResult> {
   let source: string;
   try {
-    source = readFileSync(filePath, "utf-8");
+    source = readPinnedSourceText(filePath);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -4491,7 +4860,7 @@ export async function extractSql(filePath: string, rootDir?: string): Promise<Ex
 export async function extractMarkdown(filePath: string, rootDir?: string): Promise<ExtractionResult> {
   let source: string;
   try {
-    source = readFileSync(filePath, "utf-8");
+    source = readPinnedSourceText(filePath);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -4586,7 +4955,7 @@ async function extractSvelte(filePath: string, rootDir?: string): Promise<Extrac
 
   let source: string;
   try {
-    source = readFileSync(filePath, "utf-8");
+    source = readPinnedSourceText(filePath);
   } catch {
     return result;
   }
@@ -4630,7 +4999,7 @@ async function extractAstro(filePath: string, rootDir?: string): Promise<Extract
 
   let source: string;
   try {
-    source = readFileSync(filePath, "utf-8");
+    source = readPinnedSourceText(filePath);
   } catch {
     return result;
   }
@@ -4690,8 +5059,8 @@ export async function extractGo(filePath: string, rootDir?: string): Promise<Ext
   try {
     const parser = new Parser();
     parser.setLanguage(lang);
-    source = readFileSync(filePath, "utf-8");
-    tree = parseText(parser, source);
+    source = readPinnedSourceText(filePath);
+    tree = parseText(parser, source, filePath);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -4893,8 +5262,8 @@ export async function extractRust(filePath: string, rootDir?: string): Promise<E
   try {
     const parser = new Parser();
     parser.setLanguage(lang);
-    source = readFileSync(filePath, "utf-8");
-    tree = parseText(parser, source);
+    source = readPinnedSourceText(filePath);
+    tree = parseText(parser, source, filePath);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -5174,8 +5543,8 @@ export async function extractZig(filePath: string, rootDir?: string): Promise<Ex
   try {
     const parser = new Parser();
     parser.setLanguage(lang);
-    source = readFileSync(filePath, "utf-8");
-    tree = parseText(parser, source);
+    source = readPinnedSourceText(filePath);
+    tree = parseText(parser, source, filePath);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -5360,8 +5729,8 @@ export async function extractPowershell(filePath: string, rootDir?: string): Pro
   try {
     const parser = new Parser();
     parser.setLanguage(lang);
-    source = readFileSync(filePath, "utf-8");
-    tree = parseText(parser, source);
+    source = readPinnedSourceText(filePath);
+    tree = parseText(parser, source, filePath);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -5585,8 +5954,8 @@ export async function extractObjc(filePath: string, rootDir?: string): Promise<E
   try {
     const parser = new Parser();
     parser.setLanguage(lang);
-    source = readFileSync(filePath, "utf-8");
-    tree = parseText(parser, source);
+    source = readPinnedSourceText(filePath);
+    tree = parseText(parser, source, filePath);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -5840,8 +6209,8 @@ export async function extractElixir(filePath: string, rootDir?: string): Promise
   try {
     const parser = new Parser();
     parser.setLanguage(lang);
-    source = readFileSync(filePath, "utf-8");
-    tree = parseText(parser, source);
+    source = readPinnedSourceText(filePath);
+    tree = parseText(parser, source, filePath);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -6035,10 +6404,16 @@ export async function extractElixir(filePath: string, rootDir?: string): Promise
 async function _resolveCrossFileImports(
   perFile: ExtractionResult[],
   paths: string[],
+  onGrammarUnavailable?: (language: string) => void,
 ): Promise<GraphEdge[]> {
   await ensureParserInit();
   const lang = await loadLanguage("python");
-  if (!lang) return [];
+  // R5a: a null/failed python grammar is recorded by the caller as
+  // grammar-unavailable for the requesting unit — never an empty success.
+  if (!lang) {
+    onGrammarUnavailable?.("python");
+    return [];
+  }
 
   const parser = new Parser();
   parser.setLanguage(lang);
@@ -6096,8 +6471,8 @@ async function _resolveCrossFileImports(
     let source: string;
     let tree: Tree;
     try {
-      source = readFileSync(filePath, "utf-8");
-      tree = parseText(parser, source);
+      source = readPinnedSourceText(filePath);
+      tree = parseText(parser, source, filePath);
     } catch {
       continue;
     }
@@ -6222,7 +6597,7 @@ const _CSPROJ_SDK_ATTR_RE = /<Project\s[^>]*Sdk="([^"]+)"/i;
 export function extractCsproj(filePath: string, _rootDir?: string): ExtractionResult {
   let src: Buffer;
   try {
-    src = readFileSync(filePath) as Buffer;
+    src = readPinnedSourceBytes(filePath);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -6314,7 +6689,7 @@ const _SLN_DEP_RE = /\{([0-9a-fA-F-]+)\}\s*=\s*\{([0-9a-fA-F-]+)\}/g;
 export function extractSln(filePath: string, _rootDir?: string): ExtractionResult {
   let src: string;
   try {
-    src = readFileSync(filePath, "utf-8");
+    src = readPinnedSourceText(filePath);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: String(e) };
   }
@@ -6497,7 +6872,7 @@ function _mcpDetectPackageFromArgs(args: unknown[]): string | null {
 export function extractMcpConfig(filePath: string, rootDir?: string): ExtractionResult {
   let raw: Buffer;
   try {
-    raw = readFileSync(filePath) as Buffer;
+    raw = readPinnedSourceBytes(filePath);
   } catch (e: unknown) {
     return { nodes: [], edges: [], error: `mcp_ingest read error: ${String(e)}` };
   }
@@ -6720,7 +7095,7 @@ function _getExtractor(filePath: string): ExtractorFn | undefined {
   if (basename(filePath).toLowerCase().endsWith(".blade.php")) return extractRegexBackedCode;
   const ext = extname(filePath).toLowerCase();
   if (!ext) {
-    const interp = shebangInterpreter(filePath);
+    const interp = interpreterForExtraction(filePath);
     return interp ? _SHEBANG_DISPATCH[interp] : undefined;
   }
   return _DISPATCH[ext];
@@ -6821,6 +7196,8 @@ export interface ExtractionDiagnostic {
 export interface ExtractWithDiagnosticsResult {
   extraction: Extraction;
   diagnostics: ExtractionDiagnostic[];
+  cacheMode?: "legacy" | "live-cached" | "no-cache";
+  cacheReason?: string;
 }
 
 /**
@@ -6832,12 +7209,464 @@ function _shouldCacheExtraction(result: ExtractionResult): boolean {
   return !result.error && (result.nodes?.length ?? 0) > 0;
 }
 
-export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWithDiagnosticsResult> {
+/** L5 live cache mode descriptor (R4: explicit no-cache vs injected). */
+export function liveCacheModeOf(live: LiveExtractionPorts | undefined): { cacheMode: "legacy" | "live-cached" | "no-cache"; reason: string } {
+  if (live === undefined) return { cacheMode: "legacy", reason: "non-live entry: legacy filesystem cache" };
+  const store = (live as LiveExtractionPorts).cacheStore ?? null;
+  const scope = (live as LiveExtractionPorts).scope ?? null;
+  if (live.read?.context.kind !== "tree") return { cacheMode: "no-cache",
+    reason: live.read?.context.kind === "snapshot" ? "private persistence disabled pending sealed latest-only storage"
+      : "context-bound tree read capability required for persistence" };
+  // M1: reuse needs both a store and a scope; otherwise explicit no-cache.
+  if (store !== null && scope !== null) return { cacheMode: "live-cached", reason: "live entry with injected host store and scope" };
+  return { cacheMode: "no-cache", reason: "live entry without a usable store port or scope: explicit no-cache" };
+}
+
+function checkLiveScope(scope: LiveExtractionPorts["scope"]): LiveScopeBinding | null {
+  if (scope === undefined || scope === null) return null;
+  if (typeof scope !== "object" || Array.isArray(scope)) {
+    throw new Error("live.scope is malformed: scope carries tenant + clone, or is omitted for explicit no-cache");
+  }
+  for (const field of ["tenant", "clone"] as const) {
+    const value = (scope as unknown as Record<string, unknown>)[field];
+    if (typeof value !== "string" || value.length === 0 || value.includes("\0")) {
+      throw new Error(`live.scope.${field} must be a non-empty string without NUL`);
+    }
+  }
+  return { clone: (scope as LiveScopeDto).clone, tenant: (scope as LiveScopeDto).tenant };
+}
+
+function checkLivePorts(live: LiveExtractionPorts): {
+  store: LiveCacheStorePort | null;
+  grammar: LiveGrammarWasmPort | null;
+  scope: LiveScopeBinding | null;
+  dependencyDigest: string | null;
+  contentPolicyVersion: string | null;
+  privacyBoundary: string | null;
+} {
+  if (live === null || typeof live !== "object" || Array.isArray(live)) {
+    throw new Error("live ports must be an object (explicit no-cache when ports are omitted inside live)");
+  }
+  let store: LiveCacheStorePort | null = null;
+  if (live.cacheStore !== undefined && live.cacheStore !== null) {
+    assertValidLiveStore(live.cacheStore);
+    store = live.cacheStore;
+  }
+  let grammar: LiveGrammarWasmPort | null = null;
+  if (live.grammarWasm !== undefined && live.grammarWasm !== null) {
+    const port = live.grammarWasm as LiveGrammarWasmPort;
+    if (port === null || typeof port !== "object" || typeof port.bytesFor !== "function") {
+      throw new Error("live.grammarWasm is malformed: live grammar requires an injected port with bytesFor(language)");
+    }
+    grammar = port;
+  }
+  const scope = checkLiveScope(live.scope);
+  return {
+    contentPolicyVersion: typeof live.contentPolicyVersion === "string" ? live.contentPolicyVersion : null,
+    dependencyDigest: typeof live.dependencyDigest === "string" ? live.dependencyDigest : null,
+    grammar,
+    privacyBoundary: typeof live.privacyBoundary === "string" ? live.privacyBoundary : null,
+    scope,
+    store,
+  };
+}
+
+/**
+ * M1/R6a live configuration manifest (R1 C-component): the ordered
+ * tsconfig chain (raw bytes, extends precedence, proven absence) plus the
+ * alias entries and the alias/relative import-target states (negative
+ * lookups included: creation of a previously absent candidate changes the
+ * digest). Discovery pins every configuration byte it hashes, so the
+ * hashed manifest is exactly the analyzed manifest; the alias loader and
+ * the extractors then read those pinned bytes.
+ */
+export const LIVE_CONFIG_MANIFEST_VERSION = "live-config-manifest/1";
+
+function liveConfigManifestFor(
+  filePath: string,
+  language: string,
+  sourceText: string,
+  pinned: Map<string, Buffer>,
+): { digest: string } {
+  const startDir = dirname(resolve(filePath));
+  // 1. discovery walk (same traversal as loadTsconfigAliases), probes recorded.
+  let current = resolve(startDir);
+  const probes: string[] = [];
+  let found: string | null = null;
+  while (true) {
+    const candidate = join(current, "tsconfig.json");
+    recordTsconfigProbe(candidate);
+    probes.push(candidate);
+    let hit = false;
+    try {
+      hit = existsSync(candidate);
+    } catch {
+      hit = false;
+    }
+    if (hit) {
+      found = candidate;
+      break;
+    }
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  // 2. chain walk with extends (same traversal as the alias loader),
+  // pinning every raw byte for the analysis below.
+  const files: { path: string; sha256: string }[] = [];
+  if (found !== null) {
+    const seen = new Set<string>();
+    const stack: string[] = [resolve(found)];
+    while (stack.length > 0) {
+      const cursor = stack.pop()!;
+      if (seen.has(cursor)) continue;
+      seen.add(cursor);
+      let raw: Buffer;
+      try {
+        raw = readFileSync(cursor) as Buffer;
+      } catch {
+        continue;
+      }
+      recordTsconfigRead(cursor);
+      if (!pinned.has(cursor)) pinned.set(cursor, raw);
+      files.push({ path: cursor, sha256: createHash("sha256").update(raw).digest("hex") });
+      let doc: TsconfigDocument | null = null;
+      const text = raw.toString("utf-8");
+      try {
+        doc = JSON.parse(text) as TsconfigDocument;
+      } catch {
+        try {
+          doc = JSON.parse(stripJsonc(text)) as TsconfigDocument;
+        } catch {
+          doc = null;
+        }
+      }
+      if (doc !== null) {
+        const extendsList = typeof doc.extends === "string"
+          ? [doc.extends]
+          : Array.isArray(doc.extends)
+            ? doc.extends.filter((e): e is string => typeof e === "string")
+            : [];
+        const configDir = dirname(cursor);
+        for (const ext of extendsList) {
+          const extendsPath = resolveTsconfigExtendsPath(ext, configDir);
+          if (extendsPath !== null) stack.push(resolve(extendsPath));
+        }
+      }
+    }
+    files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  }
+  // 3. alias entries (served from the pinned bytes above) + import-target
+  // states for JS/TS-family files. Unknown/unreadable inputs are tagged,
+  // never conflated with proven absence.
+  const aliases = loadTsconfigAliases(startDir);
+  const targets = liveImportTargetStates(sourceText, language, filePath);
+  const material = JSON.stringify({
+    aliases,
+    files,
+    kind: "tsconfig-chain",
+    probes: [...probes].sort(),
+    targets,
+    readContext: liveReads.getStore()?.port.context,
+    consulted: [...(liveReads.getStore()?.manifest.entries() ?? [])],
+    version: LIVE_CONFIG_MANIFEST_VERSION,
+  });
+  return { digest: createHash("sha256").update(material, "utf8").digest("hex") };
+}
+
+/** Import-target states for one source buffer (R6 manifest tail). */
+function liveImportTargetStates(
+  sourceText: string,
+  language: string,
+  importerPath: string,
+): { spec: string; kind: string; sha256: string }[] {
+  if (language !== "typescript" && language !== "tsx" && language !== "javascript") return [];
+  const specs = new Set<string>();
+  const patterns = [
+    /from\s+["']([^"']+)["']/g,
+    /import\s*\(\s*["']([^"']+)["']\s*\)/g,
+    /import\s+["']([^"']+)["']/g,
+    /require\(\s*["']([^"']+)["']\s*\)/g,
+    /export\s+[^;]*?from\s+["']([^"']+)["']/g,
+  ];
+  for (const pattern of patterns) {
+    pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(sourceText)) !== null) {
+      if (match[1] !== undefined && match[1].length > 0) specs.add(match[1]);
+    }
+  }
+  const states: { spec: string; kind: string; sha256: string }[] = [];
+  for (const spec of [...specs].sort()) {
+    const info = resolveJsImportTargetInfo(spec, importerPath);
+    if (info === null || info.resolvedPath === undefined) {
+      states.push({ kind: "external", sha256: "external", spec });
+      continue;
+    }
+    let present = false;
+    try {
+      present = existsSync(info.resolvedPath);
+    } catch {
+      present = false;
+    }
+    if (!present) {
+      states.push({ kind: "absent", sha256: "absent", spec });
+      continue;
+    }
+    try {
+      const bytes = readFileSync(info.resolvedPath) as Buffer;
+      states.push({ kind: `file:${info.resolvedPath}`, sha256: createHash("sha256").update(bytes).digest("hex"), spec });
+    } catch {
+      states.push({ kind: "unreadable", sha256: "unreadable", spec });
+    }
+  }
+  return states;
+}
+
+export async function extractWithDiagnostics(
+  paths: string[],
+  live?: LiveExtractionPorts,
+): Promise<ExtractWithDiagnosticsResult> {
   const normalizedPaths = paths.map((filePath) => resolve(filePath));
   const perFile: ExtractionResult[] = [];
   const diagnostics: ExtractionDiagnostic[] = [];
   const zeroNodeFiles: string[] = [];
   const root = inferCommonRoot(normalizedPaths);
+  // R4a: live mode is ANY provided `live` argument ({} / {cacheStore:null} /
+  // grammar-only included). It NEVER enters the legacy filesystem cache:
+  // omitted/null store selects explicit NoCache, malformed ports fail
+  // before work, and the single live cache layer is the grammar-bound
+  // injected key (R1/R2/R5). Legacy behavior stays reachable only through a
+  // genuinely non-live entry (live === undefined).
+  const isLive = live !== undefined;
+  if (isLive) {
+    const { contentPolicyVersion, dependencyDigest, grammar: suppliedGrammar, privacyBoundary, scope, store } = checkLivePorts(live!);
+    const grammarBytes = new Map<string, Uint8Array | null>();
+    const grammar: LiveGrammarWasmPort | null = suppliedGrammar === null ? null : { bytesFor(language) {
+      if (!grammarBytes.has(language)) {
+        let bytes: Uint8Array | null = null;
+        try { const current = suppliedGrammar.bytesFor(language); bytes = current ? Uint8Array.from(current) : null; } catch {}
+        grammarBytes.set(language, bytes);
+      }
+      const bytes = grammarBytes.get(language); return bytes ? Uint8Array.from(bytes) : null;
+    } };
+    // M1: cache reuse needs BOTH a usable store AND a scope. Without a scope
+    // the pass still extracts fresh results but never loads or stores —
+    // entries can never traverse clones/tenants.
+    const mode = liveCacheModeOf(live);
+    const useCache = mode.cacheMode === "live-cached" && store !== null && scope !== null;
+    if (useCache) store.authorize(scope);
+    const suppliedRead = live!.read;
+    if (suppliedRead == null) return { extraction: { nodes: [], edges: [], input_tokens: 0, output_tokens: 0 },
+      diagnostics: normalizedPaths.map(filePath => ({ filePath, error: "configuration-unavailable: a context-bound live read capability is required" })),
+      cacheMode: mode.cacheMode, cacheReason: mode.reason };
+    const read: LiveReadPort = {
+      context: structuredClone(suppliedRead.context),
+      readFileSync: suppliedRead.readFileSync.bind(suppliedRead), existsSync: suppliedRead.existsSync.bind(suppliedRead),
+      lstatSync: suppliedRead.lstatSync.bind(suppliedRead), realpathSync: suppliedRead.realpathSync.bind(suppliedRead),
+      readdirSync: suppliedRead.readdirSync.bind(suppliedRead),
+    };
+    for (const name of ["readFileSync", "existsSync", "lstatSync", "realpathSync", "readdirSync"] as const) {
+      if (typeof read[name] !== "function") throw new Error(`live.read.${name} must be a host capability`);
+    }
+    if (!read.context || (read.context.kind === "tree" ? !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(read.context.treeOid)
+      : read.context.kind !== "snapshot" || !read.context.snapshotId || !read.context.worktreeId || !read.context.snapshotKind
+        || !/^[a-f0-9]{64}$/.test(read.context.sourceVectorDigest))) throw new Error("live.read requires a pinned context");
+    // R6a: per-operation tsconfig scratch + manifest + pinned bytes +
+    // syntax evidence, all discarded after the operation.
+    const tsconfigScratch = { memo: new Map<string, TsconfigAliasEntry[]>(), reads: [] as string[], probes: [] as string[] };
+    const opScope = { grammar, syntaxErrors: new Map<string, boolean>() };
+    const pinned = new Map<string, Buffer>();
+    const reads = { port: read, bytes: pinned, exists: new Map<string, boolean>(), manifest: new Map<string, unknown>(), errors: [] as string[] };
+    return liveReads.run(reads, () => liveOperationScope.run(opScope, () => liveTsconfigScope.run(tsconfigScratch, () => livePinnedBytes.run(pinned, async () => {
+      const total = normalizedPaths.length;
+      const _PROGRESS_INTERVAL = 100;
+      for (let i = 0; i < normalizedPaths.length; i++) {
+        if (total >= _PROGRESS_INTERVAL && i % _PROGRESS_INTERVAL === 0 && i > 0) {
+          process.stderr.write(`  AST extraction: ${i}/${total} files (${Math.floor(i * 100 / total)}%)\n`);
+        }
+        const filePath = normalizedPaths[i]!;
+        const extractor = _getExtractor(filePath);
+        if (!extractor) continue;
+        // R5a: grammar availability BEFORE any cache accept. A null/failed
+        // load is grammar-unavailable for the requesting unit — never an
+        // empty success, never a warm-hit mask.
+        const liveLang = resolveLiveLanguage(filePath);
+        if (liveLang === null) {
+          const reason = `grammar-unavailable: no pinned live grammar for "${filePath}" (regex/heuristic output never counts as AST coverage)`;
+          diagnostics.push({ filePath, error: reason });
+          perFile.push({ nodes: [], edges: [], error: reason });
+          continue;
+        }
+        const probe = probeLiveGrammar(grammar, liveLang.language);
+        if (probe.digest === null) {
+          const reason = `grammar-unavailable: no verified live grammar bytes for language "${liveLang.language}" (file "${filePath}")`;
+          diagnostics.push({ filePath, error: reason });
+          perFile.push({ nodes: [], edges: [], error: reason });
+          continue;
+        }
+        // M2: ONE read — the pinned buffer below is hashed by the key AND
+        // analyzed by the extractor. Later reads of this path (extractors,
+        // tsconfig discovery) are served from the pin.
+        let liveBytes: Buffer;
+        try {
+          liveBytes = readFileSync(filePath) as Buffer;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          diagnostics.push({ filePath, error: message });
+          perFile.push({ nodes: [], edges: [], error: message });
+          continue;
+        }
+        pinned.set(resolve(filePath), liveBytes);
+        const liveText = liveBytes.toString("utf-8");
+        // M1: configuration manifest BEFORE lookup — a warm cache always
+        // re-discovers the tsconfig chain + import-target states, so a
+        // dep-a → dep-b mutation re-keys instead of serving stale targets.
+        const manifest = liveConfigManifestFor(filePath, liveLang.language, liveText, pinned);
+        // Validate unsigned payloads against a fresh deterministic derivation. All additional
+        // reads enter the same operation manifest before the final lookup identity is formed.
+        let result: ExtractionResult;
+        try { result = await extractor(filePath, root); }
+        catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          diagnostics.push({ filePath, error: message }); perFile.push({ nodes: [], edges: [], error: message }); continue;
+        }
+        const completeManifestDigest = createHash("sha256").update(JSON.stringify({ config: manifest.digest,
+          context: read.context, consulted: [...reads.manifest.entries()], grammars: [...grammarBytes].map(([name, bytes]) =>
+            ({ name, digest: bytes ? createHash("sha256").update(bytes).digest("hex") : "unavailable", abi: LIVE_GRAMMAR_ABI })) })).digest("hex");
+        // R4 explicit no-cache marker (liveNoCache): without a usable store
+        // port AND a scope, the live load/store below are no-ops that never
+        // touch the filesystem or the stat index. With both, the load uses
+        // the full-identity liveKey + per-component liveBind.
+        let liveCacheOpts: { liveBind: Record<string, unknown>; liveKey: string; store: LiveCacheStorePort } | { liveNoCache: true };
+        if (useCache) {
+          try {
+            const identity = {
+              configDigest: completeManifestDigest,
+              contentBytes: liveBytes,
+              contentPolicyVersion,
+              dependencyDigest,
+              dialect: liveLang.dialect,
+              dialectVersion: LIVE_DIALECT_VERSION,
+              extractorVersion: LIVE_EXTRACTOR_VERSION,
+              filePath,
+              grammarAbi: LIVE_GRAMMAR_ABI,
+              grammarDigest: probe.digest,
+              language: liveLang.language,
+              privacyBoundary,
+              root,
+              scope: scope!,
+            };
+            liveCacheOpts = { liveBind: liveExtractionBind(identity), liveKey: liveExtractionKey(identity), store: store! };
+          } catch {
+            const reason = `derivation-failed: live key derivation failed for "${filePath}"`;
+            diagnostics.push({ filePath, error: reason });
+            perFile.push({ nodes: [], edges: [], error: reason });
+            continue;
+          }
+        } else {
+          liveCacheOpts = { liveNoCache: true };
+        }
+        {
+          // M1/R5: the load reuses an entry only when key AND every bound
+          // component (scope, bytes, path, grammar, config, deps) are equal.
+          // Anything else is a miss — never fabricated facts.
+          let cached: Record<string, unknown> | null = null;
+          try {
+            cached = loadCached(filePath, root, liveCacheOpts);
+          } catch {
+            cached = null;
+          }
+          if (cached !== null && JSON.stringify(cached) === JSON.stringify(result) && reads.errors.length === 0
+            && opScope.syntaxErrors.get(resolve(filePath)) !== true) {
+            perFile.push(cached as unknown as ExtractionResult);
+            continue;
+          }
+        }
+        // A grammar failure inside the extractor (e.g. corrupt WASM that
+        // passed bytesFor but fails Language.load) stays
+        // grammar-unavailable/invalid — never cached as success (R5a/R7).
+        if (typeof result.error === "string" && /grammar not found/i.test(result.error)) {
+          const reason = `grammar-unavailable: ${result.error} (file "${filePath}", language "${liveLang.language}")`;
+          diagnostics.push({ filePath, error: reason });
+          perFile.push({ nodes: [], edges: [], error: reason });
+          continue;
+        }
+        // M5b/R7b: recovery syntax (tree-sitter hasError) is an explicit
+        // gap with a diagnostic — never a cached success, never silent.
+        if (opScope.syntaxErrors.get(resolve(filePath)) === true) {
+          const reason = `syntax-incomplete: parser recovery for file "${filePath}" (tree-sitter hasError): extraction is partial, never complete`;
+          diagnostics.push({ filePath, error: reason });
+          perFile.push({ nodes: [], edges: [], error: reason });
+          continue;
+        }
+        if (!result.error && reads.errors.length === 0) {
+          if (_shouldCacheExtraction(result)) {
+            try {
+              saveCached(filePath, result as unknown as Record<string, unknown>, root, liveCacheOpts);
+            } catch {
+              diagnostics.push({ filePath, error: "derivation-failed: live cache integrity/storage failure; fresh extraction retained" });
+            }
+          } else {
+            zeroNodeFiles.push(filePath);
+          }
+        } else {
+          diagnostics.push({ filePath, error: result.error ?? `configuration-unavailable: ${reads.errors.join("; ")}` });
+        }
+        perFile.push(result);
+      }
+      if (total >= _PROGRESS_INTERVAL) {
+        process.stderr.write(`  AST extraction: ${total}/${total} files (100%)\n`);
+      }
+      if (zeroNodeFiles.length > 0) {
+        process.stderr.write(
+          `warning: ${zeroNodeFiles.length} source file(s) extracted with zero nodes (not cached, rerun self-heals):\n` +
+          zeroNodeFiles.map((f) => `  - ${f}\n`).join(""),
+        );
+      }
+      let allNodes: GraphNode[] = [];
+      let allEdges: GraphEdge[] = [];
+      for (const result of perFile) {
+        allNodes.push(...(result.nodes ?? []));
+        allEdges.push(...(result.edges ?? []));
+      }
+      remapFileNodeIds(allNodes, allEdges, normalizedPaths, root);
+      const swiftMerged = _mergeSwiftExtensions(perFile, allNodes, allEdges);
+      allNodes = swiftMerged.nodes;
+      allEdges = swiftMerged.edges;
+      const pyPaths = normalizedPaths.filter((p) => extname(p) === ".py");
+      if (pyPaths.length > 0) {
+        const pyResults = perFile.filter((_r, i) => extname(normalizedPaths[i]!) === ".py");
+        const pyProbe = probeLiveGrammar(grammar, "python");
+        if (pyProbe.digest === null) {
+          const reason = `grammar-unavailable: no verified live grammar bytes for language "python" (cross-file import resolution skipped)`;
+          diagnostics.push({ filePath: pyPaths[0]!, error: reason });
+        } else {
+          try {
+            const crossFileEdges = await _resolveCrossFileImports(pyResults, pyPaths, (language) => {
+              diagnostics.push({ filePath: pyPaths[0]!, error: `grammar-unavailable: no verified live grammar bytes for language "${language}"` });
+            });
+            allEdges.push(...crossFileEdges);
+          } catch {
+            // Cross-file import resolution failed, skipping
+          }
+        }
+      }
+      return {
+        cacheMode: mode.cacheMode, cacheReason: mode.reason,
+        extraction: { nodes: allNodes, edges: allEdges, input_tokens: 0, output_tokens: 0 },
+        diagnostics: [...diagnostics, ...reads.errors.map(error => ({ filePath: normalizedPaths[0] ?? root,
+          error: `configuration-unavailable: unknown consulted input ${error}` }))],
+      };
+    }))));
+  }
+  // L5: injected host cache storage travels as a cache option; absent keeps
+  // the legacy filesystem cache for every existing caller. The grammar port
+  // travels in the AsyncLocalStorage scope (see loadLanguage).
+  const cacheOptions = {};
+  const runExtractor = (extractor: ExtractorFn, filePath: string, fileRoot: string): Promise<ExtractionResult> => {
+    return extractor(filePath, fileRoot);
+  };
 
   const total = normalizedPaths.length;
   const _PROGRESS_INTERVAL = 100;
@@ -6854,7 +7683,7 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
     const extractor = _getExtractor(filePath);
     if (!extractor) continue;
 
-    const cached = loadCached(filePath, root);
+    const cached = loadCached(filePath, root, cacheOptions);
     if (cached !== null) {
       perFile.push(cached as unknown as ExtractionResult);
       continue;
@@ -6862,7 +7691,7 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
 
     let result: ExtractionResult;
     try {
-      result = await extractor(filePath, root);
+      result = await runExtractor(extractor, filePath, root);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       diagnostics.push({ filePath, error: message });
@@ -6877,7 +7706,7 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
       // through the file; skipping the write lets a rerun self-heal. Port of
       // upstream safishamsi 1288a55 (#1666).
       if (_shouldCacheExtraction(result)) {
-        saveCached(filePath, result as unknown as Record<string, unknown>, root);
+        saveCached(filePath, result as unknown as Record<string, unknown>, root, cacheOptions);
       } else {
         zeroNodeFiles.push(filePath);
       }
@@ -6940,8 +7769,8 @@ export async function extractWithDiagnostics(paths: string[]): Promise<ExtractWi
   };
 }
 
-export async function extract(paths: string[]): Promise<Extraction> {
-  const { extraction } = await extractWithDiagnostics(paths);
+export async function extract(paths: string[], live?: LiveExtractionPorts): Promise<Extraction> {
+  const { extraction } = await extractWithDiagnostics(paths, live);
   return extraction;
 }
 
