@@ -36,44 +36,24 @@ const sleep = (ms: number): void => {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 };
 
-function liveBuildIsFresh(): boolean {
-  const marker = join(liveRoot, "dist", "index.js");
-  if (!existsSync(marker)) return false;
-  const inputs = [
-    "contracts.ts",
-    "registration.ts",
-    "integration.ts",
-    "index.ts",
-    "tsconfig.json",
-    "package.json",
-    "grammar-manifest.json",
-  ].map((name) => join(liveRoot, name));
-  if (inputs.some((input) => !existsSync(input))) return false;
-  const newestInput = Math.max(...inputs.map((input) => statSync(input).mtimeMs));
-  return statSync(marker).mtimeMs >= newestInput;
-}
-
-function runProtectedBuild(env: NodeJS.ProcessEnv): void {
-  if (!existsSync(buildScript)) {
-    throw new Error("L1b is not implemented: scripts/build-live.mjs is missing (build the engram-live package).");
-  }
+function withLiveBuildLock<T>(fn: () => T): T {
   const lockPath = join(tmpdir(), "engram-live-build.lock");
   for (let attempt = 0; ; attempt++) {
     let handle: number | undefined;
     try {
       handle = openSync(lockPath, "wx");
     } catch {
-      if (!existsSync(lockPath)) continue;
-      if (statSync(lockPath).mtimeMs < Date.now() - 180_000) unlinkSync(lockPath);
+      try {
+        if (statSync(lockPath).mtimeMs < Date.now() - 180_000) unlinkSync(lockPath);
+      } catch {
+        continue;
+      }
       if (attempt > 900) throw new Error("engram-live build lock is stuck (L1b bootstrap).");
       sleep(100);
       continue;
     }
     try {
-      // Build it even when a bootstrap left it fresh: this lane proves the
-      // build phase itself, inside the protected environment.
-      execFileSync(process.execPath, [buildScript], { cwd: root, env, stdio: "inherit" });
-      return;
+      return fn();
     } finally {
       try {
         closeSync(handle);
@@ -87,6 +67,15 @@ function runProtectedBuild(env: NodeJS.ProcessEnv): void {
       }
     }
   }
+}
+
+function runProtectedBuild(env: NodeJS.ProcessEnv): void {
+  if (!existsSync(buildScript)) {
+    throw new Error("L1b is not implemented: scripts/build-live.mjs is missing (build the engram-live package).");
+  }
+  // Build it even when a bootstrap left it fresh: this lane proves the
+  // build phase itself, inside the protected environment.
+  execFileSync(process.execPath, [buildScript], { cwd: root, env, stdio: "inherit" });
 }
 
 let packed: PackedInstall;
@@ -411,8 +400,16 @@ function packAndInstall(
   tmpRoot: string,
   tripwireBin: string,
 ): PackedInstall {
-  const { tarball, packedPaths } = packTarball(tmpRoot, env);
-  recordPhaseMarker(phaseTrace, "pack", pythonMarker);
+  const { tarball, packedPaths } = withLiveBuildLock(() => {
+    // Phase 1: build the deliverable inside the protected environment.
+    runProtectedBuild(env);
+    recordPhaseMarker(phaseTrace, "build", pythonMarker);
+    // Phase 2: pack inside the same build lock and protected environment
+    // so no concurrent reader or rebuild races on engram-live/dist.
+    const packedResult = packTarball(tmpRoot, env);
+    recordPhaseMarker(phaseTrace, "pack", pythonMarker);
+    return packedResult;
+  });
   const installDir = join(tmpRoot, "install");
   mkdirSync(installDir);
   writeFileSync(join(installDir, "package.json"), `${JSON.stringify({ name: "live-install-probe", version: "0.0.0", private: true }, null, 2)}\n`);
@@ -497,7 +494,12 @@ function tripwireEnv(binDir: string): NodeJS.ProcessEnv {
   if (!existsSync(binDir)) {
     throw new Error(`protected environment is broken: tripwire directory ${binDir} does not exist`);
   }
-  return { ...process.env, PATH: `${binDir}${process.env.PATH ? `:${process.env.PATH}` : ""}` };
+  return {
+    ...process.env,
+    PATH: `${binDir}${process.env.PATH ? `:${process.env.PATH}` : ""}`,
+    npm_config_cache: join(dirname(binDir), "npm-cache"),
+    npm_config_update_notifier: "false",
+  };
 }
 
 describe("live package", () => {
@@ -510,13 +512,10 @@ describe("live package", () => {
     writePythonTripwires(binDir, pythonMarker);
     const env = tripwireEnv(binDir);
     const phaseTrace: PhaseMarker[] = [];
-    // Phase 1: build the deliverable inside the protected environment.
-    runProtectedBuild(env);
-    recordPhaseMarker(phaseTrace, "build", pythonMarker);
-    // Phases 2-3: pack exactly as delivered, install the real tarball
-    // offline — both protected, markers recorded after each phase, inside
-    // the SAME protected environment (one tmpRoot, one tripwire directory,
-    // one marker for every phase).
+    // Phases 1-3: build, pack exactly as delivered, and install the real
+    // tarball offline — all protected, markers recorded after each phase,
+    // inside the SAME protected environment (one tmpRoot, one tripwire
+    // directory, one marker for every phase).
     packed = packAndInstall(env, pythonMarker, phaseTrace, tmpRoot, binDir);
   }, 120000);
 
