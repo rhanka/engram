@@ -9,10 +9,11 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import Graph from "graphology";
 import type { GraphStore, StoreTestDeps } from "../src/storage/types.js";
 import type { PostgresGraphStore } from "../src/storage/postgres.js";
+import { postgresLaneDecision, startEphemeralPostgres } from "./postgres-ephemeral.js";
 
 interface RecordedSql {
   via: "pool" | "client";
@@ -386,11 +387,43 @@ describe("Postgres queryWindow SQL", () => {
   });
 });
 
-describe.skipIf(!process.env.GRAPHIFY_TEST_POSTGRES_URL)(
+/**
+ * Live Postgres guard (finalization sub-scope 4): runs against
+ * GRAPHIFY_TEST_POSTGRES_URL when provided, otherwise against the ephemeral
+ * Postgres 16 base started by this same lane. It therefore executes in the
+ * `memory-postgres` CI job (required lane over the job's ephemeral base) and
+ * skips on machines without Docker instead of passing silently.
+ */
+const EXPLICIT_TIME_URL = process.env.GRAPHIFY_TEST_POSTGRES_URL;
+const timeLane = EXPLICIT_TIME_URL !== undefined && EXPLICIT_TIME_URL.length > 0
+  ? { lane: "run" } as const
+  : postgresLaneDecision(["16"]);
+
+if (timeLane.lane === "fail") {
+  const cause = timeLane.cause;
+  describe("Postgres queryWindow: live malformed-row guard", () => {
+    it("postgres lane prerequisites hold in required mode", () => {
+      throw new Error(cause);
+    });
+  });
+} else {
+describe.skipIf(timeLane.lane !== "run")(
   "Postgres queryWindow: live malformed-row guard",
   () => {
-    const connectionString = process.env.GRAPHIFY_TEST_POSTGRES_URL as string;
+    let connectionString = EXPLICIT_TIME_URL as string;
+    let stopEphemeral: (() => void) | undefined;
     const citySlug = `graphify_time_test_${Date.now()}`;
+
+    beforeAll(async () => {
+      if (EXPLICIT_TIME_URL !== undefined && EXPLICIT_TIME_URL.length > 0) return;
+      const postgres = await startEphemeralPostgres("16");
+      stopEphemeral = postgres.stop;
+      connectionString = postgres.connection;
+    }, 120_000);
+
+    afterAll(() => {
+      stopEphemeral?.();
+    });
 
     it("excludes out-of-double-range JSONB numbers without aborting the query", async () => {
       const { createPostgresGraphStore } = await import("../src/storage/postgres.js");
@@ -425,3 +458,4 @@ describe.skipIf(!process.env.GRAPHIFY_TEST_POSTGRES_URL)(
     });
   },
 );
+}
