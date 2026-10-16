@@ -303,6 +303,38 @@ export interface ActivityEvidenceSource {
   cancel(cancellation_ref: OpaqueRef): Promise<Result<{ cancelled: boolean }>>;
 }
 
+// D-8 A (lot X1): host-driven pull of one activity page into ordinary pending captures.
+export interface ActivityIngestionRequestV1 {
+  source_id: OpaqueRef;                    // names one injected activity_sources entry, else CAPABILITY_UNAVAILABLE
+  after?: Cursor;                          // forwarded to ActivityEvidenceRequestV1.after
+  limit: number;                           // 1..500, forwarded
+  valid_window?: ValidIntervalV1;          // forwarded
+  scope_ref: OpaqueRef;                    // host-supplied: ActivityEvidenceV1 carries no scope
+  purpose_ref: OpaqueRef;                  // host-supplied
+  retention: RetentionV1;                  // host-supplied
+  reconciliation: ReconciliationConsentV1; // explicit consent; family_refs [] is the opt-out
+  authorization: AuthorizationContextV1;   // used for each item's capture authorization
+  deadline_at: Instant;
+  cancellation_ref: OpaqueRef;             // forwarded to the source read and to each capture
+}
+
+export interface ActivityIngestionItemV1 {
+  evidence_id: OpaqueRef;
+  sequence: Cursor;
+  status: "committed_pending" | "duplicate_exact";
+  candidate_id: string;
+  cursor: Cursor;
+}
+
+export interface ActivityIngestionReceiptV1 {
+  source_id: OpaqueRef;
+  source_version: string;
+  page_digest: Digest;                     // as received; its construction is source-owned
+  next_after?: Cursor;
+  items: ReadonlyArray<ActivityIngestionItemV1>;
+  receipt_digest: Digest;                  // receipt kind "activity-ingestion"
+}
+
 export interface CaptureRequestV2 {
   schema_version: 2;
   idempotency_key: IdempotencyKey;
@@ -459,6 +491,11 @@ export interface PendingControlV1 {
   created_cursor: Cursor;
   policy_id: OpaqueRef;
   policy_version: string;
+  // X1 durable idempotence: clock-independent capture content binding. Compared
+  // atomically with the key reservation inside commitPending, before any write.
+  capture_content_digest?: Digest;
+  // First-commit canonical receipt, replayed verbatim on an exact duplicate.
+  capture_receipt_digest?: Digest;
 }
 
 /** Encrypted pending material is returned only through the canonical-store seam. */
@@ -478,6 +515,21 @@ export interface CanonicalTransactionReceiptV1 {
   outbox_digest?: Digest;
   committed_at: Instant;
   receipt_digest: Digest;
+}
+
+// D-8 A (lot X1): durable capture-idempotence record. Keyed by candidate_id
+// (a pure function of source, sequence and proof id), it survives the capture
+// lifecycle (pending, admitted, rejected, forgotten) independently of pending
+// controls and sealed envelopes, so an exact replay replays the RECORDED
+// acknowledgement (cursor, record digest, transaction receipt digest) with no
+// write at any lifecycle stage. record_digest and capture_receipt_digest are
+// absent only on entries written before the recording was completed.
+export interface CaptureIdempotencyRecordV1 {
+  candidate_id: string;
+  capture_content_digest: Digest;
+  created_cursor: Cursor;
+  record_digest?: Digest;
+  capture_receipt_digest?: Digest;
 }
 
 export interface AcceptedLexicalDocumentV1 {
@@ -651,6 +703,15 @@ export type AdmissionStoreInputV1 =
       event: LifecycleEventV2;
     };
 
+/** Hash-only canonical capture acknowledgements, retained across lifecycle and logical restore. */
+export interface PersistedCaptureIdempotencyV1 {
+  candidate_id: string;
+  content: Digest;
+  cursor: Cursor;
+  record_digest?: Digest;
+  receipt_digest?: Digest;
+}
+
 export interface CanonicalMemoryStorePort {
   readonly version: 1;
   readonly capabilities: CanonicalStoreCapabilitiesV1;
@@ -663,6 +724,30 @@ export interface CanonicalMemoryStorePort {
     candidate_id: string;
     authorization_receipt_digest: Digest;
   }): Promise<Result<PendingCandidateSnapshotV1>>;
+  /**
+   * D-8 A (lot X1): durable idempotence read, independent of the pending
+   * lifecycle — it answers after admission, rejection or envelope destruction,
+   * where readPending reports NOT_FOUND. Returns only digests and the recorded
+   * cursor for an already-known candidate identity, never sealed material, so
+   * no authorization carrier is required. Optional for compatibility with V1
+   * stores: ordinary capture keeps its legacy path; ingestActivity requires it.
+   */
+  readCaptureIdempotency?(input: {
+    candidate_id: string;
+  }): Promise<Result<CaptureIdempotencyRecordV1>>;
+  /** Canonical registry prefix for logical backup; never includes pending material. */
+  readCaptureIdempotencyEntries?(input: { through_cursor: Cursor }): Promise<Result<ReadonlyArray<PersistedCaptureIdempotencyV1>>>;
+  /**
+   * D-8 A (lot X1): completes the durable idempotence entry with the
+   * engine-computed record digest of the recorded acknowledgement. Called
+   * once per first commit, after the acknowledgement is built; a replayed
+   * identical digest is accepted idempotently, a different one refuses
+   * DIGEST_CONFLICT, an unknown identity refuses NOT_FOUND. Never deletes.
+   */
+  recordCaptureIdempotency?(input: {
+    candidate_id: string;
+    record_digest: Digest;
+  }): Promise<Result<CaptureIdempotencyRecordV1>>;
   applyAdmission(input: AdmissionStoreInputV1): Promise<Result<CanonicalTransactionReceiptV1>>;
   applyLifecycle(input: {
     command: LifecycleCommandV1;
@@ -690,8 +775,8 @@ export interface CanonicalMemoryStorePort {
   readJournal(input: { after: Cursor; limit: number }): Promise<Result<ReadonlyArray<LifecycleEventV2>>>;
   /**
    * D-11 B (lot X4): durable logical-restore import. The payload carries only
-   * the dense journal (public `LifecycleEventV2` pages) and the immutable
-   * record blobs it references — never pending sealed envelopes or controls.
+   * the dense journal (public `LifecycleEventV2` pages), referenced immutable
+   * record blobs and the hash-only capture registry — never pending envelopes or controls.
    * The import rebuilds every store-owned derived surface deterministically
    * from that canonical pair (accepted-only lexical rows + FTS index, plus one
    * coalesced projection-rebuild outbox batch covering the restored
@@ -701,10 +786,9 @@ export interface CanonicalMemoryStorePort {
    * `BACKUP_INVALID`. When the caller supplies the expected restored cursor
    * and canonical digest, the store compares them BEFORE commit and rolls back
    * with `RESTORE_REFUSED` on mismatch, so a refusal never leaves a written
-   * target behind. Implemented by the SQLite and Postgres durable stores; the
-   * in-memory store omits it (its tests rebuild through the persistence
-   * constructor instead), so the member is optional and no existing store
-   * breaks.
+   * target behind. Canonical restore equality also compares the capture registry
+   * root before commit. Implemented by memory, SQLite and Postgres; optional
+   * for compatibility with existing third-party stores.
    */
   importLogicalBackup?(input: LogicalBackupImportInputV1): Promise<Result<LogicalBackupImportReceiptV1>>;
   checkpoint(input: { through_cursor: Cursor }): Promise<Result<RecoveryCheckpointManifestV1>>;
@@ -820,6 +904,8 @@ export interface LogicalBackupManifestV1 {
   records_root_digest: Digest;
   journal_root_digest: Digest;
   state_digest: Digest;
+  /** Payload v3: canonical restore equality includes this registry root AND state_digest. Absent in v1/v2. */
+  capture_idempotency_digest?: Digest;
   terminal_ledger_digest: Digest;
   object_ref: OpaqueRef;
   ciphertext_digest: Digest;
@@ -831,6 +917,9 @@ export interface LogicalBackupManifestV1 {
 export interface LogicalBackupImportInputV1 {
   journal: ReadonlyArray<LifecycleEventV2>;
   records: ReadonlyArray<MemoryRecordV2>;
+  /** v1/v2 omit this registry; known journal identities then refuse capture before sealing. */
+  capture_idempotency?: ReadonlyArray<PersistedCaptureIdempotencyV1>;
+  expected_capture_idempotency_digest?: Digest;
   /**
    * Expected canonical pair, compared BEFORE commit. On mismatch the import
    * rolls back with `RESTORE_REFUSED` instead of leaving a written target
@@ -843,6 +932,7 @@ export interface LogicalBackupImportInputV1 {
 export interface LogicalBackupImportReceiptV1 {
   restored_cursor: Cursor;
   canonical_state_digest: Digest;
+  capture_idempotency_digest?: Digest;
   receipt_digest: Digest;
 }
 
@@ -870,7 +960,7 @@ export interface MemoryBackupPort {
      * callers stay green.
      */
     target_store?: CanonicalMemoryStorePort;
-  }): Promise<Result<{ restored_cursor: Cursor; canonical_state_digest: Digest; receipt_digest: Digest }>>;
+  }): Promise<Result<LogicalBackupImportReceiptV1>>;
 }
 
 export interface OperationalCapabilityReceiptV1 {
@@ -1124,6 +1214,8 @@ export interface MemoryPortV2 {
   capabilities(): Promise<Result<CapabilityDescriptorV1>>;
   validate(payload: CandidatePayloadV2): Result<{ payload_digest: Digest }>;
   capture(request: CaptureRequestV2): Promise<Result<CaptureAcknowledgementV1>>;
+  // D-8 A (lot X1): host-invoked pull of one activity page; each item becomes an ordinary pending capture.
+  ingestActivity(request: ActivityIngestionRequestV1): Promise<Result<ActivityIngestionReceiptV1>>;
   cancelCapture(cancellation_ref: OpaqueRef): Promise<Result<{ cancelled: boolean }>>;
   requestAdmission(request: AdmissionRequestV1): Promise<Result<AdmissionOutcomeV1>>;
   transition(command: LifecycleCommandV1): Promise<Result<LifecycleReceiptV1>>;

@@ -14,6 +14,7 @@ import {
 } from "../engram-memory/index.js";
 import { captureRequest, createL3Memory, lifecycleCommand, DEADLINE, NOW } from "./memory-l3-fixture.js";
 import { postgresLaneDecision, startEphemeralPostgres } from "./postgres-ephemeral.js";
+import { ACTIVITY_NOW, ACTIVITY_STAGES, assertActivityReplayAfterLogicalRestore, assertActivityReplayAtStage } from "./memory-activity-fixture.js";
 
 const X4_DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as Digest;
 const X4_ZERO = "sha256:0000000000000000000000000000000000000000000000000000000000000000" as Digest;
@@ -210,6 +211,45 @@ describe("native Postgres memory store", () => {
     return;
   }
   const maybe = decision.lane === "run" ? it : it.skip;
+
+  maybe("X1 logical restore / Postgres: exact replay and changed proof write nothing", async () => {
+    for (const version of MATRIX) {
+      const sourcePg = await startEphemeralPostgres(version);
+      let targetPg: Awaited<ReturnType<typeof startEphemeralPostgres>> | undefined;
+      const stores: CanonicalMemoryStorePort[] = [];
+      try {
+        targetPg = await startEphemeralPostgres(version);
+        let mutations = 0;
+        for (const pg of [sourcePg, targetPg]) {
+          const opened = await openPostgresCanonicalMemoryStoreV1({ connection: pg.connection,
+            clock: { now: () => ACTIVITY_NOW }, store_id: "x1-restore", on_mutation_statement: () => { mutations++; } });
+          if (!opened.ok) throw new Error(JSON.stringify(opened));
+          stores.push(opened.value);
+        }
+        await assertActivityReplayAfterLogicalRestore(stores[0]!, stores[1]!, () => mutations);
+      } finally {
+        for (const store of stores) await store.close();
+        targetPg?.stop(); sourcePg.stop();
+      }
+    }
+  }, 180_000);
+
+  maybe("X1 lifecycle backend matrix / Postgres: durable reopen, exact replay and isolated conflicts write nothing", async () => {
+    for (const version of MATRIX) {
+      const postgres = await startEphemeralPostgres(version);
+      try {
+        let mutations = 0;
+        for (const stage of ACTIVITY_STAGES) {
+          await assertActivityReplayAtStage(async () => {
+            const opened = await openPostgresCanonicalMemoryStoreV1({ connection: postgres.connection, clock: { now: () => ACTIVITY_NOW },
+              store_id: "x1-matrix", on_mutation_statement: () => { mutations++; } });
+            if (!opened.ok) throw new Error(JSON.stringify(opened));
+            return opened.value;
+          }, stage, () => mutations);
+        }
+      } finally { postgres.stop(); }
+    }
+  }, 180_000);
 
   maybe("promotion is atomic and generation mismatch fails before mutation", async () => {
     for (const version of MATRIX) {
