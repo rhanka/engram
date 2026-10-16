@@ -528,4 +528,121 @@ describe("SQLite and Postgres canonical parity", () => {
       }
     }
   }, 180_000);
+
+  it("enforces the temporal boundary intervals (start, end, just-before, just-after, open-end, point) identically on in-memory and SQLite canonical stores", async () => {
+    const cursor = 1_750_000_000_000;
+    const cases: ReadonlyArray<{ key: string; valid_time: { t: number; t_end?: number }; visible: boolean }> = [
+      { key: "tb-open", valid_time: { t: cursor - 2 }, visible: true },
+      { key: "tb-touches-cursor", valid_time: { t: cursor - 1, t_end: cursor }, visible: true },
+      { key: "tb-point", valid_time: { t: cursor, t_end: cursor }, visible: true },
+      { key: "tb-start", valid_time: { t: cursor, t_end: cursor + 2 }, visible: true },
+      { key: "tb-ended-before", valid_time: { t: cursor - 2, t_end: cursor - 1 }, visible: false },
+      { key: "tb-starts-after", valid_time: { t: cursor + 1, t_end: cursor + 2 }, visible: false },
+    ];
+
+    async function runTemporalBoundaryOnStore(store: CanonicalMemoryStorePort): Promise<string[]> {
+      const { memory } = createL3Memory("accept", store);
+      const recordIdToKey = new Map<string, string>();
+      for (const [idx, item] of cases.entries()) {
+        const req = captureRequest(`tb-${item.key}-${"0".repeat(16)}`, String(idx + 1), `temporal boundary ${item.key}`);
+        req.payload.valid_time = item.valid_time;
+        req.payload.primary_event.at = item.valid_time.t;
+        const captured = await memory.capture(req);
+        if (!captured.ok || !captured.value.candidate_id) throw new Error(`capture ${item.key} failed`);
+        const admitted = await memory.requestAdmission({
+          candidate_id: captured.value.candidate_id,
+          authorization: AUTHORIZATION,
+          deadline_at: DEADLINE,
+        });
+        if (!admitted.ok || admitted.value.status !== "accepted") throw new Error(`admit ${item.key} failed`);
+        recordIdToKey.set(admitted.value.record_id, item.key);
+      }
+      const readiness = await store.readiness();
+      if (!readiness.ok) throw new Error("readiness failed");
+      const snap = await store.acceptedSnapshot({
+        valid_as_of: cursor,
+        system_as_of: readiness.value.high_water_cursor,
+        authorization_receipt_digest: DIGEST,
+        max_candidates: 50,
+      });
+      if (!snap.ok) throw new Error("acceptedSnapshot failed");
+      return snap.value.documents.map((doc) => recordIdToKey.get(doc.record_id) ?? doc.record_id).sort();
+    }
+
+    const inMem = createInMemoryCanonicalMemoryStoreV1({ clock: { now: () => NOW }, store_id: "tb-parity", storage_epoch: "1" });
+    const inMemVisible = await runTemporalBoundaryOnStore(inMem);
+
+    const workspace = mkdtempSync(join(tmpdir(), "engram-memory-tb-sqlite-"));
+    sqliteWorkspaces.push(workspace);
+    const sqliteRes = await openFencedSqliteCanonicalMemoryStoreV1({
+      filename: join(workspace, "tb.sqlite"),
+      clock: { now: () => NOW },
+      store_id: "tb-parity",
+      allow_ephemeral_filesystem_store: true,
+    });
+    if (!sqliteRes.ok) throw new Error(sqliteRes.error.message);
+    const sqliteVisible = await runTemporalBoundaryOnStore(sqliteRes.value);
+    await sqliteRes.value.close();
+
+    const expectedVisible = ["tb-open", "tb-point", "tb-start", "tb-touches-cursor"];
+    expect(inMemVisible).toEqual(expectedVisible);
+    expect(sqliteVisible).toEqual(expectedVisible);
+  });
+
+  maybe("enforces the temporal boundary intervals identically on Postgres canonical store", async () => {
+    const cursor = 1_750_000_000_000;
+    const cases: ReadonlyArray<{ key: string; valid_time: { t: number; t_end?: number } }> = [
+      { key: "tb-open", valid_time: { t: cursor - 2 } },
+      { key: "tb-touches-cursor", valid_time: { t: cursor - 1, t_end: cursor } },
+      { key: "tb-point", valid_time: { t: cursor, t_end: cursor } },
+      { key: "tb-start", valid_time: { t: cursor, t_end: cursor + 2 } },
+      { key: "tb-ended-before", valid_time: { t: cursor - 2, t_end: cursor - 1 } },
+      { key: "tb-starts-after", valid_time: { t: cursor + 1, t_end: cursor + 2 } },
+    ];
+    const postgres = await startEphemeralPostgres("16");
+    stops.push(postgres.stop);
+    try {
+      const pgRes = await openPostgresCanonicalMemoryStoreV1({
+        connection: postgres.connection,
+        clock: { now: () => NOW },
+        store_id: "tb-parity",
+      });
+      if (!pgRes.ok) throw new Error(pgRes.error.message);
+      try {
+        const { memory } = createL3Memory("accept", pgRes.value);
+        const recordIdToKey = new Map<string, string>();
+        for (const [idx, item] of cases.entries()) {
+          const req = captureRequest(`tb-${item.key}-${"0".repeat(16)}`, String(idx + 1), `temporal boundary ${item.key}`);
+          req.payload.valid_time = item.valid_time;
+          req.payload.primary_event.at = item.valid_time.t;
+          const captured = await memory.capture(req);
+          if (!captured.ok || !captured.value.candidate_id) throw new Error(`capture ${item.key} failed`);
+          const admitted = await memory.requestAdmission({
+            candidate_id: captured.value.candidate_id,
+            authorization: AUTHORIZATION,
+            deadline_at: DEADLINE,
+          });
+          if (!admitted.ok || admitted.value.status !== "accepted") throw new Error(`admit ${item.key} failed`);
+          recordIdToKey.set(admitted.value.record_id, item.key);
+        }
+        const readiness = await pgRes.value.readiness();
+        if (!readiness.ok) throw new Error("readiness failed");
+        const snap = await pgRes.value.acceptedSnapshot({
+          valid_as_of: cursor,
+          system_as_of: readiness.value.high_water_cursor,
+          authorization_receipt_digest: DIGEST,
+          max_candidates: 50,
+        });
+        if (!snap.ok) throw new Error("acceptedSnapshot failed");
+        const pgVisible = snap.value.documents.map((doc) => recordIdToKey.get(doc.record_id) ?? doc.record_id).sort();
+        expect(pgVisible).toEqual(["tb-open", "tb-point", "tb-start", "tb-touches-cursor"]);
+      } finally {
+        await pgRes.value.close();
+      }
+    } finally {
+      postgres.stop();
+      const idx = stops.indexOf(postgres.stop);
+      if (idx >= 0) stops.splice(idx, 1);
+    }
+  }, 120_000);
 });

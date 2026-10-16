@@ -884,6 +884,22 @@ export interface CanonicalMemoryStorePort {
     sealed: SealedCandidateEnvelopeV1;
     capture_event: LifecycleEventV2;
   }): Promise<Result<CanonicalTransactionReceiptV1>>;
+  readPending(input: {
+    candidate_id: string;
+    authorization_receipt_digest: Digest;
+  }): Promise<Result<PendingCandidateSnapshotV1>>;
+  // (2026-10-16 amendment) D-8 A durable idempotence reads/writes: optional
+  // for compatibility with V1 stores; `ingestActivity` requires them.
+  readCaptureIdempotency?(input: {
+    candidate_id: string;
+  }): Promise<Result<CaptureIdempotencyRecordV1>>;
+  // (2026-10-16 amendment) Canonical registry prefix for logical backup;
+  // never includes pending material.
+  readCaptureIdempotencyEntries?(input: { through_cursor: Cursor }): Promise<Result<ReadonlyArray<PersistedCaptureIdempotencyV1>>>;
+  recordCaptureIdempotency?(input: {
+    candidate_id: string;
+    record_digest: Digest;
+  }): Promise<Result<CaptureIdempotencyRecordV1>>;
   applyAdmission(input: AdmissionStoreInputV1): Promise<Result<CanonicalTransactionReceiptV1>>;
   applyLifecycle(input: {
     command: LifecycleCommandV1;
@@ -902,12 +918,65 @@ export interface CanonicalMemoryStorePort {
     max_candidates: number;
   }): Promise<Result<AcceptedCandidateSnapshotV1>>;
   revalidate(input: RevalidationRequestV1): Promise<Result<RevalidationPacketV1>>;
+  // (2026-10-16 amendment) Pure-read revalidation: same fencing and
+  // eligibility as `revalidate`, without maintenance nor persistence.
+  revalidateReadOnly(input: RevalidationRequestV1): Promise<Result<RevalidationPacketV1>>;
   readJournal(input: { after: Cursor; limit: number }): Promise<Result<ReadonlyArray<LifecycleEventV2>>>;
+  // (2026-10-16 amendment) D-11 B durable logical-restore import, into an
+  // EMPTY store only; optional for compatibility with third-party stores.
+  importLogicalBackup?(input: LogicalBackupImportInputV1): Promise<Result<LogicalBackupImportReceiptV1>>;
   checkpoint(input: { through_cursor: Cursor }): Promise<Result<RecoveryCheckpointManifestV1>>;
   nextProjectionBatch(input: { after: Cursor; limit: number }): Promise<Result<ProjectionBatchV1>>;
   acknowledgeProjection(input: ProjectionInvalidationReceiptV1): Promise<Result<CanonicalTransactionReceiptV1>>;
   readiness(): Promise<Result<OperationalCapabilityReceiptV1>>;
   close(): Promise<Result<{ closed: true }>>;
+}
+
+// (2026-10-16 amendment) DTOs referenced by the port above, exact shapes of
+// the implemented `engram-memory/contracts` (D-8 A lot X1, D-11 B lot X4).
+export interface PendingCandidateSnapshotV1 {
+  control: PendingControlV1;
+  sealed: SealedCandidateEnvelopeV1;
+}
+
+export interface CaptureIdempotencyRecordV1 {
+  candidate_id: string;
+  capture_content_digest: Digest;
+  created_cursor: Cursor;
+  record_digest?: Digest;
+  capture_receipt_digest?: Digest;
+}
+
+export interface PersistedCaptureIdempotencyV1 {
+  candidate_id: string;
+  content: Digest;
+  cursor: Cursor;
+  record_digest?: Digest;
+  receipt_digest?: Digest;
+}
+
+export interface LogicalBackupImportInputV1 {
+  journal: ReadonlyArray<LifecycleEventV2>;
+  records: ReadonlyArray<MemoryRecordV2>;
+  capture_idempotency?: ReadonlyArray<PersistedCaptureIdempotencyV1>;
+  expected_capture_idempotency_digest?: Digest;
+  expected_restored_cursor?: Cursor;
+  expected_canonical_state_digest?: Digest;
+}
+
+export interface LogicalBackupImportReceiptV1 {
+  restored_cursor: Cursor;
+  canonical_state_digest: Digest;
+  capture_idempotency_digest?: Digest;
+  receipt_digest: Digest;
+}
+
+export interface LogicalMemoryBackupDependenciesV1 {
+  store: CanonicalMemoryStorePort;
+  authorization: AuthorizationPort;
+  backup_key: BackupKeyPort;
+  backup_object: BackupObjectPort;
+  clock: ClockPort;
 }
 
 // (new in this amendment) A production CanonicalMemoryStorePort is not constructed directly by
@@ -1076,7 +1145,14 @@ export interface LogicalBackupManifestV1 {
   excluded_counts: { pending: number; rejected: number; withdrawn: number; derived_projections: number };
   records_root_digest: Digest;
   journal_root_digest: Digest;
+  // (2026-10-16 amendment) The implemented manifest also binds the
+  // journal-fold state, the hash-only capture registry root (absent in
+  // v1/v2 payloads), and the sealed object references below.
+  state_digest: Digest;
+  capture_idempotency_digest?: Digest;
   terminal_ledger_digest: Digest;
+  object_ref: OpaqueRef;
+  ciphertext_digest: Digest;
   key_receipt_digest: Digest;
   object_receipt_digest: Digest;
   manifest_digest: Digest;
@@ -1147,7 +1223,20 @@ export interface MemoryEngineDependenciesV2 {
 }
 
 export declare function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): MemoryPortV2;
-export declare function createMemoryBackupPort(dependencies: MemoryEngineDependenciesV2): MemoryBackupPort;
+export declare function createLogicalMemoryBackupV1(dependencies: LogicalMemoryBackupDependenciesV1): MemoryBackupPort;
+
+// (2026-10-16 amendment, motivation) The three declaration blocks above are
+// aligned onto the implemented `engram-memory` package, which is the tested
+// reality: D-8 A (lot X1) added the optional idempotence reads/writes,
+// `revalidateReadOnly`, and the capture-registry DTOs; D-11 B/X1 (lot X4)
+// added `importLogicalBackup`, the `state_digest` / `capture_idempotency_digest`
+// / `object_ref` / `ciphertext_digest` manifest bindings, and the
+// store-scoped `createLogicalMemoryBackupV1` factory (the engine-scoped
+// `createMemoryBackupPort` name was never implemented). The prose of §5.9
+// already described all of these; only the declaration blocks were stale, so
+// the spec is corrected and no code changes. `tests/memory-evol-declarations.test.ts`
+// locks the declaration blocks to the code member-for-member, in both
+// directions, so either side drifting turns CI red.
 ```
 
 Pending body, citations, locators, validation material, evidence, and candidate digest live inside one `CryptoPort`-sealed envelope. Outside it, the store may persist `PendingControlV1` and the canonical hash-only capture-idempotency registry (identity, content digest, original cursor and optional acknowledgement digests); no plaintext, tokens, snippets, source locator, or derived statistic is allowlisted. Pending, rejected, and withdrawn content is excluded from FTS, graph/vector projections, caches, exports, diagnostics, telemetry, crash dumps, and logical backup.
