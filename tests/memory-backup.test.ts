@@ -11,6 +11,7 @@ import {
   type BackupObjectPort,
   type Digest,
 } from "../engram-memory/index.js";
+import { activityHarness, activityEvidence, ACTIVITY_NOW } from "./memory-activity-fixture.js";
 import { captureRequest, createL3Memory, lifecycleCommand, NOW } from "./memory-l3-fixture.js";
 
 const DEADLINE = "2026-08-16T12:40:00.000Z";
@@ -79,6 +80,87 @@ function backupPorts() {
 }
 
 describe("logical backup and restore", () => {
+  it.each([1, 2])("legacy payload v%s restores, then refuses exact and changed activity before any write", async version => {
+    const h = activityHarness();
+    const store = createInMemoryCanonicalMemoryStoreV1({ clock: { now: () => ACTIVITY_NOW } });
+    const source = h.build(store);
+    const first = await source.ingestActivity(h.request);
+    if (!first.ok) throw new Error(JSON.stringify(first));
+    const item = first.value.items[0]!;
+    const ports = backupPorts();
+    const backup = createLogicalMemoryBackupV1({ store, authorization: h.authorization,
+      backup_key: ports.key, backup_object: ports.object, clock: { now: () => ACTIVITY_NOW } });
+    const exported = await backup.exportLogical({ through_cursor: item.cursor!, authorization: h.request.authorization,
+      object_target_ref: "object:legacy", encryption_key_ref: "key:legacy", deadline_at: DEADLINE });
+    if (!exported.ok) throw new Error(JSON.stringify(exported));
+    const payload = JSON.parse(ports.sealedPlaintexts[0]!);
+    delete payload.capture_idempotency;
+    payload.schema_version = version;
+    if (version === 1) delete payload.excluded_counts;
+    const sealed = await ports.key.seal({ key_ref: "key:legacy", plaintext: JSON.stringify(payload),
+      context_digest: receiptDigest("logical-backup-context", { high_water_cursor: item.cursor }) });
+    if (!sealed.ok) throw new Error(JSON.stringify(sealed));
+    const put = await ports.object.put({ target_ref: "object:legacy", object_id: exported.value.object_ref,
+      ciphertext: sealed.value.ciphertext, ciphertext_digest: sealed.value.ciphertext_digest });
+    if (!put.ok) throw new Error(JSON.stringify(put));
+    const { manifest_digest: _old, capture_idempotency_digest: _registry, ...body } = { ...exported.value,
+      ciphertext_digest: sealed.value.ciphertext_digest, key_receipt_digest: sealed.value.key_receipt_digest,
+      object_receipt_digest: put.value.object_receipt_digest };
+    const manifest = { ...body, manifest_digest: receiptDigest("logical-backup-manifest", body) };
+    const target = createInMemoryCanonicalMemoryStoreV1({ clock: { now: () => ACTIVITY_NOW } });
+    expect(await backup.restoreLogical({ manifest, authorization: h.request.authorization, source_ref: "object:legacy",
+      decryption_key_ref: "key:legacy", deadline_at: DEADLINE, target_store: target })).toMatchObject({ ok: true });
+    const memory = h.build(target);
+    const before = target.exportStateForPersistence();
+    const writes = { ...h.writes };
+    for (const changed of [false, true]) {
+      const evidence = activityEvidence();
+      if (changed) evidence.components[0]!.text = "changed in legacy replay";
+      h.setEvidence(evidence);
+      expect(await memory.ingestActivity(h.request)).toMatchObject({ ok: false, error: { code: "DIGEST_CONFLICT" } });
+      expect(h.writes).toEqual(writes);
+      expect(target.exportStateForPersistence()).toEqual(before);
+    }
+    // The direct store seam cannot fall back to the clock-dependent event hash either.
+    expect(await target.commitPending(h.commits[0]!)).toMatchObject({ ok: false, error: { code: "DIGEST_CONFLICT" } });
+    expect(target.exportStateForPersistence()).toEqual(before);
+  });
+
+  it("registry root is part of canonical restore equality and is checked before promotion", async () => {
+    const h = activityHarness();
+    const store = createInMemoryCanonicalMemoryStoreV1({ clock: { now: () => ACTIVITY_NOW } });
+    const captured = await h.build(store).ingestActivity(h.request);
+    if (!captured.ok) throw new Error(JSON.stringify(captured));
+    const ports = backupPorts();
+    const backup = createLogicalMemoryBackupV1({ store, authorization: h.authorization,
+      backup_key: ports.key, backup_object: ports.object, clock: { now: () => ACTIVITY_NOW } });
+    const exported = await backup.exportLogical({ through_cursor: "1", authorization: h.request.authorization,
+      object_target_ref: "object:root", encryption_key_ref: "key:root", deadline_at: DEADLINE });
+    if (!exported.ok) throw new Error(JSON.stringify(exported));
+    const payload = JSON.parse(ports.sealedPlaintexts[0]!);
+    const journal = await store.readJournal({ after: "0", limit: 100 });
+    if (!journal.ok) throw new Error(JSON.stringify(journal));
+    // A target receiving the correct journal/blob pair but missing the registry refuses atomically.
+    const target = createInMemoryCanonicalMemoryStoreV1({ clock: { now: () => ACTIVITY_NOW } });
+    const before = target.exportStateForPersistence();
+    const input = { journal: journal.value, records: payload.records, expected_restored_cursor: "1",
+      expected_canonical_state_digest: exported.value.state_digest,
+      expected_capture_idempotency_digest: exported.value.capture_idempotency_digest };
+    expect(await target.importLogicalBackup!({ ...input, capture_idempotency: [] }))
+      .toMatchObject({ ok: false, error: { code: "RESTORE_REFUSED" } });
+    expect(target.exportStateForPersistence()).toEqual(before);
+    expect(await target.importLogicalBackup!({ ...input, capture_idempotency: payload.capture_idempotency }))
+      .toMatchObject({ ok: true, value: { capture_idempotency_digest: exported.value.capture_idempotency_digest } });
+    // Mutating only the manifest registry root also fails before writing the target.
+    const { manifest_digest: _old, ...body } = { ...exported.value, capture_idempotency_digest: DIGEST };
+    const manifest = { ...body, manifest_digest: receiptDigest("logical-backup-manifest", body) };
+    const empty = createInMemoryCanonicalMemoryStoreV1({ clock: { now: () => ACTIVITY_NOW } });
+    expect(await backup.restoreLogical({ manifest, authorization: h.request.authorization, source_ref: "object:root",
+      decryption_key_ref: "key:root", deadline_at: DEADLINE, target_store: empty }))
+      .toMatchObject({ ok: false, error: { code: "RESTORE_REFUSED" } });
+    expect(empty.exportStateForPersistence()).toEqual(before);
+  });
+
   it("detached logical backup excludes pending rejected FTS and projections yet restore preserves terminal dominance and state digest", async () => {
     const { memory, store } = createL3Memory();
 
@@ -295,7 +377,7 @@ describe("logical backup and restore", () => {
     if (!sealed.ok) throw new Error("v1 seal failed");
     const put = await object.put({ target_ref: "target:x4v-v1", object_id: `memory:logical-backup:${through}`, ciphertext: sealed.value.ciphertext, ciphertext_digest: sealed.value.ciphertext_digest });
     if (!put.ok) throw new Error("v1 put failed");
-    const { manifest_digest: _dropped, ...v1body } = {
+    const { manifest_digest: _dropped, capture_idempotency_digest: _registryDigest, ...v1body } = {
       ...exported.value,
       ciphertext_digest: sealed.value.ciphertext_digest,
       key_receipt_digest: sealed.value.key_receipt_digest,
