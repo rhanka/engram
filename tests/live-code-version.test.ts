@@ -54,6 +54,9 @@ async function extractWithDiagnostics(paths: string[], ports?: Omit<LiveExtracti
 import { liveExtractionBind, liveExtractionKey } from "../src/cache.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const grammarManifest = JSON.parse(
+  readFileSync(join(root, "engram-live", "grammar-manifest.json"), "utf8"),
+) as { languages: Record<string, { sourcePath: string; sha256: string; bytes?: number }> };
 const fixture = JSON.parse(
   readFileSync(join(root, "tests", "fixtures", "live-code-context.json"), "utf8"),
 ) as {
@@ -68,6 +71,19 @@ const fixture = JSON.parse(
 
 function sha256Hex(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+// Source tests use the same pinned inputs and integrity checks as build-live,
+// independently of dist. The live-package suite exercises the copied assets.
+function verifiedSourceGrammar(language: string): Uint8Array {
+  const entry = grammarManifest.languages[language];
+  if (!entry) throw new Error(`No pinned source grammar for ${language}`);
+  const bytes = new Uint8Array(readFileSync(join(root, entry.sourcePath)));
+  expect(createHash("sha256").update(bytes).digest("hex"), `source grammar digest: ${language}`).toBe(entry.sha256);
+  if (typeof entry.bytes === "number") {
+    expect(bytes.byteLength, `source grammar size: ${language}`).toBe(entry.bytes);
+  }
+  return bytes;
 }
 
 // In-memory host cache: the ONLY durable surface the engine may touch.
@@ -102,7 +118,7 @@ function makeGrammar(status: Record<string, "available" | "unavailable" | undefi
     },
     status(language: string) {
       if (status[language] === "available") {
-        const bytes = new Uint8Array(readFileSync(join(root, "engram-live/dist/grammars", `tree-sitter-${language}.wasm`)));
+        const bytes = verifiedSourceGrammar(language);
         return {
           bytes,
           abi: "wts-abi/1",
@@ -560,28 +576,9 @@ describe("live code version", () => {
     const dir = mkdtempSync(join(tmpdir(), "live-code-version-"));
     const file = join(dir, "sample.ts");
     writeFileSync(file, "export function hello(): string {\n  return \"hello\";\n}\n");
-    const { readFileSync: readWasm } = await import("node:fs");
-    const wasmByLanguage = new Map<string, Uint8Array>();
-    const wasmFor = (language: string): Uint8Array | null => {
-      const hit = wasmByLanguage.get(language);
-      if (hit) return hit;
-      const candidates = language === "typescript" || language === "tsx" || language === "javascript"
-        ? ["tree-sitter-typescript.wasm", "tree-sitter-tsx.wasm", "tree-sitter-javascript.wasm"]
-        : [`tree-sitter-${language}.wasm`];
-      for (const name of candidates) {
-        try {
-          const bytes = new Uint8Array(readWasm(join(root, "engram-live", "dist", "grammars", name)));
-          if (bytes.length > 0) {
-            wasmByLanguage.set(language, bytes);
-            return bytes;
-          }
-        } catch {
-          continue;
-        }
-      }
-      return null;
+    const liveGrammar = {
+      bytesFor: (language: string) => grammarManifest.languages[language] ? verifiedSourceGrammar(language) : null,
     };
-    const liveGrammar = { bytesFor: (language: string) => wasmFor(language) };
     const loads: string[] = [];
     const entries = new Map<string, string>();
     const calls = { count: 0 };
@@ -621,13 +618,7 @@ describe("live code version", () => {
     const dir = mkdtempSync(join(tmpdir(), "live-no-cache-"));
     const file = join(dir, "sample.ts");
     writeFileSync(file, "export function hello(): string {\n  return \"hello\";\n}\n");
-    const { readFileSync: readWasm2 } = await import("node:fs");
-    let wasm: Uint8Array | null = null;
-    try {
-      wasm = new Uint8Array(readWasm2(join(root, "engram-live", "dist", "grammars", "tree-sitter-typescript.wasm")));
-    } catch {
-      wasm = null;
-    }
+    const wasm = verifiedSourceGrammar("typescript");
     expect(wasm !== null && wasm.length > 0, "real grammar asset available").toBe(true);
     const grammar = { bytesFor: () => wasm! };
     for (const live of [{}, { cacheStore: null }, { cacheStore: undefined }, { grammarWasm: grammar }]) {
@@ -710,7 +701,7 @@ describe("live code version", () => {
       writeFileSync(join(dir, ".gitattributes"), "*.ts -text\n");
       execFileSync("git", ["-c", "core.hooksPath=/dev/null", "add", "tracked.ts"], { cwd: dir });
       const before = observedInventory(dir);
-      const wasm = new Uint8Array(readFileSync(join(root, "engram-live/dist/grammars/tree-sitter-typescript.wasm")));
+      const wasm = verifiedSourceGrammar("typescript");
       const entries = new Map<string, string>();
       const store = { load: (key: string) => entries.get(key) ?? null, store: (key: string, value: string) => { entries.set(key, value); } };
       for (const cacheStore of [undefined, null, store, { load() { throw Error("cache read failure"); }, store() { throw Error("cache write failure"); } }]) {
@@ -929,8 +920,7 @@ describe("live code version", () => {
     const app = join(dir, "app.ts");
     writeFileSync(tsconfig, JSON.stringify({ compilerOptions: { baseUrl: ".", paths: { "@lib/*": ["dep-a/*"] } } }));
     writeFileSync(app, "export function f(): number {\n  return 1;\n}\n");
-    const { readFileSync: readWasm } = await import("node:fs");
-    const wasm = new Uint8Array(readWasm(join(root, "engram-live", "dist", "grammars", "tree-sitter-typescript.wasm")));
+    const wasm = verifiedSourceGrammar("typescript");
     const grammar = { bytesFor: () => wasm };
     const loads: string[] = [];
     const entries = new Map<string, string>();
@@ -1001,7 +991,7 @@ describe("live code version", () => {
     const exitBefore = process.listeners("exit").length;
     const beforeExitBefore = process.listeners("beforeExit").length;
     try {
-      const wasm = new Uint8Array(readFileSync(join(root, "engram-live/dist/grammars/tree-sitter-typescript.wasm")));
+      const wasm = verifiedSourceGrammar("typescript");
       const mem = new Map<string, string>();
       const store = { load: (key: string) => mem.get(key) ?? null, store: (key: string, value: string) => { mem.set(key, value); } };
       for (const cacheStore of [undefined, null, store, { load() { throw Error("read failure"); }, store() { throw Error("write failure"); } }]) {
@@ -1039,8 +1029,8 @@ describe("live code version", () => {
     const file = join(dir, "same.ts");
     // Same size, same topology (names), different body bytes.
     writeFileSync(file, "export function ab(): number {\n  return 11;\n}\n");
-    const { readFileSync: readWasmB, utimesSync, statSync } = await import("node:fs");
-    const wasmB = new Uint8Array(readWasmB(join(root, "engram-live", "dist", "grammars", "tree-sitter-typescript.wasm")));
+    const { utimesSync, statSync } = await import("node:fs");
+    const wasmB = verifiedSourceGrammar("typescript");
     const grammarB = { bytesFor: () => wasmB };
     const entriesB = new Map<string, string>();
     const storeB = {
@@ -1094,7 +1084,7 @@ describe("live code version", () => {
 
 describe("sol tour2 reproductions", () => {
   async function wasmTypescript(): Promise<Uint8Array> {
-    const wasm = new Uint8Array(readFileSync(join(root, "engram-live", "dist", "grammars", "tree-sitter-typescript.wasm")));
+    const wasm = verifiedSourceGrammar("typescript");
     expect(wasm.length).toBeGreaterThan(0);
     return wasm;
   }
@@ -1321,7 +1311,7 @@ function committedCode(content: string, path = "f.ts", parents: string[] = []) {
 
 describe("owner closure classes", () => {
   async function wasmTypescript(): Promise<Uint8Array> {
-    return new Uint8Array(readFileSync(join(root, "engram-live/dist/grammars/tree-sitter-typescript.wasm")));
+    return verifiedSourceGrammar("typescript");
   }
   const input = {
     scope, language: "typescript", path: "src/f.ts", content: "export function f() { return 1; }\n",
@@ -1727,7 +1717,7 @@ function parseContextOf(
     extractorVersion: fixture.extractorVersion,
     grammarAbi: "wts-abi/1",
     grammarId: `tree-sitter-${input.language}`,
-    grammarDigest: createHash("sha256").update(readFileSync(join(root, "engram-live/dist/grammars", `tree-sitter-${input.language}.wasm`))).digest("hex"),
+    grammarDigest: createHash("sha256").update(verifiedSourceGrammar(input.language)).digest("hex"),
     grammarVersion: `wasm-sha256-for-${input.language}`,
     language: input.language,
     path: "src/shop/cart.ts",
@@ -1758,7 +1748,7 @@ function resolutionContextOf(
     extractorVersion: fixture.extractorVersion,
     grammarAbi: "wts-abi/1",
     grammarId: `tree-sitter-${input.language}`,
-    grammarDigest: createHash("sha256").update(readFileSync(join(root, "engram-live/dist/grammars", `tree-sitter-${input.language}.wasm`))).digest("hex"),
+    grammarDigest: createHash("sha256").update(verifiedSourceGrammar(input.language)).digest("hex"),
     grammarVersion: `wasm-sha256-for-${input.language}`,
     language: input.language,
     path: input.path,
