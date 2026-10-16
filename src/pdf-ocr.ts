@@ -6,7 +6,7 @@ import { extractPdfTextLayer, pdfOcrSidecarStem, parsePdfOcrMode, preflightPdf, 
 import { buildPdfOcrPagesSidecar } from "./pdf-ocr-refs.js";
 
 const MISTRAL_OCR_PACKAGE = "mistral-ocr";
-const DEFAULT_OCR_MODEL = "mistral-ocr-4-0";
+const DEFAULT_OCR_MODEL = "mistral-ocr-latest";
 const PDF_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 
 export interface PdfPreparationArtifact {
