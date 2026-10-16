@@ -456,6 +456,72 @@ describe.skipIf(timeLane.lane !== "run")(
         await store.close();
       }
     });
+
+    it("executes the shared 7-case temporal boundary fixture identically across in-memory, SQLite, live Postgres, time slice, scene, and browser renderer", async () => {
+      const { createPostgresGraphStore } = await import("../src/storage/postgres.js");
+      const { createSqliteGraphStore } = await import("../src/storage/sqlite.js");
+      const { filterTemporalWindow } = await import("../src/temporal-recall.js");
+      const { sliceGraphByTime } = await import("../src/graph-time-slice.js");
+      const { buildStudioScene } = await import("../src/studio-scene.js");
+      // @ts-expect-error — plain ESM JS module, no type declarations.
+      const { applyTimeFilter } = await import("../studio/src/lib/graphAdapter.js");
+      const {
+        TEMPORAL_CURSOR,
+        TEMPORAL_VISIBLE_EDGE_RELATIONS,
+        TEMPORAL_VISIBLE_NODE_IDS,
+        temporalBoundaryFixture,
+        temporalBoundaryGraph,
+      } = await import("./fixtures/temporal-boundary.js");
+
+      const fixture = temporalBoundaryFixture();
+      const { G, communities } = temporalBoundaryGraph();
+
+      const inMem = filterTemporalWindow(fixture, TEMPORAL_CURSOR, TEMPORAL_CURSOR);
+      const sliced = sliceGraphByTime(fixture, {
+        sinceMs: TEMPORAL_CURSOR,
+        untilMs: TEMPORAL_CURSOR,
+      });
+      const rendered = applyTimeFilter(buildStudioScene(fixture), TEMPORAL_CURSOR);
+
+      const sqliteDir = artifactBase();
+      const sqliteStore = await createSqliteGraphStore({
+        citySlug,
+        target: join(sqliteDir, "temporal.sqlite"),
+      });
+      const pgStore = await createPostgresGraphStore({
+        connectionString,
+        citySlug,
+        target: artifactBase(),
+      });
+
+      try {
+        await sqliteStore.pushGraph(G, communities, { mode: "replace" });
+        await pgStore.pushGraph(G, communities, { mode: "replace" });
+
+        const sqliteWindow = await sqliteStore.queryWindow(TEMPORAL_CURSOR, TEMPORAL_CURSOR);
+        const pgWindow = await pgStore.queryWindow(TEMPORAL_CURSOR, TEMPORAL_CURSOR);
+
+        expect(inMem.nodes.map((n) => n.id)).toEqual(TEMPORAL_VISIBLE_NODE_IDS);
+        expect(sqliteWindow.nodes.map((n) => n.id)).toEqual(TEMPORAL_VISIBLE_NODE_IDS);
+        expect(pgWindow.nodes.map((n) => n.id)).toEqual(TEMPORAL_VISIBLE_NODE_IDS);
+        expect((sliced.graph.nodes ?? []).map((n) => n.id)).toEqual(TEMPORAL_VISIBLE_NODE_IDS);
+        expect(rendered.nodes.map((n: { id: string }) => n.id)).toEqual(TEMPORAL_VISIBLE_NODE_IDS);
+
+        expect(inMem.edges.map((e) => e.relation)).toEqual(TEMPORAL_VISIBLE_EDGE_RELATIONS);
+        expect(sqliteWindow.edges.map((e) => e.relation)).toEqual(TEMPORAL_VISIBLE_EDGE_RELATIONS);
+        expect(pgWindow.edges.map((e) => e.relation)).toEqual(TEMPORAL_VISIBLE_EDGE_RELATIONS);
+        expect(((sliced.graph.links ?? []) as Array<{ relation: string }>).map((e) => e.relation)).toEqual(
+          TEMPORAL_VISIBLE_EDGE_RELATIONS,
+        );
+        expect(rendered.edges.map((e: { relation: string }) => e.relation)).toEqual(
+          TEMPORAL_VISIBLE_EDGE_RELATIONS,
+        );
+      } finally {
+        await sqliteStore.close();
+        await pgStore.clear({ force: true });
+        await pgStore.close();
+      }
+    });
   },
 );
 }
