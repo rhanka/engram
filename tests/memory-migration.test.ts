@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { migrateRetainedNeutralRecordsV1, type Digest, type RetainedNeutralRecordV1 } from "../engram-memory/index.js";
 import { createHash } from "node:crypto";
-import { INTAKE_PINS, extractPinnedRecords, sha256 } from "./fixtures/memory-pinned-intakes.js";
+import { INTAKE_PINS, extractPinnedRecords, gitBlobSha, readPinnedIntake, sha256 } from "./fixtures/memory-pinned-intakes.js";
 
 const DIGEST_A = "sha256:1111111111111111111111111111111111111111111111111111111111111111" as Digest;
 const DIGEST_B = "sha256:2222222222222222222222222222222222222222222222222222222222222222" as Digest;
@@ -77,8 +77,24 @@ function refReceipt(kind: string, value: unknown): Digest {
 }
 
 describe("pinned-intake migration matrix", () => {
-  it.each(INTAKE_PINS)("pin %s partitions every real retained fixture with reproducible legacy identity and receipts", async (pin) => {
-    const fixtures = await extractPinnedRecords(pin);
+  it.each(INTAKE_PINS)("pin %s reproduces every frozen record from its versioned source blobs without git history", async (pin) => {
+    const fixture = readPinnedIntake(pin);
+    expect(fixture.pin).toBe(pin);
+    expect(fixture.sources.length).toBeGreaterThan(0);
+    expect(new Set(fixture.sources.map(({ path }) => path)).size).toBe(fixture.sources.length);
+    for (const { content, blobSha } of fixture.sources) {
+      expect(gitBlobSha(Buffer.from(content, "utf8"))).toBe(blobSha);
+    }
+    for (const { origin } of fixture.records) {
+      expect(origin.startsWith(`${pin}:`)).toBe(true);
+      expect(fixture.sources.some(({ path }) => path === origin.split(":")[1])).toBe(true);
+    }
+    // Compare serialized bytes as well as replaying all original admission assertions.
+    expect(JSON.stringify(await extractPinnedRecords(fixture))).toBe(JSON.stringify(fixture.records));
+  });
+
+  it.each(INTAKE_PINS)("pin %s partitions every real retained fixture with reproducible legacy identity and receipts", (pin) => {
+    const fixtures = readPinnedIntake(pin).records;
     const early = INTAKE_PINS.indexOf(pin) < 3;
     expect(fixtures.length).toBeGreaterThan(0);
     expect(fixtures.some(({ node }) => node.id === "other")).toBe(true);
