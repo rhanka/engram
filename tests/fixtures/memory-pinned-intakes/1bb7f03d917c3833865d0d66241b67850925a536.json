@@ -1,0 +1,706 @@
+{
+  "pin": "1bb7f03d917c3833865d0d66241b67850925a536",
+  "sources": [
+    {
+      "path": "src/memory-admission.ts",
+      "blobSha": "8ef6613a3d7f99c78fa5d27c8e549bd1a4adf41b",
+      "content": "/**\n * Agent-memory ADMISSION GATE — the graphify-side of the ratified contract\n * SPEC_AGENT_MEMORY_SUBSTRATE (@87a8cd05..d8a4a448, wire-shape §9.4).\n *\n * graphify DEFINES this gate; h2a imports only the SIGNATURE and never graphify\n * internals; this module imports NOTHING from h2a (anti-cycle). graphify authors\n * NO memory content — it VALIDATES a caller-built note and stamps the fixed\n * admission fields only.\n *\n * Perimeter (this module): the admission checks (§3.1 schema/enum; §3.3 persona\n * = subject + STRUCTURAL event_shaped + single-note/no-profile; §3.4\n * reconcilable:false; §3.5 subject-human retention + tombstone authority; §3.6\n * principal_owner/scope neutral hook; §4 verifyVerbatim citation). OUT of scope:\n * the storage write-path (injected as a dependency), the D11 promotion rule, and\n * the parked executive/projection logic (§3.6).\n *\n * Deterministic, provider-neutral, no LLM, no network.\n */\nimport { createHash } from \"node:crypto\";\nimport { normalizeForMatch, verifyVerbatim } from \"./source-grounding.js\";\n\nexport type MemoryKind = \"context\" | \"decision\" | \"evidence\";\nexport type MemoryScope = \"private\" | \"capitalised\";\n\n/** The structural event anchor — what makes `event_shaped` a code check, not prose. */\nexport interface MemoryEventAnchor {\n  /** The instant it happened (epoch-ms or turn count). REQUIRED — a generalization has none. */\n  at: number;\n  /** A closed event-kind aligned to `memory_kind`. */\n  kind: string;\n  /** A structured locator, shared with `provenance.source`. */\n  ref: string;\n}\n\n/** Structured citation: a cited string + the named source it must appear in (§4). */\nexport interface MemoryProvenance {\n  cited: string;\n  source: string;\n}\n\n/** The note handed over by the producer (h2a). h2a authors ALL of it. */\nexport interface MemoryNoteInput {\n  node_type: \"MemoryNote\";\n  memory_kind: MemoryKind;\n  /** `\"agent-work\"` or `\"human:<id>\"` only — never a persona/identity/voice (§3.3.1). */\n  subject: string;\n  t: number;\n  t_end?: number;\n  t_src: string;\n  event: MemoryEventAnchor;\n  provenance: MemoryProvenance;\n  principal_owner: string;\n  scope: MemoryScope;\n  /** Required when `subject` is a human (§3.5). */\n  purpose?: string;\n  /** Retention/TTL bound; required when `subject` is a human (§3.5). */\n  retention?: number | string;\n  [key: string]: unknown;\n}\n\nexport interface AdmissionDeps {\n  /** Resolve a source locator to its raw text for `verifyVerbatim`; `null` when unresolvable. */\n  resolveSource: (ref: string) => string | null;\n  /** The storage write-path (injected — anti-cycle + testable). Appends the admitted node. */\n  appendNode: (node: Record<string, unknown>) => Promise<{ created: boolean }>;\n}\n\nexport type AdmissionOutcome =\n  | { admitted: true; id: string }\n  | { admitted: false; reason: string };\n\nconst MEMORY_KINDS = new Set<string>([\"context\", \"decision\", \"evidence\"]);\nconst MEMORY_SCOPES = new Set<string>([\"private\", \"capitalised\"]);\n\nfunction isHumanSubject(s: unknown): s is string {\n  return typeof s === \"string\" && s.startsWith(\"human:\") && s.length > \"human:\".length;\n}\nfunction isValidSubject(s: unknown): boolean {\n  return s === \"agent-work\" || isHumanSubject(s);\n}\n\n/** Stable content-addressed id for a note (deterministic, no clock/random). */\nfunction memoryNoteId(note: MemoryNoteInput): string {\n  const canonical = JSON.stringify([\n    note.principal_owner,\n    note.subject,\n    note.event?.ref,\n    note.event?.at,\n    note.provenance?.cited,\n    note.t,\n  ]);\n  return `mem:${createHash(\"sha256\").update(canonical).digest(\"hex\").slice(0, 16)}`;\n}\n\nfunction refuse(reason: string): AdmissionOutcome {\n  return { admitted: false, reason };\n}\n\n/**\n * The admission gate. Runs the contract's checks IN ORDER; ALL must pass. On a\n * refusal, NOTHING is stored (no silent no-op). On success, stamps the fixed\n * admission fields and appends the note as `review_status: \"pending\"` (promotion\n * to `accepted` is the D11 gate — OUT of this perimeter).\n *\n * Single-note by construction: it admits ONE note and never assembles a\n * subject-human profile — the UserModel projection prohibition (§3.2/§3.3.3) is a\n * recall-surface invariant enforced separately (charter: temporal-recall).\n */\nexport async function admitMemoryNote(\n  note: MemoryNoteInput,\n  deps: AdmissionDeps,\n): Promise<AdmissionOutcome> {\n  // 1. schema + closed enum (§3.1)\n  if (!note || note.node_type !== \"MemoryNote\") return refuse(\"node_type must be 'MemoryNote'\");\n  if (!MEMORY_KINDS.has(note.memory_kind)) {\n    return refuse(`memory_kind not in the closed enum {context,decision,evidence}: ${String(note.memory_kind)}`);\n  }\n\n  // 2. persona: subject predicate (§3.3.1)\n  if (!isValidSubject(note.subject)) {\n    return refuse(`subject must be 'agent-work' or 'human:<id>', not ${String(note.subject)}`);\n  }\n\n  // 3. persona: event_shaped is STRUCTURAL (§3.3.2) — a machine-verifiable anchor,\n  //    NOT a writer flag and NOT a prose classifier. A generalization has no `at`.\n  const ev = note.event as MemoryEventAnchor | undefined;\n  if (!ev || typeof ev !== \"object\") {\n    return refuse(\"event anchor is required (event_shaped is structural, not prose)\");\n  }\n  if (typeof ev.at !== \"number\" || !Number.isFinite(ev.at)) {\n    return refuse(\"event.at (the instant it happened) is required and must be numeric — a generalization has no instant\");\n  }\n  if (typeof ev.kind !== \"string\" || !ev.kind) return refuse(\"event.kind is required\");\n  if (typeof ev.ref !== \"string\" || !ev.ref) return refuse(\"event.ref (locator) is required\");\n\n  // 4. tenancy neutral hook (§3.6) — the FIELDS only, never the parked exec logic\n  if (typeof note.principal_owner !== \"string\" || !note.principal_owner) {\n    return refuse(\"principal_owner is required (§3.6)\");\n  }\n  if (!MEMORY_SCOPES.has(note.scope)) {\n    return refuse(`scope must be 'private' or 'capitalised', not ${String(note.scope)}`);\n  }\n\n  // 5. retention controls for a subject-human fact (§3.5)\n  if (isHumanSubject(note.subject)) {\n    if (typeof note.purpose !== \"string\" || !note.purpose) {\n      return refuse(\"a subject-human fact requires a `purpose` (§3.5)\");\n    }\n    if (note.retention === undefined || note.retention === null) {\n      return refuse(\"a subject-human fact requires a `retention` bound (§3.5)\");\n    }\n  }\n\n  // 6. citation gate — verifyVerbatim ONLY (§4): the cited string must be literally\n  //    present in the named source. This checks the citation, NOT the form (§3.3)\n  //    and NOT the truth of the lesson.\n  const prov = note.provenance;\n  if (!prov || typeof prov.cited !== \"string\" || typeof prov.source !== \"string\") {\n    return refuse(\"provenance {cited, source} is required (§4)\");\n  }\n  const raw = deps.resolveSource(prov.source);\n  if (raw == null) return refuse(`provenance source could not be resolved: ${prov.source}`);\n  if (!verifyVerbatim(prov.cited, normalizeForMatch(raw))) {\n    return refuse(\"citation failed verifyVerbatim: the cited string is not present in the named source\");\n  }\n\n  // All checks passed — stamp the fixed admission fields (graphify authors nothing else).\n  const id = memoryNoteId(note);\n  const admitted: Record<string, unknown> = {\n    ...note,\n    id,\n    trust: \"asserted\", // fixed tier (§1/§3.1)\n    review_status: \"pending\", // enters behind the binary gate; promotion is OUT of this perimeter (D11)\n    reconcilable: false, // opt-out by construction (§3.4)\n  };\n  await deps.appendNode(admitted);\n  return { admitted: true, id };\n}\n\n// ---------------------------------------------------------------------------\n// Tombstone authority hook (§3.5) — the CHECK is graphify's; the append is\n// storage's write-path (injected, OUT of this perimeter).\n// ---------------------------------------------------------------------------\n\nexport type TombstoneTarget =\n  | { kind: \"node\"; id: string }\n  | { kind: \"edge\"; source: string; target: string; relation?: string };\n\nexport interface TombstoneRequest {\n  target: TombstoneTarget;\n  /** The principal that owns the target being erased. */\n  principal_owner: string;\n}\n\nexport interface TombstoneAuthority {\n  /** Who requests the erasure. */\n  requester: string;\n  /**\n   * For a subject-human fact, a SIGNED authorization (Ed25519 of the\n   * `principal_owner` or a signed mandate) is required (§9.4); its cryptographic\n   * verification is the caller's (h2a) — this gate checks ownership.\n   */\n  signedAuthorization?: unknown;\n}\n\nexport interface TombstoneDeps {\n  appendTombstone: (tombstone: { target: TombstoneTarget; principal_owner: string }) => Promise<{ applied: boolean }>;\n}\n\n/**\n * Authority check for an erasure (§3.5): only the `principal_owner` (or an agent\n * it MANDATES) may erase. graphify KEEPS this check; the actual tombstone append\n * is storage's write-path (injected). Authority never rests on a fabricable\n * asserted `by`.\n */\nexport async function requestTombstone(\n  req: TombstoneRequest,\n  auth: TombstoneAuthority,\n  deps: TombstoneDeps,\n): Promise<{ applied: boolean; reason?: string }> {\n  const ownerAuthorised = auth.requester === req.principal_owner; // mandated-agent path: future\n  if (!ownerAuthorised) {\n    return { applied: false, reason: \"erasure requires the principal_owner (or a mandated agent)\" };\n  }\n  return deps.appendTombstone({ target: req.target, principal_owner: req.principal_owner });\n}\n"
+    },
+    {
+      "path": "src/memory-recall.ts",
+      "blobSha": "42dcdb0ac1abf46c95c260b3264c68b0ff210f49",
+      "content": "/**\n * graphify-memory v1 — the RECALL surface (SPEC_AGENT_MEMORY_SUBSTRATE, ratified\n * @87a8cd05..cd7fad55). The read side that makes the admitted substrate usable:\n * it recalls `MemoryNote` nodes through the SAME T5/T6 temporal predicate and\n * enforces the recall-surface invariants that are graphify-side (charter:\n * temporal-recall). It is the mirror of the admission gate — admission is the\n * write predicate, this is the read predicate — and it authors NO memory.\n *\n * What this surface guarantees, and deliberately does NOT:\n *  - It REUSES `overlapsTemporalWindow` (the exported T5/T6 membership predicate)\n *    rather than keeping a second, drifting copy.\n *  - It enforces tenancy access (§3.6): a `private` note is visible ONLY to its\n *    `principal_owner`; `capitalised` notes are shared; a note whose tenancy\n *    cannot be verified fails CLOSED (never recalled).\n *  - It folds tombstoned targets out at PROJECTION (§3.5) — A2 with teeth — and a\n *    tombstoned node cannot resurface through an edge (this surface is notes-only,\n *    so an edge can never reintroduce an erased subject).\n *  - It RETAINS the trust tier + review_status + provenance on every note (§1):\n *    a `pending` note is disclosed as pending, never presented as ground truth.\n *  - PROJECTION PROHIBITION (§3.3.3): it offers NO identity-profile projection.\n *    `human:<id>` notes are returned INDIVIDUALLY, never assembled into a ranked\n *    `UserModel`. The prohibition is structural — there is no such entry point.\n *\n * Deterministic, provider-neutral, no LLM, no network, no h2a import (anti-cycle).\n */\nimport { overlapsTemporalWindow } from \"./temporal-recall.js\";\n\nexport const MEMORY_RECALL_SCHEMA = \"graphify.memory-recall/v1\" as const;\n\n/** The principal performing the recall; tenancy access is evaluated against it (§3.6). */\nexport interface MemoryRecallContext {\n  principal_owner: string;\n}\n\n/** Exactly one of `asOf` (T6 point) or `window` (T5 span) must be supplied. */\nexport interface MemoryRecallOptions {\n  /** T6 point recall: the note must be live at this instant, `[asOf, asOf]`. */\n  asOf?: number;\n  /** T5 window recall: inclusive `[since, until]`; `null` leaves that side open. */\n  window?: { sinceMs: number | null; untilMs: number | null };\n}\n\n/** A compensating erasure event (§3.5). It folds its target out of EVERY projection. */\nexport interface MemoryTombstone {\n  target:\n    | { kind: \"node\"; id: string }\n    | { kind: \"edge\"; source: string; target: string; relation?: string };\n  /** The principal that owns the erased target (authority is checked at request time). */\n  principal_owner: string;\n}\n\nexport interface MemoryRecallInput {\n  nodes?: Record<string, unknown>[];\n  links?: Record<string, unknown>[];\n  edges?: Record<string, unknown>[];\n}\n\n/** A recalled note, carried verbatim — the tier and provenance are RETAINED (§1). */\nexport type RecalledMemoryNote = Record<string, unknown> & {\n  id: string;\n  node_type: \"MemoryNote\";\n  subject: string;\n  t: number;\n  trust: unknown;\n  review_status: unknown;\n  scope: string;\n  principal_owner: string;\n};\n\nexport interface MemoryRecallResult {\n  schema: typeof MEMORY_RECALL_SCHEMA;\n  /** Individual notes — NEVER an assembled identity profile (§3.3.3). */\n  notes: RecalledMemoryNote[];\n  /** Structural disclosure that no profile/UserModel projection was performed. */\n  projection: \"notes-only\";\n  requestingPrincipal: string;\n  asOfMs: number | null;\n  window: { sinceMs: number | null; untilMs: number | null } | null;\n  /** T6 contract: the full matching set, never silently truncated. */\n  unpaged: true;\n}\n\nfunction compareText(a: string, b: string): number {\n  return a < b ? -1 : a > b ? 1 : 0;\n}\n\n/** Resolve the recall bounds from exactly one of the two mutually exclusive modes. */\nfunction resolveBounds(options: MemoryRecallOptions): {\n  fromMs: number;\n  toMs: number;\n  asOfMs: number | null;\n  window: { sinceMs: number | null; untilMs: number | null } | null;\n} {\n  const hasAsOf = typeof options.asOf === \"number\";\n  const hasWindow = options.window !== undefined && options.window !== null;\n  if (hasAsOf === hasWindow) {\n    throw new Error(\"recallMemory requires exactly one of { asOf } or { window }\");\n  }\n  if (hasAsOf) {\n    const at = options.asOf as number;\n    if (!Number.isFinite(at)) throw new RangeError(\"asOf must be a finite epoch-ms instant\");\n    return { fromMs: at, toMs: at, asOfMs: at, window: null };\n  }\n  const w = options.window as { sinceMs: number | null; untilMs: number | null };\n  const fromMs = w.sinceMs ?? Number.NEGATIVE_INFINITY;\n  const toMs = w.untilMs ?? Number.POSITIVE_INFINITY;\n  if (fromMs > toMs) throw new RangeError(\"recallMemory window requires sinceMs <= untilMs\");\n  return { fromMs, toMs, asOfMs: null, window: { sinceMs: w.sinceMs, untilMs: w.untilMs } };\n}\n\n/**\n * Tenancy visibility (§3.6): a `capitalised` note is shared across principals; a\n * `private` note is visible ONLY within its `principal_owner`. A note whose\n * tenancy cannot be verified (missing owner, unknown scope) fails CLOSED — the\n * recall would rather omit a note than leak one across tenants.\n */\nfunction isVisibleTo(node: Record<string, unknown>, requester: string): boolean {\n  const owner = node.principal_owner;\n  const scope = node.scope;\n  if (typeof owner !== \"string\" || owner.length === 0) return false;\n  if (scope === \"capitalised\") return true;\n  if (scope === \"private\") return owner === requester;\n  return false;\n}\n\n/**\n * Recall the memory notes live at the requested instant/window and visible to the\n * requesting principal, folding out tombstoned targets. Pure: the input document\n * is never mutated and notes are carried verbatim.\n */\nexport function recallMemory(\n  input: MemoryRecallInput,\n  ctx: MemoryRecallContext,\n  options: MemoryRecallOptions,\n  tombstones: readonly MemoryTombstone[] = [],\n): MemoryRecallResult {\n  if (typeof ctx?.principal_owner !== \"string\" || ctx.principal_owner.length === 0) {\n    throw new Error(\"recallMemory requires a ctx.principal_owner\");\n  }\n  const { fromMs, toMs, asOfMs, window } = resolveBounds(options);\n\n  // Tombstoned node ids fold OUT at projection (§3.5). Because this surface is\n  // notes-only, a tombstoned node can never resurface through an edge — the edge\n  // cascade is satisfied by construction, not by a second pass.\n  const tombstonedNodeIds = new Set<string>();\n  for (const t of tombstones) {\n    if (t.target.kind === \"node\") tombstonedNodeIds.add(t.target.id);\n  }\n\n  const rawNodes = Array.isArray(input.nodes) ? input.nodes : [];\n  const notes: RecalledMemoryNote[] = [];\n  for (const node of rawNodes) {\n    if (node.node_type !== \"MemoryNote\") continue;\n    if (typeof node.id !== \"string\") continue;\n    if (tombstonedNodeIds.has(node.id)) continue;\n    if (!isVisibleTo(node, ctx.principal_owner)) continue;\n    if (!overlapsTemporalWindow(node, fromMs, toMs)) continue;\n    // Carried verbatim: trust, review_status and provenance are RETAINED (§1),\n    // so a pending note is disclosed as pending and never dressed as ground truth.\n    notes.push(node as RecalledMemoryNote);\n  }\n\n  // Deterministic order by (t, id). Human-subject and agent-subject notes are\n  // treated IDENTICALLY — no per-subject ranking, no profile assembly (§3.3.3).\n  notes.sort((a, b) => {\n    const ta = typeof a.t === \"number\" ? a.t : 0;\n    const tb = typeof b.t === \"number\" ? b.t : 0;\n    return ta - tb || compareText(a.id, b.id);\n  });\n\n  return {\n    schema: MEMORY_RECALL_SCHEMA,\n    notes,\n    projection: \"notes-only\",\n    requestingPrincipal: ctx.principal_owner,\n    asOfMs,\n    window,\n    unpaged: true,\n  };\n}\n"
+    },
+    {
+      "path": "src/source-grounding.ts",
+      "blobSha": "8b53a20802946a84bbdac9eef348b47492988109",
+      "content": "/**\n * Shared, source-centric grounding substrate.\n *\n * Citation grounding and typed entity linking intentionally share parsing,\n * normalized-to-raw relocation, and the verbatim gate. `rawSource` remains\n * authoritative: a SourceUnit's display text may be a trim/join projection of\n * OCR lines and must never be treated as a raw-file slice.\n */\nimport { readFileSync } from \"node:fs\";\nimport { isAbsolute, resolve as resolvePath } from \"node:path\";\n\n/** NFKD deaccent + ascii-fold (drops combining marks, ligatures degrade). */\nexport function deaccent(s: string): string {\n  return (s ?? \"\").normalize(\"NFKD\").replace(/[̀-ͯ]/g, \"\");\n}\n\nconst DOTTED_INITIAL_RUN_RE = /\\b[a-z]\\s*\\.(?:\\s*[a-z]\\s*\\.)+/g;\n\nfunction normalizeForMatchBase(s: string): string {\n  return deaccent(s ?? \"\")\n    .replace(/œ/g, \"oe\")\n    .replace(/æ/g, \"ae\")\n    .replace(/Œ/g, \"OE\")\n    .replace(/Æ/g, \"AE\")\n    .toLowerCase()\n    .replace(/\\s+/g, \" \")\n    .trim();\n}\n\nfunction foldDottedInitialSpacing(s: string): string {\n  return s.replace(DOTTED_INITIAL_RUN_RE, (run) => run.replace(/\\s+/g, \"\"));\n}\n\n/** Canonical match form used by both matching and the verbatim gate. */\nexport function normalizeForMatch(s: string): string {\n  return foldDottedInitialSpacing(normalizeForMatchBase(s));\n}\n\nexport type SourceModality = \"ocr-markdown\" | \"plain-text\";\n\nexport interface SourceUnit {\n  /** Paragraph display text; OCR paragraphs can be a trim/join projection. */\n  text: string;\n  page: number;\n  section: string;\n  paragraphIndex: number;\n  /** Raw-file half-open boundaries covering this unit's source lines. */\n  documentStart?: number;\n  documentEnd?: number;\n  /** Normalized unit text and its per-character raw document offsets. */\n  normalizedText?: string;\n  normToRaw?: number[];\n}\n\nexport interface ImageContext {\n  basename: string;\n  page: number;\n  section: string;\n  prev: string;\n  next: string;\n}\n\nexport interface ParsedSource {\n  modality: SourceModality;\n  units: SourceUnit[];\n  sectionToIndices: Map<string, number[]>;\n  images: Map<string, ImageContext>;\n  pageCount: number;\n  /** Original file contents; the sole authority for occurrence slices. */\n  rawSource?: string;\n  /** Leading YAML-ish front matter, excluded from content units. */\n  frontMatter?: Record<string, string>;\n}\n\n/** Detect modality from a source path. `.md` → OCR-markdown, else plain-text. */\nexport function detectModality(sourceFile: string): SourceModality {\n  return /\\.(md|markdown)$/i.test(sourceFile) ? \"ocr-markdown\" : \"plain-text\";\n}\n\nconst FRONT_MATTER_KEY = /^[a-z_]+:\\s/i;\n\ninterface BufferedLine {\n  text: string;\n  start: number;\n  end: number;\n}\n\nfunction lineStarts(raw: string, lines: string[]): number[] {\n  const starts: number[] = [];\n  let offset = 0;\n  for (const line of lines) {\n    starts.push(offset);\n    offset += line.length + 1;\n  }\n  return starts;\n}\n\nfunction trimmedLine(rawLine: string, start: number): BufferedLine | null {\n  const text = rawLine.trim();\n  if (!text) return null;\n  const leading = rawLine.length - rawLine.trimStart().length;\n  const trailing = rawLine.trimEnd().length;\n  return { text, start: start + leading, end: start + trailing };\n}\n\nfunction frontMatterValue(line: string): [string, string] | null {\n  const match = /^([a-zA-Z0-9_-]+):\\s*(.*)$/u.exec(line.trim());\n  if (!match) return null;\n  const key = match[1]!;\n  const value = match[2]!.trim().replace(/^(?:\"([\\s\\S]*)\"|'([\\s\\S]*)')$/u, \"$1$2\");\n  return [key, value];\n}\n\nfunction makeUnit(\n  raw: string,\n  lines: BufferedLine[],\n  page: number,\n  section: string,\n  paragraphIndex: number,\n): SourceUnit {\n  const documentStart = lines[0]!.start;\n  const documentEnd = lines[lines.length - 1]!.end;\n  const table = buildNormToRawMap(raw.slice(documentStart, documentEnd));\n  return {\n    text: lines.map((line) => line.text).join(\" \").trim(),\n    page,\n    section,\n    paragraphIndex,\n    documentStart,\n    documentEnd,\n    normalizedText: table.norm,\n    normToRaw: table.map.map((offset) => documentStart + offset),\n  };\n}\n\nfunction addUnit(\n  raw: string,\n  units: SourceUnit[],\n  sectionToIndices: Map<string, number[]>,\n  lines: BufferedLine[],\n  page: number,\n  section: string,\n): SourceUnit | null {\n  if (lines.length === 0) return null;\n  const unit = makeUnit(raw, lines, page, section, units.length);\n  if (!unit.text || unit.text.startsWith(\"![\")) return null;\n  units.push(unit);\n  const arr = sectionToIndices.get(section) ?? [];\n  arr.push(unit.paragraphIndex);\n  sectionToIndices.set(section, arr);\n  return unit;\n}\n\nfunction parseOcrMarkdown(raw: string): ParsedSource {\n  const lines = raw.split(\"\\n\");\n  const starts = lineStarts(raw, lines);\n  const units: SourceUnit[] = [];\n  const sectionToIndices = new Map<string, number[]>();\n  const images = new Map<string, ImageContext>();\n  const frontMatter: Record<string, string> = {};\n  let page = 1;\n  let section = \"\";\n  let buf: BufferedLine[] = [];\n  let pendingImages: string[] = [];\n  let inFrontMatter = false;\n  let frontMatterDone = false;\n  let i = 0;\n  if (lines[0]?.trim() === \"---\") {\n    inFrontMatter = true;\n    i = 1;\n  }\n\n  const flush = (): void => {\n    const unit = addUnit(raw, units, sectionToIndices, buf, page, section);\n    buf = [];\n    if (!unit) return;\n    for (const filename of pendingImages) {\n      const ctx = images.get(filename);\n      if (ctx && !ctx.next) ctx.next = unit.text;\n    }\n    pendingImages = [];\n  };\n\n  for (; i < lines.length; i += 1) {\n    const rawLine = lines[i] ?? \"\";\n    const s = rawLine.trim();\n    if (inFrontMatter && !frontMatterDone) {\n      if (s === \"---\") {\n        frontMatterDone = true;\n        inFrontMatter = false;\n      } else if (s !== \"\" && !FRONT_MATTER_KEY.test(s)) {\n        inFrontMatter = false;\n        frontMatterDone = true;\n        i -= 1;\n      } else {\n        const entry = frontMatterValue(rawLine);\n        if (entry) frontMatter[entry[0]] = entry[1];\n      }\n      continue;\n    }\n    if (s === \"---\") {\n      flush();\n      page += 1;\n      continue;\n    }\n    if (/^#{1,4}\\s/.test(s)) {\n      flush();\n      section = s.replace(/^#{1,4}\\s+/, \"\").trim();\n      continue;\n    }\n    const img = /^!\\[[^\\]]*\\]\\(([^)]+)\\)/.exec(s);\n    if (img) {\n      flush();\n      const filename = basenameOf(img[1] ?? \"\");\n      const prev = units.length > 0 ? (units[units.length - 1]?.text ?? \"\") : \"\";\n      images.set(filename, { basename: filename, page, section, prev, next: \"\" });\n      pendingImages.push(filename);\n      continue;\n    }\n    if (s === \"\") {\n      flush();\n      continue;\n    }\n    const line = trimmedLine(rawLine, starts[i]!);\n    if (line) buf.push(line);\n  }\n  flush();\n  return { modality: \"ocr-markdown\", units, sectionToIndices, images, pageCount: page, rawSource: raw, frontMatter };\n}\n\nfunction parsePlainText(raw: string): ParsedSource {\n  const lines = raw.split(\"\\n\");\n  const starts = lineStarts(raw, lines);\n  const units: SourceUnit[] = [];\n  const sectionToIndices = new Map<string, number[]>();\n  let section = \"\";\n  let buf: BufferedLine[] = [];\n  const flush = (): void => {\n    addUnit(raw, units, sectionToIndices, buf, 1, section);\n    buf = [];\n  };\n  for (let i = 0; i < lines.length; i += 1) {\n    const rawLine = lines[i] ?? \"\";\n    const s = rawLine.trim();\n    if (/^#{1,4}\\s/.test(s)) {\n      flush();\n      section = s.replace(/^#{1,4}\\s+/, \"\").trim();\n      continue;\n    }\n    if (isHeadingLine(s, buf.length === 0)) {\n      flush();\n      section = s;\n      continue;\n    }\n    if (s === \"\") {\n      flush();\n      continue;\n    }\n    const line = trimmedLine(rawLine, starts[i]!);\n    if (line) buf.push(line);\n  }\n  flush();\n  return {\n    modality: \"plain-text\",\n    units,\n    sectionToIndices,\n    images: new Map(),\n    pageCount: 1,\n    rawSource: raw,\n    frontMatter: {},\n  };\n}\n\nfunction isHeadingLine(s: string, atParagraphStart: boolean): boolean {\n  if (!s || !atParagraphStart) return false;\n  if (/^(chapter|part|book|adventure|story)\\b/i.test(s) && s.length <= 80) return true;\n  const words = s.split(/\\s+/);\n  if (words.length > 8 || s.length > 80) return false;\n  const letters = s.replace(/[^a-zA-ZÀ-ÿ]/g, \"\");\n  if (letters.length < 3) return false;\n  const upper = s.replace(/[^A-ZÀ-Þ]/g, \"\");\n  return upper.length / letters.length >= 0.7;\n}\n\nfunction basenameOf(path: string): string {\n  const normalized = path.replace(/\\\\/g, \"/\");\n  const index = normalized.lastIndexOf(\"/\");\n  return index >= 0 ? normalized.slice(index + 1) : normalized;\n}\n\n/** Parse any supported source modality. */\nexport function parseSource(raw: string, modality: SourceModality): ParsedSource {\n  return modality === \"ocr-markdown\" ? parseOcrMarkdown(raw) : parsePlainText(raw);\n}\n\nconst QUOTE_BEFORE = 110;\nconst QUOTE_AFTER = 210;\nconst QUOTE_MAXLEN = 320;\nconst OPEN_BOUNDARY = new Set([\" \", \"\\n\", \"«\", \"(\", '\"', \"“\"]);\nconst CLOSE_BOUNDARY = new Set([\" \", \"\\n\", \".\", \"!\", \"?\", \"»\", \")\", '\"', \"”\"]);\n\n/** Return a RAW context window around an offset. */\nexport function windowQuote(text: string, offset: number): string {\n  let a = Math.max(0, offset - QUOTE_BEFORE);\n  let b = Math.min(text.length, offset + QUOTE_AFTER);\n  while (a > 0 && !OPEN_BOUNDARY.has(text[a] ?? \"\")) a -= 1;\n  while (b < text.length && !CLOSE_BOUNDARY.has(text[b] ?? \"\")) b += 1;\n  let quote = text.slice(a, b).trim();\n  if (a > 0) quote = \"… \" + quote;\n  if (b < text.length) quote += \" …\";\n  quote = quote.replace(/\\s+/g, \" \");\n  return quote.length > QUOTE_MAXLEN ? quote.slice(0, QUOTE_MAXLEN).trim() : quote;\n}\n\n/** Hard gate shared by all grounding producers. */\nexport function verifyVerbatim(quote: string, normalizedSource: string): boolean {\n  if (!quote) return false;\n  const core = quote.replace(/^…\\s*/, \"\").replace(/\\s*…$/, \"\");\n  const needle = normalizeForMatch(core);\n  return Boolean(needle) && normalizedSource.includes(needle);\n}\n\n/** Build a normalized offset → raw offset table for one raw string. */\nexport function buildNormToRawMap(rawText: string): { norm: string; map: number[] } {\n  const normChars: string[] = [];\n  const map: number[] = [];\n  let pendingSpace = false;\n  let sawNonSpace = false;\n  for (let i = 0; i < rawText.length; i += 1) {\n    const ch = rawText[i] ?? \"\";\n    const piece = normalizeForMatchBase(ch);\n    if (piece === \"\") {\n      if (/\\s/.test(ch)) pendingSpace = true;\n      continue;\n    }\n    if (pendingSpace && sawNonSpace) {\n      normChars.push(\" \");\n      map.push(i);\n    }\n    pendingSpace = false;\n    for (const normalized of piece) {\n      normChars.push(normalized);\n      map.push(i);\n    }\n    sawNonSpace = true;\n  }\n  const norm = normChars.join(\"\");\n  const foldedChars: string[] = [];\n  const foldedMap: number[] = [];\n  let copiedUntil = 0;\n  DOTTED_INITIAL_RUN_RE.lastIndex = 0;\n  let match: RegExpExecArray | null;\n  while ((match = DOTTED_INITIAL_RUN_RE.exec(norm)) !== null) {\n    const start = match.index;\n    const end = start + match[0].length;\n    for (let i = copiedUntil; i < start; i += 1) {\n      foldedChars.push(norm[i] ?? \"\");\n      foldedMap.push(map[i] ?? 0);\n    }\n    for (let i = start; i < end; i += 1) {\n      const char = norm[i] ?? \"\";\n      if (char === \" \") continue;\n      foldedChars.push(char);\n      foldedMap.push(map[i] ?? 0);\n    }\n    copiedUntil = end;\n  }\n  for (let i = copiedUntil; i < norm.length; i += 1) {\n    foldedChars.push(norm[i] ?? \"\");\n    foldedMap.push(map[i] ?? 0);\n  }\n  return { norm: foldedChars.join(\"\"), map: foldedMap };\n}\n\n/** Locate a normalized term's raw offset, or -1 when it is absent. */\nexport function rawOffsetForTerm(rawText: string, normTerm: string): number {\n  if (!normTerm) return -1;\n  const { norm, map } = buildNormToRawMap(rawText);\n  const at = norm.indexOf(normTerm);\n  return at < 0 ? -1 : (map[at] ?? -1);\n}\n\nexport interface ResolveSourceOptions {\n  root: string;\n  searchRoots?: string[];\n}\n\n/** Resolve a source relative to the configured root and optional search roots. */\nexport function resolveSourcePath(sourceFile: string, options: ResolveSourceOptions): string | null {\n  if (!sourceFile) return null;\n  const candidates: string[] = [];\n  if (isAbsolute(sourceFile)) candidates.push(sourceFile);\n  candidates.push(resolvePath(options.root, sourceFile));\n  for (const root of options.searchRoots ?? []) candidates.push(resolvePath(root, sourceFile));\n  for (const candidate of candidates) {\n    try {\n      readFileSync(candidate);\n      return candidate;\n    } catch {\n      // Try the next location.\n    }\n  }\n  return null;\n}\n"
+    },
+    {
+      "path": "src/temporal-recall.ts",
+      "blobSha": "f17e480268e53751813281e5b469be9560f25e40",
+      "content": "/**\n * Read-only temporal graph recall (SPEC_AGENTSTATS_TIMEORIENTED, T6).\n *\n * This module projects the shared `t` / `t_end` graph contract at one instant.\n * It deliberately models neither authored memory nor semantic relevance:\n * configured stores delegate to the optional queryWindow port, while the\n * no-store path applies the same predicate directly to graph.json.\n */\nimport { existsSync, readFileSync } from \"node:fs\";\nimport { createHash } from \"node:crypto\";\nimport { join, resolve } from \"node:path\";\n\nimport type { SerializedGraphData } from \"./graph.js\";\nimport { resolveGraphInputPath } from \"./paths.js\";\nimport { loadProjectConfig } from \"./project-config.js\";\nimport { resolveStoreConfig } from \"./storage/config.js\";\nimport { resolveGraphStore } from \"./storage/registry.js\";\nimport type {\n  GraphStore,\n  GraphStoreConfig,\n  GraphStoreSnapshotMeta,\n  GraphTimeWindow,\n  GraphTimeWindowEdge,\n  GraphTimeWindowNode,\n  StoreTestDeps,\n} from \"./storage/types.js\";\nimport type { NormalizedProjectConfig } from \"./types.js\";\n\nexport const TEMPORAL_RECALL_SCHEMA = \"graphify.temporal-recall/v1\" as const;\n\ninterface TemporalSerializedGraph extends SerializedGraphData {\n  topology_signature?: unknown;\n}\n\nexport interface TemporalRecallOptions {\n  /** Safe integer epoch-ms, or ISO-8601 carrying an explicit Z/UTC offset. */\n  asOf: string | number;\n  /** Explicit graph.json source. Selecting it forces the file path. */\n  graph?: string;\n  /** Graphify project config (state dir plus optional storage mirror). */\n  config?: string;\n  /** Explicit GraphStore id. Otherwise env/config may select a store. */\n  store?: string;\n}\n\nexport interface TemporalRecallSnapshot {\n  topologySignatureSha256: string;\n  pushedAt: string;\n  toolVersion: string;\n}\n\nexport type TemporalRecallSource =\n  | {\n      kind: \"file\";\n      path: string;\n      topologySignatureSha256?: string;\n      provenance?: unknown;\n      freshness: \"unverified\";\n    }\n  | {\n      kind: \"store\";\n      storeId: string;\n      namespace?: string;\n      snapshot: TemporalRecallSnapshot | null;\n      freshness: \"unverified\";\n    };\n\nexport interface TemporalRecallResult extends GraphTimeWindow {\n  schema: typeof TEMPORAL_RECALL_SCHEMA;\n  asOfMs: number;\n  asOfIso: string;\n  source: TemporalRecallSource;\n  /** T6 returns the complete matching snapshot and never silently truncates. */\n  unpaged: true;\n}\n\nexport interface TemporalRecallDeps {\n  /** Hermetic environment map for store selection/config tests. */\n  env?: NodeJS.ProcessEnv;\n  /** Optional GraphStore resolver injection for tests/embedders. */\n  resolveStore?: (id: string, config: GraphStoreConfig) => Promise<GraphStore>;\n  /** Optional backend driver injection forwarded to the production registry. */\n  storeTestDeps?: StoreTestDeps;\n  /** Optional graph loader injection. Production reads/parses the named JSON file. */\n  readGraph?: (path: string) => TemporalSerializedGraph;\n}\n\nexport interface TemporalRecallCliOptions extends TemporalRecallOptions {\n  /** Emit the machine result only. */\n  json?: boolean;\n}\n\nexport interface TemporalRecallCliDeps extends TemporalRecallDeps {\n  /** Output sink; defaults to stdout through console.log. */\n  log?: (line: string) => void;\n}\n\nconst INTEGER_EPOCH = /^-?(?:0|[1-9]\\d*)$/;\nconst EXPLICIT_ZONE_ISO = /^\\d{4}-\\d{2}-\\d{2}T.+(?:Z|[+-]\\d{2}:\\d{2})$/i;\n\nfunction assertEpochRange(value: number): number {\n  if (!Number.isSafeInteger(value)) {\n    throw new RangeError(\"--as-of epoch-ms must be a safe integer\");\n  }\n  if (Number.isNaN(new Date(value).getTime())) {\n    throw new RangeError(\"--as-of epoch-ms is outside the ISO date range\");\n  }\n  return value;\n}\n\n/** Parse the deterministic T6 timestamp input contract. */\nexport function parseRecallTimestamp(value: string | number): number {\n  if (typeof value === \"number\") return assertEpochRange(value);\n\n  const raw = value.trim();\n  if (INTEGER_EPOCH.test(raw)) return assertEpochRange(Number(raw));\n  if (!EXPLICIT_ZONE_ISO.test(raw)) {\n    throw new Error(\n      \"--as-of must be safe integer epoch-ms or ISO-8601 with an explicit Z/UTC offset\",\n    );\n  }\n  const parsed = Date.parse(raw);\n  if (!Number.isFinite(parsed)) {\n    throw new Error(\"--as-of contains an invalid ISO-8601 timestamp\");\n  }\n  return assertEpochRange(parsed);\n}\n\nfunction hasOwn(record: Record<string, unknown>, key: string): boolean {\n  return Object.prototype.hasOwnProperty.call(record, key);\n}\n\nfunction temporalBounds(\n  record: Record<string, unknown>,\n  fromMs: number,\n  toMs: number,\n): { t: number; tEnd?: number } | undefined {\n  const t = record.t;\n  if (typeof t !== \"number\" || !Number.isFinite(t) || t > toMs) return undefined;\n  if (!hasOwn(record, \"t_end\")) return { t };\n\n  const tEnd = record.t_end;\n  if (\n    typeof tEnd !== \"number\" ||\n    !Number.isFinite(tEnd) ||\n    tEnd < t ||\n    tEnd < fromMs\n  ) {\n    return undefined;\n  }\n  return { t, tEnd };\n}\n\n/**\n * The shared T5/T6 record-level membership predicate: `t <= toMs AND (t_end\n * absent OR t_end >= fromMs)`, with untimed, malformed and inverted spans\n * excluded.\n *\n * Exported so the file-backend build-time window (SPEC §3(a)) slices with the\n * exact same semantics instead of keeping a second, drifting copy. Infinite\n * bounds are accepted here (a half-open slice); the T5 store port still\n * requires finite ordered bounds.\n */\nexport function overlapsTemporalWindow(\n  record: Record<string, unknown>,\n  fromMs: number,\n  toMs: number,\n): boolean {\n  return temporalBounds(record, fromMs, toMs) !== undefined;\n}\n\nfunction canonicalTemporalNode(\n  raw: Record<string, unknown>,\n  fromMs: number,\n  toMs: number,\n): GraphTimeWindowNode | undefined {\n  if (typeof raw.id !== \"string\") return undefined;\n  const bounds = temporalBounds(raw, fromMs, toMs);\n  if (!bounds) return undefined;\n\n  const { id: _rawId, ...attributes } = raw;\n  const node: GraphTimeWindowNode = {\n    ...attributes,\n    id: raw.id,\n    label: typeof raw.label === \"string\" && raw.label.length > 0 ? raw.label : raw.id,\n    t: bounds.t,\n  };\n\n  // These are canonical GraphStore fields, so malformed file values cannot\n  // spoof a different provider-neutral shape.\n  delete node.node_type;\n  delete node.community;\n  delete node.t_end;\n  if (typeof raw.node_type === \"string\" && raw.node_type.length > 0) {\n    node.node_type = raw.node_type;\n  }\n  if (typeof raw.community === \"number\" && Number.isFinite(raw.community)) {\n    node.community = raw.community;\n  }\n  if (bounds.tEnd !== undefined) node.t_end = bounds.tEnd;\n  return node;\n}\n\nfunction canonicalTemporalEdge(\n  raw: Record<string, unknown>,\n  fromMs: number,\n  toMs: number,\n): GraphTimeWindowEdge | undefined {\n  if (typeof raw.source !== \"string\" || typeof raw.target !== \"string\") return undefined;\n  const bounds = temporalBounds(raw, fromMs, toMs);\n  if (!bounds) return undefined;\n\n  const { source: _rawSource, target: _rawTarget, ...attributes } = raw;\n  const edge: GraphTimeWindowEdge = {\n    ...attributes,\n    source: raw.source,\n    target: raw.target,\n    relation: typeof raw.relation === \"string\" ? raw.relation : \"RELATES_TO\",\n    t: bounds.t,\n  };\n\n  delete edge.confidence;\n  delete edge.t_end;\n  if (typeof raw.confidence === \"string\" && raw.confidence.length > 0) {\n    edge.confidence = raw.confidence;\n  }\n  if (bounds.tEnd !== undefined) edge.t_end = bounds.tEnd;\n  return edge;\n}\n\nfunction compareText(a: string, b: string): number {\n  return a < b ? -1 : a > b ? 1 : 0;\n}\n\nfunction topologySignatureSha256(signature: string): string {\n  return `sha256:${createHash(\"sha256\").update(signature, \"utf-8\").digest(\"hex\")}`;\n}\n\nfunction discloseSnapshot(meta: GraphStoreSnapshotMeta): TemporalRecallSnapshot {\n  return {\n    topologySignatureSha256: topologySignatureSha256(meta.topologySignature),\n    pushedAt: meta.pushedAt,\n    toolVersion: meta.toolVersion,\n  };\n}\n\nfunction sortWindow(window: GraphTimeWindow): GraphTimeWindow {\n  const nodes = [...window.nodes].sort(\n    (a, b) => a.t - b.t || compareText(a.id, b.id),\n  );\n  const edges = [...window.edges].sort(\n    (a, b) =>\n      a.t - b.t ||\n      compareText(a.source, b.source) ||\n      compareText(a.target, b.target) ||\n      compareText(a.relation, b.relation),\n  );\n  return { nodes, edges };\n}\n\n/**\n * Pure graph.json fallback. Node and edge membership is deliberately\n * independent, so this is not an induced-subgraph operation.\n */\nexport function filterTemporalWindow(\n  raw: TemporalSerializedGraph,\n  fromMs: number,\n  toMs: number,\n): GraphTimeWindow {\n  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) {\n    throw new RangeError(\"temporal window bounds must be finite numbers\");\n  }\n  if (fromMs > toMs) {\n    throw new RangeError(\"temporal window requires fromMs <= toMs\");\n  }\n\n  const rawNodes = Array.isArray(raw.nodes) ? raw.nodes : [];\n  const rawEdges = Array.isArray(raw.links)\n    ? raw.links\n    : Array.isArray(raw.edges)\n      ? raw.edges\n      : [];\n  const nodes = rawNodes\n    .map((node) => canonicalTemporalNode(node, fromMs, toMs))\n    .filter((node): node is GraphTimeWindowNode => node !== undefined);\n  const edges = rawEdges\n    .map((edge) => canonicalTemporalEdge(edge, fromMs, toMs))\n    .filter((edge): edge is GraphTimeWindowEdge => edge !== undefined);\n  return sortWindow({ nodes, edges });\n}\n\nfunction loadConfig(configPath: string | undefined): NormalizedProjectConfig | undefined {\n  return configPath ? loadProjectConfig(resolve(configPath)) : undefined;\n}\n\nfunction selectedStoreId(\n  options: TemporalRecallOptions,\n  projectConfig: NormalizedProjectConfig | undefined,\n  env: NodeJS.ProcessEnv,\n): string | undefined {\n  return options.store ?? env.GRAPHIFY_STORE ?? projectConfig?.storage?.mirrors?.[0]?.backend;\n}\n\nfunction readTemporalGraph(path: string, deps: TemporalRecallDeps): TemporalSerializedGraph {\n  if (deps.readGraph) return deps.readGraph(path);\n  const parsed: unknown = JSON.parse(readFileSync(path, \"utf-8\"));\n  if (parsed === null || typeof parsed !== \"object\" || Array.isArray(parsed)) {\n    throw new Error(`graph file must contain a JSON object: ${path}`);\n  }\n  return parsed as TemporalSerializedGraph;\n}\n\nasync function openStore(\n  id: string,\n  config: GraphStoreConfig,\n  deps: TemporalRecallDeps,\n): Promise<GraphStore> {\n  if (deps.resolveStore) return deps.resolveStore(id, config);\n  return resolveGraphStore(id, config, deps.storeTestDeps);\n}\n\n/** Execute one read-only point-in-time graph projection. */\nexport async function recallAsOf(\n  options: TemporalRecallOptions,\n  deps: TemporalRecallDeps = {},\n): Promise<TemporalRecallResult> {\n  if (options.graph && options.store) {\n    throw new Error(\"--graph and --store are mutually exclusive recall sources\");\n  }\n  const asOfMs = parseRecallTimestamp(options.asOf);\n  const asOfIso = new Date(asOfMs).toISOString();\n  const env = deps.env ?? process.env;\n  const projectConfig = loadConfig(options.config);\n\n  // An explicit graph path is an explicit source choice, even if the ambient\n  // environment also names a store. Otherwise, once a store is selected, no\n  // store error/capability miss/empty result may silently switch sources.\n  const storeId = options.graph\n    ? undefined\n    : selectedStoreId(options, projectConfig, env);\n  if (storeId) {\n    const storeConfig = resolveStoreConfig(storeId, { projectConfig, env });\n    const store = await openStore(storeId, storeConfig, deps);\n    try {\n      if (\n        store.capabilities.queryWindow !== true ||\n        typeof store.queryWindow !== \"function\"\n      ) {\n        throw new Error(\n          `store '${storeId}' does not support temporal recall ` +\n            \"(requires capabilities.queryWindow and queryWindow())\",\n        );\n      }\n      const window = sortWindow(await store.queryWindow(asOfMs, asOfMs));\n      const snapshot = await store.readSnapshotMeta().catch(() => undefined);\n      return {\n        schema: TEMPORAL_RECALL_SCHEMA,\n        asOfMs,\n        asOfIso,\n        source: {\n          kind: \"store\",\n          storeId,\n          ...(storeConfig.namespace ? { namespace: storeConfig.namespace } : {}),\n          snapshot: snapshot ? discloseSnapshot(snapshot) : null,\n          freshness: \"unverified\",\n        },\n        unpaged: true,\n        ...window,\n      };\n    } finally {\n      await store.close();\n    }\n  }\n\n  const graphPath = options.graph\n    ? resolve(options.graph)\n    : projectConfig\n      ? join(projectConfig.outputs.state_dir, \"graph.json\")\n      : resolveGraphInputPath();\n  if (!existsSync(graphPath) && !deps.readGraph) {\n    throw new Error(`graph file not found: ${graphPath}`);\n  }\n  const raw = readTemporalGraph(graphPath, deps);\n  const window = filterTemporalWindow(raw, asOfMs, asOfMs);\n  const provenance = raw.graph?.provenance;\n  return {\n    schema: TEMPORAL_RECALL_SCHEMA,\n    asOfMs,\n    asOfIso,\n    source: {\n      kind: \"file\",\n      path: graphPath,\n      ...(typeof raw.topology_signature === \"string\"\n        ? { topologySignatureSha256: topologySignatureSha256(raw.topology_signature) }\n        : {}),\n      ...(provenance !== undefined ? { provenance } : {}),\n      freshness: \"unverified\",\n    },\n    unpaged: true,\n    ...window,\n  };\n}\n\n/** Compact non-claiming human rendering for the CLI. */\nexport function formatTemporalRecall(result: TemporalRecallResult): string {\n  const snapshot = result.source.kind === \"file\"\n    ? result.source.topologySignatureSha256 ?? \"unknown\"\n    : result.source.snapshot?.topologySignatureSha256 ?? \"unknown\";\n  const lines = [\n    `Temporal graph recall at ${result.asOfIso} (${result.asOfMs})`,\n    result.source.kind === \"file\"\n      ? `Source: graph file ${result.source.path}`\n      : `Source: store '${result.source.storeId}'` +\n        (result.source.namespace ? ` (configured namespace: ${result.source.namespace})` : \"\"),\n    `Snapshot identity: ${snapshot}`,\n    \"Freshness/provenance: unverified; result is unpaged and edges may lack returned endpoints.\",\n    `Nodes (${result.nodes.length}):`,\n  ];\n  for (const node of result.nodes) {\n    const type = node.node_type ? ` [${node.node_type}]` : \"\";\n    const end = node.t_end === undefined ? \"open\" : String(node.t_end);\n    lines.push(`  ${JSON.stringify(node.id)}${type} ${JSON.stringify(node.label)} t=${node.t} t_end=${end}`);\n  }\n  lines.push(`Edges (${result.edges.length}):`);\n  for (const edge of result.edges) {\n    const end = edge.t_end === undefined ? \"open\" : String(edge.t_end);\n    lines.push(\n      `  ${JSON.stringify(edge.source)} --${JSON.stringify(edge.relation)}--> ` +\n        `${JSON.stringify(edge.target)} t=${edge.t} t_end=${end}`,\n    );\n  }\n  return lines.join(\"\\n\");\n}\n\n/** CLI runner kept separate from Commander registration for focused tests. */\nexport async function runTemporalRecall(\n  options: TemporalRecallCliOptions,\n  deps: TemporalRecallCliDeps = {},\n): Promise<TemporalRecallResult> {\n  const result = await recallAsOf(options, deps);\n  const log = deps.log ?? ((line: string) => console.log(line));\n  log(options.json ? JSON.stringify(result, null, 2) : formatTemporalRecall(result));\n  return result;\n}\n"
+    },
+    {
+      "path": "tests/memory-admission.test.ts",
+      "blobSha": "99b97a927a45a3c2a2a3560ca1738c5cba7f4f3c",
+      "content": "/**\n * The agent-memory ADMISSION GATE (ratified contract SPEC_AGENT_MEMORY_SUBSTRATE\n * @87a8cd05..d8a4a448, wire-shape §9.4). Perimeter = the admission gate ONLY:\n * schema/enum (§3.1), the persona checks (§3.3: subject + STRUCTURAL event_shaped\n * + single-note/no-profile), reconcilable:false (§3.4), retention controls\n * (§3.5), principal_owner+scope neutral hook (§3.6), verifyVerbatim citation (§4).\n * OUT: the storage write-path (injected), the D11 promotion rule, the parked exec.\n *\n * Each predicate is encoded RED-first: a passing case AND a refusing case, so a\n * removed check makes its test fail (falsifiability).\n */\nimport { describe, expect, it, vi } from \"vitest\";\n\nimport {\n  admitMemoryNote,\n  requestTombstone,\n  type AdmissionDeps,\n  type MemoryNoteInput,\n} from \"../src/memory-admission.js\";\n\nconst T = 1_750_000_000_000;\n\n/** A source the citation resolves to; the cited string must appear in it. */\nconst SOURCE_TEXT = \"on 2026-08-01 correction Y was applied because Z, cf artifact A\";\n\nfunction deps(overrides: Partial<AdmissionDeps> = {}): AdmissionDeps {\n  return {\n    resolveSource: vi.fn((ref: string) => (ref === \"ref:A\" ? SOURCE_TEXT : null)),\n    appendNode: vi.fn(async () => ({ created: true })),\n    ...overrides,\n  };\n}\n\n/** A complete, admissible agent-work note. */\nfunction validNote(over: Partial<MemoryNoteInput> = {}): MemoryNoteInput {\n  return {\n    node_type: \"MemoryNote\",\n    memory_kind: \"decision\",\n    subject: \"agent-work\",\n    t: T,\n    t_src: \"authored-at\",\n    event: { at: T, kind: \"decision-taken\", ref: \"ref:A\" },\n    provenance: { cited: \"correction Y was applied\", source: \"ref:A\" },\n    principal_owner: \"human:antoinefa\",\n    scope: \"private\",\n    ...over,\n  };\n}\n\ndescribe(\"admitMemoryNote — schema + closed enum (§3.1)\", () => {\n  it(\"admits a well-formed agent-work note and appends it once\", async () => {\n    const d = deps();\n    const out = await admitMemoryNote(validNote(), d);\n    expect(out.admitted).toBe(true);\n    expect(d.appendNode).toHaveBeenCalledTimes(1);\n  });\n\n  it(\"refuses a memory_kind outside the closed enum, and stores NOTHING\", async () => {\n    const d = deps();\n    const out = await admitMemoryNote(validNote({ memory_kind: \"persona\" as never }), d);\n    expect(out.admitted).toBe(false);\n    expect(d.appendNode).not.toHaveBeenCalled(); // no silent write on refusal\n  });\n\n  it(\"refuses a wrong node_type\", async () => {\n    const out = await admitMemoryNote(validNote({ node_type: \"Agent\" as never }), deps());\n    expect(out.admitted).toBe(false);\n  });\n});\n\ndescribe(\"admitMemoryNote — persona mechanism, held by code (§3.3)\", () => {\n  it(\"admits subject agent-work and subject human:<id>\", async () => {\n    expect((await admitMemoryNote(validNote({ subject: \"agent-work\" }), deps())).admitted).toBe(true);\n    expect(\n      (await admitMemoryNote(\n        validNote({ subject: \"human:antoinefa\", purpose: \"self-contained requests\", retention: T + 1 }),\n        deps(),\n      )).admitted,\n    ).toBe(true);\n  });\n\n  it(\"REFUSES a persona/identity subject (not in {agent-work, human:<id>})\", async () => {\n    for (const bad of [\"persona\", \"voice:calm\", \"identity\", \"the agent\"]) {\n      expect((await admitMemoryNote(validNote({ subject: bad as never }), deps())).admitted).toBe(false);\n    }\n  });\n\n  it(\"event_shaped is STRUCTURAL: refuses a generalization with no instant `at`\", async () => {\n    // A standing rule (\"always X\") has no single instant → structurally refused.\n    const noAnchor = validNote();\n    delete (noAnchor as { event?: unknown }).event;\n    expect((await admitMemoryNote(noAnchor, deps())).admitted).toBe(false);\n\n    const noAt = validNote({ event: { kind: \"decision-taken\", ref: \"ref:A\" } as never });\n    expect((await admitMemoryNote(noAt, deps())).admitted).toBe(false);\n\n    const nonNumericAt = validNote({ event: { at: \"always\" as never, kind: \"k\", ref: \"ref:A\" } });\n    expect((await admitMemoryNote(nonNumericAt, deps())).admitted).toBe(false);\n  });\n\n  it(\"admission is single-note: it never assembles a profile (returns one id)\", async () => {\n    const out = await admitMemoryNote(validNote(), deps());\n    expect(out.admitted).toBe(true);\n    if (out.admitted) expect(typeof out.id).toBe(\"string\");\n  });\n});\n\ndescribe(\"admitMemoryNote — citation gate, verifyVerbatim only (§4)\", () => {\n  it(\"refuses an invented citation (cited string not in the named source)\", async () => {\n    const out = await admitMemoryNote(\n      validNote({ provenance: { cited: \"a fabricated claim never in the source\", source: \"ref:A\" } }),\n      deps(),\n    );\n    expect(out.admitted).toBe(false);\n  });\n\n  it(\"refuses when the source cannot be resolved\", async () => {\n    const out = await admitMemoryNote(\n      validNote({ provenance: { cited: \"correction Y was applied\", source: \"ref:UNKNOWN\" }, event: { at: T, kind: \"k\", ref: \"ref:UNKNOWN\" } }),\n      deps(),\n    );\n    expect(out.admitted).toBe(false);\n  });\n});\n\ndescribe(\"admitMemoryNote — retention controls for subject-human (§3.5)\", () => {\n  it(\"refuses a human-subject note missing purpose/retention\", async () => {\n    const noPurpose = validNote({ subject: \"human:antoinefa\", retention: T + 1 });\n    expect((await admitMemoryNote(noPurpose, deps())).admitted).toBe(false);\n    const noRetention = validNote({ subject: \"human:antoinefa\", purpose: \"p\" });\n    expect((await admitMemoryNote(noRetention, deps())).admitted).toBe(false);\n  });\n});\n\ndescribe(\"admitMemoryNote — tenancy neutral hook (§3.6)\", () => {\n  it(\"refuses a missing principal_owner or an invalid scope\", async () => {\n    expect((await admitMemoryNote(validNote({ principal_owner: \"\" }), deps())).admitted).toBe(false);\n    expect((await admitMemoryNote(validNote({ scope: \"public\" as never }), deps())).admitted).toBe(false);\n  });\n});\n\ndescribe(\"admitMemoryNote — the admitted node is stamped correctly\", () => {\n  it(\"stamps reconcilable:false (§3.4), trust:asserted, review_status:pending\", async () => {\n    const d = deps();\n    await admitMemoryNote(validNote(), d);\n    const appended = (d.appendNode as ReturnType<typeof vi.fn>).mock.calls[0][0];\n    expect(appended.reconcilable).toBe(false);\n    expect(appended.trust).toBe(\"asserted\");\n    expect(appended.review_status).toBe(\"pending\");\n    expect(appended.node_type).toBe(\"MemoryNote\");\n  });\n});\n\ndescribe(\"requestTombstone — authority check at admission (§3.5)\", () => {\n  it(\"refuses erasure by a principal that does not own the target, and appends nothing\", async () => {\n    const appendTombstone = vi.fn(async () => ({ applied: true }));\n    const out = await requestTombstone(\n      { target: { kind: \"node\", id: \"mem:x\" }, principal_owner: \"human:antoinefa\" },\n      { requester: \"human:someone-else\" },\n      { appendTombstone },\n    );\n    expect(out.applied).toBe(false);\n    expect(appendTombstone).not.toHaveBeenCalled();\n  });\n\n  it(\"allows erasure by the owner (or a mandated agent) and delegates the append\", async () => {\n    const appendTombstone = vi.fn(async () => ({ applied: true }));\n    const out = await requestTombstone(\n      { target: { kind: \"node\", id: \"mem:x\" }, principal_owner: \"human:antoinefa\" },\n      { requester: \"human:antoinefa\" },\n      { appendTombstone },\n    );\n    expect(out.applied).toBe(true);\n    expect(appendTombstone).toHaveBeenCalledTimes(1);\n  });\n});\n"
+    },
+    {
+      "path": "tests/memory-recall.test.ts",
+      "blobSha": "95ba79af79849c67c633170ead9edee7da78bcab",
+      "content": "/**\n * graphify-memory v1 — the RECALL surface (SPEC_AGENT_MEMORY_SUBSTRATE, ratified\n * @87a8cd05..cd7fad55). This is the read side that makes the admitted substrate\n * usable: it recalls `MemoryNote` nodes through the SAME T5/T6 temporal predicate\n * (`overlapsTemporalWindow`, reused — never copied) and enforces the recall-surface\n * invariants that are graphify-side and MINE (charter: temporal-recall):\n *\n *   - temporal membership: T6 as-of point OR T5 window (§7 CLOSED [t,t_end]);\n *   - tenancy access (§3.6): a private note is visible ONLY to its principal_owner,\n *     capitalised notes are shared; missing tenancy fails CLOSED;\n *   - tombstone fold-out (§3.5): a tombstoned target disappears at projection,\n *     and cannot resurface through an edge that references it (edge cascade);\n *   - tier disclosure (§1): every projection RETAINS trust + review_status + provenance;\n *   - projection prohibition (§3.3.3): the surface offers NO identity-profile\n *     projection — human-subject notes are returned individually, never assembled\n *     into a UserModel; enforced AT READ, not merely documented.\n *\n * Each invariant is encoded RED-first (a passing case AND a refusing/absent case),\n * so removing a check makes its test fail. Pure, deterministic, offline, no LLM,\n * no h2a import (anti-cycle).\n */\nimport { describe, expect, it } from \"vitest\";\n\nimport * as memoryRecall from \"../src/memory-recall.js\";\nimport {\n  recallMemory,\n  MEMORY_RECALL_SCHEMA,\n  type MemoryRecallInput,\n  type MemoryTombstone,\n} from \"../src/memory-recall.js\";\n\nconst OWNER = \"human:antoinefa\";\nconst OTHER = \"human:someone-else\";\nconst T = 1_750_000_000_000;\n\n/** A well-formed admitted note as the admission gate stamps it. `id` names the\n *  note by a short key that is prefixed `mem:` last, so it survives the spread. */\nfunction note(over: Record<string, unknown> = {}): Record<string, unknown> {\n  const { id: key = \"a\", ...rest } = over;\n  return {\n    node_type: \"MemoryNote\",\n    memory_kind: \"decision\",\n    subject: \"agent-work\",\n    t: T,\n    t_src: \"authored-at\",\n    event: { at: T, kind: \"decision-taken\", ref: \"ref:A\" },\n    provenance: { cited: \"correction Y was applied\", source: \"ref:A\" },\n    trust: \"asserted\",\n    review_status: \"pending\",\n    reconcilable: false,\n    principal_owner: OWNER,\n    scope: \"private\",\n    ...rest,\n    id: `mem:${String(key)}`,\n  };\n}\n\nfunction input(nodes: Record<string, unknown>[], links: Record<string, unknown>[] = []): MemoryRecallInput {\n  return { nodes, links };\n}\n\nconst ctx = { principal_owner: OWNER };\n\ndescribe(\"recallMemory — temporal predicate, reused from T5/T6 (§7)\", () => {\n  it(\"as-of point recalls a note live at the instant and excludes a closed-before one\", () => {\n    const doc = input([\n      note({ id: \"live\", t: T - 10, t_end: T + 10 }),\n      note({ id: \"closed-before\", t: T - 100, t_end: T - 50 }),\n      note({ id: \"open\", t: T - 10 }), // t_end absent = OPEN\n    ]);\n    const out = recallMemory(doc, ctx, { asOf: T });\n    expect(out.notes.map((n) => n.id).sort()).toEqual([\"mem:live\", \"mem:open\"]);\n  });\n\n  it(\"window recalls the notes overlapping [since, until] inclusively\", () => {\n    const doc = input([\n      note({ id: \"in\", t: T, t_end: T + 5 }),\n      note({ id: \"after\", t: T + 100, t_end: T + 200 }),\n    ]);\n    const out = recallMemory(doc, ctx, { window: { sinceMs: T - 5, untilMs: T + 10 } });\n    expect(out.notes.map((n) => n.id)).toEqual([\"mem:in\"]);\n  });\n\n  it(\"requires exactly one of asOf | window\", () => {\n    expect(() => recallMemory(input([]), ctx, {} as never)).toThrow();\n    expect(() =>\n      recallMemory(input([]), ctx, { asOf: T, window: { sinceMs: null, untilMs: null } } as never),\n    ).toThrow();\n  });\n\n  it(\"recalls ONLY MemoryNote nodes — a timed Commit is not memory\", () => {\n    const doc = input([\n      note({ id: \"n\" }),\n      { id: \"c1\", node_type: \"Commit\", t: T, principal_owner: OWNER, scope: \"capitalised\" },\n    ]);\n    const out = recallMemory(doc, ctx, { asOf: T });\n    expect(out.notes.map((n) => n.id)).toEqual([\"mem:n\"]);\n  });\n});\n\ndescribe(\"recallMemory — tenancy access, private is not cross-tenant (§3.6/§3.5)\", () => {\n  it(\"recalls the requester's own private note and any capitalised note\", () => {\n    const doc = input([\n      note({ id: \"mine\", scope: \"private\", principal_owner: OWNER }),\n      note({ id: \"shared\", scope: \"capitalised\", principal_owner: OTHER }),\n    ]);\n    const out = recallMemory(doc, ctx, { asOf: T });\n    expect(out.notes.map((n) => n.id).sort()).toEqual([\"mem:mine\", \"mem:shared\"]);\n  });\n\n  it(\"NEVER recalls another principal's private note\", () => {\n    const doc = input([note({ id: \"theirs\", scope: \"private\", principal_owner: OTHER })]);\n    const out = recallMemory(doc, ctx, { asOf: T });\n    expect(out.notes).toHaveLength(0);\n  });\n\n  it(\"fails CLOSED on a note with missing/invalid tenancy\", () => {\n    const doc = input([\n      note({ id: \"no-owner\", principal_owner: \"\" }),\n      note({ id: \"bad-scope\", scope: \"public\" }),\n    ]);\n    const out = recallMemory(doc, ctx, { asOf: T });\n    expect(out.notes).toHaveLength(0);\n  });\n});\n\ndescribe(\"recallMemory — tombstone fold-out at projection (§3.5, A2 with teeth)\", () => {\n  it(\"folds a tombstoned note out of the projection\", () => {\n    const doc = input([note({ id: \"keep\" }), note({ id: \"erased\" })]);\n    const tombstones: MemoryTombstone[] = [\n      { target: { kind: \"node\", id: \"mem:erased\" }, principal_owner: OWNER },\n    ];\n    const out = recallMemory(doc, ctx, { asOf: T }, tombstones);\n    expect(out.notes.map((n) => n.id)).toEqual([\"mem:keep\"]);\n  });\n\n  it(\"a tombstoned note cannot resurface through an edge that references it (edge cascade)\", () => {\n    const doc = input(\n      [note({ id: \"keep\" }), note({ id: \"erased\" })],\n      [{ source: \"mem:keep\", target: \"mem:erased\", relation: \"CITES\", t: T }],\n    );\n    const tombstones: MemoryTombstone[] = [\n      { target: { kind: \"node\", id: \"mem:erased\" }, principal_owner: OWNER },\n    ];\n    const out = recallMemory(doc, ctx, { asOf: T }, tombstones);\n    expect(out.notes.map((n) => n.id)).toEqual([\"mem:keep\"]);\n  });\n});\n\ndescribe(\"recallMemory — tier disclosure (§1: every projection retains tier + provenance)\", () => {\n  it(\"retains trust, review_status, and provenance on each recalled note\", () => {\n    const out = recallMemory(input([note({ id: \"n\" })]), ctx, { asOf: T });\n    const recalled = out.notes[0];\n    expect(recalled.trust).toBe(\"asserted\");\n    expect(recalled.review_status).toBe(\"pending\");\n    expect(recalled.provenance).toEqual({ cited: \"correction Y was applied\", source: \"ref:A\" });\n  });\n});\n\ndescribe(\"recallMemory — projection prohibition (§3.3.3, enforced at READ)\", () => {\n  it(\"returns human-subject notes INDIVIDUALLY, never collapsed into one profile\", () => {\n    const doc = input([\n      note({ id: \"h1\", subject: \"human:antoinefa\", memory_kind: \"context\", t: T - 20 }),\n      note({ id: \"h2\", subject: \"human:antoinefa\", memory_kind: \"context\", t: T }),\n    ]);\n    const out = recallMemory(doc, ctx, { window: { sinceMs: T - 100, untilMs: T } });\n    // Two distinct events, two distinct notes — NOT one assembled UserModel.\n    expect(out.notes.map((n) => n.id)).toEqual([\"mem:h1\", \"mem:h2\"]);\n    expect(out.projection).toBe(\"notes-only\");\n  });\n\n  it(\"the module offers NO identity-profile/persona/UserModel projection export\", () => {\n    const forbidden = /profile|persona|usermodel|identity|assemble/i;\n    const offenders = Object.keys(memoryRecall).filter((name) => forbidden.test(name));\n    expect(offenders).toEqual([]);\n  });\n\n  it(\"exposes the disclosed schema and is unpaged (T6: never silently truncates)\", () => {\n    const out = recallMemory(input([note({ id: \"n\" })]), ctx, { asOf: T });\n    expect(out.schema).toBe(MEMORY_RECALL_SCHEMA);\n    expect(out.unpaged).toBe(true);\n  });\n});\n"
+    },
+    {
+      "path": "tests/storage-postgres-time-window.test.ts",
+      "blobSha": "f10e7bd8e9c5bfe4bed5442f30540a190cea301b",
+      "content": "/**\n * Postgres temporal queryWindow tests (agent-stats time-oriented T5).\n *\n * The injected pg fake retains pushed JSONB props and evaluates the normative\n * overlap contract, giving a push -> queryWindow round trip without requiring\n * a local database. SQL-shape assertions separately lock down safe casts,\n * indexes, schema qualification, and parameterized namespace scope.\n */\nimport { mkdtempSync, rmSync } from \"node:fs\";\nimport { tmpdir } from \"node:os\";\nimport { join } from \"node:path\";\nimport { afterEach, describe, expect, it } from \"vitest\";\nimport Graph from \"graphology\";\nimport type { GraphStore, StoreTestDeps } from \"../src/storage/types.js\";\nimport type { PostgresGraphStore } from \"../src/storage/postgres.js\";\n\ninterface RecordedSql {\n  via: \"pool\" | \"client\";\n  text: string;\n  params?: unknown[];\n}\n\ninterface NodeRow {\n  city_slug: string;\n  id: string;\n  label: string | null;\n  type: string | null;\n  community: number | null;\n  props: Record<string, unknown>;\n}\n\ninterface EdgeRow {\n  city_slug: string;\n  source_id: string;\n  target_id: string;\n  relation: string;\n  confidence: string | null;\n  props: Record<string, unknown>;\n}\n\ninterface InMemoryPgState {\n  queries: RecordedSql[];\n  nodes: NodeRow[];\n  edges: EdgeRow[];\n}\n\nconst NODE_COLS = 6;\nconst EDGE_COLS = 6;\n\nfunction freshState(): InMemoryPgState {\n  return { queries: [], nodes: [], edges: [] };\n}\n\nfunction props(value: unknown): Record<string, unknown> {\n  if (typeof value !== \"string\") return {};\n  const parsed: unknown = JSON.parse(value);\n  return parsed !== null && typeof parsed === \"object\" && !Array.isArray(parsed)\n    ? (parsed as Record<string, unknown>)\n    : {};\n}\n\nfunction ingestNodes(state: InMemoryPgState, params: unknown[] | undefined): void {\n  if (!params) return;\n  for (let i = 0; i + NODE_COLS <= params.length; i += NODE_COLS) {\n    const row: NodeRow = {\n      city_slug: String(params[i]),\n      id: String(params[i + 1]),\n      label: params[i + 2] == null ? null : String(params[i + 2]),\n      type: params[i + 3] == null ? null : String(params[i + 3]),\n      community: params[i + 4] == null ? null : Number(params[i + 4]),\n      props: props(params[i + 5]),\n    };\n    const index = state.nodes.findIndex(\n      (candidate) => candidate.city_slug === row.city_slug && candidate.id === row.id,\n    );\n    if (index >= 0) state.nodes[index] = row;\n    else state.nodes.push(row);\n  }\n}\n\nfunction ingestEdges(state: InMemoryPgState, params: unknown[] | undefined): void {\n  if (!params) return;\n  for (let i = 0; i + EDGE_COLS <= params.length; i += EDGE_COLS) {\n    const row: EdgeRow = {\n      city_slug: String(params[i]),\n      source_id: String(params[i + 1]),\n      target_id: String(params[i + 2]),\n      relation: String(params[i + 3]),\n      confidence: params[i + 4] == null ? null : String(params[i + 4]),\n      props: props(params[i + 5]),\n    };\n    const index = state.edges.findIndex(\n      (candidate) =>\n        candidate.city_slug === row.city_slug &&\n        candidate.source_id === row.source_id &&\n        candidate.target_id === row.target_id &&\n        candidate.relation === row.relation,\n    );\n    if (index >= 0) state.edges[index] = row;\n    else state.edges.push(row);\n  }\n}\n\nfunction overlaps(record: { props: Record<string, unknown> }, fromMs: number, toMs: number) {\n  const start = record.props.t;\n  if (typeof start !== \"number\" || !Number.isFinite(start)) return false;\n  if (start > toMs) return false;\n  if (!Object.prototype.hasOwnProperty.call(record.props, \"t_end\")) return true;\n  const end = record.props.t_end;\n  return typeof end === \"number\" && Number.isFinite(end) && end >= start && end >= fromMs;\n}\n\nfunction answer(state: InMemoryPgState, text: string, params?: unknown[]) {\n  const upper = text.toUpperCase();\n\n  if (text.includes(\"DELETE FROM\") && text.includes(\"graph_nodes\")) {\n    const namespace = String(params?.[0]);\n    state.nodes = state.nodes.filter((row) => row.city_slug !== namespace);\n    return { rows: [], rowCount: 0 };\n  }\n  if (text.includes(\"DELETE FROM\") && text.includes(\"graph_edges\")) {\n    const namespace = String(params?.[0]);\n    state.edges = state.edges.filter((row) => row.city_slug !== namespace);\n    return { rows: [], rowCount: 0 };\n  }\n  if (text.includes(\"INSERT INTO\") && text.includes(\"graph_nodes\")) {\n    ingestNodes(state, params);\n    return { rows: [], rowCount: 0 };\n  }\n  if (text.includes(\"INSERT INTO\") && text.includes(\"graph_edges\")) {\n    ingestEdges(state, params);\n    return { rows: [], rowCount: 0 };\n  }\n\n  if (upper.includes(\"SELECT\") && text.includes(\"FROM\") && text.includes(\"graph_nodes\") && text.includes(\"n.props\")) {\n    const namespace = String(params?.[0]);\n    const fromMs = Number(params?.[1]);\n    const toMs = Number(params?.[2]);\n    const rows = state.nodes\n      .filter((row) => row.city_slug === namespace && overlaps(row, fromMs, toMs))\n      .sort((a, b) => Number(a.props.t) - Number(b.props.t) || a.id.localeCompare(b.id))\n      .map((row) => ({ ...row }));\n    return { rows, rowCount: rows.length };\n  }\n  if (upper.includes(\"SELECT\") && text.includes(\"FROM\") && text.includes(\"graph_edges\") && text.includes(\"e.props\")) {\n    const namespace = String(params?.[0]);\n    const fromMs = Number(params?.[1]);\n    const toMs = Number(params?.[2]);\n    const rows = state.edges\n      .filter((row) => row.city_slug === namespace && overlaps(row, fromMs, toMs))\n      .sort(\n        (a, b) =>\n          Number(a.props.t) - Number(b.props.t) ||\n          a.source_id.localeCompare(b.source_id) ||\n          a.target_id.localeCompare(b.target_id) ||\n          a.relation.localeCompare(b.relation),\n      )\n      .map((row) => ({ ...row }));\n    return { rows, rowCount: rows.length };\n  }\n\n  return { rows: [], rowCount: 0 };\n}\n\nfunction makeFakePgModule(state: InMemoryPgState) {\n  class FakePool {\n    constructor(_config?: Record<string, unknown>) {}\n    query(text: string, params?: unknown[]) {\n      state.queries.push({ via: \"pool\", text, params });\n      return Promise.resolve(answer(state, text, params));\n    }\n    connect() {\n      const client = {\n        query: (text: string, params?: unknown[]) => {\n          state.queries.push({ via: \"client\" as const, text, params });\n          return Promise.resolve(answer(state, text, params));\n        },\n        release() {\n          /* no-op */\n        },\n      };\n      return Promise.resolve(client);\n    }\n    end() {\n      return Promise.resolve();\n    }\n  }\n  return { Pool: FakePool };\n}\n\nconst tempDirs: string[] = [];\n\nfunction artifactBase(): string {\n  const dir = mkdtempSync(join(tmpdir(), \"graphify-pgtime-\"));\n  tempDirs.push(dir);\n  return dir;\n}\n\nafterEach(() => {\n  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });\n});\n\nasync function makeStore(\n  state: InMemoryPgState,\n  citySlug = \"time_a\",\n  schema?: string,\n): Promise<PostgresGraphStore> {\n  const { createPostgresGraphStore } = await import(\"../src/storage/postgres.js\");\n  const deps: StoreTestDeps = { driverModule: makeFakePgModule(state) };\n  return createPostgresGraphStore(\n    {\n      connectionString: \"postgres://user:pass@localhost:5432/testdb\",\n      citySlug,\n      schema,\n      target: artifactBase(),\n    },\n    deps,\n  );\n}\n\nfunction temporalFixture(): { G: Graph; communities: Map<number, string[]> } {\n  const G = new Graph();\n  G.addNode(\"before\", { label: \"Before\", node_type: \"Session\", t: 50, t_end: 99 });\n  G.addNode(\"open\", { label: \"Open\", node_type: \"Session\", t: 40, authored_by: \"agent-a\" });\n  G.addNode(\"spanning\", { label: \"Spanning\", node_type: \"Session\", t: 90, t_end: 210 });\n  G.addNode(\"left\", { label: \"Left point\", node_type: \"Commit\", t: 100, t_end: 100 });\n  G.addNode(\"right\", { label: \"Right point\", node_type: \"Commit\", t: 200, t_end: 200 });\n  G.addNode(\"after\", { label: \"After\", node_type: \"Commit\", t: 201, t_end: 201 });\n  G.addNode(\"untimed\", { label: \"Untimed\", node_type: \"Project\" });\n  G.addNode(\"bad-t\", { label: \"Bad t\", node_type: \"Session\", t: \"100\" });\n  G.addNode(\"bad-end\", { label: \"Bad end\", node_type: \"Session\", t: 120, t_end: \"open\" });\n  G.addNode(\"inverted\", { label: \"Inverted\", node_type: \"Session\", t: 160, t_end: 159 });\n  G.addEdge(\"open\", \"untimed\", {\n    relation: \"conducted-by\",\n    confidence: \"DIRECT\",\n    t: 40,\n    authored_by: \"agent-a\",\n    source: \"spoofed\",\n  });\n  G.addEdge(\"untimed\", \"left\", { relation: \"produced\", t: 100, t_end: 100 });\n  G.addEdge(\"before\", \"after\", { relation: \"before\", t: 50, t_end: 99 });\n  G.addEdge(\"bad-end\", \"inverted\", { relation: \"invalid\", t: 120, t_end: \"later\" });\n  return {\n    G,\n    communities: new Map([[7, G.nodes()]]),\n  };\n}\n\ndescribe(\"Postgres queryWindow capability and contract\", () => {\n  it(\"pairs the optional capability and method only on Postgres\", async () => {\n    const state = freshState();\n    const postgres = await makeStore(state);\n    expect(postgres.capabilities.queryWindow).toBe(true);\n    expect(postgres.queryWindow).toBeTypeOf(\"function\");\n    expect(postgres.capabilities.window).toBeDefined();\n    expect(postgres.graphWindow).toBeTypeOf(\"function\");\n\n    const { createFileGraphStore } = await import(\"../src/storage/file.js\");\n    const file: GraphStore = createFileGraphStore({ target: join(artifactBase(), \"graph.json\") });\n    expect(file.capabilities.queryWindow).toBeUndefined();\n    expect(file.queryWindow).toBeUndefined();\n    await file.close();\n    await postgres.close();\n  });\n\n  it(\"round-trips inclusive points, closed spans, and open intervals\", async () => {\n    const state = freshState();\n    const store = await makeStore(state);\n    const { G, communities } = temporalFixture();\n    await store.pushGraph(G, communities, { mode: \"replace\" });\n\n    const window = await store.queryWindow(100, 200);\n    expect(window.nodes.map((node) => node.id)).toEqual([\"open\", \"spanning\", \"left\", \"right\"]);\n    expect(window.edges.map((edge) => edge.relation)).toEqual([\"conducted-by\", \"produced\"]);\n\n    // Flat provider-neutral records preserve arbitrary props but typed identity\n    // wins, and the edge is valid even though its untimed endpoint is absent.\n    expect(window.nodes[0]).toMatchObject({\n      id: \"open\",\n      label: \"Open\",\n      node_type: \"Session\",\n      community: 7,\n      t: 40,\n      authored_by: \"agent-a\",\n    });\n    expect(window.nodes[0]).not.toHaveProperty(\"props\");\n    expect(window.nodes[0]).not.toHaveProperty(\"city_slug\");\n    expect(window.edges[0]).toMatchObject({\n      source: \"open\",\n      target: \"untimed\",\n      relation: \"conducted-by\",\n      confidence: \"DIRECT\",\n      t: 40,\n      authored_by: \"agent-a\",\n    });\n    expect(window.edges[0].source).not.toBe(\"spoofed\");\n    await store.close();\n  });\n\n  it(\"excludes untimed, malformed, inverted, and non-overlapping records\", async () => {\n    const state = freshState();\n    const store = await makeStore(state);\n    const { G, communities } = temporalFixture();\n    await store.pushGraph(G, communities);\n    const window = await store.queryWindow(100, 200);\n\n    expect(window.nodes.map((node) => node.id)).not.toEqual(\n      expect.arrayContaining([\"before\", \"after\", \"untimed\", \"bad-t\", \"bad-end\", \"inverted\"]),\n    );\n    expect(window.edges.map((edge) => edge.relation)).not.toEqual(\n      expect.arrayContaining([\"before\", \"invalid\"]),\n    );\n    await store.close();\n  });\n\n  it(\"accepts an equal-bound instant and rejects invalid bounds before SQL\", async () => {\n    const state = freshState();\n    const store = await makeStore(state);\n    await expect(store.queryWindow(Number.NaN, 1)).rejects.toThrow(/finite/);\n    await expect(store.queryWindow(1, Number.POSITIVE_INFINITY)).rejects.toThrow(/finite/);\n    await expect(store.queryWindow(2, 1)).rejects.toThrow(/fromMs <= toMs/);\n    expect(state.queries).toHaveLength(0);\n\n    const { G, communities } = temporalFixture();\n    await store.pushGraph(G, communities);\n    const instant = await store.queryWindow(100, 100);\n    expect(instant.nodes.map((node) => node.id)).toEqual([\"open\", \"spanning\", \"left\"]);\n    await store.close();\n  });\n\n  it(\"parameterizes namespace overrides and keeps namespaces isolated\", async () => {\n    const state = freshState();\n    const first = await makeStore(state, \"time_a\");\n    const second = await makeStore(state, \"time_b\");\n    const { G, communities } = temporalFixture();\n    await first.pushGraph(G, communities);\n\n    const other = new Graph();\n    other.addNode(\"other\", { label: \"Other\", node_type: \"MemoryNote\", t: 150, t_end: 150 });\n    await second.pushGraph(other, new Map([[1, [\"other\"]]]));\n\n    expect((await first.queryWindow(100, 200)).nodes.map((node) => node.id)).not.toContain(\"other\");\n    expect(\n      (await first.queryWindow(100, 200, { namespace: \"time_b\" })).nodes.map((node) => node.id),\n    ).toEqual([\"other\"]);\n\n    const select = state.queries.find(\n      (query) => query.text.includes(\"FROM graph_nodes n\") && query.params?.[0] === \"time_b\",\n    );\n    expect(select?.params).toEqual([\"time_b\", 100, 200]);\n    expect(select?.text).not.toContain(\"time_b\");\n    await first.close();\n    await second.close();\n  });\n});\n\ndescribe(\"Postgres queryWindow SQL\", () => {\n  it(\"creates four type-guarded temporal indexes\", async () => {\n    const { postgresDdlStatements } = await import(\"../src/storage/postgres.js\");\n    const temporal = postgresDdlStatements().filter((statement) =>\n      /graph_(nodes|edges)_city_t(_end)?_idx/.test(statement),\n    );\n    expect(temporal).toHaveLength(4);\n    expect(temporal.join(\"\\n\")).toContain(\"jsonb_typeof(props->'t') = 'number'\");\n    expect(temporal.join(\"\\n\")).toContain(\"jsonb_typeof(props->'t_end') = 'number'\");\n    expect(temporal.join(\"\\n\")).toContain(\"THEN CASE WHEN abs(\");\n    expect(temporal.join(\"\\n\")).toContain(\"::numeric) <= 1.7976931348623155e308::numeric\");\n    expect(temporal.join(\"\\n\")).not.toContain(\"WHERE props ?\");\n  });\n\n  it(\"uses safe numeric expressions and schema-qualified tables\", async () => {\n    const state = freshState();\n    const store = await makeStore(state, \"time_schema\", \"temporal\");\n    await store.queryWindow(10, 20);\n\n    const nodeSelect = state.queries.find((query) => query.text.includes('FROM \"temporal\".graph_nodes n'));\n    const edgeSelect = state.queries.find((query) => query.text.includes('FROM \"temporal\".graph_edges e'));\n    expect(nodeSelect?.text).toContain(\"jsonb_typeof(n.props->'t') = 'number'\");\n    expect(nodeSelect?.text).toContain(\"jsonb_typeof(n.props->'t_end') = 'number'\");\n    expect(edgeSelect?.text).toContain(\"jsonb_typeof(e.props->'t') = 'number'\");\n    expect(edgeSelect?.text).toContain(\"jsonb_typeof(e.props->'t_end') = 'number'\");\n    expect(nodeSelect?.params).toEqual([\"time_schema\", 10, 20]);\n    expect(edgeSelect?.params).toEqual([\"time_schema\", 10, 20]);\n    await store.close();\n  });\n});\n\ndescribe.skipIf(!process.env.GRAPHIFY_TEST_POSTGRES_URL)(\n  \"Postgres queryWindow: live malformed-row guard\",\n  () => {\n    const connectionString = process.env.GRAPHIFY_TEST_POSTGRES_URL as string;\n    const citySlug = `graphify_time_test_${Date.now()}`;\n\n    it(\"excludes out-of-double-range JSONB numbers without aborting the query\", async () => {\n      const { createPostgresGraphStore } = await import(\"../src/storage/postgres.js\");\n      const store = await createPostgresGraphStore({\n        connectionString,\n        citySlug,\n        target: artifactBase(),\n      });\n      try {\n        // The first read idempotently ensures tables/indexes, then raw inserts\n        // exercise legacy JSONB shapes that JavaScript cannot push losslessly.\n        await store.queryWindow(0, 1);\n        await store.query!(\n          \"INSERT INTO graph_nodes (city_slug, id, label, type, community, props) \" +\n            \"VALUES ($1, 'valid-open', 'Valid', 'Session', NULL, '{\\\"t\\\": 10}'::jsonb), \" +\n            \"($1, 'huge', 'Huge', 'Session', NULL, '{\\\"t\\\": 1e400}'::jsonb), \" +\n            \"($1, 'bad-end', 'Bad end', 'Session', NULL, '{\\\"t\\\": 10, \\\"t_end\\\": 1e400}'::jsonb), \" +\n            \"($1, 'string-t', 'String t', 'Session', NULL, '{\\\"t\\\": \\\"bad\\\"}'::jsonb), \" +\n            \"($1, 'null-t', 'Null t', 'Session', NULL, '{\\\"t\\\": null}'::jsonb), \" +\n            \"($1, 'string-end', 'String end', 'Session', NULL, '{\\\"t\\\": 10, \\\"t_end\\\": \\\"bad\\\"}'::jsonb), \" +\n            \"($1, 'null-end', 'Null end', 'Session', NULL, '{\\\"t\\\": 10, \\\"t_end\\\": null}'::jsonb) \" +\n            \"ON CONFLICT (city_slug, id) DO UPDATE SET props = EXCLUDED.props\",\n          [citySlug],\n        );\n\n        const result = await store.queryWindow(20, 20);\n        expect(result.nodes.map((node) => node.id)).toEqual([\"valid-open\"]);\n      } finally {\n        await store.clear({ force: true });\n        await store.close();\n      }\n    });\n  },\n);\n"
+    }
+  ],
+  "records": [
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-admission.test.ts:admits a well-formed agent-work note and appends it once#mem:7f25acb305109984:3d285c61f07c99d7f5b210cd34347b91fadbdc88d3408ad92a694e5b9f4f54a1",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1750000000000,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "id": "mem:7f25acb305109984",
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1750000000000]",
+      "legacyId": "mem:7f25acb305109984"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-admission.test.ts:admits subject agent-work and subject human:<id>#mem:7f25acb305109984:3d285c61f07c99d7f5b210cd34347b91fadbdc88d3408ad92a694e5b9f4f54a1",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1750000000000,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "id": "mem:7f25acb305109984",
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1750000000000]",
+      "legacyId": "mem:7f25acb305109984"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-admission.test.ts:admits subject agent-work and subject human:<id>#mem:7cf7fc61aa604d41:2c17c8aa78d6efb31ad30c0288e923d2b0d592c8effa7f25848a6b320eea404a",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "human:antoinefa",
+        "t": 1750000000000,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "purpose": "self-contained requests",
+        "retention": 1750000000001,
+        "id": "mem:7cf7fc61aa604d41",
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"human:antoinefa\",\"ref:A\",1750000000000,\"correction Y was applied\",1750000000000]",
+      "legacyId": "mem:7cf7fc61aa604d41"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-admission.test.ts:admission is single-note: it never assembles a profile (returns one id)#mem:7f25acb305109984:3d285c61f07c99d7f5b210cd34347b91fadbdc88d3408ad92a694e5b9f4f54a1",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1750000000000,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "id": "mem:7f25acb305109984",
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1750000000000]",
+      "legacyId": "mem:7f25acb305109984"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-admission.test.ts:stamps reconcilable:false (§3.4), trust:asserted, review_status:pending#mem:7f25acb305109984:3d285c61f07c99d7f5b210cd34347b91fadbdc88d3408ad92a694e5b9f4f54a1",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1750000000000,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "id": "mem:7f25acb305109984",
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1750000000000]",
+      "legacyId": "mem:7f25acb305109984"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-recall.test.ts:as-of point recalls a note live at the instant and excludes a closed-before one#mem:live:b54dde179eaea7b61f96c83b1a4e595095f7ad74f2ce3f5f6f4b4608b5614a85",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1749999999990,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false,
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "t_end": 1750000000010,
+        "id": "mem:live"
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1749999999990]",
+      "legacyId": "mem:e7f180fea604b4de"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-recall.test.ts:as-of point recalls a note live at the instant and excludes a closed-before one#mem:closed-before:d899a20c7c813cfca066399c830faf1a1dbd449cf1b9ad42b6afee45eabc43a1",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1749999999900,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false,
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "t_end": 1749999999950,
+        "id": "mem:closed-before"
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1749999999900]",
+      "legacyId": "mem:7181da7f643627ee"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-recall.test.ts:as-of point recalls a note live at the instant and excludes a closed-before one#mem:open:c7e1097fedae24966bab8372ff4ce9b096e4e757f855af24c27e4d66bf0cd661",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1749999999990,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false,
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "id": "mem:open"
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1749999999990]",
+      "legacyId": "mem:e7f180fea604b4de"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-recall.test.ts:window recalls the notes overlapping [since, until] inclusively#mem:in:6a6022de73b0fb4d72b54b0fe5dea211eb6b6c99e7f444cd8bf6222e44184275",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1750000000000,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false,
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "t_end": 1750000000005,
+        "id": "mem:in"
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1750000000000]",
+      "legacyId": "mem:7f25acb305109984"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-recall.test.ts:window recalls the notes overlapping [since, until] inclusively#mem:after:6f9cc102ecebca8f52f7a678527b497f7c7fe66319387eb61cc3b6509b0d1f32",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1750000000100,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false,
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "t_end": 1750000000200,
+        "id": "mem:after"
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1750000000100]",
+      "legacyId": "mem:8c3ca7d4707d950c"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-recall.test.ts:recalls ONLY MemoryNote nodes — a timed Commit is not memory#mem:n:f1a2b080efd9035ec1b2e8a79aa28662db406b0e5cf42a75565ef32d86bb7083",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1750000000000,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false,
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "id": "mem:n"
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1750000000000]",
+      "legacyId": "mem:7f25acb305109984"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-recall.test.ts:recalls the requester's own private note and any capitalised note#mem:mine:08b923b47026410ed8bb746628f12f001c85b841bd9eb801f499bd9e4ac1f64f",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1750000000000,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false,
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "id": "mem:mine"
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1750000000000]",
+      "legacyId": "mem:7f25acb305109984"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-recall.test.ts:recalls the requester's own private note and any capitalised note#mem:shared:66508de6c4789080163dd622d99ae288b3370d89673cb8f830672e68a0da3d12",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1750000000000,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false,
+        "principal_owner": "human:someone-else",
+        "scope": "capitalised",
+        "id": "mem:shared"
+      },
+      "identityCanonical": "[\"human:someone-else\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1750000000000]",
+      "legacyId": "mem:48c12383f3bb4ca4"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-recall.test.ts:NEVER recalls another principal's private note#mem:theirs:c96ae0cdbdc365972ac72dfd697c6a57f5c4e96728f296c20c0b50de2090805b",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1750000000000,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false,
+        "principal_owner": "human:someone-else",
+        "scope": "private",
+        "id": "mem:theirs"
+      },
+      "identityCanonical": "[\"human:someone-else\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1750000000000]",
+      "legacyId": "mem:48c12383f3bb4ca4"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-recall.test.ts:fails CLOSED on a note with missing/invalid tenancy#mem:no-owner:8b6735096b239ed7658b98920b2e6c825bb14c773c1570a27abc37d7f009492d",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1750000000000,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false,
+        "principal_owner": "",
+        "scope": "private",
+        "id": "mem:no-owner"
+      },
+      "legacyId": "mem:no-owner"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-recall.test.ts:fails CLOSED on a note with missing/invalid tenancy#mem:bad-scope:9bc318bdf63488a949a5ca914282eaba13bc186ed560207f8e56ba34bcd481b1",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1750000000000,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false,
+        "principal_owner": "human:antoinefa",
+        "scope": "public",
+        "id": "mem:bad-scope"
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1750000000000]",
+      "legacyId": "mem:7f25acb305109984"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-recall.test.ts:folds a tombstoned note out of the projection#mem:keep:98533ebc3d75ff2c6797bcdd7633fa1f03605271ee9770996398b149cb54af09",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1750000000000,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false,
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "id": "mem:keep"
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1750000000000]",
+      "legacyId": "mem:7f25acb305109984"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-recall.test.ts:folds a tombstoned note out of the projection#mem:erased:fce7aad1c71bd84fb5b1079870c00000dd81c08edae3ce3ba19fa24cbbab2103",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1750000000000,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false,
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "id": "mem:erased"
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1750000000000]",
+      "legacyId": "mem:7f25acb305109984"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-recall.test.ts:a tombstoned note cannot resurface through an edge that references it (edge cascade)#mem:keep:98533ebc3d75ff2c6797bcdd7633fa1f03605271ee9770996398b149cb54af09",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1750000000000,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false,
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "id": "mem:keep"
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1750000000000]",
+      "legacyId": "mem:7f25acb305109984"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-recall.test.ts:a tombstoned note cannot resurface through an edge that references it (edge cascade)#mem:erased:fce7aad1c71bd84fb5b1079870c00000dd81c08edae3ce3ba19fa24cbbab2103",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1750000000000,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false,
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "id": "mem:erased"
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1750000000000]",
+      "legacyId": "mem:7f25acb305109984"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-recall.test.ts:retains trust, review_status, and provenance on each recalled note#mem:n:f1a2b080efd9035ec1b2e8a79aa28662db406b0e5cf42a75565ef32d86bb7083",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1750000000000,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false,
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "id": "mem:n"
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1750000000000]",
+      "legacyId": "mem:7f25acb305109984"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-recall.test.ts:returns human-subject notes INDIVIDUALLY, never collapsed into one profile#mem:h1:b9a03e305d7a1da631ce342d7b389229fd31da581a7546786138bc4c1120054c",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "context",
+        "subject": "human:antoinefa",
+        "t": 1749999999980,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false,
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "id": "mem:h1"
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"human:antoinefa\",\"ref:A\",1750000000000,\"correction Y was applied\",1749999999980]",
+      "legacyId": "mem:d834da5dace57c89"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-recall.test.ts:returns human-subject notes INDIVIDUALLY, never collapsed into one profile#mem:h2:9112e86141683dfde913de0001acad5c85903cb2e5dae1cca691da0e587c8295",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "context",
+        "subject": "human:antoinefa",
+        "t": 1750000000000,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false,
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "id": "mem:h2"
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"human:antoinefa\",\"ref:A\",1750000000000,\"correction Y was applied\",1750000000000]",
+      "legacyId": "mem:7cf7fc61aa604d41"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/memory-recall.test.ts:exposes the disclosed schema and is unpaged (T6: never silently truncates)#mem:n:f1a2b080efd9035ec1b2e8a79aa28662db406b0e5cf42a75565ef32d86bb7083",
+      "node": {
+        "node_type": "MemoryNote",
+        "memory_kind": "decision",
+        "subject": "agent-work",
+        "t": 1750000000000,
+        "t_src": "authored-at",
+        "event": {
+          "at": 1750000000000,
+          "kind": "decision-taken",
+          "ref": "ref:A"
+        },
+        "provenance": {
+          "cited": "correction Y was applied",
+          "source": "ref:A"
+        },
+        "trust": "asserted",
+        "review_status": "pending",
+        "reconcilable": false,
+        "principal_owner": "human:antoinefa",
+        "scope": "private",
+        "id": "mem:n"
+      },
+      "identityCanonical": "[\"human:antoinefa\",\"agent-work\",\"ref:A\",1750000000000,\"correction Y was applied\",1750000000000]",
+      "legacyId": "mem:7f25acb305109984"
+    },
+    {
+      "origin": "1bb7f03d917c3833865d0d66241b67850925a536:tests/storage-postgres-time-window.test.ts:12465#other:6752dac1e568de21ad1c1ad285e7713ed33c8f643f817127552cdea1ea04e272",
+      "node": {
+        "label": "Other",
+        "node_type": "MemoryNote",
+        "t": 150,
+        "t_end": 150,
+        "id": "other"
+      },
+      "legacyId": "other"
+    }
+  ]
+}

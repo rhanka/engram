@@ -703,7 +703,9 @@ describe("memory projection adapters", () => {
 
   for (const [sequence, original] of x2bHistories().entries()) {
     for (const order of X2B_ORDERS) {
-      it(`class: sequence ${sequence} x ${order} x resumes x faults x replay on FileGraphStore`, async () => {
+      // Same exhaustive 1,344 cells, sharded into fixed 56-cell tests. A slow
+      // filesystem no longer spends the entire CI timeout on four partitions.
+      it.each(X2B_PARTITIONS)(`class: sequence ${sequence} x ${order} x partition %i x resumes x faults x replay on FileGraphStore`, async (pageSize) => {
         // One restored record stays alive, one is terminal, and one never participates in
         // the history. Unlike the older all-terminal corpus this detects destructive replay.
         const events = original.slice(0, 7);
@@ -711,118 +713,119 @@ describe("memory projection adapters", () => {
         const expected = x2bOracle(events, head, order);
         expected.live.add("unrelated");
         expected.influence.set("unrelated", x2bContribution("unrelated"));
-        for (const pageSize of X2B_PARTITIONS) {
-          for (const resume of x2bResumeCursors(events)) {
-            for (const fault of ["prepare", "publish", "commit", "response", "deadline", "fence", "unknown-token"] as const) {
-              const label = `${sequence}/${order}/${pageSize}/${resume}/${fault}`;
-              const dir = workdir();
-              const runner = createX2bMemorySqlRunner();
-              const terminal = new Set<string>();
-              const canonical = (through: string) => {
-                for (const event of events) if (BigInt(event.cursor) <= BigInt(through) && event.reason_ref === "memory:tombstoned") terminal.add(event.record_id);
-              };
-              let armed = false;
-              const hooks: X2bAdapterHooks = {
-                beforePublish: () => { if (armed && fault === "publish") { armed = false; throw new Error(label); } },
-                beforeManifestCommit: () => { if (armed && fault === "commit") { armed = false; throw new Error(label); } },
-              };
-              let graph = openGraph(dir, order, hooks, terminalResolver(terminal)).adapter;
-              let vector = (await openVector(runner, order, hooks, terminalResolver(terminal))).adapter;
-              expect((await graph.ingest("unrelated")).ok, label).toBe(true);
-              expect((await vector.ingest("unrelated")).ok, label).toBe(true);
-              const sibling = await createPostgresExactProjectionAdapter({ namespace: "sibling", sqlRunner: runner,
-                dimension: DIMENSION, resolveTerminal: terminalResolver(new Set()), embed: (r) => x2bVector(r.record_id, DIMENSION) });
-              expect((await sibling.ingest("unrelated")).ok, label).toBe(true);
-              // Persist a real prefix; resume never starts from an empty replacement backend.
-              for (const batch of partitionIntoBatches(events.filter((e) => BigInt(e.cursor) <= BigInt(resume)), pageSize)) {
-                canonical(batch.through_cursor_inclusive);
-                expect((await graph.invalidate(toBatch(batch))).ok, label).toBe(true);
-                expect((await vector.invalidate(toBatch(batch))).ok, label).toBe(true);
+        let completed = 0;
+        for (const resume of x2bResumeCursors(events)) {
+          for (const fault of ["prepare", "publish", "commit", "response", "deadline", "fence", "unknown-token"] as const) {
+            const label = `${sequence}/${order}/${pageSize}/${resume}/${fault}`;
+            const dir = workdir();
+            const runner = createX2bMemorySqlRunner();
+            const terminal = new Set<string>();
+            const canonical = (through: string) => {
+              for (const event of events) if (BigInt(event.cursor) <= BigInt(through) && event.reason_ref === "memory:tombstoned") terminal.add(event.record_id);
+            };
+            let armed = false;
+            const hooks: X2bAdapterHooks = {
+              beforePublish: () => { if (armed && fault === "publish") { armed = false; throw new Error(label); } },
+              beforeManifestCommit: () => { if (armed && fault === "commit") { armed = false; throw new Error(label); } },
+            };
+            let graph = openGraph(dir, order, hooks, terminalResolver(terminal)).adapter;
+            let vector = (await openVector(runner, order, hooks, terminalResolver(terminal))).adapter;
+            expect((await graph.ingest("unrelated")).ok, label).toBe(true);
+            expect((await vector.ingest("unrelated")).ok, label).toBe(true);
+            const sibling = await createPostgresExactProjectionAdapter({ namespace: "sibling", sqlRunner: runner,
+              dimension: DIMENSION, resolveTerminal: terminalResolver(new Set()), embed: (r) => x2bVector(r.record_id, DIMENSION) });
+            expect((await sibling.ingest("unrelated")).ok, label).toBe(true);
+            // Persist a real prefix; resume never starts from an empty replacement backend.
+            for (const batch of partitionIntoBatches(events.filter((e) => BigInt(e.cursor) <= BigInt(resume)), pageSize)) {
+              canonical(batch.through_cursor_inclusive);
+              expect((await graph.invalidate(toBatch(batch))).ok, label).toBe(true);
+              expect((await vector.invalidate(toBatch(batch))).ok, label).toBe(true);
+            }
+            canonical(head);
+            const all = partitionIntoBatches(events, pageSize).map(toBatch);
+            const probe = all.find((b) => BigInt(b.through_cursor_inclusive) > BigInt(resume)) ?? all[0]!;
+            // Fail each surface independently while the other has already advanced.
+            for (const surface of [graph, vector]) {
+              const previous = (await surface.coverage()).cursor;
+              armed = true;
+              if (fault === "prepare") {
+                const prepared = await surface.prepareGeneration({ generation: "cut",
+                  headCursor: BigInt(previous) > BigInt(probe.through_cursor_inclusive) ? previous : probe.through_cursor_inclusive, batches: [probe],
+                  deadlineAt: DEADLINE, operationId: `cut:${label}` });
+                expect(prepared.ok, label).toBe(true);
+                if (!prepared.ok) throw new Error(label);
+                expect((await surface.acknowledgePublication(prepared.value.token)).ok, label).toBe(false);
+                expect((await surface.coverage()).cursor, label).toBe(previous);
+              } else if (fault === "deadline") {
+                expect((await surface.prepareGeneration({ generation: "cut", headCursor: head, batches: [probe],
+                  deadlineAt: PAST_DEADLINE, operationId: `cut:${label}` })).ok, label).toBe(false);
+                expect((await surface.coverage()).cursor, label).toBe(previous);
+              } else if (fault === "fence") {
+                if (surface.projection_id === "graph") await graph.loseFenceForTests();
+                else await vector.loseFenceForTests();
+                expect((await surface.invalidate(probe)).ok, label).toBe(false);
+                expect((await surface.coverage()).cursor, label).toBe(previous);
+                if (surface.projection_id === "graph") await graph.reacquireFenceForTests();
+                else await vector.reacquireFenceForTests();
+              } else if (fault === "unknown-token") {
+                expect((await surface.publishPublication("unknown-token")).ok, label).toBe(false);
+                expect((await surface.coverage()).cursor, label).toBe(previous);
+              } else {
+                const result = await surface.invalidate(probe);
+                expect(result.ok, label).toBe(fault === "response");
+                if (fault !== "response") expect((await surface.coverage()).cursor, label).toBe(previous);
+                // response: publication succeeded, but its response is discarded by caller.
               }
-              canonical(head);
-              const all = partitionIntoBatches(events, pageSize).map(toBatch);
-              const probe = all.find((b) => BigInt(b.through_cursor_inclusive) > BigInt(resume)) ?? all[0]!;
-              // Fail each surface independently while the other has already advanced.
-              for (const surface of [graph, vector]) {
-                const previous = (await surface.coverage()).cursor;
-                armed = true;
-                if (fault === "prepare") {
-                  const prepared = await surface.prepareGeneration({ generation: "cut",
-                    headCursor: BigInt(previous) > BigInt(probe.through_cursor_inclusive) ? previous : probe.through_cursor_inclusive, batches: [probe],
-                    deadlineAt: DEADLINE, operationId: `cut:${label}` });
-                  expect(prepared.ok, label).toBe(true);
-                  if (!prepared.ok) throw new Error(label);
-                  expect((await surface.acknowledgePublication(prepared.value.token)).ok, label).toBe(false);
-                  expect((await surface.coverage()).cursor, label).toBe(previous);
-                } else if (fault === "deadline") {
-                  expect((await surface.prepareGeneration({ generation: "cut", headCursor: head, batches: [probe],
-                    deadlineAt: PAST_DEADLINE, operationId: `cut:${label}` })).ok, label).toBe(false);
-                  expect((await surface.coverage()).cursor, label).toBe(previous);
-                } else if (fault === "fence") {
-                  if (surface.projection_id === "graph") await graph.loseFenceForTests();
-                  else await vector.loseFenceForTests();
-                  expect((await surface.invalidate(probe)).ok, label).toBe(false);
-                  expect((await surface.coverage()).cursor, label).toBe(previous);
-                  if (surface.projection_id === "graph") await graph.reacquireFenceForTests();
-                  else await vector.reacquireFenceForTests();
-                } else if (fault === "unknown-token") {
-                  expect((await surface.publishPublication("unknown-token")).ok, label).toBe(false);
-                  expect((await surface.coverage()).cursor, label).toBe(previous);
-                } else {
-                  const result = await surface.invalidate(probe);
-                  expect(result.ok, label).toBe(fault === "response");
-                  if (fault !== "response") expect((await surface.coverage()).cursor, label).toBe(previous);
-                  // response: publication succeeded, but its response is discarded by caller.
-                }
-                armed = false;
-                const observable = await surface.readCurrent();
-                if (observable.ok) {
-                  expect(observable.value.live.filter((id) => terminal.has(id)), label).toEqual([]);
-                  expect([...observable.value.influence.keys()].filter((id) => terminal.has(id)), label).toEqual([]);
-                } else {
-                  expect(["PROJECTION_STALE", "MATERIALIZATION_FAILED"], label).toContain(observable.error.code);
-                }
-              }
-              // Recovery is an explicit writer operation. Reading an intent never repairs it.
-              graph = openGraph(dir, order, undefined, terminalResolver(terminal)).adapter;
-              await graph.recover();
-              vector = (await openVector(runner, order, undefined, terminalResolver(terminal))).adapter;
-              for (let replay = 0; replay < 2; replay++) {
-                for (const batch of all) {
-                  expect((await graph.invalidate(batch)).ok, label).toBe(true);
-                  expect((await vector.invalidate(batch)).ok, label).toBe(true);
-                  if (replay > 0) {
-                    expect(await vector.storedVectorIdsForTests(), label).toEqual([...expected.live].sort());
-                    expect(readGraphFile(dir).nodes, label).toEqual(expect.arrayContaining([...expected.live].flatMap(x2bOwnedNodes)));
-                  }
-                }
-                const current = await graph.readCurrent();
-                expect(current.ok, label).toBe(true);
-                if (!current.ok) throw new Error(label);
-                expect(new Set(current.value.live), label).toEqual(expected.live);
-                expect(new Set(current.value.tombstoned), label).toEqual(expected.tombstoned);
-                expect(current.value.influence, label).toEqual(expected.influence);
-                const vectorCurrent = await vector.readCurrent();
-                expect(vectorCurrent.ok && vectorCurrent.value.influence, label).toEqual(expected.influence);
-                expect(await vector.storedVectorIdsForTests(), label).toEqual([...expected.live].sort());
-                const file = readGraphFile(dir);
-                const nodes = new Set([...expected.live].flatMap(x2bOwnedNodes));
-                nodes.add(X2B_HUB_NODE);
-                expect(new Set(file.nodes), label).toEqual(nodes);
-                expect(new Set(file.links.map((e) => JSON.stringify(e))), label).toEqual(new Set([...expected.live].flatMap(x2bOwnedEdges).map((e) => JSON.stringify(e))));
-                const matches = await vector.querySimilar({ vector: x2bVector("unrelated", DIMENSION), topK: 20 });
-                expect(matches.ok && new Set(matches.value.matches.map((m) => m.record_id)), label).toEqual(expected.live);
-                if (matches.ok) for (const match of matches.value.matches) {
-                  expect(match.score, label).toBeCloseTo(x2bCosine(x2bVector("unrelated", DIMENSION), x2bVector(match.record_id, DIMENSION)), 10);
-                }
-                expect((await graph.coverage()).cursor, label).toBe(head);
-                expect((await vector.coverage()).cursor, label).toBe(head);
-                expect(await sibling.storedVectorIdsForTests(), label).toEqual(["unrelated"]);
+              armed = false;
+              const observable = await surface.readCurrent();
+              if (observable.ok) {
+                expect(observable.value.live.filter((id) => terminal.has(id)), label).toEqual([]);
+                expect([...observable.value.influence.keys()].filter((id) => terminal.has(id)), label).toEqual([]);
+              } else {
+                expect(["PROJECTION_STALE", "MATERIALIZATION_FAILED"], label).toContain(observable.error.code);
               }
             }
+            // Recovery is an explicit writer operation. Reading an intent never repairs it.
+            graph = openGraph(dir, order, undefined, terminalResolver(terminal)).adapter;
+            await graph.recover();
+            vector = (await openVector(runner, order, undefined, terminalResolver(terminal))).adapter;
+            for (let replay = 0; replay < 2; replay++) {
+              for (const batch of all) {
+                expect((await graph.invalidate(batch)).ok, label).toBe(true);
+                expect((await vector.invalidate(batch)).ok, label).toBe(true);
+                if (replay > 0) {
+                  expect(await vector.storedVectorIdsForTests(), label).toEqual([...expected.live].sort());
+                  expect(readGraphFile(dir).nodes, label).toEqual(expect.arrayContaining([...expected.live].flatMap(x2bOwnedNodes)));
+                }
+              }
+              const current = await graph.readCurrent();
+              expect(current.ok, label).toBe(true);
+              if (!current.ok) throw new Error(label);
+              expect(new Set(current.value.live), label).toEqual(expected.live);
+              expect(new Set(current.value.tombstoned), label).toEqual(expected.tombstoned);
+              expect(current.value.influence, label).toEqual(expected.influence);
+              const vectorCurrent = await vector.readCurrent();
+              expect(vectorCurrent.ok && vectorCurrent.value.influence, label).toEqual(expected.influence);
+              expect(await vector.storedVectorIdsForTests(), label).toEqual([...expected.live].sort());
+              const file = readGraphFile(dir);
+              const nodes = new Set([...expected.live].flatMap(x2bOwnedNodes));
+              nodes.add(X2B_HUB_NODE);
+              expect(new Set(file.nodes), label).toEqual(nodes);
+              expect(new Set(file.links.map((e) => JSON.stringify(e))), label).toEqual(new Set([...expected.live].flatMap(x2bOwnedEdges).map((e) => JSON.stringify(e))));
+              const matches = await vector.querySimilar({ vector: x2bVector("unrelated", DIMENSION), topK: 20 });
+              expect(matches.ok && new Set(matches.value.matches.map((m) => m.record_id)), label).toEqual(expected.live);
+              if (matches.ok) for (const match of matches.value.matches) {
+                expect(match.score, label).toBeCloseTo(x2bCosine(x2bVector("unrelated", DIMENSION), x2bVector(match.record_id, DIMENSION)), 10);
+              }
+              expect((await graph.coverage()).cursor, label).toBe(head);
+              expect((await vector.coverage()).cursor, label).toBe(head);
+              expect(await sibling.storedVectorIdsForTests(), label).toEqual(["unrelated"]);
+            }
+            completed++;
           }
         }
-      });
+        expect(completed).toBe(56);
+      }, 60_000);
     }
   }
 

@@ -429,16 +429,20 @@ describe("x2b projection cascade over the delivered file and SQL surfaces (local
     await livingMaterialForgetProof([0, 0, 0, 1], "adds-first");
   });
 
-  it("valid-material property: loops and multiple edges never prevent forgetting another record", async () => {
-    // Exhaust every directed graph on two nodes, with 0, 1 or 2 copies of each edge:
-    // 81 shapes (isolates, both loops, opposing and duplicate edges) × both apply orders.
-    for (const order of X2B_ORDERS) {
-      for (let shape = 0; shape < 81; shape++) {
-        const counts = Array.from({ length: 4 }, (_, index) => Math.floor(shape / 3 ** index) % 3);
-        await livingMaterialForgetProof(counts, order);
-      }
-    }
-  });
+  // Still exhaust 81 shapes × both orders; each test has exactly nine cases
+  // and an explicit CI budget, independent of scheduling and machine speed.
+  for (const order of X2B_ORDERS) {
+    it.each(Array.from({ length: 9 }, (_, index) => [index * 9, index * 9 + 8] as const))(
+      `valid-material property: ${order} shapes %i..%i forget another record`, async (firstShape) => {
+        let completed = 0;
+        for (let shape = firstShape; shape < firstShape + 9; shape++) {
+          const counts = Array.from({ length: 4 }, (_, index) => Math.floor(shape / 3 ** index) % 3);
+          await livingMaterialForgetProof(counts, order);
+          completed++;
+        }
+        expect(completed).toBe(9);
+    }, 60_000);
+  }
 
   it("FileGraphStore persisted-content property: tombstones erase owned nodes and every incident or dependent edge", async () => {
     for (const order of X2B_ORDERS) {
