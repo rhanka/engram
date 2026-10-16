@@ -35,6 +35,7 @@ async function signedLedger(host = exclusionLedgerHost()) {
 }
 const invalid = { ok: false, error: { code: "MIGRATION_LEDGER_INVALID", operation: "migrate", retryable: false } };
 const unavailable = { ok: false, error: { code: "CAPABILITY_UNAVAILABLE", operation: "migrate", retryable: false } };
+const invalidSchema = { ok: false, error: { code: "INVALID_SCHEMA", operation: "migrate", retryable: false } };
 
 describe("host-signed migration exclusion ledger", () => {
   it("signs the independent domain-separated canonical fingerprint and verifies after JSON reload", async () => {
@@ -127,6 +128,116 @@ describe("host-signed migration exclusion ledger", () => {
     expect(await verifyMigrationExclusionLedgerV1(ledger, host.exclusion_ledger_verifier)).toMatchObject(invalid);
   });
 
+  it("checks a reloaded unsigned lossless ledger by re-deriving it from the trusted source and generation", async () => {
+    for (const source of [[], [records[0]!]]) {
+      const result = await migrateRetainedNeutralRecordsV1(source, "pin:target");
+      if (!result.ok) throw new Error("lossless migration refused");
+      const reload = JSON.parse(JSON.stringify(result.value));
+      expect(reload.signature).toBeUndefined();
+      // Storage alone cannot establish that an unsigned ledger was lossless.
+      expect(await verifyMigrationExclusionLedgerV1(reload)).toMatchObject(invalid);
+      const rederived = await migrateRetainedNeutralRecordsV1(source, "pin:target");
+      expect(rederived).toEqual({ ok: true, value: reload });
+      if (!rederived.ok) throw new Error("source re-derivation refused");
+      reload.migrated = [{ source_ref: "forged" }];
+      reload.ledger_digest = fingerprint(reload);
+      expect(reload.ledger_digest).not.toBe(rederived.value.ledger_digest);
+    }
+    const host = exclusionLedgerHost();
+    const stripped = await signedLedger(host);
+    stripped.excluded = [];
+    delete stripped.signature;
+    stripped.ledger_digest = fingerprint(stripped) as MigrationLedgerV1["ledger_digest"];
+    // Re-derive from the complete trusted source, never from the stored partitions.
+    expect(await migrateRetainedNeutralRecordsV1(records, "pin:target")).toMatchObject(unavailable);
+    const rederived = await migrateRetainedNeutralRecordsV1(records, "pin:target", host);
+    if (!rederived.ok) throw new Error("source re-derivation refused");
+    expect(rederived.value.excluded).not.toHaveLength(0);
+    expect(rederived.value.ledger_digest).not.toBe(stripped.ledger_digest);
+  });
+
+  const incoherent: Array<[string, (ledger: any) => void]> = [
+    ["migrated receipt", (l) => { l.migrated[0].migration_receipt_digest = D; }],
+    ["exclusion receipt", (l) => { l.excluded[0].exclusion_receipt_digest = D; }],
+    ["invalid migrated content", (l) => {
+      l.migrated[0].citations = [];
+      l.migrated[0].migration_receipt_digest = receipt("migration-record", l.migrated[0], "migration_receipt_digest");
+    }],
+    ["extra root field", (l) => { l.extra = true; }],
+    ["unknown exclusion reason", (l) => {
+      l.excluded[0].reason = "unknown";
+      l.excluded[0].exclusion_receipt_digest = receipt("migration-exclusion", l.excluded[0], "exclusion_receipt_digest");
+    }],
+    ["extra migrated field", (l) => {
+      l.migrated[0].extra = true;
+      l.migrated[0].migration_receipt_digest = receipt("migration-record", l.migrated[0], "migration_receipt_digest");
+    }],
+    ["extra exclusion field", (l) => {
+      l.excluded[0].extra = true;
+      l.excluded[0].exclusion_receipt_digest = receipt("migration-exclusion", l.excluded[0], "exclusion_receipt_digest");
+    }],
+    ...["algorithm", "key_id", "signature"].map((field): [string, (l: any) => void] =>
+      [`empty signature ${field}`, (l) => { l.signature[field] = ""; }]),
+  ];
+  it.each(incoherent)("refuses host-signed incoherent %s before invoking the verifier", async (_field, alter) => {
+    const host = exclusionLedgerHost();
+    const ledger = await signedLedger(host);
+    alter(ledger);
+    ledger.ledger_digest = fingerprint(ledger) as MigrationLedgerV1["ledger_digest"];
+    const signature = await host.exclusion_ledger_signer.sign(ledger.ledger_digest);
+    expect(verify(null, Buffer.from(ledger.ledger_digest), host.publicKey, Buffer.from(signature.signature, "base64"))).toBe(true);
+    ledger.signature = _field.startsWith("empty signature") ? { ...signature, ...ledger.signature } : signature;
+    const check = vi.spyOn(host.exclusion_ledger_verifier, "verify");
+    expect(await verifyMigrationExclusionLedgerV1(ledger, host.exclusion_ledger_verifier)).toMatchObject(invalid);
+    expect(check).not.toHaveBeenCalled();
+  });
+
+  const malformedInputs: Array<[string, (input: any) => void]> = [
+    ["undefined interval end", (r) => { r[0].valid_time.t_end = undefined; }],
+    ["undefined citation observation", (r) => { r[0].citations[0].observed_at = undefined; }],
+    ["missing migrated source_ref", (r) => { delete r[0].source_ref; }],
+    ["non-string migrated source_ref", (r) => { r[0].source_ref = 42; }],
+    ["missing excluded source_ref", (r) => { delete r[1].source_ref; }],
+    ["non-string excluded source_ref", (r) => { r[1].source_ref = 42; }],
+    ["null record", (r) => { r[0] = null; }],
+    ["non-JSON reference", (r) => { r[0].source_ref = () => "secret:input"; }],
+  ];
+  it.each(malformedInputs)("returns a typed refusal for %s without asking for a signature", async (_field, alter) => {
+    const host = exclusionLedgerHost();
+    const sign = vi.spyOn(host.exclusion_ledger_signer, "sign");
+    const input = structuredClone(records);
+    alter(input);
+    const result = await migrateRetainedNeutralRecordsV1(input, "1", host);
+    expect(result).toMatchObject(invalidSchema);
+    expect(sign).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).not.toContain("secret:input");
+  });
+
+  it("rejects malformed collections and generations before asking for a signature", async () => {
+    const host = exclusionLedgerHost();
+    const sign = vi.spyOn(host.exclusion_ledger_signer, "sign");
+    for (const input of [null, {}, "records", [undefined], [42]]) {
+      expect(await migrateRetainedNeutralRecordsV1(input as any, "1", host)).toMatchObject(invalidSchema);
+    }
+    for (const generation of [null, 42, {}]) {
+      expect(await migrateRetainedNeutralRecordsV1(records, generation as any, host)).toMatchObject(invalidSchema);
+    }
+    expect(sign).not.toHaveBeenCalled();
+  });
+
+  it("returns NFC strings after verification of canonically equivalent stored references", async () => {
+    const host = exclusionLedgerHost();
+    const source = structuredClone(records);
+    source[0]!.source_ref = "gardé";
+    source[0]!.citations![0]!.locator.value = "café";
+    source[1]!.source_ref = "exclué";
+    const result = await migrateRetainedNeutralRecordsV1(source, "génération", host);
+    if (!result.ok) throw new Error("fixture migration refused");
+    const reload = JSON.parse(JSON.stringify(result.value), (_key, value) => typeof value === "string" ? value.normalize("NFD") : value);
+    expect(reload.excluded[0].source_ref).not.toBe(result.value.excluded[0]!.source_ref);
+    expect(await verifyMigrationExclusionLedgerV1(reload, host.exclusion_ledger_verifier)).toEqual(result);
+  });
+
   it("refuses an invalid or unknown signing key before returning a migration", async () => {
     const host = exclusionLedgerHost();
     const untrusted = exclusionLedgerHost();
@@ -139,15 +250,14 @@ describe("host-signed migration exclusion ledger", () => {
   it("maps throwing or malformed host ports to typed failures without leaking their errors", async () => {
     const host = exclusionLedgerHost();
     const throwing = async (): Promise<never> => { throw new Error("secret:key-material"); };
-    for (const ports of [
-      { ...host, exclusion_ledger_signer: { sign: throwing } },
-      { ...host, exclusion_ledger_verifier: { verify: throwing } },
-      { ...host, exclusion_ledger_signer: { sign: async () => null as any } },
-      { ...host, exclusion_ledger_verifier: { verify: async () => "yes" as any } },
-    ]) {
+    for (const [ports, expected] of [
+      [{ ...host, exclusion_ledger_signer: { sign: throwing } }, unavailable],
+      [{ ...host, exclusion_ledger_verifier: { verify: throwing } }, unavailable],
+      [{ ...host, exclusion_ledger_signer: { sign: async () => null as any } }, invalid],
+      [{ ...host, exclusion_ledger_verifier: { verify: async () => "yes" as any } }, invalid],
+    ] as const) {
       const result = await migrateRetainedNeutralRecordsV1(records, "1", ports);
-      expect(result.ok).toBe(false);
-      expect(result).toMatchObject({ error: { operation: "migrate", retryable: false } });
+      expect(result).toMatchObject(expected);
       expect(JSON.stringify(result)).not.toContain("secret:key-material");
     }
     for (const value of [null, {}, [], "ledger", { generation: "1", migrated: null, excluded: null }]) {
