@@ -9,7 +9,7 @@ import {
 // Mock OCR response shaped like the @mistralai/mistralai SDK deserialization
 // (camelCase, 0-based `index`, nullable corner coords, `dimensions|null`).
 const MOCK_OCR_RESPONSE = {
-  model: "mistral-ocr-4-0",
+  model: "mistral-ocr-latest",
   usageInfo: { pagesProcessed: 2 },
   pages: [
     {
@@ -41,7 +41,7 @@ describe("buildPdfOcrPagesSidecar", () => {
       ocrResponse: MOCK_OCR_RESPONSE,
       source_file: "/abs/scan.pdf",
       sha256: "deadbeef",
-      model: "mistral-ocr-4-0",
+      model: "mistral-ocr-latest",
     });
     expect(sidecar).not.toBeNull();
     return sidecar!;
@@ -53,7 +53,7 @@ describe("buildPdfOcrPagesSidecar", () => {
     expect(sidecar.schema).toBe("engram_pdf_ocr_pages_v1");
     expect(sidecar.source_file).toBe("/abs/scan.pdf");
     expect(sidecar.sha256).toBe("deadbeef");
-    expect(sidecar.model).toBe("mistral-ocr-4-0");
+    expect(sidecar.model).toBe("mistral-ocr-latest");
     expect(sidecar.pages).toHaveLength(2);
   });
 
@@ -114,7 +114,7 @@ describe("buildPdfOcrPagesSidecar", () => {
       },
       source_file: "/abs/snake.pdf",
       sha256: "feed",
-      model: "mistral-ocr-4-0",
+      model: "mistral-ocr-latest",
     });
     expect(sidecar!.pages[0]!.images![0]).toEqual({ id: "snake", bbox: [0.25, 0.25, 0.75, 0.75] });
   });
@@ -132,7 +132,7 @@ describe("pdfOcrPagesToCitedSourceRefs", () => {
       ocrResponse: MOCK_OCR_RESPONSE,
       source_file: "/abs/scan.pdf",
       sha256: "deadbeef",
-      model: "mistral-ocr-4-0",
+      model: "mistral-ocr-latest",
     })!;
   }
 
