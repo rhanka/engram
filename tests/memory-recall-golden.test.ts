@@ -17,10 +17,13 @@
  *   1/61 and 1/62, i.e. normalized lexical 1 and 61/62;
  * - combined = 0.85 * lexical + 0.15 * 1, so A scores exactly 1.0 and B
  *   scores 0.85 * (61/62) + 0.15 = 0.9862903225806451…;
- * - semantic fuses [lexical, ppr, vector] where the empty-adjacency PPR
- *   reproduces the lexical order and the vector stub ranks ids descending.
+ * - semantic fuses [lexical, ppr, vector]; every node points to C (including
+ *   C's self-loop), so induced PPR orders C > A > B. Vector orders ids descending.
+ * Closed-interval decay is tested separately at the scoring seam: canonical
+ * temporal eligibility excludes a record whose t_end precedes valid_as_of.
  */
 import { mkdtempSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -47,6 +50,7 @@ const BM25_B = 0.75;
 const RRF_K = 60;
 const LEXICAL_WEIGHT = 0.85;
 const RECENCY_WEIGHT = 0.15;
+const PPR = { alpha: 0.85, lazy: 0.6, tolerance: 1e-6, max_iterations: 100 } as const;
 const FIELD_WEIGHTS = { primary: 3.0, decision: 2.0, evidence: 1.5, context: 1.0, citations: 0.5 } as const;
 type LexicalField = keyof typeof FIELD_WEIGHTS;
 const LEXICAL_FIELDS = ["primary", "decision", "evidence", "context", "citations"] as const;
@@ -57,6 +61,30 @@ const TEXT_B = "harbor ledger south quay";
 const TEXT_C = "unrelated opera nightingale";
 
 const MATRIX = ["16", "17"] as const;
+
+function refCanonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(refCanonical).join(",")}]`;
+  if (value !== null && typeof value === "object") return `{${Object.entries(value)
+    .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+    .map(([key, item]) => `${JSON.stringify(key)}:${refCanonical(item)}`).join(",")}}`;
+  return JSON.stringify(value);
+}
+
+/** Independent SHA/JCS calculation; no recall constants or digest helpers. */
+function refProfileDigest(profile: "offline_lexical_v1" | "semantic_v1", systemAsOf: string): Digest {
+  const config = {
+    profile, tokenizer_version: "graphify-memory:tokenizer:v1",
+    bm25: { k1: BM25_K1, b: BM25_B }, field_weights: FIELD_WEIGHTS,
+    rrf_k: RRF_K, max_lexical_variants: 8, half_life_ms: HALF_LIFE_MS,
+    weights: { lexical: LEXICAL_WEIGHT, recency: RECENCY_WEIGHT },
+    ...(profile === "semantic_v1" ? {
+      ppr: PPR, vector_model_ref: "vector:model:v1",
+      channels: { lexical: true, induced_ppr: true, vector: true },
+      projection_cursors: { adjacency: systemAsOf, vector: "1" },
+    } : {}),
+  };
+  return `sha256:${createHash("sha256").update("graphify-memory/recall-profile-config/v1\0" + refCanonical(config)).digest("hex")}` as Digest;
+}
 
 /* Independent reference: unicode-word tokenizer (SPEC §7). */
 function refTokenize(value: string | undefined | null): string[] {
@@ -196,19 +224,19 @@ function sqliteStore(): Promise<CanonicalMemoryStorePort> {
   });
 }
 
-/** Empty-adjacency semantic stub: with no edges every node dangles, so the
- * induced PPR converges to the normalized lexical teleport in one step and
- * reproduces the lexical order. */
-function semanticStub(): SemanticProjectionPort {
+/** All eligible nodes have a real outgoing edge to the chosen hub. */
+function semanticStub(hub: () => string): SemanticProjectionPort {
   return {
     version: 1,
     async inducedAdjacency(input) {
       const ids = [...input.eligible_record_ids].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+      const hubIndex = ids.indexOf(hub());
       const body = {
         record_ids: ids,
-        offsets: new Array(ids.length + 1).fill(0),
-        neighbours: [] as number[],
-        weights: [] as number[],
+        // If the hub is ineligible, induction removes every edge to it.
+        offsets: Array.from({ length: ids.length + 1 }, (_, index) => hubIndex < 0 ? 0 : index),
+        neighbours: hubIndex < 0 ? [] : ids.map(() => hubIndex),
+        weights: hubIndex < 0 ? [] : ids.map(() => 1),
         projection_cursor: input.system_as_of,
       };
       return { ok: true, value: { ...body, adjacency_digest: receiptDigest("semantic-adjacency", body) } };
@@ -245,14 +273,16 @@ async function seedGoldenCorpus(
   store: CanonicalMemoryStorePort,
   profile: "offline_lexical_v1" | "semantic_v1",
 ): Promise<GoldenCorpus> {
+  let hub = "";
   const { memory } = profile === "semantic_v1"
-    ? buildMemory({ store, semantic: semanticStub(), vector: vectorStub() })
+    ? buildMemory({ store, semantic: semanticStub(() => hub), vector: vectorStub() })
     : buildMemory({ store });
   const ids = [
     await seedAccepted(memory, TEXT_A),
     await seedAccepted(memory, TEXT_B),
     await seedAccepted(memory, TEXT_C),
   ] as [string, string, string];
+  hub = ids[2];
   const recalled = await memory.recall(recallRequest(QUERY));
   if (!recalled.ok) throw new Error(`golden seed recall failed: ${recalled.error.code}`);
   // Citation source_refs carry the fixture sequence counter; read them back
@@ -279,7 +309,7 @@ function expectOfflineGolden(corpus: GoldenCorpus, packet: {
   records: Array<{ record: { record_id: string }; score: number; rank: number }>;
   rank_receipt: {
     profile: string; profile_version: string; scoring_formula_ref: string;
-    candidate_count: number; ordered_ids_digest: Digest;
+    candidate_count: number; ordered_ids_digest: Digest; profile_config_digest: Digest; system_as_of: string;
   };
 }): void {
   const docs = refDocs(corpus.ids, corpus.citations);
@@ -294,6 +324,7 @@ function expectOfflineGolden(corpus: GoldenCorpus, packet: {
   expect(expected[0]!.score).toBeCloseTo(1, 12);
 
   expect(packet.rank_receipt.profile).toBe("offline_lexical_v1");
+  expect(packet.rank_receipt.profile_config_digest).toBe(refProfileDigest("offline_lexical_v1", packet.rank_receipt.system_as_of));
   expect(packet.rank_receipt.profile_version).toBe("1.0.0");
   expect(packet.rank_receipt.scoring_formula_ref).toBe("graphify-memory:offline-lexical-recency:v1");
   expect(packet.rank_receipt.candidate_count).toBe(2);
@@ -311,20 +342,27 @@ function expectSemanticGolden(corpus: GoldenCorpus, packet: {
   records: Array<{ record: { record_id: string }; score: number; rank: number }>;
   rank_receipt: {
     profile: string; profile_version: string; scoring_formula_ref: string;
-    candidate_count: number; projection_receipt_digests: ReadonlyArray<Digest>;
+    candidate_count: number; projection_receipt_digests: ReadonlyArray<Digest>; profile_config_digest: Digest; system_as_of: string;
   };
 }): void {
   const docs = refDocs(corpus.ids, corpus.citations);
   const validTimeById = new Map(corpus.ids.map((id) => [id, { t: 1 }] as const));
-  const lexicalOrder = refRankedList(refBm25f(docs, refTokenize(QUERY)));
-  // Empty adjacency: PPR reproduces the lexical order. The vector channel
-  // admits every eligible id, so C fuses in too (candidate_count = 3).
-  const pprOrder = [...lexicalOrder];
+  const lexicalScores = refBm25f(docs, refTokenize(QUERY));
+  const lexicalOrder = refRankedList(lexicalScores);
+  // Solve the star's stationary equations independently of the engine's CSR
+  // iteration: r_i = (1-a)p_i/(1-a*l) off-hub; the remaining mass sits at C.
+  const total = [...lexicalScores.values()].reduce((sum, score) => sum + score, 0);
+  const factor = (1 - PPR.alpha) / (1 - PPR.alpha * PPR.lazy);
+  const ppr = new Map(corpus.ids.map((id) => [id, factor * (lexicalScores.get(id) ?? 0) / total]));
+  ppr.set(corpus.ids[2], 1 - factor);
+  const pprOrder = refRankedList(ppr);
+  expect(pprOrder).toEqual([corpus.ids[2], corpus.ids[0], corpus.ids[1]]);
   const vectorOrder = [...corpus.ids].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
   const expected = refCombine(refRrf([lexicalOrder, pprOrder, vectorOrder]), validTimeById, corpus.validAsOf);
   expect(lexicalOrder).toEqual([corpus.ids[0], corpus.ids[1]]);
 
   expect(packet.rank_receipt.profile).toBe("semantic_v1");
+  expect(packet.rank_receipt.profile_config_digest).toBe(refProfileDigest("semantic_v1", packet.rank_receipt.system_as_of));
   expect(packet.rank_receipt.profile_version).toBe("1.0.0");
   expect(packet.rank_receipt.scoring_formula_ref).toBe("graphify-memory:semantic-rrf-recency:v1");
   expect(packet.rank_receipt.projection_receipt_digests).toHaveLength(2);
@@ -364,6 +402,53 @@ async function runSemanticGolden(store: CanonicalMemoryStorePort, label: string)
 }
 
 describe("recall golden references", () => {
+  it.each(["offline_lexical_v1", "semantic_v1"] as const)("%s scores a closed interval at the independent half-life reference", async (profile) => {
+    const store = createInMemoryCanonicalMemoryStoreV1({ clock: { now: () => NOW } });
+    let hub = "";
+    const { memory } = buildMemory({ store, ...(profile === "semantic_v1"
+      ? { semantic: semanticStub(() => hub), vector: vectorStub() } : {}) });
+    const validAsOf = Date.parse(NOW);
+    const closedEnd = validAsOf - 2_592_000_000;
+    const closedTime = { t: 1, t_end: closedEnd };
+    const closed = await seedAccepted(memory, TEXT_A, { validTime: closedTime });
+    const open = await seedAccepted(memory, TEXT_A);
+    hub = closed;
+    const request = recallRequest(QUERY, { minimum_channels: profile === "semantic_v1" ? "lexical_and_semantic" : "lexical" });
+    try {
+      const ordinary = await memory.recall(request);
+      if (!ordinary.ok) throw new Error(ordinary.error.code);
+      expect(ordinary.value.records.map(({ record }) => record.record_id)).toEqual([open]);
+      // D4 scoring seam only. Keep the real admitted historical document, but
+      // let the store supply/revalidate it at its closed endpoint. The ranker
+      // still receives validAsOf (one half-life later). No temporal claim is
+      // made about a production store serving a closed-before candidate.
+      const snapshot = store.acceptedSnapshot.bind(store);
+      const revalidate = store.revalidate.bind(store);
+      store.acceptedSnapshot = (input) => snapshot({ ...input, valid_as_of: closedEnd });
+      store.revalidate = (input) => revalidate({ ...input, valid_as_of: closedEnd });
+      const recalled = await memory.recall(request);
+      if (!recalled.ok) throw new Error(recalled.error.code);
+      expect(recalled.value.rank_receipt.valid_as_of).toBe(validAsOf);
+      expect(recalled.value.rank_receipt.candidate_count).toBe(2);
+      const lexical = [closed, open].sort(); // identical texts/lengths: BM25F tie, id asc
+      const lists = profile === "semantic_v1"
+        ? [lexical, [closed, open], [closed, open].sort().reverse()] : [lexical];
+      const expected = refCombine(refRrf(lists), new Map([[closed, closedTime], [open, { t: 1 }]]), validAsOf);
+      // 30 elapsed days / 30-day half-life: derived without the engine's exp formula.
+      const expectedRecency = 2 ** (-((validAsOf - closedEnd) / 86_400_000) / 30);
+      expect(expectedRecency).toBe(0.5);
+      expect(refRecency(closedTime, validAsOf)).toBeCloseTo(expectedRecency, 15);
+      expect(recalled.value.records.map(({ record }) => record.record_id)).toEqual(expected.map(({ id }) => id));
+      for (const { id, score } of expected) {
+        const entry = recalled.value.records.find(({ record }) => record.record_id === id)!;
+        expect(entry.score).toBeCloseTo(score, 12);
+      }
+      expect(recalled.value.rank_receipt.profile_config_digest).toBe(refProfileDigest(profile, recalled.value.rank_receipt.system_as_of));
+    } finally {
+      await store.close();
+    }
+  });
+
   it("offline_lexical_v1 and semantic_v1 match the independent reference on the in-memory store", async () => {
     const inMemory = createInMemoryCanonicalMemoryStoreV1({ clock: { now: () => NOW } });
     await runOfflineGolden(inMemory, "in-memory");
