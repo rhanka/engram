@@ -31,6 +31,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -43,9 +44,11 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const liveRoot = join(root, "engram-live");
 const distRoot = join(liveRoot, "dist");
 const grammarsRoot = join(distRoot, "grammars");
+const stageRoot = join(liveRoot, `.dist-stage-${process.pid}`);
 const require = createRequire(import.meta.url);
 
 function fail(cause, detail) {
+  rmSync(stageRoot, { recursive: true, force: true });
   console.error(`build-live: ${cause}: ${detail}`);
   process.exit(1);
 }
@@ -175,96 +178,126 @@ if (cliArgs.length > 0) {
   fail("USAGE", `unknown arguments ${JSON.stringify(cliArgs)} (expected no argument or --audit-only)`);
 }
 
-// 1. Strict compile (the repository's devDependency TypeScript).
-const tsc = require.resolve("typescript/bin/tsc");
-const compiled = spawnSync(process.execPath, [tsc, "-p", "tsconfig.json"], {
-  cwd: liveRoot,
-  stdio: "inherit",
-});
-if (compiled.status !== 0) {
-  fail("COMPILE_FAILED", `tsc -p engram-live/tsconfig.json exited with ${compiled.status}`);
-}
-for (const emitted of ["index.js", "contracts.js", "integration.js", "index.d.ts", "contracts.d.ts", "integration.d.ts"]) {
-  if (!existsSync(join(distRoot, emitted))) {
-    fail("OUTPUT_INVALID", `expected emitted file engram-live/dist/${emitted} is missing`);
-  }
-}
+const stageGrammarsRoot = join(stageRoot, "grammars");
+const emittedFiles = [
+  "contracts.d.ts",
+  "contracts.d.ts.map",
+  "contracts.js",
+  "registration.d.ts",
+  "registration.d.ts.map",
+  "registration.js",
+  "integration.d.ts",
+  "integration.d.ts.map",
+  "integration.js",
+  "index.d.ts",
+  "index.d.ts.map",
+  "index.js",
+];
 
-// L5 seam audit on every build: the context-bound analysis seam must exist
-// and stay neutral before any grammar asset is trusted.
-if (!runL5Audit()) {
-  fail("L5_AUDIT_FAILED", "context-bound analysis seam is missing or escapes the neutral closure");
-}
-
-// 2. Pinned grammar manifest verification against the source tree.
-let manifest;
+rmSync(stageRoot, { recursive: true, force: true });
+mkdirSync(stageGrammarsRoot, { recursive: true });
 try {
-  manifest = JSON.parse(readFileSync(join(liveRoot, "grammar-manifest.json"), "utf8"));
-} catch (error) {
-  fail("MANIFEST_INVALID", `grammar-manifest.json does not parse: ${error.message}`);
-}
-if (!manifest || typeof manifest !== "object" || !manifest.languages || typeof manifest.languages !== "object") {
-  fail("MANIFEST_INVALID", "grammar-manifest.json must carry a languages record");
-}
-const languages = Object.entries(manifest.languages);
-if (languages.length === 0) {
-  fail("MANIFEST_INVALID", "grammar-manifest.json pins no language; the advertised matrix must be explicit");
-}
+  // 1. Strict compile (the repository's devDependency TypeScript) into a
+  // sibling staging directory so engram-live/dist is never truncated in-place.
+  const tsc = require.resolve("typescript/bin/tsc");
+  const compiled = spawnSync(process.execPath, [tsc, "-p", "tsconfig.json", "--outDir", stageRoot], {
+    cwd: liveRoot,
+    stdio: "inherit",
+  });
+  if (compiled.status !== 0) {
+    fail("COMPILE_FAILED", `tsc -p engram-live/tsconfig.json exited with ${compiled.status}`);
+  }
+  for (const emitted of emittedFiles) {
+    if (!existsSync(join(stageRoot, emitted))) {
+      fail("OUTPUT_INVALID", `expected emitted file engram-live/dist/${emitted} is missing`);
+    }
+  }
 
-// The advertised matrix must match the pinned manifest exactly: contracts.ts
-// is the built constant consumers see, so a drift is a packaging defect.
-const contractsSource = readFileSync(join(liveRoot, "contracts.ts"), "utf8");
-const advertisedMatch = contractsSource.match(/ADVERTISED_LANGUAGES[\s\S]*?=\s*\[([\s\S]*?)\]/);
-if (!advertisedMatch) {
-  fail("MANIFEST_INVALID", "contracts.ts must define the ADVERTISED_LANGUAGES constant");
-}
-const advertised = advertisedMatch[1]
-  .split(",")
-  .map((entry) => entry.replace(/\/\*[\s\S]*?\*\//g, "").replace(/["'\s]/g, ""))
-  .filter((entry) => entry.length > 0);
-const pinned = languages.map(([language]) => language).sort();
-if (JSON.stringify(advertised.slice().sort()) !== JSON.stringify(pinned)) {
-  fail("MANIFEST_INVALID", `ADVERTISED_LANGUAGES ${JSON.stringify(advertised)} drifts from the pinned manifest ${JSON.stringify(pinned)}`);
-}
+  // L5 seam audit on every build: the context-bound analysis seam must exist
+  // and stay neutral before any grammar asset is trusted.
+  if (!runL5Audit()) {
+    fail("L5_AUDIT_FAILED", "context-bound analysis seam is missing or escapes the neutral closure");
+  }
 
-mkdirSync(grammarsRoot, { recursive: true });
-const pinnedFiles = new Set();
-for (const [language, entry] of languages) {
-  if (!entry || typeof entry !== "object" || typeof entry.file !== "string" || typeof entry.sha256 !== "string") {
-    fail("MANIFEST_INVALID", `manifest entry for "${language}" must carry file and sha256`);
+  // 2. Pinned grammar manifest verification against the source tree.
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(join(liveRoot, "grammar-manifest.json"), "utf8"));
+  } catch (error) {
+    fail("MANIFEST_INVALID", `grammar-manifest.json does not parse: ${error.message}`);
   }
-  const sourcePath = join(root, entry.sourcePath);
-  if (!existsSync(sourcePath) || !statSync(sourcePath).isFile()) {
-    fail("SOURCE_MISSING", `pinned source for "${language}" is missing: ${entry.sourcePath}`);
+  if (!manifest || typeof manifest !== "object" || !manifest.languages || typeof manifest.languages !== "object") {
+    fail("MANIFEST_INVALID", "grammar-manifest.json must carry a languages record");
   }
-  const sourceBytes = readFileSync(sourcePath);
-  const sourceDigest = sha256(sourceBytes);
-  if (sourceDigest !== entry.sha256) {
-    fail(
-      "DIGEST_MISMATCH",
-      `source grammar for "${language}" (${entry.sourcePath}) has sha256 ${sourceDigest}, manifest pins ${entry.sha256}; re-pin the manifest deliberately`,
-    );
+  const languages = Object.entries(manifest.languages);
+  if (languages.length === 0) {
+    fail("MANIFEST_INVALID", "grammar-manifest.json pins no language; the advertised matrix must be explicit");
   }
-  if (typeof entry.bytes === "number" && entry.bytes !== sourceBytes.byteLength) {
-    fail("DIGEST_MISMATCH", `source grammar for "${language}" is ${sourceBytes.byteLength} bytes, manifest pins ${entry.bytes}`);
-  }
-  // 3. Copy and re-verify the packaged bytes.
-  const targetPath = join(grammarsRoot, entry.file);
-  writeFileSync(targetPath, sourceBytes);
-  const packagedDigest = sha256(readFileSync(targetPath));
-  if (packagedDigest !== entry.sha256) {
-    fail("DIGEST_MISMATCH", `packaged grammar for "${language}" has sha256 ${packagedDigest} after copy, manifest pins ${entry.sha256}`);
-  }
-  pinnedFiles.add(entry.file);
-  console.log(`build-live: verified ${language} -> dist/grammars/${entry.file} (${entry.sha256.slice(0, 12)}…, ${sourceBytes.byteLength} bytes)`);
-}
 
-// 4. Remove stale WASM assets no longer pinned.
-for (const entry of readdirSync(grammarsRoot, { withFileTypes: true })) {
-  if (entry.isFile() && entry.name.endsWith(".wasm") && !pinnedFiles.has(entry.name)) {
-    rmSync(join(grammarsRoot, entry.name));
-    console.log(`build-live: removed stale grammar asset ${entry.name} (unpinned)`);
+  // The advertised matrix must match the pinned manifest exactly: contracts.ts
+  // is the built constant consumers see, so a drift is a packaging defect.
+  const contractsSource = readFileSync(join(liveRoot, "contracts.ts"), "utf8");
+  const advertisedMatch = contractsSource.match(/ADVERTISED_LANGUAGES[\s\S]*?=\s*\[([\s\S]*?)\]/);
+  if (!advertisedMatch) {
+    fail("MANIFEST_INVALID", "contracts.ts must define the ADVERTISED_LANGUAGES constant");
   }
-}
+  const advertised = advertisedMatch[1]
+    .split(",")
+    .map((entry) => entry.replace(/\/\*[\s\S]*?\*\//g, "").replace(/["'\s]/g, ""))
+    .filter((entry) => entry.length > 0);
+  const pinned = languages.map(([language]) => language).sort();
+  if (JSON.stringify(advertised.slice().sort()) !== JSON.stringify(pinned)) {
+    fail("MANIFEST_INVALID", `ADVERTISED_LANGUAGES ${JSON.stringify(advertised)} drifts from the pinned manifest ${JSON.stringify(pinned)}`);
+  }
 
-console.log(`build-live: engram-live built — ${languages.length} grammars verified, entry surface emitted to engram-live/dist`);
+  const pinnedFiles = new Set();
+  for (const [language, entry] of languages) {
+    if (!entry || typeof entry !== "object" || typeof entry.file !== "string" || typeof entry.sha256 !== "string") {
+      fail("MANIFEST_INVALID", `manifest entry for "${language}" must carry file and sha256`);
+    }
+    const sourcePath = join(root, entry.sourcePath);
+    if (!existsSync(sourcePath) || !statSync(sourcePath).isFile()) {
+      fail("SOURCE_MISSING", `pinned source for "${language}" is missing: ${entry.sourcePath}`);
+    }
+    const sourceBytes = readFileSync(sourcePath);
+    const sourceDigest = sha256(sourceBytes);
+    if (sourceDigest !== entry.sha256) {
+      fail(
+        "DIGEST_MISMATCH",
+        `source grammar for "${language}" (${entry.sourcePath}) has sha256 ${sourceDigest}, manifest pins ${entry.sha256}; re-pin the manifest deliberately`,
+      );
+    }
+    if (typeof entry.bytes === "number" && entry.bytes !== sourceBytes.byteLength) {
+      fail("DIGEST_MISMATCH", `source grammar for "${language}" is ${sourceBytes.byteLength} bytes, manifest pins ${entry.bytes}`);
+    }
+    // 3. Stage and re-verify the packaged bytes before atomic installation.
+    const stagedPath = join(stageGrammarsRoot, entry.file);
+    writeFileSync(stagedPath, sourceBytes);
+    const packagedDigest = sha256(readFileSync(stagedPath));
+    if (packagedDigest !== entry.sha256) {
+      fail("DIGEST_MISMATCH", `packaged grammar for "${language}" has sha256 ${packagedDigest} after copy, manifest pins ${entry.sha256}`);
+    }
+    pinnedFiles.add(entry.file);
+    console.log(`build-live: verified ${language} -> dist/grammars/${entry.file} (${entry.sha256.slice(0, 12)}…, ${sourceBytes.byteLength} bytes)`);
+  }
+
+  // 4. Atomically install verified grammars and emitted entries into dist,
+  // renaming index.js last so the freshness marker is updated only after
+  // every packaged file is in place.
+  mkdirSync(grammarsRoot, { recursive: true });
+  for (const [, entry] of languages) {
+    renameSync(join(stageGrammarsRoot, entry.file), join(grammarsRoot, entry.file));
+  }
+  for (const entry of readdirSync(grammarsRoot, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.endsWith(".wasm") && !pinnedFiles.has(entry.name)) {
+      rmSync(join(grammarsRoot, entry.name));
+      console.log(`build-live: removed stale grammar asset ${entry.name} (unpinned)`);
+    }
+  }
+  for (const emitted of emittedFiles) {
+    renameSync(join(stageRoot, emitted), join(distRoot, emitted));
+  }
+  console.log(`build-live: engram-live built — ${languages.length} grammars verified, entry surface emitted to engram-live/dist`);
+} finally {
+  rmSync(stageRoot, { recursive: true, force: true });
+}

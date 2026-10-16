@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, openSync, readdirSync, readFileSync, statSync, unlinkSync, closeSync } from "node:fs";
+import { existsSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, closeSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join, posix } from "node:path";
@@ -28,39 +28,65 @@ function liveBuildIsFresh(): boolean {
     "registration.ts",
     "integration.ts",
     "index.ts",
+    "analysis-cache.ts",
+    "code-analysis.ts",
+    "comparisons.ts",
     "tsconfig.json",
     "package.json",
     "grammar-manifest.json",
   ].map((name) => join(liveRoot, name));
   if (inputs.some((input) => !existsSync(input))) return false;
+  const manifest = JSON.parse(readFileSync(join(liveRoot, "grammar-manifest.json"), "utf8")) as {
+    languages?: Record<string, { file?: string; bytes?: number }>;
+  };
+  if (!manifest.languages || typeof manifest.languages !== "object") return false;
+  const requiredOutputs = [
+    "index.js",
+    "index.d.ts",
+    "index.d.ts.map",
+    "contracts.js",
+    "contracts.d.ts",
+    "contracts.d.ts.map",
+    "registration.js",
+    "registration.d.ts",
+    "registration.d.ts.map",
+    "integration.js",
+    "integration.d.ts",
+    "integration.d.ts.map",
+  ].map((name) => join(liveRoot, "dist", name));
+  if (requiredOutputs.some((output) => !existsSync(output) || statSync(output).size === 0)) return false;
+  for (const entry of Object.values(manifest.languages)) {
+    if (typeof entry.file !== "string") return false;
+    const grammarPath = join(liveRoot, "dist", "grammars", entry.file);
+    if (!existsSync(grammarPath)) return false;
+    if (typeof entry.bytes === "number" && statSync(grammarPath).size !== entry.bytes) return false;
+  }
   const newestInput = Math.max(...inputs.map((input) => statSync(input).mtimeMs));
   return statSync(marker).mtimeMs >= newestInput;
 }
 
-export function ensureLiveBuild(): void {
-  if (!existsSync(buildScript)) {
-    throw new Error("L1b is not implemented: scripts/build-live.mjs is missing (build the engram-live package).");
-  }
-  if (liveBuildIsFresh()) return;
-  // Cross-worker build lock: vitest runs test files in parallel workers and
-  // both live test files bootstrap the same output tree.
+// Cross-worker build/pack lock: vitest runs test files in parallel workers and
+// both live test files build and pack the same engram-live/dist tree. Every
+// build and every dist/pack read runs inside this lock so `npm pack` never
+// observes an in-progress rebuild.
+function withLiveBuildLock<T>(fn: () => T): T {
   const lockPath = join(tmpdir(), "engram-live-build.lock");
   for (let attempt = 0; ; attempt++) {
     let handle: number | undefined;
     try {
       handle = openSync(lockPath, "wx");
     } catch {
-      if (!existsSync(lockPath)) continue;
-      if (statSync(lockPath).mtimeMs < Date.now() - 180_000) unlinkSync(lockPath);
+      try {
+        if (statSync(lockPath).mtimeMs < Date.now() - 180_000) unlinkSync(lockPath);
+      } catch {
+        continue;
+      }
       if (attempt > 900) throw new Error("engram-live build lock is stuck (L1b bootstrap).");
       sleep(100);
       continue;
     }
     try {
-      if (!liveBuildIsFresh()) {
-        execFileSync(process.execPath, [buildScript], { cwd: root, stdio: "inherit" });
-      }
-      return;
+      return fn();
     } finally {
       closeSyncQuiet(handle);
       try {
@@ -70,6 +96,17 @@ export function ensureLiveBuild(): void {
       }
     }
   }
+}
+
+export function ensureLiveBuild(): void {
+  if (!existsSync(buildScript)) {
+    throw new Error("L1b is not implemented: scripts/build-live.mjs is missing (build the engram-live package).");
+  }
+  withLiveBuildLock(() => {
+    if (!liveBuildIsFresh()) {
+      execFileSync(process.execPath, [buildScript], { cwd: root, stdio: "inherit" });
+    }
+  });
 }
 
 function closeSyncQuiet(handle: number | undefined): void {
@@ -956,7 +993,7 @@ function listScannedFiles(repoRelDir: string, extensions: string[]): ScannedFile
   for (const entry of readdirSync(absolute, { withFileTypes: true })) {
     const rel = `${repoRelDir}/${entry.name}`;
     if (entry.isDirectory()) {
-      if (entry.name !== "node_modules") out.push(...listScannedFiles(rel, extensions));
+      if (entry.name !== "node_modules" && !entry.name.startsWith(".")) out.push(...listScannedFiles(rel, extensions));
     } else if (entry.isFile() && extensions.some((ext) => rel.endsWith(ext))) {
       const file = join(root, ...rel.split("/"));
       if (statSync(file).size > 0) out.push({ path: rel, content: readFileSync(file, "utf8") });
@@ -990,13 +1027,22 @@ function testClosureFiles(): ScannedFile[] {
 }
 
 function packedLivePaths(): string[] {
-  const raw = execFileSync(
-    "npm",
-    ["pack", "--dry-run", "--json"],
-    { cwd: liveRoot, encoding: "utf8" },
-  );
-  const parsed = JSON.parse(raw) as [{ files: { path: string }[] }];
-  return parsed[0].files.map((file) => file.path);
+  const cacheDir = mkdtempSync(join(tmpdir(), "engram-live-neutrality-npm-cache-"));
+  try {
+    const raw = execFileSync(
+      "npm",
+      ["pack", "--dry-run", "--json"],
+      {
+        cwd: liveRoot,
+        env: { ...process.env, npm_config_cache: cacheDir, npm_config_update_notifier: "false" },
+        encoding: "utf8",
+      },
+    );
+    const parsed = JSON.parse(raw) as [{ files: { path: string }[] }];
+    return parsed[0].files.map((file) => file.path);
+  } finally {
+    rmSync(cacheDir, { recursive: true, force: true });
+  }
 }
 
 function sha256(bytes: Uint8Array | string): string {
@@ -1062,8 +1108,24 @@ describe("live neutrality", () => {
   beforeAll(ensureLiveBuild);
 
   it("built live entry has no consumer or model dependency in its transitive static and dynamic import closure", async () => {
+    const manifest = JSON.parse(readFileSync(join(liveRoot, "grammar-manifest.json"), "utf8")) as {
+      languages: Record<string, { file: string; sha256: string }>;
+    };
+    const { generated, packedPaths, grammarDigests } = withLiveBuildLock(() => {
+      if (!liveBuildIsFresh()) {
+        execFileSync(process.execPath, [buildScript], { cwd: root, stdio: "inherit" });
+      }
+      const generatedSnapshot = generatedFiles();
+      const packedPathsSnapshot = packedLivePaths();
+      const digests = new Map<string, { exists: boolean; sha256: string }>();
+      for (const [language, entry] of Object.entries(manifest.languages)) {
+        const assetPath = join(liveRoot, "dist", "grammars", entry.file);
+        const exists = existsSync(assetPath);
+        digests.set(language, { exists, sha256: exists ? sha256(readFileSync(assetPath)) : "" });
+      }
+      return { generated: generatedSnapshot, packedPaths: packedPathsSnapshot, grammarDigests: digests };
+    });
     const source = sourceFiles();
-    const generated = generatedFiles();
     // Scanning every emitted file is a superset of the entry's transitive
     // closure; the explicit walk below proves the entry closure in addition.
     const violations = [
@@ -1074,13 +1136,10 @@ describe("live neutrality", () => {
     expect(violations).toEqual([]);
 
     // Package closure: packed surface, package metadata and lockfile.
-    const manifest = JSON.parse(readFileSync(join(liveRoot, "grammar-manifest.json"), "utf8")) as {
-      languages: Record<string, { file: string; sha256: string }>;
-    };
     const packageJson = JSON.parse(readFileSync(join(liveRoot, "package.json"), "utf8")) as Record<string, unknown>;
     const lockJson = JSON.parse(readFileSync(join(liveRoot, "package-lock.json"), "utf8"));
     expect(checkImportClosure([], "package", {
-      packedPaths: packedLivePaths(),
+      packedPaths,
       packageJson,
       lockJson,
       manifestLanguages: manifest.languages,
@@ -1088,9 +1147,9 @@ describe("live neutrality", () => {
 
     // Built grammar assets match the pinned manifest digests byte for byte.
     for (const [language, entry] of Object.entries(manifest.languages)) {
-      const assetPath = join(liveRoot, "dist", "grammars", entry.file);
-      expect(existsSync(assetPath)).toBe(true);
-      expect(sha256(readFileSync(assetPath))).toBe(entry.sha256);
+      const digest = grammarDigests.get(language);
+      expect(digest?.exists).toBe(true);
+      expect(digest?.sha256).toBe(entry.sha256);
     }
 
     // Tests of the neutral surface stay inside it: the closure is the
