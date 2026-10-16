@@ -1,15 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { migrateRetainedNeutralRecordsV1, type Digest, type RetainedNeutralRecordV1 } from "../engram-memory/index.js";
-import { createHash } from "node:crypto";
+import { migrateRetainedNeutralRecordsV1, verifyMigrationExclusionLedgerV1, type Digest, type RetainedNeutralRecordV1 } from "../engram-memory/index.js";
+import { createHash, verify } from "node:crypto";
 import { INTAKE_PINS, extractPinnedRecords, gitBlobSha, readPinnedIntake, sha256 } from "./fixtures/memory-pinned-intakes.js";
+import { exclusionLedgerHost } from "./fixtures/memory-exclusion-ledger.js";
 
 const DIGEST_A = "sha256:1111111111111111111111111111111111111111111111111111111111111111" as Digest;
 const DIGEST_B = "sha256:2222222222222222222222222222222222222222222222222222222222222222" as Digest;
 const CONTENT = "sha256:3333333333333333333333333333333333333333333333333333333333333333" as Digest;
 
 describe("retained neutral record migration", () => {
-  it("retained neutral records preserve digests/time/citations or emit an explicit exclusion ledger", () => {
+  it("retained neutral records preserve digests/time/citations or emit a host-signed exclusion ledger", async () => {
     const records: RetainedNeutralRecordV1[] = [
       {
         source_ref: "legacy:keep-open",
@@ -31,7 +32,12 @@ describe("retained neutral record migration", () => {
       { source_ref: "legacy:no-digest", valid_time: { t: 7 }, citations: [{ citation_id: "cit-d", source_ref: "src-d", locator: { scheme: "document", value: "d#1" }, content_digest: CONTENT }] },
     ];
 
-    const ledger = migrateRetainedNeutralRecordsV1(records);
+    const host = exclusionLedgerHost();
+    const result = await migrateRetainedNeutralRecordsV1(records, "1", host);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("migration refused");
+    const ledger = result.value;
+    expect(await verifyMigrationExclusionLedgerV1(JSON.parse(JSON.stringify(ledger)), host.exclusion_ledger_verifier)).toEqual(result);
 
     // Retained records are transformed with digests/valid-time/citations preserved byte-for-byte.
     expect(ledger.migrated.map((entry) => entry.source_ref)).toEqual(["legacy:keep-bounded", "legacy:keep-open"]);
@@ -62,8 +68,8 @@ describe("retained neutral record migration", () => {
 /** Actual pinned legacy shapes enter the delivered migration path unchanged.
  * Legacy fixtures have no V2 record_digest/citations; deriving their historical
  * identity does NOT manufacture those missing fields. The current migrator
- * therefore excludes them explicitly. Its ledger has a digest, NOT a signature:
- * EVOL §10's signed-ledger obligation remains unsatisfied.
+ * therefore excludes them explicitly in a host-signed ledger, verified again
+ * after JSON reload (EVOL §10).
  */
 function refCanonical(value: unknown): string {
   if (Array.isArray(value)) return "[" + value.map(refCanonical).join(",") + "]";
@@ -93,7 +99,7 @@ describe("pinned-intake migration matrix", () => {
     expect(JSON.stringify(await extractPinnedRecords(fixture))).toBe(JSON.stringify(fixture.records));
   });
 
-  it.each(INTAKE_PINS)("pin %s partitions every real retained fixture with reproducible legacy identity and receipts", (pin) => {
+  it.each(INTAKE_PINS)("pin %s partitions every real retained fixture with reproducible legacy identity and receipts", async (pin) => {
     const fixtures = readPinnedIntake(pin).records;
     const early = INTAKE_PINS.indexOf(pin) < 3;
     expect(fixtures.length).toBeGreaterThan(0);
@@ -112,13 +118,24 @@ describe("pinned-intake migration matrix", () => {
       return { ...node, source_ref: origin + ":" + legacyId };
     });
     const before = structuredClone(records);
-    const ledger = migrateRetainedNeutralRecordsV1(records);
+    const host = exclusionLedgerHost();
+    const result = await migrateRetainedNeutralRecordsV1(records, "1", host);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("pinned migration refused");
+    const ledger = result.value;
     const excluded = records.map(({ source_ref }) => {
       const body = { source_ref, reason: "missing_digest" as const };
       return { ...body, exclusion_receipt_digest: refReceipt("migration-exclusion", body) };
     }).sort((a, b) => a.source_ref < b.source_ref ? -1 : a.source_ref > b.source_ref ? 1 : 0);
     const body = { generation: "1", migrated: [], excluded };
-    expect(ledger).toEqual({ ...body, ledger_digest: refReceipt("migration-ledger", body) });
+    const digest = refReceipt("migration-ledger", body);
+    expect(ledger).toEqual({ ...body, ledger_digest: digest, signature: expect.objectContaining({ algorithm: "Ed25519", key_id: "host:test-key" }) });
+    expect(verify(null, Buffer.from(digest), host.publicKey, Buffer.from(ledger.signature!.signature, "base64"))).toBe(true);
+    const reload = JSON.parse(JSON.stringify(ledger));
+    expect(await verifyMigrationExclusionLedgerV1(reload, host.exclusion_ledger_verifier)).toEqual(result);
+    reload.excluded[0].source_ref += ":altered";
+    expect(await verifyMigrationExclusionLedgerV1(reload, host.exclusion_ledger_verifier)).toMatchObject({ ok: false, error: { code: "MIGRATION_LEDGER_INVALID" } });
+    expect(await migrateRetainedNeutralRecordsV1(records)).toMatchObject({ ok: false, error: { code: "CAPABILITY_UNAVAILABLE" } });
     expect(new Set(ledger.excluded.map(({ source_ref }) => source_ref))).toEqual(new Set(records.map(({ source_ref }) => source_ref)));
     expect(ledger.excluded).toHaveLength(records.length);
     expect(records).toEqual(before);
