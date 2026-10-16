@@ -340,6 +340,21 @@ function closureHas(closurePaths: Set<string>, resolved: string): boolean {
 // declared adapter drivers.
 const TEST_ALLOWED_BARE = new Set(["vitest", "typescript", ...DECLARED_DRIVER_SPECIFIERS]);
 
+// X2b integration exception: `tests/memory-projection-cascade.postgres.test.ts` intentionally
+// wires the neutral engine to the delivered host-owned adapters — the product under test is
+// the engine driving the real FileGraphStore and the real Postgres vectors. The crossing is
+// the requirement, so exactly these two host-bridge edges from exactly that file are allowed.
+// Every other src/** edge from the closure stays forbidden (see the self-tests below).
+const TEST_ALLOWED_HOST_EDGES = new Set([
+  "tests/memory-projection-cascade.postgres.test.ts -> src/storage/memory-projection",
+  "tests/memory-projection-cascade.postgres.test.ts -> src/storage/vector/postgres-exact",
+]);
+
+function hostEdgeKey(path: string, resolved: string): string {
+  const module = resolved.endsWith(".js") || resolved.endsWith(".ts") ? resolved.slice(0, -3) : resolved;
+  return `${path} -> ${module}`;
+}
+
 function checkTestFile(file: ScannedFile, closurePaths: Set<string>): ClosureViolation[] {
   const edges = extractEdges(file.content);
   const violations: ClosureViolation[] = [...dynamicViolations(file.path, edges)];
@@ -356,6 +371,7 @@ function checkTestFile(file: ScannedFile, closurePaths: Set<string>): ClosureVio
         continue;
       }
       if (isInsidePackage(resolved) || closureHas(closurePaths, resolved)) continue;
+      if (TEST_ALLOWED_HOST_EDGES.has(hostEdgeKey(file.path, resolved))) continue;
       violations.push({ path: file.path, specifier, reason: `test-closure edge leaves the closure -> ${resolved}` });
       continue;
     }

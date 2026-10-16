@@ -88,6 +88,9 @@ jobs:
       - name: Run Postgres lane in required mode
         run: npx vitest run --fileParallelism=false tests/canonical-memory-store.parity.test.ts tests/postgres-memory-store.native.test.ts tests/memory-reconciliation.test.ts
 
+      - name: Run X2b real projection cascade lane in required mode
+        run: npx vitest run --fileParallelism=false tests/memory-projection-cascade.postgres.test.ts
+
   # L1b neutral live package (plan/09-BRANCH_LIVE_GIT_INDEXING.md; spec/
   # SPEC_LIVE_GIT_INDEXING.md §§2-3, 11, A06/A15): build the separate
   # @sentropic/engram-live package, verify the packed deliverable, and run
