@@ -94,7 +94,7 @@ describe("resolveConvertedOrigin — carriers", () => {
   it("reads the original from <stem>.ocr.json when prep.json is absent", () => {
     const dir = makeDir();
     const md = makeConverted(dir, "scan", {
-      ocr: { source_file: "/corpus/scan.pdf", sha256: "abc", model: "mistral-ocr-4-0", pages: [] },
+      ocr: { source_file: "/corpus/scan.pdf", sha256: "abc", model: "mistral-ocr-latest", pages: [] },
     });
     // The OCR sidecar names a MODEL, not a conversion pipeline, and there is no
     // frontmatter here to fill the label — the path still resolves.
@@ -108,7 +108,7 @@ describe("resolveConvertedOrigin — carriers", () => {
     const dir = makeDir();
     // The real-world aclp-am shape: prep.json absent, ocr.json + frontmatter present.
     const md = makeConverted(dir, "scan", {
-      ocr: { source_file: "/corpus/scan.pdf", sha256: "abc", model: "mistral-ocr-4-0", pages: [] },
+      ocr: { source_file: "/corpus/scan.pdf", sha256: "abc", model: "mistral-ocr-latest", pages: [] },
       front: { source: "/corpus/scan.pdf", conversion: "mistral-ocr-batch" },
     });
     expect(resolveConvertedOrigin(md)).toEqual({
