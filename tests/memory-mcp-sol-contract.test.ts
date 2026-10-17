@@ -107,6 +107,36 @@ describe('Sol MCP-L0 independent spec counterexamples', () => {
     });
   }
 
+  it('A10-R1-UNICODE M2:268,269,274 / M5:688: preserves well-formed body strings and requires NFC only where specified', () => {
+    const nfd = 'e\u0301';
+    for (const rule of M2_STRING_BOUNDARY_SPEC_RULES.filter(r => !r.is_ascii_grammar)) {
+      const { a, tool, validate } = argumentFor(rule.field_path, nfd);
+      const schema = ENGRAM_MEMORY_TOOL_DESCRIPTORS.find(d => d.name === tool)!.inputSchema;
+      expect(validate(a).ok, rule.field_path).toBe(!rule.requires_nfc);
+      if (rule.requires_nfc) continue;
+      expect(validatePublishedJsonSchemaDraft202012(schema, a).ok, rule.field_path).toBe(true);
+      const before = JSON.stringify(a);
+      const result = validate(a);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(JSON.stringify(result.value)).toBe(before);
+      // Nonempty well-formed strings include whitespace; no trimming or normalization is specified.
+      expect(validate(argumentFor(rule.field_path, ' \t').a).ok, rule.field_path).toBe(true);
+      for (const invalid of ['', '\ud800', '\udc00', 'a\ud800z']) {
+        expect(validate(argumentFor(rule.field_path, invalid).a).ok, rule.field_path).toBe(false);
+      }
+      const preimage = { ...clone(capturePreimage), effective_input: {
+        ...clone(capturePreimage.effective_input), payload: { ...a.payload, scope_ref: capturePreimage.scope_ref },
+      } };
+      const digest = computeMemoryMutationOperationDigestV1(preimage);
+      const normalized = computeMemoryMutationOperationDigestV1(JSON.parse(JSON.stringify(preimage).normalize('NFC')));
+      expect(digest.ok).toBe(true); expect(normalized.ok).toBe(true);
+      if (digest.ok && normalized.ok) {
+        expect(digest.value.canonical_jcs_utf8).toContain(nfd);
+        expect(digest.value.operation_digest).not.toBe(normalized.value.operation_digest);
+      }
+    }
+  });
+
   it('A10-R1-BOUNDS M2:239-249,275: numeric, collection and complete argument boundaries use independent spec limits', () => {
     const rules = M2_NUMERIC_AND_ARRAY_BOUNDARY_SPEC_RULES;
     for (const field of ['limit', 'max_packet_bytes'] as const) {
