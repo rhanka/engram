@@ -60,6 +60,7 @@ add('A06-current-caller', 'policy.ts', 'if (expected.caller_currently_authorized
 add('A06-current-target', 'policy.ts', 'if (expected.target_currently_authorized !== true)', 'if (expected.target_currently_authorized !== undefined && expected.target_currently_authorized !== true)', 'L0-A06', 567);
 add('A06-reconnect-verdict', 'policy.ts', 'proof.verified !== true', 'proof.verified === false', 'L0-A06', 565);
 add('A06-committed-guard-bypass', 'policy.ts', '  if (continuation.elicitation_ref !== expected.elicitation_ref)', "  if (expected.reservation_state === 'committed') return { ok: true, decision: 'disclose_committed_without_repeat_effect', continuation: continuation as unknown as MemoryConfirmationContinuationV1 };\n  if (continuation.elicitation_ref !== expected.elicitation_ref)", 'L0-A06 committed', 567);
+add('A06-invocation-principal', 'policy.ts', 'binding.delegation.delegator_principal_id !== binding.principal_id', 'false', 'L0-A06 invocation delegation', 561);
 
 for (const [field,value] of [['mode',"'confirm'"],['required','true'],['ttlSeconds','MEMORY_MCP_LIMITS.CONFIRMATION_MAX_TTL_SECONDS'],['requestSchema','MemoryConfirmationRequestV1Schema'],['responseSchema','MemoryConfirmationResponseV1Schema'],['carriesSecrets','false'],['bindToClient','true'],['bindToSub','true']]) {
  add('R3-elicitation-'+field,'gates.ts','  '+field+': '+value+',','', 'M7_MANIFEST',890);
