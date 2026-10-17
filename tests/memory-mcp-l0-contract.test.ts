@@ -622,15 +622,15 @@ describe('MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutr
         expect(res.ok).toBe(false);
       }
 
-      // Rejects NFD non-NFC strings, empty query, and out-of-range limit / max_packet_bytes
+      // M:238,688 permits NFD and whitespace queries; byte bounds still apply.
       const nfdQuery = 'e\u0301'; // decomposed é
       expect(isWellFormedUnicodeAndNfc(nfdQuery)).toBe(false);
       expect(
         validateSearchInputV1({ query: nfdQuery, purpose_ref: 'p' }).ok,
-      ).toBe(false);
+      ).toBe(true);
       expect(
         validateSearchInputV1({ query: '   ', purpose_ref: 'p' }).ok,
-      ).toBe(false);
+      ).toBe(true);
       expect(
         validateSearchInputV1({
           query: 'a'.repeat(8193),
