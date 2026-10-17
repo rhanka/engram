@@ -217,11 +217,24 @@ export interface AnalyzeCodeOutcome {
 /** Content-verified declaration AND relation inventory, held by the operation.
  * Serialized or caller-built copies cannot verify; repair never accepts a completion label as proof. */
 export interface DeclarationInventoryReceipt { readonly kind: "verified-declaration-inventory"; }
-const inventories = new WeakMap<DeclarationInventoryReceipt, { input: AnalyzeCodeInput; parsed: ParsedUnit }>();
-function inventoryReceipt(input: AnalyzeCodeInput, parsed: ParsedUnit): DeclarationInventoryReceipt {
+const inventories = new WeakMap<DeclarationInventoryReceipt, { input: AnalyzeCodeInput; parsed: ParsedUnit; symbols: readonly ResolvedSymbolDto[] }>();
+function inventoryReceipt(input: AnalyzeCodeInput, parsed: ParsedUnit, symbols: readonly ResolvedSymbolDto[]): DeclarationInventoryReceipt {
   const receipt: DeclarationInventoryReceipt = Object.freeze({ kind: "verified-declaration-inventory" });
-  inventories.set(receipt, { input: structuredClone(input), parsed: structuredClone(parsed) });
+  inventories.set(receipt, { input: structuredClone(input), parsed: structuredClone(parsed), symbols: structuredClone(symbols) });
   return receipt;
+}
+
+/** G2 consumes the same operation-held complete L5 inventory as repair.
+ * A serialized receipt, caller-built outcome, completion label or local ID
+ * cannot create evidence. Return copies, never mutable internal authority. */
+export function readSymbolInventory(receipt: DeclarationInventoryReceipt): {
+  readonly scope: LiveScopeDto; readonly treeOid: string | null; readonly path: string;
+  readonly language: string; readonly contentHash: string; readonly symbols: readonly ResolvedSymbolDto[];
+} | null {
+  const inventory = inventories.get(receipt);
+  if (!inventory) return null;
+  return { scope: { ...inventory.input.scope }, treeOid: inventory.input.treeOid, path: inventory.input.path,
+    language: inventory.input.language, contentHash: sha256Hex(inventory.input.content), symbols: structuredClone(inventory.symbols) };
 }
 
 export interface CodeAnalysisPorts {
@@ -796,7 +809,7 @@ async function analyzeCodePinned(input: AnalyzeCodeInput, ports: CodeAnalysisPor
   if (expectedUnits === 0) {
     // Verified-empty: complete syntax + walk marker with zero yield.
     return {
-      declarationInventory: manifestOk ? inventoryReceipt(input, parsed) : undefined,
+      declarationInventory: manifestOk ? inventoryReceipt(input, parsed, symbols) : undefined,
       cacheHit,
       calls,
       coverage: {
@@ -834,7 +847,7 @@ async function analyzeCodePinned(input: AnalyzeCodeInput, ports: CodeAnalysisPor
   }
 
   return {
-    declarationInventory: inventoryReceipt(input, parsed),
+    declarationInventory: inventoryReceipt(input, parsed, symbols),
     cacheHit,
     calls,
     coverage: {
