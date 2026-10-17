@@ -1685,6 +1685,12 @@ export function evaluateSameScopeTombstoneRecaptureGuardV1(input: {
 
   const ordinaryDecision = input.ordinary_policy_decision;
 
+  // M:525,716-718: absent evidence must never become Set(undefined).
+  const evidence = input.tombstoned_payload_digests_in_scope;
+  if (!(evidence instanceof Set || Array.isArray(evidence)) ||
+      ![...evidence].every(isValidSha256Digest)) {
+    return { ok: false, error_code: 'POLICY_UNAVAILABLE', message: 'Explicit same-scope tombstone evidence is required' };
+  }
   const tombstonedInSameScope =
     input.tombstoned_payload_digests_in_scope instanceof Set
       ? input.tombstoned_payload_digests_in_scope
@@ -1831,6 +1837,10 @@ export function evaluateM5LifecycleTransitionV1(input: {
         next_state: 'pending_adjudication',
         admission_status: 'pending_adjudication',
       };
+    }
+    // M:525,716-718: only an explicit negative match permits ordinary admission.
+    if (input.same_scope_tombstone_match !== false) {
+      return { ok: false, isError: true, error_code: 'POLICY_UNAVAILABLE' };
     }
     const decision = input.policy_decision;
     if (decision !== 'accept' && decision !== 'reject' && decision !== 'adjudication_required') {

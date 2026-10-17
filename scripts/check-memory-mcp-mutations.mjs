@@ -72,14 +72,19 @@ add('R2-admission-policy-default','policy.ts','const decision = input.policy_dec
 add('R2-recapture-policy-default','policy.ts','const ordinaryDecision = input.ordinary_policy_decision;',"const ordinaryDecision = input.ordinary_policy_decision ?? 'accept';",'A10-R2-POLICY',581);
 
 add('R4-recapture-success-kind','policy.ts','        isError: false,','        isError: true,','A10-R4',1391);
+add('O1-tombstone-verdict', 'policy.ts', 'if (input.same_scope_tombstone_match !== false)', 'if (false)', 'O1 A10-R4', 525);
+add('O1-tombstone-evidence', 'policy.ts', 'if (!(evidence instanceof Set || Array.isArray(evidence)) ||\n      ![...evidence].every(isValidSha256Digest))', 'if (false)', 'O1 A10-R4', 716);
 
 const results = [];
+const selectedIds = process.env.MEMORY_MCP_MUTATION_IDS?.split(',');
+const selectedCases = selectedIds ? cases.filter(c => selectedIds.includes(c.id)) : cases;
+const suites = ['tests/memory-mcp-l0-contract.test.ts', 'tests/memory-mcp-sol-contract.test.ts', 'tests/memory-mcp-cofreeze.test.ts'];
 const env = { ...process.env, npm_config_offline: 'true', NO_PROXY: '*', HTTP_PROXY: '', HTTPS_PROXY: '' };
 try {
   // Only clean baselines can give meaningful mutation evidence.
-  const baseline = spawnSync(process.execPath, ['node_modules/vitest/vitest.mjs','run','tests/memory-mcp-l0-contract.test.ts','tests/memory-mcp-sol-contract.test.ts'], { env, encoding: 'utf8' });
+  const baseline = spawnSync(process.execPath, ['node_modules/vitest/vitest.mjs','run',...suites], { env, encoding: 'utf8' });
   if (baseline.status !== 0) throw new Error('Baseline failed:\n' + baseline.stdout + baseline.stderr);
-  for (const c of cases) {
+  for (const c of selectedCases) {
     const original = readFileSync(c.file, 'utf8'); originals.set(c.file, original);
     if (!original.includes(c.from)) throw new Error('Mutation anchor missing: ' + c.id);
     const changed = original.replace(c.from, () => c.to);
@@ -92,7 +97,7 @@ try {
         failed = killed ? ['tsc: actual CapabilityTool mutable arrays'] : [];
       } else {
         const output = join(directory,'result.json');
-        const run = spawnSync(process.execPath, ['node_modules/vitest/vitest.mjs','run','tests/memory-mcp-l0-contract.test.ts','tests/memory-mcp-sol-contract.test.ts','-t',c.pattern,'--reporter=json','--outputFile',output], { env, encoding:'utf8' });
+        const run = spawnSync(process.execPath, ['node_modules/vitest/vitest.mjs','run',...suites,'-t',c.pattern,'--reporter=json','--outputFile',output], { env, encoding:'utf8' });
         const json = JSON.parse(readFileSync(output,'utf8'));
         failed = json.testResults.flatMap(f => f.assertionResults.filter(t => t.status === 'failed').map(t => t.fullName));
         killed = run.status !== 0 && failed.length > 0;
@@ -106,7 +111,7 @@ try {
   for (const r of results) lines.push(`| ${r.id} | ${r.line} | ${r.killed ? 'killed' : 'SURVIVED'} | ${r.failed[0]?.replaceAll('|','/') ?? 'none'} |`);
   lines.push('', 'Restored source identities:', '');
   for (const file of [...new Set(cases.map(c=>c.file))]) lines.push(`- \`${file}\`: \`${sha(file)}\``);
-  writeFileSync('spec/MCP_L0_SOL_MUTATIONS.md', lines.join('\n')+'\n');
+  if (!selectedIds) writeFileSync('spec/MCP_L0_SOL_MUTATIONS.md', lines.join('\n')+'\n');
   if (results.some(r=>!r.killed)) process.exitCode = 1;
 } finally {
   for (const [file, original] of originals) writeFileSync(file, original);
