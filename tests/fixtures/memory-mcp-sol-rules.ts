@@ -209,4 +209,4 @@ export const storageReceiptFields = ['backend','fence','custody','admin','retent
 export const tupleDigestFields = ['entrySha256','profileSha256','schemaSha256','manifestSha256','indexSha256','declaredLockSha256','actualLockSha256','installedExternalClosureSha256','l5ContractSha256','l5ExportsSha256'];
 
 /** M5:581: admission follows an explicit configured policy decision, never absence-as-acceptance. */
-export const absentAdmissionPolicyRule = { spec_line:581, tool:'engram_memory_request_admission', prior_state:'pending', error_code:'POLICY_UNAVAILABLE' } as const;
+export const absentAdmissionPolicyRule = { spec_line:581, tool:'engram_memory_request_admission', prior_state:'pending', same_scope_tombstone_match:false, error_code:'POLICY_UNAVAILABLE' } as const;
