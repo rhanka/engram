@@ -16,6 +16,8 @@
     "index.ts",
     "contracts.ts",
     "registration.ts",
+    "line-attribution.ts",
+    "git-executor.ts",
     "integration.ts"
   ]
 }

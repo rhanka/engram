@@ -180,6 +180,12 @@ if (cliArgs.length > 0) {
 
 const stageGrammarsRoot = join(stageRoot, "grammars");
 const emittedFiles = [
+  "line-attribution.d.ts",
+  "line-attribution.d.ts.map",
+  "line-attribution.js",
+  "git-executor.d.ts",
+  "git-executor.d.ts.map",
+  "git-executor.js",
   "contracts.d.ts",
   "contracts.d.ts.map",
   "contracts.js",
