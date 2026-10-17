@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import {
   cpSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync,
   readlinkSync, rmSync, symlinkSync, writeFileSync,
@@ -276,7 +277,7 @@ export function normalizeOracle(actual: Record<string, Buffer>, corpus: GitCorpu
 /** Digest byte paths, types, permissions and content without following links.
  * Includes objects/config/refs/index and ignored/untracked files, excludes atime.
  */
-export function inventoryDigest(corpus: GitCorpus): string {
+export function inventoryDigest(corpus: { root: string }): string {
   const hash = createHash("sha256");
   const visit = (path: Buffer) => {
     const stat = lstatSync(path);
@@ -291,6 +292,93 @@ export function inventoryDigest(corpus: GitCorpus): string {
   };
   visit(Buffer.from(corpus.root));
   return hash.digest("hex");
+}
+
+/** G1 oracle fixture: only native Git constructs objects; the observed clone
+ * and its linked worktree are never used as the producer's object store. */
+export function buildLineAttributionFixture(box: LiveGitSandbox, format: ObjectFormat = "sha1") {
+  const root = join(box.root, `line-${format}`);
+  mkdirSync(root);
+  const repo = box.init(join(root, "observed"), format);
+  const rawPath = Buffer.concat([Buffer.from("-$(touch G1_EXECUTED);"), Buffer.from("6f726967696e2dfffe09220a", "hex")]);
+  const a = ["alpha original declaration with enough distinct characters", "beta original declaration with enough distinct characters", "gamma original declaration with enough distinct characters"];
+  const b = ["delta independent implementation with enough distinct characters", "epsilon independent implementation with enough distinct characters", "zeta independent implementation with enough distinct characters"];
+  const c = ["eta final section with enough distinct characters", "theta final section with enough distinct characters", "iota final section with enough distinct characters"];
+  const commits: Record<string, string> = {};
+  const make = (name: string, files: [Buffer | string, string[]][], parents: string[] = []) => {
+    const entries = files.map(([path, lines]) => ({ path: Buffer.from(path), mode: "100644",
+      oid: box.git(repo, ["hash-object", "-w", "--no-filters", "--stdin"], lines.join("\n") + "\n").toString().trim() }));
+    const result = box.trace.run(repo, ["commit-tree", writeTree(box, repo, entries),
+      ...parents.flatMap(parent => ["-p", commits[parent]])], `${name}\n`, "setup", {
+      GIT_AUTHOR_NAME: `G1 ${name}`, GIT_AUTHOR_EMAIL: `${name}@example.invalid`,
+      GIT_AUTHOR_DATE: `1700000000 ${name === "left" ? "+0530" : name === "right" ? "-0330" : "+0000"}`,
+    });
+    if (result.status !== 0) throw new Error(`G1 native commit failed: ${result.stderr}`);
+    commits[name] = result.stdout.toString().trim();
+  };
+  make("root", [[rawPath, [...a, ...b, ...c]], ["nested/inner.txt", a]]);
+  const left = [a[0], "left parent changed this particular original declaration", a[2], ...b, ...c];
+  const right = [...a, b[0], "right parent changed this independent implementation", b[2], ...c];
+  make("left", [[rawPath, left]], ["root"]);
+  make("right", [[rawPath, right]], ["root"]);
+  const merged = [...left.slice(0, 3), ...right.slice(3, 6), ...c, "merge resolution introduced by the ordered parent merge"];
+  make("merge", [[rawPath, merged]], ["left", "right"]);
+  make("rename", [["renamed.txt", merged]], ["merge"]);
+  const moved = [...c, ...merged.slice(0, 6), merged[9]];
+  make("move", [["renamed.txt", moved]], ["rename"]);
+  make("copy", [["renamed.txt", moved], ["copied.txt", [...moved, "copy commit adds its own independent declaration"]]], ["move"]);
+  box.git(repo, ["update-ref", "refs/heads/main", commits.copy]);
+  box.git(repo, ["read-tree", commits.copy]);
+  writeFileSync(join(repo, "untracked.txt"), "untracked bytes must remain\n");
+  const linked = join(root, "linked");
+  box.git(repo, ["worktree", "add", "--quiet", "--no-checkout", "--detach", linked, commits.merge]);
+  const privateRoot = join(box.root, `retained-${format}`);
+  mkdirSync(privateRoot);
+  const stores: Record<string, string> = {};
+  for (const name of ["complete", "shallow", "missing", "missing-blob", "external-config"]) {
+    const cwd = box.init(join(privateRoot, name), format);
+    cpSync(join(repo, ".git", "objects"), join(cwd, ".git", "objects"), { recursive: true });
+    stores[name] = cwd;
+    // Repository-controlled conversions are declarations only, never canaries.
+    // The producer must override diff/quoting defaults.
+    for (const [key, value] of [["diff.algorithm", "patience"],
+      ["diff.indentHeuristic", "true"], ["core.quotePath", "false"]]) box.git(cwd, ["config", key, value]);
+  }
+  box.git(stores["external-config"], ["config", "blame.ignoreRevsFile", "must-not-open"]);
+  writeFileSync(join(stores.shallow, ".git", "shallow"), `${commits.merge}\n`);
+  const removeObject = (store: string, oid: string) => rmSync(join(stores[store], ".git", "objects", oid.slice(0, 2), oid.slice(2)));
+  removeObject("missing", commits.root);
+  const rootBlob = box.read(repo, ["ls-tree", "-rz", commits.root]).toString("latin1").split("\t")[0].split(" ")[2];
+  removeObject("missing-blob", rootBlob);
+  return { root, repo, linked, privateRoot, stores, rawPath, commits, format };
+}
+
+/** Independent native oracle. No producer parser, argument builder or result
+ * is used to derive expectations. printf receives octal bytes as data only. */
+export function nativeLineOracle(box: LiveGitSandbox, cwd: string, oid: string, path: Buffer,
+  ranges: readonly { start: number; end: number }[], detectionFlags: readonly string[] = []) {
+  const args = ["blame", "--root", "--line-porcelain", "--no-textconv", "--encoding=none", "--ignore-revs-file", "",
+    "--diff-algorithm=myers", "--no-indent-heuristic",
+    ...detectionFlags,
+    ...ranges.flatMap(range => ["-L", `${range.start},${range.end}`]), oid, "--"];
+  // Native Git can take arbitrary argv bytes; Node string argv cannot. The
+  // fixed system shell performs only byte decoding and exec, never eval.
+  const encoded = [...path].map(byte => `\\0${byte.toString(8).padStart(3, "0")}`).join("");
+  const result = spawnSync("/bin/sh", ["-c", 'p=$(printf "%bX" "$1"); shift; exec "$@" "${p%X}"', "oracle", encoded,
+    box.trace.executable, "--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "protocol.allow=never", ...args], {
+    cwd, env: { PATH: "/usr/bin:/bin", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_NO_LAZY_FETCH: "1", GIT_NO_REPLACE_OBJECTS: "1", LC_ALL: "C" }, encoding: "latin1",
+  });
+  if (result.status !== 0) throw new Error(`native blame oracle failed: ${result.stderr}`);
+  const decode = (value: string) => value.startsWith('"')
+    ? Buffer.from(value.slice(1, -1).replace(/\\([0-7]{3}|[abtnvfr"\\])/g, (_, escape: string) =>
+      String.fromCharCode(/^[0-7]/.test(escape) ? parseInt(escape, 8) : ({ a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, "\\": 92 }[escape]!))), "latin1")
+    : Buffer.from(value, "latin1");
+  return [...result.stdout.matchAll(/^([a-f0-9]{40,64}) (\d+) (\d+)(?: \d+)?\n([\s\S]*?)\n\t/gm)].map(match => ({
+    commit: match[1], original: Number(match[2]), final: Number(match[3]),
+    pathHex: decode(/^filename (.*)$/m.exec(match[4])![1]).toString("hex"),
+    author: /^author (.*)$/m.exec(match[4])![1],
+  }));
 }
 
 /** Same streamed fast-import recipe at both tiers; every commit changes a file.

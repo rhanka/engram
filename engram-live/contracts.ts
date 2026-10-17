@@ -110,6 +110,67 @@ export interface LiveScope {
   readonly worktree?: string;
 }
 
+// G1: inclusive, one-based ranges over exact committed blob bytes. These
+// facts are mapped/persisted by L3a; no producer-side cache grants authority.
+export interface LineRangeDto { readonly start: number; readonly end: number }
+/** UTF-8 identities retain their normal strings. For each non-UTF-8 field,
+ * the raw bytes are authoritative and its string is a reversible latin1
+ * projection, independent of any declared commit encoding. */
+export interface LineAuthorIdentityDto extends HistoryIdentityDto {
+  readonly nameBytes?: Uint8Array;
+  readonly emailBytes?: Uint8Array;
+}
+export interface LineAttributionOptionsDto {
+  readonly version: "native-blame-options/1";
+  readonly algorithm: "myers";
+  readonly moveMinCharacters: number | null;
+  /** Copy detection requires an explicit non-null move threshold. */
+  readonly copyMinCharacters: number | null;
+  /** With copy disabled only the canonical value "all" is admitted. */
+  readonly copySearch: "modified" | "created" | "all";
+}
+export interface LineAttributionRequestDto {
+  readonly scope: LiveScope;
+  readonly generationId: string;
+  readonly target: QualifiedOid;
+  readonly path: Uint8Array;
+  readonly ranges: readonly LineRangeDto[];
+  readonly policyVersion: string;
+  readonly options: LineAttributionOptionsDto;
+}
+export interface LineOriginDto {
+  readonly commit: QualifiedOid;
+  readonly author: LineAuthorIdentityDto;
+  readonly path: Uint8Array;
+  readonly originalRange: LineRangeDto;
+  readonly finalRange: LineRangeDto;
+}
+export interface LineParentEvidenceDto {
+  readonly commit: QualifiedOid;
+  readonly parents: readonly QualifiedOid[];
+}
+export type LineAttributionGapCause = "missing-retention" | "missing-object" | "missing-path" |
+  "shallow" | "excluded" | "unauthorized" | "invalid-range" | "invalid-evidence" | "git-unavailable";
+export interface LineAttributionGapDto {
+  readonly cause: LineAttributionGapCause;
+  readonly reason: string;
+}
+export interface LineAttributionOutcomeDto extends LineAttributionRequestDto {
+  readonly calculationVersion: string;
+  readonly gitVersion: string | null;
+  /** R1 root whose verified ordered-parent closure contains target; null
+   * on partial results, which disclose no additional retained evidence. */
+  readonly retainedRoot: QualifiedOid | null;
+  readonly state: "complete" | "partial";
+  readonly origins: readonly LineOriginDto[];
+  readonly parentEvidence: readonly LineParentEvidenceDto[];
+  readonly coverage: {
+    readonly axis: "line-attribution";
+    readonly state: "current" | "partial";
+    readonly gaps: readonly LineAttributionGapDto[];
+  };
+}
+
 /**
  * Explicit live workspace declaration (L6a). Every declaration carries its
  * opaque identity triangle: declarationId (unique per declaration, stable
