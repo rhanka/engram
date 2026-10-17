@@ -657,7 +657,7 @@ export interface BoundedProjectionObjectV1 {
   citation_refs: ReadonlyArray<OpaqueRef>;
 }
 
-/** The bounded `graph.json`-style current projection. History never inflates it. */
+/** The bounded current memory projection. History never inflates it; separate from the code graph (D10, 2026-10-17). */
 export interface BoundedCurrentProjectionV1 {
   schema_version: 1;
   projection_schema_version: 1;
@@ -1146,6 +1146,78 @@ export interface RecallPacketV2 {
   rank_receipt: RankReceiptV1;
   next_page_cursor?: OpaqueRef;
   packet_digest: Digest;
+}
+
+export interface RedactedMemoryRecordV2 {
+  record_id: string;
+  schema_version?: 2;
+  scope_ref?: OpaqueRef;
+  purpose_ref?: OpaqueRef;
+  valid_time?: ValidIntervalV1;
+  components?: ReadonlyArray<MemoryComponentV2>;
+  primary_component_id?: string;
+  primary_event?: PrimaryEventAnchorV1;
+  citations?: ReadonlyArray<CitationV1>;
+  retention?: RetentionV1;
+  reconciliation?: ReconciliationConsentV1;
+  derivation?: DerivationLineageV1;
+  payload_digest?: Digest;
+  record_digest?: Digest;
+  recorded_at?: Instant;
+  recorded_cursor?: Cursor;
+  authorization_receipt_digest?: Digest;
+  trust?: TrustBindingV1;
+}
+
+export interface RecallRecordPacketV3 {
+  record: RedactedMemoryRecordV2;
+  redacted_fields: ReadonlyArray<JsonPointer>;
+  redaction_receipt_digest: Digest;
+  score: number;
+  rank: number;
+}
+
+export interface RecallPacketV3 {
+  records: ReadonlyArray<RecallRecordPacketV3>;
+  rank_receipt: RankReceiptV1;
+  next_page_cursor?: OpaqueRef;
+  packet_digest: Digest;
+}
+
+export interface MemoryRecallPortV3 {
+  readonly version: 3;
+  recall(request: RecallRequestV2): Promise<Result<RecallPacketV3>>;
+}
+
+export interface MemoryReadReceiptV1 {
+  record_id: string;
+  record_digest: Digest;
+  valid_as_of: number;
+  system_as_of: Cursor;
+  validated_through_cursor: Cursor;
+  authorization_receipt_digest: Digest;
+  revalidation_receipt_digest: Digest;
+  checked_at: Instant;
+  receipt_digest: Digest;
+}
+
+export interface MemoryReadPacketV1 {
+  record: RedactedMemoryRecordV2;
+  redacted_fields: ReadonlyArray<JsonPointer>;
+  redaction_receipt_digest: Digest;
+  read_receipt: MemoryReadReceiptV1;
+  packet_digest: Digest;
+}
+
+export interface MemoryReadPortV1 {
+  readonly version: 1;
+  readCurrent(request: {
+    record_id: string;
+    purpose_ref: OpaqueRef;
+    authorization: AuthorizationContextV1;
+    max_packet_bytes: number;
+    deadline_at: Instant;
+  }): Promise<Result<MemoryReadPacketV1>>;
 }
 
 export interface FencedStoreConstructionV1 {
