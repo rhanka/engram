@@ -300,7 +300,7 @@ export function buildLineAttributionFixture(box: LiveGitSandbox, format: ObjectF
   const root = join(box.root, `line-${format}`);
   mkdirSync(root);
   const repo = box.init(join(root, "observed"), format);
-  const rawPath = Buffer.from("6f726967696e2dfffe09220a", "hex");
+  const rawPath = Buffer.concat([Buffer.from("-$(touch G1_EXECUTED);"), Buffer.from("6f726967696e2dfffe09220a", "hex")]);
   const a = ["alpha original declaration with enough distinct characters", "beta original declaration with enough distinct characters", "gamma original declaration with enough distinct characters"];
   const b = ["delta independent implementation with enough distinct characters", "epsilon independent implementation with enough distinct characters", "zeta independent implementation with enough distinct characters"];
   const c = ["eta final section with enough distinct characters", "theta final section with enough distinct characters", "iota final section with enough distinct characters"];
@@ -308,10 +308,15 @@ export function buildLineAttributionFixture(box: LiveGitSandbox, format: ObjectF
   const make = (name: string, files: [Buffer | string, string[]][], parents: string[] = []) => {
     const entries = files.map(([path, lines]) => ({ path: Buffer.from(path), mode: "100644",
       oid: box.git(repo, ["hash-object", "-w", "--no-filters", "--stdin"], lines.join("\n") + "\n").toString().trim() }));
-    commits[name] = box.git(repo, ["commit-tree", writeTree(box, repo, entries),
-      ...parents.flatMap(parent => ["-p", commits[parent]])], `${name}\n`).toString().trim();
+    const result = box.trace.run(repo, ["commit-tree", writeTree(box, repo, entries),
+      ...parents.flatMap(parent => ["-p", commits[parent]])], `${name}\n`, "setup", {
+      GIT_AUTHOR_NAME: `G1 ${name}`, GIT_AUTHOR_EMAIL: `${name}@example.invalid`,
+      GIT_AUTHOR_DATE: `1700000000 ${name === "left" ? "+0530" : name === "right" ? "-0330" : "+0000"}`,
+    });
+    if (result.status !== 0) throw new Error(`G1 native commit failed: ${result.stderr}`);
+    commits[name] = result.stdout.toString().trim();
   };
-  make("root", [[rawPath, [...a, ...b, ...c]]]);
+  make("root", [[rawPath, [...a, ...b, ...c]], ["nested/inner.txt", a]]);
   const left = [a[0], "left parent changed this particular original declaration", a[2], ...b, ...c];
   const right = [...a, b[0], "right parent changed this independent implementation", b[2], ...c];
   make("left", [[rawPath, left]], ["root"]);
@@ -330,11 +335,16 @@ export function buildLineAttributionFixture(box: LiveGitSandbox, format: ObjectF
   const privateRoot = join(box.root, `retained-${format}`);
   mkdirSync(privateRoot);
   const stores: Record<string, string> = {};
-  for (const name of ["complete", "shallow", "missing", "missing-blob"]) {
+  for (const name of ["complete", "shallow", "missing", "missing-blob", "external-config"]) {
     const cwd = box.init(join(privateRoot, name), format);
     cpSync(join(repo, ".git", "objects"), join(cwd, ".git", "objects"), { recursive: true });
     stores[name] = cwd;
+    // Repository-controlled conversions are declarations only, never canaries.
+    // The producer must override diff/quoting defaults.
+    for (const [key, value] of [["diff.algorithm", "patience"],
+      ["diff.indentHeuristic", "true"], ["core.quotePath", "false"]]) box.git(cwd, ["config", key, value]);
   }
+  box.git(stores["external-config"], ["config", "blame.ignoreRevsFile", "must-not-open"]);
   writeFileSync(join(stores.shallow, ".git", "shallow"), `${commits.merge}\n`);
   const removeObject = (store: string, oid: string) => rmSync(join(stores[store], ".git", "objects", oid.slice(0, 2), oid.slice(2)));
   removeObject("missing", commits.root);
