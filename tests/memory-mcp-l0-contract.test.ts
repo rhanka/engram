@@ -2642,7 +2642,6 @@ describe('MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutr
           hardware_key_required:
             A06_CONFIRMATION_CONTINUATION_SPEC_RULE.hardware_key_required,
           identity_source: 'enrolled_oidc_2fa',
-          host_deployment_qualification_status: 'unverified',
         },
       };
 
@@ -2670,6 +2669,10 @@ describe('MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutr
         execution_deadline_at: '2026-10-17T12:01:30.000Z',
         caller_currently_authorized: true,
         target_currently_authorized: true,
+        approving_human_principal_id: 'usr_alice', approving_subject_sub: 'sub_alice_2fa',
+        approver_currently_enrolled_2fa: true, approver_not_revoked: true, approver_current_assurance_verified: true,
+        expected_issuer: 'https://oidc.sent-tech.ca', accepted_assurance_policy_versions: ['assurance-policy/v1'],
+        host_deployment_qualified: true,
         reservation_state: 'uncommitted',
       };
 

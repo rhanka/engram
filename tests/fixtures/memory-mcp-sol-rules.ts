@@ -114,7 +114,6 @@ export const validContinuation = {
           hardware_key_required:
             false,
           identity_source: 'enrolled_oidc_2fa',
-          host_deployment_qualification_status: 'unverified',
         },
       } as const;
 
@@ -142,6 +141,10 @@ export const expectedBinding = {
         execution_deadline_at: '2026-10-17T12:01:30.000Z',
         caller_currently_authorized: true,
         target_currently_authorized: true,
+        approving_human_principal_id: 'usr_alice', approving_subject_sub: 'sub_alice_2fa',
+        approver_currently_enrolled_2fa: true, approver_not_revoked: true, approver_current_assurance_verified: true,
+        expected_issuer: 'https://oidc.sent-tech.ca', accepted_assurance_policy_versions: ['assurance-policy/v1'],
+        host_deployment_qualified: true,
         reservation_state: 'uncommitted',
       } as const;
 

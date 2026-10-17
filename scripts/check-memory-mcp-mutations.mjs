@@ -73,6 +73,11 @@ add('R2-recapture-policy-default','policy.ts','const ordinaryDecision = input.or
 
 add('R4-recapture-success-kind','policy.ts','        isError: false,','        isError: true,','A10-R4',1391);
 add('O1-tombstone-verdict', 'policy.ts', 'if (input.same_scope_tombstone_match !== false)', 'if (false)', 'O1 A10-R4', 525);
+for (const field of ['approver_currently_enrolled_2fa', 'approver_not_revoked', 'approver_current_assurance_verified', 'host_deployment_qualified']) {
+  add('O2-' + field, 'policy.ts', 'expected.' + field + ' !== true', 'false', 'O2 L0-A06', 567);
+}
+add('O2-issuer', 'policy.ts', 'assurance.issuer !== expected.expected_issuer', 'false', 'O2 L0-A06', 561);
+add('O2-policy', 'policy.ts', '!expected.accepted_assurance_policy_versions.includes(assurance.assurance_policy_version)', 'false', 'O2 L0-A06', 561);
 add('O1-tombstone-evidence', 'policy.ts', 'if (!(evidence instanceof Set || Array.isArray(evidence)) ||\n      ![...evidence].every(isValidSha256Digest))', 'if (false)', 'O1 A10-R4', 716);
 
 const results = [];
