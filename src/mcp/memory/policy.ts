@@ -22,6 +22,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { isValidTrustedAuditId, TRUSTED_CONTEXT_UNAVAILABLE_PROTOCOL_ERROR, type McpProtocolErrorObjectV1 } from './errors.js';
 import {
   ENGRAM_MEMORY_CONNECTOR_ID,
   ENGRAM_MEMORY_MCP_CONTRACT_VERSION,
@@ -2052,6 +2053,11 @@ export type MemoryContextProjectionResultV1 =
     }
   | {
       readonly ok: false;
+      readonly kind: 'protocol_refusal';
+      readonly protocolError: McpProtocolErrorObjectV1;
+    }
+  | {
+      readonly ok: false;
       readonly error_code:
         | 'UNAUTHORIZED'
         | 'AUTHORIZATION_REVOKED'
@@ -2172,17 +2178,14 @@ export function projectMemoryInvocationContextV1(
   binding: unknown,
   expected: ExpectedMemoryInvocationContextV1,
 ): MemoryContextProjectionResultV1 {
+  // M:322-326,785: audit refusal precedes all domain checks and envelopes.
+  if (!isPlainObject(binding) || !isValidTrustedAuditId(binding.audit_id)) {
+    return { ok: false, kind: 'protocol_refusal', protocolError: TRUSTED_CONTEXT_UNAVAILABLE_PROTOCOL_ERROR };
+  }
   if (!expected || !ENGRAM_MEMORY_TOOL_NAMES.includes(expected.tool) ||
       !isValidCursor(expected.expectedActiveGeneration) || !isValidCursor(expected.expectedPolicyEpoch) ||
       !isValidInstant(expected.now) || typeof expected.confirmationRequired !== 'boolean') {
     return { ok: false, error_code: 'UNAUTHORIZED', reason: 'Current host generation, policy epoch, tool, time and confirmation policy are required' };
-  }
-  if (!isPlainObject(binding)) {
-    return {
-      ok: false,
-      error_code: 'UNAUTHORIZED',
-      reason: 'MemoryInvocationBindingV1 must be a plain object',
-    };
   }
   const unexpected = hasUnexpectedObjectKeys(
     binding,
@@ -2283,17 +2286,6 @@ export function projectMemoryInvocationContextV1(
       ok: false,
       error_code: 'UNAUTHORIZED',
       reason: 'Required principal, session, attachment, store, scope, purpose, or correlation refs are invalid',
-    };
-  }
-
-  if (
-    !isValidOpaqueRef(binding.audit_id) ||
-    binding.audit_id === 'audit_mcp_l0_default'
-  ) {
-    return {
-      ok: false,
-      error_code: 'UNAUTHORIZED',
-      reason: 'audit_id must be a verified non-synthetic host audit reference',
     };
   }
 
