@@ -207,7 +207,7 @@ describe('Sol MCP-L0 independent spec counterexamples', () => {
   it('A10-R2-POLICY M5:581: missing host admission policy never defaults to acceptance', () => {
     const rule = absentAdmissionPolicyRule;
     for (const decision of rejected) {
-      expect(evaluateM5LifecycleTransitionV1({tool:rule.tool,prior_state:rule.prior_state,callerAuthorized:true,targetAuthorized:true,policy_decision:decision as any})).toEqual({ok:false,isError:true,error_code:rule.error_code});
+      expect(evaluateM5LifecycleTransitionV1({tool:rule.tool,prior_state:rule.prior_state,callerAuthorized:true,targetAuthorized:true,same_scope_tombstone_match:rule.same_scope_tombstone_match,policy_decision:decision as any})).toEqual({ok:false,isError:true,error_code:rule.error_code});
       const result = evaluateSameScopeTombstoneRecaptureGuardV1({scope_ref:'scope',candidate_payload_digest:'sha256:'+'a'.repeat(64),tombstoned_payload_digests_in_scope:[],ordinary_policy_decision:decision as any});
       expect(result.ok).toBe(false); if (!result.ok) expect(result.error_code).toBe(rule.error_code);
     }
