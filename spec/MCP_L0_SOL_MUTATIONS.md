@@ -4,7 +4,7 @@ Spec SHA-256: `f90c927964b44fdf6ad712eee9b894762250239384643a3790931c142d3aeeca`
 
 Reproduce: `node scripts/check-memory-mcp-mutations.mjs`. Serial source mutations; each source is restored in `finally`. No tests or fixtures are mutated. A killed mutant requires an actual failed test case (or a standard-type compiler diagnostic).
 
-Result: **82/82 killed**. Baseline: both MCP contract suites pass.
+Result: **83/83 killed**. Baseline: both MCP contract suites pass.
 
 | Mutation | Spec v3.1 line | Result | Failing test |
 |---|---:|---|---|
@@ -77,6 +77,7 @@ Result: **82/82 killed**. Baseline: both MCP contract suites pass.
 | A06-current-target | 567 | killed | Sol MCP-L0 independent spec counterexamples L0-A06 M4:525,561-567: every current authorization and reconnect verdict is closed-world |
 | A06-reconnect-verdict | 565 | killed | Sol MCP-L0 independent spec counterexamples L0-A06 M4:525,561-567: every current authorization and reconnect verdict is closed-world |
 | A06-committed-guard-bypass | 567 | killed | Sol MCP-L0 independent spec counterexamples L0-A06 committed continuation M4:567: rejects the Argon counterexample and retains every approval guard |
+| A06-invocation-principal | 561 | killed | Sol MCP-L0 independent spec counterexamples L0-A06 invocation delegation M4:561: should reject a delegation unrelated to the bound principal |
 | R3-elicitation-mode | 890 | killed | MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutral contract declarations Contract 7 — M7 Provider Manifest, CapabilityTool Descriptors, Elicitation Policies, and Catalog Entries (A10-R3-STANDARD) matches M7_MANIFEST_AND_DESCRIPTORS_SPEC_RULE and satisfies StandardAppMcpProviderManifestWithElicitation and StandardCapabilityTool field-by-field |
 | R3-elicitation-required | 890 | killed | MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutral contract declarations Contract 7 — M7 Provider Manifest, CapabilityTool Descriptors, Elicitation Policies, and Catalog Entries (A10-R3-STANDARD) matches M7_MANIFEST_AND_DESCRIPTORS_SPEC_RULE and satisfies StandardAppMcpProviderManifestWithElicitation and StandardCapabilityTool field-by-field |
 | R3-elicitation-ttlSeconds | 890 | killed | MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutral contract declarations Contract 7 — M7 Provider Manifest, CapabilityTool Descriptors, Elicitation Policies, and Catalog Entries (A10-R3-STANDARD) matches M7_MANIFEST_AND_DESCRIPTORS_SPEC_RULE and satisfies StandardAppMcpProviderManifestWithElicitation and StandardCapabilityTool field-by-field |
@@ -93,8 +94,8 @@ Result: **82/82 killed**. Baseline: both MCP contract suites pass.
 
 Restored source identities:
 
-- `src/mcp/memory/schemas.ts`: `cdb52db2a6519ecdda5706b94be3c953adb66523ef94171d6970d57add069e35`
-- `src/mcp/memory/policy.ts`: `7111719dc43f2eb321ad03456d7c45b218ef12d33761c766854c34c799d8895d`
+- `src/mcp/memory/schemas.ts`: `d0a78f7983919a82120a877fc6e1086d9222e3fa5ba60a3a99aab0a1f0d1b797`
+- `src/mcp/memory/policy.ts`: `1d3511f4ca4d58e805dc38bf3dc6d7672459e990e737e45d653838c1df2864b2`
 - `src/mcp/memory/errors.ts`: `453b47b3feb86d3cbfcb84a280cbbce9e51cadd2e3b627edc2cc55dc9f856010`
 - `src/mcp/memory/gates.ts`: `03d273d15e60c3134dfc6d7204611d79974a75d2085b098f47032d3e8fcf7542`
 - `src/mcp/memory/topology.ts`: `ec9ecd780bcef5e4c5a458dcfe5071924004f5cf127ef3f95a23ea9c02254613`
