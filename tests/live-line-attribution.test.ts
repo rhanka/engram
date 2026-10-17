@@ -1,10 +1,10 @@
 import { join } from "node:path";
-import { readFileSync } from "node:fs";
+import { cpSync, readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import * as live from "../engram-live/index.js";
 import { createSafeGitExecutor } from "../engram-live/git-executor.js";
 import { POLICY_VERSION } from "../engram-live/contracts.js";
-import { buildLineAttributionFixture, inventoryDigest, LiveGitSandbox, nativeLineOracle } from "./helpers/live-git-fixtures.js";
+import { buildHistory, buildLineAttributionFixture, inventoryDigest, LiveGitSandbox, nativeLineOracle } from "./helpers/live-git-fixtures.js";
 import type { LineAttributionRequestDto, LineAttributionOutcomeDto } from "../engram-live/contracts.js";
 import type { LineAttributionPorts } from "../engram-live/line-attribution.js";
 
@@ -194,6 +194,94 @@ describe("live line attribution", () => {
     const { request, ports, accesses } = setup();
     await expect(live.attributeLines({ ...request, options: options(1, null, search) }, ports)).rejects.toThrow();
     expect(accesses).toEqual([]);
+  });
+
+  it("reads only target ancestry in object batches and limits parent evidence to that ancestry", async () => {
+    const { box, fixture: f, request, ports } = setup();
+    for (const name of ["root", "merge"] as const) {
+      const target = f.commits[name];
+      const ancestors = box.read(f.repo, ["rev-list", target, "--"]).toString().trim().split("\n");
+      const reads: string[][] = [], authorized = new Set<string>();
+      const actual = await live.attributeLines({ ...request, target: { ...request.target, oid: target },
+        path: f.rawPath, ranges: [{ start: 1, end: 9 }] }, {
+        ...ports,
+        async openRetained(input) {
+          const view = await ports.openRetained(input);
+          return { ...view!, receipt: { ...view!.receipt, oid: f.commits.copy } };
+        },
+        async authorize(_input, origin) {
+          if (origin) { authorized.add(origin.commit.oid); return ancestors.includes(origin.commit.oid) ? "authorized" : "excluded"; }
+          return "authorized";
+        },
+        git: { ...ports.git, run(cwd, args, input, env) {
+          if (args[0] === "cat-file") {
+            expect(args).toEqual(["cat-file", "--batch"]);
+            reads.push(input!.toString().trim().split("\n"));
+          }
+          return ports.git.run(cwd, args, input, env);
+        } },
+      });
+      expect(actual.state, JSON.stringify(actual.coverage)).toBe("complete");
+      expect(actual.parentEvidence.map(e => e.commit.oid).sort()).toEqual(ancestors.sort());
+      expect([...authorized].sort()).toEqual(ancestors);
+      expect(reads[0].sort()).toEqual(ancestors);
+      expect(reads.every(batch => batch.length <= 128)).toBe(true);
+    }
+    const outside = await live.attributeLines({ ...request, target: { ...request.target, oid: f.commits.right },
+      path: f.rawPath, ranges: [{ start: 1, end: 9 }] }, {
+      ...ports, async openRetained(input) {
+        const view = await ports.openRetained(input);
+        return { ...view!, receipt: { ...view!.receipt, oid: f.commits.left } };
+      },
+    });
+    expect(outside.state).toBe("partial");
+    expect(outside.coverage.gaps[0]?.cause).toBe("missing-retention");
+    expect(outside.parentEvidence).toEqual([]);
+  });
+
+  it("admits only pinned ancestry checks and bounded batches of literal object IDs", () => {
+    let launches = 0;
+    const git = createSafeGitExecutor({ gitPath: "/usr/bin/git", disabledHooksDir: "/tmp", spawn() {
+      launches++; return { status: 0, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+    } });
+    const oid = "a".repeat(40), other = "b".repeat(64);
+    git.run("/tmp", ["rev-list", oid, "--"]);
+    git.probe("/tmp", ["merge-base", "--is-ancestor", oid, oid]);
+    git.run("/tmp", ["cat-file", "--batch"], `${oid}\n${other}\n`);
+    const count = launches;
+    for (const args of [["rev-list", "--all"], ["rev-list", "HEAD", "--"], ["rev-list", oid, "--", "file"],
+      ["merge-base", oid, oid], ["merge-base", "--is-ancestor", "HEAD", oid], ["cat-file", "--batch", "--filters"]]) {
+      expect(() => git.run("/tmp", args)).toThrow();
+    }
+    for (const input of [undefined, "", `${oid}`, "HEAD\n", `${oid}:file\n`, `${oid}\n\n`, `${oid}\n`.repeat(129), Buffer.from([255, 10])]) {
+      expect(() => git.probe("/tmp", ["cat-file", "--batch"], input)).toThrow();
+    }
+    expect(launches).toBe(count);
+  });
+
+  it("splits long target ancestry into bounded commit batches without reading the retained tip descendants", async () => {
+    const { box, fixture: f, request, ports } = setup();
+    const history = await buildHistory(box, { main: 260, pr: 1 });
+    cpSync(join(history.repo, ".git", "objects"), join(f.stores.complete, ".git", "objects"), { recursive: true });
+    const tip = box.read(history.repo, ["rev-parse", "main"]).toString().trim();
+    const target = box.read(history.repo, ["rev-parse", "main~130"]).toString().trim();
+    const expected = box.read(history.repo, ["rev-list", target, "--"]).toString().trim().split("\n");
+    const batches: string[][] = [];
+    const actual = await live.attributeLines({ ...request, target: { ...request.target, oid: target },
+      path: Buffer.from("history.txt"), ranges: [{ start: 1, end: 1 }], options: options() }, {
+      ...ports, async openRetained(input) {
+        const view = await ports.openRetained(input);
+        return { ...view!, receipt: { ...view!.receipt, oid: tip } };
+      }, git: { ...ports.git, run(cwd, args, input, env) {
+        if (args[0] === "cat-file") batches.push(input!.toString().trim().split("\n"));
+        return ports.git.run(cwd, args, input, env);
+      } },
+    });
+    expect(actual.state, JSON.stringify(actual.coverage)).toBe("complete");
+    expect(batches.slice(0, 2).map(batch => batch.length)).toEqual([128, 2]);
+    expect(batches.slice(0, 2).flat().sort()).toEqual(expected.sort());
+    expect(actual.parentEvidence.map(e => e.commit.oid).sort()).toEqual(expected);
+    expect(batches).toHaveLength(4); // Two commit batches, one target tree and one blob.
   });
 
   it("admits only the exact versioned blame form and preserves a literal final byte argument", () => {
