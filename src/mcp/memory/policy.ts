@@ -2398,6 +2398,11 @@ export function projectMemoryInvocationContextV1(
   }
 
   if (binding.delegation !== undefined) {
+    if (!isPlainObject(binding.delegation) ||
+        (binding.delegation.delegator_principal_id !== binding.principal_id &&
+         binding.delegation.delegate_principal_id !== binding.principal_id)) {
+      return { ok: false, error_code: 'UNAUTHORIZED', reason: 'Delegation must bind the invocation principal as delegator or delegate' };
+    }
     const delCheck = checkDelegationBinding(
       binding.delegation,
       binding.issued_at as Instant,

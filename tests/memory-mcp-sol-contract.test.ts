@@ -270,6 +270,26 @@ describe('Sol MCP-L0 independent spec counterexamples', () => {
     expect(projectMemoryInvocationContextV1({ ...validBinding, deadline_at: '2026-10-17T12:00:30.001Z' }).ok).toBe(false);
   });
 
+  it('L0-A06 invocation delegation M4:561: should reject a delegation unrelated to the bound principal', () => {
+    const delegation = {
+      delegator_principal_id: 'usr_bob', delegate_principal_id: 'usr_carol',
+      delegation_receipt_digest: 'sha256:' + 'd'.repeat(64), verified_by_host_resolver: true,
+      expires_at: '2026-10-17T12:05:00.000Z',
+    };
+    expect(projectMemoryInvocationContextV1({ ...validBinding, delegation }))
+      .toMatchObject({ ok: false, error_code: 'UNAUTHORIZED' });
+    for (const field of ['delegator_principal_id', 'delegate_principal_id']) {
+      const related = { ...delegation, [field]: validBinding.principal_id };
+      const result = projectMemoryInvocationContextV1({ ...validBinding, delegation: related });
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value.delegation).toEqual(related);
+      for (const invalid of [{ verified_by_host_resolver: false }, { expires_at: validBinding.issued_at }]) {
+        expect(projectMemoryInvocationContextV1({ ...validBinding, delegation: { ...related, ...invalid } }))
+          .toMatchObject({ ok: false, error_code: 'UNAUTHORIZED' });
+      }
+    }
+  });
+
   it('L0-A06 M4:561 / A06:1611: a verified delegation must connect initiating Alice to approving Bob', () => {
     const base: any = clone(validContinuation); base.assurance.approving_human_principal_id = 'usr_bob';
     const delegation = { delegator_principal_id:'usr_alice', delegate_principal_id:'usr_bob', delegation_receipt_digest:'sha256:'+'d'.repeat(64), verified_by_host_resolver:true, expires_at:'2026-10-17T12:05:00.000Z' };
