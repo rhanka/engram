@@ -291,17 +291,18 @@ describe('Sol MCP-L0 independent spec counterexamples', () => {
   });
 
   it('L0-A06 M4:561 / A06:1611: a verified delegation must connect initiating Alice to approving Bob', () => {
+    const expectedApprover = { ...expectedBinding, approving_human_principal_id: 'usr_bob' };
     const base: any = clone(validContinuation); base.assurance.approving_human_principal_id = 'usr_bob';
     const delegation = { delegator_principal_id:'usr_alice', delegate_principal_id:'usr_bob', delegation_receipt_digest:'sha256:'+'d'.repeat(64), verified_by_host_resolver:true, expires_at:'2026-10-17T12:05:00.000Z' };
-    expect(verifyMemoryConfirmationContinuationV1(base, expectedBinding).ok).toBe(false);
+    expect(verifyMemoryConfirmationContinuationV1(base, expectedApprover).ok).toBe(false);
     base.assurance.delegation = delegation;
-    expect(verifyMemoryConfirmationContinuationV1(base, expectedBinding).ok).toBe(true);
+    expect(verifyMemoryConfirmationContinuationV1(base, expectedApprover).ok).toBe(true);
     for (const change of [{delegator_principal_id:'usr_carol'}, {delegate_principal_id:'usr_dave'}, {delegator_principal_id:'usr_bob',delegate_principal_id:'usr_alice'}]) {
-      expect(verifyMemoryConfirmationContinuationV1({ ...base, assurance: { ...base.assurance, delegation: { ...delegation, ...change } } }, expectedBinding).ok).toBe(false);
+      expect(verifyMemoryConfirmationContinuationV1({ ...base, assurance: { ...base.assurance, delegation: { ...delegation, ...change } } }, expectedApprover).ok).toBe(false);
     }
-    expect(verifyDestructiveConfirmationGrantV1(base, expectedBinding).ok).toBe(true);
-    expect(verifyDestructiveConfirmationGrantV1({...base,assurance:undefined}, expectedBinding).ok).toBe(false);
-    for (const verdict of rejected) expect(verifyMemoryConfirmationContinuationV1({ ...base, assurance: { ...base.assurance, delegation: { ...delegation, verified_by_host_resolver: verdict } } }, expectedBinding).ok).toBe(false);
+    expect(verifyDestructiveConfirmationGrantV1(base, expectedApprover).ok).toBe(true);
+    expect(verifyDestructiveConfirmationGrantV1({...base,assurance:undefined}, expectedApprover).ok).toBe(false);
+    for (const verdict of rejected) expect(verifyMemoryConfirmationContinuationV1({ ...base, assurance: { ...base.assurance, delegation: { ...delegation, verified_by_host_resolver: verdict } } }, expectedApprover).ok).toBe(false);
   });
 
   it.each([
