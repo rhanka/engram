@@ -3498,4 +3498,212 @@ export function validatePublishedJsonSchemaDraft202012(
   return { ok: true, value };
 }
 
+// ============================================================================
+// 11. L0-A04 Versioned Memory Wire & Tool-Schema Profile
+// ============================================================================
+
+export const MEMORY_MCP_WIRE_PROFILE_ID_V1 =
+  'sentropic.engram.memory-wire/v1' as const;
+
+export const MEMORY_MCP_TOOL_SCHEMA_PROFILE_ID_V1 =
+  'sentropic.engram.memory-tools/2020-12-v1' as const;
+
+export const MEMORY_MCP_JSON_SCHEMA_DIALECT_V1 =
+  'https://json-schema.org/draft/2020-12/schema' as const;
+
+export interface MemoryMcpWireProfileV1 {
+  readonly wireProfileId: typeof MEMORY_MCP_WIRE_PROFILE_ID_V1;
+  readonly schemaProfileId: typeof MEMORY_MCP_TOOL_SCHEMA_PROFILE_ID_V1;
+  readonly jsonSchemaDialect: typeof MEMORY_MCP_JSON_SCHEMA_DIALECT_V1;
+  readonly allowedAssertionKeywords: readonly [
+    'type',
+    'properties',
+    'required',
+    'additionalProperties',
+    'items',
+    'minItems',
+    'maxItems',
+    'uniqueItems',
+    'enum',
+    'const',
+    'minLength',
+    'maxLength',
+    'minimum',
+    'maximum',
+    'pattern',
+    'oneOf',
+  ];
+  readonly allowedAnnotationKeywords: readonly [
+    '$schema',
+    '$id',
+    'title',
+    'description',
+    'default',
+  ];
+  readonly forbidRefAndRemoteResolution: true;
+  readonly forbidCoercionAndExecutableDefaults: true;
+  readonly requireAdditionalPropertiesFalseOnObjects: true;
+  readonly requireSemanticUtf8ByteValidation: true;
+  readonly maxPacketBytesDefault: 65536;
+  readonly maxPacketBytesMax: 1048576;
+  readonly combinedTransportCeilingUtf8Bytes: 2097152;
+  readonly mcpSdkMinVersion: '1.31.0';
+  readonly preserveImmoGlobalDefaultCodec: true;
+  readonly configurationBoundedProfileId: 'sentropic.parameters/2020-12-bounded-v1';
+  readonly configurationBoundedProfileQualifiesMemoryDtos: false;
+  readonly runtimeCodecQualificationStatus: 'unverified';
+}
+
+export const ENGRAM_MEMORY_WIRE_PROFILE_V1: MemoryMcpWireProfileV1 = Object.freeze({
+  wireProfileId: MEMORY_MCP_WIRE_PROFILE_ID_V1,
+  schemaProfileId: MEMORY_MCP_TOOL_SCHEMA_PROFILE_ID_V1,
+  jsonSchemaDialect: MEMORY_MCP_JSON_SCHEMA_DIALECT_V1,
+  allowedAssertionKeywords: Object.freeze([
+    'type',
+    'properties',
+    'required',
+    'additionalProperties',
+    'items',
+    'minItems',
+    'maxItems',
+    'uniqueItems',
+    'enum',
+    'const',
+    'minLength',
+    'maxLength',
+    'minimum',
+    'maximum',
+    'pattern',
+    'oneOf',
+  ] as const),
+  allowedAnnotationKeywords: Object.freeze([
+    '$schema',
+    '$id',
+    'title',
+    'description',
+    'default',
+  ] as const),
+  forbidRefAndRemoteResolution: true,
+  forbidCoercionAndExecutableDefaults: true,
+  requireAdditionalPropertiesFalseOnObjects: true,
+  requireSemanticUtf8ByteValidation: true,
+  maxPacketBytesDefault: 65536,
+  maxPacketBytesMax: 1048576,
+  combinedTransportCeilingUtf8Bytes: 2097152,
+  mcpSdkMinVersion: '1.31.0',
+  preserveImmoGlobalDefaultCodec: true,
+  configurationBoundedProfileId: 'sentropic.parameters/2020-12-bounded-v1',
+  configurationBoundedProfileQualifiesMemoryDtos: false,
+  runtimeCodecQualificationStatus: 'unverified',
+});
+
+const ALLOWED_DIALECT_KEYWORDS_SET = new Set<string>([
+  ...ENGRAM_MEMORY_WIRE_PROFILE_V1.allowedAssertionKeywords,
+  ...ENGRAM_MEMORY_WIRE_PROFILE_V1.allowedAnnotationKeywords,
+]);
+
+/**
+ * Validates that a JSON Schema asset conforms to the closed L0-A04
+ * `sentropic.engram.memory-tools/2020-12-v1` dialect and rejects unknown
+ * assertion keywords (`$ref`, `anyOf`, `not`, `patternProperties`, etc.),
+ * unclosed objects (`additionalProperties !== false`), or unsupported
+ * wire/schema profile identifiers.
+ */
+export function validateMemoryToolSchemaDialectV1(
+  schema: unknown,
+  options?: {
+    readonly wireProfileId?: string;
+    readonly schemaProfileId?: string;
+  },
+  path = '$',
+): SchemaValidationResult<Record<string, unknown>> {
+  if (
+    options?.wireProfileId !== undefined &&
+    options.wireProfileId !== ENGRAM_MEMORY_WIRE_PROFILE_V1.wireProfileId
+  ) {
+    return fail(
+      'wireProfileId',
+      `Unsupported wire profile '${options.wireProfileId}'; expected '${ENGRAM_MEMORY_WIRE_PROFILE_V1.wireProfileId}'`,
+    );
+  }
+  if (
+    options?.schemaProfileId !== undefined &&
+    options.schemaProfileId !== ENGRAM_MEMORY_WIRE_PROFILE_V1.schemaProfileId
+  ) {
+    return fail(
+      'schemaProfileId',
+      `Unsupported tool-schema profile '${options.schemaProfileId}'; expected '${ENGRAM_MEMORY_WIRE_PROFILE_V1.schemaProfileId}'`,
+    );
+  }
+  if (!isPlainObject(schema)) {
+    return fail(path, 'Schema node must be a plain object');
+  }
+  if (
+    path === '$' &&
+    '$schema' in schema &&
+    schema.$schema !== ENGRAM_MEMORY_WIRE_PROFILE_V1.jsonSchemaDialect
+  ) {
+    return fail(
+      `${path}.$schema`,
+      `Schema $schema must equal '${ENGRAM_MEMORY_WIRE_PROFILE_V1.jsonSchemaDialect}'`,
+    );
+  }
+
+  for (const key of Object.keys(schema)) {
+    if (!ALLOWED_DIALECT_KEYWORDS_SET.has(key)) {
+      return fail(
+        `${path}.${key}`,
+        `Keyword '${key}' is forbidden by '${ENGRAM_MEMORY_WIRE_PROFILE_V1.schemaProfileId}'`,
+      );
+    }
+  }
+
+  if (schema.type === 'object' || 'properties' in schema) {
+    if (schema.additionalProperties !== false) {
+      return fail(
+        `${path}.additionalProperties`,
+        'Object schema must set additionalProperties: false',
+      );
+    }
+    if (schema.properties !== undefined) {
+      if (!isPlainObject(schema.properties)) {
+        return fail(`${path}.properties`, 'properties must be a plain object');
+      }
+      for (const [propName, propSchema] of Object.entries(schema.properties)) {
+        const sub = validateMemoryToolSchemaDialectV1(
+          propSchema,
+          undefined,
+          `${path}.properties.${propName}`,
+        );
+        if (!sub.ok) return sub;
+      }
+    }
+  }
+
+  if ('items' in schema) {
+    const sub = validateMemoryToolSchemaDialectV1(
+      schema.items,
+      undefined,
+      `${path}.items`,
+    );
+    if (!sub.ok) return sub;
+  }
+
+  if ('oneOf' in schema) {
+    if (!Array.isArray(schema.oneOf) || schema.oneOf.length === 0) {
+      return fail(`${path}.oneOf`, 'oneOf must be a non-empty array of schemas');
+    }
+    for (let i = 0; i < schema.oneOf.length; i++) {
+      const sub = validateMemoryToolSchemaDialectV1(
+        schema.oneOf[i],
+        undefined,
+        `${path}.oneOf[${i}]`,
+      );
+      if (!sub.ok) return sub;
+    }
+  }
+
+  return { ok: true, value: schema };
+}
+
 export { DISCLOSABLE_MEMORY_STATES, ENGRAM_MEMORY_TOOL_NAMES };

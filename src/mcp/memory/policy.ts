@@ -2306,3 +2306,1063 @@ export function evaluateM5LifecycleTransitionV1(input: {
     error_code: 'ILLEGAL_TRANSITION',
   };
 }
+
+// ============================================================================
+// 11. L0-A03 Verified Invocation Binding & Context Projection
+// ============================================================================
+
+export type ChannelBindingKindV1 =
+  | 'in_process_verified'
+  | 'stdio_host_managed_verified'
+  | 'http_mcp_auth_dpop_verified'
+  | 'http_mcp_auth_bearer_verified';
+
+export interface DelegationBindingV1 {
+  readonly delegator_principal_id: OpaqueRef;
+  readonly delegate_principal_id: OpaqueRef;
+  readonly delegation_receipt_digest: Digest;
+  readonly verified_by_host_resolver: boolean;
+  readonly expires_at: Instant;
+}
+
+export type DestructiveMemoryToolName =
+  | 'engram_memory_withdraw'
+  | 'engram_memory_forget';
+
+/**
+ * L0-A03 closed host invocation binding across catalog, execution seam,
+ * broker, mesh transport, and provider.
+ * Note: Per Sentropic co-freeze (`open-points-answers-v3.1.md:9-10`),
+ * `ScopeRefV1` and `PrincipalRefV1` are NOT declared as public types;
+ * scope and principal projection live inside `MemoryInvocationBindingV1`
+ * and `MemoryContextProjectionV1`.
+ */
+export interface MemoryInvocationBindingV1 {
+  readonly issuer: OpaqueRef;
+  readonly sub: OpaqueRef;
+  readonly tid: OpaqueRef;
+  readonly claims: readonly string[];
+  readonly claims_provenance_receipt: Digest;
+  readonly principal_namespace: OpaqueRef;
+  readonly principal_id: OpaqueRef;
+  readonly tenant_id: OpaqueRef;
+  readonly tenant_membership_receipt: Digest;
+  readonly tenant_resolution_source: 'authoritative_membership';
+  readonly workspace_id?: OpaqueRef;
+  readonly agent_id: OpaqueRef;
+  readonly mcp_client_id: OpaqueRef;
+  readonly logical_session_ref: OpaqueRef;
+  readonly transport_attachment_ref: OpaqueRef;
+  readonly connection_proof_digest: Digest;
+  readonly publisher_id: 'sentropic.engram.memory';
+  readonly provider_id: 'sentropic.engram.memory';
+  readonly connector_id: 'engram-memory';
+  readonly connector_instance_ref: OpaqueRef;
+  readonly selected_source_id: 'mcp:engram-memory';
+  readonly store_id: OpaqueRef;
+  readonly scope_ref: OpaqueRef;
+  readonly purpose_ref: OpaqueRef;
+  readonly active_generation: Cursor;
+  readonly policy_epoch: Cursor;
+  readonly audit_id: OpaqueRef;
+  readonly correlation_ref: OpaqueRef;
+  readonly deadline_at: Instant;
+  readonly issued_at: Instant;
+  readonly channel_binding: ChannelBindingKindV1;
+  readonly transport_scopes: readonly ('mcp:discover' | 'mcp:tools:invoke')[];
+  readonly idempotency_key?: IdempotencyKey;
+  readonly elicitation_ref?: OpaqueRef;
+  readonly delegation?: DelegationBindingV1;
+  readonly neutral_credential: string;
+  readonly neutral_context_ref?: OpaqueRef;
+}
+
+export interface MemoryContextProjectionV1 {
+  readonly trusted_context: TrustedInvocationContextV1;
+  readonly neutral_authorization: AuthorizationContextV1;
+  readonly neutral_scope_ref: OpaqueRef;
+  readonly neutral_principal: {
+    readonly principal_namespace: OpaqueRef;
+    readonly principal_id: OpaqueRef;
+    readonly tenant_id: OpaqueRef;
+  };
+  readonly verified_claims: {
+    readonly issuer: OpaqueRef;
+    readonly sub: OpaqueRef;
+    readonly tid: OpaqueRef;
+    readonly claims_provenance_receipt: Digest;
+    readonly tenant_membership_receipt: Digest;
+  };
+  readonly session_attachment: {
+    readonly mcp_client_id: OpaqueRef;
+    readonly logical_session_ref: OpaqueRef;
+    readonly transport_attachment_ref: OpaqueRef;
+    readonly connection_proof_digest: Digest;
+  };
+  readonly routing_provenance: {
+    readonly publisher_id: 'sentropic.engram.memory';
+    readonly provider_id: 'sentropic.engram.memory';
+    readonly connector_id: 'engram-memory';
+    readonly connector_instance_ref: OpaqueRef;
+    readonly selected_source_id: 'mcp:engram-memory';
+    readonly active_generation: Cursor;
+    readonly policy_epoch: Cursor;
+  };
+  readonly envelope_bindings: {
+    readonly idempotency_key?: IdempotencyKey;
+    readonly elicitation_ref?: OpaqueRef;
+    readonly audit_id: OpaqueRef;
+    readonly correlation_ref: OpaqueRef;
+  };
+}
+
+export type MemoryContextProjectionResultV1 =
+  | {
+      readonly ok: true;
+      readonly value: MemoryContextProjectionV1;
+    }
+  | {
+      readonly ok: false;
+      readonly error_code:
+        | 'UNAUTHORIZED'
+        | 'AUTHORIZATION_REVOKED'
+        | 'POLICY_STALE'
+        | 'INVALID_SCHEMA';
+      readonly reason: string;
+    };
+
+const MEMORY_INVOCATION_BINDING_KEYS = new Set<string>([
+  'issuer',
+  'sub',
+  'tid',
+  'claims',
+  'claims_provenance_receipt',
+  'principal_namespace',
+  'principal_id',
+  'tenant_id',
+  'tenant_membership_receipt',
+  'tenant_resolution_source',
+  'workspace_id',
+  'agent_id',
+  'mcp_client_id',
+  'logical_session_ref',
+  'transport_attachment_ref',
+  'connection_proof_digest',
+  'publisher_id',
+  'provider_id',
+  'connector_id',
+  'connector_instance_ref',
+  'selected_source_id',
+  'store_id',
+  'scope_ref',
+  'purpose_ref',
+  'active_generation',
+  'policy_epoch',
+  'audit_id',
+  'correlation_ref',
+  'deadline_at',
+  'issued_at',
+  'channel_binding',
+  'transport_scopes',
+  'idempotency_key',
+  'elicitation_ref',
+  'delegation',
+  'neutral_credential',
+  'neutral_context_ref',
+]);
+
+function hasUnexpectedObjectKeys(
+  obj: Record<string, unknown>,
+  allowedKeys: ReadonlySet<string>,
+): string | null {
+  for (const key of Object.keys(obj)) {
+    if (!allowedKeys.has(key)) {
+      return key;
+    }
+  }
+  return null;
+}
+
+function parseInstantMs(value: unknown): number | null {
+  if (!isValidInstant(value)) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function checkDelegationBinding(
+  delegation: unknown,
+  nowIso: Instant,
+): { readonly ok: true } | { readonly ok: false; readonly reason: string } {
+  if (!isPlainObject(delegation)) {
+    return { ok: false, reason: 'DelegationBindingV1 must be a plain object' };
+  }
+  if (delegation.verified_by_host_resolver !== true) {
+    return {
+      ok: false,
+      reason: 'Delegation must have verified_by_host_resolver === true',
+    };
+  }
+  if (
+    !isValidOpaqueRef(delegation.delegator_principal_id) ||
+    !isValidOpaqueRef(delegation.delegate_principal_id) ||
+    !isValidSha256Digest(delegation.delegation_receipt_digest)
+  ) {
+    return {
+      ok: false,
+      reason: 'Delegation principal IDs or receipt digest invalid',
+    };
+  }
+  const nowMs = parseInstantMs(nowIso);
+  const expMs = parseInstantMs(delegation.expires_at);
+  if (nowMs === null || expMs === null || nowMs >= expMs) {
+    return { ok: false, reason: 'Delegation is expired or has invalid timestamp' };
+  }
+  return { ok: true };
+}
+
+/**
+ * Projects a verified `MemoryInvocationBindingV1` into the provider's
+ * `TrustedInvocationContextV1` and framework-free neutral `AuthorizationContextV1`.
+ * Rejects `claims: []`, missing `sub`/`tid`, workspace-as-tenant substitution,
+ * synthetic `audit_mcp_l0_default`, mismatched out-of-arguments `idempotencyKey`,
+ * stale generation/policy epoch, and unverified delegation before any effect.
+ */
+export function projectMemoryInvocationContextV1(
+  binding: unknown,
+  options?: {
+    readonly expectedActiveGeneration?: Cursor;
+    readonly expectedPolicyEpoch?: Cursor;
+    readonly argumentIdempotencyKey?: IdempotencyKey;
+    readonly requiresIdempotencyKey?: boolean;
+    readonly requiresElicitationRef?: boolean;
+  },
+): MemoryContextProjectionResultV1 {
+  if (!isPlainObject(binding)) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      reason: 'MemoryInvocationBindingV1 must be a plain object',
+    };
+  }
+  const unexpected = hasUnexpectedObjectKeys(
+    binding,
+    MEMORY_INVOCATION_BINDING_KEYS,
+  );
+  if (unexpected !== null) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      reason: `MemoryInvocationBindingV1 contains unexpected field '${unexpected}'`,
+    };
+  }
+
+  if (
+    !isValidOpaqueRef(binding.issuer) ||
+    !isValidOpaqueRef(binding.sub) ||
+    !isValidOpaqueRef(binding.tid)
+  ) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      reason: 'issuer, sub, and tid must be valid OpaqueRefs',
+    };
+  }
+
+  if (
+    !Array.isArray(binding.claims) ||
+    !binding.claims.includes('sub') ||
+    !binding.claims.includes('tid')
+  ) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      reason:
+        "claims must include verified 'sub' and 'tid' (claims:[] shortcut is forbidden)",
+    };
+  }
+
+  if (
+    !isValidSha256Digest(binding.claims_provenance_receipt) ||
+    !isValidSha256Digest(binding.tenant_membership_receipt) ||
+    !isValidSha256Digest(binding.connection_proof_digest)
+  ) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      reason:
+        'claims_provenance_receipt, tenant_membership_receipt, and connection_proof_digest must be valid sha256 digests',
+    };
+  }
+
+  if (binding.tenant_resolution_source !== 'authoritative_membership') {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      reason:
+        "tenant_resolution_source must equal 'authoritative_membership' (workspace_id cannot substitute for tenant)",
+    };
+  }
+
+  if (
+    !isValidOpaqueRef(binding.tenant_id) ||
+    binding.tenant_id !== binding.tid
+  ) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      reason: 'tenant_id must match verified tid claim from authoritative membership',
+    };
+  }
+
+  if (
+    binding.workspace_id !== undefined &&
+    !isValidOpaqueRef(binding.workspace_id)
+  ) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      reason: 'workspace_id must be a valid OpaqueRef when present',
+    };
+  }
+
+  if (
+    !isValidOpaqueRef(binding.principal_namespace) ||
+    !isValidOpaqueRef(binding.principal_id) ||
+    !isValidOpaqueRef(binding.agent_id) ||
+    !isValidOpaqueRef(binding.mcp_client_id) ||
+    !isValidOpaqueRef(binding.logical_session_ref) ||
+    !isValidOpaqueRef(binding.transport_attachment_ref) ||
+    !isValidOpaqueRef(binding.connector_instance_ref) ||
+    !isValidOpaqueRef(binding.store_id) ||
+    !isValidOpaqueRef(binding.scope_ref) ||
+    !isValidOpaqueRef(binding.purpose_ref) ||
+    !isValidOpaqueRef(binding.correlation_ref)
+  ) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      reason: 'Required principal, session, attachment, store, scope, purpose, or correlation refs are invalid',
+    };
+  }
+
+  if (
+    !isValidOpaqueRef(binding.audit_id) ||
+    binding.audit_id === 'audit_mcp_l0_default'
+  ) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      reason: 'audit_id must be a verified non-synthetic host audit reference',
+    };
+  }
+
+  if (
+    binding.publisher_id !== 'sentropic.engram.memory' ||
+    binding.provider_id !== 'sentropic.engram.memory' ||
+    binding.connector_id !== 'engram-memory' ||
+    binding.selected_source_id !== 'mcp:engram-memory'
+  ) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      reason: 'publisher_id, provider_id, connector_id, or selected_source_id mismatch',
+    };
+  }
+
+  if (
+    !isValidCursor(binding.active_generation) ||
+    !isValidCursor(binding.policy_epoch)
+  ) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      reason: 'active_generation and policy_epoch must be canonical u64 strings',
+    };
+  }
+
+  if (
+    options?.expectedActiveGeneration !== undefined &&
+    binding.active_generation !== options.expectedActiveGeneration
+  ) {
+    return {
+      ok: false,
+      error_code: 'AUTHORIZATION_REVOKED',
+      reason: 'Invocation binding active_generation does not match current active generation',
+    };
+  }
+
+  if (
+    options?.expectedPolicyEpoch !== undefined &&
+    binding.policy_epoch !== options.expectedPolicyEpoch
+  ) {
+    return {
+      ok: false,
+      error_code: 'POLICY_STALE',
+      reason: 'Invocation binding policy_epoch does not match current policy epoch',
+    };
+  }
+
+  if (
+    typeof binding.neutral_credential !== 'string' ||
+    binding.neutral_credential.trim().length === 0 ||
+    utf8ByteLength(binding.neutral_credential) > 4096
+  ) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      reason: 'neutral_credential must be a non-empty bounded credential string',
+    };
+  }
+
+  if (
+    binding.neutral_context_ref !== undefined &&
+    !isValidOpaqueRef(binding.neutral_context_ref)
+  ) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      reason: 'neutral_context_ref must be a valid OpaqueRef when present',
+    };
+  }
+
+  if (options?.requiresIdempotencyKey === true && binding.idempotency_key === undefined) {
+    return {
+      ok: false,
+      error_code: 'INVALID_SCHEMA',
+      reason: 'AppInvocationEnvelope.idempotencyKey is required for mutating tools',
+    };
+  }
+
+  if (
+    binding.idempotency_key !== undefined &&
+    !isValidIdempotencyKey(binding.idempotency_key)
+  ) {
+    return {
+      ok: false,
+      error_code: 'INVALID_SCHEMA',
+      reason: 'AppInvocationEnvelope.idempotencyKey is invalid',
+    };
+  }
+
+  if (
+    binding.idempotency_key !== undefined &&
+    options?.argumentIdempotencyKey !== undefined &&
+    binding.idempotency_key !== options.argumentIdempotencyKey
+  ) {
+    return {
+      ok: false,
+      error_code: 'INVALID_SCHEMA',
+      reason: 'AppInvocationEnvelope.idempotencyKey must equal argument idempotency_key',
+    };
+  }
+
+  if (options?.requiresElicitationRef === true && !isValidOpaqueRef(binding.elicitation_ref)) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      reason: 'AppInvocationEnvelope.elicitationRef is required for confirmation-gated tools',
+    };
+  }
+
+  if (
+    binding.elicitation_ref !== undefined &&
+    !isValidOpaqueRef(binding.elicitation_ref)
+  ) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      reason: 'AppInvocationEnvelope.elicitationRef must be a valid OpaqueRef',
+    };
+  }
+
+  const issuedMs = parseInstantMs(binding.issued_at);
+  const deadlineMs = parseInstantMs(binding.deadline_at);
+  if (issuedMs === null || deadlineMs === null || deadlineMs <= issuedMs) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      reason: 'issued_at and deadline_at must be valid UTC instants with deadline_at > issued_at',
+    };
+  }
+
+  if (binding.delegation !== undefined) {
+    const delCheck = checkDelegationBinding(
+      binding.delegation,
+      binding.issued_at as Instant,
+    );
+    if (!delCheck.ok) {
+      return {
+        ok: false,
+        error_code: 'UNAUTHORIZED',
+        reason: delCheck.reason,
+      };
+    }
+  }
+
+  const neutral_authorization: AuthorizationContextV1 =
+    binding.neutral_context_ref !== undefined
+      ? {
+          credential: binding.neutral_credential,
+          context_ref: binding.neutral_context_ref,
+        }
+      : {
+          credential: binding.neutral_credential,
+        };
+
+  const trustedCheck = validateTrustedInvocationContextV1({
+    principal_id: binding.principal_id,
+    principal_namespace: binding.principal_namespace,
+    tenant_id: binding.tenant_id,
+    store_id: binding.store_id,
+    connector_id: binding.connector_id,
+    scope_ref: binding.scope_ref,
+    mcp_client_id: binding.mcp_client_id,
+    session_id: binding.logical_session_ref,
+    correlation_id: binding.correlation_ref,
+    now_utc: binding.issued_at,
+    deadline_ms: Math.min(
+      deadlineMs - issuedMs,
+      MEMORY_MCP_LIMITS.MAX_INVOCATION_DEADLINE_MS,
+    ),
+    authorization_context: neutral_authorization,
+    policy_epoch: binding.policy_epoch,
+  });
+
+  if (!trustedCheck.ok) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      reason: trustedCheck.message,
+    };
+  }
+
+  const b = binding as unknown as MemoryInvocationBindingV1;
+
+  return {
+    ok: true,
+    value: {
+      trusted_context: trustedCheck.value,
+      neutral_authorization,
+      neutral_scope_ref: b.scope_ref,
+      neutral_principal: {
+        principal_namespace: b.principal_namespace,
+        principal_id: b.principal_id,
+        tenant_id: b.tenant_id,
+      },
+      verified_claims: {
+        issuer: b.issuer,
+        sub: b.sub,
+        tid: b.tid,
+        claims_provenance_receipt: b.claims_provenance_receipt,
+        tenant_membership_receipt: b.tenant_membership_receipt,
+      },
+      session_attachment: {
+        mcp_client_id: b.mcp_client_id,
+        logical_session_ref: b.logical_session_ref,
+        transport_attachment_ref: b.transport_attachment_ref,
+        connection_proof_digest: b.connection_proof_digest,
+      },
+      routing_provenance: {
+        publisher_id: 'sentropic.engram.memory',
+        provider_id: 'sentropic.engram.memory',
+        connector_id: 'engram-memory',
+        connector_instance_ref: b.connector_instance_ref,
+        selected_source_id: 'mcp:engram-memory',
+        active_generation: b.active_generation,
+        policy_epoch: b.policy_epoch,
+      },
+      envelope_bindings: {
+        ...(b.idempotency_key !== undefined
+          ? { idempotency_key: b.idempotency_key }
+          : {}),
+        ...(b.elicitation_ref !== undefined
+          ? { elicitation_ref: b.elicitation_ref }
+          : {}),
+        audit_id: b.audit_id,
+        correlation_ref: b.correlation_ref,
+      },
+    },
+  };
+}
+
+// ============================================================================
+// 12. L0-A06 Enrolled OIDC/2FA Confirmation Assurance & Continuation
+// ============================================================================
+
+export interface MemoryConfirmationAssuranceV1 {
+  readonly enrolled_oidc_domain: 'sent-tech.ca';
+  readonly issuer: OpaqueRef;
+  readonly approving_subject_sub: OpaqueRef;
+  readonly approving_human_principal_id: OpaqueRef;
+  readonly enrollment_receipt_digest: Digest;
+  readonly step_up_2fa_receipt_digest: Digest;
+  readonly assurance_policy_version: OpaqueRef;
+  readonly authenticated: boolean;
+  readonly enrolled_2fa: boolean;
+  readonly step_up_assurance_verified: boolean;
+  readonly hardware_key_required: false;
+  readonly identity_source: 'enrolled_oidc_2fa';
+  readonly delegation?: DelegationBindingV1;
+  readonly host_deployment_qualification_status: 'unverified';
+}
+
+export interface MemoryLogicalSessionReattachmentProofV1 {
+  readonly previous_attachment_ref: OpaqueRef;
+  readonly current_attachment_ref: OpaqueRef;
+  readonly reattachment_receipt_digest: Digest;
+  readonly verified: boolean;
+  readonly admitted_generation: Cursor;
+}
+
+export interface MemoryConfirmationContinuationV1 {
+  readonly continuation_ref: OpaqueRef;
+  readonly elicitation_ref: OpaqueRef;
+  readonly mode: 'confirm';
+  readonly capability: DestructiveMemoryToolName;
+  readonly provider_id: 'sentropic.engram.memory';
+  readonly provider_contract_version: '1.0.0';
+  readonly connector_id: 'engram-memory';
+  readonly connector_instance_ref: OpaqueRef;
+  readonly tenant_id: OpaqueRef;
+  readonly initiating_principal_namespace: OpaqueRef;
+  readonly initiating_principal_id: OpaqueRef;
+  readonly agent_id: OpaqueRef;
+  readonly mcp_client_id: OpaqueRef;
+  readonly logical_session_ref: OpaqueRef;
+  readonly transport_attachment_ref: OpaqueRef;
+  readonly active_generation: Cursor;
+  readonly store_id: OpaqueRef;
+  readonly scope_ref: OpaqueRef;
+  readonly target_ref: OpaqueRef;
+  readonly reservation_ref: OpaqueRef;
+  readonly operation_digest: Digest;
+  readonly approved: boolean;
+  readonly issued_at: Instant;
+  readonly expires_at: Instant;
+  readonly assurance: MemoryConfirmationAssuranceV1;
+  readonly reattachment_proof?: MemoryLogicalSessionReattachmentProofV1;
+}
+
+export interface ExpectedConfirmationContinuationBindingV1 {
+  readonly elicitation_ref: OpaqueRef;
+  readonly capability: DestructiveMemoryToolName;
+  readonly provider_id: 'sentropic.engram.memory';
+  readonly provider_contract_version: '1.0.0';
+  readonly connector_id: 'engram-memory';
+  readonly connector_instance_ref: OpaqueRef;
+  readonly tenant_id: OpaqueRef;
+  readonly initiating_principal_namespace: OpaqueRef;
+  readonly initiating_principal_id: OpaqueRef;
+  readonly agent_id: OpaqueRef;
+  readonly mcp_client_id: OpaqueRef;
+  readonly logical_session_ref: OpaqueRef;
+  readonly transport_attachment_ref: OpaqueRef;
+  readonly active_generation: Cursor;
+  readonly store_id: OpaqueRef;
+  readonly scope_ref: OpaqueRef;
+  readonly target_ref: OpaqueRef;
+  readonly reservation_ref: OpaqueRef;
+  readonly operation_digest: Digest;
+  readonly now: Instant;
+  readonly execution_deadline_at: Instant;
+  readonly caller_currently_authorized?: unknown;
+  readonly target_currently_authorized?: unknown;
+  readonly reservation_state?: 'uncommitted' | 'committed' | 'unknown';
+}
+
+export type ConfirmationContinuationDecisionV1 =
+  | {
+      readonly ok: true;
+      readonly decision:
+        | 'execute_confirmed'
+        | 'disclose_committed_without_repeat_effect';
+      readonly continuation: MemoryConfirmationContinuationV1;
+    }
+  | {
+      readonly ok: false;
+      readonly error_code:
+        | 'gate_failed'
+        | 'UNAUTHORIZED'
+        | 'NOT_FOUND'
+        | 'MUTATION_OUTCOME_UNKNOWN';
+      readonly reason: string;
+    };
+
+const CONFIRMATION_ASSURANCE_KEYS = new Set<string>([
+  'enrolled_oidc_domain',
+  'issuer',
+  'approving_subject_sub',
+  'approving_human_principal_id',
+  'enrollment_receipt_digest',
+  'step_up_2fa_receipt_digest',
+  'assurance_policy_version',
+  'authenticated',
+  'enrolled_2fa',
+  'step_up_assurance_verified',
+  'hardware_key_required',
+  'identity_source',
+  'delegation',
+  'host_deployment_qualification_status',
+]);
+
+const CONFIRMATION_CONTINUATION_KEYS = new Set<string>([
+  'continuation_ref',
+  'elicitation_ref',
+  'mode',
+  'capability',
+  'provider_id',
+  'provider_contract_version',
+  'connector_id',
+  'connector_instance_ref',
+  'tenant_id',
+  'initiating_principal_namespace',
+  'initiating_principal_id',
+  'agent_id',
+  'mcp_client_id',
+  'logical_session_ref',
+  'transport_attachment_ref',
+  'active_generation',
+  'store_id',
+  'scope_ref',
+  'target_ref',
+  'reservation_ref',
+  'operation_digest',
+  'approved',
+  'issued_at',
+  'expires_at',
+  'assurance',
+  'reattachment_proof',
+]);
+
+const DESTRUCTIVE_TOOL_SET = new Set<string>([
+  'engram_memory_withdraw',
+  'engram_memory_forget',
+]);
+
+/**
+ * Verifies L0-A06 enrolled OIDC/2FA confirmation assurance and durable
+ * logical-session continuation.
+ *
+ * Enforces:
+ * - Closed-world literal `true` on `caller_currently_authorized` and `target_currently_authorized`.
+ * - Separate literal `true` checks for `authenticated`, `enrolled_2fa`,
+ *   `step_up_assurance_verified`, and `approved`.
+ * - Enrolled OIDC domain `'sent-tech.ca'`, `hardware_key_required: false`,
+ *   and `identity_source: 'enrolled_oidc_2fa'` (rejecting email-only, model
+ *   assertion, service principal, or unverified `amr/acr`).
+ * - `now < expires_at`, TTL <= 300s, execution window <= 30s.
+ * - Logical-session reconnect via verified `reattachment_proof` and generation match;
+ *   new logical session requires fresh confirmation for uncommitted work.
+ * - Already-committed result (`reservation_state === 'committed'`) may be disclosed
+ *   after confirmation expiry under fresh current authorization without repeating effect.
+ */
+export function verifyMemoryConfirmationContinuationV1(
+  continuation: unknown,
+  expected: ExpectedConfirmationContinuationBindingV1,
+): ConfirmationContinuationDecisionV1 {
+  if (expected.caller_currently_authorized !== true) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      reason: 'Caller current authorization verdict must be literal true',
+    };
+  }
+  if (expected.target_currently_authorized !== true) {
+    return {
+      ok: false,
+      error_code: 'NOT_FOUND',
+      reason: 'Target current authorization verdict must be literal true',
+    };
+  }
+
+  if (expected.reservation_state === 'unknown') {
+    return {
+      ok: false,
+      error_code: 'MUTATION_OUTCOME_UNKNOWN',
+      reason: 'Unresolved mutation outcome must reconcile canonical replay evidence before effect',
+    };
+  }
+
+  if (!isPlainObject(continuation)) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason: 'MemoryConfirmationContinuationV1 must be a plain object',
+    };
+  }
+  const unexpectedKey = hasUnexpectedObjectKeys(
+    continuation,
+    CONFIRMATION_CONTINUATION_KEYS,
+  );
+  if (unexpectedKey !== null) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason: `MemoryConfirmationContinuationV1 has unexpected key '${unexpectedKey}'`,
+    };
+  }
+
+  if (
+    !isValidOpaqueRef(continuation.continuation_ref) ||
+    !isValidOpaqueRef(continuation.elicitation_ref) ||
+    continuation.mode !== 'confirm' ||
+    !DESTRUCTIVE_TOOL_SET.has(continuation.capability as string) ||
+    continuation.capability !== expected.capability ||
+    continuation.provider_id !== 'sentropic.engram.memory' ||
+    continuation.provider_id !== expected.provider_id ||
+    continuation.provider_contract_version !== '1.0.0' ||
+    continuation.provider_contract_version !== expected.provider_contract_version ||
+    continuation.connector_id !== 'engram-memory' ||
+    continuation.connector_id !== expected.connector_id ||
+    continuation.connector_instance_ref !== expected.connector_instance_ref ||
+    continuation.tenant_id !== expected.tenant_id ||
+    continuation.initiating_principal_namespace !==
+      expected.initiating_principal_namespace ||
+    continuation.initiating_principal_id !== expected.initiating_principal_id ||
+    continuation.agent_id !== expected.agent_id ||
+    continuation.mcp_client_id !== expected.mcp_client_id ||
+    continuation.store_id !== expected.store_id ||
+    continuation.scope_ref !== expected.scope_ref ||
+    continuation.target_ref !== expected.target_ref ||
+    continuation.reservation_ref !== expected.reservation_ref ||
+    !isValidSha256Digest(continuation.operation_digest) ||
+    continuation.operation_digest !== expected.operation_digest
+  ) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason: 'Confirmation continuation identity, target, reservation, or operation_digest mismatch',
+    };
+  }
+
+  // Proven already-committed result may be returned after confirmation expires
+  // without another effect or another confirmation ceremony, under current authorization.
+  if (expected.reservation_state === 'committed') {
+    return {
+      ok: true,
+      decision: 'disclose_committed_without_repeat_effect',
+      continuation: continuation as unknown as MemoryConfirmationContinuationV1,
+    };
+  }
+
+  if (continuation.elicitation_ref !== expected.elicitation_ref) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason: 'elicitation_ref mismatch for uncommitted confirmation',
+    };
+  }
+
+  if (continuation.approved !== true) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason: 'Confirmation response approved must be literal true',
+    };
+  }
+
+  if (!isPlainObject(continuation.assurance)) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason: 'Confirmation assurance record is required',
+    };
+  }
+  const assurance = continuation.assurance;
+  const unexpectedAssurance = hasUnexpectedObjectKeys(
+    assurance,
+    CONFIRMATION_ASSURANCE_KEYS,
+  );
+  if (unexpectedAssurance !== null) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason: `MemoryConfirmationAssuranceV1 has unexpected key '${unexpectedAssurance}'`,
+    };
+  }
+
+  if (
+    assurance.enrolled_oidc_domain !== 'sent-tech.ca' ||
+    assurance.hardware_key_required !== false ||
+    assurance.identity_source !== 'enrolled_oidc_2fa' ||
+    assurance.host_deployment_qualification_status !== 'unverified'
+  ) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason:
+        "Confirmation assurance must use enrolled OIDC/2FA on 'sent-tech.ca' with hardware_key_required: false",
+    };
+  }
+
+  // Four separate literal-true checks (authentication, active enrollment, current step-up assurance, approval)
+  if (assurance.authenticated !== true) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason: 'Confirming human authentication verdict must be literal true',
+    };
+  }
+  if (assurance.enrolled_2fa !== true) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason: 'Confirming human active 2FA enrollment verdict must be literal true',
+    };
+  }
+  if (assurance.step_up_assurance_verified !== true) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason: 'Confirming human step-up 2FA assurance verdict must be literal true',
+    };
+  }
+
+  if (
+    !isValidOpaqueRef(assurance.issuer) ||
+    !isValidOpaqueRef(assurance.approving_subject_sub) ||
+    !isValidOpaqueRef(assurance.approving_human_principal_id) ||
+    !isValidSha256Digest(assurance.enrollment_receipt_digest) ||
+    !isValidSha256Digest(assurance.step_up_2fa_receipt_digest) ||
+    !isValidOpaqueRef(assurance.assurance_policy_version)
+  ) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason: 'Confirmation assurance issuer, subject, receipts, or policy version invalid',
+    };
+  }
+
+  if (assurance.delegation !== undefined) {
+    const delCheck = checkDelegationBinding(
+      assurance.delegation,
+      expected.now,
+    );
+    if (!delCheck.ok) {
+      return {
+        ok: false,
+        error_code: 'gate_failed',
+        reason: delCheck.reason,
+      };
+    }
+  } else if (
+    assurance.approving_human_principal_id !== expected.initiating_principal_id
+  ) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason:
+        'Approving human differs from initiating principal without host-verified delegation',
+    };
+  }
+
+  // Logical session & transport attachment reattachment verification
+  if (continuation.logical_session_ref !== expected.logical_session_ref) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason:
+        'New logical session requires a fresh operation-bound confirmation before any uncommitted effect',
+    };
+  }
+
+  if (continuation.active_generation !== expected.active_generation) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason: 'Confirmation continuation active_generation is stale',
+    };
+  }
+
+  if (
+    continuation.transport_attachment_ref !== expected.transport_attachment_ref
+  ) {
+    if (!isPlainObject(continuation.reattachment_proof)) {
+      return {
+        ok: false,
+        error_code: 'gate_failed',
+        reason:
+          'Transport attachment changed without durable host reattachment proof',
+      };
+    }
+    const proof = continuation.reattachment_proof;
+    if (
+      proof.verified !== true ||
+      proof.previous_attachment_ref !== continuation.transport_attachment_ref ||
+      proof.current_attachment_ref !== expected.transport_attachment_ref ||
+      proof.admitted_generation !== expected.active_generation ||
+      !isValidSha256Digest(proof.reattachment_receipt_digest)
+    ) {
+      return {
+        ok: false,
+        error_code: 'gate_failed',
+        reason: 'Logical-session reattachment proof is invalid or unverified',
+      };
+    }
+  }
+
+  // Freshness, 300s TTL ceiling, and 30s post-confirmation execution bound
+  const issuedMs = parseInstantMs(continuation.issued_at);
+  const expiresMs = parseInstantMs(continuation.expires_at);
+  const nowMs = parseInstantMs(expected.now);
+  const execDeadlineMs = parseInstantMs(expected.execution_deadline_at);
+
+  if (
+    issuedMs === null ||
+    expiresMs === null ||
+    nowMs === null ||
+    execDeadlineMs === null
+  ) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason: 'Confirmation continuation timestamps must be valid UTC instants',
+    };
+  }
+
+  if (expiresMs <= issuedMs) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason: 'expires_at must be strictly greater than issued_at',
+    };
+  }
+
+  if (
+    expiresMs - issuedMs >
+    MEMORY_MCP_LIMITS.CONFIRMATION_MAX_TTL_SECONDS * 1000
+  ) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason: 'Confirmation TTL exceeds 300 seconds maximum',
+    };
+  }
+
+  if (nowMs < issuedMs || nowMs >= expiresMs) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason: 'Confirmation requires issued_at <= now < expires_at at the effect guard',
+    };
+  }
+
+  if (
+    execDeadlineMs < nowMs ||
+    execDeadlineMs - nowMs > MEMORY_MCP_LIMITS.MAX_INVOCATION_DEADLINE_MS ||
+    execDeadlineMs > expiresMs
+  ) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      reason:
+        'Execution after confirmation must be bounded to at most 30 seconds and not exceed confirmation expiry',
+    };
+  }
+
+  return {
+    ok: true,
+    decision: 'execute_confirmed',
+    continuation: continuation as unknown as MemoryConfirmationContinuationV1,
+  };
+}
