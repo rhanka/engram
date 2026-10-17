@@ -10,5 +10,7 @@
 export * from "./contracts.js";
 export * from "./integration.js";
 export * from "./line-attribution.js";
+export * from "./symbol-history.js";
+export { analyzeCode } from "./code-analysis.js";
 export { createSafeGitExecutor } from "./git-executor.js";
 export type { SafeGitExecutor, SafeGitOptions, GitSpawnFn, GitSpawnOptions, GitSpawnResult } from "./git-executor.js";

@@ -74,8 +74,8 @@ function sha256(bytes) {
 //      a source-root default.
 //
 // The audit emits no file: the exact packed surface stays pinned by
-// tests/live-neutrality.test.ts (new L5 modules are source-side neutral
-// logic, not new package entries). Returns true when every check passes.
+// tests/live-neutrality.test.ts (G2 also delivers the reused L5 modules as
+// internal package files). Returns true when every check passes.
 function runL5Audit() {
   const failures = [];
   const read = (rel) => {
@@ -90,6 +90,7 @@ function runL5Audit() {
     "engram-live/analysis-cache.ts": ["deriveAnalysisCacheKey", "AnalysisCache"],
     "engram-live/code-analysis.ts": ["analyzeCode", "repairAffectedCalls"],
     "engram-live/comparisons.ts": ["compareBranches"],
+    "engram-live/symbol-history.ts": ["correspondSymbols"],
   };
   const forbiddenEdges = [
     "../src/",
@@ -180,6 +181,8 @@ if (cliArgs.length > 0) {
 
 const stageGrammarsRoot = join(stageRoot, "grammars");
 const emittedFiles = [
+  ...["symbol-history", "code-analysis", "analysis-cache", "comparisons"].flatMap(name =>
+    [`${name}.js`, `${name}.d.ts`, `${name}.d.ts.map`]),
   "line-attribution.d.ts",
   "line-attribution.d.ts.map",
   "line-attribution.js",

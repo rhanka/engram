@@ -113,6 +113,65 @@ export interface LiveScope {
 // G1: inclusive, one-based ranges over exact committed blob bytes. These
 // facts are mapped/persisted by L3a; no producer-side cache grants authority.
 export interface LineRangeDto { readonly start: number; readonly end: number }
+
+// G2 is a comparison of two retained versions, not a historical identity or
+// a DAG traversal. Readers own history, parent views, pagination and storage.
+export interface SymbolHistoryOptionsDto {
+  readonly version: "exact-l5-body/1";
+  /** Exact equality of nonempty SHA-256 L5 body fingerprints only. These
+   * percentages are intentionally fixed; fuzzy matching needs a new policy. */
+  readonly renameThreshold: 100;
+  readonly moveThreshold: 100;
+  readonly copyThreshold: 100;
+}
+export interface SymbolHistoryRequestDto {
+  readonly scope: LiveScope;
+  readonly generationId: string;
+  readonly before: QualifiedOid;
+  readonly after: QualifiedOid;
+  readonly policyVersion: string;
+  readonly options: SymbolHistoryOptionsDto;
+}
+export interface SymbolHistoryAnchorDto {
+  readonly commit: QualifiedOid;
+  readonly tree: QualifiedOid;
+  readonly blob: QualifiedOid;
+  readonly path: Uint8Array;
+  /** Version-local L5 identity; never a continuity key. */
+  readonly symbolId: string;
+  readonly slot: string;
+  readonly name: string;
+  readonly kind: string;
+  readonly language: string;
+  readonly bodyHash: string;
+  /** Explicitly unavailable until L5 supplies verified declaration ranges. */
+  readonly range: LineRangeDto | null;
+}
+export interface SymbolCorrespondenceDto {
+  readonly before: readonly SymbolHistoryAnchorDto[];
+  readonly after: readonly SymbolHistoryAnchorDto[];
+  readonly relation: "unchanged" | "renamed" | "moved" | "renamed-and-moved" | "ambiguous";
+  /** Fan-out is not proof of a split or copy; fan-in is not proof of a
+   * semantic merge. A changed/split/merged body below policy stays missing. */
+  readonly reason: "unique-exact-body" | "split-or-copy" | "merge" | "duplicate" | "missing";
+  readonly similarity: 100 | null;
+}
+export type SymbolHistoryGapCause = "unauthorized" | "excluded" | "missing-retention" | "missing-object" |
+  "invalid-evidence" | "inventory-unavailable" | "path-unavailable" | "unsupported-entry" | "bounds-exceeded";
+export interface SymbolHistoryOutcomeDto extends SymbolHistoryRequestDto {
+  readonly calculationVersion: string;
+  readonly extractorVersion: string;
+  readonly state: "complete" | "partial";
+  readonly correspondences: readonly SymbolCorrespondenceDto[];
+  readonly parentEvidence: readonly LineParentEvidenceDto[];
+  readonly coverage: {
+    readonly axis: "symbol-correspondence";
+    /** Current means both entire regular-blob inventories were verified;
+     * individual correspondences may still be ambiguous. No causal claim. */
+    readonly state: "current" | "partial";
+    readonly gaps: readonly { readonly cause: SymbolHistoryGapCause; readonly reason: string }[];
+  };
+}
 /** UTF-8 identities retain their normal strings. For each non-UTF-8 field,
  * the raw bytes are authoritative and its string is a reversible latin1
  * projection, independent of any declared commit encoding. */
