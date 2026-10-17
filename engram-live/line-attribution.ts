@@ -45,7 +45,9 @@ function pin(input: LineAttributionRequestDto): LineAttributionRequestDto {
   if (!input || !validateLiveScope(input.scope).ok || input.scope.worktree !== undefined || !validateQualifiedOid(input.target).ok ||
       !validPath(input.path) || typeof input.generationId !== "string" || !input.generationId.trim() || input.policyVersion !== POLICY_VERSION ||
       !o || o.version !== "native-blame-options/1" || o.algorithm !== "myers" ||
-      !score(o.moveMinCharacters) || !score(o.copyMinCharacters) || !["modified", "created", "all"].includes(o.copySearch)) {
+      !score(o.moveMinCharacters) || !score(o.copyMinCharacters) || !["modified", "created", "all"].includes(o.copySearch) ||
+      (o.copyMinCharacters !== null && o.moveMinCharacters === null) ||
+      (o.copyMinCharacters === null && o.copySearch !== "all")) {
     throw new Error("line attribution requires a scoped pinned target, byte path and supported versioned policy/options");
   }
   let end = 0;
