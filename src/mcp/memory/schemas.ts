@@ -874,7 +874,7 @@ export function isValidOpaqueRef(
   value: unknown,
   maxBytes: number = MEMORY_MCP_LIMITS.OPAQUE_REF_MAX_UTF8_BYTES,
 ): value is OpaqueRef {
-  if (!isWellFormedUnicodeAndNfc(value) || value.trim().length === 0) {
+  if (!isWellFormedUnicodeAndNfc(value)) {
     return false;
   }
   const bytes = utf8ByteLength(value);
@@ -887,8 +887,13 @@ export function isValidRecordId(value: unknown): value is string {
   return isValidOpaqueRef(value) && RECORD_ID_REGEX.test(value);
 }
 
+/** M:244,688: candidate identifiers are opaque, without an NFC requirement. */
+export function isValidCandidateId(value: unknown): value is string {
+  return isWellFormedUnicode(value) && utf8ByteLength(value) >= 1 && utf8ByteLength(value) <= 512;
+}
+
 export function isValidIdempotencyKey(value: unknown): value is IdempotencyKey {
-  if (!isWellFormedUnicodeAndNfc(value) || value.trim().length === 0) {
+  if (!isWellFormedUnicodeAndNfc(value)) {
     return false;
   }
   const bytes = utf8ByteLength(value);
@@ -1028,6 +1033,10 @@ function validateRecordIdField(
   return null;
 }
 
+function validateCandidateIdField(value: unknown, path: string): SchemaValidationFailure | null {
+  return isValidCandidateId(value) ? null : fail(path, 'Expected nonempty candidate identifier within 512 UTF-8 bytes');
+}
+
 function validateIdempotencyKeyField(
   value: unknown,
   path: string,
@@ -1100,10 +1109,10 @@ export function validateSearchInputV1(
   if (keyErr) return keyErr;
 
   if (
-    !isWellFormedUnicodeAndNfc(value.query) ||
-    value.query.trim().length === 0
+    !isWellFormedUnicode(value.query) ||
+    value.query.length === 0
   ) {
-    return fail('query', 'query must be a non-empty NFC string');
+    return fail('query', 'query must be a non-empty well-formed string');
   }
   const queryBytes = utf8ByteLength(value.query);
   if (
@@ -1718,7 +1727,7 @@ export function validateRequestAdmissionInputV1(
   );
   if (keyErr) return keyErr;
 
-  const candErr = validateOpaqueRefField(value.candidate_id, 'candidate_id');
+  const candErr = validateCandidateIdField(value.candidate_id, 'candidate_id');
   if (candErr) return candErr;
 
   const idemErr = validateIdempotencyKeyField(
@@ -1746,7 +1755,7 @@ export function validateWithdrawInputV1(
   );
   if (keyErr) return keyErr;
 
-  const candErr = validateOpaqueRefField(value.candidate_id, 'candidate_id');
+  const candErr = validateCandidateIdField(value.candidate_id, 'candidate_id');
   if (candErr) return candErr;
 
   const idemErr = validateIdempotencyKeyField(
@@ -2622,7 +2631,7 @@ export function validateCaptureOutputV1(
     );
   }
 
-  const candErr = validateOpaqueRefField(
+  const candErr = validateCandidateIdField(
     value.candidate_id,
     `${path}.candidate_id`,
   );
@@ -2681,7 +2690,7 @@ export function validateAdmissionOutcomeV1(
     );
   }
 
-  const cErr = validateOpaqueRefField(
+  const cErr = validateCandidateIdField(
     value.candidate_id,
     `${path}.candidate_id`,
   );

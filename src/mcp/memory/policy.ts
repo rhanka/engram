@@ -51,6 +51,7 @@ import {
 } from './contracts.js';
 import {
   isValidCursor,
+  isValidCandidateId,
   isValidIdempotencyKey,
   isValidInstant,
   isValidOpaqueRef,
@@ -1107,7 +1108,7 @@ export function validateMemoryMutationPreimageV1(
     if (
       !hasExactKeys(target, ['kind', 'candidate_id']) ||
       target.kind !== 'candidate' ||
-      !isValidOpaqueRef(target.candidate_id)
+      !isValidCandidateId(target.candidate_id)
     ) {
       return {
         ok: false,
@@ -1135,7 +1136,7 @@ export function validateMemoryMutationPreimageV1(
     if (
       !hasExactKeys(target, ['kind', 'candidate_id']) ||
       target.kind !== 'candidate' ||
-      !isValidOpaqueRef(target.candidate_id)
+      !isValidCandidateId(target.candidate_id)
     ) {
       return {
         ok: false,
