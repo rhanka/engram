@@ -1,40 +1,71 @@
 /**
- * MCP-L0 Host Policy, Trusted Provenance, Destructive Confirmation, and
- * Durable Idempotent Operation Identity Contracts.
+ * MCP-L0 Host Policy, Trusted Provenance, Destructive Elicitation Confirmation,
+ * and Durable Idempotent Operation Identity Contracts.
+ *
+ * Normative alignment with SPEC-memory-mcp-v2.md (M2, M4, M5, M7):
+ * - Host-injected trusted scope, principal, tenant, store, connector, and
+ *   short-lived authorization context (no fabricated defaults).
+ * - Host-owned `RetentionV1` resolution: rejects expiration > host ceiling and
+ *   rejects `derivative_rule: 'retain'` unless explicitly allowed by host policy.
+ * - Host-owned `ReconciliationConsentV1` resolution: defaults omitted/empty
+ *   reconciliation consent to `{ family_refs: [] }` (never auto-expanding to
+ *   all consented families) and rejects unconsented family refs.
+ * - Host-minted neutral `LifecycleEventAnchorV1` (`{ occurred_at, kind_ref,
+ *   provenance_ref, provenance_digest }`), frozen across retries.
+ * - Host elicitation `confirm` validation (`validated_resumed`, closed request
+ *   `{ capability, target_ref, operation_digest }`, closed response
+ *   `{ approved: true }`, <= 300s TTL).
+ * - Durable idempotent operation reservation bound to the M5 9-tuple +
+ *   `normalized_input_digest` + `source_order` / `event_id` / `event_anchor`,
+ *   `DIGEST_CONFLICT` on mismatch, fresh authorization on replay, and
+ *   same-scope tombstone recapture refusal.
  */
 
 import {
-  ENGRAM_MEMORY_SCHEMA_VERSION,
+  ENGRAM_MEMORY_MCP_CONTRACT_VERSION,
   MEMORY_MCP_LIMITS,
-  type CaptureInputV1,
-  type CaptureReconciliationHintV1,
-  type CaptureRetentionHintV1,
+  type AuthorizationContextV1,
+  type CaptureOutputV1,
+  type Cursor,
+  type Digest,
   type EngramMemoryToolName,
-  type IsoUtcTimestamp,
+  type ForgetOutputV1,
+  type IdempotencyKey,
+  type Instant,
   type LifecycleEventAnchorV1,
-  type MemoryRetentionV1,
-  type OpaqueId,
-  type PrincipalRefV1,
+  type OpaqueRef,
   type PublicMemoryErrorCode,
-  type ReasonCode,
-  type ReconciliationHookV1,
-  type RetentionOutcome,
-  type ScopeRefV1,
-  type Sha256Digest,
+  type ReconciliationConsentV1,
+  type RequestAdmissionOutputV1,
+  type RetentionV1,
+  type WithdrawOutputV1,
 } from './contracts.js';
 import {
-  isValidIsoUtcTimestamp,
-  validatePrincipalRefV1,
-  validateScopeRefV1,
+  isValidCursor,
+  isValidIdempotencyKey,
+  isValidInstant,
+  isValidOpaqueRef,
+  isValidSha256Digest,
 } from './schemas.js';
 
 export interface TrustedInvocationContextV1 {
-  readonly scope_ref: ScopeRefV1;
-  readonly principal_ref: PrincipalRefV1;
-  readonly correlation_id: OpaqueId;
-  readonly now_utc: IsoUtcTimestamp;
+  readonly principal_id: OpaqueRef;
+  readonly principal_namespace: OpaqueRef;
+  readonly tenant_id: OpaqueRef;
+  readonly store_id: OpaqueRef;
+  readonly connector_id: 'engram-memory';
+  readonly scope_ref: OpaqueRef;
+  readonly mcp_client_id: OpaqueRef;
+  readonly session_id: OpaqueRef;
+  readonly correlation_id: OpaqueRef;
+  readonly now_utc: Instant;
   readonly deadline_ms: number;
-  readonly capability_token_id: OpaqueId;
+  readonly authorization_context: AuthorizationContextV1;
+  readonly policy_epoch?: Cursor;
+  readonly trust_epoch?: Cursor;
+  readonly authorization_receipt_digest?: Digest;
+  readonly authorization_issued_at?: Instant;
+  readonly authorization_expires_at?: Instant;
 }
 
 export type PolicyValidationResult<T> =
@@ -45,74 +76,71 @@ export type PolicyValidationResult<T> =
       readonly message: string;
     };
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    (Object.getPrototypeOf(value) === Object.prototype ||
+      Object.getPrototypeOf(value) === null)
+  );
+}
+
 /**
- * Validates that the host/broker supplied a non-fabricated trusted invocation
- * context with aligned tenant IDs and a bounded deadline (`<= 30,000 ms`).
+ * M4 validation of the host/broker-injected invocation context.
+ * Refuses fabricated or missing scope/principal/tenant/authorization bindings.
  */
 export function validateTrustedInvocationContextV1(
   ctx: unknown,
 ): PolicyValidationResult<TrustedInvocationContextV1> {
-  if (typeof ctx !== 'object' || ctx === null) {
+  if (!isPlainObject(ctx)) {
     return {
       ok: false,
-      error_code: 'SCOPE_VIOLATION',
-      message: 'Missing trusted invocation context.',
-    };
-  }
-  const candidate = ctx as Record<string, unknown>;
-  const scopeRes = validateScopeRefV1(candidate.scope_ref, 'scope_ref');
-  if (!scopeRes.ok) {
-    return {
-      ok: false,
-      error_code: 'SCOPE_VIOLATION',
-      message: 'Missing or invalid trusted ScopeRefV1.',
-    };
-  }
-  const prinRes = validatePrincipalRefV1(
-    candidate.principal_ref,
-    'principal_ref',
-  );
-  if (!prinRes.ok) {
-    return {
-      ok: false,
-      error_code: 'UNAUTHORIZED_PRINCIPAL',
-      message: 'Missing or invalid trusted PrincipalRefV1.',
+      error_code: 'UNAUTHORIZED',
+      message: 'Missing trusted host invocation context.',
     };
   }
 
-  if (scopeRes.value.tenant_id !== prinRes.value.tenant_id) {
+  for (const field of [
+    'principal_id',
+    'principal_namespace',
+    'tenant_id',
+    'store_id',
+    'scope_ref',
+    'mcp_client_id',
+    'session_id',
+    'correlation_id',
+  ] as const) {
+    if (!isValidOpaqueRef(ctx[field])) {
+      return {
+        ok: false,
+        error_code: 'UNAUTHORIZED',
+        message: `Missing or invalid trusted ${field}.`,
+      };
+    }
+  }
+
+  if (ctx.connector_id !== 'engram-memory') {
     return {
       ok: false,
-      error_code: 'SCOPE_VIOLATION',
-      message: 'Trusted principal tenant_id does not match trusted scope_ref.',
+      error_code: 'UNAUTHORIZED',
+      message: "Trusted connector_id must equal 'engram-memory'.",
     };
   }
 
-  if (
-    typeof candidate.correlation_id !== 'string' ||
-    candidate.correlation_id.length < 1 ||
-    candidate.correlation_id.length > 128
-  ) {
+  if (!isValidInstant(ctx.now_utc)) {
     return {
       ok: false,
       error_code: 'INVALID_SCHEMA',
-      message: 'Trusted correlation_id is required.',
-    };
-  }
-
-  if (!isValidIsoUtcTimestamp(candidate.now_utc)) {
-    return {
-      ok: false,
-      error_code: 'INVALID_TIMESTAMP',
-      message: 'Trusted now_utc must be a valid ISO-8601 UTC timestamp.',
+      message: 'Trusted now_utc must be a valid RFC 3339 millisecond UTC Instant.',
     };
   }
 
   if (
-    typeof candidate.deadline_ms !== 'number' ||
-    !Number.isInteger(candidate.deadline_ms) ||
-    candidate.deadline_ms <= 0 ||
-    candidate.deadline_ms > MEMORY_MCP_LIMITS.MAX_INVOCATION_DEADLINE_MS
+    typeof ctx.deadline_ms !== 'number' ||
+    !Number.isInteger(ctx.deadline_ms) ||
+    ctx.deadline_ms <= 0 ||
+    ctx.deadline_ms > MEMORY_MCP_LIMITS.MAX_INVOCATION_DEADLINE_MS
   ) {
     return {
       ok: false,
@@ -121,315 +149,528 @@ export function validateTrustedInvocationContextV1(
     };
   }
 
+  if (!isPlainObject(ctx.authorization_context)) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      message: 'Missing trusted AuthorizationContextV1.',
+    };
+  }
+
+  const authCtx = ctx.authorization_context;
+  const authKeys = Object.keys(authCtx);
   if (
-    typeof candidate.capability_token_id !== 'string' ||
-    candidate.capability_token_id.length < 1 ||
-    candidate.capability_token_id.length > 128
+    authKeys.some((k) => k !== 'credential' && k !== 'context_ref') ||
+    !isValidOpaqueRef(authCtx.credential, 4096) ||
+    ('context_ref' in authCtx && !isValidOpaqueRef(authCtx.context_ref))
   ) {
     return {
       ok: false,
-      error_code: 'gate_failed',
-      message: 'Trusted capability_token_id is required.',
+      error_code: 'UNAUTHORIZED',
+      message:
+        'Invalid trusted AuthorizationContextV1 credential or context_ref.',
+    };
+  }
+
+  if (
+    ctx.policy_epoch !== undefined &&
+    !isValidCursor(ctx.policy_epoch)
+  ) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      message: 'Invalid trusted policy_epoch.',
+    };
+  }
+  if (
+    ctx.trust_epoch !== undefined &&
+    !isValidCursor(ctx.trust_epoch)
+  ) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      message: 'Invalid trusted trust_epoch.',
+    };
+  }
+  if (
+    ctx.authorization_receipt_digest !== undefined &&
+    !isValidSha256Digest(ctx.authorization_receipt_digest)
+  ) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      message: 'Invalid trusted authorization_receipt_digest.',
+    };
+  }
+
+  if (
+    ctx.authorization_issued_at !== undefined ||
+    ctx.authorization_expires_at !== undefined
+  ) {
+    if (
+      !isValidInstant(ctx.authorization_issued_at) ||
+      !isValidInstant(ctx.authorization_expires_at)
+    ) {
+      return {
+        ok: false,
+        error_code: 'AUTHORIZATION_EXPIRED',
+        message: 'Invalid authorization receipt timestamp.',
+      };
+    }
+    const issuedMs = Date.parse(ctx.authorization_issued_at);
+    const expiresMs = Date.parse(ctx.authorization_expires_at);
+    const nowMs = Date.parse(ctx.now_utc);
+    const maxTtlMs =
+      MEMORY_MCP_LIMITS.AUTHORIZATION_RECEIPT_MAX_TTL_SECONDS * 1000;
+    if (
+      expiresMs <= issuedMs ||
+      expiresMs - issuedMs > maxTtlMs ||
+      nowMs < issuedMs ||
+      nowMs > expiresMs
+    ) {
+      return {
+        ok: false,
+        error_code: 'AUTHORIZATION_EXPIRED',
+        message:
+          'Authorization receipt has expired or exceeds the 300s TTL ceiling.',
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    value: ctx as unknown as TrustedInvocationContextV1,
+  };
+}
+
+/**
+ * M2 / M5 Host-minted neutral `LifecycleEventAnchorV1`.
+ * Callers never supply `event_anchor` in tool input JSON; on retry, the
+ * persisted anchor from the durable reservation is reused verbatim.
+ */
+export function createHostLifecycleEventAnchorV1(input: {
+  readonly occurred_at: Instant;
+  readonly kind_ref: OpaqueRef;
+  readonly provenance_ref: OpaqueRef;
+  readonly provenance_digest: Digest;
+  readonly persisted_anchor?: LifecycleEventAnchorV1;
+}): PolicyValidationResult<LifecycleEventAnchorV1> {
+  if (input.persisted_anchor) {
+    return { ok: true, value: input.persisted_anchor };
+  }
+  if (!isValidInstant(input.occurred_at)) {
+    return {
+      ok: false,
+      error_code: 'INVALID_SCHEMA',
+      message: 'event_anchor.occurred_at must be a valid Instant.',
+    };
+  }
+  if (
+    !isValidOpaqueRef(input.kind_ref) ||
+    !isValidOpaqueRef(input.provenance_ref)
+  ) {
+    return {
+      ok: false,
+      error_code: 'INVALID_SCHEMA',
+      message:
+        'event_anchor.kind_ref and provenance_ref must be valid OpaqueRefs.',
+    };
+  }
+  if (!isValidSha256Digest(input.provenance_digest)) {
+    return {
+      ok: false,
+      error_code: 'INVALID_DIGEST',
+      message: 'event_anchor.provenance_digest must be a valid SHA-256 Digest.',
     };
   }
 
   return {
     ok: true,
-    value: candidate as unknown as TrustedInvocationContextV1,
+    value: {
+      occurred_at: input.occurred_at,
+      kind_ref: input.kind_ref,
+      provenance_ref: input.provenance_ref,
+      provenance_digest: input.provenance_digest,
+    },
   };
-}
-
-/**
- * Verifies that `capture.provenance.captured_by` matches the authenticated
- * caller `principal_ref` (preventing provenance spoofing).
- */
-export function validateCaptureProvenancePrincipalBindingV1(
-  input: Pick<CaptureInputV1, 'provenance'>,
-  trustedPrincipal: PrincipalRefV1,
-): PolicyValidationResult<PrincipalRefV1> {
-  const capturedBy = input.provenance.captured_by;
-  if (
-    capturedBy.principal_id !== trustedPrincipal.principal_id ||
-    capturedBy.tenant_id !== trustedPrincipal.tenant_id ||
-    capturedBy.principal_kind !== trustedPrincipal.principal_kind
-  ) {
-    return {
-      ok: false,
-      error_code: 'UNAUTHORIZED_PRINCIPAL',
-      message:
-        'provenance.captured_by must match the authenticated caller principal.',
-    };
-  }
-  return { ok: true, value: trustedPrincipal };
-}
-
-const MUTATION_TOOL_TO_ANCHOR_KIND: Readonly<
-  Record<
-    | 'engram_memory_capture'
-    | 'engram_memory_request_admission'
-    | 'engram_memory_withdraw'
-    | 'engram_memory_forget',
-    LifecycleEventAnchorV1['anchor_kind']
-  >
-> = {
-  engram_memory_capture: 'capture',
-  engram_memory_request_admission: 'admission',
-  engram_memory_withdraw: 'withdrawal',
-  engram_memory_forget: 'erasure',
-} as const;
-
-/**
- * Constructs a host-verified `LifecycleEventAnchorV1` for a mutating tool call.
- * Callers never supply `event_anchor` in tool input JSON.
- */
-export function createHostLifecycleEventAnchorV1(input: {
-  readonly tool:
-    | 'engram_memory_capture'
-    | 'engram_memory_request_admission'
-    | 'engram_memory_withdraw'
-    | 'engram_memory_forget';
-  readonly event_anchor_id: OpaqueId;
-  readonly context: TrustedInvocationContextV1;
-  readonly causation_event_id?: OpaqueId;
-}): LifecycleEventAnchorV1 {
-  const base: LifecycleEventAnchorV1 = {
-    schema_version: ENGRAM_MEMORY_SCHEMA_VERSION,
-    event_anchor_id: input.event_anchor_id,
-    anchor_kind: MUTATION_TOOL_TO_ANCHOR_KIND[input.tool],
-    occurred_at_utc: input.context.now_utc,
-    actor: input.context.principal_ref,
-    correlation_id: input.context.correlation_id,
-  };
-  if (input.causation_event_id !== undefined) {
-    return {
-      ...base,
-      causation_event_id: input.causation_event_id,
-    };
-  }
-  return base;
 }
 
 export interface HostRetentionPolicyConfigV1 {
-  readonly policy_id: OpaqueId;
-  readonly default_retention_days: number;
+  readonly default_retention_days?: number;
   readonly max_retention_days: number;
-  readonly default_expiry_outcome: 'make-ineligible' | 'tombstone';
-  readonly allow_retain_outcome: boolean;
-  readonly review_Lead_days?: number;
+  readonly default_expires_at?: Instant;
+  readonly max_expires_at?: Instant;
+  readonly allow_retain_derivative_rule: boolean;
 }
 
 const MS_PER_DAY = 86_400_000;
 
 /**
- * Resolves the effective `MemoryRetentionV1` for `engram_memory_capture`:
- * - Default `expiry_outcome` is `'make-ineligible'` (or host-configured `'tombstone'`).
- * - `'retain'` is disallowed unless `hostPolicy.allow_retain_outcome === true`;
- *   otherwise a `'retain'` hint is clamped to `hostPolicy.default_expiry_outcome`.
- * - `retain_until_utc` is always finite and clamped to `max_retention_days`
- *   (<= 365 days).
- * - `legal_hold` is always initialized to `false` on agent capture.
- * - On idempotent retry (`persistedRetention`), the previously persisted
- *   `MemoryRetentionV1` is returned unchanged.
+ * M2 Host-owned `RetentionV1` resolution for `engram_memory_capture`:
+ * - Reuses `persisted_retention` verbatim on idempotent retry.
+ * - Defaults `derivative_rule` to `'make-ineligible'` when omitted.
+ * - Rejects `derivative_rule: 'retain'` with `UNAUTHORIZED` unless
+ *   `host_policy.allow_retain_derivative_rule === true` (never silently
+ *   downgrades).
+ * - Rejects `expires_at` exceeding the host retention ceiling with
+ *   `UNAUTHORIZED` (never silently clamps/truncates).
+ * - Rejects malformed or non-future `expires_at` with `INVALID_SCHEMA`.
  */
 export function resolveCaptureRetentionPolicyV1(input: {
-  readonly captured_at_utc: IsoUtcTimestamp;
+  readonly captured_at: Instant;
   readonly host_policy: HostRetentionPolicyConfigV1;
-  readonly retention_hint?: CaptureRetentionHintV1;
-  readonly persisted_retention?: MemoryRetentionV1;
-}): PolicyValidationResult<MemoryRetentionV1> {
+  readonly caller_retention?: RetentionV1;
+  readonly persisted_retention?: RetentionV1;
+}): PolicyValidationResult<RetentionV1> {
   if (input.persisted_retention) {
     return { ok: true, value: input.persisted_retention };
   }
 
-  if (!isValidIsoUtcTimestamp(input.captured_at_utc)) {
+  if (!isValidInstant(input.captured_at)) {
     return {
       ok: false,
-      error_code: 'INVALID_TIMESTAMP',
-      message: 'captured_at_utc must be a valid ISO-8601 UTC timestamp.',
+      error_code: 'INVALID_SCHEMA',
+      message: 'captured_at must be a valid RFC 3339 millisecond UTC Instant.',
     };
   }
 
-  const capturedMs = Date.parse(input.captured_at_utc);
-  const maxDays = Math.min(
-    Math.max(1, input.host_policy.max_retention_days),
-    MEMORY_MCP_LIMITS.MAX_RETENTION_CEILING_DAYS,
-  );
-  const defaultDays = Math.min(
-    Math.max(1, input.host_policy.default_retention_days),
-    maxDays,
-  );
+  if (
+    !Number.isFinite(input.host_policy.max_retention_days) ||
+    input.host_policy.max_retention_days <= 0
+  ) {
+    return {
+      ok: false,
+      error_code: 'POLICY_UNAVAILABLE',
+      message: 'Host retention policy max_retention_days must be positive.',
+    };
+  }
 
-  const ceilingMs = capturedMs + maxDays * MS_PER_DAY;
-  let effectiveRetainUntilMs = capturedMs + defaultDays * MS_PER_DAY;
-
-  if (input.retention_hint?.expires_at_utc !== undefined) {
-    if (!isValidIsoUtcTimestamp(input.retention_hint.expires_at_utc)) {
+  const capturedMs = Date.parse(input.captured_at);
+  let ceilingMs =
+    capturedMs + input.host_policy.max_retention_days * MS_PER_DAY;
+  if (input.host_policy.max_expires_at !== undefined) {
+    if (!isValidInstant(input.host_policy.max_expires_at)) {
       return {
         ok: false,
-        error_code: 'INVALID_TIMESTAMP',
-        message: 'retention_hint.expires_at_utc is invalid.',
+        error_code: 'POLICY_UNAVAILABLE',
+        message: 'Host retention policy max_expires_at is invalid.',
       };
     }
-    const hintMs = Date.parse(input.retention_hint.expires_at_utc);
-    if (hintMs <= capturedMs) {
+    ceilingMs = Math.min(ceilingMs, Date.parse(input.host_policy.max_expires_at));
+  }
+
+  const requestedRule =
+    input.caller_retention?.derivative_rule ?? 'make-ineligible';
+  if (
+    requestedRule !== 'make-ineligible' &&
+    requestedRule !== 'retain'
+  ) {
+    return {
+      ok: false,
+      error_code: 'INVALID_SCHEMA',
+      message: "derivative_rule must be 'retain' or 'make-ineligible'.",
+    };
+  }
+
+  if (
+    requestedRule === 'retain' &&
+    input.host_policy.allow_retain_derivative_rule !== true
+  ) {
+    return {
+      ok: false,
+      error_code: 'UNAUTHORIZED',
+      message:
+        "derivative_rule 'retain' is disallowed by host retention policy.",
+    };
+  }
+
+  let effectiveExpiresAt: Instant | undefined;
+  if (input.caller_retention?.expires_at !== undefined) {
+    if (!isValidInstant(input.caller_retention.expires_at)) {
       return {
         ok: false,
-        error_code: 'INVALID_TIMESTAMP',
+        error_code: 'INVALID_SCHEMA',
+        message: 'retention.expires_at must be a valid Instant.',
+      };
+    }
+    const requestedExpiresMs = Date.parse(input.caller_retention.expires_at);
+    if (requestedExpiresMs <= capturedMs) {
+      return {
+        ok: false,
+        error_code: 'INVALID_SCHEMA',
+        message: 'retention.expires_at must be strictly after captured_at.',
+      };
+    }
+    if (requestedExpiresMs > ceilingMs) {
+      return {
+        ok: false,
+        error_code: 'UNAUTHORIZED',
         message:
-          'retention_hint.expires_at_utc must be strictly after captured_at_utc.',
+          'retention.expires_at exceeds the maximum host retention ceiling.',
       };
     }
-    effectiveRetainUntilMs = Math.min(hintMs, ceilingMs);
-  }
-
-  let effectiveOutcome: RetentionOutcome =
-    input.host_policy.default_expiry_outcome;
-  if (input.retention_hint?.expiry_outcome !== undefined) {
-    if (input.retention_hint.expiry_outcome === 'retain') {
-      effectiveOutcome = input.host_policy.allow_retain_outcome
-        ? 'retain'
-        : input.host_policy.default_expiry_outcome;
-    } else {
-      effectiveOutcome = input.retention_hint.expiry_outcome;
+    effectiveExpiresAt = input.caller_retention.expires_at;
+  } else if (input.host_policy.default_expires_at !== undefined) {
+    if (!isValidInstant(input.host_policy.default_expires_at)) {
+      return {
+        ok: false,
+        error_code: 'POLICY_UNAVAILABLE',
+        message: 'Host default_expires_at is invalid.',
+      };
     }
+    const defaultMs = Date.parse(input.host_policy.default_expires_at);
+    if (defaultMs <= capturedMs || defaultMs > ceilingMs) {
+      return {
+        ok: false,
+        error_code: 'POLICY_UNAVAILABLE',
+        message: 'Host default_expires_at is outside valid retention bounds.',
+      };
+    }
+    effectiveExpiresAt = input.host_policy.default_expires_at;
+  } else if (input.host_policy.default_retention_days !== undefined) {
+    if (
+      !Number.isFinite(input.host_policy.default_retention_days) ||
+      input.host_policy.default_retention_days <= 0
+    ) {
+      return {
+        ok: false,
+        error_code: 'POLICY_UNAVAILABLE',
+        message: 'Host default_retention_days must be positive.',
+      };
+    }
+    const defaultMs =
+      capturedMs + input.host_policy.default_retention_days * MS_PER_DAY;
+    if (defaultMs > ceilingMs) {
+      return {
+        ok: false,
+        error_code: 'POLICY_UNAVAILABLE',
+        message: 'Host default_retention_days exceeds max_retention_days.',
+      };
+    }
+    effectiveExpiresAt = new Date(defaultMs).toISOString();
+  } else {
+    effectiveExpiresAt = new Date(ceilingMs).toISOString();
   }
-
-  const retainUntilUtc = new Date(effectiveRetainUntilMs).toISOString();
-  const reviewAfterUtc = new Date(
-    Math.max(
-      capturedMs,
-      effectiveRetainUntilMs -
-        (input.host_policy.review_Lead_days ?? 7) * MS_PER_DAY,
-    ),
-  ).toISOString();
 
   return {
     ok: true,
     value: {
-      schema_version: ENGRAM_MEMORY_SCHEMA_VERSION,
-      policy_id: input.host_policy.policy_id,
-      retain_until_utc: retainUntilUtc,
-      review_after_utc: reviewAfterUtc,
-      expiry_outcome: effectiveOutcome,
-      legal_hold: false,
+      expires_at: effectiveExpiresAt,
+      derivative_rule: requestedRule,
     },
   };
 }
 
 export interface HostReconciliationPolicyConfigV1 {
-  readonly default_strategy:
-    | 'manual-only'
-    | 'supersede-by-key'
-    | 'append-distinct';
-  readonly derived_conflict_key?: string;
-  readonly consented_family_refs: readonly OpaqueId[];
+  readonly consented_family_refs: readonly OpaqueRef[];
 }
 
 /**
- * Resolves the effective `ReconciliationHookV1` for `engram_memory_capture`:
- * - Caller `reconciliation_hint.family_refs` must be a subset of
- *   `host_policy.consented_family_refs`; any unauthorized ref fails with
- *   `CONSENT_DENIED`.
- * - On idempotent retry (`persisted_reconciliation`), the previously persisted
- *   hook is reused unchanged.
+ * M2 Host-owned `ReconciliationConsentV1` resolution for `engram_memory_capture`:
+ * - Reuses `persisted_reconciliation` verbatim on idempotent retry.
+ * - When caller omits `reconciliation` or passes `{ family_refs: [] }`, returns
+ *   `{ family_refs: [] }` (no cross-family reconciliation consent; NEVER
+ *   auto-expands to all `consented_family_refs`).
+ * - Rejects any family ref not in `host_policy.consented_family_refs` with
+ *   `UNAUTHORIZED`.
  */
-export function resolveCaptureReconciliationHookV1(input: {
+export function resolveCaptureReconciliationConsentV1(input: {
   readonly host_policy: HostReconciliationPolicyConfigV1;
-  readonly reconciliation_hint?: CaptureReconciliationHintV1;
-  readonly persisted_reconciliation?: ReconciliationHookV1;
-}): PolicyValidationResult<ReconciliationHookV1> {
+  readonly caller_reconciliation?: ReconciliationConsentV1;
+  readonly persisted_reconciliation?: ReconciliationConsentV1;
+}): PolicyValidationResult<ReconciliationConsentV1> {
   if (input.persisted_reconciliation) {
     return { ok: true, value: input.persisted_reconciliation };
   }
 
-  const consented = new Set(input.host_policy.consented_family_refs);
-  const requestedRefs = input.reconciliation_hint?.family_refs ?? [];
-
-  for (const ref of requestedRefs) {
-    if (!consented.has(ref)) {
-      return {
-        ok: false,
-        error_code: 'CONSENT_DENIED',
-        message: `reconciliation_hint family_ref '${ref}' is not authorized by active consent.`,
-      };
-    }
-  }
-
-  const base: ReconciliationHookV1 = {
-    schema_version: ENGRAM_MEMORY_SCHEMA_VERSION,
-    strategy: input.host_policy.default_strategy,
-    family_refs:
-      requestedRefs.length > 0
-        ? [...requestedRefs]
-        : [...input.host_policy.consented_family_refs],
-  };
-
-  if (input.host_policy.derived_conflict_key !== undefined) {
+  if (
+    !input.caller_reconciliation ||
+    input.caller_reconciliation.family_refs.length === 0
+  ) {
     return {
       ok: true,
       value: {
-        ...base,
-        conflict_key: input.host_policy.derived_conflict_key,
+        family_refs: [],
       },
     };
   }
 
-  return { ok: true, value: base };
+  const requestedRefs = input.caller_reconciliation.family_refs;
+  if (
+    requestedRefs.length >
+    MEMORY_MCP_LIMITS.RECONCILIATION_FAMILY_REFS_MAX_ITEMS
+  ) {
+    return {
+      ok: false,
+      error_code: 'INVALID_SCHEMA',
+      message: `reconciliation.family_refs exceeds ${MEMORY_MCP_LIMITS.RECONCILIATION_FAMILY_REFS_MAX_ITEMS} items.`,
+    };
+  }
+
+  const consented = new Set(input.host_policy.consented_family_refs);
+  const seen = new Set<string>();
+  for (const ref of requestedRefs) {
+    if (!isValidOpaqueRef(ref)) {
+      return {
+        ok: false,
+        error_code: 'INVALID_SCHEMA',
+        message: 'reconciliation.family_refs contains an invalid OpaqueRef.',
+      };
+    }
+    if (seen.has(ref)) {
+      return {
+        ok: false,
+        error_code: 'INVALID_SCHEMA',
+        message: `Duplicate family_ref '${ref}' in reconciliation.family_refs.`,
+      };
+    }
+    seen.add(ref);
+    if (!consented.has(ref)) {
+      return {
+        ok: false,
+        error_code: 'UNAUTHORIZED',
+        message: `Family reference '${ref}' is not permitted by active reconciliation consent.`,
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    value: {
+      family_refs: [...requestedRefs],
+    },
+  };
 }
 
+export const resolveCaptureReconciliationHookV1 =
+  resolveCaptureReconciliationConsentV1;
+
+/**
+ * M4 / M7 Host Elicitation `confirm` Grant for `engram_memory_withdraw` and
+ * `engram_memory_forget`.
+ */
 export interface DestructiveConfirmationGrantV1 {
-  readonly confirmation_id: OpaqueId;
-  readonly tool_name: 'engram_memory_withdraw' | 'engram_memory_forget';
-  readonly scope_ref: ScopeRefV1;
-  readonly principal_id: OpaqueId;
-  readonly memory_id: OpaqueId;
-  readonly reason_code: ReasonCode;
-  readonly target_digest_or_status: string;
-  readonly issued_at_utc: IsoUtcTimestamp;
-  readonly expires_at_utc: IsoUtcTimestamp;
+  readonly elicitation_ref: OpaqueRef;
+  readonly capability: 'engram_memory_withdraw' | 'engram_memory_forget';
+  readonly mcp_client_id: OpaqueRef;
+  readonly session_id: OpaqueRef;
+  readonly principal_id: OpaqueRef;
+  readonly tenant_id: OpaqueRef;
+  readonly scope_ref: OpaqueRef;
+  readonly target_ref: OpaqueRef;
+  readonly operation_digest: Digest;
+  readonly issued_at: Instant;
+  readonly expires_at: Instant;
+  readonly state: 'pending' | 'validated_resumed' | 'expired' | 'declined';
+  readonly request: {
+    readonly capability: 'engram_memory_withdraw' | 'engram_memory_forget';
+    readonly target_ref: OpaqueRef;
+    readonly operation_digest: Digest;
+  };
+  readonly response?: {
+    readonly approved: boolean;
+  };
+}
+
+export interface ExpectedDestructiveConfirmationV1 {
+  readonly capability: 'engram_memory_withdraw' | 'engram_memory_forget';
+  readonly mcp_client_id: OpaqueRef;
+  readonly session_id: OpaqueRef;
+  readonly principal_id: OpaqueRef;
+  readonly tenant_id: OpaqueRef;
+  readonly scope_ref: OpaqueRef;
+  readonly target_ref: OpaqueRef;
+  readonly operation_digest: Digest;
+  readonly now_utc: Instant;
 }
 
 /**
- * Verifies an out-of-band MCP elicitation or host confirmation token for
- * `engram_memory_withdraw` or `engram_memory_forget`.
+ * Verifies a host-validated, resumed MCP elicitation confirmation grant for
+ * `engram_memory_withdraw` or `engram_memory_forget` per M4 and M7.
  */
 export function verifyDestructiveConfirmationGrantV1(
-  grant: DestructiveConfirmationGrantV1 | undefined,
-  expected: {
-    readonly tool_name: 'engram_memory_withdraw' | 'engram_memory_forget';
-    readonly scope_ref: ScopeRefV1;
-    readonly principal_id: OpaqueId;
-    readonly memory_id: OpaqueId;
-    readonly reason_code: ReasonCode;
-    readonly target_digest_or_status: string;
-    readonly now_utc: IsoUtcTimestamp;
-  },
+  grant: DestructiveConfirmationGrantV1 | undefined | null,
+  expected: ExpectedDestructiveConfirmationV1,
 ): PolicyValidationResult<DestructiveConfirmationGrantV1> {
-  if (!grant) {
+  if (!grant || !isPlainObject(grant as unknown)) {
     return {
       ok: false,
       error_code: 'gate_failed',
       message:
-        'Destructive memory operation requires an out-of-band confirmation grant.',
+        'Destructive memory operation requires a validated host elicitation confirmation.',
+    };
+  }
+
+  if (grant.state !== 'validated_resumed') {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      message: "Elicitation confirmation state must be 'validated_resumed'.",
     };
   }
 
   if (
-    !isValidIsoUtcTimestamp(grant.issued_at_utc) ||
-    !isValidIsoUtcTimestamp(grant.expires_at_utc) ||
-    !isValidIsoUtcTimestamp(expected.now_utc)
+    !isPlainObject(grant.request) ||
+    Object.keys(grant.request).some(
+      (k) =>
+        k !== 'capability' && k !== 'target_ref' && k !== 'operation_digest',
+    )
   ) {
     return {
       ok: false,
       error_code: 'gate_failed',
-      message: 'Confirmation grant contains an invalid timestamp.',
+      message:
+        'Elicitation request must be a closed { capability, target_ref, operation_digest } object with no secret-bearing fields.',
     };
   }
 
-  const issuedMs = Date.parse(grant.issued_at_utc);
-  const expiresMs = Date.parse(grant.expires_at_utc);
+  if (
+    !isPlainObject(grant.response) ||
+    Object.keys(grant.response).length !== 1 ||
+    grant.response.approved !== true
+  ) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      message:
+        'Elicitation response must be a closed { approved: true } object.',
+    };
+  }
+
+  if (
+    !isValidOpaqueRef(grant.elicitation_ref) ||
+    !isValidOpaqueRef(grant.mcp_client_id) ||
+    !isValidOpaqueRef(grant.session_id) ||
+    !isValidOpaqueRef(grant.principal_id) ||
+    !isValidOpaqueRef(grant.tenant_id) ||
+    !isValidOpaqueRef(grant.scope_ref) ||
+    !isValidOpaqueRef(grant.target_ref) ||
+    !isValidSha256Digest(grant.operation_digest) ||
+    !isValidSha256Digest(expected.operation_digest)
+  ) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      message: 'Elicitation confirmation contains malformed binding fields.',
+    };
+  }
+
+  if (
+    !isValidInstant(grant.issued_at) ||
+    !isValidInstant(grant.expires_at) ||
+    !isValidInstant(expected.now_utc)
+  ) {
+    return {
+      ok: false,
+      error_code: 'gate_failed',
+      message: 'Elicitation confirmation contains an invalid timestamp.',
+    };
+  }
+
+  const issuedMs = Date.parse(grant.issued_at);
+  const expiresMs = Date.parse(grant.expires_at);
   const nowMs = Date.parse(expected.now_utc);
-  const maxTtlMs = MEMORY_MCP_LIMITS.CONFIRMATION_TOKEN_TTL_SECONDS * 1000;
+  const maxTtlMs = MEMORY_MCP_LIMITS.CONFIRMATION_MAX_TTL_SECONDS * 1000;
 
   if (
     expiresMs <= issuedMs ||
@@ -440,47 +681,72 @@ export function verifyDestructiveConfirmationGrantV1(
     return {
       ok: false,
       error_code: 'gate_failed',
-      message: 'Confirmation grant has expired or exceeds the 300s TTL ceiling.',
+      message:
+        'Elicitation confirmation has expired or exceeds the 300s TTL ceiling.',
     };
   }
 
   if (
-    grant.tool_name !== expected.tool_name ||
-    JSON.stringify(grant.scope_ref) !== JSON.stringify(expected.scope_ref) ||
+    grant.capability !== expected.capability ||
+    grant.request.capability !== expected.capability ||
+    grant.request.target_ref !== expected.target_ref ||
+    grant.request.operation_digest !== expected.operation_digest ||
+    grant.mcp_client_id !== expected.mcp_client_id ||
+    grant.session_id !== expected.session_id ||
     grant.principal_id !== expected.principal_id ||
-    grant.memory_id !== expected.memory_id ||
-    grant.reason_code !== expected.reason_code ||
-    grant.target_digest_or_status !== expected.target_digest_or_status
+    grant.tenant_id !== expected.tenant_id ||
+    grant.scope_ref !== expected.scope_ref ||
+    grant.target_ref !== expected.target_ref ||
+    grant.operation_digest !== expected.operation_digest
   ) {
     return {
       ok: false,
       error_code: 'gate_failed',
       message:
-        'Confirmation grant binding does not match target record or caller parameters.',
+        'Elicitation confirmation binding does not match the caller, client, session, target, or operation_digest.',
     };
   }
 
   return { ok: true, value: grant };
 }
 
+/**
+ * M5 Durable Idempotent Operation Reservation Key & Record.
+ */
+export type MutatingMemoryToolName =
+  | 'engram_memory_capture'
+  | 'engram_memory_request_admission'
+  | 'engram_memory_withdraw'
+  | 'engram_memory_forget';
+
 export interface DurableOperationKeyV1 {
-  readonly scope_ref: ScopeRefV1;
-  readonly principal_id: OpaqueId;
-  readonly tool_name:
-    | 'engram_memory_capture'
-    | 'engram_memory_request_admission'
-    | 'engram_memory_withdraw'
-    | 'engram_memory_forget';
-  readonly idempotency_key: string;
+  readonly principal_namespace: OpaqueRef;
+  readonly tenant_id: OpaqueRef;
+  readonly store_id: OpaqueRef;
+  readonly connector_id: 'engram-memory';
+  readonly scope_ref: OpaqueRef;
+  readonly tool_name: MutatingMemoryToolName;
+  readonly tool_contract_version: typeof ENGRAM_MEMORY_MCP_CONTRACT_VERSION;
+  readonly target_ref: OpaqueRef;
+  readonly idempotency_key: IdempotencyKey;
+}
+
+export interface CaptureSourceOrderV1 {
+  readonly source_ref: OpaqueRef;
+  readonly sequence: Cursor;
 }
 
 export interface DurableOperationRecordV1<TOutput = unknown> {
   readonly key: DurableOperationKeyV1;
-  readonly request_digest: Sha256Digest;
+  readonly normalized_input_digest: Digest;
   readonly status: 'in_flight' | 'completed' | 'failed_retryable';
-  readonly created_at_utc: IsoUtcTimestamp;
-  readonly effective_retention?: MemoryRetentionV1;
-  readonly effective_reconciliation?: ReconciliationHookV1;
+  readonly created_at: Instant;
+  readonly candidate_id?: OpaqueRef;
+  readonly source_order?: CaptureSourceOrderV1;
+  readonly effective_retention?: RetentionV1;
+  readonly effective_reconciliation?: ReconciliationConsentV1;
+  readonly event_id?: OpaqueRef;
+  readonly event_anchor?: LifecycleEventAnchorV1;
   readonly stored_output?: TOutput;
 }
 
@@ -488,7 +754,7 @@ export type IdempotentMutationDecisionV1<TOutput> =
   | { readonly decision: 'execute_new' }
   | {
       readonly decision: 'replay_completed';
-      readonly output: TOutput & { readonly idempotent_replay: true };
+      readonly output: TOutput;
     }
   | {
       readonly decision: 'resume_incomplete';
@@ -496,37 +762,117 @@ export type IdempotentMutationDecisionV1<TOutput> =
     }
   | {
       readonly decision: 'reject';
-      readonly error_code: 'IDEMPOTENCY_CONFLICT' | 'CONCURRENCY_CONFLICT';
-      readonly retryable: boolean;
+      readonly error_code:
+        | 'DIGEST_CONFLICT'
+        | 'UNAUTHORIZED'
+        | 'NOT_FOUND'
+        | 'FENCE_LOST'
+        | 'INVALID_SCHEMA';
+      readonly retriable: boolean;
     };
 
+function applyReplayedOutputMarker<TOutput>(
+  toolName: MutatingMemoryToolName,
+  storedOutput: TOutput,
+): TOutput {
+  if (!isPlainObject(storedOutput as unknown)) {
+    return storedOutput;
+  }
+  if (toolName === 'engram_memory_capture') {
+    const cap = storedOutput as unknown as CaptureOutputV1;
+    return {
+      ...cap,
+      status: 'duplicate_exact',
+    } as unknown as TOutput;
+  }
+  const transitionOut = storedOutput as unknown as
+    | RequestAdmissionOutputV1
+    | WithdrawOutputV1
+    | ForgetOutputV1;
+  return {
+    ...transitionOut,
+    replayed: true,
+  } as unknown as TOutput;
+}
+
 /**
- * Evaluates durable operation state for `(scope_ref, principal_id, tool_name, idempotency_key)`
- * per §6.3, §6.4, §6.5, and §6.6.
+ * Evaluates durable idempotent reservation state per M5:
+ * - Every call (including replay) MUST pass current caller authorization first.
+ * - On target-bearing tools (`request_admission`, `withdraw`, `forget`), if
+ *   target-scope authorization has not succeeded (`targetAuthorized === false`),
+ *   returns `NOT_FOUND` (never leaking `DIGEST_CONFLICT`).
+ * - Conflicting `normalized_input_digest` or `target_ref` under the same
+ *   reservation scope and `idempotency_key` fails closed with `DIGEST_CONFLICT`.
+ * - Incomplete `failed_retryable` reservations resume with the frozen
+ *   `candidate_id`, `source_order`, `effective_retention`,
+ *   `effective_reconciliation`, `event_id`, and `event_anchor`.
  */
-export function evaluateIdempotentMutationStateV1<
-  TOutput extends { readonly idempotent_replay: boolean },
->(
+export function evaluateIdempotentMutationStateV1<TOutput>(
   existing: DurableOperationRecordV1<TOutput> | undefined,
-  incomingRequestDigest: Sha256Digest,
+  incoming: {
+    readonly key: DurableOperationKeyV1;
+    readonly normalized_input_digest: Digest;
+    readonly callerAuthorized?: boolean;
+    readonly targetAuthorized?: boolean;
+  },
 ): IdempotentMutationDecisionV1<TOutput> {
+  const isTargetTool = incoming.key.tool_name !== 'engram_memory_capture';
+
+  if (incoming.targetAuthorized === false && isTargetTool) {
+    return {
+      decision: 'reject',
+      error_code: 'NOT_FOUND',
+      retriable: false,
+    };
+  }
+
+  if (incoming.callerAuthorized === false) {
+    return {
+      decision: 'reject',
+      error_code: isTargetTool ? 'NOT_FOUND' : 'UNAUTHORIZED',
+      retriable: false,
+    };
+  }
+
+  if (
+    !isValidIdempotencyKey(incoming.key.idempotency_key) ||
+    !isValidSha256Digest(incoming.normalized_input_digest)
+  ) {
+    return {
+      decision: 'reject',
+      error_code: 'INVALID_SCHEMA',
+      retriable: false,
+    };
+  }
+
   if (!existing) {
     return { decision: 'execute_new' };
   }
 
-  if (existing.request_digest !== incomingRequestDigest) {
+  if (
+    existing.key.principal_namespace !== incoming.key.principal_namespace ||
+    existing.key.tenant_id !== incoming.key.tenant_id ||
+    existing.key.store_id !== incoming.key.store_id ||
+    existing.key.connector_id !== incoming.key.connector_id ||
+    existing.key.scope_ref !== incoming.key.scope_ref ||
+    existing.key.tool_name !== incoming.key.tool_name ||
+    existing.key.tool_contract_version !== incoming.key.tool_contract_version ||
+    existing.key.idempotency_key !== incoming.key.idempotency_key ||
+    existing.key.target_ref !== incoming.key.target_ref ||
+    existing.normalized_input_digest !== incoming.normalized_input_digest
+  ) {
     return {
       decision: 'reject',
-      error_code: 'IDEMPOTENCY_CONFLICT',
-      retryable: false,
+      error_code: 'DIGEST_CONFLICT',
+      retriable: false,
     };
   }
 
   if (existing.status === 'in_flight') {
     return {
       decision: 'reject',
-      error_code: 'CONCURRENCY_CONFLICT',
-      retryable: true,
+      error_code: 'FENCE_LOST',
+      retriable: true,
     };
   }
 
@@ -540,16 +886,58 @@ export function evaluateIdempotentMutationStateV1<
   if (!existing.stored_output) {
     return {
       decision: 'reject',
-      error_code: 'CONCURRENCY_CONFLICT',
-      retryable: true,
+      error_code: 'FENCE_LOST',
+      retriable: true,
     };
   }
 
   return {
     decision: 'replay_completed',
-    output: {
-      ...existing.stored_output,
-      idempotent_replay: true,
-    },
+    output: applyReplayedOutputMarker(
+      incoming.key.tool_name,
+      existing.stored_output,
+    ),
+  };
+}
+
+/**
+ * M2 / M5 Same-Scope Tombstone Recapture Guard:
+ * Recapturing identical canonical content in the same scope after a tombstone
+ * MUST be refused by host policy (`ILLEGAL_TRANSITION` / `UNAUTHORIZED`);
+ * tombstones are irreversible through the agent MCP surface.
+ */
+export function evaluateSameScopeTombstoneRecaptureGuardV1(input: {
+  readonly scope_ref: OpaqueRef;
+  readonly candidate_payload_digest: Digest;
+  readonly tombstoned_payload_digests_in_scope: ReadonlySet<Digest> | readonly Digest[];
+}): PolicyValidationResult<{ readonly allowed: true }> {
+  if (
+    !isValidOpaqueRef(input.scope_ref) ||
+    !isValidSha256Digest(input.candidate_payload_digest)
+  ) {
+    return {
+      ok: false,
+      error_code: 'INVALID_SCHEMA',
+      message: 'Invalid scope_ref or candidate_payload_digest.',
+    };
+  }
+
+  const tombstonedSet =
+    input.tombstoned_payload_digests_in_scope instanceof Set
+      ? input.tombstoned_payload_digests_in_scope
+      : new Set(input.tombstoned_payload_digests_in_scope);
+
+  if (tombstonedSet.has(input.candidate_payload_digest)) {
+    return {
+      ok: false,
+      error_code: 'ILLEGAL_TRANSITION',
+      message:
+        'Recapturing tombstoned content in the same scope is refused; tombstones are irreversible on the agent MCP surface.',
+    };
+  }
+
+  return {
+    ok: true,
+    value: { allowed: true },
   };
 }
