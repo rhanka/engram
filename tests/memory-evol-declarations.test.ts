@@ -4,7 +4,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { createLogicalMemoryBackupV1 } from "../engram-memory/index.js";
+import {
+  createLogicalMemoryBackupV1,
+  MEMORY_RECORD_V2_SCHEMA,
+  REDACTED_MEMORY_RECORD_V2_SCHEMA,
+} from "../engram-memory/index.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SPEC = readFileSync(join(ROOT, "spec/SPEC_EVOL_AGENT_MEMORY_SUBSTRATE.md"), "utf8");
@@ -71,7 +75,7 @@ describe("EVOL declarations match the implemented contracts", () => {
       .toEqual(PROSE_FALSE_POSITIVES);
     expect(new Set(mentionedNames.filter((name) => !PROSE_FALSE_POSITIVES.has(name))))
       .toEqual(new Set(specInterfaces.keys()));
-    expect(specInterfaces.size).toBe(105);
+    expect(specInterfaces.size).toBe(112);
     expect(spec.aliases.size).toBe(18);
   });
 
@@ -102,5 +106,46 @@ describe("EVOL declarations match the implemented contracts", () => {
     expect(SPEC.includes("createLogicalMemoryBackupV1(dependencies: LogicalMemoryBackupDependenciesV1)")).toBe(true);
     expect(SPEC.includes("createMemoryBackupPort("), "stale engine-scoped factory name must be gone").toBe(false);
     expect(typeof createLogicalMemoryBackupV1).toBe("function");
+  });
+
+  it("declares additive V3 recall and V1 point-read neutral facets while keeping V2 declarations unchanged", () => {
+    const newNeutralInterfaces = [
+      "RedactedMemoryRecordV2",
+      "RecallRecordPacketV3",
+      "RecallPacketV3",
+      "MemoryRecallPortV3",
+      "MemoryReadReceiptV1",
+      "MemoryReadPacketV1",
+      "MemoryReadPortV1",
+    ] as const;
+    for (const name of newNeutralInterfaces) {
+      expect(specInterfaces.has(name), `${name} must be declared in EVOL`).toBe(true);
+      expect(codeInterfaces.has(name), `${name} must be declared in engram-memory/contracts`).toBe(true);
+      expect(interfaceShape(specInterfaces.get(name)!)).toEqual(interfaceShape(codeInterfaces.get(name)!));
+    }
+
+    // V2 recall declarations must remain untouched (RecallRecordPacketV2.record stays MemoryRecordV2).
+    const v2RecordPacket = codeInterfaces.get("RecallRecordPacketV2")!;
+    const v2RecordField = v2RecordPacket.members.find((m) => m.name?.getText() === "record") as ts.PropertySignature;
+    expect(v2RecordField.type?.getText()).toBe("MemoryRecordV2");
+
+    const v3RecordPacket = codeInterfaces.get("RecallRecordPacketV3")!;
+    const v3RecordField = v3RecordPacket.members.find((m) => m.name?.getText() === "record") as ts.PropertySignature;
+    expect(v3RecordField.type?.getText()).toBe("RedactedMemoryRecordV2");
+
+    // REDACTED_MEMORY_RECORD_V2_SCHEMA is closed and shares the exact property set of MEMORY_RECORD_V2_SCHEMA.
+    expect(REDACTED_MEMORY_RECORD_V2_SCHEMA.additionalProperties).toBe(false);
+    expect(REDACTED_MEMORY_RECORD_V2_SCHEMA.required).toEqual(["record_id"]);
+    expect(Object.keys(REDACTED_MEMORY_RECORD_V2_SCHEMA.properties).sort())
+      .toEqual(Object.keys(MEMORY_RECORD_V2_SCHEMA.properties).sort());
+  });
+
+  it("records the dated 2026-10-17 D10 amendment keeping graph.json strictly as the code graph", () => {
+    expect(SPEC).toContain(
+      "### D10 — `graph.json` is the code graph; memory uses dedicated authorized interfaces (owner amendment, 2026-10-17)",
+    );
+    expect(SPEC).toContain(
+      "`graph.json` MUST NOT materialize canonical memory records, memory-derived vertices or edges, memory projection envelopes, bodies, identifiers, citations, receipts, or metadata copied from the canonical memory store.",
+    );
   });
 });

@@ -7,7 +7,7 @@ export {
   receiptDigest,
   recordIdFromDigest,
 } from "./digests.js";
-export { CANDIDATE_PAYLOAD_V2_SCHEMA, MEMORY_RECORD_V2_SCHEMA } from "./schemas.js";
+export { CANDIDATE_PAYLOAD_V2_SCHEMA, MEMORY_RECORD_V2_SCHEMA, REDACTED_MEMORY_RECORD_V2_SCHEMA } from "./schemas.js";
 export {
   evaluateTrustEligibility,
   isCanonicalCursor,
