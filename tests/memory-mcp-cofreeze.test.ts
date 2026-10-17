@@ -12,6 +12,27 @@ import { validBinding, validContinuation, expectedBinding, expectedInvocation } 
 import { A05_MUTATION_DIGEST_VECTORS_SPEC_RULE } from './fixtures/memory-mcp-spec-rules.js';
 
 describe('L0a cofreeze counterexamples', () => {
+  it('minor 13 A10-R6 M:706: duplicate persisted policy versions must equal the sealed projection', () => {
+    for (const vector of [A05_MUTATION_DIGEST_VECTORS_SPEC_RULE.vectors.capture_v1, A05_MUTATION_DIGEST_VECTORS_SPEC_RULE.vectors.request_admission_v1, A05_MUTATION_DIGEST_VECTORS_SPEC_RULE.vectors.withdraw_v1]) {
+      const preimage = vector.preimage;
+      const key: any = { ...extractMemoryMutationLookupKeyV1(preimage), tool_name: preimage.tool_name, tool_contract_version: '1.0.0',
+        target_ref: preimage.target.kind === 'capture_source' ? preimage.target.source_ref : preimage.target.candidate_id };
+      const policy_versions = preimage.tool_name === 'engram_memory_capture' ? { tool_name: preimage.tool_name, capture_policy_version: 'capture-policy/v1' }
+        : preimage.tool_name === 'engram_memory_request_admission' ? { tool_name: preimage.tool_name, admission_policy_version: 'admission-policy/v1' } : { tool_name: preimage.tool_name };
+      const incoming: any = { key, preimage, policy_versions, normalized_input_digest: vector.expected_digest, callerAuthorized: true, targetAuthorized: true,
+        active_domain_policy_version: preimage.tool_name === 'engram_memory_capture' ? 'capture-policy/v1' : 'admission-policy/v1' };
+      const record: any = { ...incoming, status: 'failed_retryable', created_at: '2026-10-17T12:00:00.000Z', audit_id: 'audit_01', execution_generation: '1' };
+      expect(evaluateIdempotentMutationStateV1(record, incoming).decision).toBe('resume_incomplete');
+      for (const field of ['capture_policy_version', 'admission_policy_version']) {
+        expect(evaluateIdempotentMutationStateV1({ ...record, [field]: 'different-policy/v2' }, incoming))
+          .toMatchObject({ decision: 'reject', error_code: 'INVALID_SCHEMA' });
+      }
+      for (const field of ['capture_policy_version', 'admission_policy_version'] as const) {
+        if (field in policy_versions) expect(evaluateIdempotentMutationStateV1({ ...record, [field]: policy_versions[field] }, incoming).decision).toBe('resume_incomplete');
+      }
+    }
+  });
+
   it('minor 12 A10-R5 M:322-326,785: invalid audit is a protocol refusal before other projection checks', () => {
     for (const audit_id of [undefined, null, '', 'audit_mcp_l0_default', '\ud800', 'a'.repeat(513)]) {
       for (const expected of [expectedInvocation, undefined]) {
