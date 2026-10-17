@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
+import { buildLineAttributionFixture, inventoryDigest, LiveGitSandbox, nativeLineOracle } from "./helpers/live-git-fixtures.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const liveRoot = join(root, "engram-live");
@@ -499,6 +500,7 @@ function tripwireEnv(binDir: string): NodeJS.ProcessEnv {
     PATH: `${binDir}${process.env.PATH ? `:${process.env.PATH}` : ""}`,
     npm_config_cache: join(dirname(binDir), "npm-cache"),
     npm_config_update_notifier: "false",
+    npm_config_offline: "true",
   };
 }
 
@@ -747,5 +749,73 @@ describe("live package", () => {
       expect(script).toContain("exit 127");
       expect(script).toContain(packed.pythonMarker);
     }
+  });
+
+  it("the packed line attribution producer executes offline on authorized R1 objects through its public entry", () => {
+    const box = new LiveGitSandbox();
+    try {
+      const fixture = buildLineAttributionFixture(box);
+      const before = inventoryDigest(fixture);
+      const retainedBefore = inventoryDigest({ root: fixture.privateRoot });
+      const installedRoot = join(packed.installDir, "node_modules", "@sentropic", "engram-live");
+      for (const name of ["line-attribution", "git-executor"]) {
+        for (const extension of ["js", "d.ts", "d.ts.map"]) {
+          expect(packed.packedPaths).toContain(`dist/${name}.${extension}`);
+        }
+      }
+      const input = { scope: { tenant: "package-g1", clone: "clone-g1" }, generationId: "packed-generation",
+        target: { algorithm: "sha1", oid: fixture.commits.merge }, pathHex: fixture.rawPath.toString("hex"),
+        ranges: [{ start: 1, end: 10 }] };
+      const probe = `
+        import { attributeLines, createSafeGitExecutor, POLICY_VERSION } from '@sentropic/engram-live';
+        import { readFileSync } from 'node:fs';
+        const data = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+        // No checkout/module fallback: this child imports only the extracted
+        // package and Node builtins, with no root installation in its path.
+        let networkCalls = 0;
+        globalThis.fetch = () => { networkCalls++; throw new Error('offline'); };
+        const request = { ...data.input, path: Buffer.from(data.input.pathHex, 'hex'), policyVersion: POLICY_VERSION,
+          options: { version: 'native-blame-options/1', algorithm: 'myers', moveMinCharacters: 1, copyMinCharacters: 1, copySearch: 'all' } };
+        delete request.pathHex;
+        const ports = { git: createSafeGitExecutor({ gitPath: data.gitPath, disabledHooksDir: data.hooks }),
+          async authorize() { return 'authorized'; },
+          async openRetained(q) { return { cwd: data.cwd, configPaths: [data.cwd + '/.git/config'],
+            receipt: { scope: q.scope, ...q.target, receivedAt: 1700000000000, backupRef: 'packed-backup' } }; } };
+        const result = await attributeLines(request, ports);
+        const denied = await attributeLines(request, { ...ports, async authorize() { return 'unauthorized'; } });
+        const lines = result.origins.flatMap(o => Array.from({ length: o.finalRange.end - o.finalRange.start + 1 }, (_, i) => ({
+          commit: o.commit.oid, original: o.originalRange.start + i, final: o.finalRange.start + i,
+          pathHex: Buffer.from(o.path).toString('hex'), author: o.author.name,
+        })));
+        console.log(JSON.stringify({ state: result.state, version: result.calculationVersion, lines,
+          denied: denied.state, deniedOrigins: denied.origins.length, networkCalls }));
+      `;
+      writeFileShim(join(packed.installDir, "line-attribution-probe.mjs"), probe);
+      const dataPath = join(packed.installDir, "line-attribution-input.json");
+      writeFileSync(dataPath, JSON.stringify({ input, cwd: fixture.stores.complete, gitPath: box.trace.executable,
+        hooks: join(box.root, "disabled-hooks") }));
+      const output = runProtectedPhase(process.execPath, ["line-attribution-probe.mjs", dataPath], {
+        cwd: packed.installDir, env: { ...tripwireEnv(packed.tripwireBin), NODE_PATH: "", npm_config_offline: "true" },
+      });
+      recordPhaseMarker(packed.phaseTrace, "line-attribution", packed.pythonMarker);
+      expectNoPython(packed.phaseTrace);
+      const report = JSON.parse(output);
+      expect(report.state).toBe("complete");
+      expect(report.version).toBe("live-line-attribution/1");
+      expect(report.lines).toEqual(nativeLineOracle(box, fixture.repo, input.target.oid, fixture.rawPath, input.ranges, ["-M1", "-C1", "-C1", "-C1"]));
+      expect(report.denied).toBe("partial");
+      expect(report.deniedOrigins).toBe(0);
+      expect(report.networkCalls).toBe(0);
+      expect(inventoryDigest(fixture)).toBe(before);
+      expect(inventoryDigest({ root: fixture.privateRoot })).toBe(retainedBefore);
+      // The producer carries only internal and builtin edges in the actual
+      // tarball, including its declaration's injected executor contract.
+      for (const name of ["line-attribution.js", "git-executor.js"]) {
+        const source = readFileSync(join(installedRoot, "dist", name), "utf8");
+        for (const match of source.matchAll(/(?:from\s*|import\s*)["']([^"']+)["']/g)) {
+          expect(match[1].startsWith("./") || match[1].startsWith("node:"), match[1]).toBe(true);
+        }
+      }
+    } finally { box.dispose(); }
   });
 });
