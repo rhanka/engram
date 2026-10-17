@@ -10,14 +10,18 @@
   "installedQualification": "unverified",
   "sourcePolicy": {
     "engram": {
-      "path": "/home/antoinefa/src/graphify",
-      "access": "read-only-local-clone",
+      "source": "project-root:git rev-parse --path-format=absolute --git-common-dir",
+      "access": "read-only-local-clone-or-verified-history-snapshot",
       "clone": [
         "--local",
         "--no-hardlinks",
         "--no-checkout"
       ],
-      "observedWrites": false
+      "observedWrites": false,
+      "shallowSource": "isolated-native-git-fixture-with-zero-transport-children",
+      "coreAbbrev": 8,
+      "historySnapshot": "live-read-side-history.json",
+      "missingPinnedObject": "fail-explicitly-without-network-or-skip"
     },
     "controls": {
       "access": "native-git-fixtures",
