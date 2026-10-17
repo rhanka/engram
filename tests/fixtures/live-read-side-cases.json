@@ -1,5 +1,2114 @@
 {
   "version": 1,
+  "oracleVersion": "native-git-read-side/1",
+  "preparedWith": {
+    "git": "git version 2.53.0",
+    "node": "v22.22.1",
+    "method": "Native Git controls in isolated local copies; no engram-live code supplies expected answers."
+  },
   "measurement": "unverified",
-  "cases": []
+  "installedQualification": "unverified",
+  "sourcePolicy": {
+    "engram": {
+      "path": "/home/antoinefa/src/graphify",
+      "access": "read-only-local-clone",
+      "clone": [
+        "--local",
+        "--no-hardlinks",
+        "--no-checkout"
+      ],
+      "observedWrites": false
+    },
+    "controls": {
+      "access": "native-git-fixtures",
+      "observedWrites": false,
+      "setupLocation": "os-temp-outside-observed-worktrees"
+    },
+    "network": false,
+    "dependenciesAdded": false,
+    "substitutions": "Original H/S repositories are outside the authorized data scope. F_* pins replace their scenario types with constructed controls, not the original analysis C revisions. No actual H/S state, integration, reader delivery or installed acceptance is established."
+  },
+  "revisions": {
+    "E": {
+      "repository": "engram",
+      "algorithm": "sha1",
+      "oid": "545a57b8911ab108e84fa1778e0f268fe11bf1de"
+    },
+    "E0": {
+      "repository": "engram",
+      "algorithm": "sha1",
+      "oid": "e432240f8d5ea670efe672bfac52969d944cd59f"
+    },
+    "E_G1_ORIGIN": {
+      "repository": "engram",
+      "algorithm": "sha1",
+      "oid": "13c18c964bc9d7c6d7b46d116f11da8b3ed9f08d"
+    },
+    "E_CAP": {
+      "repository": "engram",
+      "algorithm": "sha1",
+      "oid": "ce26c58de1e93a6b554896ed0bd17a92f24de95e"
+    },
+    "E_STATS": {
+      "repository": "engram",
+      "algorithm": "sha1",
+      "oid": "c779e7d54eb25e4f062afcdd3440ac98bbb1d961"
+    },
+    "E_COMPARE": {
+      "repository": "engram",
+      "algorithm": "sha1",
+      "oid": "483d73e0170b5fe2083250898733a2d15d127b86"
+    },
+    "E_INGEST": {
+      "repository": "engram",
+      "algorithm": "sha1",
+      "oid": "35b5c26833ffa0d5bb140a1c130781187d8df0db"
+    },
+    "F_H0": {
+      "repository": "h2a",
+      "algorithm": "sha1",
+      "oid": "397cf37329c28d3c24cff250f43f8989a1a40187"
+    },
+    "F_DETACH": {
+      "repository": "h2a",
+      "algorithm": "sha1",
+      "oid": "48ec02772563bbc148e31e7f7fb0f58f136ae613"
+    },
+    "F_H": {
+      "repository": "h2a",
+      "algorithm": "sha1",
+      "oid": "05f32ff674aaff6622c0f638f1b80457d6a9eddb"
+    },
+    "F_HP": {
+      "repository": "h2a",
+      "algorithm": "sha1",
+      "oid": "0410a59c96cf385957e2e1d25f2dc48b866aa409"
+    },
+    "F_HR": {
+      "repository": "h2a",
+      "algorithm": "sha1",
+      "oid": "a14b42689f5f554104091f2c04b76d8a3d4a87d2"
+    },
+    "F_S0": {
+      "repository": "sentropic",
+      "algorithm": "sha1",
+      "oid": "f95c7497fbdf269e2e2d29abfe8639c33fd5be50"
+    },
+    "F_S": {
+      "repository": "sentropic",
+      "algorithm": "sha1",
+      "oid": "7541deb451b02f64d45656e124166e47cd2713b7"
+    },
+    "F_K3": {
+      "repository": "sentropic",
+      "algorithm": "sha1",
+      "oid": "785c21ea5782a05a67c99e3fc6610cf47acca2a0"
+    },
+    "F_K4": {
+      "repository": "sentropic",
+      "algorithm": "sha1",
+      "oid": "7b887be8d480212d34e8eab033acfd9ef3d3154a"
+    },
+    "F_JOIN": {
+      "repository": "h2a",
+      "algorithm": "sha1",
+      "oid": "c3c465a71dc92ed4bdd553eb939e32ba69a69c5b"
+    }
+  },
+  "protocol": {
+    "cases": 20,
+    "baseline": [
+      "native Git",
+      "available engram tools",
+      "accessible document search",
+      "accessible memory tools"
+    ],
+    "arms": [
+      "T0-current-available-workflow",
+      "existing-planned-readers-only",
+      "T1-native-read-side-with-G1-G5"
+    ],
+    "permissionsAndPinsIdenticalAcrossArms": true,
+    "oracleAccess": "verifier-only-hide-from-operators",
+    "freezeExpectationsBeforeTiming": true,
+    "timing": "question-received-to-usable-verified-answer-including-search-errors-recovery-retries",
+    "counterbalance": "T0/T1-order-across-operators",
+    "firstAnswersSeparateFromWarm": true,
+    "separateResources": [
+      "bootstrap",
+      "CPU",
+      "RSS",
+      "storage",
+      "processes"
+    ],
+    "recordEnvironment": [
+      "commands",
+      "hardware",
+      "tool-versions",
+      "artifact-identities",
+      "prototype-or-installed",
+      "permissions",
+      "coverage"
+    ],
+    "correctness": [
+      "OIDs",
+      "paths",
+      "ranges",
+      "ordered-parents",
+      "generations",
+      "citations",
+      "authorization"
+    ],
+    "reasonsRequireExplicitSources": true,
+    "failedCasesRetained": true,
+    "deniedOrFastIncompleteRefusalIsNotGain": true,
+    "recoveryRequiredWhenBaselineCanAnswer": true,
+    "score": "median(1 - T1_i/T0_i)",
+    "population": "all-20-first-investigations",
+    "continuationThreshold": 0.3,
+    "constantQualityRequired": true,
+    "thresholdRetuning": false,
+    "executionPilot": {
+      "authorized": false,
+      "additionalGainThreshold": 0.2,
+      "includedCosts": [
+        "preparation",
+        "copying",
+        "verification",
+        "recovery",
+        "cleanup"
+      ]
+    },
+    "finalQualification": "installed-compatible-artifacts-and-all-applicable-engineering-privacy-gates",
+    "results": "unverified"
+  },
+  "cases": [
+    {
+      "id": 1,
+      "question": "E: which commit and author introduced delivered: false in engram-live/integration.ts?",
+      "type": "line-origin",
+      "corpus": "engram-history",
+      "pins": {
+        "E": {
+          "algorithm": "sha1",
+          "oid": "545a57b8911ab108e84fa1778e0f268fe11bf1de"
+        },
+        "E_G1_ORIGIN": {
+          "algorithm": "sha1",
+          "oid": "13c18c964bc9d7c6d7b46d116f11da8b3ed9f08d"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "engram"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "oracle-ready",
+        "answer": "At E line 321, origin line 221 in the same path belongs to E_G1_ORIGIN, authored by Fabien Antoine. Line 196 is the separate DTO declaration.",
+        "reason": null
+      },
+      "oracles": [
+        {
+          "id": "line-origin",
+          "repository": "engram",
+          "argv": [
+            "blame",
+            "--root",
+            "--line-porcelain",
+            "--no-textconv",
+            "--encoding=none",
+            "--ignore-revs-file",
+            "",
+            "-L",
+            "321,321",
+            "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+            "--",
+            "engram-live/integration.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 448,
+            "sha256": "da912b0ea1bfb3112bd2654b42cbb291cfb6190ba75a59c9752dbca04f84880f",
+            "stdout": "13c18c964bc9d7c6d7b46d116f11da8b3ed9f08d 221 321 1\nauthor Fabien Antoine\nauthor-mail <antoinefa@users.noreply.github.com>\nauthor-time 1791777381\nauthor-tz -0400\ncommitter Fabien Antoine\ncommitter-mail <antoinefa@users.noreply.github.com>\ncommitter-time 1791811526\ncommitter-tz -0400\nsummary feat(live-git): neutral @sentropic/engram-live package without Python (L1b, wip under review)\nfilename engram-live/integration.ts\n\t        delivered: false,\n",
+            "contains": [
+              "13c18c964bc9d7c6d7b46d116f11da8b3ed9f08d 221 321 1",
+              "author Fabien Antoine",
+              "\t        delivered: false,"
+            ]
+          }
+        },
+        {
+          "id": "origin-message",
+          "repository": "engram",
+          "argv": [
+            "show",
+            "-s",
+            "--format=%B",
+            "13c18c964bc9d7c6d7b46d116f11da8b3ed9f08d"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 95,
+            "sha256": "05f3adc76f512e3c8a0ac2af4e09661f143532ecdfdb9df02e191ad57677aec0",
+            "stdout": "feat(live-git): neutral @sentropic/engram-live package without Python (L1b, wip under review)\n\n",
+            "contains": [
+              "neutral @sentropic/engram-live package"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "question": "E: when and how did the implicit 200-commit cap disappear from src/extract-git.ts?",
+      "type": "change-history",
+      "corpus": "engram-history",
+      "pins": {
+        "E": {
+          "algorithm": "sha1",
+          "oid": "545a57b8911ab108e84fa1778e0f268fe11bf1de"
+        },
+        "E_CAP": {
+          "algorithm": "sha1",
+          "oid": "ce26c58de1e93a6b554896ed0bd17a92f24de95e"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "engram"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "oracle-ready",
+        "answer": "E_CAP removed DEFAULT_MAX_COMMITS=200 on 2026-10-12. Default traversal is unbounded; explicit count and age bounds remain and declare partial coverage.",
+        "reason": null
+      },
+      "oracles": [
+        {
+          "id": "cap-history",
+          "repository": "engram",
+          "argv": [
+            "log",
+            "--format=%H %s",
+            "-S",
+            "const DEFAULT_MAX_COMMITS = 200;",
+            "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+            "--",
+            "src/extract-git.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 238,
+            "sha256": "6ea0585ac6b2af9b13dec270cbc45ed86d881519313166bfaa260ef3e2a79898",
+            "stdout": "ce26c58de1e93a6b554896ed0bd17a92f24de95e feat(live-git): bounded streaming Git reads with completeness proofs (L2a)\n36d0f24cb417874c982afdfc8a628353da0d4e2b feat(extract): first-class git extractor — Commit/Branch nodes, windowed (WP2)\n",
+            "contains": [
+              "ce26c58de1e93a6b554896ed0bd17a92f24de95e"
+            ]
+          }
+        },
+        {
+          "id": "cap-patch",
+          "repository": "engram",
+          "argv": [
+            "show",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--format=fuller",
+            "ce26c58de1e93a6b554896ed0bd17a92f24de95e",
+            "--",
+            "src/extract-git.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 5395,
+            "sha256": "297a96dc94949b21284c361e2a736ddff606bc1ec56a6f902d75af5c7ad020f1",
+            "contains": [
+              "-const DEFAULT_MAX_COMMITS = 200;",
+              "+  const args = [\"rev-list\"];",
+              "partial: true"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "question": "Where was agent-stats in E0, why is it absent at E, and what is the package-path transfer control?",
+      "type": "path-transfer-and-reason",
+      "corpus": "constructed-control",
+      "pins": {
+        "E0": {
+          "algorithm": "sha1",
+          "oid": "e432240f8d5ea670efe672bfac52969d944cd59f"
+        },
+        "E": {
+          "algorithm": "sha1",
+          "oid": "545a57b8911ab108e84fa1778e0f268fe11bf1de"
+        },
+        "E_STATS": {
+          "algorithm": "sha1",
+          "oid": "c779e7d54eb25e4f062afcdd3440ac98bbb1d961"
+        },
+        "F_H0": {
+          "algorithm": "sha1",
+          "oid": "397cf37329c28d3c24cff250f43f8989a1a40187"
+        },
+        "F_H": {
+          "algorithm": "sha1",
+          "oid": "05f32ff674aaff6622c0f638f1b80457d6a9eddb"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "engram",
+          "h2a"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "capacité absente",
+        "answer": "E0 contains _extracted/agent-stats-h2a-module; E does not. E_STATS explicitly documents relocation to h2a. The constructed H control independently moves staging/agent-stats to packages/agent-stats; it proves no real H checkout state.",
+        "reason": {
+          "state": "documented",
+          "value": "The activity staging module now lives in h2a as the @sentropic/agent-stats package",
+          "evidence": [
+            "stats-reason"
+          ]
+        },
+        "missingCapabilities": [
+          "G3"
+        ]
+      },
+      "oracles": [
+        {
+          "id": "stats-before",
+          "repository": "engram",
+          "argv": [
+            "ls-tree",
+            "-r",
+            "--name-only",
+            "e432240f8d5ea670efe672bfac52969d944cd59f",
+            "--",
+            "_extracted/agent-stats-h2a-module/"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 997,
+            "sha256": "4a7afc6e6e7fbd19f5e2198f7100cde742f67df74b0293602d13629c1e331b83",
+            "stdout": "_extracted/agent-stats-h2a-module/README.md\n_extracted/agent-stats-h2a-module/package.json\n_extracted/agent-stats-h2a-module/src/agy-chat.ts\n_extracted/agent-stats-h2a-module/src/claude-transcript.ts\n_extracted/agent-stats-h2a-module/src/cli.ts\n_extracted/agent-stats-h2a-module/src/codex-rollout.ts\n_extracted/agent-stats-h2a-module/src/correlate.ts\n_extracted/agent-stats-h2a-module/src/discover.ts\n_extracted/agent-stats-h2a-module/src/git-evidence.ts\n_extracted/agent-stats-h2a-module/src/identity.ts\n_extracted/agent-stats-h2a-module/src/index.ts\n_extracted/agent-stats-h2a-module/src/normalize.ts\n_extracted/agent-stats-h2a-module/src/project-graph.ts\n_extracted/agent-stats-h2a-module/src/redact.ts\n_extracted/agent-stats-h2a-module/src/registry.ts\n_extracted/agent-stats-h2a-module/src/report.ts\n_extracted/agent-stats-h2a-module/src/stats.ts\n_extracted/agent-stats-h2a-module/src/store.ts\n_extracted/agent-stats-h2a-module/src/track-join.ts\n_extracted/agent-stats-h2a-module/src/types.ts\n",
+            "contains": [
+              "_extracted/agent-stats-h2a-module/src/index.ts"
+            ]
+          }
+        },
+        {
+          "id": "stats-after",
+          "repository": "engram",
+          "argv": [
+            "ls-tree",
+            "-r",
+            "--name-only",
+            "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+            "--",
+            "_extracted/agent-stats-h2a-module/"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout": ""
+          }
+        },
+        {
+          "id": "stats-reason",
+          "repository": "engram",
+          "argv": [
+            "show",
+            "-s",
+            "--format=%B",
+            "c779e7d54eb25e4f062afcdd3440ac98bbb1d961"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 420,
+            "sha256": "9147b35a2f8a540583fbbe69f14d4c525cf7f2948e6dd741453e7cbf805a50bc",
+            "stdout": "refactor(memory): relocate the agent-stats staging module to h2a (F12)\n\nThe activity staging module now lives in h2a as the @sentropic/agent-stats\npackage (h2a commit b503d9a7, imported from engram e432240f). This removes\nthe staging directory, its seven test files and fixtures, keeps the root CLI\nassertion in memory-activity-boundary, and pins the absence of the module\nand of any h2a coupling in memory-neutrality.\n\n",
+            "contains": [
+              "now lives in h2a",
+              "imported from engram e432240f"
+            ]
+          }
+        },
+        {
+          "id": "stats-move-control",
+          "repository": "h2a",
+          "argv": [
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--name-status",
+            "-M100%",
+            "397cf37329c28d3c24cff250f43f8989a1a40187",
+            "05f32ff674aaff6622c0f638f1b80457d6a9eddb",
+            "--",
+            "staging/",
+            "packages/"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 64,
+            "sha256": "ed23d1f4af0d654cfae1499011f5298fed99f312b6e7dcc31e65acc7d0809c68",
+            "stdout": "R100\tstaging/agent-stats/index.ts\tpackages/agent-stats/index.ts\n",
+            "contains": [
+              "R100\tstaging/agent-stats/index.ts\tpackages/agent-stats/index.ts"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "question": "What changed in engram-live/ between E0 and E?",
+      "type": "endpoint-diff",
+      "corpus": "engram-history",
+      "pins": {
+        "E0": {
+          "algorithm": "sha1",
+          "oid": "e432240f8d5ea670efe672bfac52969d944cd59f"
+        },
+        "E": {
+          "algorithm": "sha1",
+          "oid": "545a57b8911ab108e84fa1778e0f268fe11bf1de"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "engram"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "oracle-ready",
+        "answer": "Twelve paths changed: ten added modules and modifications to contracts.ts and integration.ts. The frozen full patch digest covers every difference, not only a selected excerpt.",
+        "reason": null
+      },
+      "oracles": [
+        {
+          "id": "live-paths",
+          "repository": "engram",
+          "argv": [
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--name-status",
+            "--no-renames",
+            "e432240f8d5ea670efe672bfac52969d944cd59f",
+            "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+            "--",
+            "engram-live/"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 333,
+            "sha256": "02ec02d1877b152d36002efc0ca64a183f0a190dd10e696f16c36cb8630e11e9",
+            "stdout": "A\tengram-live/analysis-cache.ts\nA\tengram-live/code-analysis.ts\nA\tengram-live/comparisons.ts\nA\tengram-live/content-policy.ts\nM\tengram-live/contracts.ts\nA\tengram-live/coverage.ts\nA\tengram-live/diffs.ts\nM\tengram-live/integration.ts\nA\tengram-live/reconcile.ts\nA\tengram-live/scheduler.ts\nA\tengram-live/snapshots.ts\nA\tengram-live/watch.ts\n"
+          }
+        },
+        {
+          "id": "live-full-patch",
+          "repository": "engram",
+          "argv": [
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--full-index",
+            "--no-renames",
+            "e432240f8d5ea670efe672bfac52969d944cd59f",
+            "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+            "--",
+            "engram-live/"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 307918,
+            "sha256": "1c215b5f069f5436e0a0e55e20ed1090c42da13f56c401baab487434cdf1cdaa"
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "question": "How did compareBranches evolve through E to verify every merge-base?",
+      "type": "symbol-history",
+      "corpus": "engram-history",
+      "pins": {
+        "E": {
+          "algorithm": "sha1",
+          "oid": "545a57b8911ab108e84fa1778e0f268fe11bf1de"
+        },
+        "E_COMPARE": {
+          "algorithm": "sha1",
+          "oid": "483d73e0170b5fe2083250898733a2d15d127b86"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "engram"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "oracle-ready",
+        "answer": "E_COMPARE introduces compareBranches. Its history through E has one path-changing commit. Complete ancestry is validated, claimed merge-base sets are checked, and every verified base gets a tree pair; incomplete evidence stays partial. Production parser delivery remains L5-P.",
+        "reason": null
+      },
+      "oracles": [
+        {
+          "id": "comparison-history",
+          "repository": "engram",
+          "argv": [
+            "log",
+            "--format=%H %s",
+            "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+            "--",
+            "engram-live/comparisons.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 120,
+            "sha256": "9d350546516d2a886e275748e43af45fb99dfbb7ef84ce54f0b29ec26e9db765",
+            "stdout": "483d73e0170b5fe2083250898733a2d15d127b86 feat(live-git): context-bound code analysis and pinned branch comparisons (L5)\n",
+            "contains": [
+              "483d73e0170b5fe2083250898733a2d15d127b86"
+            ]
+          }
+        },
+        {
+          "id": "comparison-symbol",
+          "repository": "engram",
+          "argv": [
+            "cat-file",
+            "blob",
+            "545a57b8911ab108e84fa1778e0f268fe11bf1de:engram-live/comparisons.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 27031,
+            "sha256": "66c5cc40053529725fb16f567c822be9bdde5295477349ea65b553a6bb046357",
+            "contains": [
+              "export async function compareBranches",
+              "merge-base set differs from verified ancestry",
+              "for (const mergeBase of verifiedBases)"
+            ]
+          }
+        },
+        {
+          "id": "comparison-tests",
+          "repository": "engram",
+          "argv": [
+            "cat-file",
+            "blob",
+            "545a57b8911ab108e84fa1778e0f268fe11bf1de:tests/live-branch-comparison.test.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 17290,
+            "sha256": "8d4fcde42dd5828bcabb4a3fa5273c6122ae31981e9eeea6c9642aa88788ed06",
+            "contains": [
+              "merge"
+            ]
+          }
+        },
+        {
+          "id": "comparison-limits",
+          "repository": "engram",
+          "argv": [
+            "show",
+            "-s",
+            "--format=%B",
+            "483d73e0170b5fe2083250898733a2d15d127b86"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 946,
+            "sha256": "af241da4602d68f3d45d02d88e959d5bd8984a19ecae3c4a13e0ca3daae748a1",
+            "stdout": "feat(live-git): context-bound code analysis and pinned branch comparisons (L5)\n\nParse and resolution caches are keyed by the full analysis context\n(clone/tenant scope, tree, path, exact content, configuration, dependencies,\ngrammar availability and analyzer version) through an injected host store;\nwithout a store the analysis runs uncached and never writes to the source.\nA cached entry is served only when identical to a fresh result, foreign or\nmis-bound payloads are refused, configuration resolution (including\npackage-name extends) goes through the pinned read port, and completeness is\ncomputed from the expected relations instead of being declared. Branch\ncomparisons pin PR base, default base, every best merge-base and every merge\nparent, verify their proofs, and only report complete when each expected\ndifference was computed. Packaged reused extraction and the production parse\nadapter move to lot L5-P, ratified by the conductor.\n\n",
+            "contains": [
+              "every best merge-base",
+              "L5-P"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "question": "Why does ingestActivity produce pending candidates rather than admitted memories?",
+      "type": "documented-reason",
+      "corpus": "engram-history",
+      "pins": {
+        "E": {
+          "algorithm": "sha1",
+          "oid": "545a57b8911ab108e84fa1778e0f268fe11bf1de"
+        },
+        "E_INGEST": {
+          "algorithm": "sha1",
+          "oid": "35b5c26833ffa0d5bb140a1c130781187d8df0db"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "engram"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "capacité absente",
+        "answer": "The engine keeps ordinary captures pending until requestAdmission. E_INGEST explicitly implements D-8 A; the pinned decision source confirms the host pull and prohibition on source admission. No admitted-memory citation chain is available.",
+        "reason": {
+          "state": "documented",
+          "value": "Keep activity sources unable to admit captures and preserve existing contracts. Implement owner decision D-8 A.",
+          "evidence": [
+            "ingestion-reason",
+            "ingestion-decision"
+          ]
+        },
+        "missingCapabilities": [
+          "G3"
+        ]
+      },
+      "oracles": [
+        {
+          "id": "ingestion-code",
+          "repository": "engram",
+          "argv": [
+            "cat-file",
+            "blob",
+            "545a57b8911ab108e84fa1778e0f268fe11bf1de:engram-memory/engine.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 102852,
+            "sha256": "d479965de192cfa44969d9e956bf21f07d1e83704d430bc01466a18dce81883d",
+            "contains": [
+              "items stay pending until requestAdmission",
+              "ingestActivity: async"
+            ]
+          }
+        },
+        {
+          "id": "ingestion-reason",
+          "repository": "engram",
+          "argv": [
+            "show",
+            "-s",
+            "--format=%B",
+            "35b5c26833ffa0d5bb140a1c130781187d8df0db"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 481,
+            "sha256": "31a8b1fc5d187dbeeb765caf62343c91ca1b0e0c49f1c27c3dd4a3b289ef5d04",
+            "stdout": "feat(memory): ingest agent activity as pending captures (X1)\n\nAdd a host-invoked pull method that ingests agent activity as ordinary pending captures.\n\nPersist durable idempotence by (source, sequence, evidence id) at every lifecycle stage across all backends, preserving it through backup and restore. Reject modified evidence with DIGEST_CONFLICT before any write.\n\nKeep activity sources unable to admit captures and preserve existing contracts. Implement owner decision D-8 A.\n\n",
+            "contains": [
+              "Keep activity sources unable to admit captures",
+              "D-8 A"
+            ]
+          }
+        },
+        {
+          "id": "ingestion-decision",
+          "repository": "engram",
+          "argv": [
+            "cat-file",
+            "blob",
+            "545a57b8911ab108e84fa1778e0f268fe11bf1de:spec/SPEC_MEMORY_FINALIZATION.md"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 105047,
+            "sha256": "9d0a0de4b81416573076e0f913b3c18bc37e379e6bb747bcfae22fb665291389",
+            "contains": [
+              "D-8=A",
+              "The source cannot admit: items stay `pending` until `requestAdmission`"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "question": "What is the latest authorized index/worktree state of graphify-wt-livegit?",
+      "type": "latest-local-state",
+      "corpus": "engram-history",
+      "pins": {
+        "E": {
+          "algorithm": "sha1",
+          "oid": "545a57b8911ab108e84fa1778e0f268fe11bf1de"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "engram"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "capture-absent",
+        "answer": "No authorized stable capture was supplied. The committed E tree cannot establish a current index, worktree, conflicts or a generation. Do not inspect that worktree or reconstruct superseded local states.",
+        "reason": null,
+        "capture": null,
+        "generation": null,
+        "recoveryRequired": true
+      },
+      "oracles": [
+        {
+          "id": "committed-endpoint-only",
+          "repository": "engram",
+          "argv": [
+            "rev-parse",
+            "--verify",
+            "545a57b8911ab108e84fa1778e0f268fe11bf1de^{tree}"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 41,
+            "sha256": "cdde260c2a42c868842c0b67a22019b6451b2b443aad41e5f99302642dd32130",
+            "stdout": "9ca18ccff658b8f284d369f0c5d9b31d86afeade\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "question": "In the H control, where did worktree add --detach … HEAD in resolveJobCwd originate, and why?",
+      "type": "line-origin-and-unknown-reason",
+      "corpus": "constructed-control",
+      "pins": {
+        "F_H": {
+          "algorithm": "sha1",
+          "oid": "05f32ff674aaff6622c0f638f1b80457d6a9eddb"
+        },
+        "F_DETACH": {
+          "algorithm": "sha1",
+          "oid": "48ec02772563bbc148e31e7f7fb0f58f136ae613"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "h2a"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "capacité absente",
+        "answer": "The detached command originates at F_DETACH line 1 in src/delegate.ts, authored by L0 Fixture. The message records the change without documenting a reason: inconnu.",
+        "reason": {
+          "state": "inconnu",
+          "value": "inconnu",
+          "evidence": []
+        },
+        "missingCapabilities": [
+          "G3"
+        ]
+      },
+      "oracles": [
+        {
+          "id": "detach-origin",
+          "repository": "h2a",
+          "argv": [
+            "blame",
+            "--root",
+            "--line-porcelain",
+            "--no-textconv",
+            "-L",
+            "1,1",
+            "05f32ff674aaff6622c0f638f1b80457d6a9eddb",
+            "--",
+            "src/delegate.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 470,
+            "sha256": "b29fade1564b409a48a34d6587f106db4b033dfee895d397e494c9de53c838bc",
+            "stdout": "48ec02772563bbc148e31e7f7fb0f58f136ae613 1 1 1\nauthor L0 Fixture\nauthor-mail <l0@example.invalid>\nauthor-time 1700086400\nauthor-tz +0000\ncommitter L0 Fixture\ncommitter-mail <l0@example.invalid>\ncommitter-time 1700086400\ncommitter-tz +0000\nsummary Use detached worktrees\nprevious 397cf37329c28d3c24cff250f43f8989a1a40187 src/delegate.ts\nfilename src/delegate.ts\n\texport function resolveJobCwd(jobPath: string) { return ['worktree', 'add', '--detach', jobPath, 'HEAD']; }\n",
+            "contains": [
+              "48ec02772563bbc148e31e7f7fb0f58f136ae613",
+              "author L0 Fixture"
+            ]
+          }
+        },
+        {
+          "id": "detach-message",
+          "repository": "h2a",
+          "argv": [
+            "show",
+            "-s",
+            "--format=%B",
+            "48ec02772563bbc148e31e7f7fb0f58f136ae613"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 24,
+            "sha256": "1f58f765b43198ae2d3afa65e9a6e8b3309412f7f0d41b57ce19861932faf003",
+            "stdout": "Use detached worktrees\n\n",
+            "contains": [
+              "Use detached worktrees"
+            ]
+          }
+        },
+        {
+          "id": "detach-patch",
+          "repository": "h2a",
+          "argv": [
+            "show",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--format=fuller",
+            "48ec02772563bbc148e31e7f7fb0f58f136ae613",
+            "--",
+            "src/delegate.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 561,
+            "sha256": "3ed3fedbbae464c5a71e4def5382bbdf7c933603f257f44e0b40f8d44181c9dc",
+            "stdout": "commit 48ec02772563bbc148e31e7f7fb0f58f136ae613\nAuthor:     L0 Fixture <l0@example.invalid>\nAuthorDate: Wed Nov 15 22:13:20 2023 +0000\nCommit:     L0 Fixture <l0@example.invalid>\nCommitDate: Wed Nov 15 22:13:20 2023 +0000\n\n    Use detached worktrees\n\ndiff --git a/src/delegate.ts b/src/delegate.ts\nindex ccb9198..e79ac11 100644\n--- a/src/delegate.ts\n+++ b/src/delegate.ts\n@@ -1 +1 @@\n-export function resolveJobCwd(jobPath: string) { return jobPath; }\n+export function resolveJobCwd(jobPath: string) { return ['worktree', 'add', '--detach', jobPath, 'HEAD']; }\n",
+            "contains": [
+              "'worktree', 'add', '--detach', jobPath, 'HEAD'"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "question": "In the H control, what does HP add for GitHub PRs and what remains outside the transport?",
+      "type": "pr-transport-diff",
+      "corpus": "constructed-control",
+      "pins": {
+        "F_H": {
+          "algorithm": "sha1",
+          "oid": "05f32ff674aaff6622c0f638f1b80457d6a9eddb"
+        },
+        "F_HP": {
+          "algorithm": "sha1",
+          "oid": "0410a59c96cf385957e2e1d25f2dc48b866aa409"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "h2a"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "oracle-ready",
+        "answer": "F_HP adds number/title/headOid metadata transport and changes the shared transport field. It explicitly excludes Git object acquisition; metadata is not proof that PR objects were retained.",
+        "reason": null
+      },
+      "oracles": [
+        {
+          "id": "pr-paths",
+          "repository": "h2a",
+          "argv": [
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--name-status",
+            "05f32ff674aaff6622c0f638f1b80457d6a9eddb",
+            "0410a59c96cf385957e2e1d25f2dc48b866aa409"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 44,
+            "sha256": "3a126f4b8aeff64d2ce901b9ce859b1e5a646d88a5ec61362062e57d00f8dab9",
+            "stdout": "M\tsrc/live-contract.ts\nA\tsrc/live-github.ts\n"
+          }
+        },
+        {
+          "id": "pr-transport",
+          "repository": "h2a",
+          "argv": [
+            "cat-file",
+            "blob",
+            "0410a59c96cf385957e2e1d25f2dc48b866aa409:src/live-github.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 124,
+            "sha256": "6f7ea845403aa1d0ab73ff31635f62bc6f2b2b1bafc9ace0c4353c69f40e6dee",
+            "stdout": "// PR metadata only; Git objects use a separate transport.\nexport const pullRequestFields = ['number', 'title', 'headOid'];\n",
+            "contains": [
+              "PR metadata only",
+              "Git objects use a separate transport"
+            ]
+          }
+        },
+        {
+          "id": "pr-message",
+          "repository": "h2a",
+          "argv": [
+            "show",
+            "-s",
+            "--format=%B",
+            "0410a59c96cf385957e2e1d25f2dc48b866aa409"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 69,
+            "sha256": "258ef332e893076942f7fb138652db3d316f1a7a19a13947aec2ef126f09d248",
+            "stdout": "Add pull request metadata transport; exclude Git object acquisition\n\n",
+            "contains": [
+              "exclude Git object acquisition"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "question": "In the H control, what does HR add for branch deletion, and is it integrated at H?",
+      "type": "retention-and-ancestry",
+      "corpus": "constructed-control",
+      "pins": {
+        "F_H": {
+          "algorithm": "sha1",
+          "oid": "05f32ff674aaff6622c0f638f1b80457d6a9eddb"
+        },
+        "F_HR": {
+          "algorithm": "sha1",
+          "oid": "a14b42689f5f554104091f2c04b76d8a3d4a87d2"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "h2a"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "oracle-ready",
+        "answer": "F_HR adds private retained refs. It is not an ancestor of F_H; the control explicitly marks installed qualification unverified. Source code and ancestry do not certify installed retention or crash recovery.",
+        "reason": null,
+        "installedQualification": "unverified"
+      },
+      "oracles": [
+        {
+          "id": "retention-paths",
+          "repository": "h2a",
+          "argv": [
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--name-status",
+            "05f32ff674aaff6622c0f638f1b80457d6a9eddb",
+            "a14b42689f5f554104091f2c04b76d8a3d4a87d2"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 47,
+            "sha256": "28241813cda8d2c2d925c90ae8e80b113e004b8fbf25891cbbba49cdcd5d141c",
+            "stdout": "M\tsrc/live-contract.ts\nA\tsrc/live-retention.ts\n"
+          }
+        },
+        {
+          "id": "retention-code",
+          "repository": "h2a",
+          "argv": [
+            "cat-file",
+            "blob",
+            "a14b42689f5f554104091f2c04b76d8a3d4a87d2:src/live-retention.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 150,
+            "sha256": "ea57a7961b8a682e9cf9a465750022fdbc91d3f6ab30491d676ca56f92328d81",
+            "stdout": "// Private retained refs survive source branch deletion. Installed qualification has not run.\nexport const retainedPrefix = 'refs/private/retained/';\n",
+            "contains": [
+              "refs/private/retained/",
+              "Installed qualification has not run"
+            ]
+          }
+        },
+        {
+          "id": "retention-not-integrated",
+          "repository": "h2a",
+          "argv": [
+            "merge-base",
+            "--is-ancestor",
+            "a14b42689f5f554104091f2c04b76d8a3d4a87d2",
+            "05f32ff674aaff6622c0f638f1b80457d6a9eddb"
+          ],
+          "expected": {
+            "status": 1,
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "question": "In the H control, why does live-registration.ts deny local authority by default?",
+      "type": "authority-reason",
+      "corpus": "constructed-control",
+      "pins": {
+        "F_H": {
+          "algorithm": "sha1",
+          "oid": "05f32ff674aaff6622c0f638f1b80457d6a9eddb"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "h2a"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "capacité absente",
+        "answer": "The fixture requires a verified principal, as its L7a comment explicitly states. This does not establish an actual h2a authorization path or an admitted decision citation.",
+        "reason": {
+          "state": "inconnu",
+          "value": "inconnu",
+          "evidence": []
+        },
+        "missingCapabilities": [
+          "G3"
+        ]
+      },
+      "oracles": [
+        {
+          "id": "registration-code",
+          "repository": "h2a",
+          "argv": [
+            "cat-file",
+            "blob",
+            "05f32ff674aaff6622c0f638f1b80457d6a9eddb:src/live-registration.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 150,
+            "sha256": "f1899beb80cb193686bdaef83a002b4d3256697221d3023e348455ac23cf3629",
+            "stdout": "// L7a: only a verified principal can grant local authority.\nexport function localAuthority(verifiedPrincipal: boolean) { return verifiedPrincipal; }\n",
+            "contains": [
+              "L7a: only a verified principal",
+              "return verifiedPrincipal"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "question": "In the H control, why does recallMemory distinguish refusal from an empty result?",
+      "type": "refusal-versus-empty",
+      "corpus": "constructed-control",
+      "pins": {
+        "F_H": {
+          "algorithm": "sha1",
+          "oid": "05f32ff674aaff6622c0f638f1b80457d6a9eddb"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "h2a"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "capacité absente",
+        "answer": "The fixture returns unauthorized on refusal and complete/items:[] for an authorized empty answer. The code distinguishes these states; no recorded decision or actual host integration was supplied.",
+        "reason": {
+          "state": "inconnu",
+          "value": "inconnu",
+          "evidence": []
+        },
+        "missingCapabilities": [
+          "G3"
+        ]
+      },
+      "oracles": [
+        {
+          "id": "recall-contract",
+          "repository": "h2a",
+          "argv": [
+            "cat-file",
+            "blob",
+            "05f32ff674aaff6622c0f638f1b80457d6a9eddb:src/memory.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 220,
+            "sha256": "67546b53e5a2c17a2f918e8c6d867f0968d95cce713a7422d7cff1f864d907c9",
+            "stdout": "// Refusal is a typed unavailable result; an authorized empty result has items: [].\nexport function recallMemory(authorized: boolean) { return authorized ? { state: 'complete', items: [] } : { state: 'unauthorized' }; }\n",
+            "contains": [
+              "state: 'complete', items: []",
+              "state: 'unauthorized'"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "question": "In the H control, do HP and HR overlap, and how do merge-parent views differ?",
+      "type": "overlap-and-ordered-parents",
+      "corpus": "constructed-control",
+      "pins": {
+        "F_H": {
+          "algorithm": "sha1",
+          "oid": "05f32ff674aaff6622c0f638f1b80457d6a9eddb"
+        },
+        "F_HP": {
+          "algorithm": "sha1",
+          "oid": "0410a59c96cf385957e2e1d25f2dc48b866aa409"
+        },
+        "F_HR": {
+          "algorithm": "sha1",
+          "oid": "a14b42689f5f554104091f2c04b76d8a3d4a87d2"
+        },
+        "F_JOIN": {
+          "algorithm": "sha1",
+          "oid": "c3c465a71dc92ed4bdd553eb939e32ba69a69c5b"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "h2a"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "oracle-ready",
+        "answer": "Both contributions modify src/live-contract.ts from the same F_H base. Path overlap alone does not establish conflict. F_JOIN has ordered parents [F_HP,F_HR]; all-parent traversal includes HR, while first-parent omits that side branch. Each parent comparison has its own patch.",
+        "reason": null,
+        "commonPaths": [
+          "src/live-contract.ts"
+        ],
+        "conflict": "undetermined"
+      },
+      "oracles": [
+        {
+          "id": "hp-contribution",
+          "repository": "h2a",
+          "argv": [
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--name-only",
+            "05f32ff674aaff6622c0f638f1b80457d6a9eddb",
+            "0410a59c96cf385957e2e1d25f2dc48b866aa409"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 40,
+            "sha256": "a24b70645b0abf7b0247b6549333902f2581e837b1c5f939923b814f700a83ca",
+            "stdout": "src/live-contract.ts\nsrc/live-github.ts\n"
+          }
+        },
+        {
+          "id": "hr-contribution",
+          "repository": "h2a",
+          "argv": [
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--name-only",
+            "05f32ff674aaff6622c0f638f1b80457d6a9eddb",
+            "a14b42689f5f554104091f2c04b76d8a3d4a87d2"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 43,
+            "sha256": "f2413e2a4df4b17a9e8ee8ecea43ac1b1a30c5195e0f8893db6f68c788e42ee3",
+            "stdout": "src/live-contract.ts\nsrc/live-retention.ts\n"
+          }
+        },
+        {
+          "id": "ordered-parents",
+          "repository": "h2a",
+          "argv": [
+            "rev-list",
+            "--parents",
+            "--no-walk",
+            "c3c465a71dc92ed4bdd553eb939e32ba69a69c5b"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 123,
+            "sha256": "5635435e43256c04d9590b66502dbeabdd2b801a8e1fd906260cd69b94ed1285",
+            "stdout": "c3c465a71dc92ed4bdd553eb939e32ba69a69c5b 0410a59c96cf385957e2e1d25f2dc48b866aa409 a14b42689f5f554104091f2c04b76d8a3d4a87d2\n"
+          }
+        },
+        {
+          "id": "all-parents",
+          "repository": "h2a",
+          "argv": [
+            "rev-list",
+            "--topo-order",
+            "--parents",
+            "c3c465a71dc92ed4bdd553eb939e32ba69a69c5b"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 492,
+            "sha256": "426c4cf2115e58cf4bc67b616fb12455d579fcf5f4588a2d94f5667d1ad689ef",
+            "stdout": "c3c465a71dc92ed4bdd553eb939e32ba69a69c5b 0410a59c96cf385957e2e1d25f2dc48b866aa409 a14b42689f5f554104091f2c04b76d8a3d4a87d2\na14b42689f5f554104091f2c04b76d8a3d4a87d2 05f32ff674aaff6622c0f638f1b80457d6a9eddb\n0410a59c96cf385957e2e1d25f2dc48b866aa409 05f32ff674aaff6622c0f638f1b80457d6a9eddb\n05f32ff674aaff6622c0f638f1b80457d6a9eddb 48ec02772563bbc148e31e7f7fb0f58f136ae613\n48ec02772563bbc148e31e7f7fb0f58f136ae613 397cf37329c28d3c24cff250f43f8989a1a40187\n397cf37329c28d3c24cff250f43f8989a1a40187\n"
+          }
+        },
+        {
+          "id": "first-parent",
+          "repository": "h2a",
+          "argv": [
+            "rev-list",
+            "--first-parent",
+            "--parents",
+            "c3c465a71dc92ed4bdd553eb939e32ba69a69c5b"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 410,
+            "sha256": "d19bbcf58a7c10622f398dbd82b456d2fd36a7eb195b92918cd8d362971af618",
+            "stdout": "c3c465a71dc92ed4bdd553eb939e32ba69a69c5b 0410a59c96cf385957e2e1d25f2dc48b866aa409 a14b42689f5f554104091f2c04b76d8a3d4a87d2\n0410a59c96cf385957e2e1d25f2dc48b866aa409 05f32ff674aaff6622c0f638f1b80457d6a9eddb\n05f32ff674aaff6622c0f638f1b80457d6a9eddb 48ec02772563bbc148e31e7f7fb0f58f136ae613\n48ec02772563bbc148e31e7f7fb0f58f136ae613 397cf37329c28d3c24cff250f43f8989a1a40187\n397cf37329c28d3c24cff250f43f8989a1a40187\n"
+          }
+        },
+        {
+          "id": "first-parent-patch",
+          "repository": "h2a",
+          "argv": [
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--full-index",
+            "0410a59c96cf385957e2e1d25f2dc48b866aa409",
+            "c3c465a71dc92ed4bdd553eb939e32ba69a69c5b"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 711,
+            "sha256": "7cd955c985da5996c8dd7213520c86ee525068aeef39eaa9fd264141d8f5f1ed",
+            "stdout": "diff --git a/src/live-contract.ts b/src/live-contract.ts\nindex e3d407140cef8fd316967f4451c4906ffcc59fd9..229cc4f5d55b586ee0015781eb98dbd10471aec3 100644\n--- a/src/live-contract.ts\n+++ b/src/live-contract.ts\n@@ -1,2 +1,2 @@\n export const transport = 'metadata';\n-export const retention = 'none';\n+export const retention = 'private';\ndiff --git a/src/live-retention.ts b/src/live-retention.ts\nnew file mode 100644\nindex 0000000000000000000000000000000000000000..55bf39d44a48c75e6cb05803ea2c41fba3361040\n--- /dev/null\n+++ b/src/live-retention.ts\n@@ -0,0 +1,2 @@\n+// Private retained refs survive source branch deletion. Installed qualification has not run.\n+export const retainedPrefix = 'refs/private/retained/';\n"
+          }
+        },
+        {
+          "id": "second-parent-patch",
+          "repository": "h2a",
+          "argv": [
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--full-index",
+            "a14b42689f5f554104091f2c04b76d8a3d4a87d2",
+            "c3c465a71dc92ed4bdd553eb939e32ba69a69c5b"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 676,
+            "sha256": "4a188784901e9de79cb5239d54be575e17000d1cfbc3c0f86fa5b4dda4894fbe",
+            "stdout": "diff --git a/src/live-contract.ts b/src/live-contract.ts\nindex 338194ad10ea4bc7f7307d689a7ab698c5ad0ac2..229cc4f5d55b586ee0015781eb98dbd10471aec3 100644\n--- a/src/live-contract.ts\n+++ b/src/live-contract.ts\n@@ -1,2 +1,2 @@\n-export const transport = 'none';\n+export const transport = 'metadata';\n export const retention = 'private';\ndiff --git a/src/live-github.ts b/src/live-github.ts\nnew file mode 100644\nindex 0000000000000000000000000000000000000000..a37a15c165f535946016bdca3a03f70f62915ab4\n--- /dev/null\n+++ b/src/live-github.ts\n@@ -0,0 +1,2 @@\n+// PR metadata only; Git objects use a separate transport.\n+export const pullRequestFields = ['number', 'title', 'headOid'];\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "question": "In the H control, which tests most often changed with delegate.ts in the preceding 90 days?",
+      "type": "bounded-cochange",
+      "corpus": "constructed-control",
+      "pins": {
+        "F_H": {
+          "algorithm": "sha1",
+          "oid": "05f32ff674aaff6622c0f638f1b80457d6a9eddb"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "h2a"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "capacité absente",
+        "answer": "Among two non-merge commits touching src/delegate.ts in the fixed window, delegate.test.ts appears twice and delegate-cleanup.test.ts once. The native control supplies no causality or delivered G5 aggregate.",
+        "reason": null,
+        "missingCapabilities": [
+          "G5"
+        ],
+        "window": {
+          "since": "2023-08-18T22:13:20Z",
+          "until": "2023-11-16T22:13:20Z",
+          "days": 90
+        },
+        "denominator": 2,
+        "mergeCounting": "exclude-merges",
+        "counts": {
+          "tests/delegate.test.ts": 2,
+          "tests/delegate-cleanup.test.ts": 1
+        },
+        "causality": "inconnu"
+      },
+      "oracles": [
+        {
+          "id": "cochange-observations",
+          "repository": "h2a",
+          "argv": [
+            "log",
+            "--full-diff",
+            "--no-merges",
+            "--name-only",
+            "--format=%H",
+            "--since=2023-08-18T22:13:20Z",
+            "--until=2023-11-16T22:13:20Z",
+            "05f32ff674aaff6622c0f638f1b80457d6a9eddb",
+            "--",
+            "src/delegate.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 324,
+            "sha256": "95887af6f02a876303f95f2e1bf23b217e23ab27d8ced7a8509bc9408e71c5f0",
+            "stdout": "48ec02772563bbc148e31e7f7fb0f58f136ae613\n\nsrc/delegate.ts\ntests/delegate.test.ts\n397cf37329c28d3c24cff250f43f8989a1a40187\n\nsrc/consumer.ts\nsrc/delegate.ts\nsrc/live-contract.ts\nsrc/live-registration.ts\nsrc/memory.ts\nsrc/workspace-contract.ts\nstaging/agent-stats/index.ts\ntests/delegate-cleanup.test.ts\ntests/delegate.test.ts\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "question": "In the S control, which commit introduced POLICY_VERSION in live-storage/registration.ts?",
+      "type": "contract-line-origin",
+      "corpus": "constructed-control",
+      "pins": {
+        "F_S": {
+          "algorithm": "sha1",
+          "oid": "7541deb451b02f64d45656e124166e47cd2713b7"
+        },
+        "F_S0": {
+          "algorithm": "sha1",
+          "oid": "f95c7497fbdf269e2e2d29abfe8639c33fd5be50"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "sentropic"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "oracle-ready",
+        "answer": "F_S0 introduced POLICY_VERSION=live-policy/1 on line 1, authored by L0 Fixture. F_S preserves that contract version.",
+        "reason": null
+      },
+      "oracles": [
+        {
+          "id": "policy-origin",
+          "repository": "sentropic",
+          "argv": [
+            "blame",
+            "--root",
+            "--line-porcelain",
+            "--no-textconv",
+            "-L",
+            "1,1",
+            "7541deb451b02f64d45656e124166e47cd2713b7",
+            "--",
+            "src/live-storage/registration.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 378,
+            "sha256": "db59a9ba510b597771cf2157d53345058ee2bded8945793c9f117de0300538ec",
+            "stdout": "f95c7497fbdf269e2e2d29abfe8639c33fd5be50 1 1 1\nauthor L0 Fixture\nauthor-mail <l0@example.invalid>\nauthor-time 1700432000\nauthor-tz +0000\ncommitter L0 Fixture\ncommitter-mail <l0@example.invalid>\ncommitter-time 1700432000\ncommitter-tz +0000\nsummary Introduce versioned storage registration\nfilename src/live-storage/registration.ts\n\texport const POLICY_VERSION = 'live-policy/1';\n",
+            "contains": [
+              "f95c7497fbdf269e2e2d29abfe8639c33fd5be50",
+              "POLICY_VERSION = 'live-policy/1'"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "question": "In the S control, which change made removal retryable?",
+      "type": "behavior-change-patch",
+      "corpus": "constructed-control",
+      "pins": {
+        "F_S0": {
+          "algorithm": "sha1",
+          "oid": "f95c7497fbdf269e2e2d29abfe8639c33fd5be50"
+        },
+        "F_S": {
+          "algorithm": "sha1",
+          "oid": "7541deb451b02f64d45656e124166e47cd2713b7"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "sentropic"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "oracle-ready",
+        "answer": "F_S changes retryable:false to retryable:true and adds the removal-test control. These synthetic commits do not stand in for the original sentropic commit or qualify its runtime.",
+        "reason": null
+      },
+      "oracles": [
+        {
+          "id": "removal-history",
+          "repository": "sentropic",
+          "argv": [
+            "log",
+            "--format=%H %s",
+            "-S",
+            "retryable: true",
+            "7541deb451b02f64d45656e124166e47cd2713b7",
+            "--",
+            "src/live-storage/registration.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 77,
+            "sha256": "c5bdfa784d70301cd123b1f96ec39ba95141182c376bec1475b7f7d6c1124acc",
+            "stdout": "7541deb451b02f64d45656e124166e47cd2713b7 Make failed scope removal retryable\n",
+            "contains": [
+              "7541deb451b02f64d45656e124166e47cd2713b7"
+            ]
+          }
+        },
+        {
+          "id": "removal-patch",
+          "repository": "sentropic",
+          "argv": [
+            "show",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--format=fuller",
+            "7541deb451b02f64d45656e124166e47cd2713b7",
+            "--",
+            "src/live-storage/registration.ts",
+            "tests/removal.test.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 880,
+            "sha256": "6a2a2518bf8d70ad340ca45df2f4b1795e41cfc541bdbed7fee37e654da84e22",
+            "stdout": "commit 7541deb451b02f64d45656e124166e47cd2713b7\nAuthor:     L0 Fixture <l0@example.invalid>\nAuthorDate: Mon Nov 20 22:13:20 2023 +0000\nCommit:     L0 Fixture <l0@example.invalid>\nCommitDate: Mon Nov 20 22:13:20 2023 +0000\n\n    Make failed scope removal retryable\n\ndiff --git a/src/live-storage/registration.ts b/src/live-storage/registration.ts\nindex 74d94ff..9578481 100644\n--- a/src/live-storage/registration.ts\n+++ b/src/live-storage/registration.ts\n@@ -1,2 +1,2 @@\n export const POLICY_VERSION = 'live-policy/1';\n-export function removeScope() { return { state: 'failed', retryable: false }; }\n+export function removeScope() { return { state: 'failed', retryable: true }; }\ndiff --git a/tests/removal.test.ts b/tests/removal.test.ts\nnew file mode 100644\nindex 0000000..319a876\n--- /dev/null\n+++ b/tests/removal.test.ts\n@@ -0,0 +1 @@\n+// Assert removal failure can be retried.\n",
+            "contains": [
+              "-export function removeScope()",
+              "+export function removeScope()",
+              "retryable: true"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "question": "In the S control, where did ScopeVisibilityRoot move and what changed between K3 and K4?",
+      "type": "rename-and-symbol-history",
+      "corpus": "constructed-control",
+      "pins": {
+        "F_S": {
+          "algorithm": "sha1",
+          "oid": "7541deb451b02f64d45656e124166e47cd2713b7"
+        },
+        "F_K3": {
+          "algorithm": "sha1",
+          "oid": "785c21ea5782a05a67c99e3fc6610cf47acca2a0"
+        },
+        "F_K4": {
+          "algorithm": "sha1",
+          "oid": "7b887be8d480212d34e8eab033acfd9ef3d3154a"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "sentropic"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "oracle-ready",
+        "answer": "On a development branch, visibility.ts moved to scope-visibility.ts and scopeVisibilityRoot became ScopeVisibilityRoot with exactly the same return body; the test path was added. F_K4 is not integrated at F_S. This exact source pair is evidence for this correspondence only.",
+        "reason": null,
+        "renameThreshold": 50,
+        "symbolBody": "return 'authorized';",
+        "continuity": "unique-exact-source-pair"
+      },
+      "oracles": [
+        {
+          "id": "visibility-paths",
+          "repository": "sentropic",
+          "argv": [
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--name-status",
+            "-M50%",
+            "785c21ea5782a05a67c99e3fc6610cf47acca2a0",
+            "7b887be8d480212d34e8eab033acfd9ef3d3154a"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 74,
+            "sha256": "0df9a70673cea5b38bd2ada9f27f43fe384b31249888bded5904f8892784ce7d",
+            "stdout": "R056\tsrc/visibility.ts\tsrc/scope-visibility.ts\nA\ttests/visibility.test.ts\n"
+          }
+        },
+        {
+          "id": "symbol-before",
+          "repository": "sentropic",
+          "argv": [
+            "cat-file",
+            "blob",
+            "785c21ea5782a05a67c99e3fc6610cf47acca2a0:src/visibility.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 145,
+            "sha256": "093e689db09d084459e3ab0a3b1cfeabdf03accf87c346e0088891a4f7bb31b0",
+            "stdout": "// Repository-scoped visibility root.\n// This control has an exact function body.\nexport function scopeVisibilityRoot() { return 'authorized'; }\n",
+            "contains": [
+              "function scopeVisibilityRoot() { return 'authorized'; }"
+            ]
+          }
+        },
+        {
+          "id": "symbol-after",
+          "repository": "sentropic",
+          "argv": [
+            "cat-file",
+            "blob",
+            "7b887be8d480212d34e8eab033acfd9ef3d3154a:src/scope-visibility.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 145,
+            "sha256": "26a92d75d3b4ebd2768422efdde306085f1b0e1d19475ac73955c972ca208510",
+            "stdout": "// Repository-scoped visibility root.\n// This control has an exact function body.\nexport function ScopeVisibilityRoot() { return 'authorized'; }\n",
+            "contains": [
+              "function ScopeVisibilityRoot() { return 'authorized'; }"
+            ]
+          }
+        },
+        {
+          "id": "follow-rename",
+          "repository": "sentropic",
+          "argv": [
+            "log",
+            "--follow",
+            "--find-renames=50%",
+            "--format=%H %s",
+            "--name-status",
+            "7b887be8d480212d34e8eab033acfd9ef3d3154a",
+            "--",
+            "src/scope-visibility.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 245,
+            "sha256": "6d58a3cffc706a2760c8ded657d654a27f041e223981dfd15134a998f1d49909",
+            "stdout": "7b887be8d480212d34e8eab033acfd9ef3d3154a Rename and move the visibility root on the development branch\n\nR056\tsrc/visibility.ts\tsrc/scope-visibility.ts\n785c21ea5782a05a67c99e3fc6610cf47acca2a0 Add development visibility root\n\nA\tsrc/visibility.ts\n",
+            "contains": [
+              "785c21ea5782a05a67c99e3fc6610cf47acca2a0",
+              "7b887be8d480212d34e8eab033acfd9ef3d3154a"
+            ]
+          }
+        },
+        {
+          "id": "visibility-not-main",
+          "repository": "sentropic",
+          "argv": [
+            "merge-base",
+            "--is-ancestor",
+            "7b887be8d480212d34e8eab033acfd9ef3d3154a",
+            "7541deb451b02f64d45656e124166e47cd2713b7"
+          ],
+          "expected": {
+            "status": 1,
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout": ""
+          }
+        },
+        {
+          "id": "historical-absence",
+          "repository": "sentropic",
+          "argv": [
+            "ls-tree",
+            "-r",
+            "--name-only",
+            "7b887be8d480212d34e8eab033acfd9ef3d3154a",
+            "--",
+            "src/visibility.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stdout": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "question": "In the S control, why does cluster-mesh own the reusable Postgres backend?",
+      "type": "superseded-decision",
+      "corpus": "constructed-control",
+      "pins": {
+        "F_S": {
+          "algorithm": "sha1",
+          "oid": "7541deb451b02f64d45656e124166e47cd2713b7"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "sentropic"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "capacité absente",
+        "answer": "The fixture documents L3a v4.1: cluster-mesh owns the generic kernel and both reusable backends; the app injects and operates Postgres. It explicitly supersedes the older implementation split. No real admitted decision chain is available.",
+        "reason": {
+          "state": "inconnu",
+          "value": "inconnu",
+          "evidence": []
+        },
+        "missingCapabilities": [
+          "G3"
+        ]
+      },
+      "oracles": [
+        {
+          "id": "storage-authority",
+          "repository": "sentropic",
+          "argv": [
+            "cat-file",
+            "blob",
+            "7541deb451b02f64d45656e124166e47cd2713b7:docs/storage.md"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 188,
+            "sha256": "3d88dfc2c1aa227b807bb9f7b29d5e1030c7c896dc72ac56cd5e1379eff5564a",
+            "stdout": "Superseded: the application implements reusable Postgres storage.\nL3a v4.1: cluster-mesh owns the generic kernel and both reusable backends. The application injects and operates Postgres.\n",
+            "contains": [
+              "Superseded:",
+              "L3a v4.1",
+              "application injects and operates Postgres"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "question": "In the H/S controls, which WorkspaceDeclarationDto consumers are resolved, copied or undetermined?",
+      "type": "cross-repository-provenance-and-ambiguity",
+      "corpus": "constructed-control",
+      "pins": {
+        "F_H": {
+          "algorithm": "sha1",
+          "oid": "05f32ff674aaff6622c0f638f1b80457d6a9eddb"
+        },
+        "F_S": {
+          "algorithm": "sha1",
+          "oid": "7541deb451b02f64d45656e124166e47cd2713b7"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "h2a",
+          "sentropic"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "oracle-ready",
+        "answer": "Each consumer has an explicit local type import to its own repository contract. The declarations have identical bytes, which establishes neither shared ownership nor cross-repository continuity. The dynamic import target is undetermined; copy origin is inconnu.",
+        "reason": null,
+        "copyOrigin": "inconnu",
+        "dynamicTarget": "undetermined",
+        "crossRepositoryContinuity": "unproven"
+      },
+      "oracles": [
+        {
+          "id": "h-contract",
+          "repository": "h2a",
+          "argv": [
+            "cat-file",
+            "blob",
+            "05f32ff674aaff6622c0f638f1b80457d6a9eddb:src/workspace-contract.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 82,
+            "sha256": "1a838eff38ed7f04e1f32a50db51269d4d041231e4685ddb3cf70da82fcc70a5",
+            "stdout": "export interface WorkspaceDeclarationDto { repository: string; worktree: string }\n",
+            "contains": [
+              "WorkspaceDeclarationDto"
+            ]
+          }
+        },
+        {
+          "id": "h-consumer",
+          "repository": "h2a",
+          "argv": [
+            "cat-file",
+            "blob",
+            "05f32ff674aaff6622c0f638f1b80457d6a9eddb:src/consumer.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 120,
+            "sha256": "e4448d00b1f877cce80d89dad8902b13561e7afa0c24a28a0938590dccb83fa8",
+            "stdout": "import type { WorkspaceDeclarationDto } from './workspace-contract.js';\nexport type Consumer = WorkspaceDeclarationDto;\n",
+            "contains": [
+              "from './workspace-contract.js'"
+            ]
+          }
+        },
+        {
+          "id": "s-contract",
+          "repository": "sentropic",
+          "argv": [
+            "cat-file",
+            "blob",
+            "7541deb451b02f64d45656e124166e47cd2713b7:src/workspace-contract.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 82,
+            "sha256": "1a838eff38ed7f04e1f32a50db51269d4d041231e4685ddb3cf70da82fcc70a5",
+            "stdout": "export interface WorkspaceDeclarationDto { repository: string; worktree: string }\n",
+            "contains": [
+              "WorkspaceDeclarationDto"
+            ]
+          }
+        },
+        {
+          "id": "s-consumer",
+          "repository": "sentropic",
+          "argv": [
+            "cat-file",
+            "blob",
+            "7541deb451b02f64d45656e124166e47cd2713b7:src/consumer.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 120,
+            "sha256": "e4448d00b1f877cce80d89dad8902b13561e7afa0c24a28a0938590dccb83fa8",
+            "stdout": "import type { WorkspaceDeclarationDto } from './workspace-contract.js';\nexport type Consumer = WorkspaceDeclarationDto;\n",
+            "contains": [
+              "from './workspace-contract.js'"
+            ]
+          }
+        },
+        {
+          "id": "dynamic-consumer",
+          "repository": "sentropic",
+          "argv": [
+            "cat-file",
+            "blob",
+            "7541deb451b02f64d45656e124166e47cd2713b7:src/dynamic-consumer.ts"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 60,
+            "sha256": "bc28e34ede907f452f4a2153b130416399f2efd0ed31a2c4da18309d2f32d2b4",
+            "stdout": "export const loadContract = (name: string) => import(name);\n",
+            "contains": [
+              "import(name)"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "question": "Can an agent without provider authorization obtain unpublished content from the S control?",
+      "type": "external-disclosure-denial",
+      "corpus": "constructed-control",
+      "pins": {
+        "F_K4": {
+          "algorithm": "sha1",
+          "oid": "7b887be8d480212d34e8eab033acfd9ef3d3154a"
+        }
+      },
+      "permissions": {
+        "repositories": [
+          "sentropic"
+        ],
+        "committedRead": "authorized",
+        "localStateRead": "not-authorized",
+        "observedWrite": false,
+        "externalDisclosure": {
+          "allowed": false,
+          "repository": "*",
+          "provider": "*",
+          "scope": [],
+          "duration": null,
+          "grant": null
+        },
+        "secretExclusions": true
+      },
+      "expected": {
+        "state": "capacité absente",
+        "answer": "G4 is absent: this corpus cannot certify enforcement. Required service outcome is refusal before emission, with no content or derivatives, because no repository/provider/scope/duration grant exists. No transmission is attempted; the fixture branch is local only.",
+        "reason": null,
+        "missingCapabilities": [
+          "G4"
+        ],
+        "requiredOutcome": "refusal-before-emission",
+        "emittedBytes": 0,
+        "enforcement": "unverified"
+      },
+      "oracles": [
+        {
+          "id": "unpublished-control-endpoint",
+          "repository": "sentropic",
+          "argv": [
+            "rev-parse",
+            "--verify",
+            "7b887be8d480212d34e8eab033acfd9ef3d3154a^{tree}"
+          ],
+          "expected": {
+            "status": 0,
+            "bytes": 41,
+            "sha256": "e52e99a86ff46ee5a18bfa5028cb5fadbb21175cdff9fe273a2974a15199e94f",
+            "stdout": "6efb1c6f7cdf8c3087acb3232590c20defbdd6fa\n"
+          }
+        }
+      ]
+    }
+  ]
 }
