@@ -802,7 +802,7 @@ describe("live package", () => {
       const report = JSON.parse(output);
       expect(report.state).toBe("complete");
       expect(report.version).toBe("live-line-attribution/1");
-      expect(report.lines).toEqual(nativeLineOracle(box, fixture.repo, input.target.oid, fixture.rawPath, input.ranges, 1, 1));
+      expect(report.lines).toEqual(nativeLineOracle(box, fixture.repo, input.target.oid, fixture.rawPath, input.ranges, ["-M1", "-C1", "-C1", "-C1"]));
       expect(report.denied).toBe("partial");
       expect(report.deniedOrigins).toBe(0);
       expect(report.networkCalls).toBe(0);

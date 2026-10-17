@@ -54,16 +54,17 @@ describe("live line attribution", () => {
         { name: "merge", path: f.rawPath, end: 10, policy: options() },
         { name: "rename", path: Buffer.from("renamed.txt"), end: 10, policy: options() },
         { name: "move", path: Buffer.from("renamed.txt"), end: 10, policy: options() },
-        { name: "move", path: Buffer.from("renamed.txt"), end: 10, policy: options(1) },
-        ...(["modified", "created", "all"] as const).map(search => ({ name: "copy", path: Buffer.from("copied.txt"), end: 11, policy: options(1, 1, search) })),
+        { name: "move", path: Buffer.from("renamed.txt"), end: 10, policy: options(1), oracle: ["-M1"] },
+        { name: "copy", path: Buffer.from("copied.txt"), end: 11, policy: options(1, 1, "modified"), oracle: ["-M1", "-C1"] },
+        { name: "copy", path: Buffer.from("copied.txt"), end: 11, policy: options(1, 1, "created"), oracle: ["-M1", "-C1", "-C1"] },
+        { name: "copy", path: Buffer.from("copied.txt"), end: 11, policy: options(1, 1, "all"), oracle: ["-M1", "-C1", "-C1", "-C1"] },
         { name: "root", path: Buffer.from("nested/inner.txt"), end: 3, policy: options() },
       ];
       const observations: ReturnType<typeof lines>[] = [];
       for (const test of cases) {
         const input = { ...request, target: { algorithm: format, oid: f.commits[test.name] }, path: test.path,
           ranges: [{ start: 1, end: test.end }], options: test.policy };
-        const expected = nativeLineOracle(box, f.repo, input.target.oid, input.path, input.ranges,
-          test.policy.moveMinCharacters, test.policy.copyMinCharacters, test.policy.copySearch);
+        const expected = nativeLineOracle(box, f.repo, input.target.oid, input.path, input.ranges, test.oracle);
         expect(expected).toHaveLength(test.end);
         const actual = await live.attributeLines(input, ports);
         expect(actual.state, JSON.stringify(actual.coverage)).toBe("complete");
@@ -95,7 +96,7 @@ describe("live line attribution", () => {
       expect(observations[5]).not.toEqual(observations[7]); // -C search is consequential.
       const sparse = { ...request, ranges: [{ start: 2, end: 3 }, { start: 8, end: 9 }] };
       expect(lines(await live.attributeLines(sparse, ports))).toEqual(nativeLineOracle(box, f.repo, request.target.oid,
-        Buffer.from(request.path), sparse.ranges, 1, 1));
+        Buffer.from(request.path), sparse.ranges, ["-M1", "-C1", "-C1", "-C1"]));
       const merge = await live.attributeLines({ ...request, target: { algorithm: format, oid: f.commits.merge }, path: f.rawPath, ranges: [{ start: 1, end: 10 }] }, ports);
       expect(merge.parentEvidence.find(e => e.commit.oid === f.commits.merge)?.parents.map(p => p.oid)).toEqual([f.commits.left, f.commits.right]);
       expect(merge.origins.some(origin => origin.commit.oid === f.commits.merge)).toBe(true);
@@ -176,6 +177,25 @@ describe("live line attribution", () => {
     expect(inventoryDigest({ root: f.privateRoot })).toBe(retainedBefore);
   }, 30000);
 
+  it("rejects implicit move detection and inactive copy search before accessing retained objects", async () => {
+    const { box, fixture: f, request, ports, accesses } = setup();
+    // Native -C alone moves lines at Git's implicit threshold. The oracle
+    // receives literal flags, independently of the producer's DTO mapping.
+    const path = Buffer.from("renamed.txt"), ranges = [{ start: 1, end: 10 }];
+    const plain = nativeLineOracle(box, f.repo, f.commits.move, path, ranges);
+    const implicitMove = nativeLineOracle(box, f.repo, f.commits.move, path, ranges, ["-C1"]);
+    expect(implicitMove).not.toEqual(plain);
+    expect(implicitMove).toEqual(nativeLineOracle(box, f.repo, f.commits.move, path, ranges, ["-M20", "-C1"]));
+    await expect(live.attributeLines({ ...request, options: options(null, 1) }, ports)).rejects.toThrow();
+    expect(accesses).toEqual([]);
+  });
+
+  it.each(["modified", "created"] as const)("rejects inactive %s copy search before accessing retained objects", async search => {
+    const { request, ports, accesses } = setup();
+    await expect(live.attributeLines({ ...request, options: options(1, null, search) }, ports)).rejects.toThrow();
+    expect(accesses).toEqual([]);
+  });
+
   it("admits only the exact versioned blame form and preserves a literal final byte argument", () => {
     const launches: { args: readonly string[]; path?: Uint8Array }[] = [];
     const executor = createSafeGitExecutor({ gitPath: "/usr/bin/git", disabledHooksDir: "/tmp",
@@ -187,7 +207,7 @@ describe("live line attribution", () => {
     const base = ["blame", "--root", "--line-porcelain", "--no-textconv", "--no-progress", "--encoding=none",
       "--ignore-revs-file", "", "--diff-algorithm=myers", "--no-indent-heuristic"];
     const suffix = ["-L", "1,2", oid, "--", "safe.txt"];
-    for (const flags of [[], ["-M1"], ["-C20"], ["-M5", "-C40", "-C40"], ["-C40", "-C40", "-C40"]]) {
+    for (const flags of [[], ["-M1"], ["-M20", "-C20"], ["-M5", "-C40", "-C40"], ["-M20", "-C40", "-C40", "-C40"]]) {
       executor.blame("/tmp", [...base, ...flags, ...suffix.slice(0, -1)], Buffer.from("safe.txt"), ["/tmp/config"]);
     }
     const count = launches.length;
@@ -197,6 +217,7 @@ describe("live line attribution", () => {
       [...base, "--textconv", ...suffix], [...base, "--reverse", ...suffix],
       [...base, "--first-parent", ...suffix], [...base, "--contents", "secret", ...suffix],
       [...base, "--output=/tmp/forbidden", ...suffix], [...base, "-M0", ...suffix],
+      ...[["-C1"], ["-C40", "-C40"], ["-C40", "-C40", "-C40"]].map(flags => [...base, ...flags, ...suffix]),
       [...base, "-C20", "-C40", ...suffix], [...base, "-C20", "-C20", "-C20", "-C20", ...suffix],
       [...base, "-L", "0,2", oid, "--", "safe.txt"],
       [...base, "-L", "1,3", "-L", "3,5", oid, "--", "safe.txt"],
