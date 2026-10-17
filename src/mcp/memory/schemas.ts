@@ -100,8 +100,8 @@ const RECORD_ID_SCHEMA = {
 
 const IDEMPOTENCY_KEY_SCHEMA = {
   type: 'string',
-  minLength: MEMORY_MCP_LIMITS.IDEMPOTENCY_KEY_MIN_UTF8_BYTES,
-  maxLength: MEMORY_MCP_LIMITS.IDEMPOTENCY_KEY_MAX_UTF8_BYTES,
+  minLength: MEMORY_MCP_LIMITS.IDEMPOTENCY_KEY_SCHEMA_MIN_LENGTH,
+  maxLength: MEMORY_MCP_LIMITS.IDEMPOTENCY_KEY_SCHEMA_MAX_LENGTH,
 } as const;
 
 const DIGEST_SCHEMA = {
@@ -134,9 +134,87 @@ export const RECALL_CAPABILITY_POLICY_V1_SCHEMA = {
   },
 } as const;
 
+export const CITATION_LOCATOR_V1_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['scheme', 'value'],
+  properties: {
+    scheme: {
+      type: 'string',
+      minLength: MEMORY_MCP_LIMITS.CITATION_LOCATOR_SCHEME_MIN_UTF8_BYTES,
+      maxLength: MEMORY_MCP_LIMITS.CITATION_LOCATOR_SCHEME_MAX_UTF8_BYTES,
+    },
+    value: {
+      type: 'string',
+      minLength: MEMORY_MCP_LIMITS.CITATION_LOCATOR_VALUE_MIN_UTF8_BYTES,
+      maxLength: MEMORY_MCP_LIMITS.CITATION_LOCATOR_VALUE_MAX_UTF8_BYTES,
+    },
+  },
+} as const;
+
+export const CITATION_V1_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['citation_id', 'source_ref', 'locator', 'content_digest'],
+  properties: {
+    citation_id: OPAQUE_REF_SCHEMA,
+    source_ref: OPAQUE_REF_SCHEMA,
+    locator: CITATION_LOCATOR_V1_SCHEMA,
+    content_digest: DIGEST_SCHEMA,
+    observed_at: INSTANT_SCHEMA,
+  },
+} as const;
+
+export const MEMORY_COMPONENT_V2_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['component_id', 'kind', 'text', 'citation_ids'],
+  properties: {
+    component_id: OPAQUE_REF_SCHEMA,
+    kind: { enum: ['context', 'decision', 'evidence'] },
+    text: {
+      type: 'string',
+      minLength: MEMORY_MCP_LIMITS.COMPONENT_TEXT_MIN_UTF8_BYTES,
+      maxLength: MEMORY_MCP_LIMITS.COMPONENT_TEXT_MAX_UTF8_BYTES,
+    },
+    citation_ids: {
+      type: 'array',
+      minItems: 1,
+      maxItems: MEMORY_MCP_LIMITS.CITATIONS_MAX_ITEMS,
+      uniqueItems: true,
+      items: OPAQUE_REF_SCHEMA,
+    },
+  },
+} as const;
+
+export const RETENTION_V1_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['derivative_rule'],
+  properties: {
+    expires_at: INSTANT_SCHEMA,
+    derivative_rule: { enum: ['retain', 'make-ineligible'] },
+  },
+} as const;
+
+export const RECONCILIATION_CONSENT_V1_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['family_refs'],
+  properties: {
+    family_refs: {
+      type: 'array',
+      minItems: MEMORY_MCP_LIMITS.RECONCILIATION_FAMILY_REFS_MIN_ITEMS,
+      maxItems: MEMORY_MCP_LIMITS.RECONCILIATION_FAMILY_REFS_MAX_ITEMS,
+      uniqueItems: true,
+      items: OPAQUE_REF_SCHEMA,
+    },
+  },
+} as const;
+
 /**
- * M2 Closed Input JSON Schemas (copied from SPEC-memory-mcp-v2.md §M2 and
- * `engram-memory/schemas`).
+ * M2 Closed Input JSON Schemas (aligned with SPEC-memory-mcp-v3.1.md §M2 and
+ * `engram-memory/validation.ts:89–102,139–220`).
  */
 export const ENGRAM_MEMORY_SEARCH_INPUT_SCHEMA = {
   type: 'object',
@@ -196,15 +274,24 @@ export const ENGRAM_MEMORY_CAPTURE_PAYLOAD_INPUT_SCHEMA = {
   ],
   properties: {
     schema_version: CANDIDATE_PAYLOAD_V2_SCHEMA.properties.schema_version,
-    purpose_ref: CANDIDATE_PAYLOAD_V2_SCHEMA.properties.purpose_ref,
+    purpose_ref: OPAQUE_REF_SCHEMA,
     valid_time: CANDIDATE_PAYLOAD_V2_SCHEMA.properties.valid_time,
-    components: CANDIDATE_PAYLOAD_V2_SCHEMA.properties.components,
-    primary_component_id:
-      CANDIDATE_PAYLOAD_V2_SCHEMA.properties.primary_component_id,
+    components: {
+      type: 'array',
+      minItems: MEMORY_MCP_LIMITS.COMPONENTS_MIN_ITEMS,
+      maxItems: MEMORY_MCP_LIMITS.COMPONENTS_MAX_ITEMS,
+      items: MEMORY_COMPONENT_V2_SCHEMA,
+    },
+    primary_component_id: OPAQUE_REF_SCHEMA,
     primary_event: CANDIDATE_PAYLOAD_V2_SCHEMA.properties.primary_event,
-    citations: CANDIDATE_PAYLOAD_V2_SCHEMA.properties.citations,
-    retention: CANDIDATE_PAYLOAD_V2_SCHEMA.properties.retention,
-    reconciliation: CANDIDATE_PAYLOAD_V2_SCHEMA.properties.reconciliation,
+    citations: {
+      type: 'array',
+      minItems: MEMORY_MCP_LIMITS.CITATIONS_MIN_ITEMS,
+      maxItems: MEMORY_MCP_LIMITS.CITATIONS_MAX_ITEMS,
+      items: CITATION_V1_SCHEMA,
+    },
+    retention: RETENTION_V1_SCHEMA,
+    reconciliation: RECONCILIATION_CONSENT_V1_SCHEMA,
   },
 } as const;
 
@@ -744,10 +831,13 @@ function hasLoneSurrogate(value: string): boolean {
   return false;
 }
 
+export function isWellFormedUnicode(value: unknown): value is string {
+  return typeof value === 'string' && !hasLoneSurrogate(value);
+}
+
 export function isWellFormedUnicodeAndNfc(value: unknown): value is string {
   return (
-    typeof value === 'string' &&
-    !hasLoneSurrogate(value) &&
+    isWellFormedUnicode(value) &&
     value.normalize('NFC') === value
   );
 }
@@ -1148,13 +1238,14 @@ function validateCitationV1(
   const schemeErr = validateOpaqueRefField(
     value.locator.scheme,
     `${path}.locator.scheme`,
+    MEMORY_MCP_LIMITS.CITATION_LOCATOR_SCHEME_MAX_UTF8_BYTES,
   );
   if (schemeErr) return schemeErr;
 
   const valErr = validateOpaqueRefField(
     value.locator.value,
     `${path}.locator.value`,
-    4096,
+    MEMORY_MCP_LIMITS.CITATION_LOCATOR_VALUE_MAX_UTF8_BYTES,
   );
   if (valErr) return valErr;
 
@@ -3083,11 +3174,11 @@ export function validatePaginationHandleStateV1(
   request: PaginationContinuationContextV1,
   nowUtcOverride?: Instant,
 ): SchemaValidationResult<PaginationHandleStateV1> {
-  if (request.reauthorized === false) {
+  if ((request as { reauthorized?: unknown }).reauthorized !== true) {
     return fail(
       'page_cursor',
       'Page continuation requires fresh caller authorization',
-      'UNAUTHORIZED',
+      'STALE_PAGE',
     );
   }
 
@@ -3219,5 +3310,192 @@ export const validatePaginationCursorBindingV1: (
   nowUtcOverride?: Instant,
 ) => SchemaValidationResult<PaginationCursorBindingV1> =
   validatePaginationHandleStateV1;
+
+/**
+ * Evaluates a published JSON Schema Draft 2020-12 object structurally using
+ * Draft 2020-12 character-count semantics (`minLength`/`maxLength` in Unicode
+ * code points `[...str].length`), `pattern`, `minimum`/`maximum`, `minItems`/
+ * `maxItems`/`uniqueItems`, `required`, `additionalProperties: false`, `enum`,
+ * and `const`.
+ *
+ * Per SPEC-memory-mcp-v3.1.md §M2 (lines 254–258), structural schema evaluation
+ * counts Unicode code points while semantic validation enforces UTF-8 byte budgets.
+ */
+export function validatePublishedJsonSchemaDraft202012(
+  schema: Record<string, unknown>,
+  value: unknown,
+  path = '',
+): SchemaValidationResult<unknown> {
+  if ('const' in schema) {
+    if (value !== schema.const) {
+      return fail(path, `Expected const ${String(schema.const)}`);
+    }
+  }
+  if ('enum' in schema && Array.isArray(schema.enum)) {
+    if (!schema.enum.includes(value)) {
+      return fail(path, `Value is not in enum [${schema.enum.join(', ')}]`);
+    }
+  }
+  if ('oneOf' in schema && Array.isArray(schema.oneOf)) {
+    let matchCount = 0;
+    for (const branch of schema.oneOf) {
+      if (
+        isPlainObject(branch) &&
+        validatePublishedJsonSchemaDraft202012(branch, value, path).ok
+      ) {
+        matchCount++;
+      }
+    }
+    if (matchCount !== 1) {
+      return fail(path, `Expected value to match exactly one oneOf branch`);
+    }
+  }
+
+  const expectedType = schema.type;
+  if (expectedType === 'string') {
+    if (typeof value !== 'string') {
+      return fail(path, 'Expected string');
+    }
+    const codePointCount = Array.from(value).length;
+    if (
+      typeof schema.minLength === 'number' &&
+      codePointCount < schema.minLength
+    ) {
+      return fail(
+        path,
+        `String character length ${codePointCount} is below schema minLength ${schema.minLength}`,
+      );
+    }
+    if (
+      typeof schema.maxLength === 'number' &&
+      codePointCount > schema.maxLength
+    ) {
+      return fail(
+        path,
+        `String character length ${codePointCount} exceeds schema maxLength ${schema.maxLength}`,
+      );
+    }
+    if (typeof schema.pattern === 'string') {
+      const regex = new RegExp(schema.pattern);
+      if (!regex.test(value)) {
+        return fail(path, `String does not match pattern ${schema.pattern}`);
+      }
+    }
+    return { ok: true, value };
+  }
+
+  if (expectedType === 'integer' || expectedType === 'number') {
+    if (
+      typeof value !== 'number' ||
+      !Number.isFinite(value) ||
+      (expectedType === 'integer' && !Number.isInteger(value))
+    ) {
+      return fail(path, `Expected ${expectedType}`);
+    }
+    if (typeof schema.minimum === 'number' && value < schema.minimum) {
+      return fail(path, `Number ${value} is below minimum ${schema.minimum}`);
+    }
+    if (typeof schema.maximum === 'number' && value > schema.maximum) {
+      return fail(path, `Number ${value} exceeds maximum ${schema.maximum}`);
+    }
+    return { ok: true, value };
+  }
+
+  if (expectedType === 'boolean') {
+    if (typeof value !== 'boolean') {
+      return fail(path, 'Expected boolean');
+    }
+    return { ok: true, value };
+  }
+
+  if (expectedType === 'array') {
+    if (!Array.isArray(value)) {
+      return fail(path, 'Expected array');
+    }
+    if (typeof schema.minItems === 'number' && value.length < schema.minItems) {
+      return fail(
+        path,
+        `Array length ${value.length} is below minItems ${schema.minItems}`,
+      );
+    }
+    if (typeof schema.maxItems === 'number' && value.length > schema.maxItems) {
+      return fail(
+        path,
+        `Array length ${value.length} exceeds maxItems ${schema.maxItems}`,
+      );
+    }
+    if (schema.uniqueItems === true) {
+      const seen = new Set<string>();
+      for (let i = 0; i < value.length; i++) {
+        const serializedItem = JSON.stringify(value[i]);
+        if (seen.has(serializedItem)) {
+          return fail(`${path}[${i}]`, 'Duplicate array item violates uniqueItems');
+        }
+        seen.add(serializedItem);
+      }
+    }
+    if (isPlainObject(schema.items)) {
+      for (let i = 0; i < value.length; i++) {
+        const itemRes = validatePublishedJsonSchemaDraft202012(
+          schema.items,
+          value[i],
+          `${path}[${i}]`,
+        );
+        if (!itemRes.ok) return itemRes;
+      }
+    }
+    return { ok: true, value };
+  }
+
+  if (expectedType === 'object') {
+    if (!isPlainObject(value)) {
+      return fail(path, 'Expected plain object');
+    }
+    const properties = isPlainObject(schema.properties)
+      ? schema.properties
+      : {};
+    const required = Array.isArray(schema.required)
+      ? (schema.required as string[])
+      : [];
+
+    for (const reqKey of required) {
+      if (!(reqKey in value) || value[reqKey] === undefined) {
+        const fieldPath = path ? `${path}.${reqKey}` : reqKey;
+        return fail(fieldPath, `Missing required property '${reqKey}'`);
+      }
+    }
+
+    for (const key of Object.keys(value)) {
+      const fieldPath = path ? `${path}.${key}` : key;
+      if (value[key] === undefined) {
+        return fail(fieldPath, `Property '${key}' must not be undefined`);
+      }
+      if (value[key] === null) {
+        return fail(fieldPath, `Property '${key}' must not be null`);
+      }
+      if (!(key in properties)) {
+        if (schema.additionalProperties === false) {
+          return fail(
+            fieldPath,
+            `Unexpected property '${key}' is forbidden by additionalProperties: false`,
+          );
+        }
+        continue;
+      }
+      const propSchema = properties[key];
+      if (isPlainObject(propSchema)) {
+        const propRes = validatePublishedJsonSchemaDraft202012(
+          propSchema,
+          value[key],
+          fieldPath,
+        );
+        if (!propRes.ok) return propRes;
+      }
+    }
+    return { ok: true, value };
+  }
+
+  return { ok: true, value };
+}
 
 export { DISCLOSABLE_MEMORY_STATES, ENGRAM_MEMORY_TOOL_NAMES };
