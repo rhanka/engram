@@ -43,6 +43,10 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+/** A process could not run to completion (including timeout/maxBuffer),
+ * distinct from Git reporting a missing retained object with a nonzero exit. */
+export class GitUnavailableError extends Error {}
+
 export interface GitSpawnResult {
   readonly status: number;
   readonly stdout: Buffer;
@@ -260,8 +264,8 @@ function defaultSpawn(gitPath: string, argv: readonly string[], options: GitSpaw
     timeout: 30_000,
     killSignal: "SIGKILL",
   });
-  if (result.error) throw new Error(`live-git: Git subprocess unavailable: ${(result.error as Error).message}`);
-  if (result.status === null) throw new Error(`live-git: Git terminated by ${result.signal}`);
+  if (result.error) throw new GitUnavailableError(`live-git: Git subprocess unavailable: ${(result.error as Error).message}`, { cause: result.error });
+  if (result.status === null) throw new GitUnavailableError(`live-git: Git terminated by ${result.signal}`);
   return { status: result.status, stdout: result.stdout as Buffer, stderr: result.stderr as Buffer };
 }
 
@@ -303,9 +307,16 @@ export function createSafeGitExecutor(options: SafeGitOptions): SafeGitExecutor 
       delete baseEnv[key];
     }
   }
-  const spawnWithEnv: GitSpawnFn = options.spawn
+  const launch: GitSpawnFn = options.spawn
     ? options.spawn
     : (gitPath, argv, spawnOptions) => defaultSpawn(gitPath, argv, spawnOptions, baseEnv);
+  const spawnWithEnv: GitSpawnFn = (gitPath, argv, spawnOptions) => {
+    try { return launch(gitPath, argv, spawnOptions); }
+    catch (error) {
+      if (error instanceof GitUnavailableError) throw error;
+      throw new GitUnavailableError("live-git: Git subprocess unavailable", { cause: error });
+    }
+  };
 
   // Shared hardening prefix: no pager, no optional locks, no hooks, no
   // fsmonitor, no gc/maintenance, no network, and no attribute or ignore
