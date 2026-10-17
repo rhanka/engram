@@ -35,79 +35,8 @@ export const SPEC_V3_1_PROVENANCE = {
  * (Provenance: `/home/antoinefa/src/sentropic/packages/mcp-platform/src/manifest.ts`
  * and `src/experimental/manifest-elicitation.ts` at commit `97fe9f53e8079694e35771227c11544ce8658316`).
  */
-export type StandardRedactionClass = 'none' | 'low' | 'medium' | 'high';
-export type StandardMutability = 'read-only' | 'append' | 'state-transition';
-
-export interface StandardCapabilityGates {
-  readonly requiresElicitation: boolean;
-  readonly requiresHumanConfirmation: boolean;
-  readonly requiresPrincipalGate: boolean;
-  readonly requiresPolicy: boolean;
-}
-
-export interface StandardIdempotencyRequirement {
-  readonly required: boolean;
-  readonly scope?: 'session' | 'principal' | 'global';
-}
-
-export interface StandardCapabilityTool {
-  readonly kind: 'tool';
-  readonly name: string;
-  readonly description: string;
-  readonly requiredScopes: readonly string[];
-  readonly requiredClaims: readonly string[];
-  readonly inputSchema: Record<string, unknown>;
-  readonly outputSchema?: Record<string, unknown>;
-  readonly redactionClass: StandardRedactionClass;
-  readonly mutability: StandardMutability;
-  readonly category: 'read' | 'write' | 'admin';
-  readonly mutatesExternalSystem: boolean;
-  readonly idempotency: StandardIdempotencyRequirement;
-  readonly gates: StandardCapabilityGates;
-}
-
-export type StandardElicitationPolicyMode = 'confirm' | 'select' | 'form';
-
-export interface StandardElicitationPolicy {
-  readonly toolName: string;
-  readonly mode: StandardElicitationPolicyMode;
-  readonly required: boolean;
-  readonly ttlSeconds: number;
-  readonly requestSchema: Record<string, unknown>;
-  readonly responseSchema: Record<string, unknown>;
-  readonly carriesSecrets: false;
-  readonly bindToClient: true;
-  readonly bindToSub: true;
-}
-
-export interface StandardAppMcpProviderManifest {
-  readonly appId: string;
-  readonly providerId: string;
-  readonly version: string;
-  readonly displayName: string;
-  readonly resources: readonly unknown[];
-  readonly tools: readonly StandardCapabilityTool[];
-  readonly prompts: readonly unknown[];
-  readonly authz: {
-    readonly requiredClaims: readonly string[];
-    readonly scopes: readonly string[];
-    readonly tenantResolution: 'tid-claim' | 'header' | 'custom-resolver';
-  };
-  readonly audit: {
-    readonly eventKinds: readonly string[];
-    readonly piiClass: StandardRedactionClass;
-  };
-  readonly durability: {
-    readonly queueTopic?: string;
-    readonly dlqTopic?: string;
-  };
-  readonly secrets: readonly string[];
-}
-
-export interface StandardAppMcpProviderManifestWithElicitation
-  extends StandardAppMcpProviderManifest {
-  readonly elicitation?: readonly StandardElicitationPolicy[];
-}
+export type { CapabilityTool as StandardCapabilityTool } from '../../src/mcp/memory/standard/manifest.js';
+export type { ElicitationPolicy as StandardElicitationPolicy, AppMcpProviderManifestWithElicitation as StandardAppMcpProviderManifestWithElicitation } from '../../src/mcp/memory/standard/experimental/manifest-elicitation.js';
 
 /**
  * M1 Surface Rules (SPEC-memory-mcp-v3.1.md lines 92–125).
@@ -486,6 +415,18 @@ export const M2_STRING_BOUNDARY_SPEC_RULES: readonly StringBoundaryRuleFixture[]
       empty_value: '',
     },
   ] as const;
+
+/** M2:241,272-277: every remaining opaque candidate reference uses the same byte budget. */
+export const M2_ADDITIONAL_STRING_BOUNDARY_SPEC_RULES: readonly StringBoundaryRuleFixture[] = [
+  ['payload.purpose_ref', 241], ['payload.primary_component_id', 276],
+  ['payload.primary_event.type_ref', 277], ['payload.primary_event.citation_id', 277],
+  ['payload.components[].citation_ids[]', 275], ['evidence.evidence_ref', 241], ['evidence.citation_ids[]', 241],
+].map(([field_path, spec_line]) => ({
+  id: 'M2-STR-' + field_path, field_path: String(field_path), spec_section: 'M2' as const, spec_line: Number(spec_line),
+  min_utf8_bytes: 1, max_utf8_bytes: 512, max_allowed_schema_min_length: 1, min_required_schema_max_length: 512,
+  requires_nfc: true, is_ascii_grammar: false, exact_limit_ascii:'r'.repeat(512), over_limit_ascii:'r'.repeat(513),
+  exact_min_multibyte:'é', exact_max_multibyte:'é'.repeat(256), over_max_multibyte:'é'.repeat(256)+'a', empty_value:'' as const,
+}));
 
 export const M2_NUMERIC_AND_ARRAY_BOUNDARY_SPEC_RULES = {
   spec_section: 'M2',
@@ -982,7 +923,7 @@ export const M7_MANIFEST_AND_DESCRIPTORS_SPEC_RULE = {
   },
   elicitation: [
     {
-      toolName: 'engram_memory_withdraw',
+      capabilityRef: 'engram_memory_withdraw',
       mode: 'confirm',
       required: true,
       ttlSeconds: 300,
@@ -992,7 +933,7 @@ export const M7_MANIFEST_AND_DESCRIPTORS_SPEC_RULE = {
       spec_line: 874,
     },
     {
-      toolName: 'engram_memory_forget',
+      capabilityRef: 'engram_memory_forget',
       mode: 'confirm',
       required: true,
       ttlSeconds: 300,
@@ -1007,7 +948,7 @@ export const M7_MANIFEST_AND_DESCRIPTORS_SPEC_RULE = {
       kind: 'tool',
       name: 'engram_memory_search',
       description:
-        'Search admitted current memory records within the caller scope.',
+        'Search authorized current memory with citations and ranking receipts.',
       requiredScopes: ['mcp:tools:invoke'] as const,
       requiredClaims: ['sub', 'tid'] as const,
       redactionClass: 'high',
@@ -1027,7 +968,7 @@ export const M7_MANIFEST_AND_DESCRIPTORS_SPEC_RULE = {
       kind: 'tool',
       name: 'engram_memory_get',
       description:
-        'Read one admitted current memory record by ID within the caller scope.',
+        'Read one authorized currently eligible canonical memory record.',
       requiredScopes: ['mcp:tools:invoke'] as const,
       requiredClaims: ['sub', 'tid'] as const,
       redactionClass: 'high',
@@ -1047,7 +988,7 @@ export const M7_MANIFEST_AND_DESCRIPTORS_SPEC_RULE = {
       kind: 'tool',
       name: 'engram_memory_capture',
       description:
-        'Record a pending memory candidate with citations and evidence.',
+        'Durably submit cited material as an encrypted pending candidate.',
       requiredScopes: ['mcp:tools:invoke'] as const,
       requiredClaims: ['sub', 'tid'] as const,
       redactionClass: 'high',
@@ -1067,7 +1008,7 @@ export const M7_MANIFEST_AND_DESCRIPTORS_SPEC_RULE = {
       kind: 'tool',
       name: 'engram_memory_request_admission',
       description:
-        'Evaluate a pending memory candidate for admission under host policy.',
+        'Request the configured admission policy decision for a pending candidate.',
       requiredScopes: ['mcp:tools:invoke'] as const,
       requiredClaims: ['sub', 'tid'] as const,
       redactionClass: 'high',
@@ -1086,7 +1027,7 @@ export const M7_MANIFEST_AND_DESCRIPTORS_SPEC_RULE = {
     {
       kind: 'tool',
       name: 'engram_memory_withdraw',
-      description: 'Withdraw a pending memory candidate before admission.',
+      description: 'Withdraw an authorized pending candidate with confirmed key-destruction status.',
       requiredScopes: ['mcp:tools:invoke'] as const,
       requiredClaims: ['sub', 'tid'] as const,
       redactionClass: 'high',
@@ -1106,7 +1047,7 @@ export const M7_MANIFEST_AND_DESCRIPTORS_SPEC_RULE = {
       kind: 'tool',
       name: 'engram_memory_forget',
       description:
-        'Tombstone an admitted or historical memory record and trigger projection cleanup.',
+        'Forget an authorized admitted memory with accurate cleanup status.',
       requiredScopes: ['mcp:tools:invoke'] as const,
       requiredClaims: ['sub', 'tid'] as const,
       redactionClass: 'high',
@@ -1129,7 +1070,7 @@ export const M7_MANIFEST_AND_DESCRIPTORS_SPEC_RULE = {
     metadata: {
       name: 'engram_memory_search',
       description:
-        'Search admitted current memory records within the caller scope.',
+        'Search authorized current memory with citations and ranking receipts.',
       version: '1.0.0',
       category: 'mcp',
       authzRequirements: {
@@ -1140,7 +1081,7 @@ export const M7_MANIFEST_AND_DESCRIPTORS_SPEC_RULE = {
     tool: {
       name: 'engram_memory_search',
       description:
-        'Search admitted current memory records within the caller scope.',
+        'Search authorized current memory with citations and ranking receipts.',
       sideEffect: false,
       requiresApproval: false,
     },
@@ -1192,7 +1133,7 @@ export const A02_LOCAL_DEFINITION_SPEC_RULE = {
   mode_const: 'embedded-local',
   host_binding_ref_min_ascii: 1,
   host_binding_ref_max_ascii: 128,
-  host_binding_ref_pattern: '^[\\x21-\\x7E]{1,128}$',
+  host_binding_ref_pattern: '^[a-z0-9][a-z0-9._-]*$',
   required_binding_ports: [
     'invocation',
     'authorization',
