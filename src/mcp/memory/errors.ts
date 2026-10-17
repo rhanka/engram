@@ -470,6 +470,7 @@ function hasLoneSurrogateInAuditId(value: string): boolean {
 export function isValidTrustedAuditId(auditId: unknown): auditId is string {
   if (
     typeof auditId !== 'string' ||
+    auditId === 'audit_mcp_l0_default' ||
     hasLoneSurrogateInAuditId(auditId) ||
     auditId.normalize('NFC') !== auditId ||
     auditId.trim().length === 0

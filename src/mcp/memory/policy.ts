@@ -563,165 +563,14 @@ export const resolveCaptureReconciliationHookV1 =
  * M4 / M7 Host Elicitation `confirm` Grant for `engram_memory_withdraw` and
  * `engram_memory_forget`.
  */
-export interface DestructiveConfirmationGrantV1 {
-  readonly elicitation_ref: OpaqueRef;
-  readonly capability: 'engram_memory_withdraw' | 'engram_memory_forget';
-  readonly mcp_client_id: OpaqueRef;
-  readonly session_id: OpaqueRef;
-  readonly principal_id: OpaqueRef;
-  readonly tenant_id: OpaqueRef;
-  readonly scope_ref: OpaqueRef;
-  readonly target_ref: OpaqueRef;
-  readonly operation_digest: Digest;
-  readonly issued_at: Instant;
-  readonly expires_at: Instant;
-  readonly state: 'pending' | 'validated_resumed' | 'expired' | 'declined';
-  readonly request: {
-    readonly capability: 'engram_memory_withdraw' | 'engram_memory_forget';
-    readonly target_ref: OpaqueRef;
-    readonly operation_digest: Digest;
-  };
-  readonly response?: {
-    readonly approved: boolean;
-  };
-}
-
-export interface ExpectedDestructiveConfirmationV1 {
-  readonly capability: 'engram_memory_withdraw' | 'engram_memory_forget';
-  readonly mcp_client_id: OpaqueRef;
-  readonly session_id: OpaqueRef;
-  readonly principal_id: OpaqueRef;
-  readonly tenant_id: OpaqueRef;
-  readonly scope_ref: OpaqueRef;
-  readonly target_ref: OpaqueRef;
-  readonly operation_digest: Digest;
-  readonly now_utc: Instant;
-}
-
-/**
- * Verifies a host-validated, resumed MCP elicitation confirmation grant for
- * `engram_memory_withdraw` or `engram_memory_forget` per M4 and M7.
- */
+/** M4:561-567 / A06:1611: one assurance/continuation contract for every confirmation entry. */
+export type DestructiveConfirmationGrantV1 = MemoryConfirmationContinuationV1;
+export type ExpectedDestructiveConfirmationV1 = ExpectedConfirmationContinuationBindingV1;
 export function verifyDestructiveConfirmationGrantV1(
-  grant: DestructiveConfirmationGrantV1 | undefined | null,
-  expected: ExpectedDestructiveConfirmationV1,
+  grant: unknown, expected: ExpectedDestructiveConfirmationV1,
 ): PolicyValidationResult<DestructiveConfirmationGrantV1> {
-  if (!grant || !isPlainObject(grant as unknown)) {
-    return {
-      ok: false,
-      error_code: 'gate_failed',
-      message:
-        'Destructive memory operation requires a validated host elicitation confirmation.',
-    };
-  }
-
-  if (grant.state !== 'validated_resumed') {
-    return {
-      ok: false,
-      error_code: 'gate_failed',
-      message: "Elicitation confirmation state must be 'validated_resumed'.",
-    };
-  }
-
-  if (
-    !isPlainObject(grant.request) ||
-    Object.keys(grant.request).some(
-      (k) =>
-        k !== 'capability' && k !== 'target_ref' && k !== 'operation_digest',
-    )
-  ) {
-    return {
-      ok: false,
-      error_code: 'gate_failed',
-      message:
-        'Elicitation request must be a closed { capability, target_ref, operation_digest } object with no secret-bearing fields.',
-    };
-  }
-
-  if (
-    !isPlainObject(grant.response) ||
-    Object.keys(grant.response).length !== 1 ||
-    grant.response.approved !== true
-  ) {
-    return {
-      ok: false,
-      error_code: 'gate_failed',
-      message:
-        'Elicitation response must be a closed { approved: true } object.',
-    };
-  }
-
-  if (
-    !isValidOpaqueRef(grant.elicitation_ref) ||
-    !isValidOpaqueRef(grant.mcp_client_id) ||
-    !isValidOpaqueRef(grant.session_id) ||
-    !isValidOpaqueRef(grant.principal_id) ||
-    !isValidOpaqueRef(grant.tenant_id) ||
-    !isValidOpaqueRef(grant.scope_ref) ||
-    !isValidOpaqueRef(grant.target_ref) ||
-    !isValidSha256Digest(grant.operation_digest) ||
-    !isValidSha256Digest(expected.operation_digest)
-  ) {
-    return {
-      ok: false,
-      error_code: 'gate_failed',
-      message: 'Elicitation confirmation contains malformed binding fields.',
-    };
-  }
-
-  if (
-    !isValidInstant(grant.issued_at) ||
-    !isValidInstant(grant.expires_at) ||
-    !isValidInstant(expected.now_utc)
-  ) {
-    return {
-      ok: false,
-      error_code: 'gate_failed',
-      message: 'Elicitation confirmation contains an invalid timestamp.',
-    };
-  }
-
-  const issuedMs = Date.parse(grant.issued_at);
-  const expiresMs = Date.parse(grant.expires_at);
-  const nowMs = Date.parse(expected.now_utc);
-  const maxTtlMs = MEMORY_MCP_LIMITS.CONFIRMATION_MAX_TTL_SECONDS * 1000;
-
-  if (
-    expiresMs <= issuedMs ||
-    expiresMs - issuedMs > maxTtlMs ||
-    nowMs < issuedMs ||
-    nowMs >= expiresMs
-  ) {
-    return {
-      ok: false,
-      error_code: 'gate_failed',
-      message:
-        'Elicitation confirmation has expired or exceeds the 300s TTL ceiling.',
-    };
-  }
-
-  if (
-    grant.capability !== expected.capability ||
-    grant.request.capability !== expected.capability ||
-    grant.request.target_ref !== expected.target_ref ||
-    grant.request.operation_digest !== expected.operation_digest ||
-    grant.mcp_client_id !== expected.mcp_client_id ||
-    grant.session_id !== expected.session_id ||
-    grant.principal_id !== expected.principal_id ||
-    grant.tenant_id !== expected.tenant_id ||
-    grant.scope_ref !== expected.scope_ref ||
-    grant.target_ref !== expected.target_ref ||
-    grant.operation_digest !== expected.operation_digest
-  ) {
-    return {
-      ok: false,
-      error_code: 'gate_failed',
-      message:
-        'Elicitation confirmation binding does not match the caller, client, session, target, or operation_digest.',
-    };
-  }
-
-  return { ok: true, value: grant };
+  const result = verifyMemoryConfirmationContinuationV1(grant, expected);
+  return result.ok ? { ok: true, value: result.continuation } : { ok: false, error_code: result.error_code, message: result.reason };
 }
 
 /**
@@ -961,7 +810,7 @@ export function projectMemoryMutationPolicyVersionsV1(
     };
   }
 
-  if (explicitProjection !== undefined) {
+  if (arguments.length > 1) {
     if (!isPlainObject(explicitProjection)) {
       return {
         ok: false,
@@ -1079,7 +928,7 @@ export function validateMemoryMutationPreimageV1(
       ok: false,
       error_code: 'INVALID_SCHEMA',
       message:
-        'MemoryMutationPreimageV1 must be a closed object with all 15 required properties and no nulls.',
+        'MemoryMutationPreimageV1 must be a closed object with all required properties and no nulls.',
     };
   }
 
@@ -1516,12 +1365,12 @@ export function isSameMemoryMutationLookupKeyV1(
  */
 export interface DurableOperationKeyV1 {
   readonly principal_namespace: OpaqueRef;
-  readonly principal_id?: OpaqueRef;
+  readonly principal_id: OpaqueRef;
   readonly tenant_id: OpaqueRef;
   readonly store_id: OpaqueRef;
-  readonly provider_id?: typeof ENGRAM_MEMORY_PROVIDER_ID;
+  readonly provider_id: typeof ENGRAM_MEMORY_PROVIDER_ID;
   readonly connector_id: 'engram-memory';
-  readonly connector_instance_ref?: OpaqueRef;
+  readonly connector_instance_ref: OpaqueRef;
   readonly scope_ref: OpaqueRef;
   readonly tool_name: MutatingMemoryToolName;
   readonly tool_contract_version: typeof ENGRAM_MEMORY_MCP_CONTRACT_VERSION;
@@ -1539,8 +1388,10 @@ export interface DurableOperationRecordV1<TOutput = unknown> {
   readonly normalized_input_digest: Digest;
   readonly status: 'in_flight' | 'completed' | 'failed_retryable';
   readonly created_at: Instant;
-  readonly preimage?: MemoryMutationPreimageV1;
-  readonly policy_versions?: MemoryMutationPolicyVersionsV1;
+  readonly audit_id: OpaqueRef;
+  readonly execution_generation: Cursor;
+  readonly preimage: MemoryMutationPreimageV1;
+  readonly policy_versions: MemoryMutationPolicyVersionsV1;
   readonly capture_policy_version?: OpaqueRef;
   readonly admission_policy_version?: OpaqueRef;
   readonly candidate_id?: OpaqueRef;
@@ -1549,6 +1400,7 @@ export interface DurableOperationRecordV1<TOutput = unknown> {
   readonly effective_reconciliation?: ReconciliationConsentV1;
   readonly event_id?: OpaqueRef;
   readonly event_anchor?: LifecycleEventAnchorV1;
+  readonly canonical_replay_ref?: OpaqueRef;
   readonly stored_output?: TOutput;
 }
 
@@ -1560,7 +1412,7 @@ export type IdempotentMutationDecisionV1<TOutput> =
     }
   | {
       readonly decision: 'resume_incomplete';
-      readonly existing_record: DurableOperationRecordV1<TOutput>;
+      readonly existing_record: DurableOperationRecordV1<TOutput> | MemoryMutationBindingV1<TOutput>;
     }
   | {
       readonly decision: 'reject';
@@ -1598,122 +1450,7 @@ function applyReplayedOutputMarker<TOutput>(
   } as unknown as TOutput;
 }
 
-function validateRecordPolicyVersionConsistency(
-  record: DurableOperationRecordV1<unknown>,
-): {
-  readonly ok: boolean;
-  readonly resolvedVersion?: OpaqueRef;
-} {
-  const tool = record.key.tool_name;
-  if (record.preimage !== undefined) {
-    const preimageCheck = validateMemoryMutationPreimageV1(record.preimage);
-    if (!preimageCheck.ok || record.preimage.tool_name !== tool) {
-      return { ok: false };
-    }
-    const pvCheck = projectMemoryMutationPolicyVersionsV1(
-      record.preimage.effective_input,
-      record.policy_versions,
-    );
-    if (!pvCheck.ok) {
-      return { ok: false };
-    }
-  } else if (record.policy_versions !== undefined) {
-    const pv = record.policy_versions;
-    if (pv.tool_name !== tool) {
-      return { ok: false };
-    }
-    if (pv.tool_name === 'engram_memory_capture') {
-      if (
-        !isValidPolicyVersionRef(pv.capture_policy_version) ||
-        (record.capture_policy_version !== undefined &&
-          record.capture_policy_version !== pv.capture_policy_version)
-      ) {
-        return { ok: false };
-      }
-      return {
-        ok: true,
-        resolvedVersion: pv.capture_policy_version,
-      };
-    }
-    if (pv.tool_name === 'engram_memory_request_admission') {
-      if (
-        !isValidPolicyVersionRef(pv.admission_policy_version) ||
-        (record.admission_policy_version !== undefined &&
-          record.admission_policy_version !== pv.admission_policy_version)
-      ) {
-        return { ok: false };
-      }
-      return {
-        ok: true,
-        resolvedVersion: pv.admission_policy_version,
-      };
-    }
-    if ('capture_policy_version' in pv || 'admission_policy_version' in pv) {
-      return { ok: false };
-    }
-  }
-
-  if (tool === 'engram_memory_capture') {
-    const v =
-      record.capture_policy_version ??
-      (record.preimage?.effective_input.tool_name === 'engram_memory_capture'
-        ? record.preimage.effective_input.capture_policy_version
-        : undefined);
-    if (v !== undefined && !isValidPolicyVersionRef(v)) {
-      return { ok: false };
-    }
-    if (
-      record.preimage !== undefined ||
-      record.policy_versions !== undefined ||
-      record.capture_policy_version !== undefined
-    ) {
-      if (!isValidPolicyVersionRef(v)) return { ok: false };
-      return { ok: true, resolvedVersion: v };
-    }
-  } else if (tool === 'engram_memory_request_admission') {
-    const v =
-      record.admission_policy_version ??
-      (record.preimage?.effective_input.tool_name ===
-      'engram_memory_request_admission'
-        ? record.preimage.effective_input.admission_policy_version
-        : undefined);
-    if (v !== undefined && !isValidPolicyVersionRef(v)) {
-      return { ok: false };
-    }
-    if (
-      record.preimage !== undefined ||
-      record.policy_versions !== undefined ||
-      record.admission_policy_version !== undefined
-    ) {
-      if (!isValidPolicyVersionRef(v)) return { ok: false };
-      return { ok: true, resolvedVersion: v };
-    }
-  } else {
-    if (
-      record.capture_policy_version !== undefined ||
-      record.admission_policy_version !== undefined
-    ) {
-      return { ok: false };
-    }
-  }
-
-  return { ok: true };
-}
-
-/**
- * Evaluates durable idempotent reservation state per M4 and M5
- * (SPEC-memory-mcp-v3.1.md lines 523–530, 606–711, 1624, 1628):
- * - Closed-world literal-`true` (`=== true`) is required for `callerAuthorized`
- *   on every tool and for `targetAuthorized` on every target-bearing tool
- *   (`request_admission`, `withdraw`, `forget`). Omitted/`undefined`, `false`,
- *   `null`, `"true"`, and `1` are all refused before any comparison or disclosure.
- * - Cross-tool or cross-target reuse of the same `idempotency_key` in the same
- *   principal namespace returns `DIGEST_CONFLICT` (`M5-CROSS-TOOL-KEY`).
- * - Uncommitted (`in_flight` / `failed_retryable`) reservations with a stale
- *   domain policy version return `POLICY_STALE`; committed (`completed`)
- *   reservations replay their stored outcome under fresh caller/target
- *   authorization without recomputing policy version or expiration.
- */
+/** Compatibility entry: every execution/replay uses the same complete M5 contract. */
 export function evaluateIdempotentMutationStateV1<TOutput>(
   existing: DurableOperationRecordV1<TOutput> | undefined,
   incoming: {
@@ -1721,171 +1458,37 @@ export function evaluateIdempotentMutationStateV1<TOutput>(
     readonly normalized_input_digest: Digest;
     readonly callerAuthorized?: boolean;
     readonly targetAuthorized?: boolean;
-    readonly preimage?: MemoryMutationPreimageV1;
-    readonly policy_versions?: MemoryMutationPolicyVersionsV1;
+    readonly preimage: MemoryMutationPreimageV1;
+    readonly policy_versions: MemoryMutationPolicyVersionsV1;
     readonly active_domain_policy_version?: OpaqueRef;
   },
 ): IdempotentMutationDecisionV1<TOutput> {
-  const isTargetTool = incoming.key.tool_name !== 'engram_memory_capture';
-  const rawIncoming = incoming as unknown as Record<string, unknown>;
-
-  if (isTargetTool && rawIncoming.targetAuthorized !== true) {
-    return {
-      decision: 'reject',
-      error_code: 'NOT_FOUND',
-      retriable: false,
-    };
+  const targetTool = incoming.key?.tool_name !== 'engram_memory_capture';
+  if (incoming.callerAuthorized !== true || (targetTool && incoming.targetAuthorized !== true)) {
+    return { decision: 'reject', error_code: targetTool ? 'NOT_FOUND' : 'UNAUTHORIZED', retriable: false };
   }
-
-  if (rawIncoming.callerAuthorized !== true) {
-    return {
-      decision: 'reject',
-      error_code: isTargetTool ? 'NOT_FOUND' : 'UNAUTHORIZED',
-      retriable: false,
-    };
-  }
-
-  if (
-    !isValidIdempotencyKey(incoming.key.idempotency_key) ||
-    !isValidSha256Digest(incoming.normalized_input_digest)
-  ) {
-    return {
-      decision: 'reject',
-      error_code: 'INVALID_SCHEMA',
-      retriable: false,
-    };
-  }
-
-  if (incoming.preimage !== undefined) {
-    const preCheck = validateMemoryMutationPreimageV1(incoming.preimage);
-    if (!preCheck.ok) {
-      return {
-        decision: 'reject',
-        error_code: 'INVALID_SCHEMA',
-        retriable: false,
-      };
-    }
-    const pvCheck = projectMemoryMutationPolicyVersionsV1(
-      incoming.preimage.effective_input,
-      incoming.policy_versions,
-    );
-    if (!pvCheck.ok) {
-      return {
-        decision: 'reject',
-        error_code: 'INVALID_SCHEMA',
-        retriable: false,
-      };
-    }
-  } else if (incoming.policy_versions !== undefined) {
-    if (incoming.policy_versions.tool_name !== incoming.key.tool_name) {
-      return {
-        decision: 'reject',
-        error_code: 'INVALID_SCHEMA',
-        retriable: false,
-      };
-    }
-    if (
-      incoming.policy_versions.tool_name === 'engram_memory_capture' &&
-      !isValidPolicyVersionRef(incoming.policy_versions.capture_policy_version)
-    ) {
-      return {
-        decision: 'reject',
-        error_code: 'INVALID_SCHEMA',
-        retriable: false,
-      };
-    }
-    if (
-      incoming.policy_versions.tool_name ===
-        'engram_memory_request_admission' &&
-      !isValidPolicyVersionRef(
-        incoming.policy_versions.admission_policy_version,
-      )
-    ) {
-      return {
-        decision: 'reject',
-        error_code: 'INVALID_SCHEMA',
-        retriable: false,
-      };
-    }
-  }
-
-  if (!existing) {
-    return { decision: 'execute_new' };
-  }
-
-  const existingPolicyCheck = validateRecordPolicyVersionConsistency(existing);
-  if (!existingPolicyCheck.ok) {
-    return {
-      decision: 'reject',
-      error_code: 'INVALID_SCHEMA',
-      retriable: false,
-    };
-  }
-
-  if (
-    existing.key.principal_namespace !== incoming.key.principal_namespace ||
-    (existing.key.principal_id !== undefined &&
-      incoming.key.principal_id !== undefined &&
-      existing.key.principal_id !== incoming.key.principal_id) ||
-    existing.key.tenant_id !== incoming.key.tenant_id ||
-    existing.key.store_id !== incoming.key.store_id ||
-    existing.key.connector_id !== incoming.key.connector_id ||
-    existing.key.scope_ref !== incoming.key.scope_ref ||
-    existing.key.tool_name !== incoming.key.tool_name ||
-    existing.key.tool_contract_version !== incoming.key.tool_contract_version ||
-    existing.key.idempotency_key !== incoming.key.idempotency_key ||
-    existing.key.target_ref !== incoming.key.target_ref ||
-    existing.normalized_input_digest !== incoming.normalized_input_digest
-  ) {
-    return {
-      decision: 'reject',
-      error_code: 'DIGEST_CONFLICT',
-      retriable: false,
-    };
-  }
-
-  if (existing.status === 'in_flight') {
-    return {
-      decision: 'reject',
-      error_code: 'FENCE_LOST',
-      retriable: true,
-    };
-  }
-
-  if (existing.status === 'failed_retryable') {
-    if (
-      incoming.active_domain_policy_version !== undefined &&
-      existingPolicyCheck.resolvedVersion !== undefined &&
-      incoming.active_domain_policy_version !==
-        existingPolicyCheck.resolvedVersion
-    ) {
-      return {
-        decision: 'reject',
-        error_code: 'POLICY_STALE',
-        retriable: true,
-      };
-    }
-    return {
-      decision: 'resume_incomplete',
-      existing_record: existing,
-    };
-  }
-
-  if (!existing.stored_output) {
-    return {
-      decision: 'reject',
-      error_code: 'FENCE_LOST',
-      retriable: true,
-    };
-  }
-
-  return {
-    decision: 'replay_completed',
-    output: applyReplayedOutputMarker(
-      incoming.key.tool_name,
-      existing.stored_output,
-    ),
+  const invalid = { decision: 'reject', error_code: 'INVALID_SCHEMA', retriable: false } as const;
+  const validRecord = (r: typeof incoming): boolean => {
+    const d = computeMemoryMutationOperationDigestV1(r.preimage);
+    if (!d.ok || !r.policy_versions || !projectMemoryMutationPolicyVersionsV1(r.preimage.effective_input, r.policy_versions).ok ||
+        d.value.operation_digest !== r.normalized_input_digest) return false;
+    const pre = r.preimage;
+    const target = pre.target.kind === 'capture_source' ? pre.target.source_ref : pre.target.kind === 'candidate' ? pre.target.candidate_id : pre.target.record_id;
+    return isSameMemoryMutationLookupKeyV1(r.key, extractMemoryMutationLookupKeyV1(pre)) &&
+      r.key.tool_name === pre.tool_name && r.key.tool_contract_version === pre.provider_contract_version && r.key.target_ref === target;
   };
+  if (!validRecord(incoming)) return invalid;
+  if (existing && (!validRecord(existing) || !isValidInstant(existing.created_at))) return invalid;
+  const records: MemoryMutationBindingV1<TOutput>[] = existing ? [{
+    lookup_key: extractMemoryMutationLookupKeyV1(existing.preimage), preimage: existing.preimage,
+    operation_digest: existing.normalized_input_digest, policy_versions: existing.policy_versions,
+    recovery_state: existing.status === 'completed' ? 'completed_response' : existing.status === 'in_flight' ? 'executing_unknown_outcome' : 'authorized_uncommitted',
+    stored_output: existing.stored_output, canonical_replay_ref: existing.canonical_replay_ref,
+    // This compatibility view does not fabricate host audit/fence context.
+    audit_id: existing.audit_id, execution_generation: existing.execution_generation,
+  }] : [];
+  const decision = evaluatePrincipalScopedMutationLookupV1(records, incoming);
+  return decision.decision === 'resume_incomplete' && existing ? { decision: 'resume_incomplete', existing_record: existing } : decision;
 }
 
 /**
@@ -1901,8 +1504,8 @@ export function evaluatePrincipalScopedMutationLookupV1<TOutput>(
     readonly active_domain_policy_version?: OpaqueRef;
   },
 ): IdempotentMutationDecisionV1<TOutput> {
-  const isTargetTool =
-    incoming.preimage.tool_name !== 'engram_memory_capture';
+  if (!incoming.preimage) return { decision: 'reject', error_code: 'INVALID_SCHEMA', retriable: false };
+  const isTargetTool = incoming.preimage.tool_name !== 'engram_memory_capture';
   const rawIncoming = incoming as unknown as Record<string, unknown>;
 
   if (isTargetTool && rawIncoming.targetAuthorized !== true) {
@@ -1933,10 +1536,18 @@ export function evaluatePrincipalScopedMutationLookupV1<TOutput>(
   const existing = recordsInStore.find((r) =>
     isSameMemoryMutationLookupKeyV1(r.lookup_key, lookupKey),
   );
+  const effective = incoming.preimage.effective_input;
+  const policyVersion = effective.tool_name === 'engram_memory_capture' ? effective.capture_policy_version : effective.tool_name === 'engram_memory_request_admission' ? effective.admission_policy_version : undefined;
   if (!existing) {
+    if (policyVersion !== undefined && incoming.active_domain_policy_version !== policyVersion) {
+      return { decision: 'reject', error_code: 'POLICY_STALE', retriable: true };
+    }
     return { decision: 'execute_new' };
   }
 
+  if (!existing.preimage || !existing.policy_versions) {
+    return { decision: 'reject', error_code: 'INVALID_SCHEMA', retriable: false };
+  }
   const existingDigestRes = computeMemoryMutationOperationDigestV1(
     existing.preimage,
   );
@@ -1945,6 +1556,11 @@ export function evaluatePrincipalScopedMutationLookupV1<TOutput>(
     existing.policy_versions,
   );
   if (
+    !existing.policy_versions ||
+    !isValidOpaqueRef(existing.audit_id) || existing.audit_id === 'audit_mcp_l0_default' ||
+    !isValidCursor(existing.execution_generation) ||
+    !existing.preimage ||
+    !isSameMemoryMutationLookupKeyV1(existing.lookup_key, extractMemoryMutationLookupKeyV1(existing.preimage)) ||
     !existingDigestRes.ok ||
     !pvConsistency.ok ||
     existingDigestRes.value.operation_digest !== existing.operation_digest
@@ -1971,7 +1587,7 @@ export function evaluatePrincipalScopedMutationLookupV1<TOutput>(
     existing.recovery_state === 'completed_response' ||
     existing.recovery_state === 'canonical_committed_receipt'
   ) {
-    if (!existing.stored_output) {
+    if (!existing.stored_output || !isValidOpaqueRef(existing.canonical_replay_ref)) {
       return {
         decision: 'reject',
         error_code: 'FENCE_LOST',
@@ -1995,7 +1611,7 @@ export function evaluatePrincipalScopedMutationLookupV1<TOutput>(
     };
   }
 
-  if (incoming.active_domain_policy_version !== undefined) {
+  {
     const recordedVersion =
       existing.policy_versions.tool_name === 'engram_memory_capture'
         ? existing.policy_versions.capture_policy_version
@@ -2015,36 +1631,10 @@ export function evaluatePrincipalScopedMutationLookupV1<TOutput>(
     }
   }
 
-  return {
-    decision: 'resume_incomplete',
-    existing_record: {
-      key: {
-        principal_namespace: existing.lookup_key.principal_namespace,
-        principal_id: existing.lookup_key.principal_id,
-        tenant_id: existing.lookup_key.tenant_id,
-        store_id: existing.lookup_key.store_id,
-        provider_id: existing.lookup_key.provider_id,
-        connector_id: existing.lookup_key.connector_id,
-        connector_instance_ref: existing.lookup_key.connector_instance_ref,
-        scope_ref: existing.lookup_key.scope_ref,
-        tool_name: existing.preimage.tool_name,
-        tool_contract_version: existing.preimage.provider_contract_version,
-        target_ref:
-          existing.preimage.target.kind === 'capture_source'
-            ? existing.preimage.target.source_ref
-            : existing.preimage.target.kind === 'candidate'
-              ? existing.preimage.target.candidate_id
-              : existing.preimage.target.record_id,
-        idempotency_key: existing.lookup_key.idempotency_key,
-      },
-      normalized_input_digest: existing.operation_digest,
-      status: 'failed_retryable',
-      created_at: '2026-10-17T00:00:00.000Z',
-      preimage: existing.preimage,
-      policy_versions: existing.policy_versions,
-      stored_output: existing.stored_output,
-    },
-  };
+  if (existing.recovery_state !== 'pending_confirmation' && existing.recovery_state !== 'authorized_uncommitted') {
+    return { decision: 'reject', error_code: 'INVALID_SCHEMA', retriable: false };
+  }
+  return { decision: 'resume_incomplete', existing_record: existing };
 }
 
 /**
@@ -2093,8 +1683,7 @@ export function evaluateSameScopeTombstoneRecaptureGuardV1(input: {
     };
   }
 
-  const ordinaryDecision: AdmissionDecision =
-    input.ordinary_policy_decision ?? 'accept';
+  const ordinaryDecision = input.ordinary_policy_decision;
 
   const tombstonedInSameScope =
     input.tombstoned_payload_digests_in_scope instanceof Set
@@ -2114,6 +1703,9 @@ export function evaluateSameScopeTombstoneRecaptureGuardV1(input: {
     };
   }
 
+  if (ordinaryDecision !== 'accept' && ordinaryDecision !== 'reject' && ordinaryDecision !== 'adjudication_required') {
+    return { ok: false, error_code: 'POLICY_UNAVAILABLE', message: 'An explicit host admission decision is required' };
+  }
   const effectiveStatus =
     ordinaryDecision === 'accept'
       ? 'accepted'
@@ -2164,6 +1756,7 @@ export type M5LifecycleTransitionEvaluationV1 =
       readonly error_code:
         | 'ILLEGAL_TRANSITION'
         | 'ALREADY_TERMINAL'
+        | 'POLICY_UNAVAILABLE'
         | 'UNAUTHORIZED'
         | 'NOT_FOUND';
     };
@@ -2190,10 +1783,10 @@ export function evaluateM5LifecycleTransitionV1(input: {
   const isTargetTool = input.tool !== 'engram_memory_capture';
   const raw = input as unknown as Record<string, unknown>;
 
-  if (isTargetTool && raw.targetAuthorized !== undefined && raw.targetAuthorized !== true) {
+  if (isTargetTool && raw.targetAuthorized !== true) {
     return { ok: false, isError: true, error_code: 'NOT_FOUND' };
   }
-  if (raw.callerAuthorized !== undefined && raw.callerAuthorized !== true) {
+  if (raw.callerAuthorized !== true) {
     return {
       ok: false,
       isError: true,
@@ -2239,7 +1832,10 @@ export function evaluateM5LifecycleTransitionV1(input: {
         admission_status: 'pending_adjudication',
       };
     }
-    const decision = input.policy_decision ?? 'accept';
+    const decision = input.policy_decision;
+    if (decision !== 'accept' && decision !== 'reject' && decision !== 'adjudication_required') {
+      return { ok: false, isError: true, error_code: 'POLICY_UNAVAILABLE' };
+    }
     if (decision === 'accept') {
       return {
         ok: true,
@@ -2367,6 +1963,7 @@ export interface MemoryInvocationBindingV1 {
   readonly audit_id: OpaqueRef;
   readonly correlation_ref: OpaqueRef;
   readonly deadline_at: Instant;
+  readonly cancellation_ref: OpaqueRef;
   readonly issued_at: Instant;
   readonly channel_binding: ChannelBindingKindV1;
   readonly transport_scopes: readonly ('mcp:discover' | 'mcp:tools:invoke')[];
@@ -2378,6 +1975,8 @@ export interface MemoryInvocationBindingV1 {
 }
 
 export interface MemoryContextProjectionV1 {
+  readonly agent_id: OpaqueRef;
+  readonly delegation?: DelegationBindingV1;
   readonly trusted_context: TrustedInvocationContextV1;
   readonly neutral_authorization: AuthorizationContextV1;
   readonly neutral_scope_ref: OpaqueRef;
@@ -2393,6 +1992,9 @@ export interface MemoryContextProjectionV1 {
     readonly claims_provenance_receipt: Digest;
     readonly tenant_membership_receipt: Digest;
   };
+  readonly lifecycle_binding: { readonly deadline_at: Instant; readonly cancellation_ref: OpaqueRef };
+  readonly channel_binding: ChannelBindingKindV1;
+  readonly transport_scopes: readonly ('mcp:discover' | 'mcp:tools:invoke')[];
   readonly session_attachment: {
     readonly mcp_client_id: OpaqueRef;
     readonly logical_session_ref: OpaqueRef;
@@ -2461,6 +2063,7 @@ const MEMORY_INVOCATION_BINDING_KEYS = new Set<string>([
   'audit_id',
   'correlation_ref',
   'deadline_at',
+  'cancellation_ref',
   'issued_at',
   'channel_binding',
   'transport_scopes',
@@ -2496,7 +2099,7 @@ function checkDelegationBinding(
   if (!isPlainObject(delegation)) {
     return { ok: false, reason: 'DelegationBindingV1 must be a plain object' };
   }
-  if (delegation.verified_by_host_resolver !== true) {
+  if (!hasExactKeys(delegation, ['delegator_principal_id', 'delegate_principal_id', 'delegation_receipt_digest', 'verified_by_host_resolver', 'expires_at']) || delegation.verified_by_host_resolver !== true) {
     return {
       ok: false,
       reason: 'Delegation must have verified_by_host_resolver === true',
@@ -2636,7 +2239,8 @@ export function projectMemoryInvocationContextV1(
     !isValidOpaqueRef(binding.store_id) ||
     !isValidOpaqueRef(binding.scope_ref) ||
     !isValidOpaqueRef(binding.purpose_ref) ||
-    !isValidOpaqueRef(binding.correlation_ref)
+    !isValidOpaqueRef(binding.correlation_ref) ||
+    !isValidOpaqueRef(binding.cancellation_ref)
   ) {
     return {
       ok: false,
@@ -2775,9 +2379,17 @@ export function projectMemoryInvocationContextV1(
     };
   }
 
+  if (!['in_process_verified', 'stdio_host_managed_verified', 'http_mcp_auth_dpop_verified', 'http_mcp_auth_bearer_verified'].includes(binding.channel_binding as string) ||
+      !Array.isArray(binding.transport_scopes) ||
+      !binding.transport_scopes.includes('mcp:tools:invoke') ||
+      binding.transport_scopes.some((s) => s !== 'mcp:discover' && s !== 'mcp:tools:invoke') ||
+      new Set(binding.transport_scopes).size !== binding.transport_scopes.length) {
+    return { ok: false, error_code: 'UNAUTHORIZED', reason: 'A verified channel and invocation transport scope are required' };
+  }
+
   const issuedMs = parseInstantMs(binding.issued_at);
   const deadlineMs = parseInstantMs(binding.deadline_at);
-  if (issuedMs === null || deadlineMs === null || deadlineMs <= issuedMs) {
+  if (issuedMs === null || deadlineMs === null || deadlineMs <= issuedMs || deadlineMs - issuedMs > MEMORY_MCP_LIMITS.MAX_INVOCATION_DEADLINE_MS) {
     return {
       ok: false,
       error_code: 'UNAUTHORIZED',
@@ -2820,10 +2432,7 @@ export function projectMemoryInvocationContextV1(
     session_id: binding.logical_session_ref,
     correlation_id: binding.correlation_ref,
     now_utc: binding.issued_at,
-    deadline_ms: Math.min(
-      deadlineMs - issuedMs,
-      MEMORY_MCP_LIMITS.MAX_INVOCATION_DEADLINE_MS,
-    ),
+    deadline_ms: deadlineMs - issuedMs,
     authorization_context: neutral_authorization,
     policy_epoch: binding.policy_epoch,
   });
@@ -2841,6 +2450,8 @@ export function projectMemoryInvocationContextV1(
   return {
     ok: true,
     value: {
+      agent_id: b.agent_id,
+      ...(b.delegation !== undefined ? { delegation: { ...b.delegation } } : {}),
       trusted_context: trustedCheck.value,
       neutral_authorization,
       neutral_scope_ref: b.scope_ref,
@@ -2856,6 +2467,9 @@ export function projectMemoryInvocationContextV1(
         claims_provenance_receipt: b.claims_provenance_receipt,
         tenant_membership_receipt: b.tenant_membership_receipt,
       },
+      lifecycle_binding: { deadline_at: b.deadline_at, cancellation_ref: b.cancellation_ref },
+      channel_binding: b.channel_binding,
+      transport_scopes: [...b.transport_scopes],
       session_attachment: {
         mcp_client_id: b.mcp_client_id,
         logical_session_ref: b.logical_session_ref,
@@ -2967,7 +2581,7 @@ export interface ExpectedConfirmationContinuationBindingV1 {
   readonly execution_deadline_at: Instant;
   readonly caller_currently_authorized?: unknown;
   readonly target_currently_authorized?: unknown;
-  readonly reservation_state?: 'uncommitted' | 'committed' | 'unknown';
+  readonly reservation_state: 'uncommitted' | 'committed' | 'unknown';
 }
 
 export type ConfirmationContinuationDecisionV1 =
@@ -3075,6 +2689,9 @@ export function verifyMemoryConfirmationContinuationV1(
     };
   }
 
+  if (!['uncommitted', 'committed', 'unknown'].includes(expected.reservation_state)) {
+    return { ok: false, error_code: 'gate_failed', reason: 'Durable reservation state is required' };
+  }
   if (expected.reservation_state === 'unknown') {
     return {
       ok: false,
@@ -3234,6 +2851,11 @@ export function verifyMemoryConfirmationContinuationV1(
   }
 
   if (assurance.delegation !== undefined) {
+    if (!isPlainObject(assurance.delegation) ||
+        assurance.delegation.delegator_principal_id !== expected.initiating_principal_id ||
+        assurance.delegation.delegate_principal_id !== assurance.approving_human_principal_id) {
+      return { ok: false, error_code: 'gate_failed', reason: 'Delegation must bind the initiating and approving principals' };
+    }
     const delCheck = checkDelegationBinding(
       assurance.delegation,
       expected.now,
