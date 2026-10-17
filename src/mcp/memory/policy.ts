@@ -1417,12 +1417,18 @@ export type IdempotentMutationDecisionV1<TOutput> =
       readonly existing_record: DurableOperationRecordV1<TOutput> | MemoryMutationBindingV1<TOutput>;
     }
   | {
+      readonly decision: 'reconcile_canonical';
+      readonly canonical_replay_ref: OpaqueRef;
+      readonly existing_record: DurableOperationRecordV1<TOutput> | MemoryMutationBindingV1<TOutput>;
+    }
+  | {
       readonly decision: 'reject';
       readonly error_code:
         | 'DIGEST_CONFLICT'
         | 'UNAUTHORIZED'
         | 'NOT_FOUND'
         | 'FENCE_LOST'
+        | 'MUTATION_OUTCOME_UNKNOWN'
         | 'POLICY_STALE'
         | 'INVALID_SCHEMA';
       readonly retriable: boolean;
@@ -1466,8 +1472,11 @@ export function evaluateIdempotentMutationStateV1<TOutput>(
   },
 ): IdempotentMutationDecisionV1<TOutput> {
   const targetTool = incoming.key?.tool_name !== 'engram_memory_capture';
-  if (incoming.callerAuthorized !== true || (targetTool && incoming.targetAuthorized !== true)) {
-    return { decision: 'reject', error_code: targetTool ? 'NOT_FOUND' : 'UNAUTHORIZED', retriable: false };
+  if (incoming.callerAuthorized !== true) {
+    return { decision: 'reject', error_code: 'UNAUTHORIZED', retriable: false };
+  }
+  if (targetTool && incoming.targetAuthorized !== true) {
+    return { decision: 'reject', error_code: 'NOT_FOUND', retriable: false };
   }
   const invalid = { decision: 'reject', error_code: 'INVALID_SCHEMA', retriable: false } as const;
   const validRecord = (r: typeof incoming): boolean => {
@@ -1490,7 +1499,8 @@ export function evaluateIdempotentMutationStateV1<TOutput>(
     audit_id: existing.audit_id, execution_generation: existing.execution_generation,
   }] : [];
   const decision = evaluatePrincipalScopedMutationLookupV1(records, incoming);
-  return decision.decision === 'resume_incomplete' && existing ? { decision: 'resume_incomplete', existing_record: existing } : decision;
+  return (decision.decision === 'resume_incomplete' || decision.decision === 'reconcile_canonical') && existing
+    ? { ...decision, existing_record: existing } : decision;
 }
 
 /**
@@ -1510,17 +1520,17 @@ export function evaluatePrincipalScopedMutationLookupV1<TOutput>(
   const isTargetTool = incoming.preimage.tool_name !== 'engram_memory_capture';
   const rawIncoming = incoming as unknown as Record<string, unknown>;
 
+  if (rawIncoming.callerAuthorized !== true) {
+    return {
+      decision: 'reject',
+      error_code: 'UNAUTHORIZED',
+      retriable: false,
+    };
+  }
   if (isTargetTool && rawIncoming.targetAuthorized !== true) {
     return {
       decision: 'reject',
       error_code: 'NOT_FOUND',
-      retriable: false,
-    };
-  }
-  if (rawIncoming.callerAuthorized !== true) {
-    return {
-      decision: 'reject',
-      error_code: isTargetTool ? 'NOT_FOUND' : 'UNAUTHORIZED',
       retriable: false,
     };
   }
@@ -1589,12 +1599,16 @@ export function evaluatePrincipalScopedMutationLookupV1<TOutput>(
     existing.recovery_state === 'completed_response' ||
     existing.recovery_state === 'canonical_committed_receipt'
   ) {
-    if (!existing.stored_output || !isValidOpaqueRef(existing.canonical_replay_ref)) {
+    if (!isValidOpaqueRef(existing.canonical_replay_ref)) {
       return {
         decision: 'reject',
-        error_code: 'FENCE_LOST',
+        error_code: 'MUTATION_OUTCOME_UNKNOWN',
         retriable: true,
       };
+    }
+    if (existing.stored_output === undefined) {
+      // M:704,710: canonical commitment survives an unrecorded host completion.
+      return { decision: 'reconcile_canonical', canonical_replay_ref: existing.canonical_replay_ref, existing_record: existing };
     }
     return {
       decision: 'replay_completed',
@@ -1608,7 +1622,7 @@ export function evaluatePrincipalScopedMutationLookupV1<TOutput>(
   if (existing.recovery_state === 'executing_unknown_outcome') {
     return {
       decision: 'reject',
-      error_code: 'FENCE_LOST',
+      error_code: 'MUTATION_OUTCOME_UNKNOWN',
       retriable: true,
     };
   }
@@ -1791,15 +1805,15 @@ export function evaluateM5LifecycleTransitionV1(input: {
   const isTargetTool = input.tool !== 'engram_memory_capture';
   const raw = input as unknown as Record<string, unknown>;
 
-  if (isTargetTool && raw.targetAuthorized !== true) {
-    return { ok: false, isError: true, error_code: 'NOT_FOUND' };
-  }
   if (raw.callerAuthorized !== true) {
     return {
       ok: false,
       isError: true,
-      error_code: isTargetTool ? 'NOT_FOUND' : 'UNAUTHORIZED',
+      error_code: 'UNAUTHORIZED',
     };
+  }
+  if (isTargetTool && raw.targetAuthorized !== true) {
+    return { ok: false, isError: true, error_code: 'NOT_FOUND' };
   }
 
   if (input.tool === 'engram_memory_capture') {
