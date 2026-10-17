@@ -78,6 +78,13 @@ for (const field of ['approver_currently_enrolled_2fa', 'approver_not_revoked', 
 }
 add('O2-issuer', 'policy.ts', 'assurance.issuer !== expected.expected_issuer', 'false', 'O2 L0-A06', 561);
 add('O2-policy', 'policy.ts', '!expected.accepted_assurance_policy_versions.includes(assurance.assurance_policy_version)', 'false', 'O2 L0-A06', 561);
+add('O3-generation', 'policy.ts', 'binding.active_generation !== expected.expectedActiveGeneration', 'false', 'O3 L0-A03', 547);
+add('O3-epoch', 'policy.ts', 'binding.policy_epoch !== expected.expectedPolicyEpoch', 'false', 'O3 L0-A03', 547);
+add('O3-key-required', 'policy.ts', "const mutating = expected.tool !== 'engram_memory_search' && expected.tool !== 'engram_memory_get';", 'const mutating = false;', 'O3 L0-A03', 592);
+add('O3-key-equality', 'policy.ts', 'binding.idempotency_key !== expected.argumentIdempotencyKey', 'false', 'O3 L0-A03', 592);
+add('O3-elicitation', 'policy.ts', '(DESTRUCTIVE_TOOL_SET.has(expected.tool) || expected.confirmationRequired)', 'false', 'O3 L0-A03', 542);
+add('O3-purpose-binding', 'policy.ts', 'binding.purpose_ref !== expected.argumentPurposeRef', 'false', 'O3 L0-A03', 538);
+add('O3-purpose-projection', 'policy.ts', '      purpose_ref: b.purpose_ref,', '', 'O3 L0-A03', 1608);
 add('O1-tombstone-evidence', 'policy.ts', 'if (!(evidence instanceof Set || Array.isArray(evidence)) ||\n      ![...evidence].every(isValidSha256Digest))', 'if (false)', 'O1 A10-R4', 716);
 
 const results = [];
