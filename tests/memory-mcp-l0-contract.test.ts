@@ -123,13 +123,35 @@ import {
   validateWithdrawOutputV1,
   verifyDestructiveConfirmationGrantV1,
   verifyRequiredNeutralReadFacets,
+  ENGRAM_MEMORY_CANDIDATE_EVIDENCE_MATRIX_V1,
+  ENGRAM_MEMORY_HOST_STORAGE_PROFILE_V1,
+  ENGRAM_MEMORY_LEGACY_MIGRATION_CONTRACT_V1,
+  ENGRAM_MEMORY_LOCAL_DEFINITION_CONTRACT_V1,
+  ENGRAM_MEMORY_PUBLISHER_ENTRY_V1,
+  ENGRAM_MEMORY_RELEASE_GATE_MATRIX_V1,
+  ENGRAM_MEMORY_SELECTION_POLICY_BINDING_V1,
+  ENGRAM_MEMORY_WIRE_PROFILE_V1,
+  ENGRAM_MEMORY_WRITER_HANDOFF_V1,
+  MEMORY_BOUNDED_PARAMETER_SCHEMA_V1,
+  evaluateMemorySelectionAndRevocationV1,
+  projectMemoryInvocationContextV1,
+  validateCandidateQualificationOrderV1,
+  validateMemoryHostBindingSetV1,
+  validateMemoryLocalParametersV1,
+  validateMemoryPublisherEntryV1,
+  validateMemoryToolSchemaDialectV1,
+  verifyMemoryConfirmationContinuationV1,
   type CaptureInputV1,
   type CaptureOutputV1,
   type DestructiveConfirmationGrantV1,
   type DurableOperationKeyV1,
   type DurableOperationRecordV1,
+  type ExpectedConfirmationContinuationBindingV1,
   type ForgetOutputV1,
+  type MemoryConfirmationContinuationV1,
   type MemoryErrorV1,
+  type MemoryHostBindingSetV1,
+  type MemoryInvocationBindingV1,
   type MemoryMutationBindingV1,
   type MemoryMutationPreimageV1,
   type MemoryReadPacketV1,
@@ -142,7 +164,15 @@ import {
   type WithdrawOutputV1,
 } from '../src/mcp/memory/index.js';
 import {
+  A01_PUBLISHER_SPEC_RULE,
+  A02_LOCAL_DEFINITION_SPEC_RULE,
+  A03_CONTEXT_PROJECTION_SPEC_RULE,
+  A04_WIRE_PROFILE_SPEC_RULE,
   A05_MUTATION_DIGEST_VECTORS_SPEC_RULE,
+  A06_CONFIRMATION_CONTINUATION_SPEC_RULE,
+  A07_SELECTION_AND_STORAGE_SPEC_RULE,
+  A08_RELEASE_AND_MIGRATION_SPEC_RULE,
+  A09_CANDIDATE_AND_WRITER_HANDOFF_SPEC_RULE,
   M1_SURFACE_SPEC_RULES,
   M2_AUDIT_MISSING_SPEC_RULE,
   M2_NUMERIC_AND_ARRAY_BOUNDARY_SPEC_RULES,
@@ -2614,6 +2644,844 @@ describe('MCP-L0 Normative Conformance against SPEC-memory-mcp-v2.md and engram-
         error_code: 'DIGEST_CONFLICT',
         retriable: false,
       });
+    });
+  });
+
+  // ==========================================================================
+  // 11. L0-A01..A09 & M14 Co-Frozen v3.1 Contract Additions
+  // ==========================================================================
+  describe('11. L0-A01..A09 & M14 Co-Frozen v3.1 Contract Additions', () => {
+    it('L0-A01: Publisher identity, R 1.1.4 schema version, entryVersion===manifest.version, separate behavioral contract version, and Option B null 0.20.0 adapter', () => {
+      expect(ENGRAM_MEMORY_PUBLISHER_ENTRY_V1.registry_schema_version).toBe(
+        A01_PUBLISHER_SPEC_RULE.registry_schema_version,
+      );
+      expect(ENGRAM_MEMORY_PUBLISHER_ENTRY_V1.id).toBe(
+        A01_PUBLISHER_SPEC_RULE.publisher_entry_id,
+      );
+      expect(ENGRAM_MEMORY_PUBLISHER_ENTRY_V1.provider_id).toBe(
+        A01_PUBLISHER_SPEC_RULE.provider_id,
+      );
+      expect(ENGRAM_MEMORY_PUBLISHER_ENTRY_V1.connector_id).toBe(
+        A01_PUBLISHER_SPEC_RULE.connector_id,
+      );
+      expect(ENGRAM_MEMORY_PUBLISHER_ENTRY_V1.app_id).toBe(
+        A01_PUBLISHER_SPEC_RULE.app_id,
+      );
+      expect(ENGRAM_MEMORY_PUBLISHER_ENTRY_V1.entry_version).toBe(
+        A01_PUBLISHER_SPEC_RULE.entry_version,
+      );
+      expect(ENGRAM_MEMORY_PUBLISHER_ENTRY_V1.manifest_version).toBe(
+        A01_PUBLISHER_SPEC_RULE.manifest_version,
+      );
+      expect(ENGRAM_MEMORY_PUBLISHER_ENTRY_V1.entry_version).toBe(
+        ENGRAM_MEMORY_PROVIDER_MANIFEST.version,
+      );
+      expect(
+        ENGRAM_MEMORY_PUBLISHER_ENTRY_V1.provider_behavioral_contract_version,
+      ).toBe(A01_PUBLISHER_SPEC_RULE.provider_behavioral_contract_version);
+      expect(ENGRAM_MEMORY_PUBLISHER_ENTRY_V1.publisher_package_name).toBe(
+        A01_PUBLISHER_SPEC_RULE.publisher_package_name,
+      );
+      expect(ENGRAM_MEMORY_PUBLISHER_ENTRY_V1.entries_asset_path).toBe(
+        A01_PUBLISHER_SPEC_RULE.entries_asset_path,
+      );
+      expect(ENGRAM_MEMORY_PUBLISHER_ENTRY_V1.manifest_export_subpath).toBe(
+        A01_PUBLISHER_SPEC_RULE.manifest_export_subpath,
+      );
+      expect(ENGRAM_MEMORY_PUBLISHER_ENTRY_V1.definitions_export_subpath).toBe(
+        A01_PUBLISHER_SPEC_RULE.definitions_export_subpath,
+      );
+      expect(ENGRAM_MEMORY_PUBLISHER_ENTRY_V1.mcp_memory_export_subpath).toBe(
+        A01_PUBLISHER_SPEC_RULE.mcp_memory_export_subpath,
+      );
+      expect(ENGRAM_MEMORY_PUBLISHER_ENTRY_V1.tool_schema_profile).toBe(
+        A01_PUBLISHER_SPEC_RULE.tool_schema_profile,
+      );
+      expect(ENGRAM_MEMORY_PUBLISHER_ENTRY_V1.parameter_schema_profile).toBe(
+        A01_PUBLISHER_SPEC_RULE.parameter_schema_profile,
+      );
+      expect(ENGRAM_MEMORY_PUBLISHER_ENTRY_V1.selected_release_option).toBe(
+        A01_PUBLISHER_SPEC_RULE.selected_release_option,
+      );
+      expect(
+        ENGRAM_MEMORY_PUBLISHER_ENTRY_V1.adapter_delivering_version_in_0_20_0,
+      ).toBe(A01_PUBLISHER_SPEC_RULE.adapter_delivering_version_in_0_20_0);
+      expect(
+        ENGRAM_MEMORY_PUBLISHER_ENTRY_V1.later_b_adapter_version_status,
+      ).toBe(A01_PUBLISHER_SPEC_RULE.later_b_adapter_version_status);
+
+      expect(
+        validateMemoryPublisherEntryV1(ENGRAM_MEMORY_PUBLISHER_ENTRY_V1).ok,
+      ).toBe(true);
+
+      // Counterexamples: mismatched entryVersion vs manifestVersion, wrong providerId, or unchanged entryVersion after packageVersion bump
+      expect(
+        validateMemoryPublisherEntryV1({
+          ...ENGRAM_MEMORY_PUBLISHER_ENTRY_V1,
+          manifest_version: '1.0.1',
+        }).ok,
+      ).toBe(false);
+      expect(
+        validateMemoryPublisherEntryV1({
+          ...ENGRAM_MEMORY_PUBLISHER_ENTRY_V1,
+          provider_id: 'engram-memory' as 'sentropic.engram.memory',
+        }).ok,
+      ).toBe(false);
+      expect(
+        validateMemoryPublisherEntryV1(ENGRAM_MEMORY_PUBLISHER_ENTRY_V1, {
+          previous_package_version: '0.20.1',
+          current_package_version: '0.20.2',
+          previous_entry_version: '1.0.0',
+        }).ok,
+      ).toBe(false);
+    });
+
+    it('L0-A02: Local lazy definition contract, bounded parameter schema (mode: embedded-local, required 1..128 ASCII hostBindingRef with no default), and 9 required host binding ports', () => {
+      expect(
+        ENGRAM_MEMORY_LOCAL_DEFINITION_CONTRACT_V1.definition_export_name,
+      ).toBe(A02_LOCAL_DEFINITION_SPEC_RULE.definition_export_name);
+      expect(
+        ENGRAM_MEMORY_LOCAL_DEFINITION_CONTRACT_V1.definitions_subpath,
+      ).toBe(A02_LOCAL_DEFINITION_SPEC_RULE.definitions_subpath);
+      expect(
+        ENGRAM_MEMORY_LOCAL_DEFINITION_CONTRACT_V1.literal_loader_target,
+      ).toBe(A02_LOCAL_DEFINITION_SPEC_RULE.literal_loader_target);
+      expect(ENGRAM_MEMORY_LOCAL_DEFINITION_CONTRACT_V1.parameter_profile).toBe(
+        A02_LOCAL_DEFINITION_SPEC_RULE.parameter_profile,
+      );
+      expect(ENGRAM_MEMORY_LOCAL_DEFINITION_CONTRACT_V1.mode_const).toBe(
+        A02_LOCAL_DEFINITION_SPEC_RULE.mode_const,
+      );
+      expect(
+        ENGRAM_MEMORY_LOCAL_DEFINITION_CONTRACT_V1.host_binding_ref_has_default,
+      ).toBe(false);
+      expect(
+        ENGRAM_MEMORY_LOCAL_DEFINITION_CONTRACT_V1.host_binding_ref_min_ascii,
+      ).toBe(A02_LOCAL_DEFINITION_SPEC_RULE.host_binding_ref_min_ascii);
+      expect(
+        ENGRAM_MEMORY_LOCAL_DEFINITION_CONTRACT_V1.host_binding_ref_max_ascii,
+      ).toBe(A02_LOCAL_DEFINITION_SPEC_RULE.host_binding_ref_max_ascii);
+      expect(
+        ENGRAM_MEMORY_LOCAL_DEFINITION_CONTRACT_V1.host_binding_ref_pattern,
+      ).toBe(A02_LOCAL_DEFINITION_SPEC_RULE.host_binding_ref_pattern);
+      expect(
+        ENGRAM_MEMORY_LOCAL_DEFINITION_CONTRACT_V1.required_binding_ports,
+      ).toEqual(A02_LOCAL_DEFINITION_SPEC_RULE.required_binding_ports);
+      expect(
+        'default' in MEMORY_BOUNDED_PARAMETER_SCHEMA_V1.properties.hostBindingRef,
+      ).toBe(false);
+
+      // 4 boundary cases on hostBindingRef (min=1, max=128, max+1=129, non-ASCII, absent/empty)
+      expect(
+        validateMemoryLocalParametersV1({
+          mode: 'embedded-local',
+          hostBindingRef: 'h',
+        }).ok,
+      ).toBe(true);
+      expect(
+        validateMemoryLocalParametersV1({
+          mode: 'embedded-local',
+          hostBindingRef: 'h'.repeat(
+            A02_LOCAL_DEFINITION_SPEC_RULE.host_binding_ref_max_ascii,
+          ),
+        }).ok,
+      ).toBe(true);
+      expect(
+        validateMemoryLocalParametersV1({
+          mode: 'embedded-local',
+          hostBindingRef: 'h'.repeat(
+            A02_LOCAL_DEFINITION_SPEC_RULE.host_binding_ref_max_ascii + 1,
+          ),
+        }).ok,
+      ).toBe(false);
+      expect(
+        validateMemoryLocalParametersV1({
+          mode: 'embedded-local',
+          hostBindingRef: 'host-é',
+        }).ok,
+      ).toBe(false);
+      expect(
+        validateMemoryLocalParametersV1({
+          mode: 'embedded-local',
+          hostBindingRef: '',
+        }).ok,
+      ).toBe(false);
+      expect(
+        validateMemoryLocalParametersV1({
+          mode: 'embedded-local',
+        }).ok,
+      ).toBe(false);
+      expect(
+        validateMemoryLocalParametersV1({
+          mode: 'embedded-local',
+          hostBindingRef: 'host_01',
+          enabled: true,
+        }).ok,
+      ).toBe(false);
+
+      // Validate all 9 required host binding ports
+      const validBindings: MemoryHostBindingSetV1 = {
+        hostBindingRef: 'binding_h2a_local_01',
+        invocation: { contractVersion: '1.0.0' },
+        authorization: { contractVersion: '1.0.0' },
+        domainPolicy: { contractVersion: '1.0.0' },
+        engine: {
+          mutationPortVersion: 2,
+          recallPortVersion: 3,
+          readPortVersion: 1,
+          engineId: 'eng_01',
+          canonicalStoreId: 'store_01',
+          fenceProvenanceId: 'fence_01',
+        },
+        mutationRecovery: {
+          contractVersion: '1.0.0',
+          digestProfile: 'sentropic.engram.memory-mutation/v1',
+        },
+        confirmation: {
+          contractVersion: '1.0.0',
+          enrolledOidcDomain: 'sent-tech.ca',
+        },
+        audit: { contractVersion: '1.0.0' },
+        pagination: {
+          contractVersion: '1.0.0',
+          engramOwnsSigningSecret: false,
+        },
+        lifecycle: { contractVersion: '1.0.0' },
+      };
+      expect(validateMemoryHostBindingSetV1(validBindings).ok).toBe(true);
+
+      for (const portName of A02_LOCAL_DEFINITION_SPEC_RULE.required_binding_ports) {
+        const clone = { ...validBindings } as Record<string, unknown>;
+        delete clone[portName];
+        expect(validateMemoryHostBindingSetV1(clone).ok).toBe(false);
+      }
+    });
+
+    it('L0-A03: Verified context projection retains sub/tid, rejects claims:[] and workspace-as-tenant shortcuts, keeps neutral AuthorizationContextV1 framework-free, and exports no public ScopeRefV1 or PrincipalRefV1', () => {
+      const validBinding: MemoryInvocationBindingV1 = {
+        issuer: 'https://auth.sent-tech.ca',
+        sub: 'sub_user_alice',
+        tid: 'ten_01',
+        claims: ['sub', 'tid'],
+        claims_provenance_receipt: DIGEST_A,
+        principal_namespace: 'ns:sent-tech.ca',
+        principal_id: 'usr_alice',
+        tenant_id: 'ten_01',
+        tenant_membership_receipt: DIGEST_B,
+        tenant_resolution_source: 'authoritative_membership',
+        workspace_id: 'ws_different_from_tenant_99',
+        agent_id: 'agent_coder',
+        mcp_client_id: 'client_h2a',
+        logical_session_ref: 'sess_logical_01',
+        transport_attachment_ref: 'attach_01',
+        connection_proof_digest: DIGEST_C,
+        publisher_id: 'sentropic.engram.memory',
+        provider_id: 'sentropic.engram.memory',
+        connector_id: 'engram-memory',
+        connector_instance_ref: 'conn_inst_01',
+        selected_source_id: 'mcp:engram-memory',
+        store_id: 'store_local_01',
+        scope_ref: 'scope:project:alpha',
+        purpose_ref: 'purpose:engineering',
+        active_generation: '1',
+        policy_epoch: '4',
+        audit_id: 'audit_trusted_01',
+        correlation_ref: 'corr_01',
+        deadline_at: INSTANT_T1,
+        issued_at: INSTANT_T0,
+        channel_binding: 'in_process_verified',
+        transport_scopes: ['mcp:tools:invoke'],
+        idempotency_key: IDEM_KEY_A,
+        elicitation_ref: 'elic_01',
+        neutral_credential: 'host_resolved_cred_01',
+        neutral_context_ref: 'ctx_ref_01',
+      };
+
+      const projected = projectMemoryInvocationContextV1(validBinding, {
+        expectedActiveGeneration: '1',
+        expectedPolicyEpoch: '4',
+        argumentIdempotencyKey: IDEM_KEY_A,
+        requiresIdempotencyKey: true,
+        requiresElicitationRef: true,
+      });
+      expect(projected.ok).toBe(true);
+      if (projected.ok) {
+        expect(projected.value.verified_claims.sub).toBe('sub_user_alice');
+        expect(projected.value.verified_claims.tid).toBe('ten_01');
+        expect(projected.value.neutral_scope_ref).toBe('scope:project:alpha');
+        expect(Object.keys(projected.value.neutral_authorization).sort()).toEqual(
+          [...A03_CONTEXT_PROJECTION_SPEC_RULE.authorization_context_allowed_keys].sort(),
+        );
+      }
+
+      // Reject claims: [] shortcut
+      expect(
+        projectMemoryInvocationContextV1({
+          ...validBinding,
+          claims: [],
+        }).ok,
+      ).toBe(false);
+
+      // Reject missing 'tid' claim
+      expect(
+        projectMemoryInvocationContextV1({
+          ...validBinding,
+          claims: ['sub'],
+        }).ok,
+      ).toBe(false);
+
+      // Reject workspace_id substituted for tenant_id
+      expect(
+        projectMemoryInvocationContextV1({
+          ...validBinding,
+          tenant_id: 'ws_different_from_tenant_99',
+        }).ok,
+      ).toBe(false);
+      expect(
+        projectMemoryInvocationContextV1({
+          ...validBinding,
+          tenant_resolution_source: 'workspace_id' as 'authoritative_membership',
+        }).ok,
+      ).toBe(false);
+
+      // Reject mismatched idempotencyKey between envelope and argument
+      expect(
+        projectMemoryInvocationContextV1(validBinding, {
+          argumentIdempotencyKey: 'idem_other_key_00001',
+        }).ok,
+      ).toBe(false);
+
+      // Reject stale generation or policy epoch
+      expect(
+        projectMemoryInvocationContextV1(validBinding, {
+          expectedActiveGeneration: '2',
+        }),
+      ).toMatchObject({
+        ok: false,
+        error_code: 'AUTHORIZATION_REVOKED',
+      });
+      expect(
+        projectMemoryInvocationContextV1(validBinding, {
+          expectedPolicyEpoch: '5',
+        }),
+      ).toMatchObject({
+        ok: false,
+        error_code: 'POLICY_STALE',
+      });
+
+      // Verify neither ScopeRefV1 nor PrincipalRefV1 is declared as a public type in src/mcp/memory or engram-memory
+      const mcpFiles = [
+        'contracts.ts',
+        'schemas.ts',
+        'errors.ts',
+        'gates.ts',
+        'policy.ts',
+        'topology.ts',
+        'index.ts',
+      ];
+      for (const file of mcpFiles) {
+        const src = readFileSync(
+          join(ROOT, 'src', 'mcp', 'memory', file),
+          'utf8',
+        );
+        for (const forbiddenType of A03_CONTEXT_PROJECTION_SPEC_RULE.forbidden_public_types) {
+          expect(src).not.toMatch(
+            new RegExp(`export\\s+(type|interface)\\s+${forbiddenType}\\b`),
+          );
+        }
+      }
+    });
+
+    it('L0-A04: MemoryMcpWireProfileV1 enforces finite Draft 2020-12 dialect keywords, validates all 12 published input/output schemas, and rejects non-profile keywords or bounded-parameter profile substitution', () => {
+      expect(ENGRAM_MEMORY_WIRE_PROFILE_V1.wireProfileId).toBe(
+        A04_WIRE_PROFILE_SPEC_RULE.wire_profile_id,
+      );
+      expect(ENGRAM_MEMORY_WIRE_PROFILE_V1.schemaProfileId).toBe(
+        A04_WIRE_PROFILE_SPEC_RULE.schema_profile_id,
+      );
+      expect(ENGRAM_MEMORY_WIRE_PROFILE_V1.jsonSchemaDialect).toBe(
+        A04_WIRE_PROFILE_SPEC_RULE.json_schema_dialect,
+      );
+      expect(ENGRAM_MEMORY_WIRE_PROFILE_V1.allowedAssertionKeywords).toEqual(
+        A04_WIRE_PROFILE_SPEC_RULE.allowed_assertion_keywords,
+      );
+      expect(ENGRAM_MEMORY_WIRE_PROFILE_V1.allowedAnnotationKeywords).toEqual(
+        A04_WIRE_PROFILE_SPEC_RULE.allowed_annotation_keywords,
+      );
+      expect(
+        ENGRAM_MEMORY_WIRE_PROFILE_V1.combinedTransportCeilingUtf8Bytes,
+      ).toBe(A04_WIRE_PROFILE_SPEC_RULE.combined_transport_ceiling_utf8_bytes);
+      expect(ENGRAM_MEMORY_WIRE_PROFILE_V1.maxPacketBytesDefault).toBe(
+        A04_WIRE_PROFILE_SPEC_RULE.max_packet_bytes_default,
+      );
+      expect(ENGRAM_MEMORY_WIRE_PROFILE_V1.maxPacketBytesMax).toBe(
+        A04_WIRE_PROFILE_SPEC_RULE.max_packet_bytes_max,
+      );
+      expect(ENGRAM_MEMORY_WIRE_PROFILE_V1.mcpSdkMinVersion).toBe(
+        A04_WIRE_PROFILE_SPEC_RULE.mcp_sdk_min_version,
+      );
+
+      // Every published input and output schema must satisfy validateMemoryToolSchemaDialectV1
+      for (const toolName of ENGRAM_MEMORY_TOOL_NAMES) {
+        const pair = ENGRAM_MEMORY_TOOL_SCHEMAS[toolName];
+        expect(
+          validateMemoryToolSchemaDialectV1(pair.inputSchema, {
+            wireProfileId: A04_WIRE_PROFILE_SPEC_RULE.wire_profile_id,
+            schemaProfileId: A04_WIRE_PROFILE_SPEC_RULE.schema_profile_id,
+          }).ok,
+        ).toBe(true);
+        expect(
+          validateMemoryToolSchemaDialectV1(pair.outputSchema, {
+            wireProfileId: A04_WIRE_PROFILE_SPEC_RULE.wire_profile_id,
+            schemaProfileId: A04_WIRE_PROFILE_SPEC_RULE.schema_profile_id,
+          }).ok,
+        ).toBe(true);
+      }
+
+      // Reject forbidden keywords ($ref, anyOf, not, patternProperties) and unclosed objects
+      for (const forbiddenKeyword of [
+        '$ref',
+        'anyOf',
+        'allOf',
+        'not',
+        'patternProperties',
+        'unevaluatedProperties',
+      ]) {
+        expect(
+          validateMemoryToolSchemaDialectV1({
+            type: 'object',
+            additionalProperties: false,
+            [forbiddenKeyword]: {},
+          }).ok,
+        ).toBe(false);
+      }
+      expect(
+        validateMemoryToolSchemaDialectV1({
+          type: 'object',
+          properties: { a: { type: 'string' } },
+        }).ok,
+      ).toBe(false);
+
+      // Reject substituting configuration's bounded parameter profile for the DTO schema profile
+      expect(
+        validateMemoryToolSchemaDialectV1(ENGRAM_MEMORY_SEARCH_INPUT_SCHEMA, {
+          schemaProfileId: 'sentropic.parameters/2020-12-bounded-v1',
+        }).ok,
+      ).toBe(false);
+    });
+
+    it('L0-A06: Enrolled OIDC/2FA confirmation continuation on sent-tech.ca, 4 separate literal-true checks, reconnect reattachment proof, new-session refusal, and post-expiry committed disclosure', () => {
+      const validContinuation: MemoryConfirmationContinuationV1 = {
+        continuation_ref: 'cont_01',
+        elicitation_ref: 'elic_forget_01',
+        mode: A06_CONFIRMATION_CONTINUATION_SPEC_RULE.elicitation_mode,
+        capability: 'engram_memory_forget',
+        provider_id: 'sentropic.engram.memory',
+        provider_contract_version: '1.0.0',
+        connector_id: 'engram-memory',
+        connector_instance_ref: 'conn_inst_01',
+        tenant_id: 'ten_01',
+        initiating_principal_namespace: 'ns:sent-tech.ca',
+        initiating_principal_id: 'usr_alice',
+        agent_id: 'agent_coder',
+        mcp_client_id: 'client_h2a',
+        logical_session_ref: 'sess_logical_01',
+        transport_attachment_ref: 'attach_01',
+        active_generation: '1',
+        store_id: 'store_local_01',
+        scope_ref: 'scope:project:alpha',
+        target_ref: RECORD_ID_A,
+        reservation_ref: 'resv_04',
+        operation_digest: DIGEST_A,
+        approved: true,
+        issued_at: '2026-10-17T12:00:00.000Z',
+        expires_at: '2026-10-17T12:05:00.000Z',
+        assurance: {
+          enrolled_oidc_domain:
+            A06_CONFIRMATION_CONTINUATION_SPEC_RULE.enrolled_oidc_domain,
+          issuer: 'https://oidc.sent-tech.ca',
+          approving_subject_sub: 'sub_alice_2fa',
+          approving_human_principal_id: 'usr_alice',
+          enrollment_receipt_digest: DIGEST_B,
+          step_up_2fa_receipt_digest: DIGEST_C,
+          assurance_policy_version: 'assurance-policy/v1',
+          authenticated: true,
+          enrolled_2fa: true,
+          step_up_assurance_verified: true,
+          hardware_key_required:
+            A06_CONFIRMATION_CONTINUATION_SPEC_RULE.hardware_key_required,
+          identity_source: 'enrolled_oidc_2fa',
+          host_deployment_qualification_status: 'unverified',
+        },
+      };
+
+      const expectedBinding: ExpectedConfirmationContinuationBindingV1 = {
+        elicitation_ref: 'elic_forget_01',
+        capability: 'engram_memory_forget',
+        provider_id: 'sentropic.engram.memory',
+        provider_contract_version: '1.0.0',
+        connector_id: 'engram-memory',
+        connector_instance_ref: 'conn_inst_01',
+        tenant_id: 'ten_01',
+        initiating_principal_namespace: 'ns:sent-tech.ca',
+        initiating_principal_id: 'usr_alice',
+        agent_id: 'agent_coder',
+        mcp_client_id: 'client_h2a',
+        logical_session_ref: 'sess_logical_01',
+        transport_attachment_ref: 'attach_01',
+        active_generation: '1',
+        store_id: 'store_local_01',
+        scope_ref: 'scope:project:alpha',
+        target_ref: RECORD_ID_A,
+        reservation_ref: 'resv_04',
+        operation_digest: DIGEST_A,
+        now: '2026-10-17T12:01:00.000Z',
+        execution_deadline_at: '2026-10-17T12:01:30.000Z',
+        caller_currently_authorized: true,
+        target_currently_authorized: true,
+        reservation_state: 'uncommitted',
+      };
+
+      expect(
+        verifyMemoryConfirmationContinuationV1(validContinuation, expectedBinding),
+      ).toEqual({
+        ok: true,
+        decision: 'execute_confirmed',
+        continuation: validContinuation,
+      });
+
+      // Closed-world refusal for each of the 4 assurance/approval flags when not literal true
+      for (const badVerdict of M4_CLOSED_WORLD_AUTHZ_SPEC_RULES.rejected_verdicts) {
+        expect(
+          verifyMemoryConfirmationContinuationV1(
+            {
+              ...validContinuation,
+              approved: badVerdict as boolean,
+            },
+            expectedBinding,
+          ).ok,
+        ).toBe(false);
+        expect(
+          verifyMemoryConfirmationContinuationV1(
+            {
+              ...validContinuation,
+              assurance: {
+                ...validContinuation.assurance,
+                authenticated: badVerdict as boolean,
+              },
+            },
+            expectedBinding,
+          ).ok,
+        ).toBe(false);
+        expect(
+          verifyMemoryConfirmationContinuationV1(
+            {
+              ...validContinuation,
+              assurance: {
+                ...validContinuation.assurance,
+                enrolled_2fa: badVerdict as boolean,
+              },
+            },
+            expectedBinding,
+          ).ok,
+        ).toBe(false);
+        expect(
+          verifyMemoryConfirmationContinuationV1(
+            {
+              ...validContinuation,
+              assurance: {
+                ...validContinuation.assurance,
+                step_up_assurance_verified: badVerdict as boolean,
+              },
+            },
+            expectedBinding,
+          ).ok,
+        ).toBe(false);
+      }
+
+      // Boundary checks: now === expires_at (expired), TTL > 300s, execution > 30s
+      expect(
+        verifyMemoryConfirmationContinuationV1(validContinuation, {
+          ...expectedBinding,
+          now: validContinuation.expires_at,
+          execution_deadline_at: validContinuation.expires_at,
+        }).ok,
+      ).toBe(false);
+      expect(
+        verifyMemoryConfirmationContinuationV1(
+          {
+            ...validContinuation,
+            expires_at: '2026-10-17T12:05:00.001Z',
+          },
+          expectedBinding,
+        ).ok,
+      ).toBe(false);
+      expect(
+        verifyMemoryConfirmationContinuationV1(validContinuation, {
+          ...expectedBinding,
+          execution_deadline_at: '2026-10-17T12:01:30.001Z',
+        }).ok,
+      ).toBe(false);
+
+      // Reconnect on new transport attachment requires verified reattachment_proof; new logical session is refused
+      expect(
+        verifyMemoryConfirmationContinuationV1(validContinuation, {
+          ...expectedBinding,
+          transport_attachment_ref: 'attach_02',
+        }).ok,
+      ).toBe(false);
+      expect(
+        verifyMemoryConfirmationContinuationV1(
+          {
+            ...validContinuation,
+            reattachment_proof: {
+              previous_attachment_ref: 'attach_01',
+              current_attachment_ref: 'attach_02',
+              reattachment_receipt_digest: DIGEST_D,
+              verified: true,
+              admitted_generation: '1',
+            },
+          },
+          {
+            ...expectedBinding,
+            transport_attachment_ref: 'attach_02',
+          },
+        ).ok,
+      ).toBe(true);
+      expect(
+        verifyMemoryConfirmationContinuationV1(validContinuation, {
+          ...expectedBinding,
+          logical_session_ref: 'sess_logical_02',
+        }).ok,
+      ).toBe(false);
+
+      // Already-committed result may be disclosed after confirmation expiry under fresh current authorization without repeating effect
+      expect(
+        verifyMemoryConfirmationContinuationV1(validContinuation, {
+          ...expectedBinding,
+          now: '2026-10-17T12:10:00.000Z',
+          execution_deadline_at: '2026-10-17T12:10:10.000Z',
+          reservation_state: 'committed',
+          caller_currently_authorized: true,
+          target_currently_authorized: true,
+        }),
+      ).toEqual({
+        ok: true,
+        decision: 'disclose_committed_without_repeat_effect',
+        continuation: validContinuation,
+      });
+    });
+
+    it('L0-A07: Selection pipeline (register->select->configure->compile), catalog cache key, collision refusal, generation fencing on disable, /memory in disabledNamespaceModule, and independent host storage profiles', () => {
+      expect(ENGRAM_MEMORY_SELECTION_POLICY_BINDING_V1.pipeline_phases).toEqual(
+        A07_SELECTION_AND_STORAGE_SPEC_RULE.pipeline_phases,
+      );
+      expect(
+        ENGRAM_MEMORY_SELECTION_POLICY_BINDING_V1.local_mesh_namespace,
+      ).toBe(A07_SELECTION_AND_STORAGE_SPEC_RULE.local_mesh_namespace);
+      expect(
+        ENGRAM_MEMORY_SELECTION_POLICY_BINDING_V1.disabled_namespace_helper,
+      ).toBe(A07_SELECTION_AND_STORAGE_SPEC_RULE.disabled_namespace_helper);
+      expect(
+        ENGRAM_MEMORY_SELECTION_POLICY_BINDING_V1.disabled_namespace_helper_namespaces,
+      ).toContain(A07_SELECTION_AND_STORAGE_SPEC_RULE.local_mesh_namespace);
+      expect(
+        ENGRAM_MEMORY_SELECTION_POLICY_BINDING_V1.catalog_cache_key_fields,
+      ).toEqual(A07_SELECTION_AND_STORAGE_SPEC_RULE.catalog_cache_key_fields);
+
+      expect(
+        ENGRAM_MEMORY_HOST_STORAGE_PROFILE_V1.sentropic_host
+          .concrete_backend_status,
+      ).toBe(
+        A07_SELECTION_AND_STORAGE_SPEC_RULE.sentropic_concrete_backend_status,
+      );
+      expect(
+        ENGRAM_MEMORY_HOST_STORAGE_PROFILE_V1.h2a_host.concrete_backend,
+      ).toBe(A07_SELECTION_AND_STORAGE_SPEC_RULE.h2a_concrete_backend);
+
+      const validSelection = {
+        tenant_opted_in: true,
+        agent_selected: true,
+        tool_permitted: true,
+        plan_compiled: true,
+        has_collision: false,
+        has_verified_call_context: true,
+        disabled: false,
+        call_generation: '3',
+        active_generation: '3',
+        cache_key: {
+          tenant_id: 'ten_01',
+          principal_id: 'usr_alice',
+          agent_id: 'agent_coder',
+          policy_epoch: '4',
+          provider_id: 'sentropic.engram.memory' as const,
+          provider_version: '1.0.0',
+          source_id: 'mcp:engram-memory' as const,
+          plan_generation: '3',
+        },
+      };
+      expect(evaluateMemorySelectionAndRevocationV1(validSelection)).toEqual({
+        allowed: true,
+      });
+      expect(
+        evaluateMemorySelectionAndRevocationV1({
+          ...validSelection,
+          has_collision: true,
+        }),
+      ).toEqual({
+        allowed: false,
+        refusal_code: 'collision_refused',
+      });
+      expect(
+        evaluateMemorySelectionAndRevocationV1({
+          ...validSelection,
+          has_verified_call_context: false,
+        }),
+      ).toEqual({
+        allowed: false,
+        refusal_code: 'context_free_search_refused',
+      });
+      expect(
+        evaluateMemorySelectionAndRevocationV1({
+          ...validSelection,
+          call_generation: '2',
+        }),
+      ).toEqual({
+        allowed: false,
+        refusal_code: 'stale_or_revoked_generation_fenced',
+      });
+      expect(
+        evaluateMemorySelectionAndRevocationV1({
+          ...validSelection,
+          disabled: true,
+        }),
+      ).toEqual({
+        allowed: false,
+        refusal_code: 'stale_or_revoked_generation_fenced',
+      });
+    });
+
+    it('L0-A08 & M14: Release gate matrix selects Option B (0.20.0 ships L0-L3 without L4 adapter; SQLite reference durable host ports; later L4 order) and L7/L8 legacy migration contract', () => {
+      expect(ENGRAM_MEMORY_RELEASE_GATE_MATRIX_V1.owner_selected_option).toBe(
+        A08_RELEASE_AND_MIGRATION_SPEC_RULE.owner_selected_option,
+      );
+      expect(ENGRAM_MEMORY_RELEASE_GATE_MATRIX_V1.option_a_pursued).toBe(
+        A08_RELEASE_AND_MIGRATION_SPEC_RULE.option_a_pursued,
+      );
+      expect(
+        ENGRAM_MEMORY_RELEASE_GATE_MATRIX_V1.options.B.engram_0_20_0_lots,
+      ).toEqual(A08_RELEASE_AND_MIGRATION_SPEC_RULE.option_b_0_20_0_lots);
+      expect(
+        ENGRAM_MEMORY_RELEASE_GATE_MATRIX_V1.options.B
+          .includes_l4_adapter_in_0_20_0,
+      ).toBe(
+        A08_RELEASE_AND_MIGRATION_SPEC_RULE.option_b_0_20_0_includes_l4_adapter,
+      );
+      expect(
+        ENGRAM_MEMORY_RELEASE_GATE_MATRIX_V1.options.B
+          .reference_durable_host_ports_in_0_20_0,
+      ).toEqual(
+        A08_RELEASE_AND_MIGRATION_SPEC_RULE.option_b_0_20_0_reference_durable_host_ports,
+      );
+      expect(
+        ENGRAM_MEMORY_RELEASE_GATE_MATRIX_V1.options.B
+          .later_adapter_release_order,
+      ).toEqual(
+        A08_RELEASE_AND_MIGRATION_SPEC_RULE.option_b_later_adapter_release_order,
+      );
+      expect(
+        ENGRAM_MEMORY_RELEASE_GATE_MATRIX_V1.options.B
+          .later_adapter_version_status,
+      ).toBe(
+        A08_RELEASE_AND_MIGRATION_SPEC_RULE.option_b_later_adapter_version_status,
+      );
+
+      expect(
+        ENGRAM_MEMORY_LEGACY_MIGRATION_CONTRACT_V1.l7_mesh_legacy_removal
+          .requires_even_0_x_major,
+      ).toBe(
+        A08_RELEASE_AND_MIGRATION_SPEC_RULE.l7_mesh_incompatible_removal_requires_even_0_x_major,
+      );
+      expect(
+        ENGRAM_MEMORY_LEGACY_MIGRATION_CONTRACT_V1.l8_h2a_migration
+          .retired_files,
+      ).toHaveLength(
+        A08_RELEASE_AND_MIGRATION_SPEC_RULE.l8_h2a_retired_files_count,
+      );
+      expect(
+        ENGRAM_MEMORY_LEGACY_MIGRATION_CONTRACT_V1.l8_h2a_migration
+          .planning_targets_do_not_preassign_memory_train,
+      ).toEqual(
+        A08_RELEASE_AND_MIGRATION_SPEC_RULE.h2a_planning_targets_do_not_preassign_memory_train,
+      );
+    });
+
+    it('L0-A09: Candidate evidence matrix (L4_candidate -> L5 SqliteMemoryWorkflowStoreV1 -> L5-MEMORY-V1 -> L4_exit), forged-call/source-binding proofs, writer sequence, GWRC-CI-V1, and Feedback Loop SM-01..SM-03', () => {
+      expect(ENGRAM_MEMORY_CANDIDATE_EVIDENCE_MATRIX_V1.l5_checkpoint_id).toBe(
+        A09_CANDIDATE_AND_WRITER_HANDOFF_SPEC_RULE.l5_checkpoint_id,
+      );
+      expect(
+        ENGRAM_MEMORY_CANDIDATE_EVIDENCE_MATRIX_V1.l5_reference_workflow_store,
+      ).toBe(
+        A09_CANDIDATE_AND_WRITER_HANDOFF_SPEC_RULE.l5_reference_workflow_store,
+      );
+      expect(
+        ENGRAM_MEMORY_CANDIDATE_EVIDENCE_MATRIX_V1.l5_reference_subpath,
+      ).toBe(A09_CANDIDATE_AND_WRITER_HANDOFF_SPEC_RULE.l5_reference_subpath);
+      expect(ENGRAM_MEMORY_WRITER_HANDOFF_V1.writer_order).toEqual(
+        A09_CANDIDATE_AND_WRITER_HANDOFF_SPEC_RULE.writer_order,
+      );
+      expect(
+        ENGRAM_MEMORY_CANDIDATE_EVIDENCE_MATRIX_V1.gwrc_ci_contract_id,
+      ).toBe(A09_CANDIDATE_AND_WRITER_HANDOFF_SPEC_RULE.gwrc_ci_contract_id);
+      expect(
+        ENGRAM_MEMORY_CANDIDATE_EVIDENCE_MATRIX_V1.program_memory_admitted_without_cofreeze,
+      ).toBe(
+        A09_CANDIDATE_AND_WRITER_HANDOFF_SPEC_RULE.program_memory_admitted_without_cofreeze,
+      );
+      expect(
+        ENGRAM_MEMORY_CANDIDATE_EVIDENCE_MATRIX_V1.feedback_loop_items.map(
+          (i) => i.id,
+        ),
+      ).toEqual(A09_CANDIDATE_AND_WRITER_HANDOFF_SPEC_RULE.feedback_loop_items);
+
+      expect(
+        validateCandidateQualificationOrderV1({
+          l4_candidate_prepared: true,
+          l5_qualified_on_l4_candidate: true,
+          workflow_store_impl: 'SqliteMemoryWorkflowStoreV1',
+          uses_in_memory_mock: false,
+          forged_call_refusal_verified: true,
+          source_binding_verified: true,
+          l5_checkpoint_id: 'L5-MEMORY-V1',
+          l4_exit_claimed: true,
+          gwrc_program: 'registry',
+        }).ok,
+      ).toBe(true);
+
+      // Counterexamples: claiming L4 exit before L5-MEMORY-V1, using mocks, or using program: 'memory' in GWRC-CI-V1 without co-freeze
+      expect(
+        validateCandidateQualificationOrderV1({
+          l4_candidate_prepared: true,
+          l5_qualified_on_l4_candidate: false,
+          workflow_store_impl: 'SqliteMemoryWorkflowStoreV1',
+          forged_call_refusal_verified: true,
+          source_binding_verified: true,
+          l5_checkpoint_id: 'L5-MEMORY-V1',
+          l4_exit_claimed: true,
+        }).ok,
+      ).toBe(false);
+      expect(
+        validateCandidateQualificationOrderV1({
+          uses_in_memory_mock: true,
+        }).ok,
+      ).toBe(false);
+      expect(
+        validateCandidateQualificationOrderV1({
+          gwrc_program: 'memory',
+          gwrc_memory_extension_cofrozen: false,
+        }).ok,
+      ).toBe(false);
     });
   });
 });
