@@ -331,6 +331,40 @@ describe("live line attribution", () => {
     }
   });
 
+  it.each(["ETIMEDOUT", "ENOBUFS"])("reports %s subprocess limits as Git unavailable without claiming missing objects", async code => {
+    const { box, request, ports } = setup();
+    const failing = createSafeGitExecutor({ gitPath: box.trace.executable, disabledHooksDir: join(box.root, "disabled-hooks"),
+      spawn(_git, args) {
+        if (args.includes("config")) return { status: 1, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+        throw Object.assign(new Error(`spawnSync git ${code}`), { code });
+      },
+    });
+    for (const stage of ["blame", "cat-file", "rev-list"] as const) {
+      const actual = await live.attributeLines(request, { ...ports, git: { ...ports.git,
+        blame: stage === "blame" ? failing.blame : ports.git.blame,
+        run: (cwd, args, input, env) => args[0] === stage
+          ? failing.run(cwd, args, input, env) : ports.git.run(cwd, args, input, env),
+      } });
+      expect(actual.state).toBe("partial");
+      expect(actual.coverage.gaps[0]?.cause).toBe("git-unavailable");
+      expect(actual.origins).toEqual([]);
+      expect(actual.parentEvidence).toEqual([]);
+      expect(actual.retainedRoot).toBeNull();
+    }
+  });
+
+  it("returns an explicit partial outcome when the final configuration probe cannot spawn", async () => {
+    const { request, ports } = setup();
+    const actual = await live.attributeLines(request, { ...ports, git: { ...ports.git,
+      probeNoConfigIncludes() { throw new Error("spawnSync git EAGAIN"); },
+    } });
+    expect(actual.state).toBe("partial");
+    expect(actual.coverage.gaps[0]?.cause).toBe("git-unavailable");
+    expect(actual.origins).toEqual([]);
+    expect(actual.parentEvidence).toEqual([]);
+    expect(actual.retainedRoot).toBeNull();
+  });
+
   it("rejects corrupted native coordinates object bytes truncated porcelain and revocation before emission", async () => {
     const { fixture: f, request, ports } = setup();
     const before = inventoryDigest(f);
