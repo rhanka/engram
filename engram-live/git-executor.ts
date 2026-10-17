@@ -160,9 +160,11 @@ function validateInvocation(args: readonly string[]): void {
     let i = fixed.length;
     if (!fixed.every((arg, index) => args[index] === arg)) throw refused(command, "requires native-blame-options/1 exact porcelain form");
     const score = /^-[MC][1-9][0-9]{0,5}$/;
-    if (args[i]?.startsWith("-M") && score.test(args[i]!)) i++;
+    const hasMove = args[i]?.startsWith("-M") && score.test(args[i]!);
+    if (hasMove) i++;
     const copies: string[] = [];
     while (args[i]?.startsWith("-C") && score.test(args[i]!)) copies.push(args[i++]!);
+    if (copies.length && !hasMove) throw refused(command, "copy detection requires an explicit move threshold");
     if (copies.length > 3 || copies.some(arg => arg !== copies[0])) throw refused(command, "copy search requires one to three identical thresholds");
     let lastEnd = 0;
     let count = 0;
