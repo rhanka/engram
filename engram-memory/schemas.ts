@@ -131,3 +131,21 @@ export const MEMORY_RECORD_V2_SCHEMA = {
     trust,
   },
 } as const;
+
+/** JSON Schema companion to the closed field-omission record contract (RedactedMemoryRecordV2). */
+export const REDACTED_MEMORY_RECORD_V2_SCHEMA = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  type: "object",
+  additionalProperties: false,
+  required: ["record_id"],
+  properties: {
+    ...candidateProperties,
+    record_id: { type: "string", pattern: "^mem_[a-z2-7]+$" },
+    payload_digest: digest,
+    record_digest: digest,
+    recorded_at: { type: "string" },
+    recorded_cursor: { type: "string", pattern: "^(0|[1-9][0-9]*)$" },
+    authorization_receipt_digest: digest,
+    trust,
+  },
+} as const;
