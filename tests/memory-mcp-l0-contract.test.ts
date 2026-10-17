@@ -1,3 +1,4 @@
+import { expectedInvocation } from './fixtures/memory-mcp-sol-rules.js';
 import { validBindings as validHostBindings, validContinuation, expectedBinding, candidateTuple, confirmRequestSchema, confirmResponseSchema, toolSchemaFields } from './fixtures/memory-mcp-sol-rules.js';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -2428,12 +2429,12 @@ describe('MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutr
         neutral_context_ref: 'ctx_ref_01',
       };
 
-      const projected = projectMemoryInvocationContextV1(validBinding, {
+      const projected = projectMemoryInvocationContextV1(validBinding, { ...expectedInvocation,
         expectedActiveGeneration: '1',
         expectedPolicyEpoch: '4',
         argumentIdempotencyKey: IDEM_KEY_A,
-        requiresIdempotencyKey: true,
-        requiresElicitationRef: true,
+
+
       });
       expect(projected.ok).toBe(true);
       if (projected.ok) {
@@ -2450,7 +2451,7 @@ describe('MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutr
         projectMemoryInvocationContextV1({
           ...validBinding,
           claims: [],
-        }).ok,
+        }, expectedInvocation).ok,
       ).toBe(false);
 
       // Reject missing 'tid' claim
@@ -2458,7 +2459,7 @@ describe('MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutr
         projectMemoryInvocationContextV1({
           ...validBinding,
           claims: ['sub'],
-        }).ok,
+        }, expectedInvocation).ok,
       ).toBe(false);
 
       // Reject workspace_id substituted for tenant_id
@@ -2466,25 +2467,25 @@ describe('MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutr
         projectMemoryInvocationContextV1({
           ...validBinding,
           tenant_id: 'ws_different_from_tenant_99',
-        }).ok,
+        }, expectedInvocation).ok,
       ).toBe(false);
       expect(
         projectMemoryInvocationContextV1({
           ...validBinding,
           tenant_resolution_source: 'workspace_id' as 'authoritative_membership',
-        }).ok,
+        }, expectedInvocation).ok,
       ).toBe(false);
 
       // Reject mismatched idempotencyKey between envelope and argument
       expect(
-        projectMemoryInvocationContextV1(validBinding, {
+        projectMemoryInvocationContextV1(validBinding, { ...expectedInvocation,
           argumentIdempotencyKey: 'idem_other_key_00001',
         }).ok,
       ).toBe(false);
 
       // Reject stale generation or policy epoch
       expect(
-        projectMemoryInvocationContextV1(validBinding, {
+        projectMemoryInvocationContextV1(validBinding, { ...expectedInvocation,
           expectedActiveGeneration: '2',
         }),
       ).toMatchObject({
@@ -2492,7 +2493,7 @@ describe('MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutr
         error_code: 'AUTHORIZATION_REVOKED',
       });
       expect(
-        projectMemoryInvocationContextV1(validBinding, {
+        projectMemoryInvocationContextV1(validBinding, { ...expectedInvocation,
           expectedPolicyEpoch: '5',
         }),
       ).toMatchObject({

@@ -2,10 +2,46 @@ import { describe, expect, it } from 'vitest';
 import {
   evaluateM5LifecycleTransitionV1, evaluateSameScopeTombstoneRecaptureGuardV1,
   verifyMemoryConfirmationContinuationV1,
+  projectMemoryInvocationContextV1,
 } from '../src/mcp/memory/index.js';
-import { validContinuation, expectedBinding } from './fixtures/memory-mcp-sol-rules.js';
+import { validBinding, validContinuation, expectedBinding } from './fixtures/memory-mcp-sol-rules.js';
 
 describe('L0a cofreeze counterexamples', () => {
+  it('O3 L0-A03 M:525,545-547,592,1608: missing host expectations never waive freshness or envelope binding', () => {
+    const expected: any = {
+      tool: 'engram_memory_forget', expectedActiveGeneration: '1', expectedPolicyEpoch: '4',
+      now: validBinding.issued_at, confirmationRequired: false,
+      argumentIdempotencyKey: validBinding.idempotency_key,
+    };
+    expect((projectMemoryInvocationContextV1 as any)(validBinding).ok).toBe(false);
+    for (const field of ['tool', 'expectedActiveGeneration', 'expectedPolicyEpoch', 'now', 'confirmationRequired']) {
+      const missing = { ...expected }; delete missing[field];
+      expect(projectMemoryInvocationContextV1(validBinding, missing).ok).toBe(false);
+    }
+    expect(projectMemoryInvocationContextV1({ ...validBinding, active_generation: '0' }, expected))
+      .toMatchObject({ ok: false, error_code: 'AUTHORIZATION_REVOKED' });
+    expect(projectMemoryInvocationContextV1({ ...validBinding, policy_epoch: '3' }, expected))
+      .toMatchObject({ ok: false, error_code: 'POLICY_STALE' });
+    for (const tool of ['engram_memory_capture', 'engram_memory_request_admission', 'engram_memory_withdraw', 'engram_memory_forget']) {
+      const e = { ...expected, tool, argumentPurposeRef: validBinding.purpose_ref };
+      expect(projectMemoryInvocationContextV1({ ...validBinding, idempotency_key: undefined }, e).ok).toBe(false);
+      expect(projectMemoryInvocationContextV1(validBinding, { ...e, argumentIdempotencyKey: undefined }).ok).toBe(false);
+      expect(projectMemoryInvocationContextV1(validBinding, { ...e, argumentIdempotencyKey: 'different_key_01234' }).ok).toBe(false);
+    }
+    for (const tool of ['engram_memory_withdraw', 'engram_memory_forget']) {
+      expect(projectMemoryInvocationContextV1({ ...validBinding, elicitation_ref: undefined }, { ...expected, tool }).ok).toBe(false);
+    }
+    for (const tool of ['engram_memory_search', 'engram_memory_get', 'engram_memory_capture']) {
+      const e = { ...expected, tool, argumentPurposeRef: validBinding.purpose_ref };
+      expect(projectMemoryInvocationContextV1({ ...validBinding, elicitation_ref: undefined }, { ...e, confirmationRequired: true }).ok).toBe(false);
+      for (const argumentPurposeRef of [undefined, 'purpose:other']) {
+        expect(projectMemoryInvocationContextV1(validBinding, { ...e, argumentPurposeRef }).ok).toBe(false);
+      }
+      const projected = projectMemoryInvocationContextV1(validBinding, e);
+      expect(projected).toMatchObject({ ok: true, value: { purpose_ref: validBinding.purpose_ref } });
+    }
+  });
+
   it('O2 L0-A06 M:525,559,561,567: historical assurance cannot replace current host verdicts or accepted configuration', () => {
     for (const reservation_state of ['uncommitted', 'committed'] as const) {
       const expected: any = {
