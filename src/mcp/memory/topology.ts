@@ -1,3 +1,4 @@
+import { validateMemoryQualifiedTupleV1, validateMemoryHostProfileBindingsV1, type MemoryHostProfileBindingsV1, type MemoryCandidateTupleV1 } from './receipts.js';
 /**
  * MCP-L0 Reference Topology, Voluntary cluster-mesh Inheritance, D10 Separation,
  * Legacy Migration Dispositions (M8), Package/CLI Boundaries (M9), and
@@ -424,6 +425,7 @@ export interface MemoryPublisherEntryV1 {
   readonly parameter_schema_profile: 'sentropic.parameters/2020-12-bounded-v1';
   readonly parameter_schema_version: '1.0.0';
   readonly requires_new_entry_version_on_package_version_change: true;
+  readonly publication_receipt_contract: 'MemoryPublisherAssetsV1';
 }
 
 export const ENGRAM_MEMORY_PUBLISHER_ENTRY_V1: MemoryPublisherEntryV1 =
@@ -453,6 +455,7 @@ export const ENGRAM_MEMORY_PUBLISHER_ENTRY_V1: MemoryPublisherEntryV1 =
     parameter_schema_profile: 'sentropic.parameters/2020-12-bounded-v1',
     parameter_schema_version: '1.0.0',
     requires_new_entry_version_on_package_version_change: true,
+    publication_receipt_contract: 'MemoryPublisherAssetsV1',
   });
 
 export function validateMemoryPublisherEntryV1(
@@ -463,6 +466,12 @@ export function validateMemoryPublisherEntryV1(
     readonly previous_entry_version?: string;
   },
 ): { readonly ok: true } | { readonly ok: false; readonly reason: string } {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return { ok: false, reason: 'Publisher entry must be a closed object' };
+  const fields = Object.keys(ENGRAM_MEMORY_PUBLISHER_ENTRY_V1);
+  if (Object.keys(entry).length !== fields.length || Object.keys(entry).some(k => !fields.includes(k))) return { ok: false, reason: 'Missing or unknown publisher contract field' };
+  for (const key of fields) {
+    if (key !== 'entry_version' && key !== 'manifest_version' && entry[key] !== ENGRAM_MEMORY_PUBLISHER_ENTRY_V1[key]) return { ok: false, reason: 'Incompatible publisher contract field: ' + key };
+  }
   if (
     entry.id !== 'sentropic.engram.memory' ||
     entry.provider_id !== 'sentropic.engram.memory' ||
@@ -556,7 +565,7 @@ export interface MemoryLocalDefinitionContractV1 {
   readonly host_binding_ref_has_default: false;
   readonly host_binding_ref_min_ascii: 1;
   readonly host_binding_ref_max_ascii: 128;
-  readonly host_binding_ref_pattern: '^[\\x21-\\x7E]{1,128}$';
+  readonly host_binding_ref_pattern: '^[a-z0-9][a-z0-9._-]*$';
   readonly required_binding_ports: readonly [
     'invocation',
     'authorization',
@@ -589,7 +598,7 @@ export const ENGRAM_MEMORY_LOCAL_DEFINITION_CONTRACT_V1: MemoryLocalDefinitionCo
     host_binding_ref_has_default: false,
     host_binding_ref_min_ascii: 1,
     host_binding_ref_max_ascii: 128,
-    host_binding_ref_pattern: '^[\\x21-\\x7E]{1,128}$',
+    host_binding_ref_pattern: '^[a-z0-9][a-z0-9._-]*$',
     required_binding_ports: Object.freeze([
       'invocation',
       'authorization',
@@ -621,12 +630,13 @@ export const MEMORY_BOUNDED_PARAMETER_SCHEMA_V1 = Object.freeze({
       type: 'string',
       minLength: 1,
       maxLength: 128,
-      pattern: '^[\\x21-\\x7E]{1,128}$',
+      pattern: '^[a-z0-9][a-z0-9._-]*$',
     },
   },
 } as const);
 
 export interface MemoryHostBindingSetV1 {
+  readonly profileBindings: MemoryHostProfileBindingsV1;
   readonly hostBindingRef: string;
   readonly invocation: { readonly contractVersion: '1.0.0' };
   readonly authorization: { readonly contractVersion: '1.0.0' };
@@ -656,7 +666,12 @@ export interface MemoryHostBindingSetV1 {
   readonly diagnostics?: { readonly grantsAuthority: false };
 }
 
-const HOST_BINDING_REF_RE = /^[\x21-\x7E]{1,128}$/;
+// Registry R 1.1.4 §3.3: the only admitted bounded-profile pattern.
+const HOST_BINDING_REF_RE = /^[a-z0-9][a-z0-9._-]*$/;
+function isHostBindingRef(value: unknown): value is string {
+  return typeof value === 'string' && value.length >= 1 && value.length <= 128 &&
+    HOST_BINDING_REF_RE.exec(value)?.[0] === value;
+}
 
 export function validateMemoryLocalParametersV1(
   params: unknown,
@@ -685,8 +700,7 @@ export function validateMemoryLocalParametersV1(
     return { ok: false, reason: "mode must equal 'embedded-local'" };
   }
   if (
-    typeof obj.hostBindingRef !== 'string' ||
-    !HOST_BINDING_REF_RE.test(obj.hostBindingRef)
+    !isHostBindingRef(obj.hostBindingRef)
   ) {
     return {
       ok: false,
@@ -716,9 +730,9 @@ export function validateMemoryHostBindingSetV1(
     return { ok: false, reason: 'MemoryHostBindingSetV1 must be a plain object' };
   }
   const b = bindings as Record<string, unknown>;
+  if (!validateMemoryHostProfileBindingsV1(b.profileBindings).ok) return { ok: false, reason: 'Missing or incompatible versioned host profile/digest bindings' };
   if (
-    typeof b.hostBindingRef !== 'string' ||
-    !HOST_BINDING_REF_RE.test(b.hostBindingRef)
+    !isHostBindingRef(b.hostBindingRef)
   ) {
     return { ok: false, reason: 'Invalid or missing hostBindingRef' };
   }
@@ -730,6 +744,13 @@ export function validateMemoryHostBindingSetV1(
         reason: `Missing required host binding port '${portName}'`,
       };
     }
+    if (portName !== 'engine' && (port as Record<string, unknown>).contractVersion !== '1.0.0') {
+      return { ok: false, reason: 'Incompatible host binding contract version: ' + portName };
+    }
+  }
+  if ((b.mutationRecovery as Record<string, unknown>).digestProfile !== 'sentropic.engram.memory-mutation/v1' ||
+      (b.confirmation as Record<string, unknown>).enrolledOidcDomain !== 'sent-tech.ca') {
+    return { ok: false, reason: 'Incompatible mutation digest profile or confirmation domain' };
   }
   const engine = b.engine as Record<string, unknown>;
   if (
@@ -758,7 +779,7 @@ export function validateMemoryHostBindingSetV1(
   }
   if (b.diagnostics !== undefined) {
     const diag = b.diagnostics as Record<string, unknown>;
-    if (diag.grantsAuthority !== false) {
+    if (!diag || typeof diag !== 'object' || Array.isArray(diag) || diag.grantsAuthority !== false) {
       return {
         ok: false,
         reason: 'Optional diagnostics port must never grant authority',
@@ -812,6 +833,7 @@ export interface MemorySelectionPolicyBindingV1 {
 }
 
 export interface MemoryHostStorageProfileV1 {
+  readonly required_receipt_contract: 'MemoryHostStorageReceiptsV1';
   readonly sentropic_host: {
     readonly concrete_backend_status: 'unverified';
     readonly independent_from_h2a: true;
@@ -862,6 +884,7 @@ export const ENGRAM_MEMORY_SELECTION_POLICY_BINDING_V1: MemorySelectionPolicyBin
 
 export const ENGRAM_MEMORY_HOST_STORAGE_PROFILE_V1: MemoryHostStorageProfileV1 =
   Object.freeze({
+    required_receipt_contract: 'MemoryHostStorageReceiptsV1',
     sentropic_host: Object.freeze({
       concrete_backend_status: 'unverified' as const,
       independent_from_h2a: true as const,
@@ -1100,6 +1123,7 @@ export const ENGRAM_MEMORY_LEGACY_MIGRATION_CONTRACT_V1: MemoryLegacyMigrationCo
 // ============================================================================
 
 export interface MemoryCandidateEvidenceMatrixV1 {
+  readonly required_tuple_contract: 'MemoryCandidateTupleV1';
   readonly l5_checkpoint_id: 'L5-MEMORY-V1';
   readonly l5_reference_workflow_store: 'SqliteMemoryWorkflowStoreV1';
   readonly l5_reference_subpath: '@sentropic/mcp-broker/memory-reference';
@@ -1148,6 +1172,7 @@ export interface MemoryWriterHandoffV1 {
 
 export const ENGRAM_MEMORY_CANDIDATE_EVIDENCE_MATRIX_V1: MemoryCandidateEvidenceMatrixV1 =
   Object.freeze({
+    required_tuple_contract: 'MemoryCandidateTupleV1',
     l5_checkpoint_id: 'L5-MEMORY-V1',
     l5_reference_workflow_store: 'SqliteMemoryWorkflowStoreV1',
     l5_reference_subpath: '@sentropic/mcp-broker/memory-reference',
@@ -1196,6 +1221,8 @@ export const ENGRAM_MEMORY_WRITER_HANDOFF_V1: MemoryWriterHandoffV1 =
   });
 
 export function validateCandidateQualificationOrderV1(input: {
+  readonly qualified_tuple?: MemoryCandidateTupleV1;
+  readonly consumed_tuple?: MemoryCandidateTupleV1;
   readonly l4_candidate_prepared?: unknown;
   readonly l5_qualified_on_l4_candidate?: unknown;
   readonly workflow_store_impl?: string;
@@ -1224,6 +1251,8 @@ export function validateCandidateQualificationOrderV1(input: {
     };
   }
   if (input.l4_exit_claimed === true) {
+    const tuple = validateMemoryQualifiedTupleV1(input.qualified_tuple, input.consumed_tuple);
+    if (!tuple.ok) return tuple;
     if (
       input.l4_candidate_prepared !== true ||
       input.l5_qualified_on_l4_candidate !== true ||

@@ -1,0 +1,9 @@
+{
+  "repository": "sentropic",
+  "commit": "97fe9f53e8079694e35771227c11544ce8658316",
+  "sourceRoot": "packages/mcp-platform/src",
+  "sha256": {
+    "manifest.ts": "b2b7babf18bba56ac455451e189ecc641f37d44095eccdd4b854e4921d657dc3",
+    "experimental/manifest-elicitation.ts": "ab088b40259e554826cc6b98a5f99efeca03f7afb94d3e6efa71bc6d05e64979"
+  }
+}

@@ -51,115 +51,18 @@ export const SENTROPIC_MCP_PLATFORM_STANDARD_PROVENANCE = {
     'packages/mcp-platform/src/experimental/manifest-elicitation.ts',
 } as const;
 
-export type RedactionClass = 'none' | 'low' | 'medium' | 'high';
-export type Mutability = 'read-only' | 'append' | 'state-transition';
+import type { CapabilityTool, CapabilityGates, IdempotencyRequirement, Mutability } from './standard/manifest.js';
+import type { ElicitationPolicy, AppMcpProviderManifestWithElicitation } from './standard/experimental/manifest-elicitation.js';
+export type { RedactionClass, Mutability, CapabilityGates, IdempotencyRequirement, CapabilityResource, CapabilityTool, CapabilityPrompt, AppMcpProviderManifest } from './standard/manifest.js';
+export type { ElicitationPolicyMode, ElicitationPolicy, AppMcpProviderManifestWithElicitation } from './standard/experimental/manifest-elicitation.js';
 export type ToolMutability = Mutability;
-export type ToolCategory = 'read' | 'write' | 'admin';
-
-export interface CapabilityGates {
-  readonly requiresElicitation: boolean;
-  readonly requiresHumanConfirmation: boolean;
-  readonly requiresPrincipalGate: boolean;
-  readonly requiresPolicy: boolean;
-}
-
-export interface IdempotencyRequirement {
-  readonly required: boolean;
-  readonly scope?: 'session' | 'principal' | 'global';
-}
-
+export type ToolCategory = 'read' | 'write';
 export type ToolIdempotencyDescriptor = IdempotencyRequirement;
-
-export interface CapabilityResource {
-  readonly kind: 'resource';
-  readonly uriTemplate: string;
-  readonly name: string;
-  readonly description: string;
-  readonly mimeType: string;
-  readonly requiredScopes: readonly string[];
-  readonly requiredClaims: readonly string[];
-  readonly redactionClass: RedactionClass;
-  readonly maxBytes: number;
-  readonly cacheTtlSeconds: number;
-}
-
-export interface CapabilityTool {
-  readonly kind: 'tool';
-  readonly name: string;
-  readonly description: string;
-  readonly requiredScopes: readonly string[];
-  readonly requiredClaims: readonly string[];
-  readonly inputSchema: Record<string, unknown>;
-  readonly outputSchema?: Record<string, unknown>;
-  readonly redactionClass: RedactionClass;
-  readonly mutability: Mutability;
-  readonly category: 'read' | 'write' | 'admin';
-  readonly mutatesExternalSystem: boolean;
-  readonly idempotency: IdempotencyRequirement;
-  readonly gates: CapabilityGates;
-}
-
 export type AppMcpToolDescriptor = CapabilityTool & {
-  readonly name: EngramMemoryToolName;
-  readonly outputSchema: Record<string, unknown>;
+  name: EngramMemoryToolName;
+  inputSchema: Record<string, unknown>;
+  outputSchema: Record<string, unknown>;
 };
-
-export interface CapabilityPrompt {
-  readonly kind: 'prompt';
-  readonly name: string;
-  readonly description: string;
-  readonly requiredScopes: readonly string[];
-  readonly requiredClaims: readonly string[];
-  readonly arguments: readonly {
-    readonly name: string;
-    readonly description: string;
-    readonly required: boolean;
-  }[];
-  readonly redactionClass: RedactionClass;
-}
-
-export interface AppMcpProviderManifest {
-  readonly appId: string;
-  readonly providerId: string;
-  readonly version: string;
-  readonly displayName: string;
-  readonly resources: readonly CapabilityResource[];
-  readonly tools: readonly CapabilityTool[];
-  readonly prompts: readonly CapabilityPrompt[];
-  readonly authz: {
-    readonly requiredClaims: readonly string[];
-    readonly scopes: readonly string[];
-    readonly tenantResolution: 'tid-claim' | 'header' | 'custom-resolver';
-  };
-  readonly audit: {
-    readonly eventKinds: readonly ('discover' | 'read' | 'invoke' | 'prompt')[];
-    readonly piiClass: RedactionClass;
-  };
-  readonly durability: {
-    readonly queueTopic?: string;
-    readonly dlqTopic?: string;
-  };
-  readonly secrets: readonly string[];
-}
-
-export type ElicitationPolicyMode = 'confirm' | 'select' | 'form';
-
-export interface ElicitationPolicy {
-  readonly toolName: string;
-  readonly mode: ElicitationPolicyMode;
-  readonly required: boolean;
-  readonly ttlSeconds: number;
-  readonly requestSchema: Record<string, unknown>;
-  readonly responseSchema: Record<string, unknown>;
-  readonly carriesSecrets: false;
-  readonly bindToClient: true;
-  readonly bindToSub: true;
-}
-
-export interface AppMcpProviderManifestWithElicitation
-  extends AppMcpProviderManifest {
-  readonly elicitation?: readonly ElicitationPolicy[];
-}
 
 export function elicitationPolicyIsSecretSafe(
   policy: ElicitationPolicy,
@@ -209,7 +112,7 @@ export const CONFIRM_ELICITATION_RESPONSE_SCHEMA =
   MemoryConfirmationResponseV1Schema;
 
 export const WITHDRAW_ELICITATION_POLICY: ElicitationPolicy = {
-  toolName: 'engram_memory_withdraw',
+  capabilityRef: 'engram_memory_withdraw',
   mode: 'confirm',
   required: true,
   ttlSeconds: MEMORY_MCP_LIMITS.CONFIRMATION_MAX_TTL_SECONDS,
@@ -221,7 +124,7 @@ export const WITHDRAW_ELICITATION_POLICY: ElicitationPolicy = {
 } as const satisfies ElicitationPolicy;
 
 export const FORGET_ELICITATION_POLICY: ElicitationPolicy = {
-  toolName: 'engram_memory_forget',
+  capabilityRef: 'engram_memory_forget',
   mode: 'confirm',
   required: true,
   ttlSeconds: MEMORY_MCP_LIMITS.CONFIRMATION_MAX_TTL_SECONDS,
@@ -232,8 +135,8 @@ export const FORGET_ELICITATION_POLICY: ElicitationPolicy = {
   bindToSub: true,
 } as const satisfies ElicitationPolicy;
 
-export const ENGRAM_MEMORY_ELICITATION_POLICIES: readonly ElicitationPolicy[] =
-  [WITHDRAW_ELICITATION_POLICY, FORGET_ELICITATION_POLICY] as const;
+export const ENGRAM_MEMORY_ELICITATION_POLICIES: ElicitationPolicy[] =
+  [WITHDRAW_ELICITATION_POLICY, FORGET_ELICITATION_POLICY];
 
 export const ENGRAM_MEMORY_CAPABILITY_GATES: Readonly<
   Record<EngramMemoryToolName, CapabilityGates>
@@ -278,9 +181,9 @@ export const ENGRAM_MEMORY_CAPABILITY_GATES: Readonly<
 
 export const searchTool = {
   kind: 'tool',
-  name: 'engram_memory_search',
+  name: 'engram_memory_search' as const,
   description:
-    'Search admitted current memory records within the caller scope.',
+    'Search authorized current memory with citations and ranking receipts.',
   requiredScopes: ['mcp:tools:invoke'],
   requiredClaims: ['sub', 'tid'],
   inputSchema: ENGRAM_MEMORY_SEARCH_INPUT_SCHEMA,
@@ -291,13 +194,13 @@ export const searchTool = {
   mutatesExternalSystem: false,
   idempotency: { required: false },
   gates: ENGRAM_MEMORY_CAPABILITY_GATES.engram_memory_search,
-} as const satisfies CapabilityTool;
+} satisfies CapabilityTool;
 
 export const getTool = {
   kind: 'tool',
-  name: 'engram_memory_get',
+  name: 'engram_memory_get' as const,
   description:
-    'Read one admitted current memory record by ID within the caller scope.',
+    'Read one authorized currently eligible canonical memory record.',
   requiredScopes: ['mcp:tools:invoke'],
   requiredClaims: ['sub', 'tid'],
   inputSchema: ENGRAM_MEMORY_GET_INPUT_SCHEMA,
@@ -308,13 +211,13 @@ export const getTool = {
   mutatesExternalSystem: false,
   idempotency: { required: false },
   gates: ENGRAM_MEMORY_CAPABILITY_GATES.engram_memory_get,
-} as const satisfies CapabilityTool;
+} satisfies CapabilityTool;
 
 export const captureTool = {
   kind: 'tool',
-  name: 'engram_memory_capture',
+  name: 'engram_memory_capture' as const,
   description:
-    'Record a pending memory candidate with citations and evidence.',
+    'Durably submit cited material as an encrypted pending candidate.',
   requiredScopes: ['mcp:tools:invoke'],
   requiredClaims: ['sub', 'tid'],
   inputSchema: ENGRAM_MEMORY_CAPTURE_INPUT_SCHEMA,
@@ -325,13 +228,13 @@ export const captureTool = {
   mutatesExternalSystem: true,
   idempotency: { required: true, scope: 'principal' },
   gates: ENGRAM_MEMORY_CAPABILITY_GATES.engram_memory_capture,
-} as const satisfies CapabilityTool;
+} satisfies CapabilityTool;
 
 export const requestAdmissionTool = {
   kind: 'tool',
-  name: 'engram_memory_request_admission',
+  name: 'engram_memory_request_admission' as const,
   description:
-    'Evaluate a pending memory candidate for admission under host policy.',
+    'Request the configured admission policy decision for a pending candidate.',
   requiredScopes: ['mcp:tools:invoke'],
   requiredClaims: ['sub', 'tid'],
   inputSchema: ENGRAM_MEMORY_REQUEST_ADMISSION_INPUT_SCHEMA,
@@ -342,12 +245,12 @@ export const requestAdmissionTool = {
   mutatesExternalSystem: true,
   idempotency: { required: true, scope: 'principal' },
   gates: ENGRAM_MEMORY_CAPABILITY_GATES.engram_memory_request_admission,
-} as const satisfies CapabilityTool;
+} satisfies CapabilityTool;
 
 export const withdrawTool = {
   kind: 'tool',
-  name: 'engram_memory_withdraw',
-  description: 'Withdraw a pending memory candidate before admission.',
+  name: 'engram_memory_withdraw' as const,
+  description: 'Withdraw an authorized pending candidate with confirmed key-destruction status.',
   requiredScopes: ['mcp:tools:invoke'],
   requiredClaims: ['sub', 'tid'],
   inputSchema: ENGRAM_MEMORY_WITHDRAW_INPUT_SCHEMA,
@@ -358,13 +261,13 @@ export const withdrawTool = {
   mutatesExternalSystem: true,
   idempotency: { required: true, scope: 'principal' },
   gates: ENGRAM_MEMORY_CAPABILITY_GATES.engram_memory_withdraw,
-} as const satisfies CapabilityTool;
+} satisfies CapabilityTool;
 
 export const forgetTool = {
   kind: 'tool',
-  name: 'engram_memory_forget',
+  name: 'engram_memory_forget' as const,
   description:
-    'Tombstone an admitted or historical memory record and trigger projection cleanup.',
+    'Forget an authorized admitted memory with accurate cleanup status.',
   requiredScopes: ['mcp:tools:invoke'],
   requiredClaims: ['sub', 'tid'],
   inputSchema: ENGRAM_MEMORY_FORGET_INPUT_SCHEMA,
@@ -375,16 +278,16 @@ export const forgetTool = {
   mutatesExternalSystem: true,
   idempotency: { required: true, scope: 'principal' },
   gates: ENGRAM_MEMORY_CAPABILITY_GATES.engram_memory_forget,
-} as const satisfies CapabilityTool;
+} satisfies CapabilityTool;
 
-export const ENGRAM_MEMORY_TOOL_DESCRIPTORS: readonly AppMcpToolDescriptor[] = [
+export const ENGRAM_MEMORY_TOOL_DESCRIPTORS: AppMcpToolDescriptor[] = [
   searchTool,
   getTool,
   captureTool,
   requestAdmissionTool,
   withdrawTool,
   forgetTool,
-] as const;
+];
 
 export const ENGRAM_MEMORY_PROVIDER_MANIFEST = {
   appId: ENGRAM_MEMORY_APP_ID,
@@ -406,7 +309,7 @@ export const ENGRAM_MEMORY_PROVIDER_MANIFEST = {
   durability: {},
   secrets: [],
   elicitation: ENGRAM_MEMORY_ELICITATION_POLICIES,
-} as const satisfies AppMcpProviderManifestWithElicitation;
+} satisfies AppMcpProviderManifestWithElicitation;
 
 export interface HostConnectorRegistrationV1 {
   readonly connectorId: typeof ENGRAM_MEMORY_CONNECTOR_ID;
