@@ -26,6 +26,7 @@ import {
   ENGRAM_MEMORY_CONNECTOR_ID,
   ENGRAM_MEMORY_MCP_CONTRACT_VERSION,
   ENGRAM_MEMORY_PROVIDER_ID,
+  ENGRAM_MEMORY_TOOL_NAMES,
   MEMORY_MCP_LIMITS,
   TOMBSTONE_ALLOWED_FROM_STATES,
   type AdmissionDecision,
@@ -1986,6 +1987,7 @@ export interface MemoryInvocationBindingV1 {
 
 export interface MemoryContextProjectionV1 {
   readonly agent_id: OpaqueRef;
+  readonly purpose_ref: OpaqueRef;
   readonly delegation?: DelegationBindingV1;
   readonly trusted_context: TrustedInvocationContextV1;
   readonly neutral_authorization: AuthorizationContextV1;
@@ -2140,16 +2142,26 @@ function checkDelegationBinding(
  * synthetic `audit_mcp_l0_default`, mismatched out-of-arguments `idempotencyKey`,
  * stale generation/policy epoch, and unverified delegation before any effect.
  */
+/** Current host-owned expectations, required at every invocation/effect guard. */
+export interface ExpectedMemoryInvocationContextV1 {
+  readonly tool: EngramMemoryToolName;
+  readonly expectedActiveGeneration: Cursor;
+  readonly expectedPolicyEpoch: Cursor;
+  readonly now: Instant;
+  readonly confirmationRequired: boolean;
+  readonly argumentIdempotencyKey?: IdempotencyKey;
+  readonly argumentPurposeRef?: OpaqueRef;
+}
+
 export function projectMemoryInvocationContextV1(
   binding: unknown,
-  options?: {
-    readonly expectedActiveGeneration?: Cursor;
-    readonly expectedPolicyEpoch?: Cursor;
-    readonly argumentIdempotencyKey?: IdempotencyKey;
-    readonly requiresIdempotencyKey?: boolean;
-    readonly requiresElicitationRef?: boolean;
-  },
+  expected: ExpectedMemoryInvocationContextV1,
 ): MemoryContextProjectionResultV1 {
+  if (!expected || !ENGRAM_MEMORY_TOOL_NAMES.includes(expected.tool) ||
+      !isValidCursor(expected.expectedActiveGeneration) || !isValidCursor(expected.expectedPolicyEpoch) ||
+      !isValidInstant(expected.now) || typeof expected.confirmationRequired !== 'boolean') {
+    return { ok: false, error_code: 'UNAUTHORIZED', reason: 'Current host generation, policy epoch, tool, time and confirmation policy are required' };
+  }
   if (!isPlainObject(binding)) {
     return {
       ok: false,
@@ -2295,8 +2307,7 @@ export function projectMemoryInvocationContextV1(
   }
 
   if (
-    options?.expectedActiveGeneration !== undefined &&
-    binding.active_generation !== options.expectedActiveGeneration
+    binding.active_generation !== expected.expectedActiveGeneration
   ) {
     return {
       ok: false,
@@ -2306,8 +2317,7 @@ export function projectMemoryInvocationContextV1(
   }
 
   if (
-    options?.expectedPolicyEpoch !== undefined &&
-    binding.policy_epoch !== options.expectedPolicyEpoch
+    binding.policy_epoch !== expected.expectedPolicyEpoch
   ) {
     return {
       ok: false,
@@ -2339,7 +2349,8 @@ export function projectMemoryInvocationContextV1(
     };
   }
 
-  if (options?.requiresIdempotencyKey === true && binding.idempotency_key === undefined) {
+  const mutating = expected.tool !== 'engram_memory_search' && expected.tool !== 'engram_memory_get';
+  if (mutating && (!isValidIdempotencyKey(binding.idempotency_key) || !isValidIdempotencyKey(expected.argumentIdempotencyKey))) {
     return {
       ok: false,
       error_code: 'INVALID_SCHEMA',
@@ -2360,8 +2371,8 @@ export function projectMemoryInvocationContextV1(
 
   if (
     binding.idempotency_key !== undefined &&
-    options?.argumentIdempotencyKey !== undefined &&
-    binding.idempotency_key !== options.argumentIdempotencyKey
+    expected.argumentIdempotencyKey !== undefined &&
+    binding.idempotency_key !== expected.argumentIdempotencyKey
   ) {
     return {
       ok: false,
@@ -2370,12 +2381,18 @@ export function projectMemoryInvocationContextV1(
     };
   }
 
-  if (options?.requiresElicitationRef === true && !isValidOpaqueRef(binding.elicitation_ref)) {
+  if ((DESTRUCTIVE_TOOL_SET.has(expected.tool) || expected.confirmationRequired) && !isValidOpaqueRef(binding.elicitation_ref)) {
     return {
       ok: false,
       error_code: 'UNAUTHORIZED',
       reason: 'AppInvocationEnvelope.elicitationRef is required for confirmation-gated tools',
     };
+  }
+
+  const hasPurposeArgument = expected.tool === 'engram_memory_search' || expected.tool === 'engram_memory_get' || expected.tool === 'engram_memory_capture';
+  if ((hasPurposeArgument && !isValidOpaqueRef(expected.argumentPurposeRef)) ||
+      (expected.argumentPurposeRef !== undefined && binding.purpose_ref !== expected.argumentPurposeRef)) {
+    return { ok: false, error_code: 'UNAUTHORIZED', reason: 'Argument purpose must match the trusted purpose binding' };
   }
 
   if (
@@ -2466,6 +2483,7 @@ export function projectMemoryInvocationContextV1(
     ok: true,
     value: {
       agent_id: b.agent_id,
+      purpose_ref: b.purpose_ref,
       ...(b.delegation !== undefined ? { delegation: { ...b.delegation } } : {}),
       trusted_context: trustedCheck.value,
       neutral_authorization,

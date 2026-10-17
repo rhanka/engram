@@ -1,3 +1,4 @@
+import { expectedInvocation } from './fixtures/memory-mcp-sol-rules.js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -256,18 +257,18 @@ describe('Sol MCP-L0 independent spec counterexamples', () => {
   });
 
   it('L0-A03 M2:221 / M4:498 / A03:1608: requires and preserves verified channel, transport scopes, deadline and cancellation', () => {
-    const res = projectMemoryInvocationContextV1(validBinding); expect(res.ok).toBe(true);
+    const res = projectMemoryInvocationContextV1(validBinding, expectedInvocation); expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.value.agent_id).toBe('agent_coder');
       expect(res.value.channel_binding).toBe('in_process_verified'); expect(res.value.transport_scopes).toEqual(['mcp:tools:invoke']);
       expect(res.value.lifecycle_binding).toEqual({ deadline_at: '2026-10-17T12:00:30.000Z', cancellation_ref: 'cancel_01' });
     }
     for (const field of ['channel_binding','transport_scopes','cancellation_ref']) {
-      const b = clone(validBinding) as any; delete b[field]; expect(projectMemoryInvocationContextV1(b).ok).toBe(false);
+      const b = clone(validBinding) as any; delete b[field]; expect(projectMemoryInvocationContextV1(b, expectedInvocation).ok).toBe(false);
     }
-    for (const scopes of [[], ['mcp:discover'], ['anything'], ['mcp:tools:invoke', 'anything']]) expect(projectMemoryInvocationContextV1({ ...validBinding, transport_scopes: scopes }).ok).toBe(false);
-    expect(projectMemoryInvocationContextV1({ ...validBinding, channel_binding: 'unbound' }).ok).toBe(false);
-    expect(projectMemoryInvocationContextV1({ ...validBinding, deadline_at: '2026-10-17T12:00:30.001Z' }).ok).toBe(false);
+    for (const scopes of [[], ['mcp:discover'], ['anything'], ['mcp:tools:invoke', 'anything']]) expect(projectMemoryInvocationContextV1({ ...validBinding, transport_scopes: scopes }, expectedInvocation).ok).toBe(false);
+    expect(projectMemoryInvocationContextV1({ ...validBinding, channel_binding: 'unbound' }, expectedInvocation).ok).toBe(false);
+    expect(projectMemoryInvocationContextV1({ ...validBinding, deadline_at: '2026-10-17T12:00:30.001Z' }, expectedInvocation).ok).toBe(false);
   });
 
   it('L0-A06 invocation delegation M4:561: should reject a delegation unrelated to the bound principal', () => {
@@ -276,15 +277,15 @@ describe('Sol MCP-L0 independent spec counterexamples', () => {
       delegation_receipt_digest: 'sha256:' + 'd'.repeat(64), verified_by_host_resolver: true,
       expires_at: '2026-10-17T12:05:00.000Z',
     };
-    expect(projectMemoryInvocationContextV1({ ...validBinding, delegation }))
+    expect(projectMemoryInvocationContextV1({ ...validBinding, delegation }, expectedInvocation))
       .toMatchObject({ ok: false, error_code: 'UNAUTHORIZED' });
     for (const field of ['delegator_principal_id', 'delegate_principal_id']) {
       const related = { ...delegation, [field]: validBinding.principal_id };
-      const result = projectMemoryInvocationContextV1({ ...validBinding, delegation: related });
+      const result = projectMemoryInvocationContextV1({ ...validBinding, delegation: related }, expectedInvocation);
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.value.delegation).toEqual(related);
       for (const invalid of [{ verified_by_host_resolver: false }, { expires_at: validBinding.issued_at }]) {
-        expect(projectMemoryInvocationContextV1({ ...validBinding, delegation: { ...related, ...invalid } }))
+        expect(projectMemoryInvocationContextV1({ ...validBinding, delegation: { ...related, ...invalid } }, expectedInvocation))
           .toMatchObject({ ok: false, error_code: 'UNAUTHORIZED' });
       }
     }

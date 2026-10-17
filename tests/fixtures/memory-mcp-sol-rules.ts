@@ -74,6 +74,13 @@ export const validBinding = {
         neutral_context_ref: 'ctx_ref_01',
       } as const;
 
+/** A03 M:525,545-547,592: trusted current host expectations, never optional call flags. */
+export const expectedInvocation = {
+  tool: 'engram_memory_forget', expectedActiveGeneration: '1', expectedPolicyEpoch: '4',
+  now: '2026-10-17T12:00:00.000Z', confirmationRequired: true,
+  argumentIdempotencyKey: 'idem_0123456789abcdef0123456789',
+} as const;
+
 export const validContinuation = {
         continuation_ref: 'cont_01',
         elicitation_ref: 'elic_forget_01',
