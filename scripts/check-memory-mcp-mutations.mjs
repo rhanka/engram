@@ -94,6 +94,7 @@ add('A06-reattachment-closure', 'policy.ts', "!hasExactKeys(proof, ['previous_at
 add('A05-unknown-outcome-code', 'policy.ts', "if (existing.recovery_state === 'executing_unknown_outcome') {\n    return {\n      decision: 'reject',\n      error_code: 'MUTATION_OUTCOME_UNKNOWN'", "if (existing.recovery_state === 'executing_unknown_outcome') {\n    return {\n      decision: 'reject',\n      error_code: 'FENCE_LOST'", 'minors 9-10', 782);
 add('A05-committed-reconcile', 'policy.ts', "return { decision: 'reconcile_canonical', canonical_replay_ref: existing.canonical_replay_ref, existing_record: existing };", "return { decision: 'reject', error_code: 'FENCE_LOST', retriable: true };", 'minors 9-10', 710);
 add('A05-caller-disclosure-code', 'policy.ts', "if (rawIncoming.callerAuthorized !== true) {\n    return {\n      decision: 'reject',\n      error_code: 'UNAUTHORIZED'", "if (rawIncoming.callerAuthorized !== true) {\n    return {\n      decision: 'reject',\n      error_code: 'NOT_FOUND'", 'minor 10 ', 527);
+add('A03-audit-protocol', 'policy.ts', "return { ok: false, kind: 'protocol_refusal', protocolError: TRUSTED_CONTEXT_UNAVAILABLE_PROTOCOL_ERROR };", "return { ok: false, error_code: 'UNAUTHORIZED', reason: 'Missing audit' };", 'minor 12 ', 785);
 add('O1-tombstone-evidence', 'policy.ts', 'if (!(evidence instanceof Set || Array.isArray(evidence)) ||\n      ![...evidence].every(isValidSha256Digest))', 'if (false)', 'O1 A10-R4', 716);
 
 const results = [];

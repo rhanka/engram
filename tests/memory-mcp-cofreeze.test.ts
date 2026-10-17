@@ -12,6 +12,17 @@ import { validBinding, validContinuation, expectedBinding, expectedInvocation } 
 import { A05_MUTATION_DIGEST_VECTORS_SPEC_RULE } from './fixtures/memory-mcp-spec-rules.js';
 
 describe('L0a cofreeze counterexamples', () => {
+  it('minor 12 A10-R5 M:322-326,785: invalid audit is a protocol refusal before other projection checks', () => {
+    for (const audit_id of [undefined, null, '', 'audit_mcp_l0_default', '\ud800', 'a'.repeat(513)]) {
+      for (const expected of [expectedInvocation, undefined]) {
+        const result = (projectMemoryInvocationContextV1 as any)({ ...validBinding, audit_id }, expected);
+        expect(result).toEqual({ ok: false, kind: 'protocol_refusal', protocolError: { code: -32603, message: 'Trusted invocation context unavailable' } });
+        expect(result).not.toHaveProperty('error_code');
+        expect(result).not.toHaveProperty('structuredContent');
+      }
+    }
+  });
+
   it('minors 9-10 M:527,567,704,710,777,782: current caller admission precedes target disclosure and unknown effects require reconciliation', () => {
     const vector = A05_MUTATION_DIGEST_VECTORS_SPEC_RULE.vectors.capture_v1;
     const preimage = vector.preimage;
