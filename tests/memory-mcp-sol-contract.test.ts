@@ -125,6 +125,7 @@ describe('Sol MCP-L0 independent spec counterexamples', () => {
       for (const invalid of ['', '\ud800', '\udc00', 'a\ud800z']) {
         expect(validate(argumentFor(rule.field_path, invalid).a).ok, rule.field_path).toBe(false);
       }
+      if (tool !== 'engram_memory_capture') continue;
       const preimage = { ...clone(capturePreimage), effective_input: {
         ...clone(capturePreimage.effective_input), payload: { ...a.payload, scope_ref: capturePreimage.scope_ref },
       } };

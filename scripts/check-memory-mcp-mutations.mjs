@@ -85,6 +85,9 @@ add('O3-key-equality', 'policy.ts', 'binding.idempotency_key !== expected.argume
 add('O3-elicitation', 'policy.ts', '(DESTRUCTIVE_TOOL_SET.has(expected.tool) || expected.confirmationRequired)', 'false', 'O3 L0-A03', 542);
 add('O3-purpose-binding', 'policy.ts', 'binding.purpose_ref !== expected.argumentPurposeRef', 'false', 'O3 L0-A03', 538);
 add('O3-purpose-projection', 'policy.ts', '      purpose_ref: b.purpose_ref,', '', 'O3 L0-A03', 1608);
+add('M2-query-nfc', 'schemas.ts', '!isWellFormedUnicode(value.query)', '!isWellFormedUnicodeAndNfc(value.query)', 'minors 5-6|A10-R1-UNICODE', 238);
+add('M2-candidate-nfc', 'schemas.ts', 'return isWellFormedUnicode(value) && utf8ByteLength(value) >= 1', 'return isWellFormedUnicodeAndNfc(value) && utf8ByteLength(value) >= 1', 'minors 5-6|A10-R1-UNICODE', 244);
+add('M2-opaque-trimming', 'schemas.ts', 'if (!isWellFormedUnicodeAndNfc(value))', 'if (!isWellFormedUnicodeAndNfc(value) || value.trim().length === 0)', 'minors 5-6', 279);
 add('O1-tombstone-evidence', 'policy.ts', 'if (!(evidence instanceof Set || Array.isArray(evidence)) ||\n      ![...evidence].every(isValidSha256Digest))', 'if (false)', 'O1 A10-R4', 716);
 
 const results = [];

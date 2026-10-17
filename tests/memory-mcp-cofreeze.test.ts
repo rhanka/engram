@@ -3,10 +3,25 @@ import {
   evaluateM5LifecycleTransitionV1, evaluateSameScopeTombstoneRecaptureGuardV1,
   verifyMemoryConfirmationContinuationV1,
   projectMemoryInvocationContextV1,
+  validateSearchInputV1, validateWithdrawInputV1, isValidOpaqueRef, isValidIdempotencyKey,
+  computeMemoryMutationOperationDigestV1,
 } from '../src/mcp/memory/index.js';
 import { validBinding, validContinuation, expectedBinding } from './fixtures/memory-mcp-sol-rules.js';
+import { A05_MUTATION_DIGEST_VECTORS_SPEC_RULE } from './fixtures/memory-mcp-spec-rules.js';
 
 describe('L0a cofreeze counterexamples', () => {
+  it('minors 5-6 M:238,241-244,279,688: accept untrimmed strings and require NFC only on declared fields', () => {
+    expect(isValidOpaqueRef(' \t')).toBe(true);
+    expect(isValidIdempotencyKey(' '.repeat(16))).toBe(true);
+    for (const text of ['e\u0301', ' \t']) {
+      expect(validateSearchInputV1({ query: text, purpose_ref: ' ' }).ok).toBe(true);
+      expect(validateWithdrawInputV1({ candidate_id: text, reason_ref: ' ', idempotency_key: ' '.repeat(16) }).ok).toBe(true);
+      const p = A05_MUTATION_DIGEST_VECTORS_SPEC_RULE.vectors.request_admission_v1.preimage;
+      expect(computeMemoryMutationOperationDigestV1({ ...p, target: { kind: 'candidate', candidate_id: text }, effective_input: { ...p.effective_input, candidate_id: text } }).ok).toBe(true);
+    }
+    expect(isValidOpaqueRef('e\u0301')).toBe(false);
+  });
+
   it('O3 L0-A03 M:525,545-547,592,1608: missing host expectations never waive freshness or envelope binding', () => {
     const expected: any = {
       tool: 'engram_memory_forget', expectedActiveGeneration: '1', expectedPolicyEpoch: '4',
