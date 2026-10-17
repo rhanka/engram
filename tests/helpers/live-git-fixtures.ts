@@ -356,11 +356,10 @@ export function buildLineAttributionFixture(box: LiveGitSandbox, format: ObjectF
 /** Independent native oracle. No producer parser, argument builder or result
  * is used to derive expectations. printf receives octal bytes as data only. */
 export function nativeLineOracle(box: LiveGitSandbox, cwd: string, oid: string, path: Buffer,
-  ranges: readonly { start: number; end: number }[], move: number | null, copy: number | null, search = "all") {
+  ranges: readonly { start: number; end: number }[], detectionFlags: readonly string[] = []) {
   const args = ["blame", "--root", "--line-porcelain", "--no-textconv", "--encoding=none", "--ignore-revs-file", "",
     "--diff-algorithm=myers", "--no-indent-heuristic",
-    ...(move === null ? [] : [`-M${move}`]),
-    ...(copy === null ? [] : Array(search === "all" ? 3 : search === "created" ? 2 : 1).fill(`-C${copy}`)),
+    ...detectionFlags,
     ...ranges.flatMap(range => ["-L", `${range.start},${range.end}`]), oid, "--"];
   // Native Git can take arbitrary argv bytes; Node string argv cannot. The
   // fixed system shell performs only byte decoding and exec, never eval.
