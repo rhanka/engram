@@ -2752,21 +2752,11 @@ export function verifyMemoryConfirmationContinuationV1(
     };
   }
 
-  // Proven already-committed result may be returned after confirmation expires
-  // without another effect or another confirmation ceremony, under current authorization.
-  if (expected.reservation_state === 'committed') {
-    return {
-      ok: true,
-      decision: 'disclose_committed_without_repeat_effect',
-      continuation: continuation as unknown as MemoryConfirmationContinuationV1,
-    };
-  }
-
   if (continuation.elicitation_ref !== expected.elicitation_ref) {
     return {
       ok: false,
       error_code: 'gate_failed',
-      reason: 'elicitation_ref mismatch for uncommitted confirmation',
+      reason: 'elicitation_ref mismatch for confirmation',
     };
   }
 
@@ -2961,11 +2951,21 @@ export function verifyMemoryConfirmationContinuationV1(
     };
   }
 
-  if (nowMs < issuedMs || nowMs >= expiresMs) {
+  if (nowMs < issuedMs || (expected.reservation_state !== 'committed' && nowMs >= expiresMs)) {
     return {
       ok: false,
       error_code: 'gate_failed',
       reason: 'Confirmation requires issued_at <= now < expires_at at the effect guard',
+    };
+  }
+
+  // M4:567 relaxes expiry only after durable commitment; approval, assurance,
+  // active binding and the original <= 300s validity interval remain mandatory.
+  if (expected.reservation_state === 'committed') {
+    return {
+      ok: true,
+      decision: 'disclose_committed_without_repeat_effect',
+      continuation: continuation as unknown as MemoryConfirmationContinuationV1,
     };
   }
 

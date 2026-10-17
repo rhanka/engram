@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import type { MemoryConfirmationAssuranceV1 } from '../src/mcp/memory/index.js';
 import {
   ENGRAM_MEMORY_TOOL_DESCRIPTORS, evaluateM5LifecycleTransitionV1,
   evaluateSameScopeTombstoneRecaptureGuardV1, evaluatePrincipalScopedMutationLookupV1, evaluateIdempotentMutationStateV1,
@@ -251,6 +252,54 @@ describe('Sol MCP-L0 independent spec counterexamples', () => {
     expect(verifyDestructiveConfirmationGrantV1(base, expectedBinding).ok).toBe(true);
     expect(verifyDestructiveConfirmationGrantV1({...base,assurance:undefined}, expectedBinding).ok).toBe(false);
     for (const verdict of rejected) expect(verifyMemoryConfirmationContinuationV1({ ...base, assurance: { ...base.assurance, delegation: { ...delegation, verified_by_host_resolver: verdict } } }, expectedBinding).ok).toBe(false);
+  });
+
+  it.each([
+    ['continuation', verifyMemoryConfirmationContinuationV1],
+    ['destructive grant', verifyDestructiveConfirmationGrantV1],
+  ] as const)('L0-A06 committed %s M4:567: rejects the Argon counterexample and retains every approval guard', (_name, verify) => {
+    const committed = { ...expectedBinding, active_generation: '1', reservation_state: 'committed' } as const;
+    expect(verify({
+      ...validContinuation, approved: false,
+      assurance: undefined as unknown as MemoryConfirmationAssuranceV1, active_generation: '0',
+    }, committed)).toMatchObject({ ok: false, error_code: 'gate_failed' });
+
+    const badContinuations = [
+      ...rejected.map(approved => ({ ...validContinuation, approved })),
+      { ...validContinuation, assurance: undefined },
+      ...['authenticated', 'enrolled_2fa', 'step_up_assurance_verified'].flatMap(field =>
+        rejected.map(verdict => ({ ...validContinuation, assurance: { ...validContinuation.assurance, [field]: verdict } }))),
+      { ...validContinuation, assurance: { ...validContinuation.assurance, enrolled_oidc_domain: 'other.ca' } },
+      { ...validContinuation, assurance: { ...validContinuation.assurance, approving_human_principal_id: 'usr_bob' } },
+      { ...validContinuation, assurance: { ...validContinuation.assurance, delegation: {
+        delegator_principal_id: 'usr_carol', delegate_principal_id: 'usr_alice',
+        delegation_receipt_digest: 'sha256:' + 'd'.repeat(64), verified_by_host_resolver: true,
+        expires_at: '2026-10-17T12:05:00.000Z',
+      } } },
+      { ...validContinuation, active_generation: '0' },
+      { ...validContinuation, elicitation_ref: 'elic_other' },
+      { ...validContinuation, logical_session_ref: 'session_other' },
+      { ...validContinuation, transport_attachment_ref: 'attachment_other' },
+      { ...validContinuation, issued_at: 'invalid' },
+      { ...validContinuation, expires_at: 'invalid' },
+      { ...validContinuation, expires_at: validContinuation.issued_at },
+      { ...validContinuation, expires_at: '2026-10-17T11:59:59.999Z' },
+      { ...validContinuation, expires_at: '2026-10-17T12:05:00.001Z' },
+    ];
+    for (const continuation of badContinuations) {
+      expect(verify(continuation, committed)).toMatchObject({ ok: false, error_code: 'gate_failed' });
+    }
+    expect(verify(validContinuation, { ...committed, now: '2026-10-17T11:59:59.999Z' }))
+      .toMatchObject({ ok: false, error_code: 'gate_failed' });
+    expect(verify(validContinuation, { ...committed, now: 'invalid' }))
+      .toMatchObject({ ok: false, error_code: 'gate_failed' });
+    // M4:567 permits disclosure at/after expiry; the original affirmative evidence remains mandatory.
+    for (const now of [validContinuation.expires_at, '2026-10-17T12:10:00.000Z']) {
+      const expected = { ...committed, now, execution_deadline_at: now };
+      expect(verify(validContinuation, expected).ok).toBe(true);
+      expect(verifyMemoryConfirmationContinuationV1(validContinuation, expected))
+        .toMatchObject({ ok: true, decision: 'disclose_committed_without_repeat_effect' });
+    }
   });
 
   it('L0-A06 M4:525,561-567: every current authorization and reconnect verdict is closed-world', () => {
