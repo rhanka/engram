@@ -1240,6 +1240,7 @@ export const A04_WIRE_PROFILE_SPEC_RULE = {
     'minimum',
     'maximum',
     'pattern',
+    'oneOf',
   ] as const,
   allowed_annotation_keywords: [
     '$schema',
