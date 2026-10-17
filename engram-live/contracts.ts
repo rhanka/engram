@@ -113,6 +113,13 @@ export interface LiveScope {
 // G1: inclusive, one-based ranges over exact committed blob bytes. These
 // facts are mapped/persisted by L3a; no producer-side cache grants authority.
 export interface LineRangeDto { readonly start: number; readonly end: number }
+/** UTF-8 identities retain their normal strings. For each non-UTF-8 field,
+ * the raw bytes are authoritative and its string is a reversible latin1
+ * projection, independent of any declared commit encoding. */
+export interface LineAuthorIdentityDto extends HistoryIdentityDto {
+  readonly nameBytes?: Uint8Array;
+  readonly emailBytes?: Uint8Array;
+}
 export interface LineAttributionOptionsDto {
   readonly version: "native-blame-options/1";
   readonly algorithm: "myers";
@@ -133,7 +140,7 @@ export interface LineAttributionRequestDto {
 }
 export interface LineOriginDto {
   readonly commit: QualifiedOid;
-  readonly author: HistoryIdentityDto;
+  readonly author: LineAuthorIdentityDto;
   readonly path: Uint8Array;
   readonly originalRange: LineRangeDto;
   readonly finalRange: LineRangeDto;

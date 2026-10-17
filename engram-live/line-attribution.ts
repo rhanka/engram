@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import {
   POLICY_VERSION, validateLiveScope, validateQualifiedOid, validateRetentionReceipt,
-  type HistoryIdentityDto, type LineAttributionGapCause, type LineAttributionOptionsDto,
+  type LineAuthorIdentityDto, type LineAttributionGapCause, type LineAttributionOptionsDto,
   type LineAttributionOutcomeDto, type LineAttributionRequestDto, type LineOriginDto,
   type QualifiedOid, type RetentionReceiptDto,
 } from "./contracts.js";
@@ -70,11 +70,11 @@ function blameArgs(input: LineAttributionRequestDto): string[] {
     ...(o.copyMinCharacters === null ? [] : Array(o.copySearch === "all" ? 3 : o.copySearch === "created" ? 2 : 1).fill(`-C${o.copyMinCharacters}`)),
     ...input.ranges.flatMap(range => ["-L", `${range.start},${range.end}`]), input.target.oid, "--"];
 }
-interface Commit { tree: string; parents: string[]; author: HistoryIdentityDto }
+interface Commit { tree: string; parents: string[]; author: LineAuthorIdentityDto }
 function parseCommit(bytes: Buffer, algorithm: QualifiedOid["algorithm"]): Commit {
   const headerEnd = bytes.indexOf(Buffer.from("\n\n"));
   if (headerEnd < 0) return gap("invalid-evidence", "retained commit has no header terminator");
-  const headers = bytes.subarray(0, headerEnd).toString("utf8").split("\n");
+  const headers = bytes.subarray(0, headerEnd).toString("latin1").split("\n");
   const tree = headers.filter(line => line.startsWith("tree ")).map(line => line.slice(5));
   const parents = headers.filter(line => line.startsWith("parent ")).map(line => line.slice(7));
   const authors = headers.filter(line => line.startsWith("author "));
@@ -85,7 +85,13 @@ function parseCommit(bytes: Buffer, algorithm: QualifiedOid["algorithm"]): Commi
   const unixSeconds = Number(author[3]);
   const hours = Number(author[5]), minutes = Number(author[6]);
   if (!Number.isSafeInteger(unixSeconds) || hours > 23 || minutes > 59) return gap("invalid-evidence", "retained author time is malformed");
-  return { tree: tree[0]!, parents, author: { name: author[1]!, email: author[2]!, unixSeconds,
+  const decode = (field: string): { text: string; bytes?: Uint8Array } => {
+    const raw = Buffer.from(field, "latin1"), utf8 = raw.toString("utf8");
+    return Buffer.from(utf8, "utf8").equals(raw) ? { text: utf8 } : { text: field, bytes: Uint8Array.from(raw) };
+  };
+  const name = decode(author[1]!), email = decode(author[2]!);
+  return { tree: tree[0]!, parents, author: { name: name.text, email: email.text,
+    ...(name.bytes ? { nameBytes: name.bytes } : {}), ...(email.bytes ? { emailBytes: email.bytes } : {}), unixSeconds,
     offsetMinutes: (hours * 60 + minutes) * (author[4] === "-" ? -1 : 1) } };
 }
 function blobLines(bytes: Buffer): Buffer[] {
