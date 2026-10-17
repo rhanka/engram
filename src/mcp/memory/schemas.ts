@@ -1,432 +1,638 @@
 /**
  * MCP-L0 Closed JSON Schemas and Deterministic Validators for Engram Memory Tools.
  *
- * Every input and output schema sets `additionalProperties: false` at every
- * object boundary. Optional properties must be omitted rather than set to `null`.
+ * Normative alignment with SPEC-memory-mcp-v2.md (M2, M3, M5, M6) and
+ * `engram-memory/contracts` + `engram-memory/schemas`:
+ * - Reuses `CANDIDATE_PAYLOAD_V2_SCHEMA`, `MEMORY_RECORD_V2_SCHEMA`, and
+ *   `REDACTED_MEMORY_RECORD_V2_SCHEMA` directly from `engram-memory/schemas`.
+ * - Closed M2 input schemas (`SearchInputV1`, `GetInputV1`, `CaptureInputV1`,
+ *   `RequestAdmissionInputV1`, `WithdrawInputV1`, `ForgetInputV1`) with
+ *   `additionalProperties: false` at every object boundary.
+ * - Closed Sentropic `AppResultEnvelope` output schemas (`ToolSuccessV1<T>`,
+ *   `ToolFailureV1`).
+ * - NFC normalization, UTF-8 byte bounds, RFC 3339 millisecond UTC `Instant`,
+ *   `sha256:<64 lowercase hex>` `Digest`, canonical decimal u64 `Cursor`, and
+ *   host-managed random pagination handle validation (`STALE_PAGE`).
  */
 
 import {
-  ENGRAM_MEMORY_SCHEMA_VERSION,
+  CANDIDATE_PAYLOAD_V2_SCHEMA,
+  MEMORY_RECORD_V2_SCHEMA,
+  REDACTED_MEMORY_RECORD_V2_SCHEMA,
+} from '../../../engram-memory/dist/schemas.js';
+import {
+  DISCLOSABLE_MEMORY_STATES,
+  ENGRAM_MEMORY_CANDIDATE_SCHEMA_VERSION,
+  ENGRAM_MEMORY_STRUCTURED_OUTPUT_SCHEMA_VERSION,
   ENGRAM_MEMORY_TOOL_NAMES,
-  EVIDENCE_MEDIA_TYPES,
-  MEMORY_KINDS,
   MEMORY_MCP_LIMITS,
-  MEMORY_STATUSES,
-  READ_OUTCOMES,
-  RECALL_STATUS_FILTERS,
-  REDACTION_STATES,
-  RETENTION_OUTCOMES,
-  RETRIEVAL_STATUSES,
-  SCOPE_LEVELS,
-  SENSITIVITY_LABELS,
-  SHARING_POLICIES,
-  SOURCE_CLASSES,
-  type AdmissibilityAssessmentV1,
+  TOMBSTONE_ALLOWED_FROM_STATES,
+  type AdmissionOutcomeV1,
   type CaptureInputV1,
   type CaptureOutputV1,
+  type CapturePayloadInputV1,
+  type CitationV1,
+  type Cursor,
+  type Digest,
   type EngramMemoryToolName,
-  type EvidenceCitationV1,
+  type EvidenceBundleV1,
   type ForgetInputV1,
   type ForgetOutputV1,
   type GetInputV1,
   type GetOutputV1,
+  type IdempotencyKey,
+  type Instant,
+  type JsonPointer,
+  type LifecycleReceiptV1,
   type McpToolCallResponseV1,
+  type MemoryComponentV2,
+  type MemoryReadPacketV1,
   type MemoryReadReceiptV1,
+  type OpaqueRef,
   type PaginationCursorBindingV1,
-  type PrincipalRefV1,
+  type PaginationHandleStateV1,
   type PublicMemoryErrorCode,
-  type RecallOrderingV1,
+  type RankReceiptV1,
+  type RecallCapabilityPolicyV1,
   type RecallRecordPacketV3,
   type RedactedMemoryRecordV2,
   type RequestAdmissionInputV1,
   type RequestAdmissionOutputV1,
-  type ScopeRefV1,
   type SearchInputV1,
   type SearchOutputV1,
-  type SourceProvenanceV1,
+  type SearchPageV1,
   type ToolResultV1,
+  type TrustBindingV1,
   type WithdrawInputV1,
   type WithdrawOutputV1,
 } from './contracts.js';
+import { PUBLIC_MEMORY_ERROR_CODES } from './errors.js';
 
-const ISO_UTC_REGEX =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/;
+export {
+  CANDIDATE_PAYLOAD_V2_SCHEMA,
+  MEMORY_RECORD_V2_SCHEMA,
+  PUBLIC_MEMORY_ERROR_CODES,
+  REDACTED_MEMORY_RECORD_V2_SCHEMA,
+};
+
+export const REDACTED_MEMORY_RECORD_V2_JSON_SCHEMA =
+  REDACTED_MEMORY_RECORD_V2_SCHEMA;
+
+const INSTANT_MS_UTC_REGEX =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const SHA256_DIGEST_REGEX = /^sha256:[0-9a-f]{64}$/;
-const STRUCTURED_ATTR_KEY_REGEX = /^[A-Za-z0-9_.-]{1,64}$/;
+const RECORD_ID_REGEX = /^mem_[a-z2-7]+$/;
+const CURSOR_U64_REGEX = /^(0|[1-9][0-9]*)$/;
+const MAX_U64 = 18_446_744_073_709_551_615n;
 
-export const PUBLIC_MEMORY_ERROR_CODES: readonly PublicMemoryErrorCode[] = [
-  'INVALID_SCHEMA',
-  'UNSUPPORTED_SCHEMA_VERSION',
-  'INVALID_TIMESTAMP',
-  'INVALID_DIGEST',
-  'SCOPE_VIOLATION',
-  'UNAUTHORIZED_PRINCIPAL',
-  'CONSENT_DENIED',
-  'CONSENT_REVOKED',
-  'SHARING_POLICY_DENIED',
-  'QUOTA_EXCEEDED',
-  'NOT_FOUND',
-  'DUPLICATE_ID',
-  'IDEMPOTENCY_CONFLICT',
-  'CONCURRENCY_CONFLICT',
-  'ILLEGAL_TRANSITION',
-  'ALREADY_TERMINAL',
-  'LEGAL_HOLD_ACTIVE',
-  'EVIDENCE_UNVERIFIED',
-  'EVIDENCE_DIGEST_MISMATCH',
-  'ADMISSION_REJECTED',
-  'QUARANTINED',
-  'HASH_CHAIN_BROKEN',
-  'SIGNATURE_INVALID',
-  'BUNDLE_INTEGRITY_FAILED',
-  'ERASURE_INCOMPLETE',
-  'DEPENDENCY_UNAVAILABLE',
-  'STORAGE_IO_ERROR',
-  'RESULT_TOO_LARGE',
-  'RATE_LIMITED',
-  'MUTATION_OUTCOME_UNKNOWN',
-  'gate_failed',
-] as const;
+const OPAQUE_REF_SCHEMA = {
+  type: 'string',
+  minLength: MEMORY_MCP_LIMITS.OPAQUE_REF_MIN_UTF8_BYTES,
+  maxLength: MEMORY_MCP_LIMITS.OPAQUE_REF_MAX_UTF8_BYTES,
+} as const;
 
-export const PRINCIPAL_REF_V1_SCHEMA = {
+const RECORD_ID_SCHEMA = {
+  type: 'string',
+  minLength: MEMORY_MCP_LIMITS.OPAQUE_REF_MIN_UTF8_BYTES,
+  maxLength: MEMORY_MCP_LIMITS.OPAQUE_REF_MAX_UTF8_BYTES,
+  pattern: MEMORY_MCP_LIMITS.RECORD_ID_PATTERN,
+} as const;
+
+const IDEMPOTENCY_KEY_SCHEMA = {
+  type: 'string',
+  minLength: MEMORY_MCP_LIMITS.IDEMPOTENCY_KEY_MIN_UTF8_BYTES,
+  maxLength: MEMORY_MCP_LIMITS.IDEMPOTENCY_KEY_MAX_UTF8_BYTES,
+} as const;
+
+const DIGEST_SCHEMA = {
+  type: 'string',
+  pattern: MEMORY_MCP_LIMITS.DIGEST_PATTERN,
+} as const;
+
+const INSTANT_SCHEMA = {
+  type: 'string',
+  pattern: MEMORY_MCP_LIMITS.INSTANT_PATTERN,
+} as const;
+
+const CURSOR_SCHEMA = {
+  type: 'string',
+  pattern: MEMORY_MCP_LIMITS.CURSOR_PATTERN,
+} as const;
+
+const JSON_POINTER_SCHEMA = {
+  type: 'string',
+  pattern: '^(/([^/~]|~[01])*)*$',
+} as const;
+
+export const RECALL_CAPABILITY_POLICY_V1_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['schema_version', 'principal_id', 'principal_kind', 'tenant_id', 'roles'],
+  required: ['minimum_channels', 'network'],
   properties: {
-    schema_version: { const: ENGRAM_MEMORY_SCHEMA_VERSION },
-    principal_id: { type: 'string', minLength: 1, maxLength: 128 },
-    principal_kind: { enum: ['user', 'agent', 'service', 'system'] },
-    tenant_id: { type: 'string', minLength: 1, maxLength: 128 },
-    roles: {
-      type: 'array',
-      items: { type: 'string', minLength: 1, maxLength: 64 },
-    },
+    minimum_channels: { enum: ['lexical', 'lexical_and_semantic'] },
+    network: { enum: ['forbid', 'allow'] },
   },
 } as const;
 
-export const SCOPE_REF_V1_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['schema_version', 'tenant_id', 'workspace_id', 'project_id', 'level'],
-  properties: {
-    schema_version: { const: ENGRAM_MEMORY_SCHEMA_VERSION },
-    tenant_id: { type: 'string', minLength: 1, maxLength: 128 },
-    workspace_id: { type: 'string', minLength: 1, maxLength: 128 },
-    project_id: { type: 'string', minLength: 1, maxLength: 128 },
-    level: { enum: [...SCOPE_LEVELS] },
-    session_id: { type: 'string', minLength: 1, maxLength: 128 },
-    user_id: { type: 'string', minLength: 1, maxLength: 128 },
-  },
-} as const;
-
-export const EVIDENCE_CITATION_V1_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'schema_version',
-    'citation_id',
-    'locator',
-    'digest',
-    'media_type',
-    'observed_at_utc',
-  ],
-  properties: {
-    schema_version: { const: ENGRAM_MEMORY_SCHEMA_VERSION },
-    citation_id: { type: 'string', minLength: 1, maxLength: 128 },
-    locator: { type: 'string', minLength: 1, maxLength: 512 },
-    digest: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
-    media_type: { enum: [...EVIDENCE_MEDIA_TYPES] },
-    observed_at_utc: { type: 'string', pattern: ISO_UTC_REGEX.source },
-    byte_range: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['start_byte', 'end_byte_exclusive'],
-      properties: {
-        start_byte: { type: 'integer', minimum: 0 },
-        end_byte_exclusive: { type: 'integer', minimum: 1 },
-      },
-    },
-    line_range: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['start_line', 'end_line_inclusive'],
-      properties: {
-        start_line: { type: 'integer', minimum: 1 },
-        end_line_inclusive: { type: 'integer', minimum: 1 },
-      },
-    },
-    excerpt: { type: 'string', maxLength: 512 },
-  },
-} as const;
-
-export const SOURCE_PROVENANCE_V1_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'schema_version',
-    'source_class',
-    'captured_by',
-    'observed_at_utc',
-    'citations',
-  ],
-  properties: {
-    schema_version: { const: ENGRAM_MEMORY_SCHEMA_VERSION },
-    source_class: { enum: [...SOURCE_CLASSES] },
-    captured_by: PRINCIPAL_REF_V1_SCHEMA,
-    observed_at_utc: { type: 'string', pattern: ISO_UTC_REGEX.source },
-    citations: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 16,
-      items: EVIDENCE_CITATION_V1_SCHEMA,
-    },
-    upstream_bundle_id: { type: 'string', minLength: 1, maxLength: 128 },
-    external_origin_ref: { type: 'string', minLength: 1, maxLength: 512 },
-  },
-} as const;
-
-export const STRUCTURED_ATTRIBUTES_SCHEMA = {
-  type: 'object',
-  maxProperties: 32,
-  propertyNames: {
-    type: 'string',
-    minLength: 1,
-    maxLength: 64,
-    pattern: '^[A-Za-z0-9_.-]{1,64}$',
-  },
-  additionalProperties: {
-    type: ['string', 'number', 'boolean', 'null'],
-  },
-} as const;
-
-export const REDACTED_MEMORY_RECORD_V2_JSON_SCHEMA = {
-  $id: 'https://engram.dev/schemas/memory/v1/RedactedMemoryRecordV2.json',
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'schema_version',
-    'memory_id',
-    'scope_ref',
-    'memory_kind',
-    'status',
-    'summary',
-    'content_digest',
-    'sensitivity',
-    'source_class',
-    'citations',
-    'redaction_state',
-    'redacted_fields',
-    'admitted_at_utc',
-    'supersedes_ids',
-    'active_dispute_ids',
-  ],
-  properties: {
-    schema_version: { const: ENGRAM_MEMORY_SCHEMA_VERSION },
-    memory_id: { type: 'string', minLength: 1, maxLength: 128 },
-    scope_ref: SCOPE_REF_V1_SCHEMA,
-    memory_kind: { enum: [...MEMORY_KINDS] },
-    status: { enum: [...RETRIEVAL_STATUSES] },
-    summary: { type: 'string', minLength: 1, maxLength: 512 },
-    statement: { type: 'string', minLength: 1, maxLength: 8192 },
-    structured_attributes: STRUCTURED_ATTRIBUTES_SCHEMA,
-    content_digest: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
-    sensitivity: { enum: [...SENSITIVITY_LABELS] },
-    source_class: { enum: [...SOURCE_CLASSES] },
-    citations: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 16,
-      items: EVIDENCE_CITATION_V1_SCHEMA,
-    },
-    redaction_state: { enum: [...REDACTION_STATES] },
-    redacted_fields: {
-      type: 'array',
-      items: { type: 'string', minLength: 1 },
-    },
-    admitted_at_utc: { type: 'string', pattern: ISO_UTC_REGEX.source },
-    supersedes_ids: {
-      type: 'array',
-      items: { type: 'string', minLength: 1, maxLength: 128 },
-    },
-    active_dispute_ids: {
-      type: 'array',
-      items: { type: 'string', minLength: 1, maxLength: 128 },
-    },
-  },
-} as const;
-
+/**
+ * M2 Closed Input JSON Schemas (copied from SPEC-memory-mcp-v2.md §M2 and
+ * `engram-memory/schemas`).
+ */
 export const ENGRAM_MEMORY_SEARCH_INPUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['query_text'],
+  required: ['query', 'purpose_ref'],
   properties: {
-    query_text: {
+    query: {
       type: 'string',
-      minLength: MEMORY_MCP_LIMITS.SEARCH_QUERY_TEXT_MIN_CHARS,
-      maxLength: MEMORY_MCP_LIMITS.SEARCH_QUERY_TEXT_MAX_CHARS,
+      minLength: MEMORY_MCP_LIMITS.QUERY_MIN_UTF8_BYTES,
+      maxLength: MEMORY_MCP_LIMITS.QUERY_MAX_UTF8_BYTES,
     },
-    memory_kinds: {
-      type: 'array',
-      minItems: MEMORY_MCP_LIMITS.SEARCH_MEMORY_KINDS_MIN_ITEMS,
-      maxItems: MEMORY_MCP_LIMITS.SEARCH_MEMORY_KINDS_MAX_ITEMS,
-      uniqueItems: true,
-      items: {
-        enum: [...MEMORY_KINDS],
-      },
-    },
-    status_filter: {
-      enum: [...RECALL_STATUS_FILTERS],
-    },
+    purpose_ref: OPAQUE_REF_SCHEMA,
     limit: {
       type: 'integer',
-      minimum: MEMORY_MCP_LIMITS.SEARCH_LIMIT_MIN,
-      maximum: MEMORY_MCP_LIMITS.SEARCH_LIMIT_MAX,
-      default: MEMORY_MCP_LIMITS.SEARCH_LIMIT_DEFAULT,
+      minimum: MEMORY_MCP_LIMITS.LIMIT_MIN,
+      maximum: MEMORY_MCP_LIMITS.LIMIT_MAX,
+      default: MEMORY_MCP_LIMITS.LIMIT_DEFAULT,
     },
-    cursor: {
-      type: 'string',
-      minLength: MEMORY_MCP_LIMITS.SEARCH_CURSOR_MIN_CHARS,
-      maxLength: MEMORY_MCP_LIMITS.SEARCH_CURSOR_MAX_CHARS,
+    max_packet_bytes: {
+      type: 'integer',
+      minimum: MEMORY_MCP_LIMITS.MAX_PACKET_BYTES_MIN,
+      maximum: MEMORY_MCP_LIMITS.MAX_PACKET_BYTES_MAX,
+      default: MEMORY_MCP_LIMITS.MAX_PACKET_BYTES_DEFAULT,
     },
+    capability_policy: RECALL_CAPABILITY_POLICY_V1_SCHEMA,
+    page_cursor: OPAQUE_REF_SCHEMA,
   },
 } as const;
 
 export const ENGRAM_MEMORY_GET_INPUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['memory_ids'],
+  required: ['record_id', 'purpose_ref'],
   properties: {
-    memory_ids: {
-      type: 'array',
-      minItems: MEMORY_MCP_LIMITS.GET_MEMORY_IDS_MIN_ITEMS,
-      maxItems: MEMORY_MCP_LIMITS.GET_MEMORY_IDS_MAX_ITEMS,
-      uniqueItems: true,
-      items: {
-        type: 'string',
-        minLength: MEMORY_MCP_LIMITS.OPAQUE_ID_MIN_CHARS,
-        maxLength: MEMORY_MCP_LIMITS.OPAQUE_ID_MAX_CHARS,
-      },
+    record_id: RECORD_ID_SCHEMA,
+    purpose_ref: OPAQUE_REF_SCHEMA,
+    max_packet_bytes: {
+      type: 'integer',
+      minimum: MEMORY_MCP_LIMITS.MAX_PACKET_BYTES_MIN,
+      maximum: MEMORY_MCP_LIMITS.MAX_PACKET_BYTES_MAX,
+      default: MEMORY_MCP_LIMITS.MAX_PACKET_BYTES_DEFAULT,
     },
+  },
+} as const;
+
+export const ENGRAM_MEMORY_CAPTURE_PAYLOAD_INPUT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'schema_version',
+    'purpose_ref',
+    'valid_time',
+    'components',
+    'primary_component_id',
+    'primary_event',
+    'citations',
+  ],
+  properties: {
+    schema_version: CANDIDATE_PAYLOAD_V2_SCHEMA.properties.schema_version,
+    purpose_ref: CANDIDATE_PAYLOAD_V2_SCHEMA.properties.purpose_ref,
+    valid_time: CANDIDATE_PAYLOAD_V2_SCHEMA.properties.valid_time,
+    components: CANDIDATE_PAYLOAD_V2_SCHEMA.properties.components,
+    primary_component_id:
+      CANDIDATE_PAYLOAD_V2_SCHEMA.properties.primary_component_id,
+    primary_event: CANDIDATE_PAYLOAD_V2_SCHEMA.properties.primary_event,
+    citations: CANDIDATE_PAYLOAD_V2_SCHEMA.properties.citations,
+    retention: CANDIDATE_PAYLOAD_V2_SCHEMA.properties.retention,
+    reconciliation: CANDIDATE_PAYLOAD_V2_SCHEMA.properties.reconciliation,
+  },
+} as const;
+
+export const EVIDENCE_BUNDLE_V1_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['evidence_ref', 'evidence_digest', 'citation_ids'],
+  properties: {
+    evidence_ref: OPAQUE_REF_SCHEMA,
+    evidence_digest: DIGEST_SCHEMA,
+    citation_ids: {
+      type: 'array',
+      minItems: 1,
+      maxItems: MEMORY_MCP_LIMITS.CITATIONS_MAX_ITEMS,
+      uniqueItems: true,
+      items: OPAQUE_REF_SCHEMA,
+    },
+    attestation: { type: 'string', minLength: 1, maxLength: 4096 },
   },
 } as const;
 
 export const ENGRAM_MEMORY_CAPTURE_INPUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['idempotency_key', 'memory_kind', 'payload', 'provenance'],
+  required: ['idempotency_key', 'payload', 'evidence'],
   properties: {
-    idempotency_key: { type: 'string', minLength: 1, maxLength: 128 },
-    memory_kind: { enum: [...MEMORY_KINDS] },
-    payload: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['summary', 'statement'],
-      properties: {
-        summary: { type: 'string', minLength: 1, maxLength: 512 },
-        statement: { type: 'string', minLength: 1, maxLength: 8192 },
-        structured_attributes: STRUCTURED_ATTRIBUTES_SCHEMA,
-      },
-    },
-    provenance: SOURCE_PROVENANCE_V1_SCHEMA,
-    sensitivity: { enum: [...SENSITIVITY_LABELS] },
-    sharing_policy: { enum: [...SHARING_POLICIES] },
-    retention_hint: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        expires_at_utc: { type: 'string', pattern: ISO_UTC_REGEX.source },
-        expiry_outcome: { enum: [...RETENTION_OUTCOMES] },
-      },
-    },
-    reconciliation_hint: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['family_refs'],
-      properties: {
-        family_refs: {
-          type: 'array',
-          minItems: MEMORY_MCP_LIMITS.RECONCILIATION_FAMILY_REFS_MIN_ITEMS,
-          maxItems: MEMORY_MCP_LIMITS.RECONCILIATION_FAMILY_REFS_MAX_ITEMS,
-          uniqueItems: true,
-          items: { type: 'string', minLength: 1, maxLength: 128 },
-        },
-      },
-    },
+    idempotency_key: IDEMPOTENCY_KEY_SCHEMA,
+    payload: ENGRAM_MEMORY_CAPTURE_PAYLOAD_INPUT_SCHEMA,
+    evidence: EVIDENCE_BUNDLE_V1_SCHEMA,
   },
 } as const;
 
 export const ENGRAM_MEMORY_REQUEST_ADMISSION_INPUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['idempotency_key', 'memory_id', 'rationale_code'],
+  required: ['candidate_id', 'idempotency_key'],
   properties: {
-    idempotency_key: { type: 'string', minLength: 1, maxLength: 128 },
-    memory_id: { type: 'string', minLength: 1, maxLength: 128 },
-    rationale_code: { type: 'string', minLength: 1, maxLength: 128 },
+    candidate_id: OPAQUE_REF_SCHEMA,
+    idempotency_key: IDEMPOTENCY_KEY_SCHEMA,
   },
 } as const;
 
 export const ENGRAM_MEMORY_WITHDRAW_INPUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['idempotency_key', 'memory_id', 'reason_code'],
+  required: ['candidate_id', 'idempotency_key', 'reason_ref'],
   properties: {
-    idempotency_key: { type: 'string', minLength: 1, maxLength: 128 },
-    memory_id: { type: 'string', minLength: 1, maxLength: 128 },
-    reason_code: { type: 'string', minLength: 1, maxLength: 128 },
+    candidate_id: OPAQUE_REF_SCHEMA,
+    idempotency_key: IDEMPOTENCY_KEY_SCHEMA,
+    reason_ref: OPAQUE_REF_SCHEMA,
   },
 } as const;
 
 export const ENGRAM_MEMORY_FORGET_INPUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['idempotency_key', 'memory_id', 'reason_code'],
+  required: ['record_id', 'idempotency_key', 'reason_ref'],
   properties: {
-    idempotency_key: { type: 'string', minLength: 1, maxLength: 128 },
-    memory_id: { type: 'string', minLength: 1, maxLength: 128 },
-    reason_code: { type: 'string', minLength: 1, maxLength: 128 },
+    record_id: RECORD_ID_SCHEMA,
+    idempotency_key: IDEMPOTENCY_KEY_SCHEMA,
+    reason_ref: OPAQUE_REF_SCHEMA,
   },
 } as const;
 
-function buildToolResultEnvelopeSchema(
-  toolName: EngramMemoryToolName,
-  resultSchema: Record<string, unknown>,
-) {
+/**
+ * Neutral V3/V1 Read & Lifecycle Companion Schemas (`RecallRecordPacketV3`,
+ * `RankReceiptV1`, `MemoryReadReceiptV1`, `MemoryReadPacketV1`,
+ * `AdmissionOutcomeV1`, `LifecycleReceiptV1`).
+ */
+export const RANK_RECEIPT_V1_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'request_digest',
+    'authorization_receipt_digest',
+    'profile',
+    'profile_version',
+    'profile_config_digest',
+    'valid_as_of',
+    'system_as_of',
+    'snapshot_id',
+    'snapshot_digest',
+    'candidate_count',
+    'candidate_ids_digest',
+    'scoring_formula_ref',
+    'ordered_ids_digest',
+    'revalidation_receipt_digest',
+    'projection_receipt_digests',
+    'issued_at',
+    'receipt_digest',
+  ],
+  properties: {
+    request_digest: DIGEST_SCHEMA,
+    authorization_receipt_digest: DIGEST_SCHEMA,
+    profile: { enum: ['offline_lexical_v1', 'semantic_v1'] },
+    profile_version: OPAQUE_REF_SCHEMA,
+    profile_config_digest: DIGEST_SCHEMA,
+    valid_as_of: { type: 'integer' },
+    system_as_of: CURSOR_SCHEMA,
+    snapshot_id: OPAQUE_REF_SCHEMA,
+    snapshot_digest: DIGEST_SCHEMA,
+    candidate_count: { type: 'integer', minimum: 0 },
+    candidate_ids_digest: DIGEST_SCHEMA,
+    scoring_formula_ref: OPAQUE_REF_SCHEMA,
+    ordered_ids_digest: DIGEST_SCHEMA,
+    revalidation_receipt_digest: DIGEST_SCHEMA,
+    projection_receipt_digests: {
+      type: 'array',
+      items: DIGEST_SCHEMA,
+    },
+    issued_at: INSTANT_SCHEMA,
+    receipt_digest: DIGEST_SCHEMA,
+  },
+} as const;
+
+export const RECALL_RECORD_PACKET_V3_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'record',
+    'redacted_fields',
+    'redaction_receipt_digest',
+    'score',
+    'rank',
+  ],
+  properties: {
+    record: REDACTED_MEMORY_RECORD_V2_SCHEMA,
+    redacted_fields: {
+      type: 'array',
+      items: JSON_POINTER_SCHEMA,
+    },
+    redaction_receipt_digest: DIGEST_SCHEMA,
+    score: { type: 'number' },
+    rank: { type: 'integer', minimum: 1 },
+  },
+} as const;
+
+export const RECALL_PACKET_V3_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['records', 'rank_receipt', 'packet_digest'],
+  properties: {
+    records: {
+      type: 'array',
+      maxItems: MEMORY_MCP_LIMITS.LIMIT_MAX,
+      items: RECALL_RECORD_PACKET_V3_SCHEMA,
+    },
+    rank_receipt: RANK_RECEIPT_V1_SCHEMA,
+    next_page_cursor: OPAQUE_REF_SCHEMA,
+    packet_digest: DIGEST_SCHEMA,
+  },
+} as const;
+
+export const MEMORY_READ_RECEIPT_V1_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'record_id',
+    'record_digest',
+    'valid_as_of',
+    'system_as_of',
+    'validated_through_cursor',
+    'authorization_receipt_digest',
+    'revalidation_receipt_digest',
+    'checked_at',
+    'receipt_digest',
+  ],
+  properties: {
+    record_id: RECORD_ID_SCHEMA,
+    record_digest: DIGEST_SCHEMA,
+    valid_as_of: { type: 'integer' },
+    system_as_of: CURSOR_SCHEMA,
+    validated_through_cursor: CURSOR_SCHEMA,
+    authorization_receipt_digest: DIGEST_SCHEMA,
+    revalidation_receipt_digest: DIGEST_SCHEMA,
+    checked_at: INSTANT_SCHEMA,
+    receipt_digest: DIGEST_SCHEMA,
+  },
+} as const;
+
+export const MEMORY_READ_PACKET_V1_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'record',
+    'redacted_fields',
+    'redaction_receipt_digest',
+    'read_receipt',
+    'packet_digest',
+  ],
+  properties: {
+    record: REDACTED_MEMORY_RECORD_V2_SCHEMA,
+    redacted_fields: {
+      type: 'array',
+      items: JSON_POINTER_SCHEMA,
+    },
+    redaction_receipt_digest: DIGEST_SCHEMA,
+    read_receipt: MEMORY_READ_RECEIPT_V1_SCHEMA,
+    packet_digest: DIGEST_SCHEMA,
+  },
+} as const;
+
+export const ADMISSION_OUTCOME_V1_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'status',
+    'candidate_id',
+    'cursor',
+    'decision_receipt_digest',
+    'transaction_receipt_digest',
+  ],
+  properties: {
+    status: {
+      enum: [
+        'accepted',
+        'rejected',
+        'pending_adjudication',
+        'duplicate_exact',
+      ],
+    },
+    candidate_id: OPAQUE_REF_SCHEMA,
+    record_id: RECORD_ID_SCHEMA,
+    cursor: CURSOR_SCHEMA,
+    decision_receipt_digest: DIGEST_SCHEMA,
+    transaction_receipt_digest: DIGEST_SCHEMA,
+  },
+} as const;
+
+export const LIFECYCLE_RECEIPT_V1_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'event_id',
+    'operation',
+    'from_state',
+    'to_state',
+    'cursor',
+    'event_digest',
+    'authorization_receipt_digest',
+    'transaction_receipt_digest',
+  ],
+  properties: {
+    event_id: IDEMPOTENCY_KEY_SCHEMA,
+    operation: { enum: ['withdraw', 'tombstone'] },
+    from_state: {
+      enum: [
+        'pending',
+        'accepted_current',
+        'accepted_disputed',
+        'historical',
+        'expired',
+        'trust_invalid',
+      ],
+    },
+    to_state: { enum: ['withdrawn', 'tombstoned'] },
+    cursor: CURSOR_SCHEMA,
+    event_digest: DIGEST_SCHEMA,
+    authorization_receipt_digest: DIGEST_SCHEMA,
+    transaction_receipt_digest: DIGEST_SCHEMA,
+  },
+} as const;
+
+/**
+ * M2 Result Payload JSON Schemas.
+ */
+export const SEARCH_RESULT_PAYLOAD_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['records', 'rank_receipt', 'response_digest'],
+  properties: {
+    records: {
+      type: 'array',
+      maxItems: MEMORY_MCP_LIMITS.LIMIT_MAX,
+      items: RECALL_RECORD_PACKET_V3_SCHEMA,
+    },
+    rank_receipt: RANK_RECEIPT_V1_SCHEMA,
+    next_page_cursor: OPAQUE_REF_SCHEMA,
+    response_digest: DIGEST_SCHEMA,
+  },
+} as const;
+
+export const GET_RESULT_PAYLOAD_SCHEMA = MEMORY_READ_PACKET_V1_SCHEMA;
+
+export const CAPTURE_RESULT_PAYLOAD_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'status',
+    'candidate_id',
+    'cursor',
+    'transaction_receipt_digest',
+  ],
+  properties: {
+    status: { enum: ['committed_pending', 'duplicate_exact'] },
+    candidate_id: OPAQUE_REF_SCHEMA,
+    record_digest: DIGEST_SCHEMA,
+    cursor: CURSOR_SCHEMA,
+    transaction_receipt_digest: DIGEST_SCHEMA,
+  },
+} as const;
+
+export const REQUEST_ADMISSION_RESULT_PAYLOAD_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['outcome', 'replayed'],
+  properties: {
+    outcome: ADMISSION_OUTCOME_V1_SCHEMA,
+    replayed: { type: 'boolean' },
+  },
+} as const;
+
+export const WITHDRAW_LIFECYCLE_RECEIPT_V1_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'event_id',
+    'operation',
+    'from_state',
+    'to_state',
+    'cursor',
+    'event_digest',
+    'authorization_receipt_digest',
+    'transaction_receipt_digest',
+  ],
+  properties: {
+    event_id: IDEMPOTENCY_KEY_SCHEMA,
+    operation: { const: 'withdraw' },
+    from_state: { const: 'pending' },
+    to_state: { const: 'withdrawn' },
+    cursor: CURSOR_SCHEMA,
+    event_digest: DIGEST_SCHEMA,
+    authorization_receipt_digest: DIGEST_SCHEMA,
+    transaction_receipt_digest: DIGEST_SCHEMA,
+  },
+} as const;
+
+export const WITHDRAW_RESULT_PAYLOAD_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['receipt', 'replayed', 'key_destruction'],
+  properties: {
+    receipt: WITHDRAW_LIFECYCLE_RECEIPT_V1_SCHEMA,
+    replayed: { type: 'boolean' },
+    key_destruction: { enum: ['pending', 'complete'] },
+  },
+} as const;
+
+export const FORGET_LIFECYCLE_RECEIPT_V1_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'event_id',
+    'operation',
+    'from_state',
+    'to_state',
+    'cursor',
+    'event_digest',
+    'authorization_receipt_digest',
+    'transaction_receipt_digest',
+  ],
+  properties: {
+    event_id: IDEMPOTENCY_KEY_SCHEMA,
+    operation: { const: 'tombstone' },
+    from_state: { enum: [...TOMBSTONE_ALLOWED_FROM_STATES] },
+    to_state: { const: 'tombstoned' },
+    cursor: CURSOR_SCHEMA,
+    event_digest: DIGEST_SCHEMA,
+    authorization_receipt_digest: DIGEST_SCHEMA,
+    transaction_receipt_digest: DIGEST_SCHEMA,
+  },
+} as const;
+
+export const FORGET_RESULT_PAYLOAD_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['receipt', 'replayed', 'projection_invalidation'],
+  properties: {
+    receipt: FORGET_LIFECYCLE_RECEIPT_V1_SCHEMA,
+    replayed: { type: 'boolean' },
+    projection_invalidation: { enum: ['pending', 'complete'] },
+    coverage_receipt_digest: DIGEST_SCHEMA,
+  },
+} as const;
+
+/**
+ * M2 Sentropic `AppResultEnvelope` schema builder.
+ */
+function buildToolResultEnvelopeSchema(valueSchema: Record<string, unknown>) {
   return {
     oneOf: [
       {
         type: 'object',
         additionalProperties: false,
-        required: ['ok', 'schema_version', 'tool', 'result'],
+        required: ['ok', 'output', 'auditId', 'redactionClass'],
         properties: {
           ok: { const: true },
-          schema_version: { const: ENGRAM_MEMORY_SCHEMA_VERSION },
-          tool: { const: toolName },
-          result: resultSchema,
+          output: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['schema_version', 'value'],
+            properties: {
+              schema_version: {
+                const: ENGRAM_MEMORY_STRUCTURED_OUTPUT_SCHEMA_VERSION,
+              },
+              value: valueSchema,
+            },
+          },
+          auditId: OPAQUE_REF_SCHEMA,
+          redactionClass: { const: 'high' },
         },
       },
       {
         type: 'object',
         additionalProperties: false,
-        required: ['ok', 'schema_version', 'tool', 'error'],
+        required: ['ok', 'auditId', 'redactionClass', 'error'],
         properties: {
           ok: { const: false },
-          schema_version: { const: ENGRAM_MEMORY_SCHEMA_VERSION },
-          tool: { const: toolName },
+          auditId: OPAQUE_REF_SCHEMA,
+          redactionClass: { const: 'high' },
           error: {
             type: 'object',
             additionalProperties: false,
-            required: ['code', 'message', 'retryable'],
+            required: ['code', 'message', 'retriable'],
             properties: {
               code: { enum: [...PUBLIC_MEMORY_ERROR_CODES] },
               message: { type: 'string', minLength: 1, maxLength: 1024 },
-              retryable: { type: 'boolean' },
-              details: {
-                type: 'object',
-                additionalProperties: {
-                  type: ['string', 'number', 'boolean', 'null'],
-                },
-              },
+              retriable: { type: 'boolean' },
             },
           },
         },
@@ -435,272 +641,19 @@ function buildToolResultEnvelopeSchema(
   } as const;
 }
 
-export const SEARCH_RESULT_PAYLOAD_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'schema_version',
-    'packet_id',
-    'query_id',
-    'scope_ref',
-    'status_filter',
-    'ordering',
-    'generated_at_utc',
-    'records',
-    'withheld_count',
-    'page',
-  ],
-  properties: {
-    schema_version: { const: ENGRAM_MEMORY_SCHEMA_VERSION },
-    packet_id: { type: 'string', minLength: 1, maxLength: 128 },
-    query_id: { type: 'string', minLength: 1, maxLength: 128 },
-    scope_ref: SCOPE_REF_V1_SCHEMA,
-    status_filter: { enum: [...RECALL_STATUS_FILTERS] },
-    ordering: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['primary', 'secondary', 'tertiary'],
-      properties: {
-        primary: { const: 'relevance_score_bps_desc' },
-        secondary: { const: 'admitted_at_utc_desc' },
-        tertiary: { const: 'memory_id_asc' },
-      },
-    },
-    generated_at_utc: { type: 'string', pattern: ISO_UTC_REGEX.source },
-    records: {
-      type: 'array',
-      maxItems: MEMORY_MCP_LIMITS.SEARCH_LIMIT_MAX,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['rank', 'relevance_score_bps', 'record'],
-        properties: {
-          rank: { type: 'integer', minimum: 1 },
-          relevance_score_bps: { type: 'integer', minimum: 0, maximum: 10000 },
-          record: REDACTED_MEMORY_RECORD_V2_JSON_SCHEMA,
-        },
-      },
-    },
-    withheld_count: { type: 'integer', minimum: 0 },
-    page: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['returned_count', 'has_more'],
-      properties: {
-        returned_count: {
-          type: 'integer',
-          minimum: 0,
-          maximum: MEMORY_MCP_LIMITS.SEARCH_LIMIT_MAX,
-        },
-        has_more: { type: 'boolean' },
-        next_cursor: { type: 'string', minLength: 1, maxLength: 512 },
-      },
-    },
-  },
-} as const;
-
-export const GET_RESULT_PAYLOAD_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'schema_version',
-    'packet_id',
-    'scope_ref',
-    'generated_at_utc',
-    'results',
-  ],
-  properties: {
-    schema_version: { const: ENGRAM_MEMORY_SCHEMA_VERSION },
-    packet_id: { type: 'string', minLength: 1, maxLength: 128 },
-    scope_ref: SCOPE_REF_V1_SCHEMA,
-    generated_at_utc: { type: 'string', pattern: ISO_UTC_REGEX.source },
-    results: {
-      type: 'array',
-      minItems: MEMORY_MCP_LIMITS.GET_MEMORY_IDS_MIN_ITEMS,
-      maxItems: MEMORY_MCP_LIMITS.GET_MEMORY_IDS_MAX_ITEMS,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['memory_id', 'outcome', 'reason_codes'],
-        properties: {
-          memory_id: { type: 'string', minLength: 1, maxLength: 128 },
-          outcome: { enum: [...READ_OUTCOMES] },
-          status: { enum: [...MEMORY_STATUSES] },
-          record: REDACTED_MEMORY_RECORD_V2_JSON_SCHEMA,
-          reason_codes: {
-            type: 'array',
-            items: { type: 'string', minLength: 1, maxLength: 128 },
-          },
-        },
-      },
-    },
-  },
-} as const;
-
-export const CAPTURE_RESULT_PAYLOAD_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'schema_version',
-    'memory_id',
-    'status',
-    'content_digest',
-    'captured_at_utc',
-    'event_id',
-    'idempotent_replay',
-  ],
-  properties: {
-    schema_version: { const: ENGRAM_MEMORY_SCHEMA_VERSION },
-    memory_id: { type: 'string', minLength: 1, maxLength: 128 },
-    status: { enum: ['candidate', 'quarantined'] },
-    content_digest: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
-    captured_at_utc: { type: 'string', pattern: ISO_UTC_REGEX.source },
-    event_id: { type: 'string', minLength: 1, maxLength: 128 },
-    idempotent_replay: { type: 'boolean' },
-    quarantine_reason_codes: {
-      type: 'array',
-      items: { type: 'string', minLength: 1, maxLength: 128 },
-    },
-  },
-} as const;
-
-export const ADMISSIBILITY_ASSESSMENT_V1_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'schema_version',
-    'policy_id',
-    'policy_version',
-    'admissible',
-    'confidence_bps',
-    'assessed_at_utc',
-    'assessed_by',
-    'reason_codes',
-    'required_corroboration_count',
-    'observed_corroboration_count',
-  ],
-  properties: {
-    schema_version: { const: ENGRAM_MEMORY_SCHEMA_VERSION },
-    policy_id: { type: 'string', minLength: 1, maxLength: 128 },
-    policy_version: { type: 'string', minLength: 1, maxLength: 64 },
-    admissible: { type: 'boolean' },
-    confidence_bps: { type: 'integer', minimum: 0, maximum: 10000 },
-    assessed_at_utc: { type: 'string', pattern: ISO_UTC_REGEX.source },
-    assessed_by: PRINCIPAL_REF_V1_SCHEMA,
-    reason_codes: {
-      type: 'array',
-      items: { type: 'string', minLength: 1, maxLength: 128 },
-    },
-    required_corroboration_count: { type: 'integer', minimum: 0 },
-    observed_corroboration_count: { type: 'integer', minimum: 0 },
-  },
-} as const;
-
-export const REQUEST_ADMISSION_RESULT_PAYLOAD_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'schema_version',
-    'memory_id',
-    'outcome',
-    'resulting_status',
-    'decided_at_utc',
-    'assessment',
-    'idempotent_replay',
-  ],
-  properties: {
-    schema_version: { const: ENGRAM_MEMORY_SCHEMA_VERSION },
-    memory_id: { type: 'string', minLength: 1, maxLength: 128 },
-    outcome: { enum: ['admitted', 'quarantined', 'rejected'] },
-    resulting_status: { enum: ['admitted', 'quarantined', 'candidate'] },
-    decided_at_utc: { type: 'string', pattern: ISO_UTC_REGEX.source },
-    assessment: ADMISSIBILITY_ASSESSMENT_V1_SCHEMA,
-    idempotent_replay: { type: 'boolean' },
-    event_id: { type: 'string', minLength: 1, maxLength: 128 },
-  },
-} as const;
-
-export const WITHDRAW_RESULT_PAYLOAD_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'schema_version',
-    'memory_id',
-    'previous_status',
-    'status',
-    'withdrawn_at_utc',
-    'event_id',
-    'idempotent_replay',
-  ],
-  properties: {
-    schema_version: { const: ENGRAM_MEMORY_SCHEMA_VERSION },
-    memory_id: { type: 'string', minLength: 1, maxLength: 128 },
-    previous_status: {
-      enum: ['candidate', 'quarantined', 'admitted', 'disputed'],
-    },
-    status: { const: 'withdrawn' },
-    withdrawn_at_utc: { type: 'string', pattern: ISO_UTC_REGEX.source },
-    event_id: { type: 'string', minLength: 1, maxLength: 128 },
-    idempotent_replay: { type: 'boolean' },
-  },
-} as const;
-
-export const FORGET_RESULT_PAYLOAD_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'schema_version',
-    'memory_id',
-    'tombstone_id',
-    'erased_at_utc',
-    'event_id',
-    'erased_artifact_digests',
-    'destroyed_key_ids',
-    'idempotent_replay',
-  ],
-  properties: {
-    schema_version: { const: ENGRAM_MEMORY_SCHEMA_VERSION },
-    memory_id: { type: 'string', minLength: 1, maxLength: 128 },
-    tombstone_id: { type: 'string', minLength: 1, maxLength: 128 },
-    erased_at_utc: { type: 'string', pattern: ISO_UTC_REGEX.source },
-    event_id: { type: 'string', minLength: 1, maxLength: 128 },
-    erased_artifact_digests: {
-      type: 'array',
-      items: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
-    },
-    destroyed_key_ids: {
-      type: 'array',
-      items: { type: 'string', minLength: 1, maxLength: 128 },
-    },
-    idempotent_replay: { type: 'boolean' },
-  },
-} as const;
-
 export const ENGRAM_MEMORY_SEARCH_OUTPUT_SCHEMA = buildToolResultEnvelopeSchema(
-  'engram_memory_search',
   SEARCH_RESULT_PAYLOAD_SCHEMA,
 );
 export const ENGRAM_MEMORY_GET_OUTPUT_SCHEMA = buildToolResultEnvelopeSchema(
-  'engram_memory_get',
   GET_RESULT_PAYLOAD_SCHEMA,
 );
 export const ENGRAM_MEMORY_CAPTURE_OUTPUT_SCHEMA =
-  buildToolResultEnvelopeSchema(
-    'engram_memory_capture',
-    CAPTURE_RESULT_PAYLOAD_SCHEMA,
-  );
+  buildToolResultEnvelopeSchema(CAPTURE_RESULT_PAYLOAD_SCHEMA);
 export const ENGRAM_MEMORY_REQUEST_ADMISSION_OUTPUT_SCHEMA =
-  buildToolResultEnvelopeSchema(
-    'engram_memory_request_admission',
-    REQUEST_ADMISSION_RESULT_PAYLOAD_SCHEMA,
-  );
+  buildToolResultEnvelopeSchema(REQUEST_ADMISSION_RESULT_PAYLOAD_SCHEMA);
 export const ENGRAM_MEMORY_WITHDRAW_OUTPUT_SCHEMA =
-  buildToolResultEnvelopeSchema(
-    'engram_memory_withdraw',
-    WITHDRAW_RESULT_PAYLOAD_SCHEMA,
-  );
+  buildToolResultEnvelopeSchema(WITHDRAW_RESULT_PAYLOAD_SCHEMA);
 export const ENGRAM_MEMORY_FORGET_OUTPUT_SCHEMA = buildToolResultEnvelopeSchema(
-  'engram_memory_forget',
   FORGET_RESULT_PAYLOAD_SCHEMA,
 );
 
@@ -744,12 +697,7 @@ export interface SchemaValidationSuccess<T> {
 
 export interface SchemaValidationFailure {
   readonly ok: false;
-  readonly code:
-    | 'INVALID_SCHEMA'
-    | 'UNSUPPORTED_SCHEMA_VERSION'
-    | 'INVALID_TIMESTAMP'
-    | 'INVALID_DIGEST'
-    | 'RESULT_TOO_LARGE';
+  readonly code: PublicMemoryErrorCode;
   readonly field: string;
   readonly message: string;
 }
@@ -761,7 +709,7 @@ export type SchemaValidationResult<T> =
 function fail(
   field: string,
   message: string,
-  code: SchemaValidationFailure['code'] = 'INVALID_SCHEMA',
+  code: PublicMemoryErrorCode = 'INVALID_SCHEMA',
 ): SchemaValidationFailure {
   return { ok: false, code, field, message };
 }
@@ -771,7 +719,99 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
     typeof value === 'object' &&
     value !== null &&
     !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
+    (Object.getPrototypeOf(value) === Object.prototype ||
+      Object.getPrototypeOf(value) === null)
+  );
+}
+
+export function utf8ByteLength(value: string): number {
+  return Buffer.byteLength(value, 'utf8');
+}
+
+function hasLoneSurrogate(value: string): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = i + 1 < value.length ? value.charCodeAt(i + 1) : 0;
+      if (next < 0xdc00 || next > 0xdfff) {
+        return true;
+      }
+      i++;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function isWellFormedUnicodeAndNfc(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    !hasLoneSurrogate(value) &&
+    value.normalize('NFC') === value
+  );
+}
+
+export function isValidInstant(value: unknown): value is Instant {
+  if (typeof value !== 'string' || !INSTANT_MS_UTC_REGEX.test(value)) {
+    return false;
+  }
+  const parsed = Date.parse(value);
+  return (
+    Number.isFinite(parsed) && new Date(parsed).toISOString() === value
+  );
+}
+
+export const isValidIsoUtcTimestamp = isValidInstant;
+
+export function isValidSha256Digest(value: unknown): value is Digest {
+  return typeof value === 'string' && SHA256_DIGEST_REGEX.test(value);
+}
+
+export function isValidCursor(value: unknown): value is Cursor {
+  if (typeof value !== 'string' || !CURSOR_U64_REGEX.test(value)) {
+    return false;
+  }
+  try {
+    const n = BigInt(value);
+    return n >= 0n && n <= MAX_U64;
+  } catch {
+    return false;
+  }
+}
+
+export function isValidOpaqueRef(
+  value: unknown,
+  maxBytes: number = MEMORY_MCP_LIMITS.OPAQUE_REF_MAX_UTF8_BYTES,
+): value is OpaqueRef {
+  if (!isWellFormedUnicodeAndNfc(value) || value.trim().length === 0) {
+    return false;
+  }
+  const bytes = utf8ByteLength(value);
+  return (
+    bytes >= MEMORY_MCP_LIMITS.OPAQUE_REF_MIN_UTF8_BYTES && bytes <= maxBytes
+  );
+}
+
+export function isValidRecordId(value: unknown): value is string {
+  return isValidOpaqueRef(value) && RECORD_ID_REGEX.test(value);
+}
+
+export function isValidIdempotencyKey(value: unknown): value is IdempotencyKey {
+  if (!isWellFormedUnicodeAndNfc(value) || value.trim().length === 0) {
+    return false;
+  }
+  const bytes = utf8ByteLength(value);
+  return (
+    bytes >= MEMORY_MCP_LIMITS.IDEMPOTENCY_KEY_MIN_UTF8_BYTES &&
+    bytes <= MEMORY_MCP_LIMITS.IDEMPOTENCY_KEY_MAX_UTF8_BYTES
+  );
+}
+
+export function isValidJsonPointer(value: unknown): value is JsonPointer {
+  return (
+    isWellFormedUnicodeAndNfc(value) &&
+    /^(\/([^/~]|~[01])*)*$/.test(value)
   );
 }
 
@@ -782,89 +822,43 @@ function checkAllowedKeys(
 ): SchemaValidationFailure | null {
   const allowed = new Set(allowedKeys);
   for (const key of Object.keys(obj)) {
+    const fieldPath = path ? `${path}.${key}` : key;
     if (!allowed.has(key)) {
       return fail(
-        path ? `${path}.${key}` : key,
+        fieldPath,
         `Unexpected property '${key}' is not permitted by closed schema`,
       );
     }
     if (obj[key] === undefined) {
       return fail(
-        path ? `${path}.${key}` : key,
+        fieldPath,
         `Optional property '${key}' must be omitted rather than set to undefined`,
       );
+    }
+    if (obj[key] === null) {
+      return fail(fieldPath, `Property '${key}' must not be null`);
     }
   }
   return null;
 }
 
-function utf8Bytes(str: string): number {
-  return Buffer.byteLength(str, 'utf8');
-}
-
-export function isValidIsoUtcTimestamp(value: unknown): value is string {
-  if (typeof value !== 'string' || !ISO_UTC_REGEX.test(value)) {
-    return false;
-  }
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) {
-    return false;
-  }
-  const y = Number(value.slice(0, 4));
-  const m = Number(value.slice(5, 7));
-  const d = Number(value.slice(8, 10));
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  return (
-    dt.getUTCFullYear() === y &&
-    dt.getUTCMonth() === m - 1 &&
-    dt.getUTCDate() === d
-  );
-}
-
-export function isValidSha256Digest(value: unknown): value is string {
-  return typeof value === 'string' && SHA256_DIGEST_REGEX.test(value);
-}
-
-function validateOpaqueId(
+function checkSerializedArgumentSize(
   value: unknown,
-  field: string,
-  maxLen: number = MEMORY_MCP_LIMITS.OPAQUE_ID_MAX_CHARS,
+  path = '',
 ): SchemaValidationFailure | null {
-  if (typeof value !== 'string' || value.length < 1 || value.length > maxLen) {
-    return fail(field, `Expected string of length 1..${maxLen}`);
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(value);
+  } catch {
+    return fail(path, 'Arguments are not JSON-serializable');
   }
-  return null;
-}
-
-function validateSchemaVersionField(
-  value: unknown,
-  field: string,
-): SchemaValidationFailure | null {
-  if (typeof value !== 'string') {
-    return fail(field, 'Expected schema_version string');
-  }
-  if (value !== ENGRAM_MEMORY_SCHEMA_VERSION) {
+  if (
+    typeof serialized !== 'string' ||
+    utf8ByteLength(serialized) > MEMORY_MCP_LIMITS.MAX_ARGUMENT_OBJECT_UTF8_BYTES
+  ) {
     return fail(
-      field,
-      `Unsupported schema_version '${value}'`,
-      'UNSUPPORTED_SCHEMA_VERSION',
-    );
-  }
-  return null;
-}
-
-function validateTimestampField(
-  value: unknown,
-  field: string,
-): SchemaValidationFailure | null {
-  if (typeof value !== 'string') {
-    return fail(field, 'Expected ISO-8601 UTC timestamp string');
-  }
-  if (!isValidIsoUtcTimestamp(value)) {
-    return fail(
-      field,
-      `Invalid ISO-8601 UTC timestamp '${value}'`,
-      'INVALID_TIMESTAMP',
+      path,
+      `Serialized argument object exceeds ${MEMORY_MCP_LIMITS.MAX_ARGUMENT_OBJECT_UTF8_BYTES} UTF-8 bytes`,
     );
   }
   return null;
@@ -872,464 +866,208 @@ function validateTimestampField(
 
 function validateDigestField(
   value: unknown,
-  field: string,
+  path: string,
 ): SchemaValidationFailure | null {
-  if (typeof value !== 'string') {
-    return fail(field, 'Expected sha256 digest string');
-  }
   if (!isValidSha256Digest(value)) {
-    return fail(field, `Invalid SHA-256 digest '${value}'`, 'INVALID_DIGEST');
+    return fail(
+      path,
+      `Expected SHA-256 digest matching ${MEMORY_MCP_LIMITS.DIGEST_PATTERN}`,
+      'INVALID_DIGEST',
+    );
   }
   return null;
 }
 
-export function validateScopeRefV1(
-  value: unknown,
-  path = 'scope_ref',
-): SchemaValidationResult<ScopeRefV1> {
-  if (!isPlainObject(value)) {
-    return fail(path, 'Expected ScopeRefV1 object');
-  }
-  const keyErr = checkAllowedKeys(
-    value,
-    [
-      'schema_version',
-      'tenant_id',
-      'workspace_id',
-      'project_id',
-      'level',
-      'session_id',
-      'user_id',
-    ],
-    path,
-  );
-  if (keyErr) return keyErr;
-
-  const verErr = validateSchemaVersionField(
-    value.schema_version,
-    `${path}.schema_version`,
-  );
-  if (verErr) return verErr;
-
-  for (const k of ['tenant_id', 'workspace_id', 'project_id'] as const) {
-    const err = validateOpaqueId(value[k], `${path}.${k}`);
-    if (err) return err;
-  }
-
-  if (
-    typeof value.level !== 'string' ||
-    !(SCOPE_LEVELS as readonly string[]).includes(value.level)
-  ) {
-    return fail(`${path}.level`, 'Invalid scope level');
-  }
-
-  if ('session_id' in value) {
-    const err = validateOpaqueId(value.session_id, `${path}.session_id`);
-    if (err) return err;
-  }
-  if ('user_id' in value) {
-    const err = validateOpaqueId(value.user_id, `${path}.user_id`);
-    if (err) return err;
-  }
-
-  return { ok: true, value: value as unknown as ScopeRefV1 };
-}
-
-export function validatePrincipalRefV1(
-  value: unknown,
-  path = 'principal_ref',
-): SchemaValidationResult<PrincipalRefV1> {
-  if (!isPlainObject(value)) {
-    return fail(path, 'Expected PrincipalRefV1 object');
-  }
-  const keyErr = checkAllowedKeys(
-    value,
-    ['schema_version', 'principal_id', 'principal_kind', 'tenant_id', 'roles'],
-    path,
-  );
-  if (keyErr) return keyErr;
-
-  const verErr = validateSchemaVersionField(
-    value.schema_version,
-    `${path}.schema_version`,
-  );
-  if (verErr) return verErr;
-
-  const idErr = validateOpaqueId(value.principal_id, `${path}.principal_id`);
-  if (idErr) return idErr;
-
-  if (
-    typeof value.principal_kind !== 'string' ||
-    !['user', 'agent', 'service', 'system'].includes(value.principal_kind)
-  ) {
-    return fail(`${path}.principal_kind`, 'Invalid principal_kind');
-  }
-
-  const tenantErr = validateOpaqueId(value.tenant_id, `${path}.tenant_id`);
-  if (tenantErr) return tenantErr;
-
-  if (!Array.isArray(value.roles)) {
-    return fail(`${path}.roles`, 'Expected roles array');
-  }
-  for (let i = 0; i < value.roles.length; i++) {
-    const roleErr = validateOpaqueId(value.roles[i], `${path}.roles[${i}]`, 64);
-    if (roleErr) return roleErr;
-  }
-
-  return { ok: true, value: value as unknown as PrincipalRefV1 };
-}
-
-export function validateEvidenceCitationV1(
-  value: unknown,
-  path = 'citation',
-): SchemaValidationResult<EvidenceCitationV1> {
-  if (!isPlainObject(value)) {
-    return fail(path, 'Expected EvidenceCitationV1 object');
-  }
-  const keyErr = checkAllowedKeys(
-    value,
-    [
-      'schema_version',
-      'citation_id',
-      'locator',
-      'digest',
-      'media_type',
-      'observed_at_utc',
-      'byte_range',
-      'line_range',
-      'excerpt',
-    ],
-    path,
-  );
-  if (keyErr) return keyErr;
-
-  const verErr = validateSchemaVersionField(
-    value.schema_version,
-    `${path}.schema_version`,
-  );
-  if (verErr) return verErr;
-
-  const idErr = validateOpaqueId(value.citation_id, `${path}.citation_id`);
-  if (idErr) return idErr;
-
-  const locErr = validateOpaqueId(
-    value.locator,
-    `${path}.locator`,
-    MEMORY_MCP_LIMITS.CITATION_LOCATOR_MAX_CHARS,
-  );
-  if (locErr) return locErr;
-
-  const digErr = validateDigestField(value.digest, `${path}.digest`);
-  if (digErr) return digErr;
-
-  if (
-    typeof value.media_type !== 'string' ||
-    !(EVIDENCE_MEDIA_TYPES as readonly string[]).includes(value.media_type)
-  ) {
-    return fail(`${path}.media_type`, 'Invalid media_type');
-  }
-
-  const tsErr = validateTimestampField(
-    value.observed_at_utc,
-    `${path}.observed_at_utc`,
-  );
-  if (tsErr) return tsErr;
-
-  if ('byte_range' in value) {
-    const br = value.byte_range;
-    if (!isPlainObject(br)) {
-      return fail(`${path}.byte_range`, 'Expected byte_range object');
-    }
-    const brKeyErr = checkAllowedKeys(
-      br,
-      ['start_byte', 'end_byte_exclusive'],
-      `${path}.byte_range`,
-    );
-    if (brKeyErr) return brKeyErr;
-    if (
-      typeof br.start_byte !== 'number' ||
-      !Number.isInteger(br.start_byte) ||
-      br.start_byte < 0 ||
-      typeof br.end_byte_exclusive !== 'number' ||
-      !Number.isInteger(br.end_byte_exclusive) ||
-      br.end_byte_exclusive <= br.start_byte
-    ) {
-      return fail(
-        `${path}.byte_range`,
-        'byte_range requires integers 0 <= start_byte < end_byte_exclusive',
-      );
-    }
-  }
-
-  if ('line_range' in value) {
-    const lr = value.line_range;
-    if (!isPlainObject(lr)) {
-      return fail(`${path}.line_range`, 'Expected line_range object');
-    }
-    const lrKeyErr = checkAllowedKeys(
-      lr,
-      ['start_line', 'end_line_inclusive'],
-      `${path}.line_range`,
-    );
-    if (lrKeyErr) return lrKeyErr;
-    if (
-      typeof lr.start_line !== 'number' ||
-      !Number.isInteger(lr.start_line) ||
-      lr.start_line < 1 ||
-      typeof lr.end_line_inclusive !== 'number' ||
-      !Number.isInteger(lr.end_line_inclusive) ||
-      lr.end_line_inclusive < lr.start_line
-    ) {
-      return fail(
-        `${path}.line_range`,
-        'line_range requires integers 1 <= start_line <= end_line_inclusive',
-      );
-    }
-  }
-
-  if ('excerpt' in value) {
-    if (
-      typeof value.excerpt !== 'string' ||
-      value.excerpt.length > MEMORY_MCP_LIMITS.CITATION_EXCERPT_MAX_CHARS ||
-      utf8Bytes(value.excerpt) >
-        MEMORY_MCP_LIMITS.CITATION_EXCERPT_MAX_UTF8_BYTES
-    ) {
-      return fail(
-        `${path}.excerpt`,
-        'excerpt must be a string with <= 512 chars and <= 512 UTF-8 bytes',
-      );
-    }
-  }
-
-  return { ok: true, value: value as unknown as EvidenceCitationV1 };
-}
-
-export function validateSourceProvenanceV1(
-  value: unknown,
-  path = 'provenance',
-): SchemaValidationResult<SourceProvenanceV1> {
-  if (!isPlainObject(value)) {
-    return fail(path, 'Expected SourceProvenanceV1 object');
-  }
-  const keyErr = checkAllowedKeys(
-    value,
-    [
-      'schema_version',
-      'source_class',
-      'captured_by',
-      'observed_at_utc',
-      'citations',
-      'upstream_bundle_id',
-      'external_origin_ref',
-    ],
-    path,
-  );
-  if (keyErr) return keyErr;
-
-  const verErr = validateSchemaVersionField(
-    value.schema_version,
-    `${path}.schema_version`,
-  );
-  if (verErr) return verErr;
-
-  if (
-    typeof value.source_class !== 'string' ||
-    !(SOURCE_CLASSES as readonly string[]).includes(value.source_class)
-  ) {
-    return fail(`${path}.source_class`, 'Invalid source_class');
-  }
-
-  const capBy = validatePrincipalRefV1(
-    value.captured_by,
-    `${path}.captured_by`,
-  );
-  if (!capBy.ok) return capBy;
-
-  const tsErr = validateTimestampField(
-    value.observed_at_utc,
-    `${path}.observed_at_utc`,
-  );
-  if (tsErr) return tsErr;
-
-  if (
-    !Array.isArray(value.citations) ||
-    value.citations.length < MEMORY_MCP_LIMITS.CAPTURE_CITATIONS_MIN_ITEMS ||
-    value.citations.length > MEMORY_MCP_LIMITS.CAPTURE_CITATIONS_MAX_ITEMS
-  ) {
-    return fail(
-      `${path}.citations`,
-      `citations must be an array of ${MEMORY_MCP_LIMITS.CAPTURE_CITATIONS_MIN_ITEMS}..${MEMORY_MCP_LIMITS.CAPTURE_CITATIONS_MAX_ITEMS} items`,
-    );
-  }
-  for (let i = 0; i < value.citations.length; i++) {
-    const citRes = validateEvidenceCitationV1(
-      value.citations[i],
-      `${path}.citations[${i}]`,
-    );
-    if (!citRes.ok) return citRes;
-  }
-
-  if ('upstream_bundle_id' in value) {
-    const err = validateOpaqueId(
-      value.upstream_bundle_id,
-      `${path}.upstream_bundle_id`,
-    );
-    if (err) return err;
-  }
-  if ('external_origin_ref' in value) {
-    const err = validateOpaqueId(
-      value.external_origin_ref,
-      `${path}.external_origin_ref`,
-      512,
-    );
-    if (err) return err;
-  }
-
-  return { ok: true, value: value as unknown as SourceProvenanceV1 };
-}
-
-function validateStructuredAttributes(
+function validateInstantField(
   value: unknown,
   path: string,
 ): SchemaValidationFailure | null {
-  if (!isPlainObject(value)) {
-    return fail(path, 'structured_attributes must be a flat object');
-  }
-  const keys = Object.keys(value);
-  if (keys.length > MEMORY_MCP_LIMITS.CAPTURE_STRUCTURED_ATTR_MAX_KEYS) {
+  if (!isValidInstant(value)) {
     return fail(
       path,
-      `structured_attributes exceeds maximum of ${MEMORY_MCP_LIMITS.CAPTURE_STRUCTURED_ATTR_MAX_KEYS} keys`,
-    );
-  }
-  for (const key of keys) {
-    if (!STRUCTURED_ATTR_KEY_REGEX.test(key)) {
-      return fail(
-        `${path}.${key}`,
-        `Invalid structured_attributes key '${key}'`,
-      );
-    }
-    const v = value[key];
-    if (v === null || typeof v === 'boolean') {
-      continue;
-    }
-    if (typeof v === 'number') {
-      if (!Number.isFinite(v)) {
-        return fail(`${path}.${key}`, 'Number value must be finite');
-      }
-      continue;
-    }
-    if (typeof v === 'string') {
-      if (
-        utf8Bytes(v) >
-        MEMORY_MCP_LIMITS.CAPTURE_STRUCTURED_ATTR_STRING_MAX_UTF8_BYTES
-      ) {
-        return fail(
-          `${path}.${key}`,
-          'String attribute exceeds 512 UTF-8 bytes',
-        );
-      }
-      continue;
-    }
-    return fail(
-      `${path}.${key}`,
-      'Attribute value must be string, finite number, boolean, or null',
-    );
-  }
-  const serializedBytes = utf8Bytes(JSON.stringify(value));
-  if (
-    serializedBytes > MEMORY_MCP_LIMITS.CAPTURE_STRUCTURED_ATTR_MAX_UTF8_BYTES
-  ) {
-    return fail(
-      path,
-      `Serialized structured_attributes exceeds ${MEMORY_MCP_LIMITS.CAPTURE_STRUCTURED_ATTR_MAX_UTF8_BYTES} UTF-8 bytes`,
+      `Expected RFC 3339 millisecond UTC timestamp matching ${MEMORY_MCP_LIMITS.INSTANT_PATTERN}`,
     );
   }
   return null;
 }
 
+function validateSafeIntegerEpochField(
+  value: unknown,
+  path: string,
+): SchemaValidationFailure | null {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+    return fail(path, 'Expected safe integer epoch timestamp');
+  }
+  return null;
+}
+
+function validateCursorField(
+  value: unknown,
+  path: string,
+): SchemaValidationFailure | null {
+  if (!isValidCursor(value)) {
+    return fail(path, 'Expected canonical decimal u64 cursor');
+  }
+  return null;
+}
+
+function validateOpaqueRefField(
+  value: unknown,
+  path: string,
+  maxBytes: number = MEMORY_MCP_LIMITS.OPAQUE_REF_MAX_UTF8_BYTES,
+): SchemaValidationFailure | null {
+  if (!isValidOpaqueRef(value, maxBytes)) {
+    return fail(
+      path,
+      `Expected NFC non-empty string within 1..${maxBytes} UTF-8 bytes`,
+    );
+  }
+  return null;
+}
+
+function validateRecordIdField(
+  value: unknown,
+  path: string,
+): SchemaValidationFailure | null {
+  if (!isValidRecordId(value)) {
+    return fail(
+      path,
+      `Expected record_id matching ${MEMORY_MCP_LIMITS.RECORD_ID_PATTERN}`,
+    );
+  }
+  return null;
+}
+
+function validateIdempotencyKeyField(
+  value: unknown,
+  path: string,
+): SchemaValidationFailure | null {
+  if (!isValidIdempotencyKey(value)) {
+    return fail(
+      path,
+      `Expected NFC idempotency_key within ${MEMORY_MCP_LIMITS.IDEMPOTENCY_KEY_MIN_UTF8_BYTES}..${MEMORY_MCP_LIMITS.IDEMPOTENCY_KEY_MAX_UTF8_BYTES} UTF-8 bytes`,
+    );
+  }
+  return null;
+}
+
+export function validateRecallCapabilityPolicyV1(
+  value: unknown,
+  path = 'capability_policy',
+): SchemaValidationResult<RecallCapabilityPolicyV1> {
+  if (!isPlainObject(value)) {
+    return fail(path, 'Expected RecallCapabilityPolicyV1 object');
+  }
+  const keyErr = checkAllowedKeys(
+    value,
+    ['minimum_channels', 'network'],
+    path,
+  );
+  if (keyErr) return keyErr;
+
+  if (
+    value.minimum_channels !== 'lexical' &&
+    value.minimum_channels !== 'lexical_and_semantic'
+  ) {
+    return fail(
+      `${path}.minimum_channels`,
+      "minimum_channels must be 'lexical' or 'lexical_and_semantic'",
+    );
+  }
+  if (value.network !== 'forbid' && value.network !== 'allow') {
+    return fail(`${path}.network`, "network must be 'forbid' or 'allow'");
+  }
+  return {
+    ok: true,
+    value: value as unknown as RecallCapabilityPolicyV1,
+  };
+}
+
+/**
+ * M2 Input Validators.
+ */
 export function validateSearchInputV1(
   value: unknown,
 ): SchemaValidationResult<SearchInputV1> {
   if (!isPlainObject(value)) {
     return fail('', 'Expected SearchInputV1 object');
   }
+  const sizeErr = checkSerializedArgumentSize(value);
+  if (sizeErr) return sizeErr;
+
   const keyErr = checkAllowedKeys(
     value,
-    ['query_text', 'memory_kinds', 'status_filter', 'limit', 'cursor'],
+    [
+      'query',
+      'purpose_ref',
+      'limit',
+      'max_packet_bytes',
+      'capability_policy',
+      'page_cursor',
+    ],
     '',
   );
   if (keyErr) return keyErr;
 
   if (
-    typeof value.query_text !== 'string' ||
-    value.query_text.length < MEMORY_MCP_LIMITS.SEARCH_QUERY_TEXT_MIN_CHARS ||
-    value.query_text.length > MEMORY_MCP_LIMITS.SEARCH_QUERY_TEXT_MAX_CHARS ||
-    utf8Bytes(value.query_text) >
-      MEMORY_MCP_LIMITS.SEARCH_QUERY_TEXT_MAX_UTF8_BYTES
+    !isWellFormedUnicodeAndNfc(value.query) ||
+    value.query.trim().length === 0
+  ) {
+    return fail('query', 'query must be a non-empty NFC string');
+  }
+  const queryBytes = utf8ByteLength(value.query);
+  if (
+    queryBytes < MEMORY_MCP_LIMITS.QUERY_MIN_UTF8_BYTES ||
+    queryBytes > MEMORY_MCP_LIMITS.QUERY_MAX_UTF8_BYTES
   ) {
     return fail(
-      'query_text',
-      'query_text must be 1..2048 chars and <= 2048 UTF-8 bytes',
+      'query',
+      `query UTF-8 length must be ${MEMORY_MCP_LIMITS.QUERY_MIN_UTF8_BYTES}..${MEMORY_MCP_LIMITS.QUERY_MAX_UTF8_BYTES} bytes`,
     );
   }
 
-  if ('memory_kinds' in value) {
-    if (
-      !Array.isArray(value.memory_kinds) ||
-      value.memory_kinds.length <
-        MEMORY_MCP_LIMITS.SEARCH_MEMORY_KINDS_MIN_ITEMS ||
-      value.memory_kinds.length >
-        MEMORY_MCP_LIMITS.SEARCH_MEMORY_KINDS_MAX_ITEMS
-    ) {
-      return fail('memory_kinds', 'memory_kinds must contain 1..6 items');
-    }
-    const seen = new Set<string>();
-    for (let i = 0; i < value.memory_kinds.length; i++) {
-      const k = value.memory_kinds[i];
-      if (
-        typeof k !== 'string' ||
-        !(MEMORY_KINDS as readonly string[]).includes(k)
-      ) {
-        return fail(`memory_kinds[${i}]`, 'Invalid memory_kind');
-      }
-      if (seen.has(k)) {
-        return fail(`memory_kinds[${i}]`, 'Duplicate memory_kind');
-      }
-      seen.add(k);
-    }
-  }
-
-  if ('status_filter' in value) {
-    if (
-      typeof value.status_filter !== 'string' ||
-      !(RECALL_STATUS_FILTERS as readonly string[]).includes(
-        value.status_filter,
-      )
-    ) {
-      return fail('status_filter', 'Invalid status_filter');
-    }
-  }
+  const purposeErr = validateOpaqueRefField(value.purpose_ref, 'purpose_ref');
+  if (purposeErr) return purposeErr;
 
   if ('limit' in value) {
     if (
       typeof value.limit !== 'number' ||
       !Number.isInteger(value.limit) ||
-      value.limit < MEMORY_MCP_LIMITS.SEARCH_LIMIT_MIN ||
-      value.limit > MEMORY_MCP_LIMITS.SEARCH_LIMIT_MAX
+      value.limit < MEMORY_MCP_LIMITS.LIMIT_MIN ||
+      value.limit > MEMORY_MCP_LIMITS.LIMIT_MAX
     ) {
-      return fail('limit', 'limit must be an integer between 1 and 25');
+      return fail(
+        'limit',
+        `limit must be an integer in ${MEMORY_MCP_LIMITS.LIMIT_MIN}..${MEMORY_MCP_LIMITS.LIMIT_MAX}`,
+      );
     }
   }
 
-  if ('cursor' in value) {
+  if ('max_packet_bytes' in value) {
     if (
-      typeof value.cursor !== 'string' ||
-      value.cursor.length < MEMORY_MCP_LIMITS.SEARCH_CURSOR_MIN_CHARS ||
-      value.cursor.length > MEMORY_MCP_LIMITS.SEARCH_CURSOR_MAX_CHARS
+      typeof value.max_packet_bytes !== 'number' ||
+      !Number.isInteger(value.max_packet_bytes) ||
+      value.max_packet_bytes < MEMORY_MCP_LIMITS.MAX_PACKET_BYTES_MIN ||
+      value.max_packet_bytes > MEMORY_MCP_LIMITS.MAX_PACKET_BYTES_MAX
     ) {
-      return fail('cursor', 'cursor must be a string of length 1..512');
+      return fail(
+        'max_packet_bytes',
+        `max_packet_bytes must be an integer in ${MEMORY_MCP_LIMITS.MAX_PACKET_BYTES_MIN}..${MEMORY_MCP_LIMITS.MAX_PACKET_BYTES_MAX}`,
+      );
     }
+  }
+
+  if ('capability_policy' in value) {
+    const capRes = validateRecallCapabilityPolicyV1(
+      value.capability_policy,
+      'capability_policy',
+    );
+    if (!capRes.ok) return capRes;
+  }
+
+  if ('page_cursor' in value) {
+    const curErr = validateOpaqueRefField(value.page_cursor, 'page_cursor');
+    if (curErr) return curErr;
   }
 
   return { ok: true, value: value as unknown as SearchInputV1 };
@@ -1341,29 +1079,501 @@ export function validateGetInputV1(
   if (!isPlainObject(value)) {
     return fail('', 'Expected GetInputV1 object');
   }
-  const keyErr = checkAllowedKeys(value, ['memory_ids'], '');
+  const sizeErr = checkSerializedArgumentSize(value);
+  if (sizeErr) return sizeErr;
+
+  const keyErr = checkAllowedKeys(
+    value,
+    ['record_id', 'purpose_ref', 'max_packet_bytes'],
+    '',
+  );
   if (keyErr) return keyErr;
 
-  if (
-    !Array.isArray(value.memory_ids) ||
-    value.memory_ids.length < MEMORY_MCP_LIMITS.GET_MEMORY_IDS_MIN_ITEMS ||
-    value.memory_ids.length > MEMORY_MCP_LIMITS.GET_MEMORY_IDS_MAX_ITEMS
-  ) {
-    return fail('memory_ids', 'memory_ids must contain 1..10 items');
-  }
+  const recErr = validateRecordIdField(value.record_id, 'record_id');
+  if (recErr) return recErr;
 
-  const seen = new Set<string>();
-  for (let i = 0; i < value.memory_ids.length; i++) {
-    const id = value.memory_ids[i];
-    const idErr = validateOpaqueId(id, `memory_ids[${i}]`);
-    if (idErr) return idErr;
-    if (seen.has(id as string)) {
-      return fail(`memory_ids[${i}]`, 'Duplicate memory_id');
+  const purposeErr = validateOpaqueRefField(value.purpose_ref, 'purpose_ref');
+  if (purposeErr) return purposeErr;
+
+  if ('max_packet_bytes' in value) {
+    if (
+      typeof value.max_packet_bytes !== 'number' ||
+      !Number.isInteger(value.max_packet_bytes) ||
+      value.max_packet_bytes < MEMORY_MCP_LIMITS.MAX_PACKET_BYTES_MIN ||
+      value.max_packet_bytes > MEMORY_MCP_LIMITS.MAX_PACKET_BYTES_MAX
+    ) {
+      return fail(
+        'max_packet_bytes',
+        `max_packet_bytes must be an integer in ${MEMORY_MCP_LIMITS.MAX_PACKET_BYTES_MIN}..${MEMORY_MCP_LIMITS.MAX_PACKET_BYTES_MAX}`,
+      );
     }
-    seen.add(id as string);
   }
 
   return { ok: true, value: value as unknown as GetInputV1 };
+}
+
+function validateCitationV1(
+  value: unknown,
+  path: string,
+): SchemaValidationResult<CitationV1> {
+  if (!isPlainObject(value)) {
+    return fail(path, 'Expected CitationV1 object');
+  }
+  const keyErr = checkAllowedKeys(
+    value,
+    ['citation_id', 'source_ref', 'locator', 'content_digest', 'observed_at'],
+    path,
+  );
+  if (keyErr) return keyErr;
+
+  const cidErr = validateOpaqueRefField(
+    value.citation_id,
+    `${path}.citation_id`,
+  );
+  if (cidErr) return cidErr;
+
+  const srcErr = validateOpaqueRefField(value.source_ref, `${path}.source_ref`);
+  if (srcErr) return srcErr;
+
+  if (!isPlainObject(value.locator)) {
+    return fail(`${path}.locator`, 'Expected CitationLocatorV1 object');
+  }
+  const locKeyErr = checkAllowedKeys(
+    value.locator,
+    ['scheme', 'value'],
+    `${path}.locator`,
+  );
+  if (locKeyErr) return locKeyErr;
+
+  const schemeErr = validateOpaqueRefField(
+    value.locator.scheme,
+    `${path}.locator.scheme`,
+  );
+  if (schemeErr) return schemeErr;
+
+  const valErr = validateOpaqueRefField(
+    value.locator.value,
+    `${path}.locator.value`,
+    4096,
+  );
+  if (valErr) return valErr;
+
+  const digErr = validateDigestField(
+    value.content_digest,
+    `${path}.content_digest`,
+  );
+  if (digErr) return digErr;
+
+  if ('observed_at' in value) {
+    const obsErr = validateInstantField(
+      value.observed_at,
+      `${path}.observed_at`,
+    );
+    if (obsErr) return obsErr;
+  }
+
+  return { ok: true, value: value as unknown as CitationV1 };
+}
+
+function validateMemoryComponentV2(
+  value: unknown,
+  path: string,
+): SchemaValidationResult<MemoryComponentV2> {
+  if (!isPlainObject(value)) {
+    return fail(path, 'Expected MemoryComponentV2 object');
+  }
+  const keyErr = checkAllowedKeys(
+    value,
+    ['component_id', 'kind', 'text', 'citation_ids'],
+    path,
+  );
+  if (keyErr) return keyErr;
+
+  const idErr = validateOpaqueRefField(
+    value.component_id,
+    `${path}.component_id`,
+  );
+  if (idErr) return idErr;
+
+  if (
+    value.kind !== 'context' &&
+    value.kind !== 'decision' &&
+    value.kind !== 'evidence'
+  ) {
+    return fail(
+      `${path}.kind`,
+      "component kind must be 'context', 'decision', or 'evidence'",
+    );
+  }
+
+  if (
+    !isWellFormedUnicodeAndNfc(value.text) ||
+    value.text.trim().length === 0
+  ) {
+    return fail(`${path}.text`, 'component text must be a non-empty NFC string');
+  }
+  const textBytes = utf8ByteLength(value.text);
+  if (
+    textBytes < MEMORY_MCP_LIMITS.COMPONENT_TEXT_MIN_UTF8_BYTES ||
+    textBytes > MEMORY_MCP_LIMITS.COMPONENT_TEXT_MAX_UTF8_BYTES
+  ) {
+    return fail(
+      `${path}.text`,
+      `component text UTF-8 length must be ${MEMORY_MCP_LIMITS.COMPONENT_TEXT_MIN_UTF8_BYTES}..${MEMORY_MCP_LIMITS.COMPONENT_TEXT_MAX_UTF8_BYTES} bytes`,
+    );
+  }
+
+  if (
+    !Array.isArray(value.citation_ids) ||
+    value.citation_ids.length < 1 ||
+    value.citation_ids.length > MEMORY_MCP_LIMITS.CITATIONS_MAX_ITEMS
+  ) {
+    return fail(
+      `${path}.citation_ids`,
+      `citation_ids must contain 1..${MEMORY_MCP_LIMITS.CITATIONS_MAX_ITEMS} items`,
+    );
+  }
+  const seenCids = new Set<string>();
+  for (let i = 0; i < value.citation_ids.length; i++) {
+    const cid = value.citation_ids[i];
+    const cidErr = validateOpaqueRefField(cid, `${path}.citation_ids[${i}]`);
+    if (cidErr) return cidErr;
+    if (seenCids.has(cid as string)) {
+      return fail(
+        `${path}.citation_ids[${i}]`,
+        `Duplicate citation_id '${String(cid)}' in component`,
+      );
+    }
+    seenCids.add(cid as string);
+  }
+
+  return { ok: true, value: value as unknown as MemoryComponentV2 };
+}
+
+export function validateCapturePayloadInputV1(
+  value: unknown,
+  path = 'payload',
+): SchemaValidationResult<CapturePayloadInputV1> {
+  if (!isPlainObject(value)) {
+    return fail(path, 'Expected CapturePayloadInputV1 object');
+  }
+  const keyErr = checkAllowedKeys(
+    value,
+    [
+      'schema_version',
+      'purpose_ref',
+      'valid_time',
+      'components',
+      'primary_component_id',
+      'primary_event',
+      'citations',
+      'retention',
+      'reconciliation',
+    ],
+    path,
+  );
+  if (keyErr) return keyErr;
+
+  if (value.schema_version !== ENGRAM_MEMORY_CANDIDATE_SCHEMA_VERSION) {
+    return fail(
+      `${path}.schema_version`,
+      `payload.schema_version must equal ${ENGRAM_MEMORY_CANDIDATE_SCHEMA_VERSION}`,
+    );
+  }
+
+  const purposeErr = validateOpaqueRefField(
+    value.purpose_ref,
+    `${path}.purpose_ref`,
+  );
+  if (purposeErr) return purposeErr;
+
+  if (!isPlainObject(value.valid_time)) {
+    return fail(`${path}.valid_time`, 'Expected ValidIntervalV1 object');
+  }
+  const vtKeyErr = checkAllowedKeys(
+    value.valid_time,
+    ['t', 't_end'],
+    `${path}.valid_time`,
+  );
+  if (vtKeyErr) return vtKeyErr;
+  const tErr = validateSafeIntegerEpochField(
+    value.valid_time.t,
+    `${path}.valid_time.t`,
+  );
+  if (tErr) return tErr;
+  if ('t_end' in value.valid_time) {
+    const tEndErr = validateSafeIntegerEpochField(
+      value.valid_time.t_end,
+      `${path}.valid_time.t_end`,
+    );
+    if (tEndErr) return tEndErr;
+    if ((value.valid_time.t_end as number) < (value.valid_time.t as number)) {
+      return fail(
+        `${path}.valid_time.t_end`,
+        'valid_time.t_end must be >= valid_time.t',
+      );
+    }
+  }
+
+  if (
+    !Array.isArray(value.citations) ||
+    value.citations.length < MEMORY_MCP_LIMITS.CITATIONS_MIN_ITEMS ||
+    value.citations.length > MEMORY_MCP_LIMITS.CITATIONS_MAX_ITEMS
+  ) {
+    return fail(
+      `${path}.citations`,
+      `citations must contain ${MEMORY_MCP_LIMITS.CITATIONS_MIN_ITEMS}..${MEMORY_MCP_LIMITS.CITATIONS_MAX_ITEMS} items`,
+    );
+  }
+  const citationIdSet = new Set<string>();
+  for (let i = 0; i < value.citations.length; i++) {
+    const citRes = validateCitationV1(
+      value.citations[i],
+      `${path}.citations[${i}]`,
+    );
+    if (!citRes.ok) return citRes;
+    if (citationIdSet.has(citRes.value.citation_id)) {
+      return fail(
+        `${path}.citations[${i}].citation_id`,
+        `Duplicate citation_id '${citRes.value.citation_id}'`,
+      );
+    }
+    citationIdSet.add(citRes.value.citation_id);
+  }
+
+  if (
+    !Array.isArray(value.components) ||
+    value.components.length < MEMORY_MCP_LIMITS.COMPONENTS_MIN_ITEMS ||
+    value.components.length > MEMORY_MCP_LIMITS.COMPONENTS_MAX_ITEMS
+  ) {
+    return fail(
+      `${path}.components`,
+      `components must contain ${MEMORY_MCP_LIMITS.COMPONENTS_MIN_ITEMS}..${MEMORY_MCP_LIMITS.COMPONENTS_MAX_ITEMS} items`,
+    );
+  }
+  const componentMap = new Map<string, MemoryComponentV2>();
+  for (let i = 0; i < value.components.length; i++) {
+    const compRes = validateMemoryComponentV2(
+      value.components[i],
+      `${path}.components[${i}]`,
+    );
+    if (!compRes.ok) return compRes;
+    if (componentMap.has(compRes.value.component_id)) {
+      return fail(
+        `${path}.components[${i}].component_id`,
+        `Duplicate component_id '${compRes.value.component_id}'`,
+      );
+    }
+    for (const cid of compRes.value.citation_ids) {
+      if (!citationIdSet.has(cid)) {
+        return fail(
+          `${path}.components[${i}].citation_ids`,
+          `Component references unknown citation_id '${cid}'`,
+        );
+      }
+    }
+    componentMap.set(compRes.value.component_id, compRes.value);
+  }
+
+  const primCompErr = validateOpaqueRefField(
+    value.primary_component_id,
+    `${path}.primary_component_id`,
+  );
+  if (primCompErr) return primCompErr;
+  const primaryComponent = componentMap.get(
+    value.primary_component_id as string,
+  );
+  if (!primaryComponent) {
+    return fail(
+      `${path}.primary_component_id`,
+      'primary_component_id must resolve in components',
+    );
+  }
+
+  if (!isPlainObject(value.primary_event)) {
+    return fail(`${path}.primary_event`, 'Expected PrimaryEventAnchorV1 object');
+  }
+  const peKeyErr = checkAllowedKeys(
+    value.primary_event,
+    ['at', 'type_ref', 'citation_id'],
+    `${path}.primary_event`,
+  );
+  if (peKeyErr) return peKeyErr;
+  const peAtErr = validateSafeIntegerEpochField(
+    value.primary_event.at,
+    `${path}.primary_event.at`,
+  );
+  if (peAtErr) return peAtErr;
+  const peTypeErr = validateOpaqueRefField(
+    value.primary_event.type_ref,
+    `${path}.primary_event.type_ref`,
+  );
+  if (peTypeErr) return peTypeErr;
+  const peCidErr = validateOpaqueRefField(
+    value.primary_event.citation_id,
+    `${path}.primary_event.citation_id`,
+  );
+  if (peCidErr) return peCidErr;
+  if (
+    !citationIdSet.has(value.primary_event.citation_id as string) ||
+    !primaryComponent.citation_ids.includes(
+      value.primary_event.citation_id as string,
+    )
+  ) {
+    return fail(
+      `${path}.primary_event.citation_id`,
+      'primary_event.citation_id must resolve in citations and belong to the primary component',
+    );
+  }
+
+  if ('retention' in value) {
+    if (!isPlainObject(value.retention)) {
+      return fail(`${path}.retention`, 'Expected RetentionV1 object');
+    }
+    const retKeyErr = checkAllowedKeys(
+      value.retention,
+      ['expires_at', 'derivative_rule'],
+      `${path}.retention`,
+    );
+    if (retKeyErr) return retKeyErr;
+    if ('expires_at' in value.retention) {
+      const expErr = validateInstantField(
+        value.retention.expires_at,
+        `${path}.retention.expires_at`,
+      );
+      if (expErr) return expErr;
+    }
+    if (
+      value.retention.derivative_rule !== 'retain' &&
+      value.retention.derivative_rule !== 'make-ineligible'
+    ) {
+      return fail(
+        `${path}.retention.derivative_rule`,
+        "derivative_rule must be 'retain' or 'make-ineligible'",
+      );
+    }
+  }
+
+  if ('reconciliation' in value) {
+    if (!isPlainObject(value.reconciliation)) {
+      return fail(
+        `${path}.reconciliation`,
+        'Expected ReconciliationConsentV1 object',
+      );
+    }
+    const recKeyErr = checkAllowedKeys(
+      value.reconciliation,
+      ['family_refs'],
+      `${path}.reconciliation`,
+    );
+    if (recKeyErr) return recKeyErr;
+    if (
+      !Array.isArray(value.reconciliation.family_refs) ||
+      value.reconciliation.family_refs.length >
+        MEMORY_MCP_LIMITS.RECONCILIATION_FAMILY_REFS_MAX_ITEMS
+    ) {
+      return fail(
+        `${path}.reconciliation.family_refs`,
+        `family_refs must be an array of 0..${MEMORY_MCP_LIMITS.RECONCILIATION_FAMILY_REFS_MAX_ITEMS} items`,
+      );
+    }
+    const seenFamilies = new Set<string>();
+    for (let i = 0; i < value.reconciliation.family_refs.length; i++) {
+      const fRef = value.reconciliation.family_refs[i];
+      const fErr = validateOpaqueRefField(
+        fRef,
+        `${path}.reconciliation.family_refs[${i}]`,
+      );
+      if (fErr) return fErr;
+      if (seenFamilies.has(fRef as string)) {
+        return fail(
+          `${path}.reconciliation.family_refs[${i}]`,
+          `Duplicate family_ref '${String(fRef)}'`,
+        );
+      }
+      if (
+        i > 0 &&
+        (value.reconciliation.family_refs[i - 1] as string) >= (fRef as string)
+      ) {
+        return fail(
+          `${path}.reconciliation.family_refs[${i}]`,
+          'reconciliation.family_refs must be sorted and unique',
+        );
+      }
+      seenFamilies.add(fRef as string);
+    }
+  }
+
+  return { ok: true, value: value as unknown as CapturePayloadInputV1 };
+}
+
+export function validateEvidenceBundleV1(
+  value: unknown,
+  allowedCitationIds?: ReadonlySet<string>,
+  path = 'evidence',
+): SchemaValidationResult<EvidenceBundleV1> {
+  if (!isPlainObject(value)) {
+    return fail(path, 'Expected EvidenceBundleV1 object');
+  }
+  const keyErr = checkAllowedKeys(
+    value,
+    ['evidence_ref', 'evidence_digest', 'citation_ids', 'attestation'],
+    path,
+  );
+  if (keyErr) return keyErr;
+
+  const refErr = validateOpaqueRefField(
+    value.evidence_ref,
+    `${path}.evidence_ref`,
+  );
+  if (refErr) return refErr;
+
+  const digErr = validateDigestField(
+    value.evidence_digest,
+    `${path}.evidence_digest`,
+  );
+  if (digErr) return digErr;
+
+  if (
+    !Array.isArray(value.citation_ids) ||
+    value.citation_ids.length < 1 ||
+    value.citation_ids.length > MEMORY_MCP_LIMITS.CITATIONS_MAX_ITEMS
+  ) {
+    return fail(
+      `${path}.citation_ids`,
+      `evidence.citation_ids must contain 1..${MEMORY_MCP_LIMITS.CITATIONS_MAX_ITEMS} items`,
+    );
+  }
+  const seen = new Set<string>();
+  for (let i = 0; i < value.citation_ids.length; i++) {
+    const cid = value.citation_ids[i];
+    const cidErr = validateOpaqueRefField(cid, `${path}.citation_ids[${i}]`);
+    if (cidErr) return cidErr;
+    if (seen.has(cid as string)) {
+      return fail(
+        `${path}.citation_ids[${i}]`,
+        `Duplicate citation_id '${String(cid)}' in evidence`,
+      );
+    }
+    if (allowedCitationIds && !allowedCitationIds.has(cid as string)) {
+      return fail(
+        `${path}.citation_ids[${i}]`,
+        `evidence.citation_ids[${i}] does not resolve in payload.citations`,
+      );
+    }
+    seen.add(cid as string);
+  }
+
+  if ('attestation' in value) {
+    const attErr = validateOpaqueRefField(
+      value.attestation,
+      `${path}.attestation`,
+      4096,
+    );
+    if (attErr) return attErr;
+  }
+
+  return { ok: true, value: value as unknown as EvidenceBundleV1 };
 }
 
 export function validateCaptureInputV1(
@@ -1372,169 +1582,34 @@ export function validateCaptureInputV1(
   if (!isPlainObject(value)) {
     return fail('', 'Expected CaptureInputV1 object');
   }
+  const sizeErr = checkSerializedArgumentSize(value);
+  if (sizeErr) return sizeErr;
+
   const keyErr = checkAllowedKeys(
     value,
-    [
-      'idempotency_key',
-      'memory_kind',
-      'payload',
-      'provenance',
-      'sensitivity',
-      'sharing_policy',
-      'retention_hint',
-      'reconciliation_hint',
-    ],
+    ['idempotency_key', 'payload', 'evidence'],
     '',
   );
   if (keyErr) return keyErr;
 
-  const idemErr = validateOpaqueId(value.idempotency_key, 'idempotency_key');
+  const idemErr = validateIdempotencyKeyField(
+    value.idempotency_key,
+    'idempotency_key',
+  );
   if (idemErr) return idemErr;
 
-  if (
-    typeof value.memory_kind !== 'string' ||
-    !(MEMORY_KINDS as readonly string[]).includes(value.memory_kind)
-  ) {
-    return fail('memory_kind', 'Invalid memory_kind');
-  }
+  const payloadRes = validateCapturePayloadInputV1(value.payload, 'payload');
+  if (!payloadRes.ok) return payloadRes;
 
-  if (!isPlainObject(value.payload)) {
-    return fail('payload', 'Expected payload object');
-  }
-  const payloadKeyErr = checkAllowedKeys(
-    value.payload,
-    ['summary', 'statement', 'structured_attributes'],
-    'payload',
+  const payloadCitationIds = new Set(
+    payloadRes.value.citations.map((c) => c.citation_id),
   );
-  if (payloadKeyErr) return payloadKeyErr;
-
-  if (
-    typeof value.payload.summary !== 'string' ||
-    value.payload.summary.length <
-      MEMORY_MCP_LIMITS.CAPTURE_SUMMARY_MIN_CHARS ||
-    value.payload.summary.length >
-      MEMORY_MCP_LIMITS.CAPTURE_SUMMARY_MAX_CHARS ||
-    utf8Bytes(value.payload.summary) >
-      MEMORY_MCP_LIMITS.CAPTURE_SUMMARY_MAX_UTF8_BYTES
-  ) {
-    return fail(
-      'payload.summary',
-      'summary must be 1..512 chars and <= 512 UTF-8 bytes',
-    );
-  }
-
-  if (
-    typeof value.payload.statement !== 'string' ||
-    value.payload.statement.length <
-      MEMORY_MCP_LIMITS.CAPTURE_STATEMENT_MIN_CHARS ||
-    value.payload.statement.length >
-      MEMORY_MCP_LIMITS.CAPTURE_STATEMENT_MAX_CHARS ||
-    utf8Bytes(value.payload.statement) >
-      MEMORY_MCP_LIMITS.CAPTURE_STATEMENT_MAX_UTF8_BYTES
-  ) {
-    return fail(
-      'payload.statement',
-      'statement must be 1..8192 chars and <= 8192 UTF-8 bytes',
-    );
-  }
-
-  if ('structured_attributes' in value.payload) {
-    const attrErr = validateStructuredAttributes(
-      value.payload.structured_attributes,
-      'payload.structured_attributes',
-    );
-    if (attrErr) return attrErr;
-  }
-
-  const provRes = validateSourceProvenanceV1(value.provenance, 'provenance');
-  if (!provRes.ok) return provRes;
-
-  if ('sensitivity' in value) {
-    if (
-      typeof value.sensitivity !== 'string' ||
-      !(SENSITIVITY_LABELS as readonly string[]).includes(value.sensitivity)
-    ) {
-      return fail('sensitivity', 'Invalid sensitivity');
-    }
-  }
-
-  if ('sharing_policy' in value) {
-    if (
-      typeof value.sharing_policy !== 'string' ||
-      !(SHARING_POLICIES as readonly string[]).includes(value.sharing_policy)
-    ) {
-      return fail('sharing_policy', 'Invalid sharing_policy');
-    }
-  }
-
-  if ('retention_hint' in value) {
-    const rh = value.retention_hint;
-    if (!isPlainObject(rh)) {
-      return fail('retention_hint', 'Expected retention_hint object');
-    }
-    const rhKeyErr = checkAllowedKeys(
-      rh,
-      ['expires_at_utc', 'expiry_outcome'],
-      'retention_hint',
-    );
-    if (rhKeyErr) return rhKeyErr;
-    if ('expires_at_utc' in rh) {
-      const tsErr = validateTimestampField(
-        rh.expires_at_utc,
-        'retention_hint.expires_at_utc',
-      );
-      if (tsErr) return tsErr;
-    }
-    if ('expiry_outcome' in rh) {
-      if (
-        typeof rh.expiry_outcome !== 'string' ||
-        !(RETENTION_OUTCOMES as readonly string[]).includes(rh.expiry_outcome)
-      ) {
-        return fail('retention_hint.expiry_outcome', 'Invalid expiry_outcome');
-      }
-    }
-  }
-
-  if ('reconciliation_hint' in value) {
-    const rec = value.reconciliation_hint;
-    if (!isPlainObject(rec)) {
-      return fail('reconciliation_hint', 'Expected reconciliation_hint object');
-    }
-    const recKeyErr = checkAllowedKeys(
-      rec,
-      ['family_refs'],
-      'reconciliation_hint',
-    );
-    if (recKeyErr) return recKeyErr;
-    if (
-      !Array.isArray(rec.family_refs) ||
-      rec.family_refs.length <
-        MEMORY_MCP_LIMITS.RECONCILIATION_FAMILY_REFS_MIN_ITEMS ||
-      rec.family_refs.length >
-        MEMORY_MCP_LIMITS.RECONCILIATION_FAMILY_REFS_MAX_ITEMS
-    ) {
-      return fail(
-        'reconciliation_hint.family_refs',
-        'family_refs must contain 1..8 items',
-      );
-    }
-    const seen = new Set<string>();
-    for (let i = 0; i < rec.family_refs.length; i++) {
-      const ref = rec.family_refs[i];
-      const refErr = validateOpaqueId(
-        ref,
-        `reconciliation_hint.family_refs[${i}]`,
-      );
-      if (refErr) return refErr;
-      if (seen.has(ref as string)) {
-        return fail(
-          `reconciliation_hint.family_refs[${i}]`,
-          'Duplicate family_ref',
-        );
-      }
-      seen.add(ref as string);
-    }
-  }
+  const evidenceRes = validateEvidenceBundleV1(
+    value.evidence,
+    payloadCitationIds,
+    'evidence',
+  );
+  if (!evidenceRes.ok) return evidenceRes;
 
   return { ok: true, value: value as unknown as CaptureInputV1 };
 }
@@ -1545,21 +1620,24 @@ export function validateRequestAdmissionInputV1(
   if (!isPlainObject(value)) {
     return fail('', 'Expected RequestAdmissionInputV1 object');
   }
+  const sizeErr = checkSerializedArgumentSize(value);
+  if (sizeErr) return sizeErr;
+
   const keyErr = checkAllowedKeys(
     value,
-    ['idempotency_key', 'memory_id', 'rationale_code'],
+    ['candidate_id', 'idempotency_key'],
     '',
   );
   if (keyErr) return keyErr;
 
-  for (const field of [
+  const candErr = validateOpaqueRefField(value.candidate_id, 'candidate_id');
+  if (candErr) return candErr;
+
+  const idemErr = validateIdempotencyKeyField(
+    value.idempotency_key,
     'idempotency_key',
-    'memory_id',
-    'rationale_code',
-  ] as const) {
-    const err = validateOpaqueId(value[field], field);
-    if (err) return err;
-  }
+  );
+  if (idemErr) return idemErr;
 
   return { ok: true, value: value as unknown as RequestAdmissionInputV1 };
 }
@@ -1570,21 +1648,27 @@ export function validateWithdrawInputV1(
   if (!isPlainObject(value)) {
     return fail('', 'Expected WithdrawInputV1 object');
   }
+  const sizeErr = checkSerializedArgumentSize(value);
+  if (sizeErr) return sizeErr;
+
   const keyErr = checkAllowedKeys(
     value,
-    ['idempotency_key', 'memory_id', 'reason_code'],
+    ['candidate_id', 'idempotency_key', 'reason_ref'],
     '',
   );
   if (keyErr) return keyErr;
 
-  for (const field of [
+  const candErr = validateOpaqueRefField(value.candidate_id, 'candidate_id');
+  if (candErr) return candErr;
+
+  const idemErr = validateIdempotencyKeyField(
+    value.idempotency_key,
     'idempotency_key',
-    'memory_id',
-    'reason_code',
-  ] as const) {
-    const err = validateOpaqueId(value[field], field);
-    if (err) return err;
-  }
+  );
+  if (idemErr) return idemErr;
+
+  const reasonErr = validateOpaqueRefField(value.reason_ref, 'reason_ref');
+  if (reasonErr) return reasonErr;
 
   return { ok: true, value: value as unknown as WithdrawInputV1 };
 }
@@ -1595,36 +1679,35 @@ export function validateForgetInputV1(
   if (!isPlainObject(value)) {
     return fail('', 'Expected ForgetInputV1 object');
   }
+  const sizeErr = checkSerializedArgumentSize(value);
+  if (sizeErr) return sizeErr;
+
   const keyErr = checkAllowedKeys(
     value,
-    ['idempotency_key', 'memory_id', 'reason_code'],
+    ['record_id', 'idempotency_key', 'reason_ref'],
     '',
   );
   if (keyErr) return keyErr;
 
-  for (const field of [
+  const recErr = validateRecordIdField(value.record_id, 'record_id');
+  if (recErr) return recErr;
+
+  const idemErr = validateIdempotencyKeyField(
+    value.idempotency_key,
     'idempotency_key',
-    'memory_id',
-    'reason_code',
-  ] as const) {
-    const err = validateOpaqueId(value[field], field);
-    if (err) return err;
-  }
+  );
+  if (idemErr) return idemErr;
+
+  const reasonErr = validateOpaqueRefField(value.reason_ref, 'reason_ref');
+  if (reasonErr) return reasonErr;
 
   return { ok: true, value: value as unknown as ForgetInputV1 };
 }
 
-export function validateToolInputV1(
+export function validateToolInputByName(
   toolName: EngramMemoryToolName,
   value: unknown,
-): SchemaValidationResult<
-  | SearchInputV1
-  | GetInputV1
-  | CaptureInputV1
-  | RequestAdmissionInputV1
-  | WithdrawInputV1
-  | ForgetInputV1
-> {
+): SchemaValidationResult<unknown> {
   switch (toolName) {
     case 'engram_memory_search':
       return validateSearchInputV1(value);
@@ -1641,6 +1724,79 @@ export function validateToolInputV1(
   }
 }
 
+function validateTrustBindingV1(
+  value: unknown,
+  path: string,
+): SchemaValidationResult<TrustBindingV1> {
+  if (!isPlainObject(value)) {
+    return fail(path, 'Expected TrustBindingV1 object');
+  }
+  const keyErr = checkAllowedKeys(
+    value,
+    [
+      'class',
+      'evidence_digest',
+      'verifier_id',
+      'verifier_version',
+      'issued_at',
+      'expires_at',
+      'revocation_epoch',
+      'receipt_digest',
+    ],
+    path,
+  );
+  if (keyErr) return keyErr;
+
+  if (
+    value.class !== 'earned' &&
+    value.class !== 'asserted' &&
+    value.class !== 'signed'
+  ) {
+    return fail(
+      `${path}.class`,
+      "trust.class must be 'earned', 'asserted', or 'signed'",
+    );
+  }
+  const edErr = validateDigestField(
+    value.evidence_digest,
+    `${path}.evidence_digest`,
+  );
+  if (edErr) return edErr;
+  const vidErr = validateOpaqueRefField(
+    value.verifier_id,
+    `${path}.verifier_id`,
+  );
+  if (vidErr) return vidErr;
+  const vverErr = validateOpaqueRefField(
+    value.verifier_version,
+    `${path}.verifier_version`,
+  );
+  if (vverErr) return vverErr;
+  const issErr = validateInstantField(value.issued_at, `${path}.issued_at`);
+  if (issErr) return issErr;
+  if ('expires_at' in value) {
+    const expErr = validateInstantField(value.expires_at, `${path}.expires_at`);
+    if (expErr) return expErr;
+  }
+  const revErr = validateCursorField(
+    value.revocation_epoch,
+    `${path}.revocation_epoch`,
+  );
+  if (revErr) return revErr;
+  const recErr = validateDigestField(
+    value.receipt_digest,
+    `${path}.receipt_digest`,
+  );
+  if (recErr) return recErr;
+
+  return { ok: true, value: value as unknown as TrustBindingV1 };
+}
+
+/**
+ * Neutral V3/V1 Read Record & Packet Validators (`RedactedMemoryRecordV2`,
+ * `RecallRecordPacketV3`, `RankReceiptV1`, `MemoryReadReceiptV1`,
+ * `MemoryReadPacketV1`).
+ */
 export function validateRedactedMemoryRecordV2(
   value: unknown,
   path = 'record',
@@ -1651,451 +1807,706 @@ export function validateRedactedMemoryRecordV2(
   const keyErr = checkAllowedKeys(
     value,
     [
+      'record_id',
       'schema_version',
-      'memory_id',
       'scope_ref',
-      'memory_kind',
-      'status',
-      'summary',
-      'statement',
-      'structured_attributes',
-      'content_digest',
-      'sensitivity',
-      'source_class',
+      'purpose_ref',
+      'valid_time',
+      'components',
+      'primary_component_id',
+      'primary_event',
       'citations',
-      'redaction_state',
-      'redacted_fields',
-      'admitted_at_utc',
-      'supersedes_ids',
-      'active_dispute_ids',
+      'retention',
+      'reconciliation',
+      'derivation',
+      'payload_digest',
+      'record_digest',
+      'recorded_at',
+      'recorded_cursor',
+      'authorization_receipt_digest',
+      'trust',
     ],
     path,
   );
   if (keyErr) return keyErr;
 
-  const verErr = validateSchemaVersionField(
-    value.schema_version,
-    `${path}.schema_version`,
-  );
-  if (verErr) return verErr;
+  const recErr = validateRecordIdField(value.record_id, `${path}.record_id`);
+  if (recErr) return recErr;
 
-  const idErr = validateOpaqueId(value.memory_id, `${path}.memory_id`);
-  if (idErr) return idErr;
-
-  const scopeRes = validateScopeRefV1(value.scope_ref, `${path}.scope_ref`);
-  if (!scopeRes.ok) return scopeRes;
-
-  if (
-    typeof value.memory_kind !== 'string' ||
-    !(MEMORY_KINDS as readonly string[]).includes(value.memory_kind)
-  ) {
-    return fail(`${path}.memory_kind`, 'Invalid memory_kind');
+  if ('schema_version' in value && value.schema_version !== 2) {
+    return fail(`${path}.schema_version`, 'schema_version must equal 2');
   }
-
-  if (
-    typeof value.status !== 'string' ||
-    !(RETRIEVAL_STATUSES as readonly string[]).includes(value.status)
-  ) {
-    return fail(`${path}.status`, 'Invalid retrieval status');
+  if ('scope_ref' in value) {
+    const err = validateOpaqueRefField(value.scope_ref, `${path}.scope_ref`);
+    if (err) return err;
   }
-
-  if (
-    typeof value.summary !== 'string' ||
-    value.summary.length < 1 ||
-    value.summary.length > 512 ||
-    utf8Bytes(value.summary) > 512
-  ) {
-    return fail(`${path}.summary`, 'summary must be 1..512 chars/bytes');
+  if ('purpose_ref' in value) {
+    const err = validateOpaqueRefField(
+      value.purpose_ref,
+      `${path}.purpose_ref`,
+    );
+    if (err) return err;
   }
-
-  if ('statement' in value) {
-    if (
-      typeof value.statement !== 'string' ||
-      value.statement.length < 1 ||
-      value.statement.length > 8192 ||
-      utf8Bytes(value.statement) > 8192
-    ) {
-      return fail(`${path}.statement`, 'statement must be 1..8192 chars/bytes');
+  if ('valid_time' in value) {
+    if (!isPlainObject(value.valid_time)) {
+      return fail(`${path}.valid_time`, 'Expected ValidIntervalV1 object');
     }
-  }
-
-  if ('structured_attributes' in value) {
-    const attrErr = validateStructuredAttributes(
-      value.structured_attributes,
-      `${path}.structured_attributes`,
+    const vtKeyErr = checkAllowedKeys(
+      value.valid_time,
+      ['t', 't_end'],
+      `${path}.valid_time`,
     );
-    if (attrErr) return attrErr;
-  }
-
-  const digErr = validateDigestField(
-    value.content_digest,
-    `${path}.content_digest`,
-  );
-  if (digErr) return digErr;
-
-  if (
-    typeof value.sensitivity !== 'string' ||
-    !(SENSITIVITY_LABELS as readonly string[]).includes(value.sensitivity)
-  ) {
-    return fail(`${path}.sensitivity`, 'Invalid sensitivity');
-  }
-
-  if (
-    typeof value.source_class !== 'string' ||
-    !(SOURCE_CLASSES as readonly string[]).includes(value.source_class)
-  ) {
-    return fail(`${path}.source_class`, 'Invalid source_class');
-  }
-
-  if (
-    !Array.isArray(value.citations) ||
-    value.citations.length < 1 ||
-    value.citations.length > 16
-  ) {
-    return fail(`${path}.citations`, 'citations must contain 1..16 items');
-  }
-  for (let i = 0; i < value.citations.length; i++) {
-    const citRes = validateEvidenceCitationV1(
-      value.citations[i],
-      `${path}.citations[${i}]`,
+    if (vtKeyErr) return vtKeyErr;
+    const tErr = validateSafeIntegerEpochField(
+      value.valid_time.t,
+      `${path}.valid_time.t`,
     );
-    if (!citRes.ok) return citRes;
-  }
-
-  if (
-    typeof value.redaction_state !== 'string' ||
-    !(REDACTION_STATES as readonly string[]).includes(value.redaction_state)
-  ) {
-    return fail(`${path}.redaction_state`, 'Invalid redaction_state');
-  }
-
-  if (!Array.isArray(value.redacted_fields)) {
-    return fail(`${path}.redacted_fields`, 'Expected redacted_fields array');
-  }
-  for (let i = 0; i < value.redacted_fields.length; i++) {
-    const rfErr = validateOpaqueId(
-      value.redacted_fields[i],
-      `${path}.redacted_fields[${i}]`,
-    );
-    if (rfErr) return rfErr;
-  }
-
-  if (value.redaction_state === 'withheld') {
-    if ('statement' in value || 'structured_attributes' in value) {
-      return fail(
-        `${path}.redaction_state`,
-        'withheld records must omit statement and structured_attributes',
+    if (tErr) return tErr;
+    if ('t_end' in value.valid_time) {
+      const teErr = validateSafeIntegerEpochField(
+        value.valid_time.t_end,
+        `${path}.valid_time.t_end`,
       );
-    }
-    for (let i = 0; i < value.citations.length; i++) {
-      const cit = value.citations[i] as Record<string, unknown>;
-      if ('excerpt' in cit) {
+      if (teErr) return teErr;
+      if ((value.valid_time.t_end as number) < (value.valid_time.t as number)) {
         return fail(
-          `${path}.citations[${i}].excerpt`,
-          'withheld records must omit citation excerpts',
+          `${path}.valid_time.t_end`,
+          'valid_time.t_end must be >= valid_time.t',
         );
       }
     }
   }
 
-  const admTsErr = validateTimestampField(
-    value.admitted_at_utc,
-    `${path}.admitted_at_utc`,
-  );
-  if (admTsErr) return admTsErr;
+  let citationIdSet: Set<string> | undefined;
+  if ('citations' in value) {
+    if (
+      !Array.isArray(value.citations) ||
+      value.citations.length < 1 ||
+      value.citations.length > MEMORY_MCP_LIMITS.CITATIONS_MAX_ITEMS
+    ) {
+      return fail(
+        `${path}.citations`,
+        `citations must contain 1..${MEMORY_MCP_LIMITS.CITATIONS_MAX_ITEMS} items`,
+      );
+    }
+    citationIdSet = new Set<string>();
+    for (let i = 0; i < value.citations.length; i++) {
+      const citRes = validateCitationV1(
+        value.citations[i],
+        `${path}.citations[${i}]`,
+      );
+      if (!citRes.ok) return citRes;
+      if (citationIdSet.has(citRes.value.citation_id)) {
+        return fail(
+          `${path}.citations[${i}].citation_id`,
+          `Duplicate citation_id '${citRes.value.citation_id}'`,
+        );
+      }
+      citationIdSet.add(citRes.value.citation_id);
+    }
+  }
 
-  for (const arrField of ['supersedes_ids', 'active_dispute_ids'] as const) {
-    const arr = value[arrField];
-    if (!Array.isArray(arr)) {
-      return fail(`${path}.${arrField}`, `Expected ${arrField} array`);
+  let componentIdSet: Set<string> | undefined;
+  if ('components' in value) {
+    if (
+      !Array.isArray(value.components) ||
+      value.components.length < 1 ||
+      value.components.length > MEMORY_MCP_LIMITS.COMPONENTS_MAX_ITEMS
+    ) {
+      return fail(
+        `${path}.components`,
+        `components must contain 1..${MEMORY_MCP_LIMITS.COMPONENTS_MAX_ITEMS} items`,
+      );
     }
-    for (let i = 0; i < arr.length; i++) {
-      const idErr = validateOpaqueId(arr[i], `${path}.${arrField}[${i}]`);
-      if (idErr) return idErr;
+    componentIdSet = new Set<string>();
+    for (let i = 0; i < value.components.length; i++) {
+      const compRes = validateMemoryComponentV2(
+        value.components[i],
+        `${path}.components[${i}]`,
+      );
+      if (!compRes.ok) return compRes;
+      if (componentIdSet.has(compRes.value.component_id)) {
+        return fail(
+          `${path}.components[${i}].component_id`,
+          `Duplicate component_id '${compRes.value.component_id}'`,
+        );
+      }
+      componentIdSet.add(compRes.value.component_id);
+      if (!citationIdSet) {
+        return fail(
+          `${path}.citations`,
+          'citations must be present when components are present so citation_ids resolve',
+        );
+      }
+      for (const cid of compRes.value.citation_ids) {
+        if (!citationIdSet.has(cid)) {
+          return fail(
+            `${path}.components[${i}].citation_ids`,
+            `Component references unknown citation_id '${cid}'`,
+          );
+        }
+      }
     }
+  }
+
+  if ('primary_component_id' in value) {
+    const pcErr = validateOpaqueRefField(
+      value.primary_component_id,
+      `${path}.primary_component_id`,
+    );
+    if (pcErr) return pcErr;
+    if (
+      componentIdSet &&
+      componentIdSet.size > 0 &&
+      !componentIdSet.has(value.primary_component_id as string)
+    ) {
+      return fail(
+        `${path}.primary_component_id`,
+        'primary_component_id must resolve in surviving components',
+      );
+    }
+  }
+
+  if ('primary_event' in value) {
+    if (!isPlainObject(value.primary_event)) {
+      return fail(
+        `${path}.primary_event`,
+        'Expected PrimaryEventAnchorV1 object',
+      );
+    }
+    const peKeyErr = checkAllowedKeys(
+      value.primary_event,
+      ['at', 'type_ref', 'citation_id'],
+      `${path}.primary_event`,
+    );
+    if (peKeyErr) return peKeyErr;
+    const atErr = validateSafeIntegerEpochField(
+      value.primary_event.at,
+      `${path}.primary_event.at`,
+    );
+    if (atErr) return atErr;
+    const trErr = validateOpaqueRefField(
+      value.primary_event.type_ref,
+      `${path}.primary_event.type_ref`,
+    );
+    if (trErr) return trErr;
+    const cidErr = validateOpaqueRefField(
+      value.primary_event.citation_id,
+      `${path}.primary_event.citation_id`,
+    );
+    if (cidErr) return cidErr;
+    if (
+      citationIdSet &&
+      !citationIdSet.has(value.primary_event.citation_id as string)
+    ) {
+      return fail(
+        `${path}.primary_event.citation_id`,
+        'primary_event.citation_id must resolve in surviving citations',
+      );
+    }
+  }
+
+  if ('derivation' in value) {
+    if (!isPlainObject(value.derivation)) {
+      return fail(`${path}.derivation`, 'Expected DerivationLineageV1 object');
+    }
+    const dKeyErr = checkAllowedKeys(
+      value.derivation,
+      ['source_record_ids', 'transform_ref', 'transform_receipt_digest'],
+      `${path}.derivation`,
+    );
+    if (dKeyErr) return dKeyErr;
+    if (
+      !Array.isArray(value.derivation.source_record_ids) ||
+      value.derivation.source_record_ids.length < 1 ||
+      value.derivation.source_record_ids.length > 64
+    ) {
+      return fail(
+        `${path}.derivation.source_record_ids`,
+        'source_record_ids must contain 1..64 record IDs',
+      );
+    }
+    for (let i = 0; i < value.derivation.source_record_ids.length; i++) {
+      const sErr = validateOpaqueRefField(
+        value.derivation.source_record_ids[i],
+        `${path}.derivation.source_record_ids[${i}]`,
+      );
+      if (sErr) return sErr;
+    }
+    const trErr = validateOpaqueRefField(
+      value.derivation.transform_ref,
+      `${path}.derivation.transform_ref`,
+    );
+    if (trErr) return trErr;
+    const trdErr = validateDigestField(
+      value.derivation.transform_receipt_digest,
+      `${path}.derivation.transform_receipt_digest`,
+    );
+    if (trdErr) return trdErr;
+  }
+
+  if ('retention' in value) {
+    if (!isPlainObject(value.retention)) {
+      return fail(`${path}.retention`, 'Expected RetentionV1 object');
+    }
+    const rKeyErr = checkAllowedKeys(
+      value.retention,
+      ['expires_at', 'derivative_rule'],
+      `${path}.retention`,
+    );
+    if (rKeyErr) return rKeyErr;
+    if ('expires_at' in value.retention) {
+      const expErr = validateInstantField(
+        value.retention.expires_at,
+        `${path}.retention.expires_at`,
+      );
+      if (expErr) return expErr;
+    }
+    if (
+      value.retention.derivative_rule !== 'retain' &&
+      value.retention.derivative_rule !== 'make-ineligible'
+    ) {
+      return fail(
+        `${path}.retention.derivative_rule`,
+        "derivative_rule must be 'retain' or 'make-ineligible'",
+      );
+    }
+  }
+
+  if ('reconciliation' in value) {
+    if (!isPlainObject(value.reconciliation)) {
+      return fail(
+        `${path}.reconciliation`,
+        'Expected ReconciliationConsentV1 object',
+      );
+    }
+    const recKeyErr = checkAllowedKeys(
+      value.reconciliation,
+      ['family_refs'],
+      `${path}.reconciliation`,
+    );
+    if (recKeyErr) return recKeyErr;
+    if (
+      !Array.isArray(value.reconciliation.family_refs) ||
+      value.reconciliation.family_refs.length > 64
+    ) {
+      return fail(
+        `${path}.reconciliation.family_refs`,
+        'family_refs must contain 0..64 items',
+      );
+    }
+    for (let i = 0; i < value.reconciliation.family_refs.length; i++) {
+      const fErr = validateOpaqueRefField(
+        value.reconciliation.family_refs[i],
+        `${path}.reconciliation.family_refs[${i}]`,
+      );
+      if (fErr) return fErr;
+    }
+  }
+
+  if ('payload_digest' in value) {
+    const err = validateDigestField(
+      value.payload_digest,
+      `${path}.payload_digest`,
+    );
+    if (err) return err;
+  }
+  if ('record_digest' in value) {
+    const err = validateDigestField(
+      value.record_digest,
+      `${path}.record_digest`,
+    );
+    if (err) return err;
+  }
+  if ('recorded_at' in value) {
+    const err = validateInstantField(value.recorded_at, `${path}.recorded_at`);
+    if (err) return err;
+  }
+  if ('recorded_cursor' in value) {
+    const err = validateCursorField(
+      value.recorded_cursor,
+      `${path}.recorded_cursor`,
+    );
+    if (err) return err;
+  }
+  if ('authorization_receipt_digest' in value) {
+    const err = validateDigestField(
+      value.authorization_receipt_digest,
+      `${path}.authorization_receipt_digest`,
+    );
+    if (err) return err;
+  }
+  if ('trust' in value) {
+    const tRes = validateTrustBindingV1(value.trust, `${path}.trust`);
+    if (!tRes.ok) return tRes;
   }
 
   return { ok: true, value: value as unknown as RedactedMemoryRecordV2 };
 }
 
-export function validateSearchOutputV1(
+export function validateRecallRecordPacketV3(
   value: unknown,
-  path = 'result',
-): SchemaValidationResult<SearchOutputV1> {
+  path = 'records[]',
+): SchemaValidationResult<RecallRecordPacketV3> {
   if (!isPlainObject(value)) {
-    return fail(path, 'Expected SearchOutputV1 object');
+    return fail(path, 'Expected RecallRecordPacketV3 object');
   }
   const keyErr = checkAllowedKeys(
     value,
     [
-      'schema_version',
-      'packet_id',
-      'query_id',
-      'scope_ref',
-      'status_filter',
-      'ordering',
-      'generated_at_utc',
-      'records',
-      'withheld_count',
-      'page',
+      'record',
+      'redacted_fields',
+      'redaction_receipt_digest',
+      'score',
+      'rank',
     ],
     path,
   );
   if (keyErr) return keyErr;
 
-  const verErr = validateSchemaVersionField(
-    value.schema_version,
-    `${path}.schema_version`,
+  const recRes = validateRedactedMemoryRecordV2(
+    value.record,
+    `${path}.record`,
   );
-  if (verErr) return verErr;
+  if (!recRes.ok) return recRes;
 
-  for (const k of ['packet_id', 'query_id'] as const) {
-    const err = validateOpaqueId(value[k], `${path}.${k}`);
-    if (err) return err;
-  }
-
-  const scopeRes = validateScopeRefV1(value.scope_ref, `${path}.scope_ref`);
-  if (!scopeRes.ok) return scopeRes;
-
-  if (
-    typeof value.status_filter !== 'string' ||
-    !(RECALL_STATUS_FILTERS as readonly string[]).includes(value.status_filter)
-  ) {
-    return fail(`${path}.status_filter`, 'Invalid status_filter');
-  }
-
-  if (!isPlainObject(value.ordering)) {
-    return fail(`${path}.ordering`, 'Expected ordering object');
-  }
-  const ordKeyErr = checkAllowedKeys(
-    value.ordering,
-    ['primary', 'secondary', 'tertiary'],
-    `${path}.ordering`,
-  );
-  if (ordKeyErr) return ordKeyErr;
-  if (
-    value.ordering.primary !== 'relevance_score_bps_desc' ||
-    value.ordering.secondary !== 'admitted_at_utc_desc' ||
-    value.ordering.tertiary !== 'memory_id_asc'
-  ) {
-    return fail(`${path}.ordering`, 'Invalid ordering tuple');
-  }
-
-  const tsErr = validateTimestampField(
-    value.generated_at_utc,
-    `${path}.generated_at_utc`,
-  );
-  if (tsErr) return tsErr;
-
-  if (
-    !Array.isArray(value.records) ||
-    value.records.length > MEMORY_MCP_LIMITS.SEARCH_LIMIT_MAX
-  ) {
-    return fail(`${path}.records`, 'records must be an array of 0..25 items');
-  }
-  for (let i = 0; i < value.records.length; i++) {
-    const recPkt = value.records[i];
-    if (!isPlainObject(recPkt)) {
-      return fail(
-        `${path}.records[${i}]`,
-        'Expected RecallRecordPacketV3 object',
-      );
-    }
-    const pktKeyErr = checkAllowedKeys(
-      recPkt,
-      ['rank', 'relevance_score_bps', 'record'],
-      `${path}.records[${i}]`,
-    );
-    if (pktKeyErr) return pktKeyErr;
-    if (
-      typeof recPkt.rank !== 'number' ||
-      !Number.isInteger(recPkt.rank) ||
-      recPkt.rank < 1
-    ) {
-      return fail(`${path}.records[${i}].rank`, 'rank must be integer >= 1');
-    }
-    if (
-      typeof recPkt.relevance_score_bps !== 'number' ||
-      !Number.isInteger(recPkt.relevance_score_bps) ||
-      recPkt.relevance_score_bps < 0 ||
-      recPkt.relevance_score_bps > 10000
-    ) {
-      return fail(
-        `${path}.records[${i}].relevance_score_bps`,
-        'relevance_score_bps must be integer 0..10000',
-      );
-    }
-    const recRes = validateRedactedMemoryRecordV2(
-      recPkt.record,
-      `${path}.records[${i}].record`,
-    );
-    if (!recRes.ok) return recRes;
-  }
-
-  if (
-    typeof value.withheld_count !== 'number' ||
-    !Number.isInteger(value.withheld_count) ||
-    value.withheld_count < 0
-  ) {
-    return fail(`${path}.withheld_count`, 'withheld_count must be integer >= 0');
-  }
-
-  if (!isPlainObject(value.page)) {
-    return fail(`${path}.page`, 'Expected page object');
-  }
-  const pageKeyErr = checkAllowedKeys(
-    value.page,
-    ['returned_count', 'has_more', 'next_cursor'],
-    `${path}.page`,
-  );
-  if (pageKeyErr) return pageKeyErr;
-  if (
-    typeof value.page.returned_count !== 'number' ||
-    !Number.isInteger(value.page.returned_count) ||
-    value.page.returned_count !== value.records.length
-  ) {
+  if (!Array.isArray(value.redacted_fields)) {
     return fail(
-      `${path}.page.returned_count`,
-      'returned_count must equal records.length',
+      `${path}.redacted_fields`,
+      'redacted_fields must be an array of JsonPointers',
     );
   }
-  if (typeof value.page.has_more !== 'boolean') {
-    return fail(`${path}.page.has_more`, 'has_more must be boolean');
-  }
-  if ('next_cursor' in value.page) {
-    const curErr = validateOpaqueId(
-      value.page.next_cursor,
-      `${path}.page.next_cursor`,
-      512,
-    );
-    if (curErr) return curErr;
+  for (let i = 0; i < value.redacted_fields.length; i++) {
+    if (!isValidJsonPointer(value.redacted_fields[i])) {
+      return fail(
+        `${path}.redacted_fields[${i}]`,
+        'Expected RFC 6901 JsonPointer',
+      );
+    }
   }
 
-  return { ok: true, value: value as unknown as SearchOutputV1 };
+  const rrdErr = validateDigestField(
+    value.redaction_receipt_digest,
+    `${path}.redaction_receipt_digest`,
+  );
+  if (rrdErr) return rrdErr;
+
+  if (typeof value.score !== 'number' || !Number.isFinite(value.score)) {
+    return fail(`${path}.score`, 'score must be a finite number');
+  }
+
+  if (
+    typeof value.rank !== 'number' ||
+    !Number.isInteger(value.rank) ||
+    value.rank < 1
+  ) {
+    return fail(`${path}.rank`, 'rank must be an integer >= 1');
+  }
+
+  return { ok: true, value: value as unknown as RecallRecordPacketV3 };
 }
 
-export function validateGetOutputV1(
+export function validateRankReceiptV1(
   value: unknown,
-  path = 'result',
-): SchemaValidationResult<GetOutputV1> {
+  path = 'rank_receipt',
+): SchemaValidationResult<RankReceiptV1> {
   if (!isPlainObject(value)) {
-    return fail(path, 'Expected GetOutputV1 object');
+    return fail(path, 'Expected RankReceiptV1 object');
   }
   const keyErr = checkAllowedKeys(
     value,
-    ['schema_version', 'packet_id', 'scope_ref', 'generated_at_utc', 'results'],
+    [
+      'request_digest',
+      'authorization_receipt_digest',
+      'profile',
+      'profile_version',
+      'profile_config_digest',
+      'valid_as_of',
+      'system_as_of',
+      'snapshot_id',
+      'snapshot_digest',
+      'candidate_count',
+      'candidate_ids_digest',
+      'scoring_formula_ref',
+      'ordered_ids_digest',
+      'revalidation_receipt_digest',
+      'projection_receipt_digests',
+      'issued_at',
+      'receipt_digest',
+    ],
     path,
   );
   if (keyErr) return keyErr;
 
-  const verErr = validateSchemaVersionField(
-    value.schema_version,
-    `${path}.schema_version`,
-  );
-  if (verErr) return verErr;
-
-  const pktErr = validateOpaqueId(value.packet_id, `${path}.packet_id`);
-  if (pktErr) return pktErr;
-
-  const scopeRes = validateScopeRefV1(value.scope_ref, `${path}.scope_ref`);
-  if (!scopeRes.ok) return scopeRes;
-
-  const tsErr = validateTimestampField(
-    value.generated_at_utc,
-    `${path}.generated_at_utc`,
-  );
-  if (tsErr) return tsErr;
+  for (const df of [
+    'request_digest',
+    'authorization_receipt_digest',
+    'profile_config_digest',
+    'snapshot_digest',
+    'candidate_ids_digest',
+    'ordered_ids_digest',
+    'revalidation_receipt_digest',
+    'receipt_digest',
+  ] as const) {
+    const err = validateDigestField(value[df], `${path}.${df}`);
+    if (err) return err;
+  }
 
   if (
-    !Array.isArray(value.results) ||
-    value.results.length < MEMORY_MCP_LIMITS.GET_MEMORY_IDS_MIN_ITEMS ||
-    value.results.length > MEMORY_MCP_LIMITS.GET_MEMORY_IDS_MAX_ITEMS
+    value.profile !== 'offline_lexical_v1' &&
+    value.profile !== 'semantic_v1'
   ) {
-    return fail(`${path}.results`, 'results must contain 1..10 items');
-  }
-  for (let i = 0; i < value.results.length; i++) {
-    const receipt = value.results[i];
-    const rPath = `${path}.results[${i}]`;
-    if (!isPlainObject(receipt)) {
-      return fail(rPath, 'Expected MemoryReadReceiptV1 object');
-    }
-    const rKeyErr = checkAllowedKeys(
-      receipt,
-      ['memory_id', 'outcome', 'status', 'record', 'reason_codes'],
-      rPath,
+    return fail(
+      `${path}.profile`,
+      "profile must be 'offline_lexical_v1' or 'semantic_v1'",
     );
-    if (rKeyErr) return rKeyErr;
+  }
 
-    const idErr = validateOpaqueId(receipt.memory_id, `${rPath}.memory_id`);
-    if (idErr) return idErr;
+  for (const rf of [
+    'profile_version',
+    'snapshot_id',
+    'scoring_formula_ref',
+  ] as const) {
+    const err = validateOpaqueRefField(value[rf], `${path}.${rf}`);
+    if (err) return err;
+  }
 
-    if (
-      typeof receipt.outcome !== 'string' ||
-      !(READ_OUTCOMES as readonly string[]).includes(receipt.outcome)
-    ) {
-      return fail(`${rPath}.outcome`, 'Invalid read outcome');
-    }
+  const vaoErr = validateSafeIntegerEpochField(
+    value.valid_as_of,
+    `${path}.valid_as_of`,
+  );
+  if (vaoErr) return vaoErr;
 
-    if ('status' in receipt) {
-      if (
-        typeof receipt.status !== 'string' ||
-        !(MEMORY_STATUSES as readonly string[]).includes(receipt.status)
-      ) {
-        return fail(`${rPath}.status`, 'Invalid memory status');
-      }
-    }
+  const saoErr = validateCursorField(
+    value.system_as_of,
+    `${path}.system_as_of`,
+  );
+  if (saoErr) return saoErr;
 
-    if (receipt.outcome === 'returned') {
-      if (!('record' in receipt)) {
-        return fail(
-          `${rPath}.record`,
-          'record is required when outcome is returned',
-        );
-      }
-      if (receipt.status !== 'admitted' && receipt.status !== 'disputed') {
-        return fail(
-          `${rPath}.status`,
-          'returned outcome requires status admitted or disputed',
-        );
-      }
-      const recRes = validateRedactedMemoryRecordV2(
-        receipt.record,
-        `${rPath}.record`,
+  if (
+    typeof value.candidate_count !== 'number' ||
+    !Number.isInteger(value.candidate_count) ||
+    value.candidate_count < 0
+  ) {
+    return fail(
+      `${path}.candidate_count`,
+      'candidate_count must be an integer >= 0',
+    );
+  }
+
+  if (!Array.isArray(value.projection_receipt_digests)) {
+    return fail(
+      `${path}.projection_receipt_digests`,
+      'projection_receipt_digests must be an array of Digests',
+    );
+  }
+  for (let i = 0; i < value.projection_receipt_digests.length; i++) {
+    const err = validateDigestField(
+      value.projection_receipt_digests[i],
+      `${path}.projection_receipt_digests[${i}]`,
+    );
+    if (err) return err;
+  }
+
+  const issErr = validateInstantField(value.issued_at, `${path}.issued_at`);
+  if (issErr) return issErr;
+
+  return { ok: true, value: value as unknown as RankReceiptV1 };
+}
+
+export function validateMemoryReadReceiptV1(
+  value: unknown,
+  path = 'read_receipt',
+): SchemaValidationResult<MemoryReadReceiptV1> {
+  if (!isPlainObject(value)) {
+    return fail(path, 'Expected MemoryReadReceiptV1 object');
+  }
+  const keyErr = checkAllowedKeys(
+    value,
+    [
+      'record_id',
+      'record_digest',
+      'valid_as_of',
+      'system_as_of',
+      'validated_through_cursor',
+      'authorization_receipt_digest',
+      'revalidation_receipt_digest',
+      'checked_at',
+      'receipt_digest',
+    ],
+    path,
+  );
+  if (keyErr) return keyErr;
+
+  const recIdErr = validateRecordIdField(
+    value.record_id,
+    `${path}.record_id`,
+  );
+  if (recIdErr) return recIdErr;
+
+  for (const df of [
+    'record_digest',
+    'authorization_receipt_digest',
+    'revalidation_receipt_digest',
+    'receipt_digest',
+  ] as const) {
+    const err = validateDigestField(value[df], `${path}.${df}`);
+    if (err) return err;
+  }
+
+  const vaoErr = validateSafeIntegerEpochField(
+    value.valid_as_of,
+    `${path}.valid_as_of`,
+  );
+  if (vaoErr) return vaoErr;
+
+  const saoErr = validateCursorField(
+    value.system_as_of,
+    `${path}.system_as_of`,
+  );
+  if (saoErr) return saoErr;
+
+  const vtcErr = validateCursorField(
+    value.validated_through_cursor,
+    `${path}.validated_through_cursor`,
+  );
+  if (vtcErr) return vtcErr;
+
+  const chkErr = validateInstantField(value.checked_at, `${path}.checked_at`);
+  if (chkErr) return chkErr;
+
+  return { ok: true, value: value as unknown as MemoryReadReceiptV1 };
+}
+
+/**
+ * M2 Output Payload Validators.
+ */
+export function validateSearchOutputV1(
+  value: unknown,
+  path = 'output.value',
+): SchemaValidationResult<SearchOutputV1> {
+  if (!isPlainObject(value)) {
+    return fail(path, 'Expected SearchPageV1 object');
+  }
+  const keyErr = checkAllowedKeys(
+    value,
+    ['records', 'rank_receipt', 'next_page_cursor', 'response_digest'],
+    path,
+  );
+  if (keyErr) return keyErr;
+
+  if (
+    !Array.isArray(value.records) ||
+    value.records.length > MEMORY_MCP_LIMITS.LIMIT_MAX
+  ) {
+    return fail(
+      `${path}.records`,
+      `records must be an array of 0..${MEMORY_MCP_LIMITS.LIMIT_MAX} items`,
+    );
+  }
+  for (let i = 0; i < value.records.length; i++) {
+    const itemRes = validateRecallRecordPacketV3(
+      value.records[i],
+      `${path}.records[${i}]`,
+    );
+    if (!itemRes.ok) return itemRes;
+  }
+
+  const rrRes = validateRankReceiptV1(
+    value.rank_receipt,
+    `${path}.rank_receipt`,
+  );
+  if (!rrRes.ok) return rrRes;
+
+  if ('next_page_cursor' in value) {
+    const curErr = validateOpaqueRefField(
+      value.next_page_cursor,
+      `${path}.next_page_cursor`,
+    );
+    if (curErr) return curErr;
+  }
+
+  const digErr = validateDigestField(
+    value.response_digest,
+    `${path}.response_digest`,
+  );
+  if (digErr) return digErr;
+
+  return { ok: true, value: value as unknown as SearchPageV1 };
+}
+
+export function validateGetOutputV1(
+  value: unknown,
+  path = 'output.value',
+): SchemaValidationResult<GetOutputV1> {
+  if (!isPlainObject(value)) {
+    return fail(path, 'Expected MemoryReadPacketV1 object');
+  }
+  const keyErr = checkAllowedKeys(
+    value,
+    [
+      'record',
+      'redacted_fields',
+      'redaction_receipt_digest',
+      'read_receipt',
+      'packet_digest',
+    ],
+    path,
+  );
+  if (keyErr) return keyErr;
+
+  const recRes = validateRedactedMemoryRecordV2(
+    value.record,
+    `${path}.record`,
+  );
+  if (!recRes.ok) return recRes;
+
+  if (!Array.isArray(value.redacted_fields)) {
+    return fail(
+      `${path}.redacted_fields`,
+      'redacted_fields must be an array of JsonPointers',
+    );
+  }
+  for (let i = 0; i < value.redacted_fields.length; i++) {
+    if (!isValidJsonPointer(value.redacted_fields[i])) {
+      return fail(
+        `${path}.redacted_fields[${i}]`,
+        'Expected RFC 6901 JsonPointer',
       );
-      if (!recRes.ok) return recRes;
-    } else {
-      if ('record' in receipt) {
-        return fail(
-          `${rPath}.record`,
-          'record must be omitted when outcome is not returned',
-        );
-      }
-      if (receipt.outcome === 'not_found' && 'status' in receipt) {
-        return fail(
-          `${rPath}.status`,
-          'status must be omitted when outcome is not_found',
-        );
-      }
-    }
-
-    if (!Array.isArray(receipt.reason_codes)) {
-      return fail(`${rPath}.reason_codes`, 'Expected reason_codes array');
-    }
-    for (let j = 0; j < receipt.reason_codes.length; j++) {
-      const rcErr = validateOpaqueId(
-        receipt.reason_codes[j],
-        `${rPath}.reason_codes[${j}]`,
-      );
-      if (rcErr) return rcErr;
     }
   }
 
-  return { ok: true, value: value as unknown as GetOutputV1 };
+  const rrdErr = validateDigestField(
+    value.redaction_receipt_digest,
+    `${path}.redaction_receipt_digest`,
+  );
+  if (rrdErr) return rrdErr;
+
+  const rrRes = validateMemoryReadReceiptV1(
+    value.read_receipt,
+    `${path}.read_receipt`,
+  );
+  if (!rrRes.ok) return rrRes;
+
+  if (recRes.value.record_id !== rrRes.value.record_id) {
+    return fail(
+      `${path}.read_receipt.record_id`,
+      'read_receipt.record_id must equal record.record_id',
+    );
+  }
+
+  const digErr = validateDigestField(
+    value.packet_digest,
+    `${path}.packet_digest`,
+  );
+  if (digErr) return digErr;
+
+  return { ok: true, value: value as unknown as MemoryReadPacketV1 };
 }
 
 export function validateCaptureOutputV1(
   value: unknown,
-  path = 'result',
+  path = 'output.value',
 ): SchemaValidationResult<CaptureOutputV1> {
   if (!isPlainObject(value)) {
     return fail(path, 'Expected CaptureOutputV1 object');
@@ -2103,301 +2514,229 @@ export function validateCaptureOutputV1(
   const keyErr = checkAllowedKeys(
     value,
     [
-      'schema_version',
-      'memory_id',
       'status',
-      'content_digest',
-      'captured_at_utc',
-      'event_id',
-      'idempotent_replay',
-      'quarantine_reason_codes',
+      'candidate_id',
+      'record_digest',
+      'cursor',
+      'transaction_receipt_digest',
     ],
     path,
   );
   if (keyErr) return keyErr;
 
-  const verErr = validateSchemaVersionField(
-    value.schema_version,
-    `${path}.schema_version`,
-  );
-  if (verErr) return verErr;
-
-  const idErr = validateOpaqueId(value.memory_id, `${path}.memory_id`);
-  if (idErr) return idErr;
-
-  if (value.status !== 'candidate' && value.status !== 'quarantined') {
-    return fail(`${path}.status`, 'status must be candidate or quarantined');
-  }
-
-  const digErr = validateDigestField(
-    value.content_digest,
-    `${path}.content_digest`,
-  );
-  if (digErr) return digErr;
-
-  const tsErr = validateTimestampField(
-    value.captured_at_utc,
-    `${path}.captured_at_utc`,
-  );
-  if (tsErr) return tsErr;
-
-  const evErr = validateOpaqueId(value.event_id, `${path}.event_id`);
-  if (evErr) return evErr;
-
-  if (typeof value.idempotent_replay !== 'boolean') {
+  if (
+    value.status !== 'committed_pending' &&
+    value.status !== 'duplicate_exact'
+  ) {
     return fail(
-      `${path}.idempotent_replay`,
-      'idempotent_replay must be boolean',
+      `${path}.status`,
+      "status must be 'committed_pending' or 'duplicate_exact'",
     );
   }
 
-  if ('quarantine_reason_codes' in value) {
-    if (!Array.isArray(value.quarantine_reason_codes)) {
-      return fail(
-        `${path}.quarantine_reason_codes`,
-        'Expected quarantine_reason_codes array',
-      );
-    }
-    for (let i = 0; i < value.quarantine_reason_codes.length; i++) {
-      const rcErr = validateOpaqueId(
-        value.quarantine_reason_codes[i],
-        `${path}.quarantine_reason_codes[${i}]`,
-      );
-      if (rcErr) return rcErr;
-    }
+  const candErr = validateOpaqueRefField(
+    value.candidate_id,
+    `${path}.candidate_id`,
+  );
+  if (candErr) return candErr;
+
+  if ('record_digest' in value) {
+    const rdErr = validateDigestField(
+      value.record_digest,
+      `${path}.record_digest`,
+    );
+    if (rdErr) return rdErr;
   }
+
+  const curErr = validateCursorField(value.cursor, `${path}.cursor`);
+  if (curErr) return curErr;
+
+  const trdErr = validateDigestField(
+    value.transaction_receipt_digest,
+    `${path}.transaction_receipt_digest`,
+  );
+  if (trdErr) return trdErr;
 
   return { ok: true, value: value as unknown as CaptureOutputV1 };
 }
 
-function validateAdmissibilityAssessmentV1(
+export function validateAdmissionOutcomeV1(
   value: unknown,
-  path: string,
-): SchemaValidationResult<AdmissibilityAssessmentV1> {
+  path = 'outcome',
+): SchemaValidationResult<AdmissionOutcomeV1> {
   if (!isPlainObject(value)) {
-    return fail(path, 'Expected AdmissibilityAssessmentV1 object');
+    return fail(path, 'Expected AdmissionOutcomeV1 object');
   }
   const keyErr = checkAllowedKeys(
     value,
     [
-      'schema_version',
-      'policy_id',
-      'policy_version',
-      'admissible',
-      'confidence_bps',
-      'assessed_at_utc',
-      'assessed_by',
-      'reason_codes',
-      'required_corroboration_count',
-      'observed_corroboration_count',
+      'status',
+      'candidate_id',
+      'record_id',
+      'cursor',
+      'decision_receipt_digest',
+      'transaction_receipt_digest',
     ],
     path,
   );
   if (keyErr) return keyErr;
 
-  const verErr = validateSchemaVersionField(
-    value.schema_version,
-    `${path}.schema_version`,
-  );
-  if (verErr) return verErr;
-
-  const polErr = validateOpaqueId(value.policy_id, `${path}.policy_id`);
-  if (polErr) return polErr;
-
-  const polVerErr = validateOpaqueId(
-    value.policy_version,
-    `${path}.policy_version`,
-    64,
-  );
-  if (polVerErr) return polVerErr;
-
-  if (typeof value.admissible !== 'boolean') {
-    return fail(`${path}.admissible`, 'admissible must be boolean');
-  }
-
   if (
-    typeof value.confidence_bps !== 'number' ||
-    !Number.isInteger(value.confidence_bps) ||
-    value.confidence_bps < 0 ||
-    value.confidence_bps > 10000
+    value.status !== 'accepted' &&
+    value.status !== 'rejected' &&
+    value.status !== 'pending_adjudication' &&
+    value.status !== 'duplicate_exact'
   ) {
     return fail(
-      `${path}.confidence_bps`,
-      'confidence_bps must be integer 0..10000',
+      `${path}.status`,
+      "outcome.status must be 'accepted', 'rejected', 'pending_adjudication', or 'duplicate_exact'",
     );
   }
 
-  const tsErr = validateTimestampField(
-    value.assessed_at_utc,
-    `${path}.assessed_at_utc`,
+  const cErr = validateOpaqueRefField(
+    value.candidate_id,
+    `${path}.candidate_id`,
   );
-  if (tsErr) return tsErr;
+  if (cErr) return cErr;
 
-  const byRes = validatePrincipalRefV1(
-    value.assessed_by,
-    `${path}.assessed_by`,
+  if (value.status === 'accepted') {
+    const rErr = validateRecordIdField(value.record_id, `${path}.record_id`);
+    if (rErr) return rErr;
+  } else if ('record_id' in value) {
+    const rErr = validateRecordIdField(value.record_id, `${path}.record_id`);
+    if (rErr) return rErr;
+  }
+
+  const curErr = validateCursorField(value.cursor, `${path}.cursor`);
+  if (curErr) return curErr;
+
+  const drErr = validateDigestField(
+    value.decision_receipt_digest,
+    `${path}.decision_receipt_digest`,
   );
-  if (!byRes.ok) return byRes;
+  if (drErr) return drErr;
 
-  if (!Array.isArray(value.reason_codes)) {
-    return fail(`${path}.reason_codes`, 'Expected reason_codes array');
-  }
-  for (let i = 0; i < value.reason_codes.length; i++) {
-    const rcErr = validateOpaqueId(
-      value.reason_codes[i],
-      `${path}.reason_codes[${i}]`,
-    );
-    if (rcErr) return rcErr;
-  }
+  const trErr = validateDigestField(
+    value.transaction_receipt_digest,
+    `${path}.transaction_receipt_digest`,
+  );
+  if (trErr) return trErr;
 
-  for (const k of [
-    'required_corroboration_count',
-    'observed_corroboration_count',
-  ] as const) {
-    if (
-      typeof value[k] !== 'number' ||
-      !Number.isInteger(value[k]) ||
-      (value[k] as number) < 0
-    ) {
-      return fail(`${path}.${k}`, `${k} must be integer >= 0`);
-    }
-  }
-
-  return { ok: true, value: value as unknown as AdmissibilityAssessmentV1 };
+  return { ok: true, value: value as unknown as AdmissionOutcomeV1 };
 }
 
 export function validateRequestAdmissionOutputV1(
   value: unknown,
-  path = 'result',
+  path = 'output.value',
 ): SchemaValidationResult<RequestAdmissionOutputV1> {
   if (!isPlainObject(value)) {
     return fail(path, 'Expected RequestAdmissionOutputV1 object');
   }
-  const keyErr = checkAllowedKeys(
-    value,
-    [
-      'schema_version',
-      'memory_id',
-      'outcome',
-      'resulting_status',
-      'decided_at_utc',
-      'assessment',
-      'idempotent_replay',
-      'event_id',
-    ],
-    path,
-  );
+  const keyErr = checkAllowedKeys(value, ['outcome', 'replayed'], path);
   if (keyErr) return keyErr;
 
-  const verErr = validateSchemaVersionField(
-    value.schema_version,
-    `${path}.schema_version`,
-  );
-  if (verErr) return verErr;
+  const outRes = validateAdmissionOutcomeV1(value.outcome, `${path}.outcome`);
+  if (!outRes.ok) return outRes;
 
-  const idErr = validateOpaqueId(value.memory_id, `${path}.memory_id`);
-  if (idErr) return idErr;
-
-  if (
-    value.outcome !== 'admitted' &&
-    value.outcome !== 'quarantined' &&
-    value.outcome !== 'rejected'
-  ) {
-    return fail(`${path}.outcome`, 'Invalid outcome');
-  }
-
-  if (
-    value.resulting_status !== 'admitted' &&
-    value.resulting_status !== 'quarantined' &&
-    value.resulting_status !== 'candidate'
-  ) {
-    return fail(`${path}.resulting_status`, 'Invalid resulting_status');
-  }
-
-  const tsErr = validateTimestampField(
-    value.decided_at_utc,
-    `${path}.decided_at_utc`,
-  );
-  if (tsErr) return tsErr;
-
-  const assRes = validateAdmissibilityAssessmentV1(
-    value.assessment,
-    `${path}.assessment`,
-  );
-  if (!assRes.ok) return assRes;
-
-  if (typeof value.idempotent_replay !== 'boolean') {
-    return fail(
-      `${path}.idempotent_replay`,
-      'idempotent_replay must be boolean',
-    );
-  }
-
-  if ('event_id' in value) {
-    const evErr = validateOpaqueId(value.event_id, `${path}.event_id`);
-    if (evErr) return evErr;
+  if (typeof value.replayed !== 'boolean') {
+    return fail(`${path}.replayed`, 'replayed must be boolean');
   }
 
   return { ok: true, value: value as unknown as RequestAdmissionOutputV1 };
 }
 
+function validateLifecycleReceiptBaseV1(
+  value: unknown,
+  path: string,
+): SchemaValidationResult<LifecycleReceiptV1> {
+  if (!isPlainObject(value)) {
+    return fail(path, 'Expected LifecycleReceiptV1 object');
+  }
+  const keyErr = checkAllowedKeys(
+    value,
+    [
+      'event_id',
+      'operation',
+      'from_state',
+      'to_state',
+      'cursor',
+      'event_digest',
+      'authorization_receipt_digest',
+      'transaction_receipt_digest',
+    ],
+    path,
+  );
+  if (keyErr) return keyErr;
+
+  const evErr = validateIdempotencyKeyField(
+    value.event_id,
+    `${path}.event_id`,
+  );
+  if (evErr) return evErr;
+  const curErr = validateCursorField(value.cursor, `${path}.cursor`);
+  if (curErr) return curErr;
+
+  for (const df of [
+    'event_digest',
+    'authorization_receipt_digest',
+    'transaction_receipt_digest',
+  ] as const) {
+    const err = validateDigestField(value[df], `${path}.${df}`);
+    if (err) return err;
+  }
+
+  return { ok: true, value: value as unknown as LifecycleReceiptV1 };
+}
+
 export function validateWithdrawOutputV1(
   value: unknown,
-  path = 'result',
+  path = 'output.value',
 ): SchemaValidationResult<WithdrawOutputV1> {
   if (!isPlainObject(value)) {
     return fail(path, 'Expected WithdrawOutputV1 object');
   }
   const keyErr = checkAllowedKeys(
     value,
-    [
-      'schema_version',
-      'memory_id',
-      'previous_status',
-      'status',
-      'withdrawn_at_utc',
-      'event_id',
-      'idempotent_replay',
-    ],
+    ['receipt', 'replayed', 'key_destruction'],
     path,
   );
   if (keyErr) return keyErr;
 
-  const verErr = validateSchemaVersionField(
-    value.schema_version,
-    `${path}.schema_version`,
+  const recRes = validateLifecycleReceiptBaseV1(
+    value.receipt,
+    `${path}.receipt`,
   );
-  if (verErr) return verErr;
+  if (!recRes.ok) return recRes;
 
-  const idErr = validateOpaqueId(value.memory_id, `${path}.memory_id`);
-  if (idErr) return idErr;
-
-  if (
-    value.previous_status !== 'candidate' &&
-    value.previous_status !== 'quarantined' &&
-    value.previous_status !== 'admitted' &&
-    value.previous_status !== 'disputed'
-  ) {
-    return fail(`${path}.previous_status`, 'Invalid previous_status');
-  }
-
-  if (value.status !== 'withdrawn') {
-    return fail(`${path}.status`, 'status must be withdrawn');
-  }
-
-  const tsErr = validateTimestampField(
-    value.withdrawn_at_utc,
-    `${path}.withdrawn_at_utc`,
-  );
-  if (tsErr) return tsErr;
-
-  const evErr = validateOpaqueId(value.event_id, `${path}.event_id`);
-  if (evErr) return evErr;
-
-  if (typeof value.idempotent_replay !== 'boolean') {
+  if (recRes.value.operation !== 'withdraw') {
     return fail(
-      `${path}.idempotent_replay`,
-      'idempotent_replay must be boolean',
+      `${path}.receipt.operation`,
+      "receipt.operation must equal 'withdraw'",
+    );
+  }
+  if (recRes.value.from_state !== 'pending') {
+    return fail(
+      `${path}.receipt.from_state`,
+      "receipt.from_state must equal 'pending'",
+    );
+  }
+  if (recRes.value.to_state !== 'withdrawn') {
+    return fail(
+      `${path}.receipt.to_state`,
+      "receipt.to_state must equal 'withdrawn'",
+    );
+  }
+
+  if (typeof value.replayed !== 'boolean') {
+    return fail(`${path}.replayed`, 'replayed must be boolean');
+  }
+  if (
+    value.key_destruction !== 'pending' &&
+    value.key_destruction !== 'complete'
+  ) {
+    return fail(
+      `${path}.key_destruction`,
+      "key_destruction must be 'pending' or 'complete'",
     );
   }
 
@@ -2406,7 +2745,7 @@ export function validateWithdrawOutputV1(
 
 export function validateForgetOutputV1(
   value: unknown,
-  path = 'result',
+  path = 'output.value',
 ): SchemaValidationResult<ForgetOutputV1> {
   if (!isPlainObject(value)) {
     return fail(path, 'Expected ForgetOutputV1 object');
@@ -2414,118 +2753,143 @@ export function validateForgetOutputV1(
   const keyErr = checkAllowedKeys(
     value,
     [
-      'schema_version',
-      'memory_id',
-      'tombstone_id',
-      'erased_at_utc',
-      'event_id',
-      'erased_artifact_digests',
-      'destroyed_key_ids',
-      'idempotent_replay',
+      'receipt',
+      'replayed',
+      'projection_invalidation',
+      'coverage_receipt_digest',
     ],
     path,
   );
   if (keyErr) return keyErr;
 
-  const verErr = validateSchemaVersionField(
-    value.schema_version,
-    `${path}.schema_version`,
+  const recRes = validateLifecycleReceiptBaseV1(
+    value.receipt,
+    `${path}.receipt`,
   );
-  if (verErr) return verErr;
+  if (!recRes.ok) return recRes;
 
-  for (const k of ['memory_id', 'tombstone_id', 'event_id'] as const) {
-    const err = validateOpaqueId(value[k], `${path}.${k}`);
-    if (err) return err;
-  }
-
-  const tsErr = validateTimestampField(
-    value.erased_at_utc,
-    `${path}.erased_at_utc`,
-  );
-  if (tsErr) return tsErr;
-
-  if (!Array.isArray(value.erased_artifact_digests)) {
+  if (recRes.value.operation !== 'tombstone') {
     return fail(
-      `${path}.erased_artifact_digests`,
-      'Expected erased_artifact_digests array',
+      `${path}.receipt.operation`,
+      "receipt.operation must equal 'tombstone'",
     );
-  }
-  for (let i = 0; i < value.erased_artifact_digests.length; i++) {
-    const digErr = validateDigestField(
-      value.erased_artifact_digests[i],
-      `${path}.erased_artifact_digests[${i}]`,
-    );
-    if (digErr) return digErr;
   }
 
-  if (!Array.isArray(value.destroyed_key_ids)) {
+  if (
+    !(TOMBSTONE_ALLOWED_FROM_STATES as readonly string[]).includes(
+      recRes.value.from_state,
+    )
+  ) {
     return fail(
-      `${path}.destroyed_key_ids`,
-      'Expected destroyed_key_ids array',
+      `${path}.receipt.from_state`,
+      'receipt.from_state must be an admitted/post-admission state eligible for tombstone',
     );
   }
-  for (let i = 0; i < value.destroyed_key_ids.length; i++) {
-    const kErr = validateOpaqueId(
-      value.destroyed_key_ids[i],
-      `${path}.destroyed_key_ids[${i}]`,
+  if (recRes.value.to_state !== 'tombstoned') {
+    return fail(
+      `${path}.receipt.to_state`,
+      "receipt.to_state must equal 'tombstoned'",
     );
-    if (kErr) return kErr;
   }
 
-  if (typeof value.idempotent_replay !== 'boolean') {
+  if (typeof value.replayed !== 'boolean') {
+    return fail(`${path}.replayed`, 'replayed must be boolean');
+  }
+  if (
+    value.projection_invalidation !== 'pending' &&
+    value.projection_invalidation !== 'complete'
+  ) {
     return fail(
-      `${path}.idempotent_replay`,
-      'idempotent_replay must be boolean',
+      `${path}.projection_invalidation`,
+      "projection_invalidation must be 'pending' or 'complete'",
     );
+  }
+
+  if ('coverage_receipt_digest' in value) {
+    if (value.projection_invalidation === 'pending') {
+      return fail(
+        `${path}.coverage_receipt_digest`,
+        "coverage_receipt_digest must be omitted while projection_invalidation is 'pending'",
+      );
+    }
+    const covErr = validateDigestField(
+      value.coverage_receipt_digest,
+      `${path}.coverage_receipt_digest`,
+    );
+    if (covErr) return covErr;
   }
 
   return { ok: true, value: value as unknown as ForgetOutputV1 };
 }
 
+/**
+ * M2 Sentropic `AppResultEnvelope` validator (`ToolSuccessV1<T>` | `ToolFailureV1`).
+ */
 export function validateToolResultV1(
   toolName: EngramMemoryToolName,
   value: unknown,
 ): SchemaValidationResult<ToolResultV1<unknown>> {
   if (!isPlainObject(value)) {
-    return fail('', 'Expected ToolResultV1 object');
+    return fail('', 'Expected AppResultEnvelope object');
   }
-  const verErr = validateSchemaVersionField(
-    value.schema_version,
-    'schema_version',
-  );
-  if (verErr) return verErr;
 
-  if (value.tool !== toolName) {
-    return fail('tool', `Expected tool '${toolName}'`);
+  const auditErr = validateOpaqueRefField(value.auditId, 'auditId');
+  if (auditErr) return auditErr;
+
+  if (value.redactionClass !== 'high') {
+    return fail('redactionClass', "redactionClass must equal 'high'");
   }
 
   if (value.ok === true) {
     const keyErr = checkAllowedKeys(
       value,
-      ['ok', 'schema_version', 'tool', 'result'],
+      ['ok', 'output', 'auditId', 'redactionClass'],
       '',
     );
     if (keyErr) return keyErr;
 
+    if (!isPlainObject(value.output)) {
+      return fail('output', 'Expected output object');
+    }
+    const outKeyErr = checkAllowedKeys(
+      value.output,
+      ['schema_version', 'value'],
+      'output',
+    );
+    if (outKeyErr) return outKeyErr;
+
+    if (
+      value.output.schema_version !==
+      ENGRAM_MEMORY_STRUCTURED_OUTPUT_SCHEMA_VERSION
+    ) {
+      return fail(
+        'output.schema_version',
+        `output.schema_version must equal ${ENGRAM_MEMORY_STRUCTURED_OUTPUT_SCHEMA_VERSION}`,
+      );
+    }
+
     let res: SchemaValidationResult<unknown>;
     switch (toolName) {
       case 'engram_memory_search':
-        res = validateSearchOutputV1(value.result, 'result');
+        res = validateSearchOutputV1(value.output.value, 'output.value');
         break;
       case 'engram_memory_get':
-        res = validateGetOutputV1(value.result, 'result');
+        res = validateGetOutputV1(value.output.value, 'output.value');
         break;
       case 'engram_memory_capture':
-        res = validateCaptureOutputV1(value.result, 'result');
+        res = validateCaptureOutputV1(value.output.value, 'output.value');
         break;
       case 'engram_memory_request_admission':
-        res = validateRequestAdmissionOutputV1(value.result, 'result');
+        res = validateRequestAdmissionOutputV1(
+          value.output.value,
+          'output.value',
+        );
         break;
       case 'engram_memory_withdraw':
-        res = validateWithdrawOutputV1(value.result, 'result');
+        res = validateWithdrawOutputV1(value.output.value, 'output.value');
         break;
       case 'engram_memory_forget':
-        res = validateForgetOutputV1(value.result, 'result');
+        res = validateForgetOutputV1(value.output.value, 'output.value');
         break;
     }
     if (!res.ok) return res;
@@ -2535,7 +2899,7 @@ export function validateToolResultV1(
   if (value.ok === false) {
     const keyErr = checkAllowedKeys(
       value,
-      ['ok', 'schema_version', 'tool', 'error'],
+      ['ok', 'auditId', 'redactionClass', 'error'],
       '',
     );
     if (keyErr) return keyErr;
@@ -2545,7 +2909,7 @@ export function validateToolResultV1(
     }
     const errKeyErr = checkAllowedKeys(
       value.error,
-      ['code', 'message', 'retryable', 'details'],
+      ['code', 'message', 'retriable'],
       'error',
     );
     if (errKeyErr) return errKeyErr;
@@ -2559,35 +2923,17 @@ export function validateToolResultV1(
       return fail('error.code', 'Invalid PublicMemoryErrorCode');
     }
     if (
-      typeof value.error.message !== 'string' ||
-      value.error.message.length < 1 ||
-      value.error.message.length > 1024
+      !isWellFormedUnicodeAndNfc(value.error.message) ||
+      value.error.message.trim().length < 1 ||
+      utf8ByteLength(value.error.message) > 1024
     ) {
       return fail(
         'error.message',
-        'error.message must be a non-empty string <= 1024 chars',
+        'error.message must be a non-empty NFC string <= 1024 UTF-8 bytes',
       );
     }
-    if (typeof value.error.retryable !== 'boolean') {
-      return fail('error.retryable', 'error.retryable must be boolean');
-    }
-    if ('details' in value.error) {
-      if (!isPlainObject(value.error.details)) {
-        return fail('error.details', 'error.details must be a flat object');
-      }
-      for (const [dk, dv] of Object.entries(value.error.details)) {
-        if (
-          dv !== null &&
-          typeof dv !== 'string' &&
-          typeof dv !== 'boolean' &&
-          (typeof dv !== 'number' || !Number.isFinite(dv))
-        ) {
-          return fail(
-            `error.details.${dk}`,
-            'Detail value must be string, finite number, boolean, or null',
-          );
-        }
-      }
+    if (typeof value.error.retriable !== 'boolean') {
+      return fail('error.retriable', 'error.retriable must be boolean');
     }
     return { ok: true, value: value as unknown as ToolResultV1<unknown> };
   }
@@ -2597,12 +2943,13 @@ export function validateToolResultV1(
 
 /**
  * Validates the dual-channel MCP response (`structuredContent` + single JSON
- * text block in `content`, `isError === !structuredContent.ok`, and serialized
- * payload <= 65,536 UTF-8 bytes).
+ * text block in `content`, `isError === !structuredContent.ok`, packet byte
+ * ceiling `maxPacketBytes`, and transport ceiling `<= 2,097,152` UTF-8 bytes).
  */
 export function validateMcpToolCallResponseV1(
   toolName: EngramMemoryToolName,
   response: unknown,
+  maxPacketBytes: number = MEMORY_MCP_LIMITS.MAX_PACKET_BYTES_DEFAULT,
 ): SchemaValidationResult<McpToolCallResponseV1<unknown>> {
   if (!isPlainObject(response)) {
     return fail('', 'Expected McpToolCallResponseV1 object');
@@ -2635,13 +2982,33 @@ export function validateMcpToolCallResponseV1(
   const blockKeyErr = checkAllowedKeys(block, ['type', 'text'], 'content[0]');
   if (blockKeyErr) return blockKeyErr;
   if (block.type !== 'text' || typeof block.text !== 'string') {
-    return fail('content[0]', 'content[0] must have type="text" and string text');
+    return fail(
+      'content[0]',
+      'content[0] must have type="text" and string text',
+    );
   }
 
-  if (utf8Bytes(block.text) > MEMORY_MCP_LIMITS.MAX_SERIALIZED_RESPONSE_UTF8_BYTES) {
+  const packetCeiling = Math.min(
+    Math.max(maxPacketBytes, MEMORY_MCP_LIMITS.MAX_PACKET_BYTES_MIN),
+    MEMORY_MCP_LIMITS.MAX_PACKET_BYTES_MAX,
+  );
+  const textBytes = utf8ByteLength(block.text);
+  if (textBytes > packetCeiling) {
     return fail(
       'content[0].text',
-      `Serialized response exceeds ${MEMORY_MCP_LIMITS.MAX_SERIALIZED_RESPONSE_UTF8_BYTES} UTF-8 bytes`,
+      `Serialized response exceeds packet ceiling of ${packetCeiling} UTF-8 bytes`,
+      'RESULT_TOO_LARGE',
+    );
+  }
+
+  const totalSerializedBytes = utf8ByteLength(JSON.stringify(response));
+  if (
+    totalSerializedBytes >
+    MEMORY_MCP_LIMITS.MAX_TRANSPORT_COMBINED_SERIALIZED_UTF8_BYTES
+  ) {
+    return fail(
+      '',
+      `Combined MCP response exceeds ${MEMORY_MCP_LIMITS.MAX_TRANSPORT_COMBINED_SERIALIZED_UTF8_BYTES} UTF-8 bytes`,
       'RESULT_TOO_LARGE',
     );
   }
@@ -2653,7 +3020,9 @@ export function validateMcpToolCallResponseV1(
     return fail('content[0].text', 'content[0].text is not valid JSON');
   }
 
-  if (JSON.stringify(parsedText) !== JSON.stringify(response.structuredContent)) {
+  if (
+    JSON.stringify(parsedText) !== JSON.stringify(response.structuredContent)
+  ) {
     return fail(
       'content[0].text',
       'content[0].text JSON payload must match structuredContent',
@@ -2667,44 +3036,188 @@ export function validateMcpToolCallResponseV1(
 }
 
 /**
- * Validates that a pagination cursor binding matches the current search query
- * parameters, scope, ordering, snapshot watermark, and TTL (`expires_at_utc`).
+ * M3 Host-managed random pagination handle continuation request and validation.
+ *
+ * All missing, tampered, expired, raw-engine-cursor, parameter-mismatched, or
+ * epoch/policy/trust/expiry-drifted continuation attempts fail closed with
+ * `STALE_PAGE`. Every page continuation also requires fresh caller
+ * reauthorization (`reauthorized: true`).
  */
-export function validatePaginationCursorBindingV1(
-  binding: PaginationCursorBindingV1,
-  request: {
-    readonly scope_ref: ScopeRefV1;
-    readonly query_digest: string;
-    readonly status_filter: string;
-    readonly memory_kinds: readonly string[];
-    readonly ordering: RecallOrderingV1;
-    readonly snapshot_watermark: string;
-  },
-  nowUtc: string,
-): SchemaValidationResult<PaginationCursorBindingV1> {
-  if (!isValidIsoUtcTimestamp(nowUtc)) {
-    return fail('now_utc', 'Invalid now_utc timestamp', 'INVALID_TIMESTAMP');
-  }
-  if (!isValidIsoUtcTimestamp(binding.expires_at_utc)) {
-    return fail('cursor', 'Invalid cursor expiration timestamp');
-  }
-  if (Date.parse(nowUtc) > Date.parse(binding.expires_at_utc)) {
-    return fail('cursor', 'Pagination cursor has expired');
-  }
-  if (
-    JSON.stringify(binding.scope_ref) !== JSON.stringify(request.scope_ref) ||
-    binding.query_digest !== request.query_digest ||
-    binding.status_filter !== request.status_filter ||
-    JSON.stringify([...binding.memory_kinds].sort()) !==
-      JSON.stringify([...request.memory_kinds].sort()) ||
-    JSON.stringify(binding.ordering) !== JSON.stringify(request.ordering) ||
-    binding.snapshot_watermark !== request.snapshot_watermark ||
-    !Number.isInteger(binding.offset) ||
-    binding.offset < 0
-  ) {
-    return fail('cursor', 'Pagination cursor binding mismatch');
-  }
-  return { ok: true, value: binding };
+export interface PaginationContinuationContextV1 {
+  readonly page_cursor: OpaqueRef;
+  readonly reauthorized?: boolean;
+  readonly principal_namespace: OpaqueRef;
+  readonly tenant_id: OpaqueRef;
+  readonly store_id: OpaqueRef;
+  readonly connector_instance_id: OpaqueRef;
+  readonly scope_ref: OpaqueRef;
+  readonly purpose_ref: OpaqueRef;
+  readonly query: string;
+  readonly query_digest: Digest;
+  readonly limit: number;
+  readonly max_packet_bytes: number;
+  readonly capability_policy: RecallCapabilityPolicyV1;
+  readonly selected_profile: 'offline_lexical_v1' | 'semantic_v1';
+  readonly profile_version: string;
+  readonly policy_id: OpaqueRef;
+  readonly policy_version: string;
+  readonly authorization_epoch: Cursor;
+  readonly storage_epoch: Cursor;
+  readonly trust_revocation_epoch: Cursor;
+  readonly eligibility_digest: Digest;
+  readonly now_utc?: Instant;
+  readonly current_valid_as_of?: number;
 }
 
-export { ENGRAM_MEMORY_TOOL_NAMES };
+export function isRawEngineCursorString(cursor: string): boolean {
+  return (
+    CURSOR_U64_REGEX.test(cursor) ||
+    cursor.startsWith('raw_cursor:') ||
+    cursor.startsWith('engine_cursor:') ||
+    cursor.startsWith('offset:')
+  );
+}
+
+export function validatePaginationHandleStateV1(
+  state: PaginationHandleStateV1 | undefined | null,
+  request: PaginationContinuationContextV1,
+  nowUtcOverride?: Instant,
+): SchemaValidationResult<PaginationHandleStateV1> {
+  if (request.reauthorized === false) {
+    return fail(
+      'page_cursor',
+      'Page continuation requires fresh caller authorization',
+      'UNAUTHORIZED',
+    );
+  }
+
+  if (
+    !isValidOpaqueRef(request.page_cursor) ||
+    isRawEngineCursorString(request.page_cursor)
+  ) {
+    return fail(
+      'page_cursor',
+      'Malformed or raw engine pagination cursor is rejected',
+      'STALE_PAGE',
+    );
+  }
+
+  if (!state || !isPlainObject(state as unknown)) {
+    return fail(
+      'page_cursor',
+      'Pagination handle was not found in host-managed state',
+      'STALE_PAGE',
+    );
+  }
+
+  if (
+    state.engram_owns_signing_secret !== false ||
+    !isValidOpaqueRef(state.handle_id) ||
+    state.handle_id !== request.page_cursor ||
+    !isValidOpaqueRef(state.internal_engine_cursor) ||
+    state.handle_id === state.internal_engine_cursor
+  ) {
+    return fail(
+      'page_cursor',
+      'Pagination handle state violated host-managed handle invariants',
+      'STALE_PAGE',
+    );
+  }
+
+  const effectiveNowUtc = nowUtcOverride ?? request.now_utc;
+  if (
+    !effectiveNowUtc ||
+    !isValidInstant(effectiveNowUtc) ||
+    !isValidInstant(state.issued_at) ||
+    !isValidInstant(state.expires_at)
+  ) {
+    return fail(
+      'page_cursor',
+      'Pagination handle contains an invalid timestamp',
+      'STALE_PAGE',
+    );
+  }
+
+  const nowMs = Date.parse(effectiveNowUtc);
+  const issuedMs = Date.parse(state.issued_at);
+  const expiresMs = Date.parse(state.expires_at);
+
+  if (expiresMs <= issuedMs || nowMs < issuedMs || nowMs >= expiresMs) {
+    return fail('page_cursor', 'Pagination handle has expired', 'STALE_PAGE');
+  }
+
+  if (
+    !Number.isSafeInteger(state.valid_as_of) ||
+    !isValidCursor(state.system_as_of)
+  ) {
+    return fail(
+      'page_cursor',
+      'Pagination handle has invalid snapshot watermarks',
+      'STALE_PAGE',
+    );
+  }
+
+  if (state.next_record_expiry_at !== undefined) {
+    if (!isValidInstant(state.next_record_expiry_at)) {
+      return fail(
+        'page_cursor',
+        'Pagination handle has invalid next_record_expiry_at',
+        'STALE_PAGE',
+      );
+    }
+    const nextExpiryMs = Date.parse(state.next_record_expiry_at);
+    const currentValidAsOf = request.current_valid_as_of ?? nowMs;
+    if (
+      nowMs >= nextExpiryMs ||
+      state.valid_as_of >= nextExpiryMs ||
+      currentValidAsOf >= nextExpiryMs
+    ) {
+      return fail(
+        'page_cursor',
+        'Pagination handle invalidated by record expiration boundary',
+        'STALE_PAGE',
+      );
+    }
+  }
+
+  if (
+    state.principal_namespace !== request.principal_namespace ||
+    state.tenant_id !== request.tenant_id ||
+    state.store_id !== request.store_id ||
+    state.connector_instance_id !== request.connector_instance_id ||
+    state.scope_ref !== request.scope_ref ||
+    state.purpose_ref !== request.purpose_ref ||
+    state.query !== request.query ||
+    state.query_digest !== request.query_digest ||
+    state.limit !== request.limit ||
+    state.max_packet_bytes !== request.max_packet_bytes ||
+    state.capability_policy.minimum_channels !==
+      request.capability_policy.minimum_channels ||
+    state.capability_policy.network !== request.capability_policy.network ||
+    state.selected_profile !== request.selected_profile ||
+    state.profile_version !== request.profile_version ||
+    state.policy_id !== request.policy_id ||
+    state.policy_version !== request.policy_version ||
+    state.authorization_epoch !== request.authorization_epoch ||
+    state.storage_epoch !== request.storage_epoch ||
+    state.trust_revocation_epoch !== request.trust_revocation_epoch ||
+    state.eligibility_digest !== request.eligibility_digest
+  ) {
+    return fail(
+      'page_cursor',
+      'Pagination handle binding or epoch mismatch',
+      'STALE_PAGE',
+    );
+  }
+
+  return { ok: true, value: state };
+}
+
+export const validatePaginationCursorBindingV1: (
+  state: PaginationCursorBindingV1 | undefined | null,
+  request: PaginationContinuationContextV1,
+  nowUtcOverride?: Instant,
+) => SchemaValidationResult<PaginationCursorBindingV1> =
+  validatePaginationHandleStateV1;
+
+export { DISCLOSABLE_MEMORY_STATES, ENGRAM_MEMORY_TOOL_NAMES };

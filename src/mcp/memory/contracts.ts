@@ -1,22 +1,147 @@
 /**
  * MCP-L0 Frozen Tool & Substrate Contracts for Engram Agent Memory.
  *
- * Data-pure TypeScript types and constants defining:
- * - The six public MCP memory tools (`engram_memory_*`)
- * - Neutral V3 recall and V1 point-read contracts
- * - Input/output DTOs and public result envelopes
- * - Hard size/cardinality bounds and pagination cursor bindings
- * - Explicitly excluded internal substrate operations
+ * Normative alignment with SPEC-memory-mcp-v2.md (M1, M2, M3, M4, M5, M6):
+ * - Six public MCP memory tools (`engram_memory_*`)
+ * - Reuses neutral DTOs and V3/V1 read facets from `engram-memory/contracts`
+ * - Closed M2 input DTOs and Sentropic `AppResultEnvelope` output envelopes
+ * - Current-only memory disclosure (disputed memories are never searchable/readable)
+ * - Host-managed random pagination handle state and bindings (M3)
  */
 
-export const ENGRAM_MEMORY_SCHEMA_VERSION = 'engram.memory/v1' as const;
-export type MemorySchemaVersion = typeof ENGRAM_MEMORY_SCHEMA_VERSION;
+import type {
+  AdmissionDecision,
+  AdmissionDecisionEnvelopeV1,
+  AdmissionOutcomeV1,
+  AdmissionPolicy,
+  AdmissionPolicyRequestV1,
+  AdmissionRequestV1,
+  AuthorizationAllowedV1,
+  AuthorizationContextV1,
+  AuthorizationDeniedV1,
+  AuthorizationPort,
+  AuthorizationRequestV1,
+  AuthorizationResourceV1,
+  AuthorizationResultV1,
+  AuthorizationRevalidationV1,
+  CandidatePayloadV2,
+  CaptureAcknowledgementV1,
+  CaptureRequestV2,
+  CitationLocatorV1,
+  CitationV1,
+  Cursor,
+  DerivationLineageV1,
+  Digest,
+  EvidenceBundleV1,
+  EvidenceClass,
+  EvidenceVerificationRequestV1,
+  EvidenceVerifierPort,
+  IdempotencyKey,
+  Instant,
+  JsonPointer,
+  LifecycleCommandBaseV1,
+  LifecycleCommandV1,
+  LifecycleEventAnchorV1,
+  LifecycleReceiptV1,
+  MemoryComponentKind,
+  MemoryComponentV2,
+  MemoryErrorCode,
+  MemoryErrorV1,
+  MemoryOperation,
+  MemoryPortV2,
+  MemoryReadPacketV1,
+  MemoryReadPortV1,
+  MemoryReadReceiptV1,
+  MemoryRecallPortV3,
+  MemoryRecordV2,
+  MemoryState,
+  OpaqueRef,
+  PrimaryEventAnchorV1,
+  RankReceiptV1,
+  RecallCapabilityPolicyV1,
+  RecallPacketV2,
+  RecallPacketV3,
+  RecallRecordPacketV2,
+  RecallRecordPacketV3,
+  RecallRequestV2,
+  ReconciliationConsentV1,
+  RedactedMemoryRecordV2,
+  RedactionDirectiveV1,
+  Result,
+  RetentionV1,
+  TrustBindingV1,
+  TrustRevalidationV1,
+  ValidIntervalV1,
+} from '../../../engram-memory/dist/contracts/index.js';
 
-export type IsoUtcTimestamp = string;
-export type DurationMs = number;
-export type Sha256Digest = string;
-export type OpaqueId = string;
-export type ReasonCode = string;
+export type {
+  AdmissionDecision,
+  AdmissionDecisionEnvelopeV1,
+  AdmissionOutcomeV1,
+  AdmissionPolicy,
+  AdmissionPolicyRequestV1,
+  AdmissionRequestV1,
+  AuthorizationAllowedV1,
+  AuthorizationContextV1,
+  AuthorizationDeniedV1,
+  AuthorizationPort,
+  AuthorizationRequestV1,
+  AuthorizationResourceV1,
+  AuthorizationResultV1,
+  AuthorizationRevalidationV1,
+  CandidatePayloadV2,
+  CaptureAcknowledgementV1,
+  CaptureRequestV2,
+  CitationLocatorV1,
+  CitationV1,
+  Cursor,
+  DerivationLineageV1,
+  Digest,
+  EvidenceBundleV1,
+  EvidenceClass,
+  EvidenceVerificationRequestV1,
+  EvidenceVerifierPort,
+  IdempotencyKey,
+  Instant,
+  JsonPointer,
+  LifecycleCommandBaseV1,
+  LifecycleCommandV1,
+  LifecycleEventAnchorV1,
+  LifecycleReceiptV1,
+  MemoryComponentKind,
+  MemoryComponentV2,
+  MemoryErrorCode,
+  MemoryErrorV1,
+  MemoryOperation,
+  MemoryPortV2,
+  MemoryReadPacketV1,
+  MemoryReadPortV1,
+  MemoryReadReceiptV1,
+  MemoryRecallPortV3,
+  MemoryRecordV2,
+  MemoryState,
+  OpaqueRef,
+  PrimaryEventAnchorV1,
+  RankReceiptV1,
+  RecallCapabilityPolicyV1,
+  RecallPacketV2,
+  RecallPacketV3,
+  RecallRecordPacketV2,
+  RecallRecordPacketV3,
+  RecallRequestV2,
+  ReconciliationConsentV1,
+  RedactedMemoryRecordV2,
+  RedactionDirectiveV1,
+  Result,
+  RetentionV1,
+  TrustBindingV1,
+  TrustRevalidationV1,
+  ValidIntervalV1,
+};
+
+export const ENGRAM_MEMORY_MCP_CONTRACT_VERSION = '1.0.0' as const;
+export const ENGRAM_MEMORY_STRUCTURED_OUTPUT_SCHEMA_VERSION = 1 as const;
+export const ENGRAM_MEMORY_CANDIDATE_SCHEMA_VERSION = 2 as const;
 
 export const ENGRAM_MEMORY_TOOL_NAMES = [
   'engram_memory_search',
@@ -30,560 +155,297 @@ export const ENGRAM_MEMORY_TOOL_NAMES = [
 export type EngramMemoryToolName = (typeof ENGRAM_MEMORY_TOOL_NAMES)[number];
 
 /**
- * Internal substrate ports and administrative operations that MUST NOT be
- * exposed as public agent-callable MCP tools in v1.
+ * M1 / M4 mapping between the six agent-facing tools, the neutral port facets,
+ * and the required `MemoryOperation` authority.
+ */
+export const ENGRAM_MEMORY_TOOL_NEUTRAL_BINDINGS = {
+  engram_memory_search: {
+    facet: 'MemoryRecallPortV3.recall',
+    neutral_operation: 'recall_current',
+  },
+  engram_memory_get: {
+    facet: 'MemoryReadPortV1.readCurrent',
+    neutral_operation: 'recall_current',
+  },
+  engram_memory_capture: {
+    facet: 'MemoryPortV2.capture',
+    neutral_operation: 'capture',
+  },
+  engram_memory_request_admission: {
+    facet: 'MemoryPortV2.requestAdmission',
+    neutral_operation: 'request_admission',
+  },
+  engram_memory_withdraw: {
+    facet: 'MemoryPortV2.transition',
+    transition_operation: 'withdraw',
+    neutral_operation: 'withdraw',
+  },
+  engram_memory_forget: {
+    facet: 'MemoryPortV2.transition',
+    transition_operation: 'tombstone',
+    neutral_operation: 'tombstone',
+  },
+} as const;
+
+/**
+ * M1 operations that remain strictly outside the agent MCP surface.
  */
 export const EXCLUDED_INTERNAL_MEMORY_OPERATIONS = [
-  'admitCandidate',
-  'supersedeRecord',
-  'openDispute',
-  'resolveDispute',
-  'appendEvents',
-  'readEvents',
-  'verifyChain',
-  'runBoundedExport',
-  'verifyExportBundle',
-  'ingestExportBundle',
-  'executeErasure',
-  'purgeExpiredTombstones',
-  'evaluateConsentForCapture',
-  'applyConsentRevocationCascade',
-  'verifyEvidenceRefs',
-  'getQuarantineRecord',
-  'releaseFromQuarantine',
-  'discardQuarantinedCandidate',
-  'evaluatePromotionEligibility',
-  'projectCurrentMarkdown',
+  'admin',
+  'bootstrap',
+  'rotate',
+  'revoke',
+  'ingestActivity',
+  'invalidateProjections',
+  'backup',
+  'restore',
+  'migrate',
+  'proposeCapitalisation',
+  'proposeReconciliation',
+  'supersede',
+  'dispute',
+  'resolve_dispute',
+  'rewind',
+  'expire',
+  'mark_non_current',
+  'trust_invalidate',
+  'reject',
+  'capabilities',
+  'readiness',
+  'validate',
+  'cancelCapture',
+  'recall_history',
+  'recall_disputed',
+  'inspect_candidate',
 ] as const;
 
 export type ExcludedInternalMemoryOperation =
   (typeof EXCLUDED_INTERNAL_MEMORY_OPERATIONS)[number];
 
-export const SENSITIVITY_LABELS = [
-  'public',
-  'internal',
-  'confidential',
-  'restricted',
-] as const;
-export type SensitivityLabel = (typeof SENSITIVITY_LABELS)[number];
+/**
+ * M1 / M3 current-memory-only disclosure rule:
+ * Search and get expose `accepted_current` records only. They MUST NOT expose
+ * disputed (`accepted_disputed`), pending, rejected, withdrawn, historical,
+ * expired, trust-invalid, or tombstoned records.
+ */
+export const DISCLOSABLE_MEMORY_STATES = ['accepted_current'] as const;
+export type DisclosableMemoryState = (typeof DISCLOSABLE_MEMORY_STATES)[number];
 
-export const SHARING_POLICIES = [
-  'deny',
-  'local-only',
-  'explicit-export',
-] as const;
-export type SharingPolicy = (typeof SHARING_POLICIES)[number];
-
-export const RETENTION_OUTCOMES = [
-  'retain',
-  'make-ineligible',
-  'tombstone',
-] as const;
-export type RetentionOutcome = (typeof RETENTION_OUTCOMES)[number];
-
-export const MEMORY_STATUSES = [
-  'candidate',
-  'quarantined',
-  'admitted',
-  'superseded',
-  'disputed',
+export const NON_DISCLOSABLE_MEMORY_STATES = [
+  'pending',
+  'rejected',
   'withdrawn',
+  'accepted_disputed',
+  'historical',
   'expired',
+  'trust_invalid',
   'tombstoned',
-] as const;
-export type MemoryStatus = (typeof MEMORY_STATUSES)[number];
+] as const satisfies ReadonlyArray<Exclude<MemoryState, DisclosableMemoryState>>;
 
-export const RETRIEVAL_STATUSES = ['admitted', 'disputed'] as const;
-export type RetrievalStatus = (typeof RETRIEVAL_STATUSES)[number];
-
-export const MEMORY_KINDS = [
-  'preference',
-  'fact',
-  'procedure',
-  'episode-summary',
-  'decision-note',
-  'constraint',
-] as const;
-export type MemoryKind = (typeof MEMORY_KINDS)[number];
-
-export const SOURCE_CLASSES = [
-  'explicit-user-input',
-  'verified-artifact',
-  'tool-observation',
-  'model-inference',
-  'imported-bundle',
-] as const;
-export type SourceClass = (typeof SOURCE_CLASSES)[number];
-
-export const EVIDENCE_MEDIA_TYPES = [
-  'text/plain',
-  'text/markdown',
-  'application/json',
-  'application/octet-stream',
-] as const;
-export type EvidenceMediaType = (typeof EVIDENCE_MEDIA_TYPES)[number];
-
-export const SCOPE_LEVELS = [
-  'session',
-  'project',
-  'workspace',
-  'user',
-  'global',
-] as const;
-export type ScopeLevel = (typeof SCOPE_LEVELS)[number];
-
-export const RECALL_STATUS_FILTERS = [
-  'admitted-only',
-  'admitted-and-disputed',
-] as const;
-export type RecallStatusFilter = (typeof RECALL_STATUS_FILTERS)[number];
-
-export const REDACTION_STATES = [
-  'unredacted',
-  'redacted',
-  'withheld',
-] as const;
-export type RedactionState = (typeof REDACTION_STATES)[number];
-
-export const READ_OUTCOMES = [
-  'returned',
-  'withheld_redacted',
-  'withheld_status',
-  'not_found',
-] as const;
-export type ReadOutcome = (typeof READ_OUTCOMES)[number];
-
-export interface ScopeRefV1 {
-  readonly schema_version: MemorySchemaVersion;
-  readonly tenant_id: OpaqueId;
-  readonly workspace_id: OpaqueId;
-  readonly project_id: OpaqueId;
-  readonly level: ScopeLevel;
-  readonly session_id?: OpaqueId;
-  readonly user_id?: OpaqueId;
-}
-
-export interface PrincipalRefV1 {
-  readonly schema_version: MemorySchemaVersion;
-  readonly principal_id: OpaqueId;
-  readonly principal_kind: 'user' | 'agent' | 'service' | 'system';
-  readonly tenant_id: OpaqueId;
-  readonly roles: readonly string[];
-}
-
-export interface EvidenceCitationV1 {
-  readonly schema_version: MemorySchemaVersion;
-  readonly citation_id: OpaqueId;
-  readonly locator: string;
-  readonly digest: Sha256Digest;
-  readonly media_type: EvidenceMediaType;
-  readonly observed_at_utc: IsoUtcTimestamp;
-  readonly byte_range?: {
-    readonly start_byte: number;
-    readonly end_byte_exclusive: number;
-  };
-  readonly line_range?: {
-    readonly start_line: number;
-    readonly end_line_inclusive: number;
-  };
-  readonly excerpt?: string;
-}
-
-export interface SourceProvenanceV1 {
-  readonly schema_version: MemorySchemaVersion;
-  readonly source_class: SourceClass;
-  readonly captured_by: PrincipalRefV1;
-  readonly observed_at_utc: IsoUtcTimestamp;
-  readonly citations: readonly EvidenceCitationV1[];
-  readonly upstream_bundle_id?: OpaqueId;
-  readonly external_origin_ref?: string;
-}
-
-export interface LifecycleEventAnchorV1 {
-  readonly schema_version: MemorySchemaVersion;
-  readonly event_anchor_id: OpaqueId;
-  readonly anchor_kind:
-    | 'capture'
-    | 'admission'
-    | 'supersession'
-    | 'dispute'
-    | 'withdrawal'
-    | 'expiration'
-    | 'erasure'
-    | 'consent-revocation'
-    | 'import';
-  readonly occurred_at_utc: IsoUtcTimestamp;
-  readonly actor: PrincipalRefV1;
-  readonly correlation_id: OpaqueId;
-  readonly causation_event_id?: OpaqueId;
-}
-
-export interface MemoryRetentionV1 {
-  readonly schema_version: MemorySchemaVersion;
-  readonly policy_id: OpaqueId;
-  readonly retain_until_utc?: IsoUtcTimestamp;
-  readonly review_After_utc?: IsoUtcTimestamp;
-  readonly review_after_utc?: IsoUtcTimestamp;
-  readonly expiry_outcome: RetentionOutcome;
-  readonly legal_hold: boolean;
-}
-
-export interface ReconciliationHookV1 {
-  readonly schema_version: MemorySchemaVersion;
-  readonly strategy: 'manual-only' | 'supersede-by-key' | 'append-distinct';
-  readonly conflict_key?: string;
-  readonly family_refs: readonly OpaqueId[];
-}
-
-export interface AdmissibilityAssessmentV1 {
-  readonly schema_version: MemorySchemaVersion;
-  readonly policy_id: OpaqueId;
-  readonly policy_version: string;
-  readonly admissible: boolean;
-  readonly confidence_bps: number;
-  readonly assessed_at_utc: IsoUtcTimestamp;
-  readonly assessed_by: PrincipalRefV1;
-  readonly reason_codes: readonly ReasonCode[];
-  readonly required_corroboration_count: number;
-  readonly observed_corroboration_count: number;
-}
-
-export interface RecallQueryV1 {
-  readonly schema_version: MemorySchemaVersion;
-  readonly query_id: OpaqueId;
-  readonly scope_ref: ScopeRefV1;
-  readonly query_text: string;
-  readonly memory_kinds?: readonly MemoryKind[];
-  readonly status_filter: RecallStatusFilter;
-  readonly max_results: number;
-  readonly now_utc: IsoUtcTimestamp;
-}
-
-export interface RecallOrderingV1 {
-  readonly primary: 'relevance_score_bps_desc';
-  readonly secondary: 'admitted_at_utc_desc';
-  readonly tertiary: 'memory_id_asc';
+export function isDisclosableMemoryState(
+  state: unknown,
+): state is DisclosableMemoryState {
+  return state === 'accepted_current';
 }
 
 /**
- * Neutral V2 redacted record projection (EVOL §7 amendment 2026-10-17).
- * Replaces citation-digest-only projection with redacted citations and
- * structured attributes suitable for bounded agent recall/read.
- */
-export interface RedactedMemoryRecordV2 {
-  readonly schema_version: MemorySchemaVersion;
-  readonly memory_id: OpaqueId;
-  readonly scope_ref: ScopeRefV1;
-  readonly memory_kind: MemoryKind;
-  readonly status: RetrievalStatus;
-  readonly summary: string;
-  readonly statement?: string;
-  readonly structured_attributes?: Readonly<
-    Record<string, string | number | boolean | null>
-  >;
-  readonly content_digest: Sha256Digest;
-  readonly sensitivity: SensitivityLabel;
-  readonly source_class: SourceClass;
-  readonly citations: readonly EvidenceCitationV1[];
-  readonly redaction_state: RedactionState;
-  readonly redacted_fields: readonly string[];
-  readonly admitted_at_utc: IsoUtcTimestamp;
-  readonly supersedes_ids: readonly OpaqueId[];
-  readonly active_dispute_ids: readonly OpaqueId[];
-}
-
-export interface RecallRecordPacketV3 {
-  readonly rank: number;
-  readonly relevance_score_bps: number;
-  readonly record: RedactedMemoryRecordV2;
-}
-
-export interface RecallPacketV3 {
-  readonly schema_version: MemorySchemaVersion;
-  readonly packet_id: OpaqueId;
-  readonly query_id: OpaqueId;
-  readonly scope_ref: ScopeRefV1;
-  readonly status_filter: RecallStatusFilter;
-  readonly ordering: RecallOrderingV1;
-  readonly generated_at_utc: IsoUtcTimestamp;
-  readonly records: readonly RecallRecordPacketV3[];
-  readonly withheld_count: number;
-}
-
-export interface MemoryRecallPortV3 {
-  recallV3(query: RecallQueryV1): Promise<RecallPacketV3>;
-}
-
-export interface MemoryReadReceiptV1 {
-  readonly memory_id: OpaqueId;
-  readonly outcome: ReadOutcome;
-  readonly status?: MemoryStatus;
-  readonly record?: RedactedMemoryRecordV2;
-  readonly reason_codes: readonly ReasonCode[];
-}
-
-export interface MemoryReadPacketV1 {
-  readonly schema_version: MemorySchemaVersion;
-  readonly packet_id: OpaqueId;
-  readonly scope_ref: ScopeRefV1;
-  readonly generated_at_utc: IsoUtcTimestamp;
-  readonly results: readonly MemoryReadReceiptV1[];
-}
-
-export interface MemoryReadPortV1 {
-  readV1(input: {
-    readonly scope_ref: ScopeRefV1;
-    readonly memory_ids: readonly OpaqueId[];
-    readonly now_utc: IsoUtcTimestamp;
-  }): Promise<MemoryReadPacketV1>;
-}
-
-/**
- * Runtime facet check for neutral read ports required by MCP-L1/MCP-L2.
- */
-export function verifyRequiredNeutralReadFacets(
-  candidate: unknown,
-): {
-  readonly ok: boolean;
-  readonly missing_facets: readonly ('recallV3' | 'readV1')[];
-} {
-  const missing: ('recallV3' | 'readV1')[] = [];
-  const obj =
-    typeof candidate === 'object' && candidate !== null
-      ? (candidate as Record<string, unknown>)
-      : {};
-  if (typeof obj.recallV3 !== 'function') {
-    missing.push('recallV3');
-  }
-  if (typeof obj.readV1 !== 'function') {
-    missing.push('readV1');
-  }
-  return {
-    ok: missing.length === 0,
-    missing_facets: missing,
-  };
-}
-
-/**
- * Frozen numeric & byte bounds from SPEC-memory-mcp-v2.md.
+ * M2 limits and defaults.
  */
 export const MEMORY_MCP_LIMITS = {
-  SEARCH_QUERY_TEXT_MIN_CHARS: 1,
-  SEARCH_QUERY_TEXT_MAX_CHARS: 2048,
-  SEARCH_QUERY_TEXT_MAX_UTF8_BYTES: 2048,
-  SEARCH_MEMORY_KINDS_MIN_ITEMS: 1,
-  SEARCH_MEMORY_KINDS_MAX_ITEMS: 6,
-  SEARCH_LIMIT_MIN: 1,
-  SEARCH_LIMIT_MAX: 25,
-  SEARCH_LIMIT_DEFAULT: 10,
-  SEARCH_CURSOR_MIN_CHARS: 1,
-  SEARCH_CURSOR_MAX_CHARS: 512,
-  SEARCH_CURSOR_TTL_SECONDS: 300,
-  GET_MEMORY_IDS_MIN_ITEMS: 1,
-  GET_MEMORY_IDS_MAX_ITEMS: 10,
-  OPAQUE_ID_MIN_CHARS: 1,
-  OPAQUE_ID_MAX_CHARS: 128,
-  CAPTURE_SUMMARY_MIN_CHARS: 1,
-  CAPTURE_SUMMARY_MAX_CHARS: 512,
-  CAPTURE_SUMMARY_MAX_UTF8_BYTES: 512,
-  CAPTURE_STATEMENT_MIN_CHARS: 1,
-  CAPTURE_STATEMENT_MAX_CHARS: 8192,
-  CAPTURE_STATEMENT_MAX_UTF8_BYTES: 8192,
-  CAPTURE_STRUCTURED_ATTR_MAX_KEYS: 32,
-  CAPTURE_STRUCTURED_ATTR_KEY_MIN_CHARS: 1,
-  CAPTURE_STRUCTURED_ATTR_KEY_MAX_CHARS: 64,
-  CAPTURE_STRUCTURED_ATTR_STRING_MAX_UTF8_BYTES: 512,
-  CAPTURE_STRUCTURED_ATTR_MAX_UTF8_BYTES: 4096,
-  CAPTURE_CITATIONS_MIN_ITEMS: 1,
-  CAPTURE_CITATIONS_MAX_ITEMS: 16,
-  CITATION_LOCATOR_MIN_CHARS: 1,
-  CITATION_LOCATOR_MAX_CHARS: 512,
-  CITATION_EXCERPT_MAX_CHARS: 512,
-  CITATION_EXCERPT_MAX_UTF8_BYTES: 512,
-  RECONCILIATION_FAMILY_REFS_MIN_ITEMS: 1,
-  RECONCILIATION_FAMILY_REFS_MAX_ITEMS: 8,
-  MAX_SERIALIZED_RESPONSE_UTF8_BYTES: 65536,
+  QUERY_MIN_UTF8_BYTES: 1,
+  QUERY_MAX_UTF8_BYTES: 8192,
+  LIMIT_MIN: 1,
+  LIMIT_MAX: 50,
+  LIMIT_DEFAULT: 10,
+  MAX_PACKET_BYTES_MIN: 4096,
+  MAX_PACKET_BYTES_MAX: 1048576,
+  MAX_PACKET_BYTES_DEFAULT: 65536,
+  OPAQUE_REF_MIN_UTF8_BYTES: 1,
+  OPAQUE_REF_MAX_UTF8_BYTES: 512,
+  IDEMPOTENCY_KEY_MIN_UTF8_BYTES: 16,
+  IDEMPOTENCY_KEY_MAX_UTF8_BYTES: 256,
+  CANDIDATE_ID_MIN_UTF8_BYTES: 1,
+  CANDIDATE_ID_MAX_UTF8_BYTES: 512,
+  RECORD_ID_PATTERN: '^mem_[a-z2-7]+$',
+  DIGEST_PATTERN: '^sha256:[0-9a-f]{64}$',
+  CURSOR_PATTERN: '^(0|[1-9][0-9]*)$',
+  INSTANT_PATTERN: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$',
+  COMPONENTS_MIN_ITEMS: 1,
+  COMPONENTS_MAX_ITEMS: 64,
+  COMPONENT_TEXT_MIN_UTF8_BYTES: 1,
+  COMPONENT_TEXT_MAX_UTF8_BYTES: 65536,
+  CITATIONS_MIN_ITEMS: 1,
+  CITATIONS_MAX_ITEMS: 256,
+  RECONCILIATION_FAMILY_REFS_MIN_ITEMS: 0,
+  RECONCILIATION_FAMILY_REFS_MAX_ITEMS: 64,
+  DERIVATION_SOURCE_RECORD_IDS_MIN_ITEMS: 1,
+  DERIVATION_SOURCE_RECORD_IDS_MAX_ITEMS: 64,
+  MAX_ARGUMENT_OBJECT_UTF8_BYTES: 1048576,
+  MAX_TRANSPORT_COMBINED_SERIALIZED_UTF8_BYTES: 2097152,
   MAX_INVOCATION_DEADLINE_MS: 30000,
-  CONFIRMATION_TOKEN_TTL_SECONDS: 300,
-  DEFAULT_RETENTION_CEILING_DAYS: 90,
-  MAX_RETENTION_CEILING_DAYS: 365,
+  CONFIRMATION_MAX_TTL_SECONDS: 300,
+  AUTHORIZATION_RECEIPT_MAX_TTL_SECONDS: 300,
 } as const;
 
-export interface SearchInputV1 {
-  readonly query_text: string;
-  readonly memory_kinds?: readonly MemoryKind[];
-  readonly status_filter?: RecallStatusFilter;
-  readonly limit?: number;
-  readonly cursor?: string;
-}
+export const DEFAULT_RECALL_CAPABILITY_POLICY: RecallCapabilityPolicyV1 = {
+  minimum_channels: 'lexical',
+  network: 'forbid',
+} as const;
 
-export interface SearchPageV1 {
-  readonly returned_count: number;
-  readonly has_more: boolean;
-  readonly next_cursor?: string;
-}
-
-export type SearchOutputV1 = RecallPacketV3 & {
-  readonly page: SearchPageV1;
+/**
+ * M2 Closed Input Contracts (copied from SPEC-memory-mcp-v2.md §M2).
+ */
+export type SearchInputV1 = {
+  query: string;
+  purpose_ref: OpaqueRef;
+  limit?: number;
+  max_packet_bytes?: number;
+  capability_policy?: RecallCapabilityPolicyV1;
+  page_cursor?: OpaqueRef;
 };
 
-export interface GetInputV1 {
-  readonly memory_ids: readonly OpaqueId[];
-}
+export type GetInputV1 = {
+  record_id: string;
+  purpose_ref: OpaqueRef;
+  max_packet_bytes?: number;
+};
 
+export type CapturePayloadInputV1 = Omit<
+  CandidatePayloadV2,
+  'scope_ref' | 'derivation' | 'retention' | 'reconciliation'
+> & {
+  retention?: RetentionV1;
+  reconciliation?: ReconciliationConsentV1;
+};
+
+export type CaptureInputV1 = {
+  idempotency_key: IdempotencyKey;
+  payload: CapturePayloadInputV1;
+  evidence: EvidenceBundleV1;
+};
+
+export type RequestAdmissionInputV1 = {
+  candidate_id: string;
+  idempotency_key: IdempotencyKey;
+};
+
+export type WithdrawInputV1 = {
+  candidate_id: string;
+  idempotency_key: IdempotencyKey;
+  reason_ref: OpaqueRef;
+};
+
+export type ForgetInputV1 = {
+  record_id: string;
+  idempotency_key: IdempotencyKey;
+  reason_ref: OpaqueRef;
+};
+
+/**
+ * M2 Result Payload Contracts (copied from SPEC-memory-mcp-v2.md §M2).
+ */
+export type SearchPageV1 = {
+  records: RecallRecordPacketV3[];
+  rank_receipt: RankReceiptV1;
+  next_page_cursor?: OpaqueRef;
+  response_digest: Digest;
+};
+
+export type SearchOutputV1 = SearchPageV1;
 export type GetOutputV1 = MemoryReadPacketV1;
 
-export interface CapturePayloadInputV1 {
-  readonly summary: string;
-  readonly statement: string;
-  readonly structured_attributes?: Readonly<
-    Record<string, string | number | boolean | null>
-  >;
-}
+export type CaptureOutputV1 = {
+  status: 'committed_pending' | 'duplicate_exact';
+  candidate_id: string;
+  record_digest?: Digest;
+  cursor: Cursor;
+  transaction_receipt_digest: Digest;
+};
 
-export interface CaptureRetentionHintV1 {
-  readonly expires_at_utc?: IsoUtcTimestamp;
-  readonly expiry_outcome?: RetentionOutcome;
-}
+export type RequestAdmissionOutputV1 = {
+  outcome: AdmissionOutcomeV1;
+  replayed: boolean;
+};
 
-export interface CaptureReconciliationHintV1 {
-  readonly family_refs: readonly OpaqueId[];
-}
+export type WithdrawLifecycleReceiptV1 = LifecycleReceiptV1 & {
+  operation: 'withdraw';
+  from_state: 'pending';
+  to_state: 'withdrawn';
+};
 
-export interface CaptureInputV1 {
-  readonly idempotency_key: string;
-  readonly memory_kind: MemoryKind;
-  readonly payload: CapturePayloadInputV1;
-  readonly provenance: SourceProvenanceV1;
-  readonly sensitivity?: SensitivityLabel;
-  readonly sharing_policy?: SharingPolicy;
-  readonly retention_hint?: CaptureRetentionHintV1;
-  readonly reconciliation_hint?: CaptureReconciliationHintV1;
-}
+export type WithdrawOutputV1 = {
+  receipt: WithdrawLifecycleReceiptV1;
+  replayed: boolean;
+  key_destruction: 'pending' | 'complete';
+};
 
-export interface CaptureOutputV1 {
-  readonly schema_version: MemorySchemaVersion;
-  readonly memory_id: OpaqueId;
-  readonly status: 'candidate' | 'quarantined';
-  readonly content_digest: Sha256Digest;
-  readonly captured_at_utc: IsoUtcTimestamp;
-  readonly event_id: OpaqueId;
-  readonly idempotent_replay: boolean;
-  readonly quarantine_reason_codes?: readonly ReasonCode[];
-}
+export const TOMBSTONE_ALLOWED_FROM_STATES = [
+  'accepted_current',
+  'accepted_disputed',
+  'historical',
+  'expired',
+  'trust_invalid',
+] as const satisfies ReadonlyArray<MemoryState>;
 
-export interface RequestAdmissionInputV1 {
-  readonly idempotency_key: string;
-  readonly memory_id: OpaqueId;
-  readonly rationale_code: ReasonCode;
-}
+export type TombstoneAllowedFromState =
+  (typeof TOMBSTONE_ALLOWED_FROM_STATES)[number];
 
-export interface RequestAdmissionOutputV1 {
-  readonly schema_version: MemorySchemaVersion;
-  readonly memory_id: OpaqueId;
-  readonly outcome: 'admitted' | 'quarantined' | 'rejected';
-  readonly resulting_status: 'admitted' | 'quarantined' | 'candidate';
-  readonly decided_at_utc: IsoUtcTimestamp;
-  readonly assessment: AdmissibilityAssessmentV1;
-  readonly idempotent_replay: boolean;
-  readonly event_id?: OpaqueId;
-}
+export type ForgetLifecycleReceiptV1 = LifecycleReceiptV1 & {
+  operation: 'tombstone';
+  from_state: TombstoneAllowedFromState;
+  to_state: 'tombstoned';
+};
 
-export interface WithdrawInputV1 {
-  readonly idempotency_key: string;
-  readonly memory_id: OpaqueId;
-  readonly reason_code: ReasonCode;
-}
+export type ForgetOutputV1 = {
+  receipt: ForgetLifecycleReceiptV1;
+  replayed: boolean;
+  projection_invalidation: 'pending' | 'complete';
+  coverage_receipt_digest?: Digest;
+};
 
-export interface WithdrawOutputV1 {
-  readonly schema_version: MemorySchemaVersion;
-  readonly memory_id: OpaqueId;
-  readonly previous_status:
-    | 'candidate'
-    | 'quarantined'
-    | 'admitted'
-    | 'disputed';
-  readonly status: 'withdrawn';
-  readonly withdrawn_at_utc: IsoUtcTimestamp;
-  readonly event_id: OpaqueId;
-  readonly idempotent_replay: boolean;
-}
-
-export interface ForgetInputV1 {
-  readonly idempotency_key: string;
-  readonly memory_id: OpaqueId;
-  readonly reason_code: ReasonCode;
-}
-
-export interface ForgetOutputV1 {
-  readonly schema_version: MemorySchemaVersion;
-  readonly memory_id: OpaqueId;
-  readonly tombstone_id: OpaqueId;
-  readonly erased_at_utc: IsoUtcTimestamp;
-  readonly event_id: OpaqueId;
-  readonly erased_artifact_digests: readonly Sha256Digest[];
-  readonly destroyed_key_ids: readonly OpaqueId[];
-  readonly idempotent_replay: boolean;
-}
-
-export type PublicMemoryErrorCode =
-  | 'INVALID_SCHEMA'
-  | 'UNSUPPORTED_SCHEMA_VERSION'
-  | 'INVALID_TIMESTAMP'
-  | 'INVALID_DIGEST'
-  | 'SCOPE_VIOLATION'
-  | 'UNAUTHORIZED_PRINCIPAL'
-  | 'CONSENT_DENIED'
-  | 'CONSENT_REVOKED'
-  | 'SHARING_POLICY_DENIED'
-  | 'QUOTA_EXCEEDED'
-  | 'NOT_FOUND'
-  | 'DUPLICATE_ID'
-  | 'IDEMPOTENCY_CONFLICT'
-  | 'CONCURRENCY_CONFLICT'
-  | 'ILLEGAL_TRANSITION'
-  | 'ALREADY_TERMINAL'
-  | 'LEGAL_HOLD_ACTIVE'
-  | 'EVIDENCE_UNVERIFIED'
-  | 'EVIDENCE_DIGEST_MISMATCH'
-  | 'ADMISSION_REJECTED'
-  | 'QUARANTINED'
-  | 'HASH_CHAIN_BROKEN'
-  | 'SIGNATURE_INVALID'
-  | 'BUNDLE_INTEGRITY_FAILED'
-  | 'ERASURE_INCOMPLETE'
-  | 'DEPENDENCY_UNAVAILABLE'
-  | 'STORAGE_IO_ERROR'
+/**
+ * M6 Public Error Code Union: all 27 neutral `MemoryErrorCode` values plus the
+ * 4 MCP/Sentropic codes (`RESULT_TOO_LARGE`, `RATE_LIMITED`,
+ * `MUTATION_OUTCOME_UNKNOWN`, `gate_failed`).
+ */
+export type AdditionalPublicMemoryErrorCode =
   | 'RESULT_TOO_LARGE'
   | 'RATE_LIMITED'
   | 'MUTATION_OUTCOME_UNKNOWN'
   | 'gate_failed';
 
-export interface ToolSuccessV1<T> {
-  readonly ok: true;
-  readonly schema_version: MemorySchemaVersion;
-  readonly tool: EngramMemoryToolName;
-  readonly result: T;
-}
+export type PublicMemoryErrorCode =
+  | MemoryErrorCode
+  | AdditionalPublicMemoryErrorCode;
 
-export interface ToolFailureV1 {
-  readonly ok: false;
-  readonly schema_version: MemorySchemaVersion;
-  readonly tool: EngramMemoryToolName;
-  readonly error: {
-    readonly code: PublicMemoryErrorCode;
-    readonly message: string;
-    readonly retryable: boolean;
-    readonly details?: Readonly<
-      Record<string, string | number | boolean | null>
-    >;
+/**
+ * M2 Sentropic `AppResultEnvelope` specializations for the six synchronous tools.
+ */
+export type ToolSuccessV1<T> = {
+  ok: true;
+  output: {
+    schema_version: 1;
+    value: T;
   };
-}
+  auditId: string;
+  redactionClass: 'high';
+};
+
+export type ToolFailureV1 = {
+  ok: false;
+  auditId: string;
+  redactionClass: 'high';
+  error: {
+    code: PublicMemoryErrorCode;
+    message: string;
+    retriable: boolean;
+  };
+};
 
 export type ToolResultV1<T> = ToolSuccessV1<T> | ToolFailureV1;
 
-export type SearchToolResultV1 = ToolResultV1<SearchOutputV1>;
-export type GetToolResultV1 = ToolResultV1<GetOutputV1>;
+export type SearchToolResultV1 = ToolResultV1<SearchPageV1>;
+export type GetToolResultV1 = ToolResultV1<MemoryReadPacketV1>;
 export type CaptureToolResultV1 = ToolResultV1<CaptureOutputV1>;
 export type RequestAdmissionToolResultV1 =
   ToolResultV1<RequestAdmissionOutputV1>;
@@ -591,9 +453,10 @@ export type WithdrawToolResultV1 = ToolResultV1<WithdrawOutputV1>;
 export type ForgetToolResultV1 = ToolResultV1<ForgetOutputV1>;
 
 /**
- * Standard MCP CallToolResult transport representation for Engram memory tools.
- * Both `structuredContent` and the single JSON text block in `content` carry
- * the identical `ToolResultV1<T>` payload; `isError === !result.ok`.
+ * M2 MCP CallToolResult transport representation:
+ * `structuredContent` carries the `AppResultEnvelope` (`ToolResultV1<T>`) and
+ * `content[0].text` carries an equivalent JSON text representation;
+ * `isError` equals `!ok`.
  */
 export interface McpToolCallResponseV1<T> {
   readonly isError: boolean;
@@ -607,18 +470,133 @@ export interface McpToolCallResponseV1<T> {
 }
 
 /**
- * Cryptographic/authenticated binding contract for `engram_memory_search`
- * pagination cursors. A cursor is rejected with `INVALID_SCHEMA` (`cursor`)
- * if any bound parameter differs or if `now_utc > expires_at_utc`.
+ * M3 runtime verification of the additive versioned neutral read facets:
+ * - `MemoryRecallPortV3`: `{ readonly version: 3; recall(request: RecallRequestV2): Promise<Result<RecallPacketV3>> }`
+ * - `MemoryReadPortV1`: `{ readonly version: 1; readCurrent(request: ...): Promise<Result<MemoryReadPacketV1>> }`
+ *
+ * The adapter MUST require both facets and their explicit version numbers (3 and 1)
+ * and MUST NOT fall back to legacy `MemoryPortV2.recall` (`version: 2`).
  */
-export interface PaginationCursorBindingV1 {
-  readonly scope_ref: ScopeRefV1;
-  readonly query_digest: Sha256Digest;
-  readonly status_filter: RecallStatusFilter;
-  readonly memory_kinds: readonly MemoryKind[];
-  readonly ordering: RecallOrderingV1;
-  readonly snapshot_watermark: string;
-  readonly issued_at_utc: IsoUtcTimestamp;
-  readonly expires_at_utc: IsoUtcTimestamp;
-  readonly offset: number;
+export interface NeutralReadFacetCandidateBundleV1 {
+  readonly recallPort?: unknown;
+  readonly readPort?: unknown;
+  readonly recall_port?: unknown;
+  readonly read_port?: unknown;
 }
+
+export interface NeutralReadFacetVerificationResultV1 {
+  readonly ok: boolean;
+  readonly error_code?: 'CAPABILITY_UNAVAILABLE';
+  readonly missing_facets: readonly ('MemoryRecallPortV3' | 'MemoryReadPortV1')[];
+}
+
+export function isMemoryRecallPortV3(
+  candidate: unknown,
+): candidate is MemoryRecallPortV3 {
+  if (typeof candidate !== 'object' || candidate === null) {
+    return false;
+  }
+  const obj = candidate as Record<string, unknown>;
+  return obj.version === 3 && typeof obj.recall === 'function';
+}
+
+export function isMemoryReadPortV1(
+  candidate: unknown,
+): candidate is MemoryReadPortV1 {
+  if (typeof candidate !== 'object' || candidate === null) {
+    return false;
+  }
+  const obj = candidate as Record<string, unknown>;
+  return obj.version === 1 && typeof obj.readCurrent === 'function';
+}
+
+export function verifyRequiredNeutralReadFacets(
+  candidateOrRecallPort: unknown,
+  explicitReadPort?: unknown,
+): NeutralReadFacetVerificationResultV1 {
+  let recallCandidate: unknown;
+  let readCandidate: unknown;
+
+  if (explicitReadPort !== undefined) {
+    recallCandidate = candidateOrRecallPort;
+    readCandidate = explicitReadPort;
+  } else if (
+    typeof candidateOrRecallPort === 'object' &&
+    candidateOrRecallPort !== null
+  ) {
+    const bundle = candidateOrRecallPort as Record<string, unknown>;
+    if (
+      'recallPort' in bundle ||
+      'readPort' in bundle ||
+      'recall_port' in bundle ||
+      'read_port' in bundle
+    ) {
+      recallCandidate = bundle.recallPort ?? bundle.recall_port;
+      readCandidate = bundle.readPort ?? bundle.read_port;
+    } else {
+      recallCandidate = candidateOrRecallPort;
+      readCandidate = candidateOrRecallPort;
+    }
+  }
+
+  const missing: ('MemoryRecallPortV3' | 'MemoryReadPortV1')[] = [];
+  if (!isMemoryRecallPortV3(recallCandidate)) {
+    missing.push('MemoryRecallPortV3');
+  }
+  if (!isMemoryReadPortV1(readCandidate)) {
+    missing.push('MemoryReadPortV1');
+  }
+
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      error_code: 'CAPABILITY_UNAVAILABLE',
+      missing_facets: missing,
+    };
+  }
+
+  return {
+    ok: true,
+    missing_facets: [],
+  };
+}
+
+/**
+ * M3 Host-managed random pagination handle state and bindings.
+ *
+ * For 0.20.0, pagination uses bounded host-managed server state indexed by an
+ * unpredictable random handle (`handle_id`). The engram adapter MUST NOT
+ * generate, retain, or own a pagination signing secret, and MUST NOT expose or
+ * accept the engine's raw cursor.
+ */
+export interface PaginationHandleStateV1 {
+  readonly handle_id: OpaqueRef;
+  readonly engram_owns_signing_secret: false;
+  readonly principal_namespace: OpaqueRef;
+  readonly tenant_id: OpaqueRef;
+  readonly store_id: OpaqueRef;
+  readonly connector_instance_id: OpaqueRef;
+  readonly scope_ref: OpaqueRef;
+  readonly purpose_ref: OpaqueRef;
+  readonly query: string;
+  readonly query_digest: Digest;
+  readonly limit: number;
+  readonly max_packet_bytes: number;
+  readonly capability_policy: RecallCapabilityPolicyV1;
+  readonly selected_profile: 'offline_lexical_v1' | 'semantic_v1';
+  readonly profile_version: string;
+  readonly valid_as_of: number;
+  readonly system_as_of: Cursor;
+  readonly internal_engine_cursor: OpaqueRef;
+  readonly policy_id: OpaqueRef;
+  readonly policy_version: string;
+  readonly authorization_epoch: Cursor;
+  readonly storage_epoch: Cursor;
+  readonly trust_revocation_epoch: Cursor;
+  readonly eligibility_digest: Digest;
+  readonly next_record_expiry_at?: Instant;
+  readonly issued_at: Instant;
+  readonly expires_at: Instant;
+}
+
+export type PaginationCursorBindingV1 = PaginationHandleStateV1;
