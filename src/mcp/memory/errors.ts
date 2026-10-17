@@ -1,49 +1,60 @@
 /**
  * MCP-L0 Total Error Mapping Table & Disclosure-Safe Normalization Contract.
  *
- * Maps all 27 neutral `MemoryErrorCode` values plus the 4 public MCP/Sentropic
- * transport/broker codes (`RESULT_TOO_LARGE`, `RATE_LIMITED`,
- * `MUTATION_OUTCOME_UNKNOWN`, `gate_failed`) to deterministic public failure
- * envelopes (`ToolFailureV1`) with `isError: true`.
+ * Normative alignment with SPEC-memory-mcp-v2.md §M2 and §M6:
+ * - Total over all 27 neutral `MemoryErrorCode` values from `engram-memory/contracts`
+ *   plus the 4 MCP/Sentropic public codes (`RESULT_TOO_LARGE`, `RATE_LIMITED`,
+ *   `MUTATION_OUTCOME_UNKNOWN`, `gate_failed`).
+ * - Emits closed Sentropic `AppResultEnvelope` failure objects (`ToolFailureV1`).
+ * - Always uses predefined constant sanitized messages; never echoes raw backend
+ *   messages, filesystem paths, record bodies, target IDs, or `details`.
+ * - Enforces pre-authorization target-existence normalization to `NOT_FOUND`
+ *   across all four target-bearing tools (`engram_memory_get`,
+ *   `engram_memory_request_admission`, `engram_memory_withdraw`,
+ *   `engram_memory_forget`).
  */
 
 import {
-  ENGRAM_MEMORY_SCHEMA_VERSION,
+  ENGRAM_MEMORY_STRUCTURED_OUTPUT_SCHEMA_VERSION,
+  type AdditionalPublicMemoryErrorCode,
   type EngramMemoryToolName,
   type McpToolCallResponseV1,
+  type MemoryErrorCode,
+  type MemoryErrorV1,
   type PublicMemoryErrorCode,
   type ToolFailureV1,
+  type ToolSuccessV1,
 } from './contracts.js';
 
 export const NEUTRAL_MEMORY_ERROR_CODES = [
   'INVALID_SCHEMA',
-  'UNSUPPORTED_SCHEMA_VERSION',
-  'INVALID_TIMESTAMP',
   'INVALID_DIGEST',
-  'SCOPE_VIOLATION',
-  'UNAUTHORIZED_PRINCIPAL',
-  'CONSENT_DENIED',
-  'CONSENT_REVOKED',
-  'SHARING_POLICY_DENIED',
-  'QUOTA_EXCEEDED',
-  'NOT_FOUND',
-  'DUPLICATE_ID',
-  'IDEMPOTENCY_CONFLICT',
-  'CONCURRENCY_CONFLICT',
+  'DIGEST_CONFLICT',
+  'UNAUTHORIZED',
+  'AUTHORIZATION_EXPIRED',
+  'AUTHORIZATION_REVOKED',
+  'POLICY_UNAVAILABLE',
+  'POLICY_STALE',
   'ILLEGAL_TRANSITION',
+  'NOT_FOUND',
   'ALREADY_TERMINAL',
-  'LEGAL_HOLD_ACTIVE',
-  'EVIDENCE_UNVERIFIED',
-  'EVIDENCE_DIGEST_MISMATCH',
-  'ADMISSION_REJECTED',
-  'QUARANTINED',
-  'HASH_CHAIN_BROKEN',
-  'SIGNATURE_INVALID',
-  'BUNDLE_INTEGRITY_FAILED',
-  'ERASURE_INCOMPLETE',
-  'DEPENDENCY_UNAVAILABLE',
-  'STORAGE_IO_ERROR',
-] as const;
+  'DEADLINE_EXCEEDED',
+  'CANCELLED',
+  'CAPABILITY_UNAVAILABLE',
+  'STORE_UNAVAILABLE',
+  'FENCE_LOST',
+  'CURSOR_GAP',
+  'JOURNAL_CORRUPT',
+  'BLOB_MISSING',
+  'PROJECTION_STALE',
+  'PROJECTION_OVERSIZED',
+  'RANKING_UNAVAILABLE',
+  'STALE_PAGE',
+  'REGISTRY_VERSION_UNAVAILABLE',
+  'BACKUP_INVALID',
+  'RESTORE_REFUSED',
+  'MIGRATION_LEDGER_INVALID',
+] as const satisfies readonly MemoryErrorCode[];
 
 export type NeutralMemoryErrorCode =
   (typeof NEUTRAL_MEMORY_ERROR_CODES)[number];
@@ -53,17 +64,20 @@ export const ADDITIONAL_PUBLIC_MEMORY_ERROR_CODES = [
   'RATE_LIMITED',
   'MUTATION_OUTCOME_UNKNOWN',
   'gate_failed',
-] as const;
+] as const satisfies readonly AdditionalPublicMemoryErrorCode[];
 
-export type AdditionalPublicMemoryErrorCode =
-  (typeof ADDITIONAL_PUBLIC_MEMORY_ERROR_CODES)[number];
+export const PUBLIC_MEMORY_ERROR_CODES = [
+  ...NEUTRAL_MEMORY_ERROR_CODES,
+  ...ADDITIONAL_PUBLIC_MEMORY_ERROR_CODES,
+] as const satisfies readonly PublicMemoryErrorCode[];
 
 export interface ErrorMappingSpecV1 {
   readonly source_code: PublicMemoryErrorCode;
   readonly public_code: PublicMemoryErrorCode;
   readonly is_error: true;
+  readonly retriable: boolean;
   readonly retryable: boolean;
-  readonly requires_target_authorization_for_lifecycle_detail: boolean;
+  readonly requires_target_authorization_for_detail: boolean;
   readonly default_sanitized_message: string;
 }
 
@@ -74,264 +88,299 @@ export const MEMORY_ERROR_MAPPING_TABLE: Readonly<
     source_code: 'INVALID_SCHEMA',
     public_code: 'INVALID_SCHEMA',
     is_error: true,
+    retriable: false,
     retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
+    requires_target_authorization_for_detail: false,
     default_sanitized_message:
-      'Input or cursor failed closed schema validation.',
-  },
-  UNSUPPORTED_SCHEMA_VERSION: {
-    source_code: 'UNSUPPORTED_SCHEMA_VERSION',
-    public_code: 'UNSUPPORTED_SCHEMA_VERSION',
-    is_error: true,
-    retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
-    default_sanitized_message:
-      'Nested contract object uses an unsupported schema_version.',
-  },
-  INVALID_TIMESTAMP: {
-    source_code: 'INVALID_TIMESTAMP',
-    public_code: 'INVALID_TIMESTAMP',
-    is_error: true,
-    retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
-    default_sanitized_message: 'Malformed ISO-8601 UTC timestamp.',
+      'Request arguments failed closed schema, NFC, or size validation.',
   },
   INVALID_DIGEST: {
     source_code: 'INVALID_DIGEST',
     public_code: 'INVALID_DIGEST',
     is_error: true,
+    retriable: false,
     retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
-    default_sanitized_message: 'Malformed SHA-256 digest.',
-  },
-  SCOPE_VIOLATION: {
-    source_code: 'SCOPE_VIOLATION',
-    public_code: 'SCOPE_VIOLATION',
-    is_error: true,
-    retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
+    requires_target_authorization_for_detail: false,
     default_sanitized_message:
-      'Target scope does not match the caller trusted scope.',
+      'Supplied SHA-256 digest is malformed or failed verification.',
   },
-  UNAUTHORIZED_PRINCIPAL: {
-    source_code: 'UNAUTHORIZED_PRINCIPAL',
-    public_code: 'UNAUTHORIZED_PRINCIPAL',
+  DIGEST_CONFLICT: {
+    source_code: 'DIGEST_CONFLICT',
+    public_code: 'DIGEST_CONFLICT',
     is_error: true,
+    retriable: false,
     retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
+    requires_target_authorization_for_detail: true,
     default_sanitized_message:
-      'Authenticated principal is not authorized for this operation.',
+      'Idempotency key or target identifier was reused with conflicting canonical content.',
   },
-  CONSENT_DENIED: {
-    source_code: 'CONSENT_DENIED',
-    public_code: 'CONSENT_DENIED',
+  UNAUTHORIZED: {
+    source_code: 'UNAUTHORIZED',
+    public_code: 'UNAUTHORIZED',
     is_error: true,
+    retriable: false,
     retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
+    requires_target_authorization_for_detail: true,
     default_sanitized_message:
-      'Consent policy denied memory capture or processing.',
+      'Caller is not authorized to perform this memory operation in the resolved scope.',
   },
-  CONSENT_REVOKED: {
-    source_code: 'CONSENT_REVOKED',
-    public_code: 'CONSENT_REVOKED',
+  AUTHORIZATION_EXPIRED: {
+    source_code: 'AUTHORIZATION_EXPIRED',
+    public_code: 'AUTHORIZATION_EXPIRED',
     is_error: true,
+    retriable: false,
     retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
+    requires_target_authorization_for_detail: true,
     default_sanitized_message:
-      'Consent governing the target memory has been revoked.',
+      'Authorization grant or confirmation binding has expired.',
   },
-  SHARING_POLICY_DENIED: {
-    source_code: 'SHARING_POLICY_DENIED',
-    public_code: 'SHARING_POLICY_DENIED',
+  AUTHORIZATION_REVOKED: {
+    source_code: 'AUTHORIZATION_REVOKED',
+    public_code: 'AUTHORIZATION_REVOKED',
     is_error: true,
+    retriable: false,
     retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
+    requires_target_authorization_for_detail: true,
     default_sanitized_message:
-      'Requested sharing_policy or sensitivity is disallowed by host policy.',
+      'Authorization grant or trust binding has been revoked.',
   },
-  QUOTA_EXCEEDED: {
-    source_code: 'QUOTA_EXCEEDED',
-    public_code: 'QUOTA_EXCEEDED',
+  POLICY_UNAVAILABLE: {
+    source_code: 'POLICY_UNAVAILABLE',
+    public_code: 'POLICY_UNAVAILABLE',
     is_error: true,
+    retriable: true,
     retryable: true,
-    requires_target_authorization_for_lifecycle_detail: false,
-    default_sanitized_message: 'Scope or tenant memory quota exceeded.',
-  },
-  NOT_FOUND: {
-    source_code: 'NOT_FOUND',
-    public_code: 'NOT_FOUND',
-    is_error: true,
-    retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
+    requires_target_authorization_for_detail: false,
     default_sanitized_message:
-      'Target memory record was not found in the active scope.',
+      'Authorization or admission policy authority is temporarily unavailable.',
   },
-  DUPLICATE_ID: {
-    source_code: 'DUPLICATE_ID',
-    public_code: 'DUPLICATE_ID',
+  POLICY_STALE: {
+    source_code: 'POLICY_STALE',
+    public_code: 'POLICY_STALE',
     is_error: true,
-    retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
-    default_sanitized_message: 'Collision on a caller-supplied identifier.',
-  },
-  IDEMPOTENCY_CONFLICT: {
-    source_code: 'IDEMPOTENCY_CONFLICT',
-    public_code: 'IDEMPOTENCY_CONFLICT',
-    is_error: true,
-    retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
-    default_sanitized_message:
-      'idempotency_key was reused with a different canonical request payload.',
-  },
-  CONCURRENCY_CONFLICT: {
-    source_code: 'CONCURRENCY_CONFLICT',
-    public_code: 'CONCURRENCY_CONFLICT',
-    is_error: true,
+    retriable: true,
     retryable: true,
-    requires_target_authorization_for_lifecycle_detail: false,
+    requires_target_authorization_for_detail: false,
     default_sanitized_message:
-      'Optimistic concurrency conflict or in-flight operation with the same idempotency_key.',
+      'Policy epoch or trust state is stale; retry with refreshed policy state.',
   },
   ILLEGAL_TRANSITION: {
     source_code: 'ILLEGAL_TRANSITION',
     public_code: 'ILLEGAL_TRANSITION',
     is_error: true,
+    retriable: false,
     retryable: false,
-    requires_target_authorization_for_lifecycle_detail: true,
+    requires_target_authorization_for_detail: true,
     default_sanitized_message:
-      'Requested lifecycle transition is illegal from the current record status.',
+      'Requested lifecycle transition is not permitted from the current state.',
+  },
+  NOT_FOUND: {
+    source_code: 'NOT_FOUND',
+    public_code: 'NOT_FOUND',
+    is_error: true,
+    retriable: false,
+    retryable: false,
+    requires_target_authorization_for_detail: false,
+    default_sanitized_message:
+      'Requested memory resource was not found in the authorized scope.',
   },
   ALREADY_TERMINAL: {
     source_code: 'ALREADY_TERMINAL',
     public_code: 'ALREADY_TERMINAL',
     is_error: true,
+    retriable: false,
     retryable: false,
-    requires_target_authorization_for_lifecycle_detail: true,
+    requires_target_authorization_for_detail: true,
     default_sanitized_message:
-      'Target memory record is already in a terminal lifecycle state.',
+      'Target memory resource is already in a terminal lifecycle state.',
   },
-  LEGAL_HOLD_ACTIVE: {
-    source_code: 'LEGAL_HOLD_ACTIVE',
-    public_code: 'LEGAL_HOLD_ACTIVE',
+  DEADLINE_EXCEEDED: {
+    source_code: 'DEADLINE_EXCEEDED',
+    public_code: 'DEADLINE_EXCEEDED',
     is_error: true,
-    retryable: false,
-    requires_target_authorization_for_lifecycle_detail: true,
-    default_sanitized_message:
-      'Erasure refused because legal_hold is active on the target record.',
-  },
-  EVIDENCE_UNVERIFIED: {
-    source_code: 'EVIDENCE_UNVERIFIED',
-    public_code: 'EVIDENCE_UNVERIFIED',
-    is_error: true,
-    retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
-    default_sanitized_message:
-      'Hard evidence verification failed for the supplied citations.',
-  },
-  EVIDENCE_DIGEST_MISMATCH: {
-    source_code: 'EVIDENCE_DIGEST_MISMATCH',
-    public_code: 'EVIDENCE_DIGEST_MISMATCH',
-    is_error: true,
-    retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
-    default_sanitized_message:
-      'Citation digest does not match the referenced artifact bytes.',
-  },
-  ADMISSION_REJECTED: {
-    source_code: 'ADMISSION_REJECTED',
-    public_code: 'ADMISSION_REJECTED',
-    is_error: true,
-    retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
-    default_sanitized_message:
-      'Direct admission was rejected by policy violation.',
-  },
-  QUARANTINED: {
-    source_code: 'QUARANTINED',
-    public_code: 'QUARANTINED',
-    is_error: true,
-    retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
-    default_sanitized_message:
-      'Operation is blocked because the record is quarantined.',
-  },
-  HASH_CHAIN_BROKEN: {
-    source_code: 'HASH_CHAIN_BROKEN',
-    public_code: 'HASH_CHAIN_BROKEN',
-    is_error: true,
-    retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
-    default_sanitized_message:
-      'Underlying append-only ledger integrity verification failed.',
-  },
-  SIGNATURE_INVALID: {
-    source_code: 'SIGNATURE_INVALID',
-    public_code: 'SIGNATURE_INVALID',
-    is_error: true,
-    retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
-    default_sanitized_message: 'Cryptographic signature verification failed.',
-  },
-  BUNDLE_INTEGRITY_FAILED: {
-    source_code: 'BUNDLE_INTEGRITY_FAILED',
-    public_code: 'BUNDLE_INTEGRITY_FAILED',
-    is_error: true,
-    retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
-    default_sanitized_message:
-      'Upstream bundle reference failed integrity verification.',
-  },
-  ERASURE_INCOMPLETE: {
-    source_code: 'ERASURE_INCOMPLETE',
-    public_code: 'ERASURE_INCOMPLETE',
-    is_error: true,
+    retriable: true,
     retryable: true,
-    requires_target_authorization_for_lifecycle_detail: false,
+    requires_target_authorization_for_detail: false,
     default_sanitized_message:
-      'Derived index or payload erasure did not complete; retry with the same idempotency_key.',
+      'Memory operation exceeded the invocation deadline budget.',
   },
-  DEPENDENCY_UNAVAILABLE: {
-    source_code: 'DEPENDENCY_UNAVAILABLE',
-    public_code: 'DEPENDENCY_UNAVAILABLE',
+  CANCELLED: {
+    source_code: 'CANCELLED',
+    public_code: 'CANCELLED',
     is_error: true,
+    retriable: true,
     retryable: true,
-    requires_target_authorization_for_lifecycle_detail: false,
+    requires_target_authorization_for_detail: false,
     default_sanitized_message:
-      'Required runtime port or policy dependency is temporarily unavailable.',
+      'Memory operation was cancelled before completion.',
   },
-  STORAGE_IO_ERROR: {
-    source_code: 'STORAGE_IO_ERROR',
-    public_code: 'STORAGE_IO_ERROR',
+  CAPABILITY_UNAVAILABLE: {
+    source_code: 'CAPABILITY_UNAVAILABLE',
+    public_code: 'CAPABILITY_UNAVAILABLE',
     is_error: true,
-    retryable: true,
-    requires_target_authorization_for_lifecycle_detail: false,
+    retriable: false,
+    retryable: false,
+    requires_target_authorization_for_detail: false,
     default_sanitized_message:
-      'Transient storage I/O failure before operation completion.',
+      'Requested memory capability or required neutral port facet is unavailable.',
+  },
+  STORE_UNAVAILABLE: {
+    source_code: 'STORE_UNAVAILABLE',
+    public_code: 'STORE_UNAVAILABLE',
+    is_error: true,
+    retriable: true,
+    retryable: true,
+    requires_target_authorization_for_detail: false,
+    default_sanitized_message:
+      'Memory substrate store is temporarily unavailable.',
+  },
+  FENCE_LOST: {
+    source_code: 'FENCE_LOST',
+    public_code: 'FENCE_LOST',
+    is_error: true,
+    retriable: true,
+    retryable: true,
+    requires_target_authorization_for_detail: false,
+    default_sanitized_message:
+      'Writer lease fence was lost during operation; retry safely.',
+  },
+  CURSOR_GAP: {
+    source_code: 'CURSOR_GAP',
+    public_code: 'CURSOR_GAP',
+    is_error: true,
+    retriable: true,
+    retryable: true,
+    requires_target_authorization_for_detail: false,
+    default_sanitized_message:
+      'Transient cursor synchronization gap detected; retry operation.',
+  },
+  JOURNAL_CORRUPT: {
+    source_code: 'JOURNAL_CORRUPT',
+    public_code: 'JOURNAL_CORRUPT',
+    is_error: true,
+    retriable: false,
+    retryable: false,
+    requires_target_authorization_for_detail: false,
+    default_sanitized_message:
+      'Memory store integrity check failed; operation refused.',
+  },
+  BLOB_MISSING: {
+    source_code: 'BLOB_MISSING',
+    public_code: 'BLOB_MISSING',
+    is_error: true,
+    retriable: false,
+    retryable: false,
+    requires_target_authorization_for_detail: true,
+    default_sanitized_message:
+      'Referenced memory artifact content is missing from the store.',
+  },
+  PROJECTION_STALE: {
+    source_code: 'PROJECTION_STALE',
+    public_code: 'PROJECTION_STALE',
+    is_error: true,
+    retriable: true,
+    retryable: true,
+    requires_target_authorization_for_detail: false,
+    default_sanitized_message:
+      'Derived recall projection has not caught up to the required fence.',
+  },
+  PROJECTION_OVERSIZED: {
+    source_code: 'PROJECTION_OVERSIZED',
+    public_code: 'PROJECTION_OVERSIZED',
+    is_error: true,
+    retriable: false,
+    retryable: false,
+    requires_target_authorization_for_detail: false,
+    default_sanitized_message:
+      'Projected memory packet exceeds the configured packet byte budget.',
+  },
+  RANKING_UNAVAILABLE: {
+    source_code: 'RANKING_UNAVAILABLE',
+    public_code: 'RANKING_UNAVAILABLE',
+    is_error: true,
+    retriable: true,
+    retryable: true,
+    requires_target_authorization_for_detail: false,
+    default_sanitized_message:
+      'Requested ranking channel is temporarily unavailable.',
+  },
+  STALE_PAGE: {
+    source_code: 'STALE_PAGE',
+    public_code: 'STALE_PAGE',
+    is_error: true,
+    retriable: false,
+    retryable: false,
+    requires_target_authorization_for_detail: false,
+    default_sanitized_message:
+      'Pagination handle is unknown, expired, or no longer matches current epochs.',
+  },
+  REGISTRY_VERSION_UNAVAILABLE: {
+    source_code: 'REGISTRY_VERSION_UNAVAILABLE',
+    public_code: 'REGISTRY_VERSION_UNAVAILABLE',
+    is_error: true,
+    retriable: false,
+    retryable: false,
+    requires_target_authorization_for_detail: false,
+    default_sanitized_message:
+      'Required schema or policy registry version is unavailable.',
+  },
+  BACKUP_INVALID: {
+    source_code: 'BACKUP_INVALID',
+    public_code: 'BACKUP_INVALID',
+    is_error: true,
+    retriable: false,
+    retryable: false,
+    requires_target_authorization_for_detail: false,
+    default_sanitized_message:
+      'Internal backup validation error encountered in memory store.',
+  },
+  RESTORE_REFUSED: {
+    source_code: 'RESTORE_REFUSED',
+    public_code: 'RESTORE_REFUSED',
+    is_error: true,
+    retriable: false,
+    retryable: false,
+    requires_target_authorization_for_detail: false,
+    default_sanitized_message:
+      'Internal restore state refused the memory operation.',
+  },
+  MIGRATION_LEDGER_INVALID: {
+    source_code: 'MIGRATION_LEDGER_INVALID',
+    public_code: 'MIGRATION_LEDGER_INVALID',
+    is_error: true,
+    retriable: false,
+    retryable: false,
+    requires_target_authorization_for_detail: false,
+    default_sanitized_message:
+      'Memory store migration ledger state is invalid.',
   },
   RESULT_TOO_LARGE: {
     source_code: 'RESULT_TOO_LARGE',
     public_code: 'RESULT_TOO_LARGE',
     is_error: true,
+    retriable: false,
     retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
+    requires_target_authorization_for_detail: false,
     default_sanitized_message:
-      'Serialized response exceeds the 64 KiB (65,536-byte) transport ceiling.',
+      'Serialized response exceeds the configured packet or transport byte ceiling.',
   },
   RATE_LIMITED: {
     source_code: 'RATE_LIMITED',
     public_code: 'RATE_LIMITED',
     is_error: true,
+    retriable: true,
     retryable: true,
-    requires_target_authorization_for_lifecycle_detail: false,
+    requires_target_authorization_for_detail: false,
     default_sanitized_message:
-      'Per-principal or per-scope rate limit exceeded.',
+      'Per-principal or per-scope invocation rate limit exceeded.',
   },
   MUTATION_OUTCOME_UNKNOWN: {
     source_code: 'MUTATION_OUTCOME_UNKNOWN',
     public_code: 'MUTATION_OUTCOME_UNKNOWN',
     is_error: true,
+    retriable: true,
     retryable: true,
-    requires_target_authorization_for_lifecycle_detail: false,
+    requires_target_authorization_for_detail: false,
     default_sanitized_message:
       'Mutation commit outcome is indeterminate; retry safely with the same idempotency_key.',
   },
@@ -339,110 +388,129 @@ export const MEMORY_ERROR_MAPPING_TABLE: Readonly<
     source_code: 'gate_failed',
     public_code: 'gate_failed',
     is_error: true,
+    retriable: false,
     retryable: false,
-    requires_target_authorization_for_lifecycle_detail: false,
+    requires_target_authorization_for_detail: false,
     default_sanitized_message:
-      'Capability gate or destructive confirmation gate refused execution.',
+      'Capability gate or human confirmation gate refused execution.',
   },
 } as const;
 
-const TARGET_ID_MUTATION_TOOLS: ReadonlySet<EngramMemoryToolName> = new Set([
-  'engram_memory_request_admission',
-  'engram_memory_withdraw',
-  'engram_memory_forget',
-]);
+/**
+ * M4 / M6 target-bearing tools that MUST NOT disclose whether a target
+ * `record_id` or `candidate_id` exists in another scope or what lifecycle
+ * state/digest it has prior to successful target-scope authorization.
+ */
+export const TARGET_BEARING_MEMORY_TOOLS: ReadonlySet<EngramMemoryToolName> =
+  new Set<EngramMemoryToolName>([
+    'engram_memory_get',
+    'engram_memory_request_admission',
+    'engram_memory_withdraw',
+    'engram_memory_forget',
+  ]);
+
+const TARGET_EXISTENCE_SENSITIVE_CODES: ReadonlySet<PublicMemoryErrorCode> =
+  new Set<PublicMemoryErrorCode>([
+    'NOT_FOUND',
+    'UNAUTHORIZED',
+    'AUTHORIZATION_EXPIRED',
+    'AUTHORIZATION_REVOKED',
+    'ILLEGAL_TRANSITION',
+    'ALREADY_TERMINAL',
+    'DIGEST_CONFLICT',
+    'BLOB_MISSING',
+  ]);
 
 /**
- * Scrubs filesystem paths, SQL fragments, and multiline stack traces from
- * public error messages.
+ * M6 disclosure-safe message policy:
+ * Public error messages are strictly constant strings from
+ * `MEMORY_ERROR_MAPPING_TABLE`. Raw backend messages, paths, SQL, stack traces,
+ * record bodies, and target identifiers are unconditionally discarded.
  */
 export function sanitizePublicErrorMessage(
-  rawMessage: string | undefined,
+  _rawMessage: string | undefined,
   fallbackMessage: string,
 ): string {
-  if (!rawMessage || typeof rawMessage !== 'string') {
-    return fallbackMessage;
-  }
-  const firstLine = rawMessage.split(/\r?\n/)[0] ?? '';
-  const singleLine = firstLine.trim();
-  if (
-    singleLine.length === 0 ||
-    singleLine.length > 512 ||
-    /(?:\/home\/|\/Users\/|[A-Za-z]:\\|\bSELECT\b.*\bFROM\b|\bINSERT\s+INTO\b|\bat\s+\S+\s*\()/i.test(
-      singleLine,
-    )
-  ) {
-    return fallbackMessage;
-  }
-  return singleLine;
+  return fallbackMessage;
 }
 
 export interface NeutralErrorMappingContextV1 {
   readonly tool: EngramMemoryToolName;
-  readonly code: PublicMemoryErrorCode;
+  readonly code?: PublicMemoryErrorCode;
+  readonly error?: MemoryErrorV1;
   readonly message?: string;
-  readonly details?: Readonly<Record<string, string | number | boolean | null>>;
+  readonly retryable?: boolean;
+  readonly denial?: boolean;
+  readonly details?: Readonly<Record<string, unknown>>;
+  readonly auditId?: string;
   /**
-   * Whether the target `memory_id` has already been verified to exist within
-   * the caller's authorized `ScopeRefV1`. Defaults to `true` for non-target
-   * errors; when `false` on target-id mutation tools, existence/state leaks
-   * normalize to `NOT_FOUND`.
+   * Whether target-scope authorization has already succeeded for the target
+   * `record_id` / `candidate_id`. When `false` on any target-bearing tool
+   * (`get`, `request_admission`, `withdraw`, `forget`), existence/state/digest
+   * codes normalize to `NOT_FOUND`.
    */
   readonly targetAuthorized?: boolean;
 }
 
 /**
- * Deterministically maps any neutral or public error code to a `ToolFailureV1`
- * and its wrapping `McpToolCallResponseV1<never>`, enforcing target-existence
- * disclosure protection on `request_admission`, `withdraw`, and `forget`.
+ * Deterministically maps any neutral `MemoryErrorV1` or `PublicMemoryErrorCode`
+ * to a closed `ToolFailureV1` (`AppResultEnvelope`) and its wrapping
+ * `McpToolCallResponseV1<never>`, stripping all `details` and raw backend
+ * messages and enforcing pre-auth target-existence protection across all
+ * target-bearing tools (`get`, `request_admission`, `withdraw`, `forget`).
  */
 export function mapNeutralMemoryErrorToPublic(
   ctx: NeutralErrorMappingContextV1,
 ): McpToolCallResponseV1<never> {
-  let effectiveCode: PublicMemoryErrorCode = ctx.code;
-  let effectiveDetails = ctx.details;
-  let effectiveMessage = ctx.message;
+  const sourceError = ctx.error;
+  const isDenial = ctx.denial === true || sourceError?.denial === true;
+  const rawCode: PublicMemoryErrorCode =
+    sourceError?.code ?? ctx.code ?? 'STORE_UNAVAILABLE';
 
+  let effectiveCode: PublicMemoryErrorCode = isDenial
+    ? 'UNAUTHORIZED'
+    : rawCode;
+  if (!(effectiveCode in MEMORY_ERROR_MAPPING_TABLE)) {
+    effectiveCode = 'STORE_UNAVAILABLE';
+  }
+
+  let normalizedToNotFound = false;
   if (
-    TARGET_ID_MUTATION_TOOLS.has(ctx.tool) &&
+    TARGET_BEARING_MEMORY_TOOLS.has(ctx.tool) &&
     ctx.targetAuthorized === false &&
-    (ctx.code === 'NOT_FOUND' ||
-      ctx.code === 'SCOPE_VIOLATION' ||
-      ctx.code === 'UNAUTHORIZED_PRINCIPAL' ||
-      ctx.code === 'ILLEGAL_TRANSITION' ||
-      ctx.code === 'ALREADY_TERMINAL' ||
-      ctx.code === 'LEGAL_HOLD_ACTIVE')
+    (isDenial || TARGET_EXISTENCE_SENSITIVE_CODES.has(effectiveCode))
   ) {
     effectiveCode = 'NOT_FOUND';
-    effectiveDetails = undefined;
-    effectiveMessage = undefined;
+    normalizedToNotFound = true;
   }
 
   const spec = MEMORY_ERROR_MAPPING_TABLE[effectiveCode];
-  const message = sanitizePublicErrorMessage(
-    effectiveMessage,
-    spec.default_sanitized_message,
-  );
+  const explicitRetryable = sourceError?.retryable ?? ctx.retryable;
+  const retriable = normalizedToNotFound
+    ? false
+    : isDenial
+      ? false
+      : typeof explicitRetryable === 'boolean'
+        ? explicitRetryable
+        : spec.retriable;
 
-  const errorObj: ToolFailureV1['error'] =
-    effectiveDetails && Object.keys(effectiveDetails).length > 0
-      ? {
-          code: spec.public_code,
-          message,
-          retryable: spec.retryable,
-          details: effectiveDetails,
-        }
-      : {
-          code: spec.public_code,
-          message,
-          retryable: spec.retryable,
-        };
+  const auditId =
+    typeof ctx.auditId === 'string' && ctx.auditId.trim().length > 0
+      ? ctx.auditId
+      : 'audit_mcp_l0_default';
 
   const failure: ToolFailureV1 = {
     ok: false,
-    schema_version: ENGRAM_MEMORY_SCHEMA_VERSION,
-    tool: ctx.tool,
-    error: errorObj,
+    auditId,
+    redactionClass: 'high',
+    error: {
+      code: spec.public_code,
+      message: sanitizePublicErrorMessage(
+        sourceError?.message ?? ctx.message,
+        spec.default_sanitized_message,
+      ),
+      retriable,
+    },
   };
 
   return {
@@ -452,6 +520,36 @@ export function mapNeutralMemoryErrorToPublic(
       {
         type: 'text',
         text: JSON.stringify(failure),
+      },
+    ],
+  };
+}
+
+export function createToolSuccessEnvelope<T>(
+  value: T,
+  auditId = 'audit_mcp_l0_default',
+): McpToolCallResponseV1<T> {
+  const effectiveAuditId =
+    typeof auditId === 'string' && auditId.trim().length > 0
+      ? auditId
+      : 'audit_mcp_l0_default';
+  const envelope: ToolSuccessV1<T> = {
+    ok: true,
+    output: {
+      schema_version: ENGRAM_MEMORY_STRUCTURED_OUTPUT_SCHEMA_VERSION,
+      value,
+    },
+    auditId: effectiveAuditId,
+    redactionClass: 'high',
+  };
+
+  return {
+    isError: false,
+    structuredContent: envelope,
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify(envelope),
       },
     ],
   };
@@ -467,26 +565,48 @@ export function isMutationTool(tool: EngramMemoryToolName): boolean {
 }
 
 /**
- * Maps an unexpected dependency exception or timeout to a public MCP failure
- * envelope according to read vs mutation commit-phase semantics (§8).
+ * Maps an uncaught dependency exception or timeout to a public MCP failure
+ * envelope according to M6 read vs mutation commit-phase semantics:
+ * - Reads or pre-commit failures map to `STORE_UNAVAILABLE` (or classified
+ *   `CAPABILITY_UNAVAILABLE` / `DEADLINE_EXCEEDED` / `POLICY_UNAVAILABLE`).
+ * - Mutations whose commit phase was entered map to `MUTATION_OUTCOME_UNKNOWN`.
  */
 export function mapUnexpectedDependencyExceptionToPublic(input: {
   readonly tool: EngramMemoryToolName;
   readonly commitPhaseEntered: boolean;
-  readonly classification?: 'storage_io' | 'dependency_unavailable' | 'timeout';
+  readonly classification?:
+    | 'store_unavailable'
+    | 'storage_io'
+    | 'dependency_unavailable'
+    | 'capability_unavailable'
+    | 'deadline_exceeded'
+    | 'timeout'
+    | 'policy_unavailable';
+  readonly auditId?: string;
 }): McpToolCallResponseV1<never> {
   if (isMutationTool(input.tool) && input.commitPhaseEntered) {
     return mapNeutralMemoryErrorToPublic({
       tool: input.tool,
       code: 'MUTATION_OUTCOME_UNKNOWN',
+      auditId: input.auditId,
     });
   }
-  const code: PublicMemoryErrorCode =
-    input.classification === 'storage_io'
-      ? 'STORAGE_IO_ERROR'
-      : 'DEPENDENCY_UNAVAILABLE';
+
+  let code: PublicMemoryErrorCode = 'STORE_UNAVAILABLE';
+  if (input.classification === 'capability_unavailable') {
+    code = 'CAPABILITY_UNAVAILABLE';
+  } else if (
+    input.classification === 'deadline_exceeded' ||
+    input.classification === 'timeout'
+  ) {
+    code = 'DEADLINE_EXCEEDED';
+  } else if (input.classification === 'policy_unavailable') {
+    code = 'POLICY_UNAVAILABLE';
+  }
+
   return mapNeutralMemoryErrorToPublic({
     tool: input.tool,
     code,
+    auditId: input.auditId,
   });
 }

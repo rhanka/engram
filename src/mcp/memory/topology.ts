@@ -1,7 +1,9 @@
 /**
  * MCP-L0 Reference Topology, Voluntary cluster-mesh Inheritance, D10 Separation,
- * Legacy Migration Dispositions, Package/CLI Boundaries, and Unverified
- * Cross-Team Items.
+ * Legacy Migration Dispositions (M8), Package/CLI Boundaries (M9), and
+ * Cross-Team Verification Items.
+ *
+ * Normative alignment with SPEC-memory-mcp-v2.md (M8, M9, M10, M11, M12, M13).
  */
 
 export const ENGRAM_MEMORY_RELEASE_CADENCE_V1 = {
@@ -29,6 +31,8 @@ export const ENGRAM_MEMORY_REFERENCE_TOPOLOGY_V1 = {
 
 export const CLUSTER_MESH_MEMORY_INHERITANCE_CONTRACT_V1 = {
   subpath: '@sentropic/cluster-mesh/memory',
+  app_id: 'engram',
+  provider_id: 'engram-memory',
   provider_app_id: 'engram-memory',
   voluntary_host_inheritance_only: true,
   default_enabled: false,
@@ -59,7 +63,7 @@ export type MemoryActivationEvaluationV1 =
 
 /**
  * Evaluates whether the Engram memory MCP surface may be activated for a host
- * and tenant session under the voluntary `cluster-mesh/memory` contract.
+ * and tenant session under the voluntary `cluster-mesh/memory` contract (M10).
  */
 export function evaluateClusterMeshMemoryInheritanceV1(
   config: PersistedMemoryActivationConfigV1,
@@ -87,7 +91,7 @@ export function evaluateClusterMeshMemoryInheritanceV1(
 
 export const D10_CODE_GRAPH_SEPARATION_CONTRACT_V1 = {
   decision_id: 'D10',
-  amended_on: '2026-10-17',
+  amended_on: '2026-04-16',
   graph_json_role: 'code-graph-only',
   forbid_memory_nodes_in_graph_json: true,
   forbid_memory_edges_in_graph_json: true,
@@ -103,6 +107,19 @@ export const D10_CODE_GRAPH_SEPARATION_CONTRACT_V1 = {
   ] as const,
 } as const;
 
+/**
+ * M8 Legacy Migration Dispositions:
+ * - Retires `H2aGraphifyMemoryPort` and `createGraphifyMemoryAdapter` in
+ *   `packages/cluster-mesh/src/memory.ts` (`src/index.ts`) and the 4 shadow
+ *   operations (`engram_write_shadow`, `engram_query_shadow`,
+ *   `engram_promote_fact`, `engram_ack_promotion`).
+ * - Retires the 8 legacy memory files under `packages/h2a/src/runtime/memory/`.
+ * - Re-anchors D11 two-leg review in host `AdmissionPolicy` and
+ *   `EvidenceVerifierPort` on `engram_memory_request_admission`, replacing
+ *   `engram_ack_promotion`.
+ * - Migrates both `packages/h2a/package.json` and
+ *   `packages/h2a-runtime/package.json` (plus lockfiles) from `0.13.3`.
+ */
 export const LEGACY_MIGRATION_DISPOSITIONS_V1 = {
   cluster_mesh_shadow_protocol_retired: {
     retired_operations: [
@@ -112,49 +129,72 @@ export const LEGACY_MIGRATION_DISPOSITIONS_V1 = {
       'engram_ack_promotion',
     ] as const,
     retired_symbols: [
-      'MemoryFact',
-      'EngramAdapter',
-      'EngramAdapterError',
-      'EngramErrorCode',
+      'H2aGraphifyMemoryPort',
+      'createGraphifyMemoryAdapter',
     ] as const,
     retired_files: [
-      'packages/cluster-mesh/src/engram-types.ts',
-      'packages/cluster-mesh/src/engram-adapter.ts',
+      'packages/cluster-mesh/src/memory.ts',
+      'packages/cluster-mesh/src/index.ts',
     ] as const,
   },
   h2a_legacy_memory_files_retired: [
-    'src/memory/engram.ts',
-    'src/memory/admission-gate.ts',
-    'src/memory/decay-worker.ts',
-    'src/memory/fact-lifecycle.ts',
-    'src/memory/integrity.ts',
-    'src/memory/query-sanitizer.ts',
-    'src/memory/session-index.ts',
-    'src/memory/skill-crystallizer.ts',
+    'packages/h2a/src/runtime/memory/admit-client.ts',
+    'packages/h2a/src/runtime/memory/recall-client.ts',
+    'packages/h2a/src/runtime/memory/promote-client.ts',
+    'packages/h2a/src/runtime/memory/port-v1.ts',
+    'packages/h2a/src/runtime/memory/port-v2-adapter.ts',
+    'packages/h2a/src/runtime/memory/port-v2-compat.ts',
+    'packages/h2a/src/runtime/memory/graphify-contracts-v2.vendored.ts',
+    'packages/h2a/src/runtime/memory/d11-ceremony.ts',
   ] as const,
   d11_two_leg_review_reanchoring: {
     decision_id: 'D11',
-    retired_from: 'src/memory/admission-gate.ts',
+    retired_from: 'packages/h2a/src/runtime/memory/d11-ceremony.ts',
+    replaces_legacy_operation: 'engram_ack_promotion',
+    reanchored_on_operation: 'engram_memory_request_admission',
     reanchored_in: [
-      'Host AdmissionPolicy',
-      'Host EvidenceVerifierPort',
+      'AdmissionPolicy',
+      'EvidenceVerifierPort',
     ] as const,
     forbidden_in_neutral_engram_memory_package: true,
   },
   cluster_mesh_pin_migration: {
     previous_pin: '0.13.3',
+    target_manifests: [
+      'packages/h2a/package.json',
+      'packages/h2a-runtime/package.json',
+    ] as const,
+    updates_lockfiles: true,
     requires_upgrade_for_memory_subpath: true,
     missing_subpath_refusal_code: 'cluster_mesh_module_unavailable',
   },
 } as const;
 
+/**
+ * M9 Package Boundary & CLI Surface Contract:
+ * - Root package `@sentropic/engram` (`0.20.0`) with optional subpath
+ *   `@sentropic/engram/mcp-memory`.
+ * - Neutral `engram-memory` remains private (`"private": true`).
+ * - Explicit backend provisioning for `better-sqlite3` and `fs-ext`.
+ * - `@modelcontextprotocol/sdk >= 1.31.0` and published `@sentropic/mcp-broker`.
+ * - `engram serve` and default code-graph CLI commands do not load memory MCP
+ *   or SQLite native addons.
+ */
 export const PACKAGE_BOUNDARY_AND_CLI_CONTRACT_V1 = {
-  engram_code_published_package_name: 'engram-code',
-  engram_memory_published_package_name: '@engram/memory',
-  mcp_sdk_runtime_dependency: '@modelcontextprotocol/sdk',
-  native_storage_drivers_peer_optional: ['better-sqlite3', 'pg'] as const,
+  root_published_package_name: '@sentropic/engram',
+  root_published_version: '0.20.0',
+  optional_mcp_memory_export_subpath: '@sentropic/engram/mcp-memory',
+  neutral_memory_package_name: 'engram-memory',
+  neutral_memory_package_private: true,
+  explicit_native_backend_dependencies: [
+    'better-sqlite3',
+    'fs-ext',
+  ] as const,
+  mcp_sdk_dependency: '@modelcontextprotocol/sdk',
+  mcp_sdk_min_version: '>=1.31.0',
+  published_broker_dependency: '@sentropic/mcp-broker',
   default_engram_cli_excludes_memory_mcp_and_sqlite: true,
-  dedicated_memory_mcp_entrypoint: 'engram-memory-mcp',
+  engram_serve_excludes_memory_mcp: true,
 } as const;
 
 export interface OpusAmendmentDispositionV1 {
@@ -184,67 +224,67 @@ export const OPUS_REVIEW_AMENDMENT_DISPOSITIONS_V1: readonly OpusAmendmentDispos
     {
       id: 'A-01',
       summary:
-        'Closed input and output JSON Schemas with additionalProperties: false and no null for optional fields.',
+        'Closed M2 input schemas and Sentropic AppResultEnvelope output schemas with additionalProperties: false and no null for optional fields.',
       frozen_in_lot: 'MCP-L0',
     },
     {
       id: 'A-02',
       summary:
-        'Additive neutral RedactedMemoryRecordV2, RecallRecordPacketV3, RecallPacketV3, MemoryRecallPortV3, and MemoryReadPortV1.',
+        'Additive neutral RedactedMemoryRecordV2, RecallRecordPacketV3, RecallPacketV3, MemoryRecallPortV3 (v3), and MemoryReadPortV1 (v1).',
       frozen_in_lot: 'MCP-L0',
     },
     {
       id: 'A-03',
       summary:
-        'Host-owned retention policy defaulting to make-ineligible, finite expiration ceiling, and explicit allowance required for retain.',
+        'Host-owned RetentionV1 defaulting to derivative_rule make-ineligible, rejecting expiration > host ceiling, and rejecting retain unless host policy explicitly permits it.',
       frozen_in_lot: 'MCP-L0',
     },
     {
       id: 'A-04',
       summary:
-        'Host-owned reconciliation strategy/conflict_key and consent-subset verification for reconciliation_hint.family_refs.',
+        'Host-owned ReconciliationConsentV1 defaulting omitted/empty consent to { family_refs: [] } and rejecting unconsented family_refs.',
       frozen_in_lot: 'MCP-L0',
     },
     {
       id: 'A-05',
       summary:
-        'Out-of-band MCP elicitation or host confirmation token (300s TTL) bound to memory_id, reason_code, digest/status, principal, and scope for withdraw/forget.',
+        'Host-validated, resumed MCP elicitation confirmation (<= 300s TTL) bound to elicitation_ref, capability, mcp_client_id, session_id, principal_id, tenant_id, scope_ref, target_ref, and operation_digest.',
       frozen_in_lot: 'MCP-L0',
     },
     {
       id: 'A-06',
       summary:
-        'Target-existence and lifecycle-state disclosure normalization to NOT_FOUND before target authorization.',
+        'Pre-authorization target-existence normalization to NOT_FOUND across all four target-bearing tools (get, request_admission, withdraw, forget).',
       frozen_in_lot: 'MCP-L0',
     },
     {
       id: 'A-07',
       summary:
-        'Total error mapping table covering all 27 neutral MemoryErrorCode values plus RESULT_TOO_LARGE, RATE_LIMITED, MUTATION_OUTCOME_UNKNOWN, and gate_failed.',
+        'Total error mapping table covering all 27 neutral MemoryErrorCode values plus RESULT_TOO_LARGE, RATE_LIMITED, MUTATION_OUTCOME_UNKNOWN, and gate_failed with constant messages and stripped details.',
       frozen_in_lot: 'MCP-L0',
     },
     {
       id: 'A-08',
       summary:
-        'Durable idempotent operation store keyed by (scope_ref, principal_id, tool_name, idempotency_key) with retry-stable retention/timestamps.',
+        'Durable idempotent operation reservation keyed by the M5 9-tuple + normalized_input_digest + source_order / event_id / event_anchor with DIGEST_CONFLICT on mismatch and fresh re-authorization on replay.',
       frozen_in_lot: 'MCP-L0',
     },
     {
       id: 'A-09',
       summary:
-        'Authenticated pagination cursor bound to scope_ref, query_digest, status_filter, memory_kinds, ordering, snapshot_watermark, and 300s TTL.',
+        'Host-managed random pagination handle state (engram owns no signing secret) binding principal, tenant, store, connector, scope, purpose, query, limits, capability_policy, profile, dual-as-of, epochs, and record expiry (STALE_PAGE).',
       frozen_in_lot: 'MCP-L0',
     },
     {
       id: 'A-10',
       summary:
-        'Dual-channel MCP response carrying identical ToolResultV1 in structuredContent and content[0].text with <= 64 KiB cap.',
+        'Dual-channel MCP response carrying identical AppResultEnvelope in structuredContent and content[0].text with max_packet_bytes (default 64 KiB, max 1 MiB) and 2 MiB combined ceiling.',
       frozen_in_lot: 'MCP-L0',
     },
     {
       id: 'A-11',
       summary:
-        'Trusted broker ScopeRefV1 and PrincipalRefV1 required on every call; fabricated defaults refused with isError: true.',
+        'Trusted host/broker principal, tenant, store, connector, scope_ref, and AuthorizationContextV1 required on every call; fabricated defaults refused.',
       frozen_in_lot: 'MCP-L0',
     },
     {
@@ -256,25 +296,25 @@ export const OPUS_REVIEW_AMENDMENT_DISPOSITIONS_V1: readonly OpusAmendmentDispos
     {
       id: 'A-13',
       summary:
-        'Voluntary cluster-mesh/memory inheritance disabled by default, requiring persisted host and tenant opt-in and refusing missing subpath with cluster_mesh_module_unavailable.',
+        'Voluntary @sentropic/cluster-mesh/memory inheritance disabled by default, requiring persisted host and tenant opt-in and refusing missing subpath with cluster_mesh_module_unavailable.',
       frozen_in_lot: 'MCP-L0',
     },
     {
       id: 'A-14',
       summary:
-        'Owner amendment D10 (2026-10-17): graph.json remains strictly the code graph; memory uses dedicated authorized interfaces.',
+        'Owner amendment D10 (2026-04-16): graph.json remains strictly the code graph; memory uses dedicated authorized interfaces.',
       frozen_in_lot: 'MCP-L0',
     },
     {
       id: 'A-15',
       summary:
-        'Retirement of cluster-mesh shadow protocol and 8 h2a legacy memory files; D11 two-leg review re-anchored in host AdmissionPolicy and EvidenceVerifierPort.',
+        'Retirement of H2aGraphifyMemoryPort / createGraphifyMemoryAdapter in packages/cluster-mesh/src/memory.ts and 8 files in packages/h2a/src/runtime/memory/; D11 re-anchored in AdmissionPolicy and EvidenceVerifierPort.',
       frozen_in_lot: 'MCP-L0',
     },
     {
       id: 'A-16',
       summary:
-        '@modelcontextprotocol/sdk declared as runtime dependency when MCP server is bundled; native SQLite/PG drivers peer/optional; default engram CLI excludes memory MCP.',
+        '@sentropic/engram (0.20.0) optional @sentropic/engram/mcp-memory subpath, private engram-memory, explicit better-sqlite3 and fs-ext provisioning, @modelcontextprotocol/sdk >= 1.31.0, and engram serve exclusion.',
       frozen_in_lot: 'MCP-L0',
     },
   ] as const;
@@ -293,10 +333,6 @@ export interface UnverifiedCrossTeamItemV1 {
   readonly question: string;
 }
 
-/**
- * Explicit `unverified` cross-team items from SPEC-memory-mcp-v2.md §18 to be
- * resolved with the Sentropic, cluster-mesh, and h2a teams in downstream lots.
- */
 export const UNVERIFIED_CROSS_TEAM_ITEMS_V1: readonly UnverifiedCrossTeamItemV1[] =
   [
     {
@@ -304,14 +340,14 @@ export const UNVERIFIED_CROSS_TEAM_ITEMS_V1: readonly UnverifiedCrossTeamItemV1[
       status: 'unverified',
       target_teams: ['sentropic'],
       question:
-        'Exact mechanism by which Sentropic AppMcpToolProvider / ToolBroker injects trusted ScopeRefV1, PrincipalRefV1, capability token, and confirmation grant into tool handlers (request _meta vs side-channel context argument).',
+        'Exact mechanism by which Sentropic AppMcpToolProvider / ToolBroker injects trusted scope_ref, principal_id, AuthorizationContextV1, and elicitation confirmation into tool handlers.',
     },
     {
       id: 'UV-02',
       status: 'unverified',
       target_teams: ['sentropic', 'h2a'],
       question:
-        'Whether Sentropic ToolBroker and h2a McpServer natively support MCP elicitation for requiresUserConfirmation: true or require a host-signed confirmation token handshake.',
+        'Exact wire handshake between Sentropic ToolBroker and h2a McpServer when resuming a validated confirm elicitation for engram_memory_withdraw and engram_memory_forget.',
     },
     {
       id: 'UV-03',
@@ -325,7 +361,7 @@ export const UNVERIFIED_CROSS_TEAM_ITEMS_V1: readonly UnverifiedCrossTeamItemV1[
       status: 'unverified',
       target_teams: ['cluster-mesh', 'h2a'],
       question:
-        'Exact @sentropic/cluster-mesh target version that will publish the ./memory subpath and replace the 0.13.3 git/tarball pin in h2a.',
+        'Exact @sentropic/cluster-mesh target version that will publish the ./memory subpath and replace the 0.13.3 pin in packages/h2a/package.json and packages/h2a-runtime/package.json.',
     },
     {
       id: 'UV-05',
@@ -339,13 +375,13 @@ export const UNVERIFIED_CROSS_TEAM_ITEMS_V1: readonly UnverifiedCrossTeamItemV1[
       status: 'unverified',
       target_teams: ['h2a'],
       question:
-        'Whether any external operational scripts or tests outside src/memory/ still read legacy h2a shadow/fact files and require a one-shot migration or archive script before file deletion in MCP-L4.',
+        'Whether any external operational scripts outside packages/h2a/src/runtime/memory/ still reference legacy shadow/promotion clients before file deletion in MCP-L4.',
     },
     {
       id: 'UV-07',
       status: 'unverified',
       target_teams: ['sentropic'],
       question:
-        'Exact error code casing convention in Sentropic McpServer / ToolBroker when a pre-execution gate fails (lowercase gate_failed vs uppercase GATE_FAILED).',
+        'Published version of @sentropic/mcp-broker consumed by @sentropic/engram/mcp-memory in MCP-L2.',
     },
   ] as const;
