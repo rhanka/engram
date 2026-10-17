@@ -91,6 +91,9 @@ add('M2-opaque-trimming', 'schemas.ts', 'if (!isWellFormedUnicodeAndNfc(value))'
 add('A03-delegation-expiry', 'policy.ts', '      expected.now,', '      binding.issued_at as Instant,', 'minor 7 ', 547);
 add('A06-required-binding', 'policy.ts', "requiredRefs.some(k => !isValidOpaqueRef(continuation[k]) || !isValidOpaqueRef(expected[k]))", 'false', 'minor 11 ', 1602);
 add('A06-reattachment-closure', 'policy.ts', "!hasExactKeys(proof, ['previous_attachment_ref', 'current_attachment_ref', 'reattachment_receipt_digest', 'verified', 'admitted_generation'])", 'false', 'minor 11 ', 1602);
+add('A05-unknown-outcome-code', 'policy.ts', "if (existing.recovery_state === 'executing_unknown_outcome') {\n    return {\n      decision: 'reject',\n      error_code: 'MUTATION_OUTCOME_UNKNOWN'", "if (existing.recovery_state === 'executing_unknown_outcome') {\n    return {\n      decision: 'reject',\n      error_code: 'FENCE_LOST'", 'minors 9-10', 782);
+add('A05-committed-reconcile', 'policy.ts', "return { decision: 'reconcile_canonical', canonical_replay_ref: existing.canonical_replay_ref, existing_record: existing };", "return { decision: 'reject', error_code: 'FENCE_LOST', retriable: true };", 'minors 9-10', 710);
+add('A05-caller-disclosure-code', 'policy.ts', "if (rawIncoming.callerAuthorized !== true) {\n    return {\n      decision: 'reject',\n      error_code: 'UNAUTHORIZED'", "if (rawIncoming.callerAuthorized !== true) {\n    return {\n      decision: 'reject',\n      error_code: 'NOT_FOUND'", 'minor 10 ', 527);
 add('O1-tombstone-evidence', 'policy.ts', 'if (!(evidence instanceof Set || Array.isArray(evidence)) ||\n      ![...evidence].every(isValidSha256Digest))', 'if (false)', 'O1 A10-R4', 716);
 
 const results = [];

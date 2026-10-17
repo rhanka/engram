@@ -5,11 +5,44 @@ import {
   projectMemoryInvocationContextV1,
   validateSearchInputV1, validateWithdrawInputV1, isValidOpaqueRef, isValidIdempotencyKey,
   computeMemoryMutationOperationDigestV1,
+  evaluatePrincipalScopedMutationLookupV1, evaluateIdempotentMutationStateV1,
+  extractMemoryMutationLookupKeyV1,
 } from '../src/mcp/memory/index.js';
 import { validBinding, validContinuation, expectedBinding, expectedInvocation } from './fixtures/memory-mcp-sol-rules.js';
 import { A05_MUTATION_DIGEST_VECTORS_SPEC_RULE } from './fixtures/memory-mcp-spec-rules.js';
 
 describe('L0a cofreeze counterexamples', () => {
+  it('minors 9-10 M:527,567,704,710,777,782: current caller admission precedes target disclosure and unknown effects require reconciliation', () => {
+    const vector = A05_MUTATION_DIGEST_VECTORS_SPEC_RULE.vectors.capture_v1;
+    const preimage = vector.preimage;
+    const record: any = { lookup_key: extractMemoryMutationLookupKeyV1(preimage), preimage, operation_digest: vector.expected_digest,
+      policy_versions: { tool_name: 'engram_memory_capture', capture_policy_version: 'capture-policy/v1' },
+      audit_id: 'audit_01', execution_generation: '1', recovery_state: 'executing_unknown_outcome' };
+    const incoming = { preimage, callerAuthorized: true, active_domain_policy_version: 'capture-policy/v1' };
+    expect(evaluatePrincipalScopedMutationLookupV1([record], incoming))
+      .toMatchObject({ decision: 'reject', error_code: 'MUTATION_OUTCOME_UNKNOWN' });
+    for (const recovery_state of ['canonical_committed_receipt', 'completed_response']) {
+      expect(evaluatePrincipalScopedMutationLookupV1([{ ...record, recovery_state, canonical_replay_ref: 'canonical_01' }], incoming))
+        .toMatchObject({ decision: 'reconcile_canonical', canonical_replay_ref: 'canonical_01' });
+      expect(evaluatePrincipalScopedMutationLookupV1([{ ...record, recovery_state }], incoming))
+        .toMatchObject({ decision: 'reject', error_code: 'MUTATION_OUTCOME_UNKNOWN' });
+    }
+  });
+
+  it('minor 10 M:527,777: caller admission precedes inaccessible-target normalization', () => {
+    const targetPreimage = A05_MUTATION_DIGEST_VECTORS_SPEC_RULE.vectors.request_admission_v1.preimage;
+    for (const targetAuthorized of [undefined, false, true]) {
+      expect(evaluatePrincipalScopedMutationLookupV1([], { preimage: targetPreimage, targetAuthorized }))
+        .toMatchObject({ decision: 'reject', error_code: 'UNAUTHORIZED' });
+      expect(evaluateM5LifecycleTransitionV1({ tool: 'engram_memory_request_admission', prior_state: 'pending', targetAuthorized }))
+        .toMatchObject({ ok: false, error_code: 'UNAUTHORIZED' });
+      expect(evaluateIdempotentMutationStateV1(undefined, { key: { tool_name: 'engram_memory_request_admission' }, targetAuthorized } as any))
+        .toMatchObject({ decision: 'reject', error_code: 'UNAUTHORIZED' });
+    }
+    expect(evaluatePrincipalScopedMutationLookupV1([], { preimage: targetPreimage, callerAuthorized: true }))
+      .toMatchObject({ decision: 'reject', error_code: 'NOT_FOUND' });
+  });
+
   it('minor 7 M:517,525,547: invocation uses the delegate authority and verifies expiry at the effect guard', () => {
     const delegation = {
       delegator_principal_id: 'usr_bob', delegate_principal_id: validBinding.principal_id,
