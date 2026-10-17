@@ -9,9 +9,55 @@ import {
   extractMemoryMutationLookupKeyV1,
 } from '../src/mcp/memory/index.js';
 import { validBinding, validContinuation, expectedBinding, expectedInvocation } from './fixtures/memory-mcp-sol-rules.js';
-import { A05_MUTATION_DIGEST_VECTORS_SPEC_RULE } from './fixtures/memory-mcp-spec-rules.js';
+import { A05_MUTATION_DIGEST_VECTORS_SPEC_RULE, M5_CROSS_TOOL_KEY_SPEC_RULES } from './fixtures/memory-mcp-spec-rules.js';
+
+const vectors = A05_MUTATION_DIGEST_VECTORS_SPEC_RULE.vectors;
 
 describe('L0a cofreeze counterexamples', () => {
+  it('M5-CROSS-TOOL-KEY M:694-698: all three pairs conflict on one key and proceed with distinct keys', () => {
+    const byTool = {
+      engram_memory_capture: vectors.capture_v1, engram_memory_request_admission: vectors.request_admission_v1,
+      engram_memory_withdraw: vectors.withdraw_v1, engram_memory_forget: vectors.forget_v1,
+    };
+    for (const pair of M5_CROSS_TOOL_KEY_SPEC_RULES.conflict_pairs) {
+      const first = byTool[pair.first_tool];
+      const second = byTool[pair.second_tool];
+      // The stored key is built from the spec's nine fields, independently of production extraction.
+      const lookup_key: any = Object.fromEntries(M5_CROSS_TOOL_KEY_SPEC_RULES.lookup_key_fields.map(k => [k, first.preimage[k]]));
+      expect(extractMemoryMutationLookupKeyV1(first.preimage)).toEqual(lookup_key);
+      const policy_versions = first.preimage.tool_name === 'engram_memory_capture'
+        ? { tool_name: 'engram_memory_capture', capture_policy_version: 'capture-policy/v1' }
+        : { tool_name: 'engram_memory_request_admission', admission_policy_version: 'admission-policy/v1' };
+      const record: any = { lookup_key, preimage: first.preimage, operation_digest: first.expected_digest, policy_versions,
+        audit_id: 'audit_01', execution_generation: '1', recovery_state: 'authorized_uncommitted' };
+      const current = { callerAuthorized: true, targetAuthorized: true, active_domain_policy_version: 'admission-policy/v1' };
+      expect(evaluatePrincipalScopedMutationLookupV1([record], { ...current, preimage: { ...second.preimage, idempotency_key: first.preimage.idempotency_key } }))
+        .toEqual({ decision: 'reject', error_code: pair.expected_error_code, retriable: false });
+      expect(evaluatePrincipalScopedMutationLookupV1([record], { ...current, preimage: second.preimage }))
+        .toEqual({ decision: 'execute_new' });
+    }
+  });
+
+  it.each([
+    ['target', vectors.withdraw_changed_target, {
+      target: { kind: 'candidate', candidate_id: 'cand_02' },
+      effective_input: { ...vectors.withdraw_v1.preimage.effective_input, candidate_id: 'cand_02' },
+    }],
+    ['effective value', vectors.withdraw_changed_effective_value, {
+      effective_input: { ...vectors.withdraw_v1.preimage.effective_input, reason_ref: 'reason:operator-choice' },
+    }],
+  ] as const)('A05 literal changed %s M:686,690: exact bytes, full hash and same-key conflict', (_name, vector, change) => {
+    const preimage = { ...vectors.withdraw_v1.preimage, ...change };
+    const digest = computeMemoryMutationOperationDigestV1(preimage);
+    expect(digest).toMatchObject({ ok: true, value: { canonical_jcs_utf8: vector.expected_jcs_utf8, operation_digest: vector.expected_digest } });
+    expect(vector.expected_digest).not.toBe(vectors.withdraw_v1.expected_digest);
+    const record: any = { lookup_key: extractMemoryMutationLookupKeyV1(vectors.withdraw_v1.preimage), preimage: vectors.withdraw_v1.preimage,
+      operation_digest: vectors.withdraw_v1.expected_digest, policy_versions: { tool_name: 'engram_memory_withdraw' },
+      audit_id: 'audit_01', execution_generation: '1', recovery_state: 'authorized_uncommitted' };
+    expect(evaluatePrincipalScopedMutationLookupV1([record], { preimage, callerAuthorized: true, targetAuthorized: true }))
+      .toEqual({ decision: 'reject', error_code: 'DIGEST_CONFLICT', retriable: false });
+  });
+
   it('minor 13 A10-R6 M:706: duplicate persisted policy versions must equal the sealed projection', () => {
     for (const vector of [A05_MUTATION_DIGEST_VECTORS_SPEC_RULE.vectors.capture_v1, A05_MUTATION_DIGEST_VECTORS_SPEC_RULE.vectors.request_admission_v1, A05_MUTATION_DIGEST_VECTORS_SPEC_RULE.vectors.withdraw_v1]) {
       const preimage = vector.preimage;
