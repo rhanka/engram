@@ -14,6 +14,14 @@ import { A05_MUTATION_DIGEST_VECTORS_SPEC_RULE, M5_CROSS_TOOL_KEY_SPEC_RULES } f
 const vectors = A05_MUTATION_DIGEST_VECTORS_SPEC_RULE.vectors;
 
 describe('L0a cofreeze counterexamples', () => {
+  it('minor 5 L0-A06 M:244,561,821: a valid NFD candidate target survives confirmation binding', () => {
+    const capability = 'engram_memory_withdraw' as const;
+    const target_ref = 'e\u0301';
+    for (const reservation_state of ['uncommitted', 'committed'] as const) {
+      expect(verifyMemoryConfirmationContinuationV1({ ...validContinuation, capability, target_ref }, { ...expectedBinding, capability, target_ref, reservation_state }).ok).toBe(true);
+    }
+  });
+
   it('M5-CROSS-TOOL-KEY M:694-698: all three pairs conflict on one key and proceed with distinct keys', () => {
     const byTool = {
       engram_memory_capture: vectors.capture_v1, engram_memory_request_admission: vectors.request_admission_v1,

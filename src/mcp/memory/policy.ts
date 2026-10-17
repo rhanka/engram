@@ -2779,8 +2779,10 @@ export function verifyMemoryConfirmationContinuationV1(
   }
 
   // M:1602,561,565: required fields cannot disappear from both sides of equality.
-  const requiredRefs = ['connector_instance_ref', 'tenant_id', 'initiating_principal_namespace', 'initiating_principal_id', 'agent_id', 'mcp_client_id', 'logical_session_ref', 'transport_attachment_ref', 'store_id', 'scope_ref', 'target_ref', 'reservation_ref'] as const;
+  const requiredRefs = ['connector_instance_ref', 'tenant_id', 'initiating_principal_namespace', 'initiating_principal_id', 'agent_id', 'mcp_client_id', 'logical_session_ref', 'transport_attachment_ref', 'store_id', 'scope_ref', 'reservation_ref'] as const;
+  const validTargetRef = continuation.capability === 'engram_memory_withdraw' ? isValidCandidateId : isValidOpaqueRef;
   if (requiredRefs.some(k => !isValidOpaqueRef(continuation[k]) || !isValidOpaqueRef(expected[k])) ||
+      !validTargetRef(continuation.target_ref) || !validTargetRef(expected.target_ref) ||
       !isValidCursor(continuation.active_generation) || !isValidCursor(expected.active_generation)) {
     return { ok: false, error_code: 'gate_failed', reason: 'Required continuation and current binding references must be present and valid' };
   }
