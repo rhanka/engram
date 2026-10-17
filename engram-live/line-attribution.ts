@@ -182,32 +182,70 @@ export async function attributeLines(input: LineAttributionRequestDto, ports: Li
       return gap("git-unavailable", "retained Git view or configuration gate unavailable");
     }
     const objects = new Map<string, Buffer>();
-    const read = (type: "commit" | "tree" | "blob", oid: string): Buffer => {
-      const key = `${type}:${oid}`;
-      const known = objects.get(key); if (known) return known;
-      let body: Buffer;
-      try { body = git.run(cwd, ["cat-file", type, oid]); }
-      catch { return gap("missing-object", "required R1 object unavailable; no fetch or checkout fallback"); }
-      const digest = createHash(request.target.algorithm === "sha1" ? "sha1" : "sha256")
-        .update(`${type} ${body.length}\0`).update(body).digest("hex");
-      if (digest !== oid) return gap("invalid-evidence", "retained raw object does not match its OID");
-      objects.set(key, body); return body;
+    const readBatch = (type: "commit" | "tree" | "blob", ids: readonly string[]): void => {
+      const missing = [...new Set(ids)].filter(oid => !objects.has(`${type}:${oid}`));
+      for (let start = 0; start < missing.length; start += 128) {
+        const batch = missing.slice(start, start + 128);
+        let bytes: Buffer;
+        try { bytes = git.run(cwd, ["cat-file", "--batch"], batch.join("\n") + "\n"); }
+        catch { return gap("missing-object", "required R1 object batch unavailable; no fetch or checkout fallback"); }
+        let offset = 0;
+        for (const oid of batch) {
+          const end = bytes.indexOf(10, offset);
+          if (end < 0) return gap("invalid-evidence", "truncated retained object batch header");
+          const header = bytes.subarray(offset, end).toString("latin1");
+          if (header === `${oid} missing`) return gap("missing-object", "required R1 object unavailable");
+          const fields = header.split(" ");
+          const size = Number(fields[2]);
+          if (fields.length !== 3 || fields[0] !== oid || fields[1] !== type || !/^(0|[1-9][0-9]*)$/.test(fields[2]!) ||
+              !Number.isSafeInteger(size) || size > bytes.length - end - 2 || bytes[end + 1 + size] !== 10) {
+            return gap("invalid-evidence", "retained object batch type, order or length is malformed");
+          }
+          const body = bytes.subarray(end + 1, end + 1 + size);
+          const digest = createHash(request.target.algorithm === "sha1" ? "sha1" : "sha256")
+            .update(`${type} ${body.length}\0`).update(body).digest("hex");
+          if (digest !== oid) return gap("invalid-evidence", "retained raw object does not match its OID");
+          objects.set(`${type}:${oid}`, body); offset = end + size + 2;
+        }
+        if (offset !== bytes.length) return gap("invalid-evidence", "unexpected trailing retained object batch bytes");
+      }
     };
-    const commits = new Map<string, Commit>();
-    const pending = [receipt.oid];
-    while (pending.length) {
-      const oid = pending.pop()!; if (commits.has(oid)) continue;
-      await authorize({ commit: qualified(oid), path: request.path });
-      const commit = parseCommit(read("commit", oid), request.target.algorithm);
-      commits.set(oid, commit); pending.push(...commit.parents);
+    const read = (type: "commit" | "tree" | "blob", oid: string): Buffer => {
+      readBatch(type, [oid]); return objects.get(`${type}:${oid}`)!;
+    };
+    let ancestry: string[];
+    try {
+      // Membership is a native reachability check, not materialized evidence
+      // about every descendant and side branch of the retained root.
+      if (receipt.oid !== request.target.oid) {
+        const membership = git.probe(cwd, ["merge-base", "--is-ancestor", request.target.oid, receipt.oid]);
+        if (membership.status === 1) gap("missing-retention", "pinned target is outside the scoped R1 root ancestry");
+        if (membership.status !== 0) gap("missing-object", "retained root membership could not be verified");
+      }
+      ancestry = git.run(cwd, ["rev-list", request.target.oid, "--"]).toString("latin1").trim().split("\n");
+    } catch (error) {
+      if (error instanceof AttributionGap) throw error;
+      return gap("missing-object", "pinned target ancestry unavailable");
     }
-    if (!commits.has(request.target.oid)) return gap("missing-retention", "pinned target is outside the scoped R1 root ancestry");
+    if (!ancestry.every(oid => validateQualifiedOid(qualified(oid)).ok) || new Set(ancestry).size !== ancestry.length) {
+      return gap("invalid-evidence", "native target ancestry contains invalid or repeated OIDs");
+    }
+    const commits = new Map<string, Commit>();
+    for (let start = 0; start < ancestry.length; start += 128) {
+      const batch = ancestry.slice(start, start + 128);
+      for (const oid of batch) await authorize({ commit: qualified(oid), path: request.path });
+      readBatch("commit", batch);
+      for (const oid of batch) commits.set(oid, parseCommit(read("commit", oid), request.target.algorithm));
+    }
     const targetAncestry = new Set<string>();
-    pending.push(request.target.oid);
+    const pending = [request.target.oid];
     while (pending.length) {
       const oid = pending.pop()!; if (targetAncestry.has(oid)) continue;
-      targetAncestry.add(oid); pending.push(...commits.get(oid)!.parents);
+      const commit = commits.get(oid);
+      if (!commit) return gap("invalid-evidence", "native ancestry omits a verified parent");
+      targetAncestry.add(oid); pending.push(...commit.parents);
     }
+    if (targetAncestry.size !== commits.size) return gap("invalid-evidence", "native ancestry includes commits outside the target closure");
     const file = (oid: string, path: Uint8Array): Buffer[] => {
       const commit = commits.get(oid);
       if (!commit || !targetAncestry.has(oid)) return gap("invalid-evidence", "origin is outside the pinned target ancestry");
