@@ -1480,10 +1480,15 @@ export function evaluateIdempotentMutationStateV1<TOutput>(
     return { decision: 'reject', error_code: 'NOT_FOUND', retriable: false };
   }
   const invalid = { decision: 'reject', error_code: 'INVALID_SCHEMA', retriable: false } as const;
-  const validRecord = (r: typeof incoming): boolean => {
+  const validRecord = (r: typeof incoming & Pick<DurableOperationRecordV1, 'capture_policy_version' | 'admission_policy_version'>): boolean => {
     const d = computeMemoryMutationOperationDigestV1(r.preimage);
     if (!d.ok || !r.policy_versions || !projectMemoryMutationPolicyVersionsV1(r.preimage.effective_input, r.policy_versions).ok ||
         d.value.operation_digest !== r.normalized_input_digest) return false;
+    // M:706: redundant persisted versions cannot contradict the sealed projection.
+    if (Object.hasOwn(r, 'capture_policy_version') &&
+        (r.policy_versions.tool_name !== 'engram_memory_capture' || r.capture_policy_version !== r.policy_versions.capture_policy_version)) return false;
+    if (Object.hasOwn(r, 'admission_policy_version') &&
+        (r.policy_versions.tool_name !== 'engram_memory_request_admission' || r.admission_policy_version !== r.policy_versions.admission_policy_version)) return false;
     const pre = r.preimage;
     const target = pre.target.kind === 'capture_source' ? pre.target.source_ref : pre.target.kind === 'candidate' ? pre.target.candidate_id : pre.target.record_id;
     return isSameMemoryMutationLookupKeyV1(r.key, extractMemoryMutationLookupKeyV1(pre)) &&
