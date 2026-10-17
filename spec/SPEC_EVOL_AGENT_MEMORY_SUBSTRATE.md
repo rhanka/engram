@@ -252,6 +252,10 @@ Evidence class is immutable for a record. `asserted` is the engine's fail-closed
 
 ### 5.1 Common result and typed errors
 
+**2026-10-17 conformance amendment.** `MemoryErrorCode` includes `PROJECTION_OVERSIZED`,
+the existing typed refusal when a raw current projection exceeds the §8/D10 byte ceiling.
+This corrects an omission in this alias; the implementation and ceiling are unchanged.
+
 ```ts
 export type MemoryOperation =
   | "capture" | "cancel_capture" | "request_admission"
@@ -268,7 +272,7 @@ export type MemoryErrorCode =
   | "NOT_FOUND" | "ALREADY_TERMINAL" | "DEADLINE_EXCEEDED" | "CANCELLED"
   | "CAPABILITY_UNAVAILABLE" | "STORE_UNAVAILABLE" | "FENCE_LOST"
   | "CURSOR_GAP" | "JOURNAL_CORRUPT" | "BLOB_MISSING"
-  | "PROJECTION_STALE" | "RANKING_UNAVAILABLE" | "STALE_PAGE"
+  | "PROJECTION_STALE" | "PROJECTION_OVERSIZED" | "RANKING_UNAVAILABLE" | "STALE_PAGE"
   | "REGISTRY_VERSION_UNAVAILABLE" | "BACKUP_INVALID" | "RESTORE_REFUSED" | "MIGRATION_LEDGER_INVALID";
 
 export interface MemoryErrorV1 {
