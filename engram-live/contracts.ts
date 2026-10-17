@@ -117,7 +117,9 @@ export interface LineAttributionOptionsDto {
   readonly version: "native-blame-options/1";
   readonly algorithm: "myers";
   readonly moveMinCharacters: number | null;
+  /** Copy detection requires an explicit non-null move threshold. */
   readonly copyMinCharacters: number | null;
+  /** With copy disabled only the canonical value "all" is admitted. */
   readonly copySearch: "modified" | "created" | "all";
 }
 export interface LineAttributionRequestDto {
