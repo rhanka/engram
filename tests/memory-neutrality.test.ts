@@ -345,9 +345,12 @@ const TEST_ALLOWED_BARE = new Set(["vitest", "typescript", ...DECLARED_DRIVER_SP
 // the engine driving the real FileGraphStore and the real Postgres vectors. The crossing is
 // the requirement, so exactly these two host-bridge edges from exactly that file are allowed.
 // Every other src/** edge from the closure stays forbidden (see the self-tests below).
+// MCP-L1 deliberately tests the product read facade over the neutral engine;
+// permit that one integration edge, never a product import by engram-memory.
 const TEST_ALLOWED_HOST_EDGES = new Set([
   "tests/memory-projection-cascade.postgres.test.ts -> src/storage/memory-projection",
   "tests/memory-projection-cascade.postgres.test.ts -> src/storage/vector/postgres-exact",
+  "tests/memory-mcp-l1-reads.test.ts -> src/memory-tools/reads",
 ]);
 
 function hostEdgeKey(path: string, resolved: string): string {
