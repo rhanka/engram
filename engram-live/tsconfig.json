@@ -17,6 +17,7 @@
     "contracts.ts",
     "registration.ts",
     "line-attribution.ts",
+    "symbol-history.ts",
     "git-executor.ts",
     "integration.ts"
   ]
