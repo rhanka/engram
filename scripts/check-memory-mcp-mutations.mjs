@@ -60,7 +60,7 @@ add('A06-current-caller', 'policy.ts', 'if (expected.caller_currently_authorized
 add('A06-current-target', 'policy.ts', 'if (expected.target_currently_authorized !== true)', 'if (expected.target_currently_authorized !== undefined && expected.target_currently_authorized !== true)', 'L0-A06', 567);
 add('A06-reconnect-verdict', 'policy.ts', 'proof.verified !== true', 'proof.verified === false', 'L0-A06', 565);
 add('A06-committed-guard-bypass', 'policy.ts', '  if (continuation.elicitation_ref !== expected.elicitation_ref)', "  if (expected.reservation_state === 'committed') return { ok: true, decision: 'disclose_committed_without_repeat_effect', continuation: continuation as unknown as MemoryConfirmationContinuationV1 };\n  if (continuation.elicitation_ref !== expected.elicitation_ref)", 'L0-A06 committed', 567);
-add('A06-invocation-principal', 'policy.ts', 'binding.delegation.delegator_principal_id !== binding.principal_id', 'false', 'L0-A06 invocation delegation', 561);
+add('A06-invocation-principal', 'policy.ts', 'binding.delegation.delegate_principal_id !== binding.principal_id', 'false', 'L0-A06 invocation delegation|minor 7 ', 517);
 
 for (const [field,value] of [['mode',"'confirm'"],['required','true'],['ttlSeconds','MEMORY_MCP_LIMITS.CONFIRMATION_MAX_TTL_SECONDS'],['requestSchema','MemoryConfirmationRequestV1Schema'],['responseSchema','MemoryConfirmationResponseV1Schema'],['carriesSecrets','false'],['bindToClient','true'],['bindToSub','true']]) {
  add('R3-elicitation-'+field,'gates.ts','  '+field+': '+value+',','', 'M7_MANIFEST',890);
@@ -88,6 +88,9 @@ add('O3-purpose-projection', 'policy.ts', '      purpose_ref: b.purpose_ref,', '
 add('M2-query-nfc', 'schemas.ts', '!isWellFormedUnicode(value.query)', '!isWellFormedUnicodeAndNfc(value.query)', 'minors 5-6|A10-R1-UNICODE', 238);
 add('M2-candidate-nfc', 'schemas.ts', 'return isWellFormedUnicode(value) && utf8ByteLength(value) >= 1', 'return isWellFormedUnicodeAndNfc(value) && utf8ByteLength(value) >= 1', 'minors 5-6|A10-R1-UNICODE', 244);
 add('M2-opaque-trimming', 'schemas.ts', 'if (!isWellFormedUnicodeAndNfc(value))', 'if (!isWellFormedUnicodeAndNfc(value) || value.trim().length === 0)', 'minors 5-6', 279);
+add('A03-delegation-expiry', 'policy.ts', '      expected.now,', '      binding.issued_at as Instant,', 'minor 7 ', 547);
+add('A06-required-binding', 'policy.ts', "requiredRefs.some(k => !isValidOpaqueRef(continuation[k]) || !isValidOpaqueRef(expected[k]))", 'false', 'minor 11 ', 1602);
+add('A06-reattachment-closure', 'policy.ts', "!hasExactKeys(proof, ['previous_attachment_ref', 'current_attachment_ref', 'reattachment_receipt_digest', 'verified', 'admitted_generation'])", 'false', 'minor 11 ', 1602);
 add('O1-tombstone-evidence', 'policy.ts', 'if (!(evidence instanceof Set || Array.isArray(evidence)) ||\n      ![...evidence].every(isValidSha256Digest))', 'if (false)', 'O1 A10-R4', 716);
 
 const results = [];
