@@ -140,6 +140,9 @@ export type {
 };
 
 export const ENGRAM_MEMORY_MCP_CONTRACT_VERSION = '1.0.0' as const;
+export const ENGRAM_MEMORY_PROVIDER_ID = 'sentropic.engram.memory' as const;
+export const ENGRAM_MEMORY_CONNECTOR_ID = 'engram-memory' as const;
+export const ENGRAM_MEMORY_APP_ID = 'engram' as const;
 export const ENGRAM_MEMORY_STRUCTURED_OUTPUT_SCHEMA_VERSION = 1 as const;
 export const ENGRAM_MEMORY_CANDIDATE_SCHEMA_VERSION = 2 as const;
 
@@ -249,7 +252,10 @@ export function isDisclosableMemoryState(
 }
 
 /**
- * M2 limits and defaults.
+ * M2 limits and defaults (SPEC-memory-mcp-v3.1.md lines 234–281).
+ *
+ * Published JSON Schema character-count `minLength` for any string with UTF-8
+ * byte interval `[min, max]` MUST be `<= ceil(min / 4)` and `maxLength >= max`.
  */
 export const MEMORY_MCP_LIMITS = {
   QUERY_MIN_UTF8_BYTES: 1,
@@ -264,8 +270,14 @@ export const MEMORY_MCP_LIMITS = {
   OPAQUE_REF_MAX_UTF8_BYTES: 512,
   IDEMPOTENCY_KEY_MIN_UTF8_BYTES: 16,
   IDEMPOTENCY_KEY_MAX_UTF8_BYTES: 256,
+  IDEMPOTENCY_KEY_SCHEMA_MIN_LENGTH: 4,
+  IDEMPOTENCY_KEY_SCHEMA_MAX_LENGTH: 256,
   CANDIDATE_ID_MIN_UTF8_BYTES: 1,
   CANDIDATE_ID_MAX_UTF8_BYTES: 512,
+  CITATION_LOCATOR_SCHEME_MIN_UTF8_BYTES: 1,
+  CITATION_LOCATOR_SCHEME_MAX_UTF8_BYTES: 512,
+  CITATION_LOCATOR_VALUE_MIN_UTF8_BYTES: 1,
+  CITATION_LOCATOR_VALUE_MAX_UTF8_BYTES: 512,
   RECORD_ID_PATTERN: '^mem_[a-z2-7]+$',
   DIGEST_PATTERN: '^sha256:[0-9a-f]{64}$',
   CURSOR_PATTERN: '^(0|[1-9][0-9]*)$',
@@ -284,6 +296,7 @@ export const MEMORY_MCP_LIMITS = {
   MAX_TRANSPORT_COMBINED_SERIALIZED_UTF8_BYTES: 2097152,
   MAX_INVOCATION_DEADLINE_MS: 30000,
   CONFIRMATION_MAX_TTL_SECONDS: 300,
+  CONFIRMATION_MAX_EXECUTION_SECONDS: 30,
   AUTHORIZATION_RECEIPT_MAX_TTL_SECONDS: 300,
 } as const;
 

@@ -32,8 +32,8 @@ export const ENGRAM_MEMORY_REFERENCE_TOPOLOGY_V1 = {
 export const CLUSTER_MESH_MEMORY_INHERITANCE_CONTRACT_V1 = {
   subpath: '@sentropic/cluster-mesh/memory',
   app_id: 'engram',
-  provider_id: 'engram-memory',
-  provider_app_id: 'engram-memory',
+  provider_id: 'sentropic.engram.memory',
+  connector_id: 'engram-memory',
   voluntary_host_inheritance_only: true,
   default_enabled: false,
   auto_registered_in_default_bootstrap: false,
@@ -63,24 +63,32 @@ export type MemoryActivationEvaluationV1 =
 
 /**
  * Evaluates whether the Engram memory MCP surface may be activated for a host
- * and tenant session under the voluntary `cluster-mesh/memory` contract (M10).
+ * and tenant session under the voluntary `cluster-mesh/memory` contract (M10),
+ * enforcing M4 closed-world literal-`true` (`=== true`) semantics.
  */
 export function evaluateClusterMeshMemoryInheritanceV1(
   config: PersistedMemoryActivationConfigV1,
 ): MemoryActivationEvaluationV1 {
-  if (!config.host_memory_mcp_enabled || !config.tenant_memory_mcp_enabled) {
+  const raw = config as unknown as Record<string, unknown>;
+  if (
+    raw.host_memory_mcp_enabled !== true ||
+    raw.tenant_memory_mcp_enabled !== true
+  ) {
     return {
       enabled: false,
       refusal_code: 'memory_mcp_disabled_by_default',
     };
   }
-  if (!config.host_config_persisted || !config.tenant_policy_persisted) {
+  if (
+    raw.host_config_persisted !== true ||
+    raw.tenant_policy_persisted !== true
+  ) {
     return {
       enabled: false,
       refusal_code: 'unpersisted_activation_config',
     };
   }
-  if (!config.cluster_mesh_memory_module_available) {
+  if (raw.cluster_mesh_memory_module_available !== true) {
     return {
       enabled: false,
       refusal_code: 'cluster_mesh_module_unavailable',

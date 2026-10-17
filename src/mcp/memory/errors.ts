@@ -434,6 +434,103 @@ export function sanitizePublicErrorMessage(
   return fallbackMessage;
 }
 
+export const TRUSTED_CONTEXT_UNAVAILABLE_PROTOCOL_ERROR = {
+  code: -32603,
+  message: 'Trusted invocation context unavailable',
+} as const;
+
+export type McpProtocolErrorObjectV1 =
+  typeof TRUSTED_CONTEXT_UNAVAILABLE_PROTOCOL_ERROR;
+
+export class TrustedContextUnavailableProtocolError extends Error {
+  readonly code = -32603 as const;
+  readonly protocolError: McpProtocolErrorObjectV1 =
+    TRUSTED_CONTEXT_UNAVAILABLE_PROTOCOL_ERROR;
+
+  constructor() {
+    super(TRUSTED_CONTEXT_UNAVAILABLE_PROTOCOL_ERROR.message);
+    this.name = 'TrustedContextUnavailableProtocolError';
+  }
+}
+
+function hasLoneSurrogateInAuditId(value: string): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = i + 1 < value.length ? value.charCodeAt(i + 1) : 0;
+      if (next < 0xdc00 || next > 0xdfff) return true;
+      i++;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function isValidTrustedAuditId(auditId: unknown): auditId is string {
+  if (
+    typeof auditId !== 'string' ||
+    hasLoneSurrogateInAuditId(auditId) ||
+    auditId.normalize('NFC') !== auditId ||
+    auditId.trim().length === 0
+  ) {
+    return false;
+  }
+  const bytes = Buffer.byteLength(auditId, 'utf8');
+  return bytes >= 1 && bytes <= 512;
+}
+
+function requireTrustedAuditId(auditId: unknown): string {
+  if (!isValidTrustedAuditId(auditId)) {
+    throw new TrustedContextUnavailableProtocolError();
+  }
+  return auditId;
+}
+
+export type TrustedAuditDispatchGuardResultV1<T> =
+  | {
+      readonly ok: true;
+      readonly auditId: string;
+      readonly providerDispatched: true;
+      readonly response: McpToolCallResponseV1<T>;
+    }
+  | {
+      readonly ok: false;
+      readonly protocolError: McpProtocolErrorObjectV1;
+      readonly providerDispatched: false;
+      readonly reservationCreated: false;
+      readonly canonicalEffectCommitted: false;
+    };
+
+/**
+ * M2 / M6 Host dispatch guard for trusted `auditId` (`A10-R5-AUDIT` / `M2-AUDIT-MISSING`).
+ *
+ * When the host/broker fails to supply a valid trusted `auditId`, the call is
+ * refused at the protocol boundary with `{ code: -32603, message: "Trusted invocation context unavailable" }`
+ * BEFORE provider dispatch, reservation, or canonical effect, and WITHOUT any
+ * domain `AppResultEnvelope` (`structuredContent` / `CallToolResult`).
+ */
+export function guardTrustedAuditDispatchV1<T>(
+  auditId: unknown,
+  dispatchProvider: (trustedAuditId: string) => McpToolCallResponseV1<T>,
+): TrustedAuditDispatchGuardResultV1<T> {
+  if (!isValidTrustedAuditId(auditId)) {
+    return {
+      ok: false,
+      protocolError: TRUSTED_CONTEXT_UNAVAILABLE_PROTOCOL_ERROR,
+      providerDispatched: false,
+      reservationCreated: false,
+      canonicalEffectCommitted: false,
+    };
+  }
+  return {
+    ok: true,
+    auditId,
+    providerDispatched: true,
+    response: dispatchProvider(auditId),
+  };
+}
+
 export interface NeutralErrorMappingContextV1 {
   readonly tool: EngramMemoryToolName;
   readonly code?: PublicMemoryErrorCode;
@@ -442,12 +539,12 @@ export interface NeutralErrorMappingContextV1 {
   readonly retryable?: boolean;
   readonly denial?: boolean;
   readonly details?: Readonly<Record<string, unknown>>;
-  readonly auditId?: string;
+  readonly auditId: string;
   /**
-   * Whether target-scope authorization has already succeeded for the target
-   * `record_id` / `candidate_id`. When `false` on any target-bearing tool
-   * (`get`, `request_admission`, `withdraw`, `forget`), existence/state/digest
-   * codes normalize to `NOT_FOUND`.
+   * Closed-world literal-`true` verdict (`targetAuthorized === true`).
+   * Whenever `targetAuthorized !== true` (including `undefined`, `false`, `null`,
+   * `"true"`, or `1`) on any target-bearing tool (`get`, `request_admission`,
+   * `withdraw`, `forget`), existence/state/digest codes normalize to `NOT_FOUND`.
    */
   readonly targetAuthorized?: boolean;
 }
@@ -456,12 +553,18 @@ export interface NeutralErrorMappingContextV1 {
  * Deterministically maps any neutral `MemoryErrorV1` or `PublicMemoryErrorCode`
  * to a closed `ToolFailureV1` (`AppResultEnvelope`) and its wrapping
  * `McpToolCallResponseV1<never>`, stripping all `details` and raw backend
- * messages and enforcing pre-auth target-existence protection across all
- * target-bearing tools (`get`, `request_admission`, `withdraw`, `forget`).
+ * messages and enforcing closed-world pre-auth target-existence protection
+ * (`targetAuthorized === true`) across all target-bearing tools (`get`,
+ * `request_admission`, `withdraw`, `forget`).
+ *
+ * Requires a valid trusted host `auditId`; never fabricates a fallback audit ID.
  */
 export function mapNeutralMemoryErrorToPublic(
   ctx: NeutralErrorMappingContextV1,
 ): McpToolCallResponseV1<never> {
+  const auditId = requireTrustedAuditId(
+    (ctx as { auditId?: unknown }).auditId,
+  );
   const sourceError = ctx.error;
   const isDenial = ctx.denial === true || sourceError?.denial === true;
   const rawCode: PublicMemoryErrorCode =
@@ -474,10 +577,13 @@ export function mapNeutralMemoryErrorToPublic(
     effectiveCode = 'STORE_UNAVAILABLE';
   }
 
+  const targetAuthorized =
+    (ctx as { targetAuthorized?: unknown }).targetAuthorized === true;
+
   let normalizedToNotFound = false;
   if (
     TARGET_BEARING_MEMORY_TOOLS.has(ctx.tool) &&
-    ctx.targetAuthorized === false &&
+    !targetAuthorized &&
     (isDenial || TARGET_EXISTENCE_SENSITIVE_CODES.has(effectiveCode))
   ) {
     effectiveCode = 'NOT_FOUND';
@@ -493,11 +599,6 @@ export function mapNeutralMemoryErrorToPublic(
       : typeof explicitRetryable === 'boolean'
         ? explicitRetryable
         : spec.retriable;
-
-  const auditId =
-    typeof ctx.auditId === 'string' && ctx.auditId.trim().length > 0
-      ? ctx.auditId
-      : 'audit_mcp_l0_default';
 
   const failure: ToolFailureV1 = {
     ok: false,
@@ -527,12 +628,9 @@ export function mapNeutralMemoryErrorToPublic(
 
 export function createToolSuccessEnvelope<T>(
   value: T,
-  auditId = 'audit_mcp_l0_default',
+  auditId: string,
 ): McpToolCallResponseV1<T> {
-  const effectiveAuditId =
-    typeof auditId === 'string' && auditId.trim().length > 0
-      ? auditId
-      : 'audit_mcp_l0_default';
+  const effectiveAuditId = requireTrustedAuditId(auditId);
   const envelope: ToolSuccessV1<T> = {
     ok: true,
     output: {
@@ -570,6 +668,8 @@ export function isMutationTool(tool: EngramMemoryToolName): boolean {
  * - Reads or pre-commit failures map to `STORE_UNAVAILABLE` (or classified
  *   `CAPABILITY_UNAVAILABLE` / `DEADLINE_EXCEEDED` / `POLICY_UNAVAILABLE`).
  * - Mutations whose commit phase was entered map to `MUTATION_OUTCOME_UNKNOWN`.
+ *
+ * Requires a valid trusted host `auditId`; never fabricates a fallback audit ID.
  */
 export function mapUnexpectedDependencyExceptionToPublic(input: {
   readonly tool: EngramMemoryToolName;
@@ -582,13 +682,17 @@ export function mapUnexpectedDependencyExceptionToPublic(input: {
     | 'deadline_exceeded'
     | 'timeout'
     | 'policy_unavailable';
-  readonly auditId?: string;
+  readonly auditId: string;
 }): McpToolCallResponseV1<never> {
-  if (isMutationTool(input.tool) && input.commitPhaseEntered) {
+  const auditId = requireTrustedAuditId(
+    (input as { auditId?: unknown }).auditId,
+  );
+  if (isMutationTool(input.tool) && input.commitPhaseEntered === true) {
     return mapNeutralMemoryErrorToPublic({
       tool: input.tool,
       code: 'MUTATION_OUTCOME_UNKNOWN',
-      auditId: input.auditId,
+      auditId,
+      targetAuthorized: true,
     });
   }
 
@@ -607,6 +711,7 @@ export function mapUnexpectedDependencyExceptionToPublic(input: {
   return mapNeutralMemoryErrorToPublic({
     tool: input.tool,
     code,
-    auditId: input.auditId,
+    auditId,
+    targetAuthorized: true,
   });
 }
