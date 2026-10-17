@@ -98,6 +98,9 @@ add('A03-audit-protocol', 'policy.ts', "return { ok: false, kind: 'protocol_refu
 for (const field of ['capture_policy_version', 'admission_policy_version']) {
   add('A05-duplicate-' + field, 'policy.ts', "if (Object.hasOwn(r, '" + field + "') &&", 'if (false &&', 'minor 13 ', 706);
 }
+add('M5-lookup-key-includes-tool', 'policy.ts', 'isSameMemoryMutationLookupKeyV1(r.lookup_key, lookupKey),', 'isSameMemoryMutationLookupKeyV1(r.lookup_key, lookupKey) && r.preimage.tool_name === incoming.preimage.tool_name,', 'M5-CROSS-TOOL-KEY M:', 698);
+add('A05-digest-omits-target', 'policy.ts', 'stringifyRfc8785JcsPreservingValidatedStrings(validated.value)', 'stringifyRfc8785JcsPreservingValidatedStrings(Object.fromEntries(Object.entries(validated.value).filter(([k]) => k !== "target")))', 'A05 literal changed target', 690);
+add('A05-digest-omits-effective-value', 'policy.ts', 'stringifyRfc8785JcsPreservingValidatedStrings(validated.value)', 'stringifyRfc8785JcsPreservingValidatedStrings(JSON.parse(JSON.stringify(validated.value, (k,v) => k === "reason_ref" ? undefined : v)))', 'A05 literal changed effective value', 690);
 add('O1-tombstone-evidence', 'policy.ts', 'if (!(evidence instanceof Set || Array.isArray(evidence)) ||\n      ![...evidence].every(isValidSha256Digest))', 'if (false)', 'O1 A10-R4', 716);
 
 const results = [];
