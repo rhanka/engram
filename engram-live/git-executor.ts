@@ -112,13 +112,16 @@ const ALLOWED_COMMANDS: ReadonlySet<string> = new Set([
   "hash-object",
   "ls-files",
   "ls-tree",
+  "merge-base",
   "rev-parse",
+  "rev-list",
   "show-ref",
   "symbolic-ref",
 ]);
 
 const RAW_CAT_FILE_VERBS: ReadonlySet<string> = new Set(["-p", "blob", "commit", "tree", "-s", "-t"]);
 const HEX_OID = /^[0-9a-f]{40,64}$/;
+const FULL_OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const REFUSED_TOKENS = ["--textconv", "--ext-diff", "--stdin-paths", "--filters"];
 
 // Per-invocation environment overrides are limited to the index-context
@@ -145,7 +148,7 @@ function validatePerInvocationEnv(env: NodeJS.ProcessEnv | undefined, command: s
   }
 }
 
-function validateInvocation(args: readonly string[]): void {
+function validateInvocation(args: readonly string[], input?: Buffer | string): void {
   const command = args[0] as string;
   for (const token of args) {
     if (REFUSED_TOKENS.includes(token) || token.startsWith("--output")) {
@@ -181,9 +184,31 @@ function validateInvocation(args: readonly string[]): void {
     return;
   }
   if (command === "cat-file") {
-    // Raw object reads only: no --filters/--textconv/--path/--batch forms.
+    // Raw batches admit only a bounded stdin list of full literal OIDs;
+    // no revision/path expressions, custom formats or conversion flags.
+    if (args.length === 2 && args[1] === "--batch") {
+      const bytes = input === undefined ? Buffer.alloc(0) : Buffer.from(input);
+      const ids = bytes.toString("latin1").split("\n");
+      if (bytes.length > 65 * 128 || ids.pop() !== "" || !ids.length || ids.length > 128 || !ids.every(oid => FULL_OID.test(oid))) {
+        throw refused(command, "raw batches require 1 to 128 newline-terminated full OIDs");
+      }
+      return;
+    }
+    // Other raw object reads: no --filters/--textconv/--path forms.
     if (args.length !== 3 || !RAW_CAT_FILE_VERBS.has(args[1] as string) || !HEX_OID.test(args[2] as string)) {
       throw refused(command, "cat-file is limited to cat-file -p|blob|commit|tree|-s|-t <hex-oid>");
+    }
+    return;
+  }
+  if (command === "rev-list") {
+    if (args.length !== 3 || !FULL_OID.test(args[1] ?? "") || args[2] !== "--") {
+      throw refused(command, "ancestry listing requires one full OID followed by --");
+    }
+    return;
+  }
+  if (command === "merge-base") {
+    if (args.length !== 4 || args[1] !== "--is-ancestor" || !args.slice(2).every(oid => FULL_OID.test(oid))) {
+      throw refused(command, "retention membership requires --is-ancestor and two full OIDs");
     }
     return;
   }
@@ -312,7 +337,7 @@ export function createSafeGitExecutor(options: SafeGitOptions): SafeGitExecutor 
     "mailmap.blob=",
   ];
 
-  function buildArgv(args: readonly string[]): string[] {
+  function buildArgv(args: readonly string[], input?: Buffer | string): string[] {
     if (args.length === 0) throw new Error("live-git: refused empty Git invocation");
     const command = args[0] as string;
     if (!ALLOWED_COMMANDS.has(command)) {
@@ -321,7 +346,7 @@ export function createSafeGitExecutor(options: SafeGitOptions): SafeGitExecutor 
           "no update-index, write-tree, checkout/reset, status preflight, config, worktree mutation or network command)",
       );
     }
-    validateInvocation(args);
+    validateInvocation(args, input);
     return [...hardeningArgs, ...args];
   }
 
@@ -396,13 +421,13 @@ export function createSafeGitExecutor(options: SafeGitOptions): SafeGitExecutor 
     probeNoConfigIncludes,
     probe(cwd: string, args: readonly string[], input?: Buffer | string, env?: NodeJS.ProcessEnv): GitSpawnResult {
       if (args[0] === "blame") throw refused("blame", "requires the separately gated byte-path blame method");
-      const argv = buildArgv(args);
+      const argv = buildArgv(args, input);
       validatePerInvocationEnv(env, args[0] as string);
       return spawnWithEnv(options.gitPath, argv, { cwd, input, env });
     },
     run(cwd: string, args: readonly string[], input?: Buffer | string, env?: NodeJS.ProcessEnv): Buffer {
       if (args[0] === "blame") throw refused("blame", "requires the separately gated byte-path blame method");
-      const argv = buildArgv(args);
+      const argv = buildArgv(args, input);
       validatePerInvocationEnv(env, args[0] as string);
       const result = spawnWithEnv(options.gitPath, argv, { cwd, input, env });
       if (result.status !== 0) {
