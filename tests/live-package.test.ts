@@ -818,4 +818,77 @@ describe("live package", () => {
       }
     } finally { box.dispose(); }
   });
+
+  it("the packed symbol correspondence producer reuses L5 receipts offline through the public entry", () => {
+    const box = new LiveGitSandbox();
+    try {
+      const repo = box.init(join(box.root, "g2-retained"));
+      const commit = (path: string, content: string, parent?: string) => {
+        const blob = box.git(repo, ["hash-object", "-w", "--no-filters", "--stdin"], content).toString().trim();
+        const tree = box.git(repo, ["mktree", "-z"], `100644 blob ${blob}\t${path}\0`).toString().trim();
+        return box.git(repo, ["commit-tree", tree, ...(parent ? ["-p", parent] : [])], "G2 packed fixture\n").toString().trim();
+      };
+      const before = commit("old.ts", "export function oldName() { return 42; }\n");
+      const after = commit("new.ts", "export function newName() { return 42; }\n", before);
+      expect(box.read(repo, ["diff-tree", "-p", "-r", before, after]).toString()).toContain("+export function newName() { return 42; }");
+      const digestBefore = inventoryDigest({ root: repo });
+      for (const name of ["symbol-history", "code-analysis", "analysis-cache", "comparisons"]) {
+        for (const extension of ["js", "d.ts", "d.ts.map"]) expect(packed.packedPaths).toContain(`dist/${name}.${extension}`);
+      }
+      const probe = `
+        import { correspondSymbols, analyzeCode, createSafeGitExecutor, SYMBOL_HISTORY_OPTIONS, POLICY_VERSION } from '@sentropic/engram-live';
+        import { createHash } from 'node:crypto';
+        import { readFileSync } from 'node:fs';
+        const data = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+        let networkCalls = 0;
+        globalThis.fetch = () => { networkCalls++; throw new Error('offline'); };
+        const git = createSafeGitExecutor({ gitPath: data.gitPath, disabledHooksDir: data.hooks });
+        const objects = { async loadBlob(oid) { return git.run(data.cwd, ['cat-file', 'blob', oid]); },
+          async loadObject(oid) { const bytes = git.run(data.cwd, ['cat-file', '--batch'], oid + '\\n');
+            const end = bytes.indexOf(10), fields = bytes.subarray(0, end).toString().split(' ');
+            return fields[1] === 'missing' ? null : { type: fields[1], body: bytes.subarray(end + 1, end + 1 + Number(fields[2])) }; },
+          async isShallowBoundary() { return false; } };
+        const hash = text => createHash('sha256').update(text).digest('hex');
+        const request = { scope: { tenant: 'packed-g2', clone: 'packed-clone' }, generationId: 'packed-g2-generation',
+          before: { algorithm: 'sha1', oid: data.before }, after: { algorithm: 'sha1', oid: data.after },
+          options: SYMBOL_HISTORY_OPTIONS, policyVersion: POLICY_VERSION };
+        const ports = { async authorize() { return 'authorized'; },
+          async openRetained(q, endpoint) { git.assertNoConfigIncludes([data.cwd + '/.git/config'], true);
+            return { objects, receipt: { scope: q.scope, ...endpoint, receivedAt: 1700000000000, backupRef: 'packed-g2' } }; },
+          async inventory(q) { const content = Buffer.from((await objects.loadObject(q.blob.oid)).body).toString();
+            const result = await analyzeCode({ scope: q.scope, path: Buffer.from(q.path).toString(), treeOid: q.tree.oid,
+              content, language: 'typescript', configHash: hash('config'), dependencyHash: hash('dependencies'),
+              historicalBounds: { known: true, heads: [q.commit] } }, { objects,
+              grammar: { status() { const bytes = Uint8Array.from([0,97,115,109,1,0,0,0]);
+                return { state: 'available', version: 'fixture/1', bytes, digest: createHash('sha256').update(bytes).digest('hex'), abi: 'fixture/1', grammarId: 'fixture-ts' }; }, load() { return {}; } },
+              extractor: { parse({ content }) { return { symbols: [{ slot: 'function:0', kind: 'function',
+                name: content.includes('oldName') ? 'oldName' : 'newName', bodyHash: hash('return 42;') }],
+                calls: [], inheritances: [], topologyHash: hash(content),
+                syntax: { rootSpansBytes: true, walkComplete: true, hasError: false, hasMissing: false } }; } }
+            }); return result.declarationInventory; } };
+        const result = await correspondSymbols(request, ports);
+        const denied = await correspondSymbols(request, { ...ports, async authorize() { return 'unauthorized'; } });
+        console.log(JSON.stringify({ result, denied, networkCalls }));
+      `;
+      writeFileShim(join(packed.installDir, "symbol-history-probe.mjs"), probe);
+      const dataPath = join(packed.installDir, "symbol-history-input.json");
+      writeFileSync(dataPath, JSON.stringify({ cwd: repo, before, after, gitPath: box.trace.executable, hooks: join(box.root, "disabled-hooks") }));
+      const output = runProtectedPhase(process.execPath, ["symbol-history-probe.mjs", dataPath], {
+        cwd: packed.installDir, env: { ...tripwireEnv(packed.tripwireBin), NODE_PATH: "" },
+      });
+      recordPhaseMarker(packed.phaseTrace, "symbol-history", packed.pythonMarker);
+      expectNoPython(packed.phaseTrace);
+      const { result, denied, networkCalls } = JSON.parse(output);
+      expect(result.state, JSON.stringify(result.coverage)).toBe("complete");
+      expect(result.calculationVersion).toBe("live-symbol-history/1");
+      expect(result.correspondences).toHaveLength(1);
+      expect(result.correspondences[0]).toMatchObject({ relation: "renamed-and-moved", reason: "unique-exact-body", similarity: 100 });
+      expect(result.correspondences[0].before[0]).toMatchObject({ name: "oldName", commit: { oid: before } });
+      expect(result.correspondences[0].after[0]).toMatchObject({ name: "newName", commit: { oid: after } });
+      expect(denied.state).toBe("partial");
+      expect(denied.correspondences).toEqual([]);
+      expect(networkCalls).toBe(0);
+      expect(inventoryDigest({ root: repo })).toBe(digestBefore);
+    } finally { box.dispose(); }
+  });
 });
