@@ -1,37 +1,47 @@
 ---
-status: incomplete
+status: author-repaired-awaiting-cofreeze
 review-author:
   host: codex
   model: gpt-6.1-sol
   effort: xhigh
 author-metadata-source: owner request (declared identity)
-target-ref: 9f0653b6417b239db5286fc709e54e1f57d0327c
-reviewer: Opus (owner-selected; not dispatched)
-observed-failure: The owner forbids network access; no model call or review launch was performed. Independent review and co-owner acceptance remain unverified.
+target-ref: 1282a31d019052b1f6665bfb27ffd4eb307ed50d
+reviewed-base: 1359e6b8637faa12a59b974739cea3f51094d777
+review-input-sha256: 989a16f44d07fd35db196fdb2311590d2c8118102d7ec59fc2d709bf7a2afa2f
+independent-rereview: unverified
+co-owner-acceptance: unverified
 ---
 
-# MCP-L0 contract repair handoff
+# MCP-L0a co-review repair handoff
 
-Normative input: `SPEC-memory-mcp-v3.1.md`, exact-byte SHA-256 `f90c927964b44fdf6ad712eee9b894762250239384643a3790931c142d3aeeca`, plus the co-frozen open-point answers. Starting head: `31cfdc82dd19e6f3709f7bd4dc3cd1ca2d0cc486`. Method: `DESIGN-NOTE-L0-round3.md`; author replacement requested by the owner. No independent-review round has been consumed by this handoff.
+Normative input: `/home/antoinefa/src/graphify/.graphify/scratch/design/memory-mcp/SPEC-memory-mcp-v3.1.md`, exact-byte SHA-256 `f90c927964b44fdf6ad712eee9b894762250239384643a3790931c142d3aeeca`. Co-frozen answers SHA-256: `71ba105149a64ca775c3a27ea5e1d0d16f9abd215cac28aaa87691b1655ba2a7`.
 
-| r3 major | Author closure and independent evidence |
+Received review: `/home/antoinefa/src/sentropic/.tmp/engram-mcp/cofreeze-L0a-review.md`, SHA-256 above, verdict **OBJECTIONS** against `1359e6b8`. This handoff records author repairs, not a new co-freeze verdict. The target ref identifies the final implementation/tests; later evidence/documentation commits do not change those bytes. L0b was outside the received review and has no new acceptance here.
+
+| Objection | Repair and independent counterexample |
 |---|---|
-| R2, M4:525–527 | Lifecycle and both reservation entry points require literal `true` before lookup/disclosure. Missing configured admission decisions cannot default to acceptance. Refusal matrices cover omitted/non-Boolean authorization, continuation and terminal disclosure. |
-| R3, M7:819,865,876,890 | Exact Sentropic declarations are vendored in the product contract area with commit and byte digests. Six literals and manifest compile against those declarations, with mutable arrays and `capabilityRef`. Schema fields/types and both complete elicitation schemas use independent fixtures. |
-| R5, M2:322–324 | The expressly forbidden synthetic audit ID is rejected by the dispatch guard and envelope builders. Tests assert the constant protocol refusal and zero provider calls. |
-| R6/A05, M5:706–708 | Complete preimage and exact policy projection are mandatory on both old and principal-scoped reservation paths. Serialization/reopen cases refuse missing/mismatched versions. Committed replay requires a canonical replay reference; the compatibility path does not fabricate time/audit/fence context. |
-| A02, M7:908, A02:1607 | Every port version is checked; mutation digest profile and confirmation domain are checked. Profile IDs, parameter-schema version and asset digests are required. The bounded-parameter pattern follows registry R 1.1.4 §3.3 instead of the earlier invented printable-ASCII regex. |
-| A03, M2:221, M4:498, A03:1608 | Channel binding, invocation transport scope, cancellation and deadline are required and preserved, together with agent identity and delegation. |
-| A06, M4:561, A06:1611 | Delegation must link the initiating and approving principals in the correct direction. The old confirmation helper delegates to the full enrolled-assurance/continuation verifier. |
-| A01/A07/A09, lines 1606,1612,1614 | Registry entry/package declarations, external byte/JCS digest and asset contracts, host backend/fence/custody/admin/retention/maintenance/pagination receipts, and exact candidate/published qualification tuples are declared. Changed artifact/source/lock/contract closure requires requalification. |
-| Method, M11:1418–1420, A10:1623 | Every string-bound fixture is exercised, including a nonprimary component and an unreferenced citation so another field cannot mask the removed check. Numeric/collection/whole-argument bounds are independent fixtures. Production-schema identity comparisons were replaced by field/type fixtures. See the reproducible mutation report below. |
+| O1, M:525,716–718 | Ordinary admission requires an explicit negative tombstone match; unknown/non-Boolean matches refuse `POLICY_UNAVAILABLE`. Recapture requires a present validated same-scope digest collection, so `Set(undefined)` cannot supply eligibility. Both report examples were RED before repair, then GREEN; `O1-tombstone-verdict` and `O1-tombstone-evidence` are killed. |
+| O2, M:525,559,561,567 | A06 expected binding requires current literal-true approver enrollment, non-revocation, assurance and host-deployment qualification. Current verdicts bind the exact approving principal/subject, expected issuer and accepted assurance-policy versions. Historical assurance alone refuses, including committed disclosure. The runtime assurance record no longer fixes qualification to `unverified`; qualifying the host changes its supplied verdict, not the contract. The report example was RED; six current-check/configuration mutations are killed. |
+| O3, M:538,542,545–547,592,1608 | `ExpectedMemoryInvocationContextV1` is mandatory: current generation/epoch, actual tool, effect time and host confirmation policy. Mutation/destructive envelope requirements derive from tool identity; argument/envelope key equality and argument/trusted-purpose equality are enforced. `MemoryContextProjectionV1.purpose_ref` preserves purpose. Omitted expectations were RED; seven freshness/envelope/purpose mutations are killed. |
 
-R1 and R4 from the earlier reviews remain covered: exact/multibyte byte boundaries, and successful `pending_adjudication` with `isError:false`. The first mutation campaign exposed missing assertions for explicit missing policy projections, published-schema requiredness and outer storage receipts; those assertions were strengthened. Removal of a redundant projection check was replaced by a meaningful policy-version serialization mutation.
+All counterexamples live in `tests/memory-mcp-cofreeze.test.ts`, with the exact normative lines in test names and atomic commit bodies. The prior A06 committed-reservation guard remains covered through both confirmation entry points. Only original confirmation expiry and the no-effect execution window are relaxed for committed disclosure; current authorization, current assurance/configuration, original approval and binding checks remain required. Cross-session committed recovery uses the principal-scoped lookup after fresh caller/target authorization (M:567).
 
-Evidence: [mutation report](MCP_L0_SOL_MUTATIONS.md), generated by `node scripts/check-memory-mcp-mutations.mjs`. Each mutant changes production source only and is restored in `finally`; a failed test case or a standard-type compiler diagnostic is required. The report binds the restored source bytes.
+| Minor | Disposition under explicit v3.1 rules |
+|---|---|
+| 5 | Fixed, M:238,244,561,688,821: `query` and `candidate_id` preserve well-formed NFD strings; the independent NFC fixtures are corrected. Candidate input/output, digest-target and withdrawal-confirmation validation agree. The confirmation target counterexample also kills the candidate-target NFC mutation. |
+| 6 | Fixed, M:241–242,279: nonempty NFC opaque refs and byte-valid keys permit whitespace; no unspecified trimming remains in these field validators or query validation. |
+| 7 | Fixed for authority direction/current expiry, M:517,525,547: invoking principal is the delegate; delegation expiry is checked at the supplied effect time, not issue time. Invocation issue/deadline freshness also uses that time. Adding tenant/namespace fields to the delegation itself is non-normative, left unchanged. |
+| 8 | **Non-normative, left unchanged:** v3.1 does not freeze a replacement credential grammar/ceiling. No new token format is invented; existing credential bounds remain for owner/platform disposition. |
+| 9 | Fixed, M:567,704,710,782: unknown effects return `MUTATION_OUTCOME_UNKNOWN`; a canonical commitment with replay proof but no stored host output returns `reconcile_canonical`, never a new execution. Missing canonical proof remains unknown. |
+| 10 | Fixed, M:527,777: caller admission precedes target normalization in lifecycle and both lookup entries; caller denial is `UNAUTHORIZED`, admitted target denial is `NOT_FOUND`. |
+| 11 | Fixed for required bindings/closure, M:561,565,1602: incomplete continuation/expected refs cannot match through `undefined`; every supplied reattachment proof is closed and checked. An added approving-principal namespace field is non-normative, left unchanged; current principal/subject/issuer matching is supplied by O2. |
+| 12 | Fixed, M:322–326,785: invalid/synthetic audit IDs produce the constant protocol `-32603` before projection's domain checks, with a distinct `protocol_refusal` arm and no domain envelope. Existing dispatch/envelope guards retain the same refusal. |
+| 13 | Fixed, M:706: optional legacy top-level policy copies must equal the applicable sealed projection; tag-only arms reject fabricated capture/admission versions. Both version-copy mutations are killed. |
 
-Final validation on the restored source bytes: `npx vitest run tests/memory*` = **544 passed, 11 skipped, 0 failed** across 40 files; the 11 skips are the unprovisioned Postgres lanes. `npx tsc --noEmit -p .`, `git diff --check` and the staged whitespace check pass. **81/81** mutations are killed; the restored source hashes match the report. Standard declaration hashes were also checked against the actual local Sentropic commit. All commands use local installed tools; npm is offline. Package manifests and locks are unchanged. No Python, network request, install, provider/loader delivery, push, publication or production qualification was performed.
+M5-CROSS-TOOL-KEY now consumes all three independent fixture pairs (capture→withdraw, capture→admission, admission→forget), testing both same-key conflict and distinct-key execution. Stored lookup keys use the spec's nine fields independently of production extraction. `M5-lookup-key-includes-tool` adds tool identity to the lookup criterion and is killed (M:694–698).
 
-No normative exception is selected by this work. M14 option B remains selected. Actual deployment/backend/custody values, later adapter versions, `L5-MEMORY-V1` qualification, joint freeze receipts and Opus acceptance remain `unverified`; contract fixtures are not evidence of those runtime or release outcomes.
+A05 adds literal changed-target (`cand_01`→`cand_02`) and changed-effective-value (`reason:duplicate-candidate`→`reason:operator-choice`) vectors, with exact bytes/full hashes and same-key conflict assertions (M:686,690). Bytes were transcribed from the specified closed withdrawal arm, checked by `jq -cS`, then hashed independently by `sha256sum` and Node crypto, without production serialization. The respective hashes are `sha256:3df1c2910332249fd977cdcc779d2d956a0f307e3b549adcecc02971702a6733` and `sha256:9d74c314c207fe80fc36c6b0c8da6feca6b9f0d0a91753b917d46621ac67caee`. Mutations dropping the target or effective reason from digest bytes are killed.
 
-Co-frozen answer file SHA-256: `71ba105149a64ca775c3a27ea5e1d0d16f9abd215cac28aaa87691b1655ba2a7`.
+Final validation on restored source bytes: `npx vitest run tests/memory*` = **563 passed, 11 skipped, 0 failed**, across 41 files; `npx tsc --noEmit -p .` and `git diff --check` pass. **114/114 mutations are killed** and every restored-source SHA-256 matches the [mutation evidence](MCP_L0_SOL_MUTATIONS.md), generated by `node scripts/check-memory-mcp-mutations.mjs`. Selected reruns use `MEMORY_MCP_MUTATION_IDS` and do not overwrite the full report. Sources are restored in `finally`; tests/fixtures are never mutated. The full campaign exposed an old missing-policy test masked by O1's earlier refusal; supplying explicit tombstone evidence restores its independent policy-default kill.
+
+The owner forbids network access: no new review/model launch, install, dependency, provider/loader delivery, push, publication or production qualification was performed. All checks use installed local tools with npm offline; no Python is used. Independent re-review, joint freeze, deployment/backend/custody qualification, L5 reference/runtime qualification and co-owner acceptance remain `unverified`. Existing L0b contracts and their earlier evidence do not constitute acceptance by this L0a repair round. M14 option B is unchanged.

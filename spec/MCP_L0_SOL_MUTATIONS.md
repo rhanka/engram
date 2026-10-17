@@ -4,7 +4,7 @@ Spec SHA-256: `f90c927964b44fdf6ad712eee9b894762250239384643a3790931c142d3aeeca`
 
 Reproduce: `node scripts/check-memory-mcp-mutations.mjs`. Serial source mutations; each source is restored in `finally`. No tests or fixtures are mutated. A killed mutant requires an actual failed test case (or a standard-type compiler diagnostic).
 
-Result: **83/83 killed**. Baseline: both MCP contract suites pass.
+Result: **114/114 killed**. Baseline: all three MCP contract suites pass.
 
 | Mutation | Spec v3.1 line | Result | Failing test |
 |---|---:|---|---|
@@ -26,9 +26,9 @@ Result: **83/83 killed**. Baseline: both MCP contract suites pass.
 | R3-invoke-scope | 913 | killed | MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutral contract declarations Contract 7 — M7 Provider Manifest, CapabilityTool Descriptors, Elicitation Policies, and Catalog Entries (A10-R3-STANDARD) matches M7_MANIFEST_AND_DESCRIPTORS_SPEC_RULE and satisfies StandardAppMcpProviderManifestWithElicitation and StandardCapabilityTool field-by-field |
 | R3-readonly-compatibility | 819 | killed | tsc: actual CapabilityTool mutable arrays |
 | R4-recapture-kind | 1391 | killed | MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutral contract declarations Contract 9, 10, 11 — Host Policy, Retention, Consent, Provenance, Elicitation Confirmation, & Durable Idempotency mints neutral LifecycleEventAnchorV1, validates host elicitation confirm grants, and enforces M5 durable idempotency + tombstone recapture -> pending_adjudication (A10-R4) |
-| R5-synthetic-audit | 322 | killed | MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutral contract declarations L0-A10 — Round-2 Defect Closures (R1..R6) Against Normative Spec Fixture A10-R5-AUDIT / M2-AUDIT-MISSING: refuses missing or invalid auditId at the protocol boundary with -32603 and zero domain envelope or synthetic audit_mcp_l0_default |
+| R5-synthetic-audit | 322 | killed | L0a cofreeze counterexamples minor 12 A10-R5 M:322-326,785: invalid audit is a protocol refusal before other projection checks |
 | R6-projection-optional | 706 | killed | Sol MCP-L0 independent spec counterexamples A10-R6-POLICY M5:706-708: refuses missing projections/preimages on both reservation entry points after reopen |
-| R6-serialized-policy-version | 706 | killed | MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutral contract declarations L0-A10 — Round-2 Defect Closures (R1..R6) Against Normative Spec Fixture A10-R6-POLICY & L0-A05 & M5-CROSS-TOOL-KEY: verifies canonical RFC 8785 JCS bytes, SHA-256 operation digests, policy-version-only changes, missing-version refusal, and cross-tool idempotency key conflicts |
+| R6-serialized-policy-version | 706 | killed | L0a cofreeze counterexamples minor 13 A10-R6 M:706: duplicate persisted policy versions must equal the sealed projection |
 | R6-legacy-preimage | 706 | killed | Sol MCP-L0 independent spec counterexamples A10-R6-POLICY M5:706-708: refuses missing projections/preimages on both reservation entry points after reopen |
 | R6-policy-freshness | 708 | killed | Sol MCP-L0 independent spec counterexamples A10-R6-POLICY M5:706-708: refuses missing projections/preimages on both reservation entry points after reopen |
 | A02-port-version | 908 | killed | Sol MCP-L0 independent spec counterexamples L0-A02 M7:908 / A02:1607: refuses empty or version-incompatible ports, wrong digest profile and wrong confirmation domain |
@@ -77,7 +77,7 @@ Result: **83/83 killed**. Baseline: both MCP contract suites pass.
 | A06-current-target | 567 | killed | Sol MCP-L0 independent spec counterexamples L0-A06 M4:525,561-567: every current authorization and reconnect verdict is closed-world |
 | A06-reconnect-verdict | 565 | killed | Sol MCP-L0 independent spec counterexamples L0-A06 M4:525,561-567: every current authorization and reconnect verdict is closed-world |
 | A06-committed-guard-bypass | 567 | killed | Sol MCP-L0 independent spec counterexamples L0-A06 committed continuation M4:567: rejects the Argon counterexample and retains every approval guard |
-| A06-invocation-principal | 561 | killed | Sol MCP-L0 independent spec counterexamples L0-A06 invocation delegation M4:561: should reject a delegation unrelated to the bound principal |
+| A06-invocation-principal | 517 | killed | L0a cofreeze counterexamples minor 7 M:517,525,547: invocation uses the delegate authority and verifies expiry at the effect guard |
 | R3-elicitation-mode | 890 | killed | MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutral contract declarations Contract 7 — M7 Provider Manifest, CapabilityTool Descriptors, Elicitation Policies, and Catalog Entries (A10-R3-STANDARD) matches M7_MANIFEST_AND_DESCRIPTORS_SPEC_RULE and satisfies StandardAppMcpProviderManifestWithElicitation and StandardCapabilityTool field-by-field |
 | R3-elicitation-required | 890 | killed | MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutral contract declarations Contract 7 — M7 Provider Manifest, CapabilityTool Descriptors, Elicitation Policies, and Catalog Entries (A10-R3-STANDARD) matches M7_MANIFEST_AND_DESCRIPTORS_SPEC_RULE and satisfies StandardAppMcpProviderManifestWithElicitation and StandardCapabilityTool field-by-field |
 | R3-elicitation-ttlSeconds | 890 | killed | MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutral contract declarations Contract 7 — M7 Provider Manifest, CapabilityTool Descriptors, Elicitation Policies, and Catalog Entries (A10-R3-STANDARD) matches M7_MANIFEST_AND_DESCRIPTORS_SPEC_RULE and satisfies StandardAppMcpProviderManifestWithElicitation and StandardCapabilityTool field-by-field |
@@ -91,11 +91,42 @@ Result: **83/83 killed**. Baseline: both MCP contract suites pass.
 | R2-admission-policy-default | 581 | killed | Sol MCP-L0 independent spec counterexamples A10-R2-POLICY M5:581: missing host admission policy never defaults to acceptance |
 | R2-recapture-policy-default | 581 | killed | Sol MCP-L0 independent spec counterexamples A10-R2-POLICY M5:581: missing host admission policy never defaults to acceptance |
 | R4-recapture-success-kind | 1391 | killed | MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutral contract declarations Contract 9, 10, 11 — Host Policy, Retention, Consent, Provenance, Elicitation Confirmation, & Durable Idempotency mints neutral LifecycleEventAnchorV1, validates host elicitation confirm grants, and enforces M5 durable idempotency + tombstone recapture -> pending_adjudication (A10-R4) |
+| O1-tombstone-verdict | 525 | killed | L0a cofreeze counterexamples O1 A10-R4 M:525,716-718: missing tombstone evidence cannot authorize automatic acceptance |
+| O2-approver_currently_enrolled_2fa | 567 | killed | L0a cofreeze counterexamples O2 L0-A06 M:525,559,561,567: historical assurance cannot replace current host verdicts or accepted configuration |
+| O2-approver_not_revoked | 567 | killed | L0a cofreeze counterexamples O2 L0-A06 M:525,559,561,567: historical assurance cannot replace current host verdicts or accepted configuration |
+| O2-approver_current_assurance_verified | 567 | killed | L0a cofreeze counterexamples O2 L0-A06 M:525,559,561,567: historical assurance cannot replace current host verdicts or accepted configuration |
+| O2-host_deployment_qualified | 567 | killed | L0a cofreeze counterexamples O2 L0-A06 M:525,559,561,567: historical assurance cannot replace current host verdicts or accepted configuration |
+| O2-issuer | 561 | killed | L0a cofreeze counterexamples O2 L0-A06 M:525,559,561,567: historical assurance cannot replace current host verdicts or accepted configuration |
+| O2-policy | 561 | killed | L0a cofreeze counterexamples O2 L0-A06 M:525,559,561,567: historical assurance cannot replace current host verdicts or accepted configuration |
+| O3-generation | 547 | killed | L0a cofreeze counterexamples O3 L0-A03 M:525,545-547,592,1608: missing host expectations never waive freshness or envelope binding |
+| O3-epoch | 547 | killed | L0a cofreeze counterexamples O3 L0-A03 M:525,545-547,592,1608: missing host expectations never waive freshness or envelope binding |
+| O3-key-required | 592 | killed | L0a cofreeze counterexamples O3 L0-A03 M:525,545-547,592,1608: missing host expectations never waive freshness or envelope binding |
+| O3-key-equality | 592 | killed | L0a cofreeze counterexamples O3 L0-A03 M:525,545-547,592,1608: missing host expectations never waive freshness or envelope binding |
+| O3-elicitation | 542 | killed | L0a cofreeze counterexamples O3 L0-A03 M:525,545-547,592,1608: missing host expectations never waive freshness or envelope binding |
+| O3-purpose-binding | 538 | killed | L0a cofreeze counterexamples O3 L0-A03 M:525,545-547,592,1608: missing host expectations never waive freshness or envelope binding |
+| O3-purpose-projection | 1608 | killed | L0a cofreeze counterexamples O3 L0-A03 M:525,545-547,592,1608: missing host expectations never waive freshness or envelope binding |
+| M2-query-nfc | 238 | killed | L0a cofreeze counterexamples minors 5-6 M:238,241-244,279,688: accept untrimmed strings and require NFC only on declared fields |
+| M2-candidate-nfc | 244 | killed | L0a cofreeze counterexamples minors 5-6 M:238,241-244,279,688: accept untrimmed strings and require NFC only on declared fields |
+| M2-opaque-trimming | 279 | killed | L0a cofreeze counterexamples minors 5-6 M:238,241-244,279,688: accept untrimmed strings and require NFC only on declared fields |
+| A03-delegation-expiry | 547 | killed | L0a cofreeze counterexamples minor 7 M:517,525,547: invocation uses the delegate authority and verifies expiry at the effect guard |
+| A06-required-binding | 1602 | killed | L0a cofreeze counterexamples minor 11 M:1602,561,565: missing required bindings cannot match an equally incomplete expected object |
+| A06-reattachment-closure | 1602 | killed | L0a cofreeze counterexamples minor 11 M:1602,561,565: missing required bindings cannot match an equally incomplete expected object |
+| A05-unknown-outcome-code | 782 | killed | L0a cofreeze counterexamples minors 9-10 M:527,567,704,710,777,782: current caller admission precedes target disclosure and unknown effects require reconciliation |
+| A05-committed-reconcile | 710 | killed | L0a cofreeze counterexamples minors 9-10 M:527,567,704,710,777,782: current caller admission precedes target disclosure and unknown effects require reconciliation |
+| A05-caller-disclosure-code | 527 | killed | L0a cofreeze counterexamples minor 10 M:527,777: caller admission precedes inaccessible-target normalization |
+| A03-audit-protocol | 785 | killed | L0a cofreeze counterexamples minor 12 A10-R5 M:322-326,785: invalid audit is a protocol refusal before other projection checks |
+| A05-duplicate-capture_policy_version | 706 | killed | L0a cofreeze counterexamples minor 13 A10-R6 M:706: duplicate persisted policy versions must equal the sealed projection |
+| A05-duplicate-admission_policy_version | 706 | killed | L0a cofreeze counterexamples minor 13 A10-R6 M:706: duplicate persisted policy versions must equal the sealed projection |
+| M5-lookup-key-includes-tool | 698 | killed | L0a cofreeze counterexamples M5-CROSS-TOOL-KEY M:694-698: all three pairs conflict on one key and proceed with distinct keys |
+| A05-digest-omits-target | 690 | killed | L0a cofreeze counterexamples A05 literal changed target M:686,690: exact bytes, full hash and same-key conflict |
+| A05-digest-omits-effective-value | 690 | killed | L0a cofreeze counterexamples A05 literal changed effective value M:686,690: exact bytes, full hash and same-key conflict |
+| A06-candidate-target-nfc | 244 | killed | L0a cofreeze counterexamples minor 5 L0-A06 M:244,561,821: a valid NFD candidate target survives confirmation binding |
+| O1-tombstone-evidence | 716 | killed | L0a cofreeze counterexamples O1 A10-R4 M:525,716-718: Set(undefined) is absent evidence, not an empty tombstone set |
 
 Restored source identities:
 
-- `src/mcp/memory/schemas.ts`: `d0a78f7983919a82120a877fc6e1086d9222e3fa5ba60a3a99aab0a1f0d1b797`
-- `src/mcp/memory/policy.ts`: `1d3511f4ca4d58e805dc38bf3dc6d7672459e990e737e45d653838c1df2864b2`
+- `src/mcp/memory/schemas.ts`: `d567afac3e62fda9346dbf522907b88909ca6cc391c8dbf135d4443ffdcfb83b`
+- `src/mcp/memory/policy.ts`: `91625e86f9b81bbe337532845098bfd0cb2f074adb8f643b0e9fa6e1dda24edc`
 - `src/mcp/memory/errors.ts`: `453b47b3feb86d3cbfcb84a280cbbce9e51cadd2e3b627edc2cc55dc9f856010`
 - `src/mcp/memory/gates.ts`: `03d273d15e60c3134dfc6d7204611d79974a75d2085b098f47032d3e8fcf7542`
 - `src/mcp/memory/topology.ts`: `ec9ecd780bcef5e4c5a458dcfe5071924004f5cf127ef3f95a23ea9c02254613`
