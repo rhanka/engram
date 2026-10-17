@@ -2532,7 +2532,6 @@ export interface MemoryConfirmationAssuranceV1 {
   readonly hardware_key_required: false;
   readonly identity_source: 'enrolled_oidc_2fa';
   readonly delegation?: DelegationBindingV1;
-  readonly host_deployment_qualification_status: 'unverified';
 }
 
 export interface MemoryLogicalSessionReattachmentProofV1 {
@@ -2596,6 +2595,15 @@ export interface ExpectedConfirmationContinuationBindingV1 {
   readonly execution_deadline_at: Instant;
   readonly caller_currently_authorized?: unknown;
   readonly target_currently_authorized?: unknown;
+  /** M:559,561,567: fresh host checks for this exact approving identity/configuration. */
+  readonly approving_human_principal_id: OpaqueRef;
+  readonly approving_subject_sub: OpaqueRef;
+  readonly approver_currently_enrolled_2fa: unknown;
+  readonly approver_not_revoked: unknown;
+  readonly approver_current_assurance_verified: unknown;
+  readonly expected_issuer: OpaqueRef;
+  readonly accepted_assurance_policy_versions: readonly OpaqueRef[];
+  readonly host_deployment_qualified: unknown;
   readonly reservation_state: 'uncommitted' | 'committed' | 'unknown';
 }
 
@@ -2631,7 +2639,6 @@ const CONFIRMATION_ASSURANCE_KEYS = new Set<string>([
   'hardware_key_required',
   'identity_source',
   'delegation',
-  'host_deployment_qualification_status',
 ]);
 
 const CONFIRMATION_CONTINUATION_KEYS = new Set<string>([
@@ -2702,6 +2709,13 @@ export function verifyMemoryConfirmationContinuationV1(
       error_code: 'NOT_FOUND',
       reason: 'Target current authorization verdict must be literal true',
     };
+  }
+
+  if (expected.approver_currently_enrolled_2fa !== true ||
+      expected.approver_not_revoked !== true ||
+      expected.approver_current_assurance_verified !== true ||
+      expected.host_deployment_qualified !== true) {
+    return { ok: false, error_code: 'gate_failed', reason: 'Current approver enrollment, revocation, assurance and host qualification must be literal true' };
   }
 
   if (!['uncommitted', 'committed', 'unknown'].includes(expected.reservation_state)) {
@@ -2806,8 +2820,7 @@ export function verifyMemoryConfirmationContinuationV1(
   if (
     assurance.enrolled_oidc_domain !== 'sent-tech.ca' ||
     assurance.hardware_key_required !== false ||
-    assurance.identity_source !== 'enrolled_oidc_2fa' ||
-    assurance.host_deployment_qualification_status !== 'unverified'
+    assurance.identity_source !== 'enrolled_oidc_2fa'
   ) {
     return {
       ok: false,
@@ -2853,6 +2866,16 @@ export function verifyMemoryConfirmationContinuationV1(
       error_code: 'gate_failed',
       reason: 'Confirmation assurance issuer, subject, receipts, or policy version invalid',
     };
+  }
+
+  if (!isValidOpaqueRef(expected.expected_issuer) || assurance.issuer !== expected.expected_issuer ||
+      !isValidOpaqueRef(expected.approving_human_principal_id) ||
+      assurance.approving_human_principal_id !== expected.approving_human_principal_id ||
+      !isValidOpaqueRef(expected.approving_subject_sub) || assurance.approving_subject_sub !== expected.approving_subject_sub ||
+      !Array.isArray(expected.accepted_assurance_policy_versions) ||
+      !expected.accepted_assurance_policy_versions.every(v => isValidOpaqueRef(v)) ||
+      !expected.accepted_assurance_policy_versions.includes(assurance.assurance_policy_version)) {
+    return { ok: false, error_code: 'gate_failed', reason: 'Approving identity, issuer or assurance policy is not accepted by current host configuration' };
   }
 
   if (assurance.delegation !== undefined) {
