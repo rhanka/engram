@@ -130,28 +130,60 @@ export function buildReadSideFixtures(box: LiveGitSandbox) {
 
 /** Local-only, independent object copy. No checkout, alternates, hardlinks,
  * lazy fetch or repository program; the observed source receives no writes.
- * Git 2.53 advertises local refs through its native upload-pack child. Keep
- * clone setup in its own trace; oracle commands still require zero children. */
-export function cloneReadSideSource(box: LiveGitSandbox, source: string) {
-  if (source !== "/home/antoinefa/src/graphify") throw new Error("read-side source is not authorized");
+ * Restore the original objects from a checksummed fixture even in shallow CI;
+ * never substitute synthetic commits or expected oracle output for real OIDs.
+ * Shallow sources use an empty isolated repository plus the snapshot: Git
+ * ignores --local there and would start extra transport/packing children.
+ * Full local clones may advertise refs through native upload-pack. Keep source
+ * setup in its own trace; oracle commands still require zero children. */
+export function cloneReadSideSource(box: LiveGitSandbox, requiredPins: readonly string[]) {
   const repo = join(box.root, "engram-history");
   const setup = join(box.root, "clone-setup");
   mkdirSync(join(setup, "disabled-hooks"), { recursive: true });
   const trace = new LiveProcessTrace(setup);
-  const result = trace.run(box.root, ["-c", "protocol.file.allow=always", "clone", "--local", "--no-hardlinks", "--no-checkout",
-    `--template=${join(box.root, "empty-template")}`, source, repo]);
-  if (result.status !== 0) throw new Error(`read-side local clone failed: ${result.stderr}`);
+  const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+  const resolution = trace.run(projectRoot, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  if (resolution.status !== 0) throw new Error(`read-side source resolution failed: ${resolution.stderr}`);
+  const source = resolution.stdout.toString().trim();
+  const depth = trace.run(projectRoot, ["rev-parse", "--is-shallow-repository"]);
+  if (depth.status !== 0 || !["true\n", "false\n"].includes(depth.stdout.toString())) {
+    throw new Error(`read-side source depth resolution failed: ${depth.stderr}`);
+  }
+  const shallow = depth.stdout.toString() === "true\n";
+  if (shallow) box.init(repo);
+  else {
+    const result = trace.run(box.root, ["-c", "protocol.file.allow=always", "clone", "--local", "--no-hardlinks", "--no-checkout",
+      `--template=${join(box.root, "empty-template")}`, source, repo]);
+    if (result.status !== 0) throw new Error(`read-side local clone failed: ${result.stderr}`);
+  }
   const events = readFileSync(trace.path, "utf8").trim().split("\n").map(line => JSON.parse(line));
   const children = events.filter(event => event.event === "child_start");
-  if (children.length > 1 || children.some(event => event.child_class !== "transport/file" ||
-    JSON.stringify(event.argv) !== JSON.stringify([`git-upload-pack '${source}/.git'`]))) {
+  if (children.length > (shallow ? 0 : 1) || children.some(event => event.child_class !== "transport/file" ||
+    JSON.stringify(event.argv) !== JSON.stringify([`git-upload-pack '${source.replace(/'/g, "'\\''")}'`]))) {
     throw new Error("read-side clone launched an unexpected process");
   }
   const exits = events.filter(event => event.event === "exit");
-  if (exits.length !== 1 + children.length || exits.some(event => event.code !== 0)) {
+  if (exits.length !== (shallow ? 2 : 3) + children.length || exits.some(event => event.code !== 0)) {
     throw new Error("read-side clone trace is incomplete");
   }
-  return repo;
+  const snapshot = JSON.parse(readFileSync(new URL("../fixtures/live-read-side-history.json", import.meta.url), "utf8"));
+  const pack = readFileSync(new URL("../fixtures/live-read-side-history.pack", import.meta.url));
+  if (snapshot.version !== 1 || snapshot.algorithm !== "sha1" || pack.length !== snapshot.pack.bytes ||
+    createHash("sha256").update(pack).digest("hex") !== snapshot.pack.sha256 ||
+    pack.subarray(0, 4).toString() !== "PACK" || pack.readUInt32BE(8) !== snapshot.pack.objects) {
+    throw new Error("read-side historical object snapshot integrity failed");
+  }
+  box.git(repo, ["index-pack", "--stdin"], pack);
+  // Git's automatic abbreviation depends on object count. Preserve the exact
+  // frozen patch bytes in both the full clone and the smaller snapshot store.
+  box.git(repo, ["config", "core.abbrev", "8"]);
+  for (const oid of requiredPins) {
+    const pin = box.probe(repo, ["cat-file", "-t", oid]);
+    if (pin.status !== 0 || pin.stdout.toString() !== "commit\n") {
+      throw new Error(`read-side pinned commit unavailable offline: ${oid}; no usable historical snapshot`);
+    }
+  }
+  return { repo, source, shallow };
 }
 
 export function detectGitCapabilities(box: LiveGitSandbox) {

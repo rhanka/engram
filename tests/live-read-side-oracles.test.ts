@@ -30,7 +30,10 @@ function verifyManifest(manifest: Manifest) {
   expect(manifest.measurement).toBe("unverified");
   expect(manifest.installedQualification).toBe("unverified");
   expect(manifest.sourcePolicy).toMatchObject({ network: false, dependenciesAdded: false,
-    engram: { path: "/home/antoinefa/src/graphify", access: "read-only-local-clone", observedWrites: false,
+    engram: { source: "project-root:git rev-parse --path-format=absolute --git-common-dir",
+      access: "read-only-local-clone-or-verified-history-snapshot", observedWrites: false,
+      shallowSource: "isolated-native-git-fixture-with-zero-transport-children", coreAbbrev: 8,
+      historySnapshot: "live-read-side-history.json", missingPinnedObject: "fail-explicitly-without-network-or-skip",
       clone: ["--local", "--no-hardlinks", "--no-checkout"] },
     controls: { access: "native-git-fixtures", observedWrites: false, setupLocation: "os-temp-outside-observed-worktrees" } });
   expect(manifest.sourcePolicy.substitutions).toContain("not the original analysis C revisions");
@@ -117,7 +120,21 @@ it("the twenty case manifest pins full OIDs permissions and independently verifi
   const box = new LiveGitSandbox("/tmp"); boxes.push(box);
   expect(relative(process.cwd(), box.root).startsWith("..")).toBe(true);
   const control = buildReadSideFixtures(box);
-  const repositories: Record<string, string> = { engram: cloneReadSideSource(box, manifest.sourcePolicy.engram.path),
+  const engramPins = Object.fromEntries(Object.entries(manifest.revisions).filter(([, pin]) => pin.repository === "engram")
+    .map(([alias, pin]) => [alias, pin.oid]));
+  const { repo, source, shallow } = cloneReadSideSource(box, Object.values(engramPins));
+  const snapshot = JSON.parse(readFileSync(new URL("./fixtures/live-read-side-history.json", import.meta.url), "utf8"));
+  expect(snapshot.historyRoots).toEqual(engramPins);
+  expect(snapshot.sources).toHaveLength(59);
+  expect(snapshot.historyPaths).toEqual(["engram-live/integration.ts", "src/extract-git.ts"]);
+  for (const origin of snapshot.sources) {
+    expect(box.read(repo, ["rev-parse", `${origin.commit}:${origin.path}`]).toString().trim()).toBe(origin.blobSha);
+    const blob = box.read(repo, ["cat-file", "blob", origin.blobSha]);
+    expect(blob.length, origin.path).toBe(origin.bytes);
+    expect(sha256(blob), origin.path).toBe(origin.sha256);
+    expect(createHash("sha1").update(`blob ${blob.length}\0`).update(blob).digest("hex"), origin.path).toBe(origin.blobSha);
+  }
+  const repositories: Record<string, string> = { engram: repo,
     h2a: control.h2a, sentropic: control.sentropic };
   const frozenControls = Object.fromEntries(Object.entries(manifest.revisions).filter(([alias]) => alias.startsWith("F_"))
     .map(([alias, revision]) => [alias, revision.oid]));
@@ -178,9 +195,22 @@ it("the twenty case manifest pins full OIDs permissions and independently verifi
     expect(launch.cwd.startsWith(box.root + "/") || launch.cwd === box.root).toBe(true);
   }
   const cloneEvents = readFileSync(join(box.root, "clone-setup/git-trace2.jsonl"), "utf8").trim().split("\n").map(line => JSON.parse(line));
-  expect(cloneEvents.find(event => event.event === "start").argv).toEqual(expect.arrayContaining(["clone", "--local", "--no-hardlinks", "--no-checkout"]));
+  const starts = cloneEvents.filter(event => event.event === "start");
+  expect(starts[0].argv.slice(-3)).toEqual(["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  expect(starts[1].argv.slice(-2)).toEqual(["rev-parse", "--is-shallow-repository"]);
+  expect(starts).toHaveLength((shallow ? 2 : 3) + cloneEvents.filter(event => event.event === "child_start").length);
+  if (shallow) expect(cloneEvents.filter(event => event.event === "child_start")).toEqual([]);
+  else expect(starts[2].argv).toEqual(expect.arrayContaining(["clone", "--local", "--no-hardlinks", "--no-checkout", source, repo]));
   expect(cloneEvents.filter(event => event.event === "child_start").every(event =>
-    event.child_class === "transport/file" && event.argv.length === 1 && event.argv[0] === "git-upload-pack '/home/antoinefa/src/graphify/.git'")).toBe(true);
+    event.child_class === "transport/file" && event.argv.length === 1 && event.argv[0] === `git-upload-pack '${source.replace(/'/g, "'\\''")}'`)).toBe(true);
+  box.trace.assertSafe();
+});
+
+it("fails explicitly when a real pinned commit is unavailable locally and has no historical snapshot", () => {
+  const box = new LiveGitSandbox("/tmp"); boxes.push(box);
+  const unavailable = "f".repeat(40);
+  expect(() => cloneReadSideSource(box, [unavailable])).toThrow(
+    `read-side pinned commit unavailable offline: ${unavailable}; no usable historical snapshot`);
   box.trace.assertSafe();
 });
 
