@@ -303,7 +303,7 @@ export const M2_STRING_BOUNDARY_SPEC_RULES: readonly StringBoundaryRuleFixture[]
       max_utf8_bytes: 512,
       max_allowed_schema_min_length: 1,
       min_required_schema_max_length: 512,
-      requires_nfc: true,
+      requires_nfc: false, // M2:268 "Nonempty well-formed string"; M5:688 preserves other body strings.
       is_ascii_grammar: false,
       exact_limit_ascii: 'l'.repeat(512),
       over_limit_ascii: 'l'.repeat(513),
@@ -321,7 +321,7 @@ export const M2_STRING_BOUNDARY_SPEC_RULES: readonly StringBoundaryRuleFixture[]
       max_utf8_bytes: 512,
       max_allowed_schema_min_length: 1,
       min_required_schema_max_length: 512,
-      requires_nfc: true,
+      requires_nfc: false, // M2:269 "Nonempty well-formed string"; M5:688 preserves other body strings.
       is_ascii_grammar: false,
       exact_limit_ascii: 'v'.repeat(512),
       over_limit_ascii: 'v'.repeat(513),
@@ -357,7 +357,7 @@ export const M2_STRING_BOUNDARY_SPEC_RULES: readonly StringBoundaryRuleFixture[]
       max_utf8_bytes: 65536,
       max_allowed_schema_min_length: 1,
       min_required_schema_max_length: 65536,
-      requires_nfc: false,
+      requires_nfc: false, // M2:274 "Content is preserved, without implicit Unicode normalization."
       is_ascii_grammar: false,
       exact_limit_ascii: 't'.repeat(65536),
       over_limit_ascii: 't'.repeat(65537),

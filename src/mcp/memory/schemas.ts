@@ -1235,19 +1235,16 @@ function validateCitationV1(
   );
   if (locKeyErr) return locKeyErr;
 
-  const schemeErr = validateOpaqueRefField(
-    value.locator.scheme,
-    `${path}.locator.scheme`,
-    MEMORY_MCP_LIMITS.CITATION_LOCATOR_SCHEME_MAX_UTF8_BYTES,
-  );
-  if (schemeErr) return schemeErr;
-
-  const valErr = validateOpaqueRefField(
-    value.locator.value,
-    `${path}.locator.value`,
-    MEMORY_MCP_LIMITS.CITATION_LOCATOR_VALUE_MAX_UTF8_BYTES,
-  );
-  if (valErr) return valErr;
+  // M2:268-269 / M5:688 require well-formed content, without an NFC constraint.
+  for (const [field, maxBytes] of [
+    ['scheme', MEMORY_MCP_LIMITS.CITATION_LOCATOR_SCHEME_MAX_UTF8_BYTES],
+    ['value', MEMORY_MCP_LIMITS.CITATION_LOCATOR_VALUE_MAX_UTF8_BYTES],
+  ] as const) {
+    const fieldValue = value.locator[field];
+    if (!isWellFormedUnicode(fieldValue) || fieldValue.length === 0 || utf8ByteLength(fieldValue) > maxBytes) {
+      return fail(`${path}.locator.${field}`, `Expected nonempty well-formed string within 1..${maxBytes} UTF-8 bytes`);
+    }
+  }
 
   const digErr = validateDigestField(
     value.content_digest,
@@ -1298,10 +1295,10 @@ function validateMemoryComponentV2(
   }
 
   if (
-    !isWellFormedUnicodeAndNfc(value.text) ||
-    value.text.trim().length === 0
+    !isWellFormedUnicode(value.text) ||
+    value.text.length === 0
   ) {
-    return fail(`${path}.text`, 'component text must be a non-empty NFC string');
+    return fail(`${path}.text`, 'component text must be a nonempty well-formed string');
   }
   const textBytes = utf8ByteLength(value.text);
   if (
