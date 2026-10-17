@@ -365,6 +365,30 @@ describe("live line attribution", () => {
     expect(actual.retainedRoot).toBeNull();
   });
 
+  it("preserves non-UTF-8 author and email bytes with or without an encoding header", async () => {
+    for (const format of ["sha1", "sha256"] as const) {
+      const { box, fixture: f, request, ports } = setup(format);
+      const tree = /^tree ([a-f0-9]+)$/m.exec(box.read(f.repo, ["cat-file", "commit", f.commits.root]).toString())![1];
+      const name = Buffer.from("G1 Jos\xe9 \xff", "latin1"), email = Buffer.from("jos\xe9@example.invalid", "latin1");
+      for (const encoding of ["", "encoding ISO-8859-1\n"]) {
+        const raw = Buffer.concat([Buffer.from(`tree ${tree}\nauthor `), name, Buffer.from(" <"), email,
+          Buffer.from(`> 1700000000 +0545\ncommitter Fixture <fixture@example.invalid> 1700000000 +0000\n${encoding}\nraw identity\n`)]);
+        const target = box.git(f.repo, ["hash-object", "-t", "commit", "-w", "--stdin"], raw).toString().trim();
+        expect(box.git(f.stores.complete, ["hash-object", "-t", "commit", "-w", "--stdin"], raw).toString().trim()).toBe(target);
+        const before = inventoryDigest(f), retainedBefore = inventoryDigest({ root: f.privateRoot });
+        const actual = await live.attributeLines({ ...request, target: { algorithm: format, oid: target },
+          path: f.rawPath, ranges: [{ start: 1, end: 9 }], options: options() }, ports);
+        expect(actual.state, JSON.stringify(actual.coverage)).toBe("complete");
+        expect(actual.origins).toHaveLength(1);
+        expect(actual.origins[0].author).toEqual({ name: name.toString("latin1"), email: email.toString("latin1"),
+          nameBytes: Uint8Array.from(name), emailBytes: Uint8Array.from(email), unixSeconds: 1700000000, offsetMinutes: 345 });
+        expect(lines(actual)).toEqual(nativeLineOracle(box, f.repo, target, f.rawPath, actual.ranges));
+        expect(inventoryDigest(f)).toBe(before);
+        expect(inventoryDigest({ root: f.privateRoot })).toBe(retainedBefore);
+      }
+    }
+  });
+
   it("rejects corrupted native coordinates object bytes truncated porcelain and revocation before emission", async () => {
     const { fixture: f, request, ports } = setup();
     const before = inventoryDigest(f);
