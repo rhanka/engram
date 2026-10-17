@@ -135,7 +135,7 @@ try {
     process.stdout.write(`${killed ? 'KILLED' : 'SURVIVED'} ${c.id} (${failed.length})\n`);
   }
   const sha = path => createHash('sha256').update(readFileSync(path)).digest('hex');
-  const lines = ['# MCP-L0 Sol mutation evidence', '', 'Spec SHA-256: `f90c927964b44fdf6ad712eee9b894762250239384643a3790931c142d3aeeca`.', '', 'Reproduce: `node scripts/check-memory-mcp-mutations.mjs`. Serial source mutations; each source is restored in `finally`. No tests or fixtures are mutated. A killed mutant requires an actual failed test case (or a standard-type compiler diagnostic).', '', `Result: **${results.filter(r=>r.killed).length}/${results.length} killed**. Baseline: both MCP contract suites pass.`, '', '| Mutation | Spec v3.1 line | Result | Failing test |', '|---|---:|---|---|'];
+  const lines = ['# MCP-L0 Sol mutation evidence', '', 'Spec SHA-256: `f90c927964b44fdf6ad712eee9b894762250239384643a3790931c142d3aeeca`.', '', 'Reproduce: `node scripts/check-memory-mcp-mutations.mjs`. Serial source mutations; each source is restored in `finally`. No tests or fixtures are mutated. A killed mutant requires an actual failed test case (or a standard-type compiler diagnostic).', '', `Result: **${results.filter(r=>r.killed).length}/${results.length} killed**. Baseline: all three MCP contract suites pass.`, '', '| Mutation | Spec v3.1 line | Result | Failing test |', '|---|---:|---|---|'];
   for (const r of results) lines.push(`| ${r.id} | ${r.line} | ${r.killed ? 'killed' : 'SURVIVED'} | ${r.failed[0]?.replaceAll('|','/') ?? 'none'} |`);
   lines.push('', 'Restored source identities:', '');
   for (const file of [...new Set(cases.map(c=>c.file))]) lines.push(`- \`${file}\`: \`${sha(file)}\``);
