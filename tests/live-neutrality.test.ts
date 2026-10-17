@@ -27,6 +27,8 @@ function liveBuildIsFresh(): boolean {
     "contracts.ts",
     "registration.ts",
     "integration.ts",
+    "line-attribution.ts",
+    "git-executor.ts",
     "index.ts",
     "analysis-cache.ts",
     "code-analysis.ts",
@@ -53,6 +55,12 @@ function liveBuildIsFresh(): boolean {
     "integration.js",
     "integration.d.ts",
     "integration.d.ts.map",
+    "line-attribution.js",
+    "line-attribution.d.ts",
+    "line-attribution.d.ts.map",
+    "git-executor.js",
+    "git-executor.d.ts",
+    "git-executor.d.ts.map",
   ].map((name) => join(liveRoot, "dist", name));
   if (requiredOutputs.some((output) => !existsSync(output) || statSync(output).size === 0)) return false;
   for (const entry of Object.values(manifest.languages)) {
@@ -831,6 +839,12 @@ function expectedPackedPaths(manifestLanguages: Record<string, { file: string }>
     "dist/integration.js",
     "dist/integration.d.ts",
     "dist/integration.d.ts.map",
+    "dist/line-attribution.js",
+    "dist/line-attribution.d.ts",
+    "dist/line-attribution.d.ts.map",
+    "dist/git-executor.js",
+    "dist/git-executor.d.ts",
+    "dist/git-executor.d.ts.map",
     ...Object.values(manifestLanguages).map((entry) => `dist/grammars/${entry.file}`),
   ].sort();
 }
@@ -920,7 +934,10 @@ function checkPackageClosure(input: PackageClosureInput): ClosureViolation[] {
 const NEUTRAL_TEST_FILES = new Set([
   "tests/live-neutrality.test.ts",
   "tests/live-package.test.ts",
+  "tests/live-line-attribution.test.ts",
   "tests/live-helper.ts",
+  "tests/helpers/live-git-fixtures.ts",
+  "tests/helpers/live-process-trace.ts",
 ]);
 
 // Candidate repo paths a relative test import can resolve to (as written,
@@ -1126,6 +1143,12 @@ describe("live neutrality", () => {
       return { generated: generatedSnapshot, packedPaths: packedPathsSnapshot, grammarDigests: digests };
     });
     const source = sourceFiles();
+    expect(source.map((file) => file.path)).toContain("engram-live/line-attribution.ts");
+    for (const name of ["line-attribution", "git-executor"]) {
+      for (const extension of ["js", "d.ts", "d.ts.map"]) {
+        expect(packedPaths).toContain(`dist/${name}.${extension}`);
+      }
+    }
     // Scanning every emitted file is a superset of the entry's transitive
     // closure; the explicit walk below proves the entry closure in addition.
     const violations = [
@@ -1163,6 +1186,9 @@ describe("live neutrality", () => {
     const closurePaths = neutralTests.map((file) => file.path);
     expect(closurePaths).toContain("tests/live-neutrality.test.ts");
     expect(closurePaths).toContain("tests/live-package.test.ts");
+    expect(closurePaths).toContain("tests/live-line-attribution.test.ts");
+    expect(closurePaths).toContain("tests/helpers/live-git-fixtures.ts");
+    expect(closurePaths).toContain("tests/helpers/live-process-trace.ts");
     expect(closurePaths).not.toContain("tests/live-no-llm.test.ts");
     expect(closurePaths).not.toContain("tests/live-fixtures.test.ts");
 
@@ -1339,6 +1365,12 @@ describe("live neutrality", () => {
     singleMutationRejected((w) => ({ ...w, packedPaths: [...w.packedPaths, "dist/fetch-grammars.py"] }), /Python/);
     singleMutationRejected((w) => ({ ...w, packedPaths: [...w.packedPaths, "node_modules/web-tree-sitter/index.js"] }), /node_modules/);
     singleMutationRejected((w) => ({ ...w, packedPaths: w.packedPaths.filter((path) => path !== "dist/integration.js") }), /missing from the packed closure/);
+    for (const name of ["line-attribution", "git-executor"]) {
+      for (const extension of ["js", "d.ts", "d.ts.map"]) {
+        const missing = `dist/${name}.${extension}`;
+        singleMutationRejected((w) => ({ ...w, packedPaths: w.packedPaths.filter((path) => path !== missing) }), /missing from the packed closure/);
+      }
+    }
     singleMutationRejected((w) => ({
       ...w,
       packageJson: {
