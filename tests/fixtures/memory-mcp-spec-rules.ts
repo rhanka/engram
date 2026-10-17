@@ -1362,6 +1362,17 @@ export const A05_MUTATION_DIGEST_VECTORS_SPEC_RULE = {
       expected_digest:
         'sha256:e416f4a4c1e1c9bd5dc19eef6ed72233e050ef169d4b3d5af3c07136968bd78b',
     },
+    // M:686,690: literal bytes transcribed independently of the production serializer.
+    withdraw_changed_target: {
+      expected_jcs_utf8:
+        '{"connector_id":"engram-memory","connector_instance_ref":"conn_inst_01","effective_input":{"candidate_id":"cand_02","event_anchor":{"kind_ref":"lifecycle:withdraw","occurred_at":"2026-10-17T12:05:00.000Z","provenance_digest":"sha256:2222222222222222222222222222222222222222222222222222222222222222","provenance_ref":"prov:withdraw:01"},"event_id":"evt_wdr_01","reason_ref":"reason:duplicate-candidate","tool_name":"engram_memory_withdraw"},"idempotency_key":"idem_key_00000003","principal_id":"usr_alice","principal_namespace":"ns:sent-tech.ca","profile":"sentropic.engram.memory-mutation/v1","provider_contract_version":"1.0.0","provider_id":"sentropic.engram.memory","reservation_ref":"resv_03","scope_ref":"scope:project:alpha","store_id":"store_local_01","target":{"candidate_id":"cand_02","kind":"candidate"},"tenant_id":"ten_01","tool_name":"engram_memory_withdraw"}',
+      expected_digest: 'sha256:3df1c2910332249fd977cdcc779d2d956a0f307e3b549adcecc02971702a6733',
+    },
+    withdraw_changed_effective_value: {
+      expected_jcs_utf8:
+        '{"connector_id":"engram-memory","connector_instance_ref":"conn_inst_01","effective_input":{"candidate_id":"cand_01","event_anchor":{"kind_ref":"lifecycle:withdraw","occurred_at":"2026-10-17T12:05:00.000Z","provenance_digest":"sha256:2222222222222222222222222222222222222222222222222222222222222222","provenance_ref":"prov:withdraw:01"},"event_id":"evt_wdr_01","reason_ref":"reason:operator-choice","tool_name":"engram_memory_withdraw"},"idempotency_key":"idem_key_00000003","principal_id":"usr_alice","principal_namespace":"ns:sent-tech.ca","profile":"sentropic.engram.memory-mutation/v1","provider_contract_version":"1.0.0","provider_id":"sentropic.engram.memory","reservation_ref":"resv_03","scope_ref":"scope:project:alpha","store_id":"store_local_01","target":{"candidate_id":"cand_01","kind":"candidate"},"tenant_id":"ten_01","tool_name":"engram_memory_withdraw"}',
+      expected_digest: 'sha256:9d74c314c207fe80fc36c6b0c8da6feca6b9f0d0a91753b917d46621ac67caee',
+    },
     forget_v1: {
       preimage: {
         profile: 'sentropic.engram.memory-mutation/v1',
