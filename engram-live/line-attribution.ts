@@ -9,7 +9,7 @@ import {
   type LineAttributionOutcomeDto, type LineAttributionRequestDto, type LineOriginDto,
   type QualifiedOid, type RetentionReceiptDto,
 } from "./contracts.js";
-import type { SafeGitExecutor } from "./git-executor.js";
+import { GitUnavailableError, type SafeGitExecutor } from "./git-executor.js";
 
 export const LINE_ATTRIBUTION_VERSION = "live-line-attribution/1";
 export interface LineAttributionPorts {
@@ -188,7 +188,8 @@ export async function attributeLines(input: LineAttributionRequestDto, ports: Li
         const batch = missing.slice(start, start + 128);
         let bytes: Buffer;
         try { bytes = git.run(cwd, ["cat-file", "--batch"], batch.join("\n") + "\n"); }
-        catch { return gap("missing-object", "required R1 object batch unavailable; no fetch or checkout fallback"); }
+        catch (error) { return gap(error instanceof GitUnavailableError ? "git-unavailable" : "missing-object",
+          "required R1 object batch unavailable; no fetch or checkout fallback"); }
         let offset = 0;
         for (const oid of batch) {
           const end = bytes.indexOf(10, offset);
@@ -225,7 +226,7 @@ export async function attributeLines(input: LineAttributionRequestDto, ports: Li
       ancestry = git.run(cwd, ["rev-list", request.target.oid, "--"]).toString("latin1").trim().split("\n");
     } catch (error) {
       if (error instanceof AttributionGap) throw error;
-      return gap("missing-object", "pinned target ancestry unavailable");
+      return gap(error instanceof GitUnavailableError ? "git-unavailable" : "missing-object", "pinned target ancestry unavailable");
     }
     if (!ancestry.every(oid => validateQualifiedOid(qualified(oid)).ok) || new Set(ancestry).size !== ancestry.length) {
       return gap("invalid-evidence", "native target ancestry contains invalid or repeated OIDs");
@@ -279,7 +280,8 @@ export async function attributeLines(input: LineAttributionRequestDto, ports: Li
     if (request.ranges.some(range => range.end > targetLines.length)) return gap("invalid-range", "requested range exceeds the pinned blob");
     let output: Buffer;
     try { output = git.blame(cwd, blameArgs(request), request.path, configPaths); }
-    catch { return gap("missing-object", "native attribution could not resolve retained origins"); }
+    catch (error) { return gap(error instanceof GitUnavailableError ? "git-unavailable" : "missing-object",
+      "native attribution could not resolve retained origins"); }
     const blamed = parseBlame(output, request.target.algorithm);
     const expected = request.ranges.flatMap(range => Array.from({ length: range.end - range.start + 1 }, (_, i) => range.start + i));
     if (blamed.length !== expected.length) return gap("invalid-evidence", "native attribution did not cover every requested line");
@@ -299,7 +301,12 @@ export async function attributeLines(input: LineAttributionRequestDto, ports: Li
       } else origins.push({ commit: qualified(line.oid), author: { ...commits.get(line.oid)!.author }, path: Uint8Array.from(line.path),
         originalRange: { start: line.original, end: line.original }, finalRange: { start: line.final, end: line.final } });
     }
-    if (!git.probeNoConfigIncludes(configPaths, true)) return gap("git-unavailable", "retained configuration changed during attribution");
+    try {
+      if (!git.probeNoConfigIncludes(configPaths, true)) gap("git-unavailable", "retained configuration changed during attribution");
+    } catch (error) {
+      if (error instanceof AttributionGap) throw error;
+      return gap("git-unavailable", "retained configuration re-probe unavailable");
+    }
     // Authorization is not a cache: revocation during native Git computation
     // or origin verification suppresses all facts, including parent evidence.
     await authorize();
