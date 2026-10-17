@@ -28,6 +28,7 @@ function liveBuildIsFresh(): boolean {
     "registration.ts",
     "integration.ts",
     "line-attribution.ts",
+    "symbol-history.ts",
     "git-executor.ts",
     "index.ts",
     "analysis-cache.ts",
@@ -43,6 +44,8 @@ function liveBuildIsFresh(): boolean {
   };
   if (!manifest.languages || typeof manifest.languages !== "object") return false;
   const requiredOutputs = [
+    ...["symbol-history", "code-analysis", "analysis-cache", "comparisons"].flatMap(name =>
+      [`${name}.js`, `${name}.d.ts`, `${name}.d.ts.map`]),
     "index.js",
     "index.d.ts",
     "index.d.ts.map",
@@ -825,6 +828,8 @@ const EXPECTED_OS = ["linux"];
 
 function expectedPackedPaths(manifestLanguages: Record<string, { file: string }>): string[] {
   return [
+    ...["symbol-history", "code-analysis", "analysis-cache", "comparisons"].flatMap(name =>
+      [`dist/${name}.js`, `dist/${name}.d.ts`, `dist/${name}.d.ts.map`]),
     "package.json",
     "grammar-manifest.json",
     "dist/index.js",
@@ -935,6 +940,7 @@ const NEUTRAL_TEST_FILES = new Set([
   "tests/live-neutrality.test.ts",
   "tests/live-package.test.ts",
   "tests/live-line-attribution.test.ts",
+  "tests/live-symbol-history.test.ts",
   "tests/live-helper.ts",
   "tests/helpers/live-git-fixtures.ts",
   "tests/helpers/live-process-trace.ts",
@@ -1144,7 +1150,8 @@ describe("live neutrality", () => {
     });
     const source = sourceFiles();
     expect(source.map((file) => file.path)).toContain("engram-live/line-attribution.ts");
-    for (const name of ["line-attribution", "git-executor"]) {
+    expect(source.map((file) => file.path)).toContain("engram-live/symbol-history.ts");
+    for (const name of ["line-attribution", "git-executor", "symbol-history", "code-analysis", "analysis-cache", "comparisons"]) {
       for (const extension of ["js", "d.ts", "d.ts.map"]) {
         expect(packedPaths).toContain(`dist/${name}.${extension}`);
       }
@@ -1187,6 +1194,7 @@ describe("live neutrality", () => {
     expect(closurePaths).toContain("tests/live-neutrality.test.ts");
     expect(closurePaths).toContain("tests/live-package.test.ts");
     expect(closurePaths).toContain("tests/live-line-attribution.test.ts");
+    expect(closurePaths).toContain("tests/live-symbol-history.test.ts");
     expect(closurePaths).toContain("tests/helpers/live-git-fixtures.ts");
     expect(closurePaths).toContain("tests/helpers/live-process-trace.ts");
     expect(closurePaths).not.toContain("tests/live-no-llm.test.ts");
@@ -1365,7 +1373,7 @@ describe("live neutrality", () => {
     singleMutationRejected((w) => ({ ...w, packedPaths: [...w.packedPaths, "dist/fetch-grammars.py"] }), /Python/);
     singleMutationRejected((w) => ({ ...w, packedPaths: [...w.packedPaths, "node_modules/web-tree-sitter/index.js"] }), /node_modules/);
     singleMutationRejected((w) => ({ ...w, packedPaths: w.packedPaths.filter((path) => path !== "dist/integration.js") }), /missing from the packed closure/);
-    for (const name of ["line-attribution", "git-executor"]) {
+    for (const name of ["line-attribution", "git-executor", "symbol-history", "code-analysis", "analysis-cache", "comparisons"]) {
       for (const extension of ["js", "d.ts", "d.ts.map"]) {
         const missing = `dist/${name}.${extension}`;
         singleMutationRejected((w) => ({ ...w, packedPaths: w.packedPaths.filter((path) => path !== missing) }), /missing from the packed closure/);
