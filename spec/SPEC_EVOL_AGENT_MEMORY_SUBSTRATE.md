@@ -885,8 +885,21 @@ export interface CanonicalStoreCapabilitiesV1 {
   ephemeral_filesystem_store_permitted?: boolean; // (new in this amendment) §5.9: OPTIONAL; true iff the fenced SQLite store was opened with allow_ephemeral_filesystem_store (a non-production tmpfs/overlayfs opt-in)
 }
 
+// MCP-L1 additive extension (SPEC-memory-mcp-v3.1 M3); legacy V2 unchanged.
+export interface ScopedCanonicalReadPortV1 {
+  readonly version: 1;
+  acceptedSnapshot(input: Parameters<CanonicalMemoryStorePort["acceptedSnapshot"]>[0] & ScopedReadBindingV1): Promise<Result<AcceptedCandidateSnapshotV1>>;
+  readRecord(input: Parameters<CanonicalMemoryStorePort["readRecord"]>[0] & ScopedReadBindingV1): Promise<Result<MemoryRecordV2>>;
+}
+
+export interface ScopedReadBindingV1 {
+  scope_ref: OpaqueRef;
+  authorization: AuthorizationAllowedV1;
+}
+
 export interface CanonicalMemoryStorePort {
   readonly version: 1;
+  readonly scoped_reads?: ScopedCanonicalReadPortV1;
   readonly capabilities: CanonicalStoreCapabilitiesV1;
   commitPending(input: {
     control: PendingControlV1;
