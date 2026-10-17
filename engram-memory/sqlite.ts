@@ -656,6 +656,18 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
     return this.#transaction("recall_current", (working) => working.acceptedSnapshot(input));
   }
 
+  readonly scoped_reads: import("./contracts/index.js").ScopedCanonicalReadPortV1 = {
+    version: 1,
+    acceptedSnapshot: async input => {
+      const fence = this.#fence("recall_current");
+      return fence.ok ? this.#core.scoped_reads!.acceptedSnapshot(input) : fence;
+    },
+    readRecord: async input => {
+      const fence = this.#fence("recall_current");
+      return fence.ok ? this.#core.scoped_reads!.readRecord(input) : fence;
+    },
+  };
+
   async revalidate(input: Parameters<CanonicalMemoryStorePort["revalidate"]>[0]): Promise<Result<import("./contracts/index.js").RevalidationPacketV1>> {
     return this.#transaction(input.operation, (working) => working.revalidate(input));
   }

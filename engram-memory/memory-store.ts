@@ -385,6 +385,30 @@ function batchDigest(batch: Omit<ProjectionBatchV1, "batch_digest">): Digest {
 
 class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
   readonly version = 1 as const;
+  readonly scoped_reads: import("./contracts/index.js").ScopedCanonicalReadPortV1 = {
+    version: 1,
+    acceptedSnapshot: async input => {
+      if (!this.#scopeBound(input)) return refusal("recall_current", "UNAUTHORIZED", "scoped read binding is unavailable");
+      return this.#acceptedSnapshotReadOnly(input, input.scope_ref);
+    },
+    readRecord: async input => {
+      if (!this.#scopeBound(input)) return refusal("recall_current", "UNAUTHORIZED", "scoped read binding is unavailable");
+      const ready = this.#readiness("recall_current");
+      if (!ready.ok) return ready;
+      if (!isCanonicalCursor(input.system_as_of) || cursorCompare(input.system_as_of, ready.value.high_water_cursor) > 0) return refusal("recall_current", "STALE_PAGE", "system cursor is unavailable");
+      const record = this.#records.get(input.record_id);
+      if (record === undefined || record.scope_ref !== input.scope_ref || cursorCompare(record.recorded_cursor, input.system_as_of) > 0) return refusal("recall_current", "NOT_FOUND", "record unavailable");
+      return { ok: true, value: clone(record) };
+    },
+  };
+
+  #scopeBound(input: import("./contracts/index.js").ScopedReadBindingV1 & { authorization_receipt_digest: Digest }): boolean {
+    return typeof input.scope_ref === "string" && input.scope_ref.length > 0
+      && input.authorization?.allowed === true && input.authorization.operation === "recall_current"
+      && input.authorization.scope_ref === input.scope_ref
+      && input.authorization.receipt_digest === input.authorization_receipt_digest
+      && input.authorization.receipt_digest === receiptDigest("authorization-allowed", { ...input.authorization });
+  }
   readonly capabilities: CanonicalStoreCapabilitiesV1 = {
     atomic_promotion: true,
     dense_cursor: true,
@@ -905,6 +929,10 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
   async acceptedSnapshot(input: Parameters<CanonicalMemoryStorePort["acceptedSnapshot"]>[0]): Promise<Result<AcceptedCandidateSnapshotV1>> {
     const observed = this.#observeExpiry();
     if (!observed.ok) return observed;
+    return this.#acceptedSnapshotReadOnly(input);
+  }
+
+  #acceptedSnapshotReadOnly(input: Parameters<CanonicalMemoryStorePort["acceptedSnapshot"]>[0], scope_ref?: string): Result<AcceptedCandidateSnapshotV1> {
     const ready = this.#readiness("recall_current");
     if (!ready.ok) return ready;
     if (!isCanonicalCursor(input.system_as_of) || cursorCompare(input.system_as_of, ready.value.high_water_cursor) > 0) return refusal("recall_current", "STALE_PAGE", "system cursor is unavailable");
@@ -916,6 +944,9 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
       .filter((entry) => entry.state === "accepted_current")
       .map((entry) => this.#records.get(entry.record_id))
       .filter((record): record is MemoryRecordV2 => record !== undefined)
+      // M3: the corpus is scoped BEFORE candidate limits and all ranking statistics.
+      .filter((record) => scope_ref === undefined || record.scope_ref === scope_ref)
+      .filter((record) => scope_ref === undefined || isVisibleAtDualAsOf(record.valid_time, record.recorded_cursor, { valid_as_of: Date.parse(now.value), system_as_of: input.system_as_of }))
       .filter((record) => isVisibleAtDualAsOf(record.valid_time, record.recorded_cursor, { valid_as_of: input.valid_as_of, system_as_of: input.system_as_of }))
       .filter((record) => record.retention.expires_at === undefined || Date.parse(now.value) < Date.parse(record.retention.expires_at))
       .map((record) => this.#lexical.get(record.record_id))

@@ -10,6 +10,7 @@
 
 // Engine factory: the host constructs the memory port from injected neutral ports.
 export { createMemoryPortV2 } from "./engine.js";
+export { createMemoryReadFacetsV1, type MemoryReadFacetsV1, type MemoryReadFacetBindingV1 } from './reads.js';
 
 // Graphify-owned fenced-store factory (§5.7) + its §5.9 in-process provenance mark and admission predicate:
 // the host passes its own sqlite/postgres opener; graphify stamps and verifies provenance (no key, no signature).
