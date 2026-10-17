@@ -183,7 +183,7 @@ describe('Sol MCP-L0 independent spec counterexamples', () => {
       const input: any = { tool, prior_state: tool === 'engram_memory_capture' ? 'absent' : 'tombstoned', callerAuthorized: true, targetAuthorized: true };
       for (const field of tool === 'engram_memory_capture' ? ['callerAuthorized'] : ['callerAuthorized', 'targetAuthorized']) {
         for (const value of rejected) {
-          expect(evaluateM5LifecycleTransitionV1({ ...input, [field]: value })).toEqual({ ok: false, isError: true, error_code: tool === 'engram_memory_capture' ? 'UNAUTHORIZED' : 'NOT_FOUND' });
+          expect(evaluateM5LifecycleTransitionV1({ ...input, [field]: value })).toEqual({ ok: false, isError: true, error_code: field === 'callerAuthorized' ? 'UNAUTHORIZED' : 'NOT_FOUND' });
         }
         const omitted = { ...input }; delete omitted[field];
         expect(evaluateM5LifecycleTransitionV1(omitted).ok).toBe(false);
