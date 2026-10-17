@@ -1488,9 +1488,83 @@ export interface RecallPacketV2 {
   next_page_cursor?: OpaqueRef;
   packet_digest: Digest;
 }
+
+export interface RedactedMemoryRecordV2 {
+  record_id: string;
+  schema_version?: 2;
+  scope_ref?: OpaqueRef;
+  purpose_ref?: OpaqueRef;
+  valid_time?: ValidIntervalV1;
+  components?: ReadonlyArray<MemoryComponentV2>;
+  primary_component_id?: string;
+  primary_event?: PrimaryEventAnchorV1;
+  citations?: ReadonlyArray<CitationV1>;
+  retention?: RetentionV1;
+  reconciliation?: ReconciliationConsentV1;
+  derivation?: DerivationLineageV1;
+  payload_digest?: Digest;
+  record_digest?: Digest;
+  recorded_at?: Instant;
+  recorded_cursor?: Cursor;
+  authorization_receipt_digest?: Digest;
+  trust?: TrustBindingV1;
+}
+
+export interface RecallRecordPacketV3 {
+  record: RedactedMemoryRecordV2;
+  redacted_fields: ReadonlyArray<JsonPointer>;
+  redaction_receipt_digest: Digest;
+  score: number;
+  rank: number;
+}
+
+export interface RecallPacketV3 {
+  records: ReadonlyArray<RecallRecordPacketV3>;
+  rank_receipt: RankReceiptV1;
+  next_page_cursor?: OpaqueRef;
+  packet_digest: Digest;
+}
+
+export interface MemoryRecallPortV3 {
+  readonly version: 3;
+  recall(request: RecallRequestV2): Promise<Result<RecallPacketV3>>;
+}
+
+export interface MemoryReadReceiptV1 {
+  record_id: string;
+  record_digest: Digest;
+  valid_as_of: number;
+  system_as_of: Cursor;
+  validated_through_cursor: Cursor;
+  authorization_receipt_digest: Digest;
+  revalidation_receipt_digest: Digest;
+  checked_at: Instant;
+  receipt_digest: Digest;
+}
+
+export interface MemoryReadPacketV1 {
+  record: RedactedMemoryRecordV2;
+  redacted_fields: ReadonlyArray<JsonPointer>;
+  redaction_receipt_digest: Digest;
+  read_receipt: MemoryReadReceiptV1;
+  packet_digest: Digest;
+}
+
+export interface MemoryReadPortV1 {
+  readonly version: 1;
+  readCurrent(request: {
+    record_id: string;
+    purpose_ref: OpaqueRef;
+    authorization: AuthorizationContextV1;
+    max_packet_bytes: number;
+    deadline_at: Instant;
+  }): Promise<Result<MemoryReadPacketV1>>;
+}
 ```
 
 The caller states minimum capabilities and network permission, not a ranking profile. Graphify selects and pins one available profile before reading candidates. `lexical_and_semantic` requires `semantic_v1`; it never falls back. `lexical` permits Graphify to choose semantic when available or `offline_lexical_v1`; the selected profile cannot change during pagination. A genuine zero-match query returns an empty packet with a complete rank receipt. Missing profile inputs return `RANKING_UNAVAILABLE`, never raw FTS order, unranked success, or a mid-call fallback.
+
+**Versioned redacted recall and authorized point-read facets (owner amendment, 2026-10-17).** Changing `RecallRecordPacketV2.record` from `MemoryRecordV2` to a redacted type would alter the neutral V2 contract. Instead, `MemoryPortV2`, `RecallPacketV2`, and `RecallRecordPacketV2` keep their existing V2 declarations unchanged, while `RedactedMemoryRecordV2`, `RecallRecordPacketV3`, `RecallPacketV3`, `MemoryRecallPortV3`, `MemoryReadReceiptV1`, `MemoryReadPacketV1`, and `MemoryReadPortV1` are introduced as additive versioned neutral facets. `RedactedMemoryRecordV2` is a closed omission schema over `MemoryRecordV2`: `record_id` is required, retained fields keep their original types, unauthorized fields are omitted, components remain atomic with resolving citations, and derivation lineage stays absent unless explicitly authorized. `MemoryReadPortV1.readCurrent` reads one current record by `record_id` under the `recall_current` authorization operation bound to the requested record, applying the same scope isolation, current eligibility, trust, retention, redaction, pure-read revalidation (`revalidateReadOnly`), and fencing rules as recall without depending on search ranking.
 
 #### `offline_lexical_v1`
 
@@ -1553,11 +1627,15 @@ Postgres 16 and 17 are the L6 matrix. The `external-host` Postgres backend remai
 
 Both canonical adapters (SQLite and Postgres) persist a mutation as a `DELETE` of every canonical table followed by a full re-`INSERT` of the folded state, i.e. an `O(total-state)` write amplification per mutation (storage-lane L4 review, observation O3). This is accepted for the `embedded-local` and single-node `external-host` paths and is the declared **write-amplification ceiling** for the `external-host` Postgres backend: incremental (per-event) persistence is a later `external-host` concern and is deliberately out of scope for L6, whose gate is cross-backend canonical parity, not write throughput.
 
-### D10 — Bounded current projection; history never inflates `graph.json`
+### D10 — `graph.json` is the code graph; memory uses dedicated authorized interfaces (owner amendment, 2026-10-17)
 
-`graph.json` is one bounded current graph projection, not canonical history and not “graph plus projection.” It may contain only current accepted projection envelopes, citation references, and projection metadata. It never contains record bodies, pending data, journal events, tombstone history, rank receipts, authorization receipts, backup material, or vectors.
+`graph.json` MUST NOT materialize canonical memory records, memory-derived vertices or edges, memory projection envelopes, bodies, identifiers, citations, receipts, or metadata copied from the canonical memory store.
 
-The raw-byte merge ceiling remains `52_428_800` bytes. L6 uses a deterministic synthetic fixture that produces one projection at exactly the ceiling and one at ceiling plus one byte; the former is accepted and the latter refused. It does not depend on a dirty working artifact. A bounded export records high-water cursor, included record count, omitted count by reason, projection schema version, and digest. Omission must follow an explicit deterministic filter; silent top-N loss is forbidden. Any journal length may be replayed without linear growth of `graph.json` when current eligible cardinality is fixed.
+Canonical memory remains in its journal and immutable record store. Agents access it through dedicated authorized MCP tools.
+
+Optional lexical, vector, and semantic memory projections remain separate from the code graph and subject to memory authorization, lifecycle, and invalidation. Code symbols and documentation describing the memory implementation remain legitimate code-graph material; the prohibition concerns materialization from the canonical memory store.
+
+The existing code-graph size ceiling (`52_428_800` raw bytes) applies to the code artifact and does not require copying memories into it. Separate bounded current memory projections (`BoundedCurrentProjectionV1`, `BoundedProjectionExportV1`) may contain only current accepted projection envelopes, citation references, and projection metadata — never record bodies, pending data, journal events, tombstone history, rank receipts, authorization receipts, backup material, or vectors. L6 uses a deterministic synthetic fixture that produces one separate memory projection at exactly the `52_428_800`-byte ceiling and one at ceiling plus one byte; the former is accepted and the latter refused. It does not depend on a dirty working artifact. A bounded export records high-water cursor, included record count, omitted count by reason, projection schema version, and digest. Omission must follow an explicit deterministic filter; silent top-N loss is forbidden. Any journal length may be replayed without linear growth of the separate memory projection when current eligible cardinality is fixed.
 
 ## 9. Realization lots — exactly L0 through L7
 
