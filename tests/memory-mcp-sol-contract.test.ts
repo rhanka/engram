@@ -283,7 +283,7 @@ describe('Sol MCP-L0 independent spec counterexamples', () => {
     for (const field of ['delegator_principal_id', 'delegate_principal_id']) {
       const related = { ...delegation, [field]: validBinding.principal_id };
       const result = projectMemoryInvocationContextV1({ ...validBinding, delegation: related }, expectedInvocation);
-      expect(result.ok).toBe(true);
+      expect(result.ok).toBe(field === 'delegate_principal_id');
       if (result.ok) expect(result.value.delegation).toEqual(related);
       for (const invalid of [{ verified_by_host_resolver: false }, { expires_at: validBinding.issued_at }]) {
         expect(projectMemoryInvocationContextV1({ ...validBinding, delegation: { ...related, ...invalid } }, expectedInvocation))
