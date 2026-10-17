@@ -398,6 +398,12 @@ class PostgresCanonicalStore implements CanonicalMemoryStorePort {
     return this.#transaction("recall_current", (working) => working.acceptedSnapshot(input));
   }
 
+  readonly scoped_reads: import("./contracts/index.js").ScopedCanonicalReadPortV1 = {
+    version: 1,
+    acceptedSnapshot: input => this.#read("recall_current", () => this.#core.scoped_reads!.acceptedSnapshot(input)),
+    readRecord: input => this.#read("recall_current", () => this.#core.scoped_reads!.readRecord(input)),
+  };
+
   async revalidate(input: Parameters<CanonicalMemoryStorePort["revalidate"]>[0]): Promise<Result<import("./contracts/index.js").RevalidationPacketV1>> {
     return this.#transaction(input.operation, (working) => working.revalidate(input));
   }

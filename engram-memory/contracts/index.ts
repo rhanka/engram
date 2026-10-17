@@ -734,8 +734,21 @@ export interface PersistedCaptureIdempotencyV1 {
   receipt_digest?: Digest;
 }
 
+/** M3 additive facet: same store/fence, exact authorized scope, no maintenance. */
+export interface ScopedCanonicalReadPortV1 {
+  readonly version: 1;
+  acceptedSnapshot(input: Parameters<CanonicalMemoryStorePort["acceptedSnapshot"]>[0] & ScopedReadBindingV1): Promise<Result<AcceptedCandidateSnapshotV1>>;
+  readRecord(input: Parameters<CanonicalMemoryStorePort["readRecord"]>[0] & ScopedReadBindingV1): Promise<Result<MemoryRecordV2>>;
+}
+
+export interface ScopedReadBindingV1 {
+  scope_ref: OpaqueRef;
+  authorization: AuthorizationAllowedV1;
+}
+
 export interface CanonicalMemoryStorePort {
   readonly version: 1;
+  readonly scoped_reads?: ScopedCanonicalReadPortV1;
   readonly capabilities: CanonicalStoreCapabilitiesV1;
   commitPending(input: {
     control: PendingControlV1;

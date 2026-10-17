@@ -21,6 +21,7 @@
     "memory-store.ts",
     "engine.ts",
     "recall.ts",
+    "reads.ts",
     "migration.ts",
     "projection.ts",
     "sqlite.ts",
