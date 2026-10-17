@@ -2417,7 +2417,8 @@ export function projectMemoryInvocationContextV1(
 
   const issuedMs = parseInstantMs(binding.issued_at);
   const deadlineMs = parseInstantMs(binding.deadline_at);
-  if (issuedMs === null || deadlineMs === null || deadlineMs <= issuedMs || deadlineMs - issuedMs > MEMORY_MCP_LIMITS.MAX_INVOCATION_DEADLINE_MS) {
+  const nowMs = parseInstantMs(expected.now)!;
+  if (issuedMs === null || deadlineMs === null || nowMs < issuedMs || nowMs >= deadlineMs || deadlineMs <= issuedMs || deadlineMs - issuedMs > MEMORY_MCP_LIMITS.MAX_INVOCATION_DEADLINE_MS) {
     return {
       ok: false,
       error_code: 'UNAUTHORIZED',
@@ -2427,13 +2428,12 @@ export function projectMemoryInvocationContextV1(
 
   if (binding.delegation !== undefined) {
     if (!isPlainObject(binding.delegation) ||
-        (binding.delegation.delegator_principal_id !== binding.principal_id &&
-         binding.delegation.delegate_principal_id !== binding.principal_id)) {
-      return { ok: false, error_code: 'UNAUTHORIZED', reason: 'Delegation must bind the invocation principal as delegator or delegate' };
+        binding.delegation.delegate_principal_id !== binding.principal_id) {
+      return { ok: false, error_code: 'UNAUTHORIZED', reason: 'Delegation must bind the invoking principal as delegate' };
     }
     const delCheck = checkDelegationBinding(
       binding.delegation,
-      binding.issued_at as Instant,
+      expected.now,
     );
     if (!delCheck.ok) {
       return {
@@ -2464,8 +2464,8 @@ export function projectMemoryInvocationContextV1(
     mcp_client_id: binding.mcp_client_id,
     session_id: binding.logical_session_ref,
     correlation_id: binding.correlation_ref,
-    now_utc: binding.issued_at,
-    deadline_ms: deadlineMs - issuedMs,
+    now_utc: expected.now,
+    deadline_ms: deadlineMs - nowMs,
     authorization_context: neutral_authorization,
     policy_epoch: binding.policy_epoch,
   });
@@ -2767,6 +2767,13 @@ export function verifyMemoryConfirmationContinuationV1(
     };
   }
 
+  // M:1602,561,565: required fields cannot disappear from both sides of equality.
+  const requiredRefs = ['connector_instance_ref', 'tenant_id', 'initiating_principal_namespace', 'initiating_principal_id', 'agent_id', 'mcp_client_id', 'logical_session_ref', 'transport_attachment_ref', 'store_id', 'scope_ref', 'target_ref', 'reservation_ref'] as const;
+  if (requiredRefs.some(k => !isValidOpaqueRef(continuation[k]) || !isValidOpaqueRef(expected[k])) ||
+      !isValidCursor(continuation.active_generation) || !isValidCursor(expected.active_generation)) {
+    return { ok: false, error_code: 'gate_failed', reason: 'Required continuation and current binding references must be present and valid' };
+  }
+
   if (
     !isValidOpaqueRef(continuation.continuation_ref) ||
     !isValidOpaqueRef(continuation.elicitation_ref) ||
@@ -2943,9 +2950,7 @@ export function verifyMemoryConfirmationContinuationV1(
     };
   }
 
-  if (
-    continuation.transport_attachment_ref !== expected.transport_attachment_ref
-  ) {
+  if (continuation.reattachment_proof !== undefined || continuation.transport_attachment_ref !== expected.transport_attachment_ref) {
     if (!isPlainObject(continuation.reattachment_proof)) {
       return {
         ok: false,
@@ -2956,6 +2961,7 @@ export function verifyMemoryConfirmationContinuationV1(
     }
     const proof = continuation.reattachment_proof;
     if (
+      !hasExactKeys(proof, ['previous_attachment_ref', 'current_attachment_ref', 'reattachment_receipt_digest', 'verified', 'admitted_generation']) ||
       proof.verified !== true ||
       proof.previous_attachment_ref !== continuation.transport_attachment_ref ||
       proof.current_attachment_ref !== expected.transport_attachment_ref ||

@@ -6,10 +6,36 @@ import {
   validateSearchInputV1, validateWithdrawInputV1, isValidOpaqueRef, isValidIdempotencyKey,
   computeMemoryMutationOperationDigestV1,
 } from '../src/mcp/memory/index.js';
-import { validBinding, validContinuation, expectedBinding } from './fixtures/memory-mcp-sol-rules.js';
+import { validBinding, validContinuation, expectedBinding, expectedInvocation } from './fixtures/memory-mcp-sol-rules.js';
 import { A05_MUTATION_DIGEST_VECTORS_SPEC_RULE } from './fixtures/memory-mcp-spec-rules.js';
 
 describe('L0a cofreeze counterexamples', () => {
+  it('minor 7 M:517,525,547: invocation uses the delegate authority and verifies expiry at the effect guard', () => {
+    const delegation = {
+      delegator_principal_id: 'usr_bob', delegate_principal_id: validBinding.principal_id,
+      delegation_receipt_digest: 'sha256:' + 'd'.repeat(64), verified_by_host_resolver: true,
+      expires_at: '2026-10-17T12:00:05.000Z',
+    };
+    expect(projectMemoryInvocationContextV1({ ...validBinding, delegation }, expectedInvocation).ok).toBe(true);
+    expect(projectMemoryInvocationContextV1({ ...validBinding, delegation: { ...delegation, delegator_principal_id: validBinding.principal_id, delegate_principal_id: 'usr_bob' } }, expectedInvocation).ok).toBe(false);
+    expect(projectMemoryInvocationContextV1({ ...validBinding, delegation }, { ...expectedInvocation, now: delegation.expires_at }).ok).toBe(false);
+    expect(projectMemoryInvocationContextV1(validBinding, { ...expectedInvocation, now: validBinding.deadline_at }).ok).toBe(false);
+    expect(projectMemoryInvocationContextV1(validBinding, { ...expectedInvocation, now: '2026-10-17T11:59:59.999Z' }).ok).toBe(false);
+  });
+
+  it('minor 11 M:1602,561,565: missing required bindings cannot match an equally incomplete expected object', () => {
+    for (const field of ['tenant_id', 'target_ref', 'reservation_ref', 'initiating_principal_namespace', 'initiating_principal_id', 'agent_id', 'mcp_client_id', 'store_id', 'scope_ref', 'connector_instance_ref', 'logical_session_ref', 'transport_attachment_ref', 'active_generation']) {
+      const continuation: any = { ...validContinuation }; delete continuation[field];
+      const expected: any = { ...expectedBinding }; delete expected[field];
+      expect(verifyMemoryConfirmationContinuationV1(continuation, expected).ok, field).toBe(false);
+    }
+    const proof = { previous_attachment_ref: 'attach_01', current_attachment_ref: 'attach_02', reattachment_receipt_digest: 'sha256:' + 'd'.repeat(64), verified: true, admitted_generation: '1' };
+    for (const transport_attachment_ref of ['attach_01', 'attach_02']) {
+      const expected = { ...expectedBinding, transport_attachment_ref };
+      expect(verifyMemoryConfirmationContinuationV1({ ...validContinuation, reattachment_proof: { ...proof, extra: 'unexpected' } }, expected).ok).toBe(false);
+    }
+  });
+
   it('minors 5-6 M:238,241-244,279,688: accept untrimmed strings and require NFC only on declared fields', () => {
     expect(isValidOpaqueRef(' \t')).toBe(true);
     expect(isValidIdempotencyKey(' '.repeat(16))).toBe(true);
