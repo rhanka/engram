@@ -42,6 +42,7 @@ export interface FixtureOptions {
   vector?: VectorProjectionPort;
   store?: CanonicalMemoryStorePort;
   clock?: { now: () => string };
+  authorizationExpiresAt?: string;
   assertionRegistry?: AssertionFamilyRegistry;
   /** Records the receipt digest the fake authorization port issued per call, so tests can recompute digests. */
   authorizationLog?: Array<{ operation: string; resource: unknown; receipt_digest: Digest }>;
@@ -49,7 +50,7 @@ export interface FixtureOptions {
   seededTrustClasses?: boolean;
 }
 
-export function buildMemory(options: FixtureOptions = {}): { memory: MemoryPortV2; store: CanonicalMemoryStorePort } {
+export function buildMemory(options: FixtureOptions = {}): { memory: MemoryPortV2; store: CanonicalMemoryStorePort; dependencies: MemoryEngineDependenciesV2 } {
   const scope = options.scope ?? "mem:scope";
   const clock = options.clock ?? { now: () => NOW };
   const store = options.store ?? createInMemoryCanonicalMemoryStoreV1({ clock });
@@ -66,7 +67,7 @@ export function buildMemory(options: FixtureOptions = {}): { memory: MemoryPortV
         resource_digest: request.resource_digest,
         scope_ref: resolved,
         not_before: NOW,
-        expires_at: DEADLINE,
+        expires_at: options.authorizationExpiresAt ?? DEADLINE,
         revocation_epoch: "0",
         redaction: {
           mode: "field-allowlist" as const,
@@ -141,7 +142,7 @@ export function buildMemory(options: FixtureOptions = {}): { memory: MemoryPortV
     async rotate() { throw new Error("unused"); },
   };
 
-  const memory = createMemoryPortV2({
+  const dependencies = {
     canonical_store: store,
     authorization,
     admission_policy: policy,
@@ -154,8 +155,9 @@ export function buildMemory(options: FixtureOptions = {}): { memory: MemoryPortV
     ...(options.assertionRegistry ? { assertion_registry: options.assertionRegistry } : {}),
     ...(options.seededTrustClasses ? { evidence_verifier: seededTrustVerifier() } : {}),
     clock,
-  } as unknown as MemoryEngineDependenciesV2);
-  return { memory, store };
+  } as unknown as MemoryEngineDependenciesV2;
+  const memory = createMemoryPortV2(dependencies);
+  return { memory, store, dependencies };
 }
 
 export interface SeedOptions {

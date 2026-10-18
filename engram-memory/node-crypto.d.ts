@@ -35,6 +35,6 @@ declare module "node:fs/promises" {
 }
 
 declare class Buffer {
-  static from(value: string, encoding: "utf8" | "base64url"): import("node:crypto").BinaryBuffer;
+  static from(value: string, encoding: "utf8" | "base64url" | "hex"): import("node:crypto").BinaryBuffer;
   static concat(values: import("node:crypto").BinaryBuffer[]): import("node:crypto").BinaryBuffer;
 }

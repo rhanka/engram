@@ -256,7 +256,7 @@ function decodePageCursor(cursor: string): PagePins | undefined {
   }
 }
 
-interface OrderedRanking {
+export interface OrderedRanking {
   ordered: string[];                 // post-revalidation eligible ids, final order
   scoreById: Map<string, number>;
   candidateCount: number;
@@ -316,14 +316,14 @@ function semanticConfigDigest(adjacency: SemanticAdjacencyV1, modelRef: string, 
   }, "profile_config_digest");
 }
 
-async function computeRanking(
+export async function computeRanking(
   dependencies: MemoryEngineDependenciesV2,
-  input: { profile: SelectedProfile; request: RecallRequestV2; authorization: AuthorizationAllowedV1; valid_as_of: number; system_as_of: string; now: string },
+  input: { profile: SelectedProfile; request: RecallRequestV2; authorization: AuthorizationAllowedV1; valid_as_of: number; system_as_of: string; now: string; scoped_snapshot?: AcceptedCandidateSnapshotV1 },
 ): Promise<Result<OrderedRanking>> {
   const { profile, request, authorization, valid_as_of, system_as_of } = input;
   const candidateCap = Math.min(request.budgets.max_candidates, CANDIDATE_HARD_CAP);
 
-  const snapshotResult = await dependencies.canonical_store.acceptedSnapshot({
+  const snapshotResult = input.scoped_snapshot !== undefined ? { ok: true as const, value: input.scoped_snapshot } : await dependencies.canonical_store.acceptedSnapshot({
     valid_as_of,
     system_as_of,
     authorization_receipt_digest: authorization.receipt_digest,
@@ -358,6 +358,9 @@ async function computeRanking(
     projectionReceiptDigests.push(adjacency.adjacency_digest);
 
     // Induced eligibility subgraph: only ids the adjacency carries participate.
+    if (input.scoped_snapshot !== undefined && adjacency.record_ids.some(id => !eligibleIds.includes(id))) {
+      return fail("recall_current", "PROJECTION_STALE", "adjacency exceeded the scoped allowlist");
+    }
     const indexById = new Map(adjacency.record_ids.map((id, index) => [id, index] as const));
     const n = adjacency.record_ids.length;
     const teleport = new Map<number, number>();
@@ -400,7 +403,10 @@ async function computeRanking(
   const candidateIdsDigest = receiptDigest("recall-candidates", { candidate_ids: candidateIds }, "candidate_ids_digest");
 
   // Mandatory final revalidation against canonical state (SPEC §5.7 / §7).
-  const revalidation = await dependencies.canonical_store.revalidate({
+  const revalidate = input.scoped_snapshot !== undefined
+    ? dependencies.canonical_store.revalidateReadOnly.bind(dependencies.canonical_store)
+    : dependencies.canonical_store.revalidate.bind(dependencies.canonical_store);
+  const revalidation = await revalidate({
     record_ids: candidateIds,
     valid_as_of,
     system_as_of,
