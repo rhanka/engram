@@ -278,6 +278,16 @@ describe('MCP-L1 spec-derived neutral reads', () => {
 });
 
 describe('MCP-L1 in-process search/get', () => {
+  it('M6 should preserve PROJECTION_OVERSIZED from the required semantic neighborhood', async () => {
+    // Argon counterexample; frozen spec M6 lines 748, 757 and 1553.
+    const neighborhood = vi.fn(async () => ({ ok: false as const, error: { operation: 'recall' as const, code: 'PROJECTION_OVERSIZED' as const, message: 'oversized', retryable: false } }));
+    const { facets } = setup({ semantic: { version: 1, inducedAdjacency: neighborhood }, vector: { version: 1, query: vi.fn() } });
+    const { tools: api } = tools(facets);
+    expect(await api.search({ query: 'alpha', purpose_ref: 'purpose:test', capability_policy: { minimum_channels: 'lexical_and_semantic', network: 'forbid' } }, invocation()))
+      .toMatchObject({ ok: false, error: { code: 'PROJECTION_OVERSIZED', retriable: false } });
+    expect(neighborhood).toHaveBeenCalledOnce();
+  });
+
   it('M2/M4 should require authenticated host context and preserve the audit reference byte for byte', async () => {
     const { facets } = setup();
     const { tools: api, host } = tools(facets);
@@ -337,7 +347,7 @@ describe('MCP-L1 in-process search/get', () => {
     const { memory, facets } = setup();
     const id = await seedAccepted(memory, 'needle common ' + 'x'.repeat(5000));
     const { tools: api } = tools(facets);
-    expect(await api.get({ record_id: id, purpose_ref: 'purpose:l7', max_packet_bytes: 4096 }, invocation())).toMatchObject({ ok: false, error: { code: 'RESULT_TOO_LARGE' } });
+    expect(await api.get({ record_id: id, purpose_ref: 'purpose:l7', max_packet_bytes: 4096 }, invocation())).toMatchObject({ ok: false, error: { code: 'PROJECTION_OVERSIZED' } });
     expect(await api.get({ record_id: id, purpose_ref: 'purpose:l7' }, invocation())).toMatchObject({ ok: true, output: { value: { record: { record_id: id } } } });
     const { tools: wrong } = tools({ ...facets, recallPort: { ...facets.recallPort, version: 2 } } as any);
     expect(await wrong.search({ query: 'needle', purpose_ref: 'purpose:l7' }, invocation())).toMatchObject({ ok: false, error: { code: 'CAPABILITY_UNAVAILABLE' } });

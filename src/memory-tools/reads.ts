@@ -89,9 +89,8 @@ export function createMemoryReadToolsV1(options: { facets: MemoryReadFacetsV1; h
     return ctx;
   }
   const failure = (tool: ReadTool, ctx: MemoryReadInvocationV1, code: PublicMemoryErrorCode) => mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, code }).structuredContent;
-  const neutralFailure = (tool: ReadTool, ctx: MemoryReadInvocationV1, error: MemoryErrorV1) => error.code === 'PROJECTION_OVERSIZED'
-    ? failure(tool, ctx, 'RESULT_TOO_LARGE')
-    : mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, error }).structuredContent;
+  const neutralFailure = (tool: ReadTool, ctx: MemoryReadInvocationV1, error: MemoryErrorV1) =>
+    mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, error }).structuredContent;
   function check(ctx: MemoryReadInvocationV1): PublicMemoryErrorCode | undefined {
     const now = host.clock.now();
     if (!isValidInstant(now)) return 'STORE_UNAVAILABLE';
