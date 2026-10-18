@@ -3349,6 +3349,16 @@ export function validatePublishedJsonSchemaDraft202012(
   value: unknown,
   path = '',
 ): SchemaValidationResult<unknown> {
+  const admission = validateMemoryToolSchemaDialectV1(schema);
+  if (!admission.ok) return admission;
+  return evaluateAdmittedJsonSchema(schema, value, path);
+}
+
+function evaluateAdmittedJsonSchema(
+  schema: Record<string, unknown>,
+  value: unknown,
+  path: string,
+): SchemaValidationResult<unknown> {
   if ('const' in schema) {
     if (value !== schema.const) {
       return fail(path, `Expected const ${String(schema.const)}`);
@@ -3364,7 +3374,7 @@ export function validatePublishedJsonSchemaDraft202012(
     for (const branch of schema.oneOf) {
       if (
         isPlainObject(branch) &&
-        validatePublishedJsonSchemaDraft202012(branch, value, path).ok
+        evaluateAdmittedJsonSchema(branch, value, path).ok
       ) {
         matchCount++;
       }
@@ -3399,7 +3409,7 @@ export function validatePublishedJsonSchemaDraft202012(
       );
     }
     if (typeof schema.pattern === 'string') {
-      const regex = new RegExp(schema.pattern);
+      const regex = new RegExp(schema.pattern, 'u');
       if (!regex.test(value)) {
         return fail(path, `String does not match pattern ${schema.pattern}`);
       }
@@ -3459,7 +3469,7 @@ export function validatePublishedJsonSchemaDraft202012(
     }
     if (isPlainObject(schema.items)) {
       for (let i = 0; i < value.length; i++) {
-        const itemRes = validatePublishedJsonSchemaDraft202012(
+        const itemRes = evaluateAdmittedJsonSchema(
           schema.items,
           value[i],
           `${path}[${i}]`,
@@ -3507,7 +3517,7 @@ export function validatePublishedJsonSchemaDraft202012(
       }
       const propSchema = properties[key];
       if (isPlainObject(propSchema)) {
-        const propRes = validatePublishedJsonSchemaDraft202012(
+        const propRes = evaluateAdmittedJsonSchema(
           propSchema,
           value[key],
           fieldPath,
@@ -3678,16 +3688,50 @@ export function validateMemoryToolSchemaDialectV1(
         `Keyword '${key}' is forbidden by '${ENGRAM_MEMORY_WIRE_PROFILE_V1.schemaProfileId}'`,
       );
     }
+    const value = schema[key];
+    const field = `${path}.${key}`;
+    if (key === 'type' && !['string', 'number', 'integer', 'boolean', 'array', 'object'].includes(value as string)) {
+      return fail(field, 'type must be a supported scalar type name');
+    }
+    // Typed assertions require the explicit type the evaluator dispatches on.
+    const assertionType = ['properties', 'required', 'additionalProperties'].includes(key) ? 'object'
+      : ['items', 'minItems', 'maxItems', 'uniqueItems'].includes(key) ? 'array'
+      : ['minLength', 'maxLength', 'pattern'].includes(key) ? 'string'
+      : ['minimum', 'maximum'].includes(key) ? 'number' : undefined;
+    if (assertionType && schema.type !== assertionType && !(assertionType === 'number' && schema.type === 'integer')) {
+      return fail(field, `Assertion '${key}' requires explicit type '${assertionType}'`);
+    }
+    if (['minimum', 'maximum'].includes(key) && (typeof value !== 'number' || !Number.isFinite(value))) {
+      return fail(field, `${key} must be a finite number`);
+    }
+    if (['minLength', 'maxLength', 'minItems', 'maxItems'].includes(key) && (typeof value !== 'number' || !Number.isInteger(value) || value < 0)) {
+      return fail(field, `${key} must be a non-negative integer`);
+    }
+    if (key === 'uniqueItems' && typeof value !== 'boolean') {
+      return fail(field, 'uniqueItems must be boolean');
+    }
+    if (key === 'required' && (!Array.isArray(value) || value.some(item => typeof item !== 'string') || new Set(value).size !== value.length)) {
+      return fail(field, 'required must be an array of unique property names');
+    }
+    if (['$id', 'title', 'description'].includes(key) && typeof value !== 'string') {
+      return fail(field, `${key} must be a string annotation`);
+    }
+    if (key === 'pattern') {
+      if (typeof value !== 'string') return fail(field, 'pattern must be a string');
+      try { new RegExp(value, 'u'); } catch {
+        return fail(field, 'pattern must be a valid Unicode regular expression');
+      }
+    }
   }
 
-  if (schema.type === 'object' || 'properties' in schema) {
+  if (schema.type === 'object') {
     if (schema.additionalProperties !== false) {
       return fail(
         `${path}.additionalProperties`,
         'Object schema must set additionalProperties: false',
       );
     }
-    if (schema.properties !== undefined) {
+    if (Object.hasOwn(schema, 'properties')) {
       if (!isPlainObject(schema.properties)) {
         return fail(`${path}.properties`, 'properties must be a plain object');
       }
