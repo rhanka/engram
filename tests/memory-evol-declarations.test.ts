@@ -75,7 +75,7 @@ describe("EVOL declarations match the implemented contracts", () => {
       .toEqual(PROSE_FALSE_POSITIVES);
     expect(new Set(mentionedNames.filter((name) => !PROSE_FALSE_POSITIVES.has(name))))
       .toEqual(new Set(specInterfaces.keys()));
-    expect(specInterfaces.size).toBe(114);
+    expect(specInterfaces.size).toBe(115);
     expect(spec.aliases.size).toBe(18);
   });
 

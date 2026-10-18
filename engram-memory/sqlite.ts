@@ -336,6 +336,7 @@ function schema(database: NativeDatabase): void {
     CREATE TABLE IF NOT EXISTS memory_control (candidate_id TEXT PRIMARY KEY, body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS memory_envelope (candidate_id TEXT PRIMARY KEY, body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS memory_capture_idempotency (candidate_id TEXT PRIMARY KEY, body TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS memory_admission_outcome (candidate_id TEXT PRIMARY KEY, body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS accepted_lexical (record_id TEXT PRIMARY KEY, record_digest TEXT NOT NULL, body TEXT NOT NULL);
     CREATE VIRTUAL TABLE IF NOT EXISTS accepted_lexical_fts USING fts5(record_id UNINDEXED, primary_text, context_text, decision_text, evidence_text, citations_text);
     CREATE TABLE IF NOT EXISTS memory_outbox (sequence INTEGER PRIMARY KEY, body TEXT NOT NULL);
@@ -351,6 +352,7 @@ function stateFromDatabase(database: NativeDatabase): InMemoryStoreStateV1 {
     lexical: (database.prepare("SELECT record_id, body FROM accepted_lexical ORDER BY record_id").all() as StoredRow[]).map((row) => ({ record_id: row.id ?? row.record_id!, document: parse(row.body!) })),
     outbox: (database.prepare("SELECT body FROM memory_outbox ORDER BY sequence").all() as StoredRow[]).map((row) => parse(row.body!)),
     capture_idempotency: (database.prepare("SELECT body FROM memory_capture_idempotency ORDER BY candidate_id").all() as StoredRow[]).map((row) => parseCaptureRegistryEntry(row.body!)),
+    admission_outcomes: (database.prepare("SELECT body FROM memory_admission_outcome ORDER BY candidate_id").all() as StoredRow[]).map((row) => parse(row.body!)),
   };
 }
 
@@ -523,6 +525,7 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
     clear("memory_control");
     clear("memory_envelope");
     clear("memory_capture_idempotency");
+    clear("memory_admission_outcome");
     clear("accepted_lexical");
     clear("accepted_lexical_fts");
     clear("memory_outbox");
@@ -546,6 +549,8 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
     for (const envelope of snapshot.envelopes) insertEnvelope.run(envelope.candidate_id, json(envelope));
     const insertCapture = this.database.prepare("INSERT INTO memory_capture_idempotency(candidate_id, body) VALUES (?, ?)");
     for (const entry of snapshot.capture_idempotency ?? []) insertCapture.run(entry.candidate_id, json(entry));
+    const insertOutcome = this.database.prepare("INSERT INTO memory_admission_outcome(candidate_id, body) VALUES (?, ?)");
+    for (const entry of snapshot.admission_outcomes ?? []) insertOutcome.run(entry.candidate_id, json(entry));
     this.options.on_mutation_statement?.("state");
     this.options.failpoint?.("after_state");
 
@@ -637,6 +642,11 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
     return this.#transaction("capture", (working) => working.recordCaptureIdempotency(input));
   }
 
+  async readAdmissionOutcome(input: { candidate_id: string }) {
+    const fence = this.#fence("request_admission");
+    return fence.ok ? this.#core.readAdmissionOutcome(input) : fence;
+  }
+
   async applyAdmission(input: AdmissionStoreInputV1): Promise<Result<CanonicalTransactionReceiptV1>> {
     return this.#transaction("request_admission", (working) => working.applyAdmission(input));
   }
@@ -698,7 +708,8 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
       if (!current.ok) return current;
       if (current.value.journal.length !== 0 || current.value.records.length !== 0
         || current.value.controls.length !== 0 || current.value.envelopes.length !== 0
-        || current.value.lexical.length !== 0 || current.value.outbox.length !== 0 || (current.value.capture_idempotency?.length ?? 0) !== 0) {
+        || current.value.lexical.length !== 0 || current.value.outbox.length !== 0 || (current.value.capture_idempotency?.length ?? 0) !== 0
+        || (current.value.admission_outcomes?.length ?? 0) !== 0) {
         return refusal("restore", "RESTORE_REFUSED", "logical backup import refuses a non-empty store");
       }
       const converted = backupPublicJournalToStorageV1(input.journal);

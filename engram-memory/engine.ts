@@ -733,6 +733,45 @@ async function sameScopeTombstonePayloadMatch(
   }
 }
 
+// M5: durable admission recovery. After the pending envelope is destroyed,
+// the recorded outcome is the replay proof — returned identically, without
+// re-evaluating policy or committing another effect. A foreign scope learns
+// nothing: scope mismatch refuses UNAUTHORIZED before any receipt disclosure.
+async function recoverAdmissionOutcome(
+  dependencies: MemoryEngineDependenciesV2,
+  candidateId: string,
+  scopeRef: string,
+): Promise<Result<AdmissionOutcomeV1 | undefined>> {
+  const operation = "request_admission" as const;
+  const reader = dependencies.canonical_store.readAdmissionOutcome;
+  if (reader === undefined) return { ok: true, value: undefined };
+  try {
+    const recorded = await reader.call(dependencies.canonical_store, { candidate_id: candidateId });
+    if (!recorded.ok) return recorded.error.code === "NOT_FOUND" ? { ok: true, value: undefined } : operationFailure(operation, recorded);
+    const entry = recorded.value;
+    if (entry.candidate_id !== candidateId || !isOpaque(entry.scope_ref) || !isCanonicalCursor(entry.cursor)
+      || !isDigest(entry.decision_receipt_digest) || !isDigest(entry.transaction_receipt_digest)
+      || (entry.status !== "accepted" && entry.status !== "rejected")
+      || (entry.status === "accepted" ? !isOpaque(entry.record_id) : entry.record_id !== undefined)) {
+      return refusal(operation, "JOURNAL_CORRUPT", "recorded admission outcome is malformed");
+    }
+    if (entry.scope_ref !== scopeRef) return refusal(operation, "UNAUTHORIZED", "authorization scope does not bind the recorded admission");
+    return {
+      ok: true,
+      value: {
+        status: entry.status,
+        candidate_id: entry.candidate_id,
+        ...(entry.status === "accepted" ? { record_id: entry.record_id! } : {}),
+        cursor: entry.cursor,
+        decision_receipt_digest: entry.decision_receipt_digest,
+        transaction_receipt_digest: entry.transaction_receipt_digest,
+      },
+    };
+  } catch {
+    return unavailable(operation, "canonical store did not return a recorded admission outcome");
+  }
+}
+
 /**
  * T5.8 binding validation, before any cursor allocation. Recomputes the outcome
  * for the bound proposal's family, version, pair and pin through T5.7 steps 5–7
@@ -1250,7 +1289,17 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
           candidate_id: input.candidate_id,
           authorization_receipt_digest: authorization.value.receipt_digest,
         });
-        if (!pending.ok) return operationFailure("request_admission", pending);
+        if (!pending.ok) {
+          // M5: the pending envelope is gone after commit, but the recorded
+          // outcome survives in durable state — a lost acknowledgement
+          // replays it identically instead of permitting a second effect.
+          if (pending.error.code !== "NOT_FOUND") return operationFailure("request_admission", pending);
+          const recovered = await recoverAdmissionOutcome(dependencies, input.candidate_id, authorization.value.scope_ref);
+          if (!recovered.ok) return recovered;
+          if (recovered.value === undefined) return operationFailure("request_admission", pending);
+          admissionOutcomes.set(input.candidate_id, { scope_ref: authorization.value.scope_ref, outcome: recovered.value });
+          return { ok: true, value: recovered.value };
+        }
         if (!validPendingSnapshot(pending.value, input.candidate_id)) return refusal("request_admission", "INVALID_SCHEMA", "pending candidate snapshot is malformed");
         const opened = await dependencies.crypto.open({ sealed: pending.value.sealed, context_digest: pendingContextDigest(input.candidate_id) });
         if (!opened.ok) return operationFailure("request_admission", opened);
@@ -1349,6 +1398,7 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
           : await dependencies.canonical_store.applyAdmission({
             outcome: "reject",
             candidate_id: input.candidate_id,
+            scope_ref: envelope.payload.scope_ref,
             decision: decision.value as AdmissionDecisionEnvelopeV1 & { decision: "reject" },
             event: event as never,
           });
