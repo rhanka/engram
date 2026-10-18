@@ -858,7 +858,7 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
       this.#admissionOutcomes.set(input.candidate_id, defined({
         candidate_id: input.candidate_id,
         scope_ref: input.outcome === "accept" ? input.record.scope_ref : input.scope_ref,
-        status: input.outcome === "accept" ? "accepted" : "rejected",
+        status: (input.outcome === "accept" ? "accepted" : "rejected") as "accepted" | "rejected",
         record_id: input.outcome === "accept" ? input.record.record_id : undefined,
         cursor: appended.value.event.cursor,
         decision_receipt_digest: input.decision.receipt_digest,
