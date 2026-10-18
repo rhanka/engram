@@ -940,6 +940,29 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
     return verifyStoreProvenance(dependencies.canonical_store, readiness.value, { allowUnfencedMemoryStore: dependencies.allow_unfenced_memory_store === true }, operation);
   };
 
+  // M4: an allow receipt obtained before an asynchronous dependency is not
+  // enough to authorize the effect after that dependency returns.
+  const authorizeEffect = async (authorization: AuthorizationAllowedV1, deadline: string): Promise<Result<{ valid: true }>> => {
+    const operation = authorization.operation;
+    const now = dependencies.clock?.now();
+    if (!isInstant(now)) return unavailable(operation, "clock did not supply a canonical instant");
+    if (Date.parse(now) >= Date.parse(deadline)) return refusal(operation, "DEADLINE_EXCEEDED", "deadline elapsed before canonical effect");
+    if (Date.parse(now) >= Date.parse(authorization.expires_at)) return refusal(operation, "AUTHORIZATION_EXPIRED", "authorization expired before canonical effect");
+    try {
+      const checked = await dependencies.authorization.revalidate(authorization.receipt_digest, now);
+      if (!checked.ok) return operationFailure(operation, checked);
+      const active = validateRevalidation(checked.value, authorization.receipt_digest, authorization.revocation_epoch, now, operation);
+      if (!active.ok) return active;
+      const effectNow = dependencies.clock?.now();
+      if (!isInstant(effectNow)) return unavailable(operation, "clock did not supply a canonical instant");
+      if (Date.parse(effectNow) >= Date.parse(deadline)) return refusal(operation, "DEADLINE_EXCEEDED", "deadline elapsed before canonical effect");
+      if (Date.parse(effectNow) >= Date.parse(authorization.expires_at)) return refusal(operation, "AUTHORIZATION_EXPIRED", "authorization expired before canonical effect");
+      return active;
+    } catch {
+      return unavailable(operation, "authorization port did not return a typed result");
+    }
+  };
+
   const port: MemoryPortV2 = {
     version: 2,
     capabilities: async () => {
@@ -1034,6 +1057,14 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
             context_digest: pendingContextDigest(candidateId),
           });
           if (!sealed.ok) return operationFailure("capture", sealed);
+          const effect = await authorizeEffect(authorization.value, request.deadline_at);
+          if (!effect.ok || cancelled.has(request.cancellation_ref)) {
+            // The envelope has no canonical owner yet. Use the same custody
+            // destruction identity as the other candidate cleanup paths.
+            const destroyed = await dependencies.crypto.destroy({ key_ref: sealed.value.key_ref, idempotency_key: `destroy:${candidateId}` });
+            if (!destroyed.ok) return operationFailure("capture", destroyed);
+            return !effect.ok ? effect : refusal("capture", "CANCELLED", "capture was cancelled before commit");
+          }
           const committed = await dependencies.canonical_store.commitPending({
             control: {
               candidate_id: candidateId, envelope_digest: sealed.value.envelope_digest,
@@ -1214,6 +1245,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
         if (!decided.ok) return operationFailure("request_admission", decided);
         const decision = validateAdmissionDecisionEnvelope(dependencies.admission_policy, policyRequest, decided.value, now);
         if (!decision.ok) return decision;
+        const effect = await authorizeEffect(authorization.value, input.deadline_at);
+        if (!effect.ok) return effect;
         if (decision.value.decision === "adjudication_required") {
           const transactionReceipt = receiptDigest("admission-pending", {
             candidate_id: input.candidate_id,
@@ -1308,6 +1341,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       const fromState = await foldedStateForCommand(dependencies, input);
       if (!fromState.ok) return fromState;
       const event = lifecycleEvent(input, now, fromState.value, authorization.value.receipt_digest, bound.value ?? undefined);
+      const effect = await authorizeEffect(authorization.value, input.deadline_at);
+      if (!effect.ok) return operationFailure(input.operation, effect);
       const applied = await dependencies.canonical_store.applyLifecycle({
         command: input,
         event: event as never,
