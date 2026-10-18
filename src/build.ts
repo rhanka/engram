@@ -18,6 +18,10 @@ import { assertGraphJsonFileSize } from "./graph-size-guard.js";
 import { cleanupStaleNodes } from "./semantic-cleanup.js";
 import { validateExtraction } from "./validate.js";
 import {
+  reconcileMemoryProjectionInGraph,
+  type AssembledMemoryGraphProjectionV1,
+} from "./memory-graph-projection.js";
+import {
   deOrphanByContainer,
   deriveAliasesAndNormalizedTerms,
   normalizeSchemaHygiene,
@@ -460,6 +464,15 @@ export interface BuildMergeOptions extends BuildOptions {
   graphPath?: string;
   pruneSources?: string[];
   /**
+   * MCP-L3 filtered memory projection (restored D3/D10). When supplied, the
+   * freshly assembled projection is reconciled into the merged graph: stale
+   * memory nodes are dropped, the fresh projection is attached through the
+   * controlled assembly, and freshness cursors are stamped. Code nodes are
+   * never touched. Absent by default: existing memory nodes are preserved as
+   * foreign objects.
+   */
+  memoryProjection?: AssembledMemoryGraphProjectionV1;
+  /**
    * Automatic stale-node prune at finalize (F-0816-M5). When set, any
    * node whose `source_file` no longer exists on disk under `root` (or
    * is missing from `aliveSourceFiles` when provided) is dropped along
@@ -481,12 +494,14 @@ export interface BuildMergeOptions extends BuildOptions {
 export function buildMerge(newChunks: Extraction[], options?: BuildMergeOptions): Graph {
   const graphPath = resolve(options?.graphPath ?? ".graphify/graph.json");
   const base: Extraction[] = [];
-  let existingNodeCount = 0;
+  let existingCodeNodeCount = 0;
 
   if (existsSync(graphPath)) {
     const existing = readExistingGraphExtraction(graphPath);
     base.push(existing.extraction);
-    existingNodeCount = existing.nodeCount;
+    // MCP-L3: memory nodes reconcile separately, so the shrink guard compares
+    // code nodes only; a memory-only shrinkage at reconciliation never trips it.
+    existingCodeNodeCount = existing.extraction.nodes.filter((node) => node.file_type !== "memory").length;
   }
 
   const mergedExtraction: Extraction = {
@@ -549,11 +564,21 @@ export function buildMerge(newChunks: Extraction[], options?: BuildMergeOptions)
   const explicitPruneRequested =
     (options?.pruneSources?.length ?? 0) > 0 ||
     (options?.pruneMissingSources !== undefined && autoPruned > 0);
-  if (existingNodeCount > 0 && graph.order < existingNodeCount && !explicitPruneRequested) {
+  let newCodeNodeCount = 0;
+  graph.forEachNode((_, attrs) => {
+    if ((attrs as Record<string, unknown>).file_type !== "memory") newCodeNodeCount += 1;
+  });
+  if (existingCodeNodeCount > 0 && newCodeNodeCount < existingCodeNodeCount && !explicitPruneRequested) {
     throw new Error(
-      `engram: buildMerge would shrink graph from ${existingNodeCount} to ${graph.order} nodes. ` +
+      `engram: buildMerge would shrink graph from ${existingCodeNodeCount} to ${newCodeNodeCount} nodes. ` +
       "Pass pruneSources explicitly if you intend to remove nodes.",
     );
+  }
+
+  // MCP-L3 regeneration/reconciliation (restored D3/D10): drops stale memory
+  // nodes and attaches the fresh filtered projection; code nodes untouched.
+  if (options?.memoryProjection !== undefined) {
+    reconcileMemoryProjectionInGraph(graph, options.memoryProjection);
   }
 
   return graph;

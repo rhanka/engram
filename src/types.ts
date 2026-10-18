@@ -51,7 +51,7 @@ export interface GraphNode {
   label: string;
   // "doc_ref": architecture-decision references (ADR-NNNN / RFC NNNN) cited
   // from code comments — port of upstream safishamsi 6d3a6f1.
-  file_type: "code" | "document" | "paper" | "image" | "concept" | "rationale" | "doc_ref";
+  file_type: "code" | "document" | "paper" | "image" | "concept" | "rationale" | "doc_ref" | "memory";
   source_file: string;
   source_location?: string;
   confidence?: Confidence;
