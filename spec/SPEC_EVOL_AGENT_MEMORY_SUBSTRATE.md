@@ -922,6 +922,12 @@ export interface CanonicalMemoryStorePort {
     candidate_id: string;
     record_digest: Digest;
   }): Promise<Result<CaptureIdempotencyRecordV1>>;
+  // (MCP-L2 amendment) Durable admission replay: answers after acceptance,
+  // rejection or envelope destruction, where readPending reports NOT_FOUND.
+  // Optional for compatibility; registries are append-only, never replaced.
+  readAdmissionOutcome?(input: {
+    candidate_id: string;
+  }): Promise<Result<PersistedAdmissionOutcomeV1>>;
   applyAdmission(input: AdmissionStoreInputV1): Promise<Result<CanonicalTransactionReceiptV1>>;
   applyLifecycle(input: {
     command: LifecycleCommandV1;
@@ -975,6 +981,18 @@ export interface PersistedCaptureIdempotencyV1 {
   cursor: Cursor;
   record_digest?: Digest;
   receipt_digest?: Digest;
+}
+
+// (MCP-L2 amendment) Durable admission replay proof per candidate identity:
+// recorded atomically with the admission effect, carrying its scope binding.
+export interface PersistedAdmissionOutcomeV1 {
+  candidate_id: string;
+  scope_ref: OpaqueRef;
+  status: "accepted" | "rejected";
+  record_id?: string;
+  cursor: Cursor;
+  decision_receipt_digest: Digest;
+  transaction_receipt_digest: Digest;
 }
 
 export interface LogicalBackupImportInputV1 {
@@ -1035,6 +1053,7 @@ export type AdmissionStoreInputV1 =
   | {
       outcome: "reject";
       candidate_id: string;
+      scope_ref: OpaqueRef;
       decision: AdmissionDecisionEnvelopeV1 & { decision: "reject" };
       event: LifecycleEventV2;
     };

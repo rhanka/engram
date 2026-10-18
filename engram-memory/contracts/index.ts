@@ -721,6 +721,7 @@ export type AdmissionStoreInputV1 =
   | {
       outcome: "reject";
       candidate_id: string;
+      scope_ref: OpaqueRef;
       decision: AdmissionDecisionEnvelopeV1 & { decision: "reject" };
       event: LifecycleEventV2;
     };
@@ -732,6 +733,17 @@ export interface PersistedCaptureIdempotencyV1 {
   cursor: Cursor;
   record_digest?: Digest;
   receipt_digest?: Digest;
+}
+
+/** MCP-L2 durable admission outcome: the recorded replay proof per candidate identity. */
+export interface PersistedAdmissionOutcomeV1 {
+  candidate_id: string;
+  scope_ref: OpaqueRef;
+  status: "accepted" | "rejected";
+  record_id?: string;
+  cursor: Cursor;
+  decision_receipt_digest: Digest;
+  transaction_receipt_digest: Digest;
 }
 
 /** M3 additive facet: same store/fence, exact authorized scope, no maintenance. */
@@ -783,6 +795,17 @@ export interface CanonicalMemoryStorePort {
     candidate_id: string;
     record_digest: Digest;
   }): Promise<Result<CaptureIdempotencyRecordV1>>;
+  /**
+   * MCP-L2 durable admission replay, independent of the pending lifecycle —
+   * it answers after acceptance, rejection or envelope destruction, where
+   * readPending reports NOT_FOUND. Returns the recorded outcome with its
+   * scope binding and both receipt digests, never sealed material. Optional
+   * for compatibility: engines fall back to the in-process outcome cache.
+   * Registries are append-only; a recorded outcome is never replaced.
+   */
+  readAdmissionOutcome?(input: {
+    candidate_id: string;
+  }): Promise<Result<PersistedAdmissionOutcomeV1>>;
   applyAdmission(input: AdmissionStoreInputV1): Promise<Result<CanonicalTransactionReceiptV1>>;
   applyLifecycle(input: {
     command: LifecycleCommandV1;

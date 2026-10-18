@@ -2,6 +2,7 @@ import {
   createInMemoryCanonicalMemoryStoreV1,
   createMemoryPortV2,
   knowledgePayloadDigest,
+  memoryJournalEventHashV1,
   receiptDigest,
   type AssertionFamilyRegistry,
   type CanonicalMemoryStorePort,
@@ -239,6 +240,33 @@ export async function seedAccepted(memory: MemoryPortV2, text: string, options: 
   if (!admitted.ok) throw new Error(`admission failed: ${admitted.error.code} ${admitted.error.message}`);
   if (admitted.value.record_id === undefined) throw new Error(`admission did not accept: ${admitted.value.status}`);
   return admitted.value.record_id;
+}
+
+/**
+ * Builds a canonical store prefilled with `count` chained filler capture
+ * events (a valid hash chain cloned from a real capture event) for
+ * over-page journal tests. The engine under test then runs over a journal
+ * whose tombstones sit past the first 2000-event page.
+ */
+export function createDeepJournalStoreV1(
+  templateEvent: unknown, count: number, clock: { now(): string },
+): CanonicalMemoryStorePort {
+  const { event_hash: _dropped, ...body } = templateEvent as Record<string, unknown>;
+  const events: unknown[] = [];
+  let previous = (templateEvent as { previous_event_hash: string }).previous_event_hash;
+  for (let i = 0; i < count; i++) {
+    const event = {
+      ...body, event_id: `filler:event:${i}`, candidate_id: `candidate:filler:${i}`,
+      cursor: String(i + 1), previous_event_hash: previous,
+    };
+    const event_hash = memoryJournalEventHashV1(event as never);
+    events.push({ ...event, event_hash });
+    previous = event_hash;
+  }
+  return createInMemoryCanonicalMemoryStoreV1({
+    clock,
+    persistence: { journal: events as never, controls: [], envelopes: [], records: [], lexical: [], outbox: [] },
+  });
 }
 
 export function recallRequest(query: string, overrides: Partial<{
