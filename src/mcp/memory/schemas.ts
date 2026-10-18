@@ -3465,7 +3465,7 @@ export function validatePublishedJsonSchemaDraft202012(
       : [];
 
     for (const reqKey of required) {
-      if (!(reqKey in value) || value[reqKey] === undefined) {
+      if (!Object.hasOwn(value, reqKey) || value[reqKey] === undefined) {
         const fieldPath = path ? `${path}.${reqKey}` : reqKey;
         return fail(fieldPath, `Missing required property '${reqKey}'`);
       }
@@ -3479,7 +3479,7 @@ export function validatePublishedJsonSchemaDraft202012(
       if (value[key] === null) {
         return fail(fieldPath, `Property '${key}' must not be null`);
       }
-      if (!(key in properties)) {
+      if (!Object.hasOwn(properties, key)) {
         if (schema.additionalProperties === false) {
           return fail(
             fieldPath,
