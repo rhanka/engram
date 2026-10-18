@@ -290,12 +290,12 @@ describe("MCP-L3 filtered memory projection (M10 l.1368; MCP-L3 l.1675)", () => 
     const full = assembleMemoryGraphProjection(assembleInput([candidate()]));
     expect(full.ok).toBe(true);
     if (!full.ok) return;
-    // The ceiling set exactly at the envelope-only size: an implementation
-    // that ignores edges admits it, the specified one refuses it.
+    // The ceiling set exactly at the node-rows size: an implementation that
+    // ignores edges admits it, the specified one refuses it.
     const edgeBytes = new TextEncoder().encode(JSON.stringify(full.value.extraction.edges)).byteLength;
     expect(edgeBytes).toBeGreaterThan(0);
-    const envelopeOnly = full.value.raw_byte_size - edgeBytes;
-    const admitted = assembleMemoryGraphProjection({ ...assembleInput([candidate()]), byte_ceiling: envelopeOnly });
+    const nodesOnly = full.value.raw_byte_size - edgeBytes;
+    const admitted = assembleMemoryGraphProjection({ ...assembleInput([candidate()]), byte_ceiling: nodesOnly });
     expect(admitted.ok).toBe(false);
     if (admitted.ok) return;
     expect(admitted.error.code).toBe("PROJECTION_OVERSIZED");
@@ -385,26 +385,26 @@ describe("MCP-L3 filtered memory projection (M10 l.1368; MCP-L3 l.1675)", () => 
     const communities = new Map([[0, ["alpha_fn", "beta_fn", "memory:mem:admitted:001"]]]);
     const dir = tempDir("graphify-l3-surfaces-");
     const graphPath = join(dir, "graph.json");
-    expect(toJson(G, communities, graphPath, { force: true })).toBe(true);
+    expect(toJson(G, communities, graphPath, { force: true, memoryHighWaterCursor: "7" })).toBe(true);
     const persisted = readFileSync(graphPath, "utf-8");
     expect(persisted.includes("mem:admitted:001")).toBe(true);
     expect(persisted.includes("mem:private:009")).toBe(false);
     expect(persisted.includes("source:private")).toBe(false);
 
     const wikiDir = join(dir, "wiki");
-    expect(toWiki(G, communities, wikiDir)).toBeGreaterThan(0);
+    expect(toWiki(G, communities, wikiDir, { memoryHighWaterCursor: "7" })).toBeGreaterThan(0);
     const wikiText = readdirSync(wikiDir).filter((f) => f.endsWith(".md")).map((f) => readFileSync(join(wikiDir, f), "utf-8")).join("\n");
     expect(wikiText.includes("mem:admitted:001")).toBe(true);
     expect(wikiText.includes("mem:private:009")).toBe(false);
 
-    const report = generate(G, communities, new Map([[0, 1]]), new Map([[0, "Community 0"]]), [], [], detectionFixture(), { input: 0, output: 0 }, dir);
+    const report = generate(G, communities, new Map([[0, 1]]), new Map([[0, "Community 0"]]), [], [], detectionFixture(), { input: 0, output: 0 }, dir, { memoryHighWaterCursor: "7" });
     expect(report.includes("mem:private:009")).toBe(false);
     expect(report.includes("source:private")).toBe(false);
 
     const cacheFile = join(dir, "sample.ts");
     writeFileSync(cacheFile, "export function demo() { return 1; }\n", "utf-8");
-    saveCached(cacheFile, admitted.value.extraction, dir);
-    const cached = loadCached(cacheFile, dir) as { nodes: Array<{ id: string }> } | null;
+    saveCached(cacheFile, admitted.value.extraction, dir, { memoryHighWaterCursor: "7" });
+    const cached = loadCached(cacheFile, dir, { memoryHighWaterCursor: "7" }) as { nodes: Array<{ id: string }> } | null;
     expect(cached?.nodes.map((n) => n.id)).toContain("memory:mem:admitted:001");
     expect(JSON.stringify(cached).includes("mem:private:009")).toBe(false);
   });
@@ -446,7 +446,7 @@ describe("MCP-L3 filtered memory projection (M10 l.1368; MCP-L3 l.1675)", () => 
     attachMemoryProjectionToGraph(G, admitted.value);
     const dir = tempDir("graphify-l3-reload-");
     const graphPath = join(dir, "graph.json");
-    expect(toJson(G, new Map([[0, ["alpha_fn", "beta_fn", "memory:mem:admitted:001"]]]), graphPath, { force: true })).toBe(true);
+    expect(toJson(G, new Map([[0, ["alpha_fn", "beta_fn", "memory:mem:admitted:001"]]]), graphPath, { force: true, memoryHighWaterCursor: "7" })).toBe(true);
 
     const raw = JSON.parse(readFileSync(graphPath, "utf-8")) as Record<string, unknown>;
     const graphBlock = raw.graph as Record<string, unknown>;
@@ -459,6 +459,69 @@ describe("MCP-L3 filtered memory projection (M10 l.1368; MCP-L3 l.1675)", () => 
     expect(() => checkGraphMemoryFreshness(reloaded, "12")).toThrow(/PROJECTION_STALE/);
   });
 
+  it("existing surfaces called as today refuse a memory view without a high-water proof (M10 l.1399; R3 Sol counterexample: projection 7, live high-water 12)", () => {
+    const admitted = assembleMemoryGraphProjection(assembleInput([candidate()]));
+    expect(admitted.ok).toBe(true);
+    if (!admitted.ok) return;
+    const G = buildFromJson(codeExtraction());
+    attachMemoryProjectionToGraph(G, admitted.value);
+    const communities = new Map([[0, ["alpha_fn", "beta_fn", "memory:mem:admitted:001"]]]);
+    const dir = tempDir("graphify-l3-noproof-");
+
+    // Called exactly as existing callers do today: no high-water proof is
+    // supplied. A projection at cursor 7 against a live high-water of 12
+    // MUST NOT be served as a current view on any surface.
+    expect(() => generate(G, communities, new Map([[0, 1]]), new Map([[0, "Community 0"]]), [], [], detectionFixture(), { input: 0, output: 0 }, dir)).toThrow(/PROJECTION_STALE/);
+    expect(() => toWiki(G, communities, join(dir, "wiki"))).toThrow(/PROJECTION_STALE/);
+    expect(() => toJson(G, communities, join(dir, "graph.json"), { force: true })).toThrow(/PROJECTION_STALE/);
+
+    const cacheFile = join(dir, "sample.ts");
+    writeFileSync(cacheFile, "export function demo() { return 1; }\n", "utf-8");
+    expect(() => saveCached(cacheFile, admitted.value.extraction, dir)).toThrow(/PROJECTION_STALE/);
+    saveCached(cacheFile, admitted.value.extraction, dir, { memoryHighWaterCursor: "7" });
+    expect(() => loadCached(cacheFile, dir)).toThrow(/PROJECTION_STALE/);
+    expect(loadCached(cacheFile, dir, { memoryHighWaterCursor: "7" })).not.toBeNull();
+
+    // A code-only view carries no projection and stays servable without proof.
+    const codeOnly = buildFromJson(codeExtraction());
+    const codeCommunities = new Map([[0, ["alpha_fn", "beta_fn"]]]);
+    expect(() => generate(codeOnly, codeCommunities, new Map([[0, 1]]), new Map([[0, "Community 0"]]), [], [], detectionFixture(), { input: 0, output: 0 }, dir)).not.toThrow();
+    expect(toWiki(codeOnly, codeCommunities, join(dir, "wiki-code"))).toBeGreaterThan(0);
+    expect(toJson(codeOnly, codeCommunities, join(dir, "graph-code.json"), { force: true })).toBe(true);
+  });
+
+  it("refuses 100 memories whose real serialized nodes+edges exceed the ceiling while the envelope estimate admits them (D10 l.1362; R3 Sol counterexample)", () => {
+    expect(MEMORY_PROJECTION_RAW_BYTE_CEILING).toBe(52_428_800);
+    // Calibrated straddle: the neutral envelope plus the edge JSON stays at
+    // or below the ceiling (the round-2 computation admits), while the real
+    // serialized memory nodes plus memory edges exceed it (refusal required).
+    const bulky = (index: number): MemoryGraphCandidateV1 => {
+      const refs = Array.from({ length: 1041 }, () => "y".repeat(500));
+      refs.push("z".repeat(154));
+      return candidate({
+        record_id: `mem:bulk:${String(index).padStart(3, "0")}`,
+        citation_refs: refs,
+        code_targets: [index % 2 === 0 ? "alpha_fn" : "beta_fn"],
+      });
+    };
+    const candidates = Array.from({ length: 100 }, (_, index) => bulky(index));
+    const assembled = assembleMemoryGraphProjection({
+      high_water_cursor: "7",
+      projection_cursor: "7",
+      candidates,
+      code_node_ids: CODE_NODES,
+    });
+    expect(assembled.ok).toBe(false);
+    if (assembled.ok) return;
+    expect(assembled.error.code).toBe("PROJECTION_OVERSIZED");
+    expect(assembled.error.message).toContain("100 objects");
+    // The refusal comes from the L3 real-serialized-size measure (which
+    // names the code references), not from the neutral envelope check.
+    expect(assembled.error.message).toContain("code references");
+    const reported = Number(/is ([0-9]+) bytes/.exec(assembled.error.message)?.[1] ?? "0");
+    expect(reported).toBeGreaterThan(52_428_800);
+  });
+
   it("a revocation reaches disk: memory-only shrinkage is written, not refused (M10 l.1368)", () => {
     const dir = tempDir("graphify-l3-revocation-");
     const graphPath = join(dir, "graph.json");
@@ -468,7 +531,7 @@ describe("MCP-L3 filtered memory projection (M10 l.1368; MCP-L3 l.1675)", () => 
     const G = buildFromJson(codeExtraction());
     attachMemoryProjectionToGraph(G, admitted.value);
     const communities = new Map([[0, ["alpha_fn", "beta_fn", "memory:mem:admitted:001"]]]);
-    expect(toJson(G, communities, graphPath, { force: true })).toBe(true);
+    expect(toJson(G, communities, graphPath, { force: true, memoryHighWaterCursor: "7" })).toBe(true);
     expect(JSON.parse(readFileSync(graphPath, "utf-8")).nodes).toHaveLength(3);
 
     // The record is withdrawn: the next reconciliation drops it (three nodes
