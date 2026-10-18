@@ -9,14 +9,46 @@ import { main } from "../src/cli.js";
 
 describe("hooks", () => {
   let tmpDir: string;
+  let envDir: string;
+  let prevEnv: Record<string, string | undefined>;
+  // Captured at collection time, before beforeEach redirects HOME into temp.
+  // (node:os homedir() follows $HOME, so it cannot serve as the reference.)
+  const realHome = process.env.HOME ?? "";
 
   beforeEach(() => {
+    // Isolate every git invocation from the real user/global/system config.
+    // Without this, `git rev-parse --git-path hooks` follows a real global
+    // core.hooksPath (e.g. ~/.config/git/hooks): hook writes land
+    // outside the temp repo and global hooks fire during `git init`.
+    envDir = mkdtempSync(join(tmpdir(), "graphify-test-gitenv-"));
+    const fakeHome = join(envDir, "home");
+    mkdirSync(fakeHome, { recursive: true });
+    const fakeGlobal = join(envDir, "gitconfig-global");
+    writeFileSync(fakeGlobal, "", "utf-8");
+    const fakeSystem = join(envDir, "gitconfig-system");
+    writeFileSync(fakeSystem, "", "utf-8");
+    prevEnv = {
+      HOME: process.env.HOME,
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      GIT_CONFIG_GLOBAL: process.env.GIT_CONFIG_GLOBAL,
+      GIT_CONFIG_SYSTEM: process.env.GIT_CONFIG_SYSTEM,
+    };
+    process.env.HOME = fakeHome;
+    process.env.XDG_CONFIG_HOME = join(fakeHome, ".config");
+    process.env.GIT_CONFIG_GLOBAL = fakeGlobal;
+    process.env.GIT_CONFIG_SYSTEM = fakeSystem;
+
     tmpDir = mkdtempSync(join(tmpdir(), "graphify-test-hooks-"));
     git(tmpDir, ["init", "-q"]);
   });
 
   afterEach(() => {
     rmSync(tmpDir, { recursive: true, force: true });
+    rmSync(envDir, { recursive: true, force: true });
+    for (const [key, value] of Object.entries(prevEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   });
 
   function git(cwd: string, args: string[]): string {
@@ -33,6 +65,23 @@ describe("hooks", () => {
     const hooksDir = git(cwd, ["rev-parse", "--git-path", "hooks"]);
     return join(isAbsolute(hooksDir) ? hooksDir : resolve(cwd, hooksDir), name);
   }
+
+  it("GUARD: hook installation never writes outside the isolated git config", () => {
+    // Isolation contract: every hook test runs with HOME, XDG_CONFIG_HOME,
+    // GIT_CONFIG_GLOBAL and GIT_CONFIG_SYSTEM redirected into a temp dir, so
+    // `git rev-parse --git-path hooks` can never resolve to the real global
+    // hooks directory (e.g. ~/.config/git/hooks).
+    expect(process.env.HOME).not.toBe(realHome);
+    expect(process.env.HOME?.startsWith(tmpdir())).toBe(true);
+    const globalConfig = process.env.GIT_CONFIG_GLOBAL ?? "";
+    expect(globalConfig.length).toBeGreaterThan(0);
+    expect(globalConfig.startsWith(tmpdir())).toBe(true);
+
+    install(tmpDir);
+    expect(readFileSync(globalConfig, "utf-8")).not.toContain("hooksPath");
+    const globalHooksDir = join(process.env.HOME ?? "", ".config", "git", "hooks");
+    expect(existsSync(join(globalHooksDir, "reference-transaction"))).toBe(false);
+  });
 
   it("targets the user-editable .husky dir on Husky 9 repos (core.hooksPath=.husky/_)", () => {
     git(tmpDir, ["config", "core.hooksPath", ".husky/_"]);
