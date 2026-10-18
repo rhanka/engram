@@ -657,7 +657,7 @@ export interface BoundedProjectionObjectV1 {
   citation_refs: ReadonlyArray<OpaqueRef>;
 }
 
-/** The bounded current memory projection. History never inflates it; separate from the code graph (D10, 2026-10-17). */
+/** The bounded current memory projection. History never inflates it; it may be assembled into `graph.json` as a filtered projection under restored D10. */
 export interface BoundedCurrentProjectionV1 {
   schema_version: 1;
   projection_schema_version: 1;
