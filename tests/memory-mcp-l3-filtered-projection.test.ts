@@ -31,7 +31,7 @@ import {
   reconcileMemoryProjectionInGraph,
   type MemoryGraphCandidateV1,
   type MemoryGraphRecordState,
-} from "../src/memory-graph-projection.js";
+} from "../src/graph-memory-projection.js";
 
 const DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as Digest;
 const CODE_NODES = ["alpha_fn", "beta_fn"];
@@ -203,7 +203,7 @@ describe("MCP-L3 filtered memory projection (M10 l.1368; MCP-L3 l.1675)", () => 
     expect(replayed.value.extraction.nodes).toEqual([]);
 
     // The module is data-pure: it cannot commit, admit, mutate or resurrect.
-    const source = readFileSync(new URL("../src/memory-graph-projection.ts", import.meta.url), "utf-8");
+    const source = readFileSync(new URL("../src/graph-memory-projection.ts", import.meta.url), "utf-8");
     for (const forbidden of ["CanonicalMemoryStorePort", "MemoryPortV2", "pushGraph", "readJournal", "transition(", "capture(", "requestAdmission", "GraphStore"]) {
       expect(source.includes(forbidden)).toBe(false);
     }

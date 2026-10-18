@@ -20,7 +20,7 @@ import { validateExtraction } from "./validate.js";
 import {
   reconcileMemoryProjectionInGraph,
   type AssembledMemoryGraphProjectionV1,
-} from "./memory-graph-projection.js";
+} from "./graph-memory-projection.js";
 import {
   deOrphanByContainer,
   deriveAliasesAndNormalizedTerms,
