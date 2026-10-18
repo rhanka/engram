@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { createReferenceWriteHostPortsV1 } from '../src/mcp/memory/reference-ports.js';
@@ -11,7 +12,7 @@ import { buildMemory } from './memory-l7-fixture.js';
 // runs the mutation tools against the reference durable host-port set) and
 // the M13 closure table (crypto/node:crypto-only packed bundle).
 function buildPackedBundle(directory: string): string {
-  const root = '/home/antoinefa/src/graphify-wt-livegit-l4a';
+  const root = fileURLToPath(new URL('../', import.meta.url));
   const env = { ...process.env, PATH: `${root}/node_modules/.bin:${process.env.PATH ?? ''}` };
   execFileSync(process.execPath, ['--input-type=module', '-e', `import { build } from 'tsup'; await build({ config: false, entry: { 'memory-tools': 'src/memory-tools/index.ts' }, outDir: process.argv[1], format: ['esm'], dts: { compilerOptions: { types: ['node'] } }, splitting: false, target: 'node20', silent: true });`, join(directory, 'dist')], {
     cwd: root, env, stdio: 'pipe',
