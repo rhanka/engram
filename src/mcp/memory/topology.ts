@@ -827,6 +827,7 @@ export interface MemoryCatalogCacheKeyV1 {
   readonly policy_epoch: string;
   readonly provider_id: 'sentropic.engram.memory';
   readonly provider_version: string;
+  readonly connector_instance_id: string;
   readonly source_id: 'mcp:engram-memory';
   readonly plan_generation: string;
 }
@@ -854,6 +855,7 @@ export interface MemorySelectionPolicyBindingV1 {
     'policy_epoch',
     'provider_id',
     'provider_version',
+    'connector_instance_id',
     'source_id',
     'plan_generation',
   ];
@@ -904,6 +906,7 @@ export const ENGRAM_MEMORY_SELECTION_POLICY_BINDING_V1: MemorySelectionPolicyBin
       'policy_epoch',
       'provider_id',
       'provider_version',
+      'connector_instance_id',
       'source_id',
       'plan_generation',
     ] as const),

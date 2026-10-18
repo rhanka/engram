@@ -2871,6 +2871,7 @@ describe('MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutr
           policy_epoch: '4',
           provider_id: 'sentropic.engram.memory' as const,
           provider_version: '1.0.0',
+          connector_instance_id: 'conn_inst_01',
           source_id: 'mcp:engram-memory' as const,
           plan_generation: '3',
         },
