@@ -358,7 +358,7 @@ describe('MCP-L2 in-process write tools', () => {
     // UNKNOWN. Nothing committed (the mock threw first), so the retry commits
     // the single effect; a further retry replays it without another commit.
     const retry = await tools.forget(input, invocation());
-    expect(retry).toMatchObject({ ok: true, output: { value: { replayed: true } } });
+    expect(retry).toMatchObject({ ok: true, output: { value: { replayed: false } } });
     expect(apply).toHaveBeenCalledTimes(2);
     await expect(tools.forget(input, invocation())).resolves.toMatchObject({
       ok: true, output: { value: { replayed: true } },
