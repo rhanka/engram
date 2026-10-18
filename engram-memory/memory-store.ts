@@ -25,6 +25,7 @@ import type {
   OpaqueRef,
   OperationalCapabilityReceiptV1,
   PendingControlV1,
+  PersistedAdmissionOutcomeV1,
   PersistedCaptureIdempotencyV1,
   ProjectionBatchV1,
   ProjectionRecordV1,
@@ -95,6 +96,7 @@ export interface MemoryJournalTailV1 {
   journal: ReadonlyArray<MemoryJournalEventV1>;
   records: ReadonlyArray<MemoryRecordV2>;
   capture_idempotency?: ReadonlyArray<PersistedCaptureIdempotencyV1>;
+  admission_outcomes?: ReadonlyArray<PersistedAdmissionOutcomeV1>;
 }
 
 export interface InMemoryRecoveryCheckpointV1 extends MemoryJournalCheckpointV1 {
@@ -104,10 +106,14 @@ export interface InMemoryRecoveryCheckpointV1 extends MemoryJournalCheckpointV1 
   lexical: ReadonlyArray<{ record_id: string; document: import("./contracts/index.js").AcceptedLexicalDocumentV1 }>;
   outbox: ReadonlyArray<ProjectionBatchV1>;
   capture_idempotency?: ReadonlyArray<PersistedCaptureIdempotencyV1>;
+  admission_outcomes?: ReadonlyArray<PersistedAdmissionOutcomeV1>;
 }
 
 /** Durable X1 capture-idempotence entry: the recorded acknowledgement per candidate identity. */
 export type { PersistedCaptureIdempotencyV1 } from "./contracts/index.js";
+
+/** Durable MCP-L2 admission replay proof per candidate identity. */
+export type { PersistedAdmissionOutcomeV1 } from "./contracts/index.js";
 
 /** The canonical restore identity is (journal state digest, registry root). Order is immaterial. */
 export function captureIdempotencyDigestV1(entries: ReadonlyArray<PersistedCaptureIdempotencyV1>): Digest {
@@ -123,6 +129,7 @@ export interface InMemoryStoreStateV1 {
   lexical: ReadonlyArray<{ record_id: string; document: import("./contracts/index.js").AcceptedLexicalDocumentV1 }>;
   outbox: ReadonlyArray<ProjectionBatchV1>;
   capture_idempotency?: ReadonlyArray<PersistedCaptureIdempotencyV1>;
+  admission_outcomes?: ReadonlyArray<PersistedAdmissionOutcomeV1>;
 }
 
 export interface InMemoryCanonicalMemoryStoreOptionsV1 {
@@ -141,6 +148,7 @@ export interface InMemoryCanonicalMemoryStoreV1 extends CanonicalMemoryStorePort
   readCaptureIdempotency(input: { candidate_id: string }): Promise<Result<CaptureIdempotencyRecordV1>>;
   readCaptureIdempotencyEntries(input: { through_cursor: Cursor }): Promise<Result<ReadonlyArray<PersistedCaptureIdempotencyV1>>>;
   recordCaptureIdempotency(input: { candidate_id: string; record_digest: Digest }): Promise<Result<CaptureIdempotencyRecordV1>>;
+  readAdmissionOutcome(input: { candidate_id: string }): Promise<Result<PersistedAdmissionOutcomeV1>>;
   exportCheckpointForRecovery(through_cursor: Cursor, journal?: ReadonlyArray<MemoryJournalEventV1>): Result<InMemoryRecoveryCheckpointV1>;
   exportTailForRecovery(after_cursor: Cursor): Result<MemoryJournalTailV1>;
   exportStateForPersistence(): Result<InMemoryStoreStateV1>;
@@ -204,6 +212,17 @@ function isInstant(value: unknown): value is string {
 
 function isDigest(value: unknown): value is Digest {
   return typeof value === "string" && /^sha256:[0-9a-f]{64}$/.test(value);
+}
+
+function isOpaqueRef(value: unknown): value is OpaqueRef {
+  if (typeof value !== "string" || value.length === 0) return false;
+  try {
+    if (value.normalize("NFC") !== value) return false;
+  } catch {
+    return false;
+  }
+  const bytes = new TextEncoder().encode(value).byteLength;
+  return bytes >= 1 && bytes <= 512;
 }
 
 function journalHashInput(event: MemoryJournalEventV1): Record<string, unknown> {
@@ -429,6 +448,11 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
   // controls for entries predating the recording.
   #captureIdempotency = new Map<string, { content: Digest; cursor: Cursor; recordDigest?: Digest; receiptDigest?: Digest }>();
   #captureIdempotencyCorrupt = false;
+  // MCP-L2 durable admission replay proof: recorded atomically with the
+  // admission effect, read after envelope destruction. Append-only.
+  #admissionOutcomes = new Map<string, PersistedAdmissionOutcomeV1>();
+  #admissionOutcomesCorrupt = false;
+  #admissionOutcomesVerifyPending = false;
   #controls = new Map<string, PendingControlV1>();
   #envelopes = new Map<string, SealedCandidateEnvelopeV1>();
   #records = new Map<string, MemoryRecordV2>();
@@ -449,6 +473,7 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
       this.#outbox = persistence.outbox.map(clone);
       this.#rebuildIntentIndex();
       this.#restoreCaptureIdempotency(persistence.capture_idempotency);
+      this.#restoreAdmissionOutcomes(persistence.admission_outcomes);
       return;
     }
     const recovery = options.recovery;
@@ -469,6 +494,10 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
     this.#restoreCaptureIdempotency([
       ...(recovery.checkpoint.capture_idempotency ?? []),
       ...(tail?.capture_idempotency ?? []),
+    ]);
+    this.#restoreAdmissionOutcomes([
+      ...(recovery.checkpoint.admission_outcomes ?? []),
+      ...(tail?.admission_outcomes ?? []),
     ]);
   }
 
@@ -514,6 +543,56 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
     }));
   }
 
+  // Restores the durable admission replay proof. Restore validates the
+  // closed shape immediately; the journal binding is verified once, after a
+  // successful fold, so fold errors (gap, hash chain) keep their pinned
+  // precedence over registry disagreements. Persisted entries win over
+  // journal derivation: the receipt digest is only recorded.
+  #restoreAdmissionOutcomes(entries: ReadonlyArray<PersistedAdmissionOutcomeV1> | undefined): void {
+    this.#admissionOutcomes.clear();
+    this.#admissionOutcomesVerifyPending = false;
+    if (entries !== undefined && !Array.isArray(entries)) { this.#admissionOutcomesCorrupt = true; return; }
+    for (const entry of entries ?? []) {
+      if (entry === null || typeof entry !== "object" || typeof entry.candidate_id !== "string" || entry.candidate_id.length === 0
+        || !isOpaqueRef(entry.scope_ref) || (entry.status !== "accepted" && entry.status !== "rejected")
+        || !isCanonicalCursor(entry.cursor) || !isDigest(entry.decision_receipt_digest) || !isDigest(entry.transaction_receipt_digest)
+        || (entry.status === "accepted"
+          ? (typeof entry.record_id !== "string" || entry.record_id.length === 0)
+          : (entry.record_id !== undefined))
+        || this.#admissionOutcomes.has(entry.candidate_id)) {
+        this.#admissionOutcomesCorrupt = true; return;
+      }
+      this.#admissionOutcomes.set(entry.candidate_id, clone(entry));
+    }
+    this.#admissionOutcomesVerifyPending = this.#admissionOutcomes.size > 0;
+  }
+
+  // One-shot journal binding check, after a successful fold: every restored
+  // entry must match its journal accept/reject event (same candidate, same
+  // cursor, same decision receipt). Journal appends never invalidate an
+  // established binding, so verified entries stay verified.
+  #verifyAdmissionOutcomes(): Result<{ verified: true }> {
+    for (const entry of this.#admissionOutcomes.values()) {
+      const event = this.#journal.find((candidate) => candidate.candidate_id === entry.candidate_id
+        && (candidate.operation === "accept" || candidate.operation === "reject"));
+      if (event === undefined || event.cursor !== entry.cursor) return refusal("admin", "JOURNAL_CORRUPT", "admission outcome disagrees with its canonical decision");
+      if (entry.status === "accepted") {
+        if (event.operation !== "accept" || event.record_id !== entry.record_id
+          || event.admission_decision?.receipt_digest !== entry.decision_receipt_digest) {
+          return refusal("admin", "JOURNAL_CORRUPT", "admission outcome disagrees with its canonical decision");
+        }
+      } else if (event.operation !== "reject" || event.admission_decision?.receipt_digest !== entry.decision_receipt_digest) {
+        return refusal("admin", "JOURNAL_CORRUPT", "admission outcome disagrees with its canonical decision");
+      }
+    }
+    this.#admissionOutcomesVerifyPending = false;
+    return { ok: true, value: { verified: true } };
+  }
+
+  #exportAdmissionOutcomes(): PersistedAdmissionOutcomeV1[] {
+    return [...this.#admissionOutcomes.values()].map(clone).sort((left, right) => left.candidate_id.localeCompare(right.candidate_id));
+  }
+
   #backfillCaptureIdempotency(): void {
     for (const control of this.#controls.values()) {
       if (control.capture_content_digest === undefined) continue;
@@ -543,6 +622,7 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
   #readiness(operation: MemoryOperation): Result<FoldedMemoryStateV1> {
     if (this.#closed) return refusal(operation, "STORE_UNAVAILABLE", "canonical memory store is closed");
     if (this.#captureIdempotencyCorrupt) return refusal(operation, "JOURNAL_CORRUPT", "capture idempotency registry is malformed or disagrees with its canonical capture");
+    if (this.#admissionOutcomesCorrupt) return refusal(operation, "JOURNAL_CORRUPT", "admission outcome registry is malformed or disagrees with its canonical decision");
     if (this.#checkpoint !== undefined) {
       const checkpointFold = foldMemoryJournalV1({ journal: this.#checkpoint.journal, records: this.#checkpoint.records });
       if (!checkpointFold.ok) return { ok: false, error: { ...checkpointFold.error, operation } };
@@ -565,7 +645,12 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
       }
     }
     const folded = foldMemoryJournalV1({ journal: this.#journal, records: [...this.#records.values()] });
-    return folded.ok ? folded : { ok: false, error: { ...folded.error, operation } };
+    if (!folded.ok) return { ok: false, error: { ...folded.error, operation } };
+    if (this.#admissionOutcomesVerifyPending) {
+      const verified = this.#verifyAdmissionOutcomes();
+      if (!verified.ok) return { ok: false, error: { ...verified.error, operation } };
+    }
+    return folded;
   }
 
   #now(operation: MemoryOperation): Result<string> {
@@ -763,7 +848,32 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
     }
     this.#controls.set(input.candidate_id, { ...control, state: input.outcome === "accept" ? "withdrawn" : "rejected" });
     this.#envelopes.delete(input.candidate_id);
-    return this.#receipt("request_admission", appended.value.event, input.outcome === "accept" ? input.record.record_digest : undefined);
+    const receipt = this.#receipt("request_admission", appended.value.event, input.outcome === "accept" ? input.record.record_digest : undefined);
+    if (!receipt.ok) return receipt;
+    // MCP-L2: the replay proof commits atomically with the effect, in the
+    // same synchronous section — a later acknowledgement loss can never
+    // permit a second effect. Registries are append-only; the first
+    // recorded outcome wins (a duplicate intent replays above).
+    if (!this.#admissionOutcomes.has(input.candidate_id)) {
+      this.#admissionOutcomes.set(input.candidate_id, defined({
+        candidate_id: input.candidate_id,
+        scope_ref: input.outcome === "accept" ? input.record.scope_ref : input.scope_ref,
+        status: input.outcome === "accept" ? "accepted" : "rejected",
+        record_id: input.outcome === "accept" ? input.record.record_id : undefined,
+        cursor: appended.value.event.cursor,
+        decision_receipt_digest: input.decision.receipt_digest,
+        transaction_receipt_digest: receipt.value.receipt_digest,
+      }));
+    }
+    return receipt;
+  }
+
+  async readAdmissionOutcome(input: { candidate_id: string }): Promise<Result<PersistedAdmissionOutcomeV1>> {
+    const ready = this.#readiness("request_admission");
+    if (!ready.ok) return ready;
+    const outcome = this.#admissionOutcomes.get(input.candidate_id);
+    if (outcome === undefined) return refusal("request_admission", "NOT_FOUND", "admission outcome is not recorded");
+    return { ok: true, value: clone(outcome) };
   }
 
   #foldAtCurrent(): Result<FoldedMemoryStateV1> {
@@ -1058,21 +1168,21 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
     const checkpoint: MemoryJournalCheckpointV1 = { schema_version: 1, high_water_cursor: throughCursor, journal, records, canonical_state_digest: folded.value.canonical_state_digest };
     const controls = [...this.#controls.values()].filter((control) => cursorCompare(control.created_cursor, throughCursor) <= 0).map(clone);
     const envelopes = controls.filter((control) => control.state === "pending").map((control) => this.#envelopes.get(control.candidate_id)).filter((sealed): sealed is SealedCandidateEnvelopeV1 => sealed !== undefined).map(clone);
-    return { ok: true, value: { ...checkpoint, manifest: this.#manifest(throughCursor, folded.value, records, journal), controls, envelopes, lexical: [...this.#lexical.entries()].filter(([recordId]) => referenced.has(recordId)).map(([record_id, document]) => ({ record_id, document: clone(document) })), outbox: this.#outbox.filter((batch) => cursorCompare(batch.through_cursor_inclusive, throughCursor) <= 0).map(clone), capture_idempotency: this.#exportCaptureIdempotency().filter(entry => cursorCompare(entry.cursor, throughCursor) <= 0) } };
+    return { ok: true, value: { ...checkpoint, manifest: this.#manifest(throughCursor, folded.value, records, journal), controls, envelopes, lexical: [...this.#lexical.entries()].filter(([recordId]) => referenced.has(recordId)).map(([record_id, document]) => ({ record_id, document: clone(document) })), outbox: this.#outbox.filter((batch) => cursorCompare(batch.through_cursor_inclusive, throughCursor) <= 0).map(clone), capture_idempotency: this.#exportCaptureIdempotency().filter(entry => cursorCompare(entry.cursor, throughCursor) <= 0), admission_outcomes: this.#exportAdmissionOutcomes().filter(entry => cursorCompare(entry.cursor, throughCursor) <= 0) } };
   }
 
   exportTailForRecovery(afterCursor: Cursor): Result<MemoryJournalTailV1> {
     if (!isCanonicalCursor(afterCursor)) return refusal("admin", "INVALID_SCHEMA", "tail cursor is invalid");
     const journal = this.#journal.filter((event) => cursorCompare(event.cursor, afterCursor) > 0).map(clone);
     const referenced = new Set(journal.filter((event) => event.record_id !== undefined && event.record_digest !== undefined).map((event) => event.record_id!));
-    return { ok: true, value: { journal, records: [...this.#records.values()].filter((record) => referenced.has(record.record_id)).map(clone), capture_idempotency: this.#exportCaptureIdempotency().filter(entry => cursorCompare(entry.cursor, afterCursor) > 0) } };
+    return { ok: true, value: { journal, records: [...this.#records.values()].filter((record) => referenced.has(record.record_id)).map(clone), capture_idempotency: this.#exportCaptureIdempotency().filter(entry => cursorCompare(entry.cursor, afterCursor) > 0), admission_outcomes: this.#exportAdmissionOutcomes().filter(entry => cursorCompare(entry.cursor, afterCursor) > 0) } };
   }
 
   async importLogicalBackup(input: LogicalBackupImportInputV1): Promise<Result<LogicalBackupImportReceiptV1>> {
     const ready = this.#readiness("restore");
     if (!ready.ok) return ready;
     if (this.#journal.length || this.#records.size || this.#controls.size || this.#envelopes.size
-      || this.#lexical.size || this.#outbox.length || this.#captureIdempotency.size) {
+      || this.#lexical.size || this.#outbox.length || this.#captureIdempotency.size || this.#admissionOutcomes.size) {
       return refusal("restore", "RESTORE_REFUSED", "logical backup import refuses a non-empty store");
     }
     const converted = backupPublicJournalToStorageV1(input.journal);
@@ -1199,6 +1309,7 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
         lexical: [...this.#lexical.entries()].map(([record_id, document]) => ({ record_id, document: clone(document) })),
         outbox: this.#outbox.map(clone),
         capture_idempotency: this.#exportCaptureIdempotency(),
+        admission_outcomes: this.#exportAdmissionOutcomes(),
       },
     };
   }
