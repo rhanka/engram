@@ -1,4 +1,5 @@
 export { canonicalizeJcs, normalizeCanonicalJson, CanonicalJsonError } from "./canonical-json.js";
+export { createMemoryReadFacetsV1, type MemoryReadFacetsV1, type MemoryReadFacetBindingV1 } from './reads.js';
 export {
   authorizationResourceDigest,
   knowledgePayloadDigest,

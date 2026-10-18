@@ -18,6 +18,10 @@
     "./llm-mesh": {
       "types": "./dist/llm-mesh.d.ts",
       "import": "./dist/llm-mesh.js"
+    },
+    "./memory-tools": {
+      "types": "./dist/memory-tools.d.ts",
+      "import": "./dist/memory-tools.js"
     }
   },
   "bin": {
