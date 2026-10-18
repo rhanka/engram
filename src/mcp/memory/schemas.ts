@@ -3054,6 +3054,17 @@ function canonicalJsonStringify(value: unknown): string {
   return JSON.stringify(value) ?? 'null';
 }
 
+function isJsonData(value: unknown, ancestors = new Set<object>()): boolean {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if ((!Array.isArray(value) && !isPlainObject(value)) || ancestors.has(value as object)) return false;
+  ancestors.add(value as object);
+  const values = Array.isArray(value) ? Array.from(value) : Object.values(value as Record<string, unknown>);
+  const valid = values.every(item => isJsonData(item, ancestors));
+  ancestors.delete(value as object);
+  return valid;
+}
+
 /**
  * Validates the dual-channel MCP response (`structuredContent` + single JSON
  * text block in `content`, `isError === !structuredContent.ok`, packet byte
@@ -3351,6 +3362,7 @@ export function validatePublishedJsonSchemaDraft202012(
 ): SchemaValidationResult<unknown> {
   const admission = validateMemoryToolSchemaDialectV1(schema);
   if (!admission.ok) return admission;
+  if (!isJsonData(value)) return fail(path, 'Expected finite, acyclic JSON data');
   return evaluateAdmittedJsonSchema(schema, value, path);
 }
 
@@ -3360,12 +3372,12 @@ function evaluateAdmittedJsonSchema(
   path: string,
 ): SchemaValidationResult<unknown> {
   if ('const' in schema) {
-    if (value !== schema.const) {
+    if (canonicalJsonStringify(value) !== canonicalJsonStringify(schema.const)) {
       return fail(path, `Expected const ${String(schema.const)}`);
     }
   }
   if ('enum' in schema && Array.isArray(schema.enum)) {
-    if (!schema.enum.includes(value)) {
+    if (!schema.enum.some(item => canonicalJsonStringify(item) === canonicalJsonStringify(value))) {
       return fail(path, `Value is not in enum [${schema.enum.join(', ')}]`);
     }
   }
@@ -3460,7 +3472,7 @@ function evaluateAdmittedJsonSchema(
     if (schema.uniqueItems === true) {
       const seen = new Set<string>();
       for (let i = 0; i < value.length; i++) {
-        const serializedItem = JSON.stringify(value[i]);
+        const serializedItem = canonicalJsonStringify(value[i]);
         if (seen.has(serializedItem)) {
           return fail(`${path}[${i}]`, 'Duplicate array item violates uniqueItems');
         }
@@ -3671,6 +3683,7 @@ export function validateMemoryToolSchemaDialectV1(
   if (!isPlainObject(schema)) {
     return fail(path, 'Schema node must be a plain object');
   }
+  if (!isJsonData(schema)) return fail(path, 'Schema must contain finite, acyclic JSON data');
   if (
     Object.hasOwn(schema, '$schema') &&
     schema.$schema !== ENGRAM_MEMORY_WIRE_PROFILE_V1.jsonSchemaDialect
@@ -3690,6 +3703,9 @@ export function validateMemoryToolSchemaDialectV1(
     }
     const value = schema[key];
     const field = `${path}.${key}`;
+    if (key === 'enum' && (!Array.isArray(value) || value.length === 0 || new Set(value.map(canonicalJsonStringify)).size !== value.length)) {
+      return fail(field, 'enum must be a non-empty array of distinct JSON values');
+    }
     if (key === 'type' && !['string', 'number', 'integer', 'boolean', 'array', 'object'].includes(value as string)) {
       return fail(field, 'type must be a supported scalar type name');
     }
