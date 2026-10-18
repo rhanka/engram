@@ -25,7 +25,7 @@ import {
 import {
   MEMORY_HIGH_WATER_CURSOR_ATTR,
   MEMORY_PROJECTION_CURSOR_ATTR,
-  checkGraphMemoryFreshness,
+  enforceMemoryFreshnessForSurface,
 } from "./graph-memory-projection.js";
 
 // ---------------------------------------------------------------------------
@@ -155,10 +155,10 @@ type CommunityLabelOptions = { communityLabels?: CommunityLabelsInput };
 type JsonOptions = CommunityLabelOptions & {
   force?: boolean;
   /**
-   * MCP-L3 freshness gate (M10 l.1399): when supplied, a graph carrying a
-   * memory projection behind this high-water cursor is refused
-   * (`PROJECTION_STALE`) instead of being exported as a current view.
-   * Absent keeps the legacy behavior for code-only callers.
+   * MCP-L3 freshness proof (M10 l.1399): the live high-water cursor the
+   * caller vouches for. A graph carrying memory nodes is always gated —
+   * without this proof, or behind it, the export is refused
+   * (`PROJECTION_STALE`) instead of being written as a current view.
    */
   memoryHighWaterCursor?: string;
 };
@@ -352,17 +352,17 @@ export function toJson(
   // canonical fields (label, source_file, relation) were HTML-escaped on
   // every write. Untrusted node / edge metadata sites must apply the helper
   // at the assignment site instead.
-  // MCP-L3 freshness gate (M10 l.1399): refuse a stale memory projection
-  // instead of exporting it as a current authorized view.
+  // MCP-L3 mandatory freshness gate (M10 l.1399): every export carrying
+  // memory nodes is gated, with no parameter that skips the gate. Without a
+  // high-water proof — or behind it — the stale projection is refused
+  // (`PROJECTION_STALE`) instead of being exported as a current view.
   const memoryHighWaterCursor =
     communityLabelsOrOptions &&
     !(communityLabelsOrOptions instanceof Map) &&
     typeof (communityLabelsOrOptions as JsonOptions).memoryHighWaterCursor === "string"
       ? (communityLabelsOrOptions as JsonOptions).memoryHighWaterCursor as string
       : undefined;
-  if (memoryHighWaterCursor !== undefined) {
-    checkGraphMemoryFreshness(G, memoryHighWaterCursor);
-  }
+  enforceMemoryFreshnessForSurface(G, memoryHighWaterCursor);
 
   const provenance = G.getAttribute("provenance");
   // MCP-L3 cursor pins (M10 l.1399): an exported graph keeps its projection

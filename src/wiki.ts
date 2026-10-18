@@ -15,7 +15,7 @@ import {
   type WikiDescriptionSidecarIndex,
 } from "./wiki-descriptions.js";
 import { sanitizeMetadata } from "./security.js";
-import { checkGraphMemoryFreshness } from "./graph-memory-projection.js";
+import { enforceMemoryFreshnessForSurface } from "./graph-memory-projection.js";
 
 interface WikiPageRef {
   key: string;
@@ -390,18 +390,19 @@ export function toWiki(
     flows?: ReviewFlowArtifact | ReviewFlow[] | null;
     descriptions?: WikiDescriptionSidecarIndex;
     /**
-     * MCP-L3 freshness gate (M10 l.1399): when supplied, a graph carrying a
-     * memory projection behind this high-water cursor is refused
-     * (`PROJECTION_STALE`) instead of being rendered as a current view.
+     * MCP-L3 freshness proof (M10 l.1399): the live high-water cursor the
+     * caller vouches for. A wiki carrying memory nodes is always gated —
+     * without this proof, or behind it, rendering is refused
+     * (`PROJECTION_STALE`) instead of serving a stale view.
      */
     memoryHighWaterCursor?: string;
   },
 ): number {
-  // MCP-L3 freshness gate (M10 l.1399): refuse a stale memory projection
-  // instead of rendering it as a current authorized view.
-  if (typeof options?.memoryHighWaterCursor === "string") {
-    checkGraphMemoryFreshness(G, options.memoryHighWaterCursor);
-  }
+  // MCP-L3 mandatory freshness gate (M10 l.1399): every wiki carrying
+  // memory nodes is gated, with no parameter that skips the gate. Without a
+  // high-water proof — or behind it — the stale projection is refused
+  // (`PROJECTION_STALE`) instead of being rendered as a current view.
+  enforceMemoryFreshnessForSurface(G, options?.memoryHighWaterCursor);
   const communityMapRaw = toNumericMap(communities);
 
   // Filter stale node IDs that exist in `communities` but no longer in `G`.
