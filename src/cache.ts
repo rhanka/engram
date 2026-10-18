@@ -15,6 +15,7 @@ import {
 } from "node:fs";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { resolveGraphifyPaths } from "./paths.js";
+import { enforceCachedMemoryFreshness } from "./graph-memory-projection.js";
 
 // ---------------------------------------------------------------------------
 // Stat-based fastpath (upstream d84f07c)
@@ -94,6 +95,13 @@ export interface CacheOptions {
   store?: InjectedCacheStore | null;
   /** L5 live explicit no-cache marker (R4): skips every filesystem path. */
   liveNoCache?: boolean;
+  /**
+   * MCP-L3 freshness proof (M10 l.1399): the live high-water cursor the
+   * caller vouches for. A cached extraction carrying memory nodes is always
+   * gated on save and on load — without this proof, or behind it, it is
+   * refused (`PROJECTION_STALE`) instead of being served as a current view.
+   */
+  memoryHighWaterCursor?: string;
   /** L5 live canonical key precomputed by the caller (R1/R2/R5 binding). */
   liveKey?: string;
   /**
@@ -525,11 +533,19 @@ export function loadCached(
       return null;
     }
     if (raw === null) return null;
+    let envelope: {
+      schemaVersion?: unknown; kind?: unknown; bind?: unknown;
+      payload?: unknown; payloadDigest?: unknown;
+    };
     try {
-      const envelope = JSON.parse(raw) as {
+      envelope = JSON.parse(raw) as {
         schemaVersion?: unknown; kind?: unknown; bind?: unknown;
         payload?: unknown; payloadDigest?: unknown;
       };
+    } catch {
+      return null;
+    }
+    try {
       if (envelope === null || typeof envelope !== "object") return null;
       if (envelope.schemaVersion !== LIVE_CACHE_SCHEMA_VERSION) return null;
       if (envelope.kind !== "reused-extraction") return null;
@@ -542,9 +558,14 @@ export function loadCached(
       if (typeof result.error === "string" && result.error.length > 0) return null;
       const nodes = (result as { nodes?: unknown }).nodes;
       if (!Array.isArray(nodes) || nodes.length === 0) return null;
+      // MCP-L3 mandatory freshness gate (M10 l.1399): refusal propagates
+      // (never a silent miss). A memory-carrying payload without a
+      // high-water proof — or behind it — must not be served as current.
+      enforceCachedMemoryFreshness(result, options.memoryHighWaterCursor);
       absolutizeSourceFilesIn(result, root);
       return result;
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("PROJECTION_STALE")) throw error;
       return null;
     }
   }
@@ -554,40 +575,64 @@ export function loadCached(
   } catch {
     return null;
   }
+  // MCP-L3 mandatory freshness gate (M10 l.1399): refusal propagates
+  // (never a silent miss). A memory-carrying payload without a high-water
+  // proof — or behind it — must not be served as a current view.
+  const checkFresh = (result: Record<string, unknown>): void => {
+    enforceCachedMemoryFreshness(result, options.memoryHighWaterCursor);
+  };
   const entry = join(cacheDir(root, options), `${h}.json`);
   if (existsSync(entry)) {
+    let result: Record<string, unknown>;
     try {
-      const result = JSON.parse(readFileSync(entry, "utf-8")) as Record<string, unknown>;
-      // Re-anchor relative source_file fields so callers see the same absolute-path
-      // shape that a fresh in-process extraction produces (#777 / F-0831-P2d).
-      absolutizeSourceFilesIn(result, root);
-      return result;
+      result = JSON.parse(readFileSync(entry, "utf-8")) as Record<string, unknown>;
     } catch {
       return null;
     }
+    checkFresh(result);
+    try {
+      // Re-anchor relative source_file fields so callers see the same absolute-path
+      // shape that a fresh in-process extraction produces (#777 / F-0831-P2d).
+      absolutizeSourceFilesIn(result, root);
+    } catch {
+      return null;
+    }
+    return result;
   }
 
   if ((options.kind ?? "ast") === "ast") {
     const legacyEntry = join(legacyCacheDir(root, options), `${h}.json`);
     if (existsSync(legacyEntry)) {
+      let result: Record<string, unknown>;
       try {
-        const result = JSON.parse(readFileSync(legacyEntry, "utf-8")) as Record<string, unknown>;
-        absolutizeSourceFilesIn(result, root);
-        return result;
+        result = JSON.parse(readFileSync(legacyEntry, "utf-8")) as Record<string, unknown>;
       } catch {
         return null;
       }
+      checkFresh(result);
+      try {
+        absolutizeSourceFilesIn(result, root);
+      } catch {
+        return null;
+      }
+      return result;
     }
 
     const legacyHashEntry = join(legacyCacheDir(root, options), `${legacyFileHash(filePath)}.json`);
     if (!existsSync(legacyHashEntry)) return null;
+    let result: Record<string, unknown>;
     try {
-      const result = JSON.parse(readFileSync(legacyHashEntry, "utf-8")) as Record<string, unknown>;
-      absolutizeSourceFilesIn(result, root);
-      return result;
+      result = JSON.parse(readFileSync(legacyHashEntry, "utf-8")) as Record<string, unknown>;
     } catch {
       return null;
     }
+    checkFresh(result);
+    try {
+      absolutizeSourceFilesIn(result, root);
+    } catch {
+      return null;
+    }
+    return result;
   }
   return null;
 }
@@ -620,6 +665,9 @@ export function saveCached(
     const payload: Record<string, unknown> = hasBuckets
       ? JSON.parse(JSON.stringify(result)) as Record<string, unknown>
       : result;
+    // MCP-L3 mandatory freshness gate (M10 l.1399): never cache an
+    // unproven or stale projection.
+    enforceCachedMemoryFreshness(payload, options.memoryHighWaterCursor);
     if (hasBuckets) relativizeSourceFilesIn(payload, root);
     const envelope = {
       bind: options.liveBind,
@@ -666,6 +714,9 @@ export function saveCached(
   const onDisk: Record<string, unknown> = hasBuckets
     ? JSON.parse(JSON.stringify(result)) as Record<string, unknown>
     : result;
+  // MCP-L3 mandatory freshness gate (M10 l.1399): never cache an unproven
+  // or stale projection.
+  enforceCachedMemoryFreshness(onDisk, options.memoryHighWaterCursor);
   if (hasBuckets) relativizeSourceFilesIn(onDisk, root);
 
   try {

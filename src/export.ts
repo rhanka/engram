@@ -8,6 +8,7 @@ import Graph from "graphology";
 import { engramEnv } from "./env.js";
 import { sanitizeLabel, sanitizeMetadata } from "./security.js";
 import { isDirectedGraph } from "./graph.js";
+import { graphJsonLink, graphJsonNode, serializeGraphJson } from "./graph-json-serialization.js";
 import { assertGraphJsonFileSize, assertGraphJsonSize } from "./graph-size-guard.js";
 import { safeGitRevParse } from "./git.js";
 import type { Hyperedge } from "./types.js";
@@ -22,6 +23,12 @@ import {
   toNumericMap,
   toStringMap,
 } from "./collections.js";
+import {
+  MEMORY_HIGH_WATER_CURSOR_ATTR,
+  MEMORY_PROJECTION_CURSOR_ATTR,
+  assertMemoryGraphJsonSize,
+  enforceMemoryFreshnessForSurface,
+} from "./graph-memory-projection.js";
 
 // ---------------------------------------------------------------------------
 // backupIfProtected — upstream 6939494 (#834)
@@ -135,19 +142,22 @@ const COMMUNITY_COLORS = [
   "#EDC948", "#B07AA1", "#FF9DA7", "#9C755F", "#BAB0AC",
 ];
 
-const CONFIDENCE_SCORE_DEFAULTS: Record<string, number> = {
-  EXTRACTED: 1.0,
-  INFERRED: 0.5,
-  AMBIGUOUS: 0.2,
-};
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 type CommunityLabelsInput = NumericMapLike<string>;
 type CommunityLabelOptions = { communityLabels?: CommunityLabelsInput };
-type JsonOptions = CommunityLabelOptions & { force?: boolean };
+type JsonOptions = CommunityLabelOptions & {
+  force?: boolean;
+  /**
+   * MCP-L3 freshness proof (M10 l.1399): the live high-water cursor the
+   * caller vouches for. A graph carrying memory nodes is always gated —
+   * without this proof, or behind it, the export is refused
+   * (`PROJECTION_STALE`) instead of being written as a current view.
+   */
+  memoryHighWaterCursor?: string;
+};
 type SvgOptions = CommunityLabelOptions & { figsize?: [number, number] };
 type CanvasOptions = CommunityLabelOptions & { nodeFilenames?: StringMapLike<string> };
 type Neo4jPushOptions = {
@@ -193,7 +203,8 @@ function isCommunityLabelOptions(
 ): value is CommunityLabelOptions {
   return !(value instanceof Map) && (
     Object.prototype.hasOwnProperty.call(value, "communityLabels") ||
-    Object.prototype.hasOwnProperty.call(value, "force")
+    Object.prototype.hasOwnProperty.call(value, "force") ||
+    Object.prototype.hasOwnProperty.call(value, "memoryHighWaterCursor")
   );
 }
 
@@ -290,29 +301,16 @@ export function toJson(
   const nodes: Record<string, unknown>[] = [];
   G.forEachNode((nodeId, attrs) => {
     const communityId = nodeComm.get(nodeId) ?? null;
-    nodes.push({
-      id: nodeId,
-      ...attrs,
-      community: communityId,
-      community_name:
-        communityId !== null
-          ? sanitizeLabel(communityLabels?.get(communityId) ?? `Community ${communityId}`)
-          : null,
-    });
+    nodes.push(graphJsonNode(nodeId, attrs, communityId,
+      communityId !== null
+        ? sanitizeLabel(communityLabels?.get(communityId) ?? `Community ${communityId}`)
+        : null,
+    ));
   });
 
   const links: Record<string, unknown>[] = [];
   G.forEachEdge((_edge, data, source, target) => {
-    const link: Record<string, unknown> = {
-      source,
-      target,
-      ...data,
-    };
-    if (link.confidence_score === undefined) {
-      const conf = (data.confidence as string) ?? "EXTRACTED";
-      link.confidence_score = CONFIDENCE_SCORE_DEFAULTS[conf] ?? 1.0;
-    }
-    links.push(link);
+    links.push(graphJsonLink(source, target, data));
   });
 
   const hyperedges = (G.getAttribute("hyperedges") as Hyperedge[] | undefined) ?? [];
@@ -337,11 +335,30 @@ export function toJson(
   // canonical fields (label, source_file, relation) were HTML-escaped on
   // every write. Untrusted node / edge metadata sites must apply the helper
   // at the assignment site instead.
+  // MCP-L3 mandatory freshness gate (M10 l.1399): every export carrying
+  // memory nodes is gated, with no parameter that skips the gate. Without a
+  // high-water proof — or behind it — the stale projection is refused
+  // (`PROJECTION_STALE`) instead of being exported as a current view.
+  const memoryHighWaterCursor =
+    communityLabelsOrOptions &&
+    !(communityLabelsOrOptions instanceof Map) &&
+    typeof (communityLabelsOrOptions as JsonOptions).memoryHighWaterCursor === "string"
+      ? (communityLabelsOrOptions as JsonOptions).memoryHighWaterCursor as string
+      : undefined;
+  enforceMemoryFreshnessForSurface(G, memoryHighWaterCursor);
+
   const provenance = G.getAttribute("provenance");
+  // MCP-L3 cursor pins (M10 l.1399): an exported graph keeps its projection
+  // cursors in the `graph` block so a reloaded graph can still be judged
+  // stale; without them the reload would look like a servable code-only view.
+  const memoryProjectionCursor = G.getAttribute(MEMORY_PROJECTION_CURSOR_ATTR);
+  const memoryHighWaterPinned = G.getAttribute(MEMORY_HIGH_WATER_CURSOR_ATTR);
   const sanitisedGraphBlock = sanitizeMetadata({
     ...(provenance !== undefined ? { provenance } : {}),
     community_labels: communityLabelsObject,
     ...buildFreshnessMetadata(outputPath),
+    ...(typeof memoryProjectionCursor === "string" ? { [MEMORY_PROJECTION_CURSOR_ATTR]: memoryProjectionCursor } : {}),
+    ...(typeof memoryHighWaterPinned === "string" ? { [MEMORY_HIGH_WATER_CURSOR_ATTR]: memoryHighWaterPinned } : {}),
   });
 
   const output = {
@@ -354,15 +371,23 @@ export function toJson(
     hyperedges,
   };
 
+  // Measure the final rows, including communities and confidence defaults,
+  // using the writer's encoding. Refuse before touching the destination.
+  assertMemoryGraphJsonSize(nodes, links);
+
   if (!forceWrite) {
     try {
       assertGraphJsonFileSize(outputPath, "read");
-      const existing = JSON.parse(readFileSync(outputPath, "utf-8")) as { nodes?: unknown[] };
-      const existingNodeCount = existing.nodes?.length ?? 0;
-      if (existingNodeCount > nodes.length) {
+      const existing = JSON.parse(readFileSync(outputPath, "utf-8")) as { nodes?: Array<{ file_type?: unknown }> };
+      // MCP-L3 (M10 l.1368): memory nodes reconcile separately, so the
+      // shrink guard compares code nodes only; a memory-only shrinkage that
+      // carries a revocation to disk never trips it.
+      const existingCodeNodeCount = (existing.nodes ?? []).filter((node) => node?.file_type !== "memory").length;
+      const newCodeNodeCount = nodes.filter((node) => (node as { file_type?: unknown })?.file_type !== "memory").length;
+      if (existingCodeNodeCount > newCodeNodeCount) {
         console.warn(
-          `[engram] WARNING: new graph has ${nodes.length} nodes but existing graph.json has ` +
-          `${existingNodeCount}. Refusing to overwrite; pass force=true to override.`,
+          `[engram] WARNING: new graph has ${newCodeNodeCount} code nodes but existing graph.json has ` +
+          `${existingCodeNodeCount}. Refusing to overwrite; pass force=true to override.`,
         );
         return false;
       }
@@ -371,7 +396,7 @@ export function toJson(
     }
   }
 
-  const serialized = JSON.stringify(output, null, 2);
+  const serialized = serializeGraphJson(output);
   assertGraphJsonSize(Buffer.byteLength(serialized, "utf-8"), "write", outputPath);
   writeFileSync(outputPath, serialized, "utf-8");
   return true;
@@ -400,7 +425,11 @@ export function persistGraphWithCitations(
 ): boolean {
   const map = aggregateCitations(G, options?.citations ?? {});
   const jsonOptions: JsonOptions | undefined = options
-    ? { ...(options.communityLabels ? { communityLabels: options.communityLabels } : {}), ...(options.force ? { force: true } : {}) }
+    ? {
+      ...(options.communityLabels ? { communityLabels: options.communityLabels } : {}),
+      ...(options.force ? { force: true } : {}),
+      ...(typeof options.memoryHighWaterCursor === "string" ? { memoryHighWaterCursor: options.memoryHighWaterCursor } : {}),
+    }
     : undefined;
   const written = toJson(G, communities, outputPath, jsonOptions);
   if (written) {
