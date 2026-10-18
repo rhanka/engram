@@ -30,6 +30,7 @@ export {
   type InMemoryCanonicalMemoryStoreV1,
   type InMemoryRecoveryCheckpointV1,
   type InMemoryStoreStateV1,
+  type PersistedAdmissionOutcomeV1,
   type PersistedCaptureIdempotencyV1,
   type MemoryJournalCheckpointV1,
   type MemoryJournalEventV1,
