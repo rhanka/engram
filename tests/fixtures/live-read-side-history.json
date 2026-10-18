@@ -1,0 +1,439 @@
+{
+  "version": 1,
+  "algorithm": "sha1",
+  "method": "Native Git object snapshot: complete commit/tree ancestry of historyRoots; source blobs needed by the unchanged read-side controls. Follows verifiedGitOracle in live-code-context.json and memory-pinned-intakes blob provenance. No expected command output is used to construct objects.",
+  "historyRoots": {
+    "E": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+    "E0": "e432240f8d5ea670efe672bfac52969d944cd59f",
+    "E_G1_ORIGIN": "13c18c964bc9d7c6d7b46d116f11da8b3ed9f08d",
+    "E_CAP": "ce26c58de1e93a6b554896ed0bd17a92f24de95e",
+    "E_STATS": "c779e7d54eb25e4f062afcdd3440ac98bbb1d961",
+    "E_COMPARE": "483d73e0170b5fe2083250898733a2d15d127b86",
+    "E_INGEST": "35b5c26833ffa0d5bb140a1c130781187d8df0db"
+  },
+  "historyPaths": [
+    "engram-live/integration.ts",
+    "src/extract-git.ts"
+  ],
+  "pack": {
+    "file": "live-read-side-history.pack",
+    "bytes": 1559379,
+    "sha256": "a7f51a4f1a7ed256bae8561ce4b943720372e236fe4fd78a4c206d74ec5606f3",
+    "objects": 6132
+  },
+  "sources": [
+    {
+      "commit": "13c18c964bc9d7c6d7b46d116f11da8b3ed9f08d",
+      "path": "engram-live/integration.ts",
+      "blobSha": "1f203ce3319f7cda471f488dfaf3cec26a44402e",
+      "bytes": 11378,
+      "sha256": "1961ee648a67212a797c3fa76c2ae312841e8691fb5b17c7b927711c9d10ca65"
+    },
+    {
+      "commit": "36d0f24cb417874c982afdfc8a628353da0d4e2b",
+      "path": "src/extract-git.ts",
+      "blobSha": "5cae223d7a45172b1f1344ba96bba7ef072855b1",
+      "bytes": 13200,
+      "sha256": "b0685c756ad80323f022a507e77ad73d3606a34280965ce8aef2c61eeedfa4cb"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/analysis-cache.ts",
+      "blobSha": "10146c39c96e2b596b656ade9e33105188bf86d2",
+      "bytes": 17373,
+      "sha256": "2476280a827b8069a3818373ec073bf42442265d2ae16800f507494b09a6bafe"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/attributes.ts",
+      "blobSha": "bd5879768e0bd76303c2e91ce93f852da66b8da9",
+      "bytes": 4922,
+      "sha256": "551a15f8ecda5ece86b7a272f05c97bc1938244abd4aa872fe94aee3b244e099"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/code-analysis.ts",
+      "blobSha": "c5b9e773396f9d915e3f88b0dd3378ee2b69cf55",
+      "bytes": 52689,
+      "sha256": "66085a0d95efdcf18dcae2e4e8159bbc515d3ea7b7f970d88d3b1ab5f13e344b"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/comparisons.ts",
+      "blobSha": "475ed0d80e122652a1b1d7a654790cb116f346af",
+      "bytes": 27031,
+      "sha256": "66c5cc40053529725fb16f567c822be9bdde5295477349ea65b553a6bb046357"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/content-policy.ts",
+      "blobSha": "a105b2524c3e2148db3f289b6eb5fcb4d27387e0",
+      "bytes": 10789,
+      "sha256": "48d227942b445b64dff6c6a3f8587c9158214c72d4cff891bea38b3f18da65e5"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/contracts.ts",
+      "blobSha": "0973b0a81b70de6e999dbc8d7b5796dadb9e4b50",
+      "bytes": 113219,
+      "sha256": "a052f79444c04f11f10fec5df03d1629731fa0d2b3b47596aabef1471167ecd8"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/coverage.ts",
+      "blobSha": "920406a129d1055142d809468d840654668ac55c",
+      "bytes": 14955,
+      "sha256": "bf6d4da9fab35cc2cac562107e22f9bbbbf40109a7bfa54d416f7af800c7598e"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/diffs.ts",
+      "blobSha": "247cfa2c5269f5e5ebed2b0df008b5f9bcb875a0",
+      "bytes": 22783,
+      "sha256": "89ea2ad9d816d04ca7e111c4b11521218fc4896f246dcd26d00b66b868f5ce25"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/filesystem.ts",
+      "blobSha": "c9ae3d370208de28267cf108d70030ea6726ca3d",
+      "bytes": 12045,
+      "sha256": "ac37f133e57a73041d33cdec26987c8d7ec8506910f33fe180414c309ad3505e"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/git-executor.ts",
+      "blobSha": "8ac3978a02c92fb1bcecaf1febf0449893b50a0f",
+      "bytes": 14862,
+      "sha256": "4ea00a372ad14d01aac74c02b2cc5b83858e978caedd33cca4c7a85583ad51cc"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/git-protocol.ts",
+      "blobSha": "3068fd5b2b1de850220d0b35a8908b6e59dc6460",
+      "bytes": 25497,
+      "sha256": "f33e5e42319c1e6a0338c58bffa0c070f71507bc2e295ac0c6c0d69cbe0c9755"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/git-stream.ts",
+      "blobSha": "faf74b87fa884029a56e67998bf0e14c69d063a6",
+      "bytes": 29250,
+      "sha256": "3075fce17aa98c4e92045f1abc28d2922117d353b0e177a579fd553b284e449d"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/grammar-manifest.json",
+      "blobSha": "51bcb7dad3dd36c68824f272d852400967c116fe",
+      "bytes": 4027,
+      "sha256": "614673f7a2682049ab8d5ef4b1ef540df0f36a8a351e2dfa7a4658eead0a4a35"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/history.ts",
+      "blobSha": "b64ce5faf31d64207fe606d6fb4c20f98dd42979",
+      "bytes": 23232,
+      "sha256": "a39df03f6b150bcfbe3290a3aac2bf23829c99297e819531a396b0161dc568cf"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/index.ts",
+      "blobSha": "a008f24c3f78fcc55ccaf56458aa608c2f85f221",
+      "bytes": 518,
+      "sha256": "6e94a41726f138832d445488c90ac1c87254dca3c5c476ac63be9eae520b6b44"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/integration.ts",
+      "blobSha": "5f1f56321c30ee4553547eebcc808968460c6f3f",
+      "bytes": 16443,
+      "sha256": "99b1048035d436f406716caf20f8b9e0461ebc04cd0cfd76d77ef44cca1eae0c"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/package-lock.json",
+      "blobSha": "e3d88e87e26fb7013d49336db70e8d2173a19650",
+      "bytes": 322,
+      "sha256": "e124b69c8404404f3fa699c3793d34636685380abce77eda90a79cdffa7e96e9"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/package.json",
+      "blobSha": "1c00739f879578002d08cdcec0dfa6c065679158",
+      "bytes": 953,
+      "sha256": "4e91de4f138a4f2504c08f39e878811e4f3fb4404cd2f12790a3e66170811287"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/pr-attribution.ts",
+      "blobSha": "9274aaba65042e35a2b2a61ffc8132a652ecd52d",
+      "bytes": 6030,
+      "sha256": "76657f331fbcd5dbd413ab550a9b3797f2431a7a36aa5c43829dd366f3541773"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/pr-sync.ts",
+      "blobSha": "62110b80c2aa1ead625a9bed08fbc7c3dc59018b",
+      "bytes": 21419,
+      "sha256": "93cbf6584e59f43664c2c1d96b0fdd0b028cf4bf79bbc628d361504c8b72efa2"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/reconcile.ts",
+      "blobSha": "9aa93520b3d01f41e94297ff05570f4f47c0e3b7",
+      "bytes": 30175,
+      "sha256": "7b731d2a5f7488a854ac3cf72b97799f8b2ee5c08d0146f67adc9459ef8c854a"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/refs.ts",
+      "blobSha": "9034288d2b77bca915b8cbcd2e90c68dcd44f1f0",
+      "bytes": 11299,
+      "sha256": "59b56b32e71025a24a82817596f139fc10b73a927b5254f668f5ea1767482c80"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/registration.ts",
+      "blobSha": "377d64f0fe105cfd267de7ddfaab33e10a21c79a",
+      "bytes": 20845,
+      "sha256": "e536819f51ed1570d94c5e09cd8450bd4ad094e4cdd31582dbca081f5146da27"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/repository.ts",
+      "blobSha": "b3a5804cbdb4936fcf3ccb0613b7ba8b17a42fac",
+      "bytes": 6528,
+      "sha256": "c1b57abadc655de13bfd7088c0585505dee5ab83bc5497a06e9a52a95b391acc"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/retention.ts",
+      "blobSha": "22647a067a9ba4032417f41ff57f304bee3935ba",
+      "bytes": 9953,
+      "sha256": "f6a857339b614ab7991cd082bbe4503f9d7beefc2021121a153f4c659cf54c07"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/scheduler.ts",
+      "blobSha": "d872bc0c0e0aafcda86d83c036847c1930360e1d",
+      "bytes": 24554,
+      "sha256": "22a45b2ba47787adca14d8aff94b4bae0501df93c8df69796459f7ba9d6d95a5"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/snapshots.ts",
+      "blobSha": "652b1021363f3dec3e1e162d340c01a05fd80f1d",
+      "bytes": 43234,
+      "sha256": "9bac33d9b4c3859255accba1eeec7cbfa5334141e656e49f4c521077a28b32e7"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/tsconfig.json",
+      "blobSha": "f277b6ed457cce9937a8378cdea64c1f08c14da3",
+      "bytes": 427,
+      "sha256": "ad68d3f36b6873e31ab89c0e16f3423411406584fbb9a6da61261d01600a40f0"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/watch.ts",
+      "blobSha": "c331f9f91cd2aa5d48eeac56a8ee4776c8b23a5c",
+      "bytes": 13765,
+      "sha256": "dfd57a85fd19342efed2086c22a62f1640c29d1e7c2dd2f5c803775d58ff1f1e"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-live/worktree.ts",
+      "blobSha": "c98742b2f414501dec36c88dfaec907091c301ea",
+      "bytes": 30507,
+      "sha256": "f6af3e897f0a289672de47fa669e6d544260d90e71c28811c777088ed246ec48"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "engram-memory/engine.ts",
+      "blobSha": "ab131b0983ccfeb5f23b2cfe3a83f8f6b455c578",
+      "bytes": 102852,
+      "sha256": "d479965de192cfa44969d9e956bf21f07d1e83704d430bc01466a18dce81883d"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "spec/SPEC_MEMORY_FINALIZATION.md",
+      "blobSha": "f396a7ea968c18aebc3884c318f1492233966425",
+      "bytes": 105047,
+      "sha256": "9d0a0de4b81416573076e0f913b3c18bc37e379e6bb747bcfae22fb665291389"
+    },
+    {
+      "commit": "545a57b8911ab108e84fa1778e0f268fe11bf1de",
+      "path": "tests/live-branch-comparison.test.ts",
+      "blobSha": "db53d66831886e4c9c52d6285817ff0a81640412",
+      "bytes": 17290,
+      "sha256": "8d4fcde42dd5828bcabb4a3fa5273c6122ae31981e9eeea6c9642aa88788ed06"
+    },
+    {
+      "commit": "70ebdfee9857ba381059896089e4f2d5c19363ea",
+      "path": "engram-live/integration.ts",
+      "blobSha": "0d961461ea553cd241a31c485de2c0f1cb1c271b",
+      "bytes": 12109,
+      "sha256": "e086a9305c3abb2b189198dcc991ca9b8d3a87055138ca5dbecb1d6d4724e9e2"
+    },
+    {
+      "commit": "91994cd00cb43c86fc33a68bd1d2bbed771752de",
+      "path": "src/extract-git.ts",
+      "blobSha": "e1aa8762c93ff3b6df86f9cf433ed4ff0be1d314",
+      "bytes": 13158,
+      "sha256": "a6ed58fb3446ec8b48d1deb41d151f772b0aa3faf1bf86e4226f718030001d0b"
+    },
+    {
+      "commit": "ce26c58de1e93a6b554896ed0bd17a92f24de95e",
+      "path": "src/extract-git.ts",
+      "blobSha": "592236595456a3caad9232418786a34aba683832",
+      "bytes": 14369,
+      "sha256": "73d22b424702fb708328deb2600b370420d37a958000cd43004b2b8405cbd79b"
+    },
+    {
+      "commit": "df69faf48d41ae322e484473d65e1b1ee6148924",
+      "path": "engram-live/integration.ts",
+      "blobSha": "5f1f56321c30ee4553547eebcc808968460c6f3f",
+      "bytes": 16443,
+      "sha256": "99b1048035d436f406716caf20f8b9e0461ebc04cd0cfd76d77ef44cca1eae0c"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/attributes.ts",
+      "blobSha": "bd5879768e0bd76303c2e91ce93f852da66b8da9",
+      "bytes": 4922,
+      "sha256": "551a15f8ecda5ece86b7a272f05c97bc1938244abd4aa872fe94aee3b244e099"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/contracts.ts",
+      "blobSha": "86097e133a0298916e909c127a2e74db83543503",
+      "bytes": 79842,
+      "sha256": "0e6ec07e1e2488f7ce5a38be58c0f0eccebfacfc0b0d9dc005a8a5b6508d1774"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/filesystem.ts",
+      "blobSha": "c9ae3d370208de28267cf108d70030ea6726ca3d",
+      "bytes": 12045,
+      "sha256": "ac37f133e57a73041d33cdec26987c8d7ec8506910f33fe180414c309ad3505e"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/git-executor.ts",
+      "blobSha": "8ac3978a02c92fb1bcecaf1febf0449893b50a0f",
+      "bytes": 14862,
+      "sha256": "4ea00a372ad14d01aac74c02b2cc5b83858e978caedd33cca4c7a85583ad51cc"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/git-protocol.ts",
+      "blobSha": "3068fd5b2b1de850220d0b35a8908b6e59dc6460",
+      "bytes": 25497,
+      "sha256": "f33e5e42319c1e6a0338c58bffa0c070f71507bc2e295ac0c6c0d69cbe0c9755"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/git-stream.ts",
+      "blobSha": "faf74b87fa884029a56e67998bf0e14c69d063a6",
+      "bytes": 29250,
+      "sha256": "3075fce17aa98c4e92045f1abc28d2922117d353b0e177a579fd553b284e449d"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/grammar-manifest.json",
+      "blobSha": "51bcb7dad3dd36c68824f272d852400967c116fe",
+      "bytes": 4027,
+      "sha256": "614673f7a2682049ab8d5ef4b1ef540df0f36a8a351e2dfa7a4658eead0a4a35"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/history.ts",
+      "blobSha": "b64ce5faf31d64207fe606d6fb4c20f98dd42979",
+      "bytes": 23232,
+      "sha256": "a39df03f6b150bcfbe3290a3aac2bf23829c99297e819531a396b0161dc568cf"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/index.ts",
+      "blobSha": "a008f24c3f78fcc55ccaf56458aa608c2f85f221",
+      "bytes": 518,
+      "sha256": "6e94a41726f138832d445488c90ac1c87254dca3c5c476ac63be9eae520b6b44"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/integration.ts",
+      "blobSha": "0d961461ea553cd241a31c485de2c0f1cb1c271b",
+      "bytes": 12109,
+      "sha256": "e086a9305c3abb2b189198dcc991ca9b8d3a87055138ca5dbecb1d6d4724e9e2"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/package-lock.json",
+      "blobSha": "e3d88e87e26fb7013d49336db70e8d2173a19650",
+      "bytes": 322,
+      "sha256": "e124b69c8404404f3fa699c3793d34636685380abce77eda90a79cdffa7e96e9"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/package.json",
+      "blobSha": "1c00739f879578002d08cdcec0dfa6c065679158",
+      "bytes": 953,
+      "sha256": "4e91de4f138a4f2504c08f39e878811e4f3fb4404cd2f12790a3e66170811287"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/pr-attribution.ts",
+      "blobSha": "9274aaba65042e35a2b2a61ffc8132a652ecd52d",
+      "bytes": 6030,
+      "sha256": "76657f331fbcd5dbd413ab550a9b3797f2431a7a36aa5c43829dd366f3541773"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/pr-sync.ts",
+      "blobSha": "62110b80c2aa1ead625a9bed08fbc7c3dc59018b",
+      "bytes": 21419,
+      "sha256": "93cbf6584e59f43664c2c1d96b0fdd0b028cf4bf79bbc628d361504c8b72efa2"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/refs.ts",
+      "blobSha": "9034288d2b77bca915b8cbcd2e90c68dcd44f1f0",
+      "bytes": 11299,
+      "sha256": "59b56b32e71025a24a82817596f139fc10b73a927b5254f668f5ea1767482c80"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/registration.ts",
+      "blobSha": "377d64f0fe105cfd267de7ddfaab33e10a21c79a",
+      "bytes": 20845,
+      "sha256": "e536819f51ed1570d94c5e09cd8450bd4ad094e4cdd31582dbca081f5146da27"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/repository.ts",
+      "blobSha": "b3a5804cbdb4936fcf3ccb0613b7ba8b17a42fac",
+      "bytes": 6528,
+      "sha256": "c1b57abadc655de13bfd7088c0585505dee5ab83bc5497a06e9a52a95b391acc"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/retention.ts",
+      "blobSha": "22647a067a9ba4032417f41ff57f304bee3935ba",
+      "bytes": 9953,
+      "sha256": "f6a857339b614ab7991cd082bbe4503f9d7beefc2021121a153f4c659cf54c07"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/tsconfig.json",
+      "blobSha": "f277b6ed457cce9937a8378cdea64c1f08c14da3",
+      "bytes": 427,
+      "sha256": "ad68d3f36b6873e31ab89c0e16f3423411406584fbb9a6da61261d01600a40f0"
+    },
+    {
+      "commit": "e432240f8d5ea670efe672bfac52969d944cd59f",
+      "path": "engram-live/worktree.ts",
+      "blobSha": "c98742b2f414501dec36c88dfaec907091c301ea",
+      "bytes": 30507,
+      "sha256": "f6af3e897f0a289672de47fa669e6d544260d90e71c28811c777088ed246ec48"
+    }
+  ]
+}
