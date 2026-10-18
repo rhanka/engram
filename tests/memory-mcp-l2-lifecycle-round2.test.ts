@@ -12,7 +12,7 @@ import {
 import { createReferenceWriteHostPortsV1 } from '../src/mcp/memory/reference-ports.js';
 import { createMemoryWriteToolsV1 } from '../src/memory-tools/writes.js';
 import { captureRequest, NOW } from './memory-l3-fixture.js';
-import { buildMemory } from './memory-l7-fixture.js';
+import { buildMemory, createDeepJournalStoreV1 } from './memory-l7-fixture.js';
 
 // Independent oracle: SPEC-memory-mcp-v3.1.md M4/M5/M14 and the tour-1
 // relecture (REVIEW-L2-sol.out, 9 MAJEURS). Each test below replays the
@@ -237,27 +237,11 @@ describe('MCP-L2 round-2 lifecycle findings', () => {
   });
 
   it('M5 should hold a recapture pending when its tombstone sits past the first journal page', async () => {
-    const { createInMemoryCanonicalMemoryStoreV1, memoryJournalEventHashV1 } = await import('../engram-memory/index.js');
     const seeder = buildMemory({ scope: 'scope:l3' });
     const seeded = await seeder.memory.capture(captureRequest('l2-r2-seed-00000001', '1', 'filler body'));
     if (!seeded.ok) throw Error('seed capture failed');
     const template = (seeder.store.exportStateForPersistence() as { value: { journal: Array<Record<string, unknown>> } }).value.journal[0]!;
-    const { event_hash: _dropped, ...templateBody } = template;
-    const fillers: Array<Record<string, unknown>> = [];
-    let previous = template.previous_event_hash as string;
-    for (let i = 0; i < 2001; i++) {
-      const body = {
-        ...templateBody, event_id: `filler:event:${i}`, candidate_id: `candidate:filler:${i}`,
-        cursor: String(i + 1), previous_event_hash: previous,
-      };
-      const event_hash = memoryJournalEventHashV1(body as never);
-      fillers.push({ ...body, event_hash });
-      previous = event_hash;
-    }
-    const store = createInMemoryCanonicalMemoryStoreV1({
-      clock: { now: () => NOW },
-      persistence: { journal: fillers as never, controls: [], envelopes: [], records: [], lexical: [], outbox: [] },
-    });
+    const store = createDeepJournalStoreV1(template, 2001, { now: () => NOW });
     const { memory } = buildMemory({ scope: 'scope:l3', store: store as never });
     const first = await memory.capture(captureRequest('l2-r2-key-000051', '3001', 'guard body'));
     if (!first.ok || first.value.candidate_id === undefined) throw Error('capture failed');
