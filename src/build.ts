@@ -18,7 +18,9 @@ import { assertGraphJsonFileSize } from "./graph-size-guard.js";
 import { cleanupStaleNodes } from "./semantic-cleanup.js";
 import { validateExtraction } from "./validate.js";
 import {
+  assertMemoryProjectionFresh,
   reconcileMemoryProjectionInGraph,
+  stripAllMemoryProjectionFromGraph,
   type AssembledMemoryGraphProjectionV1,
 } from "./graph-memory-projection.js";
 import {
@@ -466,10 +468,13 @@ export interface BuildMergeOptions extends BuildOptions {
   /**
    * MCP-L3 filtered memory projection (restored D3/D10). When supplied, the
    * freshly assembled projection is reconciled into the merged graph: stale
-   * memory nodes are dropped, the fresh projection is attached through the
-   * controlled assembly, and freshness cursors are stamped. Code nodes are
-   * never touched. Absent by default: existing memory nodes are preserved as
-   * foreign objects.
+   * memory nodes are dropped, previous memory reference edges are retired,
+   * the fresh projection is attached through the controlled assembly, and
+   * freshness cursors are stamped. A supplied projection behind its own
+   * high-water cursor is refused (`PROJECTION_STALE`). Code nodes are never
+   * touched. Absent: every memory node carried from the existing graph is
+   * dropped with its edges and the freshness pins are cleared, so a
+   * regeneration without a fresh projection conserves no memory.
    */
   memoryProjection?: AssembledMemoryGraphProjectionV1;
   /**
@@ -575,10 +580,19 @@ export function buildMerge(newChunks: Extraction[], options?: BuildMergeOptions)
     );
   }
 
-  // MCP-L3 regeneration/reconciliation (restored D3/D10): drops stale memory
-  // nodes and attaches the fresh filtered projection; code nodes untouched.
+  // MCP-L3 regeneration/reconciliation (restored D3/D10, M10 l.1399): a
+  // supplied projection must be fresh against its own high-water cursor,
+  // otherwise the merge is refused instead of serving stale memory. Without
+  // a supplied fresh projection no memory is conserved: every carried memory
+  // node is dropped and the freshness pins are cleared. Code nodes untouched.
   if (options?.memoryProjection !== undefined) {
+    assertMemoryProjectionFresh(
+      options.memoryProjection.projection_cursor,
+      options.memoryProjection.high_water_cursor,
+    );
     reconcileMemoryProjectionInGraph(graph, options.memoryProjection);
+  } else {
+    stripAllMemoryProjectionFromGraph(graph);
   }
 
   return graph;

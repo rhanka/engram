@@ -4,6 +4,7 @@
 import Graph from "graphology";
 import type { GodNodeEntry, SurpriseEntry, SuggestedQuestion, DetectionResult } from "./types.js";
 import { type NumericMapLike, toNumericMap } from "./collections.js";
+import { checkGraphMemoryFreshness } from "./graph-memory-projection.js";
 import { isFileNode, isConceptNode } from "./analyze.js";
 import type { AffectedFlowsResult, ReviewFlow, ReviewFlowArtifact } from "./flows.js";
 
@@ -33,6 +34,12 @@ export interface GenerateReportOptions {
   freshness?: {
     builtFromCommit?: string | null;
   } | null;
+  /**
+   * MCP-L3 freshness gate (M10 l.1399): when supplied, a graph carrying a
+   * memory projection behind this high-water cursor is refused
+   * (`PROJECTION_STALE`) instead of being reported as a current view.
+   */
+  memoryHighWaterCursor?: string;
 }
 
 function compareFlowCriticality(a: ReviewFlow, b: ReviewFlow): number {
@@ -151,6 +158,14 @@ export function generate(
     | GenerateReportOptions
     | null,
 ): string {
+  // MCP-L3 freshness gate (M10 l.1399): refuse a stale memory projection
+  // instead of reporting it as a current authorized view.
+  const memoryHighWaterCursor = Array.isArray(suggestedQuestions)
+    ? undefined
+    : (suggestedQuestions?.memoryHighWaterCursor ?? undefined);
+  if (typeof memoryHighWaterCursor === "string") {
+    checkGraphMemoryFreshness(G, memoryHighWaterCursor);
+  }
   const communityMap = toNumericMap(communities);
   const cohesionMap = toNumericMap(cohesionScores);
   const labelMap = toNumericMap(communityLabels);
