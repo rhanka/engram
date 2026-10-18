@@ -967,3 +967,50 @@ export async function openFencedSqliteCanonicalMemoryStoreV1(options: FencedSqli
     return refusal("admin", "CAPABILITY_UNAVAILABLE", "the declared better-sqlite3 driver or SQLite initialization is unavailable");
   }
 }
+
+/**
+ * MCP-L2 reference-port seam (SPEC-memory-mcp-v3.1.md M14 round-2 closure):
+ * opens a plain durable SQLite database with the already-declared
+ * better-sqlite3 driver for the named, non-mock reference host-port set.
+ * This is NOT the fenced canonical store: no writer fence, no epoch, no
+ * provenance gate — callers own their schema and transactions. The dynamic
+ * import lives here so driver resolution stays inside engram-memory (the
+ * package that declares the driver); consumers only see the structural
+ * handle below and never import the driver themselves.
+ */
+export interface ReferenceSqliteStatementV1 {
+  run(...params: unknown[]): { changes: number | bigint };
+  get(...params: unknown[]): unknown;
+  all(...params: unknown[]): unknown[];
+}
+
+export interface ReferenceSqliteHandleV1 {
+  exec(sql: string): void;
+  prepare(sql: string): ReferenceSqliteStatementV1;
+  transaction<T extends unknown[], R>(fn: (...args: T) => R): (...args: T) => R;
+  close(): void;
+}
+
+export async function openReferenceSqliteHandleV1(filename: string): Promise<ReferenceSqliteHandleV1> {
+  const native = await import("better-sqlite3");
+  mkdirSync(dirname(filename), { recursive: true });
+  const database: NativeDatabase = new native.default(filename);
+  database.pragma("journal_mode = WAL");
+  database.pragma("busy_timeout = 5000");
+  database.pragma("synchronous = FULL");
+  const prepare = (sql: string): ReferenceSqliteStatementV1 => {
+    const statement = database.prepare(sql);
+    return {
+      run: (...params: unknown[]) => statement.run(...params),
+      get: (...params: unknown[]) => statement.get(...params),
+      all: (...params: unknown[]) => statement.all(...params),
+    };
+  };
+  return {
+    exec: (sql: string) => { database.exec(sql); },
+    prepare,
+    transaction: <T extends unknown[], R>(fn: (...args: T) => R): ((...args: T) => R) =>
+      database.transaction(fn) as (...args: T) => R,
+    close: () => { database.close(); },
+  };
+}
