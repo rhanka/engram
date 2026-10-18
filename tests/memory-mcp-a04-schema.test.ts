@@ -71,4 +71,48 @@ describe('L0-A04 supported schema shapes (M2:168, 400–401)', () => {
     }
     expect(validate({ oneOf: [{ type: 'string' }, { const: 'x' }] }, 'x').ok).toBe(false);
   });
+
+  it.each([
+    { enum: 'x' }, { enum: [] }, { enum: ['x', 'x'] },
+    { enum: [{ a: 1, b: 2 }, { b: 2, a: 1 }] },
+    ...[undefined, NaN, Infinity, 1n, () => 'x', Symbol('x'), new Date(), [undefined], { a: undefined }]
+      .flatMap(value => [{ const: value }, { enum: [value] }, { default: value }]),
+  ])('should refuse malformed enum, const and default values', schema => {
+    expect(admit(schema).ok).toBe(false);
+    expect(validate(schema, 'x').ok).toBe(false);
+  });
+
+  it('should reject cyclic schemas and sparse keyword arrays without throwing', () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.default = cyclic;
+    for (const schema of [cyclic, { enum: Array(1) }, { oneOf: Array(1) }, { type: 'object', additionalProperties: false, required: Array(1) }]) {
+      expect(admit(schema).ok).toBe(false);
+      expect(validate(schema, {}).ok).toBe(false);
+    }
+  });
+
+  it('should apply JSON equality to composite const, enum and uniqueItems assertions', () => {
+    for (const schema of [{ const: { a: [1, 2], b: true } }, { enum: [{ a: [1, 2], b: true }] }]) {
+      expect(admit(schema).ok).toBe(true);
+      expect(validate(schema, { b: true, a: [1, 2] }).ok).toBe(true);
+      expect(validate(schema, { b: true, a: [2, 1] }).ok).toBe(false);
+      expect(validate(schema, { b: false, a: [1, 2] }).ok).toBe(false);
+    }
+    const unique = { type: 'array', uniqueItems: true };
+    expect(validate(unique, [{ a: 1, b: 2 }, { b: 2, a: 1 }]).ok).toBe(false);
+    expect(validate(unique, [[1, 2], [2, 1]]).ok).toBe(true);
+    expect(validate({ const: null }, null).ok).toBe(true);
+    expect(validate({ const: 0 }, -0).ok).toBe(true);
+    const cyclic: unknown[] = [];
+    cyclic.push(cyclic);
+    for (const value of [undefined, NaN, cyclic, 1n]) expect(validate({}, value).ok).toBe(false);
+  });
+
+  it('should keep annotations inert and count Unicode characters in patterns', () => {
+    const schema = { type: 'string', pattern: '^.$', minLength: 1, maxLength: 1, default: 'x', title: 's', description: 's' };
+    expect(admit(schema).ok).toBe(true);
+    expect(validate(schema, '😀').ok).toBe(true);
+    expect(validate(schema, undefined).ok).toBe(false);
+    expect(validate({}, { unchanged: 1 }).ok).toBe(true);
+  });
 });
