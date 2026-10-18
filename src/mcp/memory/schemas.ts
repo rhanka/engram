@@ -3645,8 +3645,7 @@ export function validateMemoryToolSchemaDialectV1(
     return fail(path, 'Schema node must be a plain object');
   }
   if (
-    path === '$' &&
-    '$schema' in schema &&
+    Object.hasOwn(schema, '$schema') &&
     schema.$schema !== ENGRAM_MEMORY_WIRE_PROFILE_V1.jsonSchemaDialect
   ) {
     return fail(
