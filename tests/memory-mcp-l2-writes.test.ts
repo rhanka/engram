@@ -68,7 +68,7 @@ function fakeReservation() {
       const binding = [...bindings.values()].find((entry) => entry.preimage.reservation_ref === reservationRef);
       if (!binding) return { ok: false, error_code: 'NOT_FOUND', message: 'unknown reservation' };
       if (binding.operation_digest !== operationDigest) return { ok: false, error_code: 'INVALID_SCHEMA', message: 'confirmation digest mismatch' };
-      const next: MemoryMutationBindingV1<unknown> = { ...binding, confirmation_ref: confirmationRef, recovery_state: 'authorized_uncommitted' };
+      const next: MemoryMutationBindingV1<unknown> = { ...binding, confirmation_ref: confirmationRef, recovery_state: binding.recovery_state === 'pending_confirmation' ? 'authorized_uncommitted' : binding.recovery_state };
       bindings.set(keyOf(binding.lookup_key), next);
       return { ok: true, value: next };
     },
