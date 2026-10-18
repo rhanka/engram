@@ -173,7 +173,8 @@ describe("logical backup and restore", () => {
     await expect(memory.transition(lifecycleCommand("tombstone", tombstoneRecord))).resolves.toMatchObject({ ok: true, value: { to_state: "tombstoned" } });
 
     // A second acceptance that survives, so the backup carries live accepted history.
-    const survivor = await memory.capture(captureRequest("idempotency-key-backup-survivor", "2"));
+    // Distinct payload: M5/A10-R4 sends same-payload recapture to pending_adjudication.
+    const survivor = await memory.capture(captureRequest("idempotency-key-backup-survivor", "2", "memory body survivor"));
     if (!survivor.ok || survivor.value.candidate_id === undefined) throw new Error("survivor capture failed");
     const survivorAdmission = await memory.requestAdmission({ candidate_id: survivor.value.candidate_id, authorization: { credential: "credential:l3" }, deadline_at: DEADLINE });
     if (!survivorAdmission.ok) throw new Error("survivor admission failed");
@@ -278,15 +279,16 @@ describe("logical backup and restore", () => {
     })).resolves.toMatchObject({ ok: true });
     const survivor = survivorA;
     const expectedCurrent = [survivorA, survivorB, survivorC, resolved, rewound].sort((a, b) => a.localeCompare(b));
-    const tombstoned = await acceptOne("idempotency-key-x4c-tomb", "17");
+    // Distinct payloads: M5/A10-R4 sends same-payload recapture to pending_adjudication.
+    const tombstoned = await acceptOne("idempotency-key-x4c-tomb", "17", "x4c order tombstoned meridian");
     await expect(memory.transition(lifecycleCommand("tombstone", tombstoned))).resolves.toMatchObject({ ok: true });
-    const disputed = await acceptOne("idempotency-key-x4c-disputed", "18");
+    const disputed = await acceptOne("idempotency-key-x4c-disputed", "18", "x4c order disputed meridian");
     await expect(memory.transition(lifecycleCommand("dispute", disputed))).resolves.toMatchObject({ ok: true });
-    const historical = await acceptOne("idempotency-key-x4c-historical", "19");
+    const historical = await acceptOne("idempotency-key-x4c-historical", "19", "x4c order historical meridian");
     await expect(memory.transition(lifecycleCommand("mark_non_current", historical))).resolves.toMatchObject({ ok: true });
-    const expired = await acceptOne("idempotency-key-x4c-expired", "20");
+    const expired = await acceptOne("idempotency-key-x4c-expired", "20", "x4c order expired meridian");
     await expect(memory.transition(lifecycleCommand("expire", expired))).resolves.toMatchObject({ ok: true });
-    const distrusted = await acceptOne("idempotency-key-x4c-distrust", "21");
+    const distrusted = await acceptOne("idempotency-key-x4c-distrust", "21", "x4c order distrusted meridian");
     await expect(memory.transition(lifecycleCommand("trust_invalidate", distrusted))).resolves.toMatchObject({ ok: true });
     const expectedRemoved = [successor, tombstoned, disputed, historical, expired, distrusted].sort((a, b) => a.localeCompare(b));
     const pending = await memory.capture(captureRequest("idempotency-key-x4c-pending", "22"));
