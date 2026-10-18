@@ -10,7 +10,8 @@ import { validatePublishedJsonSchemaDraft202012 } from './schemas.js';
 const sha256 = { type: 'string', pattern: '^[0-9a-f]{64}$', minLength: 64, maxLength: 64 } as const;
 // Registry asset paths/receipt identifiers have no additional byte ceiling in M7.
 const ref = { type: 'string', minLength: 1 } as const;
-const version = { type: 'string', pattern: '^[0-9]+[.][0-9]+[.][0-9]+(?:-[0-9A-Za-z.-]+)?(?:[+][0-9A-Za-z.-]+)?$' } as const;
+// Exact SemVer, including numeric prerelease rules and an absolute end anchor.
+const version = { type: 'string', pattern: String.raw`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?![\s\S])` } as const;
 function closed(properties: Record<string, unknown>) {
   return { type: 'object', additionalProperties: false, required: Object.keys(properties), properties } as const;
 }
@@ -198,13 +199,21 @@ export interface MemoryQualificationReceiptV1 {
   published?: MemoryCandidateTupleV1;
 }
 
+// JSON member order is not identity; array order and every value still are.
+function sortedTupleJson(value: unknown): string {
+  return JSON.stringify(value, (_key, item: unknown) => {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) return item;
+    return Object.fromEntries(Object.entries(item).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
+  });
+}
+
 /** No accepted checkpoint can be reused for changed bytes or dependency closure. */
 export function validateMemoryQualifiedTupleV1(qualified: unknown, consumed: unknown): Check {
   if (!validateMemoryCandidateTupleV1(qualified).ok || !validateMemoryCandidateTupleV1(consumed).ok) return invalid('Missing qualified or consumed tuple');
   const a = qualified as MemoryCandidateTupleV1, b = consumed as MemoryCandidateTupleV1;
   // CI and source receipts are retained separately; qualification identity is the artifact closure.
   for (const key of ['source', 'artifacts', 'entrySha256', 'profileSha256', 'schemaSha256', 'manifestSha256', 'indexSha256', 'declaredLockSha256', 'actualLockSha256', 'installedExternalClosureSha256', 'l5ContractSha256', 'l5ExportsSha256', 'referenceImplementationRevision'] as const) {
-    if (JSON.stringify(a[key]) !== JSON.stringify(b[key])) return invalid('Changed tuple requires requalification: ' + key);
+    if (sortedTupleJson(a[key]) !== sortedTupleJson(b[key])) return invalid('Changed tuple requires requalification: ' + key);
   }
   return { ok: true };
 }

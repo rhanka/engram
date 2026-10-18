@@ -700,6 +700,11 @@ function isHostBindingRef(value: unknown): value is string {
     HOST_BINDING_REF_RE.exec(value)?.[0] === value;
 }
 
+function isPlainBindingShell(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) &&
+    (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+}
+
 export function validateMemoryLocalParametersV1(
   params: unknown,
 ):
@@ -711,15 +716,18 @@ export function validateMemoryLocalParametersV1(
       };
     }
   | { readonly ok: false; readonly reason: string } {
-  if (typeof params !== 'object' || params === null || Array.isArray(params)) {
+  if (!isPlainBindingShell(params)) {
     return { ok: false, reason: 'Parameters must be a plain object' };
   }
   const obj = params as Record<string, unknown>;
-  for (const key of Object.keys(obj)) {
+  if (!Object.hasOwn(obj, 'mode') || !Object.hasOwn(obj, 'hostBindingRef')) {
+    return { ok: false, reason: 'Parameters require own mode and hostBindingRef fields' };
+  }
+  for (const key of Reflect.ownKeys(obj)) {
     if (key !== 'mode' && key !== 'hostBindingRef') {
       return {
         ok: false,
-        reason: `Parameter '${key}' is forbidden by bounded parameter schema`,
+        reason: `Parameter '${String(key)}' is forbidden by bounded parameter schema`,
       };
     }
   }
@@ -749,14 +757,15 @@ export function validateMemoryHostBindingSetV1(
 ):
   | { readonly ok: true; readonly value: MemoryHostBindingSetV1 }
   | { readonly ok: false; readonly reason: string } {
-  if (
-    typeof bindings !== 'object' ||
-    bindings === null ||
-    Array.isArray(bindings)
-  ) {
+  if (!isPlainBindingShell(bindings)) {
     return { ok: false, reason: 'MemoryHostBindingSetV1 must be a plain object' };
   }
   const b = bindings as Record<string, unknown>;
+  const required = ['profileBindings', 'hostBindingRef', ...ENGRAM_MEMORY_LOCAL_DEFINITION_CONTRACT_V1.required_binding_ports];
+  const allowed = [...required, 'diagnostics'];
+  if (required.some(key => !Object.hasOwn(b, key)) || Reflect.ownKeys(b).some(key => typeof key !== 'string' || !allowed.includes(key))) {
+    return { ok: false, reason: 'Missing own or unknown host binding field' };
+  }
   if (!validateMemoryHostProfileBindingsV1(b.profileBindings).ok) return { ok: false, reason: 'Missing or incompatible versioned host profile/digest bindings' };
   if (
     !isHostBindingRef(b.hostBindingRef)
@@ -813,7 +822,7 @@ export function validateMemoryHostBindingSetV1(
       };
     }
   }
-  return { ok: true, value: bindings as MemoryHostBindingSetV1 };
+  return { ok: true, value: bindings as unknown as MemoryHostBindingSetV1 };
 }
 
 // ============================================================================
