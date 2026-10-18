@@ -71,3 +71,41 @@ describe.each<RecoveryOperation>(['withdraw', 'forget', 'requestAdmission', 'cap
     }
   });
 });
+
+describe.each<Exclude<RecoveryOperation, 'capture'>>(['withdraw', 'forget', 'requestAdmission'])('MCP-L2 first effect after claim recovery: %s', operation => {
+  it('should report replayed false when an unknown reservation commits its first effect after reopening', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'memory-l2-first-effect-recovery-'));
+    const clock = { now: () => NOW };
+    const first = await openRecoveryFixture(directory, clock, true);
+    let second: RecoveryFixture | undefined;
+    try {
+      const invoke = await prepareOperation(first, operation);
+      const before = await first.store.readiness();
+      const claim = first.ports.reservation.claimFencedExecution.bind(first.ports.reservation);
+      vi.spyOn(first.ports.reservation, 'claimFencedExecution').mockImplementationOnce(async (...args) => {
+        expect((await claim(...args)).ok).toBe(true);
+        throw Error('claim ACK lost before canonical effect');
+      });
+      expect(await invoke(first)).toMatchObject({ ok: false, error: { code: 'STORE_UNAVAILABLE' } });
+      const after = await first.store.readiness();
+      if (!before.ok || !after.ok) throw Error('canonical readiness failed');
+      expect(after.value.high_water_cursor).toBe(before.value.high_water_cursor);
+      await first.close();
+      second = await openRecoveryFixture(directory, clock, true);
+      const effect = operation === 'requestAdmission'
+        ? vi.spyOn(second.store, 'applyAdmission') : vi.spyOn(second.store, 'applyLifecycle');
+      const committed = await invoke(second);
+      expect(committed).toMatchObject({ ok: true, output: { value: { replayed: false } } });
+      expect(effect).toHaveBeenCalledOnce();
+      const replay = await invoke(second);
+      expect(replay).toEqual(committed.ok ? {
+        ...committed, output: { ...committed.output, value: { ...committed.output.value, replayed: true } },
+      } : committed);
+      expect(effect).toHaveBeenCalledOnce();
+    } finally {
+      await second?.close();
+      await first.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
