@@ -64,4 +64,32 @@ describe("MCP-L3 persisted memory byte ceiling", () => {
     expect(result).toMatchObject({ ok: false, error: { code: "PROJECTION_OVERSIZED" } });
   });
 
+  it("should refuse oversized final export rows before creating or overwriting a file", () => {
+    const G = buildFromJson({
+      nodes: ["alpha_fn", "beta_fn"].map((id) => ({ id, label: id, file_type: "code", source_file: "sample.ts" })),
+      edges: [], input_tokens: 0, output_tokens: 0,
+    });
+    // Each individual projection fits; their combined persisted view must
+    // still be checked by the real writer, including its added attributes.
+    for (const candidate of bulkCandidates()) {
+      const result = assembleMemoryGraphProjection(input([candidate]));
+      expect(result.ok).toBe(true);
+      if (result.ok) attachMemoryProjectionToGraph(G, result.value);
+    }
+    const nodes = G.filterNodes((_id, attrs) => attrs.file_type === "memory")
+      .map((id) => ({ id, ...G.getNodeAttributes(id) }));
+    const links = G.mapEdges((_id, attrs) => attrs);
+    expect(Buffer.byteLength(JSON.stringify(nodes)) + Buffer.byteLength(JSON.stringify(links))).toBe(CEILING);
+    expect(Buffer.byteLength(JSON.stringify({ nodes, links }, null, 2))).toBeGreaterThan(53_000_000);
+
+    const dir = mkdtempSync(join(tmpdir(), "l3-byte-ceiling-"));
+    dirs.push(dir);
+    const path = join(dir, "graph.json");
+    const options = { force: true, memoryHighWaterCursor: "7" };
+    expect(() => toJson(G, new Map(), path, options)).toThrow(expect.objectContaining({ code: "PROJECTION_OVERSIZED" }));
+    expect(existsSync(path)).toBe(false);
+    writeFileSync(path, "previous graph\n");
+    expect(() => toJson(G, new Map(), path, options)).toThrow(expect.objectContaining({ code: "PROJECTION_OVERSIZED" }));
+    expect(readFileSync(path, "utf-8")).toBe("previous graph\n");
+  });
 });
