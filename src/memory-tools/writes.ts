@@ -52,7 +52,6 @@ import {
   createHostLifecycleEventAnchorV1,
   evaluatePrincipalScopedMutationLookupV1,
   extractMemoryMutationLookupKeyV1,
-  projectMemoryMutationPolicyVersionsV1,
   resolveCaptureReconciliationConsentV1,
   resolveCaptureRetentionPolicyV1,
   validateMemoryMutationPreimageV1,
@@ -179,26 +178,43 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
   }
 
   /**
-   * Closed submitted-domain comparison (M5 l.686): agent values only, never
-   * host-resolved defaults. Retention and reconciliation are resolved by the
-   * host (time-derived expiry, consent filtering, policy versions), so a
-   * same-key retry reuses the persisted resolution instead of conflicting
-   * with its own clock-advanced recomputation. First resolution wins.
+   * Closed submitted-domain comparison (M5 l.602, l.686): caller-originated
+   * values decide between retry and conflict; host-resolved defaults never do.
+   * A changed target, tool or caller domain value (including an explicitly
+   * supplied expiry or reconciliation family) conflicts. An omitted expiry or
+   * family list reuses the persisted resolution instead of conflicting with
+   * its own clock-advanced recomputation, as do the once-allocated source
+   * order and policy versions. Lifecycle event identity/anchor is
+   * host-derived (`event:<tool>:<key>`, current clock) and always reused.
    */
-  function submittedEqual(left: EffectiveMemoryMutationInputV1, right: EffectiveMemoryMutationInputV1): boolean {
+  function submittedEqual(
+    left: EffectiveMemoryMutationInputV1, right: EffectiveMemoryMutationInputV1,
+    submitted?: { retention?: { derivative_rule?: string; expires_at?: string }; reconciliation?: { family_refs?: ReadonlyArray<string> } },
+  ): boolean {
     if (left.tool_name !== right.tool_name) return false;
-    const pick = (input: EffectiveMemoryMutationInputV1): unknown => {
-      switch (input.tool_name) {
-        case 'engram_memory_capture': {
-          const { retention: _retention, reconciliation: _reconciliation, ...agentPayload } = input.payload;
-          return { payload: agentPayload, evidence: input.evidence };
-        }
-        case 'engram_memory_request_admission': return { candidate_id: input.candidate_id };
-        case 'engram_memory_withdraw': return { candidate_id: input.candidate_id, reason_ref: input.reason_ref };
-        case 'engram_memory_forget': return { record_id: input.record_id, reason_ref: input.reason_ref };
+    switch (left.tool_name) {
+      case 'engram_memory_capture': {
+        if (right.tool_name !== 'engram_memory_capture') return false;
+        const { retention: _leftRetention, reconciliation: _leftReconciliation, ...leftRest } = left.payload;
+        const { retention: _rightRetention, reconciliation: _rightReconciliation, ...rightRest } = right.payload;
+        if (stable(leftRest) !== stable(rightRest)) return false;
+        if (stable(left.evidence) !== stable(right.evidence)) return false;
+        const storedRetention = _rightRetention as { derivative_rule?: unknown; expires_at?: unknown } | undefined;
+        const callerRetention = submitted?.retention ?? {};
+        if ((callerRetention.derivative_rule ?? 'make-ineligible') !== storedRetention?.derivative_rule) return false;
+        if (callerRetention.expires_at !== undefined && callerRetention.expires_at !== storedRetention?.expires_at) return false;
+        const storedFamilies = (_rightReconciliation as { family_refs?: unknown } | undefined)?.family_refs ?? [];
+        const callerFamilies = submitted?.reconciliation?.family_refs ?? [];
+        if (stable(callerFamilies) !== stable(storedFamilies)) return false;
+        return true;
       }
-    };
-    return stable(pick(left)) === stable(pick(right));
+      case 'engram_memory_request_admission':
+        return right.tool_name === 'engram_memory_request_admission' && left.candidate_id === right.candidate_id;
+      case 'engram_memory_withdraw':
+        return right.tool_name === 'engram_memory_withdraw' && left.candidate_id === right.candidate_id && left.reason_ref === right.reason_ref;
+      case 'engram_memory_forget':
+        return right.tool_name === 'engram_memory_forget' && left.record_id === right.record_id && left.reason_ref === right.reason_ref;
+    }
   }
 
   function stable(value: unknown): string {
@@ -239,109 +255,92 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     return { preimage, digest: digest.value.operation_digest, versions: digest.value.policy_versions };
   }
 
+  /**
+   * M4 l.521 + M5 l.710: `execute` claims the fence and performs the first
+   * canonical effect; `recover` re-drives the canonical engine with the
+   * reservation's stored inputs instead of serving a cached output. Recovery
+   * revalidates the current neutral authority (a revoked caller is refused,
+   * never replayed) and replays the durable canonical proof — a committed
+   * result survives a lost acknowledgement or an unrecorded completion, and
+   * an uncommitted reservation resumes without a second effect.
+   */
+  type DecidedMutationV1 =
+    | { kind: 'failure'; failure: ToolResultV1<never> }
+    | { kind: 'execute'; binding: MemoryMutationBindingV1<unknown> }
+    | { kind: 'recover'; binding: MemoryMutationBindingV1<unknown> };
+
   async function decide(
     tool: MutatingMemoryToolName, ctx: MemoryWriteInvocationV1, idempotencyKey: string, candidate: MemoryMutationPreimageV1,
-  ): Promise<{ binding: MemoryMutationBindingV1<unknown>; adopted: MemoryMutationPreimageV1; reconciling: boolean } | { failure: ToolResultV1<never> }> {
+    submitted?: { retention?: { derivative_rule?: string; expires_at?: string }; reconciliation?: { family_refs?: ReadonlyArray<string> } },
+  ): Promise<DecidedMutationV1> {
     let binding: MemoryMutationBindingV1<unknown>;
     try {
       const reserved = await host!.reservation.reserveOrLoad(extractMemoryMutationLookupKeyV1(candidate), candidate);
       if (!reserved.ok) {
         const out = mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, code: reserved.error_code, invocationAuthorized: true, targetAuthorized: true }).structuredContent;
         await audit(ctx, { tool, idempotency_key: idempotencyKey, decision: 'refuse', error_code: reserved.error_code });
-        return { failure: out };
+        return { kind: 'failure', failure: out };
       }
       binding = reserved.value;
     } catch {
       const out = failure(tool, ctx, 'STORE_UNAVAILABLE');
       await audit(ctx, { tool, idempotency_key: idempotencyKey, decision: 'refuse', error_code: 'STORE_UNAVAILABLE' });
-      return { failure: out };
+      return { kind: 'failure', failure: out };
     }
     // Same digest: the binding already holds this operation (created now or
-    // recorded earlier) — adopt it. Otherwise the submitted agent values
-    // decide between retry-with-host-defaults (adopt stored) and conflict.
+    // recorded earlier). Otherwise the caller-originated submitted values
+    // decide between retry-with-persisted-resolution (adopt stored) and
+    // conflict.
     const candidateDigest = computeMemoryMutationOperationDigestV1(candidate);
     if (!candidateDigest.ok || binding.operation_digest !== candidateDigest.value.operation_digest) {
-      if (candidateDigest.ok && submittedEqual(candidate.effective_input, binding.preimage.effective_input)) {
+      if (candidateDigest.ok && submittedEqual(candidate.effective_input, binding.preimage.effective_input, submitted)) {
         return decideStored(tool, ctx, idempotencyKey, binding);
       }
       const out = failure(tool, ctx, 'DIGEST_CONFLICT');
       await audit(ctx, { tool, idempotency_key: idempotencyKey, decision: 'refuse', error_code: 'DIGEST_CONFLICT' });
-      return { failure: out };
+      return { kind: 'failure', failure: out };
     }
-    return decideStored(tool, ctx, idempotencyKey, binding, candidate);
+    return decideStored(tool, ctx, idempotencyKey, binding);
   }
 
   async function decideStored(
-    tool: MutatingMemoryToolName, ctx: MemoryWriteInvocationV1, idempotencyKey: string, binding: MemoryMutationBindingV1<unknown>, candidate?: MemoryMutationPreimageV1,
-  ): Promise<{ binding: MemoryMutationBindingV1<unknown>; adopted: MemoryMutationPreimageV1; reconciling: boolean } | { failure: ToolResultV1<never> }> {
+    tool: MutatingMemoryToolName, ctx: MemoryWriteInvocationV1, idempotencyKey: string, binding: MemoryMutationBindingV1<unknown>,
+  ): Promise<DecidedMutationV1> {
     const adopted = binding.preimage;
-    const versions = projectMemoryMutationPolicyVersionsV1(adopted.effective_input);
     const active = tool === 'engram_memory_capture' ? await host!.policy.capturePolicyVersion()
       : tool === 'engram_memory_request_admission' ? await host!.policy.admissionPolicyVersion() : undefined;
     const evaluation = evaluatePrincipalScopedMutationLookupV1([binding], {
       preimage: adopted, callerAuthorized: true as unknown as boolean, targetAuthorized: true as unknown as boolean,
       ...(active === undefined ? {} : { active_domain_policy_version: active }),
     });
-    void versions;
-    void candidate;
     switch (evaluation.decision) {
       case 'execute_new':
-        return { binding, adopted, reconciling: false };
+        return { kind: 'execute', binding };
       case 'resume_incomplete':
-        return { binding: evaluation.existing_record as MemoryMutationBindingV1<unknown>, adopted, reconciling: false };
-      case 'replay_completed': {
-        const replayed = await refreshReplay(tool, evaluation.output as Record<string, unknown>, binding);
-        const checked = tool === 'engram_memory_capture' ? validateCaptureOutputV1(replayed)
-          : tool === 'engram_memory_request_admission' ? validateRequestAdmissionOutputV1(replayed)
-          : tool === 'engram_memory_withdraw' ? validateWithdrawOutputV1(replayed) : validateForgetOutputV1(replayed);
-        if (!checked.ok) {
-          const out = failure(tool, ctx, 'STORE_UNAVAILABLE');
-          await audit(ctx, { tool, idempotency_key: idempotencyKey, decision: 'refuse', error_code: 'STORE_UNAVAILABLE' });
-          return { failure: out };
-        }
-        await audit(ctx, { tool, idempotency_key: idempotencyKey, decision: 'replay', reservation_ref: binding.preimage.reservation_ref });
-        return { failure: createToolSuccessEnvelope(replayed, ctx.auditId).structuredContent as ToolResultV1<never> };
-      }
+        return { kind: 'execute', binding: evaluation.existing_record as MemoryMutationBindingV1<unknown> };
+      case 'replay_completed':
       case 'reconcile_canonical':
-        return { binding: evaluation.existing_record as MemoryMutationBindingV1<unknown>, adopted, reconciling: true };
+        await audit(ctx, { tool, idempotency_key: idempotencyKey, decision: 'replay', reservation_ref: binding.preimage.reservation_ref });
+        return { kind: 'recover', binding: evaluation.decision === 'reconcile_canonical'
+          ? evaluation.existing_record as MemoryMutationBindingV1<unknown> : binding };
       case 'reject': {
+        if (evaluation.error_code === 'MUTATION_OUTCOME_UNKNOWN') {
+          await audit(ctx, { tool, idempotency_key: idempotencyKey, decision: 'recover', reservation_ref: binding.preimage.reservation_ref });
+          return { kind: 'recover', binding };
+        }
         const out = mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, code: evaluation.error_code, invocationAuthorized: true, targetAuthorized: true }).structuredContent;
         await audit(ctx, { tool, idempotency_key: idempotencyKey, decision: 'refuse', error_code: evaluation.error_code });
-        return { failure: out };
+        return { kind: 'failure', failure: out };
       }
     }
-  }
-
-  function markReplayed(tool: MutatingMemoryToolName, output: Record<string, unknown>): Record<string, unknown> {
-    return tool === 'engram_memory_capture' ? { ...output, status: 'duplicate_exact' } : { ...output, replayed: true };
-  }
-
-  /** Volatile attestations (custody, coverage) are re-verified on every replay; only the canonical receipt is stable. */
-  async function refreshReplay(tool: MutatingMemoryToolName, output: Record<string, unknown>, binding: MemoryMutationBindingV1<unknown>): Promise<Record<string, unknown>> {
-    if (tool === 'engram_memory_withdraw') {
-      const target = binding.preimage.target;
-      const candidateId = target.kind === 'candidate' ? target.candidate_id : '';
-      const destroyed = await host!.keyCustody.confirmDestroyed(candidateId).catch(() => false);
-      return { ...output, replayed: true, key_destruction: destroyed === true ? 'complete' : 'pending' };
-    }
-    if (tool === 'engram_memory_forget') {
-      const receipt = output.receipt as { cursor?: Cursor } | undefined;
-      const coverage = receipt?.cursor === undefined
-        ? { complete: false as boolean, coverage_digest: undefined }
-        : await host!.coverage.verify(receipt.cursor).catch(() => ({ complete: false as boolean, coverage_digest: undefined }));
-      const { coverage_receipt_digest: _dropped, ...rest } = output;
-      return {
-        ...rest, replayed: true,
-        projection_invalidation: coverage.complete === true ? 'complete' : 'pending',
-        ...(coverage.complete === true && coverage.coverage_digest !== undefined ? { coverage_receipt_digest: coverage.coverage_digest } : {}),
-      };
-    }
-    return markReplayed(tool, output);
   }
 
   async function confirmIfRequired(tool: WriteTool, ctx: MemoryWriteInvocationV1, idempotencyKey: string, binding: MemoryMutationBindingV1<unknown>, digest: Digest, targetRef: string): Promise<ToolResultV1<never> | undefined> {
     if (tool !== 'engram_memory_withdraw' && tool !== 'engram_memory_forget') return undefined;
-    if (binding.confirmation_ref !== undefined) return undefined;
+    // M4 l.563-567: every pre-effect attempt requires the CURRENT verifier
+    // verdict. An attached confirmation is durable approval evidence, never a
+    // substitute: after expiry or a session change the verifier refuses and
+    // the uncommitted reservation cannot execute.
     let approved = false;
     try {
       approved = await host!.confirm({ capability: tool, target_ref: targetRef, operation_digest: digest, reservation_ref: binding.preimage.reservation_ref }) === true;
@@ -366,12 +365,26 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     return undefined;
   }
 
-  /** Best-effort canonical reconciliation right after the engine commit, before completion is recorded. Never fails the call: the effect is already committed. */
-  async function reconcile(ctx: MemoryWriteInvocationV1, idempotencyKey: string, binding: MemoryMutationBindingV1<unknown>, replayRef: string): Promise<void> {
+  /**
+   * Canonical reconciliation right after the engine commit, before completion
+   * is recorded (M5 l.708, l.744: completion requires the canonical replay
+   * reference, never the reverse). A failed reconciliation never masks the
+   * committed effect: the call still succeeds and the same-key retry recovers
+   * through the canonical proof.
+   */
+  async function reconcile(ctx: MemoryWriteInvocationV1, idempotencyKey: string, binding: MemoryMutationBindingV1<unknown>, replayRef: string): Promise<boolean> {
     try {
-      await host!.reservation.reconcileCanonicalOutcome(binding.preimage.reservation_ref, replayRef);
-    } catch { /* the canonical effect is already committed */ }
+      const reconciled = await host!.reservation.reconcileCanonicalOutcome(binding.preimage.reservation_ref, replayRef);
+      if (!reconciled.ok) {
+        await audit(ctx, { tool: 'reconcile', idempotency_key: idempotencyKey, decision: 'reconcile', reservation_ref: binding.preimage.reservation_ref, error_code: reconciled.error_code });
+        return false;
+      }
+    } catch {
+      await audit(ctx, { tool: 'reconcile', idempotency_key: idempotencyKey, decision: 'reconcile', reservation_ref: binding.preimage.reservation_ref, error_code: 'STORE_UNAVAILABLE' });
+      return false;
+    }
     await audit(ctx, { tool: 'reconcile', idempotency_key: idempotencyKey, decision: 'reconcile', reservation_ref: binding.preimage.reservation_ref });
+    return true;
   }
 
   async function claim(tool: EngramMemoryToolName, ctx: MemoryWriteInvocationV1, idempotencyKey: string, binding: MemoryMutationBindingV1<unknown>): Promise<ToolResultV1<never> | undefined> {
@@ -395,10 +408,18 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
       await audit(ctx, { tool, idempotency_key: idempotencyKey, decision: 'refuse', error_code: 'STORE_UNAVAILABLE' });
       return mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, code: 'STORE_UNAVAILABLE', invocationAuthorized: true, targetAuthorized: true }).structuredContent as ToolResultV1<T>;
     }
+    // M5 l.708: the port refuses a completion without a reconciled canonical
+    // replay reference. An unrecorded completion never masks the committed
+    // effect: the outcome was just proven by the engine and the same-key
+    // retry recovers it (M5 l.710).
+    let recorded = false;
     try {
-      await host!.reservation.recordCompletion(binding.preimage.reservation_ref, output);
-    } catch { /* the canonical effect and its output are already committed */ }
-    await audit(ctx, { tool, idempotency_key: idempotencyKey, decision: 'complete', reservation_ref: binding.preimage.reservation_ref });
+      recorded = (await host!.reservation.recordCompletion(binding.preimage.reservation_ref, output)).ok === true;
+    } catch { recorded = false; }
+    await audit(ctx, {
+      tool, idempotency_key: idempotencyKey, decision: 'complete', reservation_ref: binding.preimage.reservation_ref,
+      ...(recorded ? {} : { completion_recorded: false }),
+    });
     return createToolSuccessEnvelope(output, ctx.auditId).structuredContent as ToolResultV1<T>;
   }
 
@@ -430,18 +451,28 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
       evidence: arg.evidence, capture_policy_version: await host!.policy.capturePolicyVersion(),
     }, { kind: 'capture_source', source_ref: sourceOrder.source_ref, sequence: sourceOrder.sequence }, arg.idempotency_key);
     if ('failure' in reserved) return reserved.failure as ToolResultV1<CaptureOutputV1>;
-    const decided = await decide(tool, ctx, arg.idempotency_key, reserved.preimage);
-    if ('failure' in decided) return decided.failure as ToolResultV1<CaptureOutputV1>;
-    const claimed = await claim(tool, ctx, arg.idempotency_key, decided.binding);
-    if (claimed) return claimed as ToolResultV1<CaptureOutputV1>;
-    const effective = decided.adopted.effective_input;
+    const decided = await decide(tool, ctx, arg.idempotency_key, reserved.preimage, {
+      retention: arg.payload.retention, reconciliation: arg.payload.reconciliation,
+    });
+    if (decided.kind === 'failure') return decided.failure as ToolResultV1<CaptureOutputV1>;
+    if (decided.kind === 'execute') {
+      const claimed = await claim(tool, ctx, arg.idempotency_key, decided.binding);
+      if (claimed) return claimed as ToolResultV1<CaptureOutputV1>;
+    }
+    // M5 l.596: the canonical effect reuses the reservation's once-allocated
+    // (source_ref, sequence, idempotency_key) — never a freshly allocated
+    // sequence over a reservation bound to an earlier one.
+    const stored = decided.binding.preimage;
+    const effective = stored.effective_input;
     if (effective.tool_name !== 'engram_memory_capture') return failure(tool, ctx, 'STORE_UNAVAILABLE');
+    const target = stored.target;
+    if (target.kind !== 'capture_source') return failure(tool, ctx, 'STORE_UNAVAILABLE');
     let ack;
     try {
       ack = await facets.engine.capture({
-        schema_version: 2, idempotency_key: arg.idempotency_key, payload: effective.payload, evidence: effective.evidence,
-        authorization: ctx.authorization, source_order: { source_ref: sourceOrder.source_ref, sequence: sourceOrder.sequence },
-        deadline_at: ctx.deadline_at, cancellation_ref: `cancel:${tool}:${arg.idempotency_key}`,
+        schema_version: 2, idempotency_key: stored.idempotency_key, payload: effective.payload, evidence: effective.evidence,
+        authorization: ctx.authorization, source_order: { source_ref: target.source_ref, sequence: target.sequence },
+        deadline_at: ctx.deadline_at, cancellation_ref: `cancel:${tool}:${stored.idempotency_key}`,
       });
     } catch {
       return mapUnexpectedDependencyExceptionToPublic({ tool, commitPhaseEntered: true, auditId: ctx.auditId }).structuredContent as ToolResultV1<CaptureOutputV1>;
@@ -474,12 +505,16 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     }, { kind: 'candidate', candidate_id: arg.candidate_id }, arg.idempotency_key);
     if ('failure' in reserved) return reserved.failure as ToolResultV1<RequestAdmissionOutputV1>;
     const decided = await decide(tool, ctx, arg.idempotency_key, reserved.preimage);
-    if ('failure' in decided) return decided.failure as ToolResultV1<RequestAdmissionOutputV1>;
-    const claimed = await claim(tool, ctx, arg.idempotency_key, decided.binding);
-    if (claimed) return claimed as ToolResultV1<RequestAdmissionOutputV1>;
+    if (decided.kind === 'failure') return decided.failure as ToolResultV1<RequestAdmissionOutputV1>;
+    if (decided.kind === 'execute') {
+      const claimed = await claim(tool, ctx, arg.idempotency_key, decided.binding);
+      if (claimed) return claimed as ToolResultV1<RequestAdmissionOutputV1>;
+    }
+    const admitted = decided.binding.preimage;
+    if (admitted.effective_input.tool_name !== 'engram_memory_request_admission') return failure(tool, ctx, 'STORE_UNAVAILABLE');
     let outcome;
     try {
-      outcome = await facets.engine.requestAdmission({ candidate_id: arg.candidate_id, authorization: ctx.authorization, deadline_at: ctx.deadline_at });
+      outcome = await facets.engine.requestAdmission({ candidate_id: admitted.effective_input.candidate_id, authorization: ctx.authorization, deadline_at: ctx.deadline_at });
     } catch {
       return mapUnexpectedDependencyExceptionToPublic({ tool, commitPhaseEntered: true, auditId: ctx.auditId }).structuredContent as ToolResultV1<RequestAdmissionOutputV1>;
     }
@@ -492,7 +527,7 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
       return neutralFailure(tool, ctx, outcome.error) as ToolResultV1<RequestAdmissionOutputV1>;
     }
     await reconcile(ctx, arg.idempotency_key, decided.binding, outcome.value.transaction_receipt_digest);
-    return complete(tool, ctx, arg.idempotency_key, decided.binding, { outcome: outcome.value, replayed: decided.reconciling }, validateRequestAdmissionOutputV1);
+    return complete(tool, ctx, arg.idempotency_key, decided.binding, { outcome: outcome.value, replayed: decided.kind === 'recover' }, validateRequestAdmissionOutputV1);
   }
 
   async function withdraw(input: unknown, invocation: MemoryWriteInvocationV1): Promise<ToolResultV1<WithdrawOutputV1>> {
@@ -519,17 +554,19 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     }, { kind: 'candidate', candidate_id: arg.candidate_id }, arg.idempotency_key);
     if ('failure' in reserved) return reserved.failure as ToolResultV1<WithdrawOutputV1>;
     const decided = await decide(tool, ctx, arg.idempotency_key, reserved.preimage);
-    if ('failure' in decided) return decided.failure as ToolResultV1<WithdrawOutputV1>;
-    const adopted = decided.adopted.effective_input;
+    if (decided.kind === 'failure') return decided.failure as ToolResultV1<WithdrawOutputV1>;
+    const adopted = decided.binding.preimage.effective_input;
     if (adopted.tool_name !== 'engram_memory_withdraw') return failure(tool, ctx, 'STORE_UNAVAILABLE');
-    const confirmed = await confirmIfRequired(tool, ctx, arg.idempotency_key, decided.binding, decided.binding.operation_digest, arg.candidate_id);
-    if (confirmed) return confirmed as ToolResultV1<WithdrawOutputV1>;
-    const claimed = await claim(tool, ctx, arg.idempotency_key, decided.binding);
-    if (claimed) return claimed as ToolResultV1<WithdrawOutputV1>;
+    if (decided.kind === 'execute') {
+      const confirmed = await confirmIfRequired(tool, ctx, arg.idempotency_key, decided.binding, decided.binding.operation_digest, adopted.candidate_id);
+      if (confirmed) return confirmed as ToolResultV1<WithdrawOutputV1>;
+      const claimed = await claim(tool, ctx, arg.idempotency_key, decided.binding);
+      if (claimed) return claimed as ToolResultV1<WithdrawOutputV1>;
+    }
     let receipt;
     try {
       receipt = await facets.engine.transition({
-        operation: 'withdraw', candidate_id: arg.candidate_id, event_id: adopted.event_id,
+        operation: 'withdraw', candidate_id: adopted.candidate_id, event_id: adopted.event_id,
         reason_ref: adopted.reason_ref, event_anchor: adopted.event_anchor, authorization: ctx.authorization, deadline_at: ctx.deadline_at,
       });
     } catch {
@@ -546,10 +583,15 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     if (receipt.value.operation !== 'withdraw' || receipt.value.from_state !== 'pending' || receipt.value.to_state !== 'withdrawn') {
       return failure(tool, ctx, 'STORE_UNAVAILABLE');
     }
-    const destroyed = await host!.keyCustody.confirmDestroyed(arg.candidate_id).catch(() => false);
-    await reconcile(ctx, arg.idempotency_key, decided.binding, receipt.value.transaction_receipt_digest);
+    // M5 l.708: the recorded canonical replay reference never flips. A
+    // replay keeps the reconciled reference; only a reservation without one
+    // adopts the replay proof's digest.
+    const replayRef = decided.binding.canonical_replay_ref ?? receipt.value.transaction_receipt_digest;
+    const committedReceipt = { ...receipt.value, transaction_receipt_digest: replayRef };
+    const destroyed = await host!.keyCustody.confirmDestroyed(adopted.candidate_id).catch(() => false);
+    await reconcile(ctx, arg.idempotency_key, decided.binding, replayRef);
     return complete(tool, ctx, arg.idempotency_key, decided.binding, {
-      receipt: receipt.value, replayed: decided.reconciling, key_destruction: destroyed === true ? 'complete' : 'pending',
+      receipt: committedReceipt, replayed: decided.kind === 'recover', key_destruction: destroyed === true ? 'complete' : 'pending',
     }, validateWithdrawOutputV1);
   }
 
@@ -577,17 +619,19 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     }, { kind: 'record', record_id: arg.record_id }, arg.idempotency_key);
     if ('failure' in reserved) return reserved.failure as ToolResultV1<ForgetOutputV1>;
     const decided = await decide(tool, ctx, arg.idempotency_key, reserved.preimage);
-    if ('failure' in decided) return decided.failure as ToolResultV1<ForgetOutputV1>;
-    const adopted = decided.adopted.effective_input;
+    if (decided.kind === 'failure') return decided.failure as ToolResultV1<ForgetOutputV1>;
+    const adopted = decided.binding.preimage.effective_input;
     if (adopted.tool_name !== 'engram_memory_forget') return failure(tool, ctx, 'STORE_UNAVAILABLE');
-    const confirmed = await confirmIfRequired(tool, ctx, arg.idempotency_key, decided.binding, decided.binding.operation_digest, arg.record_id);
-    if (confirmed) return confirmed as ToolResultV1<ForgetOutputV1>;
-    const claimed = await claim(tool, ctx, arg.idempotency_key, decided.binding);
-    if (claimed) return claimed as ToolResultV1<ForgetOutputV1>;
+    if (decided.kind === 'execute') {
+      const confirmed = await confirmIfRequired(tool, ctx, arg.idempotency_key, decided.binding, decided.binding.operation_digest, adopted.record_id);
+      if (confirmed) return confirmed as ToolResultV1<ForgetOutputV1>;
+      const claimed = await claim(tool, ctx, arg.idempotency_key, decided.binding);
+      if (claimed) return claimed as ToolResultV1<ForgetOutputV1>;
+    }
     let receipt;
     try {
       receipt = await facets.engine.transition({
-        operation: 'tombstone', record_id: arg.record_id, event_id: adopted.event_id,
+        operation: 'tombstone', record_id: adopted.record_id, event_id: adopted.event_id,
         reason_ref: adopted.reason_ref, event_anchor: adopted.event_anchor, authorization: ctx.authorization, deadline_at: ctx.deadline_at,
       });
     } catch {
@@ -604,10 +648,13 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     if (receipt.value.operation !== 'tombstone' || receipt.value.to_state !== 'tombstoned') {
       return failure(tool, ctx, 'STORE_UNAVAILABLE');
     }
-    const coverage = await host!.coverage.verify(receipt.value.cursor).catch(() => ({ complete: false as boolean, coverage_digest: undefined }));
-    await reconcile(ctx, arg.idempotency_key, decided.binding, receipt.value.transaction_receipt_digest);
+    // M5 l.708: the recorded canonical replay reference never flips (see withdraw).
+    const replayRef = decided.binding.canonical_replay_ref ?? receipt.value.transaction_receipt_digest;
+    const committedReceipt = { ...receipt.value, transaction_receipt_digest: replayRef };
+    const coverage = await host!.coverage.verify(committedReceipt.cursor).catch(() => ({ complete: false as boolean, coverage_digest: undefined }));
+    await reconcile(ctx, arg.idempotency_key, decided.binding, replayRef);
     return complete(tool, ctx, arg.idempotency_key, decided.binding, {
-      receipt: receipt.value, replayed: decided.reconciling,
+      receipt: committedReceipt, replayed: decided.kind === 'recover',
       projection_invalidation: coverage.complete === true ? 'complete' : 'pending',
       ...(coverage.complete === true && coverage.coverage_digest !== undefined ? { coverage_receipt_digest: coverage.coverage_digest } : {}),
     }, validateForgetOutputV1);
