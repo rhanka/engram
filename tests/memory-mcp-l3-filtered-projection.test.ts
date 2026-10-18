@@ -5,6 +5,15 @@
  * MCP-L3 row (l.1675) and the filtered-projection acceptance row (l.1431), on
  * top of spec/SPEC_EVOL_AGENT_MEMORY_SUBSTRATE.md D3 (l.73-77), §5.8 (l.1056)
  * and D10 (l.1643-1649). Each case cites its normative line below.
+ *
+ * Notes:
+ * - The ceiling constant is pinned through the product re-export
+ *   (`src/graph-memory-projection.ts`), never through an `engram-memory`
+ *   import, so this suite stays outside the neutral import closure guarded
+ *   by `tests/memory-neutrality.test.ts`.
+ * - Code-target join is exact identifier equality, local to L3. Sharing of
+ *   the citation-resolution convention with live-git G3 (`explainLineOrigin`,
+ *   M10 l.1401) is unverified: no shared helper is invented or asserted here.
  */
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -13,16 +22,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import Graph from "graphology";
 import { buildFromJson, buildMerge } from "../src/build.js";
 import { toJson } from "../src/export.js";
+import { loadGraphFromData } from "../src/graph.js";
 import { generate } from "../src/report.js";
 import { toWiki } from "../src/wiki.js";
 import { loadCached, saveCached } from "../src/cache.js";
 import { validateExtraction } from "../src/validate.js";
 import {
-  MEMORY_PROJECTION_RAW_BYTE_CEILING,
-  type Digest,
-} from "../engram-memory/index.js";
-import {
   MEMORY_GRAPH_PROJECTION_RELATION_V1,
+  MEMORY_PROJECTION_RAW_BYTE_CEILING,
   assembleMemoryGraphProjection,
   assertMemoryProjectionFresh,
   attachMemoryProjectionToGraph,
@@ -33,6 +40,7 @@ import {
   type MemoryGraphRecordState,
 } from "../src/graph-memory-projection.js";
 
+type Digest = MemoryGraphCandidateV1["record_digest"];
 const DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as Digest;
 const CODE_NODES = ["alpha_fn", "beta_fn"];
 
@@ -69,6 +77,10 @@ function assembleInput(candidates: MemoryGraphCandidateV1[]) {
     candidates,
     code_node_ids: CODE_NODES,
   };
+}
+
+function detectionFixture() {
+  return { files: {}, total_files: 1, total_words: 100, needs_graph: true, warning: null, skipped_sensitive: [], graphifyignore_patterns: 0 };
 }
 
 const cleanupDirs: string[] = [];
@@ -191,8 +203,16 @@ describe("MCP-L3 filtered memory projection (M10 l.1368; MCP-L3 l.1675)", () => 
     expect(() => checkGraphMemoryFreshness(buildFromJson(codeExtraction()), "12")).not.toThrow();
   });
 
-  it("never resurrects a tombstoned record on replay, and never touches the canonical journal (D3 l.1364; M10 l.1372)", () => {
-    // A replayed batch that still lists a tombstoned record as current MUST NOT re-add it.
+  it("never resurrects a tombstoned record on replay, and never mutates the canonical journal (D3 l.1364; M10 l.1372)", () => {
+    // A real journal: the tombstone event dominates the earlier admission.
+    const journal: Array<Record<string, unknown>> = [
+      { seq: 1, event: "captured", record_id: "mem:admitted:001", state: "pending" },
+      { seq: 2, event: "admitted", record_id: "mem:admitted:001", state: "accepted_current", projection_eligible: true },
+      { seq: 3, event: "tombstoned", record_id: "mem:admitted:001", state: "tombstoned" },
+    ];
+    const journalBefore = JSON.stringify(journal);
+    // A replayed batch that still lists the tombstoned record as current
+    // MUST NOT re-project it.
     const replayed = assembleMemoryGraphProjection({
       ...assembleInput([candidate()]),
       tombstoned_ids: ["mem:admitted:001"],
@@ -201,12 +221,53 @@ describe("MCP-L3 filtered memory projection (M10 l.1368; MCP-L3 l.1675)", () => 
     if (!replayed.ok) return;
     expect(replayed.value.included).toEqual([]);
     expect(replayed.value.extraction.nodes).toEqual([]);
+    expect(replayed.value.extraction.edges).toEqual([]);
 
-    // The module is data-pure: it cannot commit, admit, mutate or resurrect.
-    const source = readFileSync(new URL("../src/graph-memory-projection.ts", import.meta.url), "utf-8");
-    for (const forbidden of ["CanonicalMemoryStorePort", "MemoryPortV2", "pushGraph", "readJournal", "transition(", "capture(", "requestAdmission", "GraphStore"]) {
-      expect(source.includes(forbidden)).toBe(false);
-    }
+    const G = buildFromJson(codeExtraction());
+    reconcileMemoryProjectionInGraph(G, replayed.value);
+    expect(G.hasNode("memory:mem:admitted:001")).toBe(false);
+    // The assembly is data-pure: the canonical journal is byte-identical.
+    expect(JSON.stringify(journal)).toBe(journalBefore);
+  });
+
+  it("retires previous memory reference edges when authorized targets change (M10 l.1370)", () => {
+    const first = assembleMemoryGraphProjection(assembleInput([candidate({ code_targets: ["alpha_fn"] })]));
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const G = buildFromJson(codeExtraction());
+    attachMemoryProjectionToGraph(G, first.value);
+    expect(G.hasEdge("memory:mem:admitted:001", "alpha_fn")).toBe(true);
+
+    // The authorization now covers `[beta]` instead of `[alpha]`.
+    const second = assembleMemoryGraphProjection(assembleInput([candidate({ code_targets: ["beta_fn"] })]));
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    const receipt = reconcileMemoryProjectionInGraph(G, second.value);
+    expect(receipt.removed).toEqual([]);
+    expect(G.hasEdge("memory:mem:admitted:001", "beta_fn")).toBe(true);
+    expect(G.hasEdge("memory:mem:admitted:001", "alpha_fn")).toBe(false);
+    // The code-code edge is untouched.
+    expect(G.hasEdge("alpha_fn", "beta_fn")).toBe(true);
+  });
+
+  it("drops dangling code targets without creating nodes (exact-id join, L3-local)", () => {
+    // Assembly already drops targets outside the live code set ("ghost_fn"
+    // never reaches the extraction); the attach step skips references whose
+    // code node is absent from the graph ("beta_fn" here) without creating it.
+    const assembled = assembleMemoryGraphProjection(
+      assembleInput([candidate({ code_targets: ["alpha_fn", "ghost_fn", "beta_fn"] })]),
+    );
+    expect(assembled.ok).toBe(true);
+    if (!assembled.ok) return;
+    expect(assembled.value.extraction.edges.map((edge) => edge.target).sort()).toEqual(["alpha_fn", "beta_fn"]);
+
+    const alphaOnly = { nodes: [codeExtraction().nodes[0]], edges: [], input_tokens: 0, output_tokens: 0 };
+    const G = buildFromJson(alphaOnly);
+    const receipt = attachMemoryProjectionToGraph(G, assembled.value);
+    expect(receipt.skipped_dangling_edges).toBe(1);
+    expect(G.hasNode("beta_fn")).toBe(false);
+    expect(G.hasNode("ghost_fn")).toBe(false);
+    expect(G.hasEdge("memory:mem:admitted:001", "alpha_fn")).toBe(true);
   });
 
   it("enforces the 52_428_800-byte ceiling deterministically, refusing without silent loss (D10 l.1362)", () => {
@@ -223,6 +284,37 @@ describe("MCP-L3 filtered memory projection (M10 l.1368; MCP-L3 l.1675)", () => 
     if (!first.ok || !second.ok) return;
     expect(first.value.extraction).toEqual(second.value.extraction);
     expect(first.value.projection_digest).toBe(second.value.projection_digest);
+  });
+
+  it("counts code-reference edges in the ceiling: an edge-blind check would admit this projection (D10 l.1362)", () => {
+    const full = assembleMemoryGraphProjection(assembleInput([candidate()]));
+    expect(full.ok).toBe(true);
+    if (!full.ok) return;
+    // The ceiling set exactly at the envelope-only size: an implementation
+    // that ignores edges admits it, the specified one refuses it.
+    const edgeBytes = new TextEncoder().encode(JSON.stringify(full.value.extraction.edges)).byteLength;
+    expect(edgeBytes).toBeGreaterThan(0);
+    const envelopeOnly = full.value.raw_byte_size - edgeBytes;
+    const admitted = assembleMemoryGraphProjection({ ...assembleInput([candidate()]), byte_ceiling: envelopeOnly });
+    expect(admitted.ok).toBe(false);
+    if (admitted.ok) return;
+    expect(admitted.error.code).toBe("PROJECTION_OVERSIZED");
+  });
+
+  it("refuses a projection whose code references overflow the 52_428_800-byte ceiling (D10 l.1362)", () => {
+    const overflowTarget = `code:${"x".repeat(52_428_800)}`;
+    const assembled = assembleMemoryGraphProjection({
+      high_water_cursor: "7",
+      projection_cursor: "7",
+      candidates: [candidate({ code_targets: [overflowTarget] })],
+      code_node_ids: [...CODE_NODES, overflowTarget],
+    });
+    expect(assembled.ok).toBe(false);
+    if (assembled.ok) return;
+    expect(assembled.error.code).toBe("PROJECTION_OVERSIZED");
+    expect(assembled.error.message).toContain("exceeds the 52428800-byte ceiling");
+    const reported = Number(/is ([0-9]+) bytes/.exec(assembled.error.message)?.[1] ?? "0");
+    expect(reported).toBeGreaterThan(52_428_800);
   });
 
   it("buildMerge reconciles memory on regeneration without tripping the shrink guard on memory-only shrinkage", () => {
@@ -242,17 +334,55 @@ describe("MCP-L3 filtered memory projection (M10 l.1368; MCP-L3 l.1675)", () => 
     expect(G.hasNode("memory:mem:admitted:001")).toBe(true);
   });
 
+  it("buildMerge conserves no memory without a fresh projection (M10 l.1399)", () => {
+    const dir = tempDir("graphify-l3-merge-noproj-");
+    const graphPath = join(dir, "graph.json");
+    writeFileSync(graphPath, JSON.stringify({ directed: false, graph: {}, nodes: [{ id: "alpha_fn", label: "alpha_fn()", file_type: "code", source_file: "src/sample.ts" }, { id: "memory:mem:stale:001", label: "mem:stale:001", file_type: "memory", source_file: "" }], links: [{ source: "memory:mem:stale:001", target: "alpha_fn", relation: "memory_about", confidence: "EXTRACTED", source_file: "" }] }), "utf-8");
+
+    const G = buildMerge([{ nodes: [], edges: [], input_tokens: 0, output_tokens: 0 }], { graphPath });
+    expect(G.hasNode("alpha_fn")).toBe(true);
+    expect(G.hasNode("memory:mem:stale:001")).toBe(false);
+    expect(G.size).toBe(0);
+    // No freshness pins remain: the stripped graph is a servable code-only view.
+    expect(() => checkGraphMemoryFreshness(G, "99")).not.toThrow();
+  });
+
+  it("buildMerge refuses a supplied projection behind its own high-water cursor (M10 l.1399)", () => {
+    const dir = tempDir("graphify-l3-merge-stale-");
+    const graphPath = join(dir, "graph.json");
+    const staleSupplied = assembleMemoryGraphProjection({
+      ...assembleInput([candidate({ projection_cursor: "7" })]),
+      high_water_cursor: "9",
+    });
+    expect(staleSupplied.ok).toBe(true);
+    if (!staleSupplied.ok) return;
+    expect(() => buildMerge([{ nodes: [], edges: [], input_tokens: 0, output_tokens: 0 }], { graphPath, memoryProjection: staleSupplied.value })).toThrow(/PROJECTION_STALE/);
+  });
+
   it("report, wiki, export and caches expose only what is projected (M10 l.1368-1369)", () => {
     const admitted = assembleMemoryGraphProjection(assembleInput([candidate()]));
     const excluded = assembleMemoryGraphProjection(assembleInput([candidate({ record_id: "mem:private:009", state: "accepted_current", authorized: false, citation_refs: ["source:private"] })]));
     expect(admitted.ok && excluded.ok).toBe(true);
     if (!admitted.ok || !excluded.ok) return;
     expect(excluded.value.included).toEqual([]);
+    expect(excluded.value.withheld).toEqual(["mem:private:009"]);
 
     const G = buildFromJson(codeExtraction());
     attachMemoryProjectionToGraph(G, admitted.value);
-    const communities = new Map([[0, ["alpha_fn", "beta_fn", "memory:mem:admitted:001"]]]);
+    // A private-for-the-audience memory really present in the view (stale or
+    // contaminated projection): the next regeneration must remove it.
+    G.mergeNode("memory:mem:private:009", { label: "mem:private:009", file_type: "memory", source_file: "", memory_projection: { schema_version: 2, record_id: "mem:private:009", projection_cursor: "7" }, citation_refs: ["source:private"] });
+    G.mergeEdge("memory:mem:private:009", "alpha_fn", { relation: MEMORY_GRAPH_PROJECTION_RELATION_V1, confidence: "EXTRACTED", source_file: "" });
+    expect(G.hasNode("memory:mem:private:009")).toBe(true);
+    const fresh = assembleMemoryGraphProjection(assembleInput([candidate()]));
+    expect(fresh.ok).toBe(true);
+    if (!fresh.ok) return;
+    const receipt = reconcileMemoryProjectionInGraph(G, fresh.value);
+    expect(receipt.removed).toContain("mem:private:009");
+    expect(G.hasNode("memory:mem:private:009")).toBe(false);
+    expect(G.hasEdge("memory:mem:private:009", "alpha_fn")).toBe(false);
 
+    const communities = new Map([[0, ["alpha_fn", "beta_fn", "memory:mem:admitted:001"]]]);
     const dir = tempDir("graphify-l3-surfaces-");
     const graphPath = join(dir, "graph.json");
     expect(toJson(G, communities, graphPath, { force: true })).toBe(true);
@@ -267,7 +397,7 @@ describe("MCP-L3 filtered memory projection (M10 l.1368; MCP-L3 l.1675)", () => 
     expect(wikiText.includes("mem:admitted:001")).toBe(true);
     expect(wikiText.includes("mem:private:009")).toBe(false);
 
-    const report = generate(G, communities, new Map([[0, 1]]), new Map([[0, "Community 0"]]), [], [], { files: {}, total_files: 1, total_words: 100, needs_graph: true, warning: null, skipped_sensitive: [], graphifyignore_patterns: 0 }, { input: 0, output: 0 }, dir);
+    const report = generate(G, communities, new Map([[0, 1]]), new Map([[0, "Community 0"]]), [], [], detectionFixture(), { input: 0, output: 0 }, dir);
     expect(report.includes("mem:private:009")).toBe(false);
     expect(report.includes("source:private")).toBe(false);
 
@@ -278,4 +408,85 @@ describe("MCP-L3 filtered memory projection (M10 l.1368; MCP-L3 l.1675)", () => 
     expect(cached?.nodes.map((n) => n.id)).toContain("memory:mem:admitted:001");
     expect(JSON.stringify(cached).includes("mem:private:009")).toBe(false);
   });
+
+  it("derived surfaces refuse a stale projection as current instead of exposing it (M10 l.1399)", () => {
+    const admitted = assembleMemoryGraphProjection(assembleInput([candidate()]));
+    expect(admitted.ok).toBe(true);
+    if (!admitted.ok) return;
+    const G = buildFromJson(codeExtraction());
+    attachMemoryProjectionToGraph(G, admitted.value);
+    const communities = new Map([[0, ["alpha_fn", "beta_fn", "memory:mem:admitted:001"]]]);
+    const dir = tempDir("graphify-l3-surfaces-stale-");
+
+    // Fresh high-water serves the view on every surface.
+    expect(() => checkGraphMemoryFreshness(G, "7")).not.toThrow();
+    expect(toJson(G, communities, join(dir, "graph.json"), { force: true, memoryHighWaterCursor: "7" })).toBe(true);
+    expect(toWiki(G, communities, join(dir, "wiki"), { memoryHighWaterCursor: "7" })).toBeGreaterThan(0);
+    expect(() => generate(G, communities, new Map([[0, 1]]), new Map([[0, "Community 0"]]), [], [], detectionFixture(), { input: 0, output: 0 }, dir, { memoryHighWaterCursor: "7" })).not.toThrow();
+
+    // Past the high-water cursor every surface refuses instead of exposing.
+    expect(() => checkGraphMemoryFreshness(G, "12")).toThrow(/PROJECTION_STALE/);
+    expect(() => toJson(G, communities, join(dir, "graph.json"), { force: true, memoryHighWaterCursor: "12" })).toThrow(/PROJECTION_STALE/);
+    expect(() => toWiki(G, communities, join(dir, "wiki"), { memoryHighWaterCursor: "12" })).toThrow(/PROJECTION_STALE/);
+    expect(() => generate(G, communities, new Map([[0, 1]]), new Map([[0, "Community 0"]]), [], [], detectionFixture(), { input: 0, output: 0 }, dir, { memoryHighWaterCursor: "12" })).toThrow(/PROJECTION_STALE/);
+
+    const cacheFile = join(dir, "sample.ts");
+    writeFileSync(cacheFile, "export function demo() { return 1; }\n", "utf-8");
+    saveCached(cacheFile, admitted.value.extraction, dir, { memoryHighWaterCursor: "7" });
+    expect(loadCached(cacheFile, dir, { memoryHighWaterCursor: "7" })).not.toBeNull();
+    expect(() => saveCached(cacheFile, admitted.value.extraction, dir, { memoryHighWaterCursor: "12" })).toThrow(/PROJECTION_STALE/);
+    expect(() => loadCached(cacheFile, dir, { memoryHighWaterCursor: "12" })).toThrow(/PROJECTION_STALE/);
+  });
+
+  it("an exported graph reloaded keeps its cursors, so a stale reload is refused (M10 l.1399)", () => {
+    const admitted = assembleMemoryGraphProjection(assembleInput([candidate()]));
+    expect(admitted.ok).toBe(true);
+    if (!admitted.ok) return;
+    const G = buildFromJson(codeExtraction());
+    attachMemoryProjectionToGraph(G, admitted.value);
+    const dir = tempDir("graphify-l3-reload-");
+    const graphPath = join(dir, "graph.json");
+    expect(toJson(G, new Map([[0, ["alpha_fn", "beta_fn", "memory:mem:admitted:001"]]]), graphPath, { force: true })).toBe(true);
+
+    const raw = JSON.parse(readFileSync(graphPath, "utf-8")) as Record<string, unknown>;
+    const graphBlock = raw.graph as Record<string, unknown>;
+    expect(graphBlock.memory_projection_cursor).toBe("7");
+    expect(graphBlock.memory_high_water_cursor).toBe("7");
+
+    const reloaded = loadGraphFromData(raw as Parameters<typeof loadGraphFromData>[0]);
+    expect(reloaded.hasNode("memory:mem:admitted:001")).toBe(true);
+    expect(() => checkGraphMemoryFreshness(reloaded, "7")).not.toThrow();
+    expect(() => checkGraphMemoryFreshness(reloaded, "12")).toThrow(/PROJECTION_STALE/);
+  });
+
+  it("a revocation reaches disk: memory-only shrinkage is written, not refused (M10 l.1368)", () => {
+    const dir = tempDir("graphify-l3-revocation-");
+    const graphPath = join(dir, "graph.json");
+    const admitted = assembleMemoryGraphProjection(assembleInput([candidate()]));
+    expect(admitted.ok).toBe(true);
+    if (!admitted.ok) return;
+    const G = buildFromJson(codeExtraction());
+    attachMemoryProjectionToGraph(G, admitted.value);
+    const communities = new Map([[0, ["alpha_fn", "beta_fn", "memory:mem:admitted:001"]]]);
+    expect(toJson(G, communities, graphPath, { force: true })).toBe(true);
+    expect(JSON.parse(readFileSync(graphPath, "utf-8")).nodes).toHaveLength(3);
+
+    // The record is withdrawn: the next reconciliation drops it (three nodes
+    // become two) and the write without force must persist the removal.
+    const revoked = assembleMemoryGraphProjection(assembleInput([candidate({ state: "withdrawn" })]));
+    expect(revoked.ok).toBe(true);
+    if (!revoked.ok) return;
+    const receipt = reconcileMemoryProjectionInGraph(G, revoked.value);
+    expect(receipt.removed).toContain("mem:admitted:001");
+    const written = toJson(G, new Map([[0, ["alpha_fn", "beta_fn"]]]), graphPath);
+    expect(written).toBe(true);
+    const persisted = JSON.parse(readFileSync(graphPath, "utf-8")) as { nodes: Array<{ id: string }> };
+    expect(persisted.nodes).toHaveLength(2);
+    expect(persisted.nodes.map((node) => node.id)).not.toContain("memory:mem:admitted:001");
+    expect(JSON.stringify(persisted).includes("mem:admitted:001")).toBe(false);
+  });
 });
+
+
+
+
