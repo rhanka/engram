@@ -453,7 +453,7 @@ describe("MCP-L3 filtered memory projection (M10 l.1368; MCP-L3 l.1675)", () => 
     expect(graphBlock.memory_projection_cursor).toBe("7");
     expect(graphBlock.memory_high_water_cursor).toBe("7");
 
-    const reloaded = loadGraphFromData(raw as Parameters<typeof loadGraphFromData>[0]);
+    const reloaded = loadGraphFromData(raw as Parameters<typeof loadGraphFromData>[0], { memoryHighWaterCursor: "7" });
     expect(reloaded.hasNode("memory:mem:admitted:001")).toBe(true);
     expect(() => checkGraphMemoryFreshness(reloaded, "7")).not.toThrow();
     expect(() => checkGraphMemoryFreshness(reloaded, "12")).toThrow(/PROJECTION_STALE/);
