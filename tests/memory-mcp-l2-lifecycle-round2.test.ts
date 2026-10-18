@@ -67,7 +67,7 @@ function fakeReservation() {
       const binding = [...bindings.values()].find((entry) => entry.preimage.reservation_ref === reservationRef);
       if (!binding) return { ok: false, error_code: 'NOT_FOUND', message: 'unknown reservation' };
       if (binding.operation_digest !== operationDigest) return { ok: false, error_code: 'INVALID_SCHEMA', message: 'confirmation digest mismatch' };
-      const next: MemoryMutationBindingV1<unknown> = { ...binding, confirmation_ref: confirmationRef, recovery_state: 'authorized_uncommitted' };
+      const next: MemoryMutationBindingV1<unknown> = { ...binding, confirmation_ref: confirmationRef, recovery_state: binding.recovery_state === 'pending_confirmation' ? 'authorized_uncommitted' : binding.recovery_state };
       bindings.set(keyOf(binding.lookup_key), next);
       return { ok: true, value: next };
     },
@@ -190,14 +190,15 @@ describe('MCP-L2 round-2 lifecycle findings', () => {
       },
     });
     const capture = vi.spyOn(rig.memory, 'capture');
+    const commit = vi.spyOn(rig.store, 'commitPending');
     const input = captureInput('l2-r2-key-000021', '9');
     await expect(rig.tools.capture(input, invocation())).resolves.toMatchObject({
       ok: false, error: { code: 'STORE_UNAVAILABLE' },
     });
     const retry = await rig.tools.capture(input, invocation());
     expect(retry).toMatchObject({ ok: true, output: { value: { status: 'committed_pending' } } });
-    expect(capture).toHaveBeenCalledOnce();
-    expect((capture.mock.calls[0]![0] as { source_order: { sequence: string } }).source_order.sequence).toBe('1');
+    expect(commit).toHaveBeenCalledOnce();
+    expect(capture.mock.calls.map(([request]) => request.source_order.sequence)).toEqual(['1', '1']);
   });
 
   it('M5 should conflict when the same key carries a changed explicit expiry', async () => {
@@ -304,8 +305,8 @@ describe('MCP-L2 round-2 lifecycle findings', () => {
     const rig = setup();
     const commit = vi.spyOn(rig.store, 'commitPending');
     const realCapture = rig.memory.capture.bind(rig.memory);
-    vi.spyOn(rig.memory, 'capture').mockImplementationOnce(async (input) => {
-      const result = await realCapture(input);
+    vi.spyOn(rig.memory, 'capture').mockImplementationOnce(async (input, guard) => {
+      const result = await realCapture(input, guard);
       expect(result.ok).toBe(true);
       throw new Error('ack lost after commit');
     });
