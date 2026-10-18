@@ -1,4 +1,5 @@
 import Graph from "graphology";
+import { enforceMemoryFreshnessForSurface } from "./graph-memory-projection.js";
 
 export interface SerializedGraphData {
   directed?: boolean;
@@ -18,7 +19,10 @@ export function isDirectedGraph(G: Graph): boolean {
   return G.type === "directed";
 }
 
-export function loadGraphFromData(raw: SerializedGraphData): Graph {
+export function loadGraphFromData(
+  raw: SerializedGraphData,
+  options?: { memoryHighWaterCursor?: string },
+): Graph {
   const G = createGraph(raw.directed === true);
 
   for (const [key, value] of Object.entries(raw.graph ?? {})) {
@@ -57,6 +61,9 @@ export function loadGraphFromData(raw: SerializedGraphData): Graph {
     G.setAttribute("hyperedges", raw.hyperedges);
   }
 
+  // Persisted cursor pins are not a live authorization/freshness proof.
+  // Every reload uses the same mandatory gate as reports and exports.
+  enforceMemoryFreshnessForSurface(G, options?.memoryHighWaterCursor);
   return G;
 }
 
