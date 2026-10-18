@@ -229,7 +229,7 @@ export function validateAuthorizationAllowed(input: AuthorizationBindingInputV1,
 function validateRevalidation(input: unknown, receiptDigestValue: Digest, expectedEpoch: string, checkedAt: string, operation: MemoryOperation): Result<{ valid: true }> {
   const value = normalizeObject(input);
   const packet = exactObject(value, ["receipt_digest", "checked_at", "valid", "current_revocation_epoch", "reason", "revalidation_receipt_digest"]);
-  if (packet === undefined || packet.receipt_digest !== receiptDigestValue || !isInstant(packet.checked_at)
+  if (packet === undefined || packet.receipt_digest !== receiptDigestValue || !isInstant(packet.checked_at) || packet.checked_at !== checkedAt
     || typeof packet.valid !== "boolean" || !isCanonicalCursor(packet.current_revocation_epoch)
     || !["valid", "expired", "revoked", "unknown"].includes(String(packet.reason)) || !isDigest(packet.revalidation_receipt_digest)
     || packet.revalidation_receipt_digest !== receiptDigest("authorization-revalidation", packet as unknown as Record<string, unknown>, "revalidation_receipt_digest")) {
@@ -852,7 +852,7 @@ async function validateReconciliationBindingForTransition(
   return { ok: true, value: recalculated };
 }
 
-function validateRecallRequest(input: unknown, now: string): Result<RecallRequestV2> {
+export function validateRecallRequest(input: unknown, now: string): Result<RecallRequestV2> {
   const value = normalizeObject(input);
   const request = optionalExactObject(value, ["query", "purpose_ref", "authorization", "capability_policy", "budgets"], ["as_of", "page"]);
   if (request === undefined || typeof request.query !== "string") return refusal("recall_current", "INVALID_SCHEMA", "recall request is not exact");
