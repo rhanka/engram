@@ -9,9 +9,24 @@ const directory = mkdtempSync(join(tmpdir(), 'memory-l1-mutations-'));
 const env = { ...process.env, npm_config_offline: 'true', GIT_NO_LAZY_FETCH: '1' };
 const cases = [
   {
+    id: 'M6-get-invocation-is-not-target-denial', file: 'src/mcp/memory/errors.ts',
+    from: 'ctx.invocationAuthorized !== false &&', to: '',
+    pattern: 'M4/M6 should preserve get invocation UNAUTHORIZED',
+  },
+  {
+    id: 'M6-get-preserves-target-authorized-errors', file: 'src/memory-tools/reads.ts',
+    from: "targetAuthorized: tool === 'engram_memory_get' && facets.isTargetAuthorizedError?.(error) === true",
+    to: 'targetAuthorized: false', pattern: 'M4/M6 should preserve get (finalCheck|BLOB_MISSING)',
+  },
+  {
+    id: 'M4-get-target-authorization-provenance', file: 'engram-memory/reads.ts',
+    from: 'target.authorized = true;', to: '',
+    pattern: 'M4/M6 should preserve get (finalCheck|BLOB_MISSING)',
+  },
+  {
     id: 'M6-preserve-projection-oversized', file: 'src/memory-tools/reads.ts',
-    from: 'mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, error }).structuredContent',
-    to: "error.code === 'PROJECTION_OVERSIZED' ? failure(tool, ctx, 'RESULT_TOO_LARGE') : mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, error }).structuredContent",
+    from: 'mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, error,',
+    to: "error.code === 'PROJECTION_OVERSIZED' ? failure(tool, ctx, 'RESULT_TOO_LARGE') : mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, error,",
     pattern: 'M6 should preserve PROJECTION_OVERSIZED',
   },
   {

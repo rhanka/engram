@@ -278,6 +278,61 @@ describe('MCP-L1 spec-derived neutral reads', () => {
 });
 
 describe('MCP-L1 in-process search/get', () => {
+  it.each([1, 2])('M4/M6 should preserve get invocation UNAUTHORIZED at host check %s', async failOn => {
+    const { memory, facets } = setup();
+    const record_id = await seedAccepted(memory, 'private target body');
+    let calls = 0;
+    const { tools: api } = tools(facets, { authorize: async () => ++calls !== failOn });
+    expect(await api.get({ record_id, purpose_ref: 'purpose:test' }, invocation()))
+      .toMatchObject({ ok: false, error: { code: 'UNAUTHORIZED' } });
+    const read = vi.spyOn(facets.readPort, 'readCurrent');
+    expect(await api.get({ record_id, purpose_ref: 'purpose:test' }, { ...invocation(), scope_ref: 'scope:inaccessible' }))
+      .toMatchObject({ ok: false, error: { code: 'UNAUTHORIZED' } });
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it.each(['AUTHORIZATION_REVOKED', 'AUTHORIZATION_EXPIRED'] as const)('M4/M6 should preserve get finalCheck %s after target authorization', async errorCode => {
+    for (const failOn of [2, 4]) {
+      const { memory, facets, dependencies } = setup();
+      const record_id = await seedAccepted(memory, 'private target body');
+      const original = dependencies.authorization.authorize.bind(dependencies.authorization);
+      let calls = 0;
+      vi.spyOn(dependencies.authorization, 'authorize').mockImplementation(async input => ++calls === failOn
+        ? { ok: false, error: { operation: 'recall_current', code: errorCode, message: '/private/backend secret', retryable: false } }
+        : original(input));
+      const { tools: api } = tools(facets);
+      const result = await api.get({ record_id, purpose_ref: 'purpose:test' }, invocation());
+      expect(result).toMatchObject({ ok: false, error: { code: errorCode } });
+      expect(calls).toBe(failOn);
+      expect(JSON.stringify(result)).not.toMatch(/private|secret/);
+    }
+  });
+
+  it('M4/M6 should preserve get BLOB_MISSING after target authorization', async () => {
+    const { memory, facets, store } = setup();
+    const record_id = await seedAccepted(memory, 'private target body');
+    vi.spyOn(store.scoped_reads!, 'readRecord').mockResolvedValue({ ok: false, error: { operation: 'recall_current', code: 'BLOB_MISSING', message: '/private/blob secret', retryable: false } });
+    const { tools: api } = tools(facets);
+    expect(await api.get({ record_id, purpose_ref: 'purpose:test' }, invocation()))
+      .toMatchObject({ ok: false, error: { code: 'BLOB_MISSING' } });
+  });
+
+  it('M4/M6 should normalize only inaccessible get targets after invocation admission', async () => {
+    const { memory, facets, store, dependencies } = setup();
+    const record_id = await seedAccepted(memory, 'private target body');
+    const foreign = await seedAccepted(buildMemory({ store, scope: 'scope:foreign' }).memory, 'foreign private body', { scope: 'scope:foreign' });
+    const { tools: api } = tools(facets);
+    for (const id of [foreign, `mem_${'a'.repeat(52)}`]) {
+      expect(await api.get({ record_id: id, purpose_ref: 'purpose:test' }, invocation()))
+        .toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+    }
+    for (const errorCode of ['UNAUTHORIZED', 'AUTHORIZATION_REVOKED', 'AUTHORIZATION_EXPIRED'] as const) {
+      vi.spyOn(dependencies.authorization, 'authorize').mockResolvedValue({ ok: false, error: { operation: 'recall_current', code: errorCode, message: 'inaccessible', retryable: false } });
+      expect(await api.get({ record_id, purpose_ref: 'purpose:test' }, invocation()))
+        .toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+    }
+  });
+
   it('M6 should preserve PROJECTION_OVERSIZED from the required semantic neighborhood', async () => {
     // Argon counterexample; frozen spec M6 lines 748, 757 and 1553.
     const neighborhood = vi.fn(async () => ({ ok: false as const, error: { operation: 'recall' as const, code: 'PROJECTION_OVERSIZED' as const, message: 'oversized', retryable: false } }));

@@ -7,7 +7,7 @@ import { isCanonicalCursor } from './validation.js';
 import { isVisibleAtDualAsOf } from './dual-as-of.js';
 import type {
   AuthorizationAllowedV1, AuthorizationContextV1, Digest, MemoryEngineDependenciesV2,
-  MemoryErrorCode, MemoryReadPacketV1, MemoryReadPortV1, MemoryRecallPortV3, MemoryRecordV2,
+  MemoryErrorCode, MemoryErrorV1, MemoryReadPacketV1, MemoryReadPortV1, MemoryRecallPortV3, MemoryRecordV2,
   OperationalCapabilityReceiptV1, RecallPacketV3, RecallRecordPacketV3, RecallRequestV2,
   RedactedMemoryRecordV2, Result, RevalidationPacketV1, ScopedCanonicalReadPortV1,
 } from './contracts/index.js';
@@ -16,6 +16,8 @@ export interface MemoryReadFacetBindingV1 { scope_ref: string; store_id: string 
 export interface MemoryReadFacetsV1 extends MemoryReadFacetBindingV1 {
   readonly recallPort: MemoryRecallPortV3;
   readonly readPort: MemoryReadPortV1;
+  /** In-process error provenance; absent means no affirmative target verdict. */
+  readonly isTargetAuthorizedError?: (error: MemoryErrorV1) => boolean;
 }
 const fail = <T>(code: MemoryErrorCode, message = 'current memory read unavailable'): Result<T> =>
   ({ ok: false, error: { operation: 'recall_current', code, message, retryable: false } });
@@ -68,6 +70,7 @@ export function createMemoryReadFacetsV1(dependencies: MemoryEngineDependenciesV
   const binding = { ...bindingInput };
   const store = dependencies.canonical_store;
   const clock = () => dependencies.clock.now();
+  const targetAuthorizedErrors = new WeakSet<MemoryErrorV1>();
 
   async function ready(): Promise<Result<OperationalCapabilityReceiptV1>> {
     const scoped = store.scoped_reads;
@@ -224,7 +227,7 @@ export function createMemoryReadFacetsV1(dependencies: MemoryEngineDependenciesV
       return { ok: true, value: packet() };
     } catch { return fail('STORE_UNAVAILABLE'); }
   }
-  async function readCurrent(input: Parameters<MemoryReadPortV1['readCurrent']>[0]): Promise<Result<MemoryReadPacketV1>> {
+  async function readCurrentResult(input: Parameters<MemoryReadPortV1['readCurrent']>[0], target: { authorized: boolean }): Promise<Result<MemoryReadPacketV1>> {
     try {
       let request: typeof input;
       try { normalizeCanonicalJson(input); request = JSON.parse(JSON.stringify(input)); } catch { return fail('INVALID_SCHEMA'); }
@@ -234,6 +237,7 @@ export function createMemoryReadFacetsV1(dependencies: MemoryEngineDependenciesV
       if (!pin.ok) return pin;
       const a = await authorize(request.authorization, request.purpose_ref, request.deadline_at, request.record_id);
       if (!a.ok) return a;
+      target.authorized = true;
       const read = await scoped().readRecord({ record_id: request.record_id, system_as_of: pin.value.high_water_cursor, authorization_receipt_digest: a.value.receipt_digest, authorization: a.value, scope_ref: binding.scope_ref });
       if (!read.ok) return read;
       const redacted = redact(read.value, a.value);
@@ -247,5 +251,14 @@ export function createMemoryReadFacetsV1(dependencies: MemoryEngineDependenciesV
       return bytes(packet) <= request.max_packet_bytes ? { ok: true, value: packet } : fail('PROJECTION_OVERSIZED');
     } catch { return fail('STORE_UNAVAILABLE'); }
   }
-  return { ...binding, recallPort: { version: 3, recall }, readPort: { version: 1, readCurrent } };
+  async function readCurrent(input: Parameters<MemoryReadPortV1['readCurrent']>[0]): Promise<Result<MemoryReadPacketV1>> {
+    const target = { authorized: false };
+    const result = await readCurrentResult(input, target);
+    if (result.ok || !target.authorized) return result;
+    // Copy dependency errors so simultaneous calls cannot share provenance.
+    const error = { ...result.error };
+    targetAuthorizedErrors.add(error);
+    return { ok: false, error };
+  }
+  return { ...binding, recallPort: { version: 3, recall }, readPort: { version: 1, readCurrent }, isTargetAuthorizedError: error => targetAuthorizedErrors.has(error) };
 }
