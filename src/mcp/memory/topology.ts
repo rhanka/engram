@@ -1,6 +1,6 @@
 import { validateMemoryQualifiedTupleV1, validateMemoryHostProfileBindingsV1, type MemoryHostProfileBindingsV1, type MemoryCandidateTupleV1 } from './receipts.js';
 /**
- * MCP-L0 Reference Topology, Voluntary cluster-mesh Inheritance, D10 Separation,
+ * MCP-L0 Reference Topology, Voluntary cluster-mesh Inheritance, Restored D10 Filtered Projection,
  * Legacy Migration Dispositions (M8), Package/CLI Boundaries (M9), and
  * Cross-Team Verification Items.
  *
@@ -98,22 +98,38 @@ export function evaluateClusterMeshMemoryInheritanceV1(
   return { enabled: true };
 }
 
-export const D10_CODE_GRAPH_SEPARATION_CONTRACT_V1 = {
+export const D10_FILTERED_PROJECTION_CONTRACT_V1 = {
   decision_id: 'D10',
-  amended_on: '2026-04-16',
-  graph_json_role: 'code-graph-only',
-  forbid_memory_nodes_in_graph_json: true,
-  forbid_memory_edges_in_graph_json: true,
-  authorized_memory_surfaces: [
-    'engram_memory_search',
-    'engram_memory_get',
-    'engram_memory_capture',
-    'engram_memory_request_admission',
-    'engram_memory_withdraw',
-    'engram_memory_forget',
-    'BoundedCurrentProjectionV1',
-    'ExportBundleV1',
+  restored_baseline: '7bc9baec',
+  graph_json_role: 'bounded-current-projection',
+  canonical_authority:
+    'immutable record blobs plus append-only lifecycle journal',
+  projection_may_contain: [
+    'current accepted projection envelopes',
+    'citation references',
+    'projection metadata',
   ] as const,
+  projection_never_contains: [
+    'record bodies',
+    'pending data',
+    'journal events',
+    'tombstone history',
+    'rank receipts',
+    'authorization receipts',
+    'backup material',
+    'vectors',
+  ] as const,
+  projected_state: 'accepted_current',
+  requires_projection_eligible_true: true,
+  removed_at_next_regeneration_or_reconciliation: [
+    'accepted_disputed',
+    'withdrawn',
+    'historical',
+    'expired',
+    'trust_invalid',
+    'tombstoned',
+  ] as const,
+  dedicated_memory_tools_remain_available_without_graph: true,
 } as const;
 
 /**
@@ -311,7 +327,7 @@ export const OPUS_REVIEW_AMENDMENT_DISPOSITIONS_V1: readonly OpusAmendmentDispos
     {
       id: 'A-14',
       summary:
-        'Owner amendment D10 (2026-04-16): graph.json remains strictly the code graph; memory uses dedicated authorized interfaces.',
+        'Restored D10 (baseline 7bc9baec): graph.json is a bounded current projection; only accepted_current records with projection_eligible === true are projected alongside code.',
       frozen_in_lot: 'MCP-L0',
     },
     {
