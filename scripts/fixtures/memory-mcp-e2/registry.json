@@ -1,0 +1,28 @@
+{
+  "name": "@sentropic/engram",
+  "version": "0.20.0",
+  "gitHead": "af60f9d7f5e02fc31755fd81927c8dd2a44b117f",
+  "dist": {
+    "shasum": "d7f7f9621f1e2a83d38bbc3d2730087eb99ca551",
+    "tarball": "https://registry.npmjs.org/@sentropic/engram/-/engram-0.20.0.tgz",
+    "fileCount": 48,
+    "integrity": "sha512-h5nFHMpQzFEtp9mq9njhK0dw58p7K5khURI4FInF2iy2BG++ncWO0D6igY5n0kETRa6rWoOYANwqVMbi+lPVFg==",
+    "signatures": [
+      {
+        "sig": "MEYCIQCuB7iXaz8jTnwBFZs53UP+8JLFYGfsMFJw4gwujyxZWgIhAOpeQUwgNy321Qw3u4bgfuB6TAjsE5Md5dHVseRAdXgG",
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+      },
+      {
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U",
+        "sig": "MEYCIQDt2XIfxGbDpXAX5QM7paVsVqulwqqJRXkQxezLv627uQIhAMkGKyR5U1/UHBqQ2RtMInv+8bfNUkTl0S9aJ3GG/PmO"
+      }
+    ],
+    "attestations": {
+      "url": "https://registry.npmjs.org/-/npm/v1/attestations/@sentropic%2fengram@0.20.0",
+      "provenance": {
+        "predicateType": "https://slsa.dev/provenance/v1"
+      }
+    },
+    "unpackedSize": 54946374
+  }
+}
