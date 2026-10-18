@@ -1625,32 +1625,33 @@ export function evaluatePrincipalScopedMutationLookupV1<TOutput>(
     };
   }
 
+  // M5 l.710,730: unknown host state cannot prove the absence of a canonical
+  // commit. Reconcile first; the first-effect guard checks current policy
+  // only if that canonical lookup finds no committed outcome.
   if (existing.recovery_state === 'executing_unknown_outcome') {
-    return {
-      decision: 'reject',
-      error_code: 'MUTATION_OUTCOME_UNKNOWN',
-      retriable: true,
-    };
+    return { decision: 'reject', error_code: 'MUTATION_OUTCOME_UNKNOWN', retriable: true };
   }
 
+  // M5 l.702: a known uncommitted reservation must use current domain policy.
+  const recordedVersion =
+    existing.policy_versions.tool_name === 'engram_memory_capture'
+      ? existing.policy_versions.capture_policy_version
+      : existing.policy_versions.tool_name ===
+          'engram_memory_request_admission'
+        ? existing.policy_versions.admission_policy_version
+        : undefined;
+  const staleVersionReject =
+    recordedVersion !== undefined &&
+    recordedVersion !== incoming.active_domain_policy_version
+      ? {
+          decision: 'reject',
+          error_code: 'POLICY_STALE',
+          retriable: true,
+        } as const
+      : undefined;
+
   {
-    const recordedVersion =
-      existing.policy_versions.tool_name === 'engram_memory_capture'
-        ? existing.policy_versions.capture_policy_version
-        : existing.policy_versions.tool_name ===
-            'engram_memory_request_admission'
-          ? existing.policy_versions.admission_policy_version
-          : undefined;
-    if (
-      recordedVersion !== undefined &&
-      recordedVersion !== incoming.active_domain_policy_version
-    ) {
-      return {
-        decision: 'reject',
-        error_code: 'POLICY_STALE',
-        retriable: true,
-      };
-    }
+    if (staleVersionReject !== undefined) return staleVersionReject;
   }
 
   if (existing.recovery_state !== 'pending_confirmation' && existing.recovery_state !== 'authorized_uncommitted') {

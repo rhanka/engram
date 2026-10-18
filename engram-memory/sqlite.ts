@@ -336,6 +336,7 @@ function schema(database: NativeDatabase): void {
     CREATE TABLE IF NOT EXISTS memory_control (candidate_id TEXT PRIMARY KEY, body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS memory_envelope (candidate_id TEXT PRIMARY KEY, body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS memory_capture_idempotency (candidate_id TEXT PRIMARY KEY, body TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS memory_admission_outcome (candidate_id TEXT PRIMARY KEY, body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS accepted_lexical (record_id TEXT PRIMARY KEY, record_digest TEXT NOT NULL, body TEXT NOT NULL);
     CREATE VIRTUAL TABLE IF NOT EXISTS accepted_lexical_fts USING fts5(record_id UNINDEXED, primary_text, context_text, decision_text, evidence_text, citations_text);
     CREATE TABLE IF NOT EXISTS memory_outbox (sequence INTEGER PRIMARY KEY, body TEXT NOT NULL);
@@ -351,6 +352,7 @@ function stateFromDatabase(database: NativeDatabase): InMemoryStoreStateV1 {
     lexical: (database.prepare("SELECT record_id, body FROM accepted_lexical ORDER BY record_id").all() as StoredRow[]).map((row) => ({ record_id: row.id ?? row.record_id!, document: parse(row.body!) })),
     outbox: (database.prepare("SELECT body FROM memory_outbox ORDER BY sequence").all() as StoredRow[]).map((row) => parse(row.body!)),
     capture_idempotency: (database.prepare("SELECT body FROM memory_capture_idempotency ORDER BY candidate_id").all() as StoredRow[]).map((row) => parseCaptureRegistryEntry(row.body!)),
+    admission_outcomes: (database.prepare("SELECT body FROM memory_admission_outcome ORDER BY candidate_id").all() as StoredRow[]).map((row) => parse(row.body!)),
   };
 }
 
@@ -523,6 +525,7 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
     clear("memory_control");
     clear("memory_envelope");
     clear("memory_capture_idempotency");
+    clear("memory_admission_outcome");
     clear("accepted_lexical");
     clear("accepted_lexical_fts");
     clear("memory_outbox");
@@ -546,6 +549,8 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
     for (const envelope of snapshot.envelopes) insertEnvelope.run(envelope.candidate_id, json(envelope));
     const insertCapture = this.database.prepare("INSERT INTO memory_capture_idempotency(candidate_id, body) VALUES (?, ?)");
     for (const entry of snapshot.capture_idempotency ?? []) insertCapture.run(entry.candidate_id, json(entry));
+    const insertOutcome = this.database.prepare("INSERT INTO memory_admission_outcome(candidate_id, body) VALUES (?, ?)");
+    for (const entry of snapshot.admission_outcomes ?? []) insertOutcome.run(entry.candidate_id, json(entry));
     this.options.on_mutation_statement?.("state");
     this.options.failpoint?.("after_state");
 
@@ -637,6 +642,11 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
     return this.#transaction("capture", (working) => working.recordCaptureIdempotency(input));
   }
 
+  async readAdmissionOutcome(input: { candidate_id: string }) {
+    const fence = this.#fence("request_admission");
+    return fence.ok ? this.#core.readAdmissionOutcome(input) : fence;
+  }
+
   async applyAdmission(input: AdmissionStoreInputV1): Promise<Result<CanonicalTransactionReceiptV1>> {
     return this.#transaction("request_admission", (working) => working.applyAdmission(input));
   }
@@ -698,7 +708,8 @@ class FencedSqliteStore implements FencedSqliteStoreInternal {
       if (!current.ok) return current;
       if (current.value.journal.length !== 0 || current.value.records.length !== 0
         || current.value.controls.length !== 0 || current.value.envelopes.length !== 0
-        || current.value.lexical.length !== 0 || current.value.outbox.length !== 0 || (current.value.capture_idempotency?.length ?? 0) !== 0) {
+        || current.value.lexical.length !== 0 || current.value.outbox.length !== 0 || (current.value.capture_idempotency?.length ?? 0) !== 0
+        || (current.value.admission_outcomes?.length ?? 0) !== 0) {
         return refusal("restore", "RESTORE_REFUSED", "logical backup import refuses a non-empty store");
       }
       const converted = backupPublicJournalToStorageV1(input.journal);
@@ -955,4 +966,51 @@ export async function openFencedSqliteCanonicalMemoryStoreV1(options: FencedSqli
     lock.release();
     return refusal("admin", "CAPABILITY_UNAVAILABLE", "the declared better-sqlite3 driver or SQLite initialization is unavailable");
   }
+}
+
+/**
+ * MCP-L2 reference-port seam (SPEC-memory-mcp-v3.1.md M14 round-2 closure):
+ * opens a plain durable SQLite database with the already-declared
+ * better-sqlite3 driver for the named, non-mock reference host-port set.
+ * This is NOT the fenced canonical store: no writer fence, no epoch, no
+ * provenance gate — callers own their schema and transactions. The dynamic
+ * import lives here so driver resolution stays inside engram-memory (the
+ * package that declares the driver); consumers only see the structural
+ * handle below and never import the driver themselves.
+ */
+export interface ReferenceSqliteStatementV1 {
+  run(...params: unknown[]): { changes: number | bigint };
+  get(...params: unknown[]): unknown;
+  all(...params: unknown[]): unknown[];
+}
+
+export interface ReferenceSqliteHandleV1 {
+  exec(sql: string): void;
+  prepare(sql: string): ReferenceSqliteStatementV1;
+  transaction<T extends unknown[], R>(fn: (...args: T) => R): (...args: T) => R;
+  close(): void;
+}
+
+export async function openReferenceSqliteHandleV1(filename: string): Promise<ReferenceSqliteHandleV1> {
+  const native = await import("better-sqlite3");
+  mkdirSync(dirname(filename), { recursive: true });
+  const database: NativeDatabase = new native.default(filename);
+  database.pragma("journal_mode = WAL");
+  database.pragma("busy_timeout = 5000");
+  database.pragma("synchronous = FULL");
+  const prepare = (sql: string): ReferenceSqliteStatementV1 => {
+    const statement = database.prepare(sql);
+    return {
+      run: (...params: unknown[]) => statement.run(...params),
+      get: (...params: unknown[]) => statement.get(...params),
+      all: (...params: unknown[]) => statement.all(...params),
+    };
+  };
+  return {
+    exec: (sql: string) => { database.exec(sql); },
+    prepare,
+    transaction: <T extends unknown[], R>(fn: (...args: T) => R): ((...args: T) => R) =>
+      database.transaction(fn) as (...args: T) => R,
+    close: () => { database.close(); },
+  };
 }

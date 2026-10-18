@@ -333,7 +333,7 @@ function openX2bMemory(
   } as unknown as MemoryEngineDependenciesV2);
 }
 
-async function captureAdmit(memory: MemoryPortV2, key: string, sequence: string, text = "x2b memory probe body text"): Promise<string> {
+async function captureAdmit(memory: MemoryPortV2, key: string, sequence: string, text = `x2b memory probe body ${key}`): Promise<string> {
   const captured = await memory.capture(captureRequest(key, sequence, text));
   if (!captured.ok || captured.value.candidate_id === undefined) throw new Error(`capture failed: ${captured.ok ? "no-candidate" : `${captured.error.code} ${captured.error.message}`}`);
   const admitted = await memory.requestAdmission({
