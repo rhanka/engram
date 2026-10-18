@@ -15,6 +15,7 @@ import {
 } from "node:fs";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { resolveGraphifyPaths } from "./paths.js";
+import { assertMemoryProjectionFresh } from "./graph-memory-projection.js";
 
 // ---------------------------------------------------------------------------
 // Stat-based fastpath (upstream d84f07c)
@@ -94,6 +95,13 @@ export interface CacheOptions {
   store?: InjectedCacheStore | null;
   /** L5 live explicit no-cache marker (R4): skips every filesystem path. */
   liveNoCache?: boolean;
+  /**
+   * MCP-L3 freshness gate (M10 l.1399): when supplied, a cached extraction
+   * carrying a memory node behind this high-water cursor is refused
+   * (`PROJECTION_STALE`) on save and on load instead of being served as a
+   * current view. Absent keeps the legacy behavior for code-only callers.
+   */
+  memoryHighWaterCursor?: string;
   /** L5 live canonical key precomputed by the caller (R1/R2/R5 binding). */
   liveKey?: string;
   /**
@@ -496,6 +504,36 @@ export function cacheDir(root: string = ".", options: CacheOptions = {}): string
 }
 
 /**
+ * MCP-L3 freshness gate over a cached extraction payload (M10 l.1399). Every
+ * memory node must pin a projection cursor at or ahead of the high-water
+ * cursor; a cursor-less memory node cannot prove freshness and is refused.
+ * Payloads without memory nodes always pass.
+ */
+function assertCachedExtractionMemoryFresh(
+  payload: Record<string, unknown>,
+  highWaterCursor: string,
+): void {
+  const nodes = (payload as { nodes?: unknown }).nodes;
+  if (!Array.isArray(nodes)) return;
+  for (const node of nodes) {
+    if (!node || typeof node !== "object") continue;
+    const record = node as Record<string, unknown>;
+    if (record.file_type !== "memory") continue;
+    const projection = record.memory_projection;
+    const cursor =
+      projection !== null && typeof projection === "object"
+        ? (projection as Record<string, unknown>).projection_cursor
+        : undefined;
+    if (typeof cursor !== "string") {
+      throw new Error(
+        "PROJECTION_STALE: cached memory node has no projection cursor; rebuild before serving",
+      );
+    }
+    assertMemoryProjectionFresh(cursor, highWaterCursor);
+  }
+}
+
+/**
  * Return cached extraction for this file if hash matches, else null.
  */
 export function loadCached(
@@ -525,11 +563,19 @@ export function loadCached(
       return null;
     }
     if (raw === null) return null;
+    let envelope: {
+      schemaVersion?: unknown; kind?: unknown; bind?: unknown;
+      payload?: unknown; payloadDigest?: unknown;
+    };
     try {
-      const envelope = JSON.parse(raw) as {
+      envelope = JSON.parse(raw) as {
         schemaVersion?: unknown; kind?: unknown; bind?: unknown;
         payload?: unknown; payloadDigest?: unknown;
       };
+    } catch {
+      return null;
+    }
+    try {
       if (envelope === null || typeof envelope !== "object") return null;
       if (envelope.schemaVersion !== LIVE_CACHE_SCHEMA_VERSION) return null;
       if (envelope.kind !== "reused-extraction") return null;
@@ -542,9 +588,15 @@ export function loadCached(
       if (typeof result.error === "string" && result.error.length > 0) return null;
       const nodes = (result as { nodes?: unknown }).nodes;
       if (!Array.isArray(nodes) || nodes.length === 0) return null;
+      // MCP-L3 freshness refusal propagates (never a silent miss): a stale
+      // projection must not be served as a current view.
+      if (typeof options.memoryHighWaterCursor === "string") {
+        assertCachedExtractionMemoryFresh(result, options.memoryHighWaterCursor);
+      }
       absolutizeSourceFilesIn(result, root);
       return result;
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("PROJECTION_STALE")) throw error;
       return null;
     }
   }
@@ -554,40 +606,65 @@ export function loadCached(
   } catch {
     return null;
   }
+  // MCP-L3 freshness refusal propagates (never a silent miss): a stale
+  // projection must not be served as a current view.
+  const checkFresh = (result: Record<string, unknown>): void => {
+    if (typeof options.memoryHighWaterCursor === "string") {
+      assertCachedExtractionMemoryFresh(result, options.memoryHighWaterCursor);
+    }
+  };
   const entry = join(cacheDir(root, options), `${h}.json`);
   if (existsSync(entry)) {
+    let result: Record<string, unknown>;
     try {
-      const result = JSON.parse(readFileSync(entry, "utf-8")) as Record<string, unknown>;
-      // Re-anchor relative source_file fields so callers see the same absolute-path
-      // shape that a fresh in-process extraction produces (#777 / F-0831-P2d).
-      absolutizeSourceFilesIn(result, root);
-      return result;
+      result = JSON.parse(readFileSync(entry, "utf-8")) as Record<string, unknown>;
     } catch {
       return null;
     }
+    checkFresh(result);
+    try {
+      // Re-anchor relative source_file fields so callers see the same absolute-path
+      // shape that a fresh in-process extraction produces (#777 / F-0831-P2d).
+      absolutizeSourceFilesIn(result, root);
+    } catch {
+      return null;
+    }
+    return result;
   }
 
   if ((options.kind ?? "ast") === "ast") {
     const legacyEntry = join(legacyCacheDir(root, options), `${h}.json`);
     if (existsSync(legacyEntry)) {
+      let result: Record<string, unknown>;
       try {
-        const result = JSON.parse(readFileSync(legacyEntry, "utf-8")) as Record<string, unknown>;
-        absolutizeSourceFilesIn(result, root);
-        return result;
+        result = JSON.parse(readFileSync(legacyEntry, "utf-8")) as Record<string, unknown>;
       } catch {
         return null;
       }
+      checkFresh(result);
+      try {
+        absolutizeSourceFilesIn(result, root);
+      } catch {
+        return null;
+      }
+      return result;
     }
 
     const legacyHashEntry = join(legacyCacheDir(root, options), `${legacyFileHash(filePath)}.json`);
     if (!existsSync(legacyHashEntry)) return null;
+    let result: Record<string, unknown>;
     try {
-      const result = JSON.parse(readFileSync(legacyHashEntry, "utf-8")) as Record<string, unknown>;
-      absolutizeSourceFilesIn(result, root);
-      return result;
+      result = JSON.parse(readFileSync(legacyHashEntry, "utf-8")) as Record<string, unknown>;
     } catch {
       return null;
     }
+    checkFresh(result);
+    try {
+      absolutizeSourceFilesIn(result, root);
+    } catch {
+      return null;
+    }
+    return result;
   }
   return null;
 }
@@ -620,6 +697,10 @@ export function saveCached(
     const payload: Record<string, unknown> = hasBuckets
       ? JSON.parse(JSON.stringify(result)) as Record<string, unknown>
       : result;
+    // MCP-L3 freshness gate (M10 l.1399): never cache a stale projection.
+    if (typeof options.memoryHighWaterCursor === "string") {
+      assertCachedExtractionMemoryFresh(payload, options.memoryHighWaterCursor);
+    }
     if (hasBuckets) relativizeSourceFilesIn(payload, root);
     const envelope = {
       bind: options.liveBind,
@@ -666,6 +747,10 @@ export function saveCached(
   const onDisk: Record<string, unknown> = hasBuckets
     ? JSON.parse(JSON.stringify(result)) as Record<string, unknown>
     : result;
+  // MCP-L3 freshness gate (M10 l.1399): never cache a stale projection.
+  if (typeof options.memoryHighWaterCursor === "string") {
+    assertCachedExtractionMemoryFresh(onDisk, options.memoryHighWaterCursor);
+  }
   if (hasBuckets) relativizeSourceFilesIn(onDisk, root);
 
   try {
