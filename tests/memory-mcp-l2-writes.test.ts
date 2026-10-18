@@ -354,9 +354,16 @@ describe('MCP-L2 in-process write tools', () => {
       ok: false, error: { code: 'MUTATION_OUTCOME_UNKNOWN', retriable: true },
     });
     expect(apply).toHaveBeenCalledOnce();
+    // M5 l.710: the retry consults the canonical proof instead of stalling on
+    // UNKNOWN. Nothing committed (the mock threw first), so the retry commits
+    // the single effect; a further retry replays it without another commit.
     const retry = await tools.forget(input, invocation());
-    expect(retry).toMatchObject({ ok: false, error: { code: 'MUTATION_OUTCOME_UNKNOWN' } });
-    expect(apply).toHaveBeenCalledOnce();
+    expect(retry).toMatchObject({ ok: true, output: { value: { replayed: true } } });
+    expect(apply).toHaveBeenCalledTimes(2);
+    await expect(tools.forget(input, invocation())).resolves.toMatchObject({
+      ok: true, output: { value: { replayed: true } },
+    });
+    expect(apply).toHaveBeenCalledTimes(2);
   });
 
   it('M2 should bound the synchronous execution deadline', async () => {
