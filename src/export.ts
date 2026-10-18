@@ -8,6 +8,7 @@ import Graph from "graphology";
 import { engramEnv } from "./env.js";
 import { sanitizeLabel, sanitizeMetadata } from "./security.js";
 import { isDirectedGraph } from "./graph.js";
+import { graphJsonLink, graphJsonNode, serializeGraphJson } from "./graph-json-serialization.js";
 import { assertGraphJsonFileSize, assertGraphJsonSize } from "./graph-size-guard.js";
 import { safeGitRevParse } from "./git.js";
 import type { Hyperedge } from "./types.js";
@@ -25,6 +26,7 @@ import {
 import {
   MEMORY_HIGH_WATER_CURSOR_ATTR,
   MEMORY_PROJECTION_CURSOR_ATTR,
+  assertMemoryGraphJsonSize,
   enforceMemoryFreshnessForSurface,
 } from "./graph-memory-projection.js";
 
@@ -139,12 +141,6 @@ const COMMUNITY_COLORS = [
   "#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#59A14F",
   "#EDC948", "#B07AA1", "#FF9DA7", "#9C755F", "#BAB0AC",
 ];
-
-const CONFIDENCE_SCORE_DEFAULTS: Record<string, number> = {
-  EXTRACTED: 1.0,
-  INFERRED: 0.5,
-  AMBIGUOUS: 0.2,
-};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -305,29 +301,16 @@ export function toJson(
   const nodes: Record<string, unknown>[] = [];
   G.forEachNode((nodeId, attrs) => {
     const communityId = nodeComm.get(nodeId) ?? null;
-    nodes.push({
-      id: nodeId,
-      ...attrs,
-      community: communityId,
-      community_name:
-        communityId !== null
-          ? sanitizeLabel(communityLabels?.get(communityId) ?? `Community ${communityId}`)
-          : null,
-    });
+    nodes.push(graphJsonNode(nodeId, attrs, communityId,
+      communityId !== null
+        ? sanitizeLabel(communityLabels?.get(communityId) ?? `Community ${communityId}`)
+        : null,
+    ));
   });
 
   const links: Record<string, unknown>[] = [];
   G.forEachEdge((_edge, data, source, target) => {
-    const link: Record<string, unknown> = {
-      source,
-      target,
-      ...data,
-    };
-    if (link.confidence_score === undefined) {
-      const conf = (data.confidence as string) ?? "EXTRACTED";
-      link.confidence_score = CONFIDENCE_SCORE_DEFAULTS[conf] ?? 1.0;
-    }
-    links.push(link);
+    links.push(graphJsonLink(source, target, data));
   });
 
   const hyperedges = (G.getAttribute("hyperedges") as Hyperedge[] | undefined) ?? [];
@@ -388,6 +371,10 @@ export function toJson(
     hyperedges,
   };
 
+  // Measure the final rows, including communities and confidence defaults,
+  // using the writer's encoding. Refuse before touching the destination.
+  assertMemoryGraphJsonSize(nodes, links);
+
   if (!forceWrite) {
     try {
       assertGraphJsonFileSize(outputPath, "read");
@@ -409,7 +396,7 @@ export function toJson(
     }
   }
 
-  const serialized = JSON.stringify(output, null, 2);
+  const serialized = serializeGraphJson(output);
   assertGraphJsonSize(Buffer.byteLength(serialized, "utf-8"), "write", outputPath);
   writeFileSync(outputPath, serialized, "utf-8");
   return true;
