@@ -1,4 +1,4 @@
-/** Independent fixtures from SPEC-memory-mcp-v3.1.md (sha256 f90c927964b44fdf6ad712eee9b894762250239384643a3790931c142d3aeeca).
+/** Independent fixtures from SPEC-memory-mcp-v3.2.md (sha256 18c697c1cd91287fd9f814c059910ffb4b39ddb1be46af547f384c7d912177b2; restored D10 delta, v3.1 co-freeze f90c927964b44fdf6ad712eee9b894762250239384643a3790931c142d3aeeca superseded for D10).
  * SOL regression rules: M4:525-527, M7:819-908, M5:706-708, A01-A09:1606-1614.
  * These are contract examples, never deployment/qualification evidence.
  */
