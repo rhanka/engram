@@ -21,9 +21,9 @@ export const recipe = JSON.parse(readFileSync(new URL("../fixtures/live-git-corp
 export class LiveGitSandbox {
   readonly root: string;
   readonly trace: LiveProcessTrace;
-  constructor() {
-    // Existing ignored directory inside this checkout, never the user's Git dir.
-    const parent = resolve(dirname(fileURLToPath(import.meta.url)), "../../.h2a/live-git-fixtures");
+  constructor(parent = resolve(dirname(fileURLToPath(import.meta.url)), "../../.h2a/live-git-fixtures")) {
+    // Default: ignored fixture space. Callers may select an OS-temp parent
+    // when every fixture/clone must be outside observed worktrees.
     mkdirSync(parent, { recursive: true });
     this.root = mkdtempSync(join(parent, "l0-"));
     try {
@@ -50,6 +50,140 @@ export class LiveGitSandbox {
     return path;
   }
   dispose() { rmSync(this.root, { recursive: true, force: true }); }
+}
+
+/** Independent read-side corpus. All writes are fixture setup, outside any
+ * observed worktree. No engram-live producer supplies objects or expectations.
+ * F_* aliases are synthetic controls, never the H/S revisions in analysis C. */
+export function buildReadSideFixtures(box: LiveGitSandbox) {
+  const h2a = box.init(join(box.root, "h2a-control"));
+  const sentropic = box.init(join(box.root, "sentropic-control"));
+  const pins: Record<string, string> = {};
+  let tick = 0;
+  const commit = (repo: string, name: string, files: Record<string, string>, parents: string[], message: string) => {
+    const entries = Object.entries(files).map(([path, content]) => ({ path: Buffer.from(path), mode: "100644",
+      oid: box.git(repo, ["hash-object", "-w", "--no-filters", "--stdin"], content).toString().trim() }));
+    const date = `${1700000000 + tick++ * 86400} +0000`;
+    const result = box.trace.run(repo, ["commit-tree", writeTree(box, repo, entries),
+      ...parents.flatMap(parent => ["-p", pins[parent]])], message + "\n", "setup",
+    { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date });
+    if (result.status !== 0) throw new Error(`read-side fixture commit failed: ${result.stderr}`);
+    pins[name] = result.stdout.toString().trim();
+  };
+  const dto = "export interface WorkspaceDeclarationDto { repository: string; worktree: string }\n";
+  const initial: Record<string, string> = {
+    "src/delegate.ts": "export function resolveJobCwd(jobPath: string) { return jobPath; }\n",
+    "tests/delegate.test.ts": "// delegate base behavior\n",
+    "tests/delegate-cleanup.test.ts": "// cleanup base behavior\n",
+    "src/live-contract.ts": "export const transport = 'none';\nexport const retention = 'none';\n",
+    "src/live-registration.ts": "// L7a: only a verified principal can grant local authority.\nexport function localAuthority(verifiedPrincipal: boolean) { return verifiedPrincipal; }\n",
+    "src/memory.ts": "// Refusal is a typed unavailable result; an authorized empty result has items: [].\nexport function recallMemory(authorized: boolean) { return authorized ? { state: 'complete', items: [] } : { state: 'unauthorized' }; }\n",
+    "src/workspace-contract.ts": dto,
+    "src/consumer.ts": "import type { WorkspaceDeclarationDto } from './workspace-contract.js';\nexport type Consumer = WorkspaceDeclarationDto;\n",
+    "staging/agent-stats/index.ts": "export const agentStats = 'local fixture';\n",
+  };
+  commit(h2a, "F_H0", initial, [], "Initialize the h2a investigation control");
+  const detached: Record<string, string> = { ...initial,
+    "src/delegate.ts": "export function resolveJobCwd(jobPath: string) { return ['worktree', 'add', '--detach', jobPath, 'HEAD']; }\n",
+    "tests/delegate.test.ts": "// detached worktree behavior\n" };
+  commit(h2a, "F_DETACH", detached, ["F_H0"], "Use detached worktrees");
+  const moved: Record<string, string> = { ...detached, "packages/agent-stats/index.ts": initial["staging/agent-stats/index.ts"]!,
+    "tests/delegate-cleanup.test.ts": "// detached cleanup behavior\n" };
+  delete moved["staging/agent-stats/index.ts"];
+  commit(h2a, "F_H", moved, ["F_DETACH"], "Move staged agent stats to packages/agent-stats");
+  commit(h2a, "F_HP", { ...moved,
+    "src/live-contract.ts": "export const transport = 'metadata';\nexport const retention = 'none';\n",
+    "src/live-github.ts": "// PR metadata only; Git objects use a separate transport.\nexport const pullRequestFields = ['number', 'title', 'headOid'];\n" }, ["F_H"], "Add pull request metadata transport; exclude Git object acquisition");
+  commit(h2a, "F_HR", { ...moved,
+    "src/live-contract.ts": "export const transport = 'none';\nexport const retention = 'private';\n",
+    "src/live-retention.ts": "// Private retained refs survive source branch deletion. Installed qualification has not run.\nexport const retainedPrefix = 'refs/private/retained/';\n" }, ["F_H"], "Retain private objects independently of source branches; qualification unverified");
+  const storage = {
+    "src/live-storage/registration.ts": "export const POLICY_VERSION = 'live-policy/1';\nexport function removeScope() { return { state: 'failed', retryable: false }; }\n",
+    "src/workspace-contract.ts": dto,
+    "src/consumer.ts": "import type { WorkspaceDeclarationDto } from './workspace-contract.js';\nexport type Consumer = WorkspaceDeclarationDto;\n",
+    "src/dynamic-consumer.ts": "export const loadContract = (name: string) => import(name);\n",
+    "docs/storage.md": "Superseded: the application implements reusable Postgres storage.\nL3a v4.1: cluster-mesh owns the generic kernel and both reusable backends. The application injects and operates Postgres.\n",
+  };
+  commit(sentropic, "F_S0", storage, [], "Introduce versioned storage registration");
+  const retryable = { ...storage,
+    "src/live-storage/registration.ts": "export const POLICY_VERSION = 'live-policy/1';\nexport function removeScope() { return { state: 'failed', retryable: true }; }\n",
+    "tests/removal.test.ts": "// Assert removal failure can be retried.\n" };
+  commit(sentropic, "F_S", retryable, ["F_S0"], "Make failed scope removal retryable");
+  const visibility: Record<string, string> = { ...retryable,
+    "src/visibility.ts": "// Repository-scoped visibility root.\n// This control has an exact function body.\nexport function scopeVisibilityRoot() { return 'authorized'; }\n" };
+  commit(sentropic, "F_K3", visibility, ["F_S"], "Add development visibility root");
+  const renamed: Record<string, string> = { ...visibility,
+    "src/scope-visibility.ts": visibility["src/visibility.ts"]!.replace("scopeVisibilityRoot", "ScopeVisibilityRoot"),
+    "tests/visibility.test.ts": "// A visibility root is scoped to the authorized repository.\n" };
+  delete renamed["src/visibility.ts"];
+  commit(sentropic, "F_K4", renamed, ["F_K3"], "Rename and move the visibility root on the development branch");
+  commit(h2a, "F_JOIN", { ...moved,
+    "src/live-contract.ts": "export const transport = 'metadata';\nexport const retention = 'private';\n",
+    "src/live-github.ts": "// PR metadata only; Git objects use a separate transport.\nexport const pullRequestFields = ['number', 'title', 'headOid'];\n",
+    "src/live-retention.ts": "// Private retained refs survive source branch deletion. Installed qualification has not run.\nexport const retainedPrefix = 'refs/private/retained/';\n",
+  }, ["F_HP", "F_HR"], "Merge topic contributions in an isolated control");
+  // One main tip per repository; neither topic is silently integrated into it.
+  box.git(h2a, ["update-ref", "refs/heads/main", pins.F_H]);
+  box.git(sentropic, ["update-ref", "refs/heads/main", pins.F_S]);
+  return { h2a, sentropic, pins };
+}
+
+/** Local-only, independent object copy. No checkout, alternates, hardlinks,
+ * lazy fetch or repository program; the observed source receives no writes.
+ * Restore the original objects from a checksummed fixture even in shallow CI;
+ * never substitute synthetic commits or expected oracle output for real OIDs.
+ * Shallow sources use an empty isolated repository plus the snapshot: Git
+ * ignores --local there and would start extra transport/packing children.
+ * Full local clones may advertise refs through native upload-pack. Keep source
+ * setup in its own trace; oracle commands still require zero children. */
+export function cloneReadSideSource(box: LiveGitSandbox, requiredPins: readonly string[]) {
+  const repo = join(box.root, "engram-history");
+  const setup = join(box.root, "clone-setup");
+  mkdirSync(join(setup, "disabled-hooks"), { recursive: true });
+  const trace = new LiveProcessTrace(setup);
+  const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+  const resolution = trace.run(projectRoot, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  if (resolution.status !== 0) throw new Error(`read-side source resolution failed: ${resolution.stderr}`);
+  const source = resolution.stdout.toString().trim();
+  const depth = trace.run(projectRoot, ["rev-parse", "--is-shallow-repository"]);
+  if (depth.status !== 0 || !["true\n", "false\n"].includes(depth.stdout.toString())) {
+    throw new Error(`read-side source depth resolution failed: ${depth.stderr}`);
+  }
+  const shallow = depth.stdout.toString() === "true\n";
+  if (shallow) box.init(repo);
+  else {
+    const result = trace.run(box.root, ["-c", "protocol.file.allow=always", "clone", "--local", "--no-hardlinks", "--no-checkout",
+      `--template=${join(box.root, "empty-template")}`, source, repo]);
+    if (result.status !== 0) throw new Error(`read-side local clone failed: ${result.stderr}`);
+  }
+  const events = readFileSync(trace.path, "utf8").trim().split("\n").map(line => JSON.parse(line));
+  const children = events.filter(event => event.event === "child_start");
+  if (children.length > (shallow ? 0 : 1) || children.some(event => event.child_class !== "transport/file" ||
+    JSON.stringify(event.argv) !== JSON.stringify([`git-upload-pack '${source.replace(/'/g, "'\\''")}'`]))) {
+    throw new Error("read-side clone launched an unexpected process");
+  }
+  const exits = events.filter(event => event.event === "exit");
+  if (exits.length !== (shallow ? 2 : 3) + children.length || exits.some(event => event.code !== 0)) {
+    throw new Error("read-side clone trace is incomplete");
+  }
+  const snapshot = JSON.parse(readFileSync(new URL("../fixtures/live-read-side-history.json", import.meta.url), "utf8"));
+  const pack = readFileSync(new URL("../fixtures/live-read-side-history.pack", import.meta.url));
+  if (snapshot.version !== 1 || snapshot.algorithm !== "sha1" || pack.length !== snapshot.pack.bytes ||
+    createHash("sha256").update(pack).digest("hex") !== snapshot.pack.sha256 ||
+    pack.subarray(0, 4).toString() !== "PACK" || pack.readUInt32BE(8) !== snapshot.pack.objects) {
+    throw new Error("read-side historical object snapshot integrity failed");
+  }
+  box.git(repo, ["index-pack", "--stdin"], pack);
+  // Git's automatic abbreviation depends on object count. Preserve the exact
+  // frozen patch bytes in both the full clone and the smaller snapshot store.
+  box.git(repo, ["config", "core.abbrev", "8"]);
+  for (const oid of requiredPins) {
+    const pin = box.probe(repo, ["cat-file", "-t", oid]);
+    if (pin.status !== 0 || pin.stdout.toString() !== "commit\n") {
+      throw new Error(`read-side pinned commit unavailable offline: ${oid}; no usable historical snapshot`);
+    }
+  }
+  return { repo, source, shallow };
 }
 
 export function detectGitCapabilities(box: LiveGitSandbox) {
