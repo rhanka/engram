@@ -1052,7 +1052,18 @@ function validateRedactionResult(input: unknown): RedactionResultV1 | undefined 
 }
 
 /** L2 coordination only: it validates/seals pending capture and delegates durability to the canonical store. */
-export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): MemoryPortV2 {
+/** Implementation-only host guard, outside the serialized neutral contract.
+ * Called after canonical proof lookup and immediately before first commit;
+ * only literal true permits an effect. Rechecks must remain safe. */
+export type MemoryFirstEffectGuardV1 = () => Promise<boolean>;
+
+export interface GuardedMemoryPortV2 extends MemoryPortV2 {
+  capture(request: CaptureRequestV2, beforeFirstEffect?: MemoryFirstEffectGuardV1): Promise<Result<CaptureAcknowledgementV1>>;
+  requestAdmission(request: Parameters<MemoryPortV2['requestAdmission']>[0], beforeFirstEffect?: MemoryFirstEffectGuardV1): Promise<Result<AdmissionOutcomeV1>>;
+  transition(command: LifecycleCommandV1, beforeFirstEffect?: MemoryFirstEffectGuardV1): Promise<Result<LifecycleReceiptV1>>;
+}
+
+export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): GuardedMemoryPortV2 {
   const cancelled = new Set<string>();
   const capturedContent = new Map<string, Digest>();
   const admissionOutcomes = new Map<string, { scope_ref: string; outcome: AdmissionOutcomeV1 }>();
@@ -1106,7 +1117,7 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
     }
   };
 
-  const port: MemoryPortV2 = {
+  const port: GuardedMemoryPortV2 = {
     version: 2,
     capabilities: async () => {
       try {
@@ -1137,7 +1148,7 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       const validated = validateCandidatePayload(payload);
       return validated.ok ? { ok: true, value: { payload_digest: validated.value.payload_digest } } : operationFailure("capture", validated);
     },
-    capture: async (input): Promise<Result<CaptureAcknowledgementV1>> => {
+    capture: async (input, beforeFirstEffect): Promise<Result<CaptureAcknowledgementV1>> => {
       const admitted = await admitFenced("capture");
       if (!admitted.ok) return admitted;
       const now = dependencies.clock?.now();
@@ -1193,6 +1204,7 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
               } };
             }
           }
+          if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal("capture", "UNAUTHORIZED", "host refused first canonical effect");
           if (cancelled.has(request.cancellation_ref)) return refusal("capture", "CANCELLED", "capture was cancelled before commit");
           const sealed = await dependencies.crypto.seal({
             candidate_id: candidateId,
@@ -1201,12 +1213,14 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
           });
           if (!sealed.ok) return operationFailure("capture", sealed);
           const effect = await authorizeEffect(authorization.value, request.deadline_at);
-          if (!effect.ok || cancelled.has(request.cancellation_ref)) {
+          const hostEffect = effect.ok && beforeFirstEffect !== undefined && await beforeFirstEffect() !== true
+            ? refusal<never>("capture", "UNAUTHORIZED", "host refused first canonical effect") : undefined;
+          if (!effect.ok || hostEffect !== undefined || cancelled.has(request.cancellation_ref)) {
             // The envelope has no canonical owner yet. Use the same custody
             // destruction identity as the other candidate cleanup paths.
             const destroyed = await dependencies.crypto.destroy({ key_ref: sealed.value.key_ref, idempotency_key: `destroy:${candidateId}` });
             if (!destroyed.ok) return operationFailure("capture", destroyed);
-            return !effect.ok ? effect : refusal("capture", "CANCELLED", "capture was cancelled before commit");
+            return !effect.ok ? effect : hostEffect ?? refusal("capture", "CANCELLED", "capture was cancelled before commit");
           }
           const committed = await dependencies.canonical_store.commitPending({
             control: {
@@ -1329,7 +1343,7 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       cancelled.add(cancellationRef);
       return { ok: true, value: { cancelled: true } };
     },
-    requestAdmission: async (input) => {
+    requestAdmission: async (input, beforeFirstEffect) => {
       const admitted = await admitFenced("request_admission");
       if (!admitted.ok) return admitted;
       if (!admissionRequestIsExact(input)) return refusal("request_admission", "INVALID_SCHEMA", "admission request is not exact");
@@ -1367,6 +1381,7 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
           admissionOutcomes.set(input.candidate_id, { scope_ref: authorization.value.scope_ref, outcome: recovered.value });
           return { ok: true, value: recovered.value };
         }
+        if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal("request_admission", "UNAUTHORIZED", "host refused first canonical effect");
         if (!validPendingSnapshot(pending.value, input.candidate_id)) return refusal("request_admission", "INVALID_SCHEMA", "pending candidate snapshot is malformed");
         const opened = await dependencies.crypto.open({ sealed: pending.value.sealed, context_digest: pendingContextDigest(input.candidate_id) });
         if (!opened.ok) return operationFailure("request_admission", opened);
@@ -1436,6 +1451,7 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
           removals: [],
           batch_digest: receiptDigest("projection-batch", { candidate_id: input.candidate_id, record_digest: record.record_digest }),
         };
+        if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal("request_admission", "UNAUTHORIZED", "host refused first canonical effect");
         const applied = decision.value.decision === "accept"
           ? await dependencies.canonical_store.applyAdmission({
             outcome: "accept",
@@ -1487,7 +1503,7 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
         return unavailable("request_admission", "admission dependencies did not return typed results");
       }
     },
-    transition: async (input): Promise<Result<LifecycleReceiptV1>> => {
+    transition: async (input, beforeFirstEffect): Promise<Result<LifecycleReceiptV1>> => {
       if (!lifecycleCommandIsExact(input)) return refusal("reject", "INVALID_SCHEMA", "lifecycle command is not exact");
       const now = dependencies.clock?.now();
       if (!isInstant(now)) return unavailable(input.operation, "clock did not supply a canonical instant");
@@ -1531,9 +1547,11 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
         if (!replayed.ok) return replayed;
         if (replayed.value !== undefined) return { ok: true, value: replayed.value };
       }
+      if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal(input.operation, "UNAUTHORIZED", "host refused first canonical effect");
       const event = lifecycleEvent(input, now, fromState.value, authorization.value.receipt_digest, bound.value ?? undefined);
       const effect = await authorizeEffect(authorization.value, input.deadline_at);
       if (!effect.ok) return operationFailure(input.operation, effect);
+      if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal(input.operation, "UNAUTHORIZED", "host refused first canonical effect");
       const applied = await dependencies.canonical_store.applyLifecycle({
         command: input,
         event: event as never,
