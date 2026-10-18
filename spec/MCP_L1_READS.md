@@ -2,7 +2,7 @@
 
 Branch: `feat/memory-mcp-l1-reads`; base: `3eff28a8` (merged L0).
 Normative source: frozen `SPEC-memory-mcp-v3.1.md`, M1/M2/M3/M4/M6/M13/M14 and the MCP-L1 row.
-Source SHA-256: `f90c927964b44fdf6ad712eee9b894762250239384643a3790931c142d3aeeca`.
+Source SHA-256: `f90c927964b44fdf6ad712eee9b894762250239384643a3790931c142d3aeeca`. Restoration delta: `SPEC-memory-mcp-v3.2.md`, SHA-256 `18c697c1cd91287fd9f814c059910ffb4b39ddb1be46af547f384c7d912177b2`, restores D3/D10 from baseline `7bc9baec`; read sections are unchanged and joint re-acceptance of the D10 delta remains `unverified`.
 The frozen source is unchanged. This lot implements option B's reads, without claiming an adapter or a complete 0.20.0 release.
 
 ## Delivered boundary
