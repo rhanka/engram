@@ -557,6 +557,20 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     if (decided.kind === 'failure') return decided.failure as ToolResultV1<WithdrawOutputV1>;
     const adopted = decided.binding.preimage.effective_input;
     if (adopted.tool_name !== 'engram_memory_withdraw') return failure(tool, ctx, 'STORE_UNAVAILABLE');
+    if (decided.kind === 'recover') {
+      // M4 l.583-587: a recovered reservation without durable proof of a
+      // committed effect still needs the CURRENT verifier verdict before the
+      // first canonical effect. A proven committed result replays through the
+      // engine's stored event identity (no second effect, fresh custody, no
+      // new ceremony); anything else refuses on an expired confirmation.
+      const proof = decided.binding;
+      const committed = (proof.recovery_state === 'completed_response' || proof.recovery_state === 'canonical_committed_receipt')
+        && isValidOpaqueRef(proof.canonical_replay_ref);
+      if (!committed) {
+        const confirmed = await confirmIfRequired(tool, ctx, arg.idempotency_key, decided.binding, decided.binding.operation_digest, adopted.candidate_id);
+        if (confirmed) return confirmed as ToolResultV1<WithdrawOutputV1>;
+      }
+    }
     if (decided.kind === 'execute') {
       const confirmed = await confirmIfRequired(tool, ctx, arg.idempotency_key, decided.binding, decided.binding.operation_digest, adopted.candidate_id);
       if (confirmed) return confirmed as ToolResultV1<WithdrawOutputV1>;
@@ -622,6 +636,17 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     if (decided.kind === 'failure') return decided.failure as ToolResultV1<ForgetOutputV1>;
     const adopted = decided.binding.preimage.effective_input;
     if (adopted.tool_name !== 'engram_memory_forget') return failure(tool, ctx, 'STORE_UNAVAILABLE');
+    if (decided.kind === 'recover') {
+      // M4 l.583-587: same recovered-reservation rule as withdraw — replay a
+      // proven committed effect, otherwise re-verify confirmation first.
+      const proof = decided.binding;
+      const committed = (proof.recovery_state === 'completed_response' || proof.recovery_state === 'canonical_committed_receipt')
+        && isValidOpaqueRef(proof.canonical_replay_ref);
+      if (!committed) {
+        const confirmed = await confirmIfRequired(tool, ctx, arg.idempotency_key, decided.binding, decided.binding.operation_digest, adopted.record_id);
+        if (confirmed) return confirmed as ToolResultV1<ForgetOutputV1>;
+      }
+    }
     if (decided.kind === 'execute') {
       const confirmed = await confirmIfRequired(tool, ctx, arg.idempotency_key, decided.binding, decided.binding.operation_digest, adopted.record_id);
       if (confirmed) return confirmed as ToolResultV1<ForgetOutputV1>;
