@@ -1625,7 +1625,28 @@ export function evaluatePrincipalScopedMutationLookupV1<TOutput>(
     };
   }
 
+  // M5 l.702: an executing reservation without durable proof of a
+  // committed effect is uncommitted. A stale domain-policy version returns
+  // POLICY_STALE before any unknown-outcome recovery re-drive.
+  const recordedVersion =
+    existing.policy_versions.tool_name === 'engram_memory_capture'
+      ? existing.policy_versions.capture_policy_version
+      : existing.policy_versions.tool_name ===
+          'engram_memory_request_admission'
+        ? existing.policy_versions.admission_policy_version
+        : undefined;
+  const staleVersionReject =
+    recordedVersion !== undefined &&
+    recordedVersion !== incoming.active_domain_policy_version
+      ? {
+          decision: 'reject',
+          error_code: 'POLICY_STALE',
+          retriable: true,
+        } as const
+      : undefined;
+
   if (existing.recovery_state === 'executing_unknown_outcome') {
+    if (staleVersionReject !== undefined) return staleVersionReject;
     return {
       decision: 'reject',
       error_code: 'MUTATION_OUTCOME_UNKNOWN',
@@ -1634,23 +1655,7 @@ export function evaluatePrincipalScopedMutationLookupV1<TOutput>(
   }
 
   {
-    const recordedVersion =
-      existing.policy_versions.tool_name === 'engram_memory_capture'
-        ? existing.policy_versions.capture_policy_version
-        : existing.policy_versions.tool_name ===
-            'engram_memory_request_admission'
-          ? existing.policy_versions.admission_policy_version
-          : undefined;
-    if (
-      recordedVersion !== undefined &&
-      recordedVersion !== incoming.active_domain_policy_version
-    ) {
-      return {
-        decision: 'reject',
-        error_code: 'POLICY_STALE',
-        retriable: true,
-      };
-    }
+    if (staleVersionReject !== undefined) return staleVersionReject;
   }
 
   if (existing.recovery_state !== 'pending_confirmation' && existing.recovery_state !== 'authorized_uncommitted') {
