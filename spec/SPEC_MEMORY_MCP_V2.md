@@ -4,7 +4,7 @@
 **Target product release:** `@sentropic/engram@0.20.0`  
 **Status:** Complete specification incorporating the 16 Opus review amendments. Implementation and release qualification remain `unverified`.
 
-The 0.20.0 delivery MUST expose engram memory through dedicated tools using the Sentropic MCP standard, re-expose those capabilities in the Sentropic registry, and support **voluntary inheritance by an agent host through cluster-mesh**. `graph.json` MUST remain the code graph.
+The 0.20.0 delivery MUST expose engram memory through dedicated tools using the Sentropic MCP standard, re-expose those capabilities in the Sentropic registry, and support **voluntary inheritance by an agent host through cluster-mesh**. `graph.json` is a bounded current graph projection that may carry filtered memory projection envelopes alongside code under restored D3/D10; the canonical journal remains the sole memory authority.
 
 This document implements the owner decision dated 2026-10-17. `MUST`, `MUST NOT`, and `SHOULD` express normative requirements. New interfaces and behavior described below are requirements to implement, not claims of existing functionality.
 
@@ -29,7 +29,7 @@ Four existing surfaces require explicit treatment:
 | Mesh memory shadow protocol | Sentropic: `packages/cluster-mesh/src/memory.ts`, exported by `src/index.ts` | Retire the public `H2aGraphifyMemoryPort` / `createGraphifyMemoryAdapter` channel in the coordinated migration. |
 | h2a memory clients, compatibility adapters, vendored contracts, and D11 | h2a: `packages/h2a/src/runtime/memory/` | Retire legacy dispatch; re-anchor D11 in host-owned `AdmissionPolicy` and `EvidenceVerifierPort` implementations. |
 | Read-only canonical revalidation | Engram: `engram-memory/contracts/index.ts`, `memory-store.ts`, `sqlite.ts`, `postgres.ts` | Reuse `revalidateReadOnly`; add the missing scope enforcement and pure scoped snapshot behavior. |
-| X2b memory graph projection | Engram: `src/storage/memory-projection.ts`, `src/storage/file.ts` | Preserve a separate memory projection and explicitly guard its destinations against the code graph. |
+| X2b memory graph projection | Engram: `src/storage/memory-projection.ts`, `src/storage/file.ts` | Preserve X2b persistence and invalidation guarantees; integrate authorized memory envelopes into the graph only through a controlled assembly that preserves foreign objects and refuses uncontrolled replacement of the assembled graph. |
 
 Other verified prerequisites are:
 
@@ -881,45 +881,56 @@ Dedicated memory discovery and calls MUST work without `.graphify/graph.json`.
 
 D2/D-B’s no-wire-API boundary applies to the neutral package. The optional product adapter provides MCP bindings; the host owns listeners, authentication, supervision, and relay policy. No new neutral deployment mode or built-in administrator is introduced.
 
-## M10. D10 replacement and the actual projection boundary
+## M10. Filtered memory projection into the graph (restored D3/D10)
 
-The replacement decision is:
+The restored decision is the initial D10 at validated baseline `7bc9baec`, recalled exactly:
 
-> **D10 — `graph.json` is the code graph; memory uses dedicated authorized interfaces.**
+> **D10 — Bounded current projection; history never inflates `graph.json`**
 >
-> `graph.json` MUST NOT materialize canonical memory records, memory-derived vertices or edges, memory projection envelopes, bodies, identifiers, citations, receipts, or metadata copied from the canonical memory store.
+> `graph.json` is one bounded current graph projection, not canonical history and not “graph plus projection.” It may contain only current accepted projection envelopes, citation references, and projection metadata. It never contains record bodies, pending data, journal events, tombstone history, rank receipts, authorization receipts, backup material, or vectors.
 >
-> Canonical memory remains in its journal and immutable record store. Agents access it through dedicated authorized MCP tools.
->
-> Optional lexical, vector, and semantic memory projections remain separate from the code graph and subject to memory authorization, lifecycle, and invalidation.
->
-> The existing code-graph size ceiling applies to the code artifact and does not require copying memories into it.
+> The raw-byte merge ceiling remains `52_428_800` bytes. A bounded export records high-water cursor, included record count, omitted count by reason, projection schema version, and digest. Omission must follow an explicit deterministic filter; silent top-N loss is forbidden. Any journal length may be replayed without linear growth of `graph.json` when current eligible cardinality is fixed.
 
-Code symbols and documentation describing the memory implementation remain legitimate code-graph material. The prohibition concerns materialization from the memory store.
+The canonical journal and immutable record blobs remain the sole memory authority (EVOL D3). Graph nodes and edges, indexes, caches, exports, and UI scenes are projections. No projection path, including graph construction, export, reload, or `GraphStore.pushGraph`, may capture, admit, mutate, or resurrect a canonical memory record.
+
+The graph may combine code with current projections of admitted, eligible, and authorized memories for the scope and audience of that view. Memory projection uses the neutral projection DTOs defined by EVOL. It carries only the envelopes, citation references, and projection metadata permitted by initial D10; it MUST NOT copy canonical record bodies, pending data, journal events, tombstone history, authorization receipts, backup material, or vectors into `graph.json`.
+
+Projection eligibility is explicit. Only a record in `accepted_current` with `projection_eligible === true`, currently eligible and authorized for the target scope and audience, may appear in the `graph.json` projection. Any transition to `accepted_disputed` (dispute), `withdrawn`, `historical`, `expired`, `trust_invalid`, or `tombstoned` removes the record from the projection at the next regeneration or reconciliation; `pending` and `rejected` records are never projected. Memories that are private for the target audience, not admitted, or not eligible MUST be excluded before assembly and before any report, wiki, export, or cache is produced. The exclusion covers their identifiers, citations, relations, statistics, and indirect influence. Rights MUST NOT be inferred from the mere presence of an object in the graph.
+
+Links to code rest on authorized references and evidence. No edge between records in different scopes and no private derivation lineage may bypass the capitalisation and redaction rules of EVOL.
+
+Loss of eligibility or authorization makes a memory immediately unavailable to authorized reads. Affected projections MUST be invalidated and then rebuilt or cleaned through the acknowledged cursor. A stale projection MUST NOT be served as a current authorized view. Retries, restores, and replayed batches MUST NOT resurrect a forgotten record.
+
+X2b keeps its persistence, staging, and invalidation guarantees. A projection adapter MUST NOT accidentally replace the whole assembled graph: integration passes through a controlled assembly that preserves foreign objects. Path, staging, and alias safeguards prevent writes outside that assembly; they do not forbid an authorized memory projection.
+
+The `52_428_800`-byte ceiling, deterministic omissions, freshness metadata, and the EVOL invalidation-cascade criteria remain applicable. The dedicated memory tools remain usable without any code graph file.
+
+Code symbols and documentation describing the memory implementation remain legitimate graph material. No cleanup of existing artifacts is presumed without evidence of non-conforming content. Any correction preserves the journal, canonical records, tombstones, and backup integrity.
+
+Restoration note: M10 restores the validated baseline at `7bc9baec` (initial D3/D10). This is a restoration, not a new owner amendment.
 
 ### Established implementation state
 
-No memory-to-`graph.json` bridge was found in the inspected build/update path. The tracked graph contains `code`, `concept`, and `rationale` nodes; no materialized memory nodes were found.
+No memory-to-`graph.json` assembly bridge was found in the inspected build/update path. The tracked graph contains `code`, `concept`, and `rationale` nodes; no materialized memory nodes were found. The filtered projection assembly is therefore missing product work assigned to MCP-L3, not an established contamination.
 
-Existing contamination is therefore **`unverified`**. This specification MUST NOT describe contamination or a connected build/update bridge as an established fact.
+Existing contamination is therefore **`unverified`**. This specification MUST NOT describe contamination as an established fact.
 
-The verified X2b implementation is `src/storage/memory-projection.ts`. It creates a private `graph-${encodeURIComponent(namespace)}.json` snapshot, writes through `FileGraphStore` to a staging target, and publishes by rename.
+The verified X2b implementation is `src/storage/memory-projection.ts`. It creates a private `graph-${encodeURIComponent(namespace)}.json` snapshot, writes through `FileGraphStore` to a staging target, and publishes by rename. That private snapshot is not the assembled code-plus-memory graph.
 
-`FileGraphStore` accepts `config.target`. That target boundary requires an explicit safeguard.
+`FileGraphStore` accepts `config.target`. That target boundary requires a controlled-assembly safeguard so a projection write cannot replace foreign graph objects or write outside the intended assembly.
 
 ### Required changes
 
 MCP-L3 MUST:
 
-- Guard X2b’s final destination, staging targets, and publication path against the configured code-graph artifact.
-- Compare resolved path identities and applicable aliases, rather than relying only on basename spelling.
-- Refuse before writing if a memory projection could replace the code graph.
-- Replace the EVOL’s required memory-to-code-graph bridge language.
-- Update D3, projection descriptions, **EVOL-L6** acceptance wording, and comments describing a `graph.json`-style memory projection.
-- Preserve bounds, lifecycle, and invalidation tests for separate memory projections.
-- Verify that graph query, report, wiki, export, and generated caches do not expose materialized canonical memory.
+- Restore EVOL D3/D10 wording to the validated baseline and assemble authorized memory envelopes with code in `graph.json` through neutral projection DTOs.
+- Project only records in `accepted_current` with `projection_eligible === true` that are currently eligible and authorized for the view; exclude every other state and every unauthorized record before assembly.
+- Preserve X2b staging, path-identity, and alias safeguards as assembly safeguards; refuse any write that would replace foreign objects or escape the controlled assembly.
+- Connect invalidation and freshness to build, update, query, report, wiki, export, and caches, so no derived output exposes a memory that is unauthorized, ineligible, or stale.
+- Preserve the `52_428_800`-byte ceiling, deterministic omissions, and lifecycle invalidation tests for the bounded projection.
+- Share the citation-resolution convention with live-git G3 (`explainLineOrigin`) without duplicating join logic, and without copying canonical memory into `/code-git` storage.
 
-Implementation hooks are removed only if found. Cleanup or regeneration of active artifacts is required only when contamination is established or deliberately seeded for testing.
+Cleanup or regeneration of active artifacts is required only when non-conforming content is established or deliberately seeded for testing.
 
 Any cleanup MUST preserve canonical records, journals, tombstones, and backup integrity. Git-history rewriting and deletion of already distributed artifacts remain outside this amendment.
 
@@ -947,7 +958,7 @@ Existing mandatory memory gates remain binding. The following classes are requir
 | Sentropic opt-in | Disabled tenant and unselected agent see no memory tools. Another tenant’s cached discovery or execution binding cannot be reused. Direct forged invocation fails. |
 | Voluntary host inheritance | Disabled h2a performs zero memory initialization and exposes zero tools. Enabled h2a obtains only selected capabilities through public mesh exports. |
 | Legacy cutover | No active shadow protocol or V1/V2 compatibility dispatch bypasses the six tools. D11 evidence reaches host policy and verifier ports with its existing guarantees. |
-| D10 | A distinctive canonical memory fixture never materializes in build/update/query/report/wiki/export. X2b rejects code-graph destinations and aliases. Seeded contamination is cleaned without changing canonical state. |
+| Filtered projection (D3/D10) | An admitted, current, shareable memory fixture appears in the graph with its authorized references to code. Non-admitted, private-for-the-audience, or ineligible memories appear in no output and exert no indirect influence. Revocation, loss of eligibility, and forgetting make the stale view unservable, then remove the projection from every declared surface. Replay, rebuild, and restore resurrect nothing and never modify canonical authority. Only `accepted_current` with `projection_eligible === true` is projected; `accepted_disputed`, `withdrawn`, `historical`, `expired`, `trust_invalid`, and `tombstoned` records are removed at the next regeneration or reconciliation. |
 | Packaging | Fresh consumers use exact candidate tarballs without sibling directories; SDK schemas work at the selected floor; disabled installations perform no memory native build. |
 | Native storage and existing gates | Preserve Linux SQLite fencing, crash/reopen, Postgres 16/17 parity coverage, trust/admission, recall profiles, backup/restore, migration signatures, and configured projection tests. |
 | Complete topology | Qualify the h2a embedded-local chain and the separate Sentropic-owned instance. Exercise success, denial, revocation, pending admission, forgetting, opt-in, and disable behavior. Verify no cross-host memory call. |
@@ -959,7 +970,7 @@ Existing Sentropic test paths to extend include:
 - `api/tests/services/catalog/execution-seam.spec.ts`
 - Relevant broker, mcp-platform, and mcp-auth suites.
 
-New focused suites SHOULD cover scoped reads, point reads, MCP schemas, durable replay, authorization, code-graph separation, mesh composition, host opt-in, and legacy cutover.
+New focused suites SHOULD cover scoped reads, point reads, MCP schemas, durable replay, authorization, filtered graph projection, mesh composition, host opt-in, and legacy cutover.
 
 All test outcomes and release readiness remain **`unverified`** in this document.
 
@@ -1018,7 +1029,7 @@ The release requires:
 - Authorization-safe durable replay and lifecycle race handling.
 - Host-bounded retention, consent, and lifecycle provenance.
 - Same-payload tombstone adjudication protection.
-- D10 documentation and implementation safeguards.
+- Filtered-projection (restored D3/D10) documentation and implementation.
 - An installable optional adapter with qualified dependency boundaries.
 - A published production broker and actual Sentropic registry execution path.
 - Explicit Sentropic tenant opt-in.
@@ -1049,7 +1060,7 @@ All 16 amendments are **applied**. None is contested.
 | 10 | **Applied** | M3 selects host-managed random pagination handles and forbids engram-owned signing secrets. Any later signed variant requires a host key port. |
 | 11 | **Applied** | M3 and MCP-L1 introduce V3 recall packets and a versioned facet without altering V2. They reuse existing `revalidateReadOnly` and require a pure scoped snapshot. Current `acceptedSnapshot` observes expiry through a write path. |
 | 12 | **Applied** | M6 maps the complete neutral error union, explicitly including `PROJECTION_OVERSIZED`, `BACKUP_INVALID`, `RESTORE_REFUSED`, and `MIGRATION_LEDGER_INVALID`. Exhaustiveness is a qualification gate. |
-| 13 | **Applied** | M10 marks contamination `unverified`, records that no connected build/update bridge was found, and targets X2b’s actual file publication path and `FileGraphStore.config.target`. Cleanup is conditional on evidence. |
+| 13 | **Applied** | M10 records the restored filtered-projection boundary (initial D3/D10), marks existing contamination `unverified`, records that no assembly bridge was found in the inspected build/update path, and targets controlled assembly over X2b’s actual file publication path and `FileGraphStore.config.target`. Cleanup is conditional on evidence. |
 | 14 | **Applied** | All delivery lots use MCP-prefixed identifiers. MCP-L8 includes both h2a mesh pins and compatibility migration; MCP-L7 extends `disabledNamespaceModule` to `/memory`. Current 0.13.3→0.16.0 compatibility is not assumed. |
 | 15 | **Applied** | M9 requires optional native provisioning, an SDK floor of 1.31.0, and publication of the currently private broker. It distinguishes the current private package’s ordinary dependencies from the required public installation behavior. |
 | 16 | **Applied** | M9 forbids memory activation through `engram serve` flags, environment variables, or alternate stdio launches. M13 fixes the embedded-local reference chain independently of W-C/ARCH-06. |
@@ -1072,10 +1083,10 @@ All MCP lots below are required for the complete 0.20.0 delivery. “Agent host�
 
 | Lot | Accountable owner | Deliverables | Dependencies | Exit criterion |
 |---|---|---|---|---|
-| **MCP-L0 — Contract freeze** | Engram, with Sentropic and agent-host contract owners | Six schemas; V3 recall and V1 point-read declarations; exact gates and error mapping; host policy/provenance rules; D10 replacement; topology; legacy migration disposition; package and profile requirements. | First. | Reviewable contract contains no behavioral placeholders. Every review amendment has a disposition. Public/private boundaries and required schema versions are explicit. |
+| **MCP-L0 — Contract freeze** | Engram, with Sentropic and agent-host contract owners | Six schemas; V3 recall and V1 point-read declarations; exact gates and error mapping; host policy/provenance rules; D10 restoration (filtered projection); topology; legacy migration disposition; package and profile requirements. | First. | Reviewable contract contains no behavioral placeholders. Every review amendment has a disposition. Public/private boundaries and required schema versions are explicit. |
 | **MCP-L1 — Scoped neutral reads** | Engram | Versioned scoped store extension; V3 redacted recall; `MemoryReadPortV1`; reuse of `revalidateReadOnly`; pure snapshots; final authorization and eligibility checks. | MCP-L0. | Same-store cross-scope, read-purity, exact-read, redaction, and version-compatibility acceptance pass. V2 declarations remain unchanged; missing extensions fail closed. |
 | **MCP-L2 — Durable lifecycle and policy safety** | Engram; agent hosts supply trusted bindings | Authorization before cached outcomes; durable admission replay; stable capture ordering and provenance; policy-bound retention/consent; atomic same-payload tombstone guard; race, interruption, and cleanup reporting. | MCP-L0. | Restart, lost-acknowledgement, conflict, revocation, withdrawal/admission race, recapture-after-forget, and cleanup tests pass. |
-| **MCP-L3 — Code-graph separation** | Engram | D10/EVOL wording updates; X2b destination guard; separate projection fixtures; conditional cleanup procedure for observed contamination. | MCP-L0. | Memory cannot target or replace the configured code graph, including tested aliases and staging publication. Graph outputs contain no materialized memory. Canonical state remains unchanged by cleanup. |
+| **MCP-L3 — Filtered memory projection into the graph** | Engram; policy and consumer-surface owners for their contracts | Restore EVOL D3/D10; assemble authorized memory envelopes with code; preserve provenance, scope, bounds, and foreign objects; connect invalidation and freshness to build, update, query, report, wiki, export, and caches. | Corrected L0 contracts; authorized L1 reads; canonical L2 transitions and invalidation as needed. No MCP transport is required for local assembly. | Positive presence of an admitted, shareable memory; absence of forbidden data and indirect influence; invalidation, replay, and anti-resurrection proven on real surfaces; journal unchanged by projection operations; ceiling and deterministic export preserved. Only `accepted_current` with `projection_eligible === true` is projected. |
 | **MCP-L4 — Standard memory provider** | Engram | `src/mcp/memory/*`; optional product export; six tools; schemas; total result/error mapping; cancellation; host-managed page handles; native dependency isolation; SDK floor. | MCP-L1, MCP-L2, and MCP-L5’s qualified contract. | SDK discovery and invocation pass without a code graph. Packed provider works from public dependencies and performs no default native storage installation. |
 | **MCP-L5 — Production Sentropic mutation and execution path** | Sentropic | Freeze and qualify the mutation subset; production broker; mandatory verified context; idempotency and elicitation forwarding; policy enforcement; catalog metadata preservation; source-bound dispatch; public broker dependencies. | MCP-L0; runs alongside MCP-L1–MCP-L3. | Production contract is versioned and pinned in candidate evidence. Concurrent-principal, tenant isolation, forged-call, confirmation-replay, and source-binding tests pass. Broker is publishable without sibling-source imports. |
 | **MCP-L6 — Sentropic registry re-exposure** | Sentropic, using the Engram provider | Sentropic-owned embedded provider/store; actual MCP discovery; tenant-aware `registerMcpSource`; selected agent/tool policy; executable handlers; collision checks; disable behavior. | MCP-L4, MCP-L5. | End-to-end catalog invocation succeeds for an opted-in tenant. Disabled tenants and unauthorized agents see no tools and cannot invoke them. No call targets h2a. |
