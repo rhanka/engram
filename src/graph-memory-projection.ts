@@ -257,19 +257,11 @@ export function assembleMemoryGraphProjection(
     return a.target < b.target ? -1 : a.target > b.target ? 1 : 0;
   });
 
-  // M10 l.1362: the ceiling covers the whole merge payload, code references
-  // included. The neutral envelope size alone would admit a projection whose
-  // serialized memory->code edges overflow `graph.json` on their own.
-  const edgeBytes = new TextEncoder().encode(JSON.stringify(edges)).byteLength;
-  const totalRawBytes = exported.value.raw_byte_size + edgeBytes;
-  const ceiling = input.byte_ceiling ?? MEMORY_PROJECTION_RAW_BYTE_CEILING;
-  if (totalRawBytes > ceiling) {
-    return refusal(
-      "PROJECTION_OVERSIZED",
-      `bounded current projection of ${entries.length} objects with ${edges.length} code references is ${totalRawBytes} bytes, exceeds the ${ceiling}-byte ceiling; refused without omitting any current entry`,
-    );
-  }
-
+  // M10 l.1362: the ceiling covers the bytes actually produced — the memory
+  // nodes and memory edges in the form written to `graph.json`. The neutral
+  // envelope size undercounts the node rows (id, label, file_type,
+  // source_file plus the duplicated envelope and citation references), so no
+  // field-by-field estimate is used: the real serialized size is measured.
   const nodes: Extraction["nodes"] = exported.value.projection.objects.map((object) => ({
     id: object.node_id,
     label: object.projection.record_id,
@@ -278,6 +270,17 @@ export function assembleMemoryGraphProjection(
     memory_projection: object.projection,
     citation_refs: [...object.citation_refs],
   }));
+  const encoder = new TextEncoder();
+  const totalRawBytes =
+    encoder.encode(JSON.stringify(nodes)).byteLength +
+    encoder.encode(JSON.stringify(edges)).byteLength;
+  const ceiling = input.byte_ceiling ?? MEMORY_PROJECTION_RAW_BYTE_CEILING;
+  if (totalRawBytes > ceiling) {
+    return refusal(
+      "PROJECTION_OVERSIZED",
+      `bounded current projection of ${entries.length} objects with ${edges.length} code references is ${totalRawBytes} bytes, exceeds the ${ceiling}-byte ceiling; refused without omitting any current entry`,
+    );
+  }
   return {
     ok: true,
     value: {
@@ -315,6 +318,78 @@ export function assertMemoryProjectionFresh(projectionCursor: string, highWaterC
     throw new Error(
       `PROJECTION_STALE: memory projection at cursor ${projectionCursor} is behind high-water cursor ${highWaterCursor}; rebuild before serving`,
     );
+  }
+}
+
+/** True when the live graph view carries at least one memory node. */
+export function graphCarriesMemoryNodes(G: Graph): boolean {
+  let found = false;
+  G.forEachNode((_nodeId, attrs) => {
+    if (!found && (attrs as Record<string, unknown>)?.file_type === "memory") found = true;
+  });
+  return found;
+}
+
+/**
+ * M10 l.1399 — the single mandatory freshness gate for every Graph surface
+ * that exposes memory (report, wiki, export). Surfaces call it
+ * unconditionally: there is no parameter that skips the gate. A view without
+ * memory nodes stays servable. A view carrying memory nodes without a
+ * high-water proof is refused — freshness is unprovable, so the projection
+ * MUST NOT be served as current. With a proof, a projection behind it is
+ * refused (`PROJECTION_STALE`).
+ */
+export function enforceMemoryFreshnessForSurface(G: Graph, highWaterCursor?: string): void {
+  if (!graphCarriesMemoryNodes(G)) return;
+  if (highWaterCursor === undefined) {
+    throw new Error(
+      "PROJECTION_STALE: graph carries memory nodes without a high-water proof; supply the live high-water cursor and rebuild before serving",
+    );
+  }
+  checkGraphMemoryFreshness(G, highWaterCursor);
+}
+
+/**
+ * M10 l.1399 — the single mandatory freshness gate for cached extractions.
+ * Same fail-closed rule as the Graph gate: payloads without memory nodes pass
+ * unconditionally; a payload carrying memory nodes without a high-water proof
+ * is refused; with a proof, every memory node must pin a projection cursor at
+ * or ahead of it (a cursor-less memory node cannot prove freshness).
+ */
+export function enforceCachedMemoryFreshness(
+  payload: Record<string, unknown>,
+  highWaterCursor?: string,
+): void {
+  const nodes = (payload as { nodes?: unknown }).nodes;
+  if (!Array.isArray(nodes)) return;
+  let carriesMemory = false;
+  for (const node of nodes) {
+    if (!!node && typeof node === "object" && (node as Record<string, unknown>).file_type === "memory") {
+      carriesMemory = true;
+      break;
+    }
+  }
+  if (!carriesMemory) return;
+  if (highWaterCursor === undefined) {
+    throw new Error(
+      "PROJECTION_STALE: cached extraction carries memory nodes without a high-water proof; supply the live high-water cursor and rebuild before serving",
+    );
+  }
+  for (const node of nodes) {
+    if (!node || typeof node !== "object") continue;
+    const record = node as Record<string, unknown>;
+    if (record.file_type !== "memory") continue;
+    const projection = record.memory_projection;
+    const cursor =
+      projection !== null && typeof projection === "object"
+        ? (projection as Record<string, unknown>).projection_cursor
+        : undefined;
+    if (typeof cursor !== "string") {
+      throw new Error(
+        "PROJECTION_STALE: cached memory node has no projection cursor; rebuild before serving",
+      );
+    }
+    assertMemoryProjectionFresh(cursor, highWaterCursor);
   }
 }
 

@@ -4,7 +4,7 @@
 import Graph from "graphology";
 import type { GodNodeEntry, SurpriseEntry, SuggestedQuestion, DetectionResult } from "./types.js";
 import { type NumericMapLike, toNumericMap } from "./collections.js";
-import { checkGraphMemoryFreshness } from "./graph-memory-projection.js";
+import { enforceMemoryFreshnessForSurface } from "./graph-memory-projection.js";
 import { isFileNode, isConceptNode } from "./analyze.js";
 import type { AffectedFlowsResult, ReviewFlow, ReviewFlowArtifact } from "./flows.js";
 
@@ -35,9 +35,10 @@ export interface GenerateReportOptions {
     builtFromCommit?: string | null;
   } | null;
   /**
-   * MCP-L3 freshness gate (M10 l.1399): when supplied, a graph carrying a
-   * memory projection behind this high-water cursor is refused
-   * (`PROJECTION_STALE`) instead of being reported as a current view.
+   * MCP-L3 freshness proof (M10 l.1399): the live high-water cursor the
+   * caller vouches for. A graph carrying memory nodes is always gated —
+   * without this proof, or behind it, the report is refused
+   * (`PROJECTION_STALE`) instead of being served as a current view.
    */
   memoryHighWaterCursor?: string;
 }
@@ -158,14 +159,14 @@ export function generate(
     | GenerateReportOptions
     | null,
 ): string {
-  // MCP-L3 freshness gate (M10 l.1399): refuse a stale memory projection
-  // instead of reporting it as a current authorized view.
-  const memoryHighWaterCursor = Array.isArray(suggestedQuestions)
-    ? undefined
-    : (suggestedQuestions?.memoryHighWaterCursor ?? undefined);
-  if (typeof memoryHighWaterCursor === "string") {
-    checkGraphMemoryFreshness(G, memoryHighWaterCursor);
-  }
+  // MCP-L3 mandatory freshness gate (M10 l.1399): every report carrying
+  // memory nodes is gated, with no parameter that skips the gate. Without a
+  // high-water proof — or behind it — the stale projection is refused
+  // (`PROJECTION_STALE`) instead of being reported as a current view.
+  enforceMemoryFreshnessForSurface(
+    G,
+    Array.isArray(suggestedQuestions) ? undefined : suggestedQuestions?.memoryHighWaterCursor,
+  );
   const communityMap = toNumericMap(communities);
   const cohesionMap = toNumericMap(cohesionScores);
   const labelMap = toNumericMap(communityLabels);
