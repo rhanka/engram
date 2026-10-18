@@ -3038,6 +3038,22 @@ export function validateToolResultV1(
   return fail('ok', 'ok must be boolean');
 }
 
+function canonicalJsonStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJsonStringify).join(',')}]`;
+  }
+  if (typeof value === 'object' && value !== null) {
+    const entries = Object.keys(value as Record<string, unknown>)
+      .sort()
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${canonicalJsonStringify((value as Record<string, unknown>)[key])}`,
+      );
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
 /**
  * Validates the dual-channel MCP response (`structuredContent` + single JSON
  * text block in `content`, `isError === !structuredContent.ok`, packet byte
@@ -3118,7 +3134,8 @@ export function validateMcpToolCallResponseV1(
   }
 
   if (
-    JSON.stringify(parsedText) !== JSON.stringify(response.structuredContent)
+    canonicalJsonStringify(parsedText) !==
+    canonicalJsonStringify(response.structuredContent)
   ) {
     return fail(
       'content[0].text',
