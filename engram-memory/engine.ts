@@ -39,6 +39,7 @@ import type {
   MemoryRecordV2,
   MemoryState,
   LifecycleCommandV1,
+  LifecycleEventV2,
   LifecycleReceiptV1,
   OperationalCapabilityReceiptV1,
   ProjectionBatchV1,
@@ -682,9 +683,12 @@ function lifecycleProjectionBatch(command: LifecycleCommandV1): ProjectionBatchV
 }
 
 async function foldedStateForCommand(dependencies: MemoryEngineDependenciesV2, command: LifecycleCommandV1): Promise<Result<MemoryState | undefined>> {
+  // Same defect class as M5 l.716: the folded state must cover the complete
+  // journal, never only the first page — the transition replay gate and the
+  // recorded from-state depend on it past cursor 2000.
+  const journal = await readFullJournal(dependencies, command.operation);
+  if (!journal.ok) return journal;
   try {
-    const journal = await dependencies.canonical_store.readJournal({ after: "0", limit: 2_000 });
-    if (!journal.ok) return operationFailure(command.operation, journal);
     const targetId = "record_id" in command ? command.record_id : command.candidate_id;
     let state: MemoryState | undefined;
     for (const event of journal.value) {
@@ -702,6 +706,28 @@ async function foldedStateForCommand(dependencies: MemoryEngineDependenciesV2, c
 // acceptance. The caller only learns the pending_adjudication outcome, never
 // tombstone identities; other scopes never match. Journal and blobs are the
 // durable evidence, so the guard survives restart with empty port caches.
+async function readFullJournal(
+  dependencies: MemoryEngineDependenciesV2,
+  operation: MemoryOperation,
+): Promise<Result<ReadonlyArray<LifecycleEventV2>>> {
+  try {
+    const events: LifecycleEventV2[] = [];
+    let after = "0";
+    for (;;) {
+      const page = await dependencies.canonical_store.readJournal({ after, limit: 2_000 });
+      if (!page.ok) return operationFailure(operation, page);
+      if (page.value.length === 0) break;
+      for (const event of page.value) events.push(event);
+      const last = page.value[page.value.length - 1]!;
+      if (page.value.length < 2_000 || last.cursor === after) break;
+      after = last.cursor;
+    }
+    return { ok: true, value: events };
+  } catch {
+    return unavailable(operation, "canonical store did not return a journal");
+  }
+}
+
 async function sameScopeTombstonePayloadMatch(
   dependencies: MemoryEngineDependenciesV2,
   authorizationReceipt: Digest,
@@ -711,8 +737,10 @@ async function sameScopeTombstonePayloadMatch(
 ): Promise<Result<boolean>> {
   const operation = "request_admission" as const;
   try {
-    const journal = await dependencies.canonical_store.readJournal({ after: "0", limit: 2_000 });
-    if (!journal.ok) return operationFailure(operation, journal);
+    // M5 l.716: the guard consults the complete journal, never only the
+    // first page — a tombstone past cursor 2000 still requires adjudication.
+    const journal = await readFullJournal(dependencies, operation);
+    if (!journal.ok) return journal;
     const lastState = new Map<string, MemoryState>();
     for (const event of journal.value) {
       if (event.record_id !== undefined) lastState.set(event.record_id, event.to_state);
@@ -731,6 +759,45 @@ async function sameScopeTombstonePayloadMatch(
   } catch {
     return unavailable(operation, "canonical store did not return tombstone replay evidence");
   }
+}
+
+// M5 l.710: durable transition recovery. When the target already rests in
+// the commanded terminal state, the committed journal event with the same
+// event identity is the replay proof — returned without applying another
+// effect. Rebuilding the event would change its recorded from-state and
+// break the store's intent deduplication, so the receipt is re-materialized
+// from the found event instead. The transaction replay digest is
+// deterministic over the committed event, hence stable across replays; the
+// caller keeps its recorded canonical reference when it has one.
+async function replayCommittedTransition(
+  dependencies: MemoryEngineDependenciesV2,
+  command: LifecycleCommandV1,
+  target: MemoryState,
+): Promise<Result<LifecycleReceiptV1 | undefined>> {
+  const operation = command.operation;
+  const journal = await readFullJournal(dependencies, operation);
+  if (!journal.ok) return journal;
+  let found: LifecycleEventV2 | undefined;
+  for (const event of journal.value) {
+    if (event.event_id === command.event_id && event.operation === operation && event.to_state === target) found = event;
+  }
+  if (found === undefined || found.from_state === undefined) return { ok: true, value: undefined };
+  return {
+    ok: true,
+    value: {
+      event_id: found.event_id,
+      operation,
+      from_state: found.from_state,
+      to_state: found.to_state,
+      cursor: found.cursor,
+      event_digest: found.event_digest,
+      authorization_receipt_digest: found.authorization_receipt_digest,
+      transaction_receipt_digest: receiptDigest("lifecycle-transition-replay", {
+        event_id: found.event_id,
+        event_digest: found.event_digest,
+      }),
+    },
+  };
 }
 
 // M5: durable admission recovery. After the pending envelope is destroyed,
@@ -1333,6 +1400,20 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
         if (!decision.ok) return decision;
         const effect = await authorizeEffect(authorization.value, input.deadline_at);
         if (!effect.ok) return effect;
+        const pendingAdjudication = (): AdmissionOutcomeV1 => {
+          const transactionReceipt = receiptDigest("admission-pending", {
+            candidate_id: input.candidate_id,
+            cursor: pending.value.control.created_cursor,
+            decision_receipt_digest: decision.value.receipt_digest,
+          });
+          return {
+            status: "pending_adjudication",
+            candidate_id: input.candidate_id,
+            cursor: pending.value.control.created_cursor,
+            decision_receipt_digest: decision.value.receipt_digest,
+            transaction_receipt_digest: transactionReceipt,
+          };
+        };
         if (decision.value.decision === "accept") {
           const guard = await sameScopeTombstonePayloadMatch(
             dependencies,
@@ -1342,40 +1423,10 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
             payloadDigest,
           );
           if (!guard.ok) return guard;
-          if (guard.value) {
-            const transactionReceipt = receiptDigest("admission-pending", {
-              candidate_id: input.candidate_id,
-              cursor: pending.value.control.created_cursor,
-              decision_receipt_digest: decision.value.receipt_digest,
-            });
-            return {
-              ok: true,
-              value: {
-                status: "pending_adjudication",
-                candidate_id: input.candidate_id,
-                cursor: pending.value.control.created_cursor,
-                decision_receipt_digest: decision.value.receipt_digest,
-                transaction_receipt_digest: transactionReceipt,
-              },
-            };
-          }
+          if (guard.value) return { ok: true, value: pendingAdjudication() };
         }
         if (decision.value.decision === "adjudication_required") {
-          const transactionReceipt = receiptDigest("admission-pending", {
-            candidate_id: input.candidate_id,
-            cursor: pending.value.control.created_cursor,
-            decision_receipt_digest: decision.value.receipt_digest,
-          });
-          return {
-            ok: true,
-            value: {
-              status: "pending_adjudication",
-              candidate_id: input.candidate_id,
-              cursor: pending.value.control.created_cursor,
-              decision_receipt_digest: decision.value.receipt_digest,
-              transaction_receipt_digest: transactionReceipt,
-            },
-          };
+          return { ok: true, value: pendingAdjudication() };
         }
         const event = admissionEvent(input.candidate_id, record, authorization.value.receipt_digest, decision.value);
         const projectionBatch = {
@@ -1402,7 +1453,24 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
             decision: decision.value as AdmissionDecisionEnvelopeV1 & { decision: "reject" },
             event: event as never,
           });
-        if (!applied.ok) return operationFailure("request_admission", applied);
+        if (!applied.ok) {
+          // M5 l.720-721: the canonical serialization re-verified the
+          // tombstone guard atomically with the commit. A guard refusal means
+          // a tombstone committed after the pre-check snapshot — adjudication,
+          // never an automatic accept. Any other refusal propagates unchanged.
+          if (applied.error.code === "ILLEGAL_TRANSITION" && decision.value.decision === "accept") {
+            const raced = await sameScopeTombstonePayloadMatch(
+              dependencies,
+              authorization.value.receipt_digest,
+              admitted.value.high_water_cursor,
+              envelope.payload.scope_ref,
+              payloadDigest,
+            );
+            if (!raced.ok) return raced;
+            if (raced.value) return { ok: true, value: pendingAdjudication() };
+          }
+          return operationFailure("request_admission", applied);
+        }
         const value: AdmissionOutcomeV1 = {
           status: decision.value.decision === "accept" ? "accepted" : "rejected",
           candidate_id: input.candidate_id,
@@ -1454,6 +1522,15 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       }
       const fromState = await foldedStateForCommand(dependencies, input);
       if (!fromState.ok) return fromState;
+      // M5 l.710: the target already rests in the commanded terminal state —
+      // recover the committed event as the replay proof, never a second
+      // effect. Authorization above already revalidated the caller.
+      const replayTarget = lifecycleTarget(input.operation);
+      if (fromState.value === replayTarget) {
+        const replayed = await replayCommittedTransition(dependencies, input, replayTarget);
+        if (!replayed.ok) return replayed;
+        if (replayed.value !== undefined) return { ok: true, value: replayed.value };
+      }
       const event = lifecycleEvent(input, now, fromState.value, authorization.value.receipt_digest, bound.value ?? undefined);
       const effect = await authorizeEffect(authorization.value, input.deadline_at);
       if (!effect.ok) return operationFailure(input.operation, effect);
