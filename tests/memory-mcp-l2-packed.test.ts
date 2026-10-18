@@ -27,7 +27,7 @@ describe('MCP-L2 packed write tools against reference ports', () => {
       const imports = [...source.matchAll(/(?:import|require)\s*\(?\s*['"]([^'"]+)['"]/g)].map((match) => match[1]);
       expect(imports.filter((spec) => spec !== 'crypto' && spec !== 'node:crypto')).toEqual([]);
       const bundle = await import(join(directory, 'dist', 'memory-tools.js'));
-      const ports = createReferenceWriteHostPortsV1({ directory: join(directory, 'ports') });
+      const ports = await createReferenceWriteHostPortsV1({ directory: join(directory, 'ports') });
       const fixture = buildMemory({ scope: 'scope:l3' });
       const facets = { scope_ref: 'scope:l3', store_id: 'memory:canonical', engine: fixture.memory };
       const hostBase = {
@@ -62,10 +62,11 @@ describe('MCP-L2 packed write tools against reference ports', () => {
       const recordId = (admitted as { output: { value: { outcome: { record_id: string } } } }).output.value.outcome.record_id;
       const forgotten = await tools.forget({ record_id: recordId, idempotency_key: 'l2-packed-key-0003-0000', reason_ref: 'reason:packed' }, ctx);
       expect((forgotten as { ok: boolean }).ok).toBe(true);
-      ports.coverage.acknowledge('7', undefined);
+      await ports.coverage.acknowledge('7', undefined);
       await expect(ports.coverage.verify('7')).resolves.toMatchObject({ complete: true });
-      ports.keyCustody.recordDestroyed(candidateId);
+      await ports.keyCustody.recordDestroyed(candidateId);
       await expect(ports.keyCustody.confirmDestroyed(candidateId)).resolves.toBe(true);
+      ports.close();
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

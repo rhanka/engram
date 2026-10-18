@@ -353,8 +353,8 @@ describe('MCP-L2 round-2 lifecycle findings', () => {
 
   it('M5 should refuse a completion without a reconciled canonical reference', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'memory-l2-r2-'));
+    const ports = await createReferenceWriteHostPortsV1({ directory });
     try {
-      const ports = createReferenceWriteHostPortsV1({ directory });
       const seed = captureRequest('l2-r2-key-000091', '7', 'ports body');
       const lookupKey = {
         principal_namespace: 'principal:test', principal_id: 'alice', tenant_id: 'tenant:one', store_id: STORE,
@@ -382,14 +382,15 @@ describe('MCP-L2 round-2 lifecycle findings', () => {
       expect((await ports.reservation.reconcileCanonicalOutcome('reservation:eight', 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')).ok).toBe(true);
       expect((await ports.reservation.recordCompletion('reservation:eight', { status: 'committed_pending' })).ok).toBe(true);
     } finally {
+      ports.close();
       rmSync(directory, { recursive: true, force: true });
     }
   });
 
   it('M14 should persist the reference over SQLite, never JSON files', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'memory-l2-r2-'));
+    const ports = await createReferenceWriteHostPortsV1({ directory });
     try {
-      const ports = createReferenceWriteHostPortsV1({ directory });
       const seed = captureRequest('l2-r2-key-000101', '7', 'ports body');
       const lookupKey = {
         principal_namespace: 'principal:test', principal_id: 'alice', tenant_id: 'tenant:one', store_id: STORE,
@@ -415,11 +416,16 @@ describe('MCP-L2 round-2 lifecycle findings', () => {
       expect(existsSync(join(directory, 'reservations.json'))).toBe(false);
       expect(existsSync(join(directory, 'audit.jsonl'))).toBe(false);
       expect(readdirSync(directory).some((file) => file.endsWith('.sqlite'))).toBe(true);
-      const reopened = createReferenceWriteHostPortsV1({ directory });
-      const reloaded = await reopened.reservation.reserveOrLoad(lookupKey, preimage);
-      expect(reloaded.ok).toBe(true);
-      if (reloaded.ok) expect(reloaded.value.preimage.reservation_ref).toBe('reservation:nine');
-      expect(reopened.auditLog().some((entry) => entry.decision === 'reserve')).toBe(true);
+      ports.close();
+      const reopened = await createReferenceWriteHostPortsV1({ directory });
+      try {
+        const reloaded = await reopened.reservation.reserveOrLoad(lookupKey, preimage);
+        expect(reloaded.ok).toBe(true);
+        if (reloaded.ok) expect(reloaded.value.preimage.reservation_ref).toBe('reservation:nine');
+        expect(reopened.auditLog().some((entry) => entry.decision === 'reserve')).toBe(true);
+      } finally {
+        reopened.close();
+      }
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
