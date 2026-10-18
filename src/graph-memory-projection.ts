@@ -33,6 +33,7 @@ import {
 } from "../engram-memory/dist/index.js";
 import type Graph from "graphology";
 import type { Extraction } from "./types.js";
+import { graphJsonLink, graphJsonNode, memoryGraphJsonByteSize } from "./graph-json-serialization.js";
 
 /** Relation carried by every memory→code edge assembled here. */
 export const MEMORY_GRAPH_PROJECTION_RELATION_V1 = "memory_about";
@@ -133,6 +134,22 @@ function isValidInterval(value: unknown): value is ValidIntervalV1 {
 function refusal<T>(code: "PROJECTION_OVERSIZED" | "INVALID_SCHEMA", message: string): Result<T> {
   const operation = "projection_invalidate" as MemoryOperation;
   return { ok: false, error: { code, operation, message, retryable: false } };
+}
+
+/** Typed refusal at the final writer, whose rows include export-time attributes. */
+export class MemoryProjectionOversizedError extends Error {
+  readonly code = "PROJECTION_OVERSIZED" as const;
+  readonly retryable = false;
+
+  constructor(readonly raw_byte_size: number) {
+    super(`memory graph projection is ${raw_byte_size} bytes, exceeds the ${MEMORY_PROJECTION_RAW_BYTE_CEILING}-byte ceiling; refused before writing`);
+    this.name = "MemoryProjectionOversizedError";
+  }
+}
+
+export function assertMemoryGraphJsonSize(nodes: Record<string, unknown>[], links: Record<string, unknown>[]): void {
+  const bytes = memoryGraphJsonByteSize(nodes, links);
+  if (bytes > MEMORY_PROJECTION_RAW_BYTE_CEILING) throw new MemoryProjectionOversizedError(bytes);
 }
 
 function compareCursor(left: string, right: string): number {
@@ -270,10 +287,10 @@ export function assembleMemoryGraphProjection(
     memory_projection: object.projection,
     citation_refs: [...object.citation_refs],
   }));
-  const encoder = new TextEncoder();
-  const totalRawBytes =
-    encoder.encode(JSON.stringify(nodes)).byteLength +
-    encoder.encode(JSON.stringify(edges)).byteLength;
+  const totalRawBytes = memoryGraphJsonByteSize(
+    nodes.map(({ id, ...attrs }) => graphJsonNode(id, attrs)),
+    edges.map(({ source, target, ...attrs }) => graphJsonLink(source, target, attrs)),
+  );
   const ceiling = input.byte_ceiling ?? MEMORY_PROJECTION_RAW_BYTE_CEILING;
   if (totalRawBytes > ceiling) {
     return refusal(
