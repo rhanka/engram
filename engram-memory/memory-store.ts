@@ -838,6 +838,18 @@ class InMemoryCanonicalStore implements InMemoryCanonicalMemoryStoreV1 {
       if (current.value.records.find((record) => record.record_id === input.record.record_id)?.state === "tombstoned") {
         return refusal("request_admission", "ALREADY_TERMINAL", "a tombstoned record cannot be accepted again");
       }
+      // M5 l.720-721: the same-payload tombstone guard participates in the
+      // canonical serialization. Re-verified atomically with the commit, a
+      // tombstone committed after the admission pre-check snapshot still
+      // requires adjudication instead of slipping into an automatic accept.
+      const tombstoneClash = current.value.records.find((record) => {
+        if (record.state !== "tombstoned") return false;
+        const blob = this.#records.get(record.record_id);
+        return blob !== undefined && blob.scope_ref === input.record.scope_ref && blob.payload_digest === input.record.payload_digest;
+      });
+      if (tombstoneClash !== undefined) {
+        return refusal("request_admission", "ILLEGAL_TRANSITION", "candidate payload matches a tombstoned record in the same scope; admission requires adjudication");
+      }
     }
     const appended = this.#append(intent);
     if (!appended.ok) return { ok: false, error: { ...appended.error, operation: "request_admission" } };
