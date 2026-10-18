@@ -9,6 +9,11 @@ const directory = mkdtempSync(join(tmpdir(), 'memory-l1-mutations-'));
 const env = { ...process.env, npm_config_offline: 'true', GIT_NO_LAZY_FETCH: '1' };
 const cases = [
   {
+    id: 'M2-search-reserves-success-envelope', file: 'src/memory-tools/reads.ts',
+    from: 'max_packet_bytes: max_packet_bytes - envelopeOverhead - 2',
+    to: 'max_packet_bytes', pattern: 'M2/M3 should reserve the success envelope',
+  },
+  {
     id: 'M6-get-invocation-is-not-target-denial', file: 'src/mcp/memory/errors.ts',
     from: 'ctx.invocationAuthorized !== false &&', to: '',
     pattern: 'M4/M6 should preserve get invocation UNAUTHORIZED',

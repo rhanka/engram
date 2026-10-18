@@ -501,4 +501,33 @@ describe('MCP-L1 in-process search/get', () => {
     } while (page_cursor);
     expect(seen.sort()).toEqual(ids.sort());
   });
+
+  it.each(['audit:l1', `audit:${'é'.repeat(200)}`])('M2/M3 should reserve the success envelope before paginating near the byte ceiling (%s)', async auditId => {
+    // Argon near-ceiling counterexample; frozen spec lines 240 and 384.
+    const { memory, facets } = setup();
+    const ids = [];
+    for (let i = 0; i < 2; i++) ids.push(await seedAccepted(memory, `alpha ${i} ${'x'.repeat(1500)}`));
+    const raw = await facets.recallPort.recall({ ...request('alpha'), purpose_ref: 'purpose:test' });
+    expect(raw.ok).toBe(true);
+    if (!raw.ok) return;
+    expect(raw.value.records).toHaveLength(2);
+    const max_packet_bytes = Buffer.byteLength(JSON.stringify(raw.value));
+    expect(max_packet_bytes).toBeGreaterThanOrEqual(4096);
+    const { tools: api } = tools(facets);
+    const seen: string[] = [];
+    let page_cursor: string | undefined, pages = 0;
+    do {
+      const result = await api.search({ query: 'alpha', purpose_ref: 'purpose:test', max_packet_bytes, ...(page_cursor ? { page_cursor } : {}) }, { ...invocation(), auditId });
+      expect(code(result)).toBeUndefined();
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(max_packet_bytes);
+      seen.push(...result.output.value.records.map(r => r.record.record_id));
+      expect(seen.length).toBeLessThanOrEqual(ids.length);
+      page_cursor = result.output.value.next_page_cursor;
+      pages++;
+    } while (page_cursor);
+    expect(pages).toBe(2);
+    expect(seen.sort()).toEqual(ids.sort());
+  });
 });
