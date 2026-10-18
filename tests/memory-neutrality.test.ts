@@ -351,6 +351,10 @@ const TEST_ALLOWED_HOST_EDGES = new Set([
   "tests/memory-projection-cascade.postgres.test.ts -> src/storage/memory-projection",
   "tests/memory-projection-cascade.postgres.test.ts -> src/storage/vector/postgres-exact",
   "tests/memory-mcp-l1-reads.test.ts -> src/memory-tools/reads",
+  // MCP-L2 recovery explicitly integrates the neutral SQLite engine with
+  // the delivered host reservation ports and write facade.
+  "tests/memory-mcp-l2-recovery-fixture.ts -> src/mcp/memory/reference-ports",
+  "tests/memory-mcp-l2-recovery-fixture.ts -> src/memory-tools/writes",
 ]);
 
 function hostEdgeKey(path: string, resolved: string): string {

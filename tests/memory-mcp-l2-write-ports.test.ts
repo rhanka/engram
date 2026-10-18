@@ -196,14 +196,15 @@ describe('MCP-L2 reference durable host ports', () => {
       const first = await setup(directory);
       const commit = vi.spyOn(first.store, 'commitPending');
       const input = agentCapture('l2-ports-key-0005', '1');
+      const claim = vi.spyOn(first.ports.reservation, 'claimFencedExecution');
       const [left, right] = await Promise.all([
         first.tools.capture(input, invocation()),
         first.tools.capture(input, invocation()),
       ]);
       const codes = [left, right].map((out) => (out.ok ? out.output.value.status : out.error.code)).sort();
       expect(commit).toHaveBeenCalledOnce();
-      expect(codes).toContain('MUTATION_OUTCOME_UNKNOWN');
-      expect(codes.some((code) => code === 'committed_pending' || code === 'duplicate_exact')).toBe(true);
+      expect(claim).toHaveBeenCalledOnce();
+      expect(codes).toEqual(['committed_pending', 'duplicate_exact']);
       first.ports.close();
       const second = await setup(directory, {}, first);
       const recovered = await second.tools.capture(input, invocation());
