@@ -394,17 +394,18 @@ export function enforceCachedMemoryFreshness(
 }
 
 /**
- * Freshness gate for an assembled graph. Graphs without L3 cursor attributes
- * carry no memory projection and stay servable; graphs with a stale pin throw.
+ * Freshness gate for an assembled graph. Memory nodes require valid cursor
+ * pins and a projection current through both the pinned and live high-water.
  */
 export function checkGraphMemoryFreshness(G: Graph, highWaterCursor: string): void {
   const attrs = G.getAttributes() as Record<string, unknown>;
   const projectionCursor = attrs[MEMORY_PROJECTION_CURSOR_ATTR];
   const pinnedHighWater = attrs[MEMORY_HIGH_WATER_CURSOR_ATTR];
-  if (projectionCursor === undefined && pinnedHighWater === undefined) return;
+  if (projectionCursor === undefined && pinnedHighWater === undefined && !graphCarriesMemoryNodes(G)) return;
   if (typeof projectionCursor !== "string" || typeof pinnedHighWater !== "string") {
     throw new Error("PROJECTION_STALE: memory projection freshness attributes are malformed; rebuild before serving");
   }
+  assertMemoryProjectionFresh(projectionCursor, pinnedHighWater);
   assertMemoryProjectionFresh(projectionCursor, highWaterCursor);
 }
 
