@@ -9,6 +9,12 @@ const directory = mkdtempSync(join(tmpdir(), 'memory-l1-mutations-'));
 const env = { ...process.env, npm_config_offline: 'true', GIT_NO_LAZY_FETCH: '1' };
 const cases = [
   {
+    id: 'M6-preserve-projection-oversized', file: 'src/memory-tools/reads.ts',
+    from: 'mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, error }).structuredContent',
+    to: "error.code === 'PROJECTION_OVERSIZED' ? failure(tool, ctx, 'RESULT_TOO_LARGE') : mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, error }).structuredContent",
+    pattern: 'M6 should preserve PROJECTION_OVERSIZED',
+  },
+  {
     id: 'M3-scope-before-corpus', file: 'engram-memory/memory-store.ts',
     from: '.filter((record) => scope_ref === undefined || record.scope_ref === scope_ref)',
     to: '.filter(() => true)', pattern: 'M3 should isolate the corpus before candidate caps',
