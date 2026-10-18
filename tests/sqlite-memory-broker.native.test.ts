@@ -422,13 +422,16 @@ describe("native SQLite memory broker", () => {
     })).resolves.toMatchObject({ ok: true });
     const tombstonedId = await acceptOne("idempotency-key-x4-tomb", "7");
     await expect(memory.transition(lifecycleCommand("tombstone", tombstonedId, "event:x4-tombstone"))).resolves.toMatchObject({ ok: true });
-    const disputedId = await acceptOne("idempotency-key-x4-disputed", "8");
+    // Each lifecycle record carries a distinct payload: reusing the tombstoned
+    // default body here would trip the same-scope recapture guard
+    // (pending_adjudication instead of the accepted record this corpus needs).
+    const disputedId = await acceptOne("idempotency-key-x4-disputed", "8", "x4 order shared disputed meridian");
     await expect(memory.transition(lifecycleCommand("dispute", disputedId, "event:x4-dispute"))).resolves.toMatchObject({ ok: true });
-    const historicalId = await acceptOne("idempotency-key-x4-historical", "9");
+    const historicalId = await acceptOne("idempotency-key-x4-historical", "9", "x4 order shared historical meridian");
     await expect(memory.transition(lifecycleCommand("mark_non_current", historicalId, "event:x4-historical"))).resolves.toMatchObject({ ok: true });
-    const expiredId = await acceptOne("idempotency-key-x4-expired", "10");
+    const expiredId = await acceptOne("idempotency-key-x4-expired", "10", "x4 order shared expired meridian");
     await expect(memory.transition(lifecycleCommand("expire", expiredId, "event:x4-expire"))).resolves.toMatchObject({ ok: true });
-    const distrustedId = await acceptOne("idempotency-key-x4-distrust", "11");
+    const distrustedId = await acceptOne("idempotency-key-x4-distrust", "11", "x4 order shared distrust meridian");
     await expect(memory.transition(lifecycleCommand("trust_invalidate", distrustedId, "event:x4-distrust"))).resolves.toMatchObject({ ok: true });
     const survivorId = survivorA;
     const expectedCurrent = [survivorA, survivorB, survivorC, resolvedId, rewoundId].sort((a, b) => a.localeCompare(b));

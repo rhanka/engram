@@ -39,6 +39,7 @@ import type {
   MemoryRecordV2,
   MemoryState,
   LifecycleCommandV1,
+  LifecycleEventV2,
   LifecycleReceiptV1,
   OperationalCapabilityReceiptV1,
   ProjectionBatchV1,
@@ -682,9 +683,12 @@ function lifecycleProjectionBatch(command: LifecycleCommandV1): ProjectionBatchV
 }
 
 async function foldedStateForCommand(dependencies: MemoryEngineDependenciesV2, command: LifecycleCommandV1): Promise<Result<MemoryState | undefined>> {
+  // Same defect class as M5 l.716: the folded state must cover the complete
+  // journal, never only the first page — the transition replay gate and the
+  // recorded from-state depend on it past cursor 2000.
+  const journal = await readFullJournal(dependencies, command.operation);
+  if (!journal.ok) return journal;
   try {
-    const journal = await dependencies.canonical_store.readJournal({ after: "0", limit: 2_000 });
-    if (!journal.ok) return operationFailure(command.operation, journal);
     const targetId = "record_id" in command ? command.record_id : command.candidate_id;
     let state: MemoryState | undefined;
     for (const event of journal.value) {
@@ -693,6 +697,145 @@ async function foldedStateForCommand(dependencies: MemoryEngineDependenciesV2, c
     return { ok: true, value: state };
   } catch {
     return unavailable(command.operation, "canonical store did not return a journal");
+  }
+}
+
+// M5/A10-R4: same-scope tombstoned-payload recapture. Before committing
+// admission, equality over the complete canonical candidate payload digest
+// against tombstoned records in the same exact scope prevents automatic
+// acceptance. The caller only learns the pending_adjudication outcome, never
+// tombstone identities; other scopes never match. Journal and blobs are the
+// durable evidence, so the guard survives restart with empty port caches.
+async function readFullJournal(
+  dependencies: MemoryEngineDependenciesV2,
+  operation: MemoryOperation,
+): Promise<Result<ReadonlyArray<LifecycleEventV2>>> {
+  try {
+    const events: LifecycleEventV2[] = [];
+    let after = "0";
+    for (;;) {
+      const page = await dependencies.canonical_store.readJournal({ after, limit: 2_000 });
+      if (!page.ok) return operationFailure(operation, page);
+      if (page.value.length === 0) break;
+      for (const event of page.value) events.push(event);
+      const last = page.value[page.value.length - 1]!;
+      if (page.value.length < 2_000 || last.cursor === after) break;
+      after = last.cursor;
+    }
+    return { ok: true, value: events };
+  } catch {
+    return unavailable(operation, "canonical store did not return a journal");
+  }
+}
+
+async function sameScopeTombstonePayloadMatch(
+  dependencies: MemoryEngineDependenciesV2,
+  authorizationReceipt: Digest,
+  systemAsOf: string,
+  scopeRef: string,
+  payloadDigest: Digest,
+): Promise<Result<boolean>> {
+  const operation = "request_admission" as const;
+  try {
+    // M5 l.716: the guard consults the complete journal, never only the
+    // first page — a tombstone past cursor 2000 still requires adjudication.
+    const journal = await readFullJournal(dependencies, operation);
+    if (!journal.ok) return journal;
+    const lastState = new Map<string, MemoryState>();
+    for (const event of journal.value) {
+      if (event.record_id !== undefined) lastState.set(event.record_id, event.to_state);
+    }
+    for (const [record_id, state] of lastState) {
+      if (state !== "tombstoned") continue;
+      const read = await dependencies.canonical_store.readRecord({
+        record_id,
+        system_as_of: systemAsOf,
+        authorization_receipt_digest: authorizationReceipt,
+      });
+      if (!read.ok) return operationFailure(operation, read);
+      if (read.value.scope_ref === scopeRef && read.value.payload_digest === payloadDigest) return { ok: true, value: true };
+    }
+    return { ok: true, value: false };
+  } catch {
+    return unavailable(operation, "canonical store did not return tombstone replay evidence");
+  }
+}
+
+// M5 l.710: durable transition recovery. When the target already rests in
+// the commanded terminal state, the committed journal event with the same
+// event identity is the replay proof — returned without applying another
+// effect. Rebuilding the event would change its recorded from-state and
+// break the store's intent deduplication, so the receipt is re-materialized
+// from the found event instead. The transaction replay digest is
+// deterministic over the committed event, hence stable across replays; the
+// caller keeps its recorded canonical reference when it has one.
+async function replayCommittedTransition(
+  dependencies: MemoryEngineDependenciesV2,
+  command: LifecycleCommandV1,
+  target: MemoryState,
+): Promise<Result<LifecycleReceiptV1 | undefined>> {
+  const operation = command.operation;
+  const journal = await readFullJournal(dependencies, operation);
+  if (!journal.ok) return journal;
+  let found: LifecycleEventV2 | undefined;
+  for (const event of journal.value) {
+    if (event.event_id === command.event_id && event.operation === operation && event.to_state === target) found = event;
+  }
+  if (found === undefined || found.from_state === undefined) return { ok: true, value: undefined };
+  return {
+    ok: true,
+    value: {
+      event_id: found.event_id,
+      operation,
+      from_state: found.from_state,
+      to_state: found.to_state,
+      cursor: found.cursor,
+      event_digest: found.event_digest,
+      authorization_receipt_digest: found.authorization_receipt_digest,
+      transaction_receipt_digest: receiptDigest("lifecycle-transition-replay", {
+        event_id: found.event_id,
+        event_digest: found.event_digest,
+      }),
+    },
+  };
+}
+
+// M5: durable admission recovery. After the pending envelope is destroyed,
+// the recorded outcome is the replay proof — returned identically, without
+// re-evaluating policy or committing another effect. A foreign scope learns
+// nothing: scope mismatch refuses UNAUTHORIZED before any receipt disclosure.
+async function recoverAdmissionOutcome(
+  dependencies: MemoryEngineDependenciesV2,
+  candidateId: string,
+  scopeRef: string,
+): Promise<Result<AdmissionOutcomeV1 | undefined>> {
+  const operation = "request_admission" as const;
+  const reader = dependencies.canonical_store.readAdmissionOutcome;
+  if (reader === undefined) return { ok: true, value: undefined };
+  try {
+    const recorded = await reader.call(dependencies.canonical_store, { candidate_id: candidateId });
+    if (!recorded.ok) return recorded.error.code === "NOT_FOUND" ? { ok: true, value: undefined } : operationFailure(operation, recorded);
+    const entry = recorded.value;
+    if (entry.candidate_id !== candidateId || !isOpaque(entry.scope_ref) || !isCanonicalCursor(entry.cursor)
+      || !isDigest(entry.decision_receipt_digest) || !isDigest(entry.transaction_receipt_digest)
+      || (entry.status !== "accepted" && entry.status !== "rejected")
+      || (entry.status === "accepted" ? !isOpaque(entry.record_id) : entry.record_id !== undefined)) {
+      return refusal(operation, "JOURNAL_CORRUPT", "recorded admission outcome is malformed");
+    }
+    if (entry.scope_ref !== scopeRef) return refusal(operation, "UNAUTHORIZED", "authorization scope does not bind the recorded admission");
+    return {
+      ok: true,
+      value: {
+        status: entry.status,
+        candidate_id: entry.candidate_id,
+        ...(entry.status === "accepted" ? { record_id: entry.record_id! } : {}),
+        cursor: entry.cursor,
+        decision_receipt_digest: entry.decision_receipt_digest,
+        transaction_receipt_digest: entry.transaction_receipt_digest,
+      },
+    };
+  } catch {
+    return unavailable(operation, "canonical store did not return a recorded admission outcome");
   }
 }
 
@@ -909,10 +1052,21 @@ function validateRedactionResult(input: unknown): RedactionResultV1 | undefined 
 }
 
 /** L2 coordination only: it validates/seals pending capture and delegates durability to the canonical store. */
-export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): MemoryPortV2 {
+/** Implementation-only host guard, outside the serialized neutral contract.
+ * Called after canonical proof lookup and immediately before first commit;
+ * only literal true permits an effect. Rechecks must remain safe. */
+export type MemoryFirstEffectGuardV1 = () => Promise<boolean>;
+
+export interface GuardedMemoryPortV2 extends MemoryPortV2 {
+  capture(request: CaptureRequestV2, beforeFirstEffect?: MemoryFirstEffectGuardV1): Promise<Result<CaptureAcknowledgementV1>>;
+  requestAdmission(request: Parameters<MemoryPortV2['requestAdmission']>[0], beforeFirstEffect?: MemoryFirstEffectGuardV1): Promise<Result<AdmissionOutcomeV1>>;
+  transition(command: LifecycleCommandV1, beforeFirstEffect?: MemoryFirstEffectGuardV1): Promise<Result<LifecycleReceiptV1>>;
+}
+
+export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): GuardedMemoryPortV2 {
   const cancelled = new Set<string>();
   const capturedContent = new Map<string, Digest>();
-  const admissionOutcomes = new Map<string, AdmissionOutcomeV1>();
+  const admissionOutcomes = new Map<string, { scope_ref: string; outcome: AdmissionOutcomeV1 }>();
   // X2 tour 4 (MAJEUR-1, normative §4): at most one invalidateProjections cascade runs at a time per port.
   // Overlapping calls queue on this chain instead of interleaving rounds: a stale batch read by an older
   // call can never apply after a newer call certified past a tombstone. A rejected call still releases
@@ -940,7 +1094,30 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
     return verifyStoreProvenance(dependencies.canonical_store, readiness.value, { allowUnfencedMemoryStore: dependencies.allow_unfenced_memory_store === true }, operation);
   };
 
-  const port: MemoryPortV2 = {
+  // M4: an allow receipt obtained before an asynchronous dependency is not
+  // enough to authorize the effect after that dependency returns.
+  const authorizeEffect = async (authorization: AuthorizationAllowedV1, deadline: string): Promise<Result<{ valid: true }>> => {
+    const operation = authorization.operation;
+    const now = dependencies.clock?.now();
+    if (!isInstant(now)) return unavailable(operation, "clock did not supply a canonical instant");
+    if (Date.parse(now) >= Date.parse(deadline)) return refusal(operation, "DEADLINE_EXCEEDED", "deadline elapsed before canonical effect");
+    if (Date.parse(now) >= Date.parse(authorization.expires_at)) return refusal(operation, "AUTHORIZATION_EXPIRED", "authorization expired before canonical effect");
+    try {
+      const checked = await dependencies.authorization.revalidate(authorization.receipt_digest, now);
+      if (!checked.ok) return operationFailure(operation, checked);
+      const active = validateRevalidation(checked.value, authorization.receipt_digest, authorization.revocation_epoch, now, operation);
+      if (!active.ok) return active;
+      const effectNow = dependencies.clock?.now();
+      if (!isInstant(effectNow)) return unavailable(operation, "clock did not supply a canonical instant");
+      if (Date.parse(effectNow) >= Date.parse(deadline)) return refusal(operation, "DEADLINE_EXCEEDED", "deadline elapsed before canonical effect");
+      if (Date.parse(effectNow) >= Date.parse(authorization.expires_at)) return refusal(operation, "AUTHORIZATION_EXPIRED", "authorization expired before canonical effect");
+      return active;
+    } catch {
+      return unavailable(operation, "authorization port did not return a typed result");
+    }
+  };
+
+  const port: GuardedMemoryPortV2 = {
     version: 2,
     capabilities: async () => {
       try {
@@ -971,7 +1148,7 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       const validated = validateCandidatePayload(payload);
       return validated.ok ? { ok: true, value: { payload_digest: validated.value.payload_digest } } : operationFailure("capture", validated);
     },
-    capture: async (input): Promise<Result<CaptureAcknowledgementV1>> => {
+    capture: async (input, beforeFirstEffect): Promise<Result<CaptureAcknowledgementV1>> => {
       const admitted = await admitFenced("capture");
       if (!admitted.ok) return admitted;
       const now = dependencies.clock?.now();
@@ -982,9 +1159,6 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       if (cancelled.has(request.cancellation_ref)) return refusal("capture", "CANCELLED", "capture was cancelled before commit");
       const candidateId = captureIdentity(request);
       const contentDigest = captureContentDigest(payload_digest, request);
-      const previous = capturedContent.get(candidateId);
-      if (previous !== undefined && previous !== contentDigest) return refusal("capture", "DIGEST_CONFLICT", "idempotency identity is already bound to different capture content");
-
       const resource = { scope_ref: payload.scope_ref };
       const authorization = await authorizeOperation(dependencies.authorization, {
         operation: "capture",
@@ -995,6 +1169,9 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
         deadline_at: request.deadline_at,
       }, payload.scope_ref, now);
       if (!authorization.ok) return authorization;
+      // M4/M5: authorize before comparing or disclosing any cached binding.
+      const previous = capturedContent.get(candidateId);
+      if (previous !== undefined && previous !== contentDigest) return refusal("capture", "DIGEST_CONFLICT", "idempotency identity is already bound to different capture content");
       if (cancelled.has(request.cancellation_ref)) return refusal("capture", "CANCELLED", "capture was cancelled before commit");
       const trust = await classifyTrust(dependencies, payload_digest, request, now);
       if (!trust.ok) return trust;
@@ -1027,6 +1204,7 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
               } };
             }
           }
+          if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal("capture", "UNAUTHORIZED", "host refused first canonical effect");
           if (cancelled.has(request.cancellation_ref)) return refusal("capture", "CANCELLED", "capture was cancelled before commit");
           const sealed = await dependencies.crypto.seal({
             candidate_id: candidateId,
@@ -1034,6 +1212,16 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
             context_digest: pendingContextDigest(candidateId),
           });
           if (!sealed.ok) return operationFailure("capture", sealed);
+          const effect = await authorizeEffect(authorization.value, request.deadline_at);
+          const hostEffect = effect.ok && beforeFirstEffect !== undefined && await beforeFirstEffect() !== true
+            ? refusal<never>("capture", "UNAUTHORIZED", "host refused first canonical effect") : undefined;
+          if (!effect.ok || hostEffect !== undefined || cancelled.has(request.cancellation_ref)) {
+            // The envelope has no canonical owner yet. Use the same custody
+            // destruction identity as the other candidate cleanup paths.
+            const destroyed = await dependencies.crypto.destroy({ key_ref: sealed.value.key_ref, idempotency_key: `destroy:${candidateId}` });
+            if (!destroyed.ok) return operationFailure("capture", destroyed);
+            return !effect.ok ? effect : hostEffect ?? refusal("capture", "CANCELLED", "capture was cancelled before commit");
+          }
           const committed = await dependencies.canonical_store.commitPending({
             control: {
               candidate_id: candidateId, envelope_digest: sealed.value.envelope_digest,
@@ -1155,15 +1343,13 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       cancelled.add(cancellationRef);
       return { ok: true, value: { cancelled: true } };
     },
-    requestAdmission: async (input) => {
+    requestAdmission: async (input, beforeFirstEffect) => {
       const admitted = await admitFenced("request_admission");
       if (!admitted.ok) return admitted;
       if (!admissionRequestIsExact(input)) return refusal("request_admission", "INVALID_SCHEMA", "admission request is not exact");
       const now = dependencies.clock?.now();
       if (!isInstant(now)) return unavailable("request_admission", "clock did not supply a canonical instant");
       if (Date.parse(now) >= Date.parse(input.deadline_at)) return refusal("request_admission", "DEADLINE_EXCEEDED", "admission deadline elapsed before decision");
-      const previousOutcome = admissionOutcomes.get(input.candidate_id);
-      if (previousOutcome !== undefined) return { ok: true, value: previousOutcome };
       const resource = { candidate_id: input.candidate_id };
       const authorization = await authorizeOperation(dependencies.authorization, {
         operation: "request_admission",
@@ -1174,12 +1360,28 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
         deadline_at: input.deadline_at,
       }, undefined, now);
       if (!authorization.ok) return authorization;
+      const previousOutcome = admissionOutcomes.get(input.candidate_id);
+      if (previousOutcome !== undefined) {
+        if (previousOutcome.scope_ref !== authorization.value.scope_ref) return refusal("request_admission", "UNAUTHORIZED", "authorization scope does not bind the cached admission");
+        return { ok: true, value: previousOutcome.outcome };
+      }
       try {
         const pending = await dependencies.canonical_store.readPending({
           candidate_id: input.candidate_id,
           authorization_receipt_digest: authorization.value.receipt_digest,
         });
-        if (!pending.ok) return operationFailure("request_admission", pending);
+        if (!pending.ok) {
+          // M5: the pending envelope is gone after commit, but the recorded
+          // outcome survives in durable state — a lost acknowledgement
+          // replays it identically instead of permitting a second effect.
+          if (pending.error.code !== "NOT_FOUND") return operationFailure("request_admission", pending);
+          const recovered = await recoverAdmissionOutcome(dependencies, input.candidate_id, authorization.value.scope_ref);
+          if (!recovered.ok) return recovered;
+          if (recovered.value === undefined) return operationFailure("request_admission", pending);
+          admissionOutcomes.set(input.candidate_id, { scope_ref: authorization.value.scope_ref, outcome: recovered.value });
+          return { ok: true, value: recovered.value };
+        }
+        if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal("request_admission", "UNAUTHORIZED", "host refused first canonical effect");
         if (!validPendingSnapshot(pending.value, input.candidate_id)) return refusal("request_admission", "INVALID_SCHEMA", "pending candidate snapshot is malformed");
         const opened = await dependencies.crypto.open({ sealed: pending.value.sealed, context_digest: pendingContextDigest(input.candidate_id) });
         if (!opened.ok) return operationFailure("request_admission", opened);
@@ -1211,22 +1413,35 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
         if (!decided.ok) return operationFailure("request_admission", decided);
         const decision = validateAdmissionDecisionEnvelope(dependencies.admission_policy, policyRequest, decided.value, now);
         if (!decision.ok) return decision;
-        if (decision.value.decision === "adjudication_required") {
+        const effect = await authorizeEffect(authorization.value, input.deadline_at);
+        if (!effect.ok) return effect;
+        const pendingAdjudication = (): AdmissionOutcomeV1 => {
           const transactionReceipt = receiptDigest("admission-pending", {
             candidate_id: input.candidate_id,
             cursor: pending.value.control.created_cursor,
             decision_receipt_digest: decision.value.receipt_digest,
           });
           return {
-            ok: true,
-            value: {
-              status: "pending_adjudication",
-              candidate_id: input.candidate_id,
-              cursor: pending.value.control.created_cursor,
-              decision_receipt_digest: decision.value.receipt_digest,
-              transaction_receipt_digest: transactionReceipt,
-            },
+            status: "pending_adjudication",
+            candidate_id: input.candidate_id,
+            cursor: pending.value.control.created_cursor,
+            decision_receipt_digest: decision.value.receipt_digest,
+            transaction_receipt_digest: transactionReceipt,
           };
+        };
+        if (decision.value.decision === "accept") {
+          const guard = await sameScopeTombstonePayloadMatch(
+            dependencies,
+            authorization.value.receipt_digest,
+            admitted.value.high_water_cursor,
+            envelope.payload.scope_ref,
+            payloadDigest,
+          );
+          if (!guard.ok) return guard;
+          if (guard.value) return { ok: true, value: pendingAdjudication() };
+        }
+        if (decision.value.decision === "adjudication_required") {
+          return { ok: true, value: pendingAdjudication() };
         }
         const event = admissionEvent(input.candidate_id, record, authorization.value.receipt_digest, decision.value);
         const projectionBatch = {
@@ -1236,6 +1451,7 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
           removals: [],
           batch_digest: receiptDigest("projection-batch", { candidate_id: input.candidate_id, record_digest: record.record_digest }),
         };
+        if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal("request_admission", "UNAUTHORIZED", "host refused first canonical effect");
         const applied = decision.value.decision === "accept"
           ? await dependencies.canonical_store.applyAdmission({
             outcome: "accept",
@@ -1249,10 +1465,28 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
           : await dependencies.canonical_store.applyAdmission({
             outcome: "reject",
             candidate_id: input.candidate_id,
+            scope_ref: envelope.payload.scope_ref,
             decision: decision.value as AdmissionDecisionEnvelopeV1 & { decision: "reject" },
             event: event as never,
           });
-        if (!applied.ok) return operationFailure("request_admission", applied);
+        if (!applied.ok) {
+          // M5 l.720-721: the canonical serialization re-verified the
+          // tombstone guard atomically with the commit. A guard refusal means
+          // a tombstone committed after the pre-check snapshot — adjudication,
+          // never an automatic accept. Any other refusal propagates unchanged.
+          if (applied.error.code === "ILLEGAL_TRANSITION" && decision.value.decision === "accept") {
+            const raced = await sameScopeTombstonePayloadMatch(
+              dependencies,
+              authorization.value.receipt_digest,
+              admitted.value.high_water_cursor,
+              envelope.payload.scope_ref,
+              payloadDigest,
+            );
+            if (!raced.ok) return raced;
+            if (raced.value) return { ok: true, value: pendingAdjudication() };
+          }
+          return operationFailure("request_admission", applied);
+        }
         const value: AdmissionOutcomeV1 = {
           status: decision.value.decision === "accept" ? "accepted" : "rejected",
           candidate_id: input.candidate_id,
@@ -1263,13 +1497,13 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
         };
         const destroyed = await dependencies.crypto.destroy({ key_ref: pending.value.sealed.key_ref, idempotency_key: `destroy:${input.candidate_id}` });
         if (!destroyed.ok) return operationFailure("request_admission", destroyed);
-        admissionOutcomes.set(input.candidate_id, value);
+        admissionOutcomes.set(input.candidate_id, { scope_ref: envelope.payload.scope_ref, outcome: value });
         return { ok: true, value };
       } catch {
         return unavailable("request_admission", "admission dependencies did not return typed results");
       }
     },
-    transition: async (input): Promise<Result<LifecycleReceiptV1>> => {
+    transition: async (input, beforeFirstEffect): Promise<Result<LifecycleReceiptV1>> => {
       if (!lifecycleCommandIsExact(input)) return refusal("reject", "INVALID_SCHEMA", "lifecycle command is not exact");
       const now = dependencies.clock?.now();
       if (!isInstant(now)) return unavailable(input.operation, "clock did not supply a canonical instant");
@@ -1304,7 +1538,20 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       }
       const fromState = await foldedStateForCommand(dependencies, input);
       if (!fromState.ok) return fromState;
+      // M5 l.710: the target already rests in the commanded terminal state —
+      // recover the committed event as the replay proof, never a second
+      // effect. Authorization above already revalidated the caller.
+      const replayTarget = lifecycleTarget(input.operation);
+      if (fromState.value === replayTarget) {
+        const replayed = await replayCommittedTransition(dependencies, input, replayTarget);
+        if (!replayed.ok) return replayed;
+        if (replayed.value !== undefined) return { ok: true, value: replayed.value };
+      }
+      if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal(input.operation, "UNAUTHORIZED", "host refused first canonical effect");
       const event = lifecycleEvent(input, now, fromState.value, authorization.value.receipt_digest, bound.value ?? undefined);
+      const effect = await authorizeEffect(authorization.value, input.deadline_at);
+      if (!effect.ok) return operationFailure(input.operation, effect);
+      if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal(input.operation, "UNAUTHORIZED", "host refused first canonical effect");
       const applied = await dependencies.canonical_store.applyLifecycle({
         command: input,
         event: event as never,
