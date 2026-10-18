@@ -696,6 +696,43 @@ async function foldedStateForCommand(dependencies: MemoryEngineDependenciesV2, c
   }
 }
 
+// M5/A10-R4: same-scope tombstoned-payload recapture. Before committing
+// admission, equality over the complete canonical candidate payload digest
+// against tombstoned records in the same exact scope prevents automatic
+// acceptance. The caller only learns the pending_adjudication outcome, never
+// tombstone identities; other scopes never match. Journal and blobs are the
+// durable evidence, so the guard survives restart with empty port caches.
+async function sameScopeTombstonePayloadMatch(
+  dependencies: MemoryEngineDependenciesV2,
+  authorizationReceipt: Digest,
+  systemAsOf: string,
+  scopeRef: string,
+  payloadDigest: Digest,
+): Promise<Result<boolean>> {
+  const operation = "request_admission" as const;
+  try {
+    const journal = await dependencies.canonical_store.readJournal({ after: "0", limit: 2_000 });
+    if (!journal.ok) return operationFailure(operation, journal);
+    const lastState = new Map<string, MemoryState>();
+    for (const event of journal.value) {
+      if (event.record_id !== undefined) lastState.set(event.record_id, event.to_state);
+    }
+    for (const [record_id, state] of lastState) {
+      if (state !== "tombstoned") continue;
+      const read = await dependencies.canonical_store.readRecord({
+        record_id,
+        system_as_of: systemAsOf,
+        authorization_receipt_digest: authorizationReceipt,
+      });
+      if (!read.ok) return operationFailure(operation, read);
+      if (read.value.scope_ref === scopeRef && read.value.payload_digest === payloadDigest) return { ok: true, value: true };
+    }
+    return { ok: true, value: false };
+  } catch {
+    return unavailable(operation, "canonical store did not return tombstone replay evidence");
+  }
+}
+
 /**
  * T5.8 binding validation, before any cursor allocation. Recomputes the outcome
  * for the bound proposal's family, version, pair and pin through T5.7 steps 5–7
@@ -1247,6 +1284,33 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
         if (!decision.ok) return decision;
         const effect = await authorizeEffect(authorization.value, input.deadline_at);
         if (!effect.ok) return effect;
+        if (decision.value.decision === "accept") {
+          const guard = await sameScopeTombstonePayloadMatch(
+            dependencies,
+            authorization.value.receipt_digest,
+            admitted.value.high_water_cursor,
+            envelope.payload.scope_ref,
+            payloadDigest,
+          );
+          if (!guard.ok) return guard;
+          if (guard.value) {
+            const transactionReceipt = receiptDigest("admission-pending", {
+              candidate_id: input.candidate_id,
+              cursor: pending.value.control.created_cursor,
+              decision_receipt_digest: decision.value.receipt_digest,
+            });
+            return {
+              ok: true,
+              value: {
+                status: "pending_adjudication",
+                candidate_id: input.candidate_id,
+                cursor: pending.value.control.created_cursor,
+                decision_receipt_digest: decision.value.receipt_digest,
+                transaction_receipt_digest: transactionReceipt,
+              },
+            };
+          }
+        }
         if (decision.value.decision === "adjudication_required") {
           const transactionReceipt = receiptDigest("admission-pending", {
             candidate_id: input.candidate_id,
