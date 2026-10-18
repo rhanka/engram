@@ -1451,6 +1451,7 @@ export const A07_SELECTION_AND_STORAGE_SPEC_RULE = {
     'policy_epoch',
     'provider_id',
     'provider_version',
+    'connector_instance_id',
     'source_id',
     'plan_generation',
   ] as const,

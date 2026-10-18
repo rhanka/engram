@@ -474,6 +474,12 @@ export const ENGRAM_MEMORY_PUBLISHER_ENTRY_V1: MemoryPublisherEntryV1 =
     publication_receipt_contract: 'MemoryPublisherAssetsV1',
   });
 
+const EXACT_SEMVER_RE =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+function isExactSemVer(value: unknown): value is string {
+  return typeof value === 'string' && EXACT_SEMVER_RE.exec(value)?.[0] === value;
+}
+
 export function validateMemoryPublisherEntryV1(
   entry: Partial<MemoryPublisherEntryV1>,
   versionStep?: {
@@ -512,13 +518,18 @@ export function validateMemoryPublisherEntryV1(
     };
   }
   if (
-    typeof entry.entry_version !== 'string' ||
-    entry.entry_version.length === 0 ||
+    !isExactSemVer(entry.entry_version) ||
     entry.entry_version !== entry.manifest_version
   ) {
     return {
       ok: false,
       reason: 'manifest_version must equal entry_version (R §3.2)',
+    };
+  }
+  if (!isExactSemVer(entry.manifest_version)) {
+    return {
+      ok: false,
+      reason: 'entry_version and manifest_version must be exact SemVer (R §3.2)',
     };
   }
   if (entry.provider_behavioral_contract_version !== '1.0.0') {
@@ -816,6 +827,7 @@ export interface MemoryCatalogCacheKeyV1 {
   readonly policy_epoch: string;
   readonly provider_id: 'sentropic.engram.memory';
   readonly provider_version: string;
+  readonly connector_instance_id: string;
   readonly source_id: 'mcp:engram-memory';
   readonly plan_generation: string;
 }
@@ -843,6 +855,7 @@ export interface MemorySelectionPolicyBindingV1 {
     'policy_epoch',
     'provider_id',
     'provider_version',
+    'connector_instance_id',
     'source_id',
     'plan_generation',
   ];
@@ -893,6 +906,7 @@ export const ENGRAM_MEMORY_SELECTION_POLICY_BINDING_V1: MemorySelectionPolicyBin
       'policy_epoch',
       'provider_id',
       'provider_version',
+      'connector_instance_id',
       'source_id',
       'plan_generation',
     ] as const),
