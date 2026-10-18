@@ -1,9 +1,12 @@
 /**
  * Normative Specification Oracle & Vendored Standard Fixtures for MCP-L0.
  *
- * Every rule in this file is encoded once from the co-frozen specification
- * `/home/antoinefa/src/graphify/.graphify/scratch/design/memory-mcp/SPEC-memory-mcp-v3.1.md`
- * (SHA-256 `f90c927964b44fdf6ad712eee9b894762250239384643a3790931c142d3aeeca`),
+ * Every rule in this file is encoded once from the restoration specification
+ * `/home/antoinefa/src/graphify/.graphify/scratch/design/memory-mcp/SPEC-memory-mcp-v3.2.md`
+ * (SHA-256 `18c697c1cd91287fd9f814c059910ffb4b39ddb1be46af547f384c7d912177b2`), which restores
+ * D3/D10 from baseline `7bc9baec`. The v3.1 co-freeze hash
+ * `f90c927964b44fdf6ad712eee9b894762250239384643a3790931c142d3aeeca` does not attest the
+ * restored D10 delta; joint re-acceptance of that delta remains `unverified`.
  * `/home/antoinefa/src/sentropic/.tmp/engram-mcp/open-points-answers-v3.1.md`,
  * and Sentropic `@sentropic/mcp-platform` (`97fe9f53e8079694e35771227c11544ce8658316`).
  *
@@ -11,10 +14,12 @@
  * or compare two fields of the same production object.
  */
 
-export const SPEC_V3_1_PROVENANCE = {
+export const SPEC_V3_2_PROVENANCE = {
   spec_path:
-    '/home/antoinefa/src/graphify/.graphify/scratch/design/memory-mcp/SPEC-memory-mcp-v3.1.md',
+    '/home/antoinefa/src/graphify/.graphify/scratch/design/memory-mcp/SPEC-memory-mcp-v3.2.md',
   spec_sha256:
+    '18c697c1cd91287fd9f814c059910ffb4b39ddb1be46af547f384c7d912177b2',
+  superseded_v3_1_spec_sha256:
     'f90c927964b44fdf6ad712eee9b894762250239384643a3790931c142d3aeeca',
   freeze_receipt_path:
     '/home/antoinefa/src/graphify/.graphify/scratch/design/memory-mcp/FREEZE-memory-mcp-v3.1.md',

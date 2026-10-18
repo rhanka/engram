@@ -11,7 +11,7 @@ import {
   CLUSTER_MESH_MEMORY_INHERITANCE_CONTRACT_V1,
   CONFIRM_ELICITATION_REQUEST_SCHEMA,
   CONFIRM_ELICITATION_RESPONSE_SCHEMA,
-  D10_CODE_GRAPH_SEPARATION_CONTRACT_V1,
+  D10_FILTERED_PROJECTION_CONTRACT_V1,
   DEFAULT_RECALL_CAPABILITY_POLICY,
   DISCLOSABLE_MEMORY_STATES,
   ENGRAM_MEMORY_CANDIDATE_SCHEMA_VERSION,
@@ -1701,7 +1701,7 @@ describe('MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutr
     });
   });
 
-  describe('Contract 13 — M8 Legacy Migration, M9 Packaging, M10 Topology, & M11 D10 Separation', () => {
+  describe('Contract 13 — M8 Legacy Migration, M9 Packaging, M10 Topology, & Filtered Projection (D10)', () => {
     it('matches M8 legacy migration dispositions and M9 package/CLI boundaries verbatim', () => {
       expect(
         LEGACY_MIGRATION_DISPOSITIONS_V1.cluster_mesh_shadow_protocol_retired,
@@ -1768,9 +1768,29 @@ describe('MCP-L0 Normative Conformance against SPEC-memory-mcp-v3.1.md and neutr
         engram_serve_excludes_memory_mcp: true,
       });
 
-      expect(D10_CODE_GRAPH_SEPARATION_CONTRACT_V1.amended_on).toBe(
-        '2026-04-16',
+      expect(D10_FILTERED_PROJECTION_CONTRACT_V1.decision_id).toBe('D10');
+      expect(D10_FILTERED_PROJECTION_CONTRACT_V1.restored_baseline).toBe(
+        '7bc9baec',
       );
+      expect(D10_FILTERED_PROJECTION_CONTRACT_V1.graph_json_role).toBe(
+        'bounded-current-projection',
+      );
+      expect(D10_FILTERED_PROJECTION_CONTRACT_V1.projected_state).toBe(
+        'accepted_current',
+      );
+      expect(
+        D10_FILTERED_PROJECTION_CONTRACT_V1.requires_projection_eligible_true,
+      ).toBe(true);
+      expect(
+        D10_FILTERED_PROJECTION_CONTRACT_V1.removed_at_next_regeneration_or_reconciliation,
+      ).toEqual([
+        'accepted_disputed',
+        'withdrawn',
+        'historical',
+        'expired',
+        'trust_invalid',
+        'tombstoned',
+      ]);
       expect(
         CLUSTER_MESH_MEMORY_INHERITANCE_CONTRACT_V1.provider_id,
       ).toBe('sentropic.engram.memory');

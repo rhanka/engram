@@ -1,6 +1,6 @@
 # MCP-L0 Sol mutation evidence
 
-Spec SHA-256: `f90c927964b44fdf6ad712eee9b894762250239384643a3790931c142d3aeeca`.
+Spec SHA-256: `18c697c1cd91287fd9f814c059910ffb4b39ddb1be46af547f384c7d912177b2` (SPEC-memory-mcp-v3.2.md, restored D10; supersedes v3.1 `f90c927964b44fdf6ad712eee9b894762250239384643a3790931c142d3aeeca` for D10 only).
 
 Reproduce: `node scripts/check-memory-mcp-mutations.mjs`. Serial source mutations; each source is restored in `finally`. No tests or fixtures are mutated. A killed mutant requires an actual failed test case (or a standard-type compiler diagnostic).
 
@@ -129,6 +129,6 @@ Restored source identities:
 - `src/mcp/memory/policy.ts`: `91625e86f9b81bbe337532845098bfd0cb2f074adb8f643b0e9fa6e1dda24edc`
 - `src/mcp/memory/errors.ts`: `453b47b3feb86d3cbfcb84a280cbbce9e51cadd2e3b627edc2cc55dc9f856010`
 - `src/mcp/memory/gates.ts`: `03d273d15e60c3134dfc6d7204611d79974a75d2085b098f47032d3e8fcf7542`
-- `src/mcp/memory/topology.ts`: `ec9ecd780bcef5e4c5a458dcfe5071924004f5cf127ef3f95a23ea9c02254613`
+- `src/mcp/memory/topology.ts`: `10cb3cd67a702a934b9bf20c0c5a6476a4e3c41eb63f702ed0d002e5cecede39`
 - `src/mcp/memory/receipts.ts`: `bff785051edbf11d91740571183434962b94bb6ca9512381041d71b00da01beb`
 - `src/mcp/memory/contracts.ts`: `ee0b276b7eac92558f0feaf95f2e2354f673b81bc1348c8403a1ad46b85fd972`
