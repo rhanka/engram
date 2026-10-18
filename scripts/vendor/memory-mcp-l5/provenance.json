@@ -1,0 +1,32 @@
+{
+  "repository": "https://github.com/rhanka/sentropic",
+  "ref": "origin/main",
+  "commit": "9ed96eb83cd77da710f1adeb83a19e425d6c4910",
+  "files": [
+    {
+      "path": "schemas/artifact-manifest-v1.schema.json",
+      "upstreamPath": "tools/memory-mcp-l5/schemas/artifact-manifest-v1.schema.json",
+      "sha256": "4a43a66928c3000cdf48fe72c242e2d9cfbd2b3cc153851e9650ebc6c0cd9d8c"
+    },
+    {
+      "path": "schemas/checkpoint-v1.schema.json",
+      "upstreamPath": "tools/memory-mcp-l5/schemas/checkpoint-v1.schema.json",
+      "sha256": "144a428ae5abf99f76c7585d1976b821c2ef207f8685bd5bfa5f2f247084f3e5"
+    },
+    {
+      "path": "schema-validator.mjs",
+      "upstreamPath": "tools/memory-mcp-l5/schema-validator.mjs",
+      "sha256": "53a6cc7ea18a5048a676f434aec1444c2e9f0e48ef3d4d01c9c18fc5787ae78c"
+    },
+    {
+      "path": "receipt.mjs",
+      "upstreamPath": "tools/memory-mcp-l5/receipt.mjs",
+      "sha256": "5151117326c82c9db176b73bd47d26af3ef7dbd385b932d61516d644a63de553"
+    },
+    {
+      "path": "proof-catalog-v1.json",
+      "upstreamPath": "tools/memory-mcp-l5/proof-catalog-v1.json",
+      "sha256": "c8b0f9c8a907eb3d6a42e7a81d7509e6f5149aaf0b9f557842bda928c74c84be"
+    }
+  ]
+}
