@@ -88,9 +88,9 @@ export function createMemoryReadToolsV1(options: { facets: MemoryReadFacetsV1; h
     } catch { throw new TrustedContextUnavailableProtocolError(); }
     return ctx;
   }
-  const failure = (tool: ReadTool, ctx: MemoryReadInvocationV1, code: PublicMemoryErrorCode) => mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, code }).structuredContent;
+  const failure = (tool: ReadTool, ctx: MemoryReadInvocationV1, code: PublicMemoryErrorCode) => mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, code, invocationAuthorized: false }).structuredContent;
   const neutralFailure = (tool: ReadTool, ctx: MemoryReadInvocationV1, error: MemoryErrorV1) =>
-    mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, error }).structuredContent;
+    mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, error, targetAuthorized: tool === 'engram_memory_get' && facets.isTargetAuthorizedError?.(error) === true }).structuredContent;
   function check(ctx: MemoryReadInvocationV1): PublicMemoryErrorCode | undefined {
     const now = host.clock.now();
     if (!isValidInstant(now)) return 'STORE_UNAVAILABLE';

@@ -541,6 +541,8 @@ export interface NeutralErrorMappingContextV1 {
   readonly denial?: boolean;
   readonly details?: Readonly<Record<string, unknown>>;
   readonly auditId: string;
+  /** A refused invocation has no admitted target lookup to normalize (M6). */
+  readonly invocationAuthorized?: boolean;
   /**
    * Closed-world literal-`true` verdict (`targetAuthorized === true`).
    * Whenever `targetAuthorized !== true` (including `undefined`, `false`, `null`,
@@ -584,6 +586,7 @@ export function mapNeutralMemoryErrorToPublic(
   let normalizedToNotFound = false;
   if (
     TARGET_BEARING_MEMORY_TOOLS.has(ctx.tool) &&
+    ctx.invocationAuthorized !== false &&
     !targetAuthorized &&
     (isDenial || TARGET_EXISTENCE_SENSITIVE_CODES.has(effectiveCode))
   ) {
