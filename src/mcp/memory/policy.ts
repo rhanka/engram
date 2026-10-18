@@ -1625,9 +1625,14 @@ export function evaluatePrincipalScopedMutationLookupV1<TOutput>(
     };
   }
 
-  // M5 l.702: an executing reservation without durable proof of a
-  // committed effect is uncommitted. A stale domain-policy version returns
-  // POLICY_STALE before any unknown-outcome recovery re-drive.
+  // M5 l.710,730: unknown host state cannot prove the absence of a canonical
+  // commit. Reconcile first; the first-effect guard checks current policy
+  // only if that canonical lookup finds no committed outcome.
+  if (existing.recovery_state === 'executing_unknown_outcome') {
+    return { decision: 'reject', error_code: 'MUTATION_OUTCOME_UNKNOWN', retriable: true };
+  }
+
+  // M5 l.702: a known uncommitted reservation must use current domain policy.
   const recordedVersion =
     existing.policy_versions.tool_name === 'engram_memory_capture'
       ? existing.policy_versions.capture_policy_version
@@ -1644,15 +1649,6 @@ export function evaluatePrincipalScopedMutationLookupV1<TOutput>(
           retriable: true,
         } as const
       : undefined;
-
-  if (existing.recovery_state === 'executing_unknown_outcome') {
-    if (staleVersionReject !== undefined) return staleVersionReject;
-    return {
-      decision: 'reject',
-      error_code: 'MUTATION_OUTCOME_UNKNOWN',
-      retriable: true,
-    };
-  }
 
   {
     if (staleVersionReject !== undefined) return staleVersionReject;

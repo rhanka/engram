@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { MemoryPortV2 } from '../../engram-memory/dist/contracts/index.js';
+import type { GuardedMemoryPortV2, MemoryFirstEffectGuardV1 } from '../../engram-memory/dist/engine.js';
 import type {
   AuthorizationContextV1,
   ClockPort,
@@ -86,7 +86,7 @@ export interface MemoryWriteInvocationV1 {
 export interface MemoryWriteFacetsV1 {
   scope_ref: string;
   store_id: string;
-  engine: MemoryPortV2;
+  engine: GuardedMemoryPortV2;
 }
 
 export interface MemoryWriteConfirmationV1 {
@@ -403,6 +403,36 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     return undefined;
   }
 
+  async function withFirstEffectGuard<T>(
+    tool: WriteTool, ctx: MemoryWriteInvocationV1, idempotencyKey: string,
+    decided: Exclude<DecidedMutationV1, { kind: 'failure' }>,
+    perform: (guard: MemoryFirstEffectGuardV1) => Promise<T>, targetRef?: string,
+  ): Promise<{ result: T } | { failure: ToolResultV1<never> }> {
+    let refused: ToolResultV1<never> | undefined;
+    let claimed = decided.kind === 'recover';
+    const result = await perform(async () => {
+      // M4 l.587 / M5 l.702,730: this runs ONLY after canonical proof
+      // lookup found no committed result, including an unknown host outcome.
+      const versions = decided.binding.policy_versions;
+      const stale = versions.tool_name === 'engram_memory_capture'
+        ? versions.capture_policy_version !== await host!.policy.capturePolicyVersion()
+        : versions.tool_name === 'engram_memory_request_admission'
+          ? versions.admission_policy_version !== await host!.policy.admissionPolicyVersion() : false;
+      if (stale) {
+        refused = failure(tool, ctx, 'POLICY_STALE');
+        await audit(ctx, { tool, idempotency_key: idempotencyKey, decision: 'refuse', error_code: 'POLICY_STALE' });
+        return false;
+      }
+      if (targetRef !== undefined) refused = await confirmIfRequired(tool, ctx, idempotencyKey, decided.binding, decided.binding.operation_digest, targetRef);
+      if (refused === undefined && !claimed) {
+        refused = await claim(tool, ctx, idempotencyKey, decided.binding);
+        claimed = refused === undefined;
+      }
+      return refused === undefined;
+    });
+    return refused === undefined ? { result } : { failure: refused };
+  }
+
   async function complete<T>(tool: EngramMemoryToolName, ctx: MemoryWriteInvocationV1, idempotencyKey: string, binding: MemoryMutationBindingV1<unknown>, output: T, validate: (value: unknown) => { ok: boolean }): Promise<ToolResultV1<T>> {
     if (!validate(output).ok) {
       await audit(ctx, { tool, idempotency_key: idempotencyKey, decision: 'refuse', error_code: 'STORE_UNAVAILABLE' });
@@ -455,10 +485,6 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
       retention: arg.payload.retention, reconciliation: arg.payload.reconciliation,
     });
     if (decided.kind === 'failure') return decided.failure as ToolResultV1<CaptureOutputV1>;
-    if (decided.kind === 'execute') {
-      const claimed = await claim(tool, ctx, arg.idempotency_key, decided.binding);
-      if (claimed) return claimed as ToolResultV1<CaptureOutputV1>;
-    }
     // M5 l.596: the canonical effect reuses the reservation's once-allocated
     // (source_ref, sequence, idempotency_key) — never a freshly allocated
     // sequence over a reservation bound to an earlier one.
@@ -469,11 +495,13 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     if (target.kind !== 'capture_source') return failure(tool, ctx, 'STORE_UNAVAILABLE');
     let ack;
     try {
-      ack = await facets.engine.capture({
+      const guarded = await withFirstEffectGuard(tool, ctx, arg.idempotency_key, decided, guard => facets.engine.capture({
         schema_version: 2, idempotency_key: stored.idempotency_key, payload: effective.payload, evidence: effective.evidence,
         authorization: ctx.authorization, source_order: { source_ref: target.source_ref, sequence: target.sequence },
         deadline_at: ctx.deadline_at, cancellation_ref: `cancel:${tool}:${stored.idempotency_key}`,
-      });
+      }, guard));
+      if ('failure' in guarded) return guarded.failure as ToolResultV1<CaptureOutputV1>;
+      ack = guarded.result;
     } catch {
       return mapUnexpectedDependencyExceptionToPublic({ tool, commitPhaseEntered: true, auditId: ctx.auditId }).structuredContent as ToolResultV1<CaptureOutputV1>;
     }
@@ -506,15 +534,13 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     if ('failure' in reserved) return reserved.failure as ToolResultV1<RequestAdmissionOutputV1>;
     const decided = await decide(tool, ctx, arg.idempotency_key, reserved.preimage);
     if (decided.kind === 'failure') return decided.failure as ToolResultV1<RequestAdmissionOutputV1>;
-    if (decided.kind === 'execute') {
-      const claimed = await claim(tool, ctx, arg.idempotency_key, decided.binding);
-      if (claimed) return claimed as ToolResultV1<RequestAdmissionOutputV1>;
-    }
-    const admitted = decided.binding.preimage;
-    if (admitted.effective_input.tool_name !== 'engram_memory_request_admission') return failure(tool, ctx, 'STORE_UNAVAILABLE');
+    const admitted = decided.binding.preimage.effective_input;
+    if (admitted.tool_name !== 'engram_memory_request_admission') return failure(tool, ctx, 'STORE_UNAVAILABLE');
     let outcome;
     try {
-      outcome = await facets.engine.requestAdmission({ candidate_id: admitted.effective_input.candidate_id, authorization: ctx.authorization, deadline_at: ctx.deadline_at });
+      const guarded = await withFirstEffectGuard(tool, ctx, arg.idempotency_key, decided, guard => facets.engine.requestAdmission({ candidate_id: admitted.candidate_id, authorization: ctx.authorization, deadline_at: ctx.deadline_at }, guard));
+      if ('failure' in guarded) return guarded.failure as ToolResultV1<RequestAdmissionOutputV1>;
+      outcome = guarded.result;
     } catch {
       return mapUnexpectedDependencyExceptionToPublic({ tool, commitPhaseEntered: true, auditId: ctx.auditId }).structuredContent as ToolResultV1<RequestAdmissionOutputV1>;
     }
@@ -557,32 +583,14 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     if (decided.kind === 'failure') return decided.failure as ToolResultV1<WithdrawOutputV1>;
     const adopted = decided.binding.preimage.effective_input;
     if (adopted.tool_name !== 'engram_memory_withdraw') return failure(tool, ctx, 'STORE_UNAVAILABLE');
-    if (decided.kind === 'recover') {
-      // M4 l.583-587: a recovered reservation without durable proof of a
-      // committed effect still needs the CURRENT verifier verdict before the
-      // first canonical effect. A proven committed result replays through the
-      // engine's stored event identity (no second effect, fresh custody, no
-      // new ceremony); anything else refuses on an expired confirmation.
-      const proof = decided.binding;
-      const committed = (proof.recovery_state === 'completed_response' || proof.recovery_state === 'canonical_committed_receipt')
-        && isValidOpaqueRef(proof.canonical_replay_ref);
-      if (!committed) {
-        const confirmed = await confirmIfRequired(tool, ctx, arg.idempotency_key, decided.binding, decided.binding.operation_digest, adopted.candidate_id);
-        if (confirmed) return confirmed as ToolResultV1<WithdrawOutputV1>;
-      }
-    }
-    if (decided.kind === 'execute') {
-      const confirmed = await confirmIfRequired(tool, ctx, arg.idempotency_key, decided.binding, decided.binding.operation_digest, adopted.candidate_id);
-      if (confirmed) return confirmed as ToolResultV1<WithdrawOutputV1>;
-      const claimed = await claim(tool, ctx, arg.idempotency_key, decided.binding);
-      if (claimed) return claimed as ToolResultV1<WithdrawOutputV1>;
-    }
     let receipt;
     try {
-      receipt = await facets.engine.transition({
+      const guarded = await withFirstEffectGuard(tool, ctx, arg.idempotency_key, decided, guard => facets.engine.transition({
         operation: 'withdraw', candidate_id: adopted.candidate_id, event_id: adopted.event_id,
         reason_ref: adopted.reason_ref, event_anchor: adopted.event_anchor, authorization: ctx.authorization, deadline_at: ctx.deadline_at,
-      });
+      }, guard), adopted.candidate_id);
+      if ('failure' in guarded) return guarded.failure as ToolResultV1<WithdrawOutputV1>;
+      receipt = guarded.result;
     } catch {
       return mapUnexpectedDependencyExceptionToPublic({ tool, commitPhaseEntered: true, auditId: ctx.auditId }).structuredContent as ToolResultV1<WithdrawOutputV1>;
     }
@@ -636,29 +644,14 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     if (decided.kind === 'failure') return decided.failure as ToolResultV1<ForgetOutputV1>;
     const adopted = decided.binding.preimage.effective_input;
     if (adopted.tool_name !== 'engram_memory_forget') return failure(tool, ctx, 'STORE_UNAVAILABLE');
-    if (decided.kind === 'recover') {
-      // M4 l.583-587: same recovered-reservation rule as withdraw — replay a
-      // proven committed effect, otherwise re-verify confirmation first.
-      const proof = decided.binding;
-      const committed = (proof.recovery_state === 'completed_response' || proof.recovery_state === 'canonical_committed_receipt')
-        && isValidOpaqueRef(proof.canonical_replay_ref);
-      if (!committed) {
-        const confirmed = await confirmIfRequired(tool, ctx, arg.idempotency_key, decided.binding, decided.binding.operation_digest, adopted.record_id);
-        if (confirmed) return confirmed as ToolResultV1<ForgetOutputV1>;
-      }
-    }
-    if (decided.kind === 'execute') {
-      const confirmed = await confirmIfRequired(tool, ctx, arg.idempotency_key, decided.binding, decided.binding.operation_digest, adopted.record_id);
-      if (confirmed) return confirmed as ToolResultV1<ForgetOutputV1>;
-      const claimed = await claim(tool, ctx, arg.idempotency_key, decided.binding);
-      if (claimed) return claimed as ToolResultV1<ForgetOutputV1>;
-    }
     let receipt;
     try {
-      receipt = await facets.engine.transition({
+      const guarded = await withFirstEffectGuard(tool, ctx, arg.idempotency_key, decided, guard => facets.engine.transition({
         operation: 'tombstone', record_id: adopted.record_id, event_id: adopted.event_id,
         reason_ref: adopted.reason_ref, event_anchor: adopted.event_anchor, authorization: ctx.authorization, deadline_at: ctx.deadline_at,
-      });
+      }, guard), adopted.record_id);
+      if ('failure' in guarded) return guarded.failure as ToolResultV1<ForgetOutputV1>;
+      receipt = guarded.result;
     } catch {
       return mapUnexpectedDependencyExceptionToPublic({ tool, commitPhaseEntered: true, auditId: ctx.auditId }).structuredContent as ToolResultV1<ForgetOutputV1>;
     }

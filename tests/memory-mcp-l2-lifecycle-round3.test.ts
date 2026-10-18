@@ -42,10 +42,10 @@ function candidateIdOf(outcome: unknown): string {
 }
 
 async function setup(directory: string, opts: {
-  now?: () => string; shared?: { memory: unknown }; grantExpiresAt?: string;
+  now?: () => string; shared?: ReturnType<typeof buildMemory>; grantExpiresAt?: string;
 } = {}) {
-  const fresh = opts.shared === undefined ? buildMemory({ scope: SCOPE }) : undefined;
-  const memory = (opts.shared?.memory ?? fresh!.memory) as never;
+  const fresh = opts.shared ?? buildMemory({ scope: SCOPE });
+  const memory = fresh.memory as never;
   const clock = { now: opts.now ?? (() => NOW) };
   const ports = await createReferenceWriteHostPortsV1({ directory, clock });
   const host = {
@@ -58,7 +58,7 @@ async function setup(directory: string, opts: {
     keyCustody: ports.keyCustody, coverage: ports.coverage,
   };
   const tools = createMemoryWriteToolsV1({ facets: { scope_ref: SCOPE, store_id: STORE, engine: memory }, host });
-  return { memory, tools, ports };
+  return { ...fresh, memory, tools, ports };
 }
 
 /** Later fence claims land in the port but their ACK is lost pre-effect. */
@@ -93,8 +93,8 @@ describe('MCP-L2 round-3 lifecycle findings', () => {
       first.ports.close();
       // Reopen after the approval expired; the retry arrives on a new session.
       now = '2026-08-16T12:35:11.789Z';
-      const second = await setup(directory, { now: () => now, shared: { memory: first.memory } });
-      const transitions = vi.spyOn(second.memory as { transition: (...args: never[]) => unknown }, 'transition');
+      const second = await setup(directory, { now: () => now, shared: first });
+      const transitions = vi.spyOn(second.store, 'applyLifecycle');
       const retry = await second.tools.withdraw(input, invocation({ session_id: 'session:two' }));
       expect(retry).toMatchObject({ ok: false, error: { code: 'gate_failed' } });
       expect(transitions).not.toHaveBeenCalled();
@@ -121,9 +121,9 @@ describe('MCP-L2 round-3 lifecycle findings', () => {
       // The same approval still covers the retry: one canonical effect only.
       now = '2026-08-16T12:35:01.789Z';
       const second = await setup(directory, {
-        now: () => now, grantExpiresAt: '2026-08-16T12:35:06.789Z', shared: { memory: first.memory },
+        now: () => now, grantExpiresAt: '2026-08-16T12:35:06.789Z', shared: first,
       });
-      const transitions = vi.spyOn(second.memory as { transition: (...args: never[]) => unknown }, 'transition');
+      const transitions = vi.spyOn(second.store, 'applyLifecycle');
       const retry = await second.tools.withdraw(input, invocation({ session_id: 'session:two' }));
       expect(retry).toMatchObject({ ok: true, output: { value: { receipt: { to_state: 'withdrawn' } } } });
       expect(transitions).toHaveBeenCalledOnce();
@@ -146,8 +146,8 @@ describe('MCP-L2 round-3 lifecycle findings', () => {
       });
       await first.ports.policy.rotate('engram_memory_request_admission');
       first.ports.close();
-      const second = await setup(directory, { shared: { memory: first.memory } });
-      const admissions = vi.spyOn(second.memory as { requestAdmission: (...args: never[]) => unknown }, 'requestAdmission');
+      const second = await setup(directory, { shared: first });
+      const admissions = vi.spyOn(second.store, 'applyAdmission');
       const retry = await second.tools.requestAdmission(input, invocation());
       expect(retry).toMatchObject({ ok: false, error: { code: 'POLICY_STALE' } });
       expect(admissions).not.toHaveBeenCalled();
@@ -168,8 +168,8 @@ describe('MCP-L2 round-3 lifecycle findings', () => {
         ok: false, error: { code: 'STORE_UNAVAILABLE' },
       });
       first.ports.close();
-      const second = await setup(directory, { shared: { memory: first.memory } });
-      const admissions = vi.spyOn(second.memory as { requestAdmission: (...args: never[]) => unknown }, 'requestAdmission');
+      const second = await setup(directory, { shared: first });
+      const admissions = vi.spyOn(second.store, 'applyAdmission');
       const retry = await second.tools.requestAdmission(input, invocation());
       expect(retry).toMatchObject({ ok: true, output: { value: { outcome: { status: 'accepted' } } } });
       expect(admissions).toHaveBeenCalledOnce();
