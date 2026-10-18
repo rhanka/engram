@@ -14,7 +14,7 @@ co-owner-acceptance: unverified
 
 # MCP-L0a co-review repair handoff
 
-Normative input: `/home/antoinefa/src/graphify/.graphify/scratch/design/memory-mcp/SPEC-memory-mcp-v3.1.md`, exact-byte SHA-256 `f90c927964b44fdf6ad712eee9b894762250239384643a3790931c142d3aeeca`. Co-frozen answers SHA-256: `71ba105149a64ca775c3a27ea5e1d0d16f9abd215cac28aaa87691b1655ba2a7`.
+Normative input: `/home/antoinefa/src/graphify/.graphify/scratch/design/memory-mcp/SPEC-memory-mcp-v3.1.md`, exact-byte SHA-256 `f90c927964b44fdf6ad712eee9b894762250239384643a3790931c142d3aeeca`. Co-frozen answers SHA-256: `71ba105149a64ca775c3a27ea5e1d0d16f9abd215cac28aaa87691b1655ba2a7`. Restoration delta: `SPEC-memory-mcp-v3.2.md`, SHA-256 `18c697c1cd91287fd9f814c059910ffb4b39ddb1be46af547f384c7d912177b2`, restores D3/D10 from baseline `7bc9baec`; the v3.1 receipt does not attest that delta and joint re-acceptance remains `unverified`.
 
 Received review: `/home/antoinefa/src/sentropic/.tmp/engram-mcp/cofreeze-L0a-review.md`, SHA-256 above, verdict **OBJECTIONS** against `1359e6b8`. This handoff records author repairs, not a new co-freeze verdict. The target ref identifies the final implementation/tests; later evidence/documentation commits do not change those bytes. L0b was outside the received review and has no new acceptance here.
 

@@ -140,12 +140,22 @@ describe("EVOL declarations match the implemented contracts", () => {
       .toEqual(Object.keys(MEMORY_RECORD_V2_SCHEMA.properties).sort());
   });
 
-  it("records the dated 2026-10-17 D10 amendment keeping graph.json strictly as the code graph", () => {
+  it("records restored D10 as a bounded filtered projection from the validated baseline", () => {
     expect(SPEC).toContain(
-      "### D10 — `graph.json` is the code graph; memory uses dedicated authorized interfaces (owner amendment, 2026-10-17)",
+      "### D10 — Bounded current projection; history never inflates `graph.json`",
     );
     expect(SPEC).toContain(
-      "`graph.json` MUST NOT materialize canonical memory records, memory-derived vertices or edges, memory projection envelopes, bodies, identifiers, citations, receipts, or metadata copied from the canonical memory store.",
+      "`graph.json` is one bounded current graph projection, not canonical history and not “graph plus projection.” It may contain only current accepted projection envelopes, citation references, and projection metadata.",
+    );
+    expect(SPEC).toContain(
+      "Only a record in `accepted_current` with `projection_eligible === true`",
+    );
+    expect(SPEC).toContain(
+      "`accepted_disputed` (dispute), `withdrawn`, `historical`, `expired`, `trust_invalid`, or `tombstoned`",
+    );
+    expect(SPEC).not.toContain("(owner amendment, 2026-10-17)");
+    expect(SPEC).toContain(
+      "**Versioned redacted recall and authorized point-read facets.**",
     );
   });
 });
