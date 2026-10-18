@@ -32,9 +32,11 @@ function agentCapture(key: string, sequence: string, text = 'ports body') {
   return { idempotency_key: request.idempotency_key, payload, evidence: request.evidence };
 }
 
-function setup(directory: string, overrides = {}) {
-  const fixture = buildMemory({ scope: SCOPE });
-  const ports = createReferenceWriteHostPortsV1({ directory });
+async function setup(directory: string, overrides = {}, shared?: { memory: unknown; store: unknown }) {
+  const fresh = shared === undefined ? buildMemory({ scope: SCOPE }) : undefined;
+  const memory = (shared?.memory ?? fresh!.memory) as never;
+  const store = (shared?.store ?? fresh!.store) as never;
+  const ports = await createReferenceWriteHostPortsV1({ directory });
   const host = {
     clock: { now: () => NOW },
     authenticate: async () => true,
@@ -47,7 +49,8 @@ function setup(directory: string, overrides = {}) {
     coverage: ports.coverage,
     ...overrides,
   };
-  const tools = createMemoryWriteToolsV1({ facets: { scope_ref: SCOPE, store_id: STORE, engine: fixture.memory }, host });
+  const tools = createMemoryWriteToolsV1({ facets: { scope_ref: SCOPE, store_id: STORE, engine: memory }, host });
+  const fixture = { memory, store };
   return { ...fixture, tools, ports };
 }
 
@@ -55,12 +58,15 @@ describe('MCP-L2 reference durable host ports', () => {
   it('M5 should replay the identical capture across port restart with one engine effect', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'memory-l2-ports-'));
     try {
-      const first = setup(directory);
+      const first = await setup(directory);
       const commit = vi.spyOn(first.store, 'commitPending');
       const input = agentCapture('l2-ports-key-0001', '1');
       const completed = await first.tools.capture(input, invocation());
       expect(completed.ok).toBe(true);
-      const second = setup(directory);
+      // Port restart against the same canonical engine: the replay re-drives
+      // the engine (revalidating authority) and recovers the durable proof.
+      first.ports.close();
+      const second = await setup(directory, {}, first);
       const replayed = await second.tools.capture(input, invocation());
       expect(replayed).toEqual(completed.ok && replayed.ok
         ? { ...completed, output: { ...completed.output, value: { ...completed.output.value, status: 'duplicate_exact' } } }
@@ -69,6 +75,7 @@ describe('MCP-L2 reference durable host ports', () => {
       const audit = second.ports.auditLog();
       expect(audit.some((entry) => entry.decision === 'complete')).toBe(true);
       expect(audit.some((entry) => entry.decision === 'replay')).toBe(true);
+      second.ports.close();
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -77,7 +84,7 @@ describe('MCP-L2 reference durable host ports', () => {
   it('M5 should reuse persisted retention across a clock advance instead of recomputing expiry', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'memory-l2-ports-'));
     try {
-      const ports = createReferenceWriteHostPortsV1({ directory });
+      const ports = await createReferenceWriteHostPortsV1({ directory });
       const key = {
         principal_namespace: 'principal:test', principal_id: 'alice', tenant_id: 'tenant:one', store_id: STORE,
         provider_id: 'sentropic.engram.memory', connector_id: 'engram-memory', connector_instance_ref: 'connector:one',
@@ -119,7 +126,7 @@ describe('MCP-L2 reference durable host ports', () => {
   it('M5 should return POLICY_STALE for an uncommitted reservation after rotation, without a new effect', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'memory-l2-ports-'));
     try {
-      const rigged = setup(directory);
+      const rigged = await setup(directory);
       const captured = await rigged.tools.capture(agentCapture('l2-ports-key-0003', '1'), invocation());
       if (!completed(captured)) throw Error('capture failed');
       const admission = { candidate_id: captured.output.value.candidate_id, idempotency_key: 'l2-ports-key-0003-0000' };
@@ -147,7 +154,7 @@ describe('MCP-L2 reference durable host ports', () => {
   it('M5 should let a single concurrent claimant win the fence', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'memory-l2-ports-'));
     try {
-      const ports = createReferenceWriteHostPortsV1({ directory });
+      const ports = await createReferenceWriteHostPortsV1({ directory });
       const key = {
         principal_namespace: 'principal:test', principal_id: 'alice', tenant_id: 'tenant:one', store_id: STORE,
         provider_id: 'sentropic.engram.memory', connector_id: 'engram-memory', connector_instance_ref: 'connector:one',
@@ -186,7 +193,7 @@ describe('MCP-L2 reference durable host ports', () => {
   it('M5 should let one concurrent claimant win and recover the committed replay after restart', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'memory-l2-ports-'));
     try {
-      const first = setup(directory);
+      const first = await setup(directory);
       const commit = vi.spyOn(first.store, 'commitPending');
       const input = agentCapture('l2-ports-key-0005', '1');
       const [left, right] = await Promise.all([
@@ -197,10 +204,12 @@ describe('MCP-L2 reference durable host ports', () => {
       expect(commit).toHaveBeenCalledOnce();
       expect(codes).toContain('MUTATION_OUTCOME_UNKNOWN');
       expect(codes.some((code) => code === 'committed_pending' || code === 'duplicate_exact')).toBe(true);
-      const second = setup(directory);
+      first.ports.close();
+      const second = await setup(directory, {}, first);
       const recovered = await second.tools.capture(input, invocation());
       expect(recovered.ok).toBe(true);
       expect(commit).toHaveBeenCalledOnce();
+      second.ports.close();
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -209,10 +218,10 @@ describe('MCP-L2 reference durable host ports', () => {
   it('M14 should bind test-only confirmation to the operation digest', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'memory-l2-ports-'));
     try {
-      const ports = createReferenceWriteHostPortsV1({ directory });
+      const ports = await createReferenceWriteHostPortsV1({ directory });
       const binding = { capability: 'engram_memory_forget', target_ref: 'mem_target', operation_digest: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', reservation_ref: 'reservation:three' } as never;
       await expect(ports.confirm(binding)).resolves.toBe(false);
-      ports.grantConfirmation(binding, '2027-08-16T12:34:56.789Z');
+      await ports.grantConfirmation(binding, '2027-08-16T12:34:56.789Z');
       await expect(ports.confirm(binding)).resolves.toBe(true);
       await expect(ports.confirm({ ...binding, operation_digest: 'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd' } as never)).resolves.toBe(false);
       await expect(ports.confirm({ ...binding, target_ref: 'mem_other' } as never)).resolves.toBe(false);
