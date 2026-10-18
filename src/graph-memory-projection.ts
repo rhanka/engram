@@ -13,6 +13,12 @@
  * or resurrect a canonical memory record. Authorization and current
  * eligibility are host decisions supplied per candidate; this module only
  * requires their literal `=== true` form (M4) and never infers them.
+ *
+ * Code-target join: exact identifier equality against the supplied live code
+ * node ids, local to L3. Sharing of the citation-resolution convention with
+ * live-git G3 (`explainLineOrigin`, M10 l.1401) is unverified: no shared
+ * helper is invented here and no canonical memory is copied into `/code-git`
+ * storage.
  */
 import {
   exportBoundedCurrentProjectionV1,
@@ -233,22 +239,6 @@ export function assembleMemoryGraphProjection(
   });
   if (!exported.ok) return exported;
 
-  const ceiling = input.byte_ceiling ?? MEMORY_PROJECTION_RAW_BYTE_CEILING;
-  if (exported.value.raw_byte_size > ceiling) {
-    return refusal(
-      "PROJECTION_OVERSIZED",
-      `bounded current projection of ${entries.length} objects is ${exported.value.raw_byte_size} bytes, exceeds the ${ceiling}-byte ceiling; refused without omitting any current entry`,
-    );
-  }
-
-  const nodes: Extraction["nodes"] = exported.value.projection.objects.map((object) => ({
-    id: object.node_id,
-    label: object.projection.record_id,
-    file_type: "memory",
-    source_file: "",
-    memory_projection: object.projection,
-    citation_refs: [...object.citation_refs],
-  }));
   const edges: Extraction["edges"] = [];
   for (const object of exported.value.projection.objects) {
     const targets = codeTargetsByRecord.get(object.projection.record_id) ?? [];
@@ -267,6 +257,27 @@ export function assembleMemoryGraphProjection(
     return a.target < b.target ? -1 : a.target > b.target ? 1 : 0;
   });
 
+  // M10 l.1362: the ceiling covers the whole merge payload, code references
+  // included. The neutral envelope size alone would admit a projection whose
+  // serialized memory->code edges overflow `graph.json` on their own.
+  const edgeBytes = new TextEncoder().encode(JSON.stringify(edges)).byteLength;
+  const totalRawBytes = exported.value.raw_byte_size + edgeBytes;
+  const ceiling = input.byte_ceiling ?? MEMORY_PROJECTION_RAW_BYTE_CEILING;
+  if (totalRawBytes > ceiling) {
+    return refusal(
+      "PROJECTION_OVERSIZED",
+      `bounded current projection of ${entries.length} objects with ${edges.length} code references is ${totalRawBytes} bytes, exceeds the ${ceiling}-byte ceiling; refused without omitting any current entry`,
+    );
+  }
+
+  const nodes: Extraction["nodes"] = exported.value.projection.objects.map((object) => ({
+    id: object.node_id,
+    label: object.projection.record_id,
+    file_type: "memory",
+    source_file: "",
+    memory_projection: object.projection,
+    citation_refs: [...object.citation_refs],
+  }));
   return {
     ok: true,
     value: {
@@ -277,7 +288,7 @@ export function assembleMemoryGraphProjection(
       omitted_by_reason: exported.value.omitted_by_reason,
       projection_digest: exported.value.projection_digest,
       export_digest: exported.value.export_digest,
-      raw_byte_size: exported.value.raw_byte_size,
+      raw_byte_size: totalRawBytes,
       raw_byte_ceiling: ceiling,
       extraction: { nodes, edges },
     },
@@ -385,9 +396,29 @@ export function stripNonProjectedMemoryNodes(
 }
 
 /**
- * Regeneration/reconciliation (M10 l.1368): the next assembly drops memories
- * that left `accepted_current`/eligibility/authorization and attaches the
- * fresh projection. Code nodes are never touched.
+ * Drops every memory node with its incident edges and clears the freshness
+ * pins, so a regeneration without a fresh projection conserves no memory
+ * (M10 l.1399). Code nodes are never touched. The stripped graph carries no
+ * projection and stays servable as a code-only view.
+ */
+export function stripAllMemoryProjectionFromGraph(G: Graph): string[] {
+  const removed = stripNonProjectedMemoryNodes(G, new Set());
+  if (G.hasAttribute(MEMORY_PROJECTION_CURSOR_ATTR)) {
+    G.removeAttribute(MEMORY_PROJECTION_CURSOR_ATTR);
+  }
+  if (G.hasAttribute(MEMORY_HIGH_WATER_CURSOR_ATTR)) {
+    G.removeAttribute(MEMORY_HIGH_WATER_CURSOR_ATTR);
+  }
+  return removed;
+}
+
+/**
+ * Regeneration/reconciliation (M10 l.1368, l.1370): the next assembly drops
+ * memories that left `accepted_current`/eligibility/authorization, retires
+ * every previous memory reference edge before attaching the fresh reference
+ * set, then attaches the fresh projection. A retargeted authorization (e.g.
+ * `[alpha]` replaced by `[beta]`) therefore leaves no stale edge behind.
+ * Code nodes and code-code edges are never touched.
  */
 export function reconcileMemoryProjectionInGraph(
   G: Graph,
@@ -395,6 +426,15 @@ export function reconcileMemoryProjectionInGraph(
 ): MemoryGraphReconcileReceiptV1 {
   const included = new Set(assembled.extraction.nodes.map((node) => node.id));
   const removed = stripNonProjectedMemoryNodes(G, included);
+  const staleEdges: string[] = [];
+  G.forEachEdge((edgeKey, _attrs, source, target) => {
+    if (source.startsWith(MEMORY_GRAPH_NODE_PREFIX) || target.startsWith(MEMORY_GRAPH_NODE_PREFIX)) {
+      staleEdges.push(edgeKey);
+    }
+  });
+  for (const edgeKey of staleEdges) {
+    if (G.hasEdge(edgeKey)) G.dropEdge(edgeKey);
+  }
   const attached = attachMemoryProjectionToGraph(G, assembled);
   return { ...attached, removed };
 }
