@@ -178,12 +178,21 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     try { await host!.audit.append({ auditId: ctx.auditId, at: host!.clock.now(), ...entry }); } catch { /* audit never masks the outcome */ }
   }
 
-  /** Closed submitted-domain comparison (M5 l.686): agent values only, never host-resolved defaults. */
+  /**
+   * Closed submitted-domain comparison (M5 l.686): agent values only, never
+   * host-resolved defaults. Retention and reconciliation are resolved by the
+   * host (time-derived expiry, consent filtering, policy versions), so a
+   * same-key retry reuses the persisted resolution instead of conflicting
+   * with its own clock-advanced recomputation. First resolution wins.
+   */
   function submittedEqual(left: EffectiveMemoryMutationInputV1, right: EffectiveMemoryMutationInputV1): boolean {
     if (left.tool_name !== right.tool_name) return false;
     const pick = (input: EffectiveMemoryMutationInputV1): unknown => {
       switch (input.tool_name) {
-        case 'engram_memory_capture': return { payload: input.payload, evidence: input.evidence };
+        case 'engram_memory_capture': {
+          const { retention: _retention, reconciliation: _reconciliation, ...agentPayload } = input.payload;
+          return { payload: agentPayload, evidence: input.evidence };
+        }
         case 'engram_memory_request_admission': return { candidate_id: input.candidate_id };
         case 'engram_memory_withdraw': return { candidate_id: input.candidate_id, reason_ref: input.reason_ref };
         case 'engram_memory_forget': return { record_id: input.record_id, reason_ref: input.reason_ref };
