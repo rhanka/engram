@@ -912,7 +912,7 @@ function validateRedactionResult(input: unknown): RedactionResultV1 | undefined 
 export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): MemoryPortV2 {
   const cancelled = new Set<string>();
   const capturedContent = new Map<string, Digest>();
-  const admissionOutcomes = new Map<string, AdmissionOutcomeV1>();
+  const admissionOutcomes = new Map<string, { scope_ref: string; outcome: AdmissionOutcomeV1 }>();
   // X2 tour 4 (MAJEUR-1, normative §4): at most one invalidateProjections cascade runs at a time per port.
   // Overlapping calls queue on this chain instead of interleaving rounds: a stale batch read by an older
   // call can never apply after a newer call certified past a tombstone. A rejected call still releases
@@ -982,9 +982,6 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       if (cancelled.has(request.cancellation_ref)) return refusal("capture", "CANCELLED", "capture was cancelled before commit");
       const candidateId = captureIdentity(request);
       const contentDigest = captureContentDigest(payload_digest, request);
-      const previous = capturedContent.get(candidateId);
-      if (previous !== undefined && previous !== contentDigest) return refusal("capture", "DIGEST_CONFLICT", "idempotency identity is already bound to different capture content");
-
       const resource = { scope_ref: payload.scope_ref };
       const authorization = await authorizeOperation(dependencies.authorization, {
         operation: "capture",
@@ -995,6 +992,9 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
         deadline_at: request.deadline_at,
       }, payload.scope_ref, now);
       if (!authorization.ok) return authorization;
+      // M4/M5: authorize before comparing or disclosing any cached binding.
+      const previous = capturedContent.get(candidateId);
+      if (previous !== undefined && previous !== contentDigest) return refusal("capture", "DIGEST_CONFLICT", "idempotency identity is already bound to different capture content");
       if (cancelled.has(request.cancellation_ref)) return refusal("capture", "CANCELLED", "capture was cancelled before commit");
       const trust = await classifyTrust(dependencies, payload_digest, request, now);
       if (!trust.ok) return trust;
@@ -1162,8 +1162,6 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
       const now = dependencies.clock?.now();
       if (!isInstant(now)) return unavailable("request_admission", "clock did not supply a canonical instant");
       if (Date.parse(now) >= Date.parse(input.deadline_at)) return refusal("request_admission", "DEADLINE_EXCEEDED", "admission deadline elapsed before decision");
-      const previousOutcome = admissionOutcomes.get(input.candidate_id);
-      if (previousOutcome !== undefined) return { ok: true, value: previousOutcome };
       const resource = { candidate_id: input.candidate_id };
       const authorization = await authorizeOperation(dependencies.authorization, {
         operation: "request_admission",
@@ -1174,6 +1172,11 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
         deadline_at: input.deadline_at,
       }, undefined, now);
       if (!authorization.ok) return authorization;
+      const previousOutcome = admissionOutcomes.get(input.candidate_id);
+      if (previousOutcome !== undefined) {
+        if (previousOutcome.scope_ref !== authorization.value.scope_ref) return refusal("request_admission", "UNAUTHORIZED", "authorization scope does not bind the cached admission");
+        return { ok: true, value: previousOutcome.outcome };
+      }
       try {
         const pending = await dependencies.canonical_store.readPending({
           candidate_id: input.candidate_id,
@@ -1263,7 +1266,7 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Me
         };
         const destroyed = await dependencies.crypto.destroy({ key_ref: pending.value.sealed.key_ref, idempotency_key: `destroy:${input.candidate_id}` });
         if (!destroyed.ok) return operationFailure("request_admission", destroyed);
-        admissionOutcomes.set(input.candidate_id, value);
+        admissionOutcomes.set(input.candidate_id, { scope_ref: envelope.payload.scope_ref, outcome: value });
         return { ok: true, value };
       } catch {
         return unavailable("request_admission", "admission dependencies did not return typed results");
