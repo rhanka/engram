@@ -131,10 +131,13 @@ export function createMemoryReadToolsV1(options: { facets: MemoryReadFacetsV1; h
           || await host.authorizeContinuation(structuredClone(state), structuredClone(ctx)) !== true) return failure(tool, ctx, 'STALE_PAGE');
       }
       const limit = arg.limit ?? 10, max_packet_bytes = arg.max_packet_bytes ?? 65536;
+      const envelopeOverhead = size(createToolSuccessEnvelope({}, ctx.auditId).structuredContent) - size({});
       const request = {
         query: arg.query, purpose_ref: arg.purpose_ref, authorization: ctx.authorization,
         capability_policy: arg.capability_policy ?? DEFAULT_RECALL_CAPABILITY_POLICY,
-        budgets: { max_candidates: 2000, max_results: limit, max_packet_bytes, deadline_at: ctx.deadline_at },
+        // M2 lines 240/384: budget the whole envelope. response_digest adds
+        // two bytes over packet_digest; the host handle is shorter than its cursor.
+        budgets: { max_candidates: 2000, max_results: limit, max_packet_bytes: max_packet_bytes - envelopeOverhead - 2, deadline_at: ctx.deadline_at },
         page: { size: limit, ...(state ? { cursor: state.internal_engine_cursor } : {}) },
       };
       const result = await facets.recallPort.recall(request);
