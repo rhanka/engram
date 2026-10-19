@@ -108,12 +108,14 @@ export {
   DIGEST_RE,
   INSTANT_RE,
   REPO_RE,
+  SHA_RE,
   durationSeconds,
   isDigest,
   isInstant,
 } from "./format.js";
 
 export {
+  FINGERPRINT_COMPONENTS,
   assertSnapshotComplete,
   ciEnvelopeSeconds,
   ciJobServiceSeconds,
@@ -150,10 +152,12 @@ export {
   parseMergeVerdict,
   qualifyInstallation,
   summarizeReviewRounds,
+  validateReviewWavesForLot,
   type EvaluatedTarget,
   type IdentifiedContext,
   type InstallationTargetInput,
   type TargetQualification,
+  type WaveError,
 } from "./milestones.js";
 
 export {

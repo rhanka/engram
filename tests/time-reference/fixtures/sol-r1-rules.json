@@ -340,6 +340,72 @@
           "code": "unresolved-receipt"
         }
       ]
+    },
+    {
+      "id": "F09",
+      "spec": "§6.11",
+      "title": "Duplicate wave identities and foreign-lot waves are rejected",
+      "cases": [
+        {
+          "mutation": "duplicate-roundId",
+          "code": "duplicate-wave"
+        },
+        {
+          "mutation": "foreign-wave-repo",
+          "code": "foreign-wave-repo"
+        },
+        {
+          "mutation": "foreign-wave-lot",
+          "code": "foreign-wave-lot"
+        }
+      ]
+    },
+    {
+      "id": "F10",
+      "spec": "TR-06",
+      "title": "Duplicate cohort members are rejected before counting",
+      "cases": [
+        {
+          "mutation": "duplicate-memberIds",
+          "code": "duplicate-member"
+        }
+      ]
+    },
+    {
+      "id": "F11",
+      "spec": "§6.4",
+      "title": "Fingerprints carry every specified regime component, unattested ones unknown",
+      "cases": [
+        {
+          "mutation": "empty-fingerprint",
+          "code": "missing-fingerprint-component"
+        },
+        {
+          "mutation": "dropped-jobSet",
+          "code": "missing-fingerprint-component"
+        },
+        {
+          "mutation": "empty-string-component",
+          "code": "missing-fingerprint-component"
+        }
+      ]
+    },
+    {
+      "id": "F12",
+      "spec": "§6.1",
+      "title": "sourceRevision is a full immutable commit SHA",
+      "cases": [
+        {
+          "mutation": "main",
+          "value": "main",
+          "code": "bad-source-revision"
+        },
+        {
+          "mutation": "short-sha",
+          "value": "46b82b4",
+          "code": "bad-source-revision"
+        }
+      ]
     }
   ],
   "shared": {
