@@ -88,6 +88,30 @@ export function validateRepoKnowledgeProfile(v: unknown): { ok: boolean; errors:
   return { ok: errors.length === 0, errors };
 }
 
+/** Walk one schema node: every object is closed, every typed array constrains its elements (section 6.0). */
+function checkSchemaClosure(node: unknown, path: string, errors: Diagnostic[]): void {
+  if (!isRecord(node)) return;
+  if (node["type"] === "object") {
+    if (node["additionalProperties"] !== false) {
+      errors.push({ code: "open-schema", message: `nested schema ${path} must be closed (additionalProperties: false)`, path });
+    }
+    const props = node["properties"];
+    if (isRecord(props)) {
+      for (const k of Object.keys(props)) checkSchemaClosure(props[k], `${path}.properties.${k}`, errors);
+    }
+  }
+  if (node["type"] === "array") {
+    if (!isRecord(node["items"])) {
+      errors.push({ code: "open-schema", message: `array schema ${path} must constrain its items`, path });
+    } else {
+      checkSchemaClosure(node["items"], `${path}.items`, errors);
+    }
+  }
+  if (Array.isArray(node["type"])) {
+    if (isRecord(node["items"])) checkSchemaClosure(node["items"], `${path}.items`, errors);
+  }
+}
+
 /** Validate the timing.schema.json document: the 14 closed section 6 schemas. */
 export function validateTimingSchemas(v: unknown): { ok: boolean; errors: Diagnostic[] } {
   const errors: Diagnostic[] = [];
@@ -105,6 +129,7 @@ export function validateTimingSchemas(v: unknown): { ok: boolean; errors: Diagno
     if (!Array.isArray(required) || !required.includes("schema")) {
       errors.push({ code: "bad-schema", message: `schema ${name} must require its schema literal`, path: `${name}.required` });
     }
+    checkSchemaClosure(s, name, errors);
   }
   for (const k of Object.keys(v)) {
     if (!(TIMING_SCHEMA_NAMES as readonly string[]).includes(k)) {
