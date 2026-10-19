@@ -623,9 +623,8 @@ export interface GraphStoreConfig {
 }
 
 /**
- * Test-only injection point: a fake driver module used instead of the
- * dynamic import of `GraphStoreFactory.requiredPackage`, mirroring the LLM
- * execution ports injection pattern. Production code never passes this.
+ * Host injection point for the backend driver, shared by production hosts
+ * and test fakes. Engram never imports or discovers a driver package.
  */
 export interface StoreTestDeps {
   driverModule?: unknown;

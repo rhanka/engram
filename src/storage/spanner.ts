@@ -1,11 +1,11 @@
+import { requireHostDriver } from "./host-driver.js";
 /**
  * Spanner GraphStore adapter (SPEC_STORAGE_BACKENDS.md, "Spanner Graph").
  *
  * Live-push mirror of an Engram graph into Cloud Spanner via batched
  * `insertOrUpdate` mutations (the Table.upsert primitive). The driver
  * (`@google-cloud/spanner`) is NEVER imported statically: it is always
- * supplied through `deps.driverModule` (tests) or the registry's dynamic
- * import (production). Importing this module evaluates no driver.
+ * supplied by the host through `deps.driverModule`. Importing this module evaluates no driver.
  *
  * On connect the adapter binds the `engram_*` tables when present, else the
  * legacy `graphify_*` tables (with a warning), else defaults to `engram_*`
@@ -354,7 +354,7 @@ interface SpannerModule {
 
 /**
  * Create a Spanner GraphStore. The driver module is supplied by the registry's
- * lazy import (production) or by `deps.driverModule` (tests). Authentication
+ * host injection through `deps.driverModule`. Authentication
  * uses Application Default Credentials (ADC) — there is no password by design.
  */
 export async function createSpannerGraphStore(
@@ -374,25 +374,8 @@ export async function createSpannerGraphStore(
     );
   }
 
-  // Resolve the driver from injected deps or a dynamic import (the registry
-  // performs the import in production; this fallback supports direct/live use).
-  let spannerMod: Record<string, unknown>;
-  if (deps?.driverModule !== undefined) {
-    spannerMod = deps.driverModule as Record<string, unknown>;
-  } else {
-    try {
-      // Optional, uninstalled-by-default driver: build the specifier at runtime
-      // so the compiler does not attempt to resolve the (absent) package. In
-      // production the registry already supplies the module via `deps`; this
-      // fallback supports direct/live use where the package IS installed.
-      const driverPackage = ["@google-cloud", "spanner"].join("/");
-      spannerMod = (await import(driverPackage)) as Record<string, unknown>;
-    } catch {
-      throw new Error(
-        "store 'spanner' requires @google-cloud/spanner. Run: npm install @google-cloud/spanner",
-      );
-    }
-  }
+  // The host supplies its driver; Engram never loads a backend package.
+  const spannerMod = requireHostDriver("spanner", "@google-cloud/spanner", deps?.driverModule);
 
   const mod = (spannerMod.default ?? spannerMod) as Partial<SpannerModule>;
   const SpannerCtor = mod.Spanner;

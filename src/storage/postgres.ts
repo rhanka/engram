@@ -1,10 +1,11 @@
+import { requireHostDriver } from "./host-driver.js";
 /**
  * Postgres GraphStore adapter (SPEC_STORAGE_BACKENDS.md, "Future Backends").
  *
  * Live-push mirror of a Graphify graph into native PostgreSQL via batched
  * `INSERT ... ON CONFLICT DO UPDATE` upserts (the merge primitive). The driver
  * (`pg`) is NEVER imported statically: it is always supplied through
- * `deps.driverModule` (tests) or the registry's dynamic import (production), so
+ * host injection through `deps.driverModule`, so
  * importing this module evaluates no driver and `tsc`/the import-guard never try
  * to resolve the (uninstalled-by-default) package.
  *
@@ -654,7 +655,7 @@ interface PgModule {
 
 /**
  * Create a Postgres GraphStore. The driver module is supplied by the registry's
- * lazy import (production) or by `deps.driverModule` (tests). The DSN is read
+ * host injection through `deps.driverModule`. The DSN is read
  * from `config.connectionString` (resolved env-only upstream); credentials are
  * never read from YAML.
  */
@@ -670,21 +671,8 @@ export async function createPostgresGraphStore(
     );
   }
 
-  // Resolve the driver from injected deps or a dynamic import (the registry
-  // performs the import in production; this fallback supports direct/live use).
-  let pgMod: Record<string, unknown>;
-  if (deps?.driverModule !== undefined) {
-    pgMod = deps.driverModule as Record<string, unknown>;
-  } else {
-    try {
-      // Optional, uninstalled-by-default driver: build the specifier at runtime
-      // so the compiler does not attempt to resolve the (absent) package.
-      const driverPackage = ["p", "g"].join("");
-      pgMod = (await import(driverPackage)) as Record<string, unknown>;
-    } catch {
-      throw new Error("store 'postgres' requires pg. Run: npm install pg");
-    }
-  }
+  // The host supplies its driver; Engram never loads a backend package.
+  const pgMod = requireHostDriver("postgres", "pg", deps?.driverModule);
 
   const mod = (pgMod.default ?? pgMod) as Partial<PgModule>;
   const PoolCtor = mod.Pool;

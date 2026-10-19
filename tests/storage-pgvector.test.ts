@@ -546,7 +546,7 @@ describe("pgvector adapter: vector registry", () => {
         connectionString: "postgres://localhost/db",
         embedding: { dimension: DIM },
       }),
-    ).rejects.toThrow(/requires pg-does-not-exist-xyzzy.*npm install pg-does-not-exist-xyzzy pgvector/i);
+    ).rejects.toThrow(/host must inject pg-does-not-exist-xyzzy via deps.driverModule/i);
   });
 
   it("throws on an unknown vector store id", async () => {
