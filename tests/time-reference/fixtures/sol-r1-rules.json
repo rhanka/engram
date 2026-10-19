@@ -141,6 +141,36 @@
           "path": "quarantine.0.id",
           "value": null,
           "code": "bad-type"
+        },
+        {
+          "base": "series",
+          "path": "quantiles.nEff.extra",
+          "value": "1",
+          "code": "invalid-neff"
+        },
+        {
+          "base": "manifest",
+          "path": "inclusionIds.0",
+          "value": null,
+          "code": "bad-type"
+        },
+        {
+          "base": "manifest",
+          "path": "exclusionIds.0",
+          "value": {},
+          "code": "bad-type"
+        },
+        {
+          "base": "manifest",
+          "path": "sourceUrls.0",
+          "value": 1,
+          "code": "bad-type"
+        },
+        {
+          "base": "cohort",
+          "path": "memberIds.0",
+          "value": null,
+          "code": "bad-type"
         }
       ]
     },
@@ -323,6 +353,26 @@
           "mutation": "qual.expectedMergeSha",
           "value": "other-merge",
           "reason": "declaration-mismatch"
+        },
+        {
+          "mutation": "receipt.targetKind",
+          "value": "delivery-environment",
+          "reason": "wrong-target-kind"
+        },
+        {
+          "mutation": "receipt.platform",
+          "value": "darwin-arm64",
+          "reason": "wrong-platform"
+        },
+        {
+          "mutation": "receipt.installationScope",
+          "value": "other-scope",
+          "reason": "wrong-scope"
+        },
+        {
+          "mutation": "receipt.releaseSourceSha",
+          "value": "other-release",
+          "reason": "wrong-release-source"
         }
       ]
     },
@@ -493,6 +543,22 @@
             9
           ],
           "expected": 5
+        }
+      ]
+    },
+    {
+      "id": "F17",
+      "spec": "§12.3",
+      "title": "Release metadata and version separation: 0.21.0 exposes ./time-reference",
+      "cases": [
+        {
+          "name": "package-exposes-time-reference"
+        },
+        {
+          "name": "package-version-0.21.0"
+        },
+        {
+          "name": "lock-version-0.21.0"
         }
       ]
     },
