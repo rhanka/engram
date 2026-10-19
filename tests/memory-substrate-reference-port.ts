@@ -527,7 +527,10 @@ export function createReferenceModuleStorageBackend(options: ReferenceBackendOpt
           for (const [mapKey, value] of core.indexes) {
             if (!mapKey.startsWith("memory-accepted-lexical\0")) continue;
             if (typeof scopeRef === "string" && !mapKey.includes(JSON.stringify(scopeRef))) continue;
-            documents.push(JSON.parse(value.data));
+            const document: unknown = JSON.parse(value.data);
+            // The canonical removal tombstone reads as absent, never as a document.
+            if (document === null) continue;
+            documents.push(document);
             if (documents.length >= Math.min(Math.max(1, Math.floor(maxCandidates)), 2000)) break;
           }
           documents.sort((left, right) => String((left as { record_id: string }).record_id).localeCompare(String((right as { record_id: string }).record_id)));
