@@ -1,0 +1,35 @@
+{
+  "mappingVersion": "1.0.0",
+  "profile": {
+    "id": "repo-knowledge",
+    "version": "1"
+  },
+  "description": "Versioned adapter from timing records to the engram extraction vocabulary. Validated separately from the profile.",
+  "adapters": [
+    {
+      "timingRecord": "TimingObservation",
+      "extractionTarget": "observation",
+      "note": "Pull-request merge evidence (PullRequestTimingV1) and final-head CI checks (CiCheckBatchV1); agent runs carry the L2 receipt fields."
+    },
+    {
+      "timingRecord": "TimingSeries",
+      "extractionTarget": "series",
+      "note": "One metric of one fingerprinted cohort with its descriptive quantile set and provenance."
+    },
+    {
+      "timingRecord": "TimingEstimate",
+      "extractionTarget": "estimate",
+      "note": "Estimate bound to a series with applicability, freshness, support and limitations."
+    },
+    {
+      "timingRecord": "TimingBudget",
+      "extractionTarget": "budget",
+      "note": "Owner decision bound in seconds with rationale, decision reference and revisit trigger. Carries no sample count and no confidence claim."
+    },
+    {
+      "timingRecord": "PlanPrediction",
+      "extractionTarget": "consumer-artifact",
+      "note": "Consumer artifact (conductor/planning) built from TimingSeries and TimingEstimate records; immutable once issued."
+    }
+  ]
+}
