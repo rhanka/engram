@@ -1,7 +1,7 @@
 /** Sol R1 F05 (§4.3, §6.5) — Effective tail thresholds and required qualifications. */
 import { describe, expect, it } from "vitest";
 import { validateQuantileSet } from "../../src/time-reference/index.js";
-import { codesOf, solRule } from "./sol-r1-helpers.js";
+import { drivenCases, codesOf, solRule } from "./sol-r1-helpers.js";
 
 interface F05Case {
   name: string;
@@ -20,7 +20,7 @@ describe("Sol R1 F05 tail support and qualifications", () => {
   const rule = solRule("F05") as { cases: F05Case[] };
 
   it("tail thresholds and qualification rules hold per fixture case", () => {
-    for (const c of rule.cases) {
+    for (const c of drivenCases("F05", rule.cases)) {
       const set: Record<string, unknown> = {
         schema: "engram.time-reference/quantile-set/1",
         quantileMethod: "nearest-rank/1",
