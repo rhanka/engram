@@ -68,6 +68,7 @@ import type {
 } from "./contracts/index.js";
 import {
   MEMORY_CONTRACT_DIGEST,
+  MEMORY_PINNED_PROFILES,
   MEMORY_REQUIRED_PROFILES,
   compareU64,
   isCanonicalU64,
@@ -241,10 +242,16 @@ function checkOptions(options: ModuleStorageMemoryStoreOptionsV1): Result<{ scop
   if (handle.descriptor === undefined || handle.descriptor.contractDigest !== MEMORY_CONTRACT_DIGEST) {
     return refuse(operation, "CAPABILITY_UNAVAILABLE", "neutral descriptor digest does not match the memory binding");
   }
-  const advertised = new Set(handle.profiles.map((profile) => profile.name));
-  for (const required of MEMORY_REQUIRED_PROFILES) {
-    if (!advertised.has(required)) {
-      return refuse(operation, "CAPABILITY_UNAVAILABLE", `neutral port does not advertise required profile ${required}`);
+  const advertised = new Map(handle.profiles.map((profile) => [profile.name, profile]));
+  for (const pinned of MEMORY_PINNED_PROFILES) {
+    if (MEMORY_REQUIRED_PROFILES.includes(pinned.name)) {
+      const claim = advertised.get(pinned.name);
+      if (claim === undefined) {
+        return refuse(operation, "CAPABILITY_UNAVAILABLE", `neutral port does not advertise required profile ${pinned.name}`);
+      }
+      if (claim.version !== pinned.version || claim.digest !== pinned.digest) {
+        return refuse(operation, "CAPABILITY_UNAVAILABLE", `neutral port profile ${pinned.name} is not at the pinned version and digest`);
+      }
     }
   }
   const binding = (options as { scope_binding?: unknown }).scope_binding as MemoryScopeBindingV1 | undefined;
@@ -1317,6 +1324,32 @@ function parseJson<T>(data: string): T | undefined {
   }
 }
 
+/**
+ * Exact K1 boundary for this scope (binding §4.2 `exact-cursor`): the chain
+ * identity, head hash, and allocation the backend reports for the bound scope.
+ */
+async function loadChainIndex(
+  handle: NeutralMemoryHandle,
+  grant: NeutralScopeGrant,
+  operation: MemoryOperation,
+): Promise<Result<{ chain: string; head: string; allocation: string }>> {
+  let page: NeutralEncodedValue;
+  try {
+    page = await handle.query("scope-chain-index", neutralJcs({}), grant);
+  } catch (error) {
+    const mapped = mapStorageError(operation, error);
+    return refuse(operation, mapped.code, mapped.message);
+  }
+  const index = parseJson<{ chain?: unknown; head?: unknown; allocation?: unknown }>(page.data);
+  if (index === undefined || typeof index !== "object" || index === null) {
+    return refuse(operation, "JOURNAL_CORRUPT", "chain index does not decode");
+  }
+  if (index.chain !== memoryJournalChain() || !isDigest(index.head) || !isCanonicalU64(index.allocation)) {
+    return refuse(operation, "JOURNAL_CORRUPT", "chain index is not an exact memory boundary");
+  }
+  return { ok: true, value: { chain: index.chain, head: index.head, allocation: index.allocation } };
+}
+
 async function loadJournal(
   handle: NeutralMemoryHandle,
   grant: NeutralScopeGrant,
@@ -1336,14 +1369,29 @@ async function loadJournal(
     if (records === undefined || !Array.isArray(records)) {
       return refuse(operation, "JOURNAL_CORRUPT", "journal page does not decode");
     }
+    // Exhausted pagination (binding §§4.2, 6.3.4): only an empty page ends
+    // recovery — a short page never truncates it — and every page must
+    // advance the continuation cursor.
     if (records.length === 0) break;
+    const continued = after;
     for (const record of records) {
       const event = parseJson<MemoryJournalEventV1>(record.value.data);
       if (event === undefined) return refuse(operation, "JOURNAL_CORRUPT", "journal event does not decode");
       events.push(event);
       after = event.cursor;
     }
-    if (records.length < 2000) break;
+    if (after === continued) return refuse(operation, "JOURNAL_CORRUPT", "journal page does not advance");
+  }
+  // Exact-boundary verification (binding §§4.2, 6.3.4): the loaded prefix
+  // covers exactly the reported allocation with the reported head.
+  const index = await loadChainIndex(handle, grant, operation);
+  if (!index.ok) return index;
+  if (BigInt(events.length) !== BigInt(index.value.allocation)) {
+    return refuse(operation, "CURSOR_GAP", "journal recovery does not exhaust the reported allocation");
+  }
+  const head = events.length === 0 ? memoryZeroHash() : events[events.length - 1]!.event_hash;
+  if (head !== index.value.head) {
+    return refuse(operation, "JOURNAL_CORRUPT", "journal recovery head disagrees with the reported boundary");
   }
   return { ok: true, value: events };
 }
@@ -1366,9 +1414,10 @@ async function loadOutbox(
     const records = parseJson<ProjectionBatchV1[]>(page.data);
     if (records === undefined || !Array.isArray(records)) return refuse(operation, "JOURNAL_CORRUPT", "outbox page does not decode");
     if (records.length === 0) break;
+    const continued = after;
     batches.push(...records);
     after = records[records.length - 1]!.through_cursor_inclusive;
-    if (records.length < 2000) break;
+    if (after === continued) return refuse(operation, "JOURNAL_CORRUPT", "outbox page does not advance");
   }
   batches.sort((left, right) => compareU64(left.through_cursor_inclusive, right.through_cursor_inclusive));
   return { ok: true, value: batches };
