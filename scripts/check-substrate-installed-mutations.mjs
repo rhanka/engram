@@ -10,6 +10,7 @@ const mutations = [
   ["extra public type ignored", 'assert.deepEqual(types.sort(), [...EXPECTED_TYPES].sort(), "installed public type inventory");', "", "extra type"],
   ["strict declaration errors ignored", "const diagnostics = ts.getPreEmitDiagnostics(program);", "const diagnostics = [];", "invalid declaration"],
   ["dependency pin ignored", "actual.version !== expected.version || actual.integrity !== expected.integrity", "false", "pinned closure"],
+  ["host ports no longer compiled", '    `export { consumeHost } from "./host-consumer.js";`,', "", "erased crypto port"],
 ];
 try {
   for (const [name, from, to, test] of mutations) {
