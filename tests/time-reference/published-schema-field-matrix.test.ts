@@ -1,12 +1,17 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { FieldRow, Obj } from "./dto-matrix-helpers.js";
+import { validateCollectionManifest } from "../../src/time-reference/index.js";
+import { INSTANT_PATTERN } from "../../src/time-reference/schemas.js";
+import { baseDto, type FieldRow, type Obj } from "./dto-matrix-helpers.js";
 
 const { rows } = JSON.parse(readFileSync(new URL("./fixtures/dto-fields.json", import.meta.url), "utf8")) as { rows: FieldRow[] };
 const published = JSON.parse(readFileSync(new URL("../../profiles/repo-knowledge/1/timing.schema.json", import.meta.url), "utf8")) as Record<string, Obj>;
 
-// Independent contract expectations: never derive these from the implementation schemas.
-const utcInstant = { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$" };
+// Independent field declarations and boundary cases verify the shared instant pattern.
+const utcInstant = {
+  type: "string", pattern: INSTANT_PATTERN, format: "date-time",
+  description: "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator.",
+};
 function declaredConstraint(format: string): Obj {
   if (format.startsWith("literal:")) return { const: format.slice("literal:".length) };
   if (format.startsWith("enum:")) return { enum: format.slice("enum:".length).split("|") };
@@ -42,7 +47,7 @@ function resolve(schemas: Record<string, Obj>, dto: string, path: string): { nod
 function assertField(schemas: Record<string, Obj>, [dto, path, format, presence]: FieldRow): void {
   const identity = `${dto}.${path}`;
   const { node, parent, field } = resolve(schemas, dto, path);
-  const constraintKeys = ["type", "const", "enum", "pattern", "format", "anyOf", "oneOf", "allOf", "not", "$ref"];
+  const constraintKeys = ["type", "const", "enum", "pattern", "format", "description", "anyOf", "oneOf", "allOf", "not", "$ref"];
   const actual = Object.fromEntries(Object.entries(node).filter(([key]) => constraintKeys.includes(key)));
   expect(actual, identity).toEqual(declaredConstraint(format));
   if (field === "[]") expect(presence, `${identity} element schema`).toBe("required");
@@ -65,6 +70,38 @@ describe("published schema constraints for every DTO field", () => {
 
   it.each(rows)("%s.%s carries %s (%s, %s)", (dto, path, format, presence, source) => {
     assertField(published, [dto, path, format, presence, source]);
+  });
+
+  it.each(rows.filter(([, , format]) => format.startsWith("instant")))(
+    "%s.%s bounds UTC instant components and fractional precision",
+    (dto, path) => {
+      const { node } = resolve(published, dto, path);
+      const instantNode = node.anyOf ? (node.anyOf as Obj[])[0]! : node;
+      const pattern = new RegExp(instantNode.pattern as string);
+      for (const value of [
+        "2026-99-99T99:99:99Z", "2026-00-01T00:00:00Z", "2026-13-01T00:00:00Z",
+        "2026-01-00T00:00:00Z", "2026-01-32T00:00:00Z", "2026-01-01T24:00:00Z",
+        "2026-01-01T00:60:00Z", "2026-01-01T00:00:60Z", "2026-01-01T00:00:00+01:00",
+        "2026-01-01T00:00:00.Z", "2026-01-01T00:00:00.1234Z",
+      ]) expect(pattern.test(value), `${dto}.${path}: ${value}`).toBe(false);
+      for (const value of [
+        "2026-01-01T00:00:00Z", "2026-12-31T23:59:59Z", "2024-02-29T12:00:00Z",
+        "2026-01-01T00:00:00.1Z", "2026-01-01T00:00:00.12Z", "2026-01-01T00:00:00.123Z",
+      ]) expect(pattern.test(value), `${dto}.${path}: ${value}`).toBe(true);
+    },
+  );
+
+  it("enforces full calendar validity through the runtime validator", () => {
+    const valid = baseDto("CollectionManifestV1");
+    expect(validateCollectionManifest(valid).ok).toBe(true);
+    for (const collectedAt of ["2024-02-29T00:00:00Z", "2000-02-29T00:00:00Z"]) {
+      expect(validateCollectionManifest({ ...valid, collectedAt }).ok, collectedAt).toBe(true);
+    }
+    for (const collectedAt of ["2026-02-30T00:00:00Z", "2026-02-29T00:00:00Z", "2100-02-29T00:00:00Z"]) {
+      expect(validateCollectionManifest({ ...valid, collectedAt }), collectedAt).toMatchObject({
+        ok: false, errors: [{ code: "bad-instant", path: "collectedAt" }],
+      });
+    }
   });
 
   const mutations: [string, string, string, (node: Obj, parent: Obj, field: string) => void][] = [
