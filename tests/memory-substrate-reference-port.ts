@@ -142,6 +142,9 @@ export interface ReferenceBackend {
   revokeGrant(token: string): void;
   liveHolders(): number;
   armFailpoint(stage: ReferenceFailStage): void;
+  /** Deterministic fault injection on the nth transact call (1-based, absolute per backend). */
+  armFailpointAtTransaction(index: number, stage: ReferenceFailStage): void;
+  transactCount(): number;
   disarmFailpoint(): void;
   committedUnits(): CommittedUnitSummary[];
   journalHead(): { allocation: string; hash: string };
@@ -185,6 +188,8 @@ export function createReferenceModuleStorageBackend(options: ReferenceBackendOpt
   };
   const handleId = `reference-handle-${++handleSequence}`;
   let failpoint: ReferenceFailStage | undefined;
+  let transactCount = 0;
+  let failAtTransaction: { index: number; stage: ReferenceFailStage } | undefined;
 
   const descriptor: NeutralModuleDescriptor = {
     contractVersion: "memory-binding-v1",
@@ -394,10 +399,49 @@ export function createReferenceModuleStorageBackend(options: ReferenceBackendOpt
     return receipt;
   }
 
+  function snapshotCore(): DurableCore {
+    return {
+      allocation: core.allocation,
+      head: core.head,
+      eventsById: new Map(core.eventsById),
+      order: [...core.order],
+      records: new Map(core.records),
+      aggregates: new Map(core.aggregates),
+      indexes: new Map(core.indexes),
+      commitResults: new Map(core.commitResults),
+      bindings: new Map(core.bindings),
+      reverseBindings: new Map(core.reverseBindings),
+      grants: core.grants,
+      holder: core.holder,
+      epochCounter: core.epochCounter,
+      grantCounter: core.grantCounter,
+      units: [...core.units],
+    };
+  }
+
+  function restoreCore(snapshot: DurableCore): void {
+    core.allocation = snapshot.allocation;
+    core.head = snapshot.head;
+    core.eventsById = snapshot.eventsById;
+    core.order = snapshot.order;
+    core.records = snapshot.records;
+    core.aggregates = snapshot.aggregates;
+    core.indexes = snapshot.indexes;
+    core.commitResults = snapshot.commitResults;
+    core.bindings = snapshot.bindings;
+    core.reverseBindings = snapshot.reverseBindings;
+    core.units.length = 0;
+    core.units.push(...snapshot.units);
+  }
+
   async function transactInner<T>(
     commitOptions: NeutralCommitOptions,
     operation: (transaction: NeutralModuleTransaction) => Promise<T>,
   ): Promise<{ readonly value: T; readonly receipt: NeutralCommitReceipt }> {
+    transactCount += 1;
+    if (failAtTransaction !== undefined && transactCount === failAtTransaction.index) {
+      failpoint = failAtTransaction.stage;
+    }
     checkGrant(commitOptions.grant, "write");
     checkFenceIdentity(commitOptions.fence);
     const staged: NeutralAtomicUnit[] = [];
@@ -445,8 +489,17 @@ export function createReferenceModuleStorageBackend(options: ReferenceBackendOpt
     maybeFire("commit-decision");
     checkGrant(commitOptions.grant, "write");
     checkFenceIdentity(commitOptions.fence);
+    // Transaction scope (L3a §5.2): the staged applies commit together. Any
+    // failure while applying a later unit restores the pre-transaction state,
+    // so no earlier apply of the same transaction ever leaks.
+    const transactionSnapshot = snapshotCore();
     let receipt: NeutralCommitReceipt = { commitId: commitOptions.idempotencyKey ?? "commit:empty", journalCursor: core.allocation };
-    for (const unit of staged) receipt = applyUnit(commitOptions, unit);
+    try {
+      for (const unit of staged) receipt = applyUnit(commitOptions, unit);
+    } catch (error) {
+      restoreCore(transactionSnapshot);
+      throw error;
+    }
     if (failpoint === "after-commit-before-response") {
       failpoint = undefined;
       throw new NeutralStorageError("store-unavailable", "commit applied but the acknowledgement was lost");
@@ -646,8 +699,15 @@ export function createReferenceModuleStorageBackend(options: ReferenceBackendOpt
     armFailpoint(stage: ReferenceFailStage): void {
       failpoint = stage;
     },
+    armFailpointAtTransaction(index: number, stage: ReferenceFailStage): void {
+      failAtTransaction = { index, stage };
+    },
+    transactCount(): number {
+      return transactCount;
+    },
     disarmFailpoint(): void {
       failpoint = undefined;
+      failAtTransaction = undefined;
     },
     committedUnits(): CommittedUnitSummary[] {
       return [...core.units];
