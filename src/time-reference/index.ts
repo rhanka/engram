@@ -57,6 +57,8 @@ export {
   SCHEMA_TIMING_BUDGET,
   SCHEMA_TIMING_ESTIMATE,
   SCHEMA_TIMING_SERIES,
+  SUPPORTED_MAPPING_VERSIONS,
+  SUPPORTED_PROFILE_VERSIONS,
 } from "./types.js";
 
 export {
@@ -120,6 +122,8 @@ export {
   ciEnvelopeSeconds,
   ciJobServiceSeconds,
   dedupeIds,
+  validateCommitsUnavailable,
+  type CollectionAttemptEvidence,
   lastCheckEndToMergeSeconds,
   openToMergeSample,
   validateCheckBatchJoin,

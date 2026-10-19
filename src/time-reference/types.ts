@@ -22,6 +22,12 @@ export const SCHEMA_FIGURE_PROVENANCE = "engram.time-reference/figure-provenance
 export const SCHEMA_REVIEW_WAVE_MANIFEST = "engram.time-reference/review-wave-manifest/1" as const;
 export const SCHEMA_REVIEW_ROUNDS_ACTUAL = "engram.time-reference/review-rounds-actual/1" as const;
 
+/** Supported `repo-knowledge` profile majors (spec section 12.2): unknown versions refuse, never fall back. */
+export const SUPPORTED_PROFILE_VERSIONS = ["1"] as const;
+
+/** Supported `engram-mapping.json` mapping versions (spec section 9.2). */
+export const SUPPORTED_MAPPING_VERSIONS = ["1.0.0"] as const;
+
 export type MetricId =
   | "start_to_pr_open"
   | "pr_open_to_merge"
