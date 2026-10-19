@@ -38,7 +38,7 @@ import {
   type ReferenceBackend,
   type ReferenceScope,
 } from "./memory-substrate-reference-port.js";
-import { DIGEST, NOW } from "./memory-l3-fixture.js";
+import { DIGEST, NOW, lifecycleCommand } from "./memory-l3-fixture.js";
 import { receiptDigest } from "../engram-memory/digests.js";
 
 const SCOPE: ReferenceScope = { tenantId: "tenant:substrate", workspaceId: "workspace:substrate" };
@@ -820,6 +820,40 @@ describe("substrate canonical trace and replay (amendment §5.2, binding §8.2)"
       ok: true,
       value: { record_digest: "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" },
     });
+    await harness.store.close();
+  });
+
+  it("removes the lexical row transactionally with its tombstone transition (binding §3.4)", async () => {
+    const harness = await openStore("store:lexical-tombstone");
+    const memory = await engineOn(harness.store, harness.clock);
+    const pending = await memory.capture(captureRequest("lexical-key-1", "1"));
+    if (!pending.ok || pending.value.candidate_id === undefined) throw new Error("capture failed");
+    const admitted = await memory.requestAdmission({
+      candidate_id: pending.value.candidate_id,
+      authorization: { credential: "credential:substrate" },
+      deadline_at: "2026-08-16T12:40:00.000Z",
+    });
+    expect(admitted).toMatchObject({ ok: true, value: { status: "accepted" } });
+    if (!admitted.ok || admitted.value.record_id === undefined) throw new Error("admission failed");
+    const recordId = admitted.value.record_id;
+    const snapshotQuery = {
+      format: "utf8" as const,
+      data: canonicalizeJcs({ system_as_of: "2", scope_ref: SCOPE_REF, max_candidates: 100 }),
+    };
+    const before = await harness.backend.handle.query("memory-accepted-snapshot", snapshotQuery, harness.backend.grant);
+    expect((JSON.parse(before.data) as unknown[]).length).toBe(1);
+    // The removal rides the transition's own unit: an injected failure at the
+    // index stage rolls the tombstone back with its journal event.
+    harness.backend.armFailpoint("index");
+    const refused = await memory.transition(lifecycleCommand("tombstone", recordId));
+    harness.backend.disarmFailpoint();
+    expect(refused).toMatchObject({ ok: false });
+    const stillThere = await harness.backend.handle.query("memory-accepted-snapshot", snapshotQuery, harness.backend.grant);
+    expect((JSON.parse(stillThere.data) as unknown[]).length).toBe(1);
+    const tombstoned = await memory.transition(lifecycleCommand("tombstone", recordId));
+    expect(tombstoned).toMatchObject({ ok: true, value: { to_state: "tombstoned" } });
+    const after = await harness.backend.handle.query("memory-accepted-snapshot", snapshotQuery, harness.backend.grant);
+    expect(JSON.parse(after.data) as unknown[]).toEqual([]);
     await harness.store.close();
   });
 });
