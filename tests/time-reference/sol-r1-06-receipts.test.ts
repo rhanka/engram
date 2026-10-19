@@ -4,11 +4,15 @@ import {
   buildDeliveryMilestones,
   validateDeliveryMilestones,
   validateDeliveryMilestonesWithReceipts,
+  validateCommittedExport,
+  regenerateCheck,
+  exportDigestOf,
   validateInstallationReceipt,
+  type CommittedExportV1,
   type InstallationReceiptV1,
   type TargetQualification,
 } from "../../src/time-reference/index.js";
-import { SOL_SHARED, solRule } from "./sol-r1-helpers.js";
+import { BASE_BUILDERS, SOL_SHARED, solRule } from "./sol-r1-helpers.js";
 
 const REPO = SOL_SHARED["repo"] as string;
 
@@ -95,20 +99,37 @@ describe("Sol R1 F07/F08 receipt binding and resolution", () => {
   });
 
   it("F08: every fixture case resolves through the primary validation path", () => {
-    const rule = solRule("F08") as { cases: { mutation: string; code: string }[] };
+    const rule = solRule("F08") as { cases: { path: string; mutation: string; code?: string; expectOk?: boolean }[] };
     for (const c of rule.cases) {
       const built = buildDeliveryMilestones(ctx(), [targetInput(receipt())])!.record;
+      const evidence = { receipts: { "rec-1": receipt() }, quals: { t: qual() }, scope: SCOPE };
       if (c.mutation === "drop-receiptRef") {
-        const { receiptRef: _d, ...noRef } = built.installMilestones[0] as Record<string, unknown>;
-        const record = { ...built, installMilestones: [{ ...noRef }] };
-        const r = validateDeliveryMilestones(record);
-        expect(r.ok, c.mutation).toBe(false);
-        if (!r.ok) expect(r.errors.map((e) => e.code), c.mutation).toContain(c.code);
-      } else {
-        const r = validateDeliveryMilestonesWithReceipts(built, {}, { t: qual() }, SCOPE);
-        expect(r.ok, c.mutation).toBe(false);
-        if (!r.ok) expect(r.errors.map((e) => e.code), c.mutation).toContain(c.code);
+        delete built.installMilestones[0]!.receiptRef;
+      } else if (c.mutation === "no-receipt-supplied") evidence.receipts = {};
+      else if (c.mutation === "arbitrary-ref") built.installMilestones[0]!.receiptRef = "attacker-ref";
+      else if (c.mutation === "foreign-repo") evidence.receipts["rec-1"].repo = "evil/other";
+      else if (c.mutation === "foreign-lot") evidence.receipts["rec-1"].lotOccurrence = "occ-9";
+      else if (c.mutation === "missing-declaration") evidence.quals = {};
+      else if (c.mutation !== "matching-receipt" && c.mutation !== "no-evidence") {
+        throw new Error(`unknown F08 mutation ${c.mutation}`);
       }
+      const supplied = c.mutation === "no-evidence" ? undefined : evidence;
+      let codes: string[];
+      if (c.path === "milestone") {
+        const result = validateDeliveryMilestones(built, supplied);
+        codes = result.ok ? [] : result.errors.map((e) => e.code);
+      } else {
+        const exp = { ...BASE_BUILDERS["export"]!(), milestones: [built] } as unknown as CommittedExportV1;
+        exp.exportDigest = exportDigestOf(exp as unknown as Record<string, unknown>);
+        if (c.path === "export") {
+          const result = validateCommittedExport(exp, [supplied]);
+          codes = result.ok ? [] : result.errors.map((e) => e.code);
+        } else if (c.path === "regeneration") {
+          codes = regenerateCheck(exp, {}, () => [], [supplied]).map((e) => e.code);
+        } else throw new Error(`unknown F08 path ${c.path}`);
+      }
+      if (c.expectOk) expect(codes, `${c.path}/${c.mutation}`).toEqual([]);
+      else expect(codes, `${c.path}/${c.mutation}`).toContain(c.code);
     }
   });
 

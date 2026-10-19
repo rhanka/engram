@@ -391,12 +391,124 @@
       "title": "Known installation actuals resolve to a matching qualified receipt",
       "cases": [
         {
+          "path": "milestone",
+          "mutation": "no-evidence",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "milestone",
+          "mutation": "no-receipt-supplied",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "milestone",
+          "mutation": "arbitrary-ref",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "milestone",
+          "mutation": "foreign-repo",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "milestone",
+          "mutation": "foreign-lot",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "milestone",
+          "mutation": "missing-declaration",
+          "code": "missing-target-declaration"
+        },
+        {
+          "path": "milestone",
           "mutation": "drop-receiptRef",
           "code": "missing-receipt-ref"
         },
         {
+          "path": "milestone",
+          "mutation": "matching-receipt",
+          "expectOk": true
+        },
+        {
+          "path": "export",
+          "mutation": "no-evidence",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "export",
           "mutation": "no-receipt-supplied",
           "code": "unresolved-receipt"
+        },
+        {
+          "path": "export",
+          "mutation": "arbitrary-ref",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "export",
+          "mutation": "foreign-repo",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "export",
+          "mutation": "foreign-lot",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "export",
+          "mutation": "missing-declaration",
+          "code": "missing-target-declaration"
+        },
+        {
+          "path": "export",
+          "mutation": "drop-receiptRef",
+          "code": "missing-receipt-ref"
+        },
+        {
+          "path": "export",
+          "mutation": "matching-receipt",
+          "expectOk": true
+        },
+        {
+          "path": "regeneration",
+          "mutation": "no-evidence",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "regeneration",
+          "mutation": "no-receipt-supplied",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "regeneration",
+          "mutation": "arbitrary-ref",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "regeneration",
+          "mutation": "foreign-repo",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "regeneration",
+          "mutation": "foreign-lot",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "regeneration",
+          "mutation": "missing-declaration",
+          "code": "missing-target-declaration"
+        },
+        {
+          "path": "regeneration",
+          "mutation": "drop-receiptRef",
+          "code": "missing-receipt-ref"
+        },
+        {
+          "path": "regeneration",
+          "mutation": "matching-receipt",
+          "expectOk": true
         }
       ]
     },
