@@ -1,0 +1,973 @@
+{
+  "CiCheckBatchV1": {
+    "title": "CiCheckBatchV1",
+    "type": "object",
+    "properties": {
+      "schema": {
+        "const": "engram.time-reference/ci-check-batch/1"
+      },
+      "repo": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+      },
+      "number": {
+        "type": "integer"
+      },
+      "headSha": {
+        "type": "string"
+      },
+      "source": {
+        "type": "string"
+      },
+      "collectedAt": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+      },
+      "totalCount": {
+        "type": "integer"
+      },
+      "pageSize": {
+        "type": "integer"
+      },
+      "page": {
+        "type": "integer"
+      },
+      "hasNextPage": {
+        "type": "boolean"
+      },
+      "checks": {
+        "type": "array"
+      }
+    },
+    "required": [
+      "schema",
+      "repo",
+      "number",
+      "headSha",
+      "source",
+      "collectedAt",
+      "totalCount",
+      "checks"
+    ],
+    "additionalProperties": false
+  },
+  "CohortV1": {
+    "title": "CohortV1",
+    "type": "object",
+    "properties": {
+      "schema": {
+        "const": "engram.time-reference/cohort/1"
+      },
+      "cohortKey": {
+        "type": "string"
+      },
+      "repo": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+      },
+      "metric": {
+        "enum": [
+          "start_to_pr_open",
+          "pr_open_to_merge",
+          "merge_to_installed",
+          "agent_run_elapsed",
+          "agent_work_seconds",
+          "ci_job_service",
+          "ci_envelope",
+          "ci_workflow_span",
+          "wait_interval"
+        ]
+      },
+      "manifestRef": {
+        "type": "object"
+      },
+      "memberIds": {
+        "type": "array"
+      },
+      "n": {
+        "type": "integer"
+      },
+      "window": {
+        "type": "object"
+      },
+      "fingerprint": {
+        "type": "object"
+      },
+      "purpose": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema",
+      "cohortKey",
+      "repo",
+      "metric",
+      "manifestRef",
+      "memberIds",
+      "n",
+      "window",
+      "fingerprint",
+      "purpose"
+    ],
+    "additionalProperties": false
+  },
+  "CollectionManifestV1": {
+    "title": "CollectionManifestV1",
+    "type": "object",
+    "properties": {
+      "schema": {
+        "const": "engram.time-reference/collection-manifest/1"
+      },
+      "ruleId": {
+        "type": "string"
+      },
+      "ruleVersion": {
+        "type": "string"
+      },
+      "repo": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+      },
+      "query": {
+        "type": "string"
+      },
+      "cutoff": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+      },
+      "collectedAt": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+      },
+      "firstAvailableAt": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+      },
+      "historicalAvailability": {
+        "enum": [
+          "attested",
+          "unattested"
+        ]
+      },
+      "pageSize": {
+        "type": "integer"
+      },
+      "totalCount": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "hasNextPage": {
+        "type": "boolean"
+      },
+      "inclusionIds": {
+        "type": "array"
+      },
+      "exclusionIds": {
+        "type": "array"
+      },
+      "quarantine": {
+        "type": "array"
+      },
+      "sourceRevision": {
+        "type": "string"
+      },
+      "sourceUrls": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "snapshotDigest": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      }
+    },
+    "required": [
+      "schema",
+      "ruleId",
+      "ruleVersion",
+      "repo",
+      "query",
+      "cutoff",
+      "collectedAt",
+      "firstAvailableAt",
+      "historicalAvailability",
+      "pageSize",
+      "totalCount",
+      "hasNextPage",
+      "inclusionIds",
+      "exclusionIds",
+      "quarantine",
+      "sourceRevision",
+      "sourceUrls",
+      "snapshotDigest"
+    ],
+    "additionalProperties": false
+  },
+  "CommittedExportV1": {
+    "title": "CommittedExportV1",
+    "type": "object",
+    "properties": {
+      "schema": {
+        "const": "engram.time-reference/committed-export/1"
+      },
+      "repo": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+      },
+      "serviceRevision": {
+        "type": "string"
+      },
+      "profileRef": {
+        "type": "object"
+      },
+      "window": {
+        "type": "object"
+      },
+      "generatedAt": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+      },
+      "generator": {
+        "type": "object"
+      },
+      "series": {
+        "type": "array"
+      },
+      "estimates": {
+        "type": "array"
+      },
+      "budgets": {
+        "type": "array"
+      },
+      "milestones": {
+        "type": "array"
+      },
+      "provenance": {
+        "type": "array"
+      },
+      "exportDigest": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      }
+    },
+    "required": [
+      "schema",
+      "repo",
+      "serviceRevision",
+      "profileRef",
+      "window",
+      "generatedAt",
+      "generator",
+      "series",
+      "estimates",
+      "budgets",
+      "milestones",
+      "provenance",
+      "exportDigest"
+    ],
+    "additionalProperties": false
+  },
+  "DeliveryMilestonesV1": {
+    "title": "DeliveryMilestonesV1",
+    "type": "object",
+    "properties": {
+      "schema": {
+        "const": "engram.time-reference/delivery-milestones/1"
+      },
+      "repo": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+      },
+      "lotRef": {
+        "type": "string"
+      },
+      "forecastRevision": {
+        "type": "string"
+      },
+      "mergeSha": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "mergeMilestone": {
+        "type": "object"
+      },
+      "installMilestones": {
+        "type": "array"
+      }
+    },
+    "required": [
+      "schema",
+      "repo",
+      "lotRef",
+      "forecastRevision",
+      "mergeSha",
+      "mergeMilestone",
+      "installMilestones"
+    ],
+    "additionalProperties": false
+  },
+  "FigureProvenanceV1": {
+    "title": "FigureProvenanceV1",
+    "type": "object",
+    "properties": {
+      "schema": {
+        "const": "engram.time-reference/figure-provenance/1"
+      },
+      "figureRef": {
+        "type": "string"
+      },
+      "cohortKey": {
+        "type": "string"
+      },
+      "ruleId": {
+        "type": "string"
+      },
+      "snapshotDigest": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      },
+      "referenceDigest": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      },
+      "referencePublishedAt": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+      },
+      "referencePublicationRevision": {
+        "type": "string"
+      },
+      "collectedAt": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+      },
+      "firstAvailableAt": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+      },
+      "appliesToRevision": {
+        "type": "string"
+      },
+      "fingerprintDigest": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      },
+      "estimatorVersion": {
+        "type": "string"
+      },
+      "policyVersion": {
+        "type": "string"
+      },
+      "quantileMethod": {
+        "enum": [
+          "nearest-rank/1",
+          "weighted-ecdf/1"
+        ]
+      }
+    },
+    "required": [
+      "schema",
+      "figureRef",
+      "cohortKey",
+      "ruleId",
+      "snapshotDigest",
+      "referenceDigest",
+      "referencePublishedAt",
+      "referencePublicationRevision",
+      "collectedAt",
+      "firstAvailableAt",
+      "appliesToRevision",
+      "fingerprintDigest",
+      "estimatorVersion",
+      "policyVersion",
+      "quantileMethod"
+    ],
+    "additionalProperties": false
+  },
+  "InstallationReceiptV1": {
+    "title": "InstallationReceiptV1",
+    "type": "object",
+    "properties": {
+      "schema": {
+        "const": "engram.time-reference/installation-receipt/1"
+      },
+      "repo": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+      },
+      "lotOccurrence": {
+        "type": "string"
+      },
+      "mergeSha": {
+        "type": "string"
+      },
+      "releaseSourceSha": {
+        "type": "string"
+      },
+      "ancestryEvidence": {
+        "type": "string"
+      },
+      "targetId": {
+        "type": "string"
+      },
+      "targetKind": {
+        "enum": [
+          "ci-runner",
+          "delivery-environment"
+        ]
+      },
+      "platform": {
+        "type": "string"
+      },
+      "installationScope": {
+        "type": "string"
+      },
+      "expectedVersion": {
+        "type": "string"
+      },
+      "observedVersion": {
+        "type": "string"
+      },
+      "expectedTuple": {
+        "type": "string"
+      },
+      "observedTuple": {
+        "type": "string"
+      },
+      "artifactIntegrity": {
+        "type": "string"
+      },
+      "resolvedExecutable": {
+        "type": "string"
+      },
+      "installStartedAt": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+      },
+      "installCompletedAt": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+      },
+      "smokeCompletedAt": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+      },
+      "installOutcome": {
+        "enum": [
+          "success",
+          "failure"
+        ]
+      },
+      "smokeOutcome": {
+        "enum": [
+          "success",
+          "failure"
+        ]
+      },
+      "clockSource": {
+        "type": "string"
+      },
+      "producerIdentity": {
+        "type": "string"
+      },
+      "evidenceDigests": {
+        "type": "array"
+      }
+    },
+    "required": [
+      "schema",
+      "repo",
+      "lotOccurrence",
+      "mergeSha",
+      "releaseSourceSha",
+      "ancestryEvidence",
+      "targetId",
+      "targetKind",
+      "platform",
+      "installationScope",
+      "expectedVersion",
+      "observedVersion",
+      "expectedTuple",
+      "observedTuple",
+      "artifactIntegrity",
+      "resolvedExecutable",
+      "installStartedAt",
+      "installCompletedAt",
+      "smokeCompletedAt",
+      "installOutcome",
+      "smokeOutcome",
+      "clockSource",
+      "producerIdentity",
+      "evidenceDigests"
+    ],
+    "additionalProperties": false
+  },
+  "PullRequestTimingV1": {
+    "title": "PullRequestTimingV1",
+    "type": "object",
+    "properties": {
+      "schema": {
+        "const": "engram.time-reference/pull-request-timing/1"
+      },
+      "repo": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+      },
+      "number": {
+        "type": "integer"
+      },
+      "url": {
+        "type": "string"
+      },
+      "createdAt": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+      },
+      "mergedAt": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+      },
+      "headSha": {
+        "type": "string"
+      },
+      "mergeSha": {
+        "type": "string"
+      },
+      "firstCommitAt": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+      },
+      "firstCommitPolicy": {
+        "const": "proxy-only-excluded-from-forecasts"
+      },
+      "openToMergeSeconds": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "commits": {
+        "type": [
+          "array",
+          "null"
+        ]
+      },
+      "commitsCollectionState": {
+        "enum": [
+          "not-collected",
+          "collected",
+          "unavailable"
+        ]
+      }
+    },
+    "required": [
+      "schema",
+      "repo",
+      "number",
+      "createdAt",
+      "mergedAt",
+      "firstCommitAt",
+      "firstCommitPolicy",
+      "openToMergeSeconds",
+      "commits",
+      "commitsCollectionState"
+    ],
+    "additionalProperties": false
+  },
+  "QuantileSetV1": {
+    "title": "QuantileSetV1",
+    "type": "object",
+    "properties": {
+      "schema": {
+        "const": "engram.time-reference/quantile-set/1"
+      },
+      "quantileMethod": {
+        "enum": [
+          "nearest-rank/1",
+          "weighted-ecdf/1"
+        ]
+      },
+      "support": {
+        "enum": [
+          "descriptive",
+          "uncalibrated-conditional",
+          "calibrated",
+          "insufficient-evidence"
+        ]
+      },
+      "calibrated": {
+        "type": "boolean"
+      },
+      "sampleCount": {
+        "type": "integer"
+      },
+      "nEff": {
+        "type": "object"
+      },
+      "p50Seconds": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "p80Seconds": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "p95Seconds": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "maxSeconds": {
+        "type": "integer"
+      },
+      "tailQualification": {
+        "type": "string"
+      },
+      "weightsPolicy": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema",
+      "quantileMethod",
+      "support",
+      "calibrated",
+      "sampleCount",
+      "nEff",
+      "p50Seconds",
+      "p80Seconds",
+      "p95Seconds"
+    ],
+    "additionalProperties": false
+  },
+  "ReviewRoundsActualV1": {
+    "title": "ReviewRoundsActualV1",
+    "type": "object",
+    "properties": {
+      "schema": {
+        "const": "engram.time-reference/review-rounds-actual/1"
+      },
+      "repo": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+      },
+      "lotOccurrence": {
+        "type": "string"
+      },
+      "convention": {
+        "const": "review-round/1"
+      },
+      "status": {
+        "enum": [
+          "complete",
+          "partial",
+          "unknown"
+        ]
+      },
+      "completedCount": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "openRoundIds": {
+        "type": "array"
+      },
+      "reviewerRunCount": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "roundIds": {
+        "type": "array"
+      },
+      "coverageManifestRef": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "evidenceRefs": {
+        "type": "array"
+      },
+      "missingReason": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema",
+      "repo",
+      "lotOccurrence",
+      "convention",
+      "status",
+      "completedCount",
+      "openRoundIds",
+      "reviewerRunCount",
+      "roundIds",
+      "coverageManifestRef",
+      "evidenceRefs"
+    ],
+    "additionalProperties": false
+  },
+  "ReviewWaveManifestV1": {
+    "title": "ReviewWaveManifestV1",
+    "type": "object",
+    "properties": {
+      "schema": {
+        "const": "engram.time-reference/review-wave-manifest/1"
+      },
+      "repo": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+      },
+      "lotOccurrence": {
+        "type": "string"
+      },
+      "roundId": {
+        "type": "string"
+      },
+      "candidateRevision": {
+        "type": "string"
+      },
+      "submittedAt": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+      },
+      "submissionEvidenceRefs": {
+        "type": "array"
+      },
+      "requestEvidenceRefs": {
+        "type": "array"
+      },
+      "reviewerRuns": {
+        "type": "array"
+      },
+      "resultEvidenceRefs": {
+        "type": "array"
+      },
+      "closureEvidenceRefs": {
+        "type": "array"
+      },
+      "closedAt": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+      }
+    },
+    "required": [
+      "schema",
+      "repo",
+      "lotOccurrence",
+      "roundId",
+      "candidateRevision",
+      "submittedAt",
+      "submissionEvidenceRefs",
+      "requestEvidenceRefs",
+      "reviewerRuns",
+      "resultEvidenceRefs",
+      "closureEvidenceRefs",
+      "closedAt"
+    ],
+    "additionalProperties": false
+  },
+  "TimingBudgetV1": {
+    "title": "TimingBudgetV1",
+    "type": "object",
+    "properties": {
+      "schema": {
+        "const": "engram.time-reference/timing-budget/1"
+      },
+      "budgetId": {
+        "type": "string"
+      },
+      "subject": {
+        "type": "string"
+      },
+      "targetSeconds": {
+        "type": "integer"
+      },
+      "boundSeconds": {
+        "type": "integer"
+      },
+      "rationale": {
+        "type": "string"
+      },
+      "decisionRef": {
+        "type": "string"
+      },
+      "owner": {
+        "type": "string"
+      },
+      "revisitTrigger": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema",
+      "budgetId",
+      "subject",
+      "rationale",
+      "decisionRef",
+      "owner",
+      "revisitTrigger"
+    ],
+    "additionalProperties": false
+  },
+  "TimingEstimateV1": {
+    "title": "TimingEstimateV1",
+    "type": "object",
+    "properties": {
+      "schema": {
+        "const": "engram.time-reference/timing-estimate/1"
+      },
+      "estimateId": {
+        "type": "string"
+      },
+      "seriesRef": {
+        "type": "object"
+      },
+      "quantiles": {
+        "type": "object"
+      },
+      "applicability": {
+        "enum": [
+          "applicable",
+          "conditional-historical",
+          "incomplete"
+        ]
+      },
+      "freshness": {
+        "type": "object"
+      },
+      "support": {
+        "enum": [
+          "descriptive",
+          "uncalibrated-conditional",
+          "calibrated",
+          "insufficient-evidence"
+        ]
+      },
+      "limitations": {
+        "type": "array"
+      }
+    },
+    "required": [
+      "schema",
+      "estimateId",
+      "seriesRef",
+      "quantiles",
+      "applicability",
+      "freshness",
+      "support",
+      "limitations"
+    ],
+    "additionalProperties": false
+  },
+  "TimingSeriesV1": {
+    "title": "TimingSeriesV1",
+    "type": "object",
+    "properties": {
+      "schema": {
+        "const": "engram.time-reference/timing-series/1"
+      },
+      "seriesId": {
+        "type": "string"
+      },
+      "subject": {
+        "type": "string"
+      },
+      "metric": {
+        "enum": [
+          "start_to_pr_open",
+          "pr_open_to_merge",
+          "merge_to_installed",
+          "agent_run_elapsed",
+          "agent_work_seconds",
+          "ci_job_service",
+          "ci_envelope",
+          "ci_workflow_span",
+          "wait_interval"
+        ]
+      },
+      "cohortRef": {
+        "type": "object"
+      },
+      "quantiles": {
+        "type": "object"
+      },
+      "unit": {
+        "const": "second"
+      },
+      "window": {
+        "type": "object"
+      },
+      "estimatorVersion": {
+        "type": "string"
+      },
+      "policyVersion": {
+        "type": "string"
+      },
+      "missingCount": {
+        "type": "integer"
+      },
+      "censoredCount": {
+        "type": "integer"
+      },
+      "exclusions": {
+        "type": "array"
+      },
+      "fingerprint": {
+        "type": "object"
+      },
+      "measured": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "schema",
+      "seriesId",
+      "subject",
+      "metric",
+      "cohortRef",
+      "quantiles",
+      "unit",
+      "window",
+      "estimatorVersion",
+      "policyVersion",
+      "missingCount",
+      "censoredCount",
+      "exclusions",
+      "fingerprint",
+      "measured"
+    ],
+    "additionalProperties": false
+  }
+}
