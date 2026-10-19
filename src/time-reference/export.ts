@@ -78,14 +78,18 @@ export function buildQuantileSet(entries: WeightedEntry[], opts: BuildQuantileOp
 }
 
 /**
- * Pinned snapshot digest over the canonical sample bytes (spec section 6.1:
- * any sample change changes the digest; identical pinned inputs reproduce
- * it). Builders pin `cohortRef.snapshotDigest` with this function so that
+ * Pinned snapshot digest over the canonical COLLECTED sample bytes (spec
+ * section 6.1: any sample change changes the digest; identical pinned
+ * inputs reproduce it). Only the collected `{id, value}` rows are hashed:
+ * weights travel with the versioned weighting policy on the consumer side
+ * (h2a spec D5), so a derived weight change never moves the snapshot
+ * digest — it surfaces as an `nEff`/quantile mismatch instead. Builders
+ * pin `cohortRef.snapshotDigest` with this function so that
  * `regenerateCheck` can authenticate externally supplied samples against
  * the digest committed in the export.
  */
 export function sampleSnapshotDigest(samples: WeightedEntry[]): string {
-  return canonicalDigest(samples);
+  return canonicalDigest(samples.map(({ id, value }) => ({ id, value })));
 }
 
 /** Compare one rebuilt quantile set against its committed figure. */
@@ -95,7 +99,7 @@ function compareQuantiles(
   path: string,
   errors: Diagnostic[],
 ): void {
-  for (const f of ["p50Seconds", "p80Seconds", "p95Seconds", "sampleCount", "maxSeconds"] as const) {
+  for (const f of ["p50Seconds", "p80Seconds", "p95Seconds", "sampleCount"] as const) {
     if (rebuilt[f] !== stored[f]) {
       errors.push({
         code: "quantile-mismatch",
@@ -103,6 +107,15 @@ function compareQuantiles(
         path: `${path}.${f}`,
       });
     }
+  }
+  // `maxSeconds` is optional (spec section 6.5): a valid export may omit
+  // it, so it is compared only when published.
+  if ("maxSeconds" in stored && rebuilt.maxSeconds !== stored.maxSeconds) {
+    errors.push({
+      code: "quantile-mismatch",
+      message: `${path} maxSeconds: stored ${String(stored.maxSeconds)}, recomputed ${String(rebuilt.maxSeconds)}`,
+      path: `${path}.maxSeconds`,
+    });
   }
   if (rebuilt.nEff.numerator !== stored.nEff.numerator
     || rebuilt.nEff.denominator !== stored.nEff.denominator) {

@@ -53,10 +53,14 @@ export interface InstallationTargetInput {
 
 export interface TargetQualification {
   /** Expected values frozen for the target (section 7.2). */
+  expectedTargetKind: string;
+  expectedPlatform: string;
+  expectedInstallationScope: string;
   expectedVersion: string;
   expectedTuple: string;
   expectedIntegrity: string;
   expectedMergeSha: string;
+  expectedReleaseSourceSha: string;
   /** Caller-verified merge linkage: the installed release contains mergeSha. */
   ancestryProven: boolean;
 }
@@ -73,12 +77,16 @@ export function qualifyInstallation(
   const r = target.receipt;
   if (r === null) return { installedAt: "unknown", reason: "no-target-receipt" };
   if (r.targetId !== target.targetId) return { installedAt: "unknown", reason: "wrong-target" };
+  if (r.targetKind !== qual.expectedTargetKind) return { installedAt: "unknown", reason: "wrong-target-kind" };
+  if (r.platform !== qual.expectedPlatform) return { installedAt: "unknown", reason: "wrong-platform" };
+  if (r.installationScope !== qual.expectedInstallationScope) return { installedAt: "unknown", reason: "wrong-scope" };
   if (r.installOutcome !== "success") return { installedAt: "unknown", reason: "install-not-success" };
   if (r.smokeOutcome !== "success") return { installedAt: "unknown", reason: "smoke-not-success" };
   if (r.observedVersion !== qual.expectedVersion) return { installedAt: "unknown", reason: "wrong-version" };
   if (r.observedTuple !== qual.expectedTuple) return { installedAt: "unknown", reason: "wrong-tuple" };
   if (r.artifactIntegrity !== qual.expectedIntegrity) return { installedAt: "unknown", reason: "wrong-integrity" };
   if (r.mergeSha !== qual.expectedMergeSha) return { installedAt: "unknown", reason: "wrong-merge-sha" };
+  if (r.releaseSourceSha !== qual.expectedReleaseSourceSha) return { installedAt: "unknown", reason: "wrong-release-source" };
   if (!qual.ancestryProven) return { installedAt: "unknown", reason: "unproven-merge-linkage" };
   if (!isInstant(r.installStartedAt) || !isInstant(r.installCompletedAt) || !isInstant(r.smokeCompletedAt)) {
     return { installedAt: "unknown", reason: "incoherent-timestamps" };
