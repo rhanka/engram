@@ -1,0 +1,489 @@
+{
+  "repo": "rhanka/engram",
+  "cohort": "enriched",
+  "purpose": "retrospective-frozen-evidence",
+  "historicalAvailability": "unattested",
+  "firstCommitPolicy": "proxy-only-excluded-from-forecasts",
+  "pullRequests": [
+    {
+      "number": 399,
+      "createdAt": "2026-10-18T08:42:22Z",
+      "mergedAt": "2026-10-18T09:02:15Z",
+      "firstCommitAt": "2026-10-18T08:16:34Z",
+      "reportedOpenToMergeHours": 0.33,
+      "reportedFirstCommitToMergeHours": 0.76
+    },
+    {
+      "number": 398,
+      "createdAt": "2026-10-18T07:28:08Z",
+      "mergedAt": "2026-10-18T07:42:14Z",
+      "firstCommitAt": "2026-10-18T06:44:40Z",
+      "reportedOpenToMergeHours": 0.23,
+      "reportedFirstCommitToMergeHours": 0.96
+    },
+    {
+      "number": 397,
+      "createdAt": "2026-10-18T06:42:33Z",
+      "mergedAt": "2026-10-18T07:28:04Z",
+      "firstCommitAt": "2026-10-18T06:25:39Z",
+      "reportedOpenToMergeHours": 0.76,
+      "reportedFirstCommitToMergeHours": 1.04
+    },
+    {
+      "number": 396,
+      "createdAt": "2026-10-18T05:42:36Z",
+      "mergedAt": "2026-10-18T06:02:14Z",
+      "firstCommitAt": "2026-10-18T05:30:12Z",
+      "reportedOpenToMergeHours": 0.33,
+      "reportedFirstCommitToMergeHours": 0.53
+    },
+    {
+      "number": 395,
+      "createdAt": "2026-10-18T02:42:24Z",
+      "mergedAt": "2026-10-18T05:22:16Z",
+      "firstCommitAt": "2026-10-18T05:02:51Z",
+      "reportedOpenToMergeHours": 2.66,
+      "reportedFirstCommitToMergeHours": 0.32
+    },
+    {
+      "number": 394,
+      "createdAt": "2026-10-18T01:42:40Z",
+      "mergedAt": "2026-10-18T05:02:14Z",
+      "firstCommitAt": "2026-10-18T00:53:17Z",
+      "reportedOpenToMergeHours": 3.33,
+      "reportedFirstCommitToMergeHours": 4.15
+    },
+    {
+      "number": 393,
+      "createdAt": "2026-10-18T01:42:36Z",
+      "mergedAt": "2026-10-18T02:22:25Z",
+      "firstCommitAt": "2026-10-18T01:11:22Z",
+      "reportedOpenToMergeHours": 0.66,
+      "reportedFirstCommitToMergeHours": 1.18
+    },
+    {
+      "number": 392,
+      "createdAt": "2026-10-17T23:42:25Z",
+      "mergedAt": "2026-10-18T00:42:19Z",
+      "firstCommitAt": "2026-10-17T23:21:42Z",
+      "reportedOpenToMergeHours": 1,
+      "reportedFirstCommitToMergeHours": 1.34
+    },
+    {
+      "number": 391,
+      "createdAt": "2026-10-17T23:02:26Z",
+      "mergedAt": "2026-10-18T00:03:06Z",
+      "firstCommitAt": "2026-10-17T22:44:21Z",
+      "reportedOpenToMergeHours": 1.01,
+      "reportedFirstCommitToMergeHours": 1.31
+    },
+    {
+      "number": 390,
+      "createdAt": "2026-10-17T22:22:26Z",
+      "mergedAt": "2026-10-17T22:42:19Z",
+      "firstCommitAt": "2026-10-17T22:09:16Z",
+      "reportedOpenToMergeHours": 0.33,
+      "reportedFirstCommitToMergeHours": 0.55
+    },
+    {
+      "number": 389,
+      "createdAt": "2026-10-17T20:42:30Z",
+      "mergedAt": "2026-10-17T22:02:18Z",
+      "firstCommitAt": "2026-10-17T20:04:50Z",
+      "reportedOpenToMergeHours": 1.33,
+      "reportedFirstCommitToMergeHours": 1.96
+    },
+    {
+      "number": 388,
+      "createdAt": "2026-10-17T16:22:32Z",
+      "mergedAt": "2026-10-17T17:02:13Z",
+      "firstCommitAt": "2026-10-17T16:10:28Z",
+      "reportedOpenToMergeHours": 0.66,
+      "reportedFirstCommitToMergeHours": 0.86
+    },
+    {
+      "number": 387,
+      "createdAt": "2026-10-17T16:22:31Z",
+      "mergedAt": "2026-10-17T23:02:23Z",
+      "firstCommitAt": "2026-10-17T16:04:36Z",
+      "reportedOpenToMergeHours": 6.66,
+      "reportedFirstCommitToMergeHours": 6.96
+    },
+    {
+      "number": 386,
+      "createdAt": "2026-10-17T14:22:30Z",
+      "mergedAt": "2026-10-17T15:02:27Z",
+      "firstCommitAt": "2026-10-17T14:06:08Z",
+      "reportedOpenToMergeHours": 0.67,
+      "reportedFirstCommitToMergeHours": 0.94
+    },
+    {
+      "number": 385,
+      "createdAt": "2026-10-16T17:42:34Z",
+      "mergedAt": "2026-10-16T18:42:22Z",
+      "firstCommitAt": "2026-10-16T17:42:31Z",
+      "reportedOpenToMergeHours": 1,
+      "reportedFirstCommitToMergeHours": 1
+    },
+    {
+      "number": 384,
+      "createdAt": "2026-10-16T16:39:58Z",
+      "mergedAt": "2026-10-16T17:42:29Z",
+      "firstCommitAt": "2026-10-16T14:34:21Z",
+      "reportedOpenToMergeHours": 1.04,
+      "reportedFirstCommitToMergeHours": 3.14
+    },
+    {
+      "number": 383,
+      "createdAt": "2026-10-16T13:02:25Z",
+      "mergedAt": "2026-10-16T13:22:26Z",
+      "firstCommitAt": "2026-10-16T12:50:06Z",
+      "reportedOpenToMergeHours": 0.33,
+      "reportedFirstCommitToMergeHours": 0.54
+    },
+    {
+      "number": 382,
+      "createdAt": "2026-10-16T10:42:35Z",
+      "mergedAt": "2026-10-18T12:22:16Z",
+      "firstCommitAt": "2026-10-18T08:03:18Z",
+      "reportedOpenToMergeHours": 49.66,
+      "reportedFirstCommitToMergeHours": 4.32
+    },
+    {
+      "number": 381,
+      "createdAt": "2026-10-16T10:42:30Z",
+      "mergedAt": "2026-10-16T11:42:32Z",
+      "firstCommitAt": "2026-10-16T10:42:26Z",
+      "reportedOpenToMergeHours": 1,
+      "reportedFirstCommitToMergeHours": 1
+    },
+    {
+      "number": 380,
+      "createdAt": "2026-10-16T09:22:22Z",
+      "mergedAt": "2026-10-16T10:22:39Z",
+      "firstCommitAt": "2026-10-16T09:13:54Z",
+      "reportedOpenToMergeHours": 1,
+      "reportedFirstCommitToMergeHours": 1.15
+    },
+    {
+      "number": 379,
+      "createdAt": "2026-10-16T07:42:43Z",
+      "mergedAt": "2026-10-16T08:22:16Z",
+      "firstCommitAt": "2026-10-16T07:42:40Z",
+      "reportedOpenToMergeHours": 0.66,
+      "reportedFirstCommitToMergeHours": 0.66
+    },
+    {
+      "number": 378,
+      "createdAt": "2026-10-16T07:22:38Z",
+      "mergedAt": "2026-10-16T07:42:21Z",
+      "firstCommitAt": "2026-10-16T07:22:36Z",
+      "reportedOpenToMergeHours": 0.33,
+      "reportedFirstCommitToMergeHours": 0.33
+    },
+    {
+      "number": 377,
+      "createdAt": "2026-10-16T01:51:33Z",
+      "mergedAt": "2026-10-16T02:02:26Z",
+      "firstCommitAt": "2026-10-16T01:51:30Z",
+      "reportedOpenToMergeHours": 0.18,
+      "reportedFirstCommitToMergeHours": 0.18
+    },
+    {
+      "number": 376,
+      "createdAt": "2026-10-16T01:11:46Z",
+      "mergedAt": "2026-10-16T01:21:59Z",
+      "firstCommitAt": "2026-10-16T01:03:53Z",
+      "reportedOpenToMergeHours": 0.17,
+      "reportedFirstCommitToMergeHours": 0.3
+    },
+    {
+      "number": 375,
+      "createdAt": "2026-10-16T00:26:33Z",
+      "mergedAt": "2026-10-16T01:31:56Z",
+      "firstCommitAt": "2026-10-16T01:22:02Z",
+      "reportedOpenToMergeHours": 1.09,
+      "reportedFirstCommitToMergeHours": 0.17
+    },
+    {
+      "number": 374,
+      "createdAt": "2026-10-14T11:24:19Z",
+      "mergedAt": "2026-10-14T11:31:46Z",
+      "firstCommitAt": "2026-10-14T11:24:16Z",
+      "reportedOpenToMergeHours": 0.12,
+      "reportedFirstCommitToMergeHours": 0.13
+    },
+    {
+      "number": 373,
+      "createdAt": "2026-10-14T01:11:55Z",
+      "mergedAt": "2026-10-14T11:51:52Z",
+      "firstCommitAt": "2026-10-14T11:43:03Z",
+      "reportedOpenToMergeHours": 10.67,
+      "reportedFirstCommitToMergeHours": 0.15
+    },
+    {
+      "number": 372,
+      "createdAt": "2026-10-14T00:32:03Z",
+      "mergedAt": "2026-10-14T00:41:41Z",
+      "firstCommitAt": "2026-10-14T00:32:01Z",
+      "reportedOpenToMergeHours": 0.16,
+      "reportedFirstCommitToMergeHours": 0.16
+    },
+    {
+      "number": 371,
+      "createdAt": "2026-10-13T23:41:48Z",
+      "mergedAt": "2026-10-13T23:51:51Z",
+      "firstCommitAt": "2026-10-13T23:41:45Z",
+      "reportedOpenToMergeHours": 0.17,
+      "reportedFirstCommitToMergeHours": 0.17
+    },
+    {
+      "number": 370,
+      "createdAt": "2026-10-13T02:09:17Z",
+      "mergedAt": "2026-10-13T02:21:49Z",
+      "firstCommitAt": "2026-10-13T02:09:12Z",
+      "reportedOpenToMergeHours": 0.21,
+      "reportedFirstCommitToMergeHours": 0.21
+    },
+    {
+      "number": 369,
+      "createdAt": "2026-10-13T01:31:58Z",
+      "mergedAt": "2026-10-13T02:01:48Z",
+      "firstCommitAt": "2026-10-13T01:45:49Z",
+      "reportedOpenToMergeHours": 0.5,
+      "reportedFirstCommitToMergeHours": 0.27
+    },
+    {
+      "number": 367,
+      "createdAt": "2026-10-12T22:41:49Z",
+      "mergedAt": "2026-10-12T22:51:45Z",
+      "firstCommitAt": "2026-10-12T22:41:46Z",
+      "reportedOpenToMergeHours": 0.17,
+      "reportedFirstCommitToMergeHours": 0.17
+    },
+    {
+      "number": 366,
+      "createdAt": "2026-10-12T22:21:49Z",
+      "mergedAt": "2026-10-12T23:01:47Z",
+      "firstCommitAt": "2026-10-12T22:51:46Z",
+      "reportedOpenToMergeHours": 0.67,
+      "reportedFirstCommitToMergeHours": 0.17
+    },
+    {
+      "number": 365,
+      "createdAt": "2026-10-12T22:01:55Z",
+      "mergedAt": "2026-10-12T22:11:50Z",
+      "firstCommitAt": "2026-10-12T22:01:52Z",
+      "reportedOpenToMergeHours": 0.17,
+      "reportedFirstCommitToMergeHours": 0.17
+    },
+    {
+      "number": 364,
+      "createdAt": "2026-10-12T21:02:21Z",
+      "mergedAt": "2026-10-12T21:11:40Z",
+      "firstCommitAt": "2026-10-12T21:02:18Z",
+      "reportedOpenToMergeHours": 0.16,
+      "reportedFirstCommitToMergeHours": 0.16
+    },
+    {
+      "number": 363,
+      "createdAt": "2026-10-12T21:01:50Z",
+      "mergedAt": "2026-10-12T21:21:45Z",
+      "firstCommitAt": "2026-10-12T21:01:47Z",
+      "reportedOpenToMergeHours": 0.33,
+      "reportedFirstCommitToMergeHours": 0.33
+    },
+    {
+      "number": 362,
+      "createdAt": "2026-10-12T16:21:53Z",
+      "mergedAt": "2026-10-12T20:41:47Z",
+      "firstCommitAt": "2026-10-12T16:21:50Z",
+      "reportedOpenToMergeHours": 4.33,
+      "reportedFirstCommitToMergeHours": 4.33
+    },
+    {
+      "number": 361,
+      "createdAt": "2026-10-12T15:41:51Z",
+      "mergedAt": "2026-10-12T15:51:47Z",
+      "firstCommitAt": "2026-10-12T15:41:48Z",
+      "reportedOpenToMergeHours": 0.17,
+      "reportedFirstCommitToMergeHours": 0.17
+    },
+    {
+      "number": 360,
+      "createdAt": "2026-10-12T15:12:07Z",
+      "mergedAt": "2026-10-12T15:21:50Z",
+      "firstCommitAt": "2026-10-12T15:12:04Z",
+      "reportedOpenToMergeHours": 0.16,
+      "reportedFirstCommitToMergeHours": 0.16
+    },
+    {
+      "number": 359,
+      "createdAt": "2026-10-12T14:22:14Z",
+      "mergedAt": "2026-10-12T14:32:04Z",
+      "firstCommitAt": "2026-10-12T14:21:58Z",
+      "reportedOpenToMergeHours": 0.16,
+      "reportedFirstCommitToMergeHours": 0.17
+    },
+    {
+      "number": 358,
+      "createdAt": "2026-10-12T13:10:57Z",
+      "mergedAt": "2026-10-12T13:42:43Z",
+      "firstCommitAt": "2026-10-12T13:25:26Z",
+      "reportedOpenToMergeHours": 0.53,
+      "reportedFirstCommitToMergeHours": 0.29
+    },
+    {
+      "number": 357,
+      "createdAt": "2026-10-12T13:09:41Z",
+      "mergedAt": "2026-10-12T13:21:49Z",
+      "firstCommitAt": "2026-10-12T13:09:39Z",
+      "reportedOpenToMergeHours": 0.2,
+      "reportedFirstCommitToMergeHours": 0.2
+    },
+    {
+      "number": 356,
+      "createdAt": "2026-10-12T03:44:43Z",
+      "mergedAt": "2026-10-12T03:56:19Z",
+      "firstCommitAt": "2026-10-12T03:44:41Z",
+      "reportedOpenToMergeHours": 0.19,
+      "reportedFirstCommitToMergeHours": 0.19
+    },
+    {
+      "number": 355,
+      "createdAt": "2026-10-12T02:44:01Z",
+      "mergedAt": "2026-10-12T03:13:38Z",
+      "firstCommitAt": "2026-10-12T02:43:59Z",
+      "reportedOpenToMergeHours": 0.49,
+      "reportedFirstCommitToMergeHours": 0.49
+    },
+    {
+      "number": 354,
+      "createdAt": "2026-10-12T01:14:01Z",
+      "mergedAt": "2026-10-12T01:43:38Z",
+      "firstCommitAt": "2026-10-12T01:13:58Z",
+      "reportedOpenToMergeHours": 0.49,
+      "reportedFirstCommitToMergeHours": 0.49
+    },
+    {
+      "number": 353,
+      "createdAt": "2026-10-11T23:13:42Z",
+      "mergedAt": "2026-10-11T23:22:48Z",
+      "firstCommitAt": "2026-10-11T23:13:39Z",
+      "reportedOpenToMergeHours": 0.15,
+      "reportedFirstCommitToMergeHours": 0.15
+    },
+    {
+      "number": 352,
+      "createdAt": "2026-10-11T22:22:56Z",
+      "mergedAt": "2026-10-11T22:43:40Z",
+      "firstCommitAt": "2026-10-11T22:22:53Z",
+      "reportedOpenToMergeHours": 0.35,
+      "reportedFirstCommitToMergeHours": 0.35
+    },
+    {
+      "number": 351,
+      "createdAt": "2026-10-11T20:36:42Z",
+      "mergedAt": "2026-10-11T21:06:25Z",
+      "firstCommitAt": "2026-10-11T20:36:40Z",
+      "reportedOpenToMergeHours": 0.5,
+      "reportedFirstCommitToMergeHours": 0.5
+    },
+    {
+      "number": 350,
+      "createdAt": "2026-10-11T19:06:32Z",
+      "mergedAt": "2026-10-11T19:36:29Z",
+      "firstCommitAt": "2026-10-11T19:06:30Z",
+      "reportedOpenToMergeHours": 0.5,
+      "reportedFirstCommitToMergeHours": 0.5
+    },
+    {
+      "number": 349,
+      "createdAt": "2026-10-11T16:56:30Z",
+      "mergedAt": "2026-10-11T17:06:30Z",
+      "firstCommitAt": "2026-10-11T16:56:27Z",
+      "reportedOpenToMergeHours": 0.17,
+      "reportedFirstCommitToMergeHours": 0.17
+    },
+    {
+      "number": 348,
+      "createdAt": "2026-10-11T14:33:33Z",
+      "mergedAt": "2026-10-11T15:04:32Z",
+      "firstCommitAt": "2026-10-11T14:33:31Z",
+      "reportedOpenToMergeHours": 0.52,
+      "reportedFirstCommitToMergeHours": 0.52
+    },
+    {
+      "number": 347,
+      "createdAt": "2026-10-10T15:09:56Z",
+      "mergedAt": "2026-10-10T15:39:49Z",
+      "firstCommitAt": "2026-10-10T15:09:53Z",
+      "reportedOpenToMergeHours": 0.5,
+      "reportedFirstCommitToMergeHours": 0.5
+    },
+    {
+      "number": 346,
+      "createdAt": "2026-10-10T12:39:56Z",
+      "mergedAt": "2026-10-10T13:10:19Z",
+      "firstCommitAt": "2026-10-10T12:39:53Z",
+      "reportedOpenToMergeHours": 0.51,
+      "reportedFirstCommitToMergeHours": 0.51
+    },
+    {
+      "number": 345,
+      "createdAt": "2026-10-10T10:39:52Z",
+      "mergedAt": "2026-10-10T11:09:47Z",
+      "firstCommitAt": "2026-10-10T10:39:49Z",
+      "reportedOpenToMergeHours": 0.5,
+      "reportedFirstCommitToMergeHours": 0.5
+    },
+    {
+      "number": 344,
+      "createdAt": "2026-10-10T07:10:00Z",
+      "mergedAt": "2026-10-10T08:39:52Z",
+      "firstCommitAt": "2026-10-06T13:40:05Z",
+      "reportedOpenToMergeHours": 1.5,
+      "reportedFirstCommitToMergeHours": 91
+    },
+    {
+      "number": 343,
+      "createdAt": "2026-10-04T05:01:28Z",
+      "mergedAt": "2026-10-16T07:22:21Z",
+      "firstCommitAt": "2026-10-16T06:52:59Z",
+      "reportedOpenToMergeHours": 290.35,
+      "reportedFirstCommitToMergeHours": 0.49
+    },
+    {
+      "number": 342,
+      "createdAt": "2026-10-04T04:18:58Z",
+      "mergedAt": "2026-10-04T04:41:59Z",
+      "firstCommitAt": "2026-10-04T04:18:39Z",
+      "reportedOpenToMergeHours": 0.38,
+      "reportedFirstCommitToMergeHours": 0.39
+    },
+    {
+      "number": 341,
+      "createdAt": "2026-10-03T23:28:12Z",
+      "mergedAt": "2026-10-03T23:33:05Z",
+      "firstCommitAt": "2026-10-03T23:27:49Z",
+      "reportedOpenToMergeHours": 0.08,
+      "reportedFirstCommitToMergeHours": 0.09
+    },
+    {
+      "number": 338,
+      "createdAt": "2026-09-24T15:01:02Z",
+      "mergedAt": "2026-09-24T15:20:04Z",
+      "firstCommitAt": "2026-09-24T15:00:34Z",
+      "reportedOpenToMergeHours": 0.32,
+      "reportedFirstCommitToMergeHours": 0.33
+    },
+    {
+      "number": 337,
+      "createdAt": "2026-09-24T14:56:01Z",
+      "mergedAt": "2026-09-24T15:01:58Z",
+      "firstCommitAt": "2026-09-24T14:50:47Z",
+      "reportedOpenToMergeHours": 0.1,
+      "reportedFirstCommitToMergeHours": 0.19
+    }
+  ]
+}
