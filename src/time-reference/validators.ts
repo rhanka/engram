@@ -107,8 +107,8 @@ class Ctx {
     }
   }
   checkIdValue(v: unknown, path: string): void {
-    if (typeof v !== "number" && typeof v !== "string") {
-      this.fail("bad-type", "identifier must be a number or a string", path);
+    if (!isInt(v) && typeof v !== "string") {
+      this.fail("bad-type", "identifier must be an integer or a string", path);
     }
   }
 }
@@ -453,9 +453,7 @@ export function validateCollectionManifest(v: unknown): ValidationResult<Collect
       c.fail("bad-type", `${f} must be an array (possibly empty, never omitted)`, f);
     } else {
       (v[f] as unknown[]).forEach((id, i) => {
-        if (typeof id !== "number" && typeof id !== "string") {
-          c.fail("bad-type", `${f}[${i}] must be a number or a string identifier`, `${f}.${i}`);
-        }
+        c.checkIdValue(id, `${f}.${i}`);
       });
     }
   }
@@ -564,8 +562,8 @@ export function validateCohort(v: unknown): ValidationResult<CohortV1> {
   } else {
     const seen = new Set<string>();
     for (const id of v["memberIds"] as unknown[]) {
-      if (typeof id !== "number" && typeof id !== "string") {
-        c.fail("bad-type", "cohort members must be number or string identifiers", "memberIds");
+      if (!isInt(id) && typeof id !== "string") {
+        c.fail("bad-type", "cohort members must be integer or string identifiers", "memberIds");
         break;
       }
       const k = `${typeof id}:${String(id)}`;
