@@ -1,0 +1,40 @@
+{
+  "profile": "repo-knowledge@1",
+  "artifactVersion": "1.0.0",
+  "schemaVersions": {
+    "timing": 1,
+    "collection-manifest": 1,
+    "pull-request-timing": 1,
+    "ci-check-batch": 1,
+    "cohort": 1,
+    "quantile-set": 1,
+    "timing-series": 1,
+    "timing-estimate": 1,
+    "timing-budget": 1,
+    "delivery-milestones": 1,
+    "installation-receipt": 1,
+    "committed-export": 1,
+    "figure-provenance": 1,
+    "review-wave-manifest": 1,
+    "review-rounds-actual": 1
+  },
+  "files": [
+    {
+      "path": "profile.json",
+      "sha256": "ce83e7c0605d675453cd8e03ae81bafd92af75a8a0dc9cce6b820ae305658e04"
+    },
+    {
+      "path": "timing.schema.json",
+      "sha256": "b75f341bafcf2e45422b1e5f96c746fc4971c59db8a82e7422bb18b83c60d5f7"
+    },
+    {
+      "path": "engram-mapping.json",
+      "sha256": "8ad522b49a085e0c585dc5b8ad24b5926d1ed6729e1d820e5179ef706aca2de8"
+    }
+  ],
+  "mappingVersion": "1.0.0",
+  "validatorPin": {
+    "source": "@sentropic/diagram-core",
+    "contract": "25c0f3d33c258fc2b906a4b85219ffce5f67eccc"
+  }
+}
