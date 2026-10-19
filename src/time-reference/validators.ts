@@ -888,7 +888,7 @@ export function validateFigureProvenance(v: unknown): ValidationResult<FigurePro
 
 const MILESTONES_FIELDS = ["schema", "repo", "lotRef", "forecastRevision", "mergeSha", "mergeMilestone", "installMilestones"] as const;
 
-export function validateDeliveryMilestones(v: unknown): ValidationResult<DeliveryMilestonesV1> {
+export function validateDeliveryMilestones(v: unknown, evidence?: MilestoneEvidence): ValidationResult<DeliveryMilestonesV1> {
   const c = new Ctx();
   if (!isRecord(v)) {
     c.fail("bad-type", "DeliveryMilestonesV1 must be an object", "");
@@ -960,6 +960,14 @@ export function validateDeliveryMilestones(v: unknown): ValidationResult<Deliver
       }
     });
   }
+  if (c.errors.length === 0) {
+    const record = v as unknown as DeliveryMilestonesV1;
+    if (evidence !== undefined) {
+      c.errors.push(...validateMilestonesAgainstReceipts(record, evidence.receipts, evidence.quals, evidence.scope));
+    } else if (record.installMilestones.some((entry) => entry.installedAt !== "unknown")) {
+      c.fail("unresolved-receipt", "known installation actuals require receipt resolution in the identified context", "installMilestones");
+    }
+  }
   return done(c, v);
 }
 
@@ -971,6 +979,12 @@ export function validateDeliveryMilestones(v: unknown): ValidationResult<Deliver
 export interface MilestoneScope {
   repo: string;
   lotOccurrence: string;
+}
+
+export interface MilestoneEvidence {
+  receipts: Record<string, InstallationReceiptV1>;
+  quals: Record<string, TargetQualification>;
+  scope: MilestoneScope;
 }
 
 /**
@@ -1041,10 +1055,7 @@ export function validateDeliveryMilestonesWithReceipts(
   quals: Record<string, TargetQualification>,
   scope: MilestoneScope,
 ): ValidationResult<DeliveryMilestonesV1> {
-  const structural = validateDeliveryMilestones(record);
-  if (!structural.ok) return structural;
-  const errors = validateMilestonesAgainstReceipts(structural.value, receipts, quals, scope);
-  return errors.length === 0 ? { ok: true, value: structural.value } : { ok: false, errors };
+  return validateDeliveryMilestones(record, { receipts, quals, scope });
 }
 
 // --- InstallationReceiptV1 (section 6.10) ------------------------------------
@@ -1105,7 +1116,7 @@ const EXPORT_FIELDS = [
   "generator", "series", "estimates", "budgets", "milestones", "provenance", "exportDigest",
 ] as const;
 
-export function validateCommittedExport(v: unknown): ValidationResult<CommittedExportV1> {
+export function validateCommittedExport(v: unknown, milestoneEvidence: readonly (MilestoneEvidence | undefined)[] = []): ValidationResult<CommittedExportV1> {
   const c = new Ctx();
   if (!isRecord(v)) {
     c.fail("bad-type", "CommittedExportV1 must be an object", "");
@@ -1160,8 +1171,11 @@ export function validateCommittedExport(v: unknown): ValidationResult<CommittedE
     c.fail("bad-type", "milestones must be an array (possibly empty)", "milestones");
   } else {
     (v["milestones"] as unknown[]).forEach((e, i) => {
-      const r = validateDeliveryMilestones(e);
+      const r = validateDeliveryMilestones(e, milestoneEvidence[i]);
       if (!r.ok) for (const e2 of r.errors) c.fail(e2.code, e2.message, e2.path === undefined ? `milestones.${i}` : `milestones.${i}.${e2.path}`);
+      if (isRecord(e) && e["repo"] !== v["repo"]) {
+        c.fail("scope-mismatch", "milestone repository must match its export", `milestones.${i}.repo`);
+      }
     });
   }
   if (!Array.isArray(v["provenance"])) {
