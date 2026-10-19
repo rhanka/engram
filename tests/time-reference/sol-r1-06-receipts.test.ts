@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildDeliveryMilestones,
   validateDeliveryMilestones,
+  validateDeliveryMilestonesWithReceipts,
   validateInstallationReceipt,
-  validateMilestonesAgainstReceipts,
   type InstallationReceiptV1,
   type TargetQualification,
 } from "../../src/time-reference/index.js";
@@ -55,13 +55,19 @@ function receipt(): InstallationReceiptV1 {
 
 function qual(): TargetQualification {
   return {
+    expectedTargetKind: "ci-runner",
+    expectedPlatform: "linux-x64",
+    expectedInstallationScope: "repo",
     expectedVersion: "0.21.0",
     expectedTuple: "0.21.0+r",
     expectedIntegrity: "sha256:x",
     expectedMergeSha: "m",
+    expectedReleaseSourceSha: "r",
     ancestryProven: true,
   };
 }
+
+const SCOPE = { repo: REPO, lotOccurrence: "occ-1" };
 
 function targetInput(r: InstallationReceiptV1) {
   return { input: { targetId: "t", forecastAt: "2026-10-18T10:06:00Z", receipt: r, receiptRef: "rec-1" }, qual: qual() };
@@ -88,20 +94,41 @@ describe("Sol R1 F07/F08 receipt binding and resolution", () => {
     }
   });
 
-  it("F08: a known installedAt without receiptRef is refused", () => {
-    const built = buildDeliveryMilestones(ctx(), [targetInput(receipt())])!.record;
-    const { receiptRef: _d, ...noRef } = built.installMilestones[0] as Record<string, unknown>;
-    const record = { ...built, installMilestones: [{ ...noRef, installedAt: "2026-10-18T10:06:00Z", verdict: "held" }] };
-    const r = validateDeliveryMilestones(record);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.errors.map((e) => e.code)).toContain("missing-receipt-ref");
+  it("F08: every fixture case resolves through the primary validation path", () => {
+    const rule = solRule("F08") as { cases: { mutation: string; code: string }[] };
+    for (const c of rule.cases) {
+      const built = buildDeliveryMilestones(ctx(), [targetInput(receipt())])!.record;
+      if (c.mutation === "drop-receiptRef") {
+        const { receiptRef: _d, ...noRef } = built.installMilestones[0] as Record<string, unknown>;
+        const record = { ...built, installMilestones: [{ ...noRef }] };
+        const r = validateDeliveryMilestones(record);
+        expect(r.ok, c.mutation).toBe(false);
+        if (!r.ok) expect(r.errors.map((e) => e.code), c.mutation).toContain(c.code);
+      } else {
+        const r = validateDeliveryMilestonesWithReceipts(built, {}, { t: qual() }, SCOPE);
+        expect(r.ok, c.mutation).toBe(false);
+        if (!r.ok) expect(r.errors.map((e) => e.code), c.mutation).toContain(c.code);
+      }
+    }
   });
 
   it("F08: a known installedAt resolves to exactly one matching qualified receipt", () => {
     const built = buildDeliveryMilestones(ctx(), [targetInput(receipt())])!.record;
-    expect(validateMilestonesAgainstReceipts(built, [receipt()], { t: qual() })).toEqual([]);
     expect(
-      validateMilestonesAgainstReceipts(built, [], { t: qual() }).map((d) => d.code),
-    ).toContain("unresolved-receipt");
+      validateDeliveryMilestonesWithReceipts(built, { "rec-1": receipt() }, { t: qual() }, SCOPE).ok,
+    ).toBe(true);
+    // An arbitrary receiptRef naming no supplied receipt fails.
+    const forged = JSON.parse(JSON.stringify(built)) as typeof built;
+    forged.installMilestones[0]!.receiptRef = "attacker-ref";
+    expect(
+      validateDeliveryMilestonesWithReceipts(forged, { "rec-1": receipt() }, { t: qual() }, SCOPE).ok,
+    ).toBe(false);
+    // A receipt from another repository or lot occurrence never backs the actual.
+    const foreign = receipt();
+    foreign.repo = "evil/other";
+    expect(
+      validateDeliveryMilestonesWithReceipts(built, { "rec-1": foreign }, { t: qual() }, SCOPE)
+        .ok,
+    ).toBe(false);
   });
 });
