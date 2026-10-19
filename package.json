@@ -53,6 +53,7 @@
     "test:serve": "vitest run tests/serve.test.ts",
     "test:smoke": "./scripts/smoke-test.sh",
     "test:pipeline": "vitest run tests/pipeline.test.ts",
+    "test:substrate-tarball": "node scripts/substrate-tarball-acceptance.mjs",
     "test:all": "vitest run && npm run test:smoke",
     "prepublishOnly": "npm run build && node scripts/assert-studio-app.mjs && npm test",
     "postinstall": "node -e \"if(require('fs').existsSync('engram-memory/package.json'))require('child_process').execSync('npm --prefix engram-memory install --no-audit --no-fund',{stdio:'inherit'})\""
