@@ -365,6 +365,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
     private readonly maintenanceBatch: NeutralWorkLimits,
     private readonly commitRecovery: boolean,
     private latched = false,
+    private recoveryRequired = false,
     private closed = false,
     private mutex: Promise<void> = Promise.resolve(),
   ) {
@@ -422,6 +423,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
     if (!liveness.ok) return liveness;
     try {
       await this.handle.checkFence(this.grant, this.fence);
+      if (this.recoveryRequired) return this.rehydrateToCommitted(operation);
       return { ok: true, value: { live: true } };
     } catch (error) {
       const mapped = mapStorageError(operation, error);
@@ -483,6 +485,8 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
     run: (scratch: InMemoryCanonicalMemoryStoreV1) => Promise<Result<T>>,
   ): Promise<Result<T>> {
     return this.exclusive(async () => {
+      const proof = await this.proof(operation);
+      if (!proof.ok) return proof;
       const before = this.snapshot();
       if (!before.ok) return before;
       const scratch = this.fork(before.value);
@@ -523,7 +527,10 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
         // Partial multi-unit failure (binding §§4.3, 8.1): earlier units of
         // this observation stay committed, so the live core rehydrates to the
         // committed prefix instead of diverging from the store.
-        if (committedPrefix > 0) await this.rehydrateToCommitted(operation);
+        if (committedPrefix > 0) {
+          const recovered = await this.rehydrateToCommitted(operation);
+          if (!recovered.ok) return recovered;
+        }
         return committed;
       }
       committedPrefix += 1;
@@ -538,6 +545,11 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
           return refuse(operation, "JOURNAL_CORRUPT", "persisted receipt bytes do not verify");
         }
         persistedReceipt = decoded;
+        after.admission_outcomes = after.admission_outcomes?.map((entry) =>
+          entry.cursor === decoded.cursor
+            ? { ...entry, transaction_receipt_digest: decoded.receipt_digest }
+            : entry,
+        );
       }
     }
     return { ok: true, value: { adopted: true, ...(persistedReceipt === undefined ? {} : { receipt: persistedReceipt }) } };
@@ -546,19 +558,23 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
   /**
    * Rehydrates the live core from the committed store after a partial
    * multi-unit failure, so the live core equals the store (binding §§4.3,
-   * 8.1, 8.5). Best-effort: the original persistence refusal is returned
-   * regardless; a failed rehydrate only means the next operation re-runs
-   * recovery from the same committed prefix.
+   * 8.1, 8.5). Failure keeps service blocked; every subsequent operation
+   * must complete recovery before reading or staging from the live core.
    */
-  private async rehydrateToCommitted(operation: MemoryOperation): Promise<void> {
+  private async rehydrateToCommitted(operation: MemoryOperation): Promise<Result<{ live: true }>> {
+    this.recoveryRequired = true;
     try {
       const loaded = await hydrate(this.handle, this.grant, operation);
-      if (!loaded.ok) return;
+      if (!loaded.ok) return loaded;
       this.core = this.fork(cloneState(loaded.value));
       this.k7Versions.clear();
       for (const [candidate, version] of loaded.value.k7Versions) this.k7Versions.set(candidate, version);
-    } catch {
-      // Best-effort: the persistence refusal below stays authoritative.
+      this.recoveryRequired = false;
+      return { ok: true, value: { live: true } };
+    } catch (error) {
+      const mapped = mapStorageError(operation, error);
+      if (mapped.latch) this.latched = true;
+      return refuse(operation, mapped.code, mapped.message);
     }
   }
 
@@ -595,7 +611,15 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
         await this.verifyAggregateGuardsInTx(transaction, unit, operation);
         // Receipt sampling inside the transaction (binding §8.3 rule 2): the
         // live epoch and a fresh clock sample are bound into the moduleResult.
-        const resampled: NeutralAtomicUnit = { ...unit, moduleResult: this.resampleModuleResult(unit) };
+        const moduleResult = this.resampleModuleResult(unit);
+        const receipt = moduleResult === undefined ? undefined : decodeReceipt(moduleResult);
+        const resampled: NeutralAtomicUnit = {
+          ...unit,
+          moduleResult,
+          updates: unit.updates.map((update) => update.kind === "memory-admission-outcomes" && receipt !== undefined
+            ? { ...update, value: neutralJcs({ ...JSON.parse(update.value.data), transaction_receipt_digest: receipt.receipt_digest }) }
+            : update),
+        };
         await transaction.apply(resampled);
         committedModuleResult = resampled.moduleResult;
       });
@@ -919,7 +943,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
         limits: this.singleEventLimits,
       });
       if (!persisted.ok) return persisted;
-      this.core = scratch;
+      this.core = this.fork(after.value);
       if (persisted.value.receipt !== undefined) return { ok: true, value: persisted.value.receipt };
       return computed;
     });

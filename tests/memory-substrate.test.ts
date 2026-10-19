@@ -711,6 +711,31 @@ describe("substrate canonical trace and replay (amendment §5.2, binding §8.2)"
     await opened.value.close();
   });
 
+  it("propagates one admission receipt to K8, the live core and replay under an advancing clock (binding §8.3.2–3)", async () => {
+    const harness = await openStore("store:admission-receipt-once");
+    let tick = Date.parse(NOW);
+    harness.clock.now = () => new Date(tick += 100).toISOString();
+    const memory = await engineOn(harness.store, harness.clock);
+    const captured = await memory.capture(captureRequest("receipt-admission", "1"));
+    if (!captured.ok || !captured.value.candidate_id) throw new Error("capture failed");
+    const request = { candidate_id: captured.value.candidate_id, authorization: { credential: "credential:substrate" }, deadline_at: "2026-08-16T12:40:00.000Z" };
+    const admitted = await memory.requestAdmission(request);
+    expect(admitted).toMatchObject({ ok: true, value: { status: "accepted" } });
+    if (!admitted.ok) throw new Error("admission failed");
+    const journal = await harness.store.readJournal({ after: "0", limit: 2000 });
+    if (!journal.ok) throw new Error("journal failed");
+    const event = journal.value.at(-1)!;
+    const persisted = await harness.backend.handle.readCommitResult!(event.event_id, harness.backend.grant);
+    const receipt = JSON.parse(persisted!.data);
+    const digest = admitted.value.transaction_receipt_digest;
+    expect(receipt.receipt_digest).toBe(digest);
+    const k8 = harness.backend.readAggregate("memory-admission-outcomes", JSON.stringify(["memory-admission-outcome-v1", request.candidate_id]));
+    expect(JSON.parse(k8!.value.data).transaction_receipt_digest).toBe(digest);
+    expect(await harness.store.readAdmissionOutcome(request)).toMatchObject({ ok: true, value: { transaction_receipt_digest: digest } });
+    expect(await memory.requestAdmission(request)).toMatchObject({ ok: true, value: { transaction_receipt_digest: digest } });
+    await harness.store.close();
+  });
+
   it("refuses a stored receipt outside the complete closed receipt schema (binding §8.3.4)", async () => {
     const harness = await openStore("store:receipt-schema");
     const input: Parameters<CanonicalMemoryStorePort["commitPending"]>[0] = {
@@ -1370,11 +1395,16 @@ describe("substrate atomicity under fault injection (amendment §5.3)", () => {
     await opened.value.close();
   });
 
-  it("rehydrates the live core to the committed prefix when a later expiry batch fails (binding §§4.3, 8.1)", async () => {
+  it.each([false, true])("recovers the committed expiry prefix, refusing service while hydration fails=%s (binding §§4.3, 8.1, 8.5)", async (failRecovery) => {
     const backend = createReferenceModuleStorageBackend({ scope: SCOPE });
     const clock = fixedClock();
+    let recoveryUnavailable = false;
+    const handle = { ...backend.handle, query: async (...args: Parameters<typeof backend.handle.query>) => {
+      if (recoveryUnavailable) throw new Error("recovery unavailable");
+      return backend.handle.query(...args);
+    } };
     const opened = await openModuleStorageCanonicalMemoryStoreV1({
-      handle: backend.handle,
+      handle,
       scope_binding: { scope: { ...SCOPE }, store_id: "store:maintenance-partial", resolveScope },
       grant: backend.grant,
       clock,
@@ -1412,6 +1442,7 @@ describe("substrate atomicity under fault injection (amendment §5.3)", () => {
     const base = backend.transactCount();
     backend.armFailpointAtTransaction(base + 2, "commit-decision");
     clock.advanceTo("2026-08-16T12:36:00.000Z");
+    recoveryUnavailable = failRecovery;
     const refused = await opened.value.acceptedSnapshot({
       valid_as_of: 1,
       system_as_of: highWater,
@@ -1421,6 +1452,18 @@ describe("substrate atomicity under fault injection (amendment §5.3)", () => {
     backend.disarmFailpoint();
     expect(refused).toMatchObject({ ok: false, error: { code: "STORE_UNAVAILABLE" } });
     expect(backend.journalHead().allocation).toBe((BigInt(highWater) + 1n).toString());
+    if (failRecovery) {
+      const transactions = backend.transactCount();
+      for (const result of [
+        await opened.value.readJournal({ after: "0", limit: 2000 }),
+        await opened.value.readiness(),
+        await opened.value.commitPending(manualCapture("candidate:blocked", "event:blocked")),
+        await opened.value.acceptedSnapshot({ valid_as_of: 1, system_as_of: highWater, authorization_receipt_digest: DIGEST, max_candidates: 50 }),
+      ]) expect(result).toMatchObject({ ok: false, error: { code: "STORE_UNAVAILABLE" } });
+      expect(backend.transactCount()).toBe(transactions);
+      expect(backend.journalHead().allocation).toBe((BigInt(highWater) + 1n).toString());
+      recoveryUnavailable = false;
+    }
     // The live core equals the store: it observes the committed prefix,
     // never the stale pre-expiry state.
     const live = await opened.value.readJournal({ after: "0", limit: 2000 });
