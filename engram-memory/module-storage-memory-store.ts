@@ -351,6 +351,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
   readonly version = 1 as const;
   readonly capabilities: CanonicalStoreCapabilitiesV1;
   readonly scoped_reads: CanonicalMemoryStorePort["scoped_reads"];
+  private recoveryInFlight?: Promise<Result<{ live: true }>>;
 
   constructor(
     private readonly handle: NeutralMemoryHandle,
@@ -562,10 +563,28 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
    * must complete recovery before reading or staging from the live core.
    */
   private async rehydrateToCommitted(operation: MemoryOperation): Promise<Result<{ live: true }>> {
+    // Readers may enter proof outside the mutation mutex. They must join
+    // the same recovery: no delayed snapshot can adopt after another
+    // recovery has allowed a writer to advance the core.
+    if (this.recoveryInFlight !== undefined) {
+      const result = await this.recoveryInFlight;
+      return result.ok ? result : refuse(operation, result.error.code, result.error.message);
+    }
+    const recovery = this.loadCommitted(operation);
+    this.recoveryInFlight = recovery;
+    try {
+      return await recovery;
+    } finally {
+      this.recoveryInFlight = undefined;
+    }
+  }
+
+  private async loadCommitted(operation: MemoryOperation): Promise<Result<{ live: true }>> {
     this.recoveryRequired = true;
     try {
       const loaded = await hydrate(this.handle, this.grant, operation);
       if (!loaded.ok) return loaded;
+      if (this.closed) return refuse(operation, "STORE_UNAVAILABLE", "canonical store is closed");
       this.core = this.fork(cloneState(loaded.value));
       this.k7Versions.clear();
       for (const [candidate, version] of loaded.value.k7Versions) this.k7Versions.set(candidate, version);
