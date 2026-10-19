@@ -16,7 +16,7 @@ import {
 } from "./quantiles.js";
 import type { CommittedExportV1, QuantileSetV1, SupportTier, TimingSeriesV1 } from "./types.js";
 import { SCHEMA_QUANTILE_SET } from "./types.js";
-import { validateCommittedExport, type Diagnostic } from "./validators.js";
+import { validateCommittedExport, type Diagnostic, type MilestoneEvidence } from "./validators.js";
 
 export interface BuildQuantileOptions {
   method: "nearest-rank/1" | "weighted-ecdf/1";
@@ -133,9 +133,10 @@ export function regenerateCheck(
   exp: CommittedExportV1,
   snapshotBytesBySeriesId: Record<string, string | Uint8Array>,
   samplesFromSnapshot: SnapshotSampleAdapter,
+  milestoneEvidence: readonly (MilestoneEvidence | undefined)[] = [],
 ): Diagnostic[] {
   const errors: Diagnostic[] = [];
-  const structural = validateCommittedExport(exp);
+  const structural = validateCommittedExport(exp, milestoneEvidence);
   if (!structural.ok) return structural.errors;
   const bySeriesId = new Map(exp.series.map((s) => [s.seriesId, s]));
   const samplesBySeriesId = new Map<string, WeightedEntry[]>();

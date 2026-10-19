@@ -138,6 +138,7 @@ export {
   validateMilestonesAgainstReceipts,
   validatePullRequestTiming,
   type MilestoneScope,
+  type MilestoneEvidence,
   validateQuantileSet,
   validateReviewRoundsActual,
   validateReviewWaveManifest,
