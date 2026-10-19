@@ -88,11 +88,14 @@ import {
   type NeutralAtomicUnit,
   type NeutralChainAppend,
   type NeutralEncodedValue,
+  NeutralStorageError,
   type NeutralMemoryHandle,
+  type NeutralModuleTransaction,
   type NeutralRecordWrite,
   type NeutralScopeGrant,
   type NeutralStorageScope,
   type NeutralWorkLimits,
+  type NeutralWriterFence,
 } from "./module-storage-neutral.js";
 
 /** Authoritative scope binding for one canonical store (binding §7.2). */
@@ -288,13 +291,14 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
     private readonly scope: NeutralStorageScope,
     private readonly grant: NeutralScopeGrant,
     private readonly clock: ClockPort,
-    private readonly epoch: string,
+    private readonly fence: NeutralWriterFence,
     private core: InMemoryCanonicalMemoryStoreV1,
     private readonly k7Versions: Map<string, string>,
     private readonly singleEventLimits: NeutralWorkLimits,
     private readonly commitRecovery: boolean,
     private latched = false,
     private closed = false,
+    private mutex: Promise<void> = Promise.resolve(),
   ) {
     this.capabilities = {
       atomic_promotion: true,
@@ -349,12 +353,32 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
     const liveness = checkGrantLiveness(operation, this.grant, now);
     if (!liveness.ok) return liveness;
     try {
-      await this.handle.checkFence(this.grant);
+      await this.handle.checkFence(this.grant, this.fence);
       return { ok: true, value: { live: true } };
     } catch (error) {
       const mapped = mapStorageError(operation, error);
       if (mapped.latch) this.latched = true;
       return refuse(operation, mapped.code, mapped.message);
+    }
+  }
+
+  /**
+   * Serializes staging and adoption (binding §§5.1, 8.1–8.3): the
+   * scratch-compute → transact → adopt sequence of one mutation never
+   * interleaves with another's, so concurrent capture and registry
+   * completion cannot lose a committed event.
+   */
+  private async exclusive<T>(run: () => Promise<T>): Promise<T> {
+    const previous = this.mutex;
+    let release: (() => void) | undefined;
+    this.mutex = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await run();
+    } finally {
+      release!();
     }
   }
 
@@ -366,7 +390,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
     return createInMemoryCanonicalMemoryStoreV1({
       clock: this.clock,
       store_id: this.binding.store_id,
-      storage_epoch: this.epoch,
+      storage_epoch: this.fence.epoch,
       persistence: clone(state),
     });
   }
@@ -390,21 +414,23 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
     operation: MemoryOperation,
     run: (scratch: InMemoryCanonicalMemoryStoreV1) => Promise<Result<T>>,
   ): Promise<Result<T>> {
-    const before = this.snapshot();
-    if (!before.ok) return before;
-    const scratch = this.fork(before.value);
-    const result = await run(scratch);
-    if (!result.ok) return result;
-    const after = scratch.exportStateForPersistence();
-    if (!after.ok) return after;
-    if (after.value.journal.length === before.value.journal.length) return result;
-    const maintenance = await this.persistDiff(operation, before.value, after.value, {
-      receipt: undefined,
-      limits: this.singleEventLimits,
+    return this.exclusive(async () => {
+      const before = this.snapshot();
+      if (!before.ok) return before;
+      const scratch = this.fork(before.value);
+      const result = await run(scratch);
+      if (!result.ok) return result;
+      const after = scratch.exportStateForPersistence();
+      if (!after.ok) return after;
+      if (after.value.journal.length === before.value.journal.length) return result;
+      const maintenance = await this.persistDiff(operation, before.value, after.value, {
+        receipt: undefined,
+        limits: this.singleEventLimits,
+      });
+      if (!maintenance.ok) return maintenance;
+      this.core = scratch;
+      return result;
     });
-    if (!maintenance.ok) return maintenance;
-    this.core = scratch;
-    return result;
   }
 
   /**
@@ -440,10 +466,37 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
     idempotencyKey: string,
     limits: NeutralWorkLimits,
   ): Promise<Result<{ committed: true }>> {
+    if (this.closed) return refuse(operation, "STORE_UNAVAILABLE", "canonical store is closed");
+    if (this.latched) return refuse(operation, "FENCE_LOST", "canonical fence was lost");
+    // Revalidation after staging waits, before the first mutating statement (binding §9.4 rule 2).
+    const beforeCommit = await this.proof(operation);
+    if (!beforeCommit.ok) return beforeCommit;
     try {
-      await this.handle.transact({ limits, idempotencyKey, grant: this.grant }, async (transaction) => {
-        await transaction.apply(unit);
+      await this.handle.transact({ limits, idempotencyKey, grant: this.grant, fence: this.fence }, async (transaction) => {
+        // In-transaction fence proof: loss during the unit rolls the whole unit back (binding §9.4 rule 3).
+        await this.handle.checkFence(this.grant, this.fence);
+        // Replay classification precedes any append, inside the transaction (binding §§5.3, 8.2 rule 2).
+        const replay = await transaction.findIdempotency({ commitIdentity: idempotencyKey });
+        if (replay !== null) {
+          const expected = expectedIntentHash(unit);
+          if (replay.intentHash !== expected) {
+            throw new NeutralStorageError("digest-conflict", "commit identity is bound to a different unit");
+          }
+          return;
+        }
+        // Allocation read inside the transaction (binding §8.1 rule 1): the
+        // head expectation and the dense cursor are verified against the
+        // committed chain state before any write.
+        await this.verifyAllocationInTx(transaction, unit, operation);
+        // Aggregate guards inside the transaction (binding §§3.3, 5.1 rule 5).
+        await this.verifyAggregateGuardsInTx(transaction, unit, operation);
+        // Receipt sampling inside the transaction (binding §8.3 rule 2): the
+        // live epoch and a fresh clock sample are bound into the moduleResult.
+        const resampled: NeutralAtomicUnit = { ...unit, moduleResult: this.resampleModuleResult(unit) };
+        await transaction.apply(resampled);
       });
+      // Final validation sits with the backend's effective COMMIT/ROLLBACK decision (binding §9.4 rule 4):
+      // the backend revalidates fence + grant at publish; a loss there surfaces as FENCE_LOST below.
       return { ok: true, value: { committed: true } };
     } catch (error) {
       const mapped = mapStorageError(operation, error);
@@ -456,6 +509,110 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
   }
 
   /**
+   * Allocation read inside the transaction (binding §8.1 rule 1): the unit's
+   * head expectations and dense cursors are verified against the committed
+   * chain state read in-transaction, before any write of this unit.
+   */
+  private async verifyAllocationInTx(
+    transaction: NeutralModuleTransaction,
+    unit: NeutralAtomicUnit,
+    operation: MemoryOperation,
+  ): Promise<void> {
+    void operation;
+    if (unit.appends.length === 0) return;
+    const chain = memoryJournalChain();
+    const cursors: string[] = [];
+    let head = memoryZeroHash();
+    let after: string | undefined;
+    for (;;) {
+      const page = await transaction.readChain({ chain, afterAllocation: after, limit: 500 });
+      if (page.records.length === 0) break;
+      for (const record of page.records) {
+        const body = parseJson<{ cursor?: unknown; event_hash?: unknown }>(record.value.data);
+        if (typeof body?.cursor !== "string" || !isCanonicalU64(body.cursor)) {
+          throw new NeutralStorageError("invalid-schema", "committed chain record carries no canonical cursor");
+        }
+        cursors.push(body.cursor);
+        head = record.hash;
+        after = body.cursor;
+      }
+    }
+    const allocation = cursors.length === 0 ? "0" : cursors[cursors.length - 1]!;
+    for (const [index, append] of unit.appends.entries()) {
+      const body = parseJson<{ cursor?: unknown }>(append.value.data);
+      if (typeof body?.cursor !== "string") {
+        throw new NeutralStorageError("invalid-schema", "append carries no cursor");
+      }
+      const priorCursor = index === 0 ? allocation : parseJson<{ cursor?: unknown }>(unit.appends[index - 1]!.value.data)?.cursor;
+      const base = index === 0 ? allocation : (typeof priorCursor === "string" ? priorCursor : undefined);
+      if (base === undefined) throw new NeutralStorageError("invalid-schema", "append chain is not dense");
+      if (nextU64(base) !== body.cursor) {
+        throw new NeutralStorageError("cas-conflict", "append cursor does not extend the committed allocation");
+      }
+      const expectation = append.expectation;
+      if (expectation.kind === "absent") {
+        if (cursors.length !== 0 || expectation.allocation !== allocation) {
+          throw new NeutralStorageError("cas-conflict", "genesis expectation does not hold");
+        }
+      } else if (index === 0 && expectation.hash !== head) {
+        throw new NeutralStorageError("cas-conflict", "stale chain head");
+      }
+    }
+  }
+
+  /**
+   * Aggregate guards inside the transaction (binding §§3.3, 5.1 rule 5):
+   * every aggregate write presents a version strictly above the committed
+   * version read in-transaction; declared aggregate-version guards are
+   * enforced the same way.
+   */
+  private async verifyAggregateGuardsInTx(
+    transaction: NeutralModuleTransaction,
+    unit: NeutralAtomicUnit,
+    operation: MemoryOperation,
+  ): Promise<void> {
+    void operation;
+    for (const guard of unit.guards) {
+      if (guard.kind === "chain-head" || guard.kind === "chain-absent") continue;
+      if (guard.aggregateKind === undefined || guard.aggregateKey === undefined || guard.version === undefined) {
+        throw new NeutralStorageError("invalid-schema", "aggregate guard names no versioned aggregate");
+      }
+      const current = await transaction.readAggregate(guard.aggregateKind, guard.aggregateKey);
+      if (current !== null && BigInt(guard.version) <= BigInt(current.version)) {
+        throw new NeutralStorageError("cas-conflict", "stale aggregate guard version");
+      }
+    }
+    for (const update of unit.updates) {
+      const current = await transaction.readAggregate(update.kind, update.key);
+      if (current !== null && BigInt(update.version) <= BigInt(current.version)) {
+        throw new NeutralStorageError("cas-conflict", "stale aggregate version");
+      }
+    }
+  }
+
+  /**
+   * Receipt sampling inside the transaction (binding §8.3 rule 2): the live
+   * epoch and a fresh clock sample are bound into the unit's moduleResult;
+   * the digest is recomputed last. Non-receipt payloads pass through.
+   */
+  private resampleModuleResult(unit: NeutralAtomicUnit): NeutralEncodedValue | undefined {
+    if (unit.moduleResult === undefined) return undefined;
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(unit.moduleResult.data) as Record<string, unknown>;
+    } catch {
+      return unit.moduleResult;
+    }
+    if (typeof body["operation"] !== "string" || typeof body["cursor"] !== "string") return unit.moduleResult;
+    const now = this.clock.now();
+    if (!isInstant(now)) throw new NeutralStorageError("store-unavailable", "clock did not supply a canonical instant");
+    const { receipt_digest: _stale, storage_epoch: _epoch, committed_at: _at, ...rest } = body;
+    void _stale; void _epoch; void _at;
+    const stamped = { ...rest, storage_epoch: this.fence.epoch, committed_at: now };
+    return neutralJcs({ ...stamped, receipt_digest: receiptDigest("canonical-transaction", stamped) });
+  }
+
+  /**
    * Uncertain-outcome reconciliation (binding §8.2 rule 3): look the commit
    * identity up and retrieve the stored original before any new effect.
    * A found proof means the effect is durable; anything else stays a refusal
@@ -465,6 +622,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
     const readCommitResult = this.handle.readCommitResult;
     if (this.commitRecovery !== true || readCommitResult === undefined) return false;
     try {
+      await this.handle.checkFence(this.grant, this.fence);
       const stored = await readCommitResult.call(this.handle, idempotencyKey, this.grant);
       return stored !== null && decodeReceipt(stored) !== undefined;
     } catch {
@@ -485,6 +643,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
     }
     let stored: NeutralEncodedValue | null;
     try {
+      await this.handle.checkFence(this.grant, this.fence);
       stored = await readCommitResult.call(this.handle, eventId, this.grant);
     } catch (error) {
       const mapped = mapStorageError(operation, error);
@@ -502,33 +661,35 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
   async commitPending(
     input: Parameters<CanonicalMemoryStorePort["commitPending"]>[0],
   ): Promise<Result<CanonicalTransactionReceiptV1>> {
-    const proof = await this.proof("capture");
-    if (!proof.ok) return proof;
-    // GAP-G2-1: the three DTOs carry no scope_ref, so the store layer performs
-    // no scope resolution and no cross-scope refusal inside commitPending itself.
-    const before = this.snapshot();
-    if (!before.ok) return before;
-    const scratch = this.fork(before.value);
-    const computed = await scratch.commitPending(input);
-    if (!computed.ok) return computed;
-    const after = scratch.exportStateForPersistence();
-    if (!after.ok) return after;
-    if (after.value.journal.length === before.value.journal.length) {
-      const original = after.value.journal.find(
-        (event) => event.operation === "capture" && event.candidate_id === input.control.candidate_id,
-      );
-      if (original === undefined) return refuse("capture", "JOURNAL_CORRUPT", "replayed capture binds no journal event");
-      return this.originalReceipt("capture", original.event_id);
-    }
-    const event = after.value.journal[after.value.journal.length - 1]!;
-    const persisted = await this.persistDiff("capture", before.value, after.value, {
-      receipt: computed.value,
-      idempotencyKey: event.event_id,
-      limits: this.singleEventLimits,
+    return this.exclusive(async () => {
+      const proof = await this.proof("capture");
+      if (!proof.ok) return proof;
+      // GAP-G2-1: the three DTOs carry no scope_ref, so the store layer performs
+      // no scope resolution and no cross-scope refusal inside commitPending itself.
+      const before = this.snapshot();
+      if (!before.ok) return before;
+      const scratch = this.fork(before.value);
+      const computed = await scratch.commitPending(input);
+      if (!computed.ok) return computed;
+      const after = scratch.exportStateForPersistence();
+      if (!after.ok) return after;
+      if (after.value.journal.length === before.value.journal.length) {
+        const original = after.value.journal.find(
+          (event) => event.operation === "capture" && event.candidate_id === input.control.candidate_id,
+        );
+        if (original === undefined) return refuse("capture", "JOURNAL_CORRUPT", "replayed capture binds no journal event");
+        return this.originalReceipt("capture", original.event_id);
+      }
+      const event = after.value.journal[after.value.journal.length - 1]!;
+      const persisted = await this.persistDiff("capture", before.value, after.value, {
+        receipt: computed.value,
+        idempotencyKey: event.event_id,
+        limits: this.singleEventLimits,
+      });
+      if (!persisted.ok) return persisted;
+      this.core = scratch;
+      return computed;
     });
-    if (!persisted.ok) return persisted;
-    this.core = scratch;
-    return computed;
   }
 
   async readPending(
@@ -558,27 +719,29 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
   async recordCaptureIdempotency(
     input: { candidate_id: string; record_digest: Digest },
   ): Promise<Result<CaptureIdempotencyRecordV1>> {
-    const proof = await this.proof("capture");
-    if (!proof.ok) return proof;
-    const before = this.snapshot();
-    if (!before.ok) return before;
-    const scratch = this.fork(before.value);
-    const computed = await scratch.recordCaptureIdempotency(input);
-    if (!computed.ok) return computed;
-    const after = scratch.exportStateForPersistence();
-    if (!after.ok) return after;
-    const changed = diffK7(before.value.capture_idempotency ?? [], after.value.capture_idempotency ?? []);
-    if (changed === undefined) return computed;
-    // Registry completion unit: admissible positive ceiling, zero appends enforced by the adapter.
-    const persisted = await this.persistDiff("capture", before.value, after.value, {
-      receipt: undefined,
-      idempotencyKey: `capture-completion:${input.candidate_id}`,
-      limits: COMPLETION_LIMITS,
-      completion: true,
+    return this.exclusive(async () => {
+      const proof = await this.proof("capture");
+      if (!proof.ok) return proof;
+      const before = this.snapshot();
+      if (!before.ok) return before;
+      const scratch = this.fork(before.value);
+      const computed = await scratch.recordCaptureIdempotency(input);
+      if (!computed.ok) return computed;
+      const after = scratch.exportStateForPersistence();
+      if (!after.ok) return after;
+      const changed = diffK7(before.value.capture_idempotency ?? [], after.value.capture_idempotency ?? []);
+      if (changed === undefined) return computed;
+      // Registry completion unit: admissible positive ceiling, zero appends enforced by the adapter.
+      const persisted = await this.persistDiff("capture", before.value, after.value, {
+        receipt: undefined,
+        idempotencyKey: `capture-completion:${input.candidate_id}`,
+        limits: COMPLETION_LIMITS,
+        completion: true,
+      });
+      if (!persisted.ok) return persisted;
+      this.core = scratch;
+      return computed;
     });
-    if (!persisted.ok) return persisted;
-    this.core = scratch;
-    return computed;
   }
 
   async readAdmissionOutcome(
@@ -592,72 +755,76 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
   async applyAdmission(
     input: AdmissionStoreInputV1,
   ): Promise<Result<CanonicalTransactionReceiptV1>> {
-    const scopeRef = input.outcome === "accept" ? input.record.scope_ref : input.scope_ref;
-    const bound = this.resolve(scopeRef, "request_admission");
-    if (!bound.ok) return bound;
-    const proof = await this.proof("request_admission");
-    if (!proof.ok) return proof;
-    const before = this.snapshot();
-    if (!before.ok) return before;
-    const scratch = this.fork(before.value);
-    const computed = await scratch.applyAdmission(input);
-    if (!computed.ok) return computed;
-    const after = scratch.exportStateForPersistence();
-    if (!after.ok) return after;
-    if (after.value.journal.length === before.value.journal.length) {
-      const original = after.value.journal.find(
-        (event) => (event.operation === "accept" || event.operation === "reject") && event.candidate_id === input.candidate_id,
-      );
-      if (original === undefined) return refuse("request_admission", "JOURNAL_CORRUPT", "replayed admission binds no journal event");
-      return this.originalReceipt("request_admission", original.event_id);
-    }
-    const event = after.value.journal[after.value.journal.length - 1]!;
-    const persisted = await this.persistDiff("request_admission", before.value, after.value, {
-      receipt: computed.value,
-      idempotencyKey: event.event_id,
-      limits: this.singleEventLimits,
+    return this.exclusive(async () => {
+      const scopeRef = input.outcome === "accept" ? input.record.scope_ref : input.scope_ref;
+      const bound = this.resolve(scopeRef, "request_admission");
+      if (!bound.ok) return bound;
+      const proof = await this.proof("request_admission");
+      if (!proof.ok) return proof;
+      const before = this.snapshot();
+      if (!before.ok) return before;
+      const scratch = this.fork(before.value);
+      const computed = await scratch.applyAdmission(input);
+      if (!computed.ok) return computed;
+      const after = scratch.exportStateForPersistence();
+      if (!after.ok) return after;
+      if (after.value.journal.length === before.value.journal.length) {
+        const original = after.value.journal.find(
+          (event) => (event.operation === "accept" || event.operation === "reject") && event.candidate_id === input.candidate_id,
+        );
+        if (original === undefined) return refuse("request_admission", "JOURNAL_CORRUPT", "replayed admission binds no journal event");
+        return this.originalReceipt("request_admission", original.event_id);
+      }
+      const event = after.value.journal[after.value.journal.length - 1]!;
+      const persisted = await this.persistDiff("request_admission", before.value, after.value, {
+        receipt: computed.value,
+        idempotencyKey: event.event_id,
+        limits: this.singleEventLimits,
+      });
+      if (!persisted.ok) return persisted;
+      this.core = scratch;
+      return computed;
     });
-    if (!persisted.ok) return persisted;
-    this.core = scratch;
-    return computed;
   }
 
   async applyLifecycle(
     input: Parameters<CanonicalMemoryStorePort["applyLifecycle"]>[0],
   ): Promise<Result<CanonicalTransactionReceiptV1>> {
-    const proof = await this.proof(input.command.operation);
-    if (!proof.ok) return proof;
-    const before = this.snapshot();
-    if (!before.ok) return before;
-    const commandTargets = input.command as LifecycleCommandV1 & { record_id?: string };
-    if (commandTargets.record_id !== undefined) {
-      const blob = before.value.records.find((record) => record.record_id === commandTargets.record_id);
-      if (blob !== undefined) {
-        const bound = this.resolve(blob.scope_ref, input.command.operation);
-        if (!bound.ok) return bound;
+    return this.exclusive(async () => {
+      const proof = await this.proof(input.command.operation);
+      if (!proof.ok) return proof;
+      const before = this.snapshot();
+      if (!before.ok) return before;
+      const commandTargets = input.command as LifecycleCommandV1 & { record_id?: string };
+      if (commandTargets.record_id !== undefined) {
+        const blob = before.value.records.find((record) => record.record_id === commandTargets.record_id);
+        if (blob !== undefined) {
+          const bound = this.resolve(blob.scope_ref, input.command.operation);
+          if (!bound.ok) return bound;
+        }
       }
-    }
-    // Candidate operations carry no scope_ref in their DTOs: same open gap as
-    // commitPending (GAP-G2-1); the engine authorization check stays the control.
-    const scratch = this.fork(before.value);
-    const computed = await scratch.applyLifecycle(input);
-    if (!computed.ok) return computed;
-    const after = scratch.exportStateForPersistence();
-    if (!after.ok) return after;
-    if (after.value.journal.length === before.value.journal.length) {
-      const original = after.value.journal.find((event) => event.event_id === input.event.event_id);
-      if (original === undefined) return refuse(input.command.operation, "JOURNAL_CORRUPT", "replayed lifecycle binds no journal event");
-      return this.originalReceipt(input.command.operation, original.event_id);
-    }
-    const event = after.value.journal[after.value.journal.length - 1]!;
-    const persisted = await this.persistDiff(input.command.operation, before.value, after.value, {
-      receipt: computed.value,
-      idempotencyKey: event.event_id,
-      limits: this.singleEventLimits,
+      // Candidate operations carry no scope_ref in their DTOs: same open gap as
+      // commitPending (GAP-G2-1); the engine authorization check stays the control.
+      const scratch = this.fork(before.value);
+      const computed = await scratch.applyLifecycle(input);
+      if (!computed.ok) return computed;
+      const after = scratch.exportStateForPersistence();
+      if (!after.ok) return after;
+      if (after.value.journal.length === before.value.journal.length) {
+        const original = after.value.journal.find((event) => event.event_id === input.event.event_id);
+        if (original === undefined) return refuse(input.command.operation, "JOURNAL_CORRUPT", "replayed lifecycle binds no journal event");
+        return this.originalReceipt(input.command.operation, original.event_id);
+      }
+      const event = after.value.journal[after.value.journal.length - 1]!;
+      const persisted = await this.persistDiff(input.command.operation, before.value, after.value, {
+        receipt: computed.value,
+        idempotencyKey: event.event_id,
+        limits: this.singleEventLimits,
+      });
+      if (!persisted.ok) return persisted;
+      this.core = scratch;
+      return computed;
     });
-    if (!persisted.ok) return persisted;
-    this.core = scratch;
-    return computed;
   }
 
   async readRecord(
@@ -703,36 +870,38 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
   async importLogicalBackup(
     input: LogicalBackupImportInputV1,
   ): Promise<Result<LogicalBackupImportReceiptV1>> {
-    for (const record of input.records) {
-      const bound = this.resolve(record.scope_ref, "restore");
-      if (!bound.ok) return bound;
-    }
-    const proof = await this.proof("restore");
-    if (!proof.ok) return proof;
-    const before = this.snapshot();
-    if (!before.ok) return before;
-    const scratch = this.fork(before.value);
-    const importBackup = scratch.importLogicalBackup;
-    if (importBackup === undefined) return refuse("restore", "CAPABILITY_UNAVAILABLE", "logical backup import is unavailable");
-    const computed = await importBackup.call(scratch, input);
-    if (!computed.ok) return computed;
-    const after = scratch.exportStateForPersistence();
-    if (!after.ok) return after;
-    const newEvents = after.value.journal.length - before.value.journal.length;
-    const newBlobs = after.value.records.length - before.value.records.length;
-    const persisted = await this.persistDiff("restore", before.value, after.value, {
-      receipt: computed.value as unknown as CanonicalTransactionReceiptV1,
-      importReceipt: computed.value,
-      idempotencyKey: `logical-backup:${computed.value.restored_cursor}:${computed.value.canonical_state_digest}`,
-      limits: {
-        maxAppends: Math.max(1, newEvents),
-        maxRecords: Math.max(1, newBlobs),
-        maxEncodedBytes: Math.max(1048576, this.singleEventLimits.maxEncodedBytes),
-      },
+    return this.exclusive(async () => {
+      for (const record of input.records) {
+        const bound = this.resolve(record.scope_ref, "restore");
+        if (!bound.ok) return bound;
+      }
+      const proof = await this.proof("restore");
+      if (!proof.ok) return proof;
+      const before = this.snapshot();
+      if (!before.ok) return before;
+      const scratch = this.fork(before.value);
+      const importBackup = scratch.importLogicalBackup;
+      if (importBackup === undefined) return refuse("restore", "CAPABILITY_UNAVAILABLE", "logical backup import is unavailable");
+      const computed = await importBackup.call(scratch, input);
+      if (!computed.ok) return computed;
+      const after = scratch.exportStateForPersistence();
+      if (!after.ok) return after;
+      const newEvents = after.value.journal.length - before.value.journal.length;
+      const newBlobs = after.value.records.length - before.value.records.length;
+      const persisted = await this.persistDiff("restore", before.value, after.value, {
+        receipt: computed.value as unknown as CanonicalTransactionReceiptV1,
+        importReceipt: computed.value,
+        idempotencyKey: `logical-backup:${computed.value.restored_cursor}:${computed.value.canonical_state_digest}`,
+        limits: {
+          maxAppends: Math.max(1, newEvents),
+          maxRecords: Math.max(1, newBlobs),
+          maxEncodedBytes: Math.max(1048576, this.singleEventLimits.maxEncodedBytes),
+        },
+      });
+      if (!persisted.ok) return persisted;
+      this.core = scratch;
+      return computed;
     });
-    if (!persisted.ok) return persisted;
-    this.core = scratch;
-    return computed;
   }
 
   async checkpoint(
@@ -746,7 +915,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
     // over the stamped body, preserving the existing durable-adapter behaviour.
     const { manifest_digest: _stale, ...body } = manifest.value;
     void _stale;
-    const stamped = { ...body, storage_epoch: this.epoch };
+    const stamped = { ...body, storage_epoch: this.fence.epoch };
     return { ok: true, value: { ...stamped, manifest_digest: receiptDigest("recovery-checkpoint", stamped) } };
   }
 
@@ -761,9 +930,11 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
   async acknowledgeProjection(
     input: ProjectionInvalidationReceiptV1,
   ): Promise<Result<CanonicalTransactionReceiptV1>> {
-    const proof = await this.proof("projection_invalidate");
-    if (!proof.ok) return proof;
-    return this.core.acknowledgeProjection(input);
+    return this.exclusive(async () => {
+      const proof = await this.proof("projection_invalidate");
+      if (!proof.ok) return proof;
+      return this.core.acknowledgeProjection(input);
+    });
   }
 
   async readiness(): Promise<Result<OperationalCapabilityReceiptV1>> {
@@ -782,7 +953,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
       ...rest,
       store_id: this.binding.store_id,
       backend: this.capabilities.backend,
-      storage_epoch: this.epoch,
+      storage_epoch: this.fence.epoch,
       capabilities: this.capabilities,
       issued_at: now,
       expires_at: new Date(Date.parse(now) + 300_000).toISOString(),
@@ -795,13 +966,20 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
     // Readers first, then the fence last (§6.4); close stays available after fence loss.
     const result = await this.core.close();
     try {
-      await this.handle.releaseFence();
+      await this.handle.releaseFence(this.fence);
     } catch {
-      // Release is best-effort: the instance is closed regardless.
+      // Release is best-effort and acquisition-bound: a stale identity never
+      // clears a successor holder; the instance is closed regardless.
     }
     this.closed = true;
     return result;
   }
+}
+
+/** Intent hash of a unit, mirroring the backend commit-identity binding (binding §5.3 rule 5). */
+function expectedIntentHash(unit: NeutralAtomicUnit): string {
+  const appendIds = unit.appends.map((append) => append.id);
+  return canonicalizeJcs({ appends: appendIds, updates: [...appendIds, ...unit.updates.map((update) => update.key)] });
 }
 
 /** Decodes stored original receipt bytes, verifying the digest (binding §8.3 rule 4). */
@@ -1314,21 +1492,21 @@ export async function openModuleStorageCanonicalMemoryStoreV1(
   const binding = options.scope_binding;
   const grant = options.grant;
 
-  let epoch: string;
+  let fence: NeutralWriterFence;
   try {
     const proof = await handle.acquireFence({ scope: checked.value.scope, store_id: checked.value.storeId, grant });
-    epoch = proof.epoch;
+    fence = { fenceId: proof.fenceId, epoch: proof.epoch };
   } catch (error) {
     const mapped = mapStorageError(operation, error);
     return refuse(operation, mapped.code, mapped.message);
   }
-  if (!isCanonicalU64(epoch)) {
+  if (typeof fence.fenceId !== "string" || fence.fenceId.length === 0 || !isCanonicalU64(fence.epoch)) {
     try {
-      await handle.releaseFence();
+      await handle.releaseFence(fence);
     } catch {
       // Best-effort release on a malformed acquisition.
     }
-    return refuse(operation, "CAPABILITY_UNAVAILABLE", "fence epoch is not a canonical u64");
+    return refuse(operation, "CAPABILITY_UNAVAILABLE", "fence identity is not a canonical acquisition");
   }
 
   let hydrated: HydratedState;
@@ -1336,7 +1514,7 @@ export async function openModuleStorageCanonicalMemoryStoreV1(
     const loaded = await hydrate(handle, grant, operation);
     if (!loaded.ok) {
       try {
-        await handle.releaseFence();
+        await handle.releaseFence(fence);
       } catch {
         // Best-effort release on refused recovery.
       }
@@ -1345,7 +1523,7 @@ export async function openModuleStorageCanonicalMemoryStoreV1(
     hydrated = loaded.value;
   } catch (error) {
     try {
-      await handle.releaseFence();
+      await handle.releaseFence(fence);
     } catch {
       // Best-effort release on recovery failure.
     }
@@ -1356,13 +1534,13 @@ export async function openModuleStorageCanonicalMemoryStoreV1(
   const core = createInMemoryCanonicalMemoryStoreV1({
     clock: options.clock,
     store_id: checked.value.storeId,
-    storage_epoch: epoch,
+    storage_epoch: fence.epoch,
     persistence: hydrated,
   });
   const ready = await core.readiness();
   if (!ready.ok) {
     try {
-      await handle.releaseFence();
+      await handle.releaseFence(fence);
     } catch {
       // Best-effort release on refused recovery.
     }
@@ -1382,7 +1560,7 @@ export async function openModuleStorageCanonicalMemoryStoreV1(
     checked.value.scope,
     grant,
     options.clock,
-    epoch,
+    fence,
     core,
     hydrated.k7Versions,
     singleEventLimits,
