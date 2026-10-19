@@ -46,6 +46,32 @@ export const MEMORY_REQUIRED_PROFILES = Object.freeze([
 /** Optional profiles: `leased-snapshots-v1` only under a detached-reader composition. */
 export const MEMORY_OPTIONAL_PROFILES = Object.freeze(["leased-snapshots-v1"]);
 
+const PROFILE_DIGEST_DOMAIN = "graphify-memory/l3a-profile/v1\0";
+
+/** Pinned semantic digest of a profile claim (binding §6.3 step 1, to co-sign C2/C6). */
+function profileDigest(name: string, version: string): string {
+  const hash = createHash("sha256");
+  hash.update(PROFILE_DIGEST_DOMAIN, "utf8");
+  hash.update(name, "utf8");
+  hash.update("\0", "utf8");
+  hash.update(version, "utf8");
+  return `sha256:${hash.digest("hex")}`;
+}
+
+/**
+ * Pinned profile negotiation table (binding §2.2 rule 5, §6.3 step 1):
+ * every required profile is pinned to its version and semantic digest.
+ * A backend advertising a missing, wrong-versioned, or digest-mismatched
+ * required profile refuses at construction, never degrades silently.
+ */
+export const MEMORY_PINNED_PROFILES: ReadonlyArray<NeutralProfileClaim> = (() => {
+  const rows: NeutralProfileClaim[] = [];
+  for (const name of [...MEMORY_REQUIRED_PROFILES, ...MEMORY_OPTIONAL_PROFILES]) {
+    rows.push(Object.freeze({ name, version: "1", digest: profileDigest(name, "1") }));
+  }
+  return Object.freeze(rows);
+})();
+
 /** Registered named queries (binding §4.1). */
 export const MEMORY_QUERY_NAMES = Object.freeze([
   "memory-journal-page",
