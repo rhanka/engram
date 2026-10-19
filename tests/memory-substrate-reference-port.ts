@@ -94,7 +94,7 @@ interface DurableCore {
   bindings: Map<string, string>;
   reverseBindings: Map<string, string>;
   grants: Map<string, { grant: NeutralScopeGrant; revoked: boolean }>;
-  holder: { handleId: string; storeId: string; epoch: string } | undefined;
+  holder: { handleId: string; storeId: string; fenceId: string; epoch: string } | undefined;
   epochCounter: bigint;
   grantCounter: number;
   units: CommittedUnitSummary[];
@@ -150,10 +150,12 @@ export interface ReferenceBackend {
   codecRoundTrip(value: string): string;
   testOnlyAllocateNext(allocation: string): string;
   testOnlyRevokeFence(): void;
+  currentFence(): { fenceId: string; epoch: string } | undefined;
   transactRaw(
     limits: { maxAppends: number; maxRecords: number; maxEncodedBytes: number },
     idempotencyKey: string,
     apply: (transaction: NeutralModuleTransaction) => Promise<void>,
+    fence?: { fenceId: string; epoch: string },
   ): Promise<{ ok: true } | { ok: false; code: string }>;
 }
 
@@ -212,10 +214,27 @@ export function createReferenceModuleStorageBackend(options: ReferenceBackendOpt
     }
   }
 
-  function checkHolder(): void {
+  function checkHolder(fence?: { fenceId: string; epoch: string }): void {
     if (core.holder === undefined || core.holder.handleId !== handleId) {
       throw new NeutralStorageError("fence-lost", "no live canonical fence for this handle");
     }
+    if (fence !== undefined && (core.holder.fenceId !== fence.fenceId || core.holder.epoch !== fence.epoch)) {
+      throw new NeutralStorageError("fence-lost", "stale writer acquisition epoch");
+    }
+  }
+
+  function checkFenceIdentity(fence: { fenceId: string; epoch: string } | undefined): void {
+    if (fence === undefined) {
+      throw new NeutralStorageError("invalid-schema", "transaction carries no acquisition fence identity");
+    }
+    checkHolder(fence);
+  }
+
+  function currentLiveFence(): { fenceId: string; epoch: string } {
+    if (core.holder === undefined) {
+      throw new NeutralStorageError("fence-lost", "no live canonical fence for this handle");
+    }
+    return { fenceId: core.holder.fenceId, epoch: core.holder.epoch };
   }
 
   function fire(stage: ReferenceFailStage): never {
@@ -244,6 +263,21 @@ export function createReferenceModuleStorageBackend(options: ReferenceBackendOpt
           throw new NeutralStorageError("digest-conflict", "commit identity is bound to a different unit");
         }
         return { commitId: optionsValue.idempotencyKey, journalCursor: core.allocation };
+      }
+    }
+    // Guard enforcement inside the transaction (binding §5.1 rule 5): head,
+    // absence, and aggregate-version guards are evaluated against the
+    // committed state before any write of this unit.
+    for (const guard of unit.guards) {
+      if (guard.kind === "chain-head") {
+        if (guard.hash !== core.head) throw new NeutralStorageError("cas-conflict", "stale chain-head guard");
+      } else if (guard.kind === "chain-absent") {
+        if (core.order.length !== 0) throw new NeutralStorageError("cas-conflict", "chain-absent guard on a non-empty chain");
+      } else if (guard.kind === "aggregate-version") {
+        const current = core.aggregates.get(`${guard.aggregateKind}\0${guard.aggregateKey}`);
+        if (current !== undefined && BigInt(guard.version ?? "0") <= BigInt(current.version)) {
+          throw new NeutralStorageError("cas-conflict", "stale aggregate guard version");
+        }
       }
     }
     // Fail-closed atomicity: every injected failure below refuses before any
@@ -332,7 +366,7 @@ export function createReferenceModuleStorageBackend(options: ReferenceBackendOpt
     operation: (transaction: NeutralModuleTransaction) => Promise<T>,
   ): Promise<{ readonly value: T; readonly receipt: NeutralCommitReceipt }> {
     checkGrant(commitOptions.grant, "write");
-    checkHolder();
+    checkFenceIdentity(commitOptions.fence);
     const staged: NeutralAtomicUnit[] = [];
     const transaction: NeutralModuleTransaction = {
       async readAggregate(kind: string, key: string): Promise<NeutralAggregateRead | null> {
@@ -377,7 +411,7 @@ export function createReferenceModuleStorageBackend(options: ReferenceBackendOpt
     }
     maybeFire("commit-decision");
     checkGrant(commitOptions.grant, "write");
-    checkHolder();
+    checkFenceIdentity(commitOptions.fence);
     let receipt: NeutralCommitReceipt = { commitId: commitOptions.idempotencyKey ?? "commit:empty", journalCursor: core.allocation };
     for (const unit of staged) receipt = applyUnit(commitOptions, unit);
     if (failpoint === "after-commit-before-response") {
@@ -503,7 +537,7 @@ export function createReferenceModuleStorageBackend(options: ReferenceBackendOpt
       const found = core.commitResults.get(commitIdentity);
       return found === undefined ? null : found.moduleResult;
     },
-    async acquireFence(input: { scope: NeutralStorageScope; store_id: string; grant: NeutralScopeGrant }): Promise<{ epoch: string }> {
+    async acquireFence(input: { scope: NeutralStorageScope; store_id: string; grant: NeutralScopeGrant }): Promise<{ fenceId: string; epoch: string }> {
       checkGrant(input.grant, "write");
       const presented = scopeKey({ tenantId: input.scope.tenantId, workspaceId: input.scope.workspaceId });
       if (presented !== scopeKey(options.scope)) {
@@ -532,15 +566,25 @@ export function createReferenceModuleStorageBackend(options: ReferenceBackendOpt
       }
       core.epochCounter += 1n;
       const epoch = core.epochCounter.toString();
-      core.holder = { handleId, storeId: input.store_id, epoch };
-      return { epoch };
+      const fenceId = `fence-${epoch}`;
+      core.holder = { handleId, storeId: input.store_id, fenceId, epoch };
+      return { fenceId, epoch };
     },
-    async checkFence(grant: NeutralScopeGrant): Promise<void> {
+    async checkFence(grant: NeutralScopeGrant, fence?: { fenceId: string; epoch: string }): Promise<void> {
       checkGrant(grant, "read");
-      checkHolder();
+      if (fence === undefined) {
+        checkHolder();
+        return;
+      }
+      checkHolder(fence);
     },
-    async releaseFence(): Promise<void> {
-      if (core.holder !== undefined && core.holder.handleId === handleId) core.holder = undefined;
+    async releaseFence(fence?: { fenceId: string; epoch: string }): Promise<void> {
+      if (core.holder === undefined || core.holder.handleId !== handleId) return;
+      if (fence !== undefined && (core.holder.fenceId !== fence.fenceId || core.holder.epoch !== fence.epoch)) {
+        throw new NeutralStorageError("fence-lost", "stale acquisition cannot release a successor holder");
+      }
+      if (fence === undefined) return;
+      core.holder = undefined;
     },
   };
 
@@ -613,13 +657,17 @@ export function createReferenceModuleStorageBackend(options: ReferenceBackendOpt
     testOnlyRevokeFence(): void {
       core.holder = undefined;
     },
+    currentFence(): { fenceId: string; epoch: string } | undefined {
+      return core.holder === undefined ? undefined : { fenceId: core.holder.fenceId, epoch: core.holder.epoch };
+    },
     async transactRaw(
       limits: { maxAppends: number; maxRecords: number; maxEncodedBytes: number },
       idempotencyKey: string,
       apply: (transaction: NeutralModuleTransaction) => Promise<void>,
+      fence?: { fenceId: string; epoch: string },
     ): Promise<{ ok: true } | { ok: false; code: string }> {
       try {
-        await transactInner({ limits, idempotencyKey, grant: primaryGrant }, apply);
+        await transactInner({ limits, idempotencyKey, grant: primaryGrant, fence: fence ?? currentLiveFence() }, apply);
         return { ok: true };
       } catch (error) {
         if (error instanceof NeutralStorageError) return { ok: false, code: error.code };
