@@ -8,7 +8,7 @@ import {
   weightedEcdf,
   type QuantileError,
 } from "../../src/time-reference/index.js";
-import { solRule } from "./sol-r1-helpers.js";
+import { drivenCases, solRule } from "./sol-r1-helpers.js";
 
 function codeOf(fn: () => unknown): string {
   try {
@@ -22,7 +22,7 @@ function codeOf(fn: () => unknown): string {
 describe("Sol R1 F18/F19 weights and probabilities", () => {
   it("F18: every fixture case rejects through the public weight parsers", () => {
     const rule = solRule("F18") as { cases: { mutation: string }[] };
-    for (const c of rule.cases) {
+    for (const c of drivenCases("F18", rule.cases)) {
       if (c.mutation !== "numeric-weight") throw new Error(`unknown F18 mutation ${c.mutation}`);
       expect(codeOf(() => parseDecimalWeight(1 as unknown as string)), c.mutation).toBe(
         "invalid-weight",
@@ -46,7 +46,7 @@ describe("Sol R1 F18/F19 weights and probabilities", () => {
 
   it("F19: the full probability domain parses exactly, including exponent forms", () => {
     const rule = solRule("F19") as { cases: { p: string; nearestRankOf: number[]; expected: number }[] };
-    for (const c of rule.cases) {
+    for (const c of drivenCases("F19", rule.cases)) {
       const p = Number(c.p);
       expect(p > 0 && p <= 1, c.p).toBe(true);
       expect(nearestRank(c.nearestRankOf, p), c.p).toBe(c.expected);
