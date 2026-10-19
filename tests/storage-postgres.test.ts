@@ -654,7 +654,7 @@ describe("Postgres adapter: registry and driver loading", () => {
       resolveGraphStore("postgres-missing-driver-test", {
         connectionString: "postgres://x",
       }),
-    ).rejects.toThrow(/requires pg-does-not-exist-xyzzy.*npm install/i);
+    ).rejects.toThrow(/host must inject pg-does-not-exist-xyzzy via deps.driverModule/i);
   });
 });
 
