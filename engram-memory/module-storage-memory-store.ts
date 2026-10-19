@@ -244,6 +244,13 @@ function clone<T>(value: T): T {
   return JSON.parse(canonicalizeJcs(value)) as T;
 }
 
+/** Deep-clones a hydrated state for core construction, keeping the version map live. */
+function cloneState(state: HydratedState): InMemoryStoreStateV1 {
+  const { k7Versions: _versions, ...rest } = state;
+  void _versions;
+  return clone(rest);
+}
+
 interface HydratedState extends InMemoryStoreStateV1 {
   k7Versions: Map<string, string>;
 }
@@ -505,15 +512,54 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
     before: InMemoryStoreStateV1,
     after: InMemoryStoreStateV1,
     plan: UnitPlan,
-  ): Promise<Result<{ adopted: true }>> {
+  ): Promise<Result<{ adopted: true; receipt?: CanonicalTransactionReceiptV1 }>> {
     const units = buildUnits(before, after, plan, this.k7Versions);
     if (!units.ok) return units;
+    let committedPrefix = 0;
+    let persistedReceipt: CanonicalTransactionReceiptV1 | undefined;
     for (const unit of units.value) {
       const committed = await this.commitUnit(operation, unit.unit, unit.idempotencyKey, unit.limits);
-      if (!committed.ok) return committed;
+      if (!committed.ok) {
+        // Partial multi-unit failure (binding §§4.3, 8.1): earlier units of
+        // this observation stay committed, so the live core rehydrates to the
+        // committed prefix instead of diverging from the store.
+        if (committedPrefix > 0) await this.rehydrateToCommitted(operation);
+        return committed;
+      }
+      committedPrefix += 1;
       for (const [candidate, version] of unit.k7Writes) this.k7Versions.set(candidate, version);
+      // The receipt is computed once inside the transaction (binding §8.3
+      // rule 2): the exact persisted bytes are returned to callers, never a
+      // second sampling under a moving clock.
+      if (plan.receipt !== undefined && plan.importReceipt === undefined && committed.value.moduleResult !== undefined) {
+        const decoded = decodeReceipt(committed.value.moduleResult);
+        if (decoded === undefined) {
+          if (committedPrefix > 0) await this.rehydrateToCommitted(operation);
+          return refuse(operation, "JOURNAL_CORRUPT", "persisted receipt bytes do not verify");
+        }
+        persistedReceipt = decoded;
+      }
     }
-    return { ok: true, value: { adopted: true } };
+    return { ok: true, value: { adopted: true, ...(persistedReceipt === undefined ? {} : { receipt: persistedReceipt }) } };
+  }
+
+  /**
+   * Rehydrates the live core from the committed store after a partial
+   * multi-unit failure, so the live core equals the store (binding §§4.3,
+   * 8.1, 8.5). Best-effort: the original persistence refusal is returned
+   * regardless; a failed rehydrate only means the next operation re-runs
+   * recovery from the same committed prefix.
+   */
+  private async rehydrateToCommitted(operation: MemoryOperation): Promise<void> {
+    try {
+      const loaded = await hydrate(this.handle, this.grant, operation);
+      if (!loaded.ok) return;
+      this.core = this.fork(cloneState(loaded.value));
+      this.k7Versions.clear();
+      for (const [candidate, version] of loaded.value.k7Versions) this.k7Versions.set(candidate, version);
+    } catch {
+      // Best-effort: the persistence refusal below stays authoritative.
+    }
   }
 
   private async commitUnit(
@@ -521,12 +567,13 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
     unit: NeutralAtomicUnit,
     idempotencyKey: string,
     limits: NeutralWorkLimits,
-  ): Promise<Result<{ committed: true }>> {
+  ): Promise<Result<{ committed: true; moduleResult?: NeutralEncodedValue }>> {
     if (this.closed) return refuse(operation, "STORE_UNAVAILABLE", "canonical store is closed");
     if (this.latched) return refuse(operation, "FENCE_LOST", "canonical fence was lost");
     // Revalidation after staging waits, before the first mutating statement (binding §9.4 rule 2).
     const beforeCommit = await this.proof(operation);
     if (!beforeCommit.ok) return beforeCommit;
+    let committedModuleResult: NeutralEncodedValue | undefined;
     try {
       await this.handle.transact({ limits, idempotencyKey, grant: this.grant, fence: this.fence }, async (transaction) => {
         // In-transaction fence proof: loss during the unit rolls the whole unit back (binding §9.4 rule 3).
@@ -550,15 +597,17 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
         // live epoch and a fresh clock sample are bound into the moduleResult.
         const resampled: NeutralAtomicUnit = { ...unit, moduleResult: this.resampleModuleResult(unit) };
         await transaction.apply(resampled);
+        committedModuleResult = resampled.moduleResult;
       });
       // Final validation sits with the backend's effective COMMIT/ROLLBACK decision (binding §9.4 rule 4):
       // the backend revalidates fence + grant at publish; a loss there surfaces as FENCE_LOST below.
-      return { ok: true, value: { committed: true } };
+      return { ok: true, value: { committed: true as const, ...(committedModuleResult === undefined ? {} : { moduleResult: committedModuleResult }) } };
     } catch (error) {
       const mapped = mapStorageError(operation, error);
       if (mapped.latch) this.latched = true;
       if (mapped.code === "STORE_UNAVAILABLE" && await this.reconcile(idempotencyKey)) {
-        return { ok: true, value: { committed: true } };
+        const recovered = await this.reconciledModuleResult(idempotencyKey);
+        return { ok: true, value: { committed: true as const, ...(recovered === undefined ? {} : { moduleResult: recovered }) } };
       }
       return refuse(operation, mapped.code, mapped.message);
     }
@@ -687,10 +736,32 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
   }
 
   /**
-   * Stored original receipt for a replayed event (binding §8.3 rule 4):
-   * decoded and returned exactly, never resampled. When the port cannot
-   * recover commit results (C4 open), the replay refuses instead of
-   * substituting a recomputed receipt.
+   * Stored original bytes for a reconciled uncertain commit (binding §8.2
+   * rule 3): the caller receives the exact persisted bytes, never a second
+   * sampling. Undefined when the port cannot recover commit results.
+   */
+  private async reconciledModuleResult(
+    idempotencyKey: string,
+  ): Promise<NeutralEncodedValue | undefined> {
+    const readCommitResult = this.handle.readCommitResult;
+    if (this.commitRecovery !== true || readCommitResult === undefined) return undefined;
+    try {
+      await this.handle.checkFence(this.grant, this.fence);
+      const stored = await readCommitResult.call(this.handle, idempotencyKey, this.grant);
+      if (stored === null || decodeReceipt(stored) === undefined) return undefined;
+      return stored;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Stored original receipt for a replayed event (binding §8.3 rules 4–5):
+   * decoded and returned exactly, never resampled. The receipt must match its
+   * committed event identity and cursor: the expected operation, the journal
+   * cursor, and the journal event hash. When the port cannot recover commit
+   * results (C4 open), the replay refuses instead of substituting a
+   * recomputed receipt.
    */
   private async originalReceipt(operation: MemoryOperation, eventId: string): Promise<Result<CanonicalTransactionReceiptV1>> {
     const readCommitResult = this.handle.readCommitResult;
@@ -711,6 +782,15 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
     }
     const decoded = decodeReceipt(stored);
     if (decoded === undefined) return refuse(operation, "JOURNAL_CORRUPT", "stored commit proof does not verify");
+    const state = this.snapshot();
+    if (!state.ok) return refuse(operation, state.error.code, state.error.message);
+    const event = state.value.journal.find((entry) => entry.event_id === eventId);
+    if (event === undefined
+      || decoded.operation !== operation
+      || decoded.cursor !== event.cursor
+      || decoded.event_digest !== event.event_hash) {
+      return refuse(operation, "JOURNAL_CORRUPT", "stored commit proof does not match its committed event identity");
+    }
     return { ok: true, value: decoded };
   }
 
@@ -744,6 +824,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
       });
       if (!persisted.ok) return persisted;
       this.core = scratch;
+      if (persisted.value.receipt !== undefined) return { ok: true, value: persisted.value.receipt };
       return computed;
     });
   }
@@ -839,6 +920,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
       });
       if (!persisted.ok) return persisted;
       this.core = scratch;
+      if (persisted.value.receipt !== undefined) return { ok: true, value: persisted.value.receipt };
       return computed;
     });
   }
@@ -879,6 +961,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
       });
       if (!persisted.ok) return persisted;
       this.core = scratch;
+      if (persisted.value.receipt !== undefined) return { ok: true, value: persisted.value.receipt };
       return computed;
     });
   }
@@ -1050,6 +1133,21 @@ const RECEIPT_FIELDS = new Set([
   "state_digest", "lexical_digest", "outbox_digest", "committed_at", "receipt_digest",
 ]);
 
+/**
+ * Closed operation enum for stored transaction receipts (binding §8.3.4):
+ * the runtime mirror of `MemoryOperation`
+ * (`engram-memory/contracts/index.ts`). A stored receipt naming any other
+ * operation is corruption, never a reason to recompute.
+ */
+const RECEIPT_OPERATIONS: ReadonlySet<string> = new Set([
+  "capture", "cancel_capture", "request_admission",
+  "reject", "withdraw", "dispute", "resolve_dispute", "expire", "supersede",
+  "mark_non_current", "rewind", "trust_invalidate", "tombstone",
+  "recall_current", "recall_history", "recall_disputed",
+  "propose_capitalisation", "propose_reconciliation", "inspect_candidate",
+  "projection_invalidate", "backup", "restore", "admin", "migrate",
+]);
+
 function decodeReceipt(stored: NeutralEncodedValue): CanonicalTransactionReceiptV1 | undefined {
   if (stored.format !== "utf8") return undefined;
   let body: Record<string, unknown>;
@@ -1064,7 +1162,7 @@ function decodeReceipt(stored: NeutralEncodedValue): CanonicalTransactionReceipt
   }
   const { receipt_digest: digest, ...rest } = body;
   if (!isDigest(digest)) return undefined;
-  if (typeof rest["operation"] !== "string" || (rest["operation"] as string).length === 0) return undefined;
+  if (typeof rest["operation"] !== "string" || !RECEIPT_OPERATIONS.has(rest["operation"] as string)) return undefined;
   if (!isCanonicalU64(rest["cursor"])) return undefined;
   if (!isCanonicalU64(rest["storage_epoch"])) return undefined;
   if (!isDigest(rest["event_digest"])) return undefined;
@@ -1075,6 +1173,19 @@ function decodeReceipt(stored: NeutralEncodedValue): CanonicalTransactionReceipt
   }
   if (receiptDigest("canonical-transaction", rest) !== digest) return undefined;
   return body as unknown as CanonicalTransactionReceiptV1;
+}
+
+/**
+ * Test-support access to the closed receipt-schema decoder (binding §8.3.4).
+ * The public replay paths combine decoding with the committed-identity match,
+ * so the operation-enum line is unit-tested through this accessor. It is an
+ * internal module export only and is never re-exported from the public
+ * substrate entry (amendment §1.2 closed value list).
+ */
+export function decodeCanonicalTransactionReceiptForTest(
+  stored: NeutralEncodedValue,
+): CanonicalTransactionReceiptV1 | undefined {
+  return decodeReceipt(stored);
 }
 
 /** Changed K7 entry (candidate identity, before/after), if exactly one changed. */
