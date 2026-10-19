@@ -982,7 +982,18 @@ function expectedIntentHash(unit: NeutralAtomicUnit): string {
   return canonicalizeJcs({ appends: appendIds, updates: [...appendIds, ...unit.updates.map((update) => update.key)] });
 }
 
-/** Decodes stored original receipt bytes, verifying the digest (binding §8.3 rule 4). */
+/**
+ * Decodes stored original receipt bytes against the complete closed receipt
+ * schema (binding §8.3.4): every required field is present in its canonical
+ * encoding, optional digests verify when present, no unknown field survives,
+ * and `receipt_digest` recomputes. Anything else is corruption, never a
+ * reason to recompute and return a fresh receipt.
+ */
+const RECEIPT_FIELDS = new Set([
+  "operation", "cursor", "storage_epoch", "record_digest", "event_digest",
+  "state_digest", "lexical_digest", "outbox_digest", "committed_at", "receipt_digest",
+]);
+
 function decodeReceipt(stored: NeutralEncodedValue): CanonicalTransactionReceiptV1 | undefined {
   if (stored.format !== "utf8") return undefined;
   let body: Record<string, unknown>;
@@ -992,9 +1003,20 @@ function decodeReceipt(stored: NeutralEncodedValue): CanonicalTransactionReceipt
     return undefined;
   }
   if (typeof body !== "object" || body === null) return undefined;
+  for (const key of Object.keys(body)) {
+    if (!RECEIPT_FIELDS.has(key)) return undefined;
+  }
   const { receipt_digest: digest, ...rest } = body;
   if (!isDigest(digest)) return undefined;
-  if (typeof rest["operation"] !== "string" || typeof rest["cursor"] !== "string") return undefined;
+  if (typeof rest["operation"] !== "string" || (rest["operation"] as string).length === 0) return undefined;
+  if (!isCanonicalU64(rest["cursor"])) return undefined;
+  if (!isCanonicalU64(rest["storage_epoch"])) return undefined;
+  if (!isDigest(rest["event_digest"])) return undefined;
+  if (!isDigest(rest["state_digest"])) return undefined;
+  if (!isInstant(rest["committed_at"])) return undefined;
+  for (const optional of ["record_digest", "lexical_digest", "outbox_digest"] as const) {
+    if (rest[optional] !== undefined && !isDigest(rest[optional])) return undefined;
+  }
   if (receiptDigest("canonical-transaction", rest) !== digest) return undefined;
   return body as unknown as CanonicalTransactionReceiptV1;
 }
