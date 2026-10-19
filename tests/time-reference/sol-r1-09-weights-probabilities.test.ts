@@ -1,12 +1,15 @@
 /** Sol R1 F18 (§5.2) + F19 (§5.1) — Weight strictness and the full probability domain. */
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
+  buildQuantileSet,
   effectiveSizeRatio,
   nearestRank,
   parseDecimalWeight,
   parseP,
   weightedEcdf,
   type QuantileError,
+  type WeightedEntry,
 } from "../../src/time-reference/index.js";
 import { drivenCases, solRule } from "./sol-r1-helpers.js";
 
@@ -20,6 +23,26 @@ function codeOf(fn: () => unknown): string {
 }
 
 describe("Sol R1 F18/F19 weights and probabilities", () => {
+  it("F18: only omitted weights default in every public quantile path", () => {
+    const cases = JSON.parse(readFileSync(new URL("./fixtures/weight-type-cases.json", import.meta.url), "utf8")) as { weight?: unknown; presentUndefined?: boolean }[];
+    expect(cases.length).toBeGreaterThan(0);
+    for (const c of cases) {
+      const entries = [{ id: "a", value: 100, weight: c.presentUndefined ? undefined : c.weight }] as WeightedEntry[];
+      expect(codeOf(() => weightedEcdf(entries, 0.5))).toBe("invalid-weight");
+      for (const method of ["nearest-rank/1", "weighted-ecdf/1"] as const) {
+        for (const support of ["descriptive", "insufficient-evidence"] as const) {
+          expect(codeOf(() => buildQuantileSet(entries, { method, support, tailQualification: "unavailable" }))).toBe("invalid-weight");
+        }
+      }
+    }
+    const entries = [{ id: "a", value: 100 }];
+    expect(weightedEcdf(entries, 0.5)).toBe(100);
+    for (const method of ["nearest-rank/1", "weighted-ecdf/1"] as const) {
+      expect(buildQuantileSet(entries, { method, support: "descriptive" }).p50Seconds).toBe(100);
+      expect(buildQuantileSet(entries, { method, support: "insufficient-evidence", tailQualification: "unavailable" }).p50Seconds).toBeNull();
+    }
+  });
+
   it("F18: every fixture case rejects through the public weight parsers", () => {
     const rule = solRule("F18") as { cases: { mutation: string }[] };
     for (const c of drivenCases("F18", rule.cases)) {
