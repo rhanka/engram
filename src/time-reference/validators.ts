@@ -997,7 +997,7 @@ export interface MilestoneEvidence {
  * Unknown actuals need no receipt.
  */
 export function validateMilestonesAgainstReceipts(
-  record: Pick<DeliveryMilestonesV1, "installMilestones" | "repo">,
+  record: Pick<DeliveryMilestonesV1, "installMilestones" | "repo" | "mergeSha">,
   receipts: Record<string, InstallationReceiptV1>,
   quals: Record<string, TargetQualification>,
   scope: MilestoneScope,
@@ -1030,6 +1030,10 @@ export function validateMilestonesAgainstReceipts(
     const qual = quals[entry.targetId];
     if (qual === undefined) {
       errors.push({ code: "missing-target-declaration", message: `no frozen target declaration for target ${JSON.stringify(entry.targetId)}`, path: p });
+      return;
+    }
+    if (receipt.mergeSha !== record.mergeSha || qual.expectedMergeSha !== record.mergeSha) {
+      errors.push({ code: "unresolved-receipt", message: "receipt and frozen declaration must both identify the milestone mergeSha", path: p });
       return;
     }
     const reproduced = qualifyInstallation(
