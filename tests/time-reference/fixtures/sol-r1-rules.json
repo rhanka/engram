@@ -462,6 +462,39 @@
           "code": null
         }
       ]
+    },
+    {
+      "id": "F18",
+      "spec": "§5.2",
+      "title": "Non-string weights are rejected, never coerced",
+      "cases": [
+        {
+          "mutation": "numeric-weight"
+        }
+      ]
+    },
+    {
+      "id": "F19",
+      "spec": "§5.1",
+      "title": "The full probability domain parses exactly, including exponent forms",
+      "cases": [
+        {
+          "p": "1e-7",
+          "nearestRankOf": [
+            5,
+            9
+          ],
+          "expected": 5
+        },
+        {
+          "p": "0.5",
+          "nearestRankOf": [
+            5,
+            9
+          ],
+          "expected": 5
+        }
+      ]
     }
   ],
   "shared": {
