@@ -1207,6 +1207,22 @@ export function validateCommittedExport(v: unknown, milestoneEvidence: readonly 
   // whose method, versions, cohort, snapshot or fingerprint contradict the
   // figure it cites is refused.
   if (Array.isArray(v["series"]) && Array.isArray(v["estimates"]) && Array.isArray(v["provenance"])) {
+    // figureRef shares one namespace across series and estimates. Reject
+    // every collision before a Map can overwrite or shadow a figure.
+    const figureIds = new Set<string>();
+    let collidingFigures = false;
+    for (const [field, idField] of [["series", "seriesId"], ["estimates", "estimateId"]] as const) {
+      (v[field] as unknown[]).forEach((figure, i) => {
+        if (!isRecord(figure) || typeof figure[idField] !== "string") return;
+        const id = figure[idField];
+        if (figureIds.has(id)) {
+          c.fail("duplicate-figure-id", `figure identifier ${JSON.stringify(id)} must be unique across series and estimates`, `${field}.${i}.${idField}`);
+          collidingFigures = true;
+        }
+        figureIds.add(id);
+      });
+    }
+    if (collidingFigures) return done(c, v);
     const seriesById = new Map<string, Record<string, unknown>>();
     for (const s of v["series"] as unknown[]) {
       if (isRecord(s) && typeof s["seriesId"] === "string") seriesById.set(s["seriesId"], s);
