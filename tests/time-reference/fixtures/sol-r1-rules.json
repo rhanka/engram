@@ -181,6 +181,97 @@
           "code": "sample-auth-mismatch"
         }
       ]
+    },
+    {
+      "id": "F05",
+      "spec": "§4.3, §6.5",
+      "title": "Effective tail thresholds and required qualifications",
+      "cases": [
+        {
+          "name": "one-sample calibrated P95",
+          "support": "calibrated",
+          "sampleCount": 1,
+          "nEff": {
+            "numerator": "1",
+            "denominator": "1"
+          },
+          "p50Seconds": 7,
+          "p80Seconds": 7,
+          "p95Seconds": 7,
+          "expectOk": false,
+          "code": "weak-tail-support"
+        },
+        {
+          "name": "calibrated P95 on n=20",
+          "support": "calibrated",
+          "sampleCount": 20,
+          "nEff": {
+            "numerator": "20",
+            "denominator": "1"
+          },
+          "p50Seconds": 1,
+          "p80Seconds": 2,
+          "p95Seconds": 3,
+          "expectOk": false,
+          "code": "weak-tail-support"
+        },
+        {
+          "name": "calibrated P95 on n=100",
+          "support": "calibrated",
+          "sampleCount": 100,
+          "nEff": {
+            "numerator": "100",
+            "denominator": "1"
+          },
+          "p50Seconds": 1,
+          "p80Seconds": 2,
+          "p95Seconds": 3,
+          "tailQualification": "nEff 100/1 over 4 campaigns",
+          "expectOk": true
+        },
+        {
+          "name": "descriptive tail without qualification",
+          "support": "descriptive",
+          "sampleCount": 20,
+          "nEff": {
+            "numerator": "20",
+            "denominator": "1"
+          },
+          "p50Seconds": 1,
+          "p80Seconds": 2,
+          "p95Seconds": 3,
+          "expectOk": false,
+          "code": "missing-tail-reason"
+        },
+        {
+          "name": "descriptive tail with qualification",
+          "support": "descriptive",
+          "sampleCount": 20,
+          "nEff": {
+            "numerator": "20",
+            "denominator": "1"
+          },
+          "p50Seconds": 1,
+          "p80Seconds": 2,
+          "p95Seconds": 3,
+          "tailQualification": "nEff 20/1: descriptive tail, 1 campaign",
+          "expectOk": true
+        },
+        {
+          "name": "uncalibrated-conditional without qualification",
+          "support": "uncalibrated-conditional",
+          "sampleCount": 20,
+          "nEff": {
+            "numerator": "20",
+            "denominator": "1"
+          },
+          "p50Seconds": 1,
+          "p80Seconds": 2,
+          "p95Seconds": 3,
+          "expectOk": false,
+          "code": "missing-tail-reason"
+        }
+      ]
     }
   ],
   "shared": {

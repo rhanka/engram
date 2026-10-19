@@ -9,7 +9,7 @@
  */
 
 import { parseMergeVerdict } from "./milestones.js";
-import { parseEffectiveSizeRatio } from "./quantiles.js";
+import { meetsTailSupport, parseEffectiveSizeRatio } from "./quantiles.js";
 import { DIGEST_RE, INSTANT_RE, REPO_RE, durationSeconds, isDigest, isInstant } from "./format.js";
 import type {
   CiCheckBatchV1,
@@ -486,10 +486,11 @@ export function validateQuantileSet(v: unknown): ValidationResult<QuantileSetV1>
   if (!isInt(v["sampleCount"]) || (v["sampleCount"] as number) < 0) {
     c.fail("bad-type", "sampleCount must be an integer >= 0", "sampleCount");
   }
+  let nEffRatio: { numerator: string; denominator: string } | null = null;
   try {
-    const r = parseEffectiveSizeRatio(v["nEff"]);
+    nEffRatio = parseEffectiveSizeRatio(v["nEff"]);
     if (v["quantileMethod"] === "nearest-rank/1" && isInt(v["sampleCount"])) {
-      if (r.numerator !== String(v["sampleCount"]) || r.denominator !== "1") {
+      if (nEffRatio.numerator !== String(v["sampleCount"]) || nEffRatio.denominator !== "1") {
         c.fail("neff-mismatch", "unit weights give nEff = sampleCount/1", "nEff");
       }
     }
@@ -513,6 +514,28 @@ export function validateQuantileSet(v: unknown): ValidationResult<QuantileSetV1>
   }
   if (anyNull && (typeof v["tailQualification"] !== "string" || (v["tailQualification"] as string).length === 0)) {
     c.fail("missing-tail-reason", "a null quantile requires tailQualification with effective-observation and campaign counts", "tailQualification");
+  }
+  // Effective tail readability (section 4.3): a calibrated quantile is
+  // displayed only with at least 5 effective observations beyond it.
+  if (v["support"] === "calibrated" && nEffRatio !== null) {
+    const levels: Array<[unknown, number, string]> = [
+      [v["p50Seconds"], 0.5, "p50Seconds"],
+      [v["p80Seconds"], 0.8, "p80Seconds"],
+      [v["p95Seconds"], 0.95, "p95Seconds"],
+    ];
+    for (const [t, p, name] of levels) {
+      if (t !== null && !meetsTailSupport(nEffRatio, p)) {
+        c.fail("weak-tail-support", `calibrated ${name} needs at least 5 effective observations beyond it (nEff ${nEffRatio.numerator}/${nEffRatio.denominator})`, name);
+      }
+    }
+  }
+  // Displayed tails outside a calibrated claim carry their qualification
+  // (section 6.5): effective-observation count beyond the quantile and the
+  // independent-campaign count.
+  if ((v["support"] === "descriptive" || v["support"] === "uncalibrated-conditional")
+    && tails.some((t) => t !== null)
+    && (typeof v["tailQualification"] !== "string" || (v["tailQualification"] as string).length === 0)) {
+    c.fail("missing-tail-reason", "a displayed non-calibrated tail requires tailQualification with effective-observation and campaign counts", "tailQualification");
   }
   if ("maxSeconds" in v && (!isInt(v["maxSeconds"]) || (v["maxSeconds"] as number) < 0)) {
     c.fail("bad-type", "maxSeconds must be an integer >= 0", "maxSeconds");
