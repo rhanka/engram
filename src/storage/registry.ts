@@ -1,11 +1,7 @@
+import { requireHostDriver } from "./host-driver.js";
 /**
- * GraphStore registry — store ids -> factories, with lazy driver loading
- * (SPEC_STORAGE_BACKENDS.md, "Store Registry And Driver Loading").
- *
- * Importing this module never evaluates a backend driver: drivers are
- * optionalDependencies resolved through dynamic import() at the moment a
- * store is resolved, generalizing the existing neo4j-driver / chokidar
- * pattern. PR2 registers only `file`; live backends follow (neo4j in PR3).
+ * GraphStore registry — store ids -> factories. Backend drivers belong to
+ * the host and must be injected (public-substrate amendment §§3.9, 5.7).
  */
 import { createFileGraphStore } from "./file.js";
 import { createNeo4jGraphStore } from "./neo4j.js";
@@ -17,7 +13,7 @@ import type { GraphStore, GraphStoreConfig, StoreTestDeps } from "./types.js";
 
 export interface GraphStoreFactory {
   readonly id: string;
-  /** npm package resolved via dynamic import, e.g. "neo4j-driver"; empty when no driver is needed */
+  /** Host-owned driver package identity; empty when no driver is needed. */
   readonly requiredPackage: string;
   create(config: GraphStoreConfig, deps?: StoreTestDeps): Promise<GraphStore>;
 }
@@ -33,10 +29,8 @@ export function listGraphStoreIds(): string[] {
 }
 
 /**
- * Resolve a store id into a GraphStore instance. When the factory declares a
- * required driver package, the registry probes the dynamic import here so
- * every backend shares the same actionable missing-driver error.
- * `deps.driverModule` (tests only) bypasses the import entirely.
+ * Resolve a store id with the host's injected driver, refusing before the
+ * factory runs if a required driver was not supplied.
  */
 export async function resolveGraphStore(
   id: string,
@@ -48,36 +42,9 @@ export async function resolveGraphStore(
     throw new Error(`unknown store '${id}'. Available: ${listGraphStoreIds().join(", ")}`);
   }
 
-  let resolvedDeps = deps;
-  if (factory.requiredPackage && deps?.driverModule === undefined) {
-    let driverModule: unknown;
-    try {
-      driverModule = await import(factory.requiredPackage);
-    } catch {
-      if (factory.requiredPackage === "better-sqlite3") {
-        try {
-          const bundledUrl = new URL(
-            "../../engram-memory/node_modules/better-sqlite3/lib/index.js",
-            import.meta.url,
-          ).href;
-          driverModule = await import(bundledUrl);
-        } catch {
-          throw new Error(
-            `store '${factory.id}' requires ${factory.requiredPackage}. ` +
-              `Run: npm install ${factory.requiredPackage}`,
-          );
-        }
-      } else {
-        throw new Error(
-          `store '${factory.id}' requires ${factory.requiredPackage}. ` +
-            `Run: npm install ${factory.requiredPackage}`,
-        );
-      }
-    }
-    resolvedDeps = { ...deps, driverModule };
-  }
+  if (factory.requiredPackage) requireHostDriver(factory.id, factory.requiredPackage, deps?.driverModule);
 
-  return factory.create(config, resolvedDeps);
+  return factory.create(config, deps);
 }
 
 registerGraphStoreFactory({

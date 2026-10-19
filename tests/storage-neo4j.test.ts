@@ -607,7 +607,7 @@ describe("Neo4j adapter: registry and driver loading", () => {
 
     await expect(
       resolveGraphStore("neo4j-missing-driver-test", { target: "bolt://localhost:7687" }),
-    ).rejects.toThrow(/requires neo4j-driver-does-not-exist-xyzzy.*npm install/i);
+    ).rejects.toThrow(/host must inject neo4j-driver-does-not-exist-xyzzy via deps.driverModule/i);
   });
 });
 

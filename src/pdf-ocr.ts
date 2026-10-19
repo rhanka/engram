@@ -5,7 +5,6 @@ import { engramEnv } from "./env.js";
 import { extractPdfTextLayer, pdfOcrSidecarStem, parsePdfOcrMode, preflightPdf, type PdfOcrMode, type PdfPreflightResult } from "./pdf-preflight.js";
 import { buildPdfOcrPagesSidecar } from "./pdf-ocr-refs.js";
 
-const MISTRAL_OCR_PACKAGE = "mistral-ocr";
 const DEFAULT_OCR_MODEL = "mistral-ocr-latest";
 const PDF_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 
@@ -89,7 +88,7 @@ function textMarkdown(sourceFile: string, text: string, provider: "unpdf" | "pdf
 
 async function loadMistralOcrModule(): Promise<MistralOcrModule> {
   if (!mistralOcrModulePromise) {
-    mistralOcrModulePromise = import(MISTRAL_OCR_PACKAGE)
+    mistralOcrModulePromise = import("mistral-ocr")
       .then((imported) => {
         const convertPdf = Reflect.get(imported, "convertPdf");
         if (typeof convertPdf !== "function") {

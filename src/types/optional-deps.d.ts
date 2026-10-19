@@ -7,6 +7,10 @@
  * shim when the package is installed.
  */
 
+declare module "faster-whisper-ts" {
+  export const WhisperModel: unknown;
+}
+
 declare module "officeparser" {
   export function parseOfficeAsync(
     file: string,

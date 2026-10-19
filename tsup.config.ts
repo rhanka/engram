@@ -1,4 +1,23 @@
 import { defineConfig } from "tsup";
+import { readFile } from "node:fs/promises";
+
+// file-type's two literal imports otherwise go through import(specifier).
+// Resolve that helper while bundling; the published closure stays inspectable.
+const literalFileTypeImports = {
+  name: "literal-file-type-imports",
+  setup(build: { onLoad: (filter: { filter: RegExp }, load: (args: { path: string }) => Promise<{ contents: string; loader: "js" }>) => void }) {
+    build.onLoad({ filter: /[\\/]file-type[\\/]source[\\/]index\.js$/ }, async ({ path }) => {
+      const source = await readFile(path, "utf8");
+      const helper = "function importAtRuntime(specifier) {\n\treturn import(specifier);\n}";
+      if (!source.includes(helper)) throw new Error("file-type import helper changed; verify its closed targets");
+      return { loader: "js", contents: source.replace(helper, `function importAtRuntime(specifier) {
+        if (specifier === "node:fs/promises") return import("node:fs/promises");
+        if (specifier === "strtok3") return import("strtok3");
+        throw new Error("unsupported file-type import");
+      }`) };
+    });
+  },
+};
 
 const optionalRuntimeDeps = [
   "@mixmark-io/domino",
@@ -28,6 +47,7 @@ export default defineConfig([
   },
   {
     entry: { cli: "src/cli.ts" },
+    esbuildPlugins: [literalFileTypeImports],
     format: ["esm"],
     banner: { js: "#!/usr/bin/env node" },
     sourcemap: true,

@@ -1,14 +1,11 @@
+import { requireHostDriver } from "./host-driver.js";
 /**
  * SQLite GraphStore adapter (SPEC_STORAGE_BACKENDS.md, "Future Backends";
  * design dossier .graphify/scratch/SQLITE_STORE_RESEARCH.md, ratified 2026-08-09).
  *
  * A LOCAL, single-file GraphStore for the Mode-2 memory substrate. The driver
- * (`better-sqlite3`) is NEVER imported statically: it is always supplied through
- * `deps.driverModule` (tests) or the registry's dynamic import (production), so
- * importing this module evaluates no driver and `tsc`/the import-guard never try
- * to resolve the (uninstalled-by-default) package. The dynamic specifier is built
- * at runtime (mirror of postgres.ts) so the compiler does not attempt to resolve
- * the absent package either.
+ * (`better-sqlite3`) is supplied by the host through `deps.driverModule`.
+ * Importing this module never evaluates a backend driver.
  *
  * NARROW capability matrix by design (dossier §1.4). This first adapter announces
  * ONLY what it proves:
@@ -505,7 +502,7 @@ interface SqliteDatabaseConstructor {
 
 /**
  * Create a SQLite GraphStore. The driver module is supplied by the registry's
- * lazy import (production) or by `deps.driverModule` (tests). The file path is
+ * host injection through `deps.driverModule`. The file path is
  * read from `config.target`.
  */
 export async function createSqliteGraphStore(
@@ -517,29 +514,8 @@ export async function createSqliteGraphStore(
     throw new Error("sqlite store requires config.target (path of the SQLite database file)");
   }
 
-  // Resolve the driver from injected deps or a dynamic import (the registry does
-  // the import in production; this fallback supports direct/live use). The
-  // specifier is built at runtime so the compiler never resolves the (absent)
-  // package — mirror of postgres.ts.
-  let sqliteMod: Record<string, unknown>;
-  if (deps?.driverModule !== undefined) {
-    sqliteMod = deps.driverModule as Record<string, unknown>;
-  } else {
-    try {
-      const driverPackage = ["better", "sqlite3"].join("-");
-      sqliteMod = (await import(driverPackage)) as Record<string, unknown>;
-    } catch {
-      try {
-        const bundledUrl = new URL(
-          "../../engram-memory/node_modules/better-sqlite3/lib/index.js",
-          import.meta.url,
-        ).href;
-        sqliteMod = (await import(bundledUrl)) as Record<string, unknown>;
-      } catch {
-        throw new Error("store 'sqlite' requires better-sqlite3. Run: npm install better-sqlite3");
-      }
-    }
-  }
+  // The host supplies its driver; Engram never loads a backend package.
+  const sqliteMod = requireHostDriver("sqlite", "better-sqlite3", deps?.driverModule);
 
   const DatabaseCtor = (sqliteMod.default ?? sqliteMod) as SqliteDatabaseConstructor;
   if (typeof DatabaseCtor !== "function") {
