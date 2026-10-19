@@ -1,2 +1,197 @@
-{"contract":"SPEC-time-reference-contract.md (Tour 3 revision, 2026-10-18)","note":"Each normative rule is encoded ONCE here as test data with its spec section. Tests read this fixture, never production tables.","rules":[{"id":"F01","spec":"§6.0","title":"Recursive closed schemas: every nested object is closed, every typed array constrains its elements","closedSchemaPaths":["CiCheckBatchV1.properties.checks.items","CohortV1.properties.fingerprint","CohortV1.properties.manifestRef","CohortV1.properties.window","CollectionManifestV1.properties.quarantine.items","CommittedExportV1.properties.budgets.items","CommittedExportV1.properties.estimates.items","CommittedExportV1.properties.generator","CommittedExportV1.properties.milestones.items","CommittedExportV1.properties.profileRef","CommittedExportV1.properties.provenance.items","CommittedExportV1.properties.series.items","CommittedExportV1.properties.window","DeliveryMilestonesV1.properties.installMilestones.items","DeliveryMilestonesV1.properties.mergeMilestone","PullRequestTimingV1.properties.commits.items","QuantileSetV1.properties.nEff","ReviewWaveManifestV1.properties.reviewerRuns.items","TimingEstimateV1.properties.freshness","TimingEstimateV1.properties.quantiles","TimingEstimateV1.properties.seriesRef","TimingSeriesV1.properties.cohortRef","TimingSeriesV1.properties.exclusions.items","TimingSeriesV1.properties.fingerprint","TimingSeriesV1.properties.quantiles","TimingSeriesV1.properties.window"]}],
-"shared":{"digest0":"sha256:0000000000000000000000000000000000000000000000000000000000000000","fingerprint":{"configDigest":"unknown","effort":"unknown","jobSet":"unknown","model":"unknown","reviewPolicy":"unknown","runner":"unknown","suiteShardSet":"unknown","toolchain":"unknown","workflowPath":"unknown"},"fingerprintDigest":"sha256:6c82fff40691ec6aeeb94ab1f04ddfd82f93690166f7158a5376d4ca5eefaa45","repo":"rhanka/h2a","sourceRevision":"46b82b42781709f2a2ab1bec6707ba58131248f0","window":{"from":"2026-10-17T04:53:00Z","to":"2026-10-18T07:48:00Z"}}}
+{
+  "contract": "SPEC-time-reference-contract.md (Tour 3 revision, 2026-10-18)",
+  "note": "Each normative rule is encoded ONCE here as test data with its spec section. Tests read this fixture, never production tables.",
+  "rules": [
+    {
+      "id": "F01",
+      "spec": "§6.0",
+      "title": "Recursive closed schemas: every nested object is closed, every typed array constrains its elements",
+      "closedSchemaPaths": [
+        "CiCheckBatchV1.properties.checks.items",
+        "CohortV1.properties.fingerprint",
+        "CohortV1.properties.manifestRef",
+        "CohortV1.properties.window",
+        "CollectionManifestV1.properties.quarantine.items",
+        "CommittedExportV1.properties.budgets.items",
+        "CommittedExportV1.properties.estimates.items",
+        "CommittedExportV1.properties.generator",
+        "CommittedExportV1.properties.milestones.items",
+        "CommittedExportV1.properties.profileRef",
+        "CommittedExportV1.properties.provenance.items",
+        "CommittedExportV1.properties.series.items",
+        "CommittedExportV1.properties.window",
+        "DeliveryMilestonesV1.properties.installMilestones.items",
+        "DeliveryMilestonesV1.properties.mergeMilestone",
+        "PullRequestTimingV1.properties.commits.items",
+        "QuantileSetV1.properties.nEff",
+        "ReviewWaveManifestV1.properties.reviewerRuns.items",
+        "TimingEstimateV1.properties.freshness",
+        "TimingEstimateV1.properties.quantiles",
+        "TimingEstimateV1.properties.seriesRef",
+        "TimingSeriesV1.properties.cohortRef",
+        "TimingSeriesV1.properties.exclusions.items",
+        "TimingSeriesV1.properties.fingerprint",
+        "TimingSeriesV1.properties.quantiles",
+        "TimingSeriesV1.properties.window"
+      ]
+    },
+    {
+      "id": "F02",
+      "spec": "§6.0, §11",
+      "title": "Recursive validator closure: nested undeclared fields, required fields and element types fail",
+      "nestedCases": [
+        {
+          "base": "cohort",
+          "path": "manifestRef.memoryId",
+          "value": "m-1",
+          "code": "undeclared-field"
+        },
+        {
+          "base": "cohort",
+          "path": "window.extra",
+          "value": 1,
+          "code": "undeclared-field"
+        },
+        {
+          "base": "series",
+          "path": "cohortRef.memoryId",
+          "value": "m-1",
+          "code": "undeclared-field"
+        },
+        {
+          "base": "series",
+          "path": "window.extra",
+          "value": 1,
+          "code": "undeclared-field"
+        },
+        {
+          "base": "series",
+          "path": "exclusions.0.note",
+          "value": "x",
+          "code": "undeclared-field"
+        },
+        {
+          "base": "estimate",
+          "path": "seriesRef.extra",
+          "value": 1,
+          "code": "undeclared-field"
+        },
+        {
+          "base": "estimate",
+          "path": "freshness.extra",
+          "value": 1,
+          "code": "undeclared-field"
+        },
+        {
+          "base": "export",
+          "path": "profileRef.extra",
+          "value": 1,
+          "code": "undeclared-field"
+        },
+        {
+          "base": "export",
+          "path": "generator.extra",
+          "value": 1,
+          "code": "undeclared-field"
+        },
+        {
+          "base": "export",
+          "path": "window.extra",
+          "value": 1,
+          "code": "undeclared-field"
+        },
+        {
+          "base": "batch",
+          "path": "checks.0.extra",
+          "value": 1,
+          "code": "undeclared-field"
+        },
+        {
+          "base": "pr",
+          "path": "commits.0.extra",
+          "value": 1,
+          "code": "undeclared-field"
+        },
+        {
+          "base": "wave",
+          "path": "reviewerRuns.0.extra",
+          "value": 1,
+          "code": "undeclared-field"
+        },
+        {
+          "base": "manifest",
+          "path": "quarantine.0.extra",
+          "value": 1,
+          "code": "undeclared-field"
+        },
+        {
+          "base": "receipt",
+          "path": "evidenceDigests.0",
+          "value": "not-a-digest",
+          "code": "bad-digest"
+        },
+        {
+          "base": "batch",
+          "path": "checks.0.id",
+          "value": null,
+          "code": "bad-type"
+        },
+        {
+          "base": "manifest",
+          "path": "quarantine.0.id",
+          "value": null,
+          "code": "bad-type"
+        }
+      ]
+    }
+  ],
+  "shared": {
+    "digest0": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "fingerprint": {
+      "configDigest": "unknown",
+      "effort": "unknown",
+      "jobSet": "unknown",
+      "model": "unknown",
+      "reviewPolicy": "unknown",
+      "runner": "unknown",
+      "suiteShardSet": "unknown",
+      "toolchain": "unknown",
+      "workflowPath": "unknown"
+    },
+    "fingerprintDigest": "sha256:6c82fff40691ec6aeeb94ab1f04ddfd82f93690166f7158a5376d4ca5eefaa45",
+    "repo": "rhanka/h2a",
+    "sourceRevision": "46b82b42781709f2a2ab1bec6707ba58131248f0",
+    "window": {
+      "from": "2026-10-17T04:53:00Z",
+      "to": "2026-10-18T07:48:00Z"
+    },
+    "validQuantileSet": {
+      "schema": "engram.time-reference/quantile-set/1",
+      "quantileMethod": "nearest-rank/1",
+      "support": "descriptive",
+      "calibrated": false,
+      "sampleCount": 3,
+      "nEff": {
+        "numerator": "3",
+        "denominator": "1"
+      },
+      "p50Seconds": 860,
+      "p80Seconds": 1777,
+      "p95Seconds": 3617,
+      "maxSeconds": 5000,
+      "tailQualification": "nEff 3/1: descriptive tail over 3 samples, 1 campaign"
+    },
+    "validManifestRef": {
+      "ruleId": "astra-merged-desc/1",
+      "snapshotDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "validCohortRef": {
+      "cohortKey": "astra-merged-desc/1",
+      "snapshotDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "validSeriesRef": {
+      "seriesId": "s1",
+      "snapshotDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  }
+}
