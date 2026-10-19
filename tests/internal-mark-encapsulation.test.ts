@@ -5,13 +5,13 @@ import { describe, expect, it } from "vitest";
 // §5.9 encapsulation guard. The in-process marks are the whole trust boundary: if any non-test source file could
 // import markInMemoryStoreV1 (or, from v5-b, markFencedStoreV1) it could stamp an arbitrary store and defeat the
 // gate. The package barrel and package.json `exports` already keep them off the host surface; this test keeps them
-// off the IN-REPO surface too — only their defining module and their one sanctioned caller may name them. Tests are
+// off the IN-REPO surface too — only their defining module and sanctioned canonical openers may name them. Tests are
 // exempt (a test helper legitimately marks bespoke embedded fakes). If this fails, a new importer leaked the mark.
 const MARKS: ReadonlyArray<{ symbol: string; allowed: ReadonlyArray<string> }> = [
   // store-factory.ts DEFINES it; memory-store.ts is the only production caller.
   { symbol: "markInMemoryStoreV1", allowed: ["engram-memory/store-factory.ts", "engram-memory/memory-store.ts"] },
-  // store-factory.ts DEFINES it; only the two fence-taking openers may stamp a store as fence-holding.
-  { symbol: "markFencedStoreV1", allowed: ["engram-memory/store-factory.ts", "engram-memory/sqlite.ts", "engram-memory/postgres.ts"] },
+  // Binding §9.6 also sanctions the neutral opener after canonical fence acquisition.
+  { symbol: "markFencedStoreV1", allowed: ["engram-memory/store-factory.ts", "engram-memory/sqlite.ts", "engram-memory/postgres.ts", "engram-memory/module-storage-memory-store.ts"] },
 ];
 
 const ROOTS = ["engram-memory", "src"];
