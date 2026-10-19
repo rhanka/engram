@@ -40,10 +40,13 @@ function keysOf(value: unknown, out = new Set<string>()): Set<string> {
 
 describe("TR-12 memory boundary", () => {
   it("a committed export carries no memory body, identifier, digest, citation or existence signal", () => {
-    const quantiles = buildQuantileSet(
-      [{ id: "a", value: 100 }],
-      { method: "nearest-rank/1", support: "descriptive" },
-    );
+    const quantiles = {
+      ...buildQuantileSet(
+        [{ id: "a", value: 100 }],
+        { method: "nearest-rank/1", support: "descriptive" },
+      ),
+      tailQualification: "nEff 1/1: descriptive tail over 1 sample, 1 campaign",
+    };
     const series = {
       schema: "engram.time-reference/timing-series/1",
       seriesId: "s1",
@@ -58,7 +61,17 @@ describe("TR-12 memory boundary", () => {
       missingCount: 0,
       censoredCount: 0,
       exclusions: [],
-      fingerprint: {},
+      fingerprint: {
+        model: "unknown",
+        effort: "unknown",
+        reviewPolicy: "unknown",
+        workflowPath: "unknown",
+        configDigest: "unknown",
+        runner: "unknown",
+        toolchain: "unknown",
+        suiteShardSet: "unknown",
+        jobSet: "unknown",
+      },
       measured: true,
     };
     expect(validateTimingSeries(series).ok).toBe(true);
