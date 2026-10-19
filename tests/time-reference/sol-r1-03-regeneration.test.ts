@@ -132,10 +132,14 @@ describe("Sol R1 F03/F04 export regeneration", () => {
   });
 
   it("F03: every published figure and maximum is recomputed, in series and in estimates", () => {
-    const rule = solRule("F03") as { cases: { mutation: string; code: string }[] };
+    const rule = solRule("F03") as { cases: { mutation: string; action?: string; expectOk?: boolean; code?: string }[] };
     for (const c of drivenCases("F03", rule.cases)) {
-      const bumped = withPath<CommittedExportV1>(sealedExport(), c.mutation, 999999);
-      expect(codesOfRegen(bumped), c.mutation).toContain(c.code);
+      const bumped = withPath<CommittedExportV1>(sealedExport(), c.mutation, c.action === "withhold" ? null : 999999);
+      bumped.exportDigest = exportDigestOf(bumped as unknown as Record<string, unknown>);
+      if (c.expectOk) {
+        expect(validateCommittedExport(bumped).ok, c.mutation).toBe(true);
+        expect(codesOfRegen(bumped), c.mutation).toEqual([]);
+      } else expect(codesOfRegen(bumped), c.mutation).toContain(c.code);
     }
   });
 
