@@ -103,7 +103,7 @@ const freshness = () => closed({
 }, ["window", "collectedAt", "referencePublishedAt"]);
 
 const profileRef = () => closed(
-  { id: str, version: str, contentDigest: digest },
+  { id: { const: "repo-knowledge" }, version: str, contentDigest: digest },
   ["id", "version", "contentDigest"],
 );
 
@@ -116,7 +116,7 @@ const mergeMilestone = () => closed({
 
 const installMilestoneEntry = () => closed({
   targetId: nonEmptyString, forecastAt: nullableInstant,
-  installedAt: { type: "string" },
+  installedAt: { anyOf: [instant, { const: "unknown" }] },
   verdict: { enum: ["held", "missed", "unknown"] },
   receiptRef: str,
 }, ["targetId", "forecastAt", "installedAt", "verdict"]);
