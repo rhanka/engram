@@ -40,6 +40,12 @@
       "spec": "§6.0, §11",
       "title": "Recursive validator closure: nested undeclared fields, required fields and element types fail",
       "nestedCases": [
+        { "base": "manifest", "path": "inclusionIds.0", "value": 1.5, "code": "bad-type" },
+        { "base": "manifest", "path": "exclusionIds.0", "value": 1.5, "code": "bad-type" },
+        { "base": "cohort", "path": "memberIds.0", "value": 1.5, "code": "bad-type" },
+        { "base": "manifest", "path": "quarantine.0.id", "value": 1.5, "code": "bad-type" },
+        { "base": "series", "path": "exclusions.0.id", "value": 1.5, "code": "bad-type" },
+        { "base": "batch", "path": "checks.0.id", "value": 1.5, "code": "bad-type" },
         {
           "base": "cohort",
           "path": "manifestRef.memoryId",
