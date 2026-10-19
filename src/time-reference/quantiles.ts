@@ -192,7 +192,7 @@ export function weightedEcdf(entries: WeightedEntry[], p: number): number {
     if (typeof e.value !== "number" || !Number.isFinite(e.value)) {
       fail("invalid-value", "samples must be finite numbers");
     }
-    const w = parseDecimalWeight(e.weight ?? "1");
+    const w = parseDecimalWeight("weight" in e ? e.weight as string : "1");
     return { id: e.id, value: e.value, num: w.num, den: w.den };
   });
   const sorted = [...parsed].sort((a, b) => (a.value === b.value ? (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) : a.value - b.value));
