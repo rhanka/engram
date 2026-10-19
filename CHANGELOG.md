@@ -4,6 +4,17 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.21.0 (2026-10-19)
+
+First publication of the engram time-reference contract (velocity and CI/CD durations, D1-C) as the `@sentropic/engram/time-reference` subpath export. No new package, service, MCP tool or CLI verb; `.`, `./llm-mesh` and `./memory-tools` keep their exact shapes and the six frozen memory tools gain no field.
+
+- **Closed versioned DTOs.** The section 6 records (collection manifest, pull-request timing, final-head CI checks, fingerprinted cohorts, quantile sets with exact `nEff` ratios, series/estimates/budgets, per-target delivery milestones, qualified installation receipts, review waves and round totals, figure provenance, committed export envelope) validate as closed recursive schemas; undeclared fields fail at every depth.
+- **Quantile primitives.** `nearest-rank/1` and `weighted-ecdf/1` as pure functions with exact decimal arithmetic, effective tail-support thresholds and required tail qualifications.
+- **Export binding and regeneration.** Committed exports bind `serviceRevision` and the `repo-knowledge@1` pin, authenticate samples against the pinned snapshot digest, recompute every published figure and maximum, and carry exactly one matching provenance record per figure.
+- **Contract artifacts.** `profiles/repo-knowledge/1/` publishes `profile.json`, `timing.schema.json`, `engram-mapping.json` and `manifest.json`; `src/repo-knowledge-contract.ts` stays the addressable export/validation entrypoint.
+
+The `0.20.x` line receives no time-reference export, type, schema or behaviour.
+
 ## 0.20.0 (2026-10-18)
 
 First Engram memory release (option B: no MCP adapter — L4 ships in a later release). Memory tools are disabled by default; every mutation refuses `CAPABILITY_UNAVAILABLE` until a host injects its reservation, audit, policy, confirmation, key-custody and coverage ports.

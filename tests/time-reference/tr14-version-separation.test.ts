@@ -18,6 +18,19 @@ describe("TR-14 version separation", () => {
     expect("./time-reference" in pkg.exports).toBe(true);
   });
 
+  it("the time-reference introduction ships as 0.21.0 in package.json and package-lock.json", () => {
+    const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
+      version: string;
+    };
+    const lock = JSON.parse(readFileSync(new URL("../../package-lock.json", import.meta.url), "utf8")) as {
+      version: string;
+      packages: Record<string, { version: string }>;
+    };
+    expect(pkg.version).toBe("0.21.0");
+    expect(lock.version).toBe("0.21.0");
+    expect(lock.packages[""].version).toBe("0.21.0");
+  });
+
   it("an unknown DTO major (/2 on a /1 validator) is refused, never fallen back to latest", () => {
     const r = validatePullRequestTiming({
       schema: "engram.time-reference/pull-request-timing/2",
