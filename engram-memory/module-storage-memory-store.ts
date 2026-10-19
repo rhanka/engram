@@ -77,6 +77,7 @@ import {
   memoryEnvelopeKey,
   memoryJournalChain,
   memoryLexicalKey,
+  memoryLexicalTombstone,
   memoryOutcomeKey,
   memoryOutboxKey,
   memoryRecordKey,
@@ -133,7 +134,22 @@ export interface ModuleStorageMemoryStoreOptionsV1 {
 export interface MemoryWorkLimitsV1 {
   readonly maxRecords?: number;
   readonly maxEncodedBytes?: number;
+  /**
+   * Maintenance expiry batch bounds (binding §4.3): expiry work observed by
+   * a read commits in units of at most this many appends/records. Absent
+   * means the descriptor batch defaults below. The declared ceiling is never
+   * derived from observed work sizes.
+   */
+  readonly maintenance_max_appends?: number;
+  readonly maintenance_max_records?: number;
 }
+
+/**
+ * Descriptor maintenance batch defaults (binding §4.3, to co-sign C2):
+ * the ceiling every expiry unit declares when the composition states none.
+ */
+const MAINTENANCE_BATCH_DEFAULT_APPENDS = 100;
+const MAINTENANCE_BATCH_DEFAULT_RECORDS = 200;
 
 const SINGLE_EVENT_LIMITS: NeutralWorkLimits = { maxAppends: 1, maxRecords: 8, maxEncodedBytes: 1048576 };
 const COMPLETION_LIMITS: NeutralWorkLimits = { maxAppends: 1, maxRecords: 1, maxEncodedBytes: 65536 };
@@ -302,6 +318,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
     private core: InMemoryCanonicalMemoryStoreV1,
     private readonly k7Versions: Map<string, string>,
     private readonly singleEventLimits: NeutralWorkLimits,
+    private readonly maintenanceBatch: NeutralWorkLimits,
     private readonly commitRecovery: boolean,
     private latched = false,
     private closed = false,
@@ -433,6 +450,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
       const maintenance = await this.persistDiff(operation, before.value, after.value, {
         receipt: undefined,
         limits: this.singleEventLimits,
+        maintenanceBatch: this.maintenanceBatch,
       });
       if (!maintenance.ok) return maintenance;
       this.core = scratch;
@@ -449,13 +467,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
     operation: MemoryOperation,
     before: InMemoryStoreStateV1,
     after: InMemoryStoreStateV1,
-    plan: {
-      receipt: CanonicalTransactionReceiptV1 | undefined;
-      importReceipt?: LogicalBackupImportReceiptV1;
-      idempotencyKey?: string;
-      limits: NeutralWorkLimits;
-      completion?: true;
-    },
+    plan: UnitPlan,
   ): Promise<Result<{ adopted: true }>> {
     const units = buildUnits(before, after, plan, this.k7Versions);
     if (!units.ok) return units;
@@ -1053,6 +1065,8 @@ interface UnitPlan {
   readonly idempotencyKey?: string;
   readonly limits: NeutralWorkLimits;
   readonly completion?: true;
+  /** Declared maintenance batch ceiling for receipt-less expiry units (binding §4.3). */
+  readonly maintenanceBatch?: NeutralWorkLimits;
 }
 
 /** Last new-event cursor referencing an entity, for aggregate versioning (binding §3.3). */
@@ -1172,7 +1186,9 @@ function buildUnits(
   }
 
   const beforeLexical = new Map(before.lexical.map(({ record_id, document }) => [record_id, canonicalizeJcs(document)]));
+  const afterLexical = new Map(after.lexical.map(({ record_id, document }) => [record_id, canonicalizeJcs(document)]));
   const afterById = new Map(after.records.map((record) => [record.record_id, record]));
+  const beforeById = new Map(before.records.map((record) => [record.record_id, record]));
   const indexWrites = [];
   for (const { record_id, document } of after.lexical) {
     if (beforeLexical.get(record_id) === canonicalizeJcs(document)) continue;
@@ -1182,6 +1198,19 @@ function buildUnits(
       index: "memory-accepted-lexical",
       key: memoryLexicalKey(blob.scope_ref, record_id),
       value: neutralJcs(document),
+    });
+  }
+  // Canonical removals (binding §3.4 rule 2): every record leaving
+  // `accepted_current` gets its tombstone in the same unit, under the
+  // transition's own scope binding — never a later cleanup.
+  for (const { record_id } of before.lexical) {
+    if (afterLexical.has(record_id)) continue;
+    const blob = beforeById.get(record_id) ?? afterById.get(record_id);
+    if (blob === undefined) return refuse("admin", "JOURNAL_CORRUPT", "lexical removal names no record blob");
+    indexWrites.push({
+      index: "memory-accepted-lexical",
+      key: memoryLexicalKey(blob.scope_ref, record_id),
+      value: memoryLexicalTombstone(),
     });
   }
 
@@ -1260,37 +1289,104 @@ function buildUnits(
   }
 
   if (plan.receipt === undefined) {
-    // Maintenance expiry observation (§4.3): the observed batch commits as
-    // one unit with its own cursor allocations; the read completes only
-    // after it commits. The batch bound fits the observed batch exactly.
+    // Maintenance expiry observation (§4.3): observed expiry commits in
+    // bounded units of at most the composition-declared batch ceiling; the
+    // read that triggered observation completes only after its units commit,
+    // preserving the observable semantics of E. Declared ceilings never
+    // derive from observed sizes.
     if (newEvents.length === 0) return { ok: true, value: [] };
-    let bytes = 0;
-    for (const item of [...records, ...appends, ...updates]) {
-      bytes += new TextEncoder().encode(item.value.data).byteLength;
+    const batch = plan.maintenanceBatch ?? {
+      maxAppends: MAINTENANCE_BATCH_DEFAULT_APPENDS,
+      maxRecords: MAINTENANCE_BATCH_DEFAULT_RECORDS,
+      maxEncodedBytes: 1048576,
+    };
+    if (!Number.isSafeInteger(batch.maxAppends) || batch.maxAppends < 1) {
+      return refuse("admin", "INVALID_SCHEMA", "maintenance batch declares no positive append bound");
     }
-    return {
-      ok: true,
-      value: [{
+    const eventSlices: MemoryJournalEventV1[][] = [];
+    for (const event of newEvents) {
+      const open = eventSlices[eventSlices.length - 1];
+      if (open === undefined || open.length >= batch.maxAppends) eventSlices.push([event]);
+      else open.push(event);
+    }
+    const sliceOfCursor = new Map(newEvents.map((event) => [event.cursor, eventSlices.findIndex((slice) => slice.includes(event))]));
+    const entitySlice = (candidateId: string | undefined, recordId: string | undefined, relatedId: string | undefined): number => {
+      for (let index = newEvents.length - 1; index >= 0; index -= 1) {
+        const event = newEvents[index]!;
+        if ((candidateId !== undefined && event.candidate_id === candidateId)
+          || (recordId !== undefined && (event.record_id === recordId || event.related_record_id === recordId))
+          || (relatedId !== undefined && (event.record_id === relatedId || event.related_record_id === relatedId))) {
+          return sliceOfCursor.get(event.cursor) ?? eventSlices.length - 1;
+        }
+      }
+      return eventSlices.length - 1;
+    };
+    const recordSlice = (key: string): number => {
+      const parts = parseJson<ReadonlyArray<string>>(key);
+      if (parts === undefined || parts.length < 2) return eventSlices.length - 1;
+      if (parts[0] === "memory-outbox-v1" && typeof parts[1] === "string") {
+        return sliceOfCursor.get(parts[1]) ?? eventSlices.length - 1;
+      }
+      return entitySlice(undefined, parts[1], undefined);
+    };
+    const updateSlice = (update: NeutralAggregateUpdate): number => {
+      const parts = parseJson<ReadonlyArray<string>>(update.key);
+      if (parts === undefined || parts.length < 2) return eventSlices.length - 1;
+      if (update.kind === "memory-fold-state" && parts.length >= 3) {
+        return parts[1] === "candidate"
+          ? entitySlice(parts[2], undefined, undefined)
+          : entitySlice(undefined, parts[2], undefined);
+      }
+      return entitySlice(parts[1], undefined, undefined);
+    };
+    const lexicalSlice = (key: string): number => {
+      const parts = parseJson<ReadonlyArray<string>>(key);
+      if (parts === undefined || parts.length < 3 || typeof parts[2] !== "string") return eventSlices.length - 1;
+      return entitySlice(undefined, parts[2], undefined);
+    };
+    const units: BuiltUnit[] = [];
+    let previousHash = head;
+    const genesis = before.journal.length === 0;
+    for (const [sliceIndex, slice] of eventSlices.entries()) {
+      const sliceAppends: NeutralChainAppend[] = slice.map((event, index) => {
+        const previous = index === 0 ? previousHash : slice[index - 1]!.event_hash;
+        const isGenesis = genesis && sliceIndex === 0 && index === 0 && event.cursor === "1";
+        return {
+          chain: memoryJournalChain(),
+          kind: "memory-journal-event",
+          id: event.event_id,
+          hash: event.event_hash,
+          value: neutralJcs(event),
+          expectation: isGenesis
+            ? { kind: "absent" as const, allocation: "0" }
+            : { kind: "head" as const, hash: previous },
+        };
+      });
+      const sliceRecords = records.filter((record) => recordSlice(record.key) === sliceIndex);
+      const sliceUpdates = updates.filter((update) => updateSlice(update) === sliceIndex);
+      const sliceIndexWrites = indexWrites.filter((write) => lexicalSlice(write.key) === sliceIndex);
+      const sliceK7 = k7Writes.filter(([candidate]) => entitySlice(candidate, undefined, undefined) === sliceIndex);
+      previousHash = slice[slice.length - 1]!.event_hash;
+      units.push({
         unit: {
-          guards: [{ kind: "chain-head", chain: memoryJournalChain(), hash: head }],
-          records,
-          appends,
-          updates,
+          guards: sliceIndex === 0
+            ? [{ kind: genesis ? "chain-absent" as const : "chain-head" as const, chain: memoryJournalChain(), hash: head, allocation: "0" }]
+            : [{ kind: "chain-head" as const, chain: memoryJournalChain(), hash: eventSlices[sliceIndex - 1]![eventSlices[sliceIndex - 1]!.length - 1]!.event_hash }],
+          records: sliceRecords,
+          appends: sliceAppends,
+          updates: sliceUpdates,
           relationships: [],
           barriers: [],
           purgeIntents: [],
-          indexWrites,
+          indexWrites: sliceIndexWrites,
           moduleResult: undefined,
         },
-        idempotencyKey: `maintenance:${newEvents[0]!.event_id}`,
-        limits: {
-          maxAppends: Math.max(1, appends.length),
-          maxRecords: Math.max(1, records.length),
-          maxEncodedBytes: Math.max(1048576, bytes),
-        },
-        k7Writes,
-      }],
-    };
+        idempotencyKey: `maintenance:${slice[0]!.event_id}`,
+        limits: { ...batch },
+        k7Writes: sliceK7,
+      });
+    }
+    return { ok: true, value: units };
   }
 
   return {
@@ -1625,6 +1721,20 @@ export async function openModuleStorageCanonicalMemoryStoreV1(
     maxRecords: Math.max(SINGLE_EVENT_LIMITS.maxRecords, maxRecords ?? 0),
     maxEncodedBytes: Math.max(SINGLE_EVENT_LIMITS.maxEncodedBytes, maxEncodedBytes ?? 0),
   };
+  // Composition-declared maintenance batch bounds (binding §4.3): the
+  // composition states the batching granularity, absent means the descriptor
+  // defaults. A declared bound is a ceiling, never derived from observed work.
+  const declaredAppends = options.work_limits?.maintenance_max_appends;
+  const declaredRecords = options.work_limits?.maintenance_max_records;
+  const maintenanceBatch: NeutralWorkLimits = {
+    maxAppends: Number.isSafeInteger(declaredAppends) && (declaredAppends as number) >= 1
+      ? declaredAppends as number
+      : MAINTENANCE_BATCH_DEFAULT_APPENDS,
+    maxRecords: Number.isSafeInteger(declaredRecords) && (declaredRecords as number) >= 1
+      ? declaredRecords as number
+      : MAINTENANCE_BATCH_DEFAULT_RECORDS,
+    maxEncodedBytes: Math.max(SINGLE_EVENT_LIMITS.maxEncodedBytes, maxEncodedBytes ?? 0),
+  };
   const store = new ModuleStorageMemoryStore(
     handle,
     binding,
@@ -1635,6 +1745,7 @@ export async function openModuleStorageCanonicalMemoryStoreV1(
     core,
     hydrated.k7Versions,
     singleEventLimits,
+    maintenanceBatch,
     typeof handle.readCommitResult === "function",
   );
   // The provenance mark is stamped only on the path where the §9.2
