@@ -595,6 +595,51 @@ export const MEMORY_POLICY_MANIFEST: ReadonlyArray<string> = Object.freeze([
 ]);
 
 /**
+ * Registered kind mappings covered by the contract digest (binding §3.1,
+ * to co-sign C2): selection/aggregate name → record kind and chain
+ * derivation, mirroring the M2 `COMMENTS_CHAIN_KINDS` registry.
+ */
+export const MEMORY_KIND_MANIFEST: {
+  readonly chains: Record<string, { readonly kind: string; readonly chain: string }>;
+  readonly records: Record<string, string>;
+  readonly aggregates: Record<string, string>;
+} = Object.freeze({
+  chains: { ...MEMORY_CHAIN_KINDS },
+  records: { ...MEMORY_RECORD_KINDS },
+  aggregates: { ...MEMORY_AGGREGATE_KINDS },
+});
+
+/**
+ * Registered identity-key formats covered by the contract digest (binding
+ * §3.1, to co-sign C2): the exact compound encodings each key helper emits.
+ * Tags alone do not encode these formats, so every format is pinned here.
+ */
+export const MEMORY_KEY_FORMATS: ReadonlyArray<string> = Object.freeze([
+  '["memory-record-v1","<record_id>"]',
+  '["memory-pending-control-v1","<candidate_id>"]',
+  '["memory-sealed-envelope-v1","<candidate_id>"]',
+  '["memory-state-v1","candidate|record","<entity_id>"]',
+  '["memory-outbox-v1","<through_cursor_inclusive>","<batch_digest>"]',
+  '["memory-capture-idempotency-v1","<candidate_id>"]',
+  '["memory-admission-outcome-v1","<candidate_id>"]',
+  '["memory-store-meta-v1","binding"]',
+  '["memory-lexical-v1","<scope_ref>","<record_id>"]',
+]);
+
+/**
+ * Registered contract assets covered by the contract digest (binding §1.2,
+ * to co-sign C2/C6): the frozen neutral bytes plus the explicitly listed
+ * additive installed contract.
+ */
+export const MEMORY_ASSET_MANIFEST: {
+  readonly contract: { readonly name: string; readonly version: string; readonly digest: string };
+  readonly additive: ReadonlyArray<string>;
+} = Object.freeze({
+  contract: { ...NEUTRAL_CONTRACT_ASSET },
+  additive: [...NEUTRAL_ADDITIVE_ASSETS],
+});
+
+/**
  * The frozen memory descriptor (binding §2.2, to co-sign C2). The digest
  * domain above is a binding value to co-sign: it records the
  * non-circularity rule (digest computed over the descriptor without
@@ -606,8 +651,15 @@ export const MEMORY_POLICY_MANIFEST: ReadonlyArray<string> = Object.freeze([
  * index policies. Host-owned backend assets (migrations, projections) are
  * recorded at backend qualification (C8), never silently.
  */
-export const MEMORY_DESCRIPTOR: NeutralModuleDescriptor = (() => {
-  const manifest = {
+/**
+ * The complete registered contract manifest covered by the contract digest
+ * (binding §2.2.3, to co-sign C2): descriptor fields, pinned profile claims
+ * with versions and semantic digests, codecs and digest domains, kind
+ * mappings, key tags and their formats, index policies, and asset digests.
+ * Exported so every section gets its own digest-mutation test.
+ */
+export function memoryContractManifest(): Record<string, unknown> {
+  return {
     contractVersion: "memory-binding-v1",
     schemaVersions: [...MEMORY_SCHEMA_VERSIONS],
     requiredProfiles: [...MEMORY_REQUIRED_PROFILES],
@@ -619,11 +671,33 @@ export const MEMORY_DESCRIPTOR: NeutralModuleDescriptor = (() => {
     profileClaims: MEMORY_PINNED_PROFILES.map((claim) => ({ ...claim })),
     codecs: [...MEMORY_CODEC_MANIFEST],
     keys: [...MEMORY_KEY_MANIFEST],
+    keyFormats: [...MEMORY_KEY_FORMATS],
+    kinds: {
+      chains: { ...MEMORY_KIND_MANIFEST.chains },
+      records: { ...MEMORY_KIND_MANIFEST.records },
+      aggregates: { ...MEMORY_KIND_MANIFEST.aggregates },
+    },
     policies: [...MEMORY_POLICY_MANIFEST],
+    assets: {
+      contract: { ...MEMORY_ASSET_MANIFEST.contract },
+      additive: [...MEMORY_ASSET_MANIFEST.additive],
+    },
   };
+}
+
+/** Contract digest over a manifest, for mutation tests (binding §2.2.3). */
+export function memoryDescriptorDigest(manifest: Record<string, unknown>): string {
+  return descriptorDigest(manifest);
+}
+
+export const MEMORY_DESCRIPTOR: NeutralModuleDescriptor = (() => {
+  const manifest = memoryContractManifest();
   const contractDigest = descriptorDigest(manifest);
-  const { profileClaims: _claims, codecs: _codecs, keys: _keys, policies: _policies, ...body } = manifest;
-  void _claims; void _codecs; void _keys; void _policies;
+  const {
+    profileClaims: _claims, codecs: _codecs, keys: _keys, keyFormats: _formats,
+    kinds: _kinds, policies: _policies, assets: _assets, ...body
+  } = manifest;
+  void _claims; void _codecs; void _keys; void _formats; void _kinds; void _policies; void _assets;
   return Object.freeze({ ...body, contractDigest }) as NeutralModuleDescriptor;
 })();
 
