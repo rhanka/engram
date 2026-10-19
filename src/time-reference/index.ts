@@ -174,4 +174,5 @@ export {
   verifyExportDigest,
   type BuildQuantileOptions,
   type ContractPinFile,
+  type SnapshotSampleAdapter,
 } from "./export.js";
