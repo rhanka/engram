@@ -25,11 +25,13 @@ export function verifyLockedClosure(consumerDir, pinned) {
 
 export function verifyInstalledTypes(consumerDir) {
   const target = join(consumerDir, "consumer.ts");
+  writeFileSync(join(consumerDir, "host-consumer.ts"), readFileSync(new URL("./fixtures/substrate-host-consumer.ts", import.meta.url), "utf8"));
   writeFileSync(target, [
     `import * as substrate from ${JSON.stringify(PUBLIC_ENTRY)};`,
     `import type { ${EXPECTED_TYPES.join(", ")} } from ${JSON.stringify(PUBLIC_ENTRY)};`,
     `export function consume(options: ModuleStorageMemoryStoreOptionsV1): Promise<Result<CanonicalMemoryStorePort>> { return substrate.openModuleStorageCanonicalMemoryStoreV1(options); }`,
     `export const engine: typeof substrate.createMemoryPortV2 = substrate.createMemoryPortV2;`,
+    `export { consumeHost } from "./host-consumer.js";`,
   ].join("\n"));
   const program = ts.createProgram([target], {
     strict: true, skipLibCheck: false, noEmit: true, target: ts.ScriptTarget.ES2022,
