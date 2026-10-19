@@ -28,9 +28,17 @@ import {
   type MemoryEngineDependenciesV2,
 } from "../src/memory-substrate/index.js";
 import {
+  MEMORY_CODEC_MANIFEST,
   MEMORY_CONTRACT_DIGEST,
+  MEMORY_KEY_MANIFEST,
+  MEMORY_OPTIONAL_PROFILES,
   MEMORY_PINNED_PROFILES,
+  MEMORY_POLICY_MANIFEST,
   MEMORY_REQUIRED_PROFILES,
+  NEUTRAL_ADDITIVE_ASSETS,
+  NEUTRAL_CONTRACT_ASSET,
+  type NeutralBoundScope,
+  type NeutralModuleStorageBinding,
   type NeutralScopeGrant,
 } from "../engram-memory/module-storage-neutral.js";
 import {
@@ -191,7 +199,30 @@ describe("substrate composition (amendment §5.1, binding §10.1 negotiation)", 
     ]);
     expect(MEMORY_CONTRACT_DIGEST).toMatch(/^sha256:[0-9a-f]{64}$/);
     // Pinned literal: any descriptor drift breaks this test loudly (freeze discipline, C2).
-    expect(MEMORY_CONTRACT_DIGEST).toBe("sha256:685350e3723d5289e4d7a0364711a00cb84b81f1b8ff9c73f107efe10569779e");
+    expect(MEMORY_CONTRACT_DIGEST).toBe("sha256:9d349499be24e4ec374ff730107f3ec7f0b7bca9d77e42f2cccd08571aa7aeed");
+  });
+
+  it("pins the complete contract manifest in the digest (binding §2.2.3)", () => {
+    // Every registered section the digest covers is pinned: codecs and digest
+    // domains, kind/key encodings, index policies, and profile claims with
+    // versions and semantic digests. Dropping any section changes the digest
+    // above and breaks the freeze test loudly.
+    expect(MEMORY_CODEC_MANIFEST).toContain("jcs-rfc8785+nfc");
+    expect(MEMORY_CODEC_MANIFEST).toContain("graphify-memory/canonical-transaction/v1");
+    expect(MEMORY_KEY_MANIFEST).toContain("memory-lexical-v1");
+    expect(MEMORY_KEY_MANIFEST).toContain("memory-capture-idempotency-v1");
+    expect(MEMORY_POLICY_MANIFEST).toEqual([
+      "first-proof-immutable:memory-capture-idempotency",
+      "first-proof-immutable:memory-admission-outcomes",
+      "journal-identity:memory-journal-event",
+    ]);
+    expect(MEMORY_PINNED_PROFILES).toHaveLength(
+      MEMORY_REQUIRED_PROFILES.length + MEMORY_OPTIONAL_PROFILES.length,
+    );
+    for (const claim of MEMORY_PINNED_PROFILES) {
+      expect(claim.version).toBe("1");
+      expect(claim.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    }
   });
 
   it("importing the entry opens nothing and acquires no fence", async () => {
