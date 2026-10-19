@@ -11,6 +11,7 @@
 export * from "./time-reference/index.js";
 
 import type { Diagnostic } from "./time-reference/index.js";
+import { SUPPORTED_MAPPING_VERSIONS, SUPPORTED_PROFILE_VERSIONS } from "./time-reference/types.js";
 
 export const REPO_KNOWLEDGE_PROFILE_ID = "repo-knowledge";
 export const REPO_KNOWLEDGE_PROFILE_VERSION = "1";
@@ -143,15 +144,39 @@ export function validateTimingSchemas(v: unknown): { ok: boolean; errors: Diagno
 export function validateEngramMapping(v: unknown): { ok: boolean; errors: Diagnostic[] } {
   const errors: Diagnostic[] = [];
   if (!isRecord(v)) return { ok: false, errors: [{ code: "bad-type", message: "mapping must be an object", path: "" }] };
-  if (typeof v["mappingVersion"] !== "string" || (v["mappingVersion"] as string).length === 0) {
-    errors.push({ code: "bad-type", message: "mappingVersion must be a non-empty string", path: "mappingVersion" });
+  if (typeof v["mappingVersion"] !== "string"
+    || !(SUPPORTED_MAPPING_VERSIONS as readonly string[]).includes(v["mappingVersion"] as string)) {
+    errors.push({ code: "unsupported-mapping-version", message: `mappingVersion ${JSON.stringify(v["mappingVersion"])} is not a supported mapping pin`, path: "mappingVersion" });
   }
   const pref = v["profile"];
   if (!isRecord(pref) || pref["id"] !== REPO_KNOWLEDGE_PROFILE_ID || typeof pref["version"] !== "string") {
     errors.push({ code: "bad-type", message: "mapping.profile must pin {id: repo-knowledge, version}", path: "profile" });
+  } else if (!(SUPPORTED_PROFILE_VERSIONS as readonly string[]).includes(pref["version"] as string)) {
+    errors.push({ code: "mapping-profile-mismatch", message: `mapping.profile.version ${JSON.stringify(pref["version"])} does not match a supported profile pin`, path: "profile.version" });
   }
   if (!Array.isArray(v["adapters"])) {
     errors.push({ code: "bad-type", message: "mapping.adapters must be an array", path: "adapters" });
+  } else {
+    (v["adapters"] as unknown[]).forEach((e, i) => {
+      const p = `adapters.${i}`;
+      if (!isRecord(e)) {
+        errors.push({ code: "bad-type", message: "each adapter must be {timingRecord, extractionTarget}", path: p });
+        return;
+      }
+      for (const k of Object.keys(e)) {
+        if (!["timingRecord", "extractionTarget", "note"].includes(k)) {
+          errors.push({ code: "undeclared-field", message: `undeclared field ${JSON.stringify(k)} in mapping adapter`, path: `${p}.${k}` });
+        }
+      }
+      for (const f of ["timingRecord", "extractionTarget"] as const) {
+        if (typeof e[f] !== "string" || (e[f] as string).length === 0) {
+          errors.push({ code: "bad-type", message: `adapter ${f} must be a non-empty string`, path: `${p}.${f}` });
+        }
+      }
+      if ("note" in e && typeof e["note"] !== "string") {
+        errors.push({ code: "bad-type", message: "adapter note must be a string", path: `${p}.note` });
+      }
+    });
   }
   return { ok: errors.length === 0, errors };
 }
