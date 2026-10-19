@@ -298,6 +298,48 @@
           "code": "duplicate-provenance"
         }
       ]
+    },
+    {
+      "id": "F07",
+      "spec": "§7.2",
+      "title": "Validated receipts and frozen target declarations bind to the identified context",
+      "cases": [
+        {
+          "mutation": "receipt.repo",
+          "value": "evil/other",
+          "reason": "foreign-repo-receipt"
+        },
+        {
+          "mutation": "receipt.lotOccurrence",
+          "value": "occ-9",
+          "reason": "foreign-lot-receipt"
+        },
+        {
+          "mutation": "receipt.mergeSha",
+          "value": "other-merge",
+          "reason": "foreign-merge-receipt"
+        },
+        {
+          "mutation": "qual.expectedMergeSha",
+          "value": "other-merge",
+          "reason": "declaration-mismatch"
+        }
+      ]
+    },
+    {
+      "id": "F08",
+      "spec": "§6.9",
+      "title": "Known installation actuals resolve to a matching qualified receipt",
+      "cases": [
+        {
+          "mutation": "drop-receiptRef",
+          "code": "missing-receipt-ref"
+        },
+        {
+          "mutation": "no-receipt-supplied",
+          "code": "unresolved-receipt"
+        }
+      ]
     }
   ],
   "shared": {
