@@ -27,7 +27,9 @@ interface Rational {
 
 const DECIMAL_RE = /^(\d{1,15})(?:\.(\d{1,12}))?$/;
 
+/** Weights are decimal strings only (spec section 5.2): numbers are never coerced. */
 export function parseDecimalWeight(text: string): Rational {
+  if (typeof text !== "string") fail("invalid-weight", `weight must be a decimal string, got ${typeof text}`);
   const m = DECIMAL_RE.exec(text);
   if (!m) fail("invalid-weight", `malformed weight: ${JSON.stringify(text)}`);
   const frac = m[2] ?? "";
@@ -37,18 +39,31 @@ export function parseDecimalWeight(text: string): Rational {
   return { num, den };
 }
 
-/** Parse `p` (given as a number) exactly via its decimal rendering. */
+const PLAIN_DECIMAL_RE = /^(\d+)(?:\.(\d+))?$/;
+
+/** Expand one exponent-form decimal (`1e-7`) into its exact plain form (`0.0000001`). */
+function expandExponent(text: string): string {
+  const m = /^(\d)(?:\.(\d+))?[eE]([+-]?\d+)$/.exec(text);
+  if (!m) return text;
+  const digits = `${m[1]}${m[2] ?? ""}`;
+  const pointPos = 1 + Number.parseInt(m[3] as string, 10);
+  if (pointPos >= digits.length) return `${digits}${"0".repeat(pointPos - digits.length)}`;
+  if (pointPos <= 0) return `0.${"0".repeat(-pointPos)}${digits}`;
+  return `${digits.slice(0, pointPos)}.${digits.slice(pointPos)}`;
+}
+
+/** Parse `p` (given as a number) exactly via its decimal rendering (spec section 5.1). */
 export function parseP(p: number): Rational {
   if (typeof p !== "number" || !Number.isFinite(p) || p <= 0 || p > 1) {
     fail("invalid-p", `p must satisfy 0 < p <= 1, got ${String(p)}`);
   }
-  const text = String(p);
-  if (/[eE]/.test(text)) {
-    // Expand exponent form exactly through BigInt-free decimal handling:
-    // reject — callers must pass plain decimal p values.
-    fail("invalid-p", `p must be a plain decimal, got ${text}`);
-  }
-  return parseDecimalWeight(text);
+  const m = PLAIN_DECIMAL_RE.exec(expandExponent(String(p)));
+  if (!m) fail("invalid-p", `p must be a decimal number, got ${String(p)}`);
+  const frac = (m as RegExpExecArray)[2] ?? "";
+  const num = BigInt(`${(m as RegExpExecArray)[1]}${frac}`);
+  const den = 10n ** BigInt(frac.length);
+  if (num <= 0n || num > den) fail("invalid-p", `p must satisfy 0 < p <= 1, got ${String(p)}`);
+  return { num, den };
 }
 
 function gcd(a: bigint, b: bigint): bigint {
