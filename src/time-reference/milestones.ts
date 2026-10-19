@@ -12,7 +12,7 @@
  * parameter. No I/O.
  */
 
-import { validateInstallationReceipt } from "./validators.js";
+import { validateInstallationReceipt, type Diagnostic } from "./validators.js";
 import type {
   DeliveryMilestonesV1,
   InstallationReceiptV1,
@@ -214,6 +214,42 @@ export function mergeToInstalledSample(mergedAt: string | null, installedAt: str
 }
 
 /**
+ * Wave identity for one lot (section 6.11): identity is
+ * `(repo, lotOccurrence, roundId)`. A duplicate identity, or a wave from
+ * another repository or lot occurrence, never increases round totals — it
+ * is refused so that shared pull requests cannot duplicate rounds across
+ * lots.
+ */
+export function validateReviewWavesForLot(
+  waves: ReviewWaveManifestV1[],
+  repo: string,
+  lotOccurrence: string,
+): Diagnostic[] {
+  const errors: Diagnostic[] = [];
+  const seen = new Set<string>();
+  waves.forEach((w, i) => {
+    const p = `waves.${i}`;
+    if (w.repo !== repo) {
+      errors.push({ code: "foreign-wave-repo", message: `wave round ${JSON.stringify(w.roundId)} belongs to repository ${JSON.stringify(w.repo)}, not ${JSON.stringify(repo)}`, path: `${p}.repo` });
+    }
+    if (w.lotOccurrence !== lotOccurrence) {
+      errors.push({ code: "foreign-wave-lot", message: `wave round ${JSON.stringify(w.roundId)} belongs to lot occurrence ${JSON.stringify(w.lotOccurrence)}, not ${JSON.stringify(lotOccurrence)}`, path: `${p}.lotOccurrence` });
+    }
+    const id = `${w.repo}/${w.lotOccurrence}/${w.roundId}`;
+    if (seen.has(id)) {
+      errors.push({ code: "duplicate-wave", message: `duplicate wave identity ${JSON.stringify(id)}`, path: `${p}.roundId` });
+    } else {
+      seen.add(id);
+    }
+  });
+  return errors;
+}
+
+export interface WaveError extends Error {
+  code: string;
+}
+
+/**
  * Lot round totals from wave manifests (section 6.11). One manifest is one
  * round; parallel reviewers of one submission are multiple reviewer runs
  * inside one manifest and one round. Without a coverageManifestRef, totals
@@ -225,6 +261,14 @@ export function summarizeReviewRounds(
   waves: ReviewWaveManifestV1[],
   coverageManifestRef: string | null,
 ): ReviewRoundsActualV1 {
+  const problems = validateReviewWavesForLot(waves, repo, lotOccurrence);
+  if (problems.length > 0) {
+    const e = new Error(
+      `review waves rejected for lot occurrence ${JSON.stringify(lotOccurrence)}: ${problems.map((d) => d.code).join(", ")}`,
+    ) as WaveError;
+    e.code = problems[0]?.code ?? "invalid-waves";
+    throw e;
+  }
   const roundIds = waves.map((w) => w.roundId);
   const openRoundIds = waves.filter((w) => w.closedAt === null).map((w) => w.roundId);
   const reviewerRunCount = waves.reduce((s, w) => s + w.reviewerRuns.length, 0);

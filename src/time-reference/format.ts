@@ -7,6 +7,8 @@
 export const INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 export const DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
 export const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+/** Full immutable commit SHA: 40 lowercase hex. A branch name or mutable tag is refused. */
+export const SHA_RE = /^[0-9a-f]{40}$/;
 
 export function isInstant(v: unknown): v is string {
   return typeof v === "string" && INSTANT_RE.test(v) && !Number.isNaN(Date.parse(v));
