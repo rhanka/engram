@@ -272,6 +272,32 @@
           "code": "missing-tail-reason"
         }
       ]
+    },
+    {
+      "id": "F06",
+      "spec": "§6.7",
+      "title": "Exactly one matching provenance record per published figure",
+      "cases": [
+        {
+          "mutation": "provenance.0.quantileMethod",
+          "value": "weighted-ecdf/1",
+          "code": "provenance-mismatch"
+        },
+        {
+          "mutation": "provenance.0.estimatorVersion",
+          "value": "e2",
+          "code": "provenance-mismatch"
+        },
+        {
+          "mutation": "provenance.0.snapshotDigest",
+          "value": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "code": "provenance-mismatch"
+        },
+        {
+          "mutation": "duplicate-provenance-s1",
+          "code": "duplicate-provenance"
+        }
+      ]
     }
   ],
   "shared": {
