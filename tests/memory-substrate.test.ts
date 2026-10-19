@@ -243,6 +243,59 @@ describe("substrate composition (amendment §5.1, binding §10.1 negotiation)", 
     expect(backend.liveHolders()).toBe(0);
   });
 
+  it("identifies the neutral-contract asset and its additive contract (binding §1.2/C6)", () => {
+    expect(NEUTRAL_CONTRACT_ASSET).toEqual({
+      name: "l3a-generic-module-storage-port",
+      version: "v4.1",
+      digest: "c7111c9e7293ee270a0b4dde277f1cfc40fa3c863c3915c6f9ccdd6935c46294",
+    });
+    expect(NEUTRAL_ADDITIVE_ASSETS.length).toBeGreaterThan(0);
+    for (const item of NEUTRAL_ADDITIVE_ASSETS) expect(item).toMatch(/binding §/);
+  });
+
+  it("consumes synchronous and asynchronous binding shapes without assuming one (binding §6.2, L3a §6.3)", async () => {
+    for (const shape of ["sync", "async"] as const) {
+      const backend = createReferenceModuleStorageBackend({ scope: SCOPE });
+      const clock = fixedClock();
+      const flat = backend.handle;
+      const binding: NeutralModuleStorageBinding = {
+        moduleId: flat.moduleId,
+        descriptor: flat.descriptor,
+        backend: flat.backend,
+        profiles: flat.profiles,
+        bind: (grant: NeutralScopeGrant) => {
+          const bound: NeutralBoundScope = {
+            transact: (options, operation) => flat.transact({ ...options, grant }, operation),
+            query: (name, input) => flat.query(name, input, grant),
+            readAggregate: (kind, key) => flat.readAggregate(kind, key, grant),
+            ...(flat.readCommitResult === undefined
+              ? {}
+              : { readCommitResult: (commitIdentity: string) => flat.readCommitResult!(commitIdentity, grant) }),
+            acquireFence: (input) => flat.acquireFence({ ...input, grant }),
+            checkFence: (fence) => flat.checkFence(grant, fence),
+            releaseFence: (fence) => flat.releaseFence(fence),
+          };
+          return shape === "sync" ? bound : Promise.resolve(bound);
+        },
+      };
+      const opened = await openModuleStorageCanonicalMemoryStoreV1({
+        handle: binding,
+        scope_binding: { scope: { ...SCOPE }, store_id: `store:bind-${shape}`, resolveScope },
+        grant: backend.grant,
+        clock,
+        deadline_at: "2026-08-16T12:40:00.000Z",
+      });
+      expect(opened.ok).toBe(true);
+      if (!opened.ok) throw new Error(`${shape} binding refused`);
+      const memory = await engineOn(opened.value, clock);
+      const captured = await memory.capture(captureRequest(`bind-key-${shape}`, "1"));
+      expect(captured).toMatchObject({ ok: true, value: { status: "committed_pending" } });
+      const readiness = await opened.value.readiness();
+      expect(readiness).toMatchObject({ ok: true, value: { storage_epoch: "1" } });
+      await opened.value.close();
+    }
+  });
+
   it("refuses a backend missing a required profile", async () => {
     const backend = createReferenceModuleStorageBackend({
       scope: SCOPE,
