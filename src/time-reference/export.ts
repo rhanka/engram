@@ -41,7 +41,7 @@ export function buildQuantileSet(entries: WeightedEntry[], opts: BuildQuantileOp
       support: opts.support,
       calibrated: false,
       sampleCount: entries.length,
-      nEff: entries.length === 0 ? { numerator: "0", denominator: "1" } : effectiveSizeRatio(entries.map((e) => e.weight ?? "1")),
+      nEff: entries.length === 0 ? { numerator: "0", denominator: "1" } : effectiveSizeRatio(entries.map((e) => "weight" in e ? e.weight as string : "1")),
       p50Seconds: null,
       p80Seconds: null,
       p95Seconds: null,
@@ -54,7 +54,7 @@ export function buildQuantileSet(entries: WeightedEntry[], opts: BuildQuantileOp
     throw new Error("n = 0 abstains: support must be insufficient-evidence");
   }
   const values = entries.map((e) => e.value);
-  const weights = entries.map((e) => e.weight ?? "1");
+  const weights = entries.map((e) => "weight" in e ? e.weight as string : "1");
   const nEff = effectiveSizeRatio(weights);
   const pick = (p: number): number =>
     opts.method === "nearest-rank/1"
