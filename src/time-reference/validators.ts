@@ -94,6 +94,21 @@ class Ctx {
   checkRepo(v: unknown, path: string): void {
     if (typeof v !== "string" || !REPO_RE.test(v)) this.fail("bad-repo", "repo must be owner/name", path);
   }
+  checkWindow(v: unknown, path: string): void {
+    if (!isRecord(v)) {
+      this.fail("bad-type", "window must be {from, to} UTC instants", path);
+      return;
+    }
+    this.checkNoExtra(v, ["from", "to"], path);
+    if (!isInstant(v["from"]) || !isInstant(v["to"])) {
+      this.fail("bad-type", "window must be {from, to} UTC instants", path);
+    }
+  }
+  checkIdValue(v: unknown, path: string): void {
+    if (typeof v !== "number" && typeof v !== "string") {
+      this.fail("bad-type", "identifier must be a number or a string", path);
+    }
+  }
 }
 
 function done<T>(ctx: Ctx, value: unknown): ValidationResult<T> {
@@ -164,8 +179,17 @@ export function validatePullRequestTiming(v: unknown): ValidationResult<PullRequ
       c.fail("state-mismatch", 'commitsCollectionState "collected" requires a commits array (possibly empty)', "commits");
     } else {
       (v["commits"] as unknown[]).forEach((e, i) => {
-        if (!isRecord(e) || typeof e["sha"] !== "string" || !isInstant(e["authoredAt"]) || !isInstant(e["committedAt"])) {
-          c.fail("bad-type", "each commit must be {sha, authoredAt, committedAt} with UTC instants", `commits.${i}`);
+        const p = `commits.${i}`;
+        if (!isRecord(e)) {
+          c.fail("bad-type", "each commit must be {sha, authoredAt, committedAt} with UTC instants", p);
+          return;
+        }
+        c.checkNoExtra(e, ["sha", "authoredAt", "committedAt"], p);
+        if (typeof e["sha"] !== "string" || (e["sha"] as string).length === 0) {
+          c.fail("bad-type", "commit sha must be a non-empty string", `${p}.sha`);
+        }
+        if (!isInstant(e["authoredAt"]) || !isInstant(e["committedAt"])) {
+          c.fail("bad-type", "commit authoredAt/committedAt must be UTC instants", p);
         }
       });
     }
@@ -223,7 +247,10 @@ export function validateCiCheckBatch(v: unknown): ValidationResult<CiCheckBatchV
         return;
       }
       c.checkNoExtra(e, CHECK_FIELDS, p);
-      if (typeof e["name"] !== "string") c.fail("bad-type", "check name must be a string", `${p}.name`);
+      c.checkIdValue(e["id"], `${p}.id`);
+      if (typeof e["name"] !== "string" || (e["name"] as string).length === 0) {
+        c.fail("bad-type", "check name must be a non-empty string", `${p}.name`);
+      }
       if (typeof e["status"] !== "string" || typeof e["conclusion"] !== "string") {
         c.fail("bad-type", "check status/conclusion keep provider values as strings", p);
       }
@@ -231,6 +258,9 @@ export function validateCiCheckBatch(v: unknown): ValidationResult<CiCheckBatchV
       c.checkInstant(e["completedAt"], `${p}.completedAt`);
       for (const f of ["headSha", "url"] as const) {
         if (f in e && typeof e[f] !== "string") c.fail("bad-type", `check ${f} must be a string`, `${p}.${f}`);
+      }
+      if ("checkSuiteId" in e && typeof e["checkSuiteId"] !== "number" && typeof e["checkSuiteId"] !== "string") {
+        c.fail("bad-type", "check checkSuiteId must be a number or a string", `${p}.checkSuiteId`);
       }
     });
   }
@@ -316,9 +346,15 @@ export function validateCollectionManifest(v: unknown): ValidationResult<Collect
     c.fail("bad-type", "quarantine must be an array", "quarantine");
   } else {
     (v["quarantine"] as unknown[]).forEach((e, i) => {
-      if (!isRecord(e) || (typeof e["id"] !== "number" && typeof e["id"] !== "string")
-        || typeof e["reason"] !== "string" || (e["reason"] as string).length === 0) {
-        c.fail("bad-type", "each quarantine record must be {id, reason} with a non-empty reason", `quarantine.${i}`);
+      const p = `quarantine.${i}`;
+      if (!isRecord(e)) {
+        c.fail("bad-type", "each quarantine record must be {id, reason} with a non-empty reason", p);
+        return;
+      }
+      c.checkNoExtra(e, ["id", "reason"], p);
+      c.checkIdValue(e["id"], `${p}.id`);
+      if (typeof e["reason"] !== "string" || (e["reason"] as string).length === 0) {
+        c.fail("bad-type", "each quarantine record carries a non-empty reason", `${p}.reason`);
       }
     });
   }
@@ -389,8 +425,14 @@ export function validateCohort(v: unknown): ValidationResult<CohortV1> {
     c.fail("bad-enum", "metric must be a section 3.1 metric identifier; a cohort mixing metrics is refused", "metric");
   }
   const ref = v["manifestRef"];
-  if (!isRecord(ref) || typeof ref["ruleId"] !== "string" || !isDigest(ref["snapshotDigest"])) {
+  if (!isRecord(ref)) {
     c.fail("bad-type", "manifestRef must be {ruleId, snapshotDigest}", "manifestRef");
+  } else {
+    c.checkNoExtra(ref, ["ruleId", "snapshotDigest"], "manifestRef");
+    if (typeof ref["ruleId"] !== "string" || (ref["ruleId"] as string).length === 0) {
+      c.fail("bad-type", "manifestRef.ruleId must be a non-empty versioned rule identifier", "manifestRef.ruleId");
+    }
+    c.checkDigest(ref["snapshotDigest"], "manifestRef.snapshotDigest");
   }
   if (!Array.isArray(v["memberIds"])) {
     c.fail("bad-type", "memberIds must be an array in manifest order", "memberIds");
@@ -398,10 +440,7 @@ export function validateCohort(v: unknown): ValidationResult<CohortV1> {
     c.fail("count-mismatch", "n must equal memberIds.length after quarantine removal", "n");
   }
   if (!isInt(v["n"]) || (v["n"] as number) < 0) c.fail("bad-type", "n must be an integer >= 0", "n");
-  const w = v["window"];
-  if (!isRecord(w) || !isInstant(w["from"]) || !isInstant(w["to"])) {
-    c.fail("bad-type", "window must be {from, to} UTC instants", "window");
-  }
+  c.checkWindow(v["window"], "window");
   if (!isRecord(v["fingerprint"])) c.fail("bad-type", "fingerprint must be an object (unattested subfields explicitly unknown)", "fingerprint");
   if (typeof v["purpose"] !== "string" || (v["purpose"] as string).length === 0) {
     c.fail("bad-type", "purpose must be a non-empty string", "purpose");
@@ -505,16 +544,19 @@ export function validateTimingSeries(v: unknown): ValidationResult<TimingSeriesV
   }
   if (!(METRICS as readonly string[]).includes(v["metric"] as string)) c.fail("bad-enum", "metric must be a section 3.1 identifier", "metric");
   const ref = v["cohortRef"];
-  if (!isRecord(ref) || typeof ref["cohortKey"] !== "string" || !isDigest(ref["snapshotDigest"])) {
+  if (!isRecord(ref)) {
     c.fail("bad-type", "cohortRef must be {cohortKey, snapshotDigest}", "cohortRef");
+  } else {
+    c.checkNoExtra(ref, ["cohortKey", "snapshotDigest"], "cohortRef");
+    if (typeof ref["cohortKey"] !== "string" || (ref["cohortKey"] as string).length === 0) {
+      c.fail("bad-type", "cohortRef.cohortKey must be a non-empty versioned cohort key", "cohortRef.cohortKey");
+    }
+    c.checkDigest(ref["snapshotDigest"], "cohortRef.snapshotDigest");
   }
   const q = validateQuantileSet(v["quantiles"]);
   if (!q.ok) for (const e of q.errors) c.fail(e.code, e.message, e.path === undefined ? "quantiles" : `quantiles.${e.path}`);
   if (v["unit"] !== "second") c.fail("bad-enum", 'unit is always "second"; no field stores days', "unit");
-  const w = v["window"];
-  if (!isRecord(w) || !isInstant(w["from"]) || !isInstant(w["to"])) {
-    c.fail("bad-type", "window must be {from, to} UTC instants", "window");
-  }
+  c.checkWindow(v["window"], "window");
   for (const f of ["missingCount", "censoredCount"] as const) {
     if (!isInt(v[f]) || (v[f] as number) < 0) c.fail("bad-type", `${f} must be an integer >= 0`, f);
   }
@@ -524,10 +566,12 @@ export function validateTimingSeries(v: unknown): ValidationResult<TimingSeriesV
     const seen = new Set<string>();
     (v["exclusions"] as unknown[]).forEach((e, i) => {
       const p = `exclusions.${i}`;
-      if (!isRecord(e) || (typeof e["id"] !== "number" && typeof e["id"] !== "string")) {
+      if (!isRecord(e)) {
         c.fail("bad-type", "each exclusion must be {id, reason}", p);
         return;
       }
+      c.checkNoExtra(e, ["id", "reason"], p);
+      c.checkIdValue(e["id"], `${p}.id`);
       if (typeof e["reason"] !== "string" || (e["reason"] as string).length === 0) {
         c.fail("missing-exclusion-reason", "every exclusion carries a non-empty reason", `${p}.reason`);
       }
@@ -584,8 +628,14 @@ export function validateTimingEstimate(v: unknown): ValidationResult<TimingEstim
     c.fail("bad-type", "estimateId must be a non-empty string", "estimateId");
   }
   const ref = v["seriesRef"];
-  if (!isRecord(ref) || typeof ref["seriesId"] !== "string" || !isDigest(ref["snapshotDigest"])) {
+  if (!isRecord(ref)) {
     c.fail("bad-type", "seriesRef must be {seriesId, snapshotDigest}", "seriesRef");
+  } else {
+    c.checkNoExtra(ref, ["seriesId", "snapshotDigest"], "seriesRef");
+    if (typeof ref["seriesId"] !== "string" || (ref["seriesId"] as string).length === 0) {
+      c.fail("bad-type", "seriesRef.seriesId must be a non-empty stable identifier", "seriesRef.seriesId");
+    }
+    c.checkDigest(ref["snapshotDigest"], "seriesRef.snapshotDigest");
   }
   const q = validateQuantileSet(v["quantiles"]);
   if (!q.ok) for (const e of q.errors) c.fail(e.code, e.message, e.path === undefined ? "quantiles" : `quantiles.${e.path}`);
@@ -593,10 +643,15 @@ export function validateTimingEstimate(v: unknown): ValidationResult<TimingEstim
     c.fail("bad-enum", "applicability must be applicable | conditional-historical | incomplete", "applicability");
   }
   const f = v["freshness"];
-  if (!isRecord(f) || !isRecord(f["window"]) || !isInstant((f["window"] as Record<string, unknown>)["from"])
-    || !isInstant((f["window"] as Record<string, unknown>)["to"])
-    || !isInstant(f["collectedAt"]) || !isInstant(f["referencePublishedAt"])) {
+  if (!isRecord(f)) {
     c.fail("bad-type", "freshness must carry window{from,to}, collectedAt and referencePublishedAt", "freshness");
+  } else {
+    c.checkNoExtra(f, ["window", "collectedAt", "referencePublishedAt"], "freshness");
+    c.checkWindow(f["window"], "freshness.window");
+    if (!isInstant(f["collectedAt"])) c.fail("bad-type", "freshness.collectedAt must be a UTC instant", "freshness.collectedAt");
+    if (!isInstant(f["referencePublishedAt"])) {
+      c.fail("bad-type", "freshness.referencePublishedAt must be a UTC instant", "freshness.referencePublishedAt");
+    }
   }
   if (q.ok && v["support"] !== (v["quantiles"] as QuantileSetV1).support) {
     c.fail("support-mismatch", "estimate support must equal its quantiles support", "support");
@@ -785,7 +840,13 @@ export function validateInstallationReceipt(v: unknown): ValidationResult<Instal
   for (const f of ["installOutcome", "smokeOutcome"] as const) {
     if (v[f] !== "success" && v[f] !== "failure") c.fail("bad-enum", `${f} must be success | failure`, f);
   }
-  if (!Array.isArray(v["evidenceDigests"])) c.fail("bad-type", "evidenceDigests must be an array", "evidenceDigests");
+  if (!Array.isArray(v["evidenceDigests"])) {
+    c.fail("bad-type", "evidenceDigests must be an array", "evidenceDigests");
+  } else {
+    (v["evidenceDigests"] as unknown[]).forEach((e, i) => {
+      if (!isDigest(e)) c.fail("bad-digest", "every evidence digest must be sha256:<64 lowercase hex>", `evidenceDigests.${i}`);
+    });
+  }
   return done(c, v);
 }
 
@@ -809,18 +870,25 @@ export function validateCommittedExport(v: unknown): ValidationResult<CommittedE
     c.fail("missing-service-binding", "an export without serviceRevision binding is refused", "serviceRevision");
   }
   const pref = v["profileRef"];
-  if (!isRecord(pref) || pref["id"] !== "repo-knowledge" || typeof pref["version"] !== "string"
-    || (pref["version"] as string).length === 0 || !isDigest(pref["contentDigest"])) {
+  if (!isRecord(pref)) {
     c.fail("missing-profile-pin", "profileRef must be {id: repo-knowledge, version, contentDigest}", "profileRef");
+  } else {
+    c.checkNoExtra(pref, ["id", "version", "contentDigest"], "profileRef");
+    if (pref["id"] !== "repo-knowledge" || typeof pref["version"] !== "string"
+      || (pref["version"] as string).length === 0 || !isDigest(pref["contentDigest"])) {
+      c.fail("missing-profile-pin", "profileRef must be {id: repo-knowledge, version, contentDigest}", "profileRef");
+    }
   }
-  const w = v["window"];
-  if (!isRecord(w) || !isInstant(w["from"]) || !isInstant(w["to"])) {
-    c.fail("bad-type", "window must be {from, to} UTC instants", "window");
-  }
+  c.checkWindow(v["window"], "window");
   c.checkInstant(v["generatedAt"], "generatedAt");
   const g = v["generator"];
-  if (!isRecord(g) || typeof g["name"] !== "string" || typeof g["version"] !== "string") {
+  if (!isRecord(g)) {
     c.fail("bad-type", "generator must be {name, version} (Node/TypeScript generator identity)", "generator");
+  } else {
+    c.checkNoExtra(g, ["name", "version"], "generator");
+    if (typeof g["name"] !== "string" || typeof g["version"] !== "string") {
+      c.fail("bad-type", "generator must be {name, version} (Node/TypeScript generator identity)", "generator");
+    }
   }
   for (const [field, fn] of [
     ["series", validateTimingSeries],
@@ -906,8 +974,18 @@ export function validateReviewWaveManifest(v: unknown): ValidationResult<ReviewW
     c.fail("bad-type", "reviewerRuns must be an array", "reviewerRuns");
   } else {
     (v["reviewerRuns"] as unknown[]).forEach((e, i) => {
-      if (!isRecord(e) || typeof e["runId"] !== "string" || !Array.isArray(e["evidenceRefs"])) {
-        c.fail("bad-type", "each reviewer run must be {runId, evidenceRefs}", `reviewerRuns.${i}`);
+      const p = `reviewerRuns.${i}`;
+      if (!isRecord(e)) {
+        c.fail("bad-type", "each reviewer run must be {runId, evidenceRefs}", p);
+        return;
+      }
+      c.checkNoExtra(e, ["runId", "evidenceRefs"], p);
+      if (typeof e["runId"] !== "string" || (e["runId"] as string).length === 0) {
+        c.fail("bad-type", "reviewer runId must be a non-empty string", `${p}.runId`);
+      }
+      if (!Array.isArray(e["evidenceRefs"])
+        || (e["evidenceRefs"] as unknown[]).some((x) => typeof x !== "string")) {
+        c.fail("bad-type", "reviewer evidenceRefs must be an array of strings", `${p}.evidenceRefs`);
       }
     });
   }
