@@ -52,7 +52,7 @@ import {
   type ReferenceBackend,
   type ReferenceScope,
 } from "./memory-substrate-reference-port.js";
-import { DIGEST, NOW, lifecycleCommand } from "./memory-l3-fixture.js";
+import { DIGEST, NOW, lifecycleCommand } from "./memory-substrate-data.js";
 import { receiptDigest } from "../engram-memory/digests.js";
 
 const SCOPE: ReferenceScope = { tenantId: "tenant:substrate", workspaceId: "workspace:substrate" };

@@ -37,6 +37,9 @@ describe("substrate tarball acceptance (installed consumer, M10)", () => {
     });
     expect(output).toMatch("tarball-acceptance OK @sentropic/engram@0.21.0");
     expect(output).toMatch("tarball-acceptance closure ./memory-substrate: no fatal findings");
+    expect(output).toMatch("installed semantic corpus: passed");
+    expect(output).toMatch("installed type inventory: 63 types, 2 values; strict compilation passed");
+    expect(output).toMatch("locked consumer: npm ci --offline");
   });
 });
 
@@ -61,6 +64,51 @@ describe("installed closure scanner mutations (M2)", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it.each(["import", "require"])("resolves %s conditions and dependencies relative to each importer", (condition) => {
+    const dir = fixture({
+      "entry.js": condition === "import" ? `import "outer";` : `require("outer");`,
+      "node_modules/outer/package.json": JSON.stringify({ name: "outer", exports: { import: "./esm.js", require: "./cjs.cjs" } }),
+      "node_modules/outer/esm.js": `import "nested";`,
+      "node_modules/outer/cjs.cjs": `require("nested");`,
+      "node_modules/nested/package.json": JSON.stringify({ name: "nested", main: "index.js" }),
+      "node_modules/nested/index.js": `module.exports = {};`,
+      "node_modules/outer/node_modules/nested/package.json": JSON.stringify({ name: "nested", exports: { [condition]: "./index.js" } }),
+      "node_modules/outer/node_modules/nested/index.js": `require("./addon.node");`,
+      "node_modules/outer/node_modules/nested/addon.node": "",
+    });
+    try {
+      expect(fatalFindings(scanInstalledClosure([join(dir, "entry.js")], dir)).some((finding) => finding.kind === "native-addon")).toBe(true);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it.each([`import("pg-" + driver)`, `require("pg-" + driver)`, "import(`pg-${driver}`)"])("rejects expression target %s for every entry", (expression) => {
+    const dir = fixture({ "entry.js": `${expression};` });
+    try {
+      const findings = scanInstalledClosure([join(dir, "entry.js")], dir);
+      expect(findings.some((finding) => finding.kind === "computed-target")).toBe(true);
+      expect(fatalFindings(findings).length).toBeGreaterThan(0);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("rejects gypfile:true without a build file or lifecycle script", () => {
+    const dir = fixture({
+      "entry.js": `require("metadata-native");`,
+      "node_modules/metadata-native/package.json": JSON.stringify({ name: "metadata-native", main: "index.js", gypfile: true }),
+      "node_modules/metadata-native/index.js": `module.exports = {};`,
+    });
+    try { expect(fatalFindings(scanInstalledClosure([join(dir, "entry.js")], dir)).length).toBeGreaterThan(0); }
+    finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("rejects gypfile:true on the published package itself", () => {
+    const dir = fixture({
+      "node_modules/published/package.json": JSON.stringify({ name: "published", gypfile: true }),
+      "node_modules/published/entry.js": `export const value = 1;`,
+    });
+    try { expect(fatalFindings(scanInstalledClosure([join(dir, "node_modules/published/entry.js")], dir)).length).toBeGreaterThan(0); }
+    finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
   it("reports a transitively reachable native addon", () => {
