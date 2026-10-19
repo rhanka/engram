@@ -22,6 +22,11 @@
     "./memory-tools": {
       "types": "./dist/memory-tools.d.ts",
       "import": "./dist/memory-tools.js"
+    },
+    "./time-reference": {
+      "types": "./dist/time-reference.d.ts",
+      "import": "./dist/time-reference.js",
+      "require": "./dist/time-reference.cjs"
     }
   },
   "bin": {
