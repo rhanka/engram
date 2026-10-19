@@ -40,10 +40,14 @@ function receipt(over: Partial<InstallationReceiptV1> = {}): InstallationReceipt
 }
 
 const QUAL: TargetQualification = {
+  expectedTargetKind: "ci-runner",
+  expectedPlatform: "linux-x64",
+  expectedInstallationScope: "repo",
   expectedVersion: "0.21.0",
   expectedTuple: "0.21.0+release-sha",
   expectedIntegrity: "sha256:artifact",
   expectedMergeSha: "merge-sha",
+  expectedReleaseSourceSha: "release-sha",
   ancestryProven: true,
 };
 
@@ -70,6 +74,10 @@ describe("TR-09 qualified installation (target-bound)", () => {
       ["wrong tuple", target(receipt({ observedTuple: "0.20.0+release-sha" })), QUAL],
       ["wrong integrity", target(receipt({ artifactIntegrity: "sha256:other" })), QUAL],
       ["wrong target", target(receipt(), "workstation"), QUAL],
+      ["wrong target kind", target(receipt({ targetKind: "delivery-environment" })), QUAL],
+      ["wrong platform", target(receipt({ platform: "darwin-arm64" })), QUAL],
+      ["wrong scope", target(receipt({ installationScope: "other-scope" })), QUAL],
+      ["wrong release source", target(receipt({ releaseSourceSha: "other-release" })), QUAL],
       ["missing ancestry", target(receipt()), { ...QUAL, ancestryProven: false }],
       [
         "incoherent timestamps",

@@ -43,10 +43,14 @@ describe("Sol R1 F09/F10/F11/F12 identity and regime", () => {
     expect(summary.completedCount).toBe(0);
   });
 
-  it("F10: duplicate cohort members are rejected before counting", () => {
-    const dup = withPath<Record<string, unknown>>(BASE_BUILDERS["cohort"]!(), "memberIds", [327, 327]);
-    (dup as Record<string, unknown>)["n"] = 2;
-    expect(codesOf(validateCohort(dup))).toContain("duplicate-member");
+  it("F10: every fixture case rejects through the public cohort validation", () => {
+    const rule = solRule("F10") as { cases: { mutation: string; code: string }[] };
+    for (const c of rule.cases) {
+      if (c.mutation !== "duplicate-memberIds") throw new Error(`unknown F10 mutation ${c.mutation}`);
+      const dup = withPath<Record<string, unknown>>(BASE_BUILDERS["cohort"]!(), "memberIds", [327, 327]);
+      (dup as Record<string, unknown>)["n"] = 2;
+      expect(codesOf(validateCohort(dup)), c.mutation).toContain(c.code);
+    }
   });
 
   it("F11: fingerprints carry every specified regime component", () => {
