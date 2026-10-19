@@ -492,13 +492,65 @@ function descriptorDigest(body: Record<string, unknown>): string {
 }
 
 /**
+ * Codec identifiers and digest domains covered by the contract digest
+ * (binding §3.2, to co-sign C2).
+ */
+export const MEMORY_CODEC_MANIFEST: ReadonlyArray<string> = Object.freeze([
+  "jcs-rfc8785+nfc",
+  "graphify-memory/payload/v2",
+  "graphify-memory/record/v2",
+  "graphify-memory/memory-journal-event/v1",
+  "graphify-memory/memory-journal-intent/v1",
+  "graphify-memory/canonical-transaction/v1",
+  "graphify-memory/recovery-checkpoint/v1",
+  "graphify-memory/accepted-lexical/v1",
+  "graphify-memory/projection-outbox/v1",
+  "graphify-memory/projection-batch/v1",
+  "graphify-memory/capture-idempotency/v1",
+  "graphify-memory/operational-capability/v1",
+]);
+
+/**
+ * Registered kind and identity-key encodings covered by the contract digest
+ * (binding §3.1, to co-sign C2).
+ */
+export const MEMORY_KEY_MANIFEST: ReadonlyArray<string> = Object.freeze([
+  "memory-journal",
+  "memory-record-v1",
+  "memory-pending-control-v1",
+  "memory-sealed-envelope-v1",
+  "memory-state-v1",
+  "memory-outbox-v1",
+  "memory-capture-idempotency-v1",
+  "memory-admission-outcome-v1",
+  "memory-store-meta-v1",
+  "memory-lexical-v1",
+]);
+
+/**
+ * Registered index policies covered by the contract digest
+ * (binding §5.3, to co-sign C2).
+ */
+export const MEMORY_POLICY_MANIFEST: ReadonlyArray<string> = Object.freeze([
+  "first-proof-immutable:memory-capture-idempotency",
+  "first-proof-immutable:memory-admission-outcomes",
+  "journal-identity:memory-journal-event",
+]);
+
+/**
  * The frozen memory descriptor (binding §2.2, to co-sign C2). The digest
  * domain above is a binding value to co-sign: it records the
  * non-circularity rule (digest computed over the descriptor without
  * itself) without amending the frozen L3a text.
+ *
+ * The contract digest covers the complete registered contract manifest
+ * (binding §2.2.3): descriptor fields, pinned profile claims with versions
+ * and semantic digests, codecs and digest domains, kind/key encodings, and
+ * index policies. Host-owned backend assets (migrations, projections) are
+ * recorded at backend qualification (C8), never silently.
  */
 export const MEMORY_DESCRIPTOR: NeutralModuleDescriptor = (() => {
-  const body = {
+  const manifest = {
     contractVersion: "memory-binding-v1",
     schemaVersions: [...MEMORY_SCHEMA_VERSIONS],
     requiredProfiles: [...MEMORY_REQUIRED_PROFILES],
@@ -507,8 +559,14 @@ export const MEMORY_DESCRIPTOR: NeutralModuleDescriptor = (() => {
     queryNames: [...MEMORY_QUERY_NAMES],
     boundaries: [...MEMORY_BOUNDARIES],
     pageLimits: { maxRecords: 2000, maxEncodedBytes: 1048576 },
+    profileClaims: MEMORY_PINNED_PROFILES.map((claim) => ({ ...claim })),
+    codecs: [...MEMORY_CODEC_MANIFEST],
+    keys: [...MEMORY_KEY_MANIFEST],
+    policies: [...MEMORY_POLICY_MANIFEST],
   };
-  const contractDigest = descriptorDigest(body);
+  const contractDigest = descriptorDigest(manifest);
+  const { profileClaims: _claims, codecs: _codecs, keys: _keys, policies: _policies, ...body } = manifest;
+  void _claims; void _codecs; void _keys; void _policies;
   return Object.freeze({ ...body, contractDigest }) as NeutralModuleDescriptor;
 })();
 
