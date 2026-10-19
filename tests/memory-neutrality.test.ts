@@ -351,6 +351,10 @@ const TEST_ALLOWED_HOST_EDGES = new Set([
   "tests/memory-projection-cascade.postgres.test.ts -> src/storage/memory-projection",
   "tests/memory-projection-cascade.postgres.test.ts -> src/storage/vector/postgres-exact",
   "tests/memory-mcp-l1-reads.test.ts -> src/memory-tools/reads",
+  // Substrate acceptance (0.21.0) consumes the public memory-substrate entry over the neutral
+  // engine: the product under test is the entry driving the reference port. Entry only, never internals.
+  "tests/memory-substrate.test.ts -> src/memory-substrate/index",
+  "tests/memory-substrate-closure.test.ts -> src/memory-substrate/index",
   // MCP-L2 recovery explicitly integrates the neutral SQLite engine with
   // the delivered host reservation ports and write facade.
   "tests/memory-mcp-l2-recovery-fixture.ts -> src/mcp/memory/reference-ports",
