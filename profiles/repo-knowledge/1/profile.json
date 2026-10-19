@@ -1,0 +1,39 @@
+{
+  "id": "repo-knowledge",
+  "version": "1",
+  "owner": "engram gr-conductor",
+  "lifecycle": "published",
+  "description": "Single repo-knowledge@1 profile: CI, architecture and timing modules. Time references live as committed typed exports per repository under this profile.",
+  "modules": {
+    "ci": {
+      "description": "CI/CD semantic module: workflows, jobs, attempts, checks per head."
+    },
+    "architecture": {
+      "description": "Architecture semantic module: components, contracts, build/runtime relations."
+    },
+    "timing": {
+      "description": "Timing module: section 3.1 clock types, delivery-chain phase types and the applicability vocabulary.",
+      "clockTypes": [
+        "start_to_pr_open",
+        "pr_open_to_merge",
+        "merge_to_installed",
+        "agent_run_elapsed",
+        "agent_work_seconds",
+        "ci_job_service",
+        "ci_envelope",
+        "ci_workflow_span",
+        "wait_interval"
+      ],
+      "phaseTypes": [
+        "start_to_pr_open",
+        "pr_open_to_merge",
+        "merge_to_installed"
+      ],
+      "applicability": [
+        "applicable",
+        "conditional-historical",
+        "incomplete"
+      ]
+    }
+  }
+}
