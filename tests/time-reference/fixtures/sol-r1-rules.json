@@ -406,6 +406,62 @@
           "code": "bad-source-revision"
         }
       ]
+    },
+    {
+      "id": "F13",
+      "spec": "§12.2",
+      "title": "Supported profile pins and matching mapping versions",
+      "cases": [
+        {
+          "mutation": "export-profile-version-2",
+          "value": "2",
+          "code": "unsupported-profile-version"
+        },
+        {
+          "mutation": "mapping-version-9",
+          "value": "9.9.9",
+          "code": "unsupported-mapping-version"
+        },
+        {
+          "mutation": "mapping-profile-version-2",
+          "value": "2",
+          "code": "mapping-profile-mismatch"
+        }
+      ]
+    },
+    {
+      "id": "F14",
+      "spec": "§6.2 A6",
+      "title": "unavailable commits require an attested attempt with a documented cause",
+      "cases": [
+        {
+          "mutation": "no-attempt",
+          "code": "missing-collection-attempt"
+        },
+        {
+          "mutation": "empty-cause",
+          "code": "missing-unavailability-cause"
+        }
+      ]
+    },
+    {
+      "id": "F15",
+      "spec": "§3.3",
+      "title": "Incoherent CI intervals are quarantined, durations are integer seconds",
+      "cases": [
+        {
+          "mutation": "negative-gap-service",
+          "code": null
+        },
+        {
+          "mutation": "fractional-envelope",
+          "code": null
+        },
+        {
+          "mutation": "zero-gap-last-check",
+          "code": null
+        }
+      ]
     }
   ],
   "shared": {
