@@ -1399,9 +1399,20 @@ describe("substrate atomicity under fault injection (amendment §5.3)", () => {
     const backend = createReferenceModuleStorageBackend({ scope: SCOPE });
     const clock = fixedClock();
     let recoveryUnavailable = false;
+    let pauseRecovery = false;
+    let signalRecovery!: () => void;
+    let releaseRecovery!: () => void;
+    const recoveryStarted = new Promise<void>((resolve) => { signalRecovery = resolve; });
+    const recoveryBarrier = new Promise<void>((resolve) => { releaseRecovery = resolve; });
     const handle = { ...backend.handle, query: async (...args: Parameters<typeof backend.handle.query>) => {
       if (recoveryUnavailable) throw new Error("recovery unavailable");
-      return backend.handle.query(...args);
+      const result = await backend.handle.query(...args);
+      if (pauseRecovery && args[0] === "memory-outbox-page") {
+        pauseRecovery = false;
+        signalRecovery();
+        await recoveryBarrier;
+      }
+      return result;
     } };
     const opened = await openModuleStorageCanonicalMemoryStoreV1({
       handle,
@@ -1463,6 +1474,23 @@ describe("substrate atomicity under fault injection (amendment §5.3)", () => {
       expect(backend.transactCount()).toBe(transactions);
       expect(backend.journalHead().allocation).toBe((BigInt(highWater) + 1n).toString());
       recoveryUnavailable = false;
+      // A second caller must join the paused recovery. Otherwise it can
+      // recover, commit, and then have its live state overwritten by the
+      // first caller's stale snapshot (binding §§8.1, 8.5).
+      pauseRecovery = true;
+      const reader = opened.value.readJournal({ after: "0", limit: 2000 });
+      await recoveryStarted;
+      let writeSettled = false;
+      const writer = opened.value.commitPending(manualCapture("candidate:recovery-race", "event:recovery-race"))
+        .then((result) => { writeSettled = true; return result; });
+      await new Promise<void>((resolve) => { setImmediate(resolve); });
+      const completedBeforeRecovery = writeSettled;
+      releaseRecovery();
+      const [read, write] = await Promise.all([reader, writer]);
+      expect(read.ok).toBe(true);
+      expect(write.ok).toBe(true);
+      expect(await journalLength(opened.value)).toBe(Number(backend.journalHead().allocation));
+      expect(completedBeforeRecovery).toBe(false);
     }
     // The live core equals the store: it observes the committed prefix,
     // never the stale pre-expiry state.
