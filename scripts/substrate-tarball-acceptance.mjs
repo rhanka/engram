@@ -2,30 +2,26 @@
  * Isolated tarball acceptance for the public memory substrate entry
  * (amendment §5, binding §10.3; design note class A, M2/M10).
  *
- * - Node only, no dependency. Local `npm pack` is the only npm operation;
- *   the consumer install runs `--offline` (no registry access).
+ * - Node only, no new dependency. Existing TypeScript/Vitest are test tools;
+ *   local pack and locked offline ci never contact the registry.
  * - `npm` means `process.env.SUBSTRATE_NPM_BIN ?? "npm"` and must be >= 10
  *   (the root manifest uses `npm:` alias overrides, which older npm cannot
  *   parse for `pack`). In this checkout the gate exports SUBSTRATE_NPM_BIN
  *   to a modern npm; elsewhere the default applies.
  * - Acceptance and closure checks run against the packed tarball installed
  *   in an isolated consumer directory: the two public values are imported
- *   from the INSTALLED package, a store is opened over an inline
- *   reference backend, a capture commits, and the persisted receipt bytes
- *   are compared with the returned digest.
+ *   from the installed PUBLIC SPECIFIER. The semantic corpus, exact type
+ *   inventory and strict compilation run in that consumer.
  * - The guard walks every published entry and every statically resolved
  *   dependency of the installed consumer. Fatal findings (native database
  *   drivers, `.node` addons, `binding.gyp`/lifecycle scripts, cluster-mesh
- *   references) fail the run for every entry. Unresolved computed imports
- *   are reported for every entry and are fatal for the memory-substrate
- *   closure itself, which must be fully static; other entries keep their
- *   pre-existing lazy optional loads, reported, not gated.
+ *   references, gypfile:true and unresolved computed imports) fail the run
+ *   for every entry, including CommonJS exports and executable entries.
  * - The inline backend below is ACCEPTANCE TEST COLLATERAL, not the C6
  *   neutral-contract asset and not a production driver: it implements the
  *   vendored neutral contract for this acceptance only. M5 stays
  *   `source-gap` (cluster-mesh asset unavailable at a pinned revision).
- * - The runner removes its tarball and consumer directories itself
- *   (unless KEEP_SUBSTRATE_TEMP=1), even on failure.
+ * - The runner removes its tarball and consumer directories even on failure.
  *
  * Wired as `npm run test:substrate-tarball`, executed by
  * `tests/memory-substrate-tarball.test.ts`.
@@ -33,6 +29,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  copyFileSync,
   existsSync,
   mkdtempSync,
   readFileSync,
@@ -45,14 +42,14 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { builtinModules } from "node:module";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { verifyInstalledSemantics, verifyInstalledTypes, verifyLockedClosure } from "./substrate-installed-acceptance.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = dirname(HERE);
 const PACKAGE_NAME = "@sentropic/engram";
 const EXPECTED_VERSION = "0.21.0";
 const EXPECTED_VALUES = ["createMemoryPortV2", "openModuleStorageCanonicalMemoryStoreV1"];
-const PUBLISHED_ENTRIES = [".", "./llm-mesh", "./memory-tools", "./memory-substrate"];
 
 /** Known native database drivers: any static edge to one fails the run. */
 const NATIVE_PACKAGE_NAMES = new Set(["better-sqlite3", "fs-ext", "pg-native", "sqlite3"]);
@@ -64,36 +61,26 @@ function packageRoot(specifier) {
   return specifier.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0];
 }
 
-/**
- * Static import edges of one file, without a parser. Statements may span
- * lines (bundled output wraps long imports), so `from` clauses are matched
- * within semicolon-bounded statements rather than per line. Only static
- * string forms are collected; anything else that loads code is reported as
- * a computed (unresolvable-at-scan) target. A literal containing `${` is a
- * template placeholder, therefore computed as well.
- */
+/** Parse real syntax: string-prefixed expressions are computed too. */
 export function staticEdges(content) {
+  const ts = createRequire(import.meta.url)("typescript");
+  const source = ts.createSourceFile("closure.js", content, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS);
   const edges = [];
-  for (const match of content.matchAll(/(?:import|export)\s[^;]*?\bfrom\s*['"]([^'"]+)['"]/g)) {
-    edges.push({ specifier: match[1], dynamic: match[1].includes("${") });
-  }
-  for (const match of content.matchAll(/(?:^|;)\s*import\s*['"]([^'"]+)['"]/gm)) {
-    edges.push({ specifier: match[1], dynamic: match[1].includes("${") });
-  }
-  for (const match of content.matchAll(/require\(\s*['"]([^'"]+)['"]\s*\)/g)) {
-    edges.push({ specifier: match[1], dynamic: match[1].includes("${") });
-  }
-  for (const match of content.matchAll(/require\(\s*(?:[^'"`\s)][^)]*?|`)/g)) {
-    void match;
-    edges.push({ specifier: "(computed-require)", dynamic: true });
-  }
-  for (const match of content.matchAll(/import\(\s*['"]([^'"]+)['"]\s*\)/g)) {
-    edges.push({ specifier: match[1], dynamic: match[1].includes("${") });
-  }
-  for (const match of content.matchAll(/\bimport\(\s*(?:[^'"`\s)][^)]*?|`)/g)) {
-    void match;
-    edges.push({ specifier: "(computed-import)", dynamic: true });
-  }
+  const add = (target, condition) => edges.push({
+    specifier: target && ts.isStringLiteralLike(target) ? target.text : target?.getText(source) ?? "(computed-target)",
+    dynamic: !target || !ts.isStringLiteralLike(target),
+    condition,
+  });
+  const visit = (node) => {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      if (node.moduleSpecifier) add(node.moduleSpecifier, "import");
+    } else if (ts.isCallExpression(node)) {
+      if (node.expression.kind === ts.SyntaxKind.ImportKeyword) add(node.arguments[0], "import");
+      else if (ts.isIdentifier(node.expression) && node.expression.text === "require") add(node.arguments[0], "require");
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
   return edges;
 }
 
@@ -135,10 +122,17 @@ function nearestPackageDir(file, stopAt) {
  * findings; callers decide the verdict per entry (see header).
  */
 export function scanInstalledClosure(entryFiles, consumerDir) {
+  // Node's parent-aware ESM resolver requires this flag on Node 20/22.
+  // One worker owns the whole walk; resolution never falls back to the consumer root.
+  return JSON.parse(execFileSync(process.execPath, ["--experimental-import-meta-resolve", fileURLToPath(import.meta.url), "--scan-closure"], {
+    input: JSON.stringify({ entryFiles, consumerDir }), encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
+  }));
+}
+
+function scanClosure(entryFiles, consumerDir) {
   const findings = [];
   const seenFiles = new Set();
   const seenPackages = new Set();
-  const consumerRequire = createRequire(join(consumerDir, "package.json"));
   // The distribution's own package lifecycle (here: the packed engram
   // manifest) is the release's reviewed surface, not a hidden dependency
   // build step: it is never flagged for lifecycle scripts or build files.
@@ -146,6 +140,11 @@ export function scanInstalledClosure(entryFiles, consumerDir) {
     entryFiles.map((entry) => nearestPackageDir(entry, consumerDir)).filter((dir) => dir !== undefined),
   );
   const queue = [...entryFiles];
+  for (const packageDir of ownedPackages) {
+    const metadata = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
+    if (metadata.gypfile === true) findings.push({ file: join(packageDir, "package.json"), specifier: packageDir, kind: "gypfile" });
+    if (existsSync(join(packageDir, "binding.gyp"))) findings.push({ file: join(packageDir, "binding.gyp"), specifier: packageDir, kind: "lifecycle-scripts" });
+  }
   let steps = 0;
   while (queue.length > 0) {
     const file = queue.pop();
@@ -187,7 +186,9 @@ export function scanInstalledClosure(entryFiles, consumerDir) {
         continue;
       } else {
         try {
-          resolved = consumerRequire.resolve(specifier);
+          resolved = edge.condition === "require"
+            ? createRequire(file).resolve(specifier)
+            : fileURLToPath(import.meta.resolve(specifier, pathToFileURL(file).href));
         } catch {
           continue;
         }
@@ -203,7 +204,9 @@ export function scanInstalledClosure(entryFiles, consumerDir) {
         const manifest = readText(join(packageDir, "package.json"));
         if (manifest !== undefined) {
           try {
-            const scripts = JSON.parse(manifest).scripts ?? {};
+            const metadata = JSON.parse(manifest);
+            if (metadata.gypfile === true) findings.push({ file: join(packageDir, "package.json"), specifier: packageDir, kind: "gypfile" });
+            const scripts = metadata.scripts ?? {};
             for (const name of Object.keys(scripts)) {
               if (LIFECYCLE_SCRIPTS.has(name)) {
                 findings.push({ file: join(packageDir, "package.json"), specifier: `${packageDir}#${name}`, kind: "lifecycle-scripts" });
@@ -229,7 +232,9 @@ export function fatalFindings(findings) {
     finding.kind === "forbidden-package"
     || finding.kind === "native-addon"
     || finding.kind === "cluster-mesh"
-    || finding.kind === "lifecycle-scripts",
+    || finding.kind === "lifecycle-scripts"
+    || finding.kind === "gypfile"
+    || finding.kind === "computed-target",
   );
 }
 
@@ -660,12 +665,16 @@ function checkNpm(npmBin) {
 }
 
 function publishedEntryFiles(installedDir, manifest) {
-  return PUBLISHED_ENTRIES.map((entry) => {
-    const mapping = manifest.exports?.[entry];
-    const relative = typeof mapping === "string" ? mapping : mapping?.import ?? mapping?.default;
-    if (typeof relative !== "string") throw new Error(`installed manifest maps no import artifact for entry ${entry}`);
-    return { entry, file: join(installedDir, relative.replace(/^\.\//, "")) };
-  });
+  const entries = [];
+  const add = (entry, mapping) => {
+    if (typeof mapping === "string") entries.push({ entry, file: join(installedDir, mapping) });
+    else if (mapping !== null && typeof mapping === "object") {
+      for (const [condition, target] of Object.entries(mapping)) if (condition !== "types") add(condition === "import" ? entry : `${entry}#${condition}`, target);
+    }
+  };
+  for (const [entry, mapping] of Object.entries(manifest.exports)) add(entry, mapping);
+  for (const [name, target] of Object.entries(manifest.bin ?? {})) add(`bin:${name}`, target);
+  return entries;
 }
 
 /**
@@ -684,18 +693,28 @@ export async function runTarballAcceptance({ repoRoot = REPO_ROOT } = {}) {
   const contractDigest = pinnedContractDigest(repoRoot);
   const packDir = mkdtempSync(join(tmpdir(), "substrate-tarball-"));
   const consumerDir = mkdtempSync(join(tmpdir(), "substrate-consumer-"));
-  const keepTemp = process.env.KEEP_SUBSTRATE_TEMP === "1";
   try {
-    const packOutput = execFileSync(npmBin, ["pack", "--pack-destination", packDir], { cwd: repoRoot, encoding: "utf8" });
+    const packOutput = execFileSync(npmBin, ["pack", "--offline", "--ignore-scripts", "--silent", "--pack-destination", packDir], { cwd: repoRoot, encoding: "utf8" });
     const tarballName = packOutput.split("\n").map((line) => line.trim()).filter((line) => line.endsWith(".tgz")).pop();
     if (!tarballName) throw new Error("npm pack printed no tarball name");
     const tarball = join(packDir, tarballName);
     writeFileSync(join(consumerDir, "package.json"), JSON.stringify({ name: "substrate-acceptance-consumer", version: "0.0.0", type: "module" }));
-    execFileSync(npmBin, ["install", "--offline", "--no-audit", "--no-fund", tarball], { cwd: consumerDir, stdio: "pipe" });
+    copyFileSync(tarball, join(consumerDir, "engram.tgz"));
+    copyFileSync(join(repoRoot, "scripts/fixtures/substrate-consumer/package.json"), join(consumerDir, "package.json"));
+    const lock = JSON.parse(readFileSync(join(repoRoot, "scripts/fixtures/substrate-consumer/package-lock.json"), "utf8"));
+    // Only the local artifact changes per build. Every third-party version,
+    // nested placement and integrity is committed, independent of cache contents.
+    lock.packages[`node_modules/${PACKAGE_NAME}`].integrity = `sha512-${createHash("sha512").update(readFileSync(tarball)).digest("base64")}`;
+    writeFileSync(join(consumerDir, "package-lock.json"), JSON.stringify(lock));
+    execFileSync(npmBin, ["ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: consumerDir, stdio: "pipe" });
+    verifyLockedClosure(consumerDir, lock);
+    console.log("locked consumer: npm ci --offline (lifecycle scripts disabled)");
     const installedDir = join(consumerDir, "node_modules", PACKAGE_NAME);
     const installedManifest = JSON.parse(readFileSync(join(installedDir, "package.json"), "utf8"));
     if (installedManifest.version !== EXPECTED_VERSION) throw new Error("installed version mismatch");
-    const namespace = await import(join(installedDir, "dist", "memory-substrate.js"));
+    const consumerEntry = join(consumerDir, "public-entry.mjs");
+    writeFileSync(consumerEntry, `export * from "${PACKAGE_NAME}/memory-substrate";`);
+    const namespace = await import(pathToFileURL(consumerEntry).href);
     const values = Object.keys(namespace).sort();
     if (JSON.stringify(values) !== JSON.stringify([...EXPECTED_VALUES].sort())) {
       throw new Error(`installed entry values differ: ${values.join(",")}`);
@@ -729,20 +748,20 @@ export async function runTarballAcceptance({ repoRoot = REPO_ROOT } = {}) {
     if (!journal.ok || journal.value.length !== 1) throw new Error("installed journal does not hold the committed event");
     await opened.value.close();
 
+    verifyInstalledTypes(consumerDir);
+    verifyInstalledSemantics(consumerDir, repoRoot);
+
     const entries = publishedEntryFiles(installedDir, installedManifest);
     const report = [];
     for (const { entry, file } of entries) {
       const findings = scanInstalledClosure([file], consumerDir);
       const fatal = fatalFindings(findings);
-      if (fatal.length > 0) {
-        throw new Error(`installed entry ${entry} has forbidden closure findings: ${JSON.stringify(fatal.slice(0, 5))}`);
-      }
       const computed = findings.filter((finding) => finding.kind === "computed-target");
-      if (entry === "./memory-substrate" && computed.length > 0) {
-        throw new Error(`installed memory-substrate closure is not fully static: ${JSON.stringify(computed.slice(0, 5))}`);
-      }
-      report.push({ entry, files: file, computedTargets: computed.length });
+      report.push({ entry, files: file, computedTargets: computed.length, fatal });
+      console.log(`tarball-acceptance closure ${entry}: ${fatal.length ? `${fatal.length} fatal findings` : "no fatal findings"}, computed-targets=${computed.length}`);
     }
+    const blocked = report.filter((row) => row.fatal.length > 0);
+    if (blocked.length) throw new Error(`installed closure refused: ${JSON.stringify(blocked.map(({ entry, fatal }) => ({ entry, findings: fatal.slice(0, 3) })))}`);
     const summary = {
       package: `${PACKAGE_NAME}@${EXPECTED_VERSION}`,
       npm: npmVersion,
@@ -753,20 +772,18 @@ export async function runTarballAcceptance({ repoRoot = REPO_ROOT } = {}) {
       report,
     };
     console.log(`tarball-acceptance OK ${summary.package} values=${values.join(",")} cursor=1`);
-    for (const row of report) {
-      console.log(`tarball-acceptance closure ${row.entry}: no fatal findings, computed-targets=${row.computedTargets}`);
-    }
     return summary;
   } finally {
-    if (!keepTemp) {
-      rmSync(packDir, { recursive: true, force: true });
-      rmSync(consumerDir, { recursive: true, force: true });
-    }
+    rmSync(packDir, { recursive: true, force: true });
+    rmSync(consumerDir, { recursive: true, force: true });
   }
 }
 
 const invokedAsScript = process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (invokedAsScript) {
+if (invokedAsScript && process.argv[2] === "--scan-closure") {
+  const { entryFiles, consumerDir } = JSON.parse(readFileSync(0, "utf8"));
+  console.log(JSON.stringify(scanClosure(entryFiles, consumerDir)));
+} else if (invokedAsScript) {
   runTarballAcceptance().then(
     () => {},
     (error) => {
