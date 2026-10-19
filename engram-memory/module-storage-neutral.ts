@@ -336,6 +336,30 @@ export interface NeutralFenceProof {
   readonly epoch: string;
 }
 
+/**
+ * Identified neutral-contract asset (binding §1.2/C6): the frozen L3a
+ * v4.1 bytes this vendored declaration is equivalent to, plus the
+ * additive installed contract recorded below. Equivalence is by the
+ * recorded field-name mirror (F §4.1/§5.2 names reused exactly); every
+ * member without a frozen counterpart is listed in
+ * NEUTRAL_ADDITIVE_ASSETS, never silently merged.
+ */
+export const NEUTRAL_CONTRACT_ASSET = Object.freeze({
+  name: "l3a-generic-module-storage-port",
+  version: "v4.1",
+  digest: "c7111c9e7293ee270a0b4dde277f1cfc40fa3c863c3915c6f9ccdd6935c46294",
+});
+
+/** Additive installed contract beyond the frozen bytes, explicitly listed (C6). */
+export const NEUTRAL_ADDITIVE_ASSETS: ReadonlyArray<string> = Object.freeze([
+  "acquireFence/checkFence/releaseFence canonical-instance acquisition (binding §9)",
+  "CommitOptions.fence writer-fence identity (binding §§9.3–9.6)",
+  "readCommitResult scoped original-result recovery (R-G4-7, binding §8.2)",
+  "profileClaims with pinned versions and semantic digests (binding §6.3)",
+  "memory-* named queries and scope-chain-index for memory-journal (binding §4.1)",
+  "memory key encodings, codec manifest, and index policies in the contract digest (binding §§2.2.3, 3.1, 3.2, 5.3)",
+]);
+
 export interface NeutralMemoryHandle {
   readonly moduleId: string;
   readonly descriptor: NeutralModuleDescriptor;
@@ -366,6 +390,39 @@ export interface NeutralMemoryHandle {
   checkFence(grant: NeutralScopeGrant, fence: NeutralWriterFence): Promise<void>;
   /** Acquisition-bound release: only the live holder clears the fence; a stale identity never clears a successor. */
   releaseFence(fence: NeutralWriterFence): Promise<void>;
+}
+
+/**
+ * Grant-bound scoped surface returned by a binding `bind` call: the grant
+ * is captured at bind time, so methods carry no per-call grant.
+ */
+export interface NeutralBoundScope {
+  transact<T>(
+    options: Omit<NeutralCommitOptions, "grant">,
+    operation: (transaction: NeutralModuleTransaction) => Promise<T>,
+  ): Promise<{ readonly value: T; readonly receipt: NeutralCommitReceipt }>;
+  query(name: string, input: NeutralEncodedValue): Promise<NeutralEncodedValue>;
+  readAggregate(kind: string, key: string): Promise<NeutralAggregateRead | null>;
+  readCommitResult?(commitIdentity: string): Promise<NeutralEncodedValue | null>;
+  acquireFence(input: { scope: NeutralStorageScope; store_id: string }): Promise<NeutralFenceProof>;
+  checkFence(fence: NeutralWriterFence): Promise<void>;
+  releaseFence(fence: NeutralWriterFence): Promise<void>;
+}
+
+/**
+ * Specified binding interface (binding §6.2, L3a §6.3): the composition
+ * binds a grant to a scope and receives the scoped surface. The delivered
+ * generic binding is synchronous while the Postgres binding is
+ * asynchronous; the constructor awaits either shape and MUST NOT assume
+ * one. A pre-bound flat NeutralMemoryHandle stays consumable as-is.
+ */
+export interface NeutralModuleStorageBinding {
+  readonly moduleId: string;
+  readonly descriptor: NeutralModuleDescriptor;
+  /** Closed backend class (G5 stays blocked: no Spanner member). */
+  readonly backend: "memory" | "sqlite" | "postgres";
+  readonly profiles: ReadonlyArray<NeutralProfileClaim>;
+  bind(grant: NeutralScopeGrant): NeutralBoundScope | Promise<NeutralBoundScope>;
 }
 
 /** Compound identity-key encodings (binding §3.1; M2 `canonicalRecordKey` precedent). */
