@@ -16,7 +16,7 @@ const build = () => execFileSync("npm", ["--prefix", "engram-memory", "run", "bu
 try {
   for (const [name, from, to, test] of mutations) {
     if (!original.includes(from)) throw new Error(`mutation anchor missing: ${name}`);
-    writeFileSync(target, original.replace(from, to));
+    writeFileSync(target, original.replaceAll(from, to));
     build();
     const result = spawnSync(process.execPath, ["node_modules/vitest/vitest.mjs", "run", "tests/memory-substrate.test.ts", "-t", test], { cwd: root, encoding: "utf8" });
     if (result.status !== 1 || !(result.stdout + result.stderr).includes("AssertionError")) {
