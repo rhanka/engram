@@ -1184,7 +1184,15 @@
               "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
             },
             "installedAt": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+                },
+                {
+                  "const": "unknown"
+                }
+              ]
             },
             "verdict": {
               "enum": [
@@ -1359,7 +1367,7 @@
         "type": "object",
         "properties": {
           "id": {
-            "type": "string"
+            "const": "repo-knowledge"
           },
           "version": {
             "type": "string"
@@ -1971,7 +1979,15 @@
                     "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
                   },
                   "installedAt": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+                      },
+                      {
+                        "const": "unknown"
+                      }
+                    ]
                   },
                   "verdict": {
                     "enum": [
