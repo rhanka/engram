@@ -9,7 +9,7 @@ import {
   validatePullRequestTiming,
 } from "../../src/time-reference/index.js";
 import { validateRepoKnowledgeProfile } from "../../src/repo-knowledge-contract.js";
-import { solRule } from "./sol-r1-helpers.js";
+import { drivenCases, solRule } from "./sol-r1-helpers.js";
 
 describe("TR-14 version separation", () => {
   it("the package exposes ./time-reference", () => {
@@ -33,7 +33,7 @@ describe("TR-14 version separation", () => {
       version: string;
       packages: Record<string, { version: string }>;
     };
-    for (const c of rule.cases) {
+    for (const c of drivenCases("F17", rule.cases)) {
       if (c.name === "package-exposes-time-reference") {
         expect("./time-reference" in pkg.exports, c.name).toBe(true);
       } else if (c.name === "package-version-0.21.0") {
