@@ -28,19 +28,25 @@ import {
   type MemoryEngineDependenciesV2,
 } from "../src/memory-substrate/index.js";
 import {
+  MEMORY_ASSET_MANIFEST,
   MEMORY_CODEC_MANIFEST,
   MEMORY_CONTRACT_DIGEST,
+  MEMORY_KEY_FORMATS,
   MEMORY_KEY_MANIFEST,
+  MEMORY_KIND_MANIFEST,
   MEMORY_OPTIONAL_PROFILES,
   MEMORY_PINNED_PROFILES,
   MEMORY_POLICY_MANIFEST,
   MEMORY_REQUIRED_PROFILES,
   NEUTRAL_ADDITIVE_ASSETS,
   NEUTRAL_CONTRACT_ASSET,
+  memoryContractManifest,
+  memoryDescriptorDigest,
   type NeutralBoundScope,
   type NeutralModuleStorageBinding,
   type NeutralScopeGrant,
 } from "../engram-memory/module-storage-neutral.js";
+import { decodeCanonicalTransactionReceiptForTest } from "../engram-memory/module-storage-memory-store.js";
 import {
   createReferenceModuleStorageBackend,
   type ReferenceBackend,
@@ -170,6 +176,41 @@ function captureRequest(key: string, sequence: string, scopeRef = SCOPE_REF, tex
   };
 }
 
+/** Store-level manual capture input, bypassing the engine (mirrors the K7 test shape). */
+function manualCapture(candidateId: string, eventId: string): Parameters<CanonicalMemoryStorePort["commitPending"]>[0] {
+  return {
+    control: {
+      candidate_id: candidateId,
+      envelope_digest: DIGEST,
+      state: "pending",
+      created_cursor: "0",
+      policy_id: "policy:manual",
+      policy_version: "1",
+      capture_content_digest: DIGEST,
+      capture_receipt_digest: DIGEST,
+    },
+    sealed: {
+      candidate_id: candidateId,
+      envelope_ref: `envelope:${candidateId}`,
+      envelope_digest: DIGEST,
+      key_ref: `key:${candidateId}`,
+      ciphertext: `${candidateId}-ciphertext`,
+    },
+    capture_event: {
+      schema_version: 2,
+      event_id: eventId,
+      cursor: "0",
+      recorded_at: NOW,
+      operation: "capture",
+      candidate_id: candidateId,
+      to_state: "pending",
+      authorization_receipt_digest: DIGEST,
+      previous_event_digest: DIGEST,
+      event_digest: DIGEST,
+    },
+  } as const;
+}
+
 async function engineOn(store: CanonicalMemoryStorePort, clock: ClockPort, host = l3Host()) {
   const memory = createMemoryPortV2({
     canonical_store: store,
@@ -199,7 +240,7 @@ describe("substrate composition (amendment §5.1, binding §10.1 negotiation)", 
     ]);
     expect(MEMORY_CONTRACT_DIGEST).toMatch(/^sha256:[0-9a-f]{64}$/);
     // Pinned literal: any descriptor drift breaks this test loudly (freeze discipline, C2).
-    expect(MEMORY_CONTRACT_DIGEST).toBe("sha256:9d349499be24e4ec374ff730107f3ec7f0b7bca9d77e42f2cccd08571aa7aeed");
+    expect(MEMORY_CONTRACT_DIGEST).toBe("sha256:dff737ced37d801ef48bb4d7088fc4fbc92021d21fe2034ff33ea643b49bec28");
   });
 
   it("pins the complete contract manifest in the digest (binding §2.2.3)", () => {
@@ -223,6 +264,43 @@ describe("substrate composition (amendment §5.1, binding §10.1 negotiation)", 
       expect(claim.version).toBe("1");
       expect(claim.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
     }
+    // Kind mappings, key formats, and asset digests are registered alongside
+    // the tags: tags alone do not encode formats or mappings (binding §2.2.3).
+    expect(MEMORY_KIND_MANIFEST.chains["memory-journal"]).toEqual({ kind: "memory-journal-event", chain: "memory-journal" });
+    expect(MEMORY_KIND_MANIFEST.records["memory-record-blobs"]).toBe("memory-record-blob");
+    expect(MEMORY_KIND_MANIFEST.aggregates["memory-capture-idempotency"]).toBe("memory-capture-idempotency");
+    expect(MEMORY_KEY_FORMATS).toContain('["memory-record-v1","<record_id>"]');
+    expect(MEMORY_KEY_FORMATS).toContain('["memory-lexical-v1","<scope_ref>","<record_id>"]');
+    expect(MEMORY_KEY_FORMATS).toHaveLength(9);
+    expect(MEMORY_ASSET_MANIFEST.contract.digest).toBe(NEUTRAL_CONTRACT_ASSET.digest);
+    expect(MEMORY_ASSET_MANIFEST.additive).toEqual([...NEUTRAL_ADDITIVE_ASSETS]);
+  });
+
+  it("kills one digest mutation per manifest section (binding §2.2.3)", () => {
+    const digestOf = (mutate: (manifest: Record<string, unknown>) => void): string => {
+      const copy = JSON.parse(canonicalizeJcs(memoryContractManifest())) as Record<string, unknown>;
+      mutate(copy);
+      return memoryDescriptorDigest(copy);
+    };
+    const mutations: Array<[string, (manifest: Record<string, unknown>) => void]> = [
+      ["requiredProfiles", (m) => { m["requiredProfiles"] = (m["requiredProfiles"] as string[]).slice(1); }],
+      ["profileClaims", (m) => { m["profileClaims"] = []; }],
+      ["codecs", (m) => { m["codecs"] = []; }],
+      ["keys", (m) => { m["keys"] = []; }],
+      ["keyFormats", (m) => { m["keyFormats"] = []; }],
+      ["kinds", (m) => { delete (m["kinds"] as Record<string, unknown>)["chains"]; }],
+      ["policies", (m) => { m["policies"] = []; }],
+      ["assets", (m) => { delete (m["assets"] as Record<string, unknown>)["contract"]; }],
+      ["queryNames", (m) => { m["queryNames"] = []; }],
+      ["boundaries", (m) => { m["boundaries"] = []; }],
+      ["chainKinds", (m) => { m["chainKinds"] = []; }],
+      ["schemaVersions", (m) => { m["schemaVersions"] = []; }],
+      ["pageLimits", (m) => { m["pageLimits"] = { maxRecords: 1, maxEncodedBytes: 1 }; }],
+    ];
+    for (const [section, mutate] of mutations) {
+      expect(digestOf(mutate), `mutation in ${section} must change the digest`).not.toBe(MEMORY_CONTRACT_DIGEST);
+    }
+    expect(memoryDescriptorDigest(JSON.parse(canonicalizeJcs(memoryContractManifest())))).toBe(MEMORY_CONTRACT_DIGEST);
   });
 
   it("importing the entry opens nothing and acquires no fence", async () => {
@@ -607,6 +685,32 @@ describe("substrate canonical trace and replay (amendment §5.2, binding §8.2)"
     await harness.store.close();
   });
 
+  it("returns the exact persisted receipt bytes under an advancing clock (binding §§8.2–8.3)", async () => {
+    const backend = createReferenceModuleStorageBackend({ scope: SCOPE });
+    let tick = Date.parse(NOW);
+    const clock: ClockPort = { now: () => { const iso = new Date(tick).toISOString(); tick += 1000; return iso; } };
+    const opened = await openModuleStorageCanonicalMemoryStoreV1({
+      handle: backend.handle,
+      scope_binding: { scope: { ...SCOPE }, store_id: "store:receipt-once", resolveScope },
+      grant: backend.grant,
+      clock,
+      deadline_at: "2026-08-16T12:40:00.000Z",
+    });
+    if (!opened.ok) throw new Error("open refused");
+    // The scratch computation samples the clock, then the transaction samples
+    // it again: with an advancing clock the two samplings differ, so a second
+    // sampling would change the persisted bytes out from under the caller.
+    const committed = await opened.value.commitPending(manualCapture("candidate:receipt-once-1", "event:receipt-once-1"));
+    expect(committed.ok).toBe(true);
+    if (!committed.ok) throw new Error("commit refused");
+    const persisted = await backend.handle.readCommitResult!("event:receipt-once-1", backend.grant);
+    expect(persisted).not.toBeNull();
+    const persistedBody = JSON.parse(persisted!.data) as { receipt_digest: string; committed_at: string };
+    expect(committed.value.receipt_digest).toBe(persistedBody.receipt_digest);
+    expect(committed.value.committed_at).toBe(persistedBody.committed_at);
+    await opened.value.close();
+  });
+
   it("refuses a stored receipt outside the complete closed receipt schema (binding §8.3.4)", async () => {
     const harness = await openStore("store:receipt-schema");
     const input: Parameters<CanonicalMemoryStorePort["commitPending"]>[0] = {
@@ -650,6 +754,84 @@ describe("substrate canonical trace and replay (amendment §5.2, binding §8.2)"
     harness.backend.testOnlyOverwriteCommitResult("event:receipt-schema-capture-1", forged);
     const replay = await harness.store.commitPending({ ...input });
     expect(replay).toMatchObject({ ok: false, error: { code: "JOURNAL_CORRUPT" } });
+    await harness.store.close();
+  });
+
+  it("refuses every forged receipt field against the closed schema (binding §8.3.4)", async () => {
+    const harness = await openStore("store:receipt-forgery");
+    const input = manualCapture("candidate:receipt-forgery-1", "event:receipt-forgery-1");
+    const committed = await harness.store.commitPending(input);
+    expect(committed.ok).toBe(true);
+    const valid = await harness.backend.handle.readCommitResult!("event:receipt-forgery-1", harness.backend.grant);
+    if (valid === null) throw new Error("no stored receipt");
+    const validBody = JSON.parse(valid.data) as Record<string, unknown>;
+    const sign = (body: Record<string, unknown>): { format: "utf8"; data: string } => {
+      const { receipt_digest: _stale, ...rest } = body;
+      void _stale;
+      return { format: "utf8", data: canonicalizeJcs({ ...rest, receipt_digest: receiptDigest("canonical-transaction", rest) }) };
+    };
+    const forgeries: Array<[string, Record<string, unknown>]> = [
+      ["unknown field", { ...validBody, injected: "x" }],
+      ["missing operation", (({ operation: _op, ...rest }) => rest)(validBody as { operation: unknown } & Record<string, unknown>)],
+      ["operation outside the enum", { ...validBody, operation: "wipe-everything" }],
+      ["empty operation", { ...validBody, operation: "" }],
+      ["non-u64 cursor", { ...validBody, cursor: "abc" }],
+      ["non-u64 storage_epoch", { ...validBody, storage_epoch: "epoch-1" }],
+      ["malformed event_digest", { ...validBody, event_digest: "nope" }],
+      ["malformed state_digest", { ...validBody, state_digest: "nope" }],
+      ["malformed committed_at", { ...validBody, committed_at: "yesterday" }],
+      ["malformed optional digest", { ...validBody, record_digest: "nope" }],
+    ];
+    for (const [name, body] of forgeries) {
+      harness.backend.testOnlyOverwriteCommitResult("event:receipt-forgery-1", sign(body));
+      const replay = await harness.store.commitPending(input);
+      expect(replay, `forgery ${name} must refuse`).toMatchObject({ ok: false, error: { code: "JOURNAL_CORRUPT" } });
+    }
+    // A recomputed digest over a tampered body still verifies the schema, so
+    // the committed identity and cursor match is the refusal below.
+    const tamperedCursor = { ...validBody, cursor: (BigInt(validBody["cursor"] as string) + 10n).toString() };
+    harness.backend.testOnlyOverwriteCommitResult("event:receipt-forgery-1", sign(tamperedCursor));
+    const replayCursor = await harness.store.commitPending(input);
+    expect(replayCursor).toMatchObject({ ok: false, error: { code: "JOURNAL_CORRUPT" } });
+    const tamperedOperation = { ...validBody, operation: "tombstone" };
+    harness.backend.testOnlyOverwriteCommitResult("event:receipt-forgery-1", sign(tamperedOperation));
+    const replayOperation = await harness.store.commitPending(input);
+    expect(replayOperation).toMatchObject({ ok: false, error: { code: "JOURNAL_CORRUPT" } });
+    // Restoring the exact original bytes replays cleanly.
+    harness.backend.testOnlyOverwriteCommitResult("event:receipt-forgery-1", valid);
+    const replayValid = await harness.store.commitPending(input);
+    expect(replayValid).toMatchObject({ ok: true });
+    if (replayValid.ok) expect(replayValid.value.receipt_digest).toBe(validBody["receipt_digest"]);
+    await harness.store.close();
+  });
+
+  it("decodes stored receipts against the closed operation enum (binding §8.3.4)", async () => {
+    const harness = await openStore("store:receipt-enum");
+    const committed = await harness.store.commitPending(manualCapture("candidate:receipt-enum-1", "event:receipt-enum-1"));
+    expect(committed.ok).toBe(true);
+    const valid = await harness.backend.handle.readCommitResult!("event:receipt-enum-1", harness.backend.grant);
+    if (valid === null) throw new Error("no stored receipt");
+    expect(decodeCanonicalTransactionReceiptForTest(valid)?.receipt_digest)
+      .toBe((JSON.parse(valid.data) as { receipt_digest: string }).receipt_digest);
+    const validBody = JSON.parse(valid.data) as Record<string, unknown>;
+    const encode = (body: Record<string, unknown>): { format: "utf8"; data: string } => ({
+      format: "utf8",
+      data: canonicalizeJcs(body),
+    });
+    const rejections: Array<[string, Record<string, unknown>]> = [
+      ["operation outside the enum", { ...validBody, operation: "wipe-everything" }],
+      ["empty operation", { ...validBody, operation: "" }],
+      ["missing operation", (({ operation: _op, ...rest }) => rest)(validBody as { operation: unknown } & Record<string, unknown>)],
+      ["non-string operation", { ...validBody, operation: 7 }],
+    ];
+    for (const [name, body] of rejections) {
+      // The digest is recomputed over the tampered body, so only the
+      // operation check can refuse: without the enum, these would decode.
+      const { receipt_digest: _stale, ...rest } = body;
+      void _stale;
+      const signed = encode({ ...rest, receipt_digest: receiptDigest("canonical-transaction", rest) });
+      expect(decodeCanonicalTransactionReceiptForTest(signed), name).toBeUndefined();
+    }
     await harness.store.close();
   });
 
@@ -1067,6 +1249,69 @@ describe("substrate atomicity under fault injection (amendment §5.3)", () => {
     await harness.store.close();
   });
 
+  it("rolls back the whole transaction when a second apply fails (L3a §5.2)", async () => {
+    const harness = await openStore("store:tx-atomic");
+    const fence = harness.backend.currentFence();
+    if (fence === undefined) throw new Error("no live fence");
+    const blobKey = JSON.stringify(["memory-record-v1", "record:tx-probe"]);
+    const k7Key = JSON.stringify(["memory-capture-idempotency-v1", "candidate:tx-probe"]);
+    const unitsBefore = harness.backend.committedUnits().length;
+    const headBefore = harness.backend.journalHead();
+    // The first apply writes a record; the second apply carries a stale chain
+    // head and refuses. The transaction unit is the whole transact call, so the
+    // first apply leaves no trace.
+    const result = await harness.backend.transactRaw(
+      { maxAppends: 1, maxRecords: 8, maxEncodedBytes: 1_048_576 },
+      "commit:tx-two-applies",
+      async (tx) => {
+        await tx.apply({
+          guards: [],
+          records: [{
+            kind: "memory-record-blobs",
+            key: blobKey,
+            value: { format: "utf8", data: "{}" },
+            contentHash: DIGEST,
+          }],
+          appends: [],
+          updates: [],
+          relationships: [],
+          barriers: [],
+          purgeIntents: [],
+          indexWrites: [],
+        });
+        await tx.apply({
+          guards: [],
+          records: [],
+          appends: [{
+            chain: "memory-journal",
+            kind: "memory-journal-event",
+            id: "event:tx-probe-stale",
+            hash: DIGEST,
+            value: { format: "utf8", data: "{}" },
+            expectation: { kind: "head", hash: `sha256:${"f".repeat(64)}` },
+          }],
+          updates: [],
+          relationships: [],
+          barriers: [],
+          purgeIntents: [],
+          indexWrites: [],
+        });
+      },
+      fence,
+    );
+    expect(result).toEqual({ ok: false, code: "cas-conflict" });
+    const blob = await harness.backend.handle.query(
+      "memory-record-by-id",
+      { format: "utf8", data: canonicalizeJcs({ record_id: "record:tx-probe" }) },
+      harness.backend.grant,
+    );
+    expect(JSON.parse(blob.data)).toMatchObject({ found: false });
+    expect(harness.backend.readAggregate("memory-capture-idempotency", k7Key)).toBeUndefined();
+    expect(harness.backend.journalHead()).toEqual(headBefore);
+    expect(harness.backend.committedUnits()).toHaveLength(unitsBefore);
+    await harness.store.close();
+  });
+
   it("commits observed expiry in composition-declared bounded units (binding §4.3)", async () => {
     const backend = createReferenceModuleStorageBackend({ scope: SCOPE });
     const clock = fixedClock();
@@ -1122,6 +1367,75 @@ describe("substrate atomicity under fault injection (amendment §5.3)", () => {
       expect(unit.limits.maxAppends).toBe(1);
     }
     expect(await journalLength(opened.value)).toBe(journal.value.length + 3);
+    await opened.value.close();
+  });
+
+  it("rehydrates the live core to the committed prefix when a later expiry batch fails (binding §§4.3, 8.1)", async () => {
+    const backend = createReferenceModuleStorageBackend({ scope: SCOPE });
+    const clock = fixedClock();
+    const opened = await openModuleStorageCanonicalMemoryStoreV1({
+      handle: backend.handle,
+      scope_binding: { scope: { ...SCOPE }, store_id: "store:maintenance-partial", resolveScope },
+      grant: backend.grant,
+      clock,
+      deadline_at: "2026-08-16T12:40:00.000Z",
+      work_limits: { maintenance_max_appends: 1 },
+    });
+    if (!opened.ok) throw new Error("open refused");
+    const memory = await engineOn(opened.value, clock);
+    const expiring = (key: string, sequence: string) => {
+      const base = captureRequest(key, sequence);
+      return {
+        ...base,
+        payload: {
+          ...base.payload,
+          retention: { derivative_rule: "retain" as const, expires_at: "2026-08-16T12:35:30.000Z" },
+        },
+      };
+    };
+    for (const sequence of ["1", "2", "3"]) {
+      const captured = await memory.capture(expiring(`partial-key-${sequence}`, sequence));
+      expect(captured.ok).toBe(true);
+      if (!captured.ok || captured.value.candidate_id === undefined) throw new Error("capture failed");
+      const admitted = await memory.requestAdmission({
+        candidate_id: captured.value.candidate_id,
+        authorization: { credential: "credential:substrate" },
+        deadline_at: "2026-08-16T12:40:00.000Z",
+      });
+      expect(admitted).toMatchObject({ ok: true, value: { status: "accepted" } });
+    }
+    const journal = await opened.value.readJournal({ after: "0", limit: 2000 });
+    if (!journal.ok || journal.value.length === 0) throw new Error("journal refused");
+    const highWater = journal.value[journal.value.length - 1]!.cursor;
+    // Fail the second of the three one-append maintenance transacts, before
+    // any write of that batch: the first batch stays committed.
+    const base = backend.transactCount();
+    backend.armFailpointAtTransaction(base + 2, "commit-decision");
+    clock.advanceTo("2026-08-16T12:36:00.000Z");
+    const refused = await opened.value.acceptedSnapshot({
+      valid_as_of: 1,
+      system_as_of: highWater,
+      authorization_receipt_digest: DIGEST,
+      max_candidates: 50,
+    });
+    backend.disarmFailpoint();
+    expect(refused).toMatchObject({ ok: false, error: { code: "STORE_UNAVAILABLE" } });
+    expect(backend.journalHead().allocation).toBe((BigInt(highWater) + 1n).toString());
+    // The live core equals the store: it observes the committed prefix,
+    // never the stale pre-expiry state.
+    const live = await opened.value.readJournal({ after: "0", limit: 2000 });
+    expect(live.ok).toBe(true);
+    if (!live.ok) throw new Error("live journal refused");
+    expect(live.value.length).toBe(Number(backend.journalHead().allocation));
+    // A later read commits the remaining batches from the adopted prefix.
+    const retry = await opened.value.acceptedSnapshot({
+      valid_as_of: 1,
+      system_as_of: highWater,
+      authorization_receipt_digest: DIGEST,
+      max_candidates: 50,
+    });
+    expect(retry.ok).toBe(true);
+    expect(await journalLength(opened.value)).toBe(Number(backend.journalHead().allocation));
     await opened.value.close();
   });
 
