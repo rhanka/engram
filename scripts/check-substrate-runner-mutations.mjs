@@ -8,6 +8,7 @@ const original = readFileSync(target, "utf8");
 const mutations = [
   ["consumer-root resolution", "createRequire(file).resolve(specifier)", 'createRequire(join(consumerDir, "package.json")).resolve(specifier)', "resolves require"],
   ["ESM resolved as CommonJS", 'edge.condition === "require"', "true", "resolves import"],
+  ["relative ESM target shadowed", 'import.meta.resolve(specifier, pathToFileURL(file).href)', 'import.meta.resolve(specifier.startsWith(".") ? `${specifier}.js` : specifier, pathToFileURL(file).href)', "exact ESM relative"],
   ["expression targets ignored", 'dynamic: !target || !ts.isStringLiteralLike(target)', "dynamic: false", "expression target"],
   ["computed targets allowed", '|| finding.kind === "computed-target"', "", "expression target"],
   ["gypfile metadata ignored", "metadata.gypfile === true", "metadata.gypfile === false", "gypfile"],
