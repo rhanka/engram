@@ -1,11 +1,11 @@
+import { requireHostDriver } from "../host-driver.js";
 /**
  * pgvector VectorStore adapter (GraphRAG VECTOR backend).
  *
  * A pushed, derived projection of graph embeddings into Postgres + pgvector.
  * `.graphify/` stays the source of truth; vectors are never a source. The
  * driver (`pg`) is NEVER imported statically — it is supplied through
- * `deps.driverModule` (tests) or the vector registry's dynamic import
- * (production). Importing this module evaluates no driver.
+ * host injection through `deps.driverModule`. Importing this module evaluates no driver.
  *
  * Embedding GENERATION is delegated to an injected `EmbeddingProvider`: no
  * model is hardcoded here, so the provider (and its env-only API key) stays
@@ -160,7 +160,7 @@ function toVectorLiteral(vector: number[]): string {
 
 /**
  * Create a pgvector VectorStore. The `pg` driver is supplied by the vector
- * registry's lazy import (production) or by `deps.driverModule` (tests). The
+ * registry's host injection through `deps.driverModule`. The
  * DSN is env-only (resolved upstream into `config.connectionString`). The
  * embedding provider is injected (`deps.embeddingProvider`) or resolved from
  * config; no model is hardcoded here.
@@ -188,23 +188,8 @@ export async function createPgVectorStore(
   }
   const dimension: number = rawDimension;
 
-  // Resolve the driver from injected deps or a dynamic import (the registry
-  // performs the import in production; this fallback supports direct/live use).
-  let pgMod: Record<string, unknown>;
-  if (deps?.driverModule !== undefined) {
-    pgMod = deps.driverModule as Record<string, unknown>;
-  } else {
-    try {
-      // Optional, uninstalled-by-default driver: build the specifier at runtime
-      // so the compiler does not attempt to resolve the (absent) package. In
-      // production the vector registry already supplies the module via `deps`;
-      // this fallback supports direct/live use where `pg` IS installed.
-      const driverPackage = "pg";
-      pgMod = (await import(driverPackage)) as Record<string, unknown>;
-    } catch {
-      throw new Error("store 'pgvector' requires pg. Run: npm install pg pgvector");
-    }
-  }
+  // The host supplies its driver; Engram never loads a backend package.
+  const pgMod = requireHostDriver("pgvector", "pg", deps?.driverModule);
 
   const mod = (pgMod.default ?? pgMod) as Partial<PgModule>;
   const PoolCtor = mod.Pool;

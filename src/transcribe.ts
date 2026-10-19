@@ -23,7 +23,6 @@ const URL_PREFIXES = ["http://", "https://", "www."];
 const CACHED_AUDIO_EXTENSIONS = [".m4a", ".opus", ".mp3", ".ogg", ".wav", ".webm"];
 const DEFAULT_MODEL = "base";
 const FALLBACK_PROMPT = "Use proper punctuation and paragraph breaks.";
-const FASTER_WHISPER_PACKAGE: string = "faster-whisper-ts";
 const HUGGING_FACE_RESOLVE_BASE = "https://huggingface.co";
 const REQUIRED_MODEL_FILES = ["config.json", "model.bin", "tokenizer.json", "vocabulary.txt"] as const;
 const SUPPORTED_MODELS = new Set([
@@ -232,7 +231,7 @@ async function ensureWhisperArtifacts(modelName?: string): Promise<WhisperArtifa
 
 async function loadFasterWhisperModule(): Promise<FasterWhisperModule> {
   if (!fasterWhisperModulePromise) {
-    fasterWhisperModulePromise = import(FASTER_WHISPER_PACKAGE)
+    fasterWhisperModulePromise = import("faster-whisper-ts")
       .then((imported) => {
         const candidate = Reflect.has(imported, "WhisperModel")
           ? imported
