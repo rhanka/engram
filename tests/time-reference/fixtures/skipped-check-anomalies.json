@@ -1,0 +1,266 @@
+{
+  "purpose": "retrospective-frozen-evidence",
+  "historicalAvailability": "unattested",
+  "pullRequests": [
+    {
+      "repo": "rhanka/engram",
+      "number": 399,
+      "headSha": "d2acfc43571a433d29ac43dae2860d49daf1b508",
+      "collectedAt": "2026-10-18T20:31:53.887Z",
+      "source": "https://api.github.com/repos/rhanka/engram/commits/d2acfc43571a433d29ac43dae2860d49daf1b508/check-runs?per_page=100",
+      "totalCount": 15,
+      "checks": [
+        {
+          "id": 117632973998,
+          "name": "post-publish-check",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T08:50:52Z",
+          "completedAt": "2026-10-18T08:50:51Z"
+        },
+        {
+          "id": 117632973929,
+          "name": "publish",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T08:50:52Z",
+          "completedAt": "2026-10-18T08:50:51Z"
+        },
+        {
+          "id": 117632973663,
+          "name": "release-guard",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T08:50:52Z",
+          "completedAt": "2026-10-18T08:50:51Z"
+        }
+      ]
+    },
+    {
+      "repo": "rhanka/sentropic",
+      "number": 697,
+      "headSha": "4883f63b2852e271059aa72a8da500e57689f879",
+      "collectedAt": "2026-10-18T20:31:53.887Z",
+      "source": "https://api.github.com/repos/rhanka/sentropic/commits/4883f63b2852e271059aa72a8da500e57689f879/check-runs?per_page=100",
+      "totalCount": 84,
+      "checks": [
+        {
+          "id": 117689696776,
+          "name": "deploy-preprod",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:36:19Z",
+          "completedAt": "2026-10-18T13:36:19Z"
+        },
+        {
+          "id": 117689696210,
+          "name": "publish-api-image",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:36:19Z",
+          "completedAt": "2026-10-18T13:36:18Z"
+        },
+        {
+          "id": 117688842984,
+          "name": "publish-ui-image",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:32:20Z",
+          "completedAt": "2026-10-18T13:32:20Z"
+        },
+        {
+          "id": 117687005490,
+          "name": "verify-train-lock-integrity",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:23:41Z",
+          "completedAt": "2026-10-18T13:23:40Z"
+        },
+        {
+          "id": 117687005403,
+          "name": "publish-cluster-mesh",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:23:41Z",
+          "completedAt": "2026-10-18T13:23:40Z"
+        },
+        {
+          "id": 117687005384,
+          "name": "publish-llm-mesh",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:23:41Z",
+          "completedAt": "2026-10-18T13:23:40Z"
+        },
+        {
+          "id": 117687005193,
+          "name": "publish-llm-gateway",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:23:40Z",
+          "completedAt": "2026-10-18T13:23:40Z"
+        },
+        {
+          "id": 117686690812,
+          "name": "publish-artifacts",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:22:15Z",
+          "completedAt": "2026-10-18T13:22:14Z"
+        },
+        {
+          "id": 117686554453,
+          "name": "publish-mcp-platform",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:21:39Z",
+          "completedAt": "2026-10-18T13:21:38Z"
+        },
+        {
+          "id": 117686517327,
+          "name": "publish-auth-hono",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:21:29Z",
+          "completedAt": "2026-10-18T13:21:28Z"
+        },
+        {
+          "id": 117686435097,
+          "name": "publish-chat-ui",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:21:07Z",
+          "completedAt": "2026-10-18T13:21:07Z"
+        },
+        {
+          "id": 117686400976,
+          "name": "publish-chat-core",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:20:58Z",
+          "completedAt": "2026-10-18T13:20:57Z"
+        },
+        {
+          "id": 117686358335,
+          "name": "publish-mcp-auth",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:20:47Z",
+          "completedAt": "2026-10-18T13:20:46Z"
+        },
+        {
+          "id": 117686358067,
+          "name": "publish-oauth-verify",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:20:46Z",
+          "completedAt": "2026-10-18T13:20:46Z"
+        },
+        {
+          "id": 117686320111,
+          "name": "publish-cowork-desktop",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:20:36Z",
+          "completedAt": "2026-10-18T13:20:36Z"
+        },
+        {
+          "id": 117686203932,
+          "name": "publish-auth-ui",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:20:06Z",
+          "completedAt": "2026-10-18T13:20:05Z"
+        },
+        {
+          "id": 117686147079,
+          "name": "publish-events",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:19:51Z",
+          "completedAt": "2026-10-18T13:19:50Z"
+        },
+        {
+          "id": 117685976765,
+          "name": "publish-auth-client",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:19:03Z",
+          "completedAt": "2026-10-18T13:19:03Z"
+        },
+        {
+          "id": 117685962622,
+          "name": "publish-contracts",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:18:59Z",
+          "completedAt": "2026-10-18T13:18:58Z"
+        },
+        {
+          "id": 117685895890,
+          "name": "publish-comments",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:18:40Z",
+          "completedAt": "2026-10-18T13:18:39Z"
+        },
+        {
+          "id": 117685863824,
+          "name": "publish-cowork-bridge",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:18:31Z",
+          "completedAt": "2026-10-18T13:18:30Z"
+        },
+        {
+          "id": 117685781392,
+          "name": "publish-cited-source-viewer",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:18:07Z",
+          "completedAt": "2026-10-18T13:18:06Z"
+        },
+        {
+          "id": 117685715712,
+          "name": "publish-chat-server",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:17:48Z",
+          "completedAt": "2026-10-18T13:17:48Z"
+        },
+        {
+          "id": 117685697689,
+          "name": "publish-harness",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:17:43Z",
+          "completedAt": "2026-10-18T13:17:42Z"
+        },
+        {
+          "id": 117685558127,
+          "name": "publish-flow",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:17:04Z",
+          "completedAt": "2026-10-18T13:17:04Z"
+        },
+        {
+          "id": 117685308838,
+          "name": "validate-idp-sync",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:15:53Z",
+          "completedAt": "2026-10-18T13:15:53Z"
+        },
+        {
+          "id": 117685274923,
+          "name": "bootstrap-publish",
+          "status": "completed",
+          "conclusion": "skipped",
+          "startedAt": "2026-10-18T13:15:43Z",
+          "completedAt": "2026-10-18T13:15:43Z"
+        }
+      ]
+    }
+  ]
+}
