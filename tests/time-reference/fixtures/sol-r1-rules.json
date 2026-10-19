@@ -143,6 +143,44 @@
           "code": "bad-type"
         }
       ]
+    },
+    {
+      "id": "F03",
+      "spec": "§8.1",
+      "title": "Regeneration recomputes and compares every published figure and maximum, in series and in estimates",
+      "cases": [
+        {
+          "mutation": "estimates.0.quantiles.p95Seconds",
+          "code": "quantile-mismatch"
+        },
+        {
+          "mutation": "estimates.0.quantiles.maxSeconds",
+          "code": "quantile-mismatch"
+        },
+        {
+          "mutation": "series.0.quantiles.maxSeconds",
+          "code": "quantile-mismatch"
+        },
+        {
+          "mutation": "series.0.quantiles.p50Seconds",
+          "code": "quantile-mismatch"
+        }
+      ]
+    },
+    {
+      "id": "F04",
+      "spec": "§6.1",
+      "title": "Supplied samples authenticate against the pinned snapshot digest before any recomputation",
+      "cases": [
+        {
+          "mutation": "renamed-sample-ids",
+          "code": "sample-auth-mismatch"
+        },
+        {
+          "mutation": "moved-sample-value",
+          "code": "sample-auth-mismatch"
+        }
+      ]
     }
   ],
   "shared": {
