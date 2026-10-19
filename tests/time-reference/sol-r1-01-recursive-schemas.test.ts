@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { TIMING_SCHEMAS } from "../../src/time-reference/index.js";
 import { validateTimingSchemas } from "../../src/repo-knowledge-contract.js";
-import { solRule } from "./sol-r1-helpers.js";
+import { drivenCases, solRule } from "./sol-r1-helpers.js";
 
 function resolvePath(root: unknown, path: string): unknown {
   let cur: unknown = root;
@@ -15,10 +15,10 @@ function resolvePath(root: unknown, path: string): unknown {
 }
 
 describe("Sol R1 F01 recursive closed schemas", () => {
-  const rule = solRule("F01") as { closedSchemaPaths: string[] };
+  const rule = solRule("F01") as { cases: string[] };
 
   it("every listed nested schema is a closed object", () => {
-    for (const p of rule.closedSchemaPaths) {
+    for (const p of drivenCases("F01", rule.cases)) {
       const node = resolvePath(TIMING_SCHEMAS, p);
       expect(node, p).toBeTypeOf("object");
       expect((node as Record<string, unknown>)["type"], p).toBe("object");

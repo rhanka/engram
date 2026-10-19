@@ -6,7 +6,7 @@
       "id": "F01",
       "spec": "§6.0",
       "title": "Recursive closed schemas: every nested object is closed, every typed array constrains its elements",
-      "closedSchemaPaths": [
+      "cases": [
         "CiCheckBatchV1.properties.checks.items",
         "CohortV1.properties.fingerprint",
         "CohortV1.properties.manifestRef",
@@ -39,7 +39,7 @@
       "id": "F02",
       "spec": "§6.0, §11",
       "title": "Recursive validator closure: nested undeclared fields, required fields and element types fail",
-      "nestedCases": [
+      "cases": [
         { "base": "manifest", "path": "inclusionIds.0", "value": 1.5, "code": "bad-type" },
         { "base": "manifest", "path": "exclusionIds.0", "value": 1.5, "code": "bad-type" },
         { "base": "cohort", "path": "memberIds.0", "value": 1.5, "code": "bad-type" },
@@ -779,7 +779,7 @@
         "source": "@sentropic/diagram-core",
         "contract": "25c0f3d33c258fc2b906a4b85219ffce5f67eccc"
       },
-      "invalidCorpus": [
+      "cases": [
         {
           "name": "bad-clock-cohort",
           "validator": "validateCohort",
