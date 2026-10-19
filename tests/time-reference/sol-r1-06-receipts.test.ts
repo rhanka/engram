@@ -110,6 +110,12 @@ describe("Sol R1 F07/F08 receipt binding and resolution", () => {
       else if (c.mutation === "foreign-repo") evidence.receipts["rec-1"].repo = "evil/other";
       else if (c.mutation === "foreign-lot") evidence.receipts["rec-1"].lotOccurrence = "occ-9";
       else if (c.mutation === "missing-declaration") evidence.quals = {};
+      else if (c.mutation === "receipt-and-declaration-sha") {
+        evidence.receipts["rec-1"].mergeSha = "other-merge";
+        evidence.quals.t.expectedMergeSha = "other-merge";
+      } else if (c.mutation === "receipt-sha-only") evidence.receipts["rec-1"].mergeSha = "other-merge";
+      else if (c.mutation === "declaration-sha-only") evidence.quals.t.expectedMergeSha = "other-merge";
+      else if (c.mutation === "null-record-sha") built.mergeSha = null;
       else if (c.mutation !== "matching-receipt" && c.mutation !== "no-evidence") {
         throw new Error(`unknown F08 mutation ${c.mutation}`);
       }
@@ -117,6 +123,9 @@ describe("Sol R1 F07/F08 receipt binding and resolution", () => {
       let codes: string[];
       if (c.path === "milestone") {
         const result = validateDeliveryMilestones(built, supplied);
+        codes = result.ok ? [] : result.errors.map((e) => e.code);
+      } else if (c.path === "wrapper") {
+        const result = validateDeliveryMilestonesWithReceipts(built, evidence.receipts, evidence.quals, evidence.scope);
         codes = result.ok ? [] : result.errors.map((e) => e.code);
       } else {
         const exp = { ...BASE_BUILDERS["export"]!(), milestones: [built] } as unknown as CommittedExportV1;

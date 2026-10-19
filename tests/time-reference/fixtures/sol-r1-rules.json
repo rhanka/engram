@@ -509,6 +509,86 @@
           "path": "regeneration",
           "mutation": "matching-receipt",
           "expectOk": true
+        },
+        {
+          "path": "milestone",
+          "mutation": "receipt-and-declaration-sha",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "milestone",
+          "mutation": "receipt-sha-only",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "milestone",
+          "mutation": "declaration-sha-only",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "milestone",
+          "mutation": "null-record-sha",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "export",
+          "mutation": "receipt-and-declaration-sha",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "export",
+          "mutation": "receipt-sha-only",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "export",
+          "mutation": "declaration-sha-only",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "export",
+          "mutation": "null-record-sha",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "regeneration",
+          "mutation": "receipt-and-declaration-sha",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "regeneration",
+          "mutation": "receipt-sha-only",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "regeneration",
+          "mutation": "declaration-sha-only",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "regeneration",
+          "mutation": "null-record-sha",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "wrapper",
+          "mutation": "receipt-and-declaration-sha",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "wrapper",
+          "mutation": "receipt-sha-only",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "wrapper",
+          "mutation": "declaration-sha-only",
+          "code": "unresolved-receipt"
+        },
+        {
+          "path": "wrapper",
+          "mutation": "null-record-sha",
+          "code": "unresolved-receipt"
         }
       ]
     },
