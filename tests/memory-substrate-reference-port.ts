@@ -17,6 +17,7 @@
 import { canonicalizeJcs } from "../engram-memory/canonical-json.js";
 import {
   MEMORY_CONTRACT_DIGEST,
+  MEMORY_PINNED_PROFILES,
   MEMORY_REQUIRED_PROFILES,
   NeutralStorageError,
   memoryJournalChain,
@@ -47,8 +48,11 @@ export interface ReferenceBackendOptions {
   readonly scope: ReferenceScope;
   readonly moduleId?: string;
   readonly requiredProfiles?: ReadonlyArray<string>;
+  readonly profileClaims?: ReadonlyArray<{ name: string; version: string; digest: string }>;
   readonly descriptorDigest?: string;
   readonly clock?: () => string;
+  /** Cap on journal records per page: short pages must never truncate recovery. */
+  readonly journalPageSize?: number;
 }
 
 export type ReferenceFailStage =
@@ -478,7 +482,10 @@ export function createReferenceModuleStorageBackend(options: ReferenceBackendOpt
     moduleId: options.moduleId ?? "engram-memory",
     descriptor,
     backend: "memory",
-    profiles: descriptor.requiredProfiles.map((name) => ({ name, version: "1", digest: `sha256:${"0".repeat(64)}` })),
+    profiles: options.profileClaims ?? descriptor.requiredProfiles.map((name) => {
+      const pinned = MEMORY_PINNED_PROFILES.find((claim) => claim.name === name);
+      return { name, version: pinned?.version ?? "1", digest: pinned?.digest ?? `sha256:${"0".repeat(64)}` };
+    }),
     async transact<T>(
       commitOptions: NeutralCommitOptions,
       operation: (transaction: NeutralModuleTransaction) => Promise<T>,
@@ -495,13 +502,14 @@ export function createReferenceModuleStorageBackend(options: ReferenceBackendOpt
           if (typeof after !== "string" || typeof limit !== "number") {
             throw new NeutralStorageError("invalid-schema", "journal page input is invalid");
           }
+          const cap = options.journalPageSize ?? 2000;
           const records: NeutralChainRecord[] = [];
           for (const id of core.order) {
             const stored = core.eventsById.get(id);
             if (stored === undefined) continue;
             if (BigInt(stored.cursor) <= BigInt(after)) continue;
             records.push({ id, hash: stored.hash, value: stored.value });
-            if (records.length >= Math.min(Math.max(1, Math.floor(limit)), 2000)) break;
+            if (records.length >= Math.min(Math.max(1, Math.floor(limit)), Math.max(1, Math.floor(cap)))) break;
           }
           return neutralJcs(records);
         }
