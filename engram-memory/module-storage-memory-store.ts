@@ -91,7 +91,9 @@ import {
   type NeutralChainAppend,
   type NeutralEncodedValue,
   NeutralStorageError,
+  type NeutralBoundScope,
   type NeutralMemoryHandle,
+  type NeutralModuleStorageBinding,
   type NeutralModuleTransaction,
   type NeutralRecordWrite,
   type NeutralScopeGrant,
@@ -116,8 +118,12 @@ export interface MemoryScopeBindingV1 {
 
 /** Composition contract of the provisional constructor (amendment §1.2, binding §6.2). */
 export interface ModuleStorageMemoryStoreOptionsV1 {
-  /** Host-provisioned neutral handle for `moduleId: 'engram-memory'`. Engram never constructs a backend. */
-  readonly handle: NeutralMemoryHandle;
+  /**
+   * Host-provisioned neutral port for `moduleId: 'engram-memory'`: either a
+   * pre-bound flat handle or a grant binding consumed synchronously or
+   * asynchronously (binding §6.2, L3a §6.3). Engram never constructs a backend.
+   */
+  readonly handle: NeutralMemoryHandle | NeutralModuleStorageBinding;
   /** Authoritative scope binding for this store (binding §7). */
   readonly scope_binding: MemoryScopeBindingV1;
   /** Host-issued grant: module `engram-memory`, the bound scope, exactly `['read', 'write']`. */
@@ -242,14 +248,45 @@ interface HydratedState extends InMemoryStoreStateV1 {
   k7Versions: Map<string, string>;
 }
 
+/**
+ * Wraps a grant-bound scope into the pre-bound flat handle shape the adapter
+ * consumes. The bind-time grant is captured; per-call grants name the same
+ * construction grant. Awaiting the bind consumes synchronous and
+ * asynchronous delivered bindings alike (binding §6.2, L3a §6.3).
+ */
+function bindToHandle(binding: NeutralModuleStorageBinding, grant: NeutralScopeGrant, bound: NeutralBoundScope): NeutralMemoryHandle {
+  void grant;
+  return {
+    moduleId: binding.moduleId,
+    descriptor: binding.descriptor,
+    backend: binding.backend,
+    profiles: binding.profiles,
+    transact: (options, operation) => bound.transact(
+      { limits: options.limits, idempotencyKey: options.idempotencyKey, fence: options.fence },
+      operation,
+    ),
+    query: (name, input) => bound.query(name, input),
+    readAggregate: (kind, key) => bound.readAggregate(kind, key),
+    ...(bound.readCommitResult === undefined
+      ? {}
+      : { readCommitResult: (commitIdentity: string) => bound.readCommitResult!(commitIdentity) }),
+    acquireFence: (input) => bound.acquireFence({ scope: input.scope, store_id: input.store_id }),
+    checkFence: (_grant, fence) => bound.checkFence(fence),
+    releaseFence: (fence) => bound.releaseFence(fence),
+  };
+}
+
 function checkOptions(options: ModuleStorageMemoryStoreOptionsV1): Result<{ scope: NeutralStorageScope; storeId: string }> {
   const operation = "admin" as const;
-  const handle = (options as { handle?: unknown }).handle as NeutralMemoryHandle | undefined;
+  const handle = (options as { handle?: unknown }).handle as NeutralMemoryHandle | NeutralModuleStorageBinding | undefined;
+  const isBinding = typeof (handle as NeutralModuleStorageBinding | undefined)?.bind === "function";
   if (handle === undefined || typeof handle !== "object"
-    || typeof handle.transact !== "function" || typeof handle.query !== "function"
-    || typeof handle.readAggregate !== "function"
-    || typeof handle.acquireFence !== "function" || typeof handle.checkFence !== "function"
-    || typeof handle.releaseFence !== "function") {
+    || (!isBinding && (typeof (handle as NeutralMemoryHandle).transact !== "function"
+      || typeof (handle as NeutralMemoryHandle).query !== "function"
+      || typeof (handle as NeutralMemoryHandle).readAggregate !== "function"
+      || typeof (handle as NeutralMemoryHandle).acquireFence !== "function"
+      || typeof (handle as NeutralMemoryHandle).checkFence !== "function"
+      || typeof (handle as NeutralMemoryHandle).releaseFence !== "function"))) {
     return refuse(operation, "CAPABILITY_UNAVAILABLE", "neutral port does not provide the required storage behaviour");
   }
   if (handle.moduleId !== "engram-memory") {
@@ -1655,9 +1692,23 @@ export async function openModuleStorageCanonicalMemoryStoreV1(
   const operation = "admin" as const;
   const checked = checkOptions(options);
   if (!checked.ok) return checked;
-  const handle = options.handle;
   const binding = options.scope_binding;
   const grant = options.grant;
+  // Either delivered binding shape is consumable: awaiting the bind covers
+  // the synchronous generic binding and the asynchronous Postgres binding
+  // alike (binding §6.2, L3a §6.3). A pre-bound flat handle passes through.
+  let handle: NeutralMemoryHandle;
+  if (typeof (options.handle as NeutralModuleStorageBinding).bind === "function") {
+    const offered = options.handle as NeutralModuleStorageBinding;
+    try {
+      handle = bindToHandle(offered, grant, await offered.bind(grant));
+    } catch (error) {
+      const mapped = mapStorageError(operation, error);
+      return refuse(operation, mapped.code, mapped.message);
+    }
+  } else {
+    handle = options.handle as NeutralMemoryHandle;
+  }
 
   let fence: NeutralWriterFence;
   try {
