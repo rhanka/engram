@@ -22,7 +22,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
+import { builtinModules, createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -84,6 +84,7 @@ function staticEdges(content: string): StaticEdge[] {
     } else if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "require") {
       const first = node.arguments[0];
       if (first !== undefined && ts.isStringLiteralLike(first)) out.push({ specifier: first.text, dynamic: false });
+      else out.push({ specifier: "(computed-require)", dynamic: true });
     }
     ts.forEachChild(node, visit);
   };
@@ -156,6 +157,104 @@ function readDistDeclarationClosure(): { types: Set<string>; values: Set<string>
   // non-exported local declarations, which stay excluded from the count by construction.
   void chunks;
   return entry;
+}
+
+const BUILTIN_SPECIFIERS = new Set([
+  ...builtinModules,
+  ...builtinModules.map((name) => name.replace(/^node:/, "")),
+]);
+
+type ClosureFindingKind = "forbidden-package" | "native-addon" | "computed-target" | "cluster-mesh";
+
+interface ClosureFinding {
+  readonly file: string;
+  readonly specifier: string;
+  readonly kind: ClosureFindingKind;
+}
+
+function packageRoot(specifier: string): string {
+  const parts = specifier.split("/");
+  return specifier.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0]!;
+}
+
+function resolveClosureTarget(specifier: string, fromFile: string): string | null {
+  if (BUILTIN_SPECIFIERS.has(specifier)) return null;
+  if (specifier.startsWith(".") || specifier.startsWith("/")) {
+    const base = specifier.startsWith("/") ? specifier : join(dirname(fromFile), specifier);
+    for (const candidate of [base, `${base}.js`, `${base}.cjs`, `${base}.mjs`, join(base, "index.js")]) {
+      try {
+        readFileSync(candidate, "utf8");
+        return candidate;
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  }
+  try {
+    return createRequire(fromFile).resolve(specifier);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Installed resolved closure (amendment §§5.7, 11): every static edge of the
+ * installed artifacts is resolved to its file and traversed transitively.
+ * A direct native driver, a transitively reachable `.node` addon, a computed
+ * (unresolvable-at-scan) import target, and any cluster-mesh reference are
+ * each reported. Only files under the repository are descended into;
+ * external packages are checked by name and extension without descending.
+ */
+function collectInstalledClosure(entries: ReadonlyArray<string>): ClosureFinding[] {
+  const findings: ClosureFinding[] = [];
+  const seen = new Set<string>();
+  const queue = [...entries];
+  while (queue.length > 0) {
+    const file = queue.pop()!;
+    if (seen.has(file)) continue;
+    seen.add(file);
+    if (file.endsWith(".node")) {
+      findings.push({ file, specifier: file, kind: "native-addon" });
+      continue;
+    }
+    let content: string;
+    try {
+      content = readFileSync(file, "utf8");
+    } catch {
+      continue;
+    }
+    for (const edge of staticEdges(content)) {
+      if (edge.dynamic) {
+        findings.push({ file, specifier: edge.specifier, kind: "computed-target" });
+        continue;
+      }
+      const specifier = edge.specifier;
+      if (specifier.includes("cluster-mesh")) {
+        findings.push({ file, specifier, kind: "cluster-mesh" });
+        continue;
+      }
+      if (FORBIDDEN_SPECIFIERS.has(packageRoot(specifier)) || specifier.endsWith(".node")) {
+        findings.push({
+          file,
+          specifier,
+          kind: specifier.endsWith(".node") ? "native-addon" : "forbidden-package",
+        });
+        continue;
+      }
+      const resolved = resolveClosureTarget(specifier, file);
+      if (resolved === null) continue;
+      if (resolved.endsWith(".node")) {
+        findings.push({ file, specifier: resolved, kind: "native-addon" });
+        continue;
+      }
+      // Relative edges are closure members by construction and always
+      // traversed; bare packages outside the repository are checked by name
+      // and extension only, never descended into.
+      if (specifier.startsWith(".") || resolved.startsWith(`${root}/`)) queue.push(resolved);
+    }
+  }
+  return findings;
 }
 
 describe("substrate entry shape (amendment §1, §5.6)", () => {
@@ -235,6 +334,31 @@ describe("substrate neutrality and driver guards (amendment §5.7)", () => {
         expect(FORBIDDEN_SPECIFIERS.has(edge.specifier), `${artifact}: forbidden driver ${edge.specifier}`).toBe(false);
         expect(edge.specifier.endsWith(".node"), `${artifact}: forbidden addon ${edge.specifier}`).toBe(false);
       }
+    }
+  });
+
+  it("resolves the installed memory-substrate closure with no driver, addon, or computed target", () => {
+    const findings = collectInstalledClosure([
+      join(root, "dist", "memory-substrate.js"),
+      join(root, "dist", "memory-substrate.cjs"),
+    ]);
+    expect(findings).toEqual([]);
+  });
+
+  it("detects direct, transitive-native, and computed driver mutations in the resolved closure", () => {
+    const dir = mkdtempSync(join(tmpdir(), "substrate-closure-fixture-"));
+    try {
+      writeFileSync(join(dir, "entry.js"), `require("pg");\nrequire("./mid.js");\n`);
+      writeFileSync(join(dir, "mid.js"), `require("./native.node");\n`);
+      writeFileSync(join(dir, "native.node"), "");
+      writeFileSync(join(dir, "computed.js"), `const name = process.argv[2];\nrequire(name);\n`);
+      const direct = collectInstalledClosure([join(dir, "entry.js")]);
+      expect(direct.some((finding) => finding.kind === "forbidden-package" && finding.specifier === "pg")).toBe(true);
+      expect(direct.some((finding) => finding.kind === "native-addon")).toBe(true);
+      const computed = collectInstalledClosure([join(dir, "computed.js")]);
+      expect(computed.some((finding) => finding.kind === "computed-target")).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
