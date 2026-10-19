@@ -405,6 +405,17 @@ export function memoryLexicalKey(scopeRef: string, recordId: string): string {
   return JSON.stringify(["memory-lexical-v1", scopeRef, recordId]);
 }
 
+/**
+ * Canonical lexical removal marker (binding §3.4 rule 2): the neutral index
+ * write carries no delete primitive, so a transition out of
+ * `accepted_current` writes the JCS null tombstone under the same key in the
+ * same unit. Readers treat the tombstone as absent; recovery rebuilds the
+ * surface from K1+K2 and never resurrects it.
+ */
+export function memoryLexicalTombstone(): NeutralEncodedValue {
+  return { format: "utf8", data: "null" };
+}
+
 /** The single journal chain identity (binding §7.4). */
 export function memoryJournalChain(): string {
   return "memory-journal";
