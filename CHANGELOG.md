@@ -15,6 +15,12 @@ First publication of the engram time-reference contract (velocity and CI/CD dura
 
 The `0.20.x` line receives no time-reference export, type, schema or behaviour.
 
+Public canonical memory substrate over the injected neutral module-storage contract (stage A only).
+
+- **New entry `./memory-substrate`.** Exports exactly `createMemoryPortV2`, the provisional `openModuleStorageCanonicalMemoryStoreV1`, and the 63 closed contract names (62 existing plus `ModuleStorageMemoryStoreOptionsV1`). Importing it opens nothing, acquires nothing, and resolves no driver: the constructor consumes a host-provisioned neutral handle for module `engram-memory`, binds it under one authoritative tenant/workspace scope, acquires the canonical-instance fence before any operation, and implements `CanonicalMemoryStorePort` (dense cursor, hash chain, K7 cursor-independent revision, atomic effect plus original replay, receipts, checkpoints). No cluster-mesh import, no `better-sqlite3`/`fs-ext`/`pg`/`.node` in the published closure of any entry (guarded by tests that fail otherwise).
+- **Reference in-memory port for tests.** A deterministic test-only backend plus the stage A acceptance suite (composition refusals, canonical trace and replay, fault-injected atomicity, fence loss latch, codec conservation, scope refusals, u64 decimal exactness, logical backup). Durable cluster-mesh backend qualification (sentropic #704) stays `unverified`.
+- **Not production storage.** The private SQL openers stay out of this entry; multiprocess exclusion and durable crash behavior are backend qualifications for later. The constructor name stays provisional until the binding is co-signed.
+
 ## 0.20.0 (2026-10-18)
 
 First Engram memory release (option B: no MCP adapter — L4 ships in a later release). Memory tools are disabled by default; every mutation refuses `CAPABILITY_UNAVAILABLE` until a host injects its reservation, audit, policy, confirmation, key-custody and coverage ports.

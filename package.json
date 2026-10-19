@@ -27,6 +27,10 @@
       "types": "./dist/time-reference.d.ts",
       "import": "./dist/time-reference.js",
       "require": "./dist/time-reference.cjs"
+    },
+    "./memory-substrate": {
+      "types": "./dist/memory-substrate.d.ts",
+      "import": "./dist/memory-substrate.js"
     }
   },
   "bin": {
