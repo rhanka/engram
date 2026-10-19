@@ -274,7 +274,7 @@ export const INSTALLATION_RECEIPT_SCHEMA: JsonSchema = schema("InstallationRecei
   repo, lotOccurrence: str, mergeSha: str, releaseSourceSha: str, ancestryEvidence: str,
   targetId: str, targetKind: { enum: ["ci-runner", "delivery-environment"] },
   platform: str, installationScope: str, expectedVersion: str, observedVersion: str,
-  expectedTuple: str, observedTuple: str, artifactIntegrity: str, resolvedExecutable: str,
+  expectedTuple: str, observedTuple: str, artifactIntegrity: digest, resolvedExecutable: str,
   installStartedAt: instant, installCompletedAt: instant, smokeCompletedAt: instant,
   installOutcome: { enum: ["success", "failure"] }, smokeOutcome: { enum: ["success", "failure"] },
   clockSource: str, producerIdentity: str, evidenceDigests: { type: "array", items: digest },
