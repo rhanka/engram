@@ -20,18 +20,26 @@ function codeOf(fn: () => unknown): string {
 }
 
 describe("Sol R1 F18/F19 weights and probabilities", () => {
-  it("F18: non-string weights are rejected, never coerced into strings", () => {
-    solRule("F18");
-    expect(codeOf(() => parseDecimalWeight(1 as unknown as string))).toBe("invalid-weight");
-    expect(codeOf(() => effectiveSizeRatio([1 as unknown as string]))).toBe("invalid-weight");
-    expect(
-      codeOf(() =>
-        weightedEcdf(
-          [{ id: "a", value: 1, weight: 2 as unknown as string }, { id: "b", value: 2 }],
-          0.5,
+  it("F18: every fixture case rejects through the public weight parsers", () => {
+    const rule = solRule("F18") as { cases: { mutation: string }[] };
+    for (const c of rule.cases) {
+      if (c.mutation !== "numeric-weight") throw new Error(`unknown F18 mutation ${c.mutation}`);
+      expect(codeOf(() => parseDecimalWeight(1 as unknown as string)), c.mutation).toBe(
+        "invalid-weight",
+      );
+      expect(codeOf(() => effectiveSizeRatio([1 as unknown as string])), c.mutation).toBe(
+        "invalid-weight",
+      );
+      expect(
+        codeOf(() =>
+          weightedEcdf(
+            [{ id: "a", value: 1, weight: 2 as unknown as string }, { id: "b", value: 2 }],
+            0.5,
+          ),
         ),
-      ),
-    ).toBe("invalid-weight");
+        c.mutation,
+      ).toBe("invalid-weight");
+    }
     // String weights keep working, including decimals.
     expect(parseDecimalWeight("0.99")).toEqual({ num: 99n, den: 100n });
   });
