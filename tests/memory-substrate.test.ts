@@ -596,6 +596,114 @@ describe("substrate canonical trace and replay (amendment §5.2, binding §8.2)"
     expect(await journalLength(harness.store)).toBe(1);
     await harness.store.close();
   });
+
+  it("serializes concurrent capture and K7 completion with no lost event (binding §§5.1, 8.1–8.3)", async () => {
+    const harness = await openStore("store:concurrent-k7");
+    const candidateA = "candidate:concurrent-a";
+    const candidateB = "candidate:concurrent-b";
+    const pendingA = await harness.store.commitPending({
+      control: {
+        candidate_id: candidateA,
+        envelope_digest: DIGEST,
+        state: "pending",
+        created_cursor: "0",
+        policy_id: "policy:concurrent",
+        policy_version: "1",
+        capture_content_digest: DIGEST,
+        capture_receipt_digest: DIGEST,
+      },
+      sealed: {
+        candidate_id: candidateA,
+        envelope_ref: "envelope:concurrent:a",
+        envelope_digest: DIGEST,
+        key_ref: "key:concurrent:a",
+        ciphertext: "concurrent-ciphertext-a",
+      },
+      capture_event: {
+        schema_version: 2,
+        event_id: "event:concurrent-capture-a",
+        cursor: "0",
+        recorded_at: NOW,
+        operation: "capture",
+        candidate_id: candidateA,
+        to_state: "pending",
+        authorization_receipt_digest: DIGEST,
+        previous_event_digest: DIGEST,
+        event_digest: DIGEST,
+      },
+    });
+    expect(pendingA).toMatchObject({ ok: true, value: { cursor: "1" } });
+    // Force a mid-flight interleave: the first transaction sleeps inside its
+    // callback, so the concurrent operation necessarily stages and adopts
+    // while the first is still in flight. Without serialized staging/adoption,
+    // one adoption overwrites the other and live state disagrees with the
+    // backend, whichever operation was delayed.
+    const rawTransact = harness.backend.handle.transact.bind(harness.backend.handle);
+    let delayed = false;
+    harness.backend.handle.transact = (async (opts, op) => rawTransact(opts, async (tx) => {
+      if (!delayed) {
+        delayed = true;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      return op(tx);
+    })) as typeof harness.backend.handle.transact;
+    // Concurrent capture of B with K7 completion of A: both succeed, and the
+    // live journal keeps both committed events while K7 reaches revision 2.
+    const [pendingB, completedA] = await Promise.all([
+      harness.store.commitPending({
+        control: {
+          candidate_id: candidateB,
+          envelope_digest: DIGEST,
+          state: "pending",
+          created_cursor: "0",
+          policy_id: "policy:concurrent",
+          policy_version: "1",
+          capture_content_digest: DIGEST,
+          capture_receipt_digest: DIGEST,
+        },
+        sealed: {
+          candidate_id: candidateB,
+          envelope_ref: "envelope:concurrent:b",
+          envelope_digest: DIGEST,
+          key_ref: "key:concurrent:b",
+          ciphertext: "concurrent-ciphertext-b",
+        },
+        capture_event: {
+          schema_version: 2,
+          event_id: "event:concurrent-capture-b",
+          cursor: "0",
+          recorded_at: NOW,
+          operation: "capture",
+          candidate_id: candidateB,
+          to_state: "pending",
+          authorization_receipt_digest: DIGEST,
+          previous_event_digest: DIGEST,
+          event_digest: DIGEST,
+        },
+      }),
+      harness.store.recordCaptureIdempotency!({
+        candidate_id: candidateA,
+        record_digest: "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      }),
+    ]);
+    expect(pendingB).toMatchObject({ ok: true, value: { cursor: "2" } });
+    expect(completedA).toMatchObject({ ok: true });
+    expect(await journalLength(harness.store)).toBe(2);
+    expect(harness.backend.journalHead().allocation).toBe("2");
+    const k7 = harness.backend.readAggregate(
+      "memory-capture-idempotency",
+      JSON.stringify(["memory-capture-idempotency-v1", candidateA]),
+    );
+    expect(k7?.version).toBe("2");
+    // Live core and backend agree: the completion is visible through the live
+    // store, not only in backend introspection.
+    const liveK7 = await harness.store.readCaptureIdempotency!({ candidate_id: candidateA });
+    expect(liveK7).toMatchObject({
+      ok: true,
+      value: { record_digest: "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" },
+    });
+    await harness.store.close();
+  });
 });
 
 describe("substrate atomicity under fault injection (amendment §5.3)", () => {
@@ -736,6 +844,49 @@ describe("substrate fences and provenance (amendment §5.4, binding §9)", () =>
     const again = await memory.capture(captureRequest("fence-commit-key-2", "2"));
     expect(again).toMatchObject({ ok: false, error: { code: "FENCE_LOST" } });
     await harness.store.close();
+  });
+
+  it("binds every guard, transaction and release to the acquisition identity (binding §§9.3–9.6)", async () => {
+    const backend = createReferenceModuleStorageBackend({ scope: SCOPE });
+    const clockA = fixedClock();
+    const openedA = await openModuleStorageCanonicalMemoryStoreV1({
+      handle: backend.handle,
+      scope_binding: { scope: { ...SCOPE }, store_id: "store:epoch-bind", resolveScope },
+      grant: backend.grant,
+      clock: clockA,
+      deadline_at: "2026-08-16T12:40:00.000Z",
+    });
+    if (!openedA.ok) throw new Error("open A refused");
+    const memoryA = await engineOn(openedA.value, clockA);
+    expect((await memoryA.capture(captureRequest("epoch-key-1", "1"))).ok).toBe(true);
+    // Supersede the acquisition out of band, then acquire the successor epoch.
+    backend.testOnlyRevokeFence();
+    const clockB = fixedClock();
+    const openedB = await openModuleStorageCanonicalMemoryStoreV1({
+      handle: backend.handle,
+      scope_binding: { scope: { ...SCOPE }, store_id: "store:epoch-bind", resolveScope },
+      grant: backend.grant,
+      clock: clockB,
+      deadline_at: "2026-08-16T12:40:00.000Z",
+    });
+    expect(openedB.ok).toBe(true);
+    if (!openedB.ok) throw new Error("open B refused");
+    // Epoch-1 writes after epoch-2 acquisition refuse; the stale instance latches.
+    const stale = await memoryA.capture(captureRequest("epoch-key-2", "2"));
+    expect(stale).toMatchObject({ ok: false, error: { code: "FENCE_LOST" } });
+    // A stale release never clears the successor holder: B still serves.
+    await openedA.value.close();
+    const memoryB = await engineOn(openedB.value, clockB);
+    expect((await memoryB.capture(captureRequest("epoch-key-3", "3"))).ok).toBe(true);
+    // A transaction without the acquisition identity refuses before effect.
+    const noFence = await backend.transactRaw(
+      { maxAppends: 1, maxRecords: 1, maxEncodedBytes: 1_048_576 },
+      "commit:no-fence-probe",
+      () => Promise.resolve(),
+      { fenceId: "fence-wrong", epoch: "0" },
+    );
+    expect(noFence.ok).toBe(false);
+    await openedB.value.close();
   });
 
   it("never admits a forged capability boolean or an unacquired wrapper (provenance)", async () => {
