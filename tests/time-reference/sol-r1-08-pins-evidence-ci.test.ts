@@ -10,7 +10,7 @@ import {
   validatePullRequestTiming,
 } from "../../src/time-reference/index.js";
 import { validateEngramMapping } from "../../src/repo-knowledge-contract.js";
-import { BASE_BUILDERS, codesOf, solRule, withPath } from "./sol-r1-helpers.js";
+import { drivenCases, BASE_BUILDERS, codesOf, solRule, withPath } from "./sol-r1-helpers.js";
 
 function lockedJson(name: string): unknown {
   return JSON.parse(readFileSync(new URL(`../../profiles/repo-knowledge/1/${name}`, import.meta.url), "utf8"));
@@ -19,7 +19,7 @@ function lockedJson(name: string): unknown {
 describe("Sol R1 F13/F14/F15 pins, evidence and CI discipline", () => {
   it("F13: unsupported profile pins and mismatched mapping versions are refused", () => {
     const rule = solRule("F13") as { cases: { mutation: string; value: string; code: string }[] };
-    for (const c of rule.cases) {
+    for (const c of drivenCases("F13", rule.cases)) {
       if (c.mutation === "export-profile-version-2") {
         const exp = withPath<Record<string, unknown>>(BASE_BUILDERS["export"]!(), "profileRef.version", c.value);
         expect(codesOf(validateCommittedExport(exp)), c.mutation).toContain(c.code);
@@ -50,7 +50,7 @@ describe("Sol R1 F13/F14/F15 pins, evidence and CI discipline", () => {
       attemptedAt: "2026-10-18T07:48:57Z",
       cause: "provider timeout on commits page 2",
     };
-    for (const c of rule.cases) {
+    for (const c of drivenCases("F14", rule.cases)) {
       const attempts = c.mutation === "no-attempt" ? [] : [{ ...attempt, cause: "" }];
       expect(codesOf(validatePullRequestTiming(unavailablePr(), attempts)), c.mutation).toContain(
         c.code,
@@ -75,7 +75,7 @@ describe("Sol R1 F13/F14/F15 pins, evidence and CI discipline", () => {
       startedAt: "2026-10-18T07:00:00Z",
       completedAt: "2026-10-18T07:19:11Z",
     };
-    for (const c of rule.cases) {
+    for (const c of drivenCases("F15", rule.cases)) {
       if (c.mutation === "negative-gap-service") {
         // End one second before start (frozen anomaly shape): no service sample.
         expect(

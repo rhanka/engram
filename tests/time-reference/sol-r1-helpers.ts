@@ -1,10 +1,12 @@
 /** Shared helpers for the Sol tour-1 correction tests: read the normative fixture once. */
 import { readFileSync } from "node:fs";
+import { canonicalJson } from "../../src/time-reference/index.js";
 
 export interface SolRule {
   id: string;
   spec: string;
   title: string;
+  cases: unknown[];
   [k: string]: unknown;
 }
 
@@ -13,6 +15,19 @@ const DOC = JSON.parse(
 ) as { shared: Record<string, unknown>; rules: SolRule[] };
 
 export const SOL_SHARED = DOC.shared;
+
+/** Completed case identities, shared by drivers imported into the coverage suite. */
+export const executedSolCases: string[] = [];
+
+/** Record an identity only after its driver's body completes and resumes iteration. */
+export function* drivenCases<T>(id: string, cases: readonly T[]): Generator<T> {
+  for (let index = 0; index < cases.length; index++) {
+    const c = cases[index]!;
+    const identity = `${id}:${index}:${canonicalJson(c)}`;
+    yield c;
+    executedSolCases.push(identity);
+  }
+}
 
 export function solRule(id: string): SolRule {
   const r = DOC.rules.find((x) => x.id === id);

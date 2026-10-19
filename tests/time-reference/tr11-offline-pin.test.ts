@@ -16,7 +16,7 @@ import {
   validateRepoKnowledgeProfile,
   validateTimingSchemas,
 } from "../../src/repo-knowledge-contract.js";
-import { codesOf, solRule } from "./sol-r1-helpers.js";
+import { drivenCases, codesOf, solRule } from "./sol-r1-helpers.js";
 
 const VALIDATORS: Record<string, (v: unknown) => { ok: boolean; errors?: { code: string }[] }> = {
   validateCohort,
@@ -36,7 +36,7 @@ describe("TR-11 offline consumer pin", () => {
     lockedFiles: string[];
     expectedMappingVersion: string;
     expectedValidatorPin: { source: string; contract: string };
-    invalidCorpus: { name: string; validator: string; object: unknown; code: string }[];
+    cases: { name: string; validator: string; object: unknown; code: string }[];
   };
 
   it("every locked contract file hashes to its manifest digest", () => {
@@ -62,7 +62,7 @@ describe("TR-11 offline consumer pin", () => {
   });
 
   it("the independent invalid corpus is refused with its typed code", () => {
-    for (const c of rule.invalidCorpus) {
+    for (const c of drivenCases("F16", rule.cases)) {
       expect(codesOf(VALIDATORS[c.validator]!(c.object)), c.name).toContain(c.code);
     }
     // Mapping and export version mismatches refuse without fallback.
