@@ -206,8 +206,11 @@
     {
       "id": "F04",
       "spec": "§6.1",
-      "title": "Supplied samples authenticate against the pinned snapshot digest before any recomputation",
+      "title": "Collected snapshot bytes authenticate before sample derivation",
       "cases": [
+        { "mutation": "derived-rows-digest", "code": "sample-auth-mismatch" },
+        { "mutation": "collected-metadata", "code": "sample-auth-mismatch" },
+        { "mutation": "unchanged-duration-new-instants", "code": "sample-auth-mismatch" },
         {
           "mutation": "renamed-sample-ids",
           "code": "sample-auth-mismatch"
