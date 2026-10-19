@@ -18,6 +18,7 @@ import {
   temporalBoundaryGraph,
 } from "./fixtures/temporal-boundary.js";
 import { postgresLaneDecision, startEphemeralPostgres } from "./postgres-ephemeral.js";
+import { loadSqliteTestDriver } from "./fixtures/sqlite-host-driver.js";
 
 function ids(items: ReadonlyArray<{ id: string }>): string[] {
   return items.map((item) => item.id);
@@ -74,10 +75,11 @@ describe("closed temporal interval contract", () => {
     // 3. Real SQLite store (queryWindow + recallAsOf)
     const sqliteDir = makeTempDir();
     const sqliteFile = join(sqliteDir, "temporal.sqlite");
+    const sqliteDriver = await loadSqliteTestDriver();
     const sqliteStore = await createSqliteGraphStore({
       citySlug: "temporal-boundary",
       target: sqliteFile,
-    });
+    }, { driverModule: sqliteDriver });
     try {
       await sqliteStore.pushGraph(G, communities, { mode: "replace" });
       const sqliteWindow = await sqliteStore.queryWindow(TEMPORAL_CURSOR, TEMPORAL_CURSOR);
@@ -91,7 +93,7 @@ describe("closed temporal interval contract", () => {
             createSqliteGraphStore({
               citySlug: "temporal-boundary",
               target: sqliteFile,
-            }),
+            }, { driverModule: sqliteDriver }),
         },
       );
       expect(ids(fromSqliteRecall.nodes)).toEqual(TEMPORAL_VISIBLE_NODE_IDS);
@@ -172,11 +174,12 @@ if (pgLane.lane === "fail") {
       it("matches in-memory, SQLite, time slice, scene, and browser renderer on live Postgres", async () => {
         const { G, communities } = temporalBoundaryGraph();
         const dir = makeTempDir();
+        const pgDriver = await import("pg");
         const pgStore = await createPostgresGraphStore({
           connectionString,
           citySlug,
           target: dir,
-        });
+        }, { driverModule: pgDriver });
         try {
           await pgStore.pushGraph(G, communities, { mode: "replace" });
           const pgWindow = await pgStore.queryWindow(TEMPORAL_CURSOR, TEMPORAL_CURSOR);
@@ -192,7 +195,7 @@ if (pgLane.lane === "fail") {
                   connectionString,
                   citySlug,
                   target: dir,
-                }),
+                }, { driverModule: pgDriver }),
             },
           );
           expect(pgRecalled.interval_convention).toBe("closed-v1");

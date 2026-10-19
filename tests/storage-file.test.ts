@@ -144,8 +144,7 @@ describe("graph store registry", () => {
     });
 
     await expect(resolveGraphStore("fake-neo4j", {})).rejects.toThrow(
-      "store 'fake-neo4j' requires graphify-test-missing-driver. " +
-        "Run: npm install graphify-test-missing-driver",
+      "store 'fake-neo4j': the host must inject graphify-test-missing-driver via deps.driverModule",
     );
   });
 

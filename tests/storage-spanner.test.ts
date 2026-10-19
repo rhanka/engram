@@ -627,7 +627,7 @@ describe("Spanner adapter: registry and driver loading", () => {
         instance: "i",
         database: "d",
       }),
-    ).rejects.toThrow(/requires @google-cloud\/spanner-does-not-exist-xyzzy.*npm install/i);
+    ).rejects.toThrow(/host must inject @google-cloud\/spanner-does-not-exist-xyzzy via deps.driverModule/i);
   });
 });
 
