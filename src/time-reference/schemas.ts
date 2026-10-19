@@ -7,7 +7,7 @@
  * as data (generated from this module, never hand-edited separately).
  */
 
-const INSTANT_PATTERN = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$";
+export const INSTANT_PATTERN = "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$";
 const DIGEST_PATTERN = "^sha256:[0-9a-f]{64}$";
 const REPO_PATTERN = "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$";
 const SHA_PATTERN = "^[0-9a-f]{40}$";
@@ -30,8 +30,11 @@ function closed(properties: Record<string, unknown>, required: string[]): Record
   return { type: "object", properties, required, additionalProperties: false };
 }
 
-const instant = { type: "string", pattern: INSTANT_PATTERN };
-const nullableInstant = { type: ["string", "null"], pattern: INSTANT_PATTERN };
+const instant = {
+  type: "string", pattern: INSTANT_PATTERN, format: "date-time",
+  description: "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator.",
+};
+const nullableInstant = { ...instant, type: ["string", "null"] };
 const digest = { type: "string", pattern: DIGEST_PATTERN };
 const sourceRevision = { type: "string", pattern: SHA_PATTERN };
 const repo = { type: "string", pattern: REPO_PATTERN };
