@@ -29,6 +29,7 @@ import {
 } from "../src/memory-substrate/index.js";
 import {
   MEMORY_CONTRACT_DIGEST,
+  MEMORY_PINNED_PROFILES,
   MEMORY_REQUIRED_PROFILES,
   type NeutralScopeGrant,
 } from "../engram-memory/module-storage-neutral.js";
@@ -225,6 +226,29 @@ describe("substrate composition (amendment §5.1, binding §10.1 negotiation)", 
     });
     expect(opened).toMatchObject({ ok: false, error: { code: "CAPABILITY_UNAVAILABLE" } });
     expect(backend.liveHolders()).toBe(0);
+  });
+
+  it("refuses a required profile at the wrong version or digest (binding §6.3.1)", async () => {
+    const pinned = new Map(MEMORY_PINNED_PROFILES.map((claim) => [claim.name, claim]));
+    for (const variant of ["version", "digest"] as const) {
+      const claims = MEMORY_REQUIRED_PROFILES.map((name) => {
+        const claim = pinned.get(name);
+        if (claim === undefined) throw new Error(`no pinned claim for ${name}`);
+        return variant === "version"
+          ? { ...claim, version: "2" }
+          : { ...claim, digest: `sha256:${"f".repeat(64)}` };
+      });
+      const backend = createReferenceModuleStorageBackend({ scope: SCOPE, profileClaims: claims });
+      const opened = await openModuleStorageCanonicalMemoryStoreV1({
+        handle: backend.handle,
+        scope_binding: { scope: { ...SCOPE }, store_id: STORE_ID, resolveScope },
+        grant: backend.grant,
+        clock: fixedClock(),
+        deadline_at: "2026-08-16T12:40:00.000Z",
+      });
+      expect(opened).toMatchObject({ ok: false, error: { code: "CAPABILITY_UNAVAILABLE" } });
+      expect(backend.liveHolders()).toBe(0);
+    }
   });
 
   it("refuses a descriptor digest mismatch", async () => {
@@ -430,6 +454,54 @@ describe("substrate canonical trace and replay (amendment §5.2, binding §8.2)"
     const manifest = await reopened.value.checkpoint({ through_cursor: highWater });
     expect(manifest).toMatchObject({ ok: true });
     await reopened.value.close();
+  });
+
+  it("exhausts short pages and verifies head/allocation on recovery (binding §§4.2, 6.3.4)", async () => {
+    const backend = createReferenceModuleStorageBackend({ scope: SCOPE, journalPageSize: 1 });
+    const clock = fixedClock();
+    const opened = await openModuleStorageCanonicalMemoryStoreV1({
+      handle: backend.handle,
+      scope_binding: { scope: { ...SCOPE }, store_id: "store:short-pages", resolveScope },
+      grant: backend.grant,
+      clock,
+      deadline_at: "2026-08-16T12:40:00.000Z",
+    });
+    if (!opened.ok) throw new Error("open refused");
+    const memory = await engineOn(opened.value, clock);
+    for (const sequence of ["1", "2", "3"]) {
+      const captured = await memory.capture(captureRequest(`short-key-${sequence}`, sequence));
+      expect(captured.ok).toBe(true);
+    }
+    expect(backend.journalHead().allocation).toBe("3");
+    await opened.value.close();
+    // Short pages never truncate: reopening loads all three events and the
+    // loaded prefix matches the exact head/allocation boundary.
+    const clock2 = fixedClock();
+    const reopened = await openModuleStorageCanonicalMemoryStoreV1({
+      handle: backend.handle,
+      scope_binding: { scope: { ...SCOPE }, store_id: "store:short-pages", resolveScope },
+      grant: backend.grant,
+      clock: clock2,
+      deadline_at: "2026-08-16T12:40:00.000Z",
+    });
+    expect(reopened.ok).toBe(true);
+    if (!reopened.ok) throw new Error("reopen refused");
+    expect(await journalLength(reopened.value)).toBe(3);
+    await reopened.value.close();
+    // A persisted allocation the pages cannot cover refuses instead of
+    // opening truncated: allocation 3 with only 2 events is CURSOR_GAP.
+    const [first] = backend.queryJournalPage({ after: "0", limit: 1 });
+    if (first === undefined) throw new Error("journal record missing");
+    backend.deleteEvent(first.id);
+    const clock3 = fixedClock();
+    const truncated = await openModuleStorageCanonicalMemoryStoreV1({
+      handle: backend.handle,
+      scope_binding: { scope: { ...SCOPE }, store_id: "store:short-pages", resolveScope },
+      grant: backend.grant,
+      clock: clock3,
+      deadline_at: "2026-08-16T12:40:00.000Z",
+    });
+    expect(truncated).toMatchObject({ ok: false, error: { code: "CURSOR_GAP" } });
   });
 
   it("replays the original receipt bytes verbatim, without resampling", async () => {
