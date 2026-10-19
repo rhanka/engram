@@ -711,6 +711,42 @@ describe("substrate canonical trace and replay (amendment §5.2, binding §8.2)"
     await opened.value.close();
   });
 
+  it("propagates one capture receipt to controls, K7, the live core and duplicate capture (binding §§5.2–5.3, 8.3)", async () => {
+    const harness = await openStore("store:capture-receipt-once");
+    let tick = Date.parse(NOW);
+    harness.clock.now = () => new Date(tick += 100).toISOString();
+    const memory = await engineOn(harness.store, harness.clock);
+    const request = captureRequest("receipt-capture", "1");
+    const captured = await memory.capture(request);
+    if (!captured.ok || !captured.value.candidate_id) throw new Error("capture failed");
+    const candidate = { candidate_id: captured.value.candidate_id };
+    const journal = await harness.store.readJournal({ after: "0", limit: 2000 });
+    if (!journal.ok) throw new Error("journal failed");
+    const persisted = await harness.backend.handle.readCommitResult!(journal.value[0]!.event_id, harness.backend.grant);
+    const digest = JSON.parse(persisted!.data).receipt_digest;
+    expect(captured.value.transaction_receipt_digest).toBe(digest);
+    const k7 = harness.backend.readAggregate("memory-capture-idempotency", JSON.stringify(["memory-capture-idempotency-v1", candidate.candidate_id]));
+    const control = harness.backend.readAggregate("memory-pending-controls", JSON.stringify(["memory-pending-control-v1", candidate.candidate_id]));
+    expect(JSON.parse(k7!.value.data).receipt_digest).toBe(digest);
+    expect(JSON.parse(control!.value.data).capture_receipt_digest).toBe(digest);
+    expect(await harness.store.readCaptureIdempotency(candidate)).toMatchObject({ ok: true, value: { capture_receipt_digest: digest } });
+    expect(await harness.store.readPending(candidate)).toMatchObject({ ok: true, value: { control: { capture_receipt_digest: digest } } });
+    expect(await memory.capture(request)).toMatchObject({ ok: true, value: { status: "duplicate_exact", transaction_receipt_digest: digest } });
+    // Inspect the first unit before registry completion can rewrite K7.
+    const direct = await harness.store.commitPending(manualCapture("candidate:receipt-direct", "event:receipt-direct"));
+    if (!direct.ok) throw new Error("direct capture failed");
+    const directK7 = harness.backend.readAggregate("memory-capture-idempotency", JSON.stringify(["memory-capture-idempotency-v1", "candidate:receipt-direct"]));
+    expect(JSON.parse(directK7!.value.data).receipt_digest).toBe(direct.value.receipt_digest);
+    await harness.store.close();
+    const reopened = await openModuleStorageCanonicalMemoryStoreV1({
+      handle: harness.backend.handle, scope_binding: { scope: { ...SCOPE }, store_id: "store:capture-receipt-once", resolveScope },
+      grant: harness.backend.grant, clock: harness.clock, deadline_at: "2026-08-16T12:40:00.000Z",
+    });
+    if (!reopened.ok) throw new Error("reopen refused");
+    expect(await (await engineOn(reopened.value, harness.clock)).capture(request)).toMatchObject({ ok: true, value: { status: "duplicate_exact", transaction_receipt_digest: digest } });
+    await reopened.value.close();
+  });
+
   it("propagates one admission receipt to K8, the live core and replay under an advancing clock (binding §8.3.2–3)", async () => {
     const harness = await openStore("store:admission-receipt-once");
     let tick = Date.parse(NOW);

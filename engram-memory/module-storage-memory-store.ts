@@ -549,6 +549,12 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
         after.admission_outcomes = after.admission_outcomes?.map((entry) =>
           entry.cursor === decoded.cursor
             ? { ...entry, transaction_receipt_digest: decoded.receipt_digest }
+        if (decoded.operation === "capture") {
+          after.controls = after.controls.map((control) => control.created_cursor === decoded.cursor
+            ? { ...control, capture_receipt_digest: decoded.receipt_digest } : control);
+          after.capture_idempotency = after.capture_idempotency?.map((entry) => entry.cursor === decoded.cursor
+            ? { ...entry, receipt_digest: decoded.receipt_digest } : entry);
+        }
             : entry,
         );
       }
@@ -635,9 +641,20 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
         const resampled: NeutralAtomicUnit = {
           ...unit,
           moduleResult,
-          updates: unit.updates.map((update) => update.kind === "memory-admission-outcomes" && receipt !== undefined
-            ? { ...update, value: neutralJcs({ ...JSON.parse(update.value.data), transaction_receipt_digest: receipt.receipt_digest }) }
-            : update),
+          updates: unit.updates.map((update) => {
+            if (update.kind === "memory-admission-outcomes" && receipt !== undefined) {
+              return { ...update, value: neutralJcs({ ...JSON.parse(update.value.data), transaction_receipt_digest: receipt.receipt_digest }) };
+            }
+            if (receipt?.operation === "capture") {
+              if (update.kind === "memory-pending-controls") {
+                return { ...update, value: neutralJcs({ ...JSON.parse(update.value.data), capture_receipt_digest: receipt.receipt_digest }) };
+              }
+              if (update.kind === "memory-capture-idempotency") {
+                return { ...update, value: neutralJcs({ ...JSON.parse(update.value.data), receipt_digest: receipt.receipt_digest }) };
+              }
+            }
+            return update;
+          }),
         };
         await transaction.apply(resampled);
         committedModuleResult = resampled.moduleResult;
@@ -866,7 +883,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
         limits: this.singleEventLimits,
       });
       if (!persisted.ok) return persisted;
-      this.core = scratch;
+      this.core = this.fork(after.value);
       if (persisted.value.receipt !== undefined) return { ok: true, value: persisted.value.receipt };
       return computed;
     });
