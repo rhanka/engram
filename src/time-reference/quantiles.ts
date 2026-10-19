@@ -117,6 +117,11 @@ export function parseEffectiveSizeRatio(value: unknown): EffectiveSizeRatio {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     fail("invalid-neff", "nEff must be a {numerator, denominator} object of decimal integer strings");
   }
+  for (const k of Object.keys(value)) {
+    if (k !== "numerator" && k !== "denominator") {
+      fail("invalid-neff", `undeclared field ${JSON.stringify(k)} on the closed nEff ratio object`);
+    }
+  }
   const { numerator, denominator } = value as Record<string, unknown>;
   if (typeof numerator !== "string" || !/^[0-9]+$/.test(numerator)) {
     fail("invalid-neff", "nEff.numerator must be a decimal integer string");
