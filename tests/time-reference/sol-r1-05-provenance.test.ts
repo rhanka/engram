@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildQuantileSet,
+  canonicalJson,
   exportDigestOf,
   sampleSnapshotDigest,
   validateCommittedExport,
@@ -28,11 +29,11 @@ const QS = () => ({
 });
 
 function pin(): string {
-  return sampleSnapshotDigest([
-    { id: "s#A", value: 100 },
-    { id: "s#B", value: 200 },
-    { id: "s#C", value: 300 },
-  ]);
+  return sampleSnapshotDigest(canonicalJson({ pullRequests: [
+    { number: 1, createdAt: "2026-10-18T07:00:00Z", mergedAt: "2026-10-18T07:01:40Z" },
+    { number: 2, createdAt: "2026-10-18T07:00:00Z", mergedAt: "2026-10-18T07:03:20Z" },
+    { number: 3, createdAt: "2026-10-18T07:00:00Z", mergedAt: "2026-10-18T07:05:00Z" },
+  ] }));
 }
 
 function sealedExport(): CommittedExportV1 {

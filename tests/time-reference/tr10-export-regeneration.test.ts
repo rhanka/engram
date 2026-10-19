@@ -2,6 +2,8 @@
 import { describe, expect, it } from "vitest";
 import {
   buildQuantileSet,
+  canonicalJson,
+  openToMergeSample,
   exportDigestOf,
   regenerateCheck,
   sampleSnapshotDigest,
@@ -32,12 +34,25 @@ function samples(): { id: string; value: number }[] {
   ];
 }
 
+function snapshotBytes(entries = samples()): string {
+  return canonicalJson({ pullRequests: entries.map((s) => ({
+    number: s.id,
+    createdAt: "2026-10-18T00:00:00Z",
+    mergedAt: new Date(Date.parse("2026-10-18T00:00:00Z") + s.value * 1000).toISOString(),
+  })) });
+}
+
+function deriveSamples(snapshot: unknown) {
+  return (snapshot as { pullRequests: { number: string; createdAt: string; mergedAt: string }[] })
+    .pullRequests.map((pr) => ({ id: pr.number, value: openToMergeSample(pr)! }));
+}
+
 function sealedExport(over: Partial<Record<string, unknown>> = {}): CommittedExportV1 {
   const quantiles = {
     ...buildQuantileSet(samples(), { method: "nearest-rank/1", support: "descriptive" }),
     tailQualification: "nEff 3/1: descriptive tail over 3 samples, 1 campaign",
   };
-  const pin = sampleSnapshotDigest(samples());
+  const pin = sampleSnapshotDigest(snapshotBytes());
   const series = {
     schema: "engram.time-reference/timing-series/1",
     seriesId: "s1",
@@ -121,7 +136,7 @@ describe("TR-10 export binding and regeneration", () => {
     const exp = sealedExport();
     expect(validateCommittedExport(exp).ok).toBe(true);
     expect(verifyExportDigest(exp)).toEqual([]);
-    expect(regenerateCheck(exp, { s1: samples() })).toEqual([]);
+    expect(regenerateCheck(exp, { s1: snapshotBytes() }, deriveSamples)).toEqual([]);
   });
 
   it("without serviceRevision, without the repo-knowledge@1 pin or without milestones it is refused", () => {
@@ -157,7 +172,7 @@ describe("TR-10 export binding and regeneration", () => {
       { id: "rhanka/h2a#3", value: 3617 },
     ];
     // Changed samples fail authentication against the pinned snapshot digest.
-    expect(regenerateCheck(exp, { s1: otherSamples }).map((d) => d.code)).toContain("sample-auth-mismatch");
+    expect(regenerateCheck(exp, { s1: snapshotBytes(otherSamples) }, deriveSamples).map((d) => d.code)).toContain("sample-auth-mismatch");
     // A hand edit (one quantile touched, digest kept) fails the digest check.
     const edited = JSON.parse(JSON.stringify(exp)) as CommittedExportV1;
     edited.series[0]!.quantiles.p50Seconds = 999999;
