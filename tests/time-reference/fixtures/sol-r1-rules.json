@@ -495,6 +495,212 @@
           "expected": 5
         }
       ]
+    },
+    {
+      "id": "F16",
+      "spec": "§13 TR-11",
+      "title": "Offline consumer pin over the locked contract files plus an independent invalid corpus",
+      "lockedDir": "profiles/repo-knowledge/1",
+      "lockedFiles": [
+        "profile.json",
+        "timing.schema.json",
+        "engram-mapping.json",
+        "manifest.json"
+      ],
+      "expectedMappingVersion": "1.0.0",
+      "expectedValidatorPin": {
+        "source": "@sentropic/diagram-core",
+        "contract": "25c0f3d33c258fc2b906a4b85219ffce5f67eccc"
+      },
+      "invalidCorpus": [
+        {
+          "name": "bad-clock-cohort",
+          "validator": "validateCohort",
+          "object": {
+            "schema": "engram.time-reference/cohort/1",
+            "cohortKey": "astra-merged-desc/1",
+            "repo": "rhanka/h2a",
+            "metric": "ci_time",
+            "manifestRef": {
+              "ruleId": "astra-merged-desc/1",
+              "snapshotDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "memberIds": [
+              327
+            ],
+            "n": 1,
+            "window": {
+              "from": "2026-10-17T04:53:00Z",
+              "to": "2026-10-18T07:48:00Z"
+            },
+            "fingerprint": {
+              "configDigest": "unknown",
+              "effort": "unknown",
+              "jobSet": "unknown",
+              "model": "unknown",
+              "reviewPolicy": "unknown",
+              "runner": "unknown",
+              "suiteShardSet": "unknown",
+              "toolchain": "unknown",
+              "workflowPath": "unknown"
+            },
+            "purpose": "retrospective-frozen-evidence"
+          },
+          "code": "bad-enum"
+        },
+        {
+          "name": "bad-unit-series",
+          "validator": "validateTimingSeries",
+          "object": {
+            "schema": "engram.time-reference/timing-series/1",
+            "seriesId": "s1",
+            "subject": "rhanka/h2a",
+            "metric": "pr_open_to_merge",
+            "cohortRef": {
+              "cohortKey": "astra-merged-desc/1",
+              "snapshotDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "quantiles": {
+              "schema": "engram.time-reference/quantile-set/1",
+              "quantileMethod": "nearest-rank/1",
+              "support": "descriptive",
+              "calibrated": false,
+              "sampleCount": 3,
+              "nEff": {
+                "numerator": "3",
+                "denominator": "1"
+              },
+              "p50Seconds": 860,
+              "p80Seconds": 1777,
+              "p95Seconds": 3617,
+              "maxSeconds": 5000,
+              "tailQualification": "nEff 3/1: descriptive tail over 3 samples, 1 campaign"
+            },
+            "unit": "day",
+            "window": {
+              "from": "2026-10-17T04:53:00Z",
+              "to": "2026-10-18T07:48:00Z"
+            },
+            "estimatorVersion": "e1",
+            "policyVersion": "p1",
+            "missingCount": 0,
+            "censoredCount": 0,
+            "exclusions": [],
+            "fingerprint": {
+              "configDigest": "unknown",
+              "effort": "unknown",
+              "jobSet": "unknown",
+              "model": "unknown",
+              "reviewPolicy": "unknown",
+              "runner": "unknown",
+              "suiteShardSet": "unknown",
+              "toolchain": "unknown",
+              "workflowPath": "unknown"
+            },
+            "measured": true
+          },
+          "code": "bad-enum"
+        },
+        {
+          "name": "cross-domain-receipt",
+          "validator": "validateInstallationReceipt",
+          "object": {
+            "schema": "engram.time-reference/installation-receipt/1",
+            "repo": "rhanka/h2a",
+            "lotOccurrence": "occ-1",
+            "mergeSha": "m",
+            "releaseSourceSha": "r",
+            "ancestryEvidence": "a",
+            "targetId": "t",
+            "targetKind": "cdn-edge",
+            "platform": "linux-x64",
+            "installationScope": "repo",
+            "expectedVersion": "0.21.0",
+            "observedVersion": "0.21.0",
+            "expectedTuple": "0.21.0+r",
+            "observedTuple": "0.21.0+r",
+            "artifactIntegrity": "sha256:x",
+            "resolvedExecutable": "/tmp/p/bin/engram",
+            "installStartedAt": "2026-10-18T10:00:00Z",
+            "installCompletedAt": "2026-10-18T10:05:00Z",
+            "smokeCompletedAt": "2026-10-18T10:06:00Z",
+            "installOutcome": "success",
+            "smokeOutcome": "success",
+            "clockSource": "c",
+            "producerIdentity": "p",
+            "evidenceDigests": []
+          },
+          "code": "bad-enum"
+        },
+        {
+          "name": "pr-installedAt",
+          "validator": "validatePullRequestTiming",
+          "object": {
+            "schema": "engram.time-reference/pull-request-timing/1",
+            "repo": "rhanka/h2a",
+            "number": 327,
+            "createdAt": "2026-10-17T04:53:00Z",
+            "mergedAt": "2026-10-17T07:38:18Z",
+            "firstCommitAt": null,
+            "firstCommitPolicy": "proxy-only-excluded-from-forecasts",
+            "openToMergeSeconds": 9918,
+            "commits": null,
+            "commitsCollectionState": "not-collected",
+            "installedAt": "unknown"
+          },
+          "code": "removed-field"
+        },
+        {
+          "name": "pr-reported-hours",
+          "validator": "validatePullRequestTiming",
+          "object": {
+            "schema": "engram.time-reference/pull-request-timing/1",
+            "repo": "rhanka/h2a",
+            "number": 327,
+            "createdAt": "2026-10-17T04:53:00Z",
+            "mergedAt": "2026-10-17T07:38:18Z",
+            "firstCommitAt": null,
+            "firstCommitPolicy": "proxy-only-excluded-from-forecasts",
+            "openToMergeSeconds": 9918,
+            "commits": null,
+            "commitsCollectionState": "not-collected",
+            "reportedOpenToMergeHours": 2.75
+          },
+          "code": "removed-field"
+        },
+        {
+          "name": "pr-snake-instant",
+          "validator": "validatePullRequestTiming",
+          "object": {
+            "number": 327,
+            "repo": "rhanka/h2a",
+            "schema": "engram.time-reference/pull-request-timing/1",
+            "mergedAt": "2026-10-17T07:38:18Z",
+            "firstCommitAt": null,
+            "firstCommitPolicy": "proxy-only-excluded-from-forecasts",
+            "openToMergeSeconds": 9918,
+            "commits": null,
+            "commitsCollectionState": "not-collected",
+            "opened": "2026-10-17T04:53:00Z"
+          },
+          "code": "removed-field"
+        },
+        {
+          "name": "batch-pr-spelling",
+          "validator": "validateCiCheckBatch",
+          "object": {
+            "schema": "engram.time-reference/ci-check-batch/1",
+            "repo": "rhanka/h2a",
+            "pr": 327,
+            "headSha": "abc",
+            "source": "https://api.example/x",
+            "collectedAt": "2026-10-18T07:48:57Z",
+            "totalCount": 1,
+            "checks": []
+          },
+          "code": "archived-spelling"
+        }
+      ]
     }
   ],
   "shared": {

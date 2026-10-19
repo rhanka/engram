@@ -1,112 +1,100 @@
-/** TR-11 — Offline consumer pin: locked bytes validate offline, archives stay archives. */
+/** TR-11 + Sol R1 F16 (§13) — Offline consumer pin over the locked contract files, plus an independent invalid corpus. */
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  sha256Hex,
   validateCiCheckBatch,
+  validateCohort,
+  validateCommittedExport,
   validateInstallationReceipt,
   validatePullRequestTiming,
+  validateTimingSeries,
   verifyContractPin,
 } from "../../src/time-reference/index.js";
-import { fixtureBytes } from "./l0d.js";
+import {
+  validateEngramMapping,
+  validateRepoKnowledgeProfile,
+  validateTimingSchemas,
+} from "../../src/repo-knowledge-contract.js";
+import { codesOf, solRule } from "./sol-r1-helpers.js";
 
-const PR_FIELDS = {
-  schema: "engram.time-reference/pull-request-timing/1",
-  repo: "rhanka/h2a",
-  number: 327,
-  createdAt: "2026-10-17T04:53:00Z",
-  mergedAt: "2026-10-17T07:38:18Z",
-  firstCommitAt: null,
-  firstCommitPolicy: "proxy-only-excluded-from-forecasts",
-  openToMergeSeconds: 9918,
-  commits: null,
-  commitsCollectionState: "not-collected",
+const VALIDATORS: Record<string, (v: unknown) => { ok: boolean; errors?: { code: string }[] }> = {
+  validateCohort,
+  validateTimingSeries,
+  validateInstallationReceipt,
+  validatePullRequestTiming,
+  validateCiCheckBatch,
 };
 
+function lockedFile(name: string): string {
+  return readFileSync(new URL(`../../profiles/repo-knowledge/1/${name}`, import.meta.url), "utf8");
+}
+
 describe("TR-11 offline consumer pin", () => {
-  it("locked artifact bytes validate offline with no network: digests match", () => {
-    const names = ["github-sample.json", "engram-enriched.json", "engram-older.json", "skipped-check-anomalies.json"];
-    const files: Record<string, string> = {};
-    const pin = names.map((name) => {
-      const bytes = fixtureBytes(name);
-      files[`contracts/repo-knowledge/1/${name}`] = bytes.toString("utf8");
-      return { path: `contracts/repo-knowledge/1/${name}`, sha256: sha256Hex(bytes.toString("utf8")) };
-    });
-    expect(verifyContractPin(files, pin)).toEqual([]);
+  const rule = solRule("F16") as {
+    lockedDir: string;
+    lockedFiles: string[];
+    expectedMappingVersion: string;
+    expectedValidatorPin: { source: string; contract: string };
+    invalidCorpus: { name: string; validator: string; object: unknown; code: string }[];
+  };
+
+  it("every locked contract file hashes to its manifest digest", () => {
+    const manifest = JSON.parse(lockedFile("manifest.json")) as {
+      mappingVersion: string;
+      validatorPin: { source: string; contract: string };
+      files: { path: string; sha256: string }[];
+    };
+    expect(manifest.mappingVersion).toBe(rule.expectedMappingVersion);
+    expect(manifest.validatorPin).toEqual(rule.expectedValidatorPin);
+    for (const name of rule.lockedFiles) {
+      if (name === "manifest.json") continue;
+      const entry = manifest.files.find((f) => f.path === name);
+      expect(entry, name).toBeDefined();
+      expect(createHash("sha256").update(lockedFile(name)).digest("hex"), name).toBe(entry?.sha256);
+    }
   });
 
-  it("a locally re-created schema substituted for the locked bytes fails the digest check", () => {
-    const bytes = fixtureBytes("github-sample.json").toString("utf8");
+  it("the locked profile, schemas and mapping validate offline with no network", () => {
+    expect(validateRepoKnowledgeProfile(JSON.parse(lockedFile("profile.json"))).ok).toBe(true);
+    expect(validateTimingSchemas(JSON.parse(lockedFile("timing.schema.json"))).ok).toBe(true);
+    expect(validateEngramMapping(JSON.parse(lockedFile("engram-mapping.json"))).ok).toBe(true);
+  });
+
+  it("the independent invalid corpus is refused with its typed code", () => {
+    for (const c of rule.invalidCorpus) {
+      expect(codesOf(VALIDATORS[c.validator]!(c.object)), c.name).toContain(c.code);
+    }
+    // Mapping and export version mismatches refuse without fallback.
+    const mapping = JSON.parse(lockedFile("engram-mapping.json")) as Record<string, unknown>;
+    expect(
+      validateEngramMapping({ ...mapping, profile: { id: "repo-knowledge", version: "2" } }).ok,
+    ).toBe(false);
+    const exp = {
+      schema: "engram.time-reference/committed-export/1",
+      repo: "rhanka/h2a",
+      serviceRevision: "0.21.0",
+      profileRef: { id: "repo-knowledge", version: "2", contentDigest: `sha256:${"0".repeat(64)}` },
+      window: { from: "2026-10-17T04:53:00Z", to: "2026-10-18T07:48:00Z" },
+      generatedAt: "2026-10-18T21:00:00Z",
+      generator: { name: "engram", version: "0.21.0" },
+      series: [],
+      estimates: [],
+      budgets: [],
+      milestones: [],
+      provenance: [],
+      exportDigest: `sha256:${"0".repeat(64)}`,
+    };
+    expect(codesOf(validateCommittedExport(exp))).toContain("unsupported-profile-version");
+  });
+
+  it("a locally re-created file substituted for the locked bytes fails the digest check", () => {
+    const bytes = '{"id":"repo-knowledge","version":"1"}';
+    const pin = [{ path: "contracts/repo-knowledge/1/profile.json", sha256: createHash("sha256").update(bytes).digest("hex") }];
     const recanonical = JSON.stringify(JSON.parse(bytes));
-    const pin = [{ path: "contracts/repo-knowledge/1/github-sample.json", sha256: sha256Hex(bytes) }];
-    const errors = verifyContractPin(
-      { "contracts/repo-knowledge/1/github-sample.json": recanonical },
-      pin,
-    );
-    expect(errors.map((d) => d.code)).toContain("pin-digest-mismatch");
     expect(
-      verifyContractPin({}, pin).map((d) => d.code),
-    ).toContain("pin-missing-file");
-  });
-
-  it("archived spellings validate only as Git-replayed archives and are refused as current DTO input", () => {
-    // `pr` instead of `number` in a check batch.
-    expect(
-      validateCiCheckBatch({
-        schema: "engram.time-reference/ci-check-batch/1",
-        repo: "rhanka/h2a",
-        pr: 327,
-        headSha: "abc",
-        source: "https://api.example/x",
-        collectedAt: "2026-10-18T07:48:57Z",
-        totalCount: 1,
-        checks: [],
-      }).ok,
-    ).toBe(false);
-    // Pull-request-level installedAt / reviewRoundsActual.
-    for (const extra of [{ installedAt: "unknown" }, { reviewRoundsActual: null }]) {
-      expect(validatePullRequestTiming({ ...PR_FIELDS, ...extra }).ok).toBe(false);
-    }
-    // Reported-hours fields.
-    for (const extra of [{ reportedOpenToMergeHours: 2.75 }, { reportedFirstCommitToMergeHours: 1.5 }]) {
-      expect(validatePullRequestTiming({ ...PR_FIELDS, ...extra }).ok).toBe(false);
-    }
-    // Snake_case instants.
-    const { createdAt: _c, ...rest } = PR_FIELDS as Record<string, unknown>;
-    expect(
-      validatePullRequestTiming({ ...rest, opened: "2026-10-17T04:53:00Z" }).ok,
-    ).toBe(false);
-  });
-
-  it("upstream valid/invalid verdicts reproduce exactly from the locked bytes", () => {
-    expect(validatePullRequestTiming(PR_FIELDS).ok).toBe(true);
-    // An undeclared cross-domain target type on a receipt is refused.
-    expect(
-      validateInstallationReceipt({
-        schema: "engram.time-reference/installation-receipt/1",
-        repo: "rhanka/h2a",
-        lotOccurrence: "occ-1",
-        mergeSha: "m",
-        releaseSourceSha: "r",
-        ancestryEvidence: "a",
-        targetId: "t",
-        targetKind: "cdn-edge",
-        platform: "linux-x64",
-        installationScope: "repo",
-        expectedVersion: "0.21.0",
-        observedVersion: "0.21.0",
-        expectedTuple: "0.21.0+r",
-        observedTuple: "0.21.0+r",
-        artifactIntegrity: "sha256:x",
-        resolvedExecutable: "/tmp/p/bin/engram",
-        installStartedAt: "2026-10-18T10:00:00Z",
-        installCompletedAt: "2026-10-18T10:05:00Z",
-        smokeCompletedAt: "2026-10-18T10:06:00Z",
-        installOutcome: "success",
-        smokeOutcome: "success",
-        clockSource: "c",
-        producerIdentity: "p",
-        evidenceDigests: [],
-      }).ok,
-    ).toBe(false);
+      verifyContractPin({ "contracts/repo-knowledge/1/profile.json": `${recanonical} ` }, pin).map((d) => d.code),
+    ).toContain("pin-digest-mismatch");
+    expect(verifyContractPin({}, pin).map((d) => d.code)).toContain("pin-missing-file");
   });
 });
