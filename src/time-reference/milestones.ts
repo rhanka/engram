@@ -76,6 +76,7 @@ export function qualifyInstallation(
 ): { installedAt: string; reason?: string } {
   const r = target.receipt;
   if (r === null) return { installedAt: "unknown", reason: "no-target-receipt" };
+  if (!validateInstallationReceipt(r).ok) return { installedAt: "unknown", reason: "invalid-receipt" };
   if (r.targetId !== target.targetId) return { installedAt: "unknown", reason: "wrong-target" };
   if (r.targetKind !== qual.expectedTargetKind) return { installedAt: "unknown", reason: "wrong-target-kind" };
   if (r.platform !== qual.expectedPlatform) return { installedAt: "unknown", reason: "wrong-platform" };
