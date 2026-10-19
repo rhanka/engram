@@ -157,7 +157,7 @@ export function openToMergeSample(pr: Pick<PullRequestTimingV1, "createdAt" | "m
   return d.seconds;
 }
 
-export function validatePullRequestTiming(v: unknown): ValidationResult<PullRequestTimingV1> {
+export function validatePullRequestTiming(v: unknown, attempts: CollectionAttemptEvidence[] = []): ValidationResult<PullRequestTimingV1> {
   const c = new Ctx();
   if (!isRecord(v)) {
     c.fail("bad-type", "PullRequestTimingV1 must be an object", "");
@@ -224,6 +224,19 @@ export function validatePullRequestTiming(v: unknown): ValidationResult<PullRequ
   } else if (v["commits"] !== null) {
     c.fail("state-mismatch", `commitsCollectionState "${state}" requires commits: null`, "commits");
   }
+  // `unavailable` requires an attested failed collection attempt with a
+  // documented cause (section 6.2, A6): enforced on the main validation
+  // path, never in a side helper alone.
+  if (state === "unavailable" && typeof v["repo"] === "string" && (typeof v["number"] === "number" || typeof v["number"] === "string")) {
+    for (const e of validateCommitsUnavailable(
+      { repo: v["repo"], number: v["number"], commitsCollectionState: "unavailable" },
+      attempts,
+    )) {
+      c.fail(e.code, e.message, e.path);
+    }
+  } else if (state === "unavailable") {
+    c.fail("missing-collection-attempt", 'commits "unavailable" requires an attested failed collection attempt with a documented cause', "commitsCollectionState");
+  }
   return done(c, v);
 }
 
@@ -246,7 +259,7 @@ export interface CollectionAttemptEvidence {
  * with an empty cause, is refused.
  */
 export function validateCommitsUnavailable(
-  pr: Pick<PullRequestTimingV1, "repo" | "number" | "commitsCollectionState">,
+  pr: { repo: string; number: number | string; commitsCollectionState: PullRequestTimingV1["commitsCollectionState"] },
   attempts: CollectionAttemptEvidence[],
 ): Diagnostic[] {
   const errors: Diagnostic[] = [];
@@ -436,7 +449,15 @@ export function validateCollectionManifest(v: unknown): ValidationResult<Collect
   if (v["totalCount"] !== null && !isInt(v["totalCount"])) c.fail("bad-type", "totalCount must be an integer or null", "totalCount");
   if (typeof v["hasNextPage"] !== "boolean") c.fail("bad-type", "hasNextPage must be a boolean", "hasNextPage");
   for (const f of ["inclusionIds", "exclusionIds"] as const) {
-    if (!Array.isArray(v[f])) c.fail("bad-type", `${f} must be an array (possibly empty, never omitted)`, f);
+    if (!Array.isArray(v[f])) {
+      c.fail("bad-type", `${f} must be an array (possibly empty, never omitted)`, f);
+    } else {
+      (v[f] as unknown[]).forEach((id, i) => {
+        if (typeof id !== "number" && typeof id !== "string") {
+          c.fail("bad-type", `${f}[${i}] must be a number or a string identifier`, `${f}.${i}`);
+        }
+      });
+    }
   }
   if (!Array.isArray(v["quarantine"])) {
     c.fail("bad-type", "quarantine must be an array", "quarantine");
@@ -457,7 +478,15 @@ export function validateCollectionManifest(v: unknown): ValidationResult<Collect
   if (typeof v["sourceRevision"] !== "string" || !SHA_RE.test(v["sourceRevision"] as string)) {
     c.fail("bad-source-revision", "sourceRevision must be a full immutable commit SHA (40 lowercase hex); a branch name or mutable tag is refused", "sourceRevision");
   }
-  if (!Array.isArray(v["sourceUrls"])) c.fail("bad-type", "sourceUrls must be an array", "sourceUrls");
+  if (!Array.isArray(v["sourceUrls"])) {
+    c.fail("bad-type", "sourceUrls must be an array", "sourceUrls");
+  } else {
+    (v["sourceUrls"] as unknown[]).forEach((u, i) => {
+      if (typeof u !== "string" || (u as string).length === 0) {
+        c.fail("bad-type", `sourceUrls[${i}] must be a non-empty string`, `sourceUrls.${i}`);
+      }
+    });
+  }
   c.checkDigest(v["snapshotDigest"], "snapshotDigest");
   return done(c, v);
 }
@@ -535,6 +564,10 @@ export function validateCohort(v: unknown): ValidationResult<CohortV1> {
   } else {
     const seen = new Set<string>();
     for (const id of v["memberIds"] as unknown[]) {
+      if (typeof id !== "number" && typeof id !== "string") {
+        c.fail("bad-type", "cohort members must be number or string identifiers", "memberIds");
+        break;
+      }
       const k = `${typeof id}:${String(id)}`;
       if (seen.has(k)) {
         c.fail("duplicate-member", "duplicate cohort members are rejected before counting or computing quantiles", "memberIds");
@@ -933,17 +966,35 @@ export function validateDeliveryMilestones(v: unknown): ValidationResult<Deliver
 }
 
 /**
+ * Identified repository/lot context a receipt resolution is bound to
+ * (sections 6.9, 7.2): a receipt from another repository or lot
+ * occurrence never backs an installation actual.
+ */
+export interface MilestoneScope {
+  repo: string;
+  lotOccurrence: string;
+}
+
+/**
  * Every known installation actual resolves to exactly one matching
- * qualified receipt (section 6.9): same target, structurally valid receipt,
- * declared target qualification, and the qualification reproduces the
- * published `installedAt`. Unknown actuals need no receipt.
+ * qualified receipt (section 6.9): `receiptRef` names the receipt, which
+ * must be structurally valid, belong to the identified repository/lot,
+ * target the same target, and reproduce the published `installedAt` under
+ * the frozen target declaration. An arbitrary `receiptRef` naming no
+ * supplied receipt, or a receipt from another repository or lot, fails.
+ * Unknown actuals need no receipt.
  */
 export function validateMilestonesAgainstReceipts(
-  record: Pick<DeliveryMilestonesV1, "installMilestones">,
-  receipts: InstallationReceiptV1[],
+  record: Pick<DeliveryMilestonesV1, "installMilestones" | "repo">,
+  receipts: Record<string, InstallationReceiptV1>,
   quals: Record<string, TargetQualification>,
+  scope: MilestoneScope,
 ): Diagnostic[] {
   const errors: Diagnostic[] = [];
+  if (record.repo !== scope.repo) {
+    errors.push({ code: "scope-mismatch", message: `milestones record for ${JSON.stringify(record.repo)} is resolved against scope ${JSON.stringify(scope.repo)}`, path: "repo" });
+    return errors;
+  }
   record.installMilestones.forEach((entry, i) => {
     const p = `installMilestones.${i}`;
     if (entry.installedAt === "unknown") return;
@@ -951,9 +1002,17 @@ export function validateMilestonesAgainstReceipts(
       errors.push({ code: "missing-receipt-ref", message: "a known installedAt resolves to a matching qualified receipt via receiptRef", path: `${p}.receiptRef` });
       return;
     }
-    const candidates = receipts.filter((r) => r.targetId === entry.targetId);
-    if (candidates.length === 0) {
-      errors.push({ code: "unresolved-receipt", message: `no receipt for target ${JSON.stringify(entry.targetId)} backs installedAt ${JSON.stringify(entry.installedAt)}`, path: p });
+    const receipt = receipts[entry.receiptRef];
+    if (receipt === undefined) {
+      errors.push({ code: "unresolved-receipt", message: `receiptRef ${JSON.stringify(entry.receiptRef)} names no supplied receipt for target ${JSON.stringify(entry.targetId)}`, path: `${p}.receiptRef` });
+      return;
+    }
+    if (receipt.targetId !== entry.targetId || receipt.repo !== scope.repo || receipt.lotOccurrence !== scope.lotOccurrence) {
+      errors.push({ code: "unresolved-receipt", message: `receipt ${JSON.stringify(entry.receiptRef)} is not a same-target receipt of the identified repository/lot for target ${JSON.stringify(entry.targetId)}`, path: p });
+      return;
+    }
+    if (!validateInstallationReceipt(receipt).ok) {
+      errors.push({ code: "unresolved-receipt", message: `receipt ${JSON.stringify(entry.receiptRef)} is structurally invalid and backs no installedAt`, path: p });
       return;
     }
     const qual = quals[entry.targetId];
@@ -961,18 +1020,33 @@ export function validateMilestonesAgainstReceipts(
       errors.push({ code: "missing-target-declaration", message: `no frozen target declaration for target ${JSON.stringify(entry.targetId)}`, path: p });
       return;
     }
-    const reproduced = candidates.some((r) => {
-      if (!validateInstallationReceipt(r).ok) return false;
-      return qualifyInstallation(
-        { targetId: entry.targetId, forecastAt: entry.forecastAt, receipt: r },
-        qual,
-      ).installedAt === entry.installedAt;
-    });
+    const reproduced = qualifyInstallation(
+      { targetId: entry.targetId, forecastAt: entry.forecastAt, receipt },
+      qual,
+    ).installedAt === entry.installedAt;
     if (!reproduced) {
       errors.push({ code: "unresolved-receipt", message: `no qualified receipt reproduces installedAt ${JSON.stringify(entry.installedAt)} for target ${JSON.stringify(entry.targetId)}`, path: p });
     }
   });
   return errors;
+}
+
+/**
+ * Primary milestone validation (sections 6.9, 7.2): structural validation
+ * plus receipt resolution bound to the identified repository/lot. This is
+ * the path callers use to accept a `DeliveryMilestonesV1` with known
+ * installation actuals; structural validation alone never accepts one.
+ */
+export function validateDeliveryMilestonesWithReceipts(
+  record: unknown,
+  receipts: Record<string, InstallationReceiptV1>,
+  quals: Record<string, TargetQualification>,
+  scope: MilestoneScope,
+): ValidationResult<DeliveryMilestonesV1> {
+  const structural = validateDeliveryMilestones(record);
+  if (!structural.ok) return structural;
+  const errors = validateMilestonesAgainstReceipts(structural.value, receipts, quals, scope);
+  return errors.length === 0 ? { ok: true, value: structural.value } : { ok: false, errors };
 }
 
 // --- InstallationReceiptV1 (section 6.10) ------------------------------------
