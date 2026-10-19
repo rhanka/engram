@@ -7,14 +7,14 @@
  * or generator, then regenerated. Pure: no I/O.
  */
 
-import { canonicalDigest, exportDigestOf, sha256Hex } from "./canonical.js";
+import { exportDigestOf, sha256Digest, sha256Hex } from "./canonical.js";
 import {
   effectiveSizeRatio,
   nearestRank,
   weightedEcdf,
   type WeightedEntry,
 } from "./quantiles.js";
-import type { CommittedExportV1, QuantileSetV1, SupportTier } from "./types.js";
+import type { CommittedExportV1, QuantileSetV1, SupportTier, TimingSeriesV1 } from "./types.js";
 import { SCHEMA_QUANTILE_SET } from "./types.js";
 import { validateCommittedExport, type Diagnostic } from "./validators.js";
 
@@ -77,20 +77,13 @@ export function buildQuantileSet(entries: WeightedEntry[], opts: BuildQuantileOp
   return set;
 }
 
-/**
- * Pinned snapshot digest over the canonical COLLECTED sample bytes (spec
- * section 6.1: any sample change changes the digest; identical pinned
- * inputs reproduce it). Only the collected `{id, value}` rows are hashed:
- * weights travel with the versioned weighting policy on the consumer side
- * (h2a spec D5), so a derived weight change never moves the snapshot
- * digest — it surfaces as an `nEff`/quantile mismatch instead. Builders
- * pin `cohortRef.snapshotDigest` with this function so that
- * `regenerateCheck` can authenticate externally supplied samples against
- * the digest committed in the export.
- */
-export function sampleSnapshotDigest(samples: WeightedEntry[]): string {
-  return canonicalDigest(samples.map(({ id, value }) => ({ id, value })));
+/** SHA-256 over the supplied collected snapshot bytes, before sample derivation (§6.1). */
+export function sampleSnapshotDigest(snapshotBytes: string | Uint8Array): string {
+  return sha256Digest(snapshotBytes);
 }
+
+/** Caller-owned, versioned metric/selection adapter over an authenticated snapshot (§8.2). */
+export type SnapshotSampleAdapter = (snapshot: unknown, series: TimingSeriesV1) => WeightedEntry[];
 
 /** Compare one rebuilt quantile set against its committed figure. */
 function compareQuantiles(
@@ -138,29 +131,38 @@ export function verifyExportDigest(exp: CommittedExportV1): Diagnostic[] {
  */
 export function regenerateCheck(
   exp: CommittedExportV1,
-  samplesBySeriesId: Record<string, WeightedEntry[]>,
+  snapshotBytesBySeriesId: Record<string, string | Uint8Array>,
+  samplesFromSnapshot: SnapshotSampleAdapter,
 ): Diagnostic[] {
   const errors: Diagnostic[] = [];
   const structural = validateCommittedExport(exp);
   if (!structural.ok) return structural.errors;
   const bySeriesId = new Map(exp.series.map((s) => [s.seriesId, s]));
+  const samplesBySeriesId = new Map<string, WeightedEntry[]>();
   for (const series of exp.series) {
-    const samples = samplesBySeriesId[series.seriesId];
-    if (samples === undefined) {
-      errors.push({ code: "missing-samples", message: `no pinned samples for series ${JSON.stringify(series.seriesId)}`, path: `series.${series.seriesId}` });
+    const bytes = snapshotBytesBySeriesId[series.seriesId];
+    if (bytes === undefined) {
+      errors.push({ code: "missing-samples", message: `no pinned snapshot bytes for series ${JSON.stringify(series.seriesId)}`, path: `series.${series.seriesId}` });
       continue;
     }
-    // Authenticate the supplied samples against the pinned snapshot digest
-    // before any recomputation: changed samples fail here even when their
-    // quantiles happen to be unchanged (spec section 6.1).
-    if (sampleSnapshotDigest(samples) !== series.cohortRef.snapshotDigest) {
+    // Authenticate the collected bytes before parsing or deriving any sample.
+    if (sampleSnapshotDigest(bytes) !== series.cohortRef.snapshotDigest) {
       errors.push({
         code: "sample-auth-mismatch",
-        message: `series ${JSON.stringify(series.seriesId)} samples do not reproduce the pinned snapshotDigest`,
+        message: `series ${JSON.stringify(series.seriesId)} snapshot bytes do not reproduce the pinned snapshotDigest`,
         path: `series.${series.seriesId}`,
       });
       continue;
     }
+    let samples: WeightedEntry[];
+    try {
+      const snapshot = JSON.parse(typeof bytes === "string" ? bytes : new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+      samples = samplesFromSnapshot(snapshot, series);
+    } catch {
+      errors.push({ code: "invalid-snapshot", message: "authenticated snapshot cannot produce samples", path: `series.${series.seriesId}` });
+      continue;
+    }
+    samplesBySeriesId.set(series.seriesId, samples);
     const rebuilt = buildQuantileSet(samples, {
       method: series.quantiles.quantileMethod,
       support: series.quantiles.support,
@@ -179,7 +181,7 @@ export function regenerateCheck(
       errors.push({ code: "series-ref-mismatch", message: `estimate ${JSON.stringify(estimate.estimateId)} seriesRef does not pin the referenced series snapshot`, path: `estimates.${estimate.estimateId}.seriesRef` });
       continue;
     }
-    const samples = samplesBySeriesId[estimate.seriesRef.seriesId];
+    const samples = samplesBySeriesId.get(estimate.seriesRef.seriesId);
     if (samples === undefined) {
       errors.push({ code: "missing-samples", message: `no pinned samples for estimate ${JSON.stringify(estimate.estimateId)}`, path: `estimates.${estimate.estimateId}` });
       continue;

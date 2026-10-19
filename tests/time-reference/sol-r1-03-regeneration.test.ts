@@ -2,7 +2,11 @@
 import { describe, expect, it } from "vitest";
 import {
   buildQuantileSet,
-  canonicalDigest,
+  canonicalJson,
+  sampleSnapshotDigest,
+  sha256Digest,
+  openToMergeSample,
+  type TimingSeriesV1,
   exportDigestOf,
   regenerateCheck,
   validateCommittedExport,
@@ -24,9 +28,25 @@ function samples(): { id: string; value: number }[] {
   ];
 }
 
-/** Pinned snapshot digest authenticates the canonical sample bytes (spec §6.1). */
+function snapshotBytes(): string {
+  return canonicalJson({
+    sourceRevision: "46b82b42781709f2a2ab1bec6707ba58131248f0",
+    collectedAt: "2026-10-18T07:48:57Z",
+    pullRequests: samples().map((s) => ({
+      number: s.id,
+      createdAt: "2026-10-18T07:00:00Z",
+      mergedAt: new Date(Date.parse("2026-10-18T07:00:00Z") + s.value * 1000).toISOString(),
+    })),
+  });
+}
+
+function deriveSamples(snapshot: unknown, _series: TimingSeriesV1) {
+  return (snapshot as { pullRequests: { number: string; createdAt: string; mergedAt: string }[] })
+    .pullRequests.map((pr) => ({ id: pr.number, value: openToMergeSample(pr)! }));
+}
+
 function pin(): string {
-  return canonicalDigest(samples());
+  return sha256Digest(snapshotBytes());
 }
 
 function sealedExport(): CommittedExportV1 {
@@ -100,22 +120,22 @@ function sealedExport(): CommittedExportV1 {
   return { ...exp, exportDigest: exportDigestOf(exp) } as unknown as CommittedExportV1;
 }
 
-function codesOfRegen(exp: CommittedExportV1, s: { id: string; value: number }[]): string[] {
-  return regenerateCheck(exp, { s1: s }).map((d) => d.code);
+function codesOfRegen(exp: CommittedExportV1, bytes = snapshotBytes()): string[] {
+  return regenerateCheck(exp, { s1: bytes }, deriveSamples).map((d) => d.code);
 }
 
 describe("Sol R1 F03/F04 export regeneration", () => {
   it("a sealed export validates and regenerates cleanly", () => {
     const exp = sealedExport();
     expect(validateCommittedExport(exp).ok).toBe(true);
-    expect(regenerateCheck(exp, { s1: samples() })).toEqual([]);
+    expect(regenerateCheck(exp, { s1: snapshotBytes() }, deriveSamples)).toEqual([]);
   });
 
   it("F03: every published figure and maximum is recomputed, in series and in estimates", () => {
     const rule = solRule("F03") as { cases: { mutation: string; code: string }[] };
     for (const c of rule.cases) {
       const bumped = withPath<CommittedExportV1>(sealedExport(), c.mutation, 999999);
-      expect(codesOfRegen(bumped, samples()), c.mutation).toContain(c.code);
+      expect(codesOfRegen(bumped), c.mutation).toContain(c.code);
     }
   });
 
@@ -123,25 +143,47 @@ describe("Sol R1 F03/F04 export regeneration", () => {
     const rule = solRule("F04") as { cases: { mutation: string; code: string }[] };
     for (const c of rule.cases) {
       const exp = sealedExport();
-      const mutated =
-        c.mutation === "renamed-sample-ids"
-          ? samples().map((s, i) => ({ ...s, id: `other-${i}` }))
-          : samples().map((s) => (s.id === "s#B" ? { ...s, value: 250 } : s));
-      if (c.mutation === "renamed-sample-ids") {
-        // Same values, renamed ids: quantiles identical, collected bytes differ.
-        expect(
-          buildQuantileSet(mutated, { method: "nearest-rank/1", support: "descriptive" }),
-        ).toEqual(buildQuantileSet(samples(), { method: "nearest-rank/1", support: "descriptive" }));
+      const snapshot = JSON.parse(snapshotBytes());
+      let bytes: string;
+      if (c.mutation === "derived-rows-digest") {
+        bytes = snapshotBytes();
+        const derivedPin = sha256Digest(canonicalJson(samples()));
+        for (const series of exp.series) series.cohortRef.snapshotDigest = derivedPin;
+        for (const estimate of exp.estimates) estimate.seriesRef.snapshotDigest = derivedPin;
+        for (const provenance of exp.provenance) provenance.snapshotDigest = derivedPin;
+        exp.exportDigest = exportDigestOf(exp as unknown as Record<string, unknown>);
+      } else {
+        if (c.mutation === "renamed-sample-ids") snapshot.pullRequests[1].number = "other-id";
+        else if (c.mutation === "moved-sample-value") snapshot.pullRequests[1].mergedAt = "2026-10-18T07:04:10Z";
+        else if (c.mutation === "collected-metadata") snapshot.collectedAt = "2026-10-18T08:00:00Z";
+        else if (c.mutation === "unchanged-duration-new-instants") {
+          for (const pr of snapshot.pullRequests) {
+            pr.createdAt = new Date(Date.parse(pr.createdAt) + 1000).toISOString();
+            pr.mergedAt = new Date(Date.parse(pr.mergedAt) + 1000).toISOString();
+          }
+          expect(deriveSamples(snapshot, exp.series[0]!)).toEqual(samples());
+        } else throw new Error(`unknown F04 mutation ${c.mutation}`);
+        bytes = canonicalJson(snapshot);
       }
-      expect(codesOfRegen(exp, mutated), c.mutation).toContain(c.code);
+      let derivations = 0;
+      const errors = regenerateCheck(exp, { s1: bytes }, (snapshot, series) => {
+        derivations++;
+        return deriveSamples(snapshot, series);
+      });
+      expect(errors.map((e) => e.code), c.mutation).toContain(c.code);
+      expect(derivations, "unauthenticated bytes never reach the sample adapter").toBe(0);
     }
   });
 
-  it("F04: a derived weight change moves the figure, never the snapshot digest", () => {
+  it("F04: the sample adapter receives the authenticated collected snapshot", () => {
     const exp = sealedExport();
-    const reweighted = samples().map((s) => ({ ...s, weight: "2" }));
-    // Collected {id, value} bytes are unchanged: authentication passes…
-    expect(codesOfRegen(exp, reweighted)).not.toContain("sample-auth-mismatch");
+    let received: unknown;
+    expect(sampleSnapshotDigest(snapshotBytes())).toBe(pin());
+    expect(regenerateCheck(exp, { s1: Buffer.from(snapshotBytes()) }, (snapshot, series) => {
+      received = snapshot;
+      return deriveSamples(snapshot, series);
+    })).toEqual([]);
+    expect(received).toEqual(JSON.parse(snapshotBytes()));
   });
 
   it("an export omitting the optional maxSeconds regenerates cleanly", () => {
@@ -157,11 +199,11 @@ describe("Sol R1 F03/F04 export regeneration", () => {
       exportDigest: exportDigestOf({ ...exp, series: [seriesWithoutMax] }),
     } as unknown as CommittedExportV1;
     expect(validateCommittedExport(withoutMax).ok).toBe(true);
-    expect(regenerateCheck(withoutMax, { s1: samples() })).toEqual([]);
+    expect(regenerateCheck(withoutMax, { s1: snapshotBytes() }, deriveSamples)).toEqual([]);
   });
 
   it("authentic samples with a hand-edited figure still report quantile-mismatch", () => {
     const edited = withPath<CommittedExportV1>(sealedExport(), "series.0.quantiles.p50Seconds", 999999);
-    expect(codesOfRegen(edited, samples())).toContain("quantile-mismatch");
+    expect(codesOfRegen(edited)).toContain("quantile-mismatch");
   });
 });
