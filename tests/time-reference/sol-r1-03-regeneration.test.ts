@@ -135,6 +135,13 @@ describe("Sol R1 F03/F04 export regeneration", () => {
     const rule = solRule("F03") as { cases: { mutation: string; action?: string; expectOk?: boolean; code?: string }[] };
     for (const c of drivenCases("F03", rule.cases)) {
       const bumped = withPath<CommittedExportV1>(sealedExport(), c.mutation, c.action === "withhold" ? null : 999999);
+      if (c.action === "omit") {
+        const segments = c.mutation.split(".");
+        const field = segments.pop()!;
+        let parent: unknown = bumped;
+        for (const segment of segments) parent = (parent as Record<string, unknown>)[segment];
+        delete (parent as Record<string, unknown>)[field];
+      }
       bumped.exportDigest = exportDigestOf(bumped as unknown as Record<string, unknown>);
       if (c.expectOk) {
         expect(validateCommittedExport(bumped).ok, c.mutation).toBe(true);
@@ -188,22 +195,6 @@ describe("Sol R1 F03/F04 export regeneration", () => {
       return deriveSamples(snapshot, series);
     })).toEqual([]);
     expect(received).toEqual(JSON.parse(snapshotBytes()));
-  });
-
-  it("an export omitting the optional maxSeconds regenerates cleanly", () => {
-    const exp = sealedExport();
-    const { maxSeconds: _m, ...quantilesWithoutMax } = exp.series[0]!.quantiles as Record<
-      string,
-      unknown
-    >;
-    const seriesWithoutMax = { ...exp.series[0], quantiles: quantilesWithoutMax };
-    const withoutMax = {
-      ...exp,
-      series: [seriesWithoutMax],
-      exportDigest: exportDigestOf({ ...exp, series: [seriesWithoutMax] }),
-    } as unknown as CommittedExportV1;
-    expect(validateCommittedExport(withoutMax).ok).toBe(true);
-    expect(regenerateCheck(withoutMax, { s1: snapshotBytes() }, deriveSamples)).toEqual([]);
   });
 
   it("authentic samples with a hand-edited figure still report quantile-mismatch", () => {
