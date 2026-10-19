@@ -167,7 +167,9 @@ function readDistDeclarationClosure(): { types: Set<string>; values: Set<string>
 }
 
 // The same strict scanner serves checkout diagnostics and installed acceptance.
-const collectInstalledClosure = (entries: ReadonlyArray<string>) => scanInstalledClosure(entries, root);
+const collectInstalledClosure = (entries: ReadonlyArray<string>) => scanInstalledClosure(
+  entries, entries[0]!.startsWith(`${root}/`) ? root : dirname(entries[0]!),
+);
 
 describe("substrate entry shape (amendment §1, §5.6)", () => {
   it("exports exactly the two runtime values, no default, no export *", async () => {
