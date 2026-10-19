@@ -21,18 +21,24 @@
       },
       "cutoff": {
         "type": "string",
-        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+        "format": "date-time",
+        "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
       },
       "collectedAt": {
         "type": "string",
-        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+        "format": "date-time",
+        "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
       },
       "firstAvailableAt": {
         "type": [
           "string",
           "null"
         ],
-        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+        "format": "date-time",
+        "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
       },
       "historicalAvailability": {
         "enum": [
@@ -149,14 +155,18 @@
       },
       "createdAt": {
         "type": "string",
-        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+        "format": "date-time",
+        "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
       },
       "mergedAt": {
         "type": [
           "string",
           "null"
         ],
-        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+        "format": "date-time",
+        "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
       },
       "headSha": {
         "type": "string"
@@ -169,7 +179,9 @@
           "string",
           "null"
         ],
-        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+        "format": "date-time",
+        "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
       },
       "firstCommitPolicy": {
         "const": "proxy-only-excluded-from-forecasts"
@@ -193,11 +205,15 @@
             },
             "authoredAt": {
               "type": "string",
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+              "format": "date-time",
+              "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
             },
             "committedAt": {
               "type": "string",
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+              "format": "date-time",
+              "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
             }
           },
           "required": [
@@ -252,7 +268,9 @@
       },
       "collectedAt": {
         "type": "string",
-        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+        "format": "date-time",
+        "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
       },
       "totalCount": {
         "type": "integer"
@@ -291,11 +309,15 @@
             },
             "startedAt": {
               "type": "string",
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+              "format": "date-time",
+              "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
             },
             "completedAt": {
               "type": "string",
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+              "format": "date-time",
+              "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
             },
             "url": {
               "type": "string"
@@ -392,11 +414,15 @@
         "properties": {
           "from": {
             "type": "string",
-            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+            "format": "date-time",
+            "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
           },
           "to": {
             "type": "string",
-            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+            "format": "date-time",
+            "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
           }
         },
         "required": [
@@ -689,11 +715,15 @@
         "properties": {
           "from": {
             "type": "string",
-            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+            "format": "date-time",
+            "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
           },
           "to": {
             "type": "string",
-            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+            "format": "date-time",
+            "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
           }
         },
         "required": [
@@ -931,11 +961,15 @@
             "properties": {
               "from": {
                 "type": "string",
-                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+                "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+                "format": "date-time",
+                "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
               },
               "to": {
                 "type": "string",
-                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+                "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+                "format": "date-time",
+                "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
               }
             },
             "required": [
@@ -946,11 +980,15 @@
           },
           "collectedAt": {
             "type": "string",
-            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+            "format": "date-time",
+            "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
           },
           "referencePublishedAt": {
             "type": "string",
-            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+            "format": "date-time",
+            "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
           }
         },
         "required": [
@@ -1056,21 +1094,27 @@
       },
       "referencePublishedAt": {
         "type": "string",
-        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+        "format": "date-time",
+        "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
       },
       "referencePublicationRevision": {
         "type": "string"
       },
       "collectedAt": {
         "type": "string",
-        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+        "format": "date-time",
+        "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
       },
       "firstAvailableAt": {
         "type": [
           "string",
           "null"
         ],
-        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+        "format": "date-time",
+        "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
       },
       "appliesToRevision": {
         "type": "string"
@@ -1142,14 +1186,18 @@
               "string",
               "null"
             ],
-            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+            "format": "date-time",
+            "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
           },
           "mergedAt": {
             "type": [
               "string",
               "null"
             ],
-            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+            "format": "date-time",
+            "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
           },
           "verdict": {
             "enum": [
@@ -1181,13 +1229,17 @@
                 "string",
                 "null"
               ],
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+              "format": "date-time",
+              "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
             },
             "installedAt": {
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+                  "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+                  "format": "date-time",
+                  "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
                 },
                 {
                   "const": "unknown"
@@ -1285,15 +1337,21 @@
       },
       "installStartedAt": {
         "type": "string",
-        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+        "format": "date-time",
+        "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
       },
       "installCompletedAt": {
         "type": "string",
-        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+        "format": "date-time",
+        "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
       },
       "smokeCompletedAt": {
         "type": "string",
-        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+        "format": "date-time",
+        "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
       },
       "installOutcome": {
         "enum": [
@@ -1389,11 +1447,15 @@
         "properties": {
           "from": {
             "type": "string",
-            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+            "format": "date-time",
+            "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
           },
           "to": {
             "type": "string",
-            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+            "format": "date-time",
+            "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
           }
         },
         "required": [
@@ -1404,7 +1466,9 @@
       },
       "generatedAt": {
         "type": "string",
-        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+        "format": "date-time",
+        "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
       },
       "generator": {
         "type": "object",
@@ -1559,11 +1623,15 @@
               "properties": {
                 "from": {
                   "type": "string",
-                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+                  "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+                  "format": "date-time",
+                  "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
                 },
                 "to": {
                   "type": "string",
-                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+                  "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+                  "format": "date-time",
+                  "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
                 }
               },
               "required": [
@@ -1803,11 +1871,15 @@
                   "properties": {
                     "from": {
                       "type": "string",
-                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+                      "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+                      "format": "date-time",
+                      "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
                     },
                     "to": {
                       "type": "string",
-                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+                      "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+                      "format": "date-time",
+                      "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
                     }
                   },
                   "required": [
@@ -1818,11 +1890,15 @@
                 },
                 "collectedAt": {
                   "type": "string",
-                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+                  "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+                  "format": "date-time",
+                  "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
                 },
                 "referencePublishedAt": {
                   "type": "string",
-                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+                  "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+                  "format": "date-time",
+                  "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
                 }
               },
               "required": [
@@ -1937,14 +2013,18 @@
                     "string",
                     "null"
                   ],
-                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+                  "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+                  "format": "date-time",
+                  "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
                 },
                 "mergedAt": {
                   "type": [
                     "string",
                     "null"
                   ],
-                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+                  "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+                  "format": "date-time",
+                  "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
                 },
                 "verdict": {
                   "enum": [
@@ -1976,13 +2056,17 @@
                       "string",
                       "null"
                     ],
-                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+                    "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+                    "format": "date-time",
+                    "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
                   },
                   "installedAt": {
                     "anyOf": [
                       {
                         "type": "string",
-                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+                        "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+                        "format": "date-time",
+                        "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
                       },
                       {
                         "const": "unknown"
@@ -2049,21 +2133,27 @@
             },
             "referencePublishedAt": {
               "type": "string",
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+              "format": "date-time",
+              "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
             },
             "referencePublicationRevision": {
               "type": "string"
             },
             "collectedAt": {
               "type": "string",
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+              "format": "date-time",
+              "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
             },
             "firstAvailableAt": {
               "type": [
                 "string",
                 "null"
               ],
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+              "format": "date-time",
+              "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
             },
             "appliesToRevision": {
               "type": "string"
@@ -2152,7 +2242,9 @@
           "string",
           "null"
         ],
-        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+        "format": "date-time",
+        "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
       },
       "submissionEvidenceRefs": {
         "type": "array",
@@ -2205,7 +2297,9 @@
           "string",
           "null"
         ],
-        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$"
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$",
+        "format": "date-time",
+        "description": "UTC instant; full calendar validity (e.g. 2026-02-30) is enforced by the runtime validator."
       }
     },
     "required": [

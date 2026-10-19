@@ -11,7 +11,10 @@ export const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 export const SHA_RE = /^[0-9a-f]{40}$/;
 
 export function isInstant(v: unknown): v is string {
-  return typeof v === "string" && INSTANT_RE.test(v) && !Number.isNaN(Date.parse(v));
+  if (typeof v !== "string" || !INSTANT_RE.test(v)) return false;
+  const ms = Date.parse(v);
+  // Date.parse normalizes impossible dates; require unchanged UTC components.
+  return !Number.isNaN(ms) && new Date(ms).toISOString().slice(0, 19) === v.slice(0, 19);
 }
 
 export function isDigest(v: unknown): v is string {
