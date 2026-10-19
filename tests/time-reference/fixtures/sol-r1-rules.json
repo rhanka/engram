@@ -230,6 +230,16 @@
           "mutation": "estimates.0.quantiles.p50Seconds",
           "action": "withhold",
           "expectOk": true
+        },
+        {
+          "mutation": "series.0.quantiles.maxSeconds",
+          "action": "omit",
+          "expectOk": true
+        },
+        {
+          "mutation": "estimates.0.quantiles.maxSeconds",
+          "action": "omit",
+          "expectOk": true
         }
       ]
     },
