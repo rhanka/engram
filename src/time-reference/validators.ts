@@ -11,7 +11,7 @@
 import { parseMergeVerdict, qualifyInstallation, type TargetQualification } from "./milestones.js";
 import { fingerprintDigestOf } from "./canonical.js";
 import { meetsTailSupport, parseEffectiveSizeRatio } from "./quantiles.js";
-import { DIGEST_RE, INSTANT_RE, REPO_RE, durationSeconds, isDigest, isInstant } from "./format.js";
+import { DIGEST_RE, INSTANT_RE, REPO_RE, SHA_RE, durationSeconds, isDigest, isInstant } from "./format.js";
 import type {
   CiCheckBatchV1,
   CohortV1,
@@ -55,7 +55,7 @@ export type ValidationResult<T> =
   | { ok: true; value: T }
   | { ok: false; errors: Diagnostic[] };
 
-export { DIGEST_RE, INSTANT_RE, REPO_RE, durationSeconds, isDigest, isInstant } from "./format.js";
+export { DIGEST_RE, INSTANT_RE, REPO_RE, SHA_RE, durationSeconds, isDigest, isInstant } from "./format.js";
 
 function isInt(v: unknown): v is number {
   return typeof v === "number" && Number.isInteger(v);
@@ -114,6 +114,31 @@ class Ctx {
 
 function done<T>(ctx: Ctx, value: unknown): ValidationResult<T> {
   return ctx.errors.length === 0 ? { ok: true, value: value as T } : { ok: false, errors: ctx.errors };
+}
+
+/**
+ * Regime fingerprint components (spec section 6.4): attested model/effort
+ * fields when available, review policy, workflow path and transitive
+ * configuration digest, runner, toolchain, suite/shard set, job set.
+ * Unattested components are explicitly `unknown`, never omitted silently
+ * and never defaulted.
+ */
+export const FINGERPRINT_COMPONENTS = [
+  "model", "effort", "reviewPolicy", "workflowPath", "configDigest",
+  "runner", "toolchain", "suiteShardSet", "jobSet",
+] as const;
+
+function checkFingerprint(c: Ctx, v: unknown, path: string): void {
+  if (!isRecord(v)) {
+    c.fail("bad-type", "fingerprint must be an object (unattested components explicitly unknown)", path);
+    return;
+  }
+  c.checkNoExtra(v, FINGERPRINT_COMPONENTS, path);
+  for (const k of FINGERPRINT_COMPONENTS) {
+    if (typeof v[k] !== "string" || (v[k] as string).length === 0) {
+      c.fail("missing-fingerprint-component", `regime fingerprint component ${JSON.stringify(k)} is required, explicitly "unknown" where unattested`, `${path}.${k}`);
+    }
+  }
 }
 
 // --- PullRequestTimingV1 (section 6.2) ------------------------------------
@@ -359,8 +384,8 @@ export function validateCollectionManifest(v: unknown): ValidationResult<Collect
       }
     });
   }
-  if (typeof v["sourceRevision"] !== "string" || (v["sourceRevision"] as string).length === 0) {
-    c.fail("bad-type", "sourceRevision must be a full source commit SHA", "sourceRevision");
+  if (typeof v["sourceRevision"] !== "string" || !SHA_RE.test(v["sourceRevision"] as string)) {
+    c.fail("bad-source-revision", "sourceRevision must be a full immutable commit SHA (40 lowercase hex); a branch name or mutable tag is refused", "sourceRevision");
   }
   if (!Array.isArray(v["sourceUrls"])) c.fail("bad-type", "sourceUrls must be an array", "sourceUrls");
   c.checkDigest(v["snapshotDigest"], "snapshotDigest");
@@ -437,12 +462,23 @@ export function validateCohort(v: unknown): ValidationResult<CohortV1> {
   }
   if (!Array.isArray(v["memberIds"])) {
     c.fail("bad-type", "memberIds must be an array in manifest order", "memberIds");
-  } else if (v["n"] !== (v["memberIds"] as unknown[]).length) {
-    c.fail("count-mismatch", "n must equal memberIds.length after quarantine removal", "n");
+  } else {
+    const seen = new Set<string>();
+    for (const id of v["memberIds"] as unknown[]) {
+      const k = `${typeof id}:${String(id)}`;
+      if (seen.has(k)) {
+        c.fail("duplicate-member", "duplicate cohort members are rejected before counting or computing quantiles", "memberIds");
+        break;
+      }
+      seen.add(k);
+    }
+    if (v["n"] !== (v["memberIds"] as unknown[]).length) {
+      c.fail("count-mismatch", "n must equal memberIds.length after quarantine removal", "n");
+    }
   }
   if (!isInt(v["n"]) || (v["n"] as number) < 0) c.fail("bad-type", "n must be an integer >= 0", "n");
   c.checkWindow(v["window"], "window");
-  if (!isRecord(v["fingerprint"])) c.fail("bad-type", "fingerprint must be an object (unattested subfields explicitly unknown)", "fingerprint");
+  checkFingerprint(c, v["fingerprint"], "fingerprint");
   if (typeof v["purpose"] !== "string" || (v["purpose"] as string).length === 0) {
     c.fail("bad-type", "purpose must be a non-empty string", "purpose");
   } else if ((FROZEN_COHORT_KEYS as readonly string[]).includes(v["cohortKey"] as string)) {
@@ -604,7 +640,7 @@ export function validateTimingSeries(v: unknown): ValidationResult<TimingSeriesV
       seen.add(k);
     });
   }
-  if (!isRecord(v["fingerprint"])) c.fail("bad-type", "fingerprint must be an object", "fingerprint");
+  checkFingerprint(c, v["fingerprint"], "fingerprint");
   if (typeof v["measured"] !== "boolean") c.fail("bad-type", "measured must be a boolean", "measured");
   return done(c, v);
 }
