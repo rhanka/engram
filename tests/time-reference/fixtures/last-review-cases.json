@@ -1,0 +1,10 @@
+[
+  {"finding":"F02","dto":"CiCheckBatchV1","path":"checks[].checkSuiteId","value":1.5},
+  {"finding":"closure","dto":"TimingEstimateV1","path":"limitations[]","value":{"reason":"invalid object"}},
+  {"finding":"closure","dto":"QuantileSetV1","path":"tailQualification","value":{}},
+  {"finding":"closure","dto":"ReviewRoundsActualV1","path":"missingReason","value":{}},
+  {"finding":"F06","collision":"series"},
+  {"finding":"F06","collision":"estimates"},
+  {"finding":"F06","collision":"series-estimate"},
+  {"finding":"receipt","dto":"InstallationReceiptV1","path":"artifactIntegrity","value":"garbage"}
+]
