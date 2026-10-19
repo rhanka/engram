@@ -9,6 +9,7 @@ import {
   validatePullRequestTiming,
 } from "../../src/time-reference/index.js";
 import { validateRepoKnowledgeProfile } from "../../src/repo-knowledge-contract.js";
+import { solRule } from "./sol-r1-helpers.js";
 
 describe("TR-14 version separation", () => {
   it("the package exposes ./time-reference", () => {
@@ -18,17 +19,32 @@ describe("TR-14 version separation", () => {
     expect("./time-reference" in pkg.exports).toBe(true);
   });
 
-  it("the time-reference introduction ships as 0.21.0 in package.json and package-lock.json", () => {
-    const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
+  it("F17: every fixture case holds for the 0.21.0 release metadata", () => {
+    const rule = solRule("F17") as { cases: { name: string }[] };
+    const pkg = JSON.parse(
+      readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+    ) as {
       version: string;
+      exports: Record<string, unknown>;
     };
-    const lock = JSON.parse(readFileSync(new URL("../../package-lock.json", import.meta.url), "utf8")) as {
+    const lock = JSON.parse(
+      readFileSync(new URL("../../package-lock.json", import.meta.url), "utf8"),
+    ) as {
       version: string;
       packages: Record<string, { version: string }>;
     };
-    expect(pkg.version).toBe("0.21.0");
-    expect(lock.version).toBe("0.21.0");
-    expect(lock.packages[""].version).toBe("0.21.0");
+    for (const c of rule.cases) {
+      if (c.name === "package-exposes-time-reference") {
+        expect("./time-reference" in pkg.exports, c.name).toBe(true);
+      } else if (c.name === "package-version-0.21.0") {
+        expect(pkg.version, c.name).toBe("0.21.0");
+      } else if (c.name === "lock-version-0.21.0") {
+        expect(lock.version, c.name).toBe("0.21.0");
+        expect(lock.packages[""].version, c.name).toBe("0.21.0");
+      } else {
+        throw new Error(`unknown F17 case ${c.name}`);
+      }
+    }
   });
 
   it("an unknown DTO major (/2 on a /1 validator) is refused, never fallen back to latest", () => {
