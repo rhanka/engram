@@ -43,6 +43,7 @@ import {
   SCHEMA_TIMING_BUDGET,
   SCHEMA_TIMING_ESTIMATE,
   SCHEMA_TIMING_SERIES,
+  SUPPORTED_PROFILE_VERSIONS,
 } from "./types.js";
 
 export interface Diagnostic {
@@ -226,6 +227,50 @@ export function validatePullRequestTiming(v: unknown): ValidationResult<PullRequ
   return done(c, v);
 }
 
+/**
+ * Attested collection-attempt evidence for `commitsCollectionState:
+ * "unavailable"` (section 6.2, A6): the failed attempt with its documented
+ * cause, kept in the collection evidence beside the pull-request record.
+ */
+export interface CollectionAttemptEvidence {
+  repo: string;
+  number: number | string;
+  attemptedAt: string;
+  cause: string;
+}
+
+/**
+ * `unavailable` requires an attested failed collection attempt with a
+ * documented cause in the collection evidence. Records in any other state
+ * need no evidence; an `unavailable` record without a matching attempt, or
+ * with an empty cause, is refused.
+ */
+export function validateCommitsUnavailable(
+  pr: Pick<PullRequestTimingV1, "repo" | "number" | "commitsCollectionState">,
+  attempts: CollectionAttemptEvidence[],
+): Diagnostic[] {
+  const errors: Diagnostic[] = [];
+  if (pr.commitsCollectionState !== "unavailable") return errors;
+  const matches = attempts.filter((a) => a.repo === pr.repo && String(a.number) === String(pr.number));
+  if (matches.length === 0) {
+    errors.push({
+      code: "missing-collection-attempt",
+      message: `commits "unavailable" for ${pr.repo}#${String(pr.number)} requires an attested failed collection attempt with a documented cause`,
+      path: "commitsCollectionState",
+    });
+    return errors;
+  }
+  matches.forEach((a) => {
+    if (!isInstant(a.attemptedAt)) {
+      errors.push({ code: "bad-attempt", message: "the collection attempt carries its UTC instant", path: "attemptedAt" });
+    }
+    if (typeof a.cause !== "string" || a.cause.length === 0) {
+      errors.push({ code: "missing-unavailability-cause", message: "the collection attempt documents its cause", path: "cause" });
+    }
+  });
+  return errors;
+}
+
 // --- CiCheckBatchV1 (section 6.3) ------------------------------------------
 
 const BATCH_FIELDS = [
@@ -303,23 +348,47 @@ export function validateCheckBatchJoin(batch: CiCheckBatchV1, prHeadSha: string)
 }
 
 /**
+ * Integer-second gap between two millisecond readings, or null when the
+ * interval is incoherent (end at or before start) or sub-second: durations
+ * are stored as integer seconds, never negative and never fractional
+ * (sections 3.3, 6.3). Incoherent intervals are quarantined by callers,
+ * never averaged in.
+ */
+function integerGapSeconds(startMs: number, endMs: number): number | null {
+  const ms = endMs - startMs;
+  if (!(ms > 0) || ms % 1000 !== 0) return null;
+  return ms / 1000;
+}
+
+/** Coherent service interval of one check, or null (skipped or quarantined). */
+function coherentCheckSpan(check: { conclusion: string; startedAt: string; completedAt: string }): { start: number; end: number } | null {
+  if (check.conclusion === "skipped") return null;
+  if (!isInstant(check.startedAt) || !isInstant(check.completedAt)) return null;
+  const start = Date.parse(check.startedAt);
+  const end = Date.parse(check.completedAt);
+  if (integerGapSeconds(start, end) === null) return null;
+  return { start, end };
+}
+
+/**
  * One job service sample, or null: skipped checks and end-at-or-before-start
  * checks are never service samples (sections 3.4, 6.3).
  */
 export function ciJobServiceSeconds(check: { status: string; conclusion: string; startedAt: string; completedAt: string }): number | null {
-  if (check.conclusion === "skipped") return null;
-  const d = durationSeconds(check.startedAt, check.completedAt);
-  return d.seconds;
+  const span = coherentCheckSpan(check);
+  return span === null ? null : integerGapSeconds(span.start, span.end);
 }
 
 /** All-checks envelope over coherent checks; null when no coherent check exists. */
 export function ciEnvelopeSeconds(batch: Pick<CiCheckBatchV1, "checks">): number | null {
-  const coherent = batch.checks.filter((ch) => durationSeconds(ch.startedAt, ch.completedAt).seconds !== null
-    || (isInstant(ch.startedAt) && isInstant(ch.completedAt) && Date.parse(ch.completedAt) > Date.parse(ch.startedAt)));
-  if (coherent.length === 0) return null;
-  const starts = coherent.map((ch) => Date.parse(ch.startedAt));
-  const ends = coherent.map((ch) => Date.parse(ch.completedAt));
-  return (Math.max(...ends) - Math.min(...starts)) / 1000;
+  const spans = batch.checks.flatMap((ch) => {
+    const span = coherentCheckSpan(ch);
+    return span === null ? [] : [span];
+  });
+  if (spans.length === 0) return null;
+  const starts = spans.map((s) => s.start);
+  const ends = spans.map((s) => s.end);
+  return integerGapSeconds(Math.min(...starts), Math.max(...ends));
 }
 
 /** Last-check-end to merge, or null when no coherent check exists. */
@@ -328,11 +397,12 @@ export function lastCheckEndToMergeSeconds(
   mergedAt: string,
 ): number | null {
   if (!isInstant(mergedAt)) return null;
-  const ends = batch.checks
-    .filter((ch) => isInstant(ch.startedAt) && isInstant(ch.completedAt) && Date.parse(ch.completedAt) > Date.parse(ch.startedAt))
-    .map((ch) => Date.parse(ch.completedAt));
+  const ends = batch.checks.flatMap((ch) => {
+    const span = coherentCheckSpan(ch);
+    return span === null ? [] : [span.end];
+  });
   if (ends.length === 0) return null;
-  return (Date.parse(mergedAt) - Math.max(...ends)) / 1000;
+  return integerGapSeconds(Math.max(...ends), Date.parse(mergedAt));
 }
 
 // --- CollectionManifestV1 (section 6.1) ------------------------------------
@@ -983,6 +1053,8 @@ export function validateCommittedExport(v: unknown): ValidationResult<CommittedE
     if (pref["id"] !== "repo-knowledge" || typeof pref["version"] !== "string"
       || (pref["version"] as string).length === 0 || !isDigest(pref["contentDigest"])) {
       c.fail("missing-profile-pin", "profileRef must be {id: repo-knowledge, version, contentDigest}", "profileRef");
+    } else if (!(SUPPORTED_PROFILE_VERSIONS as readonly string[]).includes(pref["version"] as string)) {
+      c.fail("unsupported-profile-version", `profileRef version ${JSON.stringify(pref["version"])} is not a supported profile pin; unknown versions refuse, never fall back`, "profileRef.version");
     }
   }
   c.checkWindow(v["window"], "window");
