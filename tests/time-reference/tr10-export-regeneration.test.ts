@@ -4,12 +4,25 @@ import {
   buildQuantileSet,
   exportDigestOf,
   regenerateCheck,
+  sampleSnapshotDigest,
   validateCommittedExport,
   verifyExportDigest,
   type CommittedExportV1,
 } from "../../src/time-reference/index.js";
 
 const DIGEST0 = `sha256:${"0".repeat(64)}`;
+
+const FINGERPRINT = {
+  model: "unknown",
+  effort: "unknown",
+  reviewPolicy: "unknown",
+  workflowPath: "unknown",
+  configDigest: "unknown",
+  runner: "unknown",
+  toolchain: "unknown",
+  suiteShardSet: "unknown",
+  jobSet: "unknown",
+};
 
 function samples(): { id: string; value: number }[] {
   return [
@@ -20,13 +33,17 @@ function samples(): { id: string; value: number }[] {
 }
 
 function sealedExport(over: Partial<Record<string, unknown>> = {}): CommittedExportV1 {
-  const quantiles = buildQuantileSet(samples(), { method: "nearest-rank/1", support: "descriptive" });
+  const quantiles = {
+    ...buildQuantileSet(samples(), { method: "nearest-rank/1", support: "descriptive" }),
+    tailQualification: "nEff 3/1: descriptive tail over 3 samples, 1 campaign",
+  };
+  const pin = sampleSnapshotDigest(samples());
   const series = {
     schema: "engram.time-reference/timing-series/1",
     seriesId: "s1",
     subject: "rhanka/h2a",
     metric: "pr_open_to_merge",
-    cohortRef: { cohortKey: "astra-merged-desc/1", snapshotDigest: DIGEST0 },
+    cohortRef: { cohortKey: "astra-merged-desc/1", snapshotDigest: pin },
     quantiles,
     unit: "second",
     window: { from: "2026-10-17T04:53:00Z", to: "2026-10-18T07:48:00Z" },
@@ -35,13 +52,13 @@ function sealedExport(over: Partial<Record<string, unknown>> = {}): CommittedExp
     missingCount: 0,
     censoredCount: 0,
     exclusions: [],
-    fingerprint: {},
+    fingerprint: { ...FINGERPRINT },
     measured: true,
   };
   const estimate = {
     schema: "engram.time-reference/timing-estimate/1",
     estimateId: "e1",
-    seriesRef: { seriesId: "s1", snapshotDigest: DIGEST0 },
+    seriesRef: { seriesId: "s1", snapshotDigest: pin },
     quantiles,
     applicability: "applicable",
     freshness: {
@@ -52,42 +69,24 @@ function sealedExport(over: Partial<Record<string, unknown>> = {}): CommittedExp
     support: "descriptive",
     limitations: [],
   };
-  const provenance = [
-    {
-      schema: "engram.time-reference/figure-provenance/1",
-      figureRef: "s1",
-      cohortKey: "astra-merged-desc/1",
-      ruleId: "astra-merged-desc/1",
-      snapshotDigest: DIGEST0,
-      referenceDigest: DIGEST0,
-      referencePublishedAt: "2026-10-18T21:00:00Z",
-      referencePublicationRevision: "rev-1",
-      collectedAt: "2026-10-18T07:48:57Z",
-      firstAvailableAt: null,
-      appliesToRevision: "46b82b42781709f2a2ab1bec6707ba58131248f0",
-      fingerprintDigest: DIGEST0,
-      estimatorVersion: "e1",
-      policyVersion: "p1",
-      quantileMethod: "nearest-rank/1",
-    },
-    {
-      schema: "engram.time-reference/figure-provenance/1",
-      figureRef: "e1",
-      cohortKey: "astra-merged-desc/1",
-      ruleId: "astra-merged-desc/1",
-      snapshotDigest: DIGEST0,
-      referenceDigest: DIGEST0,
-      referencePublishedAt: "2026-10-18T21:00:00Z",
-      referencePublicationRevision: "rev-1",
-      collectedAt: "2026-10-18T07:48:57Z",
-      firstAvailableAt: null,
-      appliesToRevision: "46b82b42781709f2a2ab1bec6707ba58131248f0",
-      fingerprintDigest: DIGEST0,
-      estimatorVersion: "e1",
-      policyVersion: "p1",
-      quantileMethod: "nearest-rank/1",
-    },
-  ];
+  const fingerprintDigest = "sha256:6c82fff40691ec6aeeb94ab1f04ddfd82f93690166f7158a5376d4ca5eefaa45";
+  const provenance = ["s1", "e1"].map((figureRef) => ({
+    schema: "engram.time-reference/figure-provenance/1",
+    figureRef,
+    cohortKey: "astra-merged-desc/1",
+    ruleId: "astra-merged-desc/1",
+    snapshotDigest: pin,
+    referenceDigest: DIGEST0,
+    referencePublishedAt: "2026-10-18T21:00:00Z",
+    referencePublicationRevision: "rev-1",
+    collectedAt: "2026-10-18T07:48:57Z",
+    firstAvailableAt: null,
+    appliesToRevision: "46b82b42781709f2a2ab1bec6707ba58131248f0",
+    fingerprintDigest,
+    estimatorVersion: "e1",
+    policyVersion: "p1",
+    quantileMethod: "nearest-rank/1",
+  }));
   const budget = {
     schema: "engram.time-reference/timing-budget/1",
     budgetId: "b1",
@@ -157,8 +156,8 @@ describe("TR-10 export binding and regeneration", () => {
       { id: "rhanka/h2a#2", value: 5000 },
       { id: "rhanka/h2a#3", value: 3617 },
     ];
-    // Regenerating from changed samples no longer matches the committed bytes.
-    expect(regenerateCheck(exp, { s1: otherSamples }).map((d) => d.code)).toContain("quantile-mismatch");
+    // Changed samples fail authentication against the pinned snapshot digest.
+    expect(regenerateCheck(exp, { s1: otherSamples }).map((d) => d.code)).toContain("sample-auth-mismatch");
     // A hand edit (one quantile touched, digest kept) fails the digest check.
     const edited = JSON.parse(JSON.stringify(exp)) as CommittedExportV1;
     edited.series[0]!.quantiles.p50Seconds = 999999;

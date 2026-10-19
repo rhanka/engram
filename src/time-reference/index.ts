@@ -158,6 +158,7 @@ export {
 export {
   buildQuantileSet,
   regenerateCheck,
+  sampleSnapshotDigest,
   verifyContractPin,
   verifyExportDigest,
   type BuildQuantileOptions,
