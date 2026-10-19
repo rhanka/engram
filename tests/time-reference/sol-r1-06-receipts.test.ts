@@ -12,7 +12,7 @@ import {
   type InstallationReceiptV1,
   type TargetQualification,
 } from "../../src/time-reference/index.js";
-import { BASE_BUILDERS, SOL_SHARED, solRule } from "./sol-r1-helpers.js";
+import { drivenCases, BASE_BUILDERS, SOL_SHARED, solRule } from "./sol-r1-helpers.js";
 
 const REPO = SOL_SHARED["repo"] as string;
 
@@ -87,7 +87,7 @@ describe("Sol R1 F07/F08 receipt binding and resolution", () => {
 
   it("F07: a foreign receipt or declaration never produces held", () => {
     const rule = solRule("F07") as { cases: { mutation: string; value: string; reason: string }[] };
-    for (const c of rule.cases) {
+    for (const c of drivenCases("F07", rule.cases)) {
       const r = receipt();
       const q = qual();
       if (c.mutation === "qual.expectedMergeSha") q.expectedMergeSha = c.value;
@@ -100,7 +100,7 @@ describe("Sol R1 F07/F08 receipt binding and resolution", () => {
 
   it("F08: every fixture case resolves through the primary validation path", () => {
     const rule = solRule("F08") as { cases: { path: string; mutation: string; code?: string; expectOk?: boolean }[] };
-    for (const c of rule.cases) {
+    for (const c of drivenCases("F08", rule.cases)) {
       const built = buildDeliveryMilestones(ctx(), [targetInput(receipt())])!.record;
       const evidence = { receipts: { "rec-1": receipt() }, quals: { t: qual() }, scope: SCOPE };
       if (c.mutation === "drop-receiptRef") {

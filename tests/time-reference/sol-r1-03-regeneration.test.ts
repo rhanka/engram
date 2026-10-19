@@ -12,7 +12,7 @@ import {
   validateCommittedExport,
   type CommittedExportV1,
 } from "../../src/time-reference/index.js";
-import { SOL_SHARED, solRule, withPath } from "./sol-r1-helpers.js";
+import { drivenCases, SOL_SHARED, solRule, withPath } from "./sol-r1-helpers.js";
 
 const REPO = SOL_SHARED["repo"] as string;
 const DIGEST0 = SOL_SHARED["digest0"] as string;
@@ -133,7 +133,7 @@ describe("Sol R1 F03/F04 export regeneration", () => {
 
   it("F03: every published figure and maximum is recomputed, in series and in estimates", () => {
     const rule = solRule("F03") as { cases: { mutation: string; code: string }[] };
-    for (const c of rule.cases) {
+    for (const c of drivenCases("F03", rule.cases)) {
       const bumped = withPath<CommittedExportV1>(sealedExport(), c.mutation, 999999);
       expect(codesOfRegen(bumped), c.mutation).toContain(c.code);
     }
@@ -141,7 +141,7 @@ describe("Sol R1 F03/F04 export regeneration", () => {
 
   it("F04: every fixture case authenticates through the public regeneration path", () => {
     const rule = solRule("F04") as { cases: { mutation: string; code: string }[] };
-    for (const c of rule.cases) {
+    for (const c of drivenCases("F04", rule.cases)) {
       const exp = sealedExport();
       const snapshot = JSON.parse(snapshotBytes());
       let bytes: string;

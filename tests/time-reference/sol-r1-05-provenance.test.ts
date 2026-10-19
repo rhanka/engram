@@ -8,7 +8,7 @@ import {
   validateCommittedExport,
   type CommittedExportV1,
 } from "../../src/time-reference/index.js";
-import { SOL_SHARED, solRule, withPath } from "./sol-r1-helpers.js";
+import { drivenCases, SOL_SHARED, solRule, withPath } from "./sol-r1-helpers.js";
 
 const REPO = SOL_SHARED["repo"] as string;
 const DIGEST0 = SOL_SHARED["digest0"] as string;
@@ -97,7 +97,7 @@ describe("Sol R1 F06 provenance matching", () => {
 
   it("contradictory or duplicated provenance fails with its typed code", () => {
     const rule = solRule("F06") as { cases: { mutation: string; value?: unknown; code: string }[] };
-    for (const c of rule.cases) {
+    for (const c of drivenCases("F06", rule.cases)) {
       let mutated: CommittedExportV1;
       if (c.mutation === "duplicate-provenance-s1") {
         mutated = JSON.parse(JSON.stringify(sealedExport())) as CommittedExportV1;
