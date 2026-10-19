@@ -8,7 +8,7 @@
  * explicit parameters.
  */
 
-import { parseMergeVerdict } from "./milestones.js";
+import { parseMergeVerdict, qualifyInstallation, type TargetQualification } from "./milestones.js";
 import { fingerprintDigestOf } from "./canonical.js";
 import { meetsTailSupport, parseEffectiveSizeRatio } from "./quantiles.js";
 import { DIGEST_RE, INSTANT_RE, REPO_RE, durationSeconds, isDigest, isInstant } from "./format.js";
@@ -815,12 +815,58 @@ export function validateDeliveryMilestones(v: unknown): ValidationResult<Deliver
         const want = Date.parse(String(installed)) <= Date.parse(String(e["forecastAt"])) ? "held" : "missed";
         if (verdict !== want) c.fail("verdict-mismatch", `installation verdict must be computed from the two instants (${want})`, `${p}.verdict`);
       }
-      if ("receiptRef" in e && typeof e["receiptRef"] !== "string") {
+      if (installed !== "unknown"
+        && (typeof e["receiptRef"] !== "string" || (e["receiptRef"] as string).length === 0)) {
+        c.fail("missing-receipt-ref", "a known installedAt resolves to a matching qualified receipt via receiptRef", `${p}.receiptRef`);
+      } else if ("receiptRef" in e && typeof e["receiptRef"] !== "string") {
         c.fail("bad-type", "receiptRef must be a string", `${p}.receiptRef`);
       }
     });
   }
   return done(c, v);
+}
+
+/**
+ * Every known installation actual resolves to exactly one matching
+ * qualified receipt (section 6.9): same target, structurally valid receipt,
+ * declared target qualification, and the qualification reproduces the
+ * published `installedAt`. Unknown actuals need no receipt.
+ */
+export function validateMilestonesAgainstReceipts(
+  record: Pick<DeliveryMilestonesV1, "installMilestones">,
+  receipts: InstallationReceiptV1[],
+  quals: Record<string, TargetQualification>,
+): Diagnostic[] {
+  const errors: Diagnostic[] = [];
+  record.installMilestones.forEach((entry, i) => {
+    const p = `installMilestones.${i}`;
+    if (entry.installedAt === "unknown") return;
+    if (typeof entry.receiptRef !== "string" || entry.receiptRef.length === 0) {
+      errors.push({ code: "missing-receipt-ref", message: "a known installedAt resolves to a matching qualified receipt via receiptRef", path: `${p}.receiptRef` });
+      return;
+    }
+    const candidates = receipts.filter((r) => r.targetId === entry.targetId);
+    if (candidates.length === 0) {
+      errors.push({ code: "unresolved-receipt", message: `no receipt for target ${JSON.stringify(entry.targetId)} backs installedAt ${JSON.stringify(entry.installedAt)}`, path: p });
+      return;
+    }
+    const qual = quals[entry.targetId];
+    if (qual === undefined) {
+      errors.push({ code: "missing-target-declaration", message: `no frozen target declaration for target ${JSON.stringify(entry.targetId)}`, path: p });
+      return;
+    }
+    const reproduced = candidates.some((r) => {
+      if (!validateInstallationReceipt(r).ok) return false;
+      return qualifyInstallation(
+        { targetId: entry.targetId, forecastAt: entry.forecastAt, receipt: r },
+        qual,
+      ).installedAt === entry.installedAt;
+    });
+    if (!reproduced) {
+      errors.push({ code: "unresolved-receipt", message: `no qualified receipt reproduces installedAt ${JSON.stringify(entry.installedAt)} for target ${JSON.stringify(entry.targetId)}`, path: p });
+    }
+  });
+  return errors;
 }
 
 // --- InstallationReceiptV1 (section 6.10) ------------------------------------
