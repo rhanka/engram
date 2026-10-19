@@ -10,6 +10,7 @@ const mutations = [
   ["K8 keeps the staged receipt", 'update.kind === "memory-admission-outcomes" && receipt !== undefined', 'update.kind === "mutation-disabled" && receipt !== undefined', "propagates one admission"],
   ["core keeps the staged receipt", "this.core = this.fork(after.value);", "this.core = scratch;", "propagates one admission"],
   ["failed hydration permits stale service", "this.recoveryRequired = true;", "this.recoveryRequired = false;", "recovers the committed expiry"],
+  ["concurrent recovery overwrites a commit", "if (this.recoveryInFlight !== undefined) {", "if (this.recoveryInFlight !== undefined && this.closed) {", "recovers the committed expiry"],
 ];
 const build = () => execFileSync("npm", ["--prefix", "engram-memory", "run", "build"], { cwd: root, stdio: "pipe" });
 try {
