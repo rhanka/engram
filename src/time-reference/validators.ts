@@ -111,6 +111,15 @@ class Ctx {
       this.fail("bad-type", "identifier must be an integer or a string", path);
     }
   }
+  checkStringArray(v: unknown, path: string): void {
+    if (!Array.isArray(v)) {
+      this.fail("bad-type", "value must be an array of strings", path);
+    } else {
+      v.forEach((item, i) => {
+        if (typeof item !== "string") this.fail("bad-type", "array elements must be strings", `${path}.${i}`);
+      });
+    }
+  }
 }
 
 function done<T>(ctx: Ctx, value: unknown): ValidationResult<T> {
@@ -343,9 +352,7 @@ export function validateCiCheckBatch(v: unknown): ValidationResult<CiCheckBatchV
       for (const f of ["headSha", "url"] as const) {
         if (f in e && typeof e[f] !== "string") c.fail("bad-type", `check ${f} must be a string`, `${p}.${f}`);
       }
-      if ("checkSuiteId" in e && typeof e["checkSuiteId"] !== "number" && typeof e["checkSuiteId"] !== "string") {
-        c.fail("bad-type", "check checkSuiteId must be a number or a string", `${p}.checkSuiteId`);
-      }
+      if ("checkSuiteId" in e) c.checkIdValue(e["checkSuiteId"], `${p}.checkSuiteId`);
     });
   }
   return done(c, v);
@@ -562,8 +569,8 @@ export function validateCohort(v: unknown): ValidationResult<CohortV1> {
   } else {
     const seen = new Set<string>();
     for (const id of v["memberIds"] as unknown[]) {
+      c.checkIdValue(id, "memberIds");
       if (!isInt(id) && typeof id !== "string") {
-        c.fail("bad-type", "cohort members must be integer or string identifiers", "memberIds");
         break;
       }
       const k = `${typeof id}:${String(id)}`;
@@ -680,6 +687,9 @@ export function validateQuantileSet(v: unknown): ValidationResult<QuantileSetV1>
   }
   if ("weightsPolicy" in v && typeof v["weightsPolicy"] !== "string") {
     c.fail("bad-type", "weightsPolicy must be a versioned policy identifier", "weightsPolicy");
+  }
+  if ("tailQualification" in v && typeof v["tailQualification"] !== "string") {
+    c.fail("bad-type", "tailQualification must be a string", "tailQualification");
   }
   return done(c, v);
 }
@@ -819,7 +829,7 @@ export function validateTimingEstimate(v: unknown): ValidationResult<TimingEstim
   } else if (!q.ok && !(SUPPORTS as readonly string[]).includes(v["support"] as string)) {
     c.fail("bad-enum", "support must be a section 4.3 tier", "support");
   }
-  if (!Array.isArray(v["limitations"])) c.fail("bad-type", "limitations is required (possibly empty, never omitted)", "limitations");
+  c.checkStringArray(v["limitations"], "limitations");
   return done(c, v);
 }
 
@@ -1083,9 +1093,10 @@ export function validateInstallationReceipt(v: unknown): ValidationResult<Instal
   c.checkRepo(v["repo"], "repo");
   for (const f of ["lotOccurrence", "mergeSha", "releaseSourceSha", "ancestryEvidence", "targetId", "platform",
     "installationScope", "expectedVersion", "observedVersion", "expectedTuple", "observedTuple",
-    "artifactIntegrity", "resolvedExecutable", "clockSource", "producerIdentity"] as const) {
+    "resolvedExecutable", "clockSource", "producerIdentity"] as const) {
     if (typeof v[f] !== "string" || (v[f] as string).length === 0) c.fail("bad-type", `${f} must be a non-empty string`, f);
   }
+  c.checkDigest(v["artifactIntegrity"], "artifactIntegrity");
   if (v["targetKind"] !== "ci-runner" && v["targetKind"] !== "delivery-environment") {
     c.fail("bad-enum", "targetKind must be ci-runner | delivery-environment", "targetKind");
   }
@@ -1307,8 +1318,8 @@ export function validateReviewWaveManifest(v: unknown): ValidationResult<ReviewW
   if (!Array.isArray(v["submissionEvidenceRefs"]) || (v["submissionEvidenceRefs"] as unknown[]).length === 0) {
     c.fail("bad-type", "submissionEvidenceRefs must be a non-empty array", "submissionEvidenceRefs");
   }
-  for (const f of ["requestEvidenceRefs", "resultEvidenceRefs", "closureEvidenceRefs"] as const) {
-    if (!Array.isArray(v[f])) c.fail("bad-type", `${f} must be an array`, f);
+  for (const f of ["submissionEvidenceRefs", "requestEvidenceRefs", "resultEvidenceRefs", "closureEvidenceRefs"] as const) {
+    c.checkStringArray(v[f], f);
   }
   if (!Array.isArray(v["reviewerRuns"])) {
     c.fail("bad-type", "reviewerRuns must be an array", "reviewerRuns");
@@ -1323,10 +1334,7 @@ export function validateReviewWaveManifest(v: unknown): ValidationResult<ReviewW
       if (typeof e["runId"] !== "string" || (e["runId"] as string).length === 0) {
         c.fail("bad-type", "reviewer runId must be a non-empty string", `${p}.runId`);
       }
-      if (!Array.isArray(e["evidenceRefs"])
-        || (e["evidenceRefs"] as unknown[]).some((x) => typeof x !== "string")) {
-        c.fail("bad-type", "reviewer evidenceRefs must be an array of strings", `${p}.evidenceRefs`);
-      }
+      c.checkStringArray(e["evidenceRefs"], `${p}.evidenceRefs`);
     });
   }
   if (v["closedAt"] !== null) c.checkInstant(v["closedAt"], "closedAt");
@@ -1361,7 +1369,10 @@ export function validateReviewRoundsActual(v: unknown): ValidationResult<ReviewR
     c.fail("bad-type", "reviewerRunCount must be an integer >= 0 or null", "reviewerRunCount");
   }
   for (const f of ["openRoundIds", "roundIds", "evidenceRefs"] as const) {
-    if (!Array.isArray(v[f])) c.fail("bad-type", `${f} must be an array`, f);
+    c.checkStringArray(v[f], f);
+  }
+  if ("missingReason" in v && typeof v["missingReason"] !== "string") {
+    c.fail("bad-type", "missingReason must be a string", "missingReason");
   }
   if (v["coverageManifestRef"] !== null && typeof v["coverageManifestRef"] !== "string") {
     c.fail("bad-type", "coverageManifestRef must be a string or null", "coverageManifestRef");

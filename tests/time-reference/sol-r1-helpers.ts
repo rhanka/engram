@@ -226,7 +226,7 @@ export function baseReceipt(): Record<string, unknown> {
     observedVersion: "0.21.0",
     expectedTuple: "0.21.0+r",
     observedTuple: "0.21.0+r",
-    artifactIntegrity: "sha256:x",
+    artifactIntegrity: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
     resolvedExecutable: "/tmp/p/bin/engram",
     installStartedAt: "2026-10-18T10:00:00Z",
     installCompletedAt: "2026-10-18T10:05:00Z",
