@@ -451,6 +451,52 @@ describe("substrate canonical trace and replay (amendment §5.2, binding §8.2)"
     await harness.store.close();
   });
 
+  it("refuses a stored receipt outside the complete closed receipt schema (binding §8.3.4)", async () => {
+    const harness = await openStore("store:receipt-schema");
+    const input: Parameters<CanonicalMemoryStorePort["commitPending"]>[0] = {
+      control: {
+        candidate_id: "candidate:receipt-schema-1",
+        envelope_digest: DIGEST,
+        state: "pending",
+        created_cursor: "0",
+        policy_id: "policy:receipt-schema",
+        policy_version: "1",
+        capture_content_digest: DIGEST,
+        capture_receipt_digest: DIGEST,
+      },
+      sealed: {
+        candidate_id: "candidate:receipt-schema-1",
+        envelope_ref: "envelope:receipt-schema:1",
+        envelope_digest: DIGEST,
+        key_ref: "key:receipt-schema:1",
+        ciphertext: "receipt-schema-ciphertext",
+      },
+      capture_event: {
+        schema_version: 2,
+        event_id: "event:receipt-schema-capture-1",
+        cursor: "0",
+        recorded_at: NOW,
+        operation: "capture",
+        candidate_id: "candidate:receipt-schema-1",
+        to_state: "pending",
+        authorization_receipt_digest: DIGEST,
+        previous_event_digest: DIGEST,
+        event_digest: DIGEST,
+      },
+    } as const;
+    const committed = await harness.store.commitPending({ ...input });
+    expect(committed.ok).toBe(true);
+    const forgedBody = { operation: "capture", cursor: "1" };
+    const forged = {
+      format: "utf8" as const,
+      data: canonicalizeJcs({ ...forgedBody, receipt_digest: receiptDigest("canonical-transaction", forgedBody) }),
+    };
+    harness.backend.testOnlyOverwriteCommitResult("event:receipt-schema-capture-1", forged);
+    const replay = await harness.store.commitPending({ ...input });
+    expect(replay).toMatchObject({ ok: false, error: { code: "JOURNAL_CORRUPT" } });
+    await harness.store.close();
+  });
+
   it("keeps the first proof after rejection and envelope destruction, without rebuilding the body", async () => {
     const harness = await openStore("store:reject-proof");
     const host = l3Host();
@@ -741,6 +787,152 @@ describe("substrate atomicity under fault injection (amendment §5.3)", () => {
       expect(admitted).toMatchObject({ ok: true, value: { status: "accepted" } });
       await harness.store.close();
     }
+  });
+
+  it("rolls back earlier stage writes when a later stage fails (binding §10.1, L3a §5.2)", async () => {
+    const harness = await openStore("store:rollback-leak");
+    const memory = await engineOn(harness.store, harness.clock);
+    const pending = await memory.capture(captureRequest("rollback-key-1", "1"));
+    if (!pending.ok || pending.value.candidate_id === undefined) throw new Error("capture failed");
+    const candidateId = pending.value.candidate_id;
+    const k7Key = JSON.stringify(["memory-capture-idempotency-v1", candidateId]);
+    const blobKey = JSON.stringify(["memory-record-v1", "record:rollback-probe"]);
+    const unitsBefore = harness.backend.committedUnits().length;
+    const headBefore = harness.backend.journalHead();
+    const fence = harness.backend.currentFence();
+    if (fence === undefined) throw new Error("no live fence");
+    const probeUnit = {
+      guards: [],
+      records: [{
+        kind: "memory-record-blobs",
+        key: blobKey,
+        value: { format: "utf8", data: "{}" },
+        contentHash: DIGEST,
+      }],
+      appends: [],
+      updates: [{
+        kind: "memory-capture-idempotency",
+        key: k7Key,
+        value: { format: "utf8", data: "{}" },
+        version: "1",
+      }],
+      relationships: [],
+      barriers: [],
+      purgeIntents: [],
+      indexWrites: [],
+    } as const;
+    // A genuine later-stage aggregate conflict leaks no earlier record write.
+    const conflicted = await harness.backend.transactRaw(
+      { maxAppends: 1, maxRecords: 8, maxEncodedBytes: 1_048_576 },
+      "commit:rollback-probe-conflict",
+      (tx) => tx.apply({ ...probeUnit, records: [...probeUnit.records], updates: [...probeUnit.updates] }),
+      fence,
+    );
+    expect(conflicted).toEqual({ ok: false, code: "cas-conflict" });
+    const blobAfterConflict = await harness.backend.handle.query(
+      "memory-record-by-id",
+      { format: "utf8", data: canonicalizeJcs({ record_id: "record:rollback-probe" }) },
+      harness.backend.grant,
+    );
+    expect(JSON.parse(blobAfterConflict.data)).toMatchObject({ found: false });
+    // An injected failure after the updates stage rolls back records and updates alike.
+    const freshKey = JSON.stringify(["memory-capture-idempotency-v1", "candidate:rollback-fresh"]);
+    harness.backend.armFailpoint("updates");
+    const injected = await harness.backend.transactRaw(
+      { maxAppends: 1, maxRecords: 8, maxEncodedBytes: 1_048_576 },
+      "commit:rollback-probe-injected",
+      (tx) => tx.apply({
+        guards: [],
+        records: [{
+          kind: "memory-record-blobs",
+          key: blobKey,
+          value: { format: "utf8", data: "{}" },
+          contentHash: DIGEST,
+        }],
+        appends: [],
+        updates: [{
+          kind: "memory-capture-idempotency",
+          key: freshKey,
+          value: { format: "utf8", data: "{}" },
+          version: "1",
+        }],
+        relationships: [],
+        barriers: [],
+        purgeIntents: [],
+        indexWrites: [],
+      }),
+      fence,
+    );
+    harness.backend.disarmFailpoint();
+    expect(injected).toEqual({ ok: false, code: "store-unavailable" });
+    const blobAfterInjected = await harness.backend.handle.query(
+      "memory-record-by-id",
+      { format: "utf8", data: canonicalizeJcs({ record_id: "record:rollback-probe" }) },
+      harness.backend.grant,
+    );
+    expect(JSON.parse(blobAfterInjected.data)).toMatchObject({ found: false });
+    expect(harness.backend.readAggregate("memory-capture-idempotency", freshKey)).toBeUndefined();
+    expect(harness.backend.journalHead()).toEqual(headBefore);
+    expect(harness.backend.committedUnits()).toHaveLength(unitsBefore);
+    await harness.store.close();
+  });
+
+  it("commits observed expiry in composition-declared bounded units (binding §4.3)", async () => {
+    const backend = createReferenceModuleStorageBackend({ scope: SCOPE });
+    const clock = fixedClock();
+    const opened = await openModuleStorageCanonicalMemoryStoreV1({
+      handle: backend.handle,
+      scope_binding: { scope: { ...SCOPE }, store_id: "store:maintenance-batch", resolveScope },
+      grant: backend.grant,
+      clock,
+      deadline_at: "2026-08-16T12:40:00.000Z",
+      work_limits: { maintenance_max_appends: 1 },
+    });
+    if (!opened.ok) throw new Error("open refused");
+    const memory = await engineOn(opened.value, clock);
+    const expiring = (key: string, sequence: string) => {
+      const base = captureRequest(key, sequence);
+      return {
+        ...base,
+        payload: {
+          ...base.payload,
+          retention: { derivative_rule: "retain" as const, expires_at: "2026-08-16T12:35:30.000Z" },
+        },
+      };
+    };
+    for (const sequence of ["1", "2", "3"]) {
+      const captured = await memory.capture(expiring(`maintenance-key-${sequence}`, sequence));
+      expect(captured.ok).toBe(true);
+      if (!captured.ok || captured.value.candidate_id === undefined) throw new Error("capture failed");
+      const admitted = await memory.requestAdmission({
+        candidate_id: captured.value.candidate_id,
+        authorization: { credential: "credential:substrate" },
+        deadline_at: "2026-08-16T12:40:00.000Z",
+      });
+      expect(admitted).toMatchObject({ ok: true, value: { status: "accepted" } });
+    }
+    const unitsBefore = backend.committedUnits().length;
+    const journal = await opened.value.readJournal({ after: "0", limit: 2000 });
+    if (!journal.ok || journal.value.length === 0) throw new Error("journal refused");
+    const highWater = journal.value[journal.value.length - 1]!.cursor;
+    clock.advanceTo("2026-08-16T12:36:00.000Z");
+    const snapshot = await opened.value.acceptedSnapshot({
+      valid_as_of: 1,
+      system_as_of: highWater,
+      authorization_receipt_digest: DIGEST,
+      max_candidates: 50,
+    });
+    expect(snapshot.ok).toBe(true);
+    // Three expiries split into three bounded units of one append each, every
+    // unit declaring the composition ceiling rather than an observed size.
+    const maintenance = backend.committedUnits().slice(unitsBefore);
+    expect(maintenance).toHaveLength(3);
+    for (const unit of maintenance) {
+      expect(unit.appends).toBe(1);
+      expect(unit.limits.maxAppends).toBe(1);
+    }
+    expect(await journalLength(opened.value)).toBe(journal.value.length + 3);
+    await opened.value.close();
   });
 
   it("reconciles an uncertain commit by proof, never by a second effect", async () => {
