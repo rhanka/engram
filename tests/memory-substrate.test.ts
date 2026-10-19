@@ -1431,7 +1431,7 @@ describe("substrate atomicity under fault injection (amendment §5.3)", () => {
     await opened.value.close();
   });
 
-  it.each([false, true])("recovers the committed expiry prefix, refusing service while hydration fails=%s (binding §§4.3, 8.1, 8.5)", async (failRecovery) => {
+  it.each([[false, false], [true, false], [true, true]])("recovers the committed expiry prefix, refusing service while hydration fails=%s, close=%s (binding §§4.3, 6.4, 8.1, 8.5)", async (failRecovery, closeDuringRecovery) => {
     const backend = createReferenceModuleStorageBackend({ scope: SCOPE });
     const clock = fixedClock();
     let recoveryUnavailable = false;
@@ -1440,7 +1440,19 @@ describe("substrate atomicity under fault injection (amendment §5.3)", () => {
     let releaseRecovery!: () => void;
     const recoveryStarted = new Promise<void>((resolve) => { signalRecovery = resolve; });
     const recoveryBarrier = new Promise<void>((resolve) => { releaseRecovery = resolve; });
-    const handle = { ...backend.handle, query: async (...args: Parameters<typeof backend.handle.query>) => {
+    let releasing = false;
+    let signalRelease!: () => void;
+    let finishRelease!: () => void;
+    const releaseStarted = new Promise<void>((resolve) => { signalRelease = resolve; });
+    const releaseBarrier = new Promise<void>((resolve) => { finishRelease = resolve; });
+    const handle = { ...backend.handle, releaseFence: async (...args: Parameters<typeof backend.handle.releaseFence>) => {
+      if (closeDuringRecovery) {
+        releasing = true;
+        signalRelease();
+        await releaseBarrier;
+      }
+      return backend.handle.releaseFence(...args);
+    }, query: async (...args: Parameters<typeof backend.handle.query>) => {
       if (recoveryUnavailable) throw new Error("recovery unavailable");
       const result = await backend.handle.query(...args);
       if (pauseRecovery && args[0] === "memory-outbox-page") {
@@ -1516,6 +1528,36 @@ describe("substrate atomicity under fault injection (amendment §5.3)", () => {
       pauseRecovery = true;
       const reader = opened.value.readJournal({ after: "0", limit: 2000 });
       await recoveryStarted;
+      if (closeDuringRecovery) {
+        let closed = false;
+        const closing = opened.value.close().then((result) => { closed = true; return result; });
+        let readinessSettled = false;
+        const duringClose = opened.value.readiness().then((result) => { readinessSettled = true; return result; });
+        await new Promise<void>((resolve) => { setImmediate(resolve); });
+        const releasedBeforeRecovery = releasing;
+        const refusedBeforeRecovery = readinessSettled;
+        releaseRecovery();
+        const read = await reader;
+        await releaseStarted;
+        const closingAgain = opened.value.close();
+        const completedBeforeRelease = closed;
+        finishRelease();
+        const [ready, firstClose, secondClose] = await Promise.all([duringClose, closing, closingAgain]);
+        expect(read).toMatchObject({ ok: false, error: { code: "STORE_UNAVAILABLE" } });
+        expect(ready).toMatchObject({ ok: false, error: { code: "STORE_UNAVAILABLE" } });
+        expect(firstClose).toEqual({ ok: true, value: { closed: true } });
+        expect(secondClose).toEqual(firstClose);
+        expect(releasedBeforeRecovery).toBe(false);
+        expect(completedBeforeRelease).toBe(false);
+        expect(refusedBeforeRecovery).toBe(true);
+        expect(backend.liveHolders()).toBe(0);
+        for (const result of [
+          await opened.value.readJournal({ after: "0", limit: 2000 }),
+          await opened.value.readiness(),
+          await opened.value.commitPending(manualCapture("candidate:closed", "event:closed")),
+        ]) expect(result).toMatchObject({ ok: false, error: { code: "STORE_UNAVAILABLE" } });
+        return;
+      }
       let writeSettled = false;
       const writer = opened.value.commitPending(manualCapture("candidate:recovery-race", "event:recovery-race"))
         .then((result) => { writeSettled = true; return result; });
