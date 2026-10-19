@@ -93,6 +93,10 @@ function compareQuantiles(
   errors: Diagnostic[],
 ): void {
   for (const f of ["p50Seconds", "p80Seconds", "p95Seconds", "sampleCount"] as const) {
+    // Structural validation already requires a reason for each unavailable
+    // quantile (§6.5). Regeneration compares published numbers and preserves
+    // those qualified nulls rather than inventing a tail value.
+    if (f !== "sampleCount" && stored[f] === null) continue;
     if (rebuilt[f] !== stored[f]) {
       errors.push({
         code: "quantile-mismatch",

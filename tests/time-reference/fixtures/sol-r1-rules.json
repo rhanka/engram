@@ -200,6 +200,36 @@
         {
           "mutation": "series.0.quantiles.p50Seconds",
           "code": "quantile-mismatch"
+        },
+        {
+          "mutation": "series.0.quantiles.p95Seconds",
+          "action": "withhold",
+          "expectOk": true
+        },
+        {
+          "mutation": "series.0.quantiles.p80Seconds",
+          "action": "withhold",
+          "expectOk": true
+        },
+        {
+          "mutation": "series.0.quantiles.p50Seconds",
+          "action": "withhold",
+          "expectOk": true
+        },
+        {
+          "mutation": "estimates.0.quantiles.p95Seconds",
+          "action": "withhold",
+          "expectOk": true
+        },
+        {
+          "mutation": "estimates.0.quantiles.p80Seconds",
+          "action": "withhold",
+          "expectOk": true
+        },
+        {
+          "mutation": "estimates.0.quantiles.p50Seconds",
+          "action": "withhold",
+          "expectOk": true
         }
       ]
     },
