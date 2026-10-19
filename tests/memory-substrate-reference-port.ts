@@ -150,6 +150,7 @@ export interface ReferenceBackend {
   codecRoundTrip(value: string): string;
   testOnlyAllocateNext(allocation: string): string;
   testOnlyRevokeFence(): void;
+  testOnlyOverwriteCommitResult(commitIdentity: string, moduleResult: NeutralEncodedValue): void;
   currentFence(): { fenceId: string; epoch: string } | undefined;
   transactRaw(
     limits: { maxAppends: number; maxRecords: number; maxEncodedBytes: number },
@@ -280,77 +281,105 @@ export function createReferenceModuleStorageBackend(options: ReferenceBackendOpt
         }
       }
     }
-    // Fail-closed atomicity: every injected failure below refuses before any
-    // mutation of this unit, except the post-commit acknowledgement loss.
-    // The stage name still identifies the refused sub-step.
-    maybeFire("records");
-    maybeFire("appends");
-    maybeFire("updates");
-    maybeFire("index");
-    maybeFire("module-result");
-    for (const record of unit.records) {
-      if (record.value.format !== "utf8") throw new NeutralStorageError("invalid-schema", "record value is not utf8");
-      const mapKey = `${record.kind}\0${record.key}`;
-      const prior = core.records.get(mapKey);
-      if (prior !== undefined) {
-        if (prior.value.data !== record.value.data || prior.contentHash !== record.contentHash) {
-          throw new NeutralStorageError("digest-conflict", "immutable record identity is bound to different bytes");
-        }
-        continue;
-      }
-      core.records.set(mapKey, { kind: record.kind, key: record.key, value: record.value, contentHash: record.contentHash });
-    }
+    // Transactional rollback (binding §10.1; L3a §5.2): the unit's writes are
+    // staged per real stage with the failpoint firing AFTER each stage's
+    // mutations. Any later failure — injected or a genuine aggregate
+    // conflict — restores the pre-unit state, so no subset ever leaks.
+    const rollback = {
+      records: new Map(core.records),
+      eventsById: new Map(core.eventsById),
+      order: [...core.order],
+      allocation: core.allocation,
+      head: core.head,
+      aggregates: new Map(core.aggregates),
+      indexes: new Map(core.indexes),
+      commitResults: new Map(core.commitResults),
+      unitsLength: core.units.length,
+    };
+    const restore = (): void => {
+      core.records = rollback.records;
+      core.eventsById = rollback.eventsById;
+      core.order = rollback.order;
+      core.allocation = rollback.allocation;
+      core.head = rollback.head;
+      core.aggregates = rollback.aggregates;
+      core.indexes = rollback.indexes;
+      core.commitResults = rollback.commitResults;
+      core.units.length = rollback.unitsLength;
+    };
     let cursor = core.allocation;
-    for (const append of unit.appends) {
-      if (append.chain !== memoryJournalChain()) throw new NeutralStorageError("invalid-schema", "unknown chain");
-      const expected = append.expectation;
-      if (expected.kind === "absent") {
-        if (core.order.length !== 0 || expected.allocation !== core.allocation) {
-          throw new NeutralStorageError("cas-conflict", "genesis expectation does not hold");
+    try {
+      for (const record of unit.records) {
+        if (record.value.format !== "utf8") throw new NeutralStorageError("invalid-schema", "record value is not utf8");
+        const mapKey = `${record.kind}\0${record.key}`;
+        const prior = core.records.get(mapKey);
+        if (prior !== undefined) {
+          if (prior.value.data !== record.value.data || prior.contentHash !== record.contentHash) {
+            throw new NeutralStorageError("digest-conflict", "immutable record identity is bound to different bytes");
+          }
+          continue;
         }
-      } else if (expected.hash !== core.head) {
-        throw new NeutralStorageError("cas-conflict", "stale chain head");
+        core.records.set(mapKey, { kind: record.kind, key: record.key, value: record.value, contentHash: record.contentHash });
       }
-      const prior = core.eventsById.get(append.id);
-      if (prior !== undefined) {
-        if (prior.hash !== append.hash || prior.value.data !== append.value.data) {
-          throw new NeutralStorageError("digest-conflict", "event identity is bound to a different hash");
+      maybeFire("records");
+      for (const append of unit.appends) {
+        if (append.chain !== memoryJournalChain()) throw new NeutralStorageError("invalid-schema", "unknown chain");
+        const expected = append.expectation;
+        if (expected.kind === "absent") {
+          if (core.order.length !== 0 || expected.allocation !== core.allocation) {
+            throw new NeutralStorageError("cas-conflict", "genesis expectation does not hold");
+          }
+        } else if (expected.hash !== core.head) {
+          throw new NeutralStorageError("cas-conflict", "stale chain head");
         }
-        continue;
+        const prior = core.eventsById.get(append.id);
+        if (prior !== undefined) {
+          if (prior.hash !== append.hash || prior.value.data !== append.value.data) {
+            throw new NeutralStorageError("digest-conflict", "event identity is bound to a different hash");
+          }
+          continue;
+        }
+        const body = JSON.parse(append.value.data) as { cursor?: unknown };
+        if (typeof body.cursor !== "string") throw new NeutralStorageError("invalid-schema", "event carries no cursor");
+        const next = BigInt(core.allocation) + 1n;
+        if (next > MAX_U64) throw new NeutralStorageError("limit-exceeded", "journal cursor is exhausted");
+        if (body.cursor !== next.toString()) {
+          throw new NeutralStorageError("cas-conflict", "append cursor does not extend the committed allocation");
+        }
+        core.allocation = next.toString();
+        core.head = append.hash;
+        core.eventsById.set(append.id, { hash: append.hash, value: append.value, cursor: body.cursor });
+        core.order.push(append.id);
+        cursor = core.allocation;
       }
-      const body = JSON.parse(append.value.data) as { cursor?: unknown };
-      if (typeof body.cursor !== "string") throw new NeutralStorageError("invalid-schema", "event carries no cursor");
-      const next = BigInt(core.allocation) + 1n;
-      if (next > MAX_U64) throw new NeutralStorageError("limit-exceeded", "journal cursor is exhausted");
-      if (body.cursor !== next.toString()) {
-        throw new NeutralStorageError("cas-conflict", "append cursor does not extend the committed allocation");
+      maybeFire("appends");
+      for (const update of unit.updates) {
+        const mapKey = `${update.kind}\0${update.key}`;
+        const prior = core.aggregates.get(mapKey);
+        if (prior !== undefined && BigInt(update.version) <= BigInt(prior.version)) {
+          throw new NeutralStorageError("cas-conflict", "stale aggregate version");
+        }
+        core.aggregates.set(mapKey, { kind: update.kind, key: update.key, version: update.version, value: update.value });
       }
-      core.allocation = next.toString();
-      core.head = append.hash;
-      core.eventsById.set(append.id, { hash: append.hash, value: append.value, cursor: body.cursor });
-      core.order.push(append.id);
-      cursor = core.allocation;
-    }
-    for (const update of unit.updates) {
-      const mapKey = `${update.kind}\0${update.key}`;
-      const prior = core.aggregates.get(mapKey);
-      if (prior !== undefined && BigInt(update.version) <= BigInt(prior.version)) {
-        throw new NeutralStorageError("cas-conflict", "stale aggregate version");
+      maybeFire("updates");
+      for (const write of unit.indexWrites) {
+        core.indexes.set(`${write.index}\0${write.key}`, write.value);
       }
-      core.aggregates.set(mapKey, { kind: update.kind, key: update.key, version: update.version, value: update.value });
-    }
-    for (const write of unit.indexWrites) {
-      core.indexes.set(`${write.index}\0${write.key}`, write.value);
+      maybeFire("index");
+      if (unit.moduleResult !== undefined && optionsValue.idempotencyKey !== undefined) {
+        const intentSources = [...unit.appends.map((append) => append.id), ...unit.updates.map((update) => update.key)];
+        const intentHash = canonicalizeJcs({ appends: unit.appends.map((append) => append.id), updates: intentSources });
+        core.commitResults.set(optionsValue.idempotencyKey, { intentHash, moduleResult: unit.moduleResult, unitHash: unitHash(unit) });
+        for (const append of unit.appends) {
+          core.commitResults.set(append.id, { intentHash, moduleResult: unit.moduleResult, unitHash: unitHash(unit) });
+        }
+      }
+      maybeFire("module-result");
+    } catch (error) {
+      restore();
+      throw error;
     }
     const receipt: NeutralCommitReceipt = { commitId: optionsValue.idempotencyKey ?? `commit:${core.units.length}`, journalCursor: cursor };
-    if (unit.moduleResult !== undefined && optionsValue.idempotencyKey !== undefined) {
-      const intentSources = [...unit.appends.map((append) => append.id), ...unit.updates.map((update) => update.key)];
-      const intentHash = canonicalizeJcs({ appends: unit.appends.map((append) => append.id), updates: intentSources });
-      core.commitResults.set(optionsValue.idempotencyKey, { intentHash, moduleResult: unit.moduleResult, unitHash: unitHash(unit) });
-      for (const append of unit.appends) {
-        core.commitResults.set(append.id, { intentHash, moduleResult: unit.moduleResult, unitHash: unitHash(unit) });
-      }
-    }
     core.units.push({
       limits: { ...optionsValue.limits },
       appends: unit.appends.length,
@@ -656,6 +685,14 @@ export function createReferenceModuleStorageBackend(options: ReferenceBackendOpt
     },
     testOnlyRevokeFence(): void {
       core.holder = undefined;
+    },
+    testOnlyOverwriteCommitResult(commitIdentity: string, moduleResult: NeutralEncodedValue): void {
+      const prior = core.commitResults.get(commitIdentity);
+      core.commitResults.set(commitIdentity, {
+        intentHash: prior?.intentHash ?? "test-overwritten",
+        moduleResult,
+        unitHash: prior?.unitHash ?? "test-overwritten",
+      });
     },
     currentFence(): { fenceId: string; epoch: string } | undefined {
       return core.holder === undefined ? undefined : { fenceId: core.holder.fenceId, epoch: core.holder.epoch };
