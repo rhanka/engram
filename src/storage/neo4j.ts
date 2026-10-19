@@ -1,10 +1,10 @@
+import { requireHostDriver } from "./host-driver.js";
 /**
  * Neo4j GraphStore adapter (SPEC_STORAGE_BACKENDS.md, "Neo4j Adapter (v1)").
  *
  * Creates a live-push mirror of a Graphify graph into Neo4j using batched
  * UNWIND statements. The driver is NEVER imported statically; it is always
- * supplied through `deps.driverModule` (tests) or the registry's dynamic
- * import mechanism (production).
+ * supplied by the host through `deps.driverModule`.
  *
  * Helpers extracted from src/export.ts (neo4jLabel, neo4jRelation,
  * scalarProps) are re-exported from this module so the compat wrapper in
@@ -163,8 +163,7 @@ export interface Neo4jGraphStore extends GraphStore {
 
 /**
  * Create a Neo4j GraphStore instance. The driver module is supplied by the
- * registry's lazy import mechanism (production) or test injection via
- * `deps.driverModule`.
+ * host through `deps.driverModule`.
  */
 export async function createNeo4jGraphStore(
   config: Neo4jGraphStoreConfig,
@@ -174,22 +173,8 @@ export async function createNeo4jGraphStore(
     throw new Error("neo4j store requires config.target (bolt URI)");
   }
 
-  // Resolve driver from injected deps or from dynamic import (handled by
-  // the registry before this factory is called in production).
-  let neo4jMod: Record<string, unknown>;
-  if (deps?.driverModule !== undefined) {
-    neo4jMod = deps.driverModule as Record<string, unknown>;
-  } else {
-    // Fallback: attempt dynamic import (used when calling the factory
-    // directly in live tests without going through the registry).
-    try {
-      neo4jMod = await import("neo4j-driver") as Record<string, unknown>;
-    } catch {
-      throw new Error(
-        "store 'neo4j' requires neo4j-driver. Run: npm install neo4j-driver",
-      );
-    }
-  }
+  // The host supplies its driver; Engram never loads a backend package.
+  const neo4jMod = requireHostDriver("neo4j", "neo4j-driver", deps?.driverModule);
 
   const neo4j = (neo4jMod.default ?? neo4jMod) as {
     driver(

@@ -102,12 +102,11 @@ describe("storage import guard", () => {
     await import("../src/storage/file.js");
     expect(driverProbe.evaluated).toBe(false);
 
-    // Positive control: the probe trips once the driver is really imported
-    // (pushToNeo4j resolves it dynamically), so the assertion above measures
-    // evaluation instead of vacuously passing.
-    await api
-      .pushToNeo4j(new Graph(), "bolt://localhost:7687", "user", "password")
-      .catch(() => {});
+    await expect(api.pushToNeo4j(new Graph(), "bolt://localhost:7687", "user", "password"))
+      .rejects.toMatchObject({ code: "HOST_DRIVER_REQUIRED" });
+    expect(driverProbe.evaluated).toBe(false);
+    // Positive control: only the host imports the driver.
+    await import("neo4j-driver");
     expect(driverProbe.evaluated).toBe(true);
   });
 });

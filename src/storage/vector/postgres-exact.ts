@@ -1,3 +1,4 @@
+import { requireHostDriver } from "../host-driver.js";
 /**
  * PostgresExactVectorStore — real vector projection over stock Postgres (owner decision 2026-10-14).
  * INVARIANTS (breaking case class each): 1 idempotent removal by record_id deletes owned vectors
@@ -190,17 +191,7 @@ async function resolvePgRunner(
   if (driverModule !== undefined && typeof (driverModule as { query?: unknown }).query === "function") {
     return { runner: driverModule as X2bSqlRunner, owned: false };
   }
-  let pgMod: Record<string, unknown>;
-  if (driverModule !== undefined) {
-    pgMod = driverModule as Record<string, unknown>;
-  } else {
-    try {
-      const driverPackage = "pg";
-      pgMod = (await import(driverPackage)) as Record<string, unknown>;
-    } catch {
-      throw new Error("store 'postgres-exact' requires pg (already a dependency)");
-    }
-  }
+  const pgMod = requireHostDriver("postgres-exact", "pg", driverModule);
   const mod = (pgMod.default ?? pgMod) as Partial<PgModule>;
   if (typeof mod.Pool !== "function") throw new Error("store 'postgres-exact' requires pg (already a dependency)");
   if (connectionString === undefined) throw new Error("postgres-exact store requires a connection string");
