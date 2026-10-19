@@ -180,10 +180,18 @@ export interface NeutralWorkLimits {
   readonly maxEncodedBytes: number;
 }
 
+/** Writer-fence identity carried on every guarded verification and transaction (binding §§9.3–9.6). */
+export interface NeutralWriterFence {
+  readonly fenceId: string;
+  readonly epoch: string;
+}
+
 export interface NeutralCommitOptions {
   readonly limits: NeutralWorkLimits;
   readonly idempotencyKey?: string;
   readonly grant: NeutralScopeGrant;
+  /** Live acquisition identity: verified at entry, after waits, and at final commit validation. */
+  readonly fence: NeutralWriterFence;
 }
 
 export interface NeutralCommitReceipt {
@@ -298,6 +306,7 @@ export class NeutralStorageError extends Error {
 }
 
 export interface NeutralFenceProof {
+  readonly fenceId: string;
   readonly epoch: string;
 }
 
@@ -324,9 +333,13 @@ export interface NeutralMemoryHandle {
   readCommitResult?(commitIdentity: string, grant: NeutralScopeGrant): Promise<NeutralEncodedValue | null>;
   /** Canonical-instance acquisition (R-G3-1): refuses a second live holder, never queues. */
   acquireFence(input: { scope: NeutralStorageScope; store_id: string; grant: NeutralScopeGrant }): Promise<NeutralFenceProof>;
-  /** Freshness proof: throws NeutralStorageError on loss, expiry, or revocation. */
-  checkFence(grant: NeutralScopeGrant): Promise<void>;
-  releaseFence(): Promise<void>;
+  /**
+   * Freshness proof bound to the acquisition identity (binding §§9.3–9.6):
+   * throws NeutralStorageError on loss, expiry, revocation, or epoch/fence mismatch.
+   */
+  checkFence(grant: NeutralScopeGrant, fence: NeutralWriterFence): Promise<void>;
+  /** Acquisition-bound release: only the live holder clears the fence; a stale identity never clears a successor. */
+  releaseFence(fence: NeutralWriterFence): Promise<void>;
 }
 
 /** Compound identity-key encodings (binding §3.1; M2 `canonicalRecordKey` precedent). */
