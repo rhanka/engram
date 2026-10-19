@@ -18,7 +18,7 @@
  * - Strict external TypeScript consumption (`skipLibCheck: false`).
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,7 +65,13 @@ const EXPECTED_VALUE_NAMES = new Set([
   "openModuleStorageCanonicalMemoryStoreV1",
 ]);
 
-const FORBIDDEN_SPECIFIERS = new Set(["better-sqlite3", "fs-ext", "pg"]);
+/**
+ * Known native database drivers (design note class A): any static edge to
+ * one fails the run. `pg` (pure JS) is not native; its native driver is
+ * `pg-native`.
+ */
+const FORBIDDEN_SPECIFIERS = new Set(["better-sqlite3", "fs-ext", "pg-native", "sqlite3"]);
+const LIFECYCLE_SCRIPT_NAMES = new Set(["install", "postinstall", "preinstall"]);
 
 interface StaticEdge { specifier: string; dynamic: boolean; }
 
@@ -164,7 +170,7 @@ const BUILTIN_SPECIFIERS = new Set([
   ...builtinModules.map((name) => name.replace(/^node:/, "")),
 ]);
 
-type ClosureFindingKind = "forbidden-package" | "native-addon" | "computed-target" | "cluster-mesh";
+type ClosureFindingKind = "forbidden-package" | "native-addon" | "computed-target" | "cluster-mesh" | "lifecycle-scripts";
 
 interface ClosureFinding {
   readonly file: string;
@@ -199,16 +205,18 @@ function resolveClosureTarget(specifier: string, fromFile: string): string | nul
 }
 
 /**
- * Installed resolved closure (amendment §§5.7, 11): every static edge of the
- * installed artifacts is resolved to its file and traversed transitively.
- * A direct native driver, a transitively reachable `.node` addon, a computed
+ * Installed resolved closure (amendment §§5.7, 11; design note class A):
+ * every static edge of the installed artifacts is resolved to its file and
+ * traversed transitively, INCLUDING external (node_modules) packages reached
+ * from the entries. A direct native driver, a transitively reachable `.node`
+ * addon, a `binding.gyp`/lifecycle script of a reached package, a computed
  * (unresolvable-at-scan) import target, and any cluster-mesh reference are
- * each reported. Only files under the repository are descended into;
- * external packages are checked by name and extension without descending.
+ * each reported — computed targets are collected everywhere, never skipped.
  */
 function collectInstalledClosure(entries: ReadonlyArray<string>): ClosureFinding[] {
   const findings: ClosureFinding[] = [];
   const seen = new Set<string>();
+  const seenPackages = new Set<string>();
   const queue = [...entries];
   while (queue.length > 0) {
     const file = queue.pop()!;
@@ -218,6 +226,7 @@ function collectInstalledClosure(entries: ReadonlyArray<string>): ClosureFinding
       findings.push({ file, specifier: file, kind: "native-addon" });
       continue;
     }
+    if (!/\.(?:js|cjs|mjs|ts)$/.test(file)) continue;
     let content: string;
     try {
       content = readFileSync(file, "utf8");
@@ -248,13 +257,59 @@ function collectInstalledClosure(entries: ReadonlyArray<string>): ClosureFinding
         findings.push({ file, specifier: resolved, kind: "native-addon" });
         continue;
       }
-      // Relative edges are closure members by construction and always
-      // traversed; bare packages outside the repository are checked by name
-      // and extension only, never descended into.
-      if (specifier.startsWith(".") || resolved.startsWith(`${root}/`)) queue.push(resolved);
+      checkReachedPackage(resolved, findings, seenPackages);
+      queue.push(resolved);
     }
   }
   return findings;
+}
+
+/**
+ * Flags `binding.gyp` and install/postinstall/preinstall scripts of a
+ * reached external package once: a native build step anywhere in the
+ * resolved closure fails the run.
+ */
+function checkReachedPackage(resolved: string, findings: ClosureFinding[], seenPackages: Set<string>): void {
+  // Only installed dependencies are checked: in-repo packages are
+  // source-controlled and reviewed, and the root manifest itself carries a
+  // postinstall that is not a native build step.
+  if (!resolved.includes("/node_modules/")) return;
+  let dir = dirname(resolved);
+  while (dir.includes("/node_modules/")) {
+    let manifest: string;
+    try {
+      manifest = readFileSync(join(dir, "package.json"), "utf8");
+    } catch {
+      const parent = dirname(dir);
+      if (parent === dir) return;
+      dir = parent;
+      continue;
+    }
+    if (seenPackages.has(dir)) return;
+    seenPackages.add(dir);
+    try {
+      const scripts = (JSON.parse(manifest) as { scripts?: Record<string, string> }).scripts ?? {};
+      for (const name of Object.keys(scripts)) {
+        if (LIFECYCLE_SCRIPT_NAMES.has(name)) {
+          findings.push({ file: join(dir, "package.json"), specifier: `${dir}#${name}`, kind: "lifecycle-scripts" });
+        }
+      }
+    } catch {
+      return;
+    }
+    try {
+      readFileSync(join(dir, "binding.gyp"), "utf8");
+      findings.push({ file: join(dir, "binding.gyp"), specifier: dir, kind: "lifecycle-scripts" });
+    } catch {
+      // No build file: nothing to flag.
+    }
+    return;
+  }
+}
+
+/** Findings that fail the run for every published entry. */
+function fatalClosureFindings(findings: ClosureFinding[]): ClosureFinding[] {
+  return findings.filter((finding) => finding.kind !== "computed-target");
 }
 
 describe("substrate entry shape (amendment §1, §5.6)", () => {
@@ -326,15 +381,20 @@ describe("substrate neutrality and driver guards (amendment §5.7)", () => {
     }
   });
 
-  it("statically resolves no native driver from any published entry", () => {
+  it("reports no fatal finding from any published entry, including traversed dependencies", () => {
     for (const artifact of ["index.js", "index.cjs", "llm-mesh.js", "memory-tools.js", "memory-substrate.js"]) {
-      const content = readFileSync(join(root, "dist", artifact), "utf8");
-      for (const edge of staticEdges(content)) {
-        if (edge.dynamic) continue;
-        expect(FORBIDDEN_SPECIFIERS.has(edge.specifier), `${artifact}: forbidden driver ${edge.specifier}`).toBe(false);
-        expect(edge.specifier.endsWith(".node"), `${artifact}: forbidden addon ${edge.specifier}`).toBe(false);
-      }
+      const findings = collectInstalledClosure([join(root, "dist", artifact)]);
+      expect(fatalClosureFindings(findings), `${artifact}: ${JSON.stringify(fatalClosureFindings(findings).slice(0, 3))}`).toEqual([]);
     }
+  });
+
+  it("collects computed targets on other entries instead of skipping them (M2)", () => {
+    // The `.` entry keeps pre-existing lazy optional loads outside the
+    // substrate (reported by the tarball runner, not gated here): the
+    // collector must surface them, never skip them.
+    const findings = collectInstalledClosure([join(root, "dist", "index.js")]);
+    expect(fatalClosureFindings(findings)).toEqual([]);
+    expect(findings.some((finding) => finding.kind === "computed-target")).toBe(true);
   });
 
   it("resolves the installed memory-substrate closure with no driver, addon, or computed target", () => {
@@ -345,18 +405,32 @@ describe("substrate neutrality and driver guards (amendment §5.7)", () => {
     expect(findings).toEqual([]);
   });
 
-  it("detects direct, transitive-native, and computed driver mutations in the resolved closure", () => {
+  it("detects direct, transitive-native, computed, and lifecycle mutations in the resolved closure", () => {
     const dir = mkdtempSync(join(tmpdir(), "substrate-closure-fixture-"));
     try {
-      writeFileSync(join(dir, "entry.js"), `require("pg");\nrequire("./mid.js");\n`);
+      writeFileSync(join(dir, "entry.js"), `require("pg-native");\nrequire("./mid.js");\n`);
       writeFileSync(join(dir, "mid.js"), `require("./native.node");\n`);
       writeFileSync(join(dir, "native.node"), "");
       writeFileSync(join(dir, "computed.js"), `const name = process.argv[2];\nrequire(name);\n`);
       const direct = collectInstalledClosure([join(dir, "entry.js")]);
-      expect(direct.some((finding) => finding.kind === "forbidden-package" && finding.specifier === "pg")).toBe(true);
+      expect(direct.some((finding) => finding.kind === "forbidden-package" && finding.specifier === "pg-native")).toBe(true);
       expect(direct.some((finding) => finding.kind === "native-addon")).toBe(true);
+      expect(fatalClosureFindings(direct).length).toBeGreaterThan(0);
       const computed = collectInstalledClosure([join(dir, "computed.js")]);
       expect(computed.some((finding) => finding.kind === "computed-target")).toBe(true);
+      const packageDir = join(dir, "node_modules", "fake-native");
+      mkdirSync(packageDir, { recursive: true });
+      writeFileSync(join(packageDir, "package.json"), JSON.stringify({
+        name: "fake-native",
+        version: "1.0.0",
+        main: "index.js",
+        scripts: { install: "node-gyp rebuild" },
+      }));
+      writeFileSync(join(packageDir, "index.js"), "module.exports = {};\n");
+      writeFileSync(join(dir, "lifecycle.js"), `require("fake-native");\n`);
+      const lifecycle = collectInstalledClosure([join(dir, "lifecycle.js")]);
+      expect(lifecycle.some((finding) => finding.kind === "lifecycle-scripts")).toBe(true);
+      expect(fatalClosureFindings(lifecycle).length).toBeGreaterThan(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
