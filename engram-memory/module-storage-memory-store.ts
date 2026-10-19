@@ -352,6 +352,8 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
   readonly capabilities: CanonicalStoreCapabilitiesV1;
   readonly scoped_reads: CanonicalMemoryStorePort["scoped_reads"];
   private recoveryInFlight?: Promise<Result<{ live: true }>>;
+  private closing = false;
+  private closeInFlight?: Promise<Result<{ closed: true }>>;
 
   constructor(
     private readonly handle: NeutralMemoryHandle,
@@ -416,7 +418,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
   }
 
   private async proof(operation: MemoryOperation): Promise<Result<{ live: true }>> {
-    if (this.closed) return { ok: true, value: { live: true } };
+    if (this.closed || this.closing) return refuse(operation, "STORE_UNAVAILABLE", "canonical store is closed");
     if (this.latched) return refuse(operation, "FENCE_LOST", "canonical fence was lost");
     const now = this.clock.now();
     if (!isInstant(now)) return refuse(operation, "STORE_UNAVAILABLE", "clock did not supply a canonical instant");
@@ -424,6 +426,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
     if (!liveness.ok) return liveness;
     try {
       await this.handle.checkFence(this.grant, this.fence);
+      if (this.closed || this.closing) return refuse(operation, "STORE_UNAVAILABLE", "canonical store is closed");
       if (this.recoveryRequired) return this.rehydrateToCommitted(operation);
       return { ok: true, value: { live: true } };
     } catch (error) {
@@ -546,15 +549,15 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
           return refuse(operation, "JOURNAL_CORRUPT", "persisted receipt bytes do not verify");
         }
         persistedReceipt = decoded;
-        after.admission_outcomes = after.admission_outcomes?.map((entry) =>
-          entry.cursor === decoded.cursor
-            ? { ...entry, transaction_receipt_digest: decoded.receipt_digest }
         if (decoded.operation === "capture") {
           after.controls = after.controls.map((control) => control.created_cursor === decoded.cursor
             ? { ...control, capture_receipt_digest: decoded.receipt_digest } : control);
           after.capture_idempotency = after.capture_idempotency?.map((entry) => entry.cursor === decoded.cursor
             ? { ...entry, receipt_digest: decoded.receipt_digest } : entry);
         }
+        after.admission_outcomes = after.admission_outcomes?.map((entry) =>
+          entry.cursor === decoded.cursor
+            ? { ...entry, transaction_receipt_digest: decoded.receipt_digest }
             : entry,
         );
       }
@@ -569,6 +572,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
    * must complete recovery before reading or staging from the live core.
    */
   private async rehydrateToCommitted(operation: MemoryOperation): Promise<Result<{ live: true }>> {
+    if (this.closed || this.closing) return refuse(operation, "STORE_UNAVAILABLE", "canonical store is closed");
     // Readers may enter proof outside the mutation mutex. They must join
     // the same recovery: no delayed snapshot can adopt after another
     // recovery has allowed a writer to advance the core.
@@ -590,7 +594,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
     try {
       const loaded = await hydrate(this.handle, this.grant, operation);
       if (!loaded.ok) return loaded;
-      if (this.closed) return refuse(operation, "STORE_UNAVAILABLE", "canonical store is closed");
+      if (this.closed || this.closing) return refuse(operation, "STORE_UNAVAILABLE", "canonical store is closed");
       this.core = this.fork(cloneState(loaded.value));
       this.k7Versions.clear();
       for (const [candidate, version] of loaded.value.k7Versions) this.k7Versions.set(candidate, version);
@@ -1137,11 +1141,8 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
   }
 
   async readiness(): Promise<Result<OperationalCapabilityReceiptV1>> {
-    if (!this.closed && this.latched) return refuse("admin", "FENCE_LOST", "canonical fence was lost");
-    if (!this.closed) {
-      const proof = await this.proof("admin");
-      if (!proof.ok) return proof;
-    }
+    const proof = await this.proof("admin");
+    if (!proof.ok) return proof;
     const ready = await this.core.readiness();
     if (!ready.ok) return ready;
     const { receipt_digest: _stale, store_id: _store, backend: _backend, storage_epoch: _epoch, capabilities: _capabilities, ...rest } = ready.value;
@@ -1161,17 +1162,23 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
   }
 
   async close(): Promise<Result<{ closed: true }>> {
-    if (this.closed) return { ok: true, value: { closed: true } };
-    // Readers first, then the fence last (§6.4); close stays available after fence loss.
-    const result = await this.core.close();
-    try {
-      await this.handle.releaseFence(this.fence);
-    } catch {
-      // Release is best-effort and acquisition-bound: a stale identity never
-      // clears a successor holder; the instance is closed regardless.
-    }
-    this.closed = true;
-    return result;
+    if (this.closeInFlight !== undefined) return this.closeInFlight;
+    // Latch before any wait: neither a new proof nor recovery can admit work.
+    this.closing = true;
+    this.closeInFlight = this.exclusive(async () => {
+      // Drain mutation/adoption and readers recovering outside the mutex.
+      await this.recoveryInFlight;
+      const result = await this.core.close();
+      try {
+        // Readers first, acquisition-bound fence last (§6.4), even after loss.
+        await this.handle.releaseFence(this.fence);
+      } catch {
+        // A stale identity never clears a successor holder.
+      }
+      this.closed = true;
+      return result;
+    });
+    return this.closeInFlight;
   }
 }
 
