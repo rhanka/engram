@@ -7,7 +7,7 @@
  * or generator, then regenerated. Pure: no I/O.
  */
 
-import { exportDigestOf, sha256Hex } from "./canonical.js";
+import { canonicalDigest, exportDigestOf, sha256Hex } from "./canonical.js";
 import {
   effectiveSizeRatio,
   nearestRank,
@@ -77,6 +77,39 @@ export function buildQuantileSet(entries: WeightedEntry[], opts: BuildQuantileOp
   return set;
 }
 
+/**
+ * Pinned snapshot digest over the canonical sample bytes (spec section 6.1:
+ * any sample change changes the digest; identical pinned inputs reproduce
+ * it). Builders pin `cohortRef.snapshotDigest` with this function so that
+ * `regenerateCheck` can authenticate externally supplied samples against
+ * the digest committed in the export.
+ */
+export function sampleSnapshotDigest(samples: WeightedEntry[]): string {
+  return canonicalDigest(samples);
+}
+
+/** Compare one rebuilt quantile set against its committed figure. */
+function compareQuantiles(
+  rebuilt: QuantileSetV1,
+  stored: QuantileSetV1,
+  path: string,
+  errors: Diagnostic[],
+): void {
+  for (const f of ["p50Seconds", "p80Seconds", "p95Seconds", "sampleCount", "maxSeconds"] as const) {
+    if (rebuilt[f] !== stored[f]) {
+      errors.push({
+        code: "quantile-mismatch",
+        message: `${path} ${f}: stored ${String(stored[f])}, recomputed ${String(rebuilt[f])}`,
+        path: `${path}.${f}`,
+      });
+    }
+  }
+  if (rebuilt.nEff.numerator !== stored.nEff.numerator
+    || rebuilt.nEff.denominator !== stored.nEff.denominator) {
+    errors.push({ code: "neff-mismatch", message: `${path} nEff changed`, path: `${path}.nEff` });
+  }
+}
+
 /** Recompute the exportDigest and compare with the stored value. */
 export function verifyExportDigest(exp: CommittedExportV1): Diagnostic[] {
   const expected = exportDigestOf(exp as unknown as Record<string, unknown>);
@@ -97,10 +130,22 @@ export function regenerateCheck(
   const errors: Diagnostic[] = [];
   const structural = validateCommittedExport(exp);
   if (!structural.ok) return structural.errors;
+  const bySeriesId = new Map(exp.series.map((s) => [s.seriesId, s]));
   for (const series of exp.series) {
     const samples = samplesBySeriesId[series.seriesId];
     if (samples === undefined) {
       errors.push({ code: "missing-samples", message: `no pinned samples for series ${JSON.stringify(series.seriesId)}`, path: `series.${series.seriesId}` });
+      continue;
+    }
+    // Authenticate the supplied samples against the pinned snapshot digest
+    // before any recomputation: changed samples fail here even when their
+    // quantiles happen to be unchanged (spec section 6.1).
+    if (sampleSnapshotDigest(samples) !== series.cohortRef.snapshotDigest) {
+      errors.push({
+        code: "sample-auth-mismatch",
+        message: `series ${JSON.stringify(series.seriesId)} samples do not reproduce the pinned snapshotDigest`,
+        path: `series.${series.seriesId}`,
+      });
       continue;
     }
     const rebuilt = buildQuantileSet(samples, {
@@ -109,23 +154,30 @@ export function regenerateCheck(
       tailQualification: series.quantiles.tailQualification,
       weightsPolicy: series.quantiles.weightsPolicy,
     });
-    for (const f of ["p50Seconds", "p80Seconds", "p95Seconds", "sampleCount"] as const) {
-      if (rebuilt[f] !== series.quantiles[f]) {
-        errors.push({
-          code: "quantile-mismatch",
-          message: `series ${JSON.stringify(series.seriesId)} ${f}: stored ${String(series.quantiles[f])}, recomputed ${String(rebuilt[f])}`,
-          path: `series.${series.seriesId}.quantiles.${f}`,
-        });
-      }
+    compareQuantiles(rebuilt, series.quantiles, `series.${series.seriesId}.quantiles`, errors);
+  }
+  for (const estimate of exp.estimates) {
+    const series = bySeriesId.get(estimate.seriesRef.seriesId);
+    if (series === undefined) {
+      errors.push({ code: "missing-samples", message: `estimate ${JSON.stringify(estimate.estimateId)} references unknown series ${JSON.stringify(estimate.seriesRef.seriesId)}`, path: `estimates.${estimate.estimateId}` });
+      continue;
     }
-    if (rebuilt.nEff.numerator !== series.quantiles.nEff.numerator
-      || rebuilt.nEff.denominator !== series.quantiles.nEff.denominator) {
-      errors.push({
-        code: "neff-mismatch",
-        message: `series ${JSON.stringify(series.seriesId)} nEff changed`,
-        path: `series.${series.seriesId}.quantiles.nEff`,
-      });
+    if (estimate.seriesRef.snapshotDigest !== series.cohortRef.snapshotDigest) {
+      errors.push({ code: "series-ref-mismatch", message: `estimate ${JSON.stringify(estimate.estimateId)} seriesRef does not pin the referenced series snapshot`, path: `estimates.${estimate.estimateId}.seriesRef` });
+      continue;
     }
+    const samples = samplesBySeriesId[estimate.seriesRef.seriesId];
+    if (samples === undefined) {
+      errors.push({ code: "missing-samples", message: `no pinned samples for estimate ${JSON.stringify(estimate.estimateId)}`, path: `estimates.${estimate.estimateId}` });
+      continue;
+    }
+    const rebuilt = buildQuantileSet(samples, {
+      method: estimate.quantiles.quantileMethod,
+      support: estimate.quantiles.support,
+      tailQualification: estimate.quantiles.tailQualification,
+      weightsPolicy: estimate.quantiles.weightsPolicy,
+    });
+    compareQuantiles(rebuilt, estimate.quantiles, `estimates.${estimate.estimateId}.quantiles`, errors);
   }
   errors.push(...verifyExportDigest(exp));
   return errors;
