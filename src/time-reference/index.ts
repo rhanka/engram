@@ -128,6 +128,7 @@ export {
   validateDeliveryMilestones,
   validateFigureProvenance,
   validateInstallationReceipt,
+  validateMilestonesAgainstReceipts,
   validatePullRequestTiming,
   validateQuantileSet,
   validateReviewRoundsActual,

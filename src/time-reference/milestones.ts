@@ -12,6 +12,7 @@
  * parameter. No I/O.
  */
 
+import { validateInstallationReceipt } from "./validators.js";
 import type {
   DeliveryMilestonesV1,
   InstallationReceiptV1,
@@ -134,6 +135,29 @@ export function evaluateInstallationTarget(
 }
 
 /**
+ * Bind one validated receipt and its frozen target declaration to the
+ * identified context (section 7.2). Returns the refusal reason, or null
+ * when the receipt and declaration belong to this repository, lot
+ * occurrence and merge. A foreign receipt never produces a held verdict.
+ */
+function bindToContext(
+  ctx: IdentifiedContext,
+  input: InstallationTargetInput,
+  qual: TargetQualification,
+): string | null {
+  const r = input.receipt;
+  if (r !== null) {
+    if (!validateInstallationReceipt(r).ok) return "invalid-receipt";
+    if (r.repo !== ctx.repo) return "foreign-repo-receipt";
+    if (r.lotOccurrence !== ctx.lotOccurrence) return "foreign-lot-receipt";
+    if (ctx.mergeSha === null) return "lot-unmerged";
+    if (r.mergeSha !== ctx.mergeSha) return "foreign-merge-receipt";
+  }
+  if (qual.expectedMergeSha !== ctx.mergeSha) return "declaration-mismatch";
+  return null;
+}
+
+/**
  * Build one DeliveryMilestonesV1 from an explicitly identified context.
  * Returns null without such a context (the export carries `milestones: []`).
  * Never invents a lot, target, receipt or lot association from history.
@@ -148,6 +172,19 @@ export function buildDeliveryMilestones(
   const installMilestones: InstallMilestoneEntry[] = [];
   const targetReasons: Array<{ targetId: string; reason: string }> = [];
   for (const t of targets) {
+    const refusal = bindToContext(ctx, t.input, t.qual);
+    if (refusal !== null) {
+      const entry: InstallMilestoneEntry = {
+        targetId: t.input.targetId,
+        forecastAt: t.input.forecastAt,
+        installedAt: "unknown",
+        verdict: "unknown",
+      };
+      if (t.input.receiptRef !== undefined) entry.receiptRef = t.input.receiptRef;
+      installMilestones.push(entry);
+      targetReasons.push({ targetId: t.input.targetId, reason: refusal });
+      continue;
+    }
     const ev = evaluateInstallationTarget(t.input, t.qual);
     installMilestones.push(ev.entry);
     if (ev.reason !== undefined) targetReasons.push({ targetId: t.input.targetId, reason: ev.reason });
