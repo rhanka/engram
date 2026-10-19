@@ -83,6 +83,16 @@ describe("installed closure scanner mutations (M2)", () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  it("uses the exact ESM relative target even when a suffixed decoy exists", () => {
+    const dir = fixture({
+      "entry.js": `import "./actual.js";`,
+      "actual.js": `import "pg-native";`,
+      "actual.js.js": `export const decoy = true;`,
+    });
+    try { expect(fatalFindings(scanInstalledClosure([join(dir, "entry.js")], dir)).some((finding) => finding.kind === "forbidden-package")).toBe(true); }
+    finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it.each([`import("pg-" + driver)`, `require("pg-" + driver)`, "import(`pg-${driver}`)"])("rejects expression target %s for every entry", (expression) => {
     const dir = fixture({ "entry.js": `${expression};` });
     try {

@@ -35,7 +35,6 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
@@ -92,18 +91,6 @@ function readText(file) {
   }
 }
 
-function resolveRelative(specifier, fromFile) {
-  const base = specifier.startsWith("/") ? specifier : join(dirname(fromFile), specifier);
-  for (const candidate of [`${base}.js`, `${base}.cjs`, `${base}.mjs`, base, join(base, "index.js")]) {
-    try {
-      if (statSync(candidate).isFile()) return candidate;
-    } catch {
-      continue;
-    }
-  }
-  return undefined;
-}
-
 function nearestPackageDir(file, stopAt) {
   let dir = dirname(file);
   while (dir.startsWith(stopAt) && dir !== stopAt) {
@@ -135,7 +122,7 @@ function scanClosure(entryFiles, consumerDir) {
   const seenPackages = new Set();
   // The distribution's own package lifecycle (here: the packed engram
   // manifest) is the release's reviewed surface, not a hidden dependency
-  // build step: it is never flagged for lifecycle scripts or build files.
+  // build step: its reviewed lifecycle is exempt; native metadata is not.
   const ownedPackages = new Set(
     entryFiles.map((entry) => nearestPackageDir(entry, consumerDir)).filter((dir) => dir !== undefined),
   );
@@ -180,18 +167,13 @@ function scanClosure(entryFiles, consumerDir) {
         continue;
       }
       let resolved;
-      if (specifier.startsWith(".") || specifier.startsWith("/")) {
-        resolved = resolveRelative(specifier, file);
-      } else if (BUILTINS.has(specifier) || BUILTINS.has(specifier.split("/")[0])) {
+      if (BUILTINS.has(specifier) || BUILTINS.has(specifier.split("/")[0])) continue;
+      try {
+        resolved = edge.condition === "require"
+          ? createRequire(file).resolve(specifier)
+          : fileURLToPath(import.meta.resolve(specifier, pathToFileURL(file).href));
+      } catch {
         continue;
-      } else {
-        try {
-          resolved = edge.condition === "require"
-            ? createRequire(file).resolve(specifier)
-            : fileURLToPath(import.meta.resolve(specifier, pathToFileURL(file).href));
-        } catch {
-          continue;
-        }
       }
       if (resolved === undefined) continue;
       if (resolved.endsWith(".node")) {
