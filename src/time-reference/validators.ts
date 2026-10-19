@@ -9,6 +9,7 @@
  */
 
 import { parseMergeVerdict } from "./milestones.js";
+import { fingerprintDigestOf } from "./canonical.js";
 import { meetsTailSupport, parseEffectiveSizeRatio } from "./quantiles.js";
 import { DIGEST_RE, INSTANT_RE, REPO_RE, durationSeconds, isDigest, isInstant } from "./format.js";
 import type {
@@ -946,21 +947,93 @@ export function validateCommittedExport(v: unknown): ValidationResult<CommittedE
     });
   }
   c.checkDigest(v["exportDigest"], "exportDigest");
-  // Provenance coverage: one record per published quantile set.
+  // Provenance coverage (section 6.7): exactly one matching record per
+  // published quantile set. Equal values never merge provenance: a record
+  // whose method, versions, cohort, snapshot or fingerprint contradict the
+  // figure it cites is refused.
   if (Array.isArray(v["series"]) && Array.isArray(v["estimates"]) && Array.isArray(v["provenance"])) {
-    const ids = new Set<string>();
-    for (const s of v["series"] as unknown[]) if (isRecord(s) && typeof s["seriesId"] === "string") ids.add(s["seriesId"]);
-    for (const e of v["estimates"] as unknown[]) if (isRecord(e) && typeof e["estimateId"] === "string") ids.add(e["estimateId"]);
-    const covered = new Set<string>();
-    for (const p of v["provenance"] as unknown[]) {
-      if (!isRecord(p) || typeof p["figureRef"] !== "string") continue;
-      if (!ids.has(p["figureRef"])) {
-        c.fail("provenance-unresolved", `figureRef ${JSON.stringify(p["figureRef"])} resolves to no series or estimate`, "provenance");
-      }
-      covered.add(p["figureRef"]);
+    const seriesById = new Map<string, Record<string, unknown>>();
+    for (const s of v["series"] as unknown[]) {
+      if (isRecord(s) && typeof s["seriesId"] === "string") seriesById.set(s["seriesId"], s);
     }
-    for (const id of ids) {
-      if (!covered.has(id)) c.fail("provenance-missing", `published quantile set ${JSON.stringify(id)} has no provenance record`, "provenance");
+    const estimatesById = new Map<string, Record<string, unknown>>();
+    for (const e of v["estimates"] as unknown[]) {
+      if (isRecord(e) && typeof e["estimateId"] === "string") estimatesById.set(e["estimateId"], e);
+    }
+    const records = v["provenance"] as unknown[];
+    const countByRef = new Map<string, number>();
+    records.forEach((p, i) => {
+      if (!isRecord(p) || typeof p["figureRef"] !== "string") return;
+      const ref = p["figureRef"];
+      countByRef.set(ref, (countByRef.get(ref) ?? 0) + 1);
+      const series = seriesById.get(ref);
+      const estimate = series === undefined ? estimatesById.get(ref) : undefined;
+      if (series === undefined && estimate === undefined) {
+        c.fail("provenance-unresolved", `figureRef ${JSON.stringify(ref)} resolves to no series or estimate`, `provenance.${i}.figureRef`);
+        return;
+      }
+      const figure = (series ?? estimate) as Record<string, unknown>;
+      const quantiles = figure["quantiles"];
+      // A structurally invalid figure already failed above; matching is
+      // skipped for it rather than crashing on its missing refs.
+      if (isRecord(quantiles) && p["quantileMethod"] !== quantiles["quantileMethod"]) {
+        c.fail("provenance-mismatch", `provenance quantileMethod contradicts the published figure ${JSON.stringify(ref)}`, `provenance.${i}.quantileMethod`);
+      }
+      // The computation the figure was read from: series versions for a
+      // series figure, the referenced series versions for an estimate.
+      let wantEstimator: unknown;
+      let wantPolicy: unknown;
+      let wantCohortKey: unknown;
+      let wantSnapshot: unknown;
+      let wantFingerprint: unknown;
+      if (series !== undefined) {
+        wantEstimator = series["estimatorVersion"];
+        wantPolicy = series["policyVersion"];
+        const cr = series["cohortRef"];
+        if (isRecord(cr)) {
+          wantCohortKey = cr["cohortKey"];
+          wantSnapshot = cr["snapshotDigest"];
+        }
+        wantFingerprint = series["fingerprint"];
+      } else {
+        const sr = (estimate as Record<string, unknown>)["seriesRef"];
+        if (!isRecord(sr)) return;
+        wantSnapshot = sr["snapshotDigest"];
+        const target = seriesById.get(sr["seriesId"] as string);
+        if (target !== undefined) {
+          wantEstimator = target["estimatorVersion"];
+          wantPolicy = target["policyVersion"];
+          const cr = target["cohortRef"];
+          if (isRecord(cr)) wantCohortKey = cr["cohortKey"];
+          wantFingerprint = target["fingerprint"];
+        }
+      }
+      if (wantEstimator !== undefined && p["estimatorVersion"] !== wantEstimator) {
+        c.fail("provenance-mismatch", `provenance estimatorVersion contradicts the published figure ${JSON.stringify(ref)}`, `provenance.${i}.estimatorVersion`);
+      }
+      if (wantPolicy !== undefined && p["policyVersion"] !== wantPolicy) {
+        c.fail("provenance-mismatch", `provenance policyVersion contradicts the published figure ${JSON.stringify(ref)}`, `provenance.${i}.policyVersion`);
+      }
+      if (wantCohortKey !== undefined && p["cohortKey"] !== wantCohortKey) {
+        c.fail("provenance-mismatch", `provenance cohortKey contradicts the published figure ${JSON.stringify(ref)}`, `provenance.${i}.cohortKey`);
+      }
+      if (wantSnapshot !== undefined && p["snapshotDigest"] !== wantSnapshot) {
+        c.fail("provenance-mismatch", `provenance snapshotDigest contradicts the published figure ${JSON.stringify(ref)}`, `provenance.${i}.snapshotDigest`);
+      }
+      if (isRecord(wantFingerprint)) {
+        try {
+          if (p["fingerprintDigest"] !== fingerprintDigestOf(wantFingerprint)) {
+            c.fail("provenance-mismatch", `provenance fingerprintDigest contradicts the published figure ${JSON.stringify(ref)}`, `provenance.${i}.fingerprintDigest`);
+          }
+        } catch {
+          c.fail("provenance-mismatch", `provenance fingerprint of ${JSON.stringify(ref)} is not digestible`, `provenance.${i}.fingerprintDigest`);
+        }
+      }
+    });
+    for (const id of [...seriesById.keys(), ...estimatesById.keys()]) {
+      const n = countByRef.get(id) ?? 0;
+      if (n === 0) c.fail("provenance-missing", `published quantile set ${JSON.stringify(id)} has no provenance record`, "provenance");
+      else if (n > 1) c.fail("duplicate-provenance", `published quantile set ${JSON.stringify(id)} carries ${n} provenance records, exactly one is required`, "provenance");
     }
   }
   return done(c, v);
