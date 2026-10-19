@@ -66,6 +66,7 @@ describe("TR-02 closed DTOs", () => {
       p50Seconds: 9918,
       p80Seconds: 46770,
       p95Seconds: 108177,
+      tailQualification: "nEff 20/1: descriptive tail over 20 samples, 1 campaign",
     };
     expect(validateQuantileSet(good).ok).toBe(true);
     for (const nEff of ["20", 20, 1.0, { numerator: "20.0", denominator: "1" }, { numerator: "40", denominator: "2" }]) {
