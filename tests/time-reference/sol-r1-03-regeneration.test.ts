@@ -119,17 +119,45 @@ describe("Sol R1 F03/F04 export regeneration", () => {
     }
   });
 
-  it("F04: changed samples fail authentication even when quantiles are unchanged", () => {
+  it("F04: every fixture case authenticates through the public regeneration path", () => {
+    const rule = solRule("F04") as { cases: { mutation: string; code: string }[] };
+    for (const c of rule.cases) {
+      const exp = sealedExport();
+      const mutated =
+        c.mutation === "renamed-sample-ids"
+          ? samples().map((s, i) => ({ ...s, id: `other-${i}` }))
+          : samples().map((s) => (s.id === "s#B" ? { ...s, value: 250 } : s));
+      if (c.mutation === "renamed-sample-ids") {
+        // Same values, renamed ids: quantiles identical, collected bytes differ.
+        expect(
+          buildQuantileSet(mutated, { method: "nearest-rank/1", support: "descriptive" }),
+        ).toEqual(buildQuantileSet(samples(), { method: "nearest-rank/1", support: "descriptive" }));
+      }
+      expect(codesOfRegen(exp, mutated), c.mutation).toContain(c.code);
+    }
+  });
+
+  it("F04: a derived weight change moves the figure, never the snapshot digest", () => {
     const exp = sealedExport();
-    // Same values, renamed ids: quantiles identical, canonical bytes differ.
-    const renamed = samples().map((s, i) => ({ ...s, id: `other-${i}` }));
-    expect(buildQuantileSet(renamed, { method: "nearest-rank/1", support: "descriptive" })).toEqual(
-      buildQuantileSet(samples(), { method: "nearest-rank/1", support: "descriptive" }),
-    );
-    expect(codesOfRegen(exp, renamed)).toContain("sample-auth-mismatch");
-    // Moved value: authentication fails before any quantile comparison.
-    const moved = samples().map((s) => (s.id === "s#B" ? { ...s, value: 250 } : s));
-    expect(codesOfRegen(exp, moved)).toContain("sample-auth-mismatch");
+    const reweighted = samples().map((s) => ({ ...s, weight: "2" }));
+    // Collected {id, value} bytes are unchanged: authentication passes…
+    expect(codesOfRegen(exp, reweighted)).not.toContain("sample-auth-mismatch");
+  });
+
+  it("an export omitting the optional maxSeconds regenerates cleanly", () => {
+    const exp = sealedExport();
+    const { maxSeconds: _m, ...quantilesWithoutMax } = exp.series[0]!.quantiles as Record<
+      string,
+      unknown
+    >;
+    const seriesWithoutMax = { ...exp.series[0], quantiles: quantilesWithoutMax };
+    const withoutMax = {
+      ...exp,
+      series: [seriesWithoutMax],
+      exportDigest: exportDigestOf({ ...exp, series: [seriesWithoutMax] }),
+    } as unknown as CommittedExportV1;
+    expect(validateCommittedExport(withoutMax).ok).toBe(true);
+    expect(regenerateCheck(withoutMax, { s1: samples() })).toEqual([]);
   });
 
   it("authentic samples with a hand-edited figure still report quantile-mismatch", () => {
