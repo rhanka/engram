@@ -150,7 +150,8 @@ describe.skipIf(!process.env.GRAPHIFY_TEST_POSTGRES_URL)(
         "../src/ontology-reconciliation.js"
       );
       const connectionString = process.env.GRAPHIFY_TEST_POSTGRES_URL!;
-      const store = await createPostgresGraphStore({ connectionString, citySlug: "trusttier_rt" });
+      const pgDriver = await import("pg");
+      const store = await createPostgresGraphStore({ connectionString, citySlug: "trusttier_rt" }, { driverModule: pgDriver });
       try {
         const graphology = await import("graphology");
         // Same node_type on BOTH sides — the type-guard requires it before the
