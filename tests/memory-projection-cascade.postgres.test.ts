@@ -236,7 +236,8 @@ async function openRealVector(opener: VectorOpener, resolveTerminal: X2bTerminal
   const adapter = await createPostgresExactProjectionAdapter({
     namespace: "x2b",
     dimension: DIMENSION,
-    ...(opener.sqlRunner !== undefined ? { sqlRunner: opener.sqlRunner } : { connectionString: opener.connection }),
+    ...(opener.sqlRunner !== undefined ? { sqlRunner: opener.sqlRunner }
+      : { connectionString: opener.connection, driverModule: await import("pg") }),
     embed: (record) => x2bVector(record.record_id, DIMENSION),
     contribute: (record) => x2bContribution(record.record_id),
     clock: () => NOW_X2B,
@@ -673,7 +674,7 @@ async function livingReplayProof(connection?: string): Promise<void> {
   const sqlRunner = connection === undefined ? createX2bMemorySqlRunner() : undefined;
   const vector = await openRealVector(connection === undefined ? { sqlRunner } : { connection }, resolver);
   const raw = await createPostgresExactVectorStore({ connectionString: connection, namespace: "x2b", dimension: DIMENSION },
-    sqlRunner === undefined ? undefined : { driverModule: sqlRunner });
+    { driverModule: sqlRunner ?? await import("pg") });
   const graph = await openRealGraph(workdir(), resolver);
   try {
     const memory = openX2bMemory(store, [graph, vector]);
@@ -706,13 +707,14 @@ describe("x2b living replay regression", () => {
 });
 
 async function interruptedReplayProof(connection?: string): Promise<void> {
+  const driverModule = connection === undefined ? undefined : await import("pg");
   for (const order of X2B_ORDERS) {
     const sqlRunner = connection === undefined ? createX2bMemorySqlRunner() : undefined;
     const namespace = `interrupted:${order}`;
     const dir = workdir();
     const hooks = { beforePublish: (prior: number) => { if (prior === 1) throw new Error("interrupted replay"); } };
     const openVector = (crash: boolean) => createPostgresExactProjectionAdapter({
-      namespace, connectionString: connection, sqlRunner, dimension: DIMENSION, applyOrder: order,
+      namespace, connectionString: connection, sqlRunner, driverModule, dimension: DIMENSION, applyOrder: order,
       clock: () => NOW_X2B, resolveTerminal: () => new Set(),
       embed: (record) => x2bVector(record.record_id, DIMENSION), hooks: crash ? hooks : undefined,
     });

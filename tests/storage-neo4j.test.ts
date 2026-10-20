@@ -594,8 +594,7 @@ describe("Neo4j adapter: registry and driver loading", () => {
 
   it("throws actionable error when neo4j-driver is missing (no driverModule injection)", async () => {
     const { resolveGraphStore } = await import("../src/storage/registry.js");
-    // Don't inject driverModule — the registry will try to dynamic-import neo4j-driver
-    // which may or may not be installed; we mock the failure by registering a transient factory
+    // Missing host injection must refuse before the transient factory is called.
     const { registerGraphStoreFactory } = await import("../src/storage/registry.js");
     registerGraphStoreFactory({
       id: "neo4j-missing-driver-test",
@@ -648,12 +647,13 @@ describe.skipIf(!process.env.GRAPHIFY_TEST_NEO4J_URI)(
 
     it("push → readSnapshotMeta → clear round-trip against a real Neo4j", async () => {
       const { createNeo4jGraphStore } = await import("../src/storage/neo4j.js");
+      const neo4jDriver = await import("neo4j-driver");
       const store = await createNeo4jGraphStore({
         target: uri,
         namespace,
         user,
         password,
-      });
+      }, { driverModule: neo4jDriver });
       const { G, communities } = contractFixture();
 
       try {
