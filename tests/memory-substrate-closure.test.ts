@@ -241,7 +241,7 @@ describe("substrate neutrality and driver guards (amendment §5.7)", () => {
   });
 
   it("reports no fatal finding from any published entry, including traversed dependencies", () => {
-    for (const artifact of ["index.js", "index.cjs", "llm-mesh.js", "memory-tools.js", "memory-substrate.js"]) {
+    for (const artifact of ["index.js", "index.cjs", "llm-mesh.js", "memory-tools.js", "time-reference.js", "time-reference.cjs", "memory-substrate.js"]) {
       const findings = collectInstalledClosure([join(root, "dist", artifact)]);
       expect(fatalClosureFindings(findings), `${artifact}: ${JSON.stringify(fatalClosureFindings(findings).slice(0, 3))}`).toEqual([]);
     }
