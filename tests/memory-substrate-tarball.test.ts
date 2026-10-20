@@ -14,7 +14,7 @@
  *   findings.
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,6 +29,22 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const runner = join(root, "scripts", "substrate-tarball-acceptance.mjs");
 
 describe("substrate tarball acceptance (installed consumer, M10)", () => {
+  it("pins every third-party consumer dependency to the root lockfile version and integrity", () => {
+    const consumer = JSON.parse(readFileSync(join(root, "scripts/fixtures/substrate-consumer/package-lock.json"), "utf8"));
+    const repository = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8"));
+    const dependencies = Object.entries(consumer.packages)
+      .filter(([path]) => path !== "" && path !== "node_modules/@sentropic/engram");
+    expect(dependencies.length).toBeGreaterThan(0);
+    for (const [path, entry] of dependencies) {
+      const pinned = repository.packages[path];
+      expect(pinned, `${path} must exist in the root lockfile`).toBeDefined();
+      expect(entry, `${path} must match the root lockfile`).toMatchObject({
+        version: pinned.version,
+        integrity: pinned.integrity,
+      });
+    }
+  });
+
   it("packs, installs offline, and accepts the installed entry", { timeout: 240_000 }, () => {
     const output = execFileSync(process.execPath, [runner], {
       cwd: root,
