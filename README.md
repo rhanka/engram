@@ -43,6 +43,92 @@ A token benchmark prints after every run. Once built, each query reads the compa
 
 A tiny corpus already fits in context, so there's little to compress — the value there is structural clarity, not token savings. Each `worked/` folder ships the raw inputs and the actual output so you can reproduce the numbers. Token figures are **estimates unless backed by real model calls.**
 
+## Global governance contract
+
+Sentropic, h2a, Engram and Design System share a federated governance contract. Each consequential act has one accountable owner under an explicit mandate; each repository retains its code, release and data authorities.
+
+Engram owns the knowledge and ontology frame: canonical agent memory D3, filtered projection D10, live development knowledge, governed ontology profiles and central time references D1=C. It declares the required storage surface and consumes Sentropic’s neutral storage interface. Its accountable capabilities are **C05** agent memory, **C06** live development knowledge, **C07** architecture and ontologies, and **C14** operational learning and time references. Principal clauses: **C-01, C-02, C-05, C-06, C-12, C-13, C-14 and C-16**.
+
+**Owner decisions — 2026-10-19:** **G1**, a federated contract per act; **G2**, profiles/schemas/fixtures/migrations at Engram and the generic executor/layout/rendering at Design System; **G3**, annotate presentation at Design System and the single annotation model at Sentropic. Design System receives opaque anchors and emits proposals; Sentropic resolves and persists them. Diagram anchors reference Engram profiles. **H1** requires both subdomain and separate-domain artifact hosting for each Sentropic app.
+
+The capability map C01–C14 remains provisional pending the owner's map. Accepted governance decisions and source, publication, installation and runtime qualification are separate evidence states.
+
+[Read the contract and rebuild instructions](https://github.com/rhanka/sentropic/blob/4219362ec13c7c850455ea9e639313106fb140bf/docs/governance/README.md) · [Decision register and owner evidence](https://github.com/rhanka/sentropic/blob/4219362ec13c7c850455ea9e639313106fb140bf/docs/governance/decisions.md) · [Study: clauses, capabilities and migration](https://github.com/rhanka/sentropic/blob/4219362ec13c7c850455ea9e639313106fb140bf/docs/governance/study.md) · [Interactive dossier — download and open locally](https://raw.githubusercontent.com/rhanka/sentropic/4219362ec13c7c850455ea9e639313106fb140bf/docs/governance/governance-r10-portable.html)
+
+The overview is collapsed. Expand any frame below for its static detail; the interactive dossier also supports French/English and individual frame controls. The images use the same precomputed geometry and support light/dark themes.
+
+![Global governance — collapsed overview](https://raw.githubusercontent.com/rhanka/sentropic/4219362ec13c7c850455ea9e639313106fb140bf/docs/governance/images/overview-en.svg)
+
+<details>
+<summary>h2a — Organisation and decision-making</summary>
+
+![h2a — Organisation and decision-making](https://raw.githubusercontent.com/rhanka/sentropic/4219362ec13c7c850455ea9e639313106fb140bf/docs/governance/images/frame-h2a-en.svg)
+
+</details>
+
+<details>
+<summary>Access surfaces — CLI, Cowork, cloud and AI providers</summary>
+
+![Access surfaces — CLI, Cowork, cloud and AI providers](https://raw.githubusercontent.com/rhanka/sentropic/4219362ec13c7c850455ea9e639313106fb140bf/docs/governance/images/frame-surfaces-en.svg)
+
+</details>
+
+<details>
+<summary>Sentropic — Shared services</summary>
+
+![Sentropic — Shared services](https://raw.githubusercontent.com/rhanka/sentropic/4219362ec13c7c850455ea9e639313106fb140bf/docs/governance/images/frame-cluster-mesh-en.svg)
+
+</details>
+
+<details>
+<summary>Sentropic — Catalogues</summary>
+
+![Sentropic — Catalogues](https://raw.githubusercontent.com/rhanka/sentropic/4219362ec13c7c850455ea9e639313106fb140bf/docs/governance/images/frame-cm-catalog-en.svg)
+
+</details>
+
+<details>
+<summary>Sentropic — MCP providers and tools</summary>
+
+![Sentropic — MCP providers and tools](https://raw.githubusercontent.com/rhanka/sentropic/4219362ec13c7c850455ea9e639313106fb140bf/docs/governance/images/frame-cat-mcp-en.svg)
+
+</details>
+
+<details>
+<summary>Sentropic — Security and observability</summary>
+
+![Sentropic — Security and observability](https://raw.githubusercontent.com/rhanka/sentropic/4219362ec13c7c850455ea9e639313106fb140bf/docs/governance/images/frame-cm-security-en.svg)
+
+</details>
+
+<details>
+<summary>Sentropic — Model and artifact storage</summary>
+
+![Sentropic — Model and artifact storage](https://raw.githubusercontent.com/rhanka/sentropic/4219362ec13c7c850455ea9e639313106fb140bf/docs/governance/images/frame-cm-storage-en.svg)
+
+</details>
+
+<details>
+<summary>Sentropic — Integration</summary>
+
+![Sentropic — Integration](https://raw.githubusercontent.com/rhanka/sentropic/4219362ec13c7c850455ea9e639313106fb140bf/docs/governance/images/frame-cm-cluster-en.svg)
+
+</details>
+
+<details>
+<summary>Engram — Knowledge and ontologies</summary>
+
+![Engram — Knowledge and ontologies](https://raw.githubusercontent.com/rhanka/sentropic/4219362ec13c7c850455ea9e639313106fb140bf/docs/governance/images/frame-engram-en.svg)
+
+</details>
+
+<details>
+<summary>Design System — Rendering and interaction</summary>
+
+![Design System — Rendering and interaction](https://raw.githubusercontent.com/rhanka/sentropic/4219362ec13c7c850455ea9e639313106fb140bf/docs/governance/images/frame-design-system-en.svg)
+
+</details>
+
 ## Quickstart
 
 **Requires:** Node.js 20+ and one supported AI coding assistant (Claude Code, Codex, Gemini CLI, and others — see [Reference](#reference)).
