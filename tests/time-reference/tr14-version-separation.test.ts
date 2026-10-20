@@ -12,11 +12,12 @@ import { validateRepoKnowledgeProfile } from "../../src/repo-knowledge-contract.
 import { drivenCases, solRule } from "./sol-r1-helpers.js";
 
 describe("TR-14 version separation", () => {
-  it("the package exposes ./time-reference", () => {
+  it("the package exposes ./time-reference and ./memory-substrate", () => {
     const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
       exports: Record<string, unknown>;
     };
     expect("./time-reference" in pkg.exports).toBe(true);
+    expect("./memory-substrate" in pkg.exports).toBe(true);
   });
 
   it("F17: every fixture case holds for the 0.21.0 release metadata", () => {
@@ -36,6 +37,7 @@ describe("TR-14 version separation", () => {
     for (const c of drivenCases("F17", rule.cases)) {
       if (c.name === "package-exposes-time-reference") {
         expect("./time-reference" in pkg.exports, c.name).toBe(true);
+        expect("./memory-substrate" in pkg.exports, c.name).toBe(true);
       } else if (c.name === "package-version-0.21.0") {
         expect(pkg.version, c.name).toBe("0.21.0");
       } else if (c.name === "lock-version-0.21.0") {
