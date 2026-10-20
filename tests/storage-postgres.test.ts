@@ -687,12 +687,13 @@ describe.skipIf(!process.env.GRAPHIFY_TEST_POSTGRES_URL)(
 
     it("push → readSnapshotMeta → queryNeighbors → clear round-trip", async () => {
       const { createPostgresGraphStore } = await import("../src/storage/postgres.js");
+      const pgDriver = await import("pg");
       const base = freshArtifactBase();
       const store = await createPostgresGraphStore({
         connectionString,
         citySlug,
         target: base,
-      });
+      }, { driverModule: pgDriver });
       const { G, communities } = contractFixture();
 
       try {

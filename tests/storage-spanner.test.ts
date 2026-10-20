@@ -659,12 +659,13 @@ describe.skipIf(!process.env.SPANNER_EMULATOR_HOST)(
 
     it("push → readSnapshotMeta → clear round-trip against the emulator", async () => {
       const { createSpannerGraphStore } = await import("../src/storage/spanner.js");
+      const spannerDriver = await import("@google-cloud/spanner");
       const store = await createSpannerGraphStore({
         project,
         instance,
         database,
         namespace,
-      });
+      }, { driverModule: spannerDriver });
       const { G, communities } = contractFixture();
 
       try {
