@@ -14,6 +14,7 @@ import Graph from "graphology";
 import type { GraphStore, StoreTestDeps } from "../src/storage/types.js";
 import type { PostgresGraphStore } from "../src/storage/postgres.js";
 import { postgresLaneDecision, startEphemeralPostgres } from "./postgres-ephemeral.js";
+import { loadSqliteTestDriver } from "./fixtures/sqlite-host-driver.js";
 
 interface RecordedSql {
   via: "pool" | "client";
@@ -427,11 +428,12 @@ describe.skipIf(timeLane.lane !== "run")(
 
     it("excludes out-of-double-range JSONB numbers without aborting the query", async () => {
       const { createPostgresGraphStore } = await import("../src/storage/postgres.js");
+      const pgDriver = await import("pg");
       const store = await createPostgresGraphStore({
         connectionString,
         citySlug,
         target: artifactBase(),
-      });
+      }, { driverModule: pgDriver });
       try {
         // The first read idempotently ensures tables/indexes, then raw inserts
         // exercise legacy JSONB shapes that JavaScript cannot push losslessly.
@@ -484,15 +486,17 @@ describe.skipIf(timeLane.lane !== "run")(
       const rendered = applyTimeFilter(buildStudioScene(fixture), TEMPORAL_CURSOR);
 
       const sqliteDir = artifactBase();
+      const sqliteDriver = await loadSqliteTestDriver();
+      const pgDriver = await import("pg");
       const sqliteStore = await createSqliteGraphStore({
         citySlug,
         target: join(sqliteDir, "temporal.sqlite"),
-      });
+      }, { driverModule: sqliteDriver });
       const pgStore = await createPostgresGraphStore({
         connectionString,
         citySlug,
         target: artifactBase(),
-      });
+      }, { driverModule: pgDriver });
 
       try {
         await sqliteStore.pushGraph(G, communities, { mode: "replace" });
