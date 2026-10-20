@@ -568,12 +568,13 @@ describe.skipIf(!process.env.GRAPHIFY_TEST_POSTGRES_URL)(
 
     it("upsert → query → clear round-trip against a real backend", async () => {
       const { createPgVectorStore } = await import("../src/storage/vector/pgvector.js");
+      const pgDriver = await import("pg");
       const dimension = 4;
       const store = await createPgVectorStore({
         connectionString: process.env.GRAPHIFY_TEST_POSTGRES_URL,
         embedding: { dimension },
         namespace,
-      });
+      }, { driverModule: pgDriver });
 
       try {
         await store.verifyConnection();
