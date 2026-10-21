@@ -221,20 +221,23 @@ function readHostTuple(path) {
   // Facts, not names: every file the tuple references must exist next to the
   // tuple. Its bytes are read and hashed, and the hash must match the
   // declared digest, which the manifest then binds. A missing or tampered
-  // file refuses fail-closed.
+  // file refuses fail-closed. Retain these exact verified bytes so the tuple
+  // remains resolvable relative to its retained copy without source inputs.
   const root = dirname(resolve(path));
+  const files = new Map();
   const bindFile = (declaredPath, declaredSha256, label) => {
     let fileBytes;
     try { fileBytes = readFileSync(resolve(root, declaredPath)); }
     catch { assert(false, `source-gap: host tuple references ${label} ${declaredPath} which does not exist; refusing instead of inventing the sentropic delivery`); }
     assert(sha256(fileBytes) === declaredSha256, `source-gap: host tuple ${label} ${declaredPath} bytes do not match the declared sha256 (tampered or stale); refusing instead of inventing the sentropic delivery`);
+    files.set(posix.normalize(declaredPath), fileBytes);
     return fileBytes;
   };
   const backendBytes = bindFile(doc.backend.archive, doc.backend.sha256, 'backend archive');
   assert(integrity(backendBytes) === doc.backend.integrity, `source-gap: host tuple backend archive ${doc.backend.archive} bytes do not match the declared integrity; refusing instead of inventing the sentropic delivery`);
   bindFile(doc.neutralContract.path, doc.neutralContract.sha256, 'neutral contract');
   for (const lock of doc.locks) bindFile(lock.path, lock.sha256, 'lock');
-  return { bytes, doc };
+  return { bytes, doc, files };
 }
 
 function prepareE2(tarball, { expectedVersion, registryPath, attestationsPath, hostTuple }) {
@@ -293,9 +296,15 @@ function prepareE2(tarball, { expectedVersion, registryPath, attestationsPath, h
     packedFiles,
   };
   const provenanceBytes = jsonBytes(provenance);
+  const files = new Map([[archive, tarball], ['receipts/e2-provenance.json', provenanceBytes], ['receipts/e2-npm-registry.json', registryBytes], ['receipts/e2-npm-attestations.json', attestationBytes], ['receipts/e2-host-tuple.json', hostTuple.bytes]]);
+  for (const [path, bytes] of hostTuple.files) {
+    const retainedPath = posix.join(posix.dirname(hostClosure.path), path);
+    assert(!files.has(retainedPath), `Host tuple file collides with E2 evidence: ${retainedPath}`);
+    files.set(retainedPath, bytes);
+  }
   return {
     artifact, evidence: { path: 'receipts/e2-provenance.json', sha256: sha256(provenanceBytes) },
-    files: new Map([[archive, tarball], ['receipts/e2-provenance.json', provenanceBytes], ['receipts/e2-npm-registry.json', registryBytes], ['receipts/e2-npm-attestations.json', attestationBytes], ['receipts/e2-host-tuple.json', hostTuple.bytes]]),
+    files,
   };
 }
 
