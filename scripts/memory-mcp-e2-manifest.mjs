@@ -93,9 +93,11 @@ function tarMembers(bytes) {
 
 function relativeSpecifiers(text) {
   const out = [];
-  const pattern = /(?:from\s*['"](\.[^'"]+)['"]|import\s*\(\s*['"](\.[^'"]+)['"]\s*\)|require\s*\(\s*['"](\.[^'"]+)['"]\s*\))/g;
+  // from/export-from, dynamic import(), require() and bare side-effect
+  // imports (import './x.js'): every static edge must resolve.
+  const pattern = /(?:from\s*['"](\.[^'"]+)['"]|import\s*\(\s*['"](\.[^'"]+)['"]\s*\)|require\s*\(\s*['"](\.[^'"]+)['"]\s*\)|import\s*['"](\.[^'"]+)['"])/g;
   let match;
-  while ((match = pattern.exec(text)) !== null) out.push(match[1] ?? match[2] ?? match[3]);
+  while ((match = pattern.exec(text)) !== null) out.push(match[1] ?? match[2] ?? match[3] ?? match[4]);
   return out;
 }
 

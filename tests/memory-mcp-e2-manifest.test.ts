@@ -201,6 +201,29 @@ describe('E2 substrate entry on a local deterministic fixture (offline)', () => 
     expect(result.stderr).toMatch(/missing chunk/);
   });
 
+  it('should refuse an unresolved side-effect import', () => {
+    const e2 = makeE2({ files: { 'package/dist/memory-substrate.js': `import './side-missing.js';\nexport { x } from './chunk-a.js';\n` } });
+    const p1 = makeP1();
+    const host = makeHostTuple();
+    const result = run([...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/missing chunk dist\/side-missing\.js/);
+  });
+
+  it('should inventory a resolved side-effect import', () => {
+    const e2 = makeE2({ files: {
+      'package/dist/memory-substrate.js': `import './side.js';\nexport { x } from './chunk-a.js';\n`,
+      'package/dist/side.js': 'globalThis.__side = 1;\n',
+    } });
+    const p1 = makeP1();
+    const host = makeHostTuple();
+    const out = join(directory(), 'output');
+    const result = run([...e2.base, '--output-dir', out, ...p1.args, ...host.args]);
+    expect(result.status, result.stderr).toBe(0);
+    const packed = JSON.parse(readFileSync(join(out, 'receipts/e2-provenance.json'), 'utf8')).packedFiles.map((f: { path: string }) => f.path);
+    expect(packed).toContain('dist/side.js');
+  });
+
   it('should refuse a tarball whose integrity differs from the published npm dist', () => {
     const e2 = makeE2();
     const registry = { ...e2.registry, dist: { ...e2.registry.dist, integrity: integrity(Buffer.from('different bytes')) } };
