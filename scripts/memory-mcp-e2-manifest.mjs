@@ -41,8 +41,8 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, posix, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname, posix, resolve, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { gunzipSync } from 'node:zlib';
 import { checkArtifactManifest, FROZEN_SPEC_SHA256 } from './vendor/memory-mcp-l5/receipt.mjs';
@@ -143,6 +143,8 @@ function staticSpecifiers(text, rel) {
 // declaration never substitutes for a missing runtime JS, and a present JS
 // never hides a missing reachable declaration.
 function collectGraph(members, root, kind) {
+  // A virtual root provides Node's file-URL semantics without opening files.
+  const archiveRoot = resolve('/', '__engram_archive__') + sep;
   const seen = [];
   const queue = [root];
   while (queue.length > 0) {
@@ -153,8 +155,11 @@ function collectGraph(members, root, kind) {
     seen.push(rel);
     if ((kind === 'js' && !rel.endsWith('.js')) || (kind === 'dts' && !rel.endsWith('.d.ts'))) continue;
     for (const spec of staticSpecifiers(bytes.toString('utf8'), rel)) {
-      const resolved = posix.normalize(posix.join(posix.dirname(rel), spec));
-      assert(!resolved.startsWith('..'), `Published archive escapes its package: ${spec} required by ${rel}`);
+      const url = new URL(spec, pathToFileURL(resolve(archiveRoot, rel)));
+      assert(!/%2f|%5c/i.test(url.pathname), `Published archive import has an encoded separator: ${spec} required by ${rel}`);
+      const path = fileURLToPath(url);
+      assert(path.startsWith(archiveRoot), `Published archive escapes its package: ${spec} required by ${rel}`);
+      const resolved = path.slice(archiveRoot.length).split(sep).join('/');
       // Exact ESM resolution: the specifier names the file byte-for-byte, no
       // extension guessing, so a `missing.js.js` decoy never satisfies
       // `missing.js`. Inside the type graph a `.js` specifier maps to its
