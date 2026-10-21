@@ -39,9 +39,10 @@
 // "profiles":["…"]}. Every named file must exist next to the tuple with
 // bytes matching its declared sha256, and the Node major must equal exactly 24.
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { dirname, posix, resolve, sep } from 'node:path';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire, isBuiltin, registerHooks } from 'node:module';
+import { tmpdir } from 'node:os';
+import { dirname, join, posix, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { gunzipSync } from 'node:zlib';
@@ -105,11 +106,10 @@ function staticSpecifiers(text, rel) {
     rel.endsWith('.d.ts') ? ts.ScriptKind.TS : ts.ScriptKind.JS,
   );
   const out = [];
-  const add = (target, typeOnly = false) => {
+  const add = (target, typeOnly = false, condition = 'import') => {
     assert(target && ts.isStringLiteralLike(target),
       `Published archive has an unresolvable import in ${rel}: refusing instead of guessing`);
-    if (target.text.startsWith('.')) out.push({ specifier: target.text, typeOnly });
-    else assert(!typeOnly && !rel.endsWith('.d.ts'), `Published archive has an unretained type dependency ${target.text} required by ${rel}`);
+    out.push({ specifier: target.text, typeOnly, condition });
   };
   const visit = (node) => {
     // Module-reference fields audited against TypeScript's AST interfaces and
@@ -120,7 +120,7 @@ function staticSpecifiers(text, rel) {
     } else if (ts.isImportTypeNode(node)) {
       add(ts.isLiteralTypeNode(node.argument) ? node.argument.literal : undefined, true);
     } else if (ts.isExternalModuleReference(node)) {
-      add(node.expression);
+      add(node.expression, false, 'require');
     } else if (ts.isModuleDeclaration(node) && ts.isStringLiteral(node.name)) {
       add(node.name, true);
     } else if (ts.isCallExpression(node)) {
@@ -128,7 +128,7 @@ function staticSpecifiers(text, rel) {
       const isImport = callee.kind === ts.SyntaxKind.ImportKeyword;
       const isRequire = ts.isIdentifier(callee) && callee.text === 'require';
       if ((isImport || isRequire) && node.arguments.length > 0) {
-        add(node.arguments[0]);
+        add(node.arguments[0], false, isRequire ? 'require' : 'import');
       }
     }
     ts.forEachChild(node, visit);
@@ -144,14 +144,33 @@ function staticSpecifiers(text, rel) {
   return out;
 }
 
+// Ask Node itself to resolve from the importer, without executing any archive
+// code. A synchronous, short-lived hook supplies the parent URL and the type
+// graph's condition; import.meta.resolve otherwise uses this script as parent.
+function resolveSpecifier(specifier, parentURL, kind, condition) {
+  const hook = registerHooks({
+    resolve(specifier, context, nextResolve) {
+      return nextResolve(specifier, {
+        ...context, parentURL,
+        conditions: kind === 'dts' ? ['node', 'types'] : context.conditions,
+      });
+    },
+  });
+  try {
+    return kind === 'js' && condition === 'require'
+      ? pathToFileURL(createRequire(parentURL).resolve(specifier))
+      : new URL(import.meta.resolve(specifier));
+  } finally {
+    hook.deregister();
+  }
+}
+
 // Every chunk the memory-substrate entry statically reaches, resolved inside
 // the published archive. A distributable sourcemap comment is not an import.
 // The execution graph (JS) and the type graph (d.ts) resolve separately: a
 // declaration never substitutes for a missing runtime JS, and a present JS
 // never hides a missing reachable declaration.
-function collectGraph(members, root, kind) {
-  // A virtual root provides Node's file-URL semantics without opening files.
-  const archiveRoot = resolve('/', '__engram_archive__') + sep;
+function collectGraph(members, root, kind, archiveRoot) {
   const seen = [];
   const queue = [root];
   while (queue.length > 0) {
@@ -161,21 +180,32 @@ function collectGraph(members, root, kind) {
     assert(bytes, `Published archive is missing chunk ${rel} required by ${ENTRY_SPECIFIER}`);
     seen.push(rel);
     if ((kind === 'js' && !rel.endsWith('.js')) || (kind === 'dts' && !rel.endsWith('.d.ts'))) continue;
-    for (const { specifier: spec, typeOnly } of staticSpecifiers(bytes.toString('utf8'), rel)) {
-      const url = new URL(spec, pathToFileURL(resolve(archiveRoot, rel)));
+    for (const { specifier: spec, typeOnly, condition } of staticSpecifiers(bytes.toString('utf8'), rel)) {
+      if (isBuiltin(spec)) continue;
+      const parentURL = pathToFileURL(resolve(archiveRoot, rel)).href;
+      const targetKind = typeOnly ? 'dts' : kind;
+      let url;
+      try {
+        url = resolveSpecifier(spec, parentURL, targetKind, condition);
+      } catch (error) {
+        if (error.code === 'ERR_INVALID_MODULE_SPECIFIER') {
+          throw new Error(`E2_UNRESOLVED_DEPENDENCY: invalid specifier or encoded separator ${spec} required by ${rel} (${error.code})`);
+        }
+        throw new Error(`E2_UNRESOLVED_DEPENDENCY: unretained ${targetKind === 'dts' ? 'type' : 'runtime'} dependency ${spec} required by ${rel} (${error.code})`);
+      }
+      assert(url.protocol === 'file:', `E2_UNRETAINED_DEPENDENCY: ${spec} required by ${rel} does not resolve to retained file bytes`);
       assert(!/%2f|%5c/i.test(url.pathname), `Published archive import has an encoded separator: ${spec} required by ${rel}`);
       const path = fileURLToPath(url);
-      assert(path.startsWith(archiveRoot), `Published archive escapes its package: ${spec} required by ${rel}`);
+      assert(path.startsWith(archiveRoot), `E2_UNRETAINED_DEPENDENCY: Published archive escapes its package: ${spec} required by ${rel}`);
       const resolved = path.slice(archiveRoot.length).split(sep).join('/');
       // Exact ESM resolution: the specifier names the file byte-for-byte, no
       // extension guessing, so a `missing.js.js` decoy never satisfies
       // `missing.js`. Inside the type graph a `.js` specifier maps to its
       // `.d.ts` declaration exactly as TypeScript resolves types.
-      const targetKind = typeOnly ? 'dts' : kind;
       const target = targetKind === 'js' ? resolved : (resolved.endsWith('.js') ? `${resolved.slice(0, -3)}.d.ts` : resolved);
       const suffix = targetKind === 'js' ? '.js' : '.d.ts';
-      assert(target.endsWith(suffix) && members.has(`package/${target}`), `Published archive is missing chunk ${target} required by ${rel}`);
-      if (targetKind !== kind) seen.push(...collectGraph(members, target, targetKind).filter((path) => !seen.includes(path)));
+      assert(target.endsWith(suffix) && members.has(`package/${target}`), `E2_MISSING_DEPENDENCY: Published archive is missing chunk ${target} required by ${rel}`);
+      if (targetKind !== kind) seen.push(...collectGraph(members, target, targetKind, archiveRoot).filter((path) => !seen.includes(path)));
       else if (!seen.includes(target) && !queue.includes(target)) queue.push(target);
     }
   }
@@ -183,9 +213,27 @@ function collectGraph(members, root, kind) {
 }
 
 function collectEntryClosure(members) {
-  const runtime = collectGraph(members, ENTRY_IMPORT.replace(/^\.\//, ''), 'js');
-  const types = collectGraph(members, ENTRY_TYPES.replace(/^\.\//, ''), 'dts');
-  return [...new Set(['package.json', ...runtime, ...types])].sort();
+  // Materialize only the already integrity-verified archive in a private
+  // directory so Node reads its real imports/exports metadata. Nothing is
+  // installed or evaluated; dependencies outside these retained bytes refuse.
+  const directory = mkdtempSync(join(tmpdir(), 'engram-e2-graph-'));
+  const archiveRoot = directory + sep;
+  try {
+    for (const [name, bytes] of members) {
+      assert(name.startsWith('package/'), `E2_UNRETAINED_DEPENDENCY: invalid archive member ${name}`);
+      const rel = name.slice('package/'.length);
+      assert(rel === posix.normalize(rel) && !posix.isAbsolute(rel), `E2_INVALID_ARCHIVE_MEMBER: noncanonical path ${name}`);
+      const path = resolve(archiveRoot, rel);
+      assert(path.startsWith(archiveRoot), `E2_UNRETAINED_DEPENDENCY: archive member escapes its package: ${name}`);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, bytes);
+    }
+    const runtime = collectGraph(members, ENTRY_IMPORT.replace(/^\.\//, ''), 'js', archiveRoot);
+    const types = collectGraph(members, ENTRY_TYPES.replace(/^\.\//, ''), 'dts', archiveRoot);
+    return [...new Set(['package.json', ...runtime, ...types])].sort();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 const HOST_TUPLE_FORMAT = 'e2-host-tuple/v1';
