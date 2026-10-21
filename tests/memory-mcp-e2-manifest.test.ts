@@ -333,6 +333,28 @@ describe('E2 substrate entry on a local deterministic fixture (offline)', () => 
     }
   });
 
+  it.each([
+    { specifier: './%63hunk-a.js', target: 'chunk-a' },
+    { specifier: './chunk-a.js?profile=offline#entry', target: 'chunk-a' },
+    { specifier: './literal%256d.js', target: 'literal%6d' },
+    { specifier: './literal%23hash.js', target: 'literal#hash' },
+  ])('should inventory Node URL targets for $specifier in both graphs', ({ specifier, target }) => {
+    const files = {
+      'package/dist/memory-substrate.js': `export { x } from '${specifier}';`,
+      'package/dist/memory-substrate.d.ts': `export type X = import('${specifier}').X;`,
+      [`package/dist/${target}.js`]: 'export const x = 1;',
+      [`package/dist/${target}.d.ts`]: 'export type X = string;',
+    };
+    const e2 = makeE2({ files }), p1 = makeP1(), host = makeHostTuple(), out = join(directory(), 'output');
+    const result = run([...e2.base, '--output-dir', out, ...p1.args, ...host.args]);
+    expect(result.status, result.stderr).toBe(0);
+    const packed = readJson(join(out, 'receipts/e2-provenance.json')).packedFiles;
+    for (const extension of ['js', 'd.ts']) {
+      const path = `dist/${target}.${extension}`;
+      expect(packed).toContainEqual({ path, sha256: sha256(Buffer.from(files[`package/${path}`]!)) });
+    }
+  });
+
   it('should refuse to run without an explicit target version', () => {
     const e2 = makeE2();
     const p1 = makeP1();
@@ -428,6 +450,31 @@ const ROUND3_MUTATIONS: { id: string; stderr: RegExp; setup: () => string[] }[] 
       return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
     },
   },
+  ...['runtime', 'types'].map((kind) => ({
+    id: `encoded-decoy-${kind}`, stderr: /missing chunk dist\/missing\.(js|d\.ts)/,
+    setup: () => {
+      const e2 = makeE2({ files: {
+        ...(kind === 'runtime'
+          ? { 'package/dist/memory-substrate.js': `export { x } from './%6dissing.js';` }
+          : { 'package/dist/memory-substrate.d.ts': `export type X = import('./%6dissing.js').X;` }),
+        'package/dist/%6dissing.js': 'export const x = 1;',
+        'package/dist/%6dissing.d.ts': 'export type X = string;',
+      } });
+      const p1 = makeP1(), host = makeHostTuple();
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+    },
+  })),
+  ...['%2f', '%5c'].map((separator) => ({
+    id: `encoded-separator-${separator}`, stderr: /encoded separator/,
+    setup: () => {
+      const e2 = makeE2({ files: {
+        'package/dist/memory-substrate.js': `import './${separator}missing.js';`,
+        [`package/dist/${separator}missing.js`]: 'export const decoy = true;',
+      } });
+      const p1 = makeP1(), host = makeHostTuple();
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+    },
+  })),
   {
     id: 'missing-types-target', stderr: /types/,
     setup: () => {
@@ -541,7 +588,7 @@ describe('E2 round-3 refusal driver', () => {
 
   it('covers every round-3 check with exactly one mutation row', () => {
     const ids = ROUND3_MUTATIONS.map((mutation) => mutation.id);
-    expect([...ids].sort()).toEqual(['comment-in-import', 'decoy-extension', 'external-module-reference', 'malformed-digest', 'missing-types-target', 'nonexistent-tuple-file', 'tampered-retained-backend', 'tampered-retained-contract', 'tampered-retained-lock', 'tampered-tuple-file', 'tuple-evidence-collision', 'type-import', 'type-reference-path', 'type-reference-types', 'typeof-type-import', 'unretained-type-package', 'wrong-node-major']);
+    expect([...ids].sort()).toEqual(['comment-in-import', 'decoy-extension', 'encoded-decoy-runtime', 'encoded-decoy-types', 'encoded-separator-%2f', 'encoded-separator-%5c', 'external-module-reference', 'malformed-digest', 'missing-types-target', 'nonexistent-tuple-file', 'tampered-retained-backend', 'tampered-retained-contract', 'tampered-retained-lock', 'tampered-tuple-file', 'tuple-evidence-collision', 'type-import', 'type-reference-path', 'type-reference-types', 'typeof-type-import', 'unretained-type-package', 'wrong-node-major']);
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
