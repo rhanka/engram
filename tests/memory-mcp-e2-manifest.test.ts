@@ -110,6 +110,7 @@ function makeE2(extra: { files?: Record<string, string>; exportMap?: Record<stri
     'package/dist/memory-substrate.js': ENTRY_JS,
     'package/dist/memory-substrate.d.ts': ENTRY_DTS,
     'package/dist/chunk-a.js': 'export const x = 1;\n',
+    'package/dist/chunk-a.d.ts': 'export declare const x: number;\n',
     ...extra.files,
   });
   const tgz = join(dir, `engram-${VERSION}.tgz`);
@@ -224,6 +225,30 @@ describe('E2 substrate entry on a local deterministic fixture (offline)', () => 
     expect(packed).toContain('dist/side.js');
   });
 
+  it('should refuse a runtime import satisfied only by a declaration', () => {
+    const e2 = makeE2({ files: {
+      'package/dist/memory-substrate.js': `export { x } from './only-types.js';\n`,
+      'package/dist/only-types.d.ts': 'export declare const x: number;\n',
+    } });
+    const p1 = makeP1();
+    const host = makeHostTuple();
+    const result = run([...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/missing chunk dist\/only-types\.js/);
+  });
+
+  it('should refuse a reachable declaration missing although its JS exists', () => {
+    const e2 = makeE2({ files: {
+      'package/dist/memory-substrate.d.ts': `export { y } from './chunk-b.js';\n`,
+      'package/dist/chunk-b.js': 'export const y = 2;\n',
+    } });
+    const p1 = makeP1();
+    const host = makeHostTuple();
+    const result = run([...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/missing chunk dist\/chunk-b\.d\.ts/);
+  });
+
   it('should refuse a tarball whose integrity differs from the published npm dist', () => {
     const e2 = makeE2();
     const registry = { ...e2.registry, dist: { ...e2.registry.dist, integrity: integrity(Buffer.from('different bytes')) } };
@@ -276,7 +301,7 @@ describe('E2 substrate entry on a local deterministic fixture (offline)', () => 
       expect(integrity(archive)).toBe(artifact.integrity);
     }
     const packed = JSON.parse(readFileSync(join(out, 'receipts/e2-provenance.json'), 'utf8')).packedFiles.map((f: { path: string }) => f.path);
-    for (const path of ['package.json', 'dist/memory-substrate.js', 'dist/memory-substrate.d.ts', 'dist/chunk-a.js']) expect(packed).toContain(path);
+    for (const path of ['package.json', 'dist/memory-substrate.js', 'dist/memory-substrate.d.ts', 'dist/chunk-a.js', 'dist/chunk-a.d.ts']) expect(packed).toContain(path);
     const provenanceBytes = readFileSync(join(out, manifest.e2Provenance.path));
     expect(sha256(provenanceBytes)).toBe(manifest.e2Provenance.sha256);
     const provenance = JSON.parse(provenanceBytes.toString());
