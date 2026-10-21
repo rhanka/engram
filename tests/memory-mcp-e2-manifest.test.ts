@@ -193,6 +193,30 @@ describe('E2 host closure tuple (sentropic delivery, fail-closed with source-gap
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/source-gap/);
   });
+
+  it.each([false, true])('should reopen the retained bundle without source inputs (draft=%s)', (draft) => {
+    const e2 = makeE2(), p1 = makeP1(), host = makeHostTuple(), out = join(directory(), 'output');
+    const binding = draft ? ['--pre-binding'] : p1.args;
+    const first = run([...e2.base, '--output-dir', out, ...binding, ...host.args]);
+    expect(first.status, first.stderr).toBe(0);
+    const provenance = readJson(join(out, 'receipts/e2-provenance.json'));
+    const tuplePath = join(out, provenance.hostClosure.path);
+    expect(readFileSync(tuplePath).equals(readFileSync(host.args[1]!))).toBe(true);
+    for (const path of [host.doc.backend.archive, host.doc.neutralContract.path, ...host.doc.locks.map((lock) => lock.path)]) {
+      expect(readFileSync(join(dirname(tuplePath), path)).equals(readFileSync(join(host.dir, path)))).toBe(true);
+    }
+    for (const dir of [e2.dir, p1.dir, host.dir]) rmSync(dir, { recursive: true });
+    const second = join(directory(), 'output');
+    const result = run([
+      '--expected-version', VERSION, '--tarball', join(out, provenance.artifact.archive),
+      '--registry-json', join(out, provenance.npmRegistry.path), '--attestations-json', join(out, provenance.sigstore.path),
+      '--host-tuple', tuplePath, '--output-dir', second,
+      ...(draft ? ['--pre-binding'] : ['--p1-manifest', join(out, 'pre-candidate-manifest.json'), '--p1-sha256', p1.digest]),
+    ]);
+    expect(result.status, result.stderr).toBe(0);
+    const paths = readdirSync(out, { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile()).map((entry) => join(entry.parentPath, entry.name).slice(out.length + 1));
+    for (const path of paths) expect(readFileSync(join(second, path)).equals(readFileSync(join(out, path))), path).toBe(true);
+  });
 });
 
 describe('E2 exact command documentation', () => {
@@ -454,6 +478,34 @@ const ROUND3_MUTATIONS: { id: string; stderr: RegExp; setup: () => string[] }[] 
       return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
     },
   },
+  ...['backend', 'contract', 'lock'].map((kind) => ({
+    id: `tampered-retained-${kind}`, stderr: /source-gap:.*bytes do not match/,
+    setup: () => {
+      const e2 = makeE2(), p1 = makeP1(), host = makeHostTuple(), out = join(directory(), 'output');
+      const first = run([...e2.base, '--output-dir', out, ...p1.args, ...host.args]);
+      expect(first.status, first.stderr).toBe(0);
+      const provenance = readJson(join(out, 'receipts/e2-provenance.json'));
+      const tuplePath = join(out, provenance.hostClosure.path);
+      const tuple = readJson(tuplePath);
+      const path = kind === 'backend' ? tuple.backend.archive : kind === 'contract' ? tuple.neutralContract.path : tuple.locks[0].path;
+      const retained = join(dirname(tuplePath), path);
+      expect(existsSync(retained), `retained ${kind} must exist`).toBe(true);
+      writeFileSync(retained, 'tampered retained copy');
+      rmSync(host.dir, { recursive: true });
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, '--host-tuple', tuplePath];
+    },
+  })),
+  {
+    id: 'tuple-evidence-collision', stderr: /collides with E2 evidence/,
+    setup: () => {
+      const e2 = makeE2(), p1 = makeP1(), host = makeHostTuple();
+      const bytes = Buffer.from('host file must not overwrite provenance');
+      writeFileSync(join(host.dir, 'e2-provenance.json'), bytes);
+      host.doc.locks.push({ path: './e2-provenance.json', sha256: sha256(bytes) });
+      writeFileSync(host.args[1]!, JSON.stringify(host.doc));
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+    },
+  },
   {
     id: 'wrong-node-major', stderr: /nodeImage/,
     setup: () => {
@@ -489,7 +541,7 @@ describe('E2 round-3 refusal driver', () => {
 
   it('covers every round-3 check with exactly one mutation row', () => {
     const ids = ROUND3_MUTATIONS.map((mutation) => mutation.id);
-    expect([...ids].sort()).toEqual(['comment-in-import', 'decoy-extension', 'external-module-reference', 'malformed-digest', 'missing-types-target', 'nonexistent-tuple-file', 'tampered-tuple-file', 'type-import', 'type-reference-path', 'type-reference-types', 'typeof-type-import', 'unretained-type-package', 'wrong-node-major']);
+    expect([...ids].sort()).toEqual(['comment-in-import', 'decoy-extension', 'external-module-reference', 'malformed-digest', 'missing-types-target', 'nonexistent-tuple-file', 'tampered-retained-backend', 'tampered-retained-contract', 'tampered-retained-lock', 'tampered-tuple-file', 'tuple-evidence-collision', 'type-import', 'type-reference-path', 'type-reference-types', 'typeof-type-import', 'unretained-type-package', 'wrong-node-major']);
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
