@@ -287,6 +287,28 @@ describe('E2 substrate entry on a local deterministic fixture (offline)', () => 
     expect(result.stderr).toMatch(/integrity/);
   });
 
+  it.each([
+    `export type X = import('./type-edge.js').X;`,
+    `export type X = typeof import('./type-edge.js');`,
+    `import X = require('./type-edge.js'); export { X };`,
+    `/// <reference path="./type-edge.d.ts" />`,
+    `/// <reference types="./type-edge.d.ts" />`,
+  ])('should inventory transitive declaration edges from %s', (declaration) => {
+    const files = {
+      'package/dist/memory-substrate.d.ts': declaration,
+      'package/dist/type-edge.d.ts': `export type X = import('./nested.js').X;`,
+      'package/dist/nested.d.ts': 'export type X = string;',
+    };
+    const e2 = makeE2({ files });
+    const p1 = makeP1(), host = makeHostTuple(), out = join(directory(), 'output');
+    const result = run([...e2.base, '--output-dir', out, ...p1.args, ...host.args]);
+    expect(result.status, result.stderr).toBe(0);
+    const packed = readJson(join(out, 'receipts/e2-provenance.json')).packedFiles;
+    for (const path of ['package/dist/type-edge.d.ts', 'package/dist/nested.d.ts'] as const) {
+      expect(packed).toContainEqual({ path: path.slice('package/'.length), sha256: sha256(Buffer.from(files[path])) });
+    }
+  });
+
   it('should refuse to run without an explicit target version', () => {
     const e2 = makeE2();
     const p1 = makeP1();
@@ -390,6 +412,32 @@ const ROUND3_MUTATIONS: { id: string; stderr: RegExp; setup: () => string[] }[] 
       return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
     },
   },
+  ...[
+    { id: 'type-import', declaration: `export type X = import('./missing.js').X;` },
+    { id: 'typeof-type-import', declaration: `export type X = typeof import('./missing.js');` },
+    { id: 'external-module-reference', declaration: `import X = require('./missing.js'); export { X };` },
+    { id: 'type-reference-path', declaration: `/// <reference path="./missing.d.ts" />` },
+    { id: 'type-reference-types', declaration: `/// <reference types="./missing.d.ts" />` },
+  ].map(({ id, declaration }) => ({
+    id, stderr: /missing chunk dist\/missing\.d\.ts/,
+    setup: () => {
+      const e2 = makeE2({ files: {
+        'package/dist/chunk-a.d.ts': declaration,
+        // Runtime bytes cannot satisfy a missing type edge.
+        'package/dist/missing.js': 'export const X = 1;',
+      } });
+      const p1 = makeP1(), host = makeHostTuple();
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+    },
+  })),
+  {
+    id: 'unretained-type-package', stderr: /unretained type dependency/,
+    setup: () => {
+      const e2 = makeE2({ files: { 'package/dist/chunk-a.d.ts': `export type X = import('missing-package').X;` } });
+      const p1 = makeP1(), host = makeHostTuple();
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+    },
+  },
   {
     id: 'nonexistent-tuple-file', stderr: /source-gap/,
     setup: () => {
@@ -441,7 +489,7 @@ describe('E2 round-3 refusal driver', () => {
 
   it('covers every round-3 check with exactly one mutation row', () => {
     const ids = ROUND3_MUTATIONS.map((mutation) => mutation.id);
-    expect([...ids].sort()).toEqual(['comment-in-import', 'decoy-extension', 'malformed-digest', 'missing-types-target', 'nonexistent-tuple-file', 'tampered-tuple-file', 'wrong-node-major']);
+    expect([...ids].sort()).toEqual(['comment-in-import', 'decoy-extension', 'external-module-reference', 'malformed-digest', 'missing-types-target', 'nonexistent-tuple-file', 'tampered-tuple-file', 'type-import', 'type-reference-path', 'type-reference-types', 'typeof-type-import', 'unretained-type-package', 'wrong-node-major']);
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
