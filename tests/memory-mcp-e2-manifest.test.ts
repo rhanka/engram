@@ -3,7 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import { checkArtifactManifest, ARTIFACT_MANIFEST_SCHEMA, FROZEN_SPEC_SHA256 } from '../scripts/vendor/memory-mcp-l5/receipt.mjs';
@@ -378,6 +378,67 @@ describe('E2 substrate entry on a local deterministic fixture (offline)', () => 
     }
   });
 
+  it.each(['@sentropic/engram/retained', '#retained', 'bundled/retained'])('should resolve Node import and types conditions for %s and retain transitive bytes', (specifier) => {
+    const conditions = { types: './dist/retained-types.d.ts', import: './dist/retained-runtime.js', require: './dist/missing-require.cjs' };
+    const files: Record<string, string> = {
+      'package/dist/memory-substrate.js': `export { x } from '${specifier}';`,
+      'package/dist/memory-substrate.d.ts': `export type X = import('${specifier}').X;`,
+      'package/dist/retained-runtime.js': `export { x } from './runtime-nested.js';`,
+      'package/dist/runtime-nested.js': 'export const x = 1;',
+      'package/dist/retained-types.d.ts': `export type X = import('./types-nested.js').X;`,
+      'package/dist/types-nested.d.ts': 'export type X = string;',
+    };
+    if (specifier === '#retained') files['package/package.json'] = JSON.stringify({ ...JSON.parse(packageJson()), imports: { '#retained': conditions } });
+    if (specifier === 'bundled/retained') {
+      files['package/node_modules/bundled/package.json'] = JSON.stringify({ name: 'bundled', exports: { './retained': conditions } });
+      for (const [path, bytes] of Object.entries(files)) {
+        if (path.startsWith('package/dist/') && !path.includes('memory-substrate')) {
+          files[path.replace('package/dist/', 'package/node_modules/bundled/dist/')] = bytes;
+          delete files[path];
+        }
+      }
+    }
+    const e2 = makeE2({ files, exportMap: { './retained': conditions } });
+    const p1 = makeP1(), host = makeHostTuple(), out = join(directory(), 'output');
+    const result = run([...e2.base, '--output-dir', out, ...p1.args, ...host.args]);
+    expect(result.status, result.stderr).toBe(0);
+    const packed = readJson(join(out, 'receipts/e2-provenance.json')).packedFiles;
+    for (const [path, bytes] of Object.entries(files)) {
+      if (path.endsWith('/package.json') || path.includes('memory-substrate')) continue;
+      expect(packed).toContainEqual({ path: path.slice('package/'.length), sha256: sha256(Buffer.from(bytes)) });
+    }
+  });
+
+  it('should allow Node builtins in both graphs', () => {
+    const e2 = makeE2({ files: {
+      'package/dist/chunk-a.js': `import 'node:fs'; import 'node:fs/promises'; import 'fs'; export const x = 1;`,
+      'package/dist/chunk-a.d.ts': `import 'node:fs'; export declare const x: number;`,
+    } });
+    const p1 = makeP1(), host = makeHostTuple();
+    const result = run([...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args]);
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it('should resolve require conditions from the reached package rather than the archive root', () => {
+    const files = {
+      'package/dist/chunk-a.js': `require('bundled'); export const x = 1;`,
+      'package/node_modules/bundled/package.json': JSON.stringify({
+        name: 'bundled', exports: { import: './missing.js', require: './entry.js' },
+        imports: { '#nested': { import: './missing.js', require: './nested.js' } },
+      }),
+      'package/node_modules/bundled/entry.js': `require('#nested');`,
+      'package/node_modules/bundled/nested.js': 'module.exports = 1;',
+    };
+    const e2 = makeE2({ files });
+    const p1 = makeP1(), host = makeHostTuple(), out = join(directory(), 'output');
+    const result = run([...e2.base, '--output-dir', out, ...p1.args, ...host.args]);
+    expect(result.status, result.stderr).toBe(0);
+    const packed = readJson(join(out, 'receipts/e2-provenance.json')).packedFiles;
+    for (const path of ['package/node_modules/bundled/entry.js', 'package/node_modules/bundled/nested.js'] as const) {
+      expect(packed).toContainEqual({ path: path.slice('package/'.length), sha256: sha256(Buffer.from(files[path])) });
+    }
+  });
+
   it('should refuse to run without an explicit target version', () => {
     const e2 = makeE2();
     const p1 = makeP1();
@@ -530,6 +591,46 @@ const ROUND3_MUTATIONS: { id: string; stderr: RegExp; setup: () => string[] }[] 
       return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
     },
   })),
+  ...[
+    { id: 'runtime-package', specifier: 'missing-package', stderr: /E2_UNRESOLVED_DEPENDENCY.*ERR_MODULE_NOT_FOUND/ },
+    { id: 'runtime-subpath-import', specifier: '#missing', stderr: /E2_UNRESOLVED_DEPENDENCY.*ERR_PACKAGE_IMPORT_NOT_DEFINED/ },
+    { id: 'runtime-file-url', specifier: 'file:///__engram_missing__/missing.js', stderr: /E2_UNRETAINED_DEPENDENCY/ },
+    { id: 'runtime-export-target', specifier: '@sentropic/engram/retained', stderr: /E2_MISSING_DEPENDENCY.*missing chunk dist\/missing\.js/ },
+    { id: 'runtime-import-target', specifier: '#retained', stderr: /E2_MISSING_DEPENDENCY.*missing chunk dist\/missing\.js/ },
+    { id: 'runtime-unexported-subpath', specifier: '@sentropic/engram/private', stderr: /E2_UNRESOLVED_DEPENDENCY.*ERR_PACKAGE_PATH_NOT_EXPORTED/ },
+  ].map(({ id, specifier, stderr }) => ({
+    id, stderr,
+    setup: () => {
+      const conditions = { types: './dist/chunk-a.d.ts', import: './dist/missing.js' };
+      const e2 = makeE2({
+        exportMap: { './retained': conditions },
+        files: {
+          'package/package.json': JSON.stringify({ ...JSON.parse(packageJson({ './retained': conditions })), imports: { '#retained': conditions } }),
+          'package/dist/chunk-a.js': `import '${specifier}'; export const x = 1;`,
+        },
+      });
+      const p1 = makeP1(), host = makeHostTuple();
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+    },
+  })),
+  {
+    id: 'runtime-unretained-file-url', stderr: /E2_UNRETAINED_DEPENDENCY/,
+    setup: () => {
+      const external = join(directory(), 'external.js');
+      writeFileSync(external, 'export const x = 1;');
+      const e2 = makeE2({ files: { 'package/dist/chunk-a.js': `import '${pathToFileURL(external).href}'; export const x = 1;` } });
+      const p1 = makeP1(), host = makeHostTuple();
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+    },
+  },
+  {
+    id: 'archive-path-alias', stderr: /E2_INVALID_ARCHIVE_MEMBER/,
+    setup: () => {
+      const e2 = makeE2({ files: { 'package/./package.json': packageJson() } });
+      const p1 = makeP1(), host = makeHostTuple();
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+    },
+  },
   {
     id: 'ambient-package-module', stderr: /unretained type dependency missing-package/,
     setup: () => {
@@ -637,11 +738,13 @@ describe('E2 round-3 refusal driver', () => {
   it('covers every round-3 check with exactly one mutation row', () => {
     const ids = ROUND3_MUTATIONS.map((mutation) => mutation.id);
     expect([...ids].sort()).toEqual([
-      'ambient-package-module', 'ambient-relative-module', 'comment-in-import', 'decoy-extension',
+      'ambient-package-module', 'ambient-relative-module', 'archive-path-alias', 'comment-in-import', 'decoy-extension',
       'encoded-decoy-runtime', 'encoded-decoy-types', 'encoded-separator-%2f', 'encoded-separator-%5c',
       'external-module-reference', 'jsdoc-import-tag', 'jsdoc-import-type', 'malformed-digest',
       'missing-types-target', 'module-augmentation', 'nonexistent-tuple-file',
+      'runtime-export-target', 'runtime-file-url', 'runtime-import-target',
       'runtime-jsdoc-import-tag', 'runtime-jsdoc-import-type',
+      'runtime-package', 'runtime-subpath-import', 'runtime-unexported-subpath', 'runtime-unretained-file-url',
       'tampered-retained-backend', 'tampered-retained-contract', 'tampered-retained-lock',
       'tampered-tuple-file', 'tuple-evidence-collision', 'type-export-declaration', 'type-import',
       'type-import-declaration', 'type-reference-path', 'type-reference-types', 'typeof-type-import',
