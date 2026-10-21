@@ -103,27 +103,37 @@ function relativeSpecifiers(text) {
 
 // Every chunk the memory-substrate entry statically reaches, resolved inside
 // the published archive. A distributable sourcemap comment is not an import.
-function collectEntryClosure(members) {
-  const roots = ['package.json', ENTRY_IMPORT.replace(/^\.\//, ''), ENTRY_TYPES.replace(/^\.\//, '')];
+// The execution graph (JS) and the type graph (d.ts) resolve separately: a
+// declaration never substitutes for a missing runtime JS, and a present JS
+// never hides a missing reachable declaration.
+function collectGraph(members, root, kind) {
   const seen = [];
-  const queue = [...roots];
+  const queue = [root];
   while (queue.length > 0) {
     const rel = queue.shift();
     if (seen.includes(rel)) continue;
     const bytes = members.get(`package/${rel}`);
     assert(bytes, `Published archive is missing chunk ${rel} required by ${ENTRY_SPECIFIER}`);
     seen.push(rel);
-    if (!rel.endsWith('.js') && !rel.endsWith('.d.ts')) continue;
+    if ((kind === 'js' && !rel.endsWith('.js')) || (kind === 'dts' && !rel.endsWith('.d.ts'))) continue;
     for (const spec of relativeSpecifiers(bytes.toString('utf8'))) {
       const resolved = posix.normalize(posix.join(posix.dirname(rel), spec));
       assert(!resolved.startsWith('..'), `Published archive escapes its package: ${spec} required by ${rel}`);
-      const candidates = [resolved, resolved.replace(/\.js$/, '.d.ts'), `${resolved}.js`, `${resolved}.d.ts`];
-      const target = candidates.find((candidate) => members.has(`package/${candidate}`));
-      assert(target, `Published archive is missing chunk ${resolved} required by ${rel}`);
+      const candidates = kind === 'js'
+        ? [resolved, `${resolved}.js`]
+        : [resolved.replace(/\.js$/, '.d.ts'), `${resolved}.d.ts`];
+      const target = candidates.find((candidate) => members.has(`package/${candidate}`) && (kind === 'js' ? candidate.endsWith('.js') : candidate.endsWith('.d.ts')));
+      assert(target, `Published archive is missing chunk ${kind === 'js' ? resolved : resolved.replace(/\.js$/, '.d.ts')} required by ${rel}`);
       if (!seen.includes(target) && !queue.includes(target)) queue.push(target);
     }
   }
-  return seen.sort();
+  return seen;
+}
+
+function collectEntryClosure(members) {
+  const runtime = collectGraph(members, ENTRY_IMPORT.replace(/^\.\//, ''), 'js');
+  const types = collectGraph(members, ENTRY_TYPES.replace(/^\.\//, ''), 'dts');
+  return [...new Set(['package.json', ...runtime, ...types])].sort();
 }
 
 const HOST_TUPLE_FORMAT = 'e2-host-tuple/v1';
