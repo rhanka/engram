@@ -21,9 +21,21 @@
 //     --tarball /tmp/e2-0.21.1/sentropic-engram-0.21.1.tgz \
 //     --registry-json /tmp/e2-0.21.1-registry.json \
 //     --attestations-json /tmp/e2-0.21.1-attestations.json \
+//     --host-tuple /path/to/e2-host-tuple.json \
 //     --p1-manifest /path/to/p1/pre-candidate-manifest.json \
 //     --p1-sha256 68181613ff36b601d7f6bb62550294fdcd2c0ad26f2ed25cc1ad2fa633fafd5a \
 //     --output-dir /path/to/lot2-bundle
+//
+// The host tuple (--host-tuple) is the sentropic delivery file carrying the
+// installed host-backend closure, the neutral contract, the locks, the Node 24
+// image by digest and the profiles. That delivery (G1/C9) does not exist yet:
+// the script requires the file as an explicit input, binds its bytes through
+// the E2 provenance and preserves P1. A missing or incomplete tuple is a
+// fail-closed refusal (source-gap); no value is ever invented.
+// Format: {"format":"e2-host-tuple/v1","backend":{"name","version","sourceHead",
+// "archive","sha256","integrity"},"neutralContract":{"path","version","sha256"},
+// "locks":[{"path","sha256"}], "nodeImage":"node:24…@sha256:<64hex>",
+// "profiles":["…"]}
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, posix, resolve } from 'node:path';
@@ -46,14 +58,22 @@ const integrity = (bytes) => `sha512-${createHash('sha512').update(bytes).digest
 const jsonBytes = (doc) => Buffer.from(JSON.stringify(doc, null, 2) + '\n');
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
 
-const USAGE = `Usage: node scripts/memory-mcp-e2-manifest.mjs --expected-version <semver> --tarball <published.tgz> --registry-json <npm-view-dist.json> --attestations-json <attestations.json> --output-dir <bundle>
+const USAGE = `Usage: node scripts/memory-mcp-e2-manifest.mjs --expected-version <semver> --tarball <published.tgz> --registry-json <npm-view-dist.json> --attestations-json <attestations.json> --host-tuple <e2-host-tuple-v1.json> --output-dir <bundle>
   Final: --p1-manifest <pre-candidate-manifest.json> --p1-sha256 <64 lowercase hex>
   Draft: --pre-binding (writes lot2-manifest.pre-binding.json, never a final manifest)
 --expected-version is mandatory and has no default. The tarball identity
 (integrity sha512, shasum, gitHead, SLSA provenance) is read from the retained
 registry evidence: run \`npm view @sentropic/engram@<version> name version gitHead dist --json\`.
 P1 archives and contract files are read relative to its manifest and copied after digest verification.
-The script performs no network requests.`;
+--host-tuple is mandatory (final and draft): the sentropic file carrying the
+installed host-backend closure, the neutral contract, the locks, the Node 24
+image by digest and the profiles ({"format":"e2-host-tuple/v1","backend":
+{"name","version","sourceHead","archive","sha256","integrity"},
+"neutralContract":{"path","version","sha256"},"locks":[{"path","sha256"}],
+"nodeImage":"node:24…@sha256:<64hex>","profiles":["…"]}). Its bytes are
+retained and bound through the E2 provenance; P1 is preserved byte for byte.
+A missing or incomplete tuple refuses fail-closed with source-gap: no value
+is invented. The script performs no network requests.`;
 
 // The archive has already matched the published npm SHA-512 before any member is read.
 function tarMembers(bytes) {
@@ -104,7 +124,42 @@ function collectEntryClosure(members) {
   return seen.sort();
 }
 
-function prepareE2(tarball, { expectedVersion, registryPath, attestationsPath }) {
+const HOST_TUPLE_FORMAT = 'e2-host-tuple/v1';
+const isHex = (value, length) => typeof value === 'string' && new RegExp(`^[0-9a-f]{${length}}$`).test(value);
+const isSemver = (value) => typeof value === 'string' && /^\d+\.\d+\.\d+/.test(value);
+const isRelPath = (value) => typeof value === 'string' && value.length > 0 && value.length <= 512 && !value.startsWith('/') && !/(^|\/)\.\.(\/|$)/.test(value) && !value.includes('\0') && !value.includes(':');
+const isIntegrity = (value) => typeof value === 'string' && /^sha512-[A-Za-z0-9+/]{86}==$/.test(value);
+
+// The sentropic host delivery (backend closure, neutral contract, locks,
+// Node 24 image digest, profiles) does not exist yet. It is required as an
+// explicit file input, validated strictly, and bound through the E2
+// provenance. Anything missing or malformed refuses fail-closed: no value
+// is invented to stand in for the delivery.
+function readHostTuple(path) {
+  assert(typeof path === 'string' && path.length > 0, 'source-gap: host tuple is absent (sentropic backend/contract/lock/image/profile delivery pending); pass --host-tuple <e2-host-tuple-v1.json>, no value is invented');
+  let bytes;
+  try { bytes = readFileSync(resolve(path)); }
+  catch { assert(false, `source-gap: host tuple is absent (unreadable file ${path}); pass --host-tuple <e2-host-tuple-v1.json>, no value is invented`); }
+  let doc;
+  try { doc = JSON.parse(bytes.toString('utf8')); }
+  catch { assert(false, 'source-gap: host tuple is incomplete (not JSON); refusing instead of inventing the sentropic delivery'); }
+  const failures = [];
+  if (!doc || typeof doc !== 'object') failures.push('not an object');
+  else {
+    if (doc.format !== HOST_TUPLE_FORMAT) failures.push('format must be e2-host-tuple/v1');
+    const backend = doc.backend;
+    if (!backend || typeof backend !== 'object' || typeof backend.name !== 'string' || backend.name.length === 0 || !isSemver(backend.version) || !isHex(backend.sourceHead, 40) || !isRelPath(backend.archive) || !isHex(backend.sha256, 64) || !isIntegrity(backend.integrity)) failures.push('backend closure is incomplete');
+    const contract = doc.neutralContract;
+    if (!contract || typeof contract !== 'object' || !isRelPath(contract.path) || !isSemver(contract.version) || !isHex(contract.sha256, 64)) failures.push('neutral contract is incomplete');
+    if (!Array.isArray(doc.locks) || doc.locks.length === 0 || doc.locks.some((lock) => !lock || typeof lock !== 'object' || !isRelPath(lock.path) || !isHex(lock.sha256, 64))) failures.push('locks are incomplete');
+    if (typeof doc.nodeImage !== 'string' || !/^node:24/.test(doc.nodeImage) || !/@sha256:[0-9a-f]{64}$/.test(doc.nodeImage)) failures.push('nodeImage must be a Node 24 image by digest');
+    if (!Array.isArray(doc.profiles) || doc.profiles.length === 0 || doc.profiles.some((profile) => typeof profile !== 'string' || profile.length === 0)) failures.push('profiles are incomplete');
+  }
+  assert(failures.length === 0, `source-gap: host tuple is incomplete (${failures.join('; ')}); refusing instead of inventing the sentropic delivery`);
+  return { bytes, doc };
+}
+
+function prepareE2(tarball, { expectedVersion, registryPath, attestationsPath, hostTuple }) {
   const tag = `v${expectedVersion}`;
   const registryBytes = readFileSync(registryPath);
   let registry;
@@ -138,9 +193,16 @@ function prepareE2(tarball, { expectedVersion, registryPath, attestationsPath })
   // artifactItem is a frozen sentropic contract: no shasum member. The shasum
   // binding is still enforced above and recorded in npmRegistry below.
   const artifact = { role: 'e2', name: NAME, version: expectedVersion, sha256: sha256(tarball), integrity: dist.integrity, sourceHead: gitHead, archive };
+  const hostClosure = {
+    path: 'receipts/e2-host-tuple.json', sha256: sha256(hostTuple.bytes),
+    format: hostTuple.doc.format, backend: hostTuple.doc.backend,
+    neutralContract: hostTuple.doc.neutralContract, locks: hostTuple.doc.locks,
+    nodeImage: hostTuple.doc.nodeImage, profiles: hostTuple.doc.profiles,
+  };
   const provenance = {
     evidenceVersion: 1,
     bReference: { releaseOption: 'B', repository: REPOSITORY, tag, commit: gitHead },
+    hostClosure,
     artifact,
     npmRegistry: { path: 'receipts/e2-npm-registry.json', sha256: sha256(registryBytes), tarball: dist.tarball, shasum: dist.shasum },
     sigstore: {
@@ -154,7 +216,7 @@ function prepareE2(tarball, { expectedVersion, registryPath, attestationsPath })
   const provenanceBytes = jsonBytes(provenance);
   return {
     artifact, evidence: { path: 'receipts/e2-provenance.json', sha256: sha256(provenanceBytes) },
-    files: new Map([[archive, tarball], ['receipts/e2-provenance.json', provenanceBytes], ['receipts/e2-npm-registry.json', registryBytes], ['receipts/e2-npm-attestations.json', attestationBytes]]),
+    files: new Map([[archive, tarball], ['receipts/e2-provenance.json', provenanceBytes], ['receipts/e2-npm-registry.json', registryBytes], ['receipts/e2-npm-attestations.json', attestationBytes], ['receipts/e2-host-tuple.json', hostTuple.bytes]]),
   };
 }
 
@@ -187,7 +249,8 @@ export function generateE2Bundle(options) {
   const draft = options['pre-binding'] === true, p1Digest = options['p1-sha256'];
   assert(!draft || (!p1Digest && !options['p1-manifest']), 'pre-binding cannot be combined with P1 binding options');
   assert(draft || (typeof p1Digest === 'string' && /^[0-9a-f]{64}$/.test(p1Digest) && options['p1-manifest']), 'Final manifest requires --p1-sha256 (64 lowercase hex) and --p1-manifest; use --pre-binding for a draft');
-  const e2 = prepareE2(readFileSync(options.tarball), { expectedVersion, registryPath: resolve(options['registry-json']), attestationsPath: resolve(options['attestations-json']) });
+  const hostTuple = readHostTuple(options['host-tuple']);
+  const e2 = prepareE2(readFileSync(options.tarball), { expectedVersion, registryPath: resolve(options['registry-json']), attestationsPath: resolve(options['attestations-json']), hostTuple });
   const p1 = draft ? null : prepareP1(resolve(options['p1-manifest']), p1Digest);
   const doc = draft ? {
     status: 'pre-binding', intendedStage: 'lot2', e2ArtifactSha256: e2.artifact.sha256,
@@ -221,6 +284,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const { values } = parseArgs({ options: {
       'expected-version': { type: 'string' }, tarball: { type: 'string' }, 'output-dir': { type: 'string' },
       'registry-json': { type: 'string' }, 'attestations-json': { type: 'string' },
+      'host-tuple': { type: 'string' },
       'p1-manifest': { type: 'string' }, 'p1-sha256': { type: 'string' },
       'pre-binding': { type: 'boolean' }, help: { type: 'boolean' },
     } });

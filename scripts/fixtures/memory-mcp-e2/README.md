@@ -12,6 +12,26 @@ inventories package.json, the entry JS/d.ts and every statically reached
 chunk, then binds the real published tarball (npm integrity sha512, shasum,
 gitHead and SLSA provenance from the retained registry evidence).
 
+The host tuple (`--host-tuple`) is the sentropic delivery file carrying the
+installed host-backend closure, the neutral contract, the locks, the Node 24
+image by digest and the profiles. That delivery (G1/C9) does not exist yet:
+the script requires the file as an explicit input, retains its bytes as
+`receipts/e2-host-tuple.json` and binds them through the E2 provenance
+(`hostClosure` in `receipts/e2-provenance.json`); P1 is preserved byte for
+byte. A missing or incomplete tuple refuses fail-closed with `source-gap` —
+no value is invented. Documented format (`e2-host-tuple/v1`):
+
+```json
+{
+  "format": "e2-host-tuple/v1",
+  "backend": { "name": "@sentropic/<backend>", "version": "0.3.0", "sourceHead": "<40 hex>", "archive": "host/<backend>.tgz", "sha256": "<64 hex>", "integrity": "sha512-…" },
+  "neutralContract": { "path": "contracts/<contract>.d.ts", "version": "4.1.0", "sha256": "<64 hex>" },
+  "locks": [{ "path": "locks/<lock>.json", "sha256": "<64 hex>" }],
+  "nodeImage": "node:24-bookworm-slim@sha256:<64 hex>",
+  "profiles": ["atomic-units-v1", "immutable-chains-v1", "immutable-boundaries-v1", "scope-outbox-v1", "fenced-writers-v1"]
+}
+```
+
 Exact command for the 0.21.1 release (run once 0.21.1 is published; the real
 generation is not executed here):
 
@@ -24,6 +44,7 @@ node scripts/memory-mcp-e2-manifest.mjs \
   --tarball /tmp/e2-0.21.1/sentropic-engram-0.21.1.tgz \
   --registry-json /tmp/e2-0.21.1-registry.json \
   --attestations-json /tmp/e2-0.21.1-attestations.json \
+  --host-tuple /path/to/e2-host-tuple.json \
   --p1-manifest /path/to/p1/pre-candidate-manifest.json \
   --p1-sha256 68181613ff36b601d7f6bb62550294fdcd2c0ad26f2ed25cc1ad2fa633fafd5a \
   --output-dir /path/to/lot2-bundle
@@ -37,6 +58,7 @@ node scripts/memory-mcp-e2-manifest.mjs --expected-version 0.21.1 \
   --tarball /path/to/sentropic-engram-0.21.1.tgz \
   --registry-json /path/to/e2-0.21.1-registry.json \
   --attestations-json /path/to/e2-0.21.1-attestations.json \
+  --host-tuple /path/to/e2-host-tuple.json \
   --pre-binding --output-dir /path/to/e2-draft
 ```
 
