@@ -105,19 +105,24 @@ function staticSpecifiers(text, rel) {
     rel.endsWith('.d.ts') ? ts.ScriptKind.TS : ts.ScriptKind.JS,
   );
   const out = [];
-  const add = (target) => {
+  const add = (target, typeOnly = false) => {
     assert(target && ts.isStringLiteralLike(target),
       `Published archive has an unresolvable import in ${rel}: refusing instead of guessing`);
-    if (target.text.startsWith('.')) out.push(target.text);
-    else assert(!rel.endsWith('.d.ts'), `Published archive has an unretained type dependency ${target.text} required by ${rel}`);
+    if (target.text.startsWith('.')) out.push({ specifier: target.text, typeOnly });
+    else assert(!typeOnly && !rel.endsWith('.d.ts'), `Published archive has an unretained type dependency ${target.text} required by ${rel}`);
   };
   const visit = (node) => {
-    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-      if (node.moduleSpecifier) add(node.moduleSpecifier);
+    // Module-reference fields audited against TypeScript's AST interfaces and
+    // collectExternalModuleReferences: moduleSpecifier (also JSDocImportTag),
+    // ImportType.argument, ExternalModuleReference.expression, ModuleDeclaration.name.
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node) || ts.isJSDocImportTag(node)) {
+      if (node.moduleSpecifier) add(node.moduleSpecifier, ts.isJSDocImportTag(node));
     } else if (ts.isImportTypeNode(node)) {
-      add(ts.isLiteralTypeNode(node.argument) ? node.argument.literal : undefined);
+      add(ts.isLiteralTypeNode(node.argument) ? node.argument.literal : undefined, true);
     } else if (ts.isExternalModuleReference(node)) {
       add(node.expression);
+    } else if (ts.isModuleDeclaration(node) && ts.isStringLiteral(node.name)) {
+      add(node.name, true);
     } else if (ts.isCallExpression(node)) {
       const callee = node.expression;
       const isImport = callee.kind === ts.SyntaxKind.ImportKeyword;
@@ -127,13 +132,15 @@ function staticSpecifiers(text, rel) {
       }
     }
     ts.forEachChild(node, visit);
+    // JSDoc is attached syntax, deliberately omitted by forEachChild.
+    for (const doc of node.jsDoc ?? []) visit(doc);
   };
   visit(source);
   for (const ref of source.referencedFiles) {
     assert(!ref.fileName.startsWith('/'), `Published archive has an unretained type dependency ${ref.fileName} required by ${rel}`);
-    out.push(ref.fileName.startsWith('.') ? ref.fileName : `./${ref.fileName}`);
+    out.push({ specifier: ref.fileName.startsWith('.') ? ref.fileName : `./${ref.fileName}`, typeOnly: true });
   }
-  for (const ref of source.typeReferenceDirectives) add(ts.factory.createStringLiteral(ref.fileName));
+  for (const ref of source.typeReferenceDirectives) add(ts.factory.createStringLiteral(ref.fileName), true);
   return out;
 }
 
@@ -154,7 +161,7 @@ function collectGraph(members, root, kind) {
     assert(bytes, `Published archive is missing chunk ${rel} required by ${ENTRY_SPECIFIER}`);
     seen.push(rel);
     if ((kind === 'js' && !rel.endsWith('.js')) || (kind === 'dts' && !rel.endsWith('.d.ts'))) continue;
-    for (const spec of staticSpecifiers(bytes.toString('utf8'), rel)) {
+    for (const { specifier: spec, typeOnly } of staticSpecifiers(bytes.toString('utf8'), rel)) {
       const url = new URL(spec, pathToFileURL(resolve(archiveRoot, rel)));
       assert(!/%2f|%5c/i.test(url.pathname), `Published archive import has an encoded separator: ${spec} required by ${rel}`);
       const path = fileURLToPath(url);
@@ -164,10 +171,12 @@ function collectGraph(members, root, kind) {
       // extension guessing, so a `missing.js.js` decoy never satisfies
       // `missing.js`. Inside the type graph a `.js` specifier maps to its
       // `.d.ts` declaration exactly as TypeScript resolves types.
-      const target = kind === 'js' ? resolved : (resolved.endsWith('.js') ? `${resolved.slice(0, -3)}.d.ts` : resolved);
-      const suffix = kind === 'js' ? '.js' : '.d.ts';
+      const targetKind = typeOnly ? 'dts' : kind;
+      const target = targetKind === 'js' ? resolved : (resolved.endsWith('.js') ? `${resolved.slice(0, -3)}.d.ts` : resolved);
+      const suffix = targetKind === 'js' ? '.js' : '.d.ts';
       assert(target.endsWith(suffix) && members.has(`package/${target}`), `Published archive is missing chunk ${target} required by ${rel}`);
-      if (!seen.includes(target) && !queue.includes(target)) queue.push(target);
+      if (targetKind !== kind) seen.push(...collectGraph(members, target, targetKind).filter((path) => !seen.includes(path)));
+      else if (!seen.includes(target) && !queue.includes(target)) queue.push(target);
     }
   }
   return seen;
