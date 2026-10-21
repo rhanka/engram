@@ -4,6 +4,10 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.21.1 (2026-10-21)
+
+- **Host-owned database drivers.** `pg`, `pgvector`, `neo4j-driver` and `@google-cloud/spanner` are no longer installed with engram. Per the owner decision of 2026-10-20 ("Tout passer par l'hôte"), hosts provide database drivers through `deps.driverModule`; DB stores refuse with `HOST_DRIVER_REQUIRED` otherwise. Drivers used by the live database test suites remain development dependencies only.
+
 ## 0.21.0 (2026-10-19)
 
 First publication of the engram time-reference contract (velocity and CI/CD durations, D1-C) as the `@sentropic/engram/time-reference` subpath export. No new package, service, MCP tool or CLI verb; `.`, `./llm-mesh` and `./memory-tools` keep their exact shapes and the six frozen memory tools gain no field.
