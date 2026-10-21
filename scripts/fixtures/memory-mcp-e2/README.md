@@ -2,32 +2,55 @@
 
 `registry.json` is the result of `npm view @sentropic/engram@0.20.0 name version gitHead dist --json`.
 `attestations.json` is the exact npm-registry response from the URL in `dist.attestations.url`.
-Both were retained on 2026-10-18; the producer pins their SHA-256 digests and the published SHA-512
-integrity. It checks the SLSA subject, source commit and tag bindings, retains the complete Sigstore
-bundle, and does not claim offline verification against Sigstore trust roots.
+Both were retained on 2026-10-18 for the superseded 0.20.0 `./memory-tools`
+reference. They are superseded evidence, not inputs: the script takes no
+default version and reads no fixture by itself.
 
-The published tarball SHA-256 is `6057c13905e7b63a16bfde7b70ed77bc9073076aba65f8e69e2188501351be66`.
-The archive is deliberately supplied by the caller, never rebuilt from the working tree.
-Its public memory surface is `./memory-tools` (in-process tools with an injected engine);
-the archive does not export the canonical engine or store factory. These receipts identify the
-published option-B reference, not a new engine build or L5 qualification.
+The target version is a mandatory parameter. The script verifies
+`pkg.exports['./memory-substrate'].import === './dist/memory-substrate.js'`,
+inventories package.json, the entry JS/d.ts and every statically reached
+chunk, then binds the real published tarball (npm integrity sha512, shasum,
+gitHead and SLSA provenance from the retained registry evidence).
 
-Generate a draft offline:
+Exact command for the 0.21.1 release (run once 0.21.1 is published; the real
+generation is not executed here):
 
 ```sh
-node scripts/memory-mcp-e2-manifest.mjs --tarball /path/to/sentropic-engram-0.20.0.tgz --pre-binding --output-dir /path/to/e2-draft
+npm pack @sentropic/engram@0.21.1 --pack-destination /tmp/e2-0.21.1
+npm view @sentropic/engram@0.21.1 name version gitHead dist --json > /tmp/e2-0.21.1-registry.json
+# fetch the exact response from dist.attestations.url into /tmp/e2-0.21.1-attestations.json
+node scripts/memory-mcp-e2-manifest.mjs \
+  --expected-version 0.21.1 \
+  --tarball /tmp/e2-0.21.1/sentropic-engram-0.21.1.tgz \
+  --registry-json /tmp/e2-0.21.1-registry.json \
+  --attestations-json /tmp/e2-0.21.1-attestations.json \
+  --p1-manifest /path/to/p1/pre-candidate-manifest.json \
+  --p1-sha256 68181613ff36b601d7f6bb62550294fdcd2c0ad26f2ed25cc1ad2fa633fafd5a \
+  --output-dir /path/to/lot2-bundle
+```
+
+Generate a draft offline (P1 digest `68181613ff36b601d7f6bb62550294fdcd2c0ad26f2ed25cc1ad2fa633fafd5a`
+is passed as a parameter at bind time, never prefilled in the script):
+
+```sh
+node scripts/memory-mcp-e2-manifest.mjs --expected-version 0.21.1 \
+  --tarball /path/to/sentropic-engram-0.21.1.tgz \
+  --registry-json /path/to/e2-0.21.1-registry.json \
+  --attestations-json /path/to/e2-0.21.1-attestations.json \
+  --pre-binding --output-dir /path/to/e2-draft
 ```
 
 Once P1 is delivered, replace `--pre-binding` with
 `--p1-manifest /path/to/p1/pre-candidate-manifest.json --p1-sha256 <exact-manifest-sha256>`.
 The output retains P1's manifest, verified archives and contract files, E2's exact archive and
 evidence, and the final manifest with its SHA-256 sidecar. It does not build or qualify an engine.
+Every resolution passes through the verified bytes of `ARTIFACT_MANIFEST`: no sibling sources,
+no network at open. P1 is preserved and compared byte for byte, never mixed with another digest.
 
-Run the tests offline against the published archive (synthetic P1 inputs exist only inside tests):
+Run the tests offline (deterministic local tarball fixture, no registry access):
 
 ```sh
-ENGRAM_E2_TARBALL=/path/to/sentropic-engram-0.20.0.tgz npm test -- tests/memory-mcp-e2-manifest.test.ts
+npm test -- tests/memory-mcp-e2-manifest.test.ts
 ```
 
-Without that environment variable, only the prerequisite tests run. Optionally set
-`ENGRAM_E2_SENTROPIC_REPO` to compare the vendored verifier bytes to their recorded Git commit.
+Optionally set `ENGRAM_E2_SENTROPIC_REPO` to compare the vendored verifier bytes to their recorded Git commit.
