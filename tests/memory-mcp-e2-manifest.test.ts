@@ -77,6 +77,32 @@ function packageJson(extraExports: Record<string, unknown> = {}) {
 const ENTRY_JS = `export { x } from './chunk-a.js';\nexport const entry = 1;\n`;
 const ENTRY_DTS = `export { x } from './chunk-a.js';\nexport declare const entry: number;\n`;
 
+const HOST_TUPLE_FORMAT = 'e2-host-tuple/v1';
+const HOST_NODE_IMAGE = 'node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6';
+
+// Synthetic sentropic host-tuple inputs (backend closure, neutral contract,
+// locks, Node 24 image digest, profiles). The G1/C9 delivery does not exist
+// yet; these local fixtures stand in for its documented file format only.
+function makeHostTuple(extra: Record<string, unknown> = {}) {
+  const dir = directory();
+  const doc = {
+    format: HOST_TUPLE_FORMAT,
+    backend: {
+      name: '@sentropic/cluster-mesh-memory', version: '0.3.0', sourceHead: 'c'.repeat(40),
+      archive: 'host/cluster-mesh-memory-0.3.0.tgz', sha256: 'e'.repeat(64),
+      integrity: integrity(Buffer.from('synthetic backend archive')),
+    },
+    neutralContract: { path: 'contracts/module-storage-port.d.ts', version: '4.1.0', sha256: 'f'.repeat(64) },
+    locks: [{ path: 'locks/host-package-lock.json', sha256: 'a'.repeat(64) }],
+    nodeImage: HOST_NODE_IMAGE,
+    profiles: ['atomic-units-v1', 'immutable-chains-v1', 'immutable-boundaries-v1', 'scope-outbox-v1', 'fenced-writers-v1'],
+    ...extra,
+  };
+  const path = join(dir, 'host-tuple.json');
+  writeFileSync(path, JSON.stringify(doc, null, 2));
+  return { dir, doc, args: ['--host-tuple', path] };
+}
+
 function makeE2(extra: { files?: Record<string, string>; exportMap?: Record<string, unknown> } = {}) {
   const dir = directory();
   const tarball = makeTarball({
@@ -137,11 +163,31 @@ describe('E2 handoff prerequisites', () => {
   });
 });
 
+describe('E2 host closure tuple (sentropic delivery, fail-closed with source-gap)', () => {
+  it('should refuse a final manifest when the host tuple is absent', () => {
+    const e2 = makeE2();
+    const p1 = makeP1();
+    const result = run([...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/source-gap/);
+  });
+
+  it('should refuse a final manifest when the host tuple is incomplete', () => {
+    const e2 = makeE2();
+    const p1 = makeP1();
+    const host = makeHostTuple({ locks: [] });
+    const result = run([...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/source-gap/);
+  });
+});
+
 describe('E2 substrate entry on a local deterministic fixture (offline)', () => {
   it('should refuse a tarball whose export map is not the memory-substrate entry', () => {
     const e2 = makeE2({ exportMap: { './memory-substrate': { types: './dist/memory-tools.d.ts', import: './dist/memory-tools.js' } } });
     const p1 = makeP1();
-    const result = run([...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args]);
+    const host = makeHostTuple();
+    const result = run([...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args]);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/memory-substrate/);
   });
@@ -149,7 +195,8 @@ describe('E2 substrate entry on a local deterministic fixture (offline)', () => 
   it('should refuse a tarball missing a chunk required by the entry', () => {
     const e2 = makeE2({ files: { 'package/dist/memory-substrate.js': `export { x } from './chunk-missing.js';\n` } });
     const p1 = makeP1();
-    const result = run([...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args]);
+    const host = makeHostTuple();
+    const result = run([...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args]);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/missing chunk/);
   });
@@ -160,9 +207,10 @@ describe('E2 substrate entry on a local deterministic fixture (offline)', () => 
     const reg = join(e2.dir, 'registry-tampered.json');
     writeFileSync(reg, JSON.stringify(registry, null, 2));
     const p1 = makeP1();
+    const host = makeHostTuple();
     const args = [...e2.base];
     args[args.indexOf('--registry-json') + 1] = reg;
-    const result = run([...args, '--output-dir', join(directory(), 'output'), ...p1.args]);
+    const result = run([...args, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args]);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/integrity/);
   });
@@ -179,15 +227,16 @@ describe('E2 substrate entry on a local deterministic fixture (offline)', () => 
   it('should refuse a P1 digest that differs from the retained manifest bytes', () => {
     const e2 = makeE2();
     const p1 = makeP1();
-    const args = [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args.slice(0, -1), 'f'.repeat(64)];
+    const host = makeHostTuple();
+    const args = [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args.slice(0, -1), 'f'.repeat(64), ...host.args];
     const result = run(args);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/P1 manifest SHA-256 mismatch/);
   });
 
-  it('should bind the fixture E2 and the exact P1 bytes in the closed sentropic Lot 2 schema', () => {
-    const e2 = makeE2(), p1 = makeP1(), out = join(e2.dir, 'output');
-    const result = run([...e2.base, '--output-dir', out, ...p1.args]);
+  it('should bind the fixture E2, the exact P1 bytes and a valid host tuple in the closed sentropic Lot 2 schema', () => {
+    const e2 = makeE2(), p1 = makeP1(), host = makeHostTuple(), out = join(e2.dir, 'output');
+    const result = run([...e2.base, '--output-dir', out, ...p1.args, ...host.args]);
     expect(result.status, result.stderr).toBe(0);
     const bytes = readFileSync(join(out, 'lot2-manifest.json')), manifest = JSON.parse(bytes.toString());
     expect(validateAgainstSchema(manifest, ARTIFACT_MANIFEST_SCHEMA)).toEqual([]);
@@ -209,15 +258,22 @@ describe('E2 substrate entry on a local deterministic fixture (offline)', () => 
     expect(sha256(provenanceBytes)).toBe(manifest.e2Provenance.sha256);
     const provenance = JSON.parse(provenanceBytes.toString());
     expect(provenance.bReference).toMatchObject({ releaseOption: 'B', tag: `v${VERSION}`, commit: GIT_HEAD });
+    expect(provenance.hostClosure).toMatchObject({
+      path: 'receipts/e2-host-tuple.json', format: HOST_TUPLE_FORMAT,
+      backend: host.doc.backend, neutralContract: host.doc.neutralContract,
+      locks: host.doc.locks, nodeImage: host.doc.nodeImage, profiles: host.doc.profiles,
+    });
+    expect(sha256(readFileSync(join(out, provenance.hostClosure.path)))).toBe(provenance.hostClosure.sha256);
+    expect(sha256(readFileSync(join(host.dir, 'host-tuple.json')))).toBe(provenance.hostClosure.sha256);
     for (const ref of [provenance.npmRegistry, provenance.sigstore]) expect(sha256(readFileSync(join(out, ref.path)))).toBe(ref.sha256);
     expect(readFileSync(join(out, 'lot2-manifest.json.sha256'), 'utf8')).toBe(`${sha256(bytes)}  lot2-manifest.json\n`);
   });
 
   it('should produce identical bytes for every output on two executions', () => {
-    const e2 = makeE2(), p1 = makeP1();
+    const e2 = makeE2(), p1 = makeP1(), host = makeHostTuple();
     const first = join(e2.dir, 'output'), second = join(directory(), 'output');
     for (const out of [first, second]) {
-      const result = run([...e2.base, '--output-dir', out, ...p1.args]);
+      const result = run([...e2.base, '--output-dir', out, ...p1.args, ...host.args]);
       expect(result.status, result.stderr).toBe(0);
     }
     const paths = readdirSync(first, { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile()).map((entry) => join(entry.parentPath, entry.name).slice(first.length + 1)).sort();
@@ -225,10 +281,10 @@ describe('E2 substrate entry on a local deterministic fixture (offline)', () => 
   });
 
   it.each(['digest', 'archive', 'inventory'])('should fail before writing when P1 %s is altered', (kind) => {
-    const e2 = makeE2(), p1 = makeP1(), out = join(directory(), 'output');
+    const e2 = makeE2(), p1 = makeP1(), host = makeHostTuple(), out = join(directory(), 'output');
     if (kind === 'digest') p1.args[p1.args.length - 1] = 'f'.repeat(64);
     else writeFileSync(join(p1.dir, kind === 'archive' ? p1.doc.artifacts[0]!.archive : p1.doc.contractInventory[0]!.path), 'tampered');
-    const result = run([...e2.base, '--output-dir', out, ...p1.args]);
+    const result = run([...e2.base, '--output-dir', out, ...p1.args, ...host.args]);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/P1 .*mismatch/);
     expect(existsSync(out)).toBe(false);
