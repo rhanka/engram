@@ -36,9 +36,10 @@ Exact command for the 0.21.1 release (run once 0.21.1 is published; the real
 generation is not executed here):
 
 ```sh
+mkdir -p /tmp/e2-0.21.1
 npm pack @sentropic/engram@0.21.1 --pack-destination /tmp/e2-0.21.1
 npm view @sentropic/engram@0.21.1 name version gitHead dist --json > /tmp/e2-0.21.1-registry.json
-# fetch the exact response from dist.attestations.url into /tmp/e2-0.21.1-attestations.json
+curl -fsSL "$(node -p "require('/tmp/e2-0.21.1-registry.json').dist.attestations.url")" -o /tmp/e2-0.21.1-attestations.json
 node scripts/memory-mcp-e2-manifest.mjs \
   --expected-version 0.21.1 \
   --tarball /tmp/e2-0.21.1/sentropic-engram-0.21.1.tgz \
