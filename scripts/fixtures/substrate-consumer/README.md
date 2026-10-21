@@ -1,11 +1,11 @@
-This consumer pins the third-party dependency closure for the local 0.21.0
+This consumer pins the third-party dependency closure for the local 0.21.1
 tarball. The runner substitutes only that tarball's SHA-512 integrity, then
 runs `npm ci --offline --ignore-scripts`. Missing required cache entries fail;
 the runner never regenerates the lock or fetches a replacement version.
 The existing package overrides are repeated here because npm applies overrides
 from the consumer root. Optional dependencies retain npm's optional semantics.
 
-The lock was generated once using offline npm 11.21.0, the local packed
+The lock is refreshed using offline npm 11, the local packed
 artifact and the committed consumer manifest. The two `empty-npm-package`
 alias records preserve the existing root lock entries (npm omits these absent
 optional archives during offline lock generation). No dependency is added to
