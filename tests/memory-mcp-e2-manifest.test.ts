@@ -83,17 +83,29 @@ const HOST_NODE_IMAGE = 'node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465
 // Synthetic sentropic host-tuple inputs (backend closure, neutral contract,
 // locks, Node 24 image digest, profiles). The G1/C9 delivery does not exist
 // yet; these local fixtures stand in for its documented file format only.
+// Every declared file is written next to the tuple with bytes matching the
+// declared hashes, exactly as the validator requires.
 function makeHostTuple(extra: Record<string, unknown> = {}) {
   const dir = directory();
+  const backendBytes = Buffer.from('synthetic backend archive');
+  const contractBytes = Buffer.from('export type Neutral = string;\n');
+  const lockBytes = Buffer.from(JSON.stringify({ name: 'host-lock', version: '0.0.0' }));
+  const backendArchive = 'host/cluster-mesh-memory-0.3.0.tgz';
+  const contractPath = 'contracts/module-storage-port.d.ts';
+  const lockPath = 'locks/host-package-lock.json';
+  for (const [path, bytes] of [[backendArchive, backendBytes], [contractPath, contractBytes], [lockPath, lockBytes]] as const) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), bytes);
+  }
   const doc = {
     format: HOST_TUPLE_FORMAT,
     backend: {
       name: '@sentropic/cluster-mesh-memory', version: '0.3.0', sourceHead: 'c'.repeat(40),
-      archive: 'host/cluster-mesh-memory-0.3.0.tgz', sha256: 'e'.repeat(64),
-      integrity: integrity(Buffer.from('synthetic backend archive')),
+      archive: backendArchive, sha256: sha256(backendBytes),
+      integrity: integrity(backendBytes),
     },
-    neutralContract: { path: 'contracts/module-storage-port.d.ts', version: '4.1.0', sha256: 'f'.repeat(64) },
-    locks: [{ path: 'locks/host-package-lock.json', sha256: 'a'.repeat(64) }],
+    neutralContract: { path: contractPath, version: '4.1.0', sha256: sha256(contractBytes) },
+    locks: [{ path: lockPath, sha256: sha256(lockBytes) }],
     nodeImage: HOST_NODE_IMAGE,
     profiles: ['atomic-units-v1', 'immutable-chains-v1', 'immutable-boundaries-v1', 'scope-outbox-v1', 'fenced-writers-v1'],
     ...extra,
@@ -348,5 +360,88 @@ describe('E2 substrate entry on a local deterministic fixture (offline)', () => 
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/P1 .*mismatch/);
     expect(existsSync(out)).toBe(false);
+  });
+});
+
+const HOST_IMAGE_DIGEST = HOST_NODE_IMAGE.split('@sha256:')[1]!;
+
+// Single round-3 mutation driver: one table row per check, every row must be refused.
+const ROUND3_MUTATIONS: { id: string; stderr: RegExp; setup: () => string[] }[] = [
+  {
+    id: 'comment-in-import', stderr: /missing chunk dist\/missing\.js/,
+    setup: () => makeE2commentArgs(),
+  },
+  {
+    id: 'decoy-extension', stderr: /missing chunk dist\/missing\.js/,
+    setup: () => {
+      const e2 = makeE2({ files: {
+        'package/dist/memory-substrate.js': `export { x } from './missing.js';\n`,
+        'package/dist/missing.js.js': 'export const decoy = true;\n',
+      } });
+      const p1 = makeP1(), host = makeHostTuple();
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+    },
+  },
+  {
+    id: 'missing-types-target', stderr: /types/,
+    setup: () => {
+      const e2 = makeE2({ exportMap: { './memory-substrate': { types: './dist/memory-substrate-types-missing.d.ts', import: './dist/memory-substrate.js' } } });
+      const p1 = makeP1(), host = makeHostTuple();
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+    },
+  },
+  {
+    id: 'nonexistent-tuple-file', stderr: /source-gap/,
+    setup: () => {
+      const e2 = makeE2(), p1 = makeP1(), host = makeHostTuple();
+      rmSync(join(host.dir, host.doc.backend.archive));
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+    },
+  },
+  {
+    id: 'tampered-tuple-file', stderr: /source-gap/,
+    setup: () => {
+      const e2 = makeE2(), p1 = makeP1(), host = makeHostTuple();
+      writeFileSync(join(host.dir, host.doc.neutralContract.path), 'tampered');
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+    },
+  },
+  {
+    id: 'wrong-node-major', stderr: /nodeImage/,
+    setup: () => {
+      const e2 = makeE2(), p1 = makeP1();
+      const host = makeHostTuple({ nodeImage: `node:240-bookworm-slim@sha256:${HOST_IMAGE_DIGEST}` });
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+    },
+  },
+  {
+    id: 'malformed-digest', stderr: /nodeImage/,
+    setup: () => {
+      const e2 = makeE2(), p1 = makeP1();
+      const host = makeHostTuple({ nodeImage: 'node:24-bookworm-slim@sha256:not-a-digest' });
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+    },
+  },
+];
+
+function makeE2commentArgs(): string[] {
+  const e2 = makeE2({ files: {
+    'package/dist/memory-substrate.js': `import /* trailing comment */ './missing.js';\nexport { x } from './chunk-a.js';\n`,
+  } });
+  const p1 = makeP1(), host = makeHostTuple();
+  return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+}
+
+describe('E2 round-3 refusal driver', () => {
+  it.each(ROUND3_MUTATIONS)('refuses mutation $id', ({ setup, stderr }) => {
+    const result = run(setup());
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(stderr);
+  });
+
+  it('covers every round-3 check with exactly one mutation row', () => {
+    const ids = ROUND3_MUTATIONS.map((mutation) => mutation.id);
+    expect([...ids].sort()).toEqual(['comment-in-import', 'decoy-extension', 'malformed-digest', 'missing-types-target', 'nonexistent-tuple-file', 'tampered-tuple-file', 'wrong-node-major']);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });
