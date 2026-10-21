@@ -105,27 +105,35 @@ function staticSpecifiers(text, rel) {
     rel.endsWith('.d.ts') ? ts.ScriptKind.TS : ts.ScriptKind.JS,
   );
   const out = [];
+  const add = (target) => {
+    assert(target && ts.isStringLiteralLike(target),
+      `Published archive has an unresolvable import in ${rel}: refusing instead of guessing`);
+    if (target.text.startsWith('.')) out.push(target.text);
+    else assert(!rel.endsWith('.d.ts'), `Published archive has an unretained type dependency ${target.text} required by ${rel}`);
+  };
   const visit = (node) => {
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-      if (node.moduleSpecifier) {
-        assert(ts.isStringLiteralLike(node.moduleSpecifier),
-          `Published archive has an unresolvable import in ${rel}: refusing instead of guessing`);
-        if (node.moduleSpecifier.text.startsWith('.')) out.push(node.moduleSpecifier.text);
-      }
+      if (node.moduleSpecifier) add(node.moduleSpecifier);
+    } else if (ts.isImportTypeNode(node)) {
+      add(ts.isLiteralTypeNode(node.argument) ? node.argument.literal : undefined);
+    } else if (ts.isExternalModuleReference(node)) {
+      add(node.expression);
     } else if (ts.isCallExpression(node)) {
       const callee = node.expression;
       const isImport = callee.kind === ts.SyntaxKind.ImportKeyword;
       const isRequire = ts.isIdentifier(callee) && callee.text === 'require';
       if ((isImport || isRequire) && node.arguments.length > 0) {
-        const target = node.arguments[0];
-        assert(target && ts.isStringLiteralLike(target),
-          `Published archive has an unresolvable import in ${rel}: refusing instead of guessing`);
-        if (target.text.startsWith('.')) out.push(target.text);
+        add(node.arguments[0]);
       }
     }
     ts.forEachChild(node, visit);
   };
   visit(source);
+  for (const ref of source.referencedFiles) {
+    assert(!ref.fileName.startsWith('/'), `Published archive has an unretained type dependency ${ref.fileName} required by ${rel}`);
+    out.push(ref.fileName.startsWith('.') ? ref.fileName : `./${ref.fileName}`);
+  }
+  for (const ref of source.typeReferenceDirectives) add(ts.factory.createStringLiteral(ref.fileName));
   return out;
 }
 
