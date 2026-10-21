@@ -183,6 +183,18 @@ describe('E2 host closure tuple (sentropic delivery, fail-closed with source-gap
   });
 });
 
+describe('E2 exact command documentation', () => {
+  it('should give the exact directory creation and executable attestation retrieval steps', () => {
+    const readme = readFileSync(join(ROOT, 'scripts/fixtures/memory-mcp-e2/README.md'), 'utf8');
+    const script = readFileSync(SCRIPT, 'utf8');
+    for (const doc of [readme, script]) {
+      expect(doc).toMatch(/mkdir -p \/tmp\/e2-0\.21\.1/);
+      expect(doc).toMatch(/curl -fsSL .*dist\.attestations\.url.*e2-0\.21\.1-attestations\.json/);
+    }
+    expect(readme).not.toMatch(/# fetch the exact response/);
+  });
+});
+
 describe('E2 substrate entry on a local deterministic fixture (offline)', () => {
   it('should refuse a tarball whose export map is not the memory-substrate entry', () => {
     const e2 = makeE2({ exportMap: { './memory-substrate': { types: './dist/memory-tools.d.ts', import: './dist/memory-tools.js' } } });
