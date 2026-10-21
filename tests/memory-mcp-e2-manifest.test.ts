@@ -312,9 +312,15 @@ describe('E2 substrate entry on a local deterministic fixture (offline)', () => 
   });
 
   it.each([
+    `import type { X } from './type-edge.js'; export { X };`,
+    `export type { X } from './type-edge.js';`,
     `export type X = import('./type-edge.js').X;`,
     `export type X = typeof import('./type-edge.js');`,
     `import X = require('./type-edge.js'); export { X };`,
+    `export {}; declare module './type-edge.js' { export type Added = string; }`,
+    `declare module './type-edge.js' { export type Added = string; }`,
+    `/** @typedef {import('./type-edge.js').X} X */\nexport {};`,
+    `/** @import { X } from './type-edge.js' */\nexport {};`,
     `/// <reference path="./type-edge.d.ts" />`,
     `/// <reference types="./type-edge.d.ts" />`,
   ])('should inventory transitive declaration edges from %s', (declaration) => {
@@ -331,6 +337,23 @@ describe('E2 substrate entry on a local deterministic fixture (offline)', () => 
     for (const path of ['package/dist/type-edge.d.ts', 'package/dist/nested.d.ts'] as const) {
       expect(packed).toContainEqual({ path: path.slice('package/'.length), sha256: sha256(Buffer.from(files[path])) });
     }
+  });
+
+  it.each([
+    `/** @typedef {import('./type-edge.js').X} X */\nexport const x = 1;`,
+    `/** @import { X } from './type-edge.js' */\nexport const x = 1;`,
+  ])('should inventory declaration bytes for JSDoc in runtime JS: %s', (source) => {
+    const declaration = 'export type X = string;';
+    const e2 = makeE2({ files: {
+      'package/dist/chunk-a.js': source,
+      'package/dist/type-edge.d.ts': declaration,
+    } });
+    const p1 = makeP1(), host = makeHostTuple(), out = join(directory(), 'output');
+    const result = run([...e2.base, '--output-dir', out, ...p1.args, ...host.args]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(readJson(join(out, 'receipts/e2-provenance.json')).packedFiles).toContainEqual({
+      path: 'dist/type-edge.d.ts', sha256: sha256(Buffer.from(declaration)),
+    });
   });
 
   it.each([
@@ -484,9 +507,15 @@ const ROUND3_MUTATIONS: { id: string; stderr: RegExp; setup: () => string[] }[] 
     },
   },
   ...[
+    { id: 'type-import-declaration', declaration: `import type { X } from './missing.js'; export { X };` },
+    { id: 'type-export-declaration', declaration: `export type { X } from './missing.js';` },
     { id: 'type-import', declaration: `export type X = import('./missing.js').X;` },
     { id: 'typeof-type-import', declaration: `export type X = typeof import('./missing.js');` },
     { id: 'external-module-reference', declaration: `import X = require('./missing.js'); export { X };` },
+    { id: 'module-augmentation', declaration: `export {}; declare module './missing.js' { export type X = string; }` },
+    { id: 'ambient-relative-module', declaration: `declare module './missing.js' { export type X = string; }` },
+    { id: 'jsdoc-import-type', declaration: `/** @typedef {import('./missing.js').X} X */\nexport {};` },
+    { id: 'jsdoc-import-tag', declaration: `/** @import { X } from './missing.js' */\nexport {};` },
     { id: 'type-reference-path', declaration: `/// <reference path="./missing.d.ts" />` },
     { id: 'type-reference-types', declaration: `/// <reference types="./missing.d.ts" />` },
   ].map(({ id, declaration }) => ({
@@ -497,6 +526,25 @@ const ROUND3_MUTATIONS: { id: string; stderr: RegExp; setup: () => string[] }[] 
         // Runtime bytes cannot satisfy a missing type edge.
         'package/dist/missing.js': 'export const X = 1;',
       } });
+      const p1 = makeP1(), host = makeHostTuple();
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+    },
+  })),
+  {
+    id: 'ambient-package-module', stderr: /unretained type dependency missing-package/,
+    setup: () => {
+      const e2 = makeE2({ files: { 'package/dist/chunk-a.d.ts': `declare module 'missing-package' { export type X = string; }` } });
+      const p1 = makeP1(), host = makeHostTuple();
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+    },
+  },
+  ...[
+    { id: 'runtime-jsdoc-import-type', source: `/** @typedef {import('./missing.js').X} X */\nexport const x = 1;` },
+    { id: 'runtime-jsdoc-import-tag', source: `/** @import { X } from './missing.js' */\nexport const x = 1;` },
+  ].map(({ id, source }) => ({
+    id, stderr: /missing chunk dist\/missing\.d\.ts/,
+    setup: () => {
+      const e2 = makeE2({ files: { 'package/dist/chunk-a.js': source, 'package/dist/missing.js': 'export const X = 1;' } });
       const p1 = makeP1(), host = makeHostTuple();
       return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
     },
@@ -588,7 +636,17 @@ describe('E2 round-3 refusal driver', () => {
 
   it('covers every round-3 check with exactly one mutation row', () => {
     const ids = ROUND3_MUTATIONS.map((mutation) => mutation.id);
-    expect([...ids].sort()).toEqual(['comment-in-import', 'decoy-extension', 'encoded-decoy-runtime', 'encoded-decoy-types', 'encoded-separator-%2f', 'encoded-separator-%5c', 'external-module-reference', 'malformed-digest', 'missing-types-target', 'nonexistent-tuple-file', 'tampered-retained-backend', 'tampered-retained-contract', 'tampered-retained-lock', 'tampered-tuple-file', 'tuple-evidence-collision', 'type-import', 'type-reference-path', 'type-reference-types', 'typeof-type-import', 'unretained-type-package', 'wrong-node-major']);
+    expect([...ids].sort()).toEqual([
+      'ambient-package-module', 'ambient-relative-module', 'comment-in-import', 'decoy-extension',
+      'encoded-decoy-runtime', 'encoded-decoy-types', 'encoded-separator-%2f', 'encoded-separator-%5c',
+      'external-module-reference', 'jsdoc-import-tag', 'jsdoc-import-type', 'malformed-digest',
+      'missing-types-target', 'module-augmentation', 'nonexistent-tuple-file',
+      'runtime-jsdoc-import-tag', 'runtime-jsdoc-import-type',
+      'tampered-retained-backend', 'tampered-retained-contract', 'tampered-retained-lock',
+      'tampered-tuple-file', 'tuple-evidence-collision', 'type-export-declaration', 'type-import',
+      'type-import-declaration', 'type-reference-path', 'type-reference-types', 'typeof-type-import',
+      'unretained-type-package', 'wrong-node-major',
+    ]);
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
