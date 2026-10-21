@@ -36,9 +36,11 @@
 // Format: {"format":"e2-host-tuple/v1","backend":{"name","version","sourceHead",
 // "archive","sha256","integrity"},"neutralContract":{"path","version","sha256"},
 // "locks":[{"path","sha256"}], "nodeImage":"node:24…@sha256:<64hex>",
-// "profiles":["…"]}
+// "profiles":["…"]}. Every named file must exist next to the tuple with
+// bytes matching its declared sha256, and the Node major must equal exactly 24.
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -92,13 +94,38 @@ function tarMembers(bytes) {
   return members;
 }
 
-function relativeSpecifiers(text) {
+// Real module lexer (TypeScript compiler API, a direct devDependency: no new
+// dependency). Comments are syntax trivia, so `import /* c */ './x.js'` and
+// every other static edge shape lex to their specifier; a computed target
+// cannot resolve to a file and refuses fail-closed instead of being guessed.
+function staticSpecifiers(text, rel) {
+  const ts = createRequire(import.meta.url)('typescript');
+  const source = ts.createSourceFile(
+    rel, text, ts.ScriptTarget.ESNext, true,
+    rel.endsWith('.d.ts') ? ts.ScriptKind.TS : ts.ScriptKind.JS,
+  );
   const out = [];
-  // from/export-from, dynamic import(), require() and bare side-effect
-  // imports (import './x.js'): every static edge must resolve.
-  const pattern = /(?:from\s*['"](\.[^'"]+)['"]|import\s*\(\s*['"](\.[^'"]+)['"]\s*\)|require\s*\(\s*['"](\.[^'"]+)['"]\s*\)|import\s*['"](\.[^'"]+)['"])/g;
-  let match;
-  while ((match = pattern.exec(text)) !== null) out.push(match[1] ?? match[2] ?? match[3] ?? match[4]);
+  const visit = (node) => {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      if (node.moduleSpecifier) {
+        assert(ts.isStringLiteralLike(node.moduleSpecifier),
+          `Published archive has an unresolvable import in ${rel}: refusing instead of guessing`);
+        if (node.moduleSpecifier.text.startsWith('.')) out.push(node.moduleSpecifier.text);
+      }
+    } else if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      const isImport = callee.kind === ts.SyntaxKind.ImportKeyword;
+      const isRequire = ts.isIdentifier(callee) && callee.text === 'require';
+      if ((isImport || isRequire) && node.arguments.length > 0) {
+        const target = node.arguments[0];
+        assert(target && ts.isStringLiteralLike(target),
+          `Published archive has an unresolvable import in ${rel}: refusing instead of guessing`);
+        if (target.text.startsWith('.')) out.push(target.text);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
   return out;
 }
 
@@ -117,14 +144,16 @@ function collectGraph(members, root, kind) {
     assert(bytes, `Published archive is missing chunk ${rel} required by ${ENTRY_SPECIFIER}`);
     seen.push(rel);
     if ((kind === 'js' && !rel.endsWith('.js')) || (kind === 'dts' && !rel.endsWith('.d.ts'))) continue;
-    for (const spec of relativeSpecifiers(bytes.toString('utf8'))) {
+    for (const spec of staticSpecifiers(bytes.toString('utf8'), rel)) {
       const resolved = posix.normalize(posix.join(posix.dirname(rel), spec));
       assert(!resolved.startsWith('..'), `Published archive escapes its package: ${spec} required by ${rel}`);
-      const candidates = kind === 'js'
-        ? [resolved, `${resolved}.js`]
-        : [resolved.replace(/\.js$/, '.d.ts'), `${resolved}.d.ts`];
-      const target = candidates.find((candidate) => members.has(`package/${candidate}`) && (kind === 'js' ? candidate.endsWith('.js') : candidate.endsWith('.d.ts')));
-      assert(target, `Published archive is missing chunk ${kind === 'js' ? resolved : resolved.replace(/\.js$/, '.d.ts')} required by ${rel}`);
+      // Exact ESM resolution: the specifier names the file byte-for-byte, no
+      // extension guessing, so a `missing.js.js` decoy never satisfies
+      // `missing.js`. Inside the type graph a `.js` specifier maps to its
+      // `.d.ts` declaration exactly as TypeScript resolves types.
+      const target = kind === 'js' ? resolved : (resolved.endsWith('.js') ? `${resolved.slice(0, -3)}.d.ts` : resolved);
+      const suffix = kind === 'js' ? '.js' : '.d.ts';
+      assert(target.endsWith(suffix) && members.has(`package/${target}`), `Published archive is missing chunk ${target} required by ${rel}`);
       if (!seen.includes(target) && !queue.includes(target)) queue.push(target);
     }
   }
@@ -139,9 +168,21 @@ function collectEntryClosure(members) {
 
 const HOST_TUPLE_FORMAT = 'e2-host-tuple/v1';
 const isHex = (value, length) => typeof value === 'string' && new RegExp(`^[0-9a-f]{${length}}$`).test(value);
-const isSemver = (value) => typeof value === 'string' && /^\d+\.\d+\.\d+/.test(value);
+const isSemver = (value) => typeof value === 'string' && /^\d+\.\d+\.\d+$/.test(value);
 const isRelPath = (value) => typeof value === 'string' && value.length > 0 && value.length <= 512 && !value.startsWith('/') && !/(^|\/)\.\.(\/|$)/.test(value) && !value.includes('\0') && !value.includes(':');
 const isIntegrity = (value) => typeof value === 'string' && /^sha512-[A-Za-z0-9+/]{86}==$/.test(value);
+
+// Typed Node image: a digest-pinned reference `<name>@sha256:<64 hex>`
+// whose major version parses as an integer and must equal exactly 24, so
+// `node:240-…` never reads as Node 24.
+const parseNodeImage = (value) => {
+  const reference = typeof value === 'string' ? value.match(/^(.+)@sha256:([0-9a-f]{64})$/) : null;
+  const tag = reference ? reference[1].match(/^node:(\d+)([.-].*)?$/) : null;
+  const major = tag ? Number.parseInt(tag[1], 10) : NaN;
+  const exact = tag && Number.isSafeInteger(major) && String(major) === tag[1] && major === 24;
+  assert(reference && exact, 'nodeImage must be a Node 24 image by digest (<name>@sha256:<64 hex> with major version exactly 24)');
+  return { name: reference[1], major, digest: reference[2] };
+};
 
 // The sentropic host delivery (backend closure, neutral contract, locks,
 // Node 24 image digest, profiles) does not exist yet. It is required as an
@@ -165,10 +206,26 @@ function readHostTuple(path) {
     const contract = doc.neutralContract;
     if (!contract || typeof contract !== 'object' || !isRelPath(contract.path) || !isSemver(contract.version) || !isHex(contract.sha256, 64)) failures.push('neutral contract is incomplete');
     if (!Array.isArray(doc.locks) || doc.locks.length === 0 || doc.locks.some((lock) => !lock || typeof lock !== 'object' || !isRelPath(lock.path) || !isHex(lock.sha256, 64))) failures.push('locks are incomplete');
-    if (typeof doc.nodeImage !== 'string' || !/^node:24/.test(doc.nodeImage) || !/@sha256:[0-9a-f]{64}$/.test(doc.nodeImage)) failures.push('nodeImage must be a Node 24 image by digest');
+    try { parseNodeImage(doc.nodeImage); } catch { failures.push('nodeImage must be a Node 24 image by digest'); }
     if (!Array.isArray(doc.profiles) || doc.profiles.length === 0 || doc.profiles.some((profile) => typeof profile !== 'string' || profile.length === 0)) failures.push('profiles are incomplete');
   }
   assert(failures.length === 0, `source-gap: host tuple is incomplete (${failures.join('; ')}); refusing instead of inventing the sentropic delivery`);
+  // Facts, not names: every file the tuple references must exist next to the
+  // tuple. Its bytes are read and hashed, and the hash must match the
+  // declared digest, which the manifest then binds. A missing or tampered
+  // file refuses fail-closed.
+  const root = dirname(resolve(path));
+  const bindFile = (declaredPath, declaredSha256, label) => {
+    let fileBytes;
+    try { fileBytes = readFileSync(resolve(root, declaredPath)); }
+    catch { assert(false, `source-gap: host tuple references ${label} ${declaredPath} which does not exist; refusing instead of inventing the sentropic delivery`); }
+    assert(sha256(fileBytes) === declaredSha256, `source-gap: host tuple ${label} ${declaredPath} bytes do not match the declared sha256 (tampered or stale); refusing instead of inventing the sentropic delivery`);
+    return fileBytes;
+  };
+  const backendBytes = bindFile(doc.backend.archive, doc.backend.sha256, 'backend archive');
+  assert(integrity(backendBytes) === doc.backend.integrity, `source-gap: host tuple backend archive ${doc.backend.archive} bytes do not match the declared integrity; refusing instead of inventing the sentropic delivery`);
+  bindFile(doc.neutralContract.path, doc.neutralContract.sha256, 'neutral contract');
+  for (const lock of doc.locks) bindFile(lock.path, lock.sha256, 'lock');
   return { bytes, doc };
 }
 
@@ -198,6 +255,7 @@ function prepareE2(tarball, { expectedVersion, registryPath, attestationsPath, h
   const members = tarMembers(tarball), pkg = JSON.parse(members.get('package/package.json'));
   assert(pkg.name === NAME && pkg.version === expectedVersion, 'Packed release identity mismatch');
   assert(pkg.exports?.[ENTRY_SPECIFIER]?.import === ENTRY_IMPORT, `Packed release surface mismatch: expected ${ENTRY_SPECIFIER}.import === ${ENTRY_IMPORT}`);
+  assert(pkg.exports?.[ENTRY_SPECIFIER]?.types === ENTRY_TYPES, `Packed release surface mismatch: expected ${ENTRY_SPECIFIER}.types === ${ENTRY_TYPES}`);
   const packedFiles = collectEntryClosure(members).map((path) => {
     const bytes = members.get(`package/${path}`);
     return { path, sha256: sha256(bytes) };
