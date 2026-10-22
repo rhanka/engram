@@ -40,13 +40,19 @@
 // bytes matching its declared sha256, and the Node major must equal exactly 24.
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { createRequire, isBuiltin, registerHooks } from 'node:module';
+import { createRequire, isBuiltin } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, posix, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { gunzipSync } from 'node:zlib';
 import { checkArtifactManifest, FROZEN_SPEC_SHA256 } from './vendor/memory-mcp-l5/receipt.mjs';
+
+const { registerHooks } = await import('node:module');
+if (typeof registerHooks !== 'function') {
+  console.error(`E2_UNSUPPORTED_NODE: Node.js 22.15+ (22.x) or 23.5+ is required for node:module.registerHooks; use sentropic's pinned Node 24 image for qualification. Running ${process.version}.`);
+  process.exit(2);
+}
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const NAME = '@sentropic/engram';
