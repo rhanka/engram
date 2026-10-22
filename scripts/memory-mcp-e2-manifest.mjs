@@ -42,7 +42,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire, isBuiltin, registerHooks } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join, posix, resolve, sep } from 'node:path';
+import { dirname, join, posix, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { gunzipSync } from 'node:zlib';
@@ -61,6 +61,8 @@ const sha512hex = (bytes) => createHash('sha512').update(bytes).digest('hex');
 const integrity = (bytes) => `sha512-${createHash('sha512').update(bytes).digest('base64')}`;
 const jsonBytes = (doc) => Buffer.from(JSON.stringify(doc, null, 2) + '\n');
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
+const ts = createRequire(import.meta.url)('typescript');
+const TYPE_OPTIONS = { module: ts.ModuleKind.NodeNext, moduleResolution: ts.ModuleResolutionKind.NodeNext };
 
 const USAGE = `Usage: node scripts/memory-mcp-e2-manifest.mjs --expected-version <semver> --tarball <published.tgz> --registry-json <npm-view-dist.json> --attestations-json <attestations.json> --host-tuple <e2-host-tuple-v1.json> --output-dir <bundle>
   Final: --p1-manifest <pre-candidate-manifest.json> --p1-sha256 <64 lowercase hex>
@@ -99,17 +101,18 @@ function tarMembers(bytes) {
 // dependency). Comments are syntax trivia, so `import /* c */ './x.js'` and
 // every other static edge shape lex to their specifier; a computed target
 // cannot resolve to a file and refuses fail-closed instead of being guessed.
-function staticSpecifiers(text, rel) {
-  const ts = createRequire(import.meta.url)('typescript');
+function staticSpecifiers(text, rel, filename) {
   const source = ts.createSourceFile(
-    rel, text, ts.ScriptTarget.ESNext, true,
-    rel.endsWith('.d.ts') ? ts.ScriptKind.TS : ts.ScriptKind.JS,
+    filename, text, ts.ScriptTarget.ESNext, true,
+    /\.d\.[cm]?ts$/.test(rel) ? ts.ScriptKind.TS : ts.ScriptKind.JS,
   );
+  source.impliedNodeFormat = ts.getImpliedNodeFormatForFile(filename, undefined, ts.sys, TYPE_OPTIONS);
   const out = [];
   const add = (target, typeOnly = false, condition = 'import') => {
     assert(target && ts.isStringLiteralLike(target),
-      `Published archive has an unresolvable import in ${rel}: refusing instead of guessing`);
-    out.push({ specifier: target.text, typeOnly, condition });
+      `E2_UNRESOLVED_MODULE_SPECIFIER: Published archive has an unresolvable import in ${rel}: refusing instead of guessing`);
+    const mode = target.parent ? ts.getModeForUsageLocation(source, target, TYPE_OPTIONS) : source.impliedNodeFormat;
+    out.push({ specifier: target.text, typeOnly, condition, resolutionMode: condition === 'require' ? ts.ModuleKind.CommonJS : mode });
   };
   const visit = (node) => {
     // Module-reference fields audited against TypeScript's AST interfaces and
@@ -145,14 +148,27 @@ function staticSpecifiers(text, rel) {
 }
 
 // Ask Node itself to resolve from the importer, without executing any archive
-// code. A synchronous, short-lived hook supplies the parent URL and the type
-// graph's condition; import.meta.resolve otherwise uses this script as parent.
-function resolveSpecifier(specifier, parentURL, kind, condition) {
+// code. TypeScript resolves declarations with the usage's import/require mode.
+// A short-lived Node hook supplies the runtime importer's parent URL.
+function resolveSpecifier(specifier, parentURL, kind, condition, resolutionMode, archiveRoot) {
+  if (kind === 'dts') {
+    const filename = fileURLToPath(parentURL);
+    // Preserve the established URL decoding for relative declaration edges;
+    // package imports/exports and legacy `types` use TypeScript's resolver.
+    const local = specifier.startsWith('.') || specifier.startsWith('/') || specifier.startsWith('file:');
+    const path = local ? fileURLToPath(new URL(specifier, parentURL)) : undefined;
+    const target = path ? `./${relative(dirname(filename), path).split(sep).join('/')}` : specifier;
+    const mode = resolutionMode ?? (condition === 'require' ? ts.ModuleKind.CommonJS : ts.ModuleKind.ESNext);
+    const resolved = ts.resolveModuleName(target, filename, TYPE_OPTIONS, ts.sys, undefined, undefined, mode).resolvedModule;
+    const missing = path ? `; missing chunk ${relative(archiveRoot, path).replace(/\.([cm]?)js$/, '.d.$1ts')}` : '';
+    assert(resolved && /\.d\.[cm]?ts$/.test(resolved.resolvedFileName),
+      `E2_UNRESOLVED_TYPE_DEPENDENCY: unretained type dependency ${specifier} required by ${filename}${missing}`);
+    return pathToFileURL(resolved.resolvedFileName);
+  }
   const hook = registerHooks({
     resolve(specifier, context, nextResolve) {
       return nextResolve(specifier, {
         ...context, parentURL,
-        conditions: kind === 'dts' ? ['node', 'types'] : context.conditions,
       });
     },
   });
@@ -179,15 +195,16 @@ function collectGraph(members, root, kind, archiveRoot) {
     const bytes = members.get(`package/${rel}`);
     assert(bytes, `Published archive is missing chunk ${rel} required by ${ENTRY_SPECIFIER}`);
     seen.push(rel);
-    if ((kind === 'js' && !rel.endsWith('.js')) || (kind === 'dts' && !rel.endsWith('.d.ts'))) continue;
-    for (const { specifier: spec, typeOnly, condition } of staticSpecifiers(bytes.toString('utf8'), rel)) {
+    if ((kind === 'js' && !/\.[cm]?js$/.test(rel)) || (kind === 'dts' && !/\.d\.[cm]?ts$/.test(rel))) continue;
+    for (const { specifier: spec, typeOnly, condition, resolutionMode } of staticSpecifiers(bytes.toString('utf8'), rel, resolve(archiveRoot, rel))) {
       if (isBuiltin(spec)) continue;
       const parentURL = pathToFileURL(resolve(archiveRoot, rel)).href;
       const targetKind = typeOnly ? 'dts' : kind;
       let url;
       try {
-        url = resolveSpecifier(spec, parentURL, targetKind, condition);
+        url = resolveSpecifier(spec, parentURL, targetKind, condition, resolutionMode, archiveRoot);
       } catch (error) {
+        if (error.message.startsWith('E2_UNRESOLVED_TYPE_DEPENDENCY:')) throw error;
         if (error.code === 'ERR_INVALID_MODULE_SPECIFIER') {
           throw new Error(`E2_UNRESOLVED_DEPENDENCY: invalid specifier or encoded separator ${spec} required by ${rel} (${error.code})`);
         }
@@ -198,13 +215,9 @@ function collectGraph(members, root, kind, archiveRoot) {
       const path = fileURLToPath(url);
       assert(path.startsWith(archiveRoot), `E2_UNRETAINED_DEPENDENCY: Published archive escapes its package: ${spec} required by ${rel}`);
       const resolved = path.slice(archiveRoot.length).split(sep).join('/');
-      // Exact ESM resolution: the specifier names the file byte-for-byte, no
-      // extension guessing, so a `missing.js.js` decoy never satisfies
-      // `missing.js`. Inside the type graph a `.js` specifier maps to its
-      // `.d.ts` declaration exactly as TypeScript resolves types.
-      const target = targetKind === 'js' ? resolved : (resolved.endsWith('.js') ? `${resolved.slice(0, -3)}.d.ts` : resolved);
-      const suffix = targetKind === 'js' ? '.js' : '.d.ts';
-      assert(target.endsWith(suffix) && members.has(`package/${target}`), `E2_MISSING_DEPENDENCY: Published archive is missing chunk ${target} required by ${rel}`);
+      const target = resolved;
+      const suffix = targetKind === 'js' ? /\.[cm]?js$/ : /\.d\.[cm]?ts$/;
+      assert(suffix.test(target) && members.has(`package/${target}`), `E2_MISSING_DEPENDENCY: Published archive is missing chunk ${target} required by ${rel}`);
       if (targetKind !== kind) seen.push(...collectGraph(members, target, targetKind, archiveRoot).filter((path) => !seen.includes(path)));
       else if (!seen.includes(target) && !queue.includes(target)) queue.push(target);
     }

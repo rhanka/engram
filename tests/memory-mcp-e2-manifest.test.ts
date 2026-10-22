@@ -753,3 +753,44 @@ describe('E2 round-3 refusal driver', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
+
+// Owner's final targeted checks: each row must independently refuse binding.
+const FINAL_MUTATIONS = [
+  ...['import', 'require', 'package-types'].map((mode) => ({
+    id: `declarations-${mode}`, stderr: /E2_UNRESOLVED_TYPE_DEPENDENCY.*missing chunk .*missing\.d\.ts/,
+    setup: () => {
+      const conditions = { types: { [mode]: './dist/conditional.d.ts', default: './dist/decoy.d.ts' }, import: './dist/chunk-a.js' };
+      const e2 = makeE2({ exportMap: { './conditional': conditions }, files: {
+        'package/dist/chunk-a.d.ts': mode === 'package-types'
+          ? `export type X = import('typed-package').X;`
+          : mode === 'require' ? `import X = require('@sentropic/engram/conditional'); export { X };`
+          : `export type X = import('@sentropic/engram/conditional', { with: { 'resolution-mode': 'import' } }).X;`,
+        'package/dist/conditional.d.ts': `export type X = import('./missing.js').X;`,
+        'package/dist/decoy.d.ts': 'export type X = string;',
+        'package/dist/missing.js': 'export const X = 1;',
+        'package/node_modules/typed-package/package.json': JSON.stringify({ name: 'typed-package', types: './index.d.ts', main: './decoy.js' }),
+        'package/node_modules/typed-package/index.d.ts': `export type X = import('./missing.js').X;`,
+        'package/node_modules/typed-package/decoy.js': 'module.exports = {};',
+        'package/node_modules/typed-package/decoy.d.ts': 'export type X = string;',
+        'package/node_modules/typed-package/missing.js': 'export const X = 1;',
+      } });
+      const p1 = makeP1(), host = makeHostTuple();
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+    },
+  })),
+];
+
+describe('E2 final strict refusal driver', () => {
+  it.each(FINAL_MUTATIONS)('refuses mutation $id', ({ setup, stderr }) => {
+    const result = run(setup());
+    expect(result.status, result.stdout).toBe(1);
+    expect(result.stderr).toMatch(stderr);
+    expect(result.stdout).not.toContain('bound');
+  });
+
+  it('covers every final check with exactly one mutation row', () => {
+    const ids = FINAL_MUTATIONS.map((mutation) => mutation.id);
+    expect([...ids].sort()).toEqual(['declarations-import', 'declarations-package-types', 'declarations-require']);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
