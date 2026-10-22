@@ -361,7 +361,7 @@ function readHostTuple(path) {
   return { bytes, doc, files };
 }
 
-function prepareE2(tarball, { expectedVersion, registryPath, attestationsPath, hostTuple }) {
+function prepareE2(tarball, { expectedVersion, registryPath, attestationsPath, hostTuplePath }) {
   const tag = `v${expectedVersion}`;
   const registryBytes = readFileSync(registryPath);
   let registry;
@@ -392,6 +392,8 @@ function prepareE2(tarball, { expectedVersion, registryPath, attestationsPath, h
     const bytes = members.get(`package/${path}`);
     return { path, sha256: sha256(bytes) };
   });
+  // A source-gap result must prove the published closure passed first.
+  const hostTuple = readHostTuple(hostTuplePath);
   const archive = `archives/engram-${expectedVersion}.tgz`;
   // artifactItem is a frozen sentropic contract: no shasum member. The shasum
   // binding is still enforced above and recorded in npmRegistry below.
@@ -458,8 +460,7 @@ export function generateE2Bundle(options) {
   const draft = options['pre-binding'] === true, p1Digest = options['p1-sha256'];
   assert(!draft || (!p1Digest && !options['p1-manifest']), 'pre-binding cannot be combined with P1 binding options');
   assert(draft || (typeof p1Digest === 'string' && /^[0-9a-f]{64}$/.test(p1Digest) && options['p1-manifest']), 'Final manifest requires --p1-sha256 (64 lowercase hex) and --p1-manifest; use --pre-binding for a draft');
-  const hostTuple = readHostTuple(options['host-tuple']);
-  const e2 = prepareE2(readFileSync(options.tarball), { expectedVersion, registryPath: resolve(options['registry-json']), attestationsPath: resolve(options['attestations-json']), hostTuple });
+  const e2 = prepareE2(readFileSync(options.tarball), { expectedVersion, registryPath: resolve(options['registry-json']), attestationsPath: resolve(options['attestations-json']), hostTuplePath: options['host-tuple'] });
   const p1 = draft ? null : prepareP1(resolve(options['p1-manifest']), p1Digest);
   const doc = draft ? {
     status: 'pre-binding', intendedStage: 'lot2', e2ArtifactSha256: e2.artifact.sha256,
