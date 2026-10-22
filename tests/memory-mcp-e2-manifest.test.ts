@@ -778,6 +778,41 @@ const FINAL_MUTATIONS = [
       return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
     },
   })),
+  ...['require', 'module.require', 'createRequire(import.meta.url)', 'import'].flatMap((form) => [
+    { kind: 'package', argument: `'missing-package'`, stderr: /E2_UNRESOLVED_DEPENDENCY/ },
+    { kind: 'imports', argument: `'#missing'`, stderr: /E2_UNRESOLVED_DEPENDENCY/ },
+    { kind: 'file', argument: `'file:///__engram_missing__/missing.js'`, stderr: /E2_(UNRESOLVED|UNRETAINED)_DEPENDENCY/ },
+    { kind: 'relative', argument: `'./missing.js'`, stderr: /E2_(UNRESOLVED|MISSING)_DEPENDENCY/ },
+    { kind: 'computed', argument: 'target', stderr: /E2_UNRESOLVED_MODULE_SPECIFIER/ },
+    { kind: 'empty', argument: '', stderr: /E2_UNRESOLVED_MODULE_SPECIFIER/ },
+  ].map(({ kind, argument, stderr }) => ({
+    id: `call-${form}-${kind}`, stderr,
+    setup: () => {
+      const e2 = makeE2({ files: { 'package/dist/chunk-a.js': `${form}(${argument}); export const x = 1;` } });
+      const p1 = makeP1(), host = makeHostTuple();
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+    },
+  }))),
+  ...[
+    { id: 'invalid-module-syntax', source: 'import {', stderr: /E2_INVALID_MODULE_SYNTAX/ },
+    { id: 'module-call-arguments', source: `import('./chunk-a.js', options);`, stderr: /E2_UNSUPPORTED_MODULE_CALL/ },
+    { id: 'unknown-require-receiver', source: `other.require('./chunk-a.js');`, stderr: /E2_UNRESOLVED_REQUIRE_BASE/ },
+    { id: 'create-require-base', source: `createRequire(base)('./chunk-a.js');`, stderr: /E2_UNRESOLVED_REQUIRE_BASE/ },
+    { id: 'create-require-escape', source: `const load = createRequire(import.meta.url); load('./missing.js');`, stderr: /E2_UNRESOLVED_REQUIRE_BASE/ },
+    { id: 'require-escape', source: `const load = require; load('./missing.js');`, stderr: /E2_UNSUPPORTED_MODULE_CALL/ },
+    { id: 'module-require-escape', source: `const load = module.require; load('./missing.js');`, stderr: /E2_UNSUPPORTED_MODULE_CALL/ },
+    { id: 'require-call', source: `require.call(null, './missing.js');`, stderr: /E2_UNSUPPORTED_MODULE_CALL/ },
+    { id: 'module-computed-method', source: `module[method]('./missing.js');`, stderr: /E2_UNSUPPORTED_MODULE_CALL/ },
+    { id: 'aliased-create-require', source: `import { createRequire as loader } from 'node:module'; loader(import.meta.url)('./missing.js');`, stderr: /E2_UNRESOLVED_DEPENDENCY/ },
+  ].map(({ id, source, stderr }) => ({
+    id, stderr,
+    setup: () => {
+      const e2 = makeE2({ files: { 'package/dist/chunk-a.js': source } });
+      const p1 = makeP1(), host = makeHostTuple();
+      return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
+    },
+  })),
+
 ];
 
 describe('E2 final strict refusal driver', () => {
@@ -790,7 +825,15 @@ describe('E2 final strict refusal driver', () => {
 
   it('covers every final check with exactly one mutation row', () => {
     const ids = FINAL_MUTATIONS.map((mutation) => mutation.id);
-    expect([...ids].sort()).toEqual(['declarations-import', 'declarations-package-types', 'declarations-require']);
+    const expected = [
+      'declarations-import', 'declarations-require', 'declarations-package-types',
+      'invalid-module-syntax', 'module-call-arguments', 'unknown-require-receiver',
+      'create-require-base', 'create-require-escape', 'require-escape', 'module-require-escape',
+      'require-call', 'module-computed-method', 'aliased-create-require',
+      ...['require', 'module.require', 'createRequire(import.meta.url)', 'import'].flatMap((form) =>
+        ['package', 'imports', 'file', 'relative', 'computed', 'empty'].map((kind) => `call-${form}-${kind}`)),
+    ];
+    expect([...ids].sort()).toEqual(expected.sort());
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
