@@ -812,7 +812,15 @@ const FINAL_MUTATIONS = [
       return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
     },
   })),
-
+  {
+    id: 'closure-before-source-gap', stderr: /E2_MISSING_DEPENDENCY/,
+    setup: () => {
+      const e2 = makeE2({ files: { 'package/dist/chunk-a.js': `import './missing.js';` } });
+      const host = join(directory(), 'placeholder-host.json');
+      writeFileSync(host, '{}');
+      return [...e2.base, '--pre-binding', '--host-tuple', host, '--output-dir', join(directory(), 'output')];
+    },
+  },
 ];
 
 describe('E2 final strict refusal driver', () => {
@@ -826,7 +834,7 @@ describe('E2 final strict refusal driver', () => {
   it('covers every final check with exactly one mutation row', () => {
     const ids = FINAL_MUTATIONS.map((mutation) => mutation.id);
     const expected = [
-      'declarations-import', 'declarations-require', 'declarations-package-types',
+      'declarations-import', 'declarations-require', 'declarations-package-types', 'closure-before-source-gap',
       'invalid-module-syntax', 'module-call-arguments', 'unknown-require-receiver',
       'create-require-base', 'create-require-escape', 'require-escape', 'module-require-escape',
       'require-call', 'module-computed-method', 'aliased-create-require',
@@ -836,4 +844,59 @@ describe('E2 final strict refusal driver', () => {
     expect([...ids].sort()).toEqual(expected.sort());
     expect(new Set(ids).size).toBe(ids.length);
   });
+});
+
+
+describe('E2 strict resolution positive controls', () => {
+  it.each(['require', 'module.require', 'createRequire(import.meta.url)', 'loader(import.meta.url)', 'import'])(
+    'should retain the exact conditional runtime closure for %s', (form) => {
+      const mode = form === 'import' ? 'import' : 'require';
+      const extension = mode === 'import' ? 'mjs' : 'cjs';
+      const conditions = { import: './dist/selected.mjs', require: './dist/selected.cjs' };
+      const files = {
+        'package/dist/chunk-a.js': `import { createRequire as loader } from 'node:module'; ${form}('@sentropic/engram/conditional');`,
+        [`package/dist/selected.${extension}`]: mode === 'import' ? `import './nested.mjs';` : `module['require']('./nested.cjs');`,
+        [`package/dist/nested.${extension}`]: '/* retained bytes, never executed */',
+      };
+      // The opposite condition deliberately names an absent file.
+      const e2 = makeE2({ files, exportMap: { './conditional': conditions } });
+      const host = makeHostTuple(), p1 = makeP1(), out = join(directory(), 'output');
+      const result = run([...e2.base, '--output-dir', out, ...p1.args, ...host.args]);
+      expect(result.status, result.stderr).toBe(0);
+      const packed = readJson(join(out, 'receipts/e2-provenance.json')).packedFiles;
+      for (const [path, bytes] of Object.entries(files)) {
+        expect(packed).toContainEqual({ path: path.slice('package/'.length), sha256: sha256(Buffer.from(bytes)) });
+      }
+    },
+  );
+
+  it.each(['import', 'require', 'package-types'])(
+    'should retain the transitive declarations selected by %s', (mode) => {
+      const suffix = mode === 'require' ? 'cts' : 'mts';
+      const extension = mode === 'require' ? 'cjs' : 'mjs';
+      const target = `./dist/selected.d.${suffix}`;
+      const conditions = { types: { [mode]: target, default: './dist/absent-decoy.d.ts' } };
+      const declaration = mode === 'require'
+        ? `import X = require('@sentropic/engram/conditional'); export { X };`
+        : `export type X = import('${mode === 'import' ? '@sentropic/engram/conditional' : 'typed-package'}', { with: { 'resolution-mode': 'import' } }).X;`;
+      const files = {
+        'package/dist/chunk-a.d.ts': declaration,
+        [`package/dist/selected.d.${suffix}`]: `export type X = import('./nested.${extension}').X;`,
+        [`package/dist/nested.d.${suffix}`]: 'export type X = string;',
+        'package/node_modules/typed-package/package.json': JSON.stringify({ name: 'typed-package', types: target }),
+        [`package/node_modules/typed-package/dist/selected.d.${suffix}`]: `export type X = import('./nested.${extension}').X;`,
+        [`package/node_modules/typed-package/dist/nested.d.${suffix}`]: 'export type X = string;',
+      };
+      const e2 = makeE2({ files, exportMap: { './conditional': conditions } });
+      const host = makeHostTuple(), p1 = makeP1(), out = join(directory(), 'output');
+      const result = run([...e2.base, '--output-dir', out, ...p1.args, ...host.args]);
+      expect(result.status, result.stderr).toBe(0);
+      const packed = readJson(join(out, 'receipts/e2-provenance.json')).packedFiles;
+      const prefix = mode === 'package-types' ? 'node_modules/typed-package/' : '';
+      for (const name of ['selected', 'nested']) {
+        const path = `${prefix}dist/${name}.d.${suffix}`;
+        expect(packed).toContainEqual({ path, sha256: sha256(Buffer.from(files[`package/${path}`]!)) });
+      }
+    },
+  );
 });
