@@ -106,8 +106,28 @@ function staticSpecifiers(text, rel, filename) {
     filename, text, ts.ScriptTarget.ESNext, true,
     /\.d\.[cm]?ts$/.test(rel) ? ts.ScriptKind.TS : ts.ScriptKind.JS,
   );
+  assert(source.parseDiagnostics.length === 0, `E2_INVALID_MODULE_SYNTAX: cannot parse ${rel} exactly`);
   source.impliedNodeFormat = ts.getImpliedNodeFormatForFile(filename, undefined, ts.sys, TYPE_OPTIONS);
   const out = [];
+  const unwrap = (node) => {
+    while (ts.isParenthesizedExpression(node)) node = node.expression;
+    return node;
+  };
+  const callName = (node) => {
+    node = unwrap(node);
+    if (ts.isIdentifier(node)) return node.text;
+    if (ts.isPropertyAccessExpression(node)) return node.name.text;
+    if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression)) return node.argumentExpression.text;
+  };
+  const creators = new Set(['createRequire']);
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement) || !['module', 'node:module'].includes(statement.moduleSpecifier.text)) continue;
+    const bindings = statement.importClause?.namedBindings;
+    if (bindings && ts.isNamedImports(bindings)) {
+      for (const binding of bindings.elements) if ((binding.propertyName ?? binding.name).text === 'createRequire') creators.add(binding.name.text);
+    }
+  }
+  const isCreator = (node) => creators.has(callName(node));
   const add = (target, typeOnly = false, condition = 'import') => {
     assert(target && ts.isStringLiteralLike(target),
       `E2_UNRESOLVED_MODULE_SPECIFIER: Published archive has an unresolvable import in ${rel}: refusing instead of guessing`);
@@ -115,6 +135,17 @@ function staticSpecifiers(text, rel, filename) {
     out.push({ specifier: target.text, typeOnly, condition, resolutionMode: condition === 'require' ? ts.ModuleKind.CommonJS : mode });
   };
   const visit = (node) => {
+    // A loader that escapes its direct call cannot be resolved statically.
+    const loader = (ts.isIdentifier(node) && (node.text === 'require' || creators.has(node.text))) ||
+      ((ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) && (callName(node) === 'require' || isCreator(node)));
+    const binding = node.parent && (ts.isImportSpecifier(node.parent) ||
+      (ts.isPropertyAccessExpression(node.parent) && node.parent.name === node));
+    if (loader && !binding) {
+      let usage = node;
+      while (ts.isParenthesizedExpression(usage.parent)) usage = usage.parent;
+      assert(ts.isCallExpression(usage.parent) && usage.parent.expression === usage,
+        `E2_UNSUPPORTED_MODULE_CALL: escaped require-like loader in ${rel}`);
+    }
     // Module-reference fields audited against TypeScript's AST interfaces and
     // collectExternalModuleReferences: moduleSpecifier (also JSDocImportTag),
     // ImportType.argument, ExternalModuleReference.expression, ModuleDeclaration.name.
@@ -127,11 +158,26 @@ function staticSpecifiers(text, rel, filename) {
     } else if (ts.isModuleDeclaration(node) && ts.isStringLiteral(node.name)) {
       add(node.name, true);
     } else if (ts.isCallExpression(node)) {
-      const callee = node.expression;
+      const callee = unwrap(node.expression);
       const isImport = callee.kind === ts.SyntaxKind.ImportKeyword;
-      const isRequire = ts.isIdentifier(callee) && callee.text === 'require';
-      if ((isImport || isRequire) && node.arguments.length > 0) {
-        add(node.arguments[0], false, isRequire ? 'require' : 'import');
+      const isRequire = callName(callee) === 'require';
+      const createdRequire = ts.isCallExpression(callee) && isCreator(callee.expression);
+      if (isCreator(callee)) {
+        let parent = node.parent;
+        while (ts.isParenthesizedExpression(parent)) parent = parent.parent;
+        assert(ts.isCallExpression(parent) && unwrap(parent.expression) === node && node.arguments.length === 1 && node.arguments[0].getText(source) === 'import.meta.url',
+          `E2_UNRESOLVED_REQUIRE_BASE: createRequire base or escaped loader in ${rel}`);
+      } else if (isRequire && !ts.isIdentifier(callee)) {
+        assert(ts.isIdentifier(unwrap(callee.expression)) && unwrap(callee.expression).text === 'module',
+          `E2_UNRESOLVED_REQUIRE_BASE: require receiver in ${rel}`);
+      } else if ((ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) &&
+          (callName(callee.expression) === 'require' || isCreator(callee.expression) ||
+           (ts.isIdentifier(callee.expression) && callee.expression.text === 'module'))) {
+        assert(false, `E2_UNSUPPORTED_MODULE_CALL: unresolved require-like call in ${rel}`);
+      }
+      if (isImport || isRequire || createdRequire) {
+        assert(node.arguments.length <= 1, `E2_UNSUPPORTED_MODULE_CALL: unresolved module call arguments in ${rel}`);
+        add(node.arguments[0], false, isRequire || createdRequire ? 'require' : 'import');
       }
     }
     ts.forEachChild(node, visit);
