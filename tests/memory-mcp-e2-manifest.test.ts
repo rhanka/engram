@@ -9,6 +9,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { checkArtifactManifest, ARTIFACT_MANIFEST_SCHEMA, FROZEN_SPEC_SHA256 } from '../scripts/vendor/memory-mcp-l5/receipt.mjs';
 import { validateAgainstSchema } from '../scripts/vendor/memory-mcp-l5/schema-validator.mjs';
 
+const { registerHooks } = await import('node:module');
+const hasRegisterHooks = typeof registerHooks === 'function';
+const skipReason = hasRegisterHooks ? '' : ' (skipped: requires node:module.registerHooks, Node.js 22.15+ / 23.5+)';
+
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const SCRIPT = join(ROOT, 'scripts/memory-mcp-e2-manifest.mjs');
 const VERSION = '0.21.1';
@@ -24,6 +28,18 @@ const directory = () => { const dir = mkdtempSync(join(tmpdir(), 'memory-e2-test
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 const run = (args: string[]) => spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8' });
 const readJson = (path: string) => JSON.parse(readFileSync(path, 'utf8'));
+
+it.skipIf(hasRegisterHooks)('should refuse Node.js without registerHooks before processing inputs', () => {
+  const result = run(['--unknown-option']);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toContain('E2_UNSUPPORTED_NODE');
+  expect(result.stderr).toContain('Node.js 22.15+ (22.x) or 23.5+');
+  expect(result.stderr).toContain('node:module.registerHooks');
+  expect(result.stderr).toContain('pinned Node 24 image');
+  expect(result.stderr).toContain(process.version);
+  expect(result.stderr).not.toContain('SyntaxError');
+  expect(result.stdout).toBe('');
+});
 
 // P1 is future work: these are deliberately synthetic local P1 inputs, never release evidence.
 function makeP1() {
@@ -155,7 +171,7 @@ function makeE2(extra: { files?: Record<string, string>; exportMap?: Record<stri
   return { dir, tarball, registry, base };
 }
 
-describe('E2 handoff prerequisites', () => {
+describe.skipIf(!hasRegisterHooks)(`E2 handoff prerequisites${skipReason}`, () => {
   it.each([[], ['--p1-sha256', 'a'.repeat(64)], ['--p1-manifest', 'missing.json'], ['--p1-sha256', 'ABC']].map((binding) => ({ binding })))('should refuse a final manifest without complete P1 binding: $binding', ({ binding }) => {
     const e2 = makeE2();
     const result = run([...e2.base, '--output-dir', join(directory(), 'output'), ...binding]);
@@ -176,7 +192,7 @@ describe('E2 handoff prerequisites', () => {
   });
 });
 
-describe('E2 host closure tuple (sentropic delivery, fail-closed with source-gap)', () => {
+describe.skipIf(!hasRegisterHooks)(`E2 host closure tuple (sentropic delivery, fail-closed with source-gap)${skipReason}`, () => {
   it('should refuse a final manifest when the host tuple is absent', () => {
     const e2 = makeE2();
     const p1 = makeP1();
@@ -219,7 +235,7 @@ describe('E2 host closure tuple (sentropic delivery, fail-closed with source-gap
   });
 });
 
-describe('E2 exact command documentation', () => {
+describe.skipIf(!hasRegisterHooks)(`E2 exact command documentation${skipReason}`, () => {
   it('should give the exact directory creation and executable attestation retrieval steps', () => {
     const readme = readFileSync(join(ROOT, 'scripts/fixtures/memory-mcp-e2/README.md'), 'utf8');
     const script = readFileSync(SCRIPT, 'utf8');
@@ -231,7 +247,7 @@ describe('E2 exact command documentation', () => {
   });
 });
 
-describe('E2 substrate entry on a local deterministic fixture (offline)', () => {
+describe.skipIf(!hasRegisterHooks)(`E2 substrate entry on a local deterministic fixture (offline)${skipReason}`, () => {
   it('should refuse a tarball whose export map is not the memory-substrate entry', () => {
     const e2 = makeE2({ exportMap: { './memory-substrate': { types: './dist/memory-tools.d.ts', import: './dist/memory-tools.js' } } });
     const p1 = makeP1();
@@ -728,7 +744,7 @@ function makeE2commentArgs(): string[] {
   return [...e2.base, '--output-dir', join(directory(), 'output'), ...p1.args, ...host.args];
 }
 
-describe('E2 round-3 refusal driver', () => {
+describe.skipIf(!hasRegisterHooks)(`E2 round-3 refusal driver${skipReason}`, () => {
   it.each(ROUND3_MUTATIONS)('refuses mutation $id', ({ setup, stderr }) => {
     const result = run(setup());
     expect(result.status).toBe(1);
@@ -823,7 +839,7 @@ const FINAL_MUTATIONS = [
   },
 ];
 
-describe('E2 final strict refusal driver', () => {
+describe.skipIf(!hasRegisterHooks)(`E2 final strict refusal driver${skipReason}`, () => {
   it.each(FINAL_MUTATIONS)('refuses mutation $id', ({ setup, stderr }) => {
     const result = run(setup());
     expect(result.status, result.stdout).toBe(1);
@@ -847,7 +863,7 @@ describe('E2 final strict refusal driver', () => {
 });
 
 
-describe('E2 strict resolution positive controls', () => {
+describe.skipIf(!hasRegisterHooks)(`E2 strict resolution positive controls${skipReason}`, () => {
   it.each(['require', 'module.require', 'createRequire(import.meta.url)', 'loader(import.meta.url)', 'import'])(
     'should retain the exact conditional runtime closure for %s', (form) => {
       const mode = form === 'import' ? 'import' : 'require';
