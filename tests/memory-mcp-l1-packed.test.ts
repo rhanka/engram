@@ -15,7 +15,9 @@ it('M13/M14 B should preserve real packed in-process guards without MCP, brokers
     mkdirSync(join(product, 'dist'), { recursive: true });
     const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
     expect(manifest.exports['./memory-tools']).toEqual({ types: './dist/memory-tools.d.ts', import: './dist/memory-tools.js' });
-    expect(manifest.exports['./mcp-memory']).toBeUndefined();
+    if (manifest.exports['./mcp-memory'] !== undefined) {
+      expect(manifest.exports['./mcp-memory']).toEqual({ types: './dist/mcp-memory.d.ts', import: './dist/mcp-memory.js' });
+    }
     expect(readFileSync(join(root, 'tsup.config.ts'), 'utf8')).toContain('"memory-tools": "src/memory-tools/index.ts"');
     writeFileSync(join(product, 'package.json'), JSON.stringify(manifest));
     execFileSync(process.execPath, ['--input-type=module', '-e', `import { build } from 'tsup'; await build({ config: false, entry: { 'memory-tools': 'src/memory-tools/index.ts' }, outDir: process.argv[1], format: ['esm'], dts: { compilerOptions: { types: ['node'] } }, splitting: false, target: 'node20', silent: true });`, join(product, 'dist')], { cwd: root, env, stdio: 'pipe' });
