@@ -136,13 +136,25 @@ export interface OntologyRecordBase {
   readonly catalogEntryRef?: string;
 }
 
+/**
+ * §1.4 public lineage arm: closed object with parents in stack order,
+ * the derivation record of §3 (or absent), mapping and migration references.
+ * Discriminated by the enclosing record visibility, not by an added field.
+ */
+export interface PublicLineage {
+  readonly parents: PinList;
+  readonly derivation?: PublicDerivationRecord;
+  readonly mappings: readonly string[];
+  readonly migrations: readonly string[];
+}
+
+/** §1.4 lineage union, discriminated by the enclosing record visibility. */
+export type RecordLineage = PublicLineage | PrivateLineage;
+
 export type OntologyRecord =
   | (OntologyRecordBase & {
       readonly visibility: "public";
-      readonly parents: PinList;
-      readonly derivation?: LineageDerivation;
-      readonly mappings: readonly string[];
-      readonly migrations: readonly string[];
+      readonly lineage: PublicLineage;
     })
   | (OntologyRecordBase & {
       readonly visibility: `private:${string}`;
@@ -156,8 +168,32 @@ export type OntologyRecord =
 export type DeltaOperation =
   | { readonly op: "add"; readonly subject: string; readonly declaration: unknown }
   | { readonly op: "narrow"; readonly subject: string; readonly constraint: unknown }
-  | { readonly op: "rename-with-mapping"; readonly subject: string; readonly newName: string }
+  | {
+      readonly op: "rename-with-mapping";
+      readonly subject: string;
+      readonly newName: string;
+      /**
+       * §3.2 MappingEntry arm `rename` living in the mapping file pinned by
+       * `mappingRef`: kind rename, from equals subject, to equals newName.
+       */
+      readonly mappingEntry: { readonly kind: "rename"; readonly from: string; readonly to: string };
+    }
   | { readonly op: "deprecate-term"; readonly subject: string; readonly reason: string };
+
+/**
+ * §3.2 rename consistency: the rename arm keeps the old name decodable —
+ * `from` equals the operation subject, `to` equals the new name.
+ * Throws on mismatch; a rename without this entry refuses (§3.4 unmapped-rename).
+ */
+export function assertValidDeltaOperation(op: DeltaOperation): void {
+  if (op.op !== "rename-with-mapping") return;
+  if (op.mappingEntry.from !== op.subject) {
+    throw new Error(`rename-mapping-subject-mismatch:${op.mappingEntry.from}:${op.subject}`);
+  }
+  if (op.mappingEntry.to !== op.newName) {
+    throw new Error(`rename-mapping-newname-mismatch:${op.mappingEntry.to}:${op.newName}`);
+  }
+}
 
 export type MappingEntry =
   | { readonly kind: "rename"; readonly from: string; readonly to: string }

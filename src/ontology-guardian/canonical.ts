@@ -3,6 +3,24 @@
 // objects, so sorted-key serialization with JSON string/number forms applies.
 import { createHash } from "node:crypto";
 
+/**
+ * RFC 8785 strings are valid Unicode. A lone surrogate (lead without its
+ * trail, trail without its lead) is not a character and refuses here —
+ * in values and in property names alike — instead of serializing.
+ */
+function assertWellFormedUnicode(s: string): void {
+  for (let i = 0; i < s.length; i++) {
+    const unit = s.charCodeAt(i);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = i + 1 < s.length ? s.charCodeAt(i + 1) : -1;
+      if (next < 0xdc00 || next > 0xdfff) throw new Error("invalid-unicode:lone-surrogate");
+      i++;
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
+      throw new Error("invalid-unicode:lone-surrogate");
+    }
+  }
+}
+
 function canonicalStringify(value: unknown): string {
   if (value === null) return "null";
   if (typeof value === "boolean") return value ? "true" : "false";
@@ -11,11 +29,15 @@ function canonicalStringify(value: unknown): string {
     if (Number.isInteger(value)) return String(value);
     return JSON.stringify(value) as string;
   }
-  if (typeof value === "string") return JSON.stringify(value) as string;
+  if (typeof value === "string") {
+    assertWellFormedUnicode(value);
+    return JSON.stringify(value) as string;
+  }
   if (Array.isArray(value)) return `[${value.map(canonicalStringify).join(",")}]`;
   if (typeof value === "object") {
     const record = value as Record<string, unknown>;
     const keys = Object.keys(record).sort();
+    for (const k of keys) assertWellFormedUnicode(k);
     return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalStringify(record[k])}`).join(",")}}`;
   }
   throw new Error(`unserializable:${typeof value}`);
