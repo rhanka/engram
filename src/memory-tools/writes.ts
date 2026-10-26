@@ -180,7 +180,9 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
   const failure = (tool: EngramMemoryToolName, ctx: MemoryWriteInvocationV1, code: PublicMemoryErrorCode) =>
     mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, code, invocationAuthorized: false }).structuredContent;
   const neutralFailure = (tool: EngramMemoryToolName, ctx: MemoryWriteInvocationV1, error: MemoryErrorV1) =>
-    mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, error, invocationAuthorized: true, targetAuthorized: true }).structuredContent;
+    executions.get(ctx)?.commitPhaseEntered
+      ? mapUnexpectedDependencyExceptionToPublic({ tool, auditId: ctx.auditId, commitPhaseEntered: true }).structuredContent
+      : mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, error, invocationAuthorized: true, targetAuthorized: true }).structuredContent;
 
   function check(ctx: MemoryWriteInvocationV1): PublicMemoryErrorCode | undefined {
     if (executions.get(ctx)?.signal?.aborted && !executions.get(ctx)?.commitPhaseEntered) return 'CANCELLED';
