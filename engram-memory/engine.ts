@@ -1208,7 +1208,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Gu
               } };
             }
           }
-          if (beforeFirstEffect !== undefined && (await beforeFirstEffect() !== true || beforeFirstEffect.signal?.aborted)) return refusal("capture", "UNAUTHORIZED", "host refused first canonical effect");
+          if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal("capture", "UNAUTHORIZED", "host refused first canonical effect");
+          if (beforeFirstEffect?.signal?.aborted) return refusal("capture", "CANCELLED", "cancelled before canonical commit");
           if (cancelled.has(request.cancellation_ref)) return refusal("capture", "CANCELLED", "capture was cancelled before commit");
           const sealed = await dependencies.crypto.seal({
             candidate_id: candidateId,
@@ -1217,9 +1218,9 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Gu
           });
           if (!sealed.ok) return operationFailure("capture", sealed);
           const effect = await authorizeEffect(authorization.value, request.deadline_at);
-          const hostEffect = effect.ok && beforeFirstEffect !== undefined && (await beforeFirstEffect() !== true || beforeFirstEffect.signal?.aborted)
+          const hostEffect = effect.ok && beforeFirstEffect !== undefined && await beforeFirstEffect() !== true
             ? refusal<never>("capture", "UNAUTHORIZED", "host refused first canonical effect") : undefined;
-          if (!effect.ok || hostEffect !== undefined || cancelled.has(request.cancellation_ref)) {
+          if (!effect.ok || hostEffect !== undefined || beforeFirstEffect?.signal?.aborted || cancelled.has(request.cancellation_ref)) {
             // The envelope has no canonical owner yet. Use the same custody
             // destruction identity as the other candidate cleanup paths.
             const destroyed = await dependencies.crypto.destroy({ key_ref: sealed.value.key_ref, idempotency_key: `destroy:${candidateId}` });
@@ -1387,7 +1388,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Gu
           admissionOutcomes.set(input.candidate_id, { scope_ref: authorization.value.scope_ref, outcome: recovered.value });
           return { ok: true, value: recovered.value };
         }
-        if (beforeFirstEffect !== undefined && (await beforeFirstEffect() !== true || beforeFirstEffect.signal?.aborted)) return refusal("request_admission", "UNAUTHORIZED", "host refused first canonical effect");
+        if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal("request_admission", "UNAUTHORIZED", "host refused first canonical effect");
+        if (beforeFirstEffect?.signal?.aborted) return refusal("request_admission", "CANCELLED", "cancelled before canonical commit");
         if (!validPendingSnapshot(pending.value, input.candidate_id)) return refusal("request_admission", "INVALID_SCHEMA", "pending candidate snapshot is malformed");
         const opened = await dependencies.crypto.open({ sealed: pending.value.sealed, context_digest: pendingContextDigest(input.candidate_id) });
         if (!opened.ok) return operationFailure("request_admission", opened);
@@ -1457,7 +1459,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Gu
           removals: [],
           batch_digest: receiptDigest("projection-batch", { candidate_id: input.candidate_id, record_digest: record.record_digest }),
         };
-        if (beforeFirstEffect !== undefined && (await beforeFirstEffect() !== true || beforeFirstEffect.signal?.aborted)) return refusal("request_admission", "UNAUTHORIZED", "host refused first canonical effect");
+        if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal("request_admission", "UNAUTHORIZED", "host refused first canonical effect");
+        if (beforeFirstEffect?.signal?.aborted) return refusal("request_admission", "CANCELLED", "cancelled before canonical commit");
         if (beforeFirstEffect?.signal?.aborted) return refusal("request_admission", "CANCELLED", "cancelled before canonical commit");
         beforeFirstEffect?.enterCommitPhase?.();
         const applied = decision.value.decision === "accept"
@@ -1555,11 +1558,13 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Gu
         if (!replayed.ok) return replayed;
         if (replayed.value !== undefined) return { ok: true, value: replayed.value };
       }
-      if (beforeFirstEffect !== undefined && (await beforeFirstEffect() !== true || beforeFirstEffect.signal?.aborted)) return refusal(input.operation, "UNAUTHORIZED", "host refused first canonical effect");
+      if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal(input.operation, "UNAUTHORIZED", "host refused first canonical effect");
+      if (beforeFirstEffect?.signal?.aborted) return refusal(input.operation, "CANCELLED", "cancelled before canonical commit");
       const event = lifecycleEvent(input, now, fromState.value, authorization.value.receipt_digest, bound.value ?? undefined);
       const effect = await authorizeEffect(authorization.value, input.deadline_at);
       if (!effect.ok) return operationFailure(input.operation, effect);
-      if (beforeFirstEffect !== undefined && (await beforeFirstEffect() !== true || beforeFirstEffect.signal?.aborted)) return refusal(input.operation, "UNAUTHORIZED", "host refused first canonical effect");
+      if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal(input.operation, "UNAUTHORIZED", "host refused first canonical effect");
+      if (beforeFirstEffect?.signal?.aborted) return refusal(input.operation, "CANCELLED", "cancelled before canonical commit");
       if (beforeFirstEffect?.signal?.aborted) return refusal(input.operation, "CANCELLED", "cancelled before canonical commit");
       beforeFirstEffect?.enterCommitPhase?.();
       const applied = await dependencies.canonical_store.applyLifecycle({
