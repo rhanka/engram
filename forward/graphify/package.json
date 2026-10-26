@@ -1,6 +1,6 @@
 {
   "name": "@sentropic/graphify",
-  "version": "0.19.1",
+  "version": "0.19.2",
   "description": "Deprecated — graphify has become Engram (@sentropic/engram). Forwarding shim that re-exports and re-runs @sentropic/engram.",
   "license": "MIT",
   "repository": {
@@ -8,15 +8,30 @@
     "url": "git+https://github.com/rhanka/engram.git"
   },
   "main": "index.js",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.mjs",
+      "require": "./index.js"
+    },
+    "./llm-mesh": {
+      "types": "./llm-mesh.d.ts",
+      "import": "./llm-mesh.mjs"
+    }
+  },
   "bin": {
     "graphify": "bin.js"
   },
   "files": [
     "index.js",
+    "index.mjs",
+    "index.d.ts",
+    "llm-mesh.mjs",
+    "llm-mesh.d.ts",
     "bin.js",
     "README.md"
   ],
   "dependencies": {
-    "@sentropic/engram": "0.19.1"
+    "@sentropic/engram": "0.21.2"
   }
 }
