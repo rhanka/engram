@@ -384,7 +384,15 @@ function compileOne(
     // v0.18.0 descriptors carry the legacy `graphify_entity_normalizer_v1`
     // contract. Recompute the comparison hash with that same contract so an
     // unchanged descriptor still matches; a real byte change still mismatches.
-    const currentDescriptor = descriptorFor(normalize, profile, context, storedDescriptor.contract);
+    // Persisted JSON bypasses the TypeScript union, so only the exact legacy
+    // value selects the legacy preimage. Every other stored value (including
+    // future, empty, null or missing contracts) is compared against the
+    // current contract and therefore refused unless it already matches it.
+    const storedContract = (storedDescriptor as { contract?: unknown }).contract;
+    const contract = storedContract === "graphify_entity_normalizer_v1"
+      ? storedContract
+      : ENTITY_NORMALIZER_CONTRACT;
+    const currentDescriptor = descriptorFor(normalize, profile, context, contract);
     if (currentDescriptor.normalizer_hash !== storedDescriptor.normalizer_hash) {
       throw new Error(
         `${context}.fn module bytes changed since this profile was loaded; reload the profile to refresh profile_hash`,
