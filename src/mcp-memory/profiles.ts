@@ -22,7 +22,7 @@ export function verifyMemoryFrozenProfileAssetsV1(): boolean {
       ['wire-profile', 'wireProfileId', MEMORY_FROZEN_PROFILE_BINDINGS_V1.wireProfileId, MEMORY_FROZEN_PROFILE_BINDINGS_V1.wireProfileSha256],
       ['tool-schema-profile', 'id', MEMORY_FROZEN_PROFILE_BINDINGS_V1.toolSchemaProfileId, MEMORY_FROZEN_PROFILE_BINDINGS_V1.toolSchemaProfileSha256],
       ['parameter-schema', '$id', 'https://sentropic.dev/schemas/engram/memory/parameters-v1.json', MEMORY_FROZEN_PROFILE_BINDINGS_V1.parameterProfileSha256],
-    ]) {
+    ] as const) {
       const bytes = readFileSync(new URL(name + '.json', base));
       if (createHash('sha256').update(bytes).digest('hex') !== digest || JSON.parse(bytes.toString('utf8'))[identityKey] !== id) return false;
     }
