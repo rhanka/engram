@@ -16,9 +16,11 @@ import { createMemoryReadFacetsV1 } from '../engram-memory/dist/reads.js';
 import { createInMemoryCanonicalMemoryStoreV1 } from '../engram-memory/dist/memory-store.js';
 import { receiptDigest } from '../engram-memory/digests.js';
 import {
-  ENGRAM_MEMORY_PROVIDER_ID,
-} from '../src/mcp/memory/contracts.js';
-import { ENGRAM_MEMORY_TOOL_DESCRIPTORS } from '../src/mcp/memory/gates.js';
+  MEMORY_PROVIDER_ID,
+  MEMORY_TOOL_DESCRIPTORS,
+  MEMORY_TOOL_SCHEMA_PROFILE_ID,
+  MEMORY_WIRE_PROFILE_ID,
+} from '../src/mcp-memory/provider.js';
 import {
   computeMemoryMutationOperationDigestV1,
   extractMemoryMutationLookupKeyV1,
@@ -104,10 +106,10 @@ function hostBindings() {
 function plan() {
   return {
     resolveTool: (name: string) => {
-      const descriptor = ENGRAM_MEMORY_TOOL_DESCRIPTORS.find((candidate) => candidate.name === name);
+      const descriptor = MEMORY_TOOL_DESCRIPTORS.find((candidate) => candidate.name === name);
       if (descriptor === undefined) return undefined;
       return {
-        providerId: ENGRAM_MEMORY_PROVIDER_ID,
+        providerId: MEMORY_PROVIDER_ID,
         capabilityName: descriptor.name,
         requiredScopes: [...descriptor.requiredScopes],
         requiredClaims: [...descriptor.requiredClaims],
@@ -725,7 +727,6 @@ describe('SDK discovery carries the full qualified metadata', () => {
     const server = await createEngramMemoryMcpServerV1(h.adapter);
     const via = await server.connectViaInMemory(async () => stpCtx({ elicitation_ref: ELICITATION_REF }));
     try {
-      const platform = await import('@sentropic/mcp-platform/memory');
       const listed = await via.client.listTools();
       expect(listed.tools.length).toBe(6);
       const byName = Object.fromEntries(listed.tools.map((t) => [t.name, t]));
@@ -741,9 +742,11 @@ describe('SDK discovery carries the full qualified metadata', () => {
         // The SDK transport may reorder object keys: canonical comparison.
         expect(canon(seen.inputSchema)).toBe(canon(tool.inputSchema));
         const meta = seen._meta[MEMORY_MCP_META_KEY] as Record<string, unknown>;
-        const frozen = platform.findMemoryTool(tool.name);
-        expect(meta.wireProfile).toBe(platform.MEMORY_WIRE_PROFILE_ID);
-        expect(meta.toolsProfile).toBe(platform.MEMORY_TOOLS_PROFILE_ID);
+        // Field-by-field against the manifest and the adapter's contract
+        // ids (the frozen platform cross-check lives in the packed
+        // acceptance, which owns the peers).
+        expect(meta.wireProfile).toBe(MEMORY_WIRE_PROFILE_ID);
+        expect(meta.toolsProfile).toBe(MEMORY_TOOL_SCHEMA_PROFILE_ID);
         expect(meta.providerId).toBe('sentropic.engram.memory');
         expect(meta.connectorId).toBe('engram-memory');
         expect(meta.sourceId).toBe('mcp:engram-memory');
@@ -754,9 +757,6 @@ describe('SDK discovery carries the full qualified metadata', () => {
         expect(meta.requiredScopes).toEqual(tool.requiredScopes);
         expect(meta.requiredClaims).toEqual(tool.requiredClaims);
         expect(meta.redactionClass).toBe('high');
-        expect(meta.requiredScopes).toEqual(frozen!.requiredScopes);
-        expect(meta.requiredClaims).toEqual(frozen!.requiredClaims);
-        expect(meta.redactionClass).toBe(frozen!.redactionClass);
       }
       // A throwing resolver is the constant protocol refusal with no leak,
       // and the provider is never invoked on that path.
