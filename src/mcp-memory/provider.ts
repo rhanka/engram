@@ -29,7 +29,6 @@ import {
   MEMORY_WIRE_PROFILE_ID as P2_WIRE_PROFILE_ID,
   MemoryTrustedContextError,
   isMemoryToolName,
-  isMutatingMemoryToolName,
   requireTrustedInvocationContext,
   type AppConnectorProviderAdapter,
   type MemoryToolName,
@@ -40,6 +39,7 @@ import {
   CompiledMemoryDispatch,
   MemoryDispatchRefusal,
 } from '@sentropic/mcp-broker/memory';
+import { MEMORY_FROZEN_PROFILE_BINDINGS_V1, verifyMemoryFrozenProfileAssetsV1 } from './profiles.js';
 import type {
   MemoryReadFacetsV1,
 } from '../../engram-memory/dist/reads.js';
@@ -70,7 +70,6 @@ import {
 } from '../mcp/memory/schemas.js';
 import {
   TrustedContextUnavailableProtocolError,
-  isMutationTool,
   mapNeutralMemoryErrorToPublic,
   mapUnexpectedDependencyExceptionToPublic,
 } from '../mcp/memory/errors.js';
@@ -240,6 +239,12 @@ function preflight(options: McpMemoryProviderOptions): void {
   if (!bindingCheck.ok) {
     return fail(`invalid L0 host-binding contract: ${bindingCheck.reason}.`);
   }
+  for (const [key, expected] of Object.entries(MEMORY_FROZEN_PROFILE_BINDINGS_V1)) {
+    if (options.hostBindings.profileBindings[key as keyof typeof MEMORY_FROZEN_PROFILE_BINDINGS_V1] !== expected) {
+      return fail(`incompatible frozen profile: ${key}.`);
+    }
+  }
+  if (!verifyMemoryFrozenProfileAssetsV1()) return fail('missing or altered frozen profile assets.');
   const plan = (options as { plan?: unknown }).plan;
   if (
     plan === undefined || plan === null || typeof plan !== 'object' ||
@@ -331,6 +336,8 @@ function preflight(options: McpMemoryProviderOptions): void {
     typeof writeHost.audit?.append !== 'function' ||
     typeof writeHost.policy?.capturePolicyVersion !== 'function' ||
     typeof writeHost.policy?.admissionPolicyVersion !== 'function' ||
+    typeof writeHost.policy?.provenanceDigest !== 'function' ||
+    typeof writeHost.policy?.nextSourceOrder !== 'function' ||
     typeof writeHost.confirm !== 'function' ||
     typeof writeHost.keyCustody?.confirmDestroyed !== 'function' ||
     typeof writeHost.coverage?.verify !== 'function'
@@ -345,6 +352,7 @@ function preflight(options: McpMemoryProviderOptions): void {
     !isPlainObject(retention) ||
     typeof retention.max_retention_days !== 'number' ||
     !Number.isFinite(retention.max_retention_days) ||
+    retention.max_retention_days <= 0 ||
     typeof retention.allow_retain_derivative_rule !== 'boolean'
   ) {
     return fail('write host policy retention must be a complete retention config.');
@@ -352,7 +360,8 @@ function preflight(options: McpMemoryProviderOptions): void {
   const reconciliation = policy.reconciliation;
   if (
     !isPlainObject(reconciliation) ||
-    !Array.isArray(reconciliation.consented_family_refs)
+    !Array.isArray(reconciliation.consented_family_refs) ||
+    reconciliation.consented_family_refs.some((ref) => typeof ref !== 'string' || ref.length === 0)
   ) {
     return fail('write host policy reconciliation must be a complete reconciliation config.');
   }
@@ -411,44 +420,6 @@ function isAborted(signal: AbortSignal | undefined): boolean {
   return signal?.aborted === true;
 }
 
-const CANCELLED_MARKER = Symbol('mcp-memory-cancelled');
-
-function isCancelledMarker(value: unknown): boolean {
-  return value === CANCELLED_MARKER;
-}
-
-/**
- * Race one facade promise against the host abort signal. The L0 facades
- * expose no signal parameter (frozen contracts), so an abort during dispatch
- * abandons the wait without stopping the in-process call: the caller must
- * treat a raced mutation as indeterminate (same-key retry replays the
- * canonical outcome through the reservation binding), never as proven
- * cancelled and never as a settled outcome it did not observe.
- */
-function raceWithAbort<T>(
-  promise: Promise<T>,
-  signal: AbortSignal | undefined,
-): Promise<T> {
-  if (signal === undefined) return promise;
-  if (signal.aborted) return Promise.reject(CANCELLED_MARKER);
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = (): void => {
-      reject(CANCELLED_MARKER);
-    };
-    signal.addEventListener('abort', onAbort, { once: true });
-    promise.then(
-      (value) => {
-        signal.removeEventListener('abort', onAbort);
-        resolve(value);
-      },
-      (error) => {
-        signal.removeEventListener('abort', onAbort);
-        reject(error);
-      },
-    );
-  });
-}
-
 /**
  * Step 2 authentication context, built from the verified host binding only:
  * selection has not run yet, so no projection exists. Field selection mirrors
@@ -457,23 +428,7 @@ function raceWithAbort<T>(
 function buildAuthInvocation(
   verified: StpConnectorContext,
   policyId: string,
-): {
-  auditId: string;
-  authorization: AuthorizationContextV1;
-  scope_ref: string;
-  store_id: string;
-  principal_namespace: string;
-  principal_id: string;
-  tenant_id: string;
-  connector_instance_ref: string;
-  agent_id: string;
-  session_id: string;
-  generation: string;
-  policy_id: string;
-  policy_version: string;
-  authorization_epoch: string;
-  deadline_at: string;
-} {
+): MemoryWriteInvocationV1 {
   const binding = verified.memory?.binding;
   return {
     auditId: verified.auditId,
@@ -488,13 +443,11 @@ function buildAuthInvocation(
     principal_namespace: binding?.principal_namespace ?? '',
     principal_id: binding?.principal_id ?? '',
     tenant_id: binding?.tenant_id ?? '',
+    transport_attachment_ref: binding?.transport_attachment_ref,
     connector_instance_ref: binding?.connector_instance_ref ?? '',
     agent_id: binding?.agent_id ?? '',
     session_id: binding?.logical_session_ref ?? '',
     generation: binding?.active_generation ?? '',
-    policy_id: policyId,
-    policy_version: binding?.policy_epoch ?? '',
-    authorization_epoch: binding?.policy_epoch ?? '',
     deadline_at: binding?.deadline_at ?? '',
   };
 }
@@ -554,9 +507,8 @@ export function createEngramMemoryProviderV1(
     }
     const tool: MemoryToolName = toolName;
     const signal = (req as { signal?: AbortSignal }).signal;
-    // True once the facade has been invoked: an unexpected throw past this
-    // point may have committed, so mutations classify as indeterminate.
-    let dispatched = false;
+    // Updated only at the engine canonical commit boundary.
+    const execution = { signal, commitPhaseEntered: false };
 
     try {
       // STEP 2 — authentication with the injected port. Nothing
@@ -566,14 +518,20 @@ export function createEngramMemoryProviderV1(
       // authenticator records zero domain envelopes.
       try {
         const authInvocation = buildAuthInvocation(verified, policyId);
+        const { connector_instance_ref, transport_attachment_ref: _attachment, ...common } = authInvocation;
+        const readAuthInvocation: MemoryReadInvocationV1 = {
+          ...common, connector_instance_id: connector_instance_ref, policy_id: policyId,
+          policy_version: verified.memory!.binding.policy_epoch,
+          authorization_epoch: verified.memory!.binding.policy_epoch,
+        };
         const authenticated =
           tool === 'engram_memory_search' || tool === 'engram_memory_get'
             ? await readHost.authenticate(
-              structuredClone(authInvocation) as unknown as MemoryReadInvocationV1,
+              structuredClone(readAuthInvocation),
               tool,
             )
             : await writeHost.authenticate(
-              structuredClone(authInvocation) as unknown as MemoryWriteInvocationV1,
+              structuredClone(authInvocation),
               tool as 'engram_memory_capture' | 'engram_memory_request_admission' | 'engram_memory_withdraw' | 'engram_memory_forget',
             );
         if (authenticated !== true) {
@@ -596,7 +554,7 @@ export function createEngramMemoryProviderV1(
       // forged source, stale generation, principal/tenant mismatch, missing
       // scope/claim, or an elicitation binding that differs from the verified
       // host binding) stays a typed refusal.
-      const purposeRef = readPurposeRef(tool, req.input, verified.memory?.binding?.purpose_ref);
+      const purposeRef = verified.memory?.binding?.purpose_ref;
       if (!isNonEmptyString(purposeRef)) {
         return failureResult(tool, verified.auditId, 'INVALID_SCHEMA');
       }
@@ -637,6 +595,10 @@ export function createEngramMemoryProviderV1(
       // arguments give the M6 validation error, never a context error.
       if (!isClosedToolInput(tool, req.input)) {
         return failureResult(tool, auditId, 'INVALID_SCHEMA');
+      }
+
+      if (readPurposeRef(tool, req.input, purposeRef) !== purposeRef) {
+        throw new MemoryTrustedContextError();
       }
 
       // STEP 5 — confirmation. Reads expose no confirmation port: under a
@@ -690,6 +652,7 @@ export function createEngramMemoryProviderV1(
         connector_instance_ref: projection.routing_provenance.connector_instance_ref,
         agent_id: projection.agent_id,
         session_id: projection.session_attachment.logical_session_ref,
+        transport_attachment_ref: projection.session_attachment.transport_attachment_ref,
         generation: projection.routing_provenance.active_generation,
         deadline_at: projection.lifecycle_binding.deadline_at,
         // Injected bindings, never synthesized: the verified elicitation
@@ -703,54 +666,15 @@ export function createEngramMemoryProviderV1(
         ...(confirmationRequired ? { confirmationRequired: true as const } : {}),
       };
 
-      // STEP 7 — execution: run the facade, racing the `AbortSignal` through
-      // the wait. A settled facade outcome always wins (step 8), even when
-      // the signal fired meanwhile: once the commit phase may have started,
-      // the outcome is never `CANCELLED`.
+      // STEP 7 — await the cancellable facade, preserving observed commit state.
       let outcome: ToolResultV1<unknown>;
-      try {
-        dispatched = true;
-        switch (tool) {
-          case 'engram_memory_search': {
-            outcome = await raceWithAbort(readers.search(req.input, readInvocation), signal) as ToolResultV1<unknown>;
-            break;
-          }
-          case 'engram_memory_get': {
-            outcome = await raceWithAbort(readers.get(req.input, readInvocation), signal) as ToolResultV1<unknown>;
-            break;
-          }
-          case 'engram_memory_capture': {
-            outcome = await raceWithAbort(writers.capture(req.input, writeInvocation), signal) as ToolResultV1<unknown>;
-            break;
-          }
-          case 'engram_memory_request_admission': {
-            outcome = await raceWithAbort(
-              writers.requestAdmission(req.input, writeInvocation),
-              signal,
-            ) as ToolResultV1<unknown>;
-            break;
-          }
-          case 'engram_memory_withdraw': {
-            outcome = await raceWithAbort(writers.withdraw(req.input, writeInvocation), signal) as ToolResultV1<unknown>;
-            break;
-          }
-          case 'engram_memory_forget': {
-            outcome = await raceWithAbort(writers.forget(req.input, writeInvocation), signal) as ToolResultV1<unknown>;
-            break;
-          }
-        }
-      } catch (error) {
-        if (isCancelledMarker(error)) {
-          // Aborted mid-execution without an observed outcome. Reads are
-          // effect-free, so `CANCELLED` holds; a mutation may have committed
-          // inside the abandoned wait, so its outcome is indeterminate and a
-          // same-key retry replays the canonical result.
-          if (isMutatingMemoryToolName(tool)) {
-            return failureResult(tool, auditId, 'MUTATION_OUTCOME_UNKNOWN');
-          }
-          return failureResult(tool, auditId, 'CANCELLED');
-        }
-        throw error;
+      switch (tool) {
+        case 'engram_memory_search': outcome = await readers.search(req.input, readInvocation, execution); break;
+        case 'engram_memory_get': outcome = await readers.get(req.input, readInvocation, execution); break;
+        case 'engram_memory_capture': outcome = await writers.capture(req.input, writeInvocation, execution); break;
+        case 'engram_memory_request_admission': outcome = await writers.requestAdmission(req.input, writeInvocation, execution); break;
+        case 'engram_memory_withdraw': outcome = await writers.withdraw(req.input, writeInvocation, execution); break;
+        case 'engram_memory_forget': outcome = await writers.forget(req.input, writeInvocation, execution); break;
       }
 
       // STEP 8 — outcome classification. A settled facade envelope already
@@ -763,9 +687,8 @@ export function createEngramMemoryProviderV1(
       // STEP 9 — mapping. The single exit: protocol and refusal errors
       // propagate (the server maps them to the constant protocol refusal);
       // anything else is sanitized through the M6 total error mapping. An
-      // unexpected throw after dispatch started may have committed, so
-      // mutations classify as indeterminate; only pre-dispatch (pre-commit)
-      // failures may be retriable store errors.
+      // unexpected throw after canonical commit begins may be indeterminate.
+      // Definite pre-effect failures retain the precommit mapping.
       if (
         error instanceof MemoryTrustedContextError ||
         error instanceof TrustedContextUnavailableProtocolError ||
@@ -773,13 +696,10 @@ export function createEngramMemoryProviderV1(
       ) {
         throw error;
       }
-      if (isCancelledMarker(error)) {
-        return failureResult(tool, verified.auditId, 'CANCELLED');
-      }
       return successResult(
         mapUnexpectedDependencyExceptionToPublic({
           tool,
-          commitPhaseEntered: dispatched && isMutationTool(tool),
+          commitPhaseEntered: execution.commitPhaseEntered,
           auditId: verified.auditId,
         }).structuredContent as ToolResultV1<unknown>,
       );
