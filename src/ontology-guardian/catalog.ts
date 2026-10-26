@@ -71,10 +71,12 @@ export interface McpPayload {
   readonly ui?: UiProfile;
 }
 
-/** Skill profile selector ([R9:§4.1]): `instructions` or `tools`, never both roles at once. */
-export type SkillProfileSelector =
-  | { readonly instructions: string }
-  | { readonly tools: readonly string[] };
+/**
+ * Skill profile selector ([R9:§4.1] lines 233–235: `profile`: `instructions`
+ * or `tools`). A single literal discriminant, never an invented object arm:
+ * a spec-compliant selector is exactly one of the two words.
+ */
+export type SkillProfileSelector = "instructions" | "tools";
 
 /** Skill metadata ([R9:§4.1]); name/version/description agree with the envelope. */
 export interface SkillMetadata {
@@ -94,8 +96,10 @@ export interface SkillCapability {
 }
 
 /**
- * Skill tool-bearing profile descriptors ([R9:§4.1]).
- * Exact tool fields stay with the skills package; G0 carries the array only.
+ * Skill tool-bearing profile descriptors ([R9:§4.1]: `tools` is the existing
+ * `SkillTool` descriptors). Exact tool fields stay with the skills package
+ * and are not transcribed here: this descriptor is `unverified`, kept closed
+ * as an opaque record, never widened into invented tool fields.
  */
 export type SkillToolDescriptor = Record<string, unknown>;
 
@@ -189,8 +193,12 @@ export interface SelectionRuleRow {
 export interface SelectionMetadata {
   readonly phase: string;
   readonly readinessPolicy: string;
-  /** Whole composed selection, native effective-setting order. */
-  readonly settings: readonly Record<string, unknown>[];
+  /**
+   * Whole composed selection, native effective-setting order: the complete
+   * effective `Setting[]` value (S-COMPILED), retaining rule, severity,
+   * classification and permitted options verbatim.
+   */
+  readonly settings: readonly CompiledSetting[];
   readonly severityPolicyDigest: Digest;
   readonly rules: readonly SelectionRuleRow[];
 }
@@ -322,6 +330,9 @@ export type OntologyPayload =
       readonly lineage: PrivateLineage;
       readonly ruleSheets: readonly PrivateRuleSheetRef[];
     });
+
+/** Pinned corpus authority tag for parity claims ([BP] profile-corpus-v1.0.0). */
+export const PINNED_CORPUS_AUTHORITY_TAG = "profile-corpus-v1.0.0";
 
 // --- §5.5 receipts (closed, discriminated on receiptKind) ---
 
