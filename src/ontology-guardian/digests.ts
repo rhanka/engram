@@ -126,12 +126,22 @@ export function declarationDigestDeprecateTerm(subject: string, reason: string):
   return sha256Hex(canonicalBytes({ reason, subject }));
 }
 
-export interface DeltaOperationDigest {
-  readonly op: "add" | "narrow" | "rename-with-mapping" | "deprecate-term";
-  readonly subject: string;
-  readonly declarationDigest: Digest;
-  readonly newName?: string;
-}
+/**
+ * P-DELTA operation digest, discriminated by `op` (§7.2): `newName` is
+ * required exactly for `rename-with-mapping` and forbidden for every other
+ * operation. A rename without `newName`, or an add carrying one, refuses
+ * before hashing — the shapes never hash successfully.
+ */
+export type DeltaOperationDigest =
+  | { readonly op: "add"; readonly subject: string; readonly declarationDigest: Digest }
+  | { readonly op: "narrow"; readonly subject: string; readonly declarationDigest: Digest }
+  | {
+      readonly op: "rename-with-mapping";
+      readonly subject: string;
+      readonly declarationDigest: Digest;
+      readonly newName: string;
+    }
+  | { readonly op: "deprecate-term"; readonly subject: string; readonly declarationDigest: Digest };
 
 export interface DeltaPreimageInput {
   readonly base: Pin;
@@ -141,7 +151,43 @@ export interface DeltaPreimageInput {
   readonly retiredRules: readonly { readonly ruleId: string; readonly reason: string }[];
 }
 
+/**
+ * Required/forbidden `newName` discipline, enforced before hashing (§7.2,
+ * §3.2): the operation must name its closed `op`, a non-empty subject,
+ * `newName` exactly on `rename-with-mapping`, and no other key.
+ */
+function assertValidDeltaOperationDigest(op: DeltaOperationDigest): void {
+  if (
+    op.op !== "add" &&
+    op.op !== "narrow" &&
+    op.op !== "rename-with-mapping" &&
+    op.op !== "deprecate-term"
+  ) {
+    throw new Error(`unknown-delta-operation:${String((op as { op: unknown }).op)}`);
+  }
+  if (typeof op.subject !== "string" || op.subject === "") {
+    throw new Error(`delta-op-invalid:subject:${String(op.op)}`);
+  }
+  const record = op as unknown as Record<string, unknown>;
+  if (op.op === "rename-with-mapping") {
+    if (typeof record["newName"] !== "string" || (record["newName"] as string) === "") {
+      throw new Error("delta-op-newname-required:rename-with-mapping");
+    }
+    if (Object.keys(record).sort().join(",") !== "declarationDigest,newName,op,subject") {
+      throw new Error("delta-op-forbidden-field:rename-with-mapping");
+    }
+  } else {
+    if (Object.hasOwn(record, "newName")) {
+      throw new Error(`delta-op-newname-forbidden:${op.op}`);
+    }
+    if (Object.keys(record).sort().join(",") !== "declarationDigest,op,subject") {
+      throw new Error(`delta-op-forbidden-field:${op.op}`);
+    }
+  }
+}
+
 export function deltaPreimage(input: DeltaPreimageInput): Record<string, unknown> {
+  for (const op of input.operations) assertValidDeltaOperationDigest(op);
   return {
     base: { contentDigest: input.base.contentDigest, id: input.base.id, version: input.base.version },
     mappingRef:
@@ -153,9 +199,9 @@ export function deltaPreimage(input: DeltaPreimageInput): Record<string, unknown
             version: input.mappingRef.version,
           },
     operations: input.operations.map((op) =>
-      op.newName === undefined
-        ? { declarationDigest: op.declarationDigest, op: op.op, subject: op.subject }
-        : { declarationDigest: op.declarationDigest, newName: op.newName, op: op.op, subject: op.subject },
+      op.op === "rename-with-mapping"
+        ? { declarationDigest: op.declarationDigest, newName: op.newName, op: op.op, subject: op.subject }
+        : { declarationDigest: op.declarationDigest, op: op.op, subject: op.subject },
     ),
     retiredFixtures: input.retiredFixtures.map((r) => ({ fixtureRef: r.fixtureRef, reason: r.reason })),
     retiredRules: input.retiredRules.map((r) => ({ reason: r.reason, ruleId: r.ruleId })),
