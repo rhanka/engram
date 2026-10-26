@@ -139,13 +139,13 @@
           "role": "provider",
           "path": "dist/mcp-memory.js",
           "mediaType": "application/javascript",
-          "sha256": "dd439d5c22f8873b96993fe01b447c23e2757b64ce2f7f7b62f5cfb6e5a3a60f"
+          "sha256": "a18a0fe12eeb5792d5c5f248e5c9118365d8813260d5c17dd9afb5a60d6865c7"
         },
         {
           "role": "validator",
           "path": "dist/mcp-memory.js",
           "mediaType": "application/javascript",
-          "sha256": "dd439d5c22f8873b96993fe01b447c23e2757b64ce2f7f7b62f5cfb6e5a3a60f"
+          "sha256": "a18a0fe12eeb5792d5c5f248e5c9118365d8813260d5c17dd9afb5a60d6865c7"
         },
         {
           "role": "wire-profile",
