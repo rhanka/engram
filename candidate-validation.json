@@ -1,0 +1,356 @@
+{
+  "sourceCommit": "5265c89824ec3c53feae4c311d31793bdbf965e3",
+  "tarball": {
+    "filename": "sentropic-engram-0.21.1.tgz",
+    "sha256": "868cea135a6535eac8c68ec28ef5cb6e27f08fbeb09ded72af54574812c306ad",
+    "integrity": "sha512-Y94bHNUSgniul2t2cbIRCsBKnNUazdGxVkcSlJP+gjy47PKvTYhtVb6zGD6DWCzfOkscTK9Yi0PcuKjCku7dmg=="
+  },
+  "inputs": {
+    "specSha256": "18c697c1cd91287fd9f814c059910ffb4b39ddb1be46af547f384c7d912177b2",
+    "preCandidateSha256": "2b85ff28b6fe06bda0abcdc19255f61a1ed1e4b7cfbb40c2e881c98dd234424b"
+  },
+  "targeted": {
+    "files": 12,
+    "passed": 151,
+    "failed": 0
+  },
+  "packed": {
+    "result": "pass",
+    "sdkPinned": "1.32.2",
+    "sdkFloor": "1.31.0",
+    "toolsAtEachSdk": 6,
+    "ordinaryDisabledInstall": {
+      "providerLoads": 0,
+      "storeOpens": 0,
+      "identityBootstraps": 0,
+      "memoryNativeBuilds": 0
+    }
+  },
+  "full": {
+    "passed": 5427,
+    "failed": 64,
+    "skipped": 37
+  },
+  "baseline": {
+    "commit": "652cf65684c7e191c7ba90bfb515f2f3aef8b0c1",
+    "passed": 5394,
+    "failed": 64,
+    "skipped": 37,
+    "method": "Standalone detached metadata and git archive in this worktree; same installed dependency trees. Ordinary baseline build reproduces missing fs_ext.node. tsup --external fs-ext creates baseline comparison artifacts without editing baseline sources."
+  },
+  "failureComparison": {
+    "added": [],
+    "removed": [],
+    "signaturesChanged": [],
+    "unchangedCount": 64,
+    "failures": [
+      {
+        "test": "canonical-memory-store.parity.test.ts::SQLite canonical parity with reference transaction receipts and illegal-transition guard SQLite produces identical transaction-receipt digests to the reference store and writes nothing on illegal transitions",
+        "signature": "Error: sqlite open failed: the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'"
+      },
+      {
+        "test": "canonical-memory-store.parity.test.ts::SQLite and Postgres canonical parity enforces the temporal boundary intervals (start, end, just-before, just-after, open-end, point) identically on in-memory and SQLite canonical stores",
+        "signature": "Error: the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'"
+      },
+      {
+        "test": "canonical-memory-store.test.ts::canonical SQLite memory store rolls back blob+journal+state+fts+outbox at every injected failpoint",
+        "signature": "Error: the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'"
+      },
+      {
+        "test": "canonical-memory-store.test.ts::canonical SQLite memory store same id with different full digest is refused without writes",
+        "signature": "Error: the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'"
+      },
+      {
+        "test": "memory-mcp-l1-reads.test.ts::MCP-L1 spec-derived neutral reads M3 should keep real SQLite snapshots and final checks free of write transactions and enforce its live fence",
+        "signature": "AssertionError: expected false to be true // Object.is equality"
+      },
+      {
+        "test": "memory-mcp-l2-canonical-recovery.test.ts::MCP-L2 canonical recovery: withdraw should consult canonical proof before expired guards when committed=false",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-canonical-recovery.test.ts::MCP-L2 canonical recovery: withdraw should consult canonical proof before expired guards when committed=true",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-canonical-recovery.test.ts::MCP-L2 canonical recovery: forget should consult canonical proof before expired guards when committed=false",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-canonical-recovery.test.ts::MCP-L2 canonical recovery: forget should consult canonical proof before expired guards when committed=true",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-canonical-recovery.test.ts::MCP-L2 canonical recovery: requestAdmission should consult canonical proof before expired guards when committed=false",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-canonical-recovery.test.ts::MCP-L2 canonical recovery: requestAdmission should consult canonical proof before expired guards when committed=true",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-canonical-recovery.test.ts::MCP-L2 canonical recovery: capture should consult canonical proof before expired guards when committed=false",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-canonical-recovery.test.ts::MCP-L2 canonical recovery: capture should consult canonical proof before expired guards when committed=true",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-canonical-recovery.test.ts::MCP-L2 first effect after claim recovery: withdraw should report replayed false when an unknown reservation commits its first effect after reopening",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-canonical-recovery.test.ts::MCP-L2 first effect after claim recovery: forget should report replayed false when an unknown reservation commits its first effect after reopening",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-canonical-recovery.test.ts::MCP-L2 first effect after claim recovery: requestAdmission should report replayed false when an unknown reservation commits its first effect after reopening",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-durable-admission.test.ts::MCP-L2 durable admission replay proof M5 should persist the replay proof in a file-backed store across close and reopen",
+        "signature": "Error: open failed: CAPABILITY_UNAVAILABLE"
+      },
+      {
+        "test": "memory-mcp-l2-effect-guard.test.ts::MCP-L2 effect guard: withdraw should recheck host policy and confirmation after asynchronous dependencies before committing",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-effect-guard.test.ts::MCP-L2 effect guard: withdraw should refuse committed disclosure after SQLite reopen when host authority is revoked",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-effect-guard.test.ts::MCP-L2 effect guard: withdraw should refuse committed disclosure after SQLite reopen when neutral authority is revoked",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-effect-guard.test.ts::MCP-L2 effect guard: forget should recheck host policy and confirmation after asynchronous dependencies before committing",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-effect-guard.test.ts::MCP-L2 effect guard: forget should refuse committed disclosure after SQLite reopen when host authority is revoked",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-effect-guard.test.ts::MCP-L2 effect guard: forget should refuse committed disclosure after SQLite reopen when neutral authority is revoked",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-effect-guard.test.ts::MCP-L2 effect guard: requestAdmission should recheck host policy and confirmation after asynchronous dependencies before committing",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-effect-guard.test.ts::MCP-L2 effect guard: requestAdmission should refuse committed disclosure after SQLite reopen when host authority is revoked",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-effect-guard.test.ts::MCP-L2 effect guard: requestAdmission should refuse committed disclosure after SQLite reopen when neutral authority is revoked",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-effect-guard.test.ts::MCP-L2 effect guard: capture should recheck host policy and confirmation after asynchronous dependencies before committing",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-effect-guard.test.ts::MCP-L2 effect guard: capture should refuse committed disclosure after SQLite reopen when host authority is revoked",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-mcp-l2-effect-guard.test.ts::MCP-L2 effect guard: capture should refuse committed disclosure after SQLite reopen when neutral authority is revoked",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "memory-projection-adapters.test.ts::memory projection adapters file writers in separate processes serialize and recover a killed writer without losing records",
+        "signature": "Error: Build failed with 1 error:"
+      },
+      {
+        "test": "memory-recall-durable-parity.test.ts::recall on durable SQLite matches the in-memory reference offline_lexical_v1, semantic_v1, and pagination return identical packets",
+        "signature": "Error: sqlite recall open failed: the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'"
+      },
+      {
+        "test": "memory-recall-golden.test.ts::recall golden references offline_lexical_v1 and semantic_v1 match the independent reference on SQLite",
+        "signature": "Error: sqlite golden open failed: the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'"
+      },
+      {
+        "test": "memory-reconciliation.test.ts::engine proposeReconciliation (L5b) proposeReconciliation performs no durable write on SQLite, with an expired pair member and an expired exterior record",
+        "signature": "AssertionError: expected false to be true // Object.is equality"
+      },
+      {
+        "test": "memory-substrate-tarball.test.ts::substrate tarball acceptance (installed consumer, M10) packs, installs offline, and accepts the installed entry",
+        "signature": "tarball acceptance requires npm >= 10 (got 9.2.0); set SUBSTRATE_NPM_BIN to a modern npm"
+      },
+      {
+        "test": "native-abi-smoke.test.ts::native ABI smoke the smoke verdict matches the platform: exit 0 with both addons loaded and the flock in fdinfo on Linux, PLATFORM_UNSUPPORTED elsewhere",
+        "signature": "AssertionError: expected 1 to be +0 // Object.is equality"
+      },
+      {
+        "test": "sqlite-fence-nlink.native.test.ts::native SQLite fenced open and hard-link count admits a canonical database reachable by exactly one path (st_nlink === 1)",
+        "signature": "AssertionError: expected { ok: false, error: { …(4) } } to match object { ok: true }"
+      },
+      {
+        "test": "sqlite-fence-nlink.native.test.ts::native SQLite fenced open and hard-link count refuses a database whose inode carries a second hard link (st_nlink > 1)",
+        "signature": "AssertionError: expected 'the SQLite writer fence was refused: …' to match /hard link/i"
+      },
+      {
+        "test": "sqlite-fence-nlink.native.test.ts::native SQLite fenced open and hard-link count holds operations open when a hard link appears AFTER open, and refuses only at the next reopen",
+        "signature": "Error: the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'"
+      },
+      {
+        "test": "sqlite-fence-nlink.native.test.ts::native SQLite fenced open and hard-link count readiness reports multiply_linked false for a single-named database and true after a post-open hard link, with operations still admitted",
+        "signature": "Error: the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'"
+      },
+      {
+        "test": "sqlite-fence-nlink.native.test.ts::native SQLite fenced open and hard-link count multiply_linked is bound by receipt_digest",
+        "signature": "AssertionError: expected { ok: false, error: { …(4) } } to match object { ok: true }"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::X1 lifecycle backend matrix / SQLite corrupt registry at open refuses JOURNAL_CORRUPT: malformed digest",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::X1 lifecycle backend matrix / SQLite corrupt registry at open refuses JOURNAL_CORRUPT: different content",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::X1 lifecycle backend matrix / SQLite corrupt registry at open refuses JOURNAL_CORRUPT: invalid JSON",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::X1 lifecycle backend matrix / SQLite Opus a1: logical restore preserves exact replay and content conflicts without writes",
+        "signature": "Error: {\"source\":{\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}},\"target\":{\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}}"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::X1 lifecycle backend matrix / SQLite pending: durable reopen, exact replay and isolated content conflicts write nothing",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::X1 lifecycle backend matrix / SQLite pending_adjudication: durable reopen, exact replay and isolated content conflicts write nothing",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::X1 lifecycle backend matrix / SQLite rejected: durable reopen, exact replay and isolated content conflicts write nothing",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::X1 lifecycle backend matrix / SQLite withdrawn: durable reopen, exact replay and isolated content conflicts write nothing",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::X1 lifecycle backend matrix / SQLite accepted_current: durable reopen, exact replay and isolated content conflicts write nothing",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::X1 lifecycle backend matrix / SQLite accepted_disputed: durable reopen, exact replay and isolated content conflicts write nothing",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::X1 lifecycle backend matrix / SQLite historical: durable reopen, exact replay and isolated content conflicts write nothing",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::X1 lifecycle backend matrix / SQLite expired: durable reopen, exact replay and isolated content conflicts write nothing",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::X1 lifecycle backend matrix / SQLite trust_invalid: durable reopen, exact replay and isolated content conflicts write nothing",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::X1 lifecycle backend matrix / SQLite tombstoned: durable reopen, exact replay and isolated content conflicts write nothing",
+        "signature": "Error: {\"ok\":false,\"error\":{\"code\":\"CAPABILITY_UNAVAILABLE\",\"operation\":\"admin\",\"message\":\"the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'\\nRequire stack:\\n- /home/antoinefa/src/graphify-wt-mcpl4/engram-memory/node_modules/fs-ext/fs-ext.js\",\"retryable\":false}}"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::native SQLite memory broker second process is refused and stale epoch fails before its first SQL statement",
+        "signature": "Error: flock holder did not become ready"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::native SQLite memory broker lock loss before commit rolls back and revokes active readers",
+        "signature": "Error: the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::native SQLite memory broker detached ranking and backup copies never retain the active WAL",
+        "signature": "Error: the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::native SQLite memory broker factory acquire refuses a second live holder and FENCE_LOST is terminal with no silent re-acquire, exercised through a minimal external-host harness (graceful close, host crash, restart, stale instance)",
+        "signature": "Error: the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::native SQLite memory broker a logical backup of a SQLite store restores the same canonical digests",
+        "signature": "Error: the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::native SQLite memory broker a logical backup import is atomic under an after_journal failpoint and succeeds after reopen",
+        "signature": "Error: the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::native SQLite memory broker an open refuses CAPABILITY_UNAVAILABLE when the runtime is below the required minimum",
+        "signature": "Error: the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::native SQLite memory broker a lower second raise never lowers the active floor (ABA 99.0.0 -> 3.51.4)",
+        "signature": "Error: the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::native SQLite memory broker projection outbox survives reopen: the tombstone removal reaches the surface through one cursor receipt",
+        "signature": "Error: the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'"
+      },
+      {
+        "test": "sqlite-memory-broker.native.test.ts::native SQLite memory broker engine invalidateProjections drives the fenced SQLite store: tombstone converges, replay never resurrects",
+        "signature": "Error: the SQLite writer fence was refused: Cannot find module './build/Release/fs_ext.node'"
+      }
+    ]
+  },
+  "logs": {
+    "/tmp/l4-build-final.log": {
+      "sha256": "51c31a827e179ab6b05d51c7234a5ae7b917dc1a53586c18846d1409d03229a4"
+    },
+    "/tmp/l4-pack.log": {
+      "sha256": "421e213fa2d0a42765e7a1feb2ea58de8b77a9cfbd30f685218bcb14414cde52"
+    },
+    "/tmp/l4-refresh.log": {
+      "sha256": "c3051e093de211d947673a69ed6a366562f0c27f5b1e7d69b1e3f158c1e4f26d"
+    },
+    "/tmp/l4-target-all.log": {
+      "sha256": "66d37389fd56b3addc0b38076b0f48ff0e35059f47dc54914e034f045b31156b"
+    },
+    "/tmp/l4-packed-final.log": {
+      "sha256": "8bb3fa3099c0d32e1a59847079a81bc05ca875d1f4ae059e08e660ef2f9179b8"
+    },
+    "/tmp/l4-candidate-full.json": {
+      "sha256": "927fb20bd49e571626628df761225ebe9da94deaaa69f2a17a2d9be54302610c"
+    },
+    "/tmp/l4-baseline-full.json": {
+      "sha256": "3932b18411727ea2d05d56da0069ee55a4d36587a107d6a9c1de1ed728fd0409"
+    }
+  },
+  "review": {
+    "reviewer": "Astra",
+    "sourceCommit": "5265c89824ec3c53feae4c311d31793bdbf965e3",
+    "mode": "read-only",
+    "verdict": "All round-3 findings closed; global validation incomplete.",
+    "remainingBlockingFindings": 0,
+    "previouslyClosedFindings": "maintained",
+    "additionalCounterexamples": {
+      "abortResumingSuccessfulGuard": "closed: CANCELLED, zero commits, one seal destruction",
+      "substitutedConfirmationTarget": "closed: gate_failed",
+      "admissionCleanupException": "closed: accepted receipt retained, same-receipt replay, one commit"
+    },
+    "independentlyVerified": [
+      "spec and P2 identities and archive hashes/integrities",
+      "23 packed asset digests",
+      "exact packed exports",
+      "tarball hash/integrity",
+      "runtime source-map correspondence",
+      "seven validation log hashes",
+      "same 64 normalized failure signatures in 14 test files"
+    ]
+  },
+  "unverified": [
+    "L5 qualification of the staged P2 pre-candidate archives (received with matching sha256/integrity, not re-qualified here)",
+    "Deployed host bindings, tenancy and policy values (host-supplied at composition; acceptance uses test host ports)",
+    "Postgres canonical parity and native-addon suites (environmental: no native toolchain or addons in this container)",
+    "AdmissionOutcomeV1 has no cleanup-status field; key cleanup convergence remains host-owned and unverified. Known canonical admission receipts survive cleanup refusal or exception."
+  ]
+}
