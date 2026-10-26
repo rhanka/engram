@@ -636,6 +636,21 @@ describe('single dispatch pipeline over the real canonical implementation', () =
     expect(h.counts.confirm).toBeGreaterThanOrEqual(2);
   });
 
+  it('withdrawal rechecks confirmation after awaited authorization revalidation', async () => {
+    let approved = true;
+    const h = await buildHarness({ confirm: async () => approved });
+    const captured = await h.adapter.invokeTool({ capabilityRef: 'engram_memory_capture', input: captureArgs(KEY('q')), ctx: stpCtx(), idempotencyKey: KEY('q') } as never) as any;
+    const revalidate = h.ports.authorization.revalidate;
+    h.ports.authorization.revalidate = async (...args) => { if (h.counts.confirm > 0) approved = false; return revalidate(...args); };
+    let effects = 0;
+    const apply = h.store.applyLifecycle.bind(h.store);
+    h.store.applyLifecycle = async req => { effects++; return apply(req); };
+    const out = await h.adapter.invokeTool({ capabilityRef: 'engram_memory_withdraw', input: { candidate_id: captured.output.value.candidate_id, idempotency_key: KEY('r'), reason_ref: 'reason:one' }, ctx: stpCtx({ elicitation_ref: ELICITATION_REF }), idempotencyKey: KEY('r'), elicitationRef: ELICITATION_REF } as never) as any;
+    expect(out.error.code).toBe('gate_failed');
+    expect(effects).toBe(0);
+    expect(h.counts.confirm).toBeGreaterThan(1);
+  });
+
   it('confirmation and durable association receive current identity and reject another attachment', async () => {
     const h = await buildHarness({ confirm: async b => b.principal_id === 'alice' && b.session_id === 'session:one' && b.transport_attachment_ref === 'attach:one' });
     const attach = h.writeHost.reservation.attachConfirmation;
@@ -655,6 +670,25 @@ describe('single dispatch pipeline over the real canonical implementation', () =
     const out = await h.adapter.invokeTool({ capabilityRef: 'engram_memory_capture', input: captureArgs(KEY('z')), ctx: stpCtx(), idempotencyKey: KEY('z'), signal: controller.signal } as never) as any;
     expect(out.ok).toBe(true);
     expect(out.output.value.status).toBe('committed_pending');
+  });
+
+  it('abort while the engine resumes a successful final guard remains CANCELLED', async () => {
+    const h = await buildHarness();
+    const controller = new AbortController();
+    const capture = h.facets.engine.capture;
+    h.facets.engine.capture = async (req, guard: any) => {
+      let calls = 0;
+      const wrapped = Object.assign(async () => {
+        const verdict = await guard();
+        if (++calls === 2) controller.abort();
+        return verdict;
+      }, { signal: guard.signal, enterCommitPhase: guard.enterCommitPhase });
+      return capture(req, wrapped);
+    };
+    const out = await h.adapter.invokeTool({ capabilityRef: 'engram_memory_capture', input: captureArgs(KEY('j')), ctx: stpCtx(), idempotencyKey: KEY('j'), signal: controller.signal } as never) as any;
+    expect(out.error.code).toBe('CANCELLED');
+    const retry = await h.adapter.invokeTool({ capabilityRef: 'engram_memory_capture', input: captureArgs(KEY('j')), ctx: stpCtx(), idempotencyKey: KEY('j') } as never) as any;
+    expect(retry.output.value.status).toBe('committed_pending');
   });
 
   it('a post-commit custody exception keeps the committed receipt with pending cleanup', async () => {
