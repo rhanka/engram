@@ -267,7 +267,13 @@ export async function createEngramMemoryMcpServerV1(
     // Guard before provider dispatch: a missing or untrusted context is the
     // constant protocol refusal with zero provider invocations.
     try {
-      requireTrustedInvocationContext(ctx as StpConnectorContext | undefined | null);
+      const trusted = requireTrustedInvocationContext(ctx as StpConnectorContext | undefined | null);
+      const binding = trusted.memory?.binding;
+      if (binding?.provider_id !== 'sentropic.engram.memory' ||
+          binding.connector_id !== 'engram-memory' ||
+          binding.selected_source_id !== 'mcp:engram-memory') {
+        throw new Error('source binding mismatch');
+      }
     } catch {
       throw new McpError(-32603, 'Trusted invocation context unavailable');
     }
