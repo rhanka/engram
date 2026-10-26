@@ -359,6 +359,16 @@ const TEST_ALLOWED_HOST_EDGES = new Set([
   // the delivered host reservation ports and write facade.
   "tests/memory-mcp-l2-recovery-fixture.ts -> src/mcp/memory/reference-ports",
   "tests/memory-mcp-l2-recovery-fixture.ts -> src/memory-tools/writes",
+  // MCP-L4 deliberately tests the product adapter over the neutral engine:
+  // the pipeline suite drives the real canonical store/engine/facets through
+  // the provider and SDK server with verifying host ports. Product surface
+  // only (provider, server, policy functions, schema predicates, read page
+  // store); never a product import by engram-memory.
+  "tests/mcp-memory-l4-pipeline.test.ts -> src/mcp-memory/provider",
+  "tests/mcp-memory-l4-pipeline.test.ts -> src/mcp-memory/server",
+  "tests/mcp-memory-l4-pipeline.test.ts -> src/mcp/memory/policy",
+  "tests/mcp-memory-l4-pipeline.test.ts -> src/mcp/memory/schemas",
+  "tests/mcp-memory-l4-pipeline.test.ts -> src/memory-tools/reads",
 ]);
 
 function hostEdgeKey(path: string, resolved: string): string {
