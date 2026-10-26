@@ -133,37 +133,121 @@
           "role": "definitions",
           "path": "dist/registry/definitions.js",
           "mediaType": "application/javascript",
-          "sha256": "f71cdee7a35df82c4789bceb6c5a51b4d00ab8340cd469b6e711fae4f26223d1"
+          "sha256": "8c2b5dc8d4fa828ce3f9733f87988779a00c9df8cafe4214277de57e69d262ab"
         },
         {
           "role": "provider",
           "path": "dist/mcp-memory.js",
           "mediaType": "application/javascript",
-          "sha256": "ef47edd0d0a67d1276bd9f0438bac0013d067335b3a795964c8a4240458b508c"
-        },
-        {
-          "role": "wire-profile",
-          "path": "dist/mcp-memory.js",
-          "mediaType": "application/javascript",
-          "sha256": "ef47edd0d0a67d1276bd9f0438bac0013d067335b3a795964c8a4240458b508c"
-        },
-        {
-          "role": "tool-schema-profile",
-          "path": "dist/mcp-memory.js",
-          "mediaType": "application/javascript",
-          "sha256": "ef47edd0d0a67d1276bd9f0438bac0013d067335b3a795964c8a4240458b508c"
-        },
-        {
-          "role": "parameter-schema",
-          "path": "dist/mcp-memory.js",
-          "mediaType": "application/javascript",
-          "sha256": "ef47edd0d0a67d1276bd9f0438bac0013d067335b3a795964c8a4240458b508c"
+          "sha256": "dd439d5c22f8873b96993fe01b447c23e2757b64ce2f7f7b62f5cfb6e5a3a60f"
         },
         {
           "role": "validator",
           "path": "dist/mcp-memory.js",
           "mediaType": "application/javascript",
-          "sha256": "ef47edd0d0a67d1276bd9f0438bac0013d067335b3a795964c8a4240458b508c"
+          "sha256": "dd439d5c22f8873b96993fe01b447c23e2757b64ce2f7f7b62f5cfb6e5a3a60f"
+        },
+        {
+          "role": "wire-profile",
+          "path": "dist/registry/wire-profile.json",
+          "mediaType": "application/schema+json",
+          "sha256": "057aa66211f9072321bfcd287f4aa21e19466f7830526c1f27ef647630b16257"
+        },
+        {
+          "role": "tool-schema-profile",
+          "path": "dist/registry/tool-schema-profile.json",
+          "mediaType": "application/schema+json",
+          "sha256": "e94b192c5bb6b238d8d470ef69d00dcb69e19183dbff90484fc82072a715f2a9"
+        },
+        {
+          "role": "parameter-schema",
+          "path": "dist/registry/parameter-schema.json",
+          "mediaType": "application/schema+json",
+          "sha256": "c9edd6402957c92f96c7461f30f29b64801c6f17c224c4258984e6ee3beaca47"
+        },
+        {
+          "role": "schema-input-engram_memory_search",
+          "path": "dist/registry/schemas/engram_memory_search.input.json",
+          "mediaType": "application/schema+json",
+          "sha256": "aa83a59cdae791ba6891f52f2d09741afc72aeb0e23c3ca49ecb0e10f811ff47"
+        },
+        {
+          "role": "schema-output-engram_memory_search",
+          "path": "dist/registry/schemas/engram_memory_search.output.json",
+          "mediaType": "application/schema+json",
+          "sha256": "3e3b37620ec407f337d3d9022d3e6c2f7b5c9c6bb85b7285d83357fafbc8f4e3"
+        },
+        {
+          "role": "schema-input-engram_memory_get",
+          "path": "dist/registry/schemas/engram_memory_get.input.json",
+          "mediaType": "application/schema+json",
+          "sha256": "96677583b2229b50685a92ab6cf579edd28a6da66e68733aa6eb1032948c5ab0"
+        },
+        {
+          "role": "schema-output-engram_memory_get",
+          "path": "dist/registry/schemas/engram_memory_get.output.json",
+          "mediaType": "application/schema+json",
+          "sha256": "d1e2d70ce2bc00ae055eef43bbb40c4f9b515b894c2c5edcda05521c85de1592"
+        },
+        {
+          "role": "schema-input-engram_memory_capture",
+          "path": "dist/registry/schemas/engram_memory_capture.input.json",
+          "mediaType": "application/schema+json",
+          "sha256": "be34acccbca6df0b54d0d76b5a47c85fa56b83fadcb661fcffe701d1af763b7e"
+        },
+        {
+          "role": "schema-output-engram_memory_capture",
+          "path": "dist/registry/schemas/engram_memory_capture.output.json",
+          "mediaType": "application/schema+json",
+          "sha256": "53c11c23e2306c75b9be778db7e4ab82c43bf9623f99807af08cfc8fa3a51f9d"
+        },
+        {
+          "role": "schema-input-engram_memory_request_admission",
+          "path": "dist/registry/schemas/engram_memory_request_admission.input.json",
+          "mediaType": "application/schema+json",
+          "sha256": "6d4ad5799d152cdbded83a645b1b6091cba0ddc065a7659174708534762cb2c1"
+        },
+        {
+          "role": "schema-output-engram_memory_request_admission",
+          "path": "dist/registry/schemas/engram_memory_request_admission.output.json",
+          "mediaType": "application/schema+json",
+          "sha256": "9c6ea90932ad4f75e40b2146e19e97eadf754e655aa431fcaa50c611e5a714c6"
+        },
+        {
+          "role": "schema-input-engram_memory_withdraw",
+          "path": "dist/registry/schemas/engram_memory_withdraw.input.json",
+          "mediaType": "application/schema+json",
+          "sha256": "268c64f534e0885acd5f36b4808b6503744a8ea0a59a6a0905c4e584226f7579"
+        },
+        {
+          "role": "schema-output-engram_memory_withdraw",
+          "path": "dist/registry/schemas/engram_memory_withdraw.output.json",
+          "mediaType": "application/schema+json",
+          "sha256": "d5a27d077dc0720d007912c8554c383a7456d72810b4fdd875ed9c4a292163e4"
+        },
+        {
+          "role": "schema-input-engram_memory_forget",
+          "path": "dist/registry/schemas/engram_memory_forget.input.json",
+          "mediaType": "application/schema+json",
+          "sha256": "b475cb3c2ea22ea7758aea07b64c31c2929607e12f27bba81c64df9c242d698f"
+        },
+        {
+          "role": "schema-output-engram_memory_forget",
+          "path": "dist/registry/schemas/engram_memory_forget.output.json",
+          "mediaType": "application/schema+json",
+          "sha256": "62fff7c57c8fc590ebad01abc6949514a342ba637049c14f552658e67817e1e9"
+        },
+        {
+          "role": "elicitation-request",
+          "path": "dist/registry/elicitation-request.json",
+          "mediaType": "application/schema+json",
+          "sha256": "7081119924ef70344bc4ceab08593173c470f9ff2e5f735a03581476005d129b"
+        },
+        {
+          "role": "elicitation-response",
+          "path": "dist/registry/elicitation-response.json",
+          "mediaType": "application/schema+json",
+          "sha256": "db682617520ebe117128ed2d64587f2a393ccc1e73dd360cbf8bb3a6bb382c3d"
         }
       ],
       "mcp": {
@@ -176,7 +260,11 @@
             "id": "sentropic.engram.memory-wire/v1",
             "mode": "in-process",
             "protocolVersions": [
-              "1.0.0"
+              "2025-11-25",
+              "2025-06-18",
+              "2025-03-26",
+              "2024-11-05",
+              "2024-10-07"
             ],
             "requiredHostFeatures": [
               "invocation",
@@ -192,7 +280,11 @@
           }
         ],
         "protocolVersions": [
-          "1.0.0"
+          "2025-11-25",
+          "2025-06-18",
+          "2025-03-26",
+          "2024-11-05",
+          "2024-10-07"
         ]
       }
     }
