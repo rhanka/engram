@@ -118,7 +118,8 @@
     "graphology-types": "^0.24.7",
     "mistral-ocr": "^0.1.3",
     "web-tree-sitter": "^0.26.8",
-    "yaml": "^2.8.3"
+    "yaml": "^2.8.3",
+    "zod": "^4.6.6"
   },
   "optionalDependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

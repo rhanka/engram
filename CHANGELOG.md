@@ -9,6 +9,7 @@ This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refe
 - **Dropped Ollama backend (owner decision 2026-10-25, security).** Removes the `ollama-ai-provider` dependency, which pinned `@ai-sdk/provider-utils` 2.x and its zod 3 line (GHSA-mrhx-c7xc-m3w5, high). The `ollama` direct backend is refused with the standard `--backend must be one of …` error; `@sentropic/llm-mesh` has no Ollama provider, so nothing replaces it. `validateOllamaBaseUrl` and its tests are removed with the backend.
 - **Legacy normalizer fingerprints accepted on read (owner and consumer agreement 2026-10-25).** Descriptors persisted by v0.18.0 under the `graphify_entity_normalizer_v1` contract now compile when their bytes are unchanged; a real module byte change is still refused. Writers keep emitting only `engram_entity_normalizer_v1`.
 - **Forwarding package.** The `forward/graphify` shim is bumped to 0.19.2 and pins `@sentropic/engram@0.21.2`. It now forwards the full consumer surface: an `exports` map for `.` (`types`, `import`, `require`) and `./llm-mesh` (`types`, `import`), backed by `index.mjs`/`index.d.ts`/`llm-mesh.mjs`/`llm-mesh.d.ts` re-exports. It is published separately, not by the tag workflow.
+- **zod 4 floor.** Engram now depends on `zod@^4.6.6`, so the installed production tree resolves zod 4 for every consumer (AI SDK, MCP SDK, zod-to-json-schema, Mistral).
 
 ## 0.21.1 (2026-10-21)
 
