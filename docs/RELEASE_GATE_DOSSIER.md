@@ -117,15 +117,12 @@ package, raises exactly one alert.
   product capability (local Ollama inference). Not reversible without restoring
   the capability.
 
-**Recommendation: (a), recorded with an expiry date, not accepted informally.**
-The exposure does not justify removing a feature. But per the harness security
-contract an acceptance must be a checked-in row with stable advisory identity,
-affected version, component, path, owner, rationale, `review_by` (UTC) and a
-removal plan — so that it **expires and fails the gate** rather than quietly
-becoming permanent. That register does not exist yet (§4).
-
-I am **not** deciding this. I record that (a) is defensible and that an
-acceptance without an expiry is the one form I would object to.
+**Outcome (owner decision 2026-10-25): (b).** `ollama-ai-provider` is dropped
+in 0.21.2, removing the advisory outright together with the product capability
+(local Ollama inference): the `ollama` direct backend is refused with the
+standard `--backend` error, and `@sentropic/llm-mesh` has no Ollama provider,
+so nothing replaces it. The pinned `@ai-sdk/provider-utils` 2.x line — and
+the zod 3 line it pulled (GHSA-mrhx-c7xc-m3w5, high, on zod) — no longer ships.
 
 ---
 
