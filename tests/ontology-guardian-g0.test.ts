@@ -19,7 +19,9 @@ import {
 } from "../src/ontology-guardian/digests.js";
 import type { DiagramProfileProjection } from "../src/ontology-guardian/digests.js";
 import {
+  assertValidCompiledOptions,
   assertValidCompiledRule,
+  assertValidSetting,
   compareDiagnostics,
   composeApplicability,
   deriveApplicability,
@@ -36,15 +38,16 @@ import {
   validPointer,
 } from "../src/ontology-guardian/diagnostics.js";
 import type {
+  CompiledSetting,
   NativeReport,
   Report2Diagnostic,
   ReportEntry,
 } from "../src/ontology-guardian/diagnostics.js";
 import { checkAdmission } from "../src/ontology-guardian/admission.js";
-import type { AdmissionEntry } from "../src/ontology-guardian/admission.js";
-import type { Receipt } from "../src/ontology-guardian/catalog.js";
-import { projectPrivateRecord } from "../src/ontology-guardian/types.js";
-import type { Digest, Pin } from "../src/ontology-guardian/types.js";
+import type { AdmissionEntry, AdmissionRequirement } from "../src/ontology-guardian/admission.js";
+import type { McpPayload, Receipt, RegistryEnvelope, SkillPayload } from "../src/ontology-guardian/catalog.js";
+import { assertValidDeltaOperation, projectPrivateRecord } from "../src/ontology-guardian/types.js";
+import type { Digest, OntologyRecord, Pin } from "../src/ontology-guardian/types.js";
 
 const A64 = "a".repeat(64);
 const B64 = "b".repeat(64);
@@ -196,42 +199,107 @@ describe("§7.2 owner selector vectors", () => {
 const BASE_PROFILE: DiagramProfileProjection = {
   profile: "generic@1",
   completeness: "complete",
-  entityTypes: [{ id: "node", attributes: { size: "number" } }],
-  portTypes: [{ id: "port" }],
-  relationTypes: [{ id: "link", roles: { from: { min: 1, max: 1 }, to: { min: 0, max: 5 } } }],
-  constraints: [{ kind: "unique-attribute", target: "node.name" }],
+  entityTypes: [{ id: "node", label: "Node", attributes: { size: "number" }, abstract: false }],
+  portTypes: [{ id: "port", label: "Port" }],
+  relationTypes: [
+    {
+      id: "link",
+      roles: { from: { min: 1, max: 1 }, to: { min: 0, max: 5 } },
+      targets: ["node"],
+      hierarchy: "dag",
+    },
+  ],
+  constraints: [{ kind: "unique-attribute", target: "node.name", bound: 1 }],
   limits: { maxEntities: 100, maxRelations: 200, maxEndpointsPerRelation: 4 },
 };
 
 describe("§7.4 contentDigest", () => {
-  it("FX-DIG-C1 identity/completeness change the digest", () => {
+  it("FX-DIG-C1 profile and completeness each change the digest", () => {
     const base = contentDiagramDigest(BASE_PROFILE);
     expect(contentDiagramDigest({ ...BASE_PROFILE, profile: "generic@2" })).not.toBe(base);
     expect(contentDiagramDigest({ ...BASE_PROFILE, completeness: "skeleton" })).not.toBe(base);
   });
 
-  it("FX-DIG-C2..C5 each declaration family changes the digest", () => {
+  it("FX-DIG-C2 one entity type field at a time changes the digest", () => {
     const base = contentDiagramDigest(BASE_PROFILE);
+    const [declared] = BASE_PROFILE.entityTypes;
     expect(
-      contentDiagramDigest({ ...BASE_PROFILE, entityTypes: [{ id: "node2", attributes: { size: "number" } }] }),
+      contentDiagramDigest({ ...BASE_PROFILE, entityTypes: [{ ...declared, id: "node2" }] }),
     ).not.toBe(base);
+    expect(
+      contentDiagramDigest({ ...BASE_PROFILE, entityTypes: [{ ...declared, label: "Task" }] }),
+    ).not.toBe(base);
+    expect(
+      contentDiagramDigest({ ...BASE_PROFILE, entityTypes: [{ ...declared, attributes: { size: "string" } }] }),
+    ).not.toBe(base);
+    expect(
+      contentDiagramDigest({ ...BASE_PROFILE, entityTypes: [{ ...declared, abstract: true }] }),
+    ).not.toBe(base);
+  });
+
+  it("FX-DIG-C3 one port type declaration changes the digest", () => {
+    const base = contentDiagramDigest(BASE_PROFILE);
+    const [declared] = BASE_PROFILE.portTypes;
+    expect(contentDiagramDigest({ ...BASE_PROFILE, portTypes: [{ ...declared, id: "port2" }] })).not.toBe(base);
+    expect(contentDiagramDigest({ ...BASE_PROFILE, portTypes: [{ ...declared, label: "Pin" }] })).not.toBe(base);
     expect(contentDiagramDigest({ ...BASE_PROFILE, portTypes: [] })).not.toBe(base);
+  });
+
+  it("FX-DIG-C4 one relation field at a time changes the digest", () => {
+    const base = contentDiagramDigest(BASE_PROFILE);
+    const [declared] = BASE_PROFILE.relationTypes as Record<string, unknown>[];
+    const roles = declared!["roles"] as { from: Record<string, unknown>; to: Record<string, unknown> };
     expect(
       contentDiagramDigest({
         ...BASE_PROFILE,
-        relationTypes: [{ id: "link", roles: { from: { min: 1, max: 2 }, to: { min: 0, max: 5 } } }],
+        relationTypes: [{ ...declared, roles: { ...roles, from: { ...roles.from, min: 2 } } }],
       }),
     ).not.toBe(base);
+    expect(
+      contentDiagramDigest({
+        ...BASE_PROFILE,
+        relationTypes: [{ ...declared, roles: { ...roles, to: { ...roles.to, max: 6 } } }],
+      }),
+    ).not.toBe(base);
+    expect(
+      contentDiagramDigest({ ...BASE_PROFILE, relationTypes: [{ ...declared, targets: ["node2"] }] }),
+    ).not.toBe(base);
+    expect(
+      contentDiagramDigest({ ...BASE_PROFILE, relationTypes: [{ ...declared, hierarchy: "tree" }] }),
+    ).not.toBe(base);
+  });
+
+  it("FX-DIG-C5 one constraint field at a time changes the digest", () => {
+    const base = contentDiagramDigest(BASE_PROFILE);
+    const [declared] = BASE_PROFILE.constraints as Record<string, unknown>[];
+    expect(
+      contentDiagramDigest({ ...BASE_PROFILE, constraints: [{ ...declared, kind: "required-attribute" }] }),
+    ).not.toBe(base);
+    expect(
+      contentDiagramDigest({ ...BASE_PROFILE, constraints: [{ ...declared, target: "node.label" }] }),
+    ).not.toBe(base);
+    expect(contentDiagramDigest({ ...BASE_PROFILE, constraints: [{ ...declared, bound: 2 }] })).not.toBe(base);
     expect(contentDiagramDigest({ ...BASE_PROFILE, constraints: [] })).not.toBe(base);
   });
 
-  it("FX-DIG-C6 limits and omission: change, omit, skeleton form", () => {
+  it("FX-DIG-C6 each limit and each omission changes the digest; skeletons qualify", () => {
     const base = contentDiagramDigest(BASE_PROFILE);
     expect(contentDiagramDigest({ ...BASE_PROFILE, limits: { ...BASE_PROFILE.limits, maxEntities: 101 } })).not.toBe(
       base,
     );
-    const omitted = contentDiagramDigest({ ...BASE_PROFILE, limits: { maxEndpointsPerRelation: 4 } });
-    expect(omitted).not.toBe(base);
+    expect(contentDiagramDigest({ ...BASE_PROFILE, limits: { ...BASE_PROFILE.limits, maxRelations: 201 } })).not.toBe(
+      base,
+    );
+    expect(
+      contentDiagramDigest({ ...BASE_PROFILE, limits: { ...BASE_PROFILE.limits, maxEndpointsPerRelation: 5 } }),
+    ).not.toBe(base);
+    // Each omission hashes that key as null: omitting one limit changes the digest.
+    expect(
+      contentDiagramDigest({ ...BASE_PROFILE, limits: { maxEntities: 100, maxEndpointsPerRelation: 4 } }),
+    ).not.toBe(base);
+    expect(
+      contentDiagramDigest({ ...BASE_PROFILE, limits: { maxEntities: 100, maxRelations: 200 } }),
+    ).not.toBe(base);
     // Pinned skeletons hash omitted limits as null: explicit null equals omission.
     const skeleton: DiagramProfileProjection = {
       profile: "bpmn@1",
@@ -251,11 +319,21 @@ describe("§7.4 contentDigest", () => {
     );
   });
 
-  it("FX-DIG-C7 irrelevant notes/theme/catalog/path leave the digest unchanged", () => {
+  it("FX-DIG-C7 each irrelevant input really varies and leaves the digest unchanged", () => {
     const base = contentDiagramDigest(BASE_PROFILE);
-    // Projection carries no notes, theme, catalog or path: identical declarations hash equal.
-    expect(contentDiagramDigest({ ...BASE_PROFILE })).toBe(base);
-    expect(contentDiagramDigest({ ...BASE_PROFILE, limits: { ...BASE_PROFILE.limits } })).toBe(base);
+    expect(contentDiagramDigest({ ...BASE_PROFILE, notes: ["human reading note"] })).toBe(base);
+    expect(contentDiagramDigest({ ...BASE_PROFILE, themeRef: "dark@2" })).toBe(base);
+    expect(contentDiagramDigest({ ...BASE_PROFILE, catalogRef: "catalog-entry-7" })).toBe(base);
+    expect(contentDiagramDigest({ ...BASE_PROFILE, filePath: "/profiles/generic.ts" })).toBe(base);
+    expect(
+      contentDiagramDigest({
+        ...BASE_PROFILE,
+        notes: ["n"],
+        themeRef: "dark@2",
+        catalogRef: "entry-7",
+        filePath: "/profiles/generic.ts",
+      }),
+    ).toBe(base);
   });
 });
 
@@ -283,7 +361,12 @@ describe("§7.4 pinsDigest", () => {
     expect(pinsDigestOf({ layers: [basePin] })).not.toBe(base);
   });
 
-  it("FX-DIG-P4 delta inputs change the digest; one add encodes without a profile", () => {
+  it("FX-DIG-P3b one rule-sheet version changes the digest", () => {
+    const base = pinsDigestOf({ layers: [basePin], ruleSheets: [pin("sheet-a")] });
+    expect(pinsDigestOf({ layers: [basePin], ruleSheets: [pin("sheet-a", "2.0.0")] })).not.toBe(base);
+  });
+
+  it("FX-DIG-P4 each delta input changes the digest; one add encodes without a profile", () => {
     const delta = {
       base: basePin,
       mappingRef: null,
@@ -291,37 +374,102 @@ describe("§7.4 pinsDigest", () => {
       retiredFixtures: [],
       retiredRules: [],
     };
-    const withDelta = pinsDigestOf({ layers: [basePin], deltaDigest: deltaDigestOf(delta) });
-    expect(withDelta).not.toBe(pinsDigestOf({ layers: [basePin] }));
-    const reordered = deltaDigestOf({
+    const base = deltaDigestOf(delta);
+    // Base pin: one field at a time.
+    expect(deltaDigestOf({ ...delta, base: pin("other") })).not.toBe(base);
+    expect(deltaDigestOf({ ...delta, base: pin("generic", "2.0.0") })).not.toBe(base);
+    // Single-value operation payload: same op and subject, one digest changes.
+    expect(
+      deltaDigestOf({
+        ...delta,
+        operations: [{ op: "add" as const, subject: "t", declarationDigest: A64 }],
+      }),
+    ).not.toBe(base);
+    // Pure operation reorder: the same two operations in swapped order.
+    const two = {
       ...delta,
       operations: [
-        { op: "add" as const, subject: "u", declarationDigest: A64 },
         { op: "add" as const, subject: "t", declarationDigest: B64 },
+        { op: "add" as const, subject: "u", declarationDigest: A64 },
       ],
-    });
-    expect(reordered).not.toBe(deltaDigestOf({ ...delta, operations: [...delta.operations] }));
+    };
+    expect(deltaDigestOf({ ...two, operations: [...two.operations].reverse() })).not.toBe(deltaDigestOf(two));
+    // One retired reason at a time.
     expect(
       deltaDigestOf({ ...delta, retiredFixtures: [{ fixtureRef: "f", reason: "superseded" }] }),
-    ).not.toBe(deltaDigestOf(delta));
-    expect(deltaDigestOf({ ...delta, retiredRules: [{ ruleId: "r", reason: "renamed" }] })).not.toBe(
-      deltaDigestOf(delta),
-    );
+    ).not.toBe(base);
+    expect(
+      deltaDigestOf({
+        ...delta,
+        retiredFixtures: [{ fixtureRef: "f", reason: "superseded" }],
+        // Same ref, only the reason changes.
+      }),
+    ).not.toBe(deltaDigestOf({ ...delta, retiredFixtures: [{ fixtureRef: "f", reason: "renamed" }] }));
+    expect(deltaDigestOf({ ...delta, retiredRules: [{ ruleId: "r", reason: "renamed" }] })).not.toBe(base);
+    // Mapping reference: absent versus one pin.
+    expect(deltaDigestOf({ ...delta, mappingRef: pin("map") })).not.toBe(base);
+    // The delta digest enters pinsDigest; one add needs no whole-profile value.
+    expect(pinsDigestOf({ layers: [basePin], deltaDigest: base })).not.toBe(pinsDigestOf({ layers: [basePin] }));
   });
 
-  it("FX-DIG-P5 mapping decisions change the digest", () => {
-    const one = { mappingId: "m", version: "1.0.0", entries: [{ kind: "cardinality" as const, subject: "r", chosenMin: 1, chosenMax: 2 }] };
+  it("FX-DIG-P5 each mapping decision field changes the digest", () => {
+    const one = { mappingId: "m", version: "1.0.0", entries: [{ kind: "cardinality" as const, subject: "r", chosenMin: 1, chosenMax: 3 }] };
     const base = mappingDigestOf(one);
-    expect(mappingDigestOf({ ...one, entries: [{ kind: "cardinality", subject: "r", chosenMin: 1, chosenMax: 3 }] })).not.toBe(base);
+    // chosenMin alone (the field a hardcoded projection would drop).
+    expect(mappingDigestOf({ ...one, entries: [{ kind: "cardinality", subject: "r", chosenMin: 2, chosenMax: 3 }] })).not.toBe(base);
+    expect(mappingDigestOf({ ...one, entries: [{ kind: "cardinality", subject: "r", chosenMin: 1, chosenMax: 4 }] })).not.toBe(base);
+    const shaped = {
+      mappingId: "m",
+      version: "1.0.0",
+      entries: [{ kind: "hierarchy" as const, relationId: "rel", chosenShape: "dag" as const, parentRole: "p", childRole: "c" }],
+    };
+    expect(
+      mappingDigestOf({ ...shaped, entries: [{ kind: "hierarchy", relationId: "rel", chosenShape: "tree" as const, parentRole: "p", childRole: "c" }] }),
+    ).not.toBe(mappingDigestOf(shaped));
+    expect(
+      mappingDigestOf({ ...shaped, entries: [{ kind: "hierarchy", relationId: "rel", chosenShape: "dag" as const, parentRole: "q", childRole: "c" }] }),
+    ).not.toBe(mappingDigestOf(shaped));
+    const severe = {
+      mappingId: "m",
+      version: "1.0.0",
+      entries: [{ kind: "severity" as const, ruleId: "r", phase: "import", readinessPolicy: "draft", chosenSeverity: "warn" }],
+    };
+    expect(
+      mappingDigestOf({ ...severe, entries: [{ kind: "severity", ruleId: "r", phase: "import", readinessPolicy: "draft", chosenSeverity: "error" }] }),
+    ).not.toBe(mappingDigestOf(severe));
+    const renamed = {
+      mappingId: "m",
+      version: "1.0.0",
+      entries: [{ kind: "rename" as const, from: "a", to: "b" }],
+    };
+    expect(mappingDigestOf({ ...renamed, entries: [{ kind: "rename", from: "a2", to: "b" }] })).not.toBe(
+      mappingDigestOf(renamed),
+    );
+    // Entry order, mappingId and version each change the digest.
+    const twoEntries = {
+      mappingId: "m",
+      version: "1.0.0",
+      entries: [
+        { kind: "rename" as const, from: "a", to: "b" },
+        { kind: "type" as const, from: "T", to: "U" },
+      ],
+    };
+    expect(mappingDigestOf({ ...twoEntries, entries: [...twoEntries.entries].reverse() })).not.toBe(
+      mappingDigestOf(twoEntries),
+    );
     expect(mappingDigestOf({ ...one, mappingId: "m2" })).not.toBe(base);
+    expect(mappingDigestOf({ ...one, version: "2.0.0" })).not.toBe(base);
     expect(pinsDigestOf({ layers: [basePin], mappingDigest: base })).not.toBe(pinsDigestOf({ layers: [basePin] }));
   });
 
-  it("FX-DIG-P6 theme leaves pinsDigest unchanged; drift refuses as digest-mismatch", () => {
+  it("FX-DIG-P6 applied theme state really varies and leaves pinsDigest unchanged", () => {
     const before = pinsDigestOf({ layers: [basePin] });
-    // A theme is not a pin input: identical pins hash identical.
-    expect(pinsDigestOf({ layers: [pin("generic")] })).toBe(before);
-    // Changed bytes behind an unchanged pin recompute a different content digest.
+    // Theme state is not a pin input: varying it keeps the digest identical.
+    expect(pinsDigestOf({ layers: [basePin], themeState: { theme: "dark@2" } })).toBe(before);
+    expect(pinsDigestOf({ layers: [pin("generic")], themeState: { theme: "light@1" } })).toBe(before);
+    expect(pinsDigestOf({ layers: [basePin], themeState: undefined })).toBe(before);
+    // Changed bytes behind an unchanged pin recompute a different content digest:
+    // presenting them under the old pin refuses at the gate instead of forking pinsDigest.
     expect(contentDiagramDigest({ ...BASE_PROFILE, profile: "generic@2" })).not.toBe(basePin.contentDigest);
   });
 });
@@ -353,26 +501,67 @@ describe("§7.4 resultDigest and entryDigest", () => {
     expect(changed).not.toBe(base);
   });
 
-  it("FX-DIG-R2 one pattern inside a rule body changes resultDigest", () => {
+  it("FX-DIG-R2 one pattern and one classification inside a rule body change resultDigest", () => {
     const base = resultDigestOf(RESULT_BASE);
-    const changed = resultDigestOf({
+    const [row] = RESULT_BASE.effectiveRuleSet;
+    // Same ruleId, same severity, same pins: only the select pattern changes.
+    const pattern = resultDigestOf({
       ...RESULT_BASE,
       effectiveRuleSet: [
         {
-          ...RESULT_BASE.effectiveRuleSet[0]!,
+          ...row!,
           ruleBody: { id: "label-required", phase: "import", select: { kind: "edge" }, assert: { has: "label" } },
         },
       ],
     });
-    expect(changed).not.toBe(base);
+    expect(pattern).not.toBe(base);
+    // Same body, only the stored classification changes (the field a hardcoded row would drop).
+    const classification = resultDigestOf({
+      ...RESULT_BASE,
+      effectiveRuleSet: [{ ...row!, classification: "advisory" }],
+    });
+    expect(classification).not.toBe(base);
+    expect(classification).not.toBe(pattern);
+    // Same body, only the assert threshold changes.
+    expect(
+      resultDigestOf({
+        ...RESULT_BASE,
+        effectiveRuleSet: [
+          {
+            ...row!,
+            ruleBody: { id: "label-required", phase: "import", select: { kind: "node" }, assert: { has: "label", min: 2 } },
+          },
+        ],
+      }),
+    ).not.toBe(base);
+  });
+
+  it("FX-DIG-OWNER mutating an effective rule body changes the whole-document digest", () => {
+    const withRule = E0.replace(`"rules":[]`, `"rules":[{"id":"label-required","phase":"import","select":{},"assert":{}}]`);
+    expect(ownerResultDigestOfDocument(withRule)).not.toBe(ownerResultDigestOfDocument(E0));
   });
 
   it("FX-DIG-R3 severity/selection change resultDigest; owner selector alone does not", () => {
     const base = resultDigestOf(RESULT_BASE);
     expect(resultDigestOf({ ...RESULT_BASE, severityPolicyDigest: severityPolicyDigestOf("import", "draft", ERROR) })).not.toBe(base);
-    // Owner scope: external selector change keeps E and its digest identical (0a vs 0b).
-    expect(ownerResultDigestOfDocument(E0)).toBe(ownerResultDigestOfDocument(E0));
+    // Policy-only selection (identical settings under accept): policy digest and result change.
+    const policyOnly = severityPolicyDigestOf("import", "accept", WARN);
+    expect(policyOnly).toBe("935a32b0f48e494e4e0226473703404562f8cbed025bddd73c2a1c1b5d3927f8");
+    expect(policyOnly).not.toBe(severityPolicyDigestOf("import", "draft", WARN));
+    expect(resultDigestOf({ ...RESULT_BASE, severityPolicyDigest: policyOnly })).not.toBe(base);
+    // Owner scope: the 0a/0b selector pair changes effective severity and selection
+    // digest while the same E0 document keeps its frozen result digest.
     expect(severityPolicyDigestOf("import", "accept", ERROR)).not.toBe(severityPolicyDigestOf("import", "draft", WARN));
+    expect(ownerResultDigestOfDocument(E0)).toBe(
+      "d1ac3edb3fddb851ccbc95ceeae2c57b8d93e8907ed24ac09f0b1194660b1903",
+    );
+    // V-OWNER-1 stores a changed severity row: selection and result digests change.
+    expect(severityPolicyDigestOf("import", "draft", ERROR)).toBe(
+      "8eaf5e7eb8909c547f0f55c4fd8f3f65f14951ad9e079ef8bef851bdbe0ca655",
+    );
+    expect(ownerResultDigestOfDocument(E1)).toBe(
+      "f3c0f8f0fb4d1526767df6841e42de873473d72178ca71c88b7b0fd58521eb2c",
+    );
   });
 
   it("FX-DIG-01/FX-DIG-R4 composition-only change: pinsDigest unchanged, resultDigest changed", () => {
@@ -383,21 +572,65 @@ describe("§7.4 resultDigest and entryDigest", () => {
     );
   });
 
-  it("FX-DIG-R5 catalog metadata alone leaves resultDigest unchanged", () => {
-    expect(resultDigestOf({ ...RESULT_BASE })).toBe(resultDigestOf(RESULT_BASE));
+  it("FX-DIG-R5 catalog metadata really varies and leaves resultDigest unchanged", () => {
+    const base = resultDigestOf(RESULT_BASE);
+    // Owner, consumers and other catalog fields vary; the effective result is identical.
+    expect(resultDigestOf({ ...RESULT_BASE, catalogMetadata: { owner: "team-a", consumers: ["c1"] } })).toBe(base);
+    expect(resultDigestOf({ ...RESULT_BASE, catalogMetadata: { owner: "team-b", consumers: ["c1", "c2"] } })).toBe(
+      base,
+    );
+    expect(resultDigestOf({ ...RESULT_BASE, catalogMetadata: undefined })).toBe(base);
   });
 
-  it("FX-THM-01 theme application leaves styled bytes and digests identical", () => {
-    // Applying/removing a separate theme never edits E: bytes before/after equal.
+  it("FX-THM-01 separate theme application leaves styled digests identical; baking it in does not", () => {
+    // A separately pinned theme is presentation state outside E: E bytes and digest unchanged.
     expect(ownerResultDigestOfDocument(E0)).toBe("d1ac3edb3fddb851ccbc95ceeae2c57b8d93e8907ed24ac09f0b1194660b1903");
-    expect(contentDiagramDigest(BASE_PROFILE)).toBe(contentDiagramDigest({ ...BASE_PROFILE }));
+    expect(contentDiagramDigest(BASE_PROFILE)).toBe(contentDiagramDigest({ ...BASE_PROFILE, themeRef: "dark@2" }));
+    // Baking the theme into the native document sections is a profile-byte change.
+    const themed = E0.replace(`"themes":[]`, `"themes":["dark"]`);
+    expect(ownerResultDigestOfDocument(themed)).not.toBe(ownerResultDigestOfDocument(E0));
+    // Removing it restores the frozen bytes exactly.
+    expect(ownerResultDigestOfDocument(themed.replace(`"themes":["dark"]`, `"themes":[]`))).toBe(
+      ownerResultDigestOfDocument(E0),
+    );
   });
 
-  it("FX-DIG-E1/E2 envelope and payload pin changes change entryDigest", () => {
-    const entry = { format: "sentropic.registry-entry/v1", kind: "ontology", id: "o", name: "O", entryVersion: "1.0.0" };
+  it("FX-DIG-E1 one envelope field at a time changes entryDigest", () => {
+    const entry = {
+      format: "sentropic.registry-entry/v1",
+      kind: "ontology",
+      id: "o",
+      name: "O",
+      entryVersion: "1.0.0",
+      assets: [{ role: "profile", path: "profile.json", mediaType: "application/json", sha256: A64 }],
+    };
     const base = entryDigestOf(entry);
     expect(entryDigestOf({ ...entry, name: "O2" })).not.toBe(base);
     expect(entryDigestOf({ ...entry, entryVersion: "1.0.1" })).not.toBe(base);
+    expect(
+      entryDigestOf({
+        ...entry,
+        assets: [{ role: "profile", path: "profile.json", mediaType: "application/json", sha256: B64 }],
+      }),
+    ).not.toBe(base);
+  });
+
+  it("FX-DIG-E2 one payload pin or owner field changes entryDigest", () => {
+    const entry = {
+      kind: "ontology",
+      id: "o",
+      owner: "team-a",
+      profilePin: { id: "generic", version: "1.0.0", contentDigest: A64 },
+      stack: [{ id: "generic", version: "1.0.0", contentDigest: A64 }],
+    };
+    const base = entryDigestOf(entry);
+    expect(entryDigestOf({ ...entry, owner: "team-b" })).not.toBe(base);
+    expect(
+      entryDigestOf({ ...entry, profilePin: { id: "generic", version: "2.0.0", contentDigest: A64 } }),
+    ).not.toBe(base);
+    expect(
+      entryDigestOf({ ...entry, stack: [{ id: "other", version: "1.0.0", contentDigest: A64 }] }),
+    ).not.toBe(base);
   });
 
   it("FX-DIG-04/FX-DIG-E3 deprecation changes entryDigest only", () => {
@@ -426,6 +659,15 @@ describe("§7.4 resultDigest and entryDigest", () => {
     expect(resolved).not.toBe(unresolved);
     expect(entryDigestOf({ kind: "ontology", id: "o", consumers: ["a"] })).not.toBe(
       entryDigestOf({ kind: "ontology", id: "o", consumers: ["a", "b"] }),
+    );
+    // Adding one required receipt changes the entry digest.
+    const noReceipt = entryDigestOf({ kind: "ontology", id: "o", receipts: [] });
+    expect(entryDigestOf({ kind: "ontology", id: "o", receipts: [{ receiptKind: "bpmn-bijection" }] })).not.toBe(
+      noReceipt,
+    );
+    // Adding one mapping reference or one consumer changes the entry digest.
+    expect(entryDigestOf({ kind: "ontology", id: "o", lineage: { parents: [] } })).not.toBe(
+      entryDigestOf({ kind: "ontology", id: "o", lineage: { parents: [], derivation: null, mappings: ["m1"] } }),
     );
   });
 
@@ -645,10 +887,19 @@ function passingSelection(digest: Digest = severityPolicyDigestOf("import", "dra
   return {
     phase: "import",
     readinessPolicy: "draft",
-    settings: WARN as unknown as Record<string, unknown>[],
+    settings: WARN as CompiledSetting[],
     severityPolicyDigest: digest,
     rules: [{ ruleId: "label-required", severity: "warn" }],
   };
+}
+
+function requirement(
+  receiptKind: AdmissionRequirement["receiptKind"],
+  libraryId = "bpmn-canvas",
+  libraryVersion = "1.0.0",
+  extra: Partial<AdmissionRequirement> = {},
+): AdmissionRequirement {
+  return { receiptKind, libraryId, libraryVersion, ...extra };
 }
 
 function admissionEntry(overrides: Partial<AdmissionEntry> = {}): AdmissionEntry {
@@ -696,7 +947,7 @@ function bpmnParityReceipt(overrides: Partial<Extract<Receipt, { receiptKind: "b
           bindings: [],
           severityPolicyDigest: severityPolicyDigestOf("import", "draft", WARN),
         },
-        settings: WARN as unknown as Record<string, unknown>[],
+        settings: WARN as CompiledSetting[],
       },
     },
     ruleVerdicts: [{ ruleId: "label-required", severity: "warn", verdict: "pass", parity: "proven" }],
@@ -706,7 +957,7 @@ function bpmnParityReceipt(overrides: Partial<Extract<Receipt, { receiptKind: "b
 
 describe("§5.5 admission gate", () => {
   it("admits a passing matching receipt", () => {
-    expect(checkAdmission({ entry: admissionEntry(), requiredReceiptKinds: ["bpmn-parity"], receipts: [bpmnParityReceipt()] })).toEqual({
+    expect(checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [bpmnParityReceipt()] })).toEqual({
       admitted: true,
     });
   });
@@ -720,12 +971,12 @@ describe("§5.5 admission gate", () => {
       },
     });
     expect(
-      checkAdmission({ entry: admissionEntry(), requiredReceiptKinds: ["bpmn-parity"], receipts: [unresolvedReceipt] }),
+      checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [unresolvedReceipt] }),
     ).toEqual({ admitted: false, code: "missing-receipt", reason: expect.stringContaining("unresolved") });
     expect(
       checkAdmission({
         entry: admissionEntry({ resultEvidence: { evidenceState: "unresolved" } }),
-        requiredReceiptKinds: ["bpmn-parity"],
+        requiredReceipts: [requirement("bpmn-parity")],
         receipts: [bpmnParityReceipt()],
       }).admitted,
     ).toBe(false);
@@ -740,49 +991,49 @@ describe("§5.5 admission gate", () => {
         resultEvidence: { evidenceState: "resolved", digest: A64 },
       },
     });
-    expect(checkAdmission({ entry, requiredReceiptKinds: ["bpmn-parity"], receipts: [wrongOrder] }).admitted).toBe(false);
+    expect(checkAdmission({ entry, requiredReceipts: [requirement("bpmn-parity")], receipts: [wrongOrder] }).admitted).toBe(false);
     const wrongPins = bpmnParityReceipt({
       evaluatedStack: { stack: [pin("generic")], pinsDigest: B64, resultEvidence: { evidenceState: "resolved", digest: A64 } },
     });
-    expect(checkAdmission({ entry, requiredReceiptKinds: ["bpmn-parity"], receipts: [wrongPins] }).admitted).toBe(false);
+    expect(checkAdmission({ entry, requiredReceipts: [requirement("bpmn-parity")], receipts: [wrongPins] }).admitted).toBe(false);
     const wrongResult = bpmnParityReceipt({
       evaluatedStack: { stack: [pin("generic")], pinsDigest: entry.pinsDigest, resultEvidence: { evidenceState: "resolved", digest: B64 } },
     });
-    expect(checkAdmission({ entry, requiredReceiptKinds: ["bpmn-parity"], receipts: [wrongResult] }).admitted).toBe(false);
+    expect(checkAdmission({ entry, requiredReceipts: [requirement("bpmn-parity")], receipts: [wrongResult] }).admitted).toBe(false);
   });
 
   it("FX-CAT-GATE/FX-RCPT-FAIL missing or failed receipt refuses, skeleton included", () => {
-    expect(checkAdmission({ entry: admissionEntry(), requiredReceiptKinds: ["bpmn-parity"], receipts: [] }).admitted).toBe(false);
+    expect(checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [] }).admitted).toBe(false);
     const failed = bpmnParityReceipt({ verdict: "fail" });
-    expect(checkAdmission({ entry: admissionEntry(), requiredReceiptKinds: ["bpmn-parity"], receipts: [failed] }).admitted).toBe(false);
+    expect(checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [failed] }).admitted).toBe(false);
   });
 
   it("FX-RCPT-NOTEVAL a required not-evaluated rule never counts as pass", () => {
     const noteval = bpmnParityReceipt({
       ruleVerdicts: [{ ruleId: "label-required", severity: "warn", verdict: "not-evaluated", parity: "open" }],
     });
-    expect(checkAdmission({ entry: admissionEntry(), requiredReceiptKinds: ["bpmn-parity"], receipts: [noteval] }).admitted).toBe(false);
+    expect(checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [noteval] }).admitted).toBe(false);
   });
 
   it("wrong role for the transition gate and unqualified reference claim refuse", () => {
     const oracle = bpmnParityReceipt();
     expect(
-      checkAdmission({ entry: admissionEntry(), requiredReceiptKinds: ["bpmn-parity"], receipts: [oracle], requireReference: true }).admitted,
+      checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [oracle], requireReference: true }).admitted,
     ).toBe(false);
     const unqualified = bpmnParityReceipt({ validatorRole: "qualified-ds-execution" });
-    expect(checkAdmission({ entry: admissionEntry(), requiredReceiptKinds: ["bpmn-parity"], receipts: [unqualified] }).admitted).toBe(false);
+    expect(checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [unqualified] }).admitted).toBe(false);
   });
 
   it("severity mismatch and stale selection digest refuse with matching result evidence", () => {
     const stale = bpmnParityReceipt({
       ruleVerdicts: [{ ruleId: "label-required", severity: "error", verdict: "pass", parity: "proven" }],
     });
-    expect(checkAdmission({ entry: admissionEntry(), requiredReceiptKinds: ["bpmn-parity"], receipts: [stale] }).admitted).toBe(false);
+    expect(checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [stale] }).admitted).toBe(false);
     const fresh = bpmnParityReceipt() as Extract<Receipt, { receiptKind: "bpmn-parity" }>;
     const staleDigest = bpmnParityReceipt({
       proofBindings: { ...fresh.proofBindings, severityPolicyDigest: severityPolicyDigestOf("import", "draft", ERROR) },
     });
-    expect(checkAdmission({ entry: admissionEntry(), requiredReceiptKinds: ["bpmn-parity"], receipts: [staleDigest] }).admitted).toBe(false);
+    expect(checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [staleDigest] }).admitted).toBe(false);
   });
 
   it("FX-RCPT-ARMS family arms need no BPMN proofs; wrong family matter refuses", () => {
@@ -804,11 +1055,11 @@ describe("§5.5 admission gate", () => {
       severityPolicyDigest: severityPolicyDigestOf("import", "draft", WARN),
       ruleVerdicts: [{ ruleId: "label-required", severity: "warn", verdict: "pass", parity: "proven" }],
     };
-    expect(checkAdmission({ entry: admissionEntry(), requiredReceiptKinds: ["family-corpus"], receipts: [familyReceipt] })).toEqual({
+    expect(checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("family-corpus", "engram", "1.0.0")], receipts: [familyReceipt] })).toEqual({
       admitted: true,
     });
     const wrongFixture = { ...familyReceipt, fixtureDigest: A64 } as Receipt;
-    expect(checkAdmission({ entry: admissionEntry(), requiredReceiptKinds: ["family-corpus"], receipts: [wrongFixture] }).admitted).toBe(false);
+    expect(checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("family-corpus", "engram", "1.0.0")], receipts: [wrongFixture] }).admitted).toBe(false);
     const h2a: Receipt = {
       receiptKind: "h2a-vocabulary",
       corpusDigest: B64,
@@ -829,7 +1080,7 @@ describe("§5.5 admission gate", () => {
       ruleVerdicts: [],
     };
     expect(
-      checkAdmission({ entry: admissionEntry({ selections: [] }), requiredReceiptKinds: ["h2a-vocabulary"], receipts: [h2a] }).admitted,
+      checkAdmission({ entry: admissionEntry({ selections: [] }), requiredReceipts: [requirement("h2a-vocabulary", "h2a", "1.0.0")], receipts: [h2a] }).admitted,
     ).toBe(false);
   });
 
@@ -853,7 +1104,7 @@ describe("§5.5 admission gate", () => {
       ruleVerdicts: [],
     };
     // Entry has rule sheets but receipt claims null selection: refuse.
-    expect(checkAdmission({ entry: admissionEntry(), requiredReceiptKinds: ["family-corpus"], receipts: [nulled] }).admitted).toBe(false);
+    expect(checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("family-corpus", "engram", "1.0.0")], receipts: [nulled] }).admitted).toBe(false);
     const bijection: Receipt = {
       receiptKind: "bpmn-bijection",
       corpusDigest: B64,
@@ -872,7 +1123,7 @@ describe("§5.5 admission gate", () => {
       moddleTestPin: pin("bpmn-moddle"),
       severityPolicyDigest: null,
     };
-    expect(checkAdmission({ entry: admissionEntry(), requiredReceiptKinds: ["bpmn-bijection"], receipts: [bijection] }).admitted).toBe(false);
+    expect(checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-bijection", "d2d", "1.0.0")], receipts: [bijection] }).admitted).toBe(false);
     const theme: Receipt = {
       receiptKind: "theme-invariance",
       corpusDigest: B64,
@@ -891,7 +1142,651 @@ describe("§5.5 admission gate", () => {
       semanticDigestsAfter: { contentDigest: A64, pinsDigest: A64, resultDigest: B64 },
       severityPolicyDigest: null,
     };
-    expect(checkAdmission({ entry: admissionEntry(), requiredReceiptKinds: ["theme-invariance"], receipts: [theme] }).admitted).toBe(false);
+    expect(checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("theme-invariance", "d2d", "1.0.0")], receipts: [theme] }).admitted).toBe(false);
+  });
+});
+
+// --- §1.4/§5.3 frozen record and lineage shapes; §3.2 rename mapping ---
+
+describe("frozen record, lineage and rename shapes", () => {
+  it("§1.4 public record carries the lineage container; private record carries PrivateLineage", () => {
+    const pub: OntologyRecord = {
+      namespace: "d2d",
+      id: "base",
+      version: "1.0.0",
+      owner: "team",
+      lifecycle: "published",
+      completeness: "complete",
+      visibility: "public",
+      profileShape: "diagram-profile",
+      artifactKind: "base",
+      profileRef: { canonicalRef: "c", contentDigest: A64 },
+      corpusRef: { ref: "r", digest: A64 },
+      digests: { contentDigest: A64, pinsDigest: B64, resultEvidence: { evidenceState: "resolved", digest: A64 } },
+      lineage: { parents: [pin("generic")], mappings: ["m1"], migrations: [] },
+      consumers: [],
+    };
+    expect(pub.lineage.parents).toHaveLength(1);
+    expect(pub.lineage.mappings).toEqual(["m1"]);
+    const priv: OntologyRecord = {
+      namespace: "d2d",
+      id: "base",
+      version: "1.0.0",
+      owner: "team",
+      lifecycle: "published",
+      completeness: "complete",
+      visibility: "private:tenant-a",
+      profileShape: "diagram-profile",
+      artifactKind: "base",
+      profileRef: { canonicalRef: "c", contentDigest: A64 },
+      corpusRef: { ref: "r", digest: A64 },
+      digests: { contentDigest: A64, pinsDigest: B64, resultEvidence: { evidenceState: "resolved", digest: A64 } },
+      lineage: { parents: [pin("generic")], mappings: [], migrations: [] },
+      consumers: [],
+    };
+    expect(priv.lineage.parents).toHaveLength(1);
+    expect("derivation" in priv.lineage).toBe(false);
+  });
+
+  it("§3.2 rename-with-mapping carries its mappingEntry with subject/new-name consistency", () => {
+    assertValidDeltaOperation({
+      op: "rename-with-mapping",
+      subject: "old",
+      newName: "new",
+      mappingEntry: { kind: "rename", from: "old", to: "new" },
+    });
+    expect(() =>
+      assertValidDeltaOperation({
+        op: "rename-with-mapping",
+        subject: "old",
+        newName: "new",
+        mappingEntry: { kind: "rename", from: "other", to: "new" },
+      }),
+    ).toThrow("rename-mapping-subject-mismatch");
+    expect(() =>
+      assertValidDeltaOperation({
+        op: "rename-with-mapping",
+        subject: "old",
+        newName: "new",
+        mappingEntry: { kind: "rename", from: "old", to: "other" },
+      }),
+    ).toThrow("rename-mapping-newname-mismatch");
+    assertValidDeltaOperation({ op: "add", subject: "t", declaration: { id: "t" } });
+  });
+});
+
+// --- §5.2 registry union: skill, mcp, ontology arms ---
+
+describe("§5.2 registry envelope union", () => {
+  const base = {
+    format: "sentropic.registry-entry/v1" as const,
+    contractVersion: "1.1.4",
+    id: "e",
+    name: "E",
+    description: "entry",
+    entryVersion: "1.0.0",
+    publisher: { packageName: "p", packageVersion: "1.0.0" },
+    compatibility: { entryContract: "c", packages: [], schemaProfiles: [], requiredHostFeatures: [], optionalHostFeatures: [] },
+    parameters: { schemaVersion: "s", schema: {}, defaults: {} },
+    bindings: [],
+    assets: [],
+  };
+  it("skill and mcp arms carry their own payloads; ontology requires its payload", () => {
+    const skill: SkillPayload = {
+      profile: { instructions: "Use this skill." },
+      metadata: { category: "c", contextFilters: [], permissionRequirements: [], toolNames: [] },
+      instructionsAsset: "SKILL.md",
+      capabilities: [{ id: "cap", description: "d", effect: "read-only", permissions: [] }],
+      tools: [],
+      documentSchemas: [],
+      dependencies: [],
+    };
+    const skillEntry: RegistryEnvelope = { ...base, kind: "skill", skill };
+    expect(skillEntry.kind).toBe("skill");
+    const mcp: McpPayload = {
+      manifestAsset: "manifest.json",
+      connectorIds: ["c"],
+      transportProfiles: [{ id: "t", mode: "stdio", protocolVersions: ["1"], requiredHostFeatures: [] }],
+      protocolVersions: ["1"],
+    };
+    const mcpEntry: RegistryEnvelope = { ...base, kind: "mcp", mcp };
+    expect(mcpEntry.kind).toBe("mcp");
+    // kind ontology without its payload is a type error (checked by tsc, not only by tests):
+    //   const bad: RegistryEnvelope = { ...base, kind: "ontology" };
+  });
+});
+
+// --- S-COMPILED native constraints and RFC 8785 unicode ---
+
+describe("native evidence constraints and canonical unicode", () => {
+  it("S-COMPILED options close the rule; settings keep required native fields", () => {
+    assertValidSetting({ rule: "label-required", severity: "warn", classification: "readiness" });
+    assertValidSetting({ rule: "label-required", severity: 2, options: { threshold: 1 } });
+    expect(() => assertValidSetting({ rule: "label-required" })).toThrow("setting-missing:severity");
+    expect(() => assertValidSetting({ severity: "warn" })).toThrow("setting-missing:rule");
+    expect(() => assertValidSetting({ rule: "r", severity: "warn", extra: 1 })).toThrow("setting-forbidden:extra");
+    assertValidCompiledOptions({
+      mechanismVersion: "1",
+      profileDigest: A64,
+      phase: "import",
+      readinessPolicy: "draft",
+      compiledRules: [
+        {
+          id: "r",
+          phase: "import",
+          select: {},
+          assert: {},
+          code: "c",
+          message: "m",
+          classification: "readiness",
+          bindings: [{ ownerId: "o", role: "r", targetId: "t" }],
+        },
+      ],
+      bindings: [{ ownerId: "o", role: "r", targetId: "t" }],
+      severityPolicyDigest: A64,
+    });
+    expect(() =>
+      assertValidCompiledOptions({
+        mechanismVersion: "2",
+        profileDigest: A64,
+        phase: "import",
+        readinessPolicy: "draft",
+        compiledRules: [],
+        bindings: [],
+        severityPolicyDigest: A64,
+      }),
+    ).toThrow("compiled-options-mechanism");
+  });
+
+  it("RFC 8785 canonicalization rejects lone surrogates in values and keys", () => {
+    expect(() => canonicalBytes("lone \ud800 lead")).toThrow("invalid-unicode");
+    expect(() => canonicalBytes("lone \udc00 trail")).toThrow("invalid-unicode");
+    expect(() => canonicalBytes({ ["bad \udc00"]: 1 })).toThrow("invalid-unicode");
+    // A well-formed astral pair serializes unchanged.
+    expect(canonicalBytes("𝄞")).toBe('"𝄞"');
+    expect(canonicalBytes({ key: "𝄞" })).toBe('{"key":"𝄞"}');
+  });
+
+  it("FX-DIAG-01 inverse accepts canonically equal entries with reordered keys", () => {
+    const report = sampleReport();
+    const diags = reportToDiagnostics(report, (e) => e.ruleId);
+    const reshuffled = diags.map((d) => {
+      const native = nativeEntryOf(d) as unknown as Record<string, unknown>;
+      const out: Record<string, unknown> = {};
+      for (const key of Object.keys(native).reverse()) out[key] = native[key];
+      return {
+        ...out,
+        origin: "report2",
+        nativeCode: d.nativeCode,
+        subjectRef: d.subjectRef,
+        reportEntryIndex: d.reportEntryIndex,
+        ...(d.studyDisposition !== undefined ? { studyDisposition: d.studyDisposition } : {}),
+      } as unknown as Report2Diagnostic;
+    });
+    expect(Object.keys(reshuffled[0]!).join(",")).not.toBe(Object.keys(report.entries[0]!).join(","));
+    expect(diagnosticsToNativeEntries(report, reshuffled)).toEqual(report.entries);
+  });
+
+  it("§2.1.1 non-null locator ties keep reportEntryIndex order", () => {
+    const report = sampleReport();
+    const [first] = reportToDiagnostics(report, (e) => e.ruleId);
+    const at = (index: number): Report2Diagnostic => ({
+      ...first!,
+      code: "same",
+      nativeCode: "same",
+      subjectRef: "s",
+      reportEntryIndex: index,
+      source: { domain: "tree", pointer: "/p", targetId: null, provenance: "exact" },
+      result: { domain: "tree", pointer: "/p", targetId: null, provenance: "exact" },
+    });
+    const later = at(1);
+    const earlier = at(0);
+    expect(compareDiagnostics(later, earlier)).toBeGreaterThan(0);
+    expect(compareDiagnostics(earlier, later)).toBeLessThan(0);
+    expect(sortDiagnostics([later, earlier]).map((d) => (d as Report2Diagnostic).reportEntryIndex)).toEqual([0, 1]);
+  });
+});
+
+// --- §5.5 admission: digests, requirements, selection, verdicts, families, private path ---
+
+function receiptBase(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    corpusDigest: B64,
+    libraryId: "bpmn-canvas",
+    libraryVersion: "1.0.0",
+    validatorRole: "transitional-oracle",
+    verdict: "pass",
+    issuedAt: "2026-10-26",
+    evaluatedStack: {
+      stack: [pin("generic")],
+      pinsDigest: pinsDigestOf({ layers: [pin("generic")] }),
+      resultEvidence: { evidenceState: "resolved", digest: A64 },
+    },
+    ...overrides,
+  };
+}
+
+describe("§5.5 admission hardening", () => {
+  it("every digest value is validated: malformed, empty and absent digests refuse", () => {
+    const good = { entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [bpmnParityReceipt()] };
+    expect(checkAdmission(good)).toEqual({ admitted: true });
+    expect(checkAdmission({ ...good, entry: admissionEntry({ pinsDigest: "zzz" }) }).admitted).toBe(false);
+    expect(checkAdmission({ ...good, entry: admissionEntry({ pinsDigest: "" }) }).admitted).toBe(false);
+    expect(checkAdmission({ ...good, entry: admissionEntry({ corpusDigest: "NOT-HEX" }) }).admitted).toBe(false);
+    const absentDigest = bpmnParityReceipt({
+      evaluatedStack: {
+        stack: [pin("generic")],
+        pinsDigest: undefined as unknown as Digest,
+        resultEvidence: { evidenceState: "resolved", digest: A64 },
+      },
+    });
+    expect(
+      checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [absentDigest] })
+        .admitted,
+    ).toBe(false);
+    // An unresolved arm carrying a digest value never matches resolved evidence.
+    const smuggled = bpmnParityReceipt({
+      evaluatedStack: {
+        stack: [pin("generic")],
+        pinsDigest: pinsDigestOf({ layers: [pin("generic")] }),
+        resultEvidence: { evidenceState: "unresolved", digest: A64 } as unknown as { evidenceState: "resolved"; digest: Digest },
+      },
+    });
+    expect(
+      checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [smuggled] })
+        .admitted,
+    ).toBe(false);
+  });
+
+  it("one receipt satisfies exactly one library requirement", () => {
+    const single = bpmnParityReceipt();
+    // The same receipt presented twice still leaves the second requirement missing.
+    expect(
+      checkAdmission({
+        entry: admissionEntry(),
+        requiredReceipts: [requirement("bpmn-parity"), requirement("bpmn-parity")],
+        receipts: [single],
+      }).admitted,
+    ).toBe(false);
+    // Two libraries, two receipts: each requirement binds its own.
+    const twin = bpmnParityReceipt({ libraryId: "bpmn-twin", libraryVersion: "2.0.0" });
+    expect(
+      checkAdmission({
+        entry: admissionEntry(),
+        requiredReceipts: [requirement("bpmn-parity"), requirement("bpmn-parity", "bpmn-twin", "2.0.0")],
+        receipts: [single, twin],
+      }),
+    ).toEqual({ admitted: true });
+    // Proof set is part of the requirement: the wrong set refuses.
+    expect(
+      checkAdmission({
+        entry: admissionEntry(),
+        requiredReceipts: [requirement("bpmn-parity", "bpmn-canvas", "1.0.0", { proofSet: "local-expectations" })],
+        receipts: [single],
+      }).admitted,
+    ).toBe(false);
+    // Qualification scope is part of the requirement: the wrong phase refuses.
+    expect(
+      checkAdmission({
+        entry: admissionEntry(),
+        requiredReceipts: [requirement("bpmn-parity", "bpmn-canvas", "1.0.0", { phase: "release" })],
+        receipts: [single],
+      }).admitted,
+    ).toBe(false);
+  });
+
+  it("selection and compiled evidence are verified, not only found", () => {
+    // Stale settings: binding names the WARN selection but evidence carries ERROR settings.
+    const staleSettings = bpmnParityReceipt({
+      proofBindings: {
+        ...(bpmnParityReceipt() as unknown as { proofBindings: Record<string, unknown> }).proofBindings,
+        compiledLintEvidence: {
+          scope: "public",
+          compiledOptions: {
+            mechanismVersion: "1",
+            profileDigest: A64,
+            phase: "import",
+            readinessPolicy: "draft",
+            compiledRules: [],
+            bindings: [],
+            severityPolicyDigest: severityPolicyDigestOf("import", "draft", WARN),
+          },
+          settings: ERROR as CompiledSetting[],
+        },
+      },
+    } as Partial<Extract<Receipt, { receiptKind: "bpmn-parity" }>>);
+    expect(
+      checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [staleSettings] })
+        .admitted,
+    ).toBe(false);
+    // Selector mismatch: compiled options name release/accept, selection is import/draft.
+    const selectorMismatch = bpmnParityReceipt({
+      proofBindings: {
+        ...(bpmnParityReceipt() as unknown as { proofBindings: Record<string, unknown> }).proofBindings,
+        compiledLintEvidence: {
+          scope: "public",
+          compiledOptions: {
+            mechanismVersion: "1",
+            profileDigest: A64,
+            phase: "release",
+            readinessPolicy: "accept",
+            compiledRules: [],
+            bindings: [],
+            severityPolicyDigest: severityPolicyDigestOf("import", "draft", WARN),
+          },
+          settings: WARN as CompiledSetting[],
+        },
+      },
+    } as Partial<Extract<Receipt, { receiptKind: "bpmn-parity" }>>);
+    expect(
+      checkAdmission({
+        entry: admissionEntry(),
+        requiredReceipts: [requirement("bpmn-parity")],
+        receipts: [selectorMismatch],
+      }).admitted,
+    ).toBe(false);
+    // Native profile digest must equal the entry profile pin.
+    const profileMismatch = bpmnParityReceipt({
+      proofBindings: {
+        ...(bpmnParityReceipt() as unknown as { proofBindings: Record<string, unknown> }).proofBindings,
+        compiledLintEvidence: {
+          scope: "public",
+          compiledOptions: {
+            mechanismVersion: "1",
+            profileDigest: B64,
+            phase: "import",
+            readinessPolicy: "draft",
+            compiledRules: [],
+            bindings: [],
+            severityPolicyDigest: severityPolicyDigestOf("import", "draft", WARN),
+          },
+          settings: WARN as CompiledSetting[],
+        },
+      },
+    } as Partial<Extract<Receipt, { receiptKind: "bpmn-parity" }>>);
+    expect(
+      checkAdmission({
+        entry: admissionEntry(),
+        requiredReceipts: [requirement("bpmn-parity")],
+        receipts: [profileMismatch],
+      }).admitted,
+    ).toBe(false);
+    // Compiled-rule closure: options in a compiled rule refuse.
+    const closedViolation = bpmnParityReceipt({
+      proofBindings: {
+        ...(bpmnParityReceipt() as unknown as { proofBindings: Record<string, unknown> }).proofBindings,
+        compiledLintEvidence: {
+          scope: "public",
+          compiledOptions: {
+            mechanismVersion: "1",
+            profileDigest: A64,
+            phase: "import",
+            readinessPolicy: "draft",
+            compiledRules: [
+              { id: "r", phase: "import", select: {}, assert: {}, code: "c", message: "m", classification: "r", options: {} },
+            ],
+            bindings: [],
+            severityPolicyDigest: severityPolicyDigestOf("import", "draft", WARN),
+          },
+          settings: WARN as CompiledSetting[],
+        },
+      },
+    } as Partial<Extract<Receipt, { receiptKind: "bpmn-parity" }>>);
+    expect(
+      checkAdmission({
+        entry: admissionEntry(),
+        requiredReceipts: [requirement("bpmn-parity")],
+        receipts: [closedViolation],
+      }).admitted,
+    ).toBe(false);
+  });
+
+  it("every selected rule needs its own verdict row: missing, forged off and foreign rows refuse", () => {
+    const twoRules = admissionEntry({
+      selections: [
+        {
+          ...passingSelection(),
+          rules: [
+            { ruleId: "label-required", severity: "warn" },
+            { ruleId: "second-rule", severity: "error" },
+          ],
+        },
+      ],
+    });
+    // Missing row for the second selected rule refuses.
+    expect(
+      checkAdmission({
+        entry: twoRules,
+        requiredReceipts: [requirement("bpmn-parity")],
+        receipts: [bpmnParityReceipt()],
+      }).admitted,
+    ).toBe(false);
+    // Forged off: the selection says warn, the verdict claims off.
+    const forgedOff = bpmnParityReceipt({
+      ruleVerdicts: [{ ruleId: "label-required", severity: "warn", verdict: "off", parity: "proven" }],
+    });
+    expect(
+      checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [forgedOff] })
+        .admitted,
+    ).toBe(false);
+    // Unknown rule verdict refuses.
+    const foreign = bpmnParityReceipt({
+      ruleVerdicts: [
+        { ruleId: "label-required", severity: "warn", verdict: "pass", parity: "proven" },
+        { ruleId: "ghost-rule", severity: "warn", verdict: "pass", parity: "proven" },
+      ],
+    });
+    expect(
+      checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [foreign] })
+        .admitted,
+    ).toBe(false);
+    // Selected off admits an off verdict for its own row.
+    const offSelection = admissionEntry({
+      selections: [
+        {
+          ...passingSelection(),
+          rules: [{ ruleId: "label-required", severity: "off" }],
+        },
+      ],
+    });
+    const offVerdict = bpmnParityReceipt({
+      ruleVerdicts: [{ ruleId: "label-required", severity: "off", verdict: "off", parity: "proven" }],
+    });
+    expect(
+      checkAdmission({ entry: offSelection, requiredReceipts: [requirement("bpmn-parity")], receipts: [offVerdict] }),
+    ).toEqual({ admitted: true });
+  });
+
+  it("family proof bindings: corpus, schema, matrix, pins and roles are all checked", () => {
+    // Wrong corpus evidence refuses on the parity arm too.
+    const wrongCorpus = bpmnParityReceipt({ corpusDigest: A64 });
+    expect(
+      checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [wrongCorpus] })
+        .admitted,
+    ).toBe(false);
+    // Contract verdict binds the entry schema pin and the matrix version.
+    const contractEntry = admissionEntry({ contractSchemaPin: pin("schema"), compatibilityMatrixVersion: "3" });
+    const contractOk: Receipt = {
+      ...(receiptBase() as unknown as Receipt),
+      receiptKind: "contract-verdict",
+      schemaPin: pin("schema"),
+      compatibilityMatrixVersion: "3",
+      caseVerdicts: [{ caseId: "c1" }],
+    } as Receipt;
+    expect(
+      checkAdmission({
+        entry: contractEntry,
+        requiredReceipts: [requirement("contract-verdict", "bpmn-canvas", "1.0.0")],
+        receipts: [contractOk],
+      }),
+    ).toEqual({ admitted: true });
+    const wrongSchema = { ...contractOk, schemaPin: pin("other") } as Receipt;
+    expect(
+      checkAdmission({
+        entry: contractEntry,
+        requiredReceipts: [requirement("contract-verdict", "bpmn-canvas", "1.0.0")],
+        receipts: [wrongSchema],
+      }).admitted,
+    ).toBe(false);
+    const missingBinding = { ...contractOk } as Receipt;
+    expect(
+      checkAdmission({
+        entry: admissionEntry(),
+        requiredReceipts: [requirement("contract-verdict", "bpmn-canvas", "1.0.0")],
+        receipts: [missingBinding],
+      }).admitted,
+    ).toBe(false);
+    const wrongMatrix = { ...contractOk, compatibilityMatrixVersion: "4" } as Receipt;
+    expect(
+      checkAdmission({
+        entry: contractEntry,
+        requiredReceipts: [requirement("contract-verdict", "bpmn-canvas", "1.0.0")],
+        receipts: [wrongMatrix],
+      }).admitted,
+    ).toBe(false);
+    // Theme invariance binds the styled profile pin.
+    const themeEntry = admissionEntry();
+    const themeOk: Receipt = {
+      ...(receiptBase() as unknown as Receipt),
+      receiptKind: "theme-invariance",
+      styledProfilePin: pin("generic"),
+      semanticDigestsBefore: { contentDigest: A64, pinsDigest: A64, resultDigest: A64 },
+      semanticDigestsAfter: { contentDigest: A64, pinsDigest: A64, resultDigest: A64 },
+      severityPolicyDigest: null,
+    } as Receipt;
+    expect(
+      checkAdmission({
+        entry: themeEntry,
+        requiredReceipts: [requirement("theme-invariance", "bpmn-canvas", "1.0.0")],
+        receipts: [themeOk],
+      }),
+    ).toEqual({ admitted: true });
+    const wrongStyled = { ...themeOk, styledProfilePin: pin("other") } as Receipt;
+    expect(
+      checkAdmission({
+        entry: themeEntry,
+        requiredReceipts: [requirement("theme-invariance", "bpmn-canvas", "1.0.0")],
+        receipts: [wrongStyled],
+      }).admitted,
+    ).toBe(false);
+  });
+
+  it("h2a and mem admit retained checks with pinned revision; oracle role and drift refuse", () => {
+    const h2aOk: Receipt = {
+      ...(receiptBase({ libraryId: "h2a", libraryVersion: "1.0.0", validatorRole: "retained-check" }) as unknown as Receipt),
+      receiptKind: "h2a-vocabulary",
+      protocolPin: pin("generic"),
+      sourceRevision: "rev-1",
+      fixtureDigest: B64,
+      severityPolicyDigest: null,
+      ruleVerdicts: [],
+    } as Receipt;
+    const h2aEntry = admissionEntry({ selections: [], sourceRevision: "rev-1" });
+    expect(
+      checkAdmission({
+        entry: h2aEntry,
+        requiredReceipts: [requirement("h2a-vocabulary", "h2a", "1.0.0")],
+        receipts: [h2aOk],
+      }),
+    ).toEqual({ admitted: true });
+    const oracleRole = { ...h2aOk, validatorRole: "transitional-oracle" } as Receipt;
+    expect(
+      checkAdmission({
+        entry: h2aEntry,
+        requiredReceipts: [requirement("h2a-vocabulary", "h2a", "1.0.0")],
+        receipts: [oracleRole],
+      }).admitted,
+    ).toBe(false);
+    const wrongRevision = { ...h2aOk, sourceRevision: "rev-2" } as Receipt;
+    expect(
+      checkAdmission({
+        entry: h2aEntry,
+        requiredReceipts: [requirement("h2a-vocabulary", "h2a", "1.0.0")],
+        receipts: [wrongRevision],
+      }).admitted,
+    ).toBe(false);
+    expect(
+      checkAdmission({
+        entry: admissionEntry({ selections: [] }),
+        requiredReceipts: [requirement("h2a-vocabulary", "h2a", "1.0.0")],
+        receipts: [h2aOk],
+      }).admitted,
+    ).toBe(false);
+    const memOk: Receipt = {
+      ...(receiptBase({ libraryId: "mem", libraryVersion: "1.0.0", validatorRole: "retained-check" }) as unknown as Receipt),
+      receiptKind: "mem-descriptor",
+      descriptorPin: pin("generic"),
+      fixtureDigest: B64,
+      severityPolicyDigest: null,
+      ruleVerdicts: [],
+    } as Receipt;
+    expect(
+      checkAdmission({
+        entry: admissionEntry({ selections: [] }),
+        requiredReceipts: [requirement("mem-descriptor", "mem", "1.0.0")],
+        receipts: [memOk],
+      }),
+    ).toEqual({ admitted: true });
+  });
+
+  it("private entries admit through the owner-side path only", () => {
+    const ownerSelection = {
+      phase: "import",
+      readinessPolicy: "draft",
+      severityPolicyDigest: severityPolicyDigestOf("import", "draft", WARN),
+      rules: [{ ruleId: "label-required", severity: "warn" }],
+    };
+    const privateEntry = admissionEntry({ selections: [], visibility: "private", ownerSelection });
+    const privateReceipt = bpmnParityReceipt({
+      proofBindings: {
+        ...(bpmnParityReceipt() as unknown as { proofBindings: Record<string, unknown> }).proofBindings,
+        compiledLintEvidence: { scope: "private-reference", ownerReceiptRef: "owner-ref-1" },
+      },
+    } as Partial<Extract<Receipt, { receiptKind: "bpmn-parity" }>>);
+    expect(
+      checkAdmission({
+        entry: privateEntry,
+        requiredReceipts: [requirement("bpmn-parity")],
+        receipts: [privateReceipt],
+      }),
+    ).toEqual({ admitted: true });
+    // Public selections on a private entry refuse.
+    expect(
+      checkAdmission({
+        entry: admissionEntry({ visibility: "private", ownerSelection }),
+        requiredReceipts: [requirement("bpmn-parity")],
+        receipts: [privateReceipt],
+      }).admitted,
+    ).toBe(false);
+    // Missing owner selection binding refuses.
+    expect(
+      checkAdmission({
+        entry: admissionEntry({ selections: [], visibility: "private" }),
+        requiredReceipts: [requirement("bpmn-parity")],
+        receipts: [privateReceipt],
+      }).admitted,
+    ).toBe(false);
+    // Owner severity drift refuses even with matching result evidence.
+    const drifted = admissionEntry({
+      selections: [],
+      visibility: "private",
+      ownerSelection: { ...ownerSelection, severityPolicyDigest: severityPolicyDigestOf("import", "draft", ERROR) },
+    });
+    expect(
+      checkAdmission({
+        entry: drifted,
+        requiredReceipts: [requirement("bpmn-parity")],
+        receipts: [privateReceipt],
+      }).admitted,
+    ).toBe(false);
+    // A public-scope evidence on a private entry refuses.
+    expect(
+      checkAdmission({
+        entry: privateEntry,
+        requiredReceipts: [requirement("bpmn-parity")],
+        receipts: [bpmnParityReceipt()],
+      }).admitted,
+    ).toBe(false);
   });
 });
 
