@@ -80,6 +80,28 @@ function rejects(name: string, kind: Receipt["receiptKind"], mutate: (request: a
 
 const kinds: Receipt["receiptKind"][] = ["bpmn-parity", "bpmn-bijection", "family-corpus", "h2a-vocabulary", "mem-descriptor", "mechanism-compat", "contract-verdict", "theme-invariance"];
 describe("§5.5 entry-derived exhaustive receipt requirements", () => {
+  for (const kind of ["h2a-vocabulary", "mem-descriptor"] as const) {
+    for (const privateRun of [false, true]) {
+      it(`${kind} ${privateRun ? "private" : "public"} sheetless scope admits one receipt per library across two selections`, () => {
+        const request = fixture(kind, privateRun);
+        const libraries = [{ id: "validator", version: "1.0.0" }, { id: "independent", version: "2.0.0" }];
+        const entry: AdmissionEntry = { ...request.entry, qualificationScope: {
+          libraries, proofSets: [], selections: [
+            { phase: "import", readinessPolicy: "draft" },
+            { phase: "release", readinessPolicy: "accept" },
+          ],
+        } };
+        // Fixed producer evidence: never generate receipts from the requirements
+        // under test, which would hide a duplicate-obligation regression.
+        const receipts = libraries.map((library) => ({ ...structuredClone(request.receipts[0]!), libraryId: library.id, libraryVersion: library.version }));
+        expect(deriveRequirements(entry)).toEqual(libraries.map((library) => ({ receiptKind: kind, libraryId: library.id, libraryVersion: library.version })));
+        expect(checkAdmission({ entry, receipts })).toEqual({ admitted: true });
+        expect(checkAdmission({ entry, receipts: [...receipts].reverse() })).toEqual({ admitted: true });
+        expect(checkAdmission({ entry, receipts: receipts.slice(0, 1) }).admitted).toBe(false);
+        expect(checkAdmission({ entry, receipts: [receipts[0]!, receipts[0]!] }).admitted).toBe(false);
+      });
+    }
+  }
   for (const kind of kinds) {
     for (const privateRun of [false, true]) {
       const scope = privateRun ? "private" : "public";
