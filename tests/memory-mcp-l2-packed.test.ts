@@ -46,6 +46,7 @@ describe('MCP-L2 packed write tools against reference ports', () => {
         auditId: 'audit:l2-packed', authorization: { credential: 'credential:l7' }, scope_ref: 'scope:l3', store_id: 'memory:canonical',
         principal_namespace: 'principal:test', principal_id: 'alice', tenant_id: 'tenant:one', connector_instance_ref: 'connector:one',
         agent_id: 'agent:one', session_id: 'session:one', generation: '1', deadline_at: new Date(Date.now() + 20000).toISOString(),
+        cancellation_ref: 'cancel:l2-packed', elicitation_ref: 'elicit:l2-packed',
       };
       const disabled = bundle.createMemoryWriteToolsV1({ facets });
       const request = captureRequest('l2-packed-key-00000001', '1', 'packed body');
