@@ -24,6 +24,21 @@ import type {
 } from "../src/ontology-guardian/types.js";
 
 describe("G0 type-level proof", () => {
+  it("represents public and private drafts before corpus qualification", () => {
+    const common = {
+      namespace: "drafts", id: "new-profile", version: "0.1.0", owner: "owner",
+      lifecycle: "draft" as const, completeness: "skeleton" as const,
+      profileShape: "diagram-profile" as const, artifactKind: "profile" as const,
+      profileRef: { canonicalRef: "draft:new-profile", contentDigest: "a".repeat(64) },
+      lineage: { parents: [], mappings: [], migrations: [] }, consumers: [],
+    };
+    const publicDraft: OntologyRecord = { ...common, visibility: "public" };
+    const privateDraft: OntologyRecord = { ...common, visibility: "private:tenant" };
+    for (const draft of [publicDraft, privateDraft]) {
+      expect(draft.corpusRef).toBeUndefined();
+      expect(draft.digests).toBeUndefined();
+    }
+  });
   it("holds the transcribed shapes at runtime", () => {
     const pin: Pin = { id: "generic", version: "1.0.0", contentDigest: "a".repeat(64) };
     expect(pin.id).toBe("generic");
@@ -128,7 +143,7 @@ const privatePreview: PrivateApplyPreview = { pins: [], receipts: [] };
 // @ts-expect-error guardian operation codes form a closed union
 const inventedGuardian: GuardianDiagnostic["code"] = "invented";
 
-function forbiddenContracts(record: OntologyRecord, payload: OntologyPayload, envelope: RegistryEnvelope, request: AdmissionRequest, receipt: Receipt): void {
+function forbiddenContracts(record: Exclude<OntologyRecord, { lifecycle: "draft" }>, payload: OntologyPayload, envelope: RegistryEnvelope, request: AdmissionRequest, receipt: Receipt): void {
   const { supersededBy, deprecatedReason, deprecatedAt, migrationRef, ...recordCommon } = record;
   // @ts-expect-error deprecated requires reason and date
   const deprecated: OntologyRecord = { ...recordCommon, lifecycle: "deprecated" };
@@ -151,7 +166,7 @@ function forbiddenContracts(record: OntologyRecord, payload: OntologyPayload, en
   const erasedRequirements: AdmissionRequest = { ...request, requiredReceipts: [] };
 }
 
-function lifecycleAndRoleProof(record: OntologyRecord, receipt: Receipt): void {
+function lifecycleAndRoleProof(record: Exclude<OntologyRecord, { lifecycle: "draft" }>, receipt: Receipt): void {
   const { supersededBy, deprecatedReason, deprecatedAt, migrationRef, ...common } = record;
   // @ts-expect-error date does not replace required deprecation reason
   const reasonless: OntologyRecord = { ...common, lifecycle: "deprecated", deprecatedAt: "2026-10-26" };
@@ -162,4 +177,16 @@ function lifecycleAndRoleProof(record: OntologyRecord, receipt: Receipt): void {
   const bareOracle: Receipt = { ...receiptCommon, validatorRole: "transitional-oracle" };
   // @ts-expect-error retained checks cannot carry a transition claim
   const claimedRetained: Receipt = { ...receiptCommon, validatorRole: "retained-check", transitionQualification: { claim: "oracle-witness", parityMatrixDigest: "a".repeat(64) } };
+}
+
+function draftAndPublicationProof(record: OntologyRecord & { lifecycle: "published" }): void {
+  const { corpusRef, digests, ...common } = record;
+  const draft: OntologyRecord = { ...common, lifecycle: "draft" };
+  const corpusDraft: OntologyRecord = { ...draft, corpusRef };
+  const digestedDraft: OntologyRecord = { ...draft, digests };
+  const qualifiedDraft: OntologyRecord = { ...draft, corpusRef, digests };
+  // @ts-expect-error published still requires corpusRef
+  const corpusless: OntologyRecord = { ...common, digests };
+  // @ts-expect-error published still requires digests
+  const digestless: OntologyRecord = { ...common, corpusRef };
 }

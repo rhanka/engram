@@ -1,4 +1,4 @@
-# G0 core — preuves de correction, round auteur 1
+# G0 core — preuves de correction, rounds auteur 1 et 2
 
 Références : spécification gelée `SPEC-G0-guardian-contracts.md`, SHA-256
 `e6362445f87d6581ac31224c2dc44e15214b3a7debc2afff2b3d25b8b37ff8f6`,
@@ -32,3 +32,14 @@ Exécution dans ce worktree, Node 22.22.1, npm 9.2.0 :
 - Comparaison : mêmes 97 noms de tests en échec dans 23 fichiers, mêmes premiers messages après normalisation des chemins ; zéro échec ajouté/retiré, zéro message différent. Causes conservées : fs-ext absent, sorties natives/paquets manquants et npm 9.2.0. Détails `/tmp/g0-sol-environment-comparison.json`. Les 522 succès supplémentaires correspondent exactement aux trois fichiers G0.
 
 Limites `unverified` : schéma SkillTool non transcrit ; clés internes de la représentation privée d'apply-preview non spécifiées ; vocabulaire de sévérité des descripteurs autres que BPMN/diagram-core/engram non transcrit (ces sélections publiques refusent). Les preuves privées complètes restent vérifiées chez leur producteur : l'adaptateur doit résoudre leurs références, comme les bibliothèques et périmètres de qualification. Ce contexte interne n'ajoute aucun champ aux payloads sérialisés §5.3. Qualification/publication des bibliothèques, I/O, registre et opérations d'exécution des autres lots restent hors de ce module pur ; aucune preuve d'exécution de ces lots n'est revendiquée.
+
+## Round auteur 2 — constats de G0-core-review-muse-sa1.log
+
+HEAD revu : `868c3beb5e22551f126eb299a4e7f6e7f7cbbded`. Corrections ajoutées à sa suite, sans réécriture de l'historique.
+
+- MAJOR admission : la boucle de sélections ne s'applique qu'en présence de fiches. Sans fiche, une seule exigence est produite par bibliothèque et jeu de preuve. Quatre fixtures H2A/MEM publiques et privées fixent deux sélections et deux bibliothèques, avec exactement un reçu indépendant par bibliothèque ; ordre inversé admis, reçu manquant ou réutilisé refusé. Avant correction, les quatre fixtures échouent avec quatre exigences au lieu de deux. Mutant `sheetless-selection-duplication` tué par ces fixtures.
+- MINOR brouillon : `corpusRef` et `digests` sont optionnels uniquement sur le bras `draft`. Les autres états et le candidat de dérivation gardent leurs champs obligatoires. Preuves positives publiques/privées et compilation des brouillons avec chaque combinaison de champs ; preuves négatives de publication sans corpus ou sans digests. Les mutants `published-corpus-required` et `published-digests-required` sont tués par les directives de preuve compilées.
+- MINOR EXT : condition explicitement `unverified` au voisinage des deux champs dans `catalog.ts`. La spécification gelée §5.3, lignes 717–718, exige `licenceClosure` et `coverage` pour EXT et les interdit ailleurs ; son tableau fermé, lignes 702–727, ne définit aucun discriminant de famille. Les champs restent optionnels en attendant une identité EXT spécifiée ; cette limite n'est pas présentée comme une fermeture de types prouvée.
+- Vérification : `npm test -- tests/ontology-guardian-g0.test.ts tests/ontology-guardian-g0-admission.test.ts tests/ontology-guardian-g0-typeproof.test.ts` passe 527/527 ; les douze vecteurs gelés et leurs valeurs restent inchangés. `npm run lint` passe. `npm run test:g0-mutants` tue 164/164 mutants d'exécution et 15/15 mutants de types, avec présence du fichier de preuve contrôlée par `--listFilesOnly`.
+
+La comparaison complète rattachée aux commits, fichier par fichier, est consignée dans `ontology-guardian-g0-full-suite-comparison.json` ; les chemins `/tmp` ci-dessus décrivent uniquement l'exécution historique du round 1.
