@@ -243,6 +243,11 @@ function checkVerdictsAgainstSelection(
     if (v.severity !== row.severity) {
       return `receipt ${receiptKind} severity mismatch on rule ${v.ruleId}`;
     }
+    // `off` comes from the compiled selection only: a verdict claiming `off`
+    // for a rule selected with an effective severity is forged.
+    if (v.verdict === "off" && row.severity !== "off") {
+      return `receipt ${receiptKind} forged off verdict on rule ${v.ruleId}`;
+    }
     if ((row.studyDisposition ?? undefined) !== (v.studyDisposition ?? undefined)) {
       return `receipt ${receiptKind} studyDisposition mismatch on rule ${v.ruleId}`;
     }
