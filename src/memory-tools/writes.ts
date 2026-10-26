@@ -55,7 +55,6 @@ import {
   resolveCaptureReconciliationConsentV1,
   resolveCaptureRetentionPolicyV1,
   validateMemoryMutationPreimageV1,
-  type DestructiveMemoryToolName,
   type EffectiveMemoryMutationInputV1,
   type HostReconciliationPolicyConfigV1,
   type HostRetentionPolicyConfigV1,
@@ -81,6 +80,17 @@ export interface MemoryWriteInvocationV1 {
   session_id: string;
   generation: string;
   deadline_at: string;
+  /**
+   * Injected host bindings (L4 pipeline steps 5-7). The verified elicitation
+   * reference travels to the confirmation port and durable attachment
+   * unchanged; the verified cancellation reference travels to the engine;
+   * the selected stronger confirmation gate extends confirmation to
+   * capture/requestAdmission. Absent on direct facade use, where legacy
+   * synthesized refs apply and no stronger gate is enforced.
+   */
+  elicitation_ref?: string;
+  cancellation_ref?: string;
+  confirmationRequired?: boolean;
 }
 
 export interface MemoryWriteFacetsV1 {
@@ -90,10 +100,12 @@ export interface MemoryWriteFacetsV1 {
 }
 
 export interface MemoryWriteConfirmationV1 {
-  capability: DestructiveMemoryToolName;
+  capability: WriteTool;
   target_ref: string;
   operation_digest: Digest;
   reservation_ref: string;
+  /** Verified elicitation reference, passed through unchanged when present. */
+  elicitation_ref?: string;
 }
 
 export interface MemoryWriteHostV1 {
@@ -335,15 +347,41 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     }
   }
 
-  async function confirmIfRequired(tool: WriteTool, ctx: MemoryWriteInvocationV1, idempotencyKey: string, binding: MemoryMutationBindingV1<unknown>, digest: Digest, targetRef: string): Promise<ToolResultV1<never> | undefined> {
-    if (tool !== 'engram_memory_withdraw' && tool !== 'engram_memory_forget') return undefined;
+  // Per-invocation confirmation memo: the guarded engine may run its
+  // first-effect guard more than once per attempt, but the confirmation port
+  // is called once per attempt. The attached confirmation is durable approval
+  // evidence for the remainder of that attempt; a retry builds a fresh
+  // invocation and re-verifies.
+  const confirmedThisInvocation = new WeakMap<object, Set<string>>();
+
+  async function confirmIfRequired(tool: WriteTool, ctx: MemoryWriteInvocationV1, idempotencyKey: string, binding: MemoryMutationBindingV1<unknown>, digest: Digest, targetRef: string | undefined): Promise<ToolResultV1<never> | undefined> {
+    const gated = tool === 'engram_memory_withdraw' || tool === 'engram_memory_forget' || ctx.confirmationRequired === true;
+    if (!gated) return undefined;
+    const memoKey = `${binding.preimage.reservation_ref}:${digest}`;
+    if (confirmedThisInvocation.get(ctx)?.has(memoKey)) return undefined;
+    if (targetRef === undefined) {
+      const out = failure(tool, ctx, 'gate_failed');
+      await audit(ctx, { tool, idempotency_key: idempotencyKey, decision: 'refuse', error_code: 'gate_failed' });
+      return out;
+    }
     // M4 l.563-567: every pre-effect attempt requires the CURRENT verifier
     // verdict. An attached confirmation is durable approval evidence, never a
     // substitute: after expiry or a session change the verifier refuses and
-    // the uncommitted reservation cannot execute.
+    // the uncommitted reservation cannot execute. The confirmation port
+    // receives the injected elicitation reference unchanged; durable
+    // attachment stores that injected reference, never a synthesized one
+    // (the synthesized fallback below only serves direct facade use without
+    // an injected host binding).
+    const elicitationRef = ctx.elicitation_ref;
     let approved = false;
     try {
-      approved = await host!.confirm({ capability: tool, target_ref: targetRef, operation_digest: digest, reservation_ref: binding.preimage.reservation_ref }) === true;
+      approved = await host!.confirm({
+        capability: tool,
+        target_ref: targetRef,
+        operation_digest: digest,
+        reservation_ref: binding.preimage.reservation_ref,
+        ...(elicitationRef !== undefined ? { elicitation_ref: elicitationRef } : {}),
+      }) === true;
     } catch { approved = false; }
     if (approved !== true) {
       const out = failure(tool, ctx, 'gate_failed');
@@ -351,7 +389,11 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
       return out;
     }
     try {
-      const attached = await host!.reservation.attachConfirmation(binding.preimage.reservation_ref, `confirmation:${binding.preimage.reservation_ref}`, digest);
+      const attached = await host!.reservation.attachConfirmation(
+        binding.preimage.reservation_ref,
+        elicitationRef ?? `confirmation:${binding.preimage.reservation_ref}`,
+        digest,
+      );
       if (!attached.ok) {
         const out = mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, code: attached.error_code, invocationAuthorized: true, targetAuthorized: true }).structuredContent;
         await audit(ctx, { tool, idempotency_key: idempotencyKey, decision: 'refuse', error_code: attached.error_code });
@@ -362,6 +404,12 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
       await audit(ctx, { tool, idempotency_key: idempotencyKey, decision: 'refuse', error_code: 'STORE_UNAVAILABLE' });
       return out;
     }
+    let memo = confirmedThisInvocation.get(ctx);
+    if (memo === undefined) {
+      memo = new Set<string>();
+      confirmedThisInvocation.set(ctx, memo);
+    }
+    memo.add(memoKey);
     return undefined;
   }
 
@@ -465,7 +513,15 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     const arg = checked.value as CaptureInputV1;
     const error = check(ctx);
     if (error) return failure(tool, ctx, error);
-    if (await host!.authorize(structuredClone(ctx), tool, arg.payload.purpose_ref) !== true) return failure(tool, ctx, 'UNAUTHORIZED');
+    // A throwing authorizer is a pre-commit dependency failure: sanitized
+    // `STORE_UNAVAILABLE`, never a leak and never an indeterminate outcome.
+    let authorized = false;
+    try {
+      authorized = await host!.authorize(structuredClone(ctx), tool, arg.payload.purpose_ref) === true;
+    } catch {
+      return failure(tool, ctx, 'STORE_UNAVAILABLE');
+    }
+    if (!authorized) return failure(tool, ctx, 'UNAUTHORIZED');
     const now = host!.clock.now();
     const retention = resolveCaptureRetentionPolicyV1({ captured_at: now, host_policy: host!.policy.retention, caller_retention: arg.payload.retention });
     if (!retention.ok) {
@@ -502,8 +558,11 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
       const guarded = await withFirstEffectGuard(tool, ctx, arg.idempotency_key, decided, guard => facets.engine.capture({
         schema_version: 2, idempotency_key: stored.idempotency_key, payload: effective.payload, evidence: effective.evidence,
         authorization: ctx.authorization, source_order: { source_ref: target.source_ref, sequence: target.sequence },
-        deadline_at: ctx.deadline_at, cancellation_ref: `cancel:${tool}:${stored.idempotency_key}`,
-      }, guard));
+        deadline_at: ctx.deadline_at,
+        // Injected cancellation reference, never synthesized (the legacy
+        // synthesized value only serves direct facade use without one).
+        cancellation_ref: ctx.cancellation_ref ?? `cancel:${tool}:${stored.idempotency_key}`,
+      }, guard), target.source_ref);
       if ('failure' in guarded) return guarded.failure as ToolResultV1<CaptureOutputV1>;
       ack = guarded.result;
     } catch {
@@ -531,7 +590,13 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     const arg = checked.value as RequestAdmissionInputV1;
     const error = check(ctx);
     if (error) return failure(tool, ctx, error);
-    if (await host!.authorize(structuredClone(ctx), tool, '') !== true) return failure(tool, ctx, 'UNAUTHORIZED');
+    let admittedAuthorized = false;
+    try {
+      admittedAuthorized = await host!.authorize(structuredClone(ctx), tool, '') === true;
+    } catch {
+      return failure(tool, ctx, 'STORE_UNAVAILABLE');
+    }
+    if (!admittedAuthorized) return failure(tool, ctx, 'UNAUTHORIZED');
     const reserved = await reserve(tool, ctx, {
       tool_name: tool, candidate_id: arg.candidate_id, admission_policy_version: await host!.policy.admissionPolicyVersion(),
     }, { kind: 'candidate', candidate_id: arg.candidate_id }, arg.idempotency_key);
@@ -543,7 +608,7 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     let outcome;
     let replayed = false;
     try {
-      const guarded = await withFirstEffectGuard(tool, ctx, arg.idempotency_key, decided, guard => facets.engine.requestAdmission({ candidate_id: admitted.candidate_id, authorization: ctx.authorization, deadline_at: ctx.deadline_at }, guard));
+      const guarded = await withFirstEffectGuard(tool, ctx, arg.idempotency_key, decided, guard => facets.engine.requestAdmission({ candidate_id: admitted.candidate_id, authorization: ctx.authorization, deadline_at: ctx.deadline_at }, guard), admitted.candidate_id);
       if ('failure' in guarded) return guarded.failure as ToolResultV1<RequestAdmissionOutputV1>;
       outcome = guarded.result;
       replayed = guarded.replayed;
@@ -570,7 +635,13 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     const arg = checked.value as WithdrawInputV1;
     const error = check(ctx);
     if (error) return failure(tool, ctx, error);
-    if (await host!.authorize(structuredClone(ctx), tool, '') !== true) return failure(tool, ctx, 'UNAUTHORIZED');
+    let withdrawAuthorized = false;
+    try {
+      withdrawAuthorized = await host!.authorize(structuredClone(ctx), tool, '') === true;
+    } catch {
+      return failure(tool, ctx, 'STORE_UNAVAILABLE');
+    }
+    if (!withdrawAuthorized) return failure(tool, ctx, 'UNAUTHORIZED');
     const anchor = createHostLifecycleEventAnchorV1({
       occurred_at: host!.clock.now(), kind_ref: host!.policy.anchorKindRef,
       provenance_ref: ctx.auditId, provenance_digest: await host!.policy.provenanceDigest(),
@@ -618,7 +689,15 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     // adopts the replay proof's digest.
     const replayRef = decided.binding.canonical_replay_ref ?? receipt.value.transaction_receipt_digest;
     const committedReceipt = { ...receipt.value, transaction_receipt_digest: replayRef };
-    const destroyed = await host!.keyCustody.confirmDestroyed(adopted.candidate_id).catch(() => false);
+    // Post-commit custody is cleanup evidence, never an outcome flip: a
+    // throwing custody port (synchronous or not) leaves the committed receipt
+    // with pending cleanup.
+    let destroyed = false;
+    try {
+      destroyed = await host!.keyCustody.confirmDestroyed(adopted.candidate_id) === true;
+    } catch {
+      destroyed = false;
+    }
     await reconcile(ctx, arg.idempotency_key, decided.binding, replayRef);
     return complete(tool, ctx, arg.idempotency_key, decided.binding, {
       receipt: committedReceipt, replayed, key_destruction: destroyed === true ? 'complete' : 'pending',
@@ -633,7 +712,13 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     const arg = checked.value as ForgetInputV1;
     const error = check(ctx);
     if (error) return failure(tool, ctx, error);
-    if (await host!.authorize(structuredClone(ctx), tool, '') !== true) return failure(tool, ctx, 'UNAUTHORIZED');
+    let forgetAuthorized = false;
+    try {
+      forgetAuthorized = await host!.authorize(structuredClone(ctx), tool, '') === true;
+    } catch {
+      return failure(tool, ctx, 'STORE_UNAVAILABLE');
+    }
+    if (!forgetAuthorized) return failure(tool, ctx, 'UNAUTHORIZED');
     const anchor = createHostLifecycleEventAnchorV1({
       occurred_at: host!.clock.now(), kind_ref: host!.policy.anchorKindRef,
       provenance_ref: ctx.auditId, provenance_digest: await host!.policy.provenanceDigest(),
@@ -679,7 +764,15 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     // M5 l.708: the recorded canonical replay reference never flips (see withdraw).
     const replayRef = decided.binding.canonical_replay_ref ?? receipt.value.transaction_receipt_digest;
     const committedReceipt = { ...receipt.value, transaction_receipt_digest: replayRef };
-    const coverage = await host!.coverage.verify(committedReceipt.cursor).catch(() => ({ complete: false as boolean, coverage_digest: undefined }));
+    // Post-commit coverage is cleanup evidence, never an outcome flip: a
+    // throwing coverage port (synchronous or not) leaves the committed
+    // receipt with pending invalidation.
+    let coverage: { complete: boolean; coverage_digest?: Digest };
+    try {
+      coverage = await host!.coverage.verify(committedReceipt.cursor);
+    } catch {
+      coverage = { complete: false as boolean, coverage_digest: undefined };
+    }
     await reconcile(ctx, arg.idempotency_key, decided.binding, replayRef);
     return complete(tool, ctx, arg.idempotency_key, decided.binding, {
       receipt: committedReceipt, replayed,
