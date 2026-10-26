@@ -17,10 +17,11 @@ import {
   severityPolicyDigestOf,
   stableForHash,
 } from "../src/ontology-guardian/digests.js";
-import type { DiagramProfileProjection } from "../src/ontology-guardian/digests.js";
+import type { DeltaOperationDigest, DiagramProfileProjection } from "../src/ontology-guardian/digests.js";
 import {
   assertValidCompiledOptions,
   assertValidCompiledRule,
+  assertValidNativeReport,
   assertValidSetting,
   compareDiagnostics,
   composeApplicability,
@@ -923,6 +924,7 @@ function bpmnParityReceipt(overrides: Partial<Extract<Receipt, { receiptKind: "b
     libraryId: "bpmn-canvas",
     libraryVersion: "1.0.0",
     validatorRole: "transitional-oracle",
+    transitionQualification: { claim: "oracle-witness", parityMatrixDigest: B64 },
     verdict: "pass",
     issuedAt: "2026-10-26",
     evaluatedStack: {
@@ -1111,6 +1113,7 @@ describe("§5.5 admission gate", () => {
       libraryId: "d2d",
       libraryVersion: "1.0.0",
       validatorRole: "transitional-oracle",
+      transitionQualification: { claim: "oracle-witness", parityMatrixDigest: B64 },
       verdict: "pass",
       issuedAt: "2026-10-26",
       evaluatedStack: {
@@ -1233,7 +1236,7 @@ describe("§5.2 registry envelope union", () => {
   };
   it("skill and mcp arms carry their own payloads; ontology requires its payload", () => {
     const skill: SkillPayload = {
-      profile: { instructions: "Use this skill." },
+      profile: "instructions",
       metadata: { category: "c", contextFilters: [], permissionRequirements: [], toolNames: [] },
       instructionsAsset: "SKILL.md",
       capabilities: [{ id: "cap", description: "d", effect: "read-only", permissions: [] }],
@@ -1355,6 +1358,7 @@ function receiptBase(overrides: Record<string, unknown> = {}): Record<string, un
     libraryId: "bpmn-canvas",
     libraryVersion: "1.0.0",
     validatorRole: "transitional-oracle",
+    transitionQualification: { claim: "oracle-witness", parityMatrixDigest: B64 },
     verdict: "pass",
     issuedAt: "2026-10-26",
     evaluatedStack: {
@@ -1580,8 +1584,48 @@ describe("§5.5 admission hardening", () => {
       checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [foreign] })
         .admitted,
     ).toBe(false);
-    // Selected off admits an off verdict for its own row.
+    // Selected off admits an off verdict for its own row only when the native
+    // settings select off too: effective severity derives from the settings.
+    const offSettings = [{ classification: "readiness", rule: "label-required", severity: "off" }] as CompiledSetting[];
+    const offDigest = severityPolicyDigestOf("import", "draft", offSettings);
     const offSelection = admissionEntry({
+      selections: [
+        {
+          phase: "import",
+          readinessPolicy: "draft",
+          settings: offSettings,
+          severityPolicyDigest: offDigest,
+          rules: [{ ruleId: "label-required", severity: "off" }],
+        },
+      ],
+    });
+    const offVerdict = bpmnParityReceipt({
+      proofBindings: {
+        ...(bpmnParityReceipt() as unknown as { proofBindings: Record<string, unknown> }).proofBindings,
+        severityPolicyDigest: offDigest,
+        compiledLintEvidence: {
+          scope: "public",
+          compiledOptions: {
+            mechanismVersion: "1",
+            profileDigest: A64,
+            phase: "import",
+            readinessPolicy: "draft",
+            compiledRules: [],
+            bindings: [],
+            severityPolicyDigest: offDigest,
+          },
+          settings: offSettings,
+        },
+      },
+      ruleVerdicts: [{ ruleId: "label-required", severity: "off", verdict: "off", parity: "proven" }],
+    });
+    expect(
+      checkAdmission({ entry: offSelection, requiredReceipts: [requirement("bpmn-parity")], receipts: [offVerdict] }),
+    ).toEqual({ admitted: true });
+    // A row relabelled off while the settings still select warn refuses:
+    // the row must equal the derived effective severity. The receipt below
+    // binds the unchanged WARN selection and claims off throughout.
+    const relabelled = admissionEntry({
       selections: [
         {
           ...passingSelection(),
@@ -1589,12 +1633,13 @@ describe("§5.5 admission hardening", () => {
         },
       ],
     });
-    const offVerdict = bpmnParityReceipt({
+    const relabelledVerdict = bpmnParityReceipt({
       ruleVerdicts: [{ ruleId: "label-required", severity: "off", verdict: "off", parity: "proven" }],
     });
     expect(
-      checkAdmission({ entry: offSelection, requiredReceipts: [requirement("bpmn-parity")], receipts: [offVerdict] }),
-    ).toEqual({ admitted: true });
+      checkAdmission({ entry: relabelled, requiredReceipts: [requirement("bpmn-parity")], receipts: [relabelledVerdict] })
+        .admitted,
+    ).toBe(false);
   });
 
   it("family proof bindings: corpus, schema, matrix, pins and roles are all checked", () => {
@@ -1612,6 +1657,7 @@ describe("§5.5 admission hardening", () => {
       schemaPin: pin("schema"),
       compatibilityMatrixVersion: "3",
       caseVerdicts: [{ caseId: "c1" }],
+      severityPolicyDigest: severityPolicyDigestOf("import", "draft", WARN),
     } as Receipt;
     expect(
       checkAdmission({
@@ -1644,8 +1690,9 @@ describe("§5.5 admission hardening", () => {
         receipts: [wrongMatrix],
       }).admitted,
     ).toBe(false);
-    // Theme invariance binds the styled profile pin.
-    const themeEntry = admissionEntry();
+    // Theme invariance binds the styled profile pin; the null policy digest is
+    // the no-rule-sheet binding, so the admitting entry pins no sheets.
+    const themeEntry = admissionEntry({ selections: [], ruleSheetPins: [] });
     const themeOk: Receipt = {
       ...(receiptBase() as unknown as Receipt),
       receiptKind: "theme-invariance",
@@ -1673,7 +1720,7 @@ describe("§5.5 admission hardening", () => {
 
   it("h2a and mem admit retained checks with pinned revision; oracle role and drift refuse", () => {
     const h2aOk: Receipt = {
-      ...(receiptBase({ libraryId: "h2a", libraryVersion: "1.0.0", validatorRole: "retained-check" }) as unknown as Receipt),
+      ...(receiptBase({ libraryId: "h2a", libraryVersion: "1.0.0", validatorRole: "retained-check", transitionQualification: undefined }) as unknown as Receipt),
       receiptKind: "h2a-vocabulary",
       protocolPin: pin("generic"),
       sourceRevision: "rev-1",
@@ -1681,7 +1728,7 @@ describe("§5.5 admission hardening", () => {
       severityPolicyDigest: null,
       ruleVerdicts: [],
     } as Receipt;
-    const h2aEntry = admissionEntry({ selections: [], sourceRevision: "rev-1" });
+    const h2aEntry = admissionEntry({ selections: [], ruleSheetPins: [], sourceRevision: "rev-1" });
     expect(
       checkAdmission({
         entry: h2aEntry,
@@ -1689,7 +1736,11 @@ describe("§5.5 admission hardening", () => {
         receipts: [h2aOk],
       }),
     ).toEqual({ admitted: true });
-    const oracleRole = { ...h2aOk, validatorRole: "transitional-oracle" } as Receipt;
+    const oracleRole = {
+      ...h2aOk,
+      validatorRole: "transitional-oracle",
+      transitionQualification: { claim: "oracle-witness", parityMatrixDigest: B64 },
+    } as Receipt;
     expect(
       checkAdmission({
         entry: h2aEntry,
@@ -1707,13 +1758,13 @@ describe("§5.5 admission hardening", () => {
     ).toBe(false);
     expect(
       checkAdmission({
-        entry: admissionEntry({ selections: [] }),
+        entry: admissionEntry({ selections: [], ruleSheetPins: [] }),
         requiredReceipts: [requirement("h2a-vocabulary", "h2a", "1.0.0")],
         receipts: [h2aOk],
       }).admitted,
     ).toBe(false);
     const memOk: Receipt = {
-      ...(receiptBase({ libraryId: "mem", libraryVersion: "1.0.0", validatorRole: "retained-check" }) as unknown as Receipt),
+      ...(receiptBase({ libraryId: "mem", libraryVersion: "1.0.0", validatorRole: "retained-check", transitionQualification: undefined }) as unknown as Receipt),
       receiptKind: "mem-descriptor",
       descriptorPin: pin("generic"),
       fixtureDigest: B64,
@@ -1722,7 +1773,7 @@ describe("§5.5 admission hardening", () => {
     } as Receipt;
     expect(
       checkAdmission({
-        entry: admissionEntry({ selections: [] }),
+        entry: admissionEntry({ selections: [], ruleSheetPins: [] }),
         requiredReceipts: [requirement("mem-descriptor", "mem", "1.0.0")],
         receipts: [memOk],
       }),
@@ -1811,5 +1862,735 @@ describe("D-B7 operation-not-applicable", () => {
     expect(deriveApplicability("MEM", true)[0]!.code).toBe("operation-not-applicable");
     expect(mergeApplicability("MEM")[0]!.code).toBe("operation-not-applicable");
     expect(mergeApplicability("DIA")).toEqual([]);
+  });
+});
+
+// --- §5.5 admission: order-independent set matching ---
+
+const ERROR_SETTINGS = [{ classification: "readiness", rule: "label-required", severity: "error" }] as CompiledSetting[];
+const ACCEPT_DIGEST = severityPolicyDigestOf("import", "accept", ERROR_SETTINGS);
+
+function dualSelectionEntry(): AdmissionEntry {
+  return admissionEntry({
+    selections: [
+      passingSelection(),
+      {
+        phase: "import",
+        readinessPolicy: "accept",
+        settings: ERROR_SETTINGS,
+        severityPolicyDigest: ACCEPT_DIGEST,
+        rules: [{ ruleId: "label-required", severity: "error" }],
+      },
+    ],
+  });
+}
+
+function scopedParityReceipt(policy: "draft" | "accept"): Receipt {
+  const settings = policy === "draft" ? (WARN as CompiledSetting[]) : ERROR_SETTINGS;
+  const digest = policy === "draft" ? severityPolicyDigestOf("import", "draft", WARN) : ACCEPT_DIGEST;
+  const severity = policy === "draft" ? "warn" : "error";
+  return bpmnParityReceipt({
+    proofBindings: {
+      ...(bpmnParityReceipt() as unknown as { proofBindings: Record<string, unknown> }).proofBindings,
+      severityPolicyDigest: digest,
+      compiledLintEvidence: {
+        scope: "public",
+        compiledOptions: {
+          mechanismVersion: "1",
+          profileDigest: A64,
+          phase: "import",
+          readinessPolicy: policy,
+          compiledRules: [],
+          bindings: [],
+          severityPolicyDigest: digest,
+        },
+        settings,
+      },
+    },
+    ruleVerdicts: [{ ruleId: "label-required", severity, verdict: "pass", parity: "proven" }],
+  });
+}
+
+describe("§5.5 order-independent matching", () => {
+  const draftReq = requirement("bpmn-parity", "bpmn-canvas", "1.0.0", { readinessPolicy: "draft" });
+  const acceptReq = requirement("bpmn-parity", "bpmn-canvas", "1.0.0", { readinessPolicy: "accept" });
+
+  it("draft and accept receipts admit in either order, for either requirement order", () => {
+    const draft = scopedParityReceipt("draft");
+    const accept = scopedParityReceipt("accept");
+    for (const receipts of [[draft, accept], [accept, draft]]) {
+      for (const requiredReceipts of [[draftReq, acceptReq], [acceptReq, draftReq]]) {
+        expect(checkAdmission({ entry: dualSelectionEntry(), requiredReceipts, receipts })).toEqual({
+          admitted: true,
+        });
+      }
+    }
+  });
+
+  it("a scoped requirement never consumes a receipt from the other scope", () => {
+    const draft = scopedParityReceipt("draft");
+    expect(
+      checkAdmission({ entry: dualSelectionEntry(), requiredReceipts: [acceptReq], receipts: [draft] }).admitted,
+    ).toBe(false);
+    // The phase side of the scope behaves the same way.
+    const releaseReq = requirement("bpmn-parity", "bpmn-canvas", "1.0.0", { phase: "release" });
+    expect(
+      checkAdmission({ entry: dualSelectionEntry(), requiredReceipts: [releaseReq], receipts: [draft] }).admitted,
+    ).toBe(false);
+  });
+});
+
+// --- §5.5 admission: duplicate verdicts and native severity derivation ---
+
+describe("§5.5 verdict rows and effective severity", () => {
+  it("duplicate verdict rows for one rule refuse", () => {
+    const duplicated = bpmnParityReceipt({
+      ruleVerdicts: [
+        { ruleId: "label-required", severity: "warn", verdict: "pass", parity: "proven" },
+        { ruleId: "label-required", severity: "warn", verdict: "diagnostic", parity: "proven" },
+      ],
+    });
+    expect(
+      checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [duplicated] })
+        .admitted,
+    ).toBe(false);
+  });
+
+  it("numeric settings derive the effective severity; unknown severities refuse", () => {
+    const numeric = [{ classification: "readiness", rule: "label-required", severity: 2 }] as unknown as CompiledSetting[];
+    const numericDigest = severityPolicyDigestOf("import", "draft", numeric);
+    const numericEntry = admissionEntry({
+      selections: [
+        {
+          phase: "import",
+          readinessPolicy: "draft",
+          settings: numeric,
+          severityPolicyDigest: numericDigest,
+          rules: [{ ruleId: "label-required", severity: "error" }],
+        },
+      ],
+    });
+    const numericReceipt = bpmnParityReceipt({
+      proofBindings: {
+        ...(bpmnParityReceipt() as unknown as { proofBindings: Record<string, unknown> }).proofBindings,
+        severityPolicyDigest: numericDigest,
+        compiledLintEvidence: {
+          scope: "public",
+          compiledOptions: {
+            mechanismVersion: "1",
+            profileDigest: A64,
+            phase: "import",
+            readinessPolicy: "draft",
+            compiledRules: [],
+            bindings: [],
+            severityPolicyDigest: numericDigest,
+          },
+          settings: numeric,
+        },
+      },
+      ruleVerdicts: [{ ruleId: "label-required", severity: "error", verdict: "pass", parity: "proven" }],
+    });
+    expect(
+      checkAdmission({ entry: numericEntry, requiredReceipts: [requirement("bpmn-parity")], receipts: [numericReceipt] }),
+    ).toEqual({ admitted: true });
+    // The same row labelled warn against the numeric error setting refuses.
+    const mislabelled = admissionEntry({
+      selections: [{ ...numericEntry.selections[0]!, rules: [{ ruleId: "label-required", severity: "warn" }] }],
+    });
+    expect(
+      checkAdmission({ entry: mislabelled, requiredReceipts: [requirement("bpmn-parity")], receipts: [numericReceipt] })
+        .admitted,
+    ).toBe(false);
+  });
+
+  it("profile:-prefixed setting rows bind bare rule ids; missing rows and bad values refuse", () => {
+    const prefixed = [{ classification: "readiness", rule: "profile:label-required", severity: "warn" }] as CompiledSetting[];
+    const prefixedDigest = severityPolicyDigestOf("import", "draft", prefixed);
+    const prefixedEntry = admissionEntry({
+      selections: [
+        {
+          phase: "import",
+          readinessPolicy: "draft",
+          settings: prefixed,
+          severityPolicyDigest: prefixedDigest,
+          rules: [{ ruleId: "label-required", severity: "warn" }],
+        },
+      ],
+    });
+    const prefixedReceipt = bpmnParityReceipt({
+      proofBindings: {
+        ...(bpmnParityReceipt() as unknown as { proofBindings: Record<string, unknown> }).proofBindings,
+        severityPolicyDigest: prefixedDigest,
+        compiledLintEvidence: {
+          scope: "public",
+          compiledOptions: {
+            mechanismVersion: "1",
+            profileDigest: A64,
+            phase: "import",
+            readinessPolicy: "draft",
+            compiledRules: [],
+            bindings: [],
+            severityPolicyDigest: prefixedDigest,
+          },
+          settings: prefixed,
+        },
+      },
+    });
+    expect(
+      checkAdmission({ entry: prefixedEntry, requiredReceipts: [requirement("bpmn-parity")], receipts: [prefixedReceipt] }),
+    ).toEqual({ admitted: true });
+    // A selected rule with no setting row has no bound effective severity.
+    const unsettled = admissionEntry({
+      selections: [{ ...prefixedEntry.selections[0]!, rules: [{ ruleId: "ghost-rule", severity: "warn" }] }],
+    });
+    expect(
+      checkAdmission({ entry: unsettled, requiredReceipts: [requirement("bpmn-parity")], receipts: [prefixedReceipt] })
+        .admitted,
+    ).toBe(false);
+    // An out-of-range numeric severity is not an effective severity.
+    const wild = [{ classification: "readiness", rule: "label-required", severity: 4 }] as unknown as CompiledSetting[];
+    const wildReceipt = bpmnParityReceipt({
+      proofBindings: {
+        ...(bpmnParityReceipt() as unknown as { proofBindings: Record<string, unknown> }).proofBindings,
+        compiledLintEvidence: {
+          scope: "public",
+          compiledOptions: {
+            mechanismVersion: "1",
+            profileDigest: A64,
+            phase: "import",
+            readinessPolicy: "draft",
+            compiledRules: [],
+            bindings: [],
+            severityPolicyDigest: severityPolicyDigestOf("import", "draft", WARN),
+          },
+          settings: wild,
+        },
+      },
+    });
+    expect(
+      checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [wildReceipt] })
+        .admitted,
+    ).toBe(false);
+  });
+});
+
+// --- §5.5 admission: corpus authority, transition qualification, private families ---
+
+describe("§5.5 authority, transition qualification and private families", () => {
+  it("corpus authority tag and manifest digest bind the entry corpus", () => {
+    const forgedTag = bpmnParityReceipt({
+      proofBindings: {
+        ...(bpmnParityReceipt() as unknown as { proofBindings: Record<string, unknown> }).proofBindings,
+        corpusAuthority: { tag: "other-corpus-v9.9.9", manifestDigest: B64 },
+      },
+    } as Partial<Extract<Receipt, { receiptKind: "bpmn-parity" }>>);
+    expect(
+      checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [forgedTag] })
+        .admitted,
+    ).toBe(false);
+    const forgedHash = bpmnParityReceipt({
+      proofBindings: {
+        ...(bpmnParityReceipt() as unknown as { proofBindings: Record<string, unknown> }).proofBindings,
+        corpusAuthority: { tag: "profile-corpus-v1.0.0", manifestDigest: A64 },
+      },
+    } as Partial<Extract<Receipt, { receiptKind: "bpmn-parity" }>>);
+    expect(
+      checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [forgedHash] })
+        .admitted,
+    ).toBe(false);
+  });
+
+  it("transition qualification is a closed role/claim union with validated values", () => {
+    // Oracle without witness evidence refuses.
+    const bare = { ...bpmnParityReceipt(), transitionQualification: undefined } as unknown as Receipt;
+    expect(
+      checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [bare] })
+        .admitted,
+    ).toBe(false);
+    // Oracle with a malformed matrix digest refuses.
+    const badMatrix = bpmnParityReceipt({
+      transitionQualification: { claim: "oracle-witness", parityMatrixDigest: "zzz" },
+    } as Partial<Extract<Receipt, { receiptKind: "bpmn-parity" }>>);
+    expect(
+      checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [badMatrix] })
+        .admitted,
+    ).toBe(false);
+    // Retained checks carry no transition claim.
+    const retainedClaimed = {
+      ...(receiptBase({ libraryId: "mem", libraryVersion: "1.0.0", validatorRole: "retained-check" }) as unknown as Receipt),
+      receiptKind: "mem-descriptor",
+      descriptorPin: pin("generic"),
+      fixtureDigest: B64,
+      severityPolicyDigest: null,
+      ruleVerdicts: [],
+    } as Receipt;
+    expect(
+      checkAdmission({
+        entry: admissionEntry({ selections: [], ruleSheetPins: [] }),
+        requiredReceipts: [requirement("mem-descriptor", "mem", "1.0.0")],
+        receipts: [retainedClaimed],
+      }).admitted,
+    ).toBe(false);
+    // Qualified without reference evidence refuses; with bad pin or empty
+    // gate reference refuses; with open parity refuses.
+    const qualifiedBare = bpmnParityReceipt({ validatorRole: "qualified-ds-execution" });
+    expect(
+      checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [qualifiedBare] })
+        .admitted,
+    ).toBe(false);
+    const qualifiedBadPin = bpmnParityReceipt({
+      validatorRole: "qualified-ds-execution",
+      transitionQualification: {
+        claim: "reference-qualified",
+        parityMatrixDigest: B64,
+        qualifiedExecutorPin: pin("exec", "1.0.0", "zzz"),
+        gateEvidenceRef: "gate-1",
+      },
+    } as Partial<Extract<Receipt, { receiptKind: "bpmn-parity" }>>);
+    expect(
+      checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [qualifiedBadPin] })
+        .admitted,
+    ).toBe(false);
+    const qualifiedNoGate = bpmnParityReceipt({
+      validatorRole: "qualified-ds-execution",
+      transitionQualification: {
+        claim: "reference-qualified",
+        parityMatrixDigest: B64,
+        qualifiedExecutorPin: pin("exec"),
+        gateEvidenceRef: "",
+      },
+    } as Partial<Extract<Receipt, { receiptKind: "bpmn-parity" }>>);
+    expect(
+      checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [qualifiedNoGate] })
+        .admitted,
+    ).toBe(false);
+    const qualifiedOpen = bpmnParityReceipt({
+      validatorRole: "qualified-ds-execution",
+      transitionQualification: {
+        claim: "reference-qualified",
+        parityMatrixDigest: B64,
+        qualifiedExecutorPin: pin("exec"),
+        gateEvidenceRef: "gate-1",
+      },
+      ruleVerdicts: [{ ruleId: "label-required", severity: "warn", verdict: "pass", parity: "open" }],
+    } as Partial<Extract<Receipt, { receiptKind: "bpmn-parity" }>>);
+    expect(
+      checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [qualifiedOpen] })
+        .admitted,
+    ).toBe(false);
+    // Full reference qualification with proven parity admits.
+    const qualified = bpmnParityReceipt({
+      validatorRole: "qualified-ds-execution",
+      transitionQualification: {
+        claim: "reference-qualified",
+        parityMatrixDigest: B64,
+        qualifiedExecutorPin: pin("exec"),
+        gateEvidenceRef: "gate-1",
+      },
+    } as Partial<Extract<Receipt, { receiptKind: "bpmn-parity" }>>);
+    expect(
+      checkAdmission({ entry: admissionEntry(), requiredReceipts: [requirement("bpmn-parity")], receipts: [qualified] }),
+    ).toEqual({ admitted: true });
+  });
+
+  it("private family receipts bind through the owner-side selection", () => {
+    const ownerSelection = {
+      phase: "import",
+      readinessPolicy: "draft",
+      severityPolicyDigest: severityPolicyDigestOf("import", "draft", WARN),
+      rules: [{ ruleId: "label-required", severity: "warn" }],
+    };
+    const privateEntry = admissionEntry({ selections: [], visibility: "private", ownerSelection });
+    const familyReceipt: Receipt = {
+      receiptKind: "family-corpus",
+      corpusDigest: B64,
+      libraryId: "engram",
+      libraryVersion: "1.0.0",
+      validatorRole: "retained-check",
+      verdict: "pass",
+      issuedAt: "2026-10-26",
+      evaluatedStack: {
+        stack: [pin("generic")],
+        pinsDigest: pinsDigestOf({ layers: [pin("generic")] }),
+        resultEvidence: { evidenceState: "resolved", digest: A64 },
+      },
+      family: "ENG",
+      fixtureDigest: B64,
+      severityPolicyDigest: severityPolicyDigestOf("import", "draft", WARN),
+      ruleVerdicts: [{ ruleId: "label-required", severity: "warn", verdict: "pass", parity: "proven" }],
+    };
+    expect(
+      checkAdmission({
+        entry: privateEntry,
+        requiredReceipts: [requirement("family-corpus", "engram", "1.0.0")],
+        receipts: [familyReceipt],
+      }),
+    ).toEqual({ admitted: true });
+    // Replacing the policy binding with null and removing verdicts admits
+    // nothing while rule sheets are present.
+    const stripped = { ...familyReceipt, severityPolicyDigest: null, ruleVerdicts: [] } as Receipt;
+    expect(
+      checkAdmission({
+        entry: privateEntry,
+        requiredReceipts: [requirement("family-corpus", "engram", "1.0.0")],
+        receipts: [stripped],
+      }).admitted,
+    ).toBe(false);
+    // An owner digest drift refuses with matching result evidence.
+    const drifted = admissionEntry({
+      selections: [],
+      visibility: "private",
+      ownerSelection: { ...ownerSelection, severityPolicyDigest: severityPolicyDigestOf("import", "draft", ERROR_SETTINGS) },
+    });
+    expect(
+      checkAdmission({
+        entry: drifted,
+        requiredReceipts: [requirement("family-corpus", "engram", "1.0.0")],
+        receipts: [familyReceipt],
+      }).admitted,
+    ).toBe(false);
+    // A private entry without sheets admits the explicit null binding.
+    const sheetless = admissionEntry({ selections: [], ruleSheetPins: [], visibility: "private" });
+    const empty: Receipt = { ...familyReceipt, severityPolicyDigest: null, ruleVerdicts: [] };
+    expect(
+      checkAdmission({
+        entry: sheetless,
+        requiredReceipts: [requirement("family-corpus", "engram", "1.0.0")],
+        receipts: [empty],
+      }),
+    ).toEqual({ admitted: true });
+  });
+
+  it("mechanism and bijection arms bind their policy digest; null with sheets refuses", () => {
+    const mechEntry = admissionEntry({ compatibilityMatrixVersion: "3" });
+    const mechOk: Receipt = {
+      ...(receiptBase() as unknown as Receipt),
+      receiptKind: "mechanism-compat",
+      compatibilityMatrixVersion: "3",
+      caseVerdicts: [{ caseId: "m1" }],
+      severityPolicyDigest: severityPolicyDigestOf("import", "draft", WARN),
+    } as Receipt;
+    expect(
+      checkAdmission({
+        entry: mechEntry,
+        requiredReceipts: [requirement("mechanism-compat", "bpmn-canvas", "1.0.0")],
+        receipts: [mechOk],
+      }),
+    ).toEqual({ admitted: true });
+    const mechNull = { ...mechOk, severityPolicyDigest: null } as Receipt;
+    expect(
+      checkAdmission({
+        entry: mechEntry,
+        requiredReceipts: [requirement("mechanism-compat", "bpmn-canvas", "1.0.0")],
+        receipts: [mechNull],
+      }).admitted,
+    ).toBe(false);
+    const mechUnknown = { ...mechOk, severityPolicyDigest: B64 } as Receipt;
+    expect(
+      checkAdmission({
+        entry: mechEntry,
+        requiredReceipts: [requirement("mechanism-compat", "bpmn-canvas", "1.0.0")],
+        receipts: [mechUnknown],
+      }).admitted,
+    ).toBe(false);
+    // Bijection with full coverage and a bound digest admits; null with
+    // sheets refuses.
+    const fullCoverage: Receipt = {
+      receiptKind: "bpmn-bijection",
+      corpusDigest: B64,
+      libraryId: "d2d",
+      libraryVersion: "1.0.0",
+      validatorRole: "transitional-oracle",
+      transitionQualification: { claim: "oracle-witness", parityMatrixDigest: B64 },
+      verdict: "pass",
+      issuedAt: "2026-10-26",
+      evaluatedStack: {
+        stack: [pin("generic")],
+        pinsDigest: pinsDigestOf({ layers: [pin("generic")] }),
+        resultEvidence: { evidenceState: "resolved", digest: A64 },
+      },
+      descriptorCoverage: { covered: 4, total: 4 },
+      roundTripEvidenceRef: "rt",
+      moddleTestPin: pin("bpmn-moddle"),
+      severityPolicyDigest: severityPolicyDigestOf("import", "draft", WARN),
+    };
+    expect(
+      checkAdmission({
+        entry: admissionEntry(),
+        requiredReceipts: [requirement("bpmn-bijection", "d2d", "1.0.0")],
+        receipts: [fullCoverage],
+      }),
+    ).toEqual({ admitted: true });
+    const bijectionNull = { ...fullCoverage, severityPolicyDigest: null } as Receipt;
+    expect(
+      checkAdmission({
+        entry: admissionEntry(),
+        requiredReceipts: [requirement("bpmn-bijection", "d2d", "1.0.0")],
+        receipts: [bijectionNull],
+      }).admitted,
+    ).toBe(false);
+    // A null policy digest with no sheets admits on the bijection arm too.
+    expect(
+      checkAdmission({
+        entry: admissionEntry({ selections: [], ruleSheetPins: [] }),
+        requiredReceipts: [requirement("bpmn-bijection", "d2d", "1.0.0")],
+        receipts: [bijectionNull],
+      }),
+    ).toEqual({ admitted: true });
+  });
+});
+
+// --- S-COMPILED pinned validator: phase, uniqueness, type, closure ---
+
+describe("pinned compiled validation", () => {
+  const rule = {
+    id: "r",
+    phase: "import",
+    select: {},
+    assert: {},
+    code: "c",
+    message: "m",
+    classification: "readiness",
+  };
+  const options = {
+    mechanismVersion: "1" as const,
+    profileDigest: A64,
+    phase: "import",
+    readinessPolicy: "draft",
+    compiledRules: [rule],
+    bindings: [{ ownerId: "o", role: "r", targetId: "t" }],
+    severityPolicyDigest: A64,
+  };
+
+  it("accepts the pinned shape and refuses wrong-phase, duplicate and mistyped rules", () => {
+    assertValidCompiledOptions(options);
+    expect(() => assertValidCompiledOptions({ ...options, compiledRules: [{ ...rule, phase: "release" }] })).toThrow(
+      "compiled-rule-wrong-phase",
+    );
+    expect(() => assertValidCompiledOptions({ ...options, compiledRules: [rule, { ...rule }] })).toThrow(
+      "compiled-rule-duplicate",
+    );
+    expect(() => assertValidCompiledOptions({ ...options, compiledRules: [{ ...rule, code: 42 }] })).toThrow(
+      "compiled-rule-invalid:code",
+    );
+    expect(() => assertValidCompiledOptions({ ...options, compiledRules: [{ ...rule, classification: 7 }] })).toThrow(
+      "compiled-rule-invalid:type",
+    );
+    expect(() => assertValidCompiledOptions({ ...options, phase: "draft" })).toThrow("compiled-options-invalid:phase");
+    expect(() => assertValidCompiledOptions({ ...options, readinessPolicy: "review" })).toThrow(
+      "compiled-options-invalid:readinessPolicy",
+    );
+    expect(() => assertValidCompiledOptions({ ...options, profileDigest: "zzz" })).toThrow(
+      "compiled-options-invalid:profileDigest",
+    );
+  });
+
+  it("closes bindings: exact keys, non-empty values, unique owner pairs", () => {
+    expect(() => assertValidCompiledOptions({ ...options, bindings: [{ ownerId: "o", role: "r" }] })).toThrow(
+      "compiled-binding",
+    );
+    expect(() => assertValidCompiledOptions({ ...options, bindings: [{ ownerId: "", role: "r", targetId: "t" }] })).toThrow(
+      "compiled-binding-missing-field",
+    );
+    expect(() =>
+      assertValidCompiledOptions({
+        ...options,
+        bindings: [
+          { ownerId: "o", role: "r", targetId: "t" },
+          { ownerId: "o", role: "r", targetId: "other" },
+        ],
+      }),
+    ).toThrow("compiled-binding-duplicate");
+    expect(() =>
+      assertValidCompiledOptions({ ...options, compiledRules: [{ ...rule, bindings: [{ ownerId: "o", role: "r", targetId: "t", extra: 1 }] }] }),
+    ).toThrow("compiled-binding-forbidden-field");
+  });
+});
+
+// --- §2.1/§6.2 native report boundary ---
+
+describe("native report boundary", () => {
+  it("accepts the well-formed native report", () => {
+    expect(() => assertValidNativeReport(sampleReport())).not.toThrow();
+  });
+
+  it("refuses duplicates, disorder, unknown fields and presence violations", () => {
+    const report = sampleReport();
+    const duplicated = { ...report, entries: [report.entries[0], report.entries[0]] };
+    expect(() => assertValidNativeReport(duplicated)).toThrow("native-report-duplicate-entry");
+    expect(() => reportToDiagnostics(duplicated, (e) => e.ruleId)).toThrow("native-report-duplicate-entry");
+    const reordered = { ...report, entries: [...report.entries].reverse() };
+    expect(() => assertValidNativeReport(reordered)).toThrow("native-report-out-of-order");
+    const extraTop = { ...report, invented: true };
+    expect(() => assertValidNativeReport(extraTop)).toThrow("native-report-report-forbidden:invented");
+    const extraEntry = {
+      ...report,
+      entries: [{ ...report.entries[1], invented: 1 }, report.entries[0]],
+    };
+    expect(() => assertValidNativeReport(extraEntry)).toThrow("native-report-entry-forbidden:invented");
+    const badPresence = {
+      ...report,
+      entries: [report.entries[0], { ...report.entries[1], beforePresent: true }],
+    };
+    expect(() => assertValidNativeReport(badPresence)).toThrow("native-report-invalid:entry.before-presence");
+    const lossMisplaced = {
+      ...report,
+      entries: [report.entries[0], { ...report.entries[1], classification: "readiness", lossClass: "layout" }],
+    };
+    expect(() => assertValidNativeReport(lossMisplaced)).toThrow("native-report-forbidden:entry.lossClass");
+  });
+
+  it("refuses bad literals, pointers, identity, revisions, maps and artifacts", () => {
+    const report = sampleReport();
+    const badStage = { ...report, entries: [{ ...report.entries[0], stage: "draft" }, report.entries[1]] };
+    expect(() => assertValidNativeReport(badStage)).toThrow("native-report-invalid:entry.stage");
+    const badPointer = {
+      ...report,
+      entries: [{ ...report.entries[0], source: { domain: "tree", pointer: "nope", targetId: null, provenance: "exact" } }, report.entries[1]],
+    };
+    expect(() => assertValidNativeReport(badPointer)).toThrow("native-report-invalid:entry.source");
+    const emptyOperation = { ...report, operation: "" };
+    expect(() => assertValidNativeReport(emptyOperation)).toThrow("native-report-invalid:report.operation");
+    const badVersion = { ...report, reportVersion: "3" };
+    expect(() => assertValidNativeReport(badVersion)).toThrow("native-report-invalid:reportVersion");
+    const badIdentity = { ...report, sourceIdentity: { mechanismVersion: "2" } };
+    expect(() => assertValidNativeReport(badIdentity)).toThrow("native-report-report.sourceIdentity-missing");
+    const badRevision = { ...report, inputRevision: "zzz" };
+    expect(() => assertValidNativeReport(badRevision)).toThrow("native-report-invalid:report.inputRevision");
+    const unsortedMap = {
+      ...report,
+      idMap: [
+        { sourceId: "b", resultId: "y", domain: "export" },
+        { sourceId: "a", resultId: "x", domain: "export" },
+      ],
+    };
+    expect(() => assertValidNativeReport(unsortedMap)).toThrow("native-report-idMap-unsorted");
+    const unreachableLoss = { ...report, artifacts: [] };
+    expect(() => assertValidNativeReport(unreachableLoss)).toThrow("native-report-loss-unreachable:0");
+    const unsupportedDigest = {
+      ...report,
+      artifacts: [{ format: "bpmn", capability: "unsupported", digest: A64, entryIndexes: [0] }],
+    };
+    expect(() => assertValidNativeReport(unsupportedDigest)).toThrow("native-report-artifact-digest-unsupported");
+    const nonIncreasing = {
+      ...report,
+      artifacts: [{ format: "bpmn", capability: "structural", entryIndexes: [1, 1] }],
+    };
+    expect(() => assertValidNativeReport(nonIncreasing)).toThrow("native-report-invalid:artifact.entryIndex-order");
+    const outOfRange = {
+      ...report,
+      artifacts: [{ format: "bpmn", capability: "structural", entryIndexes: [7] }],
+    };
+    expect(() => assertValidNativeReport(outOfRange)).toThrow("native-report-invalid:artifact.entryIndex-range");
+  });
+});
+
+// --- P-DELTA operation shapes ---
+
+describe("P-DELTA operation shapes", () => {
+  const shell = {
+    base: pin("generic"),
+    mappingRef: null,
+    retiredFixtures: [],
+    retiredRules: [],
+  };
+
+  it("rename carries newName in the hashed bytes; add never does", () => {
+    const renamed = deltaPreimage({
+      ...shell,
+      operations: [{ op: "rename-with-mapping", subject: "a", declarationDigest: B64, newName: "b" }],
+    });
+    expect(canonicalBytes(renamed)).toContain('"newName":"b"');
+    const added = deltaPreimage({ ...shell, operations: [{ op: "add", subject: "t", declarationDigest: B64 }] });
+    expect(canonicalBytes(added)).not.toContain("newName");
+    expect(deltaDigestOf({ ...shell, operations: [{ op: "rename-with-mapping", subject: "a", declarationDigest: B64, newName: "b" }] })).not.toBe(
+      deltaDigestOf({ ...shell, operations: [{ op: "rename-with-mapping", subject: "a", declarationDigest: B64, newName: "c" }] }),
+    );
+  });
+
+  it("rename without newName, add with newName and unknown ops refuse before hashing", () => {
+    expect(() =>
+      deltaPreimage({ ...shell, operations: [{ op: "rename-with-mapping", subject: "a", declarationDigest: B64 }] as unknown as DeltaOperationDigest }),
+    ).toThrow("delta-op-newname-required");
+    expect(() =>
+      deltaPreimage({ ...shell, operations: [{ op: "add", subject: "t", declarationDigest: B64, newName: "x" }] as unknown as DeltaOperationDigest }),
+    ).toThrow("delta-op-newname-forbidden:add");
+    expect(() =>
+      deltaPreimage({ ...shell, operations: [{ op: "copy", subject: "t", declarationDigest: B64 }] as unknown as DeltaOperationDigest }),
+    ).toThrow("unknown-delta-operation");
+    expect(() =>
+      deltaPreimage({ ...shell, operations: [{ op: "narrow", subject: "", declarationDigest: B64 }] }),
+    ).toThrow("delta-op-invalid:subject");
+  });
+});
+
+// --- Sol r2 #11 mutation regressions: one isolated mutation per omitted input ---
+
+describe("Sol r2 #11 mutation regressions", () => {
+  it("R1 dropping one rule-sheet pin changes pinsDigest", () => {
+    const layers = [pin("generic")];
+    const withSheets = pinsDigestOf({ layers, ruleSheets: [pin("sheet-a"), pin("sheet-b")] });
+    expect(pinsDigestOf({ layers, ruleSheets: [pin("sheet-a")] })).not.toBe(withSheets);
+    expect(pinsDigestOf({ layers })).not.toBe(withSheets);
+  });
+
+  it("R2 dropping the delta base changes the delta digest", () => {
+    const shell = {
+      mappingRef: null,
+      operations: [{ op: "add" as const, subject: "t", declarationDigest: B64 }],
+      retiredFixtures: [],
+      retiredRules: [],
+    };
+    const base = deltaDigestOf({ ...shell, base: pin("generic") });
+    expect(deltaDigestOf({ ...shell, base: pin("generic", "2.0.0") })).not.toBe(base);
+    expect(deltaDigestOf({ ...shell, base: pin("other") })).not.toBe(base);
+  });
+
+  it("R3 dropping a mapping childRole changes the mapping digest", () => {
+    const input = {
+      mappingId: "m",
+      version: "1.0.0",
+      entries: [{ kind: "hierarchy" as const, relationId: "rel", chosenShape: "dag" as const, parentRole: "p", childRole: "c" }],
+    };
+    const base = mappingDigestOf(input);
+    expect(
+      mappingDigestOf({
+        ...input,
+        entries: [{ kind: "hierarchy", relationId: "rel", chosenShape: "dag", parentRole: "p", childRole: "other" }],
+      }),
+    ).not.toBe(base);
+  });
+
+  it("R4 dropping an endpoint role changes the mapping digest", () => {
+    const input = {
+      mappingId: "m",
+      version: "1.0.0",
+      entries: [{ kind: "endpoint" as const, from: "rel", to: "rel2", role: "source" }],
+    };
+    const base = mappingDigestOf(input);
+    expect(
+      mappingDigestOf({ ...input, entries: [{ kind: "endpoint", from: "rel", to: "rel2", role: "target" }] }),
+    ).not.toBe(base);
+  });
+
+  it("R5 dropping a result-row severity changes resultDigest", () => {
+    const base = resultDigestOf(RESULT_BASE);
+    const [row] = RESULT_BASE.effectiveRuleSet;
+    expect(
+      resultDigestOf({ ...RESULT_BASE, effectiveRuleSet: [{ ...row!, severity: "error" }] }),
+    ).not.toBe(base);
+  });
+
+  it("R6 dropping per-rule bindings changes resultDigest", () => {
+    const base = resultDigestOf(RESULT_BASE);
+    const [row] = RESULT_BASE.effectiveRuleSet;
+    const bound = {
+      ...row!,
+      ruleBody: { ...(row!.ruleBody as Record<string, unknown>), bindings: [{ ownerId: "o", role: "r", targetId: "t" }] },
+    };
+    const unbound = { ...row!, ruleBody: { ...(row!.ruleBody as Record<string, unknown>) } };
+    expect(resultDigestOf({ ...RESULT_BASE, effectiveRuleSet: [bound] })).not.toBe(
+      resultDigestOf({ ...RESULT_BASE, effectiveRuleSet: [unbound] }),
+    );
   });
 });
