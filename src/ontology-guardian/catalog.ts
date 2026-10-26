@@ -4,7 +4,7 @@ import type {
   Completeness,
   Digest,
   DigestEvidence,
-  Lifecycle,
+  LifecycleFields,
   Pin,
   PinList,
   PrivateLineage,
@@ -99,20 +99,22 @@ export interface SkillCapability {
  * Skill tool-bearing profile descriptors ([R9:§4.1]: `tools` is the existing
  * `SkillTool` descriptors). Exact tool fields stay with the skills package
  * and are not transcribed here: this descriptor is `unverified`, kept closed
- * as an opaque record, never widened into invented tool fields.
+ * uninhabitable until that pinned descriptor has been verified.
  */
-export type SkillToolDescriptor = Record<string, unknown>;
+export type SkillToolDescriptor = never;
 
 /** `skill` arm ([R9:§4.1]); `instructions` requires `tools: []` and `metadata.toolNames: []`. */
-export interface SkillPayload {
-  readonly profile: SkillProfileSelector;
-  readonly metadata: SkillMetadata;
+interface SkillPayloadBase {
   readonly instructionsAsset: string;
   readonly capabilities: readonly SkillCapability[];
-  readonly tools: readonly SkillToolDescriptor[];
   readonly documentSchemas: DocumentSchema[];
   readonly dependencies: EntryDependency[];
 }
+
+export type SkillPayload = SkillPayloadBase & (
+  | { readonly profile: "instructions"; readonly metadata: SkillMetadata & { readonly toolNames: readonly [] }; readonly tools: readonly [] }
+  | { readonly profile: "tools"; readonly metadata: SkillMetadata; readonly tools: readonly SkillToolDescriptor[] }
+);
 
 export interface RegistryCompatibility {
   readonly entryContract: string;
@@ -288,7 +290,6 @@ export interface OntologyPayloadBase {
   readonly owner: string;
   readonly domain?: string;
   readonly profileShape: ProfileShape;
-  readonly artifactKind: ArtifactKind;
   readonly profilePin: Pin;
   readonly stack: PinList;
   readonly digests: {
@@ -296,10 +297,6 @@ export interface OntologyPayloadBase {
     readonly pinsDigest: Digest;
     readonly resultEvidence: DigestEvidence;
   };
-  readonly lifecycle: Lifecycle;
-  readonly deprecatedReason?: string;
-  readonly deprecatedAt?: string;
-  readonly supersededBy?: Pin;
   readonly provenance: ProvenanceRecord;
   readonly licenceClosure?: LicenceClosure;
   readonly coverage?: CoverageRecord;
@@ -311,15 +308,20 @@ export interface OntologyPayloadBase {
   readonly consumers: readonly string[];
   readonly compatibility: { readonly renderer: string; readonly adapter: string };
   readonly linkedTools: readonly string[];
-  readonly artifactBinding: ArtifactBinding;
 }
+
+/** The outer artifact discriminant and its binding must select the same arm. */
+type PayloadArtifact = { [K in ArtifactKind]: {
+  readonly artifactKind: K;
+  readonly artifactBinding: Extract<ArtifactBinding, { artifactKind: K }>;
+} }[ArtifactKind];
 
 /**
  * §5.3 ontology payload, discriminated by the enclosing visibility:
  * public entries carry the public lineage container and required selections;
  * private entries carry exactly `PrivateLineage` and no selections array.
  */
-export type OntologyPayload =
+export type OntologyPayload = LifecycleFields & PayloadArtifact & (
   | (OntologyPayloadBase & {
       readonly visibility: "public";
       readonly lineage: PublicLineage;
@@ -329,7 +331,7 @@ export type OntologyPayload =
       readonly visibility: `private:${string}`;
       readonly lineage: PrivateLineage;
       readonly ruleSheets: readonly PrivateRuleSheetRef[];
-    });
+    }));
 
 /** Pinned corpus authority tag for parity claims ([BP] profile-corpus-v1.0.0). */
 export const PINNED_CORPUS_AUTHORITY_TAG = "profile-corpus-v1.0.0";
@@ -361,7 +363,7 @@ export interface RuleVerdict {
   readonly studyDisposition?: string;
 }
 
-export interface ReceiptBase {
+interface ReceiptCommon {
   readonly receiptKind:
     | "bpmn-parity"
     | "bpmn-bijection"
@@ -374,12 +376,16 @@ export interface ReceiptBase {
   readonly corpusDigest: Digest;
   readonly libraryId: string;
   readonly libraryVersion: string;
-  readonly validatorRole: ValidatorRole;
   readonly verdict: "pass" | "fail";
   readonly issuedAt: string;
   readonly evaluatedStack: EvaluatedStack;
-  readonly transitionQualification?: TransitionQualification;
 }
+
+export type ReceiptBase = ReceiptCommon & (
+  | { readonly validatorRole: "retained-check"; readonly transitionQualification?: never }
+  | { readonly validatorRole: "transitional-oracle"; readonly transitionQualification: Extract<TransitionQualification, { claim: "oracle-witness" }> }
+  | { readonly validatorRole: "qualified-ds-execution"; readonly transitionQualification: Extract<TransitionQualification, { claim: "reference-qualified" }> }
+);
 
 /**
  * S-COMPILED pinned object, reused verbatim ([BC@63a9258:src/profile/lint-contracts.ts:8–12]).
