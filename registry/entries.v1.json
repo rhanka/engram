@@ -1,0 +1,200 @@
+{
+  "format": "sentropic.registry-package/v1",
+  "entries": [
+    {
+      "format": "sentropic.registry-entry/v1",
+      "contractVersion": "1.1.4",
+      "kind": "mcp",
+      "id": "sentropic.engram.memory",
+      "name": "Engram Memory",
+      "description": "Agent memory with citations, ranking receipts and durable lifecycle.",
+      "entryVersion": "1.0.0",
+      "publisher": {
+        "packageName": "@sentropic/engram",
+        "packageVersion": "0.21.1"
+      },
+      "compatibility": {
+        "entryContract": "1.1.4",
+        "packages": [
+          {
+            "name": "@sentropic/mcp-platform",
+            "range": "0.4.0"
+          },
+          {
+            "name": "@sentropic/mcp-broker",
+            "range": "0.1.0"
+          },
+          {
+            "name": "@modelcontextprotocol/sdk",
+            "range": "^1.31.0"
+          }
+        ],
+        "schemaProfiles": [
+          "sentropic.engram.memory-wire/v1",
+          "sentropic.engram.memory-tools/2020-12-v1"
+        ],
+        "requiredHostFeatures": [
+          "invocation",
+          "authorization",
+          "domainPolicy",
+          "engine",
+          "mutationRecovery",
+          "confirmation",
+          "audit",
+          "pagination",
+          "lifecycle"
+        ],
+        "optionalHostFeatures": []
+      },
+      "parameters": {
+        "schemaVersion": "1.0.0",
+        "schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "$id": "https://sentropic.dev/schemas/engram/memory/parameters-v1.json",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "hostBindingRef"
+          ],
+          "properties": {
+            "mode": {
+              "type": "string",
+              "const": "embedded-local",
+              "default": "embedded-local"
+            },
+            "hostBindingRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-z0-9][a-z0-9._-]*$"
+            }
+          }
+        },
+        "defaults": {
+          "mode": "embedded-local"
+        }
+      },
+      "bindings": [
+        {
+          "key": "invocation",
+          "contract": "MemoryInvocationBindingV1",
+          "required": true
+        },
+        {
+          "key": "authorization",
+          "contract": "AuthorizationPort",
+          "required": true
+        },
+        {
+          "key": "domainPolicy",
+          "contract": "MemoryDomainPolicyV1",
+          "required": true
+        },
+        {
+          "key": "engine",
+          "contract": "GuardedMemoryPortV2+MemoryRecallPortV3+MemoryReadPortV1",
+          "required": true
+        },
+        {
+          "key": "mutationRecovery",
+          "contract": "MemoryMutationRecoveryPortV1",
+          "required": true
+        },
+        {
+          "key": "confirmation",
+          "contract": "MemoryConfirmationAssuranceV1+MemoryConfirmationContinuationV1",
+          "required": true
+        },
+        {
+          "key": "audit",
+          "contract": "MemoryAuditSinkV1",
+          "required": true
+        },
+        {
+          "key": "pagination",
+          "contract": "MemoryPaginationStoreV1",
+          "required": true
+        },
+        {
+          "key": "lifecycle",
+          "contract": "MemoryLifecyclePortsV1",
+          "required": true
+        }
+      ],
+      "assets": [
+        {
+          "role": "manifest",
+          "path": "dist/registry/manifest.js",
+          "mediaType": "application/javascript",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "role": "definitions",
+          "path": "dist/registry/definitions.js",
+          "mediaType": "application/javascript",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "role": "provider",
+          "path": "dist/mcp-memory.js",
+          "mediaType": "application/javascript",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "role": "wire-profile",
+          "path": "dist/mcp-memory.js",
+          "mediaType": "application/javascript",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "role": "tool-schema-profile",
+          "path": "dist/mcp-memory.js",
+          "mediaType": "application/javascript",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "role": "parameter-schema",
+          "path": "registry/entries.v1.json",
+          "mediaType": "application/json",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "role": "validator",
+          "path": "dist/mcp-memory.js",
+          "mediaType": "application/javascript",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "mcp": {
+        "manifestAsset": "dist/registry/manifest.js",
+        "connectorIds": [
+          "engram-memory"
+        ],
+        "transportProfiles": [
+          {
+            "id": "sentropic.engram.memory-wire/v1",
+            "mode": "in-process",
+            "protocolVersions": [
+              "1.0.0"
+            ],
+            "requiredHostFeatures": [
+              "invocation",
+              "authorization",
+              "domainPolicy",
+              "engine",
+              "mutationRecovery",
+              "confirmation",
+              "audit",
+              "pagination",
+              "lifecycle"
+            ]
+          }
+        ],
+        "protocolVersions": [
+          "1.0.0"
+        ]
+      }
+    }
+  ]
+}
