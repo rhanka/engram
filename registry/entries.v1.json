@@ -11,7 +11,7 @@
       "entryVersion": "1.0.0",
       "publisher": {
         "packageName": "@sentropic/engram",
-        "packageVersion": "0.21.1"
+        "packageVersion": "0.21.2"
       },
       "compatibility": {
         "entryContract": "1.1.4",
