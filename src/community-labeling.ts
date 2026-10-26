@@ -364,12 +364,10 @@ export function parseLabelResponse(text: string, labeledCids: number[]): Map<num
 /**
  * Return the first configured provider whose credential env var is present.
  * Mirrors upstream `detect_backend()`. Returns null when nothing is configured.
- * ollama is excluded from auto-detect (no required env var → false positive).
  */
 export function detectLabelingBackend(): DirectLlmProvider | null {
   for (const provider of DIRECT_LLM_PROVIDERS) {
     const envNames = directProviderCredentialEnv(provider);
-    if (envNames.length === 0) continue; // skip ollama
     for (const envName of envNames) {
       if (process.env[envName]?.trim()) return provider;
     }
@@ -424,12 +422,6 @@ async function makeDefaultCallLlm(
       case "cohere": {
         const { cohere } = await import("@ai-sdk/cohere");
         return cohere(resolvedModel);
-      }
-      case "ollama": {
-        const { createOllama } = await import("ollama-ai-provider");
-        const baseURL = process.env.OLLAMA_BASE_URL?.trim();
-        const factory = baseURL ? createOllama({ baseURL }) : createOllama();
-        return factory(resolvedModel);
       }
     }
   }

@@ -124,7 +124,7 @@ export interface LoadCustomProvidersOptions {
  * Load custom LLM providers from providers.json files.
  *
  * Returns a map of provider name → config. Built-in providers (anthropic,
- * openai, gemini, mistral, cohere, ollama) are never overridden; entries that
+ * openai, gemini, mistral, cohere) are never overridden; entries that
  * shadow them are silently dropped.
  */
 export function loadCustomProviders(
@@ -162,7 +162,6 @@ export function loadCustomProviders(
     "gemini",
     "mistral",
     "cohere",
-    "ollama",
   ]);
 
   const providers: CustomProviderMap = {};
