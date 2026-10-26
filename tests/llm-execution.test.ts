@@ -5,12 +5,14 @@ import { tmpdir } from "node:os";
 
 import { normalizeProjectConfig, validateProjectConfig } from "../src/project-config.js";
 import {
+  DIRECT_LLM_PROVIDERS,
   createDirectTextJsonClient,
   createAssistantTextJsonClient,
   createAssistantVisionJsonClient,
   defaultDirectLlmModel,
   directProviderBaseUrlEnv,
   directProviderCredentialEnv,
+  isDirectLlmProvider,
   parseJsonFromLlmText,
   preflightLlmExecution,
   redactSecrets,
@@ -63,7 +65,6 @@ beforeEach(() => {
   delete process.env.GOOGLE_GENERATIVE_AI_BASE_URL;
   delete process.env.MISTRAL_BASE_URL;
   delete process.env.COHERE_BASE_URL;
-  delete process.env.OLLAMA_BASE_URL;
 });
 
 describe("LLM execution ports", () => {
@@ -184,7 +185,7 @@ describe("LLM execution ports", () => {
     expect(directProviderCredentialEnv("gemini")).toEqual(["GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"]);
   });
 
-  it("accepts ollama as a credential-free local direct provider", () => {
+  it("refuses ollama as a direct provider (dropped backend)", () => {
     const root = makeTempDir();
     const config = normalizeProjectConfig(
       {
@@ -196,9 +197,11 @@ describe("LLM execution ports", () => {
       join(root, "graphify.yaml"),
     );
 
-    expect(() => preflightLlmExecution(config.llm_execution, "text_json")).not.toThrow();
-    expect(defaultDirectLlmModel("ollama")).toBe("llama3.1");
-    expect(directProviderCredentialEnv("ollama")).toEqual([]);
+    expect(() => preflightLlmExecution(config.llm_execution, "text_json")).toThrow(
+      "llm_execution.provider must be one of anthropic, openai, gemini, mistral, cohere for direct mode",
+    );
+    expect(isDirectLlmProvider("ollama")).toBe(false);
+    expect(DIRECT_LLM_PROVIDERS as readonly string[]).not.toContain("ollama");
   });
 
   it("writes assistant text JSON instructions without calling a provider", async () => {
