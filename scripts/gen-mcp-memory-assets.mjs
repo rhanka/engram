@@ -96,7 +96,7 @@ function previousTarballBinding() {
 
 export async function generateAssets() {
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
-  const [{ MEMORY_PROVIDER_MANIFEST, ENGRAM_MEMORY_WIRE_PROFILE_V1, validateMemoryPublisherAssetsV1 }, platform] = await Promise.all([
+  const [{ MEMORY_PROVIDER_MANIFEST, ENGRAM_MEMORY_WIRE_PROFILE_V1, MEMORY_FROZEN_PROFILE_BINDINGS_V1, validateMemoryPublisherAssetsV1 }, platform] = await Promise.all([
     import('../dist/mcp-memory.js'),
     import('@sentropic/mcp-platform/memory'),
   ]);
@@ -144,12 +144,21 @@ export async function generateAssets() {
   if (!withdraw || !forget) throw new Error('elicitation policies for withdraw/forget are required');
   writeJson(join(DIST_REGISTRY, 'elicitation-request.json'), withdraw.requestSchema);
   writeJson(join(DIST_REGISTRY, 'elicitation-response.json'), withdraw.responseSchema);
+  // Loadable provider manifest is distinct from the registry-package wrapper.
+  writeFileSync(join(DIST_REGISTRY, 'provider-manifest.js'),
+    'export const manifest = ' + JSON.stringify(MEMORY_PROVIDER_MANIFEST, null, 2) + ';\nexport default manifest;\n');
   // Base-manifest asset: the canonical provider manifest bytes.
   writeJson(join(DIST_REGISTRY, 'base-manifest.json'), MEMORY_PROVIDER_MANIFEST);
 
   const entries = JSON.parse(readFileSync(ENTRIES_PATH, 'utf8'));
   const entry = entries.entries[0];
   writeJson(join(DIST_REGISTRY, 'parameter-schema.json'), entry.parameters.schema);
+  for (const [name, key] of [['wire-profile', 'wireProfileSha256'], ['tool-schema-profile', 'toolSchemaProfileSha256'], ['parameter-schema', 'parameterProfileSha256']]) {
+    if (sha256(readFileSync(join(DIST_REGISTRY, name + '.json'))) !== MEMORY_FROZEN_PROFILE_BINDINGS_V1[key]) {
+      throw new Error('frozen profile bytes drifted: ' + name);
+    }
+  }
+  entry.mcp.manifestAsset = 'dist/registry/provider-manifest.js';
 
   if (entry.publisher.packageName !== '@sentropic/engram') {
     throw new Error('registry entry publisher drifted from @sentropic/engram');
@@ -166,15 +175,14 @@ export async function generateAssets() {
   entry.mcp.protocolVersions = protocolVersions;
   entry.mcp.transportProfiles[0].protocolVersions = protocolVersions;
 
-  // The validator role must resolve to its own bytes: the CJS provider
-  // bundle (the ESM bundle already serves the provider role). Duplicating one
-  // path under two roles is forbidden by the receipt validator.
+  // Each role has distinct executable bytes; the validator is an ESM asset.
   const assetPaths = [
-    ['manifest', 'dist/registry/manifest.js'],
+    ['registry-package', 'dist/registry/manifest.js'],
+    ['manifest', 'dist/registry/provider-manifest.js'],
     ['manifest', 'dist/registry/base-manifest.json'],
     ['definitions', 'dist/registry/definitions.js'],
     ['provider', 'dist/mcp-memory.js'],
-    ['validator', 'dist/mcp-memory.cjs'],
+    ['validator', 'dist/registry/validator.js'],
     ['wire-profile', 'dist/registry/wire-profile.json'],
     ['tool-schema-profile', 'dist/registry/tool-schema-profile.json'],
     ['parameter-schema', 'dist/registry/parameter-schema.json'],
@@ -213,7 +221,7 @@ export async function generateAssets() {
     tarballSha256,
     tarballIntegrity,
     baseManifestSha256: assetByPath('dist/registry/base-manifest.json').sha256,
-    effectiveManifestSha256: assetByPath('dist/registry/manifest.js').sha256,
+    effectiveManifestSha256: assetByPath('dist/registry/provider-manifest.js').sha256,
     schemas: tools.map((tool) => ({
       tool: tool.name,
       inputAsset: `dist/registry/schemas/${tool.name}.input.json`,
