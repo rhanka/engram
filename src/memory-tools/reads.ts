@@ -1,3 +1,4 @@
+import type { MemoryExecutionControlV1 } from './execution.js';
 import { randomBytes } from 'node:crypto';
 import { receiptDigest } from '../../engram-memory/dist/digests.js';
 import type { MemoryReadFacetsV1 } from '../../engram-memory/dist/reads.js';
@@ -77,7 +78,8 @@ const size = (v: unknown) => Buffer.byteLength(JSON.stringify(v), 'utf8');
 /** M13 option B: explicit in-process operations, no listener, broker or activation. */
 export function createMemoryReadToolsV1(options: { facets: MemoryReadFacetsV1; host: MemoryReadHostV1 }) {
   const { facets, host } = options;
-  async function context(input: MemoryReadInvocationV1, tool: ReadTool): Promise<MemoryReadInvocationV1> {
+  const executions = new WeakMap<MemoryReadInvocationV1, MemoryExecutionControlV1>();
+  async function context(input: MemoryReadInvocationV1, tool: ReadTool, execution: MemoryExecutionControlV1): Promise<MemoryReadInvocationV1> {
     let ctx: MemoryReadInvocationV1;
     try { ctx = structuredClone(input); } catch { throw new TrustedContextUnavailableProtocolError(); }
     if (!ctx || !isValidTrustedAuditId(ctx.auditId) || refs.some(k => !isValidOpaqueRef(ctx[k])) || !isValidCursor(ctx.generation) || !isValidCursor(ctx.authorization_epoch) || !isValidInstant(ctx.deadline_at)
@@ -86,12 +88,14 @@ export function createMemoryReadToolsV1(options: { facets: MemoryReadFacetsV1; h
     try {
       if (await host.authenticate(structuredClone(ctx), tool) !== true) throw new TrustedContextUnavailableProtocolError();
     } catch { throw new TrustedContextUnavailableProtocolError(); }
+    executions.set(ctx, execution);
     return ctx;
   }
   const failure = (tool: ReadTool, ctx: MemoryReadInvocationV1, code: PublicMemoryErrorCode) => mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, code, invocationAuthorized: false }).structuredContent;
   const neutralFailure = (tool: ReadTool, ctx: MemoryReadInvocationV1, error: MemoryErrorV1) =>
     mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, error, targetAuthorized: tool === 'engram_memory_get' && facets.isTargetAuthorizedError?.(error) === true }).structuredContent;
   function check(ctx: MemoryReadInvocationV1): PublicMemoryErrorCode | undefined {
+    if (executions.get(ctx)?.signal?.aborted) return 'CANCELLED';
     const now = host.clock.now();
     if (!isValidInstant(now)) return 'STORE_UNAVAILABLE';
     const remaining = Date.parse(ctx.deadline_at) - Date.parse(now);
@@ -110,8 +114,8 @@ export function createMemoryReadToolsV1(options: { facets: MemoryReadFacetsV1; h
     const identity = Object.fromEntries([...refs, 'generation', 'authorization_epoch'].map(k => [k, ctx[k as keyof MemoryReadInvocationV1]]));
     return receiptDigest('memory-page-binding', { identity, query_utf8: [...new TextEncoder().encode(input.query)], purpose_ref: input.purpose_ref, limit: input.limit ?? 10, max_packet_bytes: input.max_packet_bytes ?? 65536, capability_policy: input.capability_policy ?? DEFAULT_RECALL_CAPABILITY_POLICY });
   }
-  async function search(input: unknown, invocation: MemoryReadInvocationV1): Promise<ToolResultV1<SearchPageV1>> {
-    const ctx = await context(invocation, 'engram_memory_search');
+  async function search(input: unknown, invocation: MemoryReadInvocationV1, execution: MemoryExecutionControlV1 = {}): Promise<ToolResultV1<SearchPageV1>> {
+    const ctx = await context(invocation, 'engram_memory_search', execution);
     const tool = 'engram_memory_search';
     let issued: string | undefined;
     try {
@@ -126,6 +130,7 @@ export function createMemoryReadToolsV1(options: { facets: MemoryReadFacetsV1; h
       } catch {
         return failure(tool, ctx, 'STORE_UNAVAILABLE');
       }
+      if (execution.signal?.aborted) return failure(tool, ctx, 'CANCELLED');
       if (!searchAuthorized) return failure(tool, ctx, 'UNAUTHORIZED');
       const binding_digest = pageBinding(ctx, arg);
       let state: MemoryReadPageStateV1 | undefined;
@@ -146,6 +151,7 @@ export function createMemoryReadToolsV1(options: { facets: MemoryReadFacetsV1; h
         budgets: { max_candidates: 2000, max_results: limit, max_packet_bytes: max_packet_bytes - envelopeOverhead - 2, deadline_at: ctx.deadline_at },
         page: { size: limit, ...(state ? { cursor: state.internal_engine_cursor } : {}) },
       };
+      if (execution.signal?.aborted) return failure(tool, ctx, 'CANCELLED');
       const result = await facets.recallPort.recall(request);
       if (!result.ok) return neutralFailure(tool, ctx, result.error);
       const packet = result.value;
@@ -161,9 +167,11 @@ export function createMemoryReadToolsV1(options: { facets: MemoryReadFacetsV1; h
       if (state && await host.authorizeContinuation(structuredClone(state), structuredClone(ctx)) !== true) return failure(tool, ctx, 'STALE_PAGE');
       // Host pagination/policy ports awaited after the first engine result. Re-enter
       // the neutral facets on the SAME pins so their canonical check is last.
+      if (execution.signal?.aborted) return failure(tool, ctx, 'CANCELLED');
       const final = await facets.recallPort.recall({ ...request, as_of: { valid_time: packet.rank_receipt.valid_as_of, system_cursor: packet.rank_receipt.system_as_of } });
       if (!final.ok) return neutralFailure(tool, ctx, final.error);
       if (final.value.next_page_cursor !== packet.next_page_cursor || final.value.rank_receipt.snapshot_digest !== packet.rank_receipt.snapshot_digest || JSON.stringify(final.value.records) !== JSON.stringify(packet.records)) return failure(tool, ctx, 'STALE_PAGE');
+      if (execution.signal?.aborted) return failure(tool, ctx, 'CANCELLED');
       const body = { records: [...final.value.records], rank_receipt: final.value.rank_receipt, ...(issued ? { next_page_cursor: issued } : {}) };
       const value = { ...body, response_digest: receiptDigest('memory-search-page', body, 'response_digest') };
       if (!validateSearchOutputV1(value).ok) return failure(tool, ctx, 'STORE_UNAVAILABLE');
@@ -173,8 +181,8 @@ export function createMemoryReadToolsV1(options: { facets: MemoryReadFacetsV1; h
     } catch { return failure(tool, ctx, 'STORE_UNAVAILABLE'); }
     finally { if (issued !== undefined) { try { await host.pages.dispose(issued); } catch { /* expires under the host's finite lifetime */ } } }
   }
-  async function get(input: unknown, invocation: MemoryReadInvocationV1): Promise<ToolResultV1<import('../../engram-memory/dist/contracts/index.js').MemoryReadPacketV1>> {
-    const ctx = await context(invocation, 'engram_memory_get');
+  async function get(input: unknown, invocation: MemoryReadInvocationV1, execution: MemoryExecutionControlV1 = {}): Promise<ToolResultV1<import('../../engram-memory/dist/contracts/index.js').MemoryReadPacketV1>> {
+    const ctx = await context(invocation, 'engram_memory_get', execution);
     const tool = 'engram_memory_get';
     try {
       const checked = validateGetInputV1(input);
@@ -188,6 +196,7 @@ export function createMemoryReadToolsV1(options: { facets: MemoryReadFacetsV1; h
       } catch {
         return failure(tool, ctx, 'STORE_UNAVAILABLE');
       }
+      if (execution.signal?.aborted) return failure(tool, ctx, 'CANCELLED');
       if (!getAuthorized) return failure(tool, ctx, 'UNAUTHORIZED');
       const result = await facets.readPort.readCurrent({ ...arg, authorization: ctx.authorization, max_packet_bytes: arg.max_packet_bytes ?? 65536, deadline_at: ctx.deadline_at });
       if (!result.ok) return neutralFailure(tool, ctx, result.error);
@@ -198,6 +207,7 @@ export function createMemoryReadToolsV1(options: { facets: MemoryReadFacetsV1; h
       const final = await facets.readPort.readCurrent({ ...arg, authorization: ctx.authorization, max_packet_bytes: arg.max_packet_bytes ?? 65536, deadline_at: ctx.deadline_at });
       if (!final.ok) return neutralFailure(tool, ctx, final.error);
       if (!validateGetOutputV1(final.value).ok) return failure(tool, ctx, 'STORE_UNAVAILABLE');
+      if (execution.signal?.aborted) return failure(tool, ctx, 'CANCELLED');
       return envelope(tool, ctx, final.value, arg.max_packet_bytes ?? 65536);
     } catch { return failure(tool, ctx, 'STORE_UNAVAILABLE'); }
   }
