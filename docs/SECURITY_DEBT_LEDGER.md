@@ -45,17 +45,13 @@ The four highs that DO ship:
 followed by the full suite. **Never `npm audit fix --force`** — it is permitted to
 cross a semver major and will silently change published behaviour.
 
-Two have **no fix at any version** and therefore cannot be remediated, only
-accepted or removed:
-
-- `ollama-ai-provider` — **direct** dependency, `^1.2.0`, vulnerable range `*`, LOW.
-- `@ai-sdk/provider-utils` — transitive under it, LOW, uncontrolled resource consumption (4.3).
-
-**Decision required of the principal** (CONTROL does not decide this): accept two
-LOW advisories with no available fix, or drop `ollama-ai-provider`. Both are LOW
-and neither is remotely triggerable in a CLI that only talks to a local Ollama
-endpoint, so formal acceptance is defensible — but it must be recorded, because a
-tag inherits it.
+Resolved by removal (owner decision 2026-10-25, option b): `ollama-ai-provider`
+is no longer a dependency (dropped in 0.21.2), so its pinned
+`@ai-sdk/provider-utils` 2.x line — and the zod 3 line it pulled
+(GHSA-mrhx-c7xc-m3w5, high, on zod) — no longer ships. The Ollama direct
+backend is dropped with it (`--backend ollama` is now refused with the
+standard `--backend` error); `@sentropic/llm-mesh` has no Ollama provider, so
+nothing replaces it.
 
 Not re-verified this pass, carried forward from the charter and still owed before
 a tag: the 2510 portable-artifact findings and the 19 clean-install audit
