@@ -35,6 +35,7 @@ const ROOT = dirname(HERE);
 const NPM = process.env.MCP_L4_NPM_BIN ?? '/home/antoinefa/.npm-global/bin/npm';
 const P2_BASE = '/home/antoinefa/src/sentropic/.tmp/engram-l4-handoff-p2/tools/memory-mcp-l5/artifacts';
 const P2_MANIFEST = join(P2_BASE, 'pre-candidate-manifest.json');
+const SDK_PINNED = '1.32.2';
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -1145,6 +1146,39 @@ console.log('L4-DISABLED-PROBE-OK');
 
 `;
 
+// Real packed constructor and admin dispatch: the store/identity observers
+// must fire on shipped code, even if bundling changes its function names.
+const TRACE_CONTROL_PROBE = `
+import assert from 'node:assert/strict';
+import { buildRealHost, NOW } from './real-host.mjs';
+const h = await buildRealHost();
+const readiness = await h.store.readiness();
+assert.equal(readiness.ok, true);
+let bootstraps = 0;
+const engine = h.providerMod.createMemoryPortV2({
+  canonical_store: h.store, ...h.ports, activity_sources: [], clock: h.readHost.clock,
+  allow_unfenced_memory_store: true,
+  admin_provider: {
+    version: 1,
+    async bootstrap(request) {
+      bootstraps++;
+      assert.equal(request.admin_credential_ref, 'credential:trace-control');
+      return { ok: false, error: { code: 'UNAUTHORIZED', operation: 'admin', message: 'test host refused', retryable: false } };
+    },
+    async rotate() { throw new Error('unexpected rotate'); },
+    async revoke() { throw new Error('unexpected revoke'); },
+  },
+});
+const out = await engine.admin({ operation: 'bootstrap', bootstrap: {
+  store_id: 'store:one', storage_epoch: readiness.value.storage_epoch,
+  admin_credential_ref: 'credential:trace-control', deadline_at: new Date(Date.parse(NOW) + 20_000).toISOString(),
+} });
+assert.equal(out.ok, false);
+assert.equal(out.error.code, 'UNAUTHORIZED');
+assert.equal(bootstraps, 1);
+console.log('L4-TRACE-CONTROL-PROBE-OK');
+`;
+
 const FLOOR_PROBE = `
 import assert from 'node:assert/strict';
 const host = await import('./real-host.mjs');
@@ -1242,7 +1276,12 @@ export async function runPackedAcceptance() {
   try {
     const packed = packCandidate(work);
     const enabledDir = join(work, 'enabled');
-    installConsumer(enabledDir, packed.tarball, p2ArchivePaths(manifest), { npm_config_cache: join(work, 'enabled-cache') }, '^1.31.0', true);
+    installConsumer(enabledDir, packed.tarball, p2ArchivePaths(manifest), { npm_config_cache: join(work, 'enabled-cache') }, SDK_PINNED, true);
+    const enabledSdk = readJson(join(enabledDir, 'node_modules/@modelcontextprotocol/sdk/package.json')).version;
+    if (enabledSdk !== SDK_PINNED || enabledSdk !== readJson(join(ROOT, 'candidate-manifest.json')).sdkPinned) {
+      throw new Error('enabled consumer SDK differs from the pinned candidate SDK');
+    }
+    console.log('L4-SDK-PINNED-OBSERVED:' + enabledSdk);
     writeFileSync(join(enabledDir, 'real-host.mjs'), REAL_HOST_HARNESS);
     runProbe(enabledDir, 'enabled-probe', ENABLED_PROBE);
     runProbe(enabledDir, 'invocation-probe', INVOCATION_PROBE);
@@ -1256,14 +1295,17 @@ export async function runPackedAcceptance() {
     // Positive controls prove that each observer is live before the zero proof.
     const canaryDir = join(work, 'trace-canary');
     mkdirSync(canaryDir);
-    const canary = 'function createInMemoryCanonicalMemoryStoreV1(options) {}\ncreateInMemoryCanonicalMemoryStoreV1({});\nconst operation = { operation: "bootstrap" };\nif (operation.operation === "bootstrap") {}\n';
-    writeFileSync(join(canaryDir, 'mcp-memory.cjs'), canary);
-    writeFileSync(join(canaryDir, 'mcp-memory.mjs'), canary);
+    writeFileSync(join(canaryDir, 'mcp-memory.cjs'), '');
+    writeFileSync(join(canaryDir, 'mcp-memory.mjs'), '');
     run('node', ['-e', 'require(' + JSON.stringify(join(canaryDir, 'mcp-memory.cjs')) + ');import(' + JSON.stringify(join(canaryDir, 'mcp-memory.mjs')) + ');require("node:child_process").spawnSync(process.execPath,["-e","","fs-ext node-gyp"]);'], { env: { ...process.env, ...trace.env } });
+    runProbe(enabledDir, 'trace-control-probe', TRACE_CONTROL_PROBE, trace.env);
     const control = trace.read();
     for (const kind of ['cjs-load', 'cjs-compile', 'esm-load', 'provider-load', 'store-open', 'identity-bootstrap', 'native-build']) {
       if (!control.some(row => row.kind === kind)) throw new Error('disabled observer is not live: ' + kind);
     }
+    console.log('L4-TRACE-REAL-CONTROL:' + JSON.stringify(Object.fromEntries(
+      ['store-open', 'identity-bootstrap'].map(kind => [kind, control.filter(row => row.kind === kind).length]),
+    )));
     trace.reset();
     installConsumer(disabledDir, packed.tarball, [], { npm_config_cache: join(work, 'disabled-cache'), ...trace.env }, null, false, disabledLog);
     assertNoNativeBuildAttempts(readFileSync(disabledLog, 'utf8'), 'disabled install');
@@ -1277,6 +1319,9 @@ export async function runPackedAcceptance() {
     // 1.31.0. A floor failure FAILS the acceptance outright.
     const floorDir = join(work, 'floor');
     installConsumer(floorDir, packed.tarball, p2ArchivePaths(manifest), { npm_config_cache: join(work, 'floor-cache') }, '1.31.0', false);
+    const floorSdk = readJson(join(floorDir, 'node_modules/@modelcontextprotocol/sdk/package.json')).version;
+    if (floorSdk !== '1.31.0') throw new Error('floor consumer SDK differs from exact 1.31.0');
+    console.log('L4-SDK-FLOOR-OBSERVED:' + floorSdk);
     writeFileSync(join(floorDir, 'real-host.mjs'), REAL_HOST_HARNESS);
     runProbe(floorDir, 'floor-probe', FLOOR_PROBE);
     runProbe(floorDir, 'six-tool-probe', SIX_TOOL_PROBE);

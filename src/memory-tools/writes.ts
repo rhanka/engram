@@ -87,8 +87,8 @@ export interface MemoryWriteInvocationV1 {
    * reference travels to the confirmation port and durable attachment
    * unchanged; the verified cancellation reference travels to the engine;
    * the selected stronger confirmation gate extends confirmation to
-   * capture/requestAdmission. Absent on direct facade use, where legacy
-   * synthesized refs apply and no stronger gate is enforced.
+   * capture/requestAdmission. Capture requires a valid cancellation reference;
+   * gated operations refuse without a valid elicitation reference.
    */
   elicitation_ref?: string;
   cancellation_ref?: string;
@@ -168,6 +168,7 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     try { ctx = structuredClone(input); } catch { throw new TrustedContextUnavailableProtocolError(); }
     if (!ctx || !isValidTrustedAuditId(ctx.auditId) || refs.some(k => !isValidOpaqueRef(ctx[k])) || !isValidCursor(ctx.generation) || !isValidInstant(ctx.deadline_at)
       || !ctx.authorization || typeof ctx.authorization.credential !== 'string' || Object.keys(ctx.authorization).some(k => !['credential', 'context_ref'].includes(k))
+      || (tool === 'engram_memory_capture' && !isValidOpaqueRef(ctx.cancellation_ref))
       || (ctx.authorization.context_ref !== undefined && !isValidOpaqueRef(ctx.authorization.context_ref))) throw new TrustedContextUnavailableProtocolError();
     executions.set(ctx, execution);
     if (disabled) return ctx;
@@ -365,7 +366,8 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
   async function confirmIfRequired(tool: WriteTool, ctx: MemoryWriteInvocationV1, idempotencyKey: string, binding: MemoryMutationBindingV1<unknown>, digest: Digest, targetRef: string | undefined): Promise<ToolResultV1<never> | undefined> {
     const gated = tool === 'engram_memory_withdraw' || tool === 'engram_memory_forget' || ctx.confirmationRequired === true;
     if (!gated) return undefined;
-    if (targetRef === undefined) {
+    const elicitationRef = ctx.elicitation_ref;
+    if (targetRef === undefined || !isValidOpaqueRef(elicitationRef)) {
       const out = failure(tool, ctx, 'gate_failed');
       await audit(ctx, { tool, idempotency_key: idempotencyKey, decision: 'refuse', error_code: 'gate_failed' });
       return out;
@@ -375,10 +377,7 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     // substitute: after expiry or a session change the verifier refuses and
     // the uncommitted reservation cannot execute. The confirmation port
     // receives the injected elicitation reference unchanged; durable
-    // attachment stores that injected reference, never a synthesized one
-    // (the synthesized fallback below only serves direct facade use without
-    // an injected host binding).
-    const elicitationRef = ctx.elicitation_ref;
+    // attachment stores that injected reference unchanged.
     const currentSession = {
       principal_namespace: ctx.principal_namespace, principal_id: ctx.principal_id,
       tenant_id: ctx.tenant_id, session_id: ctx.session_id,
@@ -387,7 +386,7 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     const verify = () => host!.confirm({
       ...currentSession, capability: tool, target_ref: targetRef,
       operation_digest: digest, reservation_ref: binding.preimage.reservation_ref,
-      ...(elicitationRef !== undefined ? { elicitation_ref: elicitationRef } : {}),
+      elicitation_ref: elicitationRef,
     });
     let approved = false;
     try {
@@ -402,7 +401,7 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     try {
       const attached = await host!.reservation.attachConfirmation(
         binding.preimage.reservation_ref,
-        elicitationRef ?? `confirmation:${binding.preimage.reservation_ref}`,
+        elicitationRef,
         digest,
         currentSession,
       );
@@ -578,9 +577,8 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
         schema_version: 2, idempotency_key: stored.idempotency_key, payload: effective.payload, evidence: effective.evidence,
         authorization: ctx.authorization, source_order: { source_ref: target.source_ref, sequence: target.sequence },
         deadline_at: ctx.deadline_at,
-        // Injected cancellation reference, never synthesized (the legacy
-        // synthesized value only serves direct facade use without one).
-        cancellation_ref: ctx.cancellation_ref ?? `cancel:${tool}:${stored.idempotency_key}`,
+        // Validated at the invocation boundary, passed through unchanged.
+        cancellation_ref: ctx.cancellation_ref!,
       }, guard), target.source_ref);
       if ('failure' in guarded) return guarded.failure as ToolResultV1<CaptureOutputV1>;
       ack = guarded.result;
