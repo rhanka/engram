@@ -133,37 +133,37 @@
           "role": "definitions",
           "path": "dist/registry/definitions.js",
           "mediaType": "application/javascript",
-          "sha256": "b52b306a55772396c3c003eae92ed2c5350a5f12987b9594a31f2a59f421799e"
+          "sha256": "f71cdee7a35df82c4789bceb6c5a51b4d00ab8340cd469b6e711fae4f26223d1"
         },
         {
           "role": "provider",
           "path": "dist/mcp-memory.js",
           "mediaType": "application/javascript",
-          "sha256": "51b4e7cb19827990404d450917ce5371c4d380daf744a591db67de5b397841a7"
+          "sha256": "ef47edd0d0a67d1276bd9f0438bac0013d067335b3a795964c8a4240458b508c"
         },
         {
           "role": "wire-profile",
           "path": "dist/mcp-memory.js",
           "mediaType": "application/javascript",
-          "sha256": "51b4e7cb19827990404d450917ce5371c4d380daf744a591db67de5b397841a7"
+          "sha256": "ef47edd0d0a67d1276bd9f0438bac0013d067335b3a795964c8a4240458b508c"
         },
         {
           "role": "tool-schema-profile",
           "path": "dist/mcp-memory.js",
           "mediaType": "application/javascript",
-          "sha256": "51b4e7cb19827990404d450917ce5371c4d380daf744a591db67de5b397841a7"
+          "sha256": "ef47edd0d0a67d1276bd9f0438bac0013d067335b3a795964c8a4240458b508c"
         },
         {
           "role": "parameter-schema",
           "path": "dist/mcp-memory.js",
           "mediaType": "application/javascript",
-          "sha256": "51b4e7cb19827990404d450917ce5371c4d380daf744a591db67de5b397841a7"
+          "sha256": "ef47edd0d0a67d1276bd9f0438bac0013d067335b3a795964c8a4240458b508c"
         },
         {
           "role": "validator",
           "path": "dist/mcp-memory.js",
           "mediaType": "application/javascript",
-          "sha256": "51b4e7cb19827990404d450917ce5371c4d380daf744a591db67de5b397841a7"
+          "sha256": "ef47edd0d0a67d1276bd9f0438bac0013d067335b3a795964c8a4240458b508c"
         }
       ],
       "mcp": {
