@@ -1506,9 +1506,13 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Gu
           decision_receipt_digest: decision.value.receipt_digest,
           transaction_receipt_digest: applied.value.receipt_digest,
         };
-        const destroyed = await dependencies.crypto.destroy({ key_ref: pending.value.sealed.key_ref, idempotency_key: `destroy:${input.candidate_id}` });
-        if (!destroyed.ok) return operationFailure("request_admission", destroyed);
         admissionOutcomes.set(input.candidate_id, { scope_ref: envelope.payload.scope_ref, outcome: value });
+        // The canonical decision and replay proof are already durable. Key
+        // cleanup cannot turn that known receipt into an unknown outcome.
+        // AdmissionOutcomeV1 makes no key-destruction completion claim.
+        try {
+          await dependencies.crypto.destroy({ key_ref: pending.value.sealed.key_ref, idempotency_key: `destroy:${input.candidate_id}` });
+        } catch { /* host custody still owns pending cleanup */ }
         return { ok: true, value };
       } catch {
         return unavailable("request_admission", "admission dependencies did not return typed results");
