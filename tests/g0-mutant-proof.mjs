@@ -1,757 +1,204 @@
-// G0 mutation-kill proof (Node only, no Python).
-//
-// For each semantic preimage input in §7.4 and for each row of the admission
-// rule table, this script applies exactly one textual mutation to a temp copy
-// of the module, bundles it with esbuild, and asserts that the committed
-// expectation flips (an inequality becomes an equality, a refusal becomes an
-// admission, or a typed refusal reason changes). A flip means the committed
-// test — which asserts the unflipped expectation — would fail on the mutant,
-// so the fixture kills the mutant.
-//
-// Exit 0 iff every mutant is killed; non-zero on any survivor or setup
-// failure. Temp copies live under os.tmpdir(); nothing is written to the repo.
-import { buildSync } from "esbuild";
-import assert from "node:assert";
+// Node-only mutation proof. Each mutant transforms a source module IN MEMORY
+// and executes the committed test callbacks using Vitest's actual matchers.
+// Build/import/setup failures are errors, never counted as killed mutants.
+import { build } from "esbuild";
+import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
+import * as chai from "chai";
+import { JestChaiExpect, JestAsymmetricMatchers, setState } from "@vitest/expect";
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const SRC = path.join(HERE, "..", "src", "ontology-guardian");
-const A64 = "a".repeat(64);
-const B64 = "b".repeat(64);
-const pin = (id, version = "1.0.0", contentDigest = A64) => ({ contentDigest, id, version });
-
-function copyModule() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "g0mut-"));
-  for (const file of fs.readdirSync(SRC)) {
-    fs.copyFileSync(path.join(SRC, file), path.join(dir, file));
-  }
-  return dir;
-}
-
-let bundleCount = 0;
-async function bundle(entryFile) {
-  bundleCount += 1;
-  const out = path.join(path.dirname(entryFile), `out-${bundleCount}-${path.basename(entryFile, ".ts")}.mjs`);
-  buildSync({
-    entryPoints: [entryFile],
-    bundle: true,
-    platform: "node",
-    format: "esm",
-    outfile: out,
-    logLevel: "silent",
-  });
-  return import(pathToFileURL(out).href);
-}
-
-// Pristine bundles: the baseline every mutant is compared against.
-const pristineDir = copyModule();
-const clean = {
-  digests: await bundle(path.join(pristineDir, "digests.ts")),
-  diagnostics: await bundle(path.join(pristineDir, "diagnostics.ts")),
-  admission: await bundle(path.join(pristineDir, "admission.ts")),
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const source = path.join(root, "src/ontology-guardian");
+chai.use(JestChaiExpect); chai.use(JestAsymmetricMatchers);
+setState({ assertionCalls: 0, isExpectingAssertions: false }, chai.expect);
+const runtimeKey = Symbol.for("g0.committed.callbacks");
+let registered;
+const suites = [];
+globalThis[runtimeKey] = {
+  expect: chai.expect,
+  describe(name, fn) { suites.push(name); try { fn(); } finally { suites.pop(); } },
+  it(name, fn) { registered.push({ name: [...suites, name].join(" > "), fn }); },
 };
-const D = clean.digests;
 
-function mutate(entryName, find, replace) {
-  const dir = copyModule();
-  const target = path.join(dir, entryName);
-  const text = fs.readFileSync(target, "utf8");
-  const count = text.split(find).length - 1;
-  if (count !== 1) {
-    throw new Error(`mutant setup failure: find occurs ${count}x (need exactly 1x) in ${entryName}: ${find.slice(0, 100)}`);
-  }
-  fs.writeFileSync(target, text.replace(find, replace));
-  return bundle(path.join(dir, entryName));
+async function callbacks(mutation) {
+  registered = [];
+  let hits = 0;
+  const result = await build({
+    stdin: { contents: ['ontology-guardian-g0.test.ts', 'ontology-guardian-g0-admission.test.ts', 'ontology-guardian-g0-typeproof.test.ts'].map((f) => `import ${JSON.stringify(path.join(root, 'tests', f))};`).join('\n') + `\nexport { ENTRY_COMPLETENESS } from ${JSON.stringify(path.join(root, 'tests/ontology-guardian-g0.test.ts'))};`, resolveDir: root },
+    bundle: true, platform: "node", format: "esm", write: false, logLevel: "silent",
+    plugins: [{ name: "g0-memory-mutants", setup(build) {
+      build.onResolve({ filter: /^vitest$/ }, () => ({ path: "vitest", namespace: "g0" }));
+      build.onLoad({ filter: /.*/, namespace: "g0" }, () => ({ contents: 'export const { describe, it, expect } = globalThis[Symbol.for("g0.committed.callbacks")];', loader: "js" }));
+      build.onLoad({ filter: /ontology-guardian\/.+\.ts$/ }, (args) => {
+        let contents = fs.readFileSync(args.path, "utf8");
+        if (mutation && path.basename(args.path) === mutation.file) {
+          const count = contents.split(mutation.find).length - 1;
+          assert.equal(count, 1, `setup ${mutation.id}: anchor must occur once, got ${count}`);
+          contents = contents.replace(mutation.find, mutation.replace); hits++;
+        }
+        return { contents, loader: "ts" };
+      });
+    } }],
+  });
+  if (mutation) assert.equal(hits, 1, `setup ${mutation.id}: target module must load`);
+  // Unique fragment prevents ESM caching without changing source bytes.
+  const module = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}#${mutation?.id ?? 'baseline'}`);
+  const failures = [];
+  for (const test of registered) { try { await test.fn(); } catch (error) { failures.push({ name: test.name, message: error.message }); } }
+  return { count: registered.length, failures, entry: module.ENTRY_COMPLETENESS };
 }
 
-// --- Shared admission fixtures (minimal mirrors of the committed fixtures). ---
+const mutations = [];
+function mutate(id, file, find, replace) { mutations.push({ id, file, find, replace }); }
+mutate("M1", "digests.ts", "    ruleSheets: (input.ruleSheets ?? []).map((p) => ({\n      contentDigest: p.contentDigest,\n      id: p.id,\n      version: p.version,\n    })),", "    ruleSheets: [],");
+mutate("M2", "digests.ts", "    base: { contentDigest: input.base.contentDigest, id: input.base.id, version: input.base.version },", "    base: null,");
+mutate("M3", "digests.ts", "    entries: input.entries.map((e) => ({ ...e })),", "    entries: input.entries.map((e) => {\n      const rest = { ...(e as Record<string, unknown>) };\n      delete rest[\"childRole\"];\n      return rest;\n    }),");
+mutate("M4", "digests.ts", "    entries: input.entries.map((e) => ({ ...e })),", "    entries: input.entries.map((e) => {\n      const rest = { ...(e as Record<string, unknown>) };\n      delete rest[\"role\"];\n      return rest;\n    }),");
+mutate("M5", "digests.ts", "    effectiveRuleSet: input.effectiveRuleSet.map((r) => ({\n      classification: r.classification,\n      code: r.code,\n      messageKey: r.messageKey,\n      ruleBody: r.ruleBody,\n      ruleId: r.ruleId,\n      severity: r.severity,\n    })),", "    effectiveRuleSet: input.effectiveRuleSet.map((r) => ({\n      classification: r.classification,\n      code: r.code,\n      messageKey: r.messageKey,\n      ruleBody: r.ruleBody,\n      ruleId: r.ruleId,\n    })),");
+mutate("M6", "digests.ts", "      ruleBody: r.ruleBody,", "      ruleBody: JSON.parse(JSON.stringify(r.ruleBody, (k, v) => (k === \"bindings\" ? undefined : v))),");
+mutate("M7", "digests.ts", "    portTypes: [...profile.portTypes],", "    portTypes: [...profile.portTypes],\n    themeRef: (profile.themeRef as unknown as string | null | undefined) ?? null,");
+mutate("M8", "digests.ts", "    mappingDigest: input.mappingDigest ?? null,", "    mappingDigest: input.mappingDigest ?? null,\n    themeState: (input.themeState as unknown as string | null | undefined) ?? null,");
+mutate("M9", "digests.ts", "    severityPolicyDigest: input.severityPolicyDigest,\n  };\n}\n\n/** Guardian-computable scopes (diagram/engram): SHA-256 over P-RESULT bytes. */", "    severityPolicyDigest: input.severityPolicyDigest,\n    catalogMetadata: (input.catalogMetadata as unknown) ?? null,\n  };\n}\n\n/** Guardian-computable scopes (diagram/engram): SHA-256 over P-RESULT bytes. */");
+mutate("M10", "digests.ts", "  if (\"entryDigest\" in entry) throw new Error(\"entry-digest-self-embedded\");", "  if (\"entryDigest\" in entry) { void entry; }");
+mutate("M11", "digests.ts", "        ? { declarationDigest: op.declarationDigest, newName: op.newName, op: op.op, subject: op.subject }", "        ? { declarationDigest: op.declarationDigest, op: op.op, subject: op.subject }");
+mutate("M12", "digests.ts", "    entityTypes: [...profile.entityTypes],", "    entityTypes: [],");
+mutate("M12b", "digests.ts", "  return value ?? null;", "  return value ?? 0;");
+mutate("M13", "digests.ts", "    layers: input.layers.map((p) => ({ contentDigest: p.contentDigest, id: p.id, version: p.version })),", "    layers: [...input.layers]\n      .sort((a, b) => (a.id < b.id ? -1 : 1))\n      .map((p) => ({ contentDigest: p.contentDigest, id: p.id, version: p.version })),");
+mutate("M14", "digests.ts", "export function entryDigestOf(entry: Record<string, unknown>): Digest {\n  if (\"entryDigest\" in entry) throw new Error(\"entry-digest-self-embedded\");\n  return sha256Hex(canonicalBytes(entry));\n}", "export function entryDigestOf(entry: Record<string, unknown>): Digest {\n  if (\"entryDigest\" in entry) throw new Error(\"entry-digest-self-embedded\");\n  return sha256Hex(\n    canonicalBytes(JSON.parse(JSON.stringify(entry, (k, v) => (k === \"owner\" ? undefined : v)))),\n  );\n}");
+mutate("D1", "diagnostics.ts", "    throw new Error(`compiled-rule-wrong-phase:${String(id)}`);", "    void id;");
+mutate("D2", "diagnostics.ts", "    if (ids.has(id)) throw new Error(`compiled-rule-duplicate:${String(id)}`);", "    void ids; void id;");
+mutate("D3", "diagnostics.ts", "  assertValidNativeReport(report);\n  return report.entries.map((entry, index) =>", "  return report.entries.map((entry, index) =>");
+mutate("D4", "diagnostics.ts", "  nativeEffectiveSeverity(severity);", "  void severity;");
+mutate("A12", "diagnostics.ts", "    for (const b of bindings) assertValidBinding(b);", "    void bindings;");
+mutate("A13", "digests.ts", "      throw new Error(\"delta-op-newname-required:rename-with-mapping\");", "      void record;");
+mutate("A14", "digests.ts", "      throw new Error(`delta-op-newname-forbidden:${op.op}`);", "      void op;");
+mutate("A1", "admission.ts", "      if (pb.corpusAuthority.tag !== PINNED_CORPUS_AUTHORITY_TAG) {\n        return \"bpmn-parity corpusAuthority tag mismatch\";\n      }", "      void pb;");
+mutate("A2", "admission.ts", "        if (ruleSheetsApply(entry)) return `${receipt.receiptKind} null selection binding with rule sheets`;", "        void entry;");
+mutate("A2b", "admission.ts", "  const digest = receipt.severityPolicyDigest ?? null;\n  if (digest === null) {\n    if (ruleSheetsApply(entry)) return `${kind} null selection binding with rule sheets`;\n    return null;\n  }", "  const digest = receipt.severityPolicyDigest ?? null;\n  if (digest === null) {\n    void entry;\n    return null;\n  }");
+mutate("A3", "admission.ts", "    if (seen.has(v.ruleId)) return `receipt ${receiptKind} duplicate verdict for rule ${v.ruleId}`;", "    void seen;");
+mutate("A4", "admission.ts", "      return `receipt ${receiptKind} forged off verdict on rule ${v.ruleId}`;", "      void v;");
+mutate("A6", "admission.ts", "  if (receipt.proofBindings.severityPolicyDigest !== owner.severityPolicyDigest) {\n    return \"bpmn-parity owner selection digest mismatch\";\n  }", "  void receipt; void owner;");
+mutate("A7", "admission.ts", "  if (q === undefined || q.claim !== \"oracle-witness\") {\n    return `receipt ${kind} names transitional-oracle without oracle-witness evidence`;\n  }\n  if (!isDigest(q.parityMatrixDigest)) {\n    return `receipt ${kind} oracle-witness parityMatrixDigest malformed`;\n  }\n  return null;\n}", "  void kind;\n  void q;\n  return null;\n}");
+mutate("A9", "admission.ts", "      return `receipt ${kind} carries transition qualification on a retained check`;", "      void receipt;");
+mutate("A10", "admission.ts", "    if (receipt.corpusDigest !== entry.corpusDigest) {\n      return `required receipt ${receipt.receiptKind} corpusDigest mismatch`;\n    }", "    void receipt; void entry;");
+mutate("A11", "admission.ts", "    const roleProblem = checkRoleWithVerdicts(receipt, requireReference);\n    if (roleProblem !== null) return roleProblem;", "    void receipt; void requireReference;");
 
-function warnSelection() {
-  const settings = [{ classification: "readiness", rule: "label-required", severity: "warn" }];
-  return {
-    phase: "import",
-    readinessPolicy: "draft",
-    settings,
-    severityPolicyDigest: D.severityPolicyDigestOf("import", "draft", settings),
-    rules: [{ ruleId: "label-required", severity: "warn" }],
-  };
+// Nine round-3 survivors, isolated at their exact preimage input.
+mutate("R3-sheet-digest", "digests.ts", "contentDigest: p.contentDigest,\n      id: p.id", 'contentDigest: "a".repeat(64),\n      id: p.id');
+mutate("R3-base-digest", "digests.ts", "contentDigest: input.base.contentDigest", 'contentDigest: "a".repeat(64)');
+for (const key of ["code", "messageKey"]) mutate(`R3-result-${key}`, "digests.ts", `${key}: r.${key}`, `${key}: "omitted"`);
+mutate("R3-mapping-version", "digests.ts", "version: input.mappingRef.version", 'version: "1.0.0"');
+mutate("R3-retired-reason", "digests.ts", "retiredRules: input.retiredRules.map((r) => ({ reason: r.reason, ruleId: r.ruleId }))", 'retiredRules: input.retiredRules.map((r) => ({ reason: "omitted", ruleId: r.ruleId }))');
+mutate("R3-mapping-phase", "digests.ts", "entries: input.entries.map((e) => ({ ...e }))", 'entries: input.entries.map((e) => { const { phase, ...rest } = e as any; return rest; })');
+
+for (const [key, replacement] of [["bindings", "[]"], ["compiledRules", "[]"]]) {
+  mutate(`native-expected-${key}`, "admission.ts", 'if (canonicalBytes(compiledOptions) !== canonicalBytes(selection.expectedCompiledOptions)) return false;', `if (canonicalBytes({ ...compiledOptions, ${key}: ${replacement} }) !== canonicalBytes({ ...selection.expectedCompiledOptions, ${key}: ${replacement} })) return false;`);
 }
+mutate("derived-obligations", "admission.ts", "const requiredReceipts = deriveRequirements(entry);", "const requiredReceipts = [];" );
+mutate("sheet-completeness", "admission.ts", 'if (canonicalBytes(selection.rules.map((r) => r.ruleId)) !== canonicalBytes(ids)) return "incomplete or duplicate selected rules";', 'void ids;');
+mutate("sheet-settings-completeness", "admission.ts", 'if (publicSelection.settings.some((s) => !ids.includes(s.rule.replace(/^profile:/, "")))) return "unlisted effective setting";', 'void ids;');
+mutate("public-policy-recomputation", "admission.ts", 'if (recomputedSelectionDigest(publicSelection) !== selection.severityPolicyDigest) return "selection digest does not recompute";', 'void publicSelection;');
+mutate("public-effective-severity", "admission.ts", 'if (row.severity !== effectiveSeverityOf(row.ruleId, publicSelection.settings, entry)) return "selected severity mismatch";', 'void row;');
+mutate("profile-pin-version", "admission.ts", 'if (!isExactVersion(pin.version)) return `${what} floating or unknown version`;', 'void pin;');
+mutate("stack-pin-validation", "admission.ts", 'for (const pin of [...entry.stack, ...entry.ruleSheetPins])', 'for (const pin of entry.ruleSheetPins)');
+mutate("bijection-evidence", "admission.ts", 'if (typeof receipt.roundTripEvidenceRef !== "string" || receipt.roundTripEvidenceRef.length === 0) return "bpmn-bijection round trip evidence missing";', 'void receipt;');
+mutate("theme-expected-evidence", "admission.ts", 'if (canonicalBytes(receipt.semanticDigestsBefore) !== canonicalBytes(entry.themeBefore) || canonicalBytes(receipt.semanticDigestsAfter) !== canonicalBytes(entry.themeAfter)) return "theme-invariance expected evidence mismatch";', 'void receipt;');
+mutate("private-owner-reference", "admission.ts", 'if (evidence.ownerReceiptRef !== owner.ownerReceiptRef) return "bpmn-parity owner evidence reference mismatch";', 'void evidence;');
+mutate("family-literal", "admission.ts", 'if (receipt.receiptKind === "family-corpus" && receipt.family !== entry.family) return "family-corpus family mismatch";', 'void receipt;');
+mutate("native-compiled-closure", "diagnostics.ts", 'if (Object.keys(options).sort().join(",") !== keys.sort().join(",")) throw new Error("compiled-options-fields");', 'void keys;');
+mutate("native-rules-array", "diagnostics.ts", 'if (!Array.isArray(options.compiledRules)) throw new Error("compiled-options-rules-not-array");', 'void options;');
+mutate("native-bindings-array", "diagnostics.ts", 'if (!Array.isArray(options.bindings)) throw new Error("compiled-options-bindings-not-array");', 'void options;');
+mutate("whole-report-json", "diagnostics.ts", "    canonicalBytes(report);", "    void report;" );
+mutate("coordinate-nonempty", "diagnostics.ts", 'if (targetId !== null && (typeof targetId !== "string" || targetId.length === 0)) failContract();', 'if (targetId !== null && typeof targetId !== "string") failContract();');
 
-function admEntry(extra = {}) {
-  const layers = [pin("generic")];
-  return {
-    stack: layers,
-    pinsDigest: D.pinsDigestOf({ layers }),
-    resultEvidence: { evidenceState: "resolved", digest: A64 },
-    profilePin: pin("generic"),
-    corpusDigest: B64,
-    selections: [warnSelection()],
-    ruleSheetPins: [pin("sheet-a")],
-    visibility: "public",
-    ...extra,
-  };
+// Each rule-table arm has an independent binding mutation.
+mutate("bijection-coverage", "admission.ts", 'if (receipt.descriptorCoverage.covered !== receipt.descriptorCoverage.total)', 'if (false)');
+mutate("h2a-source-revision", "admission.ts", 'if (receipt.sourceRevision !== entry.sourceRevision) return "h2a-vocabulary sourceRevision mismatch";', 'void receipt;');
+mutate("mem-descriptor-pin", "admission.ts", 'if (receipt.receiptKind === "mem-descriptor" && !pinsEqual([receipt.descriptorPin], [entry.profilePin]))', 'if (false)');
+mutate("contract-schema-pin", "admission.ts", 'if (!pinsEqual([receipt.schemaPin], [entry.contractSchemaPin])) return "contract-verdict schemaPin mismatch";', 'void receipt;');
+mutate("theme-styled-pin", "admission.ts", 'if (!pinsEqual([receipt.styledProfilePin], [entry.profilePin]))', 'if (false)');
+for (const key of ["completeness", "constraints", "portTypes", "profile", "relationTypes"]) {
+  const src = fs.readFileSync(path.join(source, 'digests.ts'), 'utf8');
+  const match = src.match(new RegExp('    ' + key + ': ([^\\n]+),'));
+  assert.ok(match, key);
+  mutate('diagram-' + key, 'digests.ts', match[0], '    ' + key + ': null,');
 }
+for (const key of ["maxEntities", "maxRelations", "maxEndpointsPerRelation"]) mutate('limit-' + key, 'digests.ts', key + ': nullOf(profile.limits.' + key + ')', key + ': null');
+for (const key of ["classification", "ruleId"]) mutate('result-' + key, 'digests.ts', '\n      ' + key + ': r.' + key, '\n      ' + key + ': "omitted"');
+for (const key of ["chosenMin", "chosenMax", "chosenShape", "parentRole", "childRole", "from", "to", "role", "subject", "ruleId", "readinessPolicy", "chosenSeverity", "relationId"]) mutate('mapping-' + key, 'digests.ts', 'entries: input.entries.map((e) => ({ ...e }))', 'entries: input.entries.map((e) => { const { ' + key + ', ...rest } = e as any; return rest; })');
 
-function evaluatedStack() {
-  const layers = [pin("generic")];
-  return { stack: layers, pinsDigest: D.pinsDigestOf({ layers }), resultEvidence: { evidenceState: "resolved", digest: A64 } };
+const baseline = await callbacks();
+assert.equal(baseline.failures.length, 0, `pristine committed suite must pass: ${JSON.stringify(baseline.failures.slice(0, 3))}`);
+console.log(`BASELINE ${baseline.count} committed callbacks passed`);
+function leafPaths(value, path = []) {
+  if (Array.isArray(value) && !value.length || value === null || typeof value !== "object") return [path];
+  return Object.entries(value).flatMap(([k, v]) => leafPaths(v, [...path, k]));
 }
-
-function parityReceipt(extra = {}, pbExtra = {}) {
-  const settings = [{ classification: "readiness", rule: "label-required", severity: "warn" }];
-  const digest = D.severityPolicyDigestOf("import", "draft", settings);
-  return {
-    receiptKind: "bpmn-parity",
-    corpusDigest: B64,
-    libraryId: "bpmn-canvas",
-    libraryVersion: "1.0.0",
-    validatorRole: "transitional-oracle",
-    transitionQualification: { claim: "oracle-witness", parityMatrixDigest: B64 },
-    verdict: "pass",
-    issuedAt: "2026-10-26",
-    evaluatedStack: evaluatedStack(),
-    proofBindings: {
-      proofSet: "published-corpus",
-      corpusAuthority: { tag: "profile-corpus-v1.0.0", manifestDigest: B64 },
-      profilePin: pin("generic"),
-      severityPolicyDigest: digest,
-      ruleSheetPins: [pin("sheet-a")],
-      compiledLintEvidence: {
-        scope: "public",
-        compiledOptions: {
-          mechanismVersion: "1",
-          profileDigest: A64,
-          phase: "import",
-          readinessPolicy: "draft",
-          compiledRules: [],
-          bindings: [],
-          severityPolicyDigest: digest,
-        },
-        settings,
-      },
-      ...pbExtra,
-    },
-    ruleVerdicts: [{ ruleId: "label-required", severity: "warn", verdict: "pass", parity: "proven" }],
-    ...extra,
-  };
+for (const keys of leafPaths(baseline.entry)) {
+  mutate('entry-' + keys.join('.'), 'digests.ts', '  return sha256Hex(canonicalBytes(entry));',
+    `  const projected = structuredClone(entry); let cursor = projected; const keys = ${JSON.stringify(keys)}; for (const key of keys.slice(0, -1)) cursor = cursor?.[key]; if (cursor) delete cursor[keys.at(-1)]; return sha256Hex(canonicalBytes(projected));`);
 }
-
-const PARITY_REQ = { receiptKind: "bpmn-parity", libraryId: "bpmn-canvas", libraryVersion: "1.0.0" };
-
-function refusesWith(ns, request, fragment) {
-  const verdict = ns.checkAdmission(request);
-  assert.strictEqual(verdict.admitted, false, "baseline must refuse");
-  assert.ok(
-    typeof verdict.reason === "string" && verdict.reason.includes(fragment),
-    `baseline reason must contain ${fragment}, got: ${verdict.reason}`,
-  );
-}
-
-// Every case: the committed test it mirrors, the one-line mutation, and the
-// flip assertion (baseline expectation vs mutant behavior).
-const cases = [
-  {
-    id: "M1",
-    test: "FX-DIG-P3 / R1",
-    entry: "digests.ts",
-    find: `    ruleSheets: (input.ruleSheets ?? []).map((p) => ({
-      contentDigest: p.contentDigest,
-      id: p.id,
-      version: p.version,
-    })),`,
-    replace: `    ruleSheets: [],`,
-    run: (mut, base) => {
-      const layers = [pin("generic")];
-      assert.notStrictEqual(
-        base.pinsDigestOf({ layers, ruleSheets: [pin("s1")] }),
-        base.pinsDigestOf({ layers, ruleSheets: [pin("s2")] }),
-      );
-      assert.strictEqual(
-        mut.pinsDigestOf({ layers, ruleSheets: [pin("s1")] }),
-        mut.pinsDigestOf({ layers, ruleSheets: [pin("s2")] }),
-      );
-    },
-  },
-  {
-    id: "M2",
-    test: "FX-DIG-P4 / R2",
-    entry: "digests.ts",
-    find: `    base: { contentDigest: input.base.contentDigest, id: input.base.id, version: input.base.version },`,
-    replace: `    base: null,`,
-    run: (mut, base) => {
-      const shell = { mappingRef: null, operations: [{ op: "add", subject: "t", declarationDigest: B64 }], retiredFixtures: [], retiredRules: [] };
-      assert.notStrictEqual(
-        base.deltaDigestOf({ ...shell, base: pin("generic") }),
-        base.deltaDigestOf({ ...shell, base: pin("other") }),
-      );
-      assert.strictEqual(
-        mut.deltaDigestOf({ ...shell, base: pin("generic") }),
-        mut.deltaDigestOf({ ...shell, base: pin("other") }),
-      );
-    },
-  },
-  {
-    id: "M3",
-    test: "R3 (mapping childRole)",
-    entry: "digests.ts",
-    find: `    entries: input.entries.map((e) => ({ ...e })),`,
-    replace: `    entries: input.entries.map((e) => {
-      const rest = { ...(e as Record<string, unknown>) };
-      delete rest["childRole"];
-      return rest;
-    }),`,
-    run: (mut, base) => {
-      const e = (childRole) => ({
-        mappingId: "m",
-        version: "1.0.0",
-        entries: [{ kind: "hierarchy", relationId: "r", chosenShape: "dag", parentRole: "p", childRole }],
-      });
-      assert.notStrictEqual(base.mappingDigestOf(e("c")), base.mappingDigestOf(e("other")));
-      assert.strictEqual(mut.mappingDigestOf(e("c")), mut.mappingDigestOf(e("other")));
-    },
-  },
-  {
-    id: "M4",
-    test: "R4 (endpoint role)",
-    entry: "digests.ts",
-    find: `    entries: input.entries.map((e) => ({ ...e })),`,
-    replace: `    entries: input.entries.map((e) => {
-      const rest = { ...(e as Record<string, unknown>) };
-      delete rest["role"];
-      return rest;
-    }),`,
-    run: (mut, base) => {
-      const e = (role) => ({
-        mappingId: "m",
-        version: "1.0.0",
-        entries: [{ kind: "endpoint", from: "rel", to: "rel2", role }],
-      });
-      assert.notStrictEqual(base.mappingDigestOf(e("source")), base.mappingDigestOf(e("target")));
-      assert.strictEqual(mut.mappingDigestOf(e("source")), mut.mappingDigestOf(e("target")));
-    },
-  },
-  {
-    id: "M5",
-    test: "FX-DIG-R2 / R5 (result-row severity)",
-    entry: "digests.ts",
-    find: `    effectiveRuleSet: input.effectiveRuleSet.map((r) => ({
-      classification: r.classification,
-      code: r.code,
-      messageKey: r.messageKey,
-      ruleBody: r.ruleBody,
-      ruleId: r.ruleId,
-      severity: r.severity,
-    })),`,
-    replace: `    effectiveRuleSet: input.effectiveRuleSet.map((r) => ({
-      classification: r.classification,
-      code: r.code,
-      messageKey: r.messageKey,
-      ruleBody: r.ruleBody,
-      ruleId: r.ruleId,
-    })),`,
-    run: (mut, base) => {
-      const row = (severity) => ({
-        classification: "readiness",
-        code: "c",
-        messageKey: "k",
-        ruleBody: {},
-        ruleId: "r",
-        severity,
-      });
-      const preimage = (severity) => ({ effectiveDeclarations: {}, effectiveRuleSet: [row(severity)], severityPolicyDigest: A64 });
-      assert.notStrictEqual(base.resultDigestOf(preimage("warn")), base.resultDigestOf(preimage("error")));
-      assert.strictEqual(mut.resultDigestOf(preimage("warn")), mut.resultDigestOf(preimage("error")));
-    },
-  },
-  {
-    id: "M6",
-    test: "R6 (per-rule bindings)",
-    entry: "digests.ts",
-    find: `      ruleBody: r.ruleBody,`,
-    replace: `      ruleBody: JSON.parse(JSON.stringify(r.ruleBody, (k, v) => (k === "bindings" ? undefined : v))),`,
-    run: (mut, base) => {
-      const row = (bindings) => ({
-        classification: "readiness",
-        code: "c",
-        messageKey: "k",
-        ruleBody: { id: "r", bindings },
-        ruleId: "r",
-        severity: "warn",
-      });
-      const preimage = (bindings) => ({ effectiveDeclarations: {}, effectiveRuleSet: [row(bindings)], severityPolicyDigest: A64 });
-      const withBindings = [{ ownerId: "o", role: "r", targetId: "t" }];
-      assert.notStrictEqual(base.resultDigestOf(preimage(withBindings)), base.resultDigestOf(preimage([])));
-      assert.strictEqual(mut.resultDigestOf(preimage(withBindings)), mut.resultDigestOf(preimage([])));
-    },
-  },
-  {
-    id: "M7",
-    test: "FX-DIG-C7 (irrelevant theme input)",
-    entry: "digests.ts",
-    find: `    portTypes: [...profile.portTypes],`,
-    replace: `    portTypes: [...profile.portTypes],
-    themeRef: (profile.themeRef as unknown as string | null | undefined) ?? null,`,
-    run: (mut, base) => {
-      const profile = { profile: "generic@1", completeness: "complete", entityTypes: [], portTypes: [], relationTypes: [], constraints: [], limits: {} };
-      assert.strictEqual(
-        base.contentDiagramDigest({ ...profile, themeRef: "dark@2" }),
-        base.contentDiagramDigest({ ...profile, themeRef: "light@1" }),
-      );
-      assert.notStrictEqual(
-        mut.contentDiagramDigest({ ...profile, themeRef: "dark@2" }),
-        mut.contentDiagramDigest({ ...profile, themeRef: "light@1" }),
-      );
-    },
-  },
-  {
-    id: "M8",
-    test: "FX-DIG-P6 (irrelevant theme state)",
-    entry: "digests.ts",
-    find: `    mappingDigest: input.mappingDigest ?? null,`,
-    replace: `    mappingDigest: input.mappingDigest ?? null,
-    themeState: (input.themeState as unknown as string | null | undefined) ?? null,`,
-    run: (mut, base) => {
-      const layers = [pin("generic")];
-      assert.strictEqual(
-        base.pinsDigestOf({ layers, themeState: { theme: "dark@2" } }),
-        base.pinsDigestOf({ layers, themeState: { theme: "light@1" } }),
-      );
-      assert.notStrictEqual(
-        mut.pinsDigestOf({ layers, themeState: { theme: "dark@2" } }),
-        mut.pinsDigestOf({ layers, themeState: { theme: "light@1" } }),
-      );
-    },
-  },
-  {
-    id: "M9",
-    test: "FX-DIG-R5 (irrelevant catalog metadata)",
-    entry: "digests.ts",
-    find: `    severityPolicyDigest: input.severityPolicyDigest,
-  };
-}
-
-/** Guardian-computable scopes (diagram/engram): SHA-256 over P-RESULT bytes. */`,
-    replace: `    severityPolicyDigest: input.severityPolicyDigest,
-    catalogMetadata: (input.catalogMetadata as unknown) ?? null,
-  };
-}
-
-/** Guardian-computable scopes (diagram/engram): SHA-256 over P-RESULT bytes. */`,
-    run: (mut, base) => {
-      const preimage = (catalogMetadata) => ({ effectiveDeclarations: {}, effectiveRuleSet: [], severityPolicyDigest: A64, catalogMetadata });
-      assert.strictEqual(base.resultDigestOf(preimage({ owner: "a" })), base.resultDigestOf(preimage({ owner: "b" })));
-      assert.notStrictEqual(mut.resultDigestOf(preimage({ owner: "a" })), mut.resultDigestOf(preimage({ owner: "b" })));
-    },
-  },
-  {
-    id: "M10",
-    test: "FX-DIG-E6 (self-embedded entry digest)",
-    entry: "digests.ts",
-    find: `  if ("entryDigest" in entry) throw new Error("entry-digest-self-embedded");`,
-    replace: `  if ("entryDigest" in entry) { void entry; }`,
-    run: (mut, base) => {
-      assert.throws(() => base.entryDigestOf({ kind: "o", entryDigest: A64 }), /self-embedded/);
-      assert.doesNotThrow(() => mut.entryDigestOf({ kind: "o", entryDigest: A64 }));
-    },
-  },
-  {
-    id: "M11",
-    test: "P-DELTA newName hashed (rename payload)",
-    entry: "digests.ts",
-    find: `        ? { declarationDigest: op.declarationDigest, newName: op.newName, op: op.op, subject: op.subject }`,
-    replace: `        ? { declarationDigest: op.declarationDigest, op: op.op, subject: op.subject }`,
-    run: (mut, base) => {
-      const shell = { base: pin("generic"), mappingRef: null, retiredFixtures: [], retiredRules: [] };
-      const op = (newName) => ({ op: "rename-with-mapping", subject: "a", declarationDigest: B64, newName });
-      assert.notStrictEqual(base.deltaDigestOf({ ...shell, operations: [op("b")] }), base.deltaDigestOf({ ...shell, operations: [op("c")] }));
-      assert.strictEqual(mut.deltaDigestOf({ ...shell, operations: [op("b")] }), mut.deltaDigestOf({ ...shell, operations: [op("c")] }));
-    },
-  },
-  {
-    id: "M12",
-    test: "FX-DIG-C2 (entity type input)",
-    entry: "digests.ts",
-    find: `    entityTypes: [...profile.entityTypes],`,
-    replace: `    entityTypes: [],`,
-    run: (mut, base) => {
-      const shell = { profile: "generic@1", completeness: "complete", portTypes: [], relationTypes: [], constraints: [], limits: {} };
-      assert.notStrictEqual(
-        base.contentDiagramDigest({ ...shell, entityTypes: [{ id: "a" }] }),
-        base.contentDiagramDigest({ ...shell, entityTypes: [{ id: "b" }] }),
-      );
-      assert.strictEqual(
-        mut.contentDiagramDigest({ ...shell, entityTypes: [{ id: "a" }] }),
-        mut.contentDiagramDigest({ ...shell, entityTypes: [{ id: "b" }] }),
-      );
-    },
-  },
-  {
-    id: "M12b",
-    test: "FX-DIG-C6 (omitted limit is null, never 0)",
-    entry: "digests.ts",
-    find: `  return value ?? null;`,
-    replace: `  return value ?? 0;`,
-    run: (mut, base) => {
-      const skeleton = { profile: "bpmn@1", completeness: "skeleton", entityTypes: [], portTypes: [], relationTypes: [], constraints: [], limits: {} };
-      const zeroed = { ...skeleton, limits: { maxEntities: 0, maxRelations: 0 } };
-      assert.notStrictEqual(base.contentDiagramDigest(skeleton), base.contentDiagramDigest(zeroed));
-      assert.strictEqual(mut.contentDiagramDigest(skeleton), mut.contentDiagramDigest(zeroed));
-    },
-  },
-  {
-    id: "M13",
-    test: "FX-DIG-P2 (layer order)",
-    entry: "digests.ts",
-    find: `    layers: input.layers.map((p) => ({ contentDigest: p.contentDigest, id: p.id, version: p.version })),`,
-    replace: `    layers: [...input.layers]
-      .sort((a, b) => (a.id < b.id ? -1 : 1))
-      .map((p) => ({ contentDigest: p.contentDigest, id: p.id, version: p.version })),`,
-    run: (mut, base) => {
-      assert.notStrictEqual(base.pinsDigestOf({ layers: [pin("a"), pin("b")] }), base.pinsDigestOf({ layers: [pin("b"), pin("a")] }));
-      assert.strictEqual(mut.pinsDigestOf({ layers: [pin("a"), pin("b")] }), mut.pinsDigestOf({ layers: [pin("b"), pin("a")] }));
-    },
-  },
-  {
-    id: "M14",
-    test: "FX-DIG-E2 (payload pin in entry digest)",
-    entry: "digests.ts",
-    find: `export function entryDigestOf(entry: Record<string, unknown>): Digest {
-  if ("entryDigest" in entry) throw new Error("entry-digest-self-embedded");
-  return sha256Hex(canonicalBytes(entry));
-}`,
-    replace: `export function entryDigestOf(entry: Record<string, unknown>): Digest {
-  if ("entryDigest" in entry) throw new Error("entry-digest-self-embedded");
-  return sha256Hex(
-    canonicalBytes(JSON.parse(JSON.stringify(entry, (k, v) => (k === "owner" ? undefined : v)))),
-  );
-}`,
-    run: (mut, base) => {
-      assert.notStrictEqual(base.entryDigestOf({ kind: "o", owner: "a" }), base.entryDigestOf({ kind: "o", owner: "b" }));
-      assert.strictEqual(mut.entryDigestOf({ kind: "o", owner: "a" }), mut.entryDigestOf({ kind: "o", owner: "b" }));
-    },
-  },
-];
-
-cases.push(
-  {
-    id: "D1",
-    test: "pinned compiled validation (wrong-phase rule)",
-    entry: "diagnostics.ts",
-    find: "    throw new Error(`compiled-rule-wrong-phase:${String(id)}`);",
-    replace: "    void id;",
-    run: (mut, base) => {
-      const rule = { id: "r", phase: "release", select: {}, assert: {}, code: "c", message: "m", classification: "readiness" };
-      const options = { mechanismVersion: "1", profileDigest: A64, phase: "import", readinessPolicy: "draft", compiledRules: [rule], bindings: [], severityPolicyDigest: A64 };
-      assert.throws(() => base.assertValidCompiledOptions(options), /wrong-phase/);
-      assert.doesNotThrow(() => mut.assertValidCompiledOptions(options));
-    },
-  },
-  {
-    id: "D2",
-    test: "pinned compiled validation (duplicate compiled id)",
-    entry: "diagnostics.ts",
-    find: "    if (ids.has(id)) throw new Error(`compiled-rule-duplicate:${String(id)}`);",
-    replace: "    void ids; void id;",
-    run: (mut, base) => {
-      const rule = { id: "r", phase: "import", select: {}, assert: {}, code: "c", message: "m", classification: "readiness" };
-      const options = { mechanismVersion: "1", profileDigest: A64, phase: "import", readinessPolicy: "draft", compiledRules: [rule, { ...rule }], bindings: [], severityPolicyDigest: A64 };
-      assert.throws(() => base.assertValidCompiledOptions(options), /duplicate/);
-      assert.doesNotThrow(() => mut.assertValidCompiledOptions(options));
-    },
-  },
-  {
-    id: "D3",
-    test: "native report boundary (duplicate entries)",
-    entry: "diagnostics.ts",
-    find: `  assertValidNativeReport(report);
-  return report.entries.map((entry, index) =>`,
-    replace: `  return report.entries.map((entry, index) =>`,
-    run: (mut, base) => {
-      const coordinate = { domain: "tree", pointer: "/a", targetId: null, provenance: "exact" };
-      const entry = { code: "c", severity: "info", classification: "readiness", stage: "import", ruleId: "r", messageKey: "k", disposition: "observed", source: coordinate, result: coordinate, beforePresent: false, afterPresent: false };
-      const report = { reportVersion: "2", operation: "validate", entries: [entry, { ...entry }], rawStandardFindings: [], idMap: [], artifacts: [] };
-      assert.throws(() => base.reportToDiagnostics(report, (e) => e.ruleId), /duplicate-entry/);
-      assert.doesNotThrow(() => mut.reportToDiagnostics(report, (e) => e.ruleId));
-    },
-  },
-  {
-    id: "D4",
-    test: "native severity predicate (bogus severity value)",
-    entry: "diagnostics.ts",
-    find: "  nativeEffectiveSeverity(severity);",
-    replace: "  void severity;",
-    run: (mut, base) => {
-      assert.throws(() => base.assertValidSetting({ rule: "r", severity: "bogus" }), /severity/);
-      assert.doesNotThrow(() => mut.assertValidSetting({ rule: "r", severity: "bogus" }));
-    },
-  },
-  {
-    id: "A12",
-    test: "per-rule bindings closure (extra key)",
-    entry: "diagnostics.ts",
-    find: "    for (const b of bindings) assertValidBinding(b);",
-    replace: "    void bindings;",
-    run: (mut, base) => {
-      const rule = { id: "r", phase: "import", select: {}, assert: {}, code: "c", message: "m", classification: "readiness", bindings: [{ ownerId: "o" }] };
-      const options = { mechanismVersion: "1", profileDigest: A64, phase: "import", readinessPolicy: "draft", compiledRules: [rule], bindings: [], severityPolicyDigest: A64 };
-      assert.throws(() => base.assertValidCompiledOptions(options), /binding/);
-      assert.doesNotThrow(() => mut.assertValidCompiledOptions(options));
-    },
-  },
-  {
-    id: "A13",
-    test: "P-DELTA rename requires newName",
-    entry: "digests.ts",
-    find: '      throw new Error("delta-op-newname-required:rename-with-mapping");',
-    replace: "      void record;",
-    run: (mut, base) => {
-      const shell = { base: pin("generic"), mappingRef: null, retiredFixtures: [], retiredRules: [] };
-      const op = { op: "rename-with-mapping", subject: "a", declarationDigest: B64 };
-      assert.throws(() => base.deltaPreimage({ ...shell, operations: [op] }), /newname-required/);
-      let mutantError = null;
-      try {
-        mut.deltaPreimage({ ...shell, operations: [op] });
-      } catch (error) {
-        mutantError = error;
-      }
-      assert.ok(
-        mutantError === null || !/newname-required/.test(mutantError.message),
-        "mutant must not throw the required-newName refusal",
-      );
-    },
-  },
-  {
-    id: "A14",
-    test: "P-DELTA add forbids newName",
-    entry: "digests.ts",
-    find: "      throw new Error(`delta-op-newname-forbidden:${op.op}`);",
-    replace: "      void op;",
-    run: (mut, base) => {
-      const shell = { base: pin("generic"), mappingRef: null, retiredFixtures: [], retiredRules: [] };
-      const op = { op: "add", subject: "t", declarationDigest: B64, newName: "x" };
-      assert.throws(() => base.deltaPreimage({ ...shell, operations: [op] }), /newname-forbidden/);
-      let mutantError = null;
-      try {
-        mut.deltaPreimage({ ...shell, operations: [op] });
-      } catch (error) {
-        mutantError = error;
-      }
-      assert.ok(
-        mutantError === null || !/newname-forbidden/.test(mutantError.message),
-        "mutant must not throw the forbidden-newName refusal",
-      );
-    },
-  },
-  {
-    id: "A1",
-    test: "admission corpusAuthority tag",
-    entry: "admission.ts",
-    find: `      if (pb.corpusAuthority.tag !== PINNED_CORPUS_AUTHORITY_TAG) {
-        return "bpmn-parity corpusAuthority tag mismatch";
-      }`,
-    replace: `      void pb;`,
-    run: (mut, base) => {
-      const forged = parityReceipt({}, { corpusAuthority: { tag: "evil-tag", manifestDigest: B64 } });
-      const request = { entry: admEntry(), requiredReceipts: [PARITY_REQ], receipts: [forged] };
-      refusesWith(base, request, "corpusAuthority tag mismatch");
-      const verdict = mut.checkAdmission(request);
-      assert.strictEqual(verdict.admitted, true, "mutant must admit the forged tag");
-    },
-  },
-  {
-    id: "A2",
-    test: "admission null family binding with sheets",
-    entry: "admission.ts",
-    find: "        if (ruleSheetsApply(entry)) return `${receipt.receiptKind} null selection binding with rule sheets`;",
-    replace: "        void entry;",
-    run: (mut, base) => {
-      const receipt = { receiptKind: "family-corpus", corpusDigest: B64, libraryId: "engram", libraryVersion: "1.0.0", validatorRole: "retained-check", verdict: "pass", issuedAt: "2026-10-26", evaluatedStack: evaluatedStack(), family: "ENG", fixtureDigest: B64, severityPolicyDigest: null, ruleVerdicts: [] };
-      const request = { entry: admEntry(), requiredReceipts: [{ receiptKind: "family-corpus", libraryId: "engram", libraryVersion: "1.0.0" }], receipts: [receipt] };
-      refusesWith(base, request, "null selection binding with rule sheets");
-      const verdict = mut.checkAdmission(request);
-      assert.strictEqual(verdict.admitted, true, "mutant must admit the null binding");
-    },
-  },
-  {
-    id: "A2b",
-    test: "admission null mechanism binding with sheets",
-    entry: "admission.ts",
-    find: `  const digest = receipt.severityPolicyDigest ?? null;
-  if (digest === null) {
-    if (ruleSheetsApply(entry)) return \`${"${kind}"} null selection binding with rule sheets\`;
-    return null;
-  }`,
-    replace: `  const digest = receipt.severityPolicyDigest ?? null;
-  if (digest === null) {
-    void entry;
-    return null;
-  }`,
-    run: (mut, base) => {
-      const receipt = { receiptKind: "mechanism-compat", corpusDigest: B64, libraryId: "bpmn-canvas", libraryVersion: "1.0.0", validatorRole: "transitional-oracle", transitionQualification: { claim: "oracle-witness", parityMatrixDigest: B64 }, verdict: "pass", issuedAt: "2026-10-26", evaluatedStack: evaluatedStack(), compatibilityMatrixVersion: "3", caseVerdicts: [{ caseId: "m1" }], severityPolicyDigest: null };
-      const request = { entry: admEntry({ compatibilityMatrixVersion: "3" }), requiredReceipts: [{ receiptKind: "mechanism-compat", libraryId: "bpmn-canvas", libraryVersion: "1.0.0" }], receipts: [receipt] };
-      refusesWith(base, request, "null selection binding with rule sheets");
-      const verdict = mut.checkAdmission(request);
-      assert.strictEqual(verdict.admitted, true, "mutant must admit the null binding");
-    },
-  },
-  {
-    id: "A3",
-    test: "admission duplicate verdict rows",
-    entry: "admission.ts",
-    find: "    if (seen.has(v.ruleId)) return `receipt ${receiptKind} duplicate verdict for rule ${v.ruleId}`;",
-    replace: "    void seen;",
-    run: (mut, base) => {
-      const receipt = parityReceipt({
-        ruleVerdicts: [
-          { ruleId: "label-required", severity: "warn", verdict: "pass", parity: "proven" },
-          { ruleId: "label-required", severity: "warn", verdict: "diagnostic", parity: "proven" },
-        ],
-      });
-      const request = { entry: admEntry(), requiredReceipts: [PARITY_REQ], receipts: [receipt] };
-      refusesWith(base, request, "duplicate verdict");
-      const verdict = mut.checkAdmission(request);
-      assert.strictEqual(verdict.admitted, true, "mutant must admit duplicates");
-    },
-  },
-  {
-    id: "A4",
-    test: "admission forged off verdict",
-    entry: "admission.ts",
-    find: "      return `receipt ${receiptKind} forged off verdict on rule ${v.ruleId}`;",
-    replace: "      void v;",
-    run: (mut, base) => {
-      const receipt = parityReceipt({
-        ruleVerdicts: [{ ruleId: "label-required", severity: "warn", verdict: "off", parity: "proven" }],
-      });
-      const request = { entry: admEntry(), requiredReceipts: [PARITY_REQ], receipts: [receipt] };
-      refusesWith(base, request, "forged off verdict");
-      const verdict = mut.checkAdmission(request);
-      assert.strictEqual(verdict.admitted, true, "mutant must admit the forged off");
-    },
-  },
-  {
-    id: "A5",
-    test: "admission effective-severity derivation (row relabelled off)",
-    entry: "admission.ts",
-    find: "        return `receipt ${receiptKind} selected severity mismatch on rule ${row.ruleId}`;",
-    replace: "        void row;",
-    run: (mut, base) => {
-      const settings = warnSelection().settings;
-      const entry = admEntry({
-        selections: [{ ...warnSelection(), rules: [{ ruleId: "label-required", severity: "off" }] }],
-      });
-      const receipt = parityReceipt({
-        ruleVerdicts: [{ ruleId: "label-required", severity: "off", verdict: "off", parity: "proven" }],
-      });
-      void settings;
-      const request = { entry, requiredReceipts: [PARITY_REQ], receipts: [receipt] };
-      refusesWith(base, request, "selected severity mismatch");
-      const verdict = mut.checkAdmission(request);
-      assert.strictEqual(verdict.admitted, true, "mutant must admit the relabelled row");
-    },
-  },
-  {
-    id: "A6",
-    test: "admission owner selection digest (private parity)",
-    entry: "admission.ts",
-    find: `  if (receipt.proofBindings.severityPolicyDigest !== owner.severityPolicyDigest) {
-    return "bpmn-parity owner selection digest mismatch";
-  }`,
-    replace: `  void receipt; void owner;`,
-    run: (mut, base) => {
-      const ownerSelection = { phase: "import", readinessPolicy: "draft", severityPolicyDigest: B64, rules: [{ ruleId: "label-required", severity: "warn" }] };
-      const entry = admEntry({ selections: [], visibility: "private", ownerSelection });
-      const receipt = parityReceipt(
-        {},
-        { severityPolicyDigest: D.severityPolicyDigestOf("import", "draft", warnSelection().settings), compiledLintEvidence: { scope: "private-reference", ownerReceiptRef: "r" } },
-      );
-      const request = { entry, requiredReceipts: [PARITY_REQ], receipts: [receipt] };
-      refusesWith(base, request, "owner selection digest mismatch");
-      const verdict = mut.checkAdmission(request);
-      assert.strictEqual(verdict.admitted, true, "mutant must admit the drifted owner digest");
-    },
-  },
-  {
-    id: "A7",
-    test: "admission oracle requires witness",
-    entry: "admission.ts",
-    find: `  if (q === undefined || q.claim !== "oracle-witness") {
-    return \`receipt ${"${kind}"} names transitional-oracle without oracle-witness evidence\`;
-  }
-  if (!isDigest(q.parityMatrixDigest)) {
-    return \`receipt ${"${kind}"} oracle-witness parityMatrixDigest malformed\`;
-  }
-  return null;
-}`,
-    replace: `  void kind;
-  void q;
-  return null;
-}`,
-    run: (mut, base) => {
-      const receipt = parityReceipt({ transitionQualification: undefined });
-      const request = { entry: admEntry(), requiredReceipts: [PARITY_REQ], receipts: [receipt] };
-      refusesWith(base, request, "without oracle-witness evidence");
-      const verdict = mut.checkAdmission(request);
-      assert.strictEqual(verdict.admitted, true, "mutant must admit the witness-free oracle");
-    },
-  },
-  {
-    id: "A9",
-    test: "admission retained checks carry no transition claim",
-    entry: "admission.ts",
-    find: "      return `receipt ${kind} carries transition qualification on a retained check`;",
-    replace: "      void receipt;",
-    run: (mut, base) => {
-      const receipt = { receiptKind: "mem-descriptor", corpusDigest: B64, libraryId: "mem", libraryVersion: "1.0.0", validatorRole: "retained-check", transitionQualification: { claim: "oracle-witness", parityMatrixDigest: B64 }, verdict: "pass", issuedAt: "2026-10-26", evaluatedStack: evaluatedStack(), descriptorPin: pin("generic"), fixtureDigest: B64, severityPolicyDigest: null, ruleVerdicts: [] };
-      const request = { entry: admEntry({ selections: [], ruleSheetPins: [] }), requiredReceipts: [{ receiptKind: "mem-descriptor", libraryId: "mem", libraryVersion: "1.0.0" }], receipts: [receipt] };
-      refusesWith(base, request, "carries transition qualification on a retained check");
-      const verdict = mut.checkAdmission(request);
-      assert.strictEqual(verdict.admitted, true, "mutant must admit the claimed retained check");
-    },
-  },
-  {
-    id: "A10",
-    test: "admission corpus digest match",
-    entry: "admission.ts",
-    find: `    if (receipt.corpusDigest !== entry.corpusDigest) {
-      return \`required receipt ${"${receipt.receiptKind}"} corpusDigest mismatch\`;
-    }`,
-    replace: `    void receipt; void entry;`,
-    run: (mut, base) => {
-      const receipt = parityReceipt({ corpusDigest: A64 });
-      const request = { entry: admEntry(), requiredReceipts: [PARITY_REQ], receipts: [receipt] };
-      refusesWith(base, request, "corpusDigest mismatch");
-      const verdict = mut.checkAdmission(request);
-      assert.strictEqual(verdict.admitted, true, "mutant must admit the wrong corpus");
-    },
-  },
-  {
-    id: "A11",
-    test: "admission transition role gate (reference required)",
-    entry: "admission.ts",
-    find: `    const roleProblem = checkRoleWithVerdicts(receipt, requireReference);
-    if (roleProblem !== null) return roleProblem;`,
-    replace: `    void receipt; void requireReference;`,
-    run: (mut, base) => {
-      const receipt = parityReceipt();
-      const request = { entry: admEntry(), requiredReceipts: [PARITY_REQ], receipts: [receipt], requireReference: true };
-      refusesWith(base, request, "requires the reference");
-      const verdict = mut.checkAdmission(request);
-      assert.strictEqual(verdict.admitted, true, "mutant must admit the oracle where the reference is required");
-    },
-  },
-);
-
 let killed = 0;
-for (const c of cases) {
-  const mut = await mutate(c.entry, c.find, c.replace);
-  const baseNs = clean[c.entry === "digests.ts" ? "digests" : c.entry === "diagnostics.ts" ? "diagnostics" : "admission"];
-  c.run(mut, baseNs, clean.diagnostics, clean.admission);
-  killed += 1;
-  console.log(`KILLED ${c.id} [${c.test}]`);
+for (const mutation of mutations) {
+  const result = await callbacks(mutation);
+  assert.equal(result.count, baseline.count, `setup ${mutation.id}: callback inventory changed`);
+  if (result.failures.length === 0) { console.error(`SURVIVED ${mutation.id}`); continue; }
+  killed++; console.log(`KILLED ${mutation.id}: ${result.failures[0].name}`);
 }
-console.log(`mutants: ${killed}/${cases.length} killed`);
-if (killed !== cases.length) process.exit(1);
+console.log(`runtime mutants: ${killed}/${mutations.length} killed by committed callbacks`);
+assert.equal(killed, mutations.length, "every runtime mutant must be killed");
+
+// Compiler mutations must invalidate a committed @ts-expect-error proof
+// (TS2578). Ordinary source errors are setup errors, not successful kills.
+const compilerMutations = [
+  ["deprecated-reason", "types.ts", 'readonly deprecatedReason: string;', 'readonly deprecatedReason?: string;'],
+  ["deprecated-date", "types.ts", 'readonly deprecatedAt: string;', 'readonly deprecatedAt?: string;'],
+  ["superseded-successor", "types.ts", 'readonly lifecycle: "superseded"; readonly supersededBy: Pin;', 'readonly lifecycle: "superseded"; readonly supersededBy?: Pin;'],
+  ["superseded-migration", "types.ts", 'readonly lifecycle: "superseded"; readonly migrationRef: string', 'readonly lifecycle: "superseded"; readonly migrationRef?: string'],
+  ["guardian-code", "types.ts", 'readonly code: GuardianCode;', 'readonly code: string;'],
+  ["unknown-skill-tool", "catalog.ts", 'export type SkillToolDescriptor = never;', 'export type SkillToolDescriptor = Record<string, unknown>;'],
+  ["artifact-binding", "catalog.ts", 'Extract<ArtifactBinding, { artifactKind: K }>', 'ArtifactBinding'],
+  ["preview-required", "application.ts", 'readonly effectiveProfile: unknown;', 'readonly effectiveProfile?: unknown;'],
+  ["preview-fields", "application.ts", 'export interface ApplyPreview {', 'export interface ApplyPreview { readonly pins?: unknown;'],
+  ["private-preview-closed", "application.ts", 'export type PrivateApplyPreview = never;', 'export type PrivateApplyPreview = unknown;'],
+  ["oracle-witness-required", "catalog.ts", 'readonly validatorRole: "transitional-oracle"; readonly transitionQualification:', 'readonly validatorRole: "transitional-oracle"; readonly transitionQualification?:'],
+  ["retained-claim-forbidden", "catalog.ts", 'readonly transitionQualification?: never', 'readonly transitionQualification?: TransitionQualification'],
+];
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "g0-type-proof-"));
+try {
+  fs.mkdirSync(path.join(scratch, 'src'), { recursive: true });
+  fs.cpSync(source, path.join(scratch, 'src/ontology-guardian'), { recursive: true });
+  fs.mkdirSync(path.join(scratch, 'tests'));
+  fs.copyFileSync(path.join(root, 'tests/ontology-guardian-g0-typeproof.test.ts'), path.join(scratch, 'tests/ontology-guardian-g0-typeproof.test.ts'));
+  for (const file of ['tsconfig.json', 'tsconfig.g0-types.json']) fs.copyFileSync(path.join(root, file), path.join(scratch, file));
+  fs.symlinkSync(path.join(root, 'node_modules'), path.join(scratch, 'node_modules'));
+  function tsc(extra = []) {
+    return spawnSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '--noEmit', '-p', path.join(scratch, 'tsconfig.g0-types.json'), ...extra], { encoding: 'utf8', cwd: scratch });
+  }
+  const compilerBaseline = tsc();
+  assert.equal(compilerBaseline.status, 0, compilerBaseline.stdout + compilerBaseline.stderr);
+  const included = tsc(['--listFilesOnly']);
+  assert.equal(included.status, 0);
+  const proof = path.join(scratch, 'tests/ontology-guardian-g0-typeproof.test.ts');
+  assert.ok(included.stdout.split(/\r?\n/).includes(proof), 'the type proof must actually be compiled');
+  for (const [id, file, find, replacement] of compilerMutations) {
+    const target = path.join(scratch, 'src/ontology-guardian', file), original = fs.readFileSync(target, 'utf8');
+    assert.equal(original.split(find).length - 1, 1, `type mutant anchor ${id}`);
+    fs.writeFileSync(target, original.replace(find, replacement));
+    const result = tsc();
+    fs.writeFileSync(target, original);
+    assert.notEqual(result.status, 0, `SURVIVED type mutant ${id}`);
+    assert.match(result.stdout, /ontology-guardian-g0-typeproof\.test\.ts\(\d+,\d+\): error TS2578/, `type mutant ${id} must be killed by a committed proof`);
+    console.log(`KILLED type-${id}`);
+  }
+  const configFile = path.join(scratch, 'tsconfig.g0-types.json');
+  const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+  config.exclude.push('tests'); fs.writeFileSync(configFile, JSON.stringify(config));
+  assert.ok(!tsc(['--listFilesOnly']).stdout.split(/\r?\n/).includes(proof), 'exclusion mutant must remove the proof and fail the inclusion assertion');
+  console.log('KILLED type-proof-exclusion');
+  console.log(`type mutants: ${compilerMutations.length + 1}/${compilerMutations.length + 1} killed; proof inclusion verified with --listFilesOnly`);
+} finally { fs.rmSync(scratch, { recursive: true, force: true }); delete globalThis[runtimeKey]; }
