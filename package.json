@@ -31,6 +31,18 @@
     "./memory-substrate": {
       "types": "./dist/memory-substrate.d.ts",
       "import": "./dist/memory-substrate.js"
+    },
+    "./mcp-memory": {
+      "types": "./dist/mcp-memory.d.ts",
+      "import": "./dist/mcp-memory.js"
+    },
+    "./registry/manifest": {
+      "types": "./dist/registry/manifest.d.ts",
+      "import": "./dist/registry/manifest.js"
+    },
+    "./registry/definitions": {
+      "types": "./dist/registry/definitions.d.ts",
+      "import": "./dist/registry/definitions.js"
     }
   },
   "bin": {
@@ -39,7 +51,8 @@
   },
   "files": [
     "dist",
-    "src/skills"
+    "src/skills",
+    "registry/entries.v1.json"
   ],
   "scripts": {
     "prebuild": "npm --prefix engram-memory run build",
@@ -126,7 +139,7 @@
     "zod": "^4.6.6"
   },
   "optionalDependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "chokidar": "^5.0.0",
     "officeparser": "^7.0.2",
     "tree-sitter-c": "^0.24.1",
@@ -145,6 +158,8 @@
   },
   "peerDependencies": {
     "@sentropic/agent-stats-core": "^0.3.0",
+    "@sentropic/mcp-broker": "0.1.0",
+    "@sentropic/mcp-platform": "0.4.0",
     "faster-whisper-ts": "^1.2.1",
     "tree-sitter-c-sharp": "^0.23.1",
     "tree-sitter-elixir": "^0.3.5",
@@ -158,6 +173,12 @@
   },
   "peerDependenciesMeta": {
     "@sentropic/agent-stats-core": {
+      "optional": true
+    },
+    "@sentropic/mcp-broker": {
+      "optional": true
+    },
+    "@sentropic/mcp-platform": {
       "optional": true
     },
     "faster-whisper-ts": {

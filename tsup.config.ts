@@ -23,6 +23,12 @@ const optionalRuntimeDeps = [
   "@mixmark-io/domino",
   "@sentropic/agent-stats-core",
   "@sentropic/agent-stats-core/*",
+  "@sentropic/mcp-broker",
+  "@sentropic/mcp-broker/*",
+  "@sentropic/mcp-platform",
+  "@sentropic/mcp-platform/*",
+  "better-sqlite3",
+  "fs-ext",
   "@modelcontextprotocol/sdk",
   "@modelcontextprotocol/sdk/*",
   "chokidar",
@@ -36,7 +42,7 @@ const optionalRuntimeDeps = [
 
 export default defineConfig([
   {
-    entry: { index: "src/index.ts", "llm-mesh": "src/llm-mesh.ts", "memory-tools": "src/memory-tools/index.ts", "time-reference": "src/time-reference/index.ts", "memory-substrate": "src/memory-substrate/index.ts" },
+    entry: { index: "src/index.ts", "llm-mesh": "src/llm-mesh.ts", "memory-tools": "src/memory-tools/index.ts", "time-reference": "src/time-reference/index.ts", "memory-substrate": "src/memory-substrate/index.ts", "mcp-memory": "src/mcp-memory/index.ts", "registry/manifest": "src/registry/manifest.ts", "registry/definitions": "src/registry/definitions.ts" },
     format: ["esm", "cjs"],
     dts: { compilerOptions: { types: ['node'] } },
     sourcemap: true,
