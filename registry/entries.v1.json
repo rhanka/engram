@@ -124,10 +124,16 @@
       ],
       "assets": [
         {
-          "role": "manifest",
+          "role": "registry-package",
           "path": "dist/registry/manifest.js",
           "mediaType": "application/javascript",
           "sha256": "f2d9f9d4829ab49ac5c0736cb7ce75ddc252c64283149e96976194cac0e7c2be"
+        },
+        {
+          "role": "manifest",
+          "path": "dist/registry/provider-manifest.js",
+          "mediaType": "application/javascript",
+          "sha256": "a88ae7f11e96475422674fb28b05966c64ba1e71b950e3cc78327cebc34c1ade"
         },
         {
           "role": "manifest",
@@ -145,13 +151,13 @@
           "role": "provider",
           "path": "dist/mcp-memory.js",
           "mediaType": "application/javascript",
-          "sha256": "a40a69294f05737eb66a60a4b660dd6e45f0ae6d8f67278bc85644351eec8637"
+          "sha256": "8c9522673cc2c00bfe634111c71b85dbc50adfb058b36b20c2fcb243cf255f3b"
         },
         {
           "role": "validator",
-          "path": "dist/mcp-memory.cjs",
+          "path": "dist/registry/validator.js",
           "mediaType": "application/javascript",
-          "sha256": "1d46d0079d9b3389f62b39d1b2cf4c84dfb8a9a41b7d3f8e1e0f7c1a5b7abe7c"
+          "sha256": "3e13743aa06cfdc8691eb8581846372c4a23bea93bc2e7b60092f88ac7bb8ef2"
         },
         {
           "role": "wire-profile",
@@ -257,7 +263,7 @@
         }
       ],
       "mcp": {
-        "manifestAsset": "dist/registry/manifest.js",
+        "manifestAsset": "dist/registry/provider-manifest.js",
         "connectorIds": [
           "engram-memory"
         ],
