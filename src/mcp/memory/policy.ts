@@ -719,6 +719,7 @@ export interface MemoryMutationRecoveryPortV1<TOutput = unknown> {
     reservationRef: OpaqueRef,
     confirmationRef: OpaqueRef,
     operationDigest: Digest,
+    currentSession?: MemoryMutationConfirmationSessionV1,
   ): Promise<PolicyValidationResult<MemoryMutationBindingV1<TOutput>>>;
   claimFencedExecution(
     reservationRef: OpaqueRef,
@@ -732,6 +733,15 @@ export interface MemoryMutationRecoveryPortV1<TOutput = unknown> {
     reservationRef: OpaqueRef,
     output: TOutput,
   ): Promise<PolicyValidationResult<MemoryMutationBindingV1<TOutput>>>;
+}
+
+/** Current verified identity for durable confirmation association. */
+export interface MemoryMutationConfirmationSessionV1 {
+  readonly principal_namespace: string;
+  readonly principal_id: string;
+  readonly tenant_id: string;
+  readonly session_id: string;
+  readonly transport_attachment_ref?: string;
 }
 
 function isValidPolicyVersionRef(value: unknown): value is OpaqueRef {
