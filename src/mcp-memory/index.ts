@@ -22,6 +22,7 @@ export {
 } from './provider.js';
 export type {
   McpMemoryCapabilityList,
+  McpMemoryDispatchPlanV1,
   McpMemoryInvokeRequest,
   McpMemoryProviderOptions,
   McpMemoryResourceRequest,
@@ -45,3 +46,28 @@ export type {
   McpMemoryDiscoveredTool,
   ResolveMemoryHostContext,
 } from './server.js';
+
+/**
+ * Host-composition helpers (L4 acceptance and host provisioning only).
+ *
+ * Re-exported canonical constructors and closed policy functions so a host
+ * can provision the REAL canonical implementation (in-memory non-native
+ * store, guarded engine, read facets, operation digests) behind the injected
+ * ports without forking contracts. Production hosts supply their own durable
+ * backend; these helpers change no product behavior.
+ */
+export { createMemoryPortV2 } from '../../engram-memory/dist/engine.js';
+export { createMemoryReadFacetsV1 } from '../../engram-memory/dist/reads.js';
+export { createInMemoryCanonicalMemoryStoreV1 } from '../../engram-memory/dist/memory-store.js';
+export {
+  computeMemoryMutationOperationDigestV1,
+  extractMemoryMutationLookupKeyV1,
+  projectMemoryMutationPolicyVersionsV1,
+  validateMemoryMutationPreimageV1,
+} from '../mcp/memory/policy.js';
+export {
+  ENGRAM_MEMORY_WIRE_PROFILE_V1,
+  MEMORY_MCP_JSON_SCHEMA_DIALECT_V1,
+} from '../mcp/memory/schemas.js';
+export { validateMemoryPublisherAssetsV1 } from '../mcp/memory/receipts.js';
+export type { MemoryPublisherAssetsV1 } from '../mcp/memory/receipts.js';

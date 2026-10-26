@@ -56,7 +56,7 @@
   ],
   "scripts": {
     "prebuild": "npm --prefix engram-memory run build",
-    "build": "node scripts/gen-st-tokens.mjs && tsup && npm run build:studio",
+    "build": "node scripts/gen-st-tokens.mjs && tsup && node scripts/gen-mcp-memory-assets.mjs && npm run build:studio",
     "build:server": "node scripts/gen-st-tokens.mjs && tsup",
     "build:studio": "node scripts/build-studio-app.mjs",
     "dev": "tsup --watch",
