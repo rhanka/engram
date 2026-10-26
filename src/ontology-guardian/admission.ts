@@ -2,7 +2,12 @@
 // result evidence explicitly; never falls back to latest.
 import { canonicalBytes } from "./canonical.js";
 import { severityPolicyDigestOf } from "./digests.js";
-import { assertValidCompiledOptions, assertValidSetting } from "./diagnostics.js";
+import {
+  assertValidCompiledOptions,
+  assertValidSetting,
+  nativeEffectiveSeverity,
+} from "./diagnostics.js";
+import { PINNED_CORPUS_AUTHORITY_TAG } from "./catalog.js";
 import { isDigest } from "./types.js";
 import type { CompiledSetting } from "./diagnostics.js";
 import type { Digest, DigestEvidence, Pin } from "./types.js";
@@ -219,22 +224,56 @@ type SelectionRows = {
 };
 
 /**
+ * Effective severity of one selected rule from the native settings (§5.3):
+ * the pinned native predicate over the rule's setting row. A rule without
+ * its setting row has no bound effective severity and refuses. Where the
+ * compiler looks up `profile:<id>`, a bare row id matches that key.
+ */
+function effectiveSeverityOf(ruleId: string, settings: readonly CompiledSetting[]): string {
+  let matches = settings.filter((s) => s.rule === ruleId);
+  if (matches.length === 0) matches = settings.filter((s) => s.rule === `profile:${ruleId}`);
+  if (matches.length === 0) throw new Error(`no-effective-severity:${ruleId}`);
+  const last = matches[matches.length - 1] as CompiledSetting;
+  return nativeEffectiveSeverity(last.severity);
+}
+
+/**
  * Every selected rule row requires exactly its own verdict row: severity and
  * study-disposition presence must match the selection, `not-evaluated`
  * refuses, `off` is admitted only where the selection itself is `off`,
- * and verdicts for unknown rules refuse. Missing rows refuse.
+ * duplicate verdict rows refuse, and verdicts for unknown rules refuse.
+ * Missing rows refuse. Where native `settings` are supplied, each selected
+ * row must also equal the effective severity derived from those settings,
+ * so a row relabelled `off` while the settings still select `warn` refuses.
  */
 function checkVerdictsAgainstSelection(
   receiptKind: string,
   verdicts: readonly RuleVerdict[],
   selection: SelectionRows | null,
+  settings: readonly CompiledSetting[] | null,
 ): string | null {
   if (selection === null) {
     if (verdicts.length !== 0) return `receipt ${receiptKind} carries rule verdicts with no rule sheet`;
     return null;
   }
   const rows = new Map(selection.rules.map((r) => [r.ruleId, r]));
+  if (settings !== null) {
+    for (const row of selection.rules) {
+      let effective: string;
+      try {
+        effective = effectiveSeverityOf(row.ruleId, settings);
+      } catch {
+        return `receipt ${receiptKind} no effective severity for selected rule ${row.ruleId}`;
+      }
+      if (row.severity !== effective) {
+        return `receipt ${receiptKind} selected severity mismatch on rule ${row.ruleId}`;
+      }
+    }
+  }
+  const seen = new Set<string>();
   for (const v of verdicts) {
+    if (seen.has(v.ruleId)) return `receipt ${receiptKind} duplicate verdict for rule ${v.ruleId}`;
+    seen.add(v.ruleId);
     const row = rows.get(v.ruleId);
     if (row === undefined) return `receipt ${receiptKind} verdict for unknown rule ${v.ruleId}`;
     if (v.verdict === "not-evaluated") {
@@ -261,11 +300,13 @@ function checkVerdictsAgainstSelection(
 }
 
 /**
- * §5.5 gate. First requires resolved result evidence on both sides with equal
- * digests (a passing receipt with unresolved evidence refuses, FX-RCPT-UNRESOLVED),
- * then compares stack order, pinsDigest and family/selection proof bindings;
- * every mismatch refuses. Each requirement binds exactly one receipt by
- * implementing library, version, proof set and qualification scope.
+ * §5.5 gate as data plus one evaluator. First requires resolved result
+ * evidence on both sides with equal digests (a passing receipt with
+ * unresolved evidence refuses, FX-RCPT-UNRESOLVED), then compares stack
+ * order, pinsDigest and family/selection proof bindings; every mismatch
+ * refuses. Requirements sort by canonical key and receipts match as a set:
+ * a receipt is consumed only after its full scope matches, so the same
+ * inputs in any order give the same verdict.
  */
 export function checkAdmission(request: AdmissionRequest): AdmissionVerdict {
   const { entry, receipts, requiredReceipts } = request;
@@ -281,41 +322,37 @@ export function checkAdmission(request: AdmissionRequest): AdmissionVerdict {
     return refuse("private entry carries public selections");
   }
 
+  const orderedRequirements = [...requiredReceipts].sort((a, b) =>
+    requirementKey(a) < requirementKey(b) ? -1 : requirementKey(a) > requirementKey(b) ? 1 : 0,
+  );
+  const orderedReceipts = receipts.map((_, index) => index).sort((a, b) => {
+    const ka = receiptKey(receipts[a] as Receipt);
+    const kb = receiptKey(receipts[b] as Receipt);
+    return ka < kb ? -1 : ka > kb ? 1 : 0;
+  });
   const consumed = new Set<number>();
-  for (const requirement of requiredReceipts) {
-    const index = receipts.findIndex((receipt, i) => !consumed.has(i) && receiptMatches(receipt, requirement));
-    if (index === -1) {
+  for (const requirement of orderedRequirements) {
+    let firstProblem: string | null = null;
+    let matched: number | null = null;
+    for (const index of orderedReceipts) {
+      if (consumed.has(index)) continue;
+      const receipt = receipts[index] as Receipt;
+      if (!receiptMatches(receipt, requirement)) continue;
+      if (!receiptScopeMatches(receipt, requirement)) continue;
+      const problem = validateReceipt(entry, receipt, requirement, requireReference);
+      if (problem === null) {
+        matched = index;
+        break;
+      }
+      if (firstProblem === null) firstProblem = problem;
+    }
+    if (matched === null) {
+      const detail = firstProblem === null ? "no candidate" : firstProblem;
       return refuse(
-        `required receipt ${requirement.receiptKind} from ${requirement.libraryId}@${requirement.libraryVersion} missing`,
+        `required receipt ${requirement.receiptKind} from ${requirement.libraryId}@${requirement.libraryVersion} missing: ${detail}`,
       );
     }
-    consumed.add(index);
-    const receipt = receipts[index] as Receipt;
-    if (receipt.verdict !== "pass") return refuse(`required receipt ${receipt.receiptKind} verdict fail`);
-
-    const receiptDigests = checkReceiptDigests(receipt);
-    if (receiptDigests !== null) return refuse(receiptDigests);
-
-    if (receipt.corpusDigest !== entry.corpusDigest) {
-      return refuse(`required receipt ${receipt.receiptKind} corpusDigest mismatch`);
-    }
-    if (receipt.evaluatedStack.resultEvidence.evidenceState !== "resolved") {
-      return refuse(`required receipt ${receipt.receiptKind} resultEvidence unresolved`);
-    }
-    if (!evidenceEqual(entry.resultEvidence, receipt.evaluatedStack.resultEvidence)) {
-      return refuse(`required receipt ${receipt.receiptKind} result digest mismatch`);
-    }
-    if (!pinsEqual(entry.stack, receipt.evaluatedStack.stack)) {
-      return refuse(`required receipt ${receipt.receiptKind} evaluated stack mismatch`);
-    }
-    if (receipt.evaluatedStack.pinsDigest !== entry.pinsDigest) {
-      return refuse(`required receipt ${receipt.receiptKind} pinsDigest mismatch`);
-    }
-    const roleProblem = checkRoleWithVerdicts(receipt, requireReference);
-    if (roleProblem !== null) return refuse(roleProblem);
-
-    const armProblem = checkArm(entry, receipt, requirement);
-    if (armProblem !== null) return refuse(armProblem);
+    consumed.add(matched);
   }
   return { admitted: true };
 }
@@ -332,19 +369,48 @@ function receiptMatches(receipt: Receipt, requirement: AdmissionRequirement): bo
   return true;
 }
 
+/**
+ * Typed transition-qualification gate (§5.5 common fields): the role/claim
+ * union is exhaustive. `retained-check` carries no transition claim;
+ * `transitional-oracle` requires the `oracle-witness` arm; only
+ * `qualified-ds-execution` with the full `reference-qualified` arm (matrix
+ * digest, executor pin, gate reference, proven parity) satisfies the switch.
+ * Every required qualification value is validated, never assumed.
+ */
 function checkRoleWithVerdicts(receipt: Receipt, requireReference: boolean): string | null {
+  const kind = receipt.receiptKind;
+  const q = receipt.transitionQualification;
   if (receipt.validatorRole === "qualified-ds-execution") {
-    const q = receipt.transitionQualification;
     if (q === undefined || q.claim !== "reference-qualified") {
-      return `receipt ${receipt.receiptKind} claims qualified-ds-execution without reference-qualified evidence`;
+      return `receipt ${kind} claims qualified-ds-execution without reference-qualified evidence`;
+    }
+    if (!isDigest(q.parityMatrixDigest)) {
+      return `receipt ${kind} reference-qualified parityMatrixDigest malformed`;
+    }
+    const executor = pinProblem(q.qualifiedExecutorPin, `receipt ${kind} qualifiedExecutorPin`);
+    if (executor !== null) return executor;
+    if (typeof q.gateEvidenceRef !== "string" || q.gateEvidenceRef === "") {
+      return `receipt ${kind} reference-qualified gateEvidenceRef missing`;
     }
     if (activeVerdicts(receipt).some((r) => r.parity === "open")) {
-      return `receipt ${receipt.receiptKind} has open parity but claims the reference role`;
+      return `receipt ${kind} has open parity but claims the reference role`;
     }
     return null;
   }
   if (requireReference) {
-    return `receipt ${receipt.receiptKind} names ${receipt.validatorRole} where the gate requires the reference`;
+    return `receipt ${kind} names ${receipt.validatorRole} where the gate requires the reference`;
+  }
+  if (receipt.validatorRole === "retained-check") {
+    if (q !== undefined) {
+      return `receipt ${kind} carries transition qualification on a retained check`;
+    }
+    return null;
+  }
+  if (q === undefined || q.claim !== "oracle-witness") {
+    return `receipt ${kind} names transitional-oracle without oracle-witness evidence`;
+  }
+  if (!isDigest(q.parityMatrixDigest)) {
+    return `receipt ${kind} oracle-witness parityMatrixDigest malformed`;
   }
   return null;
 }
@@ -365,10 +431,145 @@ function scopeMatches(
   return true;
 }
 
+/**
+ * Canonical requirement key: every field that selects a distinct receipt.
+ * Requirements sort by this key so the same set in any order matches the
+ * same way.
+ */
+function requirementKey(requirement: AdmissionRequirement): string {
+  return [
+    requirement.receiptKind,
+    requirement.libraryId,
+    requirement.libraryVersion,
+    requirement.proofSet ?? "",
+    requirement.phase ?? "",
+    requirement.readinessPolicy ?? "",
+  ].join("|");
+}
+
+/** Canonical receipt key: the requirement key fields as the receipt carries them. */
+function receiptKey(receipt: Receipt): string {
+  const base = [receipt.receiptKind, receipt.libraryId, receipt.libraryVersion];
+  if (receipt.receiptKind === "bpmn-parity") {
+    const evidence = receipt.proofBindings.compiledLintEvidence;
+    if (evidence.scope === "public") {
+      const options = evidence.compiledOptions as { phase?: unknown; readinessPolicy?: unknown } | undefined;
+      const phase = typeof options?.phase === "string" ? options.phase : "unknown";
+      const policy = typeof options?.readinessPolicy === "string" ? options.readinessPolicy : "unknown";
+      return [...base, receipt.proofBindings.proofSet, phase, policy].join("|");
+    }
+    return [...base, receipt.proofBindings.proofSet, "private-reference"].join("|");
+  }
+  return [...base, receipt.severityPolicyDigest ?? "null"].join("|");
+}
+
+/**
+ * Scope pre-match before consuming a candidate: a scoped requirement never
+ * consumes a receipt whose own scope disagrees. For the private reference
+ * and digest-bound arms the full scope binds in the arm check below.
+ */
+function receiptScopeMatches(receipt: Receipt, requirement: AdmissionRequirement): boolean {
+  if (requirement.phase === undefined && requirement.readinessPolicy === undefined) return true;
+  if (receipt.receiptKind === "bpmn-parity") {
+    const evidence = receipt.proofBindings.compiledLintEvidence;
+    if (evidence.scope !== "public") return true;
+    const options = evidence.compiledOptions as unknown;
+    if (typeof options !== "object" || options === null) return false;
+    return scopeMatches(options as { phase: string; readinessPolicy: string }, requirement);
+  }
+  return (receipt.severityPolicyDigest ?? null) !== null;
+}
+
+/**
+ * Fail-closed per-candidate validation: every check for one requirement and
+ * one receipt. A throwing check rejects the candidate, never the gate.
+ */
+function validateReceipt(
+  entry: AdmissionEntry,
+  receipt: Receipt,
+  requirement: AdmissionRequirement,
+  requireReference: boolean,
+): string | null {
+  try {
+    if (receipt.verdict !== "pass") return `required receipt ${receipt.receiptKind} verdict fail`;
+
+    const receiptDigests = checkReceiptDigests(receipt);
+    if (receiptDigests !== null) return receiptDigests;
+
+    if (receipt.corpusDigest !== entry.corpusDigest) {
+      return `required receipt ${receipt.receiptKind} corpusDigest mismatch`;
+    }
+    if (receipt.evaluatedStack.resultEvidence.evidenceState !== "resolved") {
+      return `required receipt ${receipt.receiptKind} resultEvidence unresolved`;
+    }
+    if (!evidenceEqual(entry.resultEvidence, receipt.evaluatedStack.resultEvidence)) {
+      return `required receipt ${receipt.receiptKind} result digest mismatch`;
+    }
+    if (!pinsEqual(entry.stack, receipt.evaluatedStack.stack)) {
+      return `required receipt ${receipt.receiptKind} evaluated stack mismatch`;
+    }
+    if (receipt.evaluatedStack.pinsDigest !== entry.pinsDigest) {
+      return `required receipt ${receipt.receiptKind} pinsDigest mismatch`;
+    }
+    const roleProblem = checkRoleWithVerdicts(receipt, requireReference);
+    if (roleProblem !== null) return roleProblem;
+
+    return checkArm(entry, receipt, requirement);
+  } catch (error) {
+    return `required receipt ${receipt.receiptKind} rejected: ${(error as Error).message}`;
+  }
+}
+
+/**
+ * Rule-sheet applicability from the actual sheets: public selections, the
+ * owner-side selection binding, or pinned sheet pins. A null policy digest
+ * is the explicit no-rule-sheet binding only where none of these apply.
+ */
+function ruleSheetsApply(entry: AdmissionEntry): boolean {
+  return entry.selections.length !== 0 || entry.ownerSelection !== undefined || entry.ruleSheetPins.length !== 0;
+}
+
+/**
+ * Bind a non-null policy digest to the entry selection it names: the public
+ * selection with the same digest in the required scope, or the owner-side
+ * selection binding for a private entry.
+ */
+function selectionForDigest(
+  entry: AdmissionEntry,
+  digest: Digest,
+  requirement: AdmissionRequirement,
+): SelectionRows | null {
+  if (entry.visibility === "private") {
+    const owner = entry.ownerSelection;
+    if (owner === undefined) return null;
+    if (owner.severityPolicyDigest !== digest) return null;
+    if (!scopeMatches(owner, requirement)) return null;
+    return owner;
+  }
+  const selection = entry.selections.find(
+    (s) => s.severityPolicyDigest === digest && scopeMatches(s, requirement),
+  );
+  return selection ?? null;
+}
+
+/**
+ * Admission rule table: one row per receipt kind. Each row lists the receipt
+ * kind it needs, every required binding (profile, rule sheets, policy,
+ * corpus authority, expected entry pins), the transition-qualification
+ * constraint (in `checkRoleWithVerdicts`), the selection the digest must
+ * bind, and the public versus owner-side selection path.
+ */
 function checkArm(entry: AdmissionEntry, receipt: Receipt, requirement: AdmissionRequirement): string | null {
   switch (receipt.receiptKind) {
     case "bpmn-parity": {
       const pb = receipt.proofBindings;
+      // Corpus authority at the pinned tag and hash, checked before use (§5.5).
+      if (pb.corpusAuthority.tag !== PINNED_CORPUS_AUTHORITY_TAG) {
+        return "bpmn-parity corpusAuthority tag mismatch";
+      }
+      if (pb.corpusAuthority.manifestDigest !== entry.corpusDigest) {
+        return "bpmn-parity corpusAuthority manifestDigest mismatch";
+      }
       if (!pinsEqual([pb.profilePin], [entry.profilePin])) return "bpmn-parity profilePin mismatch";
       if (!pinsEqual(pb.ruleSheetPins, entry.ruleSheetPins)) return "bpmn-parity ruleSheetPins mismatch";
       const evidence = pb.compiledLintEvidence;
@@ -394,26 +595,23 @@ function checkArm(entry: AdmissionEntry, receipt: Receipt, requirement: Admissio
       if (selection === undefined) {
         return "bpmn-parity selection, settings or compiled options mismatch the receipt binding";
       }
-      return checkVerdictsAgainstSelection(receipt.receiptKind, receipt.ruleVerdicts, selection);
+      // Effective severities derive from the native settings (§5.3).
+      return checkVerdictsAgainstSelection(receipt.receiptKind, receipt.ruleVerdicts, selection, evidence.settings);
     }
     case "bpmn-bijection": {
       if (receipt.descriptorCoverage.covered !== receipt.descriptorCoverage.total) {
         return "bpmn-bijection descriptor coverage incomplete";
       }
-      return null;
+      return checkPolicyDigestBinding(entry, receipt, requirement);
     }
     case "family-corpus":
     case "h2a-vocabulary":
     case "mem-descriptor": {
-      // H2A and MEM run retained family checks only: no oracle role, no
-      // transition claim, no BPMN proof fields (§5.5, FX-RCPT-ARMS).
-      if (receipt.receiptKind !== "family-corpus") {
-        if (receipt.validatorRole !== "retained-check") {
-          return `receipt ${receipt.receiptKind} must use validatorRole retained-check`;
-        }
-        if (receipt.transitionQualification !== undefined) {
-          return `receipt ${receipt.receiptKind} carries transition qualification on a retained check`;
-        }
+      // H2A and MEM run retained family checks only: the retained-check role
+      // with no oracle or reference claim (§5.5, FX-RCPT-ARMS). The
+      // no-transition-claim half is enforced in `checkRoleWithVerdicts`.
+      if (receipt.receiptKind !== "family-corpus" && receipt.validatorRole !== "retained-check") {
+        return `receipt ${receipt.receiptKind} must use validatorRole retained-check`;
       }
       if (receipt.fixtureDigest !== entry.corpusDigest) return `${receipt.receiptKind} fixtureDigest mismatch`;
       if (receipt.receiptKind === "h2a-vocabulary") {
@@ -424,18 +622,24 @@ function checkArm(entry: AdmissionEntry, receipt: Receipt, requirement: Admissio
       if (receipt.receiptKind === "mem-descriptor" && !pinsEqual([receipt.descriptorPin], [entry.profilePin])) {
         return "mem-descriptor descriptorPin mismatch";
       }
-      if (receipt.severityPolicyDigest === null) {
-        if (entry.selections.length !== 0) return `${receipt.receiptKind} null selection with rule sheets`;
-        return checkVerdictsAgainstSelection(receipt.receiptKind, activeVerdicts(receipt), null);
+      // Private entries bind through the owner-side selection, never through
+      // the public selections array (§5.5 storage by reference).
+      if (entry.visibility === "private") {
+        return checkPrivateFamilyBinding(entry, receipt, requirement);
+      }
+      const digest = receipt.severityPolicyDigest ?? null;
+      if (digest === null) {
+        if (ruleSheetsApply(entry)) return `${receipt.receiptKind} null selection binding with rule sheets`;
+        return checkVerdictsAgainstSelection(receipt.receiptKind, activeVerdicts(receipt), null, null);
       }
       const selection = entry.selections.find(
         (s) =>
-          s.severityPolicyDigest === receipt.severityPolicyDigest &&
+          s.severityPolicyDigest === digest &&
           scopeMatches(s, requirement) &&
-          recomputedSelectionDigest(s) === receipt.severityPolicyDigest,
+          recomputedSelectionDigest(s) === digest,
       );
       if (selection === undefined) return `${receipt.receiptKind} selection binding stale or unknown`;
-      return checkVerdictsAgainstSelection(receipt.receiptKind, activeVerdicts(receipt), selection);
+      return checkVerdictsAgainstSelection(receipt.receiptKind, activeVerdicts(receipt), selection, null);
     }
     case "mechanism-compat":
     case "contract-verdict": {
@@ -451,7 +655,7 @@ function checkArm(entry: AdmissionEntry, receipt: Receipt, requirement: Admissio
       ) {
         return `${receipt.receiptKind} compatibilityMatrixVersion mismatch`;
       }
-      return null;
+      return checkPolicyDigestBinding(entry, receipt, requirement);
     }
     case "theme-invariance": {
       if (!pinsEqual([receipt.styledProfilePin], [entry.profilePin])) {
@@ -462,9 +666,55 @@ function checkArm(entry: AdmissionEntry, receipt: Receipt, requirement: Admissio
       if (b.contentDigest !== a.contentDigest || b.pinsDigest !== a.pinsDigest || b.resultDigest !== a.resultDigest) {
         return "theme-invariance before/after mismatch";
       }
-      return null;
+      return checkPolicyDigestBinding(entry, receipt, requirement);
     }
   }
+}
+
+/**
+ * Policy-digest binding for arms without rule verdicts (bijection,
+ * mechanism, contract, theme): a null digest is the explicit no-rule-sheet
+ * binding only where no rule sheet applies; a digest must name the entry
+ * selection (public or owner-side) in the required scope.
+ */
+function checkPolicyDigestBinding(
+  entry: AdmissionEntry,
+  receipt: Extract<Receipt, { receiptKind: "bpmn-bijection" | "mechanism-compat" | "contract-verdict" | "theme-invariance" }>,
+  requirement: AdmissionRequirement,
+): string | null {
+  const kind = receipt.receiptKind;
+  const digest = receipt.severityPolicyDigest ?? null;
+  if (digest === null) {
+    if (ruleSheetsApply(entry)) return `${kind} null selection binding with rule sheets`;
+    return null;
+  }
+  if (selectionForDigest(entry, digest, requirement) === null) {
+    return `${kind} selection binding stale or unknown`;
+  }
+  return null;
+}
+
+/**
+ * Owner-side selection binding for private family, vocabulary and
+ * descriptor receipts: applicability comes from the actual rule sheets,
+ * never from the (empty) public selections array.
+ */
+function checkPrivateFamilyBinding(
+  entry: AdmissionEntry,
+  receipt: Extract<Receipt, { receiptKind: "family-corpus" | "h2a-vocabulary" | "mem-descriptor" }>,
+  requirement: AdmissionRequirement,
+): string | null {
+  const kind = receipt.receiptKind;
+  const digest = receipt.severityPolicyDigest ?? null;
+  if (digest === null) {
+    if (ruleSheetsApply(entry)) return `${kind} null selection binding with rule sheets`;
+    return checkVerdictsAgainstSelection(kind, activeVerdicts(receipt), null, null);
+  }
+  const owner = entry.ownerSelection;
+  if (owner === undefined) return `${kind} private entry without owner selection binding`;
+  if (owner.severityPolicyDigest !== digest) return `${kind} owner selection digest mismatch`;
+  if (!scopeMatches(owner, requirement)) return `${kind} owner selection outside required scope`;
+  return checkVerdictsAgainstSelection(kind, activeVerdicts(receipt), owner, null);
 }
 
 function validatedCompiled(options: CompiledLintOptions, settings: readonly CompiledSetting[]): void {
@@ -522,5 +772,7 @@ function checkPrivateParity(
     return "bpmn-parity owner selection digest mismatch";
   }
   if (!scopeMatches(owner, requirement)) return "bpmn-parity owner selection outside required scope";
-  return checkVerdictsAgainstSelection(receipt.receiptKind, receipt.ruleVerdicts, owner);
+  // The full owner evidence stays owner-side; the guardian checks the
+  // opaque binding (digest, scope, verdict rows), never the settings.
+  return checkVerdictsAgainstSelection(receipt.receiptKind, receipt.ruleVerdicts, owner, null);
 }
