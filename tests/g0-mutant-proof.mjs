@@ -99,6 +99,7 @@ for (const [key, replacement] of [["bindings", "[]"], ["compiledRules", "[]"]]) 
   mutate(`native-expected-${key}`, "admission.ts", 'if (canonicalBytes(compiledOptions) !== canonicalBytes(selection.expectedCompiledOptions)) return false;', `if (canonicalBytes({ ...compiledOptions, ${key}: ${replacement} }) !== canonicalBytes({ ...selection.expectedCompiledOptions, ${key}: ${replacement} })) return false;`);
 }
 mutate("derived-obligations", "admission.ts", "const requiredReceipts = deriveRequirements(entry);", "const requiredReceipts = [];" );
+mutate("sheetless-selection-duplication", "admission.ts", "for (const selection of ruleSheetsApply(entry) ? scope.selections : [{}])", "for (const selection of scope.selections)");
 mutate("sheet-completeness", "admission.ts", 'if (canonicalBytes(selection.rules.map((r) => r.ruleId)) !== canonicalBytes(ids)) return "incomplete or duplicate selected rules";', 'void ids;');
 mutate("sheet-settings-completeness", "admission.ts", 'if (publicSelection.settings.some((s) => !ids.includes(s.rule.replace(/^profile:/, "")))) return "unlisted effective setting";', 'void ids;');
 mutate("public-policy-recomputation", "admission.ts", 'if (recomputedSelectionDigest(publicSelection) !== selection.severityPolicyDigest) return "selection digest does not recompute";', 'void publicSelection;');
@@ -155,6 +156,8 @@ assert.equal(killed, mutations.length, "every runtime mutant must be killed");
 // Compiler mutations must invalidate a committed @ts-expect-error proof
 // (TS2578). Ordinary source errors are setup errors, not successful kills.
 const compilerMutations = [
+  ["published-corpus-required", "types.ts", 'readonly lifecycle: "published" | "deprecated" | "superseded"; readonly corpusRef: CorpusRef;', 'readonly lifecycle: "published" | "deprecated" | "superseded"; readonly corpusRef?: CorpusRef;'],
+  ["published-digests-required", "types.ts", 'readonly corpusRef: CorpusRef; readonly digests: RecordDigests', 'readonly corpusRef: CorpusRef; readonly digests?: RecordDigests'],
   ["deprecated-reason", "types.ts", 'readonly deprecatedReason: string;', 'readonly deprecatedReason?: string;'],
   ["deprecated-date", "types.ts", 'readonly deprecatedAt: string;', 'readonly deprecatedAt?: string;'],
   ["superseded-successor", "types.ts", 'readonly lifecycle: "superseded"; readonly supersededBy: Pin;', 'readonly lifecycle: "superseded"; readonly supersededBy?: Pin;'],
