@@ -33,8 +33,14 @@ import { createDisabledTrace } from './mcp-memory-disabled-trace.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HERE);
 const NPM = process.env.MCP_L4_NPM_BIN ?? '/home/antoinefa/.npm-global/bin/npm';
-const P2_BASE = '/home/antoinefa/src/sentropic/.tmp/engram-l4-handoff-p2/tools/memory-mcp-l5/artifacts';
-const P2_MANIFEST = join(P2_BASE, 'pre-candidate-manifest.json');
+// P3 archives are byte-identical to the staged P2 archives, so the same
+// staging directory serves both; only the manifest identity below is P3.
+// The P3 manifest itself is read from the frozen sentropic commit.
+const SENTROPIC_REPO = '/home/antoinefa/src/sentropic';
+const P3_COMMIT = 'c919b638686fb93c8c90a2634d3c004fd25348b3';
+const P3_MANIFEST_REF = `${P3_COMMIT}:tools/memory-mcp-l5/artifacts/pre-candidate-manifest.json`;
+const P3_BASE = '/home/antoinefa/src/sentropic/.tmp/engram-l4-handoff-p2/tools/memory-mcp-l5/artifacts';
+const P3_DIGEST = '1c96bada2a749155f29aae763fa73ea6379c385d619f70614110f59b6b10b730';
 const SDK_PINNED = '1.32.2';
 
 function sha256(bytes) {
@@ -50,14 +56,15 @@ function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-export function verifyP2Archives() {
-  if (sha256(readFileSync(P2_MANIFEST)) !== '2b85ff28b6fe06bda0abcdc19255f61a1ed1e4b7cfbb40c2e881c98dd234424b') throw new Error('P2 manifest identity mismatch');
-  const manifest = readJson(P2_MANIFEST);
+export function verifyP3Archives() {
+  const manifestBytes = run('git', ['-C', SENTROPIC_REPO, 'show', P3_MANIFEST_REF]);
+  if (sha256(manifestBytes) !== P3_DIGEST) throw new Error('P3 manifest identity mismatch');
+  const manifest = JSON.parse(manifestBytes);
   for (const artifact of manifest.artifacts) {
-    const archivePath = join(P2_BASE, artifact.archive.replace(/^tools\/memory-mcp-l5\/artifacts\//, ''));
+    const archivePath = join(P3_BASE, artifact.archive.replace(/^tools\/memory-mcp-l5\/artifacts\//, ''));
     const bytes = readFileSync(archivePath);
-    if (sha256(bytes) !== artifact.sha256) throw new Error(`P2 sha256 mismatch for ${artifact.name}`);
-    if (integrityOf(bytes) !== artifact.integrity) throw new Error(`P2 integrity mismatch for ${artifact.name}`);
+    if (sha256(bytes) !== artifact.sha256) throw new Error(`P3 sha256 mismatch for ${artifact.name}`);
+    if (integrityOf(bytes) !== artifact.integrity) throw new Error(`P3 integrity mismatch for ${artifact.name}`);
   }
   return manifest;
 }
@@ -96,9 +103,9 @@ function installConsumer(consumerDir, tarball, extraArchives = [], env = {}, sdk
   if (result.status !== 0) throw new Error('consumer install failed: ' + out);
 }
 
-function p2ArchivePaths(manifest) {
+function p3ArchivePaths(manifest) {
   return manifest.artifacts.map((artifact) =>
-    join(P2_BASE, artifact.archive.replace(/^tools\/memory-mcp-l5\/artifacts\//, '')),
+    join(P3_BASE, artifact.archive.replace(/^tools\/memory-mcp-l5\/artifacts\//, '')),
   );
 }
 
@@ -550,7 +557,7 @@ assert.equal(typeof broker.CompiledMemoryDispatch, 'function');
 assert.equal(typeof broker.bindMemoryInvocation, 'function');
 assert.equal(typeof broker.MemoryDispatchRefusal, 'function');
 
-// Manifest tools match the frozen P2 platform tools field by field.
+// Manifest tools match the frozen P3 platform tools field by field.
 const names = tools.map((t) => t.name).sort();
 assert.deepEqual(names, ['engram_memory_capture','engram_memory_forget','engram_memory_get','engram_memory_request_admission','engram_memory_search','engram_memory_withdraw']);
 for (const tool of tools) {
@@ -1271,12 +1278,12 @@ async function assertCandidateManifest(packed) {
 }
 
 export async function runPackedAcceptance() {
-  const manifest = verifyP2Archives();
+  const manifest = verifyP3Archives();
   const work = mkdtempSync(join(tmpdir(), 'mcp-l4-'));
   try {
     const packed = packCandidate(work);
     const enabledDir = join(work, 'enabled');
-    installConsumer(enabledDir, packed.tarball, p2ArchivePaths(manifest), { npm_config_cache: join(work, 'enabled-cache') }, SDK_PINNED, true);
+    installConsumer(enabledDir, packed.tarball, p3ArchivePaths(manifest), { npm_config_cache: join(work, 'enabled-cache') }, SDK_PINNED, true);
     const enabledSdk = readJson(join(enabledDir, 'node_modules/@modelcontextprotocol/sdk/package.json')).version;
     if (enabledSdk !== SDK_PINNED || enabledSdk !== readJson(join(ROOT, 'candidate-manifest.json')).sdkPinned) {
       throw new Error('enabled consumer SDK differs from the pinned candidate SDK');
@@ -1318,7 +1325,7 @@ export async function runPackedAcceptance() {
     // SDK floor on the ordinary closure: discovery plus all six tools at exactly
     // 1.31.0. A floor failure FAILS the acceptance outright.
     const floorDir = join(work, 'floor');
-    installConsumer(floorDir, packed.tarball, p2ArchivePaths(manifest), { npm_config_cache: join(work, 'floor-cache') }, '1.31.0', false);
+    installConsumer(floorDir, packed.tarball, p3ArchivePaths(manifest), { npm_config_cache: join(work, 'floor-cache') }, '1.31.0', false);
     const floorSdk = readJson(join(floorDir, 'node_modules/@modelcontextprotocol/sdk/package.json')).version;
     if (floorSdk !== '1.31.0') throw new Error('floor consumer SDK differs from exact 1.31.0');
     console.log('L4-SDK-FLOOR-OBSERVED:' + floorSdk);
