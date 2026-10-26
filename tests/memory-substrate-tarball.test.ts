@@ -51,7 +51,7 @@ describe("substrate tarball acceptance (installed consumer, M10)", () => {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     });
-    expect(output).toMatch("tarball-acceptance OK @sentropic/engram@0.21.1");
+    expect(output).toMatch("tarball-acceptance OK @sentropic/engram@0.21.2");
     expect(output).toMatch("tarball-acceptance closure ./memory-substrate: no fatal findings");
     expect(output).toMatch("installed semantic corpus: passed");
     expect(output).toMatch("installed type inventory: 63 types, 2 values; strict compilation passed");
