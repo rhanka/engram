@@ -1,5 +1,6 @@
 // §2.1 diagnostic envelope: native shapes transcribed verbatim + G0 extension.
 // The native Report/2 object is never mutated; diagnostics are separate copies.
+import { canonicalBytes } from "./canonical.js";
 import type { GuardianDiagnostic, MappingEntry } from "./types.js";
 
 // --- S-REPORT2, transcribed verbatim [BC@63a9258:src/profile/report.ts:6–28] ---
@@ -324,7 +325,10 @@ export function diagnosticsToNativeEntries(
     if (d.nativeCode !== d.code || d.code !== (expected as ReportEntry).code) {
       throw new Error("diagnostic-code-mismatch");
     }
-    if (JSON.stringify(native) !== JSON.stringify(expected)) {
+    // §2.1.1 exact canonical equality: canonically equal values with reordered
+    // keys still invert (§2.1.1 prescribes canonical comparison); field
+    // presence is preserved because absent and present keys hash differently.
+    if (canonicalBytes(native) !== canonicalBytes(expected)) {
       throw new Error(`diagnostic-field-mismatch at index ${String(i)}`);
     }
     placed[i] = native;
@@ -367,7 +371,12 @@ export function compareDiagnostics(a: Diagnostic, b: Diagnostic): number {
   }
   if (la === null) return -1;
   if (lb === null) return 1;
-  return compareText(la, lb);
+  const byLocator = compareText(la, lb);
+  if (byLocator !== 0) return byLocator;
+  // §2.1.1: whenever all three G0 keys tie, report2 diagnostics keep
+  // reportEntryIndex order — including non-null locator ties.
+  if (a.origin === "report2" && b.origin === "report2") return a.reportEntryIndex - b.reportEntryIndex;
+  return 0;
 }
 
 export function sortDiagnostics(diagnostics: readonly Diagnostic[]): Diagnostic[] {
@@ -471,4 +480,68 @@ export function assertValidCompiledRule(rule: Record<string, unknown>): void {
       throw new Error(`compiled-rule-forbidden:${key}`);
     }
   }
+  if ("bindings" in rule) {
+    const bindings = rule["bindings"];
+    if (!Array.isArray(bindings)) throw new Error("compiled-rule-bindings-not-array");
+    for (const b of bindings) assertValidBinding(b);
+  }
+}
+
+function assertValidBinding(value: unknown): void {
+  if (typeof value !== "object" || value === null) throw new Error("compiled-binding-not-object");
+  const b = value as Record<string, unknown>;
+  if (typeof b["ownerId"] !== "string" || typeof b["role"] !== "string" || typeof b["targetId"] !== "string") {
+    throw new Error("compiled-binding-missing-field");
+  }
+}
+
+const SETTING_ALLOWED = ["rule", "severity", "classification", "options"];
+
+/**
+ * S-COMPILED `Setting` ([BC] lint-contracts:11): `rule` and `severity`
+ * (string or number, raw native severity kept) required; `classification`
+ * and `options` optional; no other key permitted. `options` belongs to
+ * inherited standard-rule settings; profile-local validation settings stay
+ * closed to rule/severity/classification.
+ */
+export function assertValidSetting(setting: Record<string, unknown>): void {
+  if (typeof setting["rule"] !== "string" || setting["rule"] === "") throw new Error("setting-missing:rule");
+  const severity = setting["severity"];
+  if (typeof severity !== "string" && typeof severity !== "number") throw new Error("setting-missing:severity");
+  if ("classification" in setting && typeof setting["classification"] !== "string") {
+    throw new Error("setting-invalid:classification");
+  }
+  if ("options" in setting) {
+    const options = setting["options"];
+    if (typeof options !== "object" || options === null || Array.isArray(options)) {
+      throw new Error("setting-invalid:options");
+    }
+  }
+  for (const key of Object.keys(setting)) {
+    if (!SETTING_ALLOWED.includes(key)) throw new Error(`setting-forbidden:${key}`);
+  }
+}
+
+/**
+ * S-COMPILED `CompiledLintOptions` closure ([BC] lint-contracts:46–95):
+ * literal mechanismVersion `"1"`, required profile/phase/policy/digests,
+ * every compiled rule closed, top-level bindings valid and separate from
+ * per-rule bindings. Throws on the first violation.
+ */
+export function assertValidCompiledOptions(options: CompiledLintOptionsNative): void {
+  if (options.mechanismVersion !== "1") throw new Error(`compiled-options-mechanism:${String(options.mechanismVersion)}`);
+  if (typeof options.profileDigest !== "string" || options.profileDigest === "") {
+    throw new Error("compiled-options-missing:profileDigest");
+  }
+  if (typeof options.phase !== "string" || options.phase === "") throw new Error("compiled-options-missing:phase");
+  if (typeof options.readinessPolicy !== "string" || options.readinessPolicy === "") {
+    throw new Error("compiled-options-missing:readinessPolicy");
+  }
+  if (typeof options.severityPolicyDigest !== "string" || options.severityPolicyDigest === "") {
+    throw new Error("compiled-options-missing:severityPolicyDigest");
+  }
+  for (const rule of options.compiledRules) {
+    assertValidCompiledRule(rule as unknown as Record<string, unknown>);
+  }
+  for (const b of options.bindings) assertValidBinding(b);
 }
