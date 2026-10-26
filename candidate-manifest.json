@@ -1,10 +1,10 @@
 {
   "builtAgainstPreCandidateSha256": "2b85ff28b6fe06bda0abcdc19255f61a1ed1e4b7cfbb40c2e881c98dd234424b",
-  "engramSourceCommit": "ad96c6815e252daca31389cbe64b992d3e107a35",
+  "engramSourceCommit": "6e1eef53a020db25178b37416faa782d0a1b9855",
   "tarball": {
-    "filename": "sentropic-engram-0.21.2.tgz",
-    "sha256": "a295eef8a1733fd8c00f72ccd6938a5ea11678fdf33848f8849c4d531bd43af8",
-    "integrity": "sha512-vzIjuznMAk9IXdzBJdJgSAe7Lf0pLxC1UGK6LrSoXcYYbFIR2BVL20e6Eej4YY4MZxZTljmnn5xdYO4l7MXBSA=="
+    "filename": "sentropic-engram-0.22.0.tgz",
+    "sha256": "684a831ac950aa1ea45cf4db857aac10ec2deefe2c920ae5025747898a042862",
+    "integrity": "sha512-RNXfP55laJnYcHG0zXV60iOyU5pKwadTrfM2TPqPxEOiNWQzS5Ft9p47XlF6l/qD5bpiiHdw+p5zMwx3tGnjiw=="
   },
   "exports": {
     ".": {
@@ -43,9 +43,9 @@
     }
   },
   "registryArtifacts": {
-    "registry/entries.v1.json": "94763c394e5a5b8e013c5ce56c79a7acd9f5cc1605c7d4c4a7d68a98823bf1e0",
-    "registryEntryDigest": "29caca1059c71db403a20e49f20de9cce5489b4b4859afb6f99223338b543b03",
-    "registry/publisher-assets.v1.json": "c0e9fcce15ff06897241b623833315dd9816885a80c3485ae311a84d6f2a2be8",
+    "registry/entries.v1.json": "3fa483227ec9a36e57a76aad3f2dfe7f21d525099fb4f9e234ff2e4e14c9bbd7",
+    "registryEntryDigest": "ee5f97fe11183ec95f665802315e25b0241e5e85c80e10b0cb6903a31d517d25",
+    "registry/publisher-assets.v1.json": "cc0c5b63ecaa7c0ee42c9e67f386c0a80298776263ccb42fb85e09278d485d21",
     "dist/registry/manifest.js": "f2d9f9d4829ab49ac5c0736cb7ce75ddc252c64283149e96976194cac0e7c2be",
     "dist/registry/provider-manifest.js": "a88ae7f11e96475422674fb28b05966c64ba1e71b950e3cc78327cebc34c1ade",
     "dist/registry/base-manifest.json": "a0c484fecac059254a33f92c966070d85f690a4835e97cac814510c6124d542b",
