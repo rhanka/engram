@@ -138,19 +138,30 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
 }
 
-function readPurposeRef(tool: MemoryToolName, input: unknown): string | undefined {
-  if (!isRecord(input)) return undefined;
+/**
+ * Derive the domain purpose for compiled selection. Reads and capture carry
+ * a caller-supplied `purpose_ref` in their closed input schemas: it must be
+ * present and non-empty, otherwise the arguments are invalid. The remaining
+ * mutation tools carry no purpose argument, so the verified host binding
+ * purpose applies. The selection guard requires the derived purpose to equal
+ * the verified binding purpose; a mismatch is a trusted-context refusal.
+ */
+function readPurposeRef(
+  tool: MemoryToolName,
+  input: unknown,
+  bindingPurpose: unknown,
+): string | undefined {
   if (tool === 'engram_memory_search' || tool === 'engram_memory_get') {
+    if (!isRecord(input)) return undefined;
     return typeof input.purpose_ref === 'string' ? input.purpose_ref : undefined;
   }
   if (tool === 'engram_memory_capture') {
+    if (!isRecord(input)) return undefined;
     const payload = input.payload;
-    if (isRecord(payload) && typeof payload.purpose_ref === 'string') {
-      return payload.purpose_ref;
-    }
-    return undefined;
+    if (!isRecord(payload)) return undefined;
+    return typeof payload.purpose_ref === 'string' ? payload.purpose_ref : undefined;
   }
-  return undefined;
+  return typeof bindingPurpose === 'string' ? bindingPurpose : undefined;
 }
 
 function readInputIdempotencyKey(input: unknown): string | undefined {
@@ -376,7 +387,9 @@ export function createEngramMemoryProviderV1(
     try {
       // 2. Argument validation (purpose is a model argument and must match the
       //    verified host binding): schema failures, never missing-context.
-      const purposeRef = readPurposeRef(tool, req.input);
+      //    Mutation tools other than capture carry no purpose argument; the
+      //    verified binding purpose applies to them.
+      const purposeRef = readPurposeRef(tool, req.input, verified.memory?.binding?.purpose_ref);
       if (!isNonEmptyString(purposeRef)) {
         return invalid('INVALID_SCHEMA');
       }
