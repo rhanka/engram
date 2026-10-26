@@ -21,7 +21,7 @@ function assertWellFormedUnicode(s: string): void {
   }
 }
 
-function canonicalStringify(value: unknown): string {
+function canonicalStringify(value: unknown, active = new Set<object>()): string {
   if (value === null) return "null";
   if (typeof value === "boolean") return value ? "true" : "false";
   if (typeof value === "number") {
@@ -33,12 +33,25 @@ function canonicalStringify(value: unknown): string {
     assertWellFormedUnicode(value);
     return JSON.stringify(value) as string;
   }
-  if (Array.isArray(value)) return `[${value.map(canonicalStringify).join(",")}]`;
   if (typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    const keys = Object.keys(record).sort();
-    for (const k of keys) assertWellFormedUnicode(k);
-    return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalStringify(record[k])}`).join(",")}}`;
+    if (active.has(value)) throw new Error("invalid-json:cycle");
+    const array = Array.isArray(value);
+    if (!array && ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new Error("invalid-json:prototype");
+    if (Reflect.ownKeys(value).some((key) => typeof key !== "string")) throw new Error("invalid-json:key");
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const keys = Object.keys(descriptors).filter((key) => !(array && key === "length"));
+    for (const key of keys) {
+      assertWellFormedUnicode(key);
+      const descriptor = descriptors[key]!;
+      if (!descriptor.enumerable || !("value" in descriptor)) throw new Error("invalid-json:property");
+    }
+    if (array && (keys.length !== value.length || keys.some((key, i) => key !== String(i)))) throw new Error("invalid-json:array");
+    active.add(value);
+    const bytes = array
+      ? `[${keys.map((key) => canonicalStringify(descriptors[key]!.value, active)).join(",")}]`
+      : `{${keys.sort().map((key) => `${JSON.stringify(key)}:${canonicalStringify(descriptors[key]!.value, active)}`).join(",")}}`;
+    active.delete(value);
+    return bytes;
   }
   throw new Error(`unserializable:${typeof value}`);
 }

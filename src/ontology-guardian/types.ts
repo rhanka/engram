@@ -77,6 +77,11 @@ export function projectPrivateRecord(
 }
 
 export type Lifecycle = "draft" | "published" | "deprecated" | "superseded";
+/** §1.4/§5.3 lifecycle-dependent fields, including forbidden combinations. */
+export type LifecycleFields =
+  | { readonly lifecycle: "draft" | "published"; readonly deprecatedReason?: never; readonly deprecatedAt?: never; readonly supersededBy?: never }
+  | { readonly lifecycle: "deprecated"; readonly deprecatedReason: string; readonly deprecatedAt: string; readonly supersededBy?: Pin }
+  | { readonly lifecycle: "superseded"; readonly supersededBy: Pin; readonly deprecatedReason?: never; readonly deprecatedAt?: never };
 export type Completeness = "skeleton" | "complete";
 export type ProfileShape =
   | "engram-profile"
@@ -120,7 +125,6 @@ export interface OntologyRecordBase {
   readonly id: string;
   readonly version: string;
   readonly owner: string;
-  readonly lifecycle: Lifecycle;
   readonly completeness: Completeness;
   readonly visibility: TenantVisibility;
   readonly profileShape: ProfileShape;
@@ -129,10 +133,7 @@ export interface OntologyRecordBase {
   readonly corpusRef: CorpusRef;
   readonly digests: RecordDigests;
   readonly consumers: readonly string[];
-  readonly supersededBy?: Pin;
   readonly migrationRef?: string;
-  readonly deprecatedReason?: string;
-  readonly deprecatedAt?: string;
   readonly catalogEntryRef?: string;
 }
 
@@ -151,7 +152,7 @@ export interface PublicLineage {
 /** §1.4 lineage union, discriminated by the enclosing record visibility. */
 export type RecordLineage = PublicLineage | PrivateLineage;
 
-export type OntologyRecord =
+export type OntologyRecord = LifecycleFields & (
   | (OntologyRecordBase & {
       readonly visibility: "public";
       readonly lineage: PublicLineage;
@@ -159,7 +160,10 @@ export type OntologyRecord =
   | (OntologyRecordBase & {
       readonly visibility: `private:${string}`;
       readonly lineage: PrivateLineage;
-    });
+    })) & (
+      | { readonly lifecycle: "superseded"; readonly migrationRef: string }
+      | { readonly lifecycle: "draft" | "published" | "deprecated" }
+    );
 
 // ---------------------------------------------------------------------------
 // §3.2 delta operations (closed set) and §3.3 mapping entries (closed set)
@@ -330,8 +334,8 @@ export type NonComposableFamily = "TRK" | "H2A" | "MEM";
 /** Minimal guardian diagnostic shape (full envelope lives in diagnostics.ts). */
 export interface GuardianDiagnostic {
   readonly origin: "guardian";
-  readonly code: string;
-  readonly nativeCode: string;
+  readonly code: GuardianCode;
+  readonly nativeCode: GuardianCode;
   readonly ruleId: string | null;
   readonly subjectRef: string;
   readonly severity: "error" | "warning" | "info";

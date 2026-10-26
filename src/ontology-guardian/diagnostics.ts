@@ -2,7 +2,7 @@
 // The native Report/2 object is never mutated; diagnostics are separate copies.
 import { canonicalBytes } from "./canonical.js";
 import { isDigest } from "./types.js";
-import type { GuardianDiagnostic, MappingEntry } from "./types.js";
+import type { GuardianCode, GuardianDiagnostic, MappingEntry } from "./types.js";
 
 // --- S-REPORT2, transcribed verbatim [BC@63a9258:src/profile/report.ts:6–28] ---
 
@@ -152,7 +152,7 @@ export function validateCoordinate(value: unknown): asserts value is Coordinate 
   if (pointer !== null) {
     if (typeof pointer !== "string" || !validPointer(pointer)) failContract();
   }
-  if (targetId !== null && typeof targetId !== "string") failContract();
+  if (targetId !== null && (typeof targetId !== "string" || targetId.length === 0)) failContract();
   if ((provenance === "unavailable" && pointer !== null) || (provenance !== "unavailable" && pointer === null)) {
     failContract();
   }
@@ -321,8 +321,12 @@ export type DiagnosticOrigin = Diagnostic["origin"];
 // `sortIdMap`, `validateIdentity` and `validateBindingKeys`
 // ([BC@63a9258:src/profile/report.ts:40–112], `boundary.ts`).
 
+export class NativeReportError extends Error {
+  readonly code = "validation-refusal";
+}
+
 function reportFail(reason: string): never {
-  throw new Error(`native-report-${reason}`);
+  throw new NativeReportError(`native-report-${reason}`);
 }
 
 function exactKeys(
@@ -575,6 +579,12 @@ export function assertValidNativeReport(report: unknown): asserts report is Nati
   if (typeof report !== "object" || report === null || Array.isArray(report)) reportFail("invalid:report");
   const r = report as Record<string, unknown>;
   exactKeys(r, REPORT_REQUIRED, REPORT_OPTIONAL, "report");
+  try {
+    canonicalBytes(report);
+  } catch {
+    reportFail("invalid:json");
+  }
+
   if (r["reportVersion"] !== "2") reportFail("invalid:reportVersion");
   nonEmptyText(r["operation"], "report.operation");
   if (Object.hasOwn(r, "sourceIdentity")) assertValidProfileIdentity(r["sourceIdentity"], "report.sourceIdentity");
@@ -747,7 +757,7 @@ export function refusedOutcome(diagnostics: readonly GuardianDiagnostic[]): {
 }
 
 export function guardianDiagnostic(
-  code: string,
+  code: GuardianCode,
   subjectRef: string,
   severity: GuardianDiagnostic["severity"],
   messageKey: string,
@@ -940,6 +950,13 @@ export function assertValidSetting(setting: Record<string, unknown>): void {
  * fields and no duplicate id.
  */
 export function assertValidCompiledOptions(options: CompiledLintOptionsNative): void {
+  if (typeof options !== "object" || options === null || Array.isArray(options)) {
+    throw new Error("compiled-options-not-object");
+  }
+  const keys = ["mechanismVersion", "profileDigest", "phase", "readinessPolicy", "compiledRules", "bindings", "severityPolicyDigest"];
+  if (Object.keys(options).sort().join(",") !== keys.sort().join(",")) throw new Error("compiled-options-fields");
+  if (!Array.isArray(options.compiledRules)) throw new Error("compiled-options-rules-not-array");
+  if (!Array.isArray(options.bindings)) throw new Error("compiled-options-bindings-not-array");
   if (options.mechanismVersion !== "1") throw new Error(`compiled-options-mechanism:${String(options.mechanismVersion)}`);
   if (!isDigest(options.profileDigest)) {
     throw new Error("compiled-options-invalid:profileDigest");
