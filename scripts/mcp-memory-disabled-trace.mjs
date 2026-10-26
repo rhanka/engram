@@ -9,7 +9,7 @@ const fs = require('node:fs');
 const trace = (kind, detail) => fs.appendFileSync(process.env.MCP_L4_TRACE, JSON.stringify({ kind, detail }) + '\n');
 const memoryModule = file => /(?:mcp-memory\.(?:js|cjs)|engram-memory\/(?:dist\/)?(?:engine|memory-store|sqlite|postgres|module-storage)|(?:better-sqlite3|fs-ext)(?:\/|$))/.test(file);
 const transform = (source, file) => {
-  if (!/[/\\]@sentropic[/\\]engram[/\\]|trace-canary/.test(file)) return source;
+  if (!/[/\\]@sentropic[/\\]engram[/\\]/.test(file)) return source;
   const record = (kind, name) => 'require("node:fs").appendFileSync(process.env.MCP_L4_TRACE, JSON.stringify({kind:' + JSON.stringify(kind) + ',detail:' + JSON.stringify(name) + '}) + "\\n");';
   source = source.replace(/(function (openFencedSqliteCanonicalMemoryStoreV1|openReferenceSqliteHandleV1|openModuleStorageCanonicalMemoryStoreV1|openPostgresCanonicalMemoryStoreV1|createInMemoryCanonicalMemoryStoreV1|createCanonicalMemoryStoreFactoryV1)\([^)]*\)\s*\{)/g,
     (whole, _head, name) => whole + record('store-open', name));
