@@ -9,10 +9,16 @@
   "providerContractVersion": "1.0.0",
   "assets": [
     {
-      "role": "manifest",
+      "role": "registry-package",
       "path": "dist/registry/manifest.js",
       "mediaType": "application/javascript",
       "sha256": "f2d9f9d4829ab49ac5c0736cb7ce75ddc252c64283149e96976194cac0e7c2be"
+    },
+    {
+      "role": "manifest",
+      "path": "dist/registry/provider-manifest.js",
+      "mediaType": "application/javascript",
+      "sha256": "a88ae7f11e96475422674fb28b05966c64ba1e71b950e3cc78327cebc34c1ade"
     },
     {
       "role": "manifest",
@@ -30,13 +36,13 @@
       "role": "provider",
       "path": "dist/mcp-memory.js",
       "mediaType": "application/javascript",
-      "sha256": "a40a69294f05737eb66a60a4b660dd6e45f0ae6d8f67278bc85644351eec8637"
+      "sha256": "8c9522673cc2c00bfe634111c71b85dbc50adfb058b36b20c2fcb243cf255f3b"
     },
     {
       "role": "validator",
-      "path": "dist/mcp-memory.cjs",
+      "path": "dist/registry/validator.js",
       "mediaType": "application/javascript",
-      "sha256": "1d46d0079d9b3389f62b39d1b2cf4c84dfb8a9a41b7d3f8e1e0f7c1a5b7abe7c"
+      "sha256": "3e13743aa06cfdc8691eb8581846372c4a23bea93bc2e7b60092f88ac7bb8ef2"
     },
     {
       "role": "wire-profile",
@@ -141,11 +147,11 @@
       "sha256": "db682617520ebe117128ed2d64587f2a393ccc1e73dd360cbf8bb3a6bb382c3d"
     }
   ],
-  "entryJcsSha256": "49e7aaec652d33b28b95be9454c0ca8d7806850ed13c39eb3adcc4f2ca7f95b2",
-  "tarballSha256": "3c2df6e6192713c1320f7ed4e6bf09c0fe93ba6308d474b4b29b9cea78e130cf",
-  "tarballIntegrity": "sha512-07nriM96dEbAQZO/G3Oa0h37Vwl2RMNj2FuwTi58zFyeX2DW9n1F7dwfmVLqa7NYfpWvKczWxS/bNl65G336Og==",
+  "entryJcsSha256": "0ac6dcf795879bf842ae1380d4e4ae5417ae7f68b04da444f368381e76b4967e",
+  "tarballSha256": "868cea135a6535eac8c68ec28ef5cb6e27f08fbeb09ded72af54574812c306ad",
+  "tarballIntegrity": "sha512-Y94bHNUSgniul2t2cbIRCsBKnNUazdGxVkcSlJP+gjy47PKvTYhtVb6zGD6DWCzfOkscTK9Yi0PcuKjCku7dmg==",
   "baseManifestSha256": "a0c484fecac059254a33f92c966070d85f690a4835e97cac814510c6124d542b",
-  "effectiveManifestSha256": "f2d9f9d4829ab49ac5c0736cb7ce75ddc252c64283149e96976194cac0e7c2be",
+  "effectiveManifestSha256": "a88ae7f11e96475422674fb28b05966c64ba1e71b950e3cc78327cebc34c1ade",
   "schemas": [
     {
       "tool": "engram_memory_search",
@@ -196,11 +202,11 @@
   "validator": {
     "id": "sentropic.engram.memory-publisher-validator/v1",
     "version": "1.0.0",
-    "sha256": "1d46d0079d9b3389f62b39d1b2cf4c84dfb8a9a41b7d3f8e1e0f7c1a5b7abe7c"
+    "sha256": "3e13743aa06cfdc8691eb8581846372c4a23bea93bc2e7b60092f88ac7bb8ef2"
   },
   "executableProvenance": {
-    "sourceHead": "bafcfbe1f0e85fff07c95af601fe177ed374b259",
-    "codeArchiveSha256": "3c2df6e6192713c1320f7ed4e6bf09c0fe93ba6308d474b4b29b9cea78e130cf",
+    "sourceHead": "5265c89824ec3c53feae4c311d31793bdbf965e3",
+    "codeArchiveSha256": "868cea135a6535eac8c68ec28ef5cb6e27f08fbeb09ded72af54574812c306ad",
     "dependencyClosureSha256": "bfcaf73100fc4b12b8f22c78a75873cf4be503e0bd711efd292783cf3b698a53"
   }
 }
