@@ -92,7 +92,6 @@ export async function createEngramMemoryMcpServerV1(
           name: tool.name,
           description: tool.description,
           inputSchema: tool.inputSchema as Record<string, unknown>,
-          outputSchema: (tool as { outputSchema?: unknown }).outputSchema as Record<string, unknown> | undefined,
         })),
       }));
       server.setRequestHandler(types.CallToolRequestSchema, (async (request: unknown) => {
