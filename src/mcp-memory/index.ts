@@ -71,4 +71,5 @@ export {
   MEMORY_MCP_JSON_SCHEMA_DIALECT_V1,
 } from '../mcp/memory/schemas.js';
 export { validateMemoryPublisherAssetsV1 } from '../mcp/memory/receipts.js';
+export { MEMORY_FROZEN_PROFILE_BINDINGS_V1 } from './profiles.js';
 export type { MemoryPublisherAssetsV1 } from '../mcp/memory/receipts.js';
