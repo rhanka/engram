@@ -423,10 +423,12 @@ export async function buildRealHost(overrides = {}) {
       confirmations.push({ ...binding });
       if (overrides.confirm) return overrides.confirm(binding);
       const reserved = byRef(binding.reservation_ref);
+      const target = reserved?.preimage.target;
+      const expectedTarget = target?.kind === 'capture_source' ? target.source_ref : target?.kind === 'candidate' ? target.candidate_id : target?.record_id;
       return binding.elicitation_ref === ELICITATION_REF && binding.principal_namespace === 'ns:one' &&
         binding.principal_id === 'alice' && binding.tenant_id === 'tenant:one' && binding.session_id === 'session:one' &&
         binding.transport_attachment_ref === 'attach:one' && reserved?.operation_digest === binding.operation_digest &&
-        reserved.preimage.tool_name === binding.capability && typeof binding.target_ref === 'string' &&
+        reserved.preimage.tool_name === binding.capability && binding.target_ref === expectedTarget &&
         Date.parse(clock.now()) >= Date.parse(NOW) && Date.parse(clock.now()) < Date.parse(DEADLINE);
     },
     keyCustody: {
@@ -723,7 +725,7 @@ let recordId;
 // Ordering: authentication runs before any domain envelope.
 {
   const h = await buildRealHost();
-  const missing = await h.adapter.invokeTool({ capabilityRef: 'engram_memory_search', input: { query: 'needle' }, ctx: good() });
+  const missing = await h.adapter.invokeTool({ capabilityRef: 'engram_memory_search', input: { query: 'needle' }, ctx: good(), ...env });
   assert.equal(missing.ok, false);
   assert.equal(missing.error.code, 'INVALID_SCHEMA');
   assert.ok(h.counts.authenticate >= 1);
@@ -791,8 +793,7 @@ let recordId;
   assert.equal(h.counts.transition, 0);
 }
 
-// Cancellation before the first effect never dispatches; aborting a
-// mutation mid-execution is indeterminate, never proven cancelled.
+// Cancellation during authorization prevents reservation and later effects.
 {
   const h = await buildRealHost();
   const aborted = new AbortController();
@@ -863,7 +864,7 @@ let recordId;
 }
 
 // Stronger confirmation gate: refusal before any effect, confirmation port
-// called once per attempt, retry with approval commits fresh.
+// revalidated at every effect guard; retry with approval commits fresh.
 {
   let approved = false;
   const h = await buildRealHost({ confirm: async () => approved });
@@ -896,6 +897,12 @@ let recordId;
   assert.equal(withdraw.ok, true);
   assert.ok(h.confirmations.length >= 1);
   assert.equal(h.confirmations[0].elicitation_ref, ELICITATION_REF);
+  const verified = h.confirmations[0];
+  for (const changed of [
+    { target_ref: 'target:wrong' }, { principal_id: 'mallory' }, { session_id: 'session:other' },
+    { transport_attachment_ref: 'attach:other' }, { elicitation_ref: 'elicit:other' },
+    { operation_digest: 'sha256:' + 'f'.repeat(64) }, { capability: 'engram_memory_forget' },
+  ]) assert.equal(await h.writeHost.confirm({ ...verified, ...changed }), false);
 }
 
 // A post-commit custody exception keeps the committed receipt with pending
@@ -1266,12 +1273,13 @@ export async function runPackedAcceptance() {
     if (Object.values(disabled).some(count => count !== 0)) throw new Error('disabled effects: ' + JSON.stringify(disabled));
     console.log('L4-DISABLED-OBSERVED:' + JSON.stringify(disabled));
 
-    // SDK floor on the ordinary closure: discovery plus search at exactly
+    // SDK floor on the ordinary closure: discovery plus all six tools at exactly
     // 1.31.0. A floor failure FAILS the acceptance outright.
     const floorDir = join(work, 'floor');
     installConsumer(floorDir, packed.tarball, p2ArchivePaths(manifest), { npm_config_cache: join(work, 'floor-cache') }, '1.31.0', false);
     writeFileSync(join(floorDir, 'real-host.mjs'), REAL_HOST_HARNESS);
     runProbe(floorDir, 'floor-probe', FLOOR_PROBE);
+    runProbe(floorDir, 'six-tool-probe', SIX_TOOL_PROBE);
 
     await assertCandidateManifest(packed);
     return { packed, floor: 'pass' };
