@@ -31,6 +31,7 @@ function invocation(overrides = {}) {
   return {
     auditId: 'audit:l2-r2', authorization: { credential: 'credential:l7' },
     scope_ref: SCOPE, store_id: STORE, ...PRINCIPALS, generation: '1', deadline_at: SHORT_DEADLINE,
+    cancellation_ref: 'cancel:l2-r2', elicitation_ref: 'elicit:l2-r2',
     ...overrides,
   };
 }
