@@ -3173,7 +3173,7 @@ export async function main(): Promise<void> {
           `Next step (LLM, opt-in): run semantic extraction explicitly, for example:\n` +
           `  engram extract ${relRoot} --semantic <extraction.json>\n` +
           `or, for a direct backend (costs tokens):\n` +
-          `  engram extract ${relRoot} --backend anthropic|openai|gemini|mistral|cohere|ollama\n` +
+          `  engram extract ${relRoot} --backend anthropic|openai|gemini|mistral|cohere\n` +
           `Then rerun: engram profile ontology-output --profile-state ${dataprepResult.paths.profile.state} --input <extraction.json> --out-dir ${ontologyOutputDir}`,
         );
       } else if (!ontologyRan && ontologyConfig.enabled) {
@@ -3616,7 +3616,7 @@ export async function main(): Promise<void> {
     .argument("<inputPath>")
     .option("--semantic <path>", "Path to a provided semantic extraction JSON to merge")
     .option("--out <path>", "Output workspace root for the generated .engram state")
-    .option("--backend <name>", "Direct semantic backend: anthropic, openai, gemini, mistral, cohere, ollama, or claude-cli (no API key; writes instructions for the assistant skill)")
+    .option("--backend <name>", "Direct semantic backend: anthropic, openai, gemini, mistral, cohere, or claude-cli (no API key; writes instructions for the assistant skill)")
     .option("--model <id>", "Direct backend model override")
     .option("--concurrency <n>", "Direct backend semantic chunk concurrency", "4")
     .option("--token-budget <n>", "Approximate direct backend token budget per semantic chunk", "60000")
@@ -3797,7 +3797,7 @@ export async function main(): Promise<void> {
           }
 
           if (!isDirectLlmProvider(backend)) {
-            console.error("error: --backend must be one of anthropic, openai, gemini, mistral, cohere, ollama, claude-cli");
+            console.error("error: --backend must be one of anthropic, openai, gemini, mistral, cohere, claude-cli");
             process.exit(1);
           }
           const textSemanticFiles = [

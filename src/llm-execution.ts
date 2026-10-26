@@ -3,14 +3,13 @@ import { basename, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { engramEnv } from "./env.js";
-import { validateOllamaBaseUrl } from "./security.js";
 import type { NormalizedLlmExecutionPolicy } from "./types.js";
 
 export type LlmExecutionCapability = "text_json" | "vision_json" | "batch_vision_json";
 export type LlmExecutionMode = "assistant" | "direct" | "batch" | "mesh";
-export type DirectLlmProvider = "anthropic" | "openai" | "gemini" | "mistral" | "cohere" | "ollama";
+export type DirectLlmProvider = "anthropic" | "openai" | "gemini" | "mistral" | "cohere";
 
-export const DIRECT_LLM_PROVIDERS = ["anthropic", "openai", "gemini", "mistral", "cohere", "ollama"] as const;
+export const DIRECT_LLM_PROVIDERS = ["anthropic", "openai", "gemini", "mistral", "cohere"] as const;
 
 export interface TextJsonGenerationInput {
   schema: string;
@@ -241,8 +240,6 @@ export function defaultDirectLlmModel(provider: DirectLlmProvider): string {
       return "mistral-small-2603";
     case "cohere":
       return "command-a-03-2025";
-    case "ollama":
-      return "llama3.1";
   }
 }
 
@@ -258,8 +255,6 @@ export function directProviderCredentialEnv(provider: DirectLlmProvider): string
       return ["MISTRAL_API_KEY"];
     case "cohere":
       return ["COHERE_API_KEY"];
-    case "ollama":
-      return [];
   }
 }
 
@@ -297,8 +292,6 @@ export function directProviderBaseUrlEnv(provider: DirectLlmProvider): string[] 
       return ["MISTRAL_BASE_URL"];
     case "cohere":
       return ["COHERE_BASE_URL"];
-    case "ollama":
-      return ["OLLAMA_BASE_URL"];
   }
 }
 
@@ -368,15 +361,6 @@ async function resolveDirectModel(provider: DirectLlmProvider, model: string): P
       const { cohere, createCohere } = await import("@ai-sdk/cohere");
       const baseURL = resolveProviderBaseUrl(provider);
       return baseURL ? createCohere({ baseURL })(model) : cohere(model);
-    }
-    case "ollama": {
-      const { createOllama } = await import("ollama-ai-provider");
-      const baseURL = process.env.OLLAMA_BASE_URL?.trim();
-      // F-0831-P1 (F3): block a link-local/metadata OLLAMA_BASE_URL (SSRF)
-      // before the corpus leaves; warn-and-allow a trusted LAN host.
-      if (baseURL) await validateOllamaBaseUrl(baseURL, { warn: true });
-      const factory = baseURL ? createOllama({ baseURL }) : createOllama();
-      return factory(model);
     }
   }
 }
