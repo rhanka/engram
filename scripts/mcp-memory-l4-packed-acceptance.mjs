@@ -793,12 +793,13 @@ console.log('L4-DISABLED-OK');
 `;
 
 const FLOOR_PROBE = `
-import assert from 'node:assert/strict';
 const providerMod = await import('@sentropic/engram/mcp-memory');
 const memoryTools = await import('@sentropic/engram/memory-tools');
 const sdkTypes = await import('@modelcontextprotocol/sdk/types.js');
-const sdkPkg = await import('@modelcontextprotocol/sdk/package.json', { with: { type: 'json' } });
-assert.equal(sdkPkg.default.version, '1.31.0');
+const pathMod = await import('node:path');
+const fsMod = await import('node:fs');
+const sdkPkg = JSON.parse(fsMod.readFileSync(pathMod.join(process.cwd(), 'node_modules/@modelcontextprotocol/sdk/package.json'), 'utf8'));
+assert.equal(sdkPkg.version, '1.31.0');
 const counts = { recall: 0 };
 const facets = {
   scope_ref: 'scope:one', store_id: 'store:one',
