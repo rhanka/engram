@@ -59,6 +59,7 @@ export type {
 export { createMemoryPortV2 } from '../../engram-memory/dist/engine.js';
 export { createMemoryReadFacetsV1 } from '../../engram-memory/dist/reads.js';
 export { createInMemoryCanonicalMemoryStoreV1 } from '../../engram-memory/dist/memory-store.js';
+export { receiptDigest } from '../../engram-memory/dist/digests.js';
 export {
   computeMemoryMutationOperationDigestV1,
   extractMemoryMutationLookupKeyV1,
