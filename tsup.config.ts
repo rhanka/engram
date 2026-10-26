@@ -33,6 +33,7 @@ const optionalRuntimeDeps = [
   "@mixmark-io/domino",
   "@sentropic/agent-stats-core",
   "@sentropic/agent-stats-core/*",
+  "@sentropic/engram/mcp-memory",
   "@sentropic/mcp-broker",
   "@sentropic/mcp-broker/*",
   "@sentropic/mcp-platform",
