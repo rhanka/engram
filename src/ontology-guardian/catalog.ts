@@ -298,6 +298,12 @@ export interface OntologyPayloadBase {
     readonly resultEvidence: DigestEvidence;
   };
   readonly provenance: ProvenanceRecord;
+  /**
+   * unverified conditional transcription: SPEC-G0-guardian-contracts.md
+   * §5.3:717–718 requires both fields iff EXT, absent otherwise, but the
+   * closed payload table (§5.3:702–727) defines no family discriminant.
+   * Optionality does not prove EXT closure; no family field is invented here.
+   */
   readonly licenceClosure?: LicenceClosure;
   readonly coverage?: CoverageRecord;
   readonly conflictPolicy: string;
