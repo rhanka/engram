@@ -11,7 +11,6 @@
  * activation preflight and discovery metadata.
  */
 import { describe, expect, it } from 'vitest';
-import { MEMORY_FROZEN_PROFILE_BINDINGS_V1 } from '../src/mcp-memory/profiles.js';
 import { createMemoryPortV2 } from '../engram-memory/dist/engine.js';
 import { createMemoryReadFacetsV1 } from '../engram-memory/dist/reads.js';
 import { createInMemoryCanonicalMemoryStoreV1 } from '../engram-memory/dist/memory-store.js';
@@ -81,9 +80,15 @@ function stpCtx(bindingOverrides: Record<string, unknown> = {}, extra: Record<st
 }
 
 function hostBindings() {
-  const sha = '0'.repeat(64);
   return {
-    profileBindings: { ...MEMORY_FROZEN_PROFILE_BINDINGS_V1 },
+    profileBindings: {
+      wireProfileId: 'sentropic.engram.memory-wire/v1',
+      wireProfileSha256: '19cd5fd28c4412c11e9a52061c0584549b3abc4dc136fccf92e6c16ddfc7c974',
+      toolSchemaProfileId: 'sentropic.engram.memory-tools/2020-12-v1',
+      toolSchemaProfileSha256: '5ea308592fae260753230a48329e0300968edc642305288aedc7caa02c3a3ad0',
+      parameterProfileId: 'sentropic.parameters/2020-12-bounded-v1', parameterSchemaVersion: '1.0.0',
+      parameterProfileSha256: 'c9edd6402957c92f96c7461f30f29b64801c6f17c224c4258984e6ee3beaca47',
+    },
     hostBindingRef: 'test-binding',
     invocation: { contractVersion: '1.0.0' },
     authorization: { contractVersion: '1.0.0' },
@@ -689,6 +694,26 @@ describe('single dispatch pipeline over the real canonical implementation', () =
     expect(out.error.code).toBe('CANCELLED');
     const retry = await h.adapter.invokeTool({ capabilityRef: 'engram_memory_capture', input: captureArgs(KEY('j')), ctx: stpCtx(), idempotencyKey: KEY('j') } as never) as any;
     expect(retry.output.value.status).toBe('committed_pending');
+  });
+
+  it.each(['throw', 'refuse'])('keeps a known admission receipt when postcommit key cleanup %s', async mode => {
+    const h = await buildHarness();
+    const capture = await h.adapter.invokeTool({ capabilityRef: 'engram_memory_capture', input: captureArgs(KEY('s')), ctx: stpCtx(), idempotencyKey: KEY('s') } as never) as any;
+    let effects = 0;
+    const apply = h.store.applyAdmission.bind(h.store);
+    h.store.applyAdmission = async req => { effects++; return apply(req); };
+    h.ports.crypto.destroy = async () => {
+      if (mode === 'throw') throw new Error('CANARY-postcommit');
+      return { ok: false, error: { code: 'CANCELLED', operation: 'request_admission', message: 'cleanup cancelled', retryable: false } } as any;
+    };
+    const invoke = () => h.adapter.invokeTool({ capabilityRef: 'engram_memory_request_admission', input: { candidate_id: capture.output.value.candidate_id, idempotency_key: KEY('t') }, ctx: stpCtx(), idempotencyKey: KEY('t') } as never) as any;
+    const accepted = await invoke();
+    expect(accepted.ok).toBe(true);
+    expect(accepted.output.value.outcome.status).toBe('accepted');
+    const replay = await invoke();
+    expect(replay.output.value.outcome).toEqual(accepted.output.value.outcome);
+    expect(replay.output.value.replayed).toBe(true);
+    expect(effects).toBe(1);
   });
 
   it('a post-commit custody exception keeps the committed receipt with pending cleanup', async () => {
