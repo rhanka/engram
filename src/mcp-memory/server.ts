@@ -10,18 +10,22 @@
  *   success/failure envelope branches (`oneOf` carried verbatim);
  * - `annotations` carrying the mutability/idempotency/confirmation hints;
  * - `_meta['sentropic.engram/memory']` carrying the wire profile ids,
- *   provider/connector identity, mutability, idempotency and gates.
+ *   provider/connector identity, selected source identity, mutability,
+ *   idempotency, gates, required scopes/claims and redaction class.
  * Fields the SDK cannot carry stay authoritative in the provider manifest
- * and are asserted there.
+ * and are asserted there. The host context resolver runs inside the
+ * sanitizing boundary: a resolver throw is the constant protocol refusal and
+ * never reaches the provider.
  */
 
-import type { AppConnectorProviderAdapter } from '@sentropic/mcp-platform/memory';
+import type { AppConnectorProviderAdapter, StpConnectorContext } from '@sentropic/mcp-platform/memory';
 import {
   MEMORY_CONNECTOR_ID as P2_CONNECTOR_ID,
   MEMORY_PROVIDER_ID as P2_PROVIDER_ID,
   MEMORY_TOOLS_PROFILE_ID as P2_TOOLS_PROFILE_ID,
   MEMORY_WIRE_PROFILE_ID as P2_WIRE_PROFILE_ID,
   MemoryTrustedContextError,
+  requireTrustedInvocationContext,
 } from '@sentropic/mcp-platform/memory';
 import { MemoryDispatchRefusal } from '@sentropic/mcp-broker/memory';
 import {
@@ -110,6 +114,10 @@ export function discoveryMetadataForTool(tool: {
   mutatesExternalSystem: boolean;
   idempotency: { required: boolean; scope?: string };
   gates: { requiresHumanConfirmation: boolean; requiresElicitation: boolean };
+  requiredScopes: readonly string[];
+  requiredClaims: readonly string[];
+  redactionClass: string;
+  sourceId: string;
 }): Pick<McpMemoryDiscoveredTool, 'annotations' | '_meta'> {
   const readOnly = tool.mutability === 'read-only';
   return {
@@ -125,10 +133,14 @@ export function discoveryMetadataForTool(tool: {
         toolsProfile: P2_TOOLS_PROFILE_ID,
         providerId: P2_PROVIDER_ID,
         connectorId: P2_CONNECTOR_ID,
+        sourceId: tool.sourceId,
         mutability: tool.mutability,
         mutatesExternalSystem: tool.mutatesExternalSystem,
         idempotency: tool.idempotency,
         gates: tool.gates,
+        requiredScopes: [...tool.requiredScopes],
+        requiredClaims: [...tool.requiredClaims],
+        redactionClass: tool.redactionClass,
       },
     },
   };
@@ -225,6 +237,10 @@ export async function createEngramMemoryMcpServerV1(
         mutatesExternalSystem: tool.mutatesExternalSystem,
         idempotency: tool.idempotency as { required: boolean; scope?: string },
         gates: tool.gates as { requiresHumanConfirmation: boolean; requiresElicitation: boolean },
+        requiredScopes: tool.requiredScopes as readonly string[],
+        requiredClaims: tool.requiredClaims as readonly string[],
+        redactionClass: (tool as { redactionClass?: string }).redactionClass ?? 'high',
+        sourceId: 'mcp:engram-memory',
       });
       return {
         name: tool.name,
@@ -247,6 +263,13 @@ export async function createEngramMemoryMcpServerV1(
     const known = tools.some((tool) => tool.name === name);
     if (!known) {
       throw new McpError(-32602, `Unknown tool: ${name}`);
+    }
+    // Guard before provider dispatch: a missing or untrusted context is the
+    // constant protocol refusal with zero provider invocations.
+    try {
+      requireTrustedInvocationContext(ctx as StpConnectorContext | undefined | null);
+    } catch {
+      throw new McpError(-32603, 'Trusted invocation context unavailable');
     }
     try {
       const result = await provider.invokeTool({
@@ -298,15 +321,29 @@ export async function createEngramMemoryMcpServerV1(
         request: unknown,
         extra: { signal: AbortSignal },
       ) => {
-        const params = (request as { params: { name: string; arguments?: unknown } }).params;
-        const name = params.name;
-        const args = params.arguments ?? {};
-        const existing = tools.find((tool) => tool.name === name);
-        if (!existing) throw new McpError(-32602, `Unknown tool: ${name}`);
-        const ctx = await resolveContext(name, args);
-        const envelope = deriveEnvelope(args, ctx);
-        const result = await dispatch(name, args, ctx, envelope, extra.signal);
-        return result as unknown as Record<string, unknown>;
+        try {
+          const params = (request as { params: { name: string; arguments?: unknown } }).params;
+          const name = params.name;
+          const args = params.arguments ?? {};
+          const existing = tools.find((tool) => tool.name === name);
+          if (!existing) throw new McpError(-32602, `Unknown tool: ${name}`);
+          // The host context resolver runs INSIDE the sanitizing boundary:
+          // any resolver throw becomes the constant trusted-context protocol
+          // refusal with no message passthrough, and the provider is never
+          // invoked on this path (zero provider invocations).
+          let ctx: unknown;
+          try {
+            ctx = await resolveContext(name, args);
+          } catch {
+            throw new McpError(-32603, 'Trusted invocation context unavailable');
+          }
+          const envelope = deriveEnvelope(args, ctx);
+          const result = await dispatch(name, args, ctx, envelope, extra.signal);
+          return result as unknown as Record<string, unknown>;
+        } catch (error) {
+          if (error instanceof McpError) throw error;
+          throw toSdkError(error, '');
+        }
       }) as (request: never, extra: { signal: AbortSignal }) => Promise<unknown>);
       const [clientTransport, serverTransport] = (InMemoryTransport as unknown as { createLinkedPair(): [unknown, unknown] }).createLinkedPair();
       const client = new Client({ name: 'engram-memory-test', version: '1.0.0' }, { capabilities: {} }) as {
