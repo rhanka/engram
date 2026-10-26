@@ -22,7 +22,8 @@ function invocation(overrides = {}) {
     auditId: 'audit:l2-ports', authorization: { credential: 'credential:l7' },
     scope_ref: SCOPE, store_id: STORE, principal_namespace: 'principal:test', principal_id: 'alice',
     tenant_id: 'tenant:one', connector_instance_ref: 'connector:one', agent_id: 'agent:one', session_id: 'session:one',
-    generation: '1', deadline_at: SHORT_DEADLINE, ...overrides,
+    generation: '1', deadline_at: SHORT_DEADLINE,
+    cancellation_ref: 'cancel:l2-ports', elicitation_ref: 'elicit:l2-ports', ...overrides,
   };
 }
 

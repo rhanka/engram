@@ -10,6 +10,7 @@ export const invocation = (session_id = 'session:one') => ({
   scope_ref: 'scope:l3', store_id: 'memory:canonical', principal_namespace: 'principal:test',
   principal_id: 'alice', tenant_id: 'tenant:one', connector_instance_ref: 'connector:one',
   agent_id: 'agent:one', session_id, generation: '1', deadline_at: '2026-08-16T12:35:16.789Z',
+  cancellation_ref: 'cancel:l2-recovery', elicitation_ref: 'elicit:l2-recovery',
 });
 
 export function captureInput(key: string) {
