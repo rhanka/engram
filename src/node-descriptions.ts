@@ -795,12 +795,10 @@ function validateDescriptionResponse(text: string): void {
 
 /**
  * First configured provider whose credential env var is present, or null.
- * ollama is excluded (no required env var → false positive).
  */
 export function detectDescriptionBackend(): DirectLlmProvider | null {
   for (const provider of DIRECT_LLM_PROVIDERS) {
     const envNames = directProviderCredentialEnv(provider);
-    if (envNames.length === 0) continue; // skip ollama
     for (const envName of envNames) {
       if (process.env[envName]?.trim()) return provider;
     }
@@ -863,12 +861,6 @@ async function resolveModel(provider: DirectLlmProvider, model: string): Promise
     case "cohere": {
       const { cohere } = await import("@ai-sdk/cohere");
       return cohere(model);
-    }
-    case "ollama": {
-      const { createOllama } = await import("ollama-ai-provider");
-      const baseURL = process.env.OLLAMA_BASE_URL?.trim();
-      const factory = baseURL ? createOllama({ baseURL }) : createOllama();
-      return factory(model);
     }
   }
 }
