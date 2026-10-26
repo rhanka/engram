@@ -11,6 +11,7 @@
  * activation preflight and discovery metadata.
  */
 import { describe, expect, it } from 'vitest';
+import { MEMORY_FROZEN_PROFILE_BINDINGS_V1 } from '../src/mcp-memory/profiles.js';
 import { createMemoryPortV2 } from '../engram-memory/dist/engine.js';
 import { createMemoryReadFacetsV1 } from '../engram-memory/dist/reads.js';
 import { createInMemoryCanonicalMemoryStoreV1 } from '../engram-memory/dist/memory-store.js';
@@ -82,11 +83,7 @@ function stpCtx(bindingOverrides: Record<string, unknown> = {}, extra: Record<st
 function hostBindings() {
   const sha = '0'.repeat(64);
   return {
-    profileBindings: {
-      wireProfileId: 'sentropic.engram.memory-wire/v1', wireProfileSha256: sha,
-      toolSchemaProfileId: 'sentropic.engram.memory-tools/2020-12-v1', toolSchemaProfileSha256: sha,
-      parameterProfileId: 'sentropic.parameters/2020-12-bounded-v1', parameterSchemaVersion: '1.0.0', parameterProfileSha256: sha,
-    },
+    profileBindings: { ...MEMORY_FROZEN_PROFILE_BINDINGS_V1 },
     hostBindingRef: 'test-binding',
     invocation: { contractVersion: '1.0.0' },
     authorization: { contractVersion: '1.0.0' },
@@ -228,7 +225,7 @@ async function buildHarness(overrides: {
   coverage?: (cursor: string) => Promise<{ complete: boolean }>;
   confirmationRequired?: boolean;
   clockNow?: string;
-} = {}): Promise<Harness> {
+} = {}) {
   const counts: Record<string, number> = {
     recall: 0, readCurrent: 0, capture: 0, requestAdmission: 0, transition: 0,
     authenticate: 0, authorize: 0, reserve: 0, confirm: 0,
@@ -435,7 +432,7 @@ async function buildHarness(overrides: {
     sourceId: 'mcp:engram-memory',
     generation: '1',
   });
-  return { adapter, counts, confirmations, engineRequests, facets, readHost, writeHost };
+  return { adapter, counts, confirmations, engineRequests, facets, readHost, writeHost, ports, store };
 }
 
 describe('activation preflight consumes the L0 host-binding contract', () => {
@@ -457,6 +454,9 @@ describe('activation preflight consumes the L0 host-binding contract', () => {
       { ...good, hostBindings: undefined },
       { ...good, hostBindings: { ...hostBindings(), profileBindings: { ...(hostBindings() as { profileBindings: Record<string, unknown> }).profileBindings, wireProfileSha256: 'not-a-digest' } } },
       { ...good, hostBindings: { ...hostBindings(), confirmation: { contractVersion: '1.0.0', enrolledOidcDomain: 'other.example' } } },
+      ...['wireProfileSha256', 'toolSchemaProfileSha256', 'parameterProfileSha256'].map(key => ({ ...good, hostBindings: { ...hostBindings(), profileBindings: { ...hostBindings().profileBindings, [key]: '0'.repeat(64) } } })),
+      ...['provenanceDigest', 'nextSourceOrder'].map(key => ({ ...good, writeHost: { ...writeHost, policy: { ...policy, [key]: undefined } } })),
+      { ...good, writeHost: { ...writeHost, policy: { ...policy, retention: { max_retention_days: -1, allow_retain_derivative_rule: false } } } },
       { ...good, plan: {} },
       { ...good, sourceId: '' },
       { ...good, generation: '' },
@@ -554,7 +554,7 @@ describe('single dispatch pipeline over the real canonical implementation', () =
     expect(h.counts.recall).toBe(0);
   });
 
-  it('aborting a mutation mid-execution is indeterminate, never proven cancelled', async () => {
+  it('aborting a mutation during authorization prevents every later canonical effect', async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const controller = new AbortController();
@@ -578,7 +578,83 @@ describe('single dispatch pipeline over the real canonical implementation', () =
     const out = await pending;
     expect(authorizeCalls).toBeGreaterThanOrEqual(1);
     expect(out.ok).toBe(false);
-    expect(out.error?.code).toBe('MUTATION_OUTCOME_UNKNOWN');
+    expect(out.error?.code).toBe('CANCELLED');
+    expect(h.counts.reserve).toBe(0);
+    expect(h.counts.capture).toBe(0);
+    const retry = await h.adapter.invokeTool({ capabilityRef: 'engram_memory_capture', input: captureArgs(KEY('a')), ctx: stpCtx(), idempotencyKey: KEY('a') } as never) as any;
+    expect(retry.output.value.status).toBe('committed_pending');
+  });
+
+
+  it.each(['x'.repeat(513), 'e\u0301'])('classifies malformed purpose as INVALID_SCHEMA after authentication (%s)', async purpose_ref => {
+    const h = await buildHarness();
+    const result = await h.adapter.invokeTool({ capabilityRef: 'engram_memory_search', input: { query: 'needle', purpose_ref }, ctx: stpCtx() } as never) as any;
+    expect(result.error.code).toBe('INVALID_SCHEMA');
+    expect(h.counts.recall).toBe(0);
+  });
+
+  it('passes every required read authentication field without a write connector alias', async () => {
+    const h = await buildHarness({ authenticate: async (ctx, tool) => {
+      if (tool === 'engram_memory_search') expect(ctx).toMatchObject({
+        connector_instance_id: 'connector:one', authorization: { credential: 'credential:one' },
+        auditId: 'audit:pipeline', scope_ref: 'scope:one', store_id: 'store:one',
+        principal_namespace: 'ns:one', principal_id: 'alice', tenant_id: 'tenant:one',
+        agent_id: 'agent:one', session_id: 'session:one', generation: '1',
+        policy_id: 'policy:one', policy_version: '1', authorization_epoch: '1', deadline_at: DEADLINE,
+      });
+      return true;
+    } });
+    expect((await h.adapter.invokeTool({ capabilityRef: 'engram_memory_search', input: { query: 'needle', purpose_ref: 'purpose:one' }, ctx: stpCtx() } as never) as any).ok).toBe(true);
+  });
+
+  it('a source-order exception before reservation is a sanitized precommit failure', async () => {
+    const h = await buildHarness();
+    h.writeHost.policy.nextSourceOrder = async () => { throw new Error('CANARY'); };
+    const out = await h.adapter.invokeTool({ capabilityRef: 'engram_memory_capture', input: captureArgs(KEY('u')), ctx: stpCtx(), idempotencyKey: KEY('u') } as never) as any;
+    expect(out.error.code).toBe('STORE_UNAVAILABLE');
+    expect(JSON.stringify(out)).not.toContain('CANARY');
+    expect(h.counts.reserve).toBe(0);
+    expect(h.counts.capture).toBe(0);
+  });
+
+  it.each(['revoke', 'abort'])('rechecks %s after sealing and prevents capture commit', async mode => {
+    let approved = true;
+    const controller = new AbortController();
+    const h = await buildHarness({ confirm: async () => approved });
+    const seal = h.ports.crypto.seal;
+    h.ports.crypto.seal = async req => {
+      const result = await seal(req);
+      if (mode === 'revoke') approved = false; else controller.abort();
+      return result;
+    };
+    let effects = 0;
+    const commit = h.store.commitPending.bind(h.store);
+    h.store.commitPending = async req => { effects++; return commit(req); };
+    const out = await h.adapter.invokeTool({ capabilityRef: 'engram_memory_capture', input: captureArgs(KEY('v')), ctx: stpCtx({ elicitation_ref: ELICITATION_REF }, { confirmationRequired: true }), idempotencyKey: KEY('v'), elicitationRef: ELICITATION_REF, signal: controller.signal } as never) as any;
+    expect(out.error.code).toBe(mode === 'revoke' ? 'gate_failed' : 'CANCELLED');
+    expect(effects).toBe(0);
+    expect(h.counts.confirm).toBeGreaterThanOrEqual(2);
+  });
+
+  it('confirmation and durable association receive current identity and reject another attachment', async () => {
+    const h = await buildHarness({ confirm: async b => b.principal_id === 'alice' && b.session_id === 'session:one' && b.transport_attachment_ref === 'attach:one' });
+    const attach = h.writeHost.reservation.attachConfirmation;
+    const attachments: unknown[] = [];
+    h.writeHost.reservation.attachConfirmation = async (...args: any[]) => { attachments.push(args[3]); return (attach as any)(...args); };
+    const invoke = (attachment: string) => h.adapter.invokeTool({ capabilityRef: 'engram_memory_capture', input: captureArgs(KEY('w')), ctx: stpCtx({ elicitation_ref: ELICITATION_REF, transport_attachment_ref: attachment }, { confirmationRequired: true }), idempotencyKey: KEY('w'), elicitationRef: ELICITATION_REF } as never) as any;
+    expect((await invoke('attach:other')).error.code).toBe('gate_failed');
+    expect((await invoke('attach:one')).output.value.status).toBe('committed_pending');
+    expect(attachments).toContainEqual({ principal_namespace: 'ns:one', principal_id: 'alice', tenant_id: 'tenant:one', session_id: 'session:one', transport_attachment_ref: 'attach:one' });
+  });
+
+  it('abort after canonical commit keeps the committed receipt', async () => {
+    const h = await buildHarness();
+    const controller = new AbortController();
+    const commit = h.store.commitPending.bind(h.store);
+    h.store.commitPending = async req => { const result = await commit(req); controller.abort(); return result; };
+    const out = await h.adapter.invokeTool({ capabilityRef: 'engram_memory_capture', input: captureArgs(KEY('z')), ctx: stpCtx(), idempotencyKey: KEY('z'), signal: controller.signal } as never) as any;
+    expect(out.ok).toBe(true);
+    expect(out.output.value.status).toBe('committed_pending');
   });
 
   it('a post-commit custody exception keeps the committed receipt with pending cleanup', async () => {
@@ -621,7 +697,7 @@ describe('single dispatch pipeline over the real canonical implementation', () =
     const retry = await attempt();
     expect(retry.ok).toBe(true);
     expect(retry.output!.value.status).toBe('committed_pending');
-    expect(h.counts.confirm).toBe(2);
+    expect(h.counts.confirm).toBeGreaterThan(2);
   });
 
   it('reads under a stronger confirmation gate are refused closed', async () => {

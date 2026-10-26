@@ -1055,7 +1055,11 @@ function validateRedactionResult(input: unknown): RedactionResultV1 | undefined 
 /** Implementation-only host guard, outside the serialized neutral contract.
  * Called after canonical proof lookup and immediately before first commit;
  * only literal true permits an effect. Rechecks must remain safe. */
-export type MemoryFirstEffectGuardV1 = () => Promise<boolean>;
+export type MemoryFirstEffectGuardV1 = (() => Promise<boolean>) & {
+  readonly signal?: AbortSignal;
+  /** Called synchronously immediately before canonical commit is invoked. */
+  readonly enterCommitPhase?: () => void;
+};
 
 export interface GuardedMemoryPortV2 extends MemoryPortV2 {
   capture(request: CaptureRequestV2, beforeFirstEffect?: MemoryFirstEffectGuardV1): Promise<Result<CaptureAcknowledgementV1>>;
@@ -1204,7 +1208,7 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Gu
               } };
             }
           }
-          if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal("capture", "UNAUTHORIZED", "host refused first canonical effect");
+          if (beforeFirstEffect !== undefined && (await beforeFirstEffect() !== true || beforeFirstEffect.signal?.aborted)) return refusal("capture", "UNAUTHORIZED", "host refused first canonical effect");
           if (cancelled.has(request.cancellation_ref)) return refusal("capture", "CANCELLED", "capture was cancelled before commit");
           const sealed = await dependencies.crypto.seal({
             candidate_id: candidateId,
@@ -1213,7 +1217,7 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Gu
           });
           if (!sealed.ok) return operationFailure("capture", sealed);
           const effect = await authorizeEffect(authorization.value, request.deadline_at);
-          const hostEffect = effect.ok && beforeFirstEffect !== undefined && await beforeFirstEffect() !== true
+          const hostEffect = effect.ok && beforeFirstEffect !== undefined && (await beforeFirstEffect() !== true || beforeFirstEffect.signal?.aborted)
             ? refusal<never>("capture", "UNAUTHORIZED", "host refused first canonical effect") : undefined;
           if (!effect.ok || hostEffect !== undefined || cancelled.has(request.cancellation_ref)) {
             // The envelope has no canonical owner yet. Use the same custody
@@ -1222,6 +1226,8 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Gu
             if (!destroyed.ok) return operationFailure("capture", destroyed);
             return !effect.ok ? effect : hostEffect ?? refusal("capture", "CANCELLED", "capture was cancelled before commit");
           }
+          if (beforeFirstEffect?.signal?.aborted) return refusal("capture", "CANCELLED", "cancelled before canonical commit");
+          beforeFirstEffect?.enterCommitPhase?.();
           const committed = await dependencies.canonical_store.commitPending({
             control: {
               candidate_id: candidateId, envelope_digest: sealed.value.envelope_digest,
@@ -1381,7 +1387,7 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Gu
           admissionOutcomes.set(input.candidate_id, { scope_ref: authorization.value.scope_ref, outcome: recovered.value });
           return { ok: true, value: recovered.value };
         }
-        if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal("request_admission", "UNAUTHORIZED", "host refused first canonical effect");
+        if (beforeFirstEffect !== undefined && (await beforeFirstEffect() !== true || beforeFirstEffect.signal?.aborted)) return refusal("request_admission", "UNAUTHORIZED", "host refused first canonical effect");
         if (!validPendingSnapshot(pending.value, input.candidate_id)) return refusal("request_admission", "INVALID_SCHEMA", "pending candidate snapshot is malformed");
         const opened = await dependencies.crypto.open({ sealed: pending.value.sealed, context_digest: pendingContextDigest(input.candidate_id) });
         if (!opened.ok) return operationFailure("request_admission", opened);
@@ -1451,7 +1457,9 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Gu
           removals: [],
           batch_digest: receiptDigest("projection-batch", { candidate_id: input.candidate_id, record_digest: record.record_digest }),
         };
-        if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal("request_admission", "UNAUTHORIZED", "host refused first canonical effect");
+        if (beforeFirstEffect !== undefined && (await beforeFirstEffect() !== true || beforeFirstEffect.signal?.aborted)) return refusal("request_admission", "UNAUTHORIZED", "host refused first canonical effect");
+        if (beforeFirstEffect?.signal?.aborted) return refusal("request_admission", "CANCELLED", "cancelled before canonical commit");
+        beforeFirstEffect?.enterCommitPhase?.();
         const applied = decision.value.decision === "accept"
           ? await dependencies.canonical_store.applyAdmission({
             outcome: "accept",
@@ -1547,11 +1555,13 @@ export function createMemoryPortV2(dependencies: MemoryEngineDependenciesV2): Gu
         if (!replayed.ok) return replayed;
         if (replayed.value !== undefined) return { ok: true, value: replayed.value };
       }
-      if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal(input.operation, "UNAUTHORIZED", "host refused first canonical effect");
+      if (beforeFirstEffect !== undefined && (await beforeFirstEffect() !== true || beforeFirstEffect.signal?.aborted)) return refusal(input.operation, "UNAUTHORIZED", "host refused first canonical effect");
       const event = lifecycleEvent(input, now, fromState.value, authorization.value.receipt_digest, bound.value ?? undefined);
       const effect = await authorizeEffect(authorization.value, input.deadline_at);
       if (!effect.ok) return operationFailure(input.operation, effect);
-      if (beforeFirstEffect !== undefined && await beforeFirstEffect() !== true) return refusal(input.operation, "UNAUTHORIZED", "host refused first canonical effect");
+      if (beforeFirstEffect !== undefined && (await beforeFirstEffect() !== true || beforeFirstEffect.signal?.aborted)) return refusal(input.operation, "UNAUTHORIZED", "host refused first canonical effect");
+      if (beforeFirstEffect?.signal?.aborted) return refusal(input.operation, "CANCELLED", "cancelled before canonical commit");
+      beforeFirstEffect?.enterCommitPhase?.();
       const applied = await dependencies.canonical_store.applyLifecycle({
         command: input,
         event: event as never,
