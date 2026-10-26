@@ -53,11 +53,11 @@ export function packCandidate(destination) {
   return { tarball, sha256: sha256(bytes), integrity: integrityOf(bytes) };
 }
 
-function installConsumer(consumerDir, tarball, extraArchives = []) {
+function installConsumer(consumerDir, tarball, extraArchives = [], env = {}) {
   mkdirSync(consumerDir, { recursive: true });
   writeFileSync(join(consumerDir, 'package.json'), JSON.stringify({ name: 'l4-consumer', version: '0.0.0', type: 'module' }));
   const args = ['install', '--ignore-scripts', '--no-save', '--no-audit', '--no-fund', tarball, ...extraArchives];
-  run(NPM, args, { cwd: consumerDir });
+  run(NPM, args, { cwd: consumerDir, env: { ...process.env, ...env } });
 }
 
 function p2ArchivePaths(manifest) {
@@ -253,10 +253,13 @@ console.log('L4-DISABLED-OK');
 export async function runPackedAcceptance() {
   const manifest = verifyP2Archives();
   const work = mkdtempSync(join(tmpdir(), 'mcp-l4-'));
+  const npmCache = join(work, 'npm-cache');
+  mkdirSync(npmCache, { recursive: true });
+  const consumerEnv = { npm_config_cache: npmCache };
   try {
     const packed = packCandidate(work);
     const enabledDir = join(work, 'enabled');
-    installConsumer(enabledDir, packed.tarball, p2ArchivePaths(manifest));
+    installConsumer(enabledDir, packed.tarball, p2ArchivePaths(manifest), consumerEnv);
     writeFileSync(join(enabledDir, 'probe-enabled.mjs'), ENABLED_PROBE);
     const enabledOut = run(process.execPath, ['probe-enabled.mjs'], { cwd: enabledDir });
     if (!enabledOut.includes('L4-ENABLED-METADATA-OK')) throw new Error('enabled metadata probe failed');
@@ -267,7 +270,7 @@ export async function runPackedAcceptance() {
     const sixOut = run(process.execPath, ['probe-six.mjs'], { cwd: enabledDir });
     if (!sixOut.includes('L4-SIX-TOOL-SDK-OK')) throw new Error('six-tool SDK probe failed: ' + sixOut);
     const disabledDir = join(work, 'disabled');
-    installConsumer(disabledDir, packed.tarball, []);
+    installConsumer(disabledDir, packed.tarball, [], consumerEnv);
     writeFileSync(join(disabledDir, 'probe-disabled.mjs'), DISABLED_PROBE);
     const disabledOut = run(process.execPath, ['probe-disabled.mjs'], { cwd: disabledDir });
     if (!disabledOut.includes('L4-DISABLED-OK')) throw new Error('disabled probe failed');
