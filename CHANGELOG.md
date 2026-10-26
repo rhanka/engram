@@ -4,6 +4,10 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.22.0 (2026-10-26)
+
+- **Optional memory MCP adapter (L4 candidate, disabled by default, pending L5 qualification).** Adds the optional `./mcp-memory` and `./registry/*` entries (`./registry/manifest`, `./registry/definitions`) over the frozen L3 memory tools. The adapter is disabled by default: no provider is loaded, no store is opened and no tool is served until a host injects its references and enables the entry. This is the L4 candidate build; qualification of the exact published bytes stays pending L5.
+
 ## 0.21.2 (2026-10-25)
 
 - **Dropped Ollama backend (owner decision 2026-10-25, security).** Removes the `ollama-ai-provider` dependency, which pinned `@ai-sdk/provider-utils` 2.x and its zod 3 line (GHSA-mrhx-c7xc-m3w5, high). The `ollama` direct backend is refused with the standard `--backend must be one of …` error; `@sentropic/llm-mesh` has no Ollama provider, so nothing replaces it. `validateOllamaBaseUrl` and its tests are removed with the backend.
