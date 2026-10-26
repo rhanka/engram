@@ -7,13 +7,108 @@ import type {
   Lifecycle,
   Pin,
   PinList,
+  PrivateLineage,
   ProfileShape,
-  TenantVisibility,
+  PublicLineage,
 } from "./types.js";
+import type { CompiledLintOptionsNative, CompiledSetting } from "./diagnostics.js";
 
 // --- §5.2 pinned v9 envelope (verbatim scope; G0 adds kind value + payload) ---
 
 export type RegistryKind = "skill" | "mcp" | "ontology";
+
+/**
+ * S-V9 normative types, transcribed verbatim ([R9:§3.2]).
+ * G0 adds only the `ontology` kind value and its payload arm; no v9 field
+ * is paraphrased, merged or dropped.
+ */
+export interface DocumentSchema {
+  readonly name: string;
+  readonly schemaId: string;
+  readonly version: string;
+  readonly assetPath: string;
+  readonly sha256: string;
+}
+
+export interface EntryDependency {
+  readonly kind: "skill" | "mcp";
+  readonly id: string;
+  readonly entryRange: string;
+  readonly required: boolean;
+  readonly requiredFeatures: string[];
+}
+
+export interface TransportProfile {
+  readonly id: string;
+  readonly mode: "in-process" | "stdio" | "streamable-http" | "binding";
+  readonly bindingKey?: string;
+  readonly protocolVersions: string[];
+  readonly requiredHostFeatures: string[];
+}
+
+export interface UiProfile {
+  readonly mcpAppsRevision: string;
+  readonly a2uiSchemaRevision: string;
+  readonly resourceMimeTypes: string[];
+  readonly requiredHostFeatures: string[];
+  readonly documentSchemas: DocumentSchema[];
+  readonly catalog: { readonly id: string; readonly version: "0.9.1"; readonly asset: string; readonly sha256: string };
+}
+
+export interface McpPayload {
+  readonly manifestAsset: string;
+  readonly connectorIds: string[];
+  readonly transportProfiles: TransportProfile[];
+  readonly protocolVersions: string[];
+  readonly authorizationProfileSchemaAsset?: string;
+  readonly capabilityProfiles?: {
+    readonly id: string;
+    readonly tools: string[];
+    readonly resources: string[];
+    readonly prompts: string[];
+    readonly readOnly: boolean;
+  }[];
+  readonly ui?: UiProfile;
+}
+
+/** Skill profile selector ([R9:§4.1]): `instructions` or `tools`, never both roles at once. */
+export type SkillProfileSelector =
+  | { readonly instructions: string }
+  | { readonly tools: readonly string[] };
+
+/** Skill metadata ([R9:§4.1]); name/version/description agree with the envelope. */
+export interface SkillMetadata {
+  readonly category: string;
+  readonly contextFilters: readonly unknown[];
+  readonly permissionRequirements: readonly unknown[];
+  readonly toolNames: readonly string[];
+}
+
+export interface SkillCapability {
+  readonly id: string;
+  readonly description: string;
+  readonly effect: "read-only" | "mutation";
+  readonly permissions: readonly unknown[];
+  readonly inputSchemaRef?: string;
+  readonly outputSchemaRef?: string;
+}
+
+/**
+ * Skill tool-bearing profile descriptors ([R9:§4.1]).
+ * Exact tool fields stay with the skills package; G0 carries the array only.
+ */
+export type SkillToolDescriptor = Record<string, unknown>;
+
+/** `skill` arm ([R9:§4.1]); `instructions` requires `tools: []` and `metadata.toolNames: []`. */
+export interface SkillPayload {
+  readonly profile: SkillProfileSelector;
+  readonly metadata: SkillMetadata;
+  readonly instructionsAsset: string;
+  readonly capabilities: readonly SkillCapability[];
+  readonly tools: readonly SkillToolDescriptor[];
+  readonly documentSchemas: DocumentSchema[];
+  readonly dependencies: EntryDependency[];
+}
 
 export interface RegistryCompatibility {
   readonly entryContract: string;
@@ -42,10 +137,9 @@ export interface RegistryAsset {
   readonly sha256: Digest;
 }
 
-export interface RegistryEnvelope {
+export interface RegistryEnvelopeBase {
   readonly format: "sentropic.registry-entry/v1";
   readonly contractVersion: string;
-  readonly kind: RegistryKind;
   readonly id: string;
   readonly name: string;
   readonly description: string;
@@ -55,10 +149,33 @@ export interface RegistryEnvelope {
   readonly parameters: RegistryParameters;
   readonly bindings: readonly RegistryBinding[];
   readonly assets: readonly RegistryAsset[];
-  readonly ontology?: OntologyPayload;
   readonly extensions?: Record<string, unknown>;
   readonly requiredExtensions?: readonly string[];
 }
+
+/**
+ * §5.2 tagged union on `kind`: exactly one kind payload is present,
+ * the others are absent. `ontology` is the G0 addition with its §5.3 payload.
+ */
+export type RegistryEnvelope =
+  | (RegistryEnvelopeBase & {
+      readonly kind: "skill";
+      readonly skill: SkillPayload;
+      readonly mcp?: never;
+      readonly ontology?: never;
+    })
+  | (RegistryEnvelopeBase & {
+      readonly kind: "mcp";
+      readonly mcp: McpPayload;
+      readonly skill?: never;
+      readonly ontology?: never;
+    })
+  | (RegistryEnvelopeBase & {
+      readonly kind: "ontology";
+      readonly ontology: OntologyPayload;
+      readonly skill?: never;
+      readonly mcp?: never;
+    });
 
 // --- §5.3 ontology payload (closed) ---
 
@@ -78,12 +195,25 @@ export interface SelectionMetadata {
   readonly rules: readonly SelectionRuleRow[];
 }
 
-export interface RuleSheetRef {
+/**
+ * §5.3 public rule sheet: selections required, one row per
+ * (phase, readinessPolicy) covered by the entry qualification scope.
+ */
+export interface PublicRuleSheetRef {
   readonly sheetPin: Pin;
   readonly ruleIds: readonly string[];
-  /** Required for public entries; absent for private entries. */
-  readonly selections?: readonly SelectionMetadata[];
+  readonly selections: readonly SelectionMetadata[];
 }
+
+/** §5.3 private rule sheet: no selections array; selection stays owner-side. */
+export interface PrivateRuleSheetRef {
+  readonly sheetPin: Pin;
+  readonly ruleIds: readonly string[];
+  readonly selections?: never;
+}
+
+/** Rule sheet reference, visibility-selected by the enclosing payload arm. */
+export type RuleSheetRef = PublicRuleSheetRef | PrivateRuleSheetRef;
 
 export interface LicenceClosure {
   readonly licences: readonly string[];
@@ -138,25 +268,13 @@ export type ArtifactBinding =
       readonly compatibilityMatrixVersion: string;
     };
 
-export type PayloadLineage =
-  | {
-      readonly scope: "public";
-      readonly parents: PinList;
-      readonly derivation?: {
-        readonly base: Pin;
-        readonly operations: readonly unknown[];
-        readonly resultingDigests: {
-          readonly contentDigest: Digest;
-          readonly pinsDigest: Digest;
-          readonly resultEvidence: DigestEvidence;
-        };
-      };
-      readonly mappings: readonly string[];
-      readonly migrations: readonly string[];
-    }
-  | { readonly scope: "private"; readonly lineage: import("./types.js").PrivateLineage };
+/**
+ * §5.3 lineage: the same discriminated union as §1.4, keyed by the enclosing
+ * payload visibility. No `scope` wrapper, no extra `lineage` nesting.
+ */
+export type PayloadLineage = PublicLineage | PrivateLineage;
 
-export interface OntologyPayload {
+export interface OntologyPayloadBase {
   readonly canonicalRef: string;
   readonly namespace: string;
   readonly owner: string;
@@ -170,7 +288,6 @@ export interface OntologyPayload {
     readonly pinsDigest: Digest;
     readonly resultEvidence: DigestEvidence;
   };
-  readonly ruleSheets: readonly RuleSheetRef[];
   readonly lifecycle: Lifecycle;
   readonly deprecatedReason?: string;
   readonly deprecatedAt?: string;
@@ -178,7 +295,6 @@ export interface OntologyPayload {
   readonly provenance: ProvenanceRecord;
   readonly licenceClosure?: LicenceClosure;
   readonly coverage?: CoverageRecord;
-  readonly lineage: PayloadLineage;
   readonly conflictPolicy: string;
   readonly completeness: Completeness;
   readonly corpusRef: { readonly ref: string; readonly digest: Digest };
@@ -186,10 +302,26 @@ export interface OntologyPayload {
   readonly migrations: readonly string[];
   readonly consumers: readonly string[];
   readonly compatibility: { readonly renderer: string; readonly adapter: string };
-  readonly visibility: TenantVisibility;
   readonly linkedTools: readonly string[];
   readonly artifactBinding: ArtifactBinding;
 }
+
+/**
+ * §5.3 ontology payload, discriminated by the enclosing visibility:
+ * public entries carry the public lineage container and required selections;
+ * private entries carry exactly `PrivateLineage` and no selections array.
+ */
+export type OntologyPayload =
+  | (OntologyPayloadBase & {
+      readonly visibility: "public";
+      readonly lineage: PublicLineage;
+      readonly ruleSheets: readonly PublicRuleSheetRef[];
+    })
+  | (OntologyPayloadBase & {
+      readonly visibility: `private:${string}`;
+      readonly lineage: PrivateLineage;
+      readonly ruleSheets: readonly PrivateRuleSheetRef[];
+    });
 
 // --- §5.5 receipts (closed, discriminated on receiptKind) ---
 
@@ -238,21 +370,20 @@ export interface ReceiptBase {
   readonly transitionQualification?: TransitionQualification;
 }
 
-export interface CompiledLintOptions {
-  readonly mechanismVersion: string;
-  readonly profileDigest: string;
-  readonly phase: string;
-  readonly readinessPolicy: string;
-  readonly compiledRules: readonly Record<string, unknown>[];
-  readonly bindings: readonly { readonly ownerId: string; readonly role: string; readonly targetId: string }[];
-  readonly severityPolicyDigest: Digest;
-}
+/**
+ * S-COMPILED pinned object, reused verbatim ([BC@63a9258:src/profile/lint-contracts.ts:8–12]).
+ * `mechanismVersion` is the literal `"1"`; every compiled rule keeps required
+ * `id, phase, select, assert, code, message, classification` with only optional
+ * `repairRecipe, bindings`; a compiled rule never carries `options`.
+ */
+export type CompiledLintOptions = CompiledLintOptionsNative;
 
 export type CompiledLintEvidence =
   | {
       readonly scope: "public";
       readonly compiledOptions: CompiledLintOptions;
-      readonly settings: readonly Record<string, unknown>[];
+      /** Complete effective native settings (S-COMPILED `Setting[]`), verbatim. */
+      readonly settings: readonly CompiledSetting[];
     }
   | { readonly scope: "private-reference"; readonly ownerReceiptRef: string };
 
