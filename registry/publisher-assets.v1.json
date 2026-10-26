@@ -148,8 +148,8 @@
     }
   ],
   "entryJcsSha256": "ee5f97fe11183ec95f665802315e25b0241e5e85c80e10b0cb6903a31d517d25",
-  "tarballSha256": "a295eef8a1733fd8c00f72ccd6938a5ea11678fdf33848f8849c4d531bd43af8",
-  "tarballIntegrity": "sha512-vzIjuznMAk9IXdzBJdJgSAe7Lf0pLxC1UGK6LrSoXcYYbFIR2BVL20e6Eej4YY4MZxZTljmnn5xdYO4l7MXBSA==",
+  "tarballSha256": "684a831ac950aa1ea45cf4db857aac10ec2deefe2c920ae5025747898a042862",
+  "tarballIntegrity": "sha512-RNXfP55laJnYcHG0zXV60iOyU5pKwadTrfM2TPqPxEOiNWQzS5Ft9p47XlF6l/qD5bpiiHdw+p5zMwx3tGnjiw==",
   "baseManifestSha256": "a0c484fecac059254a33f92c966070d85f690a4835e97cac814510c6124d542b",
   "effectiveManifestSha256": "a88ae7f11e96475422674fb28b05966c64ba1e71b950e3cc78327cebc34c1ade",
   "schemas": [
@@ -205,8 +205,8 @@
     "sha256": "3e13743aa06cfdc8691eb8581846372c4a23bea93bc2e7b60092f88ac7bb8ef2"
   },
   "executableProvenance": {
-    "sourceHead": "7638249ec9fe5558dde61898cb19372b9702ba1c",
-    "codeArchiveSha256": "a295eef8a1733fd8c00f72ccd6938a5ea11678fdf33848f8849c4d531bd43af8",
+    "sourceHead": "6e1eef53a020db25178b37416faa782d0a1b9855",
+    "codeArchiveSha256": "684a831ac950aa1ea45cf4db857aac10ec2deefe2c920ae5025747898a042862",
     "dependencyClosureSha256": "032d38115845926abf71f09793795ae83815523d81c89d23d9d84a5941f2f6d2"
   }
 }
