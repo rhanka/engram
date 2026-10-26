@@ -123,7 +123,11 @@ assert.equal(typeof broker.bindMemoryInvocation, 'function');
 
 assert.equal(definitionsMod.memoryDefinition.kind, 'LazyDefinition');
 assert.equal(definitionsMod.memoryDefinition.id, 'sentropic.engram.memory');
-assert.ok(definitionsMod.memoryDefinition.load.toString().includes('./mcp-memory'));
+assert.equal(typeof definitionsMod.memoryDefinition.load, 'function');
+const definitionsText = fs.readFileSync(path.join(pkgDir, 'dist/registry/definitions.js'), 'utf8');
+assert.ok(definitionsText.includes('./mcp-memory'));
+const lazyLoaded = await definitionsMod.memoryDefinition.load();
+assert.equal(typeof (lazyLoaded.createEngramMemoryProviderV1 ?? lazyLoaded.default?.createEngramMemoryProviderV1), 'function');
 
 const entries = JSON.parse(fs.readFileSync(path.join(pkgDir, 'registry/entries.v1.json'), 'utf8'));
 assert.equal(entries.format, 'sentropic.registry-package/v1');
