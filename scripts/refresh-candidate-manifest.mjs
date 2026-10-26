@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HERE);
 const NPM = process.env.MCP_L4_NPM_BIN ?? '/home/antoinefa/.npm-global/bin/npm';
-const BUILT_AGAINST = '2b85ff28b6fe06bda0abcdc19255f61a1ed1e4b7cfbb40c2e881c98dd234424b';
+const BUILT_AGAINST = '1c96bada2a749155f29aae763fa73ea6379c385d619f70614110f59b6b10b730';
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -120,7 +120,7 @@ export async function refreshCandidateManifest() {
       sdkPinned: sdkInstalled.version,
       sdkFloorProbe: 'pending-acceptance',
       unverified: [
-        'L5 qualification of the staged P2 pre-candidate archives (received with matching sha256/integrity, not re-qualified here)',
+        'L5 qualification of the staged P3 pre-candidate archives (received with matching sha256/integrity, not re-qualified here)',
         'Deployed host bindings, tenancy and policy values (host-supplied at composition; acceptance uses test host ports)',
         'Postgres canonical parity and native-addon suites (environmental: no native toolchain or addons in this container)',
       ],
