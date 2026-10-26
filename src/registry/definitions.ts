@@ -3,11 +3,12 @@
  *
  * No side effects at import. No provider load, no store open, no native
  * build, no identity bootstrap: this module only carries the local
- * descriptor metadata (ids, versions, tool names, wire profiles). The loader
- * is a literal bound to the optional public entry
- * `@sentropic/engram/mcp-memory` (package subpath `./mcp-memory`), kept
- * external at bundle time so the packed loader imports the public entry
- * instead of an inlined copy.
+ * descriptor metadata (ids, versions, tool names, wire profiles), the full
+ * tool descriptor set, the provider manifest and the per-tool closed schemas
+ * (all static data from the L0 contracts), plus the literal loader bound to
+ * the optional public entry `@sentropic/engram/mcp-memory` (package subpath
+ * `./mcp-memory`), kept external at bundle time so the packed loader imports
+ * the public entry instead of an inlined copy.
  */
 
 import {
@@ -32,6 +33,12 @@ export interface MemoryLazyDefinitionMetadataV1 {
   readonly wireProfile: typeof MEMORY_MCP_WIRE_PROFILE_ID_V1;
   readonly toolsProfile: typeof MEMORY_MCP_TOOL_SCHEMA_PROFILE_ID_V1;
   readonly toolNames: readonly string[];
+  /** Full static tool descriptor set (qualified metadata source). */
+  readonly descriptor: typeof ENGRAM_MEMORY_TOOL_DESCRIPTORS;
+  /** Standard provider manifest (static L0 data). */
+  readonly manifest: typeof ENGRAM_MEMORY_PROVIDER_MANIFEST;
+  /** Closed per-tool input/output schemas, keyed by tool name. */
+  readonly schemas: Readonly<Record<string, { readonly inputSchema: unknown; readonly outputSchema: unknown }>>;
 }
 
 export interface MemoryLazyDefinitionV1 {
@@ -44,6 +51,11 @@ export interface MemoryLazyDefinitionV1 {
   readonly load: () => Promise<unknown>;
 }
 
+const schemas: Record<string, { inputSchema: unknown; outputSchema: unknown }> = {};
+for (const tool of ENGRAM_MEMORY_TOOL_DESCRIPTORS) {
+  schemas[tool.name] = { inputSchema: tool.inputSchema, outputSchema: tool.outputSchema };
+}
+
 export const memoryDefinitionMetadata: MemoryLazyDefinitionMetadataV1 = {
   providerId: ENGRAM_MEMORY_PROVIDER_ID,
   connectorId: ENGRAM_MEMORY_CONNECTOR_ID,
@@ -52,9 +64,10 @@ export const memoryDefinitionMetadata: MemoryLazyDefinitionMetadataV1 = {
   wireProfile: MEMORY_MCP_WIRE_PROFILE_ID_V1,
   toolsProfile: MEMORY_MCP_TOOL_SCHEMA_PROFILE_ID_V1,
   toolNames: ENGRAM_MEMORY_TOOL_DESCRIPTORS.map((tool) => tool.name),
+  descriptor: ENGRAM_MEMORY_TOOL_DESCRIPTORS,
+  manifest: ENGRAM_MEMORY_PROVIDER_MANIFEST,
+  schemas,
 };
-
-void ENGRAM_MEMORY_PROVIDER_MANIFEST;
 
 export const memoryDefinition: MemoryLazyDefinitionV1 = {
   kind: 'LazyDefinition',
