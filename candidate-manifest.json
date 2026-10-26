@@ -1,6 +1,6 @@
 {
   "builtAgainstPreCandidateSha256": "2b85ff28b6fe06bda0abcdc19255f61a1ed1e4b7cfbb40c2e881c98dd234424b",
-  "engramSourceCommit": "e51bbc9c7027e566b7acff9de344dfc6940901a4",
+  "engramSourceCommit": "104b75a88493a77da2b535d2e1e693d8866db7dd",
   "tarball": {
     "filename": "sentropic-engram-0.21.1.tgz",
     "sha256": "a4ce2a0df9e4bbf6d6c897259da43afaf19849b73af875c9590298e57bdb67dd",
