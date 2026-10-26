@@ -130,8 +130,6 @@ export interface OntologyRecordBase {
   readonly profileShape: ProfileShape;
   readonly artifactKind: ArtifactKind;
   readonly profileRef: ProfileRef;
-  readonly corpusRef: CorpusRef;
-  readonly digests: RecordDigests;
   readonly consumers: readonly string[];
   readonly migrationRef?: string;
   readonly catalogEntryRef?: string;
@@ -163,6 +161,9 @@ export type OntologyRecord = LifecycleFields & (
     })) & (
       | { readonly lifecycle: "superseded"; readonly migrationRef: string }
       | { readonly lifecycle: "draft" | "published" | "deprecated" }
+    ) & (
+      | { readonly lifecycle: "draft"; readonly corpusRef?: CorpusRef; readonly digests?: RecordDigests }
+      | { readonly lifecycle: "published" | "deprecated" | "superseded"; readonly corpusRef: CorpusRef; readonly digests: RecordDigests }
     );
 
 // ---------------------------------------------------------------------------
@@ -253,6 +254,7 @@ export type DerivedCandidate =
       readonly outcome: "ok";
       readonly candidate: OntologyRecordBase & {
         readonly lifecycle: "draft";
+        readonly corpusRef: CorpusRef;
         readonly digests: RecordDigests;
       };
       readonly derivation: LineageDerivation;

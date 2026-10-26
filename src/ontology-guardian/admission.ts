@@ -167,7 +167,7 @@ export function deriveRequirements(entry: AdmissionEntry): readonly AdmissionReq
     const producers = receiptKind === "bpmn-bijection" ? [scope.bijectionLibrary] : scope.libraries;
     for (const producer of producers) {
       if (!producer || !producer.id || !isExactVersion(producer.version)) throw new Error("incomplete bijection library pin");
-      for (const selection of scope.selections) {
+      for (const selection of ruleSheetsApply(entry) ? scope.selections : [{}]) {
         for (const proofSet of receiptKind === "bpmn-parity" ? scope.proofSets : [undefined]) {
           requirements.push({ receiptKind, libraryId: producer.id, libraryVersion: producer.version,
             ...(proofSet === undefined ? {} : { proofSet }),
