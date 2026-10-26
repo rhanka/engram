@@ -2,7 +2,9 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
+    "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["src/ontology-guardian/**/*.ts", "tests/ontology-guardian-g0-typeproof.test.ts"]
+  "include": ["src/ontology-guardian/**/*.ts", "tests/ontology-guardian-g0-typeproof.test.ts"],
+  "exclude": ["node_modules", "dist"]
 }

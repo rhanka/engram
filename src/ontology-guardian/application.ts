@@ -1,5 +1,5 @@
 // §6 application receipt (closed; data only).
-import type { Digest, GuardianDiagnostic } from "./types.js";
+import type { Digest } from "./types.js";
 
 export type ValidatorRole = "transitional-oracle" | "retained-check" | "qualified-ds-execution";
 
@@ -28,12 +28,13 @@ export interface ApplicationReceipt {
 }
 
 export interface ApplyPreview {
-  readonly effectiveProfile?: unknown;
-  readonly pins?: import("./types.js").PinList;
-  readonly pinsDigest?: Digest;
-  readonly resultDigest?: Digest;
+  readonly effectiveProfile: unknown;
   readonly bindingChanges: readonly string[];
   readonly staleArtifacts: readonly string[];
   readonly nextRebuild: string;
 }
+
+/** §6.1 does not freeze the private pins/digests/receipts container's keys.
+ * That representation is unverified and cannot be constructed here. */
+export type PrivateApplyPreview = never;
 

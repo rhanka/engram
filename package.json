@@ -58,7 +58,9 @@
     "test:substrate-tarball": "node scripts/substrate-tarball-acceptance.mjs",
     "test:all": "vitest run && npm run test:smoke",
     "prepublishOnly": "npm run build && node scripts/assert-studio-app.mjs && npm test",
-    "postinstall": "node -e \"if(require('fs').existsSync('engram-memory/package.json'))require('child_process').execSync('npm --prefix engram-memory install --no-audit --no-fund',{stdio:'inherit'})\""
+    "postinstall": "node -e \"if(require('fs').existsSync('engram-memory/package.json'))require('child_process').execSync('npm --prefix engram-memory install --no-audit --no-fund',{stdio:'inherit'})\"",
+    "pretest": "npm run test:g0-types",
+    "test:g0": "npm run test:g0-types && vitest run tests/ontology-guardian-g0*.test.ts && npm run test:g0-mutants"
   },
   "keywords": [
     "engram",
