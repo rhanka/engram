@@ -1,10 +1,10 @@
 {
-  "builtAgainstPreCandidateSha256": "2b85ff28b6fe06bda0abcdc19255f61a1ed1e4b7cfbb40c2e881c98dd234424b",
-  "engramSourceCommit": "6e1eef53a020db25178b37416faa782d0a1b9855",
+  "builtAgainstPreCandidateSha256": "1c96bada2a749155f29aae763fa73ea6379c385d619f70614110f59b6b10b730",
+  "engramSourceCommit": "ca8a53e55b41c40addfb19a6ce70fe067030d61e",
   "tarball": {
     "filename": "sentropic-engram-0.22.0.tgz",
-    "sha256": "684a831ac950aa1ea45cf4db857aac10ec2deefe2c920ae5025747898a042862",
-    "integrity": "sha512-RNXfP55laJnYcHG0zXV60iOyU5pKwadTrfM2TPqPxEOiNWQzS5Ft9p47XlF6l/qD5bpiiHdw+p5zMwx3tGnjiw=="
+    "sha256": "26a0edd50c338f30593d22ae1f06ac13d82f5557f18558750659bcfefec64c10",
+    "integrity": "sha512-/TV03olHbzG+3haTC5j5YJ282egCrXak1yQE0I8DHF1kAQDwsKUe1QlMwibvBCEmPGdWeTgSHT4fF8lZJTH8cw=="
   },
   "exports": {
     ".": {
@@ -45,7 +45,7 @@
   "registryArtifacts": {
     "registry/entries.v1.json": "3fa483227ec9a36e57a76aad3f2dfe7f21d525099fb4f9e234ff2e4e14c9bbd7",
     "registryEntryDigest": "ee5f97fe11183ec95f665802315e25b0241e5e85c80e10b0cb6903a31d517d25",
-    "registry/publisher-assets.v1.json": "cc0c5b63ecaa7c0ee42c9e67f386c0a80298776263ccb42fb85e09278d485d21",
+    "registry/publisher-assets.v1.json": "8ee23d74d2ccc8ddd5a93a2e2f196e3c2db7f4d7d574763f782290af527e0190",
     "dist/registry/manifest.js": "f2d9f9d4829ab49ac5c0736cb7ce75ddc252c64283149e96976194cac0e7c2be",
     "dist/registry/provider-manifest.js": "a88ae7f11e96475422674fb28b05966c64ba1e71b950e3cc78327cebc34c1ade",
     "dist/registry/base-manifest.json": "a0c484fecac059254a33f92c966070d85f690a4835e97cac814510c6124d542b",
@@ -78,7 +78,7 @@
   "sdkPinned": "1.32.2",
   "sdkFloorProbe": "pass",
   "unverified": [
-    "L5 qualification of the staged P2 pre-candidate archives (received with matching sha256/integrity, not re-qualified here)",
+    "L5 qualification of the staged P3 pre-candidate archives (received with matching sha256/integrity, not re-qualified here)",
     "Deployed host bindings, tenancy and policy values (host-supplied at composition; acceptance uses test host ports)",
     "Postgres canonical parity and native-addon suites (environmental: no native toolchain or addons in this container)"
   ]
