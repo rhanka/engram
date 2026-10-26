@@ -3,7 +3,8 @@
  *
  * Importing this module loads no provider, opens no store, performs no
  * native build and bootstraps no identity. Call `createEngramMemoryProviderV1`
- * with explicit host-injected ports to obtain the provider.
+ * with explicit host-injected ports to obtain the standard Sentropic
+ * `AppConnectorProviderAdapter`.
  */
 
 export {
@@ -15,16 +16,32 @@ export {
   MEMORY_TOOL_SCHEMA_PROFILE_ID,
   MEMORY_WIRE_PROFILE,
   MEMORY_WIRE_PROFILE_ID,
+  McpMemoryPreflightError,
   createEngramMemoryProviderV1,
-  createToolSuccessEnvelopeForMemory,
   protocolError,
 } from './provider.js';
 export type {
-  EngramMemoryProviderV1,
-  McpMemoryCallToolResult,
-  McpMemoryInvokeEnvelope,
+  McpMemoryCapabilityList,
+  McpMemoryInvokeRequest,
   McpMemoryProviderOptions,
+  McpMemoryResourceRequest,
+  McpMemoryStandardAdapter,
+  McpMemoryStandardInvocation,
+  McpMemoryStandardResult,
+  McpMemoryTenantContext,
+  McpMemoryTenantResolutionInput,
 } from './provider.js';
 
-export { createEngramMemoryMcpServerV1 } from './server.js';
-export type { EngramMemoryMcpServerV1 } from './server.js';
+export {
+  MEMORY_MCP_META_KEY,
+  createEngramMemoryMcpServerV1,
+  discoveryMetadataForTool,
+  toMcpCallToolResult,
+  wrapMemoryOutputSchemaForSdk,
+} from './server.js';
+export type {
+  EngramMemoryMcpServerV1,
+  McpMemoryCallToolResult,
+  McpMemoryDiscoveredTool,
+  ResolveMemoryHostContext,
+} from './server.js';
