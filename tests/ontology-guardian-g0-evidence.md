@@ -1,0 +1,34 @@
+# G0 core — preuves de correction, round auteur 1
+
+Références : spécification gelée `SPEC-G0-guardian-contracts.md`, SHA-256
+`e6362445f87d6581ac31224c2dc44e15214b3a7debc2afff2b3d25b8b37ff8f6`,
+`DESIGN-NOTE-G0-core-round3.md`, constats `G0-core-review-sol-r3.out`.
+Ce document consigne les corrections et leurs preuves ; le verdict de revue reste indépendant.
+
+| Constat | Correction et preuve commise |
+|---|---|
+| Anciens 1–6, 10, 12–14 et constats R2 déjà clos | Formes de lineage, mapping de rename, union registry, champs natifs, digests, consommation par bibliothèque, références privées, qualification et P-DELTA conservés. Leurs contrôles figurent dans les fixtures de contrats, le tableau de refus d'admission et les mutants M1–M14/D1–D4/A1–A14. |
+| 7 : validation native compilée | Fermeture de l'objet racine et prédicats de tableaux appliqués avant itération ; phases, identifiants uniques, bindings et champs de règles vérifiés. Tests `S-COMPILED closes top-level fields and array predicates`, mutants `native-*`. |
+| 8 : sévérité/verdicts | Sévérité dérivée des réglages natifs pour chaque sélection publique, y compris les familles diagram-core/engram ; off ne peut effacer une obligation. Chaque règle déclarée a exactement un verdict de sa sélection, avec sévérité et disposition identiques. Fixtures `native severities`, mutant `public-effective-severity`. |
+| 9 : bindings de preuve restants | Recalcul central de chaque digest public sur phase/politique/réglages complets avant les huit bras ; référence de round trip obligatoire et comparaison des digests de thème à l'évidence attendue. Tests isolés pour chacun des bras ; mutants `public-policy-recomputation`, `bijection-evidence`, `theme-expected-evidence`. |
+| 11 : complétude et mutants survivants | Variations isolées de chaque champ nommé, notamment digest du contenu de la base delta, digest de fiche, code/messageKey de résultat, version de mapping, raison de retraite, phase de sévérité, description et couverture. Les six régressions R2 sont conservées. Le script exécute les callbacks commis avec les matchers Vitest réels pour chaque module muté en mémoire ; aucune assertion miroir ne décide la réussite. |
+| Frontière Report/2 | Validation canonique native de l'ensemble avant tout callback de mapping ; NaN, undefined, substituts isolés, tableaux creux, objets non JSON et champs inconnus refusés avec `NativeReportError.code = validation-refusal`. targetId non vide. Fixtures `whole native JSON boundary`. |
+| Obligations non dérivées | Aucune propriété `requiredReceipts` dans l'API. `deriveRequirements` part de la famille, de l'artefact et du périmètre de qualification résolu : bibliothèques/versions, jeux de preuve et sélections. Les preuves BPMN exigent les deux bibliothèques ; base BPMN générée ajoute la bijection, mécanisme/corpus MECH ajoute la matrice. Descriptions incomplètes refusées. Fixtures public/privé pour les huit bras ; mutant `derived-obligations`. |
+| Règles sélectionnées effaçables | Conservation des IDs des fiches ; liste complète, unique et ordonnée comparée aux lignes de sélection, et réglages étrangers refusés. Périmètre phase/politique complet vérifié en public et via les références owner en privé, y compris plusieurs sélections. Mutants `sheet-completeness`, `sheet-settings-completeness`. |
+| Corps compilés et snapshots non authentifiés | L'entrée de contrôle reçoit séparément la sélection native attendue. La comparaison canonique complète est recalculée sur les deux objets : corps select/assert/code/message/classification/repairRecipe/bindings et bindings racine. Le digest de politique seul ne valide aucune modification. Fixtures `compiled rule … authenticated` et `native binding snapshot` ; mutants `native-expected-*`. |
+| Pins flottants | Version exacte et fermeture des pins vérifiées, notamment profil, stack, fiches et exécuteur qualifié ; listes vides/dupliquées refusées. latest, next, ranges, comparateurs et wildcards testés séparément. |
+| Combinaisons de types interdites | Unions discriminées lifecycle, artefact/binding et rôle/qualification ; code guardian fermé. Preuves compilées de raison/date, successeur/migration, champs étrangers et rôles. Mutants de types exigent TS2578 dans les preuves commises. |
+| Bras SkillTool non vérifié | `SkillToolDescriptor = never` ; aucun descripteur inconnu constructible. Le profil instructions exige les deux listes vides. Le schéma natif exact reste `unverified`. |
+| Apply-preview | Exactement les quatre champs §6.1, effectiveProfile obligatoire ; aucun pin/digest racine ajouté. Représentation privée non gelée : bras privé fermé par `never`, signalé `unverified`. |
+| Preuve de types exclue | rootDir/exclude corrigés ; `pretest` lance la compilation ; la présence effective du fichier est vérifiée par `tsc --listFilesOnly`. Mutant d'exclusion explicite. |
+
+Exécution dans ce worktree, Node 22.22.1, npm 9.2.0 :
+
+- `npm test -- tests/ontology-guardian-g0.test.ts tests/ontology-guardian-g0-admission.test.ts tests/ontology-guardian-g0-typeproof.test.ts` : 522/522, trois fichiers ; douze comparaisons de digests des vecteurs gelés inchangées, plus le vecteur de sélection supplémentaire.
+- `npm run lint` et `npm run test:g0-types` : succès. `tsc --noEmit -p tsconfig.g0-types.json --listFilesOnly` inclut `tests/ontology-guardian-g0-typeproof.test.ts`.
+- `npm run test:g0-mutants` : 163/163 mutants d’exécution et 13/13 mutants de types tués, sur les 522 callbacks commis. Log détaillé : /tmp/g0-sol-mutants.log.
+- Suite entière : 5 874 succès, 97 échecs, 43 ignorés, 422 fichiers. JSON détaillé `/tmp/g0-sol-full.json`.
+- Base `5a8018e3` dans un clone local temporaire, avec les mêmes node_modules et copies des sorties dist déjà présentes dans le worktree : 5 352 succès, 97 échecs, 43 ignorés. JSON `/tmp/g0-sol-base.json`.
+- Comparaison : mêmes 97 noms de tests en échec dans 23 fichiers, mêmes premiers messages après normalisation des chemins ; zéro échec ajouté/retiré, zéro message différent. Causes conservées : fs-ext absent, sorties natives/paquets manquants et npm 9.2.0. Détails `/tmp/g0-sol-environment-comparison.json`. Les 522 succès supplémentaires correspondent exactement aux trois fichiers G0.
+
+Limites `unverified` : schéma SkillTool non transcrit ; clés internes de la représentation privée d'apply-preview non spécifiées ; vocabulaire de sévérité des descripteurs autres que BPMN/diagram-core/engram non transcrit (ces sélections publiques refusent). Les preuves privées complètes restent vérifiées chez leur producteur : l'adaptateur doit résoudre leurs références, comme les bibliothèques et périmètres de qualification. Ce contexte interne n'ajoute aucun champ aux payloads sérialisés §5.3. Qualification/publication des bibliothèques, I/O, registre et opérations d'exécution des autres lots restent hors de ce module pur ; aucune preuve d'exécution de ces lots n'est revendiquée.
