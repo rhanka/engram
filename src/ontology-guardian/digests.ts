@@ -19,6 +19,14 @@ export interface DiagramProfileProjection {
     readonly maxRelations?: number | null;
     readonly maxEndpointsPerRelation?: number | null;
   };
+  /**
+   * Excluded from P-CONTENT-DIAGRAM, never hashed (§7.4 FX-DIG-C7):
+   * human notes, separately pinned theme, catalog fields, file paths.
+   */
+  readonly notes?: readonly unknown[];
+  readonly themeRef?: string;
+  readonly catalogRef?: string;
+  readonly filePath?: string;
 }
 
 function nullOf(value: number | null | undefined): number | null {
@@ -53,6 +61,8 @@ export interface PinsPreimageInput {
   readonly ruleSheets?: readonly Pin[];
   readonly deltaDigest?: Digest | null;
   readonly mappingDigest?: Digest | null;
+  /** Excluded, never hashed (§7.4 FX-DIG-P6): separately applied theme state. */
+  readonly themeState?: unknown;
 }
 
 export function pinsPreimage(input: PinsPreimageInput): Record<string, unknown> {
@@ -192,6 +202,8 @@ export interface ResultPreimageInput {
   readonly effectiveDeclarations: unknown;
   readonly effectiveRuleSet: readonly EffectiveRuleRow[];
   readonly severityPolicyDigest: Digest | null;
+  /** Excluded, never hashed (§7.4 FX-DIG-R5): catalog metadata with identical effective result. */
+  readonly catalogMetadata?: unknown;
 }
 
 export function resultPreimage(input: ResultPreimageInput): Record<string, unknown> {
@@ -224,7 +236,7 @@ export function ownerResultDigestOfDocument(completeCanonicalBytes: string): Dig
 export function severityPolicyDigestOf(
   phase: string,
   readinessPolicy: string,
-  settings: readonly Record<string, unknown>[],
+  settings: readonly object[],
 ): Digest {
   return sha256Hex(canonicalBytes({ phase, readinessPolicy, settings: [...settings] }));
 }
