@@ -127,43 +127,43 @@
           "role": "manifest",
           "path": "dist/registry/manifest.js",
           "mediaType": "application/javascript",
-          "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          "sha256": "2dc33b3b65ad418ea8ae52b4d14df38f10c732a674e8ce7df5148d0013431ce5"
         },
         {
           "role": "definitions",
           "path": "dist/registry/definitions.js",
           "mediaType": "application/javascript",
-          "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          "sha256": "b52b306a55772396c3c003eae92ed2c5350a5f12987b9594a31f2a59f421799e"
         },
         {
           "role": "provider",
           "path": "dist/mcp-memory.js",
           "mediaType": "application/javascript",
-          "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          "sha256": "51b4e7cb19827990404d450917ce5371c4d380daf744a591db67de5b397841a7"
         },
         {
           "role": "wire-profile",
           "path": "dist/mcp-memory.js",
           "mediaType": "application/javascript",
-          "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          "sha256": "51b4e7cb19827990404d450917ce5371c4d380daf744a591db67de5b397841a7"
         },
         {
           "role": "tool-schema-profile",
           "path": "dist/mcp-memory.js",
           "mediaType": "application/javascript",
-          "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          "sha256": "51b4e7cb19827990404d450917ce5371c4d380daf744a591db67de5b397841a7"
         },
         {
           "role": "parameter-schema",
-          "path": "registry/entries.v1.json",
-          "mediaType": "application/json",
-          "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          "path": "dist/mcp-memory.js",
+          "mediaType": "application/javascript",
+          "sha256": "51b4e7cb19827990404d450917ce5371c4d380daf744a591db67de5b397841a7"
         },
         {
           "role": "validator",
           "path": "dist/mcp-memory.js",
           "mediaType": "application/javascript",
-          "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          "sha256": "51b4e7cb19827990404d450917ce5371c4d380daf744a591db67de5b397841a7"
         }
       ],
       "mcp": {
