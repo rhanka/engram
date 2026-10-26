@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +9,7 @@ import { compileNormalizerByNodeType } from "../src/entity-normalizer.js";
 import { normalizeOntologyProfile } from "../src/ontology-profile.js";
 import { generateOntologyReconciliationCandidates } from "../src/ontology-reconciliation.js";
 import { loadProfileRegistries } from "../src/profile-registry.js";
-import type { Extraction, NormalizedOntologyProfile, OntologyProfile } from "../src/types.js";
+import type { EntityNormalizerDescriptor, Extraction, NormalizedOntologyProfile, OntologyProfile } from "../src/types.js";
 import type { OntologyPatchContext, OntologyPatchNode } from "../src/ontology-patch.js";
 
 const cleanupDirs: string[] = [];
@@ -221,5 +222,66 @@ describe("typed-linking normalizer contract", () => {
       export: "normalizeZoneCode",
     });
     expect(second.profile_hash).not.toBe(first.profile_hash);
+  });
+});
+
+describe("legacy v0.18.0 normalizer descriptors", () => {
+  const LEGACY_CONTRACT = "graphify_entity_normalizer_v1" as const;
+
+  function legacyDescriptor(preimage: Record<string, unknown>): EntityNormalizerDescriptor {
+    return {
+      ...(preimage as Omit<EntityNormalizerDescriptor, "normalizer_hash">),
+      contract: LEGACY_CONTRACT,
+      normalizer_hash: createHash("sha256").update(JSON.stringify({ contract: LEGACY_CONTRACT, ...preimage })).digest("hex"),
+    };
+  }
+
+  function storeLegacyDescriptor(profile: NormalizedOntologyProfile, descriptor: EntityNormalizerDescriptor): void {
+    profile.node_types.Zone.linking!.normalizer = descriptor;
+  }
+
+  it("accepts an unchanged built-in-only v0.18.0 descriptor", () => {
+    const root = tempDir();
+    const profile = normalizedProfile(root, {});
+    storeLegacyDescriptor(profile, legacyDescriptor({ builtins: ["normalize_for_match@1"] }));
+
+    const normalizers = compileNormalizerByNodeType(profile);
+    expect(normalizers.Zone?.("Café")).toBe("cafe");
+  });
+
+  it("accepts an unchanged module-backed v0.18.0 descriptor", () => {
+    const root = tempDir();
+    copyNormalizer(root);
+    const profile = normalizedProfile(root, {
+      builtin: ["case_fold", "dash_fold", "collapse_ws"],
+      fn: "./zone-normalize.mjs#normalizeZoneCode",
+    });
+    const moduleBytes = readFileSync(join(root, "zone-normalize.mjs"));
+    const moduleSha256 = createHash("sha256").update(moduleBytes).digest("hex");
+    storeLegacyDescriptor(profile, legacyDescriptor({
+      builtins: ["case_fold@1", "dash_fold@1", "collapse_ws@1"],
+      export: "normalizeZoneCode",
+      module_sha256: moduleSha256,
+    }));
+
+    expect(compileNormalizerByNodeType(profile).Zone?.("20  HA")).toBe("ha-20");
+  });
+
+  it("still refuses a v0.18.0 descriptor after a real module byte change", () => {
+    const root = tempDir();
+    copyNormalizer(root);
+    const profile = normalizedProfile(root, {
+      builtin: ["case_fold", "dash_fold", "collapse_ws"],
+      fn: "./zone-normalize.mjs#normalizeZoneCode",
+    });
+    const moduleSha256 = createHash("sha256").update(readFileSync(join(root, "zone-normalize.mjs"))).digest("hex");
+    storeLegacyDescriptor(profile, legacyDescriptor({
+      builtins: ["case_fold@1", "dash_fold@1", "collapse_ws@1"],
+      export: "normalizeZoneCode",
+      module_sha256: moduleSha256,
+    }));
+    writeFileSync(join(root, "zone-normalize.mjs"), `${readFileSync(join(root, "zone-normalize.mjs"), "utf-8")}\n`, "utf-8");
+
+    expect(() => compileNormalizerByNodeType(profile)).toThrow(/module bytes changed/);
   });
 });

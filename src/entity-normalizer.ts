@@ -141,6 +141,7 @@ function descriptorFor(
   normalize: OntologyNodeTypeNormalize | undefined,
   profile: Pick<NormalizedOntologyProfile, "sourcePath">,
   context: string,
+  contract: EntityNormalizerDescriptor["contract"] = ENTITY_NORMALIZER_CONTRACT,
 ): EntityNormalizerDescriptor {
   const builtinNames = normalizeBuiltins(normalize, context);
   const builtins = (builtinNames === undefined
@@ -150,7 +151,7 @@ function descriptorFor(
   const resolved = fn === undefined ? undefined : resolveFn(profile, fn, context);
   if (resolved) assertStandaloneModule(resolved, context);
   const fingerprint = {
-    contract: ENTITY_NORMALIZER_CONTRACT,
+    contract,
     builtins,
     ...(resolved ? { export: resolved.exportName, module_sha256: sha256(resolved.moduleBytes) } : {}),
   };
@@ -380,7 +381,10 @@ function compileOne(
   const normalize = nodeType.linking?.normalize;
   const storedDescriptor = nodeType.linking?.normalizer;
   if (storedDescriptor) {
-    const currentDescriptor = descriptorFor(normalize, profile, context);
+    // v0.18.0 descriptors carry the legacy `graphify_entity_normalizer_v1`
+    // contract. Recompute the comparison hash with that same contract so an
+    // unchanged descriptor still matches; a real byte change still mismatches.
+    const currentDescriptor = descriptorFor(normalize, profile, context, storedDescriptor.contract);
     if (currentDescriptor.normalizer_hash !== storedDescriptor.normalizer_hash) {
       throw new Error(
         `${context}.fn module bytes changed since this profile was loaded; reload the profile to refresh profile_hash`,
