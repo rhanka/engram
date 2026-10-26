@@ -22,12 +22,13 @@
  * manifest (exports derived from the packed `package.json`, tarball binding,
  * receipt validity) and flips its `sdkFloorProbe` to `pass`.
  */
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createDisabledTrace } from './mcp-memory-disabled-trace.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HERE);
@@ -49,6 +50,7 @@ function readJson(path) {
 }
 
 export function verifyP2Archives() {
+  if (sha256(readFileSync(P2_MANIFEST)) !== '2b85ff28b6fe06bda0abcdc19255f61a1ed1e4b7cfbb40c2e881c98dd234424b') throw new Error('P2 manifest identity mismatch');
   const manifest = readJson(P2_MANIFEST);
   for (const artifact of manifest.artifacts) {
     const archivePath = join(P2_BASE, artifact.archive.replace(/^tools\/memory-mcp-l5\/artifacts\//, ''));
@@ -87,8 +89,10 @@ function installConsumer(consumerDir, tarball, extraArchives = [], env = {}, sdk
   const args = ['install', '--no-save', '--no-audit', '--no-fund'];
   if (omitOptional) args.push('--omit=optional');
   args.push(...specs);
-  const out = run(NPM, args, { cwd: consumerDir, env: { ...process.env, ...env } });
+  const result = spawnSync(NPM, args, { cwd: consumerDir, env: { ...process.env, ...env }, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+  const out = (result.stdout ?? '') + (result.stderr ?? '');
   if (logPath !== null) writeFileSync(logPath, out);
+  if (result.status !== 0) throw new Error('consumer install failed: ' + out);
 }
 
 function p2ArchivePaths(manifest) {
@@ -182,6 +186,8 @@ function engineDeps(receiptDigest, clock) {
   const authorization = {
     version: 1,
     async authorize(request) {
+      assert.equal(request.context.credential, 'credential:one');
+      assert.ok(['capture', 'request_admission', 'withdraw', 'tombstone', 'recall_current'].includes(request.operation));
       const body = {
         allowed: true, decision_id: 'decision:packed', policy_version: '1',
         operation: request.operation, resource_digest: request.resource_digest,
@@ -324,7 +330,8 @@ export async function buildRealHost(overrides = {}) {
       stored.set(key, entry);
       return { ok: true, value: entry };
     },
-    async attachConfirmation(reservationRef, confirmationRef, operationDigest) {
+    async attachConfirmation(reservationRef, confirmationRef, operationDigest, currentSession) {
+      assert.deepEqual(currentSession, { principal_namespace: 'ns:one', principal_id: 'alice', tenant_id: 'tenant:one', session_id: 'session:one', transport_attachment_ref: 'attach:one' });
       const entry = byRef(reservationRef);
       if (!entry) return failPort('NOT_FOUND', 'unknown reservation');
       if (entry.operation_digest !== operationDigest) return failPort('INVALID_SCHEMA', 'confirmation digest mismatch');
@@ -366,19 +373,28 @@ export async function buildRealHost(overrides = {}) {
     },
   };
 
+  const verifyIdentity = (ctx, tool) => {
+    const read = tool === 'engram_memory_search' || tool === 'engram_memory_get';
+    return ctx.authorization?.credential === 'credential:one' &&
+      ctx.principal_namespace === 'ns:one' && ctx.principal_id === 'alice' && ctx.tenant_id === 'tenant:one' &&
+      ctx.agent_id === 'agent:one' && ctx.session_id === 'session:one' &&
+      (read ? ctx.connector_instance_id : ctx.connector_instance_ref) === 'connector:one' &&
+      (read || ctx.transport_attachment_ref === 'attach:one') &&
+      ctx.generation === '1' && ctx.scope_ref === 'scope:one' && ctx.store_id === 'store:one';
+  };
   const readHost = {
     clock,
     authenticate: async (ctx, tool) => {
       counts.authenticate++;
       if (overrides.authenticate) return overrides.authenticate(ctx, tool);
-      return ctx.scope_ref === 'scope:one' && ctx.store_id === 'store:one';
+      return verifyIdentity(ctx, tool);
     },
     authorize: async (ctx, tool, purpose) => {
       counts.authorize++;
       if (overrides.authorize) return overrides.authorize(ctx, tool, purpose);
       return ctx.scope_ref === 'scope:one' && purpose === 'purpose:one';
     },
-    authorizeContinuation: async () => true,
+    authorizeContinuation: async (_state, ctx) => verifyIdentity(ctx, 'engram_memory_search'),
     pages: memoryTools.createMemoryReadPageStoreV1({ clock, ttl_ms: 60000, max_entries: 100 }),
   };
   const writeHost = {
@@ -406,7 +422,12 @@ export async function buildRealHost(overrides = {}) {
       counts.confirm++;
       confirmations.push({ ...binding });
       if (overrides.confirm) return overrides.confirm(binding);
-      return true;
+      const reserved = byRef(binding.reservation_ref);
+      return binding.elicitation_ref === ELICITATION_REF && binding.principal_namespace === 'ns:one' &&
+        binding.principal_id === 'alice' && binding.tenant_id === 'tenant:one' && binding.session_id === 'session:one' &&
+        binding.transport_attachment_ref === 'attach:one' && reserved?.operation_digest === binding.operation_digest &&
+        reserved.preimage.tool_name === binding.capability && typeof binding.target_ref === 'string' &&
+        Date.parse(clock.now()) >= Date.parse(NOW) && Date.parse(clock.now()) < Date.parse(DEADLINE);
     },
     keyCustody: {
       confirmDestroyed: async (candidate_id) => {
@@ -465,16 +486,17 @@ export async function buildRealHost(overrides = {}) {
       };
     },
   };
-  const raw = providerMod.createEngramMemoryProviderV1({
+  const options = {
     readFacets: facets, writeFacets: facets, readHost, writeHost, policyId: 'policy:one',
     hostBindings, plan, sourceId: 'mcp:engram-memory', generation: '1',
-  });
+  };
+  const raw = providerMod.createEngramMemoryProviderV1(options);
   // Provider-entry counter: every provider dispatch passes here.
   const adapter = {
     ...raw,
     invokeTool: async (...args) => { counts.providerEntry++; return raw.invokeTool(...args); },
   };
-  return { adapter, raw, counts, confirmations, engineRequests, facets, readHost, writeHost, providerMod, memoryTools };
+  return { adapter, raw, counts, confirmations, engineRequests, facets, readHost, writeHost, providerMod, memoryTools, options, ports, store };
 }
 `;
 
@@ -579,7 +601,15 @@ assert.equal(JSON.parse(fs.readFileSync(path.join(pkgDir, assetByRole('wire-prof
 assert.equal(JSON.parse(fs.readFileSync(path.join(pkgDir, assetByRole('tool-schema-profile').path), 'utf8')).id, platform.MEMORY_TOOLS_PROFILE_ID);
 assert.equal(JSON.stringify(JSON.parse(fs.readFileSync(path.join(pkgDir, assetByRole('parameter-schema').path), 'utf8'))), JSON.stringify(entry.parameters.schema));
 assert.equal(JSON.stringify(JSON.parse(fs.readFileSync(path.join(pkgDir, 'dist/registry/base-manifest.json'), 'utf8'))), JSON.stringify(providerMod.MEMORY_PROVIDER_MANIFEST));
-assert.equal(manifestMod.manifest.entries[0].mcp.manifestAsset, 'dist/registry/manifest.js');
+assert.equal(entry.mcp.manifestAsset, 'dist/registry/provider-manifest.js');
+const providerManifest = await import(path.join(pkgDir, entry.mcp.manifestAsset));
+assert.deepEqual(providerManifest.manifest, providerMod.MEMORY_PROVIDER_MANIFEST);
+assert.equal(providerManifest.manifest.appId, 'engram');
+assert.equal(providerManifest.manifest.providerId, entry.id);
+assert.equal(providerManifest.manifest.tools.length, 6);
+const declaredValidator = await import(path.join(pkgDir, assetByRole('validator').path));
+assert.equal(typeof declaredValidator.validateMemoryPublisherAssetsV1, 'function');
+assert.equal(declaredValidator.validateMemoryPublisherAssetsV1({}, new Map()).ok, false);
 
 // Protocol revisions are the SDK-advertised list, nothing invented.
 assert.deepEqual(entry.mcp.protocolVersions, [...sdkTypes.SUPPORTED_PROTOCOL_VERSIONS]);
@@ -612,6 +642,7 @@ console.log('L4-ENABLED-PROBE-OK');
 
 const INVOCATION_PROBE = `
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 const host = await import('./real-host.mjs');
 const { buildRealHost, stpCtx, captureArgs, KEY, ELICITATION_REF } = host;
 const good = () => stpCtx({ elicitation_ref: ELICITATION_REF });
@@ -674,6 +705,21 @@ let recordId;
   assert.ok(h.counts.transition >= 3);
 }
 
+// Missing or altered shipped profile bytes refuse activation before discovery.
+{
+  const h = await buildRealHost();
+  for (const name of ['wire-profile', 'tool-schema-profile', 'parameter-schema']) {
+    const file = new URL('./node_modules/@sentropic/engram/dist/registry/' + name + '.json', import.meta.url);
+    const bytes = fs.readFileSync(file);
+    try {
+      fs.writeFileSync(file, Buffer.concat([bytes, Buffer.from(' ')]));
+      assert.throws(() => h.providerMod.createEngramMemoryProviderV1(h.options), e => e.code === 'MCP_MEMORY_PREFLIGHT_FAILED');
+      fs.unlinkSync(file);
+      assert.throws(() => h.providerMod.createEngramMemoryProviderV1(h.options), e => e.code === 'MCP_MEMORY_PREFLIGHT_FAILED');
+    } finally { fs.writeFileSync(file, bytes); }
+  }
+}
+
 // Ordering: authentication runs before any domain envelope.
 {
   const h = await buildRealHost();
@@ -703,12 +749,26 @@ let recordId;
   assert.equal(h.counts.recall, 0);
 }
 
+// Credentials are verified; a forged credential cannot reach a reservation.
+{
+  const h = await buildRealHost();
+  const server = await h.providerMod.createEngramMemoryMcpServerV1(h.adapter);
+  const via = await server.connectViaInMemory(async () => stpCtx({ neutral_credential: 'forged-credential' }));
+  try {
+    await assert.rejects(via.client.callTool({ name: 'engram_memory_capture', arguments: captureArgs(KEY('q')) }), e => e.code === -32603);
+    assert.equal(h.counts.reserve, 0);
+    assert.equal(h.counts.capture, 0);
+  } finally { await via.close(); }
+}
+
 // Invalid arguments are M6 validation failures, never context errors.
 {
   const h = await buildRealHost();
   for (const bad of [
     ['engram_memory_search', { query: 'needle' }],
     ['engram_memory_search', { query: 7, purpose_ref: 'purpose:one' }],
+    ['engram_memory_search', { query: 'needle', purpose_ref: 'x'.repeat(513) }],
+    ['engram_memory_search', { query: 'needle', purpose_ref: 'e\u0301' }],
     ['engram_memory_capture', captureArgs('abcd')],
     ['engram_memory_get', { record_id: 'nope', purpose_ref: 'purpose:one' }],
   ]) {
@@ -761,7 +821,36 @@ let recordId;
   setTimeout(release2, 50);
   const indeterminate = await pending2;
   assert.equal(indeterminate.ok, false);
-  assert.equal(indeterminate.error.code, 'MUTATION_OUTCOME_UNKNOWN');
+  assert.equal(indeterminate.error.code, 'CANCELLED');
+  assert.equal(racing.counts.reserve, 0);
+  assert.equal(racing.counts.capture, 0);
+  const retry = await racing.adapter.invokeTool({ capabilityRef: 'engram_memory_capture', input: captureArgs(KEY('b')), ctx: good(), idempotencyKey: KEY('b'), ...env });
+  assert.equal(retry.output.value.status, 'committed_pending');
+}
+
+// Revoking approval during sealing cannot pass the engine's final guard.
+{
+  let approved = true;
+  const h = await buildRealHost({ confirm: async () => approved });
+  const seal = h.ports.crypto.seal;
+  h.ports.crypto.seal = async req => { const result = await seal(req); approved = false; return result; };
+  let effects = 0;
+  const commit = h.store.commitPending.bind(h.store);
+  h.store.commitPending = async req => { effects++; return commit(req); };
+  const out = await h.adapter.invokeTool({ capabilityRef: 'engram_memory_capture', input: captureArgs(KEY('v')), ctx: stpCtx({ elicitation_ref: ELICITATION_REF }, { confirmationRequired: true }), idempotencyKey: KEY('v'), ...env });
+  assert.equal(out.error.code, 'gate_failed');
+  assert.equal(effects, 0);
+  assert.ok(h.counts.confirm > 1);
+}
+// An abort observed after commit never replaces the committed receipt.
+{
+  const controller = new AbortController();
+  const h = await buildRealHost();
+  const commit = h.store.commitPending.bind(h.store);
+  h.store.commitPending = async req => { const result = await commit(req); controller.abort(); return result; };
+  const out = await h.adapter.invokeTool({ capabilityRef: 'engram_memory_capture', input: captureArgs(KEY('z')), ctx: good(), idempotencyKey: KEY('z'), ...env, signal: controller.signal });
+  assert.equal(out.ok, true);
+  assert.equal(out.output.value.status, 'committed_pending');
 }
 
 // Host dependency exceptions are sanitized: no message, no detail leak.
@@ -787,7 +876,7 @@ let recordId;
   const committed = await attempt();
   assert.equal(committed.ok, true);
   assert.equal(committed.output.value.status, 'committed_pending');
-  assert.equal(h.counts.confirm, 2);
+  assert.ok(h.counts.confirm > 2);
 
   const reads = await h.adapter.invokeTool({ capabilityRef: 'engram_memory_search', input: { query: 'needle', purpose_ref: 'purpose:one' }, ctx: stpCtx({ elicitation_ref: ELICITATION_REF }, { confirmationRequired: true }), ...env });
   assert.equal(reads.ok, false);
@@ -892,11 +981,25 @@ try {
   assert.equal(get.structuredContent.output.value.record.record_id, recordId);
   // Real listing content round-trips through the MCP transport codec.
   assert.equal(get.content[0].text, JSON.stringify(get.structuredContent));
-  const paged = await via.client.callTool({ name: 'engram_memory_search', arguments: { query: 'needle', purpose_ref: 'purpose:one', max_packet_bytes: 4096 } });
-  if (paged.structuredContent.output && paged.structuredContent.output.value.continuation) {
-    const handle = paged.structuredContent.output.value.continuation.page_handle;
-    assert.match(handle, /^page_[A-Za-z0-9_-]{16,256}$/);
-  }
+  // Two distinct admitted records force a real host continuation.
+  const extraArgs = captureArgs(KEY('m'));
+  extraArgs.payload.components[0].text = 'hello packed second';
+  const extraCapture = await via.client.callTool({ name: 'engram_memory_capture', arguments: extraArgs });
+  const extraAdmission = await via.client.callTool({ name: 'engram_memory_request_admission', arguments: { candidate_id: extraCapture.structuredContent.output.value.candidate_id, idempotency_key: KEY('n') } });
+  assert.equal(extraAdmission.structuredContent.output.value.outcome.status, 'accepted');
+  const pageArgs = { query: 'hello', purpose_ref: 'purpose:one', limit: 1 };
+  const paged = await via.client.callTool({ name: 'engram_memory_search', arguments: pageArgs });
+  const handle = paged.structuredContent.output.value.next_page_cursor;
+  assert.match(handle, /^page_[0-9a-f]{48}$/);
+  const next = await via.client.callTool({ name: 'engram_memory_search', arguments: { ...pageArgs, page_cursor: handle } });
+  assert.equal(next.structuredContent.ok, true);
+  assert.equal(next.structuredContent.output.value.records.length, 1);
+  assert.notDeepEqual(next.structuredContent.output.value.records, paged.structuredContent.output.value.records);
+  const changed = await via.client.callTool({ name: 'engram_memory_search', arguments: { ...pageArgs, query: 'packed', page_cursor: handle } });
+  assert.equal(changed.structuredContent.error.code, 'STALE_PAGE');
+  await h.readHost.pages.dispose(handle);
+  const lost = await via.client.callTool({ name: 'engram_memory_search', arguments: { ...pageArgs, page_cursor: handle } });
+  assert.equal(lost.structuredContent.error.code, 'STALE_PAGE');
   const forget = await via.client.callTool({ name: 'engram_memory_forget', arguments: { record_id: recordId, idempotency_key: KEY('j'), reason_ref: 'reason:one' } });
   assert.equal(forget.structuredContent.output.value.receipt.to_state, 'tombstoned');
   const captureB = await via.client.callTool({ name: 'engram_memory_capture', arguments: captureArgs(KEY('k')) });
@@ -906,6 +1009,7 @@ try {
   // Forged and missing contexts: refused with zero effects and zero
   // authentication calls; the missing context never reaches the provider
   // (server guard before dispatch).
+  const forgedProviderBefore = h.counts.providerEntry;
   const effectsBefore = h.counts.capture + h.counts.transition + h.counts.recall;
   const authBefore = h.counts.authenticate;
   const forgedServer = await providerMod.createEngramMemoryMcpServerV1(h.adapter);
@@ -915,6 +1019,7 @@ try {
   } finally {
     await viaForged.close();
   }
+  assert.equal(h.counts.providerEntry, forgedProviderBefore);
   // Forged binding refused at the trust boundary: zero authentication calls.
   assert.equal(h.counts.authenticate, authBefore);
   const providerBefore = h.counts.providerEntry;
@@ -975,30 +1080,11 @@ assert.ok(peers.includes('engram'));
 assert.ok(!peers.includes('mcp-platform'));
 assert.ok(!peers.includes('mcp-broker'));
 
-// Instrumented module-load trace: importing the two static registry modules
-// must resolve zero provider, store, engine, native-addon or identity
-// modules, including the shared chunk.
-const loaded = new Set();
-const Module = await import('node:module');
-const compile = Module.default._compile;
-Module.default._compile = function (content, filename) {
-  loaded.add(filename);
-  return compile.call(this, content, filename);
-};
-let esmLoaded = [];
-try {
-  const { createRequire } = await import('node:module');
-  const require = createRequire(path.join(process.cwd(), 'trace-anchor.mjs'));
-  esmLoaded.push('@sentropic/engram/registry/manifest', '@sentropic/engram/registry/definitions');
-  await import('@sentropic/engram/registry/manifest');
-  await import('@sentropic/engram/registry/definitions');
-} finally {
-  Module.default._compile = compile;
-}
-const scope = (file) => file.includes('node_modules');
-const markers = [...loaded].filter(scope).map((file) => file.split('node_modules/').pop());
-const forbidden = ['mcp-memory', 'memory-tools', 'better-sqlite3', 'fs-ext', 'canonical', 'fence', 'store', 'engine', 'recall', 'module-storage', '.node'];
-assert.deepEqual(markers.filter((file) => forbidden.some((marker) => file.includes(marker))), []);
+// Both CJS hooks and ESM load hooks are installed before npm starts and
+// inherited by lifecycle processes; initialization is measured at function entry.
+await import('@sentropic/engram/registry/manifest');
+await import('@sentropic/engram/registry/definitions');
+await import('@sentropic/engram');
 
 // The shipped bundles outside the optional lazy entry carry no lazy memory
 // machinery: no entry-specifier import, bundling-agnostic. (The bundles do
@@ -1049,7 +1135,7 @@ assert.equal(entries.entries[0].id, 'sentropic.engram.memory');
 assert.equal(entries.entries[0].entryVersion, '1.0.0');
 assert.equal(entries.entries[0].publisher.packageVersion, JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8')).version);
 console.log('L4-DISABLED-PROBE-OK');
-console.log('L4-DISABLED-TRACE-MARKERS:' + JSON.stringify(markers.filter(scope).length));
+
 `;
 
 const FLOOR_PROBE = `
@@ -1076,9 +1162,9 @@ try {
 console.log('L4-FLOOR-PROBE-OK');
 `;
 
-function runProbe(consumerDir, name, source) {
+function runProbe(consumerDir, name, source, env = {}) {
   writeFileSync(join(consumerDir, `${name}.mjs`), source);
-  const out = run('node', [`${name}.mjs`], { cwd: consumerDir, env: { ...process.env, MCP_L4_NPM_BIN: NPM } });
+  const out = run('node', [`${name}.mjs`], { cwd: consumerDir, env: { ...process.env, ...env, MCP_L4_NPM_BIN: NPM } });
   const marker = `L4-${name.toUpperCase()}-OK`;
   const lines = out.split('\n').filter((line) => line.startsWith('L4-'));
   if (!lines.some((line) => line.startsWith(marker))) {
@@ -1128,7 +1214,8 @@ async function assertCandidateManifest(packed) {
     for (const asset of entries.entries[0].assets) {
       packedAssets.set(asset.path, new Uint8Array(readFileSync(join(packedRoot, asset.path))));
     }
-    const { validateMemoryPublisherAssetsV1 } = await import('../dist/mcp-memory.js');
+    const validatorAsset = entries.entries[0].assets.find(asset => asset.role === 'validator');
+    const { validateMemoryPublisherAssetsV1 } = await import(join(packedRoot, validatorAsset.path));
     const receipt = readJson(join(ROOT, 'registry', 'publisher-assets.v1.json'));
     if (receipt.tarballSha256 !== packed.sha256 || receipt.tarballIntegrity !== packed.integrity) {
       throw new Error('publisher receipt tarball binding does not match the just-packed tarball (refresh first)');
@@ -1158,9 +1245,26 @@ export async function runPackedAcceptance() {
     // scripts enabled, output captured for native-build instrumentation.
     const disabledDir = join(work, 'disabled');
     const disabledLog = join(work, 'disabled-install.log');
-    installConsumer(disabledDir, packed.tarball, [], { npm_config_cache: join(work, 'disabled-cache') }, null, false, disabledLog);
+    const trace = createDisabledTrace(work);
+    // Positive controls prove that each observer is live before the zero proof.
+    const canaryDir = join(work, 'trace-canary');
+    mkdirSync(canaryDir);
+    const canary = 'function createInMemoryCanonicalMemoryStoreV1(options) {}\ncreateInMemoryCanonicalMemoryStoreV1({});\nconst operation = { operation: "bootstrap" };\nif (operation.operation === "bootstrap") {}\n';
+    writeFileSync(join(canaryDir, 'mcp-memory.cjs'), canary);
+    writeFileSync(join(canaryDir, 'mcp-memory.mjs'), canary);
+    run('node', ['-e', 'require(' + JSON.stringify(join(canaryDir, 'mcp-memory.cjs')) + ');import(' + JSON.stringify(join(canaryDir, 'mcp-memory.mjs')) + ');require("node:child_process").spawnSync(process.execPath,["-e","","fs-ext node-gyp"]);'], { env: { ...process.env, ...trace.env } });
+    const control = trace.read();
+    for (const kind of ['cjs-load', 'cjs-compile', 'esm-load', 'provider-load', 'store-open', 'identity-bootstrap', 'native-build']) {
+      if (!control.some(row => row.kind === kind)) throw new Error('disabled observer is not live: ' + kind);
+    }
+    trace.reset();
+    installConsumer(disabledDir, packed.tarball, [], { npm_config_cache: join(work, 'disabled-cache'), ...trace.env }, null, false, disabledLog);
     assertNoNativeBuildAttempts(readFileSync(disabledLog, 'utf8'), 'disabled install');
-    runProbe(disabledDir, 'disabled-probe', DISABLED_PROBE);
+    runProbe(disabledDir, 'disabled-probe', DISABLED_PROBE, trace.env);
+    const observed = trace.read();
+    const disabled = Object.fromEntries(['provider-load', 'store-open', 'identity-bootstrap', 'native-build'].map(kind => [kind, observed.filter(row => row.kind === kind).length]));
+    if (Object.values(disabled).some(count => count !== 0)) throw new Error('disabled effects: ' + JSON.stringify(disabled));
+    console.log('L4-DISABLED-OBSERVED:' + JSON.stringify(disabled));
 
     // SDK floor on the ordinary closure: discovery plus search at exactly
     // 1.31.0. A floor failure FAILS the acceptance outright.
