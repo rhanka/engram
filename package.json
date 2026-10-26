@@ -50,6 +50,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
+    "test:g0-types": "tsc --noEmit -p tsconfig.g0-types.json",
+    "test:g0-mutants": "node tests/g0-mutant-proof.mjs",
     "test:serve": "vitest run tests/serve.test.ts",
     "test:smoke": "./scripts/smoke-test.sh",
     "test:pipeline": "vitest run tests/pipeline.test.ts",
