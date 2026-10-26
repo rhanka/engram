@@ -1,10 +1,10 @@
 {
   "builtAgainstPreCandidateSha256": "2b85ff28b6fe06bda0abcdc19255f61a1ed1e4b7cfbb40c2e881c98dd234424b",
-  "engramSourceCommit": "104b75a88493a77da2b535d2e1e693d8866db7dd",
+  "engramSourceCommit": "0afd5221b50b4bdd574bddc4a28cde06356a3a96",
   "tarball": {
     "filename": "sentropic-engram-0.21.1.tgz",
-    "sha256": "a4ce2a0df9e4bbf6d6c897259da43afaf19849b73af875c9590298e57bdb67dd",
-    "integrity": "sha512-ulIq/HYW0RqmdxfoGu/AssnJRvep0MDg/wpmR5IhdzWlzmryhD5HcOR+RtKHs7/sKEWh+oeca+UbHULSYLje6Q=="
+    "sha256": "8dd1e47ffcb17e33e9359259312382dc46ce7017f0656b87467c244489b1022a",
+    "integrity": "sha512-D0td/cC3lw3KXJTObuBrXZbvPrry4jTQQHWrPnzJC5FGFlbN84hQRkyOlmm8g9RuZx7zKhzBYFgj0pc1L9eknQ=="
   },
   "exports": {
     ".": {
@@ -22,8 +22,7 @@
     },
     "./time-reference": {
       "types": "./dist/time-reference.d.ts",
-      "import": "./dist/time-reference.js",
-      "require": "./dist/time-reference.cjs"
+      "import": "./dist/time-reference.js"
     },
     "./memory-substrate": {
       "types": "./dist/memory-substrate.d.ts",
@@ -43,14 +42,28 @@
     }
   },
   "registryArtifacts": {
-    "registry/entries.v1.json": "2a9aab7b19c3851fec25d7ba3b7cc0743cd78c5f5a0259cacb1da72ec761782a",
-    "dist/mcp-memory.js": "ef47edd0d0a67d1276bd9f0438bac0013d067335b3a795964c8a4240458b508c",
+    "registry/entries.v1.json": "dfb92540abdfb32de9271bbf05c3427b954c9da6819c881df2e3f0ca0910dc2f",
+    "registryEntryDigest": "4fe3869b05bb8f5ae0142e38c4870af7123797f2fa269bab42509eeedb9bc086",
+    "dist/mcp-memory.js": "a18a0fe12eeb5792d5c5f248e5c9118365d8813260d5c17dd9afb5a60d6865c7",
     "dist/registry/manifest.js": "2dc33b3b65ad418ea8ae52b4d14df38f10c732a674e8ce7df5148d0013431ce5",
-    "dist/registry/definitions.js": "f71cdee7a35df82c4789bceb6c5a51b4d00ab8340cd469b6e711fae4f26223d1"
+    "dist/registry/definitions.js": "8c2b5dc8d4fa828ce3f9733f87988779a00c9df8cafe4214277de57e69d262ab",
+    "dist/registry/wire-profile.json": "057aa66211f9072321bfcd287f4aa21e19466f7830526c1f27ef647630b16257",
+    "dist/registry/tool-schema-profile.json": "e94b192c5bb6b238d8d470ef69d00dcb69e19183dbff90484fc82072a715f2a9",
+    "dist/registry/parameter-schema.json": "c9edd6402957c92f96c7461f30f29b64801c6f17c224c4258984e6ee3beaca47",
+    "dist/registry/elicitation-request.json": "7081119924ef70344bc4ceab08593173c470f9ff2e5f735a03581476005d129b",
+    "dist/registry/elicitation-response.json": "db682617520ebe117128ed2d64587f2a393ccc1e73dd360cbf8bb3a6bb382c3d"
   },
   "peerDependencies": {
     "@sentropic/mcp-platform": "0.4.0",
     "@sentropic/mcp-broker": "0.1.0"
   },
-  "sdkFloor": "^1.31.0"
+  "sdkFloor": "^1.31.0",
+  "sdkPinned": "1.32.2",
+  "sdkFloorProbe": "pass",
+  "unverified": [
+    "L5 qualification of the staged P2 pre-candidate archives (received with matching sha256/integrity, not re-qualified here)",
+    "Deployed host bindings, tenancy and policy values (host-supplied at composition; acceptance uses test host ports)",
+    "Full six-tool matrix at the exact 1.31.0 floor (floor probe proves discovery plus search at 1.31.0; the six-tool matrix is proven at the pinned 1.32.2)",
+    "Postgres canonical parity and native-addon suites (environmental: no native toolchain or addons in this container)"
+  ]
 }
