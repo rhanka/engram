@@ -120,7 +120,13 @@ export function createMemoryReadToolsV1(options: { facets: MemoryReadFacetsV1; h
       const arg = checked.value;
       const error = check(ctx);
       if (error) return failure(tool, ctx, error);
-      if (await host.authorize(structuredClone(ctx), tool, arg.purpose_ref) !== true) return failure(tool, ctx, 'UNAUTHORIZED');
+      let searchAuthorized = false;
+      try {
+        searchAuthorized = await host.authorize(structuredClone(ctx), tool, arg.purpose_ref) === true;
+      } catch {
+        return failure(tool, ctx, 'STORE_UNAVAILABLE');
+      }
+      if (!searchAuthorized) return failure(tool, ctx, 'UNAUTHORIZED');
       const binding_digest = pageBinding(ctx, arg);
       let state: MemoryReadPageStateV1 | undefined;
       if (arg.page_cursor !== undefined) {
@@ -176,7 +182,13 @@ export function createMemoryReadToolsV1(options: { facets: MemoryReadFacetsV1; h
       const arg: GetInputV1 = checked.value;
       const error = check(ctx);
       if (error) return failure(tool, ctx, error);
-      if (await host.authorize(structuredClone(ctx), tool, arg.purpose_ref) !== true) return failure(tool, ctx, 'UNAUTHORIZED');
+      let getAuthorized = false;
+      try {
+        getAuthorized = await host.authorize(structuredClone(ctx), tool, arg.purpose_ref) === true;
+      } catch {
+        return failure(tool, ctx, 'STORE_UNAVAILABLE');
+      }
+      if (!getAuthorized) return failure(tool, ctx, 'UNAUTHORIZED');
       const result = await facets.readPort.readCurrent({ ...arg, authorization: ctx.authorization, max_packet_bytes: arg.max_packet_bytes ?? 65536, deadline_at: ctx.deadline_at });
       if (!result.ok) return neutralFailure(tool, ctx, result.error);
       if (!validateGetOutputV1(result.value).ok) return failure(tool, ctx, 'STORE_UNAVAILABLE');
