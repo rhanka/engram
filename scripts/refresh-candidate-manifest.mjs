@@ -110,15 +110,7 @@ export async function refreshCandidateManifest() {
         'registry/entries.v1.json': digestOf('registry/entries.v1.json'),
         registryEntryDigest: sha256(Buffer.from(canonicalize(entries.entries[0]), 'utf8')),
         'registry/publisher-assets.v1.json': digestOf('registry/publisher-assets.v1.json'),
-        'dist/mcp-memory.js': digestOf('dist/mcp-memory.js'),
-        'dist/registry/manifest.js': digestOf('dist/registry/manifest.js'),
-        'dist/registry/definitions.js': digestOf('dist/registry/definitions.js'),
-        'dist/registry/base-manifest.json': digestOf('dist/registry/base-manifest.json'),
-        'dist/registry/wire-profile.json': digestOf('dist/registry/wire-profile.json'),
-        'dist/registry/tool-schema-profile.json': digestOf('dist/registry/tool-schema-profile.json'),
-        'dist/registry/parameter-schema.json': digestOf('dist/registry/parameter-schema.json'),
-        'dist/registry/elicitation-request.json': digestOf('dist/registry/elicitation-request.json'),
-        'dist/registry/elicitation-response.json': digestOf('dist/registry/elicitation-response.json'),
+        ...Object.fromEntries(entries.entries[0].assets.map(asset => [asset.path, digestOf(asset.path)])),
       },
       peerDependencies: {
         '@sentropic/mcp-platform': packedPkg.peerDependencies['@sentropic/mcp-platform'],
@@ -130,7 +122,6 @@ export async function refreshCandidateManifest() {
       unverified: [
         'L5 qualification of the staged P2 pre-candidate archives (received with matching sha256/integrity, not re-qualified here)',
         'Deployed host bindings, tenancy and policy values (host-supplied at composition; acceptance uses test host ports)',
-        'Full six-tool matrix at the exact 1.31.0 floor (floor probe proves discovery plus search at 1.31.0; the six-tool matrix is proven at the pinned SDK)',
         'Postgres canonical parity and native-addon suites (environmental: no native toolchain or addons in this container)',
       ],
     };
