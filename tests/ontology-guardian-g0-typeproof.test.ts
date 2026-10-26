@@ -85,10 +85,10 @@ const badStage: ReportEntry["stage"] = "draft";
 const badOperation: NativeReport["operation"] = 42;
 
 // Oracle-witness evidence carries no gate reference field.
-// @ts-expect-error gateEvidenceRef belongs to the reference-qualified arm only
 const badWitness: TransitionQualification = {
   claim: "oracle-witness",
   parityMatrixDigest: "a".repeat(64),
+  // @ts-expect-error gateEvidenceRef belongs to the reference-qualified arm only
   gateEvidenceRef: "gate-1",
 };
 
@@ -110,4 +110,56 @@ export function typeproofShapes(payload: SkillPayload, entry: Report2Diagnostic,
   expect(payload.profile).toBeDefined();
   expect(entry.origin).toBe("report2");
   expect(mapping.domain).toBeDefined();
+}
+
+import type { OntologyRecord, GuardianDiagnostic } from "../src/ontology-guardian/types.js";
+import type { OntologyPayload, SkillToolDescriptor, RegistryEnvelope, Receipt } from "../src/ontology-guardian/catalog.js";
+import type { ApplyPreview, PrivateApplyPreview } from "../src/ontology-guardian/application.js";
+import type { AdmissionRequest } from "../src/ontology-guardian/admission.js";
+
+// @ts-expect-error unverified descriptors are uninhabitable
+const unknownTool: SkillToolDescriptor = { invented: 42 };
+// @ts-expect-error effectiveProfile is required by §6.1
+const missingPreview: ApplyPreview = { bindingChanges: [], staleArtifacts: [], nextRebuild: "build" };
+// @ts-expect-error no invented top-level pins in §6.1
+const inventedPreview: ApplyPreview = { effectiveProfile: {}, bindingChanges: [], staleArtifacts: [], nextRebuild: "build", pins: [] };
+// @ts-expect-error private preview representation is unverified, hence closed
+const privatePreview: PrivateApplyPreview = { pins: [], receipts: [] };
+// @ts-expect-error guardian operation codes form a closed union
+const inventedGuardian: GuardianDiagnostic["code"] = "invented";
+
+function forbiddenContracts(record: OntologyRecord, payload: OntologyPayload, envelope: RegistryEnvelope, request: AdmissionRequest, receipt: Receipt): void {
+  const { supersededBy, deprecatedReason, deprecatedAt, migrationRef, ...recordCommon } = record;
+  // @ts-expect-error deprecated requires reason and date
+  const deprecated: OntologyRecord = { ...recordCommon, lifecycle: "deprecated" };
+  // @ts-expect-error deprecated requires date even with reason
+  const undated: OntologyRecord = { ...recordCommon, lifecycle: "deprecated", deprecatedReason: "retired" };
+  // @ts-expect-error superseded requires successor and migration
+  const superseded: OntologyRecord = { ...recordCommon, lifecycle: "superseded" };
+  // @ts-expect-error superseded requires migration paired with successor
+  const unmigrated: OntologyRecord = { ...recordCommon, lifecycle: "superseded", supersededBy: { id: "n", version: "2", contentDigest: "a".repeat(64) } };
+  // @ts-expect-error published cannot carry deprecation metadata
+  const published: OntologyRecord = { ...recordCommon, lifecycle: "published", deprecatedReason: "retired" };
+  const { supersededBy: successor, deprecatedReason: reason, deprecatedAt: date, ...payloadCommon } = payload;
+  // @ts-expect-error payload deprecation needs reason and date too
+  const badPayload: OntologyPayload = { ...payloadCommon, lifecycle: "deprecated" };
+  // @ts-expect-error artifactBinding must agree with artifactKind
+  const mismatchedArtifact: OntologyPayload = { ...payload, artifactKind: "theme", artifactBinding: { artifactKind: "mechanism", mechanismVersion: "1", descriptorPins: [], compatibilityMatrixVersion: "1" } };
+  // @ts-expect-error ontology payload cannot be missing from its envelope
+  const missingOntology: RegistryEnvelope = { ...envelope, kind: "ontology", ontology: undefined };
+  // @ts-expect-error requirements must derive from entry; no caller array exists
+  const erasedRequirements: AdmissionRequest = { ...request, requiredReceipts: [] };
+}
+
+function lifecycleAndRoleProof(record: OntologyRecord, receipt: Receipt): void {
+  const { supersededBy, deprecatedReason, deprecatedAt, migrationRef, ...common } = record;
+  // @ts-expect-error date does not replace required deprecation reason
+  const reasonless: OntologyRecord = { ...common, lifecycle: "deprecated", deprecatedAt: "2026-10-26" };
+  // @ts-expect-error migration does not replace required successor
+  const successorless: OntologyRecord = { ...common, lifecycle: "superseded", migrationRef: "migration" };
+  const { validatorRole, transitionQualification, ...receiptCommon } = receipt;
+  // @ts-expect-error oracle role requires its witness
+  const bareOracle: Receipt = { ...receiptCommon, validatorRole: "transitional-oracle" };
+  // @ts-expect-error retained checks cannot carry a transition claim
+  const claimedRetained: Receipt = { ...receiptCommon, validatorRole: "retained-check", transitionQualification: { claim: "oracle-witness", parityMatrixDigest: "a".repeat(64) } };
 }

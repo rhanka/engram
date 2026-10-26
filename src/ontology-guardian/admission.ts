@@ -10,7 +10,7 @@ import {
 import { PINNED_CORPUS_AUTHORITY_TAG } from "./catalog.js";
 import { isDigest } from "./types.js";
 import type { CompiledSetting } from "./diagnostics.js";
-import type { Digest, DigestEvidence, Pin } from "./types.js";
+import type { ArtifactKind, Digest, DigestEvidence, Pin, ProfileShape } from "./types.js";
 import type { CompiledLintOptions, Receipt, RuleVerdict } from "./catalog.js";
 
 export interface AdmissionSelection {
@@ -20,6 +20,8 @@ export interface AdmissionSelection {
   readonly settings: readonly CompiledSetting[];
   readonly severityPolicyDigest: Digest;
   readonly rules: readonly { readonly ruleId: string; readonly severity: string; readonly studyDisposition?: string }[];
+  /** Independently supplied native selection, including full bodies and binding snapshot. */
+  readonly expectedCompiledOptions?: CompiledLintOptions;
 }
 
 /**
@@ -28,13 +30,31 @@ export interface AdmissionSelection {
  * never the settings themselves, which stay owner-side (§5.5).
  */
 export interface OwnerSelectionBinding {
+  readonly ownerReceiptRef: string;
   readonly phase: string;
   readonly readinessPolicy: string;
   readonly severityPolicyDigest: Digest;
   readonly rules: readonly { readonly ruleId: string; readonly severity: string; readonly studyDisposition?: string }[];
 }
 
+export type AdmissionFamily = "DIA" | "MECH" | "D2D" | "ENG" | "TRK" | "H2A" | "HRN" | "RPK" | "MEM" | "EXT";
+export interface QualificationScope {
+  readonly libraries: readonly { readonly id: string; readonly version: string }[];
+  readonly proofSets: readonly ("published-corpus" | "local-expectations")[];
+  readonly selections: readonly { readonly phase: string; readonly readinessPolicy: string }[];
+  readonly bijectionLibrary?: { readonly id: string; readonly version: string };
+}
+
+/** Admission projection plus the independently resolved qualification context.
+ * These context fields are not additions to the serialized §5.3 payload. */
 export interface AdmissionEntry {
+  readonly family: AdmissionFamily;
+  readonly artifactKind: ArtifactKind;
+  readonly profileShape: ProfileShape;
+  readonly generatedBpmn: boolean;
+  readonly qualificationScope: QualificationScope;
+  /** Unit sheet IDs, in the same order as ruleSheetPins. */
+  readonly ruleSheetRuleIds: readonly (readonly string[])[];
   readonly stack: readonly Pin[];
   readonly pinsDigest: Digest;
   readonly resultEvidence: DigestEvidence;
@@ -45,6 +65,7 @@ export interface AdmissionEntry {
   readonly visibility: "public" | "private";
   /** Required for private entries admitted through owner-side evidence. */
   readonly ownerSelection?: OwnerSelectionBinding;
+  readonly ownerSelections?: readonly OwnerSelectionBinding[];
   readonly compatibilityMatrixVersion?: string;
   /** Expected provenance source revision for `h2a-vocabulary` bindings. */
   readonly sourceRevision?: string;
@@ -70,7 +91,6 @@ export interface AdmissionRequirement {
 
 export interface AdmissionRequest {
   readonly entry: AdmissionEntry;
-  readonly requiredReceipts: readonly AdmissionRequirement[];
   readonly receipts: readonly Receipt[];
   /** True once the transition gate requires the qualified reference role. */
   readonly requireReference?: boolean;
@@ -79,6 +99,120 @@ export interface AdmissionRequest {
 export type AdmissionVerdict =
   | { readonly admitted: true }
   | { readonly admitted: false; readonly code: "missing-receipt"; readonly reason: string };
+
+/** §1.3 exact numeric versions (including pinned prereleases), never tags/ranges. */
+export function isExactVersion(value: unknown): value is string {
+  return typeof value === "string" && /^(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)){0,2}(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$/.test(value);
+}
+
+const FAMILY_RECEIPTS = {
+  DIA: "family-corpus", MECH: "bpmn-parity", D2D: "bpmn-parity", ENG: "family-corpus",
+  TRK: "family-corpus", H2A: "h2a-vocabulary", HRN: "family-corpus", RPK: "family-corpus",
+  MEM: "mem-descriptor", EXT: "family-corpus",
+} as const;
+
+/** Required entry bindings for each row of §5.5; all rows also bind the
+ * library/version, corpus, stack, resolved result, policy and transition role. */
+const ADMISSION_RULES = {
+  "bpmn-parity": [], "bpmn-bijection": [], "family-corpus": [],
+  "h2a-vocabulary": ["sourceRevision"], "mem-descriptor": [],
+  "mechanism-compat": ["compatibilityMatrixVersion"],
+  "contract-verdict": ["contractSchemaPin", "compatibilityMatrixVersion"],
+  "theme-invariance": ["themeBefore", "themeAfter"],
+} as const;
+
+function ownerSelectionsOf(entry: AdmissionEntry): readonly OwnerSelectionBinding[] {
+  if (entry.ownerSelections !== undefined && entry.ownerSelection !== undefined) throw new Error("ambiguous owner selection context");
+  return entry.ownerSelections ?? (entry.ownerSelection === undefined ? [] : [entry.ownerSelection]);
+}
+
+function usesBpmn(entry: AdmissionEntry): boolean {
+  return entry.family === "MECH" || entry.family === "D2D" || entry.generatedBpmn;
+}
+
+/** Full requirements derive from entry classification and its resolved scope.
+ * There is no caller-supplied array of receipt kinds that can erase a row. */
+export function deriveRequirements(entry: AdmissionEntry): readonly AdmissionRequirement[] {
+  if (!Object.hasOwn(FAMILY_RECEIPTS, entry.family) || typeof entry.generatedBpmn !== "boolean") throw new Error("entry family/generation unverified");
+  if (entry.generatedBpmn && (entry.family !== "DIA" || entry.artifactKind !== "base")) throw new Error("invalid generated base scope");
+  const scope = entry.qualificationScope;
+  if (!scope || !Array.isArray(scope.libraries) || scope.libraries.length === 0 || !Array.isArray(scope.proofSets) || !Array.isArray(scope.selections) || scope.selections.length === 0) throw new Error("incomplete qualification scope");
+  const kinds: Receipt["receiptKind"][] = entry.artifactKind === "theme" ? ["theme-invariance"]
+    : entry.artifactKind === "contract" ? ["contract-verdict"]
+    : [entry.generatedBpmn ? "bpmn-parity" : FAMILY_RECEIPTS[entry.family]];
+  if (!["mechanism", "base", "profile", "theme", "corpus", "contract"].includes(entry.artifactKind)) throw new Error("unknown artifact kind");
+  if (entry.family === "MECH" && ["mechanism", "corpus"].includes(entry.artifactKind)) kinds.push("mechanism-compat");
+  if (entry.generatedBpmn) kinds.push("bpmn-bijection");
+  const parity = kinds.includes("bpmn-parity");
+  if (parity && (scope.libraries.length < 2 || scope.proofSets.length === 0)) throw new Error("both implementing libraries and every claimed proof set required");
+  if (!parity && scope.proofSets.length !== 0) throw new Error("foreign BPMN proof scope");
+  if (new Set(scope.proofSets).size !== scope.proofSets.length || scope.proofSets.some((p) => p !== "published-corpus" && p !== "local-expectations")) throw new Error("invalid proof sets");
+  const libraries = new Set<string>();
+  for (const library of scope.libraries) {
+    if (!library.id || !isExactVersion(library.version) || libraries.has(library.id)) throw new Error("invalid or duplicate implementing library");
+    libraries.add(library.id);
+  }
+  const selections = new Set<string>();
+  for (const selection of scope.selections) {
+    if (!selection.phase || !selection.readinessPolicy) throw new Error("incomplete selection scope");
+    const key = canonicalBytes(selection);
+    if (selections.has(key)) throw new Error("duplicate selection scope");
+    selections.add(key);
+  }
+  const requirements: AdmissionRequirement[] = [];
+  for (const receiptKind of kinds) {
+    for (const binding of ADMISSION_RULES[receiptKind]) {
+      if (entry[binding] === undefined || entry[binding] === "") throw new Error(`missing entry binding ${binding}`);
+    }
+    const producers = receiptKind === "bpmn-bijection" ? [scope.bijectionLibrary] : scope.libraries;
+    for (const producer of producers) {
+      if (!producer || !producer.id || !isExactVersion(producer.version)) throw new Error("incomplete bijection library pin");
+      for (const selection of scope.selections) {
+        for (const proofSet of receiptKind === "bpmn-parity" ? scope.proofSets : [undefined]) {
+          requirements.push({ receiptKind, libraryId: producer.id, libraryVersion: producer.version,
+            ...(proofSet === undefined ? {} : { proofSet }),
+            ...(ruleSheetsApply(entry) ? selection : {}) });
+        }
+      }
+    }
+  }
+  return requirements;
+}
+
+/** Check complete sheet obligations before any receipt is matched. */
+function checkSelections(entry: AdmissionEntry): string | null {
+  if (entry.visibility !== "public" && entry.visibility !== "private") return "invalid visibility";
+  if (entry.ruleSheetRuleIds.length !== entry.ruleSheetPins.length) return "incomplete rule sheet descriptions";
+  for (const ids of entry.ruleSheetRuleIds) {
+    if (ids.some((id) => !id) || new Set(ids).size !== ids.length) return "invalid sheet rule IDs";
+  }
+  const ids = [...new Set(entry.ruleSheetRuleIds.flat())];
+  if (entry.ruleSheetPins.length === 0) {
+    if (entry.selections.length !== 0 || ownerSelectionsOf(entry).length !== 0) return "selection without rule sheet";
+    return null;
+  }
+  const selections = entry.visibility === "public" ? entry.selections : ownerSelectionsOf(entry);
+  if (selections.length !== entry.qualificationScope.selections.length) return "missing selection metadata";
+  const seen = new Set<string>();
+  for (const selection of selections) {
+    const key = canonicalBytes([selection.phase, selection.readinessPolicy]);
+    if (seen.has(key)) return "duplicate selection metadata";
+    seen.add(key);
+    if (!entry.qualificationScope.selections.some((s) => s.phase === selection.phase && s.readinessPolicy === selection.readinessPolicy)) return "selection outside qualification scope";
+    if (canonicalBytes(selection.rules.map((r) => r.ruleId)) !== canonicalBytes(ids)) return "incomplete or duplicate selected rules";
+    if (entry.visibility === "public") {
+      const publicSelection = selection as AdmissionSelection;
+      if (!Array.isArray(publicSelection.settings)) return "missing native settings";
+      if (new Set(publicSelection.settings.map((s) => s.rule)).size !== publicSelection.settings.length) return "duplicate effective setting";
+      if (publicSelection.settings.some((s) => !ids.includes(s.rule.replace(/^profile:/, "")))) return "unlisted effective setting";
+      if (recomputedSelectionDigest(publicSelection) !== selection.severityPolicyDigest) return "selection digest does not recompute";
+      for (const row of selection.rules) {
+        if (row.severity !== effectiveSeverityOf(row.ruleId, publicSelection.settings, entry)) return "selected severity mismatch";
+      }
+    } else if (!(selection as OwnerSelectionBinding).ownerReceiptRef) return "owner evidence reference missing";
+  }
+  return null;
+}
 
 function refuse(reason: string): AdmissionVerdict {
   return { admitted: false, code: "missing-receipt", reason };
@@ -99,6 +233,8 @@ function evidenceEqual(a: DigestEvidence, b: DigestEvidence): boolean {
 
 function pinProblem(pin: Pin, what: string): string | null {
   if (typeof pin !== "object" || pin === null) return `${what} pin not an object`;
+  if (Object.keys(pin).sort().join(",") !== "contentDigest,id,version") return `${what} pin fields malformed`;
+  if (!isExactVersion(pin.version)) return `${what} floating or unknown version`;
   if (typeof pin.id !== "string" || pin.id === "" || typeof pin.version !== "string" || pin.version === "") {
     return `${what} pin identity malformed`;
   }
@@ -108,6 +244,7 @@ function pinProblem(pin: Pin, what: string): string | null {
 
 /** §1.3 Digest discipline: every digest value is a present 64-char lowercase hex string. */
 function checkEntryDigests(entry: AdmissionEntry): string | null {
+  if (entry.stack.length === 0 || new Set(entry.stack.map((p) => canonicalBytes(p))).size !== entry.stack.length) return "empty or duplicate stack";
   if (!isDigest(entry.pinsDigest)) return "entry pinsDigest malformed";
   const profile = pinProblem(entry.profilePin, "entry profilePin");
   if (profile !== null) return profile;
@@ -115,15 +252,15 @@ function checkEntryDigests(entry: AdmissionEntry): string | null {
   if (entry.resultEvidence.evidenceState === "resolved" && !isDigest(entry.resultEvidence.digest)) {
     return "entry resultEvidence digest malformed";
   }
-  for (const pin of entry.ruleSheetPins) {
+  for (const pin of [...entry.stack, ...entry.ruleSheetPins]) {
     const problem = pinProblem(pin, "entry ruleSheetPin");
     if (problem !== null) return problem;
   }
   for (const selection of entry.selections) {
     if (!isDigest(selection.severityPolicyDigest)) return "entry selection severityPolicyDigest malformed";
   }
-  if (entry.ownerSelection !== undefined && !isDigest(entry.ownerSelection.severityPolicyDigest)) {
-    return "entry ownerSelection severityPolicyDigest malformed";
+  for (const selection of ownerSelectionsOf(entry)) {
+    if (!isDigest(selection.severityPolicyDigest)) return "entry ownerSelection severityPolicyDigest malformed";
   }
   if (entry.contractSchemaPin !== undefined) {
     const problem = pinProblem(entry.contractSchemaPin, "entry contractSchemaPin");
@@ -143,6 +280,11 @@ function checkEntryDigests(entry: AdmissionEntry): string | null {
 }
 
 function checkReceiptDigests(receipt: Receipt): string | null {
+  if (!isExactVersion(receipt.libraryVersion)) return "receipt floating library version";
+  for (const pin of receipt.evaluatedStack.stack) {
+    const problem = pinProblem(pin, "receipt stack");
+    if (problem !== null) return problem;
+  }
   if (!isDigest(receipt.corpusDigest)) return `receipt ${receipt.receiptKind} corpusDigest malformed`;
   if (!isDigest(receipt.evaluatedStack.pinsDigest)) {
     return `receipt ${receipt.receiptKind} evaluatedStack pinsDigest malformed`;
@@ -229,12 +371,17 @@ type SelectionRows = {
  * its setting row has no bound effective severity and refuses. Where the
  * compiler looks up `profile:<id>`, a bare row id matches that key.
  */
-function effectiveSeverityOf(ruleId: string, settings: readonly CompiledSetting[]): string {
+function effectiveSeverityOf(ruleId: string, settings: readonly CompiledSetting[], entry?: AdmissionEntry): string {
   let matches = settings.filter((s) => s.rule === ruleId);
   if (matches.length === 0) matches = settings.filter((s) => s.rule === `profile:${ruleId}`);
   if (matches.length === 0) throw new Error(`no-effective-severity:${ruleId}`);
   const last = matches[matches.length - 1] as CompiledSetting;
-  return nativeEffectiveSeverity(last.severity);
+  if (entry === undefined || usesBpmn(entry)) return nativeEffectiveSeverity(last.severity);
+  const vocabulary = entry.profileShape === "diagram-profile" ? ["error", "warning"]
+    : entry.profileShape === "engram-profile" ? ["error", "warning", "info"] : null;
+  if (vocabulary === null) throw new Error("unverified descriptor selection vocabulary");
+  if (typeof last.severity !== "string" || !vocabulary.includes(last.severity)) throw new Error("invalid family severity");
+  return last.severity;
 }
 
 /**
@@ -242,36 +389,22 @@ function effectiveSeverityOf(ruleId: string, settings: readonly CompiledSetting[
  * study-disposition presence must match the selection, `not-evaluated`
  * refuses, `off` is admitted only where the selection itself is `off`,
  * duplicate verdict rows refuse, and verdicts for unknown rules refuse.
- * Missing rows refuse. Where native `settings` are supplied, each selected
- * row must also equal the effective severity derived from those settings,
- * so a row relabelled `off` while the settings still select `warn` refuses.
+ * Missing rows refuse. checkSelections has already verified the complete
+ * selected rows and derived their native severities from effective settings.
  */
 function checkVerdictsAgainstSelection(
   receiptKind: string,
   verdicts: readonly RuleVerdict[],
   selection: SelectionRows | null,
-  settings: readonly CompiledSetting[] | null,
 ): string | null {
   if (selection === null) {
     if (verdicts.length !== 0) return `receipt ${receiptKind} carries rule verdicts with no rule sheet`;
     return null;
   }
   const rows = new Map(selection.rules.map((r) => [r.ruleId, r]));
-  if (settings !== null) {
-    for (const row of selection.rules) {
-      let effective: string;
-      try {
-        effective = effectiveSeverityOf(row.ruleId, settings);
-      } catch {
-        return `receipt ${receiptKind} no effective severity for selected rule ${row.ruleId}`;
-      }
-      if (row.severity !== effective) {
-        return `receipt ${receiptKind} selected severity mismatch on rule ${row.ruleId}`;
-      }
-    }
-  }
   const seen = new Set<string>();
   for (const v of verdicts) {
+    if (!["off", "pass", "diagnostic", "not-evaluated"].includes(v.verdict) || !["proven", "open"].includes(v.parity)) return "invalid rule verdict";
     if (seen.has(v.ruleId)) return `receipt ${receiptKind} duplicate verdict for rule ${v.ruleId}`;
     seen.add(v.ruleId);
     const row = rows.get(v.ruleId);
@@ -287,6 +420,7 @@ function checkVerdictsAgainstSelection(
     if (v.verdict === "off" && row.severity !== "off") {
       return `receipt ${receiptKind} forged off verdict on rule ${v.ruleId}`;
     }
+    if (row.severity === "off" && v.verdict !== "off") return "disabled rule has an evaluated verdict";
     if ((row.studyDisposition ?? undefined) !== (v.studyDisposition ?? undefined)) {
       return `receipt ${receiptKind} studyDisposition mismatch on rule ${v.ruleId}`;
     }
@@ -309,52 +443,59 @@ function checkVerdictsAgainstSelection(
  * inputs in any order give the same verdict.
  */
 export function checkAdmission(request: AdmissionRequest): AdmissionVerdict {
-  const { entry, receipts, requiredReceipts } = request;
-  const requireReference = request.requireReference ?? false;
+  const { entry, receipts } = request;
+  try {
+    const requiredReceipts = deriveRequirements(entry);
+    const selectionsProblem = checkSelections(entry);
+    if (selectionsProblem !== null) return refuse(selectionsProblem);
+    const requireReference = request.requireReference ?? false;
 
-  const entryDigests = checkEntryDigests(entry);
-  if (entryDigests !== null) return refuse(entryDigests);
-  if (entry.resultEvidence.evidenceState !== "resolved") {
-    return refuse("entry resultEvidence unresolved");
-  }
-  // §5.3: selections are required for public entries and absent for private ones.
-  if (entry.visibility === "private" && entry.selections.length !== 0) {
-    return refuse("private entry carries public selections");
-  }
+    const entryDigests = checkEntryDigests(entry);
+    if (entryDigests !== null) return refuse(entryDigests);
+    if (entry.resultEvidence.evidenceState !== "resolved") {
+      return refuse("entry resultEvidence unresolved");
+    }
+    // §5.3: selections are required for public entries and absent for private ones.
+    if (entry.visibility === "private" && entry.selections.length !== 0) {
+      return refuse("private entry carries public selections");
+    }
 
-  const orderedRequirements = [...requiredReceipts].sort((a, b) =>
-    requirementKey(a) < requirementKey(b) ? -1 : requirementKey(a) > requirementKey(b) ? 1 : 0,
-  );
-  const orderedReceipts = receipts.map((_, index) => index).sort((a, b) => {
-    const ka = receiptKey(receipts[a] as Receipt);
-    const kb = receiptKey(receipts[b] as Receipt);
-    return ka < kb ? -1 : ka > kb ? 1 : 0;
-  });
-  const consumed = new Set<number>();
-  for (const requirement of orderedRequirements) {
-    let firstProblem: string | null = null;
-    let matched: number | null = null;
-    for (const index of orderedReceipts) {
-      if (consumed.has(index)) continue;
-      const receipt = receipts[index] as Receipt;
-      if (!receiptMatches(receipt, requirement)) continue;
-      if (!receiptScopeMatches(receipt, requirement)) continue;
-      const problem = validateReceipt(entry, receipt, requirement, requireReference);
-      if (problem === null) {
-        matched = index;
-        break;
+    const orderedRequirements = [...requiredReceipts].sort((a, b) =>
+      requirementKey(a) < requirementKey(b) ? -1 : requirementKey(a) > requirementKey(b) ? 1 : 0,
+    );
+    const orderedReceipts = receipts.map((_, index) => index).sort((a, b) => {
+      const ka = receiptKey(receipts[a] as Receipt);
+      const kb = receiptKey(receipts[b] as Receipt);
+      return ka < kb ? -1 : ka > kb ? 1 : 0;
+    });
+    const consumed = new Set<number>();
+    for (const requirement of orderedRequirements) {
+      let firstProblem: string | null = null;
+      let matched: number | null = null;
+      for (const index of orderedReceipts) {
+        if (consumed.has(index)) continue;
+        const receipt = receipts[index] as Receipt;
+        if (!receiptMatches(receipt, requirement)) continue;
+        if (!receiptScopeMatches(receipt, requirement)) continue;
+        const problem = validateReceipt(entry, receipt, requirement, requireReference);
+        if (problem === null) {
+          matched = index;
+          break;
+        }
+        if (firstProblem === null) firstProblem = problem;
       }
-      if (firstProblem === null) firstProblem = problem;
+      if (matched === null) {
+        const detail = firstProblem === null ? "no candidate" : firstProblem;
+        return refuse(
+          `required receipt ${requirement.receiptKind} from ${requirement.libraryId}@${requirement.libraryVersion} missing: ${detail}`,
+        );
+      }
+      consumed.add(matched);
     }
-    if (matched === null) {
-      const detail = firstProblem === null ? "no candidate" : firstProblem;
-      return refuse(
-        `required receipt ${requirement.receiptKind} from ${requirement.libraryId}@${requirement.libraryVersion} missing: ${detail}`,
-      );
-    }
-    consumed.add(matched);
+    return { admitted: true };
+  } catch (error) {
+    return refuse(`invalid admission context: ${(error as Error).message}`);
   }
-  return { admitted: true };
 }
 
 /** One receipt satisfies one requirement: kind, library, version, proof set. */
@@ -477,7 +618,7 @@ function receiptScopeMatches(receipt: Receipt, requirement: AdmissionRequirement
     if (typeof options !== "object" || options === null) return false;
     return scopeMatches(options as { phase: string; readinessPolicy: string }, requirement);
   }
-  return (receipt.severityPolicyDigest ?? null) !== null;
+  return true;
 }
 
 /**
@@ -526,7 +667,7 @@ function validateReceipt(
  * is the explicit no-rule-sheet binding only where none of these apply.
  */
 function ruleSheetsApply(entry: AdmissionEntry): boolean {
-  return entry.selections.length !== 0 || entry.ownerSelection !== undefined || entry.ruleSheetPins.length !== 0;
+  return entry.selections.length !== 0 || ownerSelectionsOf(entry).length !== 0 || entry.ruleSheetPins.length !== 0;
 }
 
 /**
@@ -540,7 +681,7 @@ function selectionForDigest(
   requirement: AdmissionRequirement,
 ): SelectionRows | null {
   if (entry.visibility === "private") {
-    const owner = entry.ownerSelection;
+    const owner = ownerSelectionsOf(entry).find((s) => s.severityPolicyDigest === digest && scopeMatches(s, requirement));
     if (owner === undefined) return null;
     if (owner.severityPolicyDigest !== digest) return null;
     if (!scopeMatches(owner, requirement)) return null;
@@ -549,7 +690,8 @@ function selectionForDigest(
   const selection = entry.selections.find(
     (s) => s.severityPolicyDigest === digest && scopeMatches(s, requirement),
   );
-  return selection ?? null;
+  if (selection === undefined) return null;
+  return selection;
 }
 
 /**
@@ -596,9 +738,11 @@ function checkArm(entry: AdmissionEntry, receipt: Receipt, requirement: Admissio
         return "bpmn-parity selection, settings or compiled options mismatch the receipt binding";
       }
       // Effective severities derive from the native settings (§5.3).
-      return checkVerdictsAgainstSelection(receipt.receiptKind, receipt.ruleVerdicts, selection, evidence.settings);
+      return checkVerdictsAgainstSelection(receipt.receiptKind, receipt.ruleVerdicts, selection);
     }
     case "bpmn-bijection": {
+      if (typeof receipt.roundTripEvidenceRef !== "string" || receipt.roundTripEvidenceRef.length === 0) return "bpmn-bijection round trip evidence missing";
+      if (!Number.isSafeInteger(receipt.descriptorCoverage.covered) || !Number.isSafeInteger(receipt.descriptorCoverage.total) || receipt.descriptorCoverage.total <= 0 || receipt.descriptorCoverage.covered < 0) return "bpmn-bijection coverage malformed";
       if (receipt.descriptorCoverage.covered !== receipt.descriptorCoverage.total) {
         return "bpmn-bijection descriptor coverage incomplete";
       }
@@ -607,6 +751,7 @@ function checkArm(entry: AdmissionEntry, receipt: Receipt, requirement: Admissio
     case "family-corpus":
     case "h2a-vocabulary":
     case "mem-descriptor": {
+      if (receipt.receiptKind === "family-corpus" && receipt.family !== entry.family) return "family-corpus family mismatch";
       // H2A and MEM run retained family checks only: the retained-check role
       // with no oracle or reference claim (§5.5, FX-RCPT-ARMS). The
       // no-transition-claim half is enforced in `checkRoleWithVerdicts`.
@@ -630,16 +775,15 @@ function checkArm(entry: AdmissionEntry, receipt: Receipt, requirement: Admissio
       const digest = receipt.severityPolicyDigest ?? null;
       if (digest === null) {
         if (ruleSheetsApply(entry)) return `${receipt.receiptKind} null selection binding with rule sheets`;
-        return checkVerdictsAgainstSelection(receipt.receiptKind, activeVerdicts(receipt), null, null);
+        return checkVerdictsAgainstSelection(receipt.receiptKind, activeVerdicts(receipt), null);
       }
       const selection = entry.selections.find(
         (s) =>
           s.severityPolicyDigest === digest &&
-          scopeMatches(s, requirement) &&
-          recomputedSelectionDigest(s) === digest,
+          scopeMatches(s, requirement),
       );
       if (selection === undefined) return `${receipt.receiptKind} selection binding stale or unknown`;
-      return checkVerdictsAgainstSelection(receipt.receiptKind, activeVerdicts(receipt), selection, null);
+      return checkVerdictsAgainstSelection(receipt.receiptKind, activeVerdicts(receipt), selection);
     }
     case "mechanism-compat":
     case "contract-verdict": {
@@ -661,6 +805,8 @@ function checkArm(entry: AdmissionEntry, receipt: Receipt, requirement: Admissio
       if (!pinsEqual([receipt.styledProfilePin], [entry.profilePin])) {
         return "theme-invariance styledProfilePin mismatch";
       }
+      if (entry.themeBefore === undefined || entry.themeAfter === undefined) return "theme-invariance expected evidence missing";
+      if (canonicalBytes(receipt.semanticDigestsBefore) !== canonicalBytes(entry.themeBefore) || canonicalBytes(receipt.semanticDigestsAfter) !== canonicalBytes(entry.themeAfter)) return "theme-invariance expected evidence mismatch";
       const b = receipt.semanticDigestsBefore;
       const a = receipt.semanticDigestsAfter;
       if (b.contentDigest !== a.contentDigest || b.pinsDigest !== a.pinsDigest || b.resultDigest !== a.resultDigest) {
@@ -708,13 +854,13 @@ function checkPrivateFamilyBinding(
   const digest = receipt.severityPolicyDigest ?? null;
   if (digest === null) {
     if (ruleSheetsApply(entry)) return `${kind} null selection binding with rule sheets`;
-    return checkVerdictsAgainstSelection(kind, activeVerdicts(receipt), null, null);
+    return checkVerdictsAgainstSelection(kind, activeVerdicts(receipt), null);
   }
-  const owner = entry.ownerSelection;
+  const owner = ownerSelectionsOf(entry).find((s) => s.severityPolicyDigest === digest && scopeMatches(s, requirement));
   if (owner === undefined) return `${kind} private entry without owner selection binding`;
   if (owner.severityPolicyDigest !== digest) return `${kind} owner selection digest mismatch`;
   if (!scopeMatches(owner, requirement)) return `${kind} owner selection outside required scope`;
-  return checkVerdictsAgainstSelection(kind, activeVerdicts(receipt), owner, null);
+  return checkVerdictsAgainstSelection(kind, activeVerdicts(receipt), owner);
 }
 
 function validatedCompiled(options: CompiledLintOptions, settings: readonly CompiledSetting[]): void {
@@ -725,8 +871,8 @@ function validatedCompiled(options: CompiledLintOptions, settings: readonly Comp
 }
 
 /**
- * The full native selection binds the receipt: the stored selection digest
- * recomputes over the complete settings, the compiled evidence carries those
+ * checkSelections recomputes the selection digest over the complete settings;
+ * the full native selection then binds the receipt: the compiled evidence carries those
  * identical settings with the identical selector, the native profile digest
  * equals the entry profile pin, and the policy digest is the same value in
  * every copy (public payload, receipt binding, compiled evidence).
@@ -738,7 +884,6 @@ function selectionBinds(
   profilePin: Pin,
   bindingDigest: Digest,
 ): boolean {
-  if (recomputedSelectionDigest(selection) !== selection.severityPolicyDigest) return false;
   if (selection.severityPolicyDigest !== bindingDigest) return false;
   if (compiledOptions.severityPolicyDigest !== bindingDigest) return false;
   if (compiledOptions.phase !== selection.phase || compiledOptions.readinessPolicy !== selection.readinessPolicy) {
@@ -746,6 +891,11 @@ function selectionBinds(
   }
   if (compiledOptions.profileDigest !== profilePin.contentDigest) return false;
   if (canonicalBytes(settings) !== canonicalBytes(selection.settings)) return false;
+  if (selection.expectedCompiledOptions === undefined) return false;
+  assertValidCompiledOptions(selection.expectedCompiledOptions);
+  // Recompute the complete canonical native evidence; stored digest equality
+  // cannot authenticate rule bodies, per-rule bindings or the top-level snapshot.
+  if (canonicalBytes(compiledOptions) !== canonicalBytes(selection.expectedCompiledOptions)) return false;
   return true;
 }
 
@@ -766,13 +916,14 @@ function checkPrivateParity(
   if (typeof evidence.ownerReceiptRef !== "string" || evidence.ownerReceiptRef === "") {
     return "bpmn-parity private-reference without owner receipt reference";
   }
-  const owner = entry.ownerSelection;
+  const owner = ownerSelectionsOf(entry).find((s) => scopeMatches(s, requirement));
   if (owner === undefined) return "bpmn-parity private entry without owner selection binding";
+  if (evidence.ownerReceiptRef !== owner.ownerReceiptRef) return "bpmn-parity owner evidence reference mismatch";
   if (receipt.proofBindings.severityPolicyDigest !== owner.severityPolicyDigest) {
     return "bpmn-parity owner selection digest mismatch";
   }
   if (!scopeMatches(owner, requirement)) return "bpmn-parity owner selection outside required scope";
   // The full owner evidence stays owner-side; the guardian checks the
   // opaque binding (digest, scope, verdict rows), never the settings.
-  return checkVerdictsAgainstSelection(receipt.receiptKind, receipt.ruleVerdicts, owner, null);
+  return checkVerdictsAgainstSelection(receipt.receiptKind, receipt.ruleVerdicts, owner);
 }
