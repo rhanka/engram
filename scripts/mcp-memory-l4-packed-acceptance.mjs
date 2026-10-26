@@ -68,9 +68,10 @@ function p2ArchivePaths(manifest) {
 
 const ENABLED_PROBE = `
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
-const require = createRequire(import.meta.url);
-const pkg = require('@sentropic/engram/package.json');
+import fs from 'node:fs';
+import path from 'node:path';
+const pkgDir = path.join(process.cwd(), 'node_modules/@sentropic/engram');
+const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
 assert.equal(pkg.name, '@sentropic/engram');
 assert.ok(pkg.exports['./mcp-memory']);
 assert.ok(pkg.exports['./registry/manifest']);
@@ -124,7 +125,7 @@ assert.equal(definitionsMod.memoryDefinition.kind, 'LazyDefinition');
 assert.equal(definitionsMod.memoryDefinition.id, 'sentropic.engram.memory');
 assert.ok(definitionsMod.memoryDefinition.load.toString().includes('./mcp-memory'));
 
-const entries = JSON.parse(require('node:fs').readFileSync(require.resolve('@sentropic/engram/registry/entries.v1.json'), 'utf8'));
+const entries = JSON.parse(fs.readFileSync(path.join(pkgDir, 'registry/entries.v1.json'), 'utf8'));
 assert.equal(entries.format, 'sentropic.registry-package/v1');
 assert.equal(entries.entries.length, 1);
 console.log('L4-ENABLED-METADATA-OK');
@@ -215,12 +216,10 @@ console.log('L4-SIX-TOOL-SDK-OK');
 
 const DISABLED_PROBE = `
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
-const require = createRequire(import.meta.url);
-const fs = await import('node:fs');
-const path = await import('node:path');
-const pkgDir = path.dirname(require.resolve('@sentropic/engram/package.json'));
-const pkg = require('@sentropic/engram/package.json');
+import fs from 'node:fs';
+import path from 'node:path';
+const pkgDir = path.join(process.cwd(), 'node_modules/@sentropic/engram');
+const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
 assert.ok(!pkg.files.includes('candidate-manifest.json'));
 const entries = JSON.parse(fs.readFileSync(path.join(pkgDir, 'registry/entries.v1.json'), 'utf8'));
 assert.equal(entries.entries[0].id, 'sentropic.engram.memory');
