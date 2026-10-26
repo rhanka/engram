@@ -28,6 +28,7 @@ function invocation(overrides = {}) {
   return {
     auditId: 'audit:l2-writes', authorization: { credential: 'credential:l7' },
     scope_ref: SCOPE, store_id: STORE, ...PRINCIPALS, generation: '1', deadline_at: SHORT_DEADLINE,
+    cancellation_ref: 'cancel:l2-writes', elicitation_ref: 'elicit:l2-writes',
     ...overrides,
   };
 }
@@ -139,6 +140,28 @@ function setup(overrides = {}) {
 }
 
 describe('MCP-L2 in-process write tools', () => {
+  it.each([undefined, '', null])('should refuse direct capture without a valid injected cancellation reference (%s)', async (cancellation_ref) => {
+    const { tools, memory, host } = setup();
+    const capture = vi.spyOn(memory, 'capture');
+    const reserve = vi.spyOn(host.reservation, 'reserveOrLoad');
+    await expect(tools.capture(captureInput('l2-missing-cancel-0001', '1'), invocation({ cancellation_ref }) as never))
+      .rejects.toMatchObject({ code: -32603 });
+    expect(capture).not.toHaveBeenCalled();
+    expect(reserve).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, '', null])('should refuse direct gated capture without a valid injected elicitation reference (%s)', async (elicitation_ref) => {
+    const { tools, store, host } = setup();
+    const commit = vi.spyOn(store, 'commitPending');
+    const confirm = vi.spyOn(host, 'confirm');
+    const attach = vi.spyOn(host.reservation, 'attachConfirmation');
+    await expect(tools.capture(captureInput('l2-missing-elicit-0001', '1'), invocation({ confirmationRequired: true, elicitation_ref }) as never))
+      .resolves.toMatchObject({ ok: false, error: { code: 'gate_failed' } });
+    expect(commit).not.toHaveBeenCalled();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(attach).not.toHaveBeenCalled();
+  });
+
   it('M13 should refuse every write with a typed error when no host ports are injected', async () => {
     const fixture = buildMemory({ scope: SCOPE });
     const facets = { scope_ref: SCOPE, store_id: STORE, engine: fixture.memory };
