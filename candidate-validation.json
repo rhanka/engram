@@ -1,18 +1,77 @@
 {
-  "sourceCommit": "5265c89824ec3c53feae4c311d31793bdbf965e3",
+  "sourceCommit": "ad96c6815e252daca31389cbe64b992d3e107a35",
   "tarball": {
-    "filename": "sentropic-engram-0.21.1.tgz",
-    "sha256": "868cea135a6535eac8c68ec28ef5cb6e27f08fbeb09ded72af54574812c306ad",
-    "integrity": "sha512-Y94bHNUSgniul2t2cbIRCsBKnNUazdGxVkcSlJP+gjy47PKvTYhtVb6zGD6DWCzfOkscTK9Yi0PcuKjCku7dmg=="
+    "filename": "sentropic-engram-0.21.2.tgz",
+    "sha256": "a295eef8a1733fd8c00f72ccd6938a5ea11678fdf33848f8849c4d531bd43af8",
+    "integrity": "sha512-vzIjuznMAk9IXdzBJdJgSAe7Lf0pLxC1UGK6LrSoXcYYbFIR2BVL20e6Eej4YY4MZxZTljmnn5xdYO4l7MXBSA=="
   },
+  "artifactPath": ".graphify/scratch/l4-r2-artifacts/sentropic-engram-0.21.2.tgz",
   "inputs": {
     "specSha256": "18c697c1cd91287fd9f814c059910ffb4b39ddb1be46af547f384c7d912177b2",
     "preCandidateSha256": "2b85ff28b6fe06bda0abcdc19255f61a1ed1e4b7cfbb40c2e881c98dd234424b"
   },
+  "dependencies": {
+    "install": "plain npm install; no added override and no --force; lock unchanged after reconciliation",
+    "lockSha256": "89d648da00a79f9caa76b2bd4acb76f002b4e7e1f220b5a7f1d242661ecf1723",
+    "builderNpm": "11.17.0",
+    "fullSuiteNpm": "9.2.0",
+    "node": "v22.22.1",
+    "zodNodes": [
+      {
+        "path": "node_modules/zod",
+        "version": "4.6.7"
+      }
+    ],
+    "ollamaAiProvider": "absent",
+    "npmLsAllExitCode": 0,
+    "sdkFloor": "^1.31.0",
+    "sdkPinned": "1.32.2",
+    "optionalPeers": {
+      "@sentropic/mcp-platform": "0.4.0",
+      "@sentropic/mcp-broker": "0.1.0"
+    },
+    "peerSetup": "The plain install pruned the local optional peers. npm --no-save with the existing lock left them absent. Verified P2 archives were extracted into node_modules for the source build; the packed acceptance installs both archives through npm in fresh consumers.",
+    "environmentRestoration": "An initial --package-lock=false local peer setup resolved newer dependency ranges. npm ci restored the unchanged lock before the final build and both full suites."
+  },
+  "minorClosures": {
+    "injectedReferences": {
+      "cancellation": "typed TrustedContextUnavailableProtocolError before reservation/engine",
+      "elicitation": "gate_failed before confirmation/attachment/effect",
+      "regressionCases": 6,
+      "before": "6 failed / 24 passed",
+      "after": "30 passed"
+    },
+    "traceControls": {
+      "source": "real packed in-memory store constructor and real engine.admin bootstrap dispatch to an injected refusing host port",
+      "storeOpens": 1,
+      "identityBootstraps": 1,
+      "syntheticStoreIdentityCanary": false
+    },
+    "sdkPinnedConsumer": {
+      "installedSpec": "1.32.2",
+      "installedVersion": "1.32.2",
+      "assertedAgainstCandidateManifest": true
+    }
+  },
   "targeted": {
     "files": 12,
-    "passed": 151,
-    "failed": 0
+    "passed": 135,
+    "failed": 0,
+    "skipped": 0,
+    "suites": [
+      "mcp-memory-l4-adapter.test.ts",
+      "mcp-memory-l4-pipeline.test.ts",
+      "memory-mcp-l1-packed.test.ts",
+      "memory-mcp-l2-authorization.test.ts",
+      "memory-mcp-l2-interruption.test.ts",
+      "memory-mcp-l2-lifecycle-round2.test.ts",
+      "memory-mcp-l2-packed.test.ts",
+      "memory-mcp-l2-write-ports.test.ts",
+      "memory-mcp-l2-writes.test.ts",
+      "memory-mcp-l3-byte-ceiling.test.ts",
+      "memory-mcp-l3-filtered-projection.test.ts",
+      "memory-mcp-l3-reload.test.ts"
+    ]
   },
   "packed": {
     "result": "pass",
@@ -24,25 +83,43 @@
       "storeOpens": 0,
       "identityBootstraps": 0,
       "memoryNativeBuilds": 0
-    }
+    },
+    "repeatedInFullSuite": "pass"
   },
   "full": {
-    "passed": 5427,
+    "passed": 5430,
     "failed": 64,
     "skipped": 37
   },
   "baseline": {
-    "commit": "652cf65684c7e191c7ba90bfb515f2f3aef8b0c1",
-    "passed": 5394,
+    "commit": "5a8018e35f895995ae0299021aa4902dbd45cdcc",
+    "passed": 5391,
     "failed": 64,
     "skipped": 37,
-    "method": "Standalone detached metadata and git archive in this worktree; same installed dependency trees. Ordinary baseline build reproduces missing fs_ext.node. tsup --external fs-ext creates baseline comparison artifacts without editing baseline sources."
+    "method": "git archive in this worktree with its own Git metadata anchored to the exact baseline and shared installed dependency trees. Ordinary baseline build reproduces missing fs_ext.node. tsup --external fs-ext materializes comparison bundles without editing baseline sources; build:studio completes the baseline artifacts."
   },
   "failureComparison": {
     "added": [],
     "removed": [],
     "signaturesChanged": [],
     "unchangedCount": 64,
+    "failedFiles": [
+      "canonical-memory-store.parity.test.ts",
+      "canonical-memory-store.test.ts",
+      "memory-mcp-l1-reads.test.ts",
+      "memory-mcp-l2-canonical-recovery.test.ts",
+      "memory-mcp-l2-durable-admission.test.ts",
+      "memory-mcp-l2-effect-guard.test.ts",
+      "memory-projection-adapters.test.ts",
+      "memory-recall-durable-parity.test.ts",
+      "memory-recall-golden.test.ts",
+      "memory-reconciliation.test.ts",
+      "memory-substrate-tarball.test.ts",
+      "native-abi-smoke.test.ts",
+      "sqlite-fence-nlink.native.test.ts",
+      "sqlite-memory-broker.native.test.ts"
+    ],
+    "signatureMethod": "Test identity plus first error line; the npm >=10 diagnostic is extracted from its subprocess wrapper. No signature changed, including embedded dependency paths.",
     "failures": [
       {
         "test": "canonical-memory-store.parity.test.ts::SQLite canonical parity with reference transaction receipts and illegal-transition guard SQLite produces identical transaction-receipt digests to the reference store and writes nothing on illegal transitions",
@@ -303,54 +380,86 @@
     ]
   },
   "logs": {
-    "/tmp/l4-build-final.log": {
-      "sha256": "51c31a827e179ab6b05d51c7234a5ae7b917dc1a53586c18846d1409d03229a4"
+    "/tmp/l4-r2-install.log": {
+      "sha256": "c29b30a83d0d94f65c77d860369d51973d5f3f5cfd642b842184087829246789"
     },
-    "/tmp/l4-pack.log": {
-      "sha256": "421e213fa2d0a42765e7a1feb2ea58de8b77a9cfbd30f685218bcb14414cde52"
+    "/tmp/l4-r2-ci.log": {
+      "sha256": "eea8d724551877831a0f0a01cfe2b312a830b1dd6305d16842f2012d2e3cc74f"
     },
-    "/tmp/l4-refresh.log": {
-      "sha256": "c3051e093de211d947673a69ed6a366562f0c27f5b1e7d69b1e3f158c1e4f26d"
+    "/tmp/l4-r2-peers-install.log": {
+      "sha256": "b216480412b24f05f6629e2a20a2a4376a5d34f28b113b5b72d571171bb93dc7"
     },
-    "/tmp/l4-target-all.log": {
-      "sha256": "66d37389fd56b3addc0b38076b0f48ff0e35059f47dc54914e034f045b31156b"
+    "/tmp/l4-r2-npm-ls-all.log": {
+      "sha256": "e6816274bc8ee71ef36e859b26c96c99ac8e374483caa8586304f3ed9216ccb9"
     },
-    "/tmp/l4-packed-final.log": {
-      "sha256": "8bb3fa3099c0d32e1a59847079a81bc05ca875d1f4ae059e08e660ef2f9179b8"
+    "/tmp/l4-r2-dependency-tree.log": {
+      "sha256": "574c048a474e7bd7ae1f59a3a3c36fec56f6b00ec43bf3998c8eabd44e604d6c"
     },
-    "/tmp/l4-candidate-full.json": {
-      "sha256": "927fb20bd49e571626628df761225ebe9da94deaaa69f2a17a2d9be54302610c"
+    "/tmp/l4-r2-reanchor-build.log": {
+      "sha256": "a6a557a58cdc216dc3b65ec17c5392e5662e3393ccde418ac1cbd0c9fd36d62d"
     },
-    "/tmp/l4-baseline-full.json": {
-      "sha256": "3932b18411727ea2d05d56da0069ee55a4d36587a107d6a9c1de1ed728fd0409"
+    "/tmp/l4-r2-reanchor-pack.log": {
+      "sha256": "4e62575f9a95cb3a1f6d6f5c02ce67f7540327473ac4e6a7acbf3d65199e10a1"
+    },
+    "/tmp/l4-r2-reanchor-manifest.log": {
+      "sha256": "9756d1c45c4645472cab898340b67da50e95f742e865c8d927463aaef0f22d21"
+    },
+    "/tmp/l4-r2-direct-red.log": {
+      "sha256": "6d3bfa4b44c6490b3b4abec9140dc3a097ce8d6a9fb444d99c6718dc4d14e606"
+    },
+    "/tmp/l4-r2-direct-green.log": {
+      "sha256": "7f3d7a667a3833172ced341b0c835e540b362d95623bd712b2a317d85e20bb73"
+    },
+    "/tmp/l4-r2-build-final.log": {
+      "sha256": "d7a8afbb2be5bda30db37d181bd4280097bf7e829dcedc8f7ceafea01f283d39"
+    },
+    "/tmp/l4-r2-pack-final.log": {
+      "sha256": "8963620f18fe54db6a9e7f8e34b10ca7bb9bcc194556ebd70f29639aabf56f96"
+    },
+    "/tmp/l4-r2-refresh-final.log": {
+      "sha256": "05fb4aef7633c67efb5c2d5458b74d163df918022279a96fbf7e61c45691c657"
+    },
+    "/tmp/l4-r2-targeted.json": {
+      "sha256": "a874afe350d13d5678fb203435a08c52edf3e0e882c13d198175dd75937037b8"
+    },
+    "/tmp/l4-r2-packed-final.log": {
+      "sha256": "35d6e8871e430bff9ac1f72c976a048707d0c00852590f3e3d1e068e243b8e96"
+    },
+    "/tmp/l4-r2-candidate-full.json": {
+      "sha256": "6206f1f209daff1802da1305935c461907fb3f7374b9218e0a6fdeadfca42e78"
+    },
+    "/tmp/l4-r2-baseline-full.json": {
+      "sha256": "9ba5422bd5c7cbdc7ff9633dc8d20881cbb38cc2d9526b104fb79215294d8c11"
+    },
+    "/tmp/l4-r2-baseline-build.log": {
+      "sha256": "db1a1a9ff60f0f3771809aa767b3a484d52889987f4900200eafa444a8eeeb6f"
+    },
+    "/tmp/l4-r2-baseline-bundle.log": {
+      "sha256": "ece61db12ff655c889d21ee9ad7b6f2a331650cbe6805c3bceab3a5538244e77"
+    },
+    "/tmp/l4-r2-baseline-studio.log": {
+      "sha256": "ae8cb22a1a531ec33fcb8d426514e78b5805ca45cab15182ef7467feabf76efc"
     }
   },
   "review": {
-    "reviewer": "Astra",
-    "sourceCommit": "5265c89824ec3c53feae4c311d31793bdbf965e3",
-    "mode": "read-only",
-    "verdict": "All round-3 findings closed; global validation incomplete.",
-    "remainingBlockingFindings": 0,
-    "previouslyClosedFindings": "maintained",
-    "additionalCounterexamples": {
-      "abortResumingSuccessfulGuard": "closed: CANCELLED, zero commits, one seal destruction",
-      "substitutedConfirmationTarget": "closed: gate_failed",
-      "admissionCleanupException": "closed: accepted receipt retained, same-receipt replay, one commit"
+    "round1": {
+      "reviewer": "Muse",
+      "sourceLog": "/home/antoinefa/src/graphify/.graphify/scratch/design/memory-finalization/L4-review-muse-sa1.log",
+      "sha256": "8febace89593dbf1184da8bfccdf77c17db016a6e5cbed08c6a0907ccf651832",
+      "verdict": "SOLID",
+      "remainingMinors": 3,
+      "shellVerification": "unverified (sandbox bwrap failure in that review session)"
     },
-    "independentlyVerified": [
-      "spec and P2 identities and archive hashes/integrities",
-      "23 packed asset digests",
-      "exact packed exports",
-      "tarball hash/integrity",
-      "runtime source-map correspondence",
-      "seven validation log hashes",
-      "same 64 normalized failure signatures in 14 test files"
-    ]
+    "round2": {
+      "status": "unverified",
+      "role": "Code author; implementation verification only"
+    }
   },
   "unverified": [
     "L5 qualification of the staged P2 pre-candidate archives (received with matching sha256/integrity, not re-qualified here)",
     "Deployed host bindings, tenancy and policy values (host-supplied at composition; acceptance uses test host ports)",
     "Postgres canonical parity and native-addon suites (environmental: no native toolchain or addons in this container)",
-    "AdmissionOutcomeV1 has no cleanup-status field; key cleanup convergence remains host-owned and unverified. Known canonical admission receipts survive cleanup refusal or exception."
+    "AdmissionOutcomeV1 has no cleanup-status field; key cleanup convergence remains host-owned and unverified. Known canonical admission receipts survive cleanup refusal or exception.",
+    "Independent review of author round 2 (implementation verification here does not replace the conductor review)."
   ]
 }
