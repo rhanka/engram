@@ -4,6 +4,12 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.21.2 (2026-10-25)
+
+- **Dropped Ollama backend (owner decision 2026-10-25, security).** Removes the `ollama-ai-provider` dependency, which pinned `@ai-sdk/provider-utils` 2.x and its zod 3 line (GHSA-mrhx-c7xc-m3w5, high). The `ollama` direct backend is refused with the standard `--backend must be one of …` error; `@sentropic/llm-mesh` has no Ollama provider, so nothing replaces it. `validateOllamaBaseUrl` and its tests are removed with the backend.
+- **Legacy normalizer fingerprints accepted on read (owner and consumer agreement 2026-10-25).** Descriptors persisted by v0.18.0 under the `graphify_entity_normalizer_v1` contract now compile when their bytes are unchanged; a real module byte change is still refused. Writers keep emitting only `engram_entity_normalizer_v1`.
+- **Forwarding package.** The `forward/graphify` shim is bumped to 0.19.2 and pins `@sentropic/engram@0.21.2`. It now forwards the full consumer surface: an `exports` map for `.` (`types`, `import`, `require`) and `./llm-mesh` (`types`, `import`), backed by `index.mjs`/`index.d.ts`/`llm-mesh.mjs`/`llm-mesh.d.ts` re-exports. It is published separately, not by the tag workflow.
+
 ## 0.21.1 (2026-10-21)
 
 - **Host-owned database drivers.** `pg`, `pgvector`, `neo4j-driver` and `@google-cloud/spanner` are no longer installed with engram. Per the owner decision of 2026-10-20 ("Tout passer par l'hôte"), hosts provide database drivers through `deps.driverModule`; DB stores refuse with `HOST_DRIVER_REQUIRED` otherwise. Drivers used by the live database test suites remain development dependencies only.
