@@ -1,3 +1,4 @@
+import type { MemoryExecutionControlV1 } from './execution.js';
 import { createHash } from 'node:crypto';
 import type { GuardedMemoryPortV2, MemoryFirstEffectGuardV1 } from '../../engram-memory/dist/engine.js';
 import type {
@@ -78,6 +79,7 @@ export interface MemoryWriteInvocationV1 {
   connector_instance_ref: string;
   agent_id: string;
   session_id: string;
+  transport_attachment_ref?: string;
   generation: string;
   deadline_at: string;
   /**
@@ -100,6 +102,11 @@ export interface MemoryWriteFacetsV1 {
 }
 
 export interface MemoryWriteConfirmationV1 {
+  principal_namespace: string;
+  principal_id: string;
+  tenant_id: string;
+  session_id: string;
+  transport_attachment_ref?: string;
   capability: WriteTool;
   target_ref: string;
   operation_digest: Digest;
@@ -140,6 +147,7 @@ const refs = ['scope_ref', 'store_id', 'principal_namespace', 'principal_id', 't
 /** M13 option B: explicit in-process operations, no listener, broker or activation. Importing this module activates nothing. */
 export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1; host?: MemoryWriteHostV1 }) {
   const { facets, host } = options;
+  const executions = new WeakMap<MemoryWriteInvocationV1, MemoryExecutionControlV1>();
   const disabled =
     host === undefined || typeof host !== 'object'
     || typeof host.clock?.now !== 'function'
@@ -155,12 +163,13 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     || typeof facets?.engine?.capture !== 'function' || typeof facets?.engine?.requestAdmission !== 'function'
     || typeof facets?.engine?.transition !== 'function' || facets?.engine?.version !== 2;
 
-  async function context(input: MemoryWriteInvocationV1, tool: WriteTool): Promise<MemoryWriteInvocationV1> {
+  async function context(input: MemoryWriteInvocationV1, tool: WriteTool, execution: MemoryExecutionControlV1): Promise<MemoryWriteInvocationV1> {
     let ctx: MemoryWriteInvocationV1;
     try { ctx = structuredClone(input); } catch { throw new TrustedContextUnavailableProtocolError(); }
     if (!ctx || !isValidTrustedAuditId(ctx.auditId) || refs.some(k => !isValidOpaqueRef(ctx[k])) || !isValidCursor(ctx.generation) || !isValidInstant(ctx.deadline_at)
       || !ctx.authorization || typeof ctx.authorization.credential !== 'string' || Object.keys(ctx.authorization).some(k => !['credential', 'context_ref'].includes(k))
       || (ctx.authorization.context_ref !== undefined && !isValidOpaqueRef(ctx.authorization.context_ref))) throw new TrustedContextUnavailableProtocolError();
+    executions.set(ctx, execution);
     if (disabled) return ctx;
     try {
       if (await host!.authenticate(structuredClone(ctx), tool) !== true) throw new TrustedContextUnavailableProtocolError();
@@ -174,6 +183,7 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, error, invocationAuthorized: true, targetAuthorized: true }).structuredContent;
 
   function check(ctx: MemoryWriteInvocationV1): PublicMemoryErrorCode | undefined {
+    if (executions.get(ctx)?.signal?.aborted && !executions.get(ctx)?.commitPhaseEntered) return 'CANCELLED';
     if (disabled) return 'CAPABILITY_UNAVAILABLE';
     const now = host!.clock.now();
     if (!isValidInstant(now)) return 'STORE_UNAVAILABLE';
@@ -347,18 +357,12 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     }
   }
 
-  // Per-invocation confirmation memo: the guarded engine may run its
-  // first-effect guard more than once per attempt, but the confirmation port
-  // is called once per attempt. The attached confirmation is durable approval
-  // evidence for the remainder of that attempt; a retry builds a fresh
-  // invocation and re-verifies.
-  const confirmedThisInvocation = new WeakMap<object, Set<string>>();
+  // Memoize durable attachment only. Every guard obtains a fresh verifier verdict.
+  const attachedThisInvocation = new WeakSet<object>();
 
   async function confirmIfRequired(tool: WriteTool, ctx: MemoryWriteInvocationV1, idempotencyKey: string, binding: MemoryMutationBindingV1<unknown>, digest: Digest, targetRef: string | undefined): Promise<ToolResultV1<never> | undefined> {
     const gated = tool === 'engram_memory_withdraw' || tool === 'engram_memory_forget' || ctx.confirmationRequired === true;
     if (!gated) return undefined;
-    const memoKey = `${binding.preimage.reservation_ref}:${digest}`;
-    if (confirmedThisInvocation.get(ctx)?.has(memoKey)) return undefined;
     if (targetRef === undefined) {
       const out = failure(tool, ctx, 'gate_failed');
       await audit(ctx, { tool, idempotency_key: idempotencyKey, decision: 'refuse', error_code: 'gate_failed' });
@@ -373,26 +377,32 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     // (the synthesized fallback below only serves direct facade use without
     // an injected host binding).
     const elicitationRef = ctx.elicitation_ref;
+    const currentSession = {
+      principal_namespace: ctx.principal_namespace, principal_id: ctx.principal_id,
+      tenant_id: ctx.tenant_id, session_id: ctx.session_id,
+      ...(ctx.transport_attachment_ref ? { transport_attachment_ref: ctx.transport_attachment_ref } : {}),
+    };
+    const verify = () => host!.confirm({
+      ...currentSession, capability: tool, target_ref: targetRef,
+      operation_digest: digest, reservation_ref: binding.preimage.reservation_ref,
+      ...(elicitationRef !== undefined ? { elicitation_ref: elicitationRef } : {}),
+    });
     let approved = false;
     try {
-      approved = await host!.confirm({
-        capability: tool,
-        target_ref: targetRef,
-        operation_digest: digest,
-        reservation_ref: binding.preimage.reservation_ref,
-        ...(elicitationRef !== undefined ? { elicitation_ref: elicitationRef } : {}),
-      }) === true;
+      approved = await verify() === true;
     } catch { approved = false; }
     if (approved !== true) {
       const out = failure(tool, ctx, 'gate_failed');
       await audit(ctx, { tool, idempotency_key: idempotencyKey, decision: 'refuse', error_code: 'gate_failed' });
       return out;
     }
+    if (attachedThisInvocation.has(ctx)) return undefined;
     try {
       const attached = await host!.reservation.attachConfirmation(
         binding.preimage.reservation_ref,
         elicitationRef ?? `confirmation:${binding.preimage.reservation_ref}`,
         digest,
+        currentSession,
       );
       if (!attached.ok) {
         const out = mapNeutralMemoryErrorToPublic({ tool, auditId: ctx.auditId, code: attached.error_code, invocationAuthorized: true, targetAuthorized: true }).structuredContent;
@@ -404,13 +414,9 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
       await audit(ctx, { tool, idempotency_key: idempotencyKey, decision: 'refuse', error_code: 'STORE_UNAVAILABLE' });
       return out;
     }
-    let memo = confirmedThisInvocation.get(ctx);
-    if (memo === undefined) {
-      memo = new Set<string>();
-      confirmedThisInvocation.set(ctx, memo);
-    }
-    memo.add(memoKey);
-    return undefined;
+    attachedThisInvocation.add(ctx);
+    // Attachment itself awaited host I/O; its evidence is not a fresh verdict.
+    return confirmIfRequired(tool, ctx, idempotencyKey, binding, digest, targetRef);
   }
 
   /**
@@ -461,7 +467,10 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     // A successful canonical replay bypasses the first-effect guard; a
     // recovered reservation can still execute its first effect here.
     let replayed = true;
-    const result = await perform(async () => {
+    const execution = executions.get(ctx)!;
+    const guard: MemoryFirstEffectGuardV1 = async () => {
+      const aborted = check(ctx);
+      if (aborted) { refused = failure(tool, ctx, aborted); return false; }
       replayed = false;
       // M4 l.587 / M5 l.702,730: this runs ONLY after canonical proof
       // lookup found no committed result, including an unknown host outcome.
@@ -480,8 +489,14 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
         refused = await claim(tool, ctx, idempotencyKey, decided.binding);
         claimed = refused === undefined;
       }
+      // Claiming may await storage; verify again at the last host boundary.
+      if (refused === undefined && targetRef !== undefined) refused = await confirmIfRequired(tool, ctx, idempotencyKey, decided.binding, decided.binding.operation_digest, targetRef);
+      const finalError = check(ctx);
+      if (refused === undefined && finalError) refused = failure(tool, ctx, finalError);
       return refused === undefined;
-    });
+    };
+    Object.assign(guard, { signal: execution.signal, enterCommitPhase: () => { execution.commitPhaseEntered = true; } });
+    const result = await perform(guard);
     return refused === undefined ? { result, replayed } : { failure: refused };
   }
 
@@ -505,9 +520,9 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     return createToolSuccessEnvelope(output, ctx.auditId).structuredContent as ToolResultV1<T>;
   }
 
-  async function capture(input: unknown, invocation: MemoryWriteInvocationV1): Promise<ToolResultV1<CaptureOutputV1>> {
+  async function capture(input: unknown, invocation: MemoryWriteInvocationV1, execution: MemoryExecutionControlV1 = {}): Promise<ToolResultV1<CaptureOutputV1>> {
     const tool = 'engram_memory_capture';
-    const ctx = await context(invocation, tool);
+    const ctx = await context(invocation, tool, execution);
     const checked = validateCaptureInputV1(input);
     if (!checked.ok) return failure(tool, ctx, 'INVALID_SCHEMA');
     const arg = checked.value as CaptureInputV1;
@@ -521,6 +536,8 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     } catch {
       return failure(tool, ctx, 'STORE_UNAVAILABLE');
     }
+    const afterAuthorization = check(ctx);
+    if (afterAuthorization) return failure(tool, ctx, afterAuthorization);
     if (!authorized) return failure(tool, ctx, 'UNAUTHORIZED');
     const now = host!.clock.now();
     const retention = resolveCaptureRetentionPolicyV1({ captured_at: now, host_policy: host!.policy.retention, caller_retention: arg.payload.retention });
@@ -566,7 +583,7 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
       if ('failure' in guarded) return guarded.failure as ToolResultV1<CaptureOutputV1>;
       ack = guarded.result;
     } catch {
-      return mapUnexpectedDependencyExceptionToPublic({ tool, commitPhaseEntered: true, auditId: ctx.auditId }).structuredContent as ToolResultV1<CaptureOutputV1>;
+      return mapUnexpectedDependencyExceptionToPublic({ tool, commitPhaseEntered: execution.commitPhaseEntered === true, auditId: ctx.auditId }).structuredContent as ToolResultV1<CaptureOutputV1>;
     }
     if (!ack.ok) return neutralFailure(tool, ctx, ack.error) as ToolResultV1<CaptureOutputV1>;
     if (ack.value.status !== 'committed_pending' && ack.value.status !== 'duplicate_exact'
@@ -582,9 +599,9 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     return complete(tool, ctx, arg.idempotency_key, decided.binding, output, validateCaptureOutputV1);
   }
 
-  async function requestAdmission(input: unknown, invocation: MemoryWriteInvocationV1): Promise<ToolResultV1<RequestAdmissionOutputV1>> {
+  async function requestAdmission(input: unknown, invocation: MemoryWriteInvocationV1, execution: MemoryExecutionControlV1 = {}): Promise<ToolResultV1<RequestAdmissionOutputV1>> {
     const tool = 'engram_memory_request_admission';
-    const ctx = await context(invocation, tool);
+    const ctx = await context(invocation, tool, execution);
     const checked = validateRequestAdmissionInputV1(input);
     if (!checked.ok) return failure(tool, ctx, 'INVALID_SCHEMA');
     const arg = checked.value as RequestAdmissionInputV1;
@@ -596,6 +613,8 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     } catch {
       return failure(tool, ctx, 'STORE_UNAVAILABLE');
     }
+    const afterAuthorization = check(ctx);
+    if (afterAuthorization) return failure(tool, ctx, afterAuthorization);
     if (!admittedAuthorized) return failure(tool, ctx, 'UNAUTHORIZED');
     const reserved = await reserve(tool, ctx, {
       tool_name: tool, candidate_id: arg.candidate_id, admission_policy_version: await host!.policy.admissionPolicyVersion(),
@@ -613,7 +632,7 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
       outcome = guarded.result;
       replayed = guarded.replayed;
     } catch {
-      return mapUnexpectedDependencyExceptionToPublic({ tool, commitPhaseEntered: true, auditId: ctx.auditId }).structuredContent as ToolResultV1<RequestAdmissionOutputV1>;
+      return mapUnexpectedDependencyExceptionToPublic({ tool, commitPhaseEntered: execution.commitPhaseEntered === true, auditId: ctx.auditId }).structuredContent as ToolResultV1<RequestAdmissionOutputV1>;
     }
     if (!outcome.ok) {
       if ((outcome.error.code === 'ILLEGAL_TRANSITION' || outcome.error.code === 'ALREADY_TERMINAL')) {
@@ -627,9 +646,9 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     return complete(tool, ctx, arg.idempotency_key, decided.binding, { outcome: outcome.value, replayed }, validateRequestAdmissionOutputV1);
   }
 
-  async function withdraw(input: unknown, invocation: MemoryWriteInvocationV1): Promise<ToolResultV1<WithdrawOutputV1>> {
+  async function withdraw(input: unknown, invocation: MemoryWriteInvocationV1, execution: MemoryExecutionControlV1 = {}): Promise<ToolResultV1<WithdrawOutputV1>> {
     const tool = 'engram_memory_withdraw';
-    const ctx = await context(invocation, tool);
+    const ctx = await context(invocation, tool, execution);
     const checked = validateWithdrawInputV1(input);
     if (!checked.ok) return failure(tool, ctx, 'INVALID_SCHEMA');
     const arg = checked.value as WithdrawInputV1;
@@ -641,6 +660,8 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     } catch {
       return failure(tool, ctx, 'STORE_UNAVAILABLE');
     }
+    const afterAuthorization = check(ctx);
+    if (afterAuthorization) return failure(tool, ctx, afterAuthorization);
     if (!withdrawAuthorized) return failure(tool, ctx, 'UNAUTHORIZED');
     const anchor = createHostLifecycleEventAnchorV1({
       occurred_at: host!.clock.now(), kind_ref: host!.policy.anchorKindRef,
@@ -671,7 +692,7 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
       receipt = guarded.result;
       replayed = guarded.replayed;
     } catch {
-      return mapUnexpectedDependencyExceptionToPublic({ tool, commitPhaseEntered: true, auditId: ctx.auditId }).structuredContent as ToolResultV1<WithdrawOutputV1>;
+      return mapUnexpectedDependencyExceptionToPublic({ tool, commitPhaseEntered: execution.commitPhaseEntered === true, auditId: ctx.auditId }).structuredContent as ToolResultV1<WithdrawOutputV1>;
     }
     if (!receipt.ok) {
       if (receipt.error.code === 'ILLEGAL_TRANSITION' || receipt.error.code === 'ALREADY_TERMINAL') {
@@ -704,9 +725,9 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     }, validateWithdrawOutputV1);
   }
 
-  async function forget(input: unknown, invocation: MemoryWriteInvocationV1): Promise<ToolResultV1<ForgetOutputV1>> {
+  async function forget(input: unknown, invocation: MemoryWriteInvocationV1, execution: MemoryExecutionControlV1 = {}): Promise<ToolResultV1<ForgetOutputV1>> {
     const tool = 'engram_memory_forget';
-    const ctx = await context(invocation, tool);
+    const ctx = await context(invocation, tool, execution);
     const checked = validateForgetInputV1(input);
     if (!checked.ok) return failure(tool, ctx, 'INVALID_SCHEMA');
     const arg = checked.value as ForgetInputV1;
@@ -718,6 +739,8 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
     } catch {
       return failure(tool, ctx, 'STORE_UNAVAILABLE');
     }
+    const afterAuthorization = check(ctx);
+    if (afterAuthorization) return failure(tool, ctx, afterAuthorization);
     if (!forgetAuthorized) return failure(tool, ctx, 'UNAUTHORIZED');
     const anchor = createHostLifecycleEventAnchorV1({
       occurred_at: host!.clock.now(), kind_ref: host!.policy.anchorKindRef,
@@ -748,7 +771,7 @@ export function createMemoryWriteToolsV1(options: { facets: MemoryWriteFacetsV1;
       receipt = guarded.result;
       replayed = guarded.replayed;
     } catch {
-      return mapUnexpectedDependencyExceptionToPublic({ tool, commitPhaseEntered: true, auditId: ctx.auditId }).structuredContent as ToolResultV1<ForgetOutputV1>;
+      return mapUnexpectedDependencyExceptionToPublic({ tool, commitPhaseEntered: execution.commitPhaseEntered === true, auditId: ctx.auditId }).structuredContent as ToolResultV1<ForgetOutputV1>;
     }
     if (!receipt.ok) {
       if (receipt.error.code === 'ILLEGAL_TRANSITION' || receipt.error.code === 'ALREADY_TERMINAL') {
