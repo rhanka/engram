@@ -284,4 +284,52 @@ describe("legacy v0.18.0 normalizer descriptors", () => {
 
     expect(() => compileNormalizerByNodeType(profile)).toThrow(/module bytes changed/);
   });
+
+  it("refuses a future contract even when its fingerprint matches that contract", () => {
+    const root = tempDir();
+    const profile = normalizedProfile(root, {});
+    const fingerprint = { contract: "future_entity_normalizer_v99", builtins: ["normalize_for_match@1"] };
+    profile.node_types.Zone.linking!.normalizer = {
+      ...fingerprint,
+      normalizer_hash: createHash("sha256").update(JSON.stringify(fingerprint)).digest("hex"),
+    } as unknown as EntityNormalizerDescriptor;
+
+    expect(() => compileNormalizerByNodeType(profile)).toThrow(/module bytes changed/);
+  });
+
+  it("refuses a null contract even when its fingerprint matches that contract", () => {
+    const root = tempDir();
+    const profile = normalizedProfile(root, {});
+    const fingerprint = { contract: null, builtins: ["normalize_for_match@1"] };
+    profile.node_types.Zone.linking!.normalizer = {
+      ...fingerprint,
+      normalizer_hash: createHash("sha256").update(JSON.stringify(fingerprint)).digest("hex"),
+    } as unknown as EntityNormalizerDescriptor;
+
+    expect(() => compileNormalizerByNodeType(profile)).toThrow(/module bytes changed/);
+  });
+
+  it("refuses an empty contract even when its fingerprint matches that contract", () => {
+    const root = tempDir();
+    const profile = normalizedProfile(root, {});
+    const fingerprint = { contract: "", builtins: ["normalize_for_match@1"] };
+    profile.node_types.Zone.linking!.normalizer = {
+      ...fingerprint,
+      normalizer_hash: createHash("sha256").update(JSON.stringify(fingerprint)).digest("hex"),
+    } as unknown as EntityNormalizerDescriptor;
+
+    expect(() => compileNormalizerByNodeType(profile)).toThrow(/module bytes changed/);
+  });
+
+  it("refuses a missing contract even when its fingerprint matches the contract-less preimage", () => {
+    const root = tempDir();
+    const profile = normalizedProfile(root, {});
+    const fingerprint = { builtins: ["normalize_for_match@1"] };
+    profile.node_types.Zone.linking!.normalizer = {
+      ...fingerprint,
+      normalizer_hash: createHash("sha256").update(JSON.stringify(fingerprint)).digest("hex"),
+    } as unknown as EntityNormalizerDescriptor;
+
+    expect(() => compileNormalizerByNodeType(profile)).toThrow(/module bytes changed/);
+  });
 });
