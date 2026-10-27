@@ -31,6 +31,8 @@ const TEST_FILES = [
   "ontology-guardian-diagram-migrations.test.ts",
   "ontology-guardian-diagram-admission.test.ts",
   "ontology-guardian-diagram-typeproof.test.ts",
+  "ontology-guardian-diagram-schemas.test.ts",
+  "ontology-guardian-diagram-corpus.test.ts",
 ];
 
 async function callbacks(mutation) {
@@ -73,21 +75,29 @@ mutate("DM3", "diagram-profiles.ts", 'enumeration("accessMode", ["write", "read"
 mutate("DM4", "diagram-profiles.ts", 'value: "composite", max: 1', 'value: "composite", max: 2');
 mutate("DM5", "diagram-profiles.ts", "integer: true, min: -1, max: 9007199254740991", "integer: true, min: 0, max: 9007199254740991");
 mutate("DM6", "diagram-migrations.ts", 'if (raw === "*") return { ok: true, lower: 0, upper: -1 };', 'if (raw === "*") return { ok: true, lower: 1, upper: -1 };');
-mutate("DM7", "diagram-migrations.ts", 'if (k === "collapsed" || k in PRESENTATION_SLOTS) continue;', "if (k in PRESENTATION_SLOTS) continue;");
+mutate("DM7", "diagram-migrations.ts", 'if (key === "collapsed" && resolved.effective.container) continue;', "if (false) continue;");
 mutate("DM8", "diagram-migrations.ts", 'if (!allows(rel.type, srcType, tgtType)) return fail(`relations.${id}.endpoints`, "relationship-matrix-violation");', "void srcType; void tgtType;");
-mutate("DM9", "diagram-migrations.ts", "if (!declared.extends.includes(entity.type)) {", "if (false) {");
+mutate("DM9", "diagram-migrations.ts", "if (!declaredStereotype.extends.includes(entity.type)) {", "if (false) {");
 mutate("DM10", "diagram-registry.ts", "{ from: GENERIC_V1_PIN, supersededBy: GENERIC_V2_PIN, migrationRef: GENERIC_MIGRATION_ID },", "{ from: GENERIC_V1_PIN, supersededBy: GENERIC_V2_PIN, migrationRef: ARCHIMATE_MIGRATION_ID },");
 mutate("DM11", "diagram-schemas.ts", 'const DIAGRAM_VALUE_REQUIRED = ["contractPin", "entities", "legends", "categoryTokens"];', 'const DIAGRAM_VALUE_REQUIRED = ["contractPin", "entities", "legends"];');
 mutate("DM16", "diagram-profiles.ts", 'pattern: KEY_PATTERN, patternName: "key",', 'patternName: "key",');
-mutate("DM17", "diagram-migrations.ts", "if (Object.keys(moves).length > 0 && options.contractPin === undefined) {", "if (false) {");
-mutate("DM18", "diagram-migrations.ts", "if (existingText[slot] !== undefined && existingText[slot] !== slots[slot]) {", "if (false) {");
+mutate("DM17", "diagram-migrations.ts", "if (moveCount > 0 && options.contractPin === undefined) {", "if (false) {");
+mutate("DM18", "diagram-migrations.ts", "if (existingText[move.slot] !== undefined && existingText[move.slot] !== move.value) {", "if (false) {");
 mutate("DM19", "diagram-migrations.ts", "return Object.keys(attributes).sort().map((key) => [key, attributes[key]!] as [string, MigAttribute]);", "return Object.keys(attributes).map((key) => [key, attributes[key]!] as [string, MigAttribute]);");
 mutate("DM20", "diagram-migrations.ts", "return { extends: values };", "return { extends: [] };");
-mutate("DM21", "diagram-migrations.ts", 'form: existing["form"] ?? formForEntityType(source.entities[view.entityOccurrences[occ]!.entity]?.type ?? "node"),', 'form: "container",');
+mutate("DM21", "diagram-migrations.ts", 'form: existing["form"] ?? formForEntityType(source.entities[view.entityOccurrences[occId]!.entity]?.type ?? "node"),', 'form: "container",');
 mutate("DM22", "diagram-profiles.ts", '{ kind: "hierarchy", relationType: "contains", hierarchyId: "containment", parentRole: "parent", childRole: "child" },', '{ kind: "hierarchy", relationType: "contains", hierarchyId: "containment", parentRole: "child", childRole: "child" },');
 mutate("DM23", "diagram-schemas.ts", 'const ICON_GRAMMAR = { type: "string", minLength: 1, maxLength: 40, pattern: "^[a-z][a-z0-9-]*$" };', 'const ICON_GRAMMAR = { type: "string", minLength: 1, maxLength: 40 };');
 mutate("DM24", "diagram-oracle.ts", 'expected: allowed.has(`${relationType}\\0${sourceType}\\0${targetType}`) ? "allowed" : "rejected",', 'expected: allowed.has(`${relationType}\\0${sourceType}\\0${targetType}`) ? "rejected" : "allowed",');
 mutate("DM25", "diagram-oracle.ts", '{ input: "1", expected: { ok: true, lower: 1, upper: 1 } },', '{ input: "1", expected: { ok: true, lower: 2, upper: 1 } },');
+// Round-3 extension: one mutant per lossless-check path, schema
+// constraint, view-scoping rule and corpus manifest entry.
+mutate("DM26", "diagram-migrations.ts", "entities[id] = { id, profile: \"archimate@2\", type: mapped, attributes: nextAttrs };", "entities[id] = { id, profile: \"archimate@2\", type: mapped, attributes: {} };");
+mutate("DM27", "diagram-schemas.ts", 'required: ["documentId", "revision", "profileRefs", "entities", "relations"],', 'required: ["documentId", "revision", "profileRefs", "relations"],');
+mutate("DM28", "diagram-migrations.ts", "presentationMoves[`${view.viewId}/${occId}`] = reportSlots;", "presentationMoves[occId] = reportSlots;");
+mutate("DM29", "diagram-corpus.ts", "b19967fe65483abdbf0e271f197e13691904e4b087c1542de23c52e2ad4f45c3", "0000000000000000000000000000000000000000000000000000000000000000");
+mutate("DM30", "diagram-migrations.ts", "groups[groupId] = { ...(existing ?? { id: groupId }), id: groupId, occurrence: occId, collapsed: true };", "groups[groupId] = { ...(existing ?? { id: groupId }), id: groupId, occurrence: occId, collapsed: false };");
+mutate("DM31", "diagram-migrations.ts", "if (own.effective.baseId !== mapped) {", "if (false) {");
 mutate("DM12", "diagram-skeletons.ts", '{ kind: "max-entities-of-type", entityType: "container", max: 64 },', '{ kind: "max-entities-of-type", entityType: "container", max: 65 },');
 mutate("DM13", "diagram-profiles.ts", "limits: { maxEntities: 100000, maxRelations: 500000, maxEndpointsPerRelation: 8 },", "limits: { maxEntities: 5, maxRelations: 500000, maxEndpointsPerRelation: 8 },");
 mutate("DM14", "diagram-migrations.ts", 'if (upper !== -1 && lower > upper) return { ok: false, reason: "multiplicity-invalid" };', "if (upper !== -1 && lower > upper) return { ok: true, lower, upper };");
