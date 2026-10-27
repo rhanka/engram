@@ -1,0 +1,75 @@
+{
+  "base": {
+    "testFiles": {
+      "failed": 199,
+      "passed": 218,
+      "skipped": 5,
+      "total": 422
+    },
+    "tests": {
+      "failed": 245,
+      "passed": 4057,
+      "skipped": 31,
+      "total": 4333
+    }
+  },
+  "baseCommit": "618977a86a25c35e426a87f97cb9f3391cd1c654",
+  "baseRef": "origin/main~0 (detached worktree at base commit)",
+  "binding": {
+    "branch": "feat/ontology-guardian-diagram-profiles",
+    "branchHead": "d4a85d35e9c29b540487b9e4b96e71be80c521eff",
+    "changedFromBase": [
+      "package.json",
+      "src/ontology-guardian/diagram-matrix-data.ts",
+      "src/ontology-guardian/diagram-migrations.ts",
+      "src/ontology-guardian/diagram-profiles.ts",
+      "src/ontology-guardian/diagram-registry.ts",
+      "src/ontology-guardian/diagram-schemas.ts",
+      "src/ontology-guardian/diagram-skeletons.ts",
+      "tests/diagram-mutant-proof.mjs",
+      "tests/fixtures/generic-v1-minimal-document.json",
+      "tests/fixtures/pinned-sources/archimate-skeleton-document.json",
+      "tests/fixtures/pinned-sources/bpmn-canvas-canonical-ts.bytes",
+      "tests/fixtures/pinned-sources/ds-generic-ts.bytes",
+      "tests/fixtures/pinned-sources/ds-skeletons-ts.bytes",
+      "tests/fixtures/pinned-sources/m3-a3-serialization-specimen.json",
+      "tests/fixtures/pinned-sources/uml-skeleton-document.json",
+      "tests/ontology-guardian-diagram-admission.test.ts",
+      "tests/ontology-guardian-diagram-migrations.test.ts",
+      "tests/ontology-guardian-diagram-typeproof.test.ts",
+      "tests/ontology-guardian-diagram-vectors.test.ts",
+      "tsconfig.diagram-types.json"
+    ],
+    "frozenSpec": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md",
+    "frozenSpecSha256": "deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f"
+  },
+  "branch": {
+    "diagramTests": {
+      "failed": 0,
+      "files": [
+        "tests/ontology-guardian-diagram-admission.test.ts",
+        "tests/ontology-guardian-diagram-migrations.test.ts",
+        "tests/ontology-guardian-diagram-typeproof.test.ts",
+        "tests/ontology-guardian-diagram-vectors.test.ts"
+      ],
+      "passed": 56
+    },
+    "testFiles": {
+      "failed": 199,
+      "passed": 222,
+      "skipped": 5,
+      "total": 426
+    },
+    "tests": {
+      "failed": 245,
+      "passed": 4113,
+      "skipped": 31,
+      "total": 4389
+    }
+  },
+  "conclusion": "Same 199 failing files and 245 failing tests on both sides (identical sorted failure identities, sha256 a6adfe639cb23f419ff3010e789be71ccd7ecd5b80e029743e76571f9a5c1246). The branch adds 4 test files and 56 passing tests, zero new failures. All failures are environmental (missing native packages fs-ext/better-sqlite3, unbuilt engram-memory/dist and dist grammars).",
+  "failingIdentitiesSha256": "a6adfe639cb23f419ff3010e789be71ccd7ecd5b80e029743e76571f9a5c1246",
+  "format": "diagram-full-suite-comparison/1",
+  "generatedAt": "2026-10-27T08:55:00Z",
+  "scope": "Full vitest run on branch vs pristine base 618977a8, default reporter, same symlinked node_modules."
+}
