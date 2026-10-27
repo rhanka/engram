@@ -18,6 +18,17 @@ import {
 
 type Json = unknown;
 
+// §3.3 key grammar, applied to every semantic category attribute (§3.1).
+const KEY_PATTERN = "^[a-z][a-z0-9-]*$" as const;
+
+function categoryAttribute(name: string, required = false): Json {
+  return {
+    name, kind: "text", minLength: 1, maxLength: 40,
+    pattern: KEY_PATTERN, patternName: "key",
+    ...(required ? { required: true } : {}),
+  };
+}
+
 function text(name: string, maxLength?: number, required = false): Json {
   return { name, kind: "text", ...(required ? { required: true } : {}), ...(maxLength === undefined ? {} : { maxLength }) };
 }
@@ -69,7 +80,7 @@ const GENERIC_NODE_ATTRS: readonly Json[] = [
   { name: "pinned", kind: "boolean" },
   { name: "tags", kind: "collection", item: { kind: "text", maxLength: 40 }, maxItems: 8 },
   { name: "owner", kind: "reference", refKind: "entity" },
-  { name: "category", kind: "text", maxLength: 40 },
+  categoryAttribute("category"),
 ];
 
 function generic2Declaration(): Record<string, Json> {
@@ -84,7 +95,7 @@ function generic2Declaration(): Record<string, Json> {
         id: "container", label: "Container", container: true,
         attributes: [
           { name: "name", kind: "text", required: true, maxLength: 200 },
-          { name: "category", kind: "text", maxLength: 40 },
+          categoryAttribute("category"),
         ],
       },
       {
@@ -98,7 +109,7 @@ function generic2Declaration(): Record<string, Json> {
         id: "legend-key", label: "Legend key",
         attributes: [
           { name: "name", kind: "text", required: true, maxLength: 120 },
-          { name: "category", kind: "text", required: true, maxLength: 40 },
+          categoryAttribute("category", true),
           { name: "description", kind: "text", maxLength: 200 },
         ],
       },
@@ -136,10 +147,12 @@ function generic2Declaration(): Record<string, Json> {
       },
     ],
     constraints: [
+      { kind: "hierarchy", relationType: "contains", hierarchyId: "containment", parentRole: "parent", childRole: "child" },
+      { kind: "parent-family", hierarchyId: "containment", familyRoots: ["container", "legend"] },
+      { kind: "children-restricted", parentFamilyRoots: ["legend"], childTypes: ["legend-key"], hierarchyId: "containment" },
+      { kind: "required-parent", childTypes: ["legend-key"], parentFamilyRoots: ["legend"], hierarchyId: "containment" },
       { kind: "acyclic-hierarchy", hierarchyId: "containment" },
-      { kind: "children-restricted", hierarchyId: "containment", parentType: "legend", childTypes: ["legend-key"] },
-      { kind: "required-parent", hierarchyId: "containment", childType: "legend-key", parentTypes: ["legend"] },
-      { kind: "unique-attribute", entityType: "legend-key", attribute: "category", scope: "within-legend" },
+      { kind: "unique-attribute", entityType: "legend-key", attribute: "category", scope: { withinType: "legend" } },
     ],
     limits: { maxEntities: 100000, maxRelations: 500000, maxEndpointsPerRelation: 8 },
     notes: [],
