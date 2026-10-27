@@ -1,0 +1,177 @@
+{
+  "expressionLanguage": "http://www.w3.org/1999/XPath",
+  "typeLanguage": "http://www.w3.org/2001/XMLSchema",
+  "$type": "bpmn:Definitions",
+  "id": "Defs_Kite",
+  "targetNamespace": "urn:example:functions-workbench:v1",
+  "rootElements": [
+    {
+      "$type": "bpmn:Process",
+      "id": "Process_Kite",
+      "isExecutable": false,
+      "flowElements": [
+        {
+          "parallelMultiple": false,
+          "isInterrupting": true,
+          "$type": "bpmn:StartEvent",
+          "id": "Start_Kite",
+          "incoming": [],
+          "outgoing": [
+            "Branch_0"
+          ]
+        },
+        {
+          "isForCompensation": false,
+          "startQuantity": 1,
+          "completionQuantity": 1,
+          "$type": "bpmn:Task",
+          "id": "Task_Review",
+          "name": "Review paper kite",
+          "incoming": [
+            "Branch_0",
+            "Branch_3"
+          ],
+          "outgoing": [
+            "Branch_1"
+          ]
+        },
+        {
+          "gatewayDirection": "Unspecified",
+          "$type": "bpmn:ExclusiveGateway",
+          "id": "Choice_Kite",
+          "incoming": [
+            "Branch_1"
+          ],
+          "outgoing": [
+            "Branch_2",
+            "Branch_3"
+          ]
+        },
+        {
+          "gatewayDirection": "Unspecified",
+          "$type": "bpmn:ParallelGateway",
+          "id": "Split_Kite",
+          "incoming": [
+            "Branch_2"
+          ],
+          "outgoing": [
+            "Branch_4",
+            "Branch_5"
+          ]
+        },
+        {
+          "isForCompensation": false,
+          "startQuantity": 1,
+          "completionQuantity": 1,
+          "$type": "bpmn:Task",
+          "id": "Task_Fold",
+          "name": "Fold",
+          "incoming": [
+            "Branch_4"
+          ],
+          "outgoing": [
+            "Branch_6"
+          ]
+        },
+        {
+          "isForCompensation": false,
+          "startQuantity": 1,
+          "completionQuantity": 1,
+          "$type": "bpmn:Task",
+          "id": "Task_Tie",
+          "name": "Tie",
+          "incoming": [
+            "Branch_5"
+          ],
+          "outgoing": [
+            "Branch_7"
+          ]
+        },
+        {
+          "gatewayDirection": "Unspecified",
+          "$type": "bpmn:ParallelGateway",
+          "id": "Join_Kite",
+          "incoming": [
+            "Branch_6",
+            "Branch_7"
+          ],
+          "outgoing": [
+            "Branch_8"
+          ]
+        },
+        {
+          "$type": "bpmn:EndEvent",
+          "id": "End_Kite",
+          "incoming": [
+            "Branch_8"
+          ],
+          "outgoing": []
+        },
+        {
+          "$type": "bpmn:SequenceFlow",
+          "id": "Branch_0",
+          "sourceRef": "Start_Kite",
+          "targetRef": "Task_Review"
+        },
+        {
+          "$type": "bpmn:SequenceFlow",
+          "id": "Branch_1",
+          "sourceRef": "Task_Review",
+          "targetRef": "Choice_Kite"
+        },
+        {
+          "$type": "bpmn:SequenceFlow",
+          "id": "Branch_2",
+          "sourceRef": "Choice_Kite",
+          "targetRef": "Split_Kite",
+          "name": "ready",
+          "conditionExpression": {
+            "$type": "bpmn:FormalExpression",
+            "body": "ready == true"
+          }
+        },
+        {
+          "$type": "bpmn:SequenceFlow",
+          "id": "Branch_3",
+          "sourceRef": "Choice_Kite",
+          "targetRef": "Task_Review",
+          "name": "retry",
+          "conditionExpression": {
+            "$type": "bpmn:FormalExpression",
+            "body": "retry == true"
+          }
+        },
+        {
+          "$type": "bpmn:SequenceFlow",
+          "id": "Branch_4",
+          "sourceRef": "Split_Kite",
+          "targetRef": "Task_Fold"
+        },
+        {
+          "$type": "bpmn:SequenceFlow",
+          "id": "Branch_5",
+          "sourceRef": "Split_Kite",
+          "targetRef": "Task_Tie"
+        },
+        {
+          "$type": "bpmn:SequenceFlow",
+          "id": "Branch_6",
+          "sourceRef": "Task_Fold",
+          "targetRef": "Join_Kite"
+        },
+        {
+          "$type": "bpmn:SequenceFlow",
+          "id": "Branch_7",
+          "sourceRef": "Task_Tie",
+          "targetRef": "Join_Kite"
+        },
+        {
+          "$type": "bpmn:SequenceFlow",
+          "id": "Branch_8",
+          "sourceRef": "Join_Kite",
+          "targetRef": "End_Kite"
+        }
+      ]
+    }
+  ]
+}

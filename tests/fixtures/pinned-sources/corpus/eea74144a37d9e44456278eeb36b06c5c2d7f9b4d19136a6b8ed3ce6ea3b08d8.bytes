@@ -1,0 +1,90 @@
+{
+  "case": "uml-skeleton",
+  "note": "PARTIAL qualification fixture for the uml@1 SKELETON: a declared subset (classifiers, an association with multiplicities, a package containment tree). UML does not reduce to this subset, and the PlantUML pivot is a codec concern (GD-M4).",
+  "kind": "document",
+  "document": {
+    "documentId": "document:uml-1",
+    "schemaVersion": { "major": 1, "minor": 1 },
+    "revision": 1,
+    "profileRefs": ["uml@1"],
+    "typeDefinitions": {},
+    "entities": {
+      "entity:package": {
+        "id": "entity:package",
+        "profile": "uml@1",
+        "type": "package",
+        "attributes": { "name": { "kind": "text", "value": "domain" } }
+      },
+      "entity:order": {
+        "id": "entity:order",
+        "profile": "uml@1",
+        "type": "class",
+        "attributes": {
+          "name": { "kind": "text", "value": "Order" },
+          "abstract": { "kind": "boolean", "value": false },
+          "stereotypes": { "kind": "collection", "items": [{ "kind": "text", "value": "entity" }] }
+        }
+      },
+      "entity:customer": {
+        "id": "entity:customer",
+        "profile": "uml@1",
+        "type": "class",
+        "attributes": { "name": { "kind": "text", "value": "Customer" } }
+      },
+      "entity:identifiable": {
+        "id": "entity:identifiable",
+        "profile": "uml@1",
+        "type": "interface",
+        "attributes": { "name": { "kind": "text", "value": "Identifiable" } }
+      },
+      "entity:order-total": {
+        "id": "entity:order-total",
+        "profile": "uml@1",
+        "type": "property",
+        "attributes": {
+          "name": { "kind": "text", "value": "total" },
+          "typeName": { "kind": "text", "value": "Money" },
+          "multiplicity": { "kind": "text", "value": "1" }
+        }
+      }
+    },
+    "ports": {},
+    "relations": {
+      "relation:order-customer": {
+        "id": "relation:order-customer",
+        "profile": "uml@1",
+        "type": "association",
+        "endpoints": [
+          { "role": "source", "target": "entity:order" },
+          { "role": "target", "target": "entity:customer" }
+        ],
+        "attributes": {
+          "sourceMultiplicity": { "kind": "text", "value": "0..*" },
+          "targetMultiplicity": { "kind": "text", "value": "1" }
+        }
+      },
+      "relation:order-identifiable": {
+        "id": "relation:order-identifiable",
+        "profile": "uml@1",
+        "type": "generalization",
+        "endpoints": [
+          { "role": "source", "target": "entity:order" },
+          { "role": "target", "target": "entity:identifiable" }
+        ],
+        "attributes": {}
+      },
+      "relation:package-order": {
+        "id": "relation:package-order",
+        "profile": "uml@1",
+        "type": "packageContainment",
+        "endpoints": [
+          { "role": "parent", "target": "entity:package" },
+          { "role": "child", "target": "entity:order" }
+        ],
+        "attributes": {}
+      }
+    },
+    "resources": {},
+    "extensions": []
+  }
+}

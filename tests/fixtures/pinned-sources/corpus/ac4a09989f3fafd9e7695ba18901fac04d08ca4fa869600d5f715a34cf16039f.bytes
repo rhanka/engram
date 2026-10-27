@@ -1,0 +1,92 @@
+{
+  "id": "neutral-registry/1",
+  "providerAdapters": [
+    {
+      "id": "vertex-gemini-json-schema/1",
+      "argumentSchemaDigest": "1e42b387e05b9802efcf2ded2d9cdcf705f3dc4ac51b9610ea4290eafd928f08"
+    }
+  ],
+  "renderTokens": [
+    {
+      "name": "fill",
+      "schema": {
+        "type": "string",
+        "pattern": "^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$"
+      }
+    },
+    {
+      "name": "stroke",
+      "schema": {
+        "type": "string",
+        "pattern": "^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$"
+      }
+    },
+    {
+      "name": "textColor",
+      "schema": {
+        "type": "string",
+        "pattern": "^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$"
+      }
+    },
+    {
+      "name": "fontFamily",
+      "schema": {
+        "type": "string",
+        "enum": [
+          "fixture-sans"
+        ]
+      }
+    },
+    {
+      "name": "fontSize",
+      "schema": {
+        "type": "number",
+        "minimum": 0
+      }
+    },
+    {
+      "name": "strokeWidth",
+      "schema": {
+        "type": "number",
+        "minimum": 0
+      }
+    },
+    {
+      "name": "fontWeight",
+      "schema": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "bold"
+        ]
+      }
+    },
+    {
+      "name": "dash",
+      "schema": {
+        "type": "string",
+        "enum": [
+          "solid",
+          "dashed"
+        ]
+      }
+    },
+    {
+      "name": "arrow",
+      "schema": {
+        "type": "string",
+        "enum": [
+          "none",
+          "open",
+          "filled",
+          "hollow-triangle"
+        ]
+      }
+    }
+  ],
+  "regionTokenPattern": "^region\\.[A-Za-z_][A-Za-z0-9_-]*\\.(headerWidth|padding|gap|minHeight)$",
+  "regionTokenSchema": {
+    "type": "integer",
+    "minimum": 0
+  }
+}

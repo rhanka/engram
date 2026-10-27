@@ -1,0 +1,1226 @@
+{
+  "schema": "hrpn-ds-fixture/v1",
+  "profile": "generic@1",
+  "profileMapping": {
+    "card": "entity type `node` (attribute `name` = label)",
+    "zone": "entity type `container` (attribute `name` = label, unique per scene)",
+    "parent": "relation type `contains` (role parent = the zone, role child = the card or zone); hierarchy `containment`, tree",
+    "relation": "relation type `link` (role source = from, role target = to, attribute `label`)",
+    "extraFields": "detail, tint, code, role, name, footer, store and style are HRPN rendering data outside generic@1 attributes"
+  },
+  "coordinates": "none: no position, size, route or layout hint; the design system computes the layout",
+  "scene": {
+    "id": "S2-asbuilt",
+    "title": "Option 2 as built · HRPN main @667529f (2026-10-12)",
+    "caption": "Source of truth: this repository at `main` @667529f (`genair-infra-factory/`, `src/agents/ragengine-agent/`). A Google Chat app\npublishes to the Pub/Sub topic `hrpn-gchat-events`; a push subscription with an OIDC token of the pod service account calls\n`/gchat-push` on Cloud Run `hrpn-ragengine-agent`, a FastAPI app from ADK `get_fast_api_app` that also serves the ADK web UI (CORS `*`).\nThe route answers 200 first, then a background task runs the `LlmAgent` (gemini-2.5-flash, generic `GenAiR_RAG_Agent` prompt) on\nVertex AI RAG Engine (RagManaged Basic, corpus `hr_policies`) and replies through the Chat REST API.\nRed frames: Chat sessions in `InMemorySessionService` keyed by the space name (lost on restart, shared in group spaces), no event check\nor dedup, corpus admin tools callable by any user, user text logged at INFO; absent: citations, 1–5 feedback, eligibility check, Drive sync.\nTwo runtimes coexist: Agent Engine `hrpn-ae-ragengine-agent` (AdkApp, Terraform) is deployed but no Chat path calls it (deployed state verified 2026-10-19: engine 6891800455551123456 beside Cloud Run revision `00005-fqc`; the out-of-Terraform LB backend `hrpn-gchat-push-backend` exists, unused by the push subscription, which targets the `*.run.app` URL).\nTemplate bricks without a consumer (bucket, Firestore, Phoenix, feedback sink) stay visible as dormant. End-to-end delivery: `unknown` after the 2026-10-12 commits (org policy `iam.allowedPolicyMemberDomains` blocked earlier paths).\nPlatform inheritance: GenAiR-Cutter 26.9.0 (github.airbus.corp, AgentGarden as submodule) generated the repo and pushed it to the POD SSM repository `prj-ssm-b967/hr-polnav-c700-repo`; Terraform reads the genair-infra-factory modules from their SSM mirror; Cloud Build (same POD project) deploys on the SSM webhook. Everything runs in POD: the PROD mode of the template (`app_code`, dev/int/pro projects, Jenkins on AWS with WIF) was not run, and no HRPN repository on the Airbus SCM (GitLab / GitHub) was found (red frames).",
+    "legendPassages": [
+      "Red frames: Chat sessions in `InMemorySessionService` keyed by the space name (lost on restart, shared in group spaces), no event check or dedup, corpus admin tools callable by any user, user text logged at INFO; absent: citations, 1–5 feedback, eligibility check, Drive sync."
+    ]
+  },
+  "source": {
+    "scenes": "docs/architecture/hrpn/SCENES.md",
+    "scenesSha256": "ab3ddb9208b7d3f9c35d94401c29da5bc95477ab99d4caf0fabaa34c41be237f",
+    "metadata": "docs/architecture/hrpn/scene-metadata.mjs",
+    "metadataSha256": "2e67c2c380f50771f4d4520eb1d4110fefca1a51dd173bf10073c6216437ce68",
+    "parser": "docs/architecture/tooling/chain/parse-mermaid.mjs",
+    "parserSha256": "2014ed066f488e736a16a7ad2c169b3cb4765e2ce47ea1c84d2108fc55871797",
+    "sceneHash": "a326e51ca1f5e6946b42d8792e1e352ca6a3a8190520d91f0a2f020eb3c473e3",
+    "sceneHashNote": "build-scenes.mjs projection hash; equals data.json manifest and figures.json"
+  },
+  "counts": {
+    "cards": 41,
+    "zones": 17,
+    "relations": 44,
+    "solid": 37,
+    "dashed": 7,
+    "labelled": 44,
+    "tints": {
+      "genair": 20,
+      "none": 6,
+      "risk": 12,
+      "specific": 3
+    }
+  },
+  "entities": [
+    {
+      "id": "PEOPLE",
+      "kind": "zone",
+      "label": "Users and operators",
+      "detail": null,
+      "parent": null,
+      "tint": null,
+      "code": "PPL",
+      "footer": "scope: Users and operators"
+    },
+    {
+      "id": "EMP",
+      "kind": "card",
+      "label": "HR users and employees",
+      "detail": "ask HR policy questions in Chat",
+      "parent": "PEOPLE",
+      "tint": null,
+      "code": "USR",
+      "role": "Employees · HR",
+      "name": "HR users and employees",
+      "footer": "actor: Airbus employees",
+      "store": false
+    },
+    {
+      "id": "DEV",
+      "kind": "card",
+      "label": "HRPN developers",
+      "detail": "gcloud · Terraform · ADK web",
+      "parent": "PEOPLE",
+      "tint": null,
+      "code": "DEV",
+      "role": "Developers · admin",
+      "name": "HRPN developers (2 authors)",
+      "footer": "actor: HRPN team",
+      "store": false
+    },
+    {
+      "id": "WS",
+      "kind": "zone",
+      "label": "Google Workspace",
+      "detail": null,
+      "parent": null,
+      "tint": null,
+      "code": "GWS",
+      "footer": "service: Google Workspace"
+    },
+    {
+      "id": "CHAT",
+      "kind": "card",
+      "label": "Google Chat app",
+      "detail": "E2E unverified after 12 Oct",
+      "parent": "WS",
+      "tint": "risk",
+      "code": "CHT",
+      "role": "Chat app",
+      "name": "HR Policy Navigator",
+      "footer": "service: Google Workspace",
+      "store": false
+    },
+    {
+      "id": "GCP",
+      "kind": "zone",
+      "label": "Google Cloud Platform",
+      "detail": null,
+      "parent": null,
+      "tint": null,
+      "code": "GCP",
+      "footer": "service: Google Cloud"
+    },
+    {
+      "id": "PROJ",
+      "kind": "zone",
+      "label": "HRPN POD project prj-c700-hr-polnav-dev-d132",
+      "detail": null,
+      "parent": "GCP",
+      "tint": null,
+      "code": "PRJ",
+      "footer": "service: GCP project"
+    },
+    {
+      "id": "LBIAP",
+      "kind": "card",
+      "label": "Load balancer and IAP",
+      "detail": "IAP Google-managed (iap.tf)",
+      "parent": "PROJ",
+      "tint": "genair",
+      "code": "LB",
+      "role": "Ingress · IAP",
+      "name": "module load_balancer v1.8.3",
+      "footer": "repo: GenAiR-Infra-Factory",
+      "store": false
+    },
+    {
+      "id": "MSGZ",
+      "kind": "zone",
+      "label": "Pub/Sub",
+      "detail": null,
+      "parent": "PROJ",
+      "tint": null,
+      "code": "PS",
+      "footer": "service: Pub/Sub"
+    },
+    {
+      "id": "TOPIC",
+      "kind": "card",
+      "label": "Chat events topic",
+      "detail": "publisher: gsuiteaddons agent",
+      "parent": "MSGZ",
+      "tint": "specific",
+      "code": "TOP",
+      "role": "Pub/Sub · topic",
+      "name": "hrpn-gchat-events",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "SUB",
+      "kind": "card",
+      "label": "Push subscription",
+      "detail": "OIDC pod SA · ack 60 s · 1 day",
+      "parent": "MSGZ",
+      "tint": "specific",
+      "code": "SUB",
+      "role": "Pub/Sub · push",
+      "name": "hrpn-gchat-events-sub",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "RUNZ",
+      "kind": "zone",
+      "label": "Cloud Run hrpn-ragengine-agent",
+      "detail": null,
+      "parent": "PROJ",
+      "tint": null,
+      "code": "RUN",
+      "footer": "repo: HRPN"
+    },
+    {
+      "id": "APP",
+      "kind": "card",
+      "label": "ADK FastAPI app",
+      "detail": "ADK web UI on · CORS \"*\"",
+      "parent": "RUNZ",
+      "tint": "risk",
+      "code": "ADK",
+      "role": "Back · FastAPI",
+      "name": "get_fast_api_app()",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "PUSH",
+      "kind": "card",
+      "label": "Chat push route",
+      "detail": "no event check · no dedup",
+      "parent": "RUNZ",
+      "tint": "risk",
+      "code": "PSH",
+      "role": "Chat · push route",
+      "name": "POST /gchat-push",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "CONS",
+      "kind": "card",
+      "label": "Chat event consumer",
+      "detail": "runs after the 200 ack",
+      "parent": "RUNZ",
+      "tint": "risk",
+      "code": "CON",
+      "role": "Chat · consumer",
+      "name": "handle_push_event()",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "CHATCLI",
+      "kind": "card",
+      "label": "Chat reply client",
+      "detail": "chat.bot scope · plain text",
+      "parent": "RUNZ",
+      "tint": "specific",
+      "code": "CLI",
+      "role": "Chat · reply",
+      "name": "send_gchat_message()",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "AGENT",
+      "kind": "card",
+      "label": "ADK agent",
+      "detail": "prompt: GenAiR_RAG_Agent",
+      "parent": "RUNZ",
+      "tint": "risk",
+      "code": "AGT",
+      "role": "ADK agent",
+      "name": "root_agent = LlmAgent",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "QUERY",
+      "kind": "card",
+      "label": "Retrieval tool",
+      "detail": "top_k 3 · no link formatting",
+      "parent": "RUNZ",
+      "tint": "genair",
+      "code": "T1",
+      "role": "Tool · retrieval",
+      "name": "rag_query()",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "ADMINT",
+      "kind": "card",
+      "label": "Corpus admin tools",
+      "detail": "callable by every Chat user",
+      "parent": "RUNZ",
+      "tint": "risk",
+      "code": "T2",
+      "role": "Tools · admin",
+      "name": "create_corpus() · add_data()",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "AEZ",
+      "kind": "zone",
+      "label": "Agent Engine",
+      "detail": null,
+      "parent": "PROJ",
+      "tint": null,
+      "code": "AE",
+      "footer": "service: Vertex AI"
+    },
+    {
+      "id": "AEAPP",
+      "kind": "card",
+      "label": "Agent Engine app",
+      "detail": "AdkApp · not called by Chat",
+      "parent": "AEZ",
+      "tint": "risk",
+      "code": "AE",
+      "role": "Runtime · duplicate",
+      "name": "hrpn-ae-ragengine-agent",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "STATEZ",
+      "kind": "zone",
+      "label": "Storage and state",
+      "detail": null,
+      "parent": "PROJ",
+      "tint": null,
+      "code": "ST",
+      "footer": "repo: HRPN"
+    },
+    {
+      "id": "DOCS",
+      "kind": "card",
+      "label": "Policy documents bucket",
+      "detail": "manual upload · versioning on",
+      "parent": "STATEZ",
+      "tint": "genair",
+      "code": "DOC",
+      "role": "Bucket · documents",
+      "name": "hrpn-ragengine-docs",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "SESS",
+      "kind": "card",
+      "label": "Chat sessions in memory",
+      "detail": "per instance · lost on restart",
+      "parent": "STATEZ",
+      "tint": "risk",
+      "code": "SES",
+      "role": "Sessions · memory",
+      "name": "InMemorySessionService",
+      "footer": "repo: google-adk",
+      "store": false
+    },
+    {
+      "id": "CSQL",
+      "kind": "card",
+      "label": "Cloud SQL Postgres",
+      "detail": "DBs: ragengine-agent · phoenix",
+      "parent": "STATEZ",
+      "tint": "genair",
+      "code": "PG",
+      "role": "Cloud SQL",
+      "name": "instance hrpn (Postgres)",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "BKT",
+      "kind": "card",
+      "label": "Template bucket",
+      "detail": "gcs.tf · no consumer in code",
+      "parent": "STATEZ",
+      "tint": "genair",
+      "code": "B1",
+      "role": "Bucket · template",
+      "name": "hr-policy-navigator_hr_pod",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "FS",
+      "kind": "card",
+      "label": "Template Firestore databases",
+      "detail": "2 native DBs · no consumer",
+      "parent": "STATEZ",
+      "tint": "genair",
+      "code": "FS",
+      "role": "Firestore · template",
+      "name": "hrpn-sessions + datapipelines",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "VERTEXZ",
+      "kind": "zone",
+      "label": "Vertex AI",
+      "detail": null,
+      "parent": "PROJ",
+      "tint": null,
+      "code": "VAI",
+      "footer": "service: Vertex AI"
+    },
+    {
+      "id": "RAG",
+      "kind": "card",
+      "label": "RAG Engine corpus",
+      "detail": "RagManaged Basic · embed-005",
+      "parent": "VERTEXZ",
+      "tint": null,
+      "code": "RAG",
+      "role": "RAG Engine",
+      "name": "corpus hr_policies",
+      "footer": "service: Vertex AI",
+      "store": false
+    },
+    {
+      "id": "GEM",
+      "kind": "card",
+      "label": "Gemini",
+      "detail": "ARB: 2.5 becoming obsolete",
+      "parent": "VERTEXZ",
+      "tint": "risk",
+      "code": "LLM",
+      "role": "Model · Gemini",
+      "name": "gemini-2.5-flash",
+      "footer": "service: Vertex AI",
+      "store": false
+    },
+    {
+      "id": "OBSZ",
+      "kind": "zone",
+      "label": "Observability",
+      "detail": null,
+      "parent": "PROJ",
+      "tint": null,
+      "code": "OBS",
+      "footer": "repo: HRPN"
+    },
+    {
+      "id": "CLOG",
+      "kind": "card",
+      "label": "Cloud Run logs",
+      "detail": "full user text at INFO",
+      "parent": "OBSZ",
+      "tint": "risk",
+      "code": "LOG",
+      "role": "Logging · stdout",
+      "name": "Cloud Run request logs",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "LOGS",
+      "kind": "card",
+      "label": "Feedback log bucket",
+      "detail": "120 d · no feedback emitter",
+      "parent": "OBSZ",
+      "tint": "genair",
+      "code": "FBK",
+      "role": "Feedback · logs",
+      "name": "hrpn-logbucket + hrpn-sink",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "BQ",
+      "kind": "card",
+      "label": "BigQuery linked dataset",
+      "detail": "linked dataset on log bucket",
+      "parent": "OBSZ",
+      "tint": "genair",
+      "code": "BQ",
+      "role": "BigQuery · linked",
+      "name": "hrpn_user_feedback_ds",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "PHX",
+      "kind": "card",
+      "label": "Phoenix tracing",
+      "detail": "no instrumentation library",
+      "parent": "OBSZ",
+      "tint": "genair",
+      "code": "PHX",
+      "role": "Tracing · Phoenix",
+      "name": "module cloud_run_phoenix",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "CICDZ",
+      "kind": "zone",
+      "label": "CI/CD (same POD project)",
+      "detail": null,
+      "parent": "PROJ",
+      "tint": null,
+      "code": "CI",
+      "footer": "repo: HRPN"
+    },
+    {
+      "id": "CB",
+      "kind": "card",
+      "label": "Cloud Build trigger",
+      "detail": "build · push · run deploy",
+      "parent": "CICDZ",
+      "tint": "genair",
+      "code": "CB",
+      "role": "CI · Cloud Build",
+      "name": "cloud_trigger_cicd_python",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "AR",
+      "kind": "card",
+      "label": "Artifact Registry",
+      "detail": "module artifact_registry v1.8.3",
+      "parent": "CICDZ",
+      "tint": "genair",
+      "code": "AR",
+      "role": "Registry · Docker",
+      "name": "Artifact Registry hrpn-pod",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "TF",
+      "kind": "card",
+      "label": "Terraform",
+      "detail": "runner unknown · GCS state",
+      "parent": "CICDZ",
+      "tint": "genair",
+      "code": "TF",
+      "role": "IaC · Terraform",
+      "name": "genair-infra-factory",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "TFST",
+      "kind": "card",
+      "label": "Terraform state bucket",
+      "detail": "hrpn/<branch>/terraform/state",
+      "parent": "CICDZ",
+      "tint": "genair",
+      "code": "TFS",
+      "role": "IaC · state",
+      "name": "terraform-state bucket (POD)",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "NET",
+      "kind": "card",
+      "label": "VPC main-network",
+      "detail": "egress all-traffic · private SQL",
+      "parent": "PROJ",
+      "tint": "genair",
+      "code": "NET",
+      "role": "Network · VPC",
+      "name": "main-network / eu-west4",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "SSMPROJ",
+      "kind": "zone",
+      "label": "Platform project prj-ssm-b967",
+      "detail": null,
+      "parent": "GCP",
+      "tint": null,
+      "code": "SSM",
+      "footer": "service: GenAI platform"
+    },
+    {
+      "id": "SSM",
+      "kind": "card",
+      "label": "SSM repository",
+      "detail": "push to main → Cloud Build",
+      "parent": "SSMPROJ",
+      "tint": "genair",
+      "code": "SRC",
+      "role": "Repo · SSM",
+      "name": "hr-polnav-c700-repo",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "IFMIR",
+      "kind": "card",
+      "label": "Infra-factory mirror",
+      "detail": "TF modules v1.8.3 for POD",
+      "parent": "SSMPROJ",
+      "tint": "genair",
+      "code": "MIR",
+      "role": "Mirror · modules",
+      "name": "genair-infra-factory.git",
+      "footer": "repo: GenAI platform",
+      "store": false
+    },
+    {
+      "id": "BASE",
+      "kind": "card",
+      "label": "Base image and PyPI mirrors",
+      "detail": "+ python repos (prj-ssm-b967)",
+      "parent": "SSMPROJ",
+      "tint": null,
+      "code": "IMG",
+      "role": "Images · PyPI",
+      "name": "genair-base-container",
+      "footer": "service: GenAI platform",
+      "store": false
+    },
+    {
+      "id": "PRODZ",
+      "kind": "zone",
+      "label": "PROD landing zone · not provisioned",
+      "detail": null,
+      "parent": "GCP",
+      "tint": null,
+      "code": "PRD",
+      "footer": "service: GCP project (PROD)"
+    },
+    {
+      "id": "PRODNP",
+      "kind": "card",
+      "label": "PROD projects dev, int, pro",
+      "detail": "not provisioned · ids unknown",
+      "parent": "PRODZ",
+      "tint": "risk",
+      "code": "ENV",
+      "role": "PROD · app_code",
+      "name": "dev / int / pro / cicd projects",
+      "footer": "service: GCP project (PROD)",
+      "store": false
+    },
+    {
+      "id": "OUT",
+      "kind": "zone",
+      "label": "Outside Google Cloud",
+      "detail": null,
+      "parent": null,
+      "tint": null,
+      "code": "EXT",
+      "footer": "scope: Outside GCP"
+    },
+    {
+      "id": "AWSZ",
+      "kind": "zone",
+      "label": "Airbus AWS",
+      "detail": null,
+      "parent": "OUT",
+      "tint": null,
+      "code": "AWS",
+      "footer": "service: Airbus AWS"
+    },
+    {
+      "id": "GITHUBZ",
+      "kind": "zone",
+      "label": "Airbus GitHub · github.airbus.corp",
+      "detail": null,
+      "parent": "AWSZ",
+      "tint": null,
+      "code": "GH",
+      "footer": "service: Airbus GitHub"
+    },
+    {
+      "id": "CUTTER",
+      "kind": "card",
+      "label": "GenAiR-Cutter",
+      "detail": "Agent Engine · no frontend",
+      "parent": "GITHUBZ",
+      "tint": "genair",
+      "code": "GEN",
+      "role": "Template · GenAiR",
+      "name": "GenAiR-Cutter 26.9.0",
+      "footer": "repo: GenAiR-Cutter",
+      "store": false
+    },
+    {
+      "id": "AGARDEN",
+      "kind": "card",
+      "label": "GenAiR-AgentGarden",
+      "detail": "ragengine-agent · Cutter submodule",
+      "parent": "GITHUBZ",
+      "tint": "genair",
+      "code": "AGD",
+      "role": "Agents · template",
+      "name": "GenAiR-AgentGarden (main)",
+      "footer": "repo: GenAiR-AgentGarden",
+      "store": false
+    },
+    {
+      "id": "IFREPO",
+      "kind": "card",
+      "label": "genair-infra-factory",
+      "detail": "PROD: GitHub · POD: SSM mirror",
+      "parent": "GITHUBZ",
+      "tint": "genair",
+      "code": "GIF",
+      "role": "IaC · modules",
+      "name": "genair-infra-factory v1.8.3",
+      "footer": "repo: genair-infra-factory",
+      "store": false
+    },
+    {
+      "id": "GLIBS",
+      "kind": "card",
+      "label": "GenAiR libraries",
+      "detail": "built by Jenkins → Artifactory",
+      "parent": "GITHUBZ",
+      "tint": "genair",
+      "code": "LIB",
+      "role": "Libs · GenAiR",
+      "name": "genair-* Python packages",
+      "footer": "repo: GenAiR libs",
+      "store": false
+    },
+    {
+      "id": "GITLABZ",
+      "kind": "zone",
+      "label": "Airbus GitLab · SCM",
+      "detail": null,
+      "parent": "AWSZ",
+      "tint": null,
+      "code": "SCM",
+      "footer": "service: Airbus SCM"
+    },
+    {
+      "id": "SCMREPO",
+      "kind": "card",
+      "label": "HRPN repository on SCM",
+      "detail": "none found · code on SSM only",
+      "parent": "GITLABZ",
+      "tint": "risk",
+      "code": "GIT",
+      "role": "Repo · SCM",
+      "name": "HRPN code on the Airbus SCM",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "JENKINS",
+      "kind": "card",
+      "label": "Jenkins",
+      "detail": "GenAiR jobs · PROD pipelines",
+      "parent": "AWSZ",
+      "tint": null,
+      "code": "JK",
+      "role": "CI · Jenkins",
+      "name": "oc.jenkins 2b82-devops",
+      "footer": "service: Jenkins on AWS",
+      "store": false
+    },
+    {
+      "id": "JFROG",
+      "kind": "card",
+      "label": "JFrog Artifactory",
+      "detail": "r-8cf1-genair-pypi-local",
+      "parent": "AWSZ",
+      "tint": null,
+      "code": "JF",
+      "role": "Registry · JFrog",
+      "name": "Artifactory 2b82",
+      "footer": "service: JFrog Artifactory",
+      "store": false
+    }
+  ],
+  "relations": [
+    {
+      "id": "EMP__CHAT__3522379cd54b",
+      "from": "EMP",
+      "to": "CHAT",
+      "label": "message or @mention",
+      "style": "solid"
+    },
+    {
+      "id": "CHAT__TOPIC__e635517d6d4f",
+      "from": "CHAT",
+      "to": "TOPIC",
+      "label": "publish · gsuiteaddons agent",
+      "style": "solid"
+    },
+    {
+      "id": "TOPIC__SUB__ee85036d70b6",
+      "from": "TOPIC",
+      "to": "SUB",
+      "label": "push subscription",
+      "style": "solid"
+    },
+    {
+      "id": "SUB__PUSH__0d75bb113859",
+      "from": "SUB",
+      "to": "PUSH",
+      "label": "OIDC push · run.app URL",
+      "style": "solid"
+    },
+    {
+      "id": "PUSH__CONS__fae0670c113e",
+      "from": "PUSH",
+      "to": "CONS",
+      "label": "200 first · background task",
+      "style": "solid"
+    },
+    {
+      "id": "CONS__SESS__685675c9dcb2",
+      "from": "CONS",
+      "to": "SESS",
+      "label": "session_id = space name",
+      "style": "solid"
+    },
+    {
+      "id": "CONS__AGENT__a3d886b43b06",
+      "from": "CONS",
+      "to": "AGENT",
+      "label": "Runner.run_async",
+      "style": "solid"
+    },
+    {
+      "id": "AGENT__GEM__0559f37ab89b",
+      "from": "AGENT",
+      "to": "GEM",
+      "label": "LLM call",
+      "style": "solid"
+    },
+    {
+      "id": "AGENT__QUERY__56e7059d3971",
+      "from": "AGENT",
+      "to": "QUERY",
+      "label": "tool call",
+      "style": "solid"
+    },
+    {
+      "id": "AGENT__ADMINT__7e405e768acb",
+      "from": "AGENT",
+      "to": "ADMINT",
+      "label": "tool call · any user",
+      "style": "solid"
+    },
+    {
+      "id": "QUERY__RAG__f8bc1bec5abb",
+      "from": "QUERY",
+      "to": "RAG",
+      "label": "retrieval_query",
+      "style": "solid"
+    },
+    {
+      "id": "ADMINT__RAG__27519c09a6fb",
+      "from": "ADMINT",
+      "to": "RAG",
+      "label": "create · import_files",
+      "style": "solid"
+    },
+    {
+      "id": "DOCS__RAG__87fadb06f1aa",
+      "from": "DOCS",
+      "to": "RAG",
+      "label": "import via add_data",
+      "style": "solid"
+    },
+    {
+      "id": "CONS__CHATCLI__a82a6fb3970b",
+      "from": "CONS",
+      "to": "CHATCLI",
+      "label": "reply text",
+      "style": "solid"
+    },
+    {
+      "id": "CHATCLI__CHAT__91c3b67b714f",
+      "from": "CHATCLI",
+      "to": "CHAT",
+      "label": "spaces.messages.create",
+      "style": "solid"
+    },
+    {
+      "id": "CONS__CLOG__bbd1a1244124",
+      "from": "CONS",
+      "to": "CLOG",
+      "label": "user text logged",
+      "style": "solid"
+    },
+    {
+      "id": "DEV__DOCS__6e597ec430fd",
+      "from": "DEV",
+      "to": "DOCS",
+      "label": "gcloud storage cp",
+      "style": "solid"
+    },
+    {
+      "id": "DEV__LBIAP__2f08b4a6db37",
+      "from": "DEV",
+      "to": "LBIAP",
+      "label": "ADK web UI",
+      "style": "solid"
+    },
+    {
+      "id": "LBIAP__APP__eb87efd4d69b",
+      "from": "LBIAP",
+      "to": "APP",
+      "label": "default service",
+      "style": "solid"
+    },
+    {
+      "id": "APP__AGENT__9e212c1fe714",
+      "from": "APP",
+      "to": "AGENT",
+      "label": "POST /run (web UI)",
+      "style": "solid"
+    },
+    {
+      "id": "APP__CSQL__5f0a28de3e78",
+      "from": "APP",
+      "to": "CSQL",
+      "label": "SQL_DATABASE_URI unset",
+      "style": "dashed"
+    },
+    {
+      "id": "APP__PHX__2dc85bc7391e",
+      "from": "APP",
+      "to": "PHX",
+      "label": "no instrumentation",
+      "style": "dashed"
+    },
+    {
+      "id": "APP__LOGS__e43083545724",
+      "from": "APP",
+      "to": "LOGS",
+      "label": "no feedback_score emitter",
+      "style": "dashed"
+    },
+    {
+      "id": "PHX__CSQL__07413d9f7e9c",
+      "from": "PHX",
+      "to": "CSQL",
+      "label": "phoenix DB",
+      "style": "solid"
+    },
+    {
+      "id": "LOGS__BQ__6a5653dfa3cb",
+      "from": "LOGS",
+      "to": "BQ",
+      "label": "linked dataset",
+      "style": "solid"
+    },
+    {
+      "id": "AEAPP__RAG__a0b5b8269cfd",
+      "from": "AEAPP",
+      "to": "RAG",
+      "label": "same tools · no caller",
+      "style": "dashed"
+    },
+    {
+      "id": "TF__AEAPP__ae870530f924",
+      "from": "TF",
+      "to": "AEAPP",
+      "label": "AdkApp deploy",
+      "style": "solid"
+    },
+    {
+      "id": "TF__TOPIC__b1afb3b4556e",
+      "from": "TF",
+      "to": "TOPIC",
+      "label": "topic · sub · IAM",
+      "style": "solid"
+    },
+    {
+      "id": "SSM__CB__85b0f2d54d85",
+      "from": "SSM",
+      "to": "CB",
+      "label": "SSM webhook",
+      "style": "solid"
+    },
+    {
+      "id": "CB__AR__a0d29d8e1a8c",
+      "from": "CB",
+      "to": "AR",
+      "label": "docker push",
+      "style": "solid"
+    },
+    {
+      "id": "AR__PUSH__e7bdc0c584e6",
+      "from": "AR",
+      "to": "PUSH",
+      "label": "image hrpn-ragengine-agent",
+      "style": "solid"
+    },
+    {
+      "id": "CB__PUSH__465c03ff41f9",
+      "from": "CB",
+      "to": "PUSH",
+      "label": "gcloud run deploy",
+      "style": "solid"
+    },
+    {
+      "id": "BASE__CB__622cfc0a9da7",
+      "from": "BASE",
+      "to": "CB",
+      "label": "base image · PyPI mirrors",
+      "style": "solid"
+    },
+    {
+      "id": "DEV__SSM__7b9bc9cfb8b2",
+      "from": "DEV",
+      "to": "SSM",
+      "label": "git push main",
+      "style": "solid"
+    },
+    {
+      "id": "AGARDEN__CUTTER__15df99a228fc",
+      "from": "AGARDEN",
+      "to": "CUTTER",
+      "label": "submodule src/agent_garden",
+      "style": "solid"
+    },
+    {
+      "id": "CUTTER__SSM__2bcb9b3cc49a",
+      "from": "CUTTER",
+      "to": "SSM",
+      "label": "copier generate 26.9.0 · update",
+      "style": "solid"
+    },
+    {
+      "id": "CUTTER__PRODNP__24e6dc578f0b",
+      "from": "CUTTER",
+      "to": "PRODNP",
+      "label": "copier --prod · not run",
+      "style": "dashed"
+    },
+    {
+      "id": "IFREPO__IFMIR__00154761637c",
+      "from": "IFREPO",
+      "to": "IFMIR",
+      "label": "mirror",
+      "style": "solid"
+    },
+    {
+      "id": "IFMIR__TF__274292c87d94",
+      "from": "IFMIR",
+      "to": "TF",
+      "label": "TF modules v1.8.3",
+      "style": "solid"
+    },
+    {
+      "id": "TF__TFST__8ad42b7fbfc7",
+      "from": "TF",
+      "to": "TFST",
+      "label": "state hrpn/main",
+      "style": "solid"
+    },
+    {
+      "id": "GLIBS__JENKINS__8459419d4cfe",
+      "from": "GLIBS",
+      "to": "JENKINS",
+      "label": "builds",
+      "style": "solid"
+    },
+    {
+      "id": "JENKINS__JFROG__3981286d47c8",
+      "from": "JENKINS",
+      "to": "JFROG",
+      "label": "genair-* packages",
+      "style": "solid"
+    },
+    {
+      "id": "JFROG__BASE__a03f155bff51",
+      "from": "JFROG",
+      "to": "BASE",
+      "label": "mirror? (unverified)",
+      "style": "dashed"
+    },
+    {
+      "id": "SCMREPO__SSM__4e20c757a1be",
+      "from": "SCMREPO",
+      "to": "SSM",
+      "label": "mirror? (none found)",
+      "style": "dashed"
+    }
+  ],
+  "zoneHierarchy": {
+    "rootCards": [],
+    "zones": [
+      {
+        "id": "PEOPLE",
+        "label": "Users and operators",
+        "cards": [
+          "EMP",
+          "DEV"
+        ],
+        "zones": []
+      },
+      {
+        "id": "WS",
+        "label": "Google Workspace",
+        "cards": [
+          "CHAT"
+        ],
+        "zones": []
+      },
+      {
+        "id": "GCP",
+        "label": "Google Cloud Platform",
+        "cards": [],
+        "zones": [
+          {
+            "id": "PROJ",
+            "label": "HRPN POD project prj-c700-hr-polnav-dev-d132",
+            "cards": [
+              "LBIAP",
+              "NET"
+            ],
+            "zones": [
+              {
+                "id": "MSGZ",
+                "label": "Pub/Sub",
+                "cards": [
+                  "TOPIC",
+                  "SUB"
+                ],
+                "zones": []
+              },
+              {
+                "id": "RUNZ",
+                "label": "Cloud Run hrpn-ragengine-agent",
+                "cards": [
+                  "APP",
+                  "PUSH",
+                  "CONS",
+                  "CHATCLI",
+                  "AGENT",
+                  "QUERY",
+                  "ADMINT"
+                ],
+                "zones": []
+              },
+              {
+                "id": "AEZ",
+                "label": "Agent Engine",
+                "cards": [
+                  "AEAPP"
+                ],
+                "zones": []
+              },
+              {
+                "id": "STATEZ",
+                "label": "Storage and state",
+                "cards": [
+                  "DOCS",
+                  "SESS",
+                  "CSQL",
+                  "BKT",
+                  "FS"
+                ],
+                "zones": []
+              },
+              {
+                "id": "VERTEXZ",
+                "label": "Vertex AI",
+                "cards": [
+                  "RAG",
+                  "GEM"
+                ],
+                "zones": []
+              },
+              {
+                "id": "OBSZ",
+                "label": "Observability",
+                "cards": [
+                  "CLOG",
+                  "LOGS",
+                  "BQ",
+                  "PHX"
+                ],
+                "zones": []
+              },
+              {
+                "id": "CICDZ",
+                "label": "CI/CD (same POD project)",
+                "cards": [
+                  "CB",
+                  "AR",
+                  "TF",
+                  "TFST"
+                ],
+                "zones": []
+              }
+            ]
+          },
+          {
+            "id": "SSMPROJ",
+            "label": "Platform project prj-ssm-b967",
+            "cards": [
+              "SSM",
+              "IFMIR",
+              "BASE"
+            ],
+            "zones": []
+          },
+          {
+            "id": "PRODZ",
+            "label": "PROD landing zone · not provisioned",
+            "cards": [
+              "PRODNP"
+            ],
+            "zones": []
+          }
+        ]
+      },
+      {
+        "id": "OUT",
+        "label": "Outside Google Cloud",
+        "cards": [],
+        "zones": [
+          {
+            "id": "AWSZ",
+            "label": "Airbus AWS",
+            "cards": [
+              "JENKINS",
+              "JFROG"
+            ],
+            "zones": [
+              {
+                "id": "GITHUBZ",
+                "label": "Airbus GitHub · github.airbus.corp",
+                "cards": [
+                  "CUTTER",
+                  "AGARDEN",
+                  "IFREPO",
+                  "GLIBS"
+                ],
+                "zones": []
+              },
+              {
+                "id": "GITLABZ",
+                "label": "Airbus GitLab · SCM",
+                "cards": [
+                  "SCMREPO"
+                ],
+                "zones": []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

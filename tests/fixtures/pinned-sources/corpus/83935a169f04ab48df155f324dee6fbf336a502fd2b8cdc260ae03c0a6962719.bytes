@@ -1,0 +1,67 @@
+{
+  "data": "/home/antoinefa/src/airbus-genair-hrpolnav/docs/architecture/hrpn/.generated/data.json",
+  "scale": 0.5,
+  "blocked": [],
+  "report": [
+    {
+      "id": "S2-asbuilt",
+      "sceneHash": "a326e51ca1f5e6946b42d8792e1e352ca6a3a8190520d91f0a2f020eb3c473e3",
+      "theme": "airbus",
+      "canvas": {
+        "width": 4864,
+        "height": 4124
+      },
+      "png": {
+        "w": 2432,
+        "h": 2062
+      },
+      "bytes": 500552,
+      "errors": []
+    },
+    {
+      "id": "S2-target",
+      "sceneHash": "81183292b8249aa25776768ba505e1b46b95d9a9a6fd2e5610efb247691bcef3",
+      "theme": "airbus",
+      "canvas": {
+        "width": 5380,
+        "height": 3980
+      },
+      "png": {
+        "w": 2690,
+        "h": 1990
+      },
+      "bytes": 414602,
+      "errors": []
+    },
+    {
+      "id": "S1-conversational",
+      "sceneHash": "9d68d35baf4bdd8a5bf6ec55a87c9a48bbc84a6018f028e21f048c57d8a95884",
+      "theme": "airbus",
+      "canvas": {
+        "width": 3670,
+        "height": 3324
+      },
+      "png": {
+        "w": 1835,
+        "h": 1662
+      },
+      "bytes": 333825,
+      "errors": []
+    },
+    {
+      "id": "S3-agentfactory",
+      "sceneHash": "5d944d5441bc0a94c83f6ed78c1e050ba12b43b08bcb4fc65ce1475d13abf55f",
+      "theme": "airbus",
+      "canvas": {
+        "width": 4678,
+        "height": 3980
+      },
+      "png": {
+        "w": 2339,
+        "h": 1990
+      },
+      "bytes": 458675,
+      "errors": []
+    }
+  ]
+}

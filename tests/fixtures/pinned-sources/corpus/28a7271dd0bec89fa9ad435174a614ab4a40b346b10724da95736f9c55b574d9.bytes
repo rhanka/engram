@@ -1,0 +1,1521 @@
+{
+  "schema": "hrpn-ds-fixture/v1",
+  "profile": "generic@1",
+  "profileMapping": {
+    "card": "entity type `node` (attribute `name` = label)",
+    "zone": "entity type `container` (attribute `name` = label, unique per scene)",
+    "parent": "relation type `contains` (role parent = the zone, role child = the card or zone); hierarchy `containment`, tree",
+    "relation": "relation type `link` (role source = from, role target = to, attribute `label`)",
+    "extraFields": "detail, tint, code, role, name, footer, store and style are HRPN rendering data outside generic@1 attributes"
+  },
+  "coordinates": "none: no position, size, route or layout hint; the design system computes the layout",
+  "scene": {
+    "id": "S2-target",
+    "title": "Option 2 decided target · Pub/Sub → Cloud Run single runtime",
+    "caption": "Decided target of option B, the target figure of the ARD (owner round r1, 2026-10-19; S2 2026-10-20). D1 = B: one runtime, the Cloud Run backend\nrunning the ADK agent in process. S3 = Pub/Sub: Chat app → events topic → push subscription (OIDC, dedicated push service account) →\n`/gchat-push` → event guard (verification, dedup on the Pub/Sub `message_id`) → consumer, agent run finished before the ack. S1 = RAG Engine.\nColours: blue = GenAiR template kept unchanged; yellow = existing HRPN code kept; orange = new or changed in the target (eligibility before\nretrieval, HR prompt with read-only tools, link formatter for Workspace links (HR05), 1–5 rating as `feedback_score` into the sink and the\nBigQuery linked dataset, PII-scrubbed conversation log kept 1 year (HR04), Model Armor, governed ingestion Drive → GCS → RAG import (HR02));\nno fill = Google or third-party managed service. HR01 = A without ChatUI: no web channel, so no load balancer, IAP or ADK web UI; Agent Engine, admin tools, template bucket and template Firestore `hrpn-datapipelines` are not drawn (removal list: decision dossier §9.7).\nS2 = Firestore (owner, 2026-10-20): ADK's native `FirestoreSessionService` on the Terraform-declared Firestore database `hrpn-sessions` (sessions, history, feedback; TTL policy for the 1-year operational history of HR04); Cloud SQL carries only the Phoenix DB, kept only if Phoenix is kept (owner item, open).\nOpen: gate G1 (publisher exception, VPC-SC), PROD project ids, SCM host, PROD SSM mirror.\nPROD (GenAiR-Cutter PROD mode): `--prod` regeneration with an `app_code`; SCM push → Jenkins on AWS (WIF `iac-sa`) → `develop` / `int` / `main` → dev / int / pro.",
+    "legendPassages": [
+      "Colours: blue = GenAiR template kept unchanged; yellow = existing HRPN code kept; orange = new or changed in the target (eligibility before retrieval, HR prompt with read-only tools, link formatter for Workspace links (HR05), 1–5 rating as `feedback_score` into the sink and the BigQuery linked dataset, PII-scrubbed conversation log kept 1 year (HR04), Model Armor, governed ingestion Drive → GCS → RAG import (HR02)); no fill = Google or third-party managed service. HR01 = A without ChatUI: no web channel, so no load balancer, IAP or ADK web UI; Agent Engine, admin tools, template bucket and template Firestore `hrpn-datapipelines` are not drawn (removal list: decision dossier §9.7)."
+    ]
+  },
+  "source": {
+    "scenes": "docs/architecture/hrpn/SCENES.md",
+    "scenesSha256": "ab3ddb9208b7d3f9c35d94401c29da5bc95477ab99d4caf0fabaa34c41be237f",
+    "metadata": "docs/architecture/hrpn/scene-metadata.mjs",
+    "metadataSha256": "2e67c2c380f50771f4d4520eb1d4110fefca1a51dd173bf10073c6216437ce68",
+    "parser": "docs/architecture/tooling/chain/parse-mermaid.mjs",
+    "parserSha256": "2014ed066f488e736a16a7ad2c169b3cb4765e2ce47ea1c84d2108fc55871797",
+    "sceneHash": "b631abb4e4432f43a2978e96f83f346f76fbd7bd6a2d8eea0a3340e7ca1d2d46",
+    "sceneHashNote": "build-scenes.mjs projection hash; equals data.json manifest and figures.json"
+  },
+  "counts": {
+    "cards": 51,
+    "zones": 22,
+    "relations": 54,
+    "solid": 54,
+    "dashed": 0,
+    "labelled": 54,
+    "tints": {
+      "added": 23,
+      "genair": 16,
+      "none": 9,
+      "specific": 3
+    }
+  },
+  "entities": [
+    {
+      "id": "PEOPLE",
+      "kind": "zone",
+      "label": "Users and operators",
+      "detail": null,
+      "parent": null,
+      "tint": null,
+      "code": "PPL",
+      "footer": "scope: Users and operators"
+    },
+    {
+      "id": "EMP",
+      "kind": "card",
+      "label": "HR users and employees",
+      "detail": "ask HR policy questions in Chat",
+      "parent": "PEOPLE",
+      "tint": null,
+      "code": "USR",
+      "role": "Employees · HR",
+      "name": "HR users and employees",
+      "footer": "actor: Airbus employees",
+      "store": false
+    },
+    {
+      "id": "DEV",
+      "kind": "card",
+      "label": "HRPN developers",
+      "detail": "git push · Terraform",
+      "parent": "PEOPLE",
+      "tint": null,
+      "code": "DEV",
+      "role": "Developers · admin",
+      "name": "HRPN developers (2 authors)",
+      "footer": "actor: HRPN team",
+      "store": false
+    },
+    {
+      "id": "HRADM",
+      "kind": "card",
+      "label": "HR content owners",
+      "detail": "approve documents in Drive",
+      "parent": "PEOPLE",
+      "tint": "added",
+      "code": "OWN",
+      "role": "HR · content owners",
+      "name": "Policy owners (AAI HR)",
+      "footer": "actor: AAI HR",
+      "store": false
+    },
+    {
+      "id": "WS",
+      "kind": "zone",
+      "label": "Google Workspace",
+      "detail": null,
+      "parent": null,
+      "tint": null,
+      "code": "GWS",
+      "footer": "service: Google Workspace"
+    },
+    {
+      "id": "CHAT",
+      "kind": "card",
+      "label": "Google Chat app",
+      "detail": "Chat spaces (BRD-ACC-010)",
+      "parent": "WS",
+      "tint": null,
+      "code": "CHT",
+      "role": "Chat app",
+      "name": "HR Policy Navigator",
+      "footer": "service: Google Workspace",
+      "store": false
+    },
+    {
+      "id": "DRIVE",
+      "kind": "card",
+      "label": "HR policy Drive folder",
+      "detail": "approved PDFs only",
+      "parent": "WS",
+      "tint": "added",
+      "code": "DRV",
+      "role": "Drive · source",
+      "name": "restricted HR policy folder",
+      "footer": "service: Google Workspace",
+      "store": false
+    },
+    {
+      "id": "GCP",
+      "kind": "zone",
+      "label": "Google Cloud Platform",
+      "detail": null,
+      "parent": null,
+      "tint": null,
+      "code": "GCP",
+      "footer": "service: Google Cloud"
+    },
+    {
+      "id": "PROJ",
+      "kind": "zone",
+      "label": "HRPN POD project prj-c700-hr-polnav-dev-d132",
+      "detail": null,
+      "parent": "GCP",
+      "tint": null,
+      "code": "PRJ",
+      "footer": "service: GCP project"
+    },
+    {
+      "id": "MSGZ",
+      "kind": "zone",
+      "label": "Pub/Sub",
+      "detail": null,
+      "parent": "PROJ",
+      "tint": null,
+      "code": "PS",
+      "footer": "service: Pub/Sub"
+    },
+    {
+      "id": "TOPIC",
+      "kind": "card",
+      "label": "Chat events topic",
+      "detail": "publisher identity: gate G1",
+      "parent": "MSGZ",
+      "tint": "specific",
+      "code": "TOP",
+      "role": "Pub/Sub · topic",
+      "name": "hrpn-gchat-events",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "SUB",
+      "kind": "card",
+      "label": "Push subscription",
+      "detail": "OIDC · dedicated push SA",
+      "parent": "MSGZ",
+      "tint": "added",
+      "code": "SUB",
+      "role": "Pub/Sub · push",
+      "name": "hrpn-gchat-events-sub",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "RUNZ",
+      "kind": "zone",
+      "label": "Cloud Run hrpn-ragengine-agent",
+      "detail": null,
+      "parent": "PROJ",
+      "tint": null,
+      "code": "RUN",
+      "footer": "repo: HRPN"
+    },
+    {
+      "id": "PUSH",
+      "kind": "card",
+      "label": "Chat push route",
+      "detail": "only public route of the app",
+      "parent": "RUNZ",
+      "tint": "specific",
+      "code": "PSH",
+      "role": "Chat · push route",
+      "name": "POST /gchat-push",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "EVT",
+      "kind": "card",
+      "label": "Event guard",
+      "detail": "push SA check · message_id",
+      "parent": "RUNZ",
+      "tint": "added",
+      "code": "EVT",
+      "role": "Guard · event",
+      "name": "verify_event() · dedup",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "CONS",
+      "kind": "card",
+      "label": "Chat event consumer",
+      "detail": "agent runs before the ack",
+      "parent": "RUNZ",
+      "tint": "added",
+      "code": "CON",
+      "role": "Chat · consumer",
+      "name": "handle_push_event()",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "CHATCLI",
+      "kind": "card",
+      "label": "Chat reply client",
+      "detail": "answer + rating card",
+      "parent": "RUNZ",
+      "tint": "specific",
+      "code": "CLI",
+      "role": "Chat · reply",
+      "name": "send_gchat_message()",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "FEEDBACK",
+      "kind": "card",
+      "label": "Rating handler",
+      "detail": "BRD-MET-010 · feedback_score",
+      "parent": "RUNZ",
+      "tint": "added",
+      "code": "FDB",
+      "role": "Chat · feedback",
+      "name": "1–5 rating handler",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "ELIG",
+      "kind": "card",
+      "label": "Eligibility check",
+      "detail": "Groups profile · polite refusal",
+      "parent": "RUNZ",
+      "tint": "added",
+      "code": "ELG",
+      "role": "Guard · eligibility",
+      "name": "check_scope() pre-retrieval",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "AGENT",
+      "kind": "card",
+      "label": "ADK agent",
+      "detail": "HR persona · read-only tools",
+      "parent": "RUNZ",
+      "tint": "added",
+      "code": "AGT",
+      "role": "ADK agent",
+      "name": "root_agent (HR prompt)",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "LINK",
+      "kind": "card",
+      "label": "Link formatter tool",
+      "detail": "BRD-HR-006/007 · clickable",
+      "parent": "RUNZ",
+      "tint": "added",
+      "code": "LNK",
+      "role": "Tool · citations",
+      "name": "format_links()",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "QUERY",
+      "kind": "card",
+      "label": "Retrieval tool",
+      "detail": "returns source_uri per chunk",
+      "parent": "RUNZ",
+      "tint": "genair",
+      "code": "T1",
+      "role": "Tool · retrieval",
+      "name": "rag_query()",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "STATEZ",
+      "kind": "zone",
+      "label": "Storage and state",
+      "detail": null,
+      "parent": "PROJ",
+      "tint": null,
+      "code": "ST",
+      "footer": "repo: HRPN"
+    },
+    {
+      "id": "DOCS",
+      "kind": "card",
+      "label": "Policy documents bucket",
+      "detail": "fed by the Drive sync job",
+      "parent": "STATEZ",
+      "tint": "genair",
+      "code": "DOC",
+      "role": "Bucket · documents",
+      "name": "hrpn-ragengine-docs",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "SESS",
+      "kind": "card",
+      "label": "Persistent sessions",
+      "detail": "S2 decided · ADK 2.9.2 native",
+      "parent": "STATEZ",
+      "tint": "added",
+      "code": "SES",
+      "role": "Sessions · durable",
+      "name": "FirestoreSessionService",
+      "footer": "repo: google-adk",
+      "store": false
+    },
+    {
+      "id": "FS",
+      "kind": "card",
+      "label": "Firestore sessions database",
+      "detail": "TTL policy · 1-year history",
+      "parent": "STATEZ",
+      "tint": "added",
+      "code": "FS",
+      "role": "Firestore · sessions",
+      "name": "hrpn-sessions (Native)",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "CSQL",
+      "kind": "card",
+      "label": "Cloud SQL Postgres",
+      "detail": "phoenix DB only · if Phoenix kept",
+      "parent": "STATEZ",
+      "tint": "genair",
+      "code": "PG",
+      "role": "Cloud SQL",
+      "name": "instance hrpn (Postgres)",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "VERTEXZ",
+      "kind": "zone",
+      "label": "Vertex AI",
+      "detail": null,
+      "parent": "PROJ",
+      "tint": null,
+      "code": "VAI",
+      "footer": "service: Vertex AI"
+    },
+    {
+      "id": "RAG",
+      "kind": "card",
+      "label": "RAG Engine corpus",
+      "detail": "RagManaged Basic · embed-005",
+      "parent": "VERTEXZ",
+      "tint": null,
+      "code": "RAG",
+      "role": "RAG Engine",
+      "name": "corpus hr_policies",
+      "footer": "service: Vertex AI",
+      "store": false
+    },
+    {
+      "id": "GEM",
+      "kind": "card",
+      "label": "Gemini",
+      "detail": "upgrade with regression tests",
+      "parent": "VERTEXZ",
+      "tint": null,
+      "code": "LLM",
+      "role": "Model · Gemini",
+      "name": "pinned Gemini Flash",
+      "footer": "service: Vertex AI",
+      "store": false
+    },
+    {
+      "id": "ARMOR",
+      "kind": "card",
+      "label": "Model Armor",
+      "detail": "PROD availability: unknown",
+      "parent": "VERTEXZ",
+      "tint": "added",
+      "code": "MA",
+      "role": "Model Armor",
+      "name": "prompt + answer screening",
+      "footer": "service: Vertex AI",
+      "store": false
+    },
+    {
+      "id": "OBSZ",
+      "kind": "zone",
+      "label": "Observability",
+      "detail": null,
+      "parent": "PROJ",
+      "tint": null,
+      "code": "OBS",
+      "footer": "repo: HRPN"
+    },
+    {
+      "id": "CLOG",
+      "kind": "card",
+      "label": "Conversation audit log",
+      "detail": "PII scrubbed (BRD-HR-014)",
+      "parent": "OBSZ",
+      "tint": "added",
+      "code": "LOG",
+      "role": "Logging · audit",
+      "name": "structured conversation log",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "LOGS",
+      "kind": "card",
+      "label": "Log bucket 1 year",
+      "detail": "365 d (DAT-015) · 120 d today",
+      "parent": "OBSZ",
+      "tint": "added",
+      "code": "FBK",
+      "role": "Logs · 1 year",
+      "name": "hrpn-logbucket + hrpn-sink",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "BQ",
+      "kind": "card",
+      "label": "BigQuery linked dataset",
+      "detail": "linked dataset on log bucket",
+      "parent": "OBSZ",
+      "tint": "genair",
+      "code": "BQ",
+      "role": "BigQuery · linked",
+      "name": "hrpn_user_feedback_ds",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "PHX",
+      "kind": "card",
+      "label": "Phoenix tracing",
+      "detail": "no instrumentation library",
+      "parent": "OBSZ",
+      "tint": "genair",
+      "code": "PHX",
+      "role": "Tracing · Phoenix",
+      "name": "module cloud_run_phoenix",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "INGZ",
+      "kind": "zone",
+      "label": "Ingestion (BRD Phase 2)",
+      "detail": null,
+      "parent": "PROJ",
+      "tint": null,
+      "code": "ING",
+      "footer": "repo: HRPN"
+    },
+    {
+      "id": "SYNC",
+      "kind": "card",
+      "label": "Drive sync job",
+      "detail": "read-only SA · delta copy",
+      "parent": "INGZ",
+      "tint": "added",
+      "code": "SYN",
+      "role": "Job · Drive sync",
+      "name": "drive-sync Cloud Run job",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "IMPORT",
+      "kind": "card",
+      "label": "RAG import job",
+      "detail": "delta indexing · 24 h SLA",
+      "parent": "INGZ",
+      "tint": "added",
+      "code": "IMP",
+      "role": "Job · RAG import",
+      "name": "rag.import_files() job",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "CICDZ",
+      "kind": "zone",
+      "label": "CI/CD (same POD project)",
+      "detail": null,
+      "parent": "PROJ",
+      "tint": null,
+      "code": "CI",
+      "footer": "repo: HRPN"
+    },
+    {
+      "id": "CB",
+      "kind": "card",
+      "label": "Cloud Build trigger",
+      "detail": "build · push · run deploy",
+      "parent": "CICDZ",
+      "tint": "genair",
+      "code": "CB",
+      "role": "CI · Cloud Build",
+      "name": "cloud_trigger_cicd_python",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "AR",
+      "kind": "card",
+      "label": "Artifact Registry",
+      "detail": "module artifact_registry v1.8.3",
+      "parent": "CICDZ",
+      "tint": "genair",
+      "code": "AR",
+      "role": "Registry · Docker",
+      "name": "Artifact Registry hrpn-pod",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "TF",
+      "kind": "card",
+      "label": "Terraform",
+      "detail": "+ jobs · push SA · retention",
+      "parent": "CICDZ",
+      "tint": "genair",
+      "code": "TF",
+      "role": "IaC · Terraform",
+      "name": "genair-infra-factory",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "TFST",
+      "kind": "card",
+      "label": "Terraform state bucket",
+      "detail": "hrpn/<branch>/terraform/state",
+      "parent": "CICDZ",
+      "tint": "genair",
+      "code": "TFS",
+      "role": "IaC · state",
+      "name": "terraform-state bucket (POD)",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "NET",
+      "kind": "card",
+      "label": "VPC main-network",
+      "detail": "egress all-traffic · private SQL",
+      "parent": "PROJ",
+      "tint": "genair",
+      "code": "NET",
+      "role": "Network · VPC",
+      "name": "main-network / eu-west4",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "SSMPROJ",
+      "kind": "zone",
+      "label": "Platform project prj-ssm-b967",
+      "detail": null,
+      "parent": "GCP",
+      "tint": null,
+      "code": "SSM",
+      "footer": "service: GenAI platform"
+    },
+    {
+      "id": "SSM",
+      "kind": "card",
+      "label": "SSM repository",
+      "detail": "push to main → Cloud Build",
+      "parent": "SSMPROJ",
+      "tint": "genair",
+      "code": "SRC",
+      "role": "Repo · SSM",
+      "name": "hr-polnav-c700-repo",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "IFMIR",
+      "kind": "card",
+      "label": "Infra-factory mirror",
+      "detail": "TF modules v1.8.3 for POD",
+      "parent": "SSMPROJ",
+      "tint": "genair",
+      "code": "MIR",
+      "role": "Mirror · modules",
+      "name": "genair-infra-factory.git",
+      "footer": "repo: GenAI platform",
+      "store": false
+    },
+    {
+      "id": "BASE",
+      "kind": "card",
+      "label": "Base image and PyPI mirrors",
+      "detail": "+ python repos (prj-ssm-b967)",
+      "parent": "SSMPROJ",
+      "tint": null,
+      "code": "IMG",
+      "role": "Images · PyPI",
+      "name": "genair-base-container",
+      "footer": "service: GenAI platform",
+      "store": false
+    },
+    {
+      "id": "PRODZ",
+      "kind": "zone",
+      "label": "PROD landing zone · app_code (to provision)",
+      "detail": null,
+      "parent": "GCP",
+      "tint": null,
+      "code": "PRD",
+      "footer": "service: GCP project (PROD)"
+    },
+    {
+      "id": "PCICD",
+      "kind": "zone",
+      "label": "PROD CI/CD project · project_id_cicd",
+      "detail": null,
+      "parent": "PRODZ",
+      "tint": null,
+      "code": "CID",
+      "footer": "service: GCP project (PROD)"
+    },
+    {
+      "id": "PAR",
+      "kind": "card",
+      "label": "PROD Artifact Registry",
+      "detail": "+ app-container-images-noprod",
+      "parent": "PCICD",
+      "tint": "added",
+      "code": "PAR",
+      "role": "Registry · PROD",
+      "name": "app-container-images",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "PIAC",
+      "kind": "card",
+      "label": "IaC service account and WIF",
+      "detail": "pool wif-<app_code>-prod-cicd",
+      "parent": "PCICD",
+      "tint": "added",
+      "code": "WIF",
+      "role": "IaC · WIF",
+      "name": "iac-sa + iac-state bucket",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "PSHARED",
+      "kind": "zone",
+      "label": "PROD shared projects",
+      "detail": null,
+      "parent": "PRODZ",
+      "tint": null,
+      "code": "SHP",
+      "footer": "service: GenAI platform"
+    },
+    {
+      "id": "PSVPC",
+      "kind": "card",
+      "label": "Shared VPC host",
+      "detail": "networks dev / int / pro",
+      "parent": "PSHARED",
+      "tint": "added",
+      "code": "SVP",
+      "role": "Network · SVPC",
+      "name": "Shared VPC host project",
+      "footer": "service: GenAI platform",
+      "store": false
+    },
+    {
+      "id": "PLIBS",
+      "kind": "card",
+      "label": "Shared libraries project",
+      "detail": "GenAiR libs for PROD builds",
+      "parent": "PSHARED",
+      "tint": null,
+      "code": "PLB",
+      "role": "Libs · PyPI",
+      "name": "prj-libs-71f1 python-repository",
+      "footer": "service: GenAI platform",
+      "store": false
+    },
+    {
+      "id": "PDEVZ",
+      "kind": "zone",
+      "label": "dev project · project_id_dev",
+      "detail": null,
+      "parent": "PRODZ",
+      "tint": null,
+      "code": "DEV",
+      "footer": "service: GCP project (PROD)"
+    },
+    {
+      "id": "PDEV",
+      "kind": "card",
+      "label": "HRPN dev environment",
+      "detail": "branch develop · id unknown",
+      "parent": "PDEVZ",
+      "tint": "added",
+      "code": "DEV",
+      "role": "Env · dev",
+      "name": "hrpn-ragengine-agent",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "PINTZ",
+      "kind": "zone",
+      "label": "int project · project_id_int",
+      "detail": null,
+      "parent": "PRODZ",
+      "tint": null,
+      "code": "INT",
+      "footer": "service: GCP project (PROD)"
+    },
+    {
+      "id": "PINT",
+      "kind": "card",
+      "label": "HRPN int environment",
+      "detail": "branch int · id unknown",
+      "parent": "PINTZ",
+      "tint": "added",
+      "code": "INT",
+      "role": "Env · int",
+      "name": "hrpn-ragengine-agent",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "PPROZ",
+      "kind": "zone",
+      "label": "pro project · project_id_pro",
+      "detail": null,
+      "parent": "PRODZ",
+      "tint": null,
+      "code": "PRO",
+      "footer": "service: GCP project (PROD)"
+    },
+    {
+      "id": "PPRO",
+      "kind": "card",
+      "label": "HRPN pro environment",
+      "detail": "branch main · id unknown",
+      "parent": "PPROZ",
+      "tint": "added",
+      "code": "PRO",
+      "role": "Env · pro",
+      "name": "hrpn-ragengine-agent",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "OUT",
+      "kind": "zone",
+      "label": "Outside Google Cloud",
+      "detail": null,
+      "parent": null,
+      "tint": null,
+      "code": "EXT",
+      "footer": "scope: Outside GCP"
+    },
+    {
+      "id": "AWSZ",
+      "kind": "zone",
+      "label": "Airbus AWS",
+      "detail": null,
+      "parent": "OUT",
+      "tint": null,
+      "code": "AWS",
+      "footer": "service: Airbus AWS"
+    },
+    {
+      "id": "GITHUBZ",
+      "kind": "zone",
+      "label": "Airbus GitHub · github.airbus.corp",
+      "detail": null,
+      "parent": "AWSZ",
+      "tint": null,
+      "code": "GH",
+      "footer": "service: Airbus GitHub"
+    },
+    {
+      "id": "CUTTER",
+      "kind": "card",
+      "label": "GenAiR-Cutter",
+      "detail": "Agent Engine · no frontend",
+      "parent": "GITHUBZ",
+      "tint": "genair",
+      "code": "GEN",
+      "role": "Template · GenAiR",
+      "name": "GenAiR-Cutter 26.9.0",
+      "footer": "repo: GenAiR-Cutter",
+      "store": false
+    },
+    {
+      "id": "AGARDEN",
+      "kind": "card",
+      "label": "GenAiR-AgentGarden",
+      "detail": "ragengine-agent · Cutter submodule",
+      "parent": "GITHUBZ",
+      "tint": "genair",
+      "code": "AGD",
+      "role": "Agents · template",
+      "name": "GenAiR-AgentGarden (main)",
+      "footer": "repo: GenAiR-AgentGarden",
+      "store": false
+    },
+    {
+      "id": "IFREPO",
+      "kind": "card",
+      "label": "genair-infra-factory",
+      "detail": "PROD: GitHub · POD: SSM mirror",
+      "parent": "GITHUBZ",
+      "tint": "genair",
+      "code": "GIF",
+      "role": "IaC · modules",
+      "name": "genair-infra-factory v1.8.3",
+      "footer": "repo: genair-infra-factory",
+      "store": false
+    },
+    {
+      "id": "GLIBS",
+      "kind": "card",
+      "label": "GenAiR libraries",
+      "detail": "built by Jenkins → Artifactory",
+      "parent": "GITHUBZ",
+      "tint": "genair",
+      "code": "LIB",
+      "role": "Libs · GenAiR",
+      "name": "genair-* Python packages",
+      "footer": "repo: GenAiR libs",
+      "store": false
+    },
+    {
+      "id": "GITLABZ",
+      "kind": "zone",
+      "label": "Airbus GitLab · SCM",
+      "detail": null,
+      "parent": "AWSZ",
+      "tint": null,
+      "code": "SCM",
+      "footer": "service: Airbus SCM"
+    },
+    {
+      "id": "SCMREPO",
+      "kind": "card",
+      "label": "HRPN repository on SCM",
+      "detail": "host open: GitLab or GitHub",
+      "parent": "GITLABZ",
+      "tint": "added",
+      "code": "GIT",
+      "role": "Repo · SCM",
+      "name": "HRPN PROD repository",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "JENKINS",
+      "kind": "card",
+      "label": "Jenkins",
+      "detail": "GenAiR jobs · PROD pipelines",
+      "parent": "AWSZ",
+      "tint": null,
+      "code": "JK",
+      "role": "CI · Jenkins",
+      "name": "oc.jenkins 2b82-devops",
+      "footer": "service: Jenkins on AWS",
+      "store": false
+    },
+    {
+      "id": "JFROG",
+      "kind": "card",
+      "label": "JFrog Artifactory",
+      "detail": "r-8cf1-genair-pypi-local",
+      "parent": "AWSZ",
+      "tint": null,
+      "code": "JF",
+      "role": "Registry · JFrog",
+      "name": "Artifactory 2b82",
+      "footer": "service: JFrog Artifactory",
+      "store": false
+    }
+  ],
+  "relations": [
+    {
+      "id": "EMP__CHAT__3522379cd54b",
+      "from": "EMP",
+      "to": "CHAT",
+      "label": "message or @mention",
+      "style": "solid"
+    },
+    {
+      "id": "CHAT__TOPIC__384c1104f178",
+      "from": "CHAT",
+      "to": "TOPIC",
+      "label": "publish · Chat agent",
+      "style": "solid"
+    },
+    {
+      "id": "TOPIC__SUB__ee85036d70b6",
+      "from": "TOPIC",
+      "to": "SUB",
+      "label": "push subscription",
+      "style": "solid"
+    },
+    {
+      "id": "SUB__PUSH__7a6c99a24d16",
+      "from": "SUB",
+      "to": "PUSH",
+      "label": "OIDC push · dedicated SA",
+      "style": "solid"
+    },
+    {
+      "id": "PUSH__EVT__9936cc69c5aa",
+      "from": "PUSH",
+      "to": "EVT",
+      "label": "verify · dedup",
+      "style": "solid"
+    },
+    {
+      "id": "EVT__CONS__9b801ad9531f",
+      "from": "EVT",
+      "to": "CONS",
+      "label": "new event only",
+      "style": "solid"
+    },
+    {
+      "id": "CONS__SESS__6206c3706ecb",
+      "from": "CONS",
+      "to": "SESS",
+      "label": "session per user and space",
+      "style": "solid"
+    },
+    {
+      "id": "CONS__ELIG__59de5349ac37",
+      "from": "CONS",
+      "to": "ELIG",
+      "label": "scope check first",
+      "style": "solid"
+    },
+    {
+      "id": "ELIG__AGENT__2e59b0dbbc37",
+      "from": "ELIG",
+      "to": "AGENT",
+      "label": "eligible question",
+      "style": "solid"
+    },
+    {
+      "id": "AGENT__ARMOR__baa3593a84de",
+      "from": "AGENT",
+      "to": "ARMOR",
+      "label": "screen prompt and answer",
+      "style": "solid"
+    },
+    {
+      "id": "AGENT__GEM__0559f37ab89b",
+      "from": "AGENT",
+      "to": "GEM",
+      "label": "LLM call",
+      "style": "solid"
+    },
+    {
+      "id": "AGENT__QUERY__56e7059d3971",
+      "from": "AGENT",
+      "to": "QUERY",
+      "label": "tool call",
+      "style": "solid"
+    },
+    {
+      "id": "AGENT__LINK__a1213ff54183",
+      "from": "AGENT",
+      "to": "LINK",
+      "label": "format citations",
+      "style": "solid"
+    },
+    {
+      "id": "QUERY__RAG__f8bc1bec5abb",
+      "from": "QUERY",
+      "to": "RAG",
+      "label": "retrieval_query",
+      "style": "solid"
+    },
+    {
+      "id": "CONS__CHATCLI__c4b05047138c",
+      "from": "CONS",
+      "to": "CHATCLI",
+      "label": "answer + rating card",
+      "style": "solid"
+    },
+    {
+      "id": "CHATCLI__CHAT__91c3b67b714f",
+      "from": "CHATCLI",
+      "to": "CHAT",
+      "label": "spaces.messages.create",
+      "style": "solid"
+    },
+    {
+      "id": "CONS__FEEDBACK__cfc8daa30640",
+      "from": "CONS",
+      "to": "FEEDBACK",
+      "label": "rating click event",
+      "style": "solid"
+    },
+    {
+      "id": "FEEDBACK__LOGS__d8236351ff4f",
+      "from": "FEEDBACK",
+      "to": "LOGS",
+      "label": "feedback_score",
+      "style": "solid"
+    },
+    {
+      "id": "CONS__CLOG__2b5ff8e12cb3",
+      "from": "CONS",
+      "to": "CLOG",
+      "label": "scrubbed log entry",
+      "style": "solid"
+    },
+    {
+      "id": "CLOG__LOGS__37f742c83b60",
+      "from": "CLOG",
+      "to": "LOGS",
+      "label": "sink · 365 d",
+      "style": "solid"
+    },
+    {
+      "id": "LOGS__BQ__6a5653dfa3cb",
+      "from": "LOGS",
+      "to": "BQ",
+      "label": "linked dataset",
+      "style": "solid"
+    },
+    {
+      "id": "SESS__FS__e22e61066cfd",
+      "from": "SESS",
+      "to": "FS",
+      "label": "sessions · history",
+      "style": "solid"
+    },
+    {
+      "id": "PHX__CSQL__07413d9f7e9c",
+      "from": "PHX",
+      "to": "CSQL",
+      "label": "phoenix DB",
+      "style": "solid"
+    },
+    {
+      "id": "HRADM__DRIVE__848d229f7abe",
+      "from": "HRADM",
+      "to": "DRIVE",
+      "label": "approved documents",
+      "style": "solid"
+    },
+    {
+      "id": "DRIVE__SYNC__c4ca84ff4f94",
+      "from": "DRIVE",
+      "to": "SYNC",
+      "label": "Drive API · read-only",
+      "style": "solid"
+    },
+    {
+      "id": "SYNC__DOCS__dc261875c2c1",
+      "from": "SYNC",
+      "to": "DOCS",
+      "label": "delta copy",
+      "style": "solid"
+    },
+    {
+      "id": "DOCS__IMPORT__8cbed69a6c4d",
+      "from": "DOCS",
+      "to": "IMPORT",
+      "label": "new objects",
+      "style": "solid"
+    },
+    {
+      "id": "IMPORT__RAG__05e9d72a8f88",
+      "from": "IMPORT",
+      "to": "RAG",
+      "label": "import_files · delta",
+      "style": "solid"
+    },
+    {
+      "id": "DEV__SSM__7b9bc9cfb8b2",
+      "from": "DEV",
+      "to": "SSM",
+      "label": "git push main",
+      "style": "solid"
+    },
+    {
+      "id": "TF__SYNC__afcffec927ae",
+      "from": "TF",
+      "to": "SYNC",
+      "label": "jobs + scheduler",
+      "style": "solid"
+    },
+    {
+      "id": "TF__TOPIC__b1afb3b4556e",
+      "from": "TF",
+      "to": "TOPIC",
+      "label": "topic · sub · IAM",
+      "style": "solid"
+    },
+    {
+      "id": "SSM__CB__85b0f2d54d85",
+      "from": "SSM",
+      "to": "CB",
+      "label": "SSM webhook",
+      "style": "solid"
+    },
+    {
+      "id": "CB__AR__a0d29d8e1a8c",
+      "from": "CB",
+      "to": "AR",
+      "label": "docker push",
+      "style": "solid"
+    },
+    {
+      "id": "AR__PUSH__e7bdc0c584e6",
+      "from": "AR",
+      "to": "PUSH",
+      "label": "image hrpn-ragengine-agent",
+      "style": "solid"
+    },
+    {
+      "id": "CB__PUSH__465c03ff41f9",
+      "from": "CB",
+      "to": "PUSH",
+      "label": "gcloud run deploy",
+      "style": "solid"
+    },
+    {
+      "id": "BASE__CB__622cfc0a9da7",
+      "from": "BASE",
+      "to": "CB",
+      "label": "base image · PyPI mirrors",
+      "style": "solid"
+    },
+    {
+      "id": "AGARDEN__CUTTER__15df99a228fc",
+      "from": "AGARDEN",
+      "to": "CUTTER",
+      "label": "submodule src/agent_garden",
+      "style": "solid"
+    },
+    {
+      "id": "CUTTER__SSM__2bcb9b3cc49a",
+      "from": "CUTTER",
+      "to": "SSM",
+      "label": "copier generate 26.9.0 · update",
+      "style": "solid"
+    },
+    {
+      "id": "CUTTER__SCMREPO__0bd93570226a",
+      "from": "CUTTER",
+      "to": "SCMREPO",
+      "label": "copier generate --prod · update",
+      "style": "solid"
+    },
+    {
+      "id": "IFREPO__IFMIR__00154761637c",
+      "from": "IFREPO",
+      "to": "IFMIR",
+      "label": "mirror",
+      "style": "solid"
+    },
+    {
+      "id": "IFMIR__TF__274292c87d94",
+      "from": "IFMIR",
+      "to": "TF",
+      "label": "TF modules v1.8.3",
+      "style": "solid"
+    },
+    {
+      "id": "TF__TFST__8ad42b7fbfc7",
+      "from": "TF",
+      "to": "TFST",
+      "label": "state hrpn/main",
+      "style": "solid"
+    },
+    {
+      "id": "GLIBS__JENKINS__8459419d4cfe",
+      "from": "GLIBS",
+      "to": "JENKINS",
+      "label": "builds",
+      "style": "solid"
+    },
+    {
+      "id": "JENKINS__JFROG__3981286d47c8",
+      "from": "JENKINS",
+      "to": "JFROG",
+      "label": "genair-* packages",
+      "style": "solid"
+    },
+    {
+      "id": "DEV__SCMREPO__3ed7fe663fd2",
+      "from": "DEV",
+      "to": "SCMREPO",
+      "label": "git push · PROD",
+      "style": "solid"
+    },
+    {
+      "id": "SCMREPO__JENKINS__8551bb2bda13",
+      "from": "SCMREPO",
+      "to": "JENKINS",
+      "label": "webhook on push",
+      "style": "solid"
+    },
+    {
+      "id": "IFREPO__JENKINS__1ff25aea983c",
+      "from": "IFREPO",
+      "to": "JENKINS",
+      "label": "TF modules (PROD)",
+      "style": "solid"
+    },
+    {
+      "id": "PLIBS__JENKINS__6ee666282c0f",
+      "from": "PLIBS",
+      "to": "JENKINS",
+      "label": "GenAiR libs (PROD)",
+      "style": "solid"
+    },
+    {
+      "id": "JENKINS__PIAC__3d4be535ed8f",
+      "from": "JENKINS",
+      "to": "PIAC",
+      "label": "WIF · iac-sa",
+      "style": "solid"
+    },
+    {
+      "id": "JENKINS__PAR__a0d29d8e1a8c",
+      "from": "JENKINS",
+      "to": "PAR",
+      "label": "docker push",
+      "style": "solid"
+    },
+    {
+      "id": "JENKINS__PDEV__3e5fd7eed252",
+      "from": "JENKINS",
+      "to": "PDEV",
+      "label": "deploy · develop",
+      "style": "solid"
+    },
+    {
+      "id": "JENKINS__PINT__f7cecb5ac1e9",
+      "from": "JENKINS",
+      "to": "PINT",
+      "label": "deploy · int",
+      "style": "solid"
+    },
+    {
+      "id": "JENKINS__PPRO__159ad0a11e96",
+      "from": "JENKINS",
+      "to": "PPRO",
+      "label": "deploy · main",
+      "style": "solid"
+    },
+    {
+      "id": "PSVPC__PPRO__82f683a4c311",
+      "from": "PSVPC",
+      "to": "PPRO",
+      "label": "Shared VPC subnets",
+      "style": "solid"
+    }
+  ],
+  "zoneHierarchy": {
+    "rootCards": [],
+    "zones": [
+      {
+        "id": "PEOPLE",
+        "label": "Users and operators",
+        "cards": [
+          "EMP",
+          "DEV",
+          "HRADM"
+        ],
+        "zones": []
+      },
+      {
+        "id": "WS",
+        "label": "Google Workspace",
+        "cards": [
+          "CHAT",
+          "DRIVE"
+        ],
+        "zones": []
+      },
+      {
+        "id": "GCP",
+        "label": "Google Cloud Platform",
+        "cards": [],
+        "zones": [
+          {
+            "id": "PROJ",
+            "label": "HRPN POD project prj-c700-hr-polnav-dev-d132",
+            "cards": [
+              "NET"
+            ],
+            "zones": [
+              {
+                "id": "MSGZ",
+                "label": "Pub/Sub",
+                "cards": [
+                  "TOPIC",
+                  "SUB"
+                ],
+                "zones": []
+              },
+              {
+                "id": "RUNZ",
+                "label": "Cloud Run hrpn-ragengine-agent",
+                "cards": [
+                  "PUSH",
+                  "EVT",
+                  "CONS",
+                  "CHATCLI",
+                  "FEEDBACK",
+                  "ELIG",
+                  "AGENT",
+                  "LINK",
+                  "QUERY"
+                ],
+                "zones": []
+              },
+              {
+                "id": "STATEZ",
+                "label": "Storage and state",
+                "cards": [
+                  "DOCS",
+                  "SESS",
+                  "FS",
+                  "CSQL"
+                ],
+                "zones": []
+              },
+              {
+                "id": "VERTEXZ",
+                "label": "Vertex AI",
+                "cards": [
+                  "RAG",
+                  "GEM",
+                  "ARMOR"
+                ],
+                "zones": []
+              },
+              {
+                "id": "OBSZ",
+                "label": "Observability",
+                "cards": [
+                  "CLOG",
+                  "LOGS",
+                  "BQ",
+                  "PHX"
+                ],
+                "zones": []
+              },
+              {
+                "id": "INGZ",
+                "label": "Ingestion (BRD Phase 2)",
+                "cards": [
+                  "SYNC",
+                  "IMPORT"
+                ],
+                "zones": []
+              },
+              {
+                "id": "CICDZ",
+                "label": "CI/CD (same POD project)",
+                "cards": [
+                  "CB",
+                  "AR",
+                  "TF",
+                  "TFST"
+                ],
+                "zones": []
+              }
+            ]
+          },
+          {
+            "id": "SSMPROJ",
+            "label": "Platform project prj-ssm-b967",
+            "cards": [
+              "SSM",
+              "IFMIR",
+              "BASE"
+            ],
+            "zones": []
+          },
+          {
+            "id": "PRODZ",
+            "label": "PROD landing zone · app_code (to provision)",
+            "cards": [],
+            "zones": [
+              {
+                "id": "PCICD",
+                "label": "PROD CI/CD project · project_id_cicd",
+                "cards": [
+                  "PAR",
+                  "PIAC"
+                ],
+                "zones": []
+              },
+              {
+                "id": "PSHARED",
+                "label": "PROD shared projects",
+                "cards": [
+                  "PSVPC",
+                  "PLIBS"
+                ],
+                "zones": []
+              },
+              {
+                "id": "PDEVZ",
+                "label": "dev project · project_id_dev",
+                "cards": [
+                  "PDEV"
+                ],
+                "zones": []
+              },
+              {
+                "id": "PINTZ",
+                "label": "int project · project_id_int",
+                "cards": [
+                  "PINT"
+                ],
+                "zones": []
+              },
+              {
+                "id": "PPROZ",
+                "label": "pro project · project_id_pro",
+                "cards": [
+                  "PPRO"
+                ],
+                "zones": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "OUT",
+        "label": "Outside Google Cloud",
+        "cards": [],
+        "zones": [
+          {
+            "id": "AWSZ",
+            "label": "Airbus AWS",
+            "cards": [
+              "JENKINS",
+              "JFROG"
+            ],
+            "zones": [
+              {
+                "id": "GITHUBZ",
+                "label": "Airbus GitHub · github.airbus.corp",
+                "cards": [
+                  "CUTTER",
+                  "AGARDEN",
+                  "IFREPO",
+                  "GLIBS"
+                ],
+                "zones": []
+              },
+              {
+                "id": "GITLABZ",
+                "label": "Airbus GitLab · SCM",
+                "cards": [
+                  "SCMREPO"
+                ],
+                "zones": []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

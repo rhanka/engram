@@ -1,0 +1,1160 @@
+{
+ "viewId": "view:hrpn-s2-target-default",
+ "semanticDocumentId": "document:hrpn-s2-target",
+ "revision": 1,
+ "entityOccurrences": {
+  "occurrence:PEOPLE": {
+   "id": "occurrence:PEOPLE",
+   "entity": "entity:PEOPLE",
+   "geometry": {
+    "x": 0,
+    "y": 0,
+    "width": 492,
+    "height": 975
+   }
+  },
+  "occurrence:WS": {
+   "id": "occurrence:WS",
+   "entity": "entity:WS",
+   "geometry": {
+    "x": 0,
+    "y": 1071,
+    "width": 492,
+    "height": 630
+   }
+  },
+  "occurrence:GCP": {
+   "id": "occurrence:GCP",
+   "entity": "entity:GCP",
+   "geometry": {
+    "x": 652,
+    "y": 0,
+    "width": 4340,
+    "height": 3050
+   }
+  },
+  "occurrence:PRODZ": {
+   "id": "occurrence:PRODZ",
+   "entity": "entity:PRODZ",
+   "geometry": {
+    "x": 668,
+    "y": 142,
+    "width": 3068,
+    "height": 2892
+   },
+   "group": "grp.3.GCP"
+  },
+  "occurrence:PPROZ": {
+   "id": "occurrence:PPROZ",
+   "entity": "entity:PPROZ",
+   "geometry": {
+    "x": 684,
+    "y": 284,
+    "width": 3036,
+    "height": 1818
+   },
+   "group": "grp.5.PRODZ"
+  },
+  "occurrence:MSGZ": {
+   "id": "occurrence:MSGZ",
+   "entity": "entity:MSGZ",
+   "geometry": {
+    "x": 700,
+    "y": 427,
+    "width": 492,
+    "height": 630
+   },
+   "group": "grp.5.PPROZ"
+  },
+  "occurrence:RUNZ": {
+   "id": "occurrence:RUNZ",
+   "entity": "entity:RUNZ",
+   "geometry": {
+    "x": 1352,
+    "y": 427,
+    "width": 492,
+    "height": 902
+   },
+   "group": "grp.5.PPROZ"
+  },
+  "occurrence:STATEZ": {
+   "id": "occurrence:STATEZ",
+   "entity": "entity:STATEZ",
+   "geometry": {
+    "x": 2004,
+    "y": 427,
+    "width": 492,
+    "height": 630
+   },
+   "group": "grp.5.PPROZ"
+  },
+  "occurrence:VERTEXZ": {
+   "id": "occurrence:VERTEXZ",
+   "entity": "entity:VERTEXZ",
+   "geometry": {
+    "x": 2004,
+    "y": 1153,
+    "width": 492,
+    "height": 933
+   },
+   "group": "grp.5.PPROZ"
+  },
+  "occurrence:INGZ": {
+   "id": "occurrence:INGZ",
+   "entity": "entity:INGZ",
+   "geometry": {
+    "x": 700,
+    "y": 1153,
+    "width": 492,
+    "height": 630
+   },
+   "group": "grp.5.PPROZ"
+  },
+  "occurrence:PSHARED": {
+   "id": "occurrence:PSHARED",
+   "entity": "entity:PSHARED",
+   "geometry": {
+    "x": 684,
+    "y": 2198,
+    "width": 3036,
+    "height": 820
+   },
+   "group": "grp.5.PRODZ"
+  },
+  "occurrence:PCICD": {
+   "id": "occurrence:PCICD",
+   "entity": "entity:PCICD",
+   "geometry": {
+    "x": 700,
+    "y": 2340,
+    "width": 1112,
+    "height": 661
+   },
+   "group": "grp.7.PSHARED"
+  },
+  "occurrence:OBSZ": {
+   "id": "occurrence:OBSZ",
+   "entity": "entity:OBSZ",
+   "geometry": {
+    "x": 1972,
+    "y": 2340,
+    "width": 1112,
+    "height": 661
+   },
+   "group": "grp.7.PSHARED"
+  },
+  "occurrence:OUT": {
+   "id": "occurrence:OUT",
+   "entity": "entity:OUT",
+   "geometry": {
+    "x": 652,
+    "y": 3146,
+    "width": 4340,
+    "height": 706
+   }
+  },
+  "occurrence:GITHUBZ": {
+   "id": "occurrence:GITHUBZ",
+   "entity": "entity:GITHUBZ",
+   "geometry": {
+    "x": 668,
+    "y": 3288,
+    "width": 2384,
+    "height": 548
+   },
+   "group": "grp.3.OUT"
+  },
+  "occurrence:GENSRC": {
+   "id": "occurrence:GENSRC",
+   "entity": "entity:GENSRC",
+   "geometry": {
+    "x": 684,
+    "y": 3430,
+    "width": 2352,
+    "height": 389
+   },
+   "group": "grp.7.GITHUBZ"
+  },
+  "occurrence:GITLABZ": {
+   "id": "occurrence:GITLABZ",
+   "entity": "entity:GITLABZ",
+   "geometry": {
+    "x": 3212,
+    "y": 3288,
+    "width": 492,
+    "height": 358
+   },
+   "group": "grp.3.OUT"
+  },
+  "occurrence:AWSCI": {
+   "id": "occurrence:AWSCI",
+   "entity": "entity:AWSCI",
+   "geometry": {
+    "x": 3864,
+    "y": 3288,
+    "width": 1112,
+    "height": 358
+   },
+   "group": "grp.3.OUT"
+  },
+  "occurrence:LEGEND": {
+   "id": "occurrence:LEGEND",
+   "entity": "entity:LEGEND",
+   "geometry": {
+    "x": 0,
+    "y": 1797,
+    "width": 492,
+    "height": 630
+   }
+  },
+  "occurrence:EMP": {
+   "id": "occurrence:EMP",
+   "entity": "entity:EMP",
+   "geometry": {
+    "x": 16,
+    "y": 215,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.6.PEOPLE"
+  },
+  "occurrence:DEV": {
+   "id": "occurrence:DEV",
+   "entity": "entity:DEV",
+   "geometry": {
+    "x": 16,
+    "y": 487,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.6.PEOPLE"
+  },
+  "occurrence:HRADM": {
+   "id": "occurrence:HRADM",
+   "entity": "entity:HRADM",
+   "geometry": {
+    "x": 16,
+    "y": 759,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.6.PEOPLE"
+  },
+  "occurrence:CHAT": {
+   "id": "occurrence:CHAT",
+   "entity": "entity:CHAT",
+   "geometry": {
+    "x": 16,
+    "y": 1213,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.2.WS"
+  },
+  "occurrence:DRIVE": {
+   "id": "occurrence:DRIVE",
+   "entity": "entity:DRIVE",
+   "geometry": {
+    "x": 16,
+    "y": 1485,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.2.WS"
+  },
+  "occurrence:TOPIC": {
+   "id": "occurrence:TOPIC",
+   "entity": "entity:TOPIC",
+   "geometry": {
+    "x": 716,
+    "y": 569,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.4.MSGZ"
+  },
+  "occurrence:SUB": {
+   "id": "occurrence:SUB",
+   "entity": "entity:SUB",
+   "geometry": {
+    "x": 716,
+    "y": 841,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.4.MSGZ"
+  },
+  "occurrence:APP": {
+   "id": "occurrence:APP",
+   "entity": "entity:APP",
+   "geometry": {
+    "x": 1368,
+    "y": 841,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.4.RUNZ"
+  },
+  "occurrence:AGENT": {
+   "id": "occurrence:AGENT",
+   "entity": "entity:AGENT",
+   "geometry": {
+    "x": 1368,
+    "y": 1113,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.4.RUNZ"
+  },
+  "occurrence:CHATAPI": {
+   "id": "occurrence:CHATAPI",
+   "entity": "entity:CHATAPI",
+   "geometry": {
+    "x": 1368,
+    "y": 569,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.4.RUNZ"
+  },
+  "occurrence:DOCS": {
+   "id": "occurrence:DOCS",
+   "entity": "entity:DOCS",
+   "geometry": {
+    "x": 2020,
+    "y": 569,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.6.STATEZ"
+  },
+  "occurrence:FS": {
+   "id": "occurrence:FS",
+   "entity": "entity:FS",
+   "geometry": {
+    "x": 2020,
+    "y": 841,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.6.STATEZ"
+  },
+  "occurrence:RAG": {
+   "id": "occurrence:RAG",
+   "entity": "entity:RAG",
+   "geometry": {
+    "x": 2020,
+    "y": 1326,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.7.VERTEXZ"
+  },
+  "occurrence:GEM": {
+   "id": "occurrence:GEM",
+   "entity": "entity:GEM",
+   "geometry": {
+    "x": 2020,
+    "y": 1598,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.7.VERTEXZ"
+  },
+  "occurrence:ARMOR": {
+   "id": "occurrence:ARMOR",
+   "entity": "entity:ARMOR",
+   "geometry": {
+    "x": 2020,
+    "y": 1870,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.7.VERTEXZ"
+  },
+  "occurrence:SYNC": {
+   "id": "occurrence:SYNC",
+   "entity": "entity:SYNC",
+   "geometry": {
+    "x": 716,
+    "y": 1295,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.4.INGZ"
+  },
+  "occurrence:IMPORT": {
+   "id": "occurrence:IMPORT",
+   "entity": "entity:IMPORT",
+   "geometry": {
+    "x": 716,
+    "y": 1567,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.4.INGZ"
+  },
+  "occurrence:PSSM": {
+   "id": "occurrence:PSSM",
+   "entity": "entity:PSSM",
+   "geometry": {
+    "x": 716,
+    "y": 2514,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.5.PCICD"
+  },
+  "occurrence:PAR": {
+   "id": "occurrence:PAR",
+   "entity": "entity:PAR",
+   "geometry": {
+    "x": 1336,
+    "y": 2514,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.5.PCICD"
+  },
+  "occurrence:PIAC": {
+   "id": "occurrence:PIAC",
+   "entity": "entity:PIAC",
+   "geometry": {
+    "x": 716,
+    "y": 2786,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.5.PCICD"
+  },
+  "occurrence:PLIBS": {
+   "id": "occurrence:PLIBS",
+   "entity": "entity:PLIBS",
+   "geometry": {
+    "x": 1336,
+    "y": 2786,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.5.PCICD"
+  },
+  "occurrence:CLOG": {
+   "id": "occurrence:CLOG",
+   "entity": "entity:CLOG",
+   "geometry": {
+    "x": 1988,
+    "y": 2514,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.4.OBSZ"
+  },
+  "occurrence:LOGS": {
+   "id": "occurrence:LOGS",
+   "entity": "entity:LOGS",
+   "geometry": {
+    "x": 2608,
+    "y": 2514,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.4.OBSZ"
+  },
+  "occurrence:BQ": {
+   "id": "occurrence:BQ",
+   "entity": "entity:BQ",
+   "geometry": {
+    "x": 1988,
+    "y": 2786,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.4.OBSZ"
+  },
+  "occurrence:PHX": {
+   "id": "occurrence:PHX",
+   "entity": "entity:PHX",
+   "geometry": {
+    "x": 2608,
+    "y": 2786,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.4.OBSZ"
+  },
+  "occurrence:PSVPC": {
+   "id": "occurrence:PSVPC",
+   "entity": "entity:PSVPC",
+   "geometry": {
+    "x": 3244,
+    "y": 2340,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.7.PSHARED"
+  },
+  "occurrence:CUTTER": {
+   "id": "occurrence:CUTTER",
+   "entity": "entity:CUTTER",
+   "geometry": {
+    "x": 700,
+    "y": 3603,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.6.GENSRC"
+  },
+  "occurrence:AGARDEN": {
+   "id": "occurrence:AGARDEN",
+   "entity": "entity:AGARDEN",
+   "geometry": {
+    "x": 1320,
+    "y": 3603,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.6.GENSRC"
+  },
+  "occurrence:IFREPO": {
+   "id": "occurrence:IFREPO",
+   "entity": "entity:IFREPO",
+   "geometry": {
+    "x": 1940,
+    "y": 3603,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.6.GENSRC"
+  },
+  "occurrence:GLIBS": {
+   "id": "occurrence:GLIBS",
+   "entity": "entity:GLIBS",
+   "geometry": {
+    "x": 2560,
+    "y": 3603,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.6.GENSRC"
+  },
+  "occurrence:SCMREPO": {
+   "id": "occurrence:SCMREPO",
+   "entity": "entity:SCMREPO",
+   "geometry": {
+    "x": 3228,
+    "y": 3430,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.7.GITLABZ"
+  },
+  "occurrence:JENKINS": {
+   "id": "occurrence:JENKINS",
+   "entity": "entity:JENKINS",
+   "geometry": {
+    "x": 3880,
+    "y": 3430,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.5.AWSCI"
+  },
+  "occurrence:JFROG": {
+   "id": "occurrence:JFROG",
+   "entity": "entity:JFROG",
+   "geometry": {
+    "x": 4500,
+    "y": 3430,
+    "width": 460,
+    "height": 200
+   },
+   "group": "grp.5.AWSCI"
+  },
+  "occurrence:legend-genair": {
+   "id": "occurrence:legend-genair",
+   "entity": "entity:legend-genair",
+   "geometry": {
+    "x": 16,
+    "y": 1939,
+    "width": 460,
+    "height": 64
+   },
+   "group": "grp.6.LEGEND"
+  },
+  "occurrence:legend-custom": {
+   "id": "occurrence:legend-custom",
+   "entity": "entity:legend-custom",
+   "geometry": {
+    "x": 16,
+    "y": 2075,
+    "width": 460,
+    "height": 64
+   },
+   "group": "grp.6.LEGEND"
+  },
+  "occurrence:legend-outside": {
+   "id": "occurrence:legend-outside",
+   "entity": "entity:legend-outside",
+   "geometry": {
+    "x": 16,
+    "y": 2211,
+    "width": 460,
+    "height": 64
+   },
+   "group": "grp.6.LEGEND"
+  },
+  "occurrence:legend-none": {
+   "id": "occurrence:legend-none",
+   "entity": "entity:legend-none",
+   "geometry": {
+    "x": 16,
+    "y": 2347,
+    "width": 460,
+    "height": 64
+   },
+   "group": "grp.6.LEGEND"
+  }
+ },
+ "relationOccurrences": {
+  "occurrence:link.EMP__CHAT__3522379cd54b": {
+   "id": "occurrence:link.EMP__CHAT__3522379cd54b",
+   "relation": "relation:link.EMP__CHAT__3522379cd54b",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:EMP"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:CHAT"
+    }
+   ]
+  },
+  "occurrence:link.CHAT__TOPIC__384c1104f178": {
+   "id": "occurrence:link.CHAT__TOPIC__384c1104f178",
+   "relation": "relation:link.CHAT__TOPIC__384c1104f178",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:CHAT"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:TOPIC"
+    }
+   ]
+  },
+  "occurrence:link.TOPIC__SUB__ee85036d70b6": {
+   "id": "occurrence:link.TOPIC__SUB__ee85036d70b6",
+   "relation": "relation:link.TOPIC__SUB__ee85036d70b6",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:TOPIC"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:SUB"
+    }
+   ]
+  },
+  "occurrence:link.SUB__CHATAPI__7a6c99a24d16": {
+   "id": "occurrence:link.SUB__CHATAPI__7a6c99a24d16",
+   "relation": "relation:link.SUB__CHATAPI__7a6c99a24d16",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:SUB"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:CHATAPI"
+    }
+   ]
+  },
+  "occurrence:link.CHATAPI__AGENT__2e59b0dbbc37": {
+   "id": "occurrence:link.CHATAPI__AGENT__2e59b0dbbc37",
+   "relation": "relation:link.CHATAPI__AGENT__2e59b0dbbc37",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:CHATAPI"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:AGENT"
+    }
+   ]
+  },
+  "occurrence:link.AGENT__FS__e22e61066cfd": {
+   "id": "occurrence:link.AGENT__FS__e22e61066cfd",
+   "relation": "relation:link.AGENT__FS__e22e61066cfd",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:AGENT"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:FS"
+    }
+   ]
+  },
+  "occurrence:link.AGENT__ARMOR__baa3593a84de": {
+   "id": "occurrence:link.AGENT__ARMOR__baa3593a84de",
+   "relation": "relation:link.AGENT__ARMOR__baa3593a84de",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:AGENT"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:ARMOR"
+    }
+   ]
+  },
+  "occurrence:link.AGENT__GEM__0559f37ab89b": {
+   "id": "occurrence:link.AGENT__GEM__0559f37ab89b",
+   "relation": "relation:link.AGENT__GEM__0559f37ab89b",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:AGENT"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:GEM"
+    }
+   ]
+  },
+  "occurrence:link.AGENT__RAG__f8bc1bec5abb": {
+   "id": "occurrence:link.AGENT__RAG__f8bc1bec5abb",
+   "relation": "relation:link.AGENT__RAG__f8bc1bec5abb",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:AGENT"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:RAG"
+    }
+   ]
+  },
+  "occurrence:link.CHATAPI__CHAT__c4b05047138c": {
+   "id": "occurrence:link.CHATAPI__CHAT__c4b05047138c",
+   "relation": "relation:link.CHATAPI__CHAT__c4b05047138c",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:CHATAPI"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:CHAT"
+    }
+   ]
+  },
+  "occurrence:link.CHATAPI__LOGS__d8236351ff4f": {
+   "id": "occurrence:link.CHATAPI__LOGS__d8236351ff4f",
+   "relation": "relation:link.CHATAPI__LOGS__d8236351ff4f",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:CHATAPI"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:LOGS"
+    }
+   ]
+  },
+  "occurrence:link.CHATAPI__CLOG__2b5ff8e12cb3": {
+   "id": "occurrence:link.CHATAPI__CLOG__2b5ff8e12cb3",
+   "relation": "relation:link.CHATAPI__CLOG__2b5ff8e12cb3",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:CHATAPI"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:CLOG"
+    }
+   ]
+  },
+  "occurrence:link.CLOG__LOGS__37f742c83b60": {
+   "id": "occurrence:link.CLOG__LOGS__37f742c83b60",
+   "relation": "relation:link.CLOG__LOGS__37f742c83b60",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:CLOG"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:LOGS"
+    }
+   ]
+  },
+  "occurrence:link.LOGS__BQ__6a5653dfa3cb": {
+   "id": "occurrence:link.LOGS__BQ__6a5653dfa3cb",
+   "relation": "relation:link.LOGS__BQ__6a5653dfa3cb",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:LOGS"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:BQ"
+    }
+   ]
+  },
+  "occurrence:link.HRADM__DRIVE__848d229f7abe": {
+   "id": "occurrence:link.HRADM__DRIVE__848d229f7abe",
+   "relation": "relation:link.HRADM__DRIVE__848d229f7abe",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:HRADM"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:DRIVE"
+    }
+   ]
+  },
+  "occurrence:link.DRIVE__SYNC__c4ca84ff4f94": {
+   "id": "occurrence:link.DRIVE__SYNC__c4ca84ff4f94",
+   "relation": "relation:link.DRIVE__SYNC__c4ca84ff4f94",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:DRIVE"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:SYNC"
+    }
+   ]
+  },
+  "occurrence:link.SYNC__DOCS__dc261875c2c1": {
+   "id": "occurrence:link.SYNC__DOCS__dc261875c2c1",
+   "relation": "relation:link.SYNC__DOCS__dc261875c2c1",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:SYNC"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:DOCS"
+    }
+   ]
+  },
+  "occurrence:link.DOCS__IMPORT__8cbed69a6c4d": {
+   "id": "occurrence:link.DOCS__IMPORT__8cbed69a6c4d",
+   "relation": "relation:link.DOCS__IMPORT__8cbed69a6c4d",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:DOCS"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:IMPORT"
+    }
+   ]
+  },
+  "occurrence:link.IMPORT__RAG__05e9d72a8f88": {
+   "id": "occurrence:link.IMPORT__RAG__05e9d72a8f88",
+   "relation": "relation:link.IMPORT__RAG__05e9d72a8f88",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:IMPORT"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:RAG"
+    }
+   ]
+  },
+  "occurrence:link.AGARDEN__CUTTER__15df99a228fc": {
+   "id": "occurrence:link.AGARDEN__CUTTER__15df99a228fc",
+   "relation": "relation:link.AGARDEN__CUTTER__15df99a228fc",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:AGARDEN"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:CUTTER"
+    }
+   ]
+  },
+  "occurrence:link.CUTTER__SCMREPO__0bd93570226a": {
+   "id": "occurrence:link.CUTTER__SCMREPO__0bd93570226a",
+   "relation": "relation:link.CUTTER__SCMREPO__0bd93570226a",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:CUTTER"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:SCMREPO"
+    }
+   ]
+  },
+  "occurrence:link.GLIBS__JENKINS__8459419d4cfe": {
+   "id": "occurrence:link.GLIBS__JENKINS__8459419d4cfe",
+   "relation": "relation:link.GLIBS__JENKINS__8459419d4cfe",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:GLIBS"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:JENKINS"
+    }
+   ]
+  },
+  "occurrence:link.JENKINS__JFROG__3981286d47c8": {
+   "id": "occurrence:link.JENKINS__JFROG__3981286d47c8",
+   "relation": "relation:link.JENKINS__JFROG__3981286d47c8",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:JENKINS"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:JFROG"
+    }
+   ]
+  },
+  "occurrence:link.DEV__SCMREPO__3ed7fe663fd2": {
+   "id": "occurrence:link.DEV__SCMREPO__3ed7fe663fd2",
+   "relation": "relation:link.DEV__SCMREPO__3ed7fe663fd2",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:DEV"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:SCMREPO"
+    }
+   ]
+  },
+  "occurrence:link.SCMREPO__JENKINS__8551bb2bda13": {
+   "id": "occurrence:link.SCMREPO__JENKINS__8551bb2bda13",
+   "relation": "relation:link.SCMREPO__JENKINS__8551bb2bda13",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:SCMREPO"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:JENKINS"
+    }
+   ]
+  },
+  "occurrence:link.IFREPO__JENKINS__1ff25aea983c": {
+   "id": "occurrence:link.IFREPO__JENKINS__1ff25aea983c",
+   "relation": "relation:link.IFREPO__JENKINS__1ff25aea983c",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:IFREPO"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:JENKINS"
+    }
+   ]
+  },
+  "occurrence:link.PLIBS__JENKINS__6ee666282c0f": {
+   "id": "occurrence:link.PLIBS__JENKINS__6ee666282c0f",
+   "relation": "relation:link.PLIBS__JENKINS__6ee666282c0f",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:PLIBS"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:JENKINS"
+    }
+   ]
+  },
+  "occurrence:link.JENKINS__PIAC__3d4be535ed8f": {
+   "id": "occurrence:link.JENKINS__PIAC__3d4be535ed8f",
+   "relation": "relation:link.JENKINS__PIAC__3d4be535ed8f",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:JENKINS"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:PIAC"
+    }
+   ]
+  },
+  "occurrence:link.JENKINS__PAR__a0d29d8e1a8c": {
+   "id": "occurrence:link.JENKINS__PAR__a0d29d8e1a8c",
+   "relation": "relation:link.JENKINS__PAR__a0d29d8e1a8c",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:JENKINS"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:PAR"
+    }
+   ]
+  },
+  "occurrence:link.JENKINS__APP__159ad0a11e96": {
+   "id": "occurrence:link.JENKINS__APP__159ad0a11e96",
+   "relation": "relation:link.JENKINS__APP__159ad0a11e96",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:JENKINS"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:APP"
+    }
+   ]
+  },
+  "occurrence:link.PSVPC__APP__82f683a4c311": {
+   "id": "occurrence:link.PSVPC__APP__82f683a4c311",
+   "relation": "relation:link.PSVPC__APP__82f683a4c311",
+   "endpoints": [
+    {
+     "role": "source",
+     "occurrence": "occurrence:PSVPC"
+    },
+    {
+     "role": "target",
+     "occurrence": "occurrence:APP"
+    }
+   ]
+  }
+ },
+ "portOccurrences": {},
+ "groups": {
+  "grp.6.PEOPLE": {
+   "id": "grp.6.PEOPLE",
+   "label": "Users and operators",
+   "collapsed": false
+  },
+  "grp.2.WS": {
+   "id": "grp.2.WS",
+   "label": "Google Workspace",
+   "collapsed": false
+  },
+  "grp.3.GCP": {
+   "id": "grp.3.GCP",
+   "label": "Google Cloud Platform",
+   "collapsed": false
+  },
+  "grp.5.PRODZ": {
+   "id": "grp.5.PRODZ",
+   "label": "PROD landing zone",
+   "collapsed": false
+  },
+  "grp.5.PPROZ": {
+   "id": "grp.5.PPROZ",
+   "label": "HRPN pro project",
+   "collapsed": false
+  },
+  "grp.4.MSGZ": {
+   "id": "grp.4.MSGZ",
+   "label": "Pub/Sub",
+   "collapsed": true
+  },
+  "grp.4.RUNZ": {
+   "id": "grp.4.RUNZ",
+   "label": "Cloud Run",
+   "collapsed": false
+  },
+  "grp.6.STATEZ": {
+   "id": "grp.6.STATEZ",
+   "label": "Storage and state",
+   "collapsed": false
+  },
+  "grp.7.VERTEXZ": {
+   "id": "grp.7.VERTEXZ",
+   "label": "Vertex AI",
+   "collapsed": true
+  },
+  "grp.4.INGZ": {
+   "id": "grp.4.INGZ",
+   "label": "Ingestion",
+   "collapsed": true
+  },
+  "grp.7.PSHARED": {
+   "id": "grp.7.PSHARED",
+   "label": "PROD shared projects",
+   "collapsed": false
+  },
+  "grp.5.PCICD": {
+   "id": "grp.5.PCICD",
+   "label": "CI/CD",
+   "collapsed": true
+  },
+  "grp.4.OBSZ": {
+   "id": "grp.4.OBSZ",
+   "label": "Observability",
+   "collapsed": true
+  },
+  "grp.3.OUT": {
+   "id": "grp.3.OUT",
+   "label": "AWS",
+   "collapsed": false
+  },
+  "grp.7.GITHUBZ": {
+   "id": "grp.7.GITHUBZ",
+   "label": "Airbus GitHub",
+   "collapsed": false
+  },
+  "grp.6.GENSRC": {
+   "id": "grp.6.GENSRC",
+   "label": "GenAiR sources",
+   "collapsed": true
+  },
+  "grp.7.GITLABZ": {
+   "id": "grp.7.GITLABZ",
+   "label": "Airbus GitLab",
+   "collapsed": false
+  },
+  "grp.5.AWSCI": {
+   "id": "grp.5.AWSCI",
+   "label": "CI/CD",
+   "collapsed": true
+  },
+  "grp.6.LEGEND": {
+   "id": "grp.6.LEGEND",
+   "label": "Legend",
+   "collapsed": false
+  }
+ },
+ "filters": [],
+ "presentation": {
+  "camera": {
+   "x": 0,
+   "y": 0,
+   "zoom": 1
+  }
+ }
+}

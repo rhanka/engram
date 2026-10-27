@@ -1,0 +1,17 @@
+{
+  "format": "unicode-case-pin/1",
+  "unicodeVersion": "15.0.0",
+  "contractFormat": "unicode-case/1",
+  "files": {
+    "tests/fixtures/unicode-case-15.0.0/case-table.json": "c0fa6878b62a1abdee18879cb9a203d0f68a5959de76153a1996dbb3271c7293",
+    "tests/fixtures/unicode-case-15.0.0/manifest.json": "0d6108f47282b88f8f796ed3c469eb4253aba4115a93fbd9e95cee9cc2c6160f",
+    "tests/fixtures/unicode-case-15.0.0/vectors.json": "84c56fc1825d495d314e44e0ef0543366c60aacd6d80015dea50d4bfe608b142"
+  },
+  "provenance": {
+    "repository": "bpmn-moddle-py",
+    "branch": "blockA/lot2",
+    "pinnedBy": "5350dc0 lot2: pin Unicode 15.0.0 case tables as unicode-case/1 contract",
+    "publishedBy": "602d94c lot2: drive profile case operator from the pinned 15.0.0 tables",
+    "status": "provisional until the contract lands on the Python main"
+  }
+}

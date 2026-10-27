@@ -1,0 +1,61 @@
+{
+  "contractVersion": "1",
+  "descriptorVersion": "functions-workbench-20261004/1",
+  "defaults": "materialize-all-nonvirtual-descriptor-defaults; numeric defaults are numbers",
+  "emptyCollections": "preserve presence",
+  "unknownAttributes": "unqualified XML names with string values only; qualified unknowns unsupported",
+  "singletonExtensions": [
+    "sem:Info"
+  ],
+  "repeatCount": 3,
+  "xmlOptions": [
+    {
+      "format": false,
+      "preamble": true
+    },
+    {
+      "format": true,
+      "preamble": false
+    }
+  ],
+  "layout": {
+    "textMetrics": "unknown; not executed before G5",
+    "rounding": "half-even",
+    "precision": 3
+  },
+  "profiles": {
+    "paper": {
+      "fill": "#ffffff",
+      "stroke": "#000000"
+    },
+    "night": {
+      "fill": "#222222",
+      "stroke": "#eeeeee"
+    }
+  },
+  "stylePrecedence": [
+    "explicit-ID-override",
+    "color-DI",
+    "bioc-DI",
+    "profile-default"
+  ],
+  "styleOverrides": {
+    "Task_Review": {
+      "fill": "#ffcc00"
+    }
+  },
+  "renderExpected": {
+    "paper": {
+      "Task_Review": {
+        "fill": "#ffcc00",
+        "stroke": "#654321"
+      }
+    },
+    "night": {
+      "Task_Review": {
+        "fill": "#ffcc00",
+        "stroke": "#654321"
+      }
+    }
+  }
+}

@@ -1,0 +1,812 @@
+// Card and container metadata for the HR Policy Navigator (HRPN) architecture scenes.
+//
+// Same model as the D2D Focus dossier (airbus-genair-d2d docs/d2d-decision/focus/scene-metadata.js),
+// re-authored here (no runtime import of d2d files): card template A (460 x 200),
+// BOX for containers, zone layout { north, south, southUnder, fill, flows }.
+//
+// Card text rules (chain/ServiceNode.svelte): role <= 2 segments of <= 2 words,
+// the code appears once and never inside the name, short name and detail
+// (one 24 px line each inside the 460 px card).
+//
+// Evidence classes: `declared` = present and wired in the code read (HRPN main @667529f);
+// `dormant` = present but not reached (no consumer, variable unset, not called);
+// `external` = third-party / platform service or a cited source document (not code of this repo);
+// `target` = required by a cited source (BRD, ARD, ARB) and not built;
+// `hypothesis` = option-3 assumption drawn from a cited platform document;
+// `unknown` = not verified.
+// Runtime states: no deployment was observed by this session, so wired items are `unknown`,
+// unwired ones `dormant`, manual steps `manual`, target and hypothesis items `not-applicable`.
+// Deployed-state check of 2026-10-19 (read-only gcloud, `DS` below) is cited in `ev` of the cards it confirms
+// (SUB, RUNZ, RAG, AEAPP); evidence classes and runtime states are left unchanged.
+//
+// Tints (owner rule for HRPN): `genair` = native GenAiR template / Cutter / AgentGarden code
+// (files created by the "Created with GenAiR-cutter" commits 66b64ed and 6a16d08);
+// `specific` = HRPN-specific code (commits after 6a16d08, 2026-09-25 -> 2026-10-12);
+// `added` = target addition needed (new or changed); `removed` = to remove in the target;
+// `risk` = present but weak or at risk (red frame); none = Google / third-party managed service.
+// Decided target S2-target (owner rule 2026-10-22): `genair` = GenAiR standard (blue); `custom` = customisation within the
+// GenAiR template frame, data services included (green); `outside` = added outside the frame (yellow); none = managed service.
+// A wrapping box (BOX) may carry a tint too: the colour of the box when folded.
+//
+// Every card and container carries `ev`: evidence references checked by build-scenes.mjs.
+// Formats: `path:L`, `path:L1-L2`, `path:L1,L2` (path relative to the repo root, or `~/...`);
+// `git:<sha>` (commit of this repo); `doc:<text>` (external documentation, not verifiable offline).
+
+const EVIDENCE = new Set(['observed', 'declared', 'dormant', 'external', 'target', 'hypothesis', 'unknown']);
+const RUNTIME = new Set(['active', 'dormant', 'manual', 'unknown', 'not-applicable']);
+export const TINTS = new Set(['genair', 'specific', 'added', 'removed', 'risk', 'custom', 'outside']);
+
+const roleSegments = role => role.split('·').map(part => part.trim()).filter(Boolean);
+export const roleIsShort = role => {
+  const segments = roleSegments(role);
+  return segments.length > 0 && segments.length <= 2 && segments.every(part => part.split(/\s+/).length <= 2);
+};
+
+// ---------------------------------------------------------------------------------------------
+// Evidence path shorthands.
+const R = 'src/agents/ragengine-agent/ragengine_agent';
+const RA = 'src/agents/ragengine-agent';
+const TF = 'genair-infra-factory';
+const HO = 'docs/GOOGLE_CHAT_INTEGRATION_HANDOVER.md';
+const DS = 'docs/ard/sources/deployed-state/hrpn-state-2026-10-19.txt';
+const ANS = 'docs/ard/decision/answers/owner-answers-r1-2026-10-19.txt'; // owner answers r1 (+ S2 2026-10-20, L77)
+const SPEC = 'docs/superpowers/specs/2026-10-05-gchat-integration-design.md';
+const HRDOC = '~/src/airbus-genair-cutter/docs/hr-policy-navigator';
+const BRD = `${HRDOC}/sources/brd-compact.md`;
+const ARD = `${HRDOC}/sources/ard-compact.md`;
+const ARB = `${HRDOC}/sources/arb-source.md`;
+const REQ = `${HRDOC}/requirements.csv`;
+const MASTER = '~/src/airbus-genair-cutter/docs/templates/hr-agentic-master-source.md';
+const CUTTER = '~/src/airbus-genair-cutter';
+const LOWCODE = '~/src/airbus-genair/docs/low_code';
+const CXT = '~/src/airbus-genair/templates/genair-conversational-agent/agents_genair';
+const GEDOC = '~/src/airbus-genair-d2d/docs/v3-agentengine/GEMINI-ENTERPRISE.md';
+const NC = '~/src/airbus-genair-nc/docs/decision-r1/dossier.fr.html';
+const AAIR = '~/Téléchargements/agentair-overview.drawio.xml';
+// AgentAiR draw.io cells are cited as `drawio:<cellId>` (checked against the extracted cells).
+const cell = (...ids) => ids.map(id => `drawio:${id}`);
+// Platform inheritance and POD / PROD mechanics (GenAiR-Cutter local clone 2808ca0, 2026-09-08).
+const CIF = `${CUTTER}/genair-infra-factory`;
+const PCFG = env => `${CIF}/config/{% if not pod %}${env}.yaml{% endif %}.jinja`;   // PROD Terraform config per env
+const PCI = env => `${CUTTER}/{% if not pod %}cicd{% endif %}/${env}.yaml.jinja`;     // PROD CI/CD config per env
+const PWIF = `${CUTTER}/{% if not pod %}cicd{% endif %}/wif-client.json.jinja`;
+const PJF = `${CUTTER}/{% if not pod %}Jenkinsfile{% endif %}.jinja`;              // generated PROD pipeline
+const CJF = `${CUTTER}/CutterJenkinsfile`;
+const NATIVE = `${CUTTER}/docs/templates/transfer/master-current-native.txt`;       // AgentAiR constraint list
+const D2DM = '~/src/airbus-genair-d2d/docs/d2d-decision/focus/scene-metadata.js';
+const D2DD = '~/src/airbus-genair-d2d/docs/d2d-decision/DOSSIER_DECISION_D2D_2026-09-21.md';
+const P2P = '~/src/airbus-genair/docs/uctemplates/pod2prod';
+const GHUB = ['Airbus GitHub'];
+const SCM = ['Airbus SCM'];
+const PRODP = ['GCP project (PROD)'];
+
+// Footer owners.
+const HRPN = ['HRPN'];
+const GWS = ['Google Workspace'];
+const GCP = ['Google Cloud'];
+const VERTEX = ['Vertex AI'];
+const USERS = ['Airbus employees'];
+const TEAM = ['HRPN team'];
+const PLATFORM = ['GenAI platform'];
+const CXSVC = ['Conversational Agents'];
+const D7EFD = ['7EFD Everyday AI'];
+const D4AE9 = ['4AE9 AI Platform'];
+const D85BB = ['85BB PCP-GCP'];
+const DC9EC = ['C9EC Datahub'];
+const AIRBUS = ['Airbus security'];
+
+const A = (repo, kind, evidenceClass, runtimeState, icon, spec) => ({
+  card: 'A', kind, repo: [...repo].sort(), labelKind: spec.label ?? 'repo', tint: spec.tint ?? null, evidenceClass, runtimeState, icon,
+  code: spec.code ?? '', role: spec.role ?? '', name: spec.name ?? '', detail: spec.detail ?? '', ev: spec.ev ?? [],
+});
+const BOX = (repo, evidenceClass, runtimeState, spec) => ({
+  card: 'box', kind: 'cluster', repo: [...repo].sort(), labelKind: spec.label ?? 'repo', tint: spec.tint ?? null, evidenceClass, runtimeState, icon: 'cluster',
+  code: spec.code ?? '', role: '', name: spec.name ?? '', detail: '', ev: spec.ev ?? [],
+});
+const e = (evidenceClass, runtimeState) => ({ evidenceClass, runtimeState });
+const with_ = (base, spec) => ({ ...base, ...spec, ev: spec.ev ?? base.ev });
+
+// ---------------------------------------------------------------------------------------------
+// Option 2 skeleton, shared by S2-asbuilt and S2-target (same zone ids, same places).
+const s2Layout = {
+  north: ['PEOPLE', 'WS', 'GCP'], south: 'OUT', southUnder: 'GCP',
+  // Fill/align: zones of one row are top-aligned and stretched to the row height.
+  fill: true,
+  flows: {
+    GCP: [['PROJ'], ['SSMPROJ', 'PRODZ']],
+    PROJ: [['LBIAP', 'MSGZ', 'RUNZ', 'AEZ'], ['STATEZ', 'VERTEXZ', 'OBSZ'], ['CICDZ', 'NET']],
+    RUNZ: [['APP', 'PUSH'], ['CONS', 'CHATCLI'], ['AGENT'], ['QUERY', 'ADMINT']],
+    STATEZ: 'grid3', OBSZ: 'grid2', CICDZ: 'row', SSMPROJ: 'row',
+    // South band: Airbus AWS hosts the Airbus GitHub, the Airbus GitLab (SCM), Jenkins and JFrog (D2D zoning).
+    OUT: 'column', AWSZ: [['GITHUBZ', 'GITLABZ'], ['JENKINS', 'JFROG']], GITHUBZ: 'row', GITLABZ: 'column',
+  },
+};
+const s2TargetLayout = {
+  ...s2Layout,
+  flows: {
+    // PROD environment only (owner, 2026-10-22), after the Google Cloud standard landing zone: the app project (pro),
+    // Observability next to the CI/CD project, PROD SSM in the CI/CD project (GenAiR PROD mode: ssm = cicd project).
+    GCP: [['PRODZ']],
+    // Owner 2026-10-22: two GenAI PCP Platform boxes (CI/CD, Observability) wrapped by the shared-projects box.
+    PRODZ: [['PPROZ'], ['PSHARED']], PSHARED: [['PCICD', 'OBSZ', 'PSVPC']], PCICD: 'grid2', OBSZ: 'grid2',
+    PPROZ: [['MSGZ', 'RUNZ', 'STATEZ'], ['INGZ', 'VERTEXZ']],
+    // Cloud Run reduced to three cards (owner 2026-10-22): GenAiR FastAPI server, ADK agent + RAG tools, Google Chat API integration.
+    RUNZ: 'column', STATEZ: 'column', VERTEXZ: 'column', INGZ: 'column',
+    OUT: 'row', GITHUBZ: 'row', GENSRC: 'row', GITLABZ: 'column', AWSCI: 'row',
+  },
+  // Governance-kit layout (decision dossier view, owner 2026-10-22). Rows of items; an item given as an array is a column.
+  // Left column: users, Workspace, legend; right column: Google Cloud above AWS, at the same width (stretch).
+  kit: {
+    root: { axis: 'x', items: [{ axis: 'y', items: ['PEOPLE', 'WS', 'LEGEND'] }, { axis: 'y', stretch: true, items: ['GCP', 'OUT'] }] },
+    flows: {
+      // Pub/Sub above Ingestion, Cloud Run (three cards stacked), Storage (vertical) above Vertex AI on its right.
+      PPROZ: [[['MSGZ', 'INGZ'], 'RUNZ', ['STATEZ', 'VERTEXZ']]],
+      // Cloud Run: the three cards stacked, in the order the owner reviewed (Chat API, FastAPI server, agent).
+      RUNZ: [['CHATAPI'], ['APP'], ['AGENT']],
+      OUT: [['GITHUBZ', 'GITLABZ', 'AWSCI']],
+      // The shared-projects wrapper as wide as the pro project (owner 2026-10-22).
+      PRODZ: { axis: 'y', stretch: true, items: ['PPROZ', 'PSHARED'] },
+    },
+  },
+};
+
+const s2Common = {
+  PEOPLE: BOX(['Users and operators'], 'external', 'unknown', { code: 'PPL', name: 'Users and operators', label: 'scope',
+    ev: [`${BRD}:216`, 'git:667529f'] }),
+  EMP: A(USERS, 'user', 'external', 'unknown', 'user', { code: 'USR', role: 'Employees · HR', name: 'HR users and employees',
+    detail: 'ask HR policy questions in Chat', label: 'actor', ev: [`${BRD}:216`, `${BRD}:248`, `${REQ}:32`] }),
+  DEV: A(TEAM, 'user', 'declared', 'manual', 'workstation', { code: 'DEV', role: 'Developers · admin', name: 'HRPN developers (2 authors)',
+    detail: 'gcloud · Terraform · ADK web', label: 'actor', ev: ['git:6a16d08', 'git:667529f', '.claude/CLAUDE.md:18-22'] }),
+  WS: BOX(GWS, 'external', 'unknown', { code: 'GWS', name: 'Google Workspace', label: 'service', ev: [`${HO}:85-95`] }),
+  GCP: BOX(GCP, 'external', 'unknown', { code: 'GCP', name: 'Google Cloud Platform', label: 'service', ev: [`${TF}/config/variables.yaml:1-6`] }),
+  PROJ: BOX(['GCP project'], 'declared', 'unknown', { code: 'PRJ', name: 'HRPN POD project', label: 'service',
+    ev: [`${TF}/config/variables.yaml:2-6`, '.copier-answers.yml:5-9'] }),
+  LBIAP: A(['GenAiR-Infra-Factory'], 'network', 'declared', 'unknown', 'identity', { code: 'LB', role: 'Ingress · IAP',
+    name: 'module load_balancer v1.8.3', detail: 'IAP Google-managed (iap.tf)', tint: 'genair',
+    ev: [`${TF}/cloud_run.tf:175-194`, `${TF}/iap.tf:29-34`] }),
+  MSGZ: BOX(['Pub/Sub'], 'declared', 'unknown', { code: 'PS', name: 'Pub/Sub', label: 'service', ev: [`${TF}/gchat_pubsub.tf:8-66`] }),
+  TOPIC: A(HRPN, 'queue', 'declared', 'unknown', 'join', { code: 'TOP', role: 'Pub/Sub · topic', name: 'hrpn-gchat-events',
+    detail: 'publisher: gsuiteaddons agent', tint: 'specific', ev: [`${TF}/gchat_pubsub.tf:8-22`, 'git:8258743'] }),
+  SUB: A(HRPN, 'queue', 'declared', 'unknown', 'join', { code: 'SUB', role: 'Pub/Sub · push', name: 'hrpn-gchat-events-sub',
+    detail: 'OIDC pod SA · ack 60 s · 1 day', tint: 'specific', ev: [`${TF}/gchat_pubsub.tf:39-66`, 'git:667529f', `${DS}:206`] }),
+  RUNZ: BOX(HRPN, 'declared', 'unknown', { code: 'RUN', name: 'Cloud Run hrpn-ragengine-agent',
+    ev: [`${TF}/config/variables.yaml:24-30`, `${TF}/cloud_run.tf:144-173`, `${RA}/cloudbuild.yaml:34-50`, `${DS}:85`] }),
+  AEZ: BOX(VERTEX, 'declared', 'unknown', { code: 'AE', name: 'Agent Engine', label: 'service', ev: [`${TF}/agent_engine.tf:6-53`] }),
+  STATEZ: BOX(HRPN, 'declared', 'unknown', { code: 'ST', name: 'Storage and state', ev: [`${TF}/firestore.tf:1-13`, `${TF}/gcs.tf:1-14`] }),
+  DOCS: A(HRPN, 'store', 'declared', 'manual', 's3', { code: 'DOC', role: 'Bucket · documents', name: 'hrpn-ragengine-docs',
+    detail: 'manual upload · versioning on', tint: 'genair', ev: [`${TF}/adk_ragengine_agent.tf:1-17`, '.claude/CLAUDE.md:6,21-22'] }),
+  CSQL: A(HRPN, 'database', 'declared', 'unknown', 'postgres', { code: 'PG', role: 'Cloud SQL', name: 'instance hrpn (Postgres)',
+    detail: 'DBs: ragengine-agent · phoenix', tint: 'genair',
+    ev: [`${TF}/postgresql_instance.tf:3-14`, `${TF}/adk_ragengine_agent.tf:41-53`, `${TF}/phoenix.tf:1-13`] }),
+  BKT: A(HRPN, 'store', 'declared', 'dormant', 's3', { code: 'B1', role: 'Bucket · template', name: 'hr-policy-navigator_hr_pod',
+    detail: 'gcs.tf · no consumer in code', tint: 'genair', ev: [`${TF}/gcs.tf:1-14`, `${TF}/config/variables.yaml:44`] }),
+  FS: A(HRPN, 'database', 'declared', 'dormant', 'postgres', { code: 'FS', role: 'Firestore · template', name: 'hrpn-sessions + datapipelines',
+    detail: '2 native DBs · no consumer', tint: 'genair', ev: [`${TF}/firestore.tf:1-13`] }),
+  VERTEXZ: BOX(VERTEX, 'external', 'unknown', { code: 'VAI', name: 'Vertex AI', label: 'service', ev: [`${TF}/adk_ragengine_agent.tf:19-39`] }),
+  RAG: A(VERTEX, 'search', 'declared', 'unknown', 'graph', { code: 'RAG', role: 'RAG Engine', name: 'corpus hr_policies',
+    detail: 'RagManaged Basic · embed-005', label: 'service',
+    ev: [`${TF}/adk_ragengine_agent.tf:19-39`, `${R}/agent/agent.py:93-94`, `${R}/tools/rag_engine.py:146-151`, `${DS}:188`] }),
+  OBSZ: BOX(HRPN, 'declared', 'unknown', { code: 'OBS', name: 'Observability', ev: [`${TF}/logging.tf:1-102`] }),
+  BQ: A(HRPN, 'logging', 'declared', 'dormant', 'graph', { code: 'BQ', role: 'BigQuery · linked', name: 'hrpn_user_feedback_ds',
+    detail: 'linked dataset on log bucket', tint: 'genair', ev: [`${TF}/logging.tf:18-26`] }),
+  PHX: A(HRPN, 'logging', 'declared', 'dormant', 'graph', { code: 'PHX', role: 'Tracing · Phoenix', name: 'module cloud_run_phoenix',
+    detail: 'no instrumentation library', tint: 'genair', ev: [`${TF}/phoenix.tf:15-43`, `${RA}/pyproject.toml:7-18`] }),
+  CICDZ: BOX(HRPN, 'declared', 'unknown', { code: 'CI', name: 'CI/CD (same POD project)',
+    ev: [`${TF}/cloud_trigger_cicd_python.tf:5-24`, `${TF}/config/variables.yaml:39-41`] }),
+  CB: A(HRPN, 'ci', 'declared', 'unknown', 'cronjob', { code: 'CB', role: 'CI · Cloud Build', name: 'cloud_trigger_cicd_python',
+    detail: 'build · push · run deploy', tint: 'genair', ev: [`${TF}/cloud_trigger_cicd_python.tf:5-24`, `${RA}/cloudbuild.yaml:1-56`] }),
+  AR: A(HRPN, 'registry', 'declared', 'unknown', 'release', { code: 'AR', role: 'Registry · Docker', name: 'Artifact Registry hrpn-pod',
+    detail: 'module artifact_registry v1.8.3', tint: 'genair', ev: [`${TF}/artifact_registry_docker_pod.tf:1-10`] }),
+  NET: A(HRPN, 'network', 'declared', 'unknown', 'network', { code: 'NET', role: 'Network · VPC', name: 'main-network / eu-west4',
+    detail: 'egress all-traffic · private SQL', tint: 'genair',
+    ev: [`${TF}/network.tf:1-10`, `${TF}/config/variables.yaml:82-89`, `${RA}/cloudbuild.yaml:43-46`, `${TF}/postgresql_instance.tf:10`, `${TF}/core_shared_logic.tf:110`] }),
+  SSMPROJ: BOX(PLATFORM, 'external', 'unknown', { code: 'SSM', name: 'Platform project prj-ssm-b967', label: 'service',
+    ev: [`${TF}/config/variables.yaml:33-37,86`] }),
+  SSM: A(HRPN, 'repo', 'declared', 'unknown', 'release', { code: 'SRC', role: 'Repo · SSM', name: 'hr-polnav-c700-repo',
+    detail: 'push to main → Cloud Build', tint: 'genair', ev: [`${TF}/config/variables.yaml:33`, '.claude/CLAUDE.md:26-28'] }),
+  BASE: A(PLATFORM, 'registry', 'external', 'unknown', 'release', { code: 'IMG', role: 'Images · PyPI', name: 'genair-base-container',
+    detail: '+ python repos (prj-ssm-b967)', label: 'service',
+    ev: [`${TF}/config/variables.yaml:48-52,92`, `${RA}/cloudbuild.yaml:19-24`] }),
+  TFST: A(HRPN, 'store', 'declared', 'unknown', 's3', { code: 'TFS', role: 'IaC · state', name: 'terraform-state bucket (POD)',
+    detail: 'hrpn/<branch>/terraform/state', tint: 'genair', ev: [`${TF}/TERRAFORM.MD:60-61`, 'CLAUDE.md:100-102', `${TF}/backend.tf:1-5`] }),
+  IFMIR: A(PLATFORM, 'repo', 'declared', 'unknown', 'release', { code: 'MIR', role: 'Mirror · modules', name: 'genair-infra-factory.git',
+    detail: 'TF modules v1.8.3 for POD', tint: 'genair',
+    ev: [`${TF}/cloud_trigger_cicd_python.tf:7`, `${TF}/cloud_run.tf:146`, `${CIF}/cloud_run.tf.jinja:137`] }),
+  // South band, outside Google Cloud: Airbus AWS hosts the Airbus GitHub (GenAiR repositories), the Airbus GitLab
+  // (SCM), Jenkins and JFrog (same zoning as the D2D dossier, owner remarks of 21 and 24 September).
+  OUT: BOX(['Outside GCP'], 'external', 'unknown', { code: 'EXT', name: 'Outside Google Cloud', label: 'scope',
+    ev: ['.copier-answers.yml:3', `${D2DM}:160-161`] }),
+  AWSZ: BOX(['Airbus AWS'], 'external', 'unknown', { code: 'AWS', name: 'Airbus AWS', label: 'service',
+    ev: [`${D2DM}:160-161`, `${D2DD}:3`, `${CUTTER}/CLAUDE.md:478`] }),
+  GITHUBZ: BOX(GHUB, 'external', 'unknown', { code: 'GH', name: 'Airbus GitHub · github.airbus.corp', label: 'service',
+    ev: ['.copier-answers.yml:3', `${CUTTER}/.gitmodules:1-8`] }),
+  CUTTER: A(['GenAiR-Cutter'], 'repo', 'declared', 'not-applicable', 'release', { code: 'GEN', role: 'Template · GenAiR',
+    name: 'GenAiR-Cutter 26.9.0', detail: 'Agent Engine · no frontend', tint: 'genair',
+    ev: ['.copier-answers.yml:1-11', 'git:6a16d08', 'CLAUDE.md:106-116', 'hooks/post_gen_project.py:92-128'] }),
+  AGARDEN: A(['GenAiR-AgentGarden'], 'repo', 'declared', 'not-applicable', 'release', { code: 'AGD', role: 'Agents · template',
+    name: 'GenAiR-AgentGarden (main)', detail: 'ragengine-agent · Cutter submodule', tint: 'genair',
+    ev: [`${CUTTER}/.gitmodules:5-8`, '.copier-answers.yml:4', `${CUTTER}/CLAUDE.md:273`] }),
+  IFREPO: A(['genair-infra-factory'], 'iac', 'declared', 'not-applicable', 'release', { code: 'GIF', role: 'IaC · modules',
+    name: 'genair-infra-factory v1.8.3', detail: 'PROD: GitHub · POD: SSM mirror', tint: 'genair',
+    ev: [`${CIF}/cloud_run.tf.jinja:137`, `${TF}/cloud_run.tf:146`] }),
+  GLIBS: A(['GenAiR libs'], 'repo', 'external', 'not-applicable', 'release', { code: 'LIB', role: 'Libs · GenAiR',
+    name: 'genair-* Python packages', detail: 'built by Jenkins → Artifactory', tint: 'genair',
+    ev: [`${D2DM}:167-168`, `${RA}/pyproject.toml:20-21`, `${P2P}/prerequisites.md:75-76`] }),
+  GITLABZ: BOX(SCM, 'external', 'unknown', { code: 'SCM', name: 'Airbus GitLab · SCM', label: 'service',
+    ev: [`${NATIVE}:8951`, `${D2DD}:245`, 'doc:owner remark 2026-10-16 (GitHub / GitLab = SCM, scm.airbus.corp)'] }),
+  SCMREPO: A(HRPN, 'repo', 'unknown', 'not-applicable', 'release', { code: 'GIT', role: 'Repo · SCM', name: 'HRPN code on the Airbus SCM',
+    detail: 'none found · code on SSM only', tint: 'risk', ev: ['.copier-answers.yml:8', `${CUTTER}/CLAUDE.md:443`, `${CUTTER}/copier.yml:77-91`] }),
+  JENKINS: A(['Jenkins on AWS'], 'ci', 'external', 'unknown', 'workstation', { code: 'JK', role: 'CI · Jenkins', name: 'oc.jenkins 2b82-devops',
+    detail: 'GenAiR jobs · PROD pipelines', label: 'service', ev: [`${CUTTER}/CLAUDE.md:468-480`, `${CUTTER}/CLAUDE.md:502-510`] }),
+  JFROG: A(['JFrog Artifactory'], 'registry', 'external', 'unknown', 'release', { code: 'JF', role: 'Registry · JFrog', name: 'Artifactory 2b82',
+    detail: 'r-8cf1-genair-pypi-local', label: 'service', ev: [`${RA}/pyproject.toml:20-21`, `${P2P}/prerequisites.md:75-76`, `${D2DM}:169-170`] }),
+};
+
+// PROD mode of GenAiR-Cutter (copier `environment: Prod` + `app_code`): projects found by the labels
+// pcp-application_code / pcp-environment (dev, int, pro, cicd), Shared VPC host, ssm = cicd project.
+const prodZones = {
+  PDEVZ: BOX(PRODP, 'target', 'not-applicable', { code: 'DEV', name: 'dev project · project_id_dev', label: 'service',
+    ev: [`${CUTTER}/CLAUDE.md:107`, `${PCFG('dev')}:1-5`, 'hooks/context.py:146-151'] }),
+  PINTZ: BOX(PRODP, 'target', 'not-applicable', { code: 'INT', name: 'int project · project_id_int', label: 'service',
+    ev: [`${CUTTER}/CLAUDE.md:108`, `${PCFG('int')}:1-5`] }),
+  PPROZ: BOX(PRODP, 'target', 'not-applicable', { code: 'PRO', name: 'pro project · project_id_pro', label: 'service',
+    ev: [`${CUTTER}/CLAUDE.md:109`, `${PCFG('prod')}:1-5`] }),
+};
+
+const scenes = {};
+
+// S2-asbuilt — HRPN main @667529f (2026-10-12).
+scenes['S2-asbuilt'] = {
+  title: 'Option 2 as built · HRPN main @667529f (2026-10-12)',
+  layout: s2Layout,
+  nodes: {
+    ...s2Common,
+    CHAT: A(GWS, 'frontend', 'external', 'unknown', 'web', { code: 'CHT', role: 'Chat app', name: 'HR Policy Navigator',
+      detail: 'E2E unverified after 12 Oct', tint: 'risk', label: 'service', ev: [`${HO}:13-17`, `${HO}:85-95`, 'git:667529f'] }),
+    APP: A(HRPN, 'api', 'declared', 'unknown', 'api', { code: 'ADK', role: 'Back · FastAPI', name: 'get_fast_api_app()',
+      detail: 'ADK web UI on · CORS "*"', tint: 'risk', ev: [`${R}/main.py:24-38`, `${RA}/Dockerfile:54`] }),
+    PUSH: A(HRPN, 'api', 'declared', 'unknown', 'api', { code: 'PSH', role: 'Chat · push route', name: 'POST /gchat-push',
+      detail: 'no event check · no dedup', tint: 'risk', ev: [`${R}/main.py:41-62`, `${TF}/gchat_pubsub.tf:24-37`] }),
+    CONS: A(HRPN, 'api', 'declared', 'unknown', 'api', { code: 'CON', role: 'Chat · consumer', name: 'handle_push_event()',
+      detail: 'runs after the 200 ack', tint: 'risk', ev: [`${R}/gchat/pubsub_consumer.py:56-113`, `${R}/main.py:61-62`] }),
+    CHATCLI: A(HRPN, 'api', 'declared', 'unknown', 'api', { code: 'CLI', role: 'Chat · reply', name: 'send_gchat_message()',
+      detail: 'chat.bot scope · plain text', tint: 'specific', ev: [`${R}/gchat/gchat_client.py:9-27`] }),
+    AGENT: A(HRPN, 'agent', 'declared', 'unknown', 'llm', { code: 'AGT', role: 'ADK agent', name: 'root_agent = LlmAgent',
+      detail: 'prompt: GenAiR_RAG_Agent', tint: 'risk', ev: [`${R}/agent/agent.py:24-128`, 'git:1928da3'] }),
+    QUERY: A(HRPN, 'tool', 'declared', 'unknown', 'check', { code: 'T1', role: 'Tool · retrieval', name: 'rag_query()',
+      detail: 'top_k 3 · no link formatting', tint: 'genair', ev: [`${R}/tools/rag_engine.py:476-587`, `${R}/agent/agent.py:120-126`] }),
+    ADMINT: A(HRPN, 'tool', 'declared', 'unknown', 'check', { code: 'T2', role: 'Tools · admin', name: 'create_corpus() · add_data()',
+      detail: 'callable by every Chat user', tint: 'risk',
+      ev: [`${R}/agent/agent.py:120-126`, `${R}/tools/rag_engine.py:14-143`, `${R}/tools/rag_engine.py:146-212`] }),
+    AEAPP: A(HRPN, 'agent', 'declared', 'unknown', 'llm', { code: 'AE', role: 'Runtime · duplicate', name: 'hrpn-ae-ragengine-agent',
+      detail: 'AdkApp · not called by Chat', tint: 'risk',
+      ev: [`${TF}/config/variables.yaml:9-20`, `${TF}/agent_engine.tf:6-53`, `${R}/agent/agent.py:130-133`, `${DS}:179`] }),
+    SESS: A(['google-adk'], 'store', 'declared', 'unknown', 'postgres', { code: 'SES', role: 'Sessions · memory', name: 'InMemorySessionService',
+      detail: 'per instance · lost on restart', tint: 'risk', ev: [`${R}/gchat/pubsub_consumer.py:14-20`, `${R}/gchat/pubsub_consumer.py:96-97`] }),
+    GEM: A(VERTEX, 'llm', 'external', 'unknown', 'llm', { code: 'LLM', role: 'Model · Gemini', name: 'gemini-2.5-flash',
+      detail: 'ARB: 2.5 becoming obsolete', tint: 'risk', label: 'service', ev: [`${R}/agent/agent.py:26`, `${ARB}:547`] }),
+    CLOG: A(HRPN, 'logging', 'declared', 'unknown', 'graph', { code: 'LOG', role: 'Logging · stdout', name: 'Cloud Run request logs',
+      detail: 'full user text at INFO', tint: 'risk', ev: [`${R}/main.py:17-20`, `${R}/gchat/pubsub_consumer.py:99-105`] }),
+    LOGS: A(HRPN, 'logging', 'declared', 'dormant', 'graph', { code: 'FBK', role: 'Feedback · logs', name: 'hrpn-logbucket + hrpn-sink',
+      detail: '120 d · no feedback emitter', tint: 'genair', ev: [`${TF}/logging.tf:8-35`, `${TF}/logging.tf:39-96`] }),
+    TF: A(HRPN, 'iac', 'declared', 'unknown', 'check', { code: 'TF', role: 'IaC · Terraform', name: 'genair-infra-factory',
+      detail: 'runner unknown · GCS state', tint: 'genair', ev: ['CLAUDE.md:96-102', '.claude/CLAUDE.md:26-27'] }),
+    PRODZ: BOX(PRODP, 'unknown', 'not-applicable', { code: 'PRD', name: 'PROD landing zone · not provisioned', label: 'service',
+      ev: ['.copier-answers.yml:6', `${CUTTER}/CLAUDE.md:99-121`, `${TF}/config/variables.yaml:85-89`] }),
+    PRODNP: A(PRODP, 'iac', 'unknown', 'not-applicable', 'unknown', { code: 'ENV', role: 'PROD · app_code', name: 'dev / int / pro / cicd projects',
+      detail: 'not provisioned · ids unknown', tint: 'risk', label: 'service',
+      ev: [`${CUTTER}/copier.yml:40-47`, 'hooks/context.py:110-185', '.copier-answers.yml:6'] }),
+  },
+  edges: {
+    'EMP|CHAT|message or @mention': e('external', 'unknown'),
+    'CHAT|TOPIC|publish · gsuiteaddons agent': e('declared', 'unknown'),
+    'TOPIC|SUB|push subscription': e('declared', 'unknown'),
+    'SUB|PUSH|OIDC push · run.app URL': e('declared', 'unknown'),
+    'PUSH|CONS|200 first · background task': e('declared', 'unknown'),
+    'CONS|SESS|session_id = space name': e('declared', 'unknown'),
+    'CONS|AGENT|Runner.run_async': e('declared', 'unknown'),
+    'AGENT|GEM|LLM call': e('declared', 'unknown'),
+    'AGENT|QUERY|tool call': e('declared', 'unknown'),
+    'AGENT|ADMINT|tool call · any user': e('declared', 'unknown'),
+    'QUERY|RAG|retrieval_query': e('declared', 'unknown'),
+    'ADMINT|RAG|create · import_files': e('declared', 'unknown'),
+    'DOCS|RAG|import via add_data': e('declared', 'manual'),
+    'CONS|CHATCLI|reply text': e('declared', 'unknown'),
+    'CHATCLI|CHAT|spaces.messages.create': e('declared', 'unknown'),
+    'CONS|CLOG|user text logged': e('declared', 'unknown'),
+    'DEV|DOCS|gcloud storage cp': e('declared', 'manual'),
+    'DEV|LBIAP|ADK web UI': e('unknown', 'unknown'),
+    'LBIAP|APP|default service': e('declared', 'unknown'),
+    'APP|AGENT|POST /run (web UI)': e('declared', 'unknown'),
+    'APP|CSQL|SQL_DATABASE_URI unset': e('dormant', 'dormant'),
+    'APP|PHX|no instrumentation': e('dormant', 'dormant'),
+    'APP|LOGS|no feedback_score emitter': e('dormant', 'dormant'),
+    'PHX|CSQL|phoenix DB': e('declared', 'unknown'),
+    'LOGS|BQ|linked dataset': e('declared', 'dormant'),
+    'AEAPP|RAG|same tools · no caller': e('dormant', 'dormant'),
+    'TF|AEAPP|AdkApp deploy': e('declared', 'unknown'),
+    'TF|TOPIC|topic · sub · IAM': e('declared', 'unknown'),
+    'SSM|CB|SSM webhook': e('declared', 'unknown'),
+    'CB|AR|docker push': e('declared', 'unknown'),
+    'AR|PUSH|image hrpn-ragengine-agent': e('declared', 'unknown'),
+    'CB|PUSH|gcloud run deploy': e('declared', 'unknown'),
+    'BASE|CB|base image · PyPI mirrors': e('external', 'unknown'),
+    'DEV|SSM|git push main': e('declared', 'unknown'),
+    'AGARDEN|CUTTER|submodule src/agent_garden': e('declared', 'not-applicable'),
+    'CUTTER|SSM|copier generate 26.9.0 · update': e('declared', 'not-applicable'),
+    'CUTTER|PRODNP|copier --prod · not run': e('dormant', 'not-applicable'),
+    'IFREPO|IFMIR|mirror': e('unknown', 'unknown'),
+    'IFMIR|TF|TF modules v1.8.3': e('declared', 'unknown'),
+    'TF|TFST|state hrpn/main': e('declared', 'unknown'),
+    'GLIBS|JENKINS|builds': e('external', 'unknown'),
+    'JENKINS|JFROG|genair-* packages': e('external', 'unknown'),
+    'JFROG|BASE|mirror? (unverified)': e('unknown', 'unknown'),
+    'SCMREPO|SSM|mirror? (none found)': e('unknown', 'not-applicable'),
+  },
+};
+
+// S2-target — decided target of option B (owner round r1, 2026-10-19), the target figure of the ARD.
+// Same zone skeleton as S2-asbuilt, but clean: the as-built cards removed by the decisions (load balancer + IAP,
+// ADK web UI, admin tools, Agent Engine, template bucket, template Firestore databases) are not drawn, no card
+// carries `removed` or `risk`, and no dashed option / unverified link is drawn. The removal list stays in the
+// decision dossier (§9.7) and in the Focus page delta (as-built cards absent from the target).
+// S2 = Firestore (owner, 2026-10-20, "ok on part bien sûr firestoresession service"): SESS = ADK FirestoreSessionService
+// on the Terraform-declared Firestore database hrpn-sessions (card FS, redrawn as a target card with a TTL policy);
+// Cloud SQL keeps only the Phoenix DB (Phoenix kept or not: owner item, open), so no SESS -> CSQL link.
+// PROD environment only (owner 2026-10-22): the POD project, its CI/CD, network and the POD platform project are not drawn.
+const s2TargetDropped = new Set(['LBIAP', 'AEZ', 'BKT', 'FS', 'CSQL', 'PROJ', 'CICDZ', 'CB', 'AR', 'TF', 'TFST', 'NET',
+  'SSMPROJ', 'SSM', 'IFMIR', 'BASE', 'AWSZ']); // CSQL: Cloud SQL out of the target (owner 2026-10-22) // FS is redrawn below as the S2 sessions database (hrpn-sessions)
+const s2TargetCommon = Object.fromEntries(Object.entries(s2Common).filter(([id]) => !s2TargetDropped.has(id)));
+scenes['S2-target'] = {
+  title: 'Option 2 decided target · Pub/Sub → Cloud Run single runtime',
+  clean: true,
+  layout: s2TargetLayout,
+  nodes: {
+    ...s2TargetCommon,
+    DEV: with_(s2Common.DEV, { detail: 'git push · Terraform' }),
+    HRADM: A(['AAI HR'], 'user', 'target', 'not-applicable', 'user', { code: 'OWN', role: 'HR · content owners', name: 'Policy owners (AAI HR)',
+      detail: 'approve documents in Drive', label: 'actor', tint: 'custom', ev: [`${REQ}:38`, `${ARD}:726`] }),
+    CHAT: A(GWS, 'frontend', 'external', 'not-applicable', 'web', { code: 'CHT', role: 'Chat app', name: 'HR Policy Navigator',
+      detail: 'Chat spaces (BRD-ACC-010)', label: 'service', ev: [`${REQ}:11`, `${REQ}:32`, `${HO}:85-95`] }),
+    DRIVE: A(GWS, 'document', 'target', 'not-applicable', 'document', { code: 'DRV', role: 'Drive · source', name: 'restricted HR policy folder',
+      detail: 'approved PDFs only', label: 'service', tint: 'custom', ev: [`${BRD}:220`, `${REQ}:38`] }),
+    MSGZ: with_(s2Common.MSGZ, { tint: 'outside' }),
+    TOPIC: with_(s2Common.TOPIC, { detail: 'publisher identity: gate G1', runtimeState: 'not-applicable', tint: 'outside' }),
+    SUB: A(HRPN, 'queue', 'target', 'not-applicable', 'join', { code: 'SUB', role: 'Pub/Sub · push', name: 'hrpn-gchat-events-sub',
+      detail: 'OIDC · dedicated push SA', tint: 'outside', ev: [`${TF}/gchat_pubsub.tf:39-66`, `${TF}/gchat_pubsub.tf:27-28`, `${REQ}:34`] }),
+    // Cloud Run, three cards (owner 2026-10-22: standard FastAPI server, normal customisation = ADK agent + RAG tools,
+    // customisation outside the frame = Google Chat API integration).
+    APP: A(HRPN, 'api', 'declared', 'not-applicable', 'api', { code: 'API', role: 'Backend · FastAPI', name: 'get_fast_api_app()',
+      detail: 'Python · GenAiR template server', tint: 'genair', ev: [`${R}/main.py:24-38`, `${RA}/Dockerfile:54`] }),
+    AGENT: A(HRPN, 'agent', 'target', 'not-applicable', 'llm', { code: 'AGT', role: 'ADK agent · RAG tools', name: 'root_agent (HR prompt)',
+      detail: 'rag_query · format_links · scope', tint: 'custom',
+      ev: [`${R}/agent/agent.py:24-128`, `${R}/tools/rag_engine.py:476-587`, `${REQ}:2-8`, `${REQ}:26`] }),
+    CHATAPI: A(HRPN, 'api', 'declared', 'not-applicable', 'api', { code: 'GCH', role: 'Google Chat · API', name: 'POST /gchat-push · reply',
+      detail: 'event check · dedup · rating', tint: 'outside',
+      ev: [`${R}/main.py:41-62`, `${R}/gchat/gchat_client.py:9-27`, `${TF}/gchat_pubsub.tf:24-37`, `${REQ}:16-17`, `${REQ}:34`] }),
+    FS: A(HRPN, 'database', 'target', 'not-applicable', 'postgres', { code: 'FS', role: 'Firestore · sessions', name: 'hrpn-sessions (Native)',
+      detail: 'FirestoreSessionService · TTL 1 y', tint: 'custom',
+      ev: [`${TF}/firestore.tf:1-6`, `${R}/gchat/pubsub_consumer.py:6,15`, 'uv.lock:643-644', `${ANS}:25-27`, `${ANS}:77`, `${REQ}:28`] }),
+    VERTEXZ: with_(s2Common.VERTEXZ, { tint: 'custom' }),
+    RAG: with_(s2Common.RAG, { tint: 'custom' }),
+    GEM: A(VERTEX, 'llm', 'external', 'not-applicable', 'llm', { code: 'LLM', role: 'Model · Gemini', name: 'pinned Gemini Flash',
+      detail: 'upgrade with regression tests', label: 'service', ev: [`${ARB}:547`, `${R}/agent/agent.py:26`] }),
+    ARMOR: A(VERTEX, 'check', 'target', 'not-applicable', 'identity', { code: 'MA', role: 'Model Armor', name: 'prompt + answer screening',
+      detail: 'PROD availability: unknown', label: 'service', tint: 'custom', ev: [`${MASTER}:1892`, `${ARD}:838-839`] }),
+    OBSZ: with_(s2Common.OBSZ, { tint: 'custom', repo: ['GenAI PCP Platform'], labelKind: 'service' }),
+    CLOG: A(HRPN, 'logging', 'target', 'not-applicable', 'graph', { code: 'LOG', role: 'Logging · audit', name: 'structured conversation log',
+      detail: 'PII scrubbed (BRD-HR-014)', tint: 'custom', ev: [`${REQ}:15`, `${R}/gchat/pubsub_consumer.py:99-105`] }),
+    LOGS: A(HRPN, 'logging', 'target', 'not-applicable', 'graph', { code: 'FBK', role: 'Logs · 1 year', name: 'hrpn-logbucket + hrpn-sink',
+      detail: '365 d (DAT-015) · 120 d today', tint: 'custom', ev: [`${REQ}:28`, `${TF}/logging.tf:8-16`] }),
+
+    INGZ: BOX(HRPN, 'target', 'not-applicable', { code: 'ING', name: 'Ingestion', tint: 'custom', ev: [`${BRD}:220`, `${ARD}:726`] }),
+    SYNC: A(HRPN, 'job', 'target', 'not-applicable', 'cronjob', { code: 'SYN', role: 'Job · Drive sync', name: 'drive-sync Cloud Run job',
+      detail: 'read-only SA · delta copy', tint: 'custom', ev: [`${REQ}:12`, `${REQ}:38`, `${ARD}:726`] }),
+    IMPORT: A(HRPN, 'job', 'target', 'not-applicable', 'cronjob', { code: 'IMP', role: 'Job · RAG import', name: 'rag.import_files() job',
+      detail: 'delta indexing · 24 h SLA', tint: 'custom', ev: [`${ARD}:728-730`, `${R}/tools/rag_engine.py:110-116`] }),
+    // PROD infrastructure (GenAiR-Cutter PROD mode), added.
+    SCMREPO: A(HRPN, 'repo', 'target', 'not-applicable', 'release', { code: 'GIT', role: 'Repo · SCM', name: 'HRPN PROD repository',
+      detail: 'host open: GitLab or GitHub', tint: 'custom', ev: [`${CUTTER}/CLAUDE.md:443`, `${PJF}:3,770`, `${NATIVE}:8951`] }),
+    PRODZ: BOX(PRODP, 'target', 'not-applicable', { code: 'PRD', name: 'PROD landing zone · app_code (to provision)', label: 'service',
+      ev: [`${CUTTER}/CLAUDE.md:99-121`, 'hooks/context.py:286-310', `${CUTTER}/copier.yml:40-47`] }),
+    PCICD: BOX(['GenAI PCP Platform'], 'target', 'not-applicable', { code: 'CID', name: 'CI/CD · project_id_cicd', label: 'service',
+      ev: [`${CUTTER}/CLAUDE.md:112`, 'hooks/context.py:176-183'] }),
+    PAR: A(HRPN, 'registry', 'target', 'not-applicable', 'release', { code: 'PAR', role: 'Registry · PROD', name: 'app-container-images',
+      detail: '+ app-container-images-noprod', tint: 'custom', ev: [`${PCI('prod')}:12`, `${PCI('dev')}:12`, `${CUTTER}/CLAUDE.md:121`] }),
+    PIAC: A(HRPN, 'identity', 'target', 'not-applicable', 'identity', { code: 'WIF', role: 'IaC · WIF', name: 'iac-sa + iac-state bucket',
+      detail: 'pool wif-<app_code>-prod-cicd', tint: 'custom', ev: [`${PWIF}:3-5`, `${PCI('prod')}:9,22`, 'hooks/wif-prod.json:3-5', `${PJF}:107`] }),
+    PSHARED: BOX(PLATFORM, 'target', 'not-applicable', { code: 'SHP', name: 'PROD shared projects', label: 'service',
+      ev: [`${CUTTER}/CLAUDE.md:111-115`] }),
+    PSVPC: A(PLATFORM, 'network', 'target', 'not-applicable', 'network', { code: 'SVP', role: 'Network · SVPC', name: 'Shared VPC host project',
+      detail: 'networks dev / int / pro', tint: 'custom', label: 'service',
+      ev: ['hooks/context.py:182', `${PCFG('prod')}:120-129`, `${CUTTER}/CLAUDE.md:113`] }),
+    PLIBS: A(PLATFORM, 'registry', 'external', 'not-applicable', 'release', { code: 'PLB', role: 'Libs · PyPI', name: 'prj-libs-71f1 python-repository',
+      detail: 'GenAiR libs for PROD builds', label: 'service', tint: 'genair', ev: [`${PCI('prod')}:17,21`, `${CUTTER}/CLAUDE.md:115`] }),
+    // Owner 2026-10-22: the app project carries the HRPN label; CI/CD and Observability are GenAI PCP Platform boxes.
+    PPROZ: with_(prodZones.PPROZ, { name: 'HRPN pro project · project_id_pro' }),
+    AWSCI: BOX(['Airbus AWS'], 'external', 'unknown', { code: 'CI', name: 'CI/CD', label: 'service',
+      ev: [`${CUTTER}/CLAUDE.md:468-480`, `${P2P}/prerequisites.md:75-76`] }),
+    // PROD CI/CD project hosts the PROD SSM repository (GenAiR PROD mode: projects_dict["ssm"] = projects_dict["cicd"]).
+    PSSM: A(HRPN, 'repo', 'target', 'not-applicable', 'release', { code: 'PSM', role: 'Repo · SSM', name: 'Source Manager (PROD)',
+      detail: 'ssm = cicd project', tint: 'custom', ev: ['hooks/context.py:183', `${CUTTER}/CLAUDE.md:496`] }),
+    OUT: with_(s2Common.OUT, { name: 'AWS' }),
+  },
+  edges: {
+    'EMP|CHAT|message or @mention': e('external', 'not-applicable'),
+    'CHAT|TOPIC|publish · Chat agent': e('declared', 'not-applicable'),
+    'TOPIC|SUB|push subscription': e('declared', 'not-applicable'),
+    'SUB|CHATAPI|OIDC push · dedicated SA': e('target', 'not-applicable'),
+    'CHATAPI|AGENT|eligible question': e('target', 'not-applicable'),
+    'AGENT|FS|sessions · history': e('target', 'not-applicable'),
+    'AGENT|ARMOR|screen prompt and answer': e('target', 'not-applicable'),
+    'AGENT|GEM|LLM call': e('declared', 'not-applicable'),
+    'AGENT|RAG|retrieval_query': e('declared', 'not-applicable'),
+    'CHATAPI|CHAT|answer + rating card': e('declared', 'not-applicable'),
+    'CHATAPI|LOGS|feedback_score': e('target', 'not-applicable'),
+    'CHATAPI|CLOG|scrubbed log entry': e('target', 'not-applicable'),
+    'CLOG|LOGS|sink · 365 d': e('target', 'not-applicable'),
+    'LOGS|BQ|linked dataset': e('declared', 'not-applicable'),
+    'HRADM|DRIVE|approved documents': e('target', 'not-applicable'),
+    'DRIVE|SYNC|Drive API · read-only': e('target', 'not-applicable'),
+    'SYNC|DOCS|delta copy': e('target', 'not-applicable'),
+    'DOCS|IMPORT|new objects': e('target', 'not-applicable'),
+    'IMPORT|RAG|import_files · delta': e('target', 'not-applicable'),
+    'AGARDEN|CUTTER|submodule src/agent_garden': e('declared', 'not-applicable'),
+    'CUTTER|SCMREPO|copier generate --prod · update': e('target', 'not-applicable'),
+    'GLIBS|JENKINS|builds': e('external', 'not-applicable'),
+    'JENKINS|JFROG|genair-* packages': e('external', 'not-applicable'),
+    'DEV|SCMREPO|git push · PROD': e('target', 'not-applicable'),
+    'SCMREPO|JENKINS|webhook on push': e('target', 'not-applicable'),
+    'IFREPO|JENKINS|TF modules (PROD)': e('target', 'not-applicable'),
+    'PLIBS|JENKINS|GenAiR libs (PROD)': e('target', 'not-applicable'),
+    'JENKINS|PIAC|WIF · iac-sa': e('target', 'not-applicable'),
+    'JENKINS|PAR|docker push': e('target', 'not-applicable'),
+    'JENKINS|APP|deploy · main': e('target', 'not-applicable'),
+    'PSVPC|APP|Shared VPC subnets': e('target', 'not-applicable'),
+  },
+};
+// Cards kept from the as-built skeleton whose meaning changes in place.
+scenes['S2-target'].nodes.DOCS = with_(s2Common.DOCS, { detail: 'fed by the Drive sync job', runtimeState: 'not-applicable', tint: 'custom' });
+// Wrapping boxes asked by the owner (2026-10-22), folded by default (governance-kit/hrpn/defaults.js).
+scenes['S2-target'].nodes.GENSRC = BOX(['GenAiR'], 'external', 'not-applicable', { code: 'SRC', name: 'GenAiR sources', tint: 'genair',
+  ev: ['.copier-answers.yml:1-11', `${CUTTER}/.gitmodules:1-8`] });
+
+
+// ---------------------------------------------------------------------------------------------
+// S1-conversational — Option 1, PoC-equivalent Conversational Agent (Dialogflow CX).
+scenes['S1-conversational'] = {
+  title: 'Option 1 · Conversational Agent (PoC-equivalent)',
+  layout: {
+    north: ['PEOPLE', 'WS', 'GCP'], south: 'OUT', southUnder: 'GCP',
+    // Fill/align: zones of one row are top-aligned and stretched to the row height.
+    fill: true,
+    flows: {
+      GCP: [['PROJ'], ['PRODZ']],
+      PROJ: [['CXZ', 'TOOLZ'], ['VAIZ', 'STATEZ', 'GOVZ']],
+      CXZ: 'grid2', STATEZ: 'column', VAIZ: 'column', TOOLZ: 'column', GOVZ: 'column',
+      PRODZ: 'row', OUT: 'column', AWSZ: 'row', GITHUBZ: 'column', GITLABZ: 'column',
+    },
+  },
+  nodes: {
+    PEOPLE: s2Common.PEOPLE,
+    EMP: s2Common.EMP,
+    HRADM: A(['AAI HR'], 'user', 'external', 'manual', 'user', { code: 'OWN', role: 'HR · content owners', name: 'Policy owners (AAI HR)',
+      detail: 'upload or approve documents', label: 'actor', ev: [`${BRD}:219-220`, `${ARD}:722-726`] }),
+    WS: BOX(GWS, 'external', 'unknown', { code: 'GWS', name: 'Google Workspace', label: 'service', ev: [`${ARD}:269`, `${ARB}:182-188`] }),
+    CHAT: A(GWS, 'frontend', 'external', 'unknown', 'web', { code: 'CHT', role: 'Chat · space', name: 'Google Chat app',
+      detail: 'one Chat agent per project', label: 'service', ev: [`${LOWCODE}/whats_dialogflow.md:70-76`, `${REQ}:11`] }),
+    APPSS: A(GWS, 'api', 'external', 'unknown', 'api', { code: 'GAS', role: 'Apps Script', name: 'Chat → GCP router (ARD FP1)',
+      detail: 'VPC-SC ingress per user', tint: 'risk', label: 'service', ev: [`${ARD}:351`, `${ARD}:892-894`, `${NC}:135`] }),
+    DRIVE: A(GWS, 'document', 'external', 'unknown', 'document', { code: 'DRV', role: 'Drive · source', name: 'HR policy documents',
+      detail: 'PDF, Word · 35 → 100+', label: 'service', ev: [`${ARB}:182-188`, `${ARB}:57`, `${ARB}:563`] }),
+    GCP: BOX(GCP, 'external', 'unknown', { code: 'GCP', name: 'Google Cloud Platform', label: 'service', ev: [`${ARD}:294`] }),
+    PROJ: BOX(['GCP project'], 'external', 'unknown', { code: 'PRJ', name: 'HRPN POD project · console-built', label: 'service',
+      ev: [`${LOWCODE}/tutorials/agentbuilder/google_space_agent.md:5-14`] }),
+    CXZ: BOX(CXSVC, 'external', 'unknown', { code: 'CX', name: 'Conversational Agents (Dialogflow CX)', label: 'service',
+      ev: [`${LOWCODE}/whats_dialogflow.md:13-24`] }),
+    CXINT: A(CXSVC, 'api', 'external', 'unknown', 'web', { code: 'INT', role: 'Integration · Chat', name: 'Integrations > Google Chat',
+      detail: 'POD: useNormalUserEUC rejected', tint: 'risk', label: 'service',
+      ev: [`${LOWCODE}/tutorials/agentbuilder/google_space_agent.md:84-92`, `${HO}:37-42`] }),
+    CXAGENT: A(CXSVC, 'agent', 'external', 'unknown', 'llm', { code: 'CXA', role: 'Agent · generative', name: 'HR agent (startPlaybook)',
+      detail: 'PoC export not found', label: 'service', ev: [`${CXT}/agent.json:1-16`, `${ARB}:553`] }),
+    PLAYBOOK: A(CXSVC, 'agent', 'external', 'unknown', 'document', { code: 'PB', role: 'Playbook · rules', name: 'persona + grounding rules',
+      detail: 'strict guardrails (ARD)', tint: 'specific', label: 'service',
+      ev: [`${ARD}:354`, `${ARD}:646`, `${LOWCODE}/tutorials/agentbuilder/google_space_agent.md:67-73`] }),
+    DSTOOL: A(CXSVC, 'tool', 'external', 'unknown', 'check', { code: 'DST', role: 'Tool · data store', name: 'data store tool',
+      detail: 'template: grounding VERY_LOW', tint: 'specific', label: 'service',
+      ev: [`${CXT}/tools/GenAir Tool/GenAir Tool.json:1-22`, `${LOWCODE}/tutorials/agentbuilder/google_space_agent.md:75-79`] }),
+    TOOLZ: BOX(HRPN, 'external', 'unknown', { code: 'CRT', name: 'Cloud Run tools (PoC)', ev: [`${ARD}:270`, `${ARD}:296`] }),
+    LINKF: A(HRPN, 'tool', 'external', 'unknown', 'url', { code: 'LNK', role: 'Tool · links', name: 'source URL formatter',
+      detail: 'BRD-HR-006 · 95 % links', tint: 'specific', ev: [`${ARB}:51`, `${ARD}:355`, `${REQ}:7`] }),
+    RLA: A(HRPN, 'tool', 'external', 'dormant', 'identity', { code: 'RLA', role: 'Tool · access', name: 'Row-Level Access Security',
+      detail: 'dormant · restricted docs later', tint: 'specific', ev: [`${ARB}:252-254`, `${BRD}:223`, `${ARD}:352`] }),
+    VAIZ: BOX(VERTEX, 'external', 'unknown', { code: 'VAI', name: 'Vertex AI', label: 'service', ev: [`${ARB}:47-49`] }),
+    DATASTORE: A(VERTEX, 'search', 'external', 'unknown', 'graph', { code: 'VAS', role: 'Search · data store', name: 'Vertex AI Search data store',
+      detail: 'unstructured PDFs · snippets', label: 'service', ev: [`${ARB}:49`, `${ARD}:353`, `${LOWCODE}/tutorials/agentbuilder/google_space_agent.md:47-51`] }),
+    GEM: A(VERTEX, 'llm', 'external', 'unknown', 'llm', { code: 'LLM', role: 'Model · Gemini', name: 'Gemini 2.5 Flash',
+      detail: 'ARB: 2.5 becoming obsolete', tint: 'risk', label: 'service', ev: [`${ARB}:47`, `${ARB}:547`] }),
+    STATEZ: BOX(HRPN, 'external', 'unknown', { code: 'ST', name: 'Storage and logs', ev: [`${ARD}:722-724`] }),
+    DOCS: A(GCP, 'store', 'external', 'manual', 's3', { code: 'DOC', role: 'Bucket · documents', name: 'policy bucket (GCS)',
+      detail: 'Phase 1 manual upload', label: 'service', ev: [`${ARD}:722-724`, `${BRD}:219`] }),
+    SYNC: A(HRPN, 'job', 'target', 'not-applicable', 'cronjob', { code: 'SYN', role: 'Sync · Drive', name: 'Drive → GCS sync',
+      detail: 'BRD Phase 2 · not built', tint: 'added', ev: [`${ARD}:726`, `${REQ}:12`, `${ARB}:260-262`] }),
+    BQLOG: A(GCP, 'logging', 'external', 'unknown', 'graph', { code: 'BQ', role: 'BigQuery · logs', name: 'conversation + feedback logs',
+      detail: 'ARD FP6 · retention unknown', label: 'service', ev: [`${ARB}:55`, `${ARB}:268-272`, `${ARD}:356`] }),
+    GOVZ: BOX(['GenAiR'], 'external', 'unknown', { code: 'GOV', name: 'Delivery and governance', label: 'scope',
+      ev: [`${CUTTER}/copier.yml:68-75`] }),
+    NOIAC: A(['GenAiR-Cutter'], 'iac', 'external', 'not-applicable', 'unknown', { code: 'IAC', role: 'Delivery · gap', name: 'no Cutter template · no IaC',
+      detail: 'console build · no CI path', tint: 'risk', ev: [`${CUTTER}/copier.yml:68-75`, `${CUTTER}/CLAUDE.md:542`] }),
+    EXPORT: A(['GenAiR'], 'repo', 'external', 'manual', 'release', { code: 'ZIP', role: 'Restore · zip', name: 'agent export / restore',
+      detail: 'console import of template', tint: 'genair', ev: [`${LOWCODE}/tutorials/agentbuilder/playbook.md:19-25`] }),
+    OUT: BOX(['Outside GCP'], 'external', 'unknown', { code: 'EXT', name: 'Outside Google Cloud', label: 'scope',
+      ev: [`${LOWCODE}/tutorials/agentbuilder/playbook.md:21`, `${D2DM}:160-161`] }),
+    AWSZ: s2Common.AWSZ,
+    GITHUBZ: BOX(GHUB, 'external', 'unknown', { code: 'GH', name: 'Airbus GitHub · github.airbus.corp', label: 'service',
+      ev: [`${LOWCODE}/tutorials/agentbuilder/playbook.md:19-25`, 'CLAUDE.md:150-151'] }),
+    GENTPL: A(['GenAiR'], 'repo', 'external', 'not-applicable', 'release', { code: 'TPL', role: 'Template · exports', name: 'genair-conversational-agent',
+      detail: 'Airbus/GenAiR · playbook, tool JSON', tint: 'genair',
+      ev: [`${CXT}/agent.json:1-16`, `${CXT}/tools/GenAir Tool/GenAir Tool.json:1-22`, 'CLAUDE.md:150-151'] }),
+    GITLABZ: s2Common.GITLABZ,
+    SCMREPO: A(HRPN, 'repo', 'target', 'not-applicable', 'release', { code: 'GIT', role: 'Repo · SCM', name: 'HRPN agent export repository',
+      detail: 'not set up · host open', tint: 'added', ev: [`${LOWCODE}/tutorials/agentbuilder/playbook.md:19-25`, `${CUTTER}/CLAUDE.md:443`] }),
+    PRODZ: BOX(PRODP, 'target', 'not-applicable', { code: 'PRD', name: 'PROD projects · app_code (to provision)', label: 'service',
+      ev: [`${CUTTER}/CLAUDE.md:99-109`, `${CUTTER}/copier.yml:40-47`] }),
+    ...prodZones,
+    PDEV: A(CXSVC, 'agent', 'target', 'not-applicable', 'llm', { code: 'DEV', role: 'Env · dev', name: 'conversational agent copy',
+      detail: 'manual restore · no CI path', tint: 'added', label: 'service',
+      ev: [`${CUTTER}/CLAUDE.md:107`, `${LOWCODE}/tutorials/agentbuilder/playbook.md:19-25`, `${CUTTER}/copier.yml:68-75`] }),
+    PINT: A(CXSVC, 'agent', 'target', 'not-applicable', 'llm', { code: 'INT', role: 'Env · int', name: 'conversational agent copy',
+      detail: 'manual restore · no CI path', tint: 'added', label: 'service',
+      ev: [`${CUTTER}/CLAUDE.md:108`, `${LOWCODE}/tutorials/agentbuilder/playbook.md:19-25`] }),
+    PPRO: A(CXSVC, 'agent', 'target', 'not-applicable', 'llm', { code: 'PRO', role: 'Env · pro', name: 'conversational agent copy',
+      detail: 'manual restore · no CI path', tint: 'added', label: 'service',
+      ev: [`${CUTTER}/CLAUDE.md:109`, `${LOWCODE}/tutorials/agentbuilder/playbook.md:19-25`] }),
+  },
+  edges: {
+    'EMP|CHAT|message or @mention': e('external', 'unknown'),
+    'CHAT|CXINT|native Chat integration': e('external', 'unknown'),
+    'CHAT|APPSS|ARD FP1 routing': e('external', 'unknown'),
+    'APPSS|CXAGENT|query to GCP (ARD)': e('external', 'unknown'),
+    'CXINT|CXAGENT|detect intent': e('external', 'unknown'),
+    'CXAGENT|PLAYBOOK|start playbook': e('external', 'unknown'),
+    'PLAYBOOK|DSTOOL|data store tool': e('external', 'unknown'),
+    'DSTOOL|DATASTORE|search + snippets': e('external', 'unknown'),
+    'PLAYBOOK|GEM|generation': e('external', 'unknown'),
+    'PLAYBOOK|LINKF|OpenAPI tool (FP5)': e('external', 'unknown'),
+    'PLAYBOOK|RLA|access check (FP2)': e('external', 'dormant'),
+    'CXAGENT|BQLOG|interaction logs (FP6)': e('external', 'unknown'),
+    'DOCS|DATASTORE|import gs://': e('external', 'unknown'),
+    'HRADM|DOCS|manual upload': e('external', 'manual'),
+    'HRADM|DRIVE|approved documents': e('external', 'unknown'),
+    'DRIVE|SYNC|Drive API (Phase 2)': e('target', 'not-applicable'),
+    'SYNC|DOCS|delta copy': e('target', 'not-applicable'),
+    'GENTPL|EXPORT|template zip': e('external', 'not-applicable'),
+    'EXPORT|CXAGENT|console restore': e('external', 'manual'),
+    'NOIAC|CXAGENT|no Terraform · no CI': e('external', 'not-applicable'),
+    'EXPORT|SCMREPO|export JSON · push': e('target', 'not-applicable'),
+    'SCMREPO|PDEV|console restore · dev': e('target', 'not-applicable'),
+    'SCMREPO|PINT|console restore · int': e('target', 'not-applicable'),
+    'SCMREPO|PPRO|console restore · pro': e('target', 'not-applicable'),
+  },
+};
+
+// ---------------------------------------------------------------------------------------------
+// S3-agentfactory — Option 3 hypothesis on the AgentAiR overview skeleton (draw.io zoning kept).
+scenes['S3-agentfactory'] = {
+  title: 'Option 3 hypothesis · Agent Factory (AgentAiR)',
+  layout: {
+    // Users | Sources and LAN (GWS: Drive, Chat) | PCP-GCP, as in S1/S2 (PEOPLE | WS | GCP).
+    north: ['LEFT', 'RIGHT', 'PCP'], south: 'OUT', southUnder: 'PCP',
+    // Fill/align: e.g. Gemini Enterprise Agent Platform fills the row of Gemini Enterprise.
+    fill: true,
+    flows: {
+      LEFT: 'column', RIGHT: 'column', SAASZ: 'column', DATAHUB: 'column',
+      OUT: 'column', AWSZ: 'row', GITHUBZ: 'column', GITLABZ: 'column',
+      PCP: [['AIP', 'DATAHUB'], ['PLOG', 'CONN', 'MAF'], ['VPCSC', 'GAPI', 'IAM']],
+      AIP: [['EAI'], ['SPOKE']],
+      EAI: [['GEZ', 'GEAP'], ['AUTHM', 'OBSV', 'AUDIT', 'SCC']],
+      GEZ: 'column', GEAP: [['GW', 'POL', 'MA2'], ['RUNTIME']], RUNTIME: 'row',
+      SPOKE: 'grid3',
+    },
+  },
+  nodes: {
+    LEFT: BOX(AIRBUS, 'external', 'unknown', { code: 'USR', name: 'Users and enterprise security', label: 'scope', ev: [AAIR, ...cell(14, 12, 84, 86)] }),
+    USERS: A(USERS, 'user', 'external', 'not-applicable', 'user', { code: 'USR', role: 'Employees · HR', name: 'HR users and employees',
+      detail: 'workstation and mobile', label: 'actor', ev: [...cell(14, 11), `${ARB}:445-455`] }),
+    CASB: A(AIRBUS, 'network', 'external', 'not-applicable', 'identity', { code: 'CSB', role: 'CASB · Netskope', name: 'Airbus CASB',
+      detail: 'web egress control', label: 'service', ev: cell(12, 9) }),
+    IDP: A(AIRBUS, 'identity', 'external', 'not-applicable', 'identity', { code: 'IDP', role: 'Identity · keys', name: 'Identity provider / API keys',
+      detail: 'used by Auth Manager', label: 'service', ev: cell(84, 56) }),
+    SIEM: A(AIRBUS, 'logging', 'external', 'not-applicable', 'graph', { code: 'SIM', role: 'SIEM · SOC', name: 'Enterprise SIEM (RTM/SOC)',
+      detail: 'receives platform logs', label: 'service', ev: cell(86, 27) }),
+    PCP: BOX(D85BB, 'hypothesis', 'not-applicable', { code: 'PCP', name: '85BB · PCP-GCP', label: 'service', ev: cell(39, 2) }),
+    AIP: BOX(D4AE9, 'hypothesis', 'not-applicable', { code: 'AIP', name: '4AE9 · AI Platform', label: 'service', ev: cell(43, 3) }),
+    EAI: BOX(D7EFD, 'hypothesis', 'not-applicable', { code: 'EAI', name: '7EFD · Everyday AI (Agent Factory model)', label: 'service',
+      ev: [...cell(38, 4), `${ARB}:322-336`] }),
+    GEZ: BOX(D7EFD, 'hypothesis', 'not-applicable', { code: 'GE', name: 'Gemini Enterprise', label: 'service', ev: cell(31, 8) }),
+    GEUI: A(D7EFD, 'frontend', 'hypothesis', 'not-applicable', 'web', { code: 'GEU', role: 'Channel · GE app', name: 'Gemini Enterprise app UI',
+      detail: 'Q4 2026 · not SEC4AI-assessed', label: 'service', tint: 'risk',
+      ev: [...cell(18, 13), `${MASTER}:344`, `${MASTER}:972`, `${ARB}:465`] }),
+    MA1: A(D7EFD, 'check', 'hypothesis', 'not-applicable', 'identity', { code: 'MA1', role: 'Model Armor', name: 'template setting (GE)',
+      detail: 'prompt screening', label: 'service', ev: cell(75, 15) }),
+    FEDC: A(D7EFD, 'api', 'hypothesis', 'not-applicable', 'join', { code: 'FED', role: 'GE · connectors', name: 'Federated connectors',
+      detail: '1P/3P sources (e.g. GWS)', label: 'service', ev: [...cell(19, 41), `${ARB}:352`] }),
+    DSTORE: A(D7EFD, 'search', 'hypothesis', 'not-applicable', 'graph', { code: 'DS', role: 'GE · datastore', name: 'Ingested connectors → datastore',
+      detail: 'alternative to RAG Engine', label: 'service', ev: cell(69, 72, 68) }),
+    GEAP: BOX(D7EFD, 'hypothesis', 'not-applicable', { code: 'GEP', name: 'Gemini Enterprise Agent Platform', label: 'service', ev: cell(30, 5) }),
+    GW: A(D7EFD, 'network', 'hypothesis', 'not-applicable', 'identity', { code: 'GW', role: 'Agent Gateway', name: 'Agent Gateway (IAP)',
+      detail: 'single entry to agents', label: 'service', ev: cell(23, 16, 22) }),
+    POL: A(D7EFD, 'check', 'hypothesis', 'not-applicable', 'check', { code: 'POL', role: 'Gateway · policies', name: 'Policies',
+      detail: 'access rules per agent', label: 'service', ev: cell(76, 20) }),
+    MA2: A(D7EFD, 'check', 'hypothesis', 'not-applicable', 'identity', { code: 'MA2', role: 'Model Armor', name: 'template setting (gateway)',
+      detail: 'findings to audit and SCC', label: 'service', ev: cell(79, 21, 77, 78) }),
+    RUNTIME: BOX(D7EFD, 'hypothesis', 'not-applicable', { code: 'ART', name: 'Agent Registry / Agent Runtime', label: 'service',
+      ev: [...cell(80, 6), `${MASTER}:345`] }),
+    HRAGENT: A(HRPN, 'agent', 'hypothesis', 'not-applicable', 'llm', { code: 'AGT', role: 'Agent · HRPN', name: 'root_agent via AdkApp',
+      detail: 'POD-only runtime (27 Feb note)', tint: 'risk', ev: [...cell(49), `${R}/agent/agent.py:130-133`, `${MASTER}:340-345`] }),
+    HRTOOLS: A(HRPN, 'tool', 'hypothesis', 'not-applicable', 'check', { code: 'TLS', role: 'Tools · MCP', name: 'rag_query · links · scope',
+      detail: 'as-built tool + 2 to add', tint: 'added', ev: [...cell(50, 82), `${R}/tools/rag_engine.py:476-587`, `${REQ}:7`] }),
+    AUTHM: A(D7EFD, 'identity', 'hypothesis', 'not-applicable', 'identity', { code: 'AUT', role: 'Auth Manager', name: 'Agent Identity creds',
+      detail: 'per-agent identity', label: 'service', ev: cell(57, 45, 49) }),
+    OBSV: A(D7EFD, 'logging', 'hypothesis', 'not-applicable', 'graph', { code: 'OBS', role: 'Observability', name: 'traces (Cloud Trace)',
+      detail: 'per agent run', label: 'service', ev: cell(59, 85, 47) }),
+    AUDIT: A(D7EFD, 'logging', 'hypothesis', 'not-applicable', 'graph', { code: 'AUD', role: 'Audit · logging', name: 'Audit / Logging',
+      detail: 'retention vs DAT-015 unknown', label: 'service', ev: [...cell(58, 74), `${REQ}:28`] }),
+    SCC: A(D7EFD, 'check', 'hypothesis', 'not-applicable', 'check', { code: 'SCC', role: 'AI Security', name: 'Security Command Center',
+      detail: 'AI findings', label: 'service', ev: cell(61, 78, 60) }),
+    SPOKE: BOX(['AAI HR spoke'], 'hypothesis', 'not-applicable', { code: 'SPK', name: 'AAI HR spoke project (hypothesis)',
+      ev: [`${ARB}:334-336`, `${ARB}:467-469`] }),
+    RAG: A(VERTEX, 'search', 'hypothesis', 'not-applicable', 'graph', { code: 'RAG', role: 'RAG Engine', name: 'corpus hr_policies',
+      detail: 'reused from option 2', label: 'service', ev: [`${TF}/adk_ragengine_agent.tf:19-39`, `${R}/agent/agent.py:93-94`] }),
+    GEM: A(VERTEX, 'llm', 'hypothesis', 'not-applicable', 'llm', { code: 'LLM', role: 'Model · Gemini', name: 'Gemini (Vertex AI)',
+      detail: 'model pinned per agent', label: 'service', ev: [`${ARB}:426-430`, `${R}/agent/agent.py:26`] }),
+    DOCS: A(HRPN, 'store', 'hypothesis', 'not-applicable', 's3', { code: 'DOC', role: 'Bucket · documents', name: 'policy bucket (GCS)',
+      detail: 'Drive sync target', tint: 'added', ev: [`${ARB}:491-493`, `${ARD}:726`] }),
+    SYNC: A(HRPN, 'job', 'hypothesis', 'not-applicable', 'cronjob', { code: 'SYN', role: 'Sync · Drive', name: 'Drive → GCS → RAG import',
+      detail: 'delta indexing (Phase 2)', tint: 'added', ev: [`${ARB}:517-519`, `${REQ}:12`, `${ARD}:728-730`] }),
+    XIAM: A(['GCP IAM'], 'identity', 'hypothesis', 'not-applicable', 'identity', { code: 'XIM', role: 'IAM · cross-project', name: 'Discovery Engine agent SA',
+      detail: 'aiplatform.user on spoke', tint: 'added', label: 'service', ev: [`${GEDOC}:20-23`, `${GEDOC}:47-48`, `${GEDOC}:63-67`] }),
+    PSL: A(['AgentAiR'], 'iac', 'hypothesis', 'not-applicable', 'release', { code: 'PSL', role: 'Template · PSL', name: 'AgentAiR spoke template',
+      detail: 'end 2026 · retrofit required', tint: 'risk', label: 'service', ev: [`${ARB}:547`, `${ARB}:336`] }),
+    DATAHUB: BOX(DC9EC, 'hypothesis', 'not-applicable', { code: 'DHB', name: 'C9EC · Datahub', label: 'service', ev: cell(52, 44) }),
+    DATAPROD: A(DC9EC, 'store', 'hypothesis', 'not-applicable', 'postgres', { code: 'DP', role: 'Datahub · products', name: 'Data products',
+      detail: 'governed read-only mirrors', label: 'service', ev: [...cell(54, 64, 70), `${ARB}:346-348`] }),
+    PIPE: A(DC9EC, 'job', 'hypothesis', 'not-applicable', 'cronjob', { code: 'ITP', role: 'Datahub · pipeline', name: 'Ingestion & Transformation',
+      detail: 'platform-owned pipeline', label: 'service', ev: cell(62, 53, 63) }),
+    PLOG: A(D85BB, 'logging', 'hypothesis', 'not-applicable', 'graph', { code: 'PLG', role: 'Logging · central', name: 'Platform Logging Centralisation',
+      detail: 'forwards to SIEM', label: 'service', ev: cell(28, 73, 74, 60, 27) }),
+    CONN: A(D85BB, 'network', 'hypothesis', 'not-applicable', 'network', { code: 'NET', role: 'Connectivity', name: 'VPC · FW · Interconnect',
+      detail: 'to LAN and other apps', label: 'service', ev: cell(36, 7, 32, 34) }),
+    MAF: A(D85BB, 'check', 'hypothesis', 'not-applicable', 'identity', { code: 'MAF', role: 'Model Armor', name: 'floor template',
+      detail: 'platform floor settings', label: 'service', ev: cell(26) }),
+    VPCSC: A(D85BB, 'network', 'hypothesis', 'not-applicable', 'identity', { code: 'VSC', role: 'VPC SC', name: 'service perimeter',
+      detail: 'Agent Runtime min 1 instance', tint: 'risk', label: 'service', ev: [...cell(24), `${NC}:238`] }),
+    GAPI: A(D85BB, 'api', 'hypothesis', 'not-applicable', 'api', { code: 'GOV', role: 'Governed APIs', name: 'Governed GCP APIs / Access',
+      detail: 'allowed services list', label: 'service', ev: cell(29) }),
+    IAM: A(D85BB, 'identity', 'hypothesis', 'not-applicable', 'identity', { code: 'PAB', role: 'IAM · PAB', name: 'IAM / Principal Access',
+      detail: 'org policy (DRS) applies', label: 'service', ev: [...cell(25), `${HO}:17`] }),
+    RIGHT: BOX(['Outside PCP-GCP'], 'external', 'unknown', { code: 'SRC', name: 'Sources and LAN', label: 'scope', ev: cell(51, 40, 55) }),
+    SAASZ: BOX(GWS, 'external', 'unknown', { code: 'GWS', name: 'SaaS / data sources (GWS)', label: 'service', ev: cell(51, 40) }),
+    DRIVE: A(GWS, 'document', 'external', 'not-applicable', 'document', { code: 'DRV', role: 'Drive · source', name: 'HR policy folder',
+      detail: 'approved PDFs, Word', label: 'service', ev: [`${ARB}:437-443`, `${REQ}:38`] }),
+    CHAT: A(GWS, 'frontend', 'external', 'not-applicable', 'web', { code: 'CHT', role: 'Google Chat', name: 'not the channel here',
+      detail: 'BRD-HR-010 needs a waiver', tint: 'removed', label: 'service', ev: [`${REQ}:11`, `${ARB}:465`] }),
+    LAN: A(['Airbus LAN'], 'network', 'external', 'not-applicable', 'network', { code: 'LN', role: 'Airbus LAN', name: 'LAN-hosted sources',
+      detail: 'via platform connectivity', label: 'service', ev: cell(55, 32) }),
+    // Delivery chain outside Google Cloud (hypothesis: AgentAiR constraint "CI/CD of Airbus (Gitlab, Jenkins …) tbc").
+    OUT: BOX(['Outside GCP'], 'external', 'unknown', { code: 'EXT', name: 'Outside Google Cloud', label: 'scope',
+      ev: [`${D2DM}:160-161`, `${NATIVE}:8951`] }),
+    AWSZ: s2Common.AWSZ,
+    GITHUBZ: s2Common.GITHUBZ,
+    CUTTER: A(['GenAiR-Cutter'], 'repo', 'hypothesis', 'not-applicable', 'release', { code: 'GEN', role: 'Template · GenAiR',
+      name: 'GenAiR-Cutter + AgentGarden', detail: 'origin of the ADK agent code', tint: 'genair',
+      ev: ['.copier-answers.yml:1-11', `${CUTTER}/.gitmodules:5-8`, `${R}/agent/agent.py:130-133`] }),
+    GITLABZ: s2Common.GITLABZ,
+    SCMREPO: A(HRPN, 'repo', 'hypothesis', 'not-applicable', 'release', { code: 'GIT', role: 'Repo · SCM', name: 'HRPN agent repository',
+      detail: 'host open: GitLab or GitHub', tint: 'added', ev: [`${NATIVE}:8951`, `${CUTTER}/CLAUDE.md:443`] }),
+    JENKINS: A(['Airbus CI/CD'], 'ci', 'hypothesis', 'not-applicable', 'workstation', { code: 'JK', role: 'CI · Airbus', name: 'Airbus CI/CD (Jenkins …)',
+      detail: 'AgentAiR constraint: tbc', label: 'service', ev: [`${NATIVE}:8951`, `${CUTTER}/CLAUDE.md:502-510`] }),
+  },
+  edges: {
+    'USERS|CASB|web access': e('hypothesis', 'not-applicable'),
+    'CASB|GEUI|Gemini Enterprise': e('hypothesis', 'not-applicable'),
+    'USERS|CHAT|BRD channel · not used': e('target', 'not-applicable'),
+    'GEUI|MA1|prompt screening': e('hypothesis', 'not-applicable'),
+    'GEUI|GW|agent call': e('hypothesis', 'not-applicable'),
+    'GW|POL|policy check': e('hypothesis', 'not-applicable'),
+    'GW|MA2|screening': e('hypothesis', 'not-applicable'),
+    'GW|HRAGENT|invoke registered agent': e('hypothesis', 'not-applicable'),
+    'XIAM|HRAGENT|cross-project grant': e('hypothesis', 'not-applicable'),
+    'HRAGENT|HRTOOLS|tool call': e('hypothesis', 'not-applicable'),
+    'HRAGENT|GEM|LLM call': e('hypothesis', 'not-applicable'),
+    'HRTOOLS|RAG|retrieval': e('hypothesis', 'not-applicable'),
+    'HRAGENT|AUTHM|agent identity': e('hypothesis', 'not-applicable'),
+    'HRAGENT|OBSV|traces': e('hypothesis', 'not-applicable'),
+    'AUTHM|IDP|credentials': e('hypothesis', 'not-applicable'),
+    'MA2|AUDIT|findings': e('hypothesis', 'not-applicable'),
+    'MA2|SCC|AI findings': e('hypothesis', 'not-applicable'),
+    'OBSV|PLOG|logs': e('hypothesis', 'not-applicable'),
+    'AUDIT|PLOG|audit logs': e('hypothesis', 'not-applicable'),
+    'SCC|PLOG|findings': e('hypothesis', 'not-applicable'),
+    'PLOG|SIEM|forward': e('hypothesis', 'not-applicable'),
+    'GW|CONN|egress': e('hypothesis', 'not-applicable'),
+    'CONN|LAN|LAN sources': e('hypothesis', 'not-applicable'),
+    'FEDC|DRIVE|federated search': e('hypothesis', 'not-applicable'),
+    'DSTORE|DATAPROD|data products': e('hypothesis', 'not-applicable'),
+    'GW|DATAPROD|grounding data': e('hypothesis', 'not-applicable'),
+    'DATAPROD|PIPE|pipeline': e('hypothesis', 'not-applicable'),
+    'PIPE|CONN|sources': e('hypothesis', 'not-applicable'),
+    'DRIVE|SYNC|Drive API': e('hypothesis', 'not-applicable'),
+    'SYNC|DOCS|delta copy': e('hypothesis', 'not-applicable'),
+    'DOCS|RAG|import_files': e('hypothesis', 'not-applicable'),
+    'VPCSC|HRAGENT|perimeter · min 1 instance': e('hypothesis', 'not-applicable'),
+    'CUTTER|SCMREPO|copier generate · update': e('hypothesis', 'not-applicable'),
+    'SCMREPO|JENKINS|webhook on push (tbc)': e('hypothesis', 'not-applicable'),
+    'JENKINS|HRAGENT|deploy and register (tbc)': e('hypothesis', 'not-applicable'),
+    'JENKINS|PSL|apply spoke template (tbc)': e('hypothesis', 'not-applicable'),
+  },
+};
+
+export const sceneIds = Object.keys(scenes);
+export const sceneTitle = id => scenes[id]?.title;
+export const sceneMetadata = id => {
+  if (!scenes[id]) throw Error(`missing scene metadata ${id}`);
+  return scenes[id];
+};
+
+// Same contract as the D2D chain: no missing or extra node or edge, closed states,
+// single card template A (or container), closed tint, evidence on every item.
+export function metadataFor(graph, scene = scenes[graph.id]) {
+  if (!scene) throw Error(`missing scene metadata ${graph.id}`);
+  const actualNodes = new Set([...graph.groups, ...graph.nodes].map(item => item.id));
+  const expectedNodes = new Set(Object.keys(scene.nodes));
+  for (const id of actualNodes) if (!expectedNodes.has(id)) throw Error(`${graph.id}: missing node metadata ${id}`);
+  for (const id of expectedNodes) if (!actualNodes.has(id)) throw Error(`${graph.id}: extra node metadata ${id}`);
+  const groupIds = new Set(graph.groups.map(group => group.id));
+  const edges = {};
+  for (const edge of graph.edges) {
+    const key = `${edge.source}|${edge.target}|${edge.label}`, value = scene.edges[key];
+    if (!value) throw Error(`${graph.id}: missing edge metadata ${key}`);
+    edges[edge.id] = value;
+  }
+  if (Object.keys(edges).length !== Object.keys(scene.edges).length) {
+    const used = new Set(graph.edges.map(edge => `${edge.source}|${edge.target}|${edge.label}`));
+    throw Error(`${graph.id}: extra edge metadata ${Object.keys(scene.edges).filter(key => !used.has(key)).join(', ')}`);
+  }
+  for (const value of [...Object.values(scene.nodes), ...Object.values(edges)]) {
+    if (!EVIDENCE.has(value.evidenceClass) || !RUNTIME.has(value.runtimeState))
+      throw Error(`${graph.id}: invalid closed state ${value.evidenceClass}/${value.runtimeState}`);
+  }
+  for (const [id, value] of Object.entries(scene.nodes)) {
+    if (!value.ev?.length) throw Error(`${graph.id}/${id}: no evidence reference`);
+    const isGroup = groupIds.has(id);
+    if (isGroup !== (value.card === 'box')) throw Error(`${graph.id}/${id}: container and template disagree`);
+    if (value.card === 'box') {
+      if (value.role) throw Error(`${graph.id}/${id}: a container carries no role title`);
+      continue;
+    }
+    if (value.card !== 'A') throw Error(`${graph.id}/${id}: unknown card template ${value.card}`);
+    if (!value.code || !value.role || !value.name || !value.detail) throw Error(`${graph.id}/${id}: card needs code, role, name and detail`);
+    if (value.name.includes(value.code)) throw Error(`${graph.id}/${id}: code repeated inside the name`);
+    if (!roleIsShort(value.role)) throw Error(`${graph.id}/${id}: role title "${value.role}" is not two-by-two short`);
+    if (value.tint !== null && !TINTS.has(value.tint)) throw Error(`${graph.id}/${id}: unknown tint ${value.tint}`);
+  }
+  // A decided (clean) scene carries no removed card, no risk frame and no dashed option link.
+  if (scene.clean) {
+    const red = Object.entries(scene.nodes).filter(([, value]) => value.tint === 'removed' || value.tint === 'risk').map(([id]) => id);
+    if (red.length) throw Error(`${graph.id}: clean scene with removed/risk tints: ${red.join(', ')}`);
+    const dashed = graph.edges.filter(edge => edge.dashed).map(edge => `${edge.source}→${edge.target}`);
+    if (dashed.length) throw Error(`${graph.id}: clean scene with dashed links: ${dashed.join(', ')}`);
+  }
+  for (const id of [...scene.layout.north, scene.layout.south].filter(Boolean))
+    if (!actualNodes.has(id)) throw Error(`${graph.id}: layout zone ${id} is not in the graph`);
+  return { nodes: scene.nodes, edges, layout: scene.layout };
+}
+
+export function decorateGraph(graph, scene) {
+  const metadata = metadataFor(graph, scene);
+  for (const item of [...graph.groups, ...graph.nodes]) item.metadata = metadata.nodes[item.id];
+  for (const edge of graph.edges) edge.metadata = metadata.edges[edge.id];
+  graph.layout = metadata.layout;
+  return graph;
+}

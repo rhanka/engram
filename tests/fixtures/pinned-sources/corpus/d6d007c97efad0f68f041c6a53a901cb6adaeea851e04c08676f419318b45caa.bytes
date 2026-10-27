@@ -1,0 +1,108 @@
+// HRPN target scene as an engram / diagram-core graph (the pivot model of the DS diagram cards spec, §4).
+// Input: the scene model rendered by the owner-validated figure (#/cible, frozen 2026-10-22):
+//   docs/ard/decision/focus/.generated/governance-scenes.json → scenes['S2-target'] (model + default folds).
+// Output (this folder): S2-target.semantic.json (SemanticDocument, profile generic@1 + document-local type definitions
+// carrying the card slots), S2-target.view.json (ViewDocument: expanded geometry from the kit packer, default folds as
+// collapsed VisualGroups), and MANIFEST.json (sha256 + diagram-core validation result).
+// Validation uses @sentropic/diagram-core compiled from the DS (path in DIAGRAM_CORE, see README.md); it is reported
+// as `unverified` when that build is not available. Node only. Run from the hrpolnav repo root:
+//   DIAGRAM_CORE=<dist/index.js> node --import ./docs/ard/decision/focus/governance-kit/hrpn/node-hooks.mjs docs/architecture/hrpn/engram/build-engram.mjs
+import { readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { dirname, resolve } from 'node:path';
+import { packScene } from '../../../ard/decision/focus/governance-kit/hrpn/pack.js';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const SCENES = resolve(HERE, '../../../ard/decision/focus/.generated/governance-scenes.json');
+const sha256 = v => createHash('sha256').update(v).digest('hex');
+const scenesText = await readFile(SCENES, 'utf8');
+const { scenes } = JSON.parse(scenesText);
+const { model, defaults } = scenes['S2-target'];
+
+const P = 'generic@1';
+const text = value => ({ kind: 'text', value: String(value) });
+const local = id => id.replace(/[^A-Za-z0-9._-]/g, '-').replace(/^[^A-Za-z0-9]+/, '');
+const E = id => `entity:${local(id)}`;
+// Zones stay plain generic@1 `container` entities: the `contains` parent role accepts the declared type
+// `container` only, so a document refinement of it cannot parent (diagnostic endpoint-target-not-allowed). Their slots
+// travel in a preserved extension (namespace hrpn.zone-slots, preserved-unvalidated, hashed) until the Engram profile
+// declares container slots (DS spec §4.2).
+if (!process.env.DIAGRAM_CORE) throw Error('DIAGRAM_CORE is required (diagram-core dist/index.js): extension hashes use its hashContent');
+const core = await import(pathToFileURL(process.env.DIAGRAM_CORE).href);
+// Card slots (DS spec §4.2) as document-local, additive refinements: generic@1 declares none of them yet
+// (profile schema work owned with the Engram profiles); `tint` stays an HRPN scene attribute (spec DH-06).
+const cardSlots = [
+  { name: 'kicker', kind: 'text', maxLength: 80 }, { name: 'body', kind: 'text', maxLength: 200 },
+  { name: 'detail', kind: 'text', maxLength: 200 }, { name: 'footer', kind: 'text', maxLength: 120 },
+  { name: 'icon', kind: 'text', maxLength: 40 }, { name: 'tint', kind: 'text', maxLength: 40 },
+];
+const typeDefinitions = {
+  'hrpn-card': { id: 'hrpn-card', profile: P, baseType: 'node', label: 'HRPN card', attributes: cardSlots },
+};
+const set = (attrs, k, v) => { if (v !== undefined && v !== null && v !== '') attrs[k] = text(v); };
+const entities = {}, relations = {}, extensions = [];
+// generic@1 keeps container names unique; two zones are titled « CI/CD »: the unique name carries the kicker and the
+// rendered title stays in `displayTitle` (open point for the Engram profile, see README.md).
+const titles = model.groups.reduce((m, g) => (m[g.title] = (m[g.title] || 0) + 1, m), {});
+for (const g of model.groups) {
+  entities[E(g.id)] = { id: E(g.id), profile: P, type: 'container', attributes: { name: text(titles[g.title] > 1 ? `${g.title} · ${g.zoneKicker}` : g.title) } };
+  const slots = {}; for (const [k, v] of [['kicker', g.zoneKicker], ['subtitle', g.subtitle], ['footer', g.cardFooter], ['icon', g.icon], ['tint', g.tint], ['displayTitle', titles[g.title] > 1 ? g.title : null]]) if (v) slots[k] = v;
+  const source = core.canonicalise(slots);
+  extensions.push({ namespace: 'hrpn.zone-slots', schemaVersion: '1', scope: { kind: 'entity', target: E(g.id) }, validation: 'preserved-unvalidated', contentHash: core.hashContent(source), source });
+}
+for (const n of model.nodes) {
+  const d = n.data, attributes = { name: text(d.title) };
+  set(attributes, 'kicker', d.kicker); set(attributes, 'body', d.function); set(attributes, 'detail', d.detail === '—' ? '' : d.detail);
+  set(attributes, 'footer', d.cardFooter); set(attributes, 'icon', d.cardIcon); set(attributes, 'tint', d.tone === 'none' ? '' : d.tone);
+  entities[E(n.id)] = { id: E(n.id), profile: P, type: 'hrpn-card', attributes };
+}
+for (const item of [...model.groups, ...model.nodes]) if (item.parentId) {
+  const id = `relation:contains.${local(item.parentId)}.${local(item.id)}`;
+  relations[id] = { id, profile: P, type: 'contains', attributes: {},
+    endpoints: [{ role: 'parent', target: E(item.parentId) }, { role: 'child', target: E(item.id) }] };
+}
+for (const e of model.edges) {
+  const id = `relation:link.${local(e.id)}`;
+  const attributes = {}; set(attributes, 'label', e.label);
+  relations[id] = { id, profile: P, type: 'link', attributes, endpoints: [{ role: 'source', target: E(e.source) }, { role: 'target', target: E(e.target) }] };
+}
+const semantic = { documentId: 'document:hrpn-s2-target', schemaVersion: { major: 1, minor: 1 }, revision: 1, profileRefs: [P],
+  typeDefinitions, entities, relations, ports: {}, resources: {}, extensions };
+
+// View: expanded geometry from the kit packer (the figure's own layout), default folds as collapsed visual groups
+// (fold state is view state, spec §4.3; group id form grp.<len>.<local id>).
+const packed = packScene(model, []);
+const geo = new Map([...packed.groups, ...packed.nodes].map(x => [x.id, { x: Math.round(x.position.x), y: Math.round(x.position.y), width: Math.round(x.width), height: Math.round(x.height) }]));
+const gid = id => `grp.${local(id).length}.${local(id)}`;
+const entityOccurrences = {}, groups = {}, relationOccurrences = {};
+for (const g of model.groups) groups[gid(g.id)] = { id: gid(g.id), label: g.title, collapsed: defaults.includes(g.id) };
+for (const item of [...model.groups, ...model.nodes]) {
+  const id = `occurrence:${local(item.id)}`;
+  entityOccurrences[id] = { id, entity: E(item.id), geometry: geo.get(item.id), ...(item.parentId ? { group: gid(item.parentId) } : {}) };
+}
+for (const e of model.edges) {
+  const id = `occurrence:link.${local(e.id)}`;
+  relationOccurrences[id] = { id, relation: `relation:link.${local(e.id)}`,
+    endpoints: [{ role: 'source', occurrence: `occurrence:${local(e.source)}` }, { role: 'target', occurrence: `occurrence:${local(e.target)}` }] };
+}
+const view = { viewId: 'view:hrpn-s2-target-default', semanticDocumentId: semantic.documentId, revision: 1,
+  entityOccurrences, relationOccurrences, portOccurrences: {}, groups, filters: [], presentation: { camera: { x: 0, y: 0, zoom: 1 } } };
+
+let validation;
+{
+  const options = { registry: core.defaultProfileRegistry };
+  const sem = core.validateDocument(semantic, options), vw = core.validateView(view, semantic, options);
+  validation = { status: sem.length + vw.length === 0 ? 'valid' : 'invalid', diagramCore: process.env.DIAGRAM_CORE_REF || 'unknown',
+    semanticDiagnostics: sem, viewDiagnostics: vw };
+}
+const sem = JSON.stringify(semantic, null, 1), vw = JSON.stringify(view, null, 1);
+await writeFile(resolve(HERE, 'S2-target.semantic.json'), sem + '\n');
+await writeFile(resolve(HERE, 'S2-target.view.json'), vw + '\n');
+await writeFile(resolve(HERE, 'MANIFEST.json'), JSON.stringify({
+  source: { file: 'docs/ard/decision/focus/.generated/governance-scenes.json', sha256: sha256(scenesText), scene: 'S2-target' },
+  frozenFigure: 'docs/architecture/hrpn/frozen-20261022/ (owner-validated 2026-10-22)',
+  counts: { zones: model.groups.length, cards: model.nodes.length, links: model.edges.length, defaultFolds: defaults },
+  outputs: { 'S2-target.semantic.json': sha256(sem + '\n'), 'S2-target.view.json': sha256(vw + '\n') }, validation }, null, 1) + '\n');
+console.log(JSON.stringify({ zones: model.groups.length, cards: model.nodes.length, links: model.edges.length, validation: validation.status,
+  diagnostics: (validation.semanticDiagnostics || []).concat(validation.viewDiagnostics || []).slice(0, 8) }));

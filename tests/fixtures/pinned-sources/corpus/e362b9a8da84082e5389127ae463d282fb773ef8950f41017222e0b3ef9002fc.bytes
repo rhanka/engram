@@ -1,0 +1,1084 @@
+{
+  "schema": "hrpn-ds-fixture/v1",
+  "profile": "generic@1",
+  "profileMapping": {
+    "card": "entity type `node` (attribute `name` = label)",
+    "zone": "entity type `container` (attribute `name` = label, unique per scene)",
+    "parent": "relation type `contains` (role parent = the zone, role child = the card or zone); hierarchy `containment`, tree",
+    "relation": "relation type `link` (role source = from, role target = to, attribute `label`)",
+    "extraFields": "detail, tint, code, role, name, footer, store and style are HRPN rendering data outside generic@1 attributes"
+  },
+  "coordinates": "none: no position, size, route or layout hint; the design system computes the layout",
+  "scene": {
+    "id": "S3-agentfactory",
+    "title": "Option 3 hypothesis · Agent Factory (AgentAiR)",
+    "caption": "Hypothesis drawn on the AgentAiR overview draw.io, zoning kept: 85BB PCP-GCP ⊃ 4AE9 AI Platform ⊃ 7EFD Everyday AI (Agent\nFactory model: Gemini Enterprise; Agent Platform with Agent Gateway (IAP), Policies, Model Armor, Agent Registry / Runtime), C9EC Datahub\nand the platform cells (logging, connectivity, Model Armor floor, VPC SC, governed APIs, IAM/PAB); links follow the draw.io relations.\nHRPN adds its ADK `root_agent` (already wrapped as `AdkApp`) registered on Agent Runtime, its tools, and an AAI HR spoke project with\nRAG Engine, documents bucket and Drive sync (ARB slide 7 hub-and-spoke, slide 9 \"Agent Factory · AAI HR instance\").\nGoogle Chat is NOT the channel here: users reach the agent in the Gemini Enterprise app, so BRD-HR-010 (Chat, mandatory) needs a waiver.\nRed frames: Agent Engine POD-only, not in the production landing zone (HR master ARD note 2026-02-27, to recheck); Gemini Enterprise\nplanned Q4 2026, not SEC4AI-assessed; Agent Runtime under VPC-SC needs `min_instances` ≥ 1; PSL spoke template end 2026, retrofit required.\nFeasibility precedent outside Airbus: ADK agent on Agent Runtime registered in Gemini Enterprise Business with a cross-project IAM grant.\nDelivery (hypothesis): the ADK code keeps its GenAiR-Cutter / AgentGarden origin, lives on the Airbus SCM and reaches the platform through the Airbus CI/CD (the AgentAiR constraint list says \"CI/CD of Airbus (Gitlab, Jenkins …) tbc\"); the spoke environments (dev / int / pro) and their project ids are unknown.",
+    "legendPassages": [
+      "Red frames: Agent Engine POD-only, not in the production landing zone (HR master ARD note 2026-02-27, to recheck); Gemini Enterprise planned Q4 2026, not SEC4AI-assessed; Agent Runtime under VPC-SC needs `min_instances` ≥ 1; PSL spoke template end 2026, retrofit required."
+    ]
+  },
+  "source": {
+    "scenes": "docs/architecture/hrpn/SCENES.md",
+    "scenesSha256": "ab3ddb9208b7d3f9c35d94401c29da5bc95477ab99d4caf0fabaa34c41be237f",
+    "metadata": "docs/architecture/hrpn/scene-metadata.mjs",
+    "metadataSha256": "2e67c2c380f50771f4d4520eb1d4110fefca1a51dd173bf10073c6216437ce68",
+    "parser": "docs/architecture/tooling/chain/parse-mermaid.mjs",
+    "parserSha256": "2014ed066f488e736a16a7ad2c169b3cb4765e2ce47ea1c84d2108fc55871797",
+    "sceneHash": "5d944d5441bc0a94c83f6ed78c1e050ba12b43b08bcb4fc65ce1475d13abf55f",
+    "sceneHashNote": "build-scenes.mjs projection hash; equals data.json manifest and figures.json"
+  },
+  "counts": {
+    "cards": 37,
+    "zones": 15,
+    "relations": 36,
+    "solid": 33,
+    "dashed": 3,
+    "labelled": 36,
+    "tints": {
+      "added": 5,
+      "genair": 1,
+      "none": 26,
+      "removed": 1,
+      "risk": 4
+    }
+  },
+  "entities": [
+    {
+      "id": "LEFT",
+      "kind": "zone",
+      "label": "Users and enterprise security",
+      "detail": null,
+      "parent": null,
+      "tint": null,
+      "code": "USR",
+      "footer": "scope: Airbus security"
+    },
+    {
+      "id": "USERS",
+      "kind": "card",
+      "label": "HR users and employees",
+      "detail": "workstation and mobile",
+      "parent": "LEFT",
+      "tint": null,
+      "code": "USR",
+      "role": "Employees · HR",
+      "name": "HR users and employees",
+      "footer": "actor: Airbus employees",
+      "store": false
+    },
+    {
+      "id": "CASB",
+      "kind": "card",
+      "label": "Airbus CASB (Netskope)",
+      "detail": "web egress control",
+      "parent": "LEFT",
+      "tint": null,
+      "code": "CSB",
+      "role": "CASB · Netskope",
+      "name": "Airbus CASB",
+      "footer": "service: Airbus security",
+      "store": false
+    },
+    {
+      "id": "IDP",
+      "kind": "card",
+      "label": "Identity provider / API keys",
+      "detail": "used by Auth Manager",
+      "parent": "LEFT",
+      "tint": null,
+      "code": "IDP",
+      "role": "Identity · keys",
+      "name": "Identity provider / API keys",
+      "footer": "service: Airbus security",
+      "store": false
+    },
+    {
+      "id": "SIEM",
+      "kind": "card",
+      "label": "Enterprise SIEM (RTM/SOC)",
+      "detail": "receives platform logs",
+      "parent": "LEFT",
+      "tint": null,
+      "code": "SIM",
+      "role": "SIEM · SOC",
+      "name": "Enterprise SIEM (RTM/SOC)",
+      "footer": "service: Airbus security",
+      "store": false
+    },
+    {
+      "id": "PCP",
+      "kind": "zone",
+      "label": "85BB · PCP-GCP",
+      "detail": null,
+      "parent": null,
+      "tint": null,
+      "code": "PCP",
+      "footer": "service: 85BB PCP-GCP"
+    },
+    {
+      "id": "AIP",
+      "kind": "zone",
+      "label": "4AE9 · AI Platform",
+      "detail": null,
+      "parent": "PCP",
+      "tint": null,
+      "code": "AIP",
+      "footer": "service: 4AE9 AI Platform"
+    },
+    {
+      "id": "EAI",
+      "kind": "zone",
+      "label": "7EFD · Everyday AI (Agent Factory model)",
+      "detail": null,
+      "parent": "AIP",
+      "tint": null,
+      "code": "EAI",
+      "footer": "service: 7EFD Everyday AI"
+    },
+    {
+      "id": "GEZ",
+      "kind": "zone",
+      "label": "Gemini Enterprise",
+      "detail": null,
+      "parent": "EAI",
+      "tint": null,
+      "code": "GE",
+      "footer": "service: 7EFD Everyday AI"
+    },
+    {
+      "id": "GEUI",
+      "kind": "card",
+      "label": "GE App UI",
+      "detail": "Q4 2026 · not SEC4AI-assessed",
+      "parent": "GEZ",
+      "tint": "risk",
+      "code": "GEU",
+      "role": "Channel · GE app",
+      "name": "Gemini Enterprise app UI",
+      "footer": "service: 7EFD Everyday AI",
+      "store": false
+    },
+    {
+      "id": "MA1",
+      "kind": "card",
+      "label": "Model Armor (GE)",
+      "detail": "prompt screening",
+      "parent": "GEZ",
+      "tint": null,
+      "code": "MA1",
+      "role": "Model Armor",
+      "name": "template setting (GE)",
+      "footer": "service: 7EFD Everyday AI",
+      "store": false
+    },
+    {
+      "id": "FEDC",
+      "kind": "card",
+      "label": "Federated connectors",
+      "detail": "1P/3P sources (e.g. GWS)",
+      "parent": "GEZ",
+      "tint": null,
+      "code": "FED",
+      "role": "GE · connectors",
+      "name": "Federated connectors",
+      "footer": "service: 7EFD Everyday AI",
+      "store": false
+    },
+    {
+      "id": "DSTORE",
+      "kind": "card",
+      "label": "Ingested connectors and datastore",
+      "detail": "alternative to RAG Engine",
+      "parent": "GEZ",
+      "tint": null,
+      "code": "DS",
+      "role": "GE · datastore",
+      "name": "Ingested connectors → datastore",
+      "footer": "service: 7EFD Everyday AI",
+      "store": false
+    },
+    {
+      "id": "GEAP",
+      "kind": "zone",
+      "label": "Gemini Enterprise Agent Platform",
+      "detail": null,
+      "parent": "EAI",
+      "tint": null,
+      "code": "GEP",
+      "footer": "service: 7EFD Everyday AI"
+    },
+    {
+      "id": "GW",
+      "kind": "card",
+      "label": "Agent Gateway (IAP)",
+      "detail": "single entry to agents",
+      "parent": "GEAP",
+      "tint": null,
+      "code": "GW",
+      "role": "Agent Gateway",
+      "name": "Agent Gateway (IAP)",
+      "footer": "service: 7EFD Everyday AI",
+      "store": false
+    },
+    {
+      "id": "POL",
+      "kind": "card",
+      "label": "Policies",
+      "detail": "access rules per agent",
+      "parent": "GEAP",
+      "tint": null,
+      "code": "POL",
+      "role": "Gateway · policies",
+      "name": "Policies",
+      "footer": "service: 7EFD Everyday AI",
+      "store": false
+    },
+    {
+      "id": "MA2",
+      "kind": "card",
+      "label": "Model Armor (gateway)",
+      "detail": "findings to audit and SCC",
+      "parent": "GEAP",
+      "tint": null,
+      "code": "MA2",
+      "role": "Model Armor",
+      "name": "template setting (gateway)",
+      "footer": "service: 7EFD Everyday AI",
+      "store": false
+    },
+    {
+      "id": "RUNTIME",
+      "kind": "zone",
+      "label": "Agent Registry / Agent Runtime",
+      "detail": null,
+      "parent": "GEAP",
+      "tint": null,
+      "code": "ART",
+      "footer": "service: 7EFD Everyday AI"
+    },
+    {
+      "id": "HRAGENT",
+      "kind": "card",
+      "label": "HRPN agent with Agent Identity",
+      "detail": "POD-only runtime (27 Feb note)",
+      "parent": "RUNTIME",
+      "tint": "risk",
+      "code": "AGT",
+      "role": "Agent · HRPN",
+      "name": "root_agent via AdkApp",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "HRTOOLS",
+      "kind": "card",
+      "label": "HRPN tools and MCP",
+      "detail": "as-built tool + 2 to add",
+      "parent": "RUNTIME",
+      "tint": "added",
+      "code": "TLS",
+      "role": "Tools · MCP",
+      "name": "rag_query · links · scope",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "AUTHM",
+      "kind": "card",
+      "label": "Auth Manager",
+      "detail": "per-agent identity",
+      "parent": "EAI",
+      "tint": null,
+      "code": "AUT",
+      "role": "Auth Manager",
+      "name": "Agent Identity creds",
+      "footer": "service: 7EFD Everyday AI",
+      "store": false
+    },
+    {
+      "id": "OBSV",
+      "kind": "card",
+      "label": "Agent observability",
+      "detail": "per agent run",
+      "parent": "EAI",
+      "tint": null,
+      "code": "OBS",
+      "role": "Observability",
+      "name": "traces (Cloud Trace)",
+      "footer": "service: 7EFD Everyday AI",
+      "store": false
+    },
+    {
+      "id": "AUDIT",
+      "kind": "card",
+      "label": "Audit / Logging",
+      "detail": "retention vs DAT-015 unknown",
+      "parent": "EAI",
+      "tint": null,
+      "code": "AUD",
+      "role": "Audit · logging",
+      "name": "Audit / Logging",
+      "footer": "service: 7EFD Everyday AI",
+      "store": false
+    },
+    {
+      "id": "SCC",
+      "kind": "card",
+      "label": "AI Security (SCC)",
+      "detail": "AI findings",
+      "parent": "EAI",
+      "tint": null,
+      "code": "SCC",
+      "role": "AI Security",
+      "name": "Security Command Center",
+      "footer": "service: 7EFD Everyday AI",
+      "store": false
+    },
+    {
+      "id": "SPOKE",
+      "kind": "zone",
+      "label": "AAI HR spoke project (hypothesis)",
+      "detail": null,
+      "parent": "AIP",
+      "tint": null,
+      "code": "SPK",
+      "footer": "repo: AAI HR spoke"
+    },
+    {
+      "id": "RAG",
+      "kind": "card",
+      "label": "RAG Engine corpus",
+      "detail": "reused from option 2",
+      "parent": "SPOKE",
+      "tint": null,
+      "code": "RAG",
+      "role": "RAG Engine",
+      "name": "corpus hr_policies",
+      "footer": "service: Vertex AI",
+      "store": false
+    },
+    {
+      "id": "GEM",
+      "kind": "card",
+      "label": "Gemini",
+      "detail": "model pinned per agent",
+      "parent": "SPOKE",
+      "tint": null,
+      "code": "LLM",
+      "role": "Model · Gemini",
+      "name": "Gemini (Vertex AI)",
+      "footer": "service: Vertex AI",
+      "store": false
+    },
+    {
+      "id": "DOCS",
+      "kind": "card",
+      "label": "Policy documents bucket",
+      "detail": "Drive sync target",
+      "parent": "SPOKE",
+      "tint": "added",
+      "code": "DOC",
+      "role": "Bucket · documents",
+      "name": "policy bucket (GCS)",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "SYNC",
+      "kind": "card",
+      "label": "Drive sync and import",
+      "detail": "delta indexing (Phase 2)",
+      "parent": "SPOKE",
+      "tint": "added",
+      "code": "SYN",
+      "role": "Sync · Drive",
+      "name": "Drive → GCS → RAG import",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "XIAM",
+      "kind": "card",
+      "label": "Cross-project IAM",
+      "detail": "aiplatform.user on spoke",
+      "parent": "SPOKE",
+      "tint": "added",
+      "code": "XIM",
+      "role": "IAM · cross-project",
+      "name": "Discovery Engine agent SA",
+      "footer": "service: GCP IAM",
+      "store": false
+    },
+    {
+      "id": "PSL",
+      "kind": "card",
+      "label": "AgentAiR spoke template",
+      "detail": "end 2026 · retrofit required",
+      "parent": "SPOKE",
+      "tint": "risk",
+      "code": "PSL",
+      "role": "Template · PSL",
+      "name": "AgentAiR spoke template",
+      "footer": "service: AgentAiR",
+      "store": false
+    },
+    {
+      "id": "DATAHUB",
+      "kind": "zone",
+      "label": "C9EC · Datahub",
+      "detail": null,
+      "parent": "PCP",
+      "tint": null,
+      "code": "DHB",
+      "footer": "service: C9EC Datahub"
+    },
+    {
+      "id": "DATAPROD",
+      "kind": "card",
+      "label": "Data products",
+      "detail": "governed read-only mirrors",
+      "parent": "DATAHUB",
+      "tint": null,
+      "code": "DP",
+      "role": "Datahub · products",
+      "name": "Data products",
+      "footer": "service: C9EC Datahub",
+      "store": false
+    },
+    {
+      "id": "PIPE",
+      "kind": "card",
+      "label": "Ingestion and transformation pipeline",
+      "detail": "platform-owned pipeline",
+      "parent": "DATAHUB",
+      "tint": null,
+      "code": "ITP",
+      "role": "Datahub · pipeline",
+      "name": "Ingestion & Transformation",
+      "footer": "service: C9EC Datahub",
+      "store": false
+    },
+    {
+      "id": "PLOG",
+      "kind": "card",
+      "label": "Platform logging centralisation",
+      "detail": "forwards to SIEM",
+      "parent": "PCP",
+      "tint": null,
+      "code": "PLG",
+      "role": "Logging · central",
+      "name": "Platform Logging Centralisation",
+      "footer": "service: 85BB PCP-GCP",
+      "store": false
+    },
+    {
+      "id": "CONN",
+      "kind": "card",
+      "label": "Platform connectivity",
+      "detail": "to LAN and other apps",
+      "parent": "PCP",
+      "tint": null,
+      "code": "NET",
+      "role": "Connectivity",
+      "name": "VPC · FW · Interconnect",
+      "footer": "service: 85BB PCP-GCP",
+      "store": false
+    },
+    {
+      "id": "MAF",
+      "kind": "card",
+      "label": "Model Armor floor template",
+      "detail": "platform floor settings",
+      "parent": "PCP",
+      "tint": null,
+      "code": "MAF",
+      "role": "Model Armor",
+      "name": "floor template",
+      "footer": "service: 85BB PCP-GCP",
+      "store": false
+    },
+    {
+      "id": "VPCSC",
+      "kind": "card",
+      "label": "VPC SC",
+      "detail": "Agent Runtime min 1 instance",
+      "parent": "PCP",
+      "tint": "risk",
+      "code": "VSC",
+      "role": "VPC SC",
+      "name": "service perimeter",
+      "footer": "service: 85BB PCP-GCP",
+      "store": false
+    },
+    {
+      "id": "GAPI",
+      "kind": "card",
+      "label": "Governed GCP APIs",
+      "detail": "allowed services list",
+      "parent": "PCP",
+      "tint": null,
+      "code": "GOV",
+      "role": "Governed APIs",
+      "name": "Governed GCP APIs / Access",
+      "footer": "service: 85BB PCP-GCP",
+      "store": false
+    },
+    {
+      "id": "IAM",
+      "kind": "card",
+      "label": "IAM / PAB",
+      "detail": "org policy (DRS) applies",
+      "parent": "PCP",
+      "tint": null,
+      "code": "PAB",
+      "role": "IAM · PAB",
+      "name": "IAM / Principal Access",
+      "footer": "service: 85BB PCP-GCP",
+      "store": false
+    },
+    {
+      "id": "RIGHT",
+      "kind": "zone",
+      "label": "Sources and LAN",
+      "detail": null,
+      "parent": null,
+      "tint": null,
+      "code": "SRC",
+      "footer": "scope: Outside PCP-GCP"
+    },
+    {
+      "id": "SAASZ",
+      "kind": "zone",
+      "label": "SaaS / data sources (GWS)",
+      "detail": null,
+      "parent": "RIGHT",
+      "tint": null,
+      "code": "GWS",
+      "footer": "service: Google Workspace"
+    },
+    {
+      "id": "DRIVE",
+      "kind": "card",
+      "label": "HR policy Drive folder",
+      "detail": "approved PDFs, Word",
+      "parent": "SAASZ",
+      "tint": null,
+      "code": "DRV",
+      "role": "Drive · source",
+      "name": "HR policy folder",
+      "footer": "service: Google Workspace",
+      "store": false
+    },
+    {
+      "id": "CHAT",
+      "kind": "card",
+      "label": "Google Chat",
+      "detail": "BRD-HR-010 needs a waiver",
+      "parent": "SAASZ",
+      "tint": "removed",
+      "code": "CHT",
+      "role": "Google Chat",
+      "name": "not the channel here",
+      "footer": "service: Google Workspace",
+      "store": false
+    },
+    {
+      "id": "LAN",
+      "kind": "card",
+      "label": "Airbus LAN",
+      "detail": "via platform connectivity",
+      "parent": "RIGHT",
+      "tint": null,
+      "code": "LN",
+      "role": "Airbus LAN",
+      "name": "LAN-hosted sources",
+      "footer": "service: Airbus LAN",
+      "store": false
+    },
+    {
+      "id": "OUT",
+      "kind": "zone",
+      "label": "Outside Google Cloud",
+      "detail": null,
+      "parent": null,
+      "tint": null,
+      "code": "EXT",
+      "footer": "scope: Outside GCP"
+    },
+    {
+      "id": "AWSZ",
+      "kind": "zone",
+      "label": "Airbus AWS",
+      "detail": null,
+      "parent": "OUT",
+      "tint": null,
+      "code": "AWS",
+      "footer": "service: Airbus AWS"
+    },
+    {
+      "id": "GITHUBZ",
+      "kind": "zone",
+      "label": "Airbus GitHub · github.airbus.corp",
+      "detail": null,
+      "parent": "AWSZ",
+      "tint": null,
+      "code": "GH",
+      "footer": "service: Airbus GitHub"
+    },
+    {
+      "id": "CUTTER",
+      "kind": "card",
+      "label": "GenAiR-Cutter and AgentGarden",
+      "detail": "origin of the ADK agent code",
+      "parent": "GITHUBZ",
+      "tint": "genair",
+      "code": "GEN",
+      "role": "Template · GenAiR",
+      "name": "GenAiR-Cutter + AgentGarden",
+      "footer": "repo: GenAiR-Cutter",
+      "store": false
+    },
+    {
+      "id": "GITLABZ",
+      "kind": "zone",
+      "label": "Airbus GitLab · SCM",
+      "detail": null,
+      "parent": "AWSZ",
+      "tint": null,
+      "code": "SCM",
+      "footer": "service: Airbus SCM"
+    },
+    {
+      "id": "SCMREPO",
+      "kind": "card",
+      "label": "HRPN agent repository",
+      "detail": "host open: GitLab or GitHub",
+      "parent": "GITLABZ",
+      "tint": "added",
+      "code": "GIT",
+      "role": "Repo · SCM",
+      "name": "HRPN agent repository",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "JENKINS",
+      "kind": "card",
+      "label": "Airbus CI/CD (Jenkins)",
+      "detail": "AgentAiR constraint: tbc",
+      "parent": "AWSZ",
+      "tint": null,
+      "code": "JK",
+      "role": "CI · Airbus",
+      "name": "Airbus CI/CD (Jenkins …)",
+      "footer": "service: Airbus CI/CD",
+      "store": false
+    }
+  ],
+  "relations": [
+    {
+      "id": "USERS__CASB__154582a87dce",
+      "from": "USERS",
+      "to": "CASB",
+      "label": "web access",
+      "style": "solid"
+    },
+    {
+      "id": "CASB__GEUI__9111a5c2a462",
+      "from": "CASB",
+      "to": "GEUI",
+      "label": "Gemini Enterprise",
+      "style": "solid"
+    },
+    {
+      "id": "USERS__CHAT__de2bbc5b3e38",
+      "from": "USERS",
+      "to": "CHAT",
+      "label": "BRD channel · not used",
+      "style": "dashed"
+    },
+    {
+      "id": "GEUI__MA1__cd0a4cccffee",
+      "from": "GEUI",
+      "to": "MA1",
+      "label": "prompt screening",
+      "style": "solid"
+    },
+    {
+      "id": "GEUI__GW__6f292e945ea7",
+      "from": "GEUI",
+      "to": "GW",
+      "label": "agent call",
+      "style": "solid"
+    },
+    {
+      "id": "GW__POL__12cf2e4c2ee6",
+      "from": "GW",
+      "to": "POL",
+      "label": "policy check",
+      "style": "solid"
+    },
+    {
+      "id": "GW__MA2__5215377cf135",
+      "from": "GW",
+      "to": "MA2",
+      "label": "screening",
+      "style": "solid"
+    },
+    {
+      "id": "GW__HRAGENT__69c2dc7dbbed",
+      "from": "GW",
+      "to": "HRAGENT",
+      "label": "invoke registered agent",
+      "style": "solid"
+    },
+    {
+      "id": "XIAM__HRAGENT__f18eca9333d3",
+      "from": "XIAM",
+      "to": "HRAGENT",
+      "label": "cross-project grant",
+      "style": "dashed"
+    },
+    {
+      "id": "HRAGENT__HRTOOLS__56e7059d3971",
+      "from": "HRAGENT",
+      "to": "HRTOOLS",
+      "label": "tool call",
+      "style": "solid"
+    },
+    {
+      "id": "HRAGENT__GEM__0559f37ab89b",
+      "from": "HRAGENT",
+      "to": "GEM",
+      "label": "LLM call",
+      "style": "solid"
+    },
+    {
+      "id": "HRTOOLS__RAG__6e51d6a3d90b",
+      "from": "HRTOOLS",
+      "to": "RAG",
+      "label": "retrieval",
+      "style": "solid"
+    },
+    {
+      "id": "HRAGENT__AUTHM__9297e3ac6f24",
+      "from": "HRAGENT",
+      "to": "AUTHM",
+      "label": "agent identity",
+      "style": "solid"
+    },
+    {
+      "id": "HRAGENT__OBSV__b5ac69fc467c",
+      "from": "HRAGENT",
+      "to": "OBSV",
+      "label": "traces",
+      "style": "solid"
+    },
+    {
+      "id": "AUTHM__IDP__631aada47dea",
+      "from": "AUTHM",
+      "to": "IDP",
+      "label": "credentials",
+      "style": "solid"
+    },
+    {
+      "id": "MA2__AUDIT__8aa3c4ce3ccd",
+      "from": "MA2",
+      "to": "AUDIT",
+      "label": "findings",
+      "style": "solid"
+    },
+    {
+      "id": "MA2__SCC__33a26905e8cf",
+      "from": "MA2",
+      "to": "SCC",
+      "label": "AI findings",
+      "style": "solid"
+    },
+    {
+      "id": "OBSV__PLOG__98f38f12db22",
+      "from": "OBSV",
+      "to": "PLOG",
+      "label": "logs",
+      "style": "solid"
+    },
+    {
+      "id": "AUDIT__PLOG__71b519a3cd00",
+      "from": "AUDIT",
+      "to": "PLOG",
+      "label": "audit logs",
+      "style": "solid"
+    },
+    {
+      "id": "SCC__PLOG__8aa3c4ce3ccd",
+      "from": "SCC",
+      "to": "PLOG",
+      "label": "findings",
+      "style": "solid"
+    },
+    {
+      "id": "PLOG__SIEM__9dc08e403382",
+      "from": "PLOG",
+      "to": "SIEM",
+      "label": "forward",
+      "style": "solid"
+    },
+    {
+      "id": "GW__CONN__a3083687ee11",
+      "from": "GW",
+      "to": "CONN",
+      "label": "egress",
+      "style": "solid"
+    },
+    {
+      "id": "CONN__LAN__c55dd0f050e9",
+      "from": "CONN",
+      "to": "LAN",
+      "label": "LAN sources",
+      "style": "solid"
+    },
+    {
+      "id": "FEDC__DRIVE__5341538c62e5",
+      "from": "FEDC",
+      "to": "DRIVE",
+      "label": "federated search",
+      "style": "solid"
+    },
+    {
+      "id": "DSTORE__DATAPROD__4283e1fa93f7",
+      "from": "DSTORE",
+      "to": "DATAPROD",
+      "label": "data products",
+      "style": "solid"
+    },
+    {
+      "id": "GW__DATAPROD__5c7564af8b49",
+      "from": "GW",
+      "to": "DATAPROD",
+      "label": "grounding data",
+      "style": "solid"
+    },
+    {
+      "id": "DATAPROD__PIPE__23bf0d244a4c",
+      "from": "DATAPROD",
+      "to": "PIPE",
+      "label": "pipeline",
+      "style": "solid"
+    },
+    {
+      "id": "PIPE__CONN__878a52fc5ff6",
+      "from": "PIPE",
+      "to": "CONN",
+      "label": "sources",
+      "style": "solid"
+    },
+    {
+      "id": "DRIVE__SYNC__d503595d8213",
+      "from": "DRIVE",
+      "to": "SYNC",
+      "label": "Drive API",
+      "style": "solid"
+    },
+    {
+      "id": "SYNC__DOCS__dc261875c2c1",
+      "from": "SYNC",
+      "to": "DOCS",
+      "label": "delta copy",
+      "style": "solid"
+    },
+    {
+      "id": "DOCS__RAG__f26bd6094c37",
+      "from": "DOCS",
+      "to": "RAG",
+      "label": "import_files",
+      "style": "solid"
+    },
+    {
+      "id": "VPCSC__HRAGENT__8356391330d1",
+      "from": "VPCSC",
+      "to": "HRAGENT",
+      "label": "perimeter · min 1 instance",
+      "style": "dashed"
+    },
+    {
+      "id": "CUTTER__SCMREPO__311a0ae33897",
+      "from": "CUTTER",
+      "to": "SCMREPO",
+      "label": "copier generate · update",
+      "style": "solid"
+    },
+    {
+      "id": "SCMREPO__JENKINS__4333b5a4b1cb",
+      "from": "SCMREPO",
+      "to": "JENKINS",
+      "label": "webhook on push (tbc)",
+      "style": "solid"
+    },
+    {
+      "id": "JENKINS__HRAGENT__6879905376b9",
+      "from": "JENKINS",
+      "to": "HRAGENT",
+      "label": "deploy and register (tbc)",
+      "style": "solid"
+    },
+    {
+      "id": "JENKINS__PSL__e877447aa07d",
+      "from": "JENKINS",
+      "to": "PSL",
+      "label": "apply spoke template (tbc)",
+      "style": "solid"
+    }
+  ],
+  "zoneHierarchy": {
+    "rootCards": [],
+    "zones": [
+      {
+        "id": "LEFT",
+        "label": "Users and enterprise security",
+        "cards": [
+          "USERS",
+          "CASB",
+          "IDP",
+          "SIEM"
+        ],
+        "zones": []
+      },
+      {
+        "id": "PCP",
+        "label": "85BB · PCP-GCP",
+        "cards": [
+          "PLOG",
+          "CONN",
+          "MAF",
+          "VPCSC",
+          "GAPI",
+          "IAM"
+        ],
+        "zones": [
+          {
+            "id": "AIP",
+            "label": "4AE9 · AI Platform",
+            "cards": [],
+            "zones": [
+              {
+                "id": "EAI",
+                "label": "7EFD · Everyday AI (Agent Factory model)",
+                "cards": [
+                  "AUTHM",
+                  "OBSV",
+                  "AUDIT",
+                  "SCC"
+                ],
+                "zones": [
+                  {
+                    "id": "GEZ",
+                    "label": "Gemini Enterprise",
+                    "cards": [
+                      "GEUI",
+                      "MA1",
+                      "FEDC",
+                      "DSTORE"
+                    ],
+                    "zones": []
+                  },
+                  {
+                    "id": "GEAP",
+                    "label": "Gemini Enterprise Agent Platform",
+                    "cards": [
+                      "GW",
+                      "POL",
+                      "MA2"
+                    ],
+                    "zones": [
+                      {
+                        "id": "RUNTIME",
+                        "label": "Agent Registry / Agent Runtime",
+                        "cards": [
+                          "HRAGENT",
+                          "HRTOOLS"
+                        ],
+                        "zones": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "SPOKE",
+                "label": "AAI HR spoke project (hypothesis)",
+                "cards": [
+                  "RAG",
+                  "GEM",
+                  "DOCS",
+                  "SYNC",
+                  "XIAM",
+                  "PSL"
+                ],
+                "zones": []
+              }
+            ]
+          },
+          {
+            "id": "DATAHUB",
+            "label": "C9EC · Datahub",
+            "cards": [
+              "DATAPROD",
+              "PIPE"
+            ],
+            "zones": []
+          }
+        ]
+      },
+      {
+        "id": "RIGHT",
+        "label": "Sources and LAN",
+        "cards": [
+          "LAN"
+        ],
+        "zones": [
+          {
+            "id": "SAASZ",
+            "label": "SaaS / data sources (GWS)",
+            "cards": [
+              "DRIVE",
+              "CHAT"
+            ],
+            "zones": []
+          }
+        ]
+      },
+      {
+        "id": "OUT",
+        "label": "Outside Google Cloud",
+        "cards": [],
+        "zones": [
+          {
+            "id": "AWSZ",
+            "label": "Airbus AWS",
+            "cards": [
+              "JENKINS"
+            ],
+            "zones": [
+              {
+                "id": "GITHUBZ",
+                "label": "Airbus GitHub · github.airbus.corp",
+                "cards": [
+                  "CUTTER"
+                ],
+                "zones": []
+              },
+              {
+                "id": "GITLABZ",
+                "label": "Airbus GitLab · SCM",
+                "cards": [
+                  "SCMREPO"
+                ],
+                "zones": []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

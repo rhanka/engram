@@ -1,0 +1,30 @@
+[
+  {
+    "ruleId": "end-event-required",
+    "severity": "error",
+    "elementId": "Process_Empty",
+    "path": "/rootElements/0",
+    "code": "missing-end"
+  },
+  {
+    "ruleId": "label-required",
+    "severity": "warning",
+    "elementId": "Task_Unnamed",
+    "path": "/rootElements/0/flowElements/0/name",
+    "code": "missing-label"
+  },
+  {
+    "ruleId": "no-disconnected",
+    "severity": "error",
+    "elementId": "Task_Unnamed",
+    "path": "/rootElements/0/flowElements/0",
+    "code": "disconnected"
+  },
+  {
+    "ruleId": "start-event-required",
+    "severity": "error",
+    "elementId": "Process_Empty",
+    "path": "/rootElements/0",
+    "code": "missing-start"
+  }
+]

@@ -1,0 +1,1557 @@
+[
+  {
+    "id": "legend-wrong-child",
+    "expected": [
+      {
+        "code": "legend-key-parent-invalid",
+        "severity": "error",
+        "path": "entities.entity:n",
+        "message": "key entity entity:n is contained by legend entity:l; only legend-key entities may be contained by a legend",
+        "refs": [
+          "entity:n",
+          "entity:l"
+        ],
+        "details": {
+          "childType": "node",
+          "parentType": "legend",
+          "constraint": "children-restricted"
+        }
+      }
+    ]
+  },
+  {
+    "id": "legend-wrong-parent",
+    "expected": [
+      {
+        "code": "legend-key-parent-invalid",
+        "severity": "error",
+        "path": "entities.entity:k",
+        "message": "key entity entity:k is contained by entity:c, which is outside the legend family; a legend-key must be contained by a legend",
+        "refs": [
+          "entity:k",
+          "entity:c"
+        ],
+        "details": {
+          "childType": "legend-key",
+          "parentType": "container",
+          "constraint": "required-parent"
+        }
+      }
+    ]
+  },
+  {
+    "id": "legend-orphan",
+    "expected": [
+      {
+        "code": "legend-key-parent-invalid",
+        "severity": "error",
+        "path": "entities.entity:k",
+        "message": "key entity entity:k has no hierarchy parent; a legend-key must be contained by a legend",
+        "refs": [
+          "entity:k"
+        ],
+        "details": {
+          "childType": "legend-key",
+          "parentType": "none",
+          "constraint": "required-parent"
+        }
+      }
+    ]
+  },
+  {
+    "id": "category-undeclared",
+    "expected": [
+      {
+        "code": "tone-category-unknown",
+        "severity": "error",
+        "path": "presentation.diagram.entities.occurrence:n.categoryRef",
+        "message": "category risk on occurrence occurrence:n is not declared by any legend in this document",
+        "refs": [
+          "occurrence:n"
+        ],
+        "details": {
+          "value": "risk",
+          "legendBinding": "undeclared",
+          "categoryType": "legend-key"
+        }
+      }
+    ]
+  },
+  {
+    "id": "category-ambiguous",
+    "expected": [
+      {
+        "code": "tone-category-unknown",
+        "severity": "error",
+        "path": "presentation.diagram.entities.occurrence:n.categoryRef",
+        "message": "category risk on occurrence occurrence:n resolves ambiguously across legends; set categoryRef to bind it",
+        "refs": [
+          "occurrence:n"
+        ],
+        "details": {
+          "value": "risk",
+          "legendBinding": "ambiguous",
+          "categoryType": "legend-key"
+        }
+      }
+    ]
+  },
+  {
+    "id": "category-wrong-legend",
+    "expected": [
+      {
+        "code": "tone-category-unknown",
+        "severity": "error",
+        "path": "presentation.diagram.categoryTokens[0].legendRef",
+        "message": "legendRef names entity:c, which is not a legend",
+        "refs": [
+          "entity:c"
+        ],
+        "details": {
+          "value": "risk",
+          "legendBinding": "bound-target-not-legend",
+          "categoryType": "legend-key"
+        }
+      }
+    ]
+  },
+  {
+    "id": "pattern-bounded",
+    "expected": [
+      {
+        "code": "text-pattern-mismatch",
+        "severity": "error",
+        "path": "presentation.diagram.entities.occurrence:n.icon",
+        "message": "value does not match the key grammar",
+        "refs": [],
+        "details": {
+          "pattern": "key",
+          "length": 1,
+          "maxLength": 40
+        }
+      }
+    ]
+  },
+  {
+    "id": "pattern-without-max",
+    "expected": [
+      {
+        "code": "text-pattern-mismatch",
+        "severity": "error",
+        "path": "entities.entity:n.attributes.code",
+        "message": "value does not match the key grammar",
+        "refs": [],
+        "details": {
+          "pattern": "key",
+          "length": 1
+        }
+      }
+    ]
+  },
+  {
+    "id": "minimum-only",
+    "expected": [
+      {
+        "code": "text-pattern-mismatch",
+        "severity": "error",
+        "path": "entities.entity:n.attributes.code",
+        "message": "value is shorter than the minimum length for code",
+        "refs": [],
+        "details": {
+          "pattern": "min-length",
+          "length": 0,
+          "minLength": 1
+        }
+      }
+    ]
+  },
+  {
+    "id": "integer",
+    "expected": [
+      {
+        "code": "quantity-not-integer",
+        "severity": "error",
+        "path": "entities.entity:p.attributes.multiplicity.fields.lower",
+        "message": "value 0.5 is not an integer",
+        "refs": [],
+        "details": {
+          "value": 0.5,
+          "integer": "required"
+        }
+      }
+    ]
+  },
+  {
+    "id": "quantity-min",
+    "expected": [
+      {
+        "code": "quantity-below-min",
+        "severity": "error",
+        "path": "entities.entity:p.attributes.multiplicity.fields.lower",
+        "message": "value -1 is below the minimum 0",
+        "refs": [],
+        "details": {
+          "value": -1,
+          "min": 0
+        }
+      }
+    ]
+  },
+  {
+    "id": "quantity-max",
+    "expected": [
+      {
+        "code": "quantity-above-max",
+        "severity": "error",
+        "path": "entities.entity:p.attributes.multiplicity.fields.upper",
+        "message": "value 9007199254740992 is above the maximum 9007199254740991",
+        "refs": [],
+        "details": {
+          "value": 9007199254740992,
+          "max": 9007199254740991
+        }
+      }
+    ]
+  },
+  {
+    "id": "unique-scoped",
+    "expected": [
+      {
+        "code": "unique-attribute-violation",
+        "severity": "error",
+        "path": "entities.entity:k2.attributes.category",
+        "message": "attribute category must be unique among legend-key entities in scope within:legend; entity:k1 carries the same value",
+        "refs": [
+          "entity:k2",
+          "entity:k1"
+        ],
+        "details": {
+          "attribute": "category",
+          "type": "legend-key",
+          "scope": "within:legend"
+        }
+      }
+    ]
+  },
+  {
+    "id": "unique-legacy",
+    "expected": [
+      {
+        "code": "unique-attribute-violation",
+        "severity": "error",
+        "path": "entities.entity:c2.attributes.name",
+        "message": "attribute name must be unique among container entities; entity:c1 carries the same value",
+        "refs": [
+          "entity:c2",
+          "entity:c1"
+        ],
+        "details": {
+          "attribute": "name",
+          "type": "container"
+        }
+      }
+    ]
+  },
+  {
+    "id": "endpoint-kind",
+    "expected": [
+      {
+        "code": "endpoint-target-not-allowed",
+        "severity": "error",
+        "path": "relations.relation:r.endpoints[0].target",
+        "message": "role source accepts entity, not a port",
+        "refs": [
+          "port:p"
+        ],
+        "details": {
+          "seenKind": "port",
+          "allowed": "entity"
+        }
+      }
+    ]
+  },
+  {
+    "id": "endpoint-type",
+    "expected": [
+      {
+        "code": "endpoint-target-not-allowed",
+        "severity": "error",
+        "path": "relations.relation:r.endpoints[0].target",
+        "message": "role source accepts entity types process; entity:p is a custom-process",
+        "refs": [
+          "entity:p"
+        ],
+        "details": {
+          "seenType": "custom-process",
+          "allowed": "process"
+        }
+      }
+    ]
+  },
+  {
+    "id": "matrix-reversed-pair",
+    "expected": [
+      {
+        "code": "relationship-matrix-violation",
+        "severity": "error",
+        "path": "relations.relation:r.endpoints",
+        "message": "relation relation:r of type access is not allowed from data-object to application-component by matrix archimate-3.2",
+        "refs": [
+          "relation:r",
+          "entity:d",
+          "entity:c"
+        ],
+        "details": {
+          "matrixId": "archimate-3.2",
+          "relationType": "access",
+          "sourceType": "data-object",
+          "targetType": "application-component"
+        }
+      }
+    ]
+  },
+  {
+    "id": "multiplicity-reversed",
+    "expected": [
+      {
+        "code": "multiplicity-invalid",
+        "severity": "error",
+        "path": "entities.entity:p.attributes.multiplicity",
+        "message": "multiplicity lower 3 exceeds finite upper 2",
+        "refs": [],
+        "details": {
+          "lower": 3,
+          "upper": 2,
+          "constraint": "bound-pair"
+        }
+      }
+    ]
+  },
+  {
+    "id": "stereotype-application",
+    "expected": [
+      {
+        "code": "stereotype-application-invalid",
+        "severity": "error",
+        "path": "entities.entity:i.attributes.stereotypes[0]",
+        "message": "stereotype entity:s cannot be applied to type interface",
+        "refs": [
+          "entity:i",
+          "entity:s"
+        ],
+        "details": {
+          "attribute": "stereotypes",
+          "targetType": "interface",
+          "allowed": "class"
+        }
+      }
+    ]
+  },
+  {
+    "id": "typed-reference",
+    "expected": [
+      {
+        "code": "reference-target-type",
+        "severity": "error",
+        "path": "entities.entity:i.attributes.stereotypes[0]",
+        "message": "reference target entity:c has type class; allowed types are stereotype",
+        "refs": [
+          "entity:c"
+        ],
+        "details": {
+          "seenType": "class",
+          "allowed": "stereotype"
+        }
+      }
+    ]
+  },
+  {
+    "id": "struct-unknown",
+    "expected": [
+      {
+        "code": "struct-type-unknown",
+        "severity": "error",
+        "path": "entities.entity:p.attributes.multiplicity",
+        "message": "structured value type unknown-value is not declared",
+        "refs": [],
+        "details": {
+          "type": "unknown-value"
+        }
+      }
+    ]
+  },
+  {
+    "id": "struct-field",
+    "expected": [
+      {
+        "code": "struct-field-not-in-schema",
+        "severity": "error",
+        "path": "entities.entity:p.attributes.multiplicity.fields.ceiling",
+        "message": "field ceiling is not declared by structured type multiplicity",
+        "refs": [],
+        "details": {
+          "type": "multiplicity",
+          "field": "ceiling"
+        }
+      }
+    ]
+  },
+  {
+    "id": "struct-type",
+    "expected": [
+      {
+        "code": "struct-type-not-allowed",
+        "severity": "error",
+        "path": "entities.entity:p.attributes.multiplicity",
+        "message": "structured type other-value is not allowed here; allowed types are multiplicity",
+        "refs": [],
+        "details": {
+          "type": "other-value",
+          "allowed": "multiplicity"
+        }
+      }
+    ]
+  },
+  {
+    "id": "presentation-shape-invalid",
+    "expected": [
+      {
+        "code": "occurrence-endpoint-mismatch",
+        "severity": "error",
+        "path": "presentation.diagram.entities.occurrence:n.text.kicker",
+        "message": "diagram presentation fails check presentation-shape-invalid",
+        "refs": [],
+        "details": {
+          "check": "presentation-shape-invalid"
+        }
+      }
+    ],
+    "mutation": {
+      "path": "presentation.diagram.entities.occurrence:n.text.kicker",
+      "value": 7
+    }
+  },
+  {
+    "id": "form-selector-mismatch",
+    "expected": [
+      {
+        "code": "occurrence-endpoint-mismatch",
+        "severity": "error",
+        "path": "presentation.diagram.entities.occurrence:n.form",
+        "message": "diagram presentation fails check form-selector-mismatch",
+        "refs": [],
+        "details": {
+          "check": "form-selector-mismatch"
+        }
+      }
+    ],
+    "mutation": {
+      "path": "presentation.diagram.entities.occurrence:n.form",
+      "value": "container"
+    }
+  },
+  {
+    "id": "legend-order-invalid",
+    "expected": [
+      {
+        "code": "occurrence-endpoint-mismatch",
+        "severity": "error",
+        "path": "presentation.diagram.legends.occurrence:l.order",
+        "message": "diagram presentation fails check legend-order-invalid",
+        "refs": [],
+        "details": {
+          "check": "legend-order-invalid"
+        }
+      }
+    ],
+    "mutation": {
+      "path": "presentation.diagram.legends.occurrence:l.order",
+      "value": []
+    }
+  },
+  {
+    "id": "token-binding-conflict",
+    "expected": [
+      {
+        "code": "occurrence-endpoint-mismatch",
+        "severity": "error",
+        "path": "presentation.diagram.categoryTokens[1]",
+        "message": "diagram presentation fails check token-binding-conflict",
+        "refs": [],
+        "details": {
+          "check": "token-binding-conflict"
+        }
+      }
+    ],
+    "mutation": {
+      "path": "presentation.diagram.categoryTokens[1]",
+      "value": {
+        "legendRef": "entity:l",
+        "category": "risk",
+        "token": "danger"
+      }
+    }
+  },
+  {
+    "id": "presentation-pin-mismatch",
+    "expected": [
+      {
+        "code": "occurrence-endpoint-mismatch",
+        "severity": "error",
+        "path": "presentation.diagram.contractPin",
+        "message": "diagram presentation fails check presentation-pin-mismatch",
+        "refs": [],
+        "details": {
+          "check": "presentation-pin-mismatch"
+        }
+      }
+    ],
+    "mutation": {
+      "path": "presentation.diagram.contractPin",
+      "operation": "substitute-another-resolved-contract-pin"
+    }
+  },
+  {
+    "id": "representative-hidden",
+    "expected": [
+      {
+        "code": "occurrence-endpoint-mismatch",
+        "severity": "error",
+        "path": "relationOccurrences.occurrence:r.endpoints[1].occurrence",
+        "message": "projected endpoint for role target fails check representative-hidden",
+        "refs": [
+          "occurrence:r",
+          "occurrence:Z"
+        ],
+        "details": {
+          "role": "target",
+          "check": "representative-hidden"
+        }
+      }
+    ]
+  },
+  {
+    "id": "projection-not-folded",
+    "expected": [
+      {
+        "code": "occurrence-endpoint-mismatch",
+        "severity": "error",
+        "path": "relationOccurrences.occurrence:r.endpoints[1].occurrence",
+        "message": "projected endpoint for role target fails check projection-not-folded",
+        "refs": [
+          "occurrence:r",
+          "occurrence:Z"
+        ],
+        "details": {
+          "role": "target",
+          "check": "projection-not-folded"
+        }
+      }
+    ]
+  },
+  {
+    "id": "projection-not-outermost",
+    "expected": [
+      {
+        "code": "occurrence-endpoint-mismatch",
+        "severity": "error",
+        "path": "relationOccurrences.occurrence:r.endpoints[1].occurrence",
+        "message": "projected endpoint for role target fails check projection-not-outermost",
+        "refs": [
+          "occurrence:r",
+          "occurrence:Z"
+        ],
+        "details": {
+          "role": "target",
+          "check": "projection-not-outermost"
+        }
+      }
+    ]
+  },
+  {
+    "id": "representative-not-container",
+    "expected": [
+      {
+        "code": "occurrence-endpoint-mismatch",
+        "severity": "error",
+        "path": "relationOccurrences.occurrence:r.endpoints[1].occurrence",
+        "message": "projected endpoint for role target fails check representative-not-container",
+        "refs": [
+          "occurrence:r",
+          "occurrence:Z"
+        ],
+        "details": {
+          "role": "target",
+          "check": "representative-not-container"
+        }
+      }
+    ]
+  },
+  {
+    "id": "provenance-missing",
+    "expected": [
+      {
+        "code": "occurrence-endpoint-mismatch",
+        "severity": "error",
+        "path": "relationOccurrences.occurrence:r.endpoints[1].occurrence",
+        "message": "projected endpoint for role target fails check provenance-missing",
+        "refs": [
+          "occurrence:r",
+          "occurrence:Z"
+        ],
+        "details": {
+          "role": "target",
+          "check": "provenance-missing"
+        }
+      }
+    ]
+  },
+  {
+    "id": "provenance-mismatch",
+    "expected": [
+      {
+        "code": "occurrence-endpoint-mismatch",
+        "severity": "error",
+        "path": "relationOccurrences.occurrence:r.endpoints[1].occurrence",
+        "message": "projected endpoint for role target fails check provenance-mismatch",
+        "refs": [
+          "occurrence:r",
+          "occurrence:Z"
+        ],
+        "details": {
+          "role": "target",
+          "check": "provenance-mismatch"
+        }
+      }
+    ]
+  },
+  {
+    "id": "projection-source-projected",
+    "expected": [
+      {
+        "code": "occurrence-endpoint-mismatch",
+        "severity": "error",
+        "path": "relationOccurrences.occurrence:r.endpoints[1].occurrence",
+        "message": "projected endpoint for role target fails check projection-source-projected",
+        "refs": [
+          "occurrence:r",
+          "occurrence:Z"
+        ],
+        "details": {
+          "role": "target",
+          "check": "projection-source-projected"
+        }
+      }
+    ]
+  },
+  {
+    "id": "summary-constituents-mismatch",
+    "expected": [
+      {
+        "code": "occurrence-endpoint-mismatch",
+        "severity": "error",
+        "path": "summaryLabels.s2",
+        "message": "summary definition s2 fails check summary-constituents-mismatch",
+        "refs": [
+          "s2",
+          "occurrence:C",
+          "occurrence:X"
+        ],
+        "details": {
+          "check": "summary-constituents-mismatch"
+        }
+      }
+    ]
+  },
+  {
+    "id": "summary-duplicate-key",
+    "expected": [
+      {
+        "code": "occurrence-endpoint-mismatch",
+        "severity": "error",
+        "path": "summaryLabels.s2",
+        "message": "summary definition s2 fails check summary-duplicate-key",
+        "refs": [
+          "s2",
+          "occurrence:C",
+          "occurrence:X"
+        ],
+        "details": {
+          "check": "summary-duplicate-key",
+          "firstId": "s1"
+        }
+      }
+    ]
+  },
+  {
+    "id": "summary-occurrence-ambiguous",
+    "expected": [
+      {
+        "code": "occurrence-endpoint-mismatch",
+        "severity": "error",
+        "path": "summaryLabels.s2",
+        "message": "summary definition s2 fails check summary-occurrence-ambiguous",
+        "refs": [
+          "s2",
+          "occurrence:C",
+          "occurrence:X"
+        ],
+        "details": {
+          "check": "summary-occurrence-ambiguous",
+          "relationId": "relation:r"
+        }
+      }
+    ]
+  },
+  {
+    "id": "summary-active-key-conflict",
+    "expected": [
+      {
+        "code": "occurrence-endpoint-mismatch",
+        "severity": "error",
+        "path": "summaryLabels.s2",
+        "message": "summary definition s2 fails check summary-active-key-conflict",
+        "refs": [
+          "s2",
+          "occurrence:C",
+          "occurrence:X"
+        ],
+        "details": {
+          "check": "summary-active-key-conflict",
+          "firstId": "s1",
+          "sourceRepresentative": "occurrence:Z",
+          "targetRepresentative": "occurrence:X",
+          "strokeStyle": "solid"
+        }
+      }
+    ]
+  },
+  {
+    "id": "scope-required",
+    "expected": [
+      {
+        "code": "type-definition-conflict",
+        "severity": "error",
+        "path": "profiles.generic@2.constraints[0]",
+        "message": "unique-attribute constraint for legend-key.category requires an explicit scope",
+        "refs": [],
+        "details": {
+          "check": "unique-scope-missing",
+          "type": "legend-key",
+          "attribute": "category"
+        }
+      }
+    ]
+  },
+  {
+    "id": "abstract-container",
+    "expected": [
+      {
+        "code": "type-definition-conflict",
+        "severity": "error",
+        "path": "profiles.synthetic@2.entityTypes[0]",
+        "message": "abstract type root cannot declare container capability",
+        "refs": [],
+        "details": {
+          "check": "abstract-container",
+          "type": "root"
+        }
+      }
+    ]
+  },
+  {
+    "id": "bad-text-schema",
+    "expected": [
+      {
+        "code": "type-definition-conflict",
+        "severity": "error",
+        "path": "profiles.synthetic@2.entityTypes[0].attributes[0]",
+        "message": "text schema for code has an invalid pattern or length bounds",
+        "refs": [],
+        "details": {
+          "check": "text-pattern-invalid",
+          "attribute": "code"
+        }
+      }
+    ]
+  },
+  {
+    "id": "bad-numeric-schema",
+    "expected": [
+      {
+        "code": "type-definition-conflict",
+        "severity": "error",
+        "path": "profiles.synthetic@2.entityTypes[0].attributes[0]",
+        "message": "quantity schema for count has invalid numeric bounds",
+        "refs": [],
+        "details": {
+          "check": "numeric-constraint-invalid",
+          "attribute": "count"
+        }
+      }
+    ]
+  },
+  {
+    "id": "type-cycle",
+    "expected": [
+      {
+        "code": "type-definition-conflict",
+        "severity": "error",
+        "path": "typeDefinitions.a.baseType",
+        "message": "type definition a closes base cycle a>b>a",
+        "refs": [],
+        "details": {
+          "check": "resolution-cycle",
+          "cycle": "a>b>a"
+        }
+      }
+    ]
+  },
+  {
+    "id": "bad-matrix",
+    "expected": [
+      {
+        "code": "type-definition-conflict",
+        "severity": "error",
+        "path": "profiles.archimate@2.constraints[0]",
+        "message": "relationship matrix archimate-3.2 has an invalid or duplicate tuple",
+        "refs": [],
+        "details": {
+          "check": "matrix-constraint-invalid",
+          "matrixId": "archimate-3.2"
+        }
+      }
+    ]
+  },
+  {
+    "id": "native-redeclaration",
+    "expected": [
+      {
+        "code": "type-definition-conflict",
+        "severity": "error",
+        "path": "typeDefinitions.refined.attributes.name",
+        "message": "type definition refined redeclares name, which base type node already declares; refinements are additive only",
+        "details": {
+          "attribute": "name",
+          "baseType": "node"
+        }
+      }
+    ]
+  },
+  {
+    "id": "source-valid-inactive-summary",
+    "expected": []
+  },
+  {
+    "id": "solid-summary-does-not-include-dashed",
+    "expected": []
+  },
+  {
+    "id": "case_78e5757e7e2adade198869b77144b84085625a7380fd7035f9f64dc611833792",
+    "mutation": {
+      "path": "relations.relation:serving",
+      "value": {
+        "id": "relation:serving",
+        "profile": "archimate@2",
+        "type": "triggering",
+        "endpoints": [
+          {
+            "role": "source",
+            "target": "entity:process"
+          },
+          {
+            "role": "target",
+            "target": "entity:junction"
+          }
+        ],
+        "attributes": {}
+      }
+    },
+    "expected": [
+      {
+        "code": "relationship-matrix-violation",
+        "severity": "error",
+        "path": "entities.entity:junction",
+        "message": "junction entity:junction connects incompatible relation types flow, triggering",
+        "refs": [
+          "entity:junction",
+          "relation:flow",
+          "relation:serving"
+        ],
+        "details": {
+          "matrixId": "archimate-3.2",
+          "constraint": "incident-type-uniformity",
+          "relationTypes": "flow,triggering"
+        }
+      }
+    ],
+    "name": "junction-incident-types",
+    "sourcePin": {
+      "repository": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/fixtures/valid/archimate-skeleton-document.json",
+      "sha256": "8395ccc32ac25ae1354271817a3358bfe6f96243ecdfe2e5ef45ae1f48683951"
+    }
+  },
+  {
+    "id": "case_f579949420e664ed7b741494a57859dc9bc66a6f31d1ae799cdcedda3502cb88",
+    "mutation": {
+      "replacements": [
+        {
+          "path": "relations.relation:order-customer.attributes.sourceAggregation",
+          "value": {
+            "kind": "enum",
+            "value": "composite"
+          }
+        },
+        {
+          "path": "relations.relation:order-customer.attributes.targetAggregation",
+          "value": {
+            "kind": "enum",
+            "value": "composite"
+          }
+        }
+      ]
+    },
+    "expected": [
+      {
+        "code": "multiplicity-invalid",
+        "severity": "error",
+        "path": "relations.relation:order-customer.attributes",
+        "message": "relation relation:order-customer has 2 composite ends; at most 1 is allowed",
+        "refs": [
+          "relation:order-customer"
+        ],
+        "details": {
+          "count": 2,
+          "max": 1,
+          "constraint": "at-most-value"
+        }
+      }
+    ],
+    "name": "two-composite-ends",
+    "sourcePin": {
+      "repository": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/fixtures/valid/uml-skeleton-document.json",
+      "sha256": "eea74144a37d9e44456278eeb36b06c5c2d7f9b4d19136a6b8ed3ce6ea3b08d8"
+    }
+  },
+  {
+    "id": "case_beb407b2578c63ce4a2619c23d081c167bba9ea97492285d586ed0d4c86efa68",
+    "mutation": {
+      "isolatedEntity": {
+        "id": "entity:order",
+        "profile": "uml@2",
+        "type": "stereotype",
+        "attributes": {
+          "name": {
+            "kind": "text",
+            "value": "Order"
+          },
+          "extends": {
+            "kind": "collection",
+            "items": [
+              {
+                "kind": "enum",
+                "value": "class"
+              },
+              {
+                "kind": "enum",
+                "value": "class"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "expected": [
+      {
+        "code": "collection-bound-exceeded",
+        "severity": "error",
+        "path": "entities.entity:order.attributes.extends[1]",
+        "message": "collection extends repeats item 1; first occurrence is 0",
+        "refs": [],
+        "details": {
+          "constraint": "collection-unique",
+          "firstIndex": 0,
+          "duplicateIndex": 1
+        }
+      }
+    ],
+    "name": "duplicate-extends",
+    "sourcePin": {
+      "repository": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/fixtures/valid/uml-skeleton-document.json",
+      "sha256": "eea74144a37d9e44456278eeb36b06c5c2d7f9b4d19136a6b8ed3ce6ea3b08d8"
+    }
+  },
+  {
+    "id": "case_9ddcf62fdc56e4d33af6aebb251fe1a5fa5988e548cf60b01c5f2a191998405f",
+    "mutation": {
+      "path": "profiles.uml@2.entityTypes.class.supertypes",
+      "value": [
+        "missing"
+      ]
+    },
+    "expected": [
+      {
+        "code": "supertype-unknown",
+        "severity": "error",
+        "path": "profiles.uml@2.entityTypes.class.supertypes[0]",
+        "message": "supertype missing is not declared",
+        "refs": [],
+        "details": {
+          "supertype": "missing"
+        }
+      }
+    ],
+    "name": "supertype-unknown",
+    "sourcePin": {
+      "repository": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/fixtures/valid/uml-skeleton-document.json",
+      "sha256": "eea74144a37d9e44456278eeb36b06c5c2d7f9b4d19136a6b8ed3ce6ea3b08d8"
+    }
+  },
+  {
+    "id": "case_5de1e81a294931a03d5fd302d8a0f0c01819ef6936e399ec62264c8ab0b951b5",
+    "mutation": {
+      "path": "profiles.uml@2.entityTypes.class.supertypes",
+      "value": [
+        "class"
+      ]
+    },
+    "expected": [
+      {
+        "code": "supertype-cycle",
+        "severity": "error",
+        "path": "profiles.uml@2.entityTypes.class.supertypes",
+        "message": "supertype chain for class is cyclic",
+        "refs": [],
+        "details": {
+          "type": "class"
+        }
+      }
+    ],
+    "name": "supertype-cycle",
+    "sourcePin": {
+      "repository": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/fixtures/valid/uml-skeleton-document.json",
+      "sha256": "eea74144a37d9e44456278eeb36b06c5c2d7f9b4d19136a6b8ed3ce6ea3b08d8"
+    }
+  },
+  {
+    "id": "case_8d9846b3f4e3afcab6230b4d2433ba9f1c9939769f59ddcfe0e63511ea169969",
+    "mutation": {
+      "replacements": [
+        {
+          "path": "profiles.uml@2.entityTypes.class.attributes",
+          "value": []
+        },
+        {
+          "path": "profiles.uml@2.entityTypes.class.supertypes",
+          "value": [
+            "interface",
+            "package"
+          ]
+        },
+        {
+          "path": "profiles.uml@2.entityTypes.interface.attributes.name.maxLength",
+          "value": 100
+        }
+      ]
+    },
+    "expected": [
+      {
+        "code": "attribute-conflict",
+        "severity": "error",
+        "path": "profiles.uml@2.entityTypes.class.attributes.name",
+        "message": "inherited attribute name has incompatible schemas on class",
+        "refs": [],
+        "details": {
+          "attribute": "name",
+          "type": "class"
+        }
+      }
+    ],
+    "name": "attribute-conflict",
+    "sourcePin": {
+      "repository": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/fixtures/valid/uml-skeleton-document.json",
+      "sha256": "eea74144a37d9e44456278eeb36b06c5c2d7f9b4d19136a6b8ed3ce6ea3b08d8"
+    }
+  },
+  {
+    "id": "case_27deeb4c3575ac8f4aa268e9eeb08b822780ce0861684ff5fd1f71837500ef2c",
+    "mutation": {
+      "path": "entities.entity:order.type",
+      "value": "multiplicity",
+      "operation": "instantiate-abstract-identity-schema"
+    },
+    "expected": [
+      {
+        "code": "abstract-instantiated",
+        "severity": "error",
+        "path": "entities.entity:order.type",
+        "message": "abstract type multiplicity cannot be instantiated as an entity",
+        "refs": [
+          "entity:order"
+        ],
+        "details": {
+          "type": "multiplicity"
+        }
+      }
+    ],
+    "name": "abstract-instantiated",
+    "sourcePin": {
+      "repository": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/fixtures/valid/uml-skeleton-document.json",
+      "sha256": "eea74144a37d9e44456278eeb36b06c5c2d7f9b4d19136a6b8ed3ce6ea3b08d8"
+    }
+  },
+  {
+    "id": "case_fe922459c0772be776416003ee5450eb2b49d8f92f935556e3343370ff6f0525",
+    "mutation": {
+      "path": "input.adapterPin",
+      "value": {
+        "id": "fixture:executor",
+        "version": "1",
+        "contentDigest": "ab8bea23f592a350e1a668edc06320d9811816734788ad838dab04dbccac2eaa"
+      }
+    },
+    "expected": [
+      {
+        "code": "occurrence-endpoint-mismatch",
+        "severity": "error",
+        "path": "input.adapterPin",
+        "message": "diagram presentation fails check presentation-pin-mismatch",
+        "refs": [],
+        "details": {
+          "check": "presentation-pin-mismatch"
+        }
+      }
+    ],
+    "name": "adapter-pin-mismatch",
+    "sourcePin": {
+      "repository": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/fixtures/valid/uml-skeleton-document.json",
+      "sha256": "eea74144a37d9e44456278eeb36b06c5c2d7f9b4d19136a6b8ed3ce6ea3b08d8"
+    }
+  },
+  {
+    "id": "case_dfc9850a6f79aaa8301d79ab15a1ed73b74ce18550ad27d691d4afc31105c68b",
+    "mutation": {
+      "attachmentOccurrence": "occurrence:r",
+      "targetOccurrence": "occurrence:flow",
+      "projectedHiddenRelationOccurrences": [
+        "occurrence:flow"
+      ]
+    },
+    "expected": [
+      {
+        "code": "occurrence-endpoint-mismatch",
+        "severity": "error",
+        "path": "relationOccurrences.occurrence:r.endpoints[1].occurrence",
+        "message": "projected endpoint for role target fails check relation-target-hidden",
+        "refs": [
+          "occurrence:r",
+          "occurrence:flow"
+        ],
+        "details": {
+          "role": "target",
+          "check": "relation-target-hidden"
+        }
+      }
+    ],
+    "name": "relation-target-hidden",
+    "sourcePin": {
+      "repository": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/fixtures/valid/archimate-skeleton-document.json",
+      "sha256": "8395ccc32ac25ae1354271817a3358bfe6f96243ecdfe2e5ef45ae1f48683951"
+    }
+  },
+  {
+    "id": "case_7096bf5caf4ece090e4d14b5db3dcea68ffa7272d4e08cd982b061fc0b93a974",
+    "name": "ArchiMate folded relation-to-relation",
+    "sourcePin": {
+      "repository": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/fixtures/valid/archimate-skeleton-document.json",
+      "sha256": "8395ccc32ac25ae1354271817a3358bfe6f96243ecdfe2e5ef45ae1f48683951"
+    },
+    "mutation": {
+      "entityMappings": {
+        "entity:actor": "business-actor",
+        "entity:process": "business-process",
+        "entity:component": "application-component"
+      },
+      "replaceEntities": {
+        "entity:junction": {
+          "id": "entity:junction",
+          "profile": "archimate@2",
+          "type": "grouping",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Claims grouping"
+            }
+          }
+        }
+      },
+      "replaceRelations": {
+        "relation:assignment": {
+          "id": "relation:assignment",
+          "profile": "archimate@2",
+          "type": "association",
+          "endpoints": [
+            {
+              "role": "source",
+              "target": "entity:junction"
+            },
+            {
+              "role": "target",
+              "target": "entity:actor"
+            }
+          ],
+          "attributes": {}
+        },
+        "relation:serving": {
+          "id": "relation:serving",
+          "profile": "archimate@2",
+          "type": "groupingContainment",
+          "endpoints": [
+            {
+              "role": "parent",
+              "target": "entity:junction"
+            },
+            {
+              "role": "child",
+              "target": "entity:actor"
+            }
+          ],
+          "attributes": {}
+        },
+        "relation:flow": {
+          "id": "relation:flow",
+          "profile": "archimate@2",
+          "type": "association",
+          "endpoints": [
+            {
+              "role": "source",
+              "target": "entity:component"
+            },
+            {
+              "role": "target",
+              "target": "relation:assignment"
+            }
+          ],
+          "attributes": {}
+        }
+      },
+      "sourceViewFragment": {
+        "entityOccurrences": {
+          "occurrence:Z": {
+            "id": "occurrence:Z",
+            "entity": "entity:junction",
+            "geometry": {
+              "x": 0,
+              "y": 0,
+              "width": 1000,
+              "height": 600
+            }
+          },
+          "occurrence:A1": {
+            "id": "occurrence:A1",
+            "entity": "entity:actor",
+            "geometry": {
+              "x": 40,
+              "y": 240,
+              "width": 460,
+              "height": 200
+            },
+            "group": "occurrence:Z"
+          },
+          "occurrence:EXT": {
+            "id": "occurrence:EXT",
+            "entity": "entity:component",
+            "geometry": {
+              "x": 1200,
+              "y": 240,
+              "width": 460,
+              "height": 200
+            }
+          }
+        },
+        "relationOccurrences": {
+          "occurrence:r": {
+            "id": "occurrence:r",
+            "relation": "relation:flow",
+            "endpoints": [
+              {
+                "role": "source",
+                "occurrence": "occurrence:EXT"
+              },
+              {
+                "role": "target",
+                "occurrence": "occurrence:flow"
+              }
+            ]
+          },
+          "occurrence:flow": {
+            "id": "occurrence:flow",
+            "relation": "relation:assignment",
+            "endpoints": [
+              {
+                "role": "source",
+                "occurrence": "occurrence:Z"
+              },
+              {
+                "role": "target",
+                "occurrence": "occurrence:A1"
+              }
+            ],
+            "waypoints": [
+              {
+                "x": 500,
+                "y": 200
+              },
+              {
+                "x": 270,
+                "y": 240
+              }
+            ]
+          }
+        },
+        "portOccurrences": {},
+        "groups": {
+          "occurrence:Z": {
+            "id": "occurrence:Z",
+            "occurrence": "occurrence:Z",
+            "collapsed": false
+          }
+        },
+        "filters": []
+      },
+      "collapsedOccurrenceIds": [
+        "occurrence:Z"
+      ]
+    },
+    "expectedProjection": {
+      "entityOccurrences": {
+        "occurrence:Z": {
+          "id": "occurrence:Z",
+          "entity": "entity:junction",
+          "geometry": {
+            "x": 0,
+            "y": 0,
+            "width": 1000,
+            "height": 600
+          }
+        },
+        "occurrence:A1": {
+          "id": "occurrence:A1",
+          "entity": "entity:actor",
+          "geometry": {
+            "x": 40,
+            "y": 240,
+            "width": 460,
+            "height": 200
+          },
+          "group": "occurrence:Z"
+        },
+        "occurrence:EXT": {
+          "id": "occurrence:EXT",
+          "entity": "entity:component",
+          "geometry": {
+            "x": 1200,
+            "y": 240,
+            "width": 460,
+            "height": 200
+          }
+        }
+      },
+      "relationOccurrences": {
+        "occurrence:r": {
+          "id": "occurrence:r",
+          "relation": "relation:flow",
+          "endpoints": [
+            {
+              "role": "source",
+              "occurrence": "occurrence:EXT"
+            },
+            {
+              "role": "target",
+              "occurrence": "occurrence:Z",
+              "semanticTarget": "relation:assignment",
+              "sourceOccurrence": "occurrence:flow"
+            }
+          ]
+        },
+        "occurrence:flow": {
+          "id": "occurrence:flow",
+          "relation": "relation:assignment",
+          "endpoints": [
+            {
+              "role": "source",
+              "occurrence": "occurrence:Z"
+            },
+            {
+              "role": "target",
+              "occurrence": "occurrence:A1"
+            }
+          ],
+          "waypoints": [
+            {
+              "x": 500,
+              "y": 200
+            },
+            {
+              "x": 270,
+              "y": 240
+            }
+          ]
+        }
+      },
+      "portOccurrences": {},
+      "groups": {
+        "occurrence:Z": {
+          "id": "occurrence:Z",
+          "occurrence": "occurrence:Z",
+          "collapsed": true
+        }
+      },
+      "filters": []
+    },
+    "expectedScene": {
+      "groupCollapsed": [
+        "occurrence:A1"
+      ],
+      "endpointHidden": [
+        "occurrence:flow"
+      ],
+      "drawnRelations": [
+        "occurrence:r"
+      ]
+    },
+    "expectedUnfoldedRelationOccurrences": {
+      "occurrence:r": {
+        "id": "occurrence:r",
+        "relation": "relation:flow",
+        "endpoints": [
+          {
+            "role": "source",
+            "occurrence": "occurrence:EXT"
+          },
+          {
+            "role": "target",
+            "occurrence": "occurrence:flow"
+          }
+        ]
+      },
+      "occurrence:flow": {
+        "id": "occurrence:flow",
+        "relation": "relation:assignment",
+        "endpoints": [
+          {
+            "role": "source",
+            "occurrence": "occurrence:Z"
+          },
+          {
+            "role": "target",
+            "occurrence": "occurrence:A1"
+          }
+        ],
+        "waypoints": [
+          {
+            "x": 500,
+            "y": 200
+          },
+          {
+            "x": 270,
+            "y": 240
+          }
+        ]
+      }
+    },
+    "expectedRevision": 1,
+    "expected": [],
+    "variants": [
+      {
+        "name": "missing relation occurrence provenance",
+        "mutation": {
+          "path": "relationOccurrences.occurrence:r.endpoints[1].sourceOccurrence",
+          "operation": "remove"
+        },
+        "expected": [
+          {
+            "code": "occurrence-endpoint-mismatch",
+            "severity": "error",
+            "path": "relationOccurrences.occurrence:r.endpoints[1].occurrence",
+            "message": "projected endpoint for role target fails check provenance-missing",
+            "refs": [
+              "occurrence:r",
+              "occurrence:Z"
+            ],
+            "details": {
+              "role": "target",
+              "check": "provenance-missing"
+            }
+          }
+        ]
+      },
+      {
+        "name": "different relation occurrence provenance",
+        "mutation": {
+          "path": "relationOccurrences.occurrence:r.endpoints[1].sourceOccurrence",
+          "value": "occurrence:r"
+        },
+        "expected": [
+          {
+            "code": "occurrence-endpoint-mismatch",
+            "severity": "error",
+            "path": "relationOccurrences.occurrence:r.endpoints[1].occurrence",
+            "message": "projected endpoint for role target fails check provenance-mismatch",
+            "refs": [
+              "occurrence:r",
+              "occurrence:Z"
+            ],
+            "details": {
+              "role": "target",
+              "check": "provenance-mismatch"
+            }
+          }
+        ]
+      },
+      {
+        "name": "stale relation target projection after unfold",
+        "mutation": {
+          "path": "groups.occurrence:Z.collapsed",
+          "value": false
+        },
+        "expected": [
+          {
+            "code": "occurrence-endpoint-mismatch",
+            "severity": "error",
+            "path": "relationOccurrences.occurrence:r.endpoints[1].occurrence",
+            "message": "projected endpoint for role target fails check projection-not-folded",
+            "refs": [
+              "occurrence:r",
+              "occurrence:Z"
+            ],
+            "details": {
+              "role": "target",
+              "check": "projection-not-folded"
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

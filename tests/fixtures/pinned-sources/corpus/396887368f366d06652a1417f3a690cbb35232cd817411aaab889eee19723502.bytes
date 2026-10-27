@@ -1,0 +1,501 @@
+{
+  "scope": "Bounded executable design fixture: supplied render records, completion/normalization subset, declarative profile lint, export IR. No production layout, bpmnlint or terminal writer claim.",
+  "profile": "neutral-grid/1",
+  "input": {
+    "$type": "bpmn:Definitions",
+    "id": "Definitions_1",
+    "rootElements": [
+      {
+        "$type": "bpmn:Process",
+        "id": "Process_1",
+        "flowElements": [
+          {
+            "$type": "bpmn:ServiceTask",
+            "id": "Task_B",
+            "name": "Ready"
+          },
+          {
+            "$type": "bpmn:ServiceTask",
+            "id": "Task_A",
+            "name": ""
+          }
+        ],
+        "artifacts": [
+          {
+            "$type": "bpmn:Association",
+            "id": "Z-consumer",
+            "sourceRef": "Task_A",
+            "targetRef": "Task_B",
+            "associationDirection": "One"
+          },
+          {
+            "$type": "bpmn:Association",
+            "id": "Y-consumer",
+            "sourceRef": "Task_A",
+            "targetRef": "Task_B",
+            "associationDirection": "One"
+          },
+          {
+            "$type": "bpmn:Association",
+            "id": "A-producer",
+            "sourceRef": "Task_B",
+            "targetRef": "Task_A",
+            "associationDirection": "One"
+          }
+        ]
+      }
+    ]
+  },
+  "commands": [
+    {
+      "recipe": "add-note",
+      "parameters": {
+        "target": "Task_B",
+        "body": "Preserved source"
+      }
+    },
+    {
+      "recipe": "create-aid",
+      "parameters": {
+        "owner": "Process_1",
+        "key": "new-note",
+        "body": "helper"
+      }
+    }
+  ],
+  "render": {
+    "pages": [
+      {
+        "pageId": "A-page",
+        "name": "Second sheet",
+        "order": 1,
+        "semanticRootId": "Process_1",
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 1000,
+          "height": 800
+        }
+      },
+      {
+        "pageId": "Z-page",
+        "name": "First sheet",
+        "order": 0,
+        "semanticRootId": "Process_1",
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 1000,
+          "height": 800
+        }
+      }
+    ],
+    "occurrences": [
+      {
+        "pageId": "A-page",
+        "occurrenceKey": "a-last-page",
+        "emittedType": "node",
+        "label": {
+          "text": "Second view",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 20
+          },
+          "lines": [
+            "Second view"
+          ]
+        },
+        "role": "content",
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 100,
+          "height": 80
+        },
+        "style": [
+          {
+            "name": "fill",
+            "value": "#ffffff"
+          },
+          {
+            "name": "stroke",
+            "value": "#000000"
+          }
+        ],
+        "glyphId": "task"
+      },
+      {
+        "pageId": "Z-page",
+        "occurrenceKey": "z-last",
+        "emittedType": "node",
+        "label": {
+          "text": "Last on first",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 20
+          },
+          "lines": [
+            "Last on first"
+          ]
+        },
+        "role": "content",
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 100,
+          "height": 80
+        },
+        "style": [
+          {
+            "name": "fill",
+            "value": "#ffffff"
+          },
+          {
+            "name": "stroke",
+            "value": "#000000"
+          }
+        ],
+        "glyphId": "task"
+      },
+      {
+        "pageId": "Z-page",
+        "occurrenceKey": "a-first",
+        "emittedType": "node",
+        "label": {
+          "text": "First on first",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 20
+          },
+          "lines": [
+            "First on first"
+          ]
+        },
+        "role": "content",
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 100,
+          "height": 80
+        },
+        "style": [
+          {
+            "name": "fill",
+            "value": "#ffffff"
+          },
+          {
+            "name": "stroke",
+            "value": "#000000"
+          }
+        ],
+        "glyphId": "task"
+      }
+    ]
+  },
+  "expected": {
+    "compiler": {
+      "profile": "neutral-grid/1",
+      "notions": 2,
+      "recipes": 11,
+      "rules": 5,
+      "validationTables": 10
+    },
+    "completed": {
+      "$type": "bpmn:Definitions",
+      "id": "Definitions_1",
+      "rootElements": [
+        {
+          "$type": "bpmn:Process",
+          "id": "Process_1",
+          "flowElements": [
+            {
+              "$type": "bpmn:ServiceTask",
+              "id": "Task_B",
+              "name": "Ready",
+              "documentation": [
+                {
+                  "$type": "bpmn:Documentation",
+                  "text": "Preserved source",
+                  "textFormat": "text/plain"
+                }
+              ]
+            },
+            {
+              "$type": "bpmn:ServiceTask",
+              "id": "Task_A",
+              "name": ""
+            }
+          ],
+          "artifacts": [
+            {
+              "$type": "bpmn:Association",
+              "id": "Z-consumer",
+              "sourceRef": "Task_A",
+              "targetRef": "Task_B",
+              "associationDirection": "One"
+            },
+            {
+              "$type": "bpmn:Association",
+              "id": "Y-consumer",
+              "sourceRef": "Task_A",
+              "targetRef": "Task_B",
+              "associationDirection": "One"
+            },
+            {
+              "$type": "bpmn:Association",
+              "id": "A-producer",
+              "sourceRef": "Task_B",
+              "targetRef": "Task_A",
+              "associationDirection": "One"
+            },
+            {
+              "$type": "bpmn:TextAnnotation",
+              "id": "g_61b268027699fa668a9b0e3eced8130a2b2e188f426051e9ad25ebb1e33a800c",
+              "text": "[Note] helper"
+            }
+          ],
+          "isExecutable": true
+        }
+      ]
+    },
+    "placements": [
+      {
+        "elementId": "Task_A",
+        "ownerProcessId": "Process_1",
+        "regionKey": "side",
+        "relatedAssociationIds": [
+          "A-producer",
+          "Y-consumer",
+          "Z-consumer"
+        ],
+        "anchorAssociationId": "Y-consumer"
+      },
+      {
+        "elementId": "Task_B",
+        "ownerProcessId": "Process_1",
+        "regionKey": "side",
+        "relatedAssociationIds": [
+          "A-producer",
+          "Y-consumer",
+          "Z-consumer"
+        ],
+        "anchorAssociationId": "A-producer"
+      }
+    ],
+    "lint": {
+      "import/draft": {
+        "ok": true,
+        "entries": [
+          {
+            "code": "task-name-missing-import",
+            "targetId": "Task_A",
+            "severity": "warn",
+            "stage": "import",
+            "classification": "readiness",
+            "messageKey": "invalid"
+          }
+        ]
+      },
+      "import/accept": {
+        "ok": false,
+        "entries": [
+          {
+            "code": "task-name-missing-import",
+            "targetId": "Task_A",
+            "severity": "error",
+            "stage": "import",
+            "classification": "readiness",
+            "messageKey": "invalid"
+          }
+        ]
+      },
+      "pre-normalize/draft": {
+        "ok": true,
+        "entries": [
+          {
+            "code": "task-name-missing-pre-normalize",
+            "targetId": "Task_A",
+            "severity": "warn",
+            "stage": "pre-normalize",
+            "classification": "readiness",
+            "messageKey": "invalid"
+          }
+        ]
+      },
+      "pre-normalize/accept": {
+        "ok": false,
+        "entries": [
+          {
+            "code": "task-name-missing-pre-normalize",
+            "targetId": "Task_A",
+            "severity": "error",
+            "stage": "pre-normalize",
+            "classification": "readiness",
+            "messageKey": "invalid"
+          }
+        ]
+      },
+      "post-normalize/draft": {
+        "ok": true,
+        "entries": [
+          {
+            "code": "task-name-missing",
+            "targetId": "Task_A",
+            "severity": "warn",
+            "stage": "post-normalize",
+            "classification": "readiness",
+            "messageKey": "invalid"
+          }
+        ]
+      },
+      "post-normalize/accept": {
+        "ok": false,
+        "entries": [
+          {
+            "code": "task-name-missing",
+            "targetId": "Task_A",
+            "severity": "error",
+            "stage": "post-normalize",
+            "classification": "readiness",
+            "messageKey": "invalid"
+          }
+        ]
+      },
+      "post-layout/draft": {
+        "ok": true,
+        "entries": [
+          {
+            "code": "task-name-missing-post-layout",
+            "targetId": "Task_A",
+            "severity": "warn",
+            "stage": "post-layout",
+            "classification": "readiness",
+            "messageKey": "invalid"
+          }
+        ]
+      },
+      "post-layout/accept": {
+        "ok": false,
+        "entries": [
+          {
+            "code": "task-name-missing-post-layout",
+            "targetId": "Task_A",
+            "severity": "error",
+            "stage": "post-layout",
+            "classification": "readiness",
+            "messageKey": "invalid"
+          }
+        ]
+      },
+      "release/draft": {
+        "ok": true,
+        "entries": [
+          {
+            "code": "task-name-missing-release",
+            "targetId": "Task_A",
+            "severity": "warn",
+            "stage": "release",
+            "classification": "readiness",
+            "messageKey": "invalid"
+          }
+        ]
+      },
+      "release/accept": {
+        "ok": false,
+        "entries": [
+          {
+            "code": "task-name-missing-release",
+            "targetId": "Task_A",
+            "severity": "error",
+            "stage": "release",
+            "classification": "readiness",
+            "messageKey": "invalid"
+          }
+        ]
+      }
+    },
+    "exportIR": [
+      {
+        "kind": "page",
+        "id": "e_10",
+        "name": "First sheet"
+      },
+      {
+        "kind": "page",
+        "id": "e_11",
+        "name": "Second sheet"
+      },
+      {
+        "kind": "node",
+        "id": "e_12",
+        "name": "First on first",
+        "parent": "e_10"
+      },
+      {
+        "kind": "node",
+        "id": "e_14",
+        "name": "Second view",
+        "parent": "e_11"
+      },
+      {
+        "kind": "node",
+        "id": "e_13",
+        "name": "Last on first",
+        "parent": "e_12"
+      }
+    ],
+    "created": [
+      {
+        "$type": "bpmn:Documentation",
+        "text": "Preserved source",
+        "textFormat": "text/plain"
+      },
+      {
+        "$type": "bpmn:TextAnnotation",
+        "id": "g_61b268027699fa668a9b0e3eced8130a2b2e188f426051e9ad25ebb1e33a800c",
+        "text": "[Note] helper"
+      }
+    ],
+    "presentation": [
+      {
+        "id": "Task_A",
+        "notion": "task",
+        "label": "",
+        "tokens": [
+          {
+            "name": "fill",
+            "value": "#ffffff"
+          }
+        ]
+      },
+      {
+        "id": "Task_B",
+        "notion": "task",
+        "label": "Ready",
+        "tokens": [
+          {
+            "name": "fill",
+            "value": "#ffffff"
+          }
+        ]
+      },
+      {
+        "id": "g_61b268027699fa668a9b0e3eced8130a2b2e188f426051e9ad25ebb1e33a800c",
+        "notion": "aid",
+        "label": "HELPER",
+        "tokens": [
+          {
+            "name": "fill",
+            "value": "#eeeeff"
+          }
+        ]
+      }
+    ]
+  }
+}

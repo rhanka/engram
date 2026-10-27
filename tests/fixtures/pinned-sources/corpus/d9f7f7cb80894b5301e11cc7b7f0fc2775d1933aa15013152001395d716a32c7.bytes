@@ -1,0 +1,833 @@
+{
+  "schema": "hrpn-ds-fixture/v1",
+  "profile": "generic@1",
+  "profileMapping": {
+    "card": "entity type `node` (attribute `name` = label)",
+    "zone": "entity type `container` (attribute `name` = label, unique per scene)",
+    "parent": "relation type `contains` (role parent = the zone, role child = the card or zone); hierarchy `containment`, tree",
+    "relation": "relation type `link` (role source = from, role target = to, attribute `label`)",
+    "extraFields": "detail, tint, code, role, name, footer, store and style are HRPN rendering data outside generic@1 attributes"
+  },
+  "coordinates": "none: no position, size, route or layout hint; the design system computes the layout",
+  "scene": {
+    "id": "S1-conversational",
+    "title": "Option 1 · Conversational Agent (PoC-equivalent)",
+    "caption": "PoC-equivalent low-code path from the GenAiR low-code docs (Conversational Agents = renamed Dialogflow CX: generative playbook,\ndata store tool, Google Chat integration), the GenAiR template exports, the ARB deck (slides 2, 4) and the ARD (FP1–FP6).\nEmployees ask in a Google Chat space; the Chat integration (or, per ARD FP1, an Apps Script router) reaches an agent whose playbook\ngrounds Gemini answers on a Vertex AI Search data store fed from a GCS bucket (Phase 1 manual upload; Phase 2 Drive sync not built).\nTwo PoC Cloud Run tools are called from the playbook: Link Formatter and Row-Level Access Security (dormant); logs go to BigQuery (FP6).\nRed frames: no GenAiR production template, IaC or CI path for Conversational Agents (GenAiR-Cutter offers Cloud Run / Agent Engine only;\nconsole build and zip restore), the Dialogflow ↔ Chat connection was rejected in POD (`auth.creds.useNormalUserEUC`, handover §C,\nobserved with Dialogflow ES), the Apps Script route needs a VPC-SC ingress rule per user identity. The PoC agent export was not found: `source-gap`.\nInheritance and environments: the agent starts from the `genair-conversational-agent` exports of `Airbus/GenAiR` (github.airbus.corp). With no Cutter template, the PROD dev / int / pro projects (orange, GenAiR PROD model) would each receive a manual console restore of an export versioned on the Airbus SCM (GitLab or GitHub: open); no webhook, no Jenkins job and no IaC exist for this path. Project ids: unknown.",
+    "legendPassages": [
+      "Red frames: no GenAiR production template, IaC or CI path for Conversational Agents (GenAiR-Cutter offers Cloud Run / Agent Engine only; console build and zip restore), the Dialogflow ↔ Chat connection was rejected in POD (`auth.creds.useNormalUserEUC`, handover §C, observed with Dialogflow ES), the Apps Script route needs a VPC-SC ingress rule per user identity. The PoC agent export was not found: `source-gap`."
+    ]
+  },
+  "source": {
+    "scenes": "docs/architecture/hrpn/SCENES.md",
+    "scenesSha256": "ab3ddb9208b7d3f9c35d94401c29da5bc95477ab99d4caf0fabaa34c41be237f",
+    "metadata": "docs/architecture/hrpn/scene-metadata.mjs",
+    "metadataSha256": "2e67c2c380f50771f4d4520eb1d4110fefca1a51dd173bf10073c6216437ce68",
+    "parser": "docs/architecture/tooling/chain/parse-mermaid.mjs",
+    "parserSha256": "2014ed066f488e736a16a7ad2c169b3cb4765e2ce47ea1c84d2108fc55871797",
+    "sceneHash": "9d68d35baf4bdd8a5bf6ec55a87c9a48bbc84a6018f028e21f048c57d8a95884",
+    "sceneHashNote": "build-scenes.mjs projection hash; equals data.json manifest and figures.json"
+  },
+  "counts": {
+    "cards": 23,
+    "zones": 17,
+    "relations": 24,
+    "solid": 14,
+    "dashed": 10,
+    "labelled": 24,
+    "tints": {
+      "added": 5,
+      "genair": 2,
+      "none": 8,
+      "risk": 4,
+      "specific": 4
+    }
+  },
+  "entities": [
+    {
+      "id": "PEOPLE",
+      "kind": "zone",
+      "label": "Users and operators",
+      "detail": null,
+      "parent": null,
+      "tint": null,
+      "code": "PPL",
+      "footer": "scope: Users and operators"
+    },
+    {
+      "id": "EMP",
+      "kind": "card",
+      "label": "HR users and employees",
+      "detail": "ask HR policy questions in Chat",
+      "parent": "PEOPLE",
+      "tint": null,
+      "code": "USR",
+      "role": "Employees · HR",
+      "name": "HR users and employees",
+      "footer": "actor: Airbus employees",
+      "store": false
+    },
+    {
+      "id": "HRADM",
+      "kind": "card",
+      "label": "HR content owners",
+      "detail": "upload or approve documents",
+      "parent": "PEOPLE",
+      "tint": null,
+      "code": "OWN",
+      "role": "HR · content owners",
+      "name": "Policy owners (AAI HR)",
+      "footer": "actor: AAI HR",
+      "store": false
+    },
+    {
+      "id": "WS",
+      "kind": "zone",
+      "label": "Google Workspace",
+      "detail": null,
+      "parent": null,
+      "tint": null,
+      "code": "GWS",
+      "footer": "service: Google Workspace"
+    },
+    {
+      "id": "CHAT",
+      "kind": "card",
+      "label": "Google Chat app",
+      "detail": "one Chat agent per project",
+      "parent": "WS",
+      "tint": null,
+      "code": "CHT",
+      "role": "Chat · space",
+      "name": "Google Chat app",
+      "footer": "service: Google Workspace",
+      "store": false
+    },
+    {
+      "id": "APPSS",
+      "kind": "card",
+      "label": "Apps Script router",
+      "detail": "VPC-SC ingress per user",
+      "parent": "WS",
+      "tint": "risk",
+      "code": "GAS",
+      "role": "Apps Script",
+      "name": "Chat → GCP router (ARD FP1)",
+      "footer": "service: Google Workspace",
+      "store": false
+    },
+    {
+      "id": "DRIVE",
+      "kind": "card",
+      "label": "HR policy documents",
+      "detail": "PDF, Word · 35 → 100+",
+      "parent": "WS",
+      "tint": null,
+      "code": "DRV",
+      "role": "Drive · source",
+      "name": "HR policy documents",
+      "footer": "service: Google Workspace",
+      "store": false
+    },
+    {
+      "id": "GCP",
+      "kind": "zone",
+      "label": "Google Cloud Platform",
+      "detail": null,
+      "parent": null,
+      "tint": null,
+      "code": "GCP",
+      "footer": "service: Google Cloud"
+    },
+    {
+      "id": "PROJ",
+      "kind": "zone",
+      "label": "HRPN POD project · console-built",
+      "detail": null,
+      "parent": "GCP",
+      "tint": null,
+      "code": "PRJ",
+      "footer": "service: GCP project"
+    },
+    {
+      "id": "CXZ",
+      "kind": "zone",
+      "label": "Conversational Agents (Dialogflow CX)",
+      "detail": null,
+      "parent": "PROJ",
+      "tint": null,
+      "code": "CX",
+      "footer": "service: Conversational Agents"
+    },
+    {
+      "id": "CXINT",
+      "kind": "card",
+      "label": "Google Chat integration",
+      "detail": "POD: useNormalUserEUC rejected",
+      "parent": "CXZ",
+      "tint": "risk",
+      "code": "INT",
+      "role": "Integration · Chat",
+      "name": "Integrations > Google Chat",
+      "footer": "service: Conversational Agents",
+      "store": false
+    },
+    {
+      "id": "CXAGENT",
+      "kind": "card",
+      "label": "Conversational agent",
+      "detail": "PoC export not found",
+      "parent": "CXZ",
+      "tint": null,
+      "code": "CXA",
+      "role": "Agent · generative",
+      "name": "HR agent (startPlaybook)",
+      "footer": "service: Conversational Agents",
+      "store": false
+    },
+    {
+      "id": "PLAYBOOK",
+      "kind": "card",
+      "label": "Generative playbook",
+      "detail": "strict guardrails (ARD)",
+      "parent": "CXZ",
+      "tint": "specific",
+      "code": "PB",
+      "role": "Playbook · rules",
+      "name": "persona + grounding rules",
+      "footer": "service: Conversational Agents",
+      "store": false
+    },
+    {
+      "id": "DSTOOL",
+      "kind": "card",
+      "label": "Data store tool",
+      "detail": "template: grounding VERY_LOW",
+      "parent": "CXZ",
+      "tint": "specific",
+      "code": "DST",
+      "role": "Tool · data store",
+      "name": "data store tool",
+      "footer": "service: Conversational Agents",
+      "store": false
+    },
+    {
+      "id": "TOOLZ",
+      "kind": "zone",
+      "label": "Cloud Run tools (PoC)",
+      "detail": null,
+      "parent": "PROJ",
+      "tint": null,
+      "code": "CRT",
+      "footer": "repo: HRPN"
+    },
+    {
+      "id": "LINKF",
+      "kind": "card",
+      "label": "Link Formatter",
+      "detail": "BRD-HR-006 · 95 % links",
+      "parent": "TOOLZ",
+      "tint": "specific",
+      "code": "LNK",
+      "role": "Tool · links",
+      "name": "source URL formatter",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "RLA",
+      "kind": "card",
+      "label": "Row-Level Access Security",
+      "detail": "dormant · restricted docs later",
+      "parent": "TOOLZ",
+      "tint": "specific",
+      "code": "RLA",
+      "role": "Tool · access",
+      "name": "Row-Level Access Security",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "VAIZ",
+      "kind": "zone",
+      "label": "Vertex AI",
+      "detail": null,
+      "parent": "PROJ",
+      "tint": null,
+      "code": "VAI",
+      "footer": "service: Vertex AI"
+    },
+    {
+      "id": "DATASTORE",
+      "kind": "card",
+      "label": "Vertex AI Search data store",
+      "detail": "unstructured PDFs · snippets",
+      "parent": "VAIZ",
+      "tint": null,
+      "code": "VAS",
+      "role": "Search · data store",
+      "name": "Vertex AI Search data store",
+      "footer": "service: Vertex AI",
+      "store": false
+    },
+    {
+      "id": "GEM",
+      "kind": "card",
+      "label": "Gemini",
+      "detail": "ARB: 2.5 becoming obsolete",
+      "parent": "VAIZ",
+      "tint": "risk",
+      "code": "LLM",
+      "role": "Model · Gemini",
+      "name": "Gemini 2.5 Flash",
+      "footer": "service: Vertex AI",
+      "store": false
+    },
+    {
+      "id": "STATEZ",
+      "kind": "zone",
+      "label": "Storage and logs",
+      "detail": null,
+      "parent": "PROJ",
+      "tint": null,
+      "code": "ST",
+      "footer": "repo: HRPN"
+    },
+    {
+      "id": "DOCS",
+      "kind": "card",
+      "label": "Policy documents bucket",
+      "detail": "Phase 1 manual upload",
+      "parent": "STATEZ",
+      "tint": null,
+      "code": "DOC",
+      "role": "Bucket · documents",
+      "name": "policy bucket (GCS)",
+      "footer": "service: Google Cloud",
+      "store": false
+    },
+    {
+      "id": "SYNC",
+      "kind": "card",
+      "label": "Drive sync",
+      "detail": "BRD Phase 2 · not built",
+      "parent": "STATEZ",
+      "tint": "added",
+      "code": "SYN",
+      "role": "Sync · Drive",
+      "name": "Drive → GCS sync",
+      "footer": "repo: HRPN",
+      "store": false
+    },
+    {
+      "id": "BQLOG",
+      "kind": "card",
+      "label": "BigQuery conversation logs",
+      "detail": "ARD FP6 · retention unknown",
+      "parent": "STATEZ",
+      "tint": null,
+      "code": "BQ",
+      "role": "BigQuery · logs",
+      "name": "conversation + feedback logs",
+      "footer": "service: Google Cloud",
+      "store": false
+    },
+    {
+      "id": "GOVZ",
+      "kind": "zone",
+      "label": "Delivery and governance",
+      "detail": null,
+      "parent": "PROJ",
+      "tint": null,
+      "code": "GOV",
+      "footer": "scope: GenAiR"
+    },
+    {
+      "id": "NOIAC",
+      "kind": "card",
+      "label": "No production template",
+      "detail": "console build · no CI path",
+      "parent": "GOVZ",
+      "tint": "risk",
+      "code": "IAC",
+      "role": "Delivery · gap",
+      "name": "no Cutter template · no IaC",
+      "footer": "repo: GenAiR-Cutter",
+      "store": false
+    },
+    {
+      "id": "EXPORT",
+      "kind": "card",
+      "label": "Agent export and restore",
+      "detail": "console import of template",
+      "parent": "GOVZ",
+      "tint": "genair",
+      "code": "ZIP",
+      "role": "Restore · zip",
+      "name": "agent export / restore",
+      "footer": "repo: GenAiR",
+      "store": false
+    },
+    {
+      "id": "PRODZ",
+      "kind": "zone",
+      "label": "PROD projects · app_code (to provision)",
+      "detail": null,
+      "parent": "GCP",
+      "tint": null,
+      "code": "PRD",
+      "footer": "service: GCP project (PROD)"
+    },
+    {
+      "id": "PDEVZ",
+      "kind": "zone",
+      "label": "dev project · project_id_dev",
+      "detail": null,
+      "parent": "PRODZ",
+      "tint": null,
+      "code": "DEV",
+      "footer": "service: GCP project (PROD)"
+    },
+    {
+      "id": "PDEV",
+      "kind": "card",
+      "label": "Agent copy dev",
+      "detail": "manual restore · no CI path",
+      "parent": "PDEVZ",
+      "tint": "added",
+      "code": "DEV",
+      "role": "Env · dev",
+      "name": "conversational agent copy",
+      "footer": "service: Conversational Agents",
+      "store": false
+    },
+    {
+      "id": "PINTZ",
+      "kind": "zone",
+      "label": "int project · project_id_int",
+      "detail": null,
+      "parent": "PRODZ",
+      "tint": null,
+      "code": "INT",
+      "footer": "service: GCP project (PROD)"
+    },
+    {
+      "id": "PINT",
+      "kind": "card",
+      "label": "Agent copy int",
+      "detail": "manual restore · no CI path",
+      "parent": "PINTZ",
+      "tint": "added",
+      "code": "INT",
+      "role": "Env · int",
+      "name": "conversational agent copy",
+      "footer": "service: Conversational Agents",
+      "store": false
+    },
+    {
+      "id": "PPROZ",
+      "kind": "zone",
+      "label": "pro project · project_id_pro",
+      "detail": null,
+      "parent": "PRODZ",
+      "tint": null,
+      "code": "PRO",
+      "footer": "service: GCP project (PROD)"
+    },
+    {
+      "id": "PPRO",
+      "kind": "card",
+      "label": "Agent copy pro",
+      "detail": "manual restore · no CI path",
+      "parent": "PPROZ",
+      "tint": "added",
+      "code": "PRO",
+      "role": "Env · pro",
+      "name": "conversational agent copy",
+      "footer": "service: Conversational Agents",
+      "store": false
+    },
+    {
+      "id": "OUT",
+      "kind": "zone",
+      "label": "Outside Google Cloud",
+      "detail": null,
+      "parent": null,
+      "tint": null,
+      "code": "EXT",
+      "footer": "scope: Outside GCP"
+    },
+    {
+      "id": "AWSZ",
+      "kind": "zone",
+      "label": "Airbus AWS",
+      "detail": null,
+      "parent": "OUT",
+      "tint": null,
+      "code": "AWS",
+      "footer": "service: Airbus AWS"
+    },
+    {
+      "id": "GITHUBZ",
+      "kind": "zone",
+      "label": "Airbus GitHub · github.airbus.corp",
+      "detail": null,
+      "parent": "AWSZ",
+      "tint": null,
+      "code": "GH",
+      "footer": "service: Airbus GitHub"
+    },
+    {
+      "id": "GENTPL",
+      "kind": "card",
+      "label": "GenAiR conversational agent template",
+      "detail": "Airbus/GenAiR · playbook, tool JSON",
+      "parent": "GITHUBZ",
+      "tint": "genair",
+      "code": "TPL",
+      "role": "Template · exports",
+      "name": "genair-conversational-agent",
+      "footer": "repo: GenAiR",
+      "store": false
+    },
+    {
+      "id": "GITLABZ",
+      "kind": "zone",
+      "label": "Airbus GitLab · SCM",
+      "detail": null,
+      "parent": "AWSZ",
+      "tint": null,
+      "code": "SCM",
+      "footer": "service: Airbus SCM"
+    },
+    {
+      "id": "SCMREPO",
+      "kind": "card",
+      "label": "HRPN agent export repository",
+      "detail": "not set up · host open",
+      "parent": "GITLABZ",
+      "tint": "added",
+      "code": "GIT",
+      "role": "Repo · SCM",
+      "name": "HRPN agent export repository",
+      "footer": "repo: HRPN",
+      "store": false
+    }
+  ],
+  "relations": [
+    {
+      "id": "EMP__CHAT__3522379cd54b",
+      "from": "EMP",
+      "to": "CHAT",
+      "label": "message or @mention",
+      "style": "solid"
+    },
+    {
+      "id": "CHAT__CXINT__b04d01f1603c",
+      "from": "CHAT",
+      "to": "CXINT",
+      "label": "native Chat integration",
+      "style": "solid"
+    },
+    {
+      "id": "CHAT__APPSS__1b30808dad7d",
+      "from": "CHAT",
+      "to": "APPSS",
+      "label": "ARD FP1 routing",
+      "style": "dashed"
+    },
+    {
+      "id": "APPSS__CXAGENT__5bd5623a9dfc",
+      "from": "APPSS",
+      "to": "CXAGENT",
+      "label": "query to GCP (ARD)",
+      "style": "dashed"
+    },
+    {
+      "id": "CXINT__CXAGENT__7b72d10898bd",
+      "from": "CXINT",
+      "to": "CXAGENT",
+      "label": "detect intent",
+      "style": "solid"
+    },
+    {
+      "id": "CXAGENT__PLAYBOOK__24657a5447e4",
+      "from": "CXAGENT",
+      "to": "PLAYBOOK",
+      "label": "start playbook",
+      "style": "solid"
+    },
+    {
+      "id": "PLAYBOOK__DSTOOL__47dd593e9f8a",
+      "from": "PLAYBOOK",
+      "to": "DSTOOL",
+      "label": "data store tool",
+      "style": "solid"
+    },
+    {
+      "id": "DSTOOL__DATASTORE__d219ac8c4719",
+      "from": "DSTOOL",
+      "to": "DATASTORE",
+      "label": "search + snippets",
+      "style": "solid"
+    },
+    {
+      "id": "PLAYBOOK__GEM__e661f4c935e8",
+      "from": "PLAYBOOK",
+      "to": "GEM",
+      "label": "generation",
+      "style": "solid"
+    },
+    {
+      "id": "PLAYBOOK__LINKF__b473bf58b3b7",
+      "from": "PLAYBOOK",
+      "to": "LINKF",
+      "label": "OpenAPI tool (FP5)",
+      "style": "solid"
+    },
+    {
+      "id": "PLAYBOOK__RLA__51f9edec990b",
+      "from": "PLAYBOOK",
+      "to": "RLA",
+      "label": "access check (FP2)",
+      "style": "dashed"
+    },
+    {
+      "id": "CXAGENT__BQLOG__bc12a5ef77ca",
+      "from": "CXAGENT",
+      "to": "BQLOG",
+      "label": "interaction logs (FP6)",
+      "style": "solid"
+    },
+    {
+      "id": "DOCS__DATASTORE__f7fbe7ad5b63",
+      "from": "DOCS",
+      "to": "DATASTORE",
+      "label": "import gs://",
+      "style": "solid"
+    },
+    {
+      "id": "HRADM__DOCS__afb50962c784",
+      "from": "HRADM",
+      "to": "DOCS",
+      "label": "manual upload",
+      "style": "solid"
+    },
+    {
+      "id": "HRADM__DRIVE__848d229f7abe",
+      "from": "HRADM",
+      "to": "DRIVE",
+      "label": "approved documents",
+      "style": "solid"
+    },
+    {
+      "id": "DRIVE__SYNC__eefb74f30a11",
+      "from": "DRIVE",
+      "to": "SYNC",
+      "label": "Drive API (Phase 2)",
+      "style": "dashed"
+    },
+    {
+      "id": "SYNC__DOCS__dc261875c2c1",
+      "from": "SYNC",
+      "to": "DOCS",
+      "label": "delta copy",
+      "style": "dashed"
+    },
+    {
+      "id": "GENTPL__EXPORT__cb221df88a82",
+      "from": "GENTPL",
+      "to": "EXPORT",
+      "label": "template zip",
+      "style": "solid"
+    },
+    {
+      "id": "EXPORT__CXAGENT__d181b621a1ff",
+      "from": "EXPORT",
+      "to": "CXAGENT",
+      "label": "console restore",
+      "style": "solid"
+    },
+    {
+      "id": "NOIAC__CXAGENT__ddde25d26cdd",
+      "from": "NOIAC",
+      "to": "CXAGENT",
+      "label": "no Terraform · no CI",
+      "style": "dashed"
+    },
+    {
+      "id": "EXPORT__SCMREPO__19793062b717",
+      "from": "EXPORT",
+      "to": "SCMREPO",
+      "label": "export JSON · push",
+      "style": "dashed"
+    },
+    {
+      "id": "SCMREPO__PDEV__af6ca2d26ea0",
+      "from": "SCMREPO",
+      "to": "PDEV",
+      "label": "console restore · dev",
+      "style": "dashed"
+    },
+    {
+      "id": "SCMREPO__PINT__3904bbabeaf9",
+      "from": "SCMREPO",
+      "to": "PINT",
+      "label": "console restore · int",
+      "style": "dashed"
+    },
+    {
+      "id": "SCMREPO__PPRO__598187d83575",
+      "from": "SCMREPO",
+      "to": "PPRO",
+      "label": "console restore · pro",
+      "style": "dashed"
+    }
+  ],
+  "zoneHierarchy": {
+    "rootCards": [],
+    "zones": [
+      {
+        "id": "PEOPLE",
+        "label": "Users and operators",
+        "cards": [
+          "EMP",
+          "HRADM"
+        ],
+        "zones": []
+      },
+      {
+        "id": "WS",
+        "label": "Google Workspace",
+        "cards": [
+          "CHAT",
+          "APPSS",
+          "DRIVE"
+        ],
+        "zones": []
+      },
+      {
+        "id": "GCP",
+        "label": "Google Cloud Platform",
+        "cards": [],
+        "zones": [
+          {
+            "id": "PROJ",
+            "label": "HRPN POD project · console-built",
+            "cards": [],
+            "zones": [
+              {
+                "id": "CXZ",
+                "label": "Conversational Agents (Dialogflow CX)",
+                "cards": [
+                  "CXINT",
+                  "CXAGENT",
+                  "PLAYBOOK",
+                  "DSTOOL"
+                ],
+                "zones": []
+              },
+              {
+                "id": "TOOLZ",
+                "label": "Cloud Run tools (PoC)",
+                "cards": [
+                  "LINKF",
+                  "RLA"
+                ],
+                "zones": []
+              },
+              {
+                "id": "VAIZ",
+                "label": "Vertex AI",
+                "cards": [
+                  "DATASTORE",
+                  "GEM"
+                ],
+                "zones": []
+              },
+              {
+                "id": "STATEZ",
+                "label": "Storage and logs",
+                "cards": [
+                  "DOCS",
+                  "SYNC",
+                  "BQLOG"
+                ],
+                "zones": []
+              },
+              {
+                "id": "GOVZ",
+                "label": "Delivery and governance",
+                "cards": [
+                  "NOIAC",
+                  "EXPORT"
+                ],
+                "zones": []
+              }
+            ]
+          },
+          {
+            "id": "PRODZ",
+            "label": "PROD projects · app_code (to provision)",
+            "cards": [],
+            "zones": [
+              {
+                "id": "PDEVZ",
+                "label": "dev project · project_id_dev",
+                "cards": [
+                  "PDEV"
+                ],
+                "zones": []
+              },
+              {
+                "id": "PINTZ",
+                "label": "int project · project_id_int",
+                "cards": [
+                  "PINT"
+                ],
+                "zones": []
+              },
+              {
+                "id": "PPROZ",
+                "label": "pro project · project_id_pro",
+                "cards": [
+                  "PPRO"
+                ],
+                "zones": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "OUT",
+        "label": "Outside Google Cloud",
+        "cards": [],
+        "zones": [
+          {
+            "id": "AWSZ",
+            "label": "Airbus AWS",
+            "cards": [],
+            "zones": [
+              {
+                "id": "GITHUBZ",
+                "label": "Airbus GitHub · github.airbus.corp",
+                "cards": [
+                  "GENTPL"
+                ],
+                "zones": []
+              },
+              {
+                "id": "GITLABZ",
+                "label": "Airbus GitLab · SCM",
+                "cards": [
+                  "SCMREPO"
+                ],
+                "zones": []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
