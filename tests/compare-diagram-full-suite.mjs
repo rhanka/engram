@@ -31,6 +31,14 @@ assert.equal(canonicalBytes(baseResult.failingIdentities), canonicalBytes(branch
 const diagramFiles = branch.testResults.filter(file => /\/ontology-guardian-diagram-[^/]+\.test\.ts$/.test(file.name));
 assert.equal(diagramFiles.length, 9);
 assert.ok(diagramFiles.every(file => file.status === "passed"));
+const specVectors = diagramFiles.flatMap(file => file.assertionResults)
+  .filter(test => test.ancestorTitles.includes("§7.3.5 frozen vectors, exact bytes"));
+const specVectorIds = specVectors.map(test => test.title.split(" ")[0]).sort();
+assert.deepEqual(specVectorIds, ["V-DELTA-1", "V-DIAGRAM-1", "V-MAPPING-1", "V-PINS-1"]);
+assert.ok(specVectors.every(test => test.status === "passed"));
+const regressionSnapshots = diagramFiles.flatMap(file => file.assertionResults)
+  .filter(test => test.ancestorTitles.includes("implementation regression snapshots (not spec vectors)"));
+assert.equal(regressionSnapshots.length, 2);
 const evidenceDir = path.join(root, "tests/fixtures/diagram-full-suite-evidence");
 fs.mkdirSync(evidenceDir, { recursive: true });
 const artifacts = {};
@@ -55,6 +63,7 @@ const { failingIdentities: _branchIdentities, ...branchSummary } = branchResult;
 const frozenSpecBytes = fs.readFileSync(path.join(root, "tests/fixtures/pinned-sources/corpus/deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f.bytes"));
 assert.equal(sha256Hex(frozenSpecBytes), "deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f");
 const frozenSpec = frozenSpecBytes.toString("utf8");
+assert.ok(specVectorIds.every(id => frozenSpec.includes(id)));
 const unverifiedRegister = frozenSpec.slice(frozenSpec.indexOf("### 11.2 unverified register"), frozenSpec.indexOf("## Appendix A"))
   .split("\n").filter(line => line.startsWith("| U-")).map(line => {
     const [, id, item, ownerAndEffect] = line.split("|").map(value => value.trim());
@@ -69,7 +78,9 @@ const report = {
     note: "Evidence-only commits may follow; inputSha256 binds the complete changed execution inputs independently of the evidence commit identity." },
   environment: { node: process.version, platform: process.platform, arch: process.arch, nodeModules: fs.realpathSync(path.join(root, "node_modules")), env: "test-g2" },
   scope: "Two complete Vitest runs with --configLoader runner --reporter=json, same dependencies and environment. Base is an isolated detached 618977a8 checkout created inside the ignored worktree scratch directory, with its Git index/history restored before execution.",
-  base: baseSummary, branch: { ...branchSummary, diagramTests: { files: diagramFiles.map(file => relative(file.name)).sort(), passed: diagramFiles.reduce((sum, file) => sum + file.assertionResults.filter(test => test.status === "passed").length, 0), failed: 0 } },
+  base: baseSummary, branch: { ...branchSummary, diagramTests: { files: diagramFiles.map(file => relative(file.name)).sort(), passed: diagramFiles.reduce((sum, file) => sum + file.assertionResults.filter(test => test.status === "passed").length, 0), failed: 0,
+    specVectors: { source: "§7.3.5", ids: specVectorIds, passed: specVectors.length, total: 4 },
+    regressionSnapshots: { passed: regressionSnapshots.length, excludedFromSpecVectors: true } } },
   fullTypeScript: { errorsOnEachSide: (branchTypes.match(/error TS/g) ?? []).length, identicalDiagnostics: true },
   failingIdentities, failingIdentitiesSha256: sha256Hex(canonicalBytes(failingIdentities)),
   failingIdentitiesMethod: "G0 RFC 8785 over sorted failed file identities and sorted failed assertion identities (file > fullName); both full JSON reports are retained.",

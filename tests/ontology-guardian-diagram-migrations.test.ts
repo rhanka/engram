@@ -250,11 +250,11 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
 
   it("preserves every native field of the full pinned document", () => {
     const doc = loadMig(join(fixtures, "pinned-sources", "archimate-skeleton-document.json")).document as MigDocument;
-    const report = migrateArchimateV1ToV2(doc, {
+    const report = migrateArchimateV1ToV2(doc, { entityTypes: {
       "entity:actor": "business-actor",
       "entity:process": "business-process",
       "entity:component": "application-component",
-    });
+    } });
     expect(report.outcome).toBe("ok");
     if (report.outcome !== "ok") throw new Error("migration");
     expect(report.target!.schemaVersion).toEqual((doc as MigDocument).schemaVersion);
@@ -331,13 +331,13 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
 
 describe("archimate@1 → archimate@2 (§§3.9.1/3.13.2)", () => {
   const source = (): MigDocument => loadMig(join(fixtures, "pinned-sources", "archimate-skeleton-document.json")).document as MigDocument;
-  const mapping = {
+  const mapping = { entityTypes: {
     "entity:actor": "business-actor",
     "entity:process": "business-process",
     "entity:component": "application-component",
-  };
+  } };
 
-  it("migrates the pinned skeleton with byte-identical endpoints", () => {
+  it("migrates the pinned skeleton with the closed §3.13.2 mapping and byte-identical endpoints", () => {
     const report = migrateArchimateV1ToV2(source(), mapping);
     expect(report.outcome).toBe("ok");
     const target = report.target!;
@@ -361,6 +361,32 @@ describe("archimate@1 → archimate@2 (§§3.9.1/3.13.2)", () => {
     expect(canonicalBytes(report.originalCanonical)).toBe(canonicalBytes(source()));
   });
 
+  for (const [label, invalid] of [
+    ["flat mapping", mapping.entityTypes],
+    ["unknown wrapper key", { ...mapping, extra: true }],
+    ["missing entityTypes", {}],
+    ["null mapping", null],
+    ["array mapping", []],
+    ["scalar mapping", "business-actor"],
+    ["null entityTypes", { entityTypes: null }],
+    ["array entityTypes", { entityTypes: [] }],
+    ["scalar entityTypes", { entityTypes: "business-actor" }],
+    ["non-string assignment", { entityTypes: { ...mapping.entityTypes, "entity:actor": 1 } }],
+    ["nested assignment", { entityTypes: { ...mapping.entityTypes, "entity:actor": { type: "business-actor" } } }],
+  ] as const) {
+    it(`refuses the invalid §3.13.2 mapping shape: ${label}`, () => {
+      const doc = source();
+      const before = canonicalBytes(doc);
+      const report = migrateArchimateV1ToV2(doc, invalid as never);
+      expect(report.outcome).toBe("refused");
+      expect(report.target).toBeNull();
+      expect(report.unmigrated).toEqual([{ path: "mapping", reason: "incompatible-attribute-schema" }]);
+      expect(report.operations).toEqual([]);
+      expect(canonicalBytes(report.originalCanonical)).toBe(before);
+      expect(canonicalBytes(doc)).toBe(before);
+    });
+  }
+
   it("derives layer/aspect from the catalogue and drops no authored name", () => {
     const report = migrateArchimateV1ToV2(source(), mapping);
     expect(report.target!.entities["entity:actor"]!.attributes).toEqual({
@@ -371,7 +397,7 @@ describe("archimate@1 → archimate@2 (§§3.9.1/3.13.2)", () => {
   });
 
   it("refuses an unmapped element, leaving the original @1", () => {
-    const report = migrateArchimateV1ToV2(source(), { "entity:actor": "business-actor" });
+    const report = migrateArchimateV1ToV2(source(), { entityTypes: { "entity:actor": "business-actor" } });
     expect(report.outcome).toBe("refused");
     expect(report.target).toBeNull();
     expect(report.unmigrated).toEqual([{ path: "entities.entity:component", reason: "missing-type-mapping" }]);
@@ -566,11 +592,11 @@ describe("lossless copy-then-patch (design note A, finding 2)", () => {
     (doc.entities["entity:actor"]!.attributes as Record<string, unknown>)["domainNote"] = {
       kind: "text", value: "MUST SURVIVE",
     };
-    const report = migrateArchimateV1ToV2(doc, {
+    const report = migrateArchimateV1ToV2(doc, { entityTypes: {
       "entity:actor": "business-actor",
       "entity:process": "business-process",
       "entity:component": "application-component",
-    });
+    } });
     expect(report.outcome).toBe("ok");
     if (report.outcome !== "ok") throw new Error("migration");
     expect(report.target!.entities["entity:actor"]!.attributes["domainNote"]).toEqual({
@@ -596,11 +622,11 @@ describe("lossless copy-then-patch (design note A, finding 2)", () => {
         domainNote: { kind: "text", value: "MUST SURVIVE" },
       },
     };
-    const report = migrateArchimateV1ToV2(doc, {
+    const report = migrateArchimateV1ToV2(doc, { entityTypes: {
       "entity:actor": "business-actor",
       "entity:process": "business-process",
       "entity:component": "application-component",
-    });
+    } });
     expect(report.outcome).toBe("ok");
     if (report.outcome !== "ok") throw new Error("migration " + JSON.stringify(report.unmigrated));
     expect(report.target!.entities["entity:actor"]!.type).toBe("custom-actor");
@@ -617,11 +643,11 @@ describe("lossless copy-then-patch (design note A, finding 2)", () => {
       },
     };
     doc.entities["entity:actor"] = { ...doc.entities["entity:actor"]!, type: "custom-actor" };
-    const report = migrateArchimateV1ToV2(doc, {
+    const report = migrateArchimateV1ToV2(doc, { entityTypes: {
       "entity:actor": "application-component",
       "entity:process": "business-process",
       "entity:component": "application-component",
-    });
+    } });
     expect(report.outcome).toBe("refused");
     expect(report.target).toBeNull();
     expect(report.unmigrated).toEqual([
@@ -638,11 +664,11 @@ describe("lossless copy-then-patch (design note A, finding 2)", () => {
       },
     };
     doc.entities["entity:actor"] = { ...doc.entities["entity:actor"]!, type: "custom-actor" };
-    const report = migrateArchimateV1ToV2(doc, {
+    const report = migrateArchimateV1ToV2(doc, { entityTypes: {
       "entity:actor": "business-actor",
       "entity:process": "business-process",
       "entity:component": "application-component",
-    });
+    } });
     expect(report.outcome).toBe("refused");
     expect(report.target).toBeNull();
     expect(report.unmigrated).toEqual([
@@ -887,11 +913,11 @@ describe("migration property: declared-invariant subset (design note E)", () => 
       },
       {
         doc: loadMig(join(fixtures, "pinned-sources", "archimate-skeleton-document.json")).document as MigDocument,
-        run: (doc) => migrateArchimateV1ToV2(doc, {
+        run: (doc) => migrateArchimateV1ToV2(doc, { entityTypes: {
           "entity:actor": "business-actor",
           "entity:process": "business-process",
           "entity:component": "application-component",
-        }),
+        } }),
       },
     ];
     for (const { doc, run } of cases) {
