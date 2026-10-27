@@ -1,10 +1,10 @@
 {
   "format": "diagram-full-suite-comparison/2",
-  "generatedAt": "2026-10-27T16:04:07.689Z",
+  "generatedAt": "2026-10-27T16:15:47.415Z",
   "baseCommit": "618977a86a25c35e426a87f97cb9f3391cd1c654",
   "binding": {
     "branch": "feat/ontology-guardian-diagram-profiles",
-    "testedCommit": "bc077702f49306f32985eca0c1616c5c699a1f73",
+    "testedCommit": "0353199038fee05db300556e621243ad3b52983d",
     "frozenSpec": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md",
     "frozenSpecSha256": "deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
     "changedFromBase": [
@@ -21,8 +21,13 @@
       "src/ontology-guardian/diagram-skeletons.ts",
       "src/ontology-guardian/diagram-view-shape.ts",
       "tests/build-diagram-acceptance-fixtures.mjs",
+      "tests/compare-diagram-full-suite.mjs",
       "tests/diagram-corpus-support.ts",
       "tests/diagram-mutant-proof.mjs",
+      "tests/fixtures/diagram-full-suite-evidence/base-typescript.txt.gz",
+      "tests/fixtures/diagram-full-suite-evidence/base-vitest.json.gz",
+      "tests/fixtures/diagram-full-suite-evidence/branch-typescript.txt.gz",
+      "tests/fixtures/diagram-full-suite-evidence/branch-vitest.json.gz",
       "tests/fixtures/generic-v1-minimal-document.json",
       "tests/fixtures/pinned-sources/archimate-skeleton-document.json",
       "tests/fixtures/pinned-sources/bpmn-canvas-canonical-ts.bytes",
@@ -411,7 +416,7 @@
       "src/ontology-guardian/diagram-corpus.ts": "c9715b45d5bb6b4a67ca92fff51078a71c312f123adb5f96e7a6b6cb214520ce",
       "src/ontology-guardian/diagram-document-shape.ts": "8627f6550ecad314967610a6ced81ec53a71a15d19b196d7cefb8cda62e31b3a",
       "src/ontology-guardian/diagram-matrix-data.ts": "b1c8414eaf9d324691547acfc2ffb82ef485b12eb61b395dc3145d2282b5a908",
-      "src/ontology-guardian/diagram-migrations.ts": "9886b1444f48627b3af74ba916b1dbf1c91637f9f57a4f017d9d78609ab9d087",
+      "src/ontology-guardian/diagram-migrations.ts": "2ef4428c37b3038341e2f0e9b40bf850e966ece48204ebd7c3c2e82ee19e781c",
       "src/ontology-guardian/diagram-native-types.ts": "86ff20e8d04018e7b4a6c47a2697966d4397b26c7c71fe2568831d31313e3635",
       "src/ontology-guardian/diagram-oracle.ts": "62ddde57138c1f58cbb59c7f3e958aa432f26ed7a9e44afbac8a85db850f4959",
       "src/ontology-guardian/diagram-profiles.ts": "5ebac511271f3dc421e21830a519f455408688699b7dbd81876be1af871bcb60",
@@ -421,7 +426,7 @@
       "src/ontology-guardian/diagram-view-shape.ts": "9989bf1d3472b99b02bd25f09a5bae3b0b583c41b76af623e6a3b7268e88a367",
       "tests/build-diagram-acceptance-fixtures.mjs": "556c053dad0be5a77de5928d21ee82a79eb9569da2992ad5d428c2b0fbadcefb",
       "tests/diagram-corpus-support.ts": "b7e646cc6541dbb354f45679e63310188ada604badf8742ff1b791a941ec3687",
-      "tests/diagram-mutant-proof.mjs": "6aa04290d69db244dcbde9575c55fd3685a31454c522d44f824907098b1a6673",
+      "tests/diagram-mutant-proof.mjs": "381a27edbf758a9e03f99068e225b43b8f654d9fccb5ba1aec23992438f30a6c",
       "tests/fixtures/generic-v1-minimal-document.json": "76bbe5b8f1323c85a141830156a6e47cce5aa3b9198988ad5c172b1f23fbbd16",
       "tests/fixtures/pinned-sources/archimate-skeleton-document.json": "8395ccc32ac25ae1354271817a3358bfe6f96243ecdfe2e5ef45ae1f48683951",
       "tests/fixtures/pinned-sources/bpmn-canvas-canonical-ts.bytes": "287d8cb87beb7384fc89a8d6141681010dcba50ee895aaadc3b31345541191ba",
@@ -795,16 +800,16 @@
       "tests/ontology-guardian-diagram-acceptance.test.ts": "607ad6f18beaf4b2ec1114711745e9eca3767d557087ac15abb15a5d3c2d6e36",
       "tests/ontology-guardian-diagram-admission.test.ts": "736bd599379e23f4ffb62789fe1bd34e62fb6a3e36df3c8057dc67743d013234",
       "tests/ontology-guardian-diagram-corpus.test.ts": "1eb96a9916e379511389761e3d279fde85e6db192393157401c61bf40bc623a5",
-      "tests/ontology-guardian-diagram-migrations.test.ts": "c8ff25d4bcb05ea23bca7bf57c17f3d71b4bc29c687cefc8357f64c4239d36f1",
+      "tests/ontology-guardian-diagram-migrations.test.ts": "f02017723a409cbedc892c7f3bb207d892a95431ab5e10bf01ee31d07ba1f548",
       "tests/ontology-guardian-diagram-native-shapes.test.ts": "31ef8f2ea4246b91e2f59f3fb241cd26d25cbe6e4df61ba9113372335a3431d5",
-      "tests/ontology-guardian-diagram-recovery.test.ts": "24470fd3a9a2b24b7ba1c0b75b06ae29e33377472c0608fab906c699a393727b",
+      "tests/ontology-guardian-diagram-recovery.test.ts": "3d60cb9d12769dd8d42f1d10adc90cd3841e015e43392d14e345688cca576cf7",
       "tests/ontology-guardian-diagram-schemas.test.ts": "06a4caa476e8fde853da30355d2649af3a341e2aa780182e1515fc3eaa5faa23",
-      "tests/ontology-guardian-diagram-typeproof.test.ts": "bdb7ff71393addff55986e9f56fc8d326569fb6267445bfc1decadf71ed45e90",
-      "tests/ontology-guardian-diagram-vectors.test.ts": "aa6140eb4f515bf630a0971e8923025031b906c3c3bc9b3974f6674fed8d0ad1",
+      "tests/ontology-guardian-diagram-typeproof.test.ts": "4096ba3791d9cf1d1902a0636f2cd66a860fac12fd55d33e87dc580674db0b0c",
+      "tests/ontology-guardian-diagram-vectors.test.ts": "e03d32ab17c39684046f22de1f3dce485a46e0e602407255c217d6bd63173ce0",
       "tsconfig.diagram-types.json": "50dee7d2e10c500dc27cd80ec2524683fcb55ae70e05ad981c49620b316d8151"
     },
-    "inputSetSha256": "6811f296d540be56faac0e6c5860d23129cb6d53f8e7e51ca4900baffcbfaee6",
-    "comparisonToolSha256": "57dd2e964d9cce4714c96842dbb2b04e5fe7b669cc721978c02d2bb0a086059a",
+    "inputSetSha256": "67ae8c2bfb5874232ca198762f0ee7f0acceb44a0449a426376cbb4fd7496797",
+    "comparisonToolSha256": "f540830da591cb9d57668c8477786e64ac8f83ee90a5925364dc0f5a360e0111",
     "note": "Evidence-only commits may follow; inputSha256 binds the complete changed execution inputs independently of the evidence commit identity."
   },
   "environment": {
@@ -838,9 +843,9 @@
     },
     "tests": {
       "failed": 245,
-      "passed": 5414,
+      "passed": 5425,
       "skipped": 31,
-      "total": 5690
+      "total": 5701
     },
     "diagramTests": {
       "files": [
@@ -854,8 +859,23 @@
         "tests/ontology-guardian-diagram-typeproof.test.ts",
         "tests/ontology-guardian-diagram-vectors.test.ts"
       ],
-      "passed": 1357,
-      "failed": 0
+      "passed": 1368,
+      "failed": 0,
+      "specVectors": {
+        "source": "§7.3.5",
+        "ids": [
+          "V-DELTA-1",
+          "V-DIAGRAM-1",
+          "V-MAPPING-1",
+          "V-PINS-1"
+        ],
+        "passed": 4,
+        "total": 4
+      },
+      "regressionSnapshots": {
+        "passed": 2,
+        "excludedFromSpecVectors": true
+      }
     }
   },
   "fullTypeScript": {
@@ -1528,15 +1548,15 @@
   "artifacts": {
     "base-vitest.json.gz": {
       "path": "tests/fixtures/diagram-full-suite-evidence/base-vitest.json.gz",
-      "rawSha256": "edef724d2db5722f7624e8afdf3d14fc0be68db712f77c3ace667aa51e8be62c",
-      "compressedSha256": "5172a5bcd15a914112223c37b41f2802c8fc323379794b4cf781cb855e8c6edf",
-      "rawBytes": 1957334
+      "rawSha256": "0bcf88e3a3ebee201790ca6b548bb98afe5a282050248217b2d0a10be4a0e7b4",
+      "compressedSha256": "242ebd1fcb689803ad74d5d3246d92800e9f5de2bc228db07d1e78eb7ab7e11d",
+      "rawBytes": 1957383
     },
     "branch-vitest.json.gz": {
       "path": "tests/fixtures/diagram-full-suite-evidence/branch-vitest.json.gz",
-      "rawSha256": "d93bb6e7589b0eaeb179e9c30d8365862fbbb022500e1aacc69273377ab01022",
-      "compressedSha256": "47bc487579266a06accf0fee3f489cd98833796831abb545a95d21b6ffd8757d",
-      "rawBytes": 2372885
+      "rawSha256": "6b3a0296203bee28a680e5419d320b9ea3b5ded20cf9a799d434fb12bc518e4b",
+      "compressedSha256": "0f0a5c5ed8264693807da080876a1fc253e1aa1bdb64ff2d80828e8e85640a2a",
+      "rawBytes": 2376873
     },
     "base-typescript.txt.gz": {
       "path": "tests/fixtures/diagram-full-suite-evidence/base-typescript.txt.gz",
