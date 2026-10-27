@@ -153,6 +153,8 @@ mutate("DM47", "diagram-view-shape.ts", "const check = Object.hasOwn(required, k
 mutate("DM48", "diagram-schemas.ts", '  "type-definition-conflict",\n', "");
 mutations.at(-1).scope = ["recovery"];
 
+mutate("DM49", "diagram-migrations.ts", 'Object.keys(mapping).length !== 1', 'false');
+mutate("DM50", "diagram-migrations.ts", 'const entityTypes = mapping.entityTypes;', 'const entityTypes = mapping;');
 
 function scopeOf(file) {
   if (file === "diagram-view-shape.ts" || file === "diagram-document-shape.ts") return ["native-shapes", "recovery"];
@@ -233,6 +235,7 @@ if (!isMainThread) {
   console.log(`runtime mutants: ${evidence.length}/${mutations.length} killed by committed callbacks`);
 // Compiler mutations must invalidate a committed @ts-expect-error proof (TS2578).
 const compilerMutations = [
+  ["archimate-mapping-wrapper-optional", "diagram-migrations.ts", "readonly entityTypes: Readonly<Record<string, string>>;", "readonly entityTypes?: Readonly<Record<string, string>>;"],
   ["outcome-open", "diagram-migrations.ts", 'export type MigrationOutcome = "ok" | "refused";', 'export type MigrationOutcome = "ok" | "refused" | "partial";'],
   ["binding-version-open", "diagram-profiles.ts", 'readonly compatibilityMatrixVersion: "1";', "readonly compatibilityMatrixVersion: string;"],
   ["report-target-optional", "diagram-migrations.ts", "readonly target: null;", "readonly target: MigDocument | null;"],

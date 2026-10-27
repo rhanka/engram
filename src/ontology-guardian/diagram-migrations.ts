@@ -1207,8 +1207,13 @@ function stripMigratedSlots(
 
 export const ARCHIMATE_MIGRATION_ID = "engram:migration-archimate-1-2" as const;
 
+/** Closed §3.13.2 input: one entity reference → catalogue type map. */
+export interface ArchimateMigrationMapping {
+  readonly entityTypes: Readonly<Record<string, string>>;
+}
+
 export function migrateArchimateV1ToV2(
-  source: MigDocument, mapping: Readonly<Record<string, string>>,
+  source: MigDocument, mapping: ArchimateMigrationMapping,
 ): MigrationReport {
   const from: Pin = { id: "archimate", version: "1.0.0", contentDigest: ARCHIMATE_V1_CONTENT };
   const to: Pin = { id: "archimate", version: "2.0.0", contentDigest: ARCHIMATE_V2.contentDigest };
@@ -1218,6 +1223,11 @@ export function migrateArchimateV1ToV2(
     refuse(ARCHIMATE_MIGRATION_ID, from, to, source, ops,
       detail === undefined ? [{ path, reason }] : [{ path, reason, detail }]);
 
+  if (!isRecord(mapping) || Object.keys(mapping).length !== 1 || !Object.hasOwn(mapping, "entityTypes") ||
+      !isRecord(mapping.entityTypes) || Object.values(mapping.entityTypes).some(value => typeof value !== "string")) {
+    return fail("mapping", "incompatible-attribute-schema");
+  }
+  const entityTypes = mapping.entityTypes;
   const sourceViewFailure = checkSourceViews(source);
   if (sourceViewFailure !== null) return fail(sourceViewFailure, "incompatible-attribute-schema");
   if (source.profileRefs.filter((r) => r === "archimate@1").length !== 1) {
@@ -1254,8 +1264,8 @@ export function migrateArchimateV1ToV2(
       if (entity.profile !== "archimate@1") continue;
       const own = resolveEffectiveType(ARCHIMATE_V1_DECLARATION, source.typeDefinitions, entity.type);
       if (own.ok && own.effective.chain.includes(id)) {
-        if (mapping[entity.id] === undefined) return fail(`entities.${entity.id}`, "missing-type-mapping");
-        assignments.add(mapping[entity.id]!);
+        if (entityTypes[entity.id] === undefined) return fail(`entities.${entity.id}`, "missing-type-mapping");
+        assignments.add(entityTypes[entity.id]!);
       }
     }
     if (assignments.size !== 1) return fail(`typeDefinitions.${id}.baseType`, "missing-type-mapping");
@@ -1288,7 +1298,7 @@ export function migrateArchimateV1ToV2(
     const sourceResolved = resolveEffectiveType(ARCHIMATE_V1_DECLARATION, source.typeDefinitions, entity.type);
     const sourceKind = sourceResolved.ok ? sourceResolved.effective.baseId : entity.type;
     if (sourceKind === "junction" || sourceKind === "grouping") {
-      const mapped = mapping[id];
+      const mapped = entityTypes[id];
       if (mapped !== undefined && mapped !== sourceKind) {
         return fail(`entities.${id}.type`, "incompatible-attribute-schema");
       }
@@ -1312,7 +1322,7 @@ export function migrateArchimateV1ToV2(
       declared.add(patchPath("entities", id, "profile"));
       continue;
     }
-    const mapped = mapping[id];
+    const mapped = entityTypes[id];
     if (mapped === undefined) return fail(`entities.${id}`, "missing-type-mapping");
     const row = catalogueById.get(mapped);
     if (row === undefined) return fail(`entities.${id}`, "missing-type-mapping");
