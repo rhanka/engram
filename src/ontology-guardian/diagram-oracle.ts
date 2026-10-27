@@ -4,8 +4,10 @@
 // issuance stay owner-side (U-QUAL); the hashes below are the specified
 // expected values the builders must reproduce from pinned bytes.
 import { canonicalBytes, sha256Hex } from "./canonical.js";
-import { ARCHIMATE_CONCEPT_NAMES } from "./diagram-matrix-data.js";
+import { ARCHIMATE_CATALOGUE, ARCHIMATE_CONCEPT_NAMES } from "./diagram-matrix-data.js";
 import { ARCHIMATE_RELATIONSHIP_IDS } from "./diagram-profiles.js";
+import type { MigDocument, MigEntity, MigRelation } from "./diagram-migrations.js";
+import type { NativeViewDocument } from "./diagram-native-types.js";
 
 /**
  * stable-id/1, transcribed from the pinned bpmn-canvas bytes
@@ -89,6 +91,60 @@ export function buildArchimateMatrixCases(
     }
   }
   return cases;
+}
+
+export interface ArchimateDocumentCase extends ArchimateMatrixCase {
+  readonly document: MigDocument;
+  readonly view: NativeViewDocument;
+  readonly expectedSemanticDiagnostics: readonly Record<string, unknown>[];
+  readonly expectedViewDiagnostics: readonly [];
+}
+
+/** Complete, unlaid-out native inputs for every pair, including RelationRef targets.
+ * Expected diagnostics are C.2 fixture data, never a claimed executor result.
+ */
+export function materializeArchimateMatrixCase(row: ArchimateMatrixCase): ArchimateDocumentCase {
+  const entities: Record<string, MigEntity> = {};
+  const relations: Record<string, MigRelation> = {};
+  const makeEntity = (id: string, type: string): void => {
+    const entry = ARCHIMATE_CATALOGUE.find(entry => entry.id === type);
+    if (entry === undefined) throw new Error(`unknown corpus catalogue type: ${type}`);
+    entities[id] = { id, profile: "archimate@2", type, attributes: {
+      ...(type === "junction" ? { operator: { kind: "enum", value: "and" } } : { name: { kind: "text", value: id } }),
+      ...(entry.layer === "none" ? {} : { layer: { kind: "enum", value: entry.layer } }),
+      aspect: { kind: "enum", value: entry.aspect },
+    } };
+  };
+  const target = (side: string, type: string): string => {
+    if (type !== "@relation") { const id = `entity:${side}`; makeEntity(id, type); return id; }
+    makeEntity("entity:anchor-actor", "business-actor"); makeEntity("entity:anchor-process", "business-process");
+    const id = `relation:${side}-anchor`;
+    relations[id] = { id, profile: "archimate@2", type: "assignment", attributes: {}, endpoints: [
+      { role: "source", target: "entity:anchor-actor" }, { role: "target", target: "entity:anchor-process" },
+    ] };
+    return id;
+  };
+  const source = target("source", row.sourceType), destination = target("target", row.targetType);
+  relations["relation:case"] = { id: "relation:case", profile: "archimate@2", type: row.relationType, attributes: {},
+    endpoints: [{ role: "source", target: source }, { role: "target", target: destination }] };
+  const occurrence = (id: string): string => `occurrence:${id.replace(":", "-")}`;
+  const document: MigDocument = { documentId: "document:matrix-case", schemaVersion: { major: 2, minor: 0 }, revision: 1,
+    profileRefs: ["archimate@2"], entities, relations, ports: {}, resources: {}, extensions: [], typeDefinitions: {} };
+  const view: NativeViewDocument = { viewId: "view:matrix-case", semanticDocumentId: document.documentId, revision: 1,
+    entityOccurrences: Object.fromEntries(Object.entries(entities).map(([id]) => [occurrence(id), {
+      id: occurrence(id), entity: id, geometry: { x: 0, y: 0, width: 460, height: 200 },
+    }])),
+    relationOccurrences: Object.fromEntries(Object.entries(relations).map(([id, relation]) => [occurrence(id), {
+      id: occurrence(id), relation: id,
+      endpoints: relation.endpoints.map(endpoint => ({ role: endpoint.role, occurrence: occurrence(endpoint.target) })),
+    }])), portOccurrences: {}, groups: {}, filters: [], presentation: { camera: { x: 0, y: 0, zoom: 1 } },
+  };
+  return { ...row, document, view, expectedViewDiagnostics: [], expectedSemanticDiagnostics: row.expected === "allowed" ? [] : [{
+    code: "relationship-matrix-violation", severity: "error", path: "relations.relation:case.endpoints",
+    message: `relation relation:case of type ${row.relationType} is not allowed from ${row.sourceType} to ${row.targetType} by matrix archimate-3.2`,
+    refs: ["relation:case", source, destination],
+    details: { matrixId: "archimate-3.2", relationType: row.relationType, sourceType: row.sourceType, targetType: row.targetType },
+  }] };
 }
 
 /** One A.2 multiplicity oracle row: parsed bounds or the specified refusal. */
