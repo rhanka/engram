@@ -57,7 +57,7 @@ const changedFromBase = git("diff", "--name-only", baseCommit).split("\n").filte
 const inputPaths = changedFromBase.filter(file => !file.includes("diagram-full-suite-comparison") && !file.includes("diagram-full-suite-evidence") && !file.endsWith("diagram-mutant-evidence.json") && !file.endsWith("compare-diagram-full-suite.mjs"));
 const inputSha256 = Object.fromEntries(inputPaths.map(file => [file, sha256Hex(fs.readFileSync(path.join(root, file)))]));
 const modelFile = "tests/llm-mesh-bridge.test.ts";
-assert.ok(baseResult.failingIdentities.files.includes(modelFile));
+const modelFailures = baseResult.failingIdentities.files.filter(file => file === modelFile);
 const { failingIdentities, ...baseSummary } = baseResult;
 const { failingIdentities: _branchIdentities, ...branchSummary } = branchResult;
 const frozenSpecBytes = fs.readFileSync(path.join(root, "tests/fixtures/pinned-sources/corpus/deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f.bytes"));
@@ -76,7 +76,7 @@ const report = {
     frozenSpec: "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md", frozenSpecSha256: "deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
     changedFromBase, inputSha256, inputSetSha256: sha256Hex(canonicalBytes(inputSha256)), comparisonToolSha256: sha256Hex(fs.readFileSync(fileURLToPath(import.meta.url))),
     note: "Evidence-only commits may follow; inputSha256 binds the complete changed execution inputs independently of the evidence commit identity." },
-  environment: { node: process.version, platform: process.platform, arch: process.arch, nodeModules: fs.realpathSync(path.join(root, "node_modules")), env: "test-g2" },
+  environment: { node: process.version, npm: execFileSync(process.env.SUBSTRATE_NPM_BIN ?? "npm", ["--version"], { encoding: "utf8" }).trim(), platform: process.platform, arch: process.arch, nodeModules: fs.realpathSync(path.join(root, "node_modules")), lockfileSha256: sha256Hex(fs.readFileSync(path.join(root, "package-lock.json"))), env: "test-g2" },
   scope: "Two complete Vitest runs with --configLoader runner --reporter=json, same dependencies and environment. Base is an isolated detached 618977a8 checkout created inside the ignored worktree scratch directory, with its Git index/history restored before execution.",
   base: baseSummary, branch: { ...branchSummary, diagramTests: { files: diagramFiles.map(file => relative(file.name)).sort(), passed: diagramFiles.reduce((sum, file) => sum + file.assertionResults.filter(test => test.status === "passed").length, 0), failed: 0,
     specVectors: { source: "§7.3.5", ids: specVectorIds, passed: specVectors.length, total: 4 },
@@ -85,8 +85,8 @@ const report = {
   failingIdentities, failingIdentitiesSha256: sha256Hex(canonicalBytes(failingIdentities)),
   failingIdentitiesMethod: "G0 RFC 8785 over sorted failed file identities and sorted failed assertion identities (file > fullName); both full JSON reports are retained.",
   classification: {
-    nativeOrBuildPrerequisite: { files: failingIdentities.files.filter(file => file !== modelFile), description: "Identical baseline failures: missing fs-ext/better-sqlite3, unbuilt engram-memory/dist and grammars, associated capability/native ABI checks and npm toolchain prerequisites." },
-    modelDependencyResolution: { files: [modelFile], description: "Separate baseline failure: model resolution reports Model not found: openai:gpt-5.5 before the expected fail-closed authResolver error." },
+    otherBaselineFailures: { files: failingIdentities.files.filter(file => file !== modelFile), description: "Failure identities retained from both complete reports; an empty list means both suites passed." },
+    modelDependencyResolution: { files: modelFailures, description: modelFailures.length ? "Model-resolution baseline failure; see the retained reports." : "No model-resolution failure with the locked dependencies." },
   }, artifacts, unverifiedRegister, conclusion: "Identical failure identities on base and branch; zero added failures. Diagram fixtures, migrations and schemas pass. Native semantic/projection/layout execution and production admission remain their named owners' gates.",
 };
 fs.writeFileSync(path.join(root, "tests/ontology-guardian-diagram-full-suite-comparison.json"), `${JSON.stringify(report, null, 2)}\n`);

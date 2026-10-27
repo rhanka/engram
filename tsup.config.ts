@@ -1,5 +1,15 @@
 import { defineConfig } from "tsup";
 import { readFile } from "node:fs/promises";
+import { pdfjsGlyphData } from "./scripts/pdfjs-glyph-data.mjs";
+
+const jsonPdfjsGlyphs = {
+  name: "json-pdfjs-glyphs",
+  setup(build) {
+    build.onLoad({ filter: /[\\/]unpdf[\\/]dist[\\/]pdfjs\.mjs$/ }, async ({ path }) => ({
+      loader: "js", contents: pdfjsGlyphData(await readFile(path, "utf8")),
+    }));
+  },
+};
 
 // file-type's two literal imports otherwise go through import(specifier).
 // Resolve that helper while bundling; the published closure stays inspectable.
@@ -38,6 +48,7 @@ export default defineConfig([
   {
     entry: { index: "src/index.ts", "llm-mesh": "src/llm-mesh.ts", "memory-tools": "src/memory-tools/index.ts", "time-reference": "src/time-reference/index.ts", "memory-substrate": "src/memory-substrate/index.ts" },
     format: ["esm", "cjs"],
+    esbuildPlugins: [jsonPdfjsGlyphs],
     dts: { compilerOptions: { types: ['node'] } },
     sourcemap: true,
     clean: true,
@@ -47,7 +58,7 @@ export default defineConfig([
   },
   {
     entry: { cli: "src/cli.ts" },
-    esbuildPlugins: [literalFileTypeImports],
+    esbuildPlugins: [literalFileTypeImports, jsonPdfjsGlyphs],
     format: ["esm"],
     banner: { js: "#!/usr/bin/env node" },
     sourcemap: true,
@@ -66,6 +77,7 @@ export default defineConfig([
   },
   {
     entry: { "skill-runtime": "src/skill-runtime.ts" },
+    esbuildPlugins: [jsonPdfjsGlyphs],
     format: ["esm"],
     sourcemap: true,
     target: "node20",
