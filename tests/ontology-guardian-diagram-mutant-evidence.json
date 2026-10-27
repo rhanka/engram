@@ -1,7 +1,7 @@
 {
   "format": "diagram-mutant-proof/2",
-  "callbacks": 1357,
-  "runtimeCount": 1154,
+  "callbacks": 1368,
+  "runtimeCount": 1156,
   "schemaChecks": 658,
   "corpusEntries": 370,
   "losslessPaths": 78,
@@ -9,7 +9,7 @@
     "diagram-corpus.ts": "c9715b45d5bb6b4a67ca92fff51078a71c312f123adb5f96e7a6b6cb214520ce",
     "diagram-document-shape.ts": "8627f6550ecad314967610a6ced81ec53a71a15d19b196d7cefb8cda62e31b3a",
     "diagram-matrix-data.ts": "b1c8414eaf9d324691547acfc2ffb82ef485b12eb61b395dc3145d2282b5a908",
-    "diagram-migrations.ts": "9886b1444f48627b3af74ba916b1dbf1c91637f9f57a4f017d9d78609ab9d087",
+    "diagram-migrations.ts": "2ef4428c37b3038341e2f0e9b40bf850e966ece48204ebd7c3c2e82ee19e781c",
     "diagram-native-types.ts": "86ff20e8d04018e7b4a6c47a2697966d4397b26c7c71fe2568831d31313e3635",
     "diagram-oracle.ts": "62ddde57138c1f58cbb59c7f3e958aa432f26ed7a9e44afbac8a85db850f4959",
     "diagram-profiles.ts": "5ebac511271f3dc421e21830a519f455408688699b7dbd81876be1af871bcb60",
@@ -19,14 +19,14 @@
     "diagram-view-shape.ts": "9989bf1d3472b99b02bd25f09a5bae3b0b583c41b76af623e6a3b7268e88a367"
   },
   "testSha256": {
-    "ontology-guardian-diagram-vectors.test.ts": "aa6140eb4f515bf630a0971e8923025031b906c3c3bc9b3974f6674fed8d0ad1",
-    "ontology-guardian-diagram-migrations.test.ts": "c8ff25d4bcb05ea23bca7bf57c17f3d71b4bc29c687cefc8357f64c4239d36f1",
+    "ontology-guardian-diagram-vectors.test.ts": "e03d32ab17c39684046f22de1f3dce485a46e0e602407255c217d6bd63173ce0",
+    "ontology-guardian-diagram-migrations.test.ts": "f02017723a409cbedc892c7f3bb207d892a95431ab5e10bf01ee31d07ba1f548",
     "ontology-guardian-diagram-admission.test.ts": "736bd599379e23f4ffb62789fe1bd34e62fb6a3e36df3c8057dc67743d013234",
-    "ontology-guardian-diagram-typeproof.test.ts": "bdb7ff71393addff55986e9f56fc8d326569fb6267445bfc1decadf71ed45e90",
+    "ontology-guardian-diagram-typeproof.test.ts": "4096ba3791d9cf1d1902a0636f2cd66a860fac12fd55d33e87dc580674db0b0c",
     "ontology-guardian-diagram-schemas.test.ts": "06a4caa476e8fde853da30355d2649af3a341e2aa780182e1515fc3eaa5faa23",
     "ontology-guardian-diagram-corpus.test.ts": "1eb96a9916e379511389761e3d279fde85e6db192393157401c61bf40bc623a5",
     "ontology-guardian-diagram-native-shapes.test.ts": "31ef8f2ea4246b91e2f59f3fb241cd26d25cbe6e4df61ba9113372335a3431d5",
-    "ontology-guardian-diagram-recovery.test.ts": "24470fd3a9a2b24b7ba1c0b75b06ae29e33377472c0608fab906c699a393727b",
+    "ontology-guardian-diagram-recovery.test.ts": "3d60cb9d12769dd8d42f1d10adc90cd3841e015e43392d14e345688cca576cf7",
     "ontology-guardian-diagram-acceptance.test.ts": "607ad6f18beaf4b2ec1114711745e9eca3767d557087ac15abb15a5d3c2d6e36"
   },
   "corpusIndexSha256": "06c1e9eea97e50dcb574ed3b130c4ffb01d242d66076fbce46dff5faba33c22a",
@@ -3394,7 +3394,7 @@
       "kind": "runtime",
       "executed": 45,
       "killed": true,
-      "assertion": "A.4 draft declaration digests > pins @1 transcription digests as stability goldens",
+      "assertion": "implementation regression snapshots (not spec vectors) > pins @1 transcription digests as regression snapshots",
       "testFile": "ontology-guardian-diagram-vectors.test.ts"
     },
     {
@@ -3403,14 +3403,14 @@
       "kind": "runtime",
       "executed": 45,
       "killed": true,
-      "assertion": "A.4 draft declaration digests > pins generic@2, schema and contract digests as stability goldens",
+      "assertion": "implementation regression snapshots (not spec vectors) > pins generic@2, schema and contract digests as regression snapshots",
       "testFile": "ontology-guardian-diagram-vectors.test.ts"
     },
     {
       "id": "DM14",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "multiplicity parser (§3.11, A.2) > refuses without trimming or guessing",
       "testFile": "ontology-guardian-diagram-migrations.test.ts"
@@ -3430,14 +3430,14 @@
       "kind": "runtime",
       "executed": 45,
       "killed": true,
-      "assertion": "A.4 draft declaration digests > pins generic@2, schema and contract digests as stability goldens",
+      "assertion": "implementation regression snapshots (not spec vectors) > pins generic@2, schema and contract digests as regression snapshots",
       "testFile": "ontology-guardian-diagram-vectors.test.ts"
     },
     {
       "id": "DM17",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "generic@1 → generic@2 (§3.13.1) > refuses presentation moves without the pinned contract",
       "testFile": "ontology-guardian-diagram-migrations.test.ts"
@@ -3446,7 +3446,7 @@
       "id": "DM18",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "generic@1 → generic@2 (§3.13.1) > refuses a conflicting destination value atomically",
       "testFile": "ontology-guardian-diagram-migrations.test.ts"
@@ -3455,7 +3455,7 @@
       "id": "DM19",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "canonical refusal selection > reports the same first invalid attribute under reversed insertion",
       "testFile": "ontology-guardian-diagram-migrations.test.ts"
@@ -3466,14 +3466,14 @@
       "kind": "runtime",
       "executed": 45,
       "killed": true,
-      "assertion": "A.4 draft declaration digests > pins generic@2, schema and contract digests as stability goldens",
+      "assertion": "implementation regression snapshots (not spec vectors) > pins generic@2, schema and contract digests as regression snapshots",
       "testFile": "ontology-guardian-diagram-vectors.test.ts"
     },
     {
       "id": "DM20",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "generic@1 → generic@2 (§3.13.1) > orders attribute operations canonically under reversed insertion",
       "testFile": "ontology-guardian-diagram-migrations.test.ts"
@@ -3482,7 +3482,7 @@
       "id": "DM21",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "generic@1 → generic@2 (§3.13.1) > moves presentation slots into retained occurrences when views are supplied",
       "testFile": "ontology-guardian-diagram-migrations.test.ts"
@@ -3493,7 +3493,7 @@
       "kind": "runtime",
       "executed": 45,
       "killed": true,
-      "assertion": "A.4 draft declaration digests > pins generic@2, schema and contract digests as stability goldens",
+      "assertion": "implementation regression snapshots (not spec vectors) > pins generic@2, schema and contract digests as regression snapshots",
       "testFile": "ontology-guardian-diagram-vectors.test.ts"
     },
     {
@@ -3527,7 +3527,7 @@
       "id": "DM26",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "generic@1 → generic@2 (§3.13.1) > preserves every native field of the full pinned document",
       "testFile": "ontology-guardian-diagram-migrations.test.ts"
@@ -3545,7 +3545,7 @@
       "id": "DM28",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "generic@1 → generic@2 (§3.13.1) > moves presentation slots into retained occurrences when views are supplied",
       "testFile": "ontology-guardian-diagram-migrations.test.ts"
@@ -3572,7 +3572,7 @@
       "id": "DM30",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "per-view presentation scoping (design note B, new findings) > commits requested fold groups into the views, not a side ledger",
       "testFile": "ontology-guardian-diagram-migrations.test.ts"
@@ -3581,7 +3581,7 @@
       "id": "DM31",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "lossless copy-then-patch (design note A, finding 2) > refuses an archimate mapping that contradicts the refinement ancestry",
       "testFile": "ontology-guardian-diagram-migrations.test.ts"
@@ -3590,7 +3590,7 @@
       "id": "DM32",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "generic@1 → generic@2 (§3.13.1) > moves presentation slots into retained occurrences when views are supplied",
       "testFile": "ontology-guardian-diagram-migrations.test.ts"
@@ -3599,7 +3599,7 @@
       "id": "DM33",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "complete DiagramState recovery > refuses identity-only and malformed source views before committing",
       "testFile": "ontology-guardian-diagram-recovery.test.ts"
@@ -3608,7 +3608,7 @@
       "id": "DM34",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "atomic loss refusal, every input leaf > refuses corruption at profileRefs/0",
       "testFile": "ontology-guardian-diagram-recovery.test.ts"
@@ -3617,7 +3617,7 @@
       "id": "DM35",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "complete DiagramState recovery > audits additions, array/object identity and dotted keys independently",
       "testFile": "ontology-guardian-diagram-recovery.test.ts"
@@ -3626,7 +3626,7 @@
       "id": "DM36",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "generic@1 → generic@2 (§3.13.1) > moves presentation slots into retained occurrences when views are supplied",
       "testFile": "ontology-guardian-diagram-migrations.test.ts"
@@ -3635,7 +3635,7 @@
       "id": "DM37",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "lossless copy-then-patch (design note A, finding 2) > refuses an incompatible archimate refinement redeclaration",
       "testFile": "ontology-guardian-diagram-migrations.test.ts"
@@ -3644,7 +3644,7 @@
       "id": "DM38",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "lossless copy-then-patch (design note A, finding 2) > refuses an incompatible archimate refinement redeclaration",
       "testFile": "ontology-guardian-diagram-migrations.test.ts"
@@ -3653,7 +3653,7 @@
       "id": "DM39",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "native refinements and resolved stereotype families > resolves every declared ancestor, inherited capability and typed conflict",
       "testFile": "ontology-guardian-diagram-recovery.test.ts"
@@ -3671,7 +3671,7 @@
       "id": "DM40",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "native refinements and resolved stereotype families > rebases a native element refinement onto the explicit concrete assignment",
       "testFile": "ontology-guardian-diagram-recovery.test.ts"
@@ -3680,7 +3680,7 @@
       "id": "DM41",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "native refinements and resolved stereotype families > resolves every declared ancestor, inherited capability and typed conflict",
       "testFile": "ontology-guardian-diagram-recovery.test.ts"
@@ -3689,7 +3689,7 @@
       "id": "DM42",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "native refinements and resolved stereotype families > applies a declared stereotype to a refinement of its permitted class family",
       "testFile": "ontology-guardian-diagram-recovery.test.ts"
@@ -3698,7 +3698,7 @@
       "id": "DM43",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "native refinements and resolved stereotype families > applies a declared stereotype to a refinement of its permitted class family",
       "testFile": "ontology-guardian-diagram-recovery.test.ts"
@@ -3707,7 +3707,7 @@
       "id": "DM44",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "complete DiagramState recovery > refuses unknown document fields while retaining their complete recovery bytes",
       "testFile": "ontology-guardian-diagram-recovery.test.ts"
@@ -3716,7 +3716,7 @@
       "id": "DM45",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "native refinements and resolved stereotype families > retains native additive attribute names that also occur on Object.prototype",
       "testFile": "ontology-guardian-diagram-recovery.test.ts"
@@ -3725,7 +3725,7 @@
       "id": "DM46",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "native refinements and resolved stereotype families > retains native additive attribute names that also occur on Object.prototype",
       "testFile": "ontology-guardian-diagram-recovery.test.ts"
@@ -3749,6 +3749,15 @@
       "testFile": "ontology-guardian-diagram-recovery.test.ts"
     },
     {
+      "id": "DM49",
+      "file": "diagram-migrations.ts",
+      "kind": "runtime",
+      "executed": 151,
+      "killed": true,
+      "assertion": "archimate@1 → archimate@2 (§§3.9.1/3.13.2) > refuses the invalid §3.13.2 mapping shape: unknown wrapper key",
+      "testFile": "ontology-guardian-diagram-migrations.test.ts"
+    },
+    {
       "id": "DM5",
       "file": "diagram-profiles.ts",
       "kind": "runtime",
@@ -3758,10 +3767,19 @@
       "testFile": "ontology-guardian-diagram-vectors.test.ts"
     },
     {
+      "id": "DM50",
+      "file": "diagram-migrations.ts",
+      "kind": "runtime",
+      "executed": 151,
+      "killed": true,
+      "assertion": "generic@1 → generic@2 (§3.13.1) > preserves every native field of the full pinned document",
+      "testFile": "ontology-guardian-diagram-migrations.test.ts"
+    },
+    {
       "id": "DM6",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "multiplicity parser (§3.11, A.2) > parses the four admitted notations",
       "testFile": "ontology-guardian-diagram-migrations.test.ts"
@@ -3770,7 +3788,7 @@
       "id": "DM7",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "generic@1 → generic@2 (§3.13.1) > removes semantic collapsed and reports absent/false/true distinctly",
       "testFile": "ontology-guardian-diagram-migrations.test.ts"
@@ -3779,7 +3797,7 @@
       "id": "DM8",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "archimate@1 → archimate@2 (§§3.9.1/3.13.2) > refuses a forbidden ordered pair (composition application-component→business-process)",
       "testFile": "ontology-guardian-diagram-migrations.test.ts"
@@ -3788,7 +3806,7 @@
       "id": "DM9",
       "file": "diagram-migrations.ts",
       "kind": "runtime",
-      "executed": 140,
+      "executed": 151,
       "killed": true,
       "assertion": "uml@1 → uml@2 (§§3.11.1/3.13.2) > refuses a stereotype applied outside its extends",
       "testFile": "ontology-guardian-diagram-migrations.test.ts"
@@ -16888,6 +16906,10 @@
     }
   ],
   "compiler": [
+    {
+      "id": "archimate-mapping-wrapper-optional",
+      "killedBy": "TS2578 in committed type proof"
+    },
     {
       "id": "outcome-open",
       "killedBy": "TS2578 in committed type proof"
