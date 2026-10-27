@@ -3,6 +3,7 @@
 // match the spec byte for byte. A mismatch fails the lot; values are never
 // adjusted to fit the code.
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,11 +31,23 @@ import {
   TUPLES_SHA256,
 } from "../src/ontology-guardian/diagram-matrix-data.js";
 import {
+  ARCHIMATE_RELATIONSHIP_IDS,
   ARCHIMATE_V2,
   GENERIC_V2,
   UML_V2,
   expandArchimateTuples,
 } from "../src/ontology-guardian/diagram-profiles.js";
+import { parseMultiplicity } from "../src/ontology-guardian/diagram-migrations.js";
+import {
+  JCS_NUMBERS_CANONICAL,
+  JCS_NUMBERS_CASE,
+  ORACLE_PROJECTION_DIGESTS,
+  ORACLE_SCHEMA_VERSION,
+  STABLE_ID_EXPECTATIONS,
+  UML_MULTIPLICITY_ORACLE,
+  buildArchimateMatrixCases,
+  derivedCaseId,
+} from "../src/ontology-guardian/diagram-oracle.js";
 import { ARCHIMATE_V1_CONTENT, GENERIC_V1_CONTENT, UML_V1_CONTENT } from "../src/ontology-guardian/diagram-skeletons.js";
 import { CONTRACT_CONTENT, envelopeEntryDigest } from "../src/ontology-guardian/diagram-registry.js";
 import {
@@ -443,5 +456,148 @@ describe("governed schemas, checked with an independent JSON Schema 2020-12 vali
     const contractRequired = DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.schema["required"];
     const diagramRequired = ((viewDiagram["properties"] as Record<string, unknown>)["diagram"] as Record<string, unknown>)["required"];
     expect(diagramRequired).toEqual(contractRequired);
+  });
+});
+
+describe("§8.7 derived oracle and deterministic case builders", () => {
+  const oracle = JSON.parse(readFileSync(join(fixtures, "m3-r4-derived-oracle.json"), "utf8")) as Record<string, unknown>;
+  const instances = (oracle["instances"] as Record<string, unknown>[]);
+  const byId = (id: string): Record<string, unknown> => instances.find((i) => i["id"] === id)!;
+
+  it("pins the oracle bytes and covers A1–A5", () => {
+    expect(createHash("sha256").update(readFileSync(join(fixtures, "m3-r4-derived-oracle.json"))).digest("hex")).toBe(
+      "9860b066d227d298aa67eae8bc47475355e86d22f266d1b0ad261035b33fdf8d",
+    );
+    expect(oracle["schemaVersion"]).toBe(ORACLE_SCHEMA_VERSION);
+    expect(instances.map((i) => i["id"])).toEqual(["A1", "A2", "A3", "A4a", "A4b", "A5"]);
+  });
+
+  it("reproduces the four digest-bound derived projections", () => {
+    expect(sha256Hex(canonicalBytes(oracle))).toBe(ORACLE_PROJECTION_DIGESTS.whole);
+    expect(sha256Hex(canonicalBytes(oracle["categoryTokens"]))).toBe(ORACLE_PROJECTION_DIGESTS.categoryTokens);
+    const a1 = byId("A1");
+    expect(sha256Hex(canonicalBytes(a1["summaries"]))).toBe(ORACLE_PROJECTION_DIGESTS.a1Summaries);
+    const a5 = byId("A5");
+    expect(sha256Hex(canonicalBytes({ entities: a5["entities"], presentationEntities: a5["presentationEntities"] }))).toBe(
+      ORACLE_PROJECTION_DIGESTS.a5EntitiesPresentation,
+    );
+  });
+
+  it("holds the A1 evidence: counts, categories, folds and ten summaries", () => {
+    const a1 = byId("A1");
+    expect(a1["counts"]).toEqual({ node: 28, container: 10, legend: 1, "legend-key": 3, contains: 36, link: 50 });
+    expect(a1["categories"]).toEqual(["neutral", "proposal", "identity"]);
+    expect(a1["defaultFolds"]).toEqual([
+      "occurrence:h2a", "occurrence:surfaces", "occurrence:cluster-mesh", "occurrence:engram", "occurrence:design-system",
+    ]);
+    const summaries = a1["summaries"] as Record<string, unknown>[];
+    expect(summaries).toHaveLength(10);
+    expect(summaries[0]).toEqual({
+      id: "sum:0", sourceOccurrence: "occurrence:h2a", targetOccurrence: "occurrence:surfaces",
+      label: "Harness and collaboration",
+      relationIds: ["relation:e-h2a-chat", "relation:e-h2a-cli", "relation:e-h2a-cowork"],
+      strokeStyle: "solid",
+    });
+    for (const summary of summaries) expect(summary["strokeStyle"]).toBe("solid");
+  });
+
+  it("holds the A5 ledger: counts, folds, order and valid diagnostics", () => {
+    const a5 = byId("A5");
+    expect(a5["counts"]).toEqual({ node: 33, container: 18, legend: 1, "legend-key": 4, contains: 51, link: 31 });
+    expect(a5["categories"]).toEqual(["genair", "custom", "outside", "none"]);
+    expect(a5["defaultFolds"]).toEqual([
+      "occurrence:PCICD", "occurrence:MSGZ", "occurrence:VERTEXZ", "occurrence:OBSZ", "occurrence:INGZ", "occurrence:GENSRC", "occurrence:AWSCI",
+    ]);
+    expect(a5["legendOrder"]).toEqual([
+      "entity:legend-genair", "entity:legend-custom", "entity:legend-outside", "entity:legend-none",
+    ]);
+    expect(a5["summaries"]).toEqual([]);
+    expect(a5["expectedSemanticDiagnostics"]).toEqual([]);
+    expect(a5["expectedViewDiagnostics"]).toEqual([]);
+  });
+
+  it("holds the four A5 semantic/presentation records with every authored string placed", () => {
+    const a5 = byId("A5");
+    const entities = a5["entities"] as Record<string, Record<string, unknown>>;
+    const presented = a5["presentationEntities"] as Record<string, Record<string, unknown>>;
+    expect(entities["entity:legend-genair"]).toEqual({
+      id: "entity:legend-genair", profile: "generic@2", type: "legend-key",
+      attributes: {
+        name: { kind: "text", value: "GenAiR standard" },
+        category: { kind: "text", value: "genair" },
+        description: { kind: "text", value: "GenAiR template, unchanged" },
+      },
+    });
+    expect(presented["occurrence:legend-genair"]).toEqual({
+      form: "legend-key",
+      text: { kicker: "TINT · BLUE", body: "GenAiR template, unchanged", detail: "standard GenAiR code and service", footer: "tint: genair" },
+      icon: "window",
+      categoryRef: "entity:legend-genair",
+    });
+    for (const [id, name, category] of [
+      ["entity:legend-custom", "GenAiR customisation", "custom"],
+      ["entity:legend-outside", "Specific for HRPN", "outside"],
+      ["entity:legend-none", "Managed service", "none"],
+    ] as const) {
+      expect((entities[id]!["attributes"] as Record<string, { value: string }>)["name"]!.value).toBe(name);
+      expect((entities[id]!["attributes"] as Record<string, { value: string }>)["category"]!.value).toBe(category);
+      expect(presented[`occurrence:${id.slice("entity:".length)}`]!["categoryRef"]).toBe(id);
+    }
+  });
+
+  it("holds the specified category→token assignments", () => {
+    expect(oracle["categoryTokens"]).toEqual({
+      genair: "st-semantic-data-category1",
+      specific: "st-semantic-feedback-warning",
+      added: "st-semantic-feedback-warning",
+      removed: "st-semantic-feedback-error",
+      risk: "st-semantic-feedback-error",
+      custom: "st-semantic-feedback-success",
+      outside: "st-semantic-feedback-warning",
+      none: "st-semantic-surface-raised",
+      neutral: "st-semantic-surface-raised",
+      proposal: "st-semantic-feedback-warning",
+      identity: "st-semantic-feedback-info",
+    });
+  });
+
+  it("builds the complete 42,284-case ArchiMate corpus from governed tuples", () => {
+    const cases = buildArchimateMatrixCases(expandArchimateTuples(), ARCHIMATE_RELATIONSHIP_IDS);
+    expect(cases).toHaveLength(62 * 62 * 11);
+    expect(cases.filter((c) => c.expected === "allowed")).toHaveLength(TUPLES_COUNT);
+    const verdict = (relationType: string, sourceType: string, targetType: string): string =>
+      cases.find((c) => c.relationType === relationType && c.sourceType === sourceType && c.targetType === targetType)!.expected;
+    expect(verdict("access", "application-component", "data-object")).toBe("allowed");
+    expect(verdict("access", "data-object", "application-component")).toBe("rejected");
+    expect(verdict("association", "application-component", "@relation")).toBe("allowed");
+    expect(verdict("association", "@relation", "application-component")).toBe("allowed");
+    expect(verdict("access", "application-component", "@relation")).toBe("rejected");
+  });
+
+  it("replays the A.2 multiplicity oracle through the governed parser", () => {
+    expect(UML_MULTIPLICITY_ORACLE).toHaveLength(10);
+    for (const row of UML_MULTIPLICITY_ORACLE) {
+      expect(parseMultiplicity(row.input)).toEqual(row.expected);
+    }
+  });
+
+  it("replays the sealed JCS numbers vector and pins the stable ids", () => {
+    expect(canonicalBytes(JCS_NUMBERS_CASE)).toBe(JCS_NUMBERS_CANONICAL);
+    expect(STABLE_ID_EXPECTATIONS).toEqual([
+      "g_61b268027699fa668a9b0e3eced8130a2b2e188f426051e9ad25ebb1e33a800c",
+      "g_0a8caa16444f4c61e14ffc4d7b77eb0dd75f8764840be0d3d7b8be550c0923d1",
+      "g_fda08c83ba8214a3e2d869831822d1cc754d9ef15cf9b93fe975e9b48dec7a6b",
+      "g_58599b7f84255d80c005b2dcda149676afeb0f7045dd6a162ea609ea523ac618",
+    ]);
+  });
+
+  it("builds deterministic C.6 case ids, agreeing with an independent hash", () => {
+    const mutation = { profile: "generic@2", field: "category" };
+    const first = derivedCaseId("bytes", mutation);
+    expect(first).toBe(derivedCaseId("bytes", mutation));
+    expect(first.startsWith("case_")).toBe(true);
+    expect(first).not.toBe(derivedCaseId("bytes", { profile: "generic@2", field: "name" }));
+    const independent = `case_${createHash("sha256").update(`bytes\n${canonicalBytes(mutation)}`, "utf8").digest("hex")}`;
+    expect(first).toBe(independent);
   });
 });
