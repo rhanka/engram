@@ -7,6 +7,25 @@ import { canonicalBytes, sha256Hex } from "./canonical.js";
 import { ARCHIMATE_CONCEPT_NAMES } from "./diagram-matrix-data.js";
 import { ARCHIMATE_RELATIONSHIP_IDS } from "./diagram-profiles.js";
 
+/**
+ * stable-id/1, transcribed from the pinned bpmn-canvas bytes
+ * (tests/fixtures/pinned-sources/bpmn-canvas-canonical-ts.bytes):
+ * `g_` plus the canonical digest of ["profile-mechanism/1", owner, slot, key].
+ * Callers supply the allocation owner explicitly; the sealed expectations
+ * below are replayed by executing this function, never by copying literals.
+ */
+export function stableId(ownerId: string, slot: string, stableKey: string): string {
+  return `g_${sha256Hex(canonicalBytes(["profile-mechanism/1", ownerId, slot, stableKey]))}`;
+}
+
+/** Sealed stable-id allocations from identity-stable-id.json (role: allocations). */
+export const SEALED_STABLE_ID_ALLOCATIONS: readonly { readonly owner: string; readonly slot: string; readonly key: string }[] = [
+  { owner: "Process_1", slot: "aid", key: "new-note" },
+  { owner: "Definitions_support", slot: "collaboration", key: "Process_A" },
+  { owner: "Process_é", slot: "aid", key: "clé" },
+  { owner: "𐀀owner", slot: "slot-1", key: "key-𐀀" },
+];
+
 export const ORACLE_SCHEMA_VERSION = "m3-r4-oracle/1" as const;
 export const ORACLE_SOURCE = {
   sourceRef: "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md",

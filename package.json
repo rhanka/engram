@@ -54,7 +54,7 @@
     "test:g0-mutants": "node tests/g0-mutant-proof.mjs",
     "test:diagram-types": "tsc --noEmit -p tsconfig.diagram-types.json",
     "test:diagram-mutants": "node tests/diagram-mutant-proof.mjs",
-    "test:diagram": "npm run test:diagram-types && vitest run tests/ontology-guardian-diagram-vectors.test.ts tests/ontology-guardian-diagram-migrations.test.ts tests/ontology-guardian-diagram-admission.test.ts tests/ontology-guardian-diagram-typeproof.test.ts && npm run test:diagram-mutants",
+    "test:diagram": "npm run test:diagram-types && vitest run tests/ontology-guardian-diagram-schemas.test.ts tests/ontology-guardian-diagram-corpus.test.ts tests/ontology-guardian-diagram-vectors.test.ts tests/ontology-guardian-diagram-migrations.test.ts tests/ontology-guardian-diagram-admission.test.ts tests/ontology-guardian-diagram-typeproof.test.ts && npm run test:diagram-mutants",
     "test:serve": "vitest run tests/serve.test.ts",
     "test:smoke": "./scripts/smoke-test.sh",
     "test:pipeline": "vitest run tests/pipeline.test.ts",
