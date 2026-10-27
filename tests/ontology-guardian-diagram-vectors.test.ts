@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import Ajv2020 from "ajv/dist/2020.js";
 
 const testsDir = process.env.DIAGRAM_TESTS_DIR ?? dirname(fileURLToPath(import.meta.url));
 
@@ -172,10 +173,10 @@ describe("A.4 draft declaration digests", () => {
 
   it("pins generic@2, schema and contract digests as stability goldens", () => {
     expect(GENERIC_V2.contentDigest).toBe("cb103606707577720eba48570c0e49aadd209d8e51a9a0bc2c725b7434f79283");
-    expect(DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.digest).toBe("f50c4dfe71302432c9752c67b37ecbe8f7267d0b1813ff9090a56483332bf32c");
-    expect(DIAGRAM_SEMANTIC_SCHEMA.digest).toBe("c2e891febf856fcaa5a2c737538fff4242014fde3ff9ef0aac703302b73c984f");
-    expect(DIAGRAM_VIEW_SCHEMA.digest).toBe("962de98bfa87d049ec17e2bce6dadac5019be027ab7178eb100bd189bc2877be");
-    expect(CONTRACT_CONTENT).toBe("a25a81d843ca8a1ca25ae44504fd6ba07d5ee7741b8d882b54546210dfc0c947");
+    expect(DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.digest).toBe("f13d595793e17e1e4740c9203b19d8381fc55b90e37121d61f5037cb79f0281a");
+    expect(DIAGRAM_SEMANTIC_SCHEMA.digest).toBe("6540bf83ff3384e1294c4f5f4f9f832f0ad7757e84a443c6b960b8f06b6bab12");
+    expect(DIAGRAM_VIEW_SCHEMA.digest).toBe("9b8cfcba2c9d7e293df56a68b451f03da620e41d8838567b6d6f12f8453c64fd");
+    expect(CONTRACT_CONTENT).toBe("74dadb9c31fff7653ca31692d8db3cfea782baea8d9268a3c20982ea8ab0aeae");
   });
 
 });
@@ -347,5 +348,100 @@ describe("A.3 serialization specimen oracles through the G0 module", () => {
     expect(envelopeEntryDigest(specimen.stacked.envelope as RegistryEnvelope)).toBe(specimen.stacked.externalEntryDigest);
     expect(specimen.base.externalEntryDigest).toBe("500d7242b900d4559ffd2291ea69498fcfda3415738958b3c8d62e0927a9349d");
     expect(specimen.stacked.externalEntryDigest).toBe("5544190fd969998f25dc384d910565c2c98b73051f372bce3d39b96521965142");
+  });
+});
+
+describe("governed schemas, checked with an independent JSON Schema 2020-12 validator", () => {
+  const ajv = new Ajv2020({ allErrors: true, strict: true });
+  const validateSemantic = ajv.compile(DIAGRAM_SEMANTIC_SCHEMA.schema);
+  const validateView = ajv.compile(DIAGRAM_VIEW_SCHEMA.schema);
+  const validatePresentation = ajv.compile(DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.schema);
+  const pinned = (name: string): unknown =>
+    JSON.parse(readFileSync(join(fixtures, name), "utf8"));
+  const genericMinimal = (): unknown =>
+    JSON.parse(readFileSync(join(testsDir, "fixtures", "generic-v1-minimal-document.json"), "utf8"));
+
+  it("accepts the three pinned native documents with all their native state", () => {
+    for (const name of ["archimate-skeleton-document.json", "uml-skeleton-document.json"]) {
+      const doc = (pinned(name) as { document: unknown }).document;
+      expect(validateSemantic(doc)).toBe(true);
+    }
+    expect(validateSemantic(genericMinimal())).toBe(true);
+  });
+
+  it("rejects empty records and malformed replacements", () => {
+    expect(validateSemantic({})).toBe(false);
+    const doc = genericMinimal() as Record<string, Record<string, Record<string, unknown>>>;
+    const empty = structuredClone(doc);
+    empty["entities"] = { "entity:x": {} };
+    expect(validateSemantic(empty)).toBe(false);
+    const badVersion = structuredClone(doc) as Record<string, unknown>;
+    badVersion["schemaVersion"] = "1.1";
+    expect(validateSemantic(badVersion)).toBe(false);
+    const badTop = structuredClone(doc) as Record<string, unknown>;
+    badTop["surprise"] = true;
+    expect(validateSemantic(badTop)).toBe(false);
+    const badProfile = structuredClone(doc) as Record<string, unknown>;
+    badProfile["profileRefs"] = ["generic@9"];
+    expect(validateSemantic(badProfile)).toBe(false);
+  });
+
+  it("accepts native view filters and rejects an open diagram replacement", () => {
+    const view = {
+      viewId: "view:1", semanticDocumentId: "document:generic-1", revision: 0,
+      entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:node-a" } },
+      relationOccurrences: {},
+      portOccurrences: {},
+      groups: {},
+      filters: [{ kind: "in-fold", collapsed: ["occurrence:a"] }],
+      presentation: {
+        camera: { x: 0, y: 0, zoom: 1 },
+        diagram: {
+          contractPin: { id: "diagram-presentation", version: "1", contentDigest: A64 },
+          entities: {},
+          legends: {},
+          categoryTokens: [],
+        },
+      },
+    };
+    expect(validateView(view)).toBe(true);
+    expect(validateView({ ...view, presentation: { diagram: { surprise: true } } })).toBe(false);
+    expect(validateView({ ...view, hover: true })).toBe(false);
+  });
+
+  it("enforces presentation bounds and grammars", () => {
+    const contract = {
+      contractPin: { id: "diagram-presentation", version: "1", contentDigest: A64 },
+      entities: {
+        "occurrence:k": {
+          form: "legend-key",
+          text: { title: "k".repeat(120) },
+          icon: "window",
+          categoryRef: "entity:legend-genair",
+        },
+      },
+      legends: { "occurrence:l": { order: ["entity:legend-genair"] } },
+      categoryTokens: [{ legendRef: "occurrence:l", category: "genair", token: "st-semantic-data-category1" }],
+    };
+    expect(validatePresentation(contract)).toBe(true);
+    const longTitle = structuredClone(contract) as Record<string, Record<string, Record<string, Record<string, { text: { title: string } }>>>>;
+    longTitle["entities"]!["occurrence:k"]!["text"]!.title = "k".repeat(121);
+    expect(validatePresentation(longTitle)).toBe(false);
+    const urlIcon = structuredClone(contract) as Record<string, Record<string, Record<string, Record<string, { icon: string }>>>>;
+    urlIcon["entities"]!["occurrence:k"]!["icon"] = "https://example.com/i.svg";
+    expect(validatePresentation(urlIcon)).toBe(false);
+    const badToken = structuredClone(contract) as Record<string, { categoryTokens: { category: string }[] }>;
+    badToken["categoryTokens"]![0]!.category = "GenAiR";
+    expect(validatePresentation(badToken)).toBe(false);
+  });
+
+  it("shares one closed diagram shape between the contract and view schemas", () => {
+    const contractProps = DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.schema["properties"];
+    const viewDiagram = (DIAGRAM_VIEW_SCHEMA.schema["properties"] as Record<string, unknown>)["presentation"] as Record<string, unknown>;
+    const diagramProps = ((viewDiagram["properties"] as Record<string, unknown>)["diagram"] as Record<string, unknown>)["properties"];
+    expect(diagramProps).toEqual(contractProps);
+    const contractRequired = DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.schema["required"];
+    const diagramRequired = ((viewDiagram["properties"] as Record<string, unknown>)["diagram"] as Record<string, unknown>)["required"];
+    expect(diagramRequired).toEqual(contractRequired);
   });
 });
