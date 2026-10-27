@@ -19,6 +19,7 @@ import {
   mappingDigestOf,
   pinsDigestOf,
   pinsPreimage,
+  resultDigestOf,
 } from "../src/ontology-guardian/digests.js";
 import {
   ARCHIMATE_CATALOGUE,
@@ -189,8 +190,8 @@ describe("A.4 draft declaration digests", () => {
   it("pins generic@2, schema and contract digests as stability goldens", () => {
     expect(GENERIC_V2.contentDigest).toBe("cb103606707577720eba48570c0e49aadd209d8e51a9a0bc2c725b7434f79283");
     expect(DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.digest).toBe("f13d595793e17e1e4740c9203b19d8381fc55b90e37121d61f5037cb79f0281a");
-    expect(DIAGRAM_SEMANTIC_SCHEMA.digest).toBe("b706634a7a25697d348c8ea1aeaa195ce3128d09664b29060a8d91effd632de7");
-    expect(DIAGRAM_VIEW_SCHEMA.digest).toBe("e2594b42c76ccda460eb6ba50f19105b6a15e29008467bc9db67d0957acde87b");
+    expect(DIAGRAM_SEMANTIC_SCHEMA.digest).toBe("60e3997a1f67259219eb8a7a9aa5ab8da4c89b85fe19b96e67326bc7fd386a2a");
+    expect(DIAGRAM_VIEW_SCHEMA.digest).toBe("273351021b614523c2066098550f97b20b0aad6e6eb7b563aaad29b5481a6b7c");
     expect(CONTRACT_CONTENT).toBe("74dadb9c31fff7653ca31692d8db3cfea782baea8d9268a3c20982ea8ab0aeae");
   });
 
@@ -344,6 +345,16 @@ describe("A.3 serialization specimen oracles through the G0 module", () => {
     );
   });
 
+  it("recomputes both A.3 P-PINS and P-RESULT values from their full preimages", () => {
+    for (const item of [specimen.base, specimen.stacked]) {
+      const record = item.record;
+      expect(pinsDigestOf({ layers: item.envelope.ontology.stack, ruleSheets: [] })).toBe(record.digests.pinsDigest);
+      const effective = item === specimen.base ? item.declaration : { ...item.declaration, entityTypes: specimen.base.declaration.entityTypes, constraints: [...specimen.base.declaration.constraints, ...item.declaration.constraints] };
+      expect(resultDigestOf({ effectiveDeclarations: projectionOf(effective, item.declaration.id),
+        effectiveRuleSet: [], severityPolicyDigest: null })).toBe(record.digests.resultEvidence.digest);
+    }
+  });
+
   it("recomputes asset bytes, corpus, fixture and parity digests", () => {
     expect(sha256Hex(canonicalBytes(specimen.base.declaration))).toBe("ffcf89f3c1ab72bbbf6262f421745bd03fc16b4767bdbc5092c2ce8496bf9760");
     expect(sha256Hex(canonicalBytes(specimen.stacked.declaration))).toBe("fd8b9a9ab48fcf94f955bf65c06164e470a63ddb17fc1a68c919f145ea931417");
@@ -381,7 +392,7 @@ describe("governed schemas, checked with an independent JSON Schema 2020-12 vali
       const doc = (pinned(name) as { document: unknown }).document;
       expect(validateSemantic(doc)).toBe(true);
     }
-    expect(validateSemantic(genericMinimal())).toBe(true);
+    expect(validateSemantic(genericMinimal())).toBe(false); // Explicitly partial authored migration fixture.
   });
 
   it("rejects empty records and malformed replacements", () => {
@@ -397,18 +408,18 @@ describe("governed schemas, checked with an independent JSON Schema 2020-12 vali
     badTop["surprise"] = true;
     expect(validateSemantic(badTop)).toBe(false);
     const badProfile = structuredClone(doc) as Record<string, unknown>;
-    badProfile["profileRefs"] = ["generic@9"];
+    badProfile["profileRefs"] = [9];
     expect(validateSemantic(badProfile)).toBe(false);
   });
 
   it("accepts native view filters and rejects an open diagram replacement", () => {
     const view = {
       viewId: "view:1", semanticDocumentId: "document:generic-1", revision: 0,
-      entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:node-a" } },
+      entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:node-a" , geometry: { x: 0, y: 0, width: 460, height: 200 }} },
       relationOccurrences: {},
       portOccurrences: {},
       groups: {},
-      filters: [{ kind: "in-fold", collapsed: ["occurrence:a"] }],
+      filters: [{ id: "filter:a", kind: "entity-type", types: ["node"], mode: "include" }],
       presentation: {
         camera: { x: 0, y: 0, zoom: 1 },
         diagram: {
@@ -420,7 +431,7 @@ describe("governed schemas, checked with an independent JSON Schema 2020-12 vali
       },
     };
     expect(validateView(view)).toBe(true);
-    expect(validateView({ ...view, presentation: { diagram: { surprise: true } } })).toBe(false);
+    expect(validateView({ ...view, presentation: { camera: { x: 0, y: 0, zoom: 1 },  diagram: { surprise: true } } })).toBe(false);
     expect(validateView({ ...view, hover: true })).toBe(false);
   });
 
