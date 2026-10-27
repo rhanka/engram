@@ -13,7 +13,9 @@ import type {
   MigDocument,
   MigrationOperation,
   MigrationOutcome,
+  MigrationRefusal,
   MigrationReport,
+  MigrationSuccess,
   UnmigratedItem,
 } from "../src/ontology-guardian/diagram-migrations.js";
 import type { SupersessionRow } from "../src/ontology-guardian/diagram-registry.js";
@@ -74,9 +76,47 @@ const badReport: MigrationReport = {
     documentId: "d", revision: 0, profileRefs: [], entities: {}, relations: {},
   },
   operations: [],
-  unmigrated: [],
+  unmigrated: [{ path: "", reason: "missing-source-profile" }],
   outcome: "refused",
 };
+
+// A refusal never carries a target document.
+const badRefused: MigrationRefusal = {
+  migrationId: "engram:migration-generic-1-2",
+  from: { id: "generic", version: "1.0.0", contentDigest: "a".repeat(64) },
+  to: { id: "generic", version: "2.0.0", contentDigest: "b".repeat(64) },
+  originalSha256: "c".repeat(64),
+  originalCanonical: {
+    documentId: "d", revision: 0, profileRefs: [], entities: {}, relations: {},
+  },
+  operations: [],
+  unmigrated: [{ path: "", reason: "missing-source-profile" }],
+  outcome: "refused",
+  // @ts-expect-error refused carries a null target
+  target: {
+    documentId: "d", revision: 0, profileRefs: [], entities: {}, relations: {},
+  },
+};
+
+// A success never carries a null target.
+const badSuccess: MigrationSuccess = {
+  migrationId: "engram:migration-generic-1-2",
+  from: { id: "generic", version: "1.0.0", contentDigest: "a".repeat(64) },
+  to: { id: "generic", version: "2.0.0", contentDigest: "b".repeat(64) },
+  originalSha256: "c".repeat(64),
+  originalCanonical: {
+    documentId: "d", revision: 0, profileRefs: [], entities: {}, relations: {},
+  },
+  operations: [],
+  unmigrated: [],
+  outcome: "ok",
+  // @ts-expect-error ok carries a non-null target
+  target: null,
+};
+
+// Refusal reasons are a closed vocabulary.
+// @ts-expect-error reason strings are closed
+const badReason: UnmigratedItem = { path: "", reason: "bogus-reason" };
 
 // A governed document requires its entity and relation maps.
 // @ts-expect-error entities cannot be omitted
