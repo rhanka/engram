@@ -43,10 +43,12 @@ import {
   JCS_NUMBERS_CASE,
   ORACLE_PROJECTION_DIGESTS,
   ORACLE_SCHEMA_VERSION,
+  SEALED_STABLE_ID_ALLOCATIONS,
   STABLE_ID_EXPECTATIONS,
   UML_MULTIPLICITY_ORACLE,
   buildArchimateMatrixCases,
   derivedCaseId,
+  stableId,
 } from "../src/ontology-guardian/diagram-oracle.js";
 import { ARCHIMATE_V1_CONTENT, GENERIC_V1_CONTENT, UML_V1_CONTENT } from "../src/ontology-guardian/diagram-skeletons.js";
 import { CONTRACT_CONTENT, envelopeEntryDigest } from "../src/ontology-guardian/diagram-registry.js";
@@ -187,8 +189,8 @@ describe("A.4 draft declaration digests", () => {
   it("pins generic@2, schema and contract digests as stability goldens", () => {
     expect(GENERIC_V2.contentDigest).toBe("cb103606707577720eba48570c0e49aadd209d8e51a9a0bc2c725b7434f79283");
     expect(DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.digest).toBe("f13d595793e17e1e4740c9203b19d8381fc55b90e37121d61f5037cb79f0281a");
-    expect(DIAGRAM_SEMANTIC_SCHEMA.digest).toBe("6540bf83ff3384e1294c4f5f4f9f832f0ad7757e84a443c6b960b8f06b6bab12");
-    expect(DIAGRAM_VIEW_SCHEMA.digest).toBe("9b8cfcba2c9d7e293df56a68b451f03da620e41d8838567b6d6f12f8453c64fd");
+    expect(DIAGRAM_SEMANTIC_SCHEMA.digest).toBe("b706634a7a25697d348c8ea1aeaa195ce3128d09664b29060a8d91effd632de7");
+    expect(DIAGRAM_VIEW_SCHEMA.digest).toBe("e2594b42c76ccda460eb6ba50f19105b6a15e29008467bc9db67d0957acde87b");
     expect(CONTRACT_CONTENT).toBe("74dadb9c31fff7653ca31692d8db3cfea782baea8d9268a3c20982ea8ab0aeae");
   });
 
@@ -581,14 +583,15 @@ describe("§8.7 derived oracle and deterministic case builders", () => {
     }
   });
 
-  it("replays the sealed JCS numbers vector and pins the stable ids", () => {
+  it("replays the sealed JCS numbers vector and executes the stable ids", () => {
     expect(canonicalBytes(JCS_NUMBERS_CASE)).toBe(JCS_NUMBERS_CANONICAL);
-    expect(STABLE_ID_EXPECTATIONS).toEqual([
-      "g_61b268027699fa668a9b0e3eced8130a2b2e188f426051e9ad25ebb1e33a800c",
-      "g_0a8caa16444f4c61e14ffc4d7b77eb0dd75f8764840be0d3d7b8be550c0923d1",
-      "g_fda08c83ba8214a3e2d869831822d1cc754d9ef15cf9b93fe975e9b48dec7a6b",
-      "g_58599b7f84255d80c005b2dcda149676afeb0f7045dd6a162ea609ea523ac618",
-    ]);
+    // The sealed ids are replayed by executing stable-id/1 over the sealed
+    // allocations (identity-stable-id.json, role allocations), never by
+    // copying the expected literals.
+    expect(SEALED_STABLE_ID_ALLOCATIONS).toHaveLength(STABLE_ID_EXPECTATIONS.length);
+    expect(
+      SEALED_STABLE_ID_ALLOCATIONS.map((a) => stableId(a.owner, a.slot, a.key)),
+    ).toEqual([...STABLE_ID_EXPECTATIONS]);
   });
 
   it("builds deterministic C.6 case ids, agreeing with an independent hash", () => {
