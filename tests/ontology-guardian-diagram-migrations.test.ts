@@ -16,7 +16,7 @@ import {
   migrateUmlV1ToV2,
   parseMultiplicity,
 } from "../src/ontology-guardian/diagram-migrations.js";
-import type { MigDocument } from "../src/ontology-guardian/diagram-migrations.js";
+import type { MigAttribute, MigDocument } from "../src/ontology-guardian/diagram-migrations.js";
 import { expandArchimateTuples } from "../src/ontology-guardian/diagram-profiles.js";
 
 const fixtures = join(testsDir, "fixtures");
@@ -165,10 +165,95 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
     (doc.entities["entity:node-a"]!.attributes as Record<string, unknown>)["kicker"] = { kind: "text", value: "K" };
     const report = migrateGenericV1ToV2(doc, {
       views: [{ viewId: "view:1", revision: 0, entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:node-a" } } }],
+      contractPin: { id: "diagram-presentation", version: "1", contentDigest: "a".repeat(64) },
     });
     expect(report.outcome).toBe("ok");
+    if (report.outcome !== "ok") throw new Error("migration");
     expect(report.presentationMoves).toEqual({ "occurrence:a": { kicker: "K" } });
     expect(report.target!.entities["entity:node-a"]!.attributes["kicker"]).toBeUndefined();
+    // The moves commit into the returned views, never beside them.
+    expect(report.target!.views).toHaveLength(1);
+    expect(report.target!.views![0]).toMatchObject({
+      viewId: "view:1",
+      presentation: { diagram: { entities: { "occurrence:a": { form: "card", text: { kicker: "K" } } } } },
+    });
+  });
+
+  it("refuses presentation moves without the pinned contract", () => {
+    const doc = source();
+    (doc.entities["entity:node-a"]!.attributes as Record<string, unknown>)["kicker"] = { kind: "text", value: "K" };
+    const report = migrateGenericV1ToV2(doc, {
+      views: [{ viewId: "view:1", revision: 0, entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:node-a" } } }],
+    });
+    expect(report.outcome).toBe("refused");
+    expect(report.target).toBeNull();
+    expect(report.unmigrated).toEqual([{ path: "presentation.contractPin", reason: "missing-presentation-contract" }]);
+  });
+
+  it("refuses a conflicting destination value atomically", () => {
+    const doc = source();
+    (doc.entities["entity:node-a"]!.attributes as Record<string, unknown>)["kicker"] = { kind: "text", value: "K" };
+    const report = migrateGenericV1ToV2(doc, {
+      views: [{
+        viewId: "view:1", revision: 0,
+        entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:node-a" } },
+        presentation: { diagram: { entities: { "occurrence:a": { form: "card", text: { kicker: "OTHER" } } } } },
+      }],
+      contractPin: { id: "diagram-presentation", version: "1", contentDigest: "a".repeat(64) },
+    });
+    expect(report.outcome).toBe("refused");
+    expect(report.target).toBeNull();
+    expect(report.unmigrated).toEqual([{
+      path: "views.view:1.presentation.diagram.entities.occurrence:a.text.kicker",
+      reason: "destination-conflict",
+    }]);
+  });
+
+  it("preserves every native field of the full pinned document", () => {
+    const doc = loadMig(join(fixtures, "pinned-sources", "archimate-skeleton-document.json")).document as MigDocument;
+    const report = migrateArchimateV1ToV2(doc, {
+      "entity:actor": "business-actor",
+      "entity:process": "business-process",
+      "entity:component": "application-component",
+    });
+    expect(report.outcome).toBe("ok");
+    if (report.outcome !== "ok") throw new Error("migration");
+    expect(report.target!.schemaVersion).toEqual((doc as MigDocument).schemaVersion);
+    expect(report.target!.resources).toEqual((doc as MigDocument).resources);
+    expect(report.target!.extensions).toEqual((doc as MigDocument).extensions);
+    expect(report.target!.typeDefinitions).toEqual((doc as MigDocument).typeDefinitions);
+  });
+
+  it("orders attribute operations canonically under reversed insertion", () => {
+    const uml = (): MigDocument => loadMig(join(fixtures, "pinned-sources", "uml-skeleton-document.json")).document as MigDocument;
+    const withStereotype = (doc: MigDocument): MigDocument => {
+      const next = structuredClone(doc);
+      next.entities["entity:stereotype-entity"] = {
+        id: "entity:stereotype-entity", profile: "uml@1", type: "stereotype",
+        attributes: {
+          name: { kind: "text", value: "entity" },
+          extends: { kind: "collection", items: [{ kind: "text", value: "class" }] },
+        },
+      };
+      return next;
+    };
+    const input = { stereotypes: { entity: "entity:stereotype-entity" } };
+    const flipAttributes = (doc: MigDocument): MigDocument => {
+      const next = structuredClone(doc);
+      const rel = next.relations["relation:order-customer"]!;
+      const entries = Object.entries(rel.attributes);
+      const flipped: Record<string, MigAttribute> = {};
+      for (const [k, v] of entries.reverse()) flipped[k] = v as MigAttribute;
+      next.relations["relation:order-customer"] = { ...rel, attributes: flipped };
+      return next;
+    };
+    const first = migrateUmlV1ToV2(withStereotype(uml()), input);
+    const second = migrateUmlV1ToV2(flipAttributes(withStereotype(uml())), input);
+    expect(first.outcome).toBe("ok");
+    expect(second.outcome).toBe("ok");
+    if (first.outcome !== "ok" || second.outcome !== "ok") throw new Error("migration");
+    expect(second.operations).toEqual(first.operations);
+    expect(canonicalBytes(second.target!)).toBe(canonicalBytes(first.target!));
   });
 
   it("refuses an overlong presentation slot atomically (kicker≤200 into kicker≤80)", () => {
@@ -313,9 +398,16 @@ describe("uml@1 → uml@2 (§§3.11.1/3.13.2)", () => {
   });
 
   it("migrates with an explicit stereotype mapping and converts multiplicities", () => {
-    const report = migrateUmlV1ToV2(source(), {
+    const doc = source();
+    doc.entities["entity:stereotype-entity"] = {
+      id: "entity:stereotype-entity", profile: "uml@1", type: "stereotype",
+      attributes: {
+        name: { kind: "text", value: "entity" },
+        extends: { kind: "collection", items: [{ kind: "text", value: "class" }] },
+      },
+    };
+    const report = migrateUmlV1ToV2(doc, {
       stereotypes: { entity: "entity:stereotype-entity" },
-      declaredStereotypes: { "entity:stereotype-entity": { extends: ["class"] } },
     });
     expect(report.outcome).toBe("ok");
     const target = report.target!;
@@ -344,9 +436,36 @@ describe("uml@1 → uml@2 (§§3.11.1/3.13.2)", () => {
   });
 
   it("refuses a stereotype applied outside its extends", () => {
+    const doc = source();
+    doc.entities["entity:stereotype-entity"] = {
+      id: "entity:stereotype-entity", profile: "uml@1", type: "stereotype",
+      attributes: {
+        name: { kind: "text", value: "entity" },
+        extends: { kind: "collection", items: [{ kind: "text", value: "interface" }] },
+      },
+    };
+    const report = migrateUmlV1ToV2(doc, {
+      stereotypes: { entity: "entity:stereotype-entity" },
+    });
+    expect(report.outcome).toBe("refused");
+    expect(report.unmigrated).toEqual([
+      { path: "entities.entity:order.attributes.stereotypes[0]", reason: "stereotype-application-invalid" },
+    ]);
+  });
+
+  it("refuses a dangling stereotype mapping resolved in no document", () => {
     const report = migrateUmlV1ToV2(source(), {
       stereotypes: { entity: "entity:stereotype-entity" },
-      declaredStereotypes: { "entity:stereotype-entity": { extends: ["interface"] } },
+    });
+    expect(report.outcome).toBe("refused");
+    expect(report.unmigrated).toEqual([
+      { path: "entities.entity:order.attributes.stereotypes[0]", reason: "unmapped-stereotype" },
+    ]);
+  });
+
+  it("refuses a stereotype mapping that names a non-stereotype record", () => {
+    const report = migrateUmlV1ToV2(source(), {
+      stereotypes: { entity: "entity:order" },
     });
     expect(report.outcome).toBe("refused");
     expect(report.unmigrated).toEqual([
@@ -355,15 +474,26 @@ describe("uml@1 → uml@2 (§§3.11.1/3.13.2)", () => {
   });
 
   it("refuses untrimmable multiplicity text and reversed ranges", () => {
+    const withDeclaration = (doc: MigDocument): MigDocument => {
+      const next = structuredClone(doc);
+      next.entities["s"] = {
+        id: "s", profile: "uml@1", type: "stereotype",
+        attributes: {
+          name: { kind: "text", value: "entity" },
+          extends: { kind: "collection", items: [{ kind: "text", value: "class" }] },
+        },
+      };
+      return next;
+    };
     const doc = source();
-    const badText = structuredClone(doc);
+    const badText = withDeclaration(structuredClone(doc));
     (badText.entities["entity:order-total"]!.attributes["multiplicity"] as { value: string }).value = " 1";
-    expect(migrateUmlV1ToV2(badText, { stereotypes: { entity: "s" }, declaredStereotypes: { s: { extends: ["class"] } } }).unmigrated).toEqual([
+    expect(migrateUmlV1ToV2(badText, { stereotypes: { entity: "s" } }).unmigrated).toEqual([
       { path: "entities.entity:order-total.attributes.multiplicity", reason: "multiplicity-syntax" },
     ]);
-    const reversed = structuredClone(doc);
+    const reversed = withDeclaration(structuredClone(doc));
     (reversed.entities["entity:order-total"]!.attributes["multiplicity"] as { value: string }).value = "5..1";
-    expect(migrateUmlV1ToV2(reversed, { stereotypes: { entity: "s" }, declaredStereotypes: { s: { extends: ["class"] } } }).unmigrated).toEqual([
+    expect(migrateUmlV1ToV2(reversed, { stereotypes: { entity: "s" } }).unmigrated).toEqual([
       { path: "entities.entity:order-total.attributes.multiplicity", reason: "multiplicity-invalid" },
     ]);
   });
