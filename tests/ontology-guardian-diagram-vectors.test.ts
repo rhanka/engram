@@ -1,7 +1,8 @@
-// Diagram lot vectors (frozen spec M3-R4 deb64b75, §§7.3.5/7.4, A.1/A.3/A.4).
-// Every digest below is recomputed through src/ontology-guardian and must
-// match the spec byte for byte. A mismatch fails the lot; values are never
-// adjusted to fit the code.
+// Spec-anchored vectors/oracles (frozen M3-R4 deb64b75, §§7.3.5/7.4, A.1/A.3/A.4)
+// and separately labelled implementation regression snapshots.
+// Only the four V-* cases in §7.3.5 count as spec vectors; snapshots do not.
+// Spec digests are recomputed through src/ontology-guardian and must match
+// the spec byte for byte; their expected values are never adjusted to fit code.
 import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -181,13 +182,18 @@ describe("A.4 draft declaration digests", () => {
     })).length).toBe(5068);
   });
 
-  it("pins @1 transcription digests as stability goldens", () => {
+});
+
+// These hashes were minted by this implementation, not supplied by the spec.
+// They detect regression only and are excluded from the spec-vector count.
+describe("implementation regression snapshots (not spec vectors)", () => {
+  it("pins @1 transcription digests as regression snapshots", () => {
     expect(GENERIC_V1_CONTENT).toBe("6166cca09085eb244751d4c3b0edf82de000d3ca445af134409836970a2f1dbe");
     expect(ARCHIMATE_V1_CONTENT).toBe("96791bf1886f4a57d3cb96c82573a2bed9da621ddc9262c81d6167b90c3b3b22");
     expect(UML_V1_CONTENT).toBe("184d0b7f7364293a2f835e80c31320300ba0f4f9ebcea35f7e0dc8fc093ea0d9");
   });
 
-  it("pins generic@2, schema and contract digests as stability goldens", () => {
+  it("pins generic@2, schema and contract digests as regression snapshots", () => {
     expect(GENERIC_V2.contentDigest).toBe("cb103606707577720eba48570c0e49aadd209d8e51a9a0bc2c725b7434f79283");
     expect(DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.digest).toBe("f13d595793e17e1e4740c9203b19d8381fc55b90e37121d61f5037cb79f0281a");
     expect(DIAGRAM_SEMANTIC_SCHEMA.digest).toBe("60e3997a1f67259219eb8a7a9aa5ab8da4c89b85fe19b96e67326bc7fd386a2a");
