@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:neutral:provider-arguments:1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_.:/-]*$"
+    },
+    "adapter": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_.:/-]*/[1-9][0-9]*$"
+    },
+    "apiVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "allowedKeywords": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "type",
+          "properties",
+          "required",
+          "additionalProperties",
+          "items",
+          "enum",
+          "const",
+          "anyOf",
+          "oneOf",
+          "minItems",
+          "maxItems",
+          "minLength",
+          "maxLength",
+          "minimum",
+          "maximum",
+          "pattern"
+        ]
+      },
+      "minItems": 0
+    },
+    "optionalTransport": {
+      "enum": [
+        "omit",
+        "nullable-wire"
+      ]
+    },
+    "maxOutputTokens": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "models": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 0
+    },
+    "qualification": {
+      "enum": [
+        "unverified",
+        "accepted",
+        "rejected"
+      ]
+    },
+    "argumentSchemaDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "id",
+    "adapter",
+    "apiVersion",
+    "allowedKeywords",
+    "optionalTransport",
+    "maxOutputTokens",
+    "models",
+    "qualification",
+    "argumentSchemaDigest"
+  ]
+}

@@ -1,0 +1,1 @@
+{"caseId":"lexical-lone-surrogate","comparatorIds":["design-lexical-probe"],"expectedArtifacts":[{"json":{"code":"profile-unicode","status":"refused"},"role":"verdict"}],"expectedStatus":"refused:profile-unicode","inputArtifacts":[{"hex":"7b2261223a225c7564383030227d","role":"document"}],"operation":"loadProfile","phase":null,"profileArtifact":null}

@@ -1,0 +1,47 @@
+{
+  "name": "BPMN in Color",
+  "uri": "http://www.omg.org/spec/BPMN/non-normative/color/1.0",
+  "prefix": "color",
+  "types": [
+    {
+      "name": "ColoredLabel",
+      "extends": [ "bpmndi:BPMNLabel" ],
+      "properties": [
+        {
+          "name": "color",
+          "isAttr": true,
+          "type": "String"
+        }
+      ]
+    },
+    {
+      "name": "ColoredShape",
+      "extends": [ "bpmndi:BPMNShape" ],
+      "properties": [
+        {
+          "name": "background-color",
+          "isAttr": true,
+          "type": "String"
+        },
+        {
+          "name": "border-color",
+          "isAttr": true,
+          "type": "String"
+        }
+      ]
+    },
+    {
+      "name": "ColoredEdge",
+      "extends": [ "bpmndi:BPMNEdge" ],
+      "properties": [
+        {
+          "name": "border-color",
+          "isAttr": true,
+          "type": "String"
+        }
+      ]
+    }
+  ],
+  "enumerations": [],
+  "associations": []
+}

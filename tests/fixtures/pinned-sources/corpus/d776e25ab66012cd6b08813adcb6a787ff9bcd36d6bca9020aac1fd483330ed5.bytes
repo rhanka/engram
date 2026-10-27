@@ -1,0 +1,620 @@
+html,
+body,
+#app {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 100%;
+  margin: 0;
+  overflow: visible;
+}
+
+body {
+  font-family: var(--st-font-sans, Inter, system-ui, sans-serif);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+[data-st-theme] {
+  min-height: 100%;
+  background: var(--st-semantic-surface-subtle, #f8fafc);
+  color: var(--st-semantic-text-primary, #0f172a);
+}
+
+.dossier {
+  width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--st-typography-field-size);
+  line-height: var(--st-typography-field-lineHeight);
+  font-weight: var(--st-typography-field-weight);
+  letter-spacing: var(--st-typography-field-letterSpacing);
+  padding-block: var(--st-spacing-6, 1.5rem) var(--st-spacing-10, 2.5rem);
+}
+
+.dossier :where(.st-stack, .st-flex, .st-card, .st-tile, section, details, .fact-grid, .option-grid) {
+  min-width: 0;
+}
+
+.dossier-shell.st-appShell {
+  /* A document must grow with its content, including in a short app iframe. */
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  block-size: auto;
+  min-block-size: 0;
+  max-block-size: none;
+  grid-template-rows: auto auto auto;
+  overflow: visible;
+}
+
+.dossier-shell .st-appShell__body,
+.dossier-shell main.st-appShell__main {
+  min-width: 0;
+  height: auto;
+  max-height: none;
+  overflow: visible;
+}
+
+.dossier-shell main.st-appShell__main {
+  flex: 1 1 auto;
+}
+
+.dossier button.st-button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.dossier h1,
+.dossier h2,
+.dossier h3,
+.dossier p,
+.dossier ol,
+.dossier figure {
+  margin-block: 0;
+}
+
+.dossier-header,
+.dossier > :global(.st-stack) {
+  width: 100%;
+}
+
+.dossier small { font-size: var(--st-component-badge-fontSize); }
+
+.dossier h1 {
+  max-width: 72rem;
+}
+
+.dossier h2 {
+  margin-top: 0.4rem;
+}
+
+.lede {
+  max-width: 78rem;
+  color: var(--st-semantic-text-secondary, #475569);
+  font-size: var(--st-typography-field-size);
+  line-height: var(--st-typography-field-lineHeight);
+}
+
+.mode-switch,
+.dossier-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--st-spacing-2, 0.5rem);
+}
+
+.dossier-nav {
+  justify-content: space-between;
+  padding-inline: clamp(0rem, 2vw, 1.5rem);
+}
+
+.level-strip {
+  display: grid;
+  grid-template-columns: 1fr 0.72fr 1.2fr;
+  gap: var(--st-spacing-2, 0.5rem);
+}
+
+.level-strip span {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 2.6rem;
+  padding: 0.5rem 0.75rem;
+  border-block-end: 3px solid var(--st-semantic-border-strong, #94a3b8);
+  color: var(--st-semantic-text-secondary, #475569);
+  font-size: var(--st-typography-label-size);
+  font-weight: var(--st-component-badge-fontWeight);
+}
+
+.level-strip b {
+  display: grid;
+  place-items: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border-radius: 999px;
+  background: var(--st-semantic-surface-inverse, #0f172a);
+  color: var(--st-semantic-text-inverse, #fff);
+}
+
+.architecture-figure {
+  --fg: var(--st-semantic-text-primary);
+  --surface: var(--st-semantic-surface-default);
+  --muted: var(--st-semantic-border-subtle);
+  --hl: var(--st-semantic-feedback-warning);
+  --hl-bg: color-mix(in srgb, var(--hl) 12%, var(--surface));
+  --id: var(--st-semantic-feedback-info);
+  --id-bg: color-mix(in srgb, var(--id) 10%, var(--surface));
+  display: grid;
+  gap: var(--st-spacing-2, 0.5rem);
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--muted);
+  background: var(--surface);
+}
+
+/* Fit to the available width by default; zooming regrows the vector, never rasterizes it. */
+.diagram-scroll { width: 100%; min-width: 0; overflow-x: auto; cursor: zoom-in; }
+/* Preserve the approved r11 SVG fit after restoring the document's 16px root. */
+.diagram-scroll { width: calc(100% - 16px); margin-inline: 8px; }
+.diagram-scroll.pannable { cursor: grab; }
+.diagram-scroll.panning { cursor: grabbing; }
+.diagram-scroll:focus-visible { outline: 2px solid var(--id); outline-offset: 2px; }
+.diagram-zoom { margin-inline: auto; }
+.architecture-svg { display: block; text-rendering: geometricPrecision; }
+.diagram-scroll .architecture-svg { width: 100%; height: auto; max-width: 100%; }
+.architecture-svg .diagram-arrow { stroke: var(--st-semantic-text-secondary); }
+.architecture-svg [data-junction] { fill: var(--st-semantic-text-secondary); }
+.diagram-controls { display: flex; align-items: center; flex-wrap: wrap; gap: var(--st-spacing-2); }
+.diagram-controls output { text-align: center; font-variant-numeric: tabular-nums; }
+.render-switch { display: inline-flex; flex-wrap: nowrap; border: 1px solid var(--st-semantic-border-strong); border-radius: var(--st-radius-sm); overflow: hidden; }
+.render-switch .st-button { border-radius: 0; border: 0; }
+.render-switch .st-button + .st-button { border-inline-start: 1px solid var(--st-semantic-border-strong); }
+.render-switch .st-button:focus-visible { outline-offset: -3px; }
+.diagram-hint { display: none; color: var(--st-semantic-text-secondary); font-size: var(--st-typography-label-size); }
+
+.diagram-viewer {
+  position: fixed;
+  z-index: var(--st-component-appShell-top-zIndex, 30);
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  /* Inset sizing follows the iframe's viewport without a vh/dvh dependency. */
+  height: auto;
+  max-height: none;
+  margin: 0;
+  padding: var(--st-spacing-4);
+  padding-top: max(var(--st-spacing-4), env(safe-area-inset-top));
+  padding-bottom: max(var(--st-spacing-4), env(safe-area-inset-bottom));
+  padding-left: max(var(--st-spacing-4), env(safe-area-inset-left));
+  padding-right: max(var(--st-spacing-4), env(safe-area-inset-right));
+  border: 0;
+  background: var(--surface);
+  color: var(--fg);
+  overflow: auto;
+}
+
+.diagram-viewer[open] {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(44px, 1fr);
+  gap: var(--st-spacing-2);
+}
+
+.diagram-viewer::backdrop { background: var(--st-semantic-surface-overlay); }
+.viewer-header { display: flex; align-items: start; justify-content: space-between; gap: var(--st-spacing-2); }
+.viewer-header h2 { min-width: 0; margin: 0; }
+.viewer-header .st-button { flex-shrink: 0; }
+.viewer-controls { display: flex; align-items: center; flex-wrap: wrap; gap: var(--st-spacing-2); }
+.viewer-controls output { text-align: center; font-variant-numeric: tabular-nums; }
+.viewer-hint { margin: 0; color: var(--st-semantic-text-secondary); font-size: var(--st-typography-label-size); line-height: var(--st-typography-label-lineHeight); }
+.viewer-viewport {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--muted);
+  background: var(--st-semantic-surface-subtle);
+  cursor: grab;
+  /* No CSS gesture restriction on the page; only active viewer gestures are
+     handled by its non-passive touch listeners. */
+  touch-action: auto;
+  user-select: none;
+}
+.viewer-viewport.dragging { cursor: grabbing; }
+.viewer-viewport:focus-visible { outline: 2px solid var(--id); outline-offset: 2px; }
+.viewer-transform { position: absolute; left: 0; top: 0; width: max-content; transform-origin: 0 0; }
+.viewer-transform .architecture-svg { margin: 0; }
+.architecture-palette { margin: 0; font-size: var(--st-typography-field-size); line-height: var(--st-typography-field-lineHeight); color: var(--st-semantic-text-secondary, #475569); }
+.diagram-sources { margin-top: 8px; font-size: var(--st-typography-field-size); line-height: var(--st-typography-field-lineHeight); }
+.architecture-figure figcaption > p { margin: 0; }
+.diagram-sources summary { cursor: pointer; color: var(--st-semantic-text-secondary, #475569); }
+.diagram-sources summary,
+.supporting-detail > summary { min-height: 44px; padding-block: var(--st-spacing-3); }
+.diagram-sources p { margin: 8px 0 0; overflow-wrap: anywhere; }
+
+.flow-scroll {
+  width: 100%;
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid var(--st-semantic-border-subtle, #cbd5e1);
+  border-radius: 0;
+  background: var(--st-semantic-surface-default, #fff);
+}
+
+.flow-canvas { min-width: 100%; }
+.flow-scroll:focus-visible { outline: 2px solid var(--st-semantic-action-primary, #2563eb); outline-offset: 2px; }
+
+.architecture-title {
+  color: var(--st-semantic-text-primary, #0f172a);
+  margin: 0;
+}
+
+.clearance-note {
+  color: var(--st-semantic-text-muted, #64748b);
+  font-size: var(--st-component-badge-fontSize);
+}
+
+.architecture-figure figcaption {
+  max-width: 88rem;
+  color: var(--st-semantic-text-secondary, #475569);
+  font-size: var(--st-typography-label-size);
+  line-height: var(--st-typography-field-lineHeight);
+}
+
+.architecture-legend {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--st-semantic-text-primary, #0f172a);
+}
+
+.svelte-flow__node-architecture {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.svelte-flow__edge-path {
+  stroke: var(--st-semantic-border-interactive, #2563eb);
+  stroke-width: 2.2;
+}
+
+.svelte-flow__edge.legacy .svelte-flow__edge-path {
+  stroke: var(--st-semantic-text-muted, #64748b);
+  stroke-dasharray: 7 6;
+}
+
+.svelte-flow__edge.reject .svelte-flow__edge-path {
+  stroke: var(--st-semantic-feedback-error, #dc2626);
+  stroke-dasharray: 7 6;
+}
+
+.svelte-flow__edge-text {
+  fill: var(--st-semantic-text-primary, #0f172a);
+  font-size: var(--st-typography-field-size);
+  font-weight: var(--st-component-badge-fontWeight);
+}
+
+.svelte-flow__edge-textbg {
+  fill: var(--st-semantic-surface-default, #fff);
+  fill-opacity: 0.94;
+}
+
+.svelte-flow__edge-label {
+  padding: 0.18rem 0.35rem;
+  border: 1px solid var(--st-semantic-border-subtle, #cbd5e1);
+  border-radius: 0;
+  background: var(--st-semantic-surface-default, #fff);
+  color: var(--st-semantic-text-secondary, #475569);
+  font-size: var(--st-typography-field-size);
+  font-weight: var(--st-component-badge-fontWeight);
+  line-height: var(--st-typography-control-lineHeight);
+}
+
+:global(.svelte-flow__controls),
+:global(.svelte-flow__minimap) {
+  border: 1px solid var(--st-semantic-border-subtle, #cbd5e1);
+  box-shadow: var(--st-shadow-subtle, 0 1px 2px rgb(15 23 42 / 0.08));
+}
+
+.fact-grid,
+.trust-grid,
+.maturity-grid,
+.option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  gap: var(--st-spacing-3, 0.75rem);
+}
+
+.option-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 23rem), 1fr));
+}
+
+.fact-grid p,
+.trust-grid p,
+.maturity-grid p,
+.option-grid p {
+  line-height: var(--st-typography-field-lineHeight);
+}
+
+.stage-rail {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--st-spacing-2, 0.5rem);
+  padding: 0;
+  list-style: none;
+  counter-reset: none;
+}
+
+.stage-rail li {
+  min-height: 4rem;
+  padding: 0.65rem;
+  border-inline-start: 4px solid var(--st-semantic-action-primary, #2563eb);
+  border-radius: var(--st-radius-md, 0.4rem);
+  background: var(--st-semantic-surface-subtle, #f8fafc);
+  font-size: var(--st-component-badge-fontSize);
+  font-weight: var(--st-component-badge-fontWeight);
+  line-height: var(--st-typography-label-lineHeight);
+}
+
+.decision-context {
+  max-width: 88rem;
+  padding: 1rem 1.1rem;
+  border-inline-start: 4px solid var(--st-semantic-border-interactive, #2563eb);
+  background: var(--st-semantic-surface-subtle, #f8fafc);
+  color: var(--st-semantic-text-secondary, #475569);
+  line-height: var(--st-typography-field-lineHeight);
+}
+
+.question {
+  max-width: 78rem;
+  font-size: var(--st-typography-field-size);
+  line-height: var(--st-typography-field-lineHeight);
+}
+
+.remarks-section,
+.round-history,
+.decision-diagram,
+.decision-details {
+  display: grid;
+  gap: var(--st-spacing-3, 0.75rem);
+  padding-block-start: var(--st-spacing-3, 0.75rem);
+  border-block-start: 1px solid var(--st-semantic-border-subtle, #cbd5e1);
+}
+
+.decision-details h3 {
+  margin-block-end: var(--st-spacing-2, 0.5rem);
+}
+
+.table-scroll {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid var(--st-semantic-border-subtle, #cbd5e1);
+}
+
+.decision-details table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 832px;
+  border-collapse: collapse;
+  background: var(--st-semantic-surface-default, #fff);
+  font-size: var(--st-typography-label-size);
+  line-height: var(--st-typography-field-lineHeight);
+}
+
+.decision-details th,
+.decision-details td {
+  padding: 8px 12px;
+  border-inline-end: 1px solid var(--st-semantic-border-subtle, #cbd5e1);
+  border-block-end: 1px solid var(--st-semantic-border-subtle, #cbd5e1);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.decision-details th {
+  background: var(--st-semantic-surface-subtle, #f8fafc);
+  color: var(--st-semantic-text-secondary, #475569);
+  font-weight: var(--st-component-badge-fontWeight);
+}
+
+.decision-details tbody tr:last-child td { border-block-end: 0; }
+.decision-details tr > :last-child { border-inline-end: 0; }
+
+.remark-thread {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  border: 1px solid var(--st-semantic-border-subtle, #cbd5e1);
+  border-radius: 0;
+  background: var(--st-semantic-surface-default, #fff);
+}
+
+.thread-entry {
+  display: grid;
+  align-content: start;
+  gap: var(--st-spacing-2, 0.5rem);
+  min-width: 0;
+  padding: var(--st-spacing-4, 1rem);
+}
+
+.owner-entry {
+  border-inline-start: 4px solid var(--st-semantic-feedback-warning, #d97706);
+}
+
+.response-entry {
+  border-inline-start: 1px solid var(--st-semantic-border-subtle, #cbd5e1);
+  background: var(--st-semantic-surface-subtle, #f8fafc);
+}
+
+.remark-thread p,
+.round-history span {
+  line-height: var(--st-typography-field-lineHeight);
+  white-space: pre-wrap;
+}
+
+.verbatim {
+  font-family: var(--st-font-mono, ui-monospace, SFMono-Regular, monospace);
+  font-size: var(--st-typography-label-size);
+}
+
+.empty-remark {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: var(--st-spacing-3, 0.75rem);
+  padding: var(--st-spacing-3, 0.75rem);
+  border-inline-start: 4px solid var(--st-semantic-border-strong, #94a3b8);
+}
+
+.round-history ol {
+  display: grid;
+  gap: var(--st-spacing-2, 0.5rem);
+  padding: 0;
+  list-style: none;
+}
+
+.round-history li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: var(--st-spacing-3, 0.75rem);
+  padding-block: var(--st-spacing-2, 0.5rem);
+  border-block-end: 1px solid var(--st-semantic-border-subtle, #cbd5e1);
+}
+
+.muted-copy,
+.dossier small {
+  color: var(--st-semantic-text-secondary, #475569);
+}
+
+@media (max-width: 75rem) {
+  .option-grid { grid-template-columns: 1fr; }
+  .stage-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 48rem) {
+  .st-container--padded { padding-inline: var(--st-spacing-4, 1rem); }
+  .dossier { padding-block-start: 0.75rem; }
+  .dossier .st-badge { max-width: 100%; white-space: normal; }
+  .fact-grid, .trust-grid, .maturity-grid, .option-grid { grid-template-columns: minmax(0, 1fr); }
+  .architecture-figure { padding: var(--st-spacing-2); }
+  .diagram-hint { display: block; }
+  .diagram-scroll { max-height: 65svh; overflow-y: auto; }
+  .dossier textarea { font-size: var(--st-typography-field-size); }
+  .flow-canvas { height: 70vh; min-height: 34rem; }
+  .level-strip { grid-template-columns: 1fr; }
+  .stage-rail { grid-template-columns: 1fr; }
+  .dossier-nav { justify-content: center; }
+  .dossier-nav .st-slideIndicator { order: 1; width: 100%; flex-wrap: wrap; justify-content: center; gap: var(--st-spacing-1); }
+  .dossier .dossier-nav .st-slideIndicator button.st-slideIndicator__dot {
+    position: relative;
+    min-width: 44px;
+    width: 44px;
+    height: 44px;
+    background: transparent;
+  }
+  .dossier-nav .st-slideIndicator__dot::after {
+    content: '';
+    position: absolute;
+    inset: 50% auto auto 50%;
+    transform: translate(-50%, -50%);
+    width: 1rem;
+    height: 0.3125rem;
+    border-radius: var(--st-radius-full, 999px);
+    background: var(--st-semantic-border-strong);
+  }
+  .dossier-nav .st-slideIndicator__dot--current::after { width: 1.75rem; background: var(--st-semantic-action-primary); }
+  .empty-remark, .round-history li { grid-template-columns: minmax(0, 1fr); }
+  .remark-thread { grid-template-columns: 1fr; }
+  .response-entry {
+    border-inline-start: 4px solid var(--st-semantic-feedback-success, #15803d);
+    border-block-start: 1px solid var(--st-semantic-border-subtle, #cbd5e1);
+  }
+}
+
+.supporting-detail { border-top: 1px solid var(--muted, #cbd5e1); padding: 12px 0; }
+.supporting-detail > summary { cursor: pointer; font-size: var(--st-typography-field-size); font-weight: var(--st-component-badge-fontWeight); }
+.supporting-detail[open] > summary { margin-bottom: 8px; }
+
+.architecture-svg { margin-inline: auto; }
+.architecture-svg [data-route-state="dimmed"] { opacity: 1; }
+.architecture-svg [data-route-state="active"] { opacity: 1; }
+.architecture-svg [data-route-state="active"] > rect { stroke-width: 3; }
+.architecture-svg [data-route-state="active"] > .diagram-arrow { stroke: var(--st-semantic-text-primary); }
+
+.need-selector-bar,
+.gigogne-selector-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--st-spacing-2);
+}
+
+
+.central-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--st-spacing-4, 1rem);
+  align-items: start;
+}
+
+.route-steps {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  display: grid;
+  gap: 0.35rem;
+  line-height: var(--st-typography-field-lineHeight);
+}
+
+.readiness-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.clause-list {
+  display: grid;
+  gap: var(--st-spacing-2, 0.5rem);
+}
+
+@media (max-width: 75rem) {
+  .central-workspace { grid-template-columns: minmax(0, 1fr); }
+}
+
+.owner-feedback-annex {
+  display: grid;
+  gap: var(--st-spacing-2, 0.5rem);
+}
+
+.verbatim-raw {
+  margin: 0;
+  padding: var(--st-spacing-3, 0.75rem);
+  border: 1px solid var(--st-semantic-border-subtle, #cbd5e1);
+  background: var(--st-semantic-surface-default, #fff);
+  font-family: var(--st-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: var(--st-typography-label-size);
+  line-height: var(--st-typography-field-lineHeight);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+/* Original owner evidence remains portable and readable at mobile widths. */
+.owner-feedback-images { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: var(--st-spacing-4, 1rem); }
+.owner-feedback-images figure { margin: 0; min-width: 0; }
+.owner-feedback-images img { display: block; width: 100%; height: auto; }
+
+/* Larger type with compact, top-aligned document cells. */
+.dossier { --st-spacing-1: 4px; --st-spacing-2: 8px; --st-spacing-3: 8px; --st-spacing-4: 12px; }
+.dossier .st-card, .dossier .st-tile { padding: 12px; }
+.fact-grid, .trust-grid, .maturity-grid, .option-grid { align-items: start; }
+.dossier .st-flex[style*="flex-direction: column"] { justify-content: flex-start; }
+.decision-details, .decision-diagram, .supporting-detail { padding-block: 8px; }
+.thread-entry { padding: 12px; }
+
+.language-switch { display:inline-flex; gap:var(--st-spacing-1,4px); padding:var(--st-spacing-1,4px); border:1px solid var(--st-semantic-border-subtle); border-radius:var(--st-radius-sm,4px); background:var(--st-semantic-surface-subtle); }

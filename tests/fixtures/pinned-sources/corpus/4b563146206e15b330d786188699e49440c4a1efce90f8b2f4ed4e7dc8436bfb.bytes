@@ -1,0 +1,22 @@
+{
+  "expressionLanguage": "http://www.w3.org/1999/XPath",
+  "typeLanguage": "http://www.w3.org/2001/XMLSchema",
+  "$type": "bpmn:Definitions",
+  "id": "Defs_InvalidLint",
+  "targetNamespace": "urn:example:functions-workbench:v1",
+  "rootElements": [
+    {
+      "$type": "bpmn:Process",
+      "id": "Process_Empty",
+      "flowElements": [
+        {
+          "isForCompensation": false,
+          "startQuantity": 1,
+          "completionQuantity": 1,
+          "$type": "bpmn:Task",
+          "id": "Task_Unnamed"
+        }
+      ]
+    }
+  ]
+}

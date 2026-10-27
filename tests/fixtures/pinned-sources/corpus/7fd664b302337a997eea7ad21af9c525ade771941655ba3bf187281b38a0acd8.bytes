@@ -1,0 +1,17 @@
+{
+  "$type": "bpmn:Definitions",
+  "id": "Defs_InvalidLint",
+  "targetNamespace": "urn:example:functions-workbench:v1",
+  "rootElements": [
+    {
+      "$type": "bpmn:Process",
+      "id": "Process_Empty",
+      "flowElements": [
+        {
+          "$type": "bpmn:Task",
+          "id": "Task_Unnamed"
+        }
+      ]
+    }
+  ]
+}

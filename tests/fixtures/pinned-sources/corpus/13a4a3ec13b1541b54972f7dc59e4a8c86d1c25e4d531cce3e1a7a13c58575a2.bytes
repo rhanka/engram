@@ -1,0 +1,130 @@
+{
+  "input": {
+    "semanticTree": {
+      "$type": "bpmn:Definitions",
+      "id": "Definitions_1",
+      "rootElements": [
+        {
+          "$type": "bpmn:Process",
+          "id": "Process_1",
+          "name": "Example"
+        }
+      ]
+    },
+    "profileIdentity": {
+      "mechanismVersion": "1",
+      "schemaVersion": "1.0.0",
+      "profile": "neutral/1",
+      "version": "1.1.0",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "base": {
+        "id": "neutral-base/1",
+        "version": "fixture-2",
+        "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      "descriptors": [
+        {
+          "id": "a/1",
+          "version": "1",
+          "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        {
+          "id": "z/1",
+          "version": "1",
+          "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      ]
+    },
+    "bindings": [],
+    "descriptorPins": [
+      {
+        "id": "z/1",
+        "version": "1",
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+        "id": "a/1",
+        "version": "1",
+        "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      }
+    ],
+    "layout": {
+      "layoutVersion": "1",
+      "pages": [
+        {
+          "pageId": "Z-page",
+          "name": "First sheet",
+          "order": 0,
+          "semanticRootId": "Process_1",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 1000,
+            "height": 800
+          }
+        }
+      ],
+      "geometry": []
+    },
+    "themeId": "plain",
+    "themes": [
+      {
+        "id": "plain",
+        "aliases": [],
+        "tokens": [
+          {
+            "name": "fill",
+            "value": "#ffffff"
+          }
+        ],
+        "glyphs": [],
+        "metricsResource": "metrics",
+        "geometry": "shared",
+        "syntheticOccurrences": []
+      }
+    ],
+    "overrides": {
+      "semantic": [],
+      "occurrence": []
+    },
+    "diStyles": {
+      "native": [],
+      "bioc": []
+    },
+    "metrics": [],
+    "payload": {
+      "pages": [
+        {
+          "pageId": "Z-page",
+          "name": "First sheet",
+          "order": 0,
+          "semanticRootId": "Process_1",
+          "bounds": {
+            "x": 0,
+            "y": 0,
+            "width": 1000,
+            "height": 800
+          }
+        }
+      ],
+      "occurrences": [],
+      "coverage": [],
+      "diagnostics": []
+    },
+    "xml": "<definitions id=\"Definitions_1\"/>\n"
+  },
+  "expected": {
+    "semanticRevision": "7e5013dd439e73c1a6aeaaac01f7747846088d4c2bd84dac0598f1c7a061f7e5",
+    "descriptorDigest": "cc856ac74dba29099fa2b1f00acfd794dddeda1e76431b34071c26b0621773a2",
+    "layoutDigest": "e29247e2e49a5f29d4c79054396763ec1a3e031e9565123aaad9d5d200f22d7a",
+    "themeDigest": "b7c0a6b1fecf1456eea64c879cae903c167c3577d87377dc1daa330e8a17b975",
+    "overridesDigest": "e5d14358eed3eebbde859d54222bab9b9054c681496ba84ac751e77adc932b8c",
+    "diStylesDigest": "b9807dcc0243e9a28c1ca1e15b1b7858f334dd92bb76270ba1a8a097062599e4",
+    "metricsDigest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "payloadDigest": "c6b466b92ba0016da6ea3511a662b3e6c43ecb93ac1eaa7aa8c614e3b2f3cced",
+    "viewRevision": "51500e5c281c82a9cbb0f6c64f15ac1bf844b3a41f572fb82004bd7c4a737a1c",
+    "baseRevision": "7e5013dd439e73c1a6aeaaac01f7747846088d4c2bd84dac0598f1c7a061f7e5",
+    "importNativeBaseRevision": "55c8217301749aded384d3e6e021c06270836dd8ccba7a0a77f26d293e2e5c00",
+    "importXMLBaseRevision": "e01c6212fb06eadaa09f009f88d6e1e7e8ce3ab0c938a56e1d95c7c36e03068b"
+  }
+}
