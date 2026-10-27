@@ -1,0 +1,85 @@
+{
+  "case": "archimate-skeleton",
+  "note": "PARTIAL qualification fixture for the archimate@1 SKELETON. The eleven relation names are declared with 1..1 arity; the versioned relation/source/target matrix is NOT declared, so no ArchiMate conformance is claimed here or anywhere in this lot.",
+  "kind": "document",
+  "document": {
+    "documentId": "document:archimate-1",
+    "schemaVersion": { "major": 1, "minor": 1 },
+    "revision": 1,
+    "profileRefs": ["archimate@1"],
+    "typeDefinitions": {},
+    "entities": {
+      "entity:actor": {
+        "id": "entity:actor",
+        "profile": "archimate@1",
+        "type": "element",
+        "attributes": {
+          "name": { "kind": "text", "value": "Claims officer" },
+          "layer": { "kind": "enum", "value": "business" },
+          "aspect": { "kind": "enum", "value": "active" }
+        }
+      },
+      "entity:process": {
+        "id": "entity:process",
+        "profile": "archimate@1",
+        "type": "element",
+        "attributes": {
+          "name": { "kind": "text", "value": "Handle claim" },
+          "layer": { "kind": "enum", "value": "business" },
+          "aspect": { "kind": "enum", "value": "behaviour" }
+        }
+      },
+      "entity:component": {
+        "id": "entity:component",
+        "profile": "archimate@1",
+        "type": "element",
+        "attributes": {
+          "name": { "kind": "text", "value": "Claims service" },
+          "layer": { "kind": "enum", "value": "application" },
+          "aspect": { "kind": "enum", "value": "active" }
+        }
+      },
+      "entity:junction": {
+        "id": "entity:junction",
+        "profile": "archimate@1",
+        "type": "junction",
+        "attributes": { "operator": { "kind": "enum", "value": "and" } }
+      }
+    },
+    "ports": {},
+    "relations": {
+      "relation:assignment": {
+        "id": "relation:assignment",
+        "profile": "archimate@1",
+        "type": "assignment",
+        "endpoints": [
+          { "role": "source", "target": "entity:actor" },
+          { "role": "target", "target": "entity:process" }
+        ],
+        "attributes": {}
+      },
+      "relation:serving": {
+        "id": "relation:serving",
+        "profile": "archimate@1",
+        "type": "serving",
+        "endpoints": [
+          { "role": "source", "target": "entity:component" },
+          { "role": "target", "target": "entity:process" }
+        ],
+        "attributes": {}
+      },
+      "relation:flow": {
+        "id": "relation:flow",
+        "profile": "archimate@1",
+        "type": "flow",
+        "endpoints": [
+          { "role": "source", "target": "entity:process" },
+          { "role": "target", "target": "entity:junction" }
+        ],
+        "attributes": {}
+      }
+    },
+    "resources": {},
+    "extensions": []
+  }
+}

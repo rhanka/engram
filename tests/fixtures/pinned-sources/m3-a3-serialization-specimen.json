@@ -1,0 +1,496 @@
+{
+  "corpus": {
+    "scope": "g0-serialization",
+    "cases": [
+      "base-shape",
+      "two-layer-narrowing-shape"
+    ]
+  },
+  "base": {
+    "declaration": {
+      "id": "specimen-base@1",
+      "name": "specimen-base",
+      "version": 1,
+      "completeness": "complete",
+      "entityTypes": [
+        {
+          "id": "node",
+          "label": "Node",
+          "attributes": [
+            {
+              "name": "name",
+              "kind": "text",
+              "required": true,
+              "maxLength": 200
+            }
+          ]
+        }
+      ],
+      "portTypes": [],
+      "relationTypes": [],
+      "constraints": [],
+      "limits": {
+        "maxEntities": 100,
+        "maxRelations": 200,
+        "maxEndpointsPerRelation": 2
+      }
+    },
+    "record": {
+      "namespace": "fixture-namespace",
+      "id": "specimen-base",
+      "version": "1",
+      "owner": "fixture-owner",
+      "lifecycle": "draft",
+      "completeness": "complete",
+      "visibility": "public",
+      "profileShape": "diagram-profile",
+      "artifactKind": "base",
+      "profileRef": {
+        "canonicalRef": "fixture:specimen-base@1",
+        "contentDigest": "63ad6952c654ff343ef8aab9a39f23e9900a863e092d8113ca67791feac2e97e"
+      },
+      "corpusRef": {
+        "ref": "fixture:serialization-corpus",
+        "digest": "3d4c6b6bc655d028bc7467f7278c5dac3c913e8b298f2ad756fbc78c173701d8"
+      },
+      "digests": {
+        "contentDigest": "63ad6952c654ff343ef8aab9a39f23e9900a863e092d8113ca67791feac2e97e",
+        "pinsDigest": "8b7e46be03c24ead8555204c7ebf85a4a3d37a25e83a64700ea6d106f25162d3",
+        "resultEvidence": {
+          "evidenceState": "resolved",
+          "digest": "936fd5f33944413161807f464641469c42ec6f57e784bf0ed4ce9c77b21cb874"
+        }
+      },
+      "lineage": {
+        "parents": [],
+        "mappings": [],
+        "migrations": []
+      },
+      "consumers": [
+        "fixture:consumer"
+      ]
+    },
+    "envelope": {
+      "format": "sentropic.registry-entry/v1",
+      "contractVersion": "1.1.4",
+      "kind": "ontology",
+      "id": "fixture-base",
+      "name": "Serialization base",
+      "description": "Expected fixture serialization; not admission evidence.",
+      "entryVersion": "1",
+      "publisher": {
+        "packageName": "fixture-publisher",
+        "packageVersion": "1"
+      },
+      "compatibility": {
+        "entryContract": "1.1.4",
+        "packages": [],
+        "schemaProfiles": [
+          "fixture:diagram-profile/1"
+        ],
+        "requiredHostFeatures": [
+          "ontology-descriptors"
+        ],
+        "optionalHostFeatures": []
+      },
+      "parameters": {
+        "schemaVersion": "1",
+        "schema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false,
+          "maxProperties": 0
+        },
+        "defaults": {}
+      },
+      "bindings": [
+        {
+          "key": "profile",
+          "contract": "fixture:diagram-profile/1#sha256=c2079bdd72c369d4eb0c98534d55c30d5b0435c0805c7589ec3ed55e4e7e2ae8",
+          "required": true
+        }
+      ],
+      "assets": [
+        {
+          "role": "profile-data",
+          "path": "profiles/specimen-base.json",
+          "mediaType": "application/json",
+          "sha256": "ffcf89f3c1ab72bbbf6262f421745bd03fc16b4767bdbc5092c2ce8496bf9760"
+        }
+      ],
+      "ontology": {
+        "canonicalRef": "fixture:specimen-base@1",
+        "namespace": "fixture-namespace",
+        "owner": "fixture-owner",
+        "profileShape": "diagram-profile",
+        "artifactKind": "base",
+        "profilePin": {
+          "id": "specimen-base",
+          "version": "1",
+          "contentDigest": "63ad6952c654ff343ef8aab9a39f23e9900a863e092d8113ca67791feac2e97e"
+        },
+        "stack": [
+          {
+            "id": "specimen-base",
+            "version": "1",
+            "contentDigest": "63ad6952c654ff343ef8aab9a39f23e9900a863e092d8113ca67791feac2e97e"
+          }
+        ],
+        "digests": {
+          "contentDigest": "63ad6952c654ff343ef8aab9a39f23e9900a863e092d8113ca67791feac2e97e",
+          "pinsDigest": "8b7e46be03c24ead8555204c7ebf85a4a3d37a25e83a64700ea6d106f25162d3",
+          "resultEvidence": {
+            "evidenceState": "resolved",
+            "digest": "936fd5f33944413161807f464641469c42ec6f57e784bf0ed4ce9c77b21cb874"
+          }
+        },
+        "ruleSheets": [],
+        "lifecycle": "draft",
+        "provenance": {
+          "sourceRef": "fixture:serialization-contract",
+          "sourceRevision": "1"
+        },
+        "lineage": {
+          "parents": [],
+          "mappings": [],
+          "migrations": []
+        },
+        "conflictPolicy": "fixture:g0-conflicts@1#sha256=69294822a50219a2ce80a2a94e3196e74d61fb4186f9e6905f26d712960bb6b0",
+        "completeness": "complete",
+        "corpusRef": {
+          "ref": "fixture:serialization-corpus",
+          "digest": "3d4c6b6bc655d028bc7467f7278c5dac3c913e8b298f2ad756fbc78c173701d8"
+        },
+        "receipts": [
+          {
+            "receiptKind": "family-corpus",
+            "corpusDigest": "3d4c6b6bc655d028bc7467f7278c5dac3c913e8b298f2ad756fbc78c173701d8",
+            "libraryId": "fixture-validator",
+            "libraryVersion": "1",
+            "validatorRole": "transitional-oracle",
+            "verdict": "pass",
+            "issuedAt": "2026-10-27",
+            "evaluatedStack": {
+              "stack": [
+                {
+                  "id": "specimen-base",
+                  "version": "1",
+                  "contentDigest": "63ad6952c654ff343ef8aab9a39f23e9900a863e092d8113ca67791feac2e97e"
+                }
+              ],
+              "pinsDigest": "8b7e46be03c24ead8555204c7ebf85a4a3d37a25e83a64700ea6d106f25162d3",
+              "resultEvidence": {
+                "evidenceState": "resolved",
+                "digest": "936fd5f33944413161807f464641469c42ec6f57e784bf0ed4ce9c77b21cb874"
+              }
+            },
+            "transitionQualification": {
+              "claim": "oracle-witness",
+              "parityMatrixDigest": "e408dcd7721485c12f8d4900e059b83a2d9aa7682d5798f7783144219ee73b46"
+            },
+            "family": "DIA",
+            "fixtureDigest": "431033b0add7b951a5a63956b25a43c5069749b69acee1a8d8aa6a6c78272a9d",
+            "severityPolicyDigest": null,
+            "ruleVerdicts": []
+          }
+        ],
+        "migrations": [],
+        "consumers": [
+          "fixture:consumer"
+        ],
+        "compatibility": {
+          "renderer": "fixture:executor@1#sha256=ab8bea23f592a350e1a668edc06320d9811816734788ad838dab04dbccac2eaa",
+          "adapter": "fixture:adapter@1#sha256=84a80f9f40e48c2e1f7b2b105ad44b941447a76e4f05cbae0395878587f76a35"
+        },
+        "visibility": "public",
+        "linkedTools": [],
+        "artifactBinding": {
+          "artifactKind": "base",
+          "basePin": {
+            "id": "specimen-base",
+            "version": "1",
+            "contentDigest": "63ad6952c654ff343ef8aab9a39f23e9900a863e092d8113ca67791feac2e97e"
+          },
+          "bijectionEvidence": {
+            "evidenceState": "resolved",
+            "receiptRef": "fixture:receipt-base"
+          }
+        }
+      }
+    },
+    "externalEntryDigest": "500d7242b900d4559ffd2291ea69498fcfda3415738958b3c8d62e0927a9349d",
+    "receiptReference": {
+      "ref": "fixture:receipt-base",
+      "receiptIndex": 0
+    }
+  },
+  "stacked": {
+    "declaration": {
+      "id": "specimen-layer@1",
+      "name": "specimen-layer",
+      "version": 1,
+      "completeness": "complete",
+      "entityTypes": [],
+      "portTypes": [],
+      "relationTypes": [],
+      "constraints": [
+        {
+          "kind": "max-entities-of-type",
+          "entityType": "node",
+          "max": 10
+        }
+      ],
+      "limits": {
+        "maxEntities": 100,
+        "maxRelations": 200,
+        "maxEndpointsPerRelation": 2
+      }
+    },
+    "record": {
+      "namespace": "fixture-namespace",
+      "id": "specimen-layer",
+      "version": "1",
+      "owner": "fixture-owner",
+      "lifecycle": "draft",
+      "completeness": "complete",
+      "visibility": "public",
+      "profileShape": "diagram-profile",
+      "artifactKind": "profile",
+      "profileRef": {
+        "canonicalRef": "fixture:specimen-layer@1",
+        "contentDigest": "6787c2ae4e516218d8819e68678916a0df9d2a050f2b5c5b73b64f9a900e7b59"
+      },
+      "corpusRef": {
+        "ref": "fixture:serialization-corpus",
+        "digest": "3d4c6b6bc655d028bc7467f7278c5dac3c913e8b298f2ad756fbc78c173701d8"
+      },
+      "digests": {
+        "contentDigest": "6787c2ae4e516218d8819e68678916a0df9d2a050f2b5c5b73b64f9a900e7b59",
+        "pinsDigest": "d4eb21e7218297b366fde124c2807fce1c893aec0238af838cadcad9b6c6cb0f",
+        "resultEvidence": {
+          "evidenceState": "resolved",
+          "digest": "8a143e5506ba01f81603f5e891e7a9328d62cce0ca20b325ef36aa14af1d84a8"
+        }
+      },
+      "lineage": {
+        "parents": [
+          {
+            "id": "specimen-base",
+            "version": "1",
+            "contentDigest": "63ad6952c654ff343ef8aab9a39f23e9900a863e092d8113ca67791feac2e97e"
+          }
+        ],
+        "mappings": [],
+        "migrations": []
+      },
+      "consumers": [
+        "fixture:consumer"
+      ]
+    },
+    "envelope": {
+      "format": "sentropic.registry-entry/v1",
+      "contractVersion": "1.1.4",
+      "kind": "ontology",
+      "id": "fixture-profile",
+      "name": "Serialization profile",
+      "description": "Expected fixture serialization; not admission evidence.",
+      "entryVersion": "1",
+      "publisher": {
+        "packageName": "fixture-publisher",
+        "packageVersion": "1"
+      },
+      "compatibility": {
+        "entryContract": "1.1.4",
+        "packages": [],
+        "schemaProfiles": [
+          "fixture:diagram-profile/1"
+        ],
+        "requiredHostFeatures": [
+          "ontology-descriptors"
+        ],
+        "optionalHostFeatures": []
+      },
+      "parameters": {
+        "schemaVersion": "1",
+        "schema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false,
+          "maxProperties": 0
+        },
+        "defaults": {}
+      },
+      "bindings": [
+        {
+          "key": "profile",
+          "contract": "fixture:diagram-profile/1#sha256=c2079bdd72c369d4eb0c98534d55c30d5b0435c0805c7589ec3ed55e4e7e2ae8",
+          "required": true
+        }
+      ],
+      "assets": [
+        {
+          "role": "profile-data",
+          "path": "profiles/specimen-layer.json",
+          "mediaType": "application/json",
+          "sha256": "fd8b9a9ab48fcf94f955bf65c06164e470a63ddb17fc1a68c919f145ea931417"
+        }
+      ],
+      "ontology": {
+        "canonicalRef": "fixture:specimen-layer@1",
+        "namespace": "fixture-namespace",
+        "owner": "fixture-owner",
+        "profileShape": "diagram-profile",
+        "artifactKind": "profile",
+        "profilePin": {
+          "id": "specimen-layer",
+          "version": "1",
+          "contentDigest": "6787c2ae4e516218d8819e68678916a0df9d2a050f2b5c5b73b64f9a900e7b59"
+        },
+        "stack": [
+          {
+            "id": "specimen-base",
+            "version": "1",
+            "contentDigest": "63ad6952c654ff343ef8aab9a39f23e9900a863e092d8113ca67791feac2e97e"
+          },
+          {
+            "id": "specimen-layer",
+            "version": "1",
+            "contentDigest": "6787c2ae4e516218d8819e68678916a0df9d2a050f2b5c5b73b64f9a900e7b59"
+          }
+        ],
+        "digests": {
+          "contentDigest": "6787c2ae4e516218d8819e68678916a0df9d2a050f2b5c5b73b64f9a900e7b59",
+          "pinsDigest": "d4eb21e7218297b366fde124c2807fce1c893aec0238af838cadcad9b6c6cb0f",
+          "resultEvidence": {
+            "evidenceState": "resolved",
+            "digest": "8a143e5506ba01f81603f5e891e7a9328d62cce0ca20b325ef36aa14af1d84a8"
+          }
+        },
+        "ruleSheets": [],
+        "lifecycle": "draft",
+        "provenance": {
+          "sourceRef": "fixture:serialization-contract",
+          "sourceRevision": "1"
+        },
+        "lineage": {
+          "parents": [
+            {
+              "id": "specimen-base",
+              "version": "1",
+              "contentDigest": "63ad6952c654ff343ef8aab9a39f23e9900a863e092d8113ca67791feac2e97e"
+            }
+          ],
+          "mappings": [],
+          "migrations": []
+        },
+        "conflictPolicy": "fixture:g0-conflicts@1#sha256=69294822a50219a2ce80a2a94e3196e74d61fb4186f9e6905f26d712960bb6b0",
+        "completeness": "complete",
+        "corpusRef": {
+          "ref": "fixture:serialization-corpus",
+          "digest": "3d4c6b6bc655d028bc7467f7278c5dac3c913e8b298f2ad756fbc78c173701d8"
+        },
+        "receipts": [
+          {
+            "receiptKind": "family-corpus",
+            "corpusDigest": "3d4c6b6bc655d028bc7467f7278c5dac3c913e8b298f2ad756fbc78c173701d8",
+            "libraryId": "fixture-validator",
+            "libraryVersion": "1",
+            "validatorRole": "transitional-oracle",
+            "verdict": "pass",
+            "issuedAt": "2026-10-27",
+            "evaluatedStack": {
+              "stack": [
+                {
+                  "id": "specimen-base",
+                  "version": "1",
+                  "contentDigest": "63ad6952c654ff343ef8aab9a39f23e9900a863e092d8113ca67791feac2e97e"
+                },
+                {
+                  "id": "specimen-layer",
+                  "version": "1",
+                  "contentDigest": "6787c2ae4e516218d8819e68678916a0df9d2a050f2b5c5b73b64f9a900e7b59"
+                }
+              ],
+              "pinsDigest": "d4eb21e7218297b366fde124c2807fce1c893aec0238af838cadcad9b6c6cb0f",
+              "resultEvidence": {
+                "evidenceState": "resolved",
+                "digest": "8a143e5506ba01f81603f5e891e7a9328d62cce0ca20b325ef36aa14af1d84a8"
+              }
+            },
+            "transitionQualification": {
+              "claim": "oracle-witness",
+              "parityMatrixDigest": "e408dcd7721485c12f8d4900e059b83a2d9aa7682d5798f7783144219ee73b46"
+            },
+            "family": "DIA",
+            "fixtureDigest": "431033b0add7b951a5a63956b25a43c5069749b69acee1a8d8aa6a6c78272a9d",
+            "severityPolicyDigest": null,
+            "ruleVerdicts": []
+          }
+        ],
+        "migrations": [],
+        "consumers": [
+          "fixture:consumer"
+        ],
+        "compatibility": {
+          "renderer": "fixture:executor@1#sha256=ab8bea23f592a350e1a668edc06320d9811816734788ad838dab04dbccac2eaa",
+          "adapter": "fixture:adapter@1#sha256=84a80f9f40e48c2e1f7b2b105ad44b941447a76e4f05cbae0395878587f76a35"
+        },
+        "visibility": "public",
+        "linkedTools": [],
+        "artifactBinding": {
+          "artifactKind": "profile",
+          "profilePin": {
+            "id": "specimen-layer",
+            "version": "1",
+            "contentDigest": "6787c2ae4e516218d8819e68678916a0df9d2a050f2b5c5b73b64f9a900e7b59"
+          },
+          "stack": [
+            {
+              "id": "specimen-base",
+              "version": "1",
+              "contentDigest": "63ad6952c654ff343ef8aab9a39f23e9900a863e092d8113ca67791feac2e97e"
+            },
+            {
+              "id": "specimen-layer",
+              "version": "1",
+              "contentDigest": "6787c2ae4e516218d8819e68678916a0df9d2a050f2b5c5b73b64f9a900e7b59"
+            }
+          ]
+        }
+      }
+    },
+    "externalEntryDigest": "5544190fd969998f25dc384d910565c2c98b73051f372bce3d39b96521965142",
+    "receiptReference": {
+      "ref": "fixture:receipt-profile",
+      "receiptIndex": 0
+    }
+  },
+  "artifacts": {
+    "fixture:diagram-profile/1": {
+      "mediaType": "application/json",
+      "bytes": "{\"id\":\"fixture:diagram-profile/1\",\"required\":[\"id\",\"name\",\"version\",\"completeness\",\"entityTypes\",\"portTypes\",\"relationTypes\",\"constraints\",\"limits\"],\"scope\":\"serialization-only\",\"unknownFields\":\"refuse\"}"
+    },
+    "fixture:g0-conflicts@1": {
+      "mediaType": "application/json",
+      "bytes": "{\"attributeRedeclaration\":\"refuse\",\"gateWidening\":\"refuse\",\"id\":\"fixture:g0-conflicts@1\",\"parentRemoval\":\"refuse\",\"scope\":\"serialization-only\"}"
+    },
+    "fixture:executor@1": {
+      "mediaType": "text/javascript",
+      "bytes": "export const fixtureRole = \"renderer\";\n"
+    },
+    "fixture:adapter@1": {
+      "mediaType": "text/javascript",
+      "bytes": "export const fixtureRole = \"adapter\";\n"
+    },
+    "fixture:parity-matrix": {
+      "mediaType": "application/json",
+      "bytes": "{\"cases\":[{\"expected\":\"base\",\"id\":\"base-shape\"},{\"expected\":\"profile\",\"id\":\"two-layer-narrowing-shape\"}],\"claim\":\"oracle-witness\",\"scope\":\"serialization-only\"}"
+    },
+    "fixture:case-inputs": {
+      "mediaType": "application/json",
+      "bytes": "{\"cases\":[{\"id\":\"base-shape\",\"maxEntities\":100,\"maxRelations\":200},{\"entityType\":\"node\",\"id\":\"two-layer-narrowing-shape\",\"max\":10}],\"scope\":\"serialization-only\"}"
+    }
+  }
+}
