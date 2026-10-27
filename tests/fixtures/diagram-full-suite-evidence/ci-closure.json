@@ -1,0 +1,81 @@
+{
+  "format": "substrate-ci-closure-cause/1",
+  "testedCodeCommit": "4ef566c998f72f3aae90ed5fecfd043886ef957b",
+  "baseCommit": "618977a86a25c35e426a87f97cb9f3391cd1c654",
+  "cause": {
+    "file": "node_modules/unpdf/dist/pdfjs.mjs",
+    "version": "1.6.2",
+    "sha256": "1791df0a1ebad7491860611bfbe7b3cf8962d714c5ca0d621a46352691725f32",
+    "addedByDiagramLot": false,
+    "lockfileChangedFromBase": false,
+    "description": "The 4,328-entry glyph dictionary is a left-deep chain of 4,327 comma operators, bundled through src/detect.ts and src/pdf-preflight.ts. No diagram lot source is in the published closure. Ordinary optimized local Node runs passed; disabling JIT deterministically reproduces the CI visit/forEachChildInBinaryExpression stack overflow on the unchanged base bundle."
+  },
+  "fix": {
+    "description": "Build-only conversion of the upstream numeric glyph dictionary to JSON.parse plus Object.assign. Runtime data, property descriptors and insertion order are checked against the complete original factory. No acceptance/scanner modification or stack-size increase.",
+    "before": {
+      "sha256": "a72f11d6a81a31e8c17bbf2298aa4f65ee22fc4ee442ca7c768b4ea81708c974",
+      "maxAstDepth": 4343
+    },
+    "after": {
+      "sha256": "daa473c6e8c2d5619f278273f6061706276e95f53148c869e3c3e03734ab43be",
+      "maxAstDepth": 511
+    }
+  },
+  "reproduction": {
+    "node": "v22.22.1",
+    "command": "node --jitless --input-type=module -e \"import fs from 'node:fs'; import {staticEdges} from './scripts/substrate-tarball-acceptance.mjs'; staticEdges(fs.readFileSync(process.argv[1], 'utf8'));\" .graphify/scratch/g2-base/dist/index.js",
+    "baseExit": 1,
+    "baseError": "RangeError: Maximum call stack size exceeded (visit / forEachChildInBinaryExpression)",
+    "fixedExit": 0,
+    "fixedCommand": "node --jitless --input-type=module -e \"import fs from 'node:fs'; import {staticEdges} from './scripts/substrate-tarball-acceptance.mjs'; staticEdges(fs.readFileSync(process.argv[1], 'utf8'));\" dist/index.js"
+  },
+  "publication": {
+    "internalDiagramPackageFiles": [],
+    "internalGuardianBundledSources": [],
+    "packageFiles": 54
+  },
+  "validation": {
+    "regressionSuite": "tests/pdfjs-glyph-data.test.ts",
+    "substrateSuites": [
+      "tests/memory-substrate-closure.test.ts",
+      "tests/memory-substrate-tarball.test.ts"
+    ],
+    "node20": {
+      "version": "20.20.2",
+      "passed": 24
+    },
+    "node22": {
+      "version": "22.23.3",
+      "passed": 24
+    },
+    "node24": {
+      "version": "24.22.1",
+      "passed": 24
+    },
+    "setup": "npm 11.21.1; root and engram-memory lockfiles installed with --ignore-scripts; existing fs-ext 2.1.1 and better-sqlite3 12.11.1 binaries copied using Node fs after checking the Node ABI. No Python execution.",
+    "diagram": {
+      "passed": 1368,
+      "specVectors": 4,
+      "runtimeMutantsKilled": 1156,
+      "compilerMutantsKilled": 12
+    },
+    "artifacts": {
+      "substrate-node20.log.gz": {
+        "rawSha256": "9dc02c70539ea3cec0a04c6a041af837aa287d126f2520faea04aa4c94c6b4e7",
+        "compressedSha256": "7e2efbe3b43c36d7f797807d118bde089e93bed385b35152728fc4375bd82ea8"
+      },
+      "substrate-node22.log.gz": {
+        "rawSha256": "8e4e10a913504854e8d2d2c481917219527fa6b0a07a575d18e6556d8441f815",
+        "compressedSha256": "11dca66c5991363cda125b769cd244b84f86f8f0413c8f58da807c4103bb5e95"
+      },
+      "substrate-node24.log.gz": {
+        "rawSha256": "8a309e580cf6d1193371adae4f6fb08fb5d43c9c02c1fa4f67fa86668c9f2a01",
+        "compressedSha256": "265e22c7db98758b148fc5484056332c60cf61689b3a175c8d35cd83004fc746"
+      },
+      "diagram-lot.log.gz": {
+        "rawSha256": "51087d4fbe508558caf2cf38f6cae74774d5c57a1b7f4a5a6d3612f5cdd22b02",
+        "compressedSha256": "cd214a0e76e489e696e0005e38832906f6f5e6d6639b1b4621f542adb6feff69"
+      }
+    }
+  }
+}
