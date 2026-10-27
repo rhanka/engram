@@ -29,7 +29,7 @@
     "ontology-guardian-diagram-recovery.test.ts": "24470fd3a9a2b24b7ba1c0b75b06ae29e33377472c0608fab906c699a393727b",
     "ontology-guardian-diagram-acceptance.test.ts": "607ad6f18beaf4b2ec1114711745e9eca3767d557087ac15abb15a5d3c2d6e36"
   },
-  "corpusIndexSha256": "c37762f533fccce83968e16c4bc0a699646196096ae41a537e79b6a3f7954aef",
+  "corpusIndexSha256": "06c1e9eea97e50dcb574ed3b130c4ffb01d242d66076fbce46dff5faba33c22a",
   "runtime": [
     {
       "id": "CP1",
