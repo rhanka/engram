@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" id="Defs" targetNamespace="http://example.org/corpus">
+  <bpmn:process id="P" isExecutable="false"><bpmn:startEvent id="S"/></bpmn:process>
+  <bpmndi:BPMNDiagram id="BD"><bpmndi:BPMNPlane id="Pl" bpmnElement="P">
+    <bpmndi:BPMNShape id="SS" bpmnElement="S"><dc:Bounds x="10" y="10" width="4" height="4"/></bpmndi:BPMNShape>
+  </bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
+</bpmn:definitions>

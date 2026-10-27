@@ -1,0 +1,10 @@
+{
+  "id": "neutral-metrics/1",
+  "textPolicy": "engine-scalar-A/1",
+  "unicode": "15.0.0",
+  "unit": "micro-point",
+  "defaultAdvance": 600,
+  "spaceAdvance": 300,
+  "ascent": 800,
+  "descent": 200
+}

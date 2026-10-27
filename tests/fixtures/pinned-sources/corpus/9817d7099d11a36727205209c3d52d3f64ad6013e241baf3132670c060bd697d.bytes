@@ -1,0 +1,1 @@
+{"caseId":"lexical-unsafe-fraction","comparatorIds":["design-lexical-probe"],"expectedArtifacts":[{"json":{"code":"profile-number","status":"refused"},"role":"verdict"}],"expectedStatus":"refused:profile-number","inputArtifacts":[{"hex":"393030373139393235343734303939312e35","role":"document"}],"operation":"loadProfile","phase":null,"profileArtifact":null}

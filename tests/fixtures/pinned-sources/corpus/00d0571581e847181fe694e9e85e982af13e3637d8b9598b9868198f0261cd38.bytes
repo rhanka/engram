@@ -1,0 +1,86 @@
+**NOT MERGEABLE**
+
+Reviewed `8d1727a1 → f6f3ba37` read-only. Recomputed all 39 distinct file SHA-256 values and four G0 vectors. The local hashes reproduce, but three #711 files do **not** belong to the claimed commit. The 198 d2d payloads and 69 F1 corpus files match their manifests; five HRPN producer-source pins have drifted. Baseline A5 semantic/view validation returns zero diagnostics.
+
+Blocking findings:
+
+1. **R3-B1 — Presentation still enters the graph model.** [L113](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:113), [L290](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:290)  
+   The layer tags contradict the leak rule: semantic `strokeStyle` explicitly means “drawn with a dashed stroke”; `icon` selects a pictogram; `legend-key.token` selects a design token. Composing these through a fragment still stores them in `SemanticDocument`. Calling them model data does not establish semantic meaning.  
+   **Fix:** retain semantic text/categories in the graph; put icon selection, stroke styling and category-to-token mapping in typed view/presentation data. Update the fragment, migration, digest and coverage contracts consistently.
+
+2. **R3-B2 — A1 freezes an obsolete kit as the owner-validated #711 source.** [L1146](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:1146)  
+   The scratch files match the printed hashes, but `4138a0ec:docs/governance/kit/src/…` yields:
+   
+   | File | Printed hash prefix | Actual #711 hash prefix |
+   |---|---|---|
+   | `governance-central.js` | `1f7490ff48c0` | `8648b0935735` |
+   | `governance-collapse.js` | `585709daedd8` | `eb30e4fadbf3` |
+   | `presentation-scenes.json` | `7c9fcab414ac` | `fce2bd5fd180` |
+
+   This changes acceptance content: the pinned scratch builder/scenes lack `summaryLabels`; the merged files contain ten authored labels. Scratch central cards have heights **241–314**, while #711 cards are **200** high. The portable hash does match #711.  
+   **Fix:** pin the actual committed kit bytes and derive A1 expectations from them. Record **28 cards, 10 frames, 50 relations**, plus explicit legend additions and summary constituents.
+
+3. **R3-B3 — The c14n gate requires incompatible canonical bytes.** [L959](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:959), [L968](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:968)  
+   Executing the pinned `src/profile/canonical.ts` on the cited `parity-corpus/canonical-vectors.json` produces `1e-7`; that vector expects `0.0000001`. It contains `input`/`expected`, **no recorded digest**. It belongs to the workbench comparator, which the profile tests explicitly keep separate. The actual sealed `jcs-*` and stable-id vectors pass.  
+   **Fix:** bind `profile-c14n/2` gates to `profile-parity-corpus/1/cases/jcs-*.json` and `identity-stable-id.json`; retain the workbench vectors under their existing comparator. Correct the corresponding matrix cell.
+
+4. **R3-B4 — Completed and skeleton versions cannot coexist through the specified registry.** [L361](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:361), [L900](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:900)  
+   M1 must register skeleton and completed `archimate@1`/`uml@1` together. The pinned registry keys solely by `ProfileId`; registering either pair throws **“a profile id is a version, not a name”**. Document references likewise contain no governed-version selector. The legacy adapter’s ID-only table also cannot distinguish old and completed versions.  
+   **Fix:** specify exact-pin resolution, document-to-pin binding and registry selection for retained/completed versions. Key compatibility adapters by that immutable identity, and require coexistence/reload fixtures.
+
+5. **R3-B5 — Authored summaries remain inconsistent and ambiguous.** [L604](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:604), [L609](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:609)  
+   Source validation requires **every** relation crossing the two subtrees, without filtering style. Appendix B.4 names only the solid relation, so its supposedly valid definition omits the dashed relation and fails. Separately, definitions for nested pairs `(A,B)` and `(a,b)` can have distinct source keys but become simultaneously active for the same collapsed pair, with conflicting labels.  
+   **Fix:** validate constituents against the definition’s effective style and occurrence scope. Define uniqueness/refusal for the **active representative-pair/style key**, including collisions between different source pairs. R2-2 is only partly closed.
+
+6. **R3-B6 — A binding owner acceptance workload is withdrawn.** [L151](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:151), [L1269](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:1269)  
+   The spec dismisses “600/240” as r2 prose. The pinned owner requirements explicitly require measurement over **600 interactions and 240 stress toggles** at line 65.  
+   **Fix:** preserve that workload in the M3 roadmap gate and enumerate it. Keep the 1.8-second limit and idle-work prohibition. Its downstream ownership does not authorize weakening it.
+
+To fix; these do not independently gate this convergence pass:
+
+7. **R3-T1 — Composition and family completion need executable contracts.** [L124](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:124), [L369](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:369), [L397](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:397)  
+   The fragment lacks a concrete application/join contract; G0 rejects cross-profile endpoints without one. Independent role `entityTypes` lists express a Cartesian product, insufficient for a general ArchiMate source/target matrix. UML structured multiplicities require a carrier absent from §5; A′ K6 owns the proposed `struct` mechanism.  
+   **Fix:** specify fragment application and effective-profile identity, pairwise matrix validation, and the UML value carrier/prerequisite. Add one executable specimen for each.
+
+8. **R3-T2 — Same-kind migration collisions remain contradictory.** [L425](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:425)  
+   A valid source refinement can carry an 81-character `kicker`; the target permits 80. The procedure retains its same-name declaration but permits renaming only for a **different kind**, then promises successful validation. Retaining it conflicts with the native slot.  
+   **Fix:** extend deterministic renaming to incompatible bounds, or explicitly take the atomic-refusal branch. R2-4 is partly closed.
+
+9. **R3-T3 — The oracle’s derived expectations are still prospective.** [L1220](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:1220), [L1234](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:1234)  
+   Token mappings, recursive hint translations, added-legend counts and several pins remain “recorded at lot time.” The pinned tint legend contains neither `custom` nor `outside`, nor the promised governed token mapping. The HRPN manifest also mismatches current `.generated/data.json`, `scene-metadata.mjs`, `SCENES.md`, Focus `figures.json`, and Focus `S2-target.png`. Fixture copies themselves remain intact.  
+   **Fix:** supply the concrete derived tables and pin the intended producer snapshots separately. Preserve the frozen fixture payloads. R2-8/R2-10 are partly closed.
+
+10. **R3-T4 — A5’s ledger still does not preserve every authored field.** [L1193](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:1193)  
+    The text rejects a `kicker → description` mapping without supplying another destination. `legend-genair.kicker = "TINT · BLUE"` remains unaccounted for. Footer text exists only in an undefined “description’s ledger note,” which is not a declared target field. Explicit icon retirement is now satisfactory.  
+    **Fix:** give each kicker/footer a precise retained destination or explicit retirement disposition; publish the four resulting records and A2–A4 added counts. R2-11 remains partial.
+
+11. **R3-T5 — Appendix C still contains the placeholders claimed removed.** [L1381](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:1381)  
+    “Existing template kept,” “Per arm,” and unnamed detail-value alternatives remain. The endpoint path also omits the existing `.target` suffix. `quantity-above-max` is declared here but omitted from §5.7’s “exactly” enumerated additions.  
+    **Fix:** provide literal diagnostic objects for each new arm and reconcile paths/code inventory. R2-13 is not closed.
+
+12. **R3-T6 — Several matrix explanations exceed their evidence.** [L1160](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:1160)  
+    #711 has no duplicate “CI/CD” titles. Completed-ArchiMate/card cells use `partial` for a wrong-family landing, contrary to the legend’s definition of `absent`. Generated-BPMN/d2d says `covered` while its mapping is missing. W01–W12 are F1 documents, not uniformly c14n profile artifacts.  
+    **Fix:** remove the misplaced CI/CD claim, reconcile the verdict definitions, gate d2d coverage on the mapping, and separate canonical-identity evidence from document-model coverage.
+
+13. **R3-T7 — G0 closure remains incomplete.** [L855](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:855), [L1070](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:1070)  
+    Exact compatibility references and asset/binding shapes are corrected. However, namespace/owner lookups and specimens remain future work; `declarationFormat` is introduced as an Engram record field absent from G0’s closed record.  
+    **Fix:** locate this metadata in an allowed, versioned carrier and provide concrete lookup/specimen evidence. R2-9 is partly closed.
+
+14. **R3-T8 — Scope the skeleton no-regression promise consistently.** [L823](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:823), [L962](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:962)  
+    Uniform subtype acceptance changes historical verdicts: refining the pinned BPMN fixture’s `process` into `custom-process` currently produces `endpoint-target-not-allowed`; §5.2 accepts it. Adding `seenChain` also changes legacy refusals.  
+    **Fix:** version-bind the new behavior or enumerate intended acceptance changes while preserving frozen legacy diagnostics. The duplicate-order rule itself agrees with `610c0353`.
+
+Minor:
+
+15. **R3-M1 — Correct source quotations and the remaining cost claim.** [L48](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:48), [L1253](/home/antoinefa/src/sent-tech-design-system/.dmodel-spec-wt/spec/SPEC_EVOL_GD_M3_DIAGRAM_MODEL.md:1253)  
+    “Up to 32 MB” introduces a ceiling the owner expressly did not impose; the quotation labelled verbatim is edited. “One fragment versus three copies” is also unsupported: alternative family landings could share that fragment.  
+    **Fix:** restore the exact quotation, retain “order of magnitude, not a ceiling,” and remove the unsupported comparison.
+
+The **§9 landing is supported**: the source scenes claim generic entities/containment/links, with no ArchiMate matrix assertion. No further owner choice is needed for that landing. **R2-16 is legitimately moot as the withdrawn A/B decision input**; retained-version obligations are now acknowledged.
+
+| R2 findings | Pass-3 disposition |
+|---|---|
+| R2-1, R2-3, R2-6, R2-7, R2-12, R2-14, R2-15, R2-17, R2-18 | Closed at specification level |
+| R2-2, R2-4, R2-5, R2-8, R2-9, R2-10, R2-11 | Partly closed; remaining issues above |
+| R2-13 | Not closed |
+| R2-16 | Moot as a decision input; minor cost wording remains |

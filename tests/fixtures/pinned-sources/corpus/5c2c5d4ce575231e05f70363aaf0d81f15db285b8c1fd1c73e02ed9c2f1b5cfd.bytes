@@ -1,0 +1,59 @@
+{
+  "expressionLanguage": "http://www.w3.org/1999/XPath",
+  "typeLanguage": "http://www.w3.org/2001/XMLSchema",
+  "rootElements": [
+    {
+      "flowElements": [
+        {
+          "parallelMultiple": false,
+          "isInterrupting": true,
+          "outgoing": [
+            "Flow_1"
+          ],
+          "id": "Start_Kite",
+          "$type": "bpmn:StartEvent"
+        },
+        {
+          "isForCompensation": false,
+          "startQuantity": 1,
+          "completionQuantity": 1,
+          "dataInputAssociations": [],
+          "outgoing": [
+            "Flow_2"
+          ],
+          "incoming": [
+            "Flow_1"
+          ],
+          "name": "Review paper kite",
+          "id": "Task_Review",
+          "$type": "bpmn:Task"
+        },
+        {
+          "incoming": [
+            "Flow_2"
+          ],
+          "id": "End_Kite",
+          "$type": "bpmn:EndEvent"
+        },
+        {
+          "targetRef": "Task_Review",
+          "sourceRef": "Start_Kite",
+          "id": "Flow_1",
+          "$type": "bpmn:SequenceFlow"
+        },
+        {
+          "targetRef": "End_Kite",
+          "sourceRef": "Task_Review",
+          "id": "Flow_2",
+          "$type": "bpmn:SequenceFlow"
+        }
+      ],
+      "isExecutable": false,
+      "id": "Process_Kite",
+      "$type": "bpmn:Process"
+    }
+  ],
+  "targetNamespace": "urn:example:functions-workbench:v1",
+  "id": "Defs_Kite",
+  "$type": "bpmn:Definitions"
+}

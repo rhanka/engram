@@ -1,0 +1,164 @@
+R3 is **not ready to freeze**. It restores the study’s families and closes several earlier defects, but the presentation-fragment contract, version selection, BPMN evidence and G0 handoff remain incomplete.
+
+Review was read-only. The supplied SHA-256 matches both the snapshot and commit `f6f3ba37`; the delta reconstructs r3 exactly. Node reproduced all four G0 vectors—186/206/86/320 bytes—and the expected digest-mutation behavior. The checked source hashes and all 198 vendored d2d files match their pins.
+
+All `L…` references below refer to the [r3 specification](/home/antoinefa/src/graphify/.graphify/scratch/design/ontology-guardian/m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-f6f3ba37.md). **CLOSED** means closed at specification level, not implemented or qualified.
+
+The consolidated r1 findings, including both raw reviews, close as follows. Astra r1 #10 spans A5 and B8; its overall status remains PARTIAL.
+
+| R1 finding | Sol / Astra | Status | R3 evidence |
+|---|---|---|---|
+| A1 — Exact G0 preimages | 1 / 1 | CLOSED | L1021–1062; vectors and mutation checks reproduce. Fragment hashing remains a separate new gap, F2. |
+| A2 — Immutable legacy uniqueness | 5 / 3 | PARTIAL | L853–858 preserve declarations and legacy uniqueness details; version dispatch and other diagnostic changes remain inconsistent, F3/F13. |
+| A3 — Governed constraint declarations | 11 / 11 | CLOSED | L863–888 supply required-parent, hierarchy and membership selectors. |
+| A4 — Complete migration | 4 / 2 | PARTIAL | L419–438 enumerate rewrites and preserve residual attributes; incompatible same-kind bounds remain unresolved, F9. |
+| A5 — Supersession versus lineage | 6 / 10 | CLOSED | L442–445 separate replacement from narrowing composition and classify the successor as a base. |
+| A6 — Nested-fold representative | 2 / 4 | CLOSED | L498–506 select the outermost visible representative. |
+| A7 — Dashed-relation carrier | — / 8 | CLOSED | L290–295 provide a carrier and per-ID conservation; its layer assignment is a new defect, F1. |
+| B1 — Fold revision | — / 5 | CLOSED | L476–480 preserve the document revision meaning. |
+| B2 — Occurrence identity/restoration | 3 / 6 | CLOSED | L512–554 retain occurrence provenance, source views and override presence. |
+| B3 — A5 legend conversion | 8 / 7 | PARTIAL | L1192–1197 correct typed counts; authored content still lacks native destinations, F11. |
+| B4 — Frozen sources | 9 / 9 | PARTIAL | L1201–1234 supply many real hashes, but mappings, expectations and some fixture identities remain prospective, F8. |
+| B5 — Shared refinement resolver | 10 / — | CLOSED | L799–817 cover chains, cycles, conflicts and concrete refinements. |
+| B6 — Multiple legends | 13 / 12 | CLOSED | L329–332 and L888 specify binding, agreement and ambiguity refusal. |
+| B7 — Complete diagnostics | 12 / 13 | PARTIAL | L1369–1383 improve the contracts but retain incomplete arms and compatibility contradictions, F13. |
+| B8 — G0 mapping and admission | 7 / 10 | PARTIAL | L1070–1124 improve receipts and resolved-result admission; F6/F7 remain. |
+| B9 — Unauthorized downstream scope | 14 / 14 | CLOSED | L58 and L1268–1272 separate downstream specifications from M1. |
+| C — Earlier `architecture@1` alternative | Point 6 / Point 6 | N/A-after-reframe | L1242 withdraws that alternative. The replacement versioning decision is addressed below. |
+
+The additional DS r1 findings reproduced in the earlier reviews close as follows.
+
+| DS r1 finding | Status | R3 evidence |
+|---|---|---|
+| 1 — Relation presentation/authored summaries | PARTIAL | L290–295, L604–615; active-summary ambiguity remains, F10. |
+| 2 — Nested folds/unfolding | CLOSED | L498–554. |
+| 3 — Measurement API/footprints | CLOSED | L653–716 now carry allocation context and all measured slots. |
+| 4 — Migration/refinement remapping | PARTIAL | L421–438; F9. |
+| 5 — Digest contract | CLOSED | L1021–1062; recomputed. |
+| 6 — Legacy uniqueness | PARTIAL | L853–858; F3/F13. |
+| 7 — Executor-embedded profile rules | CLOSED | L863–888 declare generic mechanisms and renamed-profile witnesses. |
+| 8 — Legend slots/A5 counts | PARTIAL | L305, L1192–1197; content gap F11. |
+| 9 — Legend binding/order | CLOSED | L319–332, L946–948. |
+| 10 — Fold revision | CLOSED | L476–480. |
+| 11 — Multilevel refinement | CLOSED | L808–817. |
+| 12 — Declarative key grammar | CLOSED | L259, L946–948 correct the grammar overlap and minimum-length arm. |
+| 13 — Composition ancestry | CLOSED | L442–445. |
+| 14 — Layout controls | PARTIAL | L749–782 provide recursive controls; concrete scene translations remain deferred at L1234. |
+| 15 — Milestone/publication order | PARTIAL | L1259–1267 correct staging; the interaction corpus remains future work at L1269, and F12 weakens its binding requirement. |
+| 16 — Profile-choice rationale | N/A-after-reframe | L1242 withdraws the original choice; see point 3 below. |
+| 17 — Filename/persisted-field inventory | CLOSED | L8, L411, L510–517 agree. |
+
+Every new r2 finding maps as follows.
+
+| Sol r2 / Astra r2 | Finding | Status | R3 evidence |
+|---|---|---|---|
+| 1 / 3 | Legacy discriminator/diagnostics | PARTIAL | L855–857; F3/F13. |
+| 2 / 4 | Parenting direction/membership selectors | CLOSED | L863–888. |
+| 3 / 8 | Numeric order constraints | CLOSED | L946–948. |
+| 4 / 1, refinement part | Residual attributes/dependent definitions | PARTIAL | L421–425; F9. |
+| 5 / 1, collision part | Mixed-invalid migration output | CLOSED | L438 requires atomic refusal. |
+| 6 / 2, override part | Materialized style breaks restoration | CLOSED | L514, L552–554 preserve optional-field presence. |
+| 7 / 2, persistence part | Folded-only restoration | CLOSED | L535–546 require a retained source. |
+| 8 / 5 | Summary ambiguity/mixed styles | PARTIAL | L605 and L613 separate styles; projected-key collisions remain, F10. |
+| 9 / 9 | Incomplete measurement output/context | CLOSED | L653–716. |
+| 10 / 12 | A5 authored-content loss | PARTIAL | L1193; F11. |
+| 11 / 10 | Invalid/incomplete G0 handoff | PARTIAL | L1070–1099; F7. |
+| 12 / — | Diagnostic-adapter handoff | PARTIAL | L892–895 add the revision requirement; schema placement and code inventory remain incomplete, F7/F13. |
+| 13 / 15 | Original A/B maintenance comparison | N/A-after-reframe | L1242 withdraws A/B; L1253 acknowledges retained pins. |
+| 14 / 7 | Grammar subset/minimum-length contract | CLOSED | L259 and L948. |
+| 15 / 14 | Persisted-field inventory | CLOSED | L411, L510–517, L910. |
+| 16 / — | `resultDigest` change rule | CLOSED | L1008–1016; unchanged effective content can retain its result digest after repinning. |
+| — / 6 | Delete/undo dependencies | CLOSED | L933 explicitly extends cleanup and inverse restoration. |
+| — / 11 | Prospective oracle manifest | PARTIAL | L1201–1234; F8. |
+| — / 13 | Abstract-refinement regression | CLOSED | L808 and L817 preserve concrete refinements of abstract bases. |
+
+The following findings survive this final round.
+
+1. **BLOCKER — The three-layer rule is contradicted by the actual fields.**  
+   [L102](/home/antoinefa/src/graphify/.graphify/scratch/design/ontology-guardian/m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-f6f3ba37.md:102) prohibits presentation fields in `SemanticDocument`, but L106/L113 and L290–301 place pictogram selection, stroke style and paint-token selection there. L292 explicitly stores how a relation is drawn, rather than its business meaning. Calling these strings “model data” does not establish the required separation. L636 also assigns the card footprint to every leaf in every family/view, despite optional card composition and BPMN DI preservation.
+
+   **Correction:** retain business content and meaning in semantic attributes; put slot assignment, icon/style/token selection and presentation-form selection in a governed view/presentation contract. Apply card footprints only to occurrences selecting that presentation.
+
+2. **BLOCKER — The shared fragment has no executable composition or identity contract.**  
+   [L124](/home/antoinefa/src/graphify/.graphify/scratch/design/ontology-guardian/m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-f6f3ba37.md:124) and L1085 prescribe `[family pin, presentation-fragment pin]`, but provide no fragment identity, native declaration shape, target selectors, flattening rules or resolved-profile identity. The existing validator resolves attributes against one profile. [G0 L135](/home/antoinefa/src/graphify/.graphify/scratch/design/ontology-guardian/SPEC-G0-guardian-contracts.md:135) and its S-2/S-4 rules do not supply an implicit cross-profile join or attribute redeclaration mechanism. Even `name`, already declared by family types, needs an explicit composition rule.
+
+   Digest coverage is also unresolved: L903 moves footprints into presentation data, while L1027/L1056 still assume footprints inside hashed entity declarations.
+
+   **Correction:** specify the versioned fragment, selectors, conflict handling, reference ownership, flattened result and canonical preimages; include one complete family-plus-fragment witness. It must preserve the layer boundary from F1.
+
+3. **MAJOR — Skeleton and completed `@1` profiles cannot coexist under the specified registry.**  
+   [L900](/home/antoinefa/src/graphify/.graphify/scratch/design/ontology-guardian/m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-f6f3ba37.md:900) requires registering previous and completed profiles together. At `f6f3ba37`, `createProfileRegistry` keys solely by `ProfileId` and throws on a duplicate ID. Thus two `archimate@1` declarations—or two `uml@1` declarations—cannot be registered as specified. L855’s legacy adapter table is likewise keyed by ID, so it cannot distinguish declaration generations sharing that ID.
+
+   **Correction:** define exact-pin selection and adapter dispatch, including the document-to-pin binding and registry API, or publish distinct completed majors with migrations. Preserve explicit access to skeleton pins.
+
+4. **MAJOR — ArchiMate/UML completion remains underspecified, with an undeclared kernel dependency.**  
+   [L367](/home/antoinefa/src/graphify/.graphify/scratch/design/ontology-guardian/m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-f6f3ba37.md:367) promises an element catalogue and versioned relation matrix without supplying their versioned contents. L397 promises structured UML multiplicities and typed stereotypes; the pinned attribute model has no structured-value kind, and §5 adds only text/numeric constraints. The relevant A′ mechanisms are deferred to another lot.
+
+   **Correction:** freeze the catalogue/matrix and UML schemas with their acceptance/refusal fixtures. Either specify the necessary generic kernel changes in M1 or declare and gate the dependency explicitly. The pinned A′ specification also requires the ArchiMate relation-constraint witness before native M3 profiles freeze.
+
+5. **BLOCKER — The BPMN canonicalization gate uses the wrong oracle.**  
+   [L959–968](/home/antoinefa/src/graphify/.graphify/scratch/design/ontology-guardian/m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-f6f3ba37.md:959) treats `parity-corpus/canonical-vectors.json` as `profile-c14n/2` digest evidence. Executing the pinned canonicalizer in memory with Node produced:
+
+   - Actual number serialization: `1e-7`.
+   - That file’s expectation: `0.0000001`.
+   - The file contains no recorded digest.
+
+   Its W01–W12 neighbours are F1 codec fixtures, not all profile artifacts as L1168 claims. The existing `profile-canonical.test.mjs` deliberately uses separate sealed JCS expectations.
+
+   **Correction:** bind the gate to the actual sealed `profile-c14n/2` vectors. Preserve the F1 comparator fixtures under their own contract; change neither existing canonical bytes nor fixture expectations to manufacture parity.
+
+6. **MAJOR — Generated BPMN admission omits mandatory parity receipts.**  
+   [L1101](/home/antoinefa/src/graphify/.graphify/scratch/design/ontology-guardian/m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-f6f3ba37.md:1101) requires exactly one receipt kind; L1118 adds only bijection evidence for generated BPMN. [G0 L797–820](/home/antoinefa/src/graphify/.graphify/scratch/design/ontology-guardian/SPEC-G0-guardian-contracts.md:797) additionally requires generated-BPMN parity receipts, including the applicable per-library/proof-set bindings.
+
+   **Correction:** distinguish ordinary DIA admission from generated-BPMN admission explicitly. Enumerate every required arm and reject missing parity evidence. Retain the correctly specified resolved-result-first gate and explicit null selection binding for ordinary DIA entries.
+
+7. **MAJOR — The “complete” G0 mapping still violates or omits closed fields.**  
+   [L855](/home/antoinefa/src/graphify/.graphify/scratch/design/ontology-guardian/m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-f6f3ba37.md:855) introduces an ontology-record field `declarationFormat`, which the closed G0 record does not admit. L1081 describes a base binding only by its pin, omitting mandatory `bijectionEvidence`; for a non-BPMN base, [G0 L752](/home/antoinefa/src/graphify/.graphify/scratch/design/ontology-guardian/SPEC-G0-guardian-contracts.md:752) requires resolved evidence referencing its corpus receipt. L1097 leaves the diagnostic-adapter location “beside compatibility” unspecified. L1099 requires future specimens rather than supplying them.
+
+   **Correction:** provide complete base and stacked-entry specimens. Put format/adapter metadata in explicitly admitted, versioned locations; include every binding field and exact reference type. Replace unresolved identity lookups with pinned source bindings and reviewable example values.
+
+8. **MAJOR — The matrix overstates evidence, and the manifest remains partly prospective.**  
+   [L1165](/home/antoinefa/src/graphify/.graphify/scratch/design/ontology-guardian/m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-f6f3ba37.md:1165) marks generated-BPMN/d2d coverage despite explicitly missing its mapping artifact. The cited d2d position calls that mapping an open point. Other cells mix current coverage, target coverage and wrong-family applicability.
+
+   At L1220/L1234, token mappings, default folds, recursive hints and expected diagnostic arrays are still promised elsewhere. The pinned tint legend supplies colours and six categories; it does not supply the claimed complete governed-token mapping, including `custom`/`outside`. The W01–W12 index lists 21 distinct case names without their body hashes.
+
+   **Correction:** separate current and gated target verdicts; expose each HRPN scene’s evidence; supply immutable mappings, derived counts, fold/hint data and expected outcomes. Complete fixture-identity checks over case bodies, not only indexes. Mark missing evidence as partial.
+
+9. **MAJOR — Same-kind, incompatible refinement bounds have no coherent migration outcome.**  
+   [L425](/home/antoinefa/src/graphify/.graphify/scratch/design/ontology-guardian/m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-f6f3ba37.md:425) retains an overlapping attribute when its target bound rejects a stored value, but permits renaming only for a different-kind collision. A source refinement with `body: text ≤600` and a 500-character value cannot promote into `body ≤400`; retaining its declaration conflicts with the inherited target attribute. The promised successful validation conflicts with the atomic-refusal clause.
+
+   **Correction:** define one deterministic policy for every incompatible overlap: lossless renaming with collision handling, or atomic refusal before rewrites. Add this same-kind/bound witness alongside the existing different-kind test.
+
+10. **MAJOR — Authored summaries remain ambiguous after projection, and the worked style example fails validation.**  
+    [L604–609](/home/antoinefa/src/graphify/.graphify/scratch/design/ontology-guardian/m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-f6f3ba37.md:604) enforce uniqueness on source pairs, not active representative pairs. With `Z` containing `A` and one relation `A → X`, definitions for `(A,X)` and `(Z,X)` can both validly contain that relation. Collapsing `Z` activates both for `(Z,X,solid)` with potentially different labels. The Node witness confirms the collision.
+
+    Separately, L604 requires every relation satisfying the subtree condition without filtering by style. Appendix B.4’s solid-only definition therefore omits the dashed relation and violates that rule.
+
+    **Correction:** define constituent matching by style and occurrence identity, and require deterministic uniqueness or refusal for each active aggregate key after projection.
+
+11. **MAJOR — A5’s ledger still lacks a native destination for authored content.**  
+    [L1193](/home/antoinefa/src/graphify/.graphify/scratch/design/ontology-guardian/m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-f6f3ba37.md:1193) explicitly rejects the kicker-prefix mapping without giving the kicker another destination. Footer text survives only in a ledger note. The verified source includes `TINT · BLUE` and `tint: genair`; neither is assigned a target attribute. Recording a string outside the resulting diagram does not satisfy native content preservation.
+
+    **Correction:** supply exact values and destinations for all four keys, including kicker/footer content. Distinguish intentional presentation retirement from content preservation, and assert the resulting diagram’s values—not only its ledger and counts.
+
+12. **MAJOR — R3 withdraws an owner-validated performance requirement.**  
+    [L151](/home/antoinefa/src/graphify/.graphify/scratch/design/ontology-guardian/m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-f6f3ba37.md:151) and L1269 describe 600 interactions/240 stress toggles as disposable r2 prose. They are explicitly required by the binding [requirements L65](/home/antoinefa/src/sentropic/.tmp/governance-unification/DS-DIAGRAM-MODULES-REQUIREMENTS.md:65).
+
+    **Correction:** retain those required counts in the downstream gate and enumerate the workload that fulfils them. Moving execution outside M1 does not authorize reducing the requirement.
+
+13. **MAJOR — Diagnostic changes contradict legacy parity and the claimed complete freeze.**  
+    [L823](/home/antoinefa/src/graphify/.graphify/scratch/design/ontology-guardian/m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-f6f3ba37.md:823) adds `seenChain` to existing endpoint refusals, while L970 requires unchanged skeleton diagnostic arrays. L841 introduces global sorting; the pinned validator does not globally sort its output. The legacy projection only addresses uniqueness.
+
+    New contracts are also inconsistent: L941’s “exact” code inventory omits `quantity-above-max`, required at L946/L1378; L1382–1383 still leave detail keys/messages partly unspecified.
+
+    **Correction:** version diagnostic behavior by the exact declaration/adapter binding and preserve promised legacy outputs. Complete the new union, target G0 schema revision, literal messages, paths, detail keys and ordering witnesses. **Q-G0-2 itself remains closed**: its duplicate-reference selection is already correctly retained.
+
+For point 3, the **family routing is supported**: the pinned card scenes use generic mappings and do not assert ArchiMate semantics. Withdrawing `architecture@1` is consistent with that evidence. A reusable fragment governed once is also a reasonable direction; the current unspecified composition does not yet prove that it avoids consumer-specific adaptation or an additional schema mechanism.
+
+The complete landing is nevertheless **not settled**. A material compatibility choice remains:
+
+> **Owner question:** Should skeleton and completed ArchiMate/UML profiles retain the same `@1` identities through a new exact-pin selection and adapter-dispatch contract, or should breaking completions receive new majors with explicit migrations?
+
+Both options preserve one metamodel. They impose different registry and consumer-migration costs. The matrix does not decide between them, and L1253’s “one fragment versus three copies” comparison does not establish that choice.
+
+VERDICT: NOT SOLID
