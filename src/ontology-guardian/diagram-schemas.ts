@@ -113,372 +113,102 @@ export const DIAGRAM_PRESENTATION_CONTRACT_SCHEMA: GovernedSchema = govern(
   },
 );
 
-// --- Semantic document schema over the governed families (spec §§2.1/3.1/3.9/3.11) ---
-// Complete native shape: schemaVersion, typeDefinitions, resources and
-// extensions are retained (§3.13.7); entity/relation records always carry
-// their id, profile and type. The SemanticDocument carries no views:
-// DiagramState packaging (document plus retained views) stays separate.
-// Attribute values transcribe the native K6 value envelope: a closed kind
-// with only the fields that kind admits.
+// Native shapes: DS f6f3ba37 document.ts, view.ts and attributes.ts, carried
+// verbatim in the corpus. K1/K2/K6 and persisted M3 additions are explicit.
+// Schema validation establishes shape; registry/type/reference execution is DS.
+type Shape = Record<string, unknown>;
+const string: Shape = { type: "string" };
+const number: Shape = { type: "number" };
+const boolean: Shape = { type: "boolean" };
+const strings: Shape = { type: "array", items: string };
+const object = (properties: Record<string, unknown>, required: readonly string[]): Shape =>
+  ({ type: "object", properties, required, additionalProperties: false });
+const map = (value: Shape): Shape => ({ type: "object", additionalProperties: value });
+const array = (items: Shape): Shape => ({ type: "array", items });
+const choice = (...values: string[]): Shape => ({ enum: values });
+const ref = (name: string): Shape => ({ $ref: "#/$defs/" + name });
 
-// Closed native attribute-value envelope (spec §§2.1/3.11/5.8): one closed
-// shape per value kind. Struct values carry their declared type and closed
-// fields (the K6 carrier, §3.11); collections carry their items; references
-// carry a target value and/or the declared namespace kind.
-const TEXT_VALUE = {
-  type: "object",
-  properties: { kind: { const: "text" }, value: { type: "string" } },
-  required: ["kind", "value"],
-  additionalProperties: false,
+// AttributeValue is recursive through K6 fields and collection items.
+const scalarValues = ["text", "boolean", "date", "quantity", "enum", "reference"].map(kind =>
+  object({ kind: { const: kind }, value: kind === "boolean" ? boolean : kind === "quantity" ? number : string,
+    ...(kind === "quantity" ? { unit: string } : {}) },
+    kind === "quantity" ? ["kind", "value", "unit"] : ["kind", "value"]));
+const valueDefinitions = {
+  attributeValue: { anyOf: [
+    ...scalarValues,
+    object({ kind: { const: "collection" }, items: array(ref("attributeValue")) }, ["kind", "items"]),
+    object({ kind: { const: "struct" }, type: string, fields: map(ref("attributeValue")) }, ["kind", "type", "fields"]),
+  ] },
 };
-const ENUM_VALUE = {
-  type: "object",
-  properties: { kind: { const: "enum" }, value: { type: "string" } },
-  required: ["kind", "value"],
-  additionalProperties: false,
-};
-const QUANTITY_VALUE = {
-  type: "object",
-  properties: {
-    kind: { const: "quantity" },
-    value: { type: "number" },
-    unit: { type: "string", minLength: 1 },
-  },
-  required: ["kind", "value"],
-  additionalProperties: false,
-};
-const DATE_VALUE = {
-  type: "object",
-  properties: { kind: { const: "date" }, value: { type: "string" } },
-  required: ["kind", "value"],
-  additionalProperties: false,
-};
-const BOOLEAN_VALUE = {
-  type: "object",
-  properties: { kind: { const: "boolean" }, value: { type: "boolean" } },
-  required: ["kind", "value"],
-  additionalProperties: false,
-};
-const COLLECTION_VALUE = {
-  type: "object",
-  properties: { kind: { const: "collection" }, items: { type: "array" } },
-  required: ["kind", "items"],
-  additionalProperties: false,
-};
-const REFERENCE_VALUE = {
-  type: "object",
-  properties: {
-    kind: { const: "reference" },
-    value: { type: "string", minLength: 1 },
-    refKind: { type: "string", minLength: 1 },
-    targetTypes: { type: "array", items: { type: "string", minLength: 1 } },
-  },
-  required: ["kind"],
-  additionalProperties: false,
-};
-const STRUCT_VALUE = {
-  type: "object",
-  properties: {
-    kind: { const: "struct" },
-    type: { type: "string", minLength: 1 },
-    fields: { type: "object" },
-  },
-  required: ["kind", "type", "fields"],
-  additionalProperties: false,
-};
-const ATTRIBUTE_VALUE = {
-  anyOf: [
-    TEXT_VALUE, ENUM_VALUE, QUANTITY_VALUE, DATE_VALUE,
-    BOOLEAN_VALUE, COLLECTION_VALUE, REFERENCE_VALUE, STRUCT_VALUE,
-  ],
-};
-
-const ATTRIBUTE_MAP = { type: "object", additionalProperties: ATTRIBUTE_VALUE };
-
-const ENTITY_RECORD = {
-  type: "object",
-  properties: {
-    id: { type: "string", minLength: 1 },
-    profile: { type: "string", minLength: 1 },
-    type: { type: "string", minLength: 1 },
-    attributes: ATTRIBUTE_MAP,
-  },
-  required: ["id", "profile", "type", "attributes"],
-  additionalProperties: false,
-};
-
-const ENDPOINT_RECORD = {
-  type: "object",
-  properties: {
-    role: { type: "string", minLength: 1 },
-    target: { type: "string", minLength: 1 },
-  },
-  required: ["role", "target"],
-  additionalProperties: false,
-};
-
-const RELATION_RECORD = {
-  type: "object",
-  properties: {
-    id: { type: "string", minLength: 1 },
-    profile: { type: "string", minLength: 1 },
-    type: { type: "string", minLength: 1 },
-    endpoints: { type: "array", items: ENDPOINT_RECORD },
-    attributes: ATTRIBUTE_MAP,
-  },
-  required: ["id", "profile", "type", "endpoints", "attributes"],
-  additionalProperties: false,
-};
-
-// Native port record (spec §3.4): identity plus the retained semantic
-// owner/direction/name/attributes. Identity is required; an empty record
-// refuses.
-const PORT_RECORD = {
-  type: "object",
-  properties: {
-    id: { type: "string", minLength: 1 },
-    profile: { type: "string", minLength: 1 },
-    type: { type: "string", minLength: 1 },
-    owner: { type: "string", minLength: 1 },
-    direction: { enum: ["in", "out", "inout"] },
-    name: { type: "string", minLength: 1 },
-    label: { type: "string", maxLength: 80 },
-    attributes: ATTRIBUTE_MAP,
-  },
-  required: ["id"],
-  additionalProperties: false,
-};
-
-// Residual refinement definition (spec §3.13.1 step 2): identity plus the
-// rebased ancestry and additive attribute schemas. Identity is required;
-// an empty record refuses.
-const TYPE_DEFINITION_RECORD = {
-  type: "object",
-  properties: {
-    id: { type: "string", minLength: 1 },
-    profile: { type: "string", minLength: 1 },
-    type: { type: "string", minLength: 1 },
-    baseType: { type: "string", minLength: 1 },
-    supertypes: { type: "array", items: { type: "string", minLength: 1 } },
-    attributes: { type: "object" },
-  },
-  required: ["id"],
-  additionalProperties: false,
-};
+const scalarSchemas: Shape[] = [
+  object({ kind: { const: "text" }, minLength: number, maxLength: number, pattern: string, patternName: string }, ["kind"]),
+  object({ kind: { const: "boolean" } }, ["kind"]),
+  object({ kind: { const: "date" } }, ["kind"]),
+  object({ kind: { const: "quantity" }, units: strings, integer: boolean, min: number, max: number }, ["kind", "units"]),
+  object({ kind: { const: "enum" }, values: strings }, ["kind", "values"]),
+  object({ kind: { const: "reference" }, refKind: choice("document", "entity", "relation", "port", "resource", "view", "occurrence"), targetTypes: strings }, ["kind", "refKind"]),
+  object({ kind: { const: "struct" }, targetTypes: strings }, ["kind", "targetTypes"]),
+];
+const attributeSchema = { anyOf: [
+  ...scalarSchemas,
+  object({ kind: { const: "collection" }, item: { anyOf: scalarSchemas }, maxItems: number, minItems: number }, ["kind", "item", "maxItems"]),
+].map(shape => object({ ...(shape.properties as Record<string, unknown>), name: string, required: boolean },
+  [...(shape.required as string[]), "name"])) };
+const attributeMap = map(ref("attributeValue"));
+const entity = object({ id: string, profile: string, type: string, attributes: attributeMap }, ["id", "profile", "type", "attributes"]);
+const endpoint = object({ role: string, target: string }, ["role", "target"]);
+const relation = object({ id: string, profile: string, type: string, endpoints: array(endpoint), attributes: attributeMap },
+  ["id", "profile", "type", "endpoints", "attributes"]);
+const port = object({ id: string, profile: string, type: string, owner: string, name: string,
+  direction: choice("in", "out", "inout"), attributes: attributeMap },
+  ["id", "profile", "type", "owner", "name", "direction", "attributes"]);
+const definition = object({ id: string, profile: string, baseType: string, label: string, attributes: array(attributeSchema) },
+  ["id", "profile", "baseType", "attributes"]);
+const resource = object({ id: string, uri: string, mediaType: string, contentHash: string, byteLength: number },
+  ["id", "uri", "mediaType", "contentHash"]);
+const scope = { anyOf: [object({ kind: { const: "document" } }, ["kind"]),
+  ...["entity", "relation", "port"].map(kind => object({ kind: { const: kind }, target: string }, ["kind", "target"]))] };
+const extension = object({ namespace: string, schemaVersion: string, scope,
+  validation: choice("validated", "preserved-unvalidated", "unsupported"), contentHash: string, source: string },
+  ["namespace", "schemaVersion", "scope", "validation", "contentHash"]);
 
 export const DIAGRAM_SEMANTIC_SCHEMA: GovernedSchema = govern("diagram-semantic-schema", "1", {
   $schema: "https://json-schema.org/draft/2020-12/schema",
-  $id: "engram:diagram-semantic-schema/1",
-  title: "governed diagram SemanticDocument",
-  type: "object",
-  properties: {
-    documentId: { type: "string", minLength: 1 },
-    revision: { type: "integer", minimum: 0 },
-    profileRefs: {
-      type: "array",
-      items: { enum: ["generic@2", "archimate@2", "uml@2", "generic@1", "archimate@1", "uml@1"] },
-      minItems: 1,
-    },
-    schemaVersion: {
-      type: "object",
-      properties: {
-        major: { type: "integer", minimum: 0 },
-        minor: { type: "integer", minimum: 0 },
-      },
-      required: ["major", "minor"],
-      additionalProperties: false,
-    },
-    entities: { type: "object", additionalProperties: ENTITY_RECORD },
-    relations: { type: "object", additionalProperties: RELATION_RECORD },
-    ports: { type: "object", additionalProperties: PORT_RECORD },
-    typeDefinitions: { type: "object", additionalProperties: TYPE_DEFINITION_RECORD },
-    resources: { type: "object" },
-    extensions: { type: "array" },
-  },
-  required: ["documentId", "revision", "profileRefs", "entities", "relations"],
-  additionalProperties: false,
+  $id: "engram:diagram-semantic-schema/1", $defs: valueDefinitions,
+  ...object({ documentId: string, schemaVersion: object({ major: number, minor: number }, ["major", "minor"]),
+    revision: { type: "integer", minimum: 0 }, profileRefs: strings, typeDefinitions: map(definition),
+    entities: map(entity), relations: map(relation), ports: map(port), resources: map(resource), extensions: array(extension) },
+  ["documentId", "schemaVersion", "revision", "profileRefs", "typeDefinitions", "entities", "relations", "ports", "resources", "extensions"]),
 });
 
-// --- View document schema with the typed presentation extension (spec §§2.2/3.2.2/4.4.2) ---
-// The native ViewDocument field set is closed and required: a view with
-// only its three identity fields refuses. Occurrences, groups, filters,
-// geometry and presentation state transcribe the native shapes; the
-// persisted projection fields (§4.4.2) ride on the endpoint occurrence.
-
-const OCCURRENCE_GEOMETRY = {
-  type: "object",
-  properties: {
-    x: { type: "number" },
-    y: { type: "number" },
-    width: { type: "number" },
-    height: { type: "number" },
-  },
-  additionalProperties: false,
+const point = object({ x: number, y: number }, ["x", "y"]);
+const geometry = object({ x: number, y: number, width: number, height: number }, ["x", "y", "width", "height"]);
+const entityOccurrence = object({ id: string, entity: string, geometry, group: string, z: number }, ["id", "entity", "geometry"]);
+const projectedEndpoint = {
+  ...object({ role: string, occurrence: string, semanticTarget: string, sourceOccurrence: string }, ["role", "occurrence"]),
+  dependentRequired: { semanticTarget: ["sourceOccurrence"], sourceOccurrence: ["semanticTarget"] },
 };
-
-const ENTITY_OCCURRENCE = {
-  type: "object",
-  properties: {
-    id: { type: "string", minLength: 1 },
-    entity: { type: "string", minLength: 1 },
-    group: { type: "string", minLength: 1 },
-    geometry: OCCURRENCE_GEOMETRY,
-  },
-  required: ["id", "entity"],
-  additionalProperties: false,
-};
-
-const RELATION_ENDPOINT_OCCURRENCE = {
-  type: "object",
-  properties: {
-    role: { type: "string", minLength: 1 },
-    occurrence: { type: "string", minLength: 1 },
-    semanticTarget: { type: "string", minLength: 1 },
-    sourceOccurrence: { type: "string", minLength: 1 },
-  },
-  required: ["role", "occurrence"],
-  additionalProperties: false,
-};
-
-const WAYPOINT = {
-  type: "object",
-  properties: {
-    x: { type: "number" },
-    y: { type: "number" },
-  },
-  required: ["x", "y"],
-  additionalProperties: false,
-};
-
-const RELATION_OCCURRENCE = {
-  type: "object",
-  properties: {
-    id: { type: "string", minLength: 1 },
-    relation: { type: "string", minLength: 1 },
-    endpoints: { type: "array", items: RELATION_ENDPOINT_OCCURRENCE },
-    waypoints: { type: "array", items: WAYPOINT },
-    strokeStyle: { enum: ["solid", "dashed"] },
-  },
-  required: ["id", "relation", "endpoints"],
-  additionalProperties: false,
-};
-
-// Native port occurrence: identity plus the retained owner/side/order/
-// anchor bindings and geometry (spec §3.4).
-const PORT_OCCURRENCE = {
-  type: "object",
-  properties: {
-    id: { type: "string", minLength: 1 },
-    port: { type: "string", minLength: 1 },
-    ownerOccurrence: { type: "string", minLength: 1 },
-    side: { type: "string", minLength: 1 },
-    order: { type: "integer", minimum: 0 },
-    anchor: { type: "string", minLength: 1 },
-    geometry: OCCURRENCE_GEOMETRY,
-  },
-  required: ["id"],
-  additionalProperties: false,
-};
-
-// Native visual group with the occurrence-bound fold state (spec §4.1.1).
-const VISUAL_GROUP = {
-  type: "object",
-  properties: {
-    id: { type: "string", minLength: 1 },
-    label: { type: "string" },
-    collapsed: { type: "boolean" },
-    occurrence: { type: "string", minLength: 1 },
-  },
-  required: ["id"],
-  additionalProperties: false,
-};
-
-// Native view filter: a kind plus its retained selection state.
-const VIEW_FILTER = {
-  type: "object",
-  properties: {
-    kind: { type: "string", minLength: 1 },
-    collapsed: { type: "array", items: { type: "string", minLength: 1 } },
-    occurrences: { type: "array", items: { type: "string", minLength: 1 } },
-    label: { type: "string" },
-    mode: { type: "string", minLength: 1 },
-  },
-  required: ["kind"],
-  additionalProperties: false,
-};
-
-const SUMMARY_DEFINITION = {
-  type: "object",
-  properties: {
-    id: { type: "string", minLength: 1 },
-    sourceOccurrence: { type: "string", minLength: 1 },
-    targetOccurrence: { type: "string", minLength: 1 },
-    label: { type: "string", minLength: 1 },
-    relationIds: { type: "array", items: { type: "string", minLength: 1 }, minItems: 1 },
-    strokeStyle: { enum: ["solid", "dashed"] },
-  },
-  required: ["sourceOccurrence", "targetOccurrence", "label", "relationIds"],
-  additionalProperties: false,
-};
-
-const PRESENTATION_CAMERA = {
-  type: "object",
-  properties: {
-    x: { type: "number" },
-    y: { type: "number" },
-    zoom: { type: "number" },
-  },
-  required: ["x", "y", "zoom"],
-  additionalProperties: false,
-};
-
-const PRESENTATION_GRID = {
-  type: "object",
-  properties: {
-    size: { type: "number" },
-    snap: { type: "boolean" },
-  },
-  required: ["size"],
-  additionalProperties: false,
-};
-
+const relationOccurrence = object({ id: string, relation: string, endpoints: array(projectedEndpoint), waypoints: array(point),
+  strokeStyle: choice("solid", "dashed") }, ["id", "relation", "endpoints"]);
+const portOccurrence = object({ id: string, port: string, ownerOccurrence: string, side: choice("north", "east", "south", "west"),
+  order: number, anchor: { type: "number", minimum: 0, maximum: 1 } }, ["id", "port", "ownerOccurrence", "side", "order", "anchor"]);
+const group = object({ id: string, label: string, collapsed: boolean, occurrence: string }, ["id"]);
+const filter = { anyOf: [
+  ...["entity-type", "relation-type"].map(kind => object({ id: string, kind: { const: kind }, types: strings, mode: choice("include", "exclude") }, ["id", "kind", "types", "mode"])),
+  object({ id: string, kind: { const: "attribute-equals" }, attribute: string, value: string, mode: choice("include", "exclude") }, ["id", "kind", "attribute", "value", "mode"]),
+] };
+const summary = object({ id: string, sourceOccurrence: string, targetOccurrence: string, label: { type: "string", minLength: 1 },
+  relationIds: { type: "array", items: string, minItems: 1 }, strokeStyle: choice("solid", "dashed") },
+  ["sourceOccurrence", "targetOccurrence", "label", "relationIds"]);
 export const DIAGRAM_VIEW_SCHEMA: GovernedSchema = govern("diagram-view-schema", "1", {
-  $schema: "https://json-schema.org/draft/2020-12/schema",
-  $id: "engram:diagram-view-schema/1",
-  title: "governed diagram ViewDocument",
-  type: "object",
-  properties: {
-    viewId: { type: "string", minLength: 1 },
-    semanticDocumentId: { type: "string", minLength: 1 },
-    revision: { type: "integer", minimum: 0 },
-    entityOccurrences: { type: "object", additionalProperties: ENTITY_OCCURRENCE },
-    relationOccurrences: { type: "object", additionalProperties: RELATION_OCCURRENCE },
-    portOccurrences: { type: "object", additionalProperties: PORT_OCCURRENCE },
-    groups: { type: "object", additionalProperties: VISUAL_GROUP },
-    filters: { type: "array", items: VIEW_FILTER },
-    presentation: {
-      type: "object",
-      properties: {
-        camera: PRESENTATION_CAMERA,
-        grid: PRESENTATION_GRID,
-        theme: { type: "string" },
-        diagram: {
-          type: "object",
-          properties: DIAGRAM_VALUE_PROPERTIES,
-          required: DIAGRAM_VALUE_REQUIRED,
-          additionalProperties: false,
-        },
-      },
-      additionalProperties: false,
-    },
-    summaryLabels: { type: "object", additionalProperties: SUMMARY_DEFINITION },
-  },
-  required: [
-    "viewId", "semanticDocumentId", "revision",
-    "entityOccurrences", "relationOccurrences", "portOccurrences",
-    "groups", "filters",
-  ],
-  additionalProperties: false,
+  $schema: "https://json-schema.org/draft/2020-12/schema", $id: "engram:diagram-view-schema/1",
+  ...object({ viewId: string, semanticDocumentId: string, revision: { type: "integer", minimum: 0 },
+    entityOccurrences: map(entityOccurrence), relationOccurrences: map(relationOccurrence), portOccurrences: map(portOccurrence),
+    groups: map(group), filters: array(filter),
+    presentation: object({ camera: object({ x: number, y: number, zoom: number }, ["x", "y", "zoom"]),
+      grid: object({ size: number, snap: boolean }, ["size", "snap"]), theme: string,
+      diagram: object(DIAGRAM_VALUE_PROPERTIES, DIAGRAM_VALUE_REQUIRED) }, ["camera"]), summaryLabels: map(summary) },
+  ["viewId", "semanticDocumentId", "revision", "entityOccurrences", "relationOccurrences", "portOccurrences", "groups", "filters", "presentation"]),
 });
 
 // --- Diagnostic code inventory additions of this lot (spec Appendix C.1) ---
@@ -517,6 +247,7 @@ export const MIGRATION_REPORT_REASONS: readonly MigrationRefusalReason[] = [
   "missing-presentation-contract",
   "destination-conflict",
   "incompatible-attribute-schema",
+  "type-definition-conflict",
   "endpoint-role-unknown",
   "relationship-matrix-violation",
 ];

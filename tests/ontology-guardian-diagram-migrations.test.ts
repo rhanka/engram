@@ -22,8 +22,13 @@ import { expandArchimateTuples } from "../src/ontology-guardian/diagram-profiles
 const fixtures = join(testsDir, "fixtures");
 const shaFile = (path: string): string => createHash("sha256").update(readFileSync(path)).digest("hex");
 
+// The historical authored generic fixture is intentionally partial. Add the
+// native envelope explicitly at the call site; its pinned bytes stay intact.
+function nativeInput(value: MigDocument): MigDocument {
+  return value.documentId === undefined ? value : { schemaVersion: { major: 1, minor: 1 }, ports: {}, resources: {}, extensions: [], typeDefinitions: {}, ...value };
+}
 function loadMig(path: string): MigDocument {
-  return JSON.parse(readFileSync(path, "utf8")) as MigDocument;
+  return nativeInput(JSON.parse(readFileSync(path, "utf8")) as MigDocument);
 }
 
 describe("@1 byte-immutability (§2.1, §8.5)", () => {
@@ -92,6 +97,23 @@ describe("multiplicity parser (§3.11, A.2)", () => {
       expect(parseMultiplicity(raw)).toEqual({ ok: false, reason: "multiplicity-syntax" });
     }
     expect(parseMultiplicity("5..1")).toEqual({ ok: false, reason: "multiplicity-invalid" });
+  });
+});
+
+describe("canonical refusal selection", () => {
+  it("reports the same first invalid attribute under reversed insertion", () => {
+    const original = loadMig(join(fixtures, "pinned-sources", "uml-skeleton-document.json")).document as MigDocument;
+    const labels = { sourceMultiplicity: { kind: "text", value: "bad-source" }, targetMultiplicity: { kind: "text", value: "bad-target" } };
+    const results = [labels, Object.fromEntries(Object.entries(labels).reverse())].map(attributes => {
+      const source = structuredClone(original);
+      source.relations["relation:order-customer"] = { ...source.relations["relation:order-customer"]!, attributes };
+      // Remove unrelated stereotype application so both isolated inputs reach
+      // the multiplicity parser with exactly the same invalid declarations.
+      source.entities["entity:order"] = { ...source.entities["entity:order"]!, attributes: { name: { kind: "text", value: "Order" } } };
+      return migrateUmlV1ToV2(source, { stereotypes: {} });
+    });
+    expect(results[0]!.unmigrated).toEqual([{ path: "relations.relation:order-customer.attributes.sourceMultiplicity", reason: "multiplicity-syntax" }]);
+    expect(results[1]!.unmigrated).toEqual(results[0]!.unmigrated);
   });
 });
 
@@ -167,9 +189,8 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
     const report = migrateGenericV1ToV2(doc, {
       views: [{
         viewId: "view:1", semanticDocumentId: "document:generic-1-minimal", revision: 0,
-        entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:node-a" } },
-        relationOccurrences: {}, portOccurrences: {}, groups: {}, filters: [],
-      }],
+        entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:node-a" , geometry: { x: 0, y: 0, width: 460, height: 200 }} },
+        relationOccurrences: {}, portOccurrences: {}, groups: {}, filters: [], presentation: { camera: { x: 0, y: 0, zoom: 1 } }}],
       contractPin: { id: "diagram-presentation", version: "1", contentDigest: "a".repeat(64) },
     });
     expect(report.outcome).toBe("ok");
@@ -182,7 +203,7 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
     expect(report.target!.views).toHaveLength(1);
     expect(report.target!.views![0]).toMatchObject({
       viewId: "view:1",
-      presentation: {
+      presentation: { camera: { x: 0, y: 0, zoom: 1 },
         diagram: {
           contractPin: { id: "diagram-presentation", version: "1", contentDigest: "a".repeat(64) },
           entities: { "occurrence:a": { form: "card", text: { kicker: "K" }, icon: "window" } },
@@ -199,9 +220,8 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
     const report = migrateGenericV1ToV2(doc, {
       views: [{
         viewId: "view:1", semanticDocumentId: "document:generic-1-minimal", revision: 0,
-        entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:node-a" } },
-        relationOccurrences: {}, portOccurrences: {}, groups: {}, filters: [],
-      }],
+        entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:node-a" , geometry: { x: 0, y: 0, width: 460, height: 200 }} },
+        relationOccurrences: {}, portOccurrences: {}, groups: {}, filters: [], presentation: { camera: { x: 0, y: 0, zoom: 1 } }}],
     });
     expect(report.outcome).toBe("refused");
     expect(report.target).toBeNull();
@@ -214,9 +234,9 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
     const report = migrateGenericV1ToV2(doc, {
       views: [{
         viewId: "view:1", semanticDocumentId: "document:generic-1-minimal", revision: 0,
-        entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:node-a" } },
+        entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:node-a" , geometry: { x: 0, y: 0, width: 460, height: 200 }} },
         relationOccurrences: {}, portOccurrences: {}, groups: {}, filters: [],
-        presentation: { diagram: { entities: { "occurrence:a": { form: "card", text: { kicker: "OTHER" } } } } },
+        presentation: { camera: { x: 0, y: 0, zoom: 1 },  diagram: { contractPin: { id: "diagram-presentation", version: "1", contentDigest: "a".repeat(64) }, legends: {}, categoryTokens: [], entities: { "occurrence:a": { form: "card", text: { kicker: "OTHER" } } } } },
       }],
       contractPin: { id: "diagram-presentation", version: "1", contentDigest: "a".repeat(64) },
     });
@@ -283,9 +303,8 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
     const report = migrateGenericV1ToV2(doc, {
       views: [{
         viewId: "view:1", semanticDocumentId: "document:generic-1-minimal", revision: 0,
-        entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:node-a" } },
-        relationOccurrences: {}, portOccurrences: {}, groups: {}, filters: [],
-      }],
+        entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:node-a" , geometry: { x: 0, y: 0, width: 460, height: 200 }} },
+        relationOccurrences: {}, portOccurrences: {}, groups: {}, filters: [], presentation: { camera: { x: 0, y: 0, zoom: 1 } }}],
     });
     expect(report.outcome).toBe("refused");
     expect(report.target).toBeNull();
@@ -296,7 +315,7 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
 
   it("refuses a target-reserved refinement id before any rewrite", () => {
     const doc = source();
-    const withReserved = { ...doc, typeDefinitions: { node: { id: "node" } } };
+    const withReserved = { ...doc, typeDefinitions: { node: { id: "node", profile: "generic@1", baseType: "node", attributes: [] } } };
     const report = migrateGenericV1ToV2(withReserved);
     expect(report.outcome).toBe("refused");
     expect(report.unmigrated).toEqual([{ path: "typeDefinitions.node", reason: "incompatible-attribute-schema" }]);
@@ -524,7 +543,7 @@ describe("uml@1 → uml@2 (§§3.11.1/3.13.2)", () => {
 
 describe("lossless copy-then-patch (design note A, finding 2)", () => {
   const generic = (): MigDocument =>
-    JSON.parse(readFileSync(join(fixtures, "generic-v1-minimal-document.json"), "utf8")) as MigDocument;
+    nativeInput(JSON.parse(readFileSync(join(fixtures, "generic-v1-minimal-document.json"), "utf8")) as MigDocument);
 
   it("retains authored domain attributes on generic records", () => {
     const doc = generic();
@@ -567,7 +586,7 @@ describe("lossless copy-then-patch (design note A, finding 2)", () => {
     doc.typeDefinitions = {
       "custom-actor": {
         id: "custom-actor", profile: "archimate@1", baseType: "business-actor",
-        attributes: { domainNote: { name: "domainNote", kind: "text", maxLength: 200 } },
+        attributes: [{ name: "domainNote", kind: "text", maxLength: 200 }],
       },
     };
     doc.entities["entity:actor"] = {
@@ -584,7 +603,7 @@ describe("lossless copy-then-patch (design note A, finding 2)", () => {
     });
     expect(report.outcome).toBe("ok");
     if (report.outcome !== "ok") throw new Error("migration " + JSON.stringify(report.unmigrated));
-    expect(report.target!.entities["entity:actor"]!.type).toBe("business-actor");
+    expect(report.target!.entities["entity:actor"]!.type).toBe("custom-actor");
     expect(report.target!.entities["entity:actor"]!.attributes["domainNote"]).toEqual({
       kind: "text", value: "MUST SURVIVE",
     });
@@ -594,7 +613,7 @@ describe("lossless copy-then-patch (design note A, finding 2)", () => {
     const doc = loadMig(join(fixtures, "pinned-sources", "archimate-skeleton-document.json")).document as MigDocument;
     doc.typeDefinitions = {
       "custom-actor": {
-        id: "custom-actor", profile: "archimate@1", baseType: "business-actor", attributes: {},
+        id: "custom-actor", profile: "archimate@1", baseType: "business-actor", attributes: [],
       },
     };
     doc.entities["entity:actor"] = { ...doc.entities["entity:actor"]!, type: "custom-actor" };
@@ -615,7 +634,7 @@ describe("lossless copy-then-patch (design note A, finding 2)", () => {
     doc.typeDefinitions = {
       "custom-actor": {
         id: "custom-actor", profile: "archimate@1", baseType: "business-actor",
-        attributes: { name: { name: "name", kind: "boolean" } },
+        attributes: [{ name: "name", kind: "boolean" }],
       },
     };
     doc.entities["entity:actor"] = { ...doc.entities["entity:actor"]!, type: "custom-actor" };
@@ -628,7 +647,7 @@ describe("lossless copy-then-patch (design note A, finding 2)", () => {
     expect(report.target).toBeNull();
     expect(report.unmigrated).toEqual([
       {
-        path: "entities.entity:actor.attributes.name",
+        path: "typeDefinitions.custom-actor.attributes.name",
         reason: "type-definition-conflict",
         detail: "incompatible-attribute-schema",
       },
@@ -652,13 +671,13 @@ describe("lossless copy-then-patch (design note A, finding 2)", () => {
 
 describe("per-view presentation scoping (design note B, new findings)", () => {
   const generic = (): MigDocument =>
-    JSON.parse(readFileSync(join(fixtures, "generic-v1-minimal-document.json"), "utf8")) as MigDocument;
+    nativeInput(JSON.parse(readFileSync(join(fixtures, "generic-v1-minimal-document.json"), "utf8")) as MigDocument);
   const fullView = (viewId: string, occurrences: Record<string, string>): MigDocument["views"] => [{
     viewId, semanticDocumentId: "document:generic-1-minimal", revision: 0,
     entityOccurrences: Object.fromEntries(
-      Object.entries(occurrences).map(([occ, entity]) => [occ, { id: occ, entity }]),
+      Object.entries(occurrences).map(([occ, entity]) => [occ, { id: occ, entity, geometry: { x: 0, y: 0, width: 460, height: 200 } }]),
     ),
-    relationOccurrences: {}, portOccurrences: {}, groups: {}, filters: [],
+    relationOccurrences: {}, portOccurrences: {}, groups: {}, filters: [], presentation: { camera: { x: 0, y: 0, zoom: 1 } },
   }] as unknown as MigDocument["views"];
 
   it("keys moves by (view id, occurrence id), never by occurrence alone", () => {
@@ -725,14 +744,14 @@ describe("per-view presentation scoping (design note B, new findings)", () => {
 
 describe("refinement resolution (design note A, finding 5)", () => {
   const generic = (): MigDocument =>
-    JSON.parse(readFileSync(join(fixtures, "generic-v1-minimal-document.json"), "utf8")) as MigDocument;
+    nativeInput(JSON.parse(readFileSync(join(fixtures, "generic-v1-minimal-document.json"), "utf8")) as MigDocument);
   const withRefinement = (
     doc: MigDocument, typeId: string, baseType: string, schemas: Record<string, unknown>,
   ): MigDocument => {
     const next = structuredClone(doc);
     next.typeDefinitions = {
       ...(next.typeDefinitions as Record<string, unknown>),
-      [typeId]: { id: typeId, profile: "generic@1", baseType, attributes: schemas },
+      [typeId]: { id: typeId, profile: "generic@1", baseType, attributes: Object.values(schemas) },
     };
     next.entities[`entity:${typeId}`] = {
       id: `entity:${typeId}`, profile: "generic@1", type: typeId,
@@ -764,7 +783,7 @@ describe("refinement resolution (design note A, finding 5)", () => {
     expect(report.outcome).toBe("refused");
     expect(report.target).toBeNull();
     expect(report.unmigrated).toEqual([{
-      path: "entities.entity:custom-node.attributes.category",
+      path: "typeDefinitions.custom-node.attributes.category",
       reason: "type-definition-conflict",
       detail: "incompatible-attribute-schema",
     }]);
@@ -863,7 +882,7 @@ describe("migration property: declared-invariant subset (design note E)", () => 
   it("keeps ids, endpoints and pass-through attributes byte-identical on every corpus document", () => {
     const cases: { doc: MigDocument; run: (doc: MigDocument) => ReturnType<typeof migrateGenericV1ToV2> }[] = [
       {
-        doc: JSON.parse(readFileSync(join(fixtures, "generic-v1-minimal-document.json"), "utf8")) as MigDocument,
+        doc: nativeInput(JSON.parse(readFileSync(join(fixtures, "generic-v1-minimal-document.json"), "utf8")) as MigDocument),
         run: (doc) => migrateGenericV1ToV2(doc),
       },
       {

@@ -25,7 +25,7 @@ const A64 = "a".repeat(64);
 
 function minimalSemantic(): Record<string, unknown> {
   return {
-    documentId: "document:test-1",
+    documentId: "document:test-1", schemaVersion: { major: 1, minor: 1 }, ports: {}, resources: {}, extensions: [], typeDefinitions: {},
     revision: 0,
     profileRefs: ["generic@1"],
     entities: {
@@ -43,12 +43,11 @@ function minimalView(): Record<string, unknown> {
     viewId: "view:1",
     semanticDocumentId: "document:test-1",
     revision: 0,
-    entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:a" } },
+    entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:a" , geometry: { x: 0, y: 0, width: 460, height: 200 }} },
     relationOccurrences: {},
     portOccurrences: {},
     groups: {},
-    filters: [],
-  };
+    filters: [], presentation: { camera: { x: 0, y: 0, zoom: 1 } }};
 }
 
 function minimalContract(): Record<string, unknown> {
@@ -62,7 +61,7 @@ function minimalContract(): Record<string, unknown> {
 
 describe("semantic schema negatives: every required field, enum and record", () => {
   it("rejects a missing required field, one per field", () => {
-    for (const field of ["documentId", "revision", "profileRefs", "entities", "relations"]) {
+    for (const field of ["documentId", "schemaVersion", "revision", "profileRefs", "typeDefinitions", "entities", "relations", "ports", "resources", "extensions"]) {
       const doc = minimalSemantic();
       delete doc[field];
       expect(validateSemantic(doc), `missing ${field}`).toBe(false);
@@ -72,8 +71,8 @@ describe("semantic schema negatives: every required field, enum and record", () 
   it("rejects wrong types, empty records and extra properties", () => {
     expect(validateSemantic({})).toBe(false);
     expect(validateSemantic({ ...minimalSemantic(), revision: "0" })).toBe(false);
-    expect(validateSemantic({ ...minimalSemantic(), profileRefs: [] })).toBe(false);
-    expect(validateSemantic({ ...minimalSemantic(), profileRefs: ["generic@9"] })).toBe(false);
+    expect(validateSemantic({ ...minimalSemantic(), profileRefs: [false] })).toBe(false);
+    expect(validateSemantic({ ...minimalSemantic(), profileRefs: [9] })).toBe(false);
     expect(validateSemantic({ ...minimalSemantic(), surprise: true })).toBe(false);
     const badVersion = minimalSemantic();
     badVersion["schemaVersion"] = { major: 1 };
@@ -116,7 +115,7 @@ describe("semantic schema negatives: every required field, enum and record", () 
       createdAt: { kind: "date", value: "2026-10-27" },
       pinned: { kind: "boolean", value: true },
       tags: { kind: "collection", items: [{ kind: "text", value: "store" }] },
-      owner: { kind: "reference", refKind: "entity" },
+      owner: { kind: "reference", value: "entity:owner" },
       applied: { kind: "reference", value: "entity:b" },
       multiplicity: {
         kind: "struct", type: "multiplicity",
@@ -129,18 +128,18 @@ describe("semantic schema negatives: every required field, enum and record", () 
     doc["ports"] = {
       "port:p": {
         id: "port:p", profile: "generic@1", type: "port", owner: "entity:a",
-        direction: "in", label: "in", attributes: { label: { kind: "text", value: "in" } },
+        direction: "in", name: "in", attributes: { label: { kind: "text", value: "in" } },
       },
     };
     doc["typeDefinitions"] = {
-      "custom-node": { id: "custom-node", profile: "generic@1", baseType: "node", attributes: {} },
+      "custom-node": { id: "custom-node", profile: "generic@1", baseType: "node", attributes: [] },
     };
     expect(validateSemantic(doc)).toBe(true);
   });
 
   it("accepts every pinned native document from the corpus", () => {
     const generic = JSON.parse(readFileSync(join(testsDir, "fixtures", "generic-v1-minimal-document.json"), "utf8"));
-    expect(validateSemantic(generic)).toBe(true);
+    expect(validateSemantic(generic)).toBe(false); // Authored partial migration input, not a complete native document.
     for (const name of ["archimate-skeleton-document.json", "uml-skeleton-document.json"]) {
       const doc = (JSON.parse(readFileSync(join(testsDir, "fixtures", "pinned-sources", name), "utf8")) as { document: unknown }).document;
       expect(validateSemantic(doc)).toBe(true);
@@ -159,7 +158,7 @@ describe("view schema negatives: the full native field set", () => {
     expect(validateView({ viewId: "view:1", semanticDocumentId: "d", revision: 0 })).toBe(false);
     for (const field of [
       "viewId", "semanticDocumentId", "revision",
-      "entityOccurrences", "relationOccurrences", "portOccurrences", "groups", "filters",
+      "entityOccurrences", "relationOccurrences", "portOccurrences", "groups", "filters", "presentation",
     ]) {
       const view = minimalView();
       delete view[field];
@@ -171,8 +170,7 @@ describe("view schema negatives: the full native field set", () => {
   it("rejects open or dangling occurrences, groups, filters and geometry", () => {
     const open = minimalView();
     (open["entityOccurrences"] as Record<string, unknown>)["occurrence:a"] = {
-      id: "occurrence:a", entity: "entity:a", surprise: 1,
-    };
+      id: "occurrence:a", entity: "entity:a", surprise: 1, geometry: { x: 0, y: 0, width: 460, height: 200 }};
     expect(validateView(open)).toBe(false);
     const missing = minimalView();
     (missing["entityOccurrences"] as Record<string, unknown>)["occurrence:a"] = { id: "occurrence:a" };
@@ -215,10 +213,10 @@ describe("view schema negatives: the full native field set", () => {
       },
     };
     view["portOccurrences"] = {
-      "occurrence:p": { id: "occurrence:p", port: "port:p", ownerOccurrence: "occurrence:a", side: "right", order: 0 },
+      "occurrence:p": { id: "occurrence:p", port: "port:p", ownerOccurrence: "occurrence:a", side: "east", order: 0, anchor: 0.5 },
     };
     view["groups"] = { "grp.1.a": { id: "grp.1.a", occurrence: "occurrence:a", collapsed: true } };
-    view["filters"] = [{ kind: "in-fold", collapsed: ["occurrence:a"] }];
+    view["filters"] = [{ id: "filter:a", kind: "entity-type", types: ["node"], mode: "include" }];
     view["presentation"] = {
       camera: { x: 0, y: 0, zoom: 1 },
       grid: { size: 8, snap: true },
