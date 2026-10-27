@@ -27,10 +27,10 @@ function projection(id: string, declaration: Record<string, Json>): DiagramProfi
   };
 }
 
-function directedPair(id: string, entityTypes?: readonly string[]): Record<string, Json> {
+function directedPair(id: string, label: string, entityTypes?: readonly string[]): Record<string, Json> {
   const extra = entityTypes === undefined ? {} : { entityTypes: [...entityTypes] };
   return {
-    id, label: id, direction: "directed",
+    id, label, direction: "directed",
     roles: [
       { role: "source", cardinality: { min: 1, max: 1 }, targets: ["entity"], ...extra },
       { role: "target", cardinality: { min: 1, max: 1 }, targets: ["entity"], ...extra },
@@ -132,7 +132,7 @@ export const ARCHIMATE_V1_DECLARATION: Record<string, Json> = {
     },
   ],
   portTypes: [],
-  relationTypes: ARCHIMATE_V1_RELATIONS.map((id) => directedPair(id)),
+  relationTypes: ARCHIMATE_V1_RELATIONS.map((id) => directedPair(id, id)),
   constraints: [],
   limits: { maxEndpointsPerRelation: 2 },
 };
@@ -187,8 +187,8 @@ export const UML_V1_DECLARATION: Record<string, Json> = {
         { name: "targetMultiplicity", kind: "text", maxLength: 20 },
       ],
     },
-    directedPair("generalization", ["class", "interface"]),
-    directedPair("dependency"),
+    directedPair("generalization", "Generalization", ["class", "interface"]),
+    directedPair("dependency", "Dependency"),
     {
       id: "packageContainment", label: "Package containment", direction: "directed",
       roles: [
