@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node"]
+  },
+  "include": ["src/ontology-guardian/diagram-*.ts", "tests/ontology-guardian-diagram-typeproof.test.ts"],
+  "exclude": ["node_modules", "dist"]
+}
