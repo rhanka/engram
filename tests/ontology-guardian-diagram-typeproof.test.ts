@@ -20,6 +20,7 @@ import type {
 } from "../src/ontology-guardian/diagram-migrations.js";
 import type { SupersessionRow } from "../src/ontology-guardian/diagram-registry.js";
 import { SUPERSESSION } from "../src/ontology-guardian/diagram-registry.js";
+import type { NativeAttributeValue, NativePortOccurrence, NativeSemanticDocument, NativeTypeDefinition, NativeViewDocument } from "../src/ontology-guardian/diagram-native-types.js";
 
 describe("diagram lot type-level proof", () => {
   it("holds the closed migration shapes at runtime", () => {
@@ -129,4 +130,26 @@ const badDocument: MigDocument = {
 const badRow: SupersessionRow = {
   from: { id: "generic", version: "1.0.0", contentDigest: "a".repeat(64) },
   supersededBy: { id: "generic", version: "2.0.0", contentDigest: "b".repeat(64) },
+};
+
+const badNativeDefinition: NativeTypeDefinition = {
+  id: "custom", profile: "generic@1", baseType: "node",
+  // @ts-expect-error native refinements carry AttributeSchema[], never a dictionary
+  attributes: {},
+};
+const badNativePort: NativePortOccurrence = {
+  id: "occurrence:p", port: "port:p", ownerOccurrence: "occurrence:a", side: "east", order: 0,
+  // @ts-expect-error native anchors are numeric
+  anchor: "middle",
+};
+// @ts-expect-error every reference value carries its target
+const badNativeReference: NativeAttributeValue = { kind: "reference" };
+// @ts-expect-error a complete native view requires presentation.camera
+const badNativeView: NativeViewDocument = {
+  viewId: "view:a", semanticDocumentId: "document:a", revision: 0,
+  entityOccurrences: {}, relationOccurrences: {}, portOccurrences: {}, groups: {}, filters: [],
+};
+// @ts-expect-error native semantic documents require their schema version
+const badNativeSemantic: NativeSemanticDocument = {
+  documentId: "document:a", revision: 0, profileRefs: ["generic@1"], typeDefinitions: {}, entities: {}, relations: {}, ports: {}, resources: {}, extensions: [],
 };
