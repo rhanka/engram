@@ -63,6 +63,17 @@ describe("@1 byte-immutability (§2.1, §8.5)", () => {
     for (const marker of ["archimate@1", "uml@1", "multiplicity", "maxLength: 20", "packageContainment"]) {
       expect(skeletons.includes(marker)).toBe(true);
     }
+    // Exact @1 relation labels, never retyped: the pinned source spells the
+    // three labels below and maps archimate ids to themselves.
+    for (const marker of [
+      'directedPair("generalization", "Generalization"',
+      'directedPair("dependency", "Dependency"',
+      "ARCHIMATE_RELATIONS.map((id) => directedPair(id, id))",
+      'label: "Association"',
+      'label: "Package containment"',
+    ]) {
+      expect(skeletons.includes(marker)).toBe(true);
+    }
   });
 });
 
