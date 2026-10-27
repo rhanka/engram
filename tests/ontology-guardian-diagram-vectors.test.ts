@@ -171,7 +171,7 @@ describe("A.4 draft declaration digests", () => {
   });
 
   it("pins generic@2, schema and contract digests as stability goldens", () => {
-    expect(GENERIC_V2.contentDigest).toBe("0ac5e9a7e4eb7f1f12afb06e38ef935b1582a9522c31a8ed816c621827f100b4");
+    expect(GENERIC_V2.contentDigest).toBe("cb103606707577720eba48570c0e49aadd209d8e51a9a0bc2c725b7434f79283");
     expect(DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.digest).toBe("f50c4dfe71302432c9752c67b37ecbe8f7267d0b1813ff9090a56483332bf32c");
     expect(DIAGRAM_SEMANTIC_SCHEMA.digest).toBe("c2e891febf856fcaa5a2c737538fff4242014fde3ff9ef0aac703302b73c984f");
     expect(DIAGRAM_VIEW_SCHEMA.digest).toBe("962de98bfa87d049ec17e2bce6dadac5019be027ab7178eb100bd189bc2877be");
@@ -192,8 +192,19 @@ describe("governed declaration structure (§§3.1/3.9.2/3.11)", () => {
     expect((link["attributes"] as Record<string, unknown>[]).find((a) => a["name"] === "label")).toMatchObject({ maxLength: 200 });
     const contains = relations.find((r) => r["id"] === "contains") as Record<string, unknown>;
     expect((contains["roles"] as Record<string, unknown>[])[0]).toMatchObject({ role: "parent", entityTypes: ["container", "legend"] });
-    expect(d["constraints"]).toContainEqual({ kind: "children-restricted", hierarchyId: "containment", parentType: "legend", childTypes: ["legend-key"] });
-    expect(d["constraints"]).toContainEqual({ kind: "required-parent", hierarchyId: "containment", childType: "legend-key", parentTypes: ["legend"] });
+    expect(d["constraints"]).toEqual([
+      { kind: "hierarchy", relationType: "contains", hierarchyId: "containment", parentRole: "parent", childRole: "child" },
+      { kind: "parent-family", hierarchyId: "containment", familyRoots: ["container", "legend"] },
+      { kind: "children-restricted", parentFamilyRoots: ["legend"], childTypes: ["legend-key"], hierarchyId: "containment" },
+      { kind: "required-parent", childTypes: ["legend-key"], parentFamilyRoots: ["legend"], hierarchyId: "containment" },
+      { kind: "acyclic-hierarchy", hierarchyId: "containment" },
+      { kind: "unique-attribute", entityType: "legend-key", attribute: "category", scope: { withinType: "legend" } },
+    ]);
+    const nodeAttrs = (entities[0] as Record<string, unknown>)["attributes"] as Record<string, unknown>[];
+    expect(nodeAttrs.find((a) => a["name"] === "category")).toEqual({
+      name: "category", kind: "text", minLength: 1, maxLength: 40,
+      pattern: "^[a-z][a-z0-9-]*$", patternName: "key",
+    });
     expect(d["limits"]).toEqual({ maxEntities: 100000, maxRelations: 500000, maxEndpointsPerRelation: 8 });
   });
 
@@ -238,11 +249,14 @@ describe("governed declaration structure (§§3.1/3.9.2/3.11)", () => {
 
 describe("§7.3.5 mutation consequences on governed profiles", () => {
   it("flipping completeness, container, scope, pattern or bound changes contentDigest; notes do not", () => {
+    const scoped = (): Record<string, unknown>[] => [
+      { kind: "unique-attribute", entityType: "legend-key", attribute: "category", scope: { withinType: "legend" } },
+    ];
     const base = contentDiagramDigest({
       profile: "generic@2", completeness: "complete",
       entityTypes: (GENERIC_V2.declaration["entityTypes"] as readonly unknown[]).map((t) => structuredClone(t)),
       portTypes: [], relationTypes: [],
-      constraints: [{ kind: "unique-attribute", entityType: "legend-key", attribute: "category", scope: "within-legend" }],
+      constraints: scoped(),
       limits: { maxEntities: 100000, maxRelations: 500000, maxEndpointsPerRelation: 8 },
     });
     const flip = (mutate: (p: Record<string, unknown>) => void): string => {
@@ -250,7 +264,7 @@ describe("§7.3.5 mutation consequences on governed profiles", () => {
         profile: "generic@2", completeness: "complete",
         entityTypes: (GENERIC_V2.declaration["entityTypes"] as readonly unknown[]).map((t) => structuredClone(t)),
         portTypes: [], relationTypes: [],
-        constraints: [{ kind: "unique-attribute", entityType: "legend-key", attribute: "category", scope: "within-legend" }],
+        constraints: scoped(),
         limits: { maxEntities: 100000, maxRelations: 500000, maxEndpointsPerRelation: 8 },
       } as unknown as Record<string, unknown>;
       mutate(p);
@@ -266,7 +280,7 @@ describe("§7.3.5 mutation consequences on governed profiles", () => {
         profile: "generic@2", completeness: "complete",
         entityTypes: GENERIC_V2.declaration["entityTypes"] as readonly unknown[],
         portTypes: [], relationTypes: [],
-        constraints: [{ kind: "unique-attribute", entityType: "legend-key", attribute: "category", scope: "within-legend" }],
+        constraints: [{ kind: "unique-attribute", entityType: "legend-key", attribute: "category", scope: { withinType: "legend" } }],
         limits: { maxEntities: 100000, maxRelations: 500000, maxEndpointsPerRelation: 8 },
         notes: ["an editorial note"],
       }),
