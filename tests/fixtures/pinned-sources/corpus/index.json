@@ -117,7 +117,7 @@
     },
     "sha256": "5dffb39dd10551ae83b35fd256ccc3c65911d5aa731cdccb253605c3ac5d1c9a",
     "expectation": "frozen S2-target render witness",
-    "fixture": "5dffb39dd10551ae83b35fd256ccc3c65911d5aa731cdccb253605c3ac5d1c9a.bytes"
+    "fixture": "5dffb39dd10551ae83b35fd256ccc3c65911d5aa731cdccb253605c3ac5d1c9a.png"
   },
   {
     "id": "s2-target:reference-png",
@@ -129,7 +129,7 @@
     },
     "sha256": "f606ac163c5202c8cddb7caaba97e4d748d767865a2abfb1bb2f57a7bb4ad542",
     "expectation": "frozen ds-fixtures reference render",
-    "fixture": "f606ac163c5202c8cddb7caaba97e4d748d767865a2abfb1bb2f57a7bb4ad542.bytes"
+    "fixture": "f606ac163c5202c8cddb7caaba97e4d748d767865a2abfb1bb2f57a7bb4ad542.png"
   },
   {
     "id": "s2-target:governance-scenes",
@@ -201,7 +201,7 @@
     },
     "sha256": "5dffb39dd10551ae83b35fd256ccc3c65911d5aa731cdccb253605c3ac5d1c9a",
     "expectation": "producer render witness",
-    "fixture": "5dffb39dd10551ae83b35fd256ccc3c65911d5aa731cdccb253605c3ac5d1c9a.bytes"
+    "fixture": "5dffb39dd10551ae83b35fd256ccc3c65911d5aa731cdccb253605c3ac5d1c9a.png"
   },
   {
     "id": "hrpn:fixture-manifest",
