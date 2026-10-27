@@ -371,8 +371,12 @@ export function migrateArchimateV1ToV2(
       relations[id] = rel;
       continue;
     }
-    const src = rel.endpoints.find((e) => e.role === "source").target;
-    const tgt = rel.endpoints.find((e) => e.role === "target").target;
+    const srcEp = rel.endpoints.find((e) => e.role === "source");
+    const tgtEp = rel.endpoints.find((e) => e.role === "target");
+    // No role is guessed: a relation without its source/target role blocks.
+    if (srcEp === undefined || tgtEp === undefined) return fail(`relations.${id}.endpoints`, "endpoint-role-unknown");
+    const src = srcEp.target;
+    const tgt = tgtEp.target;
     const srcType = entityTypeOf.get(src);
     const tgtType = entityTypeOf.get(tgt);
     if (srcType === undefined || tgtType === undefined) return fail(`relations.${id}.endpoints`, "missing-type-mapping");
