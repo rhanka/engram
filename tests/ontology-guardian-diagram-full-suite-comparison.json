@@ -17,11 +17,12 @@
   "baseRef": "origin/main~0 (detached worktree at base commit)",
   "binding": {
     "branch": "feat/ontology-guardian-diagram-profiles",
-    "branchHead": "d4a85d35e9c29b540487b9e4b96e71be80c521eff",
+    "branchHead": "096365ba979b1ba4464ba39e153ac8d6f6c71eb4",
     "changedFromBase": [
       "package.json",
       "src/ontology-guardian/diagram-matrix-data.ts",
       "src/ontology-guardian/diagram-migrations.ts",
+      "src/ontology-guardian/diagram-oracle.ts",
       "src/ontology-guardian/diagram-profiles.ts",
       "src/ontology-guardian/diagram-registry.ts",
       "src/ontology-guardian/diagram-schemas.ts",
@@ -33,6 +34,7 @@
       "tests/fixtures/pinned-sources/ds-generic-ts.bytes",
       "tests/fixtures/pinned-sources/ds-skeletons-ts.bytes",
       "tests/fixtures/pinned-sources/m3-a3-serialization-specimen.json",
+      "tests/fixtures/pinned-sources/m3-r4-derived-oracle.json",
       "tests/fixtures/pinned-sources/uml-skeleton-document.json",
       "tests/ontology-guardian-diagram-admission.test.ts",
       "tests/ontology-guardian-diagram-migrations.test.ts",
@@ -52,7 +54,7 @@
         "tests/ontology-guardian-diagram-typeproof.test.ts",
         "tests/ontology-guardian-diagram-vectors.test.ts"
       ],
-      "passed": 56
+      "passed": 77
     },
     "testFiles": {
       "failed": 199,
@@ -62,14 +64,26 @@
     },
     "tests": {
       "failed": 245,
-      "passed": 4113,
+      "passed": 4134,
       "skipped": 31,
-      "total": 4389
+      "total": 4410
     }
   },
-  "conclusion": "Same 199 failing files and 245 failing tests on both sides (identical sorted failure identities, sha256 a6adfe639cb23f419ff3010e789be71ccd7ecd5b80e029743e76571f9a5c1246). The branch adds 4 test files and 56 passing tests, zero new failures. All failures are environmental (missing native packages fs-ext/better-sqlite3, unbuilt engram-memory/dist and dist grammars).",
+  "classification": {
+    "nativeOrBuildPrerequisite": {
+      "description": "Missing native packages (fs-ext, better-sqlite3), unbuilt engram-memory/dist and dist grammars. Pre-existing on base 618977a8, unrelated to this lot.",
+      "files": 198
+    },
+    "modelDependencyResolution": {
+      "description": "Pre-existing model/dependency-resolution failure, recorded separately: the llm-mesh-bridge test expects a fail-closed authResolver error but the harness resolves the model first and reports 'Model not found: openai:gpt-5.5'. Not a native/build prerequisite and not caused by this lot.",
+      "files": ["tests/llm-mesh-bridge.test.ts"],
+      "tests": ["tests/llm-mesh-bridge.test.ts > graphify llm-mesh bridge > uses the fail-closed requireAuthResolver when no authResolver is supplied"]
+    }
+  },
+  "conclusion": "Same 199 failing files and 245 failing tests on both sides (identical sorted failure identities, sha256 a6adfe639cb23f419ff3010e789be71ccd7ecd5b80e029743e76571f9a5c1246, recomputed from the branch run). Zero failed files intersect the lot's changed files. The branch adds 4 diagram test files with 77 passing tests (up from 56), zero new failures. Of the 199 pre-existing failing files, 198 are native/build prerequisites and 1 (llm-mesh-bridge) is a pre-existing model/dependency-resolution failure recorded separately.",
   "failingIdentitiesSha256": "a6adfe639cb23f419ff3010e789be71ccd7ecd5b80e029743e76571f9a5c1246",
+  "failingIdentitiesMethod": "sha256 over the sorted unique 'FAIL  tests/...' lines of the default-reporter full-suite log",
   "format": "diagram-full-suite-comparison/1",
-  "generatedAt": "2026-10-27T08:55:00Z",
+  "generatedAt": "2026-10-27T13:23:39Z",
   "scope": "Full vitest run on branch vs pristine base 618977a8, default reporter, same symlinked node_modules."
 }
