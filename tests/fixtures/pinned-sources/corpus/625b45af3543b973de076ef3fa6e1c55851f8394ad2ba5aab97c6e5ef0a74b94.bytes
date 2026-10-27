@@ -1,0 +1,53 @@
+{
+  "$type": "bpmn:Definitions",
+  "id": "Defs_Kite",
+  "targetNamespace": "urn:example:functions-workbench:v1",
+  "rootElements": [
+    {
+      "$type": "bpmn:Process",
+      "id": "Process_Kite",
+      "isExecutable": false,
+      "flowElements": [
+        {
+          "$type": "bpmn:StartEvent",
+          "id": "Start_Kite",
+          "outgoing": [
+            "Flow_1"
+          ]
+        },
+        {
+          "$type": "bpmn:Task",
+          "id": "Task_Review",
+          "name": "Review paper kite",
+          "incoming": [
+            "Flow_1"
+          ],
+          "outgoing": [
+            "Flow_2"
+          ],
+          "isForCompensation": false,
+          "dataInputAssociations": []
+        },
+        {
+          "$type": "bpmn:EndEvent",
+          "id": "End_Kite",
+          "incoming": [
+            "Flow_2"
+          ]
+        },
+        {
+          "$type": "bpmn:SequenceFlow",
+          "id": "Flow_1",
+          "sourceRef": "Start_Kite",
+          "targetRef": "Task_Review"
+        },
+        {
+          "$type": "bpmn:SequenceFlow",
+          "id": "Flow_2",
+          "sourceRef": "Task_Review",
+          "targetRef": "End_Kite"
+        }
+      ]
+    }
+  ]
+}

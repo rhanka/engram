@@ -1,0 +1,9 @@
+[
+  {
+    "ruleId": "reference-consistency",
+    "severity": "error",
+    "elementId": "Task_Review",
+    "path": "/rootElements/0/flowElements/1/incoming/0",
+    "code": "incoming-target-mismatch"
+  }
+]

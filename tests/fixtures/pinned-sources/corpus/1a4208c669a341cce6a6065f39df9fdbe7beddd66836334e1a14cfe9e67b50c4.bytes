@@ -1,0 +1,214 @@
+{
+  "$type": "bpmn:Definitions",
+  "id": "Defs_Kite",
+  "targetNamespace": "urn:example:functions-workbench:v1",
+  "rootElements": [
+    {
+      "$type": "bpmn:Process",
+      "id": "Process_Kite",
+      "isExecutable": false,
+      "flowElements": [
+        {
+          "$type": "bpmn:StartEvent",
+          "id": "Start_Kite",
+          "outgoing": [
+            "Flow_1"
+          ]
+        },
+        {
+          "$type": "bpmn:Task",
+          "id": "Task_Review",
+          "name": "Review paper kite",
+          "incoming": [
+            "Flow_1"
+          ],
+          "outgoing": [
+            "Flow_2"
+          ]
+        },
+        {
+          "$type": "bpmn:EndEvent",
+          "id": "End_Kite",
+          "incoming": [
+            "Flow_2"
+          ]
+        },
+        {
+          "$type": "bpmn:SequenceFlow",
+          "id": "Flow_1",
+          "sourceRef": "Start_Kite",
+          "targetRef": "Task_Review"
+        },
+        {
+          "$type": "bpmn:SequenceFlow",
+          "id": "Flow_2",
+          "sourceRef": "Task_Review",
+          "targetRef": "End_Kite"
+        },
+        {
+          "$type": "bpmn:SubProcess",
+          "id": "Sub_Lantern",
+          "name": "Lantern annex",
+          "extensionElements": {
+            "$type": "bpmn:ExtensionElements",
+            "values": [
+              {
+                "$type": "sem:Info",
+                "processRef": "Process_Lantern"
+              }
+            ]
+          }
+        },
+        {
+          "$type": "bpmn:CallActivity",
+          "id": "Call_Lantern",
+          "name": "Call lantern",
+          "calledElement": "urn:example:lantern"
+        }
+      ],
+      "name": "Renamed kite"
+    },
+    {
+      "$type": "bpmn:Process",
+      "id": "Process_Lantern",
+      "name": "Renamed lantern",
+      "flowElements": [
+        {
+          "$type": "bpmn:Task",
+          "id": "Task_Lantern",
+          "name": "Fold lantern"
+        }
+      ]
+    }
+  ],
+  "diagrams": [
+    {
+      "$type": "bpmndi:BPMNDiagram",
+      "id": "Diagram_Kite",
+      "plane": {
+        "$type": "bpmndi:BPMNPlane",
+        "id": "Plane_Kite",
+        "bpmnElement": "Process_Kite",
+        "planeElement": [
+          {
+            "$type": "bpmndi:BPMNShape",
+            "id": "Shape_Start_Kite",
+            "bpmnElement": "Start_Kite",
+            "bounds": {
+              "$type": "dc:Bounds",
+              "x": 100.5,
+              "y": 80.25,
+              "width": 100,
+              "height": 60
+            }
+          },
+          {
+            "$type": "bpmndi:BPMNShape",
+            "id": "Shape_Task_Review",
+            "bpmnElement": "Task_Review",
+            "bounds": {
+              "$type": "dc:Bounds",
+              "x": 260.5,
+              "y": 80.25,
+              "width": 100,
+              "height": 60
+            }
+          },
+          {
+            "$type": "bpmndi:BPMNShape",
+            "id": "Shape_End_Kite",
+            "bpmnElement": "End_Kite",
+            "bounds": {
+              "$type": "dc:Bounds",
+              "x": 420.5,
+              "y": 80.25,
+              "width": 100,
+              "height": 60
+            }
+          },
+          {
+            "$type": "bpmndi:BPMNShape",
+            "id": "Shape_Sub_Lantern",
+            "bpmnElement": "Sub_Lantern",
+            "bounds": {
+              "$type": "dc:Bounds",
+              "x": 580.5,
+              "y": 80.25,
+              "width": 100,
+              "height": 60
+            }
+          },
+          {
+            "$type": "bpmndi:BPMNShape",
+            "id": "Shape_Call_Lantern",
+            "bpmnElement": "Call_Lantern",
+            "bounds": {
+              "$type": "dc:Bounds",
+              "x": 740.5,
+              "y": 80.25,
+              "width": 100,
+              "height": 60
+            }
+          },
+          {
+            "$type": "bpmndi:BPMNEdge",
+            "id": "Edge_1",
+            "bpmnElement": "Flow_1",
+            "waypoint": [
+              {
+                "$type": "dc:Point",
+                "x": 136.5,
+                "y": 110.25
+              },
+              {
+                "$type": "dc:Point",
+                "x": 260.5,
+                "y": 110.25
+              }
+            ]
+          },
+          {
+            "$type": "bpmndi:BPMNEdge",
+            "id": "Edge_2",
+            "bpmnElement": "Flow_2",
+            "waypoint": [
+              {
+                "$type": "dc:Point",
+                "x": 360.5,
+                "y": 110.25
+              },
+              {
+                "$type": "dc:Point",
+                "x": 420.5,
+                "y": 110.25
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "$type": "bpmndi:BPMNDiagram",
+      "id": "Diagram_Lantern",
+      "plane": {
+        "$type": "bpmndi:BPMNPlane",
+        "id": "Plane_Lantern",
+        "bpmnElement": "Process_Lantern",
+        "planeElement": [
+          {
+            "$type": "bpmndi:BPMNShape",
+            "id": "Shape_Task_Lantern",
+            "bpmnElement": "Task_Lantern",
+            "bounds": {
+              "$type": "dc:Bounds",
+              "x": 100.5,
+              "y": 80.25,
+              "width": 100,
+              "height": 60
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

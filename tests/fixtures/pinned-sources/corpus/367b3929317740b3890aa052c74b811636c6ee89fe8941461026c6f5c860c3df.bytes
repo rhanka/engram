@@ -1,0 +1,30 @@
+{
+  "upstreamCandidateVersion": "11.14.0 (DESIGN review citation only)",
+  "localExecutableVersion": "unknown",
+  "localSourceHash": "unknown",
+  "fullUpstreamCatalog": "unknown; no fetch permitted",
+  "frozenScope": [
+    {
+      "ruleId": "start-event-required",
+      "severity": "error"
+    },
+    {
+      "ruleId": "end-event-required",
+      "severity": "error"
+    },
+    {
+      "ruleId": "label-required",
+      "severity": "warning"
+    },
+    {
+      "ruleId": "no-disconnected",
+      "severity": "error"
+    },
+    {
+      "ruleId": "reference-consistency",
+      "severity": "error"
+    }
+  ],
+  "warningPolicy": "report; errors block export",
+  "status": "specification frozen; all lint execution unverified until G3"
+}

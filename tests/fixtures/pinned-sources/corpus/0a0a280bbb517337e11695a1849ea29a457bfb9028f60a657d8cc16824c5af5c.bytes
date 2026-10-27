@@ -1,0 +1,1626 @@
+{
+  "scope": "Pre-authored bounded ensure expectations; no production runtime/parity claim.",
+  "descriptors": {
+    "id": "neutral-descriptors/1",
+    "scope": "Synthetic descriptor slice; not the complete BPMN descriptor set.",
+    "types": {
+      "bpmn:Definitions": {
+        "id": true,
+        "scalars": [
+          "id",
+          "name",
+          "targetNamespace"
+        ],
+        "containment": {
+          "rootElements": [
+            "bpmn:Process",
+            "bpmn:Collaboration"
+          ]
+        },
+        "references": {}
+      },
+      "bpmn:Process": {
+        "id": true,
+        "scalars": [
+          "id",
+          "name",
+          "isExecutable"
+        ],
+        "containment": {
+          "flowElements": [
+            "bpmn:Task",
+            "bpmn:ServiceTask",
+            "bpmn:StartEvent",
+            "bpmn:SequenceFlow",
+            "bpmn:ExclusiveGateway"
+          ],
+          "artifacts": [
+            "bpmn:TextAnnotation",
+            "bpmn:Association"
+          ],
+          "documentation": [
+            "bpmn:Documentation"
+          ],
+          "laneSets": [
+            "bpmn:LaneSet"
+          ]
+        },
+        "references": {}
+      },
+      "bpmn:Task": {
+        "id": true,
+        "scalars": [
+          "id",
+          "name"
+        ],
+        "containment": {
+          "documentation": [
+            "bpmn:Documentation"
+          ]
+        },
+        "references": {}
+      },
+      "bpmn:ServiceTask": {
+        "id": true,
+        "scalars": [
+          "id",
+          "name"
+        ],
+        "containment": {
+          "documentation": [
+            "bpmn:Documentation"
+          ]
+        },
+        "references": {}
+      },
+      "bpmn:TextAnnotation": {
+        "id": true,
+        "scalars": [
+          "id",
+          "text"
+        ],
+        "containment": {},
+        "references": {}
+      },
+      "bpmn:Association": {
+        "id": true,
+        "scalars": [
+          "id",
+          "associationDirection"
+        ],
+        "containment": {},
+        "references": {
+          "sourceRef": [
+            "bpmn:Task",
+            "bpmn:ServiceTask",
+            "bpmn:TextAnnotation"
+          ],
+          "targetRef": [
+            "bpmn:Task",
+            "bpmn:ServiceTask",
+            "bpmn:TextAnnotation"
+          ]
+        }
+      },
+      "bpmn:Documentation": {
+        "id": false,
+        "scalars": [
+          "text",
+          "textFormat"
+        ],
+        "containment": {},
+        "references": {}
+      },
+      "bpmn:FormalExpression": {
+        "id": false,
+        "scalars": [
+          "body",
+          "language"
+        ],
+        "containment": {},
+        "references": {}
+      },
+      "bpmn:StartEvent": {
+        "id": true,
+        "scalars": [
+          "id",
+          "name"
+        ],
+        "containment": {},
+        "references": {
+          "outgoing": [
+            "bpmn:SequenceFlow"
+          ]
+        }
+      },
+      "bpmn:ExclusiveGateway": {
+        "id": true,
+        "scalars": [
+          "id",
+          "name"
+        ],
+        "containment": {},
+        "references": {
+          "incoming": [
+            "bpmn:SequenceFlow"
+          ],
+          "outgoing": [
+            "bpmn:SequenceFlow"
+          ]
+        }
+      },
+      "bpmn:SequenceFlow": {
+        "id": true,
+        "scalars": [
+          "id",
+          "name"
+        ],
+        "containment": {},
+        "references": {
+          "sourceRef": [
+            "bpmn:StartEvent",
+            "bpmn:ExclusiveGateway",
+            "bpmn:Task"
+          ],
+          "targetRef": [
+            "bpmn:ExclusiveGateway",
+            "bpmn:Task"
+          ]
+        }
+      },
+      "bpmn:Collaboration": {
+        "id": true,
+        "scalars": [
+          "id",
+          "name"
+        ],
+        "containment": {
+          "participants": [
+            "bpmn:Participant"
+          ]
+        },
+        "references": {}
+      },
+      "bpmn:Participant": {
+        "id": true,
+        "scalars": [
+          "id",
+          "name"
+        ],
+        "containment": {},
+        "references": {
+          "processRef": [
+            "bpmn:Process"
+          ]
+        }
+      },
+      "bpmn:LaneSet": {
+        "id": true,
+        "scalars": [
+          "id",
+          "name"
+        ],
+        "containment": {
+          "lanes": [
+            "bpmn:Lane"
+          ]
+        },
+        "references": {}
+      },
+      "bpmn:Lane": {
+        "id": true,
+        "scalars": [
+          "id",
+          "name"
+        ],
+        "containment": {},
+        "references": {
+          "flowNodeRef": [
+            "bpmn:Task"
+          ]
+        }
+      }
+    }
+  },
+  "base": {
+    "id": "neutral-base/1",
+    "version": "fixture-2",
+    "descriptor": "neutral-descriptors/1",
+    "types": [
+      "bpmn:Definitions",
+      "bpmn:Process",
+      "bpmn:Task",
+      "bpmn:ServiceTask",
+      "bpmn:TextAnnotation",
+      "bpmn:Association",
+      "bpmn:Documentation",
+      "bpmn:FormalExpression",
+      "bpmn:StartEvent",
+      "bpmn:ExclusiveGateway",
+      "bpmn:SequenceFlow",
+      "bpmn:Collaboration",
+      "bpmn:Participant",
+      "bpmn:LaneSet",
+      "bpmn:Lane"
+    ],
+    "producerPolicy": "fixture-explicit",
+    "fields": [
+      {
+        "type": "bpmn:Definitions",
+        "field": "id",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:Definitions",
+        "field": "name",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:Definitions",
+        "field": "targetNamespace",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:Definitions",
+        "field": "rootElements",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "containment"
+      },
+      {
+        "type": "bpmn:Process",
+        "field": "id",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:Process",
+        "field": "name",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:Process",
+        "field": "isExecutable",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:Process",
+        "field": "flowElements",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "containment"
+      },
+      {
+        "type": "bpmn:Process",
+        "field": "artifacts",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "containment"
+      },
+      {
+        "type": "bpmn:Process",
+        "field": "documentation",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "containment"
+      },
+      {
+        "type": "bpmn:Task",
+        "field": "id",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:Task",
+        "field": "name",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:Task",
+        "field": "documentation",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "containment"
+      },
+      {
+        "type": "bpmn:ServiceTask",
+        "field": "id",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:ServiceTask",
+        "field": "name",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:ServiceTask",
+        "field": "documentation",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "containment"
+      },
+      {
+        "type": "bpmn:TextAnnotation",
+        "field": "id",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:TextAnnotation",
+        "field": "text",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:Association",
+        "field": "id",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:Association",
+        "field": "associationDirection",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:Association",
+        "field": "sourceRef",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "reference"
+      },
+      {
+        "type": "bpmn:Association",
+        "field": "targetRef",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "reference"
+      },
+      {
+        "type": "bpmn:Documentation",
+        "field": "text",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:Documentation",
+        "field": "textFormat",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:FormalExpression",
+        "field": "body",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:FormalExpression",
+        "field": "language",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:StartEvent",
+        "field": "id",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:StartEvent",
+        "field": "name",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:StartEvent",
+        "field": "outgoing",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "reference"
+      },
+      {
+        "type": "bpmn:ExclusiveGateway",
+        "field": "id",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:ExclusiveGateway",
+        "field": "name",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:ExclusiveGateway",
+        "field": "incoming",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "reference"
+      },
+      {
+        "type": "bpmn:ExclusiveGateway",
+        "field": "outgoing",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "reference"
+      },
+      {
+        "type": "bpmn:SequenceFlow",
+        "field": "id",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:SequenceFlow",
+        "field": "name",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:SequenceFlow",
+        "field": "sourceRef",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "reference"
+      },
+      {
+        "type": "bpmn:SequenceFlow",
+        "field": "targetRef",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "reference"
+      },
+      {
+        "type": "bpmn:Process",
+        "field": "laneSets",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "containment"
+      },
+      {
+        "type": "bpmn:Collaboration",
+        "field": "id",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:Collaboration",
+        "field": "name",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:Collaboration",
+        "field": "participants",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "containment"
+      },
+      {
+        "type": "bpmn:Participant",
+        "field": "id",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:Participant",
+        "field": "name",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:Participant",
+        "field": "processRef",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "reference"
+      },
+      {
+        "type": "bpmn:LaneSet",
+        "field": "id",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:LaneSet",
+        "field": "name",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:LaneSet",
+        "field": "lanes",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "containment"
+      },
+      {
+        "type": "bpmn:Lane",
+        "field": "id",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:Lane",
+        "field": "name",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "scalar"
+      },
+      {
+        "type": "bpmn:Lane",
+        "field": "flowNodeRef",
+        "producers": [
+          "code",
+          "editor",
+          "import"
+        ],
+        "kind": "reference"
+      }
+    ]
+  },
+  "recipe": {
+    "id": "ensure-supports",
+    "phase": "normalize",
+    "parameters": [],
+    "select": {
+      "from": "root",
+      "via": "all",
+      "where": {
+        "op": "typeIs",
+        "binding": "self",
+        "type": "bpmn:Process",
+        "mode": "exact"
+      },
+      "order": "id"
+    },
+    "when": {
+      "op": "true"
+    },
+    "writes": [
+      {
+        "binding": "root",
+        "path": "/rootElements",
+        "mode": "create"
+      },
+      {
+        "binding": "envelope",
+        "path": "/bindings",
+        "mode": "binding"
+      },
+      {
+        "binding": "collaboration",
+        "path": "/participants",
+        "mode": "create"
+      },
+      {
+        "binding": "main",
+        "path": "/processRef",
+        "mode": "reference"
+      },
+      {
+        "binding": "self",
+        "path": "/laneSets",
+        "mode": "create"
+      },
+      {
+        "binding": "laneSet",
+        "path": "/lanes",
+        "mode": "create"
+      }
+    ],
+    "steps": [
+      {
+        "op": "ensure",
+        "as": "collaboration",
+        "type": "bpmn:Collaboration",
+        "parent": "root",
+        "property": "rootElements",
+        "owner": "self",
+        "role": "collaboration",
+        "ownerId": {
+          "op": "id",
+          "binding": "root"
+        },
+        "slot": "collaboration",
+        "key": {
+          "op": "id",
+          "binding": "self"
+        },
+        "fields": [
+          {
+            "name": "name",
+            "value": {
+              "op": "literal",
+              "value": "collaboration"
+            }
+          }
+        ]
+      },
+      {
+        "op": "ensure",
+        "as": "main",
+        "type": "bpmn:Participant",
+        "parent": "collaboration",
+        "property": "participants",
+        "owner": "self",
+        "role": "main-participant",
+        "ownerId": {
+          "op": "id",
+          "binding": "self"
+        },
+        "slot": "main-participant",
+        "key": {
+          "op": "literal",
+          "value": "main-participant"
+        },
+        "fields": [
+          {
+            "name": "name",
+            "value": {
+              "op": "literal",
+              "value": "main-participant"
+            }
+          }
+        ]
+      },
+      {
+        "op": "assignRef",
+        "target": "main",
+        "path": "/processRef",
+        "mode": "replace",
+        "values": [
+          {
+            "op": "id",
+            "binding": "self"
+          }
+        ]
+      },
+      {
+        "op": "ensure",
+        "as": "laneSet",
+        "type": "bpmn:LaneSet",
+        "parent": "self",
+        "property": "laneSets",
+        "owner": "self",
+        "role": "lane-set",
+        "ownerId": {
+          "op": "id",
+          "binding": "self"
+        },
+        "slot": "lane-set",
+        "key": {
+          "op": "literal",
+          "value": "lane-set"
+        },
+        "fields": [
+          {
+            "name": "name",
+            "value": {
+              "op": "literal",
+              "value": "lane-set"
+            }
+          }
+        ]
+      },
+      {
+        "op": "ensure",
+        "as": "lane",
+        "type": "bpmn:Lane",
+        "parent": "laneSet",
+        "property": "lanes",
+        "owner": "self",
+        "role": "external-lane",
+        "ownerId": {
+          "op": "id",
+          "binding": "self"
+        },
+        "slot": "external-lane",
+        "key": {
+          "op": "literal",
+          "value": "external-lane"
+        },
+        "fields": [
+          {
+            "name": "name",
+            "value": {
+              "op": "literal",
+              "value": "external-lane"
+            }
+          }
+        ]
+      },
+      {
+        "op": "ensure",
+        "as": "band",
+        "type": "bpmn:Participant",
+        "parent": "collaboration",
+        "property": "participants",
+        "owner": "self",
+        "role": "reference-band",
+        "ownerId": {
+          "op": "id",
+          "binding": "self"
+        },
+        "slot": "reference-band",
+        "key": {
+          "op": "literal",
+          "value": "reference-band"
+        },
+        "fields": [
+          {
+            "name": "name",
+            "value": {
+              "op": "literal",
+              "value": "reference-band"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "complete support creation",
+      "input": {
+        "$type": "bpmn:Definitions",
+        "id": "Definitions_support",
+        "rootElements": [
+          {
+            "$type": "bpmn:Process",
+            "id": "Process_A",
+            "name": "Process_A",
+            "isExecutable": false
+          }
+        ]
+      },
+      "bindings": [],
+      "expected": {
+        "tree": {
+          "$type": "bpmn:Definitions",
+          "id": "Definitions_support",
+          "rootElements": [
+            {
+              "$type": "bpmn:Process",
+              "id": "Process_A",
+              "name": "Process_A",
+              "laneSets": [
+                {
+                  "$type": "bpmn:LaneSet",
+                  "id": "g_0e429a95d39ce4ebf9262cdc14703da079bba8bb5361313c0f516e10f6380b61",
+                  "name": "lane-set",
+                  "lanes": [
+                    {
+                      "$type": "bpmn:Lane",
+                      "id": "g_8cb2e97ecadbe556df0703469682d8f1c8075b06201b899f4932bc1395e57290",
+                      "name": "external-lane"
+                    }
+                  ]
+                }
+              ],
+              "isExecutable": false
+            },
+            {
+              "$type": "bpmn:Collaboration",
+              "id": "g_0a8caa16444f4c61e14ffc4d7b77eb0dd75f8764840be0d3d7b8be550c0923d1",
+              "name": "collaboration",
+              "participants": [
+                {
+                  "$type": "bpmn:Participant",
+                  "id": "g_63c1320e77563613dfeb040257a357d372f10c6410201070f434944e2a26a999",
+                  "name": "main-participant",
+                  "processRef": "Process_A"
+                },
+                {
+                  "$type": "bpmn:Participant",
+                  "id": "g_11a2781ef2229f47d2ae48d7b4cc3ad823a7f013eac7fa12d7cefd30f412d769",
+                  "name": "reference-band"
+                }
+              ]
+            }
+          ]
+        },
+        "bindings": [
+          {
+            "ownerId": "Process_A",
+            "role": "collaboration",
+            "targetId": "g_0a8caa16444f4c61e14ffc4d7b77eb0dd75f8764840be0d3d7b8be550c0923d1"
+          },
+          {
+            "ownerId": "Process_A",
+            "role": "external-lane",
+            "targetId": "g_8cb2e97ecadbe556df0703469682d8f1c8075b06201b899f4932bc1395e57290"
+          },
+          {
+            "ownerId": "Process_A",
+            "role": "lane-set",
+            "targetId": "g_0e429a95d39ce4ebf9262cdc14703da079bba8bb5361313c0f516e10f6380b61"
+          },
+          {
+            "ownerId": "Process_A",
+            "role": "main-participant",
+            "targetId": "g_63c1320e77563613dfeb040257a357d372f10c6410201070f434944e2a26a999"
+          },
+          {
+            "ownerId": "Process_A",
+            "role": "reference-band",
+            "targetId": "g_11a2781ef2229f47d2ae48d7b4cc3ad823a7f013eac7fa12d7cefd30f412d769"
+          }
+        ],
+        "createdIds": [
+          "g_0a8caa16444f4c61e14ffc4d7b77eb0dd75f8764840be0d3d7b8be550c0923d1",
+          "g_63c1320e77563613dfeb040257a357d372f10c6410201070f434944e2a26a999",
+          "g_0e429a95d39ce4ebf9262cdc14703da079bba8bb5361313c0f516e10f6380b61",
+          "g_8cb2e97ecadbe556df0703469682d8f1c8075b06201b899f4932bc1395e57290",
+          "g_11a2781ef2229f47d2ae48d7b4cc3ad823a7f013eac7fa12d7cefd30f412d769"
+        ],
+        "changeCount": 6
+      }
+    },
+    {
+      "name": "two processes have separate collaborations",
+      "input": {
+        "$type": "bpmn:Definitions",
+        "id": "Definitions_support",
+        "rootElements": [
+          {
+            "$type": "bpmn:Process",
+            "id": "Process_A",
+            "name": "Process_A",
+            "isExecutable": false
+          },
+          {
+            "$type": "bpmn:Process",
+            "id": "Process_B",
+            "name": "Process_B",
+            "isExecutable": false
+          }
+        ]
+      },
+      "bindings": [],
+      "expected": {
+        "tree": {
+          "$type": "bpmn:Definitions",
+          "id": "Definitions_support",
+          "rootElements": [
+            {
+              "$type": "bpmn:Process",
+              "id": "Process_A",
+              "name": "Process_A",
+              "laneSets": [
+                {
+                  "$type": "bpmn:LaneSet",
+                  "id": "g_0e429a95d39ce4ebf9262cdc14703da079bba8bb5361313c0f516e10f6380b61",
+                  "name": "lane-set",
+                  "lanes": [
+                    {
+                      "$type": "bpmn:Lane",
+                      "id": "g_8cb2e97ecadbe556df0703469682d8f1c8075b06201b899f4932bc1395e57290",
+                      "name": "external-lane"
+                    }
+                  ]
+                }
+              ],
+              "isExecutable": false
+            },
+            {
+              "$type": "bpmn:Process",
+              "id": "Process_B",
+              "name": "Process_B",
+              "laneSets": [
+                {
+                  "$type": "bpmn:LaneSet",
+                  "id": "g_d8b1d86b2049838573e594dbb0f949eb227c31498fe5c3e280157f79c728f330",
+                  "name": "lane-set",
+                  "lanes": [
+                    {
+                      "$type": "bpmn:Lane",
+                      "id": "g_5c5dca8ca578550554d3a814fed46fb30654b397cc704946b75b3296bf16bec9",
+                      "name": "external-lane"
+                    }
+                  ]
+                }
+              ],
+              "isExecutable": false
+            },
+            {
+              "$type": "bpmn:Collaboration",
+              "id": "g_0a8caa16444f4c61e14ffc4d7b77eb0dd75f8764840be0d3d7b8be550c0923d1",
+              "name": "collaboration",
+              "participants": [
+                {
+                  "$type": "bpmn:Participant",
+                  "id": "g_63c1320e77563613dfeb040257a357d372f10c6410201070f434944e2a26a999",
+                  "name": "main-participant",
+                  "processRef": "Process_A"
+                },
+                {
+                  "$type": "bpmn:Participant",
+                  "id": "g_11a2781ef2229f47d2ae48d7b4cc3ad823a7f013eac7fa12d7cefd30f412d769",
+                  "name": "reference-band"
+                }
+              ]
+            },
+            {
+              "$type": "bpmn:Collaboration",
+              "id": "g_6b0f13cc869f184a746a02965ff6936a000cf348128a6a873735170750b253f3",
+              "name": "collaboration",
+              "participants": [
+                {
+                  "$type": "bpmn:Participant",
+                  "id": "g_e99f77afbfc8da2f4159f6a2286a391c0174ccb7986fa005e96e528dee87f02c",
+                  "name": "main-participant",
+                  "processRef": "Process_B"
+                },
+                {
+                  "$type": "bpmn:Participant",
+                  "id": "g_97539653e0b042bd9245f86632626ccadfa7ab83a1ae4ffa6b123335c45fd400",
+                  "name": "reference-band"
+                }
+              ]
+            }
+          ]
+        },
+        "bindings": [
+          {
+            "ownerId": "Process_A",
+            "role": "collaboration",
+            "targetId": "g_0a8caa16444f4c61e14ffc4d7b77eb0dd75f8764840be0d3d7b8be550c0923d1"
+          },
+          {
+            "ownerId": "Process_A",
+            "role": "external-lane",
+            "targetId": "g_8cb2e97ecadbe556df0703469682d8f1c8075b06201b899f4932bc1395e57290"
+          },
+          {
+            "ownerId": "Process_A",
+            "role": "lane-set",
+            "targetId": "g_0e429a95d39ce4ebf9262cdc14703da079bba8bb5361313c0f516e10f6380b61"
+          },
+          {
+            "ownerId": "Process_A",
+            "role": "main-participant",
+            "targetId": "g_63c1320e77563613dfeb040257a357d372f10c6410201070f434944e2a26a999"
+          },
+          {
+            "ownerId": "Process_A",
+            "role": "reference-band",
+            "targetId": "g_11a2781ef2229f47d2ae48d7b4cc3ad823a7f013eac7fa12d7cefd30f412d769"
+          },
+          {
+            "ownerId": "Process_B",
+            "role": "collaboration",
+            "targetId": "g_6b0f13cc869f184a746a02965ff6936a000cf348128a6a873735170750b253f3"
+          },
+          {
+            "ownerId": "Process_B",
+            "role": "external-lane",
+            "targetId": "g_5c5dca8ca578550554d3a814fed46fb30654b397cc704946b75b3296bf16bec9"
+          },
+          {
+            "ownerId": "Process_B",
+            "role": "lane-set",
+            "targetId": "g_d8b1d86b2049838573e594dbb0f949eb227c31498fe5c3e280157f79c728f330"
+          },
+          {
+            "ownerId": "Process_B",
+            "role": "main-participant",
+            "targetId": "g_e99f77afbfc8da2f4159f6a2286a391c0174ccb7986fa005e96e528dee87f02c"
+          },
+          {
+            "ownerId": "Process_B",
+            "role": "reference-band",
+            "targetId": "g_97539653e0b042bd9245f86632626ccadfa7ab83a1ae4ffa6b123335c45fd400"
+          }
+        ],
+        "createdIds": [
+          "g_0a8caa16444f4c61e14ffc4d7b77eb0dd75f8764840be0d3d7b8be550c0923d1",
+          "g_63c1320e77563613dfeb040257a357d372f10c6410201070f434944e2a26a999",
+          "g_0e429a95d39ce4ebf9262cdc14703da079bba8bb5361313c0f516e10f6380b61",
+          "g_8cb2e97ecadbe556df0703469682d8f1c8075b06201b899f4932bc1395e57290",
+          "g_11a2781ef2229f47d2ae48d7b4cc3ad823a7f013eac7fa12d7cefd30f412d769",
+          "g_6b0f13cc869f184a746a02965ff6936a000cf348128a6a873735170750b253f3",
+          "g_e99f77afbfc8da2f4159f6a2286a391c0174ccb7986fa005e96e528dee87f02c",
+          "g_d8b1d86b2049838573e594dbb0f949eb227c31498fe5c3e280157f79c728f330",
+          "g_5c5dca8ca578550554d3a814fed46fb30654b397cc704946b75b3296bf16bec9",
+          "g_97539653e0b042bd9245f86632626ccadfa7ab83a1ae4ffa6b123335c45fd400"
+        ],
+        "changeCount": 12
+      }
+    },
+    {
+      "name": "imported support IDs survive",
+      "input": {
+        "$type": "bpmn:Definitions",
+        "id": "Definitions_support",
+        "rootElements": [
+          {
+            "$type": "bpmn:Process",
+            "id": "Process_A",
+            "name": "Process_A",
+            "laneSets": [
+              {
+                "$type": "bpmn:LaneSet",
+                "id": "Imported_Process_A_lane_set",
+                "name": "lane-set",
+                "lanes": [
+                  {
+                    "$type": "bpmn:Lane",
+                    "id": "Imported_Process_A_external_lane",
+                    "name": "external-lane"
+                  }
+                ]
+              }
+            ],
+            "isExecutable": false
+          },
+          {
+            "$type": "bpmn:Collaboration",
+            "id": "Imported_Process_A_collaboration",
+            "name": "collaboration",
+            "participants": [
+              {
+                "$type": "bpmn:Participant",
+                "id": "Imported_Process_A_main_participant",
+                "name": "main-participant",
+                "processRef": "Process_A"
+              },
+              {
+                "$type": "bpmn:Participant",
+                "id": "Imported_Process_A_reference_band",
+                "name": "reference-band"
+              }
+            ]
+          }
+        ]
+      },
+      "bindings": [
+        {
+          "ownerId": "Process_A",
+          "role": "collaboration",
+          "targetId": "Imported_Process_A_collaboration"
+        },
+        {
+          "ownerId": "Process_A",
+          "role": "external-lane",
+          "targetId": "Imported_Process_A_external_lane"
+        },
+        {
+          "ownerId": "Process_A",
+          "role": "lane-set",
+          "targetId": "Imported_Process_A_lane_set"
+        },
+        {
+          "ownerId": "Process_A",
+          "role": "main-participant",
+          "targetId": "Imported_Process_A_main_participant"
+        },
+        {
+          "ownerId": "Process_A",
+          "role": "reference-band",
+          "targetId": "Imported_Process_A_reference_band"
+        }
+      ],
+      "expected": {
+        "tree": {
+          "$type": "bpmn:Definitions",
+          "id": "Definitions_support",
+          "rootElements": [
+            {
+              "$type": "bpmn:Process",
+              "id": "Process_A",
+              "name": "Process_A",
+              "laneSets": [
+                {
+                  "$type": "bpmn:LaneSet",
+                  "id": "Imported_Process_A_lane_set",
+                  "name": "lane-set",
+                  "lanes": [
+                    {
+                      "$type": "bpmn:Lane",
+                      "id": "Imported_Process_A_external_lane",
+                      "name": "external-lane"
+                    }
+                  ]
+                }
+              ],
+              "isExecutable": false
+            },
+            {
+              "$type": "bpmn:Collaboration",
+              "id": "Imported_Process_A_collaboration",
+              "name": "collaboration",
+              "participants": [
+                {
+                  "$type": "bpmn:Participant",
+                  "id": "Imported_Process_A_main_participant",
+                  "name": "main-participant",
+                  "processRef": "Process_A"
+                },
+                {
+                  "$type": "bpmn:Participant",
+                  "id": "Imported_Process_A_reference_band",
+                  "name": "reference-band"
+                }
+              ]
+            }
+          ]
+        },
+        "bindings": [
+          {
+            "ownerId": "Process_A",
+            "role": "collaboration",
+            "targetId": "Imported_Process_A_collaboration"
+          },
+          {
+            "ownerId": "Process_A",
+            "role": "external-lane",
+            "targetId": "Imported_Process_A_external_lane"
+          },
+          {
+            "ownerId": "Process_A",
+            "role": "lane-set",
+            "targetId": "Imported_Process_A_lane_set"
+          },
+          {
+            "ownerId": "Process_A",
+            "role": "main-participant",
+            "targetId": "Imported_Process_A_main_participant"
+          },
+          {
+            "ownerId": "Process_A",
+            "role": "reference-band",
+            "targetId": "Imported_Process_A_reference_band"
+          }
+        ],
+        "createdIds": [],
+        "changeCount": 0
+      }
+    }
+  ],
+  "negatives": [
+    {
+      "name": "late band ID collision rolls back four earlier supports",
+      "input": {
+        "$type": "bpmn:Definitions",
+        "id": "Definitions_support",
+        "rootElements": [
+          {
+            "$type": "bpmn:Process",
+            "id": "Process_A",
+            "name": "Process_A",
+            "isExecutable": false
+          },
+          {
+            "$type": "bpmn:Participant",
+            "id": "g_11a2781ef2229f47d2ae48d7b4cc3ad823a7f013eac7fa12d7cefd30f412d769",
+            "name": "Unrelated occupant"
+          }
+        ]
+      },
+      "bindings": [],
+      "code": "id-collision"
+    },
+    {
+      "name": "duplicate imported role rolls back",
+      "input": {
+        "$type": "bpmn:Definitions",
+        "id": "Definitions_support",
+        "rootElements": [
+          {
+            "$type": "bpmn:Process",
+            "id": "Process_A",
+            "name": "Process_A",
+            "laneSets": [
+              {
+                "$type": "bpmn:LaneSet",
+                "id": "Imported_Process_A_lane_set",
+                "name": "lane-set",
+                "lanes": [
+                  {
+                    "$type": "bpmn:Lane",
+                    "id": "Imported_Process_A_external_lane",
+                    "name": "external-lane"
+                  }
+                ]
+              }
+            ],
+            "isExecutable": false
+          },
+          {
+            "$type": "bpmn:Collaboration",
+            "id": "Imported_Process_A_collaboration",
+            "name": "collaboration",
+            "participants": [
+              {
+                "$type": "bpmn:Participant",
+                "id": "Imported_Process_A_main_participant",
+                "name": "main-participant",
+                "processRef": "Process_A"
+              },
+              {
+                "$type": "bpmn:Participant",
+                "id": "Imported_Process_A_reference_band",
+                "name": "reference-band"
+              }
+            ]
+          }
+        ]
+      },
+      "bindings": [
+        {
+          "ownerId": "Process_A",
+          "role": "collaboration",
+          "targetId": "Imported_Process_A_collaboration"
+        },
+        {
+          "ownerId": "Process_A",
+          "role": "external-lane",
+          "targetId": "Imported_Process_A_external_lane"
+        },
+        {
+          "ownerId": "Process_A",
+          "role": "lane-set",
+          "targetId": "Imported_Process_A_lane_set"
+        },
+        {
+          "ownerId": "Process_A",
+          "role": "main-participant",
+          "targetId": "Imported_Process_A_main_participant"
+        },
+        {
+          "ownerId": "Process_A",
+          "role": "reference-band",
+          "targetId": "Imported_Process_A_reference_band"
+        },
+        {
+          "ownerId": "Process_A",
+          "role": "collaboration",
+          "targetId": "Imported_Process_A_collaboration"
+        }
+      ],
+      "code": "support-binding-conflict"
+    },
+    {
+      "name": "imported band under wrong parent refuses",
+      "input": {
+        "$type": "bpmn:Definitions",
+        "id": "Definitions_support",
+        "rootElements": [
+          {
+            "$type": "bpmn:Process",
+            "id": "Process_A",
+            "name": "Process_A",
+            "laneSets": [
+              {
+                "$type": "bpmn:LaneSet",
+                "id": "Imported_Process_A_lane_set",
+                "name": "lane-set",
+                "lanes": [
+                  {
+                    "$type": "bpmn:Lane",
+                    "id": "Imported_Process_A_external_lane",
+                    "name": "external-lane"
+                  }
+                ]
+              }
+            ],
+            "artifacts": [
+              {
+                "$type": "bpmn:Participant",
+                "id": "Imported_Process_A_reference_band",
+                "name": "reference-band"
+              }
+            ],
+            "isExecutable": false
+          },
+          {
+            "$type": "bpmn:Collaboration",
+            "id": "Imported_Process_A_collaboration",
+            "name": "collaboration",
+            "participants": [
+              {
+                "$type": "bpmn:Participant",
+                "id": "Imported_Process_A_main_participant",
+                "name": "main-participant",
+                "processRef": "Process_A"
+              }
+            ]
+          }
+        ]
+      },
+      "bindings": [
+        {
+          "ownerId": "Process_A",
+          "role": "collaboration",
+          "targetId": "Imported_Process_A_collaboration"
+        },
+        {
+          "ownerId": "Process_A",
+          "role": "external-lane",
+          "targetId": "Imported_Process_A_external_lane"
+        },
+        {
+          "ownerId": "Process_A",
+          "role": "lane-set",
+          "targetId": "Imported_Process_A_lane_set"
+        },
+        {
+          "ownerId": "Process_A",
+          "role": "main-participant",
+          "targetId": "Imported_Process_A_main_participant"
+        },
+        {
+          "ownerId": "Process_A",
+          "role": "reference-band",
+          "targetId": "Imported_Process_A_reference_band"
+        }
+      ],
+      "code": "support-binding-conflict"
+    },
+    {
+      "name": "reference band cannot carry processRef",
+      "input": {
+        "$type": "bpmn:Definitions",
+        "id": "Definitions_support",
+        "rootElements": [
+          {
+            "$type": "bpmn:Process",
+            "id": "Process_A",
+            "name": "Process_A",
+            "laneSets": [
+              {
+                "$type": "bpmn:LaneSet",
+                "id": "Imported_Process_A_lane_set",
+                "name": "lane-set",
+                "lanes": [
+                  {
+                    "$type": "bpmn:Lane",
+                    "id": "Imported_Process_A_external_lane",
+                    "name": "external-lane"
+                  }
+                ]
+              }
+            ],
+            "isExecutable": false
+          },
+          {
+            "$type": "bpmn:Collaboration",
+            "id": "Imported_Process_A_collaboration",
+            "name": "collaboration",
+            "participants": [
+              {
+                "$type": "bpmn:Participant",
+                "id": "Imported_Process_A_main_participant",
+                "name": "main-participant",
+                "processRef": "Process_A"
+              },
+              {
+                "$type": "bpmn:Participant",
+                "id": "Imported_Process_A_reference_band",
+                "name": "reference-band",
+                "processRef": "Process_A"
+              }
+            ]
+          }
+        ]
+      },
+      "bindings": [
+        {
+          "ownerId": "Process_A",
+          "role": "collaboration",
+          "targetId": "Imported_Process_A_collaboration"
+        },
+        {
+          "ownerId": "Process_A",
+          "role": "external-lane",
+          "targetId": "Imported_Process_A_external_lane"
+        },
+        {
+          "ownerId": "Process_A",
+          "role": "lane-set",
+          "targetId": "Imported_Process_A_lane_set"
+        },
+        {
+          "ownerId": "Process_A",
+          "role": "main-participant",
+          "targetId": "Imported_Process_A_main_participant"
+        },
+        {
+          "ownerId": "Process_A",
+          "role": "reference-band",
+          "targetId": "Imported_Process_A_reference_band"
+        }
+      ],
+      "code": "support-binding-conflict"
+    }
+  ]
+}

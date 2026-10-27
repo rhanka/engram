@@ -1,0 +1,51 @@
+# d2d — position (2026-10-18, d2d-cond)
+
+d2d (document-to-diagram) is the main consumer of the BPMN profile layer. It holds one **private business profile** over a d2d BPMN base. That profile is never published, and its business names stay out of public libraries (DESIGN §12).
+
+## 1. Our ontologies
+
+- **Consumed, public and neutral:**
+  - BPMN 2.0 through bpmn-moddle 10.3.1 / moddle-xml 12.3.1, with lint by bpmnlint 11.15.0 (recommended rules);
+  - the generic profile mechanism of bpmn-canvas `schemas/profile/*` (profile-mechanism-1, document-envelope-1, result-1, report-2, layout-1, render-data-1, compatibility-verdict) and its Python twin `bpmn_io.profile` / `bpmn_io.codec` (bpmn-io, target 0.3.0);
+  - the shared contracts, vendored by hash: parity corpus `profile-corpus-v1.0.0` (198 files, manifest-pinned) and `unicode-case/1` (UCD 15.0.0).
+- **Owned, private:**
+  - the business profile as pure data: notions, recognition predicates, lint policies, creation/placement/export recipes, themes and messages;
+  - a d2d BPMN base and placement contract (`d2d-placement/1`);
+  - legacy diagrams to migrate.
+  The design is the pmg/1 profile design R3.3. Delivery runs in lots 0–6 across both libraries; lot 0 is merged and block A is under review.
+- **Contracts that bind us:**
+  - canonical bytes `profile-c14n/2` and content digests as identity;
+  - the compatibility matrix mechanismVersion × profile version × document version, with one error code per case;
+  - Report/2 diagnostics with RFC 6901 provenance;
+  - JS/Python byte parity on the shared corpus.
+
+## 2. Needs from the guardian
+
+- **Catalog of pins, not a runtime.** Entries: `id@major.minor`, kind (`mechanism | base | profile | theme | corpus | contract`), content digest, layer stack (what it derives from), owner, visibility (`public | private:<tenant>`), conformance corpus ref, migrations and consumers to notify.
+- **Stacking and derivation as declared data:**
+  - base + profile + producerDelta, with an explicit relation matrix;
+  - merge and derive return typed diagnostics (no silent loss), and a refusal code when a digest or major version does not match.
+- **Migration registry:** source → target profile migrations, each tied to the exact source package. An unknown source profile yields `profile-source-unavailable`, never a latest fallback.
+- **Change notice:** announcement before a major or digest change of any entry we pin.
+- **Private entries:** they can be registered in a tenant-scoped catalog, so engram knows they exist (digest, owner, stack) without holding or exposing their content publicly.
+
+## 3. Constraints (must not break)
+
+- **No runtime MCP dependency** in d2d's import, lint, normalize, render or export path. Profiles are pinned by digest and vendored at build time; MCP serves agents and the catalog. This is the same position as the design system.
+- **No second meta-model.** BPMN semantics stay bpmn-moddle + the profile mechanism; the guardian indexes, it does not re-model.
+- **Bytes and digests are stable:**
+  - `profile-c14n/2`, corpus manifests, sealed vectors and existing documents must validate byte-identically after any move;
+  - no re-canonicalization by the catalog.
+- **Execution stays in the two libraries.** One mechanism, JS + Python, kept in parity by the corpus. The guardian must not add a third evaluator.
+- **Private content stays in d2d:** no customer content, private profile body or business names in any public catalog, repo or package.
+- **Tooling stack:** any guardian job used in k8s/CI is Node/TS only (no Python image).
+- **Timing:** the in-flight pmg/1 lots (blocks A and B, lot 6 integration) must not be stranded. d2d can adopt the catalog at or after lot 6.
+
+## 4. Proposals (brainstorm)
+
+- **Identity:** reuse the existing profile identity (c14n bytes → sha256) as the catalog key, and add no new id scheme.
+- **Discovery tool:** an MCP tool `ontology.resolve(id, range) → {digest, stack, artifacts, corpus}` returning pins only. A separate `ontology.check(doc, pin)` delegates to the libraries' published verifiers, not to a guardian evaluator.
+- **Conformance as an entry gate:** a profile or meta-model is admitted to the catalog only with a parity corpus and a passing receipt from each implementing library.
+- **Open point for the dossier:** the diagram-core `bpmn@1` skeleton vs the bpmn-moddle + profile mechanism. Converge with one explicit mapping (bpmn@1 as a view or adapter over the mechanism, or the reverse); two independent BPMN models is the risk to avoid.
+
+Review offer: d2d-cond will review the synthesis dossier. We will focus on the compatibility matrix, private-entry visibility, and no runtime dependency.

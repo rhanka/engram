@@ -1,0 +1,98 @@
+{
+  "id": "start-branch",
+  "phase": "release",
+  "select": {
+    "from": "root",
+    "via": "all",
+    "where": {
+      "op": "typeIs",
+      "binding": "self",
+      "type": "bpmn:StartEvent",
+      "mode": "exact"
+    },
+    "order": "id"
+  },
+  "bindings": [
+    {
+      "op": "bind",
+      "as": "flow",
+      "select": {
+        "from": "self",
+        "via": "inverseReference",
+        "property": "sourceRef",
+        "where": {
+          "op": "typeIs",
+          "binding": "self",
+          "type": "bpmn:SequenceFlow",
+          "mode": "exact"
+        },
+        "order": "id"
+      },
+      "cardinality": "one"
+    },
+    {
+      "op": "bind",
+      "as": "gateway",
+      "select": {
+        "from": "flow",
+        "via": "reference",
+        "property": "targetRef",
+        "where": {
+          "op": "typeIs",
+          "binding": "self",
+          "type": "bpmn:ExclusiveGateway",
+          "mode": "exact"
+        },
+        "order": "id"
+      },
+      "cardinality": "one"
+    }
+  ],
+  "assert": {
+    "op": "count",
+    "select": {
+      "from": "gateway",
+      "via": "inverseReference",
+      "property": "sourceRef",
+      "where": {
+        "op": "all",
+        "args": [
+          {
+            "op": "typeIs",
+            "binding": "self",
+            "type": "bpmn:SequenceFlow",
+            "mode": "exact"
+          },
+          {
+            "op": "present",
+            "value": {
+              "op": "read",
+              "binding": "self",
+              "path": "/name"
+            }
+          },
+          {
+            "op": "not",
+            "arg": {
+              "op": "equal",
+              "left": {
+                "op": "read",
+                "binding": "self",
+                "path": "/name"
+              },
+              "right": {
+                "op": "literal",
+                "value": ""
+              }
+            }
+          }
+        ]
+      },
+      "order": "id"
+    },
+    "min": 2
+  },
+  "code": "start-branch-missing",
+  "message": "invalid",
+  "classification": "readiness"
+}

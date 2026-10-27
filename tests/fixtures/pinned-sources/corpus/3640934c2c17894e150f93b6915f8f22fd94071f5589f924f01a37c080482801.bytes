@@ -1,0 +1,933 @@
+{
+  "$schema": "urn:profile-mechanism:1:profile",
+  "schemaVersion": "1.0.0",
+  "mechanismVersion": "1",
+  "profile": "neutral/1",
+  "version": "1.0.0",
+  "base": {
+    "id": "neutral-base/1",
+    "version": "fixture-1",
+    "sha256": "b75e1c4282146220ee588aa4e5892beef1c09e2eafcfa6e35d2b40de208503d0"
+  },
+  "descriptors": [
+    {
+      "id": "bpmn-native-fixture",
+      "version": "fixture-1",
+      "sha256": "c2bf410a1dd4bbd0efca214794ef5188d915d436c0086738c98e2d8355099d9e"
+    }
+  ],
+  "capabilities": [
+    "predicates/1",
+    "selectors/1",
+    "recipes/1",
+    "profile-lint/1",
+    "render-data/1",
+    "export-ir/1"
+  ],
+  "policies": {
+    "canonical": "profile-c14n/2",
+    "allocator": "stable-id/1",
+    "whitespace": "ecma262-2024",
+    "textFit": "engine-scalar-A/1",
+    "unknownFields": "reject",
+    "compatibility": "exact-or-explicit-migration/1",
+    "localeFallback": "en"
+  },
+  "producerDelta": [],
+  "notions": [
+    {
+      "id": "task",
+      "labels": [
+        {
+          "name": "en",
+          "value": "task"
+        }
+      ],
+      "citations": [],
+      "nativeTypes": [
+        "bpmn:Task"
+      ],
+      "recognition": {
+        "op": "typeIs",
+        "binding": "self",
+        "type": "bpmn:Task",
+        "mode": "exact"
+      },
+      "exclusiveGroup": "primary",
+      "ai": {
+        "description": "Synthetic profile example for schema review; no customer vocabulary.",
+        "examples": [],
+        "counterexamples": [],
+        "producers": [
+          "editor",
+          "import"
+        ],
+        "evidenceRequired": false
+      },
+      "createRecipe": "create-task",
+      "referenceRecipes": [
+        "link"
+      ],
+      "placement": "content",
+      "renderBindings": [
+        {
+          "theme": "plain",
+          "glyph": "task"
+        }
+      ],
+      "fields": [
+        {
+          "id": "name",
+          "path": "/name",
+          "widget": "text",
+          "label": "label",
+          "visible": {
+            "op": "true"
+          },
+          "mutable": {
+            "op": "true"
+          },
+          "command": "rename",
+          "choices": [],
+          "targetTypes": [],
+          "message": "invalid"
+        }
+      ]
+    },
+    {
+      "id": "aid",
+      "labels": [
+        {
+          "name": "en",
+          "value": "aid"
+        }
+      ],
+      "citations": [],
+      "nativeTypes": [
+        "bpmn:TextAnnotation"
+      ],
+      "recognition": {
+        "op": "all",
+        "args": [
+          {
+            "op": "typeIs",
+            "binding": "self",
+            "type": "bpmn:TextAnnotation",
+            "mode": "exact"
+          },
+          {
+            "op": "textPrefix",
+            "value": {
+              "op": "read",
+              "binding": "self",
+              "path": "/text"
+            },
+            "prefix": "[Aid]",
+            "trim": "none"
+          }
+        ]
+      },
+      "exclusiveGroup": "primary",
+      "ai": {
+        "description": "Synthetic profile example for schema review; no customer vocabulary.",
+        "examples": [],
+        "counterexamples": [],
+        "producers": [
+          "editor",
+          "import"
+        ],
+        "evidenceRequired": false
+      },
+      "createRecipe": "create-aid",
+      "referenceRecipes": [
+        "link"
+      ],
+      "placement": "content",
+      "renderBindings": [
+        {
+          "theme": "plain",
+          "glyph": "aid"
+        }
+      ],
+      "fields": []
+    }
+  ],
+  "rules": [
+    {
+      "id": "task-named",
+      "phase": "post",
+      "select": {
+        "from": "root",
+        "via": "all",
+        "where": {
+          "op": "typeIs",
+          "binding": "self",
+          "type": "bpmn:Task",
+          "mode": "exact"
+        },
+        "order": "id"
+      },
+      "assert": {
+        "op": "all",
+        "args": [
+          {
+            "op": "present",
+            "value": {
+              "op": "read",
+              "binding": "self",
+              "path": "/name"
+            }
+          },
+          {
+            "op": "not",
+            "arg": {
+              "op": "equal",
+              "left": {
+                "op": "read",
+                "binding": "self",
+                "path": "/name"
+              },
+              "right": {
+                "op": "literal",
+                "value": ""
+              }
+            }
+          }
+        ]
+      },
+      "code": "task-name-missing",
+      "message": "invalid",
+      "classification": "readiness"
+    }
+  ],
+  "recipes": [
+    {
+      "id": "create-task",
+      "phase": "create",
+      "parameters": [
+        {
+          "name": "owner",
+          "type": "element",
+          "required": true
+        },
+        {
+          "name": "key",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "select": {
+        "from": "owner",
+        "via": "self",
+        "where": {
+          "op": "true"
+        },
+        "order": "id"
+      },
+      "when": {
+        "op": "true"
+      },
+      "writes": [
+        {
+          "binding": "owner",
+          "path": "/flowElements",
+          "mode": "create"
+        }
+      ],
+      "steps": [
+        {
+          "op": "create",
+          "as": "created",
+          "type": "bpmn:Task",
+          "parent": "owner",
+          "property": "flowElements",
+          "slot": "task",
+          "key": {
+            "op": "param",
+            "name": "key"
+          },
+          "fields": [
+            {
+              "name": "name",
+              "value": {
+                "op": "param",
+                "name": "name"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "create-aid",
+      "phase": "create",
+      "parameters": [
+        {
+          "name": "owner",
+          "type": "element",
+          "required": true
+        },
+        {
+          "name": "key",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "body",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "select": {
+        "from": "owner",
+        "via": "self",
+        "where": {
+          "op": "true"
+        },
+        "order": "id"
+      },
+      "when": {
+        "op": "true"
+      },
+      "writes": [
+        {
+          "binding": "owner",
+          "path": "/artifacts",
+          "mode": "create"
+        }
+      ],
+      "steps": [
+        {
+          "op": "create",
+          "as": "created",
+          "type": "bpmn:TextAnnotation",
+          "parent": "owner",
+          "property": "artifacts",
+          "slot": "aid",
+          "key": {
+            "op": "param",
+            "name": "key"
+          },
+          "fields": [
+            {
+              "name": "text",
+              "value": {
+                "op": "concat",
+                "values": [
+                  {
+                    "op": "literal",
+                    "value": "[Aid] "
+                  },
+                  {
+                    "op": "param",
+                    "name": "body"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rename",
+      "phase": "edit",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "element",
+          "required": true
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "select": {
+        "from": "target",
+        "via": "self",
+        "where": {
+          "op": "true"
+        },
+        "order": "id"
+      },
+      "when": {
+        "op": "true"
+      },
+      "writes": [
+        {
+          "binding": "self",
+          "path": "/name",
+          "mode": "set"
+        }
+      ],
+      "steps": [
+        {
+          "op": "set",
+          "target": "self",
+          "path": "/name",
+          "value": {
+            "op": "param",
+            "name": "name"
+          }
+        }
+      ]
+    },
+    {
+      "id": "complete-process",
+      "phase": "complete",
+      "parameters": [],
+      "select": {
+        "from": "root",
+        "via": "all",
+        "where": {
+          "op": "typeIs",
+          "binding": "self",
+          "type": "bpmn:Process",
+          "mode": "exact"
+        },
+        "order": "id"
+      },
+      "when": {
+        "op": "true"
+      },
+      "writes": [
+        {
+          "binding": "self",
+          "path": "/isExecutable",
+          "mode": "set"
+        }
+      ],
+      "steps": [
+        {
+          "op": "set",
+          "target": "self",
+          "path": "/isExecutable",
+          "value": {
+            "op": "literal",
+            "value": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "place-task",
+      "phase": "normalize",
+      "parameters": [],
+      "select": {
+        "from": "root",
+        "via": "all",
+        "where": {
+          "op": "typeIs",
+          "binding": "self",
+          "type": "bpmn:Task",
+          "mode": "exact"
+        },
+        "order": "id"
+      },
+      "when": {
+        "op": "true"
+      },
+      "writes": [
+        {
+          "binding": "self",
+          "path": "",
+          "mode": "placement"
+        }
+      ],
+      "steps": [
+        {
+          "op": "bind",
+          "as": "owner",
+          "select": {
+            "from": "self",
+            "via": "owner",
+            "where": {
+              "op": "true"
+            },
+            "order": "id"
+          },
+          "cardinality": "one"
+        },
+        {
+          "op": "place",
+          "target": "self",
+          "owner": "owner",
+          "region": "content",
+          "related": {
+            "from": "root",
+            "via": "all",
+            "where": {
+              "op": "false"
+            },
+            "order": "id"
+          }
+        }
+      ]
+    },
+    {
+      "id": "link",
+      "phase": "reference",
+      "parameters": [
+        {
+          "name": "owner",
+          "type": "element",
+          "required": true
+        },
+        {
+          "name": "source",
+          "type": "element",
+          "required": true
+        },
+        {
+          "name": "target",
+          "type": "element",
+          "required": true
+        },
+        {
+          "name": "key",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "select": {
+        "from": "owner",
+        "via": "self",
+        "where": {
+          "op": "true"
+        },
+        "order": "id"
+      },
+      "when": {
+        "op": "true"
+      },
+      "writes": [
+        {
+          "binding": "owner",
+          "path": "/artifacts",
+          "mode": "create"
+        },
+        {
+          "binding": "edge",
+          "path": "/sourceRef",
+          "mode": "reference"
+        },
+        {
+          "binding": "edge",
+          "path": "/targetRef",
+          "mode": "reference"
+        }
+      ],
+      "steps": [
+        {
+          "op": "create",
+          "as": "edge",
+          "type": "bpmn:Association",
+          "parent": "owner",
+          "property": "artifacts",
+          "slot": "link",
+          "key": {
+            "op": "param",
+            "name": "key"
+          },
+          "fields": [
+            {
+              "name": "associationDirection",
+              "value": {
+                "op": "literal",
+                "value": "None"
+              }
+            }
+          ]
+        },
+        {
+          "op": "assignRef",
+          "target": "edge",
+          "path": "/sourceRef",
+          "values": [
+            {
+              "op": "id",
+              "binding": "source"
+            }
+          ],
+          "mode": "replace"
+        },
+        {
+          "op": "assignRef",
+          "target": "edge",
+          "path": "/targetRef",
+          "values": [
+            {
+              "op": "id",
+              "binding": "target"
+            }
+          ],
+          "mode": "replace"
+        }
+      ]
+    },
+    {
+      "id": "export-pages",
+      "phase": "export",
+      "parameters": [],
+      "select": {
+        "from": "render",
+        "via": "pages",
+        "where": {
+          "op": "true"
+        },
+        "order": "id"
+      },
+      "when": {
+        "op": "true"
+      },
+      "writes": [
+        {
+          "binding": "self",
+          "path": "",
+          "mode": "artifact"
+        }
+      ],
+      "steps": [
+        {
+          "op": "emit",
+          "as": "page",
+          "kind": "page",
+          "fields": [
+            {
+              "name": "id",
+              "value": {
+                "op": "outputId",
+                "binding": "self",
+                "domain": "page"
+              }
+            },
+            {
+              "name": "name",
+              "value": {
+                "op": "read",
+                "binding": "self",
+                "path": "/pageId"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "export-nodes",
+      "phase": "export",
+      "parameters": [],
+      "select": {
+        "from": "render",
+        "via": "occurrences",
+        "where": {
+          "op": "equal",
+          "left": {
+            "op": "read",
+            "binding": "self",
+            "path": "/emittedType"
+          },
+          "right": {
+            "op": "literal",
+            "value": "node"
+          }
+        },
+        "order": "id"
+      },
+      "when": {
+        "op": "true"
+      },
+      "writes": [
+        {
+          "binding": "self",
+          "path": "",
+          "mode": "artifact"
+        }
+      ],
+      "steps": [
+        {
+          "op": "emit",
+          "as": "node",
+          "kind": "node",
+          "fields": [
+            {
+              "name": "id",
+              "value": {
+                "op": "outputId",
+                "binding": "self",
+                "domain": "node"
+              }
+            },
+            {
+              "name": "name",
+              "value": {
+                "op": "literal",
+                "value": "Synthetic occurrence"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "placements": [
+    {
+      "id": "content",
+      "select": {
+        "from": "root",
+        "via": "all",
+        "where": {
+          "op": "typeIs",
+          "binding": "self",
+          "type": "bpmn:Task",
+          "mode": "exact"
+        },
+        "order": "id"
+      },
+      "owner": {
+        "from": "self",
+        "via": "owner",
+        "where": {
+          "op": "true"
+        },
+        "order": "id"
+      },
+      "region": "content",
+      "anchor": {
+        "from": "root",
+        "via": "all",
+        "where": {
+          "op": "false"
+        },
+        "order": "id"
+      },
+      "order": "preserve",
+      "geometry": "shared",
+      "parameters": []
+    }
+  ],
+  "themes": [
+    {
+      "id": "plain",
+      "aliases": [],
+      "tokens": [
+        {
+          "name": "fill",
+          "value": "#ffffff"
+        },
+        {
+          "name": "stroke",
+          "value": "#000000"
+        }
+      ],
+      "glyphs": [
+        {
+          "id": "task",
+          "kind": "native",
+          "nativeType": "bpmn:Task",
+          "viewBox": [
+            0,
+            0,
+            100,
+            80
+          ],
+          "commands": []
+        },
+        {
+          "id": "aid",
+          "kind": "native",
+          "nativeType": "bpmn:TextAnnotation",
+          "viewBox": [
+            0,
+            0,
+            100,
+            80
+          ],
+          "commands": []
+        }
+      ],
+      "metricsResource": "neutral-metrics",
+      "geometry": "shared"
+    }
+  ],
+  "ui": [
+    {
+      "id": "task-create",
+      "surface": "palette",
+      "group": "basic",
+      "order": 0,
+      "upstreamEntries": [
+        "create.task"
+      ],
+      "label": "label",
+      "when": {
+        "op": "true"
+      },
+      "recipe": "create-task"
+    }
+  ],
+  "validation": [
+    {
+      "id": "draft",
+      "extends": [
+        "bpmnlint:recommended"
+      ],
+      "settings": [
+        {
+          "rule": "profile:task-named",
+          "severity": "warn",
+          "classification": "readiness"
+        }
+      ],
+      "profileRule": "profile-mechanism/profile"
+    },
+    {
+      "id": "accept",
+      "extends": [
+        "bpmnlint:recommended"
+      ],
+      "settings": [
+        {
+          "rule": "profile:task-named",
+          "severity": "error",
+          "classification": "readiness"
+        }
+      ],
+      "profileRule": "profile-mechanism/profile"
+    },
+    {
+      "id": "pre-normalize",
+      "extends": [
+        "bpmnlint:recommended"
+      ],
+      "settings": [
+        {
+          "rule": "profile:task-named",
+          "severity": "error",
+          "classification": "readiness"
+        }
+      ],
+      "profileRule": "profile-mechanism/profile"
+    },
+    {
+      "id": "post-normalize",
+      "extends": [
+        "bpmnlint:recommended"
+      ],
+      "settings": [
+        {
+          "rule": "profile:task-named",
+          "severity": "error",
+          "classification": "readiness"
+        }
+      ],
+      "profileRule": "profile-mechanism/profile"
+    },
+    {
+      "id": "post-layout",
+      "extends": [
+        "bpmnlint:recommended"
+      ],
+      "settings": [
+        {
+          "rule": "profile:task-named",
+          "severity": "error",
+          "classification": "readiness"
+        }
+      ],
+      "profileRule": "profile-mechanism/profile"
+    }
+  ],
+  "providerDialects": [
+    {
+      "id": "schema-example",
+      "adapter": "vertex-gemini-json-schema",
+      "apiVersion": "fixture-only",
+      "allowedKeywords": [
+        "type",
+        "properties",
+        "required",
+        "items"
+      ],
+      "optionalTransport": "omit",
+      "maxOutputTokens": 64,
+      "models": [
+        "fixture-only"
+      ],
+      "qualification": "unverified"
+    }
+  ],
+  "exports": [
+    {
+      "id": "drawing",
+      "format": "drawio",
+      "recipes": [
+        "export-pages",
+        "export-nodes"
+      ],
+      "capabilities": [
+        {
+          "when": {
+            "op": "true"
+          },
+          "class": "structural",
+          "losses": [
+            "semantic-type"
+          ]
+        }
+      ],
+      "idPolicy": "digest",
+      "counterOrigin": 0,
+      "metadata": [],
+      "serializer": {
+        "version": "fixture-1",
+        "encoding": "UTF-8",
+        "newline": "LF",
+        "indent": 0,
+        "compression": "none",
+        "attributeOrder": [],
+        "emptyElement": "short"
+      }
+    }
+  ],
+  "migrations": [],
+  "resources": [
+    {
+      "id": "neutral-metrics",
+      "kind": "metrics",
+      "mediaType": "application/json",
+      "sha256": "f007317df6c96a962b39e6567a022f3bf20dcdc4a6494656e5596ce5a80542ef",
+      "assetKey": "neutral-metrics-fixture",
+      "license": "CC0-1.0",
+      "attribution": "Synthetic example; fixture asset supplied in lot 0."
+    }
+  ],
+  "messages": [
+    {
+      "id": "label",
+      "texts": [
+        {
+          "name": "en",
+          "value": "Task"
+        }
+      ]
+    },
+    {
+      "id": "invalid",
+      "texts": [
+        {
+          "name": "en",
+          "value": "Name is required."
+        }
+      ]
+    }
+  ],
+  "compatibilityAliases": []
+}

@@ -1,0 +1,1 @@
+{"caseId":"lexical-leading-nbsp","comparatorIds":["design-lexical-probe"],"expectedArtifacts":[{"json":{"code":"profile-json","status":"refused"},"role":"verdict"}],"expectedStatus":"refused:profile-json","inputArtifacts":[{"hex":"c2a07b7d","role":"document"}],"operation":"loadProfile","phase":null,"profileArtifact":null}

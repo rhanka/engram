@@ -1,0 +1,86 @@
+{
+  "revision": "R3.3",
+  "scope": "DESIGN.md section 3.3 refusal codes only; not the profile loss-class domain.",
+  "codes": [
+    {
+      "code": "document-version-unsupported",
+      "meaning": "Unsupported document envelope version."
+    },
+    {
+      "code": "profile-metadata-missing",
+      "meaning": "Missing profile envelope/identity; generic read-only preview only."
+    },
+    {
+      "code": "profile-metadata-conflict",
+      "meaning": "Conflicting host, snapshot and document identities."
+    },
+    {
+      "code": "profile-schema-version",
+      "meaning": "Injected P schema unsupported by R only."
+    },
+    {
+      "code": "mechanism-version-unsupported",
+      "meaning": "Injected P mechanism unsupported by R."
+    },
+    {
+      "code": "document-mechanism-unsupported",
+      "meaning": "Document D mechanism unsupported by R."
+    },
+    {
+      "code": "document-schema-unsupported",
+      "meaning": "Document D schema unsupported by R."
+    },
+    {
+      "code": "mechanism-migration-required",
+      "meaning": "Supported unequal mechanisms; exact source available."
+    },
+    {
+      "code": "profile-schema-migration-required",
+      "meaning": "Supported unequal schemas; exact source available."
+    },
+    {
+      "code": "profile-capability",
+      "meaning": "Required capability/operator unavailable."
+    },
+    {
+      "code": "profile-resource-missing",
+      "meaning": "Required asset unavailable."
+    },
+    {
+      "code": "base-mismatch",
+      "meaning": "Base revision/digest differs; exact source available."
+    },
+    {
+      "code": "descriptor-mismatch",
+      "meaning": "Descriptor pins differ; exact source available."
+    },
+    {
+      "code": "profile-major-mismatch",
+      "meaning": "Business IDs/majors differ; exact source available."
+    },
+    {
+      "code": "profile-digest-mismatch",
+      "meaning": "Same profile ID/version with known unequal digests; no migration waiver."
+    },
+    {
+      "code": "profile-patch-migration-required",
+      "meaning": "Source patch older; versions/digests known and source available."
+    },
+    {
+      "code": "profile-patch-downgrade-required",
+      "meaning": "Source patch newer; versions/digests known and source available."
+    },
+    {
+      "code": "profile-minor-migration-required",
+      "meaning": "Source minor older; versions/digests known and source available."
+    },
+    {
+      "code": "profile-minor-downgrade-required",
+      "meaning": "Source minor newer; versions/digests known and source available."
+    },
+    {
+      "code": "profile-source-unavailable",
+      "meaning": "Unknown source identity or unavailable exact package; P1 overrides source-dependent remedies."
+    }
+  ]
+}
