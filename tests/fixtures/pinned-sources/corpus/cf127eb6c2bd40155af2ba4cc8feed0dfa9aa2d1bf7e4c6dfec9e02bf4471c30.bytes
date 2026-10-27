@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:profile-mechanism:1:compatibility-verdict:r33",
+  "$defs": {
+    "refusalCode": {
+      "type": "string",
+      "enum": [
+        "document-version-unsupported",
+        "profile-metadata-missing",
+        "profile-metadata-conflict",
+        "profile-schema-version",
+        "mechanism-version-unsupported",
+        "document-mechanism-unsupported",
+        "document-schema-unsupported",
+        "mechanism-migration-required",
+        "profile-schema-migration-required",
+        "profile-capability",
+        "profile-resource-missing",
+        "base-mismatch",
+        "descriptor-mismatch",
+        "profile-major-mismatch",
+        "profile-digest-mismatch",
+        "profile-patch-migration-required",
+        "profile-patch-downgrade-required",
+        "profile-minor-migration-required",
+        "profile-minor-downgrade-required",
+        "profile-source-unavailable"
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "ok"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "refused"
+        },
+        "code": {
+          "$ref": "#/$defs/refusalCode"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "additionalProperties": false
+    }
+  ],
+  "$comment": "A bare refusal is retained for an otherwise exact invalid envelope; no new code is assigned to that residual."
+}

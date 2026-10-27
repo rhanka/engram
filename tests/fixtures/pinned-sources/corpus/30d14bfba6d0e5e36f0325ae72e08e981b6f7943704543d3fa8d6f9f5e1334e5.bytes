@@ -1,0 +1,216 @@
+{
+  "expressionLanguage": "http://www.w3.org/1999/XPath",
+  "typeLanguage": "http://www.w3.org/2001/XMLSchema",
+  "$type": "bpmn:Definitions",
+  "id": "Defs_Kite",
+  "targetNamespace": "urn:example:functions-workbench:v1",
+  "rootElements": [
+    {
+      "$type": "bpmn:Process",
+      "id": "Process_Kite",
+      "isExecutable": false,
+      "flowElements": [
+        {
+          "parallelMultiple": false,
+          "isInterrupting": true,
+          "$type": "bpmn:StartEvent",
+          "id": "Start_Kite",
+          "outgoing": [
+            "Flow_1"
+          ]
+        },
+        {
+          "isForCompensation": false,
+          "startQuantity": 1,
+          "completionQuantity": 1,
+          "$type": "bpmn:Task",
+          "id": "Task_Review",
+          "name": "Vérifier 🪁 & < > \"\n1.0 / 01 / ٢\nlong label long label long label long label long label long label long label long label long label long label long label long label ",
+          "incoming": [
+            "Flow_1"
+          ],
+          "outgoing": [
+            "Flow_2"
+          ],
+          "$attrs": {
+            "inventedNote": "01 & \"é\""
+          }
+        },
+        {
+          "isForCompensation": false,
+          "startQuantity": 1,
+          "completionQuantity": 1,
+          "$type": "bpmn:Task",
+          "id": "Task_Pack",
+          "name": "Check"
+        },
+        {
+          "$type": "bpmn:EndEvent",
+          "id": "End_Kite",
+          "incoming": [
+            "Flow_2"
+          ]
+        },
+        {
+          "$type": "bpmn:SequenceFlow",
+          "id": "Flow_1",
+          "sourceRef": "Start_Kite",
+          "targetRef": "Task_Review"
+        },
+        {
+          "$type": "bpmn:SequenceFlow",
+          "id": "Flow_2",
+          "sourceRef": "Task_Review",
+          "targetRef": "End_Kite"
+        }
+      ],
+      "laneSets": [
+        {
+          "$type": "bpmn:LaneSet",
+          "id": "Lanes_Kite",
+          "lanes": [
+            {
+              "$type": "bpmn:Lane",
+              "id": "Lane_A",
+              "name": "Review",
+              "flowNodeRef": [
+                "Start_Kite",
+                "Task_Review"
+              ]
+            },
+            {
+              "$type": "bpmn:Lane",
+              "id": "Lane_B",
+              "name": "Review",
+              "flowNodeRef": [
+                "Task_Pack",
+                "End_Kite"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "diagrams": [
+    {
+      "$type": "bpmndi:BPMNDiagram",
+      "id": "Diagram_Kite",
+      "plane": {
+        "$type": "bpmndi:BPMNPlane",
+        "id": "Plane_Kite",
+        "bpmnElement": "Process_Kite",
+        "planeElement": [
+          {
+            "$type": "bpmndi:BPMNShape",
+            "id": "Shape_Start_Kite",
+            "bpmnElement": "Start_Kite",
+            "bounds": {
+              "x": 100.5,
+              "y": 80.25,
+              "$type": "dc:Bounds",
+              "width": 100,
+              "height": 60
+            }
+          },
+          {
+            "$type": "bpmndi:BPMNShape",
+            "id": "Shape_Task_Review",
+            "bpmnElement": "Task_Review",
+            "bounds": {
+              "x": 2.5,
+              "y": 3.5,
+              "$type": "dc:Bounds",
+              "width": 100.125,
+              "height": 60
+            }
+          },
+          {
+            "$type": "bpmndi:BPMNShape",
+            "id": "Shape_End_Kite",
+            "bpmnElement": "End_Kite",
+            "bounds": {
+              "x": 420.5,
+              "y": 80.25,
+              "$type": "dc:Bounds",
+              "width": 100,
+              "height": 60
+            }
+          },
+          {
+            "$type": "bpmndi:BPMNShape",
+            "id": "Shape_Task_Pack",
+            "bpmnElement": "Task_Pack",
+            "bounds": {
+              "x": 580.5,
+              "y": 80.25,
+              "$type": "dc:Bounds",
+              "width": 100,
+              "height": 60
+            }
+          },
+          {
+            "$type": "bpmndi:BPMNShape",
+            "id": "Shape_Lane_A",
+            "bpmnElement": "Lane_A",
+            "bounds": {
+              "x": 740.5,
+              "y": 80.25,
+              "$type": "dc:Bounds",
+              "width": 100,
+              "height": 60
+            }
+          },
+          {
+            "$type": "bpmndi:BPMNShape",
+            "id": "Shape_Lane_B",
+            "bpmnElement": "Lane_B",
+            "bounds": {
+              "x": 900.5,
+              "y": 80.25,
+              "$type": "dc:Bounds",
+              "width": 100,
+              "height": 60
+            }
+          },
+          {
+            "messageVisibleKind": "initiating",
+            "$type": "bpmndi:BPMNEdge",
+            "id": "Edge_1",
+            "bpmnElement": "Flow_1",
+            "waypoint": [
+              {
+                "x": 136.5,
+                "y": 110.25,
+                "$type": "dc:Point"
+              },
+              {
+                "x": 260.5,
+                "y": 110.25,
+                "$type": "dc:Point"
+              }
+            ]
+          },
+          {
+            "messageVisibleKind": "initiating",
+            "$type": "bpmndi:BPMNEdge",
+            "id": "Edge_2",
+            "bpmnElement": "Flow_2",
+            "waypoint": [
+              {
+                "x": 360.5,
+                "y": 110.25,
+                "$type": "dc:Point"
+              },
+              {
+                "x": 420.5,
+                "y": 110.25,
+                "$type": "dc:Point"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

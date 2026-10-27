@@ -1,0 +1,16 @@
+{
+  "json": "recursively sorted object keys; UTF-8; unescaped Unicode; no whitespace; arrays/strings unchanged; finite IEEE754 numbers written as shortest round-trip decimal without exponent; negative zero = 0; integers limited to +/-9007199254740991",
+  "xml": "expanded namespace names; sorted expanded attribute names; ordered child elements; exact non-formatting text/tails; ignore declaration/prefix/attribute order/inter-element formatting only",
+  "diagnostics": [
+    "code",
+    "path"
+  ],
+  "lintSort": [
+    "ruleId",
+    "severity",
+    "elementId",
+    "path",
+    "code"
+  ],
+  "tolerance": 0
+}

@@ -1,0 +1,56 @@
+# M3 r3 — consolidated review (engram Sol 6.1 xhigh + Astra max, DS Astra pass 3)
+
+**Target.** f6f3ba37, sha256 e7ca16aedeb752f7fcdc11673e4c8600450fa2b7f3b4ac224e493f718c24b9ef.
+
+**Verdict.** All three reviews return **NOT SOLID** / **NOT MERGEABLE**.
+
+**Raw outputs.**
+- engram Sol: `review-M3-sol-r3.out` (14 findings)
+- engram Astra: `review-M3-astra-r3.out` (13 findings)
+- DS Astra: `/home/antoinefa/src/sent-tech-design-system/scratchpad/rev/dmodel-rev3.out` (6 blocking, 8 to fix, 1 minor)
+
+## Convergent blockers (all three reviews)
+
+1. **Presentation still sits in the graph.** Semantic `strokeStyle`, `icon` and `legend-key.token` are presentation fields. **Fix:** keep the semantic categories in the graph, and move stroke, icon and the category→token mapping into typed view or presentation data.
+   - Sources: Sol N1 · Astra 1 · DS R3-B1
+
+2. **The presentation fragment has no executable, G0-compatible composition contract.** **Fix:** define one, so that the fragment cannot turn into consumer-side augmentation.
+   - Sources: Sol N2 · Astra 2 · DS T1
+
+3. **Skeleton and completed archimate@1/uml@1 cannot coexist** in a registry keyed by ProfileId. The completions are also only described: there is no pairwise ArchiMate matrix and no UML multiplicity carrier.
+   - Sources: Sol N3/N4 · Astra 3/4 · DS R3-B4/T1
+
+4. **The BPMN c14n gate uses the wrong vectors.** **Fix:** bind `profile-parity-corpus/1/cases/jcs-*.json` and `identity-stable-id.json`. Generated-BPMN admission also omits the parity receipts.
+   - Sources: Sol N12/N8 · Astra 5/6 · DS R3-B3
+
+5. **The owner-validated workload was withdrawn without authority.** It must be restored: 600 interactions and 240 stress toggles (DS-DIAGRAM-MODULES-REQUIREMENTS l.65).
+   - Sources: Sol N13 · Astra 12 · DS R3-B6
+
+## Convergent majors
+
+- **Authored summaries.** They are ambiguous after projection, and the worked style example fails validation.
+  - Sources: Sol N6 · Astra 10 · DS R3-B5
+- **The G0 mapping still violates closed shapes.** Namespace and owner lookups are missing, and `declarationFormat` sits outside the closed record.
+  - Sources: Sol N7 · Astra 7 · DS T7
+- **Matrix and oracle.** Cells overstate their evidence, the oracle is still prospective, and the HRPN producer pins have drifted.
+  - Sources: Sol N9/N10 · Astra 8 · DS T3/T6
+- **Same-kind incompatible bounds have no migration outcome.**
+  - Sources: Sol N5 · Astra 9 · DS T2
+- **The A5 ledger loses authored fields** (kicker, footer).
+  - Sources: Sol N11 · Astra 11 · DS T4
+- **Diagnostic changes contradict legacy parity** (`seenChain`, global sort), and the code inventory omits `quantity-above-max`.
+  - Sources: Sol N14 · Astra 13 · DS T5/T8
+- **The pinned #711 kit is not the bytes at sentropic 4138a0ec.**
+  - Source: DS R3-B2
+
+## §9 landing (family routing)
+
+All three reviews support the routing:
+- card diagrams use generic;
+- ArchiMate assertions use the archimate family;
+- architecture@1 is withdrawn.
+
+**Open point.** Should the ArchiMate/UML completions keep the same `@1` identity, with exact-pin selection and adapter dispatch, or become new majors with explicit migrations?
+- engram Astra sees an owner choice.
+- engram Sol sees a technical defect.
+- DS R3-B4 asks for exact-pin resolution.

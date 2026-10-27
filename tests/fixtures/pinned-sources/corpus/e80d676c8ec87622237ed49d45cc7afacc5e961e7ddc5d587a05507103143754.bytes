@@ -1,0 +1,1 @@
+{"caseId":"lexical-duplicate-keys","comparatorIds":["design-lexical-probe"],"expectedArtifacts":[{"json":{"code":"profile-json-duplicate-key","status":"refused"},"role":"verdict"}],"expectedStatus":"refused:profile-json-duplicate-key","inputArtifacts":[{"hex":"7b2261223a312c225c7530303631223a327d","role":"document"}],"operation":"loadProfile","phase":null,"profileArtifact":null}

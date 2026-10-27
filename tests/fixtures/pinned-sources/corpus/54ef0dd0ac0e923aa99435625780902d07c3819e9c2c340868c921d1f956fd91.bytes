@@ -1,0 +1,32 @@
+{
+ "source": {
+  "file": "docs/ard/decision/focus/.generated/governance-scenes.json",
+  "sha256": "236320cec2b25466dfe46d9338f3f75c14aba3ee33c6c25d8070ffc242d5b35c",
+  "scene": "S2-target"
+ },
+ "frozenFigure": "docs/architecture/hrpn/frozen-20261022/ (owner-validated 2026-10-22)",
+ "counts": {
+  "zones": 19,
+  "cards": 37,
+  "links": 31,
+  "defaultFolds": [
+   "PCICD",
+   "MSGZ",
+   "VERTEXZ",
+   "OBSZ",
+   "INGZ",
+   "GENSRC",
+   "AWSCI"
+  ]
+ },
+ "outputs": {
+  "S2-target.semantic.json": "46f64154bb6592d49ccda5633b2c4d4205fb1c6752ef218be31d6757923ecf91",
+  "S2-target.view.json": "82930614efe070bdb8e5acce3aecea29dfdb2d1ab625b7d376507f97fb6f8b50"
+ },
+ "validation": {
+  "status": "valid",
+  "diagramCore": "sent-tech-design-system spec/diagram-cards 97ecf69b packages/diagram-core",
+  "semanticDiagnostics": [],
+  "viewDiagnostics": []
+ }
+}
