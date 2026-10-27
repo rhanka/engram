@@ -1,0 +1,478 @@
+# HR Policy Navigator (HRPN) — architecture scenes
+
+Focus/xyflow scenes for the HRPN ARD decision dossier, in the format of the D2D Focus dossier
+(quoted Mermaid subset parsed by `docs/architecture/tooling/chain/parse-mermaid.mjs`, cards and layout in
+`scene-metadata.mjs`, evidence per card in `EVIDENCE.md`). Built and layout-checked by `node build-scenes.mjs`.
+
+Tints: blue `genair` = native GenAiR template / Cutter / AgentGarden code; yellow `specific` = HRPN-specific
+code (commits after "Created with GenAiR-cutter", 2026-09-25 → 2026-10-12); orange `added` = target addition
+needed; red `removed` = to remove in the target; red frame `risk` = present but weak or at risk; no tint =
+Google or third-party managed service. Dashed links = dormant, optional or not built.
+
+Scene order: option 2 first (source of truth = this repository), then options 1 and 3.
+
+### `S2-asbuilt` — Option 2 as built · HRPN main @667529f (2026-10-12)
+
+```mermaid
+flowchart LR
+  subgraph PEOPLE["Users and operators"]
+    EMP["HR users and employees"]
+    DEV["HRPN developers"]
+  end
+  subgraph WS["Google Workspace"]
+    CHAT["Google Chat app"]
+  end
+  subgraph GCP["Google Cloud Platform"]
+    subgraph PROJ["HRPN POD project prj-c700-hr-polnav-dev-d132"]
+      LBIAP["Load balancer and IAP"]
+      subgraph MSGZ["Pub/Sub"]
+        TOPIC["Chat events topic"]
+        SUB["Push subscription"]
+      end
+      subgraph RUNZ["Cloud Run hrpn-ragengine-agent"]
+        APP["ADK FastAPI app"]
+        PUSH["Chat push route"]
+        CONS["Chat event consumer"]
+        CHATCLI["Chat reply client"]
+        AGENT["ADK agent"]
+        QUERY["Retrieval tool"]
+        ADMINT["Corpus admin tools"]
+      end
+      subgraph AEZ["Agent Engine"]
+        AEAPP["Agent Engine app"]
+      end
+      subgraph STATEZ["Storage and state"]
+        DOCS["Policy documents bucket"]
+        SESS["Chat sessions in memory"]
+        CSQL["Cloud SQL Postgres"]
+        BKT["Template bucket"]
+        FS["Template Firestore databases"]
+      end
+      subgraph VERTEXZ["Vertex AI"]
+        RAG["RAG Engine corpus"]
+        GEM["Gemini"]
+      end
+      subgraph OBSZ["Observability"]
+        CLOG["Cloud Run logs"]
+        LOGS["Feedback log bucket"]
+        BQ["BigQuery linked dataset"]
+        PHX["Phoenix tracing"]
+      end
+      subgraph CICDZ["CI/CD (same POD project)"]
+        CB["Cloud Build trigger"]
+        AR["Artifact Registry"]
+        TF["Terraform"]
+        TFST["Terraform state bucket"]
+      end
+      NET["VPC main-network"]
+    end
+    subgraph SSMPROJ["Platform project prj-ssm-b967"]
+      SSM["SSM repository"]
+      IFMIR["Infra-factory mirror"]
+      BASE["Base image and PyPI mirrors"]
+    end
+    subgraph PRODZ["PROD landing zone · not provisioned"]
+      PRODNP["PROD projects dev, int, pro"]
+    end
+  end
+  subgraph OUT["Outside Google Cloud"]
+    subgraph AWSZ["Airbus AWS"]
+      subgraph GITHUBZ["Airbus GitHub · github.airbus.corp"]
+        CUTTER["GenAiR-Cutter"]
+        AGARDEN["GenAiR-AgentGarden"]
+        IFREPO["genair-infra-factory"]
+        GLIBS["GenAiR libraries"]
+      end
+      subgraph GITLABZ["Airbus GitLab · SCM"]
+        SCMREPO["HRPN repository on SCM"]
+      end
+      JENKINS["Jenkins"]
+      JFROG["JFrog Artifactory"]
+    end
+  end
+  EMP -->|"message or @mention"| CHAT
+  CHAT -->|"publish · gsuiteaddons agent"| TOPIC
+  TOPIC -->|"push subscription"| SUB
+  SUB -->|"OIDC push · run.app URL"| PUSH
+  PUSH -->|"200 first · background task"| CONS
+  CONS -->|"session_id = space name"| SESS
+  CONS -->|"Runner.run_async"| AGENT
+  AGENT -->|"LLM call"| GEM
+  AGENT -->|"tool call"| QUERY
+  AGENT -->|"tool call · any user"| ADMINT
+  QUERY -->|"retrieval_query"| RAG
+  ADMINT -->|"create · import_files"| RAG
+  DOCS -->|"import via add_data"| RAG
+  CONS -->|"reply text"| CHATCLI
+  CHATCLI -->|"spaces.messages.create"| CHAT
+  CONS -->|"user text logged"| CLOG
+  DEV -->|"gcloud storage cp"| DOCS
+  DEV -->|"ADK web UI"| LBIAP
+  LBIAP -->|"default service"| APP
+  APP -->|"POST /run (web UI)"| AGENT
+  APP -.->|"SQL_DATABASE_URI unset"| CSQL
+  APP -.->|"no instrumentation"| PHX
+  APP -.->|"no feedback_score emitter"| LOGS
+  PHX -->|"phoenix DB"| CSQL
+  LOGS -->|"linked dataset"| BQ
+  AEAPP -.->|"same tools · no caller"| RAG
+  TF -->|"AdkApp deploy"| AEAPP
+  TF -->|"topic · sub · IAM"| TOPIC
+  SSM -->|"SSM webhook"| CB
+  CB -->|"docker push"| AR
+  AR -->|"image hrpn-ragengine-agent"| PUSH
+  CB -->|"gcloud run deploy"| PUSH
+  BASE -->|"base image · PyPI mirrors"| CB
+  DEV -->|"git push main"| SSM
+  AGARDEN -->|"submodule src/agent_garden"| CUTTER
+  CUTTER -->|"copier generate 26.9.0 · update"| SSM
+  CUTTER -.->|"copier --prod · not run"| PRODNP
+  IFREPO -->|"mirror"| IFMIR
+  IFMIR -->|"TF modules v1.8.3"| TF
+  TF -->|"state hrpn/main"| TFST
+  GLIBS -->|"builds"| JENKINS
+  JENKINS -->|"genair-* packages"| JFROG
+  JFROG -.->|"mirror? (unverified)"| BASE
+  SCMREPO -.->|"mirror? (none found)"| SSM
+```
+
+Caption. Source of truth: this repository at `main` @667529f (`genair-infra-factory/`, `src/agents/ragengine-agent/`). A Google Chat app
+publishes to the Pub/Sub topic `hrpn-gchat-events`; a push subscription with an OIDC token of the pod service account calls
+`/gchat-push` on Cloud Run `hrpn-ragengine-agent`, a FastAPI app from ADK `get_fast_api_app` that also serves the ADK web UI (CORS `*`).
+The route answers 200 first, then a background task runs the `LlmAgent` (gemini-2.5-flash, generic `GenAiR_RAG_Agent` prompt) on
+Vertex AI RAG Engine (RagManaged Basic, corpus `hr_policies`) and replies through the Chat REST API.
+Red frames: Chat sessions in `InMemorySessionService` keyed by the space name (lost on restart, shared in group spaces), no event check
+or dedup, corpus admin tools callable by any user, user text logged at INFO; absent: citations, 1–5 feedback, eligibility check, Drive sync.
+Two runtimes coexist: Agent Engine `hrpn-ae-ragengine-agent` (AdkApp, Terraform) is deployed but no Chat path calls it (deployed state verified 2026-10-19: engine 6891800455551123456 beside Cloud Run revision `00005-fqc`; the out-of-Terraform LB backend `hrpn-gchat-push-backend` exists, unused by the push subscription, which targets the `*.run.app` URL).
+Template bricks without a consumer (bucket, Firestore, Phoenix, feedback sink) stay visible as dormant. End-to-end delivery: `unknown` after the 2026-10-12 commits (org policy `iam.allowedPolicyMemberDomains` blocked earlier paths).
+Platform inheritance: GenAiR-Cutter 26.9.0 (github.airbus.corp, AgentGarden as submodule) generated the repo and pushed it to the POD SSM repository `prj-ssm-b967/hr-polnav-c700-repo`; Terraform reads the genair-infra-factory modules from their SSM mirror; Cloud Build (same POD project) deploys on the SSM webhook. Everything runs in POD: the PROD mode of the template (`app_code`, dev/int/pro projects, Jenkins on AWS with WIF) was not run, and no HRPN repository on the Airbus SCM (GitLab / GitHub) was found (red frames).
+### `S2-target` — Option 2 decided target · Pub/Sub → Cloud Run single runtime
+
+```mermaid
+flowchart LR
+  subgraph PEOPLE["Users and operators"]
+    EMP["HR users and employees"]
+    DEV["HRPN developers"]
+    HRADM["HR content owners"]
+  end
+  subgraph WS["Google Workspace"]
+    CHAT["Google Chat app"]
+    DRIVE["HR policy Drive folder"]
+  end
+  subgraph GCP["Google Cloud Platform"]
+    subgraph PRODZ["PROD landing zone · app_code (to provision)"]
+      subgraph PPROZ["HRPN pro project · project_id_pro"]
+        subgraph MSGZ["Pub/Sub"]
+          TOPIC["Chat events topic"]
+          SUB["Push subscription"]
+        end
+        subgraph RUNZ["Cloud Run hrpn-ragengine-agent"]
+          APP["FastAPI server"]
+          AGENT["ADK agent and RAG tools"]
+          CHATAPI["Google Chat API integration"]
+        end
+        subgraph STATEZ["Storage and state"]
+          DOCS["Policy documents bucket"]
+          FS["Firestore sessions database"]
+        end
+        subgraph VERTEXZ["Vertex AI"]
+          RAG["RAG Engine corpus"]
+          GEM["Gemini"]
+          ARMOR["Model Armor"]
+        end
+        subgraph INGZ["Ingestion"]
+          SYNC["Drive sync job"]
+          IMPORT["RAG import job"]
+        end
+      end
+      subgraph PSHARED["PROD shared projects"]
+        subgraph PCICD["CI/CD · project_id_cicd"]
+          PSSM["PROD SSM repository"]
+          PAR["PROD Artifact Registry"]
+          PIAC["IaC service account and WIF"]
+          PLIBS["Shared libraries project"]
+        end
+        subgraph OBSZ["Observability"]
+          CLOG["Conversation audit log"]
+          LOGS["Log bucket 1 year"]
+          BQ["BigQuery linked dataset"]
+          PHX["Phoenix tracing"]
+        end
+        PSVPC["Shared VPC host"]
+      end
+    end
+  end
+  subgraph OUT["AWS"]
+    subgraph GITHUBZ["Airbus GitHub · github.airbus.corp"]
+      subgraph GENSRC["GenAiR sources"]
+        CUTTER["GenAiR-Cutter"]
+        AGARDEN["GenAiR-AgentGarden"]
+        IFREPO["genair-infra-factory"]
+        GLIBS["GenAiR libraries"]
+      end
+    end
+    subgraph GITLABZ["Airbus GitLab · SCM"]
+      SCMREPO["HRPN repository on SCM"]
+    end
+    subgraph AWSCI["CI/CD"]
+      JENKINS["Jenkins"]
+      JFROG["JFrog Artifactory"]
+    end
+  end
+  EMP -->|"message or @mention"| CHAT
+  CHAT -->|"publish · Chat agent"| TOPIC
+  TOPIC -->|"push subscription"| SUB
+  SUB -->|"OIDC push · dedicated SA"| CHATAPI
+  CHATAPI -->|"eligible question"| AGENT
+  AGENT -->|"sessions · history"| FS
+  AGENT -->|"screen prompt and answer"| ARMOR
+  AGENT -->|"LLM call"| GEM
+  AGENT -->|"retrieval_query"| RAG
+  CHATAPI -->|"answer + rating card"| CHAT
+  CHATAPI -->|"feedback_score"| LOGS
+  CHATAPI -->|"scrubbed log entry"| CLOG
+  CLOG -->|"sink · 365 d"| LOGS
+  LOGS -->|"linked dataset"| BQ
+  HRADM -->|"approved documents"| DRIVE
+  DRIVE -->|"Drive API · read-only"| SYNC
+  SYNC -->|"delta copy"| DOCS
+  DOCS -->|"new objects"| IMPORT
+  IMPORT -->|"import_files · delta"| RAG
+  AGARDEN -->|"submodule src/agent_garden"| CUTTER
+  CUTTER -->|"copier generate --prod · update"| SCMREPO
+  GLIBS -->|"builds"| JENKINS
+  JENKINS -->|"genair-* packages"| JFROG
+  DEV -->|"git push · PROD"| SCMREPO
+  SCMREPO -->|"webhook on push"| JENKINS
+  IFREPO -->|"TF modules (PROD)"| JENKINS
+  PLIBS -->|"GenAiR libs (PROD)"| JENKINS
+  JENKINS -->|"WIF · iac-sa"| PIAC
+  JENKINS -->|"docker push"| PAR
+  JENKINS -->|"deploy · main"| APP
+  PSVPC -->|"Shared VPC subnets"| APP
+```
+
+Caption. Decided target of option B in the PROD environment only (owner, 2026-10-22), the target figure of the ARD (owner round r1, 2026-10-19; S2 2026-10-20).
+D1 = B: one runtime, the Cloud Run backend (GenAiR FastAPI server) running the ADK agent in process, in the pro project of the PROD landing zone.
+S3 = Pub/Sub: Chat app → events topic → push subscription (OIDC, dedicated push service account) → Google Chat API integration (`/gchat-push`,
+event check and dedup, reply, 1–5 rating) → agent. S1 = RAG Engine. S2 = Firestore (`FirestoreSessionService`, `hrpn-sessions`, TTL for the 1-year history of HR04).
+Layout after the Google Cloud standard landing zone: app project, Observability next to the CI/CD project, PROD SSM in the CI/CD project (ssm = cicd project).
+Colours: blue = GenAiR standard; green = customisation within the GenAiR template frame, data services included; yellow = added outside the frame
+(Pub/Sub, Google Chat API integration); no fill = Google or third-party managed service. HR01 = A without ChatUI: no load balancer, IAP or ADK web UI.
+Open: gate G1 (publisher exception, VPC-SC), PROD project ids, SCM host, PROD SSM mirror.
+PROD (GenAiR-Cutter PROD mode): `--prod` regeneration with an `app_code`; SCM push → Jenkins on AWS (WIF `iac-sa`) → `main` → pro.
+### `S1-conversational` — Option 1 · Conversational Agent (PoC-equivalent)
+
+```mermaid
+flowchart LR
+  subgraph PEOPLE["Users and operators"]
+    EMP["HR users and employees"]
+    HRADM["HR content owners"]
+  end
+  subgraph WS["Google Workspace"]
+    CHAT["Google Chat app"]
+    APPSS["Apps Script router"]
+    DRIVE["HR policy documents"]
+  end
+  subgraph GCP["Google Cloud Platform"]
+    subgraph PROJ["HRPN POD project · console-built"]
+      subgraph CXZ["Conversational Agents (Dialogflow CX)"]
+        CXINT["Google Chat integration"]
+        CXAGENT["Conversational agent"]
+        PLAYBOOK["Generative playbook"]
+        DSTOOL["Data store tool"]
+      end
+      subgraph TOOLZ["Cloud Run tools (PoC)"]
+        LINKF["Link Formatter"]
+        RLA["Row-Level Access Security"]
+      end
+      subgraph VAIZ["Vertex AI"]
+        DATASTORE["Vertex AI Search data store"]
+        GEM["Gemini"]
+      end
+      subgraph STATEZ["Storage and logs"]
+        DOCS["Policy documents bucket"]
+        SYNC["Drive sync"]
+        BQLOG["BigQuery conversation logs"]
+      end
+      subgraph GOVZ["Delivery and governance"]
+        NOIAC["No production template"]
+        EXPORT["Agent export and restore"]
+      end
+    end
+    subgraph PRODZ["PROD projects · app_code (to provision)"]
+      subgraph PDEVZ["dev project · project_id_dev"]
+        PDEV["Agent copy dev"]
+      end
+      subgraph PINTZ["int project · project_id_int"]
+        PINT["Agent copy int"]
+      end
+      subgraph PPROZ["pro project · project_id_pro"]
+        PPRO["Agent copy pro"]
+      end
+    end
+  end
+  subgraph OUT["Outside Google Cloud"]
+    subgraph AWSZ["Airbus AWS"]
+      subgraph GITHUBZ["Airbus GitHub · github.airbus.corp"]
+        GENTPL["GenAiR conversational agent template"]
+      end
+      subgraph GITLABZ["Airbus GitLab · SCM"]
+        SCMREPO["HRPN agent export repository"]
+      end
+    end
+  end
+  EMP -->|"message or @mention"| CHAT
+  CHAT -->|"native Chat integration"| CXINT
+  CHAT -.->|"ARD FP1 routing"| APPSS
+  APPSS -.->|"query to GCP (ARD)"| CXAGENT
+  CXINT -->|"detect intent"| CXAGENT
+  CXAGENT -->|"start playbook"| PLAYBOOK
+  PLAYBOOK -->|"data store tool"| DSTOOL
+  DSTOOL -->|"search + snippets"| DATASTORE
+  PLAYBOOK -->|"generation"| GEM
+  PLAYBOOK -->|"OpenAPI tool (FP5)"| LINKF
+  PLAYBOOK -.->|"access check (FP2)"| RLA
+  CXAGENT -->|"interaction logs (FP6)"| BQLOG
+  DOCS -->|"import gs://"| DATASTORE
+  HRADM -->|"manual upload"| DOCS
+  HRADM -->|"approved documents"| DRIVE
+  DRIVE -.->|"Drive API (Phase 2)"| SYNC
+  SYNC -.->|"delta copy"| DOCS
+  GENTPL -->|"template zip"| EXPORT
+  EXPORT -->|"console restore"| CXAGENT
+  NOIAC -.->|"no Terraform · no CI"| CXAGENT
+  EXPORT -.->|"export JSON · push"| SCMREPO
+  SCMREPO -.->|"console restore · dev"| PDEV
+  SCMREPO -.->|"console restore · int"| PINT
+  SCMREPO -.->|"console restore · pro"| PPRO
+```
+
+Caption. PoC-equivalent low-code path from the GenAiR low-code docs (Conversational Agents = renamed Dialogflow CX: generative playbook,
+data store tool, Google Chat integration), the GenAiR template exports, the ARB deck (slides 2, 4) and the ARD (FP1–FP6).
+Employees ask in a Google Chat space; the Chat integration (or, per ARD FP1, an Apps Script router) reaches an agent whose playbook
+grounds Gemini answers on a Vertex AI Search data store fed from a GCS bucket (Phase 1 manual upload; Phase 2 Drive sync not built).
+Two PoC Cloud Run tools are called from the playbook: Link Formatter and Row-Level Access Security (dormant); logs go to BigQuery (FP6).
+Red frames: no GenAiR production template, IaC or CI path for Conversational Agents (GenAiR-Cutter offers Cloud Run / Agent Engine only;
+console build and zip restore), the Dialogflow ↔ Chat connection was rejected in POD (`auth.creds.useNormalUserEUC`, handover §C,
+observed with Dialogflow ES), the Apps Script route needs a VPC-SC ingress rule per user identity. The PoC agent export was not found: `source-gap`.
+Inheritance and environments: the agent starts from the `genair-conversational-agent` exports of `Airbus/GenAiR` (github.airbus.corp). With no Cutter template, the PROD dev / int / pro projects (orange, GenAiR PROD model) would each receive a manual console restore of an export versioned on the Airbus SCM (GitLab or GitHub: open); no webhook, no Jenkins job and no IaC exist for this path. Project ids: unknown.
+### `S3-agentfactory` — Option 3 hypothesis · Agent Factory (AgentAiR)
+
+```mermaid
+flowchart LR
+  subgraph LEFT["Users and enterprise security"]
+    USERS["HR users and employees"]
+    CASB["Airbus CASB (Netskope)"]
+    IDP["Identity provider / API keys"]
+    SIEM["Enterprise SIEM (RTM/SOC)"]
+  end
+  subgraph PCP["85BB · PCP-GCP"]
+    subgraph AIP["4AE9 · AI Platform"]
+      subgraph EAI["7EFD · Everyday AI (Agent Factory model)"]
+        subgraph GEZ["Gemini Enterprise"]
+          GEUI["GE App UI"]
+          MA1["Model Armor (GE)"]
+          FEDC["Federated connectors"]
+          DSTORE["Ingested connectors and datastore"]
+        end
+        subgraph GEAP["Gemini Enterprise Agent Platform"]
+          GW["Agent Gateway (IAP)"]
+          POL["Policies"]
+          MA2["Model Armor (gateway)"]
+          subgraph RUNTIME["Agent Registry / Agent Runtime"]
+            HRAGENT["HRPN agent with Agent Identity"]
+            HRTOOLS["HRPN tools and MCP"]
+          end
+        end
+        AUTHM["Auth Manager"]
+        OBSV["Agent observability"]
+        AUDIT["Audit / Logging"]
+        SCC["AI Security (SCC)"]
+      end
+      subgraph SPOKE["AAI HR spoke project (hypothesis)"]
+        RAG["RAG Engine corpus"]
+        GEM["Gemini"]
+        DOCS["Policy documents bucket"]
+        SYNC["Drive sync and import"]
+        XIAM["Cross-project IAM"]
+        PSL["AgentAiR spoke template"]
+      end
+    end
+    subgraph DATAHUB["C9EC · Datahub"]
+      DATAPROD["Data products"]
+      PIPE["Ingestion and transformation pipeline"]
+    end
+    PLOG["Platform logging centralisation"]
+    CONN["Platform connectivity"]
+    MAF["Model Armor floor template"]
+    VPCSC["VPC SC"]
+    GAPI["Governed GCP APIs"]
+    IAM["IAM / PAB"]
+  end
+  subgraph RIGHT["Sources and LAN"]
+    subgraph SAASZ["SaaS / data sources (GWS)"]
+      DRIVE["HR policy Drive folder"]
+      CHAT["Google Chat"]
+    end
+    LAN["Airbus LAN"]
+  end
+  subgraph OUT["Outside Google Cloud"]
+    subgraph AWSZ["Airbus AWS"]
+      subgraph GITHUBZ["Airbus GitHub · github.airbus.corp"]
+        CUTTER["GenAiR-Cutter and AgentGarden"]
+      end
+      subgraph GITLABZ["Airbus GitLab · SCM"]
+        SCMREPO["HRPN agent repository"]
+      end
+      JENKINS["Airbus CI/CD (Jenkins)"]
+    end
+  end
+  USERS -->|"web access"| CASB
+  CASB -->|"Gemini Enterprise"| GEUI
+  USERS -.->|"BRD channel · not used"| CHAT
+  GEUI -->|"prompt screening"| MA1
+  GEUI -->|"agent call"| GW
+  GW -->|"policy check"| POL
+  GW -->|"screening"| MA2
+  GW -->|"invoke registered agent"| HRAGENT
+  XIAM -.->|"cross-project grant"| HRAGENT
+  HRAGENT -->|"tool call"| HRTOOLS
+  HRAGENT -->|"LLM call"| GEM
+  HRTOOLS -->|"retrieval"| RAG
+  HRAGENT -->|"agent identity"| AUTHM
+  HRAGENT -->|"traces"| OBSV
+  AUTHM -->|"credentials"| IDP
+  MA2 -->|"findings"| AUDIT
+  MA2 -->|"AI findings"| SCC
+  OBSV -->|"logs"| PLOG
+  AUDIT -->|"audit logs"| PLOG
+  SCC -->|"findings"| PLOG
+  PLOG -->|"forward"| SIEM
+  GW -->|"egress"| CONN
+  CONN -->|"LAN sources"| LAN
+  FEDC -->|"federated search"| DRIVE
+  DSTORE -->|"data products"| DATAPROD
+  GW -->|"grounding data"| DATAPROD
+  DATAPROD -->|"pipeline"| PIPE
+  PIPE -->|"sources"| CONN
+  DRIVE -->|"Drive API"| SYNC
+  SYNC -->|"delta copy"| DOCS
+  DOCS -->|"import_files"| RAG
+  VPCSC -.->|"perimeter · min 1 instance"| HRAGENT
+  CUTTER -->|"copier generate · update"| SCMREPO
+  SCMREPO -->|"webhook on push (tbc)"| JENKINS
+  JENKINS -->|"deploy and register (tbc)"| HRAGENT
+  JENKINS -->|"apply spoke template (tbc)"| PSL
+```
+
+Caption. Hypothesis drawn on the AgentAiR overview draw.io, zoning kept: 85BB PCP-GCP ⊃ 4AE9 AI Platform ⊃ 7EFD Everyday AI (Agent
+Factory model: Gemini Enterprise; Agent Platform with Agent Gateway (IAP), Policies, Model Armor, Agent Registry / Runtime), C9EC Datahub
+and the platform cells (logging, connectivity, Model Armor floor, VPC SC, governed APIs, IAM/PAB); links follow the draw.io relations.
+HRPN adds its ADK `root_agent` (already wrapped as `AdkApp`) registered on Agent Runtime, its tools, and an AAI HR spoke project with
+RAG Engine, documents bucket and Drive sync (ARB slide 7 hub-and-spoke, slide 9 "Agent Factory · AAI HR instance").
+Google Chat is NOT the channel here: users reach the agent in the Gemini Enterprise app, so BRD-HR-010 (Chat, mandatory) needs a waiver.
+Red frames: Agent Engine POD-only, not in the production landing zone (HR master ARD note 2026-02-27, to recheck); Gemini Enterprise
+planned Q4 2026, not SEC4AI-assessed; Agent Runtime under VPC-SC needs `min_instances` ≥ 1; PSL spoke template end 2026, retrofit required.
+Feasibility precedent outside Airbus: ADK agent on Agent Runtime registered in Gemini Enterprise Business with a cross-project IAM grant.
+Delivery (hypothesis): the ADK code keeps its GenAiR-Cutter / AgentGarden origin, lives on the Airbus SCM and reaches the platform through the Airbus CI/CD (the AgentAiR constraint list says "CI/CD of Airbus (Gitlab, Jenkins …) tbc"); the spoke environments (dev / int / pro) and their project ids are unknown.

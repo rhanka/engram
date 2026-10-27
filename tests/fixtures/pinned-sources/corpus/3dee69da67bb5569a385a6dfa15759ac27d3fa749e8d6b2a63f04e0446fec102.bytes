@@ -1,0 +1,309 @@
+#!/usr/bin/env node
+// Builds the HRPN acceptance fixtures for the design-system diagram packages (diagram-core / diagram-canvas,
+// profile generic@1): entities and relations only, NO coordinates (the design system computes the layout).
+//
+// Inputs (read-only):
+//   ../SCENES.md                                   quoted Mermaid subset + captions + tint legend
+//   ../scene-metadata.mjs                          card text, tint, footer per node; edge states
+//   ../../tooling/chain/parse-mermaid.mjs          the chain parser (imported, never modified)
+//   ../../tooling/chain/ServiceNode.svelte         current tint colours (parsed)
+//   ../.generated/data.json                        build-scenes.mjs output: expected counts + sceneHash
+//   docs/ard/decision/focus/.generated/figures/    reference PNG renders (copied to reference/)
+//   docs/ard/docx-build/.work/figures/             docx PNG renders (pointed to)
+//   ../hrpn-architecture.drawio                    draw.io pages, one per scene (pointed to)
+// Outputs (this directory): <scene>.json x 4, tint-legend.json, reference-renders.json, reference/*.png,
+// MANIFEST.md. Deterministic: no timestamp, a second run gives the same bytes.
+// Usage (from the repository root): node docs/architecture/hrpn/ds-fixtures/build-fixtures.mjs
+// Node only (no dependency). Fails on any count, hash or contract mismatch.
+import { readFile, writeFile, mkdir, copyFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseMermaid } from '../../tooling/chain/parse-mermaid.mjs';
+import { decorateGraph, sceneIds, sceneTitle, sceneMetadata, TINTS } from '../scene-metadata.mjs';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const hrpn = resolve(here, '..');
+const repoRoot = resolve(here, '../../../..');
+const rel = path => relative(repoRoot, path);
+const sha256 = value => createHash('sha256').update(value).digest('hex');
+const fail = message => { throw Error(`build-fixtures: ${message}`); };
+
+const SRC = {
+  scenes: join(hrpn, 'SCENES.md'),
+  metadata: join(hrpn, 'scene-metadata.mjs'),
+  parser: join(hrpn, '../tooling/chain/parse-mermaid.mjs'),
+  serviceNode: join(hrpn, '../tooling/chain/ServiceNode.svelte'),
+  data: join(hrpn, '.generated/data.json'),
+  focusFigures: join(repoRoot, 'docs/ard/decision/focus/.generated/figures'),
+  docxFigures: join(repoRoot, 'docs/ard/docx-build/.work/figures'),
+  drawio: join(hrpn, 'hrpn-architecture.drawio'),
+  drawioConverter: join(hrpn, '../tooling/xyflow-to-drawio.mjs'),
+};
+const sources = new Map(); // path -> sha256 of every file read
+const read = async (path, encoding) => {
+  const buffer = await readFile(path);
+  sources.set(path, sha256(buffer));
+  return encoding ? buffer.toString(encoding) : buffer;
+};
+
+// 1. Parse SCENES.md exactly as build-scenes.mjs does ------------------------------------------
+const markdown = await read(SRC.scenes, 'utf8');
+await read(SRC.metadata); await read(SRC.parser);
+const matches = [...markdown.matchAll(/### `([^`]+)` — ([^\n]+)\n\n```mermaid\n([\s\S]*?)```\n\nCaption\. ([\s\S]*?)(?=\n### |\s*$)/g)];
+if (matches.length !== sceneIds.length) fail(`SCENES.md has ${matches.length} scenes, metadata has ${sceneIds.length}`);
+const graphs = matches.map((match, index) => {
+  const [, id, title, source, caption] = match;
+  if (id !== sceneIds[index]) fail(`scene order mismatch: ${id} != ${sceneIds[index]}`);
+  if (title !== sceneTitle(id)) fail(`scene title mismatch for ${id}`);
+  const graph = decorateGraph(parseMermaid(source, id, title, 'option', '2026-10-15'));
+  graph.caption = caption.trim();
+  return graph;
+});
+
+// Same projection and hash as build-scenes.mjs (ties the fixture to data.json and the PNG renders).
+const projection = graph => ({
+  sceneId: graph.id,
+  nodes: [...graph.nodes, ...graph.groups].map(item => ({ id: item.id, kind: item.metadata.kind, label: item.label,
+    evidenceClass: item.metadata.evidenceClass, runtimeState: item.metadata.runtimeState, parentId: item.parent,
+    repo: item.metadata.repo, tint: item.metadata.tint })).sort((a, b) => a.id.localeCompare(b.id)),
+  edges: graph.edges.map(edge => ({ id: edge.id, source: edge.source, target: edge.target, label: edge.label, dashed: edge.dashed,
+    evidenceClass: edge.metadata.evidenceClass, runtimeState: edge.metadata.runtimeState })).sort((a, b) => a.id.localeCompare(b.id)),
+});
+const sceneHash = graph => sha256(JSON.stringify(projection(graph)).normalize('NFC'));
+
+const data = JSON.parse(await read(SRC.data, 'utf8'));
+const expected = new Map(data.manifest.graphs.map(entry => [entry.id, entry]));
+if (data.manifest.scenesHash !== sources.get(SRC.scenes)) fail('data.json was built from another SCENES.md');
+if (data.manifest.metadataHash !== sources.get(SRC.metadata)) fail('data.json was built from another scene-metadata.mjs');
+
+// Caption passages that carry legend text ("Colours:", "Red frames:"): from the opening line to the first line ending with ".".
+const passages = (caption, opener) => {
+  const lines = caption.split('\n'), out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const start = lines[i].indexOf(opener);
+    if (start !== 0) continue;
+    const run = [];
+    for (let j = i; j < lines.length; j++) { run.push(lines[j].trim()); if (/\.$/.test(lines[j].trim())) break; }
+    out.push(run.join(' '));
+  }
+  return out;
+};
+
+// 2. One fixture per scene ---------------------------------------------------------------------
+const LIMITS = { containerName: 200, nodeName: 200, linkLabel: 120, maxContainers: 64 }; // generic@1 (diagram-core profiles/generic.ts)
+const fixtures = [];
+for (const graph of graphs) {
+  const exp = expected.get(graph.id) ?? fail(`${graph.id} missing from data.json manifest`);
+  const hash = sceneHash(graph);
+  if (hash !== exp.sceneHash) fail(`${graph.id}: sceneHash ${hash} != data.json ${exp.sceneHash}`);
+  const zoneIds = new Set(graph.groups.map(group => group.id));
+  const footer = meta => `${meta.labelKind}: ${meta.repo.join(' + ')}`;
+  const items = [...graph.groups, ...graph.nodes].sort((a, b) => a.line - b.line); // Mermaid source order
+  const entities = items.map(item => {
+    const meta = item.metadata, zone = zoneIds.has(item.id);
+    return zone
+      ? { id: item.id, kind: 'zone', label: item.label, detail: null, parent: item.parent, tint: null,
+        code: meta.code, footer: footer(meta) }
+      : { id: item.id, kind: 'card', label: item.label, detail: meta.detail, parent: item.parent, tint: meta.tint,
+        code: meta.code, role: meta.role, name: meta.name, footer: footer(meta), store: item.store };
+  });
+  const relations = graph.edges.map(edge => ({ id: edge.id, from: edge.source, to: edge.target, label: edge.label,
+    style: edge.dashed ? 'dashed' : 'solid', ...(edge.both ? { bidirectional: true } : {}) }));
+  const tree = parent => entities.filter(entity => entity.kind === 'zone' && entity.parent === parent).map(zone => ({
+    id: zone.id, label: zone.label,
+    cards: entities.filter(entity => entity.kind === 'card' && entity.parent === zone.id).map(entity => entity.id),
+    zones: tree(zone.id),
+  }));
+  const zoneHierarchy = {
+    rootCards: entities.filter(entity => entity.kind === 'card' && entity.parent === null).map(entity => entity.id),
+    zones: tree(null),
+  };
+  const cards = entities.filter(entity => entity.kind === 'card'), zones = entities.filter(entity => entity.kind === 'zone');
+  const tints = {};
+  for (const card of cards) tints[card.tint ?? 'none'] = (tints[card.tint ?? 'none'] ?? 0) + 1;
+  const counts = { cards: cards.length, zones: zones.length, relations: relations.length,
+    solid: relations.filter(r => r.style === 'solid').length, dashed: relations.filter(r => r.style === 'dashed').length,
+    labelled: relations.filter(r => r.label).length,
+    tints: Object.fromEntries(Object.entries(tints).sort(([a], [b]) => a.localeCompare(b))) };
+
+  // Contract checks.
+  if (counts.cards !== exp.nodes || counts.relations !== exp.edges || counts.zones !== exp.subflows)
+    fail(`${graph.id}: counts ${counts.cards}/${counts.relations}/${counts.zones} != build-scenes ${exp.nodes}/${exp.edges}/${exp.subflows}`);
+  const ids = new Set(entities.map(entity => entity.id));
+  if (ids.size !== entities.length) fail(`${graph.id}: duplicate entity id`);
+  if (new Set(relations.map(r => r.id)).size !== relations.length) fail(`${graph.id}: duplicate relation id`);
+  for (const entity of entities) if (entity.parent !== null && !zoneIds.has(entity.parent)) fail(`${graph.id}/${entity.id}: parent is not a zone`);
+  for (const r of relations) for (const end of [r.from, r.to])
+    if (!cards.some(card => card.id === end)) fail(`${graph.id}: relation endpoint ${end} is not a card`);
+  for (const card of cards) if (card.tint !== null && !TINTS.has(card.tint)) fail(`${graph.id}/${card.id}: tint ${card.tint}`);
+  if (sceneMetadata(graph.id).clean && (tints.removed || tints.risk || counts.dashed)) fail(`${graph.id}: clean scene carries removed/risk/dashed`);
+  const generic = [];
+  const names = zones.map(zone => zone.label);
+  for (const name of new Set(names)) if (names.filter(n => n === name).length > 1) generic.push(`duplicate container name "${name}"`);
+  if (zones.length > LIMITS.maxContainers) generic.push(`containers ${zones.length} > ${LIMITS.maxContainers}`);
+  for (const zone of zones) if (zone.label.length > LIMITS.containerName) generic.push(`${zone.id}: name > ${LIMITS.containerName}`);
+  for (const card of cards) if (card.label.length > LIMITS.nodeName) generic.push(`${card.id}: name > ${LIMITS.nodeName}`);
+  for (const r of relations) if (r.label.length > LIMITS.linkLabel) generic.push(`${r.id}: label > ${LIMITS.linkLabel}`);
+  if (generic.length) fail(`${graph.id}: generic@1 limits: ${generic.join('; ')}`);
+
+  fixtures.push({
+    schema: 'hrpn-ds-fixture/v1',
+    profile: 'generic@1',
+    profileMapping: {
+      card: 'entity type `node` (attribute `name` = label)',
+      zone: 'entity type `container` (attribute `name` = label, unique per scene)',
+      parent: 'relation type `contains` (role parent = the zone, role child = the card or zone); hierarchy `containment`, tree',
+      relation: 'relation type `link` (role source = from, role target = to, attribute `label`)',
+      extraFields: 'detail, tint, code, role, name, footer, store and style are HRPN rendering data outside generic@1 attributes',
+    },
+    coordinates: 'none: no position, size, route or layout hint; the design system computes the layout',
+    scene: { id: graph.id, title: graph.title, caption: graph.caption,
+      legendPassages: [...passages(graph.caption, 'Colours:'), ...passages(graph.caption, 'Red frames:')] },
+    source: {
+      scenes: rel(SRC.scenes), scenesSha256: sources.get(SRC.scenes),
+      metadata: rel(SRC.metadata), metadataSha256: sources.get(SRC.metadata),
+      parser: rel(SRC.parser), parserSha256: sources.get(SRC.parser),
+      sceneHash: hash, sceneHashNote: 'build-scenes.mjs projection hash; equals data.json manifest and figures.json',
+    },
+    counts,
+    entities,
+    relations,
+    zoneHierarchy,
+  });
+}
+const s2t = fixtures.find(f => f.scene.id === 'S2-target');
+if (s2t.counts.cards !== 51 || s2t.counts.relations !== 54) fail(`S2-target ${s2t.counts.cards} cards / ${s2t.counts.relations} links, expected 51 / 54`);
+const geometry = /^(x|y|position|positionAbsolute|width|height|bounds|points|routedPoints|layout|canvas)$/;
+const scan = (value, path) => {
+  if (Array.isArray(value)) value.forEach((item, i) => scan(item, `${path}[${i}]`));
+  else if (value && typeof value === 'object') for (const [key, item] of Object.entries(value)) {
+    if (geometry.test(key)) fail(`geometry key ${path}.${key}`);
+    scan(item, `${path}.${key}`);
+  }
+};
+fixtures.forEach(fixture => scan(fixture, fixture.scene.id));
+
+// 3. Tint legend -------------------------------------------------------------------------------
+const svelte = await read(SRC.serviceNode, 'utf8');
+const hex = rgba => { const [r, g, b] = rgba.match(/\d+/g).map(Number); return '#' + [r, g, b].map(n => n.toString(16).padStart(2, '0')).join(''); };
+const tintCss = {};
+for (const [, tint, body] of svelte.matchAll(/\.service-node\[data-tint='([\w-]+)'\]\s*\{([^}]*)\}/g)) {
+  const background = body.match(/background:\s*(rgba\([^)]*\))/)?.[1] ?? null;
+  tintCss[tint] = {
+    css: body.trim(),
+    fill: background && { rgba: background, hex: hex(background), opacity: Number(background.match(/,\s*([\d.]+)\)$/)[1]) },
+    leftRule: body.match(/border-left-color:\s*(#[0-9a-f]+)/i)?.[1] ?? null,
+    insetFrame: body.match(/box-shadow:\s*inset[^#]*(#[0-9a-f]+)/i)?.[1] ?? null,
+  };
+}
+const baseCss = svelte.match(/\.service-node \{([^}]*)\}/)?.[1] ?? fail('ServiceNode base style not found');
+const defaultLeftRule = baseCss.match(/border-left:\s*([^;]+);/)[1].trim();
+const defaultFill = baseCss.match(/background:\s*([^;]+);/)[1].trim();
+// The draw.io export resolves the category-1 rule colour of the airbus theme (xyflow-to-drawio.mjs, table T).
+const cat1 = (await read(SRC.drawioConverter, 'utf8')).match(/cat1:\s*'(#[0-9a-f]+)'/i)?.[1] ?? fail('cat1 colour not found');
+const ruleText = `${defaultLeftRule} (resolved ${cat1} in the airbus-theme draw.io export)`;
+const tintsParagraph = markdown.match(/^Tints: ([\s\S]*?)\n\n/m)?.[1].replace(/\s*\n\s*/g, ' ') ?? fail('Tints paragraph not found');
+const [tintSentence, edgeSentence] = tintsParagraph.split(/\. (?=Dashed)/);
+const legendText = {};
+for (const part of tintSentence.split('; ')) {
+  const named = part.match(/^(.+?) `([\w-]+)` = (.+)$/), none = part.match(/^no tint = (.+)$/);
+  if (named) legendText[named[2]] = { colourName: named[1], text: named[3] };
+  else if (none) legendText.none = { colourName: 'no tint', text: none[1].replace(/\.$/, '') };
+  else fail(`unparsed tint legend part: ${part}`);
+}
+const CATEGORY = {
+  genair: 'Native GenAiR template (Cutter / AgentGarden)', specific: 'HRPN-specific code', added: 'Target addition (new or changed)',
+  removed: 'To remove in the target', risk: 'Present but weak or at risk', none: 'Google or third-party managed service',
+};
+const usage = tint => Object.fromEntries(fixtures.map(f => [f.scene.id, f.counts.tints[tint] ?? 0]).filter(([, n]) => n));
+const legend = {
+  schema: 'hrpn-ds-tint-legend/v1',
+  source: { legend: rel(SRC.scenes), legendSha256: sources.get(SRC.scenes), colours: rel(SRC.serviceNode), coloursSha256: sources.get(SRC.serviceNode),
+    note: 'Colours as rendered today by the chain card (ServiceNode.svelte): translucent fill over the white card surface; risk adds a red left rule and a 5 px inset frame.' },
+  legendParagraph: `Tints: ${tintsParagraph}`,
+  categories: [...TINTS, 'none'].map(tint => {
+    const css = tintCss[tint], text = legendText[tint] ?? fail(`no legend text for ${tint}`);
+    const scenes = usage(tint);
+    return { tint: tint === 'none' ? null : tint, key: tint, category: CATEGORY[tint], colourName: text.colourName, legend: text.text,
+      fill: tint === 'none' ? { css: defaultFill, hex: '#ffffff', opacity: 1 } : css?.fill ?? fail(`no colour for ${tint}`),
+      leftRule: tint === 'none' ? ruleText : css.leftRule ?? `inherited: ${ruleText}`,
+      insetFrame: tint === 'none' ? null : css.insetFrame,
+      css: tint === 'none' ? null : css.css,
+      usedIn: scenes,
+      scope: (tint === 'removed' || tint === 'risk') ? 'as-built and comparison scenes only (S2-asbuilt, S1-conversational, S3-agentfactory); never in the decided target S2-target' : 'all scenes where used' };
+  }),
+  relationStyles: [
+    { style: 'solid', legend: 'wired or required link' },
+    { style: 'dashed', legend: edgeSentence.replace(/^Dashed links = /, '').replace(/\.$/, ''), sourceText: edgeSentence, usedIn: Object.fromEntries(fixtures.map(f => [f.scene.id, f.counts.dashed]).filter(([, n]) => n)) },
+  ],
+  sceneLegendPassages: Object.fromEntries(fixtures.map(f => [f.scene.id, f.scene.legendPassages])),
+};
+for (const tint of ['removed', 'risk']) if (legend.categories.find(c => c.key === tint).usedIn['S2-target']) fail(`${tint} used in S2-target`);
+
+// 4. Reference renders -------------------------------------------------------------------------
+await mkdir(join(here, 'reference'), { recursive: true });
+const focusIndex = JSON.parse(await read(join(SRC.focusFigures, 'figures.json'), 'utf8'));
+const docxIndex = JSON.parse(await read(join(SRC.docxFigures, 'figures.json'), 'utf8'));
+const drawio = await read(SRC.drawio, 'utf8');
+const pages = [...drawio.matchAll(/<diagram id="([^"]+)" name="([^"]+)">/g)].map(([, id, name]) => ({ id, name }));
+const renders = { schema: 'hrpn-ds-reference-renders/v1',
+  note: 'Current chain renders (xyflow reference renderer, theme airbus) of the same scenes; layout targets for visual comparison only, not geometry input.',
+  drawio: { path: rel(SRC.drawio), sha256: sources.get(SRC.drawio), pages }, scenes: [] };
+for (const fixture of fixtures) {
+  const id = fixture.scene.id, focus = focusIndex.report.find(r => r.id === id), docx = docxIndex.report.find(r => r.id === id);
+  if (!focus || !docx) fail(`${id}: missing from figures.json`);
+  if (focus.sceneHash !== fixture.source.sceneHash) fail(`${id}: focus PNG built from sceneHash ${focus.sceneHash}`);
+  const page = pages.find(p => p.id === id) ?? fail(`${id}: no draw.io page`);
+  if (page.name !== fixture.scene.title) fail(`${id}: draw.io page name differs from scene title`);
+  const focusPng = join(SRC.focusFigures, `${id}.png`), docxPng = join(SRC.docxFigures, `${id}.png`);
+  const focusBytes = await read(focusPng), docxBytes = await read(docxPng);
+  if (focusBytes.length !== focus.bytes || docxBytes.length !== docx.bytes) fail(`${id}: PNG size differs from figures.json`);
+  const copy = join(here, 'reference', `${id}.png`);
+  await copyFile(focusPng, copy);
+  renders.scenes.push({ id, title: fixture.scene.title, sceneHash: fixture.source.sceneHash, canvas: focus.canvas,
+    png: { path: rel(copy), copiedFrom: rel(focusPng), sha256: sources.get(focusPng), scale: focusIndex.scale, size: focus.png, bytes: focus.bytes },
+    docxPng: { path: rel(docxPng), sha256: sources.get(docxPng), scale: docxIndex.scale, size: docx.png, bytes: docx.bytes, note: 'pointed to, not copied' },
+    drawioPage: { path: rel(SRC.drawio), diagramId: page.id, name: page.name } });
+}
+
+// 5. Write outputs + MANIFEST.md ---------------------------------------------------------------
+const outputs = [];
+const emit = async (name, value) => {
+  const text = JSON.stringify(value, null, 2) + '\n';
+  JSON.parse(text);
+  await writeFile(join(here, name), text);
+  outputs.push({ path: join(here, name), sha256: sha256(text), bytes: Buffer.byteLength(text) });
+};
+for (const fixture of fixtures) await emit(`${fixture.scene.id}.json`, fixture);
+await emit('tint-legend.json', legend);
+await emit('reference-renders.json', renders);
+for (const scene of renders.scenes) { const path = join(repoRoot, scene.png.path), bytes = await readFile(path);
+  outputs.push({ path, sha256: sha256(bytes), bytes: bytes.length }); }
+const generator = await readFile(fileURLToPath(import.meta.url));
+outputs.push({ path: fileURLToPath(import.meta.url), sha256: sha256(generator), bytes: generator.length });
+
+const row = (...cells) => `| ${cells.join(' | ')} |`;
+const md = ['# HRPN design-system fixtures — manifest', '',
+  'Acceptance fixtures for the design-system packages `diagram-core` / `diagram-canvas` (profile `generic@1`): the four HRPN',
+  'architecture scenes as entities and relations, with no coordinates (the design system computes the layout). Generated by',
+  '`build-fixtures.mjs` (do not edit by hand). No git commit: consumers take each file by path + sha256.', '',
+  '## Generator', '', '```sh', `node ${rel(fileURLToPath(import.meta.url))}   # from the repository root; Node only`, '```', '',
+  'Checks run by the generator: counts per scene equal the `build-scenes.mjs` output (`.generated/data.json`); sceneHash',
+  '(build-scenes projection) equals data.json and the PNG `figures.json`; unique ids; relation endpoints are cards; parents',
+  'are zones; closed tint set; S2-target clean (no removed, no risk, no dashed link) and 51 cards / 54 links; generic@1 limits',
+  '(unique container names, <= 64 containers, name <= 200, link label <= 120); no geometry key in any fixture; draw.io page',
+  'per scene with the scene title.', '',
+  '## Counts', '', row('scene', 'cards', 'zones', 'relations', 'solid', 'dashed', 'tints (cards)', 'sceneHash'), row('---', '---:', '---:', '---:', '---:', '---:', '---', '---'),
+  ...fixtures.map(f => row(`\`${f.scene.id}\``, f.counts.cards, f.counts.zones, f.counts.relations, f.counts.solid, f.counts.dashed,
+    Object.entries(f.counts.tints).map(([k, n]) => `${k} ${n}`).join(', '), `\`${f.source.sceneHash.slice(0, 16)}…\``)), '',
+  '## Files', '', row('file', 'sha256', 'bytes'), row('---', '---', '---:'),
+  ...outputs.map(o => row(`\`${rel(o.path)}\``, `\`${o.sha256}\``, o.bytes)), '',
+  'Fixture fields: `entities[]` {id, kind `card`|`zone`, label, detail, parent (zone id or null), tint, code, role, name, footer,',
+  'store}; `relations[]` {id, from, to, label, style `solid`|`dashed`}; `zoneHierarchy` {rootCards, zones[] {id, label, cards, zones}};',
+  '`profileMapping` maps them to generic@1 (`node`, `container`, `contains`, `link`).', '',
+  '## Sources (read-only)', '', row('file', 'sha256'), row('---', '---'),
+  ...[...sources.entries()].sort(([a], [b]) => rel(a).localeCompare(rel(b))).map(([path, hash]) => row(`\`${rel(path)}\``, `\`${hash}\``)), ''];
+await writeFile(join(here, 'MANIFEST.md'), md.join('\n'));
+console.log(JSON.stringify({ scenes: fixtures.map(f => ({ id: f.scene.id, ...f.counts })),
+  manifestSha256: sha256(md.join('\n')) }, null, 2));

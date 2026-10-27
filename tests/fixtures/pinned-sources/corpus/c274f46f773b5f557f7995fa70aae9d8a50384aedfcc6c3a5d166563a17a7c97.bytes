@@ -1,0 +1,51 @@
+{
+  "name": "BpmnSemantics",
+  "prefix": "sem",
+  "uri": "https://sentropic.com/schema/bpmn/semantics/1",
+  "xml": {
+    "tagAlias": "lowerCase"
+  },
+  "types": [
+    {
+      "name": "Info",
+      "superClass": [
+        "Element"
+      ],
+      "properties": [
+        {
+          "name": "order",
+          "type": "Integer",
+          "isAttr": true
+        },
+        {
+          "name": "laneRef",
+          "type": "bpmn:Lane",
+          "isAttr": true,
+          "isReference": true
+        },
+        {
+          "name": "direction",
+          "type": "String",
+          "isAttr": true
+        },
+        {
+          "name": "label",
+          "type": "String",
+          "isAttr": true
+        },
+        {
+          "name": "primaryAssociationRef",
+          "type": "bpmn:BaseElement",
+          "isAttr": true,
+          "isReference": true
+        },
+        {
+          "name": "processRef",
+          "type": "bpmn:Process",
+          "isAttr": true,
+          "isReference": true
+        }
+      ]
+    }
+  ]
+}

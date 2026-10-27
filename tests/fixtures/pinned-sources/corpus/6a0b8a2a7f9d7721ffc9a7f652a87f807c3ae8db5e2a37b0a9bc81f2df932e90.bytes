@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:profile-mechanism:1:compiled-lint-options",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "mechanismVersion": {
+      "const": "1"
+    },
+    "profileDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "phase": {
+      "enum": [
+        "import",
+        "pre-normalize",
+        "post-normalize",
+        "post-layout",
+        "release"
+      ]
+    },
+    "readinessPolicy": {
+      "enum": [
+        "draft",
+        "accept"
+      ]
+    },
+    "compiledRules": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:profile-mechanism:1:profile#/$defs/rule"
+      },
+      "minItems": 0
+    },
+    "bindings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ownerId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1
+          },
+          "targetId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "ownerId",
+          "role",
+          "targetId"
+        ]
+      },
+      "minItems": 0
+    },
+    "severityPolicyDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "mechanismVersion",
+    "profileDigest",
+    "phase",
+    "readinessPolicy",
+    "compiledRules",
+    "bindings",
+    "severityPolicyDigest"
+  ]
+}

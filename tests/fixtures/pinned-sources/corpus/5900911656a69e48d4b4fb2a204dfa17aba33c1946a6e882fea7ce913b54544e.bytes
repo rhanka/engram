@@ -1,0 +1,247 @@
+{
+  "$type": "bpmn:Definitions",
+  "id": "Defs_Kite",
+  "targetNamespace": "urn:example:functions-workbench:v1",
+  "rootElements": [
+    {
+      "$type": "bpmn:Process",
+      "id": "Process_Kite",
+      "isExecutable": false,
+      "flowElements": [
+        {
+          "$type": "bpmn:StartEvent",
+          "id": "Start_Kite",
+          "outgoing": [
+            "Flow_1"
+          ]
+        },
+        {
+          "$type": "bpmn:Task",
+          "id": "Task_Review",
+          "name": "Check",
+          "incoming": [
+            "Flow_1"
+          ],
+          "outgoing": [
+            "Flow_2"
+          ],
+          "ioSpecification": {
+            "$type": "bpmn:InputOutputSpecification",
+            "id": "IO_Review",
+            "dataInputs": [
+              {
+                "$type": "bpmn:DataInput",
+                "id": "Port_Review"
+              }
+            ]
+          },
+          "dataInputAssociations": [
+            {
+              "$type": "bpmn:DataInputAssociation",
+              "id": "Assoc_In",
+              "sourceRef": [
+                "Input_Kite"
+              ],
+              "targetRef": "Port_Review",
+              "extensionElements": {
+                "$type": "bpmn:ExtensionElements",
+                "values": [
+                  {
+                    "$type": "sem:Info",
+                    "label": "use sketch"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "$type": "bpmn:Task",
+          "id": "Task_Pack",
+          "name": "Check",
+          "ioSpecification": {
+            "$type": "bpmn:InputOutputSpecification",
+            "id": "IO_Pack",
+            "dataInputs": [
+              {
+                "$type": "bpmn:DataInput",
+                "id": "Port_Pack_In"
+              }
+            ],
+            "dataOutputs": [
+              {
+                "$type": "bpmn:DataOutput",
+                "id": "Port_Pack_Out"
+              }
+            ]
+          },
+          "dataInputAssociations": [
+            {
+              "$type": "bpmn:DataInputAssociation",
+              "id": "Assoc_Shared",
+              "sourceRef": [
+                "Input_Kite"
+              ],
+              "targetRef": "Port_Pack_In",
+              "extensionElements": {
+                "$type": "bpmn:ExtensionElements",
+                "values": [
+                  {
+                    "$type": "sem:Info",
+                    "label": "reuse sketch"
+                  }
+                ]
+              }
+            }
+          ],
+          "dataOutputAssociations": [
+            {
+              "$type": "bpmn:DataOutputAssociation",
+              "id": "Assoc_Out",
+              "sourceRef": [
+                "Port_Pack_Out"
+              ],
+              "targetRef": "Output_Kite",
+              "extensionElements": {
+                "$type": "bpmn:ExtensionElements",
+                "values": [
+                  {
+                    "$type": "sem:Info",
+                    "label": "publish plan"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "$type": "bpmn:EndEvent",
+          "id": "End_Kite",
+          "incoming": [
+            "Flow_2"
+          ]
+        },
+        {
+          "$type": "bpmn:SequenceFlow",
+          "id": "Flow_1",
+          "sourceRef": "Start_Kite",
+          "targetRef": "Task_Review"
+        },
+        {
+          "$type": "bpmn:SequenceFlow",
+          "id": "Flow_2",
+          "sourceRef": "Task_Review",
+          "targetRef": "End_Kite"
+        },
+        {
+          "$type": "bpmn:DataObject",
+          "id": "Data_Kite"
+        },
+        {
+          "$type": "bpmn:DataObjectReference",
+          "id": "Input_Kite",
+          "name": "Sketch",
+          "dataObjectRef": "Data_Kite",
+          "extensionElements": {
+            "$type": "bpmn:ExtensionElements",
+            "values": [
+              {
+                "$type": "sem:Info",
+                "order": 1,
+                "laneRef": "Lane_A",
+                "direction": "in",
+                "label": "shared sketch",
+                "primaryAssociationRef": "Assoc_In"
+              }
+            ]
+          }
+        },
+        {
+          "$type": "bpmn:DataObjectReference",
+          "id": "Output_Kite",
+          "name": "Plan",
+          "dataObjectRef": "Data_Kite",
+          "extensionElements": {
+            "$type": "bpmn:ExtensionElements",
+            "values": [
+              {
+                "$type": "sem:Info",
+                "order": 2,
+                "laneRef": "Lane_B",
+                "direction": "out",
+                "label": "finished plan",
+                "primaryAssociationRef": "Assoc_Out"
+              }
+            ]
+          }
+        },
+        {
+          "$type": "bpmn:DataObjectReference",
+          "id": "Unlinked_Kite",
+          "name": "Spare",
+          "dataObjectRef": "Data_Kite",
+          "extensionElements": {
+            "$type": "bpmn:ExtensionElements",
+            "values": [
+              {
+                "$type": "sem:Info",
+                "order": 3,
+                "laneRef": "Lane_A",
+                "direction": "in",
+                "label": "spare sketch"
+              }
+            ]
+          }
+        },
+        {
+          "$type": "bpmn:DataStoreReference",
+          "id": "Store_Kite",
+          "name": "Archive",
+          "dataStoreRef": "Store_Def",
+          "extensionElements": {
+            "$type": "bpmn:ExtensionElements",
+            "values": [
+              {
+                "$type": "sem:Info",
+                "order": 4,
+                "laneRef": "Lane_B",
+                "label": "archive"
+              }
+            ]
+          }
+        }
+      ],
+      "laneSets": [
+        {
+          "$type": "bpmn:LaneSet",
+          "id": "Lanes_Kite",
+          "lanes": [
+            {
+              "$type": "bpmn:Lane",
+              "id": "Lane_A",
+              "name": "Review",
+              "flowNodeRef": [
+                "Start_Kite",
+                "Task_Review"
+              ]
+            },
+            {
+              "$type": "bpmn:Lane",
+              "id": "Lane_B",
+              "name": "Review",
+              "flowNodeRef": [
+                "Task_Pack",
+                "End_Kite"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "$type": "bpmn:DataStore",
+      "id": "Store_Def",
+      "name": "Paper archive"
+    }
+  ]
+}

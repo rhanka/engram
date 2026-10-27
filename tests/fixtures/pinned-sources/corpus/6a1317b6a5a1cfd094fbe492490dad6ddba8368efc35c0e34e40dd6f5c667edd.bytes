@@ -1,0 +1,1 @@
+{"caseId":"lexical-nonfinite","comparatorIds":["design-lexical-probe"],"expectedArtifacts":[{"json":{"code":"profile-number","status":"refused"},"role":"verdict"}],"expectedStatus":"refused:profile-number","inputArtifacts":[{"hex":"3165343030","role":"document"}],"operation":"loadProfile","phase":null,"profileArtifact":null}

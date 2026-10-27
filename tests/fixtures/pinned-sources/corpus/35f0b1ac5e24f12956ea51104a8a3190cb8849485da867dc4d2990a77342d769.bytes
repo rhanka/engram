@@ -1,0 +1,251 @@
+// Builds the HRPN architecture scenes: parses SCENES.md (quoted Mermaid subset) with the Focus chain parser,
+// decorates each graph with scene-metadata.mjs, checks every evidence reference, runs the chain's
+// sceneFor(graph) headlessly (zone layout + orthogonal routing + edge-label placement) and writes:
+//   .generated/data.json      { graphs: [...], manifest }  (same decorated-graph shape as d2d build-map)
+//   .generated/scene-check.json  per-scene layout / routing / label / text-fit results
+//   EVIDENCE.md               per card: evidence references with the cited line, evidenceClass, runtimeState
+// Usage (from this directory): node build-scenes.mjs [--no-measure]
+// Node only. The text-fit measurement uses the pinned playwright-core + local headless Chromium of
+// ../tooling when present; otherwise it is reported as `unverified`.
+import { readFile, writeFile, mkdir, access } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { parseMermaid } from '../tooling/chain/parse-mermaid.mjs';
+import { sceneFor, CARD } from '../tooling/chain/scenes.js';
+import { serviceIcons } from '../tooling/chain/service-icons.js';
+import { decorateGraph, sceneIds, sceneTitle, sceneMetadata } from './scene-metadata.mjs';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(here, '../../..');
+const AGENTAIR = join(homedir(), 'Téléchargements/agentair-overview.drawio.xml');
+const sha256 = value => createHash('sha256').update(value).digest('hex');
+const measureEnabled = !process.argv.includes('--no-measure');
+
+// 1. Parse SCENES.md --------------------------------------------------------------------------
+const markdown = await readFile(join(here, 'SCENES.md'), 'utf8');
+const matches = [...markdown.matchAll(/### `([^`]+)` — ([^\n]+)\n\n```mermaid\n([\s\S]*?)```\n\nCaption\. ([\s\S]*?)(?=\n### |\s*$)/g)];
+if (matches.length !== sceneIds.length) throw Error(`SCENES.md has ${matches.length} scenes, metadata has ${sceneIds.length}`);
+const graphs = matches.map((match, index) => {
+  const [, id, title, source, caption] = match;
+  if (id !== sceneIds[index]) throw Error(`scene order mismatch: ${id} != ${sceneIds[index]}`);
+  if (title !== sceneTitle(id)) throw Error(`scene title mismatch for ${id}: "${title}" != "${sceneTitle(id)}"`);
+  const lines = caption.trim().split('\n').length;
+  if (lines < 5 || lines > 10) throw Error(`${id}: caption has ${lines} lines (expected 5-10)`);
+  const graph = decorateGraph(parseMermaid(source, id, title, 'option', '2026-10-15'));
+  graph.caption = caption.trim();
+  return graph;
+});
+
+// 2. Evidence references -----------------------------------------------------------------------
+const fileCache = new Map();
+const readLines = async path => {
+  if (!fileCache.has(path)) fileCache.set(path, (await readFile(path, 'utf8')).split('\n'));
+  return fileCache.get(path);
+};
+let drawioCells = null;
+const drawio = async () => {
+  if (!drawioCells) {
+    const xml = await readFile(AGENTAIR, 'utf8');
+    const attr = (tag, name) => tag.match(new RegExp('\\s' + name + '="([^"]*)"'))?.[1];
+    const raw = [...xml.matchAll(/<mxCell\b([^>]*)>/g)].map(match => ({ id: attr(match[1], 'id'), value: attr(match[1], 'value') ?? '',
+      edge: attr(match[1], 'edge') === '1', source: attr(match[1], 'source'), target: attr(match[1], 'target') }));
+    const byId = new Map(raw.map(item => [item.id, item]));
+    const name = id => (id && plain(byId.get(id)?.value ?? '')) || (id ? `cell ${id}` : 'unattached end');
+    drawioCells = new Map(raw.map(item => [item.id, item.edge ? `edge: ${name(item.source)} → ${name(item.target)}`
+      : (plain(item.value) || 'unlabelled shape (container frame or icon)')]));
+  }
+  return drawioCells;
+};
+const plain = text => text.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"')
+  .replace(/<[^>]+>/g, ' ').replace(/&nbsp;|&#xa;|&#10;/g, ' ').replace(/\s+/g, ' ').trim();
+const display = path => path.startsWith(homedir()) ? `~${path.slice(homedir().length)}` : path.slice(repoRoot.length + 1);
+
+async function checkReference(ref) {
+  if (ref.startsWith('git:')) {
+    const sha = ref.slice(4);
+    try {
+      const subject = execFileSync('git', ['-C', repoRoot, 'log', '-1', '--format=%ad %s', '--date=short', sha], { encoding: 'utf8' }).trim();
+      return { ref, ok: true, kind: 'git', excerpt: subject };
+    } catch { return { ref, ok: false, kind: 'git', error: 'commit not found' }; }
+  }
+  if (ref.startsWith('drawio:')) {
+    const id = ref.slice(7), cells = await drawio();
+    return cells.has(id) ? { ref, ok: true, kind: 'drawio', excerpt: cells.get(id) }
+      : { ref, ok: false, kind: 'drawio', error: 'cell not found' };
+  }
+  if (ref.startsWith('doc:')) return { ref, ok: true, kind: 'doc', excerpt: 'external documentation (unverified offline)' };
+  const match = ref.match(/^(.*?)(?::([\d,\-]+))?$/);
+  const path = match[1].startsWith('~/') ? join(homedir(), match[1].slice(2)) : join(repoRoot, match[1]);
+  try { await access(path); } catch { return { ref, ok: false, kind: 'file', error: 'file not found' }; }
+  if (!match[2]) return { ref, ok: true, kind: 'file', excerpt: '(whole file)' };
+  const lines = await readLines(path);
+  const numbers = match[2].split(',').flatMap(part => part.split('-').map(Number));
+  const bad = numbers.find(number => !(number >= 1 && number <= lines.length));
+  if (bad !== undefined) return { ref, ok: false, kind: 'file', error: `line ${bad} outside 1-${lines.length}` };
+  // Excerpt: the first non-empty line of the first cited range.
+  const first = numbers[0], last = match[2].split(',')[0].includes('-') ? numbers[1] : first;
+  const excerptLine = lines.slice(first - 1, last).map(line => plain(line)).find(Boolean) ?? '';
+  return { ref, ok: true, kind: 'file', path: display(path), excerpt: excerptLine.slice(0, 110) };
+}
+
+const evidence = {};
+const evidenceErrors = [];
+for (const graph of graphs) {
+  evidence[graph.id] = [];
+  for (const item of [...graph.groups, ...graph.nodes]) {
+    const meta = item.metadata;
+    if (meta.card === 'A' && !serviceIcons[meta.icon]) throw Error(`${graph.id}/${item.id}: unknown icon ${meta.icon}`);
+    const refs = [];
+    for (const ref of meta.ev) {
+      const result = await checkReference(ref);
+      refs.push(result);
+      if (!result.ok) evidenceErrors.push(`${graph.id}/${item.id}: ${ref} — ${result.error}`);
+    }
+    evidence[graph.id].push({ id: item.id, label: item.label, group: meta.card === 'box', meta, refs });
+  }
+}
+if (evidenceErrors.length) throw Error(`evidence errors:\n${evidenceErrors.join('\n')}`);
+
+// 3. Layout + routing + label placement (the chain's own sceneFor) -----------------------------
+const check = {};
+for (const graph of graphs) {
+  const started = Date.now();
+  let scene;
+  try { scene = sceneFor(graph); } catch (error) {
+    check[graph.id] = { ok: false, error: error.message };
+    continue;
+  }
+  const labelled = scene.edges.filter(edge => edge.label);
+  const placed = labelled.filter(edge => edge.data.labelBox);
+  const routed = scene.edges.filter(edge => edge.data.routedPoints?.length >= 2);
+  // Overlap audit: sibling boxes and cards must not intersect (absolute positions).
+  const boxes = scene.absoluteNodes.map(node => ({ id: node.id, parent: node.data.parentId,
+    left: node.position.x, top: node.position.y, right: node.position.x + node.width, bottom: node.position.y + node.height }));
+  const overlaps = [];
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const a = boxes[i], b = boxes[j];
+    if (a.parent !== b.parent) continue;
+    if (a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top) overlaps.push(`${a.id}×${b.id}`);
+  }
+  check[graph.id] = {
+    ok: placed.length === labelled.length && routed.length === scene.edges.length && !overlaps.length,
+    canvas: { width: Math.round(scene.canvas.width), height: Math.round(scene.canvas.height) },
+    cards: graph.nodes.length, containers: graph.groups.length, edges: scene.edges.length,
+    routedEdges: routed.length, labelledEdges: labelled.length, labelsPlaced: placed.length,
+    siblingOverlaps: overlaps, ms: Date.now() - started,
+  };
+}
+
+// 4. Text fit inside the 460 x 200 card and container headers (headless Chromium, optional) ----
+// Widths from chain/ServiceNode.svelte + style.css (box-sizing border-box): content = 460 - 8 (left rule)
+// - 2 (right border) - 18 (padding 8px 8px 8px 10px, central fix 2026-10-19) = 432 px; the role sits beside
+// the 70 px icon and a 6 px gap: 356 px.
+// Container header (Subflow.svelte): width - 4 (borders) - 16 (padding) - 40 (icon) - 6 (gap).
+const CONTENT = CARD.A.width - 8 - 2 - 18, ROLE = CONTENT - 70 - 6;
+const FONT = 'Inter, system-ui, sans-serif';
+let fit = { status: 'unverified', reason: 'measurement disabled' };
+if (measureEnabled) {
+  try {
+    const { chromium } = await import(pathToFileURL(join(here, '../tooling/node_modules/playwright-core/index.mjs')).href);
+    const executablePath = join(homedir(), '.cache/ms-playwright/chromium-1243/chrome-linux64/chrome');
+    const browser = await chromium.launch({ executablePath, headless: true });
+    const page = await browser.newPage();
+    await page.setContent(`<body style="font-family:${FONT}"></body>`);
+    const texts = [];
+    for (const graph of graphs) {
+      const sized = sceneFor(graph);
+      const widths = new Map(sized.absoluteNodes.map(node => [node.id, node.width]));
+      for (const item of [...graph.groups, ...graph.nodes]) {
+        const meta = item.metadata, repo = `${meta.labelKind}: ${meta.repo.join(' + ')}`;
+        if (meta.card === 'box') {
+          const room = widths.get(item.id) - 4 - 16 - 40 - 6;
+          texts.push({ scene: graph.id, id: item.id, field: 'title', text: item.label.split('\n')[0], size: 32, weight: 700, room });
+          texts.push({ scene: graph.id, id: item.id, field: 'repo', text: repo, size: 24, weight: 700, room });
+        } else {
+          texts.push({ scene: graph.id, id: item.id, field: 'code', text: meta.code, size: 22, weight: 400, room: ROLE, spacing: '.04em' });
+          texts.push({ scene: graph.id, id: item.id, field: 'role', text: meta.role, size: 32, weight: 700, room: ROLE });
+          texts.push({ scene: graph.id, id: item.id, field: 'name', text: meta.name, size: 24, weight: 400, room: CONTENT });
+          texts.push({ scene: graph.id, id: item.id, field: 'detail', text: meta.detail, size: 24, weight: 400, room: CONTENT });
+          texts.push({ scene: graph.id, id: item.id, field: 'repo', text: repo, size: 24, weight: 700, room: CONTENT });
+        }
+      }
+    }
+    const measured = await page.evaluate(items => items.map(item => {
+      const span = document.createElement('span');
+      span.style.cssText = `font-size:${item.size}px;font-weight:${item.weight};line-height:1.3;white-space:nowrap;letter-spacing:${item.spacing ?? 'normal'};position:absolute`;
+      span.textContent = item.text;
+      document.body.appendChild(span);
+      const width = span.getBoundingClientRect().width;
+      span.remove();
+      return { ...item, width: Math.round(width * 10) / 10 };
+    }), texts);
+    const font = await page.evaluate(() => { const w = family => { const span = document.createElement('span'); span.style.cssText = 'font-size:40px;position:absolute;white-space:nowrap;font-family:' + family; span.textContent = 'mmmmwwwwiiiilllAB01'; document.body.appendChild(span); const width = span.getBoundingClientRect().width; span.remove(); return width; }; return w('Inter, monospace') !== w('monospace') ? 'Inter' : 'Inter absent: system-ui fallback'; });
+    await browser.close();
+    const overflow = measured.filter(item => item.width > item.room);
+    const tight = measured.filter(item => item.width <= item.room && item.width > 0.9 * item.room);
+    fit = { status: overflow.length ? 'overflow' : 'ok', font, measuredTexts: measured.length,
+      widest: Object.fromEntries(['role', 'name', 'detail', 'repo', 'title'].map(field => {
+        const top = measured.filter(item => item.field === field).sort((a, b) => b.width / b.room - a.width / a.room)[0];
+        return [field, top && { scene: top.scene, id: top.id, text: top.text, width: top.width, room: Math.round(top.room) }];
+      })),
+      overflow: overflow.map(item => ({ scene: item.scene, id: item.id, field: item.field, text: item.text, width: item.width, room: Math.round(item.room) })),
+      tight: tight.map(item => ({ scene: item.scene, id: item.id, field: item.field, text: item.text, width: item.width, room: Math.round(item.room) })) };
+  } catch (error) {
+    fit = { status: 'unverified', reason: `headless measurement unavailable: ${error.message.split('\n')[0]}` };
+  }
+}
+
+// 5. Outputs ----------------------------------------------------------------------------------
+const projection = graph => ({
+  sceneId: graph.id,
+  nodes: [...graph.nodes, ...graph.groups].map(item => ({ id: item.id, kind: item.metadata.kind, label: item.label,
+    evidenceClass: item.metadata.evidenceClass, runtimeState: item.metadata.runtimeState, parentId: item.parent,
+    repo: item.metadata.repo, tint: item.metadata.tint })).sort((a, b) => a.id.localeCompare(b.id)),
+  edges: graph.edges.map(edge => ({ id: edge.id, source: edge.source, target: edge.target, label: edge.label, dashed: edge.dashed,
+    evidenceClass: edge.metadata.evidenceClass, runtimeState: edge.metadata.runtimeState })).sort((a, b) => a.id.localeCompare(b.id)),
+});
+for (const graph of graphs) graph.sceneHash = sha256(JSON.stringify(projection(graph)).normalize('NFC'));
+const metadataSource = await readFile(join(here, 'scene-metadata.mjs'), 'utf8');
+const manifest = {
+  schema: 'hrpn-architecture-scenes/v1',
+  scenes: 'docs/architecture/hrpn/SCENES.md', scenesHash: sha256(markdown), metadataHash: sha256(metadataSource),
+  chain: 'docs/architecture/tooling/chain (copy of the D2D Focus chain, see tooling/PROVENANCE.md)',
+  geometry: 'Zone layout (north/south/flows), orthogonal router of the chain, single card template A 460 x 200.',
+  graphOrder: graphs.map(graph => graph.id),
+  graphs: graphs.map(graph => ({ id: graph.id, title: graph.title, sceneHash: graph.sceneHash,
+    nodes: graph.nodes.length, edges: graph.edges.length, subflows: graph.groups.length, canvas: check[graph.id].canvas ?? null })),
+};
+await mkdir(join(here, '.generated'), { recursive: true });
+await writeFile(join(here, '.generated', 'data.json'), JSON.stringify({ graphs, manifest }));
+await writeFile(join(here, '.generated', 'scene-check.json'), JSON.stringify({ check, fit }, null, 2));
+
+// EVIDENCE.md, generated from the metadata so it never drifts from the cards.
+const cell = text => String(text).replace(/\|/g, '\\|').replace(/\n/g, ' ');
+const out = ['# HRPN architecture scenes — evidence per card', '',
+  'Generated by `node build-scenes.mjs` from `scene-metadata.mjs` (do not edit by hand). Every reference below was',
+  'checked by the build: file present and cited lines in range, commit present in this repository, or draw.io cell',
+  'present in `~/Téléchargements/agentair-overview.drawio.xml`. The excerpt is the first non-empty cited line',
+  '(HTML stripped, 110 characters). Paths without `~` are relative to this repository root.', '',
+  'Evidence classes: `declared` (in code, wired), `dormant` (in code, not reached), `external` (managed service or cited',
+  'source document), `target` (required by a cited source, not built), `hypothesis` (option-3 platform assumption),',
+  '`unknown`. Runtime states: `unknown` (wired, no deployment observed by this session), `dormant`, `manual`,',
+  '`not-applicable` (target or hypothesis).', ''];
+for (const graph of graphs) {
+  out.push(`## \`${graph.id}\` — ${graph.title}`, '', '| id | card | tint | evidenceClass / runtimeState | evidence (excerpt) |', '|---|---|---|---|---|');
+  for (const entry of evidence[graph.id]) {
+    const meta = entry.meta;
+    const title = entry.group ? `**${cell(entry.label)}** (container)` : `${meta.code} · ${cell(meta.role)} — ${cell(meta.name)} — ${cell(meta.detail)}`;
+    const refs = entry.refs.map(ref => `\`${cell(ref.ref)}\`${ref.excerpt ? ` — ${cell(ref.excerpt)}` : ''}`).join('<br>');
+    out.push(`| ${entry.id} | ${title} | ${meta.tint ?? '—'} | ${meta.evidenceClass} / ${meta.runtimeState} | ${refs} |`);
+  }
+  out.push('', '| link | evidenceClass / runtimeState |', '|---|---|');
+  for (const edge of graph.edges) out.push(`| ${edge.source} → ${edge.target} · ${cell(edge.label)}${edge.dashed ? ' (dashed)' : ''} | ${edge.metadata.evidenceClass} / ${edge.metadata.runtimeState} |`);
+  out.push('');
+}
+await writeFile(join(here, 'EVIDENCE.md'), out.join('\n'));
+
+console.log(JSON.stringify({ check, fit: { status: fit.status, font: fit.font, reason: fit.reason, overflow: fit.overflow, tight: fit.tight, widest: fit.widest } }, null, 2));
+if (Object.values(check).some(result => !result.ok)) process.exitCode = 1;

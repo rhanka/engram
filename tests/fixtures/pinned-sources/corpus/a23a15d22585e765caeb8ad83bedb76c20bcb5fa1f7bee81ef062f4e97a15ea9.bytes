@@ -1,0 +1,391 @@
+{
+  "id": "neutral-base/1",
+  "version": "fixture-2",
+  "descriptor": "neutral-descriptors/1",
+  "types": [
+    "bpmn:Definitions",
+    "bpmn:Process",
+    "bpmn:Task",
+    "bpmn:ServiceTask",
+    "bpmn:TextAnnotation",
+    "bpmn:Association",
+    "bpmn:Documentation",
+    "bpmn:FormalExpression",
+    "bpmn:StartEvent",
+    "bpmn:ExclusiveGateway",
+    "bpmn:SequenceFlow"
+  ],
+  "producerPolicy": "fixture-explicit",
+  "fields": [
+    {
+      "type": "bpmn:Definitions",
+      "field": "id",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:Definitions",
+      "field": "name",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:Definitions",
+      "field": "targetNamespace",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:Definitions",
+      "field": "rootElements",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "containment"
+    },
+    {
+      "type": "bpmn:Process",
+      "field": "id",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:Process",
+      "field": "name",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:Process",
+      "field": "isExecutable",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:Process",
+      "field": "flowElements",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "containment"
+    },
+    {
+      "type": "bpmn:Process",
+      "field": "artifacts",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "containment"
+    },
+    {
+      "type": "bpmn:Process",
+      "field": "documentation",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "containment"
+    },
+    {
+      "type": "bpmn:Task",
+      "field": "id",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:Task",
+      "field": "name",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:Task",
+      "field": "documentation",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "containment"
+    },
+    {
+      "type": "bpmn:ServiceTask",
+      "field": "id",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:ServiceTask",
+      "field": "name",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:ServiceTask",
+      "field": "documentation",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "containment"
+    },
+    {
+      "type": "bpmn:TextAnnotation",
+      "field": "id",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:TextAnnotation",
+      "field": "text",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:Association",
+      "field": "id",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:Association",
+      "field": "associationDirection",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:Association",
+      "field": "sourceRef",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "reference"
+    },
+    {
+      "type": "bpmn:Association",
+      "field": "targetRef",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "reference"
+    },
+    {
+      "type": "bpmn:Documentation",
+      "field": "text",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:Documentation",
+      "field": "textFormat",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:FormalExpression",
+      "field": "body",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:FormalExpression",
+      "field": "language",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:StartEvent",
+      "field": "id",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:StartEvent",
+      "field": "name",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:StartEvent",
+      "field": "outgoing",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "reference"
+    },
+    {
+      "type": "bpmn:ExclusiveGateway",
+      "field": "id",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:ExclusiveGateway",
+      "field": "name",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:ExclusiveGateway",
+      "field": "incoming",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "reference"
+    },
+    {
+      "type": "bpmn:ExclusiveGateway",
+      "field": "outgoing",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "reference"
+    },
+    {
+      "type": "bpmn:SequenceFlow",
+      "field": "id",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:SequenceFlow",
+      "field": "name",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "scalar"
+    },
+    {
+      "type": "bpmn:SequenceFlow",
+      "field": "sourceRef",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "reference"
+    },
+    {
+      "type": "bpmn:SequenceFlow",
+      "field": "targetRef",
+      "producers": [
+        "code",
+        "editor",
+        "import"
+      ],
+      "kind": "reference"
+    }
+  ]
+}

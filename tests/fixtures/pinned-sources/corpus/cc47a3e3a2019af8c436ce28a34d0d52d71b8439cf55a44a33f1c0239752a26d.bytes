@@ -1,0 +1,169 @@
+{
+  "schema": "hrpn-ds-tint-legend/v1",
+  "source": {
+    "legend": "docs/architecture/hrpn/SCENES.md",
+    "legendSha256": "ab3ddb9208b7d3f9c35d94401c29da5bc95477ab99d4caf0fabaa34c41be237f",
+    "colours": "docs/architecture/tooling/chain/ServiceNode.svelte",
+    "coloursSha256": "df7546df27db881eea61c94f73e64db5ce3d4b19e1cbe7c85c98cb0585244679",
+    "note": "Colours as rendered today by the chain card (ServiceNode.svelte): translucent fill over the white card surface; risk adds a red left rule and a 5 px inset frame."
+  },
+  "legendParagraph": "Tints: blue `genair` = native GenAiR template / Cutter / AgentGarden code; yellow `specific` = HRPN-specific code (commits after \"Created with GenAiR-cutter\", 2026-09-25 → 2026-10-12); orange `added` = target addition needed; red `removed` = to remove in the target; red frame `risk` = present but weak or at risk; no tint = Google or third-party managed service. Dashed links = dormant, optional or not built.",
+  "categories": [
+    {
+      "tint": "genair",
+      "key": "genair",
+      "category": "Native GenAiR template (Cutter / AgentGarden)",
+      "colourName": "blue",
+      "legend": "native GenAiR template / Cutter / AgentGarden code",
+      "fill": {
+        "rgba": "rgba(37, 99, 235, .13)",
+        "hex": "#2563eb",
+        "opacity": 0.13
+      },
+      "leftRule": "inherited: 8px solid var(--st-semantic-data-category1) (resolved #145f68 in the airbus-theme draw.io export)",
+      "insetFrame": null,
+      "css": "background: rgba(37, 99, 235, .13);",
+      "usedIn": {
+        "S2-asbuilt": 20,
+        "S2-target": 16,
+        "S1-conversational": 2,
+        "S3-agentfactory": 1
+      },
+      "scope": "all scenes where used"
+    },
+    {
+      "tint": "specific",
+      "key": "specific",
+      "category": "HRPN-specific code",
+      "colourName": "yellow",
+      "legend": "HRPN-specific code (commits after \"Created with GenAiR-cutter\", 2026-09-25 → 2026-10-12)",
+      "fill": {
+        "rgba": "rgba(234, 179, 8, .24)",
+        "hex": "#eab308",
+        "opacity": 0.24
+      },
+      "leftRule": "inherited: 8px solid var(--st-semantic-data-category1) (resolved #145f68 in the airbus-theme draw.io export)",
+      "insetFrame": null,
+      "css": "background: rgba(234, 179, 8, .24);",
+      "usedIn": {
+        "S2-asbuilt": 3,
+        "S2-target": 3,
+        "S1-conversational": 4
+      },
+      "scope": "all scenes where used"
+    },
+    {
+      "tint": "added",
+      "key": "added",
+      "category": "Target addition (new or changed)",
+      "colourName": "orange",
+      "legend": "target addition needed",
+      "fill": {
+        "rgba": "rgba(249, 115, 22, .26)",
+        "hex": "#f97316",
+        "opacity": 0.26
+      },
+      "leftRule": "inherited: 8px solid var(--st-semantic-data-category1) (resolved #145f68 in the airbus-theme draw.io export)",
+      "insetFrame": null,
+      "css": "background: rgba(249, 115, 22, .26);",
+      "usedIn": {
+        "S2-target": 23,
+        "S1-conversational": 5,
+        "S3-agentfactory": 5
+      },
+      "scope": "all scenes where used"
+    },
+    {
+      "tint": "removed",
+      "key": "removed",
+      "category": "To remove in the target",
+      "colourName": "red",
+      "legend": "to remove in the target",
+      "fill": {
+        "rgba": "rgba(220, 38, 38, .2)",
+        "hex": "#dc2626",
+        "opacity": 0.2
+      },
+      "leftRule": "inherited: 8px solid var(--st-semantic-data-category1) (resolved #145f68 in the airbus-theme draw.io export)",
+      "insetFrame": null,
+      "css": "background: rgba(220, 38, 38, .2);",
+      "usedIn": {
+        "S3-agentfactory": 1
+      },
+      "scope": "as-built and comparison scenes only (S2-asbuilt, S1-conversational, S3-agentfactory); never in the decided target S2-target"
+    },
+    {
+      "tint": "risk",
+      "key": "risk",
+      "category": "Present but weak or at risk",
+      "colourName": "red frame",
+      "legend": "present but weak or at risk",
+      "fill": {
+        "rgba": "rgba(220, 38, 38, .08)",
+        "hex": "#dc2626",
+        "opacity": 0.08
+      },
+      "leftRule": "#b3261e",
+      "insetFrame": "#b3261e",
+      "css": "background: rgba(220, 38, 38, .08); border-left-color: #b3261e; box-shadow: inset 0 0 0 5px #b3261e;",
+      "usedIn": {
+        "S2-asbuilt": 12,
+        "S1-conversational": 4,
+        "S3-agentfactory": 4
+      },
+      "scope": "as-built and comparison scenes only (S2-asbuilt, S1-conversational, S3-agentfactory); never in the decided target S2-target"
+    },
+    {
+      "tint": null,
+      "key": "none",
+      "category": "Google or third-party managed service",
+      "colourName": "no tint",
+      "legend": "Google or third-party managed service",
+      "fill": {
+        "css": "var(--st-semantic-surface-raised, #fff)",
+        "hex": "#ffffff",
+        "opacity": 1
+      },
+      "leftRule": "8px solid var(--st-semantic-data-category1) (resolved #145f68 in the airbus-theme draw.io export)",
+      "insetFrame": null,
+      "css": null,
+      "usedIn": {
+        "S2-asbuilt": 6,
+        "S2-target": 9,
+        "S1-conversational": 8,
+        "S3-agentfactory": 26
+      },
+      "scope": "all scenes where used"
+    }
+  ],
+  "relationStyles": [
+    {
+      "style": "solid",
+      "legend": "wired or required link"
+    },
+    {
+      "style": "dashed",
+      "legend": "dormant, optional or not built",
+      "sourceText": "Dashed links = dormant, optional or not built.",
+      "usedIn": {
+        "S2-asbuilt": 7,
+        "S1-conversational": 10,
+        "S3-agentfactory": 3
+      }
+    }
+  ],
+  "sceneLegendPassages": {
+    "S2-asbuilt": [
+      "Red frames: Chat sessions in `InMemorySessionService` keyed by the space name (lost on restart, shared in group spaces), no event check or dedup, corpus admin tools callable by any user, user text logged at INFO; absent: citations, 1–5 feedback, eligibility check, Drive sync."
+    ],
+    "S2-target": [
+      "Colours: blue = GenAiR template kept unchanged; yellow = existing HRPN code kept; orange = new or changed in the target (eligibility before retrieval, HR prompt with read-only tools, link formatter for Workspace links (HR05), 1–5 rating as `feedback_score` into the sink and the BigQuery linked dataset, PII-scrubbed conversation log kept 1 year (HR04), Model Armor, governed ingestion Drive → GCS → RAG import (HR02)); no fill = Google or third-party managed service. HR01 = A without ChatUI: no web channel, so no load balancer, IAP or ADK web UI; Agent Engine, admin tools, template bucket and template Firestore `hrpn-datapipelines` are not drawn (removal list: decision dossier §9.7)."
+    ],
+    "S1-conversational": [
+      "Red frames: no GenAiR production template, IaC or CI path for Conversational Agents (GenAiR-Cutter offers Cloud Run / Agent Engine only; console build and zip restore), the Dialogflow ↔ Chat connection was rejected in POD (`auth.creds.useNormalUserEUC`, handover §C, observed with Dialogflow ES), the Apps Script route needs a VPC-SC ingress rule per user identity. The PoC agent export was not found: `source-gap`."
+    ],
+    "S3-agentfactory": [
+      "Red frames: Agent Engine POD-only, not in the production landing zone (HR master ARD note 2026-02-27, to recheck); Gemini Enterprise planned Q4 2026, not SEC4AI-assessed; Agent Runtime under VPC-SC needs `min_instances` ≥ 1; PSL spoke template end 2026, retrofit required."
+    ]
+  }
+}

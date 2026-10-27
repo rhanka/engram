@@ -30,17 +30,9 @@ import {
 } from "../src/ontology-guardian/diagram-profiles.js";
 import { buildArchimateMatrixCases } from "../src/ontology-guardian/diagram-oracle.js";
 
-const shaFile = (path: string): string => createHash("sha256").update(readFileSync(path)).digest("hex");
+import { sourceIndex, corpusBytes } from "./diagram-corpus-support.js";
 
-/** Manifest ids whose bytes are carried verbatim in this repository. */
-const CARRIED: Readonly<Record<string, string>> = {
-  "oracle:derived-json": "pinned-sources/m3-r4-derived-oracle.json",
-  "ds:archimate-skeleton-document.json": "pinned-sources/archimate-skeleton-document.json",
-  "ds:uml-skeleton-document.json": "pinned-sources/uml-skeleton-document.json",
-  "ds:generic.ts": "pinned-sources/ds-generic-ts.bytes",
-  "ds:skeletons.ts": "pinned-sources/ds-skeletons-ts.bytes",
-  "sealed:canonical.ts": "pinned-sources/bpmn-canvas-canonical-ts.bytes",
-};
+const shaFile = (path: string): string => createHash("sha256").update(readFileSync(path)).digest("hex");
 
 describe("corpus manifest completeness (§8)", () => {
   it("lists every §8 item exactly once", () => {
@@ -63,9 +55,10 @@ describe("corpus manifest completeness (§8)", () => {
   });
 
   it("keeps the carried fixture bytes verbatim", () => {
-    for (const [id, fixture] of Object.entries(CARRIED)) {
-      const entry = corpusEntryById(id)!;
-      expect(shaFile(join(testsDir, "fixtures", fixture))).toBe(entry.sha256);
+    expect(CORPUS_MANIFEST).toEqual(sourceIndex.map(({ fixture, ...entry }) => entry));
+    for (const entry of CORPUS_MANIFEST) {
+      expect(createHash("sha256").update(corpusBytes(entry.id)).digest("hex"), entry.id).toBe(entry.sha256);
+      expect(entry.source.revision).toMatch(/^(?:[0-9a-f]{40}|sha256:[0-9a-f]{64})$/);
     }
   });
 

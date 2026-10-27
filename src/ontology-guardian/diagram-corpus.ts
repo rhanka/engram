@@ -36,466 +36,4452 @@ export interface CorpusEntry {
   readonly expectation: string;
 }
 
-const HEX64 = /^[0-9a-f]{64}$/;
-
-function entry(
-  id: string, kind: CorpusKind,
-  repo: string, revision: string, path: string,
-  sha256: Digest, expectation: string,
-): CorpusEntry {
-  if (!HEX64.test(sha256)) throw new Error(`corpus manifest: bad sha for ${id}`);
-  return { id, kind, source: { repo, revision, path }, sha256, expectation };
-}
-
-const DS = "sent-tech-design-system";
-const DS_REV = "f6f3ba3790696754b6e08b13b62148ef3556bc4e";
-const KIT = "sentropic";
-const KIT_REV = "4138a0ecba9c5b37409abb5ac00f732d02b7dc8d";
-const G0 = "graphify";
-const G0_REV = "618977a86a25c35e426a87f97cb9f3391cd1c654";
-const ARCHI = "archimatetool/archi";
-const ARCHI_REV = "9e6a014f9ef6a782a7dda604ef7b4d03d2c7819a";
-const HRPN = "airbus-genair-hrpolnav";
-const HRPN_REV = "faf21b6f259f93a485994bbe03b4023763bf2597";
-const BPMN = "bpmn-canvas";
-
 export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
-  // A1–A5 corpus instances (§§8.1/8.2/8.3/8.7): source pins plus the
-  // specified target counts and folds.
-  entry("instance:A1", "instance", KIT, KIT_REV,
-    "docs/governance/kit/src/presentation-scenes.json#/en/architectureScenes/central",
-    "fce2bd5fd1805a46e4c0d7066e61c4706f52dd96a8d80808b6fab946e1744e61",
-    "28 node / 10 container / 1 legend / 3 legend-key, 36 contains / 50 link, 0 dashed; 5 default folds; 10 authored summaries"),
-  entry("instance:A2", "instance", HRPN, HRPN_REV,
-    "docs/architecture/hrpn/ds-fixtures/S2-asbuilt.json",
-    "7abc427f7beca5b0f87947efc9df4daf6316f24725074f47f1da2b04be76ba2e",
-    "41 node / 17 container / 1 legend / 4 legend-key, 58 contains / 44 link, 7 dashed / 37 solid; all-expanded"),
-  entry("instance:A3", "instance", HRPN, HRPN_REV,
-    "docs/architecture/hrpn/ds-fixtures/S2-target.json",
-    "28a7271dd0bec89fa9ad435174a614ab4a40b346b10724da95736f9c55b574d9",
-    "51 node / 22 container / 1 legend / 4 legend-key, 73 contains / 54 link, 0 dashed / 54 solid; all-expanded"),
-  entry("instance:A4a", "instance", HRPN, HRPN_REV,
-    "docs/architecture/hrpn/ds-fixtures/S1-conversational.json",
-    "d9f7f7cb80894b5301e11cc7b7f0fc2775d1933aa15013152001395d716a32c7",
-    "23 node / 17 container / 1 legend / 5 legend-key, 41 contains / 24 link, 10 dashed / 14 solid; all-expanded"),
-  entry("instance:A4b", "instance", HRPN, HRPN_REV,
-    "docs/architecture/hrpn/ds-fixtures/S3-agentfactory.json",
-    "e362b9a8da84082e5389127ae463d282fb773ef8950f41017222e0b3ef9002fc",
-    "37 node / 15 container / 1 legend / 5 legend-key, 53 contains / 36 link, 3 dashed / 33 solid; all-expanded"),
-  entry("instance:A5-semantic", "instance", HRPN, HRPN_REV,
-    "docs/architecture/hrpn/engram/S2-target.semantic.json",
-    "46f64154bb6592d49ccda5633b2c4d4205fb1c6752ef218be31d6757923ecf91",
-    "56 entities / 82 relations, every id survives; standard-slot conversion per §8.4 ledger"),
-  entry("instance:A5-view", "instance", HRPN, HRPN_REV,
-    "docs/architecture/hrpn/engram/S2-target.view.json",
-    "82930614efe070bdb8e5acce3aecea29dfdb2d1ab625b7d376507f97fb6f8b50",
-    "typed presentation in presentation.diagram; 7 default folds; revision 1"),
-  entry("instance:A5-manifest", "instance", HRPN, HRPN_REV,
-    "docs/architecture/hrpn/engram/MANIFEST.json",
-    "54ef0dd0ac0e923aa99435625780902d07c3819e9c2c340868c921d1f956fd91",
-    "A5 source manifest; provenance of the frozen snapshot, never a producer pin"),
-
-  // S2-target witnesses (§8.4/§8.6).
-  entry("s2-target:figures", "frozen-fixture", HRPN, HRPN_REV,
-    "docs/ard/decision/focus/.generated/figures/figures.json",
-    "83935a169f04ab48df155f324dee6fbf336a502fd2b8cdc260ae03c0a6962719",
-    "S2-target figure bytes; frozen target sceneHash b631abb4…"),
-  entry("s2-target:png", "frozen-fixture", HRPN, HRPN_REV,
-    "docs/ard/decision/focus/.generated/figures/S2-target.png",
-    "5dffb39dd10551ae83b35fd256ccc3c65911d5aa731cdccb253605c3ac5d1c9a",
-    "frozen S2-target render witness"),
-  entry("s2-target:reference-png", "frozen-fixture", HRPN, HRPN_REV,
-    "docs/architecture/hrpn/ds-fixtures/reference/S2-target.png",
-    "f606ac163c5202c8cddb7caaba97e4d748d767865a2abfb1bb2f57a7bb4ad542",
-    "frozen ds-fixtures reference render"),
-  entry("s2-target:governance-scenes", "frozen-fixture", HRPN, HRPN_REV,
-    "docs/ard/decision/focus/.generated/governance-scenes.json",
-    "236320cec2b25466dfe46d9338f3f75c14aba3ee33c6c25d8070ffc242d5b35c",
-    "A5 independent source; does not overwrite A3"),
-
-  // HRPN producer snapshots (§8.6): current producer bytes, distinct from
-  // the frozen fixtures. Historical manifest metadata is never an active
-  // producer pin.
-  entry("hrpn-producer:data.json", "producer-snapshot", HRPN, HRPN_REV,
-    "docs/architecture/hrpn/.generated/data.json",
-    "5a893cd1c69e1bb81bf4095b7472e7494ede1eb709d2c02b732af2163a1d7f2e",
-    "current producer sceneHash 81183292…; not the frozen fixture"),
-  entry("hrpn-producer:scene-metadata.mjs", "producer-snapshot", HRPN, HRPN_REV,
-    "docs/architecture/hrpn/scene-metadata.mjs",
-    "85de8a950c66312bd1f519ea2cc04aa37dff4bf9f6f0d39e34252fd95e2b6d51",
-    "producer metadata module"),
-  entry("hrpn-producer:SCENES.md", "producer-snapshot", HRPN, HRPN_REV,
-    "docs/architecture/hrpn/SCENES.md",
-    "224bcaac70e397e771d88273219483eea808c0aa31cdcdc6d61d47f645d94853",
-    "producer scene documentation"),
-  entry("hrpn-producer:figures.json", "producer-snapshot", HRPN, HRPN_REV,
-    "docs/ard/decision/focus/.generated/figures/figures.json",
-    "83935a169f04ab48df155f324dee6fbf336a502fd2b8cdc260ae03c0a6962719",
-    "producer figure bytes"),
-  entry("hrpn-producer:S2-target.png", "producer-snapshot", HRPN, HRPN_REV,
-    "docs/ard/decision/focus/.generated/figures/S2-target.png",
-    "5dffb39dd10551ae83b35fd256ccc3c65911d5aa731cdccb253605c3ac5d1c9a",
-    "producer render witness"),
-  entry("hrpn:fixture-manifest", "frozen-fixture", HRPN, HRPN_REV,
-    "docs/architecture/hrpn/ds-fixtures/MANIFEST.md",
-    "9558092fa2af669af9dcd4df6d9380e24a1cba723dbdd603ad2ebd86c6439a49",
-    "frozen fixture manifest; historical pins are provenance only"),
-  entry("hrpn:reference-renders.json", "frozen-fixture", HRPN, HRPN_REV,
-    "docs/architecture/hrpn/ds-fixtures/reference-renders.json",
-    "7afee15ef473389452011d38fbaf8547973b5eed572440cc0c31ee8d921e25db",
-    "frozen reference render index"),
-  entry("hrpn:build-scenes.mjs", "frozen-fixture", HRPN, HRPN_REV,
-    "docs/architecture/hrpn/build-scenes.mjs",
-    "35f0b1ac5e24f12956ea51104a8a3190cb8849485da867dc4d2990a77342d769",
-    "frozen scene builder"),
-  entry("hrpn:build-fixtures.mjs", "frozen-fixture", HRPN, HRPN_REV,
-    "docs/architecture/hrpn/ds-fixtures/build-fixtures.mjs",
-    "3dee69da67bb5569a385a6dfa15759ac27d3fa749e8d6b2a63f04e0446fec102",
-    "frozen fixture builder"),
-  entry("hrpn:build-engram.mjs", "frozen-fixture", HRPN, HRPN_REV,
-    "docs/architecture/hrpn/engram/build-engram.mjs",
-    "d6d007c97efad0f68f041c6a53a901cb6adaeea851e04c08676f419318b45caa",
-    "frozen engram conversion builder"),
-
-  // §8.7 derived oracle: the derived JSON plus its four digest-bound
-  // projections, stored verbatim under tests/fixtures/pinned-sources.
-  entry("oracle:derived-json", "derived-oracle", G0, G0_REV,
-    "tests/fixtures/pinned-sources/m3-r4-derived-oracle.json",
-    "9860b066d227d298aa67eae8bc47475355e86d22f266d1b0ad261035b33fdf8d",
-    "oracle schemaVersion m3-r4-oracle/1; instances A1 A2 A3 A4a A4b A5"),
-  entry("oracle:whole", "derived-oracle", G0, G0_REV,
-    "tests/fixtures/pinned-sources/m3-r4-derived-oracle.json#whole",
-    "08cae540e5535727fc1f4b7bba3aa12d84908790b6c918dc263b65560ab4f2de",
-    "33429 canonical bytes of the whole derived oracle"),
-  entry("oracle:categoryTokens", "derived-oracle", G0, G0_REV,
-    "tests/fixtures/pinned-sources/m3-r4-derived-oracle.json#categoryTokens",
-    "a77e2a62ddd6d576f06005969361ee15c241789fe8a571e6195dfb5c2782b3bf",
-    "432 canonical bytes of the token table"),
-  entry("oracle:a1Summaries", "derived-oracle", G0, G0_REV,
-    "tests/fixtures/pinned-sources/m3-r4-derived-oracle.json#instances/A1/summaries",
-    "e363601a0c116197a471a599e92dc94da16147f0e7e78346c1ab7c7df9a49018",
-    "2110 canonical bytes; ten authored A1 summaries"),
-  entry("oracle:a5EntitiesPresentation", "derived-oracle", G0, G0_REV,
-    "tests/fixtures/pinned-sources/m3-r4-derived-oracle.json#instances/A5/{entities,presentationEntities}",
-    "527a0b18c1afee9e71591d6c2e3ef8d68294c89d5f0e593527b31a47b207a2b8",
-    "20532 canonical bytes; every A5 authored string placed"),
-
-  // Native DS sources (§8.5): the transcribed contracts stay byte-exact.
-  entry("ds:profile.ts", "native-source", DS, DS_REV,
-    "packages/diagram-core/src/profile.ts",
-    "ee4299f403e84041254537bdbb0c058079200be6b668230200f241a86dc30223",
-    "native Profile/role/attribute contracts; transcribed in §2.1"),
-  entry("ds:document.ts", "native-source", DS, DS_REV,
-    "packages/diagram-core/src/document.ts",
-    "300f05718298f7debbc15ffc36dd587b918724ca6f5ab310b297049a59dddf38",
-    "native SemanticDocument contracts; transcribed in §2.1"),
-  entry("ds:view.ts", "native-source", DS, DS_REV,
-    "packages/diagram-core/src/view.ts",
-    "767faaf9b0b5ba001aa0ac2e621de41dc5117a8386dd719dc91dbf6c01fb8598",
-    "native ViewDocument/PresentationState; transcribed in §2.2"),
-  entry("ds:attributes.ts", "native-source", DS, DS_REV,
-    "packages/diagram-core/src/attributes.ts",
-    "25574ecc699b8e08a6cc30f72b0923cc0b04c32071057a8a2edeb4beb779a21e",
-    "native scalar/structured value validation; transcribed in §5.8"),
-  entry("ds:diagnostics.ts", "native-source", DS, DS_REV,
-    "packages/diagram-core/src/diagnostics.ts",
-    "fdd5e6a39cab036c8e552d2e0db46759ddb164a535f00a9fe848a9c0555c92a4",
-    "native Diagnostic shape and 50-code baseline; transcribed in §2.2/C.1"),
-  entry("ds:validate.ts", "native-source", DS, DS_REV,
-    "packages/diagram-core/src/validate.ts",
-    "ab0ee3df80a427e8199b5204fb8652e4b86d03a2ebcf7b52860f78937ad120f3",
-    "native validation stage ordering"),
-  entry("ds:generic.ts", "native-source", DS, DS_REV,
-    "packages/diagram-core/src/profiles/generic.ts",
-    "b19967fe65483abdbf0e271f197e13691904e4b087c1542de23c52e2ad4f45c3",
-    "immutable generic@1 bytes; @1 preservation gate"),
-  entry("ds:skeletons.ts", "native-source", DS, DS_REV,
-    "packages/diagram-core/src/profiles/skeletons.ts",
-    "0a01fd2569e68c2b99ca754f28dc7cbbbd9a1d491ffa9981161cae3bbf56b54e",
-    "immutable skeleton bytes; @1 preservation gate"),
-  entry("ds:archimate-skeleton-document.json", "native-source", DS, DS_REV,
-    "packages/diagram-core/fixtures/valid/archimate-skeleton-document.json",
-    "8395ccc32ac25ae1354271817a3358bfe6f96243ecdfe2e5ef45ae1f48683951",
-    "pinned archimate@1 skeleton; migration source witness"),
-  entry("ds:uml-skeleton-document.json", "native-source", DS, DS_REV,
-    "packages/diagram-core/fixtures/valid/uml-skeleton-document.json",
-    "eea74144a37d9e44456278eeb36b06c5c2d7f9b4d19136a6b8ed3ce6ea3b08d8",
-    "pinned uml@1 skeleton; migration source witness"),
-  entry("ds:SPEC_M2_MODEL", "evidence", DS, DS_REV,
-    "spec/SPEC_EVOL_GD_M2_MODEL.md",
-    "5e7798a451c5b92cbbde6fbf85ea5f890c32c863ece3c73e5d9772efa9cff078",
-    "M2 §3.4 occurrence/transaction invariants"),
-  entry("ds:SPEC_M2_DS_PRESENTATION", "evidence", DS, DS_REV,
-    "spec/SPEC_EVOL_GD_M2_DS_PRESENTATION.md",
-    "ea0fdd0ae6aa605ec05ff8cd91c6fe02b34570369836f7a973316905698db9ab",
-    "M2 presentation contracts"),
-  entry("ds:SPEC_M2_CANVAS", "evidence", DS, DS_REV,
-    "spec/SPEC_EVOL_GD_M2_CANVAS.md",
-    "b81dfe8ad4700bc741b5c23dbe4e7d95d565deaa09e24f7d1c4ec1c4eeb9b7e9",
-    "M2 canvas contracts"),
-  entry("ds:SPEC_BPMN_MODDLE", "evidence", DS, DS_REV,
-    "spec/SPEC_EVOL_GD_BPMN_MODDLE_COVERAGE.md",
-    "7b29e147873287402a271d8b95e86bc0d39cd320152bbd8c6b1f6ef4c6e87505",
-    "BPMN moddle coverage reference"),
-  entry("ds:SPEC_RE_BPMN_JS_PARITY", "evidence", DS, DS_REV,
-    "spec/SPEC_RE_BPMN_JS_PARITY.md",
-    "17df4d8423355f26c28fe330da84198ed77d5a7684eddd4558c3b050fef7bace",
-    "BPMN parity reference"),
-
-  // G0 contracts (§8.5): the implemented G0 base of this lot.
-  entry("g0:types.ts", "native-source", G0, G0_REV,
-    "src/ontology-guardian/types.ts",
-    "e6f9e1627bcdca53c837466424c3deb853f72e5be208b6ddaa6e07e2baa0a631",
-    "G0 Digest/Pin/OntologyRecord shapes"),
-  entry("g0:catalog.ts", "native-source", G0, G0_REV,
-    "src/ontology-guardian/catalog.ts",
-    "bd5b5d290472009196e073d0f8694774d17c263a796fcf2bc9e46b1cbffe32d8",
-    "G0 catalog envelope"),
-  entry("g0:digests.ts", "native-source", G0, G0_REV,
-    "src/ontology-guardian/digests.ts",
-    "49cec7b137b8f9ec3ab074b7357472ba2b7204e8afa6212dc61142b6f3ec4405",
-    "G0 digest procedures reused by the lot"),
-  entry("g0:admission.ts", "native-source", G0, G0_REV,
-    "src/ontology-guardian/admission.ts",
-    "fe299c2e1d0c9c899cd9ac68a76a1ad230bdf542211dffdac05b0a2dafab2b9d",
-    "G0 §5.5 admission gate"),
-  entry("g0:diagnostics.ts", "native-source", G0, G0_REV,
-    "src/ontology-guardian/diagnostics.ts",
-    "521de919cf9d0161cdd0257d63fc3c2febf93e207bb5eb57df331dcc414b71af",
-    "G0 diagnostic envelope"),
-
-  // ArchiMate 3.2 matrix sources (§8.5/§3.9/A.1).
-  entry("archi:IAccessRelationship.java", "matrix-source", ARCHI, ARCHI_REV,
-    "com.archimatetool.model/src/com/archimatetool/model/IAccessRelationship.java",
-    "79eb8f693a88e585257f6808678ff03b0409456fbf9f16ca498fdfc121f8d0f3",
-    "access-mode declaration source"),
-  entry("archi:relationships.xml", "matrix-source", ARCHI, ARCHI_REV,
-    "com.archimatetool.model/model/relationships.xml",
-    "82cc8d11b174f3edf700fc8d6e3e061d4d9d8e65e5ec0f3c323d94f98a2681e7",
-    "versioned 3.2 tuple data; 11,569 expanded tuples"),
-  entry("archi:relationships-keys.xml", "matrix-source", ARCHI, ARCHI_REV,
-    "com.archimatetool.model/model/relationships-keys.xml",
-    "19d86924efc3364d26c162fe4e6643f37fd9493a0effc80ce5e2aa648fb6803e",
-    "tuple key source"),
-  entry("archi:archimate.ecore", "matrix-source", ARCHI, ARCHI_REV,
-    "com.archimatetool.model/model/archimate.ecore",
-    "6d95f268182648c4dba6802ceacf05b9b1b323624f30eb8c31282fc7be29b253",
-    "Ecore catalogue source"),
-  entry("archi:LICENSE.txt", "matrix-source", ARCHI, ARCHI_REV,
-    "com.archimatetool.model/LICENSE.txt",
-    "428f4272e912bbc3809052990c5ba1089b06382dab6e6d6a71670789bfc9bcff",
-    "licence closure evidence (U-AM)"),
-
-  // KIT scene sources (§8.5): A1 material plus #711 workload.
-  entry("kit:governance-central.js", "native-source", KIT, KIT_REV,
-    "docs/governance/kit/src/governance-central.js",
-    "8648b0935735a386afa843e7221234406c1c61fbe48fa5bc7c4172743b0c3f1c",
-    "KIT central scene module"),
-  entry("kit:governance-collapse.js", "native-source", KIT, KIT_REV,
-    "docs/governance/kit/src/governance-collapse.js",
-    "eb30e4fadbf3a045b353a700747a97941beabd5c1cf49fb6cd9e764eb5b9d3b7",
-    "KIT collapse module"),
-  entry("kit:governance-summary.js", "native-source", KIT, KIT_REV,
-    "docs/governance/kit/src/governance-summary.js",
-    "d821077ac133d229bd5835c465e9f1e7731529e7d573ccd6253fa7916a2d54cc",
-    "KIT summary module"),
-  entry("kit:governance-summary-layouts.json", "native-source", KIT, KIT_REV,
-    "docs/governance/kit/src/governance-summary-layouts.json",
-    "44a43b5e1ee3d05968a6baf8d2731076dfb048d0cfc7ddca4ac86f8fc1b10e65",
-    "KIT summary layouts"),
-  entry("kit:governance-layout.js", "native-source", KIT, KIT_REV,
-    "docs/governance/kit/src/governance-layout.js",
-    "98ca434d422a0685c68c418594452d8f768ecfd491764df992cf6c9dcb823430",
-    "KIT layout module"),
-  entry("kit:architecture-routing.js", "native-source", KIT, KIT_REV,
-    "docs/governance/kit/src/architecture-routing.js",
-    "4a181ba51080426ec77bc3dbf07ccfab1e6363f9bf5ce1363a659b0a7c47198e",
-    "KIT routing module"),
-  entry("kit:presentation-scenes.json", "native-source", KIT, KIT_REV,
-    "docs/governance/kit/src/presentation-scenes.json",
-    "fce2bd5fd1805a46e4c0d7066e61c4706f52dd96a8d80808b6fab946e1744e61",
-    "A1 source scenes"),
-  entry("kit:FrameToggle.svelte", "native-source", KIT, KIT_REV,
-    "docs/governance/kit/src/FrameToggle.svelte",
-    "9ad3b30b8ccaaf37157f13adf8feb53c1f3d1a1c3dca4b4f436166879ef45cc6",
-    "fold control module"),
-  entry("kit:check-browser.mjs", "evidence", KIT, KIT_REV,
-    "docs/governance/kit/scripts/check-browser.mjs",
-    "d0fddf3eb0ae441abcfda9dec0b6f03eeb9ee53169ab26ce257ca443e6115f84",
-    "#711 600-interaction workload source"),
-  entry("kit:browser-checks.mjs", "evidence", KIT, KIT_REV,
-    "docs/governance/kit/scripts/browser-checks.mjs",
-    "64890d902abf1ecfd9386083b5a7cab32c9226d821163ca13c21d7d974b50e2a",
-    "#711 check enumeration source"),
-  entry("kit:check-performance.mjs", "evidence", KIT, KIT_REV,
-    "docs/governance/kit/scripts/check-performance.mjs",
-    "c603e64d0df412b0d61f79046c59d03a9cb1449b0b9d2e2f8b7b460085e03d05",
-    "#711 performance budget source"),
-  entry("kit:check-geometry.mjs", "evidence", KIT, KIT_REV,
-    "docs/governance/kit/scripts/check-geometry.mjs",
-    "b3b5ed9fbade3d8e47d2cc2e63f6190d95438bad3e333c2227a70f663d21d4cb",
-    "#711 geometry assertion source"),
-  entry("kit:app.css", "evidence", KIT, KIT_REV,
-    "docs/governance/kit/src/app.css",
-    "d776e25ab66012cd6b08813adcb6a787ff9bcd36d6bca9020aac1fd483330ed5",
-    "#711 style source"),
-  entry("kit:architecture-layout.js", "evidence", KIT, KIT_REV,
-    "docs/governance/kit/src/architecture-layout.js",
-    "ec1547e5b22d98d2cd47bb84b1930fff4cd7fcc5e93c298074569d90b23692e9",
-    "#711 layout source"),
-  entry("kit:r11-portable.html", "evidence", KIT, KIT_REV,
-    "docs/governance/governance-r11-portable.html",
-    "831cbdee9bb5820e7e19ed55c942522a5848c402db9be0c89d87d02559bf6f35",
-    "#711 portable scene"),
-
-  // Sealed identity/canonicalization vectors (§§6.1/8.5): profile-c14n/2
-  // and stable-id/1 replayed through the governed code, never substituted.
-  entry("sealed:canonical.ts", "sealed-vector", BPMN, "canonical",
-    "src/profile/canonical.ts",
-    "287d8cb87beb7384fc89a8d6141681010dcba50ee895aaadc3b31345541191ba",
-    "profile-c14n/2 bytes; JCS + rawDigest + stableId"),
-  entry("sealed:jcs-key-order.json", "sealed-vector", BPMN, "parity-corpus/1",
-    "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/jcs-key-order.json",
-    "2a2b0ddc4eeaede4cdac346ae46d5b048b8f25d051b41785eaddbb3e4e491a84",
-    "JCS key-ordering case"),
-  entry("sealed:jcs-escapes.json", "sealed-vector", BPMN, "parity-corpus/1",
-    "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/jcs-escapes.json",
-    "71a5af8cb8735f034b8411a44cc1e46090083f235509b98d1629c0020f294fdc",
-    "JCS escape case"),
-  entry("sealed:jcs-numbers.json", "sealed-vector", BPMN, "parity-corpus/1",
-    "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/jcs-numbers.json",
-    "bb22448419b5d26311f475995cb5bf3f357e90ca0983ee20f0d2018766fa4bbf",
-    "JCS numbers case incl. 1e-7 and 5e-324"),
-  entry("sealed:identity-stable-id.json", "sealed-vector", BPMN, "parity-corpus/1",
-    "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/identity-stable-id.json",
-    "59ca51c94f5010267b2991b74fc42d7d04a004ed3890ef8c546ec016301df84f",
-    "four sealed stable ids incl. non-BMP allocation"),
-  entry("sealed:parity-manifest.json", "sealed-vector", BPMN, "parity-corpus/1",
-    "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/manifest.json",
-    "01b81fd9fb69f110a7f302631d6da92126bcb1672c67bea3ea68ff802df39faf",
-    "parity corpus manifest; gate runs after manifest recompute"),
-  entry("sealed:parity-pin.json", "sealed-vector", BPMN, "pins",
-    "tests/fixtures/profile-parity-corpus.pin.json",
-    "d34ee889917b8c5ef14c8d7bbd3fa2b222d93f4ac61de4bd0b41deb5767378a2",
-    "sealed parity pin"),
-  entry("sealed:unicode-pin.json", "sealed-vector", BPMN, "pins",
-    "tests/fixtures/unicode-case-15.0.0.pin.json",
-    "989aa11b6c138115a356c39867a26d8da281d2fd4b926508c72199b87fa4b762",
-    "Unicode 15.0.0 lock pin"),
-  entry("sealed:parity-index.json", "sealed-vector", BPMN, "parity-corpus",
-    "tests/fixtures/parity-corpus/index.json",
-    "40284149ca3538b35250e5896694e7d15c80d3c3233241e0d7ac3d91266df03a",
-    "parity corpus index"),
-  entry("sealed:workbench-canonical-vectors.json", "sealed-vector", BPMN, "workbench",
-    "tests/fixtures/parity-corpus/canonical-vectors.json",
-    "f238aef110a43381416fd0025326f883f760dc75510a9f0cc5817415eb02d1c6",
-    "workbench comparator only; never a c14n byte oracle"),
-
-  // BPMN corpus assigned to Engram (§6.3): generated profile/corpus pins.
-  // Each file keeps its raw-byte pin; verdicts stay under the existing
-  // F1/workbench comparators.
-  entry("bpmn-corpus:tiny.bpmn", "bpmn-corpus", BPMN, "corpus",
-    "tests/fixtures/corpus/tiny.bpmn",
-    "29142ab44afc7c4d55049d2ee27bc72af2dcb36785020c634d9aa853c7f92350",
-    "minimal BPMN case"),
-  entry("bpmn-corpus:notation.bpmn", "bpmn-corpus", BPMN, "corpus",
-    "tests/fixtures/corpus/notation.bpmn",
-    "9d39d6cf37f477ee14451b035dec7e1605f6da765df90c3d51441e4f870f763d",
-    "notation case"),
-  entry("bpmn-corpus:no-di.bpmn", "bpmn-corpus", BPMN, "corpus",
-    "tests/fixtures/corpus/no-di.bpmn",
-    "f092763b04317e16565f83dfa84be412778d6372f2bbbed5715917375c2fad5f",
-    "missing-DI case; still required not-evaluated, never pass"),
-  entry("bpmn-corpus:partial-di.bpmn", "bpmn-corpus", BPMN, "corpus",
-    "tests/fixtures/corpus/partial-di.bpmn",
-    "73c526076bfb556a7974419b4f28f7e5f512b812a9a6fe3a08afe3acd4f73795",
-    "partial-DI case"),
-  entry("bpmn-corpus:duplicate-id.bpmn", "bpmn-corpus", BPMN, "corpus",
-    "tests/fixtures/corpus/duplicate-id.bpmn",
-    "0b3bc8a15b3a2a265e93f4106d5f1d168973d5f343240ea17411581f63df6151",
-    "duplicate-id refusal case"),
-  entry("bpmn-corpus:unresolved-reference.bpmn", "bpmn-corpus", BPMN, "corpus",
-    "tests/fixtures/corpus/unresolved-reference.bpmn",
-    "43da5729c80c31fd46e0ef1c5673ce7b83e46dc01a52addf3f3daed7c9d43b0c",
-    "unresolved-reference refusal case"),
-  entry("bpmn-corpus:rogue-extension.bpmn", "bpmn-corpus", BPMN, "corpus",
-    "tests/fixtures/corpus/rogue-extension.bpmn",
-    "3db5a5412a5f48f14b9c6e76f1c3a7cb1760941d01ce543031c66a88e9753cef",
-    "rogue-extension case; unknown namespaces preserved"),
-  entry("bpmn-corpus:extension-ok.bpmn", "bpmn-corpus", BPMN, "corpus",
-    "tests/fixtures/corpus/extension-ok.bpmn",
-    "0f47cd0cb28482cddbbb1ed4210c1ac5ee8c0387320028186d00a62080934a69",
-    "admitted-extension case"),
-  entry("bpmn-corpus:io-specification-incomplete.bpmn", "bpmn-corpus", BPMN, "corpus",
-    "tests/fixtures/corpus/io-specification-incomplete.bpmn",
-    "ff99f2ed6e1a826d90b249a701aa29055416347c19967b6ce2f81d2be3efcf7f",
-    "incomplete ioSpecification case"),
-  entry("bpmn-corpus:comments.bpmn", "bpmn-corpus", BPMN, "corpus",
-    "tests/fixtures/corpus/comments.bpmn",
-    "0f3b5609248ed3eb3cb6f63b8cf2c7f2ee8f4036fb9de8d52ff3d9732f731d30",
-    "comments case"),
-
-  // Additional pinned sources (§8.5): d2d position, consolidation record
-  // and review outputs bound to the M3 freeze.
-  entry("evidence:d2d.md", "evidence", "sentropic", "governance-unification",
-    ".tmp/governance-unification/evidence-astra/threads/ontology/d2d.md",
-    "ad956900e9ddf79e639dc26332e1380961cbce88dce878527de02d188c7a97c0",
-    "pinned d2d position; U-D2D-MAP stays open"),
-  entry("evidence:CONSOLIDATED-M3-r3.md", "evidence", "graphify", "scratch",
-    ".graphify/scratch/design/ontology-guardian/m3/CONSOLIDATED-M3-r3.md",
-    "0a022c50f77f40acb866b6c7a793de87809538a9146063ce655e856374db414d",
-    "M3 consolidation record"),
-  entry("evidence:review-M3-sol-r3.out", "evidence", "graphify", "scratch",
-    ".graphify/scratch/design/ontology-guardian/m3/review-M3-sol-r3.out",
-    "3fb3bf2d22fcad2c3de3a2d83322fdab7c35c3e10021debfa150882b5ffb37a5",
-    "M3 Sol review output"),
-  entry("evidence:review-M3-astra-r3.out", "evidence", "graphify", "scratch",
-    ".graphify/scratch/design/ontology-guardian/m3/review-M3-astra-r3.out",
-    "eb2017236c70714e4a6691d8dbaba1c650d892700af0e237b69ab89c0b383b5e",
-    "M3 Astra review output"),
-  entry("evidence:dmodel-rev3.out", "evidence", "sent-tech-design-system", "scratchpad",
-    "scratchpad/rev/dmodel-rev3.out",
-    "00d0571581e847181fe694e9e85e982af13e3637d8b9598b9868198f0261cd38",
-    "DS model review output"),
+  {
+    "id": "instance:A1",
+    "kind": "instance",
+    "source": {
+      "repo": "sentropic",
+      "revision": "4138a0ecba9c5b37409abb5ac00f732d02b7dc8d",
+      "path": "docs/governance/kit/src/presentation-scenes.json#/en/architectureScenes/central"
+    },
+    "sha256": "fce2bd5fd1805a46e4c0d7066e61c4706f52dd96a8d80808b6fab946e1744e61",
+    "expectation": "28 node / 10 container / 1 legend / 3 legend-key, 36 contains / 50 link, 0 dashed; 5 default folds; 10 authored summaries"
+  },
+  {
+    "id": "instance:A2",
+    "kind": "instance",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/architecture/hrpn/ds-fixtures/S2-asbuilt.json"
+    },
+    "sha256": "7abc427f7beca5b0f87947efc9df4daf6316f24725074f47f1da2b04be76ba2e",
+    "expectation": "41 node / 17 container / 1 legend / 4 legend-key, 58 contains / 44 link, 7 dashed / 37 solid; all-expanded"
+  },
+  {
+    "id": "instance:A3",
+    "kind": "instance",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/architecture/hrpn/ds-fixtures/S2-target.json"
+    },
+    "sha256": "28a7271dd0bec89fa9ad435174a614ab4a40b346b10724da95736f9c55b574d9",
+    "expectation": "51 node / 22 container / 1 legend / 4 legend-key, 73 contains / 54 link, 0 dashed / 54 solid; all-expanded"
+  },
+  {
+    "id": "instance:A4a",
+    "kind": "instance",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/architecture/hrpn/ds-fixtures/S1-conversational.json"
+    },
+    "sha256": "d9f7f7cb80894b5301e11cc7b7f0fc2775d1933aa15013152001395d716a32c7",
+    "expectation": "23 node / 17 container / 1 legend / 5 legend-key, 41 contains / 24 link, 10 dashed / 14 solid; all-expanded"
+  },
+  {
+    "id": "instance:A4b",
+    "kind": "instance",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/architecture/hrpn/ds-fixtures/S3-agentfactory.json"
+    },
+    "sha256": "e362b9a8da84082e5389127ae463d282fb773ef8950f41017222e0b3ef9002fc",
+    "expectation": "37 node / 15 container / 1 legend / 5 legend-key, 53 contains / 36 link, 3 dashed / 33 solid; all-expanded"
+  },
+  {
+    "id": "instance:A5-semantic",
+    "kind": "instance",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/architecture/hrpn/engram/S2-target.semantic.json"
+    },
+    "sha256": "46f64154bb6592d49ccda5633b2c4d4205fb1c6752ef218be31d6757923ecf91",
+    "expectation": "56 entities / 82 relations, every id survives; standard-slot conversion per §8.4 ledger"
+  },
+  {
+    "id": "instance:A5-view",
+    "kind": "instance",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/architecture/hrpn/engram/S2-target.view.json"
+    },
+    "sha256": "82930614efe070bdb8e5acce3aecea29dfdb2d1ab625b7d376507f97fb6f8b50",
+    "expectation": "typed presentation in presentation.diagram; 7 default folds; revision 1"
+  },
+  {
+    "id": "instance:A5-manifest",
+    "kind": "instance",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/architecture/hrpn/engram/MANIFEST.json"
+    },
+    "sha256": "54ef0dd0ac0e923aa99435625780902d07c3819e9c2c340868c921d1f956fd91",
+    "expectation": "A5 source manifest; provenance of the frozen snapshot, never a producer pin"
+  },
+  {
+    "id": "s2-target:figures",
+    "kind": "frozen-fixture",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/ard/decision/focus/.generated/figures/figures.json"
+    },
+    "sha256": "83935a169f04ab48df155f324dee6fbf336a502fd2b8cdc260ae03c0a6962719",
+    "expectation": "S2-target figure bytes; frozen target sceneHash b631abb4…"
+  },
+  {
+    "id": "s2-target:png",
+    "kind": "frozen-fixture",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/ard/decision/focus/.generated/figures/S2-target.png"
+    },
+    "sha256": "5dffb39dd10551ae83b35fd256ccc3c65911d5aa731cdccb253605c3ac5d1c9a",
+    "expectation": "frozen S2-target render witness"
+  },
+  {
+    "id": "s2-target:reference-png",
+    "kind": "frozen-fixture",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/architecture/hrpn/ds-fixtures/reference/S2-target.png"
+    },
+    "sha256": "f606ac163c5202c8cddb7caaba97e4d748d767865a2abfb1bb2f57a7bb4ad542",
+    "expectation": "frozen ds-fixtures reference render"
+  },
+  {
+    "id": "s2-target:governance-scenes",
+    "kind": "frozen-fixture",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/ard/decision/focus/.generated/governance-scenes.json"
+    },
+    "sha256": "236320cec2b25466dfe46d9338f3f75c14aba3ee33c6c25d8070ffc242d5b35c",
+    "expectation": "A5 independent source; does not overwrite A3"
+  },
+  {
+    "id": "hrpn-producer:data.json",
+    "kind": "producer-snapshot",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/architecture/hrpn/.generated/data.json"
+    },
+    "sha256": "5a893cd1c69e1bb81bf4095b7472e7494ede1eb709d2c02b732af2163a1d7f2e",
+    "expectation": "current producer sceneHash 81183292…; not the frozen fixture"
+  },
+  {
+    "id": "hrpn-producer:scene-metadata.mjs",
+    "kind": "producer-snapshot",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/architecture/hrpn/scene-metadata.mjs"
+    },
+    "sha256": "85de8a950c66312bd1f519ea2cc04aa37dff4bf9f6f0d39e34252fd95e2b6d51",
+    "expectation": "producer metadata module"
+  },
+  {
+    "id": "hrpn-producer:SCENES.md",
+    "kind": "producer-snapshot",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/architecture/hrpn/SCENES.md"
+    },
+    "sha256": "224bcaac70e397e771d88273219483eea808c0aa31cdcdc6d61d47f645d94853",
+    "expectation": "producer scene documentation"
+  },
+  {
+    "id": "hrpn-producer:figures.json",
+    "kind": "producer-snapshot",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/ard/decision/focus/.generated/figures/figures.json"
+    },
+    "sha256": "83935a169f04ab48df155f324dee6fbf336a502fd2b8cdc260ae03c0a6962719",
+    "expectation": "producer figure bytes"
+  },
+  {
+    "id": "hrpn-producer:S2-target.png",
+    "kind": "producer-snapshot",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/ard/decision/focus/.generated/figures/S2-target.png"
+    },
+    "sha256": "5dffb39dd10551ae83b35fd256ccc3c65911d5aa731cdccb253605c3ac5d1c9a",
+    "expectation": "producer render witness"
+  },
+  {
+    "id": "hrpn:fixture-manifest",
+    "kind": "frozen-fixture",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/architecture/hrpn/ds-fixtures/MANIFEST.md"
+    },
+    "sha256": "9558092fa2af669af9dcd4df6d9380e24a1cba723dbdd603ad2ebd86c6439a49",
+    "expectation": "frozen fixture manifest; historical pins are provenance only"
+  },
+  {
+    "id": "hrpn:reference-renders.json",
+    "kind": "frozen-fixture",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/architecture/hrpn/ds-fixtures/reference-renders.json"
+    },
+    "sha256": "7afee15ef473389452011d38fbaf8547973b5eed572440cc0c31ee8d921e25db",
+    "expectation": "frozen reference render index"
+  },
+  {
+    "id": "hrpn:build-scenes.mjs",
+    "kind": "frozen-fixture",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/architecture/hrpn/build-scenes.mjs"
+    },
+    "sha256": "35f0b1ac5e24f12956ea51104a8a3190cb8849485da867dc4d2990a77342d769",
+    "expectation": "frozen scene builder"
+  },
+  {
+    "id": "hrpn:build-fixtures.mjs",
+    "kind": "frozen-fixture",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/architecture/hrpn/ds-fixtures/build-fixtures.mjs"
+    },
+    "sha256": "3dee69da67bb5569a385a6dfa15759ac27d3fa749e8d6b2a63f04e0446fec102",
+    "expectation": "frozen fixture builder"
+  },
+  {
+    "id": "hrpn:build-engram.mjs",
+    "kind": "frozen-fixture",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/architecture/hrpn/engram/build-engram.mjs"
+    },
+    "sha256": "d6d007c97efad0f68f041c6a53a901cb6adaeea851e04c08676f419318b45caa",
+    "expectation": "frozen engram conversion builder"
+  },
+  {
+    "id": "oracle:derived-json",
+    "kind": "derived-oracle",
+    "source": {
+      "repo": "graphify",
+      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/oracle:derived-json"
+    },
+    "sha256": "9860b066d227d298aa67eae8bc47475355e86d22f266d1b0ad261035b33fdf8d",
+    "expectation": "oracle schemaVersion m3-r4-oracle/1; instances A1 A2 A3 A4a A4b A5"
+  },
+  {
+    "id": "oracle:whole",
+    "kind": "derived-oracle",
+    "source": {
+      "repo": "graphify",
+      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/oracle:whole"
+    },
+    "sha256": "08cae540e5535727fc1f4b7bba3aa12d84908790b6c918dc263b65560ab4f2de",
+    "expectation": "33429 canonical bytes of the whole derived oracle"
+  },
+  {
+    "id": "oracle:categoryTokens",
+    "kind": "derived-oracle",
+    "source": {
+      "repo": "graphify",
+      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/oracle:categoryTokens"
+    },
+    "sha256": "a77e2a62ddd6d576f06005969361ee15c241789fe8a571e6195dfb5c2782b3bf",
+    "expectation": "432 canonical bytes of the token table"
+  },
+  {
+    "id": "oracle:a1Summaries",
+    "kind": "derived-oracle",
+    "source": {
+      "repo": "graphify",
+      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/oracle:a1Summaries"
+    },
+    "sha256": "e363601a0c116197a471a599e92dc94da16147f0e7e78346c1ab7c7df9a49018",
+    "expectation": "2110 canonical bytes; ten authored A1 summaries"
+  },
+  {
+    "id": "oracle:a5EntitiesPresentation",
+    "kind": "derived-oracle",
+    "source": {
+      "repo": "graphify",
+      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/oracle:a5EntitiesPresentation"
+    },
+    "sha256": "527a0b18c1afee9e71591d6c2e3ef8d68294c89d5f0e593527b31a47b207a2b8",
+    "expectation": "20532 canonical bytes; every A5 authored string placed"
+  },
+  {
+    "id": "ds:profile.ts",
+    "kind": "native-source",
+    "source": {
+      "repo": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/src/profile.ts"
+    },
+    "sha256": "ee4299f403e84041254537bdbb0c058079200be6b668230200f241a86dc30223",
+    "expectation": "native Profile/role/attribute contracts; transcribed in §2.1"
+  },
+  {
+    "id": "ds:document.ts",
+    "kind": "native-source",
+    "source": {
+      "repo": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/src/document.ts"
+    },
+    "sha256": "300f05718298f7debbc15ffc36dd587b918724ca6f5ab310b297049a59dddf38",
+    "expectation": "native SemanticDocument contracts; transcribed in §2.1"
+  },
+  {
+    "id": "ds:view.ts",
+    "kind": "native-source",
+    "source": {
+      "repo": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/src/view.ts"
+    },
+    "sha256": "767faaf9b0b5ba001aa0ac2e621de41dc5117a8386dd719dc91dbf6c01fb8598",
+    "expectation": "native ViewDocument/PresentationState; transcribed in §2.2"
+  },
+  {
+    "id": "ds:attributes.ts",
+    "kind": "native-source",
+    "source": {
+      "repo": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/src/attributes.ts"
+    },
+    "sha256": "25574ecc699b8e08a6cc30f72b0923cc0b04c32071057a8a2edeb4beb779a21e",
+    "expectation": "native scalar/structured value validation; transcribed in §5.8"
+  },
+  {
+    "id": "ds:diagnostics.ts",
+    "kind": "native-source",
+    "source": {
+      "repo": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/src/diagnostics.ts"
+    },
+    "sha256": "fdd5e6a39cab036c8e552d2e0db46759ddb164a535f00a9fe848a9c0555c92a4",
+    "expectation": "native Diagnostic shape and 50-code baseline; transcribed in §2.2/C.1"
+  },
+  {
+    "id": "ds:validate.ts",
+    "kind": "native-source",
+    "source": {
+      "repo": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/src/validate.ts"
+    },
+    "sha256": "ab0ee3df80a427e8199b5204fb8652e4b86d03a2ebcf7b52860f78937ad120f3",
+    "expectation": "native validation stage ordering"
+  },
+  {
+    "id": "ds:generic.ts",
+    "kind": "native-source",
+    "source": {
+      "repo": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/src/profiles/generic.ts"
+    },
+    "sha256": "b19967fe65483abdbf0e271f197e13691904e4b087c1542de23c52e2ad4f45c3",
+    "expectation": "immutable generic@1 bytes; @1 preservation gate"
+  },
+  {
+    "id": "ds:skeletons.ts",
+    "kind": "native-source",
+    "source": {
+      "repo": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/src/profiles/skeletons.ts"
+    },
+    "sha256": "0a01fd2569e68c2b99ca754f28dc7cbbbd9a1d491ffa9981161cae3bbf56b54e",
+    "expectation": "immutable skeleton bytes; @1 preservation gate"
+  },
+  {
+    "id": "ds:archimate-skeleton-document.json",
+    "kind": "native-source",
+    "source": {
+      "repo": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/fixtures/valid/archimate-skeleton-document.json"
+    },
+    "sha256": "8395ccc32ac25ae1354271817a3358bfe6f96243ecdfe2e5ef45ae1f48683951",
+    "expectation": "pinned archimate@1 skeleton; migration source witness"
+  },
+  {
+    "id": "ds:uml-skeleton-document.json",
+    "kind": "native-source",
+    "source": {
+      "repo": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "packages/diagram-core/fixtures/valid/uml-skeleton-document.json"
+    },
+    "sha256": "eea74144a37d9e44456278eeb36b06c5c2d7f9b4d19136a6b8ed3ce6ea3b08d8",
+    "expectation": "pinned uml@1 skeleton; migration source witness"
+  },
+  {
+    "id": "ds:SPEC_M2_MODEL",
+    "kind": "evidence",
+    "source": {
+      "repo": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "spec/SPEC_EVOL_GD_M2_MODEL.md"
+    },
+    "sha256": "5e7798a451c5b92cbbde6fbf85ea5f890c32c863ece3c73e5d9772efa9cff078",
+    "expectation": "M2 §3.4 occurrence/transaction invariants"
+  },
+  {
+    "id": "ds:SPEC_M2_DS_PRESENTATION",
+    "kind": "evidence",
+    "source": {
+      "repo": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "spec/SPEC_EVOL_GD_M2_DS_PRESENTATION.md"
+    },
+    "sha256": "ea0fdd0ae6aa605ec05ff8cd91c6fe02b34570369836f7a973316905698db9ab",
+    "expectation": "M2 presentation contracts"
+  },
+  {
+    "id": "ds:SPEC_M2_CANVAS",
+    "kind": "evidence",
+    "source": {
+      "repo": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "spec/SPEC_EVOL_GD_M2_CANVAS.md"
+    },
+    "sha256": "b81dfe8ad4700bc741b5c23dbe4e7d95d565deaa09e24f7d1c4ec1c4eeb9b7e9",
+    "expectation": "M2 canvas contracts"
+  },
+  {
+    "id": "ds:SPEC_BPMN_MODDLE",
+    "kind": "evidence",
+    "source": {
+      "repo": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "spec/SPEC_EVOL_GD_BPMN_MODDLE_COVERAGE.md"
+    },
+    "sha256": "7b29e147873287402a271d8b95e86bc0d39cd320152bbd8c6b1f6ef4c6e87505",
+    "expectation": "BPMN moddle coverage reference"
+  },
+  {
+    "id": "ds:SPEC_RE_BPMN_JS_PARITY",
+    "kind": "evidence",
+    "source": {
+      "repo": "sent-tech-design-system",
+      "revision": "f6f3ba3790696754b6e08b13b62148ef3556bc4e",
+      "path": "spec/SPEC_RE_BPMN_JS_PARITY.md"
+    },
+    "sha256": "17df4d8423355f26c28fe330da84198ed77d5a7684eddd4558c3b050fef7bace",
+    "expectation": "BPMN parity reference"
+  },
+  {
+    "id": "g0:types.ts",
+    "kind": "native-source",
+    "source": {
+      "repo": "graphify",
+      "revision": "618977a86a25c35e426a87f97cb9f3391cd1c654",
+      "path": "src/ontology-guardian/types.ts"
+    },
+    "sha256": "e6f9e1627bcdca53c837466424c3deb853f72e5be208b6ddaa6e07e2baa0a631",
+    "expectation": "G0 Digest/Pin/OntologyRecord shapes"
+  },
+  {
+    "id": "g0:catalog.ts",
+    "kind": "native-source",
+    "source": {
+      "repo": "graphify",
+      "revision": "618977a86a25c35e426a87f97cb9f3391cd1c654",
+      "path": "src/ontology-guardian/catalog.ts"
+    },
+    "sha256": "bd5b5d290472009196e073d0f8694774d17c263a796fcf2bc9e46b1cbffe32d8",
+    "expectation": "G0 catalog envelope"
+  },
+  {
+    "id": "g0:digests.ts",
+    "kind": "native-source",
+    "source": {
+      "repo": "graphify",
+      "revision": "618977a86a25c35e426a87f97cb9f3391cd1c654",
+      "path": "src/ontology-guardian/digests.ts"
+    },
+    "sha256": "49cec7b137b8f9ec3ab074b7357472ba2b7204e8afa6212dc61142b6f3ec4405",
+    "expectation": "G0 digest procedures reused by the lot"
+  },
+  {
+    "id": "g0:admission.ts",
+    "kind": "native-source",
+    "source": {
+      "repo": "graphify",
+      "revision": "618977a86a25c35e426a87f97cb9f3391cd1c654",
+      "path": "src/ontology-guardian/admission.ts"
+    },
+    "sha256": "fe299c2e1d0c9c899cd9ac68a76a1ad230bdf542211dffdac05b0a2dafab2b9d",
+    "expectation": "G0 §5.5 admission gate"
+  },
+  {
+    "id": "g0:diagnostics.ts",
+    "kind": "native-source",
+    "source": {
+      "repo": "graphify",
+      "revision": "618977a86a25c35e426a87f97cb9f3391cd1c654",
+      "path": "src/ontology-guardian/diagnostics.ts"
+    },
+    "sha256": "521de919cf9d0161cdd0257d63fc3c2febf93e207bb5eb57df331dcc414b71af",
+    "expectation": "G0 diagnostic envelope"
+  },
+  {
+    "id": "archi:IAccessRelationship.java",
+    "kind": "matrix-source",
+    "source": {
+      "repo": "archimatetool/archi",
+      "revision": "9e6a014f9ef6a782a7dda604ef7b4d03d2c7819a",
+      "path": "com.archimatetool.model/src/com/archimatetool/model/IAccessRelationship.java"
+    },
+    "sha256": "79eb8f693a88e585257f6808678ff03b0409456fbf9f16ca498fdfc121f8d0f3",
+    "expectation": "access-mode declaration source"
+  },
+  {
+    "id": "archi:relationships.xml",
+    "kind": "matrix-source",
+    "source": {
+      "repo": "archimatetool/archi",
+      "revision": "9e6a014f9ef6a782a7dda604ef7b4d03d2c7819a",
+      "path": "com.archimatetool.model/model/relationships.xml"
+    },
+    "sha256": "82cc8d11b174f3edf700fc8d6e3e061d4d9d8e65e5ec0f3c323d94f98a2681e7",
+    "expectation": "versioned 3.2 tuple data; 11,569 expanded tuples"
+  },
+  {
+    "id": "archi:relationships-keys.xml",
+    "kind": "matrix-source",
+    "source": {
+      "repo": "archimatetool/archi",
+      "revision": "9e6a014f9ef6a782a7dda604ef7b4d03d2c7819a",
+      "path": "com.archimatetool.model/model/relationships-keys.xml"
+    },
+    "sha256": "19d86924efc3364d26c162fe4e6643f37fd9493a0effc80ce5e2aa648fb6803e",
+    "expectation": "tuple key source"
+  },
+  {
+    "id": "archi:archimate.ecore",
+    "kind": "matrix-source",
+    "source": {
+      "repo": "archimatetool/archi",
+      "revision": "9e6a014f9ef6a782a7dda604ef7b4d03d2c7819a",
+      "path": "com.archimatetool.model/model/archimate.ecore"
+    },
+    "sha256": "6d95f268182648c4dba6802ceacf05b9b1b323624f30eb8c31282fc7be29b253",
+    "expectation": "Ecore catalogue source"
+  },
+  {
+    "id": "archi:LICENSE.txt",
+    "kind": "matrix-source",
+    "source": {
+      "repo": "archimatetool/archi",
+      "revision": "9e6a014f9ef6a782a7dda604ef7b4d03d2c7819a",
+      "path": "com.archimatetool.model/LICENSE.txt"
+    },
+    "sha256": "428f4272e912bbc3809052990c5ba1089b06382dab6e6d6a71670789bfc9bcff",
+    "expectation": "licence closure evidence (U-AM)"
+  },
+  {
+    "id": "kit:governance-central.js",
+    "kind": "native-source",
+    "source": {
+      "repo": "sentropic",
+      "revision": "4138a0ecba9c5b37409abb5ac00f732d02b7dc8d",
+      "path": "docs/governance/kit/src/governance-central.js"
+    },
+    "sha256": "8648b0935735a386afa843e7221234406c1c61fbe48fa5bc7c4172743b0c3f1c",
+    "expectation": "KIT central scene module"
+  },
+  {
+    "id": "kit:governance-collapse.js",
+    "kind": "native-source",
+    "source": {
+      "repo": "sentropic",
+      "revision": "4138a0ecba9c5b37409abb5ac00f732d02b7dc8d",
+      "path": "docs/governance/kit/src/governance-collapse.js"
+    },
+    "sha256": "eb30e4fadbf3a045b353a700747a97941beabd5c1cf49fb6cd9e764eb5b9d3b7",
+    "expectation": "KIT collapse module"
+  },
+  {
+    "id": "kit:governance-summary.js",
+    "kind": "native-source",
+    "source": {
+      "repo": "sentropic",
+      "revision": "4138a0ecba9c5b37409abb5ac00f732d02b7dc8d",
+      "path": "docs/governance/kit/src/governance-summary.js"
+    },
+    "sha256": "d821077ac133d229bd5835c465e9f1e7731529e7d573ccd6253fa7916a2d54cc",
+    "expectation": "KIT summary module"
+  },
+  {
+    "id": "kit:governance-summary-layouts.json",
+    "kind": "native-source",
+    "source": {
+      "repo": "sentropic",
+      "revision": "4138a0ecba9c5b37409abb5ac00f732d02b7dc8d",
+      "path": "docs/governance/kit/src/governance-summary-layouts.json"
+    },
+    "sha256": "44a43b5e1ee3d05968a6baf8d2731076dfb048d0cfc7ddca4ac86f8fc1b10e65",
+    "expectation": "KIT summary layouts"
+  },
+  {
+    "id": "kit:governance-layout.js",
+    "kind": "native-source",
+    "source": {
+      "repo": "sentropic",
+      "revision": "4138a0ecba9c5b37409abb5ac00f732d02b7dc8d",
+      "path": "docs/governance/kit/src/governance-layout.js"
+    },
+    "sha256": "98ca434d422a0685c68c418594452d8f768ecfd491764df992cf6c9dcb823430",
+    "expectation": "KIT layout module"
+  },
+  {
+    "id": "kit:architecture-routing.js",
+    "kind": "native-source",
+    "source": {
+      "repo": "sentropic",
+      "revision": "4138a0ecba9c5b37409abb5ac00f732d02b7dc8d",
+      "path": "docs/governance/kit/src/architecture-routing.js"
+    },
+    "sha256": "4a181ba51080426ec77bc3dbf07ccfab1e6363f9bf5ce1363a659b0a7c47198e",
+    "expectation": "KIT routing module"
+  },
+  {
+    "id": "kit:presentation-scenes.json",
+    "kind": "native-source",
+    "source": {
+      "repo": "sentropic",
+      "revision": "4138a0ecba9c5b37409abb5ac00f732d02b7dc8d",
+      "path": "docs/governance/kit/src/presentation-scenes.json"
+    },
+    "sha256": "fce2bd5fd1805a46e4c0d7066e61c4706f52dd96a8d80808b6fab946e1744e61",
+    "expectation": "A1 source scenes"
+  },
+  {
+    "id": "kit:FrameToggle.svelte",
+    "kind": "native-source",
+    "source": {
+      "repo": "sentropic",
+      "revision": "4138a0ecba9c5b37409abb5ac00f732d02b7dc8d",
+      "path": "docs/governance/kit/src/FrameToggle.svelte"
+    },
+    "sha256": "9ad3b30b8ccaaf37157f13adf8feb53c1f3d1a1c3dca4b4f436166879ef45cc6",
+    "expectation": "fold control module"
+  },
+  {
+    "id": "kit:check-browser.mjs",
+    "kind": "evidence",
+    "source": {
+      "repo": "sentropic",
+      "revision": "4138a0ecba9c5b37409abb5ac00f732d02b7dc8d",
+      "path": "docs/governance/kit/scripts/check-browser.mjs"
+    },
+    "sha256": "d0fddf3eb0ae441abcfda9dec0b6f03eeb9ee53169ab26ce257ca443e6115f84",
+    "expectation": "#711 600-interaction workload source"
+  },
+  {
+    "id": "kit:browser-checks.mjs",
+    "kind": "evidence",
+    "source": {
+      "repo": "sentropic",
+      "revision": "4138a0ecba9c5b37409abb5ac00f732d02b7dc8d",
+      "path": "docs/governance/kit/scripts/browser-checks.mjs"
+    },
+    "sha256": "64890d902abf1ecfd9386083b5a7cab32c9226d821163ca13c21d7d974b50e2a",
+    "expectation": "#711 check enumeration source"
+  },
+  {
+    "id": "kit:check-performance.mjs",
+    "kind": "evidence",
+    "source": {
+      "repo": "sentropic",
+      "revision": "4138a0ecba9c5b37409abb5ac00f732d02b7dc8d",
+      "path": "docs/governance/kit/scripts/check-performance.mjs"
+    },
+    "sha256": "c603e64d0df412b0d61f79046c59d03a9cb1449b0b9d2e2f8b7b460085e03d05",
+    "expectation": "#711 performance budget source"
+  },
+  {
+    "id": "kit:check-geometry.mjs",
+    "kind": "evidence",
+    "source": {
+      "repo": "sentropic",
+      "revision": "4138a0ecba9c5b37409abb5ac00f732d02b7dc8d",
+      "path": "docs/governance/kit/scripts/check-geometry.mjs"
+    },
+    "sha256": "b3b5ed9fbade3d8e47d2cc2e63f6190d95438bad3e333c2227a70f663d21d4cb",
+    "expectation": "#711 geometry assertion source"
+  },
+  {
+    "id": "kit:app.css",
+    "kind": "evidence",
+    "source": {
+      "repo": "sentropic",
+      "revision": "4138a0ecba9c5b37409abb5ac00f732d02b7dc8d",
+      "path": "docs/governance/kit/src/app.css"
+    },
+    "sha256": "d776e25ab66012cd6b08813adcb6a787ff9bcd36d6bca9020aac1fd483330ed5",
+    "expectation": "#711 style source"
+  },
+  {
+    "id": "kit:architecture-layout.js",
+    "kind": "evidence",
+    "source": {
+      "repo": "sentropic",
+      "revision": "4138a0ecba9c5b37409abb5ac00f732d02b7dc8d",
+      "path": "docs/governance/kit/src/architecture-layout.js"
+    },
+    "sha256": "ec1547e5b22d98d2cd47bb84b1930fff4cd7fcc5e93c298074569d90b23692e9",
+    "expectation": "#711 layout source"
+  },
+  {
+    "id": "kit:r11-portable.html",
+    "kind": "evidence",
+    "source": {
+      "repo": "sentropic",
+      "revision": "4138a0ecba9c5b37409abb5ac00f732d02b7dc8d",
+      "path": "docs/governance/governance-r11-portable.html"
+    },
+    "sha256": "831cbdee9bb5820e7e19ed55c942522a5848c402db9be0c89d87d02559bf6f35",
+    "expectation": "#711 portable scene"
+  },
+  {
+    "id": "sealed:canonical.ts",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "src/profile/canonical.ts"
+    },
+    "sha256": "287d8cb87beb7384fc89a8d6141681010dcba50ee895aaadc3b31345541191ba",
+    "expectation": "profile-c14n/2 bytes; JCS + rawDigest + stableId"
+  },
+  {
+    "id": "sealed:jcs-key-order.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/jcs-key-order.json"
+    },
+    "sha256": "2a2b0ddc4eeaede4cdac346ae46d5b048b8f25d051b41785eaddbb3e4e491a84",
+    "expectation": "JCS key-ordering case"
+  },
+  {
+    "id": "sealed:jcs-escapes.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/jcs-escapes.json"
+    },
+    "sha256": "71a5af8cb8735f034b8411a44cc1e46090083f235509b98d1629c0020f294fdc",
+    "expectation": "JCS escape case"
+  },
+  {
+    "id": "sealed:jcs-numbers.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/jcs-numbers.json"
+    },
+    "sha256": "bb22448419b5d26311f475995cb5bf3f357e90ca0983ee20f0d2018766fa4bbf",
+    "expectation": "JCS numbers case incl. 1e-7 and 5e-324"
+  },
+  {
+    "id": "sealed:identity-stable-id.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/identity-stable-id.json"
+    },
+    "sha256": "59ca51c94f5010267b2991b74fc42d7d04a004ed3890ef8c546ec016301df84f",
+    "expectation": "four sealed stable ids incl. non-BMP allocation"
+  },
+  {
+    "id": "sealed:parity-manifest.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/manifest.json"
+    },
+    "sha256": "01b81fd9fb69f110a7f302631d6da92126bcb1672c67bea3ea68ff802df39faf",
+    "expectation": "parity corpus manifest; gate runs after manifest recompute"
+  },
+  {
+    "id": "sealed:parity-pin.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus.pin.json"
+    },
+    "sha256": "d34ee889917b8c5ef14c8d7bbd3fa2b222d93f4ac61de4bd0b41deb5767378a2",
+    "expectation": "sealed parity pin"
+  },
+  {
+    "id": "sealed:unicode-pin.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/unicode-case-15.0.0.pin.json"
+    },
+    "sha256": "989aa11b6c138115a356c39867a26d8da281d2fd4b926508c72199b87fa4b762",
+    "expectation": "Unicode 15.0.0 lock pin"
+  },
+  {
+    "id": "sealed:parity-index.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/index.json"
+    },
+    "sha256": "40284149ca3538b35250e5896694e7d15c80d3c3233241e0d7ac3d91266df03a",
+    "expectation": "parity corpus index"
+  },
+  {
+    "id": "sealed:workbench-canonical-vectors.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/canonical-vectors.json"
+    },
+    "sha256": "f238aef110a43381416fd0025326f883f760dc75510a9f0cc5817415eb02d1c6",
+    "expectation": "workbench comparator only; never a c14n byte oracle"
+  },
+  {
+    "id": "bpmn-corpus:tiny.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/corpus/tiny.bpmn"
+    },
+    "sha256": "29142ab44afc7c4d55049d2ee27bc72af2dcb36785020c634d9aa853c7f92350",
+    "expectation": "minimal BPMN case"
+  },
+  {
+    "id": "bpmn-corpus:notation.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/corpus/notation.bpmn"
+    },
+    "sha256": "9d39d6cf37f477ee14451b035dec7e1605f6da765df90c3d51441e4f870f763d",
+    "expectation": "notation case"
+  },
+  {
+    "id": "bpmn-corpus:no-di.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/corpus/no-di.bpmn"
+    },
+    "sha256": "f092763b04317e16565f83dfa84be412778d6372f2bbbed5715917375c2fad5f",
+    "expectation": "missing-DI case; still required not-evaluated, never pass"
+  },
+  {
+    "id": "bpmn-corpus:partial-di.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/corpus/partial-di.bpmn"
+    },
+    "sha256": "73c526076bfb556a7974419b4f28f7e5f512b812a9a6fe3a08afe3acd4f73795",
+    "expectation": "partial-DI case"
+  },
+  {
+    "id": "bpmn-corpus:duplicate-id.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/corpus/duplicate-id.bpmn"
+    },
+    "sha256": "0b3bc8a15b3a2a265e93f4106d5f1d168973d5f343240ea17411581f63df6151",
+    "expectation": "duplicate-id refusal case"
+  },
+  {
+    "id": "bpmn-corpus:unresolved-reference.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/corpus/unresolved-reference.bpmn"
+    },
+    "sha256": "43da5729c80c31fd46e0ef1c5673ce7b83e46dc01a52addf3f3daed7c9d43b0c",
+    "expectation": "unresolved-reference refusal case"
+  },
+  {
+    "id": "bpmn-corpus:rogue-extension.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/corpus/rogue-extension.bpmn"
+    },
+    "sha256": "3db5a5412a5f48f14b9c6e76f1c3a7cb1760941d01ce543031c66a88e9753cef",
+    "expectation": "rogue-extension case; unknown namespaces preserved"
+  },
+  {
+    "id": "bpmn-corpus:extension-ok.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/corpus/extension-ok.bpmn"
+    },
+    "sha256": "0f47cd0cb28482cddbbb1ed4210c1ac5ee8c0387320028186d00a62080934a69",
+    "expectation": "admitted-extension case"
+  },
+  {
+    "id": "bpmn-corpus:io-specification-incomplete.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/corpus/io-specification-incomplete.bpmn"
+    },
+    "sha256": "ff99f2ed6e1a826d90b249a701aa29055416347c19967b6ce2f81d2be3efcf7f",
+    "expectation": "incomplete ioSpecification case"
+  },
+  {
+    "id": "bpmn-corpus:comments.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/corpus/comments.bpmn"
+    },
+    "sha256": "0f3b5609248ed3eb3cb6f63b8cf2c7f2ee8f4036fb9de8d52ff3d9732f731d30",
+    "expectation": "comments case"
+  },
+  {
+    "id": "evidence:d2d.md",
+    "kind": "evidence",
+    "source": {
+      "repo": "sentropic",
+      "revision": "sha256:ad956900e9ddf79e639dc26332e1380961cbce88dce878527de02d188c7a97c0",
+      "path": ".tmp/governance-unification/evidence-astra/threads/ontology/d2d.md"
+    },
+    "sha256": "ad956900e9ddf79e639dc26332e1380961cbce88dce878527de02d188c7a97c0",
+    "expectation": "pinned d2d position; U-D2D-MAP stays open"
+  },
+  {
+    "id": "evidence:CONSOLIDATED-M3-r3.md",
+    "kind": "evidence",
+    "source": {
+      "repo": "graphify",
+      "revision": "sha256:0a022c50f77f40acb866b6c7a793de87809538a9146063ce655e856374db414d",
+      "path": ".graphify/scratch/design/ontology-guardian/m3/CONSOLIDATED-M3-r3.md"
+    },
+    "sha256": "0a022c50f77f40acb866b6c7a793de87809538a9146063ce655e856374db414d",
+    "expectation": "M3 consolidation record"
+  },
+  {
+    "id": "evidence:review-M3-sol-r3.out",
+    "kind": "evidence",
+    "source": {
+      "repo": "graphify",
+      "revision": "sha256:3fb3bf2d22fcad2c3de3a2d83322fdab7c35c3e10021debfa150882b5ffb37a5",
+      "path": ".graphify/scratch/design/ontology-guardian/m3/review-M3-sol-r3.out"
+    },
+    "sha256": "3fb3bf2d22fcad2c3de3a2d83322fdab7c35c3e10021debfa150882b5ffb37a5",
+    "expectation": "M3 Sol review output"
+  },
+  {
+    "id": "evidence:review-M3-astra-r3.out",
+    "kind": "evidence",
+    "source": {
+      "repo": "graphify",
+      "revision": "sha256:eb2017236c70714e4a6691d8dbaba1c650d892700af0e237b69ab89c0b383b5e",
+      "path": ".graphify/scratch/design/ontology-guardian/m3/review-M3-astra-r3.out"
+    },
+    "sha256": "eb2017236c70714e4a6691d8dbaba1c650d892700af0e237b69ab89c0b383b5e",
+    "expectation": "M3 Astra review output"
+  },
+  {
+    "id": "evidence:dmodel-rev3.out",
+    "kind": "evidence",
+    "source": {
+      "repo": "sent-tech-design-system",
+      "revision": "sha256:00d0571581e847181fe694e9e85e982af13e3637d8b9598b9868198f0261cd38",
+      "path": "scratchpad/rev/dmodel-rev3.out"
+    },
+    "sha256": "00d0571581e847181fe694e9e85e982af13e3637d8b9598b9868198f0261cd38",
+    "expectation": "DS model review output"
+  },
+  {
+    "id": "spec:frozen",
+    "kind": "evidence",
+    "source": {
+      "repo": "graphify",
+      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md"
+    },
+    "sha256": "deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
+    "expectation": "Frozen binding source; raw bytes and every source pin remain immutable."
+  },
+  {
+    "id": "oracle:diagnostics",
+    "kind": "derived-oracle",
+    "source": {
+      "repo": "graphify",
+      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#C.6"
+    },
+    "sha256": "a08ed44d699f8dd1a4aa04bd368bf6dd25485486d7344869781a1c0d77a13453",
+    "expectation": "Verbatim Appendix C.6 cases; exact diagnostics and source-bound mutations."
+  },
+  {
+    "id": "hrpn:tint-legend.json",
+    "kind": "frozen-fixture",
+    "source": {
+      "repo": "airbus-genair-hrpolnav",
+      "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
+      "path": "docs/architecture/hrpn/ds-fixtures/tint-legend.json"
+    },
+    "sha256": "cc47a3e3a2019af8c436ce28a34d0d52d71b8439cf55a44a33f1c0239752a26d",
+    "expectation": "Frozen category colour evidence; target tokens are separately governed."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/bpmnlint-11.15.0-recommended.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/bpmnlint-11.15.0-recommended.json"
+    },
+    "sha256": "9f0c84f67ff37a6462e4070edfe0f84c2ce5c71344fc8cb695eee744a017d81b",
+    "expectation": "§6.2: exact sealed corpus bytes, 2149 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/compatibility-codes.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/compatibility-codes.json"
+    },
+    "sha256": "601b91d9c401d4a3aff1f05f26632d370226bf98e8366fca506b79f4a8a853b8",
+    "expectation": "§6.2: exact sealed corpus bytes, 2721 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/compatibility-verdict.schema.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/compatibility-verdict.schema.json"
+    },
+    "sha256": "cf127eb6c2bd40155af2ba4cc8feed0dfa9aa2d1bf7e4c6dfec9e02bf4471c30",
+    "expectation": "§6.2: exact sealed corpus bytes, 1603 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/compiled-lint-options.schema.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/compiled-lint-options.schema.json"
+    },
+    "sha256": "6a0b8a2a7f9d7721ffc9a7f652a87f807c3ae8db5e2a37b0a9bc81f2df932e90",
+    "expectation": "§6.2: exact sealed corpus bytes, 1567 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/lint-policy-r3.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/lint-policy-r3.json"
+    },
+    "sha256": "09d1ea508a8d3e3cf7765e70f54f0553093773769ec24c7947732175c9d5a514",
+    "expectation": "§6.2: exact sealed corpus bytes, 52792 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/neutral-base.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/neutral-base.json"
+    },
+    "sha256": "a23a15d22585e765caeb8ad83bedb76c20bcb5fa1f7bee81ef062f4e97a15ea9",
+    "expectation": "§6.2: exact sealed corpus bytes, 7031 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/neutral-chain-rule.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/neutral-chain-rule.json"
+    },
+    "sha256": "fee2e569ef2268c8b961205545d574ce47906bfb25cc29c4800cbb2dc56959ac",
+    "expectation": "§6.2: exact sealed corpus bytes, 2047 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/neutral-descriptors.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/neutral-descriptors.json"
+    },
+    "sha256": "d737e07dc2b397bb02261fb5e7e46b51b7225f58fe82bebaa78cca2e613d62d2",
+    "expectation": "§6.2: exact sealed corpus bytes, 3171 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/neutral-fixture.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/neutral-fixture.json"
+    },
+    "sha256": "86d9959eb0a21d986be9d616a5a727a54e06bc30b24641c6ee3022eed9b3974c",
+    "expectation": "§6.2: exact sealed corpus bytes, 10290 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/neutral-grid-fixture.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/neutral-grid-fixture.json"
+    },
+    "sha256": "396887368f366d06652a1417f3a690cbb35232cd817411aaab889eee19723502",
+    "expectation": "§6.2: exact sealed corpus bytes, 11891 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/neutral-grid-profile.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/neutral-grid-profile.json"
+    },
+    "sha256": "7247b5cd90c13fea2d42048a8ea6a5f3a36f64db67a771533adf10968c92cccd",
+    "expectation": "§6.2: exact sealed corpus bytes, 71340 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/neutral-grid-profile.v1.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/neutral-grid-profile.v1.json"
+    },
+    "sha256": "ab6e7308d3ccf4f76743a3943b42283f4e175ba2bf356f153bbcbd50be4c466f",
+    "expectation": "§6.2: exact sealed corpus bytes, 70715 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/neutral-metrics.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/neutral-metrics.json"
+    },
+    "sha256": "151d1a1fac1cbcab8ca53f155c3210437f4a2c285f6b68721973d1da6c362ee0",
+    "expectation": "§6.2: exact sealed corpus bytes, 200 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/neutral-profile.R2.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/neutral-profile.R2.json"
+    },
+    "sha256": "3640934c2c17894e150f93b6915f8f22fd94071f5589f924f01a37c080482801",
+    "expectation": "§6.2: exact sealed corpus bytes, 19317 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/neutral-profile.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/neutral-profile.json"
+    },
+    "sha256": "c1319045f538a9f4ef1f3f7500af4a3e0df059e04c7c42dd7e992477c9199650",
+    "expectation": "§6.2: exact sealed corpus bytes, 63350 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/neutral-provider-arguments.schema.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/neutral-provider-arguments.schema.json"
+    },
+    "sha256": "1e42b387e05b9802efcf2ded2d9cdcf705f3dc4ac51b9610ea4290eafd928f08",
+    "expectation": "§6.2: exact sealed corpus bytes, 1685 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/neutral-registry.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/neutral-registry.json"
+    },
+    "sha256": "ac4a09989f3fafd9e7695ba18901fac04d08ca4fa869600d5f715a34cf16039f",
+    "expectation": "§6.2: exact sealed corpus bytes, 1734 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/neutral-support-fixture.R31.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/neutral-support-fixture.R31.json"
+    },
+    "sha256": "0a0a280bbb517337e11695a1849ea29a457bfb9028f60a657d8cc16824c5af5c",
+    "expectation": "§6.2: exact sealed corpus bytes, 41295 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/profile-mechanism-1.schema.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/profile-mechanism-1.schema.json"
+    },
+    "sha256": "c97cfba64560ec0e7098294a5e185187de9d1f2207b272c2f002f576865692da",
+    "expectation": "§6.2: exact sealed corpus bytes, 78825 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/r3-digest-vectors.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/r3-digest-vectors.json"
+    },
+    "sha256": "13a4a3ec13b1541b54972f7dc59e4a8c86d1c25e4d531cce3e1a7a13c58575a2",
+    "expectation": "§6.2: exact sealed corpus bytes, 3782 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-mechanism/1/r33-matrix-vectors.public.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-mechanism/1/r33-matrix-vectors.public.json"
+    },
+    "sha256": "4c0d7f85c3c51b2213160022668996dbf975ff1b6100a80009fb9137488821c3",
+    "expectation": "§6.2: exact sealed corpus bytes, 472365 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-001-s2b-compat-exact.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-001-s2b-compat-exact.json"
+    },
+    "sha256": "6b46826a33fabdeac6d9138f53db24f474ba7be42a65faa07076996130889133",
+    "expectation": "§6.2: exact sealed corpus bytes, 1767 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-002-s2b-compat-document-0.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-002-s2b-compat-document-0.json"
+    },
+    "sha256": "fc2def3ff9c13b5e1cd834c4ff2ba67f163fc26022bda7f6463d76c53a163cc4",
+    "expectation": "§6.2: exact sealed corpus bytes, 1850 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-003-s2b-compat-document-2.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-003-s2b-compat-document-2.json"
+    },
+    "sha256": "e29af558c23769185f792cfc7fed43ebfb9bb0f3163321c8d5784202ce517756",
+    "expectation": "§6.2: exact sealed corpus bytes, 1850 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-004-s2b-compat-missing.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-004-s2b-compat-missing.json"
+    },
+    "sha256": "f6e22d1a69915d42c2a4641314be315f29df4926d9f4c86dacb3f8393d995ec5",
+    "expectation": "§6.2: exact sealed corpus bytes, 1419 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-005-s2b-compat-xml-alone.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-005-s2b-compat-xml-alone.json"
+    },
+    "sha256": "63ef12592f78693654b86244ad36e08939d4b425f462181763b50192ad814c6f",
+    "expectation": "§6.2: exact sealed corpus bytes, 1412 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-006-s2b-compat-conflict.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-006-s2b-compat-conflict.json"
+    },
+    "sha256": "78195a0982ac8d3f9993dab494d3d6a4153ffd2e389b2befb4fa8858592f758f",
+    "expectation": "§6.2: exact sealed corpus bytes, 2754 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-007-s2b-compat-schema.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-007-s2b-compat-schema.json"
+    },
+    "sha256": "c031070b82a066e85ca9f496316ef273f031fc5c681862b6cb1831e95986c307",
+    "expectation": "§6.2: exact sealed corpus bytes, 1834 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-008-s2b-compat-mechanism.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-008-s2b-compat-mechanism.json"
+    },
+    "sha256": "493b0a3a60b6f8ddb03d67de9c4744d7f28dba09e71af5b175880e73ac68b36c",
+    "expectation": "§6.2: exact sealed corpus bytes, 1851 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-009-s2b-compat-document-mechanism.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-009-s2b-compat-document-mechanism.json"
+    },
+    "sha256": "8d64aebff4cc35d3148745082b260a74e5757874cee68907ad92aac7f89cc8d8",
+    "expectation": "§6.2: exact sealed corpus bytes, 1862 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-010-s2b-compat-mechanism-migration.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-010-s2b-compat-mechanism-migration.json"
+    },
+    "sha256": "1891863f7599495e8c539e76023bf567bfd6fa2eed7925217a899de3f432e79c",
+    "expectation": "§6.2: exact sealed corpus bytes, 1863 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-011-s2b-compat-capability.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-011-s2b-compat-capability.json"
+    },
+    "sha256": "76f61a963c502583ccb1c9a84cca3411eaa93cc203bed0a8b7b532aced16e01c",
+    "expectation": "§6.2: exact sealed corpus bytes, 1818 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-012-s2b-compat-asset.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-012-s2b-compat-asset.json"
+    },
+    "sha256": "400e706c7598095e702c2277e05b5349019e30c987c830fe547cd999a641617b",
+    "expectation": "§6.2: exact sealed corpus bytes, 1815 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-013-s2b-compat-base.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-013-s2b-compat-base.json"
+    },
+    "sha256": "86daa1fe6955abe7d815812b40452cd0eee2d70ff3d731ea64c4406c8a3a07c7",
+    "expectation": "§6.2: exact sealed corpus bytes, 1814 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-014-s2b-compat-descriptor.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-014-s2b-compat-descriptor.json"
+    },
+    "sha256": "0a781e7b4403e5ae3c0090ea48d669b0d502389041a2021e95afde7ce444f159",
+    "expectation": "§6.2: exact sealed corpus bytes, 1832 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-015-s2b-compat-business-id.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-015-s2b-compat-business-id.json"
+    },
+    "sha256": "cbd020422f694d8722e3e578f309daf9ea232a98b6285b812b0e91182fc5dde9",
+    "expectation": "§6.2: exact sealed corpus bytes, 1837 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-016-s2b-compat-business-major.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-016-s2b-compat-business-major.json"
+    },
+    "sha256": "dd36a81a156537789757105878c9ca9e124a56c6f972aaf67171171102f55a57",
+    "expectation": "§6.2: exact sealed corpus bytes, 1842 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-017-s2b-compat-digest.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-017-s2b-compat-digest.json"
+    },
+    "sha256": "eaf88899cdea491b981b8882ffa2aea7be59e85476dedb4e51498848d6f5e4af",
+    "expectation": "§6.2: exact sealed corpus bytes, 1836 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-018-s2b-compat-digest-migration-no-waiver.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-018-s2b-compat-digest-migration-no-waiver.json"
+    },
+    "sha256": "ac41ef4600d5b5ff713e74c11b6cac283893484832843a550c11c1eadc777fbe",
+    "expectation": "§6.2: exact sealed corpus bytes, 1855 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-019-s2b-compat-patch-up.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-019-s2b-compat-patch-up.json"
+    },
+    "sha256": "56b94c2199e96c833edca91337dd459f235b86906a751ec8e5bb27f4836f04bb",
+    "expectation": "§6.2: exact sealed corpus bytes, 1856 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-020-s2b-compat-patch-down.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-020-s2b-compat-patch-down.json"
+    },
+    "sha256": "ad16c638755ace4aefdbdc9615d66d9d63684fc20efad79172314e703dc17f66",
+    "expectation": "§6.2: exact sealed corpus bytes, 1858 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-021-s2b-compat-minor-up.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-021-s2b-compat-minor-up.json"
+    },
+    "sha256": "eff8844fff117fad0b6d5ae404a947f76dced03920cad2ebcec754952c19c7b1",
+    "expectation": "§6.2: exact sealed corpus bytes, 1856 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-022-s2b-compat-minor-down.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-022-s2b-compat-minor-down.json"
+    },
+    "sha256": "2ce82a451482c52718231fe3ab04b49d993e14fdb91b903e47c2b09bbeefbab6",
+    "expectation": "§6.2: exact sealed corpus bytes, 1858 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-023-s2b-compat-source-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-023-s2b-compat-source-unavailable.json"
+    },
+    "sha256": "2f12ca43069696c30cbebbbb3590c499dc642b340af220cb682b7e6e376981a4",
+    "expectation": "§6.2: exact sealed corpus bytes, 1846 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-024-s2b-compat-precedence-version.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-024-s2b-compat-precedence-version.json"
+    },
+    "sha256": "6d587649ee9555e1938c3f1be7050e1ab52784ac19e69e896ef5d815f940b252",
+    "expectation": "§6.2: exact sealed corpus bytes, 1401 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-025-s2b-compat-precedence-capability.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-025-s2b-compat-precedence-capability.json"
+    },
+    "sha256": "0a73612bffd27a7938b775ec1dcd6d3c0291d7db03f50b518ade36a8dda1efda",
+    "expectation": "§6.2: exact sealed corpus bytes, 1754 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-026-s2b-compat-precedence-base.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-026-s2b-compat-precedence-base.json"
+    },
+    "sha256": "7c03397345487295e21981d9643b5b2aaceb4f1f70b2dcff0882e634cbd4643e",
+    "expectation": "§6.2: exact sealed corpus bytes, 1825 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-027-s123-s1-patch-up-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-027-s123-s1-patch-up-unknown.json"
+    },
+    "sha256": "71f17e22f3f8750e9c01ac097cc7aa1b5f407865bf2a312d299f4a0b721c5dc5",
+    "expectation": "§6.2: exact sealed corpus bytes, 1619 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-028-s123-s1-patch-up-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-028-s123-s1-patch-up-unavailable.json"
+    },
+    "sha256": "a3c91ee71636484a50ea88976f694f99b41243bb456ad218bc9b659334287766",
+    "expectation": "§6.2: exact sealed corpus bytes, 1627 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-029-s123-s1-patch-down-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-029-s123-s1-patch-down-unknown.json"
+    },
+    "sha256": "ccc26b9e31f2aeb6cf2a589aabf450d7630aaf98fd0a7a9bdf23dd16f3d3e583",
+    "expectation": "§6.2: exact sealed corpus bytes, 1621 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-030-s123-s1-patch-down-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-030-s123-s1-patch-down-unavailable.json"
+    },
+    "sha256": "aea8a116e4d4f534ae39a3ed5f390006ec09d7bc095b4df0badab1b0b59b282a",
+    "expectation": "§6.2: exact sealed corpus bytes, 1629 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-031-s123-s1-minor-up-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-031-s123-s1-minor-up-unknown.json"
+    },
+    "sha256": "32cbcf6461ea8bb3d40ec4621d7580ddc3febc5ef8220c7d5f4da5f78c1143ff",
+    "expectation": "§6.2: exact sealed corpus bytes, 1619 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-032-s123-s1-minor-up-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-032-s123-s1-minor-up-unavailable.json"
+    },
+    "sha256": "7fe2bc1d04d882079aa0453073bb7333e16da40ea1e11a0b4c2bd4cbe36c2dac",
+    "expectation": "§6.2: exact sealed corpus bytes, 1627 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-033-s123-s1-minor-down-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-033-s123-s1-minor-down-unknown.json"
+    },
+    "sha256": "5734dce23084b1bc5473a1641ff3de6f3318d02446fe821c8ebc923e6292d102",
+    "expectation": "§6.2: exact sealed corpus bytes, 1621 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-034-s123-s1-minor-down-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-034-s123-s1-minor-down-unavailable.json"
+    },
+    "sha256": "a347b8569cb5a94e3014b278c2c71c1ef2e4ef35984c81a16bce50fd3471784f",
+    "expectation": "§6.2: exact sealed corpus bytes, 1629 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-035-s123-s1-digest-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-035-s123-s1-digest-unknown.json"
+    },
+    "sha256": "34f0a54fb477c9de4ccc2602edf80b434a24087708306ebbe2e15e378bc5e770",
+    "expectation": "§6.2: exact sealed corpus bytes, 1611 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-036-s123-s1-digest-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-036-s123-s1-digest-unavailable.json"
+    },
+    "sha256": "437818c0ecd2088e93e644d08032ebad5d9f362d3a65577a3ada04b0eae25381",
+    "expectation": "§6.2: exact sealed corpus bytes, 1619 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-037-s123-s2-injected-schema-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-037-s123-s2-injected-schema-unknown.json"
+    },
+    "sha256": "079a5faf7f17a348838498006b625492baaa6ce37d4c289e1fd5308db558a3f6",
+    "expectation": "§6.2: exact sealed corpus bytes, 1618 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-038-s123-s2-injected-schema-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-038-s123-s2-injected-schema-unavailable.json"
+    },
+    "sha256": "fec6aec76996996e03975d461a05b2457c39e2d6f0d21a4ef946d1219cf0cd3d",
+    "expectation": "§6.2: exact sealed corpus bytes, 1626 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-039-s123-s2-document-schema-supported-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-039-s123-s2-document-schema-supported-unknown.json"
+    },
+    "sha256": "4257ff9189e4d8e0bfa03aab9496be996bbf62f46ce0574eb0de8fba11ef43e6",
+    "expectation": "§6.2: exact sealed corpus bytes, 1644 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-040-s123-s2-document-schema-supported-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-040-s123-s2-document-schema-supported-unavailable.json"
+    },
+    "sha256": "08a91df175600ec43870b9421b05568d2803fbe218e48377514143bd9723641b",
+    "expectation": "§6.2: exact sealed corpus bytes, 1652 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-041-s123-s2-document-schema-unsupported-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-041-s123-s2-document-schema-unsupported-unknown.json"
+    },
+    "sha256": "c504962a2ed2051b7b3d1620a3a549a1fb6f981ab00fbd2717744440eb386171",
+    "expectation": "§6.2: exact sealed corpus bytes, 1640 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-042-s123-s2-document-schema-unsupported-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-042-s123-s2-document-schema-unsupported-unavailable.json"
+    },
+    "sha256": "f23f934405bfc08dbba3e413c564e46c0fe80968ef011674aeadee89aab157f3",
+    "expectation": "§6.2: exact sealed corpus bytes, 1648 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-043-s123-s2-document-schema-supported-available.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-043-s123-s2-document-schema-supported-available.json"
+    },
+    "sha256": "b48f2cc9cb756eaf420e722b5e9721652bf7577e22b3ac9498cc12acca55fc31",
+    "expectation": "§6.2: exact sealed corpus bytes, 1672 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-044-s123-s2-envelope-invalid-available.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-044-s123-s2-envelope-invalid-available.json"
+    },
+    "sha256": "d4b475370c1f0532fe18c09deb921baffe95f53515f4fe20c06d9ad0a299dffd",
+    "expectation": "§6.2: exact sealed corpus bytes, 1579 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-045-s123-s2-envelope-invalid-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-045-s123-s2-envelope-invalid-unavailable.json"
+    },
+    "sha256": "7ef551292b79857f3714645573f25ebd23dfae1c1a5197787ddee8993ca71f3d",
+    "expectation": "§6.2: exact sealed corpus bytes, 1636 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-046-compatibility-test-should-require-validated-migration-results-before-accepting-a-different-identity-call-1.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-046-compatibility-test-should-require-validated-migration-results-before-accepting-a-different-identity-call-1.json"
+    },
+    "sha256": "532d57270e808081c3165a7fb63f954b16fed28d68e1d681de17a3674fc99db5",
+    "expectation": "§6.2: exact sealed corpus bytes, 1945 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-047-compatibility-test-should-require-validated-migration-results-before-accepting-a-different-identity-call-2.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-047-compatibility-test-should-require-validated-migration-results-before-accepting-a-different-identity-call-2.json"
+    },
+    "sha256": "6edc6cfa619e0294bab8141eacabe59f8ce5baa2f58ea3e41ed7b57c7c4a2872",
+    "expectation": "§6.2: exact sealed corpus bytes, 1925 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-048-compatibility-test-should-refuse-invalid-exact-envelopes-and-schema-identity-disagreement-call-1.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-048-compatibility-test-should-refuse-invalid-exact-envelopes-and-schema-identity-disagreement-call-1.json"
+    },
+    "sha256": "3e48886d27439fbe35d10c8c2bd70d7ac6ec814de982c6f7ae73c8dcfafa4759",
+    "expectation": "§6.2: exact sealed corpus bytes, 1862 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-049-compatibility-test-should-refuse-invalid-exact-envelopes-and-schema-identity-disagreement-call-2.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-049-compatibility-test-should-refuse-invalid-exact-envelopes-and-schema-identity-disagreement-call-2.json"
+    },
+    "sha256": "4e0b8772b6fd5b134403269c1279c5421bdc8cee9c9aa71145abf35fe40cdc33",
+    "expectation": "§6.2: exact sealed corpus bytes, 1946 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-050-s123-regression-should-check-source-availability-for-1-2-2-with-known-and-available-call-1.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-050-s123-regression-should-check-source-availability-for-1-2-2-with-known-and-available-call-1.json"
+    },
+    "sha256": "da9e9966d9de8ea35e59b691ff239ccbc821029329ac68656f6a0c4c7df2f2fd",
+    "expectation": "§6.2: exact sealed corpus bytes, 1661 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-051-s123-regression-should-check-source-availability-for-1-2-2-with-unknown-call-1.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-051-s123-regression-should-check-source-availability-for-1-2-2-with-unknown-call-1.json"
+    },
+    "sha256": "17454ae235cbd3f05fdc87cea9f3a78df9453ae367dfdbf9741b998b9dcc99a7",
+    "expectation": "§6.2: exact sealed corpus bytes, 1625 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-052-s123-regression-should-check-source-availability-for-1-2-2-with-unavailable-call-1.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-052-s123-regression-should-check-source-availability-for-1-2-2-with-unavailable-call-1.json"
+    },
+    "sha256": "9cb8bc6f61d9798793f3d58ba0562f04a950f18033bb8f6b19c1334209bbb1d4",
+    "expectation": "§6.2: exact sealed corpus bytes, 1633 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-053-s123-regression-should-check-source-availability-for-1-2-4-with-known-and-available-call-1.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-053-s123-regression-should-check-source-availability-for-1-2-4-with-known-and-available-call-1.json"
+    },
+    "sha256": "120f83b1e68fd13392d5c72f5f1b2a777a08e333b6b48513d9f0185f94ef11e8",
+    "expectation": "§6.2: exact sealed corpus bytes, 1661 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-054-s123-regression-should-check-source-availability-for-1-2-4-with-unknown-call-1.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-054-s123-regression-should-check-source-availability-for-1-2-4-with-unknown-call-1.json"
+    },
+    "sha256": "bc8dbfdc6e5c9a339640847c24c9736fe3e72f2ea7563f4857d199c14e9616da",
+    "expectation": "§6.2: exact sealed corpus bytes, 1625 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-055-s123-regression-should-check-source-availability-for-1-2-4-with-unavailable-call-1.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-055-s123-regression-should-check-source-availability-for-1-2-4-with-unavailable-call-1.json"
+    },
+    "sha256": "71ceb31e13bf5d637753eb8611d2b00889e46466a71ef969658a86b6b97aa5b2",
+    "expectation": "§6.2: exact sealed corpus bytes, 1633 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-056-s123-regression-should-check-source-availability-for-1-1-9-with-known-and-available-call-1.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-056-s123-regression-should-check-source-availability-for-1-1-9-with-known-and-available-call-1.json"
+    },
+    "sha256": "eadb4ab2138409f65b7ff0d37edf9ed36feaeb319fca7b48e190ddf46af6c697",
+    "expectation": "§6.2: exact sealed corpus bytes, 1661 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-057-s123-regression-should-check-source-availability-for-1-1-9-with-unknown-call-1.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-057-s123-regression-should-check-source-availability-for-1-1-9-with-unknown-call-1.json"
+    },
+    "sha256": "9809d44c9d2afb8b7c1560702bcce77fb20e26262c5aac5c790583148afb59c7",
+    "expectation": "§6.2: exact sealed corpus bytes, 1625 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-058-s123-regression-should-check-source-availability-for-1-1-9-with-unavailable-call-1.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-058-s123-regression-should-check-source-availability-for-1-1-9-with-unavailable-call-1.json"
+    },
+    "sha256": "228fdca425c0b9f36f48586265bb38e24539f2ff6046a3511cdfaad799cb2579",
+    "expectation": "§6.2: exact sealed corpus bytes, 1633 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-059-s123-regression-should-check-source-availability-for-1-3-0-with-known-and-available-call-1.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-059-s123-regression-should-check-source-availability-for-1-3-0-with-known-and-available-call-1.json"
+    },
+    "sha256": "7af230502c9afe39970c298fbbbe2f01d57ae305b90c7110c773c0a3cf5f7b7c",
+    "expectation": "§6.2: exact sealed corpus bytes, 1661 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-060-s123-regression-should-check-source-availability-for-1-3-0-with-unknown-call-1.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-060-s123-regression-should-check-source-availability-for-1-3-0-with-unknown-call-1.json"
+    },
+    "sha256": "ef7913782482a268789da96e9fc68a55d8c09ff1e489313ca2989463274ffcda",
+    "expectation": "§6.2: exact sealed corpus bytes, 1625 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-061-s123-regression-should-check-source-availability-for-1-3-0-with-unavailable-call-1.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-061-s123-regression-should-check-source-availability-for-1-3-0-with-unavailable-call-1.json"
+    },
+    "sha256": "17015fef509d9ee6924b2db53ee95d1504141931864a1fcb55e6c565b31badfc",
+    "expectation": "§6.2: exact sealed corpus bytes, 1633 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-062-s123-regression-should-keep-earlier-identity-conflicts-ahead-of-unavailable-source-call-1.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-062-s123-regression-should-keep-earlier-identity-conflicts-ahead-of-unavailable-source-call-1.json"
+    },
+    "sha256": "fd865e9f216c742600dd76134897b091309b9badb6ecf341c5512b0a42d4f23e",
+    "expectation": "§6.2: exact sealed corpus bytes, 1634 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-063-s123-regression-should-keep-earlier-identity-conflicts-ahead-of-unavailable-source-call-2.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-063-s123-regression-should-keep-earlier-identity-conflicts-ahead-of-unavailable-source-call-2.json"
+    },
+    "sha256": "5fc853d651745d1f0cf22e8c564ffb5c64de1ecaf67051e10d779aee38710666",
+    "expectation": "§6.2: exact sealed corpus bytes, 1646 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-064-s123-regression-should-refuse-schema-identity-disagreement-before-unavailable-source-and-migration-call-1.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-064-s123-regression-should-refuse-schema-identity-disagreement-before-unavailable-source-and-migration-call-1.json"
+    },
+    "sha256": "4357806a5dfa9119b0d7114b42cd0e241f3bacab31402c9b123d016ed8c5f27a",
+    "expectation": "§6.2: exact sealed corpus bytes, 1656 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-065-s123-regression-should-refuse-schema-identity-disagreement-before-known-and-available-source-and-migration-call-1.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-065-s123-regression-should-refuse-schema-identity-disagreement-before-known-and-available-source-and-migration-call-1.json"
+    },
+    "sha256": "2fb5e1c15abf8dc944ae7a87b282118db83c433c73fb02c811a118d811e61c44",
+    "expectation": "§6.2: exact sealed corpus bytes, 1686 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-066-s123-regression-should-refuse-invalid-exact-envelopes-without-an-invented-parity-code-call-1.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-066-s123-regression-should-refuse-invalid-exact-envelopes-without-an-invented-parity-code-call-1.json"
+    },
+    "sha256": "05c7372755956b74bfbd7edc41e584eebd96ece5bc33d9fe868287fb2c4e92d2",
+    "expectation": "§6.2: exact sealed corpus bytes, 1589 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-067-r33-mechanism-known-and-available.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-067-r33-mechanism-known-and-available.json"
+    },
+    "sha256": "556f4d84e2fa42792913d5d9bbf5c0bcb1a1ab58d81493f5681629e2687ad37a",
+    "expectation": "§6.2: exact sealed corpus bytes, 1866 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-068-r33-mechanism-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-068-r33-mechanism-unknown.json"
+    },
+    "sha256": "0426e48b5e37dd8d94c29b687fb0bab687088b61887969ebabc9fa4c20213d36",
+    "expectation": "§6.2: exact sealed corpus bytes, 1838 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-069-r33-mechanism-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-069-r33-mechanism-unavailable.json"
+    },
+    "sha256": "ffe1241847aaaa2f61007d5b82ce9d57a27317ea2a9ab7883ea9a6218571ab3b",
+    "expectation": "§6.2: exact sealed corpus bytes, 1846 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-070-r33-mechanism-unknown-source-version.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-070-r33-mechanism-unknown-source-version.json"
+    },
+    "sha256": "47e609b1e734893579399b66e0107b7894a44d5b6e226c30c5d7a635ebc18a5c",
+    "expectation": "§6.2: exact sealed corpus bytes, 1847 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-071-r33-mechanism-unknown-source-sha256.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-071-r33-mechanism-unknown-source-sha256.json"
+    },
+    "sha256": "8df2e9515749cd933e6e95a6425ffc43bbd1157fd759048cfb2b069e2cbce6a6",
+    "expectation": "§6.2: exact sealed corpus bytes, 1788 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-072-r33-mechanism-selected-migration-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-072-r33-mechanism-selected-migration-unavailable.json"
+    },
+    "sha256": "d17dc871e317c7db986e21d8062f4f7dcb129f68f63c2aaa70a275783b4b1d4a",
+    "expectation": "§6.2: exact sealed corpus bytes, 1864 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-073-r33-schema-known-and-available.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-073-r33-schema-known-and-available.json"
+    },
+    "sha256": "e30f8dd7c2173186b3ca9fa52f26ef905a7883a3b5617e1633f0786109c38545",
+    "expectation": "§6.2: exact sealed corpus bytes, 1877 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-074-r33-schema-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-074-r33-schema-unknown.json"
+    },
+    "sha256": "66289e7a101e9562dcfee751ce447bce620900ae3715d0f8640bf291d39bd52b",
+    "expectation": "§6.2: exact sealed corpus bytes, 1839 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-075-r33-schema-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-075-r33-schema-unavailable.json"
+    },
+    "sha256": "f8b822a6881d7eb78fd85e4eecbde1d1fba60908528aa5fb76aebfb7eef1edd7",
+    "expectation": "§6.2: exact sealed corpus bytes, 1847 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-076-r33-schema-unknown-source-version.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-076-r33-schema-unknown-source-version.json"
+    },
+    "sha256": "79df31b7dcbbf71c2ae73c278bf337b199de314bf75bdce1f9f89fac20acfe67",
+    "expectation": "§6.2: exact sealed corpus bytes, 1848 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-077-r33-schema-unknown-source-sha256.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-077-r33-schema-unknown-source-sha256.json"
+    },
+    "sha256": "f310b878e3e8843bb5e6ccdfeca5b7de0ce9eff17495599d68269ee04fe704f1",
+    "expectation": "§6.2: exact sealed corpus bytes, 1789 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-078-r33-schema-selected-migration-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-078-r33-schema-selected-migration-unavailable.json"
+    },
+    "sha256": "1c0adf54e7ff2ec73dd1f7c228900253f49cd93963898db978fdd36a6869ff31",
+    "expectation": "§6.2: exact sealed corpus bytes, 1865 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-079-r33-base-known-and-available.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-079-r33-base-known-and-available.json"
+    },
+    "sha256": "a37d3bbd02b281af5d4212e77ec11faf77281ed5e811e9d5a805024bbb7204fc",
+    "expectation": "§6.2: exact sealed corpus bytes, 1827 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-080-r33-base-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-080-r33-base-unknown.json"
+    },
+    "sha256": "9b170e54c26aecedd30399bf9bd128e1b62156b0ac389702ec1c7d4a020fbb4c",
+    "expectation": "§6.2: exact sealed corpus bytes, 1829 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-081-r33-base-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-081-r33-base-unavailable.json"
+    },
+    "sha256": "dbe1311c219a4feaf7a2f5fcccaa26cbfb72adf850bab7261a482ef03fa80508",
+    "expectation": "§6.2: exact sealed corpus bytes, 1837 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-082-r33-base-unknown-source-version.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-082-r33-base-unknown-source-version.json"
+    },
+    "sha256": "0d7651b10eb70d4984ae88cca5228a916a6eb64050e191dc2c3f16eb83f1797a",
+    "expectation": "§6.2: exact sealed corpus bytes, 1838 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-083-r33-base-unknown-source-sha256.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-083-r33-base-unknown-source-sha256.json"
+    },
+    "sha256": "b4a6118a5102dac6c4646cac13a36298de3c63b92b5b64bed88706c034aec564",
+    "expectation": "§6.2: exact sealed corpus bytes, 1779 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-084-r33-base-selected-migration-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-084-r33-base-selected-migration-unavailable.json"
+    },
+    "sha256": "2e6887fa7b6dc2c1e46ed0726009549beb85a94aa8a3cac1809f840a3d1013e4",
+    "expectation": "§6.2: exact sealed corpus bytes, 1855 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-085-r33-descriptor-known-and-available.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-085-r33-descriptor-known-and-available.json"
+    },
+    "sha256": "d942bac8933de34bef67f41009637f7caf84e667f72f8cc5625da5fdbb517aa1",
+    "expectation": "§6.2: exact sealed corpus bytes, 1845 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-086-r33-descriptor-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-086-r33-descriptor-unknown.json"
+    },
+    "sha256": "459c173f6c07057dc6d48e685222ccfde8eef2c7cd4401ab38562d7c956f25c9",
+    "expectation": "§6.2: exact sealed corpus bytes, 1835 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-087-r33-descriptor-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-087-r33-descriptor-unavailable.json"
+    },
+    "sha256": "7db4821d90abe6dad673a556b28201d91c80898b3aeeb1848ff9e1d3ad480833",
+    "expectation": "§6.2: exact sealed corpus bytes, 1843 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-088-r33-descriptor-unknown-source-version.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-088-r33-descriptor-unknown-source-version.json"
+    },
+    "sha256": "a96530e420b606365fa868bf3ea5d3698f9c5b3fd830f3b5486e230a3c217035",
+    "expectation": "§6.2: exact sealed corpus bytes, 1844 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-089-r33-descriptor-unknown-source-sha256.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-089-r33-descriptor-unknown-source-sha256.json"
+    },
+    "sha256": "13dab21ba8a4f21713a8d69278b478f1e7d3ec211b306bb7aa760914c9c8bb62",
+    "expectation": "§6.2: exact sealed corpus bytes, 1785 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-090-r33-descriptor-selected-migration-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-090-r33-descriptor-selected-migration-unavailable.json"
+    },
+    "sha256": "5d0183140d4c16dd898e6674fda6689f5af18d868ac5a619677cb8e10b8286be",
+    "expectation": "§6.2: exact sealed corpus bytes, 1861 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-091-r33-business-id-known-and-available.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-091-r33-business-id-known-and-available.json"
+    },
+    "sha256": "c236ee27907a7ffcb9820ba5e22440681d8a533001415d64a22a08faf0c7b44c",
+    "expectation": "§6.2: exact sealed corpus bytes, 1860 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-092-r33-business-id-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-092-r33-business-id-unknown.json"
+    },
+    "sha256": "2a9b7d47987b128329314a43bba5ac97cf39bb47205b54541f9aaafc941816dd",
+    "expectation": "§6.2: exact sealed corpus bytes, 1844 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-093-r33-business-id-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-093-r33-business-id-unavailable.json"
+    },
+    "sha256": "6483e257518989a143ec2313be9dadc990a277801a43f3c231715221836a2a22",
+    "expectation": "§6.2: exact sealed corpus bytes, 1852 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-094-r33-business-id-unknown-source-version.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-094-r33-business-id-unknown-source-version.json"
+    },
+    "sha256": "f568db15ea3c170bd625afc613a6c5ef936902a33002df15ef8a540b8d8237ef",
+    "expectation": "§6.2: exact sealed corpus bytes, 1853 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-095-r33-business-id-unknown-source-sha256.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-095-r33-business-id-unknown-source-sha256.json"
+    },
+    "sha256": "d0175bdfc11ea13ffd7e2a1743eab0063c8d582c885336512caff8f783712ddd",
+    "expectation": "§6.2: exact sealed corpus bytes, 1794 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-096-r33-business-id-selected-migration-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-096-r33-business-id-selected-migration-unavailable.json"
+    },
+    "sha256": "b3fde56ea31f3c465c60dee5c96c12b2679e5494696062ffb9d94c7ff30889c5",
+    "expectation": "§6.2: exact sealed corpus bytes, 1870 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-097-r33-major-known-and-available.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-097-r33-major-known-and-available.json"
+    },
+    "sha256": "137b0d573100e361a517f3a2b60b4d572980279b70407edfbec44899702bc6af",
+    "expectation": "§6.2: exact sealed corpus bytes, 1846 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-098-r33-major-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-098-r33-major-unknown.json"
+    },
+    "sha256": "cc9e4c3f745a9e081a6473000c778844fc4faeebf1723ffc77c554a750eca521",
+    "expectation": "§6.2: exact sealed corpus bytes, 1830 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-099-r33-major-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-099-r33-major-unavailable.json"
+    },
+    "sha256": "e57b41c3cb4603622ce0282a0a0325af1c3ef33aa1776b1bae04c5374025128a",
+    "expectation": "§6.2: exact sealed corpus bytes, 1838 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-100-r33-major-unknown-source-version.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-100-r33-major-unknown-source-version.json"
+    },
+    "sha256": "9fecff0e7af37ac4a048fe33812154635e3413c5c45b9ee892db2b58abd08231",
+    "expectation": "§6.2: exact sealed corpus bytes, 1839 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-101-r33-major-unknown-source-sha256.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-101-r33-major-unknown-source-sha256.json"
+    },
+    "sha256": "0e54322db9770cfdac9a1e9fd867253722a42a1321101848f24a7479f422cb48",
+    "expectation": "§6.2: exact sealed corpus bytes, 1780 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-102-r33-major-selected-migration-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-102-r33-major-selected-migration-unavailable.json"
+    },
+    "sha256": "02f7dfbda518090f81e4f30a004d150e0b388863b0c9d1ef7ae251a47ce26128",
+    "expectation": "§6.2: exact sealed corpus bytes, 1856 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-103-r33-patch-up-known-and-available.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-103-r33-patch-up-known-and-available.json"
+    },
+    "sha256": "bb4858ef14389e2c5b1b8bec958d7e809885b790c6c213b1face95d79cf56aaa",
+    "expectation": "§6.2: exact sealed corpus bytes, 1869 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-104-r33-patch-up-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-104-r33-patch-up-unknown.json"
+    },
+    "sha256": "4b1d1eafa1bd40e76ced031b74f393f1632eb9251352b58c1bdd05a12c9e083e",
+    "expectation": "§6.2: exact sealed corpus bytes, 1833 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-105-r33-patch-up-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-105-r33-patch-up-unavailable.json"
+    },
+    "sha256": "a35cf292f589cfa84ad6b02d52e58be874671b10b5b10c61fe7fd7409292f1e7",
+    "expectation": "§6.2: exact sealed corpus bytes, 1841 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-106-r33-patch-up-unknown-source-version.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-106-r33-patch-up-unknown-source-version.json"
+    },
+    "sha256": "ba1a0e479230df472166d70e8ed7ab842b1999ca584df05f26d0c2a442a894f6",
+    "expectation": "§6.2: exact sealed corpus bytes, 1842 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-107-r33-patch-up-unknown-source-sha256.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-107-r33-patch-up-unknown-source-sha256.json"
+    },
+    "sha256": "87f9ec53eeb2f1d44ec27a674a4b9e4ef526a36b35657d84411d78347288bc61",
+    "expectation": "§6.2: exact sealed corpus bytes, 1783 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-108-r33-patch-up-selected-migration-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-108-r33-patch-up-selected-migration-unavailable.json"
+    },
+    "sha256": "4fcd2f2b5a83b42264a98a7aad6599cffb73dee3b463595dec5d8d9e9a6cd2fc",
+    "expectation": "§6.2: exact sealed corpus bytes, 1859 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-109-r33-patch-down-known-and-available.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-109-r33-patch-down-known-and-available.json"
+    },
+    "sha256": "fcb16af2fdbcdd3422aa07e566fcde803e9da8519a2d961b6ad5557f42221915",
+    "expectation": "§6.2: exact sealed corpus bytes, 1871 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-110-r33-patch-down-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-110-r33-patch-down-unknown.json"
+    },
+    "sha256": "504c5846566d155c7e27f0803ce9b79a714a23c2d6719c9d565bc6877a3e6f78",
+    "expectation": "§6.2: exact sealed corpus bytes, 1835 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-111-r33-patch-down-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-111-r33-patch-down-unavailable.json"
+    },
+    "sha256": "914302297e5a85fe38d5227bc2d34197dbc0e3281769a0248e996802eecbddec",
+    "expectation": "§6.2: exact sealed corpus bytes, 1843 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-112-r33-patch-down-unknown-source-version.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-112-r33-patch-down-unknown-source-version.json"
+    },
+    "sha256": "d902b4d5ad2a8685f443eb35d20859c12d91dbd85e103cfd5f76c5ee17d3e8b0",
+    "expectation": "§6.2: exact sealed corpus bytes, 1844 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-113-r33-patch-down-unknown-source-sha256.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-113-r33-patch-down-unknown-source-sha256.json"
+    },
+    "sha256": "aa9b4b306106db80236ae2111b804ab9402e714834b4fe1ea863afb3c3a7ff08",
+    "expectation": "§6.2: exact sealed corpus bytes, 1785 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-114-r33-patch-down-selected-migration-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-114-r33-patch-down-selected-migration-unavailable.json"
+    },
+    "sha256": "07f17671b7b72c748838ead3d60c7777b232df1ea4230e00725892a922e3afae",
+    "expectation": "§6.2: exact sealed corpus bytes, 1861 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-115-r33-minor-up-known-and-available.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-115-r33-minor-up-known-and-available.json"
+    },
+    "sha256": "64f99e95c7e37c45225e87386bae4000a53757e22ad6b64532bb0754c35861c6",
+    "expectation": "§6.2: exact sealed corpus bytes, 1869 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-116-r33-minor-up-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-116-r33-minor-up-unknown.json"
+    },
+    "sha256": "3b0548c644fac06231232d159f9be8214f76a873746593ce334c8c0ff3771860",
+    "expectation": "§6.2: exact sealed corpus bytes, 1833 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-117-r33-minor-up-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-117-r33-minor-up-unavailable.json"
+    },
+    "sha256": "a824e04b82e46931b19b299da88d394cdeb5e6938d2c43425e76198c3d7f16d5",
+    "expectation": "§6.2: exact sealed corpus bytes, 1841 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-118-r33-minor-up-unknown-source-version.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-118-r33-minor-up-unknown-source-version.json"
+    },
+    "sha256": "b2d5561a46a7b6a08771196748f1cf41817a7c9fe53b605607eada163e517e47",
+    "expectation": "§6.2: exact sealed corpus bytes, 1842 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-119-r33-minor-up-unknown-source-sha256.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-119-r33-minor-up-unknown-source-sha256.json"
+    },
+    "sha256": "243d55edace3e834bfe53deeb6d85545fac88d9de6bb550e1097cc27382853e6",
+    "expectation": "§6.2: exact sealed corpus bytes, 1783 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-120-r33-minor-up-selected-migration-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-120-r33-minor-up-selected-migration-unavailable.json"
+    },
+    "sha256": "2825a61112ecb94b0f752d7817389f3ce2d80cd1d0f2c292f598967a70a9eebc",
+    "expectation": "§6.2: exact sealed corpus bytes, 1859 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-121-r33-minor-down-known-and-available.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-121-r33-minor-down-known-and-available.json"
+    },
+    "sha256": "070bb36327365d46bee8b3e0394c81a194d864076fb5c1c6e16707a5a4f3e4d9",
+    "expectation": "§6.2: exact sealed corpus bytes, 1871 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-122-r33-minor-down-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-122-r33-minor-down-unknown.json"
+    },
+    "sha256": "31541c1f0d30cf2c241a02b80d897b6c30b27831dc3c678a4ce0bc9898546862",
+    "expectation": "§6.2: exact sealed corpus bytes, 1835 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-123-r33-minor-down-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-123-r33-minor-down-unavailable.json"
+    },
+    "sha256": "0190fcce986137a85f533c80e5f2fea540413cfe1054496b41a6b71d9d694098",
+    "expectation": "§6.2: exact sealed corpus bytes, 1843 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-124-r33-minor-down-unknown-source-version.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-124-r33-minor-down-unknown-source-version.json"
+    },
+    "sha256": "825f2a743f68d87a2675e8195089e88420ce325346efc3c226d060243ef4544a",
+    "expectation": "§6.2: exact sealed corpus bytes, 1844 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-125-r33-minor-down-unknown-source-sha256.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-125-r33-minor-down-unknown-source-sha256.json"
+    },
+    "sha256": "d117ab8925c006afe1e6fa6d9e9cc0c604a19638f0830ba29642065f34d9906d",
+    "expectation": "§6.2: exact sealed corpus bytes, 1785 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-126-r33-minor-down-selected-migration-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-126-r33-minor-down-selected-migration-unavailable.json"
+    },
+    "sha256": "35444c9e2ce9276fbe1bdf4b33e1a7188ea7ea98280c51bf46d1af3a96f9cf3a",
+    "expectation": "§6.2: exact sealed corpus bytes, 1861 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-127-r33-unsupported-d-schema-known-and-available.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-127-r33-unsupported-d-schema-known-and-available.json"
+    },
+    "sha256": "e70fa00ebf2b07ade0265eb55df4914bdfb33da161e83194588c9ae090e03994",
+    "expectation": "§6.2: exact sealed corpus bytes, 1871 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-128-r33-unsupported-p-schema-known-and-available.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-128-r33-unsupported-p-schema-known-and-available.json"
+    },
+    "sha256": "3f4eab0c84401f558c5e45b9e370882d34e98abac3e7cf9d3524e532d91bf2a1",
+    "expectation": "§6.2: exact sealed corpus bytes, 1861 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-129-r33-known-digest-conflict-known-and-available.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-129-r33-known-digest-conflict-known-and-available.json"
+    },
+    "sha256": "1667904ff834e24d8f4196171d2aa3cdf2050b9ec9b86b333034bc447ab5b6d7",
+    "expectation": "§6.2: exact sealed corpus bytes, 1864 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-130-r33-equal-supported-schemas-known-and-available.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-130-r33-equal-supported-schemas-known-and-available.json"
+    },
+    "sha256": "c523eefd026801c6997c3e8c5a236d08fa6a220eb578230095fa7155f04dad2f",
+    "expectation": "§6.2: exact sealed corpus bytes, 1798 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-131-r33-unsupported-d-schema-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-131-r33-unsupported-d-schema-unknown.json"
+    },
+    "sha256": "f4b2414995f72e6eb211bc4cacbbc778aec290a224ed3cf444573f7ba82a6575",
+    "expectation": "§6.2: exact sealed corpus bytes, 1847 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-132-r33-unsupported-p-schema-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-132-r33-unsupported-p-schema-unknown.json"
+    },
+    "sha256": "13ad726bd09c4522224e0d9e57f8791f01b251795581c880245fcd17bc90d6ee",
+    "expectation": "§6.2: exact sealed corpus bytes, 1837 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-133-r33-known-digest-conflict-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-133-r33-known-digest-conflict-unknown.json"
+    },
+    "sha256": "4233c9680b87b165046d87ee8bb6f96474f80f3ce803ba68d42594dab79b16e0",
+    "expectation": "§6.2: exact sealed corpus bytes, 1840 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-134-r33-equal-supported-schemas-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-134-r33-equal-supported-schemas-unknown.json"
+    },
+    "sha256": "3b2a36208ef3cc176f810039f1478b0df8cf9a99f156e21ecc62d501a77a9d88",
+    "expectation": "§6.2: exact sealed corpus bytes, 1848 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-135-r33-unsupported-d-schema-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-135-r33-unsupported-d-schema-unavailable.json"
+    },
+    "sha256": "3d358ddd122ec8d696934c10de72f10e0db2d170c11b7cc699ffb4c65e0db4bc",
+    "expectation": "§6.2: exact sealed corpus bytes, 1855 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-136-r33-unsupported-p-schema-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-136-r33-unsupported-p-schema-unavailable.json"
+    },
+    "sha256": "8c206df4ef47f22808c940f3c21327f7f44e72d5fa6f809ff8679c7e3a90a842",
+    "expectation": "§6.2: exact sealed corpus bytes, 1845 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-137-r33-known-digest-conflict-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-137-r33-known-digest-conflict-unavailable.json"
+    },
+    "sha256": "9855af36a3ce624cbbaf7fa8973df4f9d4eebe3c29f89751ddcb178c5b121adb",
+    "expectation": "§6.2: exact sealed corpus bytes, 1848 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-138-r33-equal-supported-schemas-unavailable.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-138-r33-equal-supported-schemas-unavailable.json"
+    },
+    "sha256": "3988bbacafc8f683cbddfc94f252ca561343d81a4eb91bc8468ebc6460fe0caa",
+    "expectation": "§6.2: exact sealed corpus bytes, 1856 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-139-r33-schema-up.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-139-r33-schema-up.json"
+    },
+    "sha256": "e60161403ce2d432d0f2d0ec284ce21607401017da232c2d84db5393a7743325",
+    "expectation": "§6.2: exact sealed corpus bytes, 1860 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-140-r33-schema-before-capability.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-140-r33-schema-before-capability.json"
+    },
+    "sha256": "798ce70cad5128cc5aa37147bfbfa6bbaf9a720821d09fd45c53e497fb585327",
+    "expectation": "§6.2: exact sealed corpus bytes, 1788 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-141-r33-mechanism-before-schema.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-141-r33-mechanism-before-schema.json"
+    },
+    "sha256": "e3c28f3434c7655037f65165e57e3c0ecf3a223ab3940abe507b2e089988db52",
+    "expectation": "§6.2: exact sealed corpus bytes, 1868 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-142-r33-unsupported-d-schema-before-mechanism-difference.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-142-r33-unsupported-d-schema-before-mechanism-difference.json"
+    },
+    "sha256": "7dcd9d1d602f61cf9a1c4de2c8ce6df3ced880055bd138ff33d76c64325ce7b6",
+    "expectation": "§6.2: exact sealed corpus bytes, 1883 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-143-r33-unsupported-p-schema-before-d-schema.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-143-r33-unsupported-p-schema-before-d-schema.json"
+    },
+    "sha256": "cd8d657cee166a1eebafe6c3bfa5154d6749a160e0eb70d9768d8c87c113b528",
+    "expectation": "§6.2: exact sealed corpus bytes, 1857 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-144-r33-document-version-before-schema.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-144-r33-document-version-before-schema.json"
+    },
+    "sha256": "96b403c91429e87d3604b470d74d122174ada26664d2fb428f8998a2c524f7cb",
+    "expectation": "§6.2: exact sealed corpus bytes, 1863 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-145-r33-metadata-conflict-before-schema.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-145-r33-metadata-conflict-before-schema.json"
+    },
+    "sha256": "b66c9b833a4321cdd9bbd44b059281293fe16c9d04812c0325b6d1603e362236",
+    "expectation": "§6.2: exact sealed corpus bytes, 2312 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-146-r33-unsupported-d-mechanism-before-d-schema.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-146-r33-unsupported-d-mechanism-before-d-schema.json"
+    },
+    "sha256": "5669e986d69decf219644281dcaeeb80d6bafcd794db39dfbb60b71558d2f15a",
+    "expectation": "§6.2: exact sealed corpus bytes, 1876 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-147-r33-capability-before-source.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-147-r33-capability-before-source.json"
+    },
+    "sha256": "18c9ceedd5c35748ccb33e5f785ad556db6fa21a4f8daffd6dd990905e453fa2",
+    "expectation": "§6.2: exact sealed corpus bytes, 1742 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-148-r33-asset-before-source.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-148-r33-asset-before-source.json"
+    },
+    "sha256": "38cab82fde0cd796afe4876ba107774481d9f8ec4a9c7df1b717a2de7e3effd6",
+    "expectation": "§6.2: exact sealed corpus bytes, 1814 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-149-r33-invalid-exact-envelope.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-149-r33-invalid-exact-envelope.json"
+    },
+    "sha256": "c097fbc5923983eb345be676d22624ed4032cc455569e4a411b81c5cd79d8251",
+    "expectation": "§6.2: exact sealed corpus bytes, 1789 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-150-r33-exact-unknown-digest.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-150-r33-exact-unknown-digest.json"
+    },
+    "sha256": "a9b183a1b81c5b56288fd21eba8134740c4a2cf78b9b11f110478c207c02578b",
+    "expectation": "§6.2: exact sealed corpus bytes, 1773 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/compat-151-r33-exact-unknown-version.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/compat-151-r33-exact-unknown-version.json"
+    },
+    "sha256": "76ffa6f755008512d810e29825d0d4f8535e517d94aa39dddaef65b6d6547533",
+    "expectation": "§6.2: exact sealed corpus bytes, 1832 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/identity-stable-id.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/identity-stable-id.json"
+    },
+    "sha256": "59ca51c94f5010267b2991b74fc42d7d04a004ed3890ef8c546ec016301df84f",
+    "expectation": "§6.2: exact sealed corpus bytes, 780 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/jcs-escapes.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/jcs-escapes.json"
+    },
+    "sha256": "71a5af8cb8735f034b8411a44cc1e46090083f235509b98d1629c0020f294fdc",
+    "expectation": "§6.2: exact sealed corpus bytes, 299 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/jcs-key-order.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/jcs-key-order.json"
+    },
+    "sha256": "2a2b0ddc4eeaede4cdac346ae46d5b048b8f25d051b41785eaddbb3e4e491a84",
+    "expectation": "§6.2: exact sealed corpus bytes, 409 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/jcs-numbers.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/jcs-numbers.json"
+    },
+    "sha256": "bb22448419b5d26311f475995cb5bf3f357e90ca0983ee20f0d2018766fa4bbf",
+    "expectation": "§6.2: exact sealed corpus bytes, 407 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/lexical-duplicate-keys.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/lexical-duplicate-keys.json"
+    },
+    "sha256": "e80d676c8ec87622237ed49d45cc7afacc5e961e7ddc5d587a05507103143754",
+    "expectation": "§6.2: exact sealed corpus bytes, 381 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/lexical-leading-nbsp.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/lexical-leading-nbsp.json"
+    },
+    "sha256": "a2e2be1f86424af0620567f26eeb7ad95c2301d4a06a2bbd967142ce860dd2f2",
+    "expectation": "§6.2: exact sealed corpus bytes, 323 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/lexical-lone-surrogate.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/lexical-lone-surrogate.json"
+    },
+    "sha256": "91c50aedf5f18a77a077bbf03759ef5bbca410df42cb3a5fa71a385db3c923ed",
+    "expectation": "§6.2: exact sealed corpus bytes, 351 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/lexical-negative-zero.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/lexical-negative-zero.json"
+    },
+    "sha256": "1985e4adbc558d886e23f2eec4e73db42421761e12ef0c452babc0f60b39a9e7",
+    "expectation": "§6.2: exact sealed corpus bytes, 304 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/lexical-nonfinite.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/lexical-nonfinite.json"
+    },
+    "sha256": "6a1317b6a5a1cfd094fbe492490dad6ddba8368efc35c0e34e40dd6f5c667edd",
+    "expectation": "§6.2: exact sealed corpus bytes, 326 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/lexical-unsafe-fraction.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/lexical-unsafe-fraction.json"
+    },
+    "sha256": "9817d7099d11a36727205209c3d52d3f64ad6013e241baf3132670c060bd697d",
+    "expectation": "§6.2: exact sealed corpus bytes, 358 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/lexical-unsafe-integer.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/lexical-unsafe-integer.json"
+    },
+    "sha256": "484810960757c8751f827f71a4a97ba84594ac2acff698181a729ce6a3ea725b",
+    "expectation": "§6.2: exact sealed corpus bytes, 353 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/lint-alternating-profiles.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/lint-alternating-profiles.json"
+    },
+    "sha256": "ffee88821fa36459281a5cf28bb25a37c8fadb76452954afd786e69af98a76c5",
+    "expectation": "§6.2: exact sealed corpus bytes, 790 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/lint-extends-cycle.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/lint-extends-cycle.json"
+    },
+    "sha256": "3a555cff08084af99c6d0df132b602abf66f83ef4b03b706b8cf98cb8a594b60",
+    "expectation": "§6.2: exact sealed corpus bytes, 720 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/lint-info-through-warn.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/lint-info-through-warn.json"
+    },
+    "sha256": "e2465ab1db8b251a214220e5569c9b4d78d935bb0bc21d3e5c505833e939b329",
+    "expectation": "§6.2: exact sealed corpus bytes, 637 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/lint-pointer-escaping.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/lint-pointer-escaping.json"
+    },
+    "sha256": "997b8497ac3c0e15f73be8cae4787d94f7e9e8d0c602b52ff70502de4821c836",
+    "expectation": "§6.2: exact sealed corpus bytes, 700 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/lint-unknown-lookup-none.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/lint-unknown-lookup-none.json"
+    },
+    "sha256": "906c557637730127c28ed34ff50d5e740ecd8b4bce3fa87705adfd5cdbd985c4",
+    "expectation": "§6.2: exact sealed corpus bytes, 583 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/lint-unknown-lookup-thrown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/lint-unknown-lookup-thrown.json"
+    },
+    "sha256": "5fc2c11aa7be5a131390bab26e3c2343f9a3dcd872ae3fc2166eec8ac9c0d5b8",
+    "expectation": "§6.2: exact sealed corpus bytes, 603 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/lint-warning-through-error.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/lint-warning-through-error.json"
+    },
+    "sha256": "234bb75352bea7cb6d0df9669bef8d8a7709011bc32e42901301ac88211d8f4e",
+    "expectation": "§6.2: exact sealed corpus bytes, 696 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/lint-whitelist-escape.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/lint-whitelist-escape.json"
+    },
+    "sha256": "0bd1846712d24e352a56958881c3b6bca35c00f0d830ffac2a0e641d2e2373d5",
+    "expectation": "§6.2: exact sealed corpus bytes, 563 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/schema-external-ref-pinned.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/schema-external-ref-pinned.json"
+    },
+    "sha256": "51896e0e59a7548d1bd97758025ee7ab20d6057a3d75a507eb6aeba2771e8c18",
+    "expectation": "§6.2: exact sealed corpus bytes, 1032 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/schema-external-ref-unknown.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/schema-external-ref-unknown.json"
+    },
+    "sha256": "cdf0852e2baf9bb874e43a9e66bb7d73867e6e177693eda9bf1e5f092e2a9f81",
+    "expectation": "§6.2: exact sealed corpus bytes, 638 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/schema-id-newline.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/schema-id-newline.json"
+    },
+    "sha256": "c9bf3354764280495e8209732a20666a5fc3692af797f8336557c0de5d9fbc56",
+    "expectation": "§6.2: exact sealed corpus bytes, 848 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/schema-integer-fraction.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/schema-integer-fraction.json"
+    },
+    "sha256": "78c7e1a4e6b5d5dd9dd4c644f1db643038a671685f4544e924b9dbcf66ab24c9",
+    "expectation": "§6.2: exact sealed corpus bytes, 623 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/schema-integer-one-zero.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/schema-integer-one-zero.json"
+    },
+    "sha256": "bf9a39a8536fda13bcd04cf2cc321bc082bd05e1f337b8e0a586d6575f92ec42",
+    "expectation": "§6.2: exact sealed corpus bytes, 585 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/cases/schema-keyword-subset.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/cases/schema-keyword-subset.json"
+    },
+    "sha256": "3bf7f4146eb48c7760449e573bae136bfabc9c84e759d1c3bd1471ede96b5412",
+    "expectation": "§6.2: exact sealed corpus bytes, 791 bytes; comparator roles retained."
+  },
+  {
+    "id": "bpmn-shared:profile-parity-corpus/1/manifest.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/profile-parity-corpus/profile-parity-corpus/1/manifest.json"
+    },
+    "sha256": "01b81fd9fb69f110a7f302631d6da92126bcb1672c67bea3ea68ff802df39faf",
+    "expectation": "§6.2: exact sealed corpus bytes, 30434 bytes; comparator roles retained."
+  },
+  {
+    "id": "unicode:case-table.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/unicode-case-15.0.0/case-table.json"
+    },
+    "sha256": "c0fa6878b62a1abdee18879cb9a203d0f68a5959de76153a1996dbb3271c7293",
+    "expectation": "§6.2 Unicode 15.0.0 lock; exact table/manifest/vector bytes."
+  },
+  {
+    "id": "unicode:manifest.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/unicode-case-15.0.0/manifest.json"
+    },
+    "sha256": "0d6108f47282b88f8f796ed3c469eb4253aba4115a93fbd9e95cee9cc2c6160f",
+    "expectation": "§6.2 Unicode 15.0.0 lock; exact table/manifest/vector bytes."
+  },
+  {
+    "id": "unicode:vectors.json",
+    "kind": "sealed-vector",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/unicode-case-15.0.0/vectors.json"
+    },
+    "sha256": "84c56fc1825d495d314e44e0ef0543366c60aacd6d80015dea50d4bfe608b142",
+    "expectation": "§6.2 Unicode 15.0.0 lock; exact table/manifest/vector bytes."
+  },
+  {
+    "id": "bpmn-workbench:MANIFEST.sha256",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/MANIFEST.sha256"
+    },
+    "sha256": "61903a61e2a6f258b506b4cdcd310a57787eee30845d6deb996afbb54abf33a9",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:README.md",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/README.md"
+    },
+    "sha256": "753f96a07bad03a1d52a979e81f20cdebdd5431d2b9fd747b8715f756aca0024",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W01.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W01.json"
+    },
+    "sha256": "e31094d7f6a9d3a90b8e73c919a9f16d3a532429ade358eef287a81657ba909d",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W02.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W02.json"
+    },
+    "sha256": "7c478d205024f73f99f549e4e41a0bd5f78a90f43664e3e1f26aa646dbc01f85",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W03.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W03.json"
+    },
+    "sha256": "49bdfcc1ebcd578f5e7f0589ec023c265ad2030f1cb4b862c3ecfd53bc888864",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W04.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W04.json"
+    },
+    "sha256": "1a4208c669a341cce6a6065f39df9fdbe7beddd66836334e1a14cfe9e67b50c4",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W05.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W05.json"
+    },
+    "sha256": "5900911656a69e48d4b4fb2a204dfa17aba33c1946a6e882fea7ce913b54544e",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W06.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W06.json"
+    },
+    "sha256": "582349f46726923a85f8024dc8bffd71efe399693ca3c6144cfc325e0e3294f6",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W07.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W07.json"
+    },
+    "sha256": "4b0203bca2842f8b67453b5aca5156fa6b3874ddb30ea2e3b7cbe72f629e1e19",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W08-absent.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W08-absent.json"
+    },
+    "sha256": "6f092fdd4ee504ce137e5c7b9dcea5ac6414bbfa34fe89446889369eaceba77f",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W08-arrays.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W08-arrays.json"
+    },
+    "sha256": "b8cadbd7608d46a2b8524518e3da1adf70839c84675a1ad2bcdec5b9b4e345d6",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W08-keys.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W08-keys.json"
+    },
+    "sha256": "f57a96fa850f8c8e6d6b5bd5b178626e59f62629deff0f8fad1a467cc4204d42",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W08.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W08.json"
+    },
+    "sha256": "625b45af3543b973de076ef3fa6e1c55851f8394ad2ba5aab97c6e5ef0a74b94",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W09-dangling.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W09-dangling.json"
+    },
+    "sha256": "4fb6fa803776f99111e9c9f186ba84dcaf53c96122c28544053e3801b3c7b647",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W09-duplicate.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W09-duplicate.json"
+    },
+    "sha256": "c2bb8e402f03729fecf7991c43ebd516272e33f82e0793d9b0a906cc5c009706",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W09-extension.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W09-extension.json"
+    },
+    "sha256": "d174faa17b24ac091e20c30e7d48973ae43c6cb6b04d2868af04cfb4e01bd9bc",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W09-page.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W09-page.json"
+    },
+    "sha256": "56b866a5557a6a4b5d9a9bbf430be025628f48a065015428dacafd87f8a862eb",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W09-version.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W09-version.json"
+    },
+    "sha256": "5a8e287d371a05e44fa2b2897d219dfcc147d97840f3f599784a3ab859337f9a",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W09-wrong-type.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W09-wrong-type.json"
+    },
+    "sha256": "71b647c45e0a53423529215e539cbe6270e8aa332ccbf4a2f838b037f51dde41",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W10-conflict.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W10-conflict.json"
+    },
+    "sha256": "9194928d15c02e78b467b9e7bb66ae61820ef60cc869eec18186dc70ca61ef87",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W10.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W10.json"
+    },
+    "sha256": "7fd664b302337a997eea7ad21af9c525ade771941655ba3bf187281b38a0acd8",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W11.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W11.json"
+    },
+    "sha256": "d843286a629ffb7f6ede819c957c4f776b32407b718271abef3f49b26fb0d326",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:cases/W12.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/cases/W12.json"
+    },
+    "sha256": "41c5c00e3e13245a375e79ceda7952a43dd26168abeb8b7ccfc99098d54c695f",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:comparators.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/comparators.json"
+    },
+    "sha256": "565172afd71a4b4338d0563748d8e59c84953621f2b5e3db070f28b91a6a8f5d",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:config.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/config.json"
+    },
+    "sha256": "a4b40655217ce33a6c7be02582decb1476c0311a83f70a94063c9ceac9b85b01",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:descriptors/bioc.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/descriptors/bioc.json"
+    },
+    "sha256": "e9ebd5b06269d863fb09d08ba8953a1b02d5f140eff465741375826612f2c358",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:descriptors/bpmn-in-color.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/descriptors/bpmn-in-color.json"
+    },
+    "sha256": "81992685ed4b5b6f9e3c8ab0a979cb62e5ae6d2ce31372b214985044529a8d7d",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:descriptors/bpmn.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/descriptors/bpmn.json"
+    },
+    "sha256": "ae16ae96f24115f461ac6f57133546b88306fb37542f2d70c49f67b14d9400e7",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:descriptors/bpmndi.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/descriptors/bpmndi.json"
+    },
+    "sha256": "047c57936c9c9cce6d5d9da7c07e80fbdcb8dfa00ac734f60e97b680f44d03aa",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:descriptors/dc.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/descriptors/dc.json"
+    },
+    "sha256": "91e124b7af094303e60af5f493e56587705af34de926a43915f469bbbbce42e9",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:descriptors/di.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/descriptors/di.json"
+    },
+    "sha256": "dfe43b92531ea584c90a043c66c43ec2caeafc9473b11b00609cc679ddf74057",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:descriptors/semantics.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/descriptors/semantics.json"
+    },
+    "sha256": "c274f46f773b5f557f7995fa70aae9d8a50384aedfcc6c3a5d166563a17a7c97",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W01.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W01.bpmn"
+    },
+    "sha256": "5dfb24bdf184c5f213d1d4e8d1956d2efb01507e3350021300b2fe6dfa5db282",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W01.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W01.json"
+    },
+    "sha256": "f6be8ddae92c003a938bff57a850961dbf2d161b1833f47059c34f84b539829e",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W01.lint.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W01.lint.json"
+    },
+    "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W02.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W02.bpmn"
+    },
+    "sha256": "fc498784cc2a1793d82ad37e91b22dff1efa1ad073e36676716c83597d7ae434",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W02.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W02.json"
+    },
+    "sha256": "cedec41a3479b4f03f37d4ded4cc186ad865ef5475b31a4b3546b9981deb4c18",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W03.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W03.bpmn"
+    },
+    "sha256": "d3d0e206c7203354af1c809069679c898e924ee4bb87c658c60e739a492ce24e",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W03.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W03.json"
+    },
+    "sha256": "b3643a4b2a1c94cf4aa967fcc7f7a12dbbc129bbbb9a75ee5cb6c84ed3efee0b",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W04.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W04.bpmn"
+    },
+    "sha256": "5d5f9475393696fa735859fb4288e080c9f9a69b473bc5d2b236d37705c79690",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W04.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W04.json"
+    },
+    "sha256": "3af91972c2a948a1d2be03b4c02a9c6804b1d0c4ec97f0b4135cc9b8982504fd",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W05.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W05.bpmn"
+    },
+    "sha256": "aecbd1890ae90f2d4b92b6d63789d424ca0c9933ecc54c7d078469681a13b282",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W05.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W05.json"
+    },
+    "sha256": "f629fdf450382ccb7ff3eb3606573364e638ec976054ac4c98fafc3b8c37a65c",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W06.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W06.bpmn"
+    },
+    "sha256": "ced9d7ecd9b3ff4e749d68e88c63fbf2483376df96591864fb2d72fb305ab12f",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W06.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W06.json"
+    },
+    "sha256": "30d14bfba6d0e5e36f0325ae72e08e981b6f7943704543d3fa8d6f9f5e1334e5",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W07.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W07.bpmn"
+    },
+    "sha256": "b0b3c4094791f6cd5b913c2d7d365fe7b8540fd95cb1d87ced3917c49965cc1f",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W07.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W07.json"
+    },
+    "sha256": "4cbbe697145852759a809fa5b9610d32790a265058f81425530d7782bc6e6ade",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W08-absent.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W08-absent.bpmn"
+    },
+    "sha256": "3682408ebdc9df49e3a2c23f60a4f4f7fcffa9850f7c504e0d1eb0e16af7003a",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W08-absent.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W08-absent.json"
+    },
+    "sha256": "15edd7978198f51ca028f7efe3d9b212457850db4e1333cbed306762142a2419",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W08-arrays.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W08-arrays.bpmn"
+    },
+    "sha256": "f0358015d5d555ee04a5844ac574779e74ff6de49beb4846d432452fb38a56d7",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W08-arrays.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W08-arrays.json"
+    },
+    "sha256": "6bb4e501c6277f7fdc65857d89b29dcb9e3649b1333865bef64508b882ea488c",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W08-keys.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W08-keys.bpmn"
+    },
+    "sha256": "f6b5619be8747dfe46cdb080d5c340a5b84d57c7cdd93a4d34a278e60acf77f9",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W08-keys.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W08-keys.json"
+    },
+    "sha256": "5c2c5d4ce575231e05f70363aaf0d81f15db285b8c1fd1c73e02ed9c2f1b5cfd",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W08.bpmn",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W08.bpmn"
+    },
+    "sha256": "5dfb24bdf184c5f213d1d4e8d1956d2efb01507e3350021300b2fe6dfa5db282",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W08.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W08.json"
+    },
+    "sha256": "ef8782576a89e9cfea0bdab65ae52588d7fce54e5a6555124575cc204b98f557",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W09-dangling.diagnostic.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W09-dangling.diagnostic.json"
+    },
+    "sha256": "f3edfb8ad59bf99d67c7487d4da8ee37d7dd79552ef637676861d0fd19106702",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W09-duplicate.diagnostic.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W09-duplicate.diagnostic.json"
+    },
+    "sha256": "68e424a89eee79b1bdd1562cfb341351438cd87c4bdd28e4be53bd399a0eec28",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W09-extension.diagnostic.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W09-extension.diagnostic.json"
+    },
+    "sha256": "a01d4b02b70cb15fade57c62a5c4e83bacd50f466adae33465c537bf8bf02b1e",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W09-page.diagnostic.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W09-page.diagnostic.json"
+    },
+    "sha256": "0ad87196afc17b75ae6f8d2ff6dd6ffda1165458138d53eeb13b93bec383011a",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W09-version.diagnostic.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W09-version.diagnostic.json"
+    },
+    "sha256": "616f07f72467407087274bf09852957e54d76712743b471de207c2b865d94433",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W09-wrong-type.diagnostic.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W09-wrong-type.diagnostic.json"
+    },
+    "sha256": "f74b4115450100928880128b45ddd8ec056174fe1272a52eed550ce188b97e78",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W10-conflict.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W10-conflict.json"
+    },
+    "sha256": "b20614cd191c2da275fb1eb3df7194c77dd144c98390560124450d30e692c46a",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W10-conflict.lint.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W10-conflict.lint.json"
+    },
+    "sha256": "1e5e3641e810173ed0b9245f60be7c342ee9d6f70f9e0b80ab98a55fa43e4eb7",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W10.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W10.json"
+    },
+    "sha256": "4b563146206e15b330d786188699e49440c4a1efce90f8b2f4ed4e7dc8436bfb",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W10.lint.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W10.lint.json"
+    },
+    "sha256": "82149127b0d92d44223e18292b4483af3b888ac4c4630ef8af6bbfd811bdd79e",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W11.capabilities.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W11.capabilities.json"
+    },
+    "sha256": "223a3fdbf54dcd10d9c62bda15515d20b5c48d6ac9c390727fdd5d8358683a59",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:expected/W11.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/expected/W11.json"
+    },
+    "sha256": "76d80290a950ea190472dd68be786d5a0aee342ee902072ebd040ba030ad7c6e",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "bpmn-workbench:rule-inventory.json",
+    "kind": "bpmn-corpus",
+    "source": {
+      "repo": "bpmn-canvas",
+      "revision": "05f737885bd44fddea84bf1b4d55ae5428704855",
+      "path": "tests/fixtures/parity-corpus/rule-inventory.json"
+    },
+    "sha256": "367b3929317740b3890aa052c74b811636c6ee89fe8941461026c6f5c860c3df",
+    "expectation": "§6.2 F1/W01–W12 existing comparator input; identity is separate from document validity."
+  },
+  {
+    "id": "derived:cards-A1",
+    "kind": "derived-oracle",
+    "source": {
+      "repo": "graphify",
+      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/materialization/A1"
+    },
+    "sha256": "5ff8b524a0d44418c8c0671811f29eda12cab0d48f4e89182348b688ec3c7c56",
+    "expectation": "Complete semantic/view source and expected target; source strings/ids and explicit legend additions preserved; layout and executor qualification remain owner gates."
+  },
+  {
+    "id": "derived:cards-A2",
+    "kind": "derived-oracle",
+    "source": {
+      "repo": "graphify",
+      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/materialization/A2"
+    },
+    "sha256": "c9a43ba9be15b2830c2454cb7571ae2e84fc7caf198ba6e6fee1a0d87b16b459",
+    "expectation": "Complete semantic/view source and expected target; source strings/ids and explicit legend additions preserved; layout and executor qualification remain owner gates."
+  },
+  {
+    "id": "derived:cards-A3",
+    "kind": "derived-oracle",
+    "source": {
+      "repo": "graphify",
+      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/materialization/A3"
+    },
+    "sha256": "d44ba408239f4eac183cdbc42c216be35d145553f1f3a99b92b26eedc1d0595b",
+    "expectation": "Complete semantic/view source and expected target; source strings/ids and explicit legend additions preserved; layout and executor qualification remain owner gates."
+  },
+  {
+    "id": "derived:cards-A4a",
+    "kind": "derived-oracle",
+    "source": {
+      "repo": "graphify",
+      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/materialization/A4a"
+    },
+    "sha256": "b8abf680cafbed59f3b8fe022f8939312f36b8b3299d526d9cd2e3712a48efc9",
+    "expectation": "Complete semantic/view source and expected target; source strings/ids and explicit legend additions preserved; layout and executor qualification remain owner gates."
+  },
+  {
+    "id": "derived:cards-A4b",
+    "kind": "derived-oracle",
+    "source": {
+      "repo": "graphify",
+      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/materialization/A4b"
+    },
+    "sha256": "923f9388189c8810d05adcb7332b5a993fba67c158a79cc6615e93bcb4cf4fa9",
+    "expectation": "Complete semantic/view source and expected target; source strings/ids and explicit legend additions preserved; layout and executor qualification remain owner gates."
+  },
+  {
+    "id": "derived:cards-A5",
+    "kind": "derived-oracle",
+    "source": {
+      "repo": "graphify",
+      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/materialization/A5"
+    },
+    "sha256": "dabc7518af6c7dc9caf833e04e4cf449d404860f8d332771ce6efc02fe5997ce",
+    "expectation": "Complete semantic/view source and expected target; source strings/ids and explicit legend additions preserved; layout and executor qualification remain owner gates."
+  }
 ];
 
-/** Every §8-mandated manifest id. The manifest test fails on any absence. */
 export const REQUIRED_CORPUS_IDS: readonly string[] = [
-  "instance:A1", "instance:A2", "instance:A3", "instance:A4a", "instance:A4b",
-  "instance:A5-semantic", "instance:A5-view", "instance:A5-manifest",
-  "s2-target:figures", "s2-target:png", "s2-target:reference-png", "s2-target:governance-scenes",
-  "hrpn-producer:data.json", "hrpn-producer:scene-metadata.mjs", "hrpn-producer:SCENES.md",
-  "hrpn-producer:figures.json", "hrpn-producer:S2-target.png",
-  "hrpn:fixture-manifest", "hrpn:reference-renders.json",
-  "hrpn:build-scenes.mjs", "hrpn:build-fixtures.mjs", "hrpn:build-engram.mjs",
-  "oracle:derived-json", "oracle:whole", "oracle:categoryTokens", "oracle:a1Summaries",
+  "instance:A1",
+  "instance:A2",
+  "instance:A3",
+  "instance:A4a",
+  "instance:A4b",
+  "instance:A5-semantic",
+  "instance:A5-view",
+  "instance:A5-manifest",
+  "s2-target:figures",
+  "s2-target:png",
+  "s2-target:reference-png",
+  "s2-target:governance-scenes",
+  "hrpn-producer:data.json",
+  "hrpn-producer:scene-metadata.mjs",
+  "hrpn-producer:SCENES.md",
+  "hrpn-producer:figures.json",
+  "hrpn-producer:S2-target.png",
+  "hrpn:fixture-manifest",
+  "hrpn:reference-renders.json",
+  "hrpn:build-scenes.mjs",
+  "hrpn:build-fixtures.mjs",
+  "hrpn:build-engram.mjs",
+  "oracle:derived-json",
+  "oracle:whole",
+  "oracle:categoryTokens",
+  "oracle:a1Summaries",
   "oracle:a5EntitiesPresentation",
-  "ds:profile.ts", "ds:document.ts", "ds:view.ts", "ds:attributes.ts",
-  "ds:diagnostics.ts", "ds:validate.ts", "ds:generic.ts", "ds:skeletons.ts",
-  "ds:archimate-skeleton-document.json", "ds:uml-skeleton-document.json",
-  "ds:SPEC_M2_MODEL", "ds:SPEC_M2_DS_PRESENTATION", "ds:SPEC_M2_CANVAS",
-  "ds:SPEC_BPMN_MODDLE", "ds:SPEC_RE_BPMN_JS_PARITY",
-  "g0:types.ts", "g0:catalog.ts", "g0:digests.ts", "g0:admission.ts", "g0:diagnostics.ts",
-  "archi:IAccessRelationship.java", "archi:relationships.xml", "archi:relationships-keys.xml",
-  "archi:archimate.ecore", "archi:LICENSE.txt",
-  "kit:governance-central.js", "kit:governance-collapse.js", "kit:governance-summary.js",
-  "kit:governance-summary-layouts.json", "kit:governance-layout.js", "kit:architecture-routing.js",
-  "kit:presentation-scenes.json", "kit:FrameToggle.svelte",
-  "kit:check-browser.mjs", "kit:browser-checks.mjs", "kit:check-performance.mjs",
-  "kit:check-geometry.mjs", "kit:app.css", "kit:architecture-layout.js", "kit:r11-portable.html",
-  "sealed:canonical.ts", "sealed:jcs-key-order.json", "sealed:jcs-escapes.json",
-  "sealed:jcs-numbers.json", "sealed:identity-stable-id.json",
-  "sealed:parity-manifest.json", "sealed:parity-pin.json", "sealed:unicode-pin.json",
-  "sealed:parity-index.json", "sealed:workbench-canonical-vectors.json",
-  "bpmn-corpus:tiny.bpmn", "bpmn-corpus:notation.bpmn", "bpmn-corpus:no-di.bpmn",
-  "bpmn-corpus:partial-di.bpmn", "bpmn-corpus:duplicate-id.bpmn",
-  "bpmn-corpus:unresolved-reference.bpmn", "bpmn-corpus:rogue-extension.bpmn",
-  "bpmn-corpus:extension-ok.bpmn", "bpmn-corpus:io-specification-incomplete.bpmn",
+  "ds:profile.ts",
+  "ds:document.ts",
+  "ds:view.ts",
+  "ds:attributes.ts",
+  "ds:diagnostics.ts",
+  "ds:validate.ts",
+  "ds:generic.ts",
+  "ds:skeletons.ts",
+  "ds:archimate-skeleton-document.json",
+  "ds:uml-skeleton-document.json",
+  "ds:SPEC_M2_MODEL",
+  "ds:SPEC_M2_DS_PRESENTATION",
+  "ds:SPEC_M2_CANVAS",
+  "ds:SPEC_BPMN_MODDLE",
+  "ds:SPEC_RE_BPMN_JS_PARITY",
+  "g0:types.ts",
+  "g0:catalog.ts",
+  "g0:digests.ts",
+  "g0:admission.ts",
+  "g0:diagnostics.ts",
+  "archi:IAccessRelationship.java",
+  "archi:relationships.xml",
+  "archi:relationships-keys.xml",
+  "archi:archimate.ecore",
+  "archi:LICENSE.txt",
+  "kit:governance-central.js",
+  "kit:governance-collapse.js",
+  "kit:governance-summary.js",
+  "kit:governance-summary-layouts.json",
+  "kit:governance-layout.js",
+  "kit:architecture-routing.js",
+  "kit:presentation-scenes.json",
+  "kit:FrameToggle.svelte",
+  "kit:check-browser.mjs",
+  "kit:browser-checks.mjs",
+  "kit:check-performance.mjs",
+  "kit:check-geometry.mjs",
+  "kit:app.css",
+  "kit:architecture-layout.js",
+  "kit:r11-portable.html",
+  "sealed:canonical.ts",
+  "sealed:jcs-key-order.json",
+  "sealed:jcs-escapes.json",
+  "sealed:jcs-numbers.json",
+  "sealed:identity-stable-id.json",
+  "sealed:parity-manifest.json",
+  "sealed:parity-pin.json",
+  "sealed:unicode-pin.json",
+  "sealed:parity-index.json",
+  "sealed:workbench-canonical-vectors.json",
+  "bpmn-corpus:tiny.bpmn",
+  "bpmn-corpus:notation.bpmn",
+  "bpmn-corpus:no-di.bpmn",
+  "bpmn-corpus:partial-di.bpmn",
+  "bpmn-corpus:duplicate-id.bpmn",
+  "bpmn-corpus:unresolved-reference.bpmn",
+  "bpmn-corpus:rogue-extension.bpmn",
+  "bpmn-corpus:extension-ok.bpmn",
+  "bpmn-corpus:io-specification-incomplete.bpmn",
   "bpmn-corpus:comments.bpmn",
-  "evidence:d2d.md", "evidence:CONSOLIDATED-M3-r3.md",
-  "evidence:review-M3-sol-r3.out", "evidence:review-M3-astra-r3.out", "evidence:dmodel-rev3.out",
+  "evidence:d2d.md",
+  "evidence:CONSOLIDATED-M3-r3.md",
+  "evidence:review-M3-sol-r3.out",
+  "evidence:review-M3-astra-r3.out",
+  "evidence:dmodel-rev3.out",
+  "spec:frozen",
+  "oracle:diagnostics",
+  "hrpn:tint-legend.json",
+  "bpmn-shared:profile-mechanism/1/bpmnlint-11.15.0-recommended.json",
+  "bpmn-shared:profile-mechanism/1/compatibility-codes.json",
+  "bpmn-shared:profile-mechanism/1/compatibility-verdict.schema.json",
+  "bpmn-shared:profile-mechanism/1/compiled-lint-options.schema.json",
+  "bpmn-shared:profile-mechanism/1/lint-policy-r3.json",
+  "bpmn-shared:profile-mechanism/1/neutral-base.json",
+  "bpmn-shared:profile-mechanism/1/neutral-chain-rule.json",
+  "bpmn-shared:profile-mechanism/1/neutral-descriptors.json",
+  "bpmn-shared:profile-mechanism/1/neutral-fixture.json",
+  "bpmn-shared:profile-mechanism/1/neutral-grid-fixture.json",
+  "bpmn-shared:profile-mechanism/1/neutral-grid-profile.json",
+  "bpmn-shared:profile-mechanism/1/neutral-grid-profile.v1.json",
+  "bpmn-shared:profile-mechanism/1/neutral-metrics.json",
+  "bpmn-shared:profile-mechanism/1/neutral-profile.R2.json",
+  "bpmn-shared:profile-mechanism/1/neutral-profile.json",
+  "bpmn-shared:profile-mechanism/1/neutral-provider-arguments.schema.json",
+  "bpmn-shared:profile-mechanism/1/neutral-registry.json",
+  "bpmn-shared:profile-mechanism/1/neutral-support-fixture.R31.json",
+  "bpmn-shared:profile-mechanism/1/profile-mechanism-1.schema.json",
+  "bpmn-shared:profile-mechanism/1/r3-digest-vectors.json",
+  "bpmn-shared:profile-mechanism/1/r33-matrix-vectors.public.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-001-s2b-compat-exact.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-002-s2b-compat-document-0.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-003-s2b-compat-document-2.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-004-s2b-compat-missing.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-005-s2b-compat-xml-alone.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-006-s2b-compat-conflict.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-007-s2b-compat-schema.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-008-s2b-compat-mechanism.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-009-s2b-compat-document-mechanism.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-010-s2b-compat-mechanism-migration.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-011-s2b-compat-capability.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-012-s2b-compat-asset.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-013-s2b-compat-base.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-014-s2b-compat-descriptor.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-015-s2b-compat-business-id.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-016-s2b-compat-business-major.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-017-s2b-compat-digest.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-018-s2b-compat-digest-migration-no-waiver.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-019-s2b-compat-patch-up.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-020-s2b-compat-patch-down.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-021-s2b-compat-minor-up.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-022-s2b-compat-minor-down.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-023-s2b-compat-source-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-024-s2b-compat-precedence-version.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-025-s2b-compat-precedence-capability.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-026-s2b-compat-precedence-base.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-027-s123-s1-patch-up-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-028-s123-s1-patch-up-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-029-s123-s1-patch-down-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-030-s123-s1-patch-down-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-031-s123-s1-minor-up-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-032-s123-s1-minor-up-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-033-s123-s1-minor-down-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-034-s123-s1-minor-down-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-035-s123-s1-digest-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-036-s123-s1-digest-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-037-s123-s2-injected-schema-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-038-s123-s2-injected-schema-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-039-s123-s2-document-schema-supported-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-040-s123-s2-document-schema-supported-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-041-s123-s2-document-schema-unsupported-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-042-s123-s2-document-schema-unsupported-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-043-s123-s2-document-schema-supported-available.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-044-s123-s2-envelope-invalid-available.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-045-s123-s2-envelope-invalid-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-046-compatibility-test-should-require-validated-migration-results-before-accepting-a-different-identity-call-1.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-047-compatibility-test-should-require-validated-migration-results-before-accepting-a-different-identity-call-2.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-048-compatibility-test-should-refuse-invalid-exact-envelopes-and-schema-identity-disagreement-call-1.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-049-compatibility-test-should-refuse-invalid-exact-envelopes-and-schema-identity-disagreement-call-2.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-050-s123-regression-should-check-source-availability-for-1-2-2-with-known-and-available-call-1.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-051-s123-regression-should-check-source-availability-for-1-2-2-with-unknown-call-1.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-052-s123-regression-should-check-source-availability-for-1-2-2-with-unavailable-call-1.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-053-s123-regression-should-check-source-availability-for-1-2-4-with-known-and-available-call-1.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-054-s123-regression-should-check-source-availability-for-1-2-4-with-unknown-call-1.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-055-s123-regression-should-check-source-availability-for-1-2-4-with-unavailable-call-1.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-056-s123-regression-should-check-source-availability-for-1-1-9-with-known-and-available-call-1.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-057-s123-regression-should-check-source-availability-for-1-1-9-with-unknown-call-1.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-058-s123-regression-should-check-source-availability-for-1-1-9-with-unavailable-call-1.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-059-s123-regression-should-check-source-availability-for-1-3-0-with-known-and-available-call-1.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-060-s123-regression-should-check-source-availability-for-1-3-0-with-unknown-call-1.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-061-s123-regression-should-check-source-availability-for-1-3-0-with-unavailable-call-1.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-062-s123-regression-should-keep-earlier-identity-conflicts-ahead-of-unavailable-source-call-1.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-063-s123-regression-should-keep-earlier-identity-conflicts-ahead-of-unavailable-source-call-2.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-064-s123-regression-should-refuse-schema-identity-disagreement-before-unavailable-source-and-migration-call-1.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-065-s123-regression-should-refuse-schema-identity-disagreement-before-known-and-available-source-and-migration-call-1.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-066-s123-regression-should-refuse-invalid-exact-envelopes-without-an-invented-parity-code-call-1.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-067-r33-mechanism-known-and-available.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-068-r33-mechanism-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-069-r33-mechanism-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-070-r33-mechanism-unknown-source-version.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-071-r33-mechanism-unknown-source-sha256.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-072-r33-mechanism-selected-migration-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-073-r33-schema-known-and-available.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-074-r33-schema-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-075-r33-schema-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-076-r33-schema-unknown-source-version.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-077-r33-schema-unknown-source-sha256.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-078-r33-schema-selected-migration-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-079-r33-base-known-and-available.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-080-r33-base-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-081-r33-base-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-082-r33-base-unknown-source-version.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-083-r33-base-unknown-source-sha256.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-084-r33-base-selected-migration-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-085-r33-descriptor-known-and-available.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-086-r33-descriptor-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-087-r33-descriptor-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-088-r33-descriptor-unknown-source-version.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-089-r33-descriptor-unknown-source-sha256.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-090-r33-descriptor-selected-migration-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-091-r33-business-id-known-and-available.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-092-r33-business-id-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-093-r33-business-id-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-094-r33-business-id-unknown-source-version.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-095-r33-business-id-unknown-source-sha256.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-096-r33-business-id-selected-migration-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-097-r33-major-known-and-available.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-098-r33-major-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-099-r33-major-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-100-r33-major-unknown-source-version.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-101-r33-major-unknown-source-sha256.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-102-r33-major-selected-migration-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-103-r33-patch-up-known-and-available.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-104-r33-patch-up-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-105-r33-patch-up-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-106-r33-patch-up-unknown-source-version.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-107-r33-patch-up-unknown-source-sha256.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-108-r33-patch-up-selected-migration-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-109-r33-patch-down-known-and-available.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-110-r33-patch-down-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-111-r33-patch-down-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-112-r33-patch-down-unknown-source-version.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-113-r33-patch-down-unknown-source-sha256.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-114-r33-patch-down-selected-migration-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-115-r33-minor-up-known-and-available.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-116-r33-minor-up-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-117-r33-minor-up-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-118-r33-minor-up-unknown-source-version.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-119-r33-minor-up-unknown-source-sha256.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-120-r33-minor-up-selected-migration-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-121-r33-minor-down-known-and-available.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-122-r33-minor-down-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-123-r33-minor-down-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-124-r33-minor-down-unknown-source-version.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-125-r33-minor-down-unknown-source-sha256.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-126-r33-minor-down-selected-migration-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-127-r33-unsupported-d-schema-known-and-available.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-128-r33-unsupported-p-schema-known-and-available.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-129-r33-known-digest-conflict-known-and-available.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-130-r33-equal-supported-schemas-known-and-available.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-131-r33-unsupported-d-schema-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-132-r33-unsupported-p-schema-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-133-r33-known-digest-conflict-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-134-r33-equal-supported-schemas-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-135-r33-unsupported-d-schema-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-136-r33-unsupported-p-schema-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-137-r33-known-digest-conflict-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-138-r33-equal-supported-schemas-unavailable.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-139-r33-schema-up.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-140-r33-schema-before-capability.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-141-r33-mechanism-before-schema.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-142-r33-unsupported-d-schema-before-mechanism-difference.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-143-r33-unsupported-p-schema-before-d-schema.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-144-r33-document-version-before-schema.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-145-r33-metadata-conflict-before-schema.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-146-r33-unsupported-d-mechanism-before-d-schema.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-147-r33-capability-before-source.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-148-r33-asset-before-source.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-149-r33-invalid-exact-envelope.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-150-r33-exact-unknown-digest.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/compat-151-r33-exact-unknown-version.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/identity-stable-id.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/jcs-escapes.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/jcs-key-order.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/jcs-numbers.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/lexical-duplicate-keys.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/lexical-leading-nbsp.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/lexical-lone-surrogate.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/lexical-negative-zero.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/lexical-nonfinite.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/lexical-unsafe-fraction.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/lexical-unsafe-integer.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/lint-alternating-profiles.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/lint-extends-cycle.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/lint-info-through-warn.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/lint-pointer-escaping.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/lint-unknown-lookup-none.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/lint-unknown-lookup-thrown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/lint-warning-through-error.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/lint-whitelist-escape.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/schema-external-ref-pinned.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/schema-external-ref-unknown.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/schema-id-newline.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/schema-integer-fraction.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/schema-integer-one-zero.json",
+  "bpmn-shared:profile-parity-corpus/1/cases/schema-keyword-subset.json",
+  "bpmn-shared:profile-parity-corpus/1/manifest.json",
+  "unicode:case-table.json",
+  "unicode:manifest.json",
+  "unicode:vectors.json",
+  "bpmn-workbench:MANIFEST.sha256",
+  "bpmn-workbench:README.md",
+  "bpmn-workbench:cases/W01.json",
+  "bpmn-workbench:cases/W02.json",
+  "bpmn-workbench:cases/W03.json",
+  "bpmn-workbench:cases/W04.json",
+  "bpmn-workbench:cases/W05.json",
+  "bpmn-workbench:cases/W06.json",
+  "bpmn-workbench:cases/W07.json",
+  "bpmn-workbench:cases/W08-absent.json",
+  "bpmn-workbench:cases/W08-arrays.json",
+  "bpmn-workbench:cases/W08-keys.json",
+  "bpmn-workbench:cases/W08.json",
+  "bpmn-workbench:cases/W09-dangling.json",
+  "bpmn-workbench:cases/W09-duplicate.json",
+  "bpmn-workbench:cases/W09-extension.json",
+  "bpmn-workbench:cases/W09-page.json",
+  "bpmn-workbench:cases/W09-version.json",
+  "bpmn-workbench:cases/W09-wrong-type.json",
+  "bpmn-workbench:cases/W10-conflict.json",
+  "bpmn-workbench:cases/W10.json",
+  "bpmn-workbench:cases/W11.json",
+  "bpmn-workbench:cases/W12.json",
+  "bpmn-workbench:comparators.json",
+  "bpmn-workbench:config.json",
+  "bpmn-workbench:descriptors/bioc.json",
+  "bpmn-workbench:descriptors/bpmn-in-color.json",
+  "bpmn-workbench:descriptors/bpmn.json",
+  "bpmn-workbench:descriptors/bpmndi.json",
+  "bpmn-workbench:descriptors/dc.json",
+  "bpmn-workbench:descriptors/di.json",
+  "bpmn-workbench:descriptors/semantics.json",
+  "bpmn-workbench:expected/W01.bpmn",
+  "bpmn-workbench:expected/W01.json",
+  "bpmn-workbench:expected/W01.lint.json",
+  "bpmn-workbench:expected/W02.bpmn",
+  "bpmn-workbench:expected/W02.json",
+  "bpmn-workbench:expected/W03.bpmn",
+  "bpmn-workbench:expected/W03.json",
+  "bpmn-workbench:expected/W04.bpmn",
+  "bpmn-workbench:expected/W04.json",
+  "bpmn-workbench:expected/W05.bpmn",
+  "bpmn-workbench:expected/W05.json",
+  "bpmn-workbench:expected/W06.bpmn",
+  "bpmn-workbench:expected/W06.json",
+  "bpmn-workbench:expected/W07.bpmn",
+  "bpmn-workbench:expected/W07.json",
+  "bpmn-workbench:expected/W08-absent.bpmn",
+  "bpmn-workbench:expected/W08-absent.json",
+  "bpmn-workbench:expected/W08-arrays.bpmn",
+  "bpmn-workbench:expected/W08-arrays.json",
+  "bpmn-workbench:expected/W08-keys.bpmn",
+  "bpmn-workbench:expected/W08-keys.json",
+  "bpmn-workbench:expected/W08.bpmn",
+  "bpmn-workbench:expected/W08.json",
+  "bpmn-workbench:expected/W09-dangling.diagnostic.json",
+  "bpmn-workbench:expected/W09-duplicate.diagnostic.json",
+  "bpmn-workbench:expected/W09-extension.diagnostic.json",
+  "bpmn-workbench:expected/W09-page.diagnostic.json",
+  "bpmn-workbench:expected/W09-version.diagnostic.json",
+  "bpmn-workbench:expected/W09-wrong-type.diagnostic.json",
+  "bpmn-workbench:expected/W10-conflict.json",
+  "bpmn-workbench:expected/W10-conflict.lint.json",
+  "bpmn-workbench:expected/W10.json",
+  "bpmn-workbench:expected/W10.lint.json",
+  "bpmn-workbench:expected/W11.capabilities.json",
+  "bpmn-workbench:expected/W11.json",
+  "bpmn-workbench:rule-inventory.json",
+  "derived:cards-A1",
+  "derived:cards-A2",
+  "derived:cards-A3",
+  "derived:cards-A4a",
+  "derived:cards-A4b",
+  "derived:cards-A5"
 ];
 
 export function corpusEntryById(id: string): CorpusEntry | undefined {
-  return CORPUS_MANIFEST.find((e) => e.id === id);
+  return CORPUS_MANIFEST.find(entry => entry.id === id);
 }

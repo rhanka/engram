@@ -1,0 +1,172 @@
+{
+  "schema": "hrpn-ds-reference-renders/v1",
+  "note": "Current chain renders (xyflow reference renderer, theme airbus) of the same scenes; layout targets for visual comparison only, not geometry input.",
+  "drawio": {
+    "path": "docs/architecture/hrpn/hrpn-architecture.drawio",
+    "sha256": "80c2cea7688ea667a3b8d2bcfc2bb73b7d9ff98e7c3c9eac7b162546cd0547a8",
+    "pages": [
+      {
+        "id": "S2-asbuilt",
+        "name": "Option 2 as built · HRPN main @667529f (2026-10-12)"
+      },
+      {
+        "id": "S2-target",
+        "name": "Option 2 decided target · Pub/Sub → Cloud Run single runtime"
+      },
+      {
+        "id": "S1-conversational",
+        "name": "Option 1 · Conversational Agent (PoC-equivalent)"
+      },
+      {
+        "id": "S3-agentfactory",
+        "name": "Option 3 hypothesis · Agent Factory (AgentAiR)"
+      }
+    ]
+  },
+  "scenes": [
+    {
+      "id": "S2-asbuilt",
+      "title": "Option 2 as built · HRPN main @667529f (2026-10-12)",
+      "sceneHash": "a326e51ca1f5e6946b42d8792e1e352ca6a3a8190520d91f0a2f020eb3c473e3",
+      "canvas": {
+        "width": 4864,
+        "height": 4124
+      },
+      "png": {
+        "path": "docs/architecture/hrpn/ds-fixtures/reference/S2-asbuilt.png",
+        "copiedFrom": "docs/ard/decision/focus/.generated/figures/S2-asbuilt.png",
+        "sha256": "3be98d84d15359d704fe7c586f5efaf0de9df4641dd7f723fb93069a2208a1dd",
+        "scale": 0.5,
+        "size": {
+          "w": 2432,
+          "h": 2062
+        },
+        "bytes": 500552
+      },
+      "docxPng": {
+        "path": "docs/ard/docx-build/.work/figures/S2-asbuilt.png",
+        "sha256": "cc03325e92d5b6cbcff6c74ca831f083ce1d5c7110de1e54d33f6bb3ebfe0a8c",
+        "scale": 0.75,
+        "size": {
+          "w": 3648,
+          "h": 3093
+        },
+        "bytes": 837908,
+        "note": "pointed to, not copied"
+      },
+      "drawioPage": {
+        "path": "docs/architecture/hrpn/hrpn-architecture.drawio",
+        "diagramId": "S2-asbuilt",
+        "name": "Option 2 as built · HRPN main @667529f (2026-10-12)"
+      }
+    },
+    {
+      "id": "S2-target",
+      "title": "Option 2 decided target · Pub/Sub → Cloud Run single runtime",
+      "sceneHash": "b631abb4e4432f43a2978e96f83f346f76fbd7bd6a2d8eea0a3340e7ca1d2d46",
+      "canvas": {
+        "width": 5477,
+        "height": 5356
+      },
+      "png": {
+        "path": "docs/architecture/hrpn/ds-fixtures/reference/S2-target.png",
+        "copiedFrom": "docs/ard/decision/focus/.generated/figures/S2-target.png",
+        "sha256": "f606ac163c5202c8cddb7caaba97e4d748d767865a2abfb1bb2f57a7bb4ad542",
+        "scale": 0.5,
+        "size": {
+          "w": 2739,
+          "h": 2678
+        },
+        "bytes": 612001
+      },
+      "docxPng": {
+        "path": "docs/ard/docx-build/.work/figures/S2-target.png",
+        "sha256": "301607953637a47549fcb5f6729c1f4c814ef9d3ee3ee8024f309df3ef0c2b60",
+        "scale": 0.75,
+        "size": {
+          "w": 4108,
+          "h": 4017
+        },
+        "bytes": 1029291,
+        "note": "pointed to, not copied"
+      },
+      "drawioPage": {
+        "path": "docs/architecture/hrpn/hrpn-architecture.drawio",
+        "diagramId": "S2-target",
+        "name": "Option 2 decided target · Pub/Sub → Cloud Run single runtime"
+      }
+    },
+    {
+      "id": "S1-conversational",
+      "title": "Option 1 · Conversational Agent (PoC-equivalent)",
+      "sceneHash": "9d68d35baf4bdd8a5bf6ec55a87c9a48bbc84a6018f028e21f048c57d8a95884",
+      "canvas": {
+        "width": 3670,
+        "height": 3324
+      },
+      "png": {
+        "path": "docs/architecture/hrpn/ds-fixtures/reference/S1-conversational.png",
+        "copiedFrom": "docs/ard/decision/focus/.generated/figures/S1-conversational.png",
+        "sha256": "762c9bdd90761451b8a2a6755798485df5f77e382b576e27115f712af45884fd",
+        "scale": 0.5,
+        "size": {
+          "w": 1835,
+          "h": 1662
+        },
+        "bytes": 333825
+      },
+      "docxPng": {
+        "path": "docs/ard/docx-build/.work/figures/S1-conversational.png",
+        "sha256": "22edae32e4b0d93b343abbce457b506203e7c057bb0d55ddc57df2d9c95650a9",
+        "scale": 0.75,
+        "size": {
+          "w": 2753,
+          "h": 2493
+        },
+        "bytes": 576305,
+        "note": "pointed to, not copied"
+      },
+      "drawioPage": {
+        "path": "docs/architecture/hrpn/hrpn-architecture.drawio",
+        "diagramId": "S1-conversational",
+        "name": "Option 1 · Conversational Agent (PoC-equivalent)"
+      }
+    },
+    {
+      "id": "S3-agentfactory",
+      "title": "Option 3 hypothesis · Agent Factory (AgentAiR)",
+      "sceneHash": "5d944d5441bc0a94c83f6ed78c1e050ba12b43b08bcb4fc65ce1475d13abf55f",
+      "canvas": {
+        "width": 4678,
+        "height": 3980
+      },
+      "png": {
+        "path": "docs/architecture/hrpn/ds-fixtures/reference/S3-agentfactory.png",
+        "copiedFrom": "docs/ard/decision/focus/.generated/figures/S3-agentfactory.png",
+        "sha256": "6058c4a3946bbb59253969d0f2906541035520c64b817bbecc7205c10ab3ec38",
+        "scale": 0.5,
+        "size": {
+          "w": 2339,
+          "h": 1990
+        },
+        "bytes": 458675
+      },
+      "docxPng": {
+        "path": "docs/ard/docx-build/.work/figures/S3-agentfactory.png",
+        "sha256": "0f5368497a4ab3f52bb3b91fdfe609adc3cc1751d85d91ac3bc6d65e84baa408",
+        "scale": 0.75,
+        "size": {
+          "w": 3509,
+          "h": 2985
+        },
+        "bytes": 764743,
+        "note": "pointed to, not copied"
+      },
+      "drawioPage": {
+        "path": "docs/architecture/hrpn/hrpn-architecture.drawio",
+        "diagramId": "S3-agentfactory",
+        "name": "Option 3 hypothesis · Agent Factory (AgentAiR)"
+      }
+    }
+  ]
+}

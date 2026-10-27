@@ -1,0 +1,1 @@
+{"caseId":"lexical-negative-zero","comparatorIds":["design-lexical-probe","profile-c14n/2"],"expectedArtifacts":[{"json":{"status":"ok"},"role":"verdict"}],"expectedStatus":"ok","inputArtifacts":[{"hex":"7b2276223a2d307d","role":"document"}],"operation":"loadProfile","phase":null,"profileArtifact":null}

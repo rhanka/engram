@@ -1,0 +1,43 @@
+{
+  "validF1": [
+    "W01",
+    "W02",
+    "W03",
+    "W04",
+    "W05",
+    "W06",
+    "W07",
+    "W08",
+    "W08-keys",
+    "W08-arrays",
+    "W08-absent",
+    "W10",
+    "W10-conflict",
+    "W11"
+  ],
+  "validF7": [
+    "W01",
+    "W02",
+    "W03",
+    "W04",
+    "W05",
+    "W06",
+    "W07",
+    "W08",
+    "W08-keys",
+    "W08-arrays",
+    "W08-absent"
+  ],
+  "invalidF1": [
+    "W09-duplicate",
+    "W09-dangling",
+    "W09-wrong-type",
+    "W09-extension",
+    "W09-version",
+    "W09-page"
+  ],
+  "future": [
+    "W12"
+  ],
+  "provenance": "Wholly invented paper-kite/lantern scenarios, authored here from DESIGN W01-W12. No customer content/topology or old golden copied. Only descriptor definitions copied byte-for-byte from local public packages."
+}

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:acme="http://acme.example/ns" id="Defs" targetNamespace="http://example.org/corpus">
+  <bpmn:process id="P" isExecutable="false"><bpmn:task id="T" name="Task"/></bpmn:process>
+</bpmn:definitions>

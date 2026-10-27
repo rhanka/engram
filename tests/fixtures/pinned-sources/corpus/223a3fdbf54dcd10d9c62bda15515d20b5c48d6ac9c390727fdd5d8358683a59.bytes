@@ -1,0 +1,12 @@
+{
+  "F5": [
+    "message-flow",
+    "multiple-participants",
+    "unsupported-root:bpmn:Resource"
+  ],
+  "F6": [
+    "message-flow",
+    "multiple-participants",
+    "unsupported-root:bpmn:Resource"
+  ]
+}
