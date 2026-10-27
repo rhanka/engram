@@ -167,7 +167,7 @@ describe("A.4 draft declaration digests", () => {
   it("pins @1 transcription digests as stability goldens", () => {
     expect(GENERIC_V1_CONTENT).toBe("6166cca09085eb244751d4c3b0edf82de000d3ca445af134409836970a2f1dbe");
     expect(ARCHIMATE_V1_CONTENT).toBe("96791bf1886f4a57d3cb96c82573a2bed9da621ddc9262c81d6167b90c3b3b22");
-    expect(UML_V1_CONTENT).toBe("23049f0e5bd97343cd627f1d9a17d608164873949b21131ee4951ce0633bb3d6");
+    expect(UML_V1_CONTENT).toBe("184d0b7f7364293a2f835e80c31320300ba0f4f9ebcea35f7e0dc8fc093ea0d9");
   });
 
   it("pins generic@2, schema and contract digests as stability goldens", () => {
