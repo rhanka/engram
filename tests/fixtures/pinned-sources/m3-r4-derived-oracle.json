@@ -1,0 +1,2185 @@
+{
+  "schemaVersion": "m3-r4-oracle/1",
+  "mappings": {
+    "fixture": {
+      "semanticName": "entities[].label",
+      "viewTitle": "entities[].name when present and distinct",
+      "kicker": "entities[].code",
+      "body": "entities[].role",
+      "detail": "entities[].detail",
+      "footer": "entities[].footer",
+      "semanticCategory": "entities[].tint ?? none",
+      "strokeStyle": "relations[].style (one source drawing)",
+      "semanticParent": "entities[].parent",
+      "store": "true → node.tags includes store; false → no store tag, original presence archived",
+      "icon": "absent in frozen fixture; do not invent"
+    },
+    "a1": {
+      "semanticName": "nodes[].data.title; groups[].titleLines joined by one space",
+      "kicker": "nodes[].data.kicker / groups[].kicker",
+      "body": "nodes[].data.function",
+      "detail": "nodes[].data.detail",
+      "subtitle": "groups[].subtitle",
+      "footer": "nodes[].data.cardFooter",
+      "icon": "nodes[].data.cardIcon",
+      "semanticCategory": "data.tone / group.tone",
+      "strokeStyle": "absent → solid"
+    },
+    "a5": {
+      "semanticName": "attributes.name except extension.displayTitle on PCICD/AWSCI",
+      "kicker": "attributes.kicker or zone-slots.kicker",
+      "body": "attributes.body",
+      "detail": "attributes.detail",
+      "subtitle": "zone-slots.subtitle",
+      "footer": "attributes.footer or zone-slots.footer",
+      "icon": "attributes.icon or zone-slots.icon",
+      "semanticCategory": "attributes.tint or zone-slots.tint, absent → no category except explicit legend-none key",
+      "strokeStyle": "source relation occurrence field, absent retained"
+    }
+  },
+  "categoryTokens": {
+    "genair": "st-semantic-data-category1",
+    "specific": "st-semantic-feedback-warning",
+    "added": "st-semantic-feedback-warning",
+    "removed": "st-semantic-feedback-error",
+    "risk": "st-semantic-feedback-error",
+    "custom": "st-semantic-feedback-success",
+    "outside": "st-semantic-feedback-warning",
+    "none": "st-semantic-surface-raised",
+    "neutral": "st-semantic-surface-raised",
+    "proposal": "st-semantic-feedback-warning",
+    "identity": "st-semantic-feedback-info"
+  },
+  "instances": [
+    {
+      "id": "A1",
+      "source": "sentropic 4138a0ec:docs/governance/kit/src/presentation-scenes.json#/en/architectureScenes/central",
+      "counts": {
+        "node": 28,
+        "container": 10,
+        "legend": 1,
+        "legend-key": 3,
+        "contains": 36,
+        "link": 50
+      },
+      "categories": [
+        "neutral",
+        "proposal",
+        "identity"
+      ],
+      "defaultFolds": [
+        "occurrence:h2a",
+        "occurrence:surfaces",
+        "occurrence:cluster-mesh",
+        "occurrence:engram",
+        "occurrence:design-system"
+      ],
+      "overviewFolds": [
+        "occurrence:h2a",
+        "occurrence:surfaces",
+        "occurrence:cluster-mesh",
+        "occurrence:engram",
+        "occurrence:design-system"
+      ],
+      "summaries": [
+        {
+          "id": "sum:0",
+          "sourceOccurrence": "occurrence:h2a",
+          "targetOccurrence": "occurrence:surfaces",
+          "label": "Harness and collaboration",
+          "relationIds": [
+            "relation:e-h2a-chat",
+            "relation:e-h2a-cli",
+            "relation:e-h2a-cowork"
+          ],
+          "strokeStyle": "solid"
+        },
+        {
+          "id": "sum:1",
+          "sourceOccurrence": "occurrence:surfaces",
+          "targetOccurrence": "occurrence:cluster-mesh",
+          "label": "Sessions and tools",
+          "relationIds": [
+            "relation:e-ai-api",
+            "relation:e-cli-api",
+            "relation:e-cloud-api",
+            "relation:e-cloud-catalog",
+            "relation:e-cowork-api"
+          ],
+          "strokeStyle": "solid"
+        },
+        {
+          "id": "sum:2",
+          "sourceOccurrence": "occurrence:h2a",
+          "targetOccurrence": "occurrence:cluster-mesh",
+          "label": "Tools for h2a",
+          "relationIds": [
+            "relation:e-h2a-tools"
+          ],
+          "strokeStyle": "solid"
+        },
+        {
+          "id": "sum:3",
+          "sourceOccurrence": "occurrence:cluster-mesh",
+          "targetOccurrence": "occurrence:h2a",
+          "label": "A2a messages",
+          "relationIds": [
+            "relation:e-mesh-h2a"
+          ],
+          "strokeStyle": "solid"
+        },
+        {
+          "id": "sum:4",
+          "sourceOccurrence": "occurrence:cluster-mesh",
+          "targetOccurrence": "occurrence:surfaces",
+          "label": "Application deployment",
+          "relationIds": [
+            "relation:e-infra-cloud"
+          ],
+          "strokeStyle": "solid"
+        },
+        {
+          "id": "sum:5",
+          "sourceOccurrence": "occurrence:engram",
+          "targetOccurrence": "occurrence:cluster-mesh",
+          "label": "Memory and knowledge",
+          "relationIds": [
+            "relation:e-eng-mem",
+            "relation:e-eng-onto",
+            "relation:e-eng-store"
+          ],
+          "strokeStyle": "solid"
+        },
+        {
+          "id": "sum:6",
+          "sourceOccurrence": "occurrence:cluster-mesh",
+          "targetOccurrence": "occurrence:engram",
+          "label": "Logs and metrics",
+          "relationIds": [
+            "relation:e-eng-observe"
+          ],
+          "strokeStyle": "solid"
+        },
+        {
+          "id": "sum:7",
+          "sourceOccurrence": "occurrence:engram",
+          "targetOccurrence": "occurrence:design-system",
+          "label": "Diagram Graphs",
+          "relationIds": [
+            "relation:e-eng-ds"
+          ],
+          "strokeStyle": "solid"
+        },
+        {
+          "id": "sum:8",
+          "sourceOccurrence": "occurrence:design-system",
+          "targetOccurrence": "occurrence:cluster-mesh",
+          "label": "Canvas UI",
+          "relationIds": [
+            "relation:e-ds-catalog",
+            "relation:e-ds-comments",
+            "relation:e-ds-store"
+          ],
+          "strokeStyle": "solid"
+        },
+        {
+          "id": "sum:9",
+          "sourceOccurrence": "occurrence:h2a",
+          "targetOccurrence": "occurrence:design-system",
+          "label": "Focus schema and skill",
+          "relationIds": [
+            "relation:e-focus-dossier"
+          ],
+          "strokeStyle": "solid"
+        }
+      ],
+      "hints": {
+        "grouping": [
+          {
+            "id": "central-roots",
+            "direction": "rows",
+            "items": [
+              "entity:h2a",
+              "entity:surfaces",
+              "entity:cluster-mesh",
+              "entity:engram",
+              "entity:design-system"
+            ]
+          }
+        ]
+      },
+      "dashedRelationIds": [],
+      "expectedSemanticDiagnostics": [],
+      "expectedViewDiagnostics": [],
+      "qualification": "unverified U-QUAL"
+    },
+    {
+      "id": "A2",
+      "scene": "S2-asbuilt",
+      "sourceSha256": "7abc427f7beca5b0f87947efc9df4daf6316f24725074f47f1da2b04be76ba2e",
+      "counts": {
+        "node": 41,
+        "container": 17,
+        "legend": 1,
+        "legend-key": 4,
+        "contains": 58,
+        "link": 44
+      },
+      "categories": [
+        "genair",
+        "none",
+        "risk",
+        "specific"
+      ],
+      "defaultFolds": [],
+      "summaries": [],
+      "hints": {
+        "ordering": {
+          "entity:PEOPLE": [
+            "entity:EMP",
+            "entity:DEV"
+          ],
+          "entity:WS": [
+            "entity:CHAT"
+          ],
+          "entity:GCP": [
+            "entity:PROJ",
+            "entity:SSMPROJ",
+            "entity:PRODZ"
+          ],
+          "entity:PROJ": [
+            "entity:LBIAP",
+            "entity:NET",
+            "entity:MSGZ",
+            "entity:RUNZ",
+            "entity:AEZ",
+            "entity:STATEZ",
+            "entity:VERTEXZ",
+            "entity:OBSZ",
+            "entity:CICDZ"
+          ],
+          "entity:MSGZ": [
+            "entity:TOPIC",
+            "entity:SUB"
+          ],
+          "entity:RUNZ": [
+            "entity:APP",
+            "entity:PUSH",
+            "entity:CONS",
+            "entity:CHATCLI",
+            "entity:AGENT",
+            "entity:QUERY",
+            "entity:ADMINT"
+          ],
+          "entity:AEZ": [
+            "entity:AEAPP"
+          ],
+          "entity:STATEZ": [
+            "entity:DOCS",
+            "entity:SESS",
+            "entity:CSQL",
+            "entity:BKT",
+            "entity:FS"
+          ],
+          "entity:VERTEXZ": [
+            "entity:RAG",
+            "entity:GEM"
+          ],
+          "entity:OBSZ": [
+            "entity:CLOG",
+            "entity:LOGS",
+            "entity:BQ",
+            "entity:PHX"
+          ],
+          "entity:CICDZ": [
+            "entity:CB",
+            "entity:AR",
+            "entity:TF",
+            "entity:TFST"
+          ],
+          "entity:SSMPROJ": [
+            "entity:SSM",
+            "entity:IFMIR",
+            "entity:BASE"
+          ],
+          "entity:PRODZ": [
+            "entity:PRODNP"
+          ],
+          "entity:OUT": [
+            "entity:AWSZ"
+          ],
+          "entity:AWSZ": [
+            "entity:JENKINS",
+            "entity:JFROG",
+            "entity:GITHUBZ",
+            "entity:GITLABZ"
+          ],
+          "entity:GITHUBZ": [
+            "entity:CUTTER",
+            "entity:AGARDEN",
+            "entity:IFREPO",
+            "entity:GLIBS"
+          ],
+          "entity:GITLABZ": [
+            "entity:SCMREPO"
+          ]
+        }
+      },
+      "dashedRelationIds": [
+        "relation:AEAPP__RAG__a0b5b8269cfd",
+        "relation:APP__CSQL__5f0a28de3e78",
+        "relation:APP__LOGS__e43083545724",
+        "relation:APP__PHX__2dc85bc7391e",
+        "relation:CUTTER__PRODNP__24e6dc578f0b",
+        "relation:JFROG__BASE__a03f155bff51",
+        "relation:SCMREPO__SSM__4e20c757a1be"
+      ],
+      "expectedSemanticDiagnostics": [],
+      "expectedViewDiagnostics": [],
+      "qualification": "unverified U-QUAL"
+    },
+    {
+      "id": "A3",
+      "scene": "S2-target",
+      "sourceSha256": "28a7271dd0bec89fa9ad435174a614ab4a40b346b10724da95736f9c55b574d9",
+      "counts": {
+        "node": 51,
+        "container": 22,
+        "legend": 1,
+        "legend-key": 4,
+        "contains": 73,
+        "link": 54
+      },
+      "categories": [
+        "added",
+        "genair",
+        "none",
+        "specific"
+      ],
+      "defaultFolds": [],
+      "summaries": [],
+      "hints": {
+        "ordering": {
+          "entity:PEOPLE": [
+            "entity:EMP",
+            "entity:DEV",
+            "entity:HRADM"
+          ],
+          "entity:WS": [
+            "entity:CHAT",
+            "entity:DRIVE"
+          ],
+          "entity:GCP": [
+            "entity:PROJ",
+            "entity:SSMPROJ",
+            "entity:PRODZ"
+          ],
+          "entity:PROJ": [
+            "entity:NET",
+            "entity:MSGZ",
+            "entity:RUNZ",
+            "entity:STATEZ",
+            "entity:VERTEXZ",
+            "entity:OBSZ",
+            "entity:INGZ",
+            "entity:CICDZ"
+          ],
+          "entity:MSGZ": [
+            "entity:TOPIC",
+            "entity:SUB"
+          ],
+          "entity:RUNZ": [
+            "entity:PUSH",
+            "entity:EVT",
+            "entity:CONS",
+            "entity:CHATCLI",
+            "entity:FEEDBACK",
+            "entity:ELIG",
+            "entity:AGENT",
+            "entity:LINK",
+            "entity:QUERY"
+          ],
+          "entity:STATEZ": [
+            "entity:DOCS",
+            "entity:SESS",
+            "entity:FS",
+            "entity:CSQL"
+          ],
+          "entity:VERTEXZ": [
+            "entity:RAG",
+            "entity:GEM",
+            "entity:ARMOR"
+          ],
+          "entity:OBSZ": [
+            "entity:CLOG",
+            "entity:LOGS",
+            "entity:BQ",
+            "entity:PHX"
+          ],
+          "entity:INGZ": [
+            "entity:SYNC",
+            "entity:IMPORT"
+          ],
+          "entity:CICDZ": [
+            "entity:CB",
+            "entity:AR",
+            "entity:TF",
+            "entity:TFST"
+          ],
+          "entity:SSMPROJ": [
+            "entity:SSM",
+            "entity:IFMIR",
+            "entity:BASE"
+          ],
+          "entity:PRODZ": [
+            "entity:PCICD",
+            "entity:PSHARED",
+            "entity:PDEVZ",
+            "entity:PINTZ",
+            "entity:PPROZ"
+          ],
+          "entity:PCICD": [
+            "entity:PAR",
+            "entity:PIAC"
+          ],
+          "entity:PSHARED": [
+            "entity:PSVPC",
+            "entity:PLIBS"
+          ],
+          "entity:PDEVZ": [
+            "entity:PDEV"
+          ],
+          "entity:PINTZ": [
+            "entity:PINT"
+          ],
+          "entity:PPROZ": [
+            "entity:PPRO"
+          ],
+          "entity:OUT": [
+            "entity:AWSZ"
+          ],
+          "entity:AWSZ": [
+            "entity:JENKINS",
+            "entity:JFROG",
+            "entity:GITHUBZ",
+            "entity:GITLABZ"
+          ],
+          "entity:GITHUBZ": [
+            "entity:CUTTER",
+            "entity:AGARDEN",
+            "entity:IFREPO",
+            "entity:GLIBS"
+          ],
+          "entity:GITLABZ": [
+            "entity:SCMREPO"
+          ]
+        }
+      },
+      "dashedRelationIds": [],
+      "expectedSemanticDiagnostics": [],
+      "expectedViewDiagnostics": [],
+      "qualification": "unverified U-QUAL"
+    },
+    {
+      "id": "A4a",
+      "scene": "S1-conversational",
+      "sourceSha256": "d9f7f7cb80894b5301e11cc7b7f0fc2775d1933aa15013152001395d716a32c7",
+      "counts": {
+        "node": 23,
+        "container": 17,
+        "legend": 1,
+        "legend-key": 5,
+        "contains": 41,
+        "link": 24
+      },
+      "categories": [
+        "added",
+        "genair",
+        "none",
+        "risk",
+        "specific"
+      ],
+      "defaultFolds": [],
+      "summaries": [],
+      "hints": {
+        "ordering": {
+          "entity:PEOPLE": [
+            "entity:EMP",
+            "entity:HRADM"
+          ],
+          "entity:WS": [
+            "entity:CHAT",
+            "entity:APPSS",
+            "entity:DRIVE"
+          ],
+          "entity:GCP": [
+            "entity:PROJ",
+            "entity:PRODZ"
+          ],
+          "entity:PROJ": [
+            "entity:CXZ",
+            "entity:TOOLZ",
+            "entity:VAIZ",
+            "entity:STATEZ",
+            "entity:GOVZ"
+          ],
+          "entity:CXZ": [
+            "entity:CXINT",
+            "entity:CXAGENT",
+            "entity:PLAYBOOK",
+            "entity:DSTOOL"
+          ],
+          "entity:TOOLZ": [
+            "entity:LINKF",
+            "entity:RLA"
+          ],
+          "entity:VAIZ": [
+            "entity:DATASTORE",
+            "entity:GEM"
+          ],
+          "entity:STATEZ": [
+            "entity:DOCS",
+            "entity:SYNC",
+            "entity:BQLOG"
+          ],
+          "entity:GOVZ": [
+            "entity:NOIAC",
+            "entity:EXPORT"
+          ],
+          "entity:PRODZ": [
+            "entity:PDEVZ",
+            "entity:PINTZ",
+            "entity:PPROZ"
+          ],
+          "entity:PDEVZ": [
+            "entity:PDEV"
+          ],
+          "entity:PINTZ": [
+            "entity:PINT"
+          ],
+          "entity:PPROZ": [
+            "entity:PPRO"
+          ],
+          "entity:OUT": [
+            "entity:AWSZ"
+          ],
+          "entity:AWSZ": [
+            "entity:GITHUBZ",
+            "entity:GITLABZ"
+          ],
+          "entity:GITHUBZ": [
+            "entity:GENTPL"
+          ],
+          "entity:GITLABZ": [
+            "entity:SCMREPO"
+          ]
+        }
+      },
+      "dashedRelationIds": [
+        "relation:APPSS__CXAGENT__5bd5623a9dfc",
+        "relation:CHAT__APPSS__1b30808dad7d",
+        "relation:DRIVE__SYNC__eefb74f30a11",
+        "relation:EXPORT__SCMREPO__19793062b717",
+        "relation:NOIAC__CXAGENT__ddde25d26cdd",
+        "relation:PLAYBOOK__RLA__51f9edec990b",
+        "relation:SCMREPO__PDEV__af6ca2d26ea0",
+        "relation:SCMREPO__PINT__3904bbabeaf9",
+        "relation:SCMREPO__PPRO__598187d83575",
+        "relation:SYNC__DOCS__dc261875c2c1"
+      ],
+      "expectedSemanticDiagnostics": [],
+      "expectedViewDiagnostics": [],
+      "qualification": "unverified U-QUAL"
+    },
+    {
+      "id": "A4b",
+      "scene": "S3-agentfactory",
+      "sourceSha256": "e362b9a8da84082e5389127ae463d282fb773ef8950f41017222e0b3ef9002fc",
+      "counts": {
+        "node": 37,
+        "container": 15,
+        "legend": 1,
+        "legend-key": 5,
+        "contains": 53,
+        "link": 36
+      },
+      "categories": [
+        "added",
+        "genair",
+        "none",
+        "removed",
+        "risk"
+      ],
+      "defaultFolds": [],
+      "summaries": [],
+      "hints": {
+        "ordering": {
+          "entity:LEFT": [
+            "entity:USERS",
+            "entity:CASB",
+            "entity:IDP",
+            "entity:SIEM"
+          ],
+          "entity:PCP": [
+            "entity:PLOG",
+            "entity:CONN",
+            "entity:MAF",
+            "entity:VPCSC",
+            "entity:GAPI",
+            "entity:IAM",
+            "entity:AIP",
+            "entity:DATAHUB"
+          ],
+          "entity:AIP": [
+            "entity:EAI",
+            "entity:SPOKE"
+          ],
+          "entity:EAI": [
+            "entity:AUTHM",
+            "entity:OBSV",
+            "entity:AUDIT",
+            "entity:SCC",
+            "entity:GEZ",
+            "entity:GEAP"
+          ],
+          "entity:GEZ": [
+            "entity:GEUI",
+            "entity:MA1",
+            "entity:FEDC",
+            "entity:DSTORE"
+          ],
+          "entity:GEAP": [
+            "entity:GW",
+            "entity:POL",
+            "entity:MA2",
+            "entity:RUNTIME"
+          ],
+          "entity:RUNTIME": [
+            "entity:HRAGENT",
+            "entity:HRTOOLS"
+          ],
+          "entity:SPOKE": [
+            "entity:RAG",
+            "entity:GEM",
+            "entity:DOCS",
+            "entity:SYNC",
+            "entity:XIAM",
+            "entity:PSL"
+          ],
+          "entity:DATAHUB": [
+            "entity:DATAPROD",
+            "entity:PIPE"
+          ],
+          "entity:RIGHT": [
+            "entity:LAN",
+            "entity:SAASZ"
+          ],
+          "entity:SAASZ": [
+            "entity:DRIVE",
+            "entity:CHAT"
+          ],
+          "entity:OUT": [
+            "entity:AWSZ"
+          ],
+          "entity:AWSZ": [
+            "entity:JENKINS",
+            "entity:GITHUBZ",
+            "entity:GITLABZ"
+          ],
+          "entity:GITHUBZ": [
+            "entity:CUTTER"
+          ],
+          "entity:GITLABZ": [
+            "entity:SCMREPO"
+          ]
+        }
+      },
+      "dashedRelationIds": [
+        "relation:USERS__CHAT__de2bbc5b3e38",
+        "relation:VPCSC__HRAGENT__8356391330d1",
+        "relation:XIAM__HRAGENT__f18eca9333d3"
+      ],
+      "expectedSemanticDiagnostics": [],
+      "expectedViewDiagnostics": [],
+      "qualification": "unverified U-QUAL"
+    },
+    {
+      "id": "A5",
+      "sourceSha256": "46f64154bb6592d49ccda5633b2c4d4205fb1c6752ef218be31d6757923ecf91",
+      "counts": {
+        "node": 33,
+        "container": 18,
+        "legend": 1,
+        "legend-key": 4,
+        "contains": 51,
+        "link": 31
+      },
+      "categories": [
+        "genair",
+        "custom",
+        "outside",
+        "none"
+      ],
+      "defaultFolds": [
+        "occurrence:PCICD",
+        "occurrence:MSGZ",
+        "occurrence:VERTEXZ",
+        "occurrence:OBSZ",
+        "occurrence:INGZ",
+        "occurrence:GENSRC",
+        "occurrence:AWSCI"
+      ],
+      "summaries": [],
+      "dashedRelationIds": [],
+      "entities": {
+        "entity:PEOPLE": {
+          "id": "entity:PEOPLE",
+          "profile": "generic@2",
+          "type": "container",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Users and operators"
+            }
+          }
+        },
+        "entity:WS": {
+          "id": "entity:WS",
+          "profile": "generic@2",
+          "type": "container",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Google Workspace"
+            }
+          }
+        },
+        "entity:GCP": {
+          "id": "entity:GCP",
+          "profile": "generic@2",
+          "type": "container",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Google Cloud Platform"
+            }
+          }
+        },
+        "entity:PRODZ": {
+          "id": "entity:PRODZ",
+          "profile": "generic@2",
+          "type": "container",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "PROD landing zone"
+            }
+          }
+        },
+        "entity:PPROZ": {
+          "id": "entity:PPROZ",
+          "profile": "generic@2",
+          "type": "container",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "HRPN pro project"
+            }
+          }
+        },
+        "entity:MSGZ": {
+          "id": "entity:MSGZ",
+          "profile": "generic@2",
+          "type": "container",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Pub/Sub"
+            },
+            "category": {
+              "kind": "text",
+              "value": "outside"
+            }
+          }
+        },
+        "entity:RUNZ": {
+          "id": "entity:RUNZ",
+          "profile": "generic@2",
+          "type": "container",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Cloud Run"
+            }
+          }
+        },
+        "entity:STATEZ": {
+          "id": "entity:STATEZ",
+          "profile": "generic@2",
+          "type": "container",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Storage and state"
+            }
+          }
+        },
+        "entity:VERTEXZ": {
+          "id": "entity:VERTEXZ",
+          "profile": "generic@2",
+          "type": "container",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Vertex AI"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            }
+          }
+        },
+        "entity:INGZ": {
+          "id": "entity:INGZ",
+          "profile": "generic@2",
+          "type": "container",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Ingestion"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            }
+          }
+        },
+        "entity:PSHARED": {
+          "id": "entity:PSHARED",
+          "profile": "generic@2",
+          "type": "container",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "PROD shared projects"
+            }
+          }
+        },
+        "entity:PCICD": {
+          "id": "entity:PCICD",
+          "profile": "generic@2",
+          "type": "container",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "CI/CD"
+            }
+          }
+        },
+        "entity:OBSZ": {
+          "id": "entity:OBSZ",
+          "profile": "generic@2",
+          "type": "container",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Observability"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            }
+          }
+        },
+        "entity:OUT": {
+          "id": "entity:OUT",
+          "profile": "generic@2",
+          "type": "container",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "AWS"
+            }
+          }
+        },
+        "entity:GITHUBZ": {
+          "id": "entity:GITHUBZ",
+          "profile": "generic@2",
+          "type": "container",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Airbus GitHub"
+            }
+          }
+        },
+        "entity:GENSRC": {
+          "id": "entity:GENSRC",
+          "profile": "generic@2",
+          "type": "container",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "GenAiR sources"
+            },
+            "category": {
+              "kind": "text",
+              "value": "genair"
+            }
+          }
+        },
+        "entity:GITLABZ": {
+          "id": "entity:GITLABZ",
+          "profile": "generic@2",
+          "type": "container",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Airbus GitLab"
+            }
+          }
+        },
+        "entity:AWSCI": {
+          "id": "entity:AWSCI",
+          "profile": "generic@2",
+          "type": "container",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "CI/CD"
+            }
+          }
+        },
+        "entity:LEGEND": {
+          "id": "entity:LEGEND",
+          "profile": "generic@2",
+          "type": "legend",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Legend"
+            }
+          }
+        },
+        "entity:EMP": {
+          "id": "entity:EMP",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Employees · HR"
+            }
+          }
+        },
+        "entity:DEV": {
+          "id": "entity:DEV",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Developers · admin"
+            }
+          }
+        },
+        "entity:HRADM": {
+          "id": "entity:HRADM",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "HR · content owners"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            }
+          }
+        },
+        "entity:CHAT": {
+          "id": "entity:CHAT",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Chat app"
+            }
+          }
+        },
+        "entity:DRIVE": {
+          "id": "entity:DRIVE",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Drive · source"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            }
+          }
+        },
+        "entity:TOPIC": {
+          "id": "entity:TOPIC",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Pub/Sub · topic"
+            },
+            "category": {
+              "kind": "text",
+              "value": "outside"
+            }
+          }
+        },
+        "entity:SUB": {
+          "id": "entity:SUB",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Pub/Sub · push"
+            },
+            "category": {
+              "kind": "text",
+              "value": "outside"
+            }
+          }
+        },
+        "entity:APP": {
+          "id": "entity:APP",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Backend · FastAPI"
+            },
+            "category": {
+              "kind": "text",
+              "value": "genair"
+            }
+          }
+        },
+        "entity:AGENT": {
+          "id": "entity:AGENT",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "ADK agent · RAG tools"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            }
+          }
+        },
+        "entity:CHATAPI": {
+          "id": "entity:CHATAPI",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Google Chat · API"
+            },
+            "category": {
+              "kind": "text",
+              "value": "outside"
+            }
+          }
+        },
+        "entity:DOCS": {
+          "id": "entity:DOCS",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Bucket · documents"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            }
+          }
+        },
+        "entity:FS": {
+          "id": "entity:FS",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Firestore · sessions"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            }
+          }
+        },
+        "entity:RAG": {
+          "id": "entity:RAG",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "RAG Engine"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            }
+          }
+        },
+        "entity:GEM": {
+          "id": "entity:GEM",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Model · Gemini"
+            }
+          }
+        },
+        "entity:ARMOR": {
+          "id": "entity:ARMOR",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Model Armor"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            }
+          }
+        },
+        "entity:SYNC": {
+          "id": "entity:SYNC",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Job · Drive sync"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            }
+          }
+        },
+        "entity:IMPORT": {
+          "id": "entity:IMPORT",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Job · RAG import"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            }
+          }
+        },
+        "entity:PSSM": {
+          "id": "entity:PSSM",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Repo · SSM"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            }
+          }
+        },
+        "entity:PAR": {
+          "id": "entity:PAR",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Registry · PROD"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            }
+          }
+        },
+        "entity:PIAC": {
+          "id": "entity:PIAC",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "IaC · WIF"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            }
+          }
+        },
+        "entity:PLIBS": {
+          "id": "entity:PLIBS",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Libs · PyPI"
+            },
+            "category": {
+              "kind": "text",
+              "value": "genair"
+            }
+          }
+        },
+        "entity:CLOG": {
+          "id": "entity:CLOG",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Logging · audit"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            }
+          }
+        },
+        "entity:LOGS": {
+          "id": "entity:LOGS",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Logs · 1 year"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            }
+          }
+        },
+        "entity:BQ": {
+          "id": "entity:BQ",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "BigQuery · linked"
+            },
+            "category": {
+              "kind": "text",
+              "value": "genair"
+            }
+          }
+        },
+        "entity:PHX": {
+          "id": "entity:PHX",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Tracing · Phoenix"
+            },
+            "category": {
+              "kind": "text",
+              "value": "genair"
+            }
+          }
+        },
+        "entity:PSVPC": {
+          "id": "entity:PSVPC",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Network · SVPC"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            }
+          }
+        },
+        "entity:CUTTER": {
+          "id": "entity:CUTTER",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Template · GenAiR"
+            },
+            "category": {
+              "kind": "text",
+              "value": "genair"
+            }
+          }
+        },
+        "entity:AGARDEN": {
+          "id": "entity:AGARDEN",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Agents · template"
+            },
+            "category": {
+              "kind": "text",
+              "value": "genair"
+            }
+          }
+        },
+        "entity:IFREPO": {
+          "id": "entity:IFREPO",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "IaC · modules"
+            },
+            "category": {
+              "kind": "text",
+              "value": "genair"
+            }
+          }
+        },
+        "entity:GLIBS": {
+          "id": "entity:GLIBS",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Libs · GenAiR"
+            },
+            "category": {
+              "kind": "text",
+              "value": "genair"
+            }
+          }
+        },
+        "entity:SCMREPO": {
+          "id": "entity:SCMREPO",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Repo · SCM"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            }
+          }
+        },
+        "entity:JENKINS": {
+          "id": "entity:JENKINS",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "CI · Jenkins"
+            }
+          }
+        },
+        "entity:JFROG": {
+          "id": "entity:JFROG",
+          "profile": "generic@2",
+          "type": "node",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Registry · JFrog"
+            }
+          }
+        },
+        "entity:legend-genair": {
+          "id": "entity:legend-genair",
+          "profile": "generic@2",
+          "type": "legend-key",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "GenAiR standard"
+            },
+            "category": {
+              "kind": "text",
+              "value": "genair"
+            },
+            "description": {
+              "kind": "text",
+              "value": "GenAiR template, unchanged"
+            }
+          }
+        },
+        "entity:legend-custom": {
+          "id": "entity:legend-custom",
+          "profile": "generic@2",
+          "type": "legend-key",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "GenAiR customisation"
+            },
+            "category": {
+              "kind": "text",
+              "value": "custom"
+            },
+            "description": {
+              "kind": "text",
+              "value": "within the template frame"
+            }
+          }
+        },
+        "entity:legend-outside": {
+          "id": "entity:legend-outside",
+          "profile": "generic@2",
+          "type": "legend-key",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Specific for HRPN"
+            },
+            "category": {
+              "kind": "text",
+              "value": "outside"
+            },
+            "description": {
+              "kind": "text",
+              "value": "added outside the template"
+            }
+          }
+        },
+        "entity:legend-none": {
+          "id": "entity:legend-none",
+          "profile": "generic@2",
+          "type": "legend-key",
+          "attributes": {
+            "name": {
+              "kind": "text",
+              "value": "Managed service"
+            },
+            "category": {
+              "kind": "text",
+              "value": "none"
+            },
+            "description": {
+              "kind": "text",
+              "value": "Google or third-party"
+            }
+          }
+        }
+      },
+      "presentationEntities": {
+        "occurrence:PEOPLE": {
+          "form": "container",
+          "text": {
+            "kicker": "PPL",
+            "subtitle": "Employees HR · Developers admin · HR content owners",
+            "footer": "scope: Users and operators"
+          },
+          "icon": "people"
+        },
+        "occurrence:WS": {
+          "form": "container",
+          "text": {
+            "kicker": "GWS",
+            "subtitle": "Chat app · Drive source",
+            "footer": "service: Google Workspace"
+          },
+          "icon": "window"
+        },
+        "occurrence:GCP": {
+          "form": "container",
+          "text": {
+            "kicker": "GOOGLE CLOUD",
+            "subtitle": "PROD landing zone",
+            "footer": "service: Google Cloud"
+          },
+          "icon": "cloud"
+        },
+        "occurrence:PRODZ": {
+          "form": "container",
+          "text": {
+            "kicker": "GCP PROJECT (PROD)",
+            "subtitle": "app_code (to provision)",
+            "footer": "service: GCP project (PROD)"
+          },
+          "icon": "server"
+        },
+        "occurrence:PPROZ": {
+          "form": "container",
+          "text": {
+            "kicker": "GCP PROJECT (PROD)",
+            "subtitle": "project_id_pro",
+            "footer": "service: GCP project (PROD)"
+          },
+          "icon": "server"
+        },
+        "occurrence:MSGZ": {
+          "form": "container",
+          "text": {
+            "kicker": "PS",
+            "subtitle": "Pub/Sub topic · Pub/Sub push",
+            "footer": "service: Pub/Sub"
+          },
+          "icon": "link",
+          "categoryRef": "entity:legend-outside"
+        },
+        "occurrence:RUNZ": {
+          "form": "container",
+          "text": {
+            "kicker": "HRPN",
+            "subtitle": "hrpn-ragengine-agent",
+            "footer": "repo: HRPN"
+          },
+          "icon": "server"
+        },
+        "occurrence:STATEZ": {
+          "form": "container",
+          "text": {
+            "kicker": "HRPN",
+            "subtitle": "Bucket documents · Firestore sessions",
+            "footer": "repo: HRPN"
+          },
+          "icon": "db"
+        },
+        "occurrence:VERTEXZ": {
+          "form": "container",
+          "text": {
+            "kicker": "VAI",
+            "subtitle": "RAG Engine · Model Gemini · Model Armor",
+            "footer": "service: Vertex AI"
+          },
+          "icon": "brain",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:INGZ": {
+          "form": "container",
+          "text": {
+            "kicker": "HRPN",
+            "subtitle": "Job Drive sync · Job RAG import",
+            "footer": "repo: HRPN"
+          },
+          "icon": "server",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:PSHARED": {
+          "form": "container",
+          "text": {
+            "kicker": "GENAI PLATFORM",
+            "subtitle": "CI/CD · Observability · Network SVPC",
+            "footer": "service: GenAI platform"
+          },
+          "icon": "server"
+        },
+        "occurrence:PCICD": {
+          "form": "container",
+          "text": {
+            "kicker": "GENAI PCP PLATFORM",
+            "subtitle": "project_id_cicd",
+            "footer": "service: GenAI PCP Platform"
+          },
+          "icon": "server"
+        },
+        "occurrence:OBSZ": {
+          "form": "container",
+          "text": {
+            "kicker": "GENAI PCP PLATFORM",
+            "subtitle": "Logging audit · Logs 1 year · BigQuery linked · Tracing Phoenix",
+            "footer": "service: GenAI PCP Platform"
+          },
+          "icon": "shield",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:OUT": {
+          "form": "container",
+          "text": {
+            "kicker": "OUTSIDE GCP",
+            "subtitle": "Airbus GitHub · Airbus GitLab · CI/CD",
+            "footer": "scope: Outside GCP"
+          },
+          "icon": "link"
+        },
+        "occurrence:GITHUBZ": {
+          "form": "container",
+          "text": {
+            "kicker": "GH",
+            "subtitle": "github.airbus.corp",
+            "footer": "service: Airbus GitHub"
+          },
+          "icon": "link"
+        },
+        "occurrence:GENSRC": {
+          "form": "container",
+          "text": {
+            "kicker": "GENAIR",
+            "subtitle": "Template GenAiR · Agents template · IaC modules · Libs GenAiR",
+            "footer": "repo: GenAiR"
+          },
+          "icon": "server",
+          "categoryRef": "entity:legend-genair"
+        },
+        "occurrence:GITLABZ": {
+          "form": "container",
+          "text": {
+            "kicker": "AIRBUS SCM",
+            "subtitle": "SCM",
+            "footer": "service: Airbus SCM"
+          },
+          "icon": "link"
+        },
+        "occurrence:AWSCI": {
+          "form": "container",
+          "text": {
+            "kicker": "AIRBUS AWS",
+            "subtitle": "CI Jenkins · Registry JFrog",
+            "footer": "service: Airbus AWS"
+          },
+          "icon": "server"
+        },
+        "occurrence:LEGEND": {
+          "form": "legend",
+          "text": {
+            "kicker": "HRPN",
+            "subtitle": "Card tints and link styles of this scene"
+          },
+          "icon": "window"
+        },
+        "occurrence:EMP": {
+          "form": "card",
+          "text": {
+            "kicker": "USR",
+            "body": "HR users and employees",
+            "detail": "ask HR policy questions in Chat",
+            "footer": "actor: Airbus employees"
+          },
+          "icon": "people"
+        },
+        "occurrence:DEV": {
+          "form": "card",
+          "text": {
+            "kicker": "DEV",
+            "body": "HRPN developers (2 authors)",
+            "detail": "git push · Terraform",
+            "footer": "actor: HRPN team"
+          },
+          "icon": "people"
+        },
+        "occurrence:HRADM": {
+          "form": "card",
+          "text": {
+            "kicker": "OWN",
+            "body": "Policy owners (AAI HR)",
+            "detail": "approve documents in Drive",
+            "footer": "actor: AAI HR"
+          },
+          "icon": "people",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:CHAT": {
+          "form": "card",
+          "text": {
+            "kicker": "CHT",
+            "body": "HR Policy Navigator",
+            "detail": "Chat spaces (BRD-ACC-010)",
+            "footer": "service: Google Workspace"
+          },
+          "icon": "window"
+        },
+        "occurrence:DRIVE": {
+          "form": "card",
+          "text": {
+            "kicker": "DRV",
+            "body": "restricted HR policy folder",
+            "detail": "approved PDFs only",
+            "footer": "service: Google Workspace"
+          },
+          "icon": "window",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:TOPIC": {
+          "form": "card",
+          "text": {
+            "kicker": "TOP",
+            "body": "hrpn-gchat-events",
+            "detail": "publisher identity: gate G1",
+            "footer": "repo: HRPN"
+          },
+          "icon": "link",
+          "categoryRef": "entity:legend-outside"
+        },
+        "occurrence:SUB": {
+          "form": "card",
+          "text": {
+            "kicker": "SUB",
+            "body": "hrpn-gchat-events-sub",
+            "detail": "OIDC · dedicated push SA",
+            "footer": "repo: HRPN"
+          },
+          "icon": "link",
+          "categoryRef": "entity:legend-outside"
+        },
+        "occurrence:APP": {
+          "form": "card",
+          "text": {
+            "kicker": "API",
+            "body": "get_fast_api_app()",
+            "detail": "Python · GenAiR template server",
+            "footer": "repo: HRPN"
+          },
+          "icon": "server",
+          "categoryRef": "entity:legend-genair"
+        },
+        "occurrence:AGENT": {
+          "form": "card",
+          "text": {
+            "kicker": "AGT",
+            "body": "root_agent (HR prompt)",
+            "detail": "rag_query · format_links · scope",
+            "footer": "repo: HRPN"
+          },
+          "icon": "robot",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:CHATAPI": {
+          "form": "card",
+          "text": {
+            "kicker": "GCH",
+            "body": "POST /gchat-push · reply",
+            "detail": "event check · dedup · rating",
+            "footer": "repo: HRPN"
+          },
+          "icon": "server",
+          "categoryRef": "entity:legend-outside"
+        },
+        "occurrence:DOCS": {
+          "form": "card",
+          "text": {
+            "kicker": "DOC",
+            "body": "hrpn-ragengine-docs",
+            "detail": "fed by the Drive sync job",
+            "footer": "repo: HRPN"
+          },
+          "icon": "db",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:FS": {
+          "form": "card",
+          "text": {
+            "kicker": "FS",
+            "body": "hrpn-sessions (Native)",
+            "detail": "FirestoreSessionService · TTL 1 y",
+            "footer": "repo: HRPN"
+          },
+          "icon": "db",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:RAG": {
+          "form": "card",
+          "text": {
+            "kicker": "RAG",
+            "body": "corpus hr_policies",
+            "detail": "RagManaged Basic · embed-005",
+            "footer": "service: Vertex AI"
+          },
+          "icon": "brain",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:GEM": {
+          "form": "card",
+          "text": {
+            "kicker": "LLM",
+            "body": "pinned Gemini Flash",
+            "detail": "upgrade with regression tests",
+            "footer": "service: Vertex AI"
+          },
+          "icon": "brain"
+        },
+        "occurrence:ARMOR": {
+          "form": "card",
+          "text": {
+            "kicker": "MA",
+            "body": "prompt + answer screening",
+            "detail": "PROD availability: unknown",
+            "footer": "service: Vertex AI"
+          },
+          "icon": "shield",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:SYNC": {
+          "form": "card",
+          "text": {
+            "kicker": "SYN",
+            "body": "drive-sync Cloud Run job",
+            "detail": "read-only SA · delta copy",
+            "footer": "repo: HRPN"
+          },
+          "icon": "server",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:IMPORT": {
+          "form": "card",
+          "text": {
+            "kicker": "IMP",
+            "body": "rag.import_files() job",
+            "detail": "delta indexing · 24 h SLA",
+            "footer": "repo: HRPN"
+          },
+          "icon": "server",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:PSSM": {
+          "form": "card",
+          "text": {
+            "kicker": "PSM",
+            "body": "Source Manager (PROD)",
+            "detail": "ssm = cicd project",
+            "footer": "repo: HRPN"
+          },
+          "icon": "link",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:PAR": {
+          "form": "card",
+          "text": {
+            "kicker": "PAR",
+            "body": "app-container-images",
+            "detail": "+ app-container-images-noprod",
+            "footer": "repo: HRPN"
+          },
+          "icon": "db",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:PIAC": {
+          "form": "card",
+          "text": {
+            "kicker": "WIF",
+            "body": "iac-sa + iac-state bucket",
+            "detail": "pool wif-<app_code>-prod-cicd",
+            "footer": "repo: HRPN"
+          },
+          "icon": "shield",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:PLIBS": {
+          "form": "card",
+          "text": {
+            "kicker": "PLB",
+            "body": "prj-libs-71f1 python-repository",
+            "detail": "GenAiR libs for PROD builds",
+            "footer": "service: GenAI platform"
+          },
+          "icon": "db",
+          "categoryRef": "entity:legend-genair"
+        },
+        "occurrence:CLOG": {
+          "form": "card",
+          "text": {
+            "kicker": "LOG",
+            "body": "structured conversation log",
+            "detail": "PII scrubbed (BRD-HR-014)",
+            "footer": "repo: HRPN"
+          },
+          "icon": "shield",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:LOGS": {
+          "form": "card",
+          "text": {
+            "kicker": "FBK",
+            "body": "hrpn-logbucket + hrpn-sink",
+            "detail": "365 d (DAT-015) · 120 d today",
+            "footer": "repo: HRPN"
+          },
+          "icon": "shield",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:BQ": {
+          "form": "card",
+          "text": {
+            "kicker": "BQ",
+            "body": "hrpn_user_feedback_ds",
+            "detail": "linked dataset on log bucket",
+            "footer": "repo: HRPN"
+          },
+          "icon": "shield",
+          "categoryRef": "entity:legend-genair"
+        },
+        "occurrence:PHX": {
+          "form": "card",
+          "text": {
+            "kicker": "PHX",
+            "body": "module cloud_run_phoenix",
+            "detail": "no instrumentation library",
+            "footer": "repo: HRPN"
+          },
+          "icon": "shield",
+          "categoryRef": "entity:legend-genair"
+        },
+        "occurrence:PSVPC": {
+          "form": "card",
+          "text": {
+            "kicker": "SVP",
+            "body": "Shared VPC host project",
+            "detail": "networks dev / int / pro",
+            "footer": "service: GenAI platform"
+          },
+          "icon": "cloud",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:CUTTER": {
+          "form": "card",
+          "text": {
+            "kicker": "GEN",
+            "body": "GenAiR-Cutter 26.9.0",
+            "detail": "Agent Engine · no frontend",
+            "footer": "repo: GenAiR-Cutter"
+          },
+          "icon": "link",
+          "categoryRef": "entity:legend-genair"
+        },
+        "occurrence:AGARDEN": {
+          "form": "card",
+          "text": {
+            "kicker": "AGD",
+            "body": "GenAiR-AgentGarden (main)",
+            "detail": "ragengine-agent · Cutter submodule",
+            "footer": "repo: GenAiR-AgentGarden"
+          },
+          "icon": "link",
+          "categoryRef": "entity:legend-genair"
+        },
+        "occurrence:IFREPO": {
+          "form": "card",
+          "text": {
+            "kicker": "GIF",
+            "body": "genair-infra-factory v1.8.3",
+            "detail": "PROD: GitHub · POD: SSM mirror",
+            "footer": "repo: genair-infra-factory"
+          },
+          "icon": "server",
+          "categoryRef": "entity:legend-genair"
+        },
+        "occurrence:GLIBS": {
+          "form": "card",
+          "text": {
+            "kicker": "LIB",
+            "body": "genair-* Python packages",
+            "detail": "built by Jenkins → Artifactory",
+            "footer": "repo: GenAiR libs"
+          },
+          "icon": "link",
+          "categoryRef": "entity:legend-genair"
+        },
+        "occurrence:SCMREPO": {
+          "form": "card",
+          "text": {
+            "kicker": "GIT",
+            "body": "HRPN PROD repository",
+            "detail": "host open: GitLab or GitHub",
+            "footer": "repo: HRPN"
+          },
+          "icon": "link",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:JENKINS": {
+          "form": "card",
+          "text": {
+            "kicker": "JK",
+            "body": "oc.jenkins 2b82-devops",
+            "detail": "GenAiR jobs · PROD pipelines",
+            "footer": "service: Jenkins on AWS"
+          },
+          "icon": "server"
+        },
+        "occurrence:JFROG": {
+          "form": "card",
+          "text": {
+            "kicker": "JF",
+            "body": "Artifactory 2b82",
+            "detail": "r-8cf1-genair-pypi-local",
+            "footer": "service: JFrog Artifactory"
+          },
+          "icon": "db"
+        },
+        "occurrence:legend-genair": {
+          "form": "legend-key",
+          "text": {
+            "kicker": "TINT · BLUE",
+            "body": "GenAiR template, unchanged",
+            "detail": "standard GenAiR code and service",
+            "footer": "tint: genair"
+          },
+          "icon": "window",
+          "categoryRef": "entity:legend-genair"
+        },
+        "occurrence:legend-custom": {
+          "form": "legend-key",
+          "text": {
+            "kicker": "TINT · GREEN",
+            "body": "within the template frame",
+            "detail": "configured, data services included",
+            "footer": "tint: custom"
+          },
+          "icon": "window",
+          "categoryRef": "entity:legend-custom"
+        },
+        "occurrence:legend-outside": {
+          "form": "legend-key",
+          "text": {
+            "kicker": "TINT · YELLOW",
+            "body": "added outside the template",
+            "detail": "not provided by GenAiR",
+            "footer": "tint: outside"
+          },
+          "icon": "window",
+          "categoryRef": "entity:legend-outside"
+        },
+        "occurrence:legend-none": {
+          "form": "legend-key",
+          "text": {
+            "kicker": "NO TINT",
+            "body": "Google or third-party",
+            "detail": "managed service: no fill",
+            "footer": "tint: none"
+          },
+          "icon": "window",
+          "categoryRef": "entity:legend-none"
+        }
+      },
+      "legendOrder": [
+        "entity:legend-genair",
+        "entity:legend-custom",
+        "entity:legend-outside",
+        "entity:legend-none"
+      ],
+      "hints": {
+        "grouping": [
+          {
+            "id": "root",
+            "direction": "columns",
+            "items": [
+              {
+                "id": "left",
+                "direction": "rows",
+                "items": [
+                  "entity:PEOPLE",
+                  "entity:WS",
+                  "entity:LEGEND"
+                ]
+              },
+              {
+                "id": "right",
+                "direction": "rows",
+                "stretch": true,
+                "items": [
+                  "entity:GCP",
+                  "entity:OUT"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "PRODZ",
+            "direction": "rows",
+            "stretch": true,
+            "items": [
+              "entity:PPROZ",
+              "entity:PSHARED"
+            ]
+          },
+          {
+            "id": "PPROZ",
+            "direction": "rows",
+            "items": [
+              {
+                "id": "PPROZ-row",
+                "direction": "columns",
+                "items": [
+                  {
+                    "id": "PPROZ-left",
+                    "direction": "rows",
+                    "items": [
+                      "entity:MSGZ",
+                      "entity:INGZ"
+                    ]
+                  },
+                  "entity:RUNZ",
+                  {
+                    "id": "PPROZ-right",
+                    "direction": "rows",
+                    "items": [
+                      "entity:STATEZ",
+                      "entity:VERTEXZ"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "RUNZ",
+            "direction": "rows",
+            "items": [
+              "entity:CHATAPI",
+              "entity:APP",
+              "entity:AGENT"
+            ]
+          },
+          {
+            "id": "OUT",
+            "direction": "columns",
+            "items": [
+              "entity:GITHUBZ",
+              "entity:GITLABZ",
+              "entity:AWSCI"
+            ]
+          }
+        ]
+      },
+      "expectedSemanticDiagnostics": [],
+      "expectedViewDiagnostics": [],
+      "qualification": "unverified U-QUAL"
+    }
+  ]
+}
