@@ -18,11 +18,13 @@
 // id. Record insertion order never changes report bytes: every map iteration
 // below walks UTF-16-sorted keys, including attribute maps.
 import { canonicalBytes, sha256Hex } from "./canonical.js";
+import { checkViewShape } from "./diagram-view-shape.js";
+import { checkSemanticShape } from "./diagram-document-shape.js";
 import type { Digest, Pin } from "./types.js";
 import { ARCHIMATE_CATALOGUE } from "./diagram-matrix-data.js";
 import { expandArchimateTuples } from "./diagram-profiles.js";
 import { ARCHIMATE_V2, GENERIC_V2, UML_V2 } from "./diagram-profiles.js";
-import { ARCHIMATE_V1_CONTENT, GENERIC_V1_CONTENT, UML_V1_CONTENT } from "./diagram-skeletons.js";
+import { ARCHIMATE_V1_DECLARATION, ARCHIMATE_V1_CONTENT, GENERIC_V1_CONTENT, UML_V1_CONTENT } from "./diagram-skeletons.js";
 
 // ---------------------------------------------------------------------------
 // Governed migration input/output shapes
@@ -104,6 +106,7 @@ export interface MigrationOperation {
   readonly path: string;
   readonly action: string;
   readonly detail?: string;
+  readonly specRef?: string;
 }
 
 /**
@@ -171,8 +174,27 @@ function refuse(
     migrationId, from, to,
     originalSha256: sha256Hex(canonicalBytes(source)),
     originalCanonical: structuredClone(source),
-    operations, unmigrated, outcome: "refused", target: null,
+    operations: orderedOperations(operations, migrationId), unmigrated, outcome: "refused", target: null,
   };
+}
+
+/** Complete retained-view set; conflicting duplicate identities refuse preflight. */
+function transactionSnapshot(source: MigDocument, supplied?: readonly MigView[]): MigDocument {
+  if (supplied === undefined) return structuredClone(source);
+  const views = [...(source.views ?? [])];
+  for (const view of supplied) {
+    const same = isRecord(view) ? views.find(v => isRecord(v) && v.viewId === view.viewId) : undefined;
+    if (same === undefined || canonicalBytes(same) !== canonicalBytes(view)) views.push(view);
+  }
+  return { ...structuredClone(source), views: structuredClone(views) };
+}
+
+function orderedOperations(operations: readonly MigrationOperation[], migrationId: string): MigrationOperation[] {
+  const groups = ["profileRefs", "typeDefinitions", "entities", "relations", "ports", "views"];
+  const rank = (path: string): number => { const index = groups.indexOf(path.split(".")[0]!); return index < 0 ? groups.length : index; };
+  const compare = (a: string, b: string): number => a < b ? -1 : a > b ? 1 : 0;
+  return operations.map(operation => ({ ...operation, specRef: operation.specRef ?? (migrationId === GENERIC_MIGRATION_ID ? "§3.13.1" : "§3.13.2 + §3.13.1 common contract") }))
+    .sort((a, b) => rank(a.path) - rank(b.path) || compare(a.path, b.path) || compare(a.action, b.action) || compare(a.detail ?? "", b.detail ?? ""));
 }
 
 function getText(attr: MigAttribute | undefined): string | null {
@@ -284,33 +306,27 @@ function schemaKindOf(schema: unknown): string | null {
 
 /** Same-kind bound comparison for declared attribute schemas; true when compatible. */
 function sameKindBoundsCompatible(base: unknown, overlay: unknown): boolean {
-  if (typeof base !== "object" || base === null || typeof overlay !== "object" || overlay === null) return false;
-  const b = base as Record<string, unknown>;
-  const o = overlay as Record<string, unknown>;
-  for (const key of ["maxLength", "minLength", "required", "integer", "min", "max", "item", "values", "units", "refKind", "targetTypes"]) {
-    const bv = canonicalBytes(b[key] ?? null);
-    const ov = canonicalBytes(o[key] ?? null);
-    if (bv !== ov) return false;
-  }
-  return true;
+  if (!isRecord(base) || !isRecord(overlay)) return false;
+  const normalize = (schema: Record<string, unknown>): Record<string, unknown> => {
+    const { name: _name, required = false, ...rest } = schema;
+    return { ...rest, required };
+  };
+  return canonicalBytes(normalize(base)) === canonicalBytes(normalize(overlay));
 }
 
-function refinementBaseOf(definition: unknown): string | string[] | null {
-  if (typeof definition !== "object" || definition === null || Array.isArray(definition)) return null;
-  const record = definition as Record<string, unknown>;
-  if (typeof record["baseType"] === "string") return record["baseType"] as string;
-  if (Array.isArray(record["supertypes"])) {
-    const supers = (record["supertypes"] as unknown[]).filter((s): s is string => typeof s === "string");
-    return supers.length === (record["supertypes"] as unknown[]).length ? supers : null;
-  }
-  return null;
+function refinementBaseOf(definition: unknown): string | null {
+  return isRecord(definition) && typeof definition["baseType"] === "string" ? definition["baseType"] : null;
 }
 
-function refinementAttrsOf(definition: unknown): Readonly<Record<string, unknown>> {
-  if (typeof definition !== "object" || definition === null || Array.isArray(definition)) return {};
-  const attributes = (definition as Record<string, unknown>)["attributes"];
-  if (typeof attributes !== "object" || attributes === null || Array.isArray(attributes)) return {};
-  return attributes as Readonly<Record<string, unknown>>;
+/** Native AttributeSchema[]; a malformed declaration is never an empty overlay. */
+function refinementAttrsOf(definition: unknown): Readonly<Record<string, unknown>> | null {
+  if (!isRecord(definition) || !Array.isArray(definition["attributes"])) return null;
+  const out: Record<string, unknown> = Object.create(null);
+  for (const schema of definition["attributes"]) {
+    if (!isRecord(schema) || typeof schema["name"] !== "string" || schemaKindOf(schema) === null || Object.hasOwn(out, schema["name"])) return null;
+    out[schema["name"]] = schema;
+  }
+  return out;
 }
 
 export function resolveEffectiveType(
@@ -318,76 +334,142 @@ export function resolveEffectiveType(
   typeDefinitions: Readonly<Record<string, unknown>> | undefined,
   typeId: string,
 ): { readonly ok: true; readonly effective: EffectiveType } | { readonly ok: false; readonly failure: ResolverError } {
-  const declared = declarationById(targetDeclaration, "entityTypes");
-  // Walk the refinement chain outward: typeId → … → declared base.
-  const chain: string[] = [typeId];
-  const visited = new Set<string>([typeId]);
-  let cursor: string | null = typeId;
-  const overlays: { id: string; attributes: Readonly<Record<string, unknown>> }[] = [];
-  while (cursor !== null && !declared.has(cursor)) {
-    const definition = typeDefinitions?.[cursor];
-    if (definition === undefined) return { ok: false, failure: { error: "unknown", chain: [...chain] } };
-    const base = refinementBaseOf(definition);
-    if (base === null) return { ok: false, failure: { error: "unknown", chain: [...chain] } };
-    const bases = Array.isArray(base) ? base : [base];
-    if (bases.length === 0) return { ok: false, failure: { error: "unknown", chain: [...chain] } };
-    overlays.push({ id: cursor, attributes: refinementAttrsOf(definition) });
-    cursor = bases[0]!;
-    if (visited.has(cursor)) return { ok: false, failure: { error: "cycle", chain: [...chain, cursor] } };
-    visited.add(cursor);
-    chain.push(cursor);
+  const declared = new Map<string, Record<string, unknown>>();
+  for (const group of ["entityTypes", "portTypes", "relationTypes"]) {
+    for (const [id, entry] of declarationById(targetDeclaration, group)) declared.set(id, entry);
   }
-  const baseId = cursor ?? typeId;
-  const base = declared.get(baseId);
-  if (base === undefined) return { ok: false, failure: { error: "unknown", chain: [...chain] } };
-  // Merge base-first, checking every redeclaration for kind/bound conflicts.
-  const merged: Record<string, { kind: string }> = {};
-  const baseAttrs = (base["attributes"] as readonly Record<string, unknown>[] | undefined) ?? [];
-  for (const schema of baseAttrs) {
-    if (typeof schema["name"] === "string" && typeof schema["kind"] === "string") {
-      merged[schema["name"] as string] = { kind: schema["kind"] as string };
+  const active = new Set<string>();
+  const chain: string[] = [];
+  const schemas: Record<string, unknown> = Object.create(null);
+  let failure: ResolverError | null = null;
+  let container = false;
+  let baseId: string | undefined;
+  const visit = (id: string): void => {
+    if (failure !== null) return;
+    if (active.has(id)) { failure = { error: "cycle", chain: [...chain, id] }; return; }
+    // Repeated ancestry in a diamond is already merged; active detects cycles.
+    if (chain.includes(id)) return;
+    active.add(id); chain.push(id);
+    const native = declared.get(id);
+    const definition = native ?? typeDefinitions?.[id];
+    if (!isRecord(definition)) { failure = { error: "unknown", chain: [...chain] }; return; }
+    if (native === undefined && definition["profile"] !== targetDeclaration["id"]) {
+      failure = { error: "unknown", chain: [...chain] }; return;
     }
-  }
-  const baseSchemas: Record<string, unknown> = {};
-  for (const schema of baseAttrs) {
-    if (typeof schema["name"] === "string") baseSchemas[schema["name"] as string] = schema;
-  }
-  for (let i = overlays.length - 1; i >= 0; i--) {
-    for (const name of Object.keys(overlays[i]!.attributes).sort()) {
-      const overlay = overlays[i]!.attributes[name];
-      const kind = schemaKindOf(overlay);
-      const baseSchema = baseSchemas[name];
-      if (baseSchema !== undefined) {
-        if (kind === null || kind !== schemaKindOf(baseSchema) || !sameKindBoundsCompatible(baseSchema, overlay)) {
-          return { ok: false, failure: { error: "conflict", attribute: name, baseType: baseId } };
-        }
-        continue;
+    if (native !== undefined && baseId === undefined) baseId = id;
+    if (native?.["container"] === true) container = true;
+    const parents = native !== undefined ? (native["supertypes"] ?? []) : [refinementBaseOf(definition)];
+    if (!Array.isArray(parents) || parents.some(parent => typeof parent !== "string")) {
+      failure = { error: "unknown", chain: [...chain] }; return;
+    }
+    for (const parent of parents) visit(parent as string);
+    if (failure !== null) return;
+    const attributes = refinementAttrsOf(definition);
+    // Native relation/port declarations can omit an empty attributes list.
+    if (attributes === null && !(native !== undefined && native["attributes"] === undefined)) {
+      failure = { error: "conflict", attribute: "<attributes>", baseType: baseId ?? id }; return;
+    }
+    for (const name of Object.keys(attributes ?? {}).sort()) {
+      const schema = attributes![name];
+      if (schemas[name] !== undefined && !sameKindBoundsCompatible(schemas[name], schema)) {
+        failure = { error: "conflict", attribute: name, baseType: baseId ?? id }; return;
       }
-      if (kind !== null) merged[name] = { kind };
+      schemas[name] = schema;
     }
-  }
-  let container = (base as Record<string, unknown>)["container"] === true;
-  if ((base as Record<string, unknown>)["abstract"] === true && chain.length === 1) {
-    // Instantiating the abstract base itself refuses (Appendix C.2
-    // abstract-instantiated); a concrete refinement stays instantiable.
+    active.delete(id);
+  };
+  visit(typeId);
+  if (failure !== null) return { ok: false, failure };
+  if (baseId === undefined) return { ok: false, failure: { error: "unknown", chain } };
+  if (declared.get(typeId)?.["abstract"] === true) {
     return { ok: false, failure: { error: "conflict", attribute: "<abstract>", baseType: baseId } };
   }
-  for (const overlay of overlays) {
-    if (overlay.id !== baseId && declared.get(overlay.id)?.["container"] === true) container = true;
-    void overlay;
+  const attrs: Record<string, { kind: string }> = Object.create(null);
+  for (const [name, schema] of Object.entries(schemas)) attrs[name] = schema as { kind: string };
+  return { ok: true, effective: { baseId, chain, container, abstractBase: declared.get(baseId)?.["abstract"] === true, attrs } };
+}
+
+/** Promote compatible overlaps, retaining native arrays for residual fields. */
+function promoteRefinements(
+  declaration: Record<string, unknown>, definitions: Record<string, unknown>,
+  ops: MigrationOperation[], declared: Set<string>,
+): { path: string } | null {
+  for (const id of sortedKeys(definitions)) {
+    const definition = definitions[id];
+    if (!isRecord(definition) || definition["profile"] !== declaration["id"]) continue;
+    const resolved = resolveEffectiveType(declaration, definitions, id);
+    if (!resolved.ok) {
+      const attribute = resolved.failure.error === "conflict" ? resolved.failure.attribute : "baseType";
+      return { path: `typeDefinitions.${id}.attributes.${attribute}` };
+    }
+    const baseId = refinementBaseOf(definition)!;
+    // Resolving an abstract parent through its concrete refinement is allowed.
+    const parent = resolveEffectiveType(declaration, definitions, baseId);
+    const inherited = parent.ok ? parent.effective.attrs : Object.create(null);
+    const attrs = definition["attributes"] as Record<string, unknown>[];
+    const residual = attrs.filter(schema => inherited[schema["name"] as string] === undefined);
+    if (residual.length !== attrs.length) {
+      definitions[id] = { ...definition, attributes: residual };
+      ops.push({ path: `typeDefinitions.${id}.attributes`, action: "promote-compatible-overlap", detail: "§3.13.1 step 2" });
+      for (const schema of attrs) {
+        if (inherited[schema["name"] as string] !== undefined) declared.add(patchPath("typeDefinitions", id, "attributes", schema["name"] as string));
+      }
+    }
   }
-  // Container capability also flows from any declared intermediate base.
-  for (const id of chain) {
-    if (declared.get(id)?.["container"] === true) container = true;
+  return null;
+}
+
+/** Empty promoted refinements retire only after all records have destinations. */
+function rebasePromotedRefinements(
+  definitions: Record<string, unknown>, entities: Record<string, MigEntity>, relations: Record<string, MigRelation>,
+  ports: Record<string, unknown>, owner: string, ops: MigrationOperation[], declared: Set<string>,
+): void {
+  const retired = new Map<string, string>();
+  for (const id of sortedKeys(definitions)) {
+    const definition = definitions[id];
+    if (isRecord(definition) && definition["profile"] === owner && Array.isArray(definition["attributes"]) && definition["attributes"].length === 0) {
+      retired.set(id, refinementBaseOf(definition)!);
+    }
   }
-  return {
-    ok: true,
-    effective: {
-      baseId, chain, container,
-      abstractBase: (base as Record<string, unknown>)["abstract"] === true,
-      attrs: merged,
-    },
-  };
+  const destination = (id: string): string => { while (retired.has(id)) id = retired.get(id)!; return id; };
+  for (const id of sortedKeys(definitions)) {
+    if (retired.has(id)) {
+      delete definitions[id];
+      ops.push({ path: `typeDefinitions.${id}`, action: "retire-promoted-refinement", detail: `§3.13.1 step 2: →${destination(id)}` });
+      declared.add(patchPath("typeDefinitions", id));
+      continue;
+    }
+    const definition = definitions[id];
+    if (!isRecord(definition) || definition["profile"] !== owner || typeof definition["baseType"] !== "string") continue;
+    const baseType = destination(definition["baseType"]);
+    if (baseType !== definition["baseType"]) {
+      definitions[id] = { ...definition, baseType };
+      ops.push({ path: `typeDefinitions.${id}.baseType`, action: "rebase-residual-refinement", detail: "§3.13.1 step 2" });
+      declared.add(patchPath("typeDefinitions", id, "baseType"));
+    }
+  }
+  for (const id of sortedKeys(ports)) {
+    const port = ports[id];
+    if (!isRecord(port) || port["profile"] !== owner || typeof port["type"] !== "string") continue;
+    const type = destination(port["type"]);
+    if (type !== port["type"]) {
+      ports[id] = { ...port, type };
+      declared.add(patchPath("ports", id, "type"));
+      ops.push({ path: `ports.${id}.type`, action: "rebase-promoted-type", detail: "§3.13.1 step 2" });
+    }
+  }
+  for (const [kind, records] of [["entities", entities], ["relations", relations]] as const) {
+    for (const id of sortedKeys(records)) {
+      const record = records[id]!;
+      if (record.profile !== owner) continue;
+      const type = destination(record.type);
+      if (type !== record.type) {
+        records[id] = { ...record, type } as MigEntity & MigRelation;
+        ops.push({ path: `${kind}.${id}.type`, action: "rebase-promoted-type", detail: "§3.13.1 step 2" });
+        declared.add(patchPath(kind, id, "type"));
+      }
+    }
+  }
 }
 
 /**
@@ -400,7 +482,7 @@ export function resolveEffectiveType(
 function checkValueKindOverlap(
   attributes: Readonly<Record<string, MigAttribute>>,
   effective: EffectiveType,
-  exempt: Readonly<Set<string>>,
+  exempt: ReadonlySet<string>,
 ): { readonly attribute: string; readonly baseType: string } | null {
   for (const [name, attr] of sortedAttributes(attributes)) {
     if (exempt.has(name)) continue;
@@ -418,84 +500,65 @@ function checkValueKindOverlap(
 // (semantic document plus retained views) and the committed target.
 // ---------------------------------------------------------------------------
 
-function collectLeaves(value: unknown, base: string, out: Map<string, string>): void {
+/** Segment encoding prevents ids/attribute names containing dots from aliasing. */
+export function patchPath(...segments: readonly (string | number)[]): string {
+  return canonicalBytes(segments.map(String));
+}
+
+function collectLeaves(value: unknown, path: readonly string[], out: Map<string, string>): void {
   if (typeof value !== "object" || value === null) {
-    out.set(base, canonicalBytes(value));
+    out.set(canonicalBytes(["leaf", ...path]), canonicalBytes(value));
     return;
   }
-  if (Array.isArray(value)) {
-    if (value.length === 0) {
-      out.set(base, canonicalBytes(value));
-      return;
-    }
-    value.forEach((item, index) => collectLeaves(item, `${base}.${index}`, out));
-    return;
-  }
-  const keys = Object.keys(value as Record<string, unknown>);
-  if (keys.length === 0) {
-    out.set(base, canonicalBytes(value));
-    return;
-  }
-  for (const key of keys.sort()) {
-    collectLeaves((value as Record<string, unknown>)[key], base === "" ? key : `${base}.${key}`, out);
+  const isArray = Array.isArray(value);
+  out.set(canonicalBytes(["shape", ...path]), isArray ? "array" : "object");
+  if (isArray) {
+    const byView = path.length === 1 && path[0] === "views";
+    const bySchema = path.length === 3 && path[0] === "typeDefinitions" && path[2] === "attributes";
+    value.forEach((item, index) => {
+      const key = byView && isRecord(item) ? String(item["viewId"])
+        : bySchema && isRecord(item) ? String(item["name"]) : String(index);
+      collectLeaves(item, [...path, key], out);
+    });
+  } else {
+    for (const key of Object.keys(value).sort()) collectLeaves((value as Record<string, unknown>)[key], [...path, key], out);
   }
 }
 
-/** Source subtrees audited for lossless migration (DiagramState inputs). */
-function auditSourceLeaves(source: MigDocument, retainedViews: readonly MigView[]): Map<string, string> {
+function auditStateLeaves(state: MigDocument): Map<string, string> {
   const out = new Map<string, string>();
-  collectLeaves(source.profileRefs, "profileRefs", out);
-  collectLeaves(source.entities, "entities", out);
-  collectLeaves(source.relations, "relations", out);
-  if (source.ports !== undefined) collectLeaves(source.ports, "ports", out);
-  if (source.typeDefinitions !== undefined) collectLeaves(source.typeDefinitions, "typeDefinitions", out);
-  if (source.schemaVersion !== undefined) collectLeaves(source.schemaVersion, "schemaVersion", out);
-  if (source.resources !== undefined) collectLeaves(source.resources, "resources", out);
-  if (source.extensions !== undefined) collectLeaves(source.extensions, "extensions", out);
-  out.set("documentId", canonicalBytes(source.documentId));
-  out.set("revision", canonicalBytes(source.revision));
-  retainedViews.forEach((view, index) => collectLeaves(view, `retainedViews.${index}`, out));
+  collectLeaves(state, [], out);
   return out;
 }
 
-function auditTargetLeaves(target: MigDocument): Map<string, string> {
-  const out = new Map<string, string>();
-  collectLeaves(target.profileRefs, "profileRefs", out);
-  collectLeaves(target.entities, "entities", out);
-  collectLeaves(target.relations, "relations", out);
-  if (target.ports !== undefined) collectLeaves(target.ports, "ports", out);
-  if (target.typeDefinitions !== undefined) collectLeaves(target.typeDefinitions, "typeDefinitions", out);
-  if (target.schemaVersion !== undefined) collectLeaves(target.schemaVersion, "schemaVersion", out);
-  if (target.resources !== undefined) collectLeaves(target.resources, "resources", out);
-  if (target.extensions !== undefined) collectLeaves(target.extensions, "extensions", out);
-  out.set("documentId", canonicalBytes(target.documentId));
-  out.set("revision", canonicalBytes(target.revision));
-  (target.views ?? []).forEach((view, index) => collectLeaves(view, `retainedViews.${index}`, out));
-  return out;
-}
-
-/**
- * Declared patch coverage: a source leaf path is covered when it is
- * unchanged in the target, or when a declared patch path names it (exact
- * path or a parent record path recorded alongside the operation).
+/** Complete bidirectional audit. Only views/declaration sets ignore array order;
+ * every other value, path and object/array distinction remains observable.
  */
-function findUndeclaredLoss(
-  sourceLeaves: Map<string, string>,
-  targetLeaves: Map<string, string>,
-  declared: Readonly<Set<string>>,
-): string | null {
-  for (const [path, bytes] of [...sourceLeaves.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
-    if (targetLeaves.get(path) === bytes) continue;
-    let covered = false;
-    for (const patch of declared) {
-      if (path === patch || path.startsWith(`${patch}.`) || patch.startsWith(`${path}.`)) {
-        covered = true;
-        break;
-      }
-    }
-    if (!covered) return path;
+export function auditMigrationLoss(source: MigDocument, target: MigDocument, declared: ReadonlySet<string>): string | null {
+  const original = auditStateLeaves(source), candidate = auditStateLeaves(target);
+  const patches = [...declared].map(path => JSON.parse(path) as string[]);
+  const prefix = (parent: readonly string[], child: readonly string[]): boolean => parent.length <= child.length && parent.every((key, index) => child[index] === key);
+  for (const auditKey of [...new Set([...original.keys(), ...candidate.keys()])].sort()) {
+    if (original.get(auditKey) === candidate.get(auditKey)) continue;
+    const [kind, ...path] = JSON.parse(auditKey) as string[];
+    const covered = patches.some(patch => prefix(patch, path) ||
+      (!original.has(auditKey) && kind === "shape" && prefix(path, patch)));
+    if (!covered) return path.join(".");
   }
   return null;
+}
+
+/** Single atomic commit boundary, also exercised with corrupted candidates. */
+export function commitMigration(candidate: MigrationSuccess, declared: ReadonlySet<string>): MigrationReport {
+  const loss = auditMigrationLoss(candidate.originalCanonical, candidate.target, declared);
+  if (loss !== null) {
+    return refuse(candidate.migrationId, candidate.from, candidate.to, candidate.originalCanonical,
+      [...candidate.operations], [{ path: loss, reason: "incompatible-attribute-schema", detail: `undeclared-path-loss:${loss}` }]);
+  }
+  const failure = checkSourceViews(candidate.target);
+  if (failure !== null) return refuse(candidate.migrationId, candidate.from, candidate.to, candidate.originalCanonical,
+    [...candidate.operations], [{ path: failure, reason: "incompatible-attribute-schema" }]);
+  return candidate;
 }
 
 // ---------------------------------------------------------------------------
@@ -505,26 +568,26 @@ function findUndeclaredLoss(
 // before any write (design note, section B).
 // ---------------------------------------------------------------------------
 
-const VIEW_TOP_FIELDS: Readonly<Set<string>> = new Set([
+const VIEW_TOP_FIELDS: ReadonlySet<string> = new Set([
   "viewId", "semanticDocumentId", "revision",
   "entityOccurrences", "relationOccurrences", "portOccurrences",
   "groups", "filters", "presentation", "summaryLabels",
 ]);
-const OCCURRENCE_FIELDS: Readonly<Set<string>> = new Set(["id", "entity", "group", "geometry"]);
-const REL_OCCURRENCE_FIELDS: Readonly<Set<string>> = new Set(["id", "relation", "endpoints", "waypoints", "strokeStyle"]);
-const ENDPOINT_FIELDS: Readonly<Set<string>> = new Set(["role", "occurrence", "semanticTarget", "sourceOccurrence"]);
-const PORT_OCCURRENCE_FIELDS: Readonly<Set<string>> = new Set(["id", "port", "ownerOccurrence", "side", "order", "anchor", "geometry"]);
-const GROUP_FIELDS: Readonly<Set<string>> = new Set(["id", "label", "collapsed", "occurrence"]);
-const FILTER_FIELDS: Readonly<Set<string>> = new Set(["kind", "collapsed", "occurrences", "label", "mode"]);
-const PRESENTATION_FIELDS: Readonly<Set<string>> = new Set(["camera", "grid", "theme", "diagram"]);
-const DIAGRAM_FIELDS: Readonly<Set<string>> = new Set(["contractPin", "entities", "legends", "categoryTokens"]);
-const ENTITY_PRESENTATION_FIELDS: Readonly<Set<string>> = new Set(["form", "text", "icon", "categoryRef"]);
-const TEXT_SLOT_FIELDS: Readonly<Set<string>> = new Set(["title", "kicker", "body", "detail", "subtitle", "footer"]);
-const SUMMARY_DEFINITION_FIELDS: Readonly<Set<string>> = new Set([
+const OCCURRENCE_FIELDS: ReadonlySet<string> = new Set(["id", "entity", "group", "geometry", "z"]);
+const REL_OCCURRENCE_FIELDS: ReadonlySet<string> = new Set(["id", "relation", "endpoints", "waypoints", "strokeStyle"]);
+const ENDPOINT_FIELDS: ReadonlySet<string> = new Set(["role", "occurrence", "semanticTarget", "sourceOccurrence"]);
+const PORT_OCCURRENCE_FIELDS: ReadonlySet<string> = new Set(["id", "port", "ownerOccurrence", "side", "order", "anchor", "geometry"]);
+const GROUP_FIELDS: ReadonlySet<string> = new Set(["id", "label", "collapsed", "occurrence"]);
+const FILTER_FIELDS: ReadonlySet<string> = new Set(["id", "kind", "types", "attribute", "value", "mode"]);
+const PRESENTATION_FIELDS: ReadonlySet<string> = new Set(["camera", "grid", "theme", "diagram"]);
+const DIAGRAM_FIELDS: ReadonlySet<string> = new Set(["contractPin", "entities", "legends", "categoryTokens"]);
+const ENTITY_PRESENTATION_FIELDS: ReadonlySet<string> = new Set(["form", "text", "icon", "categoryRef"]);
+const TEXT_SLOT_FIELDS: ReadonlySet<string> = new Set(["title", "kicker", "body", "detail", "subtitle", "footer"]);
+const SUMMARY_DEFINITION_FIELDS: ReadonlySet<string> = new Set([
   "id", "sourceOccurrence", "targetOccurrence", "label", "relationIds", "strokeStyle",
 ]);
 
-function closedKeys(value: unknown, allowed: Readonly<Set<string>>): string | null {
+function closedKeys(value: unknown, allowed: ReadonlySet<string>): string | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return "<record>";
   for (const key of Object.keys(value as Record<string, unknown>).sort()) {
     if (!allowed.has(key)) return key;
@@ -541,6 +604,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * offending path, or null when the view holds the pinned shape.
  */
 export function checkRetainedView(view: MigView, entities: Readonly<Record<string, MigEntity>>): string | null {
+  if (!isRecord(view)) return "views.<record>";
+  const shape = checkViewShape(view);
+  if (shape !== null) return `views.${view.viewId}.${shape}`;
   const top = closedKeys(view as unknown as Record<string, unknown>, VIEW_TOP_FIELDS);
   if (top !== null) return `views.${view.viewId}.${top}`;
   if (typeof view.viewId !== "string" || view.viewId.length === 0) return `views.${view.viewId}.viewId`;
@@ -634,6 +700,24 @@ export function checkRetainedView(view: MigView, entities: Readonly<Record<strin
       const bad = closedKeys(summary, SUMMARY_DEFINITION_FIELDS);
       if (bad !== null) return `views.${view.viewId}.summaryLabels.${summaryId}.${bad}`;
     }
+  }
+  return null;
+}
+
+function checkSourceViews(source: MigDocument): string | null {
+  const { views: _views, ...semantic } = source;
+  const semanticFailure = checkSemanticShape(semantic);
+  if (semanticFailure !== null) return semanticFailure;
+  const seen = new Set<string>();
+  if (source.views !== undefined && !Array.isArray(source.views)) return "views";
+  for (const item of source.views ?? []) {
+    if (!isRecord(item)) return "views.<record>";
+    const view = item as unknown as MigView;
+    if (seen.has(view.viewId)) return `views.${view.viewId}`;
+    seen.add(view.viewId);
+    const failure = checkRetainedView(view, source.entities);
+    if (failure !== null) return failure;
+    if (view.semanticDocumentId !== source.documentId || view.revision > source.revision) return `views.${view.viewId}.semanticDocumentId`;
   }
   return null;
 }
@@ -750,6 +834,7 @@ interface IconMove {
 type SlotMove = TextMove | IconMove;
 
 export function migrateGenericV1ToV2(source: MigDocument, options: GenericMigrationOptions = {}): MigrationReport {
+  source = transactionSnapshot(source, options.views);
   const from: Pin = { id: "generic", version: "1.0.0", contentDigest: GENERIC_V1_CONTENT };
   const to: Pin = { id: "generic", version: "2.0.0", contentDigest: GENERIC_V2.contentDigest };
   const ops: MigrationOperation[] = [];
@@ -758,6 +843,8 @@ export function migrateGenericV1ToV2(source: MigDocument, options: GenericMigrat
     refuse(GENERIC_MIGRATION_ID, from, to, source, ops,
       detail === undefined ? [{ path, reason }] : [{ path, reason, detail }]);
 
+  const sourceViewFailure = checkSourceViews(source);
+  if (sourceViewFailure !== null) return fail(sourceViewFailure, "incompatible-attribute-schema");
   const refs = [...source.profileRefs];
   if (refs.filter((r) => r === "generic@1").length !== 1) {
     return fail("", refs.includes("generic@2") ? "target-already-present" : "missing-source-profile");
@@ -766,28 +853,32 @@ export function migrateGenericV1ToV2(source: MigDocument, options: GenericMigrat
   const nextRefs = refs.map((r) => (r === "generic@1" ? "generic@2" : r));
   ops.push({ path: "profileRefs", action: "replace-profile-ref", detail: "generic@1→generic@2" });
   nextRefs.forEach((ref, index) => {
-    if (ref !== refs[index]) declared.add(`profileRefs.${index}`);
+    if (ref !== refs[index]) declared.add(patchPath("profileRefs", index));
   });
 
   const targetDecl = GENERIC_V2.declaration as Record<string, unknown>;
   const reserved = governedIds(targetDecl);
-  const nextDefinitions: Record<string, unknown> = {};
+  const nextDefinitions: Record<string, unknown> = Object.create(null);
   for (const id of sortedKeys(source.typeDefinitions)) {
     if (reserved.has(id)) return fail(`typeDefinitions.${id}`, "incompatible-attribute-schema");
     const definition = structuredClone(source.typeDefinitions![id]);
     const rebased = rewriteRecordProfile(definition, "generic@1", "generic@2");
-    const cleaned = stripMigratedSlots(rebased, `typeDefinitions.${id}`, ops, declared);
+    const cleaned = isRecord(definition) && definition["profile"] === "generic@1"
+      ? stripMigratedSlots(rebased, ["typeDefinitions", id], ops, declared) : definition;
     nextDefinitions[id] = cleaned;
     ops.push({ path: `typeDefinitions.${id}`, action: "preserve-residual-refinement" });
     if ((definition as Record<string, unknown>)["profile"] === "generic@1") {
-      declared.add(`typeDefinitions.${id}.profile`);
+      declared.add(patchPath("typeDefinitions", id, "profile"));
     }
   }
+
+  const refinementFailure = promoteRefinements(targetDecl, nextDefinitions, ops, declared);
+  if (refinementFailure !== null) return fail(refinementFailure.path, "type-definition-conflict", "incompatible-attribute-schema");
 
   // Retained views for this transaction. Moves are keyed by
   // (view id, occurrence id): two views may reuse an occurrence id for
   // different entities, and each view keeps its own entity's strings.
-  const retainedViews = options.views ?? source.views ?? [];
+  const retainedViews = source.views ?? [];
   const movesByView = new Map<string, Map<string, SlotMove[]>>();
   for (const view of retainedViews) {
     const perOcc = new Map<string, SlotMove[]>();
@@ -856,7 +947,7 @@ export function migrateGenericV1ToV2(source: MigDocument, options: GenericMigrat
       action: "bind-presentation-contract",
       detail: `${pin.id}/${pin.version}`,
     });
-    declared.add("presentation.contractPin");
+
   }
 
   // Entity conversion over a deep copy: only declared paths change.
@@ -872,7 +963,7 @@ export function migrateGenericV1ToV2(source: MigDocument, options: GenericMigrat
       entities[id] = structuredClone(entity);
       continue;
     }
-    const resolved = resolveEffectiveType(targetDecl, source.typeDefinitions, entity.type);
+    const resolved = resolveEffectiveType(targetDecl, nextDefinitions, entity.type);
     if (!resolved.ok) {
       if (resolved.failure.error === "conflict") {
         return fail(`entities.${id}.attributes.${resolved.failure.attribute}`, "type-definition-conflict", "incompatible-attribute-schema");
@@ -883,25 +974,26 @@ export function migrateGenericV1ToV2(source: MigDocument, options: GenericMigrat
     if (overlap !== null) {
       return fail(`entities.${id}.attributes.${overlap.attribute}`, "type-definition-conflict", "incompatible-attribute-schema");
     }
-    const nextAttrs: Record<string, MigAttribute> = {};
+    const nextAttrs: Record<string, MigAttribute> = structuredClone(entity.attributes) as Record<string, MigAttribute>;
     const moved = new Set<string>();
     for (const [key, value] of sortedAttributes(entity.attributes)) {
       if (TEXT_SLOT_NAMES.includes(key) || key === ICON_SLOT) {
         moved.add(key);
+        delete nextAttrs[key];
         continue;
       }
-      if (key === "collapsed" && resolved.effective.container) continue;
+      if (key === "collapsed" && resolved.effective.container) { delete nextAttrs[key]; continue; }
       nextAttrs[key] = structuredClone(value);
     }
     for (const slot of [...moved].sort()) {
       ops.push({ path: `entities.${id}.attributes.${slot}`, action: "move-to-view-presentation", detail: "per-view occurrence destinations" });
-      declared.add(`entities.${id}.attributes.${slot}`);
+      declared.add(patchPath("entities", id, "attributes", slot));
     }
     if (resolved.effective.container && entity.attributes["collapsed"] !== undefined) {
       const collapsed = entity.attributes["collapsed"];
       const state = collapsed.value === true ? "was-true" : collapsed.value === false ? "was-false" : "was-absent";
       ops.push({ path: `entities.${id}.attributes.collapsed`, action: "remove-semantic-collapsed", detail: state });
-      declared.add(`entities.${id}.attributes.collapsed`);
+      declared.add(patchPath("entities", id, "attributes", "collapsed"));
       if (collapsed.value === true && options.seedFolds === true) {
         for (const view of retainedViews) {
           for (const occId of sortedKeys(view.entityOccurrences as unknown as Readonly<Record<string, unknown>> | undefined)) {
@@ -917,9 +1009,9 @@ export function migrateGenericV1ToV2(source: MigDocument, options: GenericMigrat
         ops.push({ path: `entities.${id}.attributes.${key}`, action: "retain-domain-attribute", detail: "present-unchanged" });
       }
     }
-    entities[id] = { id, profile: "generic@2", type: entity.type, attributes: nextAttrs };
+    entities[id] = { ...structuredClone(entity), profile: "generic@2", attributes: nextAttrs };
     ops.push({ path: `entities.${id}.profile`, action: "rewrite-profile", detail: "generic@1→generic@2" });
-    declared.add(`entities.${id}.profile`);
+    declared.add(patchPath("entities", id, "profile"));
   }
 
   const relations: Record<string, MigRelation> = {};
@@ -937,11 +1029,11 @@ export function migrateGenericV1ToV2(source: MigDocument, options: GenericMigrat
         return fail(`relations.${id}.endpoints.${index}`, "incompatible-attribute-schema");
       }
     }
-    const nextAttrs: Record<string, MigAttribute> = {};
+    const nextAttrs: Record<string, MigAttribute> = structuredClone(rel.attributes) as Record<string, MigAttribute>;
     for (const [k, v] of sortedAttributes(rel.attributes)) nextAttrs[k] = structuredClone(v);
     relations[id] = { ...structuredClone(rel), profile: "generic@2", attributes: nextAttrs };
     ops.push({ path: `relations.${id}.profile`, action: "rewrite-profile", detail: "generic@1→generic@2" });
-    declared.add(`relations.${id}.profile`);
+    declared.add(patchPath("relations", id, "profile"));
     if (rel.type === "link" && !linkBoundRecorded) {
       linkBoundRecorded = true;
       ops.push({ path: "relations.*.attributes.label", action: "record-bound-change", detail: "link.label 120→200; values never rewritten" });
@@ -956,9 +1048,11 @@ export function migrateGenericV1ToV2(source: MigDocument, options: GenericMigrat
     ports[id] = next;
     if (isRecord(port) && port["profile"] === "generic@1") {
       ops.push({ path: `ports.${id}.profile`, action: "rewrite-profile", detail: "generic@1→generic@2" });
-      declared.add(`ports.${id}.profile`);
+      declared.add(patchPath("ports", id, "profile"));
     }
   }
+
+  rebasePromotedRefinements(nextDefinitions, entities, relations, ports, "generic@2", ops, declared);
 
   // Commit the moves into the retained views: clone every retained view,
   // place each slot in its typed presentation field (text slots under
@@ -982,7 +1076,11 @@ export function migrateGenericV1ToV2(source: MigDocument, options: GenericMigrat
       for (const key of Object.keys(diagram).sort()) {
         if (!knownDiagramKeys.has(key)) return fail(`views.${view.viewId}.presentation.diagram.${key}`, "incompatible-attribute-schema");
       }
+      if (diagram["contractPin"] !== undefined && canonicalBytes(diagram["contractPin"]) !== canonicalBytes(options.contractPin)) {
+        return fail(`views.${view.viewId}.presentation.diagram.contractPin`, "destination-conflict");
+      }
       diagram["contractPin"] = { ...options.contractPin! };
+      declared.add(patchPath("views", view.viewId, "presentation", "diagram", "contractPin"));
       const diagramEntities = { ...((diagram["entities"] as Record<string, Record<string, unknown>>) ?? {}) };
       for (const occId of [...perOcc.keys()].sort()) {
         if (view.entityOccurrences[occId] === undefined) continue;
@@ -1007,15 +1105,24 @@ export function migrateGenericV1ToV2(source: MigDocument, options: GenericMigrat
         }
         diagramEntities[occId] = {
           ...existing,
-          form: existing["form"] ?? formForEntityType(source.entities[view.entityOccurrences[occId]!.entity]?.type ?? "node"),
+          form: existing["form"] ?? (() => {
+            const entity = entities[view.entityOccurrences[occId]!.entity]!;
+            const resolved = resolveEffectiveType(targetDecl, nextDefinitions, entity.type);
+            return formForEntityType(resolved.ok ? resolved.effective.baseId : entity.type);
+          })(),
           text: existingText,
         };
         presentationMoves[`${view.viewId}/${occId}`] = reportSlots;
-        declared.add(`retainedViews.${retainedViews.indexOf(view)}.presentation.diagram.entities.${occId}`);
+        if (existing["form"] === undefined) declared.add(patchPath("views", view.viewId, "presentation", "diagram", "entities", occId, "form"));
+        if (slotMoves.every(move => move.kind === "icon") && existing["text"] === undefined) declared.add(patchPath("views", view.viewId, "presentation", "diagram", "entities", occId, "text"));
+        for (const move of slotMoves) {
+          ops.push({ path: `views.${view.viewId}.presentation.diagram.entities.${occId}.${move.kind === "icon" ? "icon" : "text." + move.slot}`, action: "write-presentation-slot", detail: `entities.${view.entityOccurrences[occId]!.entity}.attributes.${move.kind === "icon" ? "icon" : move.slot}`, specRef: "§3.13.1 step 4" });
+          declared.add(patchPath("views", view.viewId, "presentation", "diagram", "entities", occId, ...(move.kind === "icon" ? ["icon"] : ["text", move.slot])));
+        }
       }
       diagram["entities"] = diagramEntities;
-      if (diagram["legends"] === undefined) diagram["legends"] = {};
-      if (diagram["categoryTokens"] === undefined) diagram["categoryTokens"] = [];
+      if (diagram["legends"] === undefined) { diagram["legends"] = {}; declared.add(patchPath("views", view.viewId, "presentation", "diagram", "legends")); }
+      if (diagram["categoryTokens"] === undefined) { diagram["categoryTokens"] = []; declared.add(patchPath("views", view.viewId, "presentation", "diagram", "categoryTokens")); }
       presentation["diagram"] = diagram;
       cloned["presentation"] = presentation;
     }
@@ -1030,7 +1137,10 @@ export function migrateGenericV1ToV2(source: MigDocument, options: GenericMigrat
           return fail(`views.${view.viewId}.groups.${groupId}`, "destination-conflict");
         }
         groups[groupId] = { ...(existing ?? { id: groupId }), id: groupId, occurrence: occId, collapsed: true };
-        declared.add(`retainedViews.${retainedViews.indexOf(view)}.groups.${groupId}`);
+        ops.push({ path: `views.${view.viewId}.groups.${groupId}`, action: "seed-view-fold", detail: occId, specRef: "§3.13.1 step 5" });
+        if (existing === undefined) declared.add(patchPath("views", view.viewId, "groups", groupId, "id"));
+        declared.add(patchPath("views", view.viewId, "groups", groupId, "occurrence"));
+        declared.add(patchPath("views", view.viewId, "groups", groupId, "collapsed"));
       }
       cloned["groups"] = groups;
     }
@@ -1045,6 +1155,7 @@ export function migrateGenericV1ToV2(source: MigDocument, options: GenericMigrat
   }
 
   const target: MigDocument = {
+    ...structuredClone(source),
     documentId: source.documentId, revision: source.revision, profileRefs: nextRefs,
     entities, relations,
     ...(source.ports !== undefined ? { ports } : {}),
@@ -1056,18 +1167,16 @@ export function migrateGenericV1ToV2(source: MigDocument, options: GenericMigrat
   };
   const stray = checkTargetClean(target, "generic@1", "generic@2");
   if (stray !== null) return fail(stray, "incompatible-attribute-schema");
-  const loss = findUndeclaredLoss(auditSourceLeaves(source, retainedViews), auditTargetLeaves(target), declared);
-  if (loss !== null) return fail(loss, "incompatible-attribute-schema", `undeclared-path-loss:${loss}`);
-  return {
+  return commitMigration({
     migrationId: GENERIC_MIGRATION_ID, from, to,
     originalSha256: sha256Hex(canonicalBytes(source)),
     originalCanonical: structuredClone(source),
-    operations: ops, unmigrated: [],
+    operations: orderedOperations(ops, GENERIC_MIGRATION_ID), unmigrated: [],
     ...(Object.keys(presentationMoves).length > 0 ? { presentationMoves } : {}),
     ...(foldSeeds.length > 0 ? { foldSeeds: [...foldSeeds].sort() } : {}),
     ...(source.typeDefinitions !== undefined ? { residuals: nextDefinitions } : {}),
     outcome: "ok", target,
-  };
+  }, declared);
 }
 
 /**
@@ -1077,23 +1186,18 @@ export function migrateGenericV1ToV2(source: MigDocument, options: GenericMigrat
  * patch path.
  */
 function stripMigratedSlots(
-  definition: unknown, basePath: string,
+  definition: unknown, basePath: readonly string[],
   ops: MigrationOperation[], declared: Set<string>,
 ): unknown {
-  if (!isRecord(definition)) return definition;
-  const attributes = definition["attributes"];
-  if (!isRecord(attributes)) return definition;
-  let changed = false;
-  const next = { ...attributes };
-  for (const slot of [...TEXT_SLOT_NAMES, ICON_SLOT, "subtitle"]) {
-    if (next[slot] !== undefined) {
-      delete next[slot];
-      changed = true;
-      ops.push({ path: `${basePath}.attributes.${slot}`, action: "remove-migrated-slot", detail: "moved to typed view presentation" });
-      declared.add(`${basePath}.attributes.${slot}`);
+  if (!isRecord(definition) || !Array.isArray(definition["attributes"])) return definition;
+  const attributes = definition["attributes"] as Record<string, unknown>[];
+  const next = attributes.filter(schema => ![...TEXT_SLOT_NAMES, ICON_SLOT].includes(schema["name"] as string));
+  if (next.length !== attributes.length) {
+    ops.push({ path: basePath.join(".") + ".attributes", action: "remove-migrated-slot", detail: "§3.13.1 step 4: moved to typed view presentation" });
+    for (const schema of attributes) {
+      if (!next.includes(schema)) declared.add(patchPath(...basePath, "attributes", schema["name"] as string));
     }
   }
-  void changed;
   return { ...definition, attributes: next };
 }
 
@@ -1114,6 +1218,8 @@ export function migrateArchimateV1ToV2(
     refuse(ARCHIMATE_MIGRATION_ID, from, to, source, ops,
       detail === undefined ? [{ path, reason }] : [{ path, reason, detail }]);
 
+  const sourceViewFailure = checkSourceViews(source);
+  if (sourceViewFailure !== null) return fail(sourceViewFailure, "incompatible-attribute-schema");
   if (source.profileRefs.filter((r) => r === "archimate@1").length !== 1) {
     return fail("", source.profileRefs.includes("archimate@2") ? "target-already-present" : "missing-source-profile");
   }
@@ -1121,25 +1227,46 @@ export function migrateArchimateV1ToV2(
   const nextRefs = source.profileRefs.map((r) => (r === "archimate@1" ? "archimate@2" : r));
   ops.push({ path: "profileRefs", action: "replace-profile-ref", detail: "archimate@1→archimate@2" });
   nextRefs.forEach((ref, index) => {
-    if (ref !== source.profileRefs[index]) declared.add(`profileRefs.${index}`);
+    if (ref !== source.profileRefs[index]) declared.add(patchPath("profileRefs", index));
   });
 
   const targetDecl = ARCHIMATE_V2.declaration as Record<string, unknown>;
   const reserved = governedIds(targetDecl);
-  const nextDefinitions: Record<string, unknown> = {};
+  const nextDefinitions: Record<string, unknown> = Object.create(null);
   for (const id of sortedKeys(source.typeDefinitions)) {
     if (reserved.has(id)) return fail(`typeDefinitions.${id}`, "incompatible-attribute-schema");
     const definition = source.typeDefinitions![id];
-    const cleaned = stripMigratedSlots(
-      rewriteRecordProfile(structuredClone(definition), "archimate@1", "archimate@2"),
-      `typeDefinitions.${id}`, ops, declared,
-    );
+    const cleaned = rewriteRecordProfile(structuredClone(definition), "archimate@1", "archimate@2");
     nextDefinitions[id] = cleaned;
     ops.push({ path: `typeDefinitions.${id}`, action: "preserve-residual-refinement" });
     if (isRecord(definition) && definition["profile"] === "archimate@1") {
-      declared.add(`typeDefinitions.${id}.profile`);
+      declared.add(patchPath("typeDefinitions", id, "profile"));
     }
   }
+
+  // A native @1 element refinement is assigned through its instances. Rebase
+  // its root declaration, retaining the residual identity and every schema.
+  for (const id of sortedKeys(nextDefinitions)) {
+    const definition = nextDefinitions[id];
+    if (!isRecord(definition) || definition["profile"] !== "archimate@2" || definition["baseType"] !== "element") continue;
+    const assignments = new Set<string>();
+    for (const entity of Object.values(source.entities)) {
+      if (entity.profile !== "archimate@1") continue;
+      const own = resolveEffectiveType(ARCHIMATE_V1_DECLARATION, source.typeDefinitions, entity.type);
+      if (own.ok && own.effective.chain.includes(id)) {
+        if (mapping[entity.id] === undefined) return fail(`entities.${entity.id}`, "missing-type-mapping");
+        assignments.add(mapping[entity.id]!);
+      }
+    }
+    if (assignments.size !== 1) return fail(`typeDefinitions.${id}.baseType`, "missing-type-mapping");
+    const mappedBase = [...assignments][0]!;
+    if (!ARCHIMATE_CATALOGUE.some(row => row.id === mappedBase)) return fail(`typeDefinitions.${id}.baseType`, "missing-type-mapping");
+    nextDefinitions[id] = { ...definition, baseType: mappedBase };
+    ops.push({ path: `typeDefinitions.${id}.baseType`, action: "rebase-residual-refinement", detail: `§3.13.2: element→${mappedBase}` });
+    declared.add(patchPath("typeDefinitions", id, "baseType"));
+  }
+  const refinementFailure = promoteRefinements(targetDecl, nextDefinitions, ops, declared);
+  if (refinementFailure !== null) return fail(refinementFailure.path, "type-definition-conflict", "incompatible-attribute-schema");
 
   const catalogueById = new Map(ARCHIMATE_CATALOGUE.map((c) => [c.id, c]));
   const tuples = expandArchimateTuples();
@@ -1158,12 +1285,14 @@ export function migrateArchimateV1ToV2(
       entities[id] = structuredClone(entity);
       continue;
     }
-    if (entity.type === "junction" || entity.type === "grouping") {
+    const sourceResolved = resolveEffectiveType(ARCHIMATE_V1_DECLARATION, source.typeDefinitions, entity.type);
+    const sourceKind = sourceResolved.ok ? sourceResolved.effective.baseId : entity.type;
+    if (sourceKind === "junction" || sourceKind === "grouping") {
       const mapped = mapping[id];
-      if (mapped !== undefined && mapped !== entity.type) {
+      if (mapped !== undefined && mapped !== sourceKind) {
         return fail(`entities.${id}.type`, "incompatible-attribute-schema");
       }
-      const resolved = resolveEffectiveType(targetDecl, source.typeDefinitions, entity.type);
+      const resolved = resolveEffectiveType(targetDecl, nextDefinitions, entity.type);
       if (!resolved.ok) {
         if (resolved.failure.error === "conflict") {
           return fail(`entities.${id}.attributes.${resolved.failure.attribute}`, "type-definition-conflict", "incompatible-attribute-schema");
@@ -1174,13 +1303,13 @@ export function migrateArchimateV1ToV2(
       if (overlap !== null) {
         return fail(`entities.${id}.attributes.${overlap.attribute}`, "type-definition-conflict", "incompatible-attribute-schema");
       }
-      entityTypeOf.set(id, entity.type);
+      entityTypeOf.set(id, sourceKind);
       entities[id] = {
-        id, profile: "archimate@2", type: entity.type,
+        ...structuredClone(entity), profile: "archimate@2", type: entity.type,
         attributes: structuredClone(entity.attributes) as Record<string, MigAttribute>,
       };
       ops.push({ path: `entities.${id}.profile`, action: "rewrite-profile", detail: "archimate@1→archimate@2; meaning retained" });
-      declared.add(`entities.${id}.profile`);
+      declared.add(patchPath("entities", id, "profile"));
       continue;
     }
     const mapped = mapping[id];
@@ -1193,7 +1322,7 @@ export function migrateArchimateV1ToV2(
     // assignment + §5.1/matrix nearest-ancestor rule). An unresolvable
     // chain refuses fail-closed; it never silently keeps the mapping.
     if (source.typeDefinitions?.[entity.type] !== undefined) {
-      const own = resolveEffectiveType(targetDecl, source.typeDefinitions, entity.type);
+      const own = resolveEffectiveType(targetDecl, nextDefinitions, entity.type);
       if (!own.ok) {
         if (own.failure.error === "conflict") {
           return fail(`entities.${id}.attributes.${own.failure.attribute}`, "type-definition-conflict", "incompatible-attribute-schema");
@@ -1204,7 +1333,8 @@ export function migrateArchimateV1ToV2(
         return fail(`entities.${id}.type`, "incompatible-attribute-schema");
       }
     }
-    const resolved = resolveEffectiveType(targetDecl, source.typeDefinitions, mapped);
+    const residualType = nextDefinitions[entity.type] === undefined ? mapped : entity.type;
+    const resolved = resolveEffectiveType(targetDecl, nextDefinitions, residualType);
     if (!resolved.ok) {
       if (resolved.failure.error === "conflict") {
         return fail(`entities.${id}.attributes.${resolved.failure.attribute}`, "type-definition-conflict", "incompatible-attribute-schema");
@@ -1228,25 +1358,25 @@ export function migrateArchimateV1ToV2(
     if (row.layer !== "none") {
       nextAttrs["layer"] = { kind: "enum", value: row.layer };
       ops.push({ path: `entities.${id}.attributes.layer`, action: "derive-from-catalogue", detail: row.layer });
-      declared.add(`entities.${id}.attributes.layer`);
+      declared.add(patchPath("entities", id, "attributes", "layer"));
     } else {
       delete nextAttrs["layer"];
       ops.push({ path: `entities.${id}.attributes.layer`, action: "drop-fabricated-layer", detail: "none is not a value" });
-      declared.add(`entities.${id}.attributes.layer`);
+      declared.add(patchPath("entities", id, "attributes", "layer"));
     }
     nextAttrs["aspect"] = { kind: "enum", value: row.aspect };
     ops.push({ path: `entities.${id}.attributes.aspect`, action: "derive-from-catalogue", detail: row.aspect });
-    declared.add(`entities.${id}.attributes.aspect`);
+    declared.add(patchPath("entities", id, "attributes", "aspect"));
     ops.push({ path: `entities.${id}.type`, action: "map-to-catalogue", detail: `${entity.type}→${mapped}` });
-    declared.add(`entities.${id}.type`);
+    declared.add(patchPath("entities", id, "type"));
     for (const [key] of sortedAttributes(nextAttrs)) {
       if (resolved.effective.attrs[key] === undefined && !conversionExempt.has(key)) {
         ops.push({ path: `entities.${id}.attributes.${key}`, action: "retain-domain-attribute", detail: "present-unchanged" });
       }
     }
-    entities[id] = { id, profile: "archimate@2", type: mapped, attributes: nextAttrs };
+    entities[id] = { ...structuredClone(entity), profile: "archimate@2", type: residualType, attributes: nextAttrs };
     ops.push({ path: `entities.${id}.profile`, action: "rewrite-profile", detail: "archimate@1→archimate@2" });
-    declared.add(`entities.${id}.profile`);
+    declared.add(patchPath("entities", id, "profile"));
   }
 
   const relations: Record<string, MigRelation> = {};
@@ -1266,11 +1396,11 @@ export function migrateArchimateV1ToV2(
     const tgtType = entityTypeOf.get(tgt);
     if (srcType === undefined || tgtType === undefined) return fail(`relations.${id}.endpoints`, "missing-type-mapping");
     if (!allows(rel.type, srcType, tgtType)) return fail(`relations.${id}.endpoints`, "relationship-matrix-violation");
-    const nextAttrs: Record<string, MigAttribute> = {};
+    const nextAttrs: Record<string, MigAttribute> = structuredClone(rel.attributes) as Record<string, MigAttribute>;
     for (const [k, v] of sortedAttributes(rel.attributes)) nextAttrs[k] = structuredClone(v);
     relations[id] = { ...structuredClone(rel), profile: "archimate@2", attributes: nextAttrs };
     ops.push({ path: `relations.${id}.profile`, action: "rewrite-profile", detail: `matrix allows ${rel.type}(${srcType}→${tgtType})` });
-    declared.add(`relations.${id}.profile`);
+    declared.add(patchPath("relations", id, "profile"));
   }
 
   const ports: Record<string, unknown> = {};
@@ -1282,6 +1412,8 @@ export function migrateArchimateV1ToV2(
     ports[id] = structuredClone(port);
   }
 
+  rebasePromotedRefinements(nextDefinitions, entities, relations, ports, targetDecl["id"] as string, ops, declared);
+
   // Retained views travel unchanged; each is validated before commit.
   const retainedViews = source.views ?? [];
   const carriedViews = structuredClone(retainedViews);
@@ -1291,6 +1423,7 @@ export function migrateArchimateV1ToV2(
   }
 
   const target: MigDocument = {
+    ...structuredClone(source),
     documentId: source.documentId, revision: source.revision,
     profileRefs: nextRefs,
     entities, relations,
@@ -1303,16 +1436,14 @@ export function migrateArchimateV1ToV2(
   };
   const stray = checkTargetClean(target, "archimate@1", "archimate@2");
   if (stray !== null) return fail(stray, "incompatible-attribute-schema");
-  const loss = findUndeclaredLoss(auditSourceLeaves(source, retainedViews), auditTargetLeaves(target), declared);
-  if (loss !== null) return fail(loss, "incompatible-attribute-schema", `undeclared-path-loss:${loss}`);
-  return {
+  return commitMigration({
     migrationId: ARCHIMATE_MIGRATION_ID, from, to,
     originalSha256: sha256Hex(canonicalBytes(source)),
     originalCanonical: structuredClone(source),
-    operations: ops, unmigrated: [],
+    operations: orderedOperations(ops, ARCHIMATE_MIGRATION_ID), unmigrated: [],
     ...(source.typeDefinitions !== undefined ? { residuals: nextDefinitions } : {}),
     outcome: "ok", target,
-  };
+  }, declared);
 }
 
 // ---------------------------------------------------------------------------
@@ -1330,9 +1461,10 @@ export interface UmlMigrationInput {
  * stereotype.extends item enum). Caller text converts to these enum
  * values; anything outside refuses.
  */
-const UML_STEREOTYPE_TARGETS: Readonly<Set<string>> = new Set([
-  "class", "interface", "package", "property", "operation",
-]);
+const UML_STEREOTYPE_TARGETS: ReadonlySet<string> = new Set(
+  (((UML_V2.declaration["entityTypes"] as Record<string, unknown>[]).find(type => type["id"] === "stereotype")!["attributes"] as Record<string, unknown>[])
+    .find(schema => schema["name"] === "extends")!["item"] as { values: string[] }).values,
+);
 
 /** A declared stereotype, resolved in the source document — never trusted from the caller. */
 function resolveDeclaredStereotype(
@@ -1342,7 +1474,10 @@ function resolveDeclaredStereotype(
   if (record === undefined) return { missing: true };
   // Ownership: the declaring record belongs to the source family.
   if (record.profile !== "uml@1") return { invalid: true };
-  if (record.type !== "stereotype") return { invalid: true };
+  const definitions = Object.fromEntries(Object.entries(source.typeDefinitions ?? {}).map(([id, definition]) =>
+    [id, rewriteRecordProfile(definition, "uml@1", "uml@2")]));
+  const resolved = resolveEffectiveType(UML_V2.declaration as Record<string, unknown>, definitions, record.type);
+  if (!resolved.ok || !resolved.effective.chain.includes("stereotype")) return { invalid: true };
   const extendsAttr = record.attributes["extends"];
   if (extendsAttr === undefined || extendsAttr.kind !== "collection" || !Array.isArray(extendsAttr.items)) {
     return { invalid: true };
@@ -1368,6 +1503,8 @@ export function migrateUmlV1ToV2(source: MigDocument, input: UmlMigrationInput):
     refuse(UML_MIGRATION_ID, from, to, source, ops,
       detail === undefined ? [{ path, reason }] : [{ path, reason, detail }]);
 
+  const sourceViewFailure = checkSourceViews(source);
+  if (sourceViewFailure !== null) return fail(sourceViewFailure, "incompatible-attribute-schema");
   if (source.profileRefs.filter((r) => r === "uml@1").length !== 1) {
     return fail("", source.profileRefs.includes("uml@2") ? "target-already-present" : "missing-source-profile");
   }
@@ -1375,30 +1512,31 @@ export function migrateUmlV1ToV2(source: MigDocument, input: UmlMigrationInput):
   const nextRefs = source.profileRefs.map((r) => (r === "uml@1" ? "uml@2" : r));
   ops.push({ path: "profileRefs", action: "replace-profile-ref", detail: "uml@1→uml@2" });
   nextRefs.forEach((ref, index) => {
-    if (ref !== source.profileRefs[index]) declared.add(`profileRefs.${index}`);
+    if (ref !== source.profileRefs[index]) declared.add(patchPath("profileRefs", index));
   });
 
   const targetDecl = UML_V2.declaration as Record<string, unknown>;
   const reserved = governedIds(targetDecl);
-  const nextDefinitions: Record<string, unknown> = {};
+  const nextDefinitions: Record<string, unknown> = Object.create(null);
   for (const id of sortedKeys(source.typeDefinitions)) {
     if (reserved.has(id)) return fail(`typeDefinitions.${id}`, "incompatible-attribute-schema");
     const definition = source.typeDefinitions![id];
-    const cleaned = stripMigratedSlots(
-      rewriteRecordProfile(structuredClone(definition), "uml@1", "uml@2"),
-      `typeDefinitions.${id}`, ops, declared,
-    );
+    const cleaned = rewriteRecordProfile(structuredClone(definition), "uml@1", "uml@2");
     nextDefinitions[id] = cleaned;
     ops.push({ path: `typeDefinitions.${id}`, action: "preserve-residual-refinement" });
     if (isRecord(definition) && definition["profile"] === "uml@1") {
-      declared.add(`typeDefinitions.${id}.profile`);
+      declared.add(patchPath("typeDefinitions", id, "profile"));
     }
   }
 
+  // Validate native declarations independently of current attribute values.
+  const refinementFailure = promoteRefinements(targetDecl, nextDefinitions, ops, declared);
+  if (refinementFailure !== null) return fail(refinementFailure.path, "type-definition-conflict", "incompatible-attribute-schema");
+
   // Conversion-exempt attribute names per record kind (declared conversions).
-  const exemptFor = (entity: MigEntity): Set<string> => {
-    if (entity.type === "property") return new Set(["multiplicity"]);
-    if (entity.type === "stereotype") return new Set(["extends"]);
+  const exemptFor = (kind: string): Set<string> => {
+    if (kind === "property") return new Set(["multiplicity"]);
+    if (kind === "stereotype") return new Set(["extends"]);
     return new Set(["stereotypes"]);
   };
 
@@ -1409,7 +1547,7 @@ export function migrateUmlV1ToV2(source: MigDocument, input: UmlMigrationInput):
       entities[id] = structuredClone(entity);
       continue;
     }
-    const resolved = resolveEffectiveType(targetDecl, source.typeDefinitions, entity.type);
+    const resolved = resolveEffectiveType(targetDecl, nextDefinitions, entity.type);
     if (!resolved.ok) {
       if (resolved.failure.error === "conflict") {
         return fail(`entities.${id}.attributes.${resolved.failure.attribute}`, "type-definition-conflict", "incompatible-attribute-schema");
@@ -1421,21 +1559,22 @@ export function migrateUmlV1ToV2(source: MigDocument, input: UmlMigrationInput):
     if (entity.type === "stereotype" && resolved.effective.baseId !== "stereotype") {
       return fail(`entities.${id}.type`, "stereotype-application-invalid");
     }
-    const exempt = exemptFor(entity);
+    const effectiveKind = resolved.effective.baseId;
+    const exempt = exemptFor(effectiveKind);
     const overlap = checkValueKindOverlap(entity.attributes, resolved.effective, exempt);
     if (overlap !== null) {
       return fail(`entities.${id}.attributes.${overlap.attribute}`, "type-definition-conflict", "incompatible-attribute-schema");
     }
-    const nextAttrs: Record<string, MigAttribute> = {};
+    const nextAttrs: Record<string, MigAttribute> = structuredClone(entity.attributes) as Record<string, MigAttribute>;
     for (const [key, attr] of sortedAttributes(entity.attributes)) {
-      if (key === "multiplicity" && entity.type === "property") {
+      if (key === "multiplicity" && effectiveKind === "property") {
         const raw = getText(attr);
         if (raw === null) return fail(`entities.${id}.attributes.multiplicity`, "multiplicity-syntax");
         const parsed = parseMultiplicity(raw);
         if (!parsed.ok) return fail(`entities.${id}.attributes.multiplicity`, parsed.reason);
         nextAttrs[key] = multiplicityStruct(parsed.lower, parsed.upper);
         ops.push({ path: `entities.${id}.attributes.multiplicity`, action: "parse-multiplicity", detail: `${raw}→${parsed.lower}/${parsed.upper}` });
-        declared.add(`entities.${id}.attributes.multiplicity`);
+        declared.add(patchPath("entities", id, "attributes", "multiplicity"));
       } else if (key === "stereotypes" && attr.kind === "collection" && Array.isArray(attr.items)) {
         const converted: MigAttribute[] = [];
         for (let i = 0; i < attr.items.length; i++) {
@@ -1449,15 +1588,15 @@ export function migrateUmlV1ToV2(source: MigDocument, input: UmlMigrationInput):
           const declaredStereotype = resolveDeclaredStereotype(source, ref);
           if ("missing" in declaredStereotype) return fail(`entities.${id}.attributes.stereotypes[${i}]`, "unmapped-stereotype");
           if ("invalid" in declaredStereotype) return fail(`entities.${id}.attributes.stereotypes[${i}]`, "stereotype-application-invalid");
-          if (!declaredStereotype.extends.includes(entity.type)) {
+          if (!declaredStereotype.extends.some(kind => resolved.effective.chain.includes(kind))) {
             return fail(`entities.${id}.attributes.stereotypes[${i}]`, "stereotype-application-invalid");
           }
           converted.push({ kind: "reference", value: ref });
         }
         nextAttrs[key] = { kind: "collection", items: converted };
         ops.push({ path: `entities.${id}.attributes.stereotypes`, action: "map-stereotypes", detail: `${attr.items.length} item(s)` });
-        declared.add(`entities.${id}.attributes.stereotypes`);
-      } else if (key === "extends" && entity.type === "stereotype" && attr.kind === "collection" && Array.isArray(attr.items)) {
+        declared.add(patchPath("entities", id, "attributes", "stereotypes"));
+      } else if (key === "extends" && effectiveKind === "stereotype" && attr.kind === "collection" && Array.isArray(attr.items)) {
         // The declaring record's own extends converts from @1 text items
         // to @2 enum items; no text value survives into the enum target.
         const converted: MigAttribute[] = [];
@@ -1477,7 +1616,7 @@ export function migrateUmlV1ToV2(source: MigDocument, input: UmlMigrationInput):
         }
         nextAttrs[key] = { kind: "collection", items: converted };
         ops.push({ path: `entities.${id}.attributes.extends`, action: "convert-stereotype-extends", detail: `${attr.items.length} item(s) text→enum` });
-        declared.add(`entities.${id}.attributes.extends`);
+        declared.add(patchPath("entities", id, "attributes", "extends"));
       } else {
         nextAttrs[key] = structuredClone(attr);
         if (resolved.effective.attrs[key] === undefined) {
@@ -1485,9 +1624,9 @@ export function migrateUmlV1ToV2(source: MigDocument, input: UmlMigrationInput):
         }
       }
     }
-    entities[id] = { id, profile: "uml@2", type: entity.type, attributes: nextAttrs };
+    entities[id] = { ...structuredClone(entity), profile: "uml@2", attributes: nextAttrs };
     ops.push({ path: `entities.${id}.profile`, action: "rewrite-profile", detail: "uml@1→uml@2" });
-    declared.add(`entities.${id}.profile`);
+    declared.add(patchPath("entities", id, "profile"));
   }
 
   const relations: Record<string, MigRelation> = {};
@@ -1497,7 +1636,7 @@ export function migrateUmlV1ToV2(source: MigDocument, input: UmlMigrationInput):
       relations[id] = structuredClone(rel);
       continue;
     }
-    const nextAttrs: Record<string, MigAttribute> = {};
+    const nextAttrs: Record<string, MigAttribute> = structuredClone(rel.attributes) as Record<string, MigAttribute>;
     for (const [key, attr] of sortedAttributes(rel.attributes)) {
       if ((key === "sourceMultiplicity" || key === "targetMultiplicity") && rel.type === "association") {
         const raw = getText(attr);
@@ -1506,14 +1645,14 @@ export function migrateUmlV1ToV2(source: MigDocument, input: UmlMigrationInput):
         if (!parsed.ok) return fail(`relations.${id}.attributes.${key}`, parsed.reason);
         nextAttrs[key] = multiplicityStruct(parsed.lower, parsed.upper);
         ops.push({ path: `relations.${id}.attributes.${key}`, action: "parse-multiplicity", detail: `${raw}→${parsed.lower}/${parsed.upper}` });
-        declared.add(`relations.${id}.attributes.${key}`);
+        declared.add(patchPath("relations", id, "attributes", key));
       } else {
         nextAttrs[key] = structuredClone(attr);
       }
     }
     relations[id] = { ...structuredClone(rel), profile: "uml@2", attributes: nextAttrs };
     ops.push({ path: `relations.${id}.profile`, action: "rewrite-profile", detail: "uml@1→uml@2" });
-    declared.add(`relations.${id}.profile`);
+    declared.add(patchPath("relations", id, "profile"));
   }
 
   const ports: Record<string, unknown> = {};
@@ -1534,6 +1673,7 @@ export function migrateUmlV1ToV2(source: MigDocument, input: UmlMigrationInput):
   }
 
   const target: MigDocument = {
+    ...structuredClone(source),
     documentId: source.documentId, revision: source.revision,
     profileRefs: nextRefs,
     entities, relations,
@@ -1546,16 +1686,14 @@ export function migrateUmlV1ToV2(source: MigDocument, input: UmlMigrationInput):
   };
   const stray = checkTargetClean(target, "uml@1", "uml@2");
   if (stray !== null) return fail(stray, "incompatible-attribute-schema");
-  const loss = findUndeclaredLoss(auditSourceLeaves(source, retainedViews), auditTargetLeaves(target), declared);
-  if (loss !== null) return fail(loss, "incompatible-attribute-schema", `undeclared-path-loss:${loss}`);
-  return {
+  return commitMigration({
     migrationId: UML_MIGRATION_ID, from, to,
     originalSha256: sha256Hex(canonicalBytes(source)),
     originalCanonical: structuredClone(source),
-    operations: ops, unmigrated: [],
+    operations: orderedOperations(ops, UML_MIGRATION_ID), unmigrated: [],
     ...(source.typeDefinitions !== undefined ? { residuals: nextDefinitions } : {}),
     outcome: "ok", target,
-  };
+  }, declared);
 }
 
 // @1 source pins live in diagram-skeletons.ts (transcribed @1 declarations).
