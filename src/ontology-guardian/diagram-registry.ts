@@ -58,6 +58,7 @@ export const LOT_CORPUS_FIXTURES: readonly CorpusFixturePin[] = [
   { path: "tests/fixtures/pinned-sources/bpmn-canvas-canonical-ts.bytes", sha256: "287d8cb87beb7384fc89a8d6141681010dcba50ee895aaadc3b31345541191ba" },
   { path: "tests/fixtures/pinned-sources/m3-a3-serialization-specimen.json", sha256: "2f280be912e381881f3c8c68e7fb28189f95a515121927a64d4bbb04e9062c76" },
   { path: "tests/fixtures/generic-v1-minimal-document.json", sha256: "76bbe5b8f1323c85a141830156a6e47cce5aa3b9198988ad5c172b1f23fbbd16" },
+  { path: "tests/fixtures/pinned-sources/m3-r4-derived-oracle.json", sha256: "9860b066d227d298aa67eae8bc47475355e86d22f266d1b0ad261035b33fdf8d" },
 ];
 
 export const LOT_CORPUS_REF = "engram:diagram-lot-corpus/1" as const;
