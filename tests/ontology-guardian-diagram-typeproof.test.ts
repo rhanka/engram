@@ -10,6 +10,7 @@ import type {
   GovernedProfile,
 } from "../src/ontology-guardian/diagram-profiles.js";
 import type {
+  ArchimateMigrationMapping,
   MigDocument,
   MigrationOperation,
   MigrationOutcome,
@@ -57,6 +58,23 @@ describe("diagram lot type-level proof", () => {
 // MigrationOutcome is the closed two-state union.
 // @ts-expect-error partial is not a migration outcome
 const badOutcome: MigrationOutcome = "partial";
+
+// §3.13.2 requires the closed entityTypes wrapper, never a flat map.
+// @ts-expect-error entityTypes is required
+const missingArchimateMapping: ArchimateMigrationMapping = {};
+const flatArchimateMapping: ArchimateMigrationMapping = {
+  // @ts-expect-error entity references belong inside entityTypes
+  "entity:actor": "business-actor",
+};
+const extraArchimateMapping: ArchimateMigrationMapping = {
+  entityTypes: {},
+  // @ts-expect-error no additional wrapper fields
+  extra: true,
+};
+const nonStringArchimateMapping: ArchimateMigrationMapping = {
+  // @ts-expect-error catalogue assignments must be strings
+  entityTypes: { "entity:actor": 1 },
+};
 
 // The contract binding pins compatibility matrix version "1" exactly.
 const badBinding: ContractBinding = {

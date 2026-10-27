@@ -160,7 +160,7 @@ describe("native refinements and resolved stereotype families", () => {
     const source = corpusJson<{ document: MigDocument }>("ds:archimate-skeleton-document.json").document;
     source.typeDefinitions = { custom: { id: "custom", profile: "archimate@1", baseType: "element", attributes: [{ name: "domainNote", kind: "text", maxLength: 100 }] } };
     source.entities["entity:actor"] = { ...source.entities["entity:actor"]!, type: "custom", attributes: { ...source.entities["entity:actor"]!.attributes, domainNote: { kind: "text", value: "kept" } } };
-    const result = migrateArchimateV1ToV2(source, { "entity:actor": "business-actor", "entity:process": "business-process", "entity:component": "application-component" });
+    const result = migrateArchimateV1ToV2(source, { entityTypes: { "entity:actor": "business-actor", "entity:process": "business-process", "entity:component": "application-component" } });
     expect(result.outcome).toBe("ok");
     expect(result.target!.typeDefinitions!.custom).toEqual({ ...source.typeDefinitions.custom as object, profile: "archimate@2", baseType: "business-actor" });
     expect(result.target!.entities["entity:actor"]!.type).toBe("custom");
