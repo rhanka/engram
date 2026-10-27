@@ -77,7 +77,17 @@ mutate("DM7", "diagram-migrations.ts", 'if (k === "collapsed" || k in PRESENTATI
 mutate("DM8", "diagram-migrations.ts", 'if (!allows(rel.type, srcType, tgtType)) return fail(`relations.${id}.endpoints`, "relationship-matrix-violation");', "void srcType; void tgtType;");
 mutate("DM9", "diagram-migrations.ts", "if (!declared.extends.includes(entity.type)) {", "if (false) {");
 mutate("DM10", "diagram-registry.ts", "{ from: GENERIC_V1_PIN, supersededBy: GENERIC_V2_PIN, migrationRef: GENERIC_MIGRATION_ID },", "{ from: GENERIC_V1_PIN, supersededBy: GENERIC_V2_PIN, migrationRef: ARCHIMATE_MIGRATION_ID },");
-mutate("DM11", "diagram-schemas.ts", 'required: ["contractPin", "entities", "legends", "categoryTokens"],', 'required: ["contractPin", "entities", "legends"],');
+mutate("DM11", "diagram-schemas.ts", 'const DIAGRAM_VALUE_REQUIRED = ["contractPin", "entities", "legends", "categoryTokens"];', 'const DIAGRAM_VALUE_REQUIRED = ["contractPin", "entities", "legends"];');
+mutate("DM16", "diagram-profiles.ts", 'pattern: KEY_PATTERN, patternName: "key",', 'patternName: "key",');
+mutate("DM17", "diagram-migrations.ts", "if (Object.keys(moves).length > 0 && options.contractPin === undefined) {", "if (false) {");
+mutate("DM18", "diagram-migrations.ts", "if (existingText[slot] !== undefined && existingText[slot] !== slots[slot]) {", "if (false) {");
+mutate("DM19", "diagram-migrations.ts", "return Object.keys(attributes).sort().map((key) => [key, attributes[key]!] as [string, MigAttribute]);", "return Object.keys(attributes).map((key) => [key, attributes[key]!] as [string, MigAttribute]);");
+mutate("DM20", "diagram-migrations.ts", "return { extends: values };", "return { extends: [] };");
+mutate("DM21", "diagram-migrations.ts", 'form: existing["form"] ?? formForEntityType(source.entities[view.entityOccurrences[occ]!.entity]?.type ?? "node"),', 'form: "container",');
+mutate("DM22", "diagram-profiles.ts", '{ kind: "hierarchy", relationType: "contains", hierarchyId: "containment", parentRole: "parent", childRole: "child" },', '{ kind: "hierarchy", relationType: "contains", hierarchyId: "containment", parentRole: "child", childRole: "child" },');
+mutate("DM23", "diagram-schemas.ts", 'const ICON_GRAMMAR = { type: "string", minLength: 1, maxLength: 40, pattern: "^[a-z][a-z0-9-]*$" };', 'const ICON_GRAMMAR = { type: "string", minLength: 1, maxLength: 40 };');
+mutate("DM24", "diagram-oracle.ts", 'expected: allowed.has(`${relationType}\\0${sourceType}\\0${targetType}`) ? "allowed" : "rejected",', 'expected: allowed.has(`${relationType}\\0${sourceType}\\0${targetType}`) ? "rejected" : "allowed",');
+mutate("DM25", "diagram-oracle.ts", '{ input: "1", expected: { ok: true, lower: 1, upper: 1 } },', '{ input: "1", expected: { ok: true, lower: 2, upper: 1 } },');
 mutate("DM12", "diagram-skeletons.ts", '{ kind: "max-entities-of-type", entityType: "container", max: 64 },', '{ kind: "max-entities-of-type", entityType: "container", max: 65 },');
 mutate("DM13", "diagram-profiles.ts", "limits: { maxEntities: 100000, maxRelations: 500000, maxEndpointsPerRelation: 8 },", "limits: { maxEntities: 5, maxRelations: 500000, maxEndpointsPerRelation: 8 },");
 mutate("DM14", "diagram-migrations.ts", 'if (upper !== -1 && lower > upper) return { ok: false, reason: "multiplicity-invalid" };', "if (upper !== -1 && lower > upper) return { ok: true, lower, upper };");
@@ -100,7 +110,8 @@ assert.equal(killed, mutations.length, "every runtime mutant must be killed");
 const compilerMutations = [
   ["outcome-open", "diagram-migrations.ts", 'export type MigrationOutcome = "ok" | "refused";', 'export type MigrationOutcome = "ok" | "refused" | "partial";'],
   ["binding-version-open", "diagram-profiles.ts", 'readonly compatibilityMatrixVersion: "1";', "readonly compatibilityMatrixVersion: string;"],
-  ["report-target-optional", "diagram-migrations.ts", "readonly target: MigDocument | null;", "readonly target?: MigDocument | null;"],
+  ["report-target-optional", "diagram-migrations.ts", "readonly target: null;", "readonly target: MigDocument | null;"],
+  ["refusal-reason-closed", "diagram-migrations.ts", '"relationship-matrix-violation";', '"relationship-matrix-violation" | string;'],
   ["document-entities-optional", "diagram-migrations.ts", "readonly entities: Readonly<Record<string, MigEntity>>;", "readonly entities?: Readonly<Record<string, MigEntity>>;"],
   ["supersession-ref-optional", "diagram-registry.ts", "readonly migrationRef: string;", "readonly migrationRef?: string;"],
 ];
