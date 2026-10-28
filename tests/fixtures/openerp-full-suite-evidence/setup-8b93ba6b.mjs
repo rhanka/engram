@@ -51,6 +51,22 @@ for (const file of ["package-lock.json", "engram-memory/package-lock.json", "stu
   setup.lockfiles[file] = { identical: true, sha256: hash(actual) };
 }
 save();
+// The conductor-provided installation is copied, never linked to or rebuilt in
+// the sibling checkout. Stop on either lockfile difference before any copy.
+const installationSource = "/home/antoinefa/src/graphify-wt-dpadapter";
+for (const [label, file] of [["top", "package-lock.json"], ["memory", "engram-memory/package-lock.json"]]) {
+  await run("shared-installation-" + label + "-lock-8b93ba6b", "cmp", [path.join(root, file), path.join(installationSource, file)], root);
+}
+await run("shared-installation-copy-8b93ba6b", "cp", ["-a", path.join(installationSource, "engram-memory/node_modules") + "/.", path.join(root, "engram-memory/node_modules") + "/"], root);
+setup.installation = { source: installationSource, method: "cp -a", lockfilesByteIdentical: true, nativeBinaries: {} };
+for (const file of ["fs-ext/build/Release/fs_ext.node", "better-sqlite3/build/Release/better_sqlite3.node"]) {
+  const location = path.join(root, "engram-memory/node_modules", file);
+  assert.ok(fs.lstatSync(location).isFile(), "native binary must be copied, not symlinked: " + file);
+  setup.installation.nativeBinaries[file] = { sha256: hash(fs.readFileSync(location)),
+    matchesSource: fs.readFileSync(location).equals(fs.readFileSync(path.join(installationSource, "engram-memory/node_modules", file))) };
+  assert.ok(setup.installation.nativeBinaries[file].matchesSource);
+}
+save();
 // Studio's build script otherwise installs independently in each checkout.
 if (!fs.existsSync(path.join(root, "studio/node_modules/vite-plugin-singlefile"))) {
   await run("shared-studio-install-8b93ba6b", "npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], path.join(root, "studio"));
@@ -74,6 +90,8 @@ try {
   }
   save();
   for (const [side, cwd] of [["base", baseline], ["branch", root]]) {
+    await run(side + "-8b93ba6b-native-probe", process.execPath, ["--input-type=module", "-e",
+      'import {createRequire} from "node:module"; import path from "node:path"; const require=createRequire(path.join(process.cwd(),"engram-memory/package.json")); const fs=require("fs-ext"); const DB=require("better-sqlite3"); const db=new DB(":memory:"); console.log(JSON.stringify({node:process.version,fsExt:typeof fs.flockSync,sqlite:db.prepare("select 1 as ok").get()})); db.close();'], cwd);
     await run(side + "-8b93ba6b-engram-memory-build", "npm", ["--prefix", "engram-memory", "run", "build"], cwd);
     const topBuild = await run(side + "-8b93ba6b-build", "npm", ["run", "build"], cwd, true);
     if (topBuild.exitCode !== 0) {
