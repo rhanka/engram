@@ -20,13 +20,26 @@ setState({ assertionCalls: 0, isExpectingAssertions: false }, chai.expect);
 const runtimeKey = Symbol.for("openerp.committed.callbacks");
 let registered;
 const suites = [];
+function makeIt() {
+  const fn = (name, f) => registered.push({ file: globalThis[runtimeKey].file, name: [...suites, name].join(" > "), fn: f });
+  fn.skip = (name) => registered.push({ file: globalThis[runtimeKey].file, name: [...suites, name].join(" > "), fn: () => {}, skipped: true });
+  fn.todo = (name) => registered.push({ file: globalThis[runtimeKey].file, name: [...suites, name].join(" > "), fn: () => {}, todo: true });
+  return fn;
+}
+function makeDescribe() {
+  const fn = (name, f) => { suites.push(name); try { f(); } finally { suites.pop(); } };
+  fn.skip = () => {};
+  fn.todo = () => {};
+  return fn;
+}
 globalThis[runtimeKey] = {
   file: "",
   expect: chai.expect,
-  describe(name, fn) { suites.push(name); try { fn(); } finally { suites.pop(); } },
-  it(name, fn) { registered.push({ file: this.file, name: [...suites, name].join(" > "), fn }); },
+  describe: makeDescribe(),
+  it: makeIt(),
 };
-globalThis[runtimeKey].it = (name, fn) => registered.push({ file: globalThis[runtimeKey].file, name: [...suites, name].join(" > "), fn });
+globalThis[runtimeKey].it = makeIt();
+globalThis[runtimeKey].describe = makeDescribe();
 const TEST_FILES = [
   "ontology-guardian-openerp-vectors.test.ts",
   "ontology-guardian-openerp-admission.test.ts",
@@ -64,6 +77,7 @@ async function callbacks(mutation) {
   const failures = [];
   let executed = 0;
   for (const test of registered) {
+    if (test.todo === true || test.skipped === true) continue;
     executed++;
     try { await test.fn(); } catch (error) { failures.push({ name: test.name, file: test.file, message: error.message }); }
   }
