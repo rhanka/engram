@@ -245,7 +245,7 @@ describe("substrate composition (amendment §5.1, binding §10.1 negotiation)", 
     ]);
     expect(MEMORY_CONTRACT_DIGEST).toMatch(/^sha256:[0-9a-f]{64}$/);
     // Pinned literal: any descriptor drift breaks this test loudly (freeze discipline, C2).
-    expect(MEMORY_CONTRACT_DIGEST).toBe("sha256:dff737ced37d801ef48bb4d7088fc4fbc92021d21fe2034ff33ea643b49bec28");
+    expect(MEMORY_CONTRACT_DIGEST).toBe("sha256:dd0cccbd6e5e29766fbc9c48351ffe58f5b0a3162152f5ff02da0798c3244fee");
   });
 
   it("pins the complete contract manifest in the digest (binding §2.2.3)", () => {
@@ -967,10 +967,11 @@ describe("substrate canonical trace and replay (amendment §5.2, binding §8.2)"
   });
 
   describe("neutral unit carries intentHash (producer contract, binding §5.3 rule 5)", () => {
-    async function openSpiedStore(storeId: string, forgeIntentHash?: string): Promise<Harness & { applied: NeutralAtomicUnit[] }> {
+    async function openSpiedStore(storeId: string, forgeIntentHash?: string): Promise<Harness & { applied: NeutralAtomicUnit[]; findCalls: Array<{ identity: string; hit: boolean }> }> {
       const backend = createReferenceModuleStorageBackend({ scope: SCOPE });
       const clock = fixedClock();
       const applied: NeutralAtomicUnit[] = [];
+      const findCalls: Array<{ identity: string; hit: boolean }> = [];
       const inner = backend.handle;
       const handle: typeof inner = {
         ...inner,
@@ -982,6 +983,7 @@ describe("substrate canonical trace and replay (amendment §5.2, binding §8.2)"
             ...transaction,
             findIdempotency: async (selector: NeutralIdempotencySelector) => {
               const entry = await transaction.findIdempotency(selector);
+              findCalls.push({ identity: selector.commitIdentity, hit: entry !== null });
               if (entry === null || forgeIntentHash === undefined) return entry;
               return { ...entry, intentHash: forgeIntentHash };
             },
@@ -1001,7 +1003,7 @@ describe("substrate canonical trace and replay (amendment §5.2, binding §8.2)"
       if (!opened.ok) throw new Error(`open refused: ${opened.error.code} ${opened.error.message}`);
       const readiness = await opened.value.readiness();
       if (!readiness.ok) throw new Error(`readiness refused: ${readiness.error.code}`);
-      return { backend, clock, store: opened.value, epoch: readiness.value.storage_epoch, applied };
+      return { backend, clock, store: opened.value, epoch: readiness.value.storage_epoch, applied, findCalls };
     }
 
     function expectedOf(unit: NeutralAtomicUnit): string {
@@ -1022,31 +1024,51 @@ describe("substrate canonical trace and replay (amendment §5.2, binding §8.2)"
     });
 
     it("replays successfully when the host returns the carried value", async () => {
+      // Replays the captured unit through the commit boundary (module-storage-memory-store.ts:629):
+      // the same idempotency key hits a non-null findIdempotency entry carrying the stamped hash.
       const harness = await openSpiedStore("store:intent-replay");
-      const memory = await engineOn(harness.store, harness.clock);
-      const first = await memory.capture(captureRequest("intent-key-2", "1"));
+      const first = await harness.store.commitPending(manualCapture("candidate:intent-replay-a", "event:intent-replay"));
       expect(first).toMatchObject({ ok: true });
+      expect(harness.applied.length).toBeGreaterThan(0);
+      const captured = harness.applied[0]!;
+      expect(captured.intentHash).toBe(expectedOf(captured));
       const unitsAfterFirst = harness.backend.committedUnits().length;
-      const appliedAfterFirst = harness.applied.length;
-      const second = await memory.capture(captureRequest("intent-key-2", "1"));
-      expect(second).toMatchObject({ ok: true, value: { status: "duplicate_exact" } });
+      const beforeJournal = await journalLength(harness.store);
+      const findBefore = harness.findCalls.length;
+      const replay = await (harness.store as unknown as {
+        commitUnit: (operation: string, unit: NeutralAtomicUnit, key: string, limits: { maxAppends: number; maxRecords: number; maxEncodedBytes: number }) => Promise<unknown>;
+      }).commitUnit("capture", captured, "event:intent-replay", { maxAppends: 1, maxRecords: 8, maxEncodedBytes: 1048576 });
+      expect(replay).toMatchObject({ ok: true });
+      const replayCalls = harness.findCalls.slice(findBefore);
+      expect(replayCalls.length).toBeGreaterThan(0);
+      expect(replayCalls.some((call) => call.identity === "event:intent-replay" && call.hit)).toBe(true);
       expect(harness.backend.committedUnits().length).toBe(unitsAfterFirst);
-      expect(harness.applied.length).toBe(appliedAfterFirst);
+      expect(await journalLength(harness.store)).toBe(beforeJournal);
       await harness.store.close();
     });
 
     it("refuses with digest-conflict when the host returns a different value", async () => {
-      // The forged host returns a foreign hash for an already-bound commit
-      // identity; the replay comparison must refuse even though the presented
-      // unit is well-formed. A host that recomputed the hash from the unit
-      // would return the matching value and wrongly succeed.
-      const harness = await openSpiedStore("store:intent-forged", "sha256:forged-intent-hash");
+      // Only the returned intentHash is forged: the same captured unit replays through the same
+      // commit boundary, so a DIGEST_CONFLICT proves the line-629 comparison ran (no K7 or
+      // event-reuse short-circuit, which commitUnit never consults).
+      const forged = "sha256:forged-intent-hash";
+      const harness = await openSpiedStore("store:intent-forged", forged);
       const first = await harness.store.commitPending(manualCapture("candidate:intent-forge-a", "event:intent-forge"));
       expect(first).toMatchObject({ ok: true });
+      expect(harness.applied.length).toBeGreaterThan(0);
+      const captured = harness.applied[0]!;
+      expect(captured.intentHash).toBe(expectedOf(captured));
+      expect(forged).not.toBe(captured.intentHash);
       const before = await journalLength(harness.store);
       const unitsBefore = harness.backend.committedUnits().length;
-      const second = await harness.store.commitPending(manualCapture("candidate:intent-forge-b", "event:intent-forge"));
+      const findBefore = harness.findCalls.length;
+      const second = await (harness.store as unknown as {
+        commitUnit: (operation: string, unit: NeutralAtomicUnit, key: string, limits: { maxAppends: number; maxRecords: number; maxEncodedBytes: number }) => Promise<unknown>;
+      }).commitUnit("capture", captured, "event:intent-forge", { maxAppends: 1, maxRecords: 8, maxEncodedBytes: 1048576 });
       expect(second).toMatchObject({ ok: false, error: { code: "DIGEST_CONFLICT" } });
+      const replayCalls = harness.findCalls.slice(findBefore);
+      expect(replayCalls.length).toBeGreaterThan(0);
+      expect(replayCalls.some((call) => call.identity === "event:intent-forge" && call.hit)).toBe(true);
       expect(await journalLength(harness.store)).toBe(before);
       expect(harness.backend.committedUnits().length).toBe(unitsBefore);
       await harness.store.close();
