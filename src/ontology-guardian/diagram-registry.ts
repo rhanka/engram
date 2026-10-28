@@ -24,7 +24,7 @@ import {
   UML_MIGRATION_ID,
 } from "./diagram-migrations.js";
 import { DIAGRAM_PRESENTATION_CONTRACT_SCHEMA, DIAGRAM_SEMANTIC_SCHEMA } from "./diagram-schemas.js";
-import { QUALIFIED_COMPATIBILITY } from "./diagram-presentation-pins.js";
+import { PRESENTATION_PIN_MISMATCH, QUALIFIED_COMPATIBILITY } from "./diagram-presentation-pins.js";
 
 export const DIAGRAM_NAMESPACE = "diagram" as const;
 export const DIAGRAM_OWNER = "engram" as const;
@@ -338,24 +338,83 @@ export const ENVELOPE_CONTRACT = envelopeOf(
 // --- diagram-presentation@1 catalog entry revision 2 (qualified DS refs) ---
 //
 // The entry-1 record above stays byte-identical (transitional compatibility,
-// empty lineage). This revision carries the qualified adapter/renderer pinned
-// references with explicit lineage to entry 1. It introduces no semantic
-// ancestry: the contract pin, stack, digests, artifact binding and asset are
-// unchanged, so no profile, lineage.parents-of-a-family or P-PINS layer gains
-// the contract (§3.2.1). Still draft: no receipt exists (U-QUAL).
+// empty G0 artifact lineage). This revision carries only the qualified
+// adapter/renderer pinned references in compatibility; the G0 artifact
+// lineage stays empty (RECORD_CONTRACT.lineage.parents = [] is preserved, so
+// no P-PINS layer gains the contract). The catalog-revision relationship to
+// entry 1 lives OUTSIDE the closed G0 payload/envelope in
+// CONTRACT_QUALIFIED_REVISION below (successor entry 2 -> predecessor entry 1
+// with its external P-ENTRY digest). Still draft: no receipt exists (U-QUAL).
 
 export const PAYLOAD_CONTRACT_QUALIFIED: OntologyPayload = {
   ...PAYLOAD_CONTRACT,
   compatibility: { ...QUALIFIED_COMPATIBILITY },
-  lineage: { parents: [CONTRACT_PIN], mappings: [], migrations: [] },
+  lineage: { parents: [], mappings: [], migrations: [] },
 };
 
 export const ENVELOPE_CONTRACT_QUALIFIED = envelopeOf(
   "engram-diagram-presentation-2", "diagram-presentation@1",
-  "Governed typed presentation contract with qualified DS adapter/renderer refs (entry revision 2; lineage: entry 1).",
+  "Governed typed presentation contract with qualified DS adapter/renderer refs (entry revision 2; revises entry 1).",
   { ...DIAGRAM_PRESENTATION_CONTRACT_SCHEMA, schema: DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.schema as Record<string, unknown> },
   "contracts/diagram-presentation-1.json", CONTRACT_CONTENT, PAYLOAD_CONTRACT_QUALIFIED, "2",
 );
+
+/**
+ * Catalog-revision relationship for the qualified entry, kept OUTSIDE the
+ * closed G0 payload/envelope (no undeclared field is added to those shapes).
+ * The successor identity (entry 2) is bound here to its predecessor
+ * (catalog id "engram-diagram-presentation-1", entryVersion "1", external
+ * P-ENTRY digest). The old entry stays reproducible with its digests.
+ */
+export interface CatalogRevisionLink {
+  readonly successor: { readonly id: string; readonly entryVersion: string };
+  readonly predecessor: { readonly id: string; readonly entryVersion: string; readonly entryDigest: Digest };
+}
+
+export const CONTRACT_QUALIFIED_REVISION: CatalogRevisionLink = {
+  successor: { id: "engram-diagram-presentation-2", entryVersion: "2" },
+  predecessor: {
+    id: "engram-diagram-presentation-1",
+    entryVersion: "1",
+    entryDigest: "a83e2c1d0ea9612d38a0b3ad1a0f0ae4e93e7f7a10fcee49ab57a6a06659da0a",
+  },
+};
+
+export type CatalogRevisionCheck =
+  | { readonly outcome: "ok" }
+  | { readonly outcome: "refused"; readonly code: typeof PRESENTATION_PIN_MISMATCH; readonly path: string };
+
+/**
+ * Resolve the catalog-revision predecessor: the successor envelope must carry
+ * the linked successor identity, the predecessor envelope must carry the
+ * linked catalog id/entryVersion, and its recomputed P-ENTRY (through
+ * ontology-guardian `envelopeEntryDigest`) must equal the linked predecessor
+ * digest. A wrong predecessor digest (or identity) refuses with
+ * presentation-pin-mismatch.
+ */
+export function checkContractCatalogRevision(
+  successorEnvelope: Pick<RegistryEnvelope, "id" | "entryVersion">,
+  predecessorEnvelope: RegistryEnvelope,
+  link: CatalogRevisionLink = CONTRACT_QUALIFIED_REVISION,
+): CatalogRevisionCheck {
+  if (
+    successorEnvelope.id !== link.successor.id ||
+    successorEnvelope.entryVersion !== link.successor.entryVersion
+  ) {
+    return { outcome: "refused", code: PRESENTATION_PIN_MISMATCH, path: "successor.id" };
+  }
+  if (
+    predecessorEnvelope.id !== link.predecessor.id ||
+    predecessorEnvelope.entryVersion !== link.predecessor.entryVersion
+  ) {
+    return { outcome: "refused", code: PRESENTATION_PIN_MISMATCH, path: "predecessor.id" };
+  }
+  const actualPredecessorDigest = envelopeEntryDigest(predecessorEnvelope);
+  if (actualPredecessorDigest !== link.predecessor.entryDigest) {
+    return { outcome: "refused", code: PRESENTATION_PIN_MISMATCH, path: "predecessor.entryDigest" };
+  }
+  return { outcome: "ok" };
+}
 
 /** P-ENTRY, computed externally and never embedded (§7.3.1). */
 export function envelopeEntryDigest(envelope: RegistryEnvelope): Digest {
