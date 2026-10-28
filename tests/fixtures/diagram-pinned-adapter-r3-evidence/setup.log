@@ -1,0 +1,559 @@
+v22.22.1
+11.21.1
+node=v22.22.1 npm=11.21.1
+=== branch engram-memory build ===
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> engram-memory@0.0.0 build
+> npm --prefix contracts run build && tsc -p tsconfig.json
+
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> @engram/memory-contracts@0.0.0 build
+> tsc -p tsconfig.json
+
+exit:0
+engram-memory/contracts/dist/index.d.ts
+engram-memory/dist/index.js
+=== branch top-level build ===
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> @sentropic/engram@0.21.3 prebuild
+> npm --prefix engram-memory run build
+
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> engram-memory@0.0.0 build
+> npm --prefix contracts run build && tsc -p tsconfig.json
+
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> @engram/memory-contracts@0.0.0 build
+> tsc -p tsconfig.json
+
+
+> @sentropic/engram@0.21.3 build
+> node scripts/gen-st-tokens.mjs && tsup && npm run build:studio
+
+gen-st-tokens: wrote /home/antoinefa/src/graphify-wt-dpadapter/src/workspace/tokens-st-css.generated.ts (108614 bytes css)
+CLI Building entry: {"index":"src/index.ts","llm-mesh":"src/llm-mesh.ts","memory-tools":"src/memory-tools/index.ts","time-reference":"src/time-reference/index.ts","memory-substrate":"src/memory-substrate/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI Building entry: {"cli":"src/cli.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI Building entry: {"cli-compat":"src/cli-compat.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI Building entry: {"skill-runtime":"src/skill-runtime.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/antoinefa/src/graphify-wt-dpadapter/tsup.config.ts
+CLI tsup v8.5.1
+CLI Using tsup config: /home/antoinefa/src/graphify-wt-dpadapter/tsup.config.ts
+CLI tsup v8.5.1
+CLI Using tsup config: /home/antoinefa/src/graphify-wt-dpadapter/tsup.config.ts
+CLI tsup v8.5.1
+CLI Using tsup config: /home/antoinefa/src/graphify-wt-dpadapter/tsup.config.ts
+CLI Target: node20
+CLI Target: node20
+ESM Build start
+CLI Target: node20
+ESM Build start
+CLI Target: node20
+ESM Build start
+CLI Cleaning output folder
+ESM Build start
+CJS Build start
+ESM dist/cli-compat.js 703.00 B
+ESM ⚡️ Build success in 19ms
+DTS Build start
+
+ WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    src/storage/file.ts:23:31:
+[37m      23 │   return dirname(fileURLToPath([32mimport.meta[37m.url));
+         ╵                                [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+ WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    src/storage/neo4j.ts:69:31:
+[37m      69 │   return dirname(fileURLToPath([32mimport.meta[37m.url));
+         ╵                                [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+ WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    src/storage/postgres.ts:117:31:
+[37m      117 │   return dirname(fileURLToPath([32mimport.meta[37m.url));
+          ╵                                [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+ WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    src/storage/spanner.ts:128:31:
+[37m      128 │   return dirname(fileURLToPath([32mimport.meta[37m.url));
+          ╵                                [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+ WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    src/storage/sqlite.ts:137:31:
+[37m      137 │   return dirname(fileURLToPath([32mimport.meta[37m.url));
+          ╵                                [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+ WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    src/studio-assets.ts:52:31:
+[37m      52 │   return dirname(fileURLToPath([32mimport.meta[37m.url));
+         ╵                                [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+CJS dist/memory-tools.cjs         160.90 KB
+CJS dist/time-reference.cjs       104.28 KB
+CJS dist/llm-mesh.cjs             15.50 KB
+CJS dist/memory-substrate.cjs     288.64 KB
+CJS dist/memory-tools.cjs.map     415.48 KB
+CJS dist/llm-mesh.cjs.map         51.43 KB
+CJS dist/time-reference.cjs.map   207.32 KB
+CJS dist/memory-substrate.cjs.map 601.34 KB
+CJS dist/index.cjs                3.54 MB
+CJS dist/index.cjs.map            6.94 MB
+CJS ⚡️ Build success in 2505ms
+ESM dist/skill-runtime.js     3.22 MB
+ESM dist/skill-runtime.js.map 6.40 MB
+ESM ⚡️ Build success in 2525ms
+ESM dist/memory-tools.js         159.64 KB
+ESM dist/llm-mesh.js             13.69 KB
+ESM dist/time-reference.js       98.43 KB
+ESM dist/memory-substrate.js     287.42 KB
+ESM dist/time-reference.js.map   202.67 KB
+ESM dist/llm-mesh.js.map         51.08 KB
+ESM dist/memory-tools.js.map     414.70 KB
+ESM dist/memory-substrate.js.map 598.56 KB
+ESM dist/index.js                3.50 MB
+ESM dist/index.js.map            6.95 MB
+ESM ⚡️ Build success in 2653ms
+ESM dist/cli.js     4.91 MB
+ESM dist/cli.js.map 9.44 MB
+ESM ⚡️ Build success in 2888ms
+DTS ⚡️ Build success in 6835ms
+DTS dist/index.d.ts                   306.14 KB
+DTS dist/llm-mesh.d.ts                5.13 KB
+DTS dist/memory-tools.d.ts            16.34 KB
+DTS dist/time-reference.d.ts          31.40 KB
+DTS dist/memory-substrate.d.ts        14.07 KB
+DTS dist/llm-execution-z67BEv9E.d.ts  50.85 KB
+DTS dist/engine.d-r-XJzQTq.d.ts       1.28 KB
+DTS dist/index.d-CBiOxdRj.d.ts        39.05 KB
+DTS dist/index.d.cts                  306.15 KB
+DTS dist/llm-mesh.d.cts               5.13 KB
+DTS dist/memory-tools.d.cts           16.35 KB
+DTS dist/time-reference.d.cts         31.40 KB
+DTS dist/memory-substrate.d.cts       14.07 KB
+DTS dist/llm-execution-z67BEv9E.d.cts 50.85 KB
+DTS dist/engine.d-Ck7VGPYF.d.cts      1.28 KB
+DTS dist/index.d-CBiOxdRj.d.cts       39.05 KB
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> @sentropic/engram@0.21.3 build:studio
+> node scripts/build-studio-app.mjs
+
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> graphify-ontology-studio-app@0.1.0 build
+> vite build
+
+vite v7.3.3 building client environment for production...
+transforming...
+09:43:57 [vite-plugin-svelte] src/components/GraphCanvas.svelte:138:6 `canvas` is updated, but is not declared with `$state(...)`. Changing its value will not correctly trigger updates
+https://svelte.dev/e/non_reactive_update
+136: 
+137:   let container;
+138:   let canvas;
+                 ^
+139:   // Stacked Canvas2D overlay that paints the in-box label text for the WebGL2
+140:   // box glyphs (mode B); stays cleared in mode A (canvas2d draws its own text).
+09:43:57 [vite-plugin-svelte] src/components/GraphCanvas.svelte:300:6 `settingsHost` is updated, but is not declared with `$state(...)`. Changing its value will not correctly trigger updates
+https://svelte.dev/e/non_reactive_update
+298:   // instead of a permanently-open row of controls crowding the canvas.
+299:   let settingsOpen = $state(false);
+300:   let settingsHost;
+                       ^
+301: 
+302:   function toggleSettings() {
+✓ 4222 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                              0.45 kB │ gzip:   0.29 kB
+dist/assets/layoutWorker-R3M9r_h0.js         3.32 kB
+dist/assets/pdf.worker.min-yatZIOMy.mjs  1,375.84 kB
+dist/assets/index-BdSdCeUU.css             123.86 kB │ gzip:  17.24 kB
+dist/assets/pdf.worker.min-DgRcL-GR.js       0.09 kB │ gzip:   0.11 kB
+dist/assets/pdf-gh-BrLFn.js                334.78 kB │ gzip:  98.38 kB
+dist/assets/index-DPuV5bz5.js              384.38 kB │ gzip: 127.96 kB
+✓ built in 10.03s
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> graphify-ontology-studio-app@0.1.0 build
+> vite build
+
+vite v7.3.3 building client environment for production...
+transforming...
+09:44:08 [vite-plugin-svelte] src/components/GraphCanvas.svelte:138:6 `canvas` is updated, but is not declared with `$state(...)`. Changing its value will not correctly trigger updates
+https://svelte.dev/e/non_reactive_update
+136: 
+137:   let container;
+138:   let canvas;
+                 ^
+139:   // Stacked Canvas2D overlay that paints the in-box label text for the WebGL2
+140:   // box glyphs (mode B); stays cleared in mode A (canvas2d draws its own text).
+09:44:08 [vite-plugin-svelte] src/components/GraphCanvas.svelte:300:6 `settingsHost` is updated, but is not declared with `$state(...)`. Changing its value will not correctly trigger updates
+https://svelte.dev/e/non_reactive_update
+298:   // instead of a permanently-open row of controls crowding the canvas.
+299:   let settingsOpen = $state(false);
+300:   let settingsHost;
+                       ^
+301: 
+302:   function toggleSettings() {
+✓ 4222 modules transformed.
+rendering chunks...
+[plugin vite:singlefile] 
+
+[plugin vite:singlefile] Inlining: index-CkycLLUi.js
+[plugin vite:singlefile] Inlining: style-BdSdCeUU.css
+computing gzip size...
+dist-singlefile/layoutWorker-R3M9r_h0.js      3.32 kB
+dist-singlefile/index.html                2,678.60 kB │ gzip: 851.86 kB
+✓ built in 9.65s
+build-studio-app: single-file template -> /home/antoinefa/src/graphify-wt-dpadapter/studio/dist/studio-template.html
+build-studio-app: /home/antoinefa/src/graphify-wt-dpadapter/studio/dist -> /home/antoinefa/src/graphify-wt-dpadapter/dist/studio-app
+exit:0
+-rwxr-xr-x 1 antoinefa antoinefa     703 Oct 28 09:43 dist/cli-compat.js
+-rwxr-xr-x 1 antoinefa antoinefa 5147990 Oct 28 09:43 dist/cli.js
+-rw-rw-r-- 1 antoinefa antoinefa  294348 Oct 28 09:43 dist/memory-substrate.js
+=== baseline engram-memory build ===
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> engram-memory@0.0.0 build
+> npm --prefix contracts run build && tsc -p tsconfig.json
+
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> @engram/memory-contracts@0.0.0 build
+> tsc -p tsconfig.json
+
+exit:0
+-rw-rw-r-- 1 antoinefa antoinefa 44438 Oct 28 09:44 engram-memory/contracts/dist/index.d.ts
+-rw-rw-r-- 1 antoinefa antoinefa  2407 Oct 28 09:44 engram-memory/dist/index.js
+=== baseline top-level build ===
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> @sentropic/engram@0.21.3 prebuild
+> npm --prefix engram-memory run build
+
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> engram-memory@0.0.0 build
+> npm --prefix contracts run build && tsc -p tsconfig.json
+
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> @engram/memory-contracts@0.0.0 build
+> tsc -p tsconfig.json
+
+
+> @sentropic/engram@0.21.3 build
+> node scripts/gen-st-tokens.mjs && tsup && npm run build:studio
+
+gen-st-tokens: wrote /home/antoinefa/src/graphify-wt-dpadapter/.baseline/src/workspace/tokens-st-css.generated.ts (108614 bytes css)
+CLI Building entry: {"index":"src/index.ts","llm-mesh":"src/llm-mesh.ts","memory-tools":"src/memory-tools/index.ts","time-reference":"src/time-reference/index.ts","memory-substrate":"src/memory-substrate/index.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI Building entry: {"cli":"src/cli.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI Building entry: {"cli-compat":"src/cli-compat.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI Building entry: {"skill-runtime":"src/skill-runtime.ts"}
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/antoinefa/src/graphify-wt-dpadapter/.baseline/tsup.config.ts
+CLI tsup v8.5.1
+CLI Using tsup config: /home/antoinefa/src/graphify-wt-dpadapter/.baseline/tsup.config.ts
+CLI tsup v8.5.1
+CLI Using tsup config: /home/antoinefa/src/graphify-wt-dpadapter/.baseline/tsup.config.ts
+CLI tsup v8.5.1
+CLI Using tsup config: /home/antoinefa/src/graphify-wt-dpadapter/.baseline/tsup.config.ts
+CLI Target: node20
+CLI Target: node20
+ESM Build start
+CLI Target: node20
+ESM Build start
+CLI Target: node20
+ESM Build start
+CLI Cleaning output folder
+ESM Build start
+CJS Build start
+ESM dist/cli-compat.js 703.00 B
+ESM ⚡️ Build success in 23ms
+DTS Build start
+ESM dist/skill-runtime.js     3.22 MB
+ESM dist/skill-runtime.js.map 6.40 MB
+ESM ⚡️ Build success in 2515ms
+
+ WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    src/storage/file.ts:23:31:
+[37m      23 │   return dirname(fileURLToPath([32mimport.meta[37m.url));
+         ╵                                [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+ WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    src/storage/neo4j.ts:69:31:
+[37m      69 │   return dirname(fileURLToPath([32mimport.meta[37m.url));
+         ╵                                [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+ WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    src/storage/postgres.ts:117:31:
+[37m      117 │   return dirname(fileURLToPath([32mimport.meta[37m.url));
+          ╵                                [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+ WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    src/storage/spanner.ts:128:31:
+[37m      128 │   return dirname(fileURLToPath([32mimport.meta[37m.url));
+          ╵                                [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+ WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    src/storage/sqlite.ts:137:31:
+[37m      137 │   return dirname(fileURLToPath([32mimport.meta[37m.url));
+          ╵                                [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+
+ WARN  [33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1m"import.meta" is not available with the "cjs" output format and will be empty[0m [empty-import-meta]
+
+    src/studio-assets.ts:52:31:
+[37m      52 │   return dirname(fileURLToPath([32mimport.meta[37m.url));
+         ╵                                [32m~~~~~~~~~~~[0m
+
+  You need to set the output format to "esm" for "import.meta" to work correctly.
+
+
+
+CJS dist/llm-mesh.cjs             15.50 KB
+CJS dist/memory-tools.cjs         160.90 KB
+CJS dist/memory-substrate.cjs     288.64 KB
+CJS dist/time-reference.cjs       104.28 KB
+CJS dist/llm-mesh.cjs.map         51.43 KB
+CJS dist/memory-tools.cjs.map     415.48 KB
+CJS dist/time-reference.cjs.map   207.32 KB
+CJS dist/memory-substrate.cjs.map 601.34 KB
+CJS dist/index.cjs                3.54 MB
+CJS dist/index.cjs.map            6.94 MB
+CJS ⚡️ Build success in 2959ms
+ESM dist/llm-mesh.js             13.69 KB
+ESM dist/time-reference.js       98.43 KB
+ESM dist/memory-tools.js         159.64 KB
+ESM dist/memory-substrate.js     287.42 KB
+ESM dist/llm-mesh.js.map         51.08 KB
+ESM dist/time-reference.js.map   202.67 KB
+ESM dist/memory-tools.js.map     414.70 KB
+ESM dist/memory-substrate.js.map 598.56 KB
+ESM dist/index.js                3.50 MB
+ESM dist/index.js.map            6.95 MB
+ESM ⚡️ Build success in 2961ms
+ESM dist/cli.js     4.91 MB
+ESM dist/cli.js.map 9.44 MB
+ESM ⚡️ Build success in 2969ms
+DTS ⚡️ Build success in 7339ms
+DTS dist/index.d.ts                   306.14 KB
+DTS dist/llm-mesh.d.ts                5.13 KB
+DTS dist/memory-tools.d.ts            16.34 KB
+DTS dist/time-reference.d.ts          31.40 KB
+DTS dist/memory-substrate.d.ts        14.07 KB
+DTS dist/llm-execution-z67BEv9E.d.ts  50.85 KB
+DTS dist/engine.d-r-XJzQTq.d.ts       1.28 KB
+DTS dist/index.d-CBiOxdRj.d.ts        39.05 KB
+DTS dist/index.d.cts                  306.15 KB
+DTS dist/llm-mesh.d.cts               5.13 KB
+DTS dist/memory-tools.d.cts           16.35 KB
+DTS dist/time-reference.d.cts         31.40 KB
+DTS dist/memory-substrate.d.cts       14.07 KB
+DTS dist/llm-execution-z67BEv9E.d.cts 50.85 KB
+DTS dist/engine.d-Ck7VGPYF.d.cts      1.28 KB
+DTS dist/index.d-CBiOxdRj.d.cts       39.05 KB
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> @sentropic/engram@0.21.3 build:studio
+> node scripts/build-studio-app.mjs
+
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+
+added 139 packages, and audited 140 packages in 11s
+
+29 packages are looking for funding
+  run `npm fund` for details
+
+12 vulnerabilities (4 low, 2 moderate, 6 high)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+Some issues need review, and may require choosing
+a different dependency.
+
+Run `npm audit` for details.
+npm warn install-scripts 1 package has install scripts not yet covered by allowScripts:
+npm warn install-scripts   esbuild@0.27.7 (postinstall: node install.js)
+npm warn install-scripts
+npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> graphify-ontology-studio-app@0.1.0 build
+> vite build
+
+vite v7.3.3 building client environment for production...
+transforming...
+09:44:51 [vite-plugin-svelte] src/components/GraphCanvas.svelte:138:6 `canvas` is updated, but is not declared with `$state(...)`. Changing its value will not correctly trigger updates
+https://svelte.dev/e/non_reactive_update
+136: 
+137:   let container;
+138:   let canvas;
+                 ^
+139:   // Stacked Canvas2D overlay that paints the in-box label text for the WebGL2
+140:   // box glyphs (mode B); stays cleared in mode A (canvas2d draws its own text).
+09:44:51 [vite-plugin-svelte] src/components/GraphCanvas.svelte:300:6 `settingsHost` is updated, but is not declared with `$state(...)`. Changing its value will not correctly trigger updates
+https://svelte.dev/e/non_reactive_update
+298:   // instead of a permanently-open row of controls crowding the canvas.
+299:   let settingsOpen = $state(false);
+300:   let settingsHost;
+                       ^
+301: 
+302:   function toggleSettings() {
+✓ 4222 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                              0.45 kB │ gzip:   0.29 kB
+dist/assets/layoutWorker-R3M9r_h0.js         3.32 kB
+dist/assets/pdf.worker.min-yatZIOMy.mjs  1,375.84 kB
+dist/assets/index-BdSdCeUU.css             123.86 kB │ gzip:  17.24 kB
+dist/assets/pdf.worker.min-DgRcL-GR.js       0.09 kB │ gzip:   0.11 kB
+dist/assets/pdf-gh-BrLFn.js                334.78 kB │ gzip:  98.38 kB
+dist/assets/index-DPuV5bz5.js              384.38 kB │ gzip: 127.96 kB
+✓ built in 10.33s
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> graphify-ontology-studio-app@0.1.0 build
+> vite build
+
+vite v7.3.3 building client environment for production...
+transforming...
+09:45:02 [vite-plugin-svelte] src/components/GraphCanvas.svelte:138:6 `canvas` is updated, but is not declared with `$state(...)`. Changing its value will not correctly trigger updates
+https://svelte.dev/e/non_reactive_update
+136: 
+137:   let container;
+138:   let canvas;
+                 ^
+139:   // Stacked Canvas2D overlay that paints the in-box label text for the WebGL2
+140:   // box glyphs (mode B); stays cleared in mode A (canvas2d draws its own text).
+09:45:02 [vite-plugin-svelte] src/components/GraphCanvas.svelte:300:6 `settingsHost` is updated, but is not declared with `$state(...)`. Changing its value will not correctly trigger updates
+https://svelte.dev/e/non_reactive_update
+298:   // instead of a permanently-open row of controls crowding the canvas.
+299:   let settingsOpen = $state(false);
+300:   let settingsHost;
+                       ^
+301: 
+302:   function toggleSettings() {
+✓ 4222 modules transformed.
+rendering chunks...
+[plugin vite:singlefile] 
+
+[plugin vite:singlefile] Inlining: index-CkycLLUi.js
+[plugin vite:singlefile] Inlining: style-BdSdCeUU.css
+computing gzip size...
+dist-singlefile/layoutWorker-R3M9r_h0.js      3.32 kB
+dist-singlefile/index.html                2,678.60 kB │ gzip: 851.86 kB
+✓ built in 10.14s
+build-studio-app: single-file template -> /home/antoinefa/src/graphify-wt-dpadapter/.baseline/studio/dist/studio-template.html
+build-studio-app: /home/antoinefa/src/graphify-wt-dpadapter/.baseline/studio/dist -> /home/antoinefa/src/graphify-wt-dpadapter/.baseline/dist/studio-app
+exit:0
+-rwxr-xr-x 1 antoinefa antoinefa     703 Oct 28 09:44 dist/cli-compat.js
+-rwxr-xr-x 1 antoinefa antoinefa 5148457 Oct 28 09:44 dist/cli.js
+-rw-rw-r-- 1 antoinefa antoinefa  294348 Oct 28 09:44 dist/memory-substrate.js
+=== baseline full suite ===
+cmd: npx vitest run --configLoader runner --reporter=json
+exit:1
+=== canonical R3 commands (identical both sides) ===
+git worktree add --detach .baseline 8b93ba6b
+cmp package-lock.json .baseline/package-lock.json  # identical
+cmp engram-memory/package-lock.json .baseline/engram-memory/package-lock.json  # identical (via git show)
+ln -sfn ../node_modules .baseline/node_modules
+ln -sfn ../../engram-memory/node_modules .baseline/engram-memory/node_modules
+export npm_config_cache=/home/antoinefa/src/graphify-wt-dpadapter/.tmp/r3-npm-cache
+npm --prefix engram-memory run build   # branch, exit 0; then in .baseline, exit 0
+npm run build                          # branch, exit 0; then in .baseline, exit 0
+npx vitest run --configLoader runner --reporter=json --outputFile=<evdir>/base-vitest.json    # cwd .baseline
+npx vitest run --configLoader runner --reporter=json --outputFile=<evdir>/branch-vitest.json  # cwd worktree root
+node tests/diagram-mutant-proof.mjs    # branch (npm run test:diagram-mutants), exit 0
+node comparison writer                 # tests/fixtures/diagram-pinned-adapter-r3-evidence/comparison.json

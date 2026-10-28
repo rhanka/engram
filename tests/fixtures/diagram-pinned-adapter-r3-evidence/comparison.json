@@ -1,0 +1,90 @@
+{
+  "format": "dp-pinned-adapter-suite-comparison/1",
+  "method": "SUITE-COMPARISON-METHOD (baseline 8b93ba6b as detached .baseline sharing branch node_modules, identical builds incl. CLI, identical env/cache, identity+status+skip comparison, cause from diagnostic text)",
+  "baselineCommit": "8b93ba6b834f83fddbcf76091054efea2e188cf1",
+  "branchCommit": "c856aa9e9a9af53e127df549e45e116253ded6f9 (plus uncommitted evidence)",
+  "setup": {
+    "lockfiles": [
+      "cmp package-lock.json -> identical",
+      "engram-memory/package-lock.json -> identical"
+    ],
+    "worktree": "git worktree add --detach .baseline 8b93ba6b",
+    "links": [
+      ".baseline/node_modules -> ../node_modules",
+      ".baseline/engram-memory/node_modules -> ../../engram-memory/node_modules"
+    ],
+    "cache": "npm_config_cache=/home/antoinefa/src/graphify-wt-dpadapter/.tmp/r3-npm-cache (shared, writable under worktree)",
+    "node": "v22.22.1",
+    "npm": "11.21.1",
+    "builds": [
+      "npm --prefix engram-memory run build (both sides, exit 0)",
+      "npm run build (both sides, exit 0; dist/cli.js + dist/memory-substrate.js present on both)"
+    ],
+    "vitest": "npx vitest run --configLoader runner --reporter=json --outputFile=<evidence>/<side>-vitest.json (same command, same env, same cache on both sides)",
+    "log": "setup.log"
+  },
+  "results": {
+    "base": {
+      "files": 432,
+      "total": 7392,
+      "passed": 7354,
+      "failed": 1,
+      "pending": 37,
+      "sha256": "f40765f22f54dac34b94aae18778c7445aee34da5628cb9bd459bf2868923114",
+      "bytes": 2686281
+    },
+    "branch": {
+      "files": 433,
+      "total": 7409,
+      "passed": 7371,
+      "failed": 1,
+      "pending": 37,
+      "sha256": "dcccb60de114e92c3c112fa6b901e66a1c9cb02e2afa5245f0e523953ed82f3b",
+      "bytes": 2688146
+    }
+  },
+  "comparison": {
+    "addedPassing": {
+      "count": 17,
+      "file": "tests/ontology-guardian-diagram-pinned-adapter.test.ts"
+    },
+    "removed": 0,
+    "failedToPassed": [],
+    "skippedToPassed": [],
+    "failingIdentitiesBase": [
+      "tests/memory-substrate-tarball.test.ts > substrate tarball acceptance (installed consumer, M10) packs, installs offline, and accepts the installed entry"
+    ],
+    "failingIdentitiesBranch": [
+      "tests/memory-substrate-tarball.test.ts > substrate tarball acceptance (installed consumer, M10) packs, installs offline, and accepts the installed entry"
+    ],
+    "branchAddsFailingOrSkipped": false,
+    "skipIdentities": {
+      "base": 37,
+      "branch": 37,
+      "diff": 0
+    }
+  },
+  "causes": [
+    {
+      "identity": "tests/memory-substrate-tarball.test.ts > substrate tarball acceptance (installed consumer, M10) packs, installs offline, and accepts the installed entry",
+      "side": "base",
+      "cause": "unclassified: npm ci --offline ENOTCACHED, missing cached tarball (zod-to-json-schema-3.25.2.tgz) in shared npm cache"
+    },
+    {
+      "identity": "tests/memory-substrate-tarball.test.ts > substrate tarball acceptance (installed consumer, M10) packs, installs offline, and accepts the installed entry",
+      "side": "branch",
+      "cause": "unclassified: npm ci --offline ENOTCACHED, missing cached tarball (zod-to-json-schema-3.25.2.tgz) in shared npm cache"
+    }
+  ],
+  "causesEqual": true,
+  "nativeAddon": false,
+  "note": "Failure message names no native module (no .node/fs-ext/better-sqlite3); per method it is unclassified, never defaulted to native-addon. Both sides fail identically at npm ci --offline ENOTCACHED for the same tarball; only worktree path and log timestamps differ. Replaces the round-2 blanket fs-ext/regression claim.",
+  "digests": {
+    "successor": "c430ff66df3b04e6d792dd1a60e40e01dbeaffa47b206da0021a937ca83fa4f9",
+    "predecessor": "a83e2c1d0ea9612d38a0b3ad1a0f0ae4e93e7f7a10fcee49ab57a6a06659da0a",
+    "contract": "74dadb9c31fff7653ca31692d8db3cfea782baea8d9268a3c20982ea8ab0aeae",
+    "schema": "f13d595793e17e1e4740c9203b19d8381fc55b90e37121d61f5037cb79f0281a",
+    "unchanged": true
+  },
+  "verdict": "PASS: branch adds no failing or skipped identity; the single failure cause is identical (unclassified offline-cache ENOTCACHED) on both sides."
+}
