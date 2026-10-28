@@ -5,6 +5,6 @@
     "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["src/ontology-guardian/openerp-*.ts", "tests/ontology-guardian-openerp-typeproof.test.ts"],
+  "include": ["src/ontology-guardian/openerp-*.ts", "tests/ontology-guardian-openerp-typeproof.test.ts", "tests/ontology-guardian-openerp-acceptance.test.ts"],
   "exclude": ["node_modules", "dist"]
 }
