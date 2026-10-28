@@ -36,9 +36,19 @@ import {
   MAPPING_ODOO,
   MAPPING_OPEN_STANDARDS,
   MAPPING_SAP,
+  OPENERP_COVERAGE_TYPES,
   qualifyMappingEntry,
 } from "../src/ontology-guardian/openerp-mappings.js";
-import { OPENERP_ADMISSION_TASKS } from "../src/ontology-guardian/openerp-registry.js";
+import {
+  OPENERP_ADMISSION_TASKS,
+  OPENERP_ALLOWED_LICENCES,
+  RECORD_OPENERP_V1,
+  SUCCESSOR_V2_DIGESTS,
+  SUCCESSOR_V2_PIN,
+  checkOpenerpLicenceClosure,
+  resolveOpenerpVersion,
+} from "../src/ontology-guardian/openerp-registry.js";
+import { OPENERP_PIN } from "../src/ontology-guardian/openerp-profile.js";
 
 const here = process.env.OPENERP_TESTS_DIR ?? dirname(fileURLToPath(import.meta.url));
 const ont = JSON.parse(readFileSync(join(here, "fixtures", "openerp", "openerp-ontology.json"), "utf8"));
@@ -61,7 +71,7 @@ function checkAmountShape(value: unknown): boolean {
   return /^[A-Z]{3}$/.test(record["currency"] as string);
 }
 
-const ALLOWED_LICENCES = ["MIT", "Apache-2.0", "CC0"] as const;
+const ALLOWED_LICENCES = OPENERP_ALLOWED_LICENCES;
 
 describe("FX-OP-01 export comparison discipline (§6b)", () => {
   it("compares semantically with producedAt set aside, never by file sha", () => {
@@ -76,9 +86,25 @@ describe("FX-OP-01 export comparison discipline (§6b)", () => {
 
 describe("FX-OP-04 licence closure (§7)", () => {
   it("holds MIT only and refuses an excluded licence with no lifecycle cure", () => {
-    expect(["MIT"].every((licence) => (ALLOWED_LICENCES as readonly string[]).includes(licence))).toBe(true);
-    expect((ALLOWED_LICENCES as readonly string[]).includes("GPL-3.0")).toBe(false);
+    expect(checkOpenerpLicenceClosure(["MIT"])).toEqual({ admitted: true });
+    expect(checkOpenerpLicenceClosure([...ALLOWED_LICENCES])).toEqual({ admitted: true });
+    const excluded = checkOpenerpLicenceClosure(["MIT", "GPL-3.0"]);
+    expect(excluded.admitted).toBe(false);
+    if (excluded.admitted !== false) throw new Error("licence");
+    expect(excluded.code).toBe("excluded-licence");
     expect(OPENERP_ADMISSION_TASKS.some((t) => t.field.includes("licenceClosure"))).toBe(true);
+  });
+
+  it("returns the exact excluded-licence code across lifecycle variants", () => {
+    for (const lifecycle of ["draft", "published", "deprecated"] as const) {
+      const withExcluded = checkOpenerpLicenceClosure(["MIT", "GPL-3.0"]);
+      expect(withExcluded.admitted).toBe(false);
+      if (withExcluded.admitted !== false) throw new Error("licence");
+      expect(withExcluded.code).toBe("excluded-licence");
+      expect(lifecycle.length).toBeGreaterThan(0);
+    }
+    expect(checkOpenerpLicenceClosure([])).toEqual({ admitted: true });
+    expect(checkOpenerpLicenceClosure(["Apache-2.0", "CC0"])).toEqual({ admitted: true });
   });
 });
 
@@ -190,26 +216,80 @@ describe("FX-OP-08 mapping integrity (§4, §6c)", () => {
       reason: "reference-unpinned",
     });
   });
+
+  it("rejects column and unknown sources independently of the supplied level (FX-OP-08)", () => {
+    expect(qualifyMappingEntry({ from: "invoices.company_id", level: "type", referencePinned: true })).toEqual({
+      qualified: false,
+      reason: "field-level-blocked",
+    });
+    expect(qualifyMappingEntry({ from: "invoices.company_id", level: "field", referencePinned: true })).toEqual({
+      qualified: false,
+      reason: "field-level-blocked",
+    });
+    expect(qualifyMappingEntry({ from: "invoices.company_id", level: "type", referencePinned: false })).toEqual({
+      qualified: false,
+      reason: "field-level-blocked",
+    });
+    expect(qualifyMappingEntry({ from: "no_such_entity", level: "type", referencePinned: true })).toEqual({
+      qualified: false,
+      reason: "unknown-source",
+    });
+    expect(qualifyMappingEntry({ from: "no_such_entity", level: "field", referencePinned: true })).toEqual({
+      qualified: false,
+      reason: "field-level-blocked",
+    });
+    expect(qualifyMappingEntry({ from: "companies, contacts", level: "field", referencePinned: true })).toEqual({
+      qualified: false,
+      reason: "grouped-source",
+    });
+  });
 });
 
 describe("FX-OP-10 lifecycle stability (§§1.5, 6a)", () => {
   it("deprecation changes entryDigest only; the §1.6 triple stays equal", () => {
-    const entry = { canonicalRef: "openerp@1", contentDigest: OPENERP_CONTENT_DIGEST, lifecycle: "draft" };
+    const corpusDigest = "c".repeat(64);
+    const published = {
+      ...RECORD_OPENERP_V1,
+      lifecycle: "published",
+      corpusRef: { ref: "openerp-conformance-corpus@1", digest: corpusDigest },
+    } as const;
     const deprecated = {
-      ...entry,
+      ...published,
       lifecycle: "deprecated",
       deprecatedReason: "superseded by openerp@2",
       deprecatedAt: "2026-10-28",
-    };
-    expect(entryDigestOf(entry)).not.toBe(entryDigestOf(deprecated));
+    } as const;
+    expect(entryDigestOf(published as unknown as Record<string, unknown>)).not.toBe(
+      entryDigestOf(deprecated as unknown as Record<string, unknown>),
+    );
+    expect(published.digests.contentDigest).toBe(OPENERP_CONTENT_DIGEST);
+    expect(published.digests.pinsDigest).toBe(OPENERP_PINS_DIGEST);
+    expect((published.digests.resultEvidence as { digest: string }).digest).toBe(OPENERP_RESULT_DIGEST);
+    expect(deprecated.digests.contentDigest).toBe(OPENERP_CONTENT_DIGEST);
+    expect(deprecated.digests.pinsDigest).toBe(OPENERP_PINS_DIGEST);
+    expect((deprecated.digests.resultEvidence as { digest: string }).digest).toBe(OPENERP_RESULT_DIGEST);
     expect(OPENERP_CONTENT_DIGEST).toBe("8c00c51d1132d48dbe7a223f0fb0fb7b7d79fc6894d403b4731ffa265b081e65");
+    expect(SUCCESSOR_V2_DIGESTS.contentDigest).not.toBe(OPENERP_CONTENT_DIGEST);
   });
 
   it("resolves pinned versions only and never falls back to latest", () => {
-    const known = new Map([["1", OPENERP_CONTENT_DIGEST]]);
-    const resolve = (version: string): string | null => known.get(version) ?? null;
-    expect(resolve("1")).toBe(OPENERP_CONTENT_DIGEST);
-    expect(resolve("99")).toBe(null);
+    const one = resolveOpenerpVersion("1");
+    expect(one.resolved).toBe(true);
+    if (one.resolved !== true) throw new Error("resolve");
+    expect(one.pin).toEqual(OPENERP_PIN);
+    expect(one.pin.contentDigest).toBe(OPENERP_CONTENT_DIGEST);
+    const two = resolveOpenerpVersion("2");
+    expect(two.resolved).toBe(true);
+    if (two.resolved !== true) throw new Error("resolve");
+    expect(two.pin).toEqual(SUCCESSOR_V2_PIN);
+    const unknown = resolveOpenerpVersion("99");
+    expect(unknown.resolved).toBe(false);
+    if (unknown.resolved !== false) throw new Error("resolve");
+    expect(unknown.code).toBe("incompatible_version");
+    const empty = resolveOpenerpVersion("");
+    expect(empty.resolved).toBe(false);
+    if (empty.resolved !== false) throw new Error("resolve");
+    expect(empty.code).toBe("incompatible_version");
   });
 });
 
@@ -255,7 +335,7 @@ describe("§3.2(b) tenant-carrying declarations (OQ-OP-11)", () => {
 
 describe("acceptance fixture list (§10)", () => {
   it("covers FX-OP-01…FX-OP-12 with one deciding observable each", () => {
-    expect([
+    const fixtures = [
       "FX-OP-01",
       "FX-OP-02",
       "FX-OP-03",
@@ -268,6 +348,18 @@ describe("acceptance fixture list (§10)", () => {
       "FX-OP-10",
       "FX-OP-11",
       "FX-OP-12",
-    ]).toHaveLength(12);
+    ] as const;
+    expect(fixtures).toHaveLength(12);
+    expect(compareExportSemantics(ont, { ...ont, producedAt: "2026-10-28" })).toBe(true);
+    expect(OPENERP_CONTENT_DIGEST.length).toBe(64);
+    expect(checkOpenerpLicenceClosure(["MIT", "GPL-3.0"]).admitted).toBe(false);
+    expect(violatesTenantScopedUniqueness({ organization_id: "org-a", key: "k" }, { organization_id: "org-a", key: "k" })).toBe(true);
+    expect(checkJournalSourceType("manual")).toBe(true);
+    expect(checkAmountShape({ amountMinor: 1, currency: "CAD", scale: 2 })).toBe(true);
+    expect(qualifyMappingEntry({ from: "invoices.company_id", level: "type", referencePinned: true }).qualified).toBe(false);
+    expect(SUCCESSOR_V2_DIGESTS.contentDigest.length).toBe(64);
+    expect(resolveOpenerpVersion("99").resolved).toBe(false);
+    expect(ACCOUNTING_BALANCE.enforcement).toBe("application");
+    expect(OPENERP_COVERAGE_TYPES.length).toBe(19);
   });
 });
