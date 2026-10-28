@@ -1,10 +1,10 @@
 {
   "format": "openerp-shared-suite-setup/1",
   "baseCommit": "8b93ba6b834f83fddbcf76091054efea2e188cf1",
-  "branchCommit": "df6fb63d5b84db920bc93946ff903897056df47f",
+  "branchCommit": "bd6dab21882d30657059626cdae383d14d96abcd",
   "node": "v22.22.1",
   "nodeBinary": "/usr/bin/node",
-  "environmentSha256": "f17dd332aa14d96187ec8493f6b09650ef38ae2537bedddf72cc5accff3f5ee1",
+  "environmentSha256": "156c03305e105811685204c52696a3f83979067d825f8ed1a390a913c62de082",
   "npmCache": "/home/antoinefa/src/graphify-wt-openerp/.graphify/scratch/openerp-suite/npm-cache",
   "environment": "test-openerp",
   "lockfiles": {
@@ -36,6 +36,46 @@
     }
   },
   "commands": [
+    {
+      "label": "shared-installation-top-lock-8b93ba6b",
+      "command": "cmp",
+      "args": [
+        "/home/antoinefa/src/graphify-wt-openerp/package-lock.json",
+        "/home/antoinefa/src/graphify-wt-dpadapter/package-lock.json"
+      ],
+      "cwd": "/home/antoinefa/src/graphify-wt-openerp",
+      "exitCode": 0,
+      "log": "tests/fixtures/openerp-full-suite-evidence/shared-installation-top-lock-8b93ba6b.log.gz",
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "compressedSha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    {
+      "label": "shared-installation-memory-lock-8b93ba6b",
+      "command": "cmp",
+      "args": [
+        "/home/antoinefa/src/graphify-wt-openerp/engram-memory/package-lock.json",
+        "/home/antoinefa/src/graphify-wt-dpadapter/engram-memory/package-lock.json"
+      ],
+      "cwd": "/home/antoinefa/src/graphify-wt-openerp",
+      "exitCode": 0,
+      "log": "tests/fixtures/openerp-full-suite-evidence/shared-installation-memory-lock-8b93ba6b.log.gz",
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "compressedSha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
+    {
+      "label": "shared-installation-copy-8b93ba6b",
+      "command": "cp",
+      "args": [
+        "-a",
+        "/home/antoinefa/src/graphify-wt-dpadapter/engram-memory/node_modules/.",
+        "/home/antoinefa/src/graphify-wt-openerp/engram-memory/node_modules/"
+      ],
+      "cwd": "/home/antoinefa/src/graphify-wt-openerp",
+      "exitCode": 0,
+      "log": "tests/fixtures/openerp-full-suite-evidence/shared-installation-copy-8b93ba6b.log.gz",
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "compressedSha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
+    },
     {
       "label": "shared-offline-cache-8b93ba6b",
       "command": "npm",
@@ -249,6 +289,20 @@
       "compressedSha256": "537d938db54859bc2fe277e50895a67ff257f5df2d30a572729d397359cb139e"
     },
     {
+      "label": "base-8b93ba6b-native-probe",
+      "command": "/usr/bin/node",
+      "args": [
+        "--input-type=module",
+        "-e",
+        "import {createRequire} from \"node:module\"; import path from \"node:path\"; const require=createRequire(path.join(process.cwd(),\"engram-memory/package.json\")); const fs=require(\"fs-ext\"); const DB=require(\"better-sqlite3\"); const db=new DB(\":memory:\"); console.log(JSON.stringify({node:process.version,fsExt:typeof fs.flockSync,sqlite:db.prepare(\"select 1 as ok\").get()})); db.close();"
+      ],
+      "cwd": "/home/antoinefa/src/graphify-wt-openerp/.baseline",
+      "exitCode": 0,
+      "log": "tests/fixtures/openerp-full-suite-evidence/base-8b93ba6b-native-probe.log.gz",
+      "rawSha256": "1f744f4a0627884d55a71a6944b9a7684429bcf52ab3e158d96d48a2d8ea4c72",
+      "compressedSha256": "76cb45698ab07ef9145369791c96c75b028857daf699473d44e9ae8cf240685b"
+    },
+    {
       "label": "base-8b93ba6b-engram-memory-build",
       "command": "npm",
       "args": [
@@ -271,39 +325,24 @@
         "build"
       ],
       "cwd": "/home/antoinefa/src/graphify-wt-openerp/.baseline",
-      "exitCode": 1,
+      "exitCode": 0,
       "log": "tests/fixtures/openerp-full-suite-evidence/base-8b93ba6b-build.log.gz",
-      "rawSha256": "0e87f20e688fa45b2449a21fe31c1e6e1426831bc44437ae4912ee32c91183e2",
-      "compressedSha256": "ad6457ca987cb815a4c5dfcbd460a975a197cc83f988e70ad4f7b202b9717e5e"
+      "rawSha256": "a5825c24ea40095a96944f922c4953c6778fd52fc4853b65617751c535f15d63",
+      "compressedSha256": "15e8804a25edf6683a95e5e5bb644600e38d960c08012f9572c7945446334f9c"
     },
     {
-      "label": "base-8b93ba6b-native-external-build",
+      "label": "branch-8b93ba6b-native-probe",
       "command": "/usr/bin/node",
       "args": [
-        "node_modules/tsup/dist/cli-default.js",
-        "--external",
-        "fs-ext",
-        "--external",
-        "better-sqlite3"
+        "--input-type=module",
+        "-e",
+        "import {createRequire} from \"node:module\"; import path from \"node:path\"; const require=createRequire(path.join(process.cwd(),\"engram-memory/package.json\")); const fs=require(\"fs-ext\"); const DB=require(\"better-sqlite3\"); const db=new DB(\":memory:\"); console.log(JSON.stringify({node:process.version,fsExt:typeof fs.flockSync,sqlite:db.prepare(\"select 1 as ok\").get()})); db.close();"
       ],
-      "cwd": "/home/antoinefa/src/graphify-wt-openerp/.baseline",
+      "cwd": "/home/antoinefa/src/graphify-wt-openerp",
       "exitCode": 0,
-      "log": "tests/fixtures/openerp-full-suite-evidence/base-8b93ba6b-native-external-build.log.gz",
-      "rawSha256": "8c73e579fa05ed9df0dc84c1e78d5976049a026300a7e74d7bf1c74a9f3a7986",
-      "compressedSha256": "191adda9db92b03d95fc8c07d752a4717c952de77348c0021aa6a6bbf5350464"
-    },
-    {
-      "label": "base-8b93ba6b-studio-build",
-      "command": "npm",
-      "args": [
-        "run",
-        "build:studio"
-      ],
-      "cwd": "/home/antoinefa/src/graphify-wt-openerp/.baseline",
-      "exitCode": 0,
-      "log": "tests/fixtures/openerp-full-suite-evidence/base-8b93ba6b-studio-build.log.gz",
-      "rawSha256": "36a013797a92b0ca1ac925529c3f4a6b8b541c410de9ae529a6015e0afbc3ec3",
-      "compressedSha256": "58ca839678ffdcd3fbd676f2445970c6ed5ae32c10bf7384a404e9bf25ad8720"
+      "log": "tests/fixtures/openerp-full-suite-evidence/branch-8b93ba6b-native-probe.log.gz",
+      "rawSha256": "1f744f4a0627884d55a71a6944b9a7684429bcf52ab3e158d96d48a2d8ea4c72",
+      "compressedSha256": "76cb45698ab07ef9145369791c96c75b028857daf699473d44e9ae8cf240685b"
     },
     {
       "label": "branch-8b93ba6b-engram-memory-build",
@@ -328,39 +367,10 @@
         "build"
       ],
       "cwd": "/home/antoinefa/src/graphify-wt-openerp",
-      "exitCode": 1,
+      "exitCode": 0,
       "log": "tests/fixtures/openerp-full-suite-evidence/branch-8b93ba6b-build.log.gz",
-      "rawSha256": "44ede54c9f6023c3456f35f124c9b6a9d99611fd3bd425cf30fc092c14163ea7",
-      "compressedSha256": "5720c707861f48bf413e3bb3d9f1aa6a06a58ec260ccfb968a860c485221ffa1"
-    },
-    {
-      "label": "branch-8b93ba6b-native-external-build",
-      "command": "/usr/bin/node",
-      "args": [
-        "node_modules/tsup/dist/cli-default.js",
-        "--external",
-        "fs-ext",
-        "--external",
-        "better-sqlite3"
-      ],
-      "cwd": "/home/antoinefa/src/graphify-wt-openerp",
-      "exitCode": 0,
-      "log": "tests/fixtures/openerp-full-suite-evidence/branch-8b93ba6b-native-external-build.log.gz",
-      "rawSha256": "a48b8b63567539bcc84385280a0202bf5c75c538fe9e4756598dfa03d0e49b80",
-      "compressedSha256": "5052c719c461ea36d486e27ee629b93cfffeff5093ef9dbc034b9b3f1871790e"
-    },
-    {
-      "label": "branch-8b93ba6b-studio-build",
-      "command": "npm",
-      "args": [
-        "run",
-        "build:studio"
-      ],
-      "cwd": "/home/antoinefa/src/graphify-wt-openerp",
-      "exitCode": 0,
-      "log": "tests/fixtures/openerp-full-suite-evidence/branch-8b93ba6b-studio-build.log.gz",
-      "rawSha256": "d473feb41081eef97e773e1e3d1e8a6ca8c21a9df4c7346bd2ac62661cc150dd",
-      "compressedSha256": "7ee8dee722ed1eb09c71b4abdef071929037feae8786b3ae9eb3255a566baa35"
+      "rawSha256": "ff437ab59fbe35738bd9925427f12ca67cc6c97c17dd210c88c4854bc2605467",
+      "compressedSha256": "ea41adba7abf2616ec5a780dcbf6ae761d3de4cca4c2ed486c3e38bd55cffeb5"
     },
     {
       "label": "base-8b93ba6b-suite",
@@ -374,10 +384,10 @@
         "--outputFile=/home/antoinefa/src/graphify-wt-openerp/.graphify/scratch/openerp-suite/base-vitest.json"
       ],
       "cwd": "/home/antoinefa/src/graphify-wt-openerp/.baseline",
-      "exitCode": 1,
+      "exitCode": 0,
       "log": "tests/fixtures/openerp-full-suite-evidence/base-8b93ba6b-suite.log.gz",
-      "rawSha256": "399160bc0c60bf5c8043084faf979143ae318723f5bc66037a64d16db959e026",
-      "compressedSha256": "77b2d195121e806f151affaf02d1ef45a2612bac7823420d894bda097dee9b7c"
+      "rawSha256": "288d6653775c750a888f4f557dc5baf6378b51c4cb2a449726800031b105674f",
+      "compressedSha256": "f787a85f2210f4643563d982d8d35715e6950151ec1f5ba8ff6de04c7aa6357f"
     },
     {
       "label": "base-8b93ba6b-types",
@@ -404,10 +414,10 @@
         "--outputFile=/home/antoinefa/src/graphify-wt-openerp/.graphify/scratch/openerp-suite/branch-vitest.json"
       ],
       "cwd": "/home/antoinefa/src/graphify-wt-openerp",
-      "exitCode": 1,
+      "exitCode": 0,
       "log": "tests/fixtures/openerp-full-suite-evidence/branch-8b93ba6b-suite.log.gz",
-      "rawSha256": "2333879c7676e8c8be0419b8256537f9d40653128e23493c5488ae6d9b156c59",
-      "compressedSha256": "21ccb2a2b1d14bfee8d8d8975db0fc3514aadc96c0c36e9f9b6e3b8ad2375057"
+      "rawSha256": "dbb8cb965f33013427561862e4f2c5818d046e16f6da284767b35281efd2fbe0",
+      "compressedSha256": "d26ffcb234d3425f9db181455f419579ae803462b77a5634dbcac24a244acd7b"
     },
     {
       "label": "branch-8b93ba6b-types",
@@ -435,10 +445,10 @@
         "tests/ontology-guardian-openerp-full-suite-comparison-8b93ba6b.json"
       ],
       "cwd": "/home/antoinefa/src/graphify-wt-openerp",
-      "exitCode": 1,
+      "exitCode": 0,
       "log": "tests/fixtures/openerp-full-suite-evidence/comparison-8b93ba6b.log.gz",
-      "rawSha256": "ce6f78e0e467419d012e8fdbadf0865e9075cfc5f3ed08a58dd8c5492ad8d70b",
-      "compressedSha256": "caa7d276814e57be357833dbdcebf0e80d44030ddfb87a6939a72a4eb9771a35"
+      "rawSha256": "c4998e74e2af353f1b4e0ed27f25fdc09454468c6beb3c88bbc83fbbc6919a1d",
+      "compressedSha256": "895643169d74fd43580fda6af65ba5249e606a359c8638429d02cdcd230231d1"
     },
     {
       "label": "baseline-remove-8b93ba6b",
@@ -458,6 +468,21 @@
       "compressedSha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec"
     }
   ],
+  "installation": {
+    "source": "/home/antoinefa/src/graphify-wt-dpadapter",
+    "method": "cp -a",
+    "lockfilesByteIdentical": true,
+    "nativeBinaries": {
+      "fs-ext/build/Release/fs_ext.node": {
+        "sha256": "01fc956137404e54875e19890467816b1e683e45635f6fb916bd1aeb1a7c0bb5",
+        "matchesSource": true
+      },
+      "better-sqlite3/build/Release/better_sqlite3.node": {
+        "sha256": "df9fbd0d061f360d81fb51e265c53c9605020bd68219e34f33c07c85de15719a",
+        "matchesSource": true
+      }
+    }
+  },
   "generatedBuildSources": {
     "base": {
       "source": "src/workspace/tokens-st-css.generated.ts",
@@ -474,6 +499,6 @@
       "restoredBeforeSuite": true
     }
   },
-  "comparisonExitCode": 1,
+  "comparisonExitCode": 0,
   "baselineRemoved": true
 }
