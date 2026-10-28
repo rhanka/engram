@@ -47,7 +47,7 @@ import { verifyInstalledSemantics, verifyInstalledTypes, verifyLockedClosure } f
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = dirname(HERE);
 const PACKAGE_NAME = "@sentropic/engram";
-const EXPECTED_VERSION = "0.21.2";
+const EXPECTED_VERSION = "0.21.3";
 const EXPECTED_VALUES = ["createMemoryPortV2", "openModuleStorageCanonicalMemoryStoreV1"];
 
 /** Known native database drivers: any static edge to one fails the run. */
@@ -384,9 +384,9 @@ export function createTarballAcceptanceBackend({ scope, contractDigest }) {
         core.indexes.set(`${write.index}\0${write.key}`, write.value);
       }
       if (unit.moduleResult !== undefined && options.idempotencyKey !== undefined) {
-        const appendIds = unit.appends.map((append) => append.id);
-        const intentHash = stableStringify({ appends: appendIds, updates: [...appendIds, ...unit.updates.map((u) => u.key)] });
-        const entry = { intentHash, moduleResult: unit.moduleResult, unitHash: unitHash(unit) };
+        // The host persists the Engram-carried intent hash verbatim and
+        // returns it byte for byte from findIdempotency; it never recomputes it.
+        const entry = { intentHash: unit.intentHash, moduleResult: unit.moduleResult, unitHash: unitHash(unit) };
         core.commitResults.set(options.idempotencyKey, entry);
         for (const append of unit.appends) core.commitResults.set(append.id, entry);
       }
