@@ -24,6 +24,7 @@ import {
   UML_MIGRATION_ID,
 } from "./diagram-migrations.js";
 import { DIAGRAM_PRESENTATION_CONTRACT_SCHEMA, DIAGRAM_SEMANTIC_SCHEMA } from "./diagram-schemas.js";
+import { QUALIFIED_COMPATIBILITY } from "./diagram-presentation-pins.js";
 
 export const DIAGRAM_NAMESPACE = "diagram" as const;
 export const DIAGRAM_OWNER = "engram" as const;
@@ -245,7 +246,7 @@ function profilePayload(
 
 function envelopeOf(
   id: string, name: string, description: string, schema: { pin: Pin; digest: Digest; schema: Record<string, unknown> },
-  assetPath: string, assetDigest: Digest, payload: OntologyPayload,
+  assetPath: string, assetDigest: Digest, payload: OntologyPayload, entryVersion = "1",
 ): RegistryEnvelope {
   return {
     format: "sentropic.registry-entry/v1",
@@ -254,7 +255,7 @@ function envelopeOf(
     id,
     name,
     description,
-    entryVersion: "1",
+    entryVersion,
     publisher: { packageName: "engram-diagram-lot", packageVersion: "0.1.0" },
     compatibility: {
       entryContract: "1.1.4",
@@ -332,6 +333,28 @@ export const ENVELOPE_CONTRACT = envelopeOf(
   "engram-diagram-presentation-1", "diagram-presentation@1", "Governed typed presentation contract (S1 draft).",
   { ...DIAGRAM_PRESENTATION_CONTRACT_SCHEMA, schema: DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.schema as Record<string, unknown> },
   "contracts/diagram-presentation-1.json", CONTRACT_CONTENT, PAYLOAD_CONTRACT,
+);
+
+// --- diagram-presentation@1 catalog entry revision 2 (qualified DS refs) ---
+//
+// The entry-1 record above stays byte-identical (transitional compatibility,
+// empty lineage). This revision carries the qualified adapter/renderer pinned
+// references with explicit lineage to entry 1. It introduces no semantic
+// ancestry: the contract pin, stack, digests, artifact binding and asset are
+// unchanged, so no profile, lineage.parents-of-a-family or P-PINS layer gains
+// the contract (§3.2.1). Still draft: no receipt exists (U-QUAL).
+
+export const PAYLOAD_CONTRACT_QUALIFIED: OntologyPayload = {
+  ...PAYLOAD_CONTRACT,
+  compatibility: { ...QUALIFIED_COMPATIBILITY },
+  lineage: { parents: [CONTRACT_PIN], mappings: [], migrations: [] },
+};
+
+export const ENVELOPE_CONTRACT_QUALIFIED = envelopeOf(
+  "engram-diagram-presentation-2", "diagram-presentation@1",
+  "Governed typed presentation contract with qualified DS adapter/renderer refs (entry revision 2; lineage: entry 1).",
+  { ...DIAGRAM_PRESENTATION_CONTRACT_SCHEMA, schema: DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.schema as Record<string, unknown> },
+  "contracts/diagram-presentation-1.json", CONTRACT_CONTENT, PAYLOAD_CONTRACT_QUALIFIED, "2",
 );
 
 /** P-ENTRY, computed externally and never embedded (§7.3.1). */
