@@ -18,7 +18,9 @@ import {
 import type { OpenerpRelationEndpoint } from "../src/ontology-guardian/openerp-profile.js";
 import { OPENERP_PIN } from "../src/ontology-guardian/openerp-profile.js";
 import type { AdmissionTask } from "../src/ontology-guardian/openerp-registry.js";
+import { RECORD_OPENERP_V1 } from "../src/ontology-guardian/openerp-registry.js";
 import type { OpenerpColumnRow } from "../src/ontology-guardian/openerp-governed.js";
+import type { OntologyRecord } from "../src/ontology-guardian/types.js";
 
 describe("openerp lot type-level proof", () => {
   it("holds the closed enforcement and carrying shapes at runtime", () => {
@@ -40,6 +42,8 @@ describe("openerp lot type-level proof", () => {
     expect(row.status).toBe("unverified");
     const endpoint: OpenerpRelationEndpoint = { key: "a.b", from: "a", to: "b" };
     expect(endpoint.to).toBe("b");
+    expect(RECORD_OPENERP_V1.lifecycle).toBe("draft");
+    expect("corpusRef" in RECORD_OPENERP_V1).toBe(false);
   });
 });
 
@@ -66,3 +70,16 @@ const badTask: AdmissionTask = { field: "corpusRef", owner: "engram" };
 // Column nullability is required.
 // @ts-expect-error column notNull is required
 const badColumn: OpenerpColumnRow = { entity: "users", name: "email", type: "text" };
+
+// Closed G0 §1.4 record: no custodian field on the draft record.
+// @ts-expect-error custodian is not a record field
+const badRecordExtra = { ...RECORD_OPENERP_V1, custodian: "engram" } satisfies OntologyRecord;
+
+// Draft corpusRef is omission, never an unresolved arm: DigestEvidence is not a Digest.
+const badRecordUnresolved: OntologyRecord = {
+  ...RECORD_OPENERP_V1,
+  lifecycle: "published",
+  // @ts-expect-error unresolved encoding is not a corpusRef digest
+  corpusRef: { ref: "openerp-conformance-corpus@1", digest: { evidenceState: "unresolved" } },
+  digests: RECORD_OPENERP_V1.digests!,
+};
