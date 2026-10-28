@@ -135,6 +135,30 @@ describe("§1.3 record closure (FX-OP-03)", () => {
   it("refuses an extra record field at runtime (closure proof)", () => {
     const widened = { ...RECORD_OPENERP_V1, custodian: "engram" };
     expect(Object.keys(widened).sort()).not.toEqual(Object.keys(RECORD_OPENERP_V1).sort());
+    const entry = recordToEntry(RECORD_OPENERP_V1, OPENERP_PIN, TEST_CORPUS_DIGEST);
+    const widenedEntry = {
+      ...entry,
+      profilePin: { ...entry.profilePin, custodian: "engram" },
+    } as unknown as typeof entry;
+    const verdict = checkAdmission({ entry: widenedEntry, receipts: [] });
+    expect(verdict.admitted).toBe(false);
+    if (verdict.admitted !== false) throw new Error("admission");
+    expect(verdict.code).toBe("missing-receipt");
+    expect(verdict.reason).toMatch(/malformed/);
+  });
+
+  it("refuses a corpusRef carrying an unresolved encoding instead of omission (FX-OP-03)", () => {
+    expect("corpusRef" in RECORD_OPENERP_V1).toBe(false);
+    const entry = recordToEntry(RECORD_OPENERP_V1, OPENERP_PIN, TEST_CORPUS_DIGEST);
+    const unresolved = {
+      ...entry,
+      corpusDigest: { evidenceState: "unresolved" },
+    } as unknown as typeof entry;
+    const verdict = checkAdmission({ entry: unresolved, receipts: [] });
+    expect(verdict.admitted).toBe(false);
+    if (verdict.admitted !== false) throw new Error("admission");
+    expect(verdict.code).toBe("missing-receipt");
+    expect(verdict.reason).toMatch(/malformed/);
   });
 });
 
