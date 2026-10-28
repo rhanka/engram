@@ -253,6 +253,12 @@ export const OPENERP_G0_CONTRACT_GAPS: readonly OpenerpContractGap[] = [
     owner: "engram",
     question: "G0 contract extension, separate decision",
   },
+  {
+    id: "GAP-OP-10",
+    missingOperation: "G0 catalog/lifecycle full-Pin resolver over RegistryEnvelope entries (deprecated entries remain resolvable)",
+    owner: "engram",
+    question: "G0 contract extension, separate decision",
+  },
 ];
 
 /** Fixture coverage for the §10 acceptance list: covered fixtures pass, not-covered stay open. */
@@ -266,7 +272,7 @@ export const OPENERP_FIXTURE_COVERAGE: Record<string, { readonly status: "covere
   "FX-OP-07": { status: "covered" },
   "FX-OP-08": { status: "covered" },
   "FX-OP-09": { status: "covered" },
-  "FX-OP-10": { status: "covered" },
+  "FX-OP-10": { status: "not-covered", gap: "GAP-OP-10" },
   "FX-OP-11": { status: "covered" },
   "FX-OP-12": { status: "covered" },
 };
@@ -296,7 +302,8 @@ export type OpenerpVersionResolution =
   | { readonly resolved: false; readonly code: "incompatible_version"; readonly reason: string };
 
 /**
- * Pinned version resolution for openerp (FX-OP-10): versions resolve only by
+ * Constant version lookup only, not the FX-OP-10 catalog/lifecycle resolver
+ * (missing G0 operation: GAP-OP-10). Versions resolve only by
  * exact pin (`1` → v1 pin, `2` → successor pin). Any unknown version refuses
  * with the exact `incompatible_version` code, never a latest fallback.
  */
