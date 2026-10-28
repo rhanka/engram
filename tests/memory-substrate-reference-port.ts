@@ -376,8 +376,9 @@ export function createReferenceModuleStorageBackend(options: ReferenceBackendOpt
       }
       maybeFire("index");
       if (unit.moduleResult !== undefined && optionsValue.idempotencyKey !== undefined) {
-        const intentSources = [...unit.appends.map((append) => append.id), ...unit.updates.map((update) => update.key)];
-        const intentHash = canonicalizeJcs({ appends: unit.appends.map((append) => append.id), updates: intentSources });
+        // The host persists the Engram-carried intent hash verbatim and
+        // returns it byte for byte from findIdempotency; it never recomputes it.
+        const intentHash = unit.intentHash;
         core.commitResults.set(optionsValue.idempotencyKey, { intentHash, moduleResult: unit.moduleResult, unitHash: unitHash(unit) });
         for (const append of unit.appends) {
           core.commitResults.set(append.id, { intentHash, moduleResult: unit.moduleResult, unitHash: unitHash(unit) });
