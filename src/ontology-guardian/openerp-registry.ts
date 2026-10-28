@@ -229,6 +229,43 @@ export const SUCCESSOR_V2_PIN: Pin = {
   contentDigest: SUCCESSOR_V2_DIGESTS.contentDigest,
 };
 
+/** §7 licence closure allowlist (MIT throughout; closure within MIT/Apache-2.0/CC0 at admission). */
+export const OPENERP_ALLOWED_LICENCES: readonly string[] = ["MIT", "Apache-2.0", "CC0"] as const;
+
+export type OpenerpLicenceVerdict =
+  | { readonly admitted: true }
+  | { readonly admitted: false; readonly code: "excluded-licence"; readonly reason: string };
+
+/**
+ * §7 recomputed licence closure over the pack (guardian admission surface
+ * for FX-OP-04): every licence must stay within the allowlist; any excluded
+ * licence refuses with the exact `excluded-licence` code. No lifecycle state
+ * cures the refusal — callers assert the same code across lifecycle variants.
+ */
+export function checkOpenerpLicenceClosure(licences: readonly string[]): OpenerpLicenceVerdict {
+  for (const licence of licences) {
+    if (!(OPENERP_ALLOWED_LICENCES as readonly string[]).includes(licence)) {
+      return { admitted: false, code: "excluded-licence", reason: `excluded licence: ${licence}` };
+    }
+  }
+  return { admitted: true };
+}
+
+export type OpenerpVersionResolution =
+  | { readonly resolved: true; readonly pin: Pin }
+  | { readonly resolved: false; readonly code: "incompatible_version"; readonly reason: string };
+
+/**
+ * Pinned version resolution for openerp (FX-OP-10): versions resolve only by
+ * exact pin (`1` → v1 pin, `2` → successor pin). Any unknown version refuses
+ * with the exact `incompatible_version` code, never a latest fallback.
+ */
+export function resolveOpenerpVersion(version: string): OpenerpVersionResolution {
+  if (version === OPENERP_PIN.version) return { resolved: true, pin: OPENERP_PIN };
+  if (version === SUCCESSOR_V2_PIN.version) return { resolved: true, pin: SUCCESSOR_V2_PIN };
+  return { resolved: false, code: "incompatible_version", reason: `unknown openerp version: ${version}` };
+}
+
 /** Draft record for the tier-N successor (admission path §1.5, corpus still absent). */
 export const RECORD_OPENERP_V2_SUCCESSOR: OntologyRecord = {
   namespace: "openerp",
