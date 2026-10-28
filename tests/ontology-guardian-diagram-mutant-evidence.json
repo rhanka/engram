@@ -12,9 +12,9 @@
     "diagram-migrations.ts": "2ef4428c37b3038341e2f0e9b40bf850e966ece48204ebd7c3c2e82ee19e781c",
     "diagram-native-types.ts": "86ff20e8d04018e7b4a6c47a2697966d4397b26c7c71fe2568831d31313e3635",
     "diagram-oracle.ts": "62ddde57138c1f58cbb59c7f3e958aa432f26ed7a9e44afbac8a85db850f4959",
-    "diagram-presentation-pins.ts": "1ef5a871c57f39d8771f537a094b8e89a826241a8fde794facea9d5c0a67dd59",
+    "diagram-presentation-pins.ts": "6479ca08559d6ded92de945384cfeef484134049073b695fb9d27cb44b3f4edd",
     "diagram-profiles.ts": "5ebac511271f3dc421e21830a519f455408688699b7dbd81876be1af871bcb60",
-    "diagram-registry.ts": "1a0637b8172a57375c6e954725c8b03a485904ba8de25620b17207843bca94f6",
+    "diagram-registry.ts": "19ab396a7955211778b0eb5054d209984f4a1710bfb5fcd3ce232411154b662b",
     "diagram-schemas.ts": "df62a8cea668cfd515341bf953e9986a9b80e7dcf4d6fea1ce2ab80ca2891014",
     "diagram-skeletons.ts": "e77c9b79b4b1fcb719bf0a5be2b05dd8512609c9c56c11c4a44ffe1c5c3e39f9",
     "diagram-view-shape.ts": "9989bf1d3472b99b02bd25f09a5bae3b0b583c41b76af623e6a3b7268e88a367"
