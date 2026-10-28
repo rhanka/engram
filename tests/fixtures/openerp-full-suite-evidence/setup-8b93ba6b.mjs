@@ -55,6 +55,11 @@ save();
 if (!fs.existsSync(path.join(root, "studio/node_modules/vite-plugin-singlefile"))) {
   await run("shared-studio-install-8b93ba6b", "npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], path.join(root, "studio"));
 }
+// The installed-consumer gate uses npm ci --offline. Seed exactly its
+// byte-pinned remote tarballs into the same worktree cache before either run.
+const consumerLock = JSON.parse(fs.readFileSync(path.join(root, "scripts/fixtures/substrate-consumer/package-lock.json"), "utf8"));
+const tarballs = [...new Set(Object.values(consumerLock.packages).map(pkg => pkg.resolved).filter(url => url?.startsWith("https://")))].sort();
+await run("shared-offline-cache-8b93ba6b", "npm", ["cache", "add", ...tarballs, "--ignore-scripts"], root);
 assert.ok(!fs.existsSync(baseline), ".baseline already exists; do not overwrite");
 let created = false;
 try {
