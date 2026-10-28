@@ -17,7 +17,18 @@ export function normalizeDiagnostic(diagnostic, checkout) {
   // Only the two known checkout prefixes differ incidentally. Keep error text,
   // native module names, source locations, error codes and stack frames intact.
   const sharedRoot = checkout.endsWith("/.baseline") ? path.dirname(checkout) : checkout;
-  return diagnostic.replaceAll(checkout, "<checkout>").replaceAll(sharedRoot, "<checkout>");
+  const normalized = diagnostic.replaceAll(checkout, "<checkout>").replaceAll(sharedRoot, "<checkout>");
+  // esbuild prints shared dependency locations relative to cwd: for example
+  // ../engram-memory/node_modules on .baseline versus engram-memory/node_modules
+  // on the branch. Resolve only those known shared-installation prefixes.
+  return normalized.split("\n").map(line => {
+    const text = line.trimStart(), indent = line.slice(0, line.length - text.length);
+    for (const directory of ["engram-memory/node_modules", "studio/node_modules", "node_modules"]) {
+      const prefix = path.relative(checkout, path.join(sharedRoot, directory)) + "/";
+      if (text.startsWith(prefix)) return indent + "<checkout>/" + directory + "/" + text.slice(prefix.length);
+    }
+    return line;
+  }).join("\n");
 }
 
 export function classifyDiagnostic(diagnostic) {
@@ -168,7 +179,7 @@ async function main() {
       nodeModules: fs.realpathSync(path.join(root, "node_modules")), npmCache: process.env.npm_config_cache },
     scope: "Pinned .baseline detached worktree; one installation shared by symlinks; same Node/environment/npm cache; top-level and engram-memory builds on both sides. See retained setup.json and full command logs.",
     base: summary(base), branch: summary(branch), fullTypeScript, artifacts,
-    method: "Each failed assertion, or failed suite without a failed assertion, uses only its own retained diagnostic on its pinned side. No probes or source-token fallback. Identity includes file, fullName, kind and occurrence. Compare category, native modules and complete diagnostic after checkout-prefix normalization only. Status multisets include skips and todos.",
+    method: "Each failed assertion, or failed suite without a failed assertion, uses only its own retained diagnostic on its pinned side. No probes or source-token fallback. Identity includes file, fullName, kind and occurrence. Compare category, native modules and complete diagnostic after known absolute/relative checkout and shared-installation path normalization only. Status multisets include skips and todos.",
     statusEvidence: Object.fromEntries(Object.entries(statusRecords).map(([side, rows]) => [side, { count: rows.length, sha256: sha256Hex(canonicalBytes(rows)) }])),
     ...decision,
   };
