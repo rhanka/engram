@@ -367,6 +367,7 @@ export const NEUTRAL_ADDITIVE_ASSETS: ReadonlyArray<string> = Object.freeze([
   "profileClaims with pinned versions and semantic digests (binding §6.3)",
   "memory-* named queries and scope-chain-index for memory-journal (binding §4.1)",
   "memory key encodings, codec manifest, and index policies in the contract digest (binding §§2.2.3, 3.1, 3.2, 5.3)",
+  "NeutralAtomicUnit.intentHash Engram-carried intent hash persisted and returned byte for byte (binding §5.3 rule 5)",
 ]);
 
 export interface NeutralMemoryHandle {
