@@ -12,7 +12,7 @@
   "testSha256": {
     "ontology-guardian-openerp-vectors.test.ts": "b24a0cf5003e207e9d46fde2166f7749f9dcf6de69214d1d1c4e9e363a3c83a7",
     "ontology-guardian-openerp-admission.test.ts": "0de50c487431a8abae2db66968e4e3f2052a09297c3c62351796897d64077f85",
-    "ontology-guardian-openerp-acceptance.test.ts": "445a9ba9cbd97ef82114e52cd1e3520f97cc7b7a1aed6a3615048f3603ac4fa8",
+    "ontology-guardian-openerp-acceptance.test.ts": "34b507c4e415f8e805507afebdd1ce20a2a0a14f2b04bf4b615ce152e4d5570e",
     "ontology-guardian-openerp-migrations.test.ts": "a1d23f1a128ad56bc6fec419769289188d5b7743ecb0b4deffe74bc3d2679b3a",
     "ontology-guardian-openerp-typeproof.test.ts": "30cce74a6cf9b77f811e42f92d88cedf76f6e8886ae72261be96dc2145a68cbd"
   },
