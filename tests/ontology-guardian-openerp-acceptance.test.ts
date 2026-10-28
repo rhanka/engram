@@ -7,13 +7,14 @@
 // | excluded licence refuses admission with excluded-licence, no lifecycle cure | NONE (checkOpenerpLicenceClosure checks a string array only, src/ontology-guardian/openerp-registry.ts:245; checkAdmission only returns missing-receipt, src/ontology-guardian/admission.ts:445) | pack with real dependency closure NOT submitted (no operation) -> not-covered GAP-OP-04 |
 // FX-OP-10 observable table (§10 line -> deciding operation -> submitted input):
 // | deprecation leaves triple equal, changes entryDigest | entryDigestOf (src/ontology-guardian/digests.ts:292) + pinsDigestOf (:81) + resultDigestOf (:271) + hashOntologyProfile (src/ontology-profile.ts:505) | complete synthetic catalog entries before/after with triple recomputed from unchanged profile inputs |
-// | deprecated version stays resolvable by pin | resolveOpenerpVersion (src/ontology-guardian/openerp-registry.ts:263) | resolved pin checked against the synthetic catalog state |
-// | unknown version refuses incompatible_version | resolveOpenerpVersion (src/ontology-guardian/openerp-registry.ts:263) | "99" and "" (never a latest fallback) |
+// | deprecated version stays resolvable by full Pin through catalog/lifecycle state | NONE (catalog.ts declares types; entryDigestOf only hashes; resolveOpenerpVersion only looks up constants) | NOT submitted -> not-covered GAP-OP-10 |
+// | unknown version refuses incompatible_version | resolveOpenerpVersion (src/ontology-guardian/openerp-registry.ts:310) | "99" and "" (never a latest fallback) |
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { canonicalBytes } from "../src/ontology-guardian/canonical.js";
+import type { OntologyPayload, RegistryEnvelope } from "../src/ontology-guardian/catalog.js";
+import { canonicalBytes, sha256Hex } from "../src/ontology-guardian/canonical.js";
 import {
   entryDigestOf,
   mappingDigestOf,
@@ -259,20 +260,24 @@ describe("FX-OP-08 mapping integrity (§4, §6c)", () => {
 
 describe("FX-OP-10 lifecycle stability (§§1.5, 6a)", () => {
   it("deprecation changes entryDigest only; the §1.6 triple stays equal (recomputed)", () => {
-    const normalized = normalizeOntologyProfile(OPENERP_PROFILE_V1);
-    const recomputedContent = hashOntologyProfile(normalized);
-    const recomputedPins = pinsDigestOf({ layers: [OPENERP_PIN] });
-    const recomputedResult = resultDigestOf({
-      effectiveDeclarations: stableForHash(normalized),
-      effectiveRuleSet: [],
-      severityPolicyDigest: null,
-    });
-    expect(recomputedContent).toBe(OPENERP_CONTENT_DIGEST);
-    expect(recomputedPins).toBe(OPENERP_PINS_DIGEST);
-    expect(recomputedResult).toBe(OPENERP_RESULT_DIGEST);
-    const syntheticCorpus = { ref: "synthetic-corpus@1", digest: "c".repeat(64) };
-    const publishedEntry = {
-      synthetic: "test-only, not real catalog evidence",
+    // This designation belongs to the test fixture, outside the closed G0 objects.
+    const designation = "synthetic test-only catalog entries; no real admission evidence";
+    const recomputeTriple = () => {
+      const normalized = normalizeOntologyProfile(OPENERP_PROFILE_V1);
+      return {
+        contentDigest: hashOntologyProfile(normalized),
+        pinsDigest: pinsDigestOf({ layers: [OPENERP_PIN] }),
+        resultEvidence: {
+          evidenceState: "resolved" as const,
+          digest: resultDigestOf({
+            effectiveDeclarations: stableForHash(normalized),
+            effectiveRuleSet: [],
+            severityPolicyDigest: null,
+          }),
+        },
+      };
+    };
+    const payload = {
       canonicalRef: "openerp@1",
       namespace: "openerp",
       owner: "openerp",
@@ -280,53 +285,85 @@ describe("FX-OP-10 lifecycle stability (§§1.5, 6a)", () => {
       artifactKind: "profile",
       profilePin: OPENERP_PIN,
       stack: [OPENERP_PIN],
-      digests: {
-        contentDigest: recomputedContent,
-        pinsDigest: recomputedPins,
-        resultEvidence: { evidenceState: "resolved", digest: recomputedResult },
-      },
+      artifactBinding: { artifactKind: "profile", profilePin: OPENERP_PIN, stack: [OPENERP_PIN] },
+      digests: recomputeTriple(),
       provenance: { sourceRef: "synthetic", sourceRevision: "synthetic" },
       lineage: { parents: [], mappings: ["openerp-open-standards@1", "openerp-odoo@1", "openerp-sap@1"], migrations: [] },
+      licenceClosure: { licences: ["MIT"], closureDigest: sha256Hex(canonicalBytes({ licences: ["MIT"] })) },
+      coverage: { declaredLimits: designation, coverageDigest: sha256Hex(designation) },
       conflictPolicy: "synthetic",
       completeness: "complete",
       lifecycle: "published",
-      corpusRef: syntheticCorpus,
+      corpusRef: { ref: "synthetic-corpus@1", digest: sha256Hex("synthetic-corpus") },
       visibility: "public",
-    };
+      ruleSheets: [],
+      receipts: [],
+      migrations: [],
+      consumers: [],
+      compatibility: { renderer: "synthetic", adapter: "synthetic" },
+      linkedTools: [],
+    } satisfies OntologyPayload;
+    const publishedEntry = {
+      format: "sentropic.registry-entry/v1",
+      contractVersion: "0.9.1",
+      kind: "ontology",
+      id: "openerp",
+      name: "Synthetic OpenERP catalog fixture",
+      description: designation,
+      entryVersion: "1",
+      publisher: { packageName: "synthetic-openerp-fixture", packageVersion: "1" },
+      compatibility: {
+        entryContract: "0.9.1", packages: [], schemaProfiles: [],
+        requiredHostFeatures: [], optionalHostFeatures: [],
+      },
+      parameters: { schemaVersion: "1", schema: {}, defaults: {} },
+      bindings: [],
+      assets: [],
+      ontology: payload,
+    } satisfies RegistryEnvelope;
     const deprecatedEntry = {
       ...publishedEntry,
-      lifecycle: "deprecated",
-      deprecatedReason: "superseded by openerp@2",
-      deprecatedAt: "2026-10-28",
+      ontology: {
+        ...payload,
+        digests: recomputeTriple(),
+        lifecycle: "deprecated",
+        deprecatedReason: "superseded by openerp@2",
+        deprecatedAt: "2026-10-28",
+      } satisfies OntologyPayload,
+    } satisfies RegistryEnvelope;
+    // P-ENTRY receives the whole envelope, with no self-embedded entryDigest.
+    expect(entryDigestOf({ ...publishedEntry })).not.toBe(entryDigestOf({ ...deprecatedEntry }));
+    const expectedTriple = {
+      contentDigest: OPENERP_CONTENT_DIGEST,
+      pinsDigest: OPENERP_PINS_DIGEST,
+      resultEvidence: { evidenceState: "resolved", digest: OPENERP_RESULT_DIGEST },
     };
-    expect(entryDigestOf(publishedEntry as unknown as Record<string, unknown>)).not.toBe(
-      entryDigestOf(deprecatedEntry as unknown as Record<string, unknown>),
-    );
-    expect(publishedEntry.digests.contentDigest).toBe(recomputedContent);
-    expect(publishedEntry.digests.pinsDigest).toBe(recomputedPins);
-    expect((publishedEntry.digests.resultEvidence as { digest: string }).digest).toBe(recomputedResult);
-    expect(deprecatedEntry.digests.contentDigest).toBe(recomputedContent);
-    expect(deprecatedEntry.digests.pinsDigest).toBe(recomputedPins);
-    expect((deprecatedEntry.digests.resultEvidence as { digest: string }).digest).toBe(recomputedResult);
+    expect(publishedEntry.ontology.digests).toEqual(expectedTriple);
+    expect(deprecatedEntry.ontology.digests).toEqual(expectedTriple);
     expect(SUCCESSOR_V2_DIGESTS.contentDigest).not.toBe(OPENERP_CONTENT_DIGEST);
   });
 
+  it("records the missing catalog/lifecycle Pin resolver as not-covered", () => {
+    expect(OPENERP_FIXTURE_COVERAGE["FX-OP-10"]).toEqual({ status: "not-covered", gap: "GAP-OP-10" });
+    expect(OPENERP_G0_CONTRACT_GAPS.find((gap) => gap.id === "GAP-OP-10")).toMatchObject({
+      owner: "engram", question: "G0 contract extension, separate decision",
+    });
+  });
+
+  it.todo("GAP-OP-10: missing G0 catalog/lifecycle full-Pin resolver over RegistryEnvelope entries; deprecated pin remains resolvable");
+});
+
+describe("OpenERP constant version lookup (unit check, no catalog/lifecycle observation)", () => {
   it("resolves pinned versions only and never falls back to latest", () => {
-    const syntheticCatalogByPin = new Map([
-      [`${OPENERP_PIN.id}@${OPENERP_PIN.version}`, OPENERP_PIN],
-      [`${SUCCESSOR_V2_PIN.id}@${SUCCESSOR_V2_PIN.version}`, SUCCESSOR_V2_PIN],
-    ]);
     const one = resolveOpenerpVersion("1");
     expect(one.resolved).toBe(true);
     if (one.resolved !== true) throw new Error("resolve");
     expect(one.pin).toEqual(OPENERP_PIN);
     expect(one.pin.contentDigest).toBe(OPENERP_CONTENT_DIGEST);
-    expect(syntheticCatalogByPin.get(`${one.pin.id}@${one.pin.version}`)).toEqual(OPENERP_PIN);
     const two = resolveOpenerpVersion("2");
     expect(two.resolved).toBe(true);
     if (two.resolved !== true) throw new Error("resolve");
     expect(two.pin).toEqual(SUCCESSOR_V2_PIN);
-    expect(syntheticCatalogByPin.get(`${two.pin.id}@${two.pin.version}`)).toEqual(SUCCESSOR_V2_PIN);
     const unknown = resolveOpenerpVersion("99");
     expect(unknown.resolved).toBe(false);
     if (unknown.resolved !== false) throw new Error("resolve");
@@ -379,7 +416,7 @@ describe("§3.2(b) tenant-carrying declarations (OQ-OP-11)", () => {
 });
 
 describe("acceptance fixture list (§10)", () => {
-  it("covers FX-OP-01…FX-OP-12 with 03/04 not-covered and the rest decided", () => {
+  it("covers FX-OP-01…FX-OP-12 with 03/04/10 not-covered and the rest decided", () => {
     const fixtures = [
       "FX-OP-01",
       "FX-OP-02",
@@ -397,8 +434,8 @@ describe("acceptance fixture list (§10)", () => {
     expect(fixtures).toHaveLength(12);
     expect(OPENERP_FIXTURE_COVERAGE["FX-OP-03"]).toEqual({ status: "not-covered", gap: "GAP-OP-03" });
     expect(OPENERP_FIXTURE_COVERAGE["FX-OP-04"]).toEqual({ status: "not-covered", gap: "GAP-OP-04" });
-    expect(OPENERP_FIXTURE_COVERAGE["FX-OP-10"]).toEqual({ status: "covered" });
-    expect(OPENERP_G0_CONTRACT_GAPS.filter((g) => g.owner === "engram").length).toBe(2);
+    expect(OPENERP_FIXTURE_COVERAGE["FX-OP-10"]).toEqual({ status: "not-covered", gap: "GAP-OP-10" });
+    expect(OPENERP_G0_CONTRACT_GAPS.filter((g) => g.owner === "engram").length).toBe(3);
     expect(compareExportSemantics(ont, { ...ont, producedAt: "2026-10-28" })).toBe(true);
     expect(OPENERP_CONTENT_DIGEST.length).toBe(64);
     expect(violatesTenantScopedUniqueness({ organization_id: "org-a", key: "k" }, { organization_id: "org-a", key: "k" })).toBe(true);
