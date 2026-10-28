@@ -13,6 +13,35 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const relative = name => name.replaceAll("\\", "/").match(/(?:^|\/)(tests\/.*)$/)?.[1] ?? name;
 const skippedStatuses = new Set(["pending", "skipped", "todo", "disabled"]);
 
+// Conductor-approved exceptions: exact assertion identities, todo only, one
+// occurrence each. These missing G0 operations remain owned by engram.
+export const OPENERP_GAP_TODO_ALLOWLIST = [
+  {
+    file: "tests/ontology-guardian-openerp-admission.test.ts",
+    fullName: "§1.3 record closure (FX-OP-03) FX-OP-03 record closure (extra field): missing G0 record-closure validator (GAP-OP-03, owner engram)",
+    gap: "GAP-OP-03",
+  },
+  {
+    file: "tests/ontology-guardian-openerp-admission.test.ts",
+    fullName: "§1.3 record closure (FX-OP-03) FX-OP-03 record closure (corpusRef unresolved): missing G0 record-closure validator (GAP-OP-03, owner engram)",
+    gap: "GAP-OP-03",
+  },
+  {
+    file: "tests/ontology-guardian-openerp-acceptance.test.ts",
+    fullName: "FX-OP-04 licence closure (§7) — not-covered (GAP-OP-04) FX-OP-04 pack closure: missing G0 pack licence-closure recomputation with excluded-licence gate (GAP-OP-04, owner engram)",
+    gap: "GAP-OP-04",
+  },
+  {
+    file: "tests/ontology-guardian-openerp-acceptance.test.ts",
+    fullName: "FX-OP-10 lifecycle stability (§§1.5, 6a) GAP-OP-10: missing G0 catalog/lifecycle full-Pin resolver over RegistryEnvelope entries; deprecated pin remains resolvable",
+    gap: "GAP-OP-10",
+  },
+].map(({ file, fullName, gap }) => Object.freeze({
+  identity: JSON.stringify([file, fullName, "assertion"]),
+  file, fullName, status: "todo", maxOccurrences: 1, gap, owner: "engram",
+}));
+Object.freeze(OPENERP_GAP_TODO_ALLOWLIST);
+
 export function normalizeDiagnostic(diagnostic, checkout) {
   // Only the two known checkout prefixes differ incidentally. Keep error text,
   // native module names, source locations, error codes and stack frames intact.
@@ -97,17 +126,30 @@ export function compareReports(base, branch, { baseCommit, branchCommit, baseChe
   const comparable = rows => rows.map(({ identity, category, modules, cause }) => ({ identity, category, modules, cause }));
   const baseStatuses = statuses(base), branchStatuses = statuses(branch);
   const addedFailuresOrSkips = addedAdverseStatuses(baseStatuses, branchStatuses);
+  const allowances = new Map(OPENERP_GAP_TODO_ALLOWLIST.map(entry => [entry.identity, {
+    entry,
+    remaining: Math.max(0, entry.maxOccurrences - baseStatuses.filter(row => row.identity === entry.identity && row.status === entry.status).length),
+  }]));
+  const allowlistedTodos = [], unexpectedAddedFailuresOrSkips = [];
+  for (const row of addedFailuresOrSkips) {
+    const allowance = allowances.get(row.identity);
+    if (allowance && row.status === allowance.entry.status && allowance.remaining > 0) {
+      allowance.remaining--;
+      allowlistedTodos.push({ ...row, gap: allowance.entry.gap, owner: allowance.entry.owner });
+    } else unexpectedAddedFailuresOrSkips.push(row);
+  }
   const causesMatch = isDeepStrictEqual(comparable(baseFailures), comparable(branchFailures));
   const counts = rows => Object.fromEntries(["native-addon", "build-prerequisite", "unclassified"].map(category => [category, rows.filter(row => row.category === category).length]));
   const baseCounts = counts(baseFailures), branchCounts = counts(branchFailures);
   const reasons = [];
-  if (addedFailuresOrSkips.length) reasons.push("added failing or skipped identities (including todo and duplicate counts)");
+  if (unexpectedAddedFailuresOrSkips.length) reasons.push("added failing or skipped identities outside the exact GAP todo allowlist (including duplicate counts)");
   if (!causesMatch) reasons.push("failure identities, categories, modules or normalized causes differ");
   for (const [side, count] of [["base", baseCounts], ["branch", branchCounts]]) {
     if (count["build-prerequisite"]) reasons.push(side + ": build-prerequisite failures");
     if (count.unclassified) reasons.push(side + ": unclassified failures");
   }
   return { passed: reasons.length === 0, reasons, causesMatch, addedFailuresOrSkips,
+    todoAllowlist: OPENERP_GAP_TODO_ALLOWLIST, allowlistedTodos, unexpectedAddedFailuresOrSkips,
     counts: { base: baseCounts, branch: branchCounts },
     failures: { base: baseFailures, branch: branchFailures },
     statuses: { base: baseStatuses, branch: branchStatuses } };
@@ -179,13 +221,14 @@ async function main() {
       nodeModules: fs.realpathSync(path.join(root, "node_modules")), npmCache: process.env.npm_config_cache },
     scope: "Pinned .baseline detached worktree; one installation shared by symlinks; same Node/environment/npm cache; top-level and engram-memory builds on both sides. See retained setup.json and full command logs.",
     base: summary(base), branch: summary(branch), fullTypeScript, artifacts,
-    method: "Each failed assertion, or failed suite without a failed assertion, uses only its own retained diagnostic on its pinned side. No probes or source-token fallback. Identity includes file, fullName, kind and occurrence. Compare category, native modules and complete diagnostic after known absolute/relative checkout and shared-installation path normalization only. Status multisets include skips and todos.",
+    method: "Each failed assertion, or failed suite without a failed assertion, uses only its own retained diagnostic on its pinned side. No probes or source-token fallback. Identity includes file, fullName, kind and occurrence. Compare category, native modules and complete diagnostic after known absolute/relative checkout and shared-installation path normalization only. Status multisets include skips and todos; only the four exact conductor-approved GAP todo identities are allowed once each.",
     statusEvidence: Object.fromEntries(Object.entries(statusRecords).map(([side, rows]) => [side, { count: rows.length, sha256: sha256Hex(canonicalBytes(rows)) }])),
     ...decision,
   };
   fs.writeFileSync(outputFile, JSON.stringify(report, null, 2) + "\n");
   console.log(JSON.stringify({ base: report.base, branch: report.branch, counts: report.counts,
     causesMatch: report.causesMatch, addedFailuresOrSkips: report.addedFailuresOrSkips.length,
+    allowlistedTodos: report.allowlistedTodos.length, unexpectedAddedFailuresOrSkips: report.unexpectedAddedFailuresOrSkips.length,
     fullTypeScript, passed: report.passed, reasons: report.reasons }));
   if (!report.passed) process.exitCode = 1;
 }

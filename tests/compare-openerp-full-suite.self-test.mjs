@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { classifyDiagnostic, compareReports } from "./compare-openerp-full-suite.mjs";
+import { OPENERP_GAP_TODO_ALLOWLIST, classifyDiagnostic, compareReports } from "./compare-openerp-full-suite.mjs";
 
 const options = { baseCommit: "a".repeat(40), branchCommit: "b".repeat(40),
   baseCheckout: "/fixture/.baseline", branchCheckout: "/fixture" };
@@ -114,4 +114,52 @@ test("should normalize the retained esbuild relative paths to the same shared in
   assert.equal(result.passed, true);
   assert.equal(result.causesMatch, true);
   assert.match(result.failures.base[0].cause, /<checkout>\/engram-memory\/node_modules/);
+});
+
+function addGapTodo(json, checkout, entry, status = "todo") {
+  json.testResults.push({ name: checkout + "/" + entry.file, status: "passed", assertionResults: [
+    { fullName: entry.fullName, status, failureMessages: [] },
+  ] });
+}
+
+test("should allow only the four exact conductor-approved todos with their GAP owners", () => {
+  const base = fixture(options.baseCheckout), branch = fixture(options.branchCheckout);
+  for (const entry of OPENERP_GAP_TODO_ALLOWLIST) addGapTodo(branch, options.branchCheckout, entry);
+  const result = compare(base, branch);
+  assert.equal(result.passed, true);
+  assert.equal(result.addedFailuresOrSkips.length, 4);
+  assert.equal(result.allowlistedTodos.length, 4);
+  assert.deepEqual(result.unexpectedAddedFailuresOrSkips, []);
+  assert.deepEqual(result.allowlistedTodos.map(row => row.gap).sort(), ["GAP-OP-03", "GAP-OP-03", "GAP-OP-04", "GAP-OP-10"]);
+  assert.ok(result.allowlistedTodos.every(row => row.owner === "engram"));
+  assert.deepEqual(result.todoAllowlist, OPENERP_GAP_TODO_ALLOWLIST);
+});
+
+test("should reject every other added todo, skip, failure, renamed identity or duplicate", () => {
+  for (const entry of OPENERP_GAP_TODO_ALLOWLIST) {
+    for (const change of ["file", "fullName", "pending", "skipped", "disabled", "failed", "duplicate"]) {
+      const base = fixture(options.baseCheckout), branch = fixture(options.branchCheckout);
+      const altered = { ...entry };
+      if (change === "file" || change === "fullName") altered[change] += " altered";
+      const status = ["pending", "skipped", "disabled", "failed"].includes(change) ? change : "todo";
+      addGapTodo(branch, options.branchCheckout, altered, status);
+      if (change === "duplicate") addGapTodo(branch, options.branchCheckout, entry);
+      const result = compare(base, branch);
+      assert.equal(result.passed, false, entry.gap + ": " + change);
+      assert.ok(result.unexpectedAddedFailuresOrSkips.length > 0);
+    }
+  }
+});
+
+test("should reject a duplicate GAP todo even when its first occurrence already exists in baseline", () => {
+  const base = fixture(options.baseCheckout), branch = fixture(options.branchCheckout);
+  const entry = OPENERP_GAP_TODO_ALLOWLIST[0];
+  addGapTodo(base, options.baseCheckout, entry);
+  addGapTodo(branch, options.branchCheckout, entry);
+  assert.equal(compare(base, branch).passed, true);
+  addGapTodo(branch, options.branchCheckout, entry);
+  const result = compare(base, branch);
+  assert.equal(result.passed, false);
+  assert.equal(result.allowlistedTodos.length, 0);
+  assert.equal(result.unexpectedAddedFailuresOrSkips.length, 1);
 });
