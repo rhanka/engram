@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node"]
+  },
+  "include": ["src/ontology-guardian/openerp-*.ts", "tests/ontology-guardian-openerp-typeproof.test.ts"],
+  "exclude": ["node_modules", "dist"]
+}
