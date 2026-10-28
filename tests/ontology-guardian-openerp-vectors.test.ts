@@ -46,6 +46,12 @@ import {
   tableInvariants,
 } from "../src/ontology-guardian/openerp-governed.js";
 import {
+  DATABASE_IMMUTABLE_ENTITIES,
+  IMMUTABILITY_MECHANISMS,
+  LINE_SOURCE_TARGETS,
+  OUTBOX_ARM_GATED,
+} from "../src/ontology-guardian/openerp-constraints.js";
+import {
   MAPPING_ODOO,
   MAPPING_OPEN_STANDARDS,
   MAPPING_SAP,
@@ -324,5 +330,127 @@ describe("§6(b) FX-OP-09 digest vectors", () => {
       timingSafeEqual(Buffer.from(OPENERP_CONTENT_DIGEST, "utf8"), Buffer.from(OPENERP_CONTENT_DIGEST, "utf8")),
     ).toBe(true);
     expect(sha256Hex("openerp@1") === OPENERP_CONTENT_DIGEST).toBe(false);
+  });
+});
+
+describe("FX-OP-01(a) full ordered tier-G equality against the byte-pinned source", () => {
+  it("reproduces all 776 column rows in order with every optional field", () => {
+    const expected: unknown[] = [];
+    for (const e of ont.entities as {
+      entity: string;
+      columns: {
+        name: string;
+        type: string;
+        notNull: boolean;
+        references?: { entity: string; field: string };
+        onDelete?: string;
+        enum?: string[];
+        check?: string;
+        addedBy?: string;
+      }[];
+    }[]) {
+      for (const c of e.columns) {
+        const row: Record<string, unknown> = { entity: e.entity, name: c.name, type: c.type, notNull: c.notNull };
+        if (c.references !== undefined) row["references"] = { entity: c.references.entity, field: c.references.field };
+        if (c.onDelete !== undefined) row["onDelete"] = c.onDelete;
+        if (c.enum !== undefined) row["enum"] = [...c.enum];
+        if (c.check !== undefined) row["check"] = c.check;
+        if (c.addedBy !== undefined) row["addedBy"] = c.addedBy;
+        expected.push(row);
+      }
+    }
+    const actual = columnRows(ont);
+    expect(actual.length).toBe(776);
+    expect(actual).toEqual(expected);
+    expect(canonicalBytes(actual)).toBe(canonicalBytes(expected));
+  });
+
+  it("reproduces all 146 relations in order with required flags and delete rules", () => {
+    const expected = (ont.relations as { from: string; field: string; to: string; required: boolean; onDelete: string }[]).map(
+      (r) => ({ from: r.from, field: r.field, to: r.to, required: r.required, onDelete: r.onDelete }),
+    );
+    const actual = relationRows(ont);
+    expect(actual.length).toBe(146);
+    expect(actual).toEqual(expected);
+    expect(canonicalBytes(actual)).toBe(canonicalBytes(expected));
+  });
+
+  it("reproduces all 57 enum columns, 11 CHECKs and 27 invariants in order", () => {
+    const expectedEnums: unknown[] = [];
+    const expectedChecks: unknown[] = [];
+    for (const e of ont.entities as {
+      entity: string;
+      columns: { name: string; type: string; notNull: boolean; enum?: string[]; check?: string }[];
+    }[]) {
+      for (const c of e.columns) {
+        if (c.enum !== undefined) expectedEnums.push({ entity: e.entity, field: c.name, values: [...c.enum] });
+        if (c.check !== undefined) expectedChecks.push({ entity: e.entity, field: c.name, check: c.check, notNull: c.notNull });
+      }
+    }
+    const expectedInvariants: unknown[] = [];
+    for (const e of ont.entities as {
+      entity: string;
+      tableInvariants: { kind: string; clause: string; addedBy?: string }[];
+    }[]) {
+      for (const t of e.tableInvariants) {
+        const row: Record<string, unknown> = { entity: e.entity, kind: t.kind, clause: t.clause };
+        if (t.addedBy !== undefined) row["addedBy"] = t.addedBy;
+        expectedInvariants.push(row);
+      }
+    }
+    expect(enumColumns(ont)).toEqual(expectedEnums);
+    expect(canonicalBytes(enumColumns(ont))).toBe(canonicalBytes(expectedEnums));
+    expect(columnChecks(ont)).toEqual(expectedChecks);
+    expect(canonicalBytes(columnChecks(ont))).toBe(canonicalBytes(expectedChecks));
+    expect(tableInvariants(ont)).toEqual(expectedInvariants);
+    expect(canonicalBytes(tableInvariants(ont))).toBe(canonicalBytes(expectedInvariants));
+  });
+});
+
+describe("addendum preservation (§3.2c/d, §5, OQ-OP-10/11/12)", () => {
+  it("holds the five target/writer rows byte for byte", () => {
+    expect(LINE_SOURCE_TARGETS).toEqual([
+      { column: "invoice_lines.source_type", kind: "manual", target: "null source_id", writer: "billing/invoice-service.ts:145" },
+      { column: "invoice_lines.source_type", kind: "invoice_proposal_line", target: "invoice_proposal_lines.id", writer: "billing/invoice-service.ts:228" },
+      { column: "invoice_lines.source_type", kind: "quote_handoff", target: "quote_handoffs.id", writer: "billing/invoice-service.ts:315" },
+      { column: "invoice_lines.source_type", kind: "recurring_schedule", target: "recurring_billing_schedules.id", writer: "billing/recurring-schedule-service.ts:302 and :415" },
+      { column: "invoice_proposal_lines.source_type", kind: "time_entry", target: "time_entries.id", writer: "project/invoice-proposal-service.ts:167" },
+    ]);
+  });
+
+  it("holds the complete outbox gate and standing arms", () => {
+    expect(OUTBOX_ARM_GATED).toEqual({
+      status: "unverified",
+      owner: "openerp",
+      question: "OQ-OP-12",
+      gate: "drop consumed_at or split emission from consumption",
+      standingArms: ["bank_transactions", "audit_events"],
+    });
+    expect(canonicalBytes(OUTBOX_ARM_GATED)).toBe(
+      canonicalBytes({
+        status: "unverified",
+        owner: "openerp",
+        question: "OQ-OP-12",
+        gate: "drop consumed_at or split emission from consumption",
+        standingArms: ["bank_transactions", "audit_events"],
+      }),
+    );
+  });
+
+  it("checks declared immutability mechanisms against their source clauses", () => {
+    expect(DATABASE_IMMUTABLE_ENTITIES).toEqual(["bank_transactions", "audit_events"]);
+    const invariants = tableInvariants(ont);
+    const bankTrigger = invariants.find((t) => t.entity === "bank_transactions" && t.kind === "trigger");
+    expect(bankTrigger).toBeDefined();
+    expect(bankTrigger!.clause).toContain("bank_transactions_immutable_evidence");
+    expect(bankTrigger!.clause).toContain("protect_imported_bank_transaction()");
+    expect(bankTrigger!.addedBy).toBe("0041_banking_reconciliation.sql");
+    expect(IMMUTABILITY_MECHANISMS["bank_transactions"]!.join(" ")).toContain("bank_transactions_immutable_evidence");
+    expect(IMMUTABILITY_MECHANISMS["bank_transactions"]!.join(" ")).toContain("protect_imported_bank_transaction()");
+    expect(IMMUTABILITY_MECHANISMS["bank_transactions"]!.join(" ")).toContain("0041_banking_reconciliation.sql");
+    const auditTriggers = invariants.filter((t) => t.entity === "audit_events" && t.kind === "trigger");
+    expect(auditTriggers.length).toBeGreaterThan(0);
+    expect(auditTriggers.some((t) => t.clause.includes("audit_events_block_mutations"))).toBe(true);
+    expect(IMMUTABILITY_MECHANISMS["audit_events"]!.join(" ")).toContain("audit_events_block_mutations()");
   });
 });
