@@ -104,3 +104,14 @@ test("should include skipped and todo identities and preserve duplicate counts",
     assert.equal(result.addedFailuresOrSkips[0].status, status);
   }
 });
+
+test("should normalize the retained esbuild relative paths to the same shared installation", () => {
+  const suffix = "engram-memory/node_modules/fs-ext/fs-ext.js:22:22: ERROR: Cannot find module './build/Release/fs_ext.node'";
+  const result = compare(
+    fixture(options.baseCheckout, "Error: Build failed\n../" + suffix),
+    fixture(options.branchCheckout, "Error: Build failed\n" + suffix),
+  );
+  assert.equal(result.passed, true);
+  assert.equal(result.causesMatch, true);
+  assert.match(result.failures.base[0].cause, /<checkout>\/engram-memory\/node_modules/);
+});
