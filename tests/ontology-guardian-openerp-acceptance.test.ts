@@ -2,15 +2,31 @@
 // Each fixture decides its claim by exit status, digest equality or an
 // asserted diagnostic. No fixture asserts a storage tier, a DDL shape, or a
 // SAP/Odoo field correspondence beyond §4.
+// FX-OP-04 observable table (§10 line -> deciding operation -> submitted input):
+// | recomputed closure contains MIT only | NONE (licences:["MIT"] is data; no G0 pack-closure operation) | NOT submitted -> not-covered GAP-OP-04 |
+// | excluded licence refuses admission with excluded-licence, no lifecycle cure | NONE (checkOpenerpLicenceClosure checks a string array only, src/ontology-guardian/openerp-registry.ts:245; checkAdmission only returns missing-receipt, src/ontology-guardian/admission.ts:445) | pack with real dependency closure NOT submitted (no operation) -> not-covered GAP-OP-04 |
+// FX-OP-10 observable table (§10 line -> deciding operation -> submitted input):
+// | deprecation leaves triple equal, changes entryDigest | entryDigestOf (src/ontology-guardian/digests.ts:292) + pinsDigestOf (:81) + resultDigestOf (:271) + hashOntologyProfile (src/ontology-profile.ts:505) | complete synthetic catalog entries before/after with triple recomputed from unchanged profile inputs |
+// | deprecated version stays resolvable by pin | resolveOpenerpVersion (src/ontology-guardian/openerp-registry.ts:263) | resolved pin checked against the synthetic catalog state |
+// | unknown version refuses incompatible_version | resolveOpenerpVersion (src/ontology-guardian/openerp-registry.ts:263) | "99" and "" (never a latest fallback) |
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalBytes } from "../src/ontology-guardian/canonical.js";
-import { entryDigestOf, mappingDigestOf } from "../src/ontology-guardian/digests.js";
+import {
+  entryDigestOf,
+  mappingDigestOf,
+  pinsDigestOf,
+  resultDigestOf,
+  stableForHash,
+} from "../src/ontology-guardian/digests.js";
+import { hashOntologyProfile, normalizeOntologyProfile } from "../src/ontology-profile.js";
 import {
   OPENERP_CONTENT_DIGEST,
+  OPENERP_PIN,
   OPENERP_PINS_DIGEST,
+  OPENERP_PROFILE_V1,
   OPENERP_RESULT_DIGEST,
 } from "../src/ontology-guardian/openerp-profile.js";
 import {
@@ -42,13 +58,14 @@ import {
 import {
   OPENERP_ADMISSION_TASKS,
   OPENERP_ALLOWED_LICENCES,
+  OPENERP_FIXTURE_COVERAGE,
+  OPENERP_G0_CONTRACT_GAPS,
   RECORD_OPENERP_V1,
   SUCCESSOR_V2_DIGESTS,
   SUCCESSOR_V2_PIN,
   checkOpenerpLicenceClosure,
   resolveOpenerpVersion,
 } from "../src/ontology-guardian/openerp-registry.js";
-import { OPENERP_PIN } from "../src/ontology-guardian/openerp-profile.js";
 
 const here = process.env.OPENERP_TESTS_DIR ?? dirname(fileURLToPath(import.meta.url));
 const ont = JSON.parse(readFileSync(join(here, "fixtures", "openerp", "openerp-ontology.json"), "utf8"));
@@ -84,28 +101,23 @@ describe("FX-OP-01 export comparison discipline (§6b)", () => {
   });
 });
 
-describe("FX-OP-04 licence closure (§7)", () => {
-  it("holds MIT only and refuses an excluded licence with no lifecycle cure", () => {
+describe("FX-OP-04 licence closure (§7) — not-covered (GAP-OP-04)", () => {
+  it("documents FX-OP-04 as not-covered (missing G0 pack-closure gate)", () => {
+    expect(OPENERP_FIXTURE_COVERAGE["FX-OP-04"]).toEqual({ status: "not-covered", gap: "GAP-OP-04" });
+    expect(OPENERP_G0_CONTRACT_GAPS.find((g) => g.id === "GAP-OP-04")).toMatchObject({ owner: "engram" });
+    expect(OPENERP_ADMISSION_TASKS.some((t) => t.field.includes("licenceClosure"))).toBe(true);
+  });
+
+  it("allowlist unit (NOT FX-OP-04): string array check only, no pack closure", () => {
     expect(checkOpenerpLicenceClosure(["MIT"])).toEqual({ admitted: true });
     expect(checkOpenerpLicenceClosure([...ALLOWED_LICENCES])).toEqual({ admitted: true });
     const excluded = checkOpenerpLicenceClosure(["MIT", "GPL-3.0"]);
     expect(excluded.admitted).toBe(false);
     if (excluded.admitted !== false) throw new Error("licence");
     expect(excluded.code).toBe("excluded-licence");
-    expect(OPENERP_ADMISSION_TASKS.some((t) => t.field.includes("licenceClosure"))).toBe(true);
   });
 
-  it("returns the exact excluded-licence code across lifecycle variants", () => {
-    for (const lifecycle of ["draft", "published", "deprecated"] as const) {
-      const withExcluded = checkOpenerpLicenceClosure(["MIT", "GPL-3.0"]);
-      expect(withExcluded.admitted).toBe(false);
-      if (withExcluded.admitted !== false) throw new Error("licence");
-      expect(withExcluded.code).toBe("excluded-licence");
-      expect(lifecycle.length).toBeGreaterThan(0);
-    }
-    expect(checkOpenerpLicenceClosure([])).toEqual({ admitted: true });
-    expect(checkOpenerpLicenceClosure(["Apache-2.0", "CC0"])).toEqual({ admitted: true });
-  });
+  it.todo("FX-OP-04 pack closure: missing G0 pack licence-closure recomputation with excluded-licence gate (GAP-OP-04, owner engram)");
 });
 
 describe("FX-OP-05 tenant-scoped uniqueness (§3.2a)", () => {
@@ -246,42 +258,75 @@ describe("FX-OP-08 mapping integrity (§4, §6c)", () => {
 });
 
 describe("FX-OP-10 lifecycle stability (§§1.5, 6a)", () => {
-  it("deprecation changes entryDigest only; the §1.6 triple stays equal", () => {
-    const corpusDigest = "c".repeat(64);
-    const published = {
-      ...RECORD_OPENERP_V1,
+  it("deprecation changes entryDigest only; the §1.6 triple stays equal (recomputed)", () => {
+    const normalized = normalizeOntologyProfile(OPENERP_PROFILE_V1);
+    const recomputedContent = hashOntologyProfile(normalized);
+    const recomputedPins = pinsDigestOf({ layers: [OPENERP_PIN] });
+    const recomputedResult = resultDigestOf({
+      effectiveDeclarations: stableForHash(normalized),
+      effectiveRuleSet: [],
+      severityPolicyDigest: null,
+    });
+    expect(recomputedContent).toBe(OPENERP_CONTENT_DIGEST);
+    expect(recomputedPins).toBe(OPENERP_PINS_DIGEST);
+    expect(recomputedResult).toBe(OPENERP_RESULT_DIGEST);
+    const syntheticCorpus = { ref: "synthetic-corpus@1", digest: "c".repeat(64) };
+    const publishedEntry = {
+      synthetic: "test-only, not real catalog evidence",
+      canonicalRef: "openerp@1",
+      namespace: "openerp",
+      owner: "openerp",
+      profileShape: "engram-profile",
+      artifactKind: "profile",
+      profilePin: OPENERP_PIN,
+      stack: [OPENERP_PIN],
+      digests: {
+        contentDigest: recomputedContent,
+        pinsDigest: recomputedPins,
+        resultEvidence: { evidenceState: "resolved", digest: recomputedResult },
+      },
+      provenance: { sourceRef: "synthetic", sourceRevision: "synthetic" },
+      lineage: { parents: [], mappings: ["openerp-open-standards@1", "openerp-odoo@1", "openerp-sap@1"], migrations: [] },
+      conflictPolicy: "synthetic",
+      completeness: "complete",
       lifecycle: "published",
-      corpusRef: { ref: "openerp-conformance-corpus@1", digest: corpusDigest },
-    } as const;
-    const deprecated = {
-      ...published,
+      corpusRef: syntheticCorpus,
+      visibility: "public",
+    };
+    const deprecatedEntry = {
+      ...publishedEntry,
       lifecycle: "deprecated",
       deprecatedReason: "superseded by openerp@2",
       deprecatedAt: "2026-10-28",
-    } as const;
-    expect(entryDigestOf(published as unknown as Record<string, unknown>)).not.toBe(
-      entryDigestOf(deprecated as unknown as Record<string, unknown>),
+    };
+    expect(entryDigestOf(publishedEntry as unknown as Record<string, unknown>)).not.toBe(
+      entryDigestOf(deprecatedEntry as unknown as Record<string, unknown>),
     );
-    expect(published.digests.contentDigest).toBe(OPENERP_CONTENT_DIGEST);
-    expect(published.digests.pinsDigest).toBe(OPENERP_PINS_DIGEST);
-    expect((published.digests.resultEvidence as { digest: string }).digest).toBe(OPENERP_RESULT_DIGEST);
-    expect(deprecated.digests.contentDigest).toBe(OPENERP_CONTENT_DIGEST);
-    expect(deprecated.digests.pinsDigest).toBe(OPENERP_PINS_DIGEST);
-    expect((deprecated.digests.resultEvidence as { digest: string }).digest).toBe(OPENERP_RESULT_DIGEST);
-    expect(OPENERP_CONTENT_DIGEST).toBe("8c00c51d1132d48dbe7a223f0fb0fb7b7d79fc6894d403b4731ffa265b081e65");
+    expect(publishedEntry.digests.contentDigest).toBe(recomputedContent);
+    expect(publishedEntry.digests.pinsDigest).toBe(recomputedPins);
+    expect((publishedEntry.digests.resultEvidence as { digest: string }).digest).toBe(recomputedResult);
+    expect(deprecatedEntry.digests.contentDigest).toBe(recomputedContent);
+    expect(deprecatedEntry.digests.pinsDigest).toBe(recomputedPins);
+    expect((deprecatedEntry.digests.resultEvidence as { digest: string }).digest).toBe(recomputedResult);
     expect(SUCCESSOR_V2_DIGESTS.contentDigest).not.toBe(OPENERP_CONTENT_DIGEST);
   });
 
   it("resolves pinned versions only and never falls back to latest", () => {
+    const syntheticCatalogByPin = new Map([
+      [`${OPENERP_PIN.id}@${OPENERP_PIN.version}`, OPENERP_PIN],
+      [`${SUCCESSOR_V2_PIN.id}@${SUCCESSOR_V2_PIN.version}`, SUCCESSOR_V2_PIN],
+    ]);
     const one = resolveOpenerpVersion("1");
     expect(one.resolved).toBe(true);
     if (one.resolved !== true) throw new Error("resolve");
     expect(one.pin).toEqual(OPENERP_PIN);
     expect(one.pin.contentDigest).toBe(OPENERP_CONTENT_DIGEST);
+    expect(syntheticCatalogByPin.get(`${one.pin.id}@${one.pin.version}`)).toEqual(OPENERP_PIN);
     const two = resolveOpenerpVersion("2");
     expect(two.resolved).toBe(true);
     if (two.resolved !== true) throw new Error("resolve");
     expect(two.pin).toEqual(SUCCESSOR_V2_PIN);
+    expect(syntheticCatalogByPin.get(`${two.pin.id}@${two.pin.version}`)).toEqual(SUCCESSOR_V2_PIN);
     const unknown = resolveOpenerpVersion("99");
     expect(unknown.resolved).toBe(false);
     if (unknown.resolved !== false) throw new Error("resolve");
@@ -334,7 +379,7 @@ describe("§3.2(b) tenant-carrying declarations (OQ-OP-11)", () => {
 });
 
 describe("acceptance fixture list (§10)", () => {
-  it("covers FX-OP-01…FX-OP-12 with one deciding observable each", () => {
+  it("covers FX-OP-01…FX-OP-12 with 03/04 not-covered and the rest decided", () => {
     const fixtures = [
       "FX-OP-01",
       "FX-OP-02",
@@ -350,9 +395,12 @@ describe("acceptance fixture list (§10)", () => {
       "FX-OP-12",
     ] as const;
     expect(fixtures).toHaveLength(12);
+    expect(OPENERP_FIXTURE_COVERAGE["FX-OP-03"]).toEqual({ status: "not-covered", gap: "GAP-OP-03" });
+    expect(OPENERP_FIXTURE_COVERAGE["FX-OP-04"]).toEqual({ status: "not-covered", gap: "GAP-OP-04" });
+    expect(OPENERP_FIXTURE_COVERAGE["FX-OP-10"]).toEqual({ status: "covered" });
+    expect(OPENERP_G0_CONTRACT_GAPS.filter((g) => g.owner === "engram").length).toBe(2);
     expect(compareExportSemantics(ont, { ...ont, producedAt: "2026-10-28" })).toBe(true);
     expect(OPENERP_CONTENT_DIGEST.length).toBe(64);
-    expect(checkOpenerpLicenceClosure(["MIT", "GPL-3.0"]).admitted).toBe(false);
     expect(violatesTenantScopedUniqueness({ organization_id: "org-a", key: "k" }, { organization_id: "org-a", key: "k" })).toBe(true);
     expect(checkJournalSourceType("manual")).toBe(true);
     expect(checkAmountShape({ amountMinor: 1, currency: "CAD", scale: 2 })).toBe(true);
