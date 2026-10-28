@@ -4,6 +4,7 @@
 // coverage row stays unverified with its owner. No identifier is invented.
 // P-MAPPING digests recompute through src/ontology-guardian (never copied).
 import { mappingDigestOf } from "./digests.js";
+import { OPENERP_NODE_TYPE_IDS } from "./openerp-profile.js";
 import type { Digest, MappingFile, Pin } from "./types.js";
 
 export const OPENERP_COVERAGE_TYPES: readonly string[] = [
@@ -150,7 +151,15 @@ export function recomputeMappingDigest(artifact: MappingFile): Digest {
  */
 export type MappingQualification =
   | { readonly qualified: true }
-  | { readonly qualified: false; readonly reason: "grouped-source" | "field-level-blocked" | "reference-unpinned" };
+  | { readonly qualified: false; readonly reason: "grouped-source" | "field-level-blocked" | "reference-unpinned" | "unknown-source" };
+
+/**
+ * Native entity identifiers for type-arm resolution (§4.2 entry rule):
+ * the 67 N2 keys. A type entry names exactly one of these; anything else
+ * (column `entity.field`, grouped or unknown identifier) never enters,
+ * independently of the supplied level or pin state.
+ */
+const NATIVE_ENTITY_IDS: readonly string[] = OPENERP_NODE_TYPE_IDS;
 
 export function qualifyMappingEntry(candidate: {
   readonly from: string;
@@ -158,7 +167,11 @@ export function qualifyMappingEntry(candidate: {
   readonly referencePinned: boolean;
 }): MappingQualification {
   if (candidate.from.includes(",")) return { qualified: false, reason: "grouped-source" };
+  if (candidate.from.includes(".")) return { qualified: false, reason: "field-level-blocked" };
   if (candidate.level === "field") return { qualified: false, reason: "field-level-blocked" };
+  if (!(NATIVE_ENTITY_IDS as readonly string[]).includes(candidate.from)) {
+    return { qualified: false, reason: "unknown-source" };
+  }
   if (!candidate.referencePinned) return { qualified: false, reason: "reference-unpinned" };
   return { qualified: true };
 }
