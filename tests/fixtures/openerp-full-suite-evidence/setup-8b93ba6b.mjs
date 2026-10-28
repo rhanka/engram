@@ -70,7 +70,17 @@ try {
   save();
   for (const [side, cwd] of [["base", baseline], ["branch", root]]) {
     await run(side + "-8b93ba6b-engram-memory-build", "npm", ["--prefix", "engram-memory", "run", "build"], cwd);
-    await run(side + "-8b93ba6b-build", "npm", ["run", "build"], cwd);
+    const topBuild = await run(side + "-8b93ba6b-build", "npm", ["run", "build"], cwd, true);
+    if (topBuild.exitCode !== 0) {
+      const diagnostic = fs.readFileSync(topBuild.raw, "utf8");
+      assert.match(diagnostic, /Cannot find module.*fs_ext\.node/, "unexpected top-level build failure");
+      // The native packages remain unchanged and unavailable at runtime. This
+      // identical bundling setup on both sides emits the required dist files
+      // without attempting to bundle or rebuild a missing native binary.
+      await run(side + "-8b93ba6b-native-external-build", process.execPath,
+        ["node_modules/tsup/dist/cli-default.js", "--external", "fs-ext", "--external", "better-sqlite3"], cwd);
+      await run(side + "-8b93ba6b-studio-build", "npm", ["run", "build:studio"], cwd);
+    }
     for (const file of ["dist/cli.js", "dist/memory-substrate.js", "dist/memory-substrate.d.ts", "engram-memory/dist/index.js", "engram-memory/dist/sqlite.js"]) {
       assert.ok(fs.statSync(path.join(cwd, file)).size > 0, side + " build missing " + file);
     }
