@@ -67,27 +67,90 @@ const { failingIdentities, ...baseSummary } = baseResult;
 const { failingIdentities: _branchIdentities, ...branchSummary } = branchResult;
 const frozenSpecBytes = fs.readFileSync(path.join(root, "tests/fixtures/openerp/openerp-ontology.json"));
 assert.equal(sha256Hex(frozenSpecBytes), "dcee5c9da1fdca908e56a049a4af80e289a61beeda14ca9b155993152f2b1213");
-function classifyFailures(branchJson) {
-  const groups = { sqliteNative: [], substrateDist: [], tarballConsumer: [], abiSmoke: [] };
-  for (const file of branchJson.testResults.filter((f) => f.status === "failed")) {
-    const name = relative(file.name);
-    const messages = file.assertionResults.filter((t) => t.status === "failed").flatMap((t) => t.failureMessages ?? []).join("\n");
-    if (/fs-ext|better-sqlite3|SQLite writer fence|CAPABILITY_UNAVAILABLE|sqlite/i.test(messages) || /sqlite|canonical-memory|memory-mcp|memory-recall|memory-reconciliation|memory-projection|temporal-boundary/i.test(name)) {
-      groups.sqliteNative.push(name);
-    } else if (/dist\/memory-substrate|substrate.*closure|installed-proof|no such file.*dist/i.test(messages) || /memory-substrate-closure|memory-substrate-installed-proof/i.test(name)) {
-      groups.substrateDist.push(name);
-    } else if (/tarball-acceptance|substrate-consumer|memory-substrate-tarball/i.test(messages + name)) {
-      groups.tarballConsumer.push(name);
-    } else if (/native-abi|sqlite-fence|sqlite-runtime/i.test(name)) {
-      groups.abiSmoke.push(name);
-    } else {
-      groups.sqliteNative.push(name);
+function probeNativeErrors() {
+  const errors = [];
+  try {
+    execFileSync(process.execPath, ["scripts/check-native-abi.mjs"], { cwd: root, encoding: "utf8", timeout: 120000 });
+  } catch (error) {
+    const out = `${error.stdout ?? ""}\n${error.stderr ?? ""}`;
+    if (/better-sqlite3|fs-ext|\.node\b|MODULE_MISSING|CAPABILITY_UNAVAILABLE/.test(out)) {
+      errors.push({ probe: "check-native-abi", excerpt: out.slice(0, 1000) });
     }
   }
-  for (const key of Object.keys(groups)) groups[key] = [...new Set(groups[key])].sort();
+  try {
+    const probe = "import { mkdtempSync } from 'node:fs'; import { tmpdir } from 'node:os'; import { join } from 'node:path'; import { openFencedSqliteCanonicalMemoryStoreV1 } from './engram-memory/dist/sqlite.js'; const dir = mkdtempSync(join(tmpdir(), 'compare-probe-')); const opened = await openFencedSqliteCanonicalMemoryStoreV1({ filename: join(dir, 'probe.sqlite'), clock: { now: () => '2026-08-16T12:00:00.000Z' }, store_id: 'compare-probe', allow_ephemeral_filesystem_store: true }); console.log(JSON.stringify(opened.error ?? { ok: opened.ok }).slice(0, 1000));";
+    const out = execFileSync(process.execPath, ["--input-type=module", "-e", probe], { cwd: root, encoding: "utf8", timeout: 60000 });
+    if (/better-sqlite3|fs-ext|fs_ext|\.node\b|CAPABILITY_UNAVAILABLE/.test(out)) {
+      errors.push({ probe: "sqlite-open", excerpt: out.slice(0, 1000) });
+    }
+  } catch (error) {
+    const out = `${error.stdout ?? ""}\n${error.stderr ?? ""}`;
+    if (/better-sqlite3|fs-ext|fs_ext|\.node\b|CAPABILITY_UNAVAILABLE/.test(out)) {
+      errors.push({ probe: "sqlite-open", excerpt: out.slice(0, 1000) });
+    }
+  }
+  return errors;
+}
+const nativeProbeErrors = probeNativeErrors();
+function nativeGateOfSource(source) {
+  if (source.includes("openFencedSqliteCanonicalMemoryStoreV1")) return "openFencedSqliteCanonicalMemoryStoreV1";
+  if (source.includes("check-native-abi")) return "check-native-abi";
+  if (source.includes("better-sqlite3") || source.includes("fs-ext")) return "native-import";
+  return null;
+}
+function classifyFailures(json) {
+  const groups = { nativeAddon: [], buildPrerequisite: [], unclassified: [], nativeAddonEvidence: [] };
+  for (const file of json.testResults.filter((f) => f.status === "failed")) {
+    const name = relative(file.name);
+    const messages = file.assertionResults.filter((t) => t.status === "failed").flatMap((t) => t.failureMessages ?? []).join("\n");
+    if (/better-sqlite3|fs-ext|\.node\b|CAPABILITY_UNAVAILABLE/.test(messages)) {
+      groups.nativeAddon.push(name);
+    } else if (/dist\/memory-substrate|no such file.*dist|ENOENT.*dist|substrate build missing|run `npm run build`|installed.*dist|memory-substrate\.js/.test(messages)) {
+      groups.buildPrerequisite.push(name);
+    } else {
+      let gated = null;
+      try {
+        const source = fs.readFileSync(path.join(root, name), "utf8");
+        gated = nativeGateOfSource(source);
+      } catch {}
+      const probe = nativeProbeErrors[0] ?? nativeProbeErrors[1] ?? null;
+      if (gated !== null && probe !== undefined && probe !== null && /better-sqlite3|fs-ext|fs_ext|\.node\b|CAPABILITY_UNAVAILABLE|MODULE_MISSING/.test(probe.excerpt)) {
+        groups.nativeAddon.push(name);
+        groups.nativeAddonEvidence.push({ file: name, gate: gated, probe: probe.probe, excerpt: probe.excerpt.slice(0, 300) });
+      } else {
+        groups.unclassified.push({ file: name, excerpt: messages.slice(0, 500) });
+      }
+    }
+  }
+  for (const key of ["nativeAddon", "buildPrerequisite"]) groups[key] = [...new Set(groups[key])].sort();
+  groups.nativeAddonEvidence = [...groups.nativeAddonEvidence].sort((a, b) => (a.file < b.file ? -1 : 1));
+  groups.unclassified = [...groups.unclassified].sort((a, b) => (a.file < b.file ? -1 : 1));
   return groups;
 }
+function normalizeCauseGroups(groups) {
+  return {
+    nativeAddon: [...groups.nativeAddon],
+    buildPrerequisite: [...groups.buildPrerequisite],
+    unclassified: groups.unclassified.map((u) => u.file),
+  };
+}
 const failureClassification = classifyFailures(branch);
+const baseClassification = classifyFailures(base);
+assert.deepEqual(
+  normalizeCauseGroups(baseClassification),
+  normalizeCauseGroups(failureClassification),
+  "failure normalized causes must match base",
+);
+assert.equal(
+  failureClassification.buildPrerequisite.length,
+  0,
+  `build-prerequisite failures must be zero after building dist + engram-memory: ${JSON.stringify(failureClassification.buildPrerequisite)}`,
+);
+assert.equal(
+  failureClassification.unclassified.length,
+  0,
+  `unclassified failures must be zero: ${JSON.stringify(failureClassification.unclassified.slice(0, 3))}`,
+);
 const report = {
   format: "openerp-full-suite-comparison/1", generatedAt: new Date().toISOString(), baseCommit,
   binding: { branch: git("branch", "--show-current"), testedCommit: git("rev-parse", "HEAD"),
@@ -95,14 +158,15 @@ const report = {
     changedFromBase, inputSha256, inputSetSha256: sha256Hex(canonicalBytes(inputSha256)), comparisonToolSha256: sha256Hex(fs.readFileSync(fileURLToPath(import.meta.url))),
     note: "Evidence-only commits may follow; inputSha256 binds the complete changed execution inputs independently of the evidence commit identity." },
   environment: { node: process.version, platform: process.platform, arch: process.arch, nodeModules: fs.realpathSync(path.join(root, "node_modules")), scope: "test-openerp" },
-  scope: `Two complete Vitest runs with --reporter=json, same dependencies and environment (shared node_modules, engram-memory dist built via Node on both sides). Base is the explicit pinned ${baseCommit} checkout inside the ignored .worktrees scratch directory.`,
+  scope: `Two complete Vitest runs with --reporter=json, same dependencies and environment (shared node_modules, top-level dist including memory-substrate.js plus declarations and engram-memory dist built via Node on both sides). Base is the explicit pinned ${baseCommit} checkout inside the ignored .worktrees scratch directory.`,
   base: baseSummary, branch: { ...branchSummary, openerpTests: { files: openerpFiles.map(file => relative(file.name)).sort(), passed: openerpPassed, failed: 0 } },
   fullTypeScript: { errorsOnEachSide: (branchTypes.match(/error TS/g) ?? []).length, identicalDiagnostics: true },
   failingIdentities, failingIdentitiesSha256: sha256Hex(canonicalBytes(failingIdentities)),
   failingIdentitiesMethod: "G0 RFC 8785 over sorted failed file identities and sorted failed assertion identities (file > fullName); both full JSON reports are retained.",
   failureClassification,
-  failureCause: "All 23 remaining failed files are native environmental: missing SQLite native bindings (fs-ext/better-sqlite3) and unbuilt top-level dist/memory-substrate artefacts; identical on base and branch with zero added failures.",
-  conclusion: "Identical failure identities on base and branch; zero added failures. Openerp fixtures, vectors, admission, acceptance and migrations pass.",
+  baseFailureClassification: baseClassification,
+  failureCause: `${failureClassification.nativeAddon.length} remaining failed files are native-addon (demonstrated error names better-sqlite3/fs-ext/.node/CAPABILITY_UNAVAILABLE); 0 build-prerequisite; 0 unclassified; identical identities and normalized causes on base and branch with zero added failures.`,
+  conclusion: "Identical failure identities and normalized causes on base and branch; zero added failures. Openerp fixtures, vectors, admission, acceptance and migrations pass.",
 };
 fs.writeFileSync(outputFile, `${JSON.stringify(report, null, 2)}\n`);
 console.log(JSON.stringify({ base: baseSummary, branch: report.branch, failureIdentitiesMatch: true, fullTypeScriptErrors: report.fullTypeScript.errorsOnEachSide }));
