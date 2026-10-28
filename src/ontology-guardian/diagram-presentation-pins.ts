@@ -14,6 +14,15 @@
 // immutable 40-hex commit pinning the transitive sources, and <sha256> the
 // 64-hex SHA-256 of the entry file bytes at that commit. parsePinnedDsRef
 // refuses anything not matching, including every "transitional:" value.
+//
+// Canonical repository-relative POSIX path grammar for <path>:
+// - nonempty segments separated by "/"; no empty segment (no leading,
+//   trailing or doubled "/"), no "." or ".." segment;
+// - no backslash, no control character (incl. NUL, \x00-\x1F, \x7F),
+//   no "#" (fragment delimiter);
+// - required entry-file suffix ".ts".
+// Whitespace anywhere in the reference also refuses (transitional values
+// included). Failures report presentation-pin-mismatch.
 import type { Pin } from "./types.js";
 
 /** Spec §3.2.1/C.3 refusal code for pin-equality failures. */
@@ -64,6 +73,22 @@ function mismatch(reason: string): Error {
   return new Error(`${PRESENTATION_PIN_MISMATCH}:${reason}`);
 }
 
+/** Canonical entry-path check (see grammar above). Throws presentation-pin-mismatch. */
+function assertCanonicalEntryPath(path: string): void {
+  if (path.length === 0) throw mismatch("path");
+  if (path.startsWith("/") || path.endsWith("/")) throw mismatch("path");
+  if (path.includes("\\")) throw mismatch("path");
+  if (path.includes("#")) throw mismatch("path");
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1F\x7F]/.test(path)) throw mismatch("path");
+  if (!path.endsWith(".ts")) throw mismatch("path");
+  const segments = path.split("/");
+  for (const segment of segments) {
+    if (segment.length === 0) throw mismatch("path");
+    if (segment === "." || segment === "..") throw mismatch("path");
+  }
+}
+
 /**
  * Parse an exact pinned DS reference. Refuses with
  * presentation-pin-mismatch on any non-matching value, including every
@@ -84,9 +109,35 @@ export function parsePinnedDsRef(value: unknown): PinnedDsRef {
   if (atIndex < 0 || head.indexOf("@", atIndex + 1) >= 0) throw mismatch("commit-separator");
   const path = head.slice(0, atIndex);
   const commit = head.slice(atIndex + 1);
-  if (path.length === 0 || path.startsWith("/") || !path.endsWith(".ts")) throw mismatch("path");
+  assertCanonicalEntryPath(path);
   if (!COMMIT_RE.test(commit)) throw mismatch("commit");
   return { repository: DS_REPOSITORY, commit, path, sha256 };
+}
+
+/**
+ * Project a parsed pinned DS reference onto the Pin shape the DS executor
+ * compares (DS presentation.ts `parsePinnedAdapterReference` at e3bc10cc):
+ * id `ds:<repository>/<path>`, version `<commit>`, contentDigest `<sha256>`.
+ */
+export function pinnedRefToAdapterPin(ref: PinnedDsRef): Pin {
+  return {
+    id: `ds:${ref.repository}/${ref.path}`,
+    version: ref.commit,
+    contentDigest: ref.sha256,
+  };
+}
+
+function isPinLike(value: unknown): value is Pin {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record["id"] === "string" &&
+    (record["id"] as string).length > 0 &&
+    typeof record["version"] === "string" &&
+    (record["version"] as string).length > 0 &&
+    typeof record["contentDigest"] === "string" &&
+    SHA256_RE.test(record["contentDigest"] as string)
+  );
 }
 
 /** Pin equality means equality of id, version and contentDigest (spec §3.2.1). */
@@ -101,26 +152,29 @@ export type PresentationPinCheck =
 /**
  * Engram catalog side of the spec §3.2.1 application pin equalities:
  * input.contractPin MUST equal the resolved contract pin, and input.adapterPin
- * MUST equal the contract catalog ontology.compatibility.adapter exact pinned
- * reference. (The adapter schema-binding equality against
- * artifactBinding.schemaPin is carried by the qualified catalog entry itself
- * and asserted where that entry is built.) Unknown, transitional or
- * non-matching pins refuse with presentation-pin-mismatch; no candidate view
- * is produced here.
+ * (frozen M3 §3.2.1 Pin { id, version, contentDigest }) MUST equal the Pin
+ * projected from the contract catalog ontology.compatibility.adapter exact
+ * pinned reference (DS parsePinnedAdapterReference shape at e3bc10cc: id
+ * `ds:<repository>/<path>`, version `<commit>`, contentDigest `<sha256>`).
+ * (The adapter schema-binding equality against artifactBinding.schemaPin is
+ * carried by the qualified catalog entry itself and asserted where that entry
+ * is built.) Unknown, transitional, malformed or non-matching pins refuse
+ * with presentation-pin-mismatch; no candidate view is produced here.
  */
 export function checkPresentationPins(
-  input: { readonly contractPin: Pin; readonly adapterPin: string },
+  input: { readonly contractPin: Pin; readonly adapterPin: Pin },
   resolved: { readonly contractPin: Pin; readonly adapterRef: string },
 ): PresentationPinCheck {
   if (!isExactPin(input.contractPin, resolved.contractPin)) {
     return { outcome: "refused", code: PRESENTATION_PIN_MISMATCH, path: "input.contractPin" };
   }
+  let expectedAdapterPin: Pin;
   try {
-    parsePinnedDsRef(input.adapterPin);
+    expectedAdapterPin = pinnedRefToAdapterPin(parsePinnedDsRef(resolved.adapterRef));
   } catch {
     return { outcome: "refused", code: PRESENTATION_PIN_MISMATCH, path: "input.adapterPin" };
   }
-  if (input.adapterPin !== resolved.adapterRef) {
+  if (!isPinLike(input.adapterPin) || !isExactPin(input.adapterPin, expectedAdapterPin)) {
     return { outcome: "refused", code: PRESENTATION_PIN_MISMATCH, path: "input.adapterPin" };
   }
   return { outcome: "ok" };
