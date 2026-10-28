@@ -115,6 +115,21 @@ mutate("OM13", "openerp-profile.ts",
 mutate("OM14", "openerp-profile.ts",
   '    if (keys !== "source,target") problems.push("relation:" + id);',
   "    void id; void keys;");
+mutate("OM15", "openerp-governed.ts",
+  "      type: c.type,",
+  '      type: c.name === "constraint" ? c.type : "fabricated",');
+mutate("OM16", "openerp-governed.ts",
+  "      if (c.check !== undefined) out.push({ entity: e.entity, field: c.name, check: c.check, notNull: c.notNull });",
+  '      if (c.check !== undefined) out.push({ entity: e.entity, field: c.name, check: c.name === "candidate_kind" ? c.check : "fabricated", notNull: c.notNull });');
+mutate("OM17", "openerp-constraints.ts",
+  '  { column: "invoice_lines.source_type", kind: "invoice_proposal_line", target: "invoice_proposal_lines.id", writer: "billing/invoice-service.ts:228" },',
+  '  { column: "invoice_lines.source_type", kind: "invoice_proposal_line", target: "invoices.id", writer: "billing/invoice-service.ts:228" },');
+mutate("OM18", "openerp-constraints.ts",
+  '    "trigger bank_transactions_immutable_evidence before update or delete",',
+  '    "trigger bank_transactions_nonexistent before update or delete",');
+mutate("OM19", "openerp-constraints.ts",
+  '  gate: "drop consumed_at or split emission from consumption",',
+  '  gate: "no schema decision required",');
 
 const baseline = await callbacks();
 assert.equal(baseline.failures.length, 0, `pristine committed suite must pass: ${JSON.stringify(baseline.failures.slice(0, 8))}`);
