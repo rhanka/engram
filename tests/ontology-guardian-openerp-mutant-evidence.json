@@ -1,18 +1,18 @@
 {
   "format": "openerp-mutant-proof/1",
-  "callbacks": 63,
+  "callbacks": 65,
   "runtimeCount": 19,
   "sourceSha256": {
     "openerp-constraints.ts": "905521cc1e2c7386f2ce74f7fe60fceaa7a00d099f345676415b6e76330e99ba",
     "openerp-governed.ts": "57adcb8289340c6a2d05c8f65579e7b483e47e09551763ccc5fd9ecab2212074",
     "openerp-mappings.ts": "9d74fc3d642c3fee38a581ed4d860c6098b0f6a369f655fc9be507664bc6899e",
     "openerp-profile.ts": "d276bb10f1aea577b1f8040dbacba97f8ca9b8f3e915fdc9f5f85c4bbbefde05",
-    "openerp-registry.ts": "1a60e2f24019238dfa606ec70bbd4f05dd6befcb3f7b105f1fd9bea5680a6cd0"
+    "openerp-registry.ts": "242d6e2e3092a0585df6428bdd8ea16f37333313827ab2d720a2f627334ebe93"
   },
   "testSha256": {
     "ontology-guardian-openerp-vectors.test.ts": "b24a0cf5003e207e9d46fde2166f7749f9dcf6de69214d1d1c4e9e363a3c83a7",
-    "ontology-guardian-openerp-admission.test.ts": "f91033f8dc15444cf8e1edecf64010e5cac760470b98432051376a1ede37b1f9",
-    "ontology-guardian-openerp-acceptance.test.ts": "cbad95e2e09b845df6d0e8219887397a4c1ece5cb853f2a1afcb8a8fc0d905ff",
+    "ontology-guardian-openerp-admission.test.ts": "0de50c487431a8abae2db66968e4e3f2052a09297c3c62351796897d64077f85",
+    "ontology-guardian-openerp-acceptance.test.ts": "4975112f5cd9af21d3a84f936d454de55b9f6ba8ba8cc5b3c7c096ecf245f68a",
     "ontology-guardian-openerp-migrations.test.ts": "a1d23f1a128ad56bc6fec419769289188d5b7743ecb0b4deffe74bc3d2679b3a",
     "ontology-guardian-openerp-typeproof.test.ts": "30cce74a6cf9b77f811e42f92d88cedf76f6e8886ae72261be96dc2145a68cbd"
   },
@@ -26,7 +26,7 @@
     {
       "id": "OM1",
       "file": "openerp-profile.ts",
-      "executed": 63,
+      "executed": 62,
       "killed": true,
       "assertion": "§2.9 native profile N1–N4 > passes validateOntologyProfile with no error (FX-OP-02)",
       "testFile": "ontology-guardian-openerp-vectors.test.ts"
@@ -34,7 +34,7 @@
     {
       "id": "OM10",
       "file": "openerp-constraints.ts",
-      "executed": 63,
+      "executed": 62,
       "killed": true,
       "assertion": "§3.2(b) tenant-carrying declarations (OQ-OP-11) > records database tenant-carrying for exactly the three named FKs",
       "testFile": "ontology-guardian-openerp-acceptance.test.ts"
@@ -42,7 +42,7 @@
     {
       "id": "OM11",
       "file": "openerp-governed.ts",
-      "executed": 63,
+      "executed": 62,
       "killed": true,
       "assertion": "§2.9 native profile N1–N4 > transcribes column references with delete rules (§2.3)",
       "testFile": "ontology-guardian-openerp-vectors.test.ts"
@@ -50,7 +50,7 @@
     {
       "id": "OM12",
       "file": "openerp-registry.ts",
-      "executed": 63,
+      "executed": 62,
       "killed": true,
       "assertion": "§6(b) FX-OP-09 digest vectors > tier-N successor at version 2 reproduces the three changed digests",
       "testFile": "ontology-guardian-openerp-vectors.test.ts"
@@ -58,7 +58,7 @@
     {
       "id": "OM13",
       "file": "openerp-profile.ts",
-      "executed": 63,
+      "executed": 62,
       "killed": true,
       "assertion": "§2.9 native profile N1–N4 > reports non-native keys on a widened value (N4 audit)",
       "testFile": "ontology-guardian-openerp-vectors.test.ts"
@@ -66,7 +66,7 @@
     {
       "id": "OM14",
       "file": "openerp-profile.ts",
-      "executed": 63,
+      "executed": 62,
       "killed": true,
       "assertion": "§2.9 native profile N1–N4 > reports non-native keys on a widened value (N4 audit)",
       "testFile": "ontology-guardian-openerp-vectors.test.ts"
@@ -74,7 +74,7 @@
     {
       "id": "OM15",
       "file": "openerp-governed.ts",
-      "executed": 63,
+      "executed": 62,
       "killed": true,
       "assertion": "FX-OP-01(a) full ordered tier-G equality against the byte-pinned source > reproduces all 776 column rows in order with every optional field",
       "testFile": "ontology-guardian-openerp-vectors.test.ts"
@@ -82,7 +82,7 @@
     {
       "id": "OM16",
       "file": "openerp-governed.ts",
-      "executed": 63,
+      "executed": 62,
       "killed": true,
       "assertion": "FX-OP-01(a) full ordered tier-G equality against the byte-pinned source > reproduces all 57 enum columns, 11 CHECKs and 27 invariants in order",
       "testFile": "ontology-guardian-openerp-vectors.test.ts"
@@ -90,7 +90,7 @@
     {
       "id": "OM17",
       "file": "openerp-constraints.ts",
-      "executed": 63,
+      "executed": 62,
       "killed": true,
       "assertion": "addendum preservation (§3.2c/d, §5, OQ-OP-10/11/12) > holds the five target/writer rows byte for byte",
       "testFile": "ontology-guardian-openerp-vectors.test.ts"
@@ -98,7 +98,7 @@
     {
       "id": "OM18",
       "file": "openerp-constraints.ts",
-      "executed": 63,
+      "executed": 62,
       "killed": true,
       "assertion": "addendum preservation (§3.2c/d, §5, OQ-OP-10/11/12) > checks declared immutability mechanisms against their source clauses",
       "testFile": "ontology-guardian-openerp-vectors.test.ts"
@@ -106,7 +106,7 @@
     {
       "id": "OM19",
       "file": "openerp-constraints.ts",
-      "executed": 63,
+      "executed": 62,
       "killed": true,
       "assertion": "addendum preservation (§3.2c/d, §5, OQ-OP-10/11/12) > holds the complete outbox gate and standing arms",
       "testFile": "ontology-guardian-openerp-vectors.test.ts"
@@ -114,7 +114,7 @@
     {
       "id": "OM2",
       "file": "openerp-mappings.ts",
-      "executed": 63,
+      "executed": 62,
       "killed": true,
       "assertion": "§4 mapping artifact vectors, exact bytes > asserts empty entries and recomputes every P-MAPPING digest",
       "testFile": "ontology-guardian-openerp-vectors.test.ts"
@@ -122,7 +122,7 @@
     {
       "id": "OM3",
       "file": "openerp-constraints.ts",
-      "executed": 63,
+      "executed": 62,
       "killed": true,
       "assertion": "§3.2(b) tenant-carrying declarations (OQ-OP-11) > records database tenant-carrying for exactly the three named FKs",
       "testFile": "ontology-guardian-openerp-acceptance.test.ts"
@@ -130,7 +130,7 @@
     {
       "id": "OM4",
       "file": "openerp-constraints.ts",
-      "executed": 63,
+      "executed": 62,
       "killed": true,
       "assertion": "FX-OP-06 polymorphic declarations (§3.2d, OQ-OP-10) > asserts no target for the manual arm and refuses kinds outside the sets",
       "testFile": "ontology-guardian-openerp-acceptance.test.ts"
@@ -138,7 +138,7 @@
     {
       "id": "OM5",
       "file": "openerp-constraints.ts",
-      "executed": 63,
+      "executed": 62,
       "killed": true,
       "assertion": "addendum preservation (§3.2c/d, §5, OQ-OP-10/11/12) > checks declared immutability mechanisms against their source clauses",
       "testFile": "ontology-guardian-openerp-vectors.test.ts"
@@ -146,7 +146,7 @@
     {
       "id": "OM6",
       "file": "openerp-constraints.ts",
-      "executed": 63,
+      "executed": 62,
       "killed": true,
       "assertion": "FX-OP-05 tenant-scoped uniqueness (§3.2a) > declares 20 tenant-scoped uniqueness rows, all database",
       "testFile": "ontology-guardian-openerp-acceptance.test.ts"
@@ -154,7 +154,7 @@
     {
       "id": "OM7",
       "file": "openerp-governed.ts",
-      "executed": 63,
+      "executed": 62,
       "killed": true,
       "assertion": "§§2.3–2.7 governed preservation counts > holds 776 column rows including 3 as-extracted pseudo-columns",
       "testFile": "ontology-guardian-openerp-vectors.test.ts"
@@ -162,7 +162,7 @@
     {
       "id": "OM8",
       "file": "openerp-registry.ts",
-      "executed": 63,
+      "executed": 62,
       "killed": true,
       "assertion": "§1.3 record closure (FX-OP-03) > carries identity, digests and lineage from the exact preimages",
       "testFile": "ontology-guardian-openerp-admission.test.ts"
@@ -170,7 +170,7 @@
     {
       "id": "OM9",
       "file": "openerp-mappings.ts",
-      "executed": 63,
+      "executed": 62,
       "killed": true,
       "assertion": "FX-OP-08 mapping integrity (§4, §6c) > rejects column and unknown sources independently of the supplied level (FX-OP-08)",
       "testFile": "ontology-guardian-openerp-acceptance.test.ts"
