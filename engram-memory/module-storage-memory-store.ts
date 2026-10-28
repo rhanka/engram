@@ -642,8 +642,13 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
         // live epoch and a fresh clock sample are bound into the moduleResult.
         const moduleResult = this.resampleModuleResult(unit);
         const receipt = moduleResult === undefined ? undefined : decodeReceipt(moduleResult);
-        const resampled: NeutralAtomicUnit = {
-          ...unit,
+        // The carried hash is recomputed at the apply boundary: resampling
+        // touches update values and the moduleResult only, never append ids
+        // or update keys, so the stamped value equals the built one.
+        const { intentHash: _carried, ...unitRest } = unit;
+        void _carried;
+        const resampled: NeutralAtomicUnit = withIntentHash({
+          ...unitRest,
           moduleResult,
           updates: unit.updates.map((update) => {
             if (update.kind === "memory-admission-outcomes" && receipt !== undefined) {
@@ -659,7 +664,7 @@ class ModuleStorageMemoryStore implements CanonicalMemoryStorePort {
             }
             return update;
           }),
-        };
+        });
         await transaction.apply(resampled);
         committedModuleResult = resampled.moduleResult;
       });
@@ -1189,6 +1194,15 @@ function expectedIntentHash(unit: NeutralAtomicUnit): string {
 }
 
 /**
+ * Stamps the Engram-carried intent hash onto a freshly built unit. The base
+ * carries every member except `intentHash`, so the hash preimage can never
+ * include the field itself.
+ */
+function withIntentHash(base: Omit<NeutralAtomicUnit, "intentHash">): NeutralAtomicUnit {
+  return { ...base, intentHash: expectedIntentHash(base as NeutralAtomicUnit) };
+}
+
+/**
  * Decodes stored original receipt bytes against the complete closed receipt
  * schema (binding §8.3.4): every required field is present in its canonical
  * encoding, optional digests verify when present, no unknown field survives,
@@ -1485,7 +1499,7 @@ function buildUnits(
     return {
       ok: true,
       value: [{
-        unit: {
+        unit: withIntentHash({
           guards: [],
           records: [],
           appends: [],
@@ -1495,7 +1509,7 @@ function buildUnits(
           purgeIntents: [],
           indexWrites,
           moduleResult: undefined,
-        },
+        }),
         idempotencyKey: plan.idempotencyKey,
         limits: plan.limits,
         k7Writes,
@@ -1583,7 +1597,7 @@ function buildUnits(
       const sliceK7 = k7Writes.filter(([candidate]) => entitySlice(candidate, undefined, undefined) === sliceIndex);
       previousHash = slice[slice.length - 1]!.event_hash;
       units.push({
-        unit: {
+        unit: withIntentHash({
           guards: sliceIndex === 0
             ? [{ kind: genesis ? "chain-absent" as const : "chain-head" as const, chain: memoryJournalChain(), hash: head, allocation: "0" }]
             : [{ kind: "chain-head" as const, chain: memoryJournalChain(), hash: eventSlices[sliceIndex - 1]![eventSlices[sliceIndex - 1]!.length - 1]!.event_hash }],
@@ -1595,7 +1609,7 @@ function buildUnits(
           purgeIntents: [],
           indexWrites: sliceIndexWrites,
           moduleResult: undefined,
-        },
+        }),
         idempotencyKey: `maintenance:${slice[0]!.event_id}`,
         limits: { ...batch },
         k7Writes: sliceK7,
@@ -1607,7 +1621,7 @@ function buildUnits(
   return {
     ok: true,
     value: [{
-      unit: {
+      unit: withIntentHash({
         guards: newEvents.length === 0
           ? []
           : [{ kind: before.journal.length === 0 ? "chain-absent" as const : "chain-head" as const, chain: memoryJournalChain(), hash: head, allocation: "0" }],
@@ -1619,7 +1633,7 @@ function buildUnits(
         purgeIntents: [],
         indexWrites,
         moduleResult: neutralJcs(plan.importReceipt ?? plan.receipt),
-      },
+      }),
       idempotencyKey: plan.idempotencyKey ?? newEvents[newEvents.length - 1]!.event_id,
       limits: plan.limits,
       k7Writes,
