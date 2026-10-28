@@ -1221,16 +1221,46 @@ function runProbe(consumerDir, name, source, env = {}) {
   return lines;
 }
 
-function assertNoNativeBuildAttempts(installLog, label) {
-  // A native BUILD attempt compiles (node-gyp, build-from-source); a
-  // prebuilt download is not a build. Either way the disabled proof fails on
-  // any compilation attempt for the memory native modules.
-  const hits = installLog.split('\n').filter((line) =>
-    /node-gyp rebuild|gyp info .*build|build-from-source/i.test(line) &&
-    /fs-ext|better-sqlite3|node-gyp/i.test(line),
+export function assertNoNativeBuildAttempts(installLog, label, traceRows = []) {
+  // A native BUILD attempt compiles for a memory native module (fs-ext,
+  // better-sqlite3); a prebuilt download is not a build, and a warning that
+  // merely DESCRIBES an install script is not an executed build either.
+  // Every hit must be attributable to a memory native module through
+  // executed-build evidence: either an instrumented `native-build` trace row
+  // from the install, or an install-log lifecycle record naming the module
+  // next to build-execution markers. Warning-only lines (`npm warn ...`,
+  // e.g. the tree-sitter-lua install-script description) and unrelated
+  // addons never match: there is no bare node-gyp alternative, so each hit
+  // names fs-ext or better-sqlite3.
+  const executedBuild = /node-gyp rebuild|gyp info .*build|build-from-source/i;
+  const memoryNative = /fs-ext|better-sqlite3/i;
+  const warningOnly = /npm\s+warn/i;
+  // npm echoes the package script line (`> fs-ext@x install`) adjacent to
+  // the executed command line (`> node-gyp rebuild`), so attribution may
+  // sit on an immediate neighbour rather than the marker line itself.
+  const attributableLifecycle = (text) =>
+    (/^\s*>/.test(text) && memoryNative.test(text)) ||
+    /node_modules[\\/].*(fs-ext|better-sqlite3)/i.test(text);
+  const lines = installLog.split('\n');
+  const hits = lines.filter((line, index) => {
+    if (warningOnly.test(line)) return false;
+    if (!executedBuild.test(line)) return false;
+    if (memoryNative.test(line)) return true;
+    const neighbours = lines.slice(Math.max(0, index - 2), index + 3);
+    return neighbours.some((neighbour, offset) => {
+      const neighbourIndex = Math.max(0, index - 2) + offset;
+      return neighbourIndex !== index && !warningOnly.test(neighbour) && attributableLifecycle(neighbour);
+    });
+  });
+  const traced = traceRows.filter((row) =>
+    row?.kind === 'native-build' && memoryNative.test(String(row?.detail ?? '')),
   );
-  if (hits.length > 0) {
-    throw new Error(`${label}: native build attempts observed:\n${hits.slice(0, 10).join('\n')}`);
+  const evidence = [
+    ...hits.map((line) => `log: ${line.trim()}`),
+    ...traced.map((row) => `trace: ${String(row.detail).slice(0, 300)}`),
+  ];
+  if (evidence.length > 0) {
+    throw new Error(`${label}: native build attempts observed:\n${evidence.slice(0, 10).join('\n')}`);
   }
 }
 
@@ -1315,7 +1345,10 @@ export async function runPackedAcceptance() {
     )));
     trace.reset();
     installConsumer(disabledDir, packed.tarball, [], { npm_config_cache: join(work, 'disabled-cache'), ...trace.env }, null, false, disabledLog);
-    assertNoNativeBuildAttempts(readFileSync(disabledLog, 'utf8'), 'disabled install');
+    // The trace holds install-phase rows only here (reset before the
+    // install, disabled probe afterwards), so its `native-build` rows are
+    // executed-build evidence attributable to the install itself.
+    assertNoNativeBuildAttempts(readFileSync(disabledLog, 'utf8'), 'disabled install', trace.read());
     runProbe(disabledDir, 'disabled-probe', DISABLED_PROBE, trace.env);
     const observed = trace.read();
     const disabled = Object.fromEntries(['provider-load', 'store-open', 'identity-bootstrap', 'native-build'].map(kind => [kind, observed.filter(row => row.kind === kind).length]));
