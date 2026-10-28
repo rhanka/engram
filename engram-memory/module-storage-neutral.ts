@@ -189,6 +189,15 @@ export interface NeutralGuard {
 }
 
 export interface NeutralAtomicUnit {
+  /**
+   * Engram-carried intent hash (binding §5.3 rule 5): Engram fills this on
+   * every unit passed to `ModuleTransaction.apply`, computed as JCS over
+   * the append ids and the updates (append ids first, then update keys).
+   * The preimage never includes this field itself. The host MUST persist
+   * it with the idempotency entry and MUST return it byte for byte as
+   * `NeutralIdempotencyEntry.intentHash`; the host MUST NOT recompute it.
+   */
+  readonly intentHash: string;
   readonly guards: ReadonlyArray<NeutralGuard>;
   readonly records: ReadonlyArray<NeutralRecordWrite>;
   readonly appends: ReadonlyArray<NeutralChainAppend>;

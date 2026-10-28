@@ -42,8 +42,13 @@ import {
   NEUTRAL_CONTRACT_ASSET,
   memoryContractManifest,
   memoryDescriptorDigest,
+  type NeutralAtomicUnit,
   type NeutralBoundScope,
+  type NeutralCommitOptions,
+  type NeutralCommitReceipt,
+  type NeutralIdempotencySelector,
   type NeutralModuleStorageBinding,
+  type NeutralModuleTransaction,
   type NeutralScopeGrant,
 } from "../engram-memory/module-storage-neutral.js";
 import { decodeCanonicalTransactionReceiptForTest } from "../engram-memory/module-storage-memory-store.js";
@@ -961,6 +966,93 @@ describe("substrate canonical trace and replay (amendment §5.2, binding §8.2)"
     await harness.store.close();
   });
 
+  describe("neutral unit carries intentHash (producer contract, binding §5.3 rule 5)", () => {
+    async function openSpiedStore(storeId: string, forgeIntentHash?: string): Promise<Harness & { applied: NeutralAtomicUnit[] }> {
+      const backend = createReferenceModuleStorageBackend({ scope: SCOPE });
+      const clock = fixedClock();
+      const applied: NeutralAtomicUnit[] = [];
+      const inner = backend.handle;
+      const handle: typeof inner = {
+        ...inner,
+        transact: <T>(
+          options: NeutralCommitOptions,
+          operation: (transaction: NeutralModuleTransaction) => Promise<T>,
+        ): Promise<{ readonly value: T; readonly receipt: NeutralCommitReceipt }> =>
+          inner.transact(options, (transaction) => operation({
+            ...transaction,
+            findIdempotency: async (selector: NeutralIdempotencySelector) => {
+              const entry = await transaction.findIdempotency(selector);
+              if (entry === null || forgeIntentHash === undefined) return entry;
+              return { ...entry, intentHash: forgeIntentHash };
+            },
+            apply: async (unit: NeutralAtomicUnit) => {
+              applied.push(unit);
+              return transaction.apply(unit);
+            },
+          })),
+      };
+      const opened = await openModuleStorageCanonicalMemoryStoreV1({
+        handle,
+        scope_binding: { scope: { ...SCOPE }, store_id: storeId, resolveScope },
+        grant: backend.grant,
+        clock,
+        deadline_at: "2026-08-16T12:40:00.000Z",
+      });
+      if (!opened.ok) throw new Error(`open refused: ${opened.error.code} ${opened.error.message}`);
+      const readiness = await opened.value.readiness();
+      if (!readiness.ok) throw new Error(`readiness refused: ${readiness.error.code}`);
+      return { backend, clock, store: opened.value, epoch: readiness.value.storage_epoch, applied };
+    }
+
+    function expectedOf(unit: NeutralAtomicUnit): string {
+      const appendIds = unit.appends.map((append) => append.id);
+      return canonicalizeJcs({ appends: appendIds, updates: [...appendIds, ...unit.updates.map((update) => update.key)] });
+    }
+
+    it("stamps every applied unit with the intent hash formula", async () => {
+      const harness = await openSpiedStore("store:intent-carried");
+      const memory = await engineOn(harness.store, harness.clock);
+      const pending = await memory.capture(captureRequest("intent-key-1", "1"));
+      if (!pending.ok || pending.value.candidate_id === undefined) throw new Error("capture failed");
+      expect(harness.applied.length).toBeGreaterThan(0);
+      for (const unit of harness.applied) {
+        expect(unit.intentHash).toBe(expectedOf(unit));
+      }
+      await harness.store.close();
+    });
+
+    it("replays successfully when the host returns the carried value", async () => {
+      const harness = await openSpiedStore("store:intent-replay");
+      const memory = await engineOn(harness.store, harness.clock);
+      const first = await memory.capture(captureRequest("intent-key-2", "1"));
+      expect(first).toMatchObject({ ok: true });
+      const unitsAfterFirst = harness.backend.committedUnits().length;
+      const appliedAfterFirst = harness.applied.length;
+      const second = await memory.capture(captureRequest("intent-key-2", "1"));
+      expect(second).toMatchObject({ ok: true, value: { status: "duplicate_exact" } });
+      expect(harness.backend.committedUnits().length).toBe(unitsAfterFirst);
+      expect(harness.applied.length).toBe(appliedAfterFirst);
+      await harness.store.close();
+    });
+
+    it("refuses with digest-conflict when the host returns a different value", async () => {
+      // The forged host returns a foreign hash for an already-bound commit
+      // identity; the replay comparison must refuse even though the presented
+      // unit is well-formed. A host that recomputed the hash from the unit
+      // would return the matching value and wrongly succeed.
+      const harness = await openSpiedStore("store:intent-forged", "sha256:forged-intent-hash");
+      const first = await harness.store.commitPending(manualCapture("candidate:intent-forge-a", "event:intent-forge"));
+      expect(first).toMatchObject({ ok: true });
+      const before = await journalLength(harness.store);
+      const unitsBefore = harness.backend.committedUnits().length;
+      const second = await harness.store.commitPending(manualCapture("candidate:intent-forge-b", "event:intent-forge"));
+      expect(second).toMatchObject({ ok: false, error: { code: "DIGEST_CONFLICT" } });
+      expect(await journalLength(harness.store)).toBe(before);
+      expect(harness.backend.committedUnits().length).toBe(unitsBefore);
+      await harness.store.close();
+    });
+  });
+
   it("completes K7 with a cursor-independent revision (tour 2 correction 1, tour 3 objection 1)", async () => {
     // Store-level flow: a content-bound capture creates the K7 entry at revision 1
     // (the engine completes it during admission, so the completion is driven here directly).
@@ -1235,6 +1327,7 @@ describe("substrate atomicity under fault injection (amendment §5.3)", () => {
     const fence = harness.backend.currentFence();
     if (fence === undefined) throw new Error("no live fence");
     const probeUnit = {
+      intentHash: "probe-intent-hash",
       guards: [],
       records: [{
         kind: "memory-record-blobs",
@@ -1275,6 +1368,7 @@ describe("substrate atomicity under fault injection (amendment §5.3)", () => {
       { maxAppends: 1, maxRecords: 8, maxEncodedBytes: 1_048_576 },
       "commit:rollback-probe-injected",
       (tx) => tx.apply({
+        intentHash: "probe-intent-hash",
         guards: [],
         records: [{
           kind: "memory-record-blobs",
@@ -1326,6 +1420,7 @@ describe("substrate atomicity under fault injection (amendment §5.3)", () => {
       "commit:tx-two-applies",
       async (tx) => {
         await tx.apply({
+          intentHash: "probe-intent-hash",
           guards: [],
           records: [{
             kind: "memory-record-blobs",
@@ -1341,6 +1436,7 @@ describe("substrate atomicity under fault injection (amendment §5.3)", () => {
           indexWrites: [],
         });
         await tx.apply({
+          intentHash: "probe-intent-hash",
           guards: [],
           records: [],
           appends: [{
@@ -1618,6 +1714,7 @@ describe("substrate atomicity under fault injection (amendment §5.3)", () => {
       { maxAppends: 1, maxRecords: 10, maxEncodedBytes: 1_048_576 },
       "commit:limits-probe",
       (tx) => tx.apply({
+        intentHash: "probe-intent-hash",
         guards: [],
         records: [],
         appends: [
