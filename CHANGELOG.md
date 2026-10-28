@@ -4,6 +4,10 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.21.3 (2026-10-28)
+
+- **Neutral atomic unit carries intentHash (producer contract, binding §5.3 rule 5).** `NeutralAtomicUnit` gains the additive readonly field `intentHash`, filled by Engram on every unit passed to `transaction.apply` — computed exactly as the existing replay formula (JCS over the append ids and the updates), with the hash preimage never including the field itself. Hosts persist it with the idempotency entry and return it byte for byte as `NeutralIdempotencyEntry.intentHash` instead of recomputing it; host-side recomputation is removed from the reference port and the tarball acceptance double.
+
 ## 0.21.2 (2026-10-25)
 
 - **Dropped Ollama backend (owner decision 2026-10-25, security).** Removes the `ollama-ai-provider` dependency, which pinned `@ai-sdk/provider-utils` 2.x and its zod 3 line (GHSA-mrhx-c7xc-m3w5, high). The `ollama` direct backend is refused with the standard `--backend must be one of …` error; `@sentropic/llm-mesh` has no Ollama provider, so nothing replaces it. `validateOllamaBaseUrl` and its tests are removed with the backend.
