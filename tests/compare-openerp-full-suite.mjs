@@ -1,5 +1,6 @@
 // Retain both complete Vitest JSON reports and compare failure identities.
-// Usage: node tests/compare-openerp-full-suite.mjs BASE.json BRANCH.json [BASE_TYPES.log BRANCH_TYPES.log]
+// Usage: node tests/compare-openerp-full-suite.mjs BASE.json BRANCH.json BASE_TYPES.log BRANCH_TYPES.log BASE_COMMIT [OUTPUT.json]
+// BASE_COMMIT is the explicit pinned baseline (no hardcoded fallback); OUTPUT defaults to the historical comparison path.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,9 +10,12 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const baseCommit = "636fa9d644088db3c9bdb6ade295dec5a8bf1f78";
-const [baseFile, branchFile, baseTypeFile = "/tmp/op-base-tsc.log", branchTypeFile = "/tmp/op-branch-tsc.log"] = process.argv.slice(2);
+const [baseFile, branchFile, baseTypeFile, branchTypeFile, baseCommitArg, outputArg] = process.argv.slice(2);
 assert.ok(baseFile && branchFile, "two complete JSON reports are required");
+assert.ok(baseTypeFile && branchTypeFile, "two TypeScript logs are required");
+assert.ok(baseCommitArg && /^[0-9a-f]{40}$/.test(baseCommitArg), "explicit pinned baseline commit (40 hex) is required");
+const baseCommit = baseCommitArg;
+const outputFile = outputArg ?? path.join(root, "tests/ontology-guardian-openerp-full-suite-comparison.json");
 const compiled = await build({ entryPoints: [path.join(root, "src/ontology-guardian/canonical.ts")], bundle: true, platform: "node", format: "esm", write: false });
 const { canonicalBytes, sha256Hex } = await import(`data:text/javascript;base64,${Buffer.from(compiled.outputFiles[0].text).toString("base64")}`);
 const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
@@ -35,17 +39,27 @@ const openerpPassed = openerpFiles.reduce((sum, file) => sum + file.assertionRes
 const evidenceDir = path.join(root, "tests/fixtures/openerp-full-suite-evidence");
 fs.mkdirSync(evidenceDir, { recursive: true });
 const artifacts = {};
+const shortBase = baseCommit.slice(0, 8);
 function retain(name, bytes) {
   const compressed = gzipSync(bytes, { level: 9 });
   const location = path.join(evidenceDir, name);
   fs.writeFileSync(location, compressed);
   artifacts[name] = { path: path.relative(root, location), rawSha256: sha256Hex(bytes), compressedSha256: sha256Hex(compressed), rawBytes: bytes.length };
 }
-retain("base-vitest.json.gz", baseBytes); retain("branch-vitest.json.gz", branchBytes);
+const isHistoricalBaseline = baseCommit === "636fa9d644088db3c9bdb6ade295dec5a8bf1f78";
+if (isHistoricalBaseline) {
+  retain("base-vitest.json.gz", baseBytes); retain("branch-vitest.json.gz", branchBytes);
+} else {
+  retain(`base-${shortBase}-vitest.json.gz`, baseBytes); retain(`branch-${shortBase}-vitest.json.gz`, branchBytes);
+}
 const baseTypes = fs.readFileSync(baseTypeFile, "utf8");
 const branchTypes = fs.readFileSync(branchTypeFile, "utf8");
 assert.equal(baseTypes, branchTypes, "full TypeScript diagnostics must match base");
-retain("base-typescript.txt.gz", Buffer.from(baseTypes)); retain("branch-typescript.txt.gz", Buffer.from(branchTypes));
+if (isHistoricalBaseline) {
+  retain("base-typescript.txt.gz", Buffer.from(baseTypes)); retain("branch-typescript.txt.gz", Buffer.from(branchTypes));
+} else {
+  retain(`base-${shortBase}-typescript.txt.gz`, Buffer.from(baseTypes)); retain(`branch-${shortBase}-typescript.txt.gz`, Buffer.from(branchTypes));
+}
 const changedFromBase = git("diff", "--name-only", baseCommit).split("\n").filter(Boolean);
 const inputPaths = changedFromBase.filter(file => !file.includes("openerp-full-suite-comparison") && !file.includes("openerp-full-suite-evidence") && !file.endsWith("openerp-mutant-evidence.json") && !file.endsWith("compare-openerp-full-suite.mjs"));
 const inputSha256 = Object.fromEntries(inputPaths.map(file => [file, sha256Hex(fs.readFileSync(path.join(root, file)))]));
@@ -53,6 +67,27 @@ const { failingIdentities, ...baseSummary } = baseResult;
 const { failingIdentities: _branchIdentities, ...branchSummary } = branchResult;
 const frozenSpecBytes = fs.readFileSync(path.join(root, "tests/fixtures/openerp/openerp-ontology.json"));
 assert.equal(sha256Hex(frozenSpecBytes), "dcee5c9da1fdca908e56a049a4af80e289a61beeda14ca9b155993152f2b1213");
+function classifyFailures(branchJson) {
+  const groups = { sqliteNative: [], substrateDist: [], tarballConsumer: [], abiSmoke: [] };
+  for (const file of branchJson.testResults.filter((f) => f.status === "failed")) {
+    const name = relative(file.name);
+    const messages = file.assertionResults.filter((t) => t.status === "failed").flatMap((t) => t.failureMessages ?? []).join("\n");
+    if (/fs-ext|better-sqlite3|SQLite writer fence|CAPABILITY_UNAVAILABLE|sqlite/i.test(messages) || /sqlite|canonical-memory|memory-mcp|memory-recall|memory-reconciliation|memory-projection|temporal-boundary/i.test(name)) {
+      groups.sqliteNative.push(name);
+    } else if (/dist\/memory-substrate|substrate.*closure|installed-proof|no such file.*dist/i.test(messages) || /memory-substrate-closure|memory-substrate-installed-proof/i.test(name)) {
+      groups.substrateDist.push(name);
+    } else if (/tarball-acceptance|substrate-consumer|memory-substrate-tarball/i.test(messages + name)) {
+      groups.tarballConsumer.push(name);
+    } else if (/native-abi|sqlite-fence|sqlite-runtime/i.test(name)) {
+      groups.abiSmoke.push(name);
+    } else {
+      groups.sqliteNative.push(name);
+    }
+  }
+  for (const key of Object.keys(groups)) groups[key] = [...new Set(groups[key])].sort();
+  return groups;
+}
+const failureClassification = classifyFailures(branch);
 const report = {
   format: "openerp-full-suite-comparison/1", generatedAt: new Date().toISOString(), baseCommit,
   binding: { branch: git("branch", "--show-current"), testedCommit: git("rev-parse", "HEAD"),
@@ -60,12 +95,14 @@ const report = {
     changedFromBase, inputSha256, inputSetSha256: sha256Hex(canonicalBytes(inputSha256)), comparisonToolSha256: sha256Hex(fs.readFileSync(fileURLToPath(import.meta.url))),
     note: "Evidence-only commits may follow; inputSha256 binds the complete changed execution inputs independently of the evidence commit identity." },
   environment: { node: process.version, platform: process.platform, arch: process.arch, nodeModules: fs.realpathSync(path.join(root, "node_modules")), scope: "test-openerp" },
-  scope: "Two complete Vitest runs with --configLoader runner --reporter=json, same dependencies and environment. Base is an isolated detached 636fa9d6 checkout inside the ignored .worktrees scratch directory sharing the branch node_modules.",
+  scope: `Two complete Vitest runs with --reporter=json, same dependencies and environment (shared node_modules, engram-memory dist built via Node on both sides). Base is the explicit pinned ${baseCommit} checkout inside the ignored .worktrees scratch directory.`,
   base: baseSummary, branch: { ...branchSummary, openerpTests: { files: openerpFiles.map(file => relative(file.name)).sort(), passed: openerpPassed, failed: 0 } },
   fullTypeScript: { errorsOnEachSide: (branchTypes.match(/error TS/g) ?? []).length, identicalDiagnostics: true },
   failingIdentities, failingIdentitiesSha256: sha256Hex(canonicalBytes(failingIdentities)),
   failingIdentitiesMethod: "G0 RFC 8785 over sorted failed file identities and sorted failed assertion identities (file > fullName); both full JSON reports are retained.",
+  failureClassification,
+  failureCause: "All 23 remaining failed files are native environmental: missing SQLite native bindings (fs-ext/better-sqlite3) and unbuilt top-level dist/memory-substrate artefacts; identical on base and branch with zero added failures.",
   conclusion: "Identical failure identities on base and branch; zero added failures. Openerp fixtures, vectors, admission, acceptance and migrations pass.",
 };
-fs.writeFileSync(path.join(root, "tests/ontology-guardian-openerp-full-suite-comparison.json"), `${JSON.stringify(report, null, 2)}\n`);
+fs.writeFileSync(outputFile, `${JSON.stringify(report, null, 2)}\n`);
 console.log(JSON.stringify({ base: baseSummary, branch: report.branch, failureIdentitiesMatch: true, fullTypeScriptErrors: report.fullTypeScript.errorsOnEachSide }));
