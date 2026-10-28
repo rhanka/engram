@@ -232,15 +232,55 @@ export const SUCCESSOR_V2_PIN: Pin = {
 /** §7 licence closure allowlist (MIT throughout; closure within MIT/Apache-2.0/CC0 at admission). */
 export const OPENERP_ALLOWED_LICENCES: readonly string[] = ["MIT", "Apache-2.0", "CC0"] as const;
 
+/** Missing G0 contract operations for the OpenERP lot (owner: engram, separate decision). */
+export interface OpenerpContractGap {
+  readonly id: string;
+  readonly missingOperation: string;
+  readonly owner: "engram";
+  readonly question: string;
+}
+
+export const OPENERP_G0_CONTRACT_GAPS: readonly OpenerpContractGap[] = [
+  {
+    id: "GAP-OP-03",
+    missingOperation: "G0 record-closure validator for OntologyRecord (extra field refuses; corpusRef unresolved encoding refuses instead of omission)",
+    owner: "engram",
+    question: "G0 contract extension, separate decision",
+  },
+  {
+    id: "GAP-OP-04",
+    missingOperation: "G0 pack licence-closure recomputation with §5.5 excluded-licence gate for family EXT (no lifecycle cure)",
+    owner: "engram",
+    question: "G0 contract extension, separate decision",
+  },
+];
+
+/** Fixture coverage for the §10 acceptance list: covered fixtures pass, not-covered stay open. */
+export const OPENERP_FIXTURE_COVERAGE: Record<string, { readonly status: "covered" | "not-covered"; readonly gap?: string }> = {
+  "FX-OP-01": { status: "covered" },
+  "FX-OP-02": { status: "covered" },
+  "FX-OP-03": { status: "not-covered", gap: "GAP-OP-03" },
+  "FX-OP-04": { status: "not-covered", gap: "GAP-OP-04" },
+  "FX-OP-05": { status: "covered" },
+  "FX-OP-06": { status: "covered" },
+  "FX-OP-07": { status: "covered" },
+  "FX-OP-08": { status: "covered" },
+  "FX-OP-09": { status: "covered" },
+  "FX-OP-10": { status: "covered" },
+  "FX-OP-11": { status: "covered" },
+  "FX-OP-12": { status: "covered" },
+};
+
 export type OpenerpLicenceVerdict =
   | { readonly admitted: true }
   | { readonly admitted: false; readonly code: "excluded-licence"; readonly reason: string };
 
 /**
- * §7 recomputed licence closure over the pack (guardian admission surface
- * for FX-OP-04): every licence must stay within the allowlist; any excluded
- * licence refuses with the exact `excluded-licence` code. No lifecycle state
- * cures the refusal — callers assert the same code across lifecycle variants.
+ * §7 allowlist unit check (NOT the FX-OP-04 pack closure gate).
+ * Every licence must stay within the allowlist; any excluded licence refuses
+ * with `excluded-licence`. This helper checks a caller-supplied string array
+ * only: it neither computes the pack dependency closure nor participates in
+ * `checkAdmission`. FX-OP-04 stays not-covered (GAP-OP-04, OQ-OP-13 open).
  */
 export function checkOpenerpLicenceClosure(licences: readonly string[]): OpenerpLicenceVerdict {
   for (const licence of licences) {
