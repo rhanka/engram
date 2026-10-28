@@ -1,10 +1,10 @@
 {
   "format": "openerp-full-suite-comparison/1",
-  "generatedAt": "2026-10-28T12:54:43.988Z",
+  "generatedAt": "2026-10-28T13:26:20.377Z",
   "baseCommit": "8b93ba6b834f83fddbcf76091054efea2e188cf1",
   "binding": {
     "branch": "feat/ontology-guardian-openerp",
-    "testedCommit": "4458f703ef1d47034563b128f8593d5f86ce884d",
+    "testedCommit": "957f16eb459a3d98854c1d80f7ff55e9294f48a1",
     "frozenSpec": "SPEC-openerp-ontology-FROZEN-761beb41.md",
     "frozenSpecSha256": "761beb417cc33c9181b0d1a74a8a59ca4350bf7970f99076d4ec5874250bbd93",
     "changedFromBase": [
@@ -15,8 +15,12 @@
       "src/ontology-guardian/openerp-profile.ts",
       "src/ontology-guardian/openerp-registry.ts",
       "tests/compare-openerp-full-suite.mjs",
+      "tests/fixtures/openerp-full-suite-evidence/base-8b93ba6b-typescript.txt.gz",
+      "tests/fixtures/openerp-full-suite-evidence/base-8b93ba6b-vitest.json.gz",
       "tests/fixtures/openerp-full-suite-evidence/base-typescript.txt.gz",
       "tests/fixtures/openerp-full-suite-evidence/base-vitest.json.gz",
+      "tests/fixtures/openerp-full-suite-evidence/branch-8b93ba6b-typescript.txt.gz",
+      "tests/fixtures/openerp-full-suite-evidence/branch-8b93ba6b-vitest.json.gz",
       "tests/fixtures/openerp-full-suite-evidence/branch-typescript.txt.gz",
       "tests/fixtures/openerp-full-suite-evidence/branch-vitest.json.gz",
       "tests/fixtures/openerp/RETROCESSION-openerp-ontology.md",
@@ -25,6 +29,7 @@
       "tests/fixtures/openerp/openerp-ontology.json",
       "tests/ontology-guardian-openerp-acceptance.test.ts",
       "tests/ontology-guardian-openerp-admission.test.ts",
+      "tests/ontology-guardian-openerp-full-suite-comparison-8b93ba6b.json",
       "tests/ontology-guardian-openerp-full-suite-comparison.json",
       "tests/ontology-guardian-openerp-migrations.test.ts",
       "tests/ontology-guardian-openerp-mutant-evidence.json",
@@ -39,21 +44,21 @@
       "src/ontology-guardian/openerp-governed.ts": "57adcb8289340c6a2d05c8f65579e7b483e47e09551763ccc5fd9ecab2212074",
       "src/ontology-guardian/openerp-mappings.ts": "9d74fc3d642c3fee38a581ed4d860c6098b0f6a369f655fc9be507664bc6899e",
       "src/ontology-guardian/openerp-profile.ts": "d276bb10f1aea577b1f8040dbacba97f8ca9b8f3e915fdc9f5f85c4bbbefde05",
-      "src/ontology-guardian/openerp-registry.ts": "1a60e2f24019238dfa606ec70bbd4f05dd6befcb3f7b105f1fd9bea5680a6cd0",
+      "src/ontology-guardian/openerp-registry.ts": "242d6e2e3092a0585df6428bdd8ea16f37333313827ab2d720a2f627334ebe93",
       "tests/fixtures/openerp/RETROCESSION-openerp-ontology.md": "c655288b478b1d18acdfb1a9ab35f632c948f37745225d84adead2f93df6ab45",
       "tests/fixtures/openerp/SHA256SUMS": "f74f34b829eb25ee248f21db76ed85a2a4c117e13594dcb845fd5303b65b032a",
       "tests/fixtures/openerp/export-ontology.mjs": "5ddf004260695ef53067083bdf253eb4e8dbaf71cba2c299f1e8dcccdcea9f4d",
       "tests/fixtures/openerp/openerp-ontology.json": "dcee5c9da1fdca908e56a049a4af80e289a61beeda14ca9b155993152f2b1213",
-      "tests/ontology-guardian-openerp-acceptance.test.ts": "cbad95e2e09b845df6d0e8219887397a4c1ece5cb853f2a1afcb8a8fc0d905ff",
-      "tests/ontology-guardian-openerp-admission.test.ts": "f91033f8dc15444cf8e1edecf64010e5cac760470b98432051376a1ede37b1f9",
+      "tests/ontology-guardian-openerp-acceptance.test.ts": "4975112f5cd9af21d3a84f936d454de55b9f6ba8ba8cc5b3c7c096ecf245f68a",
+      "tests/ontology-guardian-openerp-admission.test.ts": "0de50c487431a8abae2db66968e4e3f2052a09297c3c62351796897d64077f85",
       "tests/ontology-guardian-openerp-migrations.test.ts": "a1d23f1a128ad56bc6fec419769289188d5b7743ecb0b4deffe74bc3d2679b3a",
       "tests/ontology-guardian-openerp-typeproof.test.ts": "30cce74a6cf9b77f811e42f92d88cedf76f6e8886ae72261be96dc2145a68cbd",
       "tests/ontology-guardian-openerp-vectors.test.ts": "b24a0cf5003e207e9d46fde2166f7749f9dcf6de69214d1d1c4e9e363a3c83a7",
-      "tests/openerp-mutant-proof.mjs": "5bbe3b1119e86fb2fde37f438d629c7117e74fb827ee9b121881635d2e898c23",
+      "tests/openerp-mutant-proof.mjs": "0c23b121d1a4d1e4ff1bcf34a9ef88678afd05d6908fac9a45a95e6f5299d0e5",
       "tsconfig.openerp-types.json": "0f7bcda6e4093796ffb0b1f8fb0a7e5559e112816d15d2eccfc093e1bfede628"
     },
-    "inputSetSha256": "6e46232eea641070981e0f4c0a7203c8fdeb1b565bdc3f8d3b9c986fff7ce865",
-    "comparisonToolSha256": "a8a18408106aa614abeaac0d24c132d025bdfa10794efac24c3741f9ae166cf0",
+    "inputSetSha256": "8e6fdcdc50cb44760f4feb8eaab1a179a5d237e397ba191db09ca1086179110e",
+    "comparisonToolSha256": "de945bac8a144882a3d1c39742753c566ab9b919c207aa52a3d56fffff28e56b",
     "note": "Evidence-only commits may follow; inputSha256 binds the complete changed execution inputs independently of the evidence commit identity."
   },
   "environment": {
@@ -63,33 +68,33 @@
     "nodeModules": "/home/antoinefa/src/graphify-wt-openerp/node_modules",
     "scope": "test-openerp"
   },
-  "scope": "Two complete Vitest runs with --reporter=json, same dependencies and environment (shared node_modules, engram-memory dist built via Node on both sides). Base is the explicit pinned 8b93ba6b834f83fddbcf76091054efea2e188cf1 checkout inside the ignored .worktrees scratch directory.",
+  "scope": "Two complete Vitest runs with --reporter=json, same dependencies and environment (shared node_modules, top-level dist including memory-substrate.js plus declarations and engram-memory dist built via Node on both sides). Base is the explicit pinned 8b93ba6b834f83fddbcf76091054efea2e188cf1 checkout inside the ignored .worktrees scratch directory.",
   "base": {
     "testFiles": {
-      "failed": 23,
-      "passed": 403,
+      "failed": 20,
+      "passed": 406,
       "skipped": 6,
       "total": 432
     },
     "tests": {
-      "failed": 97,
-      "passed": 7252,
+      "failed": 79,
+      "passed": 7270,
       "skipped": 43,
       "total": 7392
     }
   },
   "branch": {
     "testFiles": {
-      "failed": 23,
-      "passed": 408,
+      "failed": 20,
+      "passed": 411,
       "skipped": 6,
       "total": 437
     },
     "tests": {
-      "failed": 97,
-      "passed": 7315,
+      "failed": 79,
+      "passed": 7332,
       "skipped": 43,
-      "total": 7455
+      "total": 7457
     },
     "openerpTests": {
       "files": [
@@ -99,7 +104,7 @@
         "tests/ontology-guardian-openerp-typeproof.test.ts",
         "tests/ontology-guardian-openerp-vectors.test.ts"
       ],
-      "passed": 63,
+      "passed": 62,
       "failed": 0
     }
   },
@@ -123,9 +128,6 @@
       "tests/memory-recall-durable-parity.test.ts",
       "tests/memory-recall-golden.test.ts",
       "tests/memory-reconciliation.test.ts",
-      "tests/memory-substrate-closure.test.ts",
-      "tests/memory-substrate-installed-proof.test.ts",
-      "tests/memory-substrate-tarball.test.ts",
       "tests/native-abi-smoke.test.ts",
       "tests/sqlite-fence-nlink.native.test.ts",
       "tests/sqlite-fence-shim.native.test.ts",
@@ -180,24 +182,6 @@
       "tests/memory-recall-durable-parity.test.ts > recall on durable SQLite matches the in-memory reference offline_lexical_v1, semantic_v1, and pagination return identical packets",
       "tests/memory-recall-golden.test.ts > recall golden references offline_lexical_v1 and semantic_v1 match the independent reference on SQLite",
       "tests/memory-reconciliation.test.ts > engine proposeReconciliation (L5b) proposeReconciliation performs no durable write on SQLite, with an expired pair member and an expired exterior record",
-      "tests/memory-substrate-closure.test.ts > substrate entry shape (amendment §1, §5.6) exports exactly the 63 closed type names in the built declarations",
-      "tests/memory-substrate-closure.test.ts > substrate neutrality and driver guards (amendment §5.7) imports no cluster-mesh package anywhere in the substrate",
-      "tests/memory-substrate-closure.test.ts > substrate neutrality and driver guards (amendment §5.7) statically resolves no native driver from the substrate artifacts",
-      "tests/memory-substrate-installed-proof.test.ts > installed public proof mutations (Class A, binding §10.3) compiles and inventories the consumer's public exports",
-      "tests/memory-substrate-installed-proof.test.ts > installed public proof mutations (Class A, binding §10.3) kills a leaked private subpath @sentropic/engram/dist/memory-substrate.js",
-      "tests/memory-substrate-installed-proof.test.ts > installed public proof mutations (Class A, binding §10.3) kills a leaked private subpath @sentropic/engram/engram-memory/store-factory",
-      "tests/memory-substrate-installed-proof.test.ts > installed public proof mutations (Class A, binding §10.3) kills a leaked private subpath @sentropic/engram/memory-substrate/internal",
-      "tests/memory-substrate-installed-proof.test.ts > installed public proof mutations (Class A, binding §10.3) kills broken installed behavior by exercising the public package",
-      "tests/memory-substrate-installed-proof.test.ts > installed public proof mutations (Class A, binding §10.3) kills erased crypto port in the installed declaration",
-      "tests/memory-substrate-installed-proof.test.ts > installed public proof mutations (Class A, binding §10.3) kills extra type in the installed declaration",
-      "tests/memory-substrate-installed-proof.test.ts > installed public proof mutations (Class A, binding §10.3) kills invalid declaration in the installed declaration",
-      "tests/memory-substrate-installed-proof.test.ts > installed public proof mutations (Class A, binding §10.3) kills missing crypto destroy in the installed declaration",
-      "tests/memory-substrate-installed-proof.test.ts > installed public proof mutations (Class A, binding §10.3) kills missing crypto open in the installed declaration",
-      "tests/memory-substrate-installed-proof.test.ts > installed public proof mutations (Class A, binding §10.3) kills missing crypto rotate in the installed declaration",
-      "tests/memory-substrate-installed-proof.test.ts > installed public proof mutations (Class A, binding §10.3) kills missing crypto seal in the installed declaration",
-      "tests/memory-substrate-installed-proof.test.ts > installed public proof mutations (Class A, binding §10.3) kills missing type in the installed declaration",
-      "tests/memory-substrate-installed-proof.test.ts > installed public proof mutations (Class A, binding §10.3) rejects an installed dependency that drifted from the pinned closure",
-      "tests/memory-substrate-tarball.test.ts > substrate tarball acceptance (installed consumer, M10) packs, installs offline, and accepts the installed entry",
       "tests/native-abi-smoke.test.ts > native ABI smoke the smoke verdict matches the platform: exit 0 with both addons loaded and the flock in fdinfo on Linux, PLATFORM_UNSUPPORTED elsewhere",
       "tests/sqlite-fence-nlink.native.test.ts > native SQLite fenced open and hard-link count admits a canonical database reachable by exactly one path (st_nlink === 1)",
       "tests/sqlite-fence-nlink.native.test.ts > native SQLite fenced open and hard-link count holds operations open when a hard link appears AFTER open, and refuses only at the next reopen",
@@ -233,10 +217,10 @@
       "tests/temporal-boundary-contract.test.ts > closed temporal interval contract executes all 7 boundary cases identically across in-memory store, SQLite, recall, time slice, scene, and browser renderer"
     ]
   },
-  "failingIdentitiesSha256": "020813fae0aa0fe0272afba46665704685086a721ec5aa19c4a3e392f987d53b",
+  "failingIdentitiesSha256": "1dfb358357cc6e4c5ffc68f48e46dcf8781a722d2236b1f4c23a3b72103662a5",
   "failingIdentitiesMethod": "G0 RFC 8785 over sorted failed file identities and sorted failed assertion identities (file > fullName); both full JSON reports are retained.",
   "failureClassification": {
-    "sqliteNative": [
+    "nativeAddon": [
       "tests/canonical-memory-store.parity.test.ts",
       "tests/canonical-memory-store.test.ts",
       "tests/memory-mcp-l1-reads.test.ts",
@@ -251,22 +235,82 @@
       "tests/memory-recall-durable-parity.test.ts",
       "tests/memory-recall-golden.test.ts",
       "tests/memory-reconciliation.test.ts",
+      "tests/native-abi-smoke.test.ts",
       "tests/sqlite-fence-nlink.native.test.ts",
       "tests/sqlite-fence-shim.native.test.ts",
       "tests/sqlite-memory-broker.native.test.ts",
       "tests/sqlite-runtime-version.test.ts",
       "tests/temporal-boundary-contract.test.ts"
     ],
-    "substrateDist": [
-      "tests/memory-substrate-closure.test.ts",
-      "tests/memory-substrate-installed-proof.test.ts",
-      "tests/memory-substrate-tarball.test.ts"
-    ],
-    "tarballConsumer": [],
-    "abiSmoke": [
-      "tests/native-abi-smoke.test.ts"
+    "buildPrerequisite": [],
+    "unclassified": [],
+    "nativeAddonEvidence": [
+      {
+        "file": "tests/memory-mcp-l1-reads.test.ts",
+        "gate": "openFencedSqliteCanonicalMemoryStoreV1",
+        "probe": "check-native-abi",
+        "excerpt": "node=22.22.1 modules=127 platform=linux arch=x64 libc=2.43\nbetter-sqlite3=loaded /home/antoinefa/src/graphify-wt-openerp/engram-memory/node_modules/better-sqlite3/lib/index.js\n\nMODULE_MISSING: fs-ext failed to load\n"
+      },
+      {
+        "file": "tests/memory-reconciliation.test.ts",
+        "gate": "openFencedSqliteCanonicalMemoryStoreV1",
+        "probe": "check-native-abi",
+        "excerpt": "node=22.22.1 modules=127 platform=linux arch=x64 libc=2.43\nbetter-sqlite3=loaded /home/antoinefa/src/graphify-wt-openerp/engram-memory/node_modules/better-sqlite3/lib/index.js\n\nMODULE_MISSING: fs-ext failed to load\n"
+      },
+      {
+        "file": "tests/native-abi-smoke.test.ts",
+        "gate": "check-native-abi",
+        "probe": "check-native-abi",
+        "excerpt": "node=22.22.1 modules=127 platform=linux arch=x64 libc=2.43\nbetter-sqlite3=loaded /home/antoinefa/src/graphify-wt-openerp/engram-memory/node_modules/better-sqlite3/lib/index.js\n\nMODULE_MISSING: fs-ext failed to load\n"
+      }
     ]
   },
-  "failureCause": "All 23 remaining failed files are native environmental: missing SQLite native bindings (fs-ext/better-sqlite3) and unbuilt top-level dist/memory-substrate artefacts; identical on base and branch with zero added failures.",
-  "conclusion": "Identical failure identities on base and branch; zero added failures. Openerp fixtures, vectors, admission, acceptance and migrations pass."
+  "baseFailureClassification": {
+    "nativeAddon": [
+      "tests/canonical-memory-store.parity.test.ts",
+      "tests/canonical-memory-store.test.ts",
+      "tests/memory-mcp-l1-reads.test.ts",
+      "tests/memory-mcp-l2-canonical-recovery.test.ts",
+      "tests/memory-mcp-l2-durable-admission.test.ts",
+      "tests/memory-mcp-l2-effect-guard.test.ts",
+      "tests/memory-mcp-l2-lifecycle-round2.test.ts",
+      "tests/memory-mcp-l2-lifecycle-round3.test.ts",
+      "tests/memory-mcp-l2-packed.test.ts",
+      "tests/memory-mcp-l2-write-ports.test.ts",
+      "tests/memory-projection-adapters.test.ts",
+      "tests/memory-recall-durable-parity.test.ts",
+      "tests/memory-recall-golden.test.ts",
+      "tests/memory-reconciliation.test.ts",
+      "tests/native-abi-smoke.test.ts",
+      "tests/sqlite-fence-nlink.native.test.ts",
+      "tests/sqlite-fence-shim.native.test.ts",
+      "tests/sqlite-memory-broker.native.test.ts",
+      "tests/sqlite-runtime-version.test.ts",
+      "tests/temporal-boundary-contract.test.ts"
+    ],
+    "buildPrerequisite": [],
+    "unclassified": [],
+    "nativeAddonEvidence": [
+      {
+        "file": "tests/memory-mcp-l1-reads.test.ts",
+        "gate": "openFencedSqliteCanonicalMemoryStoreV1",
+        "probe": "check-native-abi",
+        "excerpt": "node=22.22.1 modules=127 platform=linux arch=x64 libc=2.43\nbetter-sqlite3=loaded /home/antoinefa/src/graphify-wt-openerp/engram-memory/node_modules/better-sqlite3/lib/index.js\n\nMODULE_MISSING: fs-ext failed to load\n"
+      },
+      {
+        "file": "tests/memory-reconciliation.test.ts",
+        "gate": "openFencedSqliteCanonicalMemoryStoreV1",
+        "probe": "check-native-abi",
+        "excerpt": "node=22.22.1 modules=127 platform=linux arch=x64 libc=2.43\nbetter-sqlite3=loaded /home/antoinefa/src/graphify-wt-openerp/engram-memory/node_modules/better-sqlite3/lib/index.js\n\nMODULE_MISSING: fs-ext failed to load\n"
+      },
+      {
+        "file": "tests/native-abi-smoke.test.ts",
+        "gate": "check-native-abi",
+        "probe": "check-native-abi",
+        "excerpt": "node=22.22.1 modules=127 platform=linux arch=x64 libc=2.43\nbetter-sqlite3=loaded /home/antoinefa/src/graphify-wt-openerp/engram-memory/node_modules/better-sqlite3/lib/index.js\n\nMODULE_MISSING: fs-ext failed to load\n"
+      }
+    ]
+  },
+  "failureCause": "20 remaining failed files are native-addon (demonstrated error names better-sqlite3/fs-ext/.node/CAPABILITY_UNAVAILABLE); 0 build-prerequisite; 0 unclassified; identical identities and normalized causes on base and branch with zero added failures.",
+  "conclusion": "Identical failure identities and normalized causes on base and branch; zero added failures. Openerp fixtures, vectors, admission, acceptance and migrations pass."
 }
