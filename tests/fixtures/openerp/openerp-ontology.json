@@ -1,0 +1,6785 @@
+{
+  "producer": "openerp",
+  "producedAt": "2026-10-27",
+  "method": "deterministic parse of apps/api/src/db/migrations/*.sql",
+  "scopeUnit": "organization_id",
+  "tenancyLevels": 1,
+  "rlsMechanism": "session setting app.current_organization_id, forced row level security",
+  "counts": {
+    "migrations": 43,
+    "entities": 67,
+    "tenantScopedEntities": 62,
+    "forcedRlsEntities": 60,
+    "relations": 146,
+    "enumeratedFields": 57,
+    "tableInvariants": 27,
+    "parserGaps": 0
+  },
+  "entities": [
+    {
+      "entity": "organizations",
+      "module": "foundation",
+      "sourceMigration": "0001_foundation.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "legal_name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "display_name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "slug",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "active",
+            "suspended"
+          ]
+        },
+        {
+          "name": "default_locale",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "en",
+            "fr"
+          ]
+        },
+        {
+          "name": "default_currency",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "default_timezone",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "country",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "province_state",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": false,
+      "forcedRls": true
+    },
+    {
+      "entity": "tenant_settings",
+      "module": "foundation",
+      "sourceMigration": "0001_foundation.sql",
+      "columns": [
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "supported_locales",
+          "type": "text[]",
+          "notNull": true
+        },
+        {
+          "name": "primary_locale",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "en",
+            "fr"
+          ]
+        },
+        {
+          "name": "tax_region",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "fiscal_year_start",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "document_numbering_policy",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "retention_policy",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "self_hosted_update_state",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "gst_registration_number",
+          "type": "text",
+          "notNull": false,
+          "addedBy": "0038_billing_issuer_tenant_settings.sql"
+        },
+        {
+          "name": "qst_registration_number",
+          "type": "text",
+          "notNull": false,
+          "addedBy": "0038_billing_issuer_tenant_settings.sql"
+        },
+        {
+          "name": "issuer_address",
+          "type": "jsonb",
+          "notNull": false,
+          "addedBy": "0038_billing_issuer_tenant_settings.sql"
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "users",
+      "module": "foundation",
+      "sourceMigration": "0001_foundation.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "display_name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "preferred_locale",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "en",
+            "fr"
+          ]
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "invited",
+            "active",
+            "deactivated"
+          ]
+        },
+        {
+          "name": "password_hash",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "mfa_state",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "last_login_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "unique",
+          "clause": "unique (organization_id, email)"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "teams",
+      "module": "foundation",
+      "sourceMigration": "0001_foundation.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "parent_team_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "teams",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "manager_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "roles",
+      "module": "foundation",
+      "sourceMigration": "0001_foundation.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "system_role",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "unique",
+          "clause": "unique (organization_id, name)"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "permission_grants",
+      "module": "foundation",
+      "sourceMigration": "0001_foundation.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "role_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "roles",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "resource",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "action",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "scope",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "conditions",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "check:crossColumn",
+          "clause": "check (role_id is not null or user_id is not null)"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "audit_events",
+      "module": "foundation",
+      "sourceMigration": "0001_foundation.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "actor_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "actor_type",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "action",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "resource_type",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "resource_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "before_summary",
+          "type": "jsonb",
+          "notNull": false
+        },
+        {
+          "name": "after_summary",
+          "type": "jsonb",
+          "notNull": false
+        },
+        {
+          "name": "ip_hash",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "user_agent_hash",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "source",
+          "type": "text",
+          "notNull": false,
+          "addedBy": "0002_canon_entities.sql"
+        },
+        {
+          "name": "agent_id",
+          "type": "text",
+          "notNull": false,
+          "addedBy": "0002_canon_entities.sql"
+        },
+        {
+          "name": "tool_call_id",
+          "type": "text",
+          "notNull": false,
+          "addedBy": "0002_canon_entities.sql"
+        },
+        {
+          "name": "policy_decision_id",
+          "type": "text",
+          "notNull": false,
+          "addedBy": "0002_canon_entities.sql"
+        },
+        {
+          "name": "delegation_id",
+          "type": "text",
+          "notNull": false,
+          "addedBy": "0002_canon_entities.sql"
+        },
+        {
+          "name": "approval_request_id",
+          "type": "uuid",
+          "notNull": false,
+          "addedBy": "0002_canon_entities.sql",
+          "references": {
+            "entity": "approval_requests",
+            "field": "id"
+          }
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "trigger",
+          "clause": "audit_events_no_update before update for each row execute function audit_events_block_mutations()",
+          "addedBy": "0007_audit_events_partition.sql"
+        },
+        {
+          "kind": "trigger",
+          "clause": "audit_events_no_delete before delete for each row execute function audit_events_block_mutations()",
+          "addedBy": "0007_audit_events_partition.sql"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "file_objects",
+      "module": "foundation",
+      "sourceMigration": "0001_foundation.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "storage_key",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "filename",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "content_type",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "size_bytes",
+          "type": "bigint",
+          "notNull": true,
+          "check": "size_bytes >= 0"
+        },
+        {
+          "name": "checksum",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "visibility_scope",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "comments",
+      "module": "foundation",
+      "sourceMigration": "0001_foundation.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "resource_type",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "resource_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "body",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "visibility",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "notifications",
+      "module": "foundation",
+      "sourceMigration": "0001_foundation.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "recipient_user_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "channel",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "subject_key",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "body_key",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "payload",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "read_at",
+          "type": "timestamptz",
+          "notNull": false
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "domain_events",
+      "module": "foundation",
+      "sourceMigration": "0001_foundation.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "event_type",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "resource_type",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "resource_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "payload_summary",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "emitted_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "consumed_at",
+          "type": "timestamptz",
+          "notNull": false
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "user_identities",
+      "module": "canon",
+      "sourceMigration": "0002_canon_entities.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "display_name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "preferred_locale",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "en",
+            "fr"
+          ]
+        },
+        {
+          "name": "mfa_state",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "not_configured",
+            "passkey",
+            "totp"
+          ]
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "invited",
+            "active",
+            "deactivated"
+          ]
+        },
+        {
+          "name": "actor_type",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "human",
+            "agent",
+            "system"
+          ]
+        },
+        {
+          "name": "last_login_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "email_verified",
+          "type": "boolean",
+          "notNull": true,
+          "addedBy": "0042_auth_email_verification.sql"
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": false,
+      "forcedRls": false
+    },
+    {
+      "entity": "organization_members",
+      "module": "canon",
+      "sourceMigration": "0002_canon_entities.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "user_identity_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "user_identities",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "invited",
+            "active",
+            "deactivated"
+          ]
+        },
+        {
+          "name": "preferred_locale",
+          "type": "text",
+          "notNull": false,
+          "enum": [
+            "en",
+            "fr"
+          ]
+        },
+        {
+          "name": "joined_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "unique",
+          "clause": "unique (user_identity_id, organization_id)"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "fx_rate_snapshots",
+      "module": "canon",
+      "sourceMigration": "0002_canon_entities.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "source_currency",
+          "type": "char(3)",
+          "notNull": true
+        },
+        {
+          "name": "target_currency",
+          "type": "char(3)",
+          "notNull": true
+        },
+        {
+          "name": "rate",
+          "type": "numeric(20, 10)",
+          "notNull": true,
+          "check": "rate > 0"
+        },
+        {
+          "name": "effective_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "source",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "timeline_entries",
+      "module": "canon",
+      "sourceMigration": "0002_canon_entities.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "resource_type",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "resource_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "actor_user_identity_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "user_identities",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "entry_type",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "payload_summary",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "occurred_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "approval_requests",
+      "module": "canon",
+      "sourceMigration": "0002_canon_entities.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "requester_user_identity_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "user_identities",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "approver_user_identity_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "user_identities",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "approver_role_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "roles",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "subject_type",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "subject_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "urgency",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "low",
+            "normal",
+            "high"
+          ]
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "pending",
+            "approved",
+            "rejected",
+            "escalated",
+            "expired"
+          ]
+        },
+        {
+          "name": "decision_reason",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "decided_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "check:crossColumn",
+          "clause": "check (approver_user_identity_id is not null or approver_role_id is not null)"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "idempotency_records",
+      "module": "canon",
+      "sourceMigration": "0002_canon_entities.sql",
+      "columns": [
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "key",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "request_hash",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "response_body_hash",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "status_code",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "compositePrimaryKey",
+          "clause": "primary key (organization_id, key)"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "translation_keys",
+      "module": "translation",
+      "sourceMigration": "0004_translation_keys.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "namespace",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "key",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "locale",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "en",
+            "fr"
+          ]
+        },
+        {
+          "name": "label",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "draft",
+            "active",
+            "archived"
+          ]
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "unique",
+          "clause": "unique (organization_id, namespace, key, locale)"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": false
+    },
+    {
+      "entity": "jobs",
+      "module": "jobs",
+      "sourceMigration": "0005_jobs.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "job_type",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "payload",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "cancelled"
+          ]
+        },
+        {
+          "name": "attempts",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "idempotency_key",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "scheduled_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "started_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "last_error",
+          "type": "text",
+          "notNull": false
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "unique",
+          "clause": "unique (organization_id, idempotency_key)"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": false
+    },
+    {
+      "entity": "passkey_credentials",
+      "module": "passkey",
+      "sourceMigration": "0006_passkey_credentials.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "user_identity_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "user_identities",
+            "field": "id"
+          },
+          "onDelete": "cascade"
+        },
+        {
+          "name": "credential_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "public_key_cose",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "sign_count",
+          "type": "bigint",
+          "notNull": true
+        },
+        {
+          "name": "transports",
+          "type": "text[]",
+          "notNull": true
+        },
+        {
+          "name": "aaguid",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "label",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "backed_up",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "device_type",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "singleDevice",
+            "multiDevice"
+          ]
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "last_used_at",
+          "type": "timestamptz",
+          "notNull": false
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": false,
+      "forcedRls": false
+    },
+    {
+      "entity": "passkey_challenges",
+      "module": "passkey",
+      "sourceMigration": "0006_passkey_credentials.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "user_identity_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "user_identities",
+            "field": "id"
+          },
+          "onDelete": "cascade"
+        },
+        {
+          "name": "challenge",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "purpose",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "registration",
+            "authentication"
+          ]
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": false,
+      "forcedRls": false
+    },
+    {
+      "entity": "agent_definitions",
+      "module": "agentic",
+      "sourceMigration": "0008_agentic_entities.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "capabilities",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "tools",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "policies",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "budget_caps",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "identity_mode",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "acting_as",
+            "service_principal",
+            "on_behalf_of"
+          ]
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "active",
+            "suspended",
+            "archived"
+          ]
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "unique",
+          "clause": "unique (organization_id, name)"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "agent_runs",
+      "module": "agentic",
+      "sourceMigration": "0008_agentic_entities.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "agent_definition_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "agent_definitions",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "triggered_by_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "triggered_by_workflow_run_id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "acting_principal",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "on_behalf_of",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "mode",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "acting_as",
+            "service_principal",
+            "on_behalf_of"
+          ]
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "pending",
+            "running",
+            "succeeded",
+            "failed",
+            "cancelled",
+            "awaiting_approval"
+          ]
+        },
+        {
+          "name": "started_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "budget_consumed",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "approval_request_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "approval_requests",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "trace_id",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "policy_decision_id",
+          "type": "uuid",
+          "notNull": false,
+          "addedBy": "0008_agentic_entities.sql",
+          "references": {
+            "entity": "policy_decisions",
+            "field": "id"
+          }
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "policy_decisions",
+      "module": "agentic",
+      "sourceMigration": "0008_agentic_entities.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "agent_run_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "agent_runs",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "tool_call_id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "policy_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "decision",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "allow",
+            "deny",
+            "require_approval"
+          ]
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "evaluated_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "tool_calls",
+      "module": "agentic",
+      "sourceMigration": "0008_agentic_entities.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "agent_run_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "agent_runs",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "tool_name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "input",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "output",
+          "type": "jsonb",
+          "notNull": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "pending",
+            "running",
+            "succeeded",
+            "failed"
+          ]
+        },
+        {
+          "name": "started_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "otel_span_id",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "supervision_requests",
+      "module": "agentic",
+      "sourceMigration": "0008_agentic_entities.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "agent_run_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "agent_runs",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "mode",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "inline",
+            "panel"
+          ]
+        },
+        {
+          "name": "assigned_to_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "decision",
+          "type": "text",
+          "notNull": false,
+          "enum": [
+            "approve",
+            "reject",
+            "escalate"
+          ]
+        },
+        {
+          "name": "decided_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "companies",
+      "module": "crm",
+      "sourceMigration": "0010_crm_companies.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "display_name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "legal_name",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "active",
+            "archived"
+          ]
+        },
+        {
+          "name": "owner_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "team_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "teams",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "website",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "phone",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "language",
+          "type": "text",
+          "notNull": false,
+          "check": "language is null or language in ('en', 'fr'"
+        },
+        {
+          "name": "tax_region",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "billing_address",
+          "type": "jsonb",
+          "notNull": false
+        },
+        {
+          "name": "shipping_address",
+          "type": "jsonb",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false,
+          "addedBy": "0014_crm_soft_delete.sql"
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "contacts",
+      "module": "crm",
+      "sourceMigration": "0011_crm_contacts.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "company_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "companies",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "display_name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "first_name",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "last_name",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "phone",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "language",
+          "type": "text",
+          "notNull": false,
+          "check": "language is null or language in ('en', 'fr'"
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "active",
+            "inactive"
+          ]
+        },
+        {
+          "name": "owner_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false,
+          "addedBy": "0014_crm_soft_delete.sql"
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "pipeline_stages",
+      "module": "crm",
+      "sourceMigration": "0012_crm_pipeline.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "order_index",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "is_initial",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "is_won",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "is_lost",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "unique",
+          "clause": "unique (organization_id, name)"
+        },
+        {
+          "kind": "unique",
+          "clause": "unique (organization_id, order_index)"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "opportunities",
+      "module": "crm",
+      "sourceMigration": "0012_crm_pipeline.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "company_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "companies",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "primary_contact_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "contacts",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "stage_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "pipeline_stages",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "open",
+            "won",
+            "lost",
+            "archived"
+          ]
+        },
+        {
+          "name": "owner_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "team_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "teams",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "expected_value",
+          "type": "jsonb",
+          "notNull": false
+        },
+        {
+          "name": "currency",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "expected_close_date",
+          "type": "date",
+          "notNull": false
+        },
+        {
+          "name": "probability_band",
+          "type": "text",
+          "notNull": false,
+          "check": "probability_band is null or probability_band in ('low', 'medium', 'high'"
+        },
+        {
+          "name": "service_summary",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "loss_reason",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false,
+          "addedBy": "0014_crm_soft_delete.sql"
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "leads",
+      "module": "crm",
+      "sourceMigration": "0013_crm_leads.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "source",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "display_name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "company_name",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "contact_name",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "phone",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "new",
+            "working",
+            "converted",
+            "disqualified"
+          ]
+        },
+        {
+          "name": "owner_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "team_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "teams",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "converted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "converted_company_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "companies",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "converted_contact_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "contacts",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "converted_opportunity_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "opportunities",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false,
+          "addedBy": "0014_crm_soft_delete.sql"
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "projects",
+      "module": "project",
+      "sourceMigration": "0015_project_projects.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "draft",
+            "active",
+            "on_hold",
+            "completed",
+            "cancelled"
+          ]
+        },
+        {
+          "name": "code",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "company_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "companies",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "owner_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "start_date",
+          "type": "date",
+          "notNull": false
+        },
+        {
+          "name": "end_date",
+          "type": "date",
+          "notNull": false
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "project_tasks",
+      "module": "project",
+      "sourceMigration": "0016_project_tasks.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "project_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "projects",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "todo",
+            "in_progress",
+            "blocked",
+            "done",
+            "cancelled"
+          ]
+        },
+        {
+          "name": "assignee_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "due_date",
+          "type": "date",
+          "notNull": false
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "parent_task_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "project_tasks",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "time_entries",
+      "module": "project",
+      "sourceMigration": "0017_project_time_entries.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "project_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "projects",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "project_task_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "project_tasks",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "entry_date",
+          "type": "date",
+          "notNull": true
+        },
+        {
+          "name": "minutes",
+          "type": "integer",
+          "notNull": true,
+          "check": "minutes > 0"
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "billable",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "draft",
+            "submitted",
+            "approved",
+            "rejected"
+          ]
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "approval_request_id",
+          "type": "uuid",
+          "notNull": false,
+          "addedBy": "0025_project_time_approval.sql",
+          "references": {
+            "entity": "approval_requests",
+            "field": "id"
+          }
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "rates",
+      "module": "project",
+      "sourceMigration": "0018_project_rates.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "amount",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "effective_from",
+          "type": "date",
+          "notNull": true
+        },
+        {
+          "name": "effective_to",
+          "type": "date",
+          "notNull": false
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "unique",
+          "clause": "constraint rates_org_name_unique unique (organization_id, name)"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "assignments",
+      "module": "project",
+      "sourceMigration": "0019_project_assignments.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "project_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "projects",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "role_label",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "allocation_percent",
+          "type": "integer",
+          "notNull": false,
+          "check": "allocation_percent between 0 and 100"
+        },
+        {
+          "name": "start_date",
+          "type": "date",
+          "notNull": false
+        },
+        {
+          "name": "end_date",
+          "type": "date",
+          "notNull": false
+        },
+        {
+          "name": "billable_rate_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "rates",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "invoice_proposals",
+      "module": "project",
+      "sourceMigration": "0020_project_invoice_proposals.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "project_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "projects",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "company_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "companies",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "draft",
+            "submitted",
+            "approved",
+            "rejected"
+          ]
+        },
+        {
+          "name": "period_start",
+          "type": "date",
+          "notNull": false
+        },
+        {
+          "name": "period_end",
+          "type": "date",
+          "notNull": false
+        },
+        {
+          "name": "total",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "currency",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "submitted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "invoice_proposal_lines",
+      "module": "project",
+      "sourceMigration": "0020_project_invoice_proposals.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "invoice_proposal_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "invoice_proposals",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "source_type",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "source_id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "quantity_minutes",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "unit_rate",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "amount",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "invoices",
+      "module": "billing",
+      "sourceMigration": "0021_billing_invoices.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "company_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "companies",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "project_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "projects",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "invoice_proposal_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "invoice_proposals",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "invoice_number",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "draft",
+            "issued",
+            "paid",
+            "partially_paid",
+            "void",
+            "written_off"
+          ]
+        },
+        {
+          "name": "currency",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "subtotal",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "tax_total",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "total",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "issue_date",
+          "type": "date",
+          "notNull": false
+        },
+        {
+          "name": "due_date",
+          "type": "date",
+          "notNull": false
+        },
+        {
+          "name": "issued_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "tax_category_id",
+          "type": "uuid",
+          "notNull": false,
+          "addedBy": "0023_billing_taxes.sql",
+          "references": {
+            "entity": "tax_categories",
+            "field": "id"
+          }
+        },
+        {
+          "name": "tax_breakdown",
+          "type": "jsonb",
+          "notNull": false,
+          "addedBy": "0023_billing_taxes.sql"
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "notNull": false,
+          "addedBy": "0037_billing_invoice_document_fields.sql"
+        },
+        {
+          "name": "po_number",
+          "type": "text",
+          "notNull": false,
+          "addedBy": "0037_billing_invoice_document_fields.sql"
+        },
+        {
+          "name": "payment_terms_days",
+          "type": "integer",
+          "notNull": false,
+          "addedBy": "0037_billing_invoice_document_fields.sql"
+        },
+        {
+          "name": "issuer_snapshot",
+          "type": "jsonb",
+          "notNull": false,
+          "addedBy": "0039_billing_invoice_identity_snapshots.sql"
+        },
+        {
+          "name": "customer_snapshot",
+          "type": "jsonb",
+          "notNull": false,
+          "addedBy": "0039_billing_invoice_identity_snapshots.sql"
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "unique",
+          "clause": "unique (organization_id, invoice_number)"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "invoice_lines",
+      "module": "billing",
+      "sourceMigration": "0021_billing_invoices.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "invoice_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "invoices",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "source_type",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "source_id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "quantity",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "unit_price",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "amount",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "payments",
+      "module": "billing",
+      "sourceMigration": "0022_billing_payments.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "invoice_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "invoices",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "company_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "companies",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "amount",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "payment_date",
+          "type": "date",
+          "notNull": true
+        },
+        {
+          "name": "method",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "bank_transfer",
+            "card",
+            "cheque",
+            "cash",
+            "other"
+          ]
+        },
+        {
+          "name": "reference",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "addedConstraint",
+          "clause": "payments_organization_id_id_key unique (organization_id, id)",
+          "addedBy": "0041_banking_reconciliation.sql"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "tax_categories",
+      "module": "billing",
+      "sourceMigration": "0023_billing_taxes.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "code",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "unique",
+          "clause": "unique (organization_id, code)"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "tax_rate_versions",
+      "module": "billing",
+      "sourceMigration": "0023_billing_taxes.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "tax_category_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "tax_categories",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "jurisdiction",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "label",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "rate_bps",
+          "type": "integer",
+          "notNull": true,
+          "check": "rate_bps >= 0"
+        },
+        {
+          "name": "compound",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "effective_from",
+          "type": "date",
+          "notNull": true
+        },
+        {
+          "name": "effective_to",
+          "type": "date",
+          "notNull": false
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "accounts",
+      "module": "billing",
+      "sourceMigration": "0024_billing_accounting.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "code",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "type",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "asset",
+            "liability",
+            "equity",
+            "revenue",
+            "expense"
+          ]
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "unique",
+          "clause": "unique (organization_id, code)"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "journal_entries",
+      "module": "billing",
+      "sourceMigration": "0024_billing_accounting.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "entry_date",
+          "type": "date",
+          "notNull": true
+        },
+        {
+          "name": "reference",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "source_type",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "invoice",
+            "payment",
+            "manual"
+          ]
+        },
+        {
+          "name": "source_id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "draft",
+            "posted",
+            "void"
+          ]
+        },
+        {
+          "name": "posted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "journal_entry_lines",
+      "module": "billing",
+      "sourceMigration": "0024_billing_accounting.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "journal_entry_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "journal_entries",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "account_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "accounts",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "debit",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "credit",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "quote_handoffs",
+      "module": "crm",
+      "sourceMigration": "0026_crm_quote_handoffs.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "opportunity_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "opportunities",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "target_type",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "invoice",
+            "project",
+            "subscription"
+          ]
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "pending",
+            "accepted",
+            "rejected",
+            "cancelled"
+          ]
+        },
+        {
+          "name": "requested_by_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "accepted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "recurring_billing_schedules",
+      "module": "billing",
+      "sourceMigration": "0027_billing_recurring_schedules.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "company_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "companies",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "cadence",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "weekly",
+            "monthly",
+            "quarterly",
+            "annual"
+          ]
+        },
+        {
+          "name": "amount",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "currency",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "next_run_at",
+          "type": "date",
+          "notNull": true
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "last_invoice_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "invoices",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "last_run_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "saved_views",
+      "module": "reporting",
+      "sourceMigration": "0028_reporting_saved_views.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "owner_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "resource_type",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "filters",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "columns",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "sort_by",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "is_shared",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "report_definitions",
+      "module": "reporting",
+      "sourceMigration": "0029_reporting_report_definitions.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "owner_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "report_type",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "parameters",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "is_shared",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "report_runs",
+      "module": "reporting",
+      "sourceMigration": "0029_reporting_report_definitions.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "report_definition_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "report_definitions",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "triggered_by_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "completed",
+            "failed"
+          ]
+        },
+        {
+          "name": "parameters_snapshot",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "result_columns",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "result_rows",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "row_count",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "error_detail",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "started_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "dashboards",
+      "module": "reporting",
+      "sourceMigration": "0030_reporting_dashboards.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "owner_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "is_shared",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "dashboard_widgets",
+      "module": "reporting",
+      "sourceMigration": "0030_reporting_dashboards.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "dashboard_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "dashboards",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "report_definition_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "report_definitions",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "position",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "scheduled_deliveries",
+      "module": "reporting",
+      "sourceMigration": "0031_reporting_scheduled_deliveries.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "owner_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "target_type",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "report_definition"
+          ]
+        },
+        {
+          "name": "target_id",
+          "type": "uuid",
+          "notNull": true
+        },
+        {
+          "name": "cadence",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "daily",
+            "weekly",
+            "monthly",
+            "quarterly",
+            "annual"
+          ]
+        },
+        {
+          "name": "timezone",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "next_run_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "last_run_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "channel",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "in_app"
+          ]
+        },
+        {
+          "name": "recipient_user_ids",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "is_shared",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "delivery_runs",
+      "module": "reporting",
+      "sourceMigration": "0031_reporting_scheduled_deliveries.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "scheduled_delivery_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "scheduled_deliveries",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "report_run_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "report_runs",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "triggered_by",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "schedule",
+            "manual"
+          ]
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "completed",
+            "failed",
+            "skipped"
+          ]
+        },
+        {
+          "name": "error_detail",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "snapshot_summary",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "started_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "workflow_definitions",
+      "module": "workflow",
+      "sourceMigration": "0032_workflow_definitions_runs.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "owner_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "trigger_type",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "trigger_config",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "action_type",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "action_config",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "is_active",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "is_shared",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "cadence",
+          "type": "text",
+          "notNull": false,
+          "addedBy": "0036_workflow_schedules.sql"
+        },
+        {
+          "name": "timezone",
+          "type": "text",
+          "notNull": false,
+          "addedBy": "0036_workflow_schedules.sql"
+        },
+        {
+          "name": "next_run_at",
+          "type": "timestamptz",
+          "notNull": false,
+          "addedBy": "0036_workflow_schedules.sql"
+        },
+        {
+          "name": "last_run_at",
+          "type": "timestamptz",
+          "notNull": false,
+          "addedBy": "0036_workflow_schedules.sql"
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "workflow_runs",
+      "module": "workflow",
+      "sourceMigration": "0032_workflow_definitions_runs.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "workflow_definition_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "workflow_definitions",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "trigger_audit_event_id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "trigger_event_type",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "trigger_resource_type",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "trigger_resource_id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "triggered_by",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "event",
+            "manual"
+          ]
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "completed",
+            "failed",
+            "skipped"
+          ]
+        },
+        {
+          "name": "created_resource_type",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "created_resource_id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "action_result",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "error_detail",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "started_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "webhook_endpoints",
+      "module": "webhook",
+      "sourceMigration": "0033_webhook_endpoints_deliveries.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "owner_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "users",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "target_url",
+          "type": "text",
+          "notNull": true,
+          "check": "target_url like 'https://%'"
+        },
+        {
+          "name": "signing_secret",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "event_types",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "is_active",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "is_shared",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "consecutive_failures",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "disabled_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "webhook_deliveries",
+      "module": "webhook",
+      "sourceMigration": "0033_webhook_endpoints_deliveries.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "webhook_endpoint_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "webhook_endpoints",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "event_type",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "trigger_audit_event_id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "payload",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "signature",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "pending_egress",
+            "succeeded",
+            "failed"
+          ]
+        },
+        {
+          "name": "http_status",
+          "type": "integer",
+          "notNull": false
+        },
+        {
+          "name": "attempt_count",
+          "type": "integer",
+          "notNull": true
+        },
+        {
+          "name": "next_retry_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "error_detail",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "signed_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "delivered_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "openerp_sessions",
+      "module": "openerp",
+      "sourceMigration": "0034_openerp_sessions.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "user_identity_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "user_identities",
+            "field": "id"
+          },
+          "onDelete": "cascade"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "cascade"
+        },
+        {
+          "name": "session_token_hash",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "refresh_token_hash",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "device_name",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "ip_address",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "user_agent",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "mfa_verified",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "last_activity_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "revoked_at",
+          "type": "timestamptz",
+          "notNull": false
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": false
+    },
+    {
+      "entity": "oidc_state",
+      "module": "oidc",
+      "sourceMigration": "0035_oidc_state.sql",
+      "columns": [
+        {
+          "name": "state",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "nonce",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "code_verifier",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "redirect_after",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": false,
+      "forcedRls": false
+    },
+    {
+      "entity": "email_sends",
+      "module": "foundation",
+      "sourceMigration": "0040_foundation_email_sends.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "to_address",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "subject",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "resource_type",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "resource_id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "queued",
+            "sent",
+            "failed"
+          ]
+        },
+        {
+          "name": "provider",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "idempotency_key",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "error",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "sent_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "unique",
+          "clause": "unique (organization_id, idempotency_key)"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "bank_accounts",
+      "module": "banking",
+      "sourceMigration": "0041_banking_reconciliation.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "provider",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "ofx",
+            "plaid_sandbox"
+          ]
+        },
+        {
+          "name": "provider_account_ref",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "display_name",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "account_type",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "checking",
+            "savings",
+            "credit",
+            "loan",
+            "investment",
+            "other"
+          ]
+        },
+        {
+          "name": "currency",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "institution",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "unique",
+          "clause": "unique (organization_id, provider, provider_account_ref)"
+        },
+        {
+          "kind": "unique",
+          "clause": "unique (organization_id, id, provider)"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "bank_transactions",
+      "module": "banking",
+      "sourceMigration": "0041_banking_reconciliation.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "bank_account_id",
+          "type": "uuid",
+          "notNull": true
+        },
+        {
+          "name": "provider",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "ofx",
+            "plaid_sandbox"
+          ]
+        },
+        {
+          "name": "provider_transaction_ref",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "posted_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "amount",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "raw_description",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "normalized_snapshot",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "reconciliation_status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "unmatched",
+            "matched",
+            "ignored"
+          ]
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "constraint",
+          "type": "bank_transactions_account_provider_fk",
+          "notNull": false
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "check:jsonbShape",
+          "clause": "constraint bank_transactions_amount_shape_check check ( jsonb_typeof(amount) = 'object' and amount ?& array['amountMinor', 'currency', 'scale'] and (amount - 'amountMinor' - 'currency' - 'scale') = '{}'::jsonb and jsonb_typeof(amount -> 'amountMinor') = 'number' and jsonb_typeof(amount -> 'currency') = 'string' and jsonb_typeof(amount -> 'scale') = 'number' and (amount ->> 'currency') ~ '^[A-Z]{3}$' )"
+        },
+        {
+          "kind": "check:jsonbShape",
+          "clause": "constraint bank_transactions_snapshot_shape_check check ( jsonb_typeof(normalized_snapshot) = 'object' and normalized_snapshot ?& array['sourceId', 'providerRef', 'postedAt', 'amount', 'description'] and (normalized_snapshot - 'sourceId' - 'providerRef' - 'postedAt' - 'amount' - 'description' - 'merchant' - 'category') = '{}'::jsonb and jsonb_typeof(normalized_snapshot -> 'sourceId') = 'string' and jsonb_typeof(normalized_snapshot -> 'providerRef') = 'string' and jsonb_typeof(normalized_snapshot -> 'postedAt') = 'string' and jsonb_typeof(normalized_snapshot -> 'amount') = 'object' and jsonb_typeof(normalized_snapshot -> 'description') = 'string' and (not (normalized_snapshot ? 'merchant') or jsonb_typeof(normalized_snapshot -> 'merchant') = 'string') and (not (normalized_snapshot ? 'category') or jsonb_typeof(normalized_snapshot -> 'category') = 'string') and normalized_snapshot -> 'providerRef' = to_jsonb(provider_transaction_ref) and normalized_snapshot ->> 'postedAt' = to_char(posted_at at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') and normalized_snapshot -> 'amount' = amount and normalized_snapshot -> 'description' = to_jsonb(raw_description) and octet_length(normalized_snapshot::text) <= 16384 )"
+        },
+        {
+          "kind": "unique",
+          "clause": "unique (organization_id, bank_account_id, provider, provider_transaction_ref)"
+        },
+        {
+          "kind": "unique",
+          "clause": "unique (organization_id, id)"
+        },
+        {
+          "kind": "trigger",
+          "clause": "bank_transactions_immutable_evidence before update or delete for each row execute function protect_imported_bank_transaction()",
+          "addedBy": "0041_banking_reconciliation.sql"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "reconciliation_links",
+      "module": "banking",
+      "sourceMigration": "0041_banking_reconciliation.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "bank_transaction_id",
+          "type": "uuid",
+          "notNull": true
+        },
+        {
+          "name": "candidate_kind",
+          "type": "text",
+          "notNull": true,
+          "check": "candidate_kind = 'payment'"
+        },
+        {
+          "name": "candidate_id",
+          "type": "uuid",
+          "notNull": true
+        },
+        {
+          "name": "score",
+          "type": "numeric",
+          "notNull": true,
+          "check": "score >= 0 and score <= 1"
+        },
+        {
+          "name": "reasons",
+          "type": "jsonb",
+          "notNull": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "notNull": true,
+          "enum": [
+            "proposed",
+            "confirmed",
+            "rejected"
+          ]
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "constraint",
+          "type": "reconciliation_links_transaction_fk",
+          "notNull": false
+        },
+        {
+          "name": "constraint",
+          "type": "reconciliation_links_payment_fk",
+          "notNull": false
+        }
+      ],
+      "tableInvariants": [
+        {
+          "kind": "unique",
+          "clause": "unique (organization_id, bank_transaction_id, candidate_kind, candidate_id)"
+        }
+      ],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "auth_email_verifications",
+      "module": "auth",
+      "sourceMigration": "0042_auth_email_verification.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "code_hash",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "verification_token",
+          "type": "text",
+          "notNull": false
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "used",
+          "type": "boolean",
+          "notNull": true
+        },
+        {
+          "name": "used_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    },
+    {
+      "entity": "auth_pending_tenant_selections",
+      "module": "auth",
+      "sourceMigration": "0043_auth_pending_tenant_selections.sql",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "notNull": false,
+          "references": {
+            "entity": "organizations",
+            "field": "id"
+          },
+          "onDelete": "no action (default)"
+        },
+        {
+          "name": "user_identity_id",
+          "type": "uuid",
+          "notNull": true,
+          "references": {
+            "entity": "user_identities",
+            "field": "id"
+          },
+          "onDelete": "cascade"
+        },
+        {
+          "name": "ceremony_id",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "token_hash",
+          "type": "text",
+          "notNull": true
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamptz",
+          "notNull": true
+        },
+        {
+          "name": "consumed_at",
+          "type": "timestamptz",
+          "notNull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "notNull": true
+        }
+      ],
+      "tableInvariants": [],
+      "tenantScoped": true,
+      "forcedRls": true
+    }
+  ],
+  "relations": [
+    {
+      "from": "tenant_settings",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "users",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "teams",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "teams",
+      "field": "parent_team_id",
+      "to": "teams",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "teams",
+      "field": "manager_user_id",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "roles",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "permission_grants",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "permission_grants",
+      "field": "role_id",
+      "to": "roles",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "permission_grants",
+      "field": "user_id",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "permission_grants",
+      "field": "created_by",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "audit_events",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "audit_events",
+      "field": "actor_user_id",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "audit_events",
+      "field": "approval_request_id",
+      "to": "approval_requests",
+      "required": false,
+      "onDelete": "n-a"
+    },
+    {
+      "from": "file_objects",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "file_objects",
+      "field": "created_by",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "comments",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "comments",
+      "field": "created_by",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "notifications",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "notifications",
+      "field": "recipient_user_id",
+      "to": "users",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "domain_events",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "organization_members",
+      "field": "user_identity_id",
+      "to": "user_identities",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "organization_members",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "fx_rate_snapshots",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "timeline_entries",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "timeline_entries",
+      "field": "actor_user_identity_id",
+      "to": "user_identities",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "approval_requests",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "approval_requests",
+      "field": "requester_user_identity_id",
+      "to": "user_identities",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "approval_requests",
+      "field": "approver_user_identity_id",
+      "to": "user_identities",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "approval_requests",
+      "field": "approver_role_id",
+      "to": "roles",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "idempotency_records",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "translation_keys",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "jobs",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "passkey_credentials",
+      "field": "user_identity_id",
+      "to": "user_identities",
+      "required": true,
+      "onDelete": "cascade"
+    },
+    {
+      "from": "passkey_challenges",
+      "field": "user_identity_id",
+      "to": "user_identities",
+      "required": false,
+      "onDelete": "cascade"
+    },
+    {
+      "from": "agent_definitions",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "agent_runs",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "agent_runs",
+      "field": "agent_definition_id",
+      "to": "agent_definitions",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "agent_runs",
+      "field": "triggered_by_user_id",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "agent_runs",
+      "field": "approval_request_id",
+      "to": "approval_requests",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "agent_runs",
+      "field": "policy_decision_id",
+      "to": "policy_decisions",
+      "required": false,
+      "onDelete": "n-a"
+    },
+    {
+      "from": "policy_decisions",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "policy_decisions",
+      "field": "agent_run_id",
+      "to": "agent_runs",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "tool_calls",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "tool_calls",
+      "field": "agent_run_id",
+      "to": "agent_runs",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "supervision_requests",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "supervision_requests",
+      "field": "agent_run_id",
+      "to": "agent_runs",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "supervision_requests",
+      "field": "assigned_to_user_id",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "companies",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "companies",
+      "field": "owner_user_id",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "companies",
+      "field": "team_id",
+      "to": "teams",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "contacts",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "contacts",
+      "field": "company_id",
+      "to": "companies",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "contacts",
+      "field": "owner_user_id",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "pipeline_stages",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "opportunities",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "opportunities",
+      "field": "company_id",
+      "to": "companies",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "opportunities",
+      "field": "primary_contact_id",
+      "to": "contacts",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "opportunities",
+      "field": "stage_id",
+      "to": "pipeline_stages",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "opportunities",
+      "field": "owner_user_id",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "opportunities",
+      "field": "team_id",
+      "to": "teams",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "leads",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "leads",
+      "field": "owner_user_id",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "leads",
+      "field": "team_id",
+      "to": "teams",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "leads",
+      "field": "converted_company_id",
+      "to": "companies",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "leads",
+      "field": "converted_contact_id",
+      "to": "contacts",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "leads",
+      "field": "converted_opportunity_id",
+      "to": "opportunities",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "projects",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "projects",
+      "field": "company_id",
+      "to": "companies",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "projects",
+      "field": "owner_user_id",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "project_tasks",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "project_tasks",
+      "field": "project_id",
+      "to": "projects",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "project_tasks",
+      "field": "assignee_user_id",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "project_tasks",
+      "field": "parent_task_id",
+      "to": "project_tasks",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "time_entries",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "time_entries",
+      "field": "project_id",
+      "to": "projects",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "time_entries",
+      "field": "project_task_id",
+      "to": "project_tasks",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "time_entries",
+      "field": "user_id",
+      "to": "users",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "time_entries",
+      "field": "approval_request_id",
+      "to": "approval_requests",
+      "required": false,
+      "onDelete": "n-a"
+    },
+    {
+      "from": "rates",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "assignments",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "assignments",
+      "field": "project_id",
+      "to": "projects",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "assignments",
+      "field": "user_id",
+      "to": "users",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "assignments",
+      "field": "billable_rate_id",
+      "to": "rates",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "invoice_proposals",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "invoice_proposals",
+      "field": "project_id",
+      "to": "projects",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "invoice_proposals",
+      "field": "company_id",
+      "to": "companies",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "invoice_proposal_lines",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "invoice_proposal_lines",
+      "field": "invoice_proposal_id",
+      "to": "invoice_proposals",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "invoices",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "invoices",
+      "field": "company_id",
+      "to": "companies",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "invoices",
+      "field": "project_id",
+      "to": "projects",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "invoices",
+      "field": "invoice_proposal_id",
+      "to": "invoice_proposals",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "invoices",
+      "field": "tax_category_id",
+      "to": "tax_categories",
+      "required": false,
+      "onDelete": "n-a"
+    },
+    {
+      "from": "invoice_lines",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "invoice_lines",
+      "field": "invoice_id",
+      "to": "invoices",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "payments",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "payments",
+      "field": "invoice_id",
+      "to": "invoices",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "payments",
+      "field": "company_id",
+      "to": "companies",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "tax_categories",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "tax_rate_versions",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "tax_rate_versions",
+      "field": "tax_category_id",
+      "to": "tax_categories",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "accounts",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "journal_entries",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "journal_entry_lines",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "journal_entry_lines",
+      "field": "journal_entry_id",
+      "to": "journal_entries",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "journal_entry_lines",
+      "field": "account_id",
+      "to": "accounts",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "quote_handoffs",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "quote_handoffs",
+      "field": "opportunity_id",
+      "to": "opportunities",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "quote_handoffs",
+      "field": "requested_by_user_id",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "recurring_billing_schedules",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "recurring_billing_schedules",
+      "field": "company_id",
+      "to": "companies",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "recurring_billing_schedules",
+      "field": "last_invoice_id",
+      "to": "invoices",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "saved_views",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "saved_views",
+      "field": "owner_user_id",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "report_definitions",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "report_definitions",
+      "field": "owner_user_id",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "report_runs",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "report_runs",
+      "field": "report_definition_id",
+      "to": "report_definitions",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "report_runs",
+      "field": "triggered_by_user_id",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "dashboards",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "dashboards",
+      "field": "owner_user_id",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "dashboard_widgets",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "dashboard_widgets",
+      "field": "dashboard_id",
+      "to": "dashboards",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "dashboard_widgets",
+      "field": "report_definition_id",
+      "to": "report_definitions",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "scheduled_deliveries",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "scheduled_deliveries",
+      "field": "owner_user_id",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "delivery_runs",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "delivery_runs",
+      "field": "scheduled_delivery_id",
+      "to": "scheduled_deliveries",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "delivery_runs",
+      "field": "report_run_id",
+      "to": "report_runs",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "workflow_definitions",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "workflow_definitions",
+      "field": "owner_user_id",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "workflow_runs",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "workflow_runs",
+      "field": "workflow_definition_id",
+      "to": "workflow_definitions",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "webhook_endpoints",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "webhook_endpoints",
+      "field": "owner_user_id",
+      "to": "users",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "webhook_deliveries",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "webhook_deliveries",
+      "field": "webhook_endpoint_id",
+      "to": "webhook_endpoints",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "openerp_sessions",
+      "field": "user_identity_id",
+      "to": "user_identities",
+      "required": true,
+      "onDelete": "cascade"
+    },
+    {
+      "from": "openerp_sessions",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "cascade"
+    },
+    {
+      "from": "email_sends",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "bank_accounts",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "bank_transactions",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "reconciliation_links",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": true,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "auth_email_verifications",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "auth_pending_tenant_selections",
+      "field": "organization_id",
+      "to": "organizations",
+      "required": false,
+      "onDelete": "no action (default)"
+    },
+    {
+      "from": "auth_pending_tenant_selections",
+      "field": "user_identity_id",
+      "to": "user_identities",
+      "required": true,
+      "onDelete": "cascade"
+    }
+  ],
+  "parserGaps": []
+}
