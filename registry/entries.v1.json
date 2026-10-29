@@ -127,7 +127,7 @@
           "role": "registry-package",
           "path": "dist/registry/manifest.js",
           "mediaType": "application/javascript",
-          "sha256": "f2d9f9d4829ab49ac5c0736cb7ce75ddc252c64283149e96976194cac0e7c2be"
+          "sha256": "80af68d9af58b78dd33973a0828f2b6809af68b78855acd198c3e389ae43c0c7"
         },
         {
           "role": "manifest",
@@ -145,19 +145,19 @@
           "role": "definitions",
           "path": "dist/registry/definitions.js",
           "mediaType": "application/javascript",
-          "sha256": "f25d8a5e974e808ca8151e47fd24581c7200acd056e7037737e1f66d656fa2bf"
+          "sha256": "43086fc09744e188bac4ac218ea90571bcf2d3b4cec51161437bca2e995477e8"
         },
         {
           "role": "provider",
           "path": "dist/mcp-memory.js",
           "mediaType": "application/javascript",
-          "sha256": "d476e7d31ee6f00cf7c3e54449aefbafaa5a39346b6bc8dfa40b411d27b0b377"
+          "sha256": "56ceb8f4ed7ccfd9924497e56bccaf95dc4f8007f84c3154efae53f02dececae"
         },
         {
           "role": "validator",
           "path": "dist/registry/validator.js",
           "mediaType": "application/javascript",
-          "sha256": "3e13743aa06cfdc8691eb8581846372c4a23bea93bc2e7b60092f88ac7bb8ef2"
+          "sha256": "7013c4900334de78fada795f791f2cc40e8c3b9efa96c4f663954fbe40028687"
         },
         {
           "role": "wire-profile",
