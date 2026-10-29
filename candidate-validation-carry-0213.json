@@ -39,10 +39,10 @@
     }
   },
   "comparison": {
-    "status": "blocked",
+    "status": "accepted-under-conductor-exception-E1",
     "freshFullSuiteRuns": 0,
-    "verdict": "unresolved",
-    "reason": "SUITE-COMPARISON-METHOD.md step 1 requires STOP when root lockfiles differ. The exact L4 version/SDK/optional-peer delta differs; owner exception is pending. No .baseline created and no full-suite run performed.",
+    "verdict": "pass: 0 added branch failures/skips, 0 branch failures; 2 baseline-only failures unclassified and unresolved",
+    "reason": "SUITE-COMPARISON-METHOD.md step 1 stops on differing root lockfiles. Conductor exception E1 (.graphify/scratch/design/memory-finalization/DESIGN-NOTE-L4-carry-round3.md, Addendum E1, note sha256 9744be7fc6ed55265d706af55eafbfa4b57cfd49dc2a6f8a0848be2b7cc32701) accepts the documented root lockfile delta (engram-memory lock identical) and the committed R2 historical reports on the shared native installation as the full-suite evidence, compared with the ported occurrence-level comparator (historicalRound2). No fresh full-suite run was performed.",
     "setup": {
       "path": "tests/fixtures/l4-full-suite-evidence/blocked-setup.json.gz",
       "rawSha256": "34cf2e1df1b315372a8cc8f05806dfc8f13427d210cd65f4b218308dea21148f",
@@ -63,6 +63,13 @@
       "compressedSha256": "41582214a72a3da4f037bf63093bd984e6600ef70cc8492118faa24622f1810d",
       "rawBytes": 2258,
       "compressedBytes": 861
+    },
+    "exception": {
+      "id": "E1",
+      "note": ".graphify/scratch/design/memory-finalization/DESIGN-NOTE-L4-carry-round3.md",
+      "noteSha256": "9744be7fc6ed55265d706af55eafbfa4b57cfd49dc2a6f8a0848be2b7cc32701",
+      "decidedBy": "gr-conductor",
+      "date": "2026-10-29"
     }
   },
   "historicalRound2": {
