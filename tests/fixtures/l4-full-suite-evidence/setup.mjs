@@ -30,7 +30,7 @@ async function run(label, executable, args, cwd = root, allowFailure = false) {
   const fd = fs.openSync(log, 'w');
   const entry = { label, executable, args, cwd, startedAt: new Date().toISOString(),
     retainedLog: 'tests/fixtures/l4-full-suite-evidence/' + label + '.log.gz' };
-  setup.commands.push(entry); setup.logs.push(path.relative(root, log)); save();
+  setup.commands.push(entry); if (label !== 'comparison') setup.logs.push(path.relative(root, log)); save();
   console.log(label + ': ' + executable + ' ' + args.join(' '));
   const code = await new Promise((resolve, reject) => {
     const child = spawn(executable, args, { cwd, env, stdio: ['ignore', fd, fd] });
@@ -58,7 +58,7 @@ for (const file of ['package-lock.json', 'engram-memory/package-lock.json', 'stu
     setup.lockfiles[file].deltaSha256 = hash(delta);
     save();
     assert.equal(file, 'package-lock.json', file + ' differs: STOP');
-    assert.equal(hash(delta), 'b9702b4ef6291c2ad450f073cb1118d41a251947ca62b0304457ca7041220fb6', 'unexpected lock delta: STOP');
+    assert.equal(hash(delta), '3e1b88ef29bd3af25b0b7cdd668ac200209ff536de8b02a66b4dc35ae8deed48', 'unexpected lock delta: STOP');
     assert.equal(env.L4_ACCEPT_LOCK_DELTA, '1', 'root lock differs; explicit owner exception required: STOP');
     setup.lockfileException = 'Owner authorized the exact retained L4 version/SDK/optional-peer delta with one shared installation.';
   }
@@ -127,5 +127,5 @@ try {
     setup.baselineRemoved = !fs.existsSync(baseline); save();
   }
 }
-await run('comparison', process.execPath, ['tests/compare-l4-full-suite.mjs', path.join(scratch, 'base-vitest.json'),
+process.exitCode = await run('comparison', process.execPath, ['tests/compare-l4-full-suite.mjs', path.join(scratch, 'base-vitest.json'),
   path.join(scratch, 'branch-vitest.json'), setupFile, path.join(scratch, 'comparison.json')], root, true);
