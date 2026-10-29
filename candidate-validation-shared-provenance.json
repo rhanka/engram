@@ -1,0 +1,64 @@
+{
+  "format": "candidate-validation-shared-provenance/r1",
+  "sourceCommit": "2bd7da41779305831b16c94f1272ab3b9d38128e",
+  "defect": "dist/mcp-memory.js et dist/memory-substrate.js auto-suffisants (tsup splitting:false) : chacun sa copie du registre WeakSet, store substrate inconnu du serveur MCP (CAPABILITY_UNAVAILABLE).",
+  "fix": "tsup config librairie splitting:true : internes partagés dans un chunk interne unique. Carte exports inchangée, sorties CJS conservées, gate privée (aucun export du registre).",
+  "tarball": {
+    "filename": "sentropic-engram-0.22.0.tgz",
+    "sha256": "0e740e5c8fd9d8bc167d6efcdd0e2bf86a2af5c6accfc2bc1c464e4477b14f08",
+    "integrity": "sha512-YuHv8eJ/rsijXI4ylv+vare3Bu4gCnh3mS3QmDz36T9aJ9pJgjBwXcuTCATBV9C8RQGfYYuFwjkLazrDDILMNQ=="
+  },
+  "artifactPath": ".graphify/scratch/l4-r6-artifacts/sentropic-engram-0.22.0.tgz",
+  "builtAgainstPreCandidateSha256": "1c96bada2a749155f29aae763fa73ea6379c385d619f70614110f59b6b10b730",
+  "p3Status": "unchanged (verifyP3Archives pass dans les runs packagés)",
+  "before": {
+    "definers": ["mcp-memory.js", "memory-substrate.js"],
+    "probe": { "exitCode": 3, "ok": false, "code": "CAPABILITY_UNAVAILABLE" }
+  },
+  "after": {
+    "definers": ["chunk-HYPGGBK6.js"],
+    "probe": { "exitCode": 0, "ok": true, "code": null }
+  },
+  "weakSetPerDistFile": {
+    "dist/mcp-memory.js": 0,
+    "dist/memory-substrate.js": 0,
+    "dist/chunk-HYPGGBK6.js": 2
+  },
+  "cjs": "sorties conservées (index, llm-mesh, mcp-memory, memory-substrate, memory-tools, time-reference .cjs) ; registre CJS partagé dans chunk-Q5EGPFU2.cjs",
+  "exportsMap": "inchangée (refresh dérivée du package.json packagé, aucune différence)",
+  "filesCoverage": "chunks sous dist/, couvert par files:[dist, src/skills, registry/entries.v1.json]",
+  "contractDigest": "sha256:dd0cccbd6e5e29766fbc9c48351ffe58f5b0a3162152f5ff02da0798c3244fee (test mémoire-substrat vert)",
+  "intentHash": "cas portés par memory-substrate.test.ts, verts",
+  "targeted": {
+    "files": 10,
+    "passed": 148,
+    "failed": 0,
+    "suites": [
+      "shared-provenance-chunk.test.ts",
+      "store-provenance.test.ts",
+      "memory-substrate-closure.test.ts",
+      "memory-substrate.test.ts",
+      "mcp-memory-l4-adapter.test.ts",
+      "mcp-memory-l4-pipeline.test.ts",
+      "mcp-memory-l4-disabled-detector.test.ts",
+      "memory-substrate-tarball.test.ts",
+      "mcp-memory-l4-shared-provenance-packed.test.ts",
+      "mcp-memory-l4-packed.test.ts"
+    ]
+  },
+  "packed": {
+    "result": "pass",
+    "sdkPinned": "1.32.2",
+    "sdkFloor": "1.31.0",
+    "sdkFloorProbe": "pass",
+    "ordinaryDisabledInstall": {
+      "providerLoads": 0,
+      "storeOpens": 0,
+      "identityBootstraps": 0,
+      "memoryNativeBuilds": 0
+    }
+  },
+  "notCovered": [
+    "full suite non rejouée (ciblées + packed acceptance uniquement, selon brief)"
+  ]
+}
