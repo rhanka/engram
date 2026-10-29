@@ -55,14 +55,14 @@ function wrongType(value: unknown): unknown {
   if (typeof value === "boolean") return "true";
   return null;
 }
-function fixture(name: string, kind: Kind, path: Path, value: Record<string, unknown>, required = nativeRequired.get(name)): void {
+function fixture(name: string, kind: Kind, path: Path, value: Record<string, unknown>, required = nativeRequired.get(name), checkViewGuard = true): void {
   if (required === undefined) throw new Error(`untranscribed native interface ${name}`);
   describe(`native shape ${name} (${kind}:${path.join("/")})`, () => {
     const check = (v: unknown, expected: boolean): void => {
       const input = replace(kind, path, v);
       expect(validators[kind](input), JSON.stringify(validators[kind].errors)).toBe(expected);
       if (kind === "semantic") expect(checkSemanticShape(input) === null).toBe(expected);
-      if (kind === "view") expect(checkViewShape(input) === null).toBe(expected);
+      if (kind === "view" && checkViewGuard) expect(checkViewShape(input) === null).toBe(expected);
       if (kind === "presentation") expect(checkViewShape({ ...view, presentation: { ...view.presentation, diagram: input } }) === null).toBe(expected);
     };
     it("accepts the full native record", () => check(value, true));
@@ -145,7 +145,45 @@ fixture("VisualGroup", "view", ["groups", "group:a"], { id: "group:a", label: "G
 fixture("PresentationState", "view", ["presentation"], { camera: { x: 0, y: 0, zoom: 1 }, grid: { size: 8, snap: true }, theme: "light" });
 fixture("Camera", "view", ["presentation", "camera"], { x: 0, y: 0, zoom: 1 }, ["x", "y", "zoom"]);
 fixture("Grid", "view", ["presentation", "grid"], { size: 8, snap: true }, ["size", "snap"]);
-fixture("SummaryLabelDefinition", "view", ["summaryLabels", "sum:a"], { id: "sum:a", sourceOccurrence: "occurrence:a", targetOccurrence: "occurrence:a", label: "Summary", relationIds: ["relation:a"], strokeStyle: "solid" }, ["sourceOccurrence", "targetOccurrence", "label", "relationIds"]);
+// The governed summary schema retains its pinned shape; the M3 guard is tested separately below.
+fixture("SummaryLabelDefinition", "view", ["summaryLabels", "sum:a"], { id: "sum:a", sourceOccurrence: "occurrence:a", targetOccurrence: "occurrence:a", label: "Summary", relationIds: ["relation:a"], strokeStyle: "solid" }, ["sourceOccurrence", "targetOccurrence", "label", "relationIds"], false);
+describe("summary definition shape (M3 §4.5.1)", () => {
+  const summary = { id: "sum:a", sourceOccurrence: "occurrence:a", targetOccurrence: "occurrence:a", label: "Summary", relationIds: ["relation:a"] };
+  const input = (value: unknown): unknown => replace("view", ["summaryLabels", "sum:a"], value);
+  it("rejects a missing id at the summary id path", () => {
+    const { id: _id, ...withoutId } = summary;
+    expect(checkViewShape(input(withoutId))).toBe("summaryLabels.sum:a.id");
+  });
+  it("accepts optional relation occurrence references", () => {
+    expect(checkViewShape(input({ ...summary, relationOccurrences: ["o1"] }))).toBeNull();
+  });
+  it("rejects non-list relation occurrences at their path", () => {
+    for (const relationOccurrences of [null, "o1", {}]) {
+      expect(checkViewShape(input({ ...summary, relationOccurrences }))).toBe("summaryLabels.sum:a.relationOccurrences");
+    }
+  });
+  it("rejects non-string relation occurrence items at their index", () => {
+    for (const item of [null, 42, {}]) {
+      expect(checkViewShape(input({ ...summary, relationOccurrences: ["o1", item] }))).toBe("summaryLabels.sum:a.relationOccurrences.1");
+    }
+  });
+  it("accepts an empty label", () => {
+    expect(checkViewShape(input({ ...summary, label: "" }))).toBeNull();
+  });
+  it("rejects unknown summary properties at their path", () => {
+    expect(checkViewShape(input({ ...summary, accidental: true }))).toBe("summaryLabels.sum:a.accidental");
+  });
+  it("leaves ordering, distinctness and key agreement to DS validation", () => {
+    expect(checkViewShape(input({ ...summary, id: "sum:b", relationIds: ["relation:b", "relation:a", "relation:a"],
+      relationOccurrences: ["o2", "o1", "o1"] }))).toBeNull();
+  });
+  it("accepts an empty optional relation occurrence list", () => {
+    expect(checkViewShape(input({ ...summary, relationOccurrences: [] }))).toBeNull();
+  });
+  it("retains the non-empty relation id list requirement", () => {
+    expect(checkViewShape(input({ ...summary, relationIds: [] }))).toBe("summaryLabels.sum:a.relationIds");
+  });
+});
 fixture("DiagramPresentation", "presentation", [], presentation);
 fixture("ContractPin", "presentation", ["contractPin"], presentation.contractPin, ["id", "version", "contentDigest"]);
 const entityPresentation = { form: "card", text: { title: "A", kicker: "K", body: "B", detail: "D", subtitle: "S", footer: "F" }, icon: "window", categoryRef: "entity:key" };
