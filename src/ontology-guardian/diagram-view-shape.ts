@@ -74,8 +74,8 @@ const diagram = record({
   categoryTokens: list(record({ legendRef: nonempty, category: key, token })),
 });
 const summary: Check = (v, p) => {
-  const failure = record({ sourceOccurrence: text, targetOccurrence: text, label: nonempty, relationIds: list(text) },
-    { id: text, strokeStyle: enumeration("solid", "dashed") })(v, p);
+  const failure = record({ id: text, sourceOccurrence: text, targetOccurrence: text, label: text, relationIds: list(text) },
+    { strokeStyle: enumeration("solid", "dashed"), relationOccurrences: list(text) })(v, p);
   if (failure !== null) return failure;
   return ((v as { relationIds: string[] }).relationIds.length > 0) ? null : `${p}.relationIds`;
 };
