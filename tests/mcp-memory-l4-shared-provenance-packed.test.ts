@@ -7,7 +7,7 @@
  * bundle); passes after (one shared registry).
  */
 import { expect, it } from 'vitest';
-import { runSharedProvenancePacked } from '../scripts/mcp-memory-l4-shared-provenance.mjs';
+import { runFencedStorePacked, runSharedProvenancePacked } from '../scripts/mcp-memory-l4-shared-provenance.mjs';
 
 it('packed cross-entry provenance: substrate engine admits the mcp-memory store and the server captures', async () => {
   const { packed, definers, probe } = await runSharedProvenancePacked();
@@ -16,4 +16,13 @@ it('packed cross-entry provenance: substrate engine admits the mcp-memory store 
   expect(definers.inMemory, `in-memory registry definers: ${JSON.stringify(definers.inMemory)}`).toHaveLength(1);
   expect(probe.code, `probe stderr: ${probe.stderr ?? ''}`).toBe(null);
   expect(probe.ok).toBe(true);
+}, 300_000);
+
+it('packed fenced-store provenance: substrate opener with the exemption disabled refuses the old archive and captures on the new one', async () => {
+  const { byteIdentical, old, new: current } = await runFencedStorePacked();
+  expect(byteIdentical).toBe(true);
+  expect(old.probe.ok).toBe(false);
+  expect(old.probe.code, `old probe stderr: ${old.probe.stderr ?? ''}`).toBe('CAPABILITY_UNAVAILABLE');
+  expect(current.probe.code, `new probe stderr: ${current.probe.stderr ?? ''}`).toBe(null);
+  expect(current.probe.ok).toBe(true);
 }, 300_000);

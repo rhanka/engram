@@ -46,6 +46,19 @@
       "mcp-memory-l4-packed.test.ts"
     ]
   },
+  "fencedStoreCase": {
+    "store": "openModuleStorageCanonicalMemoryStoreV1 via @sentropic/engram/memory-substrate over the neutral tarball acceptance backend",
+    "engineFacetsServer": "@sentropic/engram/mcp-memory with the unfenced exemption disabled",
+    "backendSource": "sliced pristine from scripts/substrate-tarball-acceptance.mjs (tarballAcceptanceBackendSources)",
+    "oldArchive": ".graphify/scratch/l4-r5-artifacts/sentropic-engram-0.22.0.tgz",
+    "oldSha256": "965c93e326df9866584261061f4e49571cfd74dfe1dc258c0c6894eea121a4e9",
+    "oldProbe": { "exitCode": 3, "ok": false, "code": "CAPABILITY_UNAVAILABLE" },
+    "newArchive": ".graphify/scratch/l4-r6-artifacts/sentropic-engram-0.22.0.tgz",
+    "newProbe": { "exitCode": 0, "ok": true, "code": null },
+    "repackSha256": "0e740e5c8fd9d8bc167d6efcdd0e2bf86a2af5c6accfc2bc1c464e4477b14f08",
+    "byteIdentical": true,
+    "suite": "tests/mcp-memory-l4-shared-provenance-packed.test.ts (2 passed)"
+  },
   "packed": {
     "result": "pass",
     "sdkPinned": "1.32.2",
