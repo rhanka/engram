@@ -1,80 +1,58 @@
 import { describe, expect, it } from 'vitest';
+import { runInNewContext } from 'node:vm';
+import { join } from 'node:path';
 import { assertNoNativeBuildAttempts } from '../scripts/mcp-memory-l4-packed-acceptance.mjs';
+import { createDisabledTrace, isMemoryNativeBuildProcess } from '../scripts/mcp-memory-disabled-trace.mjs';
+import { detectorCases, detectorOptions } from './fixtures/l4-disabled-detector-cases.mjs';
 
-// Regression for the review finding: the disabled-install detector used to
-// reject an unrelated npm warning as a memory-native compilation attempt.
 describe('disabled-install native-build detector', () => {
-  it('ignores the warning-only tree-sitter-lua script description', () => {
-    const log = 'npm warn install-scripts   tree-sitter-lua@2.1.3 (install: node-gyp rebuild)';
-    expect(() => assertNoNativeBuildAttempts(log, 'disabled install', [])).not.toThrow();
+  for (const test of detectorCases) it(test.name, () => {
+    const detect = () => assertNoNativeBuildAttempts(test.log, 'disabled install', test.trace, detectorOptions(test));
+    if (test.builds) expect(detect).toThrow(/native build attempts observed/);
+    else expect(detect).not.toThrow();
   });
 
-  it('ignores warning-only lines even when they name a memory native module', () => {
-    const log = [
-      'npm warn install-scripts   fs-ext@2.0.1 (install: node-gyp rebuild)',
-      'added 10 packages in 3s',
-    ].join('\n');
-    expect(() => assertNoNativeBuildAttempts(log, 'disabled install', [])).not.toThrow();
+  it('classifies the actual successful-prebuild preload dispatch entirely in memory', () => {
+    const files = new Map<string, string>();
+    createDisabledTrace('/memory', {
+      writeFile: (file, bytes) => files.set(file, String(bytes)),
+      readFile: file => files.get(file) ?? '',
+    });
+    const rows: any[] = [];
+    const child = Object.fromEntries(['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']
+      .map(method => [method, () => ({ status: 0 })]));
+    class Module { static _load() {} static _resolveFilename(file) { return file; } _compile() {} }
+    runInNewContext(files.get('/memory/trace-preload.cjs')!, {
+      require: name => ({
+        'node:fs': { appendFileSync: (_file, line) => rows.push(JSON.parse(line)) },
+        'node:module': Object.assign(Module, { syncBuiltinESMExports() {} }),
+        'node:child_process': child,
+      })[name],
+      process: { env: { MCP_L4_TRACE: '/memory/trace' }, cwd: () => '/fixture/node_modules/better-sqlite3' },
+    });
+    child.spawn('/bin/sh', ['-c', 'prebuild-install || node-gyp rebuild --release']);
+    child.spawn('/tools/prebuild-install', []);
+    child.spawn('node-gyp', ['rebuild'], { shell: true });
+    child.exec('node-gyp rebuild');
+    expect(rows.filter(row => row.kind === 'lifecycle')).toHaveLength(4);
+    expect(rows.filter(row => row.kind === 'native-build')).toEqual([]);
+    expect(() => assertNoNativeBuildAttempts('', 'disabled install', rows)).not.toThrow();
+    for (const name of ['fs-ext', 'better-sqlite3']) {
+      child.spawn('/tools/node-gyp', ['rebuild'], { cwd: join('/fixture/node_modules', name) });
+      expect(() => assertNoNativeBuildAttempts('', 'disabled install', rows)).toThrow(/native build attempts observed/);
+    }
+    expect(rows.filter(row => row.kind === 'native-build')).toHaveLength(2);
   });
 
-  it('ignores executed builds of unrelated addons', () => {
-    const log = [
-      '> tree-sitter-lua@2.1.3 install',
-      '> node-gyp rebuild',
-      'gyp info build done',
-    ].join('\n');
-    expect(() => assertNoNativeBuildAttempts(log, 'disabled install', [])).not.toThrow();
-  });
-
-  it('flags an executed fs-ext build via adjacent lifecycle records', () => {
-    const log = [
-      '> fs-ext@2.0.1 install',
-      '> node-gyp rebuild',
-      'gyp info ok',
-    ].join('\n');
-    expect(() => assertNoNativeBuildAttempts(log, 'disabled install', [])).toThrow(
-      /native build attempts observed/,
-    );
-  });
-
-  it('flags an executed better-sqlite3 build on one attributable line', () => {
-    const log = 'gyp info build with better-sqlite3@12.2.0 at node_modules/better-sqlite3';
-    expect(() => assertNoNativeBuildAttempts(log, 'disabled install', [])).toThrow(
-      /native build attempts observed/,
-    );
-  });
-
-  it('flags instrumented native-build trace rows for memory modules', () => {
-    const log = 'added 100 packages in 10s';
-    const traceRows = [
-      { kind: 'native-build', detail: '/tmp/l4/disabled/node_modules/fs-ext fs-ext ["node-gyp","rebuild"]' },
-    ];
-    expect(() => assertNoNativeBuildAttempts(log, 'disabled install', traceRows)).toThrow(
-      /native build attempts observed/,
-    );
-  });
-
-  it('flags instrumented native-build trace rows for better-sqlite3', () => {
-    const log = 'added 100 packages in 10s';
-    const traceRows = [
-      { kind: 'native-build', detail: '/tmp/l4/disabled better-sqlite3 ["prebuild-install","--build-from-source"]' },
-    ];
-    expect(() => assertNoNativeBuildAttempts(log, 'disabled install', traceRows)).toThrow(
-      /native build attempts observed/,
-    );
-  });
-
-  it('ignores non-build trace rows and unattributed native-build rows', () => {
-    const log = 'added 100 packages in 10s';
-    const traceRows = [
-      { kind: 'lifecycle', detail: '/tmp/l4/disabled fs-ext ["node","-e",""]' },
-      { kind: 'native-build', detail: '/tmp/l4/disabled/node_modules/engram-memory engram-memory ["node-gyp","rebuild"]' },
-    ];
-    expect(() => assertNoNativeBuildAttempts(log, 'disabled install', traceRows)).not.toThrow();
-  });
-
-  it('accepts a clean ordinary install log', () => {
-    const log = 'added 312 packages in 12s';
-    expect(() => assertNoNativeBuildAttempts(log, 'disabled install', [])).not.toThrow();
+  it('attributes only the specified compiler executables to a memory module cwd', () => {
+    for (const executable of ['node-gyp', 'make', 'cc', 'c++', 'g++', 'gcc', 'clang', 'clang++', 'clang-18']) {
+      expect(isMemoryNativeBuildProcess('/tools/' + executable, '/fixture/node_modules/fs-ext')).toBe(true);
+      expect(isMemoryNativeBuildProcess(executable, '/fixture/node_modules/better-sqlite3/build')).toBe(true);
+      expect(isMemoryNativeBuildProcess(executable, '/fixture/node_modules/tree-sitter-lua')).toBe(false);
+    }
+    for (const executable of ['sh', 'prebuild-install', 'node', 'not-node-gyp', 'gcc-wrapper']) {
+      expect(isMemoryNativeBuildProcess(executable, '/fixture/node_modules/fs-ext')).toBe(false);
+    }
+    expect(isMemoryNativeBuildProcess('make', '/fixture/node_modules/fs-ext-other')).toBe(false);
   });
 });
