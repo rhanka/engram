@@ -15,12 +15,30 @@
  *
  * Also asserts the static invariant over the PACKED dist: the provenance
  * WeakSets are defined in exactly one ESM module file.
+ *
+ * Fenced-store case (MINOR): the store is opened through the substrate entry
+ * (`openModuleStorageCanonicalMemoryStoreV1` over the neutral acceptance
+ * backend), then engine, facets and server come from the mcp-memory entry
+ * with the unfenced exemption disabled. Old archive: CAPABILITY_UNAVAILABLE;
+ * new archive: capture succeeds.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { packCandidate, p3ArchivePaths, verifyP3Archives } from './mcp-memory-l4-packed-acceptance.mjs';
+import { pinnedContractDigest, tarballAcceptanceBackendSources } from './substrate-tarball-acceptance.mjs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = dirname(HERE);
+
+/** Frozen L4 archives under test: r5 (pre-fix) must refuse, r6 (fix) must capture. */
+const L4_R5_TARBALL = '.graphify/scratch/l4-r5-artifacts/sentropic-engram-0.22.0.tgz';
+const L4_R6_TARBALL = '.graphify/scratch/l4-r6-artifacts/sentropic-engram-0.22.0.tgz';
+const L4_R5_SHA256 = '965c93e326df9866584261061f4e49571cfd74dfe1dc258c0c6894eea121a4e9';
+const L4_R6_SHA256 = '0e740e5c8fd9d8bc167d6efcdd0e2bf86a2af5c6accfc2bc1c464e4477b14f08';
 
 const NPM = process.env.MCP_L4_NPM_BIN ?? '/home/antoinefa/.npm-global/bin/npm';
 const SDK_PINNED = '1.32.2';
@@ -409,4 +427,281 @@ export async function runSharedProvenancePacked() {
       }
     }
   }
+}
+
+/**
+ * Fenced-store probe tail. Reuses the shared head above (imports, binding,
+ * engine ports) but opens the store through the substrate entry over the
+ * neutral acceptance backend, then wires engine, facets and server from the
+ * mcp-memory entry with the unfenced exemption disabled.
+ */
+const FENCED_STORE_TAIL = `
+const failPort = (error_code, message) => ({ ok: false, error_code, message });
+
+const fencedScope = { tenantId: 'tenant:one', workspaceId: 'workspace:one' };
+const fencedClock = { now: () => NOW };
+// Neutral acceptance backend (same factory as the substrate tarball
+// acceptance, embedded from its live source below); the store is opened
+// through the substrate entry.
+const fencedBackend = createTarballAcceptanceBackend({ scope: { ...fencedScope }, contractDigest: CONTRACT_DIGEST });
+const fencedOpened = await substrate.openModuleStorageCanonicalMemoryStoreV1({
+  handle: fencedBackend.handle,
+  scope_binding: {
+    scope: { ...fencedScope }, store_id: 'store:one',
+    resolveScope: (scopeRef) => scopeRef === 'scope:one' ? { ...fencedScope } : null,
+  },
+  grant: fencedBackend.grant,
+  clock: fencedClock,
+  deadline_at: DEADLINE,
+});
+if (!fencedOpened.ok) {
+  console.log(JSON.stringify({ ok: false, code: fencedOpened.error.code ?? null }));
+  process.exit(3);
+}
+const fencedStore = fencedOpened.value;
+const fencedPorts = engineDeps(mcp.receiptDigest, fencedClock);
+// Engine, facets and server all come from the mcp-memory entry with the
+// unfenced exemption disabled: only a fenced store sharing this module
+// instance's provenance registry is admitted.
+const engine = mcp.createMemoryPortV2({
+  canonical_store: fencedStore, authorization: fencedPorts.authorization,
+  admission_policy: fencedPorts.admission_policy, crypto: fencedPorts.crypto,
+  evidence_verifier: fencedPorts.evidence_verifier, activity_sources: [],
+  clock: fencedClock,
+});
+const readFacets = mcp.createMemoryReadFacetsV1(
+  { canonical_store: fencedStore, ...fencedPorts, activity_sources: [], clock: fencedClock },
+  { scope_ref: 'scope:one', store_id: 'store:one' },
+);
+const facets = {
+  scope_ref: 'scope:one', store_id: 'store:one',
+  recallPort: readFacets.recallPort, readPort: readFacets.readPort, engine,
+};
+
+const stored = new Map();
+const byRef = (ref) => [...stored.values()].find((entry) => entry.preimage.reservation_ref === ref);
+const isOpaque = (s) => typeof s === 'string' && s.length >= 1 && s.length <= 512;
+const reservation = {
+  async reserveOrLoad(lookupKey, candidate) {
+    const key = JSON.stringify(lookupKey);
+    const existing = stored.get(key);
+    if (existing) return { ok: true, value: existing };
+    if (!mcp.validateMemoryMutationPreimageV1(candidate).ok) return failPort('INVALID_SCHEMA', 'candidate preimage is not closed');
+    const digest = mcp.computeMemoryMutationOperationDigestV1(candidate);
+    if (!digest.ok) return failPort(digest.error_code, 'candidate digest failed');
+    const versions = mcp.projectMemoryMutationPolicyVersionsV1(candidate.effective_input);
+    if (!versions.ok) return failPort(versions.error_code, 'candidate policy versions failed');
+    const entry = {
+      lookup_key: lookupKey, preimage: candidate, operation_digest: digest.value.operation_digest,
+      policy_versions: versions.value, recovery_state: 'authorized_uncommitted',
+      audit_id: 'reservation-audit:' + candidate.reservation_ref, execution_generation: '0',
+    };
+    stored.set(key, entry);
+    return { ok: true, value: entry };
+  },
+  async attachConfirmation(reservationRef, confirmationRef, operationDigest) {
+    const entry = byRef(reservationRef);
+    if (!entry) return failPort('NOT_FOUND', 'unknown reservation');
+    if (entry.operation_digest !== operationDigest) return failPort('INVALID_SCHEMA', 'confirmation digest mismatch');
+    if (!isOpaque(confirmationRef)) return failPort('INVALID_SCHEMA', 'confirmation ref is not opaque');
+    const next = { ...entry, confirmation_ref: confirmationRef };
+    stored.set(JSON.stringify(next.lookup_key), next);
+    return { ok: true, value: next };
+  },
+  async claimFencedExecution(reservationRef, executionGeneration) {
+    const entry = byRef(reservationRef);
+    if (!entry) return failPort('NOT_FOUND', 'unknown reservation');
+    if (entry.recovery_state !== 'authorized_uncommitted') return failPort('INVALID_SCHEMA', 'reservation is not claimable');
+    const next = { ...entry, recovery_state: 'executing_unknown_outcome', execution_generation: executionGeneration };
+    stored.set(JSON.stringify(next.lookup_key), next);
+    return { ok: true, value: next };
+  },
+  async reconcileCanonicalOutcome(reservationRef, canonicalReplayRef) {
+    const entry = byRef(reservationRef);
+    if (!entry) return failPort('NOT_FOUND', 'unknown reservation');
+    if (!isOpaque(canonicalReplayRef)) return failPort('INVALID_SCHEMA', 'replay ref is not opaque');
+    const next = { ...entry, recovery_state: 'canonical_committed_receipt', canonical_replay_ref: canonicalReplayRef };
+    stored.set(JSON.stringify(next.lookup_key), next);
+    return { ok: true, value: next };
+  },
+  async recordCompletion(reservationRef, output) {
+    const entry = byRef(reservationRef);
+    if (!entry) return failPort('NOT_FOUND', 'unknown reservation');
+    if (!isOpaque(entry.canonical_replay_ref) || entry.recovery_state !== 'canonical_committed_receipt') {
+      return failPort('INVALID_SCHEMA', 'reservation has no canonical commitment to complete');
+    }
+    const next = { ...entry, recovery_state: 'completed_response', stored_output: output };
+    stored.set(JSON.stringify(next.lookup_key), next);
+    return { ok: true, value: next };
+  },
+};
+
+const readHost = {
+  clock: fencedClock,
+  authenticate: async (ctx, tool) => ctx.scope_ref === 'scope:one' && ctx.store_id === 'store:one',
+  authorize: async (ctx, tool, purpose) => ctx.scope_ref === 'scope:one' && purpose === 'purpose:one',
+  authorizeContinuation: async () => true,
+  pages: memoryTools.createMemoryReadPageStoreV1({ clock: fencedClock, ttl_ms: 60000, max_entries: 100 }),
+};
+const writeHost = {
+  clock: fencedClock,
+  authenticate: readHost.authenticate,
+  authorize: async (ctx, tool, purpose) => {
+    if (ctx.scope_ref !== 'scope:one') return false;
+    if (tool === 'engram_memory_capture') return purpose === 'purpose:one';
+    return true;
+  },
+  reservation,
+  audit: { append: async () => {} },
+  policy: {
+    capturePolicyVersion: async () => 'capture-policy/v1',
+    admissionPolicyVersion: async () => 'admission-policy/v1',
+    retention: { max_retention_days: 30, allow_retain_derivative_rule: false },
+    reconciliation: { consented_family_refs: [] },
+    anchorKindRef: 'memory:lifecycle',
+    provenanceDigest: async () => D,
+    nextSourceOrder: async () => ({ source_ref: 'source:host', sequence: '1' }),
+  },
+  confirm: async () => true,
+  keyCustody: { confirmDestroyed: async () => true },
+  coverage: { verify: async () => ({ complete: false }) },
+};
+
+const assetBytes = (rel) => fs.readFileSync(path.join(PKG, rel));
+const assetSha = (rel) => createHash('sha256').update(assetBytes(rel)).digest('hex');
+const hostBindings = {
+  profileBindings: {
+    wireProfileId: 'sentropic.engram.memory-wire/v1', wireProfileSha256: assetSha('dist/registry/wire-profile.json'),
+    toolSchemaProfileId: 'sentropic.engram.memory-tools/2020-12-v1', toolSchemaProfileSha256: assetSha('dist/registry/tool-schema-profile.json'),
+    parameterProfileId: 'sentropic.parameters/2020-12-bounded-v1', parameterSchemaVersion: '1.0.0', parameterProfileSha256: assetSha('dist/registry/parameter-schema.json'),
+  },
+  hostBindingRef: 'fenced-store-provenance',
+  invocation: { contractVersion: '1.0.0' },
+  authorization: { contractVersion: '1.0.0' },
+  domainPolicy: { contractVersion: '1.0.0' },
+  engine: {
+    mutationPortVersion: 2, recallPortVersion: 3, readPortVersion: 1,
+    engineId: 'fenced-engine', canonicalStoreId: 'store:one', fenceProvenanceId: 'fence:fenced',
+  },
+  mutationRecovery: { contractVersion: '1.0.0', digestProfile: 'sentropic.engram.memory-mutation/v1' },
+  confirmation: { contractVersion: '1.0.0', enrolledOidcDomain: 'sent-tech.ca' },
+  audit: { contractVersion: '1.0.0' },
+  pagination: { contractVersion: '1.0.0', engramOwnsSigningSecret: false },
+  lifecycle: { contractVersion: '1.0.0' },
+};
+const plan = {
+  resolveTool: (name) => {
+    const descriptor = mcp.MEMORY_PROVIDER_MANIFEST.tools.find((c) => c.name === name);
+    if (descriptor === undefined) return undefined;
+    return {
+      providerId: descriptor.providerId ?? 'sentropic.engram.memory',
+      capabilityName: descriptor.name,
+      requiredScopes: [...descriptor.requiredScopes],
+      requiredClaims: [...descriptor.requiredClaims],
+      entry: {
+        gates: {
+          requiresHumanConfirmation: descriptor.gates.requiresHumanConfirmation,
+          requiresElicitation: descriptor.gates.requiresElicitation,
+        },
+      },
+    };
+  },
+};
+
+const provider = mcp.createEngramMemoryProviderV1({
+  readFacets: facets, writeFacets: facets, readHost, writeHost, policyId: 'policy:one',
+  hostBindings, plan, sourceId: 'mcp:engram-memory', generation: '1',
+});
+const server = await mcp.createEngramMemoryMcpServerV1(provider);
+const out = await server.callTool('engram_memory_capture', captureArgs(KEY('a')), stpCtx(), { idempotencyKey: KEY('a') });
+const envelope = out.structuredContent;
+console.log(JSON.stringify({ ok: envelope.ok === true, code: envelope.ok === true ? null : envelope.error?.code ?? null }));
+if (envelope.ok !== true) process.exit(3);
+`;
+
+/**
+ * Neutral acceptance backend prelude for the fenced-store probe: the pinned
+ * contract digest plus the factory and its module-scope companions, sliced
+ * pristine from the on-disk backend source (no hand copy, no runtime
+ * toString which the test runner's SSR transform rewrites).
+ */
+function fencedBackendPrelude() {
+  const sources = tarballAcceptanceBackendSources(ROOT);
+  return [
+    `const CONTRACT_DIGEST = ${JSON.stringify(pinnedContractDigest(ROOT))};`,
+    `const ZERO_HASH = 'sha256:${'0'.repeat(64)}';`,
+    'const MAX_U64 = 18446744073709551615n;',
+    `const storageError = ${sources.storageError};`,
+    `const stableStringify = ${sources.stableStringify};`,
+    `const profileDigest = ${sources.profileDigest};`,
+    `const createTarballAcceptanceBackend = ${sources.createTarballAcceptanceBackend};`,
+  ].join('\n');
+}
+
+function sha256Hex(bytes) {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+function execProbeFile(consumerDir, filename) {
+  try {
+    const out = execFileSync(process.execPath, [filename], {
+      cwd: consumerDir, encoding: 'utf8', stdio: 'pipe',
+    });
+    return { exitCode: 0, ...JSON.parse(out.trim().split('\n').pop()) };
+  } catch (error) {
+    const stdout = error.stdout ?? '';
+    let parsed = null;
+    try {
+      parsed = JSON.parse(stdout.trim().split('\n').pop() ?? '');
+    } catch {
+      parsed = null;
+    }
+    return { exitCode: error.status ?? 1, ok: false, code: parsed?.code ?? null, stderr: (error.stderr ?? '').slice(-2000) };
+  }
+}
+
+function runFencedProbeAgainst(tarball, extraArchives) {
+  const work = mkdtempSync(join(tmpdir(), 'l4-fenced-provenance-'));
+  try {
+    const consumerDir = join(work, 'consumer');
+    installConsumer(consumerDir, tarball, extraArchives, join(work, 'npm-cache'));
+    writeFileSync(join(consumerDir, 'fenced-store-probe.mjs'), SHARED_PROVENANCE_PROBE + fencedBackendPrelude() + FENCED_STORE_TAIL);
+    return { probe: execProbeFile(consumerDir, 'fenced-store-probe.mjs') };
+  } finally {
+    if (process.env.L4_KEEP_WORKDIRS !== '1') {
+      try {
+        rmSync(work, { recursive: true, force: true });
+      } catch {
+        /* best-effort cleanup */
+      }
+    }
+  }
+}
+
+/**
+ * Fenced-store packed case: re-pack the candidate and require byte-identity
+ * with the r6 archive, then run the substrate-opened, exemption-disabled
+ * probe against the frozen r5 archive (must refuse CAPABILITY_UNAVAILABLE)
+ * and the frozen r6 archive (must capture).
+ */
+export async function runFencedStorePacked() {
+  const r5Bytes = readFileSync(join(ROOT, L4_R5_TARBALL));
+  if (sha256Hex(r5Bytes) !== L4_R5_SHA256) throw new Error('r5 archive identity mismatch');
+  const r6Bytes = readFileSync(join(ROOT, L4_R6_TARBALL));
+  if (sha256Hex(r6Bytes) !== L4_R6_SHA256) throw new Error('r6 archive identity mismatch');
+  const repackWork = mkdtempSync(join(tmpdir(), 'l4-fenced-repack-'));
+  let repacked;
+  try {
+    repacked = packCandidate(repackWork);
+  } finally {
+    const { rmSync } = await import('node:fs');
+    rmSync(repackWork, { recursive: true, force: true });
+  }
+  const byteIdentical = repacked.sha256 === L4_R6_SHA256;
+  if (!byteIdentical) throw new Error(`repack drift: packed ${repacked.sha256} !== r6 ${L4_R6_SHA256}`);
+  const manifest = verifyP3Archives();
+  const extraArchives = p3ArchivePaths(manifest);
+  const old = runFencedProbeAgainst(join(ROOT, L4_R5_TARBALL), extraArchives);
+  const current = runFencedProbeAgainst(join(ROOT, L4_R6_TARBALL), extraArchives);
+  return { repacked, byteIdentical, old, new: current };
 }

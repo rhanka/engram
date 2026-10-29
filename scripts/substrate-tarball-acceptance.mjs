@@ -220,13 +220,13 @@ export function fatalFindings(findings) {
   );
 }
 
-function stableStringify(value) {
+export function stableStringify(value) {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
   return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
 }
 
-function storageError(code, message) {
+export function storageError(code, message) {
   const error = new Error(message);
   error.code = code;
   return error;
@@ -577,7 +577,7 @@ export function createTarballAcceptanceBackend({ scope, contractDigest }) {
   return { handle, grant };
 }
 
-function profileDigest(name) {
+export function profileDigest(name) {
   const hash = createHash("sha256");
   hash.update("graphify-memory/l3a-profile/v1\0", "utf8");
   hash.update(name, "utf8");
@@ -597,6 +597,27 @@ export function pinnedContractDigest(repoRoot) {
   const match = testSource?.match(/MEMORY_CONTRACT_DIGEST\)\.toBe\("(sha256:[0-9a-f]{64})"\)/);
   if (!match) throw new Error("pinned MEMORY_CONTRACT_DIGEST literal not found in tests/memory-substrate.test.ts");
   return match[1];
+}
+
+/**
+ * Pristine backend factory + companion sources, sliced from the on-disk text
+ * with a real parser for hermetic packed probes. A runtime
+ * `fn.toString()` is unusable here: under the test runner's SSR transform it
+ * returns rewritten source (`__vite_ssr_import_*` references) that crashes in
+ * the plain-node consumer.
+ */
+export function tarballAcceptanceBackendSources(repoRoot) {
+  const ts = createRequire(import.meta.url)("typescript");
+  const text = readText(join(repoRoot, "scripts", "substrate-tarball-acceptance.mjs"));
+  if (text === undefined) throw new Error("backend source unreadable");
+  const source = ts.createSourceFile("tarball-acceptance-backend.mjs", text, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS);
+  const out = {};
+  for (const name of ["storageError", "stableStringify", "profileDigest", "createTarballAcceptanceBackend"]) {
+    const statement = source.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === name);
+    if (statement === undefined) throw new Error(`backend source function not found: ${name}`);
+    out[name] = text.slice(statement.getStart(source), statement.getEnd()).replace(/^export\s+/, "");
+  }
+  return out;
 }
 
 function manualCapture() {
