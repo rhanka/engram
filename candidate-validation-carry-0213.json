@@ -22,7 +22,7 @@
   },
   "comparator": {
     "origin": "OpenERP comparator port",
-    "selfTestsPassed": 14,
+    "selfTestsPassed": 16,
     "source": {
       "path": "tests/fixtures/l4-full-suite-evidence/compare-l4-full-suite.mjs.gz",
       "rawSha256": "181dae0cd92836ed29ccc0cf2fdabbda1aaefbdec37b750b7ed40e8c8cf8c53a",
@@ -32,17 +32,17 @@
     },
     "fixtures": {
       "path": "tests/fixtures/l4-full-suite-evidence/compare-l4-full-suite.self-test.mjs.gz",
-      "rawSha256": "ea211c4965cc6ff1e23dd2dbbee1560e45676f2803deb4eee1694ebe04a9b399",
-      "compressedSha256": "c62782004ad87758250616c4001524a7da50245780a70476807d8b645e74496c",
-      "rawBytes": 8992,
-      "compressedBytes": 2030
+      "rawSha256": "e37b8b100f4f981c24aa57483c170706f786170618b08bc6051280bac86da77a",
+      "compressedSha256": "51f590a272c83d1a3b0acab9d183b3537bcd84dd53e69e50465b6f25b4bbd39d",
+      "rawBytes": 10116,
+      "compressedBytes": 2169
     }
   },
   "comparison": {
     "status": "accepted-under-conductor-exception-E1",
     "freshFullSuiteRuns": 0,
     "verdict": "pass: 0 added branch failures/skips, 0 branch failures; 2 baseline-only failures unclassified and unresolved",
-    "reason": "SUITE-COMPARISON-METHOD.md step 1 stops on differing root lockfiles. Conductor exception E1 (.graphify/scratch/design/memory-finalization/DESIGN-NOTE-L4-carry-round3.md, Addendum E1, note sha256 9744be7fc6ed55265d706af55eafbfa4b57cfd49dc2a6f8a0848be2b7cc32701) accepts the documented root lockfile delta (engram-memory lock identical) and the committed R2 historical reports on the shared native installation as the full-suite evidence, compared with the ported occurrence-level comparator (historicalRound2). No fresh full-suite run was performed.",
+    "reason": "SUITE-COMPARISON-METHOD.md step 1 stops on differing root lockfiles. Conductor exception E1 (tests/fixtures/l4-full-suite-evidence/DESIGN-NOTE-L4-carry-round3.md.gz, Addendum E1, note sha256 9744be7fc6ed55265d706af55eafbfa4b57cfd49dc2a6f8a0848be2b7cc32701) accepts the documented root lockfile delta (engram-memory lock identical) and the committed R2 historical reports on the shared native installation as the full-suite evidence, compared with the ported occurrence-level comparator (historicalRound2). No fresh full-suite run was performed.",
     "setup": {
       "path": "tests/fixtures/l4-full-suite-evidence/blocked-setup.json.gz",
       "rawSha256": "34cf2e1df1b315372a8cc8f05806dfc8f13427d210cd65f4b218308dea21148f",
@@ -66,10 +66,21 @@
     },
     "exception": {
       "id": "E1",
-      "note": ".graphify/scratch/design/memory-finalization/DESIGN-NOTE-L4-carry-round3.md",
+      "note": "tests/fixtures/l4-full-suite-evidence/DESIGN-NOTE-L4-carry-round3.md.gz",
       "noteSha256": "9744be7fc6ed55265d706af55eafbfa4b57cfd49dc2a6f8a0848be2b7cc32701",
       "decidedBy": "gr-conductor",
-      "date": "2026-10-29"
+      "date": "2026-10-29",
+      "noteArtifact": {
+        "path": "tests/fixtures/l4-full-suite-evidence/DESIGN-NOTE-L4-carry-round3.md.gz",
+        "rawSha256": "9744be7fc6ed55265d706af55eafbfa4b57cfd49dc2a6f8a0848be2b7cc32701",
+        "compressedSha256": "d461f89c7cb9eb1656614047d50d16cf9bb3ccb01a163b0e030c7bbec18903c1",
+        "rawBytes": 5811,
+        "compressedBytes": 2773
+      },
+      "provenance": {
+        "conductorCheckout": "/home/antoinefa/src/graphify",
+        "conductorPath": ".graphify/scratch/design/memory-finalization/DESIGN-NOTE-L4-carry-round3.md"
+      }
     }
   },
   "historicalRound2": {
@@ -146,6 +157,13 @@
       "compressedSha256": "782206100f56548e03312ea4de41b68c49aa06418c200f7fec213fbf2900547b",
       "rawBytes": 2697762,
       "compressedBytes": 282348
+    },
+    "replayLog": {
+      "path": "tests/fixtures/l4-full-suite-evidence/r2-historical-replay.log.gz",
+      "rawSha256": "2ef93586ccabaec8ee5942ed1e0dc4a3853e8a3481ce6ac368dd251cc5a76dbd",
+      "compressedSha256": "b090d16db4a44e249ccf5ea3180503c3d4519eb6ba57ef43ffd594eaf379ff87",
+      "rawBytes": 3210,
+      "compressedBytes": 1271
     }
   },
   "repack": {
@@ -187,10 +205,10 @@
     },
     "comparator-self-test.log": {
       "path": "tests/fixtures/l4-full-suite-evidence/comparator-self-test.log.gz",
-      "rawSha256": "c8949ffac62080b3a2ad1d5b035dc57da99ac77c8c9cfc9f0172368b6daa19d4",
-      "compressedSha256": "662af824551f9bc54d3585731bd30617170f81df2f37c334b43f1fa7f510328c",
-      "rawBytes": 3497,
-      "compressedBytes": 1016
+      "rawSha256": "44463344b6a80eeb02fa2edbf327e5c1f120a3731b018eb0bd2b676a914487bb",
+      "compressedSha256": "05ba6e56e000aae08253a3f49020c13a4277cae620229191cc8ad105048a6f42",
+      "rawBytes": 3784,
+      "compressedBytes": 993
     },
     "lockfile-stop.log": {
       "path": "tests/fixtures/l4-full-suite-evidence/lockfile-stop.log.gz",
@@ -306,10 +324,10 @@
     },
     "compare-l4-full-suite.self-test.mjs": {
       "path": "tests/fixtures/l4-full-suite-evidence/compare-l4-full-suite.self-test.mjs.gz",
-      "rawSha256": "ea211c4965cc6ff1e23dd2dbbee1560e45676f2803deb4eee1694ebe04a9b399",
-      "compressedSha256": "c62782004ad87758250616c4001524a7da50245780a70476807d8b645e74496c",
-      "rawBytes": 8992,
-      "compressedBytes": 2030
+      "rawSha256": "e37b8b100f4f981c24aa57483c170706f786170618b08bc6051280bac86da77a",
+      "compressedSha256": "51f590a272c83d1a3b0acab9d183b3537bcd84dd53e69e50465b6f25b4bbd39d",
+      "rawBytes": 10116,
+      "compressedBytes": 2169
     },
     "setup.mjs": {
       "path": "tests/fixtures/l4-full-suite-evidence/setup.mjs.gz",
@@ -352,6 +370,20 @@
       "compressedSha256": "f97d40d5c6b9bc22f4913d78cd7051c5254a337072c87bc2cbe6fb71aa2384a7",
       "rawBytes": 436,
       "compressedBytes": 322
+    },
+    "DESIGN-NOTE-L4-carry-round3.md": {
+      "path": "tests/fixtures/l4-full-suite-evidence/DESIGN-NOTE-L4-carry-round3.md.gz",
+      "rawSha256": "9744be7fc6ed55265d706af55eafbfa4b57cfd49dc2a6f8a0848be2b7cc32701",
+      "compressedSha256": "d461f89c7cb9eb1656614047d50d16cf9bb3ccb01a163b0e030c7bbec18903c1",
+      "rawBytes": 5811,
+      "compressedBytes": 2773
+    },
+    "r2-historical-replay.log": {
+      "path": "tests/fixtures/l4-full-suite-evidence/r2-historical-replay.log.gz",
+      "rawSha256": "2ef93586ccabaec8ee5942ed1e0dc4a3853e8a3481ce6ac368dd251cc5a76dbd",
+      "compressedSha256": "b090d16db4a44e249ccf5ea3180503c3d4519eb6ba57ef43ffd594eaf379ff87",
+      "rawBytes": 3210,
+      "compressedBytes": 1271
     }
   },
   "rules": {
@@ -360,11 +392,14 @@
     "zeroPython": true,
     "originalCheckoutUnmodified": true
   },
-  "historicalNote": "candidate-validation.json is unchanged. Historical r2 evidence is retained explicitly as historical; fresh r3 comparison remains blocked.",
+  "historicalNote": "fresh r3 run waived under conductor exception E1 (Addendum E1 §2); R2 historical pair accepted",
   "summaryOutput": {
     "path": ".graphify/scratch/design/memory-finalization/L4-carry-r3.out",
     "originalBriefPathNotWritten": true,
-    "reason": "Direct user instruction forbids modifying /home/antoinefa/src/graphify."
+    "reason": "Direct user instruction forbids modifying /home/antoinefa/src/graphify.",
+    "evidence": false,
+    "retained": false,
+    "retention": "Local scratch output; excluded from committed comparison evidence."
   },
   "graphHook": {
     "passed": true,
@@ -375,6 +410,21 @@
       "rawBytes": 436,
       "compressedBytes": 322
     },
-    "generatedStateRetained": ".graphify/scratch/l4-r3-generated-graph"
+    "generatedStateRetained": false,
+    "generatedState": {
+      "path": ".graphify/scratch/l4-r3-generated-graph",
+      "evidence": false,
+      "retained": false,
+      "retention": "Local generated state; excluded from committed comparison evidence."
+    }
+  },
+  "evidenceOnlyCommits": {
+    "sourceCommit": "1716a70d1c93c4e73cb8191a0a138059d37bb3c6",
+    "priorCommits": [
+      "876bbf3bd9c1e16a6d866b41084cb2a0e0455db1",
+      "8e604b60e30085c0fcad40f299639150b2c4d17a"
+    ],
+    "thisCommit": "HEAD (the commit containing this evidence-only follow-up)",
+    "scope": "Comparator self-tests, retained evidence and summary metadata only; runtime source and all packed files are unchanged from sourceCommit."
   }
 }

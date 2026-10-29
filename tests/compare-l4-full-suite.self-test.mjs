@@ -9,6 +9,12 @@ function fixture(checkout, diagnostic = "Error: Cannot find module './build/Rele
     assertionResults: [{ fullName: "opens native store", status: "failed", failureMessages: [diagnostic + "\n    at " + checkout + "/tests/example.test.ts:10:2"] }] }] };
 }
 const compare = (base, branch) => compareReports(base, branch, options);
+function duplicateFixture(checkout, diagnostics) {
+  const report = fixture(checkout);
+  report.testResults[0].assertionResults = diagnostics.map(diagnostic =>
+    fixture(checkout, diagnostic).testResults[0].assertionResults[0]);
+  return report;
+}
 
 test("should accept identical per-failure module diagnostics after checkout-prefix normalization", () => {
   const result = compare(fixture(options.baseCheckout), fixture(options.branchCheckout));
@@ -88,6 +94,28 @@ test("should retain duplicate failures and reject an additional occurrence", () 
   assert.equal(result.failures.branch.length, 2);
   assert.equal(result.failures.branch[1].occurrence, 2);
   assert.equal(result.addedFailuresOrSkips.length, 1);
+});
+
+test("should reject a changed cause on one duplicate failing occurrence", () => {
+  const causes = ["Error: fs-ext A", "Error: fs-ext B"];
+  const result = compare(
+    duplicateFixture(options.baseCheckout, causes),
+    duplicateFixture(options.branchCheckout, [causes[1], causes[1]]),
+  );
+  assert.equal(result.passed, false);
+  assert.equal(result.sharedCausesMatch, false);
+  assert.equal(result.addedFailuresOrSkips.length, 0);
+});
+
+test("should reject swapped causes on duplicate failing occurrences", () => {
+  const causes = ["Error: fs-ext A", "Error: fs-ext B"];
+  const result = compare(
+    duplicateFixture(options.baseCheckout, causes),
+    duplicateFixture(options.branchCheckout, [causes[1], causes[0]]),
+  );
+  assert.equal(result.passed, false);
+  assert.equal(result.sharedCausesMatch, false);
+  assert.equal(result.addedFailuresOrSkips.length, 0);
 });
 
 test("should include skipped and todo identities and preserve duplicate counts", () => {
