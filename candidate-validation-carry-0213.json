@@ -1,71 +1,156 @@
 {
+  "format": "candidate-validation-carry-0213/r3",
+  "sourceCommit": "1716a70d1c93c4e73cb8191a0a138059d37bb3c6",
   "baseline": "8b93ba6b834f83fddbcf76091054efea2e188cf1",
-  "branchBase": "7b08b8a9b4d720e60e53c3891276935104675d47",
+  "detectorFix": {
+    "rule": "Only an attributed node-gyp/make/cc/c++/g++/gcc/clang* spawn or build/config.gypi/build/Release/obj.target fails the gate; logs are diagnostics only.",
+    "regression": {
+      "passed": 22,
+      "cases": 20,
+      "negatives": 12,
+      "positives": 8,
+      "inMemory": true
+    },
+    "mutationProof": {
+      "path": "tests/fixtures/l4-full-suite-evidence/detector-mutants.json.gz",
+      "rawSha256": "d2ae6149149688e50c182e3709bef87a4d41f0d17893d5f017f9b059d46d6d3c",
+      "compressedSha256": "fc64077e37c8d3dd4c1340e99ba53eccf9a386cd473a5d0d85fcaed3c572c301",
+      "rawBytes": 1112,
+      "compressedBytes": 455
+    },
+    "preloadProof": "Actual generated preload evaluated with in-memory filesystem and child-process stubs; successful-prebuild dispatch is accepted; node-gyp for each memory module is rejected."
+  },
+  "comparator": {
+    "origin": "OpenERP comparator port",
+    "selfTestsPassed": 14,
+    "source": {
+      "path": "tests/fixtures/l4-full-suite-evidence/compare-l4-full-suite.mjs.gz",
+      "rawSha256": "181dae0cd92836ed29ccc0cf2fdabbda1aaefbdec37b750b7ed40e8c8cf8c53a",
+      "compressedSha256": "78ebeebf3c210370ab7000af5ce23b9e716a9b2cd7835dde0a06b839098d5f5b",
+      "rawBytes": 12466,
+      "compressedBytes": 4166
+    },
+    "fixtures": {
+      "path": "tests/fixtures/l4-full-suite-evidence/compare-l4-full-suite.self-test.mjs.gz",
+      "rawSha256": "ea211c4965cc6ff1e23dd2dbbee1560e45676f2803deb4eee1694ebe04a9b399",
+      "compressedSha256": "c62782004ad87758250616c4001524a7da50245780a70476807d8b645e74496c",
+      "rawBytes": 8992,
+      "compressedBytes": 2030
+    }
+  },
   "comparison": {
-    "added": "51 (all passed: mcp-memory-l4-adapter, mcp-memory-l4-disabled-detector [new], mcp-memory-l4-packed, mcp-memory-l4-pipeline, memory-mcp-l2-writes, release-config 0.22.0, 2x time-reference 0.22.0)",
-    "baseline": "432 files / 7392 tests / 7353 passed / 2 failed / 37 pending",
-    "branch": "436 files / 7440 tests / 7403 passed / 0 failed / 37 pending",
-    "changed": "2 (both branch=passed, baseline=failed; load artifacts, see failing)",
-    "failingIdentities": [
+    "status": "blocked",
+    "freshFullSuiteRuns": 0,
+    "verdict": "unresolved",
+    "reason": "SUITE-COMPARISON-METHOD.md step 1 requires STOP when root lockfiles differ. The exact L4 version/SDK/optional-peer delta differs; owner exception is pending. No .baseline created and no full-suite run performed.",
+    "setup": {
+      "path": "tests/fixtures/l4-full-suite-evidence/blocked-setup.json.gz",
+      "rawSha256": "34cf2e1df1b315372a8cc8f05806dfc8f13427d210cd65f4b218308dea21148f",
+      "compressedSha256": "2feff9729b1cbb929197841b1a08b040baaa9d007a9bc370d9867a43adaaff7a",
+      "rawBytes": 1365,
+      "compressedBytes": 773
+    },
+    "stop": {
+      "path": "tests/fixtures/l4-full-suite-evidence/lockfile-stop.log.gz",
+      "rawSha256": "bcaf6995824834f7f00a86f3ebbccbc622fa7da9d73051436df679776656b6b5",
+      "compressedSha256": "3f63b94ddc8fe8cde89c893240c34685703312b7051ce88077ee7340345287e9",
+      "rawBytes": 880,
+      "compressedBytes": 535
+    },
+    "lockDelta": {
+      "path": "tests/fixtures/l4-full-suite-evidence/lock-delta.log.gz",
+      "rawSha256": "3e1b88ef29bd3af25b0b7cdd668ac200209ff536de8b02a66b4dc35ae8deed48",
+      "compressedSha256": "41582214a72a3da4f037bf63093bd984e6600ef70cc8492118faa24622f1810d",
+      "rawBytes": 2258,
+      "compressedBytes": 861
+    }
+  },
+  "historicalRound2": {
+    "status": "historical-r2-replay-only",
+    "base": {
+      "files": 432,
+      "total": 7392,
+      "passed": 7353,
+      "failed": 2,
+      "skipped": 37
+    },
+    "branch": {
+      "files": 436,
+      "total": 7440,
+      "passed": 7403,
+      "failed": 0,
+      "skipped": 37
+    },
+    "passedUnderRound3BaselineOnlyPolicy": true,
+    "causesMatch": false,
+    "sharedCausesMatch": true,
+    "addedFailuresOrSkips": 0,
+    "unresolved": [
       {
-        "baselineCause": "unclassified :: AssertionError: expected 19029.739627000003 to be less than 5000 (30 s vitest budget is 5000 ms scale budget; machine under parallel full-suite load)",
-        "baselineIsolation": "pass (2 files together: 15/15 on baseline)",
-        "baselineStatus": "failed",
-        "branchIsolation": "pass (file alone: 6/6 on branch)",
-        "branchStatus": "passed",
-        "identity": "tests/ontology-reconciliation-blocking.test.ts :: ontology reconciliation lexical blocking :: processes 40k selectively-blocked nodes inside the scale budget"
+        "identity": "[\"tests/memory-substrate-closure.test.ts\",\"substrate neutrality and driver guards (amendment §5.7) reports no fatal finding from any published entry, including traversed dependencies\",\"assertion\",1]",
+        "file": "tests/memory-substrate-closure.test.ts",
+        "fullName": "substrate neutrality and driver guards (amendment §5.7) reports no fatal finding from any published entry, including traversed dependencies",
+        "kind": "assertion",
+        "occurrence": 1,
+        "side": "base",
+        "commit": "8b93ba6b834f83fddbcf76091054efea2e188cf1",
+        "status": "failed",
+        "category": "unclassified",
+        "modules": [],
+        "cause": "Error: STACK_TRACE_ERROR\n    at task (file://<checkout>/node_modules/@vitest/runner/dist/chunk-artifact.js:1784:27)\n    at Object.<anonymous> (file://<checkout>/node_modules/@vitest/runner/dist/chunk-artifact.js:1817:16)\n    at Object.<anonymous> (file://<checkout>/node_modules/@vitest/runner/dist/chunk-artifact.js:1563:28)\n    at chain (file://<checkout>/node_modules/@vitest/runner/dist/chunk-artifact.js:599:14)\n    at <checkout>/tests/memory-substrate-closure.test.ts:243:3\n    at file://<checkout>/node_modules/@vitest/runner/dist/chunk-artifact.js:1889:40\n    at runWithSuite (file://<checkout>/node_modules/@vitest/runner/dist/chunk-artifact.js:2258:8)\n    at Object.collect (file://<checkout>/node_modules/@vitest/runner/dist/chunk-artifact.js:1889:10)\n    at Object.collect (file://<checkout>/node_modules/@vitest/runner/dist/chunk-artifact.js:1893:54)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)",
+        "diagnostic": "Error: STACK_TRACE_ERROR\n    at task (file:///home/antoinefa/src/graphify-wt-mcpl4/.baseline/node_modules/@vitest/runner/dist/chunk-artifact.js:1784:27)\n    at Object.<anonymous> (file:///home/antoinefa/src/graphify-wt-mcpl4/.baseline/node_modules/@vitest/runner/dist/chunk-artifact.js:1817:16)\n    at Object.<anonymous> (file:///home/antoinefa/src/graphify-wt-mcpl4/.baseline/node_modules/@vitest/runner/dist/chunk-artifact.js:1563:28)\n    at chain (file:///home/antoinefa/src/graphify-wt-mcpl4/.baseline/node_modules/@vitest/runner/dist/chunk-artifact.js:599:14)\n    at /home/antoinefa/src/graphify-wt-mcpl4/.baseline/tests/memory-substrate-closure.test.ts:243:3\n    at file:///home/antoinefa/src/graphify-wt-mcpl4/.baseline/node_modules/@vitest/runner/dist/chunk-artifact.js:1889:40\n    at runWithSuite (file:///home/antoinefa/src/graphify-wt-mcpl4/.baseline/node_modules/@vitest/runner/dist/chunk-artifact.js:2258:8)\n    at Object.collect (file:///home/antoinefa/src/graphify-wt-mcpl4/.baseline/node_modules/@vitest/runner/dist/chunk-artifact.js:1889:10)\n    at Object.collect (file:///home/antoinefa/src/graphify-wt-mcpl4/.baseline/node_modules/@vitest/runner/dist/chunk-artifact.js:1893:54)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)",
+        "originalCategory": "unclassified",
+        "resolution": "unresolved"
       },
       {
-        "baselineCause": "unclassified :: Error: STACK_TRACE_ERROR (vitest 30 s timeout placeholder; single test takes 7.1 s alone, 7 sequential installed-closure scans)",
-        "baselineIsolation": "pass (2 files together: 15/15 on baseline)",
-        "baselineStatus": "failed",
-        "branchIsolation": "pass (file alone: 9/9 on branch)",
-        "branchStatus": "passed",
-        "identity": "tests/memory-substrate-closure.test.ts :: substrate neutrality and driver guards (amendment §5.7) :: reports no fatal finding from any published entry, including traversed dependencies"
+        "identity": "[\"tests/ontology-reconciliation-blocking.test.ts\",\"ontology reconciliation lexical blocking processes 40k selectively-blocked nodes inside the scale budget\",\"assertion\",1]",
+        "file": "tests/ontology-reconciliation-blocking.test.ts",
+        "fullName": "ontology reconciliation lexical blocking processes 40k selectively-blocked nodes inside the scale budget",
+        "kind": "assertion",
+        "occurrence": 1,
+        "side": "base",
+        "commit": "8b93ba6b834f83fddbcf76091054efea2e188cf1",
+        "status": "failed",
+        "category": "unclassified",
+        "modules": [],
+        "cause": "AssertionError: expected 19029.739627000003 to be less than 5000\n    at <checkout>/tests/ontology-reconciliation-blocking.test.ts:648:23\n    at file://<checkout>/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file://<checkout>/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file://<checkout>/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file://<checkout>/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file://<checkout>/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file://<checkout>/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file://<checkout>/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64",
+        "diagnostic": "AssertionError: expected 19029.739627000003 to be less than 5000\n    at /home/antoinefa/src/graphify-wt-mcpl4/.baseline/tests/ontology-reconciliation-blocking.test.ts:648:23\n    at file:///home/antoinefa/src/graphify-wt-mcpl4/.baseline/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///home/antoinefa/src/graphify-wt-mcpl4/.baseline/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///home/antoinefa/src/graphify-wt-mcpl4/.baseline/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///home/antoinefa/src/graphify-wt-mcpl4/.baseline/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///home/antoinefa/src/graphify-wt-mcpl4/.baseline/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///home/antoinefa/src/graphify-wt-mcpl4/.baseline/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///home/antoinefa/src/graphify-wt-mcpl4/.baseline/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64",
+        "originalCategory": "unclassified",
+        "resolution": "unresolved"
       }
     ],
-    "fullTable": ".graphify/scratch/l4-r6-compare/comparison.json (worktree-local, git-ignored scratch)",
-    "nativeAddonFailures": "0 on either side; no failure diagnostic names fs_ext.node, better-sqlite3 or any .node addon",
-    "removed": "3 (all passed on baseline: release-config 0.21.3, 2x TR-14 F17 0.21.3; superseded by 0.22.0 counterparts)",
-    "same": "7339 identities with equal status (includes all 37 pending on both sides; no added skips)",
-    "supsersededRuns": "cold-cache run (branch 7400/3/37: tarball ENOTCACHED setup artifact + closure + blocking) and one high-load branch run (8 timeouts incl. l1/l2-packed, all 44 pass in isolation) disclosed as load variance, not product signal; committed pair is the back-to-back controlled run"
-  },
-  "detectorFix": {
-    "behavioralRepro": "old predicate flags the exact review warning (OLD-DETECTOR-HITS:1 via node -e)",
-    "callSite": "scripts/mcp-memory-l4-packed-acceptance.mjs: assertNoNativeBuildAttempts(log, 'disabled install', trace.read()) — trace holds install-phase rows only (reset before install, disabled probe after)",
-    "file": "scripts/mcp-memory-l4-packed-acceptance.mjs",
-    "newRule": "hit = executed-build marker (node-gyp rebuild | gyp info .*build | build-from-source) AND attribution to fs-ext|better-sqlite3 — same line, adjacent lifecycle record (> fs-ext@x install next to > node-gyp rebuild), or node_modules path — OR instrumented trace native-build row naming fs-ext|better-sqlite3; npm warn lines never match; bare node-gyp alternative removed",
-    "regression": "tests/mcp-memory-l4-disabled-detector.test.ts — 9/9 pass on new code; exact review warning + warn-only fs-ext line + unrelated-addon build do not throw; fs-ext lifecycle pair, better-sqlite3 line, fs-ext and better-sqlite3 trace rows throw"
-  },
-  "environment": {
-    "cache": "worktree-local .compare-cache primed from ~/.npm/_cacache, npm_config_cache set for builds and suites (removed after)",
-    "engramNm": "byte-identical by construction: cp -a from dpadapter (read-only source) into both trees; pre-existing delta was only the missing fs-ext/build in mcpl4; fs-ext loads OK",
-    "installs": "branch kept its prepared top-level install (lock-clean); baseline fresh `npm ci --no-audit --no-fund` with npm 11.21.1, exit 0, lock untouched, SDK 1.29.0 verified",
-    "lockfileDelta": "34 diff lines, legitimate and documented: root version 0.22.0/0.21.3 (2 spots), optionalDependencies SDK ^1.31.0/^1.0.0, branch-only optional peers @sentropic/mcp-broker 0.1.0 + @sentropic/mcp-platform 0.4.0, resolved SDK 1.32.2/1.29.0, @hono/node-server range ^1.19.9 || ^2.0.5 vs ^1.19.9; engram-memory/package-lock.json byte-identical (cmp)",
-    "node": "v22.22.1 both sides",
-    "suiteCommand": "npx vitest run --reporter=json --outputFile=<side>.json (same command, back-to-back 15:35:51Z/15:39:04Z)"
-  },
-  "historicalNote": "candidate-validation.json stays historical (baseline 5a8018e, source ad96c681, tarball 0.21.2); this file is the current carry evidence",
-  "packedAcceptance": {
-    "counts": {
-      "identityBootstraps": 1,
-      "nativeBuilds": 0,
-      "providerLoads": 0,
-      "storeOpens": 0
+    "report": {
+      "path": "tests/fixtures/l4-full-suite-evidence/r2-historical-comparison.json.gz",
+      "rawSha256": "80ababbf3e4d1cafc80cb1397d3c83b1399ea5085267f75dab39aa0bd4f1af9a",
+      "compressedSha256": "089843c586c9704c2784547daa32b41cc22d5f329486dcaceae4c701ee44970b",
+      "rawBytes": 3706434,
+      "compressedBytes": 323038
     },
-    "npm": "11.21.1 (suite default; no MCP_L4_NPM_BIN override)",
-    "result": "MCP-L4-PACKED-OK sha256=965c93e326df9866584261061f4e49571cfd74dfe1dc258c0c6894eea121a4e9 floor=pass",
-    "sdkFloor": "1.31.0 observed",
-    "sdkPinned": "1.32.2 observed",
-    "tarballUnchanged": true,
-    "traceControl": {
-      "identityBootstraps": 1,
-      "storeOpens": 1
+    "baseReport": {
+      "path": "tests/fixtures/l4-full-suite-evidence/r2-historical-base-vitest.json.gz",
+      "rawSha256": "228bca3a6c840d9b855d50ae91e990b256405987919530e6f0ecd768019544cd",
+      "compressedSha256": "3f3a4142160c71feff9905daf101cf2239c48c31ba10c013dbfccf4c283474da",
+      "rawBytes": 2685337,
+      "compressedBytes": 280775
     },
-    "vitest": "tests/mcp-memory-l4-packed.test.ts 1 passed (58 s)"
+    "branchReport": {
+      "path": "tests/fixtures/l4-full-suite-evidence/r2-historical-branch-vitest.json.gz",
+      "rawSha256": "e56560090b3bffc29a355dc96856c003fcc5ed7cbaaeb01454dea69962432670",
+      "compressedSha256": "782206100f56548e03312ea4de41b68c49aa06418c200f7fec213fbf2900547b",
+      "rawBytes": 2697762,
+      "compressedBytes": 282348
+    }
   },
   "repack": {
-    "action": "none — packed sha256/integrity identical to manifest (965c93e3.../sha512-GTpbi...); scripts/ change is outside the packed files; candidate-manifest.json and registry assets untouched (one build-stamp churn reverted)",
+    "action": "none",
+    "tarball": {
+      "sha256": "965c93e326df9866584261061f4e49571cfd74dfe1dc258c0c6894eea121a4e9",
+      "integrity": "sha512-GTpbiHocqxLiyI1Syn1g26vOrh8+o9zTGFc2yKKrBGqE+strVqOlc9A+DJ1PRJEmPWuULG+vWB9Iebhy1r1Q7A==",
+      "unchanged": true,
+      "packedMembersCompared": 114,
+      "changedPackedMembers": [],
+      "repacked": false
+    },
     "p3": {
       "sha256": "1c96bada2a749155f29aae763fa73ea6379c385d619f70614110f59b6b10b730",
       "frozenCommit": "c919b638686fb93c8c90a2634d3c004fd25348b3",
@@ -73,13 +158,216 @@
       "candidateManifestMatches": true,
       "frozenManifestMatches": true,
       "unchanged": true
+    },
+    "backup": "dec7c55d557b3a291a6fbfb10e794b687c2ea9c2",
+    "historicalValidationSha256": "270deff419fa88411c05c90075525d5b86d66c9b7899f10a71166dce24453a70",
+    "candidateManifestSha256": "5c26148652fe18d7e77a0400ef361e879388b7482423827b610fc67817cadbb2"
+  },
+  "evidence": {
+    "detector-tests.log": {
+      "path": "tests/fixtures/l4-full-suite-evidence/detector-tests.log.gz",
+      "rawSha256": "7cf23ad33662fe39ce7f7f7f0e60d84447eb1ecb80541ef481e2b44c7226f98d",
+      "compressedSha256": "044bd15d5a4d1982a8f10b75950407f45eddfc417712b1323423904cf9f802ec",
+      "rawBytes": 3394,
+      "compressedBytes": 731
+    },
+    "detector-mutants.json": {
+      "path": "tests/fixtures/l4-full-suite-evidence/detector-mutants.json.gz",
+      "rawSha256": "d2ae6149149688e50c182e3709bef87a4d41f0d17893d5f017f9b059d46d6d3c",
+      "compressedSha256": "fc64077e37c8d3dd4c1340e99ba53eccf9a386cd473a5d0d85fcaed3c572c301",
+      "rawBytes": 1112,
+      "compressedBytes": 455
+    },
+    "comparator-self-test.log": {
+      "path": "tests/fixtures/l4-full-suite-evidence/comparator-self-test.log.gz",
+      "rawSha256": "c8949ffac62080b3a2ad1d5b035dc57da99ac77c8c9cfc9f0172368b6daa19d4",
+      "compressedSha256": "662af824551f9bc54d3585731bd30617170f81df2f37c334b43f1fa7f510328c",
+      "rawBytes": 3497,
+      "compressedBytes": 1016
+    },
+    "lockfile-stop.log": {
+      "path": "tests/fixtures/l4-full-suite-evidence/lockfile-stop.log.gz",
+      "rawSha256": "bcaf6995824834f7f00a86f3ebbccbc622fa7da9d73051436df679776656b6b5",
+      "compressedSha256": "3f63b94ddc8fe8cde89c893240c34685703312b7051ce88077ee7340345287e9",
+      "rawBytes": 880,
+      "compressedBytes": 535
+    },
+    "blocked-setup.json": {
+      "path": "tests/fixtures/l4-full-suite-evidence/blocked-setup.json.gz",
+      "rawSha256": "34cf2e1df1b315372a8cc8f05806dfc8f13427d210cd65f4b218308dea21148f",
+      "compressedSha256": "2feff9729b1cbb929197841b1a08b040baaa9d007a9bc370d9867a43adaaff7a",
+      "rawBytes": 1365,
+      "compressedBytes": 773
+    },
+    "lock-delta.log": {
+      "path": "tests/fixtures/l4-full-suite-evidence/lock-delta.log.gz",
+      "rawSha256": "3e1b88ef29bd3af25b0b7cdd668ac200209ff536de8b02a66b4dc35ae8deed48",
+      "compressedSha256": "41582214a72a3da4f037bf63093bd984e6600ef70cc8492118faa24622f1810d",
+      "rawBytes": 2258,
+      "compressedBytes": 861
+    },
+    "r2-historical-base-vitest.json": {
+      "path": "tests/fixtures/l4-full-suite-evidence/r2-historical-base-vitest.json.gz",
+      "rawSha256": "228bca3a6c840d9b855d50ae91e990b256405987919530e6f0ecd768019544cd",
+      "compressedSha256": "3f3a4142160c71feff9905daf101cf2239c48c31ba10c013dbfccf4c283474da",
+      "rawBytes": 2685337,
+      "compressedBytes": 280775
+    },
+    "r2-historical-branch-vitest.json": {
+      "path": "tests/fixtures/l4-full-suite-evidence/r2-historical-branch-vitest.json.gz",
+      "rawSha256": "e56560090b3bffc29a355dc96856c003fcc5ed7cbaaeb01454dea69962432670",
+      "compressedSha256": "782206100f56548e03312ea4de41b68c49aa06418c200f7fec213fbf2900547b",
+      "rawBytes": 2697762,
+      "compressedBytes": 282348
+    },
+    "r2-historical-setup.log": {
+      "path": "tests/fixtures/l4-full-suite-evidence/r2-historical-setup.log.gz",
+      "rawSha256": "d567ebfb0d77cfa3a5271efe6975eb27cc269af730470cdfa55e3f4dec95f815",
+      "compressedSha256": "f0f7cb7967e41458fb137efd08cbbf6cc6c49320c5cbdded5dcb73c27c00d30c",
+      "rawBytes": 2038,
+      "compressedBytes": 806
+    },
+    "r2-historical-branch-build.log": {
+      "path": "tests/fixtures/l4-full-suite-evidence/r2-historical-branch-build.log.gz",
+      "rawSha256": "5d94112da318551cb6330ce755fa59a3fafd31eed2a0645e531fb65e90643280",
+      "compressedSha256": "84e0239c84b5c2da2fea0a84bba66f4ee574044a7ea2d8095aef75f59277b53a",
+      "rawBytes": 15276,
+      "compressedBytes": 3028
+    },
+    "r2-historical-branch-engram-build.log": {
+      "path": "tests/fixtures/l4-full-suite-evidence/r2-historical-branch-engram-build.log.gz",
+      "rawSha256": "b214978eb80ba2029d825a9466a244dda27af338668b3f2ff26f387ce8983e37",
+      "compressedSha256": "e6b108fb587f7560247ca178e49a5eca5f15ba0b30743a8417a99d78589a0d86",
+      "rawBytes": 629,
+      "compressedBytes": 227
+    },
+    "r2-historical-baseline-build.log": {
+      "path": "tests/fixtures/l4-full-suite-evidence/r2-historical-baseline-build.log.gz",
+      "rawSha256": "dfa848292b9b0c574913f304584b8c39366a7e5161b7afc859d97e52943d82da",
+      "compressedSha256": "f2405c9ba28bb063bc9b66c2b6b995d56d9b3ebe56fff5dea5a8d939bb84b76c",
+      "rawBytes": 12260,
+      "compressedBytes": 2651
+    },
+    "r2-historical-baseline-engram-build.log": {
+      "path": "tests/fixtures/l4-full-suite-evidence/r2-historical-baseline-engram-build.log.gz",
+      "rawSha256": "b214978eb80ba2029d825a9466a244dda27af338668b3f2ff26f387ce8983e37",
+      "compressedSha256": "e6b108fb587f7560247ca178e49a5eca5f15ba0b30743a8417a99d78589a0d86",
+      "rawBytes": 629,
+      "compressedBytes": 227
+    },
+    "r2-historical-branch.stderr.log": {
+      "path": "tests/fixtures/l4-full-suite-evidence/r2-historical-branch.stderr.log.gz",
+      "rawSha256": "337091c6a13ebdad88c1573a32fc431dfe1ae2e38a9fa11cf331fb35c92b38bc",
+      "compressedSha256": "137432470b05322e71a16239e08957df1bb86f75ed2e551d32e00aa11b88ad95",
+      "rawBytes": 25706,
+      "compressedBytes": 1646
+    },
+    "r2-historical-branch.stdout.log": {
+      "path": "tests/fixtures/l4-full-suite-evidence/r2-historical-branch.stdout.log.gz",
+      "rawSha256": "14af3da818f1ea2af4bd5c96a78a35729764b15ea6915eb5e7ab6af758b8b152",
+      "compressedSha256": "f3d7b674291c670c5502aab661c25468f5417945074dbc28a3eae51cef9e895f",
+      "rawBytes": 1402,
+      "compressedBytes": 538
+    },
+    "r2-historical-baseline.stderr.log": {
+      "path": "tests/fixtures/l4-full-suite-evidence/r2-historical-baseline.stderr.log.gz",
+      "rawSha256": "55399972a531de84627aa4a120d84129053051f46d4e65abd96da94becfdc6ff",
+      "compressedSha256": "502130398fee5ad5010887fdcccec1d4bb43945079bac137ce0e8c67da9f0352",
+      "rawBytes": 25706,
+      "compressedBytes": 1651
+    },
+    "r2-historical-baseline.stdout.log": {
+      "path": "tests/fixtures/l4-full-suite-evidence/r2-historical-baseline.stdout.log.gz",
+      "rawSha256": "b0d5dbd6aab76968739baf121df6826109edee96e4471963bac707576879e953",
+      "compressedSha256": "e9072b9f32108c13f176fc462cddd456766e7e921b5605ed4b6689385e3e6bcd",
+      "rawBytes": 1404,
+      "compressedBytes": 539
+    },
+    "r2-historical-comparison.json": {
+      "path": "tests/fixtures/l4-full-suite-evidence/r2-historical-comparison.json.gz",
+      "rawSha256": "80ababbf3e4d1cafc80cb1397d3c83b1399ea5085267f75dab39aa0bd4f1af9a",
+      "compressedSha256": "089843c586c9704c2784547daa32b41cc22d5f329486dcaceae4c701ee44970b",
+      "rawBytes": 3706434,
+      "compressedBytes": 323038
+    },
+    "compare-l4-full-suite.mjs": {
+      "path": "tests/fixtures/l4-full-suite-evidence/compare-l4-full-suite.mjs.gz",
+      "rawSha256": "181dae0cd92836ed29ccc0cf2fdabbda1aaefbdec37b750b7ed40e8c8cf8c53a",
+      "compressedSha256": "78ebeebf3c210370ab7000af5ce23b9e716a9b2cd7835dde0a06b839098d5f5b",
+      "rawBytes": 12466,
+      "compressedBytes": 4166
+    },
+    "compare-l4-full-suite.self-test.mjs": {
+      "path": "tests/fixtures/l4-full-suite-evidence/compare-l4-full-suite.self-test.mjs.gz",
+      "rawSha256": "ea211c4965cc6ff1e23dd2dbbee1560e45676f2803deb4eee1694ebe04a9b399",
+      "compressedSha256": "c62782004ad87758250616c4001524a7da50245780a70476807d8b645e74496c",
+      "rawBytes": 8992,
+      "compressedBytes": 2030
+    },
+    "setup.mjs": {
+      "path": "tests/fixtures/l4-full-suite-evidence/setup.mjs.gz",
+      "rawSha256": "a429e43b951393902a8400f04e45069d7b40007035ba1894ddebf0b8fb1ea847",
+      "compressedSha256": "a76b8309c165be95bcea19b8e85357c09c495151b1cc672f43160bc3482e8942",
+      "rawBytes": 9269,
+      "compressedBytes": 3502
+    },
+    "l4-disabled-detector-cases.mjs": {
+      "path": "tests/fixtures/l4-full-suite-evidence/l4-disabled-detector-cases.mjs.gz",
+      "rawSha256": "e8cad69e6a922ad4db15e14e068ef1f5efb0cd12851a8e83f6a752e55620aa44",
+      "compressedSha256": "1f8d5ecf04121392c6a000a1f768cc58e8d5b162b23ce8cb5fd74f51a3790525",
+      "rawBytes": 3270,
+      "compressedBytes": 988
+    },
+    "mcp-memory-l4-disabled-detector.mutants.mjs": {
+      "path": "tests/fixtures/l4-full-suite-evidence/mcp-memory-l4-disabled-detector.mutants.mjs.gz",
+      "rawSha256": "5bb86fde787de07f958e85925407f5cea68d03703d88aabd695fa7cf16f98119",
+      "compressedSha256": "8cd997fedad80bb47b8e0c1e12ce2ff79a3ad6cf3f9d8410e874962256cc6cd5",
+      "rawBytes": 1549,
+      "compressedBytes": 732
+    },
+    "frozen-p3-manifest.json": {
+      "path": "tests/fixtures/l4-full-suite-evidence/frozen-p3-manifest.json.gz",
+      "rawSha256": "1c96bada2a749155f29aae763fa73ea6379c385d619f70614110f59b6b10b730",
+      "compressedSha256": "b86d7ce74a05db6872d2f52aaad682dceef935c14bea78ce6eed1e67b38a1b85",
+      "rawBytes": 9511,
+      "compressedBytes": 3255
+    },
+    "invariants.json": {
+      "path": "tests/fixtures/l4-full-suite-evidence/invariants.json.gz",
+      "rawSha256": "87f24c914f28c0f96f5dde40cac5d9cea0eff4032574e2f64441d50bf8882eeb",
+      "compressedSha256": "3b3ad7a0dce950070ea96c9adeea0ee28737734e53400a59aef091bc798fd04c",
+      "rawBytes": 924,
+      "compressedBytes": 570
+    },
+    "graph-hook.log": {
+      "path": "tests/fixtures/l4-full-suite-evidence/graph-hook.log.gz",
+      "rawSha256": "92cc1e8d2d07e9b69d04e368459b724993574e5fd2fd487c8aa94e3a1c5d2fd4",
+      "compressedSha256": "f97d40d5c6b9bc22f4913d78cd7051c5254a337072c87bc2cbe6fb71aa2384a7",
+      "rawBytes": 436,
+      "compressedBytes": 322
     }
   },
   "rules": {
-    "backupBranch": "feat/memory-mcp-l4-candidate-p3-pre0213 still at dec7c55d557b3a291a6fbfb10e794b687c2ea9c2, untouched",
     "noPushTagPublish": true,
-    "noReviewClaimed": true,
-    "zeroPython": true
+    "noReviewPerformed": true,
+    "zeroPython": true,
+    "originalCheckoutUnmodified": true
   },
-  "sourceCommit": "5a7105eb71d9199d07cd320aacfdc54ef42bb3d5 (detector fix + regression; packed source for tarball remains 0db169cb)"
+  "historicalNote": "candidate-validation.json is unchanged. Historical r2 evidence is retained explicitly as historical; fresh r3 comparison remains blocked.",
+  "summaryOutput": {
+    "path": ".graphify/scratch/design/memory-finalization/L4-carry-r3.out",
+    "originalBriefPathNotWritten": true,
+    "reason": "Direct user instruction forbids modifying /home/antoinefa/src/graphify."
+  },
+  "graphHook": {
+    "passed": true,
+    "evidence": {
+      "path": "tests/fixtures/l4-full-suite-evidence/graph-hook.log.gz",
+      "rawSha256": "92cc1e8d2d07e9b69d04e368459b724993574e5fd2fd487c8aa94e3a1c5d2fd4",
+      "compressedSha256": "f97d40d5c6b9bc22f4913d78cd7051c5254a337072c87bc2cbe6fb71aa2384a7",
+      "rawBytes": 436,
+      "compressedBytes": 322
+    },
+    "generatedStateRetained": ".graphify/scratch/l4-r3-generated-graph"
+  }
 }
