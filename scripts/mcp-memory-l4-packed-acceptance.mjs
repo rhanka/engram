@@ -103,7 +103,7 @@ function installConsumer(consumerDir, tarball, extraArchives = [], env = {}, sdk
   if (result.status !== 0) throw new Error('consumer install failed: ' + out);
 }
 
-function p3ArchivePaths(manifest) {
+export function p3ArchivePaths(manifest) {
   return manifest.artifacts.map((artifact) =>
     join(P3_BASE, artifact.archive.replace(/^tools\/memory-mcp-l5\/artifacts\//, '')),
   );
