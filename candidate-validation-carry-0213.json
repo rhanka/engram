@@ -1,1 +1,85 @@
-{"baseline":"8b93ba6b834f83fddbcf76091054efea2e188cf1","branchBase":"7b08b8a9b4d720e60e53c3891276935104675d47","comparison":{"added":"51 (all passed: mcp-memory-l4-adapter, mcp-memory-l4-disabled-detector [new], mcp-memory-l4-packed, mcp-memory-l4-pipeline, memory-mcp-l2-writes, release-config 0.22.0, 2x time-reference 0.22.0)","baseline":"432 files / 7392 tests / 7353 passed / 2 failed / 37 pending","branch":"436 files / 7440 tests / 7403 passed / 0 failed / 37 pending","changed":"2 (both branch=passed, baseline=failed; load artifacts, see failing)","failingIdentities":[{"baselineCause":"unclassified :: AssertionError: expected 19029.739627000003 to be less than 5000 (30 s vitest budget is 5000 ms scale budget; machine under parallel full-suite load)","baselineIsolation":"pass (2 files together: 15/15 on baseline)","baselineStatus":"failed","branchIsolation":"pass (file alone: 6/6 on branch)","branchStatus":"passed","identity":"tests/ontology-reconciliation-blocking.test.ts :: ontology reconciliation lexical blocking :: processes 40k selectively-blocked nodes inside the scale budget"},{"baselineCause":"unclassified :: Error: STACK_TRACE_ERROR (vitest 30 s timeout placeholder; single test takes 7.1 s alone, 7 sequential installed-closure scans)","baselineIsolation":"pass (2 files together: 15/15 on baseline)","baselineStatus":"failed","branchIsolation":"pass (file alone: 9/9 on branch)","branchStatus":"passed","identity":"tests/memory-substrate-closure.test.ts :: substrate neutrality and driver guards (amendment §5.7) :: reports no fatal finding from any published entry, including traversed dependencies"}],"fullTable":".graphify/scratch/l4-r6-compare/comparison.json (worktree-local, git-ignored scratch)","nativeAddonFailures":"0 on either side; no failure diagnostic names fs_ext.node, better-sqlite3 or any .node addon","removed":"3 (all passed on baseline: release-config 0.21.3, 2x TR-14 F17 0.21.3; superseded by 0.22.0 counterparts)","same":"7339 identities with equal status (includes all 37 pending on both sides; no added skips)","supsersededRuns":"cold-cache run (branch 7400/3/37: tarball ENOTCACHED setup artifact + closure + blocking) and one high-load branch run (8 timeouts incl. l1/l2-packed, all 44 pass in isolation) disclosed as load variance, not product signal; committed pair is the back-to-back controlled run"},"detectorFix":{"behavioralRepro":"old predicate flags the exact review warning (OLD-DETECTOR-HITS:1 via node -e)","callSite":"scripts/mcp-memory-l4-packed-acceptance.mjs: assertNoNativeBuildAttempts(log, 'disabled install', trace.read()) — trace holds install-phase rows only (reset before install, disabled probe after)","file":"scripts/mcp-memory-l4-packed-acceptance.mjs","newRule":"hit = executed-build marker (node-gyp rebuild | gyp info .*build | build-from-source) AND attribution to fs-ext|better-sqlite3 — same line, adjacent lifecycle record (> fs-ext@x install next to > node-gyp rebuild), or node_modules path — OR instrumented trace native-build row naming fs-ext|better-sqlite3; npm warn lines never match; bare node-gyp alternative removed","regression":"tests/mcp-memory-l4-disabled-detector.test.ts — 9/9 pass on new code; exact review warning + warn-only fs-ext line + unrelated-addon build do not throw; fs-ext lifecycle pair, better-sqlite3 line, fs-ext and better-sqlite3 trace rows throw"},"environment":{"cache":"worktree-local .compare-cache primed from ~/.npm/_cacache, npm_config_cache set for builds and suites (removed after)","engramNm":"byte-identical by construction: cp -a from dpadapter (read-only source) into both trees; pre-existing delta was only the missing fs-ext/build in mcpl4; fs-ext loads OK","installs":"branch kept its prepared top-level install (lock-clean); baseline fresh `npm ci --no-audit --no-fund` with npm 11.21.1, exit 0, lock untouched, SDK 1.29.0 verified","lockfileDelta":"34 diff lines, legitimate and documented: root version 0.22.0/0.21.3 (2 spots), optionalDependencies SDK ^1.31.0/^1.0.0, branch-only optional peers @sentropic/mcp-broker 0.1.0 + @sentropic/mcp-platform 0.4.0, resolved SDK 1.32.2/1.29.0, @hono/node-server range ^1.19.9 || ^2.0.5 vs ^1.19.9; engram-memory/package-lock.json byte-identical (cmp)","node":"v22.22.1 both sides","suiteCommand":"npx vitest run --reporter=json --outputFile=<side>.json (same command, back-to-back 15:35:51Z/15:39:04Z)"},"historicalNote":"candidate-validation.json stays historical (baseline 5a8018e, source ad96c681, tarball 0.21.2); this file is the current carry evidence","packedAcceptance":{"counts":{"identityBootstraps":1,"nativeBuilds":0,"providerLoads":0,"storeOpens":0},"npm":"11.21.1 (suite default; no MCP_L4_NPM_BIN override)","result":"MCP-L4-PACKED-OK sha256=965c93e326df9866584261061f4e49571cfd74dfe1dc258c0c6894eea121a4e9 floor=pass","sdkFloor":"1.31.0 observed","sdkPinned":"1.32.2 observed","tarballUnchanged":true,"traceControl":{"identityBootstraps":1,"storeOpens":1},"vitest":"tests/mcp-memory-l4-packed.test.ts 1 passed (58 s)"},"repack":{"action":"none — packed sha256/integrity identical to manifest (965c93e3.../sha512-GTpbi...); scripts/ change is outside the packed files; candidate-manifest.json and registry assets untouched (one build-stamp churn reverted)","p3":"1c96bada2a749155f29aae763fa73ea6379c5b10b730 unchanged; r5 tarball kept as-is"},"rules":{"backupBranch":"feat/memory-mcp-l4-candidate-p3-pre0213 still at dec7c55d557b3a291a6fbfb10e794b687c2ea9c2, untouched","noPushTagPublish":true,"noReviewClaimed":true,"zeroPython":true},"sourceCommit":"5a7105eb71d9199d07cd320aacfdc54ef42bb3d5 (detector fix + regression; packed source for tarball remains 0db169cb)"}
+{
+  "baseline": "8b93ba6b834f83fddbcf76091054efea2e188cf1",
+  "branchBase": "7b08b8a9b4d720e60e53c3891276935104675d47",
+  "comparison": {
+    "added": "51 (all passed: mcp-memory-l4-adapter, mcp-memory-l4-disabled-detector [new], mcp-memory-l4-packed, mcp-memory-l4-pipeline, memory-mcp-l2-writes, release-config 0.22.0, 2x time-reference 0.22.0)",
+    "baseline": "432 files / 7392 tests / 7353 passed / 2 failed / 37 pending",
+    "branch": "436 files / 7440 tests / 7403 passed / 0 failed / 37 pending",
+    "changed": "2 (both branch=passed, baseline=failed; load artifacts, see failing)",
+    "failingIdentities": [
+      {
+        "baselineCause": "unclassified :: AssertionError: expected 19029.739627000003 to be less than 5000 (30 s vitest budget is 5000 ms scale budget; machine under parallel full-suite load)",
+        "baselineIsolation": "pass (2 files together: 15/15 on baseline)",
+        "baselineStatus": "failed",
+        "branchIsolation": "pass (file alone: 6/6 on branch)",
+        "branchStatus": "passed",
+        "identity": "tests/ontology-reconciliation-blocking.test.ts :: ontology reconciliation lexical blocking :: processes 40k selectively-blocked nodes inside the scale budget"
+      },
+      {
+        "baselineCause": "unclassified :: Error: STACK_TRACE_ERROR (vitest 30 s timeout placeholder; single test takes 7.1 s alone, 7 sequential installed-closure scans)",
+        "baselineIsolation": "pass (2 files together: 15/15 on baseline)",
+        "baselineStatus": "failed",
+        "branchIsolation": "pass (file alone: 9/9 on branch)",
+        "branchStatus": "passed",
+        "identity": "tests/memory-substrate-closure.test.ts :: substrate neutrality and driver guards (amendment §5.7) :: reports no fatal finding from any published entry, including traversed dependencies"
+      }
+    ],
+    "fullTable": ".graphify/scratch/l4-r6-compare/comparison.json (worktree-local, git-ignored scratch)",
+    "nativeAddonFailures": "0 on either side; no failure diagnostic names fs_ext.node, better-sqlite3 or any .node addon",
+    "removed": "3 (all passed on baseline: release-config 0.21.3, 2x TR-14 F17 0.21.3; superseded by 0.22.0 counterparts)",
+    "same": "7339 identities with equal status (includes all 37 pending on both sides; no added skips)",
+    "supsersededRuns": "cold-cache run (branch 7400/3/37: tarball ENOTCACHED setup artifact + closure + blocking) and one high-load branch run (8 timeouts incl. l1/l2-packed, all 44 pass in isolation) disclosed as load variance, not product signal; committed pair is the back-to-back controlled run"
+  },
+  "detectorFix": {
+    "behavioralRepro": "old predicate flags the exact review warning (OLD-DETECTOR-HITS:1 via node -e)",
+    "callSite": "scripts/mcp-memory-l4-packed-acceptance.mjs: assertNoNativeBuildAttempts(log, 'disabled install', trace.read()) — trace holds install-phase rows only (reset before install, disabled probe after)",
+    "file": "scripts/mcp-memory-l4-packed-acceptance.mjs",
+    "newRule": "hit = executed-build marker (node-gyp rebuild | gyp info .*build | build-from-source) AND attribution to fs-ext|better-sqlite3 — same line, adjacent lifecycle record (> fs-ext@x install next to > node-gyp rebuild), or node_modules path — OR instrumented trace native-build row naming fs-ext|better-sqlite3; npm warn lines never match; bare node-gyp alternative removed",
+    "regression": "tests/mcp-memory-l4-disabled-detector.test.ts — 9/9 pass on new code; exact review warning + warn-only fs-ext line + unrelated-addon build do not throw; fs-ext lifecycle pair, better-sqlite3 line, fs-ext and better-sqlite3 trace rows throw"
+  },
+  "environment": {
+    "cache": "worktree-local .compare-cache primed from ~/.npm/_cacache, npm_config_cache set for builds and suites (removed after)",
+    "engramNm": "byte-identical by construction: cp -a from dpadapter (read-only source) into both trees; pre-existing delta was only the missing fs-ext/build in mcpl4; fs-ext loads OK",
+    "installs": "branch kept its prepared top-level install (lock-clean); baseline fresh `npm ci --no-audit --no-fund` with npm 11.21.1, exit 0, lock untouched, SDK 1.29.0 verified",
+    "lockfileDelta": "34 diff lines, legitimate and documented: root version 0.22.0/0.21.3 (2 spots), optionalDependencies SDK ^1.31.0/^1.0.0, branch-only optional peers @sentropic/mcp-broker 0.1.0 + @sentropic/mcp-platform 0.4.0, resolved SDK 1.32.2/1.29.0, @hono/node-server range ^1.19.9 || ^2.0.5 vs ^1.19.9; engram-memory/package-lock.json byte-identical (cmp)",
+    "node": "v22.22.1 both sides",
+    "suiteCommand": "npx vitest run --reporter=json --outputFile=<side>.json (same command, back-to-back 15:35:51Z/15:39:04Z)"
+  },
+  "historicalNote": "candidate-validation.json stays historical (baseline 5a8018e, source ad96c681, tarball 0.21.2); this file is the current carry evidence",
+  "packedAcceptance": {
+    "counts": {
+      "identityBootstraps": 1,
+      "nativeBuilds": 0,
+      "providerLoads": 0,
+      "storeOpens": 0
+    },
+    "npm": "11.21.1 (suite default; no MCP_L4_NPM_BIN override)",
+    "result": "MCP-L4-PACKED-OK sha256=965c93e326df9866584261061f4e49571cfd74dfe1dc258c0c6894eea121a4e9 floor=pass",
+    "sdkFloor": "1.31.0 observed",
+    "sdkPinned": "1.32.2 observed",
+    "tarballUnchanged": true,
+    "traceControl": {
+      "identityBootstraps": 1,
+      "storeOpens": 1
+    },
+    "vitest": "tests/mcp-memory-l4-packed.test.ts 1 passed (58 s)"
+  },
+  "repack": {
+    "action": "none — packed sha256/integrity identical to manifest (965c93e3.../sha512-GTpbi...); scripts/ change is outside the packed files; candidate-manifest.json and registry assets untouched (one build-stamp churn reverted)",
+    "p3": {
+      "sha256": "1c96bada2a749155f29aae763fa73ea6379c385d619f70614110f59b6b10b730",
+      "frozenCommit": "c919b638686fb93c8c90a2634d3c004fd25348b3",
+      "frozenManifest": "tools/memory-mcp-l5/artifacts/pre-candidate-manifest.json",
+      "candidateManifestMatches": true,
+      "frozenManifestMatches": true,
+      "unchanged": true
+    }
+  },
+  "rules": {
+    "backupBranch": "feat/memory-mcp-l4-candidate-p3-pre0213 still at dec7c55d557b3a291a6fbfb10e794b687c2ea9c2, untouched",
+    "noPushTagPublish": true,
+    "noReviewClaimed": true,
+    "zeroPython": true
+  },
+  "sourceCommit": "5a7105eb71d9199d07cd320aacfdc54ef42bb3d5 (detector fix + regression; packed source for tarball remains 0db169cb)"
+}
