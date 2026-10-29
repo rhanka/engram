@@ -60,7 +60,11 @@ export default defineConfig([
     sourcemap: true,
     clean: true,
     target: "node20",
-    splitting: false,
+    // Shared provenance (L4): entries that share the private fenced-store
+    // registry must resolve to ONE module instance. Splitting puts the
+    // shared internals in one internal chunk imported by both ESM entries;
+    // the CJS outputs stay self-contained per entry (separate module system).
+    splitting: true,
     external: optionalRuntimeDeps,
   },
   {
