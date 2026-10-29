@@ -55,23 +55,25 @@ function wrongType(value: unknown): unknown {
   if (typeof value === "boolean") return "true";
   return null;
 }
-function fixture(name: string, kind: Kind, path: Path, value: Record<string, unknown>, required = nativeRequired.get(name), checkViewGuard = true): void {
+function fixture(name: string, kind: Kind, path: Path, value: Record<string, unknown>, required = nativeRequired.get(name), guardRequired?: string[]): void {
   if (required === undefined) throw new Error(`untranscribed native interface ${name}`);
+  const requiredByGuard = guardRequired ?? required;
   describe(`native shape ${name} (${kind}:${path.join("/")})`, () => {
-    const check = (v: unknown, expected: boolean): void => {
+    const check = (v: unknown, expected: boolean, guardExpected = expected): void => {
       const input = replace(kind, path, v);
       expect(validators[kind](input), JSON.stringify(validators[kind].errors)).toBe(expected);
       if (kind === "semantic") expect(checkSemanticShape(input) === null).toBe(expected);
-      if (kind === "view" && checkViewGuard) expect(checkViewShape(input) === null).toBe(expected);
+      if (kind === "view") expect(checkViewShape(input) === null).toBe(guardExpected);
       if (kind === "presentation") expect(checkViewShape({ ...view, presentation: { ...view.presentation, diagram: input } }) === null).toBe(expected);
     };
     it("accepts the full native record", () => check(value, true));
     it("rejects a non-record", () => check(null, false));
-    it("checks the empty-record boundary", () => check({}, required!.length === 0));
+    it("checks the empty-record boundary", () => check({}, required!.length === 0, requiredByGuard.length === 0));
     it("rejects an extra property", () => check({ ...value, accidental: true }, false));
     for (const key of ["constructor", "__proto__", "toString"]) it(`rejects an extra own ${key} property`, () => check({ ...value, [key]: true }, false));
-    for (const key of required) it(`rejects missing ${key}`, () => {
-      const incomplete = structuredClone(value); delete incomplete[key]; check(incomplete, false);
+    for (const key of new Set([...required, ...requiredByGuard])) it(`rejects missing ${key}`, () => {
+      const incomplete = structuredClone(value); delete incomplete[key];
+      check(incomplete, !required.includes(key), !requiredByGuard.includes(key));
     });
     for (const [key, original] of Object.entries(value)) {
       it(`rejects wrong type for ${key}`, () => check({ ...value, [key]: wrongType(original) }, false));
@@ -79,7 +81,7 @@ function fixture(name: string, kind: Kind, path: Path, value: Record<string, unk
       if (Array.isArray(original)) it(`rejects a malformed item in ${key}`, () => check({ ...value, [key]: [wrongType(original[0])] }, false));
       if (Array.isArray(original)) it(`rejects a null item in ${key}`, () => check({ ...value, [key]: [null] }, false));
       if (!required.includes(key) && key !== "semanticTarget" && key !== "sourceOccurrence") it(`accepts absent optional ${key}`, () => {
-        const absent = structuredClone(value); delete absent[key]; check(absent, true);
+        const absent = structuredClone(value); delete absent[key]; check(absent, true, !requiredByGuard.includes(key));
       });
     }
   });
@@ -145,14 +147,17 @@ fixture("VisualGroup", "view", ["groups", "group:a"], { id: "group:a", label: "G
 fixture("PresentationState", "view", ["presentation"], { camera: { x: 0, y: 0, zoom: 1 }, grid: { size: 8, snap: true }, theme: "light" });
 fixture("Camera", "view", ["presentation", "camera"], { x: 0, y: 0, zoom: 1 }, ["x", "y", "zoom"]);
 fixture("Grid", "view", ["presentation", "grid"], { size: 8, snap: true }, ["size", "snap"]);
-// The governed summary schema retains its pinned shape; the M3 guard is tested separately below.
-fixture("SummaryLabelDefinition", "view", ["summaryLabels", "sum:a"], { id: "sum:a", sourceOccurrence: "occurrence:a", targetOccurrence: "occurrence:a", label: "Summary", relationIds: ["relation:a"], strokeStyle: "solid" }, ["sourceOccurrence", "targetOccurrence", "label", "relationIds"], false);
+// Ajv retains the governed required fields; the guard follows M3 §4.5.1.
+fixture("SummaryLabelDefinition", "view", ["summaryLabels", "sum:a"], { id: "sum:a", sourceOccurrence: "occurrence:a", targetOccurrence: "occurrence:a", label: "Summary", relationIds: ["relation:a"], strokeStyle: "solid" }, ["sourceOccurrence", "targetOccurrence", "label", "relationIds"], ["id", "sourceOccurrence", "targetOccurrence", "label", "relationIds"]);
 describe("summary definition shape (M3 §4.5.1)", () => {
   const summary = { id: "sum:a", sourceOccurrence: "occurrence:a", targetOccurrence: "occurrence:a", label: "Summary", relationIds: ["relation:a"] };
   const input = (value: unknown): unknown => replace("view", ["summaryLabels", "sum:a"], value);
   it("rejects a missing id at the summary id path", () => {
     const { id: _id, ...withoutId } = summary;
     expect(checkViewShape(input(withoutId))).toBe("summaryLabels.sum:a.id");
+  });
+  it("rejects an unsupported stroke style at its path", () => {
+    expect(checkViewShape(input({ ...summary, strokeStyle: "dotted" }))).toBe("summaryLabels.sum:a.strokeStyle");
   });
   it("accepts optional relation occurrence references", () => {
     expect(checkViewShape(input({ ...summary, relationOccurrences: ["o1"] }))).toBeNull();

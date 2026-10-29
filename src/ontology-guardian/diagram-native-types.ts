@@ -82,5 +82,5 @@ export interface NativeViewDocument {
   readonly groups: Readonly<Record<string, { readonly id: string; readonly label?: string; readonly collapsed?: boolean; readonly occurrence?: string }>>;
   readonly filters: readonly NativeViewFilter[];
   readonly presentation: NativePresentationState;
-  readonly summaryLabels?: Readonly<Record<string, { readonly id?: string; readonly sourceOccurrence: string; readonly targetOccurrence: string; readonly label: string; readonly relationIds: readonly string[]; readonly strokeStyle?: "solid" | "dashed" }>>;
+  readonly summaryLabels?: Readonly<Record<string, { readonly id: string; readonly sourceOccurrence: string; readonly targetOccurrence: string; readonly label: string; readonly relationIds: readonly string[]; readonly strokeStyle?: "solid" | "dashed"; readonly relationOccurrences?: readonly string[] }>>;
 }

@@ -584,7 +584,7 @@ const DIAGRAM_FIELDS: ReadonlySet<string> = new Set(["contractPin", "entities", 
 const ENTITY_PRESENTATION_FIELDS: ReadonlySet<string> = new Set(["form", "text", "icon", "categoryRef"]);
 const TEXT_SLOT_FIELDS: ReadonlySet<string> = new Set(["title", "kicker", "body", "detail", "subtitle", "footer"]);
 const SUMMARY_DEFINITION_FIELDS: ReadonlySet<string> = new Set([
-  "id", "sourceOccurrence", "targetOccurrence", "label", "relationIds", "strokeStyle",
+  "id", "sourceOccurrence", "targetOccurrence", "label", "relationIds", "strokeStyle", "relationOccurrences",
 ]);
 
 function closedKeys(value: unknown, allowed: ReadonlySet<string>): string | null {
