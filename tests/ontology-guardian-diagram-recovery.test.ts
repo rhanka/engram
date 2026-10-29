@@ -88,13 +88,20 @@ export const LOSSLESS_WITNESS: MigDocument = { ...document(),
     portOccurrences: { "occurrence:p": { id: "occurrence:p", port: "port:p", ownerOccurrence: "occurrence:a", side: "east", order: 1, anchor: 0.5 } },
     groups: { "group:a": { id: "group:a", label: "G", collapsed: false, occurrence: "occurrence:a" } },
     filters: [{ id: "filter:a", kind: "entity-type", types: ["node"], mode: "include" }],
-    summaryLabels: { "sum:a": { id: "sum:a", sourceOccurrence: "occurrence:a", targetOccurrence: "occurrence:a", label: "Kept", relationIds: ["relation:r"] } } }],
+    summaryLabels: { "sum:a": { id: "sum:a", sourceOccurrence: "occurrence:a", targetOccurrence: "occurrence:a", label: "Kept", relationIds: ["relation:r"], relationOccurrences: ["occurrence:r"] } } }],
 };
 export function losslessLeafPaths(value: unknown, base: (string | number)[] = []): (string | number)[][] {
   if (value === null || typeof value !== "object" || Object.keys(value).length === 0) return [base];
   return Object.entries(value).flatMap(([key, child]) => losslessLeafPaths(child, [...base, Array.isArray(value) ? Number(key) : key]));
 }
 describe("atomic loss refusal, every input leaf", () => {
+  it("retains summary relation occurrences through generic migration", () => {
+    const source = structuredClone(LOSSLESS_WITNESS);
+    const result = migrateGenericV1ToV2(source);
+    expect(result.outcome, JSON.stringify(result.unmigrated)).toBe("ok");
+    expect(result.target!.views).toEqual(source.views);
+    expect(result.originalCanonical).toEqual(source);
+  });
   it("accepts the complete witness before testing corruption", () => {
     const source = structuredClone(LOSSLESS_WITNESS);
     const candidate: MigrationSuccess = { migrationId: "test:commit", from: contractPin, to: contractPin,
