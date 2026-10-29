@@ -28,7 +28,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createDisabledTrace } from './mcp-memory-disabled-trace.mjs';
+import { createDisabledTrace, isMemoryNativeBuildProcess } from './mcp-memory-disabled-trace.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HERE);
@@ -1221,47 +1221,22 @@ function runProbe(consumerDir, name, source, env = {}) {
   return lines;
 }
 
-export function assertNoNativeBuildAttempts(installLog, label, traceRows = []) {
-  // A native BUILD attempt compiles for a memory native module (fs-ext,
-  // better-sqlite3); a prebuilt download is not a build, and a warning that
-  // merely DESCRIBES an install script is not an executed build either.
-  // Every hit must be attributable to a memory native module through
-  // executed-build evidence: either an instrumented `native-build` trace row
-  // from the install, or an install-log lifecycle record naming the module
-  // next to build-execution markers. Warning-only lines (`npm warn ...`,
-  // e.g. the tree-sitter-lua install-script description) and unrelated
-  // addons never match: there is no bare node-gyp alternative, so each hit
-  // names fs-ext or better-sqlite3.
-  const executedBuild = /node-gyp rebuild|gyp info .*build|build-from-source/i;
-  const memoryNative = /fs-ext|better-sqlite3/i;
-  const warningOnly = /npm\s+warn/i;
-  // npm echoes the package script line (`> fs-ext@x install`) adjacent to
-  // the executed command line (`> node-gyp rebuild`), so attribution may
-  // sit on an immediate neighbour rather than the marker line itself.
-  const attributableLifecycle = (text) =>
-    (/^\s*>/.test(text) && memoryNative.test(text)) ||
-    /node_modules[\\/].*(fs-ext|better-sqlite3)/i.test(text);
-  const lines = installLog.split('\n');
-  const hits = lines.filter((line, index) => {
-    if (warningOnly.test(line)) return false;
-    if (!executedBuild.test(line)) return false;
-    if (memoryNative.test(line)) return true;
-    const neighbours = lines.slice(Math.max(0, index - 2), index + 3);
-    return neighbours.some((neighbour, offset) => {
-      const neighbourIndex = Math.max(0, index - 2) + offset;
-      return neighbourIndex !== index && !warningOnly.test(neighbour) && attributableLifecycle(neighbour);
-    });
-  });
-  const traced = traceRows.filter((row) =>
-    row?.kind === 'native-build' && memoryNative.test(String(row?.detail ?? '')),
-  );
-  const evidence = [
-    ...hits.map((line) => `log: ${line.trim()}`),
-    ...traced.map((row) => `trace: ${String(row.detail).slice(0, 300)}`),
-  ];
-  if (evidence.length > 0) {
-    throw new Error(`${label}: native build attempts observed:\n${evidence.slice(0, 10).join('\n')}`);
+export function assertNoNativeBuildAttempts(installLog, label, traceRows = [], {
+  moduleDirectories = [], pathExists = existsSync,
+} = {}) {
+  const evidence = traceRows.filter(row => row?.kind === 'native-build' &&
+    isMemoryNativeBuildProcess(row.detail?.executable, row.detail?.cwd))
+    .map(row => 'trace: ' + JSON.stringify(row.detail));
+  for (const directory of moduleDirectories) {
+    if (!/(?:^|[/\\])(?:fs-ext|better-sqlite3)$/.test(directory)) continue;
+    for (const output of ['build/config.gypi', 'build/Release/obj.target']) {
+      const file = join(directory, output);
+      if (pathExists(file)) evidence.push('filesystem: ' + file);
+    }
   }
+  // npm prints scripts before dispatch. Log excerpts are diagnostics only.
+  if (evidence.length) throw new Error(label + ': native build attempts observed:\n' +
+    evidence.slice(0, 10).join('\n') + '\ninstall log excerpt:\n' + installLog.slice(-2000));
 }
 
 /**
@@ -1334,7 +1309,11 @@ export async function runPackedAcceptance() {
     mkdirSync(canaryDir);
     writeFileSync(join(canaryDir, 'mcp-memory.cjs'), '');
     writeFileSync(join(canaryDir, 'mcp-memory.mjs'), '');
-    run('node', ['-e', 'require(' + JSON.stringify(join(canaryDir, 'mcp-memory.cjs')) + ');import(' + JSON.stringify(join(canaryDir, 'mcp-memory.mjs')) + ');require("node:child_process").spawnSync(process.execPath,["-e","","fs-ext node-gyp"]);'], { env: { ...process.env, ...trace.env } });
+    const nativeCanary = join(canaryDir, 'node_modules/fs-ext');
+    mkdirSync(nativeCanary, { recursive: true });
+    const nativeCommand = join(canaryDir, 'node-gyp');
+    writeFileSync(nativeCommand, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    run('node', ['-e', 'require(' + JSON.stringify(join(canaryDir, 'mcp-memory.cjs')) + ');import(' + JSON.stringify(join(canaryDir, 'mcp-memory.mjs')) + ');require("node:child_process").spawnSync(' + JSON.stringify(nativeCommand) + ',[],{cwd:' + JSON.stringify(nativeCanary) + '});'], { env: { ...process.env, ...trace.env } });
     runProbe(enabledDir, 'trace-control-probe', TRACE_CONTROL_PROBE, trace.env);
     const control = trace.read();
     for (const kind of ['cjs-load', 'cjs-compile', 'esm-load', 'provider-load', 'store-open', 'identity-bootstrap', 'native-build']) {
@@ -1348,7 +1327,9 @@ export async function runPackedAcceptance() {
     // The trace holds install-phase rows only here (reset before the
     // install, disabled probe afterwards), so its `native-build` rows are
     // executed-build evidence attributable to the install itself.
-    assertNoNativeBuildAttempts(readFileSync(disabledLog, 'utf8'), 'disabled install', trace.read());
+    assertNoNativeBuildAttempts(readFileSync(disabledLog, 'utf8'), 'disabled install', trace.read(), {
+      moduleDirectories: ['better-sqlite3', 'fs-ext'].map(name => join(disabledDir, 'node_modules', name)),
+    });
     runProbe(disabledDir, 'disabled-probe', DISABLED_PROBE, trace.env);
     const observed = trace.read();
     const disabled = Object.fromEntries(['provider-load', 'store-open', 'identity-bootstrap', 'native-build'].map(kind => [kind, observed.filter(row => row.kind === kind).length]));
