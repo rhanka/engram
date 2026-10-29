@@ -167,6 +167,14 @@ const badNativeView: NativeViewDocument = {
   viewId: "view:a", semanticDocumentId: "document:a", revision: 0,
   entityOccurrences: {}, relationOccurrences: {}, portOccurrences: {}, groups: {}, filters: [],
 };
+type NativeSummaryDefinition = NonNullable<NativeViewDocument["summaryLabels"]>[string];
+const nativeSummary: NativeSummaryDefinition = {
+  id: "sum:a", sourceOccurrence: "occurrence:a", targetOccurrence: "occurrence:a",
+  label: "", relationIds: ["relation:r"], relationOccurrences: ["occurrence:r"],
+};
+// @ts-expect-error native summaries require their identity
+const badNativeSummary: NativeSummaryDefinition = { sourceOccurrence: "occurrence:a", targetOccurrence: "occurrence:a", label: "", relationIds: ["relation:r"] };
+
 // @ts-expect-error native semantic documents require their schema version
 const badNativeSemantic: NativeSemanticDocument = {
   documentId: "document:a", revision: 0, profileRefs: ["generic@1"], typeDefinitions: {}, entities: {}, relations: {}, ports: {}, resources: {}, extensions: [],
