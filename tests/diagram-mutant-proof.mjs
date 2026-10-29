@@ -156,6 +156,23 @@ mutations.at(-1).scope = ["recovery"];
 mutate("DM49", "diagram-migrations.ts", 'Object.keys(mapping).length !== 1', 'false');
 mutate("DM50", "diagram-migrations.ts", 'const entityTypes = mapping.entityTypes;', 'const entityTypes = mapping;');
 
+// Keep mutations local to SummaryDefinition so unrelated view checks cannot kill them.
+const summaryGuard = 'const failure = record({ id: text, sourceOccurrence: text, targetOccurrence: text, label: text, relationIds: list(text) },\n    { strokeStyle: enumeration("solid", "dashed"), relationOccurrences: list(text) })(v, p);';
+mutate("DM51", "diagram-view-shape.ts", summaryGuard, summaryGuard.replace("sourceOccurrence: text", "sourceOccurrence: () => null"));
+mutate("DM52", "diagram-view-shape.ts", summaryGuard, summaryGuard.replace("sourceOccurrence: text, ", "").replace("{ strokeStyle:", "{ sourceOccurrence: text, strokeStyle:"));
+mutate("DM53", "diagram-view-shape.ts", summaryGuard, summaryGuard.replace("targetOccurrence: text", "targetOccurrence: () => null"));
+mutate("DM54", "diagram-view-shape.ts", summaryGuard, summaryGuard.replace("targetOccurrence: text, ", "").replace("{ strokeStyle:", "{ targetOccurrence: text, strokeStyle:"));
+mutate("DM55", "diagram-view-shape.ts", summaryGuard, summaryGuard.replace("label: text", "label: () => null"));
+mutate("DM56", "diagram-view-shape.ts", summaryGuard, summaryGuard.replace("label: text, ", "").replace("{ strokeStyle:", "{ label: text, strokeStyle:"));
+mutate("DM57", "diagram-view-shape.ts", summaryGuard, summaryGuard.replace("relationIds: list(text)", "relationIds: list(() => null)"));
+mutate("DM58", "diagram-view-shape.ts", summaryGuard, summaryGuard.replace('strokeStyle: enumeration("solid", "dashed")', "strokeStyle: () => null"));
+mutate("DM59", "diagram-view-shape.ts", summaryGuard, summaryGuard.replace('strokeStyle: enumeration("solid", "dashed")', "strokeStyle: text"));
+mutate("DM60", "diagram-view-shape.ts", summaryGuard, summaryGuard.replace("id: text, ", "").replace("{ strokeStyle:", "{ id: text, strokeStyle:"));
+mutate("DM61", "diagram-view-shape.ts", summaryGuard, summaryGuard.replace("label: text", "label: nonempty"));
+mutate("DM62", "diagram-view-shape.ts", summaryGuard, summaryGuard.replace(", relationOccurrences: list(text)", ""));
+mutate("DM63", "diagram-view-shape.ts", summaryGuard, summaryGuard.replace("relationOccurrences: list(text)", "relationOccurrences: () => null"));
+mutate("DM64", "diagram-view-shape.ts", summaryGuard, summaryGuard.replace("relationOccurrences: list(text)", "relationOccurrences: list(() => null)"));
+
 function scopeOf(file) {
   if (file === "diagram-view-shape.ts" || file === "diagram-document-shape.ts") return ["native-shapes", "recovery"];
   if (file === "diagram-schemas.ts") return ["schemas", "native-shapes"];
@@ -246,6 +263,7 @@ const compilerMutations = [
   ["native-anchor-string", "diagram-native-types.ts", "readonly anchor: number;", "readonly anchor: number | string;"],
   ["native-reference-valueless", "diagram-native-types.ts", 'readonly kind: "text" | "date" | "enum" | "reference"; readonly value: string', 'readonly kind: "text" | "date" | "enum" | "reference"; readonly value?: string'],
   ["native-view-presentation-optional", "diagram-native-types.ts", "readonly presentation: NativePresentationState;", "readonly presentation?: NativePresentationState;"],
+  ["native-summary-id-optional", "diagram-native-types.ts", "readonly summaryLabels?: Readonly<Record<string, { readonly id: string;", "readonly summaryLabels?: Readonly<Record<string, { readonly id?: string;"],
   ["native-semantic-version-optional", "diagram-native-types.ts", "readonly schemaVersion: { readonly major: number; readonly minor: number };", "readonly schemaVersion?: { readonly major: number; readonly minor: number };"],
 ];
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "diagram-type-proof-"));
