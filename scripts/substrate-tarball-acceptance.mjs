@@ -47,7 +47,7 @@ import { verifyInstalledSemantics, verifyInstalledTypes, verifyLockedClosure } f
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = dirname(HERE);
 const PACKAGE_NAME = "@sentropic/engram";
-const EXPECTED_VERSION = "0.22.1";
+const EXPECTED_VERSION = "0.23.0";
 const EXPECTED_VALUES = ["createMemoryPortV2", "openModuleStorageCanonicalMemoryStoreV1"];
 
 /** Known native database drivers: any static edge to one fails the run. */
