@@ -4,6 +4,11 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.23.0 (2026-10-30)
+
+- **F3 host-storage closure exports (additive).** `@sentropic/engram/mcp-memory` now re-exports the existing frozen host-storage profile (`ENGRAM_MEMORY_HOST_STORAGE_PROFILE_V1`, `MemoryHostStorageProfileV1`) and the closed receipts contract (`MEMORY_HOST_STORAGE_RECEIPTS_V1_SCHEMA`, `validateMemoryHostStorageReceiptsV1`, `MemoryHostStorageReceiptsV1`) from `src/mcp/memory/topology.ts` and `src/mcp/memory/receipts.ts`. Pure side-effect-free re-exports; no new receipt field, no new subpath, no frozen-byte change (SQLite plan co-sign condition F3).
+- **PW4 public compiled-plan builder with staged activation.** New `createManifestMemoryDispatchPlanV1(options?)` (plus `ManifestMemoryDispatchPlanOptionsV1`) on `@sentropic/engram/mcp-memory`: a pure, synchronous, store-free builder producing a validated, frozen `McpMemoryDispatchPlanV1` from the frozen provider manifest, so `createEngramMemoryProviderV1` can be activated — and its adapter then bound into the broker compiled dispatch — before any registry compile exists. Throws at construction on source-id, provider-identity, tool-list, scope/claim or gate drift from the frozen L0 contract.
+
 ## 0.22.1 (2026-10-30)
 
 - ships the engram-memory usage skill for the MCP memory tools (`skills/engram-memory/SKILL.md`, packed via `files`).
