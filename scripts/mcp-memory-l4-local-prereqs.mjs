@@ -7,7 +7,7 @@
  * `tests/fixtures/l4-full-suite-evidence/frozen-p3-manifest.json.gz`
  * (raw sha256 verified). Only these remain local-only:
  * - the P3 peer archives under the sentropic handoff directory;
- * - the frozen L4 archives (r5 pre-fix, r8 fix) under `.graphify/scratch`,
+ * - the frozen L4 archives (r5 pre-fix, r9 fix) under `.graphify/scratch`,
  *   which is git-ignored.
  *
  * When a prerequisite is absent the caller SKIPS the test with an explicit
@@ -33,11 +33,11 @@ export const FROZEN_P3_RAW_SHA256 = '1c96bada2a749155f29aae763fa73ea6379c385d619
  * path to reproduce the no-sentropic CI state on the developer machine).
  */
 export const P3_BASE = process.env.MCP_L4_P3_BASE ?? '/home/antoinefa/src/sentropic/.tmp/engram-l4-handoff-p2/tools/memory-mcp-l5/artifacts';
-/** Frozen L4 archives under test: r5 (pre-fix) must refuse, r8 (fix) must capture. */
+/** Frozen L4 archives under test: r5 (pre-fix) must refuse, r9 (fix) must capture. */
 export const L4_R5_TARBALL_REL = '.graphify/scratch/l4-r5-artifacts/sentropic-engram-0.22.0.tgz';
 export const L4_R5_SHA256 = '965c93e326df9866584261061f4e49571cfd74dfe1dc258c0c6894eea121a4e9';
-export const L4_R8_TARBALL_REL = '.graphify/scratch/l4-r8-artifacts/sentropic-engram-0.22.0.tgz';
-export const L4_R8_SHA256 = 'd8b2e8149a073e5c894f04b3fa098fc4e2d36fe5a654747b85bffe9ad7b03f0e';
+export const L4_R9_TARBALL_REL = '.graphify/scratch/l4-r9-artifacts/sentropic-engram-0.22.0.tgz';
+export const L4_R9_SHA256 = '238cc00ec37ecc12036adfcea07727432eb56911cf319e76bb9fd516c592050c';
 
 /**
  * Read the P3 manifest from the tracked fixture, verifying its raw sha256
@@ -89,7 +89,7 @@ export function missingFencedStorePrereqs(rootDir = DEFAULT_ROOT) {
   return [
     ...missingP3PeerArchives(rootDir),
     ...missingScratchTarball(rootDir, L4_R5_TARBALL_REL, 'r5 pre-fix'),
-    ...missingScratchTarball(rootDir, L4_R8_TARBALL_REL, 'r8 fix'),
+    ...missingScratchTarball(rootDir, L4_R9_TARBALL_REL, 'r9 fix'),
   ];
 }
 
