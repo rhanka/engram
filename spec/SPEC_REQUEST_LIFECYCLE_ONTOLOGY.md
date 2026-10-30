@@ -212,116 +212,113 @@ Per `D1` (`OWNER-DECISIONS-2026-10-30.md:12`) and G0 (`SPEC-G0-guardian-contract
 
 ## 2. Vocabulary Publication, Digest Discipline & Migration Order (`B1`, `D1`, `E1`, G0)
 
-### 2.1 Profile JSON & Correspondence JSON Schemas
+> « Amendment A1 » — sections 2.1 and 2.2 below are replaced per the round-3 binding design note (`DESIGN-NOTE-rlo-g0-binding.md`, sha256 `a503789494fcbd8813fd005607f4596fcdba480975ae56f47278d43089125667`); section 2.3 is unchanged.
 
-Per G0 (`SPEC-G0-guardian-contracts.md:191-215,363-391`) and following the committed structure of `profiles/repo-knowledge/1/profile.json` (`.graphify/scratch/design/request-lifecycle/sources/engram__profiles_repo-knowledge_1_profile.json:1-39`), Engram publishes two deterministic JSON files under `profiles/request-lifecycle/1/` (`proposed, not yet in code`):
+### 2.1 Profile JSON & Mapping JSON Schemas
 
-#### 2.1.1 `profiles/request-lifecycle/1/profile.json` (`proposed, not yet in code`)
+Engram publishes two deterministic JSON files under
+`profiles/request-lifecycle/1/`. Both files copy the committed shape of
+`profiles/repo-knowledge/1/` exactly. No top-level key is added and none is
+removed.
 
-```typescript
-export interface RequestLifecycleProfileDocumentV1 {
-  readonly $schema: 'https://sentropic.dev/schemas/ontology-profile/v1.json';
-  readonly id: 'request-lifecycle';
-  readonly version: 1;
-  readonly coordinate: 'request-lifecycle@1';
-  readonly domain: 'track';
-  readonly visibility: 'public';
-  readonly specPath: 'spec/SPEC_REQUEST_LIFECYCLE_ONTOLOGY.md';
-  readonly language: 'en';
-  readonly entityTypes: readonly OntologyEntityTypeDef[];
-  readonly relationTypes: readonly OntologyRelationTypeDef[];
-  readonly axes: {
-    readonly itemKinds: readonly ['feature', 'bug', 'chore', 'decision', 'defect'];
-    readonly itemRoles: readonly ['workpackage', 'spec-phase', 'stream'];
-    readonly specStatuses: readonly ['to-specify', 'specified', 'n/a'];
-    readonly realizationStatuses: readonly ['to-do', 'in-progress', 'done', 'cancelled', 'rejected'];
-    readonly reopenMotives: readonly ['closed-without-owner-uat', 'regression-observed'];
-    readonly decisionGates: readonly ['orientation', 'commitment'];
-    readonly gateDispositions: readonly ['required', 'skipped', 'not-applicable', 'completed'];
-    readonly acceptanceStatuses: readonly ['fail', 'waived', 'unknown', 'stale', 'pass', 'n/a'];
-    readonly evidenceKinds: readonly ['unit', 'integration', 'e2e', 'manual'];
-    readonly decisionOutcomes: readonly ['pending', 'go', 'no-go', 'deferred'];
-    readonly demandTypes: readonly ['feature', 'defect', 'chore'];
-    readonly demandStatuses: readonly [
-      'raised',
-      'qualifying',
-      'agreed',
-      'rejected',
-      'duplicate',
-      'parked',
-    ];
-    readonly demandSourceKinds: readonly ['human', 'agent', 'h2a', 'import', 'external'];
-    readonly blockerKinds: readonly ['decision', 'dependency'];
-    readonly blockerResolutionRules: readonly ['linked-done', 'linked-accepted', 'manual'];
-    readonly blockerScopes: readonly ['intra', 'extra'];
-    readonly reportBuckets: readonly ['AWAITED', 'DROPPED', 'DONE', 'TO-DO'];
-    readonly reportStatuses: readonly [
-      'progressing',
-      'unforeseen',
-      'blocked',
-      'decision-awaited',
-      'not-qualified',
-      'withdrawn',
-    ];
-    readonly requestLifecycleStages: readonly [
-      'spec',
-      'dev',
-      'pr',
-      'review',
-      'merged',
-      'published',
-      'deployed',
-    ];
-  };
-}
-```
+#### 2.1.1 `profiles/request-lifecycle/1/profile.json`
 
-#### 2.1.2 `profiles/request-lifecycle/1/correspondences.json` (`proposed, not yet in code`)
+Top-level shape, copied from `profiles/repo-knowledge/1/profile.json:1-7`:
+`{id, version, owner, lifecycle, description, modules}`. `version` is the
+string `"1"` (same form as `profiles/repo-knowledge/1/profile.json:3`).
 
-Per `D1` (`OWNER-DECISIONS-2026-10-30.md:12`), ontology evolution uses **versions + explicit correspondences** (`compose` is `operation-not-applicable` in G0, `SPEC-G0-guardian-contracts.md:484,496`). The correspondence file maps `request-lifecycle@1` to:
-1. `@sentropic/track@0.98.7` model axes, report statuses, and report stages (§1.4.2), explicitly marking `'review'` and `'published'` as `B1` widenings (`not covered` yet in `sources/track-origin-main/packages/track/src/model/report-status.ts:9`), and preserving inbound normalization of legacy persisted tokens (`'PR' -> 'pr'`, `'mergé' -> 'merged'`, `'déployé' -> 'deployed'` per `sources/track-origin-main/packages/track/src/model/report-status.ts:15-19`) so that **no persisted event value is ever withdrawn** (`B1`, `OWNER-DECISIONS-2026-10-30.md:10`).
-2. `repo-knowledge@1` (`.graphify/scratch/design/request-lifecycle/sources/engram__profiles_repo-knowledge_1_profile.json:5-19`), mapping `pull_request` / `spec` references to `repo-knowledge@1` `document` and `module` entities (`kind: 'cross-profile-join'`).
-3. `memory-dto@1` (`SPEC-G0-guardian-contracts.md:433-464`), mapping `decision` and `spec` citations to Engram memory decision components (`kind: 'citation-anchor'`).
+Request-lifecycle content lives inside `modules`. Two modules are defined:
 
-```typescript
-export type CorrespondenceKind =
-  | 'exact'
-  | 'widening'
-  | 'inbound-alias-normalization'
-  | 'cross-profile-join'
-  | 'citation-anchor';
+- `modules.track`: `{description, entityTypes, relationTypes, axes}`.
+  `entityTypes` lists the 7 entity types of section 1.2 as `{id}` objects:
+  `decision, lot, production, pull_request, release, request, spec`.
+  `relationTypes` lists the 12 relation types of section 1.3 as
+  `{id, from, to}` objects: `request_promoted_to_lot`,
+  `request_governed_by_decision`, `request_specified_by_spec`,
+  `lot_child_of_lot`, `lot_specified_by_spec`, `lot_governed_by_decision`,
+  `decision_cites_spec`, `lot_implemented_by_pr`, `pr_cites_spec`,
+  `pr_ships_in_release`, `release_deployed_to_production`,
+  `lot_blocked_by_entity`. `axes` holds the 18 axes of section 1.4.2,
+  including `requestLifecycleStages: ["spec", "dev", "pr", "review",
+  "merged", "published", "deployed"]`.
+- `modules.lifecycle`: `{description, requestLifecycleStages}` with the
+  same 7-stage list, kept next to the stage-normalizer contract of
+  section 2.3.
 
-export type CorrespondenceCoverageStatus = 'verified' | 'partial' | 'not covered';
+The following section 2.1.1 fields of the previous draft have no slot in
+this shape and are not asserted here: `$schema`, `coordinate`, `domain`,
+`visibility`, `specPath`, `language`, and top-level `entityTypes`,
+`relationTypes`, `axes`. See open questions OQ-RL-2 and OQ-RL-7.
 
-export interface OntologyCorrespondenceRule {
-  readonly ruleId: string;
-  readonly sourceCoordinate: 'request-lifecycle@1';
-  readonly sourceSymbol: string;
-  readonly targetSystem: 'track' | 'engram-repo-knowledge@1' | 'engram-memory-dto@1';
-  readonly targetVersionRange: string;
-  readonly targetSymbol: string;
-  readonly kind: CorrespondenceKind;
-  readonly coverageStatus: CorrespondenceCoverageStatus;
-  readonly inboundAliases?: Readonly<Record<string, string>>;
-  readonly unmappedSourceValues?: readonly string[];
-  readonly openQuestionId?: string;
-  readonly notes: string;
-}
+#### 2.1.2 `profiles/request-lifecycle/1/engram-mapping.json`
 
-export interface RequestLifecycleCorrespondencesDocumentV1 {
-  readonly $schema: 'https://sentropic.dev/schemas/ontology-correspondences/v1.json';
-  readonly coordinate: 'request-lifecycle@1';
-  readonly rules: readonly OntologyCorrespondenceRule[];
-}
-```
+Top-level shape, copied from
+`profiles/repo-knowledge/1/engram-mapping.json:1-8`:
+`{mappingVersion, profile, description, adapters}`. `profile` is
+`{id: "request-lifecycle", version: "1"}`. Each adapter keeps the real
+adapter keys `{timingRecord, extractionTarget, note}` of
+`profiles/repo-knowledge/1/engram-mapping.json:9-13`:
+
+- `timingRecord` holds the `request-lifecycle@1` source symbol (for
+  example `"RequestLifecycleStage"`).
+- `extractionTarget` holds the target symbol in Track or in
+  `repo-knowledge@1` (for example `"ReportStage"`).
+- `note` holds the correspondence kind and coverage as text (for example
+  `"widening; review and published are B1 additions, not covered in Track
+  REPORT_STAGES"`).
+
+The previous `OntologyCorrespondenceRule` fields `kind`,
+`coverageStatus`, `inboundAliases`, `unmappedSourceValues` and
+`openQuestionId` have no dedicated adapter slot. They survive only as
+`note` text (partial). See open question OQ-RL-3. Ontology evolution still
+uses versions plus explicit correspondences; composition stays refused
+(section 2.2, fixture F3).
 
 ### 2.2 Canonical Digest Computation (G0 Contract)
 
-Per `SPEC-G0-guardian-contracts.md:363-391`:
-1. Each file under `profiles/request-lifecycle/1/` (`profile.json`, `correspondences.json`) is normalized to UTF-8, LF line endings, and RFC 8785 JCS canonical JSON (`canonicalizeJsonText`).
-2. For each file in lexicographical relative-path order (`correspondences.json`, `profile.json`), Engram computes `fileDigest = sha256(canonicalBytes)` (`64-hex` lowercase) and joins records as `<relativePath>\0<fileDigest>\n`.
-3. The pin's `digest` is `sha256:<64-hex>` where `<64-hex>` is the lowercase SHA-256 of the joined manifest bytes (`computeOntologyCanonicalDigest`, `SPEC-G0-guardian-contracts.md:382-391`).
-4. `verifyOntologyPinDigest` (`SPEC-G0-guardian-contracts.md:393-415`) verifies the catalog entry against disk and fails closed with `OntologyIntegrityError` (`code: 'ONTOLOGY_DIGEST_MISMATCH'`) on any tampering or unupdated edit.
+Digests use only the committed G0 helpers. A `Digest` is 64 lowercase hex
+digits with no prefix (`src/ontology-guardian/types.ts:6`,
+`src/ontology-guardian/types.ts:8-11`).
+
+1. Content digest: parse `profiles/request-lifecycle/1/profile.json` as a
+   JSON value and compute
+   `contentDigest = digestOfPreimage(profileJsonValue)`
+   (`src/ontology-guardian/canonical.ts:70-72`), equivalently
+   `sha256Hex(canonicalBytes(profileJsonValue))`
+   (`src/ontology-guardian/canonical.ts:60-67`).
+   `REQUEST_LIFECYCLE_PIN = {id: "request-lifecycle", version: "1",
+   contentDigest}` follows the closed `Pin` shape
+   (`src/ontology-guardian/types.ts:14-18`) and the `OPENERP_PIN` pattern
+   (`src/ontology-guardian/openerp-profile.ts:495`).
+2. Pins digest: `pinsDigestOf({layers: [REQUEST_LIFECYCLE_PIN]})`
+   (`src/ontology-guardian/digests.ts:81-84`), the same single-layer form
+   as `openerpPinsDigestOf`
+   (`src/ontology-guardian/openerp-profile.ts:506-508`). The digest value
+   is `unknown` until the profile file exists and is pinned; no value is
+   asserted in this spec.
+3. Mapping digest: `engram-mapping.json` is hashed as a JSON value with
+   `digestOfPreimage`. `mappingDigestOf`
+   (`src/ontology-guardian/digests.ts:231-233`) needs a `MappingFile`
+   projection (`src/ontology-guardian/types.ts:224-229`) that the
+   `{mappingVersion, profile, description, adapters}` shape does not
+   provide directly. Status: partial. See open question OQ-RL-4.
+4. Catalog entry digest: `entryDigestOf(entry)`
+   (`src/ontology-guardian/digests.ts:292-295`), computed externally over
+   the whole entry and never self-embedded.
+5. Admission: `checkAdmission({entry, receipts})`
+   (`src/ontology-guardian/admission.ts:445-499`) returns
+   `{admitted: true}` or `{admitted: false, code: "missing-receipt",
+   reason}` (`src/ontology-guardian/admission.ts:99-101`). The
+   `request-lifecycle@1` entry uses family `"TRK"`
+   (`src/ontology-guardian/admission.ts:40`), `profileShape:
+   "track-vocabulary"` (`src/ontology-guardian/types.ts:86-91`) and
+   `artifactKind: "profile"` (`src/ontology-guardian/types.ts:92`).
+   `deriveRequirements` (`src/ontology-guardian/admission.ts:135`) then
+   requires a `"family-corpus"` receipt
+   (`src/ontology-guardian/admission.ts:108-111`). No
+   `computeOntologyCanonicalDigest`, `verifyOntologyPinDigest`,
+   `canonicalizeJsonText` or `OntologyIntegrityError` symbol is used:
+   none exists in `src/`.
 
 ### 2.3 Stage Normalizer & Rollout Sequencing: Readers First, Then Writers (`B1`)
 
@@ -786,9 +783,11 @@ All implementation work in `rhanka/engram` is structured into five test-first Ty
 
 ### 8.1 Lot Breakdown (Engram Only)
 
+> « Amendment A1 » — the `RLO-L1` row below and the `F1`/`F3` rows in §8.2 are replaced per the round-3 binding design note (`DESIGN-NOTE-rlo-g0-binding.md`, sha256 `a503789494fcbd8813fd005607f4596fcdba480975ae56f47278d43089125667`).
+
 | Lot ID (`proposed`) | Title | Target Files & Entry Points in `rhanka/engram` (`proposed`) | Prerequisite Lots | Test-First Acceptance Fixtures |
 |---|---|---|---|---|
-| **`RLO-L1`** | `request-lifecycle@1` Profile, Correspondences, Stage Normalizer & Catalog Registration | `profiles/request-lifecycle/1/profile.json`, `profiles/request-lifecycle/1/correspondences.json`, `src/request-lifecycle/stage-normalizer.ts`, `src/ontology-guardian/catalog.ts`, `spec/SPEC_REQUEST_LIFECYCLE_ONTOLOGY.md`, `tests/request-lifecycle-ontology.test.ts` | G0 (`ONT-G0`) | `F1`, `F2`, `F3` |
+| **`RLO-L1`** | `request-lifecycle@1` Profile, Mapping, Stage Normalizer & Registration | `profiles/request-lifecycle/1/profile.json`, `profiles/request-lifecycle/1/engram-mapping.json`, `src/request-lifecycle/stage-normalizer.ts` (already committed, `8c456781`), `src/request-lifecycle/registry.ts`, `spec/SPEC_REQUEST_LIFECYCLE_ONTOLOGY.md`, `tests/request-lifecycle-ontology.test.ts` | G0 (`ONT-G0`) | `F1`, `F2`, `F3` |
 | **`RLO-L2`** | Deterministic Spec-Pin & Spec-Exempt Validator | `src/request-lifecycle/spec-pin-validator.ts`, `tests/spec-pin-validator.test.ts` | `RLO-L1` | `F4`, `F5`, `F6`, `F7`, `F8` |
 | **`RLO-L3`** | Read-Only Memory↔Spec Drift Report at `baselineCommit` | `src/request-lifecycle/drift-report.ts`, `tests/request-lifecycle-drift-report.test.ts` | `RLO-L1`, `RLO-L2` | `F9`, `F10` |
 | **`RLO-L4`** | GitHub Card Read-Only Enrichment Projection & Re-Anchor Manifest | `src/request-lifecycle/card-enrichment.ts`, `src/request-lifecycle/reanchor-manifest.ts`, `src/request-lifecycle/index.ts`, `tests/request-lifecycle-enrichment.test.ts` | `RLO-L1`, `RLO-L2`, `RLO-L3` | `F11`, `F12` |
@@ -798,9 +797,9 @@ All implementation work in `rhanka/engram` is structured into five test-first Ty
 
 | Fixture ID | Lot | Input Scenario | Expected Deterministic Output |
 |---|---|---|---|
-| **`F1`** | `RLO-L1` | Load `profiles/request-lifecycle/1/profile.json` and `correspondences.json`; run `computeOntologyCanonicalDigest` and `verifyOntologyPinDigest` (`SPEC-G0-guardian-contracts.md:382-415`). | Returns `sha256:<64-hex>` matching the catalog entry for `request-lifecycle@1`; zero French tokens in `entityTypes`, `relationTypes`, or `axes`; all 7 entity types (`request`, `spec`, `decision`, `lot`, `pull_request`, `release`, `production`), all Track `origin/main` axes (§1.4.2), and all 7 `requestLifecycleStages` (`spec`, `dev`, `pr`, `review`, `merged`, `published`, `deployed`) present. |
+| **`F1`** | `RLO-L1` | Load `profiles/request-lifecycle/1/profile.json` and `profiles/request-lifecycle/1/engram-mapping.json`; recompute the content digest with `digestOfPreimage` and the pins digest with `pinsDigestOf({layers: [REQUEST_LIFECYCLE_PIN]})`; call `checkAdmission` on the `TRK` entry without receipts. | Top-level keys are exactly `{id, version, owner, lifecycle, description, modules}` with `version: "1"`; `modules.track` declares all 7 entity types, all 12 relation types and all 18 axes including the 7 `requestLifecycleStages`; recomputed digests equal `REQUEST_LIFECYCLE_PIN.contentDigest` and `REQUEST_LIFECYCLE_PINS_DIGEST` (64 lowercase hex, `isDigest` true); a one-field mutation changes the recomputed digest; `checkAdmission` returns `{admitted: false, code: "missing-receipt", reason}` with a non-empty `reason`. The `{admitted: true}` path is not covered until a `family-corpus` receipt fixture exists (OQ-RL-6). |
 | **`F2`** | `RLO-L1` | Call `normalizeRequestLifecycleStage` on `'spec'`, `'dev'`, `'pr'`, `'PR'`, `'review'`, `'merged'`, `'mergé'`, `'published'`, `'deployed'`, `'déployé'`, `'bogus-stage'`, and `undefined`. | Maps `'PR' -> 'pr'`, `'mergé' -> 'merged'`, `'déployé' -> 'deployed'`; maps the 7 canonical English stages 1:1; returns `undefined` for `'bogus-stage'` and `undefined` (matching Track's `normalizeReportStage` unknown contract in `sources/track-origin-main/packages/track/src/model/report-status.ts:26-30`) without throwing. |
-| **`F3`** | `RLO-L1` | Call G0 `composeOntologies({ id: 'composed', version: 1, left: 'request-lifecycle@1', right: 'repo-knowledge@1' })`. | Returns `{ ok: false, status: 'operation-not-applicable', reason: ... }` per `D1` and `SPEC-G0-guardian-contracts.md:484,496`. |
+| **`F3`** | `RLO-L1` | Call `composeApplicability("TRK")` (`src/ontology-guardian/diagnostics.ts:785-788`) and wrap the result with `refusedOutcome` (`src/ontology-guardian/diagnostics.ts:749-757`). | Returns exactly one diagnostic `{origin: "guardian", code: "operation-not-applicable", nativeCode: "operation-not-applicable", ruleId: null, subjectRef: "TRK", severity: "error", path: null, messageKey: "compose-not-offered"}`; `refusedOutcome` returns `{outcome: "refused", diagnostics: [that diagnostic]}`. No `composeOntologies` symbol is used: it does not exist in `src/`. |
 | **`F4`** | `RLO-L2`, `RLO-L5` | `validateSpecPin` (and `graphify request-lifecycle check`) on a `feature` leaf (`role: undefined`) triggered at `event.at >= T` with `candidate: { mode: 'pin', repository: 'rhanka/engram', path: 'spec/SPEC_REQUEST_LIFECYCLE_ONTOLOGY.md', sha256: '<matching-64-hex>' }` where `gitReader` resolves the blob at `targetCommitOid`. | Returns `{ status: 'valid-pin', refusalCode: undefined, normalizedPin: { repository: 'rhanka/engram', path: 'spec/SPEC_REQUEST_LIFECYCLE_ONTOLOGY.md', sha256: '<matching-64-hex>', commitOid: targetCommitOid, blobOid: '<40-hex>' } }`; CLI `exitCode === 0`. |
 | **`F5`** | `RLO-L2`, `RLO-L5` | `validateSpecPin` (and `graphify request-lifecycle check`) on a `feature` leaf triggered at `event.at >= T` with `path: '.graphify/scratch/design/request-lifecycle/SPEC-request-lifecycle-ontology.md'`. | Returns `{ status: 'refused', refusalCode: 'PIN_PATH_SCRATCH_FORBIDDEN' }`; CLI `exitCode === 1`. |
 | **`F6`** | `RLO-L2`, `RLO-L5` | `validateSpecPin` (and `graphify request-lifecycle check`) on a `feature` leaf triggered at `event.at >= T` with: (a) `candidate: null`, (b) uncommitted path (`gitReader.readCommittedBlob` returns `null`), (c) committed blob whose `contentSha256` differs from `candidate.sha256`. | Returns deterministic refusals: (a) `PIN_MISSING`, (b) `PIN_BLOB_NOT_COMMITTED`, (c) `PIN_SHA256_MISMATCH`; CLI `exitCode === 1` for each. |
