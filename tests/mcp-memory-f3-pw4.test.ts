@@ -191,35 +191,57 @@ describe('PW4 manifest dispatch plan builder output and determinism', () => {
   });
 
   it('refuses drifted manifests and foreign source ids at construction', () => {
+    // Guard against vacuous passes: every drift case below must reach a real
+    // builder (a missing export would otherwise turn each case into a
+    // TypeError that toThrow() still accepts).
+    expect(typeof createManifestMemoryDispatchPlanV1).toBe('function');
     const drifted = (mutate: (manifest: Record<string, unknown>) => void): unknown => {
       const manifest = structuredClone(MEMORY_PROVIDER_MANIFEST) as Record<string, unknown>;
       mutate(manifest);
       return manifest;
     };
+    const driftedTool = (index: number, mutate: (tool: Record<string, unknown>) => void): unknown =>
+      drifted((m) => { mutate((m.tools as Record<string, unknown>[])[index]); });
+    const driftedToolGates = (index: number, mutate: (gates: Record<string, unknown>) => void): unknown =>
+      driftedTool(index, (tool) => { mutate(tool.gates as Record<string, unknown>); });
     expect(() => createManifestMemoryDispatchPlanV1({
-      manifest: drifted((m) => {
-        ((m.tools as Record<string, unknown>[])[0].gates as Record<string, unknown>).requiresHumanConfirmation = true;
-      }) as never,
-    })).toThrow();
+      manifest: driftedToolGates(0, (g) => { g.requiresHumanConfirmation = true; }) as never,
+    })).toThrow(/drifted from the frozen L0/);
+    expect(() => createManifestMemoryDispatchPlanV1({
+      manifest: driftedToolGates(0, (g) => { g.requiresPolicy = false; }) as never,
+    })).toThrow(/drifted from the frozen L0/);
+    expect(() => createManifestMemoryDispatchPlanV1({
+      manifest: driftedToolGates(0, (g) => { g.requiresPrincipalGate = true; }) as never,
+    })).toThrow(/drifted from the frozen L0/);
+    expect(() => createManifestMemoryDispatchPlanV1({
+      manifest: driftedTool(0, (tool) => { tool.description = 'Drifted description.'; }) as never,
+    })).toThrow(/drifted from the frozen L0/);
+    expect(() => createManifestMemoryDispatchPlanV1({
+      manifest: driftedTool(0, (tool) => { tool.inputSchema = { type: 'object' }; }) as never,
+    })).toThrow(/drifted from the frozen L0/);
+    expect(() => createManifestMemoryDispatchPlanV1({
+      manifest: driftedTool(0, (tool) => { tool.extra_field = 'extra'; }) as never,
+    })).toThrow(/drifted from the frozen L0/);
+    expect(() => createManifestMemoryDispatchPlanV1({
+      manifest: drifted((m) => { m.appId = 'other.app'; }) as never,
+    })).toThrow(/drifted from the frozen L0/);
     expect(() => createManifestMemoryDispatchPlanV1({
       manifest: drifted((m) => { (m.tools as unknown[]).pop(); }) as never,
-    })).toThrow();
+    })).toThrow(/frozen L0/);
     expect(() => createManifestMemoryDispatchPlanV1({
-      manifest: drifted((m) => {
-        ((m.tools as Record<string, unknown>[])[0].requiredClaims as unknown[]) = ['sub'];
-      }) as never,
-    })).toThrow();
+      manifest: driftedTool(0, (tool) => { (tool.requiredClaims as unknown[]) = ['sub']; }) as never,
+    })).toThrow(/drifted from the frozen L0/);
     expect(() => createManifestMemoryDispatchPlanV1({
       manifest: drifted((m) => { m.providerId = 'other.provider'; }) as never,
-    })).toThrow();
+    })).toThrow(/drifted from the frozen L0/);
     expect(() => createManifestMemoryDispatchPlanV1({
       manifest: drifted((m) => {
         (m.tools as unknown[]).push((m.tools as unknown[])[0]);
       }) as never,
-    })).toThrow();
+    })).toThrow(/frozen L0/);
     expect(() => createManifestMemoryDispatchPlanV1({
       sourceId: 'mcp:other' as never,
-    })).toThrow();
+    })).toThrow(/unsupported sourceId/);
   });
 });
 
@@ -471,14 +493,70 @@ describe('PW4 staged activation breaks the registry compile cycle', () => {
   }, 30_000);
 
   it('binds the materialized adapter into the broker compiled dispatch without a materialization cycle', async () => {
-    const { adapter } = await buildManifestPlanHarness();
+    const { adapter, plan } = await buildManifestPlanHarness();
+    const brokerPlan = createManifestMemoryDispatchPlanV1();
     const dispatch = new CompiledMemoryDispatch({
-      plan: createManifestMemoryDispatchPlanV1(),
+      plan: brokerPlan,
       adapters: [adapter],
       sourceId: 'mcp:engram-memory',
       generation: '1',
     });
     expect(typeof dispatch.select).toBe('function');
+    // Byte-equality between the staged plan and the broker-compiled plan over
+    // the full six-tool resolution projection.
+    for (const name of TOOL_NAMES) {
+      expect(JSON.stringify(brokerPlan.resolveTool(name))).toBe(JSON.stringify(plan.resolveTool(name)));
+    }
+    // Real selections through the external dispatch: for every tool the
+    // broker-compiled plan and the staged plan drive byte-identical broker
+    // selections and context projections through CompiledMemoryDispatch.
+    const stagedDispatch = new CompiledMemoryDispatch({
+      plan,
+      adapters: [adapter],
+      sourceId: 'mcp:engram-memory',
+      generation: '1',
+    });
+    const selectInput = (name: (typeof TOOL_NAMES)[number]) =>
+      ({
+        toolName: name,
+        ctx: stpCtx(),
+        purposeRef: 'purpose:one',
+        ...(name === 'engram_memory_capture' || name === 'engram_memory_request_admission' ||
+            name === 'engram_memory_withdraw' || name === 'engram_memory_forget'
+          ? { idempotencyKey: 'idempotency:pw4:0001' }
+          : {}),
+        ...(name === 'engram_memory_withdraw' || name === 'engram_memory_forget'
+          ? { elicitationRef: 'elicit:pw4' }
+          : {}),
+        expectedPrincipalSub: 'alice',
+        expectedTenantRef: 'tenant:one',
+        expectedSourceId: 'mcp:engram-memory',
+        expectedGeneration: '1',
+      }) as unknown as Parameters<CompiledMemoryDispatch['select']>[0];
+    for (const name of TOOL_NAMES) {
+      const input = selectInput(name);
+      const selected = dispatch.select(input);
+      expect(selected.adapter).toBe(adapter);
+      const stagedSelected = stagedDispatch.select(input);
+      expect(JSON.stringify(selected.selection)).toBe(JSON.stringify(stagedSelected.selection));
+      expect(JSON.stringify(selected.projection)).toBe(JSON.stringify(stagedSelected.projection));
+      expect(selected.auditRef).toBe(stagedSelected.auditRef);
+      const staged = plan.resolveTool(name);
+      expect(selected.selection.capabilityName).toBe(staged!.capabilityName);
+      expect(selected.selection.providerId).toBe(staged!.providerId);
+      expect(selected.selection.requiredScopes).toEqual([...staged!.requiredScopes]);
+      expect(selected.selection.requiredClaims).toEqual([...staged!.requiredClaims]);
+      expect(selected.selection.confirmationRequired).toBe(
+        name === 'engram_memory_withdraw' || name === 'engram_memory_forget' ||
+        staged!.entry.gates.requiresHumanConfirmation || staged!.entry.gates.requiresElicitation,
+      );
+      expect(selected.projection.purpose_ref).toBe('purpose:one');
+      expect(selected.projection.envelope_bindings.idempotency_key).toBe(
+        name === 'engram_memory_search' || name === 'engram_memory_get'
+          ? undefined
+          : 'idempotency:pw4:0001',
+      );
+    }
   }, 30_000);
 });
 
