@@ -21,11 +21,16 @@ function isAscii(token: string): boolean {
   return /^[\x20-\x7E]+$/.test(token);
 }
 
-describe("F1 — request-lifecycle@1 profile, correspondences and canonical digest", () => {
-  const profile = JSON.parse(readFileSync(profileUrl, "utf8")) as Record<string, unknown>;
-  const correspondences = JSON.parse(readFileSync(correspondencesUrl, "utf8")) as Record<string, unknown>;
+function loadProfileFiles(): { profile: Record<string, unknown>; correspondences: Record<string, unknown> } {
+  return {
+    profile: JSON.parse(readFileSync(profileUrl, "utf8")) as Record<string, unknown>,
+    correspondences: JSON.parse(readFileSync(correspondencesUrl, "utf8")) as Record<string, unknown>,
+  };
+}
 
+describe("F1 — request-lifecycle@1 profile, correspondences and canonical digest", () => {
   it("canonical digest matches the catalog entry for request-lifecycle@1 and verifies on disk", async () => {
+    const { profile, correspondences } = loadProfileFiles();
     const guardian = (await import("../src/ontology-guardian/catalog.js")) as Record<string, unknown>;
     const computeOntologyCanonicalDigest = guardian["computeOntologyCanonicalDigest"] as (
       files: Readonly<Record<string, string>>,
@@ -47,6 +52,7 @@ describe("F1 — request-lifecycle@1 profile, correspondences and canonical dige
   });
 
   it("declares all 7 entity types and the correspondences coordinate", () => {
+    const { profile, correspondences } = loadProfileFiles();
     const entityIds = (profile["entityTypes"] as { id: string }[]).map((e) => e.id).sort();
     expect(entityIds).toEqual(["decision", "lot", "production", "pull_request", "release", "request", "spec"]);
     expect(profile["id"]).toBe("request-lifecycle");
@@ -61,6 +67,7 @@ describe("F1 — request-lifecycle@1 profile, correspondences and canonical dige
   });
 
   it("carries zero French tokens in entityTypes, relationTypes and axes", () => {
+    const { profile } = loadProfileFiles();
     for (const entity of profile["entityTypes"] as { id: string }[]) {
       expect(isAscii(entity.id), entity.id).toBe(true);
       expect(LOWERCASE_ASCII_ID.test(entity.id) || DASHED_ASCII_ID.test(entity.id), entity.id).toBe(true);
@@ -79,6 +86,7 @@ describe("F1 — request-lifecycle@1 profile, correspondences and canonical dige
   });
 
   it("declares all Track origin/main axes per §1.4.2 and all 7 requestLifecycleStages", () => {
+    const { profile } = loadProfileFiles();
     expect(profile["axes"]).toEqual({
       itemKinds: ["feature", "bug", "chore", "decision", "defect"],
       itemRoles: ["workpackage", "spec-phase", "stream"],
