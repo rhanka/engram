@@ -3,7 +3,9 @@ import { canonicalBytes, sha256Hex } from "../src/ontology-guardian/canonical.js
 import { auditMigrationLoss, commitMigration, migrateGenericV1ToV2, migrateArchimateV1ToV2, migrateUmlV1ToV2, patchPath, resolveEffectiveType } from "../src/ontology-guardian/diagram-migrations.js";
 import type { MigDocument, MigView, MigrationSuccess } from "../src/ontology-guardian/diagram-migrations.js";
 import { corpusJson } from "./diagram-corpus-support.js";
-import { MIGRATION_REPORT_REASONS } from "../src/ontology-guardian/diagram-schemas.js";
+import { DIAGRAM_VIEW_SCHEMA_V2, MIGRATION_REPORT_REASONS } from "../src/ontology-guardian/diagram-schemas.js";
+
+const VIEW2 = DIAGRAM_VIEW_SCHEMA_V2.pin;
 
 const contractPin = { id: "diagram-presentation", version: "1", contentDigest: "a".repeat(64) };
 const document = (): MigDocument => ({
@@ -23,7 +25,7 @@ describe("complete DiagramState recovery", () => {
       if (refuse) (source.entities["entity:a"]!.attributes as Record<string, unknown>)["kicker"] = { kind: "text", value: "x".repeat(81) };
       const expected = { ...source, views: [...source.views, extra] };
       const expectedBytes = canonicalBytes(expected);
-      const report = migrateGenericV1ToV2(source, { views: [extra], contractPin });
+      const report = migrateGenericV1ToV2(source, { views: [extra], contractPin, viewSchemas: { "view:z": VIEW2, "view:a": VIEW2 } });
       expect(report.outcome).toBe(refuse ? "refused" : "ok");
       expect(canonicalBytes(report.originalCanonical)).toBe(expectedBytes);
       expect(report.originalSha256).toBe(sha256Hex(canonicalBytes(expected)));
@@ -34,21 +36,21 @@ describe("complete DiagramState recovery", () => {
   });
   it("compares valid view sets by identity while restoring the original order", () => {
     const source = { ...document(), views: [view("view:z"), view("view:a")] };
-    const report = migrateGenericV1ToV2(source);
+    const report = migrateGenericV1ToV2(source, { viewSchemas: { "view:z": VIEW2, "view:a": VIEW2 } });
     expect(report.outcome).toBe("ok");
     expect(auditMigrationLoss(source, { ...source, views: [...source.views].reverse() }, new Set())).toBeNull();
     expect(canonicalBytes(report.originalCanonical)).toBe(canonicalBytes(source));
   });
   it("refuses unknown document fields while retaining their complete recovery bytes", () => {
     const source = { ...document(), domainNote: { nested: ["one", { value: "two" }] }, views: [view()] };
-    const report = migrateGenericV1ToV2(source);
+    const report = migrateGenericV1ToV2(source, { viewSchemas: { "view:a": VIEW2 } });
     expect(report.outcome).toBe("refused");
     expect(report.originalCanonical.domainNote).toEqual(source.domainNote);
   });
   it("refuses conflicting view identities without losing either input", () => {
     const source = { ...document(), views: [view()] };
     const other = view(); other.presentation!.camera = { x: 10, y: 0, zoom: 1 };
-    const report = migrateGenericV1ToV2(source, { views: [other] });
+    const report = migrateGenericV1ToV2(source, { views: [other], viewSchemas: { "view:a": VIEW2 } });
     expect(report.outcome).toBe("refused");
     expect(report.originalCanonical.views).toEqual([source.views[0], other]);
   });
@@ -68,7 +70,7 @@ describe("complete DiagramState recovery", () => {
       bad.push(invalid);
     }
     for (const invalid of bad) {
-      const result = migrateGenericV1ToV2(document(), { views: [invalid as MigView] });
+      const result = migrateGenericV1ToV2(document(), { views: [invalid as MigView], viewSchemas: { "view:a": VIEW2 } });
       expect(result.outcome).toBe("refused"); expect(result.target).toBeNull();
       expect(result.originalCanonical.views).toEqual([invalid]);
     }
@@ -97,7 +99,7 @@ export function losslessLeafPaths(value: unknown, base: (string | number)[] = []
 describe("atomic loss refusal, every input leaf", () => {
   it("retains summary relation occurrences through generic migration", () => {
     const source = structuredClone(LOSSLESS_WITNESS);
-    const result = migrateGenericV1ToV2(source);
+    const result = migrateGenericV1ToV2(source, { viewSchemas: { "view:a": VIEW2 } });
     expect(result.outcome, JSON.stringify(result.unmigrated)).toBe("ok");
     expect(result.target!.views).toEqual(source.views);
     expect(result.originalCanonical).toEqual(source);
@@ -131,7 +133,7 @@ describe("native refinements and resolved stereotype families", () => {
     const source = { ...document(), typeDefinitions: { custom: { id: "custom", profile: "generic@1", baseType: "node",
       attributes: ["constructor", "__proto__", "toString"].map(name => ({ name, kind: "text" })) } },
       entities: { "entity:a": { ...document().entities["entity:a"]!, type: "custom", attributes } } };
-    const result = migrateGenericV1ToV2(source);
+    const result = migrateGenericV1ToV2(source, { viewSchemas: {} });
     expect(result.outcome, JSON.stringify(result.unmigrated)).toBe("ok");
     expect(canonicalBytes(result.target!.entities["entity:a"]!.attributes)).toBe(canonicalBytes(attributes));
     expect(result.target!.typeDefinitions!.custom).toEqual({ ...source.typeDefinitions.custom, profile: "generic@2" });
@@ -153,7 +155,7 @@ describe("native refinements and resolved stereotype families", () => {
   it("refuses unused and valueless incompatible native declarations", () => {
     for (const schema of [{ name: "category", kind: "boolean" }, { name: "category", kind: "text", maxLength: 41 }]) {
       const source = { ...document(), typeDefinitions: { custom: { id: "custom", profile: "generic@1", baseType: "node", attributes: [schema] } } };
-      const result = migrateGenericV1ToV2(source);
+      const result = migrateGenericV1ToV2(source, { viewSchemas: {} });
       expect(result.outcome).toBe("refused");
       expect(result.unmigrated[0]).toMatchObject({ path: "typeDefinitions.custom.attributes.category", reason: "type-definition-conflict" });
       expect(MIGRATION_REPORT_REASONS).toContain(result.unmigrated[0]!.reason);
@@ -164,7 +166,7 @@ describe("native refinements and resolved stereotype families", () => {
       parent: { id: "parent", profile: "generic@1", baseType: "node", attributes: [{ name: "category", kind: "text", minLength: 1, maxLength: 40, pattern: "^[a-z][a-z0-9-]*$", patternName: "key" }] },
       child: { id: "child", profile: "generic@1", baseType: "parent", attributes: [{ name: "domainNote", kind: "boolean" }] },
     }, entities: { "entity:a": { ...document().entities["entity:a"]!, type: "child", attributes: { name: { kind: "text", value: "A" }, domainNote: { kind: "boolean", value: true } } } } };
-    const result = migrateGenericV1ToV2(source);
+    const result = migrateGenericV1ToV2(source, { viewSchemas: {} });
     expect(result.outcome).toBe("ok");
     expect(result.target!.typeDefinitions!.parent).toBeUndefined();
     expect((result.target!.typeDefinitions!.child as { baseType: string }).baseType).toBe("node");
@@ -175,7 +177,7 @@ describe("native refinements and resolved stereotype families", () => {
     const source = corpusJson<{ document: MigDocument }>("ds:archimate-skeleton-document.json").document;
     source.typeDefinitions = { custom: { id: "custom", profile: "archimate@1", baseType: "element", attributes: [{ name: "domainNote", kind: "text", maxLength: 100 }] } };
     source.entities["entity:actor"] = { ...source.entities["entity:actor"]!, type: "custom", attributes: { ...source.entities["entity:actor"]!.attributes, domainNote: { kind: "text", value: "kept" } } };
-    const result = migrateArchimateV1ToV2(source, { entityTypes: { "entity:actor": "business-actor", "entity:process": "business-process", "entity:component": "application-component" } });
+    const result = migrateArchimateV1ToV2(source, { entityTypes: { "entity:actor": "business-actor", "entity:process": "business-process", "entity:component": "application-component" } }, { viewSchemas: {} });
     expect(result.outcome).toBe("ok");
     expect(result.target!.typeDefinitions!.custom).toEqual({ ...source.typeDefinitions.custom as object, profile: "archimate@2", baseType: "business-actor" });
     expect(result.target!.entities["entity:actor"]!.type).toBe("custom");
@@ -186,7 +188,7 @@ describe("native refinements and resolved stereotype families", () => {
     source.typeDefinitions = { domain: { id: "domain", profile: "uml@1", baseType: "class", attributes: [] }, specialized: { id: "specialized", profile: "uml@1", baseType: "stereotype", attributes: [] } };
     source.entities["entity:order"] = { ...source.entities["entity:order"]!, type: "domain" };
     source.entities["entity:declared"] = { id: "entity:declared", profile: "uml@1", type: "specialized", attributes: { name: { kind: "text", value: "entity" }, extends: { kind: "collection", items: [{ kind: "text", value: "class" }] } } };
-    const result = migrateUmlV1ToV2(source, { stereotypes: { entity: "entity:declared" } });
+    const result = migrateUmlV1ToV2(source, { stereotypes: { entity: "entity:declared" } }, { viewSchemas: {} });
     expect(result.outcome).toBe("ok");
     expect(result.target!.entities["entity:order"]!.attributes.stereotypes).toEqual({ kind: "collection", items: [{ kind: "reference", value: "entity:declared" }] });
   });

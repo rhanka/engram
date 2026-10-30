@@ -6,7 +6,7 @@ import { corpusBytes, corpusJson, sourceIndex } from "./diagram-corpus-support.j
 import { canonicalBytes, sha256Hex } from "../src/ontology-guardian/canonical.js";
 import { migrateGenericV1ToV2 } from "../src/ontology-guardian/diagram-migrations.js";
 import type { MigDocument, MigView } from "../src/ontology-guardian/diagram-migrations.js";
-import { DIAGRAM_SEMANTIC_SCHEMA, DIAGRAM_VIEW_SCHEMA } from "../src/ontology-guardian/diagram-schemas.js";
+import { DIAGRAM_SEMANTIC_SCHEMA, DIAGRAM_VIEW_SCHEMA, DIAGRAM_VIEW_SCHEMA_V2 } from "../src/ontology-guardian/diagram-schemas.js";
 import { buildArchimateMatrixCases, materializeArchimateMatrixCase, derivedCaseId, stableId } from "../src/ontology-guardian/diagram-oracle.js";
 import { ARCHIMATE_RELATIONSHIP_IDS, expandArchimateTuples } from "../src/ontology-guardian/diagram-profiles.js";
 
@@ -43,7 +43,7 @@ describe("all six pinned semantic/view card cases", () => {
       const source = JSON.parse(canonicalBytes(fixture.source)) as MigDocument;
       const sourceView = JSON.parse(canonicalBytes(fixture.sourceView)) as MigView;
       const contractPin = (fixture.expectedView.presentation!.diagram as { contractPin: { id: string; version: string; contentDigest: string } }).contractPin;
-      const result = migrateGenericV1ToV2(source, { views: [sourceView], contractPin });
+      const result = migrateGenericV1ToV2(source, { views: [sourceView], contractPin, viewSchemas: { [sourceView.viewId]: DIAGRAM_VIEW_SCHEMA_V2.pin } });
       expect(result.outcome, JSON.stringify(result.unmigrated)).toBe("ok");
       const fullInput = { ...source, views: [sourceView] };
       expect(canonicalBytes(result.originalCanonical)).toBe(canonicalBytes(fullInput));

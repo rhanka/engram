@@ -35,12 +35,12 @@ const TEST_FILES = [
   "ontology-guardian-diagram-admission.test.ts", "ontology-guardian-diagram-typeproof.test.ts",
   "ontology-guardian-diagram-schemas.test.ts", "ontology-guardian-diagram-corpus.test.ts",
   "ontology-guardian-diagram-native-shapes.test.ts", "ontology-guardian-diagram-recovery.test.ts",
-  "ontology-guardian-diagram-acceptance.test.ts",
+  "ontology-guardian-diagram-acceptance.test.ts", "ontology-guardian-diagram-view-schema.test.ts",
 ];
 function edit(contents, mutation) {
   if (mutation.kind === "schema") {
     const anchor = "const digest = sha256Hex(canonicalBytes(schema));";
-    const inject = `if (id === ${JSON.stringify(mutation.schemaId)}) {
+    const inject = `if (id === ${JSON.stringify(mutation.schemaId)} && version === ${JSON.stringify(mutation.schemaVersion)}) {
       schema = structuredClone(schema);
       const route = ${JSON.stringify(mutation.path)};
       let node = schema; for (const key of route.slice(0, -1)) node = node[key];
@@ -173,10 +173,41 @@ mutate("DM62", "diagram-view-shape.ts", summaryGuard, summaryGuard.replace(", re
 mutate("DM63", "diagram-view-shape.ts", summaryGuard, summaryGuard.replace("relationOccurrences: list(text)", "relationOccurrences: () => null"));
 mutate("DM64", "diagram-view-shape.ts", summaryGuard, summaryGuard.replace("relationOccurrences: list(text)", "relationOccurrences: list(() => null)"));
 
+// diagram-view-schema@2 (SPEC §6.3): generated mutants cover the governed
+// schema data; the hand-specified mutants below cover derivation, conflict,
+// input mutation, atomicity, selection and digest behavior of the hand-written
+// checks and the view migration. Skipped view-before-profile ordering and the
+// gate vocabulary are covered through the composed fixtures.
+mutate("MV1", "diagram-view-migration.ts", 'summary["id"] = key;', 'void key;');
+mutate("MV2", "diagram-view-migration.ts", '} else if (summary["id"] !== key) {', '} else if (false) {');
+mutate("MV3", "diagram-view-migration.ts",
+  'const candidate = structuredClone(view) as Record<string, unknown>;\n  const summaries = candidate["summaryLabels"];',
+  'const candidate = (view) as Record<string, unknown>;\n  const summaries = candidate["summaryLabels"];');
+mutate("MV4", "diagram-view-migration.ts",
+  '    if (report.outcome === "refused") {\n      return viewRefusal(source, target, views, evidence.bytes, operations,',
+  '    if (report.outcome === "refused") {\n      void report; void operations; continue;\n      return viewRefusal(source, target, views, evidence.bytes, operations,');
+mutate("MV5", "diagram-view-migration.ts", '|| pin.version !== requiredVersion) {', '|| false) {');
+mutate("MV6", "diagram-view-migration.ts", 'if (known.digest !== pin.contentDigest) {', 'if (false) {');
+mutate("MG1", "diagram-migrations.ts", 'const associations = viewSchemas ?? {};', 'const associations: Readonly<Record<string, Pin>> = {};');
+mutations.at(-1).scope = ["view-schema"];
+mutate("MG3", "diagram-migrations.ts",
+  '  const { views, stage } = stageConvertedViews(source, options.views, viewPins);\n  if ("boundary" in stage || stage.outcome === "refused") return { viewStage: stage, profileStage: null };',
+  '  const { views, stage } = stageConvertedViews(source, options.views, viewPins);\n  void stage;\n  if (false) return { viewStage: stage, profileStage: null };');
+mutations.at(-1).scope = ["view-schema"];
+mutate("MG4", "diagram-migrations.ts", 'if (known.digest !== (pin as Pin).contentDigest) {', 'if (false) {');
+mutations.at(-1).scope = ["view-schema"];
+mutate("MG5", "diagram-migrations.ts",
+  'function preCanonicalBoundary(source: MigDocument): BoundaryPreflightRefusal | null {\n  try {\n    canonicalBytes(source);\n    return null;',
+  'function preCanonicalBoundary(source: MigDocument): BoundaryPreflightRefusal | null {\n  try {\n    void source;\n    return null;');
+mutations.at(-1).scope = ["view-schema"];
+mutate("MS1", "diagram-schemas.ts", 'if (pin.id !== "diagram-view-schema") return undefined;', 'if (false) return undefined;');
+mutations.at(-1).scope = ["view-schema"];
+
 function scopeOf(file) {
   if (file === "diagram-view-shape.ts" || file === "diagram-document-shape.ts") return ["native-shapes", "recovery"];
   if (file === "diagram-schemas.ts") return ["schemas", "native-shapes"];
   if (file === "diagram-corpus.ts") return ["corpus"];
+  if (file === "diagram-view-migration.ts") return ["view-schema", "migrations"];
   if (file === "diagram-migrations.ts") return ["migrations", "recovery"];
   if (file === "diagram-oracle.ts") return ["vectors", "acceptance"];
   return ["vectors", "admission"];
@@ -204,7 +235,7 @@ if (!isMainThread) {
       for (const [key, value] of Object.entries(node)) {
         const at = [...route, key];
         if (!propertyMap && keywords.has(key)) {
-          const base = { kind: "schema", file: "diagram-schemas.ts", schemaId: pin.id, path: at, scope: ["schemas", "native-shapes"] };
+          const base = { kind: "schema", file: "diagram-schemas.ts", schemaId: pin.id, schemaVersion: pin.version, path: at, scope: ["schemas", "native-shapes", "view-schema"] };
           if (key === "required") for (const field of value) schemaMutants.push({ ...base, operation: "required", field });
           else if (key === "dependentRequired") for (const field of Object.keys(value)) schemaMutants.push({ ...base, operation: "dependency", field });
           else schemaMutants.push({ ...base, operation: key === "type" ? "nullable" : key === "additionalProperties" || key === "uniqueItems" ? "replace" : "delete", value: key === "additionalProperties" ? true : false });
@@ -264,6 +295,8 @@ const compilerMutations = [
   ["native-reference-valueless", "diagram-native-types.ts", 'readonly kind: "text" | "date" | "enum" | "reference"; readonly value: string', 'readonly kind: "text" | "date" | "enum" | "reference"; readonly value?: string'],
   ["native-view-presentation-optional", "diagram-native-types.ts", "readonly presentation: NativePresentationState;", "readonly presentation?: NativePresentationState;"],
   ["native-summary-id-optional", "diagram-native-types.ts", "readonly summaryLabels?: Readonly<Record<string, { readonly id: string;", "readonly summaryLabels?: Readonly<Record<string, { readonly id?: string;"],
+  ["view-reason-open", "diagram-view-migration.ts", '| "summary-key-conflict"', '| "summary-key-conflict" | string'],
+  ["boundary-target-open", "diagram-view-migration.ts", "readonly original?: unknown;\n  readonly target: null;", "readonly original?: unknown;\n  readonly target: unknown;"],
   ["native-semantic-version-optional", "diagram-native-types.ts", "readonly schemaVersion: { readonly major: number; readonly minor: number };", "readonly schemaVersion?: { readonly major: number; readonly minor: number };"],
 ];
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "diagram-type-proof-"));

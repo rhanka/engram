@@ -18,9 +18,11 @@ import {
 } from "../src/ontology-guardian/diagram-migrations.js";
 import type { MigAttribute, MigDocument } from "../src/ontology-guardian/diagram-migrations.js";
 import { expandArchimateTuples } from "../src/ontology-guardian/diagram-profiles.js";
+import { DIAGRAM_VIEW_SCHEMA_V2 } from "../src/ontology-guardian/diagram-schemas.js";
 
 const fixtures = join(testsDir, "fixtures");
 const shaFile = (path: string): string => createHash("sha256").update(readFileSync(path)).digest("hex");
+const VIEW2 = DIAGRAM_VIEW_SCHEMA_V2.pin;
 
 // The historical authored generic fixture is intentionally partial. Add the
 // native envelope explicitly at the call site; its pinned bytes stay intact.
@@ -110,7 +112,7 @@ describe("canonical refusal selection", () => {
       // Remove unrelated stereotype application so both isolated inputs reach
       // the multiplicity parser with exactly the same invalid declarations.
       source.entities["entity:order"] = { ...source.entities["entity:order"]!, attributes: { name: { kind: "text", value: "Order" } } };
-      return migrateUmlV1ToV2(source, { stereotypes: {} });
+      return migrateUmlV1ToV2(source, { stereotypes: {} }, { viewSchemas: {} });
     });
     expect(results[0]!.unmigrated).toEqual([{ path: "relations.relation:order-customer.attributes.sourceMultiplicity", reason: "multiplicity-syntax" }]);
     expect(results[1]!.unmigrated).toEqual(results[0]!.unmigrated);
@@ -121,7 +123,7 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
   const source = (): MigDocument => loadMig(join(fixtures, "generic-v1-minimal-document.json"));
 
   it("migrates the minimal document, preserving every id and endpoint", () => {
-    const report = migrateGenericV1ToV2(source());
+    const report = migrateGenericV1ToV2(source(), { viewSchemas: {} });
     expect(report.outcome).toBe("ok");
     expect(report.unmigrated).toEqual([]);
     expect(report.target).not.toBeNull();
@@ -147,7 +149,7 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
   });
 
   it("removes semantic collapsed and reports absent/false/true distinctly", () => {
-    const report = migrateGenericV1ToV2(source());
+    const report = migrateGenericV1ToV2(source(), { viewSchemas: {} });
     const removals = report.operations.filter((o) => o.action === "remove-semantic-collapsed");
     expect(removals.map((o) => `${o.path}=${o.detail}`).sort()).toEqual([
       "entities.entity:box-open.attributes.collapsed=was-false",
@@ -159,10 +161,10 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
 
   it("round-trips: originalCanonical restores byte for byte; re-migration refuses", () => {
     const doc = source();
-    const report = migrateGenericV1ToV2(doc);
+    const report = migrateGenericV1ToV2(doc, { viewSchemas: {} });
     expect(canonicalBytes(report.originalCanonical)).toBe(canonicalBytes(doc));
     expect(report.originalSha256).toBe(sha256Hex(canonicalBytes(doc)));
-    const again = migrateGenericV1ToV2(report.target!);
+    const again = migrateGenericV1ToV2(report.target!, { viewSchemas: {} });
     expect(again.outcome).toBe("refused");
     expect(again.target).toBeNull();
     expect(again.unmigrated).toEqual([{ path: "", reason: "target-already-present" }]);
@@ -173,7 +175,7 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
     const doc = source();
     const withSlot = structuredClone(doc);
     (withSlot.entities["entity:node-a"]!.attributes as Record<string, unknown>)["kicker"] = { kind: "text", value: "K" };
-    const report = migrateGenericV1ToV2(withSlot);
+    const report = migrateGenericV1ToV2(withSlot, { viewSchemas: {} });
     expect(report.outcome).toBe("refused");
     expect(report.target).toBeNull();
     expect(report.unmigrated).toEqual([
@@ -187,6 +189,7 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
     (doc.entities["entity:node-a"]!.attributes as Record<string, unknown>)["kicker"] = { kind: "text", value: "K" };
     (doc.entities["entity:node-a"]!.attributes as Record<string, unknown>)["icon"] = { kind: "text", value: "window" };
     const report = migrateGenericV1ToV2(doc, {
+      viewSchemas: { "view:1": VIEW2 },
       views: [{
         viewId: "view:1", semanticDocumentId: "document:generic-1-minimal", revision: 0,
         entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:node-a" , geometry: { x: 0, y: 0, width: 460, height: 200 }} },
@@ -218,6 +221,7 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
     const doc = source();
     (doc.entities["entity:node-a"]!.attributes as Record<string, unknown>)["kicker"] = { kind: "text", value: "K" };
     const report = migrateGenericV1ToV2(doc, {
+      viewSchemas: { "view:1": VIEW2 },
       views: [{
         viewId: "view:1", semanticDocumentId: "document:generic-1-minimal", revision: 0,
         entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:node-a" , geometry: { x: 0, y: 0, width: 460, height: 200 }} },
@@ -232,6 +236,7 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
     const doc = source();
     (doc.entities["entity:node-a"]!.attributes as Record<string, unknown>)["kicker"] = { kind: "text", value: "K" };
     const report = migrateGenericV1ToV2(doc, {
+      viewSchemas: { "view:1": VIEW2 },
       views: [{
         viewId: "view:1", semanticDocumentId: "document:generic-1-minimal", revision: 0,
         entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:node-a" , geometry: { x: 0, y: 0, width: 460, height: 200 }} },
@@ -254,7 +259,7 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
       "entity:actor": "business-actor",
       "entity:process": "business-process",
       "entity:component": "application-component",
-    } });
+    } }, { viewSchemas: {} });
     expect(report.outcome).toBe("ok");
     if (report.outcome !== "ok") throw new Error("migration");
     expect(report.target!.schemaVersion).toEqual((doc as MigDocument).schemaVersion);
@@ -286,8 +291,8 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
       next.relations["relation:order-customer"] = { ...rel, attributes: flipped };
       return next;
     };
-    const first = migrateUmlV1ToV2(withStereotype(uml()), input);
-    const second = migrateUmlV1ToV2(flipAttributes(withStereotype(uml())), input);
+    const first = migrateUmlV1ToV2(withStereotype(uml()), input, { viewSchemas: {} });
+    const second = migrateUmlV1ToV2(flipAttributes(withStereotype(uml())), input, { viewSchemas: {} });
     expect(first.outcome).toBe("ok");
     expect(second.outcome).toBe("ok");
     if (first.outcome !== "ok" || second.outcome !== "ok") throw new Error("migration");
@@ -301,6 +306,7 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
       kind: "text", value: "k".repeat(100),
     };
     const report = migrateGenericV1ToV2(doc, {
+      viewSchemas: { "view:1": VIEW2 },
       views: [{
         viewId: "view:1", semanticDocumentId: "document:generic-1-minimal", revision: 0,
         entityOccurrences: { "occurrence:a": { id: "occurrence:a", entity: "entity:node-a" , geometry: { x: 0, y: 0, width: 460, height: 200 }} },
@@ -316,14 +322,14 @@ describe("generic@1 → generic@2 (§3.13.1)", () => {
   it("refuses a target-reserved refinement id before any rewrite", () => {
     const doc = source();
     const withReserved = { ...doc, typeDefinitions: { node: { id: "node", profile: "generic@1", baseType: "node", attributes: [] } } };
-    const report = migrateGenericV1ToV2(withReserved);
+    const report = migrateGenericV1ToV2(withReserved, { viewSchemas: {} });
     expect(report.outcome).toBe("refused");
     expect(report.unmigrated).toEqual([{ path: "typeDefinitions.node", reason: "incompatible-attribute-schema" }]);
   });
 
   it("refuses a missing source profile without a candidate", () => {
     const doc = { ...source(), profileRefs: ["uml@1"] };
-    const report = migrateGenericV1ToV2(doc);
+    const report = migrateGenericV1ToV2(doc, { viewSchemas: {} });
     expect(report.outcome).toBe("refused");
     expect(report.unmigrated).toEqual([{ path: "", reason: "missing-source-profile" }]);
   });
@@ -338,7 +344,7 @@ describe("archimate@1 → archimate@2 (§§3.9.1/3.13.2)", () => {
   } };
 
   it("migrates the pinned skeleton with the closed §3.13.2 mapping and byte-identical endpoints", () => {
-    const report = migrateArchimateV1ToV2(source(), mapping);
+    const report = migrateArchimateV1ToV2(source(), mapping, { viewSchemas: {} });
     expect(report.outcome).toBe("ok");
     const target = report.target!;
     expect(target.profileRefs).toEqual(["archimate@2"]);
@@ -377,7 +383,7 @@ describe("archimate@1 → archimate@2 (§§3.9.1/3.13.2)", () => {
     it(`refuses the invalid §3.13.2 mapping shape: ${label}`, () => {
       const doc = source();
       const before = canonicalBytes(doc);
-      const report = migrateArchimateV1ToV2(doc, invalid as never);
+      const report = migrateArchimateV1ToV2(doc, invalid as never, { viewSchemas: {} });
       expect(report.outcome).toBe("refused");
       expect(report.target).toBeNull();
       expect(report.unmigrated).toEqual([{ path: "mapping", reason: "incompatible-attribute-schema" }]);
@@ -388,7 +394,7 @@ describe("archimate@1 → archimate@2 (§§3.9.1/3.13.2)", () => {
   }
 
   it("derives layer/aspect from the catalogue and drops no authored name", () => {
-    const report = migrateArchimateV1ToV2(source(), mapping);
+    const report = migrateArchimateV1ToV2(source(), mapping, { viewSchemas: {} });
     expect(report.target!.entities["entity:actor"]!.attributes).toEqual({
       name: { kind: "text", value: "Claims officer" },
       layer: { kind: "enum", value: "business" },
@@ -397,7 +403,7 @@ describe("archimate@1 → archimate@2 (§§3.9.1/3.13.2)", () => {
   });
 
   it("refuses an unmapped element, leaving the original @1", () => {
-    const report = migrateArchimateV1ToV2(source(), { entityTypes: { "entity:actor": "business-actor" } });
+    const report = migrateArchimateV1ToV2(source(), { entityTypes: { "entity:actor": "business-actor" } }, { viewSchemas: {} });
     expect(report.outcome).toBe("refused");
     expect(report.target).toBeNull();
     expect(report.unmigrated).toEqual([{ path: "entities.entity:component", reason: "missing-type-mapping" }]);
@@ -407,7 +413,7 @@ describe("archimate@1 → archimate@2 (§§3.9.1/3.13.2)", () => {
     const doc = source();
     const edited = structuredClone(doc);
     edited.relations["relation:serving"] = { ...edited.relations["relation:serving"]!, type: "composition" };
-    const report = migrateArchimateV1ToV2(edited, mapping);
+    const report = migrateArchimateV1ToV2(edited, mapping, { viewSchemas: {} });
     expect(report.outcome).toBe("refused");
     expect(report.unmigrated).toEqual([{ path: "relations.relation:serving.endpoints", reason: "relationship-matrix-violation" }]);
   });
@@ -419,7 +425,7 @@ describe("archimate@1 → archimate@2 (§§3.9.1/3.13.2)", () => {
       ...edited.relations["relation:flow"]!,
       endpoints: [{ role: "source", target: "entity:process" }],
     };
-    const report = migrateArchimateV1ToV2(edited, mapping);
+    const report = migrateArchimateV1ToV2(edited, mapping, { viewSchemas: {} });
     expect(report.outcome).toBe("refused");
     expect(report.unmigrated).toEqual([{ path: "relations.relation:flow.endpoints", reason: "endpoint-role-unknown" }]);
   });
@@ -445,7 +451,7 @@ describe("archimate@1 → archimate@2 (§§3.9.1/3.13.2)", () => {
         { role: "target", target: "relation:assignment" },
       ],
     };
-    const report = migrateArchimateV1ToV2(edited, mapping);
+    const report = migrateArchimateV1ToV2(edited, mapping, { viewSchemas: {} });
     expect(report.outcome).toBe("refused");
     expect(report.target).toBeNull();
     expect(report.unmigrated).toEqual([{ path: "relations.relation:flow.endpoints", reason: "missing-type-mapping" }]);
@@ -456,7 +462,7 @@ describe("uml@1 → uml@2 (§§3.11.1/3.13.2)", () => {
   const source = (): MigDocument => loadMig(join(fixtures, "pinned-sources", "uml-skeleton-document.json")).document as MigDocument;
 
   it("refuses the raw skeleton on its unmapped stereotype text", () => {
-    const report = migrateUmlV1ToV2(source(), { stereotypes: {} });
+    const report = migrateUmlV1ToV2(source(), { stereotypes: {} }, { viewSchemas: {} });
     expect(report.outcome).toBe("refused");
     expect(report.target).toBeNull();
     expect(report.unmigrated).toEqual([
@@ -476,7 +482,7 @@ describe("uml@1 → uml@2 (§§3.11.1/3.13.2)", () => {
     };
     const report = migrateUmlV1ToV2(doc, {
       stereotypes: { entity: "entity:stereotype-entity" },
-    });
+    }, { viewSchemas: {} });
     expect(report.outcome).toBe("ok");
     const target = report.target!;
     expect(target.profileRefs).toEqual(["uml@2"]);
@@ -514,7 +520,7 @@ describe("uml@1 → uml@2 (§§3.11.1/3.13.2)", () => {
     };
     const report = migrateUmlV1ToV2(doc, {
       stereotypes: { entity: "entity:stereotype-entity" },
-    });
+    }, { viewSchemas: {} });
     expect(report.outcome).toBe("refused");
     expect(report.unmigrated).toEqual([
       { path: "entities.entity:order.attributes.stereotypes[0]", reason: "stereotype-application-invalid" },
@@ -524,7 +530,7 @@ describe("uml@1 → uml@2 (§§3.11.1/3.13.2)", () => {
   it("refuses a dangling stereotype mapping resolved in no document", () => {
     const report = migrateUmlV1ToV2(source(), {
       stereotypes: { entity: "entity:stereotype-entity" },
-    });
+    }, { viewSchemas: {} });
     expect(report.outcome).toBe("refused");
     expect(report.unmigrated).toEqual([
       { path: "entities.entity:order.attributes.stereotypes[0]", reason: "unmapped-stereotype" },
@@ -534,7 +540,7 @@ describe("uml@1 → uml@2 (§§3.11.1/3.13.2)", () => {
   it("refuses a stereotype mapping that names a non-stereotype record", () => {
     const report = migrateUmlV1ToV2(source(), {
       stereotypes: { entity: "entity:order" },
-    });
+    }, { viewSchemas: {} });
     expect(report.outcome).toBe("refused");
     expect(report.unmigrated).toEqual([
       { path: "entities.entity:order.attributes.stereotypes[0]", reason: "stereotype-application-invalid" },
@@ -556,12 +562,12 @@ describe("uml@1 → uml@2 (§§3.11.1/3.13.2)", () => {
     const doc = source();
     const badText = withDeclaration(structuredClone(doc));
     (badText.entities["entity:order-total"]!.attributes["multiplicity"] as { value: string }).value = " 1";
-    expect(migrateUmlV1ToV2(badText, { stereotypes: { entity: "s" } }).unmigrated).toEqual([
+    expect(migrateUmlV1ToV2(badText, { stereotypes: { entity: "s" } }, { viewSchemas: {} }).unmigrated).toEqual([
       { path: "entities.entity:order-total.attributes.multiplicity", reason: "multiplicity-syntax" },
     ]);
     const reversed = withDeclaration(structuredClone(doc));
     (reversed.entities["entity:order-total"]!.attributes["multiplicity"] as { value: string }).value = "5..1";
-    expect(migrateUmlV1ToV2(reversed, { stereotypes: { entity: "s" } }).unmigrated).toEqual([
+    expect(migrateUmlV1ToV2(reversed, { stereotypes: { entity: "s" } }, { viewSchemas: {} }).unmigrated).toEqual([
       { path: "entities.entity:order-total.attributes.multiplicity", reason: "multiplicity-invalid" },
     ]);
   });
@@ -576,7 +582,7 @@ describe("lossless copy-then-patch (design note A, finding 2)", () => {
     (doc.entities["entity:node-a"]!.attributes as Record<string, unknown>)["domainNote"] = {
       kind: "text", value: "MUST SURVIVE",
     };
-    const report = migrateGenericV1ToV2(doc);
+    const report = migrateGenericV1ToV2(doc, { viewSchemas: {} });
     expect(report.outcome).toBe("ok");
     if (report.outcome !== "ok") throw new Error("migration");
     expect(report.target!.entities["entity:node-a"]!.attributes["domainNote"]).toEqual({
@@ -596,7 +602,7 @@ describe("lossless copy-then-patch (design note A, finding 2)", () => {
       "entity:actor": "business-actor",
       "entity:process": "business-process",
       "entity:component": "application-component",
-    } });
+    } }, { viewSchemas: {} });
     expect(report.outcome).toBe("ok");
     if (report.outcome !== "ok") throw new Error("migration");
     expect(report.target!.entities["entity:actor"]!.attributes["domainNote"]).toEqual({
@@ -626,7 +632,7 @@ describe("lossless copy-then-patch (design note A, finding 2)", () => {
       "entity:actor": "business-actor",
       "entity:process": "business-process",
       "entity:component": "application-component",
-    } });
+    } }, { viewSchemas: {} });
     expect(report.outcome).toBe("ok");
     if (report.outcome !== "ok") throw new Error("migration " + JSON.stringify(report.unmigrated));
     expect(report.target!.entities["entity:actor"]!.type).toBe("custom-actor");
@@ -647,7 +653,7 @@ describe("lossless copy-then-patch (design note A, finding 2)", () => {
       "entity:actor": "application-component",
       "entity:process": "business-process",
       "entity:component": "application-component",
-    } });
+    } }, { viewSchemas: {} });
     expect(report.outcome).toBe("refused");
     expect(report.target).toBeNull();
     expect(report.unmigrated).toEqual([
@@ -668,7 +674,7 @@ describe("lossless copy-then-patch (design note A, finding 2)", () => {
       "entity:actor": "business-actor",
       "entity:process": "business-process",
       "entity:component": "application-component",
-    } });
+    } }, { viewSchemas: {} });
     expect(report.outcome).toBe("refused");
     expect(report.target).toBeNull();
     expect(report.unmigrated).toEqual([
@@ -682,7 +688,7 @@ describe("lossless copy-then-patch (design note A, finding 2)", () => {
 
   it("keeps the complete target valid: endpoints and native fields survive", () => {
     const doc = generic();
-    const report = migrateGenericV1ToV2(doc);
+    const report = migrateGenericV1ToV2(doc, { viewSchemas: {} });
     expect(report.outcome).toBe("ok");
     if (report.outcome !== "ok") throw new Error("migration");
     expect(canonicalBytes(report.originalCanonical)).toBe(canonicalBytes(doc));
@@ -711,6 +717,7 @@ describe("per-view presentation scoping (design note B, new findings)", () => {
     (doc.entities["entity:node-a"]!.attributes as Record<string, unknown>)["kicker"] = { kind: "text", value: "NODE" };
     (doc.entities["entity:box"]!.attributes as Record<string, unknown>)["kicker"] = { kind: "text", value: "BOX" };
     const report = migrateGenericV1ToV2(doc, {
+      viewSchemas: { "view:1": VIEW2, "view:2": VIEW2 },
       views: [
         ...fullView("view:1", { "occurrence:a": "entity:node-a" })!,
         ...fullView("view:2", { "occurrence:a": "entity:box" })!,
@@ -738,7 +745,7 @@ describe("per-view presentation scoping (design note B, new findings)", () => {
       id: "entity:foreign", profile: "other@1", type: "widget",
       attributes: { body: { kind: "text", value: "legitimate semantic body" } },
     };
-    const report = migrateGenericV1ToV2(doc);
+    const report = migrateGenericV1ToV2(doc, { viewSchemas: {} });
     expect(report.outcome).toBe("ok");
     if (report.outcome !== "ok") throw new Error("migration");
     expect(report.target!.entities["entity:foreign"]).toEqual(doc.entities["entity:foreign"]);
@@ -748,6 +755,7 @@ describe("per-view presentation scoping (design note B, new findings)", () => {
     const doc = generic();
     const report = migrateGenericV1ToV2(doc, {
       views: fullView("view:1", { "occurrence:a": "entity:box" }),
+      viewSchemas: { "view:1": VIEW2 },
       seedFolds: true,
     });
     expect(report.outcome).toBe("ok");
@@ -762,6 +770,7 @@ describe("per-view presentation scoping (design note B, new findings)", () => {
     const doc = generic();
     const report = migrateGenericV1ToV2(doc, {
       views: fullView("view:1", { "occurrence:ghost": "entity:missing" }),
+      viewSchemas: { "view:1": VIEW2 },
     });
     expect(report.outcome).toBe("refused");
     expect(report.target).toBeNull();
@@ -793,7 +802,7 @@ describe("refinement resolution (design note A, finding 5)", () => {
     (doc.entities["entity:custom-node"]!.attributes as Record<string, unknown>)["domainNote"] = {
       kind: "text", value: "kept",
     };
-    const report = migrateGenericV1ToV2(doc);
+    const report = migrateGenericV1ToV2(doc, { viewSchemas: {} });
     expect(report.outcome).toBe("ok");
     if (report.outcome !== "ok") throw new Error("migration " + JSON.stringify(report.unmigrated));
     expect(report.target!.entities["entity:custom-node"]!.attributes["domainNote"]).toEqual({
@@ -805,7 +814,7 @@ describe("refinement resolution (design note A, finding 5)", () => {
     const doc = withRefinement(generic(), "custom-node", "node", {
       category: { name: "category", kind: "boolean" },
     });
-    const report = migrateGenericV1ToV2(doc);
+    const report = migrateGenericV1ToV2(doc, { viewSchemas: {} });
     expect(report.outcome).toBe("refused");
     expect(report.target).toBeNull();
     expect(report.unmigrated).toEqual([{
@@ -820,7 +829,7 @@ describe("refinement resolution (design note A, finding 5)", () => {
     (doc.entities["entity:node-a"]!.attributes as Record<string, unknown>)["category"] = {
       kind: "boolean", value: true,
     };
-    const report = migrateGenericV1ToV2(doc);
+    const report = migrateGenericV1ToV2(doc, { viewSchemas: {} });
     expect(report.outcome).toBe("refused");
     expect(report.target).toBeNull();
     expect(report.unmigrated).toEqual([{
@@ -836,7 +845,7 @@ describe("refinement resolution (design note A, finding 5)", () => {
     (refined.entities["entity:custom-box"]!.attributes as Record<string, unknown>)["collapsed"] = {
       kind: "boolean", value: true,
     };
-    const report = migrateGenericV1ToV2(refined);
+    const report = migrateGenericV1ToV2(refined, { viewSchemas: {} });
     expect(report.outcome).toBe("ok");
     if (report.outcome !== "ok") throw new Error("migration");
     expect(report.target!.entities["entity:custom-box"]!.attributes["collapsed"]).toBeUndefined();
@@ -859,7 +868,7 @@ describe("stereotype ownership and declaration (finding 6)", () => {
         extends: { kind: "collection", items: [{ kind: "text", value: "class" }] },
       },
     };
-    const report = migrateUmlV1ToV2(doc, { stereotypes: { entity: "entity:foreign-stereotype" } });
+    const report = migrateUmlV1ToV2(doc, { stereotypes: { entity: "entity:foreign-stereotype" } }, { viewSchemas: {} });
     expect(report.outcome).toBe("refused");
     expect(report.target).toBeNull();
     expect(report.unmigrated).toEqual([
@@ -876,7 +885,7 @@ describe("stereotype ownership and declaration (finding 6)", () => {
         extends: { kind: "collection", items: [{ kind: "text", value: "class" }] },
       },
     };
-    const report = migrateUmlV1ToV2(doc, { stereotypes: { entity: "entity:stereotype-entity" } });
+    const report = migrateUmlV1ToV2(doc, { stereotypes: { entity: "entity:stereotype-entity" } }, { viewSchemas: {} });
     expect(report.outcome).toBe("ok");
     if (report.outcome !== "ok") throw new Error("migration");
     expect(report.target!.entities["entity:stereotype-entity"]!.attributes["extends"]).toEqual({
@@ -893,12 +902,12 @@ describe("stereotype ownership and declaration (finding 6)", () => {
         extends: { kind: "collection", items: [{ kind: "text", value: "class" }, { kind: "text", value: "class" }] },
       },
     };
-    expect(migrateUmlV1ToV2(structuredClone(doc), { stereotypes: { entity: "s" } }).unmigrated).toEqual([
+    expect(migrateUmlV1ToV2(structuredClone(doc), { stereotypes: { entity: "s" } }, { viewSchemas: {} }).unmigrated).toEqual([
       { path: "entities.entity:order.attributes.stereotypes[0]", reason: "stereotype-application-invalid" },
     ]);
     const bad = structuredClone(doc);
     (bad.entities["s"]!.attributes["extends"] as { items: { value: string }[] }).items = [{ kind: "text", value: "toto" } as never];
-    expect(migrateUmlV1ToV2(bad, { stereotypes: { entity: "s" } }).unmigrated).toEqual([
+    expect(migrateUmlV1ToV2(bad, { stereotypes: { entity: "s" } }, { viewSchemas: {} }).unmigrated).toEqual([
       { path: "entities.entity:order.attributes.stereotypes[0]", reason: "stereotype-application-invalid" },
     ]);
   });
@@ -909,7 +918,7 @@ describe("migration property: declared-invariant subset (design note E)", () => 
     const cases: { doc: MigDocument; run: (doc: MigDocument) => ReturnType<typeof migrateGenericV1ToV2> }[] = [
       {
         doc: nativeInput(JSON.parse(readFileSync(join(fixtures, "generic-v1-minimal-document.json"), "utf8")) as MigDocument),
-        run: (doc) => migrateGenericV1ToV2(doc),
+        run: (doc) => migrateGenericV1ToV2(doc, { viewSchemas: {} }),
       },
       {
         doc: loadMig(join(fixtures, "pinned-sources", "archimate-skeleton-document.json")).document as MigDocument,
@@ -917,7 +926,7 @@ describe("migration property: declared-invariant subset (design note E)", () => 
           "entity:actor": "business-actor",
           "entity:process": "business-process",
           "entity:component": "application-component",
-        } }),
+        } }, { viewSchemas: {} }),
       },
     ];
     for (const { doc, run } of cases) {
@@ -942,7 +951,7 @@ describe("migration property: declared-invariant subset (design note E)", () => 
         extends: { kind: "collection", items: [{ kind: "text", value: "class" }] },
       },
     };
-    const umlReport = migrateUmlV1ToV2(structuredClone(uml), { stereotypes: { entity: "s" } });
+    const umlReport = migrateUmlV1ToV2(structuredClone(uml), { stereotypes: { entity: "s" } }, { viewSchemas: {} });
     expect(umlReport.outcome).toBe("ok");
     if (umlReport.outcome !== "ok") throw new Error("migration");
     expect(canonicalBytes(umlReport.originalCanonical)).toBe(canonicalBytes(uml));
