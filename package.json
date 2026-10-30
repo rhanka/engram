@@ -52,6 +52,7 @@
   "files": [
     "dist",
     "src/skills",
+    "skills/engram-memory",
     "registry/entries.v1.json"
   ],
   "scripts": {
