@@ -73,3 +73,18 @@ export {
 export { validateMemoryPublisherAssetsV1 } from '../mcp/memory/receipts.js';
 export { MEMORY_FROZEN_PROFILE_BINDINGS_V1 } from './profiles.js';
 export type { MemoryPublisherAssetsV1 } from '../mcp/memory/receipts.js';
+
+/**
+ * Host-storage closure (F3, SQLite plan co-sign condition): additive,
+ * side-effect-free re-exports of the existing frozen host-storage profile
+ * and the closed receipts schema/validator, so a host can validate its
+ * `MemoryHostStorageReceiptsV1` bundle against the published profile
+ * without private source imports. No new receipt field, no new subpath.
+ */
+export { ENGRAM_MEMORY_HOST_STORAGE_PROFILE_V1 } from '../mcp/memory/topology.js';
+export type { MemoryHostStorageProfileV1 } from '../mcp/memory/topology.js';
+export {
+  MEMORY_HOST_STORAGE_RECEIPTS_V1_SCHEMA,
+  validateMemoryHostStorageReceiptsV1,
+} from '../mcp/memory/receipts.js';
+export type { MemoryHostStorageReceiptsV1 } from '../mcp/memory/receipts.js';
