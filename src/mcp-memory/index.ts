@@ -18,9 +18,11 @@ export {
   MEMORY_WIRE_PROFILE_ID,
   McpMemoryPreflightError,
   createEngramMemoryProviderV1,
+  createManifestMemoryDispatchPlanV1,
   protocolError,
 } from './provider.js';
 export type {
+  ManifestMemoryDispatchPlanOptionsV1,
   McpMemoryCapabilityList,
   McpMemoryDispatchPlanV1,
   McpMemoryInvokeRequest,

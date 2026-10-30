@@ -56,6 +56,7 @@ import {
 import {
   ENGRAM_MEMORY_PROVIDER_MANIFEST,
   ENGRAM_MEMORY_TOOL_DESCRIPTORS,
+  type AppMcpProviderManifestWithElicitation,
 } from '../mcp/memory/gates.js';
 import {
   ENGRAM_MEMORY_WIRE_PROFILE_V1,
@@ -123,6 +124,104 @@ export const MEMORY_TOOL_NAMES = ENGRAM_MEMORY_TOOL_NAMES;
 export const MEMORY_WIRE_PROFILE = ENGRAM_MEMORY_WIRE_PROFILE_V1;
 export const MEMORY_PROVIDER_MANIFEST = ENGRAM_MEMORY_PROVIDER_MANIFEST;
 export const MEMORY_TOOL_DESCRIPTORS = ENGRAM_MEMORY_TOOL_DESCRIPTORS;
+
+/**
+ * PW4 staged-activation seam: options for the pure manifest-to-plan builder.
+ * The plan is compiled for the bound catalog source (`mcp:engram-memory`)
+ * from the frozen provider manifest by default; a caller may pass its own
+ * manifest, which must match the frozen L0 tool contract exactly or the
+ * builder throws.
+ */
+export interface ManifestMemoryDispatchPlanOptionsV1 {
+  /** Bound catalog source id; only `mcp:engram-memory` is accepted. */
+  readonly sourceId?: 'mcp:engram-memory';
+  /** Manifest to compile; defaults to the frozen `MEMORY_PROVIDER_MANIFEST`. */
+  readonly manifest?: AppMcpProviderManifestWithElicitation;
+}
+
+/**
+ * Pure, synchronous, store-free builder producing a validated, frozen
+ * `McpMemoryDispatchPlanV1` directly from the frozen provider manifest, so
+ * `createEngramMemoryProviderV1` can be activated — and its adapter then
+ * bound into the broker compiled dispatch — before any registry compile
+ * exists. This breaks the registry-compile/provider-activation
+ * materialization cycle without any placeholder store or fake plan. Throws
+ * `Error` at construction when the source id, provider identity, tool list
+ * or any gate boolean drifts from the frozen L0 contract.
+ */
+export function createManifestMemoryDispatchPlanV1(
+  options?: ManifestMemoryDispatchPlanOptionsV1,
+): McpMemoryDispatchPlanV1 {
+  const sourceId = options?.sourceId ?? 'mcp:engram-memory';
+  if (sourceId !== 'mcp:engram-memory') {
+    throw new Error(
+      `createManifestMemoryDispatchPlanV1: unsupported sourceId ${JSON.stringify(sourceId)}; only mcp:engram-memory is bound.`,
+    );
+  }
+  const manifest = options?.manifest ?? MEMORY_PROVIDER_MANIFEST;
+  if (manifest.providerId !== ENGRAM_MEMORY_PROVIDER_ID) {
+    throw new Error(
+      'createManifestMemoryDispatchPlanV1: manifest providerId drifted from the frozen L0 contract.',
+    );
+  }
+  const manifestTools = [...manifest.tools];
+  if (manifestTools.length !== ENGRAM_MEMORY_TOOL_DESCRIPTORS.length) {
+    throw new Error(
+      `createManifestMemoryDispatchPlanV1: manifest lists ${manifestTools.length} tools; the frozen L0 contract exposes ${ENGRAM_MEMORY_TOOL_DESCRIPTORS.length}.`,
+    );
+  }
+  for (const descriptor of ENGRAM_MEMORY_TOOL_DESCRIPTORS) {
+    const candidate = manifestTools.find((tool) => tool.name === descriptor.name);
+    if (candidate === undefined) {
+      throw new Error(
+        `createManifestMemoryDispatchPlanV1: manifest tool list drifted from the frozen L0 contract (${descriptor.name} missing).`,
+      );
+    }
+    if (
+      !Array.isArray(candidate.requiredScopes) ||
+      JSON.stringify([...candidate.requiredScopes]) !== JSON.stringify([...descriptor.requiredScopes]) ||
+      !Array.isArray(candidate.requiredClaims) ||
+      JSON.stringify([...candidate.requiredClaims]) !== JSON.stringify([...descriptor.requiredClaims])
+    ) {
+      throw new Error(
+        `createManifestMemoryDispatchPlanV1: manifest tool ${descriptor.name} drifted from the frozen L0 scopes/claims.`,
+      );
+    }
+    const gates = (candidate as { gates?: { requiresHumanConfirmation?: unknown; requiresElicitation?: unknown } }).gates;
+    if (
+      typeof gates?.requiresHumanConfirmation !== 'boolean' ||
+      typeof gates?.requiresElicitation !== 'boolean' ||
+      gates.requiresHumanConfirmation !== descriptor.gates.requiresHumanConfirmation ||
+      gates.requiresElicitation !== descriptor.gates.requiresElicitation
+    ) {
+      throw new Error(
+        `createManifestMemoryDispatchPlanV1: manifest tool ${descriptor.name} gate booleans drifted from the frozen L0 contract.`,
+      );
+    }
+  }
+  const descriptorsByName = new Map<string, (typeof ENGRAM_MEMORY_TOOL_DESCRIPTORS)[number]>(
+    ENGRAM_MEMORY_TOOL_DESCRIPTORS.map((tool) => [tool.name as string, tool]),
+  );
+  const providerId = manifest.providerId;
+  return Object.freeze({
+    resolveTool: (name: string) => {
+      const descriptor = descriptorsByName.get(name);
+      if (descriptor === undefined) return undefined;
+      return Object.freeze({
+        providerId,
+        capabilityName: descriptor.name,
+        requiredScopes: Object.freeze([...descriptor.requiredScopes]),
+        requiredClaims: Object.freeze([...descriptor.requiredClaims]),
+        entry: Object.freeze({
+          gates: Object.freeze({
+            requiresHumanConfirmation: descriptor.gates.requiresHumanConfirmation,
+            requiresElicitation: descriptor.gates.requiresElicitation,
+          }),
+        }),
+      });
+    },
+  });
+}
 
 export type { MemoryToolName, PublicMemoryErrorCode, ToolResultV1 };
 export type { MemoryHostBindingSetV1 };
