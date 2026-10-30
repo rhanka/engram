@@ -11,7 +11,7 @@
       "entryVersion": "1.0.0",
       "publisher": {
         "packageName": "@sentropic/engram",
-        "packageVersion": "0.22.0"
+        "packageVersion": "0.23.0"
       },
       "compatibility": {
         "entryContract": "1.1.4",
@@ -151,13 +151,13 @@
           "role": "provider",
           "path": "dist/mcp-memory.js",
           "mediaType": "application/javascript",
-          "sha256": "56ceb8f4ed7ccfd9924497e56bccaf95dc4f8007f84c3154efae53f02dececae"
+          "sha256": "68a1b3b372088fc777c83e9ec8b2ae7829d22a65ac89e6a7e8914a2927077a5a"
         },
         {
           "role": "validator",
           "path": "dist/registry/validator.js",
           "mediaType": "application/javascript",
-          "sha256": "7013c4900334de78fada795f791f2cc40e8c3b9efa96c4f663954fbe40028687"
+          "sha256": "6c36947da91b88a5d0ddd87b6e28443b90790a720136fc11db99cd220e01b285"
         },
         {
           "role": "wire-profile",
