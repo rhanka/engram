@@ -58,6 +58,8 @@ import {
   DIAGRAM_PRESENTATION_CONTRACT_SCHEMA,
   DIAGRAM_SEMANTIC_SCHEMA,
   DIAGRAM_VIEW_SCHEMA,
+  DIAGRAM_VIEW_SCHEMA_V2,
+  GOVERNED_SCHEMAS,
 } from "../src/ontology-guardian/diagram-schemas.js";
 import type { RegistryEnvelope } from "../src/ontology-guardian/catalog.js";
 
@@ -198,7 +200,29 @@ describe("implementation regression snapshots (not spec vectors)", () => {
     expect(DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.digest).toBe("f13d595793e17e1e4740c9203b19d8381fc55b90e37121d61f5037cb79f0281a");
     expect(DIAGRAM_SEMANTIC_SCHEMA.digest).toBe("60e3997a1f67259219eb8a7a9aa5ab8da4c89b85fe19b96e67326bc7fd386a2a");
     expect(DIAGRAM_VIEW_SCHEMA.digest).toBe("273351021b614523c2066098550f97b20b0aad6e6eb7b563aaad29b5481a6b7c");
+    expect(DIAGRAM_VIEW_SCHEMA_V2.digest).toBe("50c97fc87a9546facff86f2deab8fdb99073419f43eef09958b96225367037ef");
     expect(CONTRACT_CONTENT).toBe("74dadb9c31fff7653ca31692d8db3cfea782baea8d9268a3c20982ea8ab0aeae");
+  });
+
+  it("recomputes every governed schema digest after all modules load", () => {
+    const literals: Readonly<Record<string, string>> = {
+      "diagram-presentation-schema": "f13d595793e17e1e4740c9203b19d8381fc55b90e37121d61f5037cb79f0281a",
+      "diagram-semantic-schema": "60e3997a1f67259219eb8a7a9aa5ab8da4c89b85fe19b96e67326bc7fd386a2a",
+      "diagram-view-schema": "273351021b614523c2066098550f97b20b0aad6e6eb7b563aaad29b5481a6b7c",
+      "diagram-view-schema@2": "50c97fc87a9546facff86f2deab8fdb99073419f43eef09958b96225367037ef",
+    };
+    for (const [key, governed] of Object.entries(GOVERNED_SCHEMAS)) {
+      // A stored digest alone cannot detect late mutation: recompute from the
+      // exposed value and compare against the stored digest, the pin and the
+      // pinned regression literal.
+      expect(sha256Hex(canonicalBytes(governed.schema)), key).toBe(governed.digest);
+      expect(governed.pin.contentDigest, key).toBe(governed.digest);
+      expect(governed.digest, key).toBe(literals[key]);
+    }
+    expect(DIAGRAM_VIEW_SCHEMA_V2.pin).toEqual({
+      id: "diagram-view-schema", version: "2", contentDigest: DIAGRAM_VIEW_SCHEMA_V2.digest,
+    });
+    expect((DIAGRAM_VIEW_SCHEMA_V2.schema as Record<string, unknown>)["$id"]).toBe("engram:diagram-view-schema/2");
   });
 
 });
@@ -475,6 +499,22 @@ describe("governed schemas, checked with an independent JSON Schema 2020-12 vali
     const contractRequired = DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.schema["required"];
     const diagramRequired = ((viewDiagram["properties"] as Record<string, unknown>)["diagram"] as Record<string, unknown>)["required"];
     expect(diagramRequired).toEqual(contractRequired);
+  });
+
+  it("keeps the presentation subtree equal in @1, @2 and the contract", () => {
+    const subtreeOf = (schema: Record<string, unknown>): unknown =>
+      ((schema["properties"] as Record<string, unknown>)["presentation"] as Record<string, unknown>)["properties"];
+    expect(subtreeOf(DIAGRAM_VIEW_SCHEMA_V2.schema)).toEqual(subtreeOf(DIAGRAM_VIEW_SCHEMA.schema));
+    const diagramOf = (schema: Record<string, unknown>): unknown =>
+      ((subtreeOf(schema) as Record<string, unknown>)["diagram"] as Record<string, unknown>)["properties"];
+    expect(diagramOf(DIAGRAM_VIEW_SCHEMA_V2.schema)).toEqual(DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.schema["properties"]);
+    // Only the summary definition differs between the two view versions.
+    const summariesOf = (schema: Record<string, unknown>): unknown =>
+      ((schema["properties"] as Record<string, unknown>)["summaryLabels"] as Record<string, unknown>)["additionalProperties"];
+    expect(summariesOf(DIAGRAM_VIEW_SCHEMA_V2.schema)).not.toEqual(summariesOf(DIAGRAM_VIEW_SCHEMA.schema));
+    expect((summariesOf(DIAGRAM_VIEW_SCHEMA_V2.schema) as Record<string, unknown>)["required"]).toEqual(
+      ["id", "sourceOccurrence", "targetOccurrence", "label", "relationIds"],
+    );
   });
 });
 

@@ -7,8 +7,8 @@ import { join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import type tsTypes from "typescript";
 import { corpusBytes, corpusJson, testsDir } from "./diagram-corpus-support.js";
-import { DIAGRAM_PRESENTATION_CONTRACT_SCHEMA, DIAGRAM_SEMANTIC_SCHEMA, DIAGRAM_VIEW_SCHEMA } from "../src/ontology-guardian/diagram-schemas.js";
-import { checkViewShape } from "../src/ontology-guardian/diagram-view-shape.js";
+import { DIAGRAM_PRESENTATION_CONTRACT_SCHEMA, DIAGRAM_SEMANTIC_SCHEMA, DIAGRAM_VIEW_SCHEMA, DIAGRAM_VIEW_SCHEMA_V2 } from "../src/ontology-guardian/diagram-schemas.js";
+import { checkGovernedViewShape, checkViewShape, checkViewShapeV1, checkViewShapeV2 } from "../src/ontology-guardian/diagram-view-shape.js";
 import { checkSemanticShape } from "../src/ontology-guardian/diagram-document-shape.js";
 
 const ts = createRequire(join(testsDir, "native-shapes.cjs"))("typescript") as typeof tsTypes;
@@ -24,6 +24,10 @@ for (const [id, bytes] of [["ds:document.ts", corpusBytes("ds:document.ts").toSt
 }
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validators = { semantic: ajv.compile(DIAGRAM_SEMANTIC_SCHEMA.schema), view: ajv.compile(DIAGRAM_VIEW_SCHEMA.schema), presentation: ajv.compile(DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.schema) };
+// @2 mirror: the same view fixtures compiled against the exact governed @2
+// value. Semantic and presentation subtrees are version-invariant, so only
+// the view entry point is recompiled; every other node keeps its killer.
+const validatorsV2 = { ...validators, view: ajv.compile(DIAGRAM_VIEW_SCHEMA_V2.schema) };
 const geometry = { x: 0, y: 0, width: 460, height: 200 };
 const entity = { id: "entity:a", profile: "generic@2", type: "node", attributes: { name: { kind: "text", value: "A" } } };
 const semantic = { documentId: "document:shapes", schemaVersion: { major: 1, minor: 1 }, revision: 0,
@@ -36,7 +40,11 @@ const presentation = { contractPin: { id: "diagram-presentation", version: "1", 
 const directPresentation = validators.presentation;
 validators.presentation = ((input: unknown): boolean => {
   const result = directPresentation(input);
-  expect(validators.view({ ...view, presentation: { ...view.presentation, diagram: input } })).toBe(result);
+  const embedded = { ...view, presentation: { ...view.presentation, diagram: input } };
+  expect(validators.view(embedded)).toBe(result);
+  // The @2 embedding agrees at baseline; a view-schema diagram mutation
+  // flips it and fails here.
+  expect(validatorsV2.view(embedded)).toBe(result);
   return result as boolean;
 }) as typeof directPresentation;
 type Kind = keyof typeof validators;
@@ -55,13 +63,13 @@ function wrongType(value: unknown): unknown {
   if (typeof value === "boolean") return "true";
   return null;
 }
-function fixture(name: string, kind: Kind, path: Path, value: Record<string, unknown>, required = nativeRequired.get(name), guardRequired?: string[]): void {
+function fixture(name: string, kind: Kind, path: Path, value: Record<string, unknown>, required = nativeRequired.get(name), guardRequired?: string[], active: typeof validators = validators, tag = ""): void {
   if (required === undefined) throw new Error(`untranscribed native interface ${name}`);
   const requiredByGuard = guardRequired ?? required;
-  describe(`native shape ${name} (${kind}:${path.join("/")})`, () => {
+  describe(`native shape ${name} (${kind}:${path.join("/")})${tag}`, () => {
     const check = (v: unknown, expected: boolean, guardExpected = expected): void => {
       const input = replace(kind, path, v);
-      expect(validators[kind](input), JSON.stringify(validators[kind].errors)).toBe(expected);
+      expect(active[kind](input), JSON.stringify(active[kind].errors)).toBe(expected);
       if (kind === "semantic") expect(checkSemanticShape(input) === null).toBe(expected);
       if (kind === "view") expect(checkViewShape(input) === null).toBe(guardExpected);
       if (kind === "presentation") expect(checkViewShape({ ...view, presentation: { ...view.presentation, diagram: input } }) === null).toBe(expected);
@@ -134,21 +142,31 @@ for (const schema of schemas.filter(schema => schema.kind !== "collection")) {
   const required = ["kind", ...({ quantity: ["units"], enum: ["values"], reference: ["refKind"], struct: ["targetTypes"] }[item.kind] ?? [])];
   fixture(`ScalarSchema:${item.kind}`, "semantic", ["typeDefinitions", "custom", "attributes", 0, "item"], item, required);
 }
-fixture("ViewDocument", "view", [], view);
-fixture("Geometry", "view", ["entityOccurrences", "occurrence:a", "geometry"], geometry);
-fixture("EntityOccurrence", "view", ["entityOccurrences", "occurrence:a"], { id: "occurrence:a", entity: "entity:a", geometry, group: "group:a", z: 2 });
 const relationOccurrence = { id: "occurrence:r", relation: "relation:a", endpoints: [{ role: "source", occurrence: "occurrence:a" }], waypoints: [{ x: 1, y: 2 }], strokeStyle: "dashed" };
 (view.relationOccurrences as Record<string, unknown>)["occurrence:r"] = relationOccurrence;
-fixture("RelationOccurrence", "view", ["relationOccurrences", "occurrence:r"], relationOccurrence);
-fixture("RelationOccurrenceEndpoint", "view", ["relationOccurrences", "occurrence:r", "endpoints", 0], { role: "source", occurrence: "occurrence:a", semanticTarget: "entity:a", sourceOccurrence: "occurrence:a" });
-fixture("Point", "view", ["relationOccurrences", "occurrence:r", "waypoints", 0], { x: 1, y: 2 });
-fixture("PortOccurrence", "view", ["portOccurrences", "occurrence:p"], { id: "occurrence:p", port: "port:a", ownerOccurrence: "occurrence:a", side: "east", order: 1, anchor: 0.5 });
-fixture("VisualGroup", "view", ["groups", "group:a"], { id: "group:a", label: "Group", collapsed: true, occurrence: "occurrence:a" });
-fixture("PresentationState", "view", ["presentation"], { camera: { x: 0, y: 0, zoom: 1 }, grid: { size: 8, snap: true }, theme: "light" });
-fixture("Camera", "view", ["presentation", "camera"], { x: 0, y: 0, zoom: 1 }, ["x", "y", "zoom"]);
-fixture("Grid", "view", ["presentation", "grid"], { size: 8, snap: true }, ["size", "snap"]);
-// Ajv retains the governed required fields; the guard follows M3 §4.5.1.
-fixture("SummaryLabelDefinition", "view", ["summaryLabels", "sum:a"], { id: "sum:a", sourceOccurrence: "occurrence:a", targetOccurrence: "occurrence:a", label: "Summary", relationIds: ["relation:a"], strokeStyle: "solid" }, ["sourceOccurrence", "targetOccurrence", "label", "relationIds"], ["id", "sourceOccurrence", "targetOccurrence", "label", "relationIds"]);
+// Every view-kind fixture runs twice: once against the exact governed @1
+// value (existing killers preserved verbatim) and once against the exact
+// governed @2 value (same expectations except the @1-only divergences, which
+// the versioned required set and the guard already encode). The guard stays
+// version-independent: it requires id and admits @2 shapes in both runs.
+for (const [tag, active, summaryRequired] of [
+  ["", validators, ["sourceOccurrence", "targetOccurrence", "label", "relationIds"]],
+  [" [@2]", validatorsV2, ["id", "sourceOccurrence", "targetOccurrence", "label", "relationIds"]],
+] as const) {
+  fixture("ViewDocument", "view", [], view, undefined, undefined, active, tag);
+  fixture("Geometry", "view", ["entityOccurrences", "occurrence:a", "geometry"], geometry, undefined, undefined, active, tag);
+  fixture("EntityOccurrence", "view", ["entityOccurrences", "occurrence:a"], { id: "occurrence:a", entity: "entity:a", geometry, group: "group:a", z: 2 }, undefined, undefined, active, tag);
+  fixture("RelationOccurrence", "view", ["relationOccurrences", "occurrence:r"], relationOccurrence, undefined, undefined, active, tag);
+  fixture("RelationOccurrenceEndpoint", "view", ["relationOccurrences", "occurrence:r", "endpoints", 0], { role: "source", occurrence: "occurrence:a", semanticTarget: "entity:a", sourceOccurrence: "occurrence:a" }, undefined, undefined, active, tag);
+  fixture("Point", "view", ["relationOccurrences", "occurrence:r", "waypoints", 0], { x: 1, y: 2 }, undefined, undefined, active, tag);
+  fixture("PortOccurrence", "view", ["portOccurrences", "occurrence:p"], { id: "occurrence:p", port: "port:a", ownerOccurrence: "occurrence:a", side: "east", order: 1, anchor: 0.5 }, undefined, undefined, active, tag);
+  fixture("VisualGroup", "view", ["groups", "group:a"], { id: "group:a", label: "Group", collapsed: true, occurrence: "occurrence:a" }, undefined, undefined, active, tag);
+  fixture("PresentationState", "view", ["presentation"], { camera: { x: 0, y: 0, zoom: 1 }, grid: { size: 8, snap: true }, theme: "light" }, undefined, undefined, active, tag);
+  fixture("Camera", "view", ["presentation", "camera"], { x: 0, y: 0, zoom: 1 }, ["x", "y", "zoom"], undefined, active, tag);
+  fixture("Grid", "view", ["presentation", "grid"], { size: 8, snap: true }, ["size", "snap"], undefined, active, tag);
+  // Ajv retains the governed required fields; the guard follows M3 §4.5.1.
+  fixture("SummaryLabelDefinition", "view", ["summaryLabels", "sum:a"], { id: "sum:a", sourceOccurrence: "occurrence:a", targetOccurrence: "occurrence:a", label: "Summary", relationIds: ["relation:a"], strokeStyle: "solid" }, [...summaryRequired], ["id", "sourceOccurrence", "targetOccurrence", "label", "relationIds"], active, tag);
+}
 describe("summary definition shape (M3 §4.5.1)", () => {
   const summary = { id: "sum:a", sourceOccurrence: "occurrence:a", targetOccurrence: "occurrence:a", label: "Summary", relationIds: ["relation:a"] };
   const input = (value: unknown): unknown => replace("view", ["summaryLabels", "sum:a"], value);
@@ -187,6 +205,45 @@ describe("summary definition shape (M3 §4.5.1)", () => {
   });
   it("retains the non-empty relation id list requirement", () => {
     expect(checkViewShape(input({ ...summary, relationIds: [] }))).toBe("summaryLabels.sum:a.relationIds");
+  });
+});
+describe("@1-aware guard and @2 parity (SPEC §5.1 rows)", () => {
+  const ajvV2 = new Ajv2020({ strict: true, allErrors: true });
+  const validateV2 = ajvV2.compile(DIAGRAM_VIEW_SCHEMA_V2.schema);
+  const input = (value: unknown): unknown => replace("view", ["summaryLabels", "sum:a"], value);
+  const identified = { id: "sum:a", sourceOccurrence: "occurrence:a", targetOccurrence: "occurrence:a", label: "Summary", relationIds: ["relation:a"] };
+
+  it("keeps the integrated guard @2-shaped while the @1 check admits id-less summaries", () => {
+    const { id: _id, ...idLess } = identified;
+    expect(checkViewShape(input(idLess))).toBe("summaryLabels.sum:a.id");
+    expect(checkViewShapeV1(input(idLess))).toBeNull();
+    expect(checkViewShapeV2(input(idLess))).toBe("summaryLabels.sum:a.id");
+    expect(validateV2(input(idLess))).toBe(false);
+  });
+  it("matches @2 parity fixtures without accidental missing-id failures", () => {
+    // Every fixture below carries its id, so an Ajv-@2 refusal can only come
+    // from the varied constraint, never from a missing identity.
+    const variants: [string, Record<string, unknown>, boolean][] = [
+      ["complete", { ...identified }, true],
+      ["empty label", { ...identified, label: "" }, true],
+      ["occurrence list", { ...identified, relationOccurrences: ["o1"] }, true],
+      ["empty occurrence list", { ...identified, relationOccurrences: [] }, true],
+      ["dotted stroke", { ...identified, strokeStyle: "dotted" }, false],
+      ["empty relation ids", { ...identified, relationIds: [] }, false],
+      ["null occurrence list", { ...identified, relationOccurrences: null }, false],
+      ["non-string id", { ...identified, id: 7 }, false],
+      ["null label", { ...identified, label: null }, false],
+    ];
+    for (const [label, summary, expected] of variants) {
+      expect(validateV2(input(summary)), label).toBe(expected);
+      expect(checkViewShapeV2(input(summary)) === null, label).toBe(expected);
+      expect(checkViewShape(input(summary)) === null, label).toBe(expected);
+    }
+  });
+  it("refuses an unknown governed version without falling back", () => {
+    expect(checkGovernedViewShape("1", input(identified))).toBeNull();
+    expect(checkGovernedViewShape("2", input(identified))).toBeNull();
+    expect(checkGovernedViewShape("3", input(identified))).not.toBeNull();
   });
 });
 fixture("DiagramPresentation", "presentation", [], presentation);
@@ -228,7 +285,7 @@ describe("every presentation bound and grammar", () => {
     }
   });
   it("retains the explicitly declared minima alongside the grammars", () => {
-    for (const schema of [DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.schema, (DIAGRAM_VIEW_SCHEMA.schema as any).properties.presentation.properties.diagram] as any[]) {
+    for (const schema of [DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.schema, (DIAGRAM_VIEW_SCHEMA.schema as any).properties.presentation.properties.diagram, (DIAGRAM_VIEW_SCHEMA_V2.schema as any).properties.presentation.properties.diagram] as any[]) {
       expect(schema.properties.entities.additionalProperties.properties.icon.minLength).toBe(1);
       expect(schema.properties.categoryTokens.items.properties.category.minLength).toBe(1);
       expect(schema.properties.categoryTokens.items.properties.token.minLength).toBe(1);
@@ -250,13 +307,16 @@ describe("every presentation bound and grammar", () => {
     for (const field of ["semanticTarget", "sourceOccurrence"]) {
       const input = replace("view", ["relationOccurrences", "occurrence:r", "endpoints", 0], { role: "source", occurrence: "occurrence:a", [field]: "entity:a" });
       expect(validators.view(input)).toBe(false); expect(checkViewShape(input)).not.toBeNull();
+      expect(validatorsV2.view(input)).toBe(false); expect(checkViewShapeV2(input)).not.toBeNull();
     }
   });
 });
-for (const kind of ["entity-type", "relation-type", "attribute-equals"]) {
-  const value = kind === "attribute-equals" ? { id: "filter:a", kind, attribute: "name", value: "A", mode: "include" }
-    : { id: "filter:a", kind, types: ["node"], mode: "include" };
-  fixture(`ViewFilter:${kind}`, "view", ["filters", 0], value, Object.keys(value));
+for (const [tag, active] of [["", validators], [" [@2]", validatorsV2]] as const) {
+  for (const kind of ["entity-type", "relation-type", "attribute-equals"]) {
+    const value = kind === "attribute-equals" ? { id: "filter:a", kind, attribute: "name", value: "A", mode: "include" }
+      : { id: "filter:a", kind, types: ["node"], mode: "include" };
+    fixture(`ViewFilter:${kind}`, "view", ["filters", 0], value, Object.keys(value), undefined, active, tag);
+  }
 }
 describe("recursive values and closed unions", () => {
   it("rejects object-shaped refinement attributes and valueless references", () => {
@@ -271,11 +331,22 @@ describe("recursive values and closed unions", () => {
     const input = replace("view", ["portOccurrences", "occurrence:p"], { id: "occurrence:p", port: "port:p", ownerOccurrence: "occurrence:a", side, order: 0, anchor: 0 });
     expect(validators.view(input)).toBe(true); expect(checkViewShape(input)).toBeNull();
   });
+  for (const [kind, item] of [
+    ["entity-type", { id: "filter:a", kind: "bogus", types: ["node"], mode: "include" }],
+    ["relation-type", { id: "filter:a", kind: "bogus", types: ["node"], mode: "include" }],
+    ["attribute-equals", { id: "filter:a", kind: "bogus", attribute: "name", value: "A", mode: "include" }],
+  ] as const) it(`rejects a branch-complete filter with a forged ${kind} kind`, () => {
+    const input = replace("view", ["filters", 0], item);
+    expect(validators.view(input)).toBe(false);
+    expect(validatorsV2.view(input)).toBe(false);
+  });
   for (const kind of ["entity-type", "relation-type", "attribute-equals"]) for (const mode of ["include", "exclude"]) it(`accepts filter ${kind}/${mode}`, () => {
     const value = kind === "attribute-equals" ? { id: "filter:a", kind, attribute: "name", value: "A", mode } : { id: "filter:a", kind, types: ["node"], mode };
     const input = replace("view", ["filters", 0], value);
     expect(validators.view(input)).toBe(true); expect(checkViewShape(input)).toBeNull();
+    expect(validatorsV2.view(input)).toBe(true); expect(checkViewShapeV2(input)).toBeNull();
     expect(validators.view(replace("view", ["filters", 0], { ...value, mode: "banana" }))).toBe(false);
+    expect(validatorsV2.view(replace("view", ["filters", 0], { ...value, mode: "banana" }))).toBe(false);
   });
   for (const kind of ["document", "entity", "relation", "port"]) for (const validation of ["validated", "preserved-unvalidated", "unsupported"]) it(`accepts extension ${kind}/${validation}`, () => {
     const value = { namespace: "urn:foreign", schemaVersion: "1", scope: kind === "document" ? { kind } : { kind, target: "entity:a" }, validation, contentHash: "a".repeat(64) };
@@ -287,6 +358,7 @@ describe("recursive values and closed unions", () => {
   for (const anchor of [-0.1, 1.1]) it(`rejects anchor ${anchor}`, () => {
     const input = replace("view", ["portOccurrences", "occurrence:p"], { id: "occurrence:p", port: "port:a", ownerOccurrence: "occurrence:a", side: "east", order: 0, anchor });
     expect(validators.view(input)).toBe(false); expect(checkViewShape(input)).not.toBeNull();
+    expect(validatorsV2.view(input)).toBe(false); expect(checkViewShapeV2(input)).not.toBeNull();
   });
   it("accepts the complete pinned A5 semantic and view bytes", () => {
     expect(validators.semantic(corpusJson("instance:A5-semantic")), JSON.stringify(validators.semantic.errors)).toBe(true);
