@@ -19,6 +19,21 @@ function govern(id: string, version: string, schema: Record<string, unknown>): G
   return { pin: { id, version, contentDigest: digest }, schema, digest };
 }
 
+/**
+ * Recursively freeze governed schema data after construction. A shallow
+ * freeze or TypeScript `readonly` is insufficient: shared subobjects (the
+ * presentation subtree, grammar constants) must all be immutable so a later
+ * write cannot leave a stored digest describing changed bytes.
+ */
+function deepFreeze(value: unknown): void {
+  if (typeof value !== "object" || value === null || Object.isFrozen(value)) return;
+  if (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype) return;
+  for (const key of Reflect.ownKeys(value)) {
+    deepFreeze((value as Record<PropertyKey, unknown>)[key]);
+  }
+  Object.freeze(value);
+}
+
 const KEY_GRAMMAR = { type: "string", minLength: 1, maxLength: 40, pattern: "^[a-z][a-z0-9-]*$" };
 const TOKEN_GRAMMAR = {
   type: "string", minLength: 1, maxLength: 80, pattern: "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*$",
@@ -200,7 +215,7 @@ const filter = { anyOf: [
 const summary = object({ id: string, sourceOccurrence: string, targetOccurrence: string, label: { type: "string", minLength: 1 },
   relationIds: { type: "array", items: string, minItems: 1 }, strokeStyle: choice("solid", "dashed") },
   ["sourceOccurrence", "targetOccurrence", "label", "relationIds"]);
-export const DIAGRAM_VIEW_SCHEMA: GovernedSchema = govern("diagram-view-schema", "1", {
+const DIAGRAM_VIEW_SCHEMA_V1_VALUE: Record<string, unknown> = {
   $schema: "https://json-schema.org/draft/2020-12/schema", $id: "engram:diagram-view-schema/1",
   ...object({ viewId: string, semanticDocumentId: string, revision: { type: "integer", minimum: 0 },
     entityOccurrences: map(entityOccurrence), relationOccurrences: map(relationOccurrence), portOccurrences: map(portOccurrence),
@@ -209,7 +224,35 @@ export const DIAGRAM_VIEW_SCHEMA: GovernedSchema = govern("diagram-view-schema",
       grid: object({ size: number, snap: boolean }, ["size", "snap"]), theme: string,
       diagram: object(DIAGRAM_VALUE_PROPERTIES, DIAGRAM_VALUE_REQUIRED) }, ["camera"]), summaryLabels: map(summary) },
   ["viewId", "semanticDocumentId", "revision", "entityOccurrences", "relationOccurrences", "portOccurrences", "groups", "filters", "presentation"]),
-});
+};
+export const DIAGRAM_VIEW_SCHEMA: GovernedSchema = govern("diagram-view-schema", "1", DIAGRAM_VIEW_SCHEMA_V1_VALUE);
+
+/**
+ * diagram-view-schema@2: the exact §3.1 closed delta applied to an
+ * independent copy of the @1 value. The four paths below are the governed
+ * patch; @1 bytes are never rewritten in place and no shared subobject is
+ * mutated. Required `id` stays a plain string, `label` admits `""`, and the
+ * optional `relationOccurrences` list admits `[]` at the shape level.
+ */
+function applyViewSchemaV2Patch(value: Record<string, unknown>): Record<string, unknown> {
+  value["$id"] = "engram:diagram-view-schema/2";
+  const summaries = (value["properties"] as Record<string, unknown>)["summaryLabels"] as Record<string, unknown>;
+  const definition = summaries["additionalProperties"] as Record<string, unknown>;
+  definition["required"] = ["id", "sourceOccurrence", "targetOccurrence", "label", "relationIds"];
+  const properties = definition["properties"] as Record<string, unknown>;
+  properties["label"] = { type: "string" };
+  properties["relationOccurrences"] = { type: "array", items: { type: "string" } };
+  return value;
+}
+export const DIAGRAM_VIEW_SCHEMA_V2: GovernedSchema = govern(
+  "diagram-view-schema", "2", applyViewSchemaV2Patch(structuredClone(DIAGRAM_VIEW_SCHEMA_V1_VALUE)),
+);
+
+// The governed wrapper/pin identities are immutable once constructed.
+for (const governed of [DIAGRAM_PRESENTATION_CONTRACT_SCHEMA, DIAGRAM_SEMANTIC_SCHEMA, DIAGRAM_VIEW_SCHEMA, DIAGRAM_VIEW_SCHEMA_V2]) {
+  deepFreeze(governed.schema);
+  Object.freeze(governed.pin);
+}
 
 // --- Diagnostic code inventory additions of this lot (spec Appendix C.1) ---
 // Native arms stay owner-side (U-DIAG); this list is the governed binding input.
@@ -255,5 +298,28 @@ export const MIGRATION_REPORT_REASONS: readonly MigrationRefusalReason[] = [
 export const GOVERNED_SCHEMAS: Readonly<Record<string, GovernedSchema>> = {
   "diagram-presentation-schema": DIAGRAM_PRESENTATION_CONTRACT_SCHEMA,
   "diagram-semantic-schema": DIAGRAM_SEMANTIC_SCHEMA,
+  // The `diagram-view-schema` alias retains its version-1 meaning. The @2
+  // successor is appended after all existing entries so schema-mutant
+  // enumeration keeps every existing SC assignment stable.
   "diagram-view-schema": DIAGRAM_VIEW_SCHEMA,
+  "diagram-view-schema@2": DIAGRAM_VIEW_SCHEMA_V2,
 };
+
+/** Version-ordered enumeration of both governed view schemas, @1 then @2. */
+export const VIEW_SCHEMA_VERSIONS: readonly GovernedSchema[] = [DIAGRAM_VIEW_SCHEMA, DIAGRAM_VIEW_SCHEMA_V2];
+
+/**
+ * Exact version-and-digest resolution for both view-schema versions. Unknown
+ * versions, mismatching digests and unknown ids refuse with `undefined`;
+ * there is no fallback to another version.
+ */
+export function resolveViewSchemaVersion(version: string): GovernedSchema | undefined {
+  return version === "1" ? DIAGRAM_VIEW_SCHEMA : version === "2" ? DIAGRAM_VIEW_SCHEMA_V2 : undefined;
+}
+
+export function resolveViewSchemaPin(pin: Pin): GovernedSchema | undefined {
+  if (pin.id !== "diagram-view-schema") return undefined;
+  const schema = resolveViewSchemaVersion(pin.version);
+  if (schema === undefined || schema.digest !== pin.contentDigest) return undefined;
+  return schema;
+}
