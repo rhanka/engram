@@ -1,4 +1,4 @@
-This consumer pins the third-party dependency closure for the local 0.22.0
+This consumer pins the third-party dependency closure for the local 0.22.1
 tarball. The runner substitutes only that tarball's SHA-512 integrity, then
 runs `npm ci --offline --ignore-scripts`. Missing required cache entries fail;
 the runner never regenerates the lock or fetches a replacement version.
