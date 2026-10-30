@@ -1,0 +1,53 @@
+{
+  "format": "candidate-validation-l4-r7/r1",
+  "sourceCommit": "465da4d6800880b3da992ccb0394458d3854dd05",
+  "reason": "rebase sur origin/main 86dd6c53 : scripts de test main (test:diagram pinned-adapter, test:openerp-*) embarqués via package.json dans les bundles index/cli ; recandidate l4-r7.",
+  "tarball": {
+    "filename": "sentropic-engram-0.22.0.tgz",
+    "sha256": "514011653c40d3c6b77945e72a6437e1adcb2b676d330313646f79be0133ec11",
+    "integrity": "sha512-guiavPh8dsTJuE1mVsfFunyKoSFf/9jwuzWUd+mW2PvvBmHkx1WV/3FEPAQqp4+lTPC22WdSRF+nvvZruvAASw=="
+  },
+  "artifactPath": ".graphify/scratch/l4-r7-artifacts/sentropic-engram-0.22.0.tgz",
+  "builtAgainstPreCandidateSha256": "1c96bada2a749155f29aae763fa73ea6379c385d619f70614110f59b6b10b730",
+  "memberDiffR6toR7": {
+    "memberCount": 310,
+    "added": [],
+    "removed": [],
+    "differing": [
+      "package/package.json",
+      "package/dist/index.js",
+      "package/dist/index.js.map",
+      "package/dist/index.cjs",
+      "package/dist/index.cjs.map",
+      "package/dist/cli.js",
+      "package/dist/cli.js.map"
+    ],
+    "note": "seul package.json (scripts de test main) et les bundles qui l'embarquent ; rien d'autre."
+  },
+  "byteIdentity": {
+    "dist/mcp-memory.js": "identical r6=r7",
+    "dist/memory-substrate.js": "identical r6=r7",
+    "sharedChunks": "60/60 identical r6=r7 (dont chunk-HYPGGBK6.js registre partagé)",
+    "cjs": "57/58 identical ; seul dist/index.cjs diffère (embarque package.json)",
+    "registryAssets": "digests manifest inchangés sauf receipt (re-liée) ; refresh : drift check packed/worktree pass ; receipt validateMemoryPublisherAssetsV1=true contre les bytes r7"
+  },
+  "fencedStoreCase": {
+    "oldArchive": ".graphify/scratch/l4-r5-artifacts/sentropic-engram-0.22.0.tgz",
+    "oldSha256": "965c93e326df9866584261061f4e49571cfd74dfe1dc258c0c6894eea121a4e9",
+    "oldProbe": { "exitCode": 3, "ok": false, "code": "CAPABILITY_UNAVAILABLE" },
+    "newArchive": ".graphify/scratch/l4-r7-artifacts/sentropic-engram-0.22.0.tgz",
+    "newProbe": { "exitCode": 0, "ok": true, "code": null },
+    "repackSha256": "514011653c40d3c6b77945e72a6437e1adcb2b676d330313646f79be0133ec11",
+    "byteIdentical": true
+  },
+  "targeted": {
+    "nonPacked": "28 files passed, 624 passed | 1 skipped",
+    "packed": "2 files passed, 3 passed (mcp-memory-l4-packed, shared-provenance-packed)",
+    "openerpDiagram": "15 files passed, 1463 passed | 4 todo (npm run test:openerp et test:diagram exit 0, mutants tués)",
+    "tsc": "tsc --noEmit -p tsconfig.json exit 0"
+  },
+  "ciDefaultRun": "npm test (vitest run) : aucun pin byte restant sur r6 (grep L4_R6/l4-r6/0e740e5c vide hors historiques) ; pin r7 vérifié par les suites packagées ci-dessus",
+  "notCovered": [
+    "full suite non rejouée (ciblées + packed + openerp/diagram + tsc, selon brief)"
+  ]
+}
