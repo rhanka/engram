@@ -34,11 +34,11 @@ import { pinnedContractDigest, tarballAcceptanceBackendSources } from './substra
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HERE);
 
-/** Frozen L4 archives under test: r5 (pre-fix) must refuse, r7 (fix) must capture. */
+/** Frozen L4 archives under test: r5 (pre-fix) must refuse, r8 (fix) must capture. */
 const L4_R5_TARBALL = '.graphify/scratch/l4-r5-artifacts/sentropic-engram-0.22.0.tgz';
-const L4_R7_TARBALL = '.graphify/scratch/l4-r7-artifacts/sentropic-engram-0.22.0.tgz';
+const L4_R8_TARBALL = '.graphify/scratch/l4-r8-artifacts/sentropic-engram-0.22.0.tgz';
 const L4_R5_SHA256 = '965c93e326df9866584261061f4e49571cfd74dfe1dc258c0c6894eea121a4e9';
-const L4_R7_SHA256 = '514011653c40d3c6b77945e72a6437e1adcb2b676d330313646f79be0133ec11';
+const L4_R8_SHA256 = 'd8b2e8149a073e5c894f04b3fa098fc4e2d36fe5a654747b85bffe9ad7b03f0e';
 
 const NPM = process.env.MCP_L4_NPM_BIN ?? '/home/antoinefa/.npm-global/bin/npm';
 const SDK_PINNED = '1.32.2';
@@ -680,15 +680,15 @@ function runFencedProbeAgainst(tarball, extraArchives) {
 
 /**
  * Fenced-store packed case: re-pack the candidate and require byte-identity
- * with the r7 archive, then run the substrate-opened, exemption-disabled
+ * with the r8 archive, then run the substrate-opened, exemption-disabled
  * probe against the frozen r5 archive (must refuse CAPABILITY_UNAVAILABLE)
- * and the frozen r7 archive (must capture).
+ * and the frozen r8 archive (must capture).
  */
 export async function runFencedStorePacked() {
   const r5Bytes = readFileSync(join(ROOT, L4_R5_TARBALL));
   if (sha256Hex(r5Bytes) !== L4_R5_SHA256) throw new Error('r5 archive identity mismatch');
-  const r7Bytes = readFileSync(join(ROOT, L4_R7_TARBALL));
-  if (sha256Hex(r7Bytes) !== L4_R7_SHA256) throw new Error('r7 archive identity mismatch');
+  const r8Bytes = readFileSync(join(ROOT, L4_R8_TARBALL));
+  if (sha256Hex(r8Bytes) !== L4_R8_SHA256) throw new Error('r8 archive identity mismatch');
   const repackWork = mkdtempSync(join(tmpdir(), 'l4-fenced-repack-'));
   let repacked;
   try {
@@ -697,11 +697,11 @@ export async function runFencedStorePacked() {
     const { rmSync } = await import('node:fs');
     rmSync(repackWork, { recursive: true, force: true });
   }
-  const byteIdentical = repacked.sha256 === L4_R7_SHA256;
-  if (!byteIdentical) throw new Error(`repack drift: packed ${repacked.sha256} !== r7 ${L4_R7_SHA256}`);
+  const byteIdentical = repacked.sha256 === L4_R8_SHA256;
+  if (!byteIdentical) throw new Error(`repack drift: packed ${repacked.sha256} !== r8 ${L4_R8_SHA256}`);
   const manifest = verifyP3Archives();
   const extraArchives = p3ArchivePaths(manifest);
   const old = runFencedProbeAgainst(join(ROOT, L4_R5_TARBALL), extraArchives);
-  const current = runFencedProbeAgainst(join(ROOT, L4_R7_TARBALL), extraArchives);
+  const current = runFencedProbeAgainst(join(ROOT, L4_R8_TARBALL), extraArchives);
   return { repacked, byteIdentical, old, new: current };
 }
