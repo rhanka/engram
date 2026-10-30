@@ -4,6 +4,10 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.22.1 (2026-10-30)
+
+- ships the engram-memory usage skill for the MCP memory tools (`skills/engram-memory/SKILL.md`, packed via `files`).
+
 ## 0.22.0 (2026-10-26)
 
 - **Optional memory MCP adapter (L4 candidate, disabled by default, pending L5 qualification).** Adds the optional `./mcp-memory` and `./registry/*` entries (`./registry/manifest`, `./registry/definitions`) over the frozen L3 memory tools. The adapter is disabled by default: no provider is loaded, no store is opened and no tool is served until a host injects its references and enables the entry. This is the L4 candidate build; qualification of the exact published bytes stays pending L5.
