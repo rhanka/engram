@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SKILL_RELATIVE = "skills/engram-memory/SKILL.md";
-const EXPECTED_SHA256 = "dd4f1769588ae65af10fa7c9b023578f0c9f8688b446e5ba790fbb39f3abfbaf";
+const EXPECTED_SHA256 = "dd4f17695844a65ae10fa7c9b023578f0c9f8688b446e5ba790fbb39f3abfbaf";
 
 function frontmatter(text: string): string {
   const match = text.match(/^---\n([\s\S]*?)\n---/);
