@@ -46,6 +46,7 @@ import type {
 import type {
   AuthorizationContextV1,
 } from '../../engram-memory/dist/contracts/index.js';
+import { canonicalizeJcs } from '../../engram-memory/dist/canonical-json.js';
 import {
   ENGRAM_MEMORY_CONNECTOR_ID,
   ENGRAM_MEMORY_PROVIDER_ID,
@@ -140,14 +141,30 @@ export interface ManifestMemoryDispatchPlanOptionsV1 {
 }
 
 /**
+ * Canonical JSON of a manifest value for exact frozen-projection comparison.
+ * A value with no unambiguous canonical JSON form is itself drift: the drift
+ * `Error` is raised instead of the canonicalization error.
+ */
+function canonicalManifestJson(value: unknown, driftMessage: string): string {
+  try {
+    return canonicalizeJcs(value);
+  } catch {
+    throw new Error(driftMessage);
+  }
+}
+
+/**
  * Pure, synchronous, store-free builder producing a validated, frozen
  * `McpMemoryDispatchPlanV1` directly from the frozen provider manifest, so
  * `createEngramMemoryProviderV1` can be activated — and its adapter then
  * bound into the broker compiled dispatch — before any registry compile
  * exists. This breaks the registry-compile/provider-activation
  * materialization cycle without any placeholder store or fake plan. Throws
- * `Error` at construction when the source id, provider identity, tool list
- * or any gate boolean drifts from the frozen L0 contract.
+ * `Error` at construction when the source id, any manifest identity field
+ * (providerId, appId, version, authz) or any tool descriptor projection —
+ * kind, description, mutability, category, idempotency, scopes/claims, the
+ * four gate booleans and the canonical input/output schemas — drifts from
+ * the frozen L0 contract, or when a tool carries any extra field.
  */
 export function createManifestMemoryDispatchPlanV1(
   options?: ManifestMemoryDispatchPlanOptionsV1,
@@ -164,6 +181,24 @@ export function createManifestMemoryDispatchPlanV1(
       'createManifestMemoryDispatchPlanV1: manifest providerId drifted from the frozen L0 contract.',
     );
   }
+  if (manifest.appId !== MEMORY_PROVIDER_MANIFEST.appId) {
+    throw new Error(
+      'createManifestMemoryDispatchPlanV1: manifest appId drifted from the frozen L0 contract.',
+    );
+  }
+  if (manifest.version !== MEMORY_PROVIDER_MANIFEST.version) {
+    throw new Error(
+      'createManifestMemoryDispatchPlanV1: manifest version drifted from the frozen L0 contract.',
+    );
+  }
+  const authzDrift =
+    'createManifestMemoryDispatchPlanV1: manifest authz drifted from the frozen L0 contract.';
+  if (
+    canonicalManifestJson(manifest.authz, authzDrift) !==
+    canonicalizeJcs(MEMORY_PROVIDER_MANIFEST.authz)
+  ) {
+    throw new Error(authzDrift);
+  }
   const manifestTools = [...manifest.tools];
   if (manifestTools.length !== ENGRAM_MEMORY_TOOL_DESCRIPTORS.length) {
     throw new Error(
@@ -177,6 +212,29 @@ export function createManifestMemoryDispatchPlanV1(
         `createManifestMemoryDispatchPlanV1: manifest tool list drifted from the frozen L0 contract (${descriptor.name} missing).`,
       );
     }
+    const tool = candidate as unknown as Record<string, unknown>;
+    const fieldDrift = (field: string): never => {
+      throw new Error(
+        `createManifestMemoryDispatchPlanV1: manifest tool ${descriptor.name} ${field} drifted from the frozen L0 contract.`,
+      );
+    };
+    // Extra tool fields are refused: the manifest tool must carry exactly the
+    // frozen descriptor projection, nothing additive.
+    for (const key of Object.keys(tool)) {
+      if (!Object.prototype.hasOwnProperty.call(descriptor, key)) {
+        fieldDrift(`extra field ${JSON.stringify(key)}`);
+      }
+    }
+    if (tool.kind !== descriptor.kind) fieldDrift('kind');
+    if (tool.description !== descriptor.description) fieldDrift('description');
+    if (tool.mutability !== descriptor.mutability) fieldDrift('mutability');
+    if (descriptor.category !== undefined && tool.category !== descriptor.category) {
+      fieldDrift('category');
+    }
+    if (tool.mutatesExternalSystem !== descriptor.mutatesExternalSystem) {
+      fieldDrift('mutatesExternalSystem');
+    }
+    if (tool.redactionClass !== descriptor.redactionClass) fieldDrift('redactionClass');
     if (
       !Array.isArray(candidate.requiredScopes) ||
       JSON.stringify([...candidate.requiredScopes]) !== JSON.stringify([...descriptor.requiredScopes]) ||
@@ -187,16 +245,43 @@ export function createManifestMemoryDispatchPlanV1(
         `createManifestMemoryDispatchPlanV1: manifest tool ${descriptor.name} drifted from the frozen L0 scopes/claims.`,
       );
     }
-    const gates = (candidate as { gates?: { requiresHumanConfirmation?: unknown; requiresElicitation?: unknown } }).gates;
+    const gates = tool.gates as {
+      requiresHumanConfirmation?: unknown;
+      requiresElicitation?: unknown;
+      requiresPolicy?: unknown;
+      requiresPrincipalGate?: unknown;
+    } | undefined;
     if (
       typeof gates?.requiresHumanConfirmation !== 'boolean' ||
       typeof gates?.requiresElicitation !== 'boolean' ||
+      typeof gates?.requiresPolicy !== 'boolean' ||
+      typeof gates?.requiresPrincipalGate !== 'boolean' ||
       gates.requiresHumanConfirmation !== descriptor.gates.requiresHumanConfirmation ||
-      gates.requiresElicitation !== descriptor.gates.requiresElicitation
+      gates.requiresElicitation !== descriptor.gates.requiresElicitation ||
+      gates.requiresPolicy !== descriptor.gates.requiresPolicy ||
+      gates.requiresPrincipalGate !== descriptor.gates.requiresPrincipalGate
     ) {
       throw new Error(
         `createManifestMemoryDispatchPlanV1: manifest tool ${descriptor.name} gate booleans drifted from the frozen L0 contract.`,
       );
+    }
+    const idempotencyDrift =
+      `createManifestMemoryDispatchPlanV1: manifest tool ${descriptor.name} idempotency drifted from the frozen L0 contract.`;
+    if (
+      canonicalManifestJson(tool.idempotency, idempotencyDrift) !==
+      canonicalizeJcs(descriptor.idempotency)
+    ) {
+      throw new Error(idempotencyDrift);
+    }
+    const schemaDrift =
+      `createManifestMemoryDispatchPlanV1: manifest tool ${descriptor.name} inputSchema/outputSchema drifted from the frozen L0 contract.`;
+    if (
+      canonicalManifestJson(tool.inputSchema, schemaDrift) !==
+        canonicalizeJcs(descriptor.inputSchema) ||
+      canonicalManifestJson(tool.outputSchema, schemaDrift) !==
+        canonicalizeJcs(descriptor.outputSchema)
+    ) {
+      throw new Error(schemaDrift);
     }
   }
   const descriptorsByName = new Map<string, (typeof ENGRAM_MEMORY_TOOL_DESCRIPTORS)[number]>(
