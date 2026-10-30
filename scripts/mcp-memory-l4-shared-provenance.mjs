@@ -29,16 +29,13 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { packCandidate, p3ArchivePaths, verifyP3Archives } from './mcp-memory-l4-packed-acceptance.mjs';
+import { L4_R5_SHA256, L4_R5_TARBALL_REL as L4_R5_TARBALL, L4_R8_SHA256, L4_R8_TARBALL_REL as L4_R8_TARBALL } from './mcp-memory-l4-local-prereqs.mjs';
 import { pinnedContractDigest, tarballAcceptanceBackendSources } from './substrate-tarball-acceptance.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HERE);
 
-/** Frozen L4 archives under test: r5 (pre-fix) must refuse, r8 (fix) must capture. */
-const L4_R5_TARBALL = '.graphify/scratch/l4-r5-artifacts/sentropic-engram-0.22.0.tgz';
-const L4_R8_TARBALL = '.graphify/scratch/l4-r8-artifacts/sentropic-engram-0.22.0.tgz';
-const L4_R5_SHA256 = '965c93e326df9866584261061f4e49571cfd74dfe1dc258c0c6894eea121a4e9';
-const L4_R8_SHA256 = 'd8b2e8149a073e5c894f04b3fa098fc4e2d36fe5a654747b85bffe9ad7b03f0e';
+/** Frozen L4 archives under test: r5 (pre-fix) must refuse, r8 (fix) must capture (paths shared with the local-prereqs gate). */
 
 const NPM = process.env.MCP_L4_NPM_BIN ?? '/home/antoinefa/.npm-global/bin/npm';
 const SDK_PINNED = '1.32.2';
