@@ -1,0 +1,15 @@
+{
+  "mappingVersion": "1.0.0",
+  "profile": {
+    "id": "request-lifecycle",
+    "version": "1"
+  },
+  "description": "Versioned adapter from request-lifecycle@1 symbols to the Track report vocabulary. The stage correspondence below is the committed RLO-L1 scope; the repo-knowledge@1 and memory-dto@1 correspondences of the previous draft are not covered in this mapping yet (OQ-RL-3).",
+  "adapters": [
+    {
+      "timingRecord": "RequestLifecycleStage",
+      "extractionTarget": "ReportStage",
+      "note": "widening; review and published are B1 additions, not covered in Track REPORT_STAGES"
+    }
+  ]
+}
