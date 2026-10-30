@@ -54,7 +54,7 @@ const optionalRuntimeDeps = [
 export default defineConfig([
   {
     entry: { index: "src/index.ts", "llm-mesh": "src/llm-mesh.ts", "memory-tools": "src/memory-tools/index.ts", "time-reference": "src/time-reference/index.ts", "memory-substrate": "src/memory-substrate/index.ts", "mcp-memory": "src/mcp-memory/index.ts", "registry/manifest": "src/registry/manifest.ts", "registry/definitions": "src/registry/definitions.ts", "registry/validator": "src/registry/validator.ts" },
-    format: ["esm", "cjs"],
+    format: ["esm"],
     esbuildPlugins: [jsonPdfjsGlyphs],
     // DTS-only self-reference mapping: `src/registry/definitions.ts` lazily
     // imports the public subpath `@sentropic/engram/mcp-memory`, deliberately
@@ -75,9 +75,24 @@ export default defineConfig([
     target: "node20",
     // Shared provenance (L4): entries that share the private fenced-store
     // registry must resolve to ONE module instance. Splitting puts the
-    // shared internals in one internal chunk imported by both ESM entries;
-    // the CJS outputs stay self-contained per entry (separate module system).
+    // shared internals in one internal chunk imported by both ESM entries.
     splitting: true,
+    external: optionalRuntimeDeps,
+  },
+  {
+    // CJS build without splitting, as 0.21.3 did: `import.meta.url` would
+    // otherwise survive in the CJS output and crash every require() caller.
+    // Same entries, externals, plugins and target as the ESM block above.
+    // No DTS here (generated once, by the ESM block) and no clean here (the
+    // ESM block owns the single clean so it cannot wipe this block's output).
+    entry: { index: "src/index.ts", "llm-mesh": "src/llm-mesh.ts", "memory-tools": "src/memory-tools/index.ts", "time-reference": "src/time-reference/index.ts", "memory-substrate": "src/memory-substrate/index.ts", "mcp-memory": "src/mcp-memory/index.ts", "registry/manifest": "src/registry/manifest.ts", "registry/definitions": "src/registry/definitions.ts", "registry/validator": "src/registry/validator.ts" },
+    format: ["cjs"],
+    esbuildPlugins: [jsonPdfjsGlyphs],
+    dts: false,
+    sourcemap: true,
+    clean: false,
+    target: "node20",
+    splitting: false,
     external: optionalRuntimeDeps,
   },
   {
