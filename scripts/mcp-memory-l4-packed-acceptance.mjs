@@ -29,18 +29,16 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDisabledTrace, isMemoryNativeBuildProcess } from './mcp-memory-disabled-trace.mjs';
+import { P3_BASE, readFrozenP3Manifest } from './mcp-memory-l4-local-prereqs.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HERE);
 const NPM = process.env.MCP_L4_NPM_BIN ?? '/home/antoinefa/.npm-global/bin/npm';
 // P3 archives are byte-identical to the staged P2 archives, so the same
 // staging directory serves both; only the manifest identity below is P3.
-// The P3 manifest itself is read from the frozen sentropic commit.
-const SENTROPIC_REPO = '/home/antoinefa/src/sentropic';
-const P3_COMMIT = 'c919b638686fb93c8c90a2634d3c004fd25348b3';
-const P3_MANIFEST_REF = `${P3_COMMIT}:tools/memory-mcp-l5/artifacts/pre-candidate-manifest.json`;
-const P3_BASE = '/home/antoinefa/src/sentropic/.tmp/engram-l4-handoff-p2/tools/memory-mcp-l5/artifacts';
-const P3_DIGEST = '1c96bada2a749155f29aae763fa73ea6379c385d619f70614110f59b6b10b730';
+// The P3 manifest itself comes from the tracked fixture
+// tests/fixtures/l4-full-suite-evidence/frozen-p3-manifest.json.gz (raw
+// sha256 verified there); only the peer archives below stay local-only.
 const SDK_PINNED = '1.32.2';
 
 function sha256(bytes) {
@@ -57,9 +55,7 @@ function readJson(path) {
 }
 
 export function verifyP3Archives() {
-  const manifestBytes = run('git', ['-C', SENTROPIC_REPO, 'show', P3_MANIFEST_REF]);
-  if (sha256(manifestBytes) !== P3_DIGEST) throw new Error('P3 manifest identity mismatch');
-  const manifest = JSON.parse(manifestBytes);
+  const manifest = readFrozenP3Manifest(ROOT);
   for (const artifact of manifest.artifacts) {
     const archivePath = join(P3_BASE, artifact.archive.replace(/^tools\/memory-mcp-l5\/artifacts\//, ''));
     const bytes = readFileSync(archivePath);
