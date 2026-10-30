@@ -56,7 +56,20 @@ export default defineConfig([
     entry: { index: "src/index.ts", "llm-mesh": "src/llm-mesh.ts", "memory-tools": "src/memory-tools/index.ts", "time-reference": "src/time-reference/index.ts", "memory-substrate": "src/memory-substrate/index.ts", "mcp-memory": "src/mcp-memory/index.ts", "registry/manifest": "src/registry/manifest.ts", "registry/definitions": "src/registry/definitions.ts", "registry/validator": "src/registry/validator.ts" },
     format: ["esm", "cjs"],
     esbuildPlugins: [jsonPdfjsGlyphs],
-    dts: { compilerOptions: { types: ['node'] } },
+    // DTS-only self-reference mapping: `src/registry/definitions.ts` lazily
+    // imports the public subpath `@sentropic/engram/mcp-memory`, deliberately
+    // kept external in the JS bundle (see `external` above). A clean checkout
+    // has no dist/, so the DTS step cannot resolve it through the package
+    // self-reference; map it to the source entry for types only. Scoped to
+    // this DTS step: the runtime specifier stays external, no provider copy
+    // is inlined. Chosen over ordering the builds because the entries of this
+    // block compile in parallel workers, so an order-based fix would be racy.
+    dts: {
+      compilerOptions: {
+        types: ['node'],
+        paths: { '@sentropic/engram/mcp-memory': ['./src/mcp-memory/index.ts'] },
+      },
+    },
     sourcemap: true,
     clean: true,
     target: "node20",
