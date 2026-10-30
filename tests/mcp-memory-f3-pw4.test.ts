@@ -314,10 +314,16 @@ function hostBindings() {
 }
 
 async function buildManifestPlanHarness() {
-  const { createMemoryPortV2 } = await import('../engram-memory/dist/engine.js');
-  const { createMemoryReadFacetsV1 } = await import('../engram-memory/dist/reads.js');
-  const { createInMemoryCanonicalMemoryStoreV1 } = await import('../engram-memory/dist/memory-store.js');
-  const { receiptDigest } = await import('../engram-memory/digests.js');
+  // One-way import direction (FIN §3.1.3 T0.1): the canonical constructors are
+  // consumed through the public entry's host-composition re-exports (the same
+  // bindings engram-memory emits), never through private engram-memory paths,
+  // so this suite composes the host surface without reaching around it.
+  const {
+    createMemoryPortV2,
+    createMemoryReadFacetsV1,
+    createInMemoryCanonicalMemoryStoreV1,
+    receiptDigest,
+  } = await import('../src/mcp-memory/index.js');
   const { createMemoryReadPageStoreV1 } = await import('../src/memory-tools/reads.js');
 
   const clock = { now: () => NOW };
