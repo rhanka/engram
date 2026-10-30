@@ -1,0 +1,60 @@
+{
+  "id": "request-lifecycle",
+  "version": "1",
+  "owner": "engram gr-conductor",
+  "lifecycle": "draft",
+  "description": "Single request-lifecycle@1 profile: track entity, relation and axis vocabulary plus the 7-stage request lifecycle (spec, dev, pr, review, merged, published, deployed) guarded by the stage-normalizer contract of spec section 2.3.",
+  "modules": {
+    "track": {
+      "description": "Track-aligned vocabulary module: the 7 entity types of section 1.2, the 12 relation types of section 1.3 and the axes of section 1.4.2.",
+      "entityTypes": [
+        { "id": "decision" },
+        { "id": "lot" },
+        { "id": "production" },
+        { "id": "pull_request" },
+        { "id": "release" },
+        { "id": "request" },
+        { "id": "spec" }
+      ],
+      "relationTypes": [
+        { "id": "request_promoted_to_lot", "from": "request", "to": "lot" },
+        { "id": "request_governed_by_decision", "from": "request", "to": "decision" },
+        { "id": "request_specified_by_spec", "from": "request", "to": "spec" },
+        { "id": "lot_child_of_lot", "from": "lot", "to": "lot" },
+        { "id": "lot_specified_by_spec", "from": "lot", "to": "spec" },
+        { "id": "lot_governed_by_decision", "from": "lot", "to": "decision" },
+        { "id": "decision_cites_spec", "from": "decision", "to": "spec" },
+        { "id": "lot_implemented_by_pr", "from": "lot", "to": "pull_request" },
+        { "id": "pr_cites_spec", "from": "pull_request", "to": "spec" },
+        { "id": "pr_ships_in_release", "from": "pull_request", "to": "release" },
+        { "id": "release_deployed_to_production", "from": "release", "to": "production" },
+        { "id": "lot_blocked_by_entity", "from": "lot", "to": ["lot", "decision"] }
+      ],
+      "axes": {
+        "itemKinds": ["feature", "bug", "chore", "decision", "defect"],
+        "itemRoles": ["workpackage", "spec-phase", "stream"],
+        "specStatuses": ["to-specify", "specified", "n/a"],
+        "realizationStatuses": ["to-do", "in-progress", "done", "cancelled", "rejected"],
+        "reopenMotives": ["closed-without-owner-uat", "regression-observed"],
+        "decisionGates": ["orientation", "commitment"],
+        "gateDispositions": ["required", "skipped", "not-applicable", "completed"],
+        "acceptanceStatuses": ["fail", "waived", "unknown", "stale", "pass", "n/a"],
+        "evidenceKinds": ["unit", "integration", "e2e", "manual"],
+        "decisionOutcomes": ["pending", "go", "no-go", "deferred"],
+        "demandTypes": ["feature", "defect", "chore"],
+        "demandStatuses": ["raised", "qualifying", "agreed", "rejected", "duplicate", "parked"],
+        "demandSourceKinds": ["human", "agent", "h2a", "import", "external"],
+        "blockerKinds": ["decision", "dependency"],
+        "blockerResolutionRules": ["linked-done", "linked-accepted", "manual"],
+        "blockerScopes": ["intra", "extra"],
+        "reportBuckets": ["AWAITED", "DROPPED", "DONE", "TO-DO"],
+        "reportStatuses": ["progressing", "unforeseen", "blocked", "decision-awaited", "not-qualified", "withdrawn"],
+        "requestLifecycleStages": ["spec", "dev", "pr", "review", "merged", "published", "deployed"]
+      }
+    },
+    "lifecycle": {
+      "description": "Stage module: the 7-stage request lifecycle kept next to the stage-normalizer contract of spec section 2.3.",
+      "requestLifecycleStages": ["spec", "dev", "pr", "review", "merged", "published", "deployed"]
+    }
+  }
+}
