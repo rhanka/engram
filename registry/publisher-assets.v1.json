@@ -36,7 +36,7 @@
       "role": "provider",
       "path": "dist/mcp-memory.js",
       "mediaType": "application/javascript",
-      "sha256": "68a1b3b372088fc777c83e9ec8b2ae7829d22a65ac89e6a7e8914a2927077a5a"
+      "sha256": "db82fc5069979a0f5925d79727cc682777286f9be36c0f15dca3ad8751417542"
     },
     {
       "role": "validator",
@@ -147,7 +147,7 @@
       "sha256": "db682617520ebe117128ed2d64587f2a393ccc1e73dd360cbf8bb3a6bb382c3d"
     }
   ],
-  "entryJcsSha256": "532199670c88a66a905b47499f98f55f11ce2840ccab68f3fc3b65625e44e176",
+  "entryJcsSha256": "3f48c3b644076645705586954c4c4c39acef5433540a04f585a9341847570418",
   "tarballSha256": "238cc00ec37ecc12036adfcea07727432eb56911cf319e76bb9fd516c592050c",
   "tarballIntegrity": "sha512-TcqSyAXYfyqhyi0xhKs85rqhRS+yQiGv510Fj1XMkeJyx+c2SsfzchN7pAe1yjw3V1B95UhXjR8Oc3gBTR7ohg==",
   "baseManifestSha256": "a0c484fecac059254a33f92c966070d85f690a4835e97cac814510c6124d542b",
@@ -205,7 +205,7 @@
     "sha256": "6c36947da91b88a5d0ddd87b6e28443b90790a720136fc11db99cd220e01b285"
   },
   "executableProvenance": {
-    "sourceHead": "8458baeb6b89878a0af8c88c2a893767067cec95",
+    "sourceHead": "daa7a53107141cfc4f2401f63a59b0cfbb21f101",
     "codeArchiveSha256": "238cc00ec37ecc12036adfcea07727432eb56911cf319e76bb9fd516c592050c",
     "dependencyClosureSha256": "98fb3fa615e38c06331c7a7c9c977a9f833d7bf97f19d82cd5f800e6af432297"
   }
