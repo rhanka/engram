@@ -229,6 +229,8 @@
     "@google-cloud/spanner": "^8.0.0",
     "@sentropic/design-system-themes": "^0.11.0",
     "@sentropic/design-system-tokens": "^0.11.0",
+    "@sentropic/mcp-broker": "0.1.0",
+    "@sentropic/mcp-platform": "0.4.0",
     "@types/node": "^25.8.0",
     "neo4j-driver": "^6.0.1",
     "pg": "^8.13.0",
