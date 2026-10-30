@@ -13,6 +13,11 @@
  * When a prerequisite is absent the caller SKIPS the test with an explicit
  * reason naming the missing file. Nothing here passes vacuously: a missing
  * entry always yields a non-empty list, and callers use `it.skipIf`.
+ *
+ * The packed acceptance and fenced-store cases additionally carry the
+ * frozen-candidate version gate: they only run when the checkout
+ * package.json version still matches the frozen candidate-manifest
+ * version (0.22.0 historical release evidence).
  */
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
@@ -23,6 +28,8 @@ import { gunzipSync } from 'node:zlib';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = dirname(HERE);
 
+/** Tracked candidate manifest holding the frozen 0.22.0 tarball binding. */
+export const CANDIDATE_MANIFEST_REL = 'candidate-manifest.json';
 /** Tracked fixture holding the frozen P3 pre-candidate manifest bytes. */
 export const FROZEN_P3_FIXTURE_REL = 'tests/fixtures/l4-full-suite-evidence/frozen-p3-manifest.json.gz';
 /** Raw (gunzipped) sha256 of the fixture; equals the frozen P3 identity. */
@@ -74,9 +81,42 @@ function missingScratchTarball(rootDir, rel, label) {
   return existsSync(join(rootDir, rel)) ? [] : [`frozen archive ${join(rootDir, rel)} (${label})`];
 }
 
-/** Prerequisites for the packed acceptance run (P3 peer archives only). */
+/**
+ * Version embedded in the frozen candidate-manifest tarball filename
+ * (`sentropic-engram-<version>.tgz`). Throws when the tracked manifest is
+ * unreadable or carries no parseable version: a repository defect, never a
+ * skip.
+ */
+export function candidateManifestVersion(rootDir = DEFAULT_ROOT) {
+  const manifest = JSON.parse(readFileSync(join(rootDir, CANDIDATE_MANIFEST_REL), 'utf8'));
+  const filename = manifest?.tarball?.filename ?? '';
+  const match = filename.match(/-(\d+\.\d+\.\d+)\.tgz$/);
+  if (!match) throw new Error(`candidate-manifest tarball filename carries no version: ${filename}`);
+  return match[1];
+}
+
+/** Current package.json version under test. */
+export function packageJsonVersion(rootDir = DEFAULT_ROOT) {
+  return JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8')).version;
+}
+
+/**
+ * Frozen-candidate version gate: the 0.22.0 packed comparisons are
+ * historical release evidence and must not be rewritten, so they only run
+ * when the checkout version still matches the frozen candidate version.
+ * Returns a single skip entry naming both versions when they differ.
+ */
+export function missingFrozenCandidateVersionPrereqs(rootDir = DEFAULT_ROOT) {
+  const pkg = packageJsonVersion(rootDir);
+  const candidate = candidateManifestVersion(rootDir);
+  return pkg === candidate
+    ? []
+    : [`frozen candidate evidence: package.json version ${pkg} differs from candidate-manifest version ${candidate} (historical release evidence, not rewritten)`];
+}
+
+/** Prerequisites for the packed acceptance run (P3 peer archives plus frozen-candidate version). */
 export function missingPackedAcceptancePrereqs(rootDir = DEFAULT_ROOT) {
-  return missingP3PeerArchives(rootDir);
+  return [...missingP3PeerArchives(rootDir), ...missingFrozenCandidateVersionPrereqs(rootDir)];
 }
 
 /** Prerequisites for the cross-entry shared-provenance run (P3 archives only). */
@@ -84,12 +124,13 @@ export function missingSharedProvenancePrereqs(rootDir = DEFAULT_ROOT) {
   return missingP3PeerArchives(rootDir);
 }
 
-/** Prerequisites for the fenced-store run (P3 archives plus r5 and r8). */
+/** Prerequisites for the fenced-store run (P3 archives plus r5, r9 and frozen-candidate version). */
 export function missingFencedStorePrereqs(rootDir = DEFAULT_ROOT) {
   return [
     ...missingP3PeerArchives(rootDir),
     ...missingScratchTarball(rootDir, L4_R5_TARBALL_REL, 'r5 pre-fix'),
     ...missingScratchTarball(rootDir, L4_R9_TARBALL_REL, 'r9 fix'),
+    ...missingFrozenCandidateVersionPrereqs(rootDir),
   ];
 }
 
