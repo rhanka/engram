@@ -102,18 +102,19 @@ function canonicalEvidence(value: unknown): { ok: true; bytes: string } | { ok: 
 
 function viewRefusal(
   from: Pin, to: Pin, source: unknown, bytes: string,
-  operations: MigrationOperation[], unmigrated: [ViewSchemaUnmigrated, ...ViewSchemaUnmigrated[]],
+  unmigrated: [ViewSchemaUnmigrated, ...ViewSchemaUnmigrated[]],
 ): ViewSchemaMigrationRefusal {
   return {
     migrationId: VIEW_SCHEMA_MIGRATION_ID, from, to,
     originalSha256: sha256Hex(bytes),
     originalCanonical: structuredClone(source),
-    operations, unmigrated, outcome: "refused", target: null,
+    operations: [], unmigrated, outcome: "refused", target: null,
   };
 }
 
-function describePin(pin: Pin): string {
-  return `${pin.id}/${pin.version}#${pin.contentDigest}`;
+function describePin(pin: unknown): string {
+  if (!isRecord(pin)) return String(pin);
+  return `${String(pin.id)}/${String(pin.version)}#${String(pin.contentDigest)}`;
 }
 
 interface PinCause {
@@ -129,6 +130,12 @@ interface PinCause {
 function checkPinCause(pin: Pin, role: "source" | "target", requiredVersion: string): PinCause | null {
   const unknownReason = role === "source" ? "unknown-source-schema" : "unknown-target-schema";
   const digestReason = role === "source" ? "source-digest-mismatch" : "target-digest-mismatch";
+  if (!isRecord(pin as unknown)) {
+    return {
+      reason: unknownReason,
+      detail: `${role} schema selection unavailable or inadmissible: ${describePin(pin as unknown)}`,
+    };
+  }
   const known = pin.id === "diagram-view-schema" ? resolveViewSchemaVersion(pin.version) : undefined;
   if (known === undefined || pin.version !== requiredVersion) {
     return {
@@ -149,7 +156,7 @@ function checkPinCause(pin: Pin, role: "source" | "target", requiredVersion: str
 export function migrateViewSchemaV1ToV2(
   view: unknown, pins: { readonly source: Pin; readonly target: Pin },
 ): ViewSchemaMigrationReport | BoundaryPreflightRefusal {
-  const { source, target } = pins;
+  const { source, target } = (pins ?? {}) as { readonly source: Pin; readonly target: Pin };
   const operations: MigrationOperation[] = [];
   const sourceCause = checkPinCause(source, "source", "1");
   const targetCause = checkPinCause(target, "target", "2");
@@ -157,22 +164,23 @@ export function migrateViewSchemaV1ToV2(
   if (!evidence.ok) return evidence.refusal;
   const bytes = evidence.bytes;
   if (sourceCause !== null) {
-    return viewRefusal(source, target, view, bytes, operations,
+    return viewRefusal(source, target, view, bytes,
       [{ path: "", reason: sourceCause.reason, detail: sourceCause.detail }]);
   }
   if (targetCause !== null) {
-    return viewRefusal(source, target, view, bytes, operations,
+    return viewRefusal(source, target, view, bytes,
       [{ path: "", reason: targetCause.reason, detail: targetCause.detail }]);
   }
   const sourceFailure = checkViewShapeV1(view);
   if (sourceFailure !== null) {
-    return viewRefusal(source, target, view, bytes, operations, [{
+    return viewRefusal(source, target, view, bytes, [{
       path: sourceFailure, reason: "invalid-source-view",
       detail: `source view fails its exact selected schema (diagram-view-schema/1) at ${sourceFailure}`,
     }]);
   }
   const candidate = structuredClone(view) as Record<string, unknown>;
   const summaries = candidate["summaryLabels"];
+  const conflicts: ViewSchemaUnmigrated[] = [];
   if (isRecord(summaries)) {
     for (const key of sortedKeys(summaries)) {
       const summary = summaries[key];
@@ -184,16 +192,20 @@ export function migrateViewSchemaV1ToV2(
           detail: "H1: copy the existing map key into the absent own id",
         });
       } else if (summary["id"] !== key) {
-        return viewRefusal(source, target, view, bytes, operations, [{
+        conflicts.push({
           path: `summaryLabels.${key}.id`, reason: "summary-key-conflict",
           detail: `record-key-mismatch: existing summary id differs from its map key ${JSON.stringify(key)}`,
-        }]);
+        });
       }
     }
   }
+  if (conflicts.length > 0) {
+    return viewRefusal(source, target, view, bytes,
+      conflicts as [ViewSchemaUnmigrated, ...ViewSchemaUnmigrated[]]);
+  }
   const targetFailure = checkViewShapeV2(candidate);
   if (targetFailure !== null) {
-    return viewRefusal(source, target, view, bytes, operations, [{
+    return viewRefusal(source, target, view, bytes, [{
       path: targetFailure, reason: "invalid-target-view",
       detail: `converted view fails the exact governed @2 schema at ${targetFailure}`,
     }]);
@@ -219,13 +231,13 @@ export function adoptViewSchemaV2(
   const evidence = canonicalEvidence(view);
   if (!evidence.ok) return evidence.refusal;
   if (targetCause !== null) {
-    return viewRefusal(target, target, view, evidence.bytes, operations,
+    return viewRefusal(target, target, view, evidence.bytes,
       [{ path: "", reason: targetCause.reason, detail: targetCause.detail }]);
   }
   const bytes = evidence.bytes;
   const failure = checkViewShapeV2(view);
   if (failure !== null) {
-    return viewRefusal(target, target, view, bytes, operations, [{
+    return viewRefusal(target, target, view, bytes, [{
       path: failure, reason: "invalid-source-view",
       detail: `source view fails its exact selected schema (diagram-view-schema/2) at ${failure}`,
     }]);
@@ -243,29 +255,38 @@ export function adoptViewSchemaV2(
 export function migrateRetainedViewsV1ToV2(
   views: readonly unknown[], pins: { readonly source: Pin; readonly target: Pin },
 ): ViewSchemaMigrationReport | BoundaryPreflightRefusal {
-  const { source, target } = pins;
+  const { source, target } = (pins ?? {}) as { readonly source: Pin; readonly target: Pin };
   const operations: MigrationOperation[] = [];
+  const failures: ViewSchemaUnmigrated[] = [];
   const evidence = canonicalEvidence(views);
   if (!evidence.ok) return evidence.refusal;
   const converted: Record<string, unknown>[] = [];
   for (let index = 0; index < views.length; index++) {
     const report = migrateViewSchemaV1ToV2(views[index], pins);
     if ("boundary" in report) {
-      return viewRefusal(source, target, views, evidence.bytes, operations, [{
-        path: `views.${index}`, reason: "canonical-evidence-unavailable", detail: report.detail,
-      }]);
+      failures.push({
+        path: `views.${viewKey(views[index], index)}`, reason: "canonical-evidence-unavailable", detail: report.detail,
+      });
+      continue;
     }
     if (report.outcome === "refused") {
-      return viewRefusal(source, target, views, evidence.bytes, operations,
-        report.unmigrated.map(item => ({
+      for (const item of report.unmigrated) {
+        failures.push({
           ...item,
           path: `views.${viewKey(views[index], index)}${item.path === "" ? "" : `.${item.path}`}`,
-        })) as [ViewSchemaUnmigrated, ...ViewSchemaUnmigrated[]]);
+        });
+      }
+      continue;
     }
     converted.push(report.target as Record<string, unknown>);
     for (const operation of report.operations) {
       operations.push({ ...operation, path: `views.${viewKey(views[index], index)}.${operation.path}` });
     }
+  }
+  if (failures.length > 0) {
+    failures.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    return viewRefusal(source, target, views, evidence.bytes,
+      failures as [ViewSchemaUnmigrated, ...ViewSchemaUnmigrated[]]);
   }
   return {
     migrationId: VIEW_SCHEMA_MIGRATION_ID, from: source, to: target,
