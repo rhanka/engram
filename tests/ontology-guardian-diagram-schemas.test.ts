@@ -14,11 +14,13 @@ import {
   DIAGRAM_PRESENTATION_CONTRACT_SCHEMA,
   DIAGRAM_SEMANTIC_SCHEMA,
   DIAGRAM_VIEW_SCHEMA,
+  DIAGRAM_VIEW_SCHEMA_V2,
 } from "../src/ontology-guardian/diagram-schemas.js";
 
 const ajv = new Ajv2020({ allErrors: true, strict: true });
 const validateSemantic = ajv.compile(DIAGRAM_SEMANTIC_SCHEMA.schema);
 const validateView = ajv.compile(DIAGRAM_VIEW_SCHEMA.schema);
+const validateViewV2 = ajv.compile(DIAGRAM_VIEW_SCHEMA_V2.schema);
 const validatePresentation = ajv.compile(DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.schema);
 
 const A64 = "a".repeat(64);
@@ -153,7 +155,12 @@ describe("semantic schema negatives: every required field, enum and record", () 
   });
 });
 
-describe("view schema negatives: the full native field set", () => {
+for (const [tag, validate] of [["", validateView], [" [@2]", validateViewV2]] as const) {
+describe(`view schema negatives: the full native field set${tag}`, () => {
+  // The mirrored run compiles the identical bodies against the exact
+  // governed @2 value; every node below is version-invariant except the
+  // summary delta, covered separately.
+  const validateView = validate;
   it("rejects an identity-only view and each missing native field", () => {
     expect(validateView({ viewId: "view:1", semanticDocumentId: "d", revision: 0 })).toBe(false);
     for (const field of [
@@ -252,6 +259,46 @@ describe("view schema negatives: the full native field set", () => {
       diagram: { ...minimalContract(), entities: { "occurrence:a": { text: {} } } },
     };
     expect(validateView(shape)).toBe(false);
+  });
+});
+}
+
+describe("view schema @2 delta (Ajv over the exact governed values)", () => {
+  const summary = (): Record<string, unknown> => ({
+    id: "sum:a", sourceOccurrence: "occurrence:a", targetOccurrence: "occurrence:a",
+    label: "Overview", relationIds: ["relation:link-a"],
+  });
+  const viewWith = (summaries: Record<string, unknown>): Record<string, unknown> => ({ ...minimalView(), summaryLabels: summaries });
+
+  it("requires id only under @2 and keeps @1 accepting id-less summaries", () => {
+    const { id: _id, ...idLess } = summary();
+    expect(validateView(viewWith({ "sum:a": summary() }))).toBe(true);
+    expect(validateViewV2(viewWith({ "sum:a": summary() }))).toBe(true);
+    expect(validateView(viewWith({ "sum:a": idLess }))).toBe(true);
+    expect(validateViewV2(viewWith({ "sum:a": idLess }))).toBe(false);
+  });
+
+  it("accepts empty labels only under @2", () => {
+    expect(validateView(viewWith({ "sum:a": { ...summary(), label: "" } }))).toBe(false);
+    expect(validateViewV2(viewWith({ "sum:a": { ...summary(), label: "" } }))).toBe(true);
+  });
+
+  it("accepts occurrence lists only under @2, including the empty list", () => {
+    expect(validateView(viewWith({ "sum:a": { ...summary(), relationOccurrences: ["o1"] } }))).toBe(false);
+    expect(validateViewV2(viewWith({ "sum:a": { ...summary(), relationOccurrences: ["o1"] } }))).toBe(true);
+    expect(validateViewV2(viewWith({ "sum:a": { ...summary(), relationOccurrences: [] } }))).toBe(true);
+  });
+
+  it("keeps every other summary constraint identical across versions", () => {
+    for (const summaries of [
+      { "sum:a": { ...summary(), strokeStyle: "dotted" } },
+      { "sum:a": { ...summary(), relationIds: [] } },
+      { "sum:a": { ...summary(), surprise: 1 } },
+      { "sum:a": { sourceOccurrence: "occurrence:a", targetOccurrence: "occurrence:a", relationIds: ["r"] } },
+    ]) {
+      expect(validateView(viewWith(summaries)), JSON.stringify(summaries)).toBe(false);
+      expect(validateViewV2(viewWith(summaries)), JSON.stringify(summaries)).toBe(false);
+    }
   });
 });
 
