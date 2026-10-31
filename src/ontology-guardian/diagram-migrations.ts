@@ -19,6 +19,12 @@
 // below walks UTF-16-sorted keys, including attribute maps.
 import { canonicalBytes, sha256Hex } from "./canonical.js";
 import { checkViewShape } from "./diagram-view-shape.js";
+import { resolveViewSchemaVersion } from "./diagram-schemas.js";
+import {
+  boundaryPreflightRefusal,
+  migrateRetainedViewsV1ToV2,
+} from "./diagram-view-migration.js";
+import type { BoundaryPreflightRefusal, ViewSchemaMigrationReport } from "./diagram-view-migration.js";
 import { checkSemanticShape } from "./diagram-document-shape.js";
 import type { Digest, Pin } from "./types.js";
 import { ARCHIMATE_CATALOGUE } from "./diagram-matrix-data.js";
@@ -722,6 +728,84 @@ function checkSourceViews(source: MigDocument): string | null {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// View-schema composition boundary (SPEC §4.4 option (i), owner G1).
+// Every retained view carries an explicit exact view-schema pin; views are
+// converted by the separate view migration before profile preflight.
+// ---------------------------------------------------------------------------
+
+/**
+ * Explicit per-view view-schema associations for a profile migration call.
+ * Each retained view id maps to its exact authenticated view-schema pin.
+ * An absent map entry never implies @2: it refuses at the gate. A call with
+ * no retained view supplies an explicit empty set.
+ */
+export interface ProfileViewOptions {
+  readonly viewSchemas: Readonly<Record<string, Pin>>;
+}
+
+/**
+ * Pre-canonical boundary evidence for a profile source. When canonical
+ * bytes cannot be formed (non-JSON runtime data, lone surrogates), no
+ * profile `MigrationReport` is fabricated: the boundary refusal carries the
+ * actual cause and the supplied original where available.
+ */
+function preCanonicalBoundary(source: MigDocument): BoundaryPreflightRefusal | null {
+  try {
+    canonicalBytes(source);
+    return null;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const reason = detail.startsWith("invalid-unicode") ? "canonical-evidence-unavailable" : "non-json-input";
+    return boundaryPreflightRefusal(reason, detail, source);
+  }
+}
+
+/**
+ * Exact-pin view-schema gate for every retained view (separate-list F2-a:
+ * each cause reuses the existing `incompatible-attribute-schema` member with
+ * a documented detail). The gate routes associations only — presence,
+ * resolution, digest and version; the retained @2 shape itself stays with
+ * the strict guard (`checkSourceViews`), which applies the identical
+ * `checkViewShape` to the same views. Returns the first failure, or null
+ * when every retained view carries an authenticated @2 association.
+ */
+function checkViewSchemaGates(source: MigDocument, viewSchemas: Readonly<Record<string, Pin>>): UnmigratedItem[] {
+  const associations = viewSchemas;
+  const failures: UnmigratedItem[] = [];
+  for (const item of source.views ?? []) {
+    const viewId = isRecord(item) && typeof item["viewId"] === "string" ? item["viewId"] : null;
+    const path = viewId === null ? "views.<record>" : `views.${viewId}`;
+    if (viewId === null || !Object.hasOwn(associations, viewId)) {
+      failures.push({ path, reason: "incompatible-attribute-schema", detail: `view-schema association absent for retained view ${path}` });
+      continue;
+    }
+    const pin = associations[viewId]!;
+    const known = isRecord(pin) && pin["id"] === "diagram-view-schema"
+      ? resolveViewSchemaVersion(typeof pin["version"] === "string" ? pin["version"] : "")
+      : undefined;
+    if (known === undefined) {
+      failures.push({ path, reason: "incompatible-attribute-schema", detail: `unresolved/unsupported view-schema association ${describeAttemptedPin(pin)} for retained view ${path}` });
+      continue;
+    }
+    if (known.digest !== (pin as Pin).contentDigest) {
+      failures.push({ path, reason: "incompatible-attribute-schema", detail: `view-schema association digest mismatch for retained view ${path}` });
+      continue;
+    }
+    if ((pin as Pin).version !== "2") {
+      failures.push({ path, reason: "incompatible-attribute-schema", detail: `view conversion required before strict profile preflight for retained view ${path}` });
+      continue;
+    }
+  }
+  failures.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return failures;
+}
+
+function describeAttemptedPin(pin: unknown): string {
+  if (!isRecord(pin)) return String(pin);
+  return `${String(pin["id"])}/${String(pin["version"])}#${String(pin["contentDigest"])}`;
+}
+
 function checkDiagramValue(diagram: unknown, viewId: string): string | null {
   if (!isRecord(diagram)) return `views.${viewId}.presentation.diagram`;
   const bad = closedKeys(diagram, DIAGRAM_FIELDS);
@@ -800,7 +884,7 @@ const ICON_SLOT = "icon" as const;
 const ICON_MAX = 40;
 const ICON_VALUE = /^[a-z][a-z0-9-]*$/;
 
-export interface GenericMigrationOptions {
+export interface GenericMigrationOptions extends ProfileViewOptions {
   /** Retained views for this transaction; defaults to source.views (§3.13). */
   readonly views?: readonly MigView[];
   readonly seedFolds?: boolean;
@@ -833,7 +917,10 @@ interface IconMove {
 
 type SlotMove = TextMove | IconMove;
 
-export function migrateGenericV1ToV2(source: MigDocument, options: GenericMigrationOptions = {}): MigrationReport {
+export function migrateGenericV1ToV2(source: MigDocument, options: GenericMigrationOptions): MigrationReport | BoundaryPreflightRefusal {
+  if (!isRecord(source)) return boundaryPreflightRefusal("non-json-input", "profile source is not a JSON object", source);
+  const boundary = preCanonicalBoundary(source);
+  if (boundary !== null) return boundary;
   source = transactionSnapshot(source, options.views);
   const from: Pin = { id: "generic", version: "1.0.0", contentDigest: GENERIC_V1_CONTENT };
   const to: Pin = { id: "generic", version: "2.0.0", contentDigest: GENERIC_V2.contentDigest };
@@ -843,6 +930,11 @@ export function migrateGenericV1ToV2(source: MigDocument, options: GenericMigrat
     refuse(GENERIC_MIGRATION_ID, from, to, source, ops,
       detail === undefined ? [{ path, reason }] : [{ path, reason, detail }]);
 
+  const viewGate = checkViewSchemaGates(source, options.viewSchemas);
+  if (viewGate.length > 0) {
+    return refuse(GENERIC_MIGRATION_ID, from, to, source, ops,
+      viewGate as [UnmigratedItem, ...UnmigratedItem[]]);
+  }
   const sourceViewFailure = checkSourceViews(source);
   if (sourceViewFailure !== null) return fail(sourceViewFailure, "incompatible-attribute-schema");
   const refs = [...source.profileRefs];
@@ -1213,8 +1305,11 @@ export interface ArchimateMigrationMapping {
 }
 
 export function migrateArchimateV1ToV2(
-  source: MigDocument, mapping: ArchimateMigrationMapping,
-): MigrationReport {
+  source: MigDocument, mapping: ArchimateMigrationMapping, options: ProfileViewOptions,
+): MigrationReport | BoundaryPreflightRefusal {
+  if (!isRecord(source)) return boundaryPreflightRefusal("non-json-input", "profile source is not a JSON object", source);
+  const boundary = preCanonicalBoundary(source);
+  if (boundary !== null) return boundary;
   const from: Pin = { id: "archimate", version: "1.0.0", contentDigest: ARCHIMATE_V1_CONTENT };
   const to: Pin = { id: "archimate", version: "2.0.0", contentDigest: ARCHIMATE_V2.contentDigest };
   const ops: MigrationOperation[] = [];
@@ -1228,6 +1323,11 @@ export function migrateArchimateV1ToV2(
     return fail("mapping", "incompatible-attribute-schema");
   }
   const entityTypes = mapping.entityTypes;
+  const viewGate = checkViewSchemaGates(source, options.viewSchemas);
+  if (viewGate.length > 0) {
+    return refuse(ARCHIMATE_MIGRATION_ID, from, to, source, ops,
+      viewGate as [UnmigratedItem, ...UnmigratedItem[]]);
+  }
   const sourceViewFailure = checkSourceViews(source);
   if (sourceViewFailure !== null) return fail(sourceViewFailure, "incompatible-attribute-schema");
   if (source.profileRefs.filter((r) => r === "archimate@1").length !== 1) {
@@ -1504,7 +1604,10 @@ function resolveDeclaredStereotype(
   return { extends: values };
 }
 
-export function migrateUmlV1ToV2(source: MigDocument, input: UmlMigrationInput): MigrationReport {
+export function migrateUmlV1ToV2(source: MigDocument, input: UmlMigrationInput, options: ProfileViewOptions): MigrationReport | BoundaryPreflightRefusal {
+  if (!isRecord(source)) return boundaryPreflightRefusal("non-json-input", "profile source is not a JSON object", source);
+  const boundary = preCanonicalBoundary(source);
+  if (boundary !== null) return boundary;
   const from: Pin = { id: "uml", version: "1.0.0", contentDigest: UML_V1_CONTENT };
   const to: Pin = { id: "uml", version: "2.0.0", contentDigest: UML_V2.contentDigest };
   const ops: MigrationOperation[] = [];
@@ -1513,6 +1616,11 @@ export function migrateUmlV1ToV2(source: MigDocument, input: UmlMigrationInput):
     refuse(UML_MIGRATION_ID, from, to, source, ops,
       detail === undefined ? [{ path, reason }] : [{ path, reason, detail }]);
 
+  const viewGate = checkViewSchemaGates(source, options.viewSchemas);
+  if (viewGate.length > 0) {
+    return refuse(UML_MIGRATION_ID, from, to, source, ops,
+      viewGate as [UnmigratedItem, ...UnmigratedItem[]]);
+  }
   const sourceViewFailure = checkSourceViews(source);
   if (sourceViewFailure !== null) return fail(sourceViewFailure, "incompatible-attribute-schema");
   if (source.profileRefs.filter((r) => r === "uml@1").length !== 1) {
@@ -1704,6 +1812,90 @@ export function migrateUmlV1ToV2(source: MigDocument, input: UmlMigrationInput):
     ...(source.typeDefinitions !== undefined ? { residuals: nextDefinitions } : {}),
     outcome: "ok", target,
   }, declared);
+}
+
+// ---------------------------------------------------------------------------
+// Staged composition (SPEC §4.4 option (i), owner G1): the @1 → @2 view
+// migration runs as a separate, independently pinned stage before the
+// profile migration. Both stage receipts are retained; when the second stage
+// refuses, its input is the @2-view intermediate while the pre-conversion
+// original stays available through the view stage report.
+// ---------------------------------------------------------------------------
+
+/** Two stage receipts of one composed conversion; no single transaction. */
+export interface StagedMigrationResult {
+  readonly viewStage: ViewSchemaMigrationReport | BoundaryPreflightRefusal;
+  readonly profileStage: MigrationReport | BoundaryPreflightRefusal | null;
+}
+
+/** Explicit pins for the composed view stage: exact @1 in, exact @2 out. */
+export interface ViewStagePins {
+  readonly source: Pin;
+  readonly target: Pin;
+}
+
+function stageConvertedViews(
+  source: MigDocument, supplied: readonly MigView[] | undefined, viewPins: ViewStagePins,
+): { readonly views: MigView[]; readonly stage: ViewSchemaMigrationReport | BoundaryPreflightRefusal } {
+  const merged = transactionSnapshot(source, supplied);
+  const views = [...(merged.views ?? [])] as MigView[];
+  const stage = migrateRetainedViewsV1ToV2(views, viewPins);
+  if ("boundary" in stage || stage.outcome === "refused") return { views, stage };
+  return { views: stage.target as unknown as MigView[], stage };
+}
+
+function stageViewSchemas(views: readonly MigView[], target: Pin): Readonly<Record<string, Pin>> {
+  return Object.fromEntries(views.map(view => [view.viewId, target]));
+}
+
+function profileSourceWithViews(source: MigDocument, converted: readonly MigView[]): MigDocument {
+  if (converted.length === 0 && source.views === undefined) return source;
+  return { ...source, views: structuredClone(converted) };
+}
+
+/** Run the @1 → @2 view stage, then generic@1 → generic@2 on the result. */
+export function migrateGenericWithViewsV1ToV2(
+  source: MigDocument, options: Omit<GenericMigrationOptions, "viewSchemas"> & { readonly viewPins: ViewStagePins },
+): StagedMigrationResult {
+  const { viewPins, ...profileOptions } = options;
+  const { views, stage } = stageConvertedViews(source, options.views, viewPins);
+  if ("boundary" in stage || stage.outcome === "refused") return { viewStage: stage, profileStage: null };
+  // The converted views replace the embedded pre-conversion views; merging
+  // them would duplicate every converted view id with conflicting bytes.
+  const profileSource = { ...source };
+  delete profileSource.views;
+  const profileStage = migrateGenericV1ToV2(profileSource, {
+    ...profileOptions,
+    ...(views.length > 0 || source.views !== undefined || options.views !== undefined ? { views } : {}),
+    viewSchemas: stageViewSchemas(views, viewPins.target),
+  });
+  return { viewStage: stage, profileStage };
+}
+
+/** Run the @1 → @2 view stage, then archimate@1 → archimate@2 on the result. */
+export function migrateArchimateWithViewsV1ToV2(
+  source: MigDocument, mapping: ArchimateMigrationMapping,
+  options: { readonly viewPins: ViewStagePins },
+): StagedMigrationResult {
+  const { views, stage } = stageConvertedViews(source, undefined, options.viewPins);
+  if ("boundary" in stage || stage.outcome === "refused") return { viewStage: stage, profileStage: null };
+  const profileStage = migrateArchimateV1ToV2(profileSourceWithViews(source, views), mapping, {
+    viewSchemas: stageViewSchemas(views, options.viewPins.target),
+  });
+  return { viewStage: stage, profileStage };
+}
+
+/** Run the @1 → @2 view stage, then uml@1 → uml@2 on the result. */
+export function migrateUmlWithViewsV1ToV2(
+  source: MigDocument, input: UmlMigrationInput,
+  options: { readonly viewPins: ViewStagePins },
+): StagedMigrationResult {
+  const { views, stage } = stageConvertedViews(source, undefined, options.viewPins);
+  if ("boundary" in stage || stage.outcome === "refused") return { viewStage: stage, profileStage: null };
+  const profileStage = migrateUmlV1ToV2(profileSourceWithViews(source, views), input, {
+    viewSchemas: stageViewSchemas(views, options.viewPins.target),
+  });
+  return { viewStage: stage, profileStage };
 }
 
 // @1 source pins live in diagram-skeletons.ts (transcribed @1 declarations).
