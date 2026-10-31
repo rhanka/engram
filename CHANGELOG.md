@@ -4,6 +4,12 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.23.1 (2026-10-31)
+
+- **officeparser becomes an optional peer dependency (security).** npm never applies a package's `overrides` for its consumers, so the real vulnerable `pdfjs-dist` reached every consumer through officeparser's dependency tree. Consumers now do not install officeparser at all unless they opt in; the dev tree keeps the devDependency and the `pdfjs-dist`/`tesseract.js` stub overrides so tests and the bundle build stay unchanged. A missing officeparser now yields the typed `OFFICE_EXTRACTION_UNAVAILABLE` outcome (`office extraction unavailable: install officeparser`) with no crash; .docx/.xlsx/.pptx extraction is unchanged when it is present.
+- **csv-parse 7.0.3 (security).** Closes the moderate prototype-replacement advisory (`Prototype replacement still reachable via columns path`, fixed in 7.0.2). The 7.0.0 changelog declares no breaking changes; the single call site (registry CSV loading) is unchanged and the CSV tests stay green.
+- **Non-breaking `npm audit fix --omit=dev`.** Bumps the remaining runtime advisories inside their declared ranges (AI SDK transitive deps, express 4.x line, `ws`, `nanoid`, `qs`). `npm audit --omit=dev` now reports no findings; no audit allow-lists or ignores were added.
+
 ## 0.23.0 (2026-10-30)
 
 - **F3 host-storage closure exports (additive).** `@sentropic/engram/mcp-memory` now re-exports the existing frozen host-storage profile (`ENGRAM_MEMORY_HOST_STORAGE_PROFILE_V1`, `MemoryHostStorageProfileV1`) and the closed receipts contract (`MEMORY_HOST_STORAGE_RECEIPTS_V1_SCHEMA`, `validateMemoryHostStorageReceiptsV1`, `MemoryHostStorageReceiptsV1`) from `src/mcp/memory/topology.ts` and `src/mcp/memory/receipts.ts`. Pure side-effect-free re-exports; no new receipt field, no new subpath, no frozen-byte change (SQLite plan co-sign condition F3).
