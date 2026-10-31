@@ -184,11 +184,11 @@ mutate("MV3", "diagram-view-migration.ts",
   'const candidate = structuredClone(view) as Record<string, unknown>;\n  const summaries = candidate["summaryLabels"];',
   'const candidate = (view) as Record<string, unknown>;\n  const summaries = candidate["summaryLabels"];');
 mutate("MV4", "diagram-view-migration.ts",
-  '    if (report.outcome === "refused") {\n      return viewRefusal(source, target, views, evidence.bytes, operations,',
-  '    if (report.outcome === "refused") {\n      void report; void operations; continue;\n      return viewRefusal(source, target, views, evidence.bytes, operations,');
+  '    if (report.outcome === "refused") {\n      for (const item of report.unmigrated) {',
+  '    if (report.outcome === "refused") {\n      void report; continue;\n      for (const item of report.unmigrated) {');
 mutate("MV5", "diagram-view-migration.ts", '|| pin.version !== requiredVersion) {', '|| false) {');
 mutate("MV6", "diagram-view-migration.ts", 'if (known.digest !== pin.contentDigest) {', 'if (false) {');
-mutate("MG1", "diagram-migrations.ts", 'const associations = viewSchemas ?? {};', 'const associations: Readonly<Record<string, Pin>> = {};');
+mutate("MG1", "diagram-migrations.ts", 'const associations = viewSchemas;', 'const associations: Readonly<Record<string, Pin>> = {};');
 mutations.at(-1).scope = ["view-schema"];
 mutate("MG3", "diagram-migrations.ts",
   '  const { views, stage } = stageConvertedViews(source, options.views, viewPins);\n  if ("boundary" in stage || stage.outcome === "refused") return { viewStage: stage, profileStage: null };',
@@ -202,6 +202,24 @@ mutate("MG5", "diagram-migrations.ts",
 mutations.at(-1).scope = ["view-schema"];
 mutate("MS1", "diagram-schemas.ts", 'if (pin.id !== "diagram-view-schema") return undefined;', 'if (false) return undefined;');
 mutations.at(-1).scope = ["view-schema"];
+
+// SPEC §6.3 manual tightening mutants over the governed @2 schema data. The
+// generator only weakens existing keywords, so these two are hand-specified:
+// restore the @1 summary label bound and remove the admitted occurrence
+// list. Both are killed by the existing positive fixtures (empty label,
+// present occurrence list) in the schemas / view-schema scopes.
+mutations.push({
+  id: "SM1", kind: "schema", file: "diagram-schemas.ts",
+  schemaId: "diagram-view-schema", schemaVersion: "2",
+  path: ["properties", "summaryLabels", "additionalProperties", "properties", "label", "minLength"],
+  operation: "replace", value: 1, scope: ["schemas", "view-schema"],
+});
+mutations.push({
+  id: "SM2", kind: "schema", file: "diagram-schemas.ts",
+  schemaId: "diagram-view-schema", schemaVersion: "2",
+  path: ["properties", "summaryLabels", "additionalProperties", "properties", "relationOccurrences"],
+  operation: "delete", scope: ["schemas", "view-schema"],
+});
 
 function scopeOf(file) {
   if (file === "diagram-view-shape.ts" || file === "diagram-document-shape.ts") return ["native-shapes", "recovery"];
