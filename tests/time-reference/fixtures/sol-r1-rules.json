@@ -796,10 +796,10 @@
           "name": "package-exposes-time-reference"
         },
         {
-          "name": "package-version-0.23.0"
+          "name": "package-version-0.23.1"
         },
         {
-          "name": "lock-version-0.23.0"
+          "name": "lock-version-0.23.1"
         }
       ]
     },
