@@ -79,7 +79,25 @@ const summary: Check = (v, p) => {
   if (failure !== null) return failure;
   return ((v as { relationIds: string[] }).relationIds.length > 0) ? null : `${p}.relationIds`;
 };
-const view = record({
+
+/** @1 summary shape: `id` optional, label non-empty, no occurrence list. */
+const summaryV1: Check = (v, p) => {
+  const failure = record({ sourceOccurrence: text, targetOccurrence: text, label: nonempty, relationIds: list(text) },
+    { id: text, strokeStyle: enumeration("solid", "dashed") })(v, p);
+  if (failure !== null) return failure;
+  return ((v as { relationIds: string[] }).relationIds.length > 0) ? null : `${p}.relationIds`;
+};
+
+/** Shape of one summary definition under the selected governed @1 schema. */
+export function checkSummaryShapeV1(value: unknown, path: string): string | null {
+  return summaryV1(value, path);
+}
+
+/** Shape of one summary definition under the selected governed @2 schema. */
+export function checkSummaryShapeV2(value: unknown, path: string): string | null {
+  return summary(value, path);
+}
+const viewRecord = (summaries: Check): Check => record({
   viewId: text, semanticDocumentId: text,
   revision: (v, p) => Number.isInteger(v) && (v as number) >= 0 ? null : p,
   entityOccurrences: map(record({ id: text, entity: text, geometry }, { group: text, z: number })),
@@ -91,10 +109,38 @@ const view = record({
   filters: list(filter),
   presentation: record({ camera: record({ x: number, y: number, zoom: number }) },
     { grid: record({ size: number, snap: boolean }), theme: text, diagram }),
-}, { summaryLabels: map(summary) });
+}, { summaryLabels: map(summaries) });
+
+const view = viewRecord(summary);
+const viewV1 = viewRecord(summaryV1);
 
 /** Returns the offending path; a missing native field is never defaulted. */
 export function checkViewShape(value: unknown): string | null {
   const failure = view(value, "");
   return failure === null ? null : failure.replace(/^\./, "");
+}
+
+/**
+ * Pinned hand-written check against the exact governed @1 view-schema value
+ * (JSON Schema 2020-12 semantics). No runtime dependency; Ajv stays the
+ * test-only oracle.
+ */
+export function checkViewShapeV1(value: unknown): string | null {
+  const failure = viewV1(value, "");
+  return failure === null ? null : failure.replace(/^\./, "");
+}
+
+/** Pinned hand-written check against the exact governed @2 view-schema value. */
+export function checkViewShapeV2(value: unknown): string | null {
+  return checkViewShape(value);
+}
+
+/**
+ * Version-dispatched governed check. An unknown version refuses at the root
+ * without falling back to another version.
+ */
+export function checkGovernedViewShape(version: string, value: unknown): string | null {
+  if (version === "1") return checkViewShapeV1(value);
+  if (version === "2") return checkViewShapeV2(value);
+  return "";
 }

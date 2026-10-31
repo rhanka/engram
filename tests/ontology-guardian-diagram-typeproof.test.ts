@@ -17,8 +17,16 @@ import type {
   MigrationRefusal,
   MigrationReport,
   MigrationSuccess,
+  ProfileViewOptions,
+  StagedMigrationResult,
   UnmigratedItem,
+  ViewStagePins,
 } from "../src/ontology-guardian/diagram-migrations.js";
+import type {
+  BoundaryPreflightRefusal,
+  ViewSchemaMigrationReport,
+  ViewSchemaRefusalReason,
+} from "../src/ontology-guardian/diagram-view-migration.js";
 import type { SupersessionRow } from "../src/ontology-guardian/diagram-registry.js";
 import { SUPERSESSION } from "../src/ontology-guardian/diagram-registry.js";
 import type { NativeAttributeValue, NativePortOccurrence, NativeSemanticDocument, NativeTypeDefinition, NativeViewDocument } from "../src/ontology-guardian/diagram-native-types.js";
@@ -136,6 +144,36 @@ const badSuccess: MigrationSuccess = {
 // Refusal reasons are a closed vocabulary.
 // @ts-expect-error reason strings are closed
 const badReason: UnmigratedItem = { path: "", reason: "bogus-reason" };
+
+// The view-schema refusal list is a separate closed vocabulary (F2-a).
+// @ts-expect-error view-schema reason strings are closed
+const badViewReason: { path: string; reason: ViewSchemaRefusalReason } = { path: "", reason: "bogus-reason" };
+
+// A boundary preflight refusal never carries a target document or a digest.
+const badBoundary: BoundaryPreflightRefusal = {
+  boundary: "pre-canonical", outcome: "refused", reason: "non-json-input", detail: "x",
+  // @ts-expect-error boundary refusal carries a null target
+  target: {},
+};
+
+// A staged result always carries its profile stage arm (null when refused).
+const stagedNull: StagedMigrationResult = {
+  viewStage: null as unknown as ViewSchemaMigrationReport,
+  profileStage: null,
+};
+expect(stagedNull.profileStage).toBeNull();
+
+// Per-view associations stay an explicit required map, never an implied pin.
+// @ts-expect-error omitting the association map is a compile error
+const missingViewOptions: ProfileViewOptions = {};
+expect(missingViewOptions).toBeDefined();
+const viewOptions: ProfileViewOptions = { viewSchemas: {} };
+expect(viewOptions.viewSchemas).toEqual({});
+const stagePins: ViewStagePins = {
+  source: { id: "diagram-view-schema", version: "1", contentDigest: "a".repeat(64) },
+  target: { id: "diagram-view-schema", version: "2", contentDigest: "b".repeat(64) },
+};
+expect(stagePins.target.version).toBe("2");
 
 // A governed document requires its entity and relation maps.
 // @ts-expect-error entities cannot be omitted
