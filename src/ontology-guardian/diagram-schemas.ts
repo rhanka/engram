@@ -252,6 +252,7 @@ export const DIAGRAM_VIEW_SCHEMA_V2: GovernedSchema = govern(
 for (const governed of [DIAGRAM_PRESENTATION_CONTRACT_SCHEMA, DIAGRAM_SEMANTIC_SCHEMA, DIAGRAM_VIEW_SCHEMA, DIAGRAM_VIEW_SCHEMA_V2]) {
   deepFreeze(governed.schema);
   Object.freeze(governed.pin);
+  Object.freeze(governed);
 }
 
 // --- Diagnostic code inventory additions of this lot (spec Appendix C.1) ---
@@ -307,6 +308,9 @@ export const GOVERNED_SCHEMAS: Readonly<Record<string, GovernedSchema>> = {
 
 /** Version-ordered enumeration of both governed view schemas, @1 then @2. */
 export const VIEW_SCHEMA_VERSIONS: readonly GovernedSchema[] = [DIAGRAM_VIEW_SCHEMA, DIAGRAM_VIEW_SCHEMA_V2];
+
+Object.freeze(GOVERNED_SCHEMAS);
+Object.freeze(VIEW_SCHEMA_VERSIONS);
 
 /**
  * Exact version-and-digest resolution for both view-schema versions. Unknown
