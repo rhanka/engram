@@ -320,6 +320,8 @@ The same semantic pass handles non-code inputs:
 | Images | `.png .jpg .webp .gif` | Multimodal vision — screenshots, diagrams, any language |
 | Audio / Video | `.mp4 .mov .webm .mkv .avi .m4v .mp3 .wav .m4a .ogg` | Detected locally; downloaded with `yt-dlp` when needed, normalized with `ffmpeg`, transcribed via `faster-whisper-ts`, then fed through the same semantic path |
 
+Office extraction (`.docx`, `.xlsx`, plus `.pptx`/`.odt`/`.ods`/`.odp`/`.rtf` files when converted manually) is powered by [`officeparser`](https://www.npmjs.com/package/officeparser), which is an **optional peer dependency**: engram no longer installs it for you, so a consumer tree stays free of its `pdfjs-dist`/`tesseract.js` chain (npm does not apply engram's dev-time `overrides` to consumers). Install it yourself — `npm install officeparser` — to enable office-file conversion. When it is absent, the extraction path reports a typed `office extraction unavailable: install officeparser` outcome and the file is skipped instead of crashing.
+
 PDF OCR, audio/video transcription, and provider variables are detailed under [Reference](#reference).
 
 ## What you get
@@ -413,7 +415,7 @@ Engram sends file contents to your assistant's underlying model API for semantic
 
 ### Tech stack
 
-Graphology + Louvain (`graphology-communities-louvain`) + tree-sitter + vis-network, with regex-backed language fallbacks, `unpdf`, optional `pdftotext`, optional `mistral-ocr`, `officeparser`, `turndown`, the `yt-dlp` + `ffmpeg` + `faster-whisper-ts` transcription path, and optional Vercel AI SDK direct text backends. No Neo4j required; the default HTML output is fully static.
+Graphology + Louvain (`graphology-communities-louvain`) + tree-sitter + vis-network, with regex-backed language fallbacks, `unpdf`, optional `pdftotext`, optional `mistral-ocr`, optional peer `officeparser`, `turndown`, the `yt-dlp` + `ffmpeg` + `faster-whisper-ts` transcription path, and optional Vercel AI SDK direct text backends. No Neo4j required; the default HTML output is fully static.
 
 The studio's dense-graph renderer and layout registry come from `@sentropic/graph`, which lives in and is published from the [Sent Tech design system](https://github.com/rhanka/sent-tech-design-system) (`packages/graph`), its single source and publisher. Engram keeps no copy of it: the CLI, the root tests and the studio build all resolve the published package from npm. Renderer changes are made, tested and released in the design system.
 
