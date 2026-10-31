@@ -2,7 +2,7 @@
   "schema_version": 1,
   "publisher": {
     "packageName": "@sentropic/engram",
-    "packageVersion": "0.23.0"
+    "packageVersion": "0.23.1"
   },
   "entryVersion": "1.0.0",
   "manifestVersion": "1.0.0",
@@ -12,7 +12,7 @@
       "role": "registry-package",
       "path": "dist/registry/manifest.js",
       "mediaType": "application/javascript",
-      "sha256": "80af68d9af58b78dd33973a0828f2b6809af68b78855acd198c3e389ae43c0c7"
+      "sha256": "e18dcc9efc2138070a97b11e6e712ced624c2491c4c1440a4f4a6e3a88c8390f"
     },
     {
       "role": "manifest",
@@ -30,19 +30,19 @@
       "role": "definitions",
       "path": "dist/registry/definitions.js",
       "mediaType": "application/javascript",
-      "sha256": "43086fc09744e188bac4ac218ea90571bcf2d3b4cec51161437bca2e995477e8"
+      "sha256": "ee797f048be6b8c5bca148e0f3722fb1f5e3274b2860037267117fd663f1152e"
     },
     {
       "role": "provider",
       "path": "dist/mcp-memory.js",
       "mediaType": "application/javascript",
-      "sha256": "db82fc5069979a0f5925d79727cc682777286f9be36c0f15dca3ad8751417542"
+      "sha256": "69884e849d32062af4224d4e79d120a2b7eb08d7a03290355e348a8bbb56b235"
     },
     {
       "role": "validator",
       "path": "dist/registry/validator.js",
       "mediaType": "application/javascript",
-      "sha256": "6c36947da91b88a5d0ddd87b6e28443b90790a720136fc11db99cd220e01b285"
+      "sha256": "555c3d979039b320a434fab3f3f9cfa5cbced7f4593c5beafc0647640d2d567f"
     },
     {
       "role": "wire-profile",
@@ -147,7 +147,7 @@
       "sha256": "db682617520ebe117128ed2d64587f2a393ccc1e73dd360cbf8bb3a6bb382c3d"
     }
   ],
-  "entryJcsSha256": "3f48c3b644076645705586954c4c4c39acef5433540a04f585a9341847570418",
+  "entryJcsSha256": "d692dd8ac40138d5145550fef289b2ecd956b2e3f830996809bafc32e11663af",
   "tarballSha256": "238cc00ec37ecc12036adfcea07727432eb56911cf319e76bb9fd516c592050c",
   "tarballIntegrity": "sha512-TcqSyAXYfyqhyi0xhKs85rqhRS+yQiGv510Fj1XMkeJyx+c2SsfzchN7pAe1yjw3V1B95UhXjR8Oc3gBTR7ohg==",
   "baseManifestSha256": "a0c484fecac059254a33f92c966070d85f690a4835e97cac814510c6124d542b",
@@ -202,11 +202,11 @@
   "validator": {
     "id": "sentropic.engram.memory-publisher-validator/v1",
     "version": "1.0.0",
-    "sha256": "6c36947da91b88a5d0ddd87b6e28443b90790a720136fc11db99cd220e01b285"
+    "sha256": "555c3d979039b320a434fab3f3f9cfa5cbced7f4593c5beafc0647640d2d567f"
   },
   "executableProvenance": {
-    "sourceHead": "daa7a53107141cfc4f2401f63a59b0cfbb21f101",
+    "sourceHead": "bde80646854f79d8399b8228d719813109d6620c",
     "codeArchiveSha256": "238cc00ec37ecc12036adfcea07727432eb56911cf319e76bb9fd516c592050c",
-    "dependencyClosureSha256": "98fb3fa615e38c06331c7a7c9c977a9f833d7bf97f19d82cd5f800e6af432297"
+    "dependencyClosureSha256": "bcccb667a69afd6ed6cea1a2fc95aa486603abf78c6a6bc1365678eb8dfea032"
   }
 }

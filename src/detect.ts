@@ -390,36 +390,83 @@ export async function extractPdfText(filePath: string): Promise<string> {
 
 /**
  * Convert .docx, .xlsx, .pptx, .odt, .ods, .odp and .rtf files to plain
- * text using officeparser. The host package keeps officeparser as an
- * optional dep with `pdfjs-dist` and `tesseract.js` overridden to
- * `empty-npm-package` (see package.json `overrides`); we always pass
- * `{ ocr: false }` so tesseract is never imported, and we route .pdf
- * separately through unpdf so the pdfjs stub is never hit either.
+ * text using officeparser. officeparser is an OPTIONAL PEER dependency:
+ * a consumer that has not installed it gets the typed
+ * `OFFICE_EXTRACTION_UNAVAILABLE` outcome below instead of a crash.
+ * engram's own tree keeps the dev-time install (devDependencies) with
+ * `pdfjs-dist` and `tesseract.js` overridden to `empty-npm-package` (see
+ * package.json `overrides`; npm never applies a package's overrides for
+ * its consumers); we always pass `{ ocr: false }` so tesseract is never
+ * imported, and we route .pdf separately through unpdf so the pdfjs
+ * stub is never hit either.
  */
-async function officeParseToText(filePath: string): Promise<string> {
+export const OFFICE_EXTRACTION_UNAVAILABLE = "office extraction unavailable: install officeparser";
+
+export type OfficeParseResult =
+  | { status: "ok"; text: string }
+  | { status: "unavailable"; message: typeof OFFICE_EXTRACTION_UNAVAILABLE }
+  | { status: "error" };
+
+/** Shape of the officeparser module we consume (only `parseOfficeAsync`). */
+type OfficeparserModule = {
+  parseOfficeAsync: (file: string, opts?: { ocr?: boolean }) => Promise<string>;
+};
+
+/**
+ * Seam over the optional `officeparser` import. Injected by tests to simulate
+ * the module's absence; hosts may route it through their own loader.
+ */
+export type ImportOfficeparser = () => Promise<OfficeparserModule>;
+
+const importOfficeparser: ImportOfficeparser = async () =>
+  (await import("officeparser")) as unknown as OfficeparserModule;
+
+/** Distinguish "officeparser is not installed" from a parse failure inside it. */
+function isOfficeparserMissing(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = (error as Error & { code?: unknown }).code;
+  if (code !== "ERR_MODULE_NOT_FOUND" && code !== "MODULE_NOT_FOUND") return false;
+  // Node quotes the missing specifier itself ("Cannot find package 'officeparser'");
+  // a broken officeparser install quotes one of its own imports instead.
+  return /Cannot find (?:package|module) 'officeparser'/.test(error.message);
+}
+
+export async function officeParseToText(
+  filePath: string,
+  importOffice: ImportOfficeparser = importOfficeparser,
+): Promise<OfficeParseResult> {
   try {
-    const { parseOfficeAsync } = (await import("officeparser")) as unknown as {
-      parseOfficeAsync: (file: string, opts?: { ocr?: boolean }) => Promise<string>;
-    };
-    return await parseOfficeAsync(filePath, { ocr: false });
-  } catch {
-    return "";
+    const { parseOfficeAsync } = await importOffice();
+    return { status: "ok", text: await parseOfficeAsync(filePath, { ocr: false }) };
+  } catch (error) {
+    if (isOfficeparserMissing(error)) {
+      return { status: "unavailable", message: OFFICE_EXTRACTION_UNAVAILABLE };
+    }
+    return { status: "error" };
   }
 }
 
 /** Convert a .docx file to plain text via officeparser. */
-export async function docxToMarkdown(filePath: string): Promise<string> {
+export async function docxToMarkdown(
+  filePath: string,
+  importOffice: ImportOfficeparser = importOfficeparser,
+): Promise<string> {
   // F-0831-P1 (F2): .docx is a zip+XML container; cap it before officeparser
   // decompresses it, treating a zip-bomb as empty rather than parsing it.
   if (!zipWithinCaps(filePath)) return "";
-  return (await officeParseToText(filePath)).trim();
+  const result = await officeParseToText(filePath, importOffice);
+  return result.status === "ok" ? result.text.trim() : "";
 }
 
 /** Convert an .xlsx file to plain text via officeparser. */
-export async function xlsxToMarkdown(filePath: string): Promise<string> {
+export async function xlsxToMarkdown(
+  filePath: string,
+  importOffice: ImportOfficeparser = importOfficeparser,
+): Promise<string> {
   // F-0831-P1 (F2): same zip-bomb cap as .docx before openpyxl-style parsing.
   if (!zipWithinCaps(filePath)) return "";
-  return (await officeParseToText(filePath)).trim();
+  const result = await officeParseToText(filePath, importOffice);
+  return result.status === "ok" ? result.text.trim() : "";
 }
 
 /** Convert .docx/.xlsx to a markdown sidecar file. */

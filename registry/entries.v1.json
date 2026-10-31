@@ -11,7 +11,7 @@
       "entryVersion": "1.0.0",
       "publisher": {
         "packageName": "@sentropic/engram",
-        "packageVersion": "0.23.0"
+        "packageVersion": "0.23.1"
       },
       "compatibility": {
         "entryContract": "1.1.4",
@@ -127,7 +127,7 @@
           "role": "registry-package",
           "path": "dist/registry/manifest.js",
           "mediaType": "application/javascript",
-          "sha256": "80af68d9af58b78dd33973a0828f2b6809af68b78855acd198c3e389ae43c0c7"
+          "sha256": "e18dcc9efc2138070a97b11e6e712ced624c2491c4c1440a4f4a6e3a88c8390f"
         },
         {
           "role": "manifest",
@@ -145,19 +145,19 @@
           "role": "definitions",
           "path": "dist/registry/definitions.js",
           "mediaType": "application/javascript",
-          "sha256": "43086fc09744e188bac4ac218ea90571bcf2d3b4cec51161437bca2e995477e8"
+          "sha256": "ee797f048be6b8c5bca148e0f3722fb1f5e3274b2860037267117fd663f1152e"
         },
         {
           "role": "provider",
           "path": "dist/mcp-memory.js",
           "mediaType": "application/javascript",
-          "sha256": "db82fc5069979a0f5925d79727cc682777286f9be36c0f15dca3ad8751417542"
+          "sha256": "69884e849d32062af4224d4e79d120a2b7eb08d7a03290355e348a8bbb56b235"
         },
         {
           "role": "validator",
           "path": "dist/registry/validator.js",
           "mediaType": "application/javascript",
-          "sha256": "6c36947da91b88a5d0ddd87b6e28443b90790a720136fc11db99cd220e01b285"
+          "sha256": "555c3d979039b320a434fab3f3f9cfa5cbced7f4593c5beafc0647640d2d567f"
         },
         {
           "role": "wire-profile",
