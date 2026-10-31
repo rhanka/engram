@@ -7,11 +7,17 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 import { canonicalBytes, sha256Hex } from "../src/ontology-guardian/canonical.js";
 import {
+  DIAGRAM_PRESENTATION_CONTRACT_SCHEMA,
+  DIAGRAM_SEMANTIC_SCHEMA,
   DIAGRAM_VIEW_SCHEMA,
   DIAGRAM_VIEW_SCHEMA_V2,
+  GOVERNED_SCHEMAS,
+  VIEW_SCHEMA_VERSIONS,
   resolveViewSchemaPin,
   resolveViewSchemaVersion,
 } from "../src/ontology-guardian/diagram-schemas.js";
+import type { Pin } from "../src/ontology-guardian/types.js";
+import { LOSSLESS_WITNESS } from "./ontology-guardian-diagram-recovery.test.js";
 import {
   checkGovernedViewShape,
   checkSummaryShapeV1,
@@ -65,33 +71,19 @@ const completeSummary = (): Record<string, unknown> => ({
   label: "Kept", relationIds: ["relation:r"],
 });
 
-/** §6.1: generic@1 document whose summary lacks id and occurrence list. */
+/**
+ * §6.1: generic@1 document derived from the recovery witness. In a separate
+ * fixture copy of LOSSLESS_WITNESS, summary id and summary
+ * relationOccurrences are removed from summaryLabels["sum:a"]; label "Kept"
+ * and relationIds ["relation:r"] stay. LOSSLESS_WITNESS itself is unchanged.
+ */
 function idLessDocument(): MigDocument {
-  return {
-    documentId: "document:generic-1", schemaVersion: { major: 1, minor: 1 }, revision: 0,
-    profileRefs: ["generic@1"],
-    entities: {
-      "entity:node-a": {
-        id: "entity:node-a", profile: "generic@1", type: "node",
-        attributes: { name: { kind: "text", value: "A" } },
-      },
-    },
-    relations: {}, ports: {}, typeDefinitions: {}, resources: {}, extensions: [],
-    views: [{
-      viewId: "view:a", semanticDocumentId: "document:generic-1", revision: 0,
-      entityOccurrences: {
-        "occurrence:a": { id: "occurrence:a", entity: "entity:node-a", geometry: { x: 0, y: 0, width: 460, height: 200 } },
-      },
-      relationOccurrences: {}, portOccurrences: {}, groups: {}, filters: [],
-      presentation: { camera: { x: 0, y: 0, zoom: 1 } },
-      summaryLabels: {
-        "sum:a": {
-          sourceOccurrence: "occurrence:a", targetOccurrence: "occurrence:a",
-          label: "Kept", relationIds: ["relation:r"],
-        },
-      },
-    } as unknown as MigView],
-  };
+  const doc = structuredClone(LOSSLESS_WITNESS);
+  const summaries = (doc.views![0] as unknown as Record<string, unknown>)["summaryLabels"] as Record<string, unknown>;
+  const summary = summaries["sum:a"] as Record<string, unknown>;
+  delete summary["id"];
+  delete summary["relationOccurrences"];
+  return doc;
 }
 
 describe("exact pin resolution (no fallback, no inference)", () => {
@@ -403,7 +395,7 @@ describe("staged composition (i): view stage before profile migration", () => {
 
   it("preserves both originals when the second stage refuses", () => {
     const doc = idLessDocument();
-    (doc.entities["entity:node-a"]!.attributes as Record<string, unknown>)["kicker"] = { kind: "text", value: "K" };
+    (doc.entities["entity:a"]!.attributes as Record<string, unknown>)["kicker"] = { kind: "text", value: "K" };
     // No contract pin: the view stage succeeds while the profile stage refuses.
     const result = migrateGenericWithViewsV1ToV2(doc, { viewPins: VIEW_PINS, views: doc.views });
     if ("boundary" in result.viewStage || result.viewStage.outcome !== "ok") throw new Error("view stage must succeed");
@@ -567,5 +559,165 @@ describe("§6.2 hand-written vs Ajv parity over both exact governed schemas", ()
         expect(hand, `${label} @${version}`).not.toBeNull();
       }
     }
+  });
+});
+
+describe("§6.1 fixture provenance: derived from the recovery witness", () => {
+  it("removes id and occurrences in a copy while LOSSLESS_WITNESS stays unchanged", () => {
+    const witnessSummary = (LOSSLESS_WITNESS.views![0] as unknown as Record<string, Record<string, Record<string, unknown>>>)["summaryLabels"]!["sum:a"]!;
+    expect(witnessSummary["id"]).toBe("sum:a");
+    expect(witnessSummary["relationOccurrences"]).toEqual(["occurrence:r"]);
+    const doc = idLessDocument();
+    const fixtureSummary = ((doc.views![0] as unknown as Record<string, unknown>)["summaryLabels"] as Record<string, unknown>)["sum:a"] as Record<string, unknown>;
+    expect(fixtureSummary).toEqual({
+      sourceOccurrence: "occurrence:a", targetOccurrence: "occurrence:a",
+      label: "Kept", relationIds: ["relation:r"],
+    });
+    expect(witnessSummary["id"]).toBe("sum:a");
+    expect(witnessSummary["relationOccurrences"]).toEqual(["occurrence:r"]);
+  });
+});
+
+describe("absent or null pins refuse with a typed refusal, never throw (SPEC §4.2)", () => {
+  const view = () => minimalView({ "sum:a": completeSummary() });
+
+  it("refuses an absent or null source pin as unknown-source-schema", () => {
+    for (const source of [undefined, null] as unknown as Pin[]) {
+      const report = migrateViewSchemaV1ToV2(view(), { source, target: V2 });
+      if ("boundary" in report || report.outcome !== "refused") throw new Error("absent source pin must refuse");
+      expect(report.target).toBeNull();
+      expect(report.unmigrated).toEqual([{
+        path: "", reason: "unknown-source-schema",
+        detail: expect.stringContaining("source schema selection unavailable"),
+      }]);
+    }
+  });
+
+  it("refuses an absent or null target pin as unknown-target-schema", () => {
+    for (const target of [undefined, null] as unknown as Pin[]) {
+      const report = migrateViewSchemaV1ToV2(view(), { source: V1, target });
+      if ("boundary" in report || report.outcome !== "refused") throw new Error("absent target pin must refuse");
+      expect(report.target).toBeNull();
+      expect(report.unmigrated).toEqual([{
+        path: "", reason: "unknown-target-schema",
+        detail: expect.stringContaining("target schema selection unavailable"),
+      }]);
+    }
+  });
+
+  it("refuses a non-record pin without throwing", () => {
+    const report = migrateViewSchemaV1ToV2(view(), { source: "diagram-view-schema/1" as unknown as Pin, target: V2 });
+    if ("boundary" in report || report.outcome !== "refused") throw new Error("non-record source pin must refuse");
+    expect(report.target).toBeNull();
+    expect(report.unmigrated[0]!.reason).toBe("unknown-source-schema");
+  });
+
+  it("refuses an absent or null adoption pin as unknown-target-schema", () => {
+    for (const target of [undefined, null] as unknown as Pin[]) {
+      const report = adoptViewSchemaV2(view(), target);
+      if ("boundary" in report || report.outcome !== "refused") throw new Error("absent adoption pin must refuse");
+      expect(report.target).toBeNull();
+      expect(report.unmigrated).toEqual([{
+        path: "", reason: "unknown-target-schema",
+        detail: expect.stringContaining("target schema selection unavailable"),
+      }]);
+    }
+  });
+});
+
+describe("multiple failures are all retained in sorted order (SPEC §4.2)", () => {
+  const conflicting = (id: string): Record<string, unknown> => ({
+    id, sourceOccurrence: "o", targetOccurrence: "o", label: "L", relationIds: ["r"],
+  });
+
+  it("retains every conflicting summary", () => {
+    const report = migrateViewSchemaV1ToV2(minimalView({
+      "sum:b": conflicting("other-b"),
+      "sum:a": conflicting("other-a"),
+    }), VIEW_PINS);
+    if ("boundary" in report || report.outcome !== "refused") throw new Error("conflicts must refuse");
+    expect(report.target).toBeNull();
+    expect(report.operations).toEqual([]);
+    expect(report.unmigrated).toEqual([
+      {
+        path: "summaryLabels.sum:a.id", reason: "summary-key-conflict",
+        detail: 'record-key-mismatch: existing summary id differs from its map key "sum:a"',
+      },
+      {
+        path: "summaryLabels.sum:b.id", reason: "summary-key-conflict",
+        detail: 'record-key-mismatch: existing summary id differs from its map key "sum:b"',
+      },
+    ]);
+  });
+
+  it("retains every failing retained view", () => {
+    const bad = (viewId: string, key: string): Record<string, unknown> => ({
+      ...minimalView({ [key]: conflicting("other") }),
+      viewId,
+    });
+    const report = migrateRetainedViewsV1ToV2([bad("view:b", "sum:b"), bad("view:a", "sum:a")], VIEW_PINS);
+    if ("boundary" in report || report.outcome !== "refused") throw new Error("failing views must refuse");
+    expect(report.target).toBeNull();
+    expect(report.operations).toEqual([]);
+    expect(report.unmigrated).toEqual([
+      {
+        path: "views.view:a.summaryLabels.sum:a.id", reason: "summary-key-conflict",
+        detail: expect.stringContaining("record-key-mismatch"),
+      },
+      {
+        path: "views.view:b.summaryLabels.sum:b.id", reason: "summary-key-conflict",
+        detail: expect.stringContaining("record-key-mismatch"),
+      },
+    ]);
+  });
+
+  it("retains every profile gate failure", () => {
+    const doc = idLessDocument();
+    const second = structuredClone(doc.views![0]) as unknown as MigView;
+    (second as unknown as Record<string, unknown>)["viewId"] = "view:b";
+    const report = migrateGenericV1ToV2({ ...doc, views: [...doc.views!, second] }, { viewSchemas: {} });
+    if ("boundary" in report || report.outcome !== "refused") throw new Error("missing associations must refuse");
+    expect(report.target).toBeNull();
+    expect(report.unmigrated).toEqual([
+      {
+        path: "views.view:a", reason: "incompatible-attribute-schema",
+        detail: "view-schema association absent for retained view views.view:a",
+      },
+      {
+        path: "views.view:b", reason: "incompatible-attribute-schema",
+        detail: "view-schema association absent for retained view views.view:b",
+      },
+    ]);
+  });
+});
+
+describe("a refusal never declares an unapplied derivation", () => {
+  it("returns empty operations on a missing-then-conflict refusal", () => {
+    const report = migrateViewSchemaV1ToV2(minimalView({
+      "sum:a": { sourceOccurrence: "o", targetOccurrence: "o", label: "A", relationIds: ["r"] },
+      "sum:b": { id: "other", sourceOccurrence: "o", targetOccurrence: "o", label: "B", relationIds: ["r"] },
+    }), VIEW_PINS);
+    if ("boundary" in report || report.outcome !== "refused") throw new Error("conflict must refuse");
+    expect(report.target).toBeNull();
+    expect(report.operations).toEqual([]);
+    expect(report.unmigrated).toEqual([{
+      path: "summaryLabels.sum:b.id", reason: "summary-key-conflict",
+      detail: 'record-key-mismatch: existing summary id differs from its map key "sum:b"',
+    }]);
+  });
+});
+
+describe("governed wrappers and enumerations are frozen (SPEC §3.3)", () => {
+  it("freezes every wrapper, the inventory and the version enumeration", () => {
+    for (const governed of [
+      DIAGRAM_PRESENTATION_CONTRACT_SCHEMA, DIAGRAM_SEMANTIC_SCHEMA,
+      DIAGRAM_VIEW_SCHEMA, DIAGRAM_VIEW_SCHEMA_V2,
+    ]) {
+      expect(Object.isFrozen(governed)).toBe(true);
+      expect(Object.isFrozen(governed.pin)).toBe(true);
+      expect(Object.isFrozen(governed.schema)).toBe(true);
+    }
+    expect(Object.isFrozen(GOVERNED_SCHEMAS)).toBe(true);
+    expect(Object.isFrozen(VIEW_SCHEMA_VERSIONS)).toBe(true);
   });
 });

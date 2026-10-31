@@ -163,7 +163,10 @@ const stagedNull: StagedMigrationResult = {
 };
 expect(stagedNull.profileStage).toBeNull();
 
-// Per-view associations stay an explicit optional map, never an implied pin.
+// Per-view associations stay an explicit required map, never an implied pin.
+// @ts-expect-error omitting the association map is a compile error
+const missingViewOptions: ProfileViewOptions = {};
+expect(missingViewOptions).toBeDefined();
 const viewOptions: ProfileViewOptions = { viewSchemas: {} };
 expect(viewOptions.viewSchemas).toEqual({});
 const stagePins: ViewStagePins = {
