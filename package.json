@@ -227,7 +227,9 @@
       "pdfjs-dist": "npm:empty-npm-package@1.0.0",
       "tesseract.js": "npm:empty-npm-package@1.0.0"
     },
-    "tree-sitter": "^0.26.8"
+    "tree-sitter": "^0.26.8",
+    "hono": "^4.13.17",
+    "@hono/node-server": "^2.1.6"
   },
   "devDependencies": {
     "@google-cloud/spanner": "^8.0.0",
