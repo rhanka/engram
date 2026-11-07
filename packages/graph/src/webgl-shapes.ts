@@ -41,6 +41,7 @@ import {
   BOX_SHAPE_CODE,
   coerceFiniteCoord,
   drawnRadius,
+  isGlyphVisible,
   unitShapeGeometry,
 } from "./render-geometry";
 import type { GraphStyleBuffers } from "./types";
@@ -268,6 +269,8 @@ export interface ShapeInstanceSet {
   fill: Map<number, number[]>;
   border: Map<number, number[]>;
   nonFiniteCount: number;
+  /** Nodes skipped by viewport culling (P1 LOD) — visible result unchanged. */
+  culledCount: number;
 }
 
 /**
@@ -292,6 +295,14 @@ export function buildShapeInstances(frame: WebGLShapeFrame): ShapeInstanceSet {
   const centerX = frame.centerX ?? 0;
   const centerY = frame.centerY ?? 0;
   let nonFiniteCount = 0;
+  let culledCount = 0;
+
+  // Device-px viewport mapping for culling (P1 LOD). The instance `a_center`
+  // stays in WORLD coords (the shader transforms it); we map to device px HERE
+  // only to decide visibility. Mirrors renderer.ts screenPoint / edge screenPoint.
+  const { camera, viewportWidth, viewportHeight } = frame;
+  const halfViewW = viewportWidth / 2;
+  const halfViewH = viewportHeight / 2;
 
   for (let i = 0; i < frame.nodeCount; i += 1) {
     const shape = style?.nodeShapes?.[i] ?? 0;

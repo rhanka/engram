@@ -518,7 +518,9 @@ export function edgeGeometry(
  * endpoints from `edgeGeometry`, so the curve starts/ends on the node borders.
  */
 export function tessellateEdge(geom: EdgeGeometry, segments = 16): Array<[number, number]> {
-  if (!geom.curved) {
+  // A straight edge — or a curve whose lateral bow is sub-pixel under LOD
+  // (segments collapsed to 1 by lodCurveSegments) — is a single chord segment.
+  if (!geom.curved || segments <= 1) {
     return [
       [geom.startX, geom.startY],
       [geom.endX, geom.endY],
@@ -535,4 +537,119 @@ export function tessellateEdge(geom: EdgeGeometry, segments = 16): Array<[number
     points.push([x, y]);
   }
   return points;
+}
+
+// ---------------------------------------------------------------------------
+// LEVEL-OF-DETAIL (B1 Phase 5 — perf at scale, plan §1.K P1/P2/P3 → LOD).
+//
+// LOD is the WHOLE point of the WebGL migration: stay interactive at high node
+// counts WITHOUT reducing the node set (feedback_perf_no_node_reduction — we
+// NEVER drop nodes the user should see; we only skip work that produces NOTHING
+// VISIBLE). Every threshold below gates on VISIBILITY, never on the size law
+// (R5): a glyph/edge is simplified or culled ONLY when its drawn contribution is
+// off-screen or sub-pixel, so the visible raster is unchanged.
+//
+// CRUCIALLY all thresholds are set FAR below the golden zoom levels (DPR 1–3,
+// zoom 1/2.5, sizes 8–32 ⇒ device radii ≥ 8px, box font ≥ ~9.8px, arrows ≥ 5px,
+// curve bows tens of px), so golden-webgl stays byte-for-byte green — LOD only
+// fires when content is genuinely invisible/illegible.
+// ---------------------------------------------------------------------------
+
+/**
+ * Cull margin in device px added around the viewport before deciding a glyph is
+ * fully off-screen. Generous so a partially-visible glyph (and its border ring /
+ * bold outline) is never clipped at the edge.
+ */
+export const LOD_CULL_MARGIN_PX = 4;
+
+/**
+ * Device-pixel box LABEL-text legibility floor (P2 label-skip → zoom-LOD). Below
+ * this font size the rasterized label is sub-legible noise (a smear of < ~4px
+ * glyphs), so the WebGL box pass SKIPS the text raster (the box rect/border still
+ * draw). The golden min box font is ~9.8px (18·12/22 at DPR1/zoom1), well above
+ * this, so labelled-box goldens are unaffected. The Canvas2D reference still
+ * draws the (illegible) text, so this is a WebGL-only perf skip on content the
+ * user cannot read; it does not change any golden fixture.
+ */
+export const LOD_MIN_LABEL_FONT_PX = 4;
+
+/**
+ * Sub-pixel arrowhead floor (device px). An arrowhead shorter than this covers
+ * effectively no pixels, so the WebGL edge pass SKIPS it. Golden arrows are ≥ 5px
+ * (ARROW_LENGTH·width·PR·zoom with width ≥ 2), far above this.
+ */
+export const LOD_MIN_ARROW_PX = 0.75;
+
+/**
+ * Sub-pixel curve-bow floor (device px). When a quadratic edge's lateral bow
+ * (control-point offset from the chord) is below this, the curve is visually a
+ * straight line, so the WebGL edge pass tessellates it as ONE segment instead of
+ * CURVE_SEGMENTS. The hit-test still samples the true curve (so picking is
+ * unchanged); only the drawn polyline is simplified, and only when the visible
+ * difference is sub-pixel. Golden curves bow tens of px, so they keep full
+ * tessellation.
+ */
+export const LOD_MIN_CURVE_BOW_PX = 0.5;
+
+/**
+ * Whether a glyph of drawn `radius` (device px) centred at device (cx, cy) is at
+ * least partially inside the viewport (+ margin + radius). Off-screen glyphs
+ * contribute NOTHING, so the instance builders skip them entirely (viewport
+ * culling, P1). Returns true for any glyph touching the visible region, so a
+ * glyph straddling the edge is always kept.
+ */
+export function isGlyphVisible(
+  cx: number,
+  cy: number,
+  radius: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  margin = LOD_CULL_MARGIN_PX,
+): boolean {
+  const pad = radius + margin;
+  return cx + pad >= 0 && cx - pad <= viewportWidth && cy + pad >= 0 && cy - pad <= viewportHeight;
+}
+
+/**
+ * Whether an axis-aligned device-px box [minX,minY]–[maxX,maxY] (already padded
+ * by the caller for stroke/curve bow) intersects the viewport (+ margin). Used to
+ * cull edges whose entire bounding box is off-screen — both endpoints (and the
+ * curve control) outside the same side of the viewport ⇒ the edge draws nothing.
+ */
+export function isBoxVisible(
+  minX: number,
+  minY: number,
+  maxX: number,
+  maxY: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  margin = LOD_CULL_MARGIN_PX,
+): boolean {
+  return maxX + margin >= 0 && minX - margin <= viewportWidth && maxY + margin >= 0 && minY - margin <= viewportHeight;
+}
+
+/** Lateral bow (device px) of a quadratic edge: control-point distance to chord. */
+export function curveBow(geom: EdgeGeometry): number {
+  if (!geom.curved) return 0;
+  const ax = geom.startX;
+  const ay = geom.startY;
+  const bx = geom.endX;
+  const by = geom.endY;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return 0;
+  // Perpendicular distance from the control point to the chord line.
+  return Math.abs((geom.controlX - ax) * dy - (geom.controlY - ay) * dx) / len;
+}
+
+/**
+ * Effective curve segment count for an edge under LOD: a curve whose bow is
+ * sub-pixel ({@link LOD_MIN_CURVE_BOW_PX}) collapses to a single straight segment
+ * (segments via tessellateEdge's straight path), else the full `segments`. Pure
+ * (no GL), so the geometry-parity test layer can assert it matches.
+ */
+export function lodCurveSegments(geom: EdgeGeometry, segments: number): number {
+  if (!geom.curved) return 1;
+  return curveBow(geom) < LOD_MIN_CURVE_BOW_PX ? 1 : segments;
 }
