@@ -4,6 +4,10 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.23.2 (2026-11-07)
+
+- **hono 4.13.17 and @hono/node-server 2.1.6 (security).** Pinned through overrides, with a single copy of each: GHSA-jpvv-r467-5p4w (a backslash parsed as a path separator bypasses path-based access control), GHSA-7v5p-43qr-wch5 and GHSA-qv5m-9pm6-hqp3 (node-server WebSocket), and GHSA-h7mg-cq63-vhpq with the mount/csrf advisories (hono RegExpRouter skipping wildcard middleware). Both are transitive through the MCP SDK and mcp-platform; no engram code change.
+
 ## 0.23.1 (2026-10-31)
 
 - **officeparser becomes an optional peer dependency (security).** npm never applies a package's `overrides` for its consumers, so the real vulnerable `pdfjs-dist` reached every consumer through officeparser's dependency tree. Consumers now do not install officeparser at all unless they opt in; the dev tree keeps the devDependency and the `pdfjs-dist`/`tesseract.js` stub overrides so tests and the bundle build stay unchanged. A missing officeparser now yields the typed `OFFICE_EXTRACTION_UNAVAILABLE` outcome (`office extraction unavailable: install officeparser`) with no crash; .docx/.xlsx/.pptx extraction is unchanged when it is present.
