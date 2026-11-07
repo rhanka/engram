@@ -1,0 +1,53 @@
+{
+  "format": "engram.archi-view/1",
+  "viewId": "view:roles-teintes",
+  "activeHierarchy": "archi-composition",
+  "draw": [
+    "entity:api-h2a",
+    "entity:api-memory",
+    "entity:api-track",
+    "entity:art-branch",
+    "entity:art-track-op",
+    "entity:cmp-control",
+    "entity:pkg-h2a",
+    "entity:pkg-plugin",
+    "entity:pkg-track",
+    "entity:rt-claude",
+    "entity:rt-codex",
+    "entity:rt-h2a",
+    "entity:rt-track",
+    "entity:st-events",
+    "entity:svc-live",
+    "entity:sys-engram",
+    "entity:sys-h2a",
+    "entity:sys-track"
+  ],
+  "collapsed": [
+    "entity:pkg-h2a",
+    "entity:pkg-plugin",
+    "entity:sys-engram"
+  ],
+  "legend": {
+    "legendRef": "entity:legend-memoire",
+    "title": "Teintes",
+    "order": [
+      "entity:key-alim",
+      "entity:key-ctrl",
+      "entity:key-mem"
+    ],
+    "tokens": [
+      {
+        "category": "alimentation",
+        "token": "st-semantic-data-category1"
+      },
+      {
+        "category": "controle",
+        "token": "st-semantic-data-category2"
+      },
+      {
+        "category": "memoire",
+        "token": "st-semantic-data-category3"
+      }
+    ]
+  }
+}
