@@ -1,0 +1,26 @@
+{
+  "format": "engram.archi-manifest/1",
+  "language": "fr",
+  "owningRepo": "entity:repo-h2a",
+  "document": "document.json",
+  "views": [
+    "view-specs/roles-teintes.json"
+  ],
+  "profilePins": [
+    {
+      "id": "archi",
+      "version": "1.0.0",
+      "contentDigest": "81ed1a11925f9bb1d644a839cad788555ffeea876c8c09d2d0a34d6981e8b344"
+    },
+    {
+      "id": "generic",
+      "version": "2.0.0",
+      "contentDigest": "cb103606707577720eba48570c0e49aadd209d8e51a9a0bc2c725b7434f79283"
+    }
+  ],
+  "viewSchemaPin": {
+    "id": "diagram-view-schema",
+    "version": "2",
+    "contentDigest": "50c97fc87a9546facff86f2deab8fdb99073419f43eef09958b96225367037ef"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node"]
+  },
+  "include": ["src/ontology-guardian/archi-*.ts", "tests/ontology-guardian-archi-*.test.ts"],
+  "exclude": ["node_modules", "dist"]
+}

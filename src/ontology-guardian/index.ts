@@ -7,3 +7,5 @@ export * from "./diagnostics.js";
 export * from "./canonical.js";
 export * from "./digests.js";
 export * from "./admission.js";
+export * from "./archi-profile.js";
+export * from "./archi-check.js";

@@ -1,0 +1,22 @@
+{
+  "format": "engram.archi-view/1",
+  "viewId": "view:deploiement-hosts",
+  "activeHierarchy": "archi-deployment",
+  "draw": [
+    "entity:host-cluster",
+    "entity:host-poste",
+    "entity:rt-agy",
+    "entity:rt-claude",
+    "entity:rt-codex",
+    "entity:rt-gemini",
+    "entity:rt-guard",
+    "entity:rt-h2a",
+    "entity:rt-hermes",
+    "entity:rt-muse",
+    "entity:rt-opencode",
+    "entity:rt-track",
+    "entity:rt-vibe",
+    "entity:svc-live"
+  ],
+  "collapsed": []
+}

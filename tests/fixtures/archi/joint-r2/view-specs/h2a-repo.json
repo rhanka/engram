@@ -1,0 +1,15 @@
+{
+  "format": "engram.archi-view/1",
+  "viewId": "view:h2a-repo",
+  "activeHierarchy": "archi-source",
+  "draw": [
+    "entity:api-track",
+    "entity:cmp-control",
+    "entity:pkg-track",
+    "entity:repo-h2a",
+    "entity:rt-track",
+    "entity:st-events",
+    "entity:sys-track"
+  ],
+  "collapsed": []
+}

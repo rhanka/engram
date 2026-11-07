@@ -1,0 +1,3039 @@
+{
+  "documentId": "document:archi-joint",
+  "schemaVersion": {
+    "major": 1,
+    "minor": 1
+  },
+  "revision": 0,
+  "profileRefs": [
+    "archi@1"
+  ],
+  "typeDefinitions": {},
+  "entities": {
+    "entity:repo-h2a": {
+      "id": "entity:repo-h2a",
+      "profile": "archi@1",
+      "type": "repo",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "h2a"
+        },
+        "url": {
+          "kind": "text",
+          "value": "https://github.com/rhanka/h2a"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Code de h2a, Track et Focus"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/package.json:8-12"
+            },
+            {
+              "kind": "text",
+              "value": "h2a:packages/focus"
+            }
+          ]
+        }
+      }
+    },
+    "entity:repo-engram": {
+      "id": "entity:repo-engram",
+      "profile": "archi@1",
+      "type": "repo",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "engram"
+        },
+        "url": {
+          "kind": "text",
+          "value": "https://github.com/rhanka/engram"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Code d'engram"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "graphify:git remote get-url origin"
+            }
+          ]
+        }
+      }
+    },
+    "entity:act-rhanka": {
+      "id": "entity:act-rhanka",
+      "profile": "archi@1",
+      "type": "actor",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "rhanka"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/package.json:18 (espace GitHub ; responsabilité = assertion)"
+            }
+          ]
+        }
+      }
+    },
+    "entity:act-anthropic": {
+      "id": "entity:act-anthropic",
+      "profile": "archi@1",
+      "type": "actor",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "Anthropic"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "org"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "assertion : éditeur de Claude Code"
+            }
+          ]
+        }
+      }
+    },
+    "entity:act-openai": {
+      "id": "entity:act-openai",
+      "profile": "archi@1",
+      "type": "actor",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "OpenAI"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "org"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "assertion : éditeur de Codex"
+            }
+          ]
+        }
+      }
+    },
+    "entity:sys-h2a": {
+      "id": "entity:sys-h2a",
+      "profile": "archi@1",
+      "type": "system",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "h2a"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Relie les agents des CLI"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/package.json:2-4"
+            }
+          ]
+        }
+      }
+    },
+    "entity:sys-track": {
+      "id": "entity:sys-track",
+      "profile": "archi@1",
+      "type": "system",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "Track"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Contrôle chaque écriture"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "track-facts-r5.md:40-48"
+            }
+          ]
+        }
+      }
+    },
+    "entity:sys-engram": {
+      "id": "entity:sys-engram",
+      "profile": "archi@1",
+      "type": "system",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "engram"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Mémoire gouvernée du track"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "G0:76"
+            },
+            {
+              "kind": "text",
+              "value": "R7b-owner-comments.fr.md:115-117"
+            }
+          ]
+        }
+      }
+    },
+    "entity:sys-mesh": {
+      "id": "entity:sys-mesh",
+      "profile": "archi@1",
+      "type": "system",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "cluster-mesh"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Opère le service vivant"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "R7b-owner-comments.fr.md:122-123"
+            }
+          ]
+        }
+      }
+    },
+    "entity:pkg-h2a": {
+      "id": "entity:pkg-h2a",
+      "profile": "archi@1",
+      "type": "package",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "@sentropic/h2a"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "library"
+        },
+        "version": {
+          "kind": "text",
+          "value": "0.91.0"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Code JS de h2a et bin h2a"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/package.json:2-4"
+            },
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/package.json:44-46"
+            }
+          ]
+        }
+      }
+    },
+    "entity:pkg-plugin": {
+      "id": "entity:pkg-plugin",
+      "profile": "archi@1",
+      "type": "package",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "h2a"
+        },
+        "shortName": {
+          "kind": "text",
+          "value": "Plugin h2a"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "plugin"
+        },
+        "version": {
+          "kind": "text",
+          "value": "0.91.0"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Branche h2a dans les CLI"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/.claude-plugin/plugin.json:1-23"
+            },
+            {
+              "kind": "text",
+              "value": "h2a:.claude-plugin/marketplace.json:9-11"
+            }
+          ]
+        }
+      }
+    },
+    "entity:pkg-track": {
+      "id": "entity:pkg-track",
+      "profile": "archi@1",
+      "type": "package",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "@sentropic/track"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "library"
+        },
+        "version": {
+          "kind": "text",
+          "value": "0.91.0"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Code JS du suivi et bins track"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/package.json:2-3"
+            },
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/package.json:32-35"
+            }
+          ]
+        }
+      }
+    },
+    "entity:cmp-control": {
+      "id": "entity:cmp-control",
+      "profile": "archi@1",
+      "type": "component",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "Contrôle"
+        },
+        "shortName": {
+          "kind": "text",
+          "value": "Contrôle Track"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Valide ou refuse l'écriture"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/src/events/store.ts:39"
+            },
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/src/ingest/ingest.ts:275-277"
+            }
+          ]
+        }
+      }
+    },
+    "entity:rt-h2a": {
+      "id": "entity:rt-h2a",
+      "profile": "archi@1",
+      "type": "runtime",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "h2a"
+        },
+        "shortName": {
+          "kind": "text",
+          "value": "CLI h2a"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "cli"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Sert le MCP et les hooks"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/package.json:44-46"
+            }
+          ]
+        }
+      }
+    },
+    "entity:rt-guard": {
+      "id": "entity:rt-guard",
+      "profile": "archi@1",
+      "type": "runtime",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "deny-manual-h2a-cli"
+        },
+        "shortName": {
+          "kind": "text",
+          "value": "Garde Bash"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "hook"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Bloque la CLI h2a lancée à la main"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/hooks/hooks.json:4-15"
+            },
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/hooks/deny-manual-h2a-cli.mjs:10-37"
+            }
+          ]
+        }
+      }
+    },
+    "entity:rt-track": {
+      "id": "entity:rt-track",
+      "profile": "archi@1",
+      "type": "runtime",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "track"
+        },
+        "shortName": {
+          "kind": "text",
+          "value": "CLI track"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "cli"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Valide puis écrit le suivi"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/package.json:33"
+            },
+            {
+              "kind": "text",
+              "value": "track-facts-r5.md:72-78"
+            }
+          ]
+        }
+      }
+    },
+    "entity:rt-track-mcp": {
+      "id": "entity:rt-track-mcp",
+      "profile": "archi@1",
+      "type": "runtime",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "track-mcp"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "mcp-server"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Sert les lectures, sans store"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/src/mcp/cli.ts:2-13"
+            }
+          ]
+        }
+      }
+    },
+    "entity:rt-claude": {
+      "id": "entity:rt-claude",
+      "profile": "archi@1",
+      "type": "runtime",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "Claude Code"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "cli"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Session de l'agent"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "host:~/.claude/settings.json:105-154 (relu par Astra r1)"
+            }
+          ]
+        }
+      }
+    },
+    "entity:rt-codex": {
+      "id": "entity:rt-codex",
+      "profile": "archi@1",
+      "type": "runtime",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "Codex"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "cli"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Session de l'agent"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/.mcp.json:3-12"
+            }
+          ]
+        }
+      }
+    },
+    "entity:api-h2a": {
+      "id": "entity:api-h2a",
+      "profile": "archi@1",
+      "type": "api",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "MCP h2a"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "mcp"
+        },
+        "access": {
+          "kind": "enum",
+          "value": "read-write"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Outils de coordination h2a_*"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/src/mcp.ts:30-38"
+            }
+          ]
+        }
+      }
+    },
+    "entity:api-track": {
+      "id": "entity:api-track",
+      "profile": "archi@1",
+      "type": "api",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "Outils track_*"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "mcp"
+        },
+        "access": {
+          "kind": "enum",
+          "value": "read-only"
+        },
+        "role": {
+          "kind": "text",
+          "value": "15 lectures, aucune écriture"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/src/mcp/server.ts:33-182"
+            }
+          ]
+        }
+      }
+    },
+    "entity:api-memory": {
+      "id": "entity:api-memory",
+      "profile": "archi@1",
+      "type": "api",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "Outils mémoire"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "mcp"
+        },
+        "access": {
+          "kind": "enum",
+          "value": "read-write"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Six outils mémoire, contrat figé"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "G0:76 (I-3)"
+            }
+          ]
+        }
+      }
+    },
+    "entity:svc-live": {
+      "id": "entity:svc-live",
+      "profile": "archi@1",
+      "type": "service",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "engram live"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Tient le track record vivant"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "proposed"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "R7b-owner-comments.fr.md:122"
+            },
+            {
+              "kind": "text",
+              "value": "R7b-owner-comments.fr.md:152-154"
+            }
+          ]
+        }
+      }
+    },
+    "entity:art-track-report": {
+      "id": "entity:art-track-report",
+      "profile": "archi@1",
+      "type": "artifact",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "harness/track-report"
+        },
+        "shortName": {
+          "kind": "text",
+          "value": "track-report"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "skill"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Rapport Track pour l'owner"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/skills/harness/track-report/SKILL.md:1-20"
+            }
+          ]
+        }
+      }
+    },
+    "entity:art-track-op": {
+      "id": "entity:art-track-op",
+      "profile": "archi@1",
+      "type": "artifact",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "track-operation"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "skill"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Choisit lecture MCP ou CLI"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/skills/track-operation/SKILL.md:58-66"
+            }
+          ]
+        }
+      }
+    },
+    "entity:art-branch": {
+      "id": "entity:art-branch",
+      "profile": "archi@1",
+      "type": "artifact",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "branch-lifecycle"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "skill"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Guide la fusion et la clôture"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/skills/branch-lifecycle/SKILL.md:3-10"
+            }
+          ]
+        }
+      }
+    },
+    "entity:st-events": {
+      "id": "entity:st-events",
+      "profile": "archi@1",
+      "type": "store",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": ".track/events.jsonl"
+        },
+        "shortName": {
+          "kind": "text",
+          "value": "events.jsonl"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "jsonl"
+        },
+        "writerPolicy": {
+          "kind": "enum",
+          "value": "single-writer"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Journal du suivi, ajout seul"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "track-facts-r5.md:117-120"
+            }
+          ]
+        }
+      }
+    },
+    "entity:host-poste": {
+      "id": "entity:host-poste",
+      "profile": "archi@1",
+      "type": "host",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "Poste de travail"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "workstation"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Poste de l'owner"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "assertion : poste local de l'owner"
+            }
+          ]
+        }
+      }
+    },
+    "entity:host-cluster": {
+      "id": "entity:host-cluster",
+      "profile": "archi@1",
+      "type": "host",
+      "attributes": {
+        "name": {
+          "kind": "text",
+          "value": "Cluster cluster-mesh"
+        },
+        "shortName": {
+          "kind": "text",
+          "value": "Cluster"
+        },
+        "form": {
+          "kind": "enum",
+          "value": "cluster"
+        },
+        "role": {
+          "kind": "text",
+          "value": "Fait tourner engram live"
+        },
+        "lifecycle": {
+          "kind": "enum",
+          "value": "proposed"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "R7b-owner-comments.fr.md:122 (identité unverified)"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "relations": {
+    "relation:mi-sys-h2a": {
+      "id": "relation:mi-sys-h2a",
+      "profile": "archi@1",
+      "type": "managedIn",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:sys-h2a"
+        },
+        {
+          "role": "target",
+          "target": "entity:repo-h2a"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/package.json:16-20"
+            }
+          ]
+        }
+      }
+    },
+    "relation:mi-sys-track": {
+      "id": "relation:mi-sys-track",
+      "profile": "archi@1",
+      "type": "managedIn",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:sys-track"
+        },
+        {
+          "role": "target",
+          "target": "entity:repo-h2a"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/package.json:8-12"
+            }
+          ]
+        }
+      }
+    },
+    "relation:mi-sys-engram": {
+      "id": "relation:mi-sys-engram",
+      "profile": "archi@1",
+      "type": "managedIn",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:sys-engram"
+        },
+        {
+          "role": "target",
+          "target": "entity:repo-engram"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "graphify:git remote get-url origin"
+            }
+          ]
+        }
+      }
+    },
+    "relation:ob-repo-h2a": {
+      "id": "relation:ob-repo-h2a",
+      "profile": "archi@1",
+      "type": "ownedBy",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:repo-h2a"
+        },
+        {
+          "role": "target",
+          "target": "entity:act-rhanka"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "assertion (m1)"
+            }
+          ]
+        }
+      }
+    },
+    "relation:ob-repo-engram": {
+      "id": "relation:ob-repo-engram",
+      "profile": "archi@1",
+      "type": "ownedBy",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:repo-engram"
+        },
+        {
+          "role": "target",
+          "target": "entity:act-rhanka"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "assertion (m1)"
+            }
+          ]
+        }
+      }
+    },
+    "relation:ob-claude": {
+      "id": "relation:ob-claude",
+      "profile": "archi@1",
+      "type": "ownedBy",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-claude"
+        },
+        {
+          "role": "target",
+          "target": "entity:act-anthropic"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "assertion"
+            }
+          ]
+        }
+      }
+    },
+    "relation:ob-codex": {
+      "id": "relation:ob-codex",
+      "profile": "archi@1",
+      "type": "ownedBy",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-codex"
+        },
+        {
+          "role": "target",
+          "target": "entity:act-openai"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "assertion"
+            }
+          ]
+        }
+      }
+    },
+    "relation:ob-mesh": {
+      "id": "relation:ob-mesh",
+      "profile": "archi@1",
+      "type": "ownedBy",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:sys-mesh"
+        },
+        {
+          "role": "target",
+          "target": "entity:act-rhanka"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "assertion"
+            }
+          ]
+        }
+      }
+    },
+    "relation:op-live": {
+      "id": "relation:op-live",
+      "profile": "archi@1",
+      "type": "operatedBy",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:svc-live"
+        },
+        {
+          "role": "target",
+          "target": "entity:sys-mesh"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "proposed"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "R7b-owner-comments.fr.md:122"
+            }
+          ]
+        }
+      }
+    },
+    "relation:op-poste": {
+      "id": "relation:op-poste",
+      "profile": "archi@1",
+      "type": "operatedBy",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:host-poste"
+        },
+        {
+          "role": "target",
+          "target": "entity:act-rhanka"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "assertion"
+            }
+          ]
+        }
+      }
+    },
+    "relation:op-cluster": {
+      "id": "relation:op-cluster",
+      "profile": "archi@1",
+      "type": "operatedBy",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:host-cluster"
+        },
+        {
+          "role": "target",
+          "target": "entity:sys-mesh"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "proposed"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "R7b-owner-comments.fr.md:122"
+            }
+          ]
+        }
+      }
+    },
+    "relation:po-pkg-h2a": {
+      "id": "relation:po-pkg-h2a",
+      "profile": "archi@1",
+      "type": "partOf",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:pkg-h2a"
+        },
+        {
+          "role": "target",
+          "target": "entity:sys-h2a"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/package.json:2-4"
+            }
+          ]
+        }
+      }
+    },
+    "relation:po-plugin": {
+      "id": "relation:po-plugin",
+      "profile": "archi@1",
+      "type": "partOf",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:pkg-plugin"
+        },
+        {
+          "role": "target",
+          "target": "entity:sys-h2a"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:.claude-plugin/marketplace.json:9-11"
+            }
+          ]
+        }
+      }
+    },
+    "relation:po-rt-h2a": {
+      "id": "relation:po-rt-h2a",
+      "profile": "archi@1",
+      "type": "partOf",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-h2a"
+        },
+        {
+          "role": "target",
+          "target": "entity:sys-h2a"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/package.json:44-46"
+            }
+          ]
+        }
+      }
+    },
+    "relation:po-guard": {
+      "id": "relation:po-guard",
+      "profile": "archi@1",
+      "type": "partOf",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-guard"
+        },
+        {
+          "role": "target",
+          "target": "entity:sys-h2a"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/hooks/hooks.json:4-15"
+            }
+          ]
+        }
+      }
+    },
+    "relation:po-api-h2a": {
+      "id": "relation:po-api-h2a",
+      "profile": "archi@1",
+      "type": "partOf",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:api-h2a"
+        },
+        {
+          "role": "target",
+          "target": "entity:sys-h2a"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/src/mcp.ts:30-38"
+            }
+          ]
+        }
+      }
+    },
+    "relation:po-report": {
+      "id": "relation:po-report",
+      "profile": "archi@1",
+      "type": "partOf",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:art-track-report"
+        },
+        {
+          "role": "target",
+          "target": "entity:pkg-plugin"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "track-facts-r5.md:52-54"
+            }
+          ]
+        }
+      }
+    },
+    "relation:po-pkg-track": {
+      "id": "relation:po-pkg-track",
+      "profile": "archi@1",
+      "type": "partOf",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:pkg-track"
+        },
+        {
+          "role": "target",
+          "target": "entity:sys-track"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/package.json:2"
+            }
+          ]
+        }
+      }
+    },
+    "relation:po-control": {
+      "id": "relation:po-control",
+      "profile": "archi@1",
+      "type": "partOf",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:cmp-control"
+        },
+        {
+          "role": "target",
+          "target": "entity:pkg-track"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "track-facts-r5.md:72-78"
+            }
+          ]
+        }
+      }
+    },
+    "relation:po-rt-track": {
+      "id": "relation:po-rt-track",
+      "profile": "archi@1",
+      "type": "partOf",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-track"
+        },
+        {
+          "role": "target",
+          "target": "entity:sys-track"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/package.json:33"
+            }
+          ]
+        }
+      }
+    },
+    "relation:po-rt-mcp": {
+      "id": "relation:po-rt-mcp",
+      "profile": "archi@1",
+      "type": "partOf",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-track-mcp"
+        },
+        {
+          "role": "target",
+          "target": "entity:sys-track"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/package.json:34"
+            }
+          ]
+        }
+      }
+    },
+    "relation:po-api-track": {
+      "id": "relation:po-api-track",
+      "profile": "archi@1",
+      "type": "partOf",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:api-track"
+        },
+        {
+          "role": "target",
+          "target": "entity:sys-track"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "track-facts-r5.md:19-26"
+            }
+          ]
+        }
+      }
+    },
+    "relation:po-track-op": {
+      "id": "relation:po-track-op",
+      "profile": "archi@1",
+      "type": "partOf",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:art-track-op"
+        },
+        {
+          "role": "target",
+          "target": "entity:pkg-track"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "track-facts-r5.md:50-51"
+            }
+          ]
+        }
+      }
+    },
+    "relation:po-branch": {
+      "id": "relation:po-branch",
+      "profile": "archi@1",
+      "type": "partOf",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:art-branch"
+        },
+        {
+          "role": "target",
+          "target": "entity:pkg-track"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "track-facts-r5.md:56-57"
+            }
+          ]
+        }
+      }
+    },
+    "relation:po-api-mem": {
+      "id": "relation:po-api-mem",
+      "profile": "archi@1",
+      "type": "partOf",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:api-memory"
+        },
+        {
+          "role": "target",
+          "target": "entity:sys-engram"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "G0:76"
+            }
+          ]
+        }
+      }
+    },
+    "relation:po-live": {
+      "id": "relation:po-live",
+      "profile": "archi@1",
+      "type": "partOf",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:svc-live"
+        },
+        {
+          "role": "target",
+          "target": "entity:sys-engram"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "proposed"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "R7b-owner-comments.fr.md:115-117"
+            }
+          ]
+        }
+      }
+    },
+    "relation:ro-h2a": {
+      "id": "relation:ro-h2a",
+      "profile": "archi@1",
+      "type": "runsOn",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-h2a"
+        },
+        {
+          "role": "target",
+          "target": "entity:host-poste"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:README.md:62"
+            }
+          ]
+        }
+      }
+    },
+    "relation:ro-guard": {
+      "id": "relation:ro-guard",
+      "profile": "archi@1",
+      "type": "runsOn",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-guard"
+        },
+        {
+          "role": "target",
+          "target": "entity:host-poste"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/hooks/hooks.json:9-11"
+            }
+          ]
+        }
+      }
+    },
+    "relation:ro-track": {
+      "id": "relation:ro-track",
+      "profile": "archi@1",
+      "type": "runsOn",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-track"
+        },
+        {
+          "role": "target",
+          "target": "entity:host-poste"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/package.json:33"
+            }
+          ]
+        }
+      }
+    },
+    "relation:ro-track-mcp": {
+      "id": "relation:ro-track-mcp",
+      "profile": "archi@1",
+      "type": "runsOn",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-track-mcp"
+        },
+        {
+          "role": "target",
+          "target": "entity:host-poste"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/src/mcp/cli.ts:2"
+            }
+          ]
+        }
+      }
+    },
+    "relation:ro-claude": {
+      "id": "relation:ro-claude",
+      "profile": "archi@1",
+      "type": "runsOn",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-claude"
+        },
+        {
+          "role": "target",
+          "target": "entity:host-poste"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "assertion"
+            }
+          ]
+        }
+      }
+    },
+    "relation:ro-codex": {
+      "id": "relation:ro-codex",
+      "profile": "archi@1",
+      "type": "runsOn",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-codex"
+        },
+        {
+          "role": "target",
+          "target": "entity:host-poste"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "assertion"
+            }
+          ]
+        }
+      }
+    },
+    "relation:ro-live": {
+      "id": "relation:ro-live",
+      "profile": "archi@1",
+      "type": "runsOn",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:svc-live"
+        },
+        {
+          "role": "target",
+          "target": "entity:host-cluster"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "proposed"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "R7b-owner-comments.fr.md:122"
+            }
+          ]
+        }
+      }
+    },
+    "relation:da-h2a": {
+      "id": "relation:da-h2a",
+      "profile": "archi@1",
+      "type": "deployedAs",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:pkg-h2a"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-h2a"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "label": {
+          "kind": "text",
+          "value": "déployé comme"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/package.json:44-46"
+            }
+          ]
+        }
+      }
+    },
+    "relation:da-guard": {
+      "id": "relation:da-guard",
+      "profile": "archi@1",
+      "type": "deployedAs",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:pkg-plugin"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-guard"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "label": {
+          "kind": "text",
+          "value": "déployé comme"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/hooks/hooks.json:4-15"
+            }
+          ]
+        }
+      }
+    },
+    "relation:da-track": {
+      "id": "relation:da-track",
+      "profile": "archi@1",
+      "type": "deployedAs",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:pkg-track"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-track"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "label": {
+          "kind": "text",
+          "value": "déployé comme"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/package.json:33"
+            }
+          ]
+        }
+      }
+    },
+    "relation:da-track-mcp": {
+      "id": "relation:da-track-mcp",
+      "profile": "archi@1",
+      "type": "deployedAs",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:pkg-track"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-track-mcp"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "label": {
+          "kind": "text",
+          "value": "déployé comme"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/package.json:34"
+            }
+          ]
+        }
+      }
+    },
+    "relation:do-h2a-track": {
+      "id": "relation:do-h2a-track",
+      "profile": "archi@1",
+      "type": "dependsOn",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:pkg-h2a"
+        },
+        {
+          "role": "target",
+          "target": "entity:pkg-track"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "label": {
+          "kind": "text",
+          "value": "dépend de"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/package.json:55"
+            }
+          ]
+        }
+      }
+    },
+    "relation:eb-control": {
+      "id": "relation:eb-control",
+      "profile": "archi@1",
+      "type": "executedBy",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:cmp-control"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-track"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "track-facts-r5.md:72-78"
+            }
+          ]
+        }
+      }
+    },
+    "relation:eb-track-in-h2a": {
+      "id": "relation:eb-track-in-h2a",
+      "profile": "archi@1",
+      "type": "executedBy",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:pkg-track"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-h2a"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "label": {
+          "kind": "text",
+          "value": "exécuté par"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/src/mcp/cli.ts:2-5"
+            }
+          ]
+        }
+      }
+    },
+    "relation:lb-plugin-claude": {
+      "id": "relation:lb-plugin-claude",
+      "profile": "archi@1",
+      "type": "loadedBy",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:pkg-plugin"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-claude"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "label": {
+          "kind": "text",
+          "value": "chargé par"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "host:~/.claude/plugins/installed_plugins.json:32-40 (installation)"
+            }
+          ]
+        }
+      }
+    },
+    "relation:lb-plugin-codex": {
+      "id": "relation:lb-plugin-codex",
+      "profile": "archi@1",
+      "type": "loadedBy",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:pkg-plugin"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-codex"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "label": {
+          "kind": "text",
+          "value": "chargé par"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/.codex-plugin/plugin.json:17-18"
+            }
+          ]
+        }
+      }
+    },
+    "relation:lb-report": {
+      "id": "relation:lb-report",
+      "profile": "archi@1",
+      "type": "loadedBy",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:art-track-report"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-claude"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/.claude-plugin/plugin.json:3"
+            }
+          ]
+        }
+      }
+    },
+    "relation:lb-track-op": {
+      "id": "relation:lb-track-op",
+      "profile": "archi@1",
+      "type": "loadedBy",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:art-track-op"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-claude"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/src/cli/install-skills.ts:263-284"
+            }
+          ]
+        }
+      }
+    },
+    "relation:lb-track-op-codex": {
+      "id": "relation:lb-track-op-codex",
+      "profile": "archi@1",
+      "type": "loadedBy",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:art-track-op"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-codex"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/src/cli/install-skills.ts:263-284"
+            }
+          ]
+        }
+      }
+    },
+    "relation:lb-branch": {
+      "id": "relation:lb-branch",
+      "profile": "archi@1",
+      "type": "loadedBy",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:art-branch"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-claude"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/src/cli/install-skills.ts:263-284"
+            }
+          ]
+        }
+      }
+    },
+    "relation:lb-branch-codex": {
+      "id": "relation:lb-branch-codex",
+      "profile": "archi@1",
+      "type": "loadedBy",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:art-branch"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-codex"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/src/cli/install-skills.ts:263-284"
+            }
+          ]
+        }
+      }
+    },
+    "relation:in-hooks": {
+      "id": "relation:in-hooks",
+      "profile": "archi@1",
+      "type": "invokes",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-claude"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-h2a"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "trigger": {
+          "kind": "enum",
+          "value": "hook"
+        },
+        "event": {
+          "kind": "text",
+          "value": "SessionStart, SessionEnd, Stop, UserPromptSubmit"
+        },
+        "label": {
+          "kind": "text",
+          "value": "lance · hooks de session"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "host:~/.claude/settings.json:105-154 (relu par Astra r1)"
+            }
+          ]
+        }
+      }
+    },
+    "relation:in-mcp-claude": {
+      "id": "relation:in-mcp-claude",
+      "profile": "archi@1",
+      "type": "invokes",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-claude"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-h2a"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "trigger": {
+          "kind": "enum",
+          "value": "mcp-stdio"
+        },
+        "label": {
+          "kind": "text",
+          "value": "lance · mcp-serve"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/.claude-plugin/plugin.json:9-22"
+            }
+          ]
+        }
+      }
+    },
+    "relation:in-mcp-codex": {
+      "id": "relation:in-mcp-codex",
+      "profile": "archi@1",
+      "type": "invokes",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-codex"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-h2a"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "trigger": {
+          "kind": "enum",
+          "value": "mcp-stdio"
+        },
+        "label": {
+          "kind": "text",
+          "value": "lance · mcp-serve"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/.mcp.json:3-12"
+            }
+          ]
+        }
+      }
+    },
+    "relation:in-guard": {
+      "id": "relation:in-guard",
+      "profile": "archi@1",
+      "type": "invokes",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-claude"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-guard"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "trigger": {
+          "kind": "enum",
+          "value": "hook"
+        },
+        "event": {
+          "kind": "text",
+          "value": "PreToolUse"
+        },
+        "label": {
+          "kind": "text",
+          "value": "lance · avant chaque Bash"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/hooks/hooks.json:4-15"
+            }
+          ]
+        }
+      }
+    },
+    "relation:in-track": {
+      "id": "relation:in-track",
+      "profile": "archi@1",
+      "type": "invokes",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-claude"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-track"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "trigger": {
+          "kind": "enum",
+          "value": "command"
+        },
+        "label": {
+          "kind": "text",
+          "value": "lance · écritures du suivi"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/skills/track-operation/SKILL.md:58-66"
+            }
+          ]
+        }
+      }
+    },
+    "relation:pa-h2a": {
+      "id": "relation:pa-h2a",
+      "profile": "archi@1",
+      "type": "providesApi",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-h2a"
+        },
+        {
+          "role": "target",
+          "target": "entity:api-h2a"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/src/mcp.ts:30-38"
+            }
+          ]
+        }
+      }
+    },
+    "relation:pa-h2a-track": {
+      "id": "relation:pa-h2a-track",
+      "profile": "archi@1",
+      "type": "providesApi",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-h2a"
+        },
+        {
+          "role": "target",
+          "target": "entity:api-track"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/src/mcp.ts:39-55"
+            }
+          ]
+        }
+      }
+    },
+    "relation:pa-track-mcp": {
+      "id": "relation:pa-track-mcp",
+      "profile": "archi@1",
+      "type": "providesApi",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-track-mcp"
+        },
+        {
+          "role": "target",
+          "target": "entity:api-track"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "track-facts-r5.md:19-26"
+            }
+          ]
+        }
+      }
+    },
+    "relation:pa-live": {
+      "id": "relation:pa-live",
+      "profile": "archi@1",
+      "type": "providesApi",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:svc-live"
+        },
+        {
+          "role": "target",
+          "target": "entity:api-memory"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "proposed"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "R7b-owner-comments.fr.md:117"
+            }
+          ]
+        }
+      }
+    },
+    "relation:ca-claude": {
+      "id": "relation:ca-claude",
+      "profile": "archi@1",
+      "type": "consumesApi",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-claude"
+        },
+        {
+          "role": "target",
+          "target": "entity:api-h2a"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "label": {
+          "kind": "text",
+          "value": "appelle · outils h2a_*"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/h2a/.claude-plugin/plugin.json:9-22"
+            }
+          ]
+        }
+      }
+    },
+    "relation:ca-h2a-memory": {
+      "id": "relation:ca-h2a-memory",
+      "profile": "archi@1",
+      "type": "consumesApi",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-h2a"
+        },
+        {
+          "role": "target",
+          "target": "entity:api-memory"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "proposed"
+        },
+        "label": {
+          "kind": "text",
+          "value": "appelle · propositions et questions"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "R7b-owner-comments.fr.md:124"
+            },
+            {
+              "kind": "text",
+              "value": "R7b-owner-comments.fr.md:440"
+            }
+          ]
+        }
+      }
+    },
+    "relation:ac-write": {
+      "id": "relation:ac-write",
+      "profile": "archi@1",
+      "type": "accesses",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-track"
+        },
+        {
+          "role": "target",
+          "target": "entity:st-events"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "mode": {
+          "kind": "enum",
+          "value": "append"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "track-facts-r5.md:117-120"
+            }
+          ]
+        }
+      }
+    },
+    "relation:ac-read-mcp": {
+      "id": "relation:ac-read-mcp",
+      "profile": "archi@1",
+      "type": "accesses",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-track-mcp"
+        },
+        {
+          "role": "target",
+          "target": "entity:st-events"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "mode": {
+          "kind": "enum",
+          "value": "read"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/src/mcp/cli.ts:2-13"
+            }
+          ]
+        }
+      }
+    },
+    "relation:ac-read-h2a": {
+      "id": "relation:ac-read-h2a",
+      "profile": "archi@1",
+      "type": "accesses",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:rt-h2a"
+        },
+        {
+          "role": "target",
+          "target": "entity:st-events"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "mode": {
+          "kind": "enum",
+          "value": "read"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "h2a:packages/track/src/mcp/cli.ts:2-5"
+            }
+          ]
+        }
+      }
+    },
+    "relation:dc-track-op": {
+      "id": "relation:dc-track-op",
+      "profile": "archi@1",
+      "type": "documents",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:art-track-op"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-track"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "label": {
+          "kind": "text",
+          "value": "documente"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "track-facts-r5.md:32-34"
+            }
+          ]
+        }
+      }
+    },
+    "relation:dc-branch": {
+      "id": "relation:dc-branch",
+      "profile": "archi@1",
+      "type": "documents",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:art-branch"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-track"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "label": {
+          "kind": "text",
+          "value": "documente"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "track-facts-r5.md:56-57"
+            }
+          ]
+        }
+      }
+    },
+    "relation:dc-report": {
+      "id": "relation:dc-report",
+      "profile": "archi@1",
+      "type": "documents",
+      "endpoints": [
+        {
+          "role": "source",
+          "target": "entity:art-track-report"
+        },
+        {
+          "role": "target",
+          "target": "entity:rt-track"
+        }
+      ],
+      "attributes": {
+        "lifecycle": {
+          "kind": "enum",
+          "value": "current"
+        },
+        "label": {
+          "kind": "text",
+          "value": "documente"
+        },
+        "evidence": {
+          "kind": "collection",
+          "items": [
+            {
+              "kind": "text",
+              "value": "track-facts-r5.md:52-54"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "ports": {},
+  "resources": {},
+  "extensions": []
+}
