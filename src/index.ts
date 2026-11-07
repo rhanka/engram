@@ -792,3 +792,28 @@ export type {
   StudioRenderSceneNode,
   StudioRenderStyleBuffers,
 } from "./studio-render-buffers.js";
+export {
+  JSON_PROJECTION_VERSION,
+  toJsonValue,
+} from "./json-value.js";
+export type {
+  JsonValue,
+  ToJsonValueResult,
+} from "./json-value.js";
+export {
+  PROFILE_BUNDLE_SCHEMA_V1,
+  bundleProfile,
+  checkProfileCompatibility,
+  computeRegistryRecordsDigest,
+} from "./profile-bundle.js";
+export type {
+  BundledRegistrySnapshotV1,
+  BundleProfileResult,
+  ProfileBreakingChange,
+  ProfileBundleIssue,
+  ProfileBundleV1,
+  ProfileComparableInput,
+  ProfileCompatibilityOptions,
+  ProfileCompatibilityResult,
+  ProfileNonBreakingChange,
+} from "./profile-bundle.js";

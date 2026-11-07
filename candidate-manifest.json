@@ -40,6 +40,10 @@
     "./registry/definitions": {
       "types": "./dist/registry/definitions.d.ts",
       "import": "./dist/registry/definitions.js"
+    },
+    "./profile-bundle": {
+      "types": "./dist/profile-bundle.d.ts",
+      "import": "./dist/profile-bundle.js"
     }
   },
   "registryArtifacts": {
