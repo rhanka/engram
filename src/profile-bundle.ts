@@ -172,11 +172,13 @@ function computeBundleDigest(
   docProjection: JsonValue,
   registries: Readonly<Record<string, BundledRegistrySnapshotV1>>,
   registriesMode: "full" | "bindings-only",
-): Digest {
+): Digest | null {
   const regPre: Record<string, unknown> = {};
   for (const [id, snap] of Object.entries(registries)) {
+    const bProj = toJsonValue(snap.binding);
+    if (!bProj.ok) return null;
     setProp(regPre, id, {
-      binding: snap.binding,
+      binding: bProj.value,
       recordCount: snap.recordCount,
       recordsDigest: registriesMode === "bindings-only" ? "not_bundled" : snap.recordsDigest,
     });
@@ -262,13 +264,14 @@ function bundleProfileInternal(
 
   const proj = toJsonValue(parsed);
   if (!proj.ok || !isPlainObj(proj.value)) {
-    const p = proj.ok ? "profile" : proj.path;
+    const p = proj.ok ? "profile" : proj.path || "profile";
+    const reason = proj.ok ? "non_plain_object" : proj.reason;
     return {
       result: deepFreeze({
         ok: false,
         status: "refused",
         refusalCode: "invalid_profile_schema",
-        errors: [{ severity: "error", code: "invalid_profile_schema", path: p, message: `Invalid profile at ${p || "profile"}` }],
+        errors: [{ severity: "error", code: "invalid_profile_schema", path: p, message: `profile projection failed at ${p}: ${reason}` }],
         warnings: [],
       }),
     };
@@ -295,12 +298,13 @@ function bundleProfileInternal(
   const docProj = toJsonValue(stableForHash(parsed));
   if (!docProj.ok || !isPlainObj(docProj.value)) {
     const p = docProj.ok ? "profile" : docProj.path || "profile";
+    const reason = docProj.ok ? "non_plain_object" : docProj.reason;
     return {
       result: deepFreeze({
         ok: false,
         status: "refused",
         refusalCode: "invalid_profile_schema",
-        errors: [{ severity: "error", code: "invalid_profile_schema", path: p, message: `Invalid documentProjection at ${p}` }],
+        errors: [{ severity: "error", code: "invalid_profile_schema", path: p, message: `profile projection failed at ${p}: ${reason}` }],
         warnings: [],
       }),
     };
@@ -332,32 +336,9 @@ function bundleProfileInternal(
     };
   }
 
-  const valErrors = validateOntologyProfile(parsed as OntologyProfile);
-  if (valErrors.length > 0) {
-    return {
-      parsedDoc,
-      eligibleForStructuralRemoval: true,
-      result: deepFreeze({
-        ok: false,
-        status: "refused",
-        refusalCode: "invalid_profile_schema",
-        errors: valErrors.map((msg) => {
-          const sp = msg.indexOf(" ");
-          return {
-            severity: "error",
-            code: "invalid_profile_schema",
-            path: sp === -1 ? msg : msg.slice(0, sp),
-            message: msg,
-          };
-        }),
-        warnings: [],
-      }),
-    };
-  }
-
-  let normalized: NormalizedOntologyProfile;
+  let valErrors: string[];
   try {
-    normalized = normalizeOntologyProfile(parsed as OntologyProfile);
+    valErrors = validateOntologyProfile(parsedDoc as unknown as OntologyProfile);
   } catch (err) {
     const rawMsg = err instanceof Error ? err.message : String(err);
     return {
@@ -380,6 +361,71 @@ function bundleProfileInternal(
       }),
     };
   }
+  if (valErrors.length > 0) {
+    return {
+      parsedDoc,
+      eligibleForStructuralRemoval: true,
+      result: deepFreeze({
+        ok: false,
+        status: "refused",
+        refusalCode: "invalid_profile_schema",
+        errors: valErrors.map((msg) => {
+          const sp = msg.indexOf(" ");
+          return {
+            severity: "error",
+            code: "invalid_profile_schema",
+            path: sp === -1 ? msg : msg.slice(0, sp),
+            message: msg,
+          };
+        }),
+        warnings: [],
+      }),
+    };
+  }
+
+  let rawNormalized: NormalizedOntologyProfile;
+  try {
+    rawNormalized = normalizeOntologyProfile(parsedDoc as unknown as OntologyProfile);
+  } catch (err) {
+    const rawMsg = err instanceof Error ? err.message : String(err);
+    return {
+      parsedDoc,
+      eligibleForStructuralRemoval: true,
+      result: deepFreeze({
+        ok: false,
+        status: "refused",
+        refusalCode: "invalid_profile_schema",
+        errors: rawMsg.split("\n").map((line) => {
+          const token = line.replace(/^\s*-\s*/, "").trim().split(" ")[0] ?? "";
+          return {
+            severity: "error",
+            code: "invalid_profile_schema",
+            path: token.includes(".") ? token : "profile",
+            message: line,
+          };
+        }),
+        warnings: [],
+      }),
+    };
+  }
+
+  const normProj = toJsonValue(rawNormalized);
+  if (!normProj.ok || !isPlainObj(normProj.value)) {
+    const p = normProj.ok ? "profile" : normProj.path || "profile";
+    const reason = normProj.ok ? "non_plain_object" : normProj.reason;
+    return {
+      parsedDoc,
+      eligibleForStructuralRemoval: true,
+      result: deepFreeze({
+        ok: false,
+        status: "refused",
+        refusalCode: "invalid_profile_schema",
+        errors: [{ severity: "error", code: "invalid_profile_schema", path: p, message: `profile projection failed at ${p}: ${reason}` }],
+        warnings: [],
+      }),
+    };
+  }
+  const normalized = normProj.value as unknown as NormalizedOntologyProfile;
 
   const registriesMode = registriesInput === undefined ? "bindings-only" : "full";
   const declaredIds = Object.keys(normalized.registries).sort();
@@ -480,6 +526,18 @@ function bundleProfileInternal(
   }
 
   const digest = computeBundleDigest(docProj.value, snapshots, registriesMode);
+  if (!digest) {
+    return {
+      parsedDoc,
+      result: deepFreeze({
+        ok: false,
+        status: "refused",
+        refusalCode: "invalid_profile_schema",
+        errors: [{ severity: "error", code: "invalid_profile_schema", path: "registries", message: "Failed to project registry bindings" }],
+        warnings: [],
+      }),
+    };
+  }
   const bundle: ProfileBundleV1 = {
     schema: PROFILE_BUNDLE_SCHEMA_V1,
     digest,
@@ -521,46 +579,122 @@ function isStringMap(v: unknown): v is Record<string, string> {
   return isPlainObj(v) && Object.values(v).every((x) => typeof x === "string");
 }
 
+function isStrArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((x) => typeof x === "string");
+}
+
+function isValidRegistryBinding(b: unknown, allowBoundSourcePath = false): b is BundledRegistrySnapshotV1["binding"] {
+  if (!isPlainObj(b)) return false;
+  if (Object.values(b).some((v) => v === undefined)) return false;
+  return (
+    typeof b.source === "string" &&
+    typeof b.id_column === "string" &&
+    typeof b.label_column === "string" &&
+    typeof b.node_type === "string" &&
+    isStrArray(b.alias_columns) &&
+    (b.partition_column === undefined || typeof b.partition_column === "string") &&
+    (allowBoundSourcePath ? b.bound_source_path === undefined || typeof b.bound_source_path === "string" : !Object.prototype.hasOwnProperty.call(b, "bound_source_path")) &&
+    toJsonValue(b).ok
+  );
+}
+
 function isValidNormalizedProfile(p: unknown): p is NormalizedOntologyProfile {
   if (!isPlainObj(p)) return false;
   const cit = asRec(p.citation_policy), hard = asRec(p.hardening), inf = asRec(p.inference_policy), ev = asRec(p.evidence_policy);
-  const out = asRec(asRec(p.outputs).ontology);
-  return (
-    typeof p.id === "string" &&
-    typeof p.version === "string" &&
-    typeof p.default_language === "string" &&
-    typeof p.profile_hash === "string" &&
-    isPlainObj(p.node_types) &&
-    isPlainObj(p.relation_types) &&
-    isPlainObj(p.registries) &&
-    isPlainObj(p.citation_policy) &&
-    typeof cit.minimum_granularity === "string" &&
-    Object.prototype.hasOwnProperty.call(GRAN_RANK, cit.minimum_granularity) &&
-    typeof cit.require_source_file === "boolean" &&
-    isPlainObj(p.hardening) &&
-    Array.isArray(hard.statuses) &&
-    typeof hard.default_status === "string" &&
-    Array.isArray(hard.promotion_requires) &&
-    Array.isArray(hard.status_transitions) &&
-    isPlainObj(p.inference_policy) &&
-    typeof inf.allow_inferred_relations === "boolean" &&
-    Array.isArray(inf.allowed_relation_types) &&
-    typeof inf.require_evidence_refs === "boolean" &&
-    isPlainObj(p.evidence_policy) &&
-    typeof ev.require_evidence_refs === "boolean" &&
-    typeof ev.min_refs === "number" &&
-    Array.isArray(ev.node_types) &&
-    Array.isArray(ev.relation_types) &&
-    isPlainObj(p.hierarchies) &&
-    (p.class_hierarchies === undefined || isPlainObj(p.class_hierarchies)) &&
-    isPlainObj(p.outputs) &&
-    isPlainObj(p.outputs.ontology) &&
-    typeof out.enabled === "boolean" &&
-    Array.isArray(out.canonical_node_types) &&
-    Array.isArray(out.source_node_types) &&
-    Array.isArray(out.relation_exports) &&
-    isPlainObj(out.wiki)
-  );
+  const out = asRec(asRec(p.outputs).ontology), wiki = asRec(out.wiki);
+  if (
+    typeof p.id !== "string" ||
+    typeof p.version !== "string" ||
+    typeof p.default_language !== "string" ||
+    typeof p.profile_hash !== "string" ||
+    (p.sourcePath !== undefined && typeof p.sourcePath !== "string") ||
+    !isPlainObj(p.node_types) ||
+    !isPlainObj(p.relation_types) ||
+    !isPlainObj(p.registries) ||
+    !isPlainObj(p.citation_policy) ||
+    typeof cit.minimum_granularity !== "string" ||
+    !Object.prototype.hasOwnProperty.call(GRAN_RANK, cit.minimum_granularity) ||
+    typeof cit.require_source_file !== "boolean" ||
+    (cit.allow_bbox !== true && cit.allow_bbox !== false && cit.allow_bbox !== "when_available") ||
+    !isPlainObj(p.hardening) ||
+    !isStrArray(hard.statuses) ||
+    typeof hard.default_status !== "string" ||
+    !isStrArray(hard.promotion_requires) ||
+    !Array.isArray(hard.status_transitions) ||
+    !isPlainObj(p.inference_policy) ||
+    typeof inf.allow_inferred_relations !== "boolean" ||
+    !isStrArray(inf.allowed_relation_types) ||
+    typeof inf.require_evidence_refs !== "boolean" ||
+    !isPlainObj(p.evidence_policy) ||
+    typeof ev.require_evidence_refs !== "boolean" ||
+    typeof ev.min_refs !== "number" ||
+    !Number.isFinite(ev.min_refs) ||
+    !isStrArray(ev.node_types) ||
+    !isStrArray(ev.relation_types) ||
+    !isPlainObj(p.hierarchies) ||
+    (p.class_hierarchies !== undefined && !isPlainObj(p.class_hierarchies)) ||
+    !isPlainObj(p.outputs) ||
+    !isPlainObj(p.outputs.ontology) ||
+    typeof out.enabled !== "boolean" ||
+    (out.artifact_schema !== undefined && typeof out.artifact_schema !== "string") ||
+    !isStrArray(out.canonical_node_types) ||
+    !isStrArray(out.source_node_types) ||
+    (out.occurrence_node_types !== undefined && !isStrArray(out.occurrence_node_types)) ||
+    (out.alias_fields !== undefined && !isStrArray(out.alias_fields)) ||
+    !isStrArray(out.relation_exports) ||
+    !isPlainObj(out.wiki) ||
+    typeof wiki.enabled !== "boolean" ||
+    !isStrArray(wiki.page_node_types) ||
+    typeof wiki.include_backlinks !== "boolean" ||
+    typeof wiki.include_source_snippets !== "boolean"
+  ) {
+    return false;
+  }
+  for (const nt of Object.values(p.node_types)) {
+    if (
+      !isPlainObj(nt) ||
+      (nt.aliases !== undefined && !isStrArray(nt.aliases)) ||
+      (nt.registry !== undefined && typeof nt.registry !== "string") ||
+      (nt.status_policy !== undefined && typeof nt.status_policy !== "string") ||
+      (nt.source_backed !== undefined && typeof nt.source_backed !== "boolean")
+    ) {
+      return false;
+    }
+  }
+  for (const rt of Object.values(p.relation_types)) {
+    if (
+      !isPlainObj(rt) ||
+      !isStrArray(rt.source_types) ||
+      !isStrArray(rt.target_types) ||
+      typeof rt.requires_evidence !== "boolean" ||
+      !isStrArray(rt.assertion_basis) ||
+      !isStrArray(rt.derivation_methods)
+    ) {
+      return false;
+    }
+  }
+  for (const reg of Object.values(p.registries)) {
+    if (!isValidRegistryBinding(reg, true)) return false;
+  }
+  for (const tr of hard.status_transitions) {
+    if (!isPlainObj(tr) || !isStrArray(tr.from_statuses) || !isStrArray(tr.to_statuses) || !isStrArray(tr.requires)) {
+      return false;
+    }
+  }
+  for (const h of Object.values(p.hierarchies)) {
+    if (
+      !isPlainObj(h) ||
+      typeof h.registry !== "string" ||
+      typeof h.parent_column !== "string" ||
+      typeof h.child_column !== "string" ||
+      typeof h.relation_type !== "string" ||
+      typeof h.parent_node_type !== "string" ||
+      typeof h.child_node_type !== "string"
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function resolveComparableSide(input: ProfileComparableInput): {
@@ -587,12 +721,12 @@ function resolveComparableSide(input: ProfileComparableInput): {
       findProtoPaths(docProj.value).length === 0;
     if (validBasic) {
       let regsOk = true;
+      const projectedRegistries: Record<string, BundledRegistrySnapshotV1> = {};
       for (const [id, snap] of Object.entries(b.registries)) {
         if (
           !isPlainObj(snap) ||
           snap.registryId !== id ||
-          !isPlainObj(snap.binding) ||
-          !toJsonValue(snap.binding).ok ||
+          !isValidRegistryBinding(snap.binding, false) ||
           (b.registriesMode === "bindings-only"
             ? snap.recordCount !== null || snap.recordsDigest !== null
             : typeof snap.recordCount !== "number" || !Number.isInteger(snap.recordCount) || snap.recordCount < 0 || !isDigest(snap.recordsDigest))
@@ -600,9 +734,52 @@ function resolveComparableSide(input: ProfileComparableInput): {
           regsOk = false;
           break;
         }
+        const bProj = toJsonValue(snap.binding);
+        if (!bProj.ok) {
+          regsOk = false;
+          break;
+        }
+        setProp(projectedRegistries, id, {
+          registryId: id,
+          binding: bProj.value as unknown as BundledRegistrySnapshotV1["binding"],
+          recordCount: snap.recordCount,
+          recordsDigest: snap.recordsDigest,
+        });
       }
-      if (regsOk && computeBundleDigest(docProj.value, b.registries, b.registriesMode) === b.digest) {
-        return { bundle: b, parsedDoc: docProj.value as Record<string, JsonValue>, eligibleForStructuralRemoval: true, issues: [] };
+      if (regsOk && computeBundleDigest(docProj.value, projectedRegistries, b.registriesMode) === b.digest) {
+        const rederived = bundleProfileInternal(docProj.value as unknown as OntologyProfile);
+        if (rederived.result.ok) {
+          const rb = rederived.result.bundle;
+          const bProfProj = toJsonValue(stableForHash(b.profile));
+          const rbProfProj = toJsonValue(stableForHash(rb.profile));
+          const bExtProj = toJsonValue(stableForHash(b.extensions));
+          const rbExtProj = toJsonValue(stableForHash(rb.extensions));
+          if (
+            b.profileId === rb.profileId &&
+            b.profileVersion === rb.profileVersion &&
+            b.profileHash === rb.profileHash &&
+            bProfProj.ok &&
+            rbProfProj.ok &&
+            canonicalBytes(bProfProj.value) === canonicalBytes(rbProfProj.value) &&
+            bExtProj.ok &&
+            rbExtProj.ok &&
+            canonicalBytes(bExtProj.value) === canonicalBytes(rbExtProj.value)
+          ) {
+            const resolvedBundle: ProfileBundleV1 = {
+              schema: PROFILE_BUNDLE_SCHEMA_V1,
+              digest: b.digest,
+              profileId: rb.profileId,
+              profileVersion: rb.profileVersion,
+              profileHash: rb.profileHash,
+              profile: rb.profile,
+              documentProjection: docProj.value,
+              extensions: rb.extensions,
+              registries: projectedRegistries,
+              registriesMode: b.registriesMode,
+            };
+            return { bundle: resolvedBundle, parsedDoc: docProj.value as Record<string, JsonValue>, eligibleForStructuralRemoval: true, issues: [] };
+          }
+        }
       }
     }
     return {
@@ -672,6 +849,7 @@ export function checkProfileCompatibility(
   newProfile: ProfileComparableInput,
   options?: ProfileCompatibilityOptions,
 ): ProfileCompatibilityResult {
+  try {
   const oldSide = resolveComparableSide(oldProfile);
   const newSide = resolveComparableSide(newProfile);
   const sortChanges = <T extends { path: string; code: string; subject: string }>(arr: T[]): T[] =>
@@ -714,10 +892,14 @@ export function checkProfileCompatibility(
 
   const checkResidual = (path: string, subject: string, oldVal: unknown, newVal: unknown) => {
     const rOld = renderCanon(oldVal), rNew = renderCanon(newVal);
-    if (rOld === rNew) return;
     const before = renderTrunc(rOld), after = renderTrunc(rNew);
     const unproj = (oldVal !== undefined && !toJsonValue(oldVal).ok) || (newVal !== undefined && !toJsonValue(newVal).ok);
-    if (!unproj && options?.classifyModeledFieldChange) {
+    if (unproj) {
+      pushB("changed_modeled_field", path, subject, before, after);
+      return;
+    }
+    if (rOld === rNew) return;
+    if (options?.classifyModeledFieldChange) {
       try {
         if (options.classifyModeledFieldChange({ path, before: oldVal, after: newVal }) === "non-breaking") {
           pushNB("classified_modeled_field_change", path, subject, before, after);
@@ -1022,4 +1204,20 @@ export function checkProfileCompatibility(
     nonBreaking,
     validationIssues: [],
   });
+  } catch (err) {
+    return deepFreeze({
+      ok: false,
+      compatible: false,
+      oldDigest: null,
+      newDigest: null,
+      breaking: [],
+      nonBreaking: [],
+      validationIssues: [{
+        severity: "error",
+        code: "invalid_profile_schema",
+        path: "profile",
+        message: err instanceof Error ? err.message : String(err),
+      }],
+    });
+  }
 }

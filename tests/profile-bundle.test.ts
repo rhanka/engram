@@ -2,10 +2,11 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { canonicalBytes, sha256Hex } from "../src/ontology-guardian/canonical.js";
 import { normalizeOntologyProfile, parseOntologyProfile } from "../src/ontology-profile.js";
-import type { RegistryRecord } from "../src/types.js";
+import type { OntologyProfile, RegistryRecord } from "../src/types.js";
 import { JSON_PROJECTION_VERSION, toJsonValue } from "../src/json-value.js";
 import {
   PROFILE_BUNDLE_SCHEMA_V1,
+  type ProfileBundleV1,
   bundleProfile,
   checkProfileCompatibility,
   computeRegistryRecordsDigest,
@@ -14,7 +15,7 @@ import {
 const BASE_YAML = `id: synthetic-profile
 version: 2
 default_language: fr
-ontology_version: "2.2"
+label_version: "1.0"
 node_types:
   Alpha:
     id_prefix: "alpha:"
@@ -78,7 +79,7 @@ stage_enum:
   instruments: [inst_a]
   fallback: unknown_stage
   outcome_values: { accepted: [ok], refused: [no] }
-extraction_hints:
+hint_block:
   field_x:
     applies_to: [Alpha]
     description: Hint X
@@ -106,11 +107,14 @@ const rec = (id: string, label = `L-${id}`, extra: Partial<RegistryRecord> = {})
 });
 
 describe("F-EN2 profile bundle & shared JSON projection", () => {
-  it("F-EN2-T1: digest invariance across key order, comments, flow style, and record order", () => {
-    const reordered = `# comment\noutputs:\n  ontology: { wiki: { include_source_snippets: false, include_backlinks: false, page_node_types: [Alpha], enabled: false }, relation_exports: [links_to], source_node_types: [Beta], canonical_node_types: [Alpha], enabled: true }\nextraction_hints: { field_x: { examples: [ex1], anti_invention: Never invent, extraction_patterns: [pat1], format: string, description: Hint X, applies_to: [Alpha] } }\nstage_enum: { outcome_values: { refused: [no], accepted: [ok] }, fallback: unknown_stage, instruments: [inst_a], pipeline: [step_a, step_b] }\nhardening: { status_transitions: [{ to: [validated, rejected], from: [candidate] }], promotion_requires: [citation], default_status: candidate, statuses: [candidate, validated, rejected] }\ninference_policy: { require_evidence_refs: false, allowed_relation_types: [links_to], allow_inferred_relations: true }\nevidence_policy: { relation_types: [links_to], node_types: [Alpha], min_refs: 1, require_evidence_refs: true }\ncitation_policy: { allow_bbox: when_available, require_source_file: true, minimum_granularity: file }\nregistries: { reg_alpha: { node_type: Alpha, alias_columns: [slug], label_column: label, id_column: id, source: alpha_src } }\nsynonym_relations: { legacy_link: links_to }\nrelation_types:\n  unreferenced_rel: { description: Unreferenced, requires_evidence: false, target: [Beta], source: [Alpha] }\n  links_to: { description: Links Alpha, derivation_methods: [extracted], assertion_basis: [explicit], requires_evidence: false, target: [Alpha, Beta], source: [Alpha] }\nnode_types:\n  Beta: { properties: { title: { description: Title, type: string } }, aliases: [beta_alias], definition: Beta entity, id_prefix: "beta:" }\n  Alpha: { properties: { created_on: { description: Date, format: date, type: string }, score: { description: Score, type: number } }, status_policy: candidate, source_backed: true, registry: reg_alpha, aliases: [alpha_alias], definition: Alpha entity, id_prefix: "alpha:" }\nontology_version: "2.2"\ndefault_language: fr\nversion: 2\nid: synthetic-profile\n`;
+  it("F-EN2-T1: digest invariance across key order, comments, blank lines, flow style, and record order", () => {
+    const reordered = `# comment\n\noutputs:\n  ontology: { wiki: { include_source_snippets: false, include_backlinks: false, page_node_types: [Alpha], enabled: false }, relation_exports: [links_to], source_node_types: [Beta], canonical_node_types: [Alpha], enabled: true }\n\nhint_block: { field_x: { examples: [ex1], anti_invention: Never invent, extraction_patterns: [pat1], format: string, description: Hint X, applies_to: [Alpha] } }\n\nstage_enum: { outcome_values: { refused: [no], accepted: [ok] }, fallback: unknown_stage, instruments: [inst_a], pipeline: [step_a, step_b] }\n\nhardening: { status_transitions: [{ to: [validated, rejected], from: [candidate] }], promotion_requires: [citation], default_status: candidate, statuses: [candidate, validated, rejected] }\n\ninference_policy: { require_evidence_refs: false, allowed_relation_types: [links_to], allow_inferred_relations: true }\n\nevidence_policy: { relation_types: [links_to], node_types: [Alpha], min_refs: 1, require_evidence_refs: true }\n\ncitation_policy: { allow_bbox: when_available, require_source_file: true, minimum_granularity: file }\n\nregistries: { reg_alpha: { node_type: Alpha, alias_columns: [slug], label_column: label, id_column: id, source: alpha_src } }\n\nsynonym_relations: { legacy_link: links_to }\n\nrelation_types:\n  unreferenced_rel: { description: Unreferenced, requires_evidence: false, target: [Beta], source: [Alpha] }\n  links_to: { description: Links Alpha, derivation_methods: [extracted], assertion_basis: [explicit], requires_evidence: false, target: [Alpha, Beta], source: [Alpha] }\n\nnode_types:\n  Beta: { properties: { title: { description: Title, type: string } }, aliases: [beta_alias], definition: Beta entity, id_prefix: "beta:" }\n  Alpha: { properties: { created_on: { description: Date, format: date, type: string }, score: { description: Score, type: number } }, status_policy: candidate, source_backed: true, registry: reg_alpha, aliases: [alpha_alias], definition: Alpha entity, id_prefix: "alpha:" }\n\nlabel_version: "1.0"\n\ndefault_language: fr\nversion: 2\nid: synthetic-profile\n`;
     const b1 = bundleProfile(BASE_YAML, { reg_alpha: [rec("1"), rec("2")] });
     const b2 = bundleProfile(reordered, { reg_alpha: [rec("2"), rec("1")] });
-    expect(b1.ok && b2.ok && b1.bundle.digest === b2.bundle.digest).toBe(true);
+    expect(b1.ok).toBe(true);
+    expect(b2.ok).toBe(true);
+    if (!b1.ok || !b2.ok) return;
+    expect(b1.bundle.digest).toBe(b2.bundle.digest);
   });
 
   it("F-EN2-T2: digest sensitivity and sourceFile independence", () => {
@@ -118,8 +122,10 @@ describe("F-EN2 profile bundle & shared JSON projection", () => {
     expect(base.ok).toBe(true);
     if (!base.ok) return;
     const sameDiffSource = bundleProfile(BASE_YAML, { reg_alpha: [rec("1", "One", { sourceFile: "/other/b.csv" })] });
-    expect(sameDiffSource.ok && sameDiffSource.bundle.digest).toBe(base.bundle.digest);
-    expect(sameDiffSource.ok && sameDiffSource.bundle.registries.reg_alpha?.recordsDigest).toBe(base.bundle.registries.reg_alpha?.recordsDigest);
+    expect(sameDiffSource.ok).toBe(true);
+    if (!sameDiffSource.ok) return;
+    expect(sameDiffSource.bundle.digest).toBe(base.bundle.digest);
+    expect(sameDiffSource.bundle.registries.reg_alpha?.recordsDigest).toBe(base.bundle.registries.reg_alpha?.recordsDigest);
     for (const mut of [
       BASE_YAML.replace("type: number", "type: integer"),
       BASE_YAML.replace("alpha_alias", "alpha_alias_2"),
@@ -127,10 +133,12 @@ describe("F-EN2 profile bundle & shared JSON projection", () => {
       BASE_YAML.replace("version: 2", 'version: "2"'),
     ]) {
       const res = bundleProfile(mut, { reg_alpha: [rec("1", "One")] });
-      expect(res.ok && res.bundle.digest !== base.bundle.digest).toBe(true);
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.bundle.digest).not.toBe(base.bundle.digest);
     }
     const recLabelMut = bundleProfile(BASE_YAML, { reg_alpha: [rec("1", "Changed")] });
-    expect(recLabelMut.ok && recLabelMut.bundle.digest !== base.bundle.digest).toBe(true);
+    expect(recLabelMut.ok).toBe(true);
+    if (recLabelMut.ok) expect(recLabelMut.bundle.digest).not.toBe(base.bundle.digest);
   });
 
   it("F-EN2-T3: removed node type is breaking and annotated when covered by alias", () => {
@@ -187,24 +195,32 @@ describe("F-EN2 profile bundle & shared JSON projection", () => {
     expect(checkProfileCompatibility(BASE_YAML, BASE_YAML.replace("label_column: label", "label_column: name")).breaking.map((b) => b.code)).toContain("changed_registry_binding");
     const full1 = bundleProfile(BASE_YAML, { reg_alpha: [rec("1", "A")] });
     const full2 = bundleProfile(BASE_YAML, { reg_alpha: [rec("1", "B")] });
-    expect(full1.ok && full2.ok && checkProfileCompatibility(full1.bundle, full2.bundle).breaking.map((b) => b.code)).toContain("changed_registry_records");
+    expect(full1.ok).toBe(true);
+    expect(full2.ok).toBe(true);
+    if (full1.ok && full2.ok) {
+      expect(checkProfileCompatibility(full1.bundle, full2.bundle).breaking.map((b) => b.code)).toContain("changed_registry_records");
+    }
     expect(bundleProfile(BASE_YAML, {})).toMatchObject({ ok: false, refusalCode: "invalid_registry_data" });
     expect(bundleProfile(BASE_YAML, { reg_alpha: [], extra: [] })).toMatchObject({ ok: false, refusalCode: "invalid_registry_data" });
     expect(bundleProfile(BASE_YAML, { reg_alpha: [rec("1"), rec("1")] })).toMatchObject({ ok: false, refusalCode: "invalid_registry_data" });
     const badRegId = bundleProfile(BASE_YAML, { reg_alpha: [rec("1", "A", { registryId: "wrong" })] });
-    expect(!badRegId.ok && badRegId.errors[0]?.path).toBe("registries.reg_alpha.records[0].registryId");
+    expect(badRegId.ok).toBe(false);
+    if (!badRegId.ok) expect(badRegId.errors[0]?.path).toBe("registries.reg_alpha.records[0].registryId");
     const badNodeType = bundleProfile(BASE_YAML, { reg_alpha: [rec("1", "A", { nodeType: "Beta" })] });
-    expect(!badNodeType.ok && badNodeType.errors[0]?.path).toBe("registries.reg_alpha.records[0].nodeType");
+    expect(badNodeType.ok).toBe(false);
+    if (!badNodeType.ok) expect(badNodeType.errors[0]?.path).toBe("registries.reg_alpha.records[0].nodeType");
     const promMut = BASE_YAML.replace("promotion_requires: [citation]", "promotion_requires: [citation, review]");
     expect(checkProfileCompatibility(BASE_YAML, promMut).breaking).toContainEqual(expect.objectContaining({ code: "changed_modeled_field", path: "hardening.promotion_requires" }));
     expect(checkProfileCompatibility(BASE_YAML, BASE_YAML.replace("enabled: false", "enabled: true")).breaking).toContainEqual(expect.objectContaining({ code: "changed_modeled_field", path: "outputs.ontology.wiki" }));
     const promAllowed = checkProfileCompatibility(BASE_YAML, promMut, { classifyModeledFieldChange: ({ path }) => (path === "hardening.promotion_requires" ? "non-breaking" : "breaking") });
-    expect(promAllowed.compatible && promAllowed.nonBreaking.some((n) => n.code === "classified_modeled_field_change")).toBe(true);
+    expect(promAllowed.compatible).toBe(true);
+    expect(promAllowed.nonBreaking.some((n) => n.code === "classified_modeled_field_change")).toBe(true);
     expect(checkProfileCompatibility(BASE_YAML, promMut, { classifyModeledFieldChange: () => { throw new Error("fail"); } }).compatible).toBe(false);
     const evAllNodes = BASE_YAML.replace("node_types: [Alpha]", "node_types: []");
     expect(checkProfileCompatibility(BASE_YAML, evAllNodes).breaking.map((b) => b.code)).toContain("tightened_evidence_policy");
     const evRelaxNodes = checkProfileCompatibility(evAllNodes, BASE_YAML);
-    expect(evRelaxNodes.compatible && evRelaxNodes.nonBreaking.map((n) => n.code).includes("relaxed_evidence_policy")).toBe(true);
+    expect(evRelaxNodes.compatible).toBe(true);
+    expect(evRelaxNodes.nonBreaking.map((n) => n.code)).toContain("relaxed_evidence_policy");
     const evAllRels = BASE_YAML.replace("relation_types: [links_to]", "relation_types: []");
     expect(checkProfileCompatibility(BASE_YAML, evAllRels).breaking.map((b) => b.code)).toContain("tightened_evidence_policy");
     expect(checkProfileCompatibility(evAllRels, BASE_YAML).nonBreaking.map((n) => n.code)).toContain("relaxed_evidence_policy");
@@ -212,6 +228,9 @@ describe("F-EN2 profile bundle & shared JSON projection", () => {
     const evOff2 = evAllNodes.replace("require_evidence_refs: true", "require_evidence_refs: false");
     expect(checkProfileCompatibility(evOff1, evOff2).breaking).toEqual([]);
     expect(checkProfileCompatibility(evOff1, evOff2).nonBreaking).toEqual([]);
+    const evOffRels = evAllRels.replace("require_evidence_refs: true", "require_evidence_refs: false");
+    expect(checkProfileCompatibility(evOff1, evOffRels).breaking).toEqual([]);
+    expect(checkProfileCompatibility(evOff1, evOffRels).nonBreaking).toEqual([]);
     const citPage = BASE_YAML.replace("minimum_granularity: file", "minimum_granularity: page");
     const citRelax1 = checkProfileCompatibility(citPage, BASE_YAML);
     expect(citRelax1.breaking).toEqual([]);
@@ -235,8 +254,10 @@ describe("F-EN2 profile bundle & shared JSON projection", () => {
     const norm = normalizeOntologyProfile(parseOntologyProfile(BASE_YAML));
     expect(norm.profile_hash).toBe(T9_GOLDEN_PROFILE_HASH);
     const res = bundleProfile(BASE_YAML);
-    expect(res.ok && res.bundle.profileHash).toBe(T9_GOLDEN_PROFILE_HASH);
-    expect(res.ok && res.bundle.schema).toBe(PROFILE_BUNDLE_SCHEMA_V1);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.bundle.profileHash).toBe(T9_GOLDEN_PROFILE_HASH);
+    expect(res.bundle.schema).toBe(PROFILE_BUNDLE_SCHEMA_V1);
     expect(JSON_PROJECTION_VERSION).toBe("engram.json-projection/v1");
   });
 
@@ -244,25 +265,71 @@ describe("F-EN2 profile bundle & shared JSON projection", () => {
     expect(bundleProfile("node_types: [unclosed")).toMatchObject({ ok: false, refusalCode: "invalid_profile_syntax" });
     const noSource = bundleProfile(BASE_YAML.replace("    source: [Alpha]\n    target: [Alpha, Beta]", "    target: [Alpha, Beta]"));
     expect(noSource).toMatchObject({ ok: false, refusalCode: "invalid_profile_schema", errors: [{ path: "relation_types.links_to.source", message: "relation_types.links_to.source is required" }] });
+    const nullNodeYaml = "id: p\nversion: 1\nnode_types:\n  Alpha:\n";
+    expect(bundleProfile(nullNodeYaml)).toMatchObject({ ok: false, refusalCode: "invalid_profile_schema" });
+    const nullRelYaml = "id: p\nversion: 1\nnode_types:\n  Alpha:\n    id_prefix: 'a:'\nrelation_types:\n  rel:\n";
+    expect(bundleProfile(nullRelYaml)).toMatchObject({ ok: false, refusalCode: "invalid_profile_schema" });
+    expect(checkProfileCompatibility(BASE_YAML, nullNodeYaml)).toMatchObject({ ok: false, compatible: false });
+    const mapRes = bundleProfile(new Map() as unknown as OntologyProfile);
+    expect(mapRes).toMatchObject({ ok: false, refusalCode: "invalid_profile_schema", errors: [{ path: "profile", message: "profile projection failed at profile: non_plain_object" }] });
     const withFn = bundleProfile(BASE_YAML.replace("    status_policy: candidate", '    status_policy: candidate\n    linking:\n      normalize:\n        fn: "./nonexistent-normalizer-module.js"'));
     expect(withFn).toMatchObject({ ok: false, refusalCode: "unsupported_linking_fn", errors: [{ path: "node_types.Alpha.linking.normalize.fn" }] });
     expect(checkProfileCompatibility("node_types: [unclosed", BASE_YAML)).toMatchObject({ ok: false, compatible: false });
+    const goodRes = bundleProfile(BASE_YAML);
+    expect(goodRes.ok).toBe(true);
+    if (goodRes.ok) {
+      const p3a = JSON.parse(JSON.stringify(goodRes.bundle)) as { profile: { node_types: Record<string, unknown> } };
+      p3a.profile.node_types.Alpha = null;
+      const rP3a = checkProfileCompatibility(BASE_YAML, p3a as unknown as ProfileBundleV1);
+      expect(rP3a.ok).toBe(false);
+      expect(rP3a.validationIssues).toEqual([expect.objectContaining({ path: "new.digest" })]);
+      const p3b = JSON.parse(JSON.stringify(goodRes.bundle)) as { profile: { hardening: { status_transitions: unknown[] } } };
+      p3b.profile.hardening.status_transitions = [{}];
+      const rP3b = checkProfileCompatibility(BASE_YAML, p3b as unknown as ProfileBundleV1);
+      expect(rP3b.ok).toBe(false);
+      expect(rP3b.validationIssues).toEqual([expect.objectContaining({ path: "new.digest" })]);
+      const p3c = JSON.parse(JSON.stringify(goodRes.bundle)) as { profile: { node_types: Record<string, unknown> } };
+      delete p3c.profile.node_types.Beta;
+      const rP3c = checkProfileCompatibility(BASE_YAML, p3c as unknown as ProfileBundleV1);
+      expect(rP3c.ok).toBe(false);
+      expect(rP3c.validationIssues).toEqual([expect.objectContaining({ path: "new.digest" })]);
+      const p5 = JSON.parse(JSON.stringify(goodRes.bundle)) as { registries: { reg_alpha: { binding: Record<string, unknown> } } };
+      p5.registries.reg_alpha.binding.partition_column = undefined;
+      const rP5 = checkProfileCompatibility(BASE_YAML, p5 as unknown as ProfileBundleV1);
+      expect(rP5.ok).toBe(false);
+      expect(rP5.validationIssues).toEqual([expect.objectContaining({ path: "new.digest" })]);
+    }
     const noBeta = BASE_YAML.replace(/  Beta:[\s\S]*?title: \{ type: string, description: Title \}\n/, "");
     const dangNode = checkProfileCompatibility(BASE_YAML, noBeta);
     expect(dangNode.ok).toBe(false);
+    expect(dangNode.compatible).toBe(false);
+    expect(dangNode.validationIssues.length).toBeGreaterThan(0);
     expect(dangNode.validationIssues.every((i) => i.path.startsWith("new."))).toBe(true);
     expect(dangNode.breaking.find((b) => b.code === "removed_node_type" && b.subject === "Beta")).toBeTruthy();
     const noLinksTo = BASE_YAML.replace(/  links_to:[\s\S]*?description: Links Alpha\n/, "");
     const dangRel = checkProfileCompatibility(BASE_YAML, noLinksTo);
     expect(dangRel.ok).toBe(false);
+    expect(dangRel.compatible).toBe(false);
+    expect(dangRel.validationIssues.length).toBeGreaterThan(0);
+    expect(dangRel.validationIssues.every((i) => i.path.startsWith("new."))).toBe(true);
     expect(dangRel.breaking.find((b) => b.code === "removed_relation_type" && b.subject === "links_to")).toBeTruthy();
     const parsedObj = parseOntologyProfile(BASE_YAML) as Record<string, unknown>;
     expect(bundleProfile(parsedObj).ok).toBe(true);
+    const alphaNode = (parsedObj.node_types as Record<string, { aliases: string[]; properties: unknown }>).Alpha;
+    expect(Object.isFrozen(alphaNode?.aliases)).toBe(false);
+    expect(Object.isFrozen(alphaNode?.properties)).toBe(false);
+    const noStatusesYaml = "id: min-p\nversion: 1\nnode_types:\n  Alpha:\n    id_prefix: 'a:'\n";
+    expect(bundleProfile(noStatusesYaml).ok).toBe(true);
+    expect(Object.isFrozen(normalizeOntologyProfile(parseOntologyProfile(noStatusesYaml)).hardening.statuses)).toBe(false);
     const protoObj = Object.assign(Object.create(null), parsedObj, JSON.parse('{"__proto__":{"x":1}}'));
     Object.setPrototypeOf(protoObj, Object.prototype);
     expect(bundleProfile(protoObj)).toMatchObject({ ok: false, refusalCode: "invalid_profile_schema", errors: [{ path: "__proto__" }] });
     const jp = toJsonValue(Object.assign(JSON.parse('{"__proto__":{"x":1}}'), { u: undefined }));
-    expect(jp.ok && Object.getPrototypeOf(jp.value) === Object.prototype && Object.prototype.hasOwnProperty.call(jp.value, "__proto__")).toBe(true);
+    expect(jp.ok).toBe(true);
+    if (jp.ok) {
+      expect(Object.getPrototypeOf(jp.value)).toBe(Object.prototype);
+      expect(Object.prototype.hasOwnProperty.call(jp.value, "__proto__")).toBe(true);
+    }
     const shared = { k: -0 };
     expect(toJsonValue({ a: shared, b: shared })).toEqual({ ok: true, value: { a: { k: 0 }, b: { k: 0 } } });
     const cyc: Record<string, unknown> = {};
@@ -271,9 +338,17 @@ describe("F-EN2 profile bundle & shared JSON projection", () => {
     expect(toJsonValue(new Date())).toEqual({ ok: false, path: "", reason: "non_plain_object" });
     expect(toJsonValue({ [Symbol("s")]: 1 })).toEqual({ ok: false, path: "", reason: "symbol_key" });
     expect(toJsonValue(Object.defineProperty({}, "g", { get: () => 1, enumerable: true }))).toEqual({ ok: false, path: "g", reason: "accessor_property" });
+    expect(toJsonValue(Object.defineProperty({}, "hidden", { value: 1, enumerable: false }))).toEqual({ ok: false, path: "hidden", reason: "accessor_property" });
     // eslint-disable-next-line no-sparse-arrays
     expect(toJsonValue([1, , 3])).toEqual({ ok: false, path: "[1]", reason: "unsupported_type" });
-    expect(toJsonValue({ b: 1, a: NaN })).toEqual({ ok: false, path: "a", reason: "non_finite_number" });
+    expect(toJsonValue([undefined])).toEqual({ ok: false, path: "[0]", reason: "unsupported_type" });
+    expect(toJsonValue(undefined)).toEqual({ ok: false, path: "", reason: "unsupported_type" });
+    expect(toJsonValue(1n)).toEqual({ ok: false, path: "", reason: "unsupported_type" });
+    expect(toJsonValue(() => {})).toEqual({ ok: false, path: "", reason: "unsupported_type" });
+    expect(toJsonValue(Infinity)).toEqual({ ok: false, path: "", reason: "non_finite_number" });
+    expect(toJsonValue(-Infinity)).toEqual({ ok: false, path: "", reason: "non_finite_number" });
+    expect(toJsonValue({ b: NaN, a: NaN })).toEqual({ ok: false, path: "a", reason: "non_finite_number" });
+    expect(toJsonValue({ x: [0, { y: NaN }] })).toEqual({ ok: false, path: "x[1].y", reason: "non_finite_number" });
     expect(toJsonValue({ "\ud800": 1 })).toEqual({ ok: false, path: "\ud800", reason: "invalid_unicode" });
     expect(toJsonValue("\ud800")).toEqual({ ok: false, path: "", reason: "invalid_unicode" });
   });
@@ -286,16 +361,24 @@ describe("F-EN2 profile bundle & shared JSON projection", () => {
       if (!b.ok) return;
       expect(b.bundle.profileVersion).toBe("2");
       expect(Object.keys(b.bundle.extensions).sort()).toEqual(["etape_enum", "extraction_hints", "ontology_version", "synonym_relations"]);
-      expect(bundleProfile(`\n# comment\n${raw}\n`).ok && bundleProfile(`\n# comment\n${raw}\n`)).toMatchObject({ bundle: { digest: b.bundle.digest } });
+      const commented = bundleProfile(`\n# comment\n${raw}\n`);
+      expect(commented.ok).toBe(true);
+      if (commented.ok) expect(commented.bundle.digest).toBe(b.bundle.digest);
       expect(checkProfileCompatibility(raw, raw.replace(/  supersedes:\n(?:    .*\n)+/, "")).breaking.map((x) => x.code)).toContain("removed_relation_type");
       expect(checkProfileCompatibility(raw, raw.replace(/superficie_m2:\s*\{\s*type:\s*number/, "superficie_m2: { type: integer")).breaking.map((x) => x.code)).toContain("changed_node_property_type");
-      expect(checkProfileCompatibility(raw, raw.replace("target: [Zone, Lot]", "target: [Zone]")).breaking.map((x) => x.code)).toContain("narrowed_relation_target");
+      const narrowed = checkProfileCompatibility(raw, raw.replace("target: [Zone, Lot]", "target: [Zone]"));
+      expect(narrowed.breaking.some((x) => x.code === "narrowed_relation_target" && x.subject === "concerns")).toBe(true);
       const added = checkProfileCompatibility(raw, raw.replace("node_types:", "node_types:\n  SyntheticExtra:\n    id_prefix: 'syn:'"));
-      expect(added.compatible && added.nonBreaking.map((x) => x.code)).toEqual(["added_node_type"]);
+      expect(added.compatible).toBe(true);
+      expect(added.nonBreaking.map((x) => x.code)).toEqual(["added_node_type"]);
       const noRezones = checkProfileCompatibility(raw, raw.replace(/  rezones:\n(?:    .*\n)+/, ""));
-      expect(!noRezones.ok && noRezones.validationIssues.length > 0 && noRezones.breaking.some((x) => x.code === "removed_relation_type")).toBe(true);
+      expect(noRezones.ok).toBe(false);
+      expect(noRezones.validationIssues.length).toBeGreaterThan(0);
+      expect(noRezones.breaking.some((x) => x.code === "removed_relation_type")).toBe(true);
       const noConstraint = checkProfileCompatibility(raw, raw.replace(/  Constraint:\n(?:    .*\n)+/, ""));
-      expect(!noConstraint.ok && noConstraint.validationIssues.length > 0 && noConstraint.breaking.some((x) => x.code === "removed_node_type")).toBe(true);
+      expect(noConstraint.ok).toBe(false);
+      expect(noConstraint.validationIssues.length).toBeGreaterThan(0);
+      expect(noConstraint.breaking.some((x) => x.code === "removed_node_type")).toBe(true);
     });
   });
 });
