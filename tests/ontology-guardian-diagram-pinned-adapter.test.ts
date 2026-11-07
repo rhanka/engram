@@ -6,15 +6,19 @@
 // pinned commit; they skip (never fake-pass) when the clone is absent.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { pinsDigestOf } from "../src/ontology-guardian/digests.js";
 import {
   CONTRACT_CONTENT,
+  CONTRACT_FOLD_REVISION,
   CONTRACT_PIN,
   CONTRACT_QUALIFIED_REVISION,
   ENVELOPE_CONTRACT,
+  ENVELOPE_CONTRACT_FOLD,
   ENVELOPE_CONTRACT_QUALIFIED,
   PAYLOAD_CONTRACT,
+  PAYLOAD_CONTRACT_FOLD,
   PAYLOAD_CONTRACT_QUALIFIED,
   TRANSITIONAL_COMPATIBILITY,
   checkContractCatalogRevision,
@@ -26,12 +30,14 @@ import {
   DS_ADAPTER_PATH,
   DS_ADAPTER_SHA256,
   DS_COMMIT,
+  DS_COMMIT_ENTRY_2,
   DS_RENDERER_PATH,
   DS_RENDERER_SHA256,
   DS_REPOSITORY,
   PINNED_ADAPTER_REF,
   PINNED_RENDERER_REF,
   PRESENTATION_PIN_MISMATCH,
+  QUALIFIED_COMPATIBILITY_ENTRY_2,
   checkPresentationPins,
   isExactPin,
   parsePinnedDsRef,
@@ -44,6 +50,11 @@ const SCHEMA_DIGEST = "f13d595793e17e1e4740c9203b19d8381fc55b90e37121d61f5037cb7
 const CONTRACT_DIGEST = "74dadb9c31fff7653ca31692d8db3cfea782baea8d9268a3c20982ea8ab0aeae";
 const OLD_ENTRY_DIGEST = "a83e2c1d0ea9612d38a0b3ad1a0f0ae4e93e7f7a10fcee49ab57a6a06659da0a";
 const NEW_ENTRY_DIGEST = "c430ff66df3b04e6d792dd1a60e40e01dbeaffa47b206da0021a937ca83fa4f9";
+const FOLD_ENTRY_DIGEST = "a053b97344f02ad9faf1e2f1ee51bca157e62e010eca7f2600a964fca0b62327";
+const ENTRY_2_COMMIT = "e3bc10cc9e59d48bb807afc41173ba83f6698940";
+const ENTRY_3_COMMIT = "7c5a8c82bf2abc71bf0963e3fcfc395c48fcf6af";
+const FOLD_PATH = "packages/diagram-core/src/fold.ts";
+const FOLD_SHA256 = "143c0be91a4cf1ad2263b5f0df729e6014462ee2a4a405999ff215a1282c1272";
 
 const DS_CLONE = "/home/antoinefa/src/sent-tech-design-system";
 
@@ -97,6 +108,30 @@ describe("pinned DS reference format (§3.2.1)", () => {
     expect(qualifiedAdapterPin()).toEqual({
       id: `ds:${DS_REPOSITORY}/${DS_ADAPTER_PATH}`,
       version: DS_COMMIT,
+      contentDigest: DS_ADAPTER_SHA256,
+    });
+  });
+
+  it("parses entry 3 compatibility refs at the fold-capable DS_COMMIT and projects the adapter Pin", () => {
+    expect(DS_COMMIT).toBe(ENTRY_3_COMMIT);
+    expect(DS_COMMIT_ENTRY_2).toBe(ENTRY_2_COMMIT);
+    const adapterRef = parsePinnedDsRef(PAYLOAD_CONTRACT_FOLD.compatibility.adapter);
+    const rendererRef = parsePinnedDsRef(PAYLOAD_CONTRACT_FOLD.compatibility.renderer);
+    expect(adapterRef).toEqual({
+      repository: DS_REPOSITORY,
+      commit: ENTRY_3_COMMIT,
+      path: DS_ADAPTER_PATH,
+      sha256: DS_ADAPTER_SHA256,
+    });
+    expect(rendererRef).toEqual({
+      repository: DS_REPOSITORY,
+      commit: ENTRY_3_COMMIT,
+      path: DS_RENDERER_PATH,
+      sha256: DS_RENDERER_SHA256,
+    });
+    expect(pinnedRefToAdapterPin(adapterRef)).toEqual({
+      id: `ds:${DS_REPOSITORY}/${DS_ADAPTER_PATH}`,
+      version: ENTRY_3_COMMIT,
       contentDigest: DS_ADAPTER_SHA256,
     });
   });
@@ -166,12 +201,15 @@ describe("adapter binding to schemaPin (§3.2.1)", () => {
   });
 
   it("binds the qualified adapter to the contract schema pin through the catalog entry", () => {
-    expect(PAYLOAD_CONTRACT_QUALIFIED.compatibility.adapter).toBe(PINNED_ADAPTER_REF);
+    expect(PAYLOAD_CONTRACT_QUALIFIED.compatibility.adapter).toBe(QUALIFIED_COMPATIBILITY_ENTRY_2.adapter);
     expect(parsePinnedDsRef(PAYLOAD_CONTRACT_QUALIFIED.compatibility.adapter).path).toBe(DS_ADAPTER_PATH);
     expect(PAYLOAD_CONTRACT_QUALIFIED.artifactBinding).toEqual(contractBindingOf());
     expect(PAYLOAD_CONTRACT_QUALIFIED.artifactBinding.schemaPin).toEqual(
       DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.pin,
     );
+    expect(PAYLOAD_CONTRACT_FOLD.compatibility.adapter).toBe(PINNED_ADAPTER_REF);
+    expect(parsePinnedDsRef(PAYLOAD_CONTRACT_FOLD.compatibility.adapter).commit).toBe(ENTRY_3_COMMIT);
+    expect(PAYLOAD_CONTRACT_FOLD.artifactBinding).toEqual(contractBindingOf());
   });
 
   it("accepts the qualified adapter Pin and refuses each mutated Pin field", () => {
@@ -261,13 +299,109 @@ describe.skipIf(!dsAvailable)(
   `DS entry-byte hashes at the pinned commit${dsAvailable ? "" : " (skipped: DS clone absent at " + DS_CLONE + ")"}`,
   () => {
     it("hashes the adapter entry bytes to the pinned sha256", () => {
-      const bytes = dsEntryBytes(parsePinnedDsRef(PINNED_ADAPTER_REF));
+      const ref = parsePinnedDsRef(PINNED_ADAPTER_REF);
+      expect(ref.commit).toBe(ENTRY_3_COMMIT);
+      const bytes = dsEntryBytes(ref);
       expect(sha256HexBytes(bytes)).toBe(DS_ADAPTER_SHA256);
     });
 
     it("hashes the renderer entry bytes to the pinned sha256", () => {
-      const bytes = dsEntryBytes(parsePinnedDsRef(PINNED_RENDERER_REF));
+      const ref = parsePinnedDsRef(PINNED_RENDERER_REF);
+      expect(ref.commit).toBe(ENTRY_3_COMMIT);
+      const bytes = dsEntryBytes(ref);
       expect(sha256HexBytes(bytes)).toBe(DS_RENDERER_SHA256);
+    });
+
+    it("hashes entry-2 refs at DS_COMMIT_ENTRY_2 and fold.ts at DS_COMMIT", () => {
+      expect(sha256HexBytes(dsEntryBytes(parsePinnedDsRef(QUALIFIED_COMPATIBILITY_ENTRY_2.adapter)))).toBe(DS_ADAPTER_SHA256);
+      expect(sha256HexBytes(dsEntryBytes(parsePinnedDsRef(QUALIFIED_COMPATIBILITY_ENTRY_2.renderer)))).toBe(DS_RENDERER_SHA256);
+      expect(sha256HexBytes(dsEntryBytes({ repository: DS_REPOSITORY, commit: DS_COMMIT, path: FOLD_PATH, sha256: FOLD_SHA256 }))).toBe(FOLD_SHA256);
+    });
+  },
+);
+
+describe.skipIf(!dsAvailable)(
+  `DS fold-projection PIN mechanism probe at the pinned commits${dsAvailable ? "" : " (skipped: DS clone absent at " + DS_CLONE + ")"}`,
+  () => {
+    async function bundleDiagramCore(commit: string) {
+      const { build } = await import("esbuild");
+      const baseDir = "packages/diagram-core/src";
+      const gitShow = (p: string): string => execFileSync("git", ["-C", DS_CLONE, "show", `${commit}:${p}`], { encoding: "utf8" });
+      const res = await build({
+        stdin: { contents: gitShow(`${baseDir}/index.ts`), resolveDir: "/", sourcefile: `${baseDir}/index.ts`, loader: "ts" },
+        bundle: true, format: "esm", platform: "node", write: false,
+        plugins: [{ name: "git-ds", setup(b) {
+          b.onResolve({ filter: /^\./ }, (a) => ({ path: path.posix.normalize(path.posix.join(path.posix.dirname(a.importer), a.path)).replace(/^\/+/, "").replace(/\.js$/, ".ts"), namespace: "git" }));
+          b.onLoad({ filter: /.*/, namespace: "git" }, (a) => ({ contents: gitShow(a.path), loader: "ts" }));
+        } }],
+      });
+      return import(`data:text/javascript;base64,${Buffer.from(res.outputFiles[0]!.text).toString("base64")}`);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function fixtureFor(core: any) {
+      const registry = core.createProfileRegistry([core.generic2Profile]);
+      const options = { registry, bindings: { schemaVersion: "1", rows: [core.bindingRowFor(core.generic2Profile, core.SCOPED_CONSTRAINTS_ADAPTER)] } };
+      const box = { x: 0, y: 0, width: 460, height: 200 };
+      const doc = {
+        ...core.createDocument({ documentId: core.documentRef("probe"), profileRefs: ["generic@2"] }),
+        entities: {
+          "entity:z": { id: "entity:z", profile: "generic@2", type: "container", attributes: { name: core.text("Z") } },
+          "entity:a": { id: "entity:a", profile: "generic@2", type: "node", attributes: { name: core.text("A") } },
+          "entity:b": { id: "entity:b", profile: "generic@2", type: "node", attributes: { name: core.text("B") } },
+        },
+        relations: {
+          "relation:r1": { id: "relation:r1", profile: "generic@2", type: "contains", endpoints: [{ role: "parent", target: "entity:z" }, { role: "child", target: "entity:a" }], attributes: {} },
+          "relation:r2": { id: "relation:r2", profile: "generic@2", type: "association", endpoints: [{ role: "source", target: "entity:a" }, { role: "target", target: "entity:b" }], attributes: { label: core.text("links") } },
+        },
+      };
+      const sourceView = {
+        ...core.createView({ viewId: core.viewRef("v"), semanticDocumentId: doc.documentId }),
+        entityOccurrences: {
+          "occurrence:o-z": { id: "occurrence:o-z", entity: "entity:z", geometry: box },
+          "occurrence:o-a": { id: "occurrence:o-a", entity: "entity:a", geometry: box, group: "grp.3.o-z" },
+          "occurrence:o-b": { id: "occurrence:o-b", entity: "entity:b", geometry: box },
+        },
+        relationOccurrences: {
+          "occurrence:e-r2": { id: "occurrence:e-r2", relation: "relation:r2", endpoints: [{ role: "source", occurrence: "occurrence:o-a" }, { role: "target", occurrence: "occurrence:o-b" }], waypoints: [] },
+        },
+        groups: { "grp.3.o-z": { id: "grp.3.o-z", occurrence: "occurrence:o-z", collapsed: true } },
+        summaryLabels: { "summary:s1": { id: "summary:s1", sourceOccurrence: "occurrence:o-z", targetOccurrence: "occurrence:o-b", label: "links", relationIds: ["relation:r2"], relationOccurrences: ["occurrence:e-r2"] } },
+        presentation: {
+          camera: { x: 0, y: 0, zoom: 1 },
+          diagram: {
+            contractPin: { ...core.DIAGRAM_PRESENTATION_CONTRACT_PIN },
+            entities: {
+              "occurrence:o-z": { form: "container", text: { kicker: "Zone", subtitle: "S", footer: "F" } },
+              "occurrence:o-a": { form: "card", text: { kicker: "Card", body: "B", footer: "F" } },
+              "occurrence:o-b": { form: "card", text: { kicker: "Card", body: "B", footer: "F" } },
+            },
+            legends: {}, categoryTokens: [],
+          },
+        },
+      };
+      return { doc, sourceView, options };
+    }
+
+    it("probes the PIN fold-projection mechanism with generic@2 (literal ARCHI1 + FIX + folded Rôles replay in lots 2–3, spec:446-447): [] at DS_COMMIT and occurrence-endpoint-mismatch at DS_COMMIT_ENTRY_2", async () => {
+      const core = await bundleDiagramCore(DS_COMMIT);
+      const { doc, sourceView, options } = fixtureFor(core);
+      const folded = core.projectView(doc, sourceView, ["occurrence:o-z"]);
+      expect(folded.relationOccurrences["occurrence:e-r2"].endpoints[0]).toEqual({
+        role: "source", occurrence: "occurrence:o-z", semanticTarget: "entity:a", sourceOccurrence: "occurrence:o-a",
+      });
+      expect(core.validateView(folded, doc, options)).toEqual([]);
+      expect(core.validateDiagramPresentation(doc, folded, options)).toEqual([]);
+      // PIN:8 and PIN:10 contrast at entry 2's DS commit
+      const core2 = await bundleDiagramCore(DS_COMMIT_ENTRY_2);
+      expect(core2.projectView).toBeUndefined();
+      const fx2 = fixtureFor(core2);
+      const refused = core2.validateView(folded, fx2.doc, fx2.options);
+      expect(refused.length).toBeGreaterThan(0);
+      expect(refused).toContainEqual(expect.objectContaining({
+        code: "occurrence-endpoint-mismatch",
+        path: "relationOccurrences.occurrence:e-r2.endpoints[0].occurrence",
+      }));
     });
   },
 );
@@ -282,8 +416,8 @@ describe("catalog entry lineage (entry 1 stays reproducible)", () => {
   });
 
   it("records entry 2 with qualified refs and preserved G0 artifact lineage", () => {
-    expect(PAYLOAD_CONTRACT_QUALIFIED.compatibility.renderer).toBe(PINNED_RENDERER_REF);
-    expect(PAYLOAD_CONTRACT_QUALIFIED.compatibility.adapter).toBe(PINNED_ADAPTER_REF);
+    expect(PAYLOAD_CONTRACT_QUALIFIED.compatibility.renderer).toBe(QUALIFIED_COMPATIBILITY_ENTRY_2.renderer);
+    expect(PAYLOAD_CONTRACT_QUALIFIED.compatibility.adapter).toBe(QUALIFIED_COMPATIBILITY_ENTRY_2.adapter);
     expect(PAYLOAD_CONTRACT_QUALIFIED.lineage).toEqual({ parents: [], mappings: [], migrations: [] });
     expect(PAYLOAD_CONTRACT_QUALIFIED.profilePin).toEqual(CONTRACT_PIN);
     expect(PAYLOAD_CONTRACT_QUALIFIED.stack).toEqual([CONTRACT_PIN]);
@@ -292,6 +426,37 @@ describe("catalog entry lineage (entry 1 stays reproducible)", () => {
     expect(ENVELOPE_CONTRACT_QUALIFIED.id).toBe("engram-diagram-presentation-2");
     expect(ENVELOPE_CONTRACT_QUALIFIED.entryVersion).toBe("2");
     expect(envelopeEntryDigest(ENVELOPE_CONTRACT_QUALIFIED)).toBe(NEW_ENTRY_DIGEST);
+  });
+
+  it("records entry 3 at the fold-capable DS_COMMIT and links revision 3 -> 2", () => {
+    expect(PAYLOAD_CONTRACT_FOLD.compatibility.renderer).toBe(PINNED_RENDERER_REF);
+    expect(PAYLOAD_CONTRACT_FOLD.compatibility.adapter).toBe(PINNED_ADAPTER_REF);
+    expect(PAYLOAD_CONTRACT_FOLD.lineage).toEqual({ parents: [], mappings: [], migrations: [] });
+    expect(PAYLOAD_CONTRACT_FOLD.profilePin).toEqual(CONTRACT_PIN);
+    expect(PAYLOAD_CONTRACT_FOLD.stack).toEqual([CONTRACT_PIN]);
+    expect(PAYLOAD_CONTRACT_FOLD.digests.contentDigest).toBe(CONTRACT_DIGEST);
+    expect(PAYLOAD_CONTRACT_FOLD.digests.pinsDigest).toBe(pinsDigestOf({ layers: [CONTRACT_PIN] }));
+    expect(ENVELOPE_CONTRACT_FOLD.id).toBe("engram-diagram-presentation-3");
+    expect(ENVELOPE_CONTRACT_FOLD.entryVersion).toBe("3");
+    expect(envelopeEntryDigest(ENVELOPE_CONTRACT_FOLD)).toBe(FOLD_ENTRY_DIGEST);
+    expect(CONTRACT_FOLD_REVISION).toEqual({
+      successor: { id: "engram-diagram-presentation-3", entryVersion: "3" },
+      predecessor: {
+        id: "engram-diagram-presentation-2",
+        entryVersion: "2",
+        entryDigest: NEW_ENTRY_DIGEST,
+      },
+    });
+    expect(
+      checkContractCatalogRevision(ENVELOPE_CONTRACT_FOLD, ENVELOPE_CONTRACT_QUALIFIED, CONTRACT_FOLD_REVISION),
+    ).toEqual({ outcome: "ok" });
+    expect(
+      checkContractCatalogRevision(ENVELOPE_CONTRACT_FOLD, ENVELOPE_CONTRACT, CONTRACT_FOLD_REVISION),
+    ).toEqual({
+      outcome: "refused",
+      code: PRESENTATION_PIN_MISMATCH,
+      path: "predecessor.id",
+    });
   });
 
   it("keeps the catalog-revision link outside the closed G0 payload/envelope", () => {
