@@ -448,3 +448,11 @@ export function checkContractCatalogRevision(
 export function envelopeEntryDigest(envelope: RegistryEnvelope): Digest {
   return entryDigestOf(envelope as unknown as Record<string, unknown>);
 }
+
+/** proposed: draft G0 registry exports for archi@1 (spec/SPEC_EVOL_ARCHI_CARDS.md §2.5). */
+export {
+  ARCHI_V1_PIN,
+  ENVELOPE_ARCHI_V1,
+  PAYLOAD_ARCHI_V1,
+  RECORD_ARCHI_V1,
+} from "./archi-profile.js";
