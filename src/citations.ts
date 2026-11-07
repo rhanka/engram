@@ -136,7 +136,12 @@ export function extractionCitationKey(citation: OntologyCitation): string {
     return "\0\0t:";
   }
   const doc = typeof citation.docSha === "string" ? citation.docSha.trim().toLowerCase() : "";
-  const page = locatorPart(citation.page);
+  let page: string;
+  try {
+    page = locatorPart(citation.page);
+  } catch {
+    page = "";
+  }
   let spanOrText: string;
   const span = citation.quoteSpan;
   if (

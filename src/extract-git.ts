@@ -767,7 +767,9 @@ function mergeItemGroup(
       conflicts,
       false,
     );
-    defineOwnProp(merged, "source_file", sfRes.hasValue && typeof sfRes.value === "string" ? sfRes.value : "");
+    if (sfRes.hasValue) {
+      defineOwnProp(merged, "source_file", sfRes.value);
+    }
   } else {
     defineOwnProp(merged, "id", itemKey);
   }
@@ -797,7 +799,7 @@ function mergeItemGroup(
     const lp = getOwnEnumerable(copy, "label");
     if (lp.present && typeof lp.value === "string" && lp.value.length > 0 && isWellFormedString(lp.value)) {
       const normL = lp.value.trim().normalize("NFC");
-      if (normL.length > 0) aliasSet.add(normL);
+      aliasSet.add(normL);
     }
     const ap = getOwnEnumerable(copy, "aliases");
     if (ap.present) {
@@ -883,11 +885,10 @@ function mergeItemGroup(
   for (const copy of copies) {
     const ab = getOwnEnumerable(copy, "assertion_basis");
     if (!ab.present) continue;
+    if (typeof ab.value === "string" && !isWellFormedString(ab.value)) continue;
     anyCarriedAssertionBasis = true;
     if (typeof ab.value === "string") {
-      if (isWellFormedString(ab.value)) {
-        basisSet.add(ab.value);
-      }
+      basisSet.add(ab.value);
     } else {
       allCarriedAssertionBasisString = false;
       if (Array.isArray(ab.value)) {
@@ -1084,7 +1085,10 @@ export function mergeExtractionsWithCitations(
   const nodesMerged = mergeIdKeyedCollection<GraphNode>(extractions, "nodes", "node", conflicts);
 
   // Edges
-  const edgeGroups = new Map<string, Record<string, unknown>[]>();
+  const edgeGroups = new Map<
+    string,
+    { joinedKey: string; injectiveKey: string; copies: Record<string, unknown>[] }
+  >();
   for (const ext of extractions) {
     if (!ext || typeof ext !== "object" || Array.isArray(ext)) continue;
     const rawEdges = (ext as unknown as Record<string, unknown>).edges;
@@ -1110,33 +1114,38 @@ export function mergeExtractionsWithCitations(
       ) {
         continue;
       }
-      let key: string;
+      let joinedKey: string;
+      let injectiveKey: string;
       if (edgeKeyScope === "cross-document") {
-        key = `${src.value}\0${tgt.value}\0${rel.value}`;
+        joinedKey = `${src.value}\0${tgt.value}\0${rel.value}`;
+        injectiveKey = JSON.stringify([src.value, tgt.value, rel.value]);
       } else {
         const sf = getOwnEnumerable(edge, "source_file");
         let sfStr = "";
-        if (sf.present && sf.value !== null) {
-          const str = typeof sf.value === "string" ? sf.value : String(sf.value);
-          if (!isWellFormedString(str)) continue;
-          sfStr = str;
+        if (sf.present && typeof sf.value === "string") {
+          if (!isWellFormedString(sf.value)) continue;
+          sfStr = sf.value;
         }
-        key = `${src.value}\0${tgt.value}\0${rel.value}\0${sfStr}`;
+        joinedKey = `${src.value}\0${tgt.value}\0${rel.value}\0${sfStr}`;
+        injectiveKey = JSON.stringify([src.value, tgt.value, rel.value, sfStr]);
       }
-      let bucket = edgeGroups.get(key);
+      let bucket = edgeGroups.get(injectiveKey);
       if (!bucket) {
-        bucket = [];
-        edgeGroups.set(key, bucket);
+        bucket = { joinedKey, injectiveKey, copies: [] };
+        edgeGroups.set(injectiveKey, bucket);
       }
-      bucket.push(edge);
+      bucket.copies.push(edge);
     }
   }
 
-  const sortedEdgeKeys = [...edgeGroups.keys()].sort();
+  const sortedEdgeGroups = [...edgeGroups.values()].sort((a, b) => {
+    if (a.joinedKey !== b.joinedKey) return a.joinedKey < b.joinedKey ? -1 : 1;
+    if (a.injectiveKey !== b.injectiveKey) return a.injectiveKey < b.injectiveKey ? -1 : 1;
+    return 0;
+  });
   const mergedEdges: GraphEdge[] = [];
-  for (const key of sortedEdgeKeys) {
-    const copies = edgeGroups.get(key)!;
-    mergedEdges.push(mergeItemGroup("edge", key, copies, conflicts) as unknown as GraphEdge);
+  for (const group of sortedEdgeGroups) {
+    mergedEdges.push(mergeItemGroup("edge", group.joinedKey, group.copies, conflicts) as unknown as GraphEdge);
   }
 
   const hyperedgesMerged = mergeIdKeyedCollection<Hyperedge>(extractions, "hyperedges", "hyperedge", conflicts);

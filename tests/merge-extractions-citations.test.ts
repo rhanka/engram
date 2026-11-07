@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as rootApi from "../src/index.js";
 import { canonicalBytes } from "../src/ontology-guardian/canonical.js";
 import { toJsonValue } from "../src/json-value.js";
 import {
@@ -271,6 +272,36 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
     expect(canonicalOf(mergeExtractionsWithCitations([zeroTokenInput]))).toBe(
       canonicalOf(mergeExtractionsWithCitations([zeroTokenInput, zeroTokenInput])),
     );
+
+    // m1: A losing label that is non-empty before trim but empty after normalization ("\t")
+    // is added to aliases as "" per the §4(d).2 formula; an absent-like "" label is excluded.
+    const tabLabelExt: Extraction = {
+      nodes: [{ id: "node-ws", label: "\t", file_type: "document", source_file: "doc.pdf" }],
+      edges: [],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+    const betaLabelExt: Extraction = {
+      nodes: [{ id: "node-ws", label: "Beta", file_type: "document", source_file: "doc.pdf" }],
+      edges: [],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+    const wsMerged12 = mergeExtractionsWithCitations([tabLabelExt, betaLabelExt]);
+    const wsMerged21 = mergeExtractionsWithCitations([betaLabelExt, tabLabelExt]);
+    expect(canonicalOf(wsMerged12)).toBe(canonicalOf(wsMerged21));
+    expect(wsMerged12.extraction.nodes[0]!.label).toBe("Beta");
+    expect(wsMerged12.extraction.nodes[0]!.aliases).toEqual([""]);
+
+    const emptyLabelExt: Extraction = {
+      nodes: [{ id: "node-ws", label: "", file_type: "document", source_file: "doc.pdf" }],
+      edges: [],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+    const emptyVsBeta = mergeExtractionsWithCitations([emptyLabelExt, betaLabelExt]);
+    expect(emptyVsBeta.extraction.nodes[0]!.label).toBe("Beta");
+    expect("aliases" in emptyVsBeta.extraction.nodes[0]!).toBe(false);
   });
 
   it("F-EN4-T4: order independence across all 6 permutations of 3 colliding extractions and citation unions", () => {
@@ -433,6 +464,59 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
       const dupRep = unioned.find((c) => c.docSha === "sha-dup")!;
       expect(dupRep.bbox).toEqual([0.1, 0.2, 0.3, 0.4]);
       expect(dupRep.source_file).toBe("f1.pdf");
+    }
+
+    // m4 (P9): Collision-free internal edge key when endpoints contain U+0000
+    const nulEdgeA: Extraction = {
+      nodes: [],
+      edges: [
+        {
+          source: "a\u0000b",
+          target: "c",
+          relation: "links_to",
+          confidence: "EXTRACTED",
+          source_file: "doc.pdf",
+        },
+      ],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+    const nulEdgeB: Extraction = {
+      nodes: [],
+      edges: [
+        {
+          source: "a",
+          target: "b\u0000c",
+          relation: "links_to",
+          confidence: "EXTRACTED",
+          source_file: "doc.pdf",
+        },
+      ],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+    for (const scope of ["per-source-file", "cross-document"] as const) {
+      const ab = mergeExtractionsWithCitations([nulEdgeA, nulEdgeB], { edgeKeyScope: scope });
+      const ba = mergeExtractionsWithCitations([nulEdgeB, nulEdgeA], { edgeKeyScope: scope });
+      expect(ab.extraction.edges).toHaveLength(2);
+      expect(ba.extraction.edges).toHaveLength(2);
+      expect(canonicalOf(ab)).toBe(canonicalOf(ba));
+      expect(
+        ab.extraction.edges.map((e) => [e.source, e.target]),
+      ).toEqual([
+        ["a", "b\u0000c"],
+        ["a\u0000b", "c"],
+      ]);
+      // Idempotency and associativity on U+0000-bearing edges
+      const idemp = mergeExtractionsWithCitations([ab.extraction], { edgeKeyScope: scope });
+      expect(canonicalOf(idemp)).toBe(canonicalOf(ab));
+      const leftAssoc = mergeExtractionsWithCitations([ab.extraction, nulEdgeA], { edgeKeyScope: scope });
+      const rightAssoc = mergeExtractionsWithCitations(
+        [nulEdgeA, mergeExtractionsWithCitations([nulEdgeB, nulEdgeA], { edgeKeyScope: scope }).extraction],
+        { edgeKeyScope: scope },
+      );
+      expect(canonicalOf(leftAssoc)).toBe(canonicalOf(ab));
+      expect(canonicalOf(rightAssoc)).toBe(canonicalOf(ab));
     }
   });
 
@@ -769,6 +853,74 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
     expect(crossDoc.extraction.edges).toHaveLength(1);
     expect(crossDoc.extraction.edges[0]!.source_file).toBe("doc-a.pdf");
     expect(crossDoc.extraction.edges[0]!.citations).toHaveLength(3);
+
+    // m2 (P5): All-null cross-document source_file stays null (not coerced to ""), and non-string winner stays unchanged
+    const nullSfExt1: Extraction = {
+      nodes: [],
+      edges: [
+        {
+          source: "node-a",
+          target: "node-b",
+          relation: "links_to",
+          confidence: "EXTRACTED",
+          source_file: null as unknown as string,
+        },
+      ],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+    const nullSfExt2: Extraction = {
+      nodes: [],
+      edges: [
+        {
+          source: "node-a",
+          target: "node-b",
+          relation: "links_to",
+          confidence: "INFERRED",
+          source_file: null as unknown as string,
+        },
+      ],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+    const crossNull = mergeExtractionsWithCitations([nullSfExt1, nullSfExt2], {
+      edgeKeyScope: "cross-document",
+    });
+    expect(crossNull.conflicts).toEqual([]);
+    expect(crossNull.extraction.edges).toHaveLength(1);
+    expect(crossNull.extraction.edges[0]!.source_file).toBeNull();
+    // Idempotency and associativity on all-null cross-document edge
+    expect(
+      canonicalOf(
+        mergeExtractionsWithCitations([crossNull.extraction], { edgeKeyScope: "cross-document" }),
+      ),
+    ).toBe(canonicalOf(crossNull));
+    expect(
+      canonicalOf(
+        mergeExtractionsWithCitations([crossNull.extraction, nullSfExt1], {
+          edgeKeyScope: "cross-document",
+        }),
+      ),
+    ).toBe(canonicalOf(crossNull));
+
+    const numSfExt: Extraction = {
+      nodes: [],
+      edges: [
+        {
+          source: "node-a",
+          target: "node-b",
+          relation: "links_to",
+          confidence: "EXTRACTED",
+          source_file: 5 as unknown as string,
+        },
+      ],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+    const crossNum = mergeExtractionsWithCitations([numSfExt, nullSfExt1], {
+      edgeKeyScope: "cross-document",
+    });
+    expect(crossNum.extraction.edges[0]!.source_file).toBe(5);
   });
 
   it("F-EN4-T7: associativity across round-1, round-2, round-3, and round-4 counterexamples", () => {
@@ -782,13 +934,41 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
       expect(canonicalOf(leftNested.extraction)).toBe(canonicalOf(flat.extraction));
       expect(canonicalOf(rightNested.extraction)).toBe(canonicalOf(flat.extraction));
 
-      // Forwarded conflicts from inner + outer cover the flat conflict triples (kind, id, field).
+      // Idempotency on merged result and order independence across all 6 flat permutations
+      expect(canonicalOf(mergeExtractionsWithCitations([flat.extraction]).extraction)).toBe(
+        canonicalOf(flat.extraction),
+      );
+      for (const perm of permutations([a, b, c])) {
+        expect(canonicalOf(mergeExtractionsWithCitations(perm))).toBe(canonicalOf(flat));
+      }
+
+      // m3: Every merge result emits unique citation keys per node and per edge
+      for (const res of [flat, ab, bc, leftNested, rightNested]) {
+        for (const node of res.extraction.nodes) {
+          if (node.citations) {
+            const citeKeys = node.citations.map((ct) => extractionCitationKey(ct));
+            expect(new Set(citeKeys).size).toBe(citeKeys.length);
+          }
+        }
+        for (const edge of res.extraction.edges) {
+          if (edge.citations) {
+            const citeKeys = edge.citations.map((ct) => extractionCitationKey(ct));
+            expect(new Set(citeKeys).size).toBe(citeKeys.length);
+          }
+        }
+      }
+
+      // Forwarded conflicts from inner + outer cover the flat conflict triples (kind, id, field) for both nestings.
       const flatTriples = new Set(flat.conflicts.map((x) => `${x.kind}\0${x.id}\0${x.field}`));
       const leftTriples = new Set(
         [...ab.conflicts, ...leftNested.conflicts].map((x) => `${x.kind}\0${x.id}\0${x.field}`),
       );
+      const rightTriples = new Set(
+        [...bc.conflicts, ...rightNested.conflicts].map((x) => `${x.kind}\0${x.id}\0${x.field}`),
+      );
       for (const t of flatTriples) {
         expect(leftTriples.has(t)).toBe(true);
+        expect(rightTriples.has(t)).toBe(true);
       }
       return { flat, ab, leftNested, bc, rightNested };
     };
@@ -1110,6 +1290,109 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
     const fooRep = mergedCites.find((c) => extractionCitationKey(c) === "d\u00001\u0000t:foo")!;
     expect(fooRep.excerpt).toBe("foo");
     expect(canonicalOf(unionExtractionCitations([mergedCites]))).toBe(canonicalOf(mergedCites));
+
+    // 8. M2 (P1, P8): Default per-file scope with non-string edge source_file preserves associativity, idempotency, and order independence
+    const nonStrSfEdgeExt: Extraction = {
+      nodes: [],
+      edges: [
+        {
+          source: "a",
+          target: "b",
+          relation: "r",
+          confidence: "EXTRACTED",
+          source_file: 5 as unknown as string,
+        },
+      ],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+    const m2Res = assertAssociative(nonStrSfEdgeExt, nonStrSfEdgeExt, nonStrSfEdgeExt);
+    expect(m2Res.flat.extraction.edges).toHaveLength(1);
+    expect(m2Res.flat.extraction.edges[0]!.source_file).toBe(5);
+    expect(
+      canonicalOf(
+        mergeExtractionsWithCitations([
+          mergeExtractionsWithCitations([nonStrSfEdgeExt, nonStrSfEdgeExt]).extraction,
+          nonStrSfEdgeExt,
+        ]),
+      ),
+    ).toBe(canonicalOf(mergeExtractionsWithCitations([nonStrSfEdgeExt, nonStrSfEdgeExt, nonStrSfEdgeExt])));
+    expect(
+      canonicalOf(
+        mergeExtractionsWithCitations([
+          mergeExtractionsWithCitations([nonStrSfEdgeExt]).extraction,
+          nonStrSfEdgeExt,
+        ]),
+      ),
+    ).toBe(canonicalOf(mergeExtractionsWithCitations([nonStrSfEdgeExt, nonStrSfEdgeExt])));
+
+    const strSfEdgeExt: Extraction = {
+      nodes: [],
+      edges: [{ source: "a", target: "b", relation: "r", confidence: "EXTRACTED", source_file: "5" }],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+    const emptySfEdgeExt: Extraction = {
+      nodes: [],
+      edges: [{ source: "a", target: "b", relation: "r", confidence: "EXTRACTED", source_file: "" }],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+    const p8Res = assertAssociative(nonStrSfEdgeExt, strSfEdgeExt, emptySfEdgeExt);
+    expect(p8Res.flat.extraction.edges).toHaveLength(2);
+    expect(p8Res.flat.extraction.edges.map((e) => e.source_file)).toEqual([5, "5"]);
+
+    // 9. M3 (P2): assertion_basis string with a lone surrogate is treated as absent on that copy, keeping associativity & idempotency
+    const surrAbA: Extraction = {
+      nodes: [],
+      edges: [
+        {
+          source: "a",
+          target: "b",
+          relation: "r",
+          confidence: "EXTRACTED",
+          source_file: "f.pdf",
+          assertion_basis: "\ud800",
+        },
+      ],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+    const surrAbB: Extraction = {
+      nodes: [],
+      edges: [
+        {
+          source: "a",
+          target: "b",
+          relation: "r",
+          confidence: "EXTRACTED",
+          source_file: "f.pdf",
+          assertion_basis: "x",
+        },
+      ],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+    const surrAbC: Extraction = {
+      nodes: [],
+      edges: [
+        {
+          source: "a",
+          target: "b",
+          relation: "r",
+          confidence: "EXTRACTED",
+          source_file: "f.pdf",
+        },
+      ],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+    const singleSurr = mergeExtractionsWithCitations([surrAbA]);
+    expect("assertion_basis" in singleSurr.extraction.edges[0]!).toBe(false);
+    expect(canonicalOf(mergeExtractionsWithCitations([singleSurr.extraction]))).toBe(canonicalOf(singleSurr));
+    expect(canonicalOf(mergeExtractionsWithCitations([surrAbA, surrAbA]))).toBe(canonicalOf(singleSurr));
+    const m3Res = assertAssociative(surrAbA, surrAbC, surrAbB);
+    expect(m3Res.flat.extraction.edges[0]!.assertion_basis).toBe("x");
   });
 
   it("F-EN4-T8: legacy mergeExtractions(base, extra) characterization golden", () => {
@@ -1229,49 +1512,74 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
 
     const legacy = mergeExtractions(base, extra);
 
-    // 1. Last node per id wins wholesale (citations on base node-z are gone); insertion order preserved
-    expect(legacy.nodes.map((n) => n.id)).toEqual(["node-z", "node-a", "node-m"]);
-    expect(legacy.nodes[0]).toEqual({
-      id: "node-z",
-      label: "Zeta Extra Wins Wholesale",
-      file_type: "document",
-      source_file: "b.pdf",
+    // m3: Pin the complete legacy output object
+    expect(legacy).toEqual({
+      provenance: {
+        source_owner: "git",
+        source_id: "repo-extra",
+        observed_at: "2026-02-01T00:00:00.000Z",
+        source_hash: "2222222",
+        adapter_version: "v1",
+      },
+      nodes: [
+        {
+          id: "node-z",
+          label: "Zeta Extra Wins Wholesale",
+          file_type: "document",
+          source_file: "b.pdf",
+        },
+        {
+          id: "node-a",
+          label: "Alpha Only Base",
+          file_type: "document",
+          source_file: "a.pdf",
+        },
+        {
+          id: "node-m",
+          label: "Middle Extra",
+          file_type: "document",
+          source_file: "b.pdf",
+        },
+      ],
+      edges: [
+        {
+          source: "node-z",
+          target: "node-a",
+          relation: "links_to",
+          confidence: "INFERRED",
+          source_file: "a.pdf",
+          weight: 9,
+        },
+        {
+          source: "node-z",
+          target: "node-a",
+          relation: "links_to",
+          confidence: "EXTRACTED",
+          source_file: "b.pdf",
+          weight: 2,
+        },
+      ],
+      hyperedges: [
+        {
+          id: "he-1",
+          label: "Group 1",
+          nodes: ["node-z", "node-a"],
+          relation: "grouped",
+          confidence: "EXTRACTED",
+          source_file: "a.pdf",
+        },
+        {
+          id: "he-1",
+          label: "Group 1 Duplicate Kept",
+          nodes: ["node-m", "node-a"],
+          relation: "grouped",
+          confidence: "INFERRED",
+          source_file: "b.pdf",
+        },
+      ],
+      input_tokens: 155,
+      output_tokens: 65,
     });
-    expect(legacy.nodes[0]!.citations).toBeUndefined();
-
-    // 2. Edges keyed per source_file: a.pdf overwritten by extra, b.pdf kept
-    expect(legacy.edges).toEqual([
-      {
-        source: "node-z",
-        target: "node-a",
-        relation: "links_to",
-        confidence: "INFERRED",
-        source_file: "a.pdf",
-        weight: 9,
-      },
-      {
-        source: "node-z",
-        target: "node-a",
-        relation: "links_to",
-        confidence: "EXTRACTED",
-        source_file: "b.pdf",
-        weight: 2,
-      },
-    ]);
-
-    // 3. Hyperedges concatenated with duplicates kept
-    expect(legacy.hyperedges).toHaveLength(2);
-    expect(legacy.hyperedges![0]!.label).toBe("Group 1");
-    expect(legacy.hyperedges![1]!.label).toBe("Group 1 Duplicate Kept");
-
-    // 4. extra.provenance beats base.provenance
-    expect(legacy.provenance?.source_id).toBe("repo-extra");
-
-    // 5. Tokens summed
-    expect(legacy.input_tokens).toBe(155);
-    expect(legacy.output_tokens).toBe(65);
-
-    // 6. Ontology arrays dropped from output even when present in inputs
     expect("canonical_entities" in legacy).toBe(false);
     expect("mentions" in legacy).toBe(false);
     expect("occurrences" in legacy).toBe(false);
@@ -1280,7 +1588,10 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
   });
 
   it("F-EN4-T9: all Extraction members, totality, own __proto__ keys, and non-string citation key fields", () => {
-    // 1. Empty input []
+    // 1. Empty input [] and root barrel re-exports
+    expect(typeof rootApi.mergeExtractionsWithCitations).toBe("function");
+    expect(typeof rootApi.extractionCitationKey).toBe("function");
+    expect(typeof rootApi.unionExtractionCitations).toBe("function");
     expect(mergeExtractionsWithCitations([])).toEqual({
       extraction: {
         nodes: [],
@@ -1459,20 +1770,38 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
     expect(fullRes.extraction.occurrences![0]!.source_refs).toEqual(["sr-1", "sr-2"]);
     expect(fullRes.extraction.mappings![0]!.assertion_basis).toEqual(["basis-1", "basis-2"]);
 
-    // Evidence ev-1 merged, numeric confidence 0.4 wins by smallest rendering with conflict; all evidence_refs resolve
+    // Evidence ev-1 merged, numeric confidence 0.4 wins by smallest rendering with conflict; all evidence_refs resolve across all records
     const evIds = new Set(fullRes.extraction.evidence!.map((e) => e.id));
     expect(evIds).toEqual(new Set(["ev-1", "ev-2"]));
     const ev1 = fullRes.extraction.evidence!.find((e) => e.id === "ev-1")!;
     expect(ev1.confidence).toBe(0.4);
     expect(ev1.quote).toBe("Quote A");
-    for (const ref of fullRes.extraction.nodes[0]!.evidence_refs ?? []) {
-      expect(evIds.has(ref)).toBe(true);
+    for (const record of [
+      ...fullRes.extraction.nodes,
+      ...(fullRes.extraction.canonical_entities ?? []),
+      ...(fullRes.extraction.mentions ?? []),
+      ...(fullRes.extraction.occurrences ?? []),
+      ...(fullRes.extraction.mappings ?? []),
+    ]) {
+      for (const ref of record.evidence_refs ?? []) {
+        expect(evIds.has(ref)).toBe(true);
+      }
     }
 
     const conflictKinds = new Set<ExtractionMergeConflict["kind"]>(fullRes.conflicts.map((c) => c.kind));
     expect(conflictKinds).toEqual(
       new Set(["provenance", "node", "hyperedge", "canonical_entity", "mention", "occurrence", "evidence", "mapping"]),
     );
+    const provConflicts = fullRes.conflicts.filter((c) => c.kind === "provenance");
+    expect(provConflicts).toHaveLength(1);
+    expect(provConflicts[0]).toEqual({
+      kind: "provenance",
+      id: "provenance",
+      field: "provenance",
+      values: [canonicalOf(full2.provenance), canonicalOf(full1.provenance)],
+      resolved: canonicalOf(full2.provenance),
+      sourceFiles: [""],
+    });
     const evConfConflict = fullRes.conflicts.find(
       (c) => c.kind === "evidence" && c.id === "ev-1" && c.field === "confidence",
     );
@@ -1485,7 +1814,9 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
       sourceFiles: ["doc-1.pdf", "doc-2.pdf"],
     });
 
-    // 3. Totality: NaN confidence_score, {community: undefined}, lone surrogate in citation excerpt, non-object node, node without id
+    // 3. Totality (§4(c)): NaN confidence_score, {community: undefined}, lone surrogate in citation excerpt,
+    // non-object node, node without id, edges without valid string source/target/relation,
+    // missing/non-array nodes/edges -> [], and non-array optional members -> absent
     const malformed: Extraction = {
       nodes: [
         null as unknown as GraphNode,
@@ -1505,6 +1836,11 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
         },
       ],
       edges: [
+        null as unknown as GraphEdge,
+        { target: "valid-node", relation: "links_to", confidence: "EXTRACTED", source_file: "doc.pdf" } as unknown as GraphEdge,
+        { source: 123, target: "valid-node", relation: "links_to", confidence: "EXTRACTED", source_file: "doc.pdf" } as unknown as GraphEdge,
+        { source: "valid-node", target: "", relation: "links_to", confidence: "EXTRACTED", source_file: "doc.pdf" } as unknown as GraphEdge,
+        { source: "valid-node", target: "valid-node", relation: "bad\ud800rel", confidence: "EXTRACTED", source_file: "doc.pdf" } as unknown as GraphEdge,
         {
           source: "valid-node",
           target: "valid-node",
@@ -1514,11 +1850,21 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
           confidence_score: Number.NaN,
         },
       ],
+      hyperedges: "not-an-array" as unknown as Extraction["hyperedges"],
+      canonical_entities: 42 as unknown as Extraction["canonical_entities"],
       input_tokens: 5,
       output_tokens: 2,
     };
+    const missingArraysExt = {
+      nodes: undefined,
+      edges: "not-an-array",
+      hyperedges: { bad: true },
+      mentions: "not-an-array",
+      input_tokens: Number.NaN,
+      output_tokens: -0,
+    } as unknown as Extraction;
 
-    const totRes = mergeExtractionsWithCitations([malformed]);
+    const totRes = mergeExtractionsWithCitations([malformed, missingArraysExt]);
     expect(totRes.extraction.nodes).toHaveLength(1);
     const validNode = totRes.extraction.nodes[0]!;
     expect(validNode.id).toBe("valid-node");
@@ -1526,8 +1872,21 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
     expect("confidence_score" in validNode).toBe(false);
     expect(validNode.citations).toHaveLength(1);
     expect(validNode.citations![0]!.excerpt).toBe("good excerpt");
+    expect(totRes.extraction.edges).toHaveLength(1);
     expect("confidence_score" in totRes.extraction.edges[0]!).toBe(false);
+    expect("hyperedges" in totRes.extraction).toBe(false);
+    expect("canonical_entities" in totRes.extraction).toBe(false);
+    expect("mentions" in totRes.extraction).toBe(false);
     expect(() => canonicalBytes(totRes.extraction)).not.toThrow();
+
+    const onlyMissingArrays = mergeExtractionsWithCitations([missingArraysExt]);
+    expect(onlyMissingArrays.extraction).toEqual({
+      nodes: [],
+      edges: [],
+      input_tokens: 0,
+      output_tokens: 0,
+    });
+    expect("hyperedges" in onlyMissingArrays.extraction).toBe(false);
 
     // 4. Own "__proto__" keys via JSON.parse at top level and inside properties{}
     const protoNode1 = JSON.parse(
@@ -1578,5 +1937,108 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
     ]);
     expect(numCiteRes.extraction.nodes[0]!.citations).toHaveLength(1);
     expect(() => canonicalBytes(numCiteRes.extraction)).not.toThrow();
+
+    // 6. M1 (P3a-P3f): JSON objects with own non-callable toString in edge source_file and citation page never throw
+    const badToStringObj = JSON.parse('{"toString":1}') as unknown;
+    const badToStringArr = JSON.parse('[{"toString":2}]') as unknown;
+    const nullProtoPage = Object.create(null) as unknown;
+
+    const citeBadPageObj: OntologyCitation = {
+      source_file: "doc.pdf",
+      docSha: "SHA-M1",
+      page: badToStringObj as number,
+      excerpt: "clause one",
+    };
+    const citeBadPageArr: OntologyCitation = {
+      source_file: "doc.pdf",
+      docSha: "SHA-M1",
+      page: badToStringArr as number,
+      excerpt: "clause two",
+    };
+    const citeNullProto: OntologyCitation = {
+      source_file: "doc.pdf",
+      docSha: "SHA-M1",
+      page: nullProtoPage as number,
+      excerpt: "clause three",
+    };
+    expect(extractionCitationKey(citeBadPageObj)).toBe("sha-m1\0\0t:clause one");
+    expect(extractionCitationKey(citeBadPageArr)).toBe("sha-m1\0\0t:clause two");
+    expect(extractionCitationKey(citeNullProto)).toBe("sha-m1\0\0t:clause three");
+
+    const unionBadPages = unionExtractionCitations([[citeBadPageObj], [citeBadPageArr]]);
+    expect(unionBadPages).toHaveLength(2);
+    expect(canonicalOf(unionExtractionCitations([[citeBadPageArr], [citeBadPageObj]]))).toBe(
+      canonicalOf(unionBadPages),
+    );
+    expect(canonicalOf(unionExtractionCitations([unionBadPages]))).toBe(canonicalOf(unionBadPages));
+
+    const m1ExtA: Extraction = {
+      nodes: [
+        {
+          id: "node-m1",
+          label: "M1",
+          file_type: "document",
+          source_file: "doc.pdf",
+          citations: [citeBadPageObj],
+        },
+      ],
+      edges: [
+        {
+          source: "node-m1",
+          target: "node-m1",
+          relation: "links_to",
+          confidence: "EXTRACTED",
+          source_file: badToStringObj as string,
+          citations: [citeBadPageObj],
+        },
+      ],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+    const m1ExtB: Extraction = {
+      nodes: [
+        {
+          id: "node-m1",
+          label: "M1",
+          file_type: "document",
+          source_file: "doc.pdf",
+          citations: [citeBadPageArr],
+        },
+      ],
+      edges: [
+        {
+          source: "node-m1",
+          target: "node-m1",
+          relation: "links_to",
+          confidence: "EXTRACTED",
+          source_file: badToStringObj as string,
+          citations: [citeBadPageArr],
+        },
+      ],
+      input_tokens: 0,
+      output_tokens: 0,
+    };
+
+    for (const scope of ["per-source-file", "cross-document"] as const) {
+      const m1MergedAB = mergeExtractionsWithCitations([m1ExtA, m1ExtB], { edgeKeyScope: scope });
+      const m1MergedBA = mergeExtractionsWithCitations([m1ExtB, m1ExtA], { edgeKeyScope: scope });
+      expect(m1MergedAB.extraction.edges).toHaveLength(1);
+      expect(m1MergedAB.extraction.nodes[0]!.citations).toHaveLength(2);
+      expect(m1MergedAB.extraction.nodes[0]!.citation_count).toBe(2);
+      expect(m1MergedAB.extraction.edges[0]!.citations).toHaveLength(2);
+      expect(m1MergedAB.extraction.edges[0]!.citation_count).toBe(2);
+      expect(canonicalOf(m1MergedAB)).toBe(canonicalOf(m1MergedBA));
+      // Idempotency and associativity
+      expect(
+        canonicalOf(mergeExtractionsWithCitations([m1MergedAB.extraction], { edgeKeyScope: scope })),
+      ).toBe(canonicalOf(m1MergedAB));
+      expect(
+        canonicalOf(
+          mergeExtractionsWithCitations([m1MergedAB.extraction, m1ExtA], { edgeKeyScope: scope }),
+        ),
+      ).toBe(
+        canonicalOf(mergeExtractionsWithCitations([m1ExtA, m1ExtB, m1ExtA], { edgeKeyScope: scope })),
+      );
+    }
   });
 });
