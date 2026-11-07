@@ -1,0 +1,22 @@
+{
+  "format": "engram.archi-manifest/1",
+  "language": "fr",
+  "owningRepo": "entity:repo-h2a",
+  "document": "document.json",
+  "views": [
+    "view-specs/deploiement-hosts.json",
+    "view-specs/roles-hosts.json"
+  ],
+  "profilePins": [
+    {
+      "id": "archi",
+      "version": "1.0.0",
+      "contentDigest": "81ed1a11925f9bb1d644a839cad788555ffeea876c8c09d2d0a34d6981e8b344"
+    }
+  ],
+  "viewSchemaPin": {
+    "id": "diagram-view-schema",
+    "version": "2",
+    "contentDigest": "50c97fc87a9546facff86f2deab8fdb99073419f43eef09958b96225367037ef"
+  }
+}

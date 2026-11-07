@@ -1,0 +1,38 @@
+{
+  "format": "engram.archi-view/1",
+  "viewId": "view:roles-hosts",
+  "activeHierarchy": "archi-dossier-hosts",
+  "draw": [
+    "entity:api-h2a",
+    "entity:api-memory",
+    "entity:api-track",
+    "entity:art-branch",
+    "entity:art-track-op",
+    "entity:cmp-control",
+    "entity:host-poste",
+    "entity:pkg-h2a",
+    "entity:pkg-plugin",
+    "entity:pkg-track",
+    "entity:rt-agy",
+    "entity:rt-claude",
+    "entity:rt-codex",
+    "entity:rt-gemini",
+    "entity:rt-h2a",
+    "entity:rt-hermes",
+    "entity:rt-muse",
+    "entity:rt-opencode",
+    "entity:rt-track",
+    "entity:rt-vibe",
+    "entity:st-events",
+    "entity:svc-live",
+    "entity:sys-engram",
+    "entity:sys-h2a",
+    "entity:sys-track"
+  ],
+  "collapsed": [
+    "entity:host-poste",
+    "entity:pkg-h2a",
+    "entity:pkg-plugin",
+    "entity:sys-engram"
+  ]
+}
