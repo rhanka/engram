@@ -11,6 +11,7 @@ import {
   ARCHIMATE_MATRIX_CELLS,
   RELATION_KEY,
 } from "./diagram-matrix-data.js";
+import { ARCHI_V1 } from "./archi-profile.js";
 
 // ---------------------------------------------------------------------------
 // Shared native declaration helpers (spec Appendix A.4 recipe, transcribed)
@@ -334,9 +335,10 @@ export function diagramPresentationBinding(schemaPin: Pin): ContractBinding {
   return { artifactKind: "contract", schemaPin, compatibilityMatrixVersion: DIAGRAM_PRESENTATION_COMPATIBILITY };
 }
 
-/** All governed @2 profiles of this lot, keyed by ProfileId. */
+/** All governed @2 profiles of this lot (plus proposed archi@1 appended last), keyed by ProfileId. */
 export const GOVERNED_PROFILES: Readonly<Record<string, GovernedProfile>> = {
   "generic@2": GENERIC_V2,
   "archimate@2": ARCHIMATE_V2,
   "uml@2": UML_V2,
+  "archi@1": ARCHI_V1,
 };
