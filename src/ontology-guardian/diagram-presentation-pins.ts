@@ -30,8 +30,10 @@ export const PRESENTATION_PIN_MISMATCH = "presentation-pin-mismatch" as const;
 
 /** Qualified DS source repository (conductor-verified). */
 export const DS_REPOSITORY = "rhanka/sent-tech-design-system" as const;
-/** Immutable commit pinning the transitive DS sources (conductor-verified). */
-export const DS_COMMIT = "e3bc10cc9e59d48bb807afc41173ba83f6698940" as const;
+/** Immutable commit pinning the transitive DS sources (entry revision 3, fold-capable). */
+export const DS_COMMIT = "7c5a8c82bf2abc71bf0963e3fcfc395c48fcf6af" as const;
+/** Immutable commit of catalog entry revision 2 (frozen for entry-2 byte reproducibility). */
+export const DS_COMMIT_ENTRY_2 = "e3bc10cc9e59d48bb807afc41173ba83f6698940" as const;
 
 /** Schema adapter entry file (bound to schemaPin f13d5957…). */
 export const DS_ADAPTER_PATH = "packages/diagram-core/src/presentation-validate.ts" as const;
@@ -50,6 +52,19 @@ export const PINNED_ADAPTER_REF =
 /** Qualified compatibility.renderer pinned reference (one per role). */
 export const PINNED_RENDERER_REF =
   `ds:${DS_REPOSITORY}/${DS_RENDERER_PATH}@${DS_COMMIT}#sha256=${DS_RENDERER_SHA256}` as const;
+
+/** Entry-2 compatibility.adapter pinned reference at DS_COMMIT_ENTRY_2. */
+export const PINNED_ADAPTER_REF_ENTRY_2 =
+  `ds:${DS_REPOSITORY}/${DS_ADAPTER_PATH}@${DS_COMMIT_ENTRY_2}#sha256=${DS_ADAPTER_SHA256}` as const;
+/** Entry-2 compatibility.renderer pinned reference at DS_COMMIT_ENTRY_2. */
+export const PINNED_RENDERER_REF_ENTRY_2 =
+  `ds:${DS_REPOSITORY}/${DS_RENDERER_PATH}@${DS_COMMIT_ENTRY_2}#sha256=${DS_RENDERER_SHA256}` as const;
+
+/** Entry-2 qualified compatibility carrier (frozen at DS_COMMIT_ENTRY_2). */
+export const QUALIFIED_COMPATIBILITY_ENTRY_2 = {
+  renderer: PINNED_RENDERER_REF_ENTRY_2,
+  adapter: PINNED_ADAPTER_REF_ENTRY_2,
+} as const;
 
 /** Qualified compatibility carrier replacing the transitional strings. */
 export const QUALIFIED_COMPATIBILITY = {

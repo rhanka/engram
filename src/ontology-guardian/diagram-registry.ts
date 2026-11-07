@@ -24,7 +24,11 @@ import {
   UML_MIGRATION_ID,
 } from "./diagram-migrations.js";
 import { DIAGRAM_PRESENTATION_CONTRACT_SCHEMA, DIAGRAM_SEMANTIC_SCHEMA } from "./diagram-schemas.js";
-import { PRESENTATION_PIN_MISMATCH, QUALIFIED_COMPATIBILITY } from "./diagram-presentation-pins.js";
+import {
+  PRESENTATION_PIN_MISMATCH,
+  QUALIFIED_COMPATIBILITY,
+  QUALIFIED_COMPATIBILITY_ENTRY_2,
+} from "./diagram-presentation-pins.js";
 
 export const DIAGRAM_NAMESPACE = "diagram" as const;
 export const DIAGRAM_OWNER = "engram" as const;
@@ -348,7 +352,7 @@ export const ENVELOPE_CONTRACT = envelopeOf(
 
 export const PAYLOAD_CONTRACT_QUALIFIED: OntologyPayload = {
   ...PAYLOAD_CONTRACT,
-  compatibility: { ...QUALIFIED_COMPATIBILITY },
+  compatibility: { ...QUALIFIED_COMPATIBILITY_ENTRY_2 },
   lineage: { parents: [], mappings: [], migrations: [] },
 };
 
@@ -357,6 +361,21 @@ export const ENVELOPE_CONTRACT_QUALIFIED = envelopeOf(
   "Governed typed presentation contract with qualified DS adapter/renderer refs (entry revision 2; revises entry 1).",
   { ...DIAGRAM_PRESENTATION_CONTRACT_SCHEMA, schema: DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.schema as Record<string, unknown> },
   "contracts/diagram-presentation-1.json", CONTRACT_CONTENT, PAYLOAD_CONTRACT_QUALIFIED, "2",
+);
+
+// --- diagram-presentation@1 catalog entry revision 3 (fold-capable DS refs at 7c5a8c82) ---
+
+export const PAYLOAD_CONTRACT_FOLD: OntologyPayload = {
+  ...PAYLOAD_CONTRACT,
+  compatibility: { ...QUALIFIED_COMPATIBILITY },
+  lineage: { parents: [], mappings: [], migrations: [] },
+};
+
+export const ENVELOPE_CONTRACT_FOLD = envelopeOf(
+  "engram-diagram-presentation-3", "diagram-presentation@1",
+  "Governed typed presentation contract with qualified DS adapter/renderer refs (entry revision 3; revises entry 2).",
+  { ...DIAGRAM_PRESENTATION_CONTRACT_SCHEMA, schema: DIAGRAM_PRESENTATION_CONTRACT_SCHEMA.schema as Record<string, unknown> },
+  "contracts/diagram-presentation-1.json", CONTRACT_CONTENT, PAYLOAD_CONTRACT_FOLD, "3",
 );
 
 /**
@@ -377,6 +396,15 @@ export const CONTRACT_QUALIFIED_REVISION: CatalogRevisionLink = {
     id: "engram-diagram-presentation-1",
     entryVersion: "1",
     entryDigest: "a83e2c1d0ea9612d38a0b3ad1a0f0ae4e93e7f7a10fcee49ab57a6a06659da0a",
+  },
+};
+
+export const CONTRACT_FOLD_REVISION: CatalogRevisionLink = {
+  successor: { id: "engram-diagram-presentation-3", entryVersion: "3" },
+  predecessor: {
+    id: "engram-diagram-presentation-2",
+    entryVersion: "2",
+    entryDigest: "c430ff66df3b04e6d792dd1a60e40e01dbeaffa47b206da0021a937ca83fa4f9",
   },
 };
 
