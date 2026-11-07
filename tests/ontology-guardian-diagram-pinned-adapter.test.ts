@@ -4,7 +4,6 @@
 // schemaPin f13d5957…; transitional/malformed pins refuse with
 // presentation-pin-mismatch. Entry-byte hashes read the DS clone at the
 // pinned commit; they skip (never fake-pass) when the clone is absent.
-import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import path from "node:path";
@@ -318,10 +317,16 @@ describe.skipIf(!dsAvailable)(
       expect(sha256HexBytes(dsEntryBytes(parsePinnedDsRef(QUALIFIED_COMPATIBILITY_ENTRY_2.renderer)))).toBe(DS_RENDERER_SHA256);
       expect(sha256HexBytes(dsEntryBytes({ repository: DS_REPOSITORY, commit: DS_COMMIT, path: FOLD_PATH, sha256: FOLD_SHA256 }))).toBe(FOLD_SHA256);
     });
+  },
+);
 
-    it("replays a folded view with projectView, validateView and validateDiagramPresentation returning [] at DS_COMMIT", async () => {
+describe.skipIf(!dsAvailable)(
+  `DS fold-projection PIN mechanism probe at the pinned commits${dsAvailable ? "" : " (skipped: DS clone absent at " + DS_CLONE + ")"}`,
+  () => {
+    async function bundleDiagramCore(commit: string) {
+      const { build } = await import("esbuild");
       const baseDir = "packages/diagram-core/src";
-      const gitShow = (p: string): string => execFileSync("git", ["-C", DS_CLONE, "show", `${DS_COMMIT}:${p}`], { encoding: "utf8" });
+      const gitShow = (p: string): string => execFileSync("git", ["-C", DS_CLONE, "show", `${commit}:${p}`], { encoding: "utf8" });
       const res = await build({
         stdin: { contents: gitShow(`${baseDir}/index.ts`), resolveDir: "/", sourcefile: `${baseDir}/index.ts`, loader: "ts" },
         bundle: true, format: "esm", platform: "node", write: false,
@@ -330,7 +335,11 @@ describe.skipIf(!dsAvailable)(
           b.onLoad({ filter: /.*/, namespace: "git" }, (a) => ({ contents: gitShow(a.path), loader: "ts" }));
         } }],
       });
-      const core = await import(`data:text/javascript;base64,${Buffer.from(res.outputFiles[0]!.text).toString("base64")}`);
+      return import(`data:text/javascript;base64,${Buffer.from(res.outputFiles[0]!.text).toString("base64")}`);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function fixtureFor(core: any) {
       const registry = core.createProfileRegistry([core.generic2Profile]);
       const options = { registry, bindings: { schemaVersion: "1", rows: [core.bindingRowFor(core.generic2Profile, core.SCOPED_CONSTRAINTS_ADAPTER)] } };
       const box = { x: 0, y: 0, width: 460, height: 200 };
@@ -371,9 +380,28 @@ describe.skipIf(!dsAvailable)(
           },
         },
       };
+      return { doc, sourceView, options };
+    }
+
+    it("probes the PIN fold-projection mechanism with generic@2 (literal ARCHI1 + FIX + folded Rôles replay in lots 2–3, spec:446-447): [] at DS_COMMIT and occurrence-endpoint-mismatch at DS_COMMIT_ENTRY_2", async () => {
+      const core = await bundleDiagramCore(DS_COMMIT);
+      const { doc, sourceView, options } = fixtureFor(core);
       const folded = core.projectView(doc, sourceView, ["occurrence:o-z"]);
+      expect(folded.relationOccurrences["occurrence:e-r2"].endpoints[0]).toEqual({
+        role: "source", occurrence: "occurrence:o-z", semanticTarget: "entity:a", sourceOccurrence: "occurrence:o-a",
+      });
       expect(core.validateView(folded, doc, options)).toEqual([]);
       expect(core.validateDiagramPresentation(doc, folded, options)).toEqual([]);
+      // PIN:8 and PIN:10 contrast at entry 2's DS commit
+      const core2 = await bundleDiagramCore(DS_COMMIT_ENTRY_2);
+      expect(core2.projectView).toBeUndefined();
+      const fx2 = fixtureFor(core2);
+      const refused = core2.validateView(folded, fx2.doc, fx2.options);
+      expect(refused.length).toBeGreaterThan(0);
+      expect(refused).toContainEqual(expect.objectContaining({
+        code: "occurrence-endpoint-mismatch",
+        path: "relationOccurrences.occurrence:e-r2.endpoints[0].occurrence",
+      }));
     });
   },
 );
