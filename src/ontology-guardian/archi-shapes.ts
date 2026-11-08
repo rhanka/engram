@@ -21,7 +21,10 @@ import { ARCHI_V1 } from "./archi-profile.js";
 import { ARCHI_CONTAINER_KINDS, type ArchiActiveHierarchy } from "./archi-cards.js";
 import type { ArchiViewSpec } from "./archi-view.js";
 
-/** Fixed repository-relative path for architecture discovery (§5.1). */
+/** Fixed repository-relative path for strict Mermaid architecture discovery (§5.1). */
+export const ARCHI_MMD_PATH = ".engram/architecture/architecture.mmd" as const;
+
+/** Fixed repository-relative path for T3 fallback JSON manifest discovery (§5.1). */
 export const ARCHI_MANIFEST_PATH = ".engram/architecture/manifest.json" as const;
 
 const LOCAL_ID_RE = /^[a-z][a-z0-9-]*$/;
@@ -107,7 +110,9 @@ export interface ArchiViewBinding {
 export interface ArchiAcceptanceSource {
   readonly repository: string;
   readonly commit: string;
-  readonly manifestPath: string;
+  readonly manifestPath:
+    | typeof ARCHI_MMD_PATH
+    | typeof ARCHI_MANIFEST_PATH;
 }
 
 /** proposed: file digest entry in ArchiAcceptance.files (§5.4). */
@@ -123,6 +128,7 @@ export interface ArchiAcceptance {
   readonly language: ArchiLanguage;
   readonly owningRepo: string;
   readonly documentPin: Pin;
+  readonly textDigest?: string;
   readonly profilePins: readonly Pin[];
   readonly cardsPin: Pin;
   readonly viewSchemaPin: Pin;
@@ -142,7 +148,7 @@ export type ArchiIJsonParseResult =
   | { readonly ok: true; readonly value: unknown }
   | { readonly ok: false; readonly pointer: string; readonly reason: string };
 
-function isWellFormedUnicodeString(s: string): boolean {
+export function isWellFormedUnicodeString(s: string): boolean {
   for (let i = 0; i < s.length; i++) {
     const code = s.charCodeAt(i);
     if (code >= 0xd800 && code <= 0xdbff) {
@@ -690,9 +696,22 @@ const VIEW_SPEC_ALLOWED_KEYS = new Set([
   "draw",
   "collapsed",
   "legend",
+  "layout",
 ]);
 const LEGEND_ALLOWED_KEYS = new Set(["legendRef", "title", "order", "tokens"]);
 const LEGEND_TOKEN_ALLOWED_KEYS = new Set(["category", "token"]);
+const LAYOUT_ALLOWED_KEYS = new Set([
+  "stretch",
+  "cardGapX",
+  "cardGapY",
+  "zoneGapX",
+  "zoneGapY",
+  "rankGap",
+  "ordering",
+  "grouping",
+]);
+const LAYOUT_GAP_KEYS = ["cardGapX", "cardGapY", "zoneGapX", "zoneGapY", "rankGap"] as const;
+const LAYOUT_GROUP_ALLOWED_KEYS = new Set(["id", "direction", "stretch", "gapAfter", "items"]);
 
 /**
  * Closed shape and §5.6 checks for ArchiViewSpec (§5.2, §5.3 stage 1, §5.6).
@@ -856,6 +875,160 @@ export function checkArchiViewSpecShape(
             diagnostics.push(
               makeArchiDiagnostic("archi-input-invalid", `/legend/tokens/${i}/token`, subjectRef, "legend.tokens token must be a non-empty string."),
             );
+          }
+        }
+      }
+    }
+  }
+
+  if ("layout" in value) {
+    const ly = value["layout"];
+    if (!isPlainRecord(ly) || Object.keys(ly).length === 0) {
+      diagnostics.push(
+        makeArchiDiagnostic("archi-input-invalid", "/layout", subjectRef, "ArchiViewSpec layout must be a non-empty object (M11, §5.2)."),
+      );
+    } else {
+      for (const k of Object.keys(ly)) {
+        if (!LAYOUT_ALLOWED_KEYS.has(k)) {
+          diagnostics.push(
+            makeArchiDiagnostic("archi-input-invalid", `/layout/${esc(k)}`, subjectRef, `Unknown field "${k}" in ArchiViewSpec.layout.`),
+          );
+        }
+      }
+      if ("stretch" in ly && typeof ly["stretch"] !== "boolean") {
+        diagnostics.push(
+          makeArchiDiagnostic("archi-input-invalid", "/layout/stretch", subjectRef, "layout.stretch must be a boolean."),
+        );
+      }
+      for (const gapKey of LAYOUT_GAP_KEYS) {
+        if (gapKey in ly) {
+          const gVal = ly[gapKey];
+          if (typeof gVal !== "number" || !Number.isSafeInteger(gVal) || gVal < 0) {
+            diagnostics.push(
+              makeArchiDiagnostic("archi-input-invalid", `/layout/${gapKey}`, subjectRef, `layout.${gapKey} must be a non-negative safe integer.`),
+            );
+          }
+        }
+      }
+      if ("ordering" in ly) {
+        const ord = ly["ordering"];
+        if (!isPlainRecord(ord) || Object.keys(ord).length === 0) {
+          diagnostics.push(
+            makeArchiDiagnostic("archi-input-invalid", "/layout/ordering", subjectRef, "layout.ordering must be a non-empty object (M11, §5.2)."),
+          );
+        } else {
+          for (const [pKey, children] of Object.entries(ord)) {
+            const pPtr = `/layout/ordering/${esc(pKey)}`;
+            if (!isValidPrefixedRef(pKey, "entity")) {
+              diagnostics.push(
+                makeArchiDiagnostic("archi-input-invalid", pPtr, subjectRef, "layout.ordering key must be a valid EntityRef (entity:<local>)."),
+              );
+            }
+            if (!Array.isArray(children)) {
+              diagnostics.push(
+                makeArchiDiagnostic("archi-input-invalid", pPtr, subjectRef, "layout.ordering entry must be an array of EntityRefs."),
+              );
+            } else {
+              const seenChildren = new Set<string>();
+              for (let i = 0; i < children.length; i++) {
+                const cItem = children[i];
+                const cPtr = `${pPtr}/${i}`;
+                if (!isValidPrefixedRef(cItem, "entity")) {
+                  diagnostics.push(
+                    makeArchiDiagnostic("archi-input-invalid", cPtr, subjectRef, "layout.ordering child must be a valid EntityRef (entity:<local>)."),
+                  );
+                } else if (seenChildren.has(cItem)) {
+                  diagnostics.push(
+                    makeArchiDiagnostic("archi-input-invalid", cPtr, cItem, `Duplicate child "${cItem}" in layout.ordering (M12, §5.2).`, cItem),
+                  );
+                } else {
+                  seenChildren.add(cItem);
+                }
+              }
+            }
+          }
+        }
+      }
+      if ("grouping" in ly) {
+        const grpList = ly["grouping"];
+        if (!Array.isArray(grpList) || grpList.length === 0) {
+          diagnostics.push(
+            makeArchiDiagnostic("archi-input-invalid", "/layout/grouping", subjectRef, "layout.grouping must be a non-empty array (M11, §5.2)."),
+          );
+        } else {
+          const seenGroupIds = new Set<string>();
+          const checkLayoutGroup = (gRaw: unknown, gPtr: string): void => {
+            if (!isPlainRecord(gRaw)) {
+              diagnostics.push(
+                makeArchiDiagnostic("archi-input-invalid", gPtr, subjectRef, "layout.grouping entry must be a plain object."),
+              );
+              return;
+            }
+            for (const k of Object.keys(gRaw)) {
+              if (!LAYOUT_GROUP_ALLOWED_KEYS.has(k)) {
+                diagnostics.push(
+                  makeArchiDiagnostic("archi-input-invalid", `${gPtr}/${esc(k)}`, subjectRef, `Unknown field "${k}" in ArchiLayoutGroup.`),
+                );
+              }
+            }
+            if (typeof gRaw["id"] !== "string" || !isValidLocalId(gRaw["id"])) {
+              diagnostics.push(
+                makeArchiDiagnostic("archi-input-invalid", `${gPtr}/id`, subjectRef, "ArchiLayoutGroup.id must match local id grammar."),
+              );
+            } else if (seenGroupIds.has(gRaw["id"])) {
+              diagnostics.push(
+                makeArchiDiagnostic("archi-input-invalid", `${gPtr}/id`, subjectRef, `Duplicate layout group id "${gRaw["id"]}" in view (M12, §5.2).`),
+              );
+            } else {
+              seenGroupIds.add(gRaw["id"]);
+            }
+            if (gRaw["direction"] !== "rows" && gRaw["direction"] !== "columns") {
+              diagnostics.push(
+                makeArchiDiagnostic("archi-input-invalid", `${gPtr}/direction`, subjectRef, 'ArchiLayoutGroup.direction must be "rows" or "columns".'),
+              );
+            }
+            if ("stretch" in gRaw && typeof gRaw["stretch"] !== "boolean") {
+              diagnostics.push(
+                makeArchiDiagnostic("archi-input-invalid", `${gPtr}/stretch`, subjectRef, "ArchiLayoutGroup.stretch must be a boolean."),
+              );
+            }
+            if (
+              "gapAfter" in gRaw &&
+              (typeof gRaw["gapAfter"] !== "number" || !Number.isSafeInteger(gRaw["gapAfter"]) || (gRaw["gapAfter"] as number) < 0)
+            ) {
+              diagnostics.push(
+                makeArchiDiagnostic("archi-input-invalid", `${gPtr}/gapAfter`, subjectRef, "ArchiLayoutGroup.gapAfter must be a non-negative safe integer."),
+              );
+            }
+            if (!Array.isArray(gRaw["items"])) {
+              diagnostics.push(
+                makeArchiDiagnostic("archi-input-invalid", `${gPtr}/items`, subjectRef, "ArchiLayoutGroup.items must be an array."),
+              );
+            } else {
+              const seenDirectRefs = new Set<string>();
+              for (let k = 0; k < gRaw["items"].length; k++) {
+                const item = gRaw["items"][k];
+                const itemPtr = `${gPtr}/items/${k}`;
+                if (typeof item === "string") {
+                  if (!isValidPrefixedRef(item, "entity")) {
+                    diagnostics.push(
+                      makeArchiDiagnostic("archi-input-invalid", itemPtr, subjectRef, "ArchiLayoutGroup item ref must be a valid EntityRef (entity:<local>)."),
+                    );
+                  } else if (seenDirectRefs.has(item)) {
+                    diagnostics.push(
+                      makeArchiDiagnostic("archi-input-invalid", itemPtr, item, `Duplicate direct entity ref "${item}" in layout group items (M12, §5.2).`, item),
+                    );
+                  } else {
+                    seenDirectRefs.add(item);
+                  }
+                } else {
+                  checkLayoutGroup(item, itemPtr);
+                }
+              }
+            }
+          };
+          for (let i = 0; i < grpList.length; i++) {
+            checkLayoutGroup(grpList[i], `/layout/grouping/${i}`);
           }
         }
       }
@@ -1131,7 +1304,8 @@ export function checkArchiViewBindingShape(value: unknown): string | null {
   return null;
 }
 
-const ACCEPTANCE_ALLOWED_KEYS = new Set([
+/** Unconditionally required keys of ArchiAcceptance (§5.4). `textDigest` is conditional on `source.manifestPath`. */
+export const REQUIRED_ACCEPTANCE_KEYS = Object.freeze([
   "format",
   "source",
   "language",
@@ -1142,6 +1316,11 @@ const ACCEPTANCE_ALLOWED_KEYS = new Set([
   "viewSchemaPin",
   "bindings",
   "files",
+] as const);
+
+const ACCEPTANCE_ALLOWED_KEYS = new Set<string>([
+  ...REQUIRED_ACCEPTANCE_KEYS,
+  "textDigest",
 ]);
 const ACCEPTANCE_SOURCE_KEYS = new Set(["repository", "commit", "manifestPath"]);
 const ACCEPTANCE_FILE_KEYS = new Set(["path", "contentDigest"]);
@@ -1155,7 +1334,7 @@ export function checkArchiAcceptanceShape(value: unknown): string | null {
   for (const k of Object.keys(value)) {
     if (!ACCEPTANCE_ALLOWED_KEYS.has(k)) return `/${esc(k)}`;
   }
-  for (const req of ACCEPTANCE_ALLOWED_KEYS) {
+  for (const req of REQUIRED_ACCEPTANCE_KEYS) {
     if (!(req in value)) return `/${esc(req)}`;
   }
   if (value["format"] !== "engram.archi-acceptance/1") return "/format";
@@ -1169,7 +1348,19 @@ export function checkArchiAcceptanceShape(value: unknown): string | null {
   if (typeof value["source"]["commit"] !== "string" || !COMMIT_HEX_RE.test(value["source"]["commit"])) {
     return "/source/commit";
   }
-  if (value["source"]["manifestPath"] !== ARCHI_MANIFEST_PATH) return "/source/manifestPath";
+  const manifestPath = value["source"]["manifestPath"];
+  if (manifestPath !== ARCHI_MMD_PATH && manifestPath !== ARCHI_MANIFEST_PATH) {
+    return "/source/manifestPath";
+  }
+  if (manifestPath === ARCHI_MMD_PATH) {
+    if (typeof value["textDigest"] !== "string" || !DIGEST_HEX_RE.test(value["textDigest"])) {
+      return "/textDigest";
+    }
+  } else {
+    if ("textDigest" in value) {
+      return "/textDigest";
+    }
+  }
   if (value["language"] !== "fr" && value["language"] !== "en") return "/language";
   if (!isValidPrefixedRef(value["owningRepo"], "entity")) return "/owningRepo";
   const dPin = checkPinClosedShape(value["documentPin"], "/documentPin");
