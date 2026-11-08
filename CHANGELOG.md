@@ -4,6 +4,10 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.26.0 (2026-11-08)
+
+- **Archi carrier for reversible exports (P-4, `engram.archi-carrier/1`).** `encodeArchiCarrier`, `decodeArchiCarrier` and `checkArchiCarrier` on the zero-dependency `@sentropic/engram/archi-mermaid` subpath: one universal frame carries the canonical strict Mermaid text with its sha256, view and fold state inside a host export (SVG, draw.io, PlantUML); decode re-checks canonical form and survives the specified host re-wraps; check yields `carrier-digest-mismatch` or `export-stale` against the committed text. `ARCHI_DIAGNOSTIC_CODES` now lists 37 codes. Host slots and visible drift stay with the design-system exporters.
+
 ## 0.25.0 (2026-11-08)
 
 - **Architecture ingestion (archi@1 lot 4).** `ingestArchitecture` reads the committed architecture at one commit through `git show`, runs the closed shapes, the I-JSON reader and the fail-closed acceptance stages, and writes the canonical records and the `ArchiAcceptance` envelope atomically (`createGitReadAt`, `createAtomicArchiWriter`), on `@sentropic/engram/archi`.
