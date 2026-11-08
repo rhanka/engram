@@ -467,7 +467,18 @@ export {
   detectGitWindow,
   extractGit,
   mergeExtractions,
+  mergeExtractionsWithCitations,
 } from "./extract-git.js";
+export type {
+  ExtractionMergeConflict,
+  ExtractionMergeConflictKind,
+  MergeExtractionsOptions,
+  MergeExtractionsResult,
+} from "./extract-git.js";
+export {
+  extractionCitationKey,
+  unionExtractionCitations,
+} from "./citations.js";
 export {
   GH_EXTRACT_ADAPTER_VERSION,
   GH_EXTRACTION_TTL,
