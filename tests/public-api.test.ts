@@ -106,6 +106,9 @@ describe("public API compatibility", () => {
     expect(typeof api.loadQualityTargetsConfig).toBe("function");
     expect(typeof api.evaluateQualityBundle).toBe("function");
     expect(typeof api.validatePrecomputedQaReportBinding).toBe("function");
+    expect(typeof api.mergeExtractionsWithCitations).toBe("function");
+    expect(typeof api.extractionCitationKey).toBe("function");
+    expect(typeof api.unionExtractionCitations).toBe("function");
   });
 
   it("accepts object-style map inputs and option objects", () => {

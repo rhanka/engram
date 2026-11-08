@@ -15,6 +15,8 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type Graph from "graphology";
+import { type JsonValue, toJsonValue } from "./json-value.js";
+import { canonicalBytes } from "./ontology-guardian/canonical.js";
 import type { OntologyCitation } from "./types.js";
 
 /** Default inline Level-1 K (most-distinct-source top-K). Spec Decision 2. */
@@ -98,6 +100,178 @@ export function unionCitations(
   }
   out.sort(compareCitations);
   return out;
+}
+
+function defineCitationProperty(target: Record<string, unknown>, key: string, value: unknown): void {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
+}
+
+function cloneCitationJsonValue(value: JsonValue): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => cloneCitationJsonValue(item));
+  }
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(value)) {
+    defineCitationProperty(out, key, cloneCitationJsonValue((value as Record<string, JsonValue>)[key]!));
+  }
+  return out;
+}
+
+function isNonBlankCitationText(value: JsonValue): boolean {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+/**
+ * F-EN4 citation identity: `docSha + page + quoteSpan|excerpt` joined with `\0`.
+ * Deliberately different from the existing `citationKey` above, which is unchanged.
+ */
+export function extractionCitationKey(citation: OntologyCitation): string {
+  if (!citation || typeof citation !== "object") {
+    return "\0\0t:";
+  }
+  const doc = typeof citation.docSha === "string" ? citation.docSha.trim().toLowerCase() : "";
+  let page: string;
+  try {
+    page = locatorPart(citation.page);
+  } catch {
+    page = "";
+  }
+  let spanOrText: string;
+  const span = citation.quoteSpan;
+  if (
+    Array.isArray(span) &&
+    span.length === 2 &&
+    typeof span[0] === "number" &&
+    Number.isFinite(span[0]) &&
+    typeof span[1] === "number" &&
+    Number.isFinite(span[1])
+  ) {
+    spanOrText = `s:${String(span[0])}:${String(span[1])}`;
+  } else {
+    let text = "";
+    for (const candidate of [citation.excerpt, citation.quote]) {
+      if (typeof candidate === "string") {
+        const trimmed = candidate.trim();
+        if (trimmed.length > 0) {
+          text = trimmed.normalize("NFC");
+          break;
+        }
+      }
+    }
+    spanOrText = `t:${text}`;
+  }
+  return [doc, page, spanOrText].join("\0");
+}
+
+function mergeExtractionCitationGroup(group: readonly Record<string, JsonValue>[]): {
+  readonly rep: OntologyCitation;
+  readonly key: string;
+  readonly rendering: string;
+} {
+  const keySet = new Set<string>();
+  for (const item of group) {
+    for (const k of Object.keys(item)) {
+      keySet.add(k);
+    }
+  }
+  const sortedKeys = [...keySet].sort();
+  const projectedRep: Record<string, JsonValue> = {};
+  const repOut: Record<string, unknown> = {};
+
+  for (const field of sortedKeys) {
+    const isTextField = field === "excerpt" || field === "quote";
+    let hasWinner = false;
+    let winnerVal: JsonValue = null;
+    let winnerRendering = "";
+    let winnerNonBlank = false;
+
+    for (const item of group) {
+      if (!Object.prototype.hasOwnProperty.call(item, field)) continue;
+      const val = item[field]!;
+      const rendering = canonicalBytes(val);
+      const nonBlank = isTextField ? isNonBlankCitationText(val) : false;
+
+      if (!hasWinner) {
+        hasWinner = true;
+        winnerVal = val;
+        winnerRendering = rendering;
+        winnerNonBlank = nonBlank;
+        continue;
+      }
+
+      if (isTextField) {
+        if (nonBlank && !winnerNonBlank) {
+          winnerVal = val;
+          winnerRendering = rendering;
+          winnerNonBlank = true;
+        } else if (nonBlank === winnerNonBlank && rendering < winnerRendering) {
+          winnerVal = val;
+          winnerRendering = rendering;
+        }
+      } else if (rendering < winnerRendering) {
+        winnerVal = val;
+        winnerRendering = rendering;
+      }
+    }
+
+    if (hasWinner) {
+      defineCitationProperty(projectedRep, field, winnerVal);
+      defineCitationProperty(repOut, field, cloneCitationJsonValue(winnerVal));
+    }
+  }
+
+  const rep = repOut as unknown as OntologyCitation;
+  return {
+    rep,
+    key: extractionCitationKey(rep),
+    rendering: canonicalBytes(projectedRep),
+  };
+}
+
+/**
+ * Order-independent union under `extractionCitationKey`.
+ * Duplicates merge field-wise; output order is total by `(extractionCitationKey, canonicalBytes)`.
+ * Inputs are not mutated; malformed or unprojectable entries are skipped.
+ */
+export function unionExtractionCitations(
+  lists: ReadonlyArray<readonly OntologyCitation[] | null | undefined>,
+): OntologyCitation[] {
+  if (!Array.isArray(lists)) return [];
+  const groups = new Map<string, Record<string, JsonValue>[]>();
+
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    for (const raw of list) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+      const projected = toJsonValue(raw);
+      if (!projected.ok) continue;
+      if (projected.value === null || typeof projected.value !== "object" || Array.isArray(projected.value)) {
+        continue;
+      }
+      const projObj = projected.value as Record<string, JsonValue>;
+      const key = extractionCitationKey(projObj as unknown as OntologyCitation);
+      let bucket = groups.get(key);
+      if (!bucket) {
+        bucket = [];
+        groups.set(key, bucket);
+      }
+      bucket.push(projObj);
+    }
+  }
+
+  const merged = [...groups.values()].map((group) => mergeExtractionCitationGroup(group));
+  merged.sort((a, b) => {
+    if (a.key !== b.key) return a.key < b.key ? -1 : 1;
+    if (a.rendering !== b.rendering) return a.rendering < b.rendering ? -1 : 1;
+    return 0;
+  });
+  return merged.map((entry) => entry.rep);
 }
 
 /**
