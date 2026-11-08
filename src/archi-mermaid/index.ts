@@ -49,6 +49,14 @@ export const ARCHI_MERMAID_DIAGNOSTIC_CODES = Object.freeze([
 
 export type ArchiMermaidDiagnosticCode = (typeof ARCHI_MERMAID_DIAGNOSTIC_CODES)[number];
 
+/** Closed 2-code diagnostic inventory for the engram.archi-carrier/1 framing API (P-4 §2, §5.5). */
+export const ARCHI_CARRIER_DIAGNOSTIC_CODES = Object.freeze([
+  "carrier-digest-mismatch",
+  "export-stale",
+] as const);
+
+export type ArchiCarrierDiagnosticCode = (typeof ARCHI_CARRIER_DIAGNOSTIC_CODES)[number];
+
 /** Narrowed EngramDiagnostic envelope returned by the engram.archi-mermaid/1 codec (P-2 r3 §7). */
 export interface ArchiMermaidDiagnostic extends EngramDiagnostic {
   readonly origin: "engram";
@@ -59,13 +67,43 @@ export interface ArchiMermaidDiagnostic extends EngramDiagnostic {
   readonly subjectRef: string;
 }
 
+/** Narrowed EngramDiagnostic envelope returned by the engram.archi-carrier/1 API (P-4 §2). */
+export interface ArchiCarrierDiagnostic extends EngramDiagnostic {
+  readonly origin: "engram";
+  readonly severity: "error";
+  readonly code: ArchiMermaidDiagnosticCode | ArchiCarrierDiagnosticCode;
+  readonly nativeCode: ArchiMermaidDiagnosticCode | ArchiCarrierDiagnosticCode;
+  readonly path: string;
+  readonly subjectRef: string;
+}
+
 /**
  * Discriminated result union returned by `parseArchiMermaid`, `printArchiMermaid`,
- * and `formatArchiMermaid`. Never throws.
+ * `formatArchiMermaid`, `encodeArchiCarrier`, `decodeArchiCarrier`, and `checkArchiCarrier`. Never throws.
  */
-export type ArchiMermaidResult<T> =
+export type ArchiMermaidResult<T, D extends EngramDiagnostic = ArchiMermaidDiagnostic> =
   | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly diagnostics: readonly [ArchiMermaidDiagnostic, ...ArchiMermaidDiagnostic[]] };
+  | { readonly ok: false; readonly diagnostics: readonly [D, ...D[]] };
+
+/** Input shape for `encodeArchiCarrier` (P-4 §2). */
+export interface ArchiCarrierEncodeInput {
+  readonly text: string;
+  readonly view: string;
+  readonly collapsed: readonly string[];
+}
+
+/** Decoded value returned by `decodeArchiCarrier` and `checkArchiCarrier` (P-4 §2). */
+export interface ArchiCarrierDecoded {
+  readonly text: string;
+  readonly view: string;
+  readonly collapsed: readonly string[];
+  readonly sha256: string;
+}
+
+/** Options for `encodeArchiCarrier`, `decodeArchiCarrier`, and `checkArchiCarrier` (P-4 §2). */
+export interface ArchiCarrierOptions {
+  readonly subjectRef?: string;
+}
 
 /**
  * Authored triple S = (ArchiManifest, NativeSemanticDocument, ArchiViewSpec[]) (P-2 r3 §1).
@@ -2900,4 +2938,626 @@ export function formatArchiMermaid(
   const parsed = parseArchiMermaid(text, { checkCanonical: check, subjectRef });
   if (!parsed.ok) return parsed;
   return printArchiMermaid(parsed.value, { subjectRef });
+}
+
+// ---------------------------------------------------------------------------
+// Module-private FIPS 180-4 UTF-8 SHA-256 & engram.archi-carrier/1 (P-4)
+// ---------------------------------------------------------------------------
+
+const DEFAULT_CARRIER_SUBJECT_REF = "archi-carrier";
+const CARRIER_ENCODE_KEYS: ReadonlySet<string> = new Set(["text", "view", "collapsed"]);
+
+const SHA256_K: readonly number[] = [
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+];
+
+function rotr32(x: number, n: number): number {
+  return (x >>> n) | (x << (32 - n));
+}
+
+function utf8BytesOf(text: string): number[] {
+  const bytes: number[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c < 0x80) {
+      bytes.push(c);
+    } else if (c < 0x800) {
+      bytes.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f));
+    } else if (c >= 0xd800 && c <= 0xdbff && i + 1 < text.length) {
+      const low = text.charCodeAt(i + 1);
+      if (low >= 0xdc00 && low <= 0xdfff) {
+        const cp = 0x10000 + (((c - 0xd800) << 10) | (low - 0xdc00));
+        bytes.push(
+          0xf0 | (cp >> 18),
+          0x80 | ((cp >> 12) & 0x3f),
+          0x80 | ((cp >> 6) & 0x3f),
+          0x80 | (cp & 0x3f),
+        );
+        i++;
+      } else {
+        bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+      }
+    } else {
+      bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+    }
+  }
+  return bytes;
+}
+
+function sha256Utf8Hex(text: string): string {
+  const bytes = utf8BytesOf(text);
+  const byteLen = bytes.length;
+  bytes.push(0x80);
+  while (bytes.length % 64 !== 56) {
+    bytes.push(0);
+  }
+  const highBits = Math.floor(byteLen / 0x20000000);
+  const lowBits = (byteLen << 3) >>> 0;
+  bytes.push(
+    (highBits >>> 24) & 0xff,
+    (highBits >>> 16) & 0xff,
+    (highBits >>> 8) & 0xff,
+    highBits & 0xff,
+    (lowBits >>> 24) & 0xff,
+    (lowBits >>> 16) & 0xff,
+    (lowBits >>> 8) & 0xff,
+    lowBits & 0xff,
+  );
+
+  let h0 = 0x6a09e667;
+  let h1 = 0xbb67ae85;
+  let h2 = 0x3c6ef372;
+  let h3 = 0xa54ff53a;
+  let h4 = 0x510e527f;
+  let h5 = 0x9b05688c;
+  let h6 = 0x1f83d9ab;
+  let h7 = 0x5be0cd19;
+
+  const w = new Int32Array(64);
+  for (let offset = 0; offset < bytes.length; offset += 64) {
+    for (let i = 0; i < 16; i++) {
+      const j = offset + i * 4;
+      w[i] =
+        ((bytes[j]! << 24) |
+          (bytes[j + 1]! << 16) |
+          (bytes[j + 2]! << 8) |
+          bytes[j + 3]!) |
+        0;
+    }
+    for (let i = 16; i < 64; i++) {
+      const w15 = w[i - 15]!;
+      const s0 = rotr32(w15, 7) ^ rotr32(w15, 18) ^ (w15 >>> 3);
+      const w2 = w[i - 2]!;
+      const s1 = rotr32(w2, 17) ^ rotr32(w2, 19) ^ (w2 >>> 10);
+      w[i] = (w[i - 16]! + s0 + w[i - 7]! + s1) | 0;
+    }
+
+    let a = h0;
+    let b = h1;
+    let c = h2;
+    let d = h3;
+    let e = h4;
+    let f = h5;
+    let g = h6;
+    let h = h7;
+
+    for (let i = 0; i < 64; i++) {
+      const s1 = rotr32(e, 6) ^ rotr32(e, 11) ^ rotr32(e, 25);
+      const ch = (e & f) ^ (~e & g);
+      const temp1 = (h + s1 + ch + SHA256_K[i]! + w[i]!) | 0;
+      const s0 = rotr32(a, 2) ^ rotr32(a, 13) ^ rotr32(a, 22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const temp2 = (s0 + maj) | 0;
+
+      h = g;
+      g = f;
+      f = e;
+      e = (d + temp1) | 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (temp1 + temp2) | 0;
+    }
+
+    h0 = (h0 + a) | 0;
+    h1 = (h1 + b) | 0;
+    h2 = (h2 + c) | 0;
+    h3 = (h3 + d) | 0;
+    h4 = (h4 + e) | 0;
+    h5 = (h5 + f) | 0;
+    h6 = (h6 + g) | 0;
+    h7 = (h7 + h) | 0;
+  }
+
+  return [h0, h1, h2, h3, h4, h5, h6, h7]
+    .map((v) => (v >>> 0).toString(16).padStart(8, "0"))
+    .join("");
+}
+
+function resolveCarrierSubjectRef(options: unknown, fallback: string): string {
+  if (options && typeof options === "object" && !Array.isArray(options)) {
+    const sr = (options as { readonly subjectRef?: unknown }).subjectRef;
+    if (typeof sr === "string" && sr.length > 0) return sr;
+  }
+  return fallback;
+}
+
+function makeCarrierRefusal<T>(
+  code: ArchiMermaidDiagnosticCode | ArchiCarrierDiagnosticCode,
+  message: string,
+  path: string,
+  subjectRef: string,
+): ArchiMermaidResult<T, ArchiCarrierDiagnostic> {
+  return {
+    ok: false,
+    diagnostics: [
+      {
+        origin: "engram",
+        severity: "error",
+        code,
+        nativeCode: code,
+        message,
+        path,
+        subjectRef,
+      },
+    ],
+  };
+}
+
+function computeDrawnContainersForView(
+  triple: ArchiSourceTriple,
+  viewSpec: ArchiViewSpec,
+): ReadonlySet<string> {
+  const drawnContainers = new Set<string>();
+  for (const entId of viewSpec.draw) {
+    const ent = triple.document.entities[entId];
+    if (!ent) continue;
+    const spec = ENTITY_SPECS.get(ent.type);
+    if (spec && spec.profile === "archi@1" && spec.container) {
+      drawnContainers.add(entId);
+    }
+  }
+  return drawnContainers;
+}
+
+function hasXmlNonCharacter(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c === 0xfffe || c === 0xffff) return true;
+  }
+  return false;
+}
+
+function normalizeFrameLinesN1ToN5(raw: string): readonly string[] {
+  // N1: CRLF and lone CR -> LF
+  const n1 = raw.replace(/\r\n?/g, "\n");
+  // N2: remove trailing SP or TAB from every line
+  let lines = n1.split("\n").map((line) => line.replace(/[ \t]+$/g, ""));
+  // N3: drop leading and trailing empty lines
+  while (lines.length > 0 && lines[0] === "") {
+    lines.shift();
+  }
+  while (lines.length > 0 && lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+  if (lines.length === 0) return [];
+  // N4: remove the longest SP/TAB prefix shared by every non-empty line
+  let sharedPrefix: string | undefined;
+  for (const line of lines) {
+    if (line.length === 0) continue;
+    let pLen = 0;
+    while (pLen < line.length && (line.charCodeAt(pLen) === 0x20 || line.charCodeAt(pLen) === 0x09)) {
+      pLen++;
+    }
+    const p = line.slice(0, pLen);
+    if (sharedPrefix === undefined) {
+      sharedPrefix = p;
+    } else {
+      const minLen = Math.min(sharedPrefix.length, p.length);
+      let k = 0;
+      while (k < minLen && sharedPrefix.charCodeAt(k) === p.charCodeAt(k)) {
+        k++;
+      }
+      sharedPrefix = sharedPrefix.slice(0, k);
+    }
+    if (sharedPrefix.length === 0) break;
+  }
+  if (sharedPrefix && sharedPrefix.length > 0) {
+    lines = lines.map((line) => (line.length > 0 ? line.slice(sharedPrefix!.length) : ""));
+  }
+  // N5: represented by `lines` joined with "\n" + trailing "\n"
+  return lines;
+}
+
+/**
+ * Encode a canonical `engram.archi-mermaid/1` text, view local id, and collapsed container set
+ * into a universal `engram.archi-carrier/1` frame (P-4 §1, §2). Never throws.
+ */
+export function encodeArchiCarrier(
+  input: unknown,
+  options?: ArchiCarrierOptions,
+): ArchiMermaidResult<string, ArchiCarrierDiagnostic> {
+  const subjectRef = resolveCarrierSubjectRef(options, DEFAULT_SUBJECT_REF);
+
+  // Step 1: Input object shape and primitive checks in listed order
+  if (!isPlainObject(input)) {
+    return makeCarrierRefusal("mermaid-strict-invalid", "Expected plain object input for encodeArchiCarrier.", "", subjectRef);
+  }
+  for (const k of Object.keys(input)) {
+    if (!CARRIER_ENCODE_KEYS.has(k)) {
+      return makeCarrierRefusal("mermaid-strict-invalid", `Unknown field '${k}' in encodeArchiCarrier input.`, `/${escPtr(k)}`, subjectRef);
+    }
+  }
+  const text = input["text"];
+  if (typeof text !== "string") {
+    return makeCarrierRefusal("mermaid-strict-invalid", "Field 'text' must be a string.", "/text", subjectRef);
+  }
+  const view = input["view"];
+  if (typeof view !== "string" || !LOCAL_RE.test(view)) {
+    return makeCarrierRefusal("mermaid-strict-invalid", "Field 'view' must match LOCAL grammar.", "/view", subjectRef);
+  }
+  const collapsed = input["collapsed"];
+  if (!Array.isArray(collapsed)) {
+    return makeCarrierRefusal("mermaid-strict-invalid", "Field 'collapsed' must be an array.", "/collapsed", subjectRef);
+  }
+
+  // Step 2: XML 1.0 non-character check (U+FFFE / U+FFFF)
+  if (hasXmlNonCharacter(text)) {
+    return makeCarrierRefusal(
+      "mermaid-strict-unrepresentable",
+      "Field 'text' contains disallowed XML 1.0 non-character (U+FFFE or U+FFFF).",
+      "/text",
+      subjectRef,
+    );
+  }
+
+  // Step 3: Parse and canonical check on text (returns codec diagnostic unshifted)
+  const parsed = parseArchiMermaid(text, { checkCanonical: true, subjectRef });
+  if (!parsed.ok) {
+    return parsed;
+  }
+
+  // Step 4: Verify "view:" + view in parsed.value.views
+  const viewId = `view:${view}`;
+  const viewSpec = parsed.value.views.find((v) => v.viewId === viewId);
+  if (!viewSpec) {
+    return makeCarrierRefusal(
+      "mermaid-strict-orphan-ref",
+      `View '${viewId}' is not declared in the document.`,
+      "/view",
+      subjectRef,
+    );
+  }
+
+  // Step 5: Per-index checks (a) invalid -> (b) orphan/non-container/undrawn -> (c) duplicate -> (d) unsorted
+  const drawnContainers = computeDrawnContainersForView(parsed.value, viewSpec);
+  const seenCollapsed = new Set<string>();
+  const collapsedRefs: string[] = [];
+
+  for (let i = 0; i < collapsed.length; i++) {
+    const item = collapsed[i];
+    const itemPath = `/collapsed/${i}`;
+    // (a) string matching ^entity:[a-z][a-z0-9-]{0,39}$
+    if (
+      typeof item !== "string" ||
+      !item.startsWith("entity:") ||
+      !LOCAL_RE.test(item.slice("entity:".length))
+    ) {
+      return makeCarrierRefusal(
+        "mermaid-strict-invalid",
+        `Invalid entity reference at /collapsed/${i}.`,
+        itemPath,
+        subjectRef,
+      );
+    }
+    // (b) in D(view)
+    if (!drawnContainers.has(item)) {
+      return makeCarrierRefusal(
+        "mermaid-strict-orphan-ref",
+        `Entity '${item}' is not a drawn archi@1 container in view '${viewId}'.`,
+        itemPath,
+        subjectRef,
+      );
+    }
+    // (c) duplicate check
+    if (seenCollapsed.has(item)) {
+      return makeCarrierRefusal(
+        "mermaid-strict-duplicate",
+        `Duplicate collapsed entity '${item}' at /collapsed/${i}.`,
+        itemPath,
+        subjectRef,
+      );
+    }
+    // (d) UTF-16 order check
+    if (i > 0 && cmpBytes(collapsedRefs[i - 1]!, item) > 0) {
+      return makeCarrierRefusal(
+        "mermaid-strict-noncanonical",
+        `Collapsed entity list is not in strictly ascending UTF-16 order at /collapsed/${i}.`,
+        itemPath,
+        subjectRef,
+      );
+    }
+    seenCollapsed.add(item);
+    collapsedRefs.push(item);
+  }
+
+  // Step 6: Map each ref via toEid, sort by cmpBytes into collapsed=, and return header + "\n" + text
+  const sha256 = sha256Utf8Hex(text);
+  const collapsedToken =
+    collapsedRefs.length === 0
+      ? "-"
+      : collapsedRefs.map(toEid).sort(cmpBytes).join(",");
+  const header = `archi-carrier 1 text=engram.archi-mermaid/1 sha256=${sha256} view=${view} collapsed=${collapsedToken}`;
+  return {
+    ok: true,
+    value: `${header}\n${text}`,
+  };
+}
+
+/**
+ * Decode and verify a universal `engram.archi-carrier/1` frame after applying
+ * host whitespace normalizations N1–N5 (P-4 §1.4, §2). Never throws.
+ */
+export function decodeArchiCarrier(
+  frame: unknown,
+  options?: ArchiCarrierOptions,
+): ArchiMermaidResult<ArchiCarrierDecoded, ArchiCarrierDiagnostic> {
+  const subjectRef = resolveCarrierSubjectRef(options, DEFAULT_CARRIER_SUBJECT_REF);
+
+  // Step 1: Non-string, empty before or after N1–N5, or forbidden characters after N1–N5
+  if (typeof frame !== "string" || frame.length === 0) {
+    return makeCarrierRefusal("mermaid-strict-invalid", "Empty or non-string carrier frame.", "/0", subjectRef);
+  }
+  const lines = normalizeFrameLinesN1ToN5(frame);
+  if (lines.length === 0) {
+    return makeCarrierRefusal("mermaid-strict-invalid", "Empty carrier frame after normalization.", "/0", subjectRef);
+  }
+
+  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+    const line = lines[lineIdx]!;
+    for (let j = 0; j < line.length; j++) {
+      const c = line.charCodeAt(j);
+      if (
+        c === 0xfeff ||
+        c === 0x09 ||
+        c === 0x0d ||
+        c <= 0x1f ||
+        (c >= 0x7f && c <= 0x9f) ||
+        c === 0xfffe ||
+        c === 0xffff
+      ) {
+        return makeCarrierRefusal(
+          "mermaid-strict-invalid",
+          "Disallowed character (BOM, TAB, CR, control char, or XML non-character) in carrier frame.",
+          `/${lineIdx}`,
+          subjectRef,
+        );
+      }
+      if (c >= 0xd800 && c <= 0xdbff) {
+        if (j + 1 >= line.length) {
+          return makeCarrierRefusal("mermaid-strict-invalid", "Lone high surrogate in carrier frame.", `/${lineIdx}`, subjectRef);
+        }
+        const next = line.charCodeAt(j + 1);
+        if (next < 0xdc00 || next > 0xdfff) {
+          return makeCarrierRefusal("mermaid-strict-invalid", "Lone high surrogate in carrier frame.", `/${lineIdx}`, subjectRef);
+        }
+        j++;
+      } else if (c >= 0xdc00 && c <= 0xdfff) {
+        return makeCarrierRefusal("mermaid-strict-invalid", "Lone low surrogate in carrier frame.", `/${lineIdx}`, subjectRef);
+      }
+    }
+  }
+
+  // Step 2: Header on line 0 (path: "/0"), split on SP and checked in §1.2 order
+  const headerTokens = lines[0]!.split(" ");
+
+  // Token 0: magic "archi-carrier"
+  if (headerTokens.length < 1 || headerTokens[0] !== "archi-carrier") {
+    return makeCarrierRefusal("mermaid-strict-invalid", "Invalid carrier magic literal on line 0.", "/0", subjectRef);
+  }
+
+  // Token 1: version (INT != 1 -> mermaid-strict-unsupported whatever follows; missing or non-INT -> mermaid-strict-invalid)
+  if (headerTokens.length < 2 || !INT_RE.test(headerTokens[1]!)) {
+    return makeCarrierRefusal("mermaid-strict-invalid", "Missing or invalid carrier version token on line 0.", "/0", subjectRef);
+  }
+  if (headerTokens[1] !== "1") {
+    return makeCarrierRefusal(
+      "mermaid-strict-unsupported",
+      `Unsupported carrier grammar version '${headerTokens[1]}'.`,
+      "/0",
+      subjectRef,
+    );
+  }
+
+  // Token 2: text=engram.archi-mermaid/1
+  if (headerTokens.length < 3 || !headerTokens[2]!.startsWith("text=")) {
+    return makeCarrierRefusal("mermaid-strict-invalid", "Missing or malformed 'text=' token in carrier header.", "/0", subjectRef);
+  }
+  const textFormat = headerTokens[2]!.slice("text=".length);
+  if (textFormat.length === 0) {
+    return makeCarrierRefusal("mermaid-strict-invalid", "Empty 'text=' value in carrier header.", "/0", subjectRef);
+  }
+  if (textFormat !== "engram.archi-mermaid/1") {
+    return makeCarrierRefusal(
+      "mermaid-strict-annotation-unknown",
+      `Unsupported carrier payload format '${textFormat}'.`,
+      "/0",
+      subjectRef,
+    );
+  }
+
+  // Token 3: sha256=<HEX64>
+  if (headerTokens.length < 4 || !headerTokens[3]!.startsWith("sha256=")) {
+    return makeCarrierRefusal("mermaid-strict-invalid", "Missing or malformed 'sha256=' token in carrier header.", "/0", subjectRef);
+  }
+  const headerSha256 = headerTokens[3]!.slice("sha256=".length);
+  if (!HEX64_RE.test(headerSha256)) {
+    return makeCarrierRefusal("mermaid-strict-invalid", "Invalid 'sha256=' hex digest in carrier header.", "/0", subjectRef);
+  }
+
+  // Token 4: view=<LOCAL>
+  if (headerTokens.length < 5 || !headerTokens[4]!.startsWith("view=")) {
+    return makeCarrierRefusal("mermaid-strict-invalid", "Missing or malformed 'view=' token in carrier header.", "/0", subjectRef);
+  }
+  const headerView = headerTokens[4]!.slice("view=".length);
+  if (!LOCAL_RE.test(headerView)) {
+    return makeCarrierRefusal("mermaid-strict-invalid", "Invalid 'view=' local id in carrier header.", "/0", subjectRef);
+  }
+
+  // Token 5: collapsed=<COLLAPSED>
+  if (headerTokens.length < 6 || !headerTokens[5]!.startsWith("collapsed=")) {
+    return makeCarrierRefusal("mermaid-strict-invalid", "Missing or malformed 'collapsed=' token in carrier header.", "/0", subjectRef);
+  }
+  const collapsedRaw = headerTokens[5]!.slice("collapsed=".length);
+  let headerCollapsedEids: string[] = [];
+  if (collapsedRaw !== "-") {
+    if (collapsedRaw.length === 0) {
+      return makeCarrierRefusal("mermaid-strict-invalid", "Empty 'collapsed=' value in carrier header.", "/0", subjectRef);
+    }
+    headerCollapsedEids = collapsedRaw.split(",");
+    for (const eid of headerCollapsedEids) {
+      if (!EID_RE.test(eid)) {
+        return makeCarrierRefusal(
+          "mermaid-strict-invalid",
+          `Invalid EID '${eid}' in carrier 'collapsed=' header token.`,
+          "/0",
+          subjectRef,
+        );
+      }
+    }
+  }
+
+  // Token 6+: seventh token fails after collapsed=
+  if (headerTokens.length > 6) {
+    return makeCarrierRefusal("mermaid-strict-invalid", "Unexpected extra token in carrier header.", "/0", subjectRef);
+  }
+
+  // Step 3: Payload (lines 1..n of the N1–N5 frame) parsed with checkCanonical: true; shift path from "/<i>" to "/<i+1>"
+  const payload = lines.length >= 2 ? `${lines.slice(1).join("\n")}\n` : "";
+  const parsed = parseArchiMermaid(payload, { checkCanonical: true, subjectRef });
+  if (!parsed.ok) {
+    const d = parsed.diagnostics[0];
+    const m = /^\/(\d+)$/.exec(d.path);
+    const shiftedPath = m ? `/${Number(m[1]) + 1}` : d.path;
+    return {
+      ok: false,
+      diagnostics: [{ ...d, path: shiftedPath }],
+    };
+  }
+
+  // Step 4: SHA-256 integrity check
+  const actualSha256 = sha256Utf8Hex(payload);
+  if (actualSha256 !== headerSha256) {
+    return makeCarrierRefusal(
+      "carrier-digest-mismatch",
+      "Carrier payload SHA-256 digest does not match header sha256.",
+      "/0",
+      subjectRef,
+    );
+  }
+
+  // Step 5: View and collapsed= semantic checks (path: "/0")
+  const viewId = `view:${headerView}`;
+  const viewSpec = parsed.value.views.find((v) => v.viewId === viewId);
+  if (!viewSpec) {
+    return makeCarrierRefusal(
+      "mermaid-strict-orphan-ref",
+      `Carrier header view '${viewId}' is not declared in payload.`,
+      "/0",
+      subjectRef,
+    );
+  }
+
+  const drawnContainers = computeDrawnContainersForView(parsed.value, viewSpec);
+  const seenEids = new Set<string>();
+  const collapsedRefs: string[] = [];
+
+  for (let i = 0; i < headerCollapsedEids.length; i++) {
+    const eid = headerCollapsedEids[i]!;
+    const entityRef = fromEid(eid);
+    // (a) already enforced at step 2
+    // (b) fromEid(eid) in D(view)
+    if (!drawnContainers.has(entityRef)) {
+      return makeCarrierRefusal(
+        "mermaid-strict-orphan-ref",
+        `Collapsed entity '${entityRef}' is not a drawn archi@1 container in view '${viewId}'.`,
+        "/0",
+        subjectRef,
+      );
+    }
+    // (c) duplicate EID
+    if (seenEids.has(eid)) {
+      return makeCarrierRefusal(
+        "mermaid-strict-duplicate",
+        `Duplicate EID '${eid}' in carrier 'collapsed=' header token.`,
+        "/0",
+        subjectRef,
+      );
+    }
+    // (d) EID byte order
+    if (i > 0 && cmpBytes(headerCollapsedEids[i - 1]!, eid) > 0) {
+      return makeCarrierRefusal(
+        "mermaid-strict-noncanonical",
+        "Carrier 'collapsed=' EID list is not in strictly ascending EID byte order.",
+        "/0",
+        subjectRef,
+      );
+    }
+    seenEids.add(eid);
+    collapsedRefs.push(entityRef);
+  }
+
+  collapsedRefs.sort(cmpBytes);
+
+  return {
+    ok: true,
+    value: {
+      text: payload,
+      view: headerView,
+      collapsed: collapsedRefs,
+      sha256: actualSha256,
+    },
+  };
+}
+
+/**
+ * Decode a universal `engram.archi-carrier/1` frame and verify that its `sha256` matches
+ * the canonical `committedText` (P-4 §2). Never throws.
+ */
+export function checkArchiCarrier(
+  frame: unknown,
+  committedText: unknown,
+  options?: ArchiCarrierOptions,
+): ArchiMermaidResult<ArchiCarrierDecoded, ArchiCarrierDiagnostic> {
+  // Step 1: Decode frame
+  const dec = decodeArchiCarrier(frame, options);
+  if (!dec.ok) return dec;
+
+  // Step 2: Validate committedText with subjectRef: DEFAULT_SUBJECT_REF
+  const com = parseArchiMermaid(committedText, {
+    checkCanonical: true,
+    subjectRef: DEFAULT_SUBJECT_REF,
+  });
+  if (!com.ok) return com;
+
+  // Step 3: Check staleness against committedText SHA-256
+  const committedSha = sha256Utf8Hex(committedText as string);
+  if (dec.value.sha256 !== committedSha) {
+    const subjectRef = resolveCarrierSubjectRef(options, DEFAULT_CARRIER_SUBJECT_REF);
+    return makeCarrierRefusal(
+      "export-stale",
+      "Carrier payload sha256 does not match committed architecture.mmd digest.",
+      "/0",
+      subjectRef,
+    );
+  }
+
+  return dec;
 }
