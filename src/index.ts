@@ -867,3 +867,21 @@ export type {
   ProducedExtraction,
   RefusedProduction,
 } from "./extraction-cache.js";
+export {
+  EXTRACTION_SCHEMA_V1,
+  adaptTextJsonClient,
+  extractDocumentBatch,
+  runHeadlessExtractionBatch,
+} from "./extraction-batch.js";
+export type {
+  AdaptedHeadlessLlmClient,
+  HeadlessBatchResult,
+  HeadlessClock,
+  HeadlessDocumentInput,
+  HeadlessDocumentPage,
+  HeadlessExecutionBounds,
+  HeadlessExtractInput,
+  HeadlessExtractResult,
+  HeadlessLlmClient,
+  HeadlessLlmTurnResponse,
+} from "./extraction-batch.js";
