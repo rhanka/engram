@@ -48,6 +48,10 @@
     "./archi": {
       "types": "./dist/archi.d.ts",
       "import": "./dist/archi.js"
+    },
+    "./extraction-batch": {
+      "types": "./dist/extraction-batch.d.ts",
+      "import": "./dist/extraction-batch.js"
     }
   },
   "registryArtifacts": {

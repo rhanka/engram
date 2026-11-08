@@ -109,6 +109,13 @@ describe("public API compatibility", () => {
     expect(typeof api.mergeExtractionsWithCitations).toBe("function");
     expect(typeof api.extractionCitationKey).toBe("function");
     expect(typeof api.unionExtractionCitations).toBe("function");
+    expect(typeof api.normalizeExtractionIdentity).toBe("function");
+    expect(typeof api.computeExtractionKey).toBe("function");
+    expect(typeof api.createCachedExtractionEntry).toBe("function");
+    expect(typeof api.lookupCachedExtraction).toBe("function");
+    expect(typeof api.transitionCoverageRecord).toBe("function");
+    expect(typeof api.checkCoverageGate).toBe("function");
+    expect(typeof api.getOrExtract).toBe("function");
   });
 
   it("accepts object-style map inputs and option objects", () => {
