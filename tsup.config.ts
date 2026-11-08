@@ -53,7 +53,7 @@ const optionalRuntimeDeps = [
 
 export default defineConfig([
   {
-    entry: { index: "src/index.ts", "llm-mesh": "src/llm-mesh.ts", "memory-tools": "src/memory-tools/index.ts", "time-reference": "src/time-reference/index.ts", "memory-substrate": "src/memory-substrate/index.ts", "mcp-memory": "src/mcp-memory/index.ts", "registry/manifest": "src/registry/manifest.ts", "registry/definitions": "src/registry/definitions.ts", "registry/validator": "src/registry/validator.ts", "profile-bundle": "src/profile-bundle.ts", archi: "src/archi.ts" },
+    entry: { index: "src/index.ts", "llm-mesh": "src/llm-mesh.ts", "memory-tools": "src/memory-tools/index.ts", "time-reference": "src/time-reference/index.ts", "memory-substrate": "src/memory-substrate/index.ts", "mcp-memory": "src/mcp-memory/index.ts", "registry/manifest": "src/registry/manifest.ts", "registry/definitions": "src/registry/definitions.ts", "registry/validator": "src/registry/validator.ts", "profile-bundle": "src/profile-bundle.ts", archi: "src/archi.ts", "extraction-batch": "src/extraction-batch.ts" },
     format: ["esm"],
     esbuildPlugins: [jsonPdfjsGlyphs],
     // DTS-only self-reference mapping: `src/registry/definitions.ts` lazily
@@ -85,7 +85,7 @@ export default defineConfig([
     // Same entries, externals, plugins and target as the ESM block above.
     // No DTS here (generated once, by the ESM block) and no clean here (the
     // ESM block owns the single clean so it cannot wipe this block's output).
-    entry: { index: "src/index.ts", "llm-mesh": "src/llm-mesh.ts", "memory-tools": "src/memory-tools/index.ts", "time-reference": "src/time-reference/index.ts", "memory-substrate": "src/memory-substrate/index.ts", "mcp-memory": "src/mcp-memory/index.ts", "registry/manifest": "src/registry/manifest.ts", "registry/definitions": "src/registry/definitions.ts", "registry/validator": "src/registry/validator.ts", "profile-bundle": "src/profile-bundle.ts", archi: "src/archi.ts" },
+    entry: { index: "src/index.ts", "llm-mesh": "src/llm-mesh.ts", "memory-tools": "src/memory-tools/index.ts", "time-reference": "src/time-reference/index.ts", "memory-substrate": "src/memory-substrate/index.ts", "mcp-memory": "src/mcp-memory/index.ts", "registry/manifest": "src/registry/manifest.ts", "registry/definitions": "src/registry/definitions.ts", "registry/validator": "src/registry/validator.ts", "profile-bundle": "src/profile-bundle.ts", archi: "src/archi.ts", "extraction-batch": "src/extraction-batch.ts" },
     format: ["cjs"],
     esbuildPlugins: [jsonPdfjsGlyphs],
     dts: false,
