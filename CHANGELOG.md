@@ -4,6 +4,12 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.25.0 (2026-11-08)
+
+- **Architecture ingestion (archi@1 lot 4).** `ingestArchitecture` reads the committed architecture at one commit through `git show`, runs the closed shapes, the I-JSON reader and the fail-closed acceptance stages, and writes the canonical records and the `ArchiAcceptance` envelope atomically (`createGitReadAt`, `createAtomicArchiWriter`), on `@sentropic/engram/archi`.
+- **Strict Mermaid source ingestion (lot 5).** A repository can commit only `.engram/architecture/architecture.mmd`: it is parsed with `parseArchiMermaid` in canonical mode, its bytes are pinned as `textDigest` next to `documentPin`, and re-ingesting unchanged text is idempotent. JSON-only repositories keep working during the transition.
+- **Design-system exports.** `VIEW_SCHEMA_V2_PIN` and `canonicalBytes` (RFC 8785) on `@sentropic/engram/archi`.
+
 ## 0.24.0 (2026-11-07)
 
 - **Extraction toolkit, domain-agnostic (train 0.24.0, four lots).** `@sentropic/engram/profile-bundle`: `bundleProfile`, `checkProfileCompatibility` and `computeRegistryRecordsDigest` for any ontology profile (the consumer profile stays in its own repository); citations at merge (`mergeExtractionsWithCitations`, with conflict reporting); the extraction cache and coverage registry (`getOrExtract`); and the headless extraction batch (`runHeadlessExtractionBatch`, exit codes 0/64/65/75, receipts, a golden guard on `EXTRACTION_SEMANTICS_VERSION`), all on `@sentropic/engram/extraction-batch`.
