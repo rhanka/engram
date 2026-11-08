@@ -13,7 +13,7 @@ describe("release configuration", () => {
     },
   );
 
-  it("tracks the 0.24.0 release across package metadata and changelog", () => {
+  it("tracks the 0.25.0 release across package metadata and changelog", () => {
     const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8")) as { name?: string; version?: string };
     const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf-8")) as {
       name?: string;
@@ -23,12 +23,12 @@ describe("release configuration", () => {
     const changelog = readFileSync(new URL("../CHANGELOG.md", import.meta.url), "utf-8");
 
     expect(pkg.name).toBe("@sentropic/engram");
-    expect(pkg.version).toBe("0.24.0");
+    expect(pkg.version).toBe("0.25.0");
     expect(lock.name).toBe("@sentropic/engram");
     expect(lock.packages?.[""]?.name).toBe("@sentropic/engram");
-    expect(lock.version).toBe("0.24.0");
-    expect(lock.packages?.[""]?.version).toBe("0.24.0");
-    expect(changelog).toContain("## 0.24.0 (2026-11-07)");
+    expect(lock.version).toBe("0.25.0");
+    expect(lock.packages?.[""]?.version).toBe("0.25.0");
+    expect(changelog).toContain("## 0.25.0 (2026-11-08)");
   });
 
   it("runs the main TypeScript CI test matrix on Node 20, 22, and 24", () => {
