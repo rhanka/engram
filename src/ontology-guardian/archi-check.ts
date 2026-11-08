@@ -8,12 +8,22 @@ import type { Pin } from "./types.js";
 type NativeEntity = NativeSemanticDocument["entities"][string];
 type NativeRelation = NativeSemanticDocument["relations"][string];
 
-/** proposed: closed 25-code archi diagnostic inventory (§5.5). */
+/** proposed: closed 35-code archi diagnostic inventory (§5.5, P-2 r3 §7, §10 A8). */
 export const ARCHI_DIAGNOSTIC_CODES = Object.freeze([
   "archi-manifest-missing",
   "archi-manifest-invalid",
   "archi-input-invalid",
   "archi-source-unresolved",
+  "mermaid-strict-invalid",
+  "mermaid-strict-unsupported",
+  "mermaid-strict-annotation-unknown",
+  "mermaid-strict-duplicate",
+  "mermaid-strict-duplicate-datum",
+  "mermaid-strict-orphan-ref",
+  "mermaid-strict-placement-drift",
+  "mermaid-strict-style-drift",
+  "mermaid-strict-noncanonical",
+  "mermaid-strict-unrepresentable",
   "incompatible_version",
   "digest-mismatch",
   "archi-pin-mismatch",
@@ -38,18 +48,7 @@ export const ARCHI_DIAGNOSTIC_CODES = Object.freeze([
 ] as const);
 
 /** proposed: closed 35-code archi diagnostic inventory (§5.5, P-2 r3 §7, §10 A8). */
-export type ArchiDiagnosticCode =
-  | (typeof ARCHI_DIAGNOSTIC_CODES)[number]
-  | "mermaid-strict-invalid"
-  | "mermaid-strict-unsupported"
-  | "mermaid-strict-annotation-unknown"
-  | "mermaid-strict-duplicate"
-  | "mermaid-strict-duplicate-datum"
-  | "mermaid-strict-orphan-ref"
-  | "mermaid-strict-placement-drift"
-  | "mermaid-strict-style-drift"
-  | "mermaid-strict-noncanonical"
-  | "mermaid-strict-unrepresentable";
+export type ArchiDiagnosticCode = (typeof ARCHI_DIAGNOSTIC_CODES)[number];
 
 /** proposed: authored ArchiManifest shape (§5.2, P-2 r3 §3.1). */
 export interface ArchiManifest {
