@@ -81,6 +81,15 @@ export type ArchiOccurrenceMeasures = Readonly<Record<string, ArchiSlotMeasureme
 /** proposed: per-occurrence line measurements for a view (§3.9). */
 export type ArchiViewMeasures = Readonly<Record<string, ArchiOccurrenceMeasures>>;
 
+/** proposed: DS render options for one archi occurrence (P-2 r3 §3.1, §6). */
+export interface ArchiOccurrenceRenderOptions {
+  readonly proposed?: true;
+  readonly toggleLabel?: string;
+}
+
+/** proposed: per-occurrence DS render options for a view, emitted beside diagram and measures (P-2 r3 §6, §10 A4). */
+export type ArchiViewRenderOptions = Readonly<Record<string, ArchiOccurrenceRenderOptions>>;
+
 /** proposed: view binding input for projectArchiCards and checkArchiView (§2.4, §3.2, §3.7, §5.4). */
 export interface ArchiProjectionBinding {
   readonly activeHierarchy: ArchiActiveHierarchy;
@@ -91,12 +100,13 @@ export interface ArchiProjectionBinding {
   readonly legendRef?: string;
 }
 
-/** proposed: discriminated result of projectArchiCards (§3.2). */
+/** proposed: discriminated result of projectArchiCards (§3.2; P-2 r3 §6). */
 export type ArchiCardsProjectionResult =
   | {
       readonly outcome: "ok";
       readonly diagram: ArchiDiagramPresentation;
       readonly measures: ArchiViewMeasures;
+      readonly renderOptions: ArchiViewRenderOptions;
     }
   | {
       readonly outcome: "refused";
@@ -479,10 +489,12 @@ export function projectArchiCards(
     };
   }
   const L = cards.labels[language];
+  const togglePrefix = L.toggle ?? (language === "fr" ? "Replier ou déplier" : "Collapse or expand");
   const expectedContractPin = binding.presentationContractPin ?? binding.contractPin ?? CONTRACT_PIN;
   const m = buildArchiSemanticModel(document);
   const entities: Record<string, ArchiPresentationEntity> = {};
   const measures: Record<string, ArchiOccurrenceMeasures> = {};
+  const renderOptions: Record<string, ArchiOccurrenceRenderOptions> = {};
   const diagnostics: EngramDiagnostic[] = [];
 
   if (binding.cardsPin !== undefined) {
@@ -523,6 +535,13 @@ export function projectArchiCards(
   }
 
   const drawn = new Set(Object.values(sourceView.entityOccurrences).map((o) => o.entity).filter(m.isArchi));
+  const zonesWithDrawnChild = new Set<string>();
+  for (const childId of drawn) {
+    const parentId = archiPlacement(m, childId, binding.activeHierarchy, drawn).parent;
+    if (parentId !== undefined) {
+      zonesWithDrawnChild.add(parentId);
+    }
+  }
   const keys = binding.legendRef ? legendKeys(document, binding.legendRef) : new Map<string, string>();
 
   for (const [o, oc] of Object.entries(sourceView.entityOccurrences).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
@@ -683,6 +702,14 @@ export function projectArchiCards(
     }
     entities[o] = entry;
     measures[o] = ms;
+    const ro: { proposed?: true; toggleLabel?: string } = {};
+    if (status !== "current") {
+      ro.proposed = true;
+    }
+    if (container && zonesWithDrawnChild.has(id)) {
+      ro.toggleLabel = `${togglePrefix} ${m.title(id)}`;
+    }
+    renderOptions[o] = ro;
   }
 
   if (diagnostics.length > 0) {
@@ -700,5 +727,6 @@ export function projectArchiCards(
       categoryTokens: governed?.categoryTokens ?? [],
     },
     measures,
+    renderOptions,
   };
 }

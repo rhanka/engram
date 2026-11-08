@@ -3,11 +3,12 @@ import { sortDiagnostics } from "./diagnostics.js";
 import type { EngramDiagnostic } from "./diagnostics.js";
 import { checkSemanticShape } from "./diagram-document-shape.js";
 import type { NativeSemanticDocument } from "./diagram-native-types.js";
+import type { Pin } from "./types.js";
 
 type NativeEntity = NativeSemanticDocument["entities"][string];
 type NativeRelation = NativeSemanticDocument["relations"][string];
 
-/** proposed: closed 25-code archi diagnostic inventory (§5.5). */
+/** proposed: closed 35-code archi diagnostic inventory (§5.5, P-2 r3 §7, §10 A8). */
 export type ArchiDiagnosticCode =
   | "archi-manifest-missing"
   | "archi-manifest-invalid"
@@ -33,7 +34,29 @@ export type ArchiDiagnosticCode =
   | "archi-stroke-status"
   | "archi-summary-missing"
   | "archi-slot-drift"
-  | "archi-revision-conflict";
+  | "archi-revision-conflict"
+  | "mermaid-strict-invalid"
+  | "mermaid-strict-unsupported"
+  | "mermaid-strict-annotation-unknown"
+  | "mermaid-strict-duplicate"
+  | "mermaid-strict-duplicate-datum"
+  | "mermaid-strict-orphan-ref"
+  | "mermaid-strict-placement-drift"
+  | "mermaid-strict-style-drift"
+  | "mermaid-strict-noncanonical"
+  | "mermaid-strict-unrepresentable";
+
+/** proposed: authored ArchiManifest shape (§5.2, P-2 r3 §3.1). */
+export interface ArchiManifest {
+  readonly format: "engram.archi-manifest/1";
+  readonly language: ArchiLanguage;
+  readonly owningRepo: string;
+  readonly document: string;
+  readonly views: readonly string[];
+  readonly profilePins: readonly Pin[];
+  readonly cardsPin?: Pin;
+  readonly viewSchemaPin: Pin;
+}
 
 type ArchiCheckCode =
   | "archi-input-invalid"

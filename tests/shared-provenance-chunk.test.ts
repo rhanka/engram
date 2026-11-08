@@ -96,6 +96,10 @@ describe("shared provenance registry (L4)", () => {
       types: "./dist/archi.d.ts",
       import: "./dist/archi.js",
     });
+    expect(pkg.exports["./archi-mermaid"]).toEqual({
+      types: "./dist/archi-mermaid.d.ts",
+      import: "./dist/archi-mermaid.js",
+    });
     for (const [key, value] of Object.entries(manifest.exports)) {
       expect(pkg.exports[key], `exports[${key}]`).toEqual(value);
     }
@@ -108,6 +112,7 @@ describe("shared provenance registry (L4)", () => {
       "CONTRACT_PIN",
       "GENERIC_V2",
       "archiSummaries",
+      "buildArchiSourceView",
       "checkArchi",
       "checkArchiView",
       "projectArchiCards",
@@ -115,6 +120,7 @@ describe("shared provenance registry (L4)", () => {
     expect(typeof archi["checkArchi"]).toBe("function");
     expect(typeof archi["projectArchiCards"]).toBe("function");
     expect(typeof archi["archiSummaries"]).toBe("function");
+    expect(typeof archi["buildArchiSourceView"]).toBe("function");
     expect(typeof archi["checkArchiView"]).toBe("function");
     expect(archi["ARCHI_V1_PIN"]).toBeDefined();
     expect(archi["ARCHI_CARDS_PIN"]).toBeDefined();
@@ -122,5 +128,17 @@ describe("shared provenance registry (L4)", () => {
     expect(archi["ARCHI_V1"]).toBeDefined();
     expect(archi["GENERIC_V2"]).toBeDefined();
     expect(archi["ARCHI_CARDS_CONTENT"]).toBeDefined();
+
+    const archiMermaid = (await import("../src/archi-mermaid/index.js")) as Record<string, unknown>;
+    expect(Object.keys(archiMermaid).sort()).toEqual([
+      "ARCHI_MERMAID_DIAGNOSTIC_CODES",
+      "formatArchiMermaid",
+      "parseArchiMermaid",
+      "printArchiMermaid",
+    ]);
+    expect(typeof archiMermaid["parseArchiMermaid"]).toBe("function");
+    expect(typeof archiMermaid["printArchiMermaid"]).toBe("function");
+    expect(typeof archiMermaid["formatArchiMermaid"]).toBe("function");
+    expect(archiMermaid["ARCHI_MERMAID_DIAGNOSTIC_CODES"]).toBeDefined();
   });
 });
