@@ -103,13 +103,19 @@ describe("shared provenance registry (L4)", () => {
     expect(Object.keys(archi).sort()).toEqual([
       "ARCHI_CARDS_CONTENT",
       "ARCHI_CARDS_PIN",
+      "ARCHI_MERMAID_DIAGNOSTIC_CODES",
       "ARCHI_V1",
       "ARCHI_V1_PIN",
+      "ArchiMermaidError",
       "CONTRACT_PIN",
       "GENERIC_V2",
       "archiSummaries",
+      "canonical",
       "checkArchi",
       "checkArchiView",
+      "fmt",
+      "parse",
+      "print",
       "projectArchiCards",
     ]);
     expect(typeof archi["checkArchi"]).toBe("function");
