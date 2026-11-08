@@ -304,6 +304,11 @@ export interface DiagramCoreDiagnostic extends DsDiagnostic {
   readonly studyDisposition?: string;
 }
 
+/** proposed: DS diagnostic envelope arm for archi@1, widening code to string for DS 7c5a8c82 codes outside S-DSDIAG (§5.5, §8 O10, m-r2-2). */
+export interface ArchiDsDiagnostic extends Omit<DiagramCoreDiagnostic, "code"> {
+  readonly code: string;
+}
+
 export interface EngramDiagnostic extends EngramIssue {
   readonly origin: "engram";
   readonly nativeCode: string;
@@ -697,7 +702,7 @@ export function diagnosticsToNativeEntries(
   return placed as ReportEntry[];
 }
 
-function locatorOf(d: Diagnostic): string | null {
+function locatorOf(d: Diagnostic | ArchiDsDiagnostic): string | null {
   switch (d.origin) {
     case "report2":
       return d.source.pointer;
@@ -719,7 +724,10 @@ function compareText(a: string, b: string): number {
  * null locators first; report2 ties keep reportEntryIndex order.
  * Never applied to the native Report.
  */
-export function compareDiagnostics(a: Diagnostic, b: Diagnostic): number {
+export function compareDiagnostics(
+  a: Diagnostic | ArchiDsDiagnostic,
+  b: Diagnostic | ArchiDsDiagnostic,
+): number {
   const byCode = compareText(a.code, b.code);
   if (byCode !== 0) return byCode;
   const bySubject = compareText(a.subjectRef, b.subjectRef);
@@ -740,7 +748,9 @@ export function compareDiagnostics(a: Diagnostic, b: Diagnostic): number {
   return 0;
 }
 
-export function sortDiagnostics(diagnostics: readonly Diagnostic[]): Diagnostic[] {
+export function sortDiagnostics<T extends Diagnostic | ArchiDsDiagnostic = Diagnostic>(
+  diagnostics: readonly T[],
+): T[] {
   return [...diagnostics].sort(compareDiagnostics);
 }
 
