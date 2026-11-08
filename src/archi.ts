@@ -4,6 +4,7 @@ import { DIAGRAM_VIEW_SCHEMA_V2 } from "./ontology-guardian/diagram-schemas.js";
 import type { Pin } from "./ontology-guardian/types.js";
 
 export {
+  ARCHI_DIAGNOSTIC_CODES,
   checkArchi,
   type ArchiDiagnosticCode,
   type ArchiLanguage,
@@ -46,9 +47,47 @@ export {
 export { canonicalBytes } from "./ontology-guardian/canonical.js";
 export { GENERIC_V2, type GovernedProfile } from "./ontology-guardian/diagram-profiles.js";
 export { CONTRACT_PIN } from "./ontology-guardian/diagram-registry.js";
-export type { EngramDiagnostic } from "./ontology-guardian/diagnostics.js";
+export type { ArchiDsDiagnostic, EngramDiagnostic } from "./ontology-guardian/diagnostics.js";
 export type { NativeSemanticDocument, NativeViewDocument } from "./ontology-guardian/diagram-native-types.js";
 export type { Digest, Pin } from "./ontology-guardian/types.js";
+export {
+  ARCHI_MANIFEST_PATH,
+  assertValidArchiDiagnosticEnvelope,
+  checkArchiAcceptanceShape,
+  checkArchiDocumentInvariants,
+  checkArchiManifestShape,
+  checkArchiSourceTriple,
+  checkArchiViewBindingShape,
+  checkArchiViewSpecShape,
+  parseStrictIJson,
+  toArchiDsDiagnostic,
+  type ArchiAcceptance,
+  type ArchiAcceptanceFileEntry,
+  type ArchiAcceptanceSource,
+  type ArchiIJsonParseResult,
+  type ArchiRefusal,
+  type ArchiRefusalScope,
+  type ArchiSourceTripleInput,
+  type ArchiStage,
+  type ArchiViewBinding,
+} from "./ontology-guardian/archi-shapes.js";
+export {
+  createAtomicArchiWriter,
+  createGitReadAt,
+  createMemoryArchiWriter,
+  ingestArchitecture,
+  verifyArchiBinding,
+  verifyArchiViewBinding,
+  type ArchiAccepted,
+  type ArchiIngestDsPort,
+  type ArchiIngestInput,
+  type ArchiIngestPorts,
+  type ArchiIngestionResult,
+  type ArchiMemoryWriterPort,
+  type ArchiReadAtPort,
+  type ArchiVerifyBindingInput,
+  type ArchiWriterPort,
+} from "./ontology-guardian/archi-ingest.js";
 
 /** Governed diagram-view-schema@2 Pin carried by archi@1 bindings. */
 export const VIEW_SCHEMA_V2_PIN: Pin = DIAGRAM_VIEW_SCHEMA_V2.pin;
