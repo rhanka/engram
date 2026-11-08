@@ -1,6 +1,7 @@
 // archi@1 ingestion pipeline (stages 1–8), all 25 §5.5 diagnostic codes, Focus binding verification, atomic writer and E2E git commit ingestion
 // (spec/SPEC_EVOL_ARCHI_CARDS.md §5.1–§5.6, §6.1–§6.2).
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -10,9 +11,7 @@ import { canonicalBytes, digestOfPreimage } from "../src/ontology-guardian/canon
 import { sortDiagnostics, validPointer } from "../src/ontology-guardian/diagnostics.js";
 import type { NativeSemanticDocument, NativeViewDocument } from "../src/ontology-guardian/diagram-native-types.js";
 import {
-  DS_ADAPTER_SHA256,
-  DS_COMMIT,
-  DS_RENDERER_SHA256,
+  DS_ADAPTER_SHA256, DS_COMMIT, DS_RENDERER_SHA256,
 } from "../src/ontology-guardian/diagram-presentation-pins.js";
 import {
   ARCHI_DIAGNOSTIC_CODES,
@@ -25,7 +24,7 @@ import {
   type ArchiViewSpec,
 } from "../src/ontology-guardian/archi-view.js";
 import {
-  ARCHI_MANIFEST_PATH,
+  ARCHI_MANIFEST_PATH, ARCHI_MMD_PATH,
   assertValidArchiDiagnosticEnvelope,
   checkArchiAcceptanceShape,
   checkArchiViewBindingShape,
@@ -42,6 +41,7 @@ import {
   type ArchiIngestDsPort,
   type ArchiIngestPorts,
 } from "../src/ontology-guardian/archi-ingest.js";
+import { printArchiMermaid } from "../src/archi-mermaid/index.js";
 import { dsCloneAvailable, dsSkipReason, loadDsDiagramCore } from "./helpers/ds-executor.js";
 
 interface ArchiIngestTestPorts extends ArchiIngestPorts {
@@ -487,8 +487,8 @@ describe("archi@1 ingestion stages 1–8 and full 25-code §5.5 coverage (tier E
     expect(rRevConflict).toMatchObject({ outcome: "refused", stage: "versioning" });
     recordRefusal(rRevConflict);
 
-    // Every single one of the 25 codes in ARCHI_DIAGNOSTIC_CODES was reached!
-    expect([...reached].sort()).toEqual([...ARCHI_DIAGNOSTIC_CODES].sort());
+    // Every single one of the 25 JSON-mode codes in ARCHI_DIAGNOSTIC_CODES was reached!
+    expect([...reached].sort()).toEqual(ARCHI_DIAGNOSTIC_CODES.filter((c) => !c.startsWith("mermaid-strict-")).sort());
 
     // Any DS finding refuses, warnings included (§5.5 line 407)
     const rDsWarn = ingestArchitecture(
@@ -809,5 +809,492 @@ describe.skipIf(!dsCloneAvailable())(
         rmSync(tmpDir, { recursive: true, force: true });
       }
     });
+
+    it("M1: ingests joint-r2 (r0), joint-r2-teintes (r1), and hosts-r3 (r2) end-to-end from a git repository holding ONLY .engram/architecture/architecture.mmd, matches JSON-ingested pins/files, and passes verifyArchiBinding (§5.1–§5.4, §6.2)", async () => {
+      const ds = (await loadDsDiagramCore()) as unknown as ArchiIngestDsPort;
+      const tmpDir = mkdtempSync(join(tmpdir(), "archi-e2e-mmd-git-"));
+      const repoDir = join(tmpDir, "repo-mmd");
+      const outDirMmd = join(tmpDir, "engram-out-mmd");
+      const outDirJson = join(tmpDir, "engram-out-json");
+      mkdirSync(repoDir, { recursive: true });
+      mkdirSync(outDirMmd, { recursive: true });
+      mkdirSync(outDirJson, { recursive: true });
+
+      const git = (...args: string[]): string =>
+        execFileSync("git", ["-C", repoDir, ...args], { encoding: "utf8" }).trim();
+      const sha256Hex = (s: string): string => createHash("sha256").update(Buffer.from(s, "utf8")).digest("hex");
+
+      try {
+        git("init", "-q");
+        git("config", "user.name", "Archi Test");
+        git("config", "user.email", "archi@test.local");
+        git("config", "advice.ignoredHook", "false");
+
+        const archiDir = join(repoDir, ".engram", "architecture");
+        mkdirSync(archiDir, { recursive: true });
+
+        // Commit 1 (r0): joint-r2 fixture (.mmd only, zero JSON files in git)
+        const mmdR0 = readText("joint-r2/architecture.mmd");
+        writeFileSync(join(archiDir, "architecture.mmd"), mmdR0, "utf8");
+        git("add", ".");
+        git("commit", "-q", "-m", "feat: archi joint-r2 mmd (r0)");
+        const commitR0 = git("rev-parse", "HEAD");
+        expect(git("ls-files").split("\n")).toEqual([ARCHI_MMD_PATH]);
+
+        // Dirty working tree to prove committed git blob is read exclusively (§5.1)
+        writeFileSync(join(archiDir, "architecture.mmd"), "corrupt working tree mmd", "utf8");
+
+        const readAt = createGitReadAt(repoDir);
+        const writerMmd = createAtomicArchiWriter(outDirMmd);
+
+        const resR0 = ingestArchitecture(
+          { repository: repoDir, commit: commitR0 },
+          { readAt, ds, write: writerMmd },
+        );
+        expect(resR0.outcome).toBe("accepted");
+        if (resR0.outcome !== "accepted") return;
+
+        expect(resR0.idempotent).toBe(false);
+        expect(resR0.directory).toBe("architecture/archi-joint/r0");
+        expect(resR0.acceptance.source).toEqual({
+          repository: repoDir,
+          commit: commitR0,
+          manifestPath: ARCHI_MMD_PATH,
+        });
+        expect(resR0.acceptance.textDigest).toBe(sha256Hex(mmdR0));
+        expect(checkArchiAcceptanceShape(resR0.acceptance)).toBeNull();
+
+        // Cross-format parity with JSON ingestion of joint-r2 (M3 / C5)
+        const rawFixManifest = readJson<ArchiManifest>("joint-r2/manifest.json");
+        const jsonR0Files: Record<string, string> = {
+          [ARCHI_MANIFEST_PATH]: canonicalBytes(rawFixManifest),
+          "document.json": canonicalBytes(FIX_DOC),
+          "view-specs/deploiement.json": canonicalBytes(DEPLOIEMENT_SPEC),
+          "view-specs/h2a-repo.json": canonicalBytes(H2A_REPO_SPEC),
+          "view-specs/roles-replie.json": canonicalBytes(ROLES_REPLIE_SPEC),
+          "view-specs/roles.json": canonicalBytes(ROLES_SPEC),
+        };
+        const resJsonR0 = ingestArchitecture(
+          { repository: repoDir, commit: commitR0 },
+          {
+            readAt: (_c, p) => jsonR0Files[p] ?? null,
+            ds,
+            write: createAtomicArchiWriter(outDirJson),
+          },
+        );
+        expect(resJsonR0.outcome).toBe("accepted");
+        if (resJsonR0.outcome === "accepted") {
+          expect(resR0.acceptance.documentPin).toEqual(resJsonR0.acceptance.documentPin);
+          expect(resR0.acceptance.bindings).toEqual(resJsonR0.acceptance.bindings);
+          expect(resR0.acceptance.files).toEqual(resJsonR0.acceptance.files);
+          for (const f of resR0.acceptance.files) {
+            expect(resR0.files[f.path]).toBe(resJsonR0.files[f.path]);
+          }
+        }
+
+        // Verify each stored binding passes Focus verifyArchiBinding
+        const r0DiskDir = join(outDirMmd, resR0.directory);
+        const storedDocR0 = JSON.parse(readFileSync(join(r0DiskDir, "document.json"), "utf8")) as NativeSemanticDocument;
+        for (const viewLocal of ["deploiement", "h2a-repo", "roles", "roles-replie"]) {
+          const v = JSON.parse(readFileSync(join(r0DiskDir, `views/${viewLocal}.json`), "utf8")) as NativeViewDocument;
+          const b = JSON.parse(readFileSync(join(r0DiskDir, `bindings/${viewLocal}.json`), "utf8")) as ArchiViewBinding;
+          expect(checkArchiViewBindingShape(b)).toBeNull();
+          expect(verifyArchiBinding({ document: storedDocR0, view: v, binding: b, ds })).toEqual({ outcome: "ok" });
+        }
+
+        // Idempotent re-ingestion of commitR0 returns stored acceptance and writes nothing
+        const resR0Again = ingestArchitecture(
+          { repository: repoDir, commit: commitR0 },
+          { readAt, ds, write: writerMmd },
+        );
+        expect(resR0Again).toEqual({
+          ...resR0,
+          idempotent: true,
+        });
+
+        // Commit 2 (r1): joint-r2-teintes (.mmd only, with revision raised to 1)
+        const printedR1 = printArchiMermaid({
+          manifest: readJson<ArchiManifest>("joint-r2-teintes/manifest.json"),
+          document: { ...TINT_DOC, revision: 1 },
+          views: [ROLES_TEINTES_SPEC],
+        });
+        expect(printedR1.ok).toBe(true);
+        if (!printedR1.ok) return;
+        const mmdR1 = printedR1.value;
+        writeFileSync(join(archiDir, "architecture.mmd"), mmdR1, "utf8");
+        git("add", "-A");
+        git("commit", "-q", "-m", "feat: archi joint-r2-teintes mmd (r1)");
+        const commitR1 = git("rev-parse", "HEAD");
+        expect(git("ls-files").split("\n")).toEqual([ARCHI_MMD_PATH]);
+
+        const resR1 = ingestArchitecture(
+          { repository: repoDir, commit: commitR1 },
+          { readAt, ds, write: writerMmd },
+        );
+        expect(resR1.outcome).toBe("accepted");
+        if (resR1.outcome === "accepted") {
+          expect(resR1.directory).toBe("architecture/archi-joint/r1");
+          expect(resR1.acceptance.source.manifestPath).toBe(ARCHI_MMD_PATH);
+          expect(resR1.acceptance.textDigest).toBe(sha256Hex(mmdR1));
+          expect(checkArchiAcceptanceShape(resR1.acceptance)).toBeNull();
+          const r1DiskDir = join(outDirMmd, resR1.directory);
+          const storedDocR1 = JSON.parse(readFileSync(join(r1DiskDir, "document.json"), "utf8")) as NativeSemanticDocument;
+          const v1 = JSON.parse(readFileSync(join(r1DiskDir, "views/roles-teintes.json"), "utf8")) as NativeViewDocument;
+          const b1 = JSON.parse(readFileSync(join(r1DiskDir, "bindings/roles-teintes.json"), "utf8")) as ArchiViewBinding;
+          expect(verifyArchiBinding({ document: storedDocR1, view: v1, binding: b1, ds })).toEqual({ outcome: "ok" });
+        }
+
+        // Commit 3 (r2): hosts-r3 (.mmd only, with revision raised to 2)
+        const printedR2 = printArchiMermaid({
+          manifest: readJson<ArchiManifest>("hosts-r3/manifest.json"),
+          document: { ...HO_DOC, revision: 2 },
+          views: [DEPLOIEMENT_HOSTS_SPEC, ROLES_HOSTS_SPEC],
+        });
+        expect(printedR2.ok).toBe(true);
+        if (!printedR2.ok) return;
+        const mmdR2 = printedR2.value;
+        writeFileSync(join(archiDir, "architecture.mmd"), mmdR2, "utf8");
+        git("add", "-A");
+        git("commit", "-q", "-m", "feat: archi hosts-r3 mmd (r2)");
+        const commitR2 = git("rev-parse", "HEAD");
+        expect(git("ls-files").split("\n")).toEqual([ARCHI_MMD_PATH]);
+
+        const resR2 = ingestArchitecture(
+          { repository: repoDir, commit: commitR2 },
+          { readAt, ds, write: writerMmd },
+        );
+        expect(resR2.outcome).toBe("accepted");
+        if (resR2.outcome === "accepted") {
+          expect(resR2.directory).toBe("architecture/archi-joint/r2");
+          expect(resR2.acceptance.source.manifestPath).toBe(ARCHI_MMD_PATH);
+          expect(resR2.acceptance.textDigest).toBe(sha256Hex(mmdR2));
+          expect(checkArchiAcceptanceShape(resR2.acceptance)).toBeNull();
+          const r2DiskDir = join(outDirMmd, resR2.directory);
+          const storedDocR2 = JSON.parse(readFileSync(join(r2DiskDir, "document.json"), "utf8")) as NativeSemanticDocument;
+          for (const viewLocal of ["deploiement-hosts", "roles-hosts"]) {
+            const v2 = JSON.parse(readFileSync(join(r2DiskDir, `views/${viewLocal}.json`), "utf8")) as NativeViewDocument;
+            const b2 = JSON.parse(readFileSync(join(r2DiskDir, `bindings/${viewLocal}.json`), "utf8")) as ArchiViewBinding;
+            expect(verifyArchiBinding({ document: storedDocR2, view: v2, binding: b2, ds })).toEqual({ outcome: "ok" });
+          }
+        }
+      } finally {
+        rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
   },
 );
+
+describe("archi@1 strict Mermaid (.mmd) ingestion M2 & M3 (tier E)", () => {
+  const ds = createFakeDsPort();
+  const baseMmd = readText("joint-r2-teintes/architecture.mmd");
+  const sha256Hex = (bytes: Uint8Array | string): string =>
+    createHash("sha256")
+      .update(typeof bytes === "string" ? Buffer.from(bytes, "utf8") : bytes)
+      .digest("hex");
+
+  it("M2: reaches all 9 parse/check mermaid-strict-* codes and invalid UTF-8 / BOM through ingestArchitecture with zero writes (§5.3, §5.5, §6.2)", () => {
+    const reachedMmdCodes = new Set<ArchiDiagnosticCode>();
+
+    const expectMmdSourceRefusal = (
+      rawMmd: Uint8Array | string,
+      expectedCode: ArchiDiagnosticCode,
+      expectedPath?: string,
+    ) => {
+      const writer = createMemoryArchiWriter();
+      const readCalls: string[] = [];
+      const res = ingestArchitecture(
+        { repository: "repo-mmd", commit: COMMIT_A },
+        {
+          readAt: (_commit, path) => {
+            readCalls.push(path);
+            return path === ARCHI_MMD_PATH ? rawMmd : null;
+          },
+          ds,
+          write: writer,
+        },
+      );
+      expect(res.outcome).toBe("refused");
+      expect(writer.writeCount).toBe(0);
+      expect(readCalls).toEqual([ARCHI_MMD_PATH]);
+      if (res.outcome !== "refused") return;
+
+      expect(res.stage).toBe("source");
+      expect(res.scopes).toHaveLength(1);
+      expect(res.scopes[0]!.scope).toBe(`file:${ARCHI_MMD_PATH}`);
+      expect(res.scopes[0]!.diagnostics.length).toBeGreaterThan(0);
+      expect(res.scopes[0]!.diagnostics).toEqual(sortDiagnostics(res.scopes[0]!.diagnostics));
+      for (const d of res.scopes[0]!.diagnostics) {
+        assertValidArchiDiagnosticEnvelope(d);
+        expect(d.origin).toBe("engram");
+        expect(d.subjectRef).toBe(ARCHI_MMD_PATH);
+        expect(validPointer(d.path!)).toBe(true);
+        reachedMmdCodes.add(d.code as ArchiDiagnosticCode);
+      }
+      expect(res.scopes[0]!.diagnostics[0]!.code).toBe(expectedCode);
+      if (expectedPath !== undefined) {
+        expect(res.scopes[0]!.diagnostics[0]!.path).toBe(expectedPath);
+      }
+    };
+
+    // Step 1(a): invalid UTF-8 bytes, UTF-8 BOM (Uint8Array and string), lone surrogate -> mermaid-strict-invalid at /0
+    expectMmdSourceRefusal(new Uint8Array([0xff, 0xfe, 0xfd]), "mermaid-strict-invalid", "/0");
+    expectMmdSourceRefusal(
+      new Uint8Array([0xef, 0xbb, 0xbf, ...Buffer.from(baseMmd, "utf8")]),
+      "mermaid-strict-invalid",
+      "/0",
+    );
+    expectMmdSourceRefusal(`\uFEFF${baseMmd}`, "mermaid-strict-invalid", "/0");
+    expectMmdSourceRefusal(`\uD800${baseMmd}`, "mermaid-strict-invalid", "/0");
+
+    // Step 1(b): all 9 parse/check mermaid-strict-* codes
+    // 1. mermaid-strict-invalid (lexical tab)
+    expectMmdSourceRefusal(baseMmd.replace("flowchart LR", "flowchart\tLR"), "mermaid-strict-invalid", "/0");
+    // 2. mermaid-strict-unsupported
+    expectMmdSourceRefusal(baseMmd.replace("flowchart LR", "flowchart TB"), "mermaid-strict-unsupported", "/0");
+    // 3. mermaid-strict-annotation-unknown
+    expectMmdSourceRefusal(
+      baseMmd.replace("%% @dl language fr", "%% @dl language fr\n%% @dl bogus value"),
+      "mermaid-strict-annotation-unknown",
+    );
+    // 4. mermaid-strict-duplicate
+    expectMmdSourceRefusal(
+      baseMmd.replace("%% @dl language fr", "%% @dl language fr\n%% @dl language en"),
+      "mermaid-strict-duplicate",
+    );
+    // 5. mermaid-strict-duplicate-datum
+    expectMmdSourceRefusal(
+      baseMmd.replace("%% @dl entity system", '%% @dl entity system\n%% @dl name "Track"'),
+      "mermaid-strict-duplicate-datum",
+    );
+    // 6. mermaid-strict-orphan-ref
+    expectMmdSourceRefusal(
+      baseMmd.replace("%% @dl owning-repo e_repo_h2a", "%% @dl owning-repo e_repo_unknown"),
+      "mermaid-strict-orphan-ref",
+    );
+    // 7. mermaid-strict-placement-drift
+    expectMmdSourceRefusal(
+      baseMmd.replace('subgraph e_host_poste["Poste de travail"]\nend', 'e_host_poste["Poste de travail"]'),
+      "mermaid-strict-placement-drift",
+    );
+    // 8. mermaid-strict-style-drift
+    expectMmdSourceRefusal(
+      baseMmd.replace(
+        'e_pkg_track -->|"déployé comme"| e_rt_track',
+        'e_pkg_track -.->|"déployé comme"| e_rt_track',
+      ),
+      "mermaid-strict-style-drift",
+    );
+    // 9. mermaid-strict-noncanonical (trailing blank line)
+    expectMmdSourceRefusal(`${baseMmd}\n`, "mermaid-strict-noncanonical");
+
+    expect([...reachedMmdCodes].sort()).toEqual([
+      "mermaid-strict-annotation-unknown",
+      "mermaid-strict-duplicate",
+      "mermaid-strict-duplicate-datum",
+      "mermaid-strict-invalid",
+      "mermaid-strict-noncanonical",
+      "mermaid-strict-orphan-ref",
+      "mermaid-strict-placement-drift",
+      "mermaid-strict-style-drift",
+      "mermaid-strict-unsupported",
+    ]);
+
+    // Step 1(c): Stage-1 shape/cross-ref guards on parsed .mmd triple without secondary readAt calls
+    // Omitting `pin cards` in a canonical .mmd refuses with archi-manifest-invalid at /cardsPin (§5.2)
+    const mmdWithoutCardsPin = baseMmd.replace(/%% @dl pin cards [^\n]+\n/, "");
+    expectMmdSourceRefusal(mmdWithoutCardsPin, "archi-manifest-invalid", "/cardsPin");
+
+    // Unsupported language ('de') in a canonical .mmd refuses with archi-manifest-invalid at /language
+    const mmdBadLang = baseMmd.replace("%% @dl language fr", "%% @dl language de");
+    expectMmdSourceRefusal(mmdBadLang, "archi-manifest-invalid", "/language");
+
+    // owning-repo pointing to a non-repo entity (e_sys_h2a) in a canonical .mmd refuses with archi-input-invalid at /owningRepo
+    const mmdBadOwning = baseMmd.replace("%% @dl owning-repo e_repo_h2a", "%% @dl owning-repo e_sys_h2a");
+    const writerOwning = createMemoryArchiWriter();
+    const resOwning = ingestArchitecture(
+      { repository: "repo-mmd", commit: COMMIT_A },
+      {
+        readAt: (_c, p) => (p === ARCHI_MMD_PATH ? mmdBadOwning : null),
+        ds,
+        write: writerOwning,
+      },
+    );
+    expect(resOwning).toMatchObject({
+      outcome: "refused",
+      stage: "source",
+      scopes: [
+        {
+          scope: `file:${ARCHI_MMD_PATH}`,
+          diagnostics: [
+            expect.objectContaining({
+              code: "archi-input-invalid",
+              path: "/owningRepo",
+              subjectRef: "entity:sys-h2a",
+            }),
+          ],
+        },
+      ],
+    });
+    expect(writerOwning.writeCount).toBe(0);
+  });
+
+  it("M3: pins textDigest, matches JSON-ingested pins/files across all 3 fixtures, enforces T3 .mmd precedence, and verifies Stage 7 idempotence & conflict (§5.1, §5.3, §5.4, §6.2)", () => {
+    const fixtureCases: readonly {
+      readonly name: string;
+      readonly mmdRel: string;
+      readonly jsonFiles: Readonly<Record<string, string>>;
+    }[] = [
+      {
+        name: "joint-r2",
+        mmdRel: "joint-r2/architecture.mmd",
+        jsonFiles: {
+          [ARCHI_MANIFEST_PATH]: readText("joint-r2/manifest.json"),
+          "document.json": readText("joint-r2/document.json"),
+          "view-specs/deploiement.json": readText("joint-r2/view-specs/deploiement.json"),
+          "view-specs/h2a-repo.json": readText("joint-r2/view-specs/h2a-repo.json"),
+          "view-specs/roles-replie.json": readText("joint-r2/view-specs/roles-replie.json"),
+          "view-specs/roles.json": readText("joint-r2/view-specs/roles.json"),
+        },
+      },
+      {
+        name: "joint-r2-teintes",
+        mmdRel: "joint-r2-teintes/architecture.mmd",
+        jsonFiles: {
+          [ARCHI_MANIFEST_PATH]: readText("joint-r2-teintes/manifest.json"),
+          "document.json": readText("joint-r2-teintes/document.json"),
+          "view-specs/roles-teintes.json": readText("joint-r2-teintes/view-specs/roles-teintes.json"),
+        },
+      },
+      {
+        name: "hosts-r3",
+        mmdRel: "hosts-r3/architecture.mmd",
+        jsonFiles: {
+          [ARCHI_MANIFEST_PATH]: readText("hosts-r3/manifest.json"),
+          "document.json": readText("hosts-r3/document.json"),
+          "view-specs/deploiement-hosts.json": readText("hosts-r3/view-specs/deploiement-hosts.json"),
+          "view-specs/roles-hosts.json": readText("hosts-r3/view-specs/roles-hosts.json"),
+        },
+      },
+    ];
+
+    for (const fc of fixtureCases) {
+      const mmdText = readText(fc.mmdRel);
+      const mmdBytes = new Uint8Array(Buffer.from(mmdText, "utf8"));
+      const expectedTextDigest = sha256Hex(mmdBytes);
+
+      // Ingest via .mmd (as Uint8Array) while corrupt manifest.json also exists (T3 precedence: .mmd wins)
+      const writerMmd = createMemoryArchiWriter();
+      const readPaths: string[] = [];
+      const resMmd = ingestArchitecture(
+        { repository: `repo-${fc.name}`, commit: COMMIT_A },
+        {
+          readAt: (_c, p) => {
+            readPaths.push(p);
+            if (p === ARCHI_MMD_PATH) return mmdBytes;
+            if (p === ARCHI_MANIFEST_PATH) return "{ corrupt manifest ignored when .mmd exists";
+            return null;
+          },
+          ds,
+          write: writerMmd,
+        },
+      );
+      expect(resMmd.outcome).toBe("accepted");
+      expect(readPaths).toEqual([ARCHI_MMD_PATH]);
+
+      // Ingest via T3 JSON fallback (.mmd absent)
+      const writerJson = createMemoryArchiWriter();
+      const resJson = ingestArchitecture(
+        { repository: `repo-${fc.name}`, commit: COMMIT_A },
+        {
+          readAt: (_c, p) => (p === ARCHI_MMD_PATH ? null : (fc.jsonFiles[p] ?? null)),
+          ds,
+          write: writerJson,
+        },
+      );
+      expect(resJson.outcome).toBe("accepted");
+
+      if (resMmd.outcome === "accepted" && resJson.outcome === "accepted") {
+        // Check acceptance shape and textDigest on .mmd vs JSON
+        expect(checkArchiAcceptanceShape(resMmd.acceptance)).toBeNull();
+        expect(checkArchiAcceptanceShape(resJson.acceptance)).toBeNull();
+        expect(resMmd.acceptance.source.manifestPath).toBe(ARCHI_MMD_PATH);
+        expect(resMmd.acceptance.textDigest).toBe(expectedTextDigest);
+        expect(resJson.acceptance.source.manifestPath).toBe(ARCHI_MANIFEST_PATH);
+        expect(resJson.acceptance.textDigest).toBeUndefined();
+        expect("textDigest" in resJson.acceptance).toBe(false);
+
+        // Cross-format parity (C5): identical documentPin, bindings (viewPin & bindingPin), files digests, and non-acceptance bytes
+        expect(resMmd.acceptance.documentPin).toEqual(resJson.acceptance.documentPin);
+        expect(resMmd.acceptance.profilePins).toEqual(resJson.acceptance.profilePins);
+        expect(resMmd.acceptance.cardsPin).toEqual(resJson.acceptance.cardsPin);
+        expect(resMmd.acceptance.viewSchemaPin).toEqual(resJson.acceptance.viewSchemaPin);
+        expect(resMmd.acceptance.bindings).toEqual(resJson.acceptance.bindings);
+        expect(resMmd.acceptance.files).toEqual(resJson.acceptance.files);
+        for (const f of resMmd.acceptance.files) {
+          expect(resMmd.files[f.path]).toBe(resJson.files[f.path]);
+        }
+
+        // Idempotence (R1): re-ingesting unchanged .mmd (as string) at COMMIT_A or COMMIT_B returns idempotent: true, preserves COMMIT_A, and performs zero writes
+        const resSameCommit = ingestArchitecture(
+          { repository: `repo-${fc.name}`, commit: COMMIT_A },
+          {
+            readAt: (_c, p) => (p === ARCHI_MMD_PATH ? mmdText : null),
+            ds,
+            write: writerMmd,
+          },
+        );
+        expect(resSameCommit).toEqual({
+          ...resMmd,
+          idempotent: true,
+        });
+        expect(writerMmd.writeCount).toBe(1);
+
+        const resNextCommit = ingestArchitecture(
+          { repository: `repo-${fc.name}`, commit: COMMIT_B },
+          {
+            readAt: (_c, p) => (p === ARCHI_MMD_PATH ? mmdText : null),
+            ds,
+            write: writerMmd,
+          },
+        );
+        expect(resNextCommit.outcome).toBe("accepted");
+        if (resNextCommit.outcome === "accepted") {
+          expect(resNextCommit.idempotent).toBe(true);
+          expect(resNextCommit.acceptance.source.commit).toBe(COMMIT_A);
+          expect(resNextCommit.acceptance.textDigest).toBe(expectedTextDigest);
+          expect(resNextCommit.acceptanceDigest).toBe(resMmd.acceptanceDigest);
+          expect(writerMmd.writeCount).toBe(1);
+        }
+
+        // Stage 7 textDigest conflict check: if stored acceptance.json has a different textDigest, refuses with archi-revision-conflict
+        const tamperedAcc: ArchiAcceptance = {
+          ...resMmd.acceptance,
+          textDigest: "0".repeat(64),
+        };
+        writerMmd.directories.set(resMmd.directory, {
+          ...resMmd.files,
+          "acceptance.json": canonicalBytes(tamperedAcc),
+        });
+        const resDigestConflict = ingestArchitecture(
+          { repository: `repo-${fc.name}`, commit: COMMIT_B },
+          {
+            readAt: (_c, p) => (p === ARCHI_MMD_PATH ? mmdText : null),
+            ds,
+            write: writerMmd,
+          },
+        );
+        expect(resDigestConflict).toMatchObject({
+          outcome: "refused",
+          stage: "versioning",
+          scopes: [
+            {
+              scope: "document",
+              diagnostics: [expect.objectContaining({ code: "archi-revision-conflict", path: "/revision" })],
+            },
+          ],
+        });
+        expect(writerMmd.writeCount).toBe(1);
+      }
+    }
+  });
+});
