@@ -1,5 +1,8 @@
 // Public subpath @sentropic/engram/archi — Focus surface for archi@1 + archi-cards@1
 // (spec/SPEC_EVOL_ARCHI_CARDS.md §2–§5).
+import { DIAGRAM_VIEW_SCHEMA_V2 } from "./ontology-guardian/diagram-schemas.js";
+import type { Pin } from "./ontology-guardian/types.js";
+
 export {
   checkArchi,
   type ArchiDiagnosticCode,
@@ -40,8 +43,12 @@ export {
   type ArchiViewSpecLegend,
   type ArchiViewSpecLegendToken,
 } from "./ontology-guardian/archi-view.js";
+export { canonicalBytes } from "./ontology-guardian/canonical.js";
 export { GENERIC_V2, type GovernedProfile } from "./ontology-guardian/diagram-profiles.js";
 export { CONTRACT_PIN } from "./ontology-guardian/diagram-registry.js";
 export type { EngramDiagnostic } from "./ontology-guardian/diagnostics.js";
 export type { NativeSemanticDocument, NativeViewDocument } from "./ontology-guardian/diagram-native-types.js";
 export type { Digest, Pin } from "./ontology-guardian/types.js";
+
+/** Governed diagram-view-schema@2 Pin carried by archi@1 bindings. */
+export const VIEW_SCHEMA_V2_PIN: Pin = DIAGRAM_VIEW_SCHEMA_V2.pin;

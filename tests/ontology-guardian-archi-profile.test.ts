@@ -40,6 +40,7 @@ import {
   RECORD_ARCHI_V1 as REGISTRY_ARCHI_RECORD,
 } from "../src/ontology-guardian/diagram-registry.js";
 import { DIAGRAM_VIEW_SCHEMA_V2 } from "../src/ontology-guardian/diagram-schemas.js";
+import { VIEW_SCHEMA_V2_PIN, canonicalBytes as archiCanonicalBytes } from "../src/archi.js";
 import { ARCHI_V1 as INDEX_ARCHI_V1 } from "../src/ontology-guardian/index.js";
 import { dsCloneAvailable, dsSkipReason, loadDsDiagramCore } from "./helpers/ds-executor.js";
 
@@ -376,6 +377,43 @@ describe("archi@1 fixture manifests (§5.2, §6.1, tier E)", () => {
     for (const { dir } of cases) {
       const manifest = JSON.parse(readFileSync(join(repoRoot, dir, "manifest.json"), "utf8")) as Record<string, any>;
       expect(manifest["cardsPin"], dir).toEqual(ARCHI_CARDS_PIN);
+    }
+  });
+
+  it("exports VIEW_SCHEMA_V2_PIN and canonicalBytes on @sentropic/engram/archi matching fixture manifests and documentPin digests (CP-13, CP-16)", () => {
+    expect(VIEW_SCHEMA_V2_PIN).toBe(DIAGRAM_VIEW_SCHEMA_V2.pin);
+    expect(Object.isFrozen(VIEW_SCHEMA_V2_PIN)).toBe(true);
+    expect(archiCanonicalBytes).toBe(canonicalBytes);
+
+    const knownInput = {
+      revision: 0,
+      documentId: "document:archi-joint",
+      schemaVersion: { minor: 1, major: 1 },
+      profileRefs: ["archi@1"],
+    };
+    const expectedKnownBytes =
+      '{"documentId":"document:archi-joint","profileRefs":["archi@1"],"revision":0,"schemaVersion":{"major":1,"minor":1}}';
+    expect(archiCanonicalBytes(knownInput)).toBe(expectedKnownBytes);
+    expect(sha256Hex(archiCanonicalBytes(knownInput))).toBe(digestOfPreimage(knownInput));
+
+    for (const { dir } of cases) {
+      const absDir = join(repoRoot, dir);
+      const manifest = JSON.parse(readFileSync(join(absDir, "manifest.json"), "utf8")) as Record<string, any>;
+      const doc = JSON.parse(readFileSync(join(absDir, manifest["document"] as string), "utf8")) as Record<string, any>;
+
+      expect(VIEW_SCHEMA_V2_PIN, `${dir}/manifest.json`).toEqual(manifest["viewSchemaPin"]);
+
+      const docBytes = archiCanonicalBytes(doc);
+      expect(docBytes, `${dir}/document.json`).toBe(canonicalBytes(doc));
+      const documentPin = {
+        id: doc["documentId"] as string,
+        version: String(doc["revision"]),
+        contentDigest: digestOfPreimage(doc),
+      };
+      expect(sha256Hex(docBytes), `${dir}/document.json`).toBe(documentPin.contentDigest);
+      expect(createHash("sha256").update(docBytes, "utf8").digest("hex"), `${dir}/document.json`).toBe(
+        documentPin.contentDigest,
+      );
     }
   });
 });
