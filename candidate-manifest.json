@@ -52,6 +52,10 @@
     "./extraction-batch": {
       "types": "./dist/extraction-batch.d.ts",
       "import": "./dist/extraction-batch.js"
+    },
+    "./archi-mermaid": {
+      "types": "./dist/archi-mermaid.d.ts",
+      "import": "./dist/archi-mermaid.js"
     }
   },
   "registryArtifacts": {

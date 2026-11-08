@@ -988,3 +988,116 @@ describe("H1: hosts-r3 (HO) card and zone faces (§2.7, §6.1, §6.2)", () => {
     expect(ents["occurrence:o-rt-hermes"]!.text.footer).toBe("propriétaire: NousResearch");
   });
 });
+
+describe("DS CP-5: renderOptions projection (P-2 r3 §3.1, §6)", () => {
+  it("emits proposed iff title status !== current and toggleLabel only on zones with >= 1 drawn child", () => {
+    const source = buildArchiSourceView(TINT_DOC, ROLES_TEINTES_SPEC);
+    const res = projectArchiCards(TINT_DOC, source, bindingFor(ROLES_TEINTES_SPEC), ARCHI_CARDS_CONTENT);
+    expect(res.outcome).toBe("ok");
+    if (res.outcome !== "ok") return;
+
+    // Legend occurrences are generic@2 and not in renderOptions
+    expect(res.renderOptions["occurrence:o-legend-memoire"]).toBeUndefined();
+    expect(res.renderOptions["occurrence:o-key-alim"]).toBeUndefined();
+
+    // Zones with >= 1 drawn child in view:roles-teintes: sys-h2a, sys-track, pkg-track, sys-engram
+    expect(res.renderOptions["occurrence:o-sys-h2a"]).toEqual({
+      toggleLabel: "Replier ou déplier h2a",
+    });
+    expect(res.renderOptions["occurrence:o-sys-track"]).toEqual({
+      toggleLabel: "Replier ou déplier Track",
+    });
+    expect(res.renderOptions["occurrence:o-pkg-track"]).toEqual({
+      toggleLabel: "Replier ou déplier @sentropic/track",
+    });
+    expect(res.renderOptions["occurrence:o-sys-engram"]).toEqual({
+      toggleLabel: "Replier ou déplier engram",
+    });
+
+    // Drawn zones with NO drawn child in view:roles-teintes: pkg-h2a, pkg-plugin -> no toggleLabel
+    expect(res.renderOptions["occurrence:o-pkg-h2a"]).toEqual({});
+    expect(res.renderOptions["occurrence:o-pkg-plugin"]).toEqual({});
+
+    // Current card vs proposed card (svc-live) -> proposed: true only on non-current
+    expect(res.renderOptions["occurrence:o-rt-track"]).toEqual({});
+    expect(res.renderOptions["occurrence:o-svc-live"]).toEqual({
+      proposed: true,
+    });
+
+    // In view:deploiement, host-cluster is a proposed zone with a drawn child (svc-live):
+    // gets both proposed: true and toggleLabel (without status mark)
+    const depSource = buildArchiSourceView(FIX_DOC, DEPLOIEMENT_SPEC);
+    const depRes = projectArchiCards(FIX_DOC, depSource, bindingFor(DEPLOIEMENT_SPEC), ARCHI_CARDS_CONTENT);
+    expect(depRes.outcome).toBe("ok");
+    if (depRes.outcome !== "ok") return;
+    expect(depRes.renderOptions["occurrence:o-host-cluster"]).toEqual({
+      proposed: true,
+      toggleLabel: "Replier ou déplier Cluster",
+    });
+    expect(depRes.renderOptions["occurrence:o-host-poste"]).toEqual({
+      toggleLabel: "Replier ou déplier Poste de travail",
+    });
+
+    // In view:roles-hosts (archi-dossier-hosts), host-poste has drawn CLI runtime children -> gets toggleLabel
+    const rhSource = buildArchiSourceView(HO_DOC, ROLES_HOSTS_SPEC);
+    const rhRes = projectArchiCards(HO_DOC, rhSource, bindingFor(ROLES_HOSTS_SPEC), ARCHI_CARDS_CONTENT);
+    expect(rhRes.outcome).toBe("ok");
+    if (rhRes.outcome !== "ok") return;
+    expect(rhRes.renderOptions["occurrence:o-host-poste"]).toEqual({
+      toggleLabel: "Replier ou déplier Poste de travail",
+    });
+
+    // When host-poste is drawn in archi-composition (view:roles), it has no partOf children -> no toggleLabel
+    const rolesWithHostSpec: ArchiViewSpec = {
+      ...ROLES_SPEC,
+      draw: ["entity:host-poste", ...ROLES_SPEC.draw].sort(),
+      collapsed: ["entity:host-poste", ...ROLES_SPEC.collapsed].sort(),
+    };
+    const rwhSource = buildArchiSourceView(FIX_DOC, rolesWithHostSpec);
+    const rwhRes = projectArchiCards(FIX_DOC, rwhSource, bindingFor(rolesWithHostSpec), ARCHI_CARDS_CONTENT);
+    expect(rwhRes.outcome).toBe("ok");
+    if (rwhRes.outcome !== "ok") return;
+    expect(rwhRes.renderOptions["occurrence:o-host-poste"]).toEqual({});
+
+    // Retired and placement-inherited status propagation -> proposed: true
+    const docMut = structuredClone(FIX_DOC) as any;
+    docMut.entities["entity:sys-engram"].attributes.lifecycle = { kind: "enum", value: "retired" };
+    docMut.relations["relation:po-rt-h2a"].attributes.lifecycle = { kind: "enum", value: "proposed" };
+    const mutRes = projectArchiCards(
+      docMut,
+      buildArchiSourceView(docMut, ROLES_SPEC),
+      bindingFor(ROLES_SPEC),
+      ARCHI_CARDS_CONTENT,
+    );
+    expect(mutRes.outcome).toBe("ok");
+    if (mutRes.outcome !== "ok") return;
+    expect(mutRes.renderOptions["occurrence:o-sys-engram"]).toEqual({
+      proposed: true,
+      toggleLabel: "Replier ou déplier engram",
+    });
+    expect(mutRes.renderOptions["occurrence:o-rt-h2a"]).toEqual({
+      proposed: true,
+    });
+
+    // English toggleLabel ("Collapse or expand <title>")
+    const enSpec: ArchiViewSpec = {
+      format: "engram.archi-view/1",
+      viewId: "view:en-min",
+      activeHierarchy: "archi-composition",
+      draw: ["entity:api-memory", "entity:sys-engram"],
+      collapsed: [],
+    };
+    const enRes = projectArchiCards(
+      FIX_DOC,
+      buildArchiSourceView(FIX_DOC, enSpec),
+      { ...bindingFor(enSpec), language: "en" },
+      ARCHI_CARDS_CONTENT,
+    );
+    expect(enRes.outcome).toBe("ok");
+    if (enRes.outcome !== "ok") return;
+    expect(enRes.renderOptions["occurrence:o-sys-engram"]).toEqual({
+      toggleLabel: "Collapse or expand engram",
+    });
+    expect(enRes.renderOptions["occurrence:o-api-memory"]).toEqual({});
+  });
+});
