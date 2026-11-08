@@ -1,5 +1,6 @@
 // Proposed archi-cards@1 slot projection, status marks, detail fitting, footer derivation and legend carriage
 // (spec/SPEC_EVOL_ARCHI_CARDS.md §3.2–§3.7, §3.9, §5.5; PROTO:44-200, :224-266, :333-376).
+import { digestOfPreimage } from "./canonical.js";
 import { sortDiagnostics, type EngramDiagnostic } from "./diagnostics.js";
 import type { NativeSemanticDocument, NativeViewDocument } from "./diagram-native-types.js";
 import { CONTRACT_PIN } from "./diagram-registry.js";
@@ -40,12 +41,18 @@ export type ArchiActiveHierarchy =
 
 /** proposed: text slots on an archi-cards@1 projected entity (§3.2). */
 export interface ArchiEntityTextSlots {
+  /** Absent when status === "current" and shortName is unset; consumer resolves text.title ?? entity.attributes.name.value (§3.2, m-r2-1). */
   readonly title?: string;
   readonly kicker?: string;
   readonly body?: string;
   readonly detail?: string;
   readonly subtitle?: string;
   readonly footer?: string;
+}
+
+/** proposed: resolved render-facing text slots on an archi-cards@1 projected entity where title is always a string (`text.title ?? entity.attributes.name.value`; §3.2, m-r2-1). */
+export interface ArchiRenderEntityTextSlots extends ArchiEntityTextSlots {
+  readonly title: string;
 }
 
 /** proposed: single entity entry inside view.presentation.diagram.entities (§3.2, §3.7). */
@@ -77,7 +84,7 @@ export type ArchiViewMeasures = Readonly<Record<string, ArchiOccurrenceMeasures>
 /** proposed: view binding input for projectArchiCards and checkArchiView (§2.4, §3.2, §3.7, §5.4). */
 export interface ArchiProjectionBinding {
   readonly activeHierarchy: ArchiActiveHierarchy;
-  readonly language?: ArchiLanguage;
+  readonly language: ArchiLanguage;
   readonly contractPin?: Pin;
   readonly presentationContractPin?: Pin;
   readonly cardsPin?: Pin;
@@ -439,20 +446,63 @@ function deriveKicker(m: ArchiSemanticModel, id: string, L: ArchiLanguageLabels)
   return fl ? `${L.kind[k]} · ${fl}` : L.kind[k];
 }
 
-/** proposed: pure archi-cards@1 slot projection over a retained source view (§3.2–§3.7, §3.9; PROTO:336-376). */
+/**
+ * proposed: pure archi-cards@1 slot projection over a retained source view (§3.2–§3.7, §3.9; PROTO:336-376).
+ *
+ * Note on `text.title`: omitted when `status === "current"` and `shortName` is unset; consumers resolve
+ * `text.title ?? entity.attributes.name.value` into {@link ArchiRenderEntityTextSlots} (§3.2, m-r2-1).
+ *
+ * Diagnostic pointers are rooted at the `{ view, measures }` scope (`/view/presentation/diagram/...` and
+ * `/measures/<occ>/<state>.<slot>`), plus `/cardsPin` for binding pin verification.
+ */
 export function projectArchiCards(
   document: NativeSemanticDocument,
   sourceView: NativeViewDocument,
   binding: ArchiProjectionBinding,
   cards: ArchiCardsContent = ARCHI_CARDS_CONTENT,
 ): ArchiCardsProjectionResult {
-  const language: ArchiLanguage = binding.language ?? "fr";
+  const language = binding.language;
+  if (language !== "fr" && language !== "en") {
+    return {
+      outcome: "refused",
+      diagnostics: [
+        {
+          origin: "engram",
+          severity: "error",
+          code: "archi-input-invalid",
+          nativeCode: "archi-input-invalid",
+          message: `Binding language "${String(language)}" is invalid (expected "fr" or "en").`,
+          path: "/language",
+          subjectRef: sourceView.viewId,
+        },
+      ],
+    };
+  }
   const L = cards.labels[language];
   const expectedContractPin = binding.presentationContractPin ?? binding.contractPin ?? CONTRACT_PIN;
   const m = buildArchiSemanticModel(document);
   const entities: Record<string, ArchiPresentationEntity> = {};
   const measures: Record<string, ArchiOccurrenceMeasures> = {};
   const diagnostics: EngramDiagnostic[] = [];
+
+  if (binding.cardsPin !== undefined) {
+    const expectedCardsDigest = digestOfPreimage(cards);
+    if (
+      binding.cardsPin.id !== "archi-cards" ||
+      binding.cardsPin.version !== "1" ||
+      binding.cardsPin.contentDigest !== expectedCardsDigest
+    ) {
+      diagnostics.push({
+        origin: "engram",
+        severity: "error",
+        code: "archi-pin-mismatch",
+        nativeCode: "archi-pin-mismatch",
+        message: `Binding cardsPin does not match archi-cards@1 contentDigest (${expectedCardsDigest}).`,
+        path: "/cardsPin",
+        subjectRef: "archi-cards@1",
+      });
+    }
+  }
 
   const governed = sourceView.presentation?.diagram;
   if (
@@ -467,7 +517,7 @@ export function projectArchiCards(
       code: "archi-pin-mismatch",
       nativeCode: "archi-pin-mismatch",
       message: `Source view ${sourceView.viewId} presentation.diagram.contractPin does not match binding contractPin.`,
-      path: "/presentation/diagram/contractPin",
+      path: "/view/presentation/diagram/contractPin",
       subjectRef: sourceView.viewId,
     });
   }
@@ -507,7 +557,7 @@ export function projectArchiCards(
         code: f.code,
         nativeCode: f.code,
         message: `Occurrence ${o} (${id}) failed footer derivation (${f.code}).`,
-        path: `/presentation/diagram/entities/${esc(o)}/text/footer`,
+        path: `/view/presentation/diagram/entities/${esc(o)}/text/footer`,
         nodeId: o,
         subjectRef: o,
       });
@@ -525,7 +575,7 @@ export function projectArchiCards(
           code: "archi-slot-missing",
           nativeCode: "archi-slot-missing",
           message: `Container occurrence ${o} (${id}) is missing required role for subtitle.`,
-          path: `/presentation/diagram/entities/${esc(o)}/text/subtitle`,
+          path: `/view/presentation/diagram/entities/${esc(o)}/text/subtitle`,
           nodeId: o,
           subjectRef: o,
         });
@@ -540,7 +590,7 @@ export function projectArchiCards(
           code: "archi-slot-missing",
           nativeCode: "archi-slot-missing",
           message: `Card occurrence ${o} (${id}) is missing required role for body.`,
-          path: `/presentation/diagram/entities/${esc(o)}/text/body`,
+          path: `/view/presentation/diagram/entities/${esc(o)}/text/body`,
           nodeId: o,
           subjectRef: o,
         });
@@ -553,7 +603,7 @@ export function projectArchiCards(
           code: "archi-detail-missing",
           nativeCode: "archi-detail-missing",
           message: `Card occurrence ${o} (${id}) has no detail items.`,
-          path: `/presentation/diagram/entities/${esc(o)}/text/detail`,
+          path: `/view/presentation/diagram/entities/${esc(o)}/text/detail`,
           nodeId: o,
           subjectRef: o,
         });
@@ -625,7 +675,7 @@ export function projectArchiCards(
           code: "archi-category-unbound",
           nativeCode: "archi-category-unbound",
           message: `Occurrence ${o} (${id}) category "${cat}" is not bound in legend ${binding.legendRef ?? "<none>"}.`,
-          path: `/presentation/diagram/entities/${esc(o)}/categoryRef`,
+          path: `/view/presentation/diagram/entities/${esc(o)}/categoryRef`,
           nodeId: o,
           subjectRef: o,
         });

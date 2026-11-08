@@ -85,6 +85,13 @@ function dsCodes(list: readonly { readonly severity?: string; readonly code: str
   return [...new Set(list.map((x) => `${x.severity === "warning" ? "W:" : ""}${x.code}${x.details?.check ? `/${x.details.check}` : ""}`))];
 }
 
+const UNFOLDED_DS_PORT: ArchiDsPort = {
+  projectView: (_doc, view) => view,
+  classifyInternalRelations: () => new Set(),
+  analyzeSummaries: () => ({ actives: new Map(), sourceIssues: [], conflicts: [] }),
+  createProfileRegistry: () => ({}),
+};
+
 describe("archi@1 view derivation and V1–V4 checks (tier E, §2.4, §6.1–§6.2)", () => {
   it("builds the 5 ported views and 2 HO views with valid shape, 0 archi diagnostics and exact groups/arrows (EV:12-19, :40-47, :75-82, :91-98, :154-161, H1)", () => {
     const cases: readonly [NativeSemanticDocument, ArchiViewSpec][] = [
@@ -99,7 +106,14 @@ describe("archi@1 view derivation and V1–V4 checks (tier E, §2.4, §6.1–§6
     for (const [doc, spec] of cases) {
       const { source } = buildProjectedSource(doc, spec);
       expect(checkViewShapeV2(source), spec.viewId).toBeNull();
-      expect(checkArchiView(doc, source, bindingFor(spec)), spec.viewId).toEqual([]);
+      expect(checkArchiView(doc, source, bindingFor(spec), UNFOLDED_DS_PORT), spec.viewId).toEqual([]);
+      for (const g of Object.values(source.groups)) {
+        expect(g).toEqual({ id: g.id, collapsed: false, occurrence: g.occurrence });
+        expect("label" in g).toBe(false);
+      }
+      for (const o of Object.values(source.entityOccurrences)) {
+        expect(o.geometry).toEqual({ x: 0, y: 0, width: 460, height: 200 });
+      }
     }
 
     // EV:18-19 groups and arrows for view:roles
@@ -161,6 +175,28 @@ describe("archi@1 view derivation and V1–V4 checks (tier E, §2.4, §6.1–§6
       "host-cluster": null,
       "svc-live": "grp.14.o-host-cluster",
     });
+    const depArrows = Object.values(dep.relationOccurrences)
+      .map((r) => r.relation.replace("relation:", "") + ((r.strokeStyle ?? "solid") === "dashed" ? "(dashed)" : ""))
+      .sort();
+    expect(depArrows).toEqual(["in-guard", "in-hooks", "in-mcp-claude", "in-mcp-codex", "in-track"]);
+
+    // EV:160-161 groups and arrows for view:roles-teintes (including legend-memoire and its 3 keys in grp.16.o-legend-memoire)
+    const teintes = buildProjectedSource(TINT_DOC, ROLES_TEINTES_SPEC).source;
+    expect(
+      Object.fromEntries(
+        Object.values(teintes.entityOccurrences).map((x) => [x.id.replace("occurrence:o-", ""), x.group ?? null]),
+      ),
+    ).toEqual({
+      ...rolesGroups,
+      "legend-memoire": null,
+      "key-alim": "grp.16.o-legend-memoire",
+      "key-ctrl": "grp.16.o-legend-memoire",
+      "key-mem": "grp.16.o-legend-memoire",
+    });
+    const teintesArrows = Object.values(teintes.relationOccurrences)
+      .map((r) => r.relation.replace("relation:", "") + ((r.strokeStyle ?? "solid") === "dashed" ? "(dashed)" : ""))
+      .sort();
+    expect(teintesArrows).toEqual(rolesArrows);
 
     // EV:97-98 groups and arrows for view:h2a-repo
     const repoView = buildProjectedSource(FIX_DOC, H2A_REPO_SPEC).source;
@@ -197,7 +233,7 @@ describe("archi@1 view derivation and V1–V4 checks (tier E, §2.4, §6.1–§6
         { role: "target", occurrence: archiOccurrenceRef("entity:api-h2a") },
       ],
     };
-    const diags = checkArchiView(FIX_DOC, v, bindingFor(ROLES_SPEC));
+    const diags = checkArchiView(FIX_DOC, v, bindingFor(ROLES_SPEC), UNFOLDED_DS_PORT);
     expect(diags.map((d) => d.code)).toEqual(["archi-edge-policy"]);
     expect(diags[0]!.path).toBe("/relationOccurrences/occurrence:e-pa-h2a");
     expect(diags[0]!.nodeId).toBe("occurrence:e-pa-h2a");
@@ -211,7 +247,7 @@ describe("archi@1 view derivation and V1–V4 checks (tier E, §2.4, §6.1–§6
     (v.entityOccurrences[archiOccurrenceRef("entity:rt-track")] as { group?: string }).group = archiGroupId(
       archiOccurrenceRef("entity:pkg-track"),
     );
-    const diags = checkArchiView(FIX_DOC, v, bindingFor(ROLES_SPEC));
+    const diags = checkArchiView(FIX_DOC, v, bindingFor(ROLES_SPEC), UNFOLDED_DS_PORT);
     expect(diags.map((d) => d.code)).toEqual(["archi-zone-mismatch"]);
     expect(diags[0]!.path).toBe("/entityOccurrences/occurrence:o-rt-track");
     expect(diags[0]!.nodeId).toBe("occurrence:o-rt-track");
@@ -222,7 +258,7 @@ describe("archi@1 view derivation and V1–V4 checks (tier E, §2.4, §6.1–§6
     const { source } = buildProjectedSource(FIX_DOC, ROLES_SPEC);
     const v = clone(source);
     delete (v.relationOccurrences["occurrence:e-ca-h2a-memory"] as { strokeStyle?: string }).strokeStyle;
-    const diags = checkArchiView(FIX_DOC, v, bindingFor(ROLES_SPEC));
+    const diags = checkArchiView(FIX_DOC, v, bindingFor(ROLES_SPEC), UNFOLDED_DS_PORT);
     expect(diags.map((d) => d.code)).toEqual(["archi-stroke-status"]);
     expect(diags[0]!.path).toBe("/relationOccurrences/occurrence:e-ca-h2a-memory");
     expect(diags[0]!.nodeId).toBe("occurrence:e-ca-h2a-memory");
@@ -236,7 +272,7 @@ describe("archi@1 view derivation and V1–V4 checks (tier E, §2.4, §6.1–§6
       ...v.entityOccurrences[archiOccurrenceRef("entity:rt-track")],
       id: "occurrence:o-dup",
     };
-    const diags = checkArchiView(FIX_DOC, v, bindingFor(ROLES_SPEC));
+    const diags = checkArchiView(FIX_DOC, v, bindingFor(ROLES_SPEC), UNFOLDED_DS_PORT);
     expect(diags.map((d) => d.code)).toEqual(["archi-occurrence-duplicate"]);
     expect(diags[0]!.nodeId).toBe("occurrence:o-dup");
     expect(diags[0]!.subjectRef).toBe("occurrence:o-dup");
@@ -252,11 +288,11 @@ describe("archi@1 view derivation and V1–V4 checks (tier E, §2.4, §6.1–§6
     };
     const { source } = buildProjectedSource(FIX_DOC, spec);
     expect(source.entityOccurrences[archiOccurrenceRef("entity:cmp-control")]?.group).toBe("grp.11.o-sys-track");
-    expect(checkArchiView(FIX_DOC, source, bindingFor(spec))).toEqual([]);
+    expect(checkArchiView(FIX_DOC, source, bindingFor(spec), UNFOLDED_DS_PORT)).toEqual([]);
 
     const v = clone(source);
     delete (v.entityOccurrences[archiOccurrenceRef("entity:cmp-control")] as { group?: string }).group;
-    const diags = checkArchiView(FIX_DOC, v, bindingFor(spec));
+    const diags = checkArchiView(FIX_DOC, v, bindingFor(spec), UNFOLDED_DS_PORT);
     expect(diags.map((d) => d.code)).toEqual(["archi-zone-mismatch"]);
     expect(diags[0]!.subjectRef).toBe("occurrence:o-cmp-control");
   });
@@ -268,11 +304,45 @@ describe("archi@1 view derivation and V1–V4 checks (tier E, §2.4, §6.1–§6
     (v.entityOccurrences[archiOccurrenceRef("entity:rt-claude")] as { group?: string }).group = archiGroupId(
       archiOccurrenceRef("entity:sys-h2a"),
     );
-    const diags = checkArchiView(FIX_DOC, v, bindingFor(ROLES_SPEC));
+    const diags = checkArchiView(FIX_DOC, v, bindingFor(ROLES_SPEC), UNFOLDED_DS_PORT);
     expect(diags.map((d) => d.code)).toEqual(["archi-zone-mismatch"]);
     expect(diags[0]!.path).toBe("/entityOccurrences/occurrence:o-rt-claude");
     expect(diags[0]!.nodeId).toBe("occurrence:o-rt-claude");
     expect(diags[0]!.subjectRef).toBe("occurrence:o-rt-claude");
+  });
+
+  it("V2 (archi-zone-mismatch) refuses misplaced occurrences on each non-composition active tree: archi-dossier-hosts, archi-source, archi-deployment (§2.4)", () => {
+    // 1. archi-dossier-hosts: CLI root rt-gemini left at root instead of grp.12.o-host-poste
+    const { source: hostsSource } = buildProjectedSource(HO_DOC, ROLES_HOSTS_SPEC);
+    const vHosts = clone(hostsSource);
+    delete (vHosts.entityOccurrences[archiOccurrenceRef("entity:rt-gemini")] as { group?: string }).group;
+    const dHosts = checkArchiView(HO_DOC, vHosts, bindingFor(ROLES_HOSTS_SPEC), UNFOLDED_DS_PORT);
+    expect(dHosts.map((d) => d.code)).toEqual(["archi-zone-mismatch"]);
+    expect(dHosts[0]!.subjectRef).toBe("occurrence:o-rt-gemini");
+
+    // 2. archi-source: sys-track left at root instead of grp.10.o-repo-h2a
+    const { source: repoSource } = buildProjectedSource(FIX_DOC, H2A_REPO_SPEC);
+    const vRepo = clone(repoSource);
+    delete (vRepo.entityOccurrences[archiOccurrenceRef("entity:sys-track")] as { group?: string }).group;
+    const dRepo = checkArchiView(FIX_DOC, vRepo, bindingFor(H2A_REPO_SPEC), UNFOLDED_DS_PORT);
+    expect(dRepo.map((d) => d.code)).toEqual(["archi-zone-mismatch"]);
+    expect(dRepo[0]!.subjectRef).toBe("occurrence:o-sys-track");
+
+    // 3. archi-deployment: svc-live placed in host-poste instead of host-cluster
+    const { source: depSource } = buildProjectedSource(FIX_DOC, DEPLOIEMENT_SPEC);
+    const vDep = clone(depSource);
+    (vDep.entityOccurrences[archiOccurrenceRef("entity:svc-live")] as { group?: string }).group =
+      "grp.12.o-host-poste";
+    const dDep = checkArchiView(FIX_DOC, vDep, bindingFor(DEPLOIEMENT_SPEC), UNFOLDED_DS_PORT);
+    expect(dDep.map((d) => d.code)).toEqual(["archi-zone-mismatch"]);
+    expect(dDep[0]!.subjectRef).toBe("occurrence:o-svc-live");
+  });
+
+  it("fails closed with archi-executor-unavailable when ds port is omitted at runtime (§5.5)", () => {
+    const { source } = buildProjectedSource(FIX_DOC, ROLES_SPEC);
+    const diags = checkArchiView(FIX_DOC, source, bindingFor(ROLES_SPEC), undefined as unknown as ArchiDsPort);
+    expect(diags.map((d) => d.code)).toEqual(["archi-executor-unavailable"]);
+    expect(diags[0]!.path).toBe("/summaryLabels");
   });
 });
 
@@ -305,7 +375,7 @@ describe.skipIf(!dsCloneAvailable())(`archi@1 view & presentation DS qualificati
       const { source } = buildProjectedSource(doc, spec);
       const collapsedIds = spec.collapsed.map(archiOccurrenceRef);
       const summaryLabels = collapsedIds.length
-        ? archiSummaries(doc, source, collapsedIds, ds as unknown as ArchiDsPort)
+        ? archiSummaries(doc, source, collapsedIds, ds as unknown as ArchiDsPort, "fr")
         : {};
       const withSums = Object.keys(summaryLabels).length ? { ...source, summaryLabels } : source;
       const displayed = collapsedIds.length ? ds.projectView(doc, withSums, collapsedIds) : source;
@@ -332,7 +402,7 @@ describe.skipIf(!dsCloneAvailable())(`archi@1 view & presentation DS qualificati
     const rawGov = buildArchiSourceView(TINT_DOC, ROLES_TEINTES_SPEC).presentation.diagram as Record<string, any>;
     const { source } = buildProjectedSource(TINT_DOC, ROLES_TEINTES_SPEC);
     const collapsedIds = ROLES_TEINTES_SPEC.collapsed.map(archiOccurrenceRef);
-    const summaryLabels = archiSummaries(TINT_DOC, source, collapsedIds, ds as unknown as ArchiDsPort);
+    const summaryLabels = archiSummaries(TINT_DOC, source, collapsedIds, ds as unknown as ArchiDsPort, "fr");
     const folded = ds.projectView(TINT_DOC, { ...source, summaryLabels }, collapsedIds);
 
     const pick = (dg: Record<string, any>) =>
@@ -395,7 +465,7 @@ describe.skipIf(!dsCloneAvailable())(`archi@1 view & presentation DS qualificati
     const collapsedIds = ROLES_TEINTES_SPEC.collapsed.map(archiOccurrenceRef);
     const view = ds.projectView(
       TINT_DOC,
-      { ...source, summaryLabels: archiSummaries(TINT_DOC, source, collapsedIds, ds as unknown as ArchiDsPort) },
+      { ...source, summaryLabels: archiSummaries(TINT_DOC, source, collapsedIds, ds as unknown as ArchiDsPort, "fr") },
       collapsedIds,
     );
 

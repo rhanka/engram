@@ -1,5 +1,6 @@
 // #711 KIT font metrics and §3.9 slot allocation parity tests
 // (spec/SPEC_EVOL_ARCHI_CARDS.md §3.9, §6.1, §6.3; EV:1, :106-112, :196-198).
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -27,6 +28,10 @@ import {
   measureArchiKicker,
   measureArchiText,
 } from "../src/ontology-guardian/archi-metrics.js";
+import { DS_COMMIT } from "../src/ontology-guardian/diagram-presentation-pins.js";
+import { DS_CLONE, dsCloneAvailable, dsSkipReason } from "./helpers/ds-executor.js";
+
+const DS_COMMIT_0370 = "bbf8b390d1704756cc43b433f31d0a43ea2a4792";
 
 const testsDir = dirname(fileURLToPath(import.meta.url));
 const KIT_ROOT = "/home/antoinefa/src/airbus-genair-hrpolnav/docs/ard/decision/focus/governance-kit";
@@ -221,3 +226,85 @@ describe.skipIf(!kitAvailable())(`#711 KIT source parity (§6.3, EV:1)${kitSkipR
     expect(ARCHI_CARDS_ALLOCATION.folded.footer).toEqual([428, 1]);
   });
 });
+
+function gitShowDs(commit: string, relPath: string): string {
+  return execFileSync("git", ["-C", DS_CLONE, "show", `${commit}:${relPath}`], {
+    encoding: "utf8",
+  });
+}
+
+function extractConstNumber(source: string, name: string): number {
+  const m = source.match(new RegExp(`export\\s+const\\s+${name}\\s*=\\s*(\\d+)\\s*;`));
+  if (!m?.[1]) throw new Error(`Constant ${name} not found`);
+  return Number(m[1]);
+}
+
+function extractObjectNumber(source: string, key: string): number {
+  const m = source.match(new RegExp(`\\b${key}\\s*:\\s*(\\d+)\\b`));
+  if (!m?.[1]) throw new Error(`Key ${key} not found`);
+  return Number(m[1]);
+}
+
+describe.skipIf(!dsCloneAvailable(DS_COMMIT) || !dsCloneAvailable(DS_COMMIT_0370))(
+  `DS measure.ts clamp derivation across 7c5a8c82 and 0.37.0 (tier DS, §3.9, §6.3)${dsSkipReason()}`,
+  () => {
+    it("asserts TOGGLE_ALLOCATION=32 at 7c5a8c82 and 66 at 0.37.0 (bbf8b390) and verifies the §3.9 clamp against both (§6.3)", () => {
+      const measure7c5 = gitShowDs(DS_COMMIT, "packages/diagram-canvas/src/layout/measure.ts");
+      const measure0370 = gitShowDs(DS_COMMIT_0370, "packages/diagram-canvas/src/layout/measure.ts");
+      const cardModel0370 = gitShowDs(
+        DS_COMMIT_0370,
+        "packages/components-svelte/src/lib/diagramCardModel.ts",
+      );
+
+      const width7c5 = extractConstNumber(measure7c5, "FIXED_CARD_WIDTH");
+      const inset7c5 = extractConstNumber(measure7c5, "CONTENT_INSET");
+      const toggle7c5 = extractConstNumber(measure7c5, "TOGGLE_ALLOCATION");
+
+      const width0370 = extractConstNumber(measure0370, "FIXED_CARD_WIDTH");
+      const inset0370 = extractConstNumber(measure0370, "CONTENT_INSET");
+      const toggle0370 = extractConstNumber(measure0370, "TOGGLE_ALLOCATION");
+
+      const cardGeometryToggle0370 = extractObjectNumber(cardModel0370, "toggleAllocation");
+      const foldedHeaderTextWidth0370 = extractObjectNumber(cardModel0370, "foldedHeaderTextWidth");
+
+      expect(width7c5).toBe(460);
+      expect(inset7c5).toBe(16);
+      expect(toggle7c5).toBe(32);
+
+      expect(width0370).toBe(460);
+      expect(inset0370).toBe(16);
+      expect(toggle0370).toBe(66);
+      expect(cardGeometryToggle0370).toBe(66);
+      expect(foldedHeaderTextWidth0370).toBe(290);
+
+      const inner = width7c5 - 2 * inset7c5;
+      expect(inner).toBe(428);
+      const headerWidth7c5 = inner - toggle7c5;
+      const headerWidth0370 = inner - toggle0370;
+      expect(headerWidth7c5).toBe(396);
+      expect(headerWidth0370).toBe(362);
+
+      // Card header (358) fits inside both DS header allocations (362 at 0.37.0, 396 at 7c5a8c82) and inner (428)
+      expect(ARCHI_CARDS_ALLOCATION.card.kicker[0]).toBe(358);
+      expect(ARCHI_CARDS_ALLOCATION.card.title[0]).toBe(358);
+      expect(ARCHI_CARDS_ALLOCATION.card.kicker[0]).toBeLessThanOrEqual(headerWidth0370);
+      expect(ARCHI_CARDS_ALLOCATION.card.title[0]).toBeLessThanOrEqual(headerWidth0370);
+      expect(headerWidth0370).toBeLessThanOrEqual(headerWidth7c5);
+
+      // Card body, detail, footer and folded footer are clamped to DS innerWidthOf(460) = 428
+      expect(ARCHI_CARDS_ALLOCATION.card.body).toEqual([inner, 1]);
+      expect(ARCHI_CARDS_ALLOCATION.card.detail).toEqual([inner, 1]);
+      expect(ARCHI_CARDS_ALLOCATION.card.footer).toEqual([inner, 1]);
+      expect(ARCHI_CARDS_ALLOCATION.folded.footer).toEqual([inner, 1]);
+
+      // Folded header kicker/title (290) match CARD_GEOMETRY.foldedHeaderTextWidth and fit inside 362 and 396
+      expect(ARCHI_CARDS_ALLOCATION.folded.kicker).toEqual([foldedHeaderTextWidth0370, 1]);
+      expect(ARCHI_CARDS_ALLOCATION.folded.title).toEqual([foldedHeaderTextWidth0370, 1]);
+      expect(ARCHI_CARDS_ALLOCATION.folded.title[0]).toBeLessThanOrEqual(headerWidth0370);
+
+      // Folded subtitle (396 = 460 - 64) equals inner - toggle7c5 (428 - 32) and fits inside inner (428)
+      expect(ARCHI_CARDS_ALLOCATION.folded.subtitle).toEqual([headerWidth7c5, 2]);
+      expect(ARCHI_CARDS_ALLOCATION.folded.subtitle[0]).toBeLessThanOrEqual(inner);
+    });
+  },
+);

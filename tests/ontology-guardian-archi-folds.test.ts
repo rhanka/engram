@@ -75,7 +75,7 @@ function sourceOf(doc: NativeSemanticDocument, spec: ArchiViewSpec): NativeViewD
 }
 
 function foldTo(ds: ArchiDsPort, doc: NativeSemanticDocument, source: NativeViewDocument, collapsedIds: readonly string[]): NativeViewDocument {
-  const summaryLabels = archiSummaries(doc, source, collapsedIds, ds);
+  const summaryLabels = archiSummaries(doc, source, collapsedIds, ds, "fr");
   const { summaryLabels: _old, ...bare } = source;
   void _old;
   return ds.projectView(
@@ -123,7 +123,18 @@ describe.skipIf(!dsCloneAvailable())(`archi-cards@1 fold summaries, RJ1, N12, 20
 
     // EV:48-56 view:roles-replie
     const replieSource = sourceOf(FIX_DOC, ROLES_REPLIE_SPEC);
-    const replieFolded = foldTo(dsPort, FIX_DOC, replieSource, ROLES_REPLIE_SPEC.collapsed.map(archiOccurrenceRef));
+    const replieCollapsed = ROLES_REPLIE_SPEC.collapsed.map(archiOccurrenceRef);
+    expect(Object.keys(archiSummaries(FIX_DOC, replieSource, replieCollapsed, dsPort, "fr"))).toEqual([
+      "summary:s1",
+      "summary:s2",
+      "summary:s3",
+      "summary:s4",
+      "summary:s5",
+      "summary:s6",
+      "summary:s7",
+      "summary:s8",
+    ]);
+    const replieFolded = foldTo(dsPort, FIX_DOC, replieSource, replieCollapsed);
     expect(checkArchiView(FIX_DOC, replieFolded, bindingFor(ROLES_REPLIE_SPEC), dsPort)).toEqual([]);
     expect(formatActiveSummaries(ds, FIX_DOC, replieFolded, reg1)).toEqual([
       '(rt-claude,sys-h2a,solid) "lance · appelle · 3 liaisons" ca-claude,in-hooks,in-mcp-claude',
@@ -201,7 +212,7 @@ describe.skipIf(!dsCloneAvailable())(`archi-cards@1 fold summaries, RJ1, N12, 20
     const T2 = ROLES_REPLIE_SPEC.collapsed.map(archiOccurrenceRef);
     const stale = ds.projectView(
       FIX_DOC,
-      { ...source, summaryLabels: archiSummaries(FIX_DOC, source, ROLES_SPEC.collapsed.map(archiOccurrenceRef), dsPort) },
+      { ...source, summaryLabels: archiSummaries(FIX_DOC, source, ROLES_SPEC.collapsed.map(archiOccurrenceRef), dsPort, "fr") },
       T2,
     );
     expect(ds.validateView(stale, FIX_DOC, opts1)).toEqual([]);
@@ -370,16 +381,15 @@ describe.skipIf(!dsCloneAvailable())(`archi-cards@1 fold summaries, RJ1, N12, 20
     expect(checkArchiView(HO_DOC, rolesHostsDefault, bindingFor(ROLES_HOSTS_SPEC), dsPort)).toEqual([]);
 
     const defaultSummaries = formatActiveSummaries(ds, HO_DOC, rolesHostsDefault, reg1);
-    expect(defaultSummaries).toContain(
+    expect(defaultSummaries).toEqual([
+      '(host-poste,api-h2a,solid) "appelle · outils h2a_*" ca-claude',
       '(host-poste,rt-h2a,solid) "lance · sondage · 8 liaisons" host-agy,host-claude,host-codex,host-gemini,host-hermes,host-muse,host-opencode,host-vibe',
-    );
-    expect(defaultSummaries).toContain('(host-poste,api-h2a,solid) "appelle · outils h2a_*" ca-claude');
-    expect(defaultSummaries).toContain('(host-poste,rt-track,solid) "lance · écritures du suivi" in-track');
-    expect(defaultSummaries).toContain(
+      '(host-poste,rt-track,solid) "lance · écritures du suivi" in-track',
       '(rt-h2a,sys-engram,dashed) "appelle · propositions et questions" ca-h2a-memory',
-    );
+    ]);
 
     // Exhaustive fold states of both HO views
+    const hoStats: Record<string, { containers: number; states: number; projectedAggregates: number; labelled: number }> = {};
     for (const [spec, expectedContainers, expectedStates] of [
       [ROLES_HOSTS_SPEC, 7, 128],
       [DEPLOIEMENT_HOSTS_SPEC, 2, 4],
@@ -406,6 +416,21 @@ describe.skipIf(!dsCloneAvailable())(`archi-cards@1 fold summaries, RJ1, N12, 20
       }
       expect(states).toBe(expectedStates);
       expect(labelled).toBe(projectedAggregates);
+      hoStats[spec.viewId] = { containers: containers.length, states, projectedAggregates, labelled };
     }
+    expect(hoStats).toEqual({
+      "view:roles-hosts": {
+        containers: 7,
+        states: 128,
+        projectedAggregates: 768,
+        labelled: 768,
+      },
+      "view:deploiement-hosts": {
+        containers: 2,
+        states: 4,
+        projectedAggregates: 0,
+        labelled: 0,
+      },
+    });
   });
 });

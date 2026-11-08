@@ -28,13 +28,35 @@ type NativeRelationOccurrence = NativeViewDocument["relationOccurrences"][string
 const FAMILY = "archi@1";
 const esc = (t: string): string => t.replace(/~/g, "~0").replace(/\//g, "~1");
 
-const ROLE_ORDER_BY_PROFILE_TYPE: ReadonlyMap<string, readonly [string, string]> = new Map([
-  ["generic@2::contains", ["parent", "child"]],
+interface DeclaredRelationType {
+  readonly id: string;
+  readonly roles: readonly { readonly role: string }[];
+}
+
+interface DeclaredProfile {
+  readonly id: string;
+  readonly relationTypes: readonly DeclaredRelationType[];
+}
+
+function buildRoleOrderMap(profiles: readonly DeclaredProfile[]): ReadonlyMap<string, readonly [string, string]> {
+  const map = new Map<string, readonly [string, string]>();
+  for (const p of profiles) {
+    for (const rt of p.relationTypes) {
+      if (rt.roles[0]?.role && rt.roles[1]?.role) {
+        map.set(`${p.id}::${rt.id}`, [rt.roles[0].role, rt.roles[1].role]);
+      }
+    }
+  }
+  return map;
+}
+
+const ROLE_ORDER_BY_PROFILE_TYPE: ReadonlyMap<string, readonly [string, string]> = buildRoleOrderMap([
+  ARCHI_V1.declaration as unknown as DeclaredProfile,
+  GENERIC_V2.declaration as unknown as DeclaredProfile,
 ]);
 
 const REGISTRY_CACHE = new WeakMap<object, unknown>();
 function registryForDs(ds: ArchiDsPort): unknown {
-  if (!ds.createProfileRegistry) return undefined;
   let cached = REGISTRY_CACHE.get(ds);
   if (cached === undefined) {
     cached = ds.createProfileRegistry([ARCHI_V1.declaration, GENERIC_V2.declaration]);
@@ -82,7 +104,7 @@ export interface ArchiDsPort {
     document: NativeSemanticDocument,
     collapsedSet: ReadonlySet<string>,
   ): ReadonlySet<string>;
-  analyzeSummaries?(
+  analyzeSummaries(
     view: NativeViewDocument,
     document: NativeSemanticDocument,
     options?: { readonly registry?: unknown },
@@ -91,7 +113,7 @@ export interface ArchiDsPort {
     readonly sourceIssues: readonly { readonly id: string; readonly check: string }[];
     readonly conflicts: readonly { readonly id: string; readonly check: string }[];
   };
-  createProfileRegistry?(profiles: readonly unknown[]): unknown;
+  createProfileRegistry(profiles: readonly unknown[]): unknown;
 }
 
 /** proposed: derived entity occurrence ref `occurrence:o-<local>` (§5.2; PROTO:253). */
@@ -119,7 +141,7 @@ export function buildArchiSourceView(
   const legends: Record<string, { readonly order: readonly string[] }> = {};
   const categoryTokens: { readonly legendRef: string; readonly category: string; readonly token: string }[] = [];
 
-  spec.draw.forEach((id, i) => {
+  for (const id of spec.draw) {
     const occ = archiOccurrenceRef(id);
     const k = m.kindOf(id);
     const p = archiPlacement(m, id, spec.activeHierarchy, drawnSet).parent;
@@ -127,19 +149,14 @@ export function buildArchiSourceView(
     entityOccurrences[occ] = {
       id: occ,
       entity: id,
-      geometry: {
-        x: 40 + (i % 5) * 320,
-        y: 40 + Math.floor(i / 5) * 200,
-        width: 280,
-        height: 140,
-      },
+      geometry: { x: 0, y: 0, width: 460, height: 200 },
       ...(group ? { group } : {}),
     };
     if (k && ARCHI_CONTAINER_KINDS.has(k)) {
       const gid = archiGroupId(occ);
-      groups[gid] = { id: gid, label: m.title(id), collapsed: false, occurrence: occ };
+      groups[gid] = { id: gid, collapsed: false, occurrence: occ };
     }
-  });
+  }
 
   if (spec.legend) {
     const lg = spec.legend;
@@ -148,11 +165,10 @@ export function buildArchiSourceView(
     entityOccurrences[lo] = {
       id: lo,
       entity: lg.legendRef,
-      geometry: { x: 40, y: 760, width: 320, height: 160 },
+      geometry: { x: 0, y: 0, width: 460, height: 200 },
     };
     groups[gid] = {
       id: gid,
-      label: lg.title ?? lg.legendRef,
       collapsed: false,
       occurrence: lo,
     };
@@ -160,19 +176,19 @@ export function buildArchiSourceView(
       form: "legend",
       text: lg.title ? { title: lg.title } : {},
     };
-    lg.order.forEach((ke, idx) => {
+    for (const ke of lg.order) {
       const ko = archiOccurrenceRef(ke);
       entityOccurrences[ko] = {
         id: ko,
         entity: ke,
-        geometry: { x: 60 + idx * 90, y: 800, width: 80, height: 32 },
+        geometry: { x: 0, y: 0, width: 460, height: 200 },
         group: gid,
       };
       govEntities[ko] = {
         form: "legend-key",
         text: {},
       };
-    });
+    }
     legends[lo] = { order: [...lg.order] };
     for (const row of lg.tokens) {
       categoryTokens.push({ legendRef: lg.legendRef, category: row.category, token: row.token });
@@ -245,13 +261,20 @@ function projectedAggregates(
     if (internal.has(ro.id)) continue;
     const r = document.relations[ro.relation];
     if (!r || ro.endpoints.length !== 2) continue;
-    const roles = ROLE_ORDER_BY_PROFILE_TYPE.get(`${r.profile}::${r.type}`) ?? ["source", "target"];
+    const roles = ROLE_ORDER_BY_PROFILE_TYPE.get(`${r.profile}::${r.type}`);
+    if (!roles) {
+      throw new Error(
+        `projectedAggregates: unknown relation profile/type "${r.profile}::${r.type}" (not declared in ARCHI_V1 or GENERIC_V2).`,
+      );
+    }
     const first = ro.endpoints.find((e) => e.role === roles[0]);
     const second = ro.endpoints.find((e) => e.role === roles[1]);
-    const [s, t] =
-      first && second
-        ? [first.occurrence, second.occurrence]
-        : [ro.endpoints[0]!.occurrence, ro.endpoints[1]!.occurrence];
+    if (!first || !second) {
+      throw new Error(
+        `projectedAggregates: relationOccurrence "${ro.id}" endpoints do not match declared roles [${roles[0]}, ${roles[1]}].`,
+      );
+    }
+    const [s, t] = [first.occurrence, second.occurrence];
     const style: "solid" | "dashed" = ro.strokeStyle ?? "solid";
     const key = `(${s},${t},${style})`;
     const cur: ProjectedAggregate = map.get(key) ?? {
@@ -289,9 +312,36 @@ export function archiSummaries(
   sourceView: NativeViewDocument,
   collapsed: readonly string[],
   ds: ArchiDsPort,
-  cards: ArchiCardsContent = ARCHI_CARDS_CONTENT,
-  language: ArchiLanguage = "fr",
+  language: ArchiLanguage,
+  cards?: ArchiCardsContent,
+): Readonly<Record<string, ArchiSummaryDefinition>>;
+export function archiSummaries(
+  document: NativeSemanticDocument,
+  sourceView: NativeViewDocument,
+  collapsed: readonly string[],
+  ds: ArchiDsPort,
+  cards: ArchiCardsContent,
+  language: ArchiLanguage,
+): Readonly<Record<string, ArchiSummaryDefinition>>;
+export function archiSummaries(
+  document: NativeSemanticDocument,
+  sourceView: NativeViewDocument,
+  collapsed: readonly string[],
+  ds: ArchiDsPort,
+  languageOrCards: ArchiLanguage | ArchiCardsContent,
+  cardsOrLanguage?: ArchiCardsContent | ArchiLanguage,
 ): Readonly<Record<string, ArchiSummaryDefinition>> {
+  const language: ArchiLanguage =
+    typeof languageOrCards === "string"
+      ? languageOrCards
+      : (cardsOrLanguage as ArchiLanguage);
+  const cards: ArchiCardsContent =
+    typeof languageOrCards === "string"
+      ? ((cardsOrLanguage as ArchiCardsContent | undefined) ?? ARCHI_CARDS_CONTENT)
+      : languageOrCards;
+  if (language !== "fr" && language !== "en") {
+    throw new Error(`archiSummaries: unsupported language "${String(language)}" (expected "fr" | "en").`);
+  }
   const { summaryLabels: _old, ...bare } = sourceView;
   void _old;
   const projected = ds.projectView(document, bare, collapsed);
@@ -312,7 +362,7 @@ export function archiSummaries(
       ids.length === 1 && typeof singleLabel === "string"
         ? singleLabel
         : `${verbs.join(" · ")} · ${ids.length} ${cards.labels[language].links}`;
-    const id = `summary:s-${i}`;
+    const id = `summary:s${i}`;
     out[id] = {
       id,
       sourceOccurrence: x.source,
@@ -331,10 +381,21 @@ export function checkArchiView(
   document: NativeSemanticDocument,
   view: NativeViewDocument,
   binding: ArchiProjectionBinding,
-  ds?: ArchiDsPort,
+  ds: ArchiDsPort,
 ): readonly EngramDiagnostic[] {
   const m = buildArchiSemanticModel(document);
   const diagnostics: EngramDiagnostic[] = [];
+  if (binding.language !== "fr" && binding.language !== "en") {
+    diagnostics.push({
+      origin: "engram",
+      severity: "error",
+      code: "archi-input-invalid",
+      nativeCode: "archi-input-invalid",
+      message: `Binding language "${String(binding.language)}" is invalid (expected "fr" or "en").`,
+      path: "/language",
+      subjectRef: view.viewId,
+    });
+  }
   const byEnt = new Map<string, string>();
 
   // V1: at most one entityOccurrence per archi@1 entity
@@ -408,22 +469,28 @@ export function checkArchiView(
   }
 
   // V5: every projected aggregate edge in a folded view must have an active summaryLabel
-  if (ds) {
+  if (
+    !ds ||
+    typeof ds.projectView !== "function" ||
+    typeof ds.classifyInternalRelations !== "function" ||
+    typeof ds.analyzeSummaries !== "function" ||
+    typeof ds.createProfileRegistry !== "function"
+  ) {
+    diagnostics.push({
+      origin: "engram",
+      severity: "error",
+      code: "archi-executor-unavailable",
+      nativeCode: "archi-executor-unavailable",
+      message: `checkArchiView requires an ArchiDsPort with projectView, classifyInternalRelations, analyzeSummaries, and createProfileRegistry.`,
+      path: "/summaryLabels",
+      subjectRef: view.viewId,
+    });
+  } else {
     const collapsedIds = Object.values(view.groups)
       .filter((g) => g.collapsed && g.occurrence)
       .map((g) => g.occurrence!);
     const registry = registryForDs(ds);
-    const activeKeys: ReadonlySet<string> = ds.analyzeSummaries
-      ? new Set(
-          ds
-            .analyzeSummaries(view, document, { registry })
-            .actives.keys(),
-        )
-      : new Set(
-          Object.values(view.summaryLabels ?? {}).map(
-            (s) => `(${s.sourceOccurrence},${s.targetOccurrence},${s.strokeStyle ?? "solid"})`,
-          ),
-        );
+    const activeKeys = new Set(ds.analyzeSummaries(view, document, { registry }).actives.keys());
     for (const x of projectedAggregates(view, document, collapsedIds, ds)) {
       if (!activeKeys.has(x.key)) {
         diagnostics.push({

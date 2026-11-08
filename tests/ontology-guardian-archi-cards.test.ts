@@ -12,6 +12,7 @@ import {
   ARCHI_CARDS_ALLOCATION,
   ARCHI_CARDS_CONTENT,
   ARCHI_CARDS_LABELS,
+  ARCHI_CARDS_PIN,
 } from "../src/ontology-guardian/archi-cards-data.js";
 import {
   projectArchiCards,
@@ -52,11 +53,12 @@ const clone = <T>(x: T): T => structuredClone(x);
 const T = (value: string) => ({ kind: "text" as const, value });
 const N = (value: string) => ({ kind: "enum" as const, value });
 
-function bindingFor(spec: ArchiViewSpec): ArchiProjectionBinding {
+function bindingFor(spec: ArchiViewSpec, language: "fr" | "en" = "fr"): ArchiProjectionBinding {
   return {
     activeHierarchy: spec.activeHierarchy,
-    language: "fr",
+    language,
     contractPin: CONTRACT_PIN,
+    cardsPin: ARCHI_CARDS_PIN,
     ...(spec.legend ? { legendRef: spec.legend.legendRef } : {}),
   };
 }
@@ -417,25 +419,130 @@ describe("archi-cards@1 slot projection over the 5 ported views (§3.2–§3.9, 
       "SYSTÈME · ENGRAM": 213,
     });
 
-    // Closed kickers in en (§3.10): every card kicker <= 358, every container kicker <= 290
-    const closedEnCards = [
-      "Actor · Organization",
-      "Artifact · Manifest",
-      "Store · Objects",
-      "Store · Graph",
-      "Runtime · Daemon",
-      "Runtime · Hook",
-      "API · Commands",
-      "Component",
-      "Service",
+    // All 32 closed kind × form pairs in fr and en (§3.10, m2)
+    const closedPairs: readonly [keyof typeof ARCHI_CARDS_LABELS.fr.kind, string | null, boolean][] = [
+      ["actor", null, false],
+      ["actor", "human", false],
+      ["actor", "agent", false],
+      ["actor", "team", false],
+      ["actor", "org", false],
+      ["system", null, true],
+      ["repo", null, true],
+      ["package", "library", true],
+      ["package", "plugin", true],
+      ["package", "app", true],
+      ["component", null, false],
+      ["runtime", "cli", false],
+      ["runtime", "mcp-server", false],
+      ["runtime", "daemon", false],
+      ["runtime", "job", false],
+      ["runtime", "hook", false],
+      ["service", null, false],
+      ["api", "mcp", false],
+      ["api", "http", false],
+      ["api", "cli", false],
+      ["store", "jsonl", false],
+      ["store", "file", false],
+      ["store", "database", false],
+      ["store", "object-store", false],
+      ["store", "graph", false],
+      ["artifact", "skill", false],
+      ["artifact", "manifest", false],
+      ["artifact", "schema", false],
+      ["artifact", "doc", false],
+      ["host", "workstation", true],
+      ["host", "cluster", true],
+      ["host", "cloud-project", true],
     ];
-    for (const k of closedEnCards) {
-      expect(measureArchiKicker(k, "en"), k).toBeLessThanOrEqual(ARCHI_CARDS_ALLOCATION.card.kicker[0]);
+    expect(closedPairs).toHaveLength(32);
+    const formatKicker = (lang: "fr" | "en", kind: keyof typeof ARCHI_CARDS_LABELS.fr.kind, form: string | null): string => {
+      const L = ARCHI_CARDS_LABELS[lang];
+      const fl = kind === "api" && form === "cli" ? L.form["api.cli"] : form ? L.form[form] : undefined;
+      return fl ? `${L.kind[kind]} · ${fl}` : L.kind[kind];
+    };
+    const allFrWidths: Record<string, number> = {};
+    const allEnWidths: Record<string, number> = {};
+    for (const [kind, form, isContainer] of closedPairs) {
+      const kFr = formatKicker("fr", kind, form);
+      const kEn = formatKicker("en", kind, form);
+      const wFr = r1(measureArchiKicker(kFr, "fr"));
+      const wEn = r1(measureArchiKicker(kEn, "en"));
+      const budget = isContainer ? ARCHI_CARDS_ALLOCATION.folded.kicker[0] : ARCHI_CARDS_ALLOCATION.card.kicker[0];
+      expect(wFr, `fr:${kFr}`).toBeLessThanOrEqual(budget);
+      expect(wEn, `en:${kEn}`).toBeLessThanOrEqual(budget);
+      allFrWidths[kFr] = wFr;
+      allEnWidths[kEn] = wEn;
     }
-    const closedEnZones = ["Host · Cloud project", "Package · Plugin", "Repo", "System"];
-    for (const k of closedEnZones) {
-      expect(measureArchiKicker(k, "en"), k).toBeLessThanOrEqual(ARCHI_CARDS_ALLOCATION.folded.kicker[0]);
-    }
+    expect({ allFrWidths, allEnWidths }).toEqual({
+      allFrWidths: {
+        Acteur: 84.2,
+        "Acteur · Humain": 189.7,
+        "Acteur · Agent": 174.3,
+        "Acteur · Équipe": 181.8,
+        "Acteur · Organisation": 262.7,
+        Système: 101.4,
+        Repo: 58.3,
+        "Paquet · Lib": 137.9,
+        "Paquet · Plugin": 182.3,
+        "Paquet · App": 144.5,
+        Composant: 134.3,
+        "Exécution · CLI": 173.9,
+        "Exécution · MCP": 187.5,
+        "Exécution · Démon": 219.1,
+        "Exécution · Job": 180.5,
+        "Exécution · Hook": 201.6,
+        Service: 91.7,
+        "API · MCP": 102.7,
+        "API · HTTP": 108.4,
+        "API · Commandes": 195.4,
+        "Stockage · JSONL": 202.4,
+        "Stockage · Fichier": 217.8,
+        "Stockage · Base": 191,
+        "Stockage · Objets": 214.7,
+        "Stockage · Graphe": 220.5,
+        "Artefact · Skill": 186.2,
+        "Artefact · Manifeste": 245.1,
+        "Artefact · Schéma": 216.5,
+        "Artefact · Doc": 172.1,
+        "Hôte · Poste": 148,
+        "Hôte · Cluster": 175.2,
+        "Hôte · Projet cloud": 237.2,
+      },
+      allEnWidths: {
+        Actor: 71.5,
+        "Actor · Human": 170.4,
+        "Actor · Agent": 161.6,
+        "Actor · Team": 149.7,
+        "Actor · Organization": 248.2,
+        System: 88.2,
+        Repo: 58.3,
+        "Package · Lib": 153.2,
+        "Package · Plugin": 197.6,
+        "Package · App": 159.8,
+        Component: 135.2,
+        "Runtime · CLI": 151.5,
+        "Runtime · MCP": 165.1,
+        "Runtime · Daemon": 209.9,
+        "Runtime · Job": 158.1,
+        "Runtime · Hook": 179.1,
+        Service: 91.7,
+        "API · MCP": 102.7,
+        "API · HTTP": 108.4,
+        "API · Commands": 182.2,
+        "Store · JSONL": 159.4,
+        "Store · File": 135.6,
+        "Store · Database": 201.6,
+        "Store · Objects": 186.2,
+        "Store · Graph": 164.2,
+        "Artifact · Skill": 179.6,
+        "Artifact · Manifest": 225.3,
+        "Artifact · Schema": 209.9,
+        "Artifact · Doc": 165.5,
+        "Host · Workstation": 232.3,
+        "Host · Cluster": 175.6,
+        "Host · Cloud project": 252.1,
+      },
+    });
   });
 });
 
@@ -555,6 +662,116 @@ describe("RJ2: status marks « (cible) » / « (retiré) » and detail +N fittin
       expect(manyRes.measures[occ]!["card.detail"]!.available).toBe(428);
       expect(manyRes.measures[occ]!["card.detail"]!.overflow).toBe(false);
     }
+
+    // m1: relation:po-rt-track retired -> title "CLI track (retiré)"
+    const retiredNest = clone(FIX_DOC);
+    (retiredNest.relations["relation:po-rt-track"]!.attributes as Record<string, unknown>)["lifecycle"] = N("retired");
+    const retiredNestRes = projectArchiCards(
+      retiredNest,
+      buildArchiSourceView(retiredNest, ROLES_SPEC),
+      bindingFor(ROLES_SPEC),
+    );
+    expect(retiredNestRes.outcome).toBe("ok");
+    if (retiredNestRes.outcome === "ok") {
+      expect(retiredNestRes.diagram.entities[archiOccurrenceRef("entity:rt-track")]!.text.title).toBe(
+        "CLI track (retiré)",
+      );
+    }
+
+    // m1: item whose entity is retired and relation is proposed -> "(retiré)" (precedence retired > proposed)
+    const precedenceDoc = clone(FIX_DOC);
+    (precedenceDoc.entities["entity:svc-live"]!.attributes as Record<string, unknown>)["lifecycle"] = N("retired");
+    (precedenceDoc.relations["relation:pa-live"]!.attributes as Record<string, unknown>)["lifecycle"] = N("proposed");
+    const precedenceRes = projectArchiCards(
+      precedenceDoc,
+      buildArchiSourceView(precedenceDoc, ROLES_SPEC),
+      bindingFor(ROLES_SPEC),
+    );
+    expect(precedenceRes.outcome).toBe("ok");
+    if (precedenceRes.outcome === "ok") {
+      expect(precedenceRes.diagram.entities[archiOccurrenceRef("entity:api-memory")]!.text.detail).toBe(
+        "fourni par: engram live (retiré)",
+      );
+      expect(precedenceRes.diagram.entities[archiOccurrenceRef("entity:svc-live")]!.text.title).toBe(
+        "engram live (retiré)",
+      );
+    }
+  });
+
+  it("projects view:roles in English (en) across card and container kinds with (target) and (retired) marks (§3.2–§3.6)", () => {
+    const source = buildArchiSourceView(FIX_DOC, ROLES_SPEC);
+    const enRes = projectArchiCards(FIX_DOC, source, bindingFor(ROLES_SPEC, "en"), ARCHI_CARDS_CONTENT);
+    expect(enRes.outcome).toBe("ok");
+    if (enRes.outcome !== "ok") return;
+    const ents = enRes.diagram.entities;
+
+    // One card/container per kind in view:roles (en)
+    expect(ents["occurrence:o-rt-track"]!.text).toEqual({
+      kicker: "Runtime · CLI",
+      title: "CLI track",
+      body: "Valide puis écrit le suivi",
+      detail: "on: Poste de travail",
+      footer: "repo: h2a · @sentropic/track",
+    });
+    expect(ents["occurrence:o-api-memory"]!.text).toEqual({
+      kicker: "API · MCP",
+      body: "Six outils mémoire, contrat figé",
+      detail: "provided by: engram live (target)",
+      footer: "repo: engram",
+    });
+    expect(ents["occurrence:o-art-branch"]!.text).toEqual({
+      kicker: "Artifact · Skill",
+      body: "Guide la fusion et la clôture",
+      detail: "loaded by: Claude Code · Codex",
+      footer: "repo: h2a · @sentropic/track",
+    });
+    expect(ents["occurrence:o-cmp-control"]!.text).toEqual({
+      kicker: "Component",
+      title: "Contrôle Track",
+      body: "Valide ou refuse l'écriture",
+      detail: "run by: CLI track",
+      footer: "repo: h2a · @sentropic/track",
+    });
+    expect(ents["occurrence:o-st-events"]!.text).toEqual({
+      kicker: "Store · JSONL",
+      title: "events.jsonl",
+      body: "Journal du suivi, ajout seul",
+      detail: "read by: CLI h2a · track-mcp",
+      footer: "written by: CLI track",
+    });
+    expect(ents["occurrence:o-svc-live"]!.text).toEqual({
+      kicker: "Service",
+      title: "engram live (target)",
+      body: "Tient le track record vivant",
+      detail: "on: Cluster (target)",
+      footer: "operated by: cluster-mesh (target)",
+    });
+    expect(ents["occurrence:o-pkg-h2a"]!.text).toEqual({
+      kicker: "Package · Lib",
+      subtitle: "Code JS de h2a et bin h2a",
+      footer: "repo: h2a",
+    });
+    expect(ents["occurrence:o-sys-engram"]!.text).toEqual({
+      kicker: "System",
+      subtitle: "Mémoire gouvernée du track",
+      footer: "repo: engram",
+    });
+
+    // Retired mark in English: "(retired)"
+    const retiredEn = clone(FIX_DOC);
+    (retiredEn.entities["entity:svc-live"]!.attributes as Record<string, unknown>)["lifecycle"] = N("retired");
+    const retiredEnRes = projectArchiCards(
+      retiredEn,
+      buildArchiSourceView(retiredEn, ROLES_SPEC),
+      bindingFor(ROLES_SPEC, "en"),
+    );
+    expect(retiredEnRes.outcome).toBe("ok");
+    if (retiredEnRes.outcome === "ok") {
+      expect(retiredEnRes.diagram.entities["occurrence:o-svc-live"]!.text.title).toBe("engram live (retired)");
+      expect(retiredEnRes.diagram.entities["occurrence:o-api-memory"]!.text.detail).toBe(
+        "provided by: engram live (retired)",
+      );
+    }
   });
 });
 
@@ -566,9 +783,32 @@ describe("archi-cards@1 negative and boundary cases: N13, N15, N20, N21, N22, N2
     expect(res.outcome).toBe("refused");
     if (res.outcome !== "refused") return;
     expect(res.diagnostics.map((x) => x.code)).toEqual(["archi-detail-missing"]);
-    expect(res.diagnostics[0]!.path).toBe("/presentation/diagram/entities/occurrence:o-rt-track/text/detail");
+    expect(res.diagnostics[0]!.path).toBe("/view/presentation/diagram/entities/occurrence:o-rt-track/text/detail");
     expect(res.diagnostics[0]!.nodeId).toBe("occurrence:o-rt-track");
     expect(res.diagnostics[0]!.subjectRef).toBe("occurrence:o-rt-track");
+    expect(validPointer(res.diagnostics[0]!.path!)).toBe(true);
+  });
+
+  it("refuses forged binding.cardsPin with archi-pin-mismatch on /cardsPin and subjectRef archi-cards@1 (§5.4)", () => {
+    const source = buildArchiSourceView(FIX_DOC, ROLES_SPEC);
+    const forged = {
+      ...ARCHI_CARDS_PIN,
+      contentDigest: "0".repeat(64) as typeof ARCHI_CARDS_PIN.contentDigest,
+    };
+    const res = projectArchiCards(FIX_DOC, source, {
+      ...bindingFor(ROLES_SPEC),
+      cardsPin: forged,
+    });
+    expect(res.outcome).toBe("refused");
+    if (res.outcome !== "refused") return;
+    expect(res.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "archi-pin-mismatch",
+        nativeCode: "archi-pin-mismatch",
+        path: "/cardsPin",
+        subjectRef: "archi-cards@1",
+      }),
+    ]);
     expect(validPointer(res.diagnostics[0]!.path!)).toBe(true);
   });
 
@@ -623,7 +863,7 @@ describe("archi-cards@1 negative and boundary cases: N13, N15, N20, N21, N22, N2
     expect(res.outcome).toBe("refused");
     if (res.outcome !== "refused") return;
     expect(res.diagnostics.map((x) => x.code)).toEqual(["archi-category-unbound"]);
-    expect(res.diagnostics[0]!.path).toBe("/presentation/diagram/entities/occurrence:o-rt-codex/categoryRef");
+    expect(res.diagnostics[0]!.path).toBe("/view/presentation/diagram/entities/occurrence:o-rt-codex/categoryRef");
     expect(res.diagnostics[0]!.nodeId).toBe("occurrence:o-rt-codex");
     expect(res.diagnostics[0]!.subjectRef).toBe("occurrence:o-rt-codex");
   });
@@ -632,6 +872,7 @@ describe("archi-cards@1 negative and boundary cases: N13, N15, N20, N21, N22, N2
     const source = buildArchiSourceView(TINT_DOC, ROLES_TEINTES_SPEC);
     const res = projectArchiCards(TINT_DOC, source, {
       activeHierarchy: ROLES_TEINTES_SPEC.activeHierarchy,
+      language: "fr",
       contractPin: CONTRACT_PIN,
     });
     expect(res.outcome).toBe("refused");
