@@ -129,13 +129,16 @@ export const ARCHI_CORPUS_REF = "engram:diagram-archi-corpus/1" as const;
 
 /** proposed: raw-byte SHA-256 pins of every committed archi@1 corpus fixture (§2.5, §6.1). */
 export const ARCHI_CORPUS_FIXTURES: readonly CorpusFixturePin[] = deepFreeze([
+  { path: "tests/fixtures/archi/hosts-r3/architecture.mmd", sha256: "b19091784b38df65d0733a8825157fdf0ec0e6bd9f62b37971a2bbd456b1d118" },
   { path: "tests/fixtures/archi/hosts-r3/document.json", sha256: "766b5bfc16080556889431caf10fc54925393ac5ce2097e0ca373c40d4bafe48" },
   { path: "tests/fixtures/archi/hosts-r3/manifest.json", sha256: "90f39d252002d283746e5fd0fe18601a6dd0691c816677d4e8948baeaaffb692" },
   { path: "tests/fixtures/archi/hosts-r3/view-specs/deploiement-hosts.json", sha256: "2f92579b1cefeeffc4fb013a4cee9ad277c3ff5463a7fde9d3125ffcdf3bca54" },
   { path: "tests/fixtures/archi/hosts-r3/view-specs/roles-hosts.json", sha256: "707d55e0e00410e23eacb2a0540f68d6896d8da3f9aaeb66dbcbe2031a6a07db" },
+  { path: "tests/fixtures/archi/joint-r2-teintes/architecture.mmd", sha256: "d85a47e5343a8bf0c301236c53916ffe58e33a39bafea3993dae60ba51164436" },
   { path: "tests/fixtures/archi/joint-r2-teintes/document.json", sha256: "b0626677981eff1faffe41da33d6f6c12863a06e11dac93c0fef55cc0ac6b644" },
   { path: "tests/fixtures/archi/joint-r2-teintes/manifest.json", sha256: "763f0d0e230d7319cacd192791a3821efd515cfba6f07ba2db1c49175fa74ef7" },
   { path: "tests/fixtures/archi/joint-r2-teintes/view-specs/roles-teintes.json", sha256: "ada1a60751f64901d5aac7fe8e370fbe0e664bccd8cf6b89fcffb2239cba00d0" },
+  { path: "tests/fixtures/archi/joint-r2/architecture.mmd", sha256: "463e52bf0fe49ff860b1f0bdf20019684f957d2e91f5adfc44da010212068494" },
   { path: "tests/fixtures/archi/joint-r2/document.json", sha256: "93fe81e1d1dbd8c56151cd9c0231c37997316ca2f77d8a476d37ff9416b8e181" },
   { path: "tests/fixtures/archi/joint-r2/manifest.json", sha256: "006b477ce8749c623433b4ceebc8d8bd5b094e40a1f38822076281ff341d0ece" },
   { path: "tests/fixtures/archi/joint-r2/view-specs/deploiement.json", sha256: "00a74b813f570ba24448883418bf713693f84b73a913578cdb91b83a6db9ae1d" },

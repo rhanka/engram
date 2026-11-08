@@ -1,0 +1,491 @@
+flowchart LR
+%% @dl format engram.archi-mermaid/1
+%% @dl document archi-joint
+%% @dl schema 1.1
+%% @dl revision 0
+%% @dl language fr
+%% @dl owning-repo e_repo_h2a
+%% @dl profile archi@1
+%% @dl pin profile archi 1.0.0 81ed1a11925f9bb1d644a839cad788555ffeea876c8c09d2d0a34d6981e8b344
+%% @dl pin cards archi-cards 1 7de031e42469eb426cd520fab2f390e33ec62fca374d224b463bbe9d70cb1246
+%% @dl pin view-schema diagram-view-schema 2 50c97fc87a9546facff86f2deab8fdb99073419f43eef09958b96225367037ef
+
+%% @dl entity actor org
+%% @dl evidence ".github/workflows/ci.yml:234"
+e_act_anthropic["Anthropic"]
+
+%% @dl entity actor org
+%% @dl evidence "unverified — no vendor attribution in reviewed code/docs"
+e_act_gemini_owner_unverified["unverified"]
+
+%% @dl entity actor org
+%% @dl evidence "docs/plugin-capability-matrix.md:5"
+e_act_google["Google"]
+
+%% @dl entity actor org
+%% @dl evidence "packages/h2a/src/hosts/muse.ts:10"
+e_act_meta["Meta"]
+
+%% @dl entity actor org
+%% @dl evidence "packages/h2a/src/hosts/vibe.ts:9"
+e_act_mistral["Mistral"]
+
+%% @dl entity actor org
+%% @dl evidence "docs/specs/2026-06-28-h2a-command-mapping-v6.md:17"
+e_act_nousresearch["NousResearch"]
+
+%% @dl entity actor org
+%% @dl evidence ".github/workflows/ci.yml:85"
+e_act_openai["OpenAI"]
+
+%% @dl entity actor org
+%% @dl evidence "unverified — no vendor attribution in reviewed code/docs"
+e_act_opencode_owner_unverified["unverified"]
+
+%% @dl entity actor
+%% @dl evidence "h2a:packages/h2a/package.json:18 (espace GitHub ; responsabilité = assertion)"
+e_act_rhanka["rhanka"]
+
+%% @dl entity system
+%% @dl role "Mémoire gouvernée du track"
+%% @dl evidence "G0:76"
+%% @dl evidence "R7b-owner-comments.fr.md:115-117"
+subgraph e_sys_engram["engram"]
+  %% @dl entity service
+  %% @dl role "Tient le track record vivant"
+  %% @dl lifecycle proposed
+  %% @dl evidence "R7b-owner-comments.fr.md:122"
+  %% @dl evidence "R7b-owner-comments.fr.md:152-154"
+  %% @dl nest po-live
+  %% @dl lifecycle proposed
+  %% @dl evidence "R7b-owner-comments.fr.md:115-117"
+  e_svc_live["engram live"]
+  %% @dl entity api mcp
+  %% @dl role "Six outils mémoire, contrat figé"
+  %% @dl evidence "G0:76 (I-3)"
+  %% @dl access read-write
+  %% @dl nest po-api-mem
+  %% @dl evidence "G0:76"
+  e_api_memory["Outils mémoire"]
+end
+
+%% @dl entity system
+%% @dl role "Relie les agents des CLI"
+%% @dl evidence "h2a:packages/h2a/package.json:2-4"
+subgraph e_sys_h2a["h2a"]
+  %% @dl entity package library
+  %% @dl role "Code JS de h2a et bin h2a"
+  %% @dl evidence "h2a:packages/h2a/package.json:2-4"
+  %% @dl evidence "h2a:packages/h2a/package.json:44-46"
+  %% @dl version "0.91.0"
+  %% @dl nest po-pkg-h2a
+  %% @dl evidence "h2a:packages/h2a/package.json:2-4"
+  subgraph e_pkg_h2a["@sentropic/h2a"]
+  end
+  %% @dl entity package plugin
+  %% @dl shortName "Plugin h2a"
+  %% @dl role "Branche h2a dans les CLI"
+  %% @dl evidence "h2a:packages/h2a/.claude-plugin/plugin.json:1-23"
+  %% @dl evidence "h2a:.claude-plugin/marketplace.json:9-11"
+  %% @dl version "0.91.0"
+  %% @dl nest po-plugin
+  %% @dl evidence "h2a:.claude-plugin/marketplace.json:9-11"
+  subgraph e_pkg_plugin["h2a"]
+    %% @dl entity artifact skill
+    %% @dl shortName "track-report"
+    %% @dl role "Rapport Track pour l'owner"
+    %% @dl evidence "h2a:packages/h2a/skills/harness/track-report/SKILL.md:1-20"
+    %% @dl nest po-report
+    %% @dl evidence "track-facts-r5.md:52-54"
+    e_art_track_report["harness/track-report"]
+  end
+  %% @dl entity runtime hook
+  %% @dl shortName "Garde Bash"
+  %% @dl role "Bloque la CLI h2a lancée à la main"
+  %% @dl evidence "h2a:packages/h2a/hooks/hooks.json:4-15"
+  %% @dl evidence "h2a:packages/h2a/hooks/deny-manual-h2a-cli.mjs:10-37"
+  %% @dl nest po-guard
+  %% @dl evidence "h2a:packages/h2a/hooks/hooks.json:4-15"
+  e_rt_guard["deny-manual-h2a-cli"]
+  %% @dl entity runtime cli
+  %% @dl shortName "CLI h2a"
+  %% @dl role "Sert le MCP et les hooks"
+  %% @dl evidence "h2a:packages/h2a/package.json:44-46"
+  %% @dl nest po-rt-h2a
+  %% @dl evidence "h2a:packages/h2a/package.json:44-46"
+  e_rt_h2a["h2a"]
+  %% @dl entity api mcp
+  %% @dl role "Outils de coordination h2a_*"
+  %% @dl evidence "h2a:packages/h2a/src/mcp.ts:30-38"
+  %% @dl access read-write
+  %% @dl nest po-api-h2a
+  %% @dl evidence "h2a:packages/h2a/src/mcp.ts:30-38"
+  e_api_h2a["MCP h2a"]
+end
+
+%% @dl entity system
+%% @dl role "Opère le service vivant"
+%% @dl evidence "R7b-owner-comments.fr.md:122-123"
+subgraph e_sys_mesh["cluster-mesh"]
+end
+
+%% @dl entity system
+%% @dl role "Contrôle chaque écriture"
+%% @dl evidence "track-facts-r5.md:40-48"
+subgraph e_sys_track["Track"]
+  %% @dl entity package library
+  %% @dl role "Code JS du suivi et bins track"
+  %% @dl evidence "h2a:packages/track/package.json:2-3"
+  %% @dl evidence "h2a:packages/track/package.json:32-35"
+  %% @dl version "0.91.0"
+  %% @dl nest po-pkg-track
+  %% @dl evidence "h2a:packages/track/package.json:2"
+  subgraph e_pkg_track["@sentropic/track"]
+    %% @dl entity component
+    %% @dl shortName "Contrôle Track"
+    %% @dl role "Valide ou refuse l'écriture"
+    %% @dl evidence "h2a:packages/track/src/events/store.ts:39"
+    %% @dl evidence "h2a:packages/track/src/ingest/ingest.ts:275-277"
+    %% @dl nest po-control
+    %% @dl evidence "track-facts-r5.md:72-78"
+    e_cmp_control["Contrôle"]
+    %% @dl entity artifact skill
+    %% @dl role "Guide la fusion et la clôture"
+    %% @dl evidence "h2a:packages/track/skills/branch-lifecycle/SKILL.md:3-10"
+    %% @dl nest po-branch
+    %% @dl evidence "track-facts-r5.md:56-57"
+    e_art_branch["branch-lifecycle"]
+    %% @dl entity artifact skill
+    %% @dl role "Choisit lecture MCP ou CLI"
+    %% @dl evidence "h2a:packages/track/skills/track-operation/SKILL.md:58-66"
+    %% @dl nest po-track-op
+    %% @dl evidence "track-facts-r5.md:50-51"
+    e_art_track_op["track-operation"]
+  end
+  %% @dl entity runtime cli
+  %% @dl shortName "CLI track"
+  %% @dl role "Valide puis écrit le suivi"
+  %% @dl evidence "h2a:packages/track/package.json:33"
+  %% @dl evidence "track-facts-r5.md:72-78"
+  %% @dl nest po-rt-track
+  %% @dl evidence "h2a:packages/track/package.json:33"
+  e_rt_track["track"]
+  %% @dl entity runtime mcp-server
+  %% @dl role "Sert les lectures, sans store"
+  %% @dl evidence "h2a:packages/track/src/mcp/cli.ts:2-13"
+  %% @dl nest po-rt-mcp
+  %% @dl evidence "h2a:packages/track/package.json:34"
+  e_rt_track_mcp["track-mcp"]
+  %% @dl entity api mcp
+  %% @dl role "15 lectures, aucune écriture"
+  %% @dl evidence "h2a:packages/track/src/mcp/server.ts:33-182"
+  %% @dl access read-only
+  %% @dl nest po-api-track
+  %% @dl evidence "track-facts-r5.md:19-26"
+  e_api_track["Outils track_*"]
+end
+
+%% @dl entity repo
+%% @dl role "Code d'engram"
+%% @dl evidence "graphify:git remote get-url origin"
+%% @dl url "https://github.com/rhanka/engram"
+subgraph e_repo_engram["engram"]
+end
+
+%% @dl entity repo
+%% @dl role "Code de h2a, Track et Focus"
+%% @dl evidence "h2a:packages/track/package.json:8-12"
+%% @dl evidence "h2a:packages/focus"
+%% @dl url "https://github.com/rhanka/h2a"
+subgraph e_repo_h2a["h2a"]
+end
+
+%% @dl entity runtime cli
+%% @dl role "Ouvre la session de l’agent"
+%% @dl evidence "h2a@db4857950bb3f198d8ece7a2b0a2d63e2aaaee7e:packages/h2a/src/hosts/plugin.ts:107"
+e_rt_agy["Antigravity/agy"]
+
+%% @dl entity runtime cli
+%% @dl role "Ouvre la session de l’agent"
+%% @dl evidence "h2a@db4857950bb3f198d8ece7a2b0a2d63e2aaaee7e:packages/h2a/src/hosts/plugin.ts:86"
+e_rt_claude["Claude Code"]
+
+%% @dl entity runtime cli
+%% @dl role "Ouvre la session de l’agent"
+%% @dl evidence "h2a@db4857950bb3f198d8ece7a2b0a2d63e2aaaee7e:packages/h2a/src/hosts/plugin.ts:93"
+e_rt_codex["Codex"]
+
+%% @dl entity runtime cli
+%% @dl role "Ouvre la session de l’agent"
+%% @dl evidence "h2a@db4857950bb3f198d8ece7a2b0a2d63e2aaaee7e:packages/h2a/src/hosts/plugin.ts:100"
+e_rt_gemini["Gemini CLI"]
+
+%% @dl entity runtime cli
+%% @dl role "Ouvre la session de l’agent"
+%% @dl evidence "h2a@db4857950bb3f198d8ece7a2b0a2d63e2aaaee7e:packages/h2a/src/hosts/plugin.ts:114"
+e_rt_hermes["Hermes"]
+
+%% @dl entity runtime cli
+%% @dl role "Ouvre la session de l’agent"
+%% @dl evidence "h2a@db4857950bb3f198d8ece7a2b0a2d63e2aaaee7e:packages/h2a/src/hosts/plugin.ts:128"
+e_rt_muse["Muse"]
+
+%% @dl entity runtime cli
+%% @dl role "Ouvre la session de l’agent"
+%% @dl evidence "h2a@db4857950bb3f198d8ece7a2b0a2d63e2aaaee7e:packages/h2a/src/hosts/plugin.ts:121"
+e_rt_opencode["OpenCode"]
+
+%% @dl entity runtime cli
+%% @dl role "Ouvre la session de l’agent"
+%% @dl evidence "h2a@db4857950bb3f198d8ece7a2b0a2d63e2aaaee7e:packages/h2a/src/hosts/plugin.ts:143"
+e_rt_vibe["Vibe"]
+
+%% @dl entity store jsonl
+%% @dl shortName "events.jsonl"
+%% @dl role "Journal du suivi, ajout seul"
+%% @dl evidence "track-facts-r5.md:117-120"
+%% @dl writerPolicy single-writer
+e_st_events[".track/events.jsonl"]
+
+%% @dl entity host cluster
+%% @dl shortName "Cluster"
+%% @dl role "Fait tourner engram live"
+%% @dl lifecycle proposed
+%% @dl evidence "R7b-owner-comments.fr.md:122 (identité unverified)"
+subgraph e_host_cluster["Cluster cluster-mesh"]
+end
+
+%% @dl entity host workstation
+%% @dl role "8 CLI"
+%% @dl evidence "assertion : poste local de l'owner"
+subgraph e_host_poste["Poste de travail"]
+end
+
+%% @dl rel mi-sys-engram managedIn e_sys_engram e_repo_engram
+%% @dl evidence "graphify:git remote get-url origin"
+%% @dl rel ro-live runsOn e_svc_live e_host_cluster
+%% @dl lifecycle proposed
+%% @dl evidence "R7b-owner-comments.fr.md:122"
+%% @dl rel op-live operatedBy e_svc_live e_sys_mesh
+%% @dl lifecycle proposed
+%% @dl evidence "R7b-owner-comments.fr.md:122"
+%% @dl rel pa-live providesApi e_svc_live e_api_memory
+%% @dl lifecycle proposed
+%% @dl evidence "R7b-owner-comments.fr.md:117"
+%% @dl rel mi-sys-h2a managedIn e_sys_h2a e_repo_h2a
+%% @dl evidence "h2a:packages/h2a/package.json:16-20"
+%% @dl edge da-h2a deployedAs
+%% @dl evidence "h2a:packages/h2a/package.json:44-46"
+e_pkg_h2a -->|"déployé comme"| e_rt_h2a
+%% @dl edge do-h2a-track dependsOn
+%% @dl evidence "h2a:packages/h2a/package.json:55"
+e_pkg_h2a -->|"dépend de"| e_pkg_track
+%% @dl edge da-guard deployedAs
+%% @dl evidence "h2a:packages/h2a/hooks/hooks.json:4-15"
+e_pkg_plugin -->|"déployé comme"| e_rt_guard
+%% @dl rel lb-report loadedBy e_art_track_report e_rt_claude
+%% @dl evidence "h2a:packages/h2a/.claude-plugin/plugin.json:3"
+%% @dl edge dc-report documents
+%% @dl evidence "track-facts-r5.md:52-54"
+e_art_track_report -->|"documente"| e_rt_track
+%% @dl rel ro-guard runsOn e_rt_guard e_host_poste
+%% @dl evidence "h2a:packages/h2a/hooks/hooks.json:9-11"
+%% @dl rel ro-h2a runsOn e_rt_h2a e_host_poste
+%% @dl evidence "h2a:README.md:62"
+%% @dl rel pa-h2a providesApi e_rt_h2a e_api_h2a
+%% @dl evidence "h2a:packages/h2a/src/mcp.ts:30-38"
+%% @dl rel pa-h2a-track providesApi e_rt_h2a e_api_track
+%% @dl evidence "h2a:packages/h2a/src/mcp.ts:39-55"
+%% @dl edge ca-h2a-memory consumesApi
+%% @dl lifecycle proposed
+%% @dl evidence "R7b-owner-comments.fr.md:124"
+%% @dl evidence "R7b-owner-comments.fr.md:440"
+e_rt_h2a -.->|"appelle · propositions et questions"| e_api_memory
+%% @dl rel ac-read-h2a accesses e_rt_h2a e_st_events
+%% @dl evidence "h2a:packages/track/src/mcp/cli.ts:2-5"
+%% @dl mode read
+%% @dl rel ob-mesh ownedBy e_sys_mesh e_act_rhanka
+%% @dl evidence "assertion"
+%% @dl rel mi-sys-track managedIn e_sys_track e_repo_h2a
+%% @dl evidence "h2a:packages/track/package.json:8-12"
+%% @dl edge da-track deployedAs
+%% @dl evidence "h2a:packages/track/package.json:33"
+e_pkg_track -->|"déployé comme"| e_rt_track
+%% @dl edge da-track-mcp deployedAs
+%% @dl evidence "h2a:packages/track/package.json:34"
+e_pkg_track -->|"déployé comme"| e_rt_track_mcp
+%% @dl edge eb-track-in-h2a executedBy
+%% @dl evidence "h2a:packages/track/src/mcp/cli.ts:2-5"
+e_pkg_track -->|"exécuté par"| e_rt_h2a
+%% @dl rel eb-control executedBy e_cmp_control e_rt_track
+%% @dl evidence "track-facts-r5.md:72-78"
+%% @dl rel lb-branch loadedBy e_art_branch e_rt_claude
+%% @dl evidence "h2a:packages/track/src/cli/install-skills.ts:263-284"
+%% @dl rel lb-branch-codex loadedBy e_art_branch e_rt_codex
+%% @dl evidence "h2a:packages/track/src/cli/install-skills.ts:263-284"
+%% @dl edge dc-branch documents
+%% @dl evidence "track-facts-r5.md:56-57"
+e_art_branch -->|"documente"| e_rt_track
+%% @dl rel lb-track-op loadedBy e_art_track_op e_rt_claude
+%% @dl evidence "h2a:packages/track/src/cli/install-skills.ts:263-284"
+%% @dl rel lb-track-op-codex loadedBy e_art_track_op e_rt_codex
+%% @dl evidence "h2a:packages/track/src/cli/install-skills.ts:263-284"
+%% @dl edge dc-track-op documents
+%% @dl evidence "track-facts-r5.md:32-34"
+e_art_track_op -->|"documente"| e_rt_track
+%% @dl rel ro-track runsOn e_rt_track e_host_poste
+%% @dl evidence "h2a:packages/track/package.json:33"
+%% @dl rel ac-write accesses e_rt_track e_st_events
+%% @dl evidence "track-facts-r5.md:117-120"
+%% @dl mode append
+%% @dl rel ro-track-mcp runsOn e_rt_track_mcp e_host_poste
+%% @dl evidence "h2a:packages/track/src/mcp/cli.ts:2"
+%% @dl rel pa-track-mcp providesApi e_rt_track_mcp e_api_track
+%% @dl evidence "track-facts-r5.md:19-26"
+%% @dl rel ac-read-mcp accesses e_rt_track_mcp e_st_events
+%% @dl evidence "h2a:packages/track/src/mcp/cli.ts:2-13"
+%% @dl mode read
+%% @dl rel ob-repo-engram ownedBy e_repo_engram e_act_rhanka
+%% @dl evidence "assertion (m1)"
+%% @dl rel ob-repo-h2a ownedBy e_repo_h2a e_act_rhanka
+%% @dl evidence "assertion (m1)"
+%% @dl rel ro-host-agy runsOn e_rt_agy e_host_poste
+%% @dl evidence "Owner correction: supported CLI on workstation"
+%% @dl rel ob-host-agy ownedBy e_rt_agy e_act_google
+%% @dl evidence "docs/plugin-capability-matrix.md:5"
+%% @dl edge host-agy invokes
+%% @dl evidence "h2a@db4857950bb3f198d8ece7a2b0a2d63e2aaaee7e:packages/h2a/src/hosts/plugin.ts:107"
+%% @dl trigger poll
+%% @dl event "agy-plugin-poll"
+e_rt_agy -->|"sondage"| e_rt_h2a
+%% @dl rel ro-host-claude runsOn e_rt_claude e_host_poste
+%% @dl evidence "Owner correction: supported CLI on workstation"
+%% @dl rel ob-host-claude ownedBy e_rt_claude e_act_anthropic
+%% @dl evidence ".github/workflows/ci.yml:234"
+%% @dl edge in-guard invokes
+%% @dl evidence "h2a:packages/h2a/hooks/hooks.json:4-15"
+%% @dl trigger hook
+%% @dl event "PreToolUse"
+e_rt_claude -->|"lance · avant chaque Bash"| e_rt_guard
+%% @dl edge host-claude invokes
+%% @dl evidence "h2a@db4857950bb3f198d8ece7a2b0a2d63e2aaaee7e:packages/h2a/src/hosts/plugin.ts:86"
+%% @dl trigger hook
+%% @dl event "claude-settings-hook"
+e_rt_claude -->|"lance · hooks de session"| e_rt_h2a
+%% @dl edge in-track invokes
+%% @dl evidence "h2a:packages/track/skills/track-operation/SKILL.md:58-66"
+%% @dl trigger command
+e_rt_claude -->|"lance · écritures du suivi"| e_rt_track
+%% @dl edge ca-claude consumesApi
+%% @dl evidence "h2a:packages/h2a/.claude-plugin/plugin.json:9-22"
+e_rt_claude -->|"appelle · outils h2a_*"| e_api_h2a
+%% @dl rel ro-host-codex runsOn e_rt_codex e_host_poste
+%% @dl evidence "Owner correction: supported CLI on workstation"
+%% @dl rel ob-host-codex ownedBy e_rt_codex e_act_openai
+%% @dl evidence ".github/workflows/ci.yml:85"
+%% @dl edge host-codex invokes
+%% @dl evidence "h2a@db4857950bb3f198d8ece7a2b0a2d63e2aaaee7e:packages/h2a/src/hosts/plugin.ts:93"
+%% @dl trigger hook
+%% @dl event "codex-app-server"
+e_rt_codex -->|"lance · app-server"| e_rt_h2a
+%% @dl rel ro-host-gemini runsOn e_rt_gemini e_host_poste
+%% @dl evidence "Owner correction: supported CLI on workstation"
+%% @dl rel ob-host-gemini ownedBy e_rt_gemini e_act_gemini_owner_unverified
+%% @dl evidence "unverified — no vendor attribution in reviewed code/docs"
+%% @dl edge host-gemini invokes
+%% @dl evidence "h2a@db4857950bb3f198d8ece7a2b0a2d63e2aaaee7e:packages/h2a/src/hosts/plugin.ts:100"
+%% @dl trigger hook
+%% @dl event "gemini-hooks"
+e_rt_gemini -->|"lance · hooks Gemini"| e_rt_h2a
+%% @dl rel ro-host-hermes runsOn e_rt_hermes e_host_poste
+%% @dl evidence "Owner correction: supported CLI on workstation"
+%% @dl rel ob-host-hermes ownedBy e_rt_hermes e_act_nousresearch
+%% @dl evidence "docs/specs/2026-06-28-h2a-command-mapping-v6.md:17"
+%% @dl edge host-hermes invokes
+%% @dl evidence "h2a@db4857950bb3f198d8ece7a2b0a2d63e2aaaee7e:packages/h2a/src/hosts/plugin.ts:114"
+%% @dl trigger hook
+%% @dl event "hermes-hooks"
+e_rt_hermes -->|"lance · hooks Hermes"| e_rt_h2a
+%% @dl rel ro-host-muse runsOn e_rt_muse e_host_poste
+%% @dl evidence "Owner correction: supported CLI on workstation"
+%% @dl rel ob-host-muse ownedBy e_rt_muse e_act_meta
+%% @dl evidence "packages/h2a/src/hosts/muse.ts:10"
+%% @dl edge host-muse invokes
+%% @dl evidence "h2a@db4857950bb3f198d8ece7a2b0a2d63e2aaaee7e:packages/h2a/src/hosts/plugin.ts:128"
+%% @dl trigger poll
+%% @dl event "muse-poll"
+e_rt_muse -->|"sondage · cycle de vie Muse"| e_rt_h2a
+%% @dl rel ro-host-opencode runsOn e_rt_opencode e_host_poste
+%% @dl evidence "Owner correction: supported CLI on workstation"
+%% @dl rel ob-host-opencode ownedBy e_rt_opencode e_act_opencode_owner_unverified
+%% @dl evidence "unverified — no vendor attribution in reviewed code/docs"
+%% @dl edge host-opencode invokes
+%% @dl evidence "h2a@db4857950bb3f198d8ece7a2b0a2d63e2aaaee7e:packages/h2a/src/hosts/plugin.ts:121"
+%% @dl trigger hook
+%% @dl event "opencode-plugin"
+e_rt_opencode -->|"lance · plugin OpenCode"| e_rt_h2a
+%% @dl rel ro-host-vibe runsOn e_rt_vibe e_host_poste
+%% @dl evidence "Owner correction: supported CLI on workstation"
+%% @dl rel ob-host-vibe ownedBy e_rt_vibe e_act_mistral
+%% @dl evidence "packages/h2a/src/hosts/vibe.ts:9"
+%% @dl edge host-vibe invokes
+%% @dl evidence "h2a@db4857950bb3f198d8ece7a2b0a2d63e2aaaee7e:packages/h2a/src/hosts/plugin.ts:143"
+%% @dl trigger hook
+%% @dl event "vibe-hooks"
+e_rt_vibe -->|"lance · post_agent Vibe"| e_rt_h2a
+%% @dl rel op-cluster operatedBy e_host_cluster e_sys_mesh
+%% @dl lifecycle proposed
+%% @dl evidence "R7b-owner-comments.fr.md:122"
+%% @dl rel op-poste operatedBy e_host_poste e_act_rhanka
+%% @dl evidence "assertion"
+
+%% @dl view deploiement-hosts archi-deployment
+%% @dl draw e_host_cluster
+%% @dl draw e_host_poste
+%% @dl draw e_rt_agy
+%% @dl draw e_rt_claude
+%% @dl draw e_rt_codex
+%% @dl draw e_rt_gemini
+%% @dl draw e_rt_guard
+%% @dl draw e_rt_h2a
+%% @dl draw e_rt_hermes
+%% @dl draw e_rt_muse
+%% @dl draw e_rt_opencode
+%% @dl draw e_rt_track
+%% @dl draw e_rt_vibe
+%% @dl draw e_svc_live
+%% @dl expanded e_host_cluster
+%% @dl expanded e_host_poste
+
+%% @dl view roles-hosts archi-dossier-hosts
+%% @dl draw e_api_h2a
+%% @dl draw e_api_memory
+%% @dl draw e_api_track
+%% @dl draw e_art_branch
+%% @dl draw e_art_track_op
+%% @dl draw e_cmp_control
+%% @dl draw e_host_poste
+%% @dl draw e_pkg_h2a
+%% @dl draw e_pkg_plugin
+%% @dl draw e_pkg_track
+%% @dl draw e_rt_agy
+%% @dl draw e_rt_claude
+%% @dl draw e_rt_codex
+%% @dl draw e_rt_gemini
+%% @dl draw e_rt_h2a
+%% @dl draw e_rt_hermes
+%% @dl draw e_rt_muse
+%% @dl draw e_rt_opencode
+%% @dl draw e_rt_track
+%% @dl draw e_rt_vibe
+%% @dl draw e_st_events
+%% @dl draw e_svc_live
+%% @dl draw e_sys_engram
+%% @dl draw e_sys_h2a
+%% @dl draw e_sys_track
+%% @dl expanded e_pkg_track
+%% @dl expanded e_sys_h2a
+%% @dl expanded e_sys_track
+
+classDef dashed stroke-dasharray: 5 5
+class e_host_cluster,e_svc_live dashed
