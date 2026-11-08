@@ -490,7 +490,11 @@ function cmpBytes(a: string, b: string): number {
 }
 
 function trimSp(s: string): string {
-  return s.replace(/^ +| +$/g, "");
+  let start = 0;
+  let end = s.length;
+  while (start < end && s.charCodeAt(start) === 0x20) start++;
+  while (end > start && s.charCodeAt(end - 1) === 0x20) end--;
+  return start === 0 && end === s.length ? s : s.slice(start, end);
 }
 
 function isPlainObject(val: unknown): val is Record<string, unknown> {
@@ -3083,8 +3087,12 @@ function sha256Utf8Hex(text: string): string {
 
 function resolveCarrierSubjectRef(options: unknown, fallback: string): string {
   if (options && typeof options === "object" && !Array.isArray(options)) {
-    const sr = (options as { readonly subjectRef?: unknown }).subjectRef;
-    if (typeof sr === "string" && sr.length > 0) return sr;
+    try {
+      const sr = (options as { readonly subjectRef?: unknown }).subjectRef;
+      if (typeof sr === "string" && sr.length > 0) return sr;
+    } catch {
+      return fallback;
+    }
   }
   return fallback;
 }
@@ -3111,6 +3119,19 @@ function makeCarrierRefusal<T>(
   };
 }
 
+function settleCarrier<T>(
+  fn: () => ArchiMermaidResult<T, ArchiCarrierDiagnostic>,
+  path: string,
+  subjectRef: string,
+): ArchiMermaidResult<T, ArchiCarrierDiagnostic> {
+  try {
+    return fn();
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : "non-Error value thrown";
+    return makeCarrierRefusal("mermaid-strict-invalid", `Unreadable carrier input (${detail}).`, path, subjectRef);
+  }
+}
+
 function computeDrawnContainersForView(
   triple: ArchiSourceTriple,
   viewSpec: ArchiViewSpec,
@@ -3135,11 +3156,21 @@ function hasXmlNonCharacter(s: string): boolean {
   return false;
 }
 
+function trimTrailingSpTab(line: string): string {
+  let end = line.length;
+  while (end > 0) {
+    const c = line.charCodeAt(end - 1);
+    if (c !== 0x20 && c !== 0x09) break;
+    end--;
+  }
+  return end === line.length ? line : line.slice(0, end);
+}
+
 function normalizeFrameLinesN1ToN5(raw: string): readonly string[] {
   // N1: CRLF and lone CR -> LF
   const n1 = raw.replace(/\r\n?/g, "\n");
   // N2: remove trailing SP or TAB from every line
-  let lines = n1.split("\n").map((line) => line.replace(/[ \t]+$/g, ""));
+  let lines = n1.split("\n").map(trimTrailingSpTab);
   // N3: drop leading and trailing empty lines
   while (lines.length > 0 && lines[0] === "") {
     lines.shift();
@@ -3185,7 +3216,13 @@ export function encodeArchiCarrier(
   options?: ArchiCarrierOptions,
 ): ArchiMermaidResult<string, ArchiCarrierDiagnostic> {
   const subjectRef = resolveCarrierSubjectRef(options, DEFAULT_SUBJECT_REF);
+  return settleCarrier(() => encodeArchiCarrierUnchecked(input, subjectRef), "", subjectRef);
+}
 
+function encodeArchiCarrierUnchecked(
+  input: unknown,
+  subjectRef: string,
+): ArchiMermaidResult<string, ArchiCarrierDiagnostic> {
   // Step 1: Input object shape and primitive checks in listed order
   if (!isPlainObject(input)) {
     return makeCarrierRefusal("mermaid-strict-invalid", "Expected plain object input for encodeArchiCarrier.", "", subjectRef);

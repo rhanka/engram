@@ -705,9 +705,9 @@ export function checkArchiCarrier(frame: unknown, committedText: unknown, option
 ```
 
 - **Refusal order, locations, and subjects (`[JUDGMENT]`):**
-  - **Default `subjectRef`:** `encodeArchiCarrier` defaults `subjectRef` to the codec-local `DEFAULT_SUBJECT_REF` (`".engram/architecture/architecture.mmd"`, `MMD:99`), whose value equals `ARCHI_MMD_PATH` (`SHP:25`); `MMD` never imports `SHP`. `decodeArchiCarrier` and `checkArchiCarrier` default the frame's `subjectRef` to `"archi-carrier"`; in `checkArchiCarrier`, findings on `committedText` always carry `subjectRef: DEFAULT_SUBJECT_REF`.
+  - **Default `subjectRef`:** `encodeArchiCarrier` defaults `subjectRef` to the codec-local `DEFAULT_SUBJECT_REF` (`".engram/architecture/architecture.mmd"`, `MMD:99`), whose value equals `ARCHI_MMD_PATH` (`SHP:25`); `MMD` never imports `SHP`. `decodeArchiCarrier` and `checkArchiCarrier` default the frame's `subjectRef` to `"archi-carrier"` when `options.subjectRef` is not a non-empty string (encode: `DEFAULT_SUBJECT_REF`); in `checkArchiCarrier`, findings on `committedText` always carry `subjectRef: DEFAULT_SUBJECT_REF`.
   - **`encodeArchiCarrier(input, options?)`** (first failure wins):
-    1. Non-object `input`, unknown key, non-string `text`, `view` not matching `LOCAL_RE` (`MMD:170`), or `collapsed` not an array — checked in the listed order; an unknown key → `path: "/<key>"` (RFC 6901-escaped), the first one in `Object.keys` order — → `mermaid-strict-invalid` (`path: ""`, `"/<key>"`, `"/text"`, `"/view"`, or `"/collapsed"`).
+    1. Non-object `input`, unknown key, non-string `text`, `view` not matching `LOCAL_RE` (`MMD:170`), or `collapsed` not an array — checked in the listed order; an unknown key → `path: "/<key>"` (RFC 6901-escaped), the first one in `Object.keys` order; an input whose fields cannot be read → `mermaid-strict-invalid` (`path: ""`) — → `mermaid-strict-invalid` (`path: ""`, `"/<key>"`, `"/text"`, `"/view"`, or `"/collapsed"`).
     2. `text` contains `U+FFFE` or `U+FFFF` → `mermaid-strict-unrepresentable` (`path: "/text"`).
     3. `parseArchiMermaid(text, { checkCanonical: true, subjectRef })` fails → returns its closed diagnostic (`mermaid-strict-noncanonical` when `fmt(t) ≠ t`, or `mermaid-strict-*`; its `path` points into `text` read as an array of lines, `P2:526`, unshifted, whereas steps 1, 4, and 5 point into the input object with the same default `subjectRef`).
     4. `"view:" + view` not in `parsed.value.views` → `mermaid-strict-orphan-ref` (`path: "/view"`).
@@ -722,7 +722,7 @@ export function checkArchiCarrier(frame: unknown, committedText: unknown, option
   - **`checkArchiCarrier(frame, committedText, options?)`**:
     1. Runs `decodeArchiCarrier(frame, options)`; if `!dec.ok`, returns `dec`.
     2. Validates `committedText` via `parseArchiMermaid(committedText, { checkCanonical: true, subjectRef: DEFAULT_SUBJECT_REF })` (the codec-local `DEFAULT_SUBJECT_REF`, `MMD:99`, whose value equals `ARCHI_MMD_PATH`, `SHP:25`; `MMD` never imports `SHP`); if `!com.ok`, returns `com`.
-    3. If `dec.value.sha256 !== sha256Utf8Hex(committedText)`, refuses with `export-stale` (`path: "/0"`, `subjectRef: options?.subjectRef ?? "archi-carrier"`). Otherwise returns `dec`.
+    3. If `dec.value.sha256 !== sha256Utf8Hex(committedText)`, refuses with `export-stale` (`path: "/0"`, `subjectRef`: the frame `subjectRef` resolved as in decode). Otherwise returns `dec`.
 
 ### 6. Contract list for the DS (what P-3 consumes and honours)
 

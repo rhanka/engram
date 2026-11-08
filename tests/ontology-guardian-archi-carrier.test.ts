@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   ARCHI_CARRIER_DIAGNOSTIC_CODES,
@@ -43,46 +44,32 @@ function sha256Hex(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
-/** Exact N1–N5 reference normalization from P-4 §1.4. */
+/** Independent N1–N5 reference oracle from P-4 §1.4. */
 function normalizeCarrierN1ToN5(raw: string): string {
-  // N1: CRLF and lone CR -> LF
-  const n1 = raw.replace(/\r\n?/g, "\n");
-  // N2: remove trailing SP or TAB from every line
-  let lines = n1.split("\n").map((line) => line.replace(/[ \t]+$/g, ""));
-  // N3: drop leading and trailing empty lines
-  while (lines.length > 0 && lines[0] === "") {
-    lines.shift();
+  // N1: split on CRLF, CR, or LF
+  const rawLines = raw.split(/\r\n|\r|\n/);
+  // N2: strip trailing SP/TAB via linear scan
+  const trimmed = rawLines.map((line) => {
+    let end = line.length;
+    while (end > 0 && (line[end - 1] === " " || line[end - 1] === "\t")) end--;
+    return line.slice(0, end);
+  });
+  // N3: slice between first and last non-empty line
+  const firstNonEmpty = trimmed.findIndex((l) => l.length > 0);
+  if (firstNonEmpty === -1) return "";
+  let lastNonEmpty = trimmed.length - 1;
+  while (lastNonEmpty > firstNonEmpty && trimmed[lastNonEmpty] === "") lastNonEmpty--;
+  const window = trimmed.slice(firstNonEmpty, lastNonEmpty + 1);
+  // N4: longest common SP/TAB prefix across non-empty lines
+  const nonEmpty = window.filter((l) => l.length > 0);
+  const firstIndent = nonEmpty[0]!.match(/^[ \t]*/)?.[0] ?? "";
+  let prefixLen = firstIndent.length;
+  while (prefixLen > 0 && !nonEmpty.every((l) => l.startsWith(firstIndent.slice(0, prefixLen)))) {
+    prefixLen--;
   }
-  while (lines.length > 0 && lines[lines.length - 1] === "") {
-    lines.pop();
-  }
-  if (lines.length === 0) return "";
-  // N4: remove longest SP/TAB prefix shared by every non-empty line
-  let sharedPrefix: string | undefined;
-  for (const line of lines) {
-    if (line.length === 0) continue;
-    let pLen = 0;
-    while (pLen < line.length && (line.charCodeAt(pLen) === 0x20 || line.charCodeAt(pLen) === 0x09)) {
-      pLen++;
-    }
-    const p = line.slice(0, pLen);
-    if (sharedPrefix === undefined) {
-      sharedPrefix = p;
-    } else {
-      const minLen = Math.min(sharedPrefix.length, p.length);
-      let k = 0;
-      while (k < minLen && sharedPrefix.charCodeAt(k) === p.charCodeAt(k)) {
-        k++;
-      }
-      sharedPrefix = sharedPrefix.slice(0, k);
-    }
-    if (sharedPrefix.length === 0) break;
-  }
-  if (sharedPrefix && sharedPrefix.length > 0) {
-    lines = lines.map((line) => (line.length > 0 ? line.slice(sharedPrefix!.length) : ""));
-  }
-  // N5: end with exactly one LF
-  return `${lines.join("\n")}\n`;
+  const dedented = prefixLen > 0 ? window.map((l) => (l.length > 0 ? l.slice(prefixLen) : "")) : window;
+  // N5: join with LF and terminate with one LF
+  return `${dedented.join("\n")}\n`;
 }
 
 function unwrapParseMmd(text: string): ArchiSourceTriple {
@@ -559,6 +546,21 @@ describe("engram.archi-carrier/1 (P-4, Lot 6)", () => {
       "archi-carrier",
     );
 
+    const fffeText = FX_JOINT_R2.replace("Mémoire gouvernée du track", "Mémoire \uFFFE du track");
+    // encode step 1 before step 2
+    expectCarrierRefusal(encodeArchiCarrier({ text: fffeText, view: "Roles", collapsed: [] }), "mermaid-strict-invalid", "/view", ARCHI_MMD_PATH);
+    // encode step 2 before step 3
+    expectCarrierRefusal(encodeArchiCarrier({ text: swappedText.replace("Mémoire gouvernée du track", "Mémoire \uFFFE du track"), view: "roles", collapsed: [] }), "mermaid-strict-unrepresentable", "/text", ARCHI_MMD_PATH);
+    // encode step 3 before step 4
+    expectCarrierRefusal(encodeArchiCarrier({ text: swappedText, view: "nonexistent-view", collapsed: [] }), "mermaid-strict-noncanonical", "/30", ARCHI_MMD_PATH);
+    // encode step 4 before step 5
+    expectCarrierRefusal(encodeArchiCarrier({ text: FX_JOINT_R2, view: "nonexistent-view", collapsed: [123] }), "mermaid-strict-orphan-ref", "/view", ARCHI_MMD_PATH);
+    // rule (b) before rule (d): index 1 is undrawn on roles AND sorts before index 0
+    expectCarrierRefusal(encodeArchiCarrier({ text: FX_JOINT_R2, view: "roles", collapsed: ["entity:sys-h2a", "entity:host-cluster"] }), "mermaid-strict-orphan-ref", "/collapsed/1", ARCHI_MMD_PATH);
+    expectCarrierRefusal(decodeArchiCarrier(`archi-carrier 1 text=engram.archi-mermaid/1 sha256=${validSha} view=roles collapsed=e_sys_h2a,e_host_cluster\n${FX_JOINT_R2}`), "mermaid-strict-orphan-ref", "/0", "archi-carrier");
+    // decode step 4 before step 5
+    expectCarrierRefusal(decodeArchiCarrier(`archi-carrier 1 text=engram.archi-mermaid/1 sha256=${"0".repeat(64)} view=nonexistent-view collapsed=-\n${FX_JOINT_R2}`), "carrier-digest-mismatch", "/0", "archi-carrier");
+
     // 6. Header token order precedence in decode (path: "/0")
     // Magic mismatch (even when version is 2)
     expectCarrierRefusal(
@@ -678,6 +680,42 @@ describe("engram.archi-carrier/1 (P-4, Lot 6)", () => {
     );
 
     // 7. Default and custom subjectRef on encode, decode, and check
+    expectCarrierRefusal(
+      encodeArchiCarrier({
+        get text(): string {
+          throw new Error("unreadable");
+        },
+        view: "roles",
+        collapsed: [],
+      }),
+      "mermaid-strict-invalid",
+      "",
+      ARCHI_MMD_PATH,
+    );
+    expectCarrierRefusal(
+      encodeArchiCarrier(null, {
+        get subjectRef(): string {
+          throw new Error("unreadable subjectRef");
+        },
+      }),
+      "mermaid-strict-invalid",
+      "",
+      ARCHI_MMD_PATH,
+    );
+    expectCarrierRefusal(decodeArchiCarrier("", { subjectRef: "" }), "mermaid-strict-invalid", "/0", "archi-carrier");
+    expectCarrierRefusal(encodeArchiCarrier(null, { subjectRef: "" }), "mermaid-strict-invalid", "", ARCHI_MMD_PATH);
+    expectCarrierRefusal(
+      decodeArchiCarrier("", { subjectRef: 123 as unknown as string }),
+      "mermaid-strict-invalid",
+      "/0",
+      "archi-carrier",
+    );
+    expectCarrierRefusal(
+      encodeArchiCarrier(null, { subjectRef: 123 as unknown as string }),
+      "mermaid-strict-invalid",
+      "",
+      ARCHI_MMD_PATH,
+    );
     expectCarrierRefusal(
       encodeArchiCarrier(null, { subjectRef: "custom/source.mmd" }),
       "mermaid-strict-invalid",
@@ -996,7 +1034,7 @@ describe("engram.archi-carrier/1 (P-4, Lot 6)", () => {
 
     for (let i = 0; i < 5000; i++) {
       let mutated: unknown;
-      if (i < 12) {
+      if (i < 13) {
         mutated = [
           null,
           undefined,
@@ -1010,6 +1048,7 @@ describe("engram.archi-carrier/1 (P-4, Lot 6)", () => {
           `\r\n  ${baseFrame.replace(/\n/g, "\r\n  ")}  \r\n`,
           `\t${baseFrame.slice(0, -1).replace(/\n/g, "\n\t")}`,
           "\uFEFF" + baseFrame,
+          `${baseFrame.slice(0, -1)}${" ".repeat(100_000)}x\n`,
         ][i];
       } else {
         const mode = nextRand() % 6;
@@ -1057,6 +1096,12 @@ describe("engram.archi-carrier/1 (P-4, Lot 6)", () => {
       const dec = decodeArchiCarrier(mutated);
       if (dec.ok) {
         acceptedCount++;
+        expect(dec.value).toEqual({
+          text: FX_JOINT_R2_TEINTES,
+          view: "roles-teintes",
+          collapsed: ["entity:pkg-h2a", "entity:sys-h2a"],
+          sha256: sha256Hex(FX_JOINT_R2_TEINTES),
+        });
         const reEncoded = encodeArchiCarrier({
           text: dec.value.text,
           view: dec.value.view,
@@ -1088,20 +1133,21 @@ describe("engram.archi-carrier/1 (P-4, Lot 6)", () => {
   it("C-T8: enforces zero runtime dependency in src/archi-mermaid/index.ts and guards ARCHI_CARRIER_DIAGNOSTIC_CODES value & type alignment", () => {
     const source = readFileSync(join(rootDir, "src", "archi-mermaid", "index.ts"), "utf8");
 
-    // Strip comments and string literals before scanning for require( / import(
-    const importDecls = [...source.matchAll(/^\s*import\b[^\n;]*/gm)].map((m) => m[0].trim());
-    expect(importDecls.length).toBeGreaterThan(0);
-    for (const decl of importDecls) {
-      expect(decl, `every import must be 'import type': ${decl}`).toMatch(/^import\s+type\b/);
+    const sf = ts.createSourceFile("index.ts", source, ts.ScriptTarget.Latest, true);
+    let importDeclCount = 0;
+    for (const st of sf.statements) {
+      if (ts.isImportDeclaration(st)) {
+        importDeclCount++;
+        expect(st.importClause?.isTypeOnly, st.getText(sf)).toBe(true);
+      }
+      if (ts.isExportDeclaration(st) && st.moduleSpecifier) {
+        expect(st.isTypeOnly, st.getText(sf)).toBe(true);
+      }
+      expect(ts.isImportEqualsDeclaration(st), st.getText(sf)).toBe(false);
     }
+    expect(importDeclCount).toBeGreaterThan(0);
 
-    const exportFromDecls = [...source.matchAll(/^\s*export\b[^;]*\bfrom\s+["'][^"']+["']/gm)].map((m) =>
-      m[0].trim(),
-    );
-    for (const decl of exportFromDecls) {
-      expect(decl, `every export...from must be 'export type...from': ${decl}`).toMatch(/^export\s+type\b/);
-    }
-
+    // Scan the raw source; any `require(` or `import(` text fails, comments and strings included
     expect(source).not.toMatch(/\brequire\s*\(/);
     expect(source).not.toMatch(/\bimport\s*\(/);
 
