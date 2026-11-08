@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import Graph from "graphology";
 
 import * as api from "../src/index.js";
+import * as extractionBatchApi from "../src/extraction-batch.js";
 
 const cleanupDirs: string[] = [];
 
@@ -116,6 +117,14 @@ describe("public API compatibility", () => {
     expect(typeof api.transitionCoverageRecord).toBe("function");
     expect(typeof api.checkCoverageGate).toBe("function");
     expect(typeof api.getOrExtract).toBe("function");
+    expect(api.EXTRACTION_SCHEMA_V1).toBe("engram_extraction_v1");
+    expect(typeof api.adaptTextJsonClient).toBe("function");
+    expect(typeof api.extractDocumentBatch).toBe("function");
+    expect(typeof api.runHeadlessExtractionBatch).toBe("function");
+    expect(extractionBatchApi.EXTRACTION_SCHEMA_V1).toBe("engram_extraction_v1");
+    expect(typeof extractionBatchApi.adaptTextJsonClient).toBe("function");
+    expect(typeof extractionBatchApi.extractDocumentBatch).toBe("function");
+    expect(typeof extractionBatchApi.runHeadlessExtractionBatch).toBe("function");
   });
 
   it("accepts object-style map inputs and option objects", () => {
