@@ -50,6 +50,8 @@ import type {
 } from "./extract-git.js";
 import {
   PROFILE_BUNDLE_SCHEMA_V1,
+  bundleProfile,
+  checkProfileCompatibility,
   computeRegistryRecordsDigest,
 } from "./profile-bundle.js";
 import type {
@@ -68,17 +70,16 @@ import type {
   TextJsonGenerationClient,
   TextJsonGenerationInput,
 } from "./llm-execution.js";
-import { canonicalBytes, digestOfPreimage } from "./ontology-guardian/canonical.js";
+import { canonicalBytes } from "./ontology-guardian/canonical.js";
 import { stableForHash } from "./ontology-guardian/digests.js";
 import { isDigest } from "./ontology-guardian/types.js";
 import type { Digest } from "./ontology-guardian/types.js";
-import { normalizeOntologyProfile, validateOntologyProfile } from "./ontology-profile.js";
+import { validateOntologyProfile } from "./ontology-profile.js";
 import { buildProfileChunkPrompt } from "./profile-prompts.js";
 import { validateProfileExtraction } from "./profile-validate.js";
 import { validateSemanticFragment } from "./semantic-fragment-validation.js";
 import { validateExtraction } from "./validate.js";
 import { toJsonValue } from "./json-value.js";
-import type { JsonValue } from "./json-value.js";
 import type {
   Extraction,
   NormalizedOntologyProfile,
@@ -251,24 +252,6 @@ export interface AdaptedHeadlessLlmClient extends HeadlessLlmClient {
 
 const DEFAULT_MAX_CHUNK_CHARS = 20_000;
 
-const CONSUMED_PROFILE_KEYS = new Set([
-  "id",
-  "version",
-  "default_language",
-  "sourcePath",
-  "profile_hash",
-  "node_types",
-  "relation_types",
-  "registries",
-  "citation_policy",
-  "hardening",
-  "inference_policy",
-  "evidence_policy",
-  "hierarchies",
-  "class_hierarchies",
-  "outputs",
-]);
-
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const proto = Object.getPrototypeOf(value);
@@ -416,30 +399,6 @@ function isValidRegistryBindingShape(b: unknown): b is BundledRegistrySnapshotV1
   );
 }
 
-function computeBundleDigestForValidation(
-  docProjection: JsonValue,
-  snapshots: Record<string, BundledRegistrySnapshotV1>,
-  registriesMode: "full" | "bindings-only",
-): Digest | null {
-  const regPreimage: Record<string, unknown> = {};
-  for (const id of Object.keys(snapshots).sort()) {
-    const s = snapshots[id]!;
-    const bProj = toJsonValue(s.binding);
-    if (!bProj.ok) return null;
-    defineOwnProp(regPreimage, id, {
-      binding: bProj.value,
-      recordCount: s.recordCount,
-      recordsDigest: s.recordsDigest ?? "not_bundled",
-    });
-  }
-  return digestOfPreimage({
-    schema: PROFILE_BUNDLE_SCHEMA_V1,
-    document: docProjection,
-    registries: regPreimage,
-    registriesMode,
-  });
-}
-
 function deepKeySortCopy<T>(value: T): T {
   if (value === null || typeof value !== "object") return value;
   if (Array.isArray(value)) {
@@ -459,6 +418,7 @@ function deepKeySortCopy<T>(value: T): T {
 /**
  * Row 2 bundle re-validation and profile re-derivation (§3(c).1 Row 2, §3(d).2).
  * Never reads or compares `bundle.profile` (R4-m3).
+ * Reuses EN-L0 `bundleProfile` and `checkProfileCompatibility` (R-m6).
  */
 function revalidateFullBundleAndRederiveProfile(
   rawBundle: unknown,
@@ -475,203 +435,202 @@ function revalidateFullBundleAndRederiveProfile(
       readonly reason: string;
       readonly diagnostic?: "invalid_profile_bundle";
     } {
-  if (!isPlainObject(rawBundle) || rawBundle.schema !== PROFILE_BUNDLE_SCHEMA_V1) {
-    return {
-      ok: false,
-      reason: "profileBundle is not a valid ProfileBundleV1 object",
-      diagnostic: "invalid_profile_bundle",
-    };
-  }
-
-  if (rawBundle.registriesMode === "bindings-only") {
-    return {
-      ok: false,
-      reason: "profileBundle must be full-mode (bindings-only bundles cannot key extraction caching)",
-    };
-  }
-
-  if (
-    rawBundle.registriesMode !== "full" ||
-    typeof rawBundle.digest !== "string" ||
-    !isDigest(rawBundle.digest) ||
-    typeof rawBundle.profileId !== "string" ||
-    typeof rawBundle.profileVersion !== "string" ||
-    typeof rawBundle.profileHash !== "string" ||
-    !isPlainObject(rawBundle.extensions) ||
-    !isPlainObject(rawBundle.registries) ||
-    !isPlainObject(rawBundle.documentProjection)
-  ) {
-    return {
-      ok: false,
-      reason: "profileBundle failed structural shape validation",
-      diagnostic: "invalid_profile_bundle",
-    };
-  }
-
-  const docProj = toJsonValue(rawBundle.documentProjection);
-  if (!docProj.ok || !isPlainObject(docProj.value) || hasOwnProtoKey(docProj.value)) {
-    return {
-      ok: false,
-      reason: "profileBundle.documentProjection failed JSON projection or __proto__ check",
-      diagnostic: "invalid_profile_bundle",
-    };
-  }
-
-  const stableDocProj = toJsonValue(stableForHash(docProj.value));
-  if (
-    !stableDocProj.ok ||
-    !isPlainObject(stableDocProj.value) ||
-    canonicalBytes(stableDocProj.value) !== canonicalBytes(docProj.value)
-  ) {
-    return {
-      ok: false,
-      reason: "profileBundle.documentProjection is not in canonical stableForHash form",
-      diagnostic: "invalid_profile_bundle",
-    };
-  }
-
-  // Step (iii): linking.normalize.fn fence on documentProjection
-  if (hasLinkingNormalizeFn(docProj.value)) {
-    return {
-      ok: false,
-      reason: "profileBundle.documentProjection contains unsupported linking.normalize.fn",
-      diagnostic: "invalid_profile_bundle",
-    };
-  }
-
-  // Step (iv): validateOntologyProfile on documentProjection
-  const profileErrors = validateOntologyProfile(docProj.value);
-  if (profileErrors.length > 0) {
-    return {
-      ok: false,
-      reason: `profileBundle.documentProjection failed profile validation: ${profileErrors[0]}`,
-      diagnostic: "invalid_profile_bundle",
-    };
-  }
-
-  // Step (v): normalizeOntologyProfile on documentProjection
-  let rederivedProfile: NormalizedOntologyProfile;
   try {
-    rederivedProfile = normalizeOntologyProfile(docProj.value as unknown as OntologyProfile);
+    if (!isPlainObject(rawBundle) || rawBundle.schema !== PROFILE_BUNDLE_SCHEMA_V1) {
+      return {
+        ok: false,
+        reason: "profileBundle is not a valid ProfileBundleV1 object",
+        diagnostic: "invalid_profile_bundle",
+      };
+    }
+
+    if (rawBundle.registriesMode === "bindings-only") {
+      return {
+        ok: false,
+        reason: "profileBundle must be full-mode (bindings-only bundles cannot key extraction caching)",
+      };
+    }
+
+    if (
+      rawBundle.registriesMode !== "full" ||
+      typeof rawBundle.digest !== "string" ||
+      !isDigest(rawBundle.digest) ||
+      typeof rawBundle.profileId !== "string" ||
+      typeof rawBundle.profileVersion !== "string" ||
+      typeof rawBundle.profileHash !== "string" ||
+      !isPlainObject(rawBundle.extensions) ||
+      !isPlainObject(rawBundle.registries) ||
+      !isPlainObject(rawBundle.documentProjection)
+    ) {
+      return {
+        ok: false,
+        reason: "profileBundle failed structural shape validation",
+        diagnostic: "invalid_profile_bundle",
+      };
+    }
+
+    const docProj = toJsonValue(rawBundle.documentProjection);
+    if (!docProj.ok || !isPlainObject(docProj.value) || hasOwnProtoKey(docProj.value)) {
+      return {
+        ok: false,
+        reason: "profileBundle.documentProjection failed JSON projection or __proto__ check",
+        diagnostic: "invalid_profile_bundle",
+      };
+    }
+
+    const stableDocProj = toJsonValue(stableForHash(docProj.value));
+    if (
+      !stableDocProj.ok ||
+      !isPlainObject(stableDocProj.value) ||
+      canonicalBytes(stableDocProj.value) !== canonicalBytes(docProj.value)
+    ) {
+      return {
+        ok: false,
+        reason: "profileBundle.documentProjection is not in canonical stableForHash form",
+        diagnostic: "invalid_profile_bundle",
+      };
+    }
+
+    // Step (iii): linking.normalize.fn fence on documentProjection
+    if (hasLinkingNormalizeFn(docProj.value)) {
+      return {
+        ok: false,
+        reason: "profileBundle.documentProjection contains unsupported linking.normalize.fn",
+        diagnostic: "invalid_profile_bundle",
+      };
+    }
+
+    // Step (iv): validateOntologyProfile on documentProjection (wrapped in try/catch per R-M2)
+    let profileErrors: string[];
+    try {
+      profileErrors = validateOntologyProfile(docProj.value as unknown as OntologyProfile);
+    } catch (err) {
+      return {
+        ok: false,
+        reason: `profileBundle.documentProjection failed profile validation: ${err instanceof Error ? err.message : String(err)}`,
+        diagnostic: "invalid_profile_bundle",
+      };
+    }
+    if (profileErrors.length > 0) {
+      return {
+        ok: false,
+        reason: `profileBundle.documentProjection failed profile validation: ${profileErrors[0]}`,
+        diagnostic: "invalid_profile_bundle",
+      };
+    }
+
+    // Step (v) & EN-L0 re-derivation via `bundleProfile` (R-m6)
+    const rederivedRes = bundleProfile(docProj.value as unknown as OntologyProfile);
+    if (!rederivedRes.ok) {
+      return {
+        ok: false,
+        reason: `profileBundle.documentProjection failed normalization: ${rederivedRes.errors[0]?.message ?? rederivedRes.refusalCode}`,
+        diagnostic: "invalid_profile_bundle",
+      };
+    }
+
+    const rederivedBundle = rederivedRes.bundle;
+    const rederivedProfile = rederivedBundle.profile;
+
+    // Validate registry snapshots against re-derived profile & full-mode invariants
+    const declaredRegIds = Object.keys(rederivedProfile.registries).sort();
+    const bundleRegIds = Object.keys(rawBundle.registries).sort();
+    if (
+      declaredRegIds.length !== bundleRegIds.length ||
+      declaredRegIds.some((id, idx) => id !== bundleRegIds[idx])
+    ) {
+      return {
+        ok: false,
+        reason: "profileBundle.registries keys do not match declared profile registries",
+        diagnostic: "invalid_profile_bundle",
+      };
+    }
+
+    const validatedRegistries: Record<string, BundledRegistrySnapshotV1> = {};
+    for (const regId of declaredRegIds) {
+      const snap = rawBundle.registries[regId];
+      if (
+        !isPlainObject(snap) ||
+        snap.registryId !== regId ||
+        !isValidRegistryBindingShape(snap.binding) ||
+        typeof snap.recordCount !== "number" ||
+        !Number.isInteger(snap.recordCount) ||
+        snap.recordCount < 0 ||
+        typeof snap.recordsDigest !== "string" ||
+        !isDigest(snap.recordsDigest)
+      ) {
+        return {
+          ok: false,
+          reason: `profileBundle.registries.${regId} is malformed`,
+          diagnostic: "invalid_profile_bundle",
+        };
+      }
+
+      const expectedBinding = rederivedBundle.registries[regId]!.binding;
+      const snapBindingProj = toJsonValue(snap.binding);
+      const expectedBindingProj = toJsonValue(expectedBinding);
+      if (
+        !snapBindingProj.ok ||
+        !expectedBindingProj.ok ||
+        canonicalBytes(snapBindingProj.value) !== canonicalBytes(expectedBindingProj.value)
+      ) {
+        return {
+          ok: false,
+          reason: `profileBundle.registries.${regId}.binding does not match re-derived profile binding`,
+          diagnostic: "invalid_profile_bundle",
+        };
+      }
+
+      defineOwnProp(validatedRegistries, regId, {
+        registryId: regId,
+        binding: snapBindingProj.value as unknown as BundledRegistrySnapshotV1["binding"],
+        recordCount: snap.recordCount,
+        recordsDigest: snap.recordsDigest,
+      });
+    }
+
+    // Reuse EN-L0 `checkProfileCompatibility` (with `profile` replaced by `rederivedProfile` so
+    // `rawBundle.profile` is never trusted or read) to validate scalar metadata, extensions
+    // (against EN-L0's CONSUMED_KEYS), and bundle digest (via EN-L0's computeBundleDigest) (R-m6)
+    const candidateBundle: ProfileBundleV1 = {
+      schema: PROFILE_BUNDLE_SCHEMA_V1,
+      digest: rawBundle.digest,
+      profileId: rawBundle.profileId,
+      profileVersion: rawBundle.profileVersion,
+      profileHash: rawBundle.profileHash,
+      profile: rederivedProfile,
+      documentProjection: docProj.value,
+      extensions: rawBundle.extensions,
+      registries: validatedRegistries,
+      registriesMode: "full",
+    };
+
+    const compatCheck = checkProfileCompatibility(candidateBundle, candidateBundle);
+    if (!compatCheck.ok) {
+      return {
+        ok: false,
+        reason:
+          compatCheck.validationIssues[0]?.message ??
+          "profileBundle failed EN-L0 digest, scalar metadata, or extensions validation",
+        diagnostic: "invalid_profile_bundle",
+      };
+    }
+
+    const sortedProfile = deepFreeze(deepKeySortCopy(rederivedProfile));
+    return {
+      ok: true,
+      digest: rawBundle.digest,
+      rederivedProfile,
+      sortedProfile,
+      registries: validatedRegistries,
+    };
   } catch (err) {
     return {
       ok: false,
-      reason: `profileBundle.documentProjection failed normalization: ${err instanceof Error ? err.message : String(err)}`,
+      reason: `profileBundle failed validation: ${err instanceof Error ? err.message : String(err)}`,
       diagnostic: "invalid_profile_bundle",
     };
   }
-
-  // Verify scalar metadata & extensions against re-derived profile and documentProjection
-  if (
-    rawBundle.profileId !== rederivedProfile.id ||
-    rawBundle.profileVersion !== rederivedProfile.version ||
-    rawBundle.profileHash !== rederivedProfile.profile_hash
-  ) {
-    return {
-      ok: false,
-      reason: "profileBundle scalar metadata does not match re-derived profile",
-      diagnostic: "invalid_profile_bundle",
-    };
-  }
-
-  const expectedExtensions: Record<string, unknown> = {};
-  for (const k of Object.keys(docProj.value)) {
-    if (!CONSUMED_PROFILE_KEYS.has(k)) {
-      defineOwnProp(expectedExtensions, k, docProj.value[k]);
-    }
-  }
-  const bundleExtProj = toJsonValue(stableForHash(rawBundle.extensions));
-  const expectedExtProj = toJsonValue(stableForHash(expectedExtensions));
-  if (
-    !bundleExtProj.ok ||
-    !expectedExtProj.ok ||
-    canonicalBytes(bundleExtProj.value) !== canonicalBytes(expectedExtProj.value)
-  ) {
-    return {
-      ok: false,
-      reason: "profileBundle.extensions does not match documentProjection extensions",
-      diagnostic: "invalid_profile_bundle",
-    };
-  }
-
-  // Validate registry snapshots against re-derived profile & full-mode invariants
-  const declaredRegIds = Object.keys(rederivedProfile.registries).sort();
-  const bundleRegIds = Object.keys(rawBundle.registries).sort();
-  if (
-    declaredRegIds.length !== bundleRegIds.length ||
-    declaredRegIds.some((id, idx) => id !== bundleRegIds[idx])
-  ) {
-    return {
-      ok: false,
-      reason: "profileBundle.registries keys do not match declared profile registries",
-      diagnostic: "invalid_profile_bundle",
-    };
-  }
-
-  const validatedRegistries: Record<string, BundledRegistrySnapshotV1> = {};
-  for (const regId of declaredRegIds) {
-    const snap = rawBundle.registries[regId];
-    if (
-      !isPlainObject(snap) ||
-      snap.registryId !== regId ||
-      !isValidRegistryBindingShape(snap.binding) ||
-      typeof snap.recordCount !== "number" ||
-      !Number.isInteger(snap.recordCount) ||
-      snap.recordCount < 0 ||
-      typeof snap.recordsDigest !== "string" ||
-      !isDigest(snap.recordsDigest)
-    ) {
-      return {
-        ok: false,
-        reason: `profileBundle.registries.${regId} is malformed`,
-        diagnostic: "invalid_profile_bundle",
-      };
-    }
-
-    const { bound_source_path: _bsp, ...expectedBinding } = rederivedProfile.registries[regId]!;
-    const snapBindingProj = toJsonValue(snap.binding);
-    const expectedBindingProj = toJsonValue(expectedBinding);
-    if (
-      !snapBindingProj.ok ||
-      !expectedBindingProj.ok ||
-      canonicalBytes(snapBindingProj.value) !== canonicalBytes(expectedBindingProj.value)
-    ) {
-      return {
-        ok: false,
-        reason: `profileBundle.registries.${regId}.binding does not match re-derived profile binding`,
-        diagnostic: "invalid_profile_bundle",
-      };
-    }
-
-    defineOwnProp(validatedRegistries, regId, {
-      registryId: regId,
-      binding: snapBindingProj.value as unknown as BundledRegistrySnapshotV1["binding"],
-      recordCount: snap.recordCount,
-      recordsDigest: snap.recordsDigest,
-    });
-  }
-
-  const recomputedDigest = computeBundleDigestForValidation(
-    docProj.value,
-    validatedRegistries,
-    "full",
-  );
-  if (!recomputedDigest || recomputedDigest !== rawBundle.digest) {
-    return {
-      ok: false,
-      reason: "profileBundle.digest does not match recomputed digest",
-      diagnostic: "invalid_profile_bundle",
-    };
-  }
-
-  const sortedProfile = deepFreeze(deepKeySortCopy(rederivedProfile));
-  return {
-    ok: true,
-    digest: rawBundle.digest,
-    rederivedProfile,
-    sortedProfile,
-    registries: validatedRegistries,
-  };
 }
 
 function sortRegistryRecordsCopy(records: readonly RegistryRecord[]): RegistryRecord[] {
@@ -774,8 +733,9 @@ function renderAndPackPages(
 
 function isAdaptedClient(client: HeadlessLlmClient): client is AdaptedHeadlessLlmClient {
   return (
-    isPlainObject(client as unknown) &&
-    Object.prototype.hasOwnProperty.call(client, "adaptedFrom") &&
+    client !== null &&
+    typeof client === "object" &&
+    "adaptedFrom" in client &&
     (client as AdaptedHeadlessLlmClient).adaptedFrom != null
   );
 }
@@ -1039,6 +999,9 @@ function classifyThrownGenerateError(
         ? (getOwnPropValue(err, "message") as string)
         : String(err);
 
+  // §3(c).5 message-based rules use `err.message` on `Error` instances and `String(err)` otherwise
+  const ruleMsg = err instanceof Error ? err.message : String(err);
+
   const topName =
     err instanceof Error
       ? err.name
@@ -1059,7 +1022,7 @@ function classifyThrownGenerateError(
   }
 
   // (ii) Missing provider credential -> Row 23
-  if (topMsg.startsWith("Missing provider credential")) {
+  if (ruleMsg.startsWith("Missing provider credential")) {
     return {
       row: 23,
       status: "refused",
@@ -1071,7 +1034,7 @@ function classifyThrownGenerateError(
   }
 
   // (ii-b) Graphify mesh: -> Row 23
-  if (topMsg.startsWith("Graphify mesh: ")) {
+  if (ruleMsg.startsWith("Graphify mesh: ")) {
     return {
       row: 23,
       status: "refused",
@@ -1083,7 +1046,7 @@ function classifyThrownGenerateError(
   }
 
   // (iii) Exact empty message -> Row 14
-  if (topMsg === "LLM returned empty or filtered response") {
+  if (ruleMsg === "LLM returned empty or filtered response") {
     return {
       row: 14,
       status: "refused",
@@ -1096,8 +1059,8 @@ function classifyThrownGenerateError(
 
   // (iv) Direct LLM JSON parse / size rejections -> Row 16
   if (
-    topMsg.startsWith("Direct LLM response was not valid JSON") ||
-    topMsg.startsWith("Direct LLM response exceeds")
+    ruleMsg.startsWith("Direct LLM response was not valid JSON") ||
+    ruleMsg.startsWith("Direct LLM response exceeds")
   ) {
     return {
       row: 16,
@@ -1195,7 +1158,7 @@ function classifyThrownGenerateError(
     upperCode === "ECONNREFUSED" ||
     upperCode === "ETIMEDOUT" ||
     isRetryableFlag ||
-    topMsg.includes("fetch failed")
+    ruleMsg.includes("fetch failed")
   ) {
     return {
       row: 15,
@@ -1391,12 +1354,11 @@ function validateAndPruneChunkExtraction(params: {
     return { ok: false, row: 17, reason: first };
   }
 
-  const proj = toJsonValue(params.rawParsed);
-  if (!proj.ok || !isPlainObject(proj.value)) {
-    return { ok: false, row: 17, reason: "fragment failed JSON projection" };
+  if (!isPlainObject(params.rawParsed)) {
+    return { ok: false, row: 17, reason: "fragment must be a plain object" };
   }
 
-  const fragment = structuredClone(proj.value) as unknown as Extraction;
+  const fragment = structuredClone(params.rawParsed) as unknown as Extraction;
   const initialItemCount =
     (Array.isArray(fragment.nodes) ? fragment.nodes.length : 0) +
     (Array.isArray(fragment.edges) ? fragment.edges.length : 0);
@@ -1448,7 +1410,16 @@ function validateAndPruneChunkExtraction(params: {
   }
 
   // 3. Profile validation & per-item pruning + cascade (§3(d).3)
-  const val1 = validateProfileExtraction(fragment, { profile: params.sortedProfile });
+  let val1;
+  try {
+    val1 = validateProfileExtraction(fragment, { profile: params.sortedProfile });
+  } catch (err) {
+    return {
+      ok: false,
+      row: 18,
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
   if (!val1.valid) {
     const errorIssues = val1.issues.filter((iss) => iss.severity === "error");
     if (
@@ -1597,7 +1568,16 @@ function validateAndPruneChunkExtraction(params: {
     }
 
     // Re-validate once after pruning
-    const val2 = validateProfileExtraction(fragment, { profile: params.sortedProfile });
+    let val2;
+    try {
+      val2 = validateProfileExtraction(fragment, { profile: params.sortedProfile });
+    } catch (err) {
+      return {
+        ok: false,
+        row: 18,
+        reason: err instanceof Error ? err.message : String(err),
+      };
+    }
     if (!val2.valid) {
       const err2 = val2.issues.find((i) => i.severity === "error");
       return {
@@ -1671,10 +1651,13 @@ function withReceiptDiagnostics(
 }
 
 function findStoredSourceFile(extraction: Extraction): string | null {
+  if (!isPlainObject(extraction)) return null;
   if (Array.isArray(extraction.nodes)) {
     for (const node of extraction.nodes) {
+      if (!isPlainObject(node)) continue;
       if (Array.isArray(node.citations)) {
         for (const cit of node.citations) {
+          if (!isPlainObject(cit)) continue;
           if (typeof cit.source_file === "string" && cit.source_file.length > 0) {
             return cit.source_file;
           }
@@ -1684,8 +1667,10 @@ function findStoredSourceFile(extraction: Extraction): string | null {
   }
   if (Array.isArray(extraction.edges)) {
     for (const edge of extraction.edges) {
+      if (!isPlainObject(edge)) continue;
       if (Array.isArray(edge.citations)) {
         for (const cit of edge.citations) {
+          if (!isPlainObject(cit)) continue;
           if (typeof cit.source_file === "string" && cit.source_file.length > 0) {
             return cit.source_file;
           }
@@ -1695,6 +1680,7 @@ function findStoredSourceFile(extraction: Extraction): string | null {
   }
   if (Array.isArray(extraction.nodes)) {
     for (const node of extraction.nodes) {
+      if (!isPlainObject(node)) continue;
       if (typeof node.source_file === "string" && node.source_file.length > 0) {
         return node.source_file;
       }
@@ -1702,6 +1688,7 @@ function findStoredSourceFile(extraction: Extraction): string | null {
   }
   if (Array.isArray(extraction.edges)) {
     for (const edge of extraction.edges) {
+      if (!isPlainObject(edge)) continue;
       if (typeof edge.source_file === "string" && edge.source_file.length > 0) {
         return edge.source_file;
       }
@@ -1788,10 +1775,10 @@ function buildEarlyRefusalResult(params: {
   });
 
   return {
-    result: deepFreeze({
+    result: Object.freeze({
       extraction: null,
       receipt,
-      mergeConflicts: [],
+      mergeConflicts: Object.freeze([]),
       suggestedExitCode: params.exitCode,
     }),
     endedInRow24: false,
@@ -1808,8 +1795,15 @@ async function extractDocumentBatchInternal(
   input: HeadlessExtractInput,
   batchCtx: InternalExtractBatchContext,
 ): Promise<InternalExtractDocumentOutcome> {
-  const inObj = isPlainObject(input as unknown) ? (input as unknown as Record<string, unknown>) : {};
-  const clock = resolveClock(isPlainObject(inObj.clock) ? (inObj.clock as unknown as HeadlessClock) : undefined);
+  const inObj =
+    input !== null && typeof input === "object" && !Array.isArray(input)
+      ? (input as unknown as Record<string, unknown>)
+      : {};
+  const clock = resolveClock(
+    inObj.clock !== null && typeof inObj.clock === "object"
+      ? (inObj.clock as HeadlessClock)
+      : undefined,
+  );
   const startMs = clock.nowMs();
 
   // Extract raw strings for receipt fallback before validation
@@ -2395,7 +2389,8 @@ async function extractDocumentBatchInternal(
       }, validBounds.timeoutMs);
 
       let startedAttempts = 0;
-      let anyTokensUnknown = false;
+      let tokensInUnknown = false;
+      let tokensOutUnknown = false;
       let sumTokensIn = 0;
       let sumTokensOut = 0;
       let lastReportedModel: string | null = null;
@@ -2407,18 +2402,19 @@ async function extractDocumentBatchInternal(
 
       const recordAttemptMetadata = (turn?: HeadlessLlmTurnResponse) => {
         if (!turn) {
-          anyTokensUnknown = true;
+          tokensInUnknown = true;
+          tokensOutUnknown = true;
           return;
         }
         if (typeof turn.tokensIn === "number" && Number.isFinite(turn.tokensIn)) {
           sumTokensIn += turn.tokensIn;
         } else {
-          anyTokensUnknown = true;
+          tokensInUnknown = true;
         }
         if (typeof turn.tokensOut === "number" && Number.isFinite(turn.tokensOut)) {
           sumTokensOut += turn.tokensOut;
         } else {
-          anyTokensUnknown = true;
+          tokensOutUnknown = true;
         }
         if (typeof turn.model === "string" && turn.model.trim().length > 0) {
           const m = turn.model.trim();
@@ -2428,6 +2424,12 @@ async function extractDocumentBatchInternal(
             modelVaried = true;
           }
           lastReportedModel = m;
+          if (m !== normId.modelPolicy.model) {
+            const diffDiag = `reported_model_differs_from_policy:${m}`;
+            if (!runDiagnostics.includes(diffDiag)) {
+              runDiagnostics.push(diffDiag);
+            }
+          }
         }
         if (typeof turn.provider === "string" && turn.provider.trim().length > 0) {
           lastReportedProvider = turn.provider.trim();
@@ -2470,8 +2472,8 @@ async function extractDocumentBatchInternal(
           provider: resolvedProvider,
           modelSource: resolvedModelSource,
           latencyMs: clampLatency(startMs, clock.nowMs()),
-          tokensIn: startedAttempts === 0 || anyTokensUnknown ? null : sumTokensIn,
-          tokensOut: startedAttempts === 0 || anyTokensUnknown ? null : sumTokensOut,
+          tokensIn: startedAttempts === 0 || tokensInUnknown ? null : sumTokensIn,
+          tokensOut: startedAttempts === 0 || tokensOutUnknown ? null : sumTokensOut,
           retryable: failure.retryable,
           refusalCode: failure.refusalCode,
           refusalReason: failure.reason,
@@ -2743,8 +2745,8 @@ async function extractDocumentBatchInternal(
           provider: resolvedProvider,
           modelSource: resolvedModelSource,
           latencyMs: clampLatency(startMs, clock.nowMs()),
-          tokensIn: startedAttempts === 0 || anyTokensUnknown ? null : sumTokensIn,
-          tokensOut: startedAttempts === 0 || anyTokensUnknown ? null : sumTokensOut,
+          tokensIn: startedAttempts === 0 || tokensInUnknown ? null : sumTokensIn,
+          tokensOut: startedAttempts === 0 || tokensOutUnknown ? null : sumTokensOut,
           retryable: false,
           diagnostics: runDiagnostics,
         });
@@ -2928,10 +2930,10 @@ async function extractDocumentBatchInternal(
     }
   }
 
-  const frozenResult: HeadlessExtractResult = deepFreeze({
+  const frozenResult: HeadlessExtractResult = Object.freeze({
     extraction: finalExtraction,
-    receipt: finalReceipt,
-    mergeConflicts: finalConflicts,
+    receipt: deepFreeze(finalReceipt),
+    mergeConflicts: deepFreeze(finalConflicts),
     suggestedExitCode: finalExitCode,
   });
 
@@ -2962,9 +2964,9 @@ export async function runHeadlessExtractionBatch(
 ): Promise<HeadlessBatchResult> {
   const items = Array.isArray(inputs) ? inputs : [];
   if (items.length === 0) {
-    return deepFreeze({
-      results: [],
-      summary: {
+    return Object.freeze({
+      results: Object.freeze([]),
+      summary: Object.freeze({
         total: 0,
         ok: 0,
         okFromCache: 0,
@@ -2975,7 +2977,7 @@ export async function runHeadlessExtractionBatch(
         tokensIn: 0,
         tokensOut: 0,
         tokensUnknownCount: 0,
-      },
+      }),
       suggestedExitCode: 0,
     });
   }
@@ -3032,7 +3034,7 @@ export async function runHeadlessExtractionBatch(
         await o.heldRow24Transition.port.put(o.heldRow24Transition.record);
       } catch {
         const updatedReceipt = withReceiptDiagnostics(res.receipt, ["coverage_write_failed"]);
-        res = deepFreeze({
+        res = Object.freeze({
           extraction: res.extraction,
           receipt: updatedReceipt,
           mergeConflicts: res.mergeConflicts,
@@ -3111,9 +3113,9 @@ export async function runHeadlessExtractionBatch(
     batchExitCode = 0;
   }
 
-  return deepFreeze({
-    results: finalResults,
-    summary: {
+  return Object.freeze({
+    results: Object.freeze(finalResults),
+    summary: Object.freeze({
       total: finalResults.length,
       ok,
       okFromCache,
@@ -3124,7 +3126,7 @@ export async function runHeadlessExtractionBatch(
       tokensIn: numericTokensInCount > 0 ? sumTokensIn : null,
       tokensOut: numericTokensOutCount > 0 ? sumTokensOut : null,
       tokensUnknownCount,
-    },
+    }),
     suggestedExitCode: batchExitCode,
   });
 }

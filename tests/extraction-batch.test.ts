@@ -3,15 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import * as batchSubpath from "../src/extraction-batch.js";
 import * as rootApi from "../src/index.js";
 import { parseJsonFromLlmText, type TextJsonGenerationClient, type TextJsonGenerationInput } from "../src/llm-execution.js";
-import { canonicalBytes, sha256Hex } from "../src/ontology-guardian/canonical.js";
-import { normalizeOntologyProfile } from "../src/ontology-profile.js";
+import { sha256Hex } from "../src/ontology-guardian/canonical.js";
 import {
-  PROFILE_BUNDLE_SCHEMA_V1,
   type ProfileBundleV1,
   bundleProfile,
 } from "../src/profile-bundle.js";
-import { buildProfileChunkPrompt } from "../src/profile-prompts.js";
-import type { Extraction, OntologyProfile, RegistryRecord } from "../src/types.js";
+import type { Extraction, RegistryRecord } from "../src/types.js";
 import {
   type CachedExtractionEntryV2,
   type CoverageKey,
@@ -21,6 +18,7 @@ import {
   type ExtractionCachePort,
   type ExtractionKey,
   type ExtractionModelPolicyV1,
+  createCachedExtractionEntry,
   transitionCoverageRecord,
 } from "../src/extraction-cache.js";
 
@@ -92,9 +90,14 @@ outputs:
       enabled: false
       page_node_types: [Alpha]
       include_backlinks: false
-      include_source_snippets: false`;
+      include_source_snippets: false
+x_hints:
+  field_x:
+    description: Hint X`;
 
-const SYNTHETIC_PROFILE_REORDERED_YAML = `outputs:
+const SYNTHETIC_PROFILE_REORDERED_YAML = `x_hints:
+  field_x: { description: Hint X }
+outputs:
   ontology:
     wiki: { include_source_snippets: false, include_backlinks: false, page_node_types: [Alpha], enabled: false }
     relation_exports: [links_to]
@@ -661,6 +664,63 @@ describe("F-EN3: headless bounded extraction batch with structured receipts", ()
     expect(res2.receipt.latencyMs).toBe(1500);
     expect(res2.receipt.retryable).toBe(true);
     expect(res2.suggestedExitCode).toBe(75);
+
+    // Variant 3 (R-m4 & R-m2): Class-based ManualClock (non-plain prototype) + independent per-field token unknown flag
+    class ClassManualClock implements batchSubpath.HeadlessClock {
+      currentMs = 1_700_000_000_000;
+      setTimeoutCalls = 0;
+      nowMs() {
+        return this.currentMs;
+      }
+      nowIso() {
+        return new Date(this.currentMs).toISOString();
+      }
+      setTimeout(_fn: () => void, _ms: number) {
+        this.setTimeoutCalls++;
+        return 1;
+      }
+      clearTimeout(_handle: unknown) {
+        // no-op
+      }
+    }
+
+    const classClock = new ClassManualClock();
+    const resClassClock = await batchSubpath.extractDocumentBatch({
+      document: {
+        docSha: DOC_SHA_3,
+        sourceFile: "docs/class-clock.pdf",
+        pages: [{ page: 1, text: "Alpha class clock." }],
+      },
+      profileBundle: bundle,
+      modelPolicy: DEFAULT_MODEL_POLICY,
+      promptVersion: "prompt/v1",
+      bounds: {
+        timeoutMs: 2000,
+        maxDocumentBytes: 100_000,
+        maxAttempts: 1,
+      },
+      client: {
+        provider: "openai",
+        model: "gpt-4o-mini",
+        async generate() {
+          classClock.currentMs += 325;
+          return {
+            status: "ok",
+            text: makeValidExtractionJson({ docSha: DOC_SHA_3 }),
+            tokensIn: 400,
+            tokensOut: null,
+            model: "gpt-4o-mini",
+            provider: "openai",
+          };
+        },
+      },
+      clock: classClock,
+    });
+    expect(classClock.setTimeoutCalls).toBe(1);
+    expect(resClassClock.receipt.status).toBe("ok");
+    expect(resClassClock.receipt.latencyMs).toBe(325);
+    expect(resClassClock.receipt.tokensIn).toBe(400);
+    expect(resClassClock.receipt.tokensOut).toBeNull();
   });
 
   it("F-EN3-T3: refusals without throwing across content_filter, empty, invalid JSON, 429, unknown, native refusals, and 401 vs 400", async () => {
@@ -886,6 +946,22 @@ describe("F-EN3: headless bounded extraction batch with structured receipts", ()
     expect(r400.receipt.attempts).toBe(1);
     expect(r400.suggestedExitCode).toBe(0);
     expect(cov401.calls.put).toBe(1);
+
+    // (viii) Native client where reported turn.model differs from modelPolicy.model (R-m8)
+    const rDiffModel = await runWithTurn(async () => ({
+      status: "ok",
+      text: makeValidExtractionJson(),
+      tokensIn: 50,
+      tokensOut: 15,
+      model: "gpt-4o-mini-2024-07-18",
+      provider: "openai",
+    }));
+    expect(rDiffModel.receipt.status).toBe("ok");
+    expect(rDiffModel.receipt.model).toBe("gpt-4o-mini-2024-07-18");
+    expect(rDiffModel.receipt.modelSource).toBe("response");
+    expect(rDiffModel.receipt.diagnostics).toContain(
+      "reported_model_differs_from_policy:gpt-4o-mini-2024-07-18",
+    );
   });
 
   it("F-EN3-T4: adaptTextJsonClient contract across direct-like, wrapped SDK, mesh, assistant, and non-exposing doubles", async () => {
@@ -1230,6 +1306,52 @@ describe("F-EN3: headless bounded extraction batch with structured receipts", ()
     expect(rMeshBridgeConfig.receipt.refusalCode).toBe("client_configuration_error");
     expect(rMeshBridgeConfig.suggestedExitCode).toBe(64);
     expect(covMeshAuth.map.size).toBe(0);
+
+    // Plain mesh-shaped non-Error object with retryable: false and message: "fetch failed" -> Row 24, not Row 15 (R-m1)
+    const rMeshNonRetryableFetch = await runRejectingDirect(() => ({
+      providerId: "p",
+      retryable: false,
+      message: "fetch failed: permanent policy rejection",
+    }));
+    expect(rMeshNonRetryableFetch.receipt.status).toBe("refused");
+    expect(rMeshNonRetryableFetch.receipt.refusalCode).toBe("upstream_error");
+    expect(rMeshNonRetryableFetch.receipt.retryable).toBe(false);
+    expect(rMeshNonRetryableFetch.receipt.attempts).toBe(1);
+    expect(rMeshNonRetryableFetch.receipt.diagnostics).toContain("unclassified_client_error");
+    expect(rMeshNonRetryableFetch.receipt.refusalReason).toBe("fetch failed: permanent policy rejection");
+    expect(rMeshNonRetryableFetch.suggestedExitCode).toBe(0);
+
+    // Class-based AdaptedHeadlessLlmClient hits the Row 11 mode fence by duck type (R-m4)
+    class ClassAdaptedClient implements batchSubpath.AdaptedHeadlessLlmClient {
+      readonly provider = "openai";
+      readonly model = "gpt-4o-mini";
+      readonly adaptedFrom = assistantDouble;
+      async generate(): Promise<batchSubpath.HeadlessLlmTurnResponse> {
+        assistantCalls++;
+        return { status: "ok", text: "{}", tokensIn: 0, tokensOut: 0 };
+      }
+    }
+    const rClassAdapted = await batchSubpath.extractDocumentBatch({
+      document: {
+        docSha: DOC_SHA_1,
+        sourceFile: "docs/t4-class-adapted.pdf",
+        pages: [{ page: 1, text: "Alpha" }],
+      },
+      profileBundle: bundle,
+      modelPolicy: DEFAULT_MODEL_POLICY,
+      promptVersion: "prompt/v1",
+      bounds: {
+        timeoutMs: 5000,
+        maxDocumentBytes: 100_000,
+        maxAttempts: 2,
+      },
+      client: new ClassAdaptedClient(),
+      clock: clock.clock,
+    });
+    expect(rClassAdapted.receipt.refusalCode).toBe("unsupported_client");
+    expect(rClassAdapted.receipt.attempts).toBe(0);
+    expect(rClassAdapted.suggestedExitCode).toBe(64);
+    expect(assistantCalls).toBe(0);
   });
 
   it("F-EN3-T5: end-to-end pages, citation stamping, pruning with full cascade, splitter surrogate guard, cache and conflict replay", async () => {
@@ -1429,6 +1551,74 @@ describe("F-EN3: headless bounded extraction batch with structured receipts", ()
     expect(res2.receipt.attempts).toBe(0);
     expect(res2.extraction).toEqual(res1.extraction);
     expect(res2.mergeConflicts).toEqual(res1.mergeConflicts);
+
+    // R-M1 (§0.1.6): Returned extraction is mutable (not deep-frozen) on fresh run, cache hit, and batch result,
+    // while top-level result, receipt, and mergeConflicts remain frozen
+    expect(Object.isFrozen(res1)).toBe(true);
+    expect(Object.isFrozen(res1.receipt)).toBe(true);
+    expect(Object.isFrozen(res1.mergeConflicts)).toBe(true);
+    expect(Object.isFrozen(res1.extraction)).toBe(false);
+    expect(Object.isFrozen(res1.extraction!.nodes)).toBe(false);
+    expect(Object.isFrozen(res1.extraction!.nodes[0])).toBe(false);
+    res1.extraction!.nodes[0]!.community = 3;
+    expect(res1.extraction!.nodes[0]!.community).toBe(3);
+
+    expect(Object.isFrozen(res2.extraction)).toBe(false);
+    expect(Object.isFrozen(res2.extraction!.nodes[0])).toBe(false);
+    res2.extraction!.nodes[0]!.community = 4;
+    expect(res2.extraction!.nodes[0]!.community).toBe(4);
+
+    const batchMut = await batchSubpath.runHeadlessExtractionBatch([extractInput]);
+    expect(Object.isFrozen(batchMut)).toBe(true);
+    expect(Object.isFrozen(batchMut.results)).toBe(true);
+    expect(Object.isFrozen(batchMut.summary)).toBe(true);
+    expect(Object.isFrozen(batchMut.results[0]!.extraction)).toBe(false);
+    batchMut.results[0]!.extraction!.nodes[0]!.community = 5;
+    expect(batchMut.results[0]!.extraction!.nodes[0]!.community).toBe(5);
+
+    // R-m3: Chunk-level response containing a lone surrogate (\uD800) in a node field/citation is NOT retried as Row 17,
+    // and is handled by §4 merge without failing at row 17
+    let surrogateChunkCalls = 0;
+    const surrogateChunkClient: batchSubpath.HeadlessLlmClient = {
+      provider: "openai",
+      model: "gpt-4o-mini",
+      async generate() {
+        surrogateChunkCalls++;
+        return {
+          status: "ok",
+          text:
+            '{"nodes":[{"id":"alpha:1","label":"Valid Alpha","extra_note":"Lone\\ud800Surrogate","file_type":"document","source_file":"docs/surr.pdf","node_type":"Alpha","status":"candidate","confidence":"EXTRACTED","citations":[{"source_file":"docs/surr.pdf","docSha":"' +
+            DOC_SHA_4 +
+            '","page":1,"quoteSpan":[0,5],"excerpt":"Alpha"},{"source_file":"docs/surr.pdf","docSha":"' +
+            DOC_SHA_4 +
+            '","page":1,"excerpt":"Alpha\\ud800"}]}],"edges":[],"input_tokens":10,"output_tokens":5}',
+          tokensIn: 10,
+          tokensOut: 5,
+        };
+      },
+    };
+    const resSurrChunk = await batchSubpath.extractDocumentBatch({
+      document: {
+        docSha: DOC_SHA_4,
+        sourceFile: "docs/surr.pdf",
+        pages: [{ page: 1, text: "Alpha page content" }],
+      },
+      profileBundle: bundle,
+      modelPolicy: DEFAULT_MODEL_POLICY,
+      promptVersion: "prompt/v1",
+      bounds: {
+        timeoutMs: 5000,
+        maxDocumentBytes: 100_000,
+        maxAttempts: 3,
+      },
+      client: surrogateChunkClient,
+      clock: clock.clock,
+    });
+    expect(surrogateChunkCalls).toBe(1);
+    expect(resSurrChunk.receipt.attempts).toBe(1);
+    expect(resSurrChunk.receipt.status).toBe("ok");
+    expect(resSurrChunk.extraction?.nodes[0]?.citations).toHaveLength(1);
+    expect("extra_note" in (resSurrChunk.extraction?.nodes[0] ?? {})).toBe(false);
 
     // Splitter surrogate-pair guard variant
     const capturedPrompts: string[] = [];
@@ -1926,6 +2116,46 @@ describe("F-EN3: headless bounded extraction batch with structured receipts", ()
       expect(rGood.receipt.status).toBe("ok");
       expect(counter.count).toBe(1);
     }
+
+    // (viii) R-M2: Digest-consistent cached entry whose extraction.nodes contains [null] resolves without throwing
+    {
+      const cache = createInMemoryCache();
+      const counter = { count: 0 };
+      const baseInput: batchSubpath.HeadlessExtractInput = {
+        document: { docSha: DOC_SHA_1, sourceFile: "docs/t6-null-node.pdf", pages: [{ page: 1, text: "Alpha" }] },
+        profileBundle: bundle,
+        modelPolicy: DEFAULT_MODEL_POLICY,
+        promptVersion: "prompt/v1",
+        bounds: { timeoutMs: 5000, maxDocumentBytes: 100_000, maxAttempts: 1 },
+        client: makeOkClient(counter),
+        cache: cache.port,
+        clock: clock.clock,
+      };
+      const seedRun = await batchSubpath.extractDocumentBatch(baseInput);
+      const key = seedRun.receipt.extractionKey!;
+      const existingEntry = cache.map.get(key) as CachedExtractionEntryV2;
+      const craftedRes = createCachedExtractionEntry({
+        identity: existingEntry.identity,
+        extraction: {
+          nodes: [null] as unknown as Extraction["nodes"],
+          edges: [null] as unknown as Extraction["edges"],
+          input_tokens: 0,
+          output_tokens: 0,
+        },
+        receipt: existingEntry.receipt,
+        createdAt: existingEntry.createdAt,
+      });
+      expect(craftedRes.ok).toBe(true);
+      if (craftedRes.ok) {
+        cache.map.set(key, craftedRes.entry);
+      }
+      const rNullNode = await batchSubpath.extractDocumentBatch(baseInput);
+      expect(rNullNode.receipt.status).toBe("ok");
+      expect(rNullNode.receipt.fromCache).toBe(true);
+      const bNullNode = await batchSubpath.runHeadlessExtractionBatch([baseInput]);
+      expect(bNullNode.results[0]?.receipt.status).toBe("ok");
+      expect(bNullNode.results[0]?.receipt.fromCache).toBe(true);
+    }
   });
 
   it("F-EN3-T7: identity and input validation, bundle re-derivation, key-sorted profile prompts, registry sorting, and sourceFile rename", async () => {
@@ -1993,6 +2223,73 @@ describe("F-EN3: headless bounded extraction batch with structured receipts", ()
     expect(rTampered.suggestedExitCode).toBe(65);
     expect(calls).toBe(0);
     expect(covTamper.map.size).toBe(0);
+
+    // 2b. R-M2: Malformed documentProjection subtrees (null node_type, null registry binding, null hierarchy) never reject;
+    // they fail closed as Row 2 (invalid_identity + invalid_profile_bundle, exit 65)
+    for (const mutateDocProj of [
+      (dp: Record<string, unknown>) => {
+        (dp.node_types as Record<string, unknown>).Beta = null;
+      },
+      (dp: Record<string, unknown>) => {
+        (dp.node_types as Record<string, unknown>).Alpha = null;
+      },
+      (dp: Record<string, unknown>) => {
+        (dp.registries as Record<string, unknown>).reg_alpha = null;
+      },
+      (dp: Record<string, unknown>) => {
+        dp.hierarchies = { h: null };
+      },
+    ]) {
+      const brokenDocProj = structuredClone(bundle.documentProjection) as Record<string, unknown>;
+      mutateDocProj(brokenDocProj);
+      const brokenBundle: ProfileBundleV1 = {
+        ...bundle,
+        documentProjection: brokenDocProj as ProfileBundleV1["documentProjection"],
+      };
+      const rBroken = await batchSubpath.extractDocumentBatch({
+        ...baseInput,
+        profileBundle: brokenBundle,
+      });
+      expect(rBroken.receipt.status).toBe("refused");
+      expect(rBroken.receipt.refusalCode).toBe("invalid_identity");
+      expect(rBroken.receipt.diagnostics).toContain("invalid_profile_bundle");
+      expect(rBroken.suggestedExitCode).toBe(65);
+
+      const bBroken = await batchSubpath.runHeadlessExtractionBatch([
+        {
+          ...baseInput,
+          profileBundle: brokenBundle,
+        },
+      ]);
+      expect(bBroken.results[0]?.receipt.refusalCode).toBe("invalid_identity");
+      expect(bBroken.suggestedExitCode).toBe(65);
+    }
+
+    // 2c. R-m6: Non-empty extensions path on valid bundle, and tampered extensions fail closed as Row 2
+    expect(bundle.extensions).toEqual({
+      x_hints: {
+        field_x: {
+          description: "Hint X",
+        },
+      },
+    });
+    const tamperedExtBundle: ProfileBundleV1 = {
+      ...bundle,
+      extensions: {
+        x_hints: {
+          field_x: {
+            description: "Tampered Hint",
+          },
+        },
+      },
+    };
+    const rTamperedExt = await batchSubpath.extractDocumentBatch({
+      ...baseInput,
+      profileBundle: tamperedExtBundle,
+    });
+    expect(rTamperedExt.receipt.refusalCode).toBe("invalid_identity");
+    expect(rTamperedExt.receipt.diagnostics).toContain("invalid_profile_bundle");
+    expect(rTamperedExt.suggestedExitCode).toBe(65);
 
     // 3. bundle.profile tamper case: alter bundle.profile scalar leaving documentProjection and digest intact ->
     // captured prompts byte-equal genuine bundle and second run is a cache hit with 0 model calls
@@ -2397,6 +2694,31 @@ describe("F-EN3: headless bounded extraction batch with structured receipts", ()
     expect(completionOrder).toEqual(["doc2", "doc1"]);
     expect(batchConcurrent.results[0]?.receipt.docSha).toBe("a".repeat(64));
     expect(batchConcurrent.results[1]?.receipt.docSha).toBe("b".repeat(64));
+
+    // 8. R-m2: Batch with partial per-field token reporting (tokensIn: 400, tokensOut: null)
+    const partialTokensClient: batchSubpath.HeadlessLlmClient = {
+      provider: "openai",
+      model: "gpt-4o-mini",
+      async generate() {
+        return {
+          status: "ok",
+          text: makeValidExtractionJson({ docSha: "c".repeat(64) }),
+          tokensIn: 400,
+          tokensOut: null,
+          model: "gpt-4o-mini",
+          provider: "openai",
+        };
+      },
+    };
+    const batchPartialTokens = await batchSubpath.runHeadlessExtractionBatch([
+      makeDocInput("c".repeat(64), { client: partialTokensClient, cache: undefined, coverage: undefined }),
+    ]);
+    assertBatchPartition(batchPartialTokens);
+    expect(batchPartialTokens.results[0]?.receipt.tokensIn).toBe(400);
+    expect(batchPartialTokens.results[0]?.receipt.tokensOut).toBeNull();
+    expect(batchPartialTokens.summary.tokensIn).toBe(400);
+    expect(batchPartialTokens.summary.tokensOut).toBeNull();
+    expect(batchPartialTokens.summary.tokensUnknownCount).toBe(1);
   });
 
   it("F-EN3-T9: semantics pin golden guard on EXTRACTION_SEMANTICS_VERSION, schema, prompt, and splitter", async () => {
@@ -2486,11 +2808,18 @@ describe("F-EN3: headless bounded extraction batch with structured receipts", ()
       splitterSha256: sha256Hex(JSON.stringify(splitChunks)),
     };
 
-    // 1. Live pin must match the committed golden
+    // 1. Live pin must match the committed golden (R-M3: verifySemanticsGolden runs first so live drift fails with the required message)
+    verifySemanticsGolden(actualPin, T9_SEMANTICS_GOLDEN);
     expect(actualPin).toEqual(T9_SEMANTICS_GOLDEN);
-    expect(() => verifySemanticsGolden(actualPin, T9_SEMANTICS_GOLDEN)).not.toThrow();
 
-    // 2. Hash move without semanticsVersion move -> "bump EXTRACTION_SEMANTICS_VERSION"
+    // 2. Hash or schema move without semanticsVersion move -> "bump EXTRACTION_SEMANTICS_VERSION"
+    expect(() =>
+      verifySemanticsGolden(
+        { ...actualPin, schema: "engram_extraction_v2" },
+        T9_SEMANTICS_GOLDEN,
+      ),
+    ).toThrow(/bump EXTRACTION_SEMANTICS_VERSION/);
+
     expect(() =>
       verifySemanticsGolden(
         { ...actualPin, promptSha256: "0".repeat(64) },
@@ -2517,6 +2846,30 @@ describe("F-EN3: headless bounded extraction batch with structured receipts", ()
   it("F-EN3-T10: batch row-24 guard (owner option O-1, option C) across systemic, isolated, mixed, and crash replay", async () => {
     const bundle = makeFullBundle();
     const clock = createManualClock();
+
+    // R-m7: Shared assertion helper for every batch in T10 (receipt shape + summary partition invariant)
+    const assertRow24Receipt = (r: batchSubpath.HeadlessExtractResult) => {
+      expect(r.receipt.status).toBe("refused");
+      expect(r.receipt.refusalCode).toBe("upstream_error");
+      expect(r.receipt.retryable).toBe(false);
+      expect(r.receipt.attempts).toBe(1);
+      expect(r.suggestedExitCode).toBe(0);
+      expect(
+        r.receipt.diagnostics.includes("unclassified_client_error") ||
+          r.receipt.diagnostics.includes("native_refusal_non_retryable"),
+      ).toBe(true);
+    };
+
+    const assertRow24Batch = (batch: batchSubpath.HeadlessBatchResult) => {
+      const s = batch.summary;
+      expect(s.ok + s.refused + s.timeout + s.tooLarge + s.abandoned).toBe(s.total);
+      expect(s.okFromCache).toBeLessThanOrEqual(s.ok);
+      for (const r of batch.results) {
+        if (r.receipt.status === "refused") {
+          assertRow24Receipt(r);
+        }
+      }
+    };
 
     const unknownThrowClient: batchSubpath.HeadlessLlmClient = {
       provider: "openai",
@@ -2594,23 +2947,9 @@ describe("F-EN3: headless bounded extraction batch with structured receipts", ()
         makeInput(DOC_SHA_3, cache.port, cov.port),
       ]);
 
+      assertRow24Batch(batchSys);
       expect(batchSys.suggestedExitCode).toBe(64);
       expect(batchSys.summary.refused).toBe(3);
-      expect(
-        batchSys.summary.ok +
-          batchSys.summary.refused +
-          batchSys.summary.timeout +
-          batchSys.summary.tooLarge +
-          batchSys.summary.abandoned,
-      ).toBe(batchSys.summary.total);
-
-      for (const r of batchSys.results) {
-        expect(r.receipt.status).toBe("refused");
-        expect(r.receipt.refusalCode).toBe("upstream_error");
-        expect(r.receipt.diagnostics).toContain("unclassified_client_error");
-        expect(r.receipt.attempts).toBe(1);
-        expect(r.suggestedExitCode).toBe(0);
-      }
 
       // No coverage puts for any of the three
       expect(cov.calls.put).toBe(0);
@@ -2631,6 +2970,7 @@ describe("F-EN3: headless bounded extraction batch with structured receipts", ()
         makeInput(DOC_SHA_4, cache.port, cov.port, unknownThrowClient), // hits cache
       ]);
 
+      assertRow24Batch(batchSysWithHit);
       expect(batchSysWithHit.suggestedExitCode).toBe(64);
       expect(batchSysWithHit.summary.okFromCache).toBe(1);
       expect(cov.calls.put).toBe(1);
@@ -2639,7 +2979,7 @@ describe("F-EN3: headless bounded extraction batch with structured receipts", ()
       expect(cov.getRecord("ville-exemple", DOC_SHA_2, bundle.digest)).toBeUndefined();
     }
 
-    // (ii) Isolated: batch of 1 non-cached document -> option A: batch exit 0, transition written, 3 runs abandon
+    // (ii) Isolated: batch of 1 non-cached document AND direct extractDocumentBatch call -> option A: exit 0, transition written, 3 runs abandon
     {
       const cache = createInMemoryCache();
       const cov = createInMemoryCoverage();
@@ -2648,6 +2988,7 @@ describe("F-EN3: headless bounded extraction batch with structured receipts", ()
         const batchIso = await batchSubpath.runHeadlessExtractionBatch([
           makeInput(DOC_SHA_1, cache.port, cov.port),
         ]);
+        assertRow24Batch(batchIso);
         expect(batchIso.suggestedExitCode).toBe(0);
         expect(batchIso.results[0]?.suggestedExitCode).toBe(0);
         expect(cov.calls.put).toBe(i);
@@ -2655,6 +2996,17 @@ describe("F-EN3: headless bounded extraction batch with structured receipts", ()
         expect(rec?.failureCount).toBe(i);
         expect(rec?.status).toBe(i < 3 ? "pending" : "abandoned");
       }
+
+      // Direct extractDocumentBatch call variant
+      const directCache = createInMemoryCache();
+      const directCov = createInMemoryCoverage();
+      const directRes = await batchSubpath.extractDocumentBatch(
+        makeInput(DOC_SHA_2, directCache.port, directCov.port),
+      );
+      assertRow24Receipt(directRes);
+      expect(directCov.calls.put).toBe(1);
+      expect(directCov.getRecord("ville-exemple", DOC_SHA_2, bundle.digest)?.failureCount).toBe(1);
+      expect(directCov.getRecord("ville-exemple", DOC_SHA_2, bundle.digest)?.status).toBe("pending");
     }
 
     // (iii) Mixed: [row-24, row-24, fresh ok] -> exit 0, both row-24 transitions written
@@ -2668,6 +3020,7 @@ describe("F-EN3: headless bounded extraction batch with structured receipts", ()
         makeInput(DOC_SHA_3, cache.port, cov.port, okClient),
       ]);
 
+      assertRow24Batch(batchMixed);
       expect(batchMixed.suggestedExitCode).toBe(0);
       expect(cov.calls.put).toBe(3);
       expect(cov.getRecord("ville-exemple", DOC_SHA_1, bundle.digest)?.failureCount).toBe(1);
@@ -2682,6 +3035,7 @@ describe("F-EN3: headless bounded extraction batch with structured receipts", ()
         makeInput(DOC_SHA_2, cacheDiff.port, covDiff.port, nativeRow24Client),
       ]);
 
+      assertRow24Batch(batchDiffReason);
       expect(batchDiffReason.suggestedExitCode).toBe(0);
       expect(covDiff.calls.put).toBe(2);
       expect(covDiff.getRecord("ville-exemple", DOC_SHA_1, bundle.digest)?.failureCount).toBe(1);
@@ -2740,7 +3094,9 @@ describe("F-EN3: headless bounded extraction batch with structured receipts", ()
       const replayBatch = await batchSubpath.runHeadlessExtractionBatch([
         makeInput(DOC_SHA_2, cache.port, cov.port, countingRow24Client),
       ]);
+      assertRow24Batch(replayBatch);
       expect(replayBatch.suggestedExitCode).toBe(0);
+      expect(cov.calls.put).toBe(2);
       expect(row24Calls).toBe(2);
       const replayedRec = cov.getRecord("ville-exemple", DOC_SHA_2, bundle.digest);
       expect(replayedRec?.failureCount).toBe(1);
