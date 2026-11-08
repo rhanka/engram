@@ -84,7 +84,7 @@ describe("shared provenance registry (L4)", () => {
     }
   });
 
-  it("keeps the public exports map unchanged", () => {
+  it("keeps the public exports map unchanged", async () => {
     const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
       exports: Record<string, Record<string, string>>;
     };
@@ -92,8 +92,35 @@ describe("shared provenance registry (L4)", () => {
       exports: Record<string, Record<string, string>>;
     };
     expect(Object.keys(pkg.exports).sort()).toEqual(Object.keys(manifest.exports).sort());
+    expect(pkg.exports["./archi"]).toEqual({
+      types: "./dist/archi.d.ts",
+      import: "./dist/archi.js",
+    });
     for (const [key, value] of Object.entries(manifest.exports)) {
       expect(pkg.exports[key], `exports[${key}]`).toEqual(value);
     }
+    const archi = (await import("../src/archi.js")) as Record<string, unknown>;
+    expect(Object.keys(archi).sort()).toEqual([
+      "ARCHI_CARDS_CONTENT",
+      "ARCHI_CARDS_PIN",
+      "ARCHI_V1",
+      "ARCHI_V1_PIN",
+      "CONTRACT_PIN",
+      "GENERIC_V2",
+      "archiSummaries",
+      "checkArchi",
+      "checkArchiView",
+      "projectArchiCards",
+    ]);
+    expect(typeof archi["checkArchi"]).toBe("function");
+    expect(typeof archi["projectArchiCards"]).toBe("function");
+    expect(typeof archi["archiSummaries"]).toBe("function");
+    expect(typeof archi["checkArchiView"]).toBe("function");
+    expect(archi["ARCHI_V1_PIN"]).toBeDefined();
+    expect(archi["ARCHI_CARDS_PIN"]).toBeDefined();
+    expect(archi["CONTRACT_PIN"]).toBeDefined();
+    expect(archi["ARCHI_V1"]).toBeDefined();
+    expect(archi["GENERIC_V2"]).toBeDefined();
+    expect(archi["ARCHI_CARDS_CONTENT"]).toBeDefined();
   });
 });
