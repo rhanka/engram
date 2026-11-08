@@ -488,7 +488,14 @@ describe("archi@1 ingestion stages 1–8 and full 25-code §5.5 coverage (tier E
     recordRefusal(rRevConflict);
 
     // Every single one of the 25 JSON-mode codes in ARCHI_DIAGNOSTIC_CODES was reached!
-    expect([...reached].sort()).toEqual(ARCHI_DIAGNOSTIC_CODES.filter((c) => !c.startsWith("mermaid-strict-")).sort());
+    expect([...reached].sort()).toEqual(
+      ARCHI_DIAGNOSTIC_CODES.filter(
+        (c) =>
+          !c.startsWith("mermaid-strict-") &&
+          c !== "carrier-digest-mismatch" &&
+          c !== "export-stale",
+      ).sort(),
+    );
 
     // Any DS finding refuses, warnings included (§5.5 line 407)
     const rDsWarn = ingestArchitecture(

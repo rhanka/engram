@@ -154,7 +154,11 @@ describe("shared provenance registry (L4)", () => {
 
     const archiMermaid = (await import("../src/archi-mermaid/index.js")) as Record<string, unknown>;
     expect(Object.keys(archiMermaid).sort()).toEqual([
+      "ARCHI_CARRIER_DIAGNOSTIC_CODES",
       "ARCHI_MERMAID_DIAGNOSTIC_CODES",
+      "checkArchiCarrier",
+      "decodeArchiCarrier",
+      "encodeArchiCarrier",
       "formatArchiMermaid",
       "parseArchiMermaid",
       "printArchiMermaid",
@@ -162,6 +166,10 @@ describe("shared provenance registry (L4)", () => {
     expect(typeof archiMermaid["parseArchiMermaid"]).toBe("function");
     expect(typeof archiMermaid["printArchiMermaid"]).toBe("function");
     expect(typeof archiMermaid["formatArchiMermaid"]).toBe("function");
+    expect(typeof archiMermaid["encodeArchiCarrier"]).toBe("function");
+    expect(typeof archiMermaid["decodeArchiCarrier"]).toBe("function");
+    expect(typeof archiMermaid["checkArchiCarrier"]).toBe("function");
     expect(archiMermaid["ARCHI_MERMAID_DIAGNOSTIC_CODES"]).toBeDefined();
+    expect(archiMermaid["ARCHI_CARRIER_DIAGNOSTIC_CODES"]).toBeDefined();
   });
 });
