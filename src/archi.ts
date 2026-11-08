@@ -20,14 +20,17 @@ export {
   type ArchiDiagramPresentation,
   type ArchiEntityTextSlots,
   type ArchiOccurrenceMeasures,
+  type ArchiOccurrenceRenderOptions,
   type ArchiPresentationEntity,
   type ArchiProjectionBinding,
   type ArchiRenderEntityTextSlots,
   type ArchiViewMeasures,
+  type ArchiViewRenderOptions,
 } from "./ontology-guardian/archi-cards.js";
 export type { ArchiSlotMeasurement } from "./ontology-guardian/archi-metrics.js";
 export {
   archiSummaries,
+  buildArchiSourceView,
   checkArchiView,
   type ArchiDsPort,
   type ArchiLayoutGroup,
@@ -37,19 +40,6 @@ export {
   type ArchiViewSpecLegend,
   type ArchiViewSpecLegendToken,
 } from "./ontology-guardian/archi-view.js";
-export {
-  ARCHI_MERMAID_DIAGNOSTIC_CODES,
-  ArchiMermaidError,
-  canonical,
-  fmt,
-  parse,
-  print,
-  type ArchiMermaidDiagnosticCode,
-  type ArchiMermaidFormatOptions,
-  type ArchiMermaidParseOptions,
-  type ArchiMermaidPrintOptions,
-  type ArchiSourceTriple,
-} from "./archi-mermaid/index.js";
 export { GENERIC_V2, type GovernedProfile } from "./ontology-guardian/diagram-profiles.js";
 export { CONTRACT_PIN } from "./ontology-guardian/diagram-registry.js";
 export type { EngramDiagnostic } from "./ontology-guardian/diagnostics.js";

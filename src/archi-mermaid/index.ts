@@ -49,7 +49,33 @@ export const ARCHI_MERMAID_DIAGNOSTIC_CODES = Object.freeze([
 
 export type ArchiMermaidDiagnosticCode = (typeof ARCHI_MERMAID_DIAGNOSTIC_CODES)[number];
 
-/** Authored triple S = (ArchiManifest, NativeSemanticDocument, ArchiViewSpec[]) (P-2 r3 §1). */
+/** Narrowed EngramDiagnostic envelope returned by the engram.archi-mermaid/1 codec (P-2 r3 §7). */
+export interface ArchiMermaidDiagnostic extends EngramDiagnostic {
+  readonly origin: "engram";
+  readonly severity: "error";
+  readonly code: ArchiMermaidDiagnosticCode;
+  readonly nativeCode: ArchiMermaidDiagnosticCode;
+  readonly path: string;
+  readonly subjectRef: string;
+}
+
+/**
+ * Discriminated result union returned by `parseArchiMermaid`, `printArchiMermaid`,
+ * and `formatArchiMermaid`. Never throws.
+ */
+export type ArchiMermaidResult<T> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly diagnostics: readonly [ArchiMermaidDiagnostic, ...ArchiMermaidDiagnostic[]] };
+
+/**
+ * Authored triple S = (ArchiManifest, NativeSemanticDocument, ArchiViewSpec[]) (P-2 r3 §1).
+ *
+ * Canonical ordering:
+ * - `views` is ordered by derived `view-specs/<localId>.json` path in UTF-16 code unit order,
+ *   matching `manifest.views`.
+ * - Within `ArchiViewSpecLegend`, `tokens` are ordered by UTF-16 code unit order of the decoded
+ *   model `category` string (`ArchiViewSpecLegendToken.category`), not by the raw `ASTRING` lexeme.
+ */
 export interface ArchiSourceTriple {
   readonly manifest: ArchiManifest;
   readonly document: NativeSemanticDocument;
@@ -72,10 +98,8 @@ export interface ArchiMermaidPrintOptions {
 
 const DEFAULT_SUBJECT_REF = ".engram/architecture/architecture.mmd";
 
-/** Structured error thrown by parse, print, canonical and fmt on any closed codec violation. */
-export class ArchiMermaidError extends Error {
-  readonly code: ArchiMermaidDiagnosticCode;
-  readonly diagnostic: EngramDiagnostic;
+class ArchiMermaidRefusal extends Error {
+  readonly diagnostic: ArchiMermaidDiagnostic;
 
   constructor(
     code: ArchiMermaidDiagnosticCode,
@@ -84,8 +108,7 @@ export class ArchiMermaidError extends Error {
     subjectRef: string = DEFAULT_SUBJECT_REF,
   ) {
     super(message);
-    this.name = "ArchiMermaidError";
-    this.code = code;
+    this.name = "ArchiMermaidRefusal";
     this.diagnostic = {
       origin: "engram",
       severity: "error",
@@ -94,6 +117,48 @@ export class ArchiMermaidError extends Error {
       message,
       path,
       subjectRef,
+    };
+  }
+}
+
+function resolveSubjectRef(options: unknown): string {
+  if (options && typeof options === "object" && !Array.isArray(options)) {
+    const sr = (options as { readonly subjectRef?: unknown }).subjectRef;
+    if (typeof sr === "string") return sr;
+  }
+  return DEFAULT_SUBJECT_REF;
+}
+
+function settle<T>(
+  fn: () => T,
+  fallbackCode: ArchiMermaidDiagnosticCode,
+  fallbackPath: string,
+  subjectRef: string,
+): ArchiMermaidResult<T> {
+  try {
+    return { ok: true, value: fn() };
+  } catch (e) {
+    if (e instanceof ArchiMermaidRefusal) {
+      return { ok: false, diagnostics: [e.diagnostic] };
+    }
+    const rawMsg = e instanceof Error ? e.message : String(e);
+    const message =
+      fallbackCode === "mermaid-strict-invalid" && !/column \d+/.test(rawMsg)
+        ? `${rawMsg} (at column 1)`
+        : rawMsg;
+    return {
+      ok: false,
+      diagnostics: [
+        {
+          origin: "engram",
+          severity: "error",
+          code: fallbackCode,
+          nativeCode: fallbackCode,
+          message,
+          path: fallbackPath,
+          subjectRef,
+        },
+      ],
     };
   }
 }
@@ -308,21 +373,71 @@ const ALL_DECLARED_ATTR_NAMES = new Set([
   "mode",
 ]);
 
-const GAP_KEY_TO_FIELD: Readonly<Record<string, keyof Pick<ArchiLayoutHints, "cardGapX" | "cardGapY" | "zoneGapX" | "zoneGapY" | "rankGap">>> = {
-  "card-x": "cardGapX",
-  "card-y": "cardGapY",
-  "zone-x": "zoneGapX",
-  "zone-y": "zoneGapY",
-  rank: "rankGap",
-};
+type GapField = keyof Pick<ArchiLayoutHints, "cardGapX" | "cardGapY" | "zoneGapX" | "zoneGapY" | "rankGap">;
 
-const GAP_ORDER: readonly (readonly [string, keyof Pick<ArchiLayoutHints, "cardGapX" | "cardGapY" | "zoneGapX" | "zoneGapY" | "rankGap">])[] = [
+const GAP_ORDER: readonly (readonly [string, GapField])[] = [
   ["card-x", "cardGapX"],
   ["card-y", "cardGapY"],
   ["zone-x", "zoneGapX"],
   ["zone-y", "zoneGapY"],
   ["rank", "rankGap"],
 ];
+
+const GAP_KEY_TO_FIELD: ReadonlyMap<string, GapField> = new Map<string, GapField>(GAP_ORDER);
+
+// Closed key sets for print domain M (m1)
+const TRIPLE_KEYS: ReadonlySet<string> = new Set(["manifest", "document", "views"]);
+const MANIFEST_KEYS: ReadonlySet<string> = new Set([
+  "format",
+  "language",
+  "owningRepo",
+  "document",
+  "views",
+  "profilePins",
+  "cardsPin",
+  "viewSchemaPin",
+]);
+const PIN_KEYS: ReadonlySet<string> = new Set(["id", "version", "contentDigest"]);
+const DOCUMENT_KEYS: ReadonlySet<string> = new Set([
+  "documentId",
+  "schemaVersion",
+  "revision",
+  "profileRefs",
+  "typeDefinitions",
+  "entities",
+  "relations",
+  "ports",
+  "resources",
+  "extensions",
+]);
+const SCHEMA_VERSION_KEYS: ReadonlySet<string> = new Set(["major", "minor"]);
+const ENTITY_KEYS: ReadonlySet<string> = new Set(["id", "profile", "type", "attributes"]);
+const RELATION_KEYS: ReadonlySet<string> = new Set(["id", "profile", "type", "endpoints", "attributes"]);
+const ENDPOINT_KEYS: ReadonlySet<string> = new Set(["role", "target"]);
+const ATTR_SCALAR_KEYS: ReadonlySet<string> = new Set(["kind", "value"]);
+const ATTR_COLLECTION_KEYS: ReadonlySet<string> = new Set(["kind", "items"]);
+const VIEW_KEYS: ReadonlySet<string> = new Set([
+  "format",
+  "viewId",
+  "activeHierarchy",
+  "draw",
+  "collapsed",
+  "legend",
+  "layout",
+]);
+const LEGEND_KEYS: ReadonlySet<string> = new Set(["legendRef", "title", "order", "tokens"]);
+const TOKEN_KEYS: ReadonlySet<string> = new Set(["category", "token"]);
+const LAYOUT_KEYS: ReadonlySet<string> = new Set([
+  "stretch",
+  "cardGapX",
+  "cardGapY",
+  "zoneGapX",
+  "zoneGapY",
+  "rankGap",
+  "ordering",
+  "grouping",
+]);
+const GROUP_KEYS: ReadonlySet<string> = new Set(["id", "direction", "stretch", "gapAfter", "items"]);
 
 // ---------------------------------------------------------------------------
 // Helpers: pointers, byte comparison, EID mapping, string escaping
@@ -336,6 +451,26 @@ function cmpBytes(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+function trimSp(s: string): string {
+  return s.replace(/^ +| +$/g, "");
+}
+
+function isPlainObject(val: unknown): val is Record<string, unknown> {
+  return Boolean(val) && typeof val === "object" && !Array.isArray(val);
+}
+
+function isNonNegSafeInt(val: unknown): val is number {
+  return typeof val === "number" && Number.isSafeInteger(val) && val >= 0;
+}
+
+function isSafeIntDecString(s: string): boolean {
+  return INT_RE.test(s) && Number.isSafeInteger(Number(s));
+}
+
+function isSafeVersionString(s: string): boolean {
+  return VERSION_RE.test(s) && s.split(".").every((seg) => Number.isSafeInteger(Number(seg)));
+}
+
 function toEid(entityId: string): string {
   const local = entityId.slice("entity:".length);
   return `e_${local.replace(/-/g, "_")}`;
@@ -345,13 +480,28 @@ function fromEid(eid: string): string {
   return `entity:${eid.slice(2).replace(/_/g, "-")}`;
 }
 
+let activeParseLines: readonly string[] = [];
+
+function defaultLineColumn(lineIdx: number): number {
+  const line = activeParseLines[lineIdx];
+  if (typeof line !== "string" || line.length === 0) return 1;
+  let idx = 0;
+  while (idx < line.length && line.charCodeAt(idx) === 0x20) {
+    idx++;
+  }
+  return idx < line.length ? idx + 1 : 1;
+}
+
 function failParse(
   code: ArchiMermaidDiagnosticCode,
   lineIdx: number,
   message: string,
   subjectRef: string,
+  col?: number,
 ): never {
-  throw new ArchiMermaidError(code, message, `/${lineIdx}`, subjectRef);
+  const resolvedCol = col ?? defaultLineColumn(lineIdx);
+  const fullMessage = /column \d+/.test(message) ? message : `${message} (at column ${resolvedCol})`;
+  throw new ArchiMermaidRefusal(code, fullMessage, `/${lineIdx}`, subjectRef);
 }
 
 function failPrint(
@@ -359,7 +509,25 @@ function failPrint(
   subjectRef: string,
   message: string,
 ): never {
-  throw new ArchiMermaidError("mermaid-strict-unrepresentable", message, path, subjectRef);
+  throw new ArchiMermaidRefusal("mermaid-strict-unrepresentable", message, path, subjectRef);
+}
+
+function assertExactKeysForPrint(
+  obj: unknown,
+  allowed: ReadonlySet<string>,
+  path: string,
+  subjectRef: string,
+): Record<string, unknown> {
+  if (!isPlainObject(obj)) {
+    failPrint(path, subjectRef, `Expected object at ${path || "/"}.`);
+  }
+  for (const k of Object.keys(obj)) {
+    if (!allowed.has(k)) {
+      const kPath = path === "" ? `/${escPtr(k)}` : `${path}/${escPtr(k)}`;
+      failPrint(kPath, subjectRef, `Unknown or unrepresentable field '${k}'.`);
+    }
+  }
+  return obj;
 }
 
 function hasInvalidScalarOrControl(s: string): boolean {
@@ -378,35 +546,35 @@ function hasInvalidScalarOrControl(s: string): boolean {
   return false;
 }
 
-const VSTRING_ENCODE_MAP: Readonly<Record<string, string>> = {
-  '"': "#34;",
-  "#": "#35;",
-  "&": "#38;",
-  "<": "#60;",
-  ">": "#62;",
-  "[": "#91;",
-  "]": "#93;",
-  "`": "#96;",
-  "{": "#123;",
-  "|": "#124;",
-  "\u2028": "#8232;",
-  "\u2029": "#8233;",
-};
+const VSTRING_ENCODE_MAP: ReadonlyMap<string, string> = new Map<string, string>([
+  ['"', "#34;"],
+  ["#", "#35;"],
+  ["&", "#38;"],
+  ["<", "#60;"],
+  [">", "#62;"],
+  ["[", "#91;"],
+  ["]", "#93;"],
+  ["`", "#96;"],
+  ["{", "#123;"],
+  ["|", "#124;"],
+  ["\u2028", "#8232;"],
+  ["\u2029", "#8233;"],
+]);
 
-const VSTRING_DECODE_MAP: Readonly<Record<string, string>> = {
-  "#34;": '"',
-  "#35;": "#",
-  "#38;": "&",
-  "#60;": "<",
-  "#62;": ">",
-  "#91;": "[",
-  "#93;": "]",
-  "#96;": "`",
-  "#123;": "{",
-  "#124;": "|",
-  "#8232;": "\u2028",
-  "#8233;": "\u2029",
-};
+const VSTRING_DECODE_MAP: ReadonlyMap<string, string> = new Map<string, string>([
+  ["#34;", '"'],
+  ["#35;", "#"],
+  ["#38;", "&"],
+  ["#60;", "<"],
+  ["#62;", ">"],
+  ["#91;", "["],
+  ["#93;", "]"],
+  ["#96;", "`"],
+  ["#123;", "{"],
+  ["#124;", "|"],
+  ["#8232;", "\u2028"],
+  ["#8233;", "\u2029"],
+]);
 
 const VSTRING_RAW_FORBIDDEN = new Set([
   '"',
@@ -426,7 +594,7 @@ function encodeVString(s: string): string {
   let out = '"';
   for (let i = 0; i < s.length; i++) {
     const ch = s[i]!;
-    const esc = VSTRING_ENCODE_MAP[ch];
+    const esc = VSTRING_ENCODE_MAP.get(ch);
     out += esc !== undefined ? esc : ch;
   }
   return `${out}"`;
@@ -449,7 +617,7 @@ function decodeVString(raw: string, lineIdx: number, subjectRef: string): string
         failParse("mermaid-strict-invalid", lineIdx, "Unescaped '#' in VSTRING.", subjectRef);
       }
       const code = inner.slice(i, semi + 1);
-      const decoded = VSTRING_DECODE_MAP[code];
+      const decoded = VSTRING_DECODE_MAP.get(code);
       if (decoded === undefined) {
         failParse("mermaid-strict-invalid", lineIdx, `Unknown entity escape '${code}' in VSTRING.`, subjectRef);
       }
@@ -485,7 +653,7 @@ function decodeAString(raw: string, lineIdx: number, subjectRef: string): string
   for (let i = 0; i < inner.length; i++) {
     const ch = inner[i]!;
     if (ch === '"' || ch === "{" || ch === "\u2028" || ch === "\u2029") {
-      failParse("mermaid-strict-invalid", lineIdx, `Unescaped character in ASTRING.`, subjectRef);
+      failParse("mermaid-strict-invalid", lineIdx, "Unescaped character in ASTRING.", subjectRef);
     }
     if (ch === "\\") {
       if (i + 1 >= inner.length) {
@@ -521,7 +689,8 @@ function getAttrString(
   attrs: Readonly<Record<string, NativeAttributeValue>> | undefined,
   key: string,
 ): string | undefined {
-  const v = attrs?.[key] as { readonly kind?: string; readonly value?: unknown } | undefined;
+  if (!attrs || !Object.hasOwn(attrs, key)) return undefined;
+  const v = attrs[key] as { readonly kind?: string; readonly value?: unknown } | undefined;
   return typeof v?.value === "string" ? v.value : undefined;
 }
 
@@ -555,7 +724,7 @@ function computeRelationPlacement(
 }
 
 // ---------------------------------------------------------------------------
-// print(triple): Model M -> Canonical Mermaid-strict text
+// printOrRefuse(triple): Model M -> Canonical Mermaid-strict text
 // ---------------------------------------------------------------------------
 
 function checkPrintString(val: unknown, path: string, subjectRef: string): string {
@@ -576,29 +745,27 @@ function checkAttributeMapForPrint(
     readonly forms: ReadonlySet<string> | null;
   },
 ): Readonly<Record<string, NativeAttributeValue>> {
-  if (!attrs || typeof attrs !== "object" || Array.isArray(attrs)) {
+  if (!isPlainObject(attrs)) {
     failPrint(options.path, options.subjectRef, `Missing attributes object at ${options.path}.`);
   }
   const rec = attrs as Record<string, NativeAttributeValue>;
 
   if (options.isEntity) {
-    const nameAttr = rec["name"] as { readonly kind?: unknown; readonly value?: unknown } | undefined;
-    if (!nameAttr || nameAttr.kind !== "text") {
+    if (!Object.hasOwn(rec, "name")) {
       failPrint(`${options.path}/name`, options.subjectRef, "Entity requires text attribute 'name'.");
     }
-    checkPrintString(nameAttr.value, `${options.path}/name/value`, options.subjectRef);
+    const nameAttr = assertExactKeysForPrint(rec["name"], ATTR_SCALAR_KEYS, `${options.path}/name`, options.subjectRef);
+    if (nameAttr["kind"] !== "text") {
+      failPrint(`${options.path}/name`, options.subjectRef, "Entity requires text attribute 'name'.");
+    }
+    checkPrintString(nameAttr["value"], `${options.path}/name/value`, options.subjectRef);
   }
 
   if (options.profile === "archi@1") {
-    const lc = rec["lifecycle"] as { readonly kind?: unknown; readonly value?: unknown } | undefined;
-    if (
-      !lc ||
-      lc.kind !== "enum" ||
-      (lc.value !== "current" && lc.value !== "proposed" && lc.value !== "retired")
-    ) {
+    if (!Object.hasOwn(rec, "lifecycle")) {
       failPrint(`${options.path}/lifecycle`, options.subjectRef, "archi@1 record requires valid lifecycle.");
     }
-  } else if ("lifecycle" in rec) {
+  } else if (Object.hasOwn(rec, "lifecycle")) {
     failPrint(`${options.path}/lifecycle`, options.subjectRef, "generic@2 record cannot carry lifecycle.");
   }
 
@@ -609,8 +776,13 @@ function checkAttributeMapForPrint(
       if (!options.forms) {
         failPrint(attrPath, options.subjectRef, "Type does not declare form.");
       }
-      const formVal = rawVal as { readonly kind?: unknown; readonly value?: unknown } | undefined;
-      if (!formVal || formVal.kind !== "enum" || typeof formVal.value !== "string" || !WORD_RE.test(formVal.value) || !options.forms.has(formVal.value)) {
+      const formVal = assertExactKeysForPrint(rawVal, ATTR_SCALAR_KEYS, attrPath, options.subjectRef);
+      if (
+        formVal["kind"] !== "enum" ||
+        typeof formVal["value"] !== "string" ||
+        hasInvalidScalarOrControl(formVal["value"]) ||
+        !WORD_RE.test(formVal["value"])
+      ) {
         failPrint(attrPath, options.subjectRef, "Invalid form attribute value.");
       }
       continue;
@@ -619,30 +791,33 @@ function checkAttributeMapForPrint(
     if (!expectedKind) {
       failPrint(attrPath, options.subjectRef, `Undeclared attribute '${k}'.`);
     }
-    if (!rawVal || typeof rawVal !== "object") {
-      failPrint(attrPath, options.subjectRef, `Invalid attribute value for '${k}'.`);
-    }
-    const v = rawVal as { readonly kind?: unknown; readonly value?: unknown; readonly items?: unknown };
-    if (v.kind !== expectedKind) {
+    const v = assertExactKeysForPrint(
+      rawVal,
+      expectedKind === "collection" ? ATTR_COLLECTION_KEYS : ATTR_SCALAR_KEYS,
+      attrPath,
+      options.subjectRef,
+    );
+    if (v["kind"] !== expectedKind) {
       failPrint(attrPath, options.subjectRef, `Attribute '${k}' kind mismatch.`);
     }
     if (expectedKind === "text") {
-      checkPrintString(v.value, `${attrPath}/value`, options.subjectRef);
+      checkPrintString(v["value"], `${attrPath}/value`, options.subjectRef);
     } else if (expectedKind === "enum") {
-      const s = checkPrintString(v.value, `${attrPath}/value`, options.subjectRef);
+      const s = checkPrintString(v["value"], `${attrPath}/value`, options.subjectRef);
       if (!WORD_RE.test(s)) {
         failPrint(`${attrPath}/value`, options.subjectRef, `Enum attribute '${k}' must be a WORD.`);
       }
     } else if (expectedKind === "collection") {
-      if (!Array.isArray(v.items)) {
+      const items = v["items"];
+      if (!Array.isArray(items)) {
         failPrint(`${attrPath}/items`, options.subjectRef, `Collection '${k}' items must be an array.`);
       }
-      for (let i = 0; i < v.items.length; i++) {
-        const item = v.items[i] as { readonly kind?: unknown; readonly value?: unknown } | undefined;
-        if (!item || item.kind !== "text") {
+      for (let i = 0; i < items.length; i++) {
+        const item = assertExactKeysForPrint(items[i], ATTR_SCALAR_KEYS, `${attrPath}/items/${i}`, options.subjectRef);
+        if (item["kind"] !== "text") {
           failPrint(`${attrPath}/items/${i}`, options.subjectRef, `Collection '${k}' item must be text.`);
         }
-        checkPrintString(item.value, `${attrPath}/items/${i}/value`, options.subjectRef);
+        checkPrintString(item["value"], `${attrPath}/items/${i}/value`, options.subjectRef);
       }
     }
   }
@@ -658,6 +833,7 @@ function emitAttributeLines(
 ): void {
   for (const decl of attrDecls) {
     if (omitLabel && decl.name === "label") continue;
+    if (!Object.hasOwn(attrs, decl.name)) continue;
     const raw = attrs[decl.name];
     if (raw === undefined) continue;
     if (decl.name === "lifecycle") {
@@ -686,35 +862,26 @@ function emitAttributeLines(
 }
 
 function validatePinForPrint(pin: unknown, path: string, subjectRef: string): Pin {
-  if (!pin || typeof pin !== "object") {
-    failPrint(path, subjectRef, `Invalid pin at ${path}.`);
-  }
-  const p = pin as { readonly id?: unknown; readonly version?: unknown; readonly contentDigest?: unknown };
-  const id = checkPrintString(p.id, `${path}/id`, subjectRef);
-  const version = checkPrintString(p.version, `${path}/version`, subjectRef);
-  const digest = checkPrintString(p.contentDigest, `${path}/contentDigest`, subjectRef);
-  if (!WORD_RE.test(id) || !VERSION_RE.test(version) || !HEX64_RE.test(digest)) {
+  const p = assertExactKeysForPrint(pin, PIN_KEYS, path, subjectRef);
+  const id = checkPrintString(p["id"], `${path}/id`, subjectRef);
+  const version = checkPrintString(p["version"], `${path}/version`, subjectRef);
+  const digest = checkPrintString(p["contentDigest"], `${path}/contentDigest`, subjectRef);
+  if (!WORD_RE.test(id) || !isSafeVersionString(version) || !HEX64_RE.test(digest)) {
     failPrint(path, subjectRef, `Malformed pin fields at ${path}.`);
   }
-  return p as Pin;
+  return pin as Pin;
 }
 
-/** Print an authored ArchiSourceTriple to canonical engram.archi-mermaid/1 text (P-2 r3 §4). */
-export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOptions): string {
-  const defaultRef = options?.subjectRef ?? DEFAULT_SUBJECT_REF;
-  if (!triple || typeof triple !== "object") {
-    failPrint("", defaultRef, "Triple must be an object.");
-  }
-  const { manifest, document, views } = triple;
-  if (!manifest || typeof manifest !== "object") {
-    failPrint("/manifest", defaultRef, "Missing manifest.");
-  }
-  if (!document || typeof document !== "object") {
-    failPrint("/document", defaultRef, "Missing document.");
-  }
+function printOrRefuse(triple: unknown, defaultRef: string): string {
+  const topObj = assertExactKeysForPrint(triple, TRIPLE_KEYS, "", defaultRef);
+  const manifestObj = assertExactKeysForPrint(topObj["manifest"], MANIFEST_KEYS, "/manifest", defaultRef);
+  const docObj = assertExactKeysForPrint(topObj["document"], DOCUMENT_KEYS, "/document", defaultRef);
+  const views = topObj["views"];
   if (!Array.isArray(views)) {
     failPrint("/views", defaultRef, "Views must be an array.");
   }
+  const manifest = manifestObj as unknown as ArchiManifest;
+  const document = docObj as unknown as NativeSemanticDocument;
 
   // M1, M2: document header & empty buckets
   const docId = checkPrintString(document.documentId, "/document/documentId", defaultRef);
@@ -726,19 +893,11 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
     failPrint("/document/documentId", docId, "Invalid document local id.");
   }
 
-  const sv = document.schemaVersion as { readonly major?: unknown; readonly minor?: unknown } | undefined;
-  if (
-    !sv ||
-    typeof sv.major !== "number" ||
-    typeof sv.minor !== "number" ||
-    !Number.isInteger(sv.major) ||
-    !Number.isInteger(sv.minor) ||
-    sv.major < 0 ||
-    sv.minor < 0
-  ) {
+  const sv = assertExactKeysForPrint(document.schemaVersion, SCHEMA_VERSION_KEYS, "/document/schemaVersion", docId);
+  if (!isNonNegSafeInt(sv["major"]) || !isNonNegSafeInt(sv["minor"])) {
     failPrint("/document/schemaVersion", docId, "Invalid schemaVersion.");
   }
-  if (typeof document.revision !== "number" || !Number.isInteger(document.revision) || document.revision < 0) {
+  if (!isNonNegSafeInt(document.revision)) {
     failPrint("/document/revision", docId, "Invalid revision.");
   }
 
@@ -757,13 +916,13 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
     profileRank.set(ref, i);
   }
 
-  if (!document.typeDefinitions || typeof document.typeDefinitions !== "object" || Object.keys(document.typeDefinitions).length > 0) {
+  if (!isPlainObject(document.typeDefinitions) || Object.keys(document.typeDefinitions).length > 0) {
     failPrint("/document/typeDefinitions", docId, "typeDefinitions must be empty.");
   }
-  if (!document.ports || typeof document.ports !== "object" || Object.keys(document.ports).length > 0) {
+  if (!isPlainObject(document.ports) || Object.keys(document.ports).length > 0) {
     failPrint("/document/ports", docId, "ports must be empty.");
   }
-  if (!document.resources || typeof document.resources !== "object" || Object.keys(document.resources).length > 0) {
+  if (!isPlainObject(document.resources) || Object.keys(document.resources).length > 0) {
     failPrint("/document/resources", docId, "resources must be empty.");
   }
   if (!Array.isArray(document.extensions) || document.extensions.length > 0) {
@@ -771,14 +930,16 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
   }
 
   // Validate entities (M1, M3, M6, M7, M8)
-  if (!document.entities || typeof document.entities !== "object") {
+  if (!isPlainObject(document.entities)) {
     failPrint("/document/entities", docId, "Missing entities map.");
   }
   const entities = document.entities;
+  const entityIds = new Set(Object.keys(entities));
   const entitySpecsById = new Map<string, EntityTypeSpec>();
   for (const [key, ent] of Object.entries(entities)) {
     const entPath = `/document/entities/${escPtr(key)}`;
-    if (!ent || typeof ent !== "object" || ent.id !== key) {
+    const entObj = assertExactKeysForPrint(ent, ENTITY_KEYS, entPath, key);
+    if (entObj["id"] !== key) {
       failPrint(entPath, key, "Entity key and id mismatch.");
     }
     if (!key.startsWith("entity:")) {
@@ -788,14 +949,14 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
     if (!LOCAL_RE.test(local)) {
       failPrint(`${entPath}/id`, key, `Invalid entity local id '${local}'.`);
     }
-    const spec = ENTITY_SPECS.get(ent.type);
+    const spec = typeof entObj["type"] === "string" ? ENTITY_SPECS.get(entObj["type"]) : undefined;
     if (!spec) {
-      failPrint(`${entPath}/type`, key, `Unsupported entity type '${String(ent.type)}'.`);
+      failPrint(`${entPath}/type`, key, `Unsupported entity type '${String(entObj["type"])}'.`);
     }
-    if (ent.profile !== spec.profile || !profileRank.has(ent.profile)) {
-      failPrint(`${entPath}/profile`, key, `Entity profile '${String(ent.profile)}' mismatch or not in profileRefs.`);
+    if (entObj["profile"] !== spec.profile || !profileRank.has(spec.profile)) {
+      failPrint(`${entPath}/profile`, key, `Entity profile '${String(entObj["profile"])}' mismatch or not in profileRefs.`);
     }
-    checkAttributeMapForPrint(ent.attributes, spec.attrMap, {
+    checkAttributeMapForPrint(entObj["attributes"], spec.attrMap, {
       path: `${entPath}/attributes`,
       subjectRef: key,
       isEntity: true,
@@ -806,7 +967,7 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
   }
 
   // Validate relations & build composition tree (M1, M3, M4, M5, M6, M7, M8)
-  if (!document.relations || typeof document.relations !== "object") {
+  if (!isPlainObject(document.relations)) {
     failPrint("/document/relations", docId, "Missing relations map.");
   }
   const relations = document.relations;
@@ -823,7 +984,8 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
 
   for (const [key, rel] of Object.entries(relations)) {
     const relPath = `/document/relations/${escPtr(key)}`;
-    if (!rel || typeof rel !== "object" || rel.id !== key) {
+    const relObj = assertExactKeysForPrint(rel, RELATION_KEYS, relPath, key);
+    if (relObj["id"] !== key) {
       failPrint(relPath, key, "Relation key and id mismatch.");
     }
     if (!key.startsWith("relation:")) {
@@ -833,40 +995,38 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
     if (!LOCAL_RE.test(local)) {
       failPrint(`${relPath}/id`, key, `Invalid relation local id '${local}'.`);
     }
-    const spec = RELATION_SPECS.get(rel.type);
+    const spec = typeof relObj["type"] === "string" ? RELATION_SPECS.get(relObj["type"]) : undefined;
     if (!spec) {
-      failPrint(`${relPath}/type`, key, `Unsupported relation type '${String(rel.type)}'.`);
+      failPrint(`${relPath}/type`, key, `Unsupported relation type '${String(relObj["type"])}'.`);
     }
-    if (rel.profile !== spec.profile || !profileRank.has(rel.profile)) {
-      failPrint(`${relPath}/profile`, key, `Relation profile '${String(rel.profile)}' mismatch or not in profileRefs.`);
+    if (relObj["profile"] !== spec.profile || !profileRank.has(spec.profile)) {
+      failPrint(`${relPath}/profile`, key, `Relation profile '${String(relObj["profile"])}' mismatch or not in profileRefs.`);
     }
-    if (!Array.isArray(rel.endpoints) || rel.endpoints.length !== 2) {
+    if (!Array.isArray(relObj["endpoints"]) || relObj["endpoints"].length !== 2) {
       failPrint(`${relPath}/endpoints`, key, "Relation must have exactly 2 endpoints.");
     }
-    const ep0 = rel.endpoints[0];
-    const ep1 = rel.endpoints[1];
+    const ep0 = assertExactKeysForPrint(relObj["endpoints"][0], ENDPOINT_KEYS, `${relPath}/endpoints/0`, key);
+    const ep1 = assertExactKeysForPrint(relObj["endpoints"][1], ENDPOINT_KEYS, `${relPath}/endpoints/1`, key);
     if (
-      !ep0 ||
-      !ep1 ||
-      ep0.role !== spec.roles[0] ||
-      ep1.role !== spec.roles[1] ||
-      ep0.port !== undefined ||
-      ep1.port !== undefined ||
-      typeof ep0.target !== "string" ||
-      typeof ep1.target !== "string"
+      ep0["role"] !== spec.roles[0] ||
+      ep1["role"] !== spec.roles[1] ||
+      typeof ep0["target"] !== "string" ||
+      typeof ep1["target"] !== "string"
     ) {
       failPrint(`${relPath}/endpoints`, key, "Relation endpoints do not match declared roles.");
     }
-    const ent0 = entities[ep0.target];
-    const ent1 = entities[ep1.target];
-    if (!ent0) {
-      failPrint(`${relPath}/endpoints/0/target`, key, `Unknown target entity '${ep0.target}'.`);
+    const tgt0 = ep0["target"];
+    const tgt1 = ep1["target"];
+    if (!entityIds.has(tgt0)) {
+      failPrint(`${relPath}/endpoints/0/target`, key, `Unknown target entity '${tgt0}'.`);
     }
-    if (!ent1) {
-      failPrint(`${relPath}/endpoints/1/target`, key, `Unknown target entity '${ep1.target}'.`);
+    if (!entityIds.has(tgt1)) {
+      failPrint(`${relPath}/endpoints/1/target`, key, `Unknown target entity '${tgt1}'.`);
     }
+    const ent0 = entities[tgt0]!;
+    const ent1 = entities[tgt1]!;
 
-    checkAttributeMapForPrint(rel.attributes, spec.attrMap, {
+    checkAttributeMapForPrint(relObj["attributes"], spec.attrMap, {
       path: `${relPath}/attributes`,
       subjectRef: key,
       isEntity: false,
@@ -877,11 +1037,15 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
     const placement = computeRelationPlacement(rel.type, ent0, ent1, rel.attributes);
     if (placement === "nest") {
       // partOf: source = child, target = parent; contains: parent = parent, child = child
-      const childId = rel.type === "partOf" ? ep0.target : ep1.target;
-      const parentId = rel.type === "partOf" ? ep1.target : ep0.target;
+      const childId = rel.type === "partOf" ? tgt0 : tgt1;
+      const parentId = rel.type === "partOf" ? tgt1 : tgt0;
       const childEnt = entities[childId]!;
       const parentEnt = entities[parentId]!;
       const parentSpec = entitySpecsById.get(parentId)!;
+      const expectedNestType = childEnt.profile === "archi@1" ? "partOf" : "contains";
+      if (rel.type !== expectedNestType) {
+        failPrint(`${relPath}/type`, key, `Nesting relation for ${childEnt.profile} child must be '${expectedNestType}'.`);
+      }
       if (childEnt.profile !== parentEnt.profile || !parentSpec.container) {
         failPrint(relPath, key, "Invalid nesting parent family or non-container parent.");
       }
@@ -900,15 +1064,15 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
         rel,
         localId: local,
         spec,
-        srcId: ep0.target,
-        tgtId: ep1.target,
+        srcId: tgt0,
+        tgtId: tgt1,
         placement,
       });
     }
   }
 
   // Check for cycles in composition tree (M5)
-  for (const entId of Object.keys(entities)) {
+  for (const entId of entityIds) {
     const visited = new Set<string>();
     let cur: string | undefined = entId;
     while (cur !== undefined) {
@@ -929,7 +1093,7 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
     failPrint("/manifest/language", defaultRef, "Invalid manifest language.");
   }
   const owningRepo = checkPrintString(manifest.owningRepo, "/manifest/owningRepo", defaultRef);
-  if (!entities[owningRepo]) {
+  if (!entityIds.has(owningRepo)) {
     failPrint("/manifest/owningRepo", defaultRef, "owningRepo is not an entity of the document.");
   }
   if (manifest.document !== "document.json") {
@@ -951,15 +1115,14 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
   }
   validatePinForPrint(manifest.viewSchemaPin, "/manifest/viewSchemaPin", defaultRef);
 
-  // Validate views (M1, M10, M11, M12)
-  const sortedViews: { readonly view: ArchiViewSpec; readonly localId: string }[] = [];
+  // Validate views (M1, M9, M10, M11, M12)
+  const sortedViews: { readonly view: ArchiViewSpec; readonly localId: string; readonly specPath: string }[] = [];
   const seenViewIds = new Set<string>();
   for (let i = 0; i < views.length; i++) {
-    const v = views[i]!;
+    const vRaw = views[i];
     const vPath = `/views/${i}`;
-    if (!v || typeof v !== "object") {
-      failPrint(vPath, defaultRef, "View must be an object.");
-    }
+    const vObj = assertExactKeysForPrint(vRaw, VIEW_KEYS, vPath, defaultRef);
+    const v = vObj as unknown as ArchiViewSpec;
     const vId = checkPrintString(v.viewId, `${vPath}/viewId`, defaultRef);
     if (!vId.startsWith("view:")) {
       failPrint(`${vPath}/viewId`, vId || defaultRef, "viewId must start with 'view:'.");
@@ -969,6 +1132,10 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
       failPrint(`${vPath}/viewId`, vId, `Invalid or duplicate viewId '${vId}'.`);
     }
     seenViewIds.add(vLocal);
+    const specPath = `view-specs/${vLocal}.json`;
+    if (i > 0 && cmpBytes(sortedViews[i - 1]!.specPath, specPath) >= 0) {
+      failPrint(`${vPath}/viewId`, vId, "views array must be ordered by derived view-specs/<localId>.json path.");
+    }
     if (v.format !== "engram.archi-view/1") {
       failPrint(`${vPath}/format`, vId, "Invalid view format.");
     }
@@ -982,7 +1149,7 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
     const drawnContainers = new Set<string>();
     for (let j = 0; j < v.draw.length; j++) {
       const ref = checkPrintString(v.draw[j], `${vPath}/draw/${j}`, vId);
-      if (!entities[ref]) {
+      if (!entityIds.has(ref)) {
         failPrint(`${vPath}/draw/${j}`, vId, `Unknown entity '${ref}' in draw.`);
       }
       if (j > 0 && cmpBytes(v.draw[j - 1]!, ref) >= 0) {
@@ -1008,11 +1175,9 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
 
     if (v.legend !== undefined) {
       const lPath = `${vPath}/legend`;
-      if (!v.legend || typeof v.legend !== "object") {
-        failPrint(lPath, vId, "Invalid legend.");
-      }
+      assertExactKeysForPrint(v.legend, LEGEND_KEYS, lPath, vId);
       const lRef = checkPrintString(v.legend.legendRef, `${lPath}/legendRef`, vId);
-      if (!entities[lRef]) {
+      if (!entityIds.has(lRef)) {
         failPrint(`${lPath}/legendRef`, vId, `Unknown legendRef '${lRef}'.`);
       }
       if (v.legend.title !== undefined) {
@@ -1024,7 +1189,7 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
       const seenKeys = new Set<string>();
       for (let j = 0; j < v.legend.order.length; j++) {
         const kRef = checkPrintString(v.legend.order[j], `${lPath}/order/${j}`, vId);
-        if (!entities[kRef] || seenKeys.has(kRef)) {
+        if (!entityIds.has(kRef) || seenKeys.has(kRef)) {
           failPrint(`${lPath}/order/${j}`, vId, `Unknown or duplicate key '${kRef}' in legend.order.`);
         }
         seenKeys.add(kRef);
@@ -1033,12 +1198,9 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
         failPrint(`${lPath}/tokens`, vId, "legend.tokens must be an array.");
       }
       for (let j = 0; j < v.legend.tokens.length; j++) {
-        const tok = v.legend.tokens[j];
-        if (!tok || typeof tok !== "object") {
-          failPrint(`${lPath}/tokens/${j}`, vId, "Invalid token entry.");
-        }
-        const cat = checkPrintString(tok.category, `${lPath}/tokens/${j}/category`, vId);
-        const tokenStr = checkPrintString(tok.token, `${lPath}/tokens/${j}/token`, vId);
+        const tok = assertExactKeysForPrint(v.legend.tokens[j], TOKEN_KEYS, `${lPath}/tokens/${j}`, vId);
+        const cat = checkPrintString(tok["category"], `${lPath}/tokens/${j}/category`, vId);
+        const tokenStr = checkPrintString(tok["token"], `${lPath}/tokens/${j}/token`, vId);
         if (!TOKEN_RE.test(tokenStr)) {
           failPrint(`${lPath}/tokens/${j}/token`, vId, `Invalid DS token '${tokenStr}'.`);
         }
@@ -1050,9 +1212,7 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
 
     if (v.layout !== undefined) {
       const lyPath = `${vPath}/layout`;
-      if (!v.layout || typeof v.layout !== "object") {
-        failPrint(lyPath, vId, "Invalid layout.");
-      }
+      assertExactKeysForPrint(v.layout, LAYOUT_KEYS, lyPath, vId);
       const ly = v.layout;
       let hasAnyLayoutDatum = false;
       if (ly.stretch !== undefined) {
@@ -1064,14 +1224,14 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
       for (const [, field] of GAP_ORDER) {
         const gVal = ly[field];
         if (gVal !== undefined) {
-          if (typeof gVal !== "number" || !Number.isInteger(gVal) || gVal < 0) {
-            failPrint(`${lyPath}/${field}`, vId, `layout.${field} must be a non-negative integer.`);
+          if (!isNonNegSafeInt(gVal)) {
+            failPrint(`${lyPath}/${field}`, vId, `layout.${field} must be a non-negative safe integer.`);
           }
           hasAnyLayoutDatum = true;
         }
       }
       if (ly.ordering !== undefined) {
-        if (!ly.ordering || typeof ly.ordering !== "object" || Array.isArray(ly.ordering)) {
+        if (!isPlainObject(ly.ordering)) {
           failPrint(`${lyPath}/ordering`, vId, "layout.ordering must be an object.");
         }
         const ordKeys = Object.keys(ly.ordering);
@@ -1081,7 +1241,7 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
         hasAnyLayoutDatum = true;
         for (const pKey of ordKeys) {
           const pPath = `${lyPath}/ordering/${escPtr(pKey)}`;
-          if (!entities[pKey]) {
+          if (!entityIds.has(pKey)) {
             failPrint(pPath, vId, `Unknown parent entity '${pKey}' in layout.ordering.`);
           }
           const children = ly.ordering[pKey];
@@ -1091,7 +1251,7 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
           const seenChildren = new Set<string>();
           for (let j = 0; j < children.length; j++) {
             const cRef = checkPrintString(children[j], `${pPath}/${j}`, vId);
-            if (!entities[cRef] || seenChildren.has(cRef)) {
+            if (!entityIds.has(cRef) || seenChildren.has(cRef)) {
               failPrint(`${pPath}/${j}`, vId, `Unknown or duplicate child '${cRef}' in layout.ordering.`);
             }
             seenChildren.add(cRef);
@@ -1104,10 +1264,9 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
         }
         hasAnyLayoutDatum = true;
         const seenGroups = new Set<string>();
-        const validateGroup = (g: ArchiLayoutGroup, gPath: string): void => {
-          if (!g || typeof g !== "object") {
-            failPrint(gPath, vId, "Invalid layout group.");
-          }
+        const validateGroup = (gRaw: unknown, gPath: string): void => {
+          const gObj = assertExactKeysForPrint(gRaw, GROUP_KEYS, gPath, vId);
+          const g = gObj as unknown as ArchiLayoutGroup;
           const gid = checkPrintString(g.id, `${gPath}/id`, vId);
           if (!LOCAL_RE.test(gid) || seenGroups.has(gid)) {
             failPrint(`${gPath}/id`, vId, `Invalid or duplicate layout group id '${gid}'.`);
@@ -1119,19 +1278,19 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
           if (g.stretch !== undefined && typeof g.stretch !== "boolean") {
             failPrint(`${gPath}/stretch`, vId, "group.stretch must be boolean.");
           }
-          if (g.gapAfter !== undefined && (typeof g.gapAfter !== "number" || !Number.isInteger(g.gapAfter) || g.gapAfter < 0)) {
-            failPrint(`${gPath}/gapAfter`, vId, "group.gapAfter must be a non-negative integer.");
+          if (g.gapAfter !== undefined && !isNonNegSafeInt(g.gapAfter)) {
+            failPrint(`${gPath}/gapAfter`, vId, "group.gapAfter must be a non-negative safe integer.");
           }
           if (!Array.isArray(g.items)) {
             failPrint(`${gPath}/items`, vId, "group.items must be an array.");
           }
           const directRefs = new Set<string>();
           for (let k = 0; k < g.items.length; k++) {
-            const item = g.items[k]!;
+            const item = g.items[k];
             const itemPath = `${gPath}/items/${k}`;
             if (typeof item === "string") {
               checkPrintString(item, itemPath, vId);
-              if (!entities[item] || directRefs.has(item)) {
+              if (!entityIds.has(item) || directRefs.has(item)) {
                 failPrint(itemPath, vId, `Unknown or duplicate entity '${item}' in group items.`);
               }
               directRefs.add(item);
@@ -1141,7 +1300,7 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
           }
         };
         for (let j = 0; j < ly.grouping.length; j++) {
-          validateGroup(ly.grouping[j]!, `${lyPath}/grouping/${j}`);
+          validateGroup(ly.grouping[j], `${lyPath}/grouping/${j}`);
         }
       }
       if (!hasAnyLayoutDatum) {
@@ -1149,12 +1308,12 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
       }
     }
 
-    sortedViews.push({ view: v, localId: vLocal });
+    sortedViews.push({ view: v, localId: vLocal, specPath });
   }
 
   sortedViews.sort((a, b) => cmpBytes(a.localId, b.localId));
   const expectedManifestViews = sortedViews
-    .map((v) => `view-specs/${v.localId}.json`)
+    .map((v) => v.specPath)
     .sort(cmpBytes);
   if (
     !Array.isArray(manifest.views) ||
@@ -1169,7 +1328,7 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
     "flowchart LR",
     "%% @dl format engram.archi-mermaid/1",
     `%% @dl document ${docLocal}`,
-    `%% @dl schema ${sv.major}.${sv.minor}`,
+    `%% @dl schema ${sv["major"]}.${sv["minor"]}`,
     `%% @dl revision ${document.revision}`,
     `%% @dl language ${manifest.language}`,
     `%% @dl owning-repo ${toEid(manifest.owningRepo)}`,
@@ -1200,7 +1359,7 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
     return cmpBytes(toEid(aId), toEid(bId));
   };
 
-  const rootEntityIds = Object.keys(entities)
+  const rootEntityIds = [...entityIds]
     .filter((id) => !nestRelationByChild.has(id))
     .sort(compareSiblings);
 
@@ -1304,6 +1463,7 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
       for (const keyId of lg.order) {
         vLines.push(`%% @dl key ${toEid(keyId)}`);
       }
+      // K8: tokens are ordered by UTF-16 code unit order of the decoded model category string.
       const sortedTokens = [...lg.tokens].sort((a, b) => cmpBytes(a.category, b.category));
       for (const tok of sortedTokens) {
         vLines.push(`%% @dl token ${encodeAString(tok.category)} ${tok.token}`);
@@ -1370,7 +1530,7 @@ export function print(triple: ArchiSourceTriple, options?: ArchiMermaidPrintOpti
 }
 
 // ---------------------------------------------------------------------------
-// parse(text): engram.archi-mermaid/1 text -> Authored ArchiSourceTriple
+// parseOrRefuse(text): engram.archi-mermaid/1 text -> Authored ArchiSourceTriple
 // ---------------------------------------------------------------------------
 
 interface MutableAttrBag {
@@ -1402,7 +1562,7 @@ function parseAttrLine(
       failParse("mermaid-strict-invalid", lineIdx, `Attribute '${attrName}' requires an ASTRING value.`, subjectRef);
     }
     const val = decodeAString(rawVal, lineIdx, subjectRef);
-    if (attrName in bag.attrs) {
+    if (Object.hasOwn(bag.attrs, attrName)) {
       failParse("mermaid-strict-duplicate", lineIdx, `Duplicate attribute '${attrName}'.`, subjectRef);
     }
     bag.attrs[attrName] = { kind: "text", value: val };
@@ -1410,13 +1570,13 @@ function parseAttrLine(
     if (rawVal === "[]" || rawVal.startsWith('"') || !WORD_RE.test(rawVal)) {
       failParse("mermaid-strict-invalid", lineIdx, `Attribute '${attrName}' requires a WORD value.`, subjectRef);
     }
-    if (attrName in bag.attrs) {
+    if (Object.hasOwn(bag.attrs, attrName)) {
       failParse("mermaid-strict-duplicate", lineIdx, `Duplicate attribute '${attrName}'.`, subjectRef);
     }
     bag.attrs[attrName] = { kind: "enum", value: rawVal };
   } else if (kind === "collection") {
     if (rawVal === "[]") {
-      if (attrName in bag.attrs || bag.explicitEmptyCollections.has(attrName)) {
+      if (Object.hasOwn(bag.attrs, attrName) || bag.explicitEmptyCollections.has(attrName)) {
         failParse("mermaid-strict-duplicate", lineIdx, `Duplicate or conflicting empty collection '${attrName}'.`, subjectRef);
       }
       bag.explicitEmptyCollections.add(attrName);
@@ -1429,7 +1589,9 @@ function parseAttrLine(
         failParse("mermaid-strict-duplicate", lineIdx, `Collection '${attrName}' cannot mix '[]' and items.`, subjectRef);
       }
       const val = decodeAString(rawVal, lineIdx, subjectRef);
-      const existing = bag.attrs[attrName] as { readonly kind: "collection"; readonly items: { readonly kind: "text"; readonly value: string }[] } | undefined;
+      const existing = Object.hasOwn(bag.attrs, attrName)
+        ? (bag.attrs[attrName] as { readonly kind: "collection"; readonly items: { readonly kind: "text"; readonly value: string }[] } | undefined)
+        : undefined;
       if (!existing) {
         bag.attrs[attrName] = { kind: "collection", items: [{ kind: "text", value: val }] };
       } else {
@@ -1440,7 +1602,8 @@ function parseAttrLine(
 }
 
 function classifyUnsupportedOrInvalidStatement(trimmed: string, lineIdx: number, subjectRef: string): never {
-  const firstWord = trimmed.split(/ +/)[0] ?? "";
+  const rawFirst = trimmed.split(/ +/)[0] ?? "";
+  const firstWord = rawFirst.replace(/:$/, "");
   if (
     trimmed === "---" ||
     UNSUPPORTED_STATEMENT_HEADS.has(firstWord) ||
@@ -1448,16 +1611,20 @@ function classifyUnsupportedOrInvalidStatement(trimmed: string, lineIdx: number,
     firstWord === "classDef" ||
     firstWord === "class"
   ) {
-    failParse("mermaid-strict-unsupported", lineIdx, `Unsupported Mermaid statement '${firstWord}'.`, subjectRef);
+    failParse("mermaid-strict-unsupported", lineIdx, `Unsupported Mermaid statement '${rawFirst}'.`, subjectRef);
   }
-  // Check for unsupported Mermaid node shapes, links, :::, @-->
+  // Check for unsupported Mermaid node shapes, links, :::, @-->, &
   const quoteIdx = trimmed.indexOf('"');
   const prefix = quoteIdx === -1 ? trimmed : trimmed.slice(0, quoteIdx);
   if (
+    prefix.includes("[[") ||
+    prefix.includes("[/") ||
+    prefix.includes("[\\") ||
     prefix.includes("(") ||
     prefix.includes("{") ||
     prefix.includes("@{") ||
     prefix.includes(">") ||
+    prefix.includes("&") ||
     prefix.includes("==>") ||
     prefix.includes("---") ||
     prefix.includes("-.-") ||
@@ -1476,56 +1643,76 @@ function classifyUnsupportedOrInvalidStatement(trimmed: string, lineIdx: number,
   failParse("mermaid-strict-invalid", lineIdx, "Unrecognized statement line.", subjectRef);
 }
 
-/** Parse engram.archi-mermaid/1 text into an authored ArchiSourceTriple (P-2 r3 §4, §7). */
-export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSourceTriple {
-  const subjectRef = options?.subjectRef ?? DEFAULT_SUBJECT_REF;
+function parseOrRefuse(
+  text: unknown,
+  options: { readonly checkCanonical?: boolean; readonly subjectRef: string },
+): ArchiSourceTriple {
+  const { subjectRef } = options;
+  activeParseLines = [];
   if (typeof text !== "string" || text.length === 0) {
-    failParse("mermaid-strict-invalid", 0, "Empty or non-string input.", subjectRef);
+    failParse("mermaid-strict-invalid", 0, "Empty or non-string input.", subjectRef, 1);
   }
   if (text.charCodeAt(0) === 0xfeff) {
-    failParse("mermaid-strict-invalid", 0, "UTF-8 BOM is forbidden (K1).", subjectRef);
+    failParse("mermaid-strict-invalid", 0, "UTF-8 BOM is forbidden (K1).", subjectRef, 1);
   }
 
   const rawLines = text.split("\n");
+  activeParseLines = rawLines;
   for (let i = 0; i < rawLines.length; i++) {
     const line = rawLines[i]!;
     for (let j = 0; j < line.length; j++) {
       const c = line.charCodeAt(j);
-      if (c === 0x0d || c === 0x09 || c <= 0x1f || (c >= 0x7f && c <= 0x9f)) {
-        failParse("mermaid-strict-invalid", i, "Forbidden control character, CR or TAB.", subjectRef);
+      if (c === 0xfeff || c === 0x0d || c === 0x09 || c <= 0x1f || (c >= 0x7f && c <= 0x9f)) {
+        failParse("mermaid-strict-invalid", i, "Forbidden control character, BOM, CR or TAB.", subjectRef, j + 1);
       }
       if (c >= 0xd800 && c <= 0xdbff) {
         if (j + 1 >= line.length) {
-          failParse("mermaid-strict-invalid", i, "Lone high surrogate in UTF-16 input.", subjectRef);
+          failParse("mermaid-strict-invalid", i, "Lone high surrogate in UTF-16 input.", subjectRef, j + 1);
         }
         const next = line.charCodeAt(j + 1);
         if (next < 0xdc00 || next > 0xdfff) {
-          failParse("mermaid-strict-invalid", i, "Lone high surrogate in UTF-16 input.", subjectRef);
+          failParse("mermaid-strict-invalid", i, "Lone high surrogate in UTF-16 input.", subjectRef, j + 1);
         }
         j++;
       } else if (c >= 0xdc00 && c <= 0xdfff) {
-        failParse("mermaid-strict-invalid", i, "Lone low surrogate in UTF-16 input.", subjectRef);
+        failParse("mermaid-strict-invalid", i, "Lone low surrogate in UTF-16 input.", subjectRef, j + 1);
       }
     }
   }
 
   // Locate first non-empty line -> must be flowchart LR
   let idx = 0;
-  while (idx < rawLines.length && rawLines[idx]!.trim() === "") {
+  while (idx < rawLines.length && trimSp(rawLines[idx]!) === "") {
     idx++;
   }
   if (idx >= rawLines.length) {
-    failParse("mermaid-strict-invalid", 0, "Empty file.", subjectRef);
+    failParse("mermaid-strict-invalid", 0, "Empty file.", subjectRef, 1);
   }
-  const firstTrimmed = rawLines[idx]!.trim();
+  const firstTrimmed = trimSp(rawLines[idx]!);
+  if (firstTrimmed === "---") {
+    failParse("mermaid-strict-unsupported", idx, "YAML front-matter is unsupported.", subjectRef);
+  }
   if (firstTrimmed.startsWith("%%{")) {
     failParse("mermaid-strict-unsupported", idx, "Mermaid directives are unsupported.", subjectRef);
   }
+  if (firstTrimmed.startsWith("%%") && !/^%% +@dl(?=$| )/.test(firstTrimmed)) {
+    failParse("mermaid-strict-unsupported", idx, "Free comments and malformed @dl prefixes are unsupported.", subjectRef);
+  }
   const firstTokens = firstTrimmed.split(/ +/);
-  if (firstTokens[0] === "flowchart" && (firstTokens.length !== 2 || firstTokens[1] !== "LR")) {
+  const firstHeadWord = (firstTokens[0] ?? "").replace(/:$/, "");
+  if (
+    firstTokens[0] === "flowchart" &&
+    (firstTokens.length !== 2 || firstTokens[1] !== "LR") &&
+    firstTokens.every((t) => /^[\x21-\x7e]+$/.test(t))
+  ) {
     failParse("mermaid-strict-unsupported", idx, "Only 'flowchart LR' is supported on line 1.", subjectRef);
   }
-  if (firstTokens[0] === "graph" || UNSUPPORTED_STATEMENT_HEADS.has(firstTokens[0] ?? "")) {
+  if (
+    firstHeadWord === "classDef" ||
+    firstHeadWord === "class" ||
+    firstHeadWord === "graph" ||
+    UNSUPPORTED_STATEMENT_HEADS.has(firstHeadWord)
+  ) {
     failParse("mermaid-strict-unsupported", idx, `Unsupported diagram header '${firstTokens[0]}'.`, subjectRef);
   }
   if (firstTokens.length !== 2 || firstTokens[0] !== "flowchart" || firstTokens[1] !== "LR") {
@@ -1569,6 +1756,7 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
   const entities: Record<string, NativeEntity> = {};
   const eidToEntityId = new Map<string, string>();
   const relations: Record<string, NativeRelation> = {};
+  const seenRelationIds = new Set<string>();
   const nestRelationByChild = new Map<string, NativeRelation>();
 
   const subgraphStack: {
@@ -1630,7 +1818,7 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
     }
     const srcEnt = entities[srcId]!;
     const tgtEnt = entities[tgtId]!;
-    if (spec.profile === "archi@1" && !("lifecycle" in attrBag.attrs)) {
+    if (spec.profile === "archi@1" && !Object.hasOwn(attrBag.attrs, "lifecycle")) {
       attrBag.attrs["lifecycle"] = { kind: "enum", value: "current" };
     }
     const placement = computeRelationPlacement(relType, srcEnt, tgtEnt, attrBag.attrs);
@@ -1647,6 +1835,7 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
       ],
       attributes: attrBag.attrs,
     };
+    seenRelationIds.add(relId);
     openRelation = undefined;
   };
 
@@ -1676,7 +1865,7 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
     readonly tokenLines: number[];
     readonly keyLines: number[];
     stretch?: boolean;
-    readonly gaps: Partial<Record<keyof Pick<ArchiLayoutHints, "cardGapX" | "cardGapY" | "zoneGapX" | "zoneGapY" | "rankGap">, number>>;
+    readonly gaps: Partial<Record<GapField, number>>;
     readonly ordering: Map<string, string[]>;
     readonly grouping: MutableLayoutGroup[];
     readonly groupsById: Map<string, MutableLayoutGroup>;
@@ -1773,7 +1962,7 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
 
   for (; idx < rawLines.length; idx++) {
     const rawLine = rawLines[idx]!;
-    const trimmed = rawLine.trim();
+    const trimmed = trimSp(rawLine);
     if (trimmed === "") continue;
 
     // 1. Check directives or non-@dl comments
@@ -1788,13 +1977,13 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
       if (classBlockState === "expect-class" || section === "classes" || section === "done") {
         failParse("mermaid-strict-invalid", idx, "Annotation line after class block.", subjectRef);
       }
-      const payload = (dlMatch[1] ?? "").trim();
+      const payload = trimSp(dlMatch[1] ?? "");
       if (payload === "") {
         failParse("mermaid-strict-annotation-unknown", idx, "Empty @dl annotation.", subjectRef);
       }
       const spaceIdx = payload.indexOf(" ");
       const kw = spaceIdx === -1 ? payload : payload.slice(0, spaceIdx);
-      const rest = spaceIdx === -1 ? "" : payload.slice(spaceIdx + 1).trim();
+      const rest = spaceIdx === -1 ? "" : trimSp(payload.slice(spaceIdx + 1));
 
       // Handle by active open block or section
       if (HEAD_KEYWORDS.has(kw)) {
@@ -1817,11 +2006,13 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
         } else if (kw === "schema") {
           if (schemaVersion !== undefined) failParse("mermaid-strict-duplicate", idx, "Duplicate schema line.", subjectRef);
           const m = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.exec(rest);
-          if (!m) failParse("mermaid-strict-invalid", idx, "Invalid schema version.", subjectRef);
+          if (!m || !isSafeIntDecString(m[1]!) || !isSafeIntDecString(m[2]!)) {
+            failParse("mermaid-strict-invalid", idx, "Invalid schema version.", subjectRef);
+          }
           schemaVersion = { major: Number(m[1]), minor: Number(m[2]) };
         } else if (kw === "revision") {
           if (revision !== undefined) failParse("mermaid-strict-duplicate", idx, "Duplicate revision line.", subjectRef);
-          if (!INT_RE.test(rest)) failParse("mermaid-strict-invalid", idx, "Invalid revision.", subjectRef);
+          if (!isSafeIntDecString(rest)) failParse("mermaid-strict-invalid", idx, "Invalid revision.", subjectRef);
           revision = Number(rest);
         } else if (kw === "language") {
           if (language !== undefined) failParse("mermaid-strict-duplicate", idx, "Duplicate language line.", subjectRef);
@@ -1832,7 +2023,8 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
           if (!EID_RE.test(rest)) failParse("mermaid-strict-invalid", idx, "Invalid owning-repo EID.", subjectRef);
           owningRepoEid = { eid: rest, lineIdx: idx };
         } else if (kw === "profile") {
-          if (!/^([a-z][a-z0-9-]*)@(0|[1-9][0-9]*)$/.test(rest)) {
+          const profMatch = /^([a-z][a-z0-9-]*)@(0|[1-9][0-9]*)$/.exec(rest);
+          if (!profMatch || !isSafeIntDecString(profMatch[2]!)) {
             failParse("mermaid-strict-invalid", idx, "Invalid profile reference syntax.", subjectRef);
           }
           if (rest !== "archi@1" && rest !== "generic@2") {
@@ -1852,7 +2044,7 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
           if (role !== "profile" && role !== "cards" && role !== "view-schema") {
             failParse("mermaid-strict-annotation-unknown", idx, `Unknown pin role '${role}'.`, subjectRef);
           }
-          if (!WORD_RE.test(id) || !VERSION_RE.test(version) || !HEX64_RE.test(digest)) {
+          if (!WORD_RE.test(id) || !isSafeVersionString(version) || !HEX64_RE.test(digest)) {
             failParse("mermaid-strict-invalid", idx, "Invalid pin arguments.", subjectRef);
           }
           const pinObj: Pin = { id, version, contentDigest: digest };
@@ -1931,7 +2123,7 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
           failParse("mermaid-strict-invalid", idx, `Invalid nest relation local id '${rest}'.`, subjectRef);
         }
         const relId = `relation:${rest}`;
-        if (relId in relations) {
+        if (seenRelationIds.has(relId)) {
           failParse("mermaid-strict-duplicate", idx, `Duplicate relation id '${relId}'.`, subjectRef);
         }
         const nestRelType = openEntity.spec.profile === "archi@1" ? "partOf" : "contains";
@@ -1969,7 +2161,7 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
             failParse("mermaid-strict-placement-drift", idx, `Nesting relation '${relType}' cannot be written as edge.`, subjectRef);
           }
           const relId = `relation:${localId}`;
-          if (relId in relations) {
+          if (seenRelationIds.has(relId)) {
             failParse("mermaid-strict-duplicate", idx, `Duplicate relation id '${relId}'.`, subjectRef);
           }
           openRelation = {
@@ -1997,7 +2189,7 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
             failParse("mermaid-strict-placement-drift", idx, `Nesting relation '${relType}' cannot be written as rel.`, subjectRef);
           }
           const relId = `relation:${localId}`;
-          if (relId in relations) {
+          if (seenRelationIds.has(relId)) {
             failParse("mermaid-strict-duplicate", idx, `Duplicate relation id '${relId}'.`, subjectRef);
           }
           openRelation = {
@@ -2082,7 +2274,7 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
           }
           const sp = rest.indexOf(" ");
           const eid = sp === -1 ? rest : rest.slice(0, sp);
-          const titleRaw = sp === -1 ? undefined : rest.slice(sp + 1).trim();
+          const titleRaw = sp === -1 ? undefined : trimSp(rest.slice(sp + 1));
           if (!EID_RE.test(eid)) failParse("mermaid-strict-invalid", idx, "Invalid legend EID.", subjectRef);
           const entId = eidToEntityId.get(eid);
           if (!entId) failParse("mermaid-strict-orphan-ref", idx, `Unknown legend entity '${eid}'.`, subjectRef);
@@ -2121,7 +2313,7 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
           if (!afterCat.startsWith(" ")) {
             failParse("mermaid-strict-invalid", idx, "Missing space after category on token line.", subjectRef);
           }
-          const tokenStr = afterCat.trim();
+          const tokenStr = trimSp(afterCat);
           if (!TOKEN_RE.test(tokenStr)) {
             failParse("mermaid-strict-invalid", idx, `Invalid token '${tokenStr}'.`, subjectRef);
           }
@@ -2143,11 +2335,11 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
           const parts = rest.split(/ +/);
           if (parts.length !== 2) failParse("mermaid-strict-invalid", idx, "Malformed gap line.", subjectRef);
           const [gapKey, intStr] = parts as [string, string];
-          const field = GAP_KEY_TO_FIELD[gapKey];
-          if (!field || !INT_RE.test(intStr)) {
+          const field = GAP_KEY_TO_FIELD.get(gapKey);
+          if (!field || !isSafeIntDecString(intStr)) {
             failParse("mermaid-strict-invalid", idx, "Invalid gap key or integer.", subjectRef);
           }
-          if (openView.gaps[field] !== undefined) {
+          if (Object.hasOwn(openView.gaps, field)) {
             failParse("mermaid-strict-duplicate", idx, `Duplicate gap '${gapKey}'.`, subjectRef);
           }
           openView.gaps[field] = Number(intStr);
@@ -2205,7 +2397,7 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
             p += 2;
           }
           if (p < parts.length && parts[p] === "gap-after") {
-            if (p + 1 >= parts.length || !INT_RE.test(parts[p + 1]!)) {
+            if (p + 1 >= parts.length || !isSafeIntDecString(parts[p + 1]!)) {
               failParse("mermaid-strict-invalid", idx, "Invalid 'gap-after <INT>' on group line.", subjectRef);
             }
             gapAfter = Number(parts[p + 1]!);
@@ -2284,15 +2476,19 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
     }
 
     // 2. Non-annotation statement lines
-    const firstStmtWord = trimmed.split(/ +/)[0] ?? "";
+    const rawFirstStmtWord = trimmed.split(/ +/)[0] ?? "";
+    const firstStmtWord = rawFirstStmtWord.replace(/:$/, "");
     if (
       trimmed === "---" ||
       UNSUPPORTED_STATEMENT_HEADS.has(firstStmtWord) ||
       firstStmtWord === "flowchart"
     ) {
-      failParse("mermaid-strict-unsupported", idx, `Unsupported Mermaid statement '${firstStmtWord}'.`, subjectRef);
+      failParse("mermaid-strict-unsupported", idx, `Unsupported Mermaid statement '${rawFirstStmtWord}'.`, subjectRef);
     }
     if (section === "head") {
+      if (firstStmtWord === "classDef" || firstStmtWord === "class") {
+        failParse("mermaid-strict-unsupported", idx, `Unsupported '${firstStmtWord}' statement in head.`, subjectRef);
+      }
       ensureHeadComplete(idx);
       section = "tree";
     }
@@ -2410,7 +2606,7 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
         ...(openEntity.form !== undefined ? { form: { kind: "enum", value: openEntity.form } } : {}),
         ...openEntity.attrBag.attrs,
       };
-      if (openEntity.spec.profile === "archi@1" && !("lifecycle" in attrs)) {
+      if (openEntity.spec.profile === "archi@1" && !Object.hasOwn(attrs, "lifecycle")) {
         attrs["lifecycle"] = { kind: "enum", value: "current" };
       }
 
@@ -2425,7 +2621,7 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
       if (openEntity.nest) {
         const parent = subgraphStack[subgraphStack.length - 1]!;
         const nest = openEntity.nest;
-        if (nest.spec.profile === "archi@1" && !("lifecycle" in nest.attrBag.attrs)) {
+        if (nest.spec.profile === "archi@1" && !Object.hasOwn(nest.attrBag.attrs, "lifecycle")) {
           nest.attrBag.attrs["lifecycle"] = { kind: "enum", value: "current" };
         }
         const endpoints =
@@ -2446,6 +2642,7 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
           attributes: nest.attrBag.attrs,
         };
         relations[nest.relId] = relRecord;
+        seenRelationIds.add(nest.relId);
         nestRelationByChild.set(entityId, relRecord);
       }
 
@@ -2473,6 +2670,9 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
       const rawLabel = edgeMatch[3];
       const tgtEid = edgeMatch[4]!;
 
+      if (rawLabel !== undefined && rawLabel.length >= 4 && rawLabel.startsWith('"`') && rawLabel.endsWith('`"')) {
+        failParse("mermaid-strict-unsupported", idx, "Markdown string labels are unsupported.", subjectRef);
+      }
       const labelVal = rawLabel !== undefined ? decodeVString(rawLabel, idx, subjectRef) : undefined;
       const srcId = eidToEntityId.get(srcEid);
       const tgtId = eidToEntityId.get(tgtEid);
@@ -2486,7 +2686,7 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
         ...openRelation.attrBag.attrs,
         ...(labelVal !== undefined ? { label: { kind: "text", value: labelVal } } : {}),
       };
-      if (openRelation.spec.profile === "archi@1" && !("lifecycle" in attrs)) {
+      if (openRelation.spec.profile === "archi@1" && !Object.hasOwn(attrs, "lifecycle")) {
         attrs["lifecycle"] = { kind: "enum", value: "current" };
       }
 
@@ -2521,6 +2721,7 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
         ],
         attributes: attrs,
       };
+      seenRelationIds.add(openRelation.relId);
       openRelation = undefined;
       continue;
     }
@@ -2602,8 +2803,8 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
     views: parsedViews,
   };
 
-  if (options?.checkCanonical) {
-    const canonicalText = print(triple, { subjectRef });
+  if (options.checkCanonical) {
+    const canonicalText = printOrRefuse(triple, subjectRef);
     if (canonicalText !== text) {
       const actualLines = text.split("\n");
       const expectedLines = canonicalText.split("\n");
@@ -2618,11 +2819,19 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
       if (diffIdx >= actualLines.length) {
         diffIdx = Math.max(0, actualLines.length - 1);
       }
+      const aLine = actualLines[diffIdx] ?? "";
+      const eLine = expectedLines[diffIdx] ?? "";
+      let diffCol = 1;
+      const minChars = Math.min(aLine.length, eLine.length);
+      while (diffCol - 1 < minChars && aLine.charCodeAt(diffCol - 1) === eLine.charCodeAt(diffCol - 1)) {
+        diffCol++;
+      }
       failParse(
         "mermaid-strict-noncanonical",
         diffIdx,
-        `Non-canonical text at line ${diffIdx + 1}.`,
+        `Non-canonical text at line ${diffIdx + 1}, column ${diffCol}.`,
         subjectRef,
+        diffCol,
       );
     }
   }
@@ -2630,16 +2839,65 @@ export function parse(text: string, options?: ArchiMermaidParseOptions): ArchiSo
   return triple;
 }
 
-/** Format parseable engram.archi-mermaid/1 text to canonical bytes, or verify canonical form when check: true. */
-export function canonical(text: string, options?: ArchiMermaidFormatOptions): string {
-  const triple = parse(text, {
-    checkCanonical: options?.check === true,
-    subjectRef: options?.subjectRef,
-  });
-  return print(triple, { subjectRef: options?.subjectRef });
+// ---------------------------------------------------------------------------
+// Public zero-dependency codec API (@sentropic/engram/archi-mermaid)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse `engram.archi-mermaid/1` text into an authored {@link ArchiSourceTriple} (P-2 r3 §4, §7).
+ *
+ * Returns a discriminated {@link ArchiMermaidResult} union and never throws.
+ * Note: At the codec layer, `language`, `lifecycle`, `form`, and enum attribute values accept any
+ * lexical `WORD` (`^[a-z][a-z0-9-]*$`); semantic value narrowing belongs to stage 3 (`checkArchiSource` / `validateNativeSemanticDocument`).
+ */
+export function parseArchiMermaid(
+  text: unknown,
+  options?: ArchiMermaidParseOptions,
+): ArchiMermaidResult<ArchiSourceTriple> {
+  const subjectRef = resolveSubjectRef(options);
+  const checkCanonical =
+    Boolean(options && typeof options === "object" && !Array.isArray(options)) &&
+    (options as ArchiMermaidParseOptions).checkCanonical === true;
+  return settle(
+    () => parseOrRefuse(text, { checkCanonical, subjectRef }),
+    "mermaid-strict-invalid",
+    "/0",
+    subjectRef,
+  );
 }
 
-/** Alias of canonical(text, options): format parseable engram.archi-mermaid/1 text to canonical bytes. */
-export function fmt(text: string, options?: ArchiMermaidFormatOptions): string {
-  return canonical(text, options);
+/**
+ * Print an authored {@link ArchiSourceTriple} to canonical `engram.archi-mermaid/1` text (P-2 r3 §4).
+ *
+ * Returns a discriminated {@link ArchiMermaidResult} union and never throws.
+ */
+export function printArchiMermaid(
+  triple: unknown,
+  options?: ArchiMermaidPrintOptions,
+): ArchiMermaidResult<string> {
+  const subjectRef = resolveSubjectRef(options);
+  return settle(
+    () => printOrRefuse(triple, subjectRef),
+    "mermaid-strict-unrepresentable",
+    "",
+    subjectRef,
+  );
+}
+
+/**
+ * Format parseable `engram.archi-mermaid/1` text to canonical bytes, or verify canonical form when `check: true` (P-2 r3 §4).
+ *
+ * Returns a discriminated {@link ArchiMermaidResult} union and never throws.
+ */
+export function formatArchiMermaid(
+  text: unknown,
+  options?: ArchiMermaidFormatOptions,
+): ArchiMermaidResult<string> {
+  const subjectRef = resolveSubjectRef(options);
+  const check =
+    Boolean(options && typeof options === "object" && !Array.isArray(options)) &&
+    (options as ArchiMermaidFormatOptions).check === true;
+  const parsed = parseArchiMermaid(text, { checkCanonical: check, subjectRef });
+  if (!parsed.ok) return parsed;
+  return printArchiMermaid(parsed.value, { subjectRef });
 }

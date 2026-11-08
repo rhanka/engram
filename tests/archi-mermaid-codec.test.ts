@@ -2,18 +2,31 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
+import { ARCHI_CARDS_CONTENT } from "../src/ontology-guardian/archi-cards-data.js";
+import {
+  archiRelationEncoding,
+  buildArchiSemanticModel,
+} from "../src/ontology-guardian/archi-cards.js";
+import {
+  checkArchi,
+  type ArchiDiagnosticCode,
+} from "../src/ontology-guardian/archi-check.js";
+import {
+  ARCHI1_DECLARATION,
+  ARCHI1_TUPLES,
+} from "../src/ontology-guardian/archi-profile.js";
 import { canonicalBytes } from "../src/ontology-guardian/canonical.js";
 import { validPointer } from "../src/ontology-guardian/diagnostics.js";
 import type { NativeSemanticDocument } from "../src/ontology-guardian/diagram-native-types.js";
+import { GENERIC_V2 } from "../src/ontology-guardian/diagram-profiles.js";
 import {
   ARCHI_MERMAID_DIAGNOSTIC_CODES,
-  ArchiMermaidError,
-  canonical,
-  fmt,
-  parse,
-  print,
+  formatArchiMermaid,
+  parseArchiMermaid,
+  printArchiMermaid,
   type ArchiManifest,
+  type ArchiMermaidDiagnostic,
   type ArchiMermaidDiagnosticCode,
   type ArchiSourceTriple,
   type ArchiViewSpec,
@@ -36,30 +49,54 @@ const JOINT_R2 = loadFixtureTriple("joint-r2");
 const HOSTS_R3 = loadFixtureTriple("hosts-r3");
 const JOINT_R2_TEINTES = loadFixtureTriple("joint-r2-teintes");
 
-function expectParseCode(
+function unwrapPrint(triple: ArchiSourceTriple, options?: { readonly subjectRef?: string }): string {
+  const res = printArchiMermaid(triple, options);
+  expect(res.ok, res.ok ? "" : res.diagnostics[0]?.message).toBe(true);
+  if (!res.ok) throw new Error(res.diagnostics[0]?.message);
+  return res.value;
+}
+
+function unwrapParse(
   text: string,
+  options?: { readonly checkCanonical?: boolean; readonly subjectRef?: string },
+): ArchiSourceTriple {
+  const res = parseArchiMermaid(text, options);
+  expect(res.ok, res.ok ? "" : res.diagnostics[0]?.message).toBe(true);
+  if (!res.ok) throw new Error(res.diagnostics[0]?.message);
+  return res.value;
+}
+
+function unwrapFormat(
+  text: string,
+  options?: { readonly check?: boolean; readonly subjectRef?: string },
+): string {
+  const res = formatArchiMermaid(text, options);
+  expect(res.ok, res.ok ? "" : res.diagnostics[0]?.message).toBe(true);
+  if (!res.ok) throw new Error(res.diagnostics[0]?.message);
+  return res.value;
+}
+
+function expectParseCode(
+  text: unknown,
   expectedCode: ArchiMermaidDiagnosticCode,
   options?: { readonly checkCanonical?: boolean; readonly subjectRef?: string },
-): ArchiMermaidError {
-  let caught: unknown;
-  try {
-    parse(text, options);
-  } catch (err) {
-    caught = err;
-  }
-  expect(caught, `expected parse to fail with ${expectedCode}`).toBeInstanceOf(ArchiMermaidError);
-  const error = caught as ArchiMermaidError;
-  expect(error.code).toBe(expectedCode);
-  expect(error.diagnostic.origin).toBe("engram");
-  expect(error.diagnostic.severity).toBe("error");
-  expect(error.diagnostic.code).toBe(expectedCode);
-  expect(error.diagnostic.nativeCode).toBe(expectedCode);
-  expect(validPointer(error.diagnostic.path ?? "")).toBe(true);
-  expect(error.diagnostic.path).toMatch(/^\/\d+$/);
-  expect(error.diagnostic.subjectRef).toBe(
+): ArchiMermaidDiagnostic {
+  const res = parseArchiMermaid(text, options);
+  expect(res.ok, `expected parseArchiMermaid to refuse with ${expectedCode}`).toBe(false);
+  if (res.ok) throw new Error("expected ok: false");
+  expect(res.diagnostics).toHaveLength(1);
+  const diag = res.diagnostics[0];
+  expect(diag.origin).toBe("engram");
+  expect(diag.severity).toBe("error");
+  expect(diag.code).toBe(expectedCode);
+  expect(diag.nativeCode).toBe(expectedCode);
+  expect(validPointer(diag.path)).toBe(true);
+  expect(diag.path).toMatch(/^\/\d+$/);
+  expect(diag.message).toMatch(/column \d+/);
+  expect(diag.subjectRef).toBe(
     options?.subjectRef ?? ".engram/architecture/architecture.mmd",
   );
-  expect(Object.keys(error.diagnostic).sort()).toEqual([
+  expect(Object.keys(diag).sort()).toEqual([
     "code",
     "message",
     "nativeCode",
@@ -68,28 +105,33 @@ function expectParseCode(
     "severity",
     "subjectRef",
   ]);
-  return error;
+  return diag;
 }
 
 function expectPrintCode(
   triple: unknown,
   expectedCode: ArchiMermaidDiagnosticCode = "mermaid-strict-unrepresentable",
-): ArchiMermaidError {
-  let caught: unknown;
-  try {
-    print(triple as ArchiSourceTriple);
-  } catch (err) {
-    caught = err;
-  }
-  expect(caught, `expected print to fail with ${expectedCode}`).toBeInstanceOf(ArchiMermaidError);
-  const error = caught as ArchiMermaidError;
-  expect(error.code).toBe(expectedCode);
-  expect(error.diagnostic.origin).toBe("engram");
-  expect(error.diagnostic.severity).toBe("error");
-  expect(error.diagnostic.code).toBe(expectedCode);
-  expect(error.diagnostic.nativeCode).toBe(expectedCode);
-  expect(validPointer(error.diagnostic.path ?? "")).toBe(true);
-  return error;
+): ArchiMermaidDiagnostic {
+  const res = printArchiMermaid(triple);
+  expect(res.ok, `expected printArchiMermaid to refuse with ${expectedCode}`).toBe(false);
+  if (res.ok) throw new Error("expected ok: false");
+  expect(res.diagnostics).toHaveLength(1);
+  const diag = res.diagnostics[0];
+  expect(diag.origin).toBe("engram");
+  expect(diag.severity).toBe("error");
+  expect(diag.code).toBe(expectedCode);
+  expect(diag.nativeCode).toBe(expectedCode);
+  expect(validPointer(diag.path)).toBe(true);
+  expect(Object.keys(diag).sort()).toEqual([
+    "code",
+    "message",
+    "nativeCode",
+    "origin",
+    "path",
+    "severity",
+    "subjectRef",
+  ]);
+  return diag;
 }
 
 describe("engram.archi-mermaid/1 — corpus round trips (G-T1, G-T2, G-T3)", () => {
@@ -100,23 +142,21 @@ describe("engram.archi-mermaid/1 — corpus round trips (G-T1, G-T2, G-T3)", () 
   ];
 
   it.each(fixtures)(
-    "%s: parse(print(j)) equals j on JCS bytes, print(parse(t)) equals canonical(t), fmt(t) equals t",
+    "%s: parseArchiMermaid(printArchiMermaid(j)) equals j on JCS bytes, printArchiMermaid(parseArchiMermaid(t)) equals formatArchiMermaid(t), formatArchiMermaid(t) equals t",
     (_name, j) => {
-      const t = print(j);
+      const t = unwrapPrint(j);
       expect(t.startsWith("flowchart LR\n%% @dl format engram.archi-mermaid/1\n")).toBe(true);
       expect(t.endsWith("\n")).toBe(true);
       expect(t.endsWith("\n\n")).toBe(false);
       // K9: canonical text holds no '{'
       expect(t.includes("{")).toBe(false);
 
-      // fmt(t) === t and canonical(t) === t for canonical text (G-T1)
-      expect(fmt(t)).toBe(t);
-      expect(canonical(t)).toBe(t);
-      expect(fmt(t, { check: true })).toBe(t);
-      expect(canonical(t, { check: true })).toBe(t);
+      // formatArchiMermaid(t) === t for canonical text (G-T1)
+      expect(unwrapFormat(t)).toBe(t);
+      expect(unwrapFormat(t, { check: true })).toBe(t);
 
-      // parse(print(j)) equals j on per-record and whole-triple JCS bytes (G-T3)
-      const roundTripped = parse(t, { checkCanonical: true });
+      // parseArchiMermaid(printArchiMermaid(j)) equals j on per-record and whole-triple JCS bytes (G-T3)
+      const roundTripped = unwrapParse(t, { checkCanonical: true });
       expect(canonicalBytes(roundTripped.manifest)).toBe(canonicalBytes(j.manifest));
       expect(canonicalBytes(roundTripped.document)).toBe(canonicalBytes(j.document));
       expect(roundTripped.views).toHaveLength(j.views.length);
@@ -125,14 +165,14 @@ describe("engram.archi-mermaid/1 — corpus round trips (G-T1, G-T2, G-T3)", () 
       }
       expect(canonicalBytes(roundTripped)).toBe(canonicalBytes(j));
 
-      // print(parse(t)) equals canonical(t) (G-T2)
-      expect(print(parse(t))).toBe(canonical(t));
+      // printArchiMermaid(parseArchiMermaid(t)) equals formatArchiMermaid(t) (G-T2)
+      expect(unwrapPrint(unwrapParse(t))).toBe(unwrapFormat(t));
     },
   );
 
   it("joint-r2-teintes: preserves generic@2 legend, legend-key and contains without synthesizing lifecycle and matches §4.9 fragment lines", () => {
-    const t = print(JOINT_R2_TEINTES);
-    const parsed = parse(t);
+    const t = unwrapPrint(JOINT_R2_TEINTES);
+    const parsed = unwrapParse(t);
 
     // generic@2 records never get a synthesized lifecycle attribute (§3.2, §3.3, K6, M3)
     expect(parsed.document.entities["entity:legend-memoire"]?.attributes["lifecycle"]).toBeUndefined();
@@ -162,9 +202,14 @@ describe("engram.archi-mermaid/1 — corpus round trips (G-T1, G-T2, G-T3)", () 
     );
   });
 
-  it("G-T2: non-canonical mutants of K1–K12 parse to the same model, print(parse(t)) === canonical(t), fmt restores canonical bytes, and check mode reports mermaid-strict-noncanonical", () => {
-    const base = print(JOINT_R2_TEINTES);
+  it("G-T2: non-canonical mutants of K1–K12 parse to the same model, print(parse(t)) === format(t), format restores canonical bytes, and check mode reports mermaid-strict-noncanonical (or mermaid-strict-invalid for lexical K9/K10 mutants)", () => {
+    const base = unwrapPrint(JOINT_R2_TEINTES);
 
+    // Note on K9 and K10 (m8):
+    // K9 (closed escape sets in VSTRING/ASTRING) and K10 (minimal base-10 integers without leading zeros)
+    // are enforced directly by the lexical grammar of engram.archi-mermaid/1. Any non-canonical escape
+    // (such as `#97;` in VSTRING or `\u0041` in ASTRING) or leading-zero integer (`024` on gap, `01.1` on schema,
+    // `00` on revision) is rejected at the lexical stage with `mermaid-strict-invalid` (verified below).
     const mutants: readonly [string, string][] = [
       // K1: trailing space on line 1
       ["K1 trailing space", base.replace("flowchart LR\n", "flowchart LR   \n")],
@@ -266,14 +311,47 @@ describe("engram.archi-mermaid/1 — corpus round trips (G-T1, G-T2, G-T3)", () 
 
     for (const [label, mutant] of mutants) {
       expect(mutant, label).not.toBe(base);
-      const parsed = parse(mutant);
+      const parsed = unwrapParse(mutant);
       expect(canonicalBytes(parsed), label).toBe(canonicalBytes(JOINT_R2_TEINTES));
-      expect(print(parsed), label).toBe(base);
-      expect(canonical(mutant), label).toBe(base);
-      expect(fmt(mutant), label).toBe(base);
+      expect(unwrapPrint(parsed), label).toBe(base);
+      expect(unwrapFormat(mutant), label).toBe(base);
       expectParseCode(mutant, "mermaid-strict-noncanonical", { checkCanonical: true });
-      expect(() => fmt(mutant, { check: true })).toThrow(ArchiMermaidError);
+      const fmtCheck = formatArchiMermaid(mutant, { check: true });
+      expect(fmtCheck.ok).toBe(false);
+      if (!fmtCheck.ok) {
+        expect(fmtCheck.diagnostics[0].code).toBe("mermaid-strict-noncanonical");
+      }
     }
+
+    // K9 lexical escape mutants (#97; in VSTRING and \u0041 in ASTRING) -> mermaid-strict-invalid (m8)
+    expectParseCode(
+      base.replace('e_rt_track["track"]', 'e_rt_track["tr#97;ck"]'),
+      "mermaid-strict-invalid",
+    );
+    expectParseCode(
+      base.replace(
+        '%% @dl role "Contrôle chaque écriture"',
+        '%% @dl role "\\u0041Contrôle chaque écriture"',
+      ),
+      "mermaid-strict-invalid",
+    );
+
+    // K10 leading-zero integer mutants (gap card-x 024, schema 01.1, revision 00) -> mermaid-strict-invalid (m8)
+    expectParseCode(
+      base.replace(
+        "%% @dl view roles-teintes archi-composition",
+        "%% @dl view roles-teintes archi-composition\n%% @dl gap card-x 024",
+      ),
+      "mermaid-strict-invalid",
+    );
+    expectParseCode(
+      base.replace("%% @dl schema 1.1", "%% @dl schema 01.1"),
+      "mermaid-strict-invalid",
+    );
+    expectParseCode(
+      base.replace("%% @dl revision 0", "%% @dl revision 00"),
+      "mermaid-strict-invalid",
+    );
   });
 });
 
@@ -310,7 +388,7 @@ describe("engram.archi-mermaid/1 — escaping & lone surrogates (§4.4, K9, M8)"
       value: 'lance · hooks [session] #2 "q" {b} | `tick` <&> \u2028 \u2029',
     };
 
-    const t = print(triple);
+    const t = unwrapPrint(triple);
     expect(t.includes("{")).toBe(false);
     expect(t).toContain('subgraph e_sys_track["Bêta #91;labo#93; #123;x}"]');
     expect(t).toContain(
@@ -323,13 +401,13 @@ describe("engram.archi-mermaid/1 — escaping & lone surrogates (§4.4, K9, M8)"
       '-->|"lance · hooks #91;session#93; #35;2 #34;q#34; #123;b} #124; #96;tick#96; #60;#38;#62; #8232; #8233;"|',
     );
 
-    expect(fmt(t)).toBe(t);
-    const back = parse(t, { checkCanonical: true });
+    expect(unwrapFormat(t)).toBe(t);
+    const back = unwrapParse(t, { checkCanonical: true });
     expect(canonicalBytes(back)).toBe(canonicalBytes(triple));
   });
 
   it("refuses raw '[', ']', '#', '{' or unknown entity escape in VSTRING and raw '{' or bad escape in ASTRING with mermaid-strict-invalid", () => {
-    const base = print(JOINT_R2);
+    const base = unwrapPrint(JOINT_R2);
     expectParseCode(
       base.replace('e_rt_track["track"]', 'e_rt_track["track [cli]"]'),
       "mermaid-strict-invalid",
@@ -367,7 +445,7 @@ describe("engram.archi-mermaid/1 — escaping & lone surrogates (§4.4, K9, M8)"
   });
 
   it("refuses a lone surrogate in parse (mermaid-strict-invalid) and in print (mermaid-strict-unrepresentable)", () => {
-    const base = print(JOINT_R2);
+    const base = unwrapPrint(JOINT_R2);
     expectParseCode(
       base.replace('e_rt_track["track"]', 'e_rt_track["track \uD800"]'),
       "mermaid-strict-invalid",
@@ -390,7 +468,7 @@ describe("engram.archi-mermaid/1 — escaping & lone surrogates (§4.4, K9, M8)"
 describe("engram.archi-mermaid/1 — fold rule collapsed = D \\ X and refusal cases (§5)", () => {
   it("handles all-folded (X = ∅), all-expanded (X = D), partial exceptions, and childless drawn containers", () => {
     // 1. All-folded (roles-replie in joint-r2 has all 6 drawn containers in collapsed -> 0 expanded lines)
-    const tJoint = print(JOINT_R2);
+    const tJoint = unwrapPrint(JOINT_R2);
     const replieBlock = tJoint.split("\n\n").find((b) => b.startsWith("%% @dl view roles-replie "))!;
     expect(replieBlock).toBeDefined();
     expect(replieBlock).not.toContain("%% @dl expanded ");
@@ -405,14 +483,14 @@ describe("engram.archi-mermaid/1 — fold rule collapsed = D \\ X and refusal ca
       ...allExpanded.views[0]!,
       collapsed: [],
     };
-    const tAllExp = print(allExpanded);
+    const tAllExp = unwrapPrint(allExpanded);
     expect(tAllExp).toContain("%% @dl expanded e_pkg_h2a");
     expect(tAllExp).toContain("%% @dl expanded e_pkg_plugin");
     expect(tAllExp).toContain("%% @dl expanded e_pkg_track");
     expect(tAllExp).toContain("%% @dl expanded e_sys_engram");
     expect(tAllExp).toContain("%% @dl expanded e_sys_h2a");
     expect(tAllExp).toContain("%% @dl expanded e_sys_track");
-    expect(canonicalBytes(parse(tAllExp))).toBe(canonicalBytes(allExpanded));
+    expect(canonicalBytes(unwrapParse(tAllExp))).toBe(canonicalBytes(allExpanded));
 
     // 3. Drawn container with no drawn child (host-poste drawn without its runtimes) stays in D(v)
     const childlessContainer = structuredClone(JOINT_R2_TEINTES) as {
@@ -425,14 +503,14 @@ describe("engram.archi-mermaid/1 — fold rule collapsed = D \\ X and refusal ca
       draw: ["entity:host-poste", ...childlessContainer.views[0]!.draw].sort(),
       collapsed: ["entity:host-poste", ...childlessContainer.views[0]!.collapsed].sort(),
     };
-    const tChildless = print(childlessContainer);
+    const tChildless = unwrapPrint(childlessContainer);
     expect(tChildless).toContain("%% @dl draw e_host_poste");
     expect(tChildless).not.toContain("%% @dl expanded e_host_poste");
-    expect(canonicalBytes(parse(tChildless))).toBe(canonicalBytes(childlessContainer));
+    expect(canonicalBytes(unwrapParse(tChildless))).toBe(canonicalBytes(childlessContainer));
   });
 
   it("refuses expanded on undrawn container, non-container, unknown entity, duplicate expanded, and fold/collapsed keywords", () => {
-    const base = print(JOINT_R2_TEINTES);
+    const base = unwrapPrint(JOINT_R2_TEINTES);
 
     // Undrawn container (entity:host-poste is in document, but not in draw of roles-teintes)
     expectParseCode(
@@ -543,7 +621,7 @@ describe("engram.archi-mermaid/1 — layout injectivity (§3.4, §4.5, K8, M11)"
 
     const j2 = structuredClone(j1);
     j2.views[0] = {
-      ...j1.views[0]!,
+      ...j2.views[0]!,
       layout: {
         ...j1.views[0]!.layout!,
         grouping: [
@@ -572,8 +650,8 @@ describe("engram.archi-mermaid/1 — layout injectivity (§3.4, §4.5, K8, M11)"
       },
     };
 
-    const t1 = print(j1);
-    const t2 = print(j2);
+    const t1 = unwrapPrint(j1);
+    const t2 = unwrapPrint(j2);
     expect(t1).not.toBe(t2);
 
     expect(t1).toContain(
@@ -606,10 +684,10 @@ describe("engram.archi-mermaid/1 — layout injectivity (§3.4, §4.5, K8, M11)"
       ].join("\n"),
     );
 
-    expect(canonicalBytes(parse(t1, { checkCanonical: true }))).toBe(canonicalBytes(j1));
-    expect(canonicalBytes(parse(t2, { checkCanonical: true }))).toBe(canonicalBytes(j2));
+    expect(canonicalBytes(unwrapParse(t1, { checkCanonical: true }))).toBe(canonicalBytes(j1));
+    expect(canonicalBytes(unwrapParse(t2, { checkCanonical: true }))).toBe(canonicalBytes(j2));
 
-    // Interleaved non-canonical group item lines parse to j1 and fmt restores t1 (§4.6)
+    // Interleaved non-canonical group item lines parse to j1 and formatArchiMermaid restores t1 (§4.6)
     const interleaved = t1.replace(
       [
         "%% @dl group h columns in g stretch true",
@@ -622,8 +700,8 @@ describe("engram.archi-mermaid/1 — layout injectivity (§3.4, §4.5, K8, M11)"
         "%% @dl item h e_sys_track",
       ].join("\n"),
     );
-    expect(canonicalBytes(parse(interleaved))).toBe(canonicalBytes(j1));
-    expect(fmt(interleaved)).toBe(t1);
+    expect(canonicalBytes(unwrapParse(interleaved))).toBe(canonicalBytes(j1));
+    expect(unwrapFormat(interleaved)).toBe(t1);
   });
 
   it("allows reusing layout group ids across distinct views in the same file, while refusing duplicate group ids within one view", () => {
@@ -644,8 +722,8 @@ describe("engram.archi-mermaid/1 — layout injectivity (§3.4, §4.5, K8, M11)"
         grouping: [{ id: "shared-g", direction: "columns", items: ["entity:sys-h2a"] }],
       },
     };
-    const t = print(j);
-    expect(canonicalBytes(parse(t, { checkCanonical: true }))).toBe(canonicalBytes(j));
+    const t = unwrapPrint(j);
+    expect(canonicalBytes(unwrapParse(t, { checkCanonical: true }))).toBe(canonicalBytes(j));
 
     // Duplicate group id within the same view refuses with mermaid-strict-duplicate
     expectParseCode(
@@ -673,7 +751,7 @@ describe("engram.archi-mermaid/1 — layout injectivity (§3.4, §4.5, K8, M11)"
 });
 
 describe("engram.archi-mermaid/1 — all 10 closed diagnostic codes (G-T4, §7)", () => {
-  const base = print(JOINT_R2_TEINTES);
+  const base = unwrapPrint(JOINT_R2_TEINTES);
 
   it("exports the exact 10 closed codes in ARCHI_MERMAID_DIAGNOSTIC_CODES", () => {
     expect(ARCHI_MERMAID_DIAGNOSTIC_CODES).toEqual([
@@ -690,12 +768,43 @@ describe("engram.archi-mermaid/1 — all 10 closed diagnostic codes (G-T4, §7)"
     ]);
   });
 
-  it("1. mermaid-strict-invalid: lexical errors, missing parts, unbalanced subgraph, out-of-order section, kind-spelling mismatch", () => {
+  it("1. mermaid-strict-invalid: lexical errors, missing parts, unbalanced subgraph, out-of-order section, kind-spelling mismatch, non-SP whitespace (m3), unsafe ints (m2)", () => {
     // BOM, CR, TAB, control character
     expectParseCode(`\uFEFF${base}`, "mermaid-strict-invalid");
+    expectParseCode(base.replace("flowchart LR\n", "flowchart LR\n\uFEFF"), "mermaid-strict-invalid");
     expectParseCode(base.replace("\n", "\r\n"), "mermaid-strict-invalid");
     expectParseCode(base.replace("flowchart LR", "flowchart\tLR"), "mermaid-strict-invalid");
     expectParseCode(base.replace("flowchart LR", "flowchart LR\u0007"), "mermaid-strict-invalid");
+
+    // m3: non-SP Unicode whitespace (U+00A0, U+2003) on line 1, blank line, and annotation line
+    expectParseCode(base.replace("flowchart LR\n", "flowchart LR\u00A0\n"), "mermaid-strict-invalid");
+    expectParseCode(base.replace("%% @dl language fr", "%% @dl language fr\u2003"), "mermaid-strict-invalid");
+    expectParseCode(`\u00A0\n${base}`, "mermaid-strict-invalid");
+    expectParseCode(base.replace("flowchart LR\n", "flowchart\u00A0LR\n"), "mermaid-strict-invalid");
+
+    // m2: integers exceeding Number.MAX_SAFE_INTEGER
+    expectParseCode(
+      base.replace("%% @dl revision 0", "%% @dl revision 9007199254740993"),
+      "mermaid-strict-invalid",
+    );
+    expectParseCode(
+      base.replace("%% @dl schema 1.1", "%% @dl schema 9007199254740993.0"),
+      "mermaid-strict-invalid",
+    );
+    expectParseCode(
+      base.replace(
+        "%% @dl view roles-teintes archi-composition",
+        "%% @dl view roles-teintes archi-composition\n%% @dl gap card-x 9007199254740993",
+      ),
+      "mermaid-strict-invalid",
+    );
+    expectParseCode(
+      base.replace(
+        "%% @dl pin cards archi-cards 1 ",
+        "%% @dl pin cards archi-cards 9007199254740993 ",
+      ),
+      "mermaid-strict-invalid",
+    );
 
     // Unbalanced subgraph / end
     expectParseCode(`${base}end\n`, "mermaid-strict-invalid");
@@ -755,14 +864,26 @@ describe("engram.archi-mermaid/1 — all 10 closed diagnostic codes (G-T4, §7)"
     );
   });
 
-  it("2. mermaid-strict-unsupported: non-LR flowchart, directives, free comments, unsupported shapes/links/classes", () => {
+  it("2. mermaid-strict-unsupported: non-LR flowchart, directives, front-matter, free comments, unsupported shapes/links/classes (m4)", () => {
     expectParseCode(base.replace("flowchart LR", "flowchart TB"), "mermaid-strict-unsupported");
     expectParseCode(base.replace("flowchart LR", "graph LR"), "mermaid-strict-unsupported");
     expectParseCode(`%%{init: {'theme': 'dark'}}%%\n${base}`, "mermaid-strict-unsupported");
+    // m4: front-matter, free comment, or classDef before flowchart LR on line 1
+    expectParseCode(`---\ntitle: x\n---\n${base}`, "mermaid-strict-unsupported");
+    expectParseCode(`%% free comment before header\n${base}`, "mermaid-strict-unsupported");
+    expectParseCode(`classDef foo fill:#f00\n${base}`, "mermaid-strict-unsupported");
+    // m4: classDef in head section (after flowchart LR, before head is complete)
+    expectParseCode(
+      base.replace("flowchart LR", "flowchart LR\nclassDef foo fill:#f00"),
+      "mermaid-strict-unsupported",
+    );
     expectParseCode(base.replace("flowchart LR", "flowchart LR\n%% free comment"), "mermaid-strict-unsupported");
     expectParseCode(base.replace("%% @dl language fr", "%%@dl language fr"), "mermaid-strict-unsupported");
     expectParseCode(base.replace("flowchart LR", "flowchart LR\ndirection TB"), "mermaid-strict-unsupported");
     expectParseCode(base.replace("flowchart LR", "flowchart LR\nstyle e_rt_track fill:#f00"), "mermaid-strict-unsupported");
+    // m4: accTitle: and accDescr: with trailing colon
+    expectParseCode(base.replace("flowchart LR", "flowchart LR\naccTitle: My Title"), "mermaid-strict-unsupported");
+    expectParseCode(base.replace("flowchart LR", "flowchart LR\naccDescr: My Description"), "mermaid-strict-unsupported");
     expectParseCode(
       base.replace("classDef dashed stroke-dasharray: 5 5", "classDef dashed fill:#f00"),
       "mermaid-strict-unsupported",
@@ -775,6 +896,15 @@ describe("engram.archi-mermaid/1 — all 10 closed diagnostic codes (G-T4, §7)"
       base.replace('e_rt_track["track"]', 'e_rt_track{"track"}'),
       "mermaid-strict-unsupported",
     );
+    // m4: subroutine [[...]] and parallelogram [/.../] shapes
+    expectParseCode(
+      base.replace('e_rt_track["track"]', 'e_rt_track[["track"]]'),
+      "mermaid-strict-unsupported",
+    );
+    expectParseCode(
+      base.replace('e_rt_track["track"]', 'e_rt_track[/"track"/]'),
+      "mermaid-strict-unsupported",
+    );
     expectParseCode(
       base.replace('e_rt_track["track"]', 'e_rt_track@{ label: "track" }'),
       "mermaid-strict-unsupported",
@@ -785,6 +915,14 @@ describe("engram.archi-mermaid/1 — all 10 closed diagnostic codes (G-T4, §7)"
     );
     expectParseCode(
       base.replace('e_rt_track["track"]', 'e_rt_track["`track`"]'),
+      "mermaid-strict-unsupported",
+    );
+    // m4: Markdown string on edge label
+    expectParseCode(
+      base.replace(
+        'e_pkg_track -->|"déployé comme"| e_rt_track',
+        'e_pkg_track -->|"`déployé comme`"| e_rt_track',
+      ),
       "mermaid-strict-unsupported",
     );
     expectParseCode(
@@ -1026,11 +1164,11 @@ describe("engram.archi-mermaid/1 — all 10 closed diagnostic codes (G-T4, §7)"
   });
 
   it("9. mermaid-strict-noncanonical: reported on non-canonical text in check mode", () => {
-    const err = expectParseCode(`${base}\n`, "mermaid-strict-noncanonical", { checkCanonical: true });
-    expect(err.code).toBe("mermaid-strict-noncanonical");
+    const diag = expectParseCode(`${base}\n`, "mermaid-strict-noncanonical", { checkCanonical: true });
+    expect(diag.code).toBe("mermaid-strict-noncanonical");
   });
 
-  it("10. mermaid-strict-unrepresentable: refuses triples outside print domain M (M1–M12)", () => {
+  it("10. mermaid-strict-unrepresentable: refuses triples outside print domain M (M1–M12, M3, m1, m2, m9)", () => {
     // M1: invalid entity local id
     const m1 = structuredClone(JOINT_R2_TEINTES) as any;
     m1.document.entities["entity:Bad_Id"] = {
@@ -1044,7 +1182,7 @@ describe("engram.archi-mermaid/1 — all 10 closed diagnostic codes (G-T4, §7)"
     m2.document.ports = { "port:p1": {} };
     expectPrintCode(m2);
 
-    // M3: generic@2 entity of type 'node' or carrying lifecycle
+    // M3: generic@2 entity of type 'container' or carrying lifecycle
     const m3Type = structuredClone(JOINT_R2_TEINTES) as any;
     m3Type.document.entities["entity:legend-memoire"].type = "container";
     expectPrintCode(m3Type);
@@ -1055,6 +1193,35 @@ describe("engram.archi-mermaid/1 — all 10 closed diagnostic codes (G-T4, §7)"
       value: "current",
     };
     expectPrintCode(m3Life);
+
+    // Review M3: nesting relation type contradicts child family (contains on archi@1, partOf on generic@2)
+    const m3ContainsOnArchi = structuredClone(JOINT_R2_TEINTES) as any;
+    m3ContainsOnArchi.document.relations["relation:po-pkg-track"] = {
+      id: "relation:po-pkg-track",
+      profile: "generic@2",
+      type: "contains",
+      endpoints: [
+        { role: "parent", target: "entity:sys-track" },
+        { role: "child", target: "entity:pkg-track" },
+      ],
+      attributes: {},
+    };
+    expectPrintCode(m3ContainsOnArchi);
+
+    const m3PartOfOnGeneric = structuredClone(JOINT_R2_TEINTES) as any;
+    m3PartOfOnGeneric.document.relations["relation:ct-key-alim"] = {
+      id: "relation:ct-key-alim",
+      profile: "archi@1",
+      type: "partOf",
+      endpoints: [
+        { role: "source", target: "entity:key-alim" },
+        { role: "target", target: "entity:legend-memoire" },
+      ],
+      attributes: {
+        lifecycle: { kind: "enum", value: "current" },
+      },
+    };
+    expectPrintCode(m3PartOfOnGeneric);
 
     // M4: dangling relation endpoint
     const m4 = structuredClone(JOINT_R2_TEINTES) as any;
@@ -1098,6 +1265,11 @@ describe("engram.archi-mermaid/1 — all 10 closed diagnostic codes (G-T4, §7)"
     m9.manifest.document = "other.json";
     expectPrintCode(m9);
 
+    // Review m9: views array order does not match manifest.views order
+    const m9ViewsOrder = structuredClone(HOSTS_R3) as any;
+    m9ViewsOrder.views = [...m9ViewsOrder.views].reverse();
+    expectPrintCode(m9ViewsOrder);
+
     // M12: unsorted draw set or duplicate in legend.order
     const m12Set = structuredClone(JOINT_R2_TEINTES) as any;
     m12Set.views[0].draw = [...m12Set.views[0].draw].reverse();
@@ -1106,5 +1278,428 @@ describe("engram.archi-mermaid/1 — all 10 closed diagnostic codes (G-T4, §7)"
     const m12List = structuredClone(JOINT_R2_TEINTES) as any;
     m12List.views[0].legend.order = ["entity:key-alim", "entity:key-alim"];
     expectPrintCode(m12List);
+  });
+});
+
+describe("engram.archi-mermaid/1 — Round 2 review regression suite (B1, M1, M2, m1, m2, m6, m7)", () => {
+  it("M1: parseArchiMermaid, printArchiMermaid, and formatArchiMermaid agree on WORD enums; stage 3 rejects semantic enum typos", () => {
+    const base = unwrapPrint(JOINT_R2_TEINTES);
+
+    // 1. Typo on lifecycle ('propsed') parses and formats without throwing or returning unrepresentable
+    const badLifecycleText = base.replace("%% @dl lifecycle proposed", "%% @dl lifecycle propsed");
+    const parsedLc = unwrapParse(badLifecycleText);
+    expect(parsedLc.document.entities["entity:svc-live"]?.attributes["lifecycle"]).toEqual({
+      kind: "enum",
+      value: "propsed",
+    });
+    expect(unwrapFormat(badLifecycleText)).toBe(badLifecycleText);
+    expect(unwrapFormat(badLifecycleText, { check: true })).toBe(badLifecycleText);
+
+    // 2. Typo on form ('jsonll') parses and formats at the codec layer
+    const badFormText = base.replace("%% @dl entity store jsonl", "%% @dl entity store jsonll");
+    const parsedForm = unwrapParse(badFormText);
+    expect(parsedForm.document.entities["entity:st-events"]?.attributes["form"]).toEqual({
+      kind: "enum",
+      value: "jsonll",
+    });
+    expect(unwrapFormat(badFormText)).toBe(badFormText);
+
+    // 3. Typo on enum ('mode wrte') parses and formats at the codec layer, and is rejected by checkArchi
+    const badWpRelText = base.replace("%% @dl mode append", "%% @dl mode wrte");
+    const parsedMode = unwrapParse(badWpRelText);
+    const accessesRel = Object.values(parsedMode.document.relations).find(
+      (r) => r.type === "accesses" && (r.attributes["mode"] as any)?.value === "wrte",
+    );
+    expect(accessesRel?.attributes["mode"]).toEqual({
+      kind: "enum",
+      value: "wrte",
+    });
+    expect(unwrapFormat(badWpRelText)).toBe(badWpRelText);
+    const modeDiags = checkArchi(parsedMode.document, ARCHI_CARDS_CONTENT, parsedMode.manifest.language);
+    expect(modeDiags.some((d) => d.code === "archi-footer-missing")).toBe(true);
+
+    // 4. Unsupported language ('de') parses and formats at the codec layer, and is rejected by checkArchi (archi-input-invalid)
+    const badLangText = base.replace("%% @dl language fr", "%% @dl language de");
+    const parsedLang = unwrapParse(badLangText);
+    expect(parsedLang.manifest.language).toBe("de");
+    expect(unwrapFormat(badLangText)).toBe(badLangText);
+    const langDiags = checkArchi(parsedLang.document, ARCHI_CARDS_CONTENT, parsedLang.manifest.language);
+    expect(langDiags.length).toBeGreaterThan(0);
+    expect(langDiags[0]?.code).toBe("archi-input-invalid");
+  });
+
+  it("M2: Object.prototype keys (constructor, toString, __proto__, valueOf) never leak or throw in parseArchiMermaid or printArchiMermaid", () => {
+    const base = unwrapPrint(JOINT_R2_TEINTES);
+
+    for (const protoKey of ["constructor", "toString", "__proto__", "valueOf", "hasOwnProperty"]) {
+      // Gap key in view block -> mermaid-strict-invalid
+      expectParseCode(
+        base.replace(
+          "%% @dl view roles-teintes archi-composition",
+          `%% @dl view roles-teintes archi-composition\n%% @dl gap ${protoKey} 10`,
+        ),
+        "mermaid-strict-invalid",
+      );
+
+      // Attribute name in entity block -> mermaid-strict-annotation-unknown (or invalid for __proto__)
+      expectParseCode(
+        base.replace("%% @dl entity system", `%% @dl entity system\n%% @dl ${protoKey} "x"`),
+        "mermaid-strict-annotation-unknown",
+      );
+
+      // printArchiMermaid existence checks on entity IDs
+      const badOwning = structuredClone(JOINT_R2_TEINTES) as any;
+      badOwning.manifest.owningRepo = protoKey;
+      expectPrintCode(badOwning);
+
+      const badEndpoint = structuredClone(JOINT_R2_TEINTES) as any;
+      badEndpoint.document.relations["relation:da-track"].endpoints[0].target = protoKey;
+      expectPrintCode(badEndpoint);
+
+      const badDraw = structuredClone(JOINT_R2_TEINTES) as any;
+      badDraw.views[0].draw = [protoKey];
+      badDraw.views[0].collapsed = [];
+      expectPrintCode(badDraw);
+
+      const badLegendRef = structuredClone(JOINT_R2_TEINTES) as any;
+      badLegendRef.views[0].legend.legendRef = protoKey;
+      expectPrintCode(badLegendRef);
+
+      const badLegendOrder = structuredClone(JOINT_R2_TEINTES) as any;
+      badLegendOrder.views[0].legend.order = [protoKey];
+      expectPrintCode(badLegendOrder);
+
+      const badOrdParent = structuredClone(JOINT_R2_TEINTES) as any;
+      badOrdParent.views[0].layout = {
+        ordering: { [protoKey]: ["entity:pkg-h2a"] },
+      };
+      expectPrintCode(badOrdParent);
+
+      const badOrdChild = structuredClone(JOINT_R2_TEINTES) as any;
+      badOrdChild.views[0].layout = {
+        ordering: { "entity:sys-h2a": [protoKey] },
+      };
+      expectPrintCode(badOrdChild);
+
+      const badGroupItem = structuredClone(JOINT_R2_TEINTES) as any;
+      badGroupItem.views[0].layout = {
+        grouping: [{ id: "g1", direction: "rows", items: [protoKey] }],
+      };
+      expectPrintCode(badGroupItem);
+    }
+  });
+
+  it("m1 & m2: printArchiMermaid refuses unknown keys on all 15 closed record shapes, array buckets, and unsafe integers", () => {
+    const mutations: ((t: any) => void)[] = [
+      (t) => { t.extra = 1; },
+      (t) => { t.manifest.extra = 1; },
+      (t) => { t.manifest.viewSchemaPin.extra = 1; },
+      (t) => { t.document.extra = 1; },
+      (t) => { t.document.schemaVersion.patch = 0; },
+      (t) => { t.document.typeDefinitions = []; },
+      (t) => { t.document.ports = []; },
+      (t) => { t.document.resources = []; },
+      (t) => { t.document.entities = []; },
+      (t) => { t.document.relations = []; },
+      (t) => { t.document.entities["entity:rt-track"].extra = 1; },
+      (t) => { t.document.entities["entity:rt-track"].attributes.name.extra = 1; },
+      (t) => { t.document.entities["entity:rt-track"].attributes.form.extra = 1; },
+      (t) => { t.document.entities["entity:rt-track"].attributes.role.extra = 1; },
+      (t) => { t.document.entities["entity:rt-track"].attributes.evidence.extra = 1; },
+      (t) => { t.document.entities["entity:rt-track"].attributes.evidence.items[0].extra = 1; },
+      (t) => { t.document.relations["relation:da-track"].extra = 1; },
+      (t) => { t.document.relations["relation:da-track"].endpoints[0].extra = 1; },
+      (t) => { t.views[0].extra = 1; },
+      (t) => { t.views[0].legend.extra = 1; },
+      (t) => { t.views[0].legend.tokens[0].extra = 1; },
+      (t) => { t.views[0].layout = { stretch: true, extra: 1 }; },
+      (t) => {
+        t.views[0].layout = {
+          grouping: [{ id: "g1", direction: "rows", items: ["entity:sys-h2a"], extra: 1 }],
+        };
+      },
+      // m2: unsafe integers in print
+      (t) => { t.document.revision = 1e21; },
+      (t) => { t.document.schemaVersion.major = Number.MAX_SAFE_INTEGER + 1; },
+      (t) => { t.manifest.viewSchemaPin.version = "9007199254740993"; },
+      (t) => { t.views[0].layout = { cardGapX: 1e21 }; },
+      (t) => {
+        t.views[0].layout = {
+          grouping: [{ id: "g1", direction: "rows", gapAfter: Number.MAX_SAFE_INTEGER + 1, items: ["entity:sys-h2a"] }],
+        };
+      },
+    ];
+
+    for (const mutate of mutations) {
+      const clone = structuredClone(JOINT_R2_TEINTES) as any;
+      mutate(clone);
+      expectPrintCode(clone, "mermaid-strict-unrepresentable");
+    }
+  });
+
+  it("m7: orders legend.tokens by decoded model category UTF-16 code units even when ASTRING escaping reverses lexeme order", () => {
+    // Model categories: 'a"b' (char code 34 at index 1) < 'a#b' (char code 35 at index 1).
+    // ASTRING lexemes: '"a\\"b"' (char code 92 '\\' at index 2) > '"a#b"' (char code 35 '#' at index 2).
+    const j = structuredClone(JOINT_R2_TEINTES) as any;
+    j.views[0].legend.tokens = [
+      { category: 'a"b', token: "st-semantic-data-category1" },
+      { category: "a#b", token: "st-semantic-data-category2" },
+    ];
+    const printed = unwrapPrint(j);
+    expect(printed).toContain(
+      '%% @dl token "a\\"b" st-semantic-data-category1\n%% @dl token "a#b" st-semantic-data-category2',
+    );
+    const back = unwrapParse(printed, { checkCanonical: true });
+    expect(canonicalBytes(back)).toBe(canonicalBytes(j));
+  });
+
+  it("m6: drift guard — codec tables, relation placement, and diagnostic codes match ARCHI1_DECLARATION, GENERIC_V2, ARCHI1_TUPLES, archiRelationEncoding, and ArchiDiagnosticCode", () => {
+    // 1. Type-level equality on the 10 mermaid-strict-* diagnostic codes
+    expectTypeOf<ArchiMermaidDiagnosticCode>().toEqualTypeOf<
+      Extract<ArchiDiagnosticCode, `mermaid-strict-${string}`>
+    >();
+
+    // 2. Verify all 11 archi@1 entity types + 2 generic@2 legend entity types (container flags, forms, and attributes)
+    for (const et of ARCHI1_DECLARATION.entityTypes) {
+      const formAttr = et.attributes.find((a) => a.name === "form") as { readonly values?: readonly string[] } | undefined;
+      const sampleForm = formAttr?.values?.[0];
+      const probe = structuredClone(JOINT_R2) as any;
+      const extraAttrs: Record<string, any> = {
+        name: { kind: "text", value: `Probe ${et.id}` },
+        lifecycle: { kind: "enum", value: "current" },
+        ...(sampleForm ? { form: { kind: "enum", value: sampleForm } } : {}),
+      };
+      for (const attr of et.attributes) {
+        const attrName = String(attr.name);
+        if (attrName === "name" || attrName === "form" || attrName === "lifecycle") continue;
+        if (attr.kind === "text") extraAttrs[attrName] = { kind: "text", value: "v" };
+        else if (attr.kind === "enum") extraAttrs[attrName] = { kind: "enum", value: "v" };
+        else if (attr.kind === "collection") extraAttrs[attrName] = { kind: "collection", items: [{ kind: "text", value: "v" }] };
+      }
+      probe.document.entities["entity:probe-ent"] = {
+        id: "entity:probe-ent",
+        profile: "archi@1",
+        type: et.id,
+        attributes: extraAttrs,
+      };
+      const text = unwrapPrint(probe);
+      if (et.container) {
+        expect(text).toContain(`subgraph e_probe_ent["Probe ${et.id}"]`);
+      } else {
+        expect(text).toContain(`\ne_probe_ent["Probe ${et.id}"]`);
+      }
+      expect(canonicalBytes(unwrapParse(text, { checkCanonical: true }))).toBe(canonicalBytes(probe));
+    }
+
+    // 3. Verify all 55 ARCHI1_TUPLES against archiRelationEncoding
+    for (const tuple of ARCHI1_TUPLES) {
+      const srcDef = ARCHI1_DECLARATION.entityTypes.find((e) => e.id === tuple.sourceType)!;
+      const tgtDef = ARCHI1_DECLARATION.entityTypes.find((e) => e.id === tuple.targetType)!;
+      const srcForm = (srcDef.attributes.find((a) => a.name === "form") as { readonly values?: readonly string[] } | undefined)?.values?.[0];
+      const tgtForm = (tgtDef.attributes.find((a) => a.name === "form") as { readonly values?: readonly string[] } | undefined)?.values?.[0];
+
+      const writerPolicies = tuple.targetType === "store" ? (["single-writer", "multi-writer"] as const) : ([undefined] as const);
+      const modes = tuple.relationType === "accesses" ? (["read", "append", "write"] as const) : ([undefined] as const);
+
+      for (const wp of writerPolicies) {
+        for (const mode of modes) {
+          const probe = structuredClone(JOINT_R2) as any;
+          probe.document.entities["entity:p-src"] = {
+            id: "entity:p-src",
+            profile: "archi@1",
+            type: tuple.sourceType,
+            attributes: {
+              name: { kind: "text", value: "Src" },
+              lifecycle: { kind: "enum", value: "current" },
+              ...(srcForm ? { form: { kind: "enum", value: srcForm } } : {}),
+            },
+          };
+          probe.document.entities["entity:p-tgt"] = {
+            id: "entity:p-tgt",
+            profile: "archi@1",
+            type: tuple.targetType,
+            attributes: {
+              name: { kind: "text", value: "Tgt" },
+              lifecycle: { kind: "enum", value: "current" },
+              ...(tgtForm ? { form: { kind: "enum", value: tgtForm } } : {}),
+              ...(wp ? { writerPolicy: { kind: "enum", value: wp } } : {}),
+            },
+          };
+          const relRecord = {
+            id: "relation:p-rel",
+            profile: "archi@1" as const,
+            type: tuple.relationType,
+            endpoints: [
+              { role: "source", target: "entity:p-src" },
+              { role: "target", target: "entity:p-tgt" },
+            ],
+            attributes: {
+              lifecycle: { kind: "enum" as const, value: "current" },
+              ...(mode ? { mode: { kind: "enum" as const, value: mode } } : {}),
+            },
+          };
+          probe.document.relations["relation:p-rel"] = relRecord;
+
+          const model = buildArchiSemanticModel(probe.document);
+          const guardianEnc = archiRelationEncoding(model, relRecord);
+          const printed = unwrapPrint(probe);
+          if (tuple.relationType === "partOf") {
+            expect(printed).toContain("%% @dl nest p-rel");
+          } else if (guardianEnc === "arrow") {
+            expect(printed).toContain(`%% @dl edge p-rel ${tuple.relationType}`);
+          } else {
+            expect(printed).toContain(`%% @dl rel p-rel ${tuple.relationType} e_p_src e_p_tgt`);
+          }
+          expect(canonicalBytes(unwrapParse(printed, { checkCanonical: true }))).toBe(canonicalBytes(probe));
+        }
+      }
+    }
+  });
+
+  it("B1: property test — 5,000 text mutations and 5,000 JSON mutations never throw and always return a valid result union", () => {
+    const baseText = unwrapPrint(JOINT_R2_TEINTES);
+    const baseLines = baseText.split("\n");
+    const codeSet = new Set<string>(ARCHI_MERMAID_DIAGNOSTIC_CODES);
+
+    // Deterministic xorshift32 PRNG
+    let seed = 0x9e3779b9;
+    const nextRand = (): number => {
+      seed ^= seed << 13;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      return seed >>> 0;
+    };
+    const pick = <T>(arr: readonly T[]): T => arr[nextRand() % arr.length]!;
+
+    const trickyTokens = [
+      "constructor",
+      "toString",
+      "__proto__",
+      "valueOf",
+      "hasOwnProperty",
+      "flowchart TB",
+      "---",
+      "%%{init: {}}%%",
+      "%% comment",
+      "accTitle: x",
+      "classDef x fill:#000",
+      "class e_rt_track x",
+      'e_rt_track[["sub"]]',
+      'e_rt_track["`md`"]',
+      "%% @dl gap constructor 1",
+      "%% @dl gap card-x 9007199254740993",
+      "%% @dl gap card-x 024",
+      "%% @dl lifecycle propsed",
+      "%% @dl entity store jsonll",
+      "end",
+      "subgraph e_rt_track[\"x\"]",
+      "\u00A0",
+      "\uD800",
+      "\uFEFF",
+      "\t",
+      "\r",
+    ];
+
+    // 1. 5,000 text mutations
+    for (let i = 0; i < 5000; i++) {
+      const op = nextRand() % 5;
+      let mutated: unknown;
+      if (i < 10) {
+        mutated = [null, undefined, 42, {}, [], true, "", "\uFEFF", "\uD800", "\uDC00"][i];
+      } else if (op === 0) {
+        const lines = [...baseLines];
+        const idx = nextRand() % lines.length;
+        lines[idx] = pick(trickyTokens);
+        mutated = lines.join("\n");
+      } else if (op === 1) {
+        const lines = [...baseLines];
+        const idx = nextRand() % lines.length;
+        lines.splice(idx, 1);
+        mutated = lines.join("\n");
+      } else if (op === 2) {
+        const lines = [...baseLines];
+        const a = nextRand() % lines.length;
+        const b = nextRand() % lines.length;
+        const tmp = lines[a]!;
+        lines[a] = lines[b]!;
+        lines[b] = tmp;
+        mutated = lines.join("\n");
+      } else if (op === 3) {
+        const lines = [...baseLines];
+        const idx = nextRand() % lines.length;
+        lines.splice(idx, 0, pick(trickyTokens));
+        mutated = lines.join("\n");
+      } else {
+        const pos = nextRand() % baseText.length;
+        mutated = `${baseText.slice(0, pos)}${pick(trickyTokens)}${baseText.slice(pos + 1)}`;
+      }
+
+      const pRes = parseArchiMermaid(mutated, { checkCanonical: (i & 1) === 1 });
+      if (pRes.ok) {
+        const fRes = formatArchiMermaid(mutated);
+        expect(fRes.ok).toBe(true);
+        const prRes = printArchiMermaid(pRes.value);
+        expect(prRes.ok).toBe(true);
+      } else {
+        const d = pRes.diagnostics[0];
+        expect(codeSet.has(d.code)).toBe(true);
+        expect(validPointer(d.path)).toBe(true);
+        expect(d.message).toMatch(/column \d+/);
+      }
+    }
+
+    // 2. 5,000 JSON/triple mutations
+    const badValues: readonly unknown[] = [
+      null,
+      undefined,
+      0,
+      -1,
+      1.5,
+      1e21,
+      Number.MAX_SAFE_INTEGER + 1,
+      NaN,
+      Infinity,
+      "",
+      "constructor",
+      "toString",
+      "__proto__",
+      "bad\nstr",
+      "lone\uD800",
+      [],
+      {},
+      { extra: 1 },
+    ];
+
+    for (let i = 0; i < 5000; i++) {
+      if (i < badValues.length) {
+        const r = printArchiMermaid(badValues[i]);
+        expect(r.ok).toBe(false);
+        if (!r.ok) {
+          expect(r.diagnostics[0].code).toBe("mermaid-strict-unrepresentable");
+          expect(validPointer(r.diagnostics[0].path)).toBe(true);
+        }
+        continue;
+      }
+      const clone = structuredClone(JOINT_R2_TEINTES) as any;
+      const target = nextRand() % 10;
+      const val = pick(badValues);
+      if (target === 0) clone.manifest.owningRepo = val;
+      else if (target === 1) clone.manifest.language = val;
+      else if (target === 2) clone.manifest.viewSchemaPin = val;
+      else if (target === 3) clone.document.revision = val;
+      else if (target === 4) clone.document.schemaVersion = val;
+      else if (target === 5) clone.document.ports = val;
+      else if (target === 6) clone.document.entities["entity:rt-track"].attributes.lifecycle = val;
+      else if (target === 7) clone.document.relations["relation:da-track"].endpoints[0].target = val;
+      else if (target === 8) clone.views[0].draw = [val];
+      else clone.views[0].layout = val;
+
+      const r = printArchiMermaid(clone);
+      if (!r.ok) {
+        const d = r.diagnostics[0];
+        expect(d.code).toBe("mermaid-strict-unrepresentable");
+        expect(validPointer(d.path)).toBe(true);
+      }
+    }
   });
 });
