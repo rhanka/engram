@@ -82,7 +82,28 @@ export interface ArchiViewSpecLegend {
   readonly tokens: readonly ArchiViewSpecLegendToken[];
 }
 
-/** proposed: authored ArchiViewSpec shape (§5.2). */
+/** proposed: layout group in ArchiViewSpec.layout.grouping (P-2 r3 §3.4, §10 A3). */
+export interface ArchiLayoutGroup {
+  readonly id: string;
+  readonly direction: "rows" | "columns";
+  readonly stretch?: boolean;
+  readonly gapAfter?: number;
+  readonly items: readonly (string | ArchiLayoutGroup)[];
+}
+
+/** proposed: layout hints in ArchiViewSpec (P-2 r3 §3.4, §10 A3). */
+export interface ArchiLayoutHints {
+  readonly stretch?: boolean;
+  readonly cardGapX?: number;
+  readonly cardGapY?: number;
+  readonly zoneGapX?: number;
+  readonly zoneGapY?: number;
+  readonly rankGap?: number;
+  readonly ordering?: Readonly<Record<string, readonly string[]>>;
+  readonly grouping?: readonly ArchiLayoutGroup[];
+}
+
+/** proposed: authored ArchiViewSpec shape (§5.2, P-2 r3 §10 A3). */
 export interface ArchiViewSpec {
   readonly format: "engram.archi-view/1";
   readonly viewId: string;
@@ -90,6 +111,7 @@ export interface ArchiViewSpec {
   readonly draw: readonly string[];
   readonly collapsed: readonly string[];
   readonly legend?: ArchiViewSpecLegend;
+  readonly layout?: ArchiLayoutHints;
 }
 
 /** proposed: injected DS port for fold projection and summary analysis (§3.8, §6). */

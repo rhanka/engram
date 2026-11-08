@@ -5,6 +5,12 @@
     "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["src/ontology-guardian/archi-*.ts", "tests/ontology-guardian-archi-*.test.ts"],
+  "include": [
+    "src/archi.ts",
+    "src/archi-mermaid/*.ts",
+    "src/ontology-guardian/archi-*.ts",
+    "tests/archi-mermaid-codec.test.ts",
+    "tests/ontology-guardian-archi-*.test.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }
