@@ -7,6 +7,34 @@ import type { NativeSemanticDocument } from "./diagram-native-types.js";
 type NativeEntity = NativeSemanticDocument["entities"][string];
 type NativeRelation = NativeSemanticDocument["relations"][string];
 
+/** proposed: closed 25-code archi diagnostic inventory (§5.5). */
+export type ArchiDiagnosticCode =
+  | "archi-manifest-missing"
+  | "archi-manifest-invalid"
+  | "archi-input-invalid"
+  | "archi-source-unresolved"
+  | "incompatible_version"
+  | "digest-mismatch"
+  | "archi-pin-mismatch"
+  | "archi-executor-unavailable"
+  | "archi-source-conflict"
+  | "archi-footer-missing"
+  | "archi-single-writer"
+  | "archi-execution-unbound"
+  | "archi-edge-verb"
+  | "archi-slot-missing"
+  | "archi-detail-missing"
+  | "archi-category-unbound"
+  | "card-overflow"
+  | "zone-overflow"
+  | "archi-occurrence-duplicate"
+  | "archi-zone-mismatch"
+  | "archi-edge-policy"
+  | "archi-stroke-status"
+  | "archi-summary-missing"
+  | "archi-slot-drift"
+  | "archi-revision-conflict";
+
 type ArchiCheckCode =
   | "archi-input-invalid"
   | "archi-source-conflict"

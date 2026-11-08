@@ -9,3 +9,7 @@ export * from "./digests.js";
 export * from "./admission.js";
 export * from "./archi-profile.js";
 export * from "./archi-check.js";
+export * from "./archi-metrics.js";
+export * from "./archi-cards-data.js";
+export * from "./archi-cards.js";
+export * from "./archi-view.js";

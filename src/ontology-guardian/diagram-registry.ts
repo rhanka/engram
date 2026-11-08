@@ -456,3 +456,11 @@ export {
   PAYLOAD_ARCHI_V1,
   RECORD_ARCHI_V1,
 } from "./archi-profile.js";
+
+/** proposed: draft G0 registry exports for archi-cards@1 (spec/SPEC_EVOL_ARCHI_CARDS.md §3.1). */
+export {
+  ARCHI_CARDS_PIN,
+  ENVELOPE_ARCHI_CARDS_V1,
+  PAYLOAD_ARCHI_CARDS_V1,
+  RECORD_ARCHI_CARDS_V1,
+} from "./archi-cards-data.js";
