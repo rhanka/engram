@@ -47,6 +47,10 @@
     "./profile-bundle": {
       "types": "./dist/profile-bundle.d.ts",
       "import": "./dist/profile-bundle.js"
+    },
+    "./archi": {
+      "types": "./dist/archi.d.ts",
+      "import": "./dist/archi.js"
     }
   },
   "bin": {

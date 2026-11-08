@@ -22,5 +22,10 @@
     "id": "diagram-view-schema",
     "version": "2",
     "contentDigest": "50c97fc87a9546facff86f2deab8fdb99073419f43eef09958b96225367037ef"
+  },
+  "cardsPin": {
+    "id": "archi-cards",
+    "version": "1",
+    "contentDigest": "7de031e42469eb426cd520fab2f390e33ec62fca374d224b463bbe9d70cb1246"
   }
 }

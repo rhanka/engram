@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { canonicalBytes, sha256Hex } from "../src/ontology-guardian/canonical.js";
+import { canonicalBytes, digestOfPreimage, sha256Hex } from "../src/ontology-guardian/canonical.js";
 import { contentDiagramDigest, pinsDigestOf } from "../src/ontology-guardian/digests.js";
 import { GOVERNED_PROFILES } from "../src/ontology-guardian/diagram-profiles.js";
 import {
@@ -20,10 +20,23 @@ import {
   RECORD_ARCHI_V1,
 } from "../src/ontology-guardian/archi-profile.js";
 import {
+  ARCHI_CARDS_CONTENT,
+  ARCHI_CARDS_CONTENT_DIGEST,
+  ARCHI_CARDS_PIN,
+  ARCHI_CARDS_SCHEMA_V1,
+  ENVELOPE_ARCHI_CARDS_V1,
+  PAYLOAD_ARCHI_CARDS_V1,
+  RECORD_ARCHI_CARDS_V1,
+} from "../src/ontology-guardian/archi-cards-data.js";
+import {
+  ARCHI_CARDS_PIN as REGISTRY_CARDS_PIN,
   ARCHI_V1_PIN as REGISTRY_ARCHI_PIN,
+  ENVELOPE_ARCHI_CARDS_V1 as REGISTRY_CARDS_ENVELOPE,
   ENVELOPE_ARCHI_V1 as REGISTRY_ARCHI_ENVELOPE,
   GENERIC_V2_PIN,
+  PAYLOAD_ARCHI_CARDS_V1 as REGISTRY_CARDS_PAYLOAD,
   PAYLOAD_ARCHI_V1 as REGISTRY_ARCHI_PAYLOAD,
+  RECORD_ARCHI_CARDS_V1 as REGISTRY_CARDS_RECORD,
   RECORD_ARCHI_V1 as REGISTRY_ARCHI_RECORD,
 } from "../src/ontology-guardian/diagram-registry.js";
 import { DIAGRAM_VIEW_SCHEMA_V2 } from "../src/ontology-guardian/diagram-schemas.js";
@@ -201,6 +214,78 @@ describe("archi@1 profile declaration (§2.1–§2.5, tier E)", () => {
     expect(record.lineage).toEqual({ parents: [], mappings: [], migrations: [] });
   });
 
+  it("registers archi-cards@1 as a draft G0 mechanism-descriptor contract record (§3.1)", () => {
+    expect(isDeepFrozen(ARCHI_CARDS_CONTENT)).toBe(true);
+    expect(isDeepFrozen(ARCHI_CARDS_PIN)).toBe(true);
+    expect(isDeepFrozen(RECORD_ARCHI_CARDS_V1)).toBe(true);
+    expect(isDeepFrozen(PAYLOAD_ARCHI_CARDS_V1)).toBe(true);
+    expect(isDeepFrozen(ENVELOPE_ARCHI_CARDS_V1)).toBe(true);
+
+    expect(REGISTRY_CARDS_PIN).toBe(ARCHI_CARDS_PIN);
+    expect(REGISTRY_CARDS_RECORD).toBe(RECORD_ARCHI_CARDS_V1);
+    expect(REGISTRY_CARDS_PAYLOAD).toBe(PAYLOAD_ARCHI_CARDS_V1);
+    expect(REGISTRY_CARDS_ENVELOPE).toBe(ENVELOPE_ARCHI_CARDS_V1);
+
+    const expectedDigest = digestOfPreimage(ARCHI_CARDS_CONTENT);
+    expect(ARCHI_CARDS_CONTENT_DIGEST).toBe(expectedDigest);
+    expect(ARCHI_CARDS_PIN).toEqual({
+      id: "archi-cards",
+      version: "1",
+      contentDigest: expectedDigest,
+    });
+
+    const record = RECORD_ARCHI_CARDS_V1;
+    const pin = ARCHI_CARDS_PIN;
+    const payload = PAYLOAD_ARCHI_CARDS_V1;
+    const envelope = ENVELOPE_ARCHI_CARDS_V1;
+    const canonicalRef = "engram:archi-cards@1";
+
+    expect(record.namespace).toBe("diagram");
+    expect(record.id).toBe("archi-cards");
+    expect(record.version).toBe("1");
+    expect(record.owner).toBe("engram");
+    expect(record.lifecycle).toBe("draft");
+    expect(record.completeness).toBe("complete");
+    expect(record.profileShape).toBe("mechanism-descriptor");
+    expect(record.artifactKind).toBe("contract");
+    expect(record.profileRef.canonicalRef).toBe(canonicalRef);
+    expect(record.profileRef.contentDigest).toBe(pin.contentDigest);
+    expect(record.digests!.contentDigest).toBe(pin.contentDigest);
+    expect(record.digests!.pinsDigest).toBe(pinsDigestOf({ layers: [pin] }));
+    expect(record.digests!.resultEvidence).toEqual({ evidenceState: "unresolved" });
+    expect(payload.canonicalRef).toBe(canonicalRef);
+    expect(payload.profilePin).toEqual(pin);
+    expect(payload.stack).toEqual([pin]);
+    expect(payload.digests.contentDigest).toBe(pin.contentDigest);
+    expect(payload.digests.pinsDigest).toBe(pinsDigestOf({ layers: [pin] }));
+    expect(payload.digests.resultEvidence).toEqual({ evidenceState: "unresolved" });
+    expect(payload.namespace).toBe(record.namespace);
+    expect(payload.owner).toBe(record.owner);
+    expect(payload.corpusRef).toEqual(record.corpusRef);
+    expect(payload.migrations).toEqual([]);
+    expect(payload.compatibility.renderer.startsWith("transitional:")).toBe(true);
+    expect(payload.compatibility.adapter.startsWith("transitional:")).toBe(true);
+    expect(payload.artifactBinding).toEqual({
+      artifactKind: "contract",
+      schemaPin: ARCHI_CARDS_SCHEMA_V1.pin,
+      compatibilityMatrixVersion: "1",
+    });
+    expect(envelope.kind).toBe("ontology");
+    if (envelope.kind !== "ontology") throw new Error("envelope kind");
+    expect(envelope.ontology).toBe(payload);
+    expect(envelope.ontology.profilePin).toEqual(pin);
+    expect(envelope.assets).toEqual([
+      {
+        role: "contract-data",
+        path: "contracts/archi-cards-1.json",
+        mediaType: "application/json",
+        sha256: ARCHI_CARDS_CONTENT_DIGEST,
+      },
+    ]);
+    expect(payload.lineage).toEqual({ parents: [], mappings: [], migrations: [] });
+    expect(record.lineage).toEqual({ parents: [], mappings: [], migrations: [] });
+  });
+
   it("pins every file in tests/fixtures/archi/ by raw-byte SHA-256 in ARCHI_CORPUS_FIXTURES", () => {
     const diskFiles = listArchiFixtureFiles("tests/fixtures/archi");
     expect(ARCHI_CORPUS_FIXTURES.map((f) => f.path)).toEqual(diskFiles);
@@ -215,6 +300,8 @@ describe("archi@1 profile declaration (§2.1–§2.5, tier E)", () => {
     expect(ARCHI_CORPUS_DIGEST).toBe(expectedDigest);
     expect(RECORD_ARCHI_V1.corpusRef).toEqual({ ref: ARCHI_CORPUS_REF, digest: expectedDigest });
     expect(PAYLOAD_ARCHI_V1.corpusRef).toEqual({ ref: ARCHI_CORPUS_REF, digest: expectedDigest });
+    expect(RECORD_ARCHI_CARDS_V1.corpusRef).toEqual({ ref: ARCHI_CORPUS_REF, digest: expectedDigest });
+    expect(PAYLOAD_ARCHI_CARDS_V1.corpusRef).toEqual({ ref: ARCHI_CORPUS_REF, digest: expectedDigest });
   });
 });
 
@@ -252,7 +339,6 @@ describe("archi@1 fixture manifests (§5.2, §6.1, tier E)", () => {
       const doc = JSON.parse(readFileSync(join(absDir, manifest["document"] as string), "utf8")) as Record<string, any>;
 
       expect(manifest["format"]).toBe("engram.archi-manifest/1");
-      expect("cardsPin" in manifest).toBe(false);
       expect(manifest["profilePins"]).toEqual(expectedProfilePins);
       expect(
         (manifest["profilePins"] as { id: string; version: string }[]).map(
@@ -280,7 +366,18 @@ describe("archi@1 fixture manifests (§5.2, §6.1, tier E)", () => {
     }
   });
 
-  it.todo("cardsPin equals the archi-cards@1 pin (lot 3)");
+  it("cardsPin equals the archi-cards@1 pin (lot 3, §3.1, §5.2)", () => {
+    const expectedPin = {
+      id: "archi-cards",
+      version: "1",
+      contentDigest: digestOfPreimage(ARCHI_CARDS_CONTENT),
+    };
+    expect(ARCHI_CARDS_PIN).toEqual(expectedPin);
+    for (const { dir } of cases) {
+      const manifest = JSON.parse(readFileSync(join(repoRoot, dir, "manifest.json"), "utf8")) as Record<string, any>;
+      expect(manifest["cardsPin"], dir).toEqual(ARCHI_CARDS_PIN);
+    }
+  });
 });
 
 describe.skipIf(!dsCloneAvailable())(`archi@1 DS executor qualification (tier DS)${dsSkipReason()}`, () => {
