@@ -118,11 +118,17 @@ export interface ArchiIngestInput {
   readonly commit: string;
 }
 
-/** proposed: injected ports for ingestArchitecture (§5.3). */
+/**
+ * proposed: injected ports for ingestArchitecture (§5.3).
+ * Production callers must pass only {readAt, ds, write}.
+ */
 export interface ArchiIngestPorts {
   readonly readAt: ArchiReadAtPort;
   readonly ds: ArchiIngestDsPort;
   readonly write: ArchiWriterPort;
+}
+
+interface InternalArchiIngestSeamPorts extends ArchiIngestPorts {
   readonly cardsContent?: ArchiCardsContent;
   readonly transformProjectedView?: (view: NativeViewDocument, spec: ArchiViewSpec) => NativeViewDocument;
 }
@@ -204,30 +210,6 @@ function addDiagToScope(
   const list = map.get(scope) ?? [];
   list.push(...diags);
   map.set(scope, list);
-}
-
-function resolveManifestChildPath(
-  readAt: ArchiReadAtPort,
-  commit: string,
-  relPath: string,
-): { readonly resolvedPath: string; readonly bytes: Uint8Array | string } | null {
-  if (relPath.startsWith(".engram/architecture/")) {
-    const direct = readAt(commit, relPath);
-    if (direct !== null && direct !== undefined) {
-      return { resolvedPath: relPath, bytes: direct };
-    }
-    return null;
-  }
-  const underArchi = `.engram/architecture/${relPath}`;
-  const first = readAt(commit, underArchi);
-  if (first !== null && first !== undefined) {
-    return { resolvedPath: underArchi, bytes: first };
-  }
-  const fallback = readAt(commit, relPath);
-  if (fallback !== null && fallback !== undefined) {
-    return { resolvedPath: relPath, bytes: fallback };
-  }
-  return null;
 }
 
 function sha256BytesHex(bytes: Uint8Array): string {
@@ -359,10 +341,13 @@ export function ingestArchitecture(
 
   const manifest = parsedManifest.value as ArchiManifest;
 
-  // Read document and view specs from commit
+  // Read document and view specs at the exact repo-relative paths named by the manifest (§5.1, §5.2)
   let docResolved: { readonly resolvedPath: string; readonly bytes: Uint8Array | string } | null = null;
   try {
-    docResolved = resolveManifestChildPath(ports.readAt, input.commit, manifest.document);
+    const rawDoc = ports.readAt(input.commit, manifest.document);
+    if (rawDoc !== null && rawDoc !== undefined) {
+      docResolved = { resolvedPath: manifest.document, bytes: rawDoc };
+    }
   } catch {
     docResolved = null;
   }
@@ -384,7 +369,10 @@ export function ingestArchitecture(
     const vp = manifest.views[i]!;
     let resolved: { readonly resolvedPath: string; readonly bytes: Uint8Array | string } | null = null;
     try {
-      resolved = resolveManifestChildPath(ports.readAt, input.commit, vp);
+      const rawView = ports.readAt(input.commit, vp);
+      if (rawView !== null && rawView !== undefined) {
+        resolved = { resolvedPath: vp, bytes: rawView };
+      }
     } catch {
       resolved = null;
     }
@@ -592,7 +580,8 @@ export function ingestArchitecture(
   }
 
   // --- Stage 4: document ---
-  const cardsContent = ports.cardsContent ?? ARCHI_CARDS_CONTENT;
+  const seamPorts = ports as InternalArchiIngestSeamPorts;
+  const cardsContent = seamPorts.cardsContent ?? ARCHI_CARDS_CONTENT;
   const docCheckDiags = checkArchi(doc, cardsContent, manifest.language);
   if (docCheckDiags.length > 0) {
     return makeRefusal("document", new Map([["document", docCheckDiags]]));
@@ -624,8 +613,8 @@ export function ingestArchitecture(
         diagram: proj.diagram as unknown as NativeDiagramPresentation,
       },
     };
-    if (ports.transformProjectedView) {
-      sourceView = ports.transformProjectedView(sourceView, spec);
+    if (seamPorts.transformProjectedView) {
+      sourceView = seamPorts.transformProjectedView(sourceView, spec);
     }
 
     const viewShapeErr = checkGovernedViewShape("2", sourceView);
@@ -790,6 +779,25 @@ export function ingestArchitecture(
   }
 
   // Stage 8: write acceptance record
+  if (seamPorts.cardsContent !== undefined || seamPorts.transformProjectedView !== undefined) {
+    const firstViewId = viewSpecs[0]?.viewId ?? "view:unknown";
+    return makeRefusal(
+      "views",
+      new Map([
+        [
+          firstViewId,
+          [
+            makeArchiDiagnostic(
+              "archi-slot-drift",
+              "/transformProjectedView",
+              firstViewId,
+              "Test-injection seams cannot produce an accepted record (§5.3, §5.6.1).",
+            ),
+          ],
+        ],
+      ]),
+    );
+  }
   const sortedFileEntries: ArchiAcceptanceFileEntry[] = Object.keys(nonAcceptanceValues)
     .sort()
     .map((p) => ({

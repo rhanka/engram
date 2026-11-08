@@ -19,6 +19,7 @@ import {
   type ArchiDiagnosticCode,
   type ArchiManifest,
 } from "../src/ontology-guardian/archi-check.js";
+import type { ArchiCardsContent } from "../src/ontology-guardian/archi-cards-data.js";
 import {
   archiOccurrenceRef,
   type ArchiViewSpec,
@@ -39,25 +40,36 @@ import {
   ingestArchitecture,
   verifyArchiBinding,
   type ArchiIngestDsPort,
+  type ArchiIngestPorts,
 } from "../src/ontology-guardian/archi-ingest.js";
 import { dsCloneAvailable, dsSkipReason, loadDsDiagramCore } from "./helpers/ds-executor.js";
+
+interface ArchiIngestTestPorts extends ArchiIngestPorts {
+  readonly cardsContent?: ArchiCardsContent;
+  readonly transformProjectedView?: (view: NativeViewDocument, spec: ArchiViewSpec) => NativeViewDocument;
+}
 
 const testsDir = dirname(fileURLToPath(import.meta.url));
 const readText = (rel: string): string => readFileSync(join(testsDir, "fixtures", "archi", rel), "utf8");
 const readJson = <T>(rel: string): T => JSON.parse(readText(rel)) as T;
+const toRepoRelativeManifest = (m: ArchiManifest): ArchiManifest => ({
+  ...m,
+  document: m.document.startsWith(".engram/architecture/") ? m.document : `.engram/architecture/${m.document}`,
+  views: m.views.map((v) => (v.startsWith(".engram/architecture/") ? v : `.engram/architecture/${v}`)),
+});
 
-const FIX_MANIFEST = readJson<ArchiManifest>("joint-r2/manifest.json");
+const FIX_MANIFEST = toRepoRelativeManifest(readJson<ArchiManifest>("joint-r2/manifest.json"));
 const FIX_DOC = readJson<NativeSemanticDocument>("joint-r2/document.json");
 const ROLES_SPEC = readJson<ArchiViewSpec>("joint-r2/view-specs/roles.json");
 const ROLES_REPLIE_SPEC = readJson<ArchiViewSpec>("joint-r2/view-specs/roles-replie.json");
 const DEPLOIEMENT_SPEC = readJson<ArchiViewSpec>("joint-r2/view-specs/deploiement.json");
 const H2A_REPO_SPEC = readJson<ArchiViewSpec>("joint-r2/view-specs/h2a-repo.json");
 
-const TINT_MANIFEST = readJson<ArchiManifest>("joint-r2-teintes/manifest.json");
+const TINT_MANIFEST = toRepoRelativeManifest(readJson<ArchiManifest>("joint-r2-teintes/manifest.json"));
 const TINT_DOC = readJson<NativeSemanticDocument>("joint-r2-teintes/document.json");
 const ROLES_TEINTES_SPEC = readJson<ArchiViewSpec>("joint-r2-teintes/view-specs/roles-teintes.json");
 
-const HO_MANIFEST = readJson<ArchiManifest>("hosts-r3/manifest.json");
+const HO_MANIFEST = toRepoRelativeManifest(readJson<ArchiManifest>("hosts-r3/manifest.json"));
 const HO_DOC = readJson<NativeSemanticDocument>("hosts-r3/document.json");
 const ROLES_HOSTS_SPEC = readJson<ArchiViewSpec>("hosts-r3/view-specs/roles-hosts.json");
 const DEPLOIEMENT_HOSTS_SPEC = readJson<ArchiViewSpec>("hosts-r3/view-specs/deploiement-hosts.json");
@@ -78,7 +90,7 @@ function buildFakeFiles(overrides?: {
       ? FIX_MANIFEST
       : {
           ...FIX_MANIFEST,
-          views: ["view-specs/roles.json"],
+          views: [".engram/architecture/view-specs/roles.json"],
         });
   const doc = overrides?.document ?? FIX_DOC;
   const roles = overrides?.roles ?? ROLES_SPEC;
@@ -201,7 +213,7 @@ describe("archi@1 ingestion stages 1–8 and full 25-code §5.5 coverage (tier E
 
     // 4. archi-input-invalid (Stage 1: source — owningRepo not a repo, non-container in collapsed)
     const filesBadOwning = buildFakeFiles({
-      manifest: { ...FIX_MANIFEST, owningRepo: "entity:sys-h2a", views: ["view-specs/roles.json"] },
+      manifest: { ...FIX_MANIFEST, owningRepo: "entity:sys-h2a", views: [".engram/architecture/view-specs/roles.json"] },
       roles: { ...ROLES_SPEC, collapsed: ["entity:api-h2a", ...ROLES_SPEC.collapsed].sort() },
     });
     const rInputInvalid = ingestArchitecture(
@@ -215,7 +227,7 @@ describe("archi@1 ingestion stages 1–8 and full 25-code §5.5 coverage (tier E
     const filesBadVer = buildFakeFiles({
       manifest: {
         ...FIX_MANIFEST,
-        views: ["view-specs/roles.json"],
+        views: [".engram/architecture/view-specs/roles.json"],
         cardsPin: { ...FIX_MANIFEST.cardsPin!, version: "99" },
       },
     });
@@ -230,7 +242,7 @@ describe("archi@1 ingestion stages 1–8 and full 25-code §5.5 coverage (tier E
     const filesBadDigest = buildFakeFiles({
       manifest: {
         ...FIX_MANIFEST,
-        views: ["view-specs/roles.json"],
+        views: [".engram/architecture/view-specs/roles.json"],
         viewSchemaPin: { ...FIX_MANIFEST.viewSchemaPin, contentDigest: "0".repeat(64) },
       },
     });
@@ -243,7 +255,7 @@ describe("archi@1 ingestion stages 1–8 and full 25-code §5.5 coverage (tier E
 
     // 7. archi-pin-mismatch (Stage 2: pins — generic@2 omitted while document has generic@2)
     const filesPinMismatch = buildFakeFiles({
-      manifest: { ...FIX_MANIFEST, views: ["view-specs/roles.json"] },
+      manifest: { ...FIX_MANIFEST, views: [".engram/architecture/view-specs/roles.json"] },
       document: { ...TINT_DOC, profileRefs: ["archi@1"] },
     });
     const rPinMismatch = ingestArchitecture(
@@ -336,35 +348,36 @@ describe("archi@1 ingestion stages 1–8 and full 25-code §5.5 coverage (tier E
     recordRefusal(rStage5Proj);
 
     // 19–22. Stage 5 (view checks V1–V4): archi-occurrence-duplicate, archi-zone-mismatch, archi-edge-policy, archi-stroke-status
+    const testPortsStage5: ArchiIngestTestPorts = {
+      readAt: (_c, p) => filesOk[p] ?? null,
+      ds,
+      write: createMemoryArchiWriter(),
+      transformProjectedView: (view) => {
+        const mutated = structuredClone(view) as Record<string, any>;
+        // V1: duplicate occurrence of entity:rt-h2a
+        mutated["entityOccurrences"]["occurrence:o-rt-h2a-dup"] = {
+          ...mutated["entityOccurrences"][archiOccurrenceRef("entity:rt-h2a")],
+          id: "occurrence:o-rt-h2a-dup",
+        };
+        // V2: wrong group on occurrence:o-rt-track
+        mutated["entityOccurrences"][archiOccurrenceRef("entity:rt-track")]["group"] = "grp.9.o-sys-h2a";
+        // V3: detail relation drawn as arrow (relation:pa-h2a is providesApi = detail)
+        mutated["relationOccurrences"]["occurrence:e-pa-h2a"] = {
+          id: "occurrence:e-pa-h2a",
+          relation: "relation:pa-h2a",
+          endpoints: [
+            { role: "source", occurrence: archiOccurrenceRef("entity:pkg-h2a") },
+            { role: "target", occurrence: archiOccurrenceRef("entity:api-h2a") },
+          ],
+        };
+        // V4: proposed relation drawn solid (relation:ca-h2a-memory is proposed)
+        delete mutated["relationOccurrences"]["occurrence:e-ca-h2a-memory"]["strokeStyle"];
+        return mutated as NativeViewDocument;
+      },
+    };
     const rStage5ViewChecks = ingestArchitecture(
       { repository: "repo", commit: COMMIT_A },
-      {
-        readAt: (_c, p) => filesOk[p] ?? null,
-        ds,
-        write: createMemoryArchiWriter(),
-        transformProjectedView: (view) => {
-          const mutated = structuredClone(view) as Record<string, any>;
-          // V1: duplicate occurrence of entity:rt-h2a
-          mutated["entityOccurrences"]["occurrence:o-rt-h2a-dup"] = {
-            ...mutated["entityOccurrences"][archiOccurrenceRef("entity:rt-h2a")],
-            id: "occurrence:o-rt-h2a-dup",
-          };
-          // V2: wrong group on occurrence:o-rt-track
-          mutated["entityOccurrences"][archiOccurrenceRef("entity:rt-track")]["group"] = "grp.9.o-sys-h2a";
-          // V3: detail relation drawn as arrow (relation:pa-h2a is providesApi = detail)
-          mutated["relationOccurrences"]["occurrence:e-pa-h2a"] = {
-            id: "occurrence:e-pa-h2a",
-            relation: "relation:pa-h2a",
-            endpoints: [
-              { role: "source", occurrence: archiOccurrenceRef("entity:pkg-h2a") },
-              { role: "target", occurrence: archiOccurrenceRef("entity:api-h2a") },
-            ],
-          };
-          // V4: proposed relation drawn solid (relation:ca-h2a-memory is proposed)
-          delete mutated["relationOccurrences"]["occurrence:e-ca-h2a-memory"]["strokeStyle"];
-          return mutated as NativeViewDocument;
-        },
-      },
+      testPortsStage5,
     );
     expect(rStage5ViewChecks).toMatchObject({ outcome: "refused", stage: "views" });
     recordRefusal(rStage5ViewChecks);
@@ -507,8 +520,78 @@ describe("archi@1 ingestion stages 1–8 and full 25-code §5.5 coverage (tier E
     }
   });
 
+  it("stage 1 reads only the manifest-named repo-relative path and ignores unnamed sibling files (§5.1, §5.2)", () => {
+    const ds = createFakeDsPort();
+
+    // 1. Manifest names repo-root "document.json" and "view-specs/roles.json", while only unnamed
+    //    siblings under ".engram/architecture/" exist -> refuses with archi-source-unresolved.
+    const rootNamedManifest: ArchiManifest = {
+      ...FIX_MANIFEST,
+      document: "document.json",
+      views: ["view-specs/roles.json"],
+    };
+    const unnamedPrefixedOnly: Record<string, string> = {
+      [ARCHI_MANIFEST_PATH]: canonicalBytes(rootNamedManifest),
+      ".engram/architecture/document.json": canonicalBytes(FIX_DOC),
+      ".engram/architecture/view-specs/roles.json": canonicalBytes(ROLES_SPEC),
+    };
+    const rUnresolved = ingestArchitecture(
+      { repository: "repo", commit: COMMIT_A },
+      { readAt: (_c, p) => unnamedPrefixedOnly[p] ?? null, ds, write: createMemoryArchiWriter() },
+    );
+    expect(rUnresolved).toMatchObject({ outcome: "refused", stage: "source" });
+    if (rUnresolved.outcome === "refused") {
+      expect(rUnresolved.scopes[0]!.diagnostics.map((d) => ({ code: d.code, path: d.path }))).toEqual([
+        { code: "archi-source-unresolved", path: "/document" },
+        { code: "archi-source-unresolved", path: "/views/0" },
+      ]);
+    }
+
+    // 2. Manifest names ".engram/architecture/document.json" and ".engram/architecture/view-specs/roles.json",
+    //    while corrupt unnamed siblings exist both at repo root and in ".engram/architecture/" -> ignored and accepted.
+    const filesWithUnnamedSiblings: Record<string, string> = {
+      ...buildFakeFiles(),
+      "document.json": "{ corrupt root sibling document",
+      "view-specs/roles.json": "{ corrupt root sibling view",
+      ".engram/architecture/sibling-ignored.json": "{ corrupt sibling in archi dir",
+      ".engram/architecture/view-specs/sibling-view.json": "{ corrupt sibling in view-specs dir",
+    };
+    const rAcceptedPrefixed = ingestArchitecture(
+      { repository: "repo", commit: COMMIT_A },
+      { readAt: (_c, p) => filesWithUnnamedSiblings[p] ?? null, ds, write: createMemoryArchiWriter() },
+    );
+    expect(rAcceptedPrefixed.outcome).toBe("accepted");
+
+    // 3. Manifest names "document.json" and "view-specs/roles.json" with valid bytes at repo root,
+    //    while corrupt unnamed siblings sit at ".engram/architecture/document.json" and
+    //    ".engram/architecture/view-specs/roles.json" -> unnamed siblings are ignored and ingestion accepts.
+    const filesRootNamedWithCorruptArchiSiblings: Record<string, string> = {
+      [ARCHI_MANIFEST_PATH]: canonicalBytes(rootNamedManifest),
+      "document.json": canonicalBytes(FIX_DOC),
+      "view-specs/roles.json": canonicalBytes(ROLES_SPEC),
+      ".engram/architecture/document.json": "{ corrupt unnamed sibling under .engram/architecture",
+      ".engram/architecture/view-specs/roles.json": "{ corrupt unnamed sibling view under .engram/architecture",
+    };
+    const rAcceptedRoot = ingestArchitecture(
+      { repository: "repo", commit: COMMIT_A },
+      { readAt: (_c, p) => filesRootNamedWithCorruptArchiSiblings[p] ?? null, ds, write: createMemoryArchiWriter() },
+    );
+    expect(rAcceptedRoot.outcome).toBe("accepted");
+  });
+
   it("atomic write rollback: a failing write leaves no target directory and no temporary directory on disk (§5.3 stage 8, §6.1)", () => {
     const tmpRoot = mkdtempSync(join(tmpdir(), "archi-atomic-fail-"));
+    const collectEntriesRecursive = (dir: string): string[] => {
+      if (!existsSync(dir)) return [];
+      const names: string[] = [];
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        names.push(entry.name);
+        if (entry.isDirectory()) {
+          names.push(...collectEntriesRecursive(join(dir, entry.name)));
+        }
+      }
+      return names;
+    };
     try {
       const filesOk = buildFakeFiles();
       const ds = createFakeDsPort();
@@ -531,6 +614,8 @@ describe("archi@1 ingestion stages 1–8 and full 25-code §5.5 coverage (tier E
       if (existsSync(docDir)) {
         expect(readdirSync(docDir)).toEqual([]);
       }
+      const allEntries = collectEntriesRecursive(tmpRoot);
+      expect(allEntries.filter((name) => name.startsWith(".tmp-archi-"))).toEqual([]);
     } finally {
       rmSync(tmpRoot, { recursive: true, force: true });
     }
@@ -562,7 +647,7 @@ describe.skipIf(!dsCloneAvailable())(
         mkdirSync(viewSpecsDir, { recursive: true });
 
         // Commit 1 (r0): joint-r2 fixture
-        writeFileSync(join(archiDir, "manifest.json"), readText("joint-r2/manifest.json"), "utf8");
+        writeFileSync(join(archiDir, "manifest.json"), JSON.stringify(FIX_MANIFEST, null, 2), "utf8");
         writeFileSync(join(archiDir, "document.json"), readText("joint-r2/document.json"), "utf8");
         for (const vf of ["deploiement.json", "h2a-repo.json", "roles-replie.json", "roles.json"]) {
           writeFileSync(join(viewSpecsDir, vf), readText(`joint-r2/view-specs/${vf}`), "utf8");
@@ -667,7 +752,7 @@ describe.skipIf(!dsCloneAvailable())(
         // Commit 2 (r1): joint-r2-teintes fixture (with revision raised to 1)
         rmSync(viewSpecsDir, { recursive: true, force: true });
         mkdirSync(viewSpecsDir, { recursive: true });
-        writeFileSync(join(archiDir, "manifest.json"), readText("joint-r2-teintes/manifest.json"), "utf8");
+        writeFileSync(join(archiDir, "manifest.json"), JSON.stringify(TINT_MANIFEST, null, 2), "utf8");
         writeFileSync(
           join(archiDir, "document.json"),
           JSON.stringify({ ...TINT_DOC, revision: 1 }, null, 2),
@@ -698,7 +783,7 @@ describe.skipIf(!dsCloneAvailable())(
         // Commit 3 (r2): hosts-r3 fixture (with revision raised to 2)
         rmSync(viewSpecsDir, { recursive: true, force: true });
         mkdirSync(viewSpecsDir, { recursive: true });
-        writeFileSync(join(archiDir, "manifest.json"), readText("hosts-r3/manifest.json"), "utf8");
+        writeFileSync(join(archiDir, "manifest.json"), JSON.stringify(HO_MANIFEST, null, 2), "utf8");
         writeFileSync(
           join(archiDir, "document.json"),
           JSON.stringify({ ...HO_DOC, revision: 2 }, null, 2),

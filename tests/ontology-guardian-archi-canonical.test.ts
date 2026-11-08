@@ -37,6 +37,7 @@ import {
   checkArchiDocumentInvariants,
   checkArchiManifestShape,
   checkArchiSourceTriple,
+  checkArchiValueInvariants,
   checkArchiViewBindingShape,
   checkArchiViewSpecShape,
   parseStrictIJson,
@@ -60,19 +61,24 @@ import { CONTRACT_PIN } from "../src/ontology-guardian/diagram-registry.js";
 const testsDir = dirname(fileURLToPath(import.meta.url));
 const readText = (rel: string): string => readFileSync(join(testsDir, "fixtures", "archi", rel), "utf8");
 const readJson = <T>(rel: string): T => JSON.parse(readText(rel)) as T;
+const toRepoRelativeManifest = (m: ArchiManifest): ArchiManifest => ({
+  ...m,
+  document: m.document.startsWith(".engram/architecture/") ? m.document : `.engram/architecture/${m.document}`,
+  views: m.views.map((v) => (v.startsWith(".engram/architecture/") ? v : `.engram/architecture/${v}`)),
+});
 
-const FIX_MANIFEST = readJson<ArchiManifest>("joint-r2/manifest.json");
+const FIX_MANIFEST = toRepoRelativeManifest(readJson<ArchiManifest>("joint-r2/manifest.json"));
 const FIX_DOC = readJson<NativeSemanticDocument>("joint-r2/document.json");
 const ROLES_SPEC = readJson<ArchiViewSpec>("joint-r2/view-specs/roles.json");
 const ROLES_REPLIE_SPEC = readJson<ArchiViewSpec>("joint-r2/view-specs/roles-replie.json");
 const DEPLOIEMENT_SPEC = readJson<ArchiViewSpec>("joint-r2/view-specs/deploiement.json");
 const H2A_REPO_SPEC = readJson<ArchiViewSpec>("joint-r2/view-specs/h2a-repo.json");
 
-const TINT_MANIFEST = readJson<ArchiManifest>("joint-r2-teintes/manifest.json");
+const TINT_MANIFEST = toRepoRelativeManifest(readJson<ArchiManifest>("joint-r2-teintes/manifest.json"));
 const TINT_DOC = readJson<NativeSemanticDocument>("joint-r2-teintes/document.json");
 const ROLES_TEINTES_SPEC = readJson<ArchiViewSpec>("joint-r2-teintes/view-specs/roles-teintes.json");
 
-const HO_MANIFEST = readJson<ArchiManifest>("hosts-r3/manifest.json");
+const HO_MANIFEST = toRepoRelativeManifest(readJson<ArchiManifest>("hosts-r3/manifest.json"));
 const HO_DOC = readJson<NativeSemanticDocument>("hosts-r3/document.json");
 const ROLES_HOSTS_SPEC = readJson<ArchiViewSpec>("hosts-r3/view-specs/roles-hosts.json");
 const DEPLOIEMENT_HOSTS_SPEC = readJson<ArchiViewSpec>("hosts-r3/view-specs/deploiement-hosts.json");
@@ -378,6 +384,10 @@ describe("Strict I-JSON reader and closed shape guards (§5.2, §5.3, §5.6, §6
     const dCtrl = checkArchiDocumentInvariants(ctrlDoc, ctrlDoc.documentId);
     expect(dCtrl.map((d) => d.code)).toEqual(["archi-input-invalid"]);
     expect(dCtrl[0]!.path).toBe("/entities/entity:sys-h2a/attributes/role/value");
+
+    const d = checkArchiValueInvariants({ a: 1.5 }, "s");
+    expect(d.map((x) => x.code)).toEqual(["archi-input-invalid"]);
+    expect(d[0]!.path).toBe("/a");
   });
 
   it("C4: refuses local id 'sys.h2a' (invalid local id grammar) and bare refs without prefix with archi-input-invalid", () => {
