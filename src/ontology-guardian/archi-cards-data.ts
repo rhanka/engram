@@ -71,6 +71,7 @@ export interface ArchiLanguageLabels {
     readonly retired: string;
   };
   readonly links: string;
+  readonly toggle?: string;
 }
 
 /** proposed: card detail rule entry (§3.3). */

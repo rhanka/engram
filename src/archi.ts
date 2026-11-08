@@ -4,6 +4,7 @@ export {
   checkArchi,
   type ArchiDiagnosticCode,
   type ArchiLanguage,
+  type ArchiManifest,
   type ArchiVerbCards,
 } from "./ontology-guardian/archi-check.js";
 export { ARCHI_V1, ARCHI_V1_PIN } from "./ontology-guardian/archi-profile.js";
@@ -19,17 +20,25 @@ export {
   type ArchiDiagramPresentation,
   type ArchiEntityTextSlots,
   type ArchiOccurrenceMeasures,
+  type ArchiOccurrenceRenderOptions,
   type ArchiPresentationEntity,
   type ArchiProjectionBinding,
   type ArchiRenderEntityTextSlots,
   type ArchiViewMeasures,
+  type ArchiViewRenderOptions,
 } from "./ontology-guardian/archi-cards.js";
 export type { ArchiSlotMeasurement } from "./ontology-guardian/archi-metrics.js";
 export {
   archiSummaries,
+  buildArchiSourceView,
   checkArchiView,
   type ArchiDsPort,
+  type ArchiLayoutGroup,
+  type ArchiLayoutHints,
   type ArchiSummaryDefinition,
+  type ArchiViewSpec,
+  type ArchiViewSpecLegend,
+  type ArchiViewSpecLegendToken,
 } from "./ontology-guardian/archi-view.js";
 export { GENERIC_V2, type GovernedProfile } from "./ontology-guardian/diagram-profiles.js";
 export { CONTRACT_PIN } from "./ontology-guardian/diagram-registry.js";
