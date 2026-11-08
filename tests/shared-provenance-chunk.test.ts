@@ -111,8 +111,10 @@ describe("shared provenance registry (L4)", () => {
       "ARCHI_V1_PIN",
       "CONTRACT_PIN",
       "GENERIC_V2",
+      "VIEW_SCHEMA_V2_PIN",
       "archiSummaries",
       "buildArchiSourceView",
+      "canonicalBytes",
       "checkArchi",
       "checkArchiView",
       "projectArchiCards",
@@ -122,9 +124,11 @@ describe("shared provenance registry (L4)", () => {
     expect(typeof archi["archiSummaries"]).toBe("function");
     expect(typeof archi["buildArchiSourceView"]).toBe("function");
     expect(typeof archi["checkArchiView"]).toBe("function");
+    expect(typeof archi["canonicalBytes"]).toBe("function");
     expect(archi["ARCHI_V1_PIN"]).toBeDefined();
     expect(archi["ARCHI_CARDS_PIN"]).toBeDefined();
     expect(archi["CONTRACT_PIN"]).toBeDefined();
+    expect(archi["VIEW_SCHEMA_V2_PIN"]).toBeDefined();
     expect(archi["ARCHI_V1"]).toBeDefined();
     expect(archi["GENERIC_V2"]).toBeDefined();
     expect(archi["ARCHI_CARDS_CONTENT"]).toBeDefined();
