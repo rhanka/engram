@@ -33,8 +33,10 @@ import {
   type ArchiDsPort,
   type ArchiViewSpec,
 } from "./archi-view.js";
+import { parseArchiMermaid } from "../archi-mermaid/index.js";
 import {
   ARCHI_MANIFEST_PATH,
+  ARCHI_MMD_PATH,
   checkArchiAcceptanceShape,
   checkArchiDocumentInvariants,
   checkArchiManifestShape,
@@ -42,11 +44,13 @@ import {
   checkArchiViewBindingShape,
   checkArchiViewSpecShape,
   dottedPathToPointer,
+  isWellFormedUnicodeString,
   makeArchiDiagnostic,
   parseStrictIJson,
   toArchiDsDiagnostic,
   type ArchiAcceptance,
   type ArchiAcceptanceFileEntry,
+  type ArchiAcceptanceSource,
   type ArchiRefusal,
   type ArchiRefusalScope,
   type ArchiStage,
@@ -274,6 +278,7 @@ export function ingestArchitecture(
   ports: ArchiIngestPorts,
 ): ArchiIngestionResult {
   const manifestScope = `file:${ARCHI_MANIFEST_PATH}`;
+  const mmdScope = `file:${ARCHI_MMD_PATH}`;
 
   // --- Stage 1: source ---
   const stage1Scopes = new Map<string, (EngramDiagnostic | ArchiDsDiagnostic)[]>();
@@ -291,166 +296,317 @@ export function ingestArchitecture(
     return makeRefusal("source", stage1Scopes);
   }
 
-  let manifestRaw: Uint8Array | string | null | undefined;
+  let rawMmd: Uint8Array | string | null | undefined;
   try {
-    manifestRaw = ports.readAt(input.commit, ARCHI_MANIFEST_PATH);
+    rawMmd = ports.readAt(input.commit, ARCHI_MMD_PATH);
   } catch (err) {
     addDiagToScope(
       stage1Scopes,
-      manifestScope,
+      mmdScope,
       makeArchiDiagnostic(
         "archi-source-unresolved",
         "",
-        ARCHI_MANIFEST_PATH,
+        ARCHI_MMD_PATH,
         `Commit "${input.commit}" could not be resolved: ${err instanceof Error ? err.message : String(err)}`,
       ),
     );
     return makeRefusal("source", stage1Scopes);
   }
 
-  if (manifestRaw === null || manifestRaw === undefined) {
-    addDiagToScope(
-      stage1Scopes,
-      manifestScope,
-      makeArchiDiagnostic(
-        "archi-manifest-missing",
-        "",
-        ARCHI_MANIFEST_PATH,
-        `Manifest "${ARCHI_MANIFEST_PATH}" is absent at commit ${input.commit}.`,
-      ),
-    );
-    return makeRefusal("source", stage1Scopes);
-  }
+  let manifest: ArchiManifest;
+  let doc: NativeSemanticDocument;
+  let viewSpecs: ArchiViewSpec[];
+  let sourceManifestPath: ArchiAcceptanceSource["manifestPath"];
+  let textDigest: string | undefined;
 
-  const parsedManifest = parseStrictIJson(manifestRaw);
-  if (!parsedManifest.ok) {
-    const code = /duplicate/i.test(parsedManifest.reason) ? "archi-input-invalid" : "archi-manifest-invalid";
-    addDiagToScope(
-      stage1Scopes,
-      manifestScope,
-      makeArchiDiagnostic(code, parsedManifest.pointer, ARCHI_MANIFEST_PATH, parsedManifest.reason),
-    );
-    return makeRefusal("source", stage1Scopes);
-  }
+  if (rawMmd !== null && rawMmd !== undefined) {
+    sourceManifestPath = ARCHI_MMD_PATH;
+    let text: string;
 
-  const manifestDiags = checkArchiManifestShape(parsedManifest.value, ARCHI_MANIFEST_PATH);
-  if (manifestDiags.length > 0) {
-    addDiagToScope(stage1Scopes, manifestScope, ...manifestDiags);
-    return makeRefusal("source", stage1Scopes);
-  }
-
-  const manifest = parsedManifest.value as ArchiManifest;
-
-  // Read document and view specs at the exact repo-relative paths named by the manifest (§5.1, §5.2)
-  let docResolved: { readonly resolvedPath: string; readonly bytes: Uint8Array | string } | null = null;
-  try {
-    const rawDoc = ports.readAt(input.commit, manifest.document);
-    if (rawDoc !== null && rawDoc !== undefined) {
-      docResolved = { resolvedPath: manifest.document, bytes: rawDoc };
-    }
-  } catch {
-    docResolved = null;
-  }
-  if (!docResolved) {
-    addDiagToScope(
-      stage1Scopes,
-      manifestScope,
-      makeArchiDiagnostic(
-        "archi-source-unresolved",
-        "/document",
-        manifest.document,
-        `Document "${manifest.document}" named by manifest cannot be read at commit ${input.commit}.`,
-      ),
-    );
-  }
-
-  const viewResolvedList: { readonly manifestIndex: number; readonly resolvedPath: string; readonly bytes: Uint8Array | string }[] = [];
-  for (let i = 0; i < manifest.views.length; i++) {
-    const vp = manifest.views[i]!;
-    let resolved: { readonly resolvedPath: string; readonly bytes: Uint8Array | string } | null = null;
-    try {
-      const rawView = ports.readAt(input.commit, vp);
-      if (rawView !== null && rawView !== undefined) {
-        resolved = { resolvedPath: vp, bytes: rawView };
+    // Step 1(a): UTF-8 fatal decode and textDigest preimage
+    if (typeof rawMmd === "string") {
+      if (rawMmd.charCodeAt(0) === 0xfeff) {
+        addDiagToScope(
+          stage1Scopes,
+          mmdScope,
+          makeArchiDiagnostic(
+            "mermaid-strict-invalid",
+            "/0",
+            ARCHI_MMD_PATH,
+            "Strict Mermaid source must not start with a UTF-8 BOM (U+FEFF) (at column 1).",
+          ),
+        );
+        return makeRefusal("source", stage1Scopes);
       }
-    } catch {
-      resolved = null;
+      if (!isWellFormedUnicodeString(rawMmd)) {
+        addDiagToScope(
+          stage1Scopes,
+          mmdScope,
+          makeArchiDiagnostic(
+            "mermaid-strict-invalid",
+            "/0",
+            ARCHI_MMD_PATH,
+            "Strict Mermaid source contains an unpaired Unicode surrogate (at column 1).",
+          ),
+        );
+        return makeRefusal("source", stage1Scopes);
+      }
+      const rawBytes = new TextEncoder().encode(rawMmd);
+      textDigest = sha256BytesHex(rawBytes);
+      text = rawMmd;
+    } else if (rawMmd instanceof Uint8Array) {
+      textDigest = sha256BytesHex(rawMmd);
+      if (rawMmd.length >= 3 && rawMmd[0] === 0xef && rawMmd[1] === 0xbb && rawMmd[2] === 0xbf) {
+        addDiagToScope(
+          stage1Scopes,
+          mmdScope,
+          makeArchiDiagnostic(
+            "mermaid-strict-invalid",
+            "/0",
+            ARCHI_MMD_PATH,
+            "Strict Mermaid source must not start with a UTF-8 BOM (0xEF 0xBB 0xBF) (at column 1).",
+          ),
+        );
+        return makeRefusal("source", stage1Scopes);
+      }
+      try {
+        text = new TextDecoder("utf-8", { fatal: true }).decode(rawMmd);
+      } catch {
+        addDiagToScope(
+          stage1Scopes,
+          mmdScope,
+          makeArchiDiagnostic(
+            "mermaid-strict-invalid",
+            "/0",
+            ARCHI_MMD_PATH,
+            "Strict Mermaid source bytes are not valid UTF-8 (at column 1).",
+          ),
+        );
+        return makeRefusal("source", stage1Scopes);
+      }
+    } else {
+      addDiagToScope(
+        stage1Scopes,
+        mmdScope,
+        makeArchiDiagnostic(
+          "mermaid-strict-invalid",
+          "/0",
+          ARCHI_MMD_PATH,
+          "Strict Mermaid source must be a UTF-8 string or Uint8Array (at column 1).",
+        ),
+      );
+      return makeRefusal("source", stage1Scopes);
     }
-    if (!resolved) {
+
+    // Step 1(b): Strict Mermaid parse and canonical check
+    const parsed = parseArchiMermaid(text, { checkCanonical: true, subjectRef: ARCHI_MMD_PATH });
+    if (!parsed.ok) {
+      addDiagToScope(stage1Scopes, mmdScope, ...parsed.diagnostics);
+      return makeRefusal("source", stage1Scopes);
+    }
+
+    // Step 1(c): Stage-1 triple invariants on parsed.value without secondary ports.readAt calls
+    manifest = parsed.value.manifest;
+    const parsedDocument = parsed.value.document;
+    const parsedViews = parsed.value.views;
+
+    const manifestDiags = checkArchiManifestShape(manifest, ARCHI_MMD_PATH);
+    addDiagToScope(stage1Scopes, mmdScope, ...manifestDiags);
+
+    const docDiags = checkArchiDocumentInvariants(parsedDocument, ARCHI_MMD_PATH);
+    addDiagToScope(stage1Scopes, mmdScope, ...docDiags);
+
+    const checkedSpecs: ArchiViewSpec[] = [];
+    for (const spec of parsedViews) {
+      const vDiags = checkArchiViewSpecShape(spec, spec.viewId);
+      if (vDiags.length > 0) {
+        addDiagToScope(stage1Scopes, spec.viewId, ...vDiags);
+      } else {
+        checkedSpecs.push(spec);
+      }
+    }
+
+    if (stage1Scopes.size === 0) {
+      const cross = checkArchiStage1CrossRefs(manifest, parsedDocument, checkedSpecs);
+      addDiagToScope(stage1Scopes, mmdScope, ...cross.manifestDiagnostics);
+      for (const [viewId, diags] of cross.viewDiagnostics.entries()) {
+        addDiagToScope(stage1Scopes, viewId, ...diags);
+      }
+    }
+
+    if (stage1Scopes.size > 0) {
+      return makeRefusal("source", stage1Scopes);
+    }
+
+    doc = parsedDocument;
+    viewSpecs = checkedSpecs;
+  } else {
+    // T3 transition fallback: ARCHI_MANIFEST_PATH when ARCHI_MMD_PATH is absent
+    sourceManifestPath = ARCHI_MANIFEST_PATH;
+    textDigest = undefined;
+
+    let manifestRaw: Uint8Array | string | null | undefined;
+    try {
+      manifestRaw = ports.readAt(input.commit, ARCHI_MANIFEST_PATH);
+    } catch (err) {
       addDiagToScope(
         stage1Scopes,
         manifestScope,
         makeArchiDiagnostic(
           "archi-source-unresolved",
-          `/views/${i}`,
-          vp,
-          `View spec "${vp}" named by manifest cannot be read at commit ${input.commit}.`,
+          "",
+          ARCHI_MANIFEST_PATH,
+          `Commit "${input.commit}" could not be resolved: ${err instanceof Error ? err.message : String(err)}`,
         ),
       );
-    } else {
-      viewResolvedList.push({ manifestIndex: i, ...resolved });
+      return makeRefusal("source", stage1Scopes);
     }
-  }
 
-  if (stage1Scopes.size > 0) {
-    return makeRefusal("source", stage1Scopes);
-  }
-
-  const docScope = `file:${docResolved!.resolvedPath}`;
-  const parsedDoc = parseStrictIJson(docResolved!.bytes);
-  let document: NativeSemanticDocument | undefined;
-  if (!parsedDoc.ok) {
-    addDiagToScope(
-      stage1Scopes,
-      docScope,
-      makeArchiDiagnostic("archi-input-invalid", parsedDoc.pointer, docResolved!.resolvedPath, parsedDoc.reason),
-    );
-  } else {
-    const docDiags = checkArchiDocumentInvariants(parsedDoc.value, docResolved!.resolvedPath);
-    if (docDiags.length > 0) {
-      addDiagToScope(stage1Scopes, docScope, ...docDiags);
-    } else {
-      document = parsedDoc.value as NativeSemanticDocument;
-    }
-  }
-
-  const viewSpecs: ArchiViewSpec[] = [];
-  const viewScopeByViewId = new Map<string, string>();
-  for (const vEntry of viewResolvedList) {
-    const vScope = `file:${vEntry.resolvedPath}`;
-    const parsedView = parseStrictIJson(vEntry.bytes);
-    if (!parsedView.ok) {
+    if (manifestRaw === null || manifestRaw === undefined) {
       addDiagToScope(
         stage1Scopes,
-        vScope,
-        makeArchiDiagnostic("archi-input-invalid", parsedView.pointer, vEntry.resolvedPath, parsedView.reason),
+        manifestScope,
+        makeArchiDiagnostic(
+          "archi-manifest-missing",
+          "",
+          ARCHI_MANIFEST_PATH,
+          `Manifest "${ARCHI_MANIFEST_PATH}" is absent at commit ${input.commit}.`,
+        ),
       );
-      continue;
+      return makeRefusal("source", stage1Scopes);
     }
-    const vDiags = checkArchiViewSpecShape(parsedView.value, vEntry.resolvedPath);
-    if (vDiags.length > 0) {
-      addDiagToScope(stage1Scopes, vScope, ...vDiags);
-      continue;
+
+    const parsedManifest = parseStrictIJson(manifestRaw);
+    if (!parsedManifest.ok) {
+      const code = /duplicate/i.test(parsedManifest.reason) ? "archi-input-invalid" : "archi-manifest-invalid";
+      addDiagToScope(
+        stage1Scopes,
+        manifestScope,
+        makeArchiDiagnostic(code, parsedManifest.pointer, ARCHI_MANIFEST_PATH, parsedManifest.reason),
+      );
+      return makeRefusal("source", stage1Scopes);
     }
-    const spec = parsedView.value as ArchiViewSpec;
-    viewSpecs.push(spec);
-    viewScopeByViewId.set(spec.viewId, vScope);
-  }
 
-  if (document && viewSpecs.length === manifest.views.length && stage1Scopes.size === 0) {
-    const cross = checkArchiStage1CrossRefs(manifest, document, viewSpecs);
-    addDiagToScope(stage1Scopes, manifestScope, ...cross.manifestDiagnostics);
-    for (const [viewId, diags] of cross.viewDiagnostics.entries()) {
-      const scope = viewScopeByViewId.get(viewId) ?? viewId;
-      addDiagToScope(stage1Scopes, scope, ...diags);
+    const manifestDiags = checkArchiManifestShape(parsedManifest.value, ARCHI_MANIFEST_PATH);
+    if (manifestDiags.length > 0) {
+      addDiagToScope(stage1Scopes, manifestScope, ...manifestDiags);
+      return makeRefusal("source", stage1Scopes);
     }
-  }
 
-  if (stage1Scopes.size > 0) {
-    return makeRefusal("source", stage1Scopes);
-  }
+    manifest = parsedManifest.value as ArchiManifest;
 
-  const doc = document!;
+    // Read document and view specs at the exact repo-relative paths named by the manifest (§5.1, §5.2)
+    let docResolved: { readonly resolvedPath: string; readonly bytes: Uint8Array | string } | null = null;
+    try {
+      const rawDoc = ports.readAt(input.commit, manifest.document);
+      if (rawDoc !== null && rawDoc !== undefined) {
+        docResolved = { resolvedPath: manifest.document, bytes: rawDoc };
+      }
+    } catch {
+      docResolved = null;
+    }
+    if (!docResolved) {
+      addDiagToScope(
+        stage1Scopes,
+        manifestScope,
+        makeArchiDiagnostic(
+          "archi-source-unresolved",
+          "/document",
+          manifest.document,
+          `Document "${manifest.document}" named by manifest cannot be read at commit ${input.commit}.`,
+        ),
+      );
+    }
+
+    const viewResolvedList: { readonly manifestIndex: number; readonly resolvedPath: string; readonly bytes: Uint8Array | string }[] = [];
+    for (let i = 0; i < manifest.views.length; i++) {
+      const vp = manifest.views[i]!;
+      let resolved: { readonly resolvedPath: string; readonly bytes: Uint8Array | string } | null = null;
+      try {
+        const rawView = ports.readAt(input.commit, vp);
+        if (rawView !== null && rawView !== undefined) {
+          resolved = { resolvedPath: vp, bytes: rawView };
+        }
+      } catch {
+        resolved = null;
+      }
+      if (!resolved) {
+        addDiagToScope(
+          stage1Scopes,
+          manifestScope,
+          makeArchiDiagnostic(
+            "archi-source-unresolved",
+            `/views/${i}`,
+            vp,
+            `View spec "${vp}" named by manifest cannot be read at commit ${input.commit}.`,
+          ),
+        );
+      } else {
+        viewResolvedList.push({ manifestIndex: i, ...resolved });
+      }
+    }
+
+    if (stage1Scopes.size > 0) {
+      return makeRefusal("source", stage1Scopes);
+    }
+
+    const docScope = `file:${docResolved!.resolvedPath}`;
+    const parsedDoc = parseStrictIJson(docResolved!.bytes);
+    let document: NativeSemanticDocument | undefined;
+    if (!parsedDoc.ok) {
+      addDiagToScope(
+        stage1Scopes,
+        docScope,
+        makeArchiDiagnostic("archi-input-invalid", parsedDoc.pointer, docResolved!.resolvedPath, parsedDoc.reason),
+      );
+    } else {
+      const docDiags = checkArchiDocumentInvariants(parsedDoc.value, docResolved!.resolvedPath);
+      if (docDiags.length > 0) {
+        addDiagToScope(stage1Scopes, docScope, ...docDiags);
+      } else {
+        document = parsedDoc.value as NativeSemanticDocument;
+      }
+    }
+
+    const parsedViewSpecs: ArchiViewSpec[] = [];
+    const viewScopeByViewId = new Map<string, string>();
+    for (const vEntry of viewResolvedList) {
+      const vScope = `file:${vEntry.resolvedPath}`;
+      const parsedView = parseStrictIJson(vEntry.bytes);
+      if (!parsedView.ok) {
+        addDiagToScope(
+          stage1Scopes,
+          vScope,
+          makeArchiDiagnostic("archi-input-invalid", parsedView.pointer, vEntry.resolvedPath, parsedView.reason),
+        );
+        continue;
+      }
+      const vDiags = checkArchiViewSpecShape(parsedView.value, vEntry.resolvedPath);
+      if (vDiags.length > 0) {
+        addDiagToScope(stage1Scopes, vScope, ...vDiags);
+        continue;
+      }
+      const spec = parsedView.value as ArchiViewSpec;
+      parsedViewSpecs.push(spec);
+      viewScopeByViewId.set(spec.viewId, vScope);
+    }
+
+    if (document && parsedViewSpecs.length === manifest.views.length && stage1Scopes.size === 0) {
+      const cross = checkArchiStage1CrossRefs(manifest, document, parsedViewSpecs);
+      addDiagToScope(stage1Scopes, manifestScope, ...cross.manifestDiagnostics);
+      for (const [viewId, diags] of cross.viewDiagnostics.entries()) {
+        const scope = viewScopeByViewId.get(viewId) ?? viewId;
+        addDiagToScope(stage1Scopes, scope, ...diags);
+      }
+    }
+
+    if (stage1Scopes.size > 0) {
+      return makeRefusal("source", stage1Scopes);
+    }
+
+    doc = document!;
+    viewSpecs = parsedViewSpecs;
+  }
 
   // --- Stage 2: pins ---
   const stage2Diags: EngramDiagnostic[] = [];
@@ -758,14 +914,20 @@ export function ingestArchitecture(
       const parsedAcc = parseStrictIJson(existingAccRaw);
       if (parsedAcc.ok && checkArchiAcceptanceShape(parsedAcc.value) === null) {
         const storedAcc = parsedAcc.value as ArchiAcceptance;
-        return {
-          outcome: "accepted",
-          directory,
-          acceptance: storedAcc,
-          acceptanceDigest: digestOfPreimage(storedAcc),
-          idempotent: true,
-          files: { ...existingFiles },
-        };
+        const sameTextDigest =
+          storedAcc.textDigest === undefined ||
+          textDigest === undefined ||
+          storedAcc.textDigest === textDigest;
+        if (sameTextDigest) {
+          return {
+            outcome: "accepted",
+            directory,
+            acceptance: storedAcc,
+            acceptanceDigest: digestOfPreimage(storedAcc),
+            idempotent: true,
+            files: { ...existingFiles },
+          };
+        }
       }
     }
 
@@ -811,11 +973,12 @@ export function ingestArchitecture(
     source: {
       repository: input.repository,
       commit: input.commit,
-      manifestPath: ARCHI_MANIFEST_PATH,
+      manifestPath: sourceManifestPath,
     },
     language: manifest.language,
     owningRepo: manifest.owningRepo,
     documentPin,
+    ...(textDigest !== undefined ? { textDigest } : {}),
     profilePins: manifest.profilePins,
     cardsPin: manifest.cardsPin!,
     viewSchemaPin: manifest.viewSchemaPin,

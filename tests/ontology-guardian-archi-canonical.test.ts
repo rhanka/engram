@@ -31,7 +31,7 @@ import {
   type ArchiViewSpec,
 } from "../src/ontology-guardian/archi-view.js";
 import {
-  ARCHI_MANIFEST_PATH,
+  ARCHI_MANIFEST_PATH, ARCHI_MMD_PATH, REQUIRED_ACCEPTANCE_KEYS,
   assertValidArchiDiagnosticEnvelope,
   checkArchiAcceptanceShape,
   checkArchiDocumentInvariants,
@@ -52,11 +52,10 @@ import {
   type ArchiIngestDsPort,
 } from "../src/ontology-guardian/archi-ingest.js";
 import {
-  DS_ADAPTER_SHA256,
-  DS_COMMIT,
-  DS_RENDERER_SHA256,
+  DS_ADAPTER_SHA256, DS_COMMIT, DS_RENDERER_SHA256,
 } from "../src/ontology-guardian/diagram-presentation-pins.js";
 import { CONTRACT_PIN } from "../src/ontology-guardian/diagram-registry.js";
+import { ARCHI_MERMAID_DIAGNOSTIC_CODES, formatArchiMermaid, parseArchiMermaid, printArchiMermaid } from "../src/archi-mermaid/index.js";
 
 const testsDir = dirname(fileURLToPath(import.meta.url));
 const readText = (rel: string): string => readFileSync(join(testsDir, "fixtures", "archi", rel), "utf8");
@@ -209,15 +208,17 @@ describe("m-r2-2: sortDiagnostics accepts ArchiDsDiagnostic and preserves typing
 });
 
 describe("ARCHI_DIAGNOSTIC_CODES inventory (§5.5)", () => {
-  it("exports the exact frozen 25-code inventory (21 archi-*, 2 DS layout names, 2 G0 names) and leaves DIAGRAM_DIAGNOSTIC_CODES unchanged", () => {
+  it("exports the exact frozen 35-code inventory (21 archi-*, 10 mermaid-strict-*, 2 DS layout names, 2 G0 names) and leaves DIAGRAM_DIAGNOSTIC_CODES unchanged", () => {
     expect(Object.isFrozen(ARCHI_DIAGNOSTIC_CODES)).toBe(true);
-    expect(ARCHI_DIAGNOSTIC_CODES).toHaveLength(25);
-    expect(new Set(ARCHI_DIAGNOSTIC_CODES).size).toBe(25);
+    expect(ARCHI_DIAGNOSTIC_CODES).toHaveLength(35);
+    expect(new Set(ARCHI_DIAGNOSTIC_CODES).size).toBe(35);
 
     const archiPrefixed = ARCHI_DIAGNOSTIC_CODES.filter((c) => c.startsWith("archi-"));
+    const mermaidPrefixed = ARCHI_DIAGNOSTIC_CODES.filter((c) => c.startsWith("mermaid-strict-"));
     const layoutNames = ARCHI_DIAGNOSTIC_CODES.filter((c) => c === "card-overflow" || c === "zone-overflow");
     const g0Names = ARCHI_DIAGNOSTIC_CODES.filter((c) => c === "incompatible_version" || c === "digest-mismatch");
     expect(archiPrefixed).toHaveLength(21);
+    expect(mermaidPrefixed).toEqual([...ARCHI_MERMAID_DIAGNOSTIC_CODES]);
     expect(layoutNames).toEqual(["card-overflow", "zone-overflow"]);
     expect(g0Names).toEqual(["incompatible_version", "digest-mismatch"]);
 
@@ -225,8 +226,6 @@ describe("ARCHI_DIAGNOSTIC_CODES inventory (§5.5)", () => {
       const typed: ArchiDiagnosticCode = c;
       expect(typeof typed).toBe("string");
     }
-
-    // DIAGRAM_DIAGNOSTIC_CODES does not change (§5.5 line 401)
     expect(DIAGRAM_DIAGNOSTIC_CODES).not.toContain("archi-manifest-missing");
   });
 });
@@ -553,7 +552,7 @@ describe("Strict I-JSON reader and closed shape guards (§5.2, §5.3, §5.6, §6
     expect(dsNative.subjectRef).toBe("occurrence:o-rt-h2a");
   });
 
-  it("§5.6.6 lossless round-trip gate with T = canonical JSON on all corpus triples (joint-r2, joint-r2-teintes, hosts-r3)", () => {
+  it("§5.6.6 lossless round-trip gate with T = canonical JSON and T = engram.archi-mermaid/1 on all corpus triples (joint-r2, joint-r2-teintes, hosts-r3)", () => {
     const triples: readonly ArchiSourceTripleInput[] = [
       {
         manifest: FIX_MANIFEST,
@@ -585,5 +584,269 @@ describe("Strict I-JSON reader and closed shape guards (§5.2, §5.3, §5.6, §6
       expect(canonicalBytes(parseT(formatT(S)))).toBe(canonicalBytes(S));
       expect(formatT(parseT(t))).toBe(t);
     }
+
+    // T = engram.archi-mermaid/1 round-trip gate (§5.6.6, §6.1, Gate (iii))
+    const mmdTriples: readonly { readonly name: string; readonly triple: ArchiSourceTripleInput }[] = [
+      {
+        name: "joint-r2",
+        triple: {
+          manifest: readJson<ArchiManifest>("joint-r2/manifest.json"),
+          document: FIX_DOC,
+          views: [DEPLOIEMENT_SPEC, H2A_REPO_SPEC, ROLES_REPLIE_SPEC, ROLES_SPEC],
+        },
+      },
+      {
+        name: "joint-r2-teintes",
+        triple: {
+          manifest: readJson<ArchiManifest>("joint-r2-teintes/manifest.json"),
+          document: TINT_DOC,
+          views: [ROLES_TEINTES_SPEC],
+        },
+      },
+      {
+        name: "hosts-r3",
+        triple: {
+          manifest: readJson<ArchiManifest>("hosts-r3/manifest.json"),
+          document: HO_DOC,
+          views: [DEPLOIEMENT_HOSTS_SPEC, ROLES_HOSTS_SPEC],
+        },
+      },
+    ];
+
+    const formatMmd = (s: ArchiSourceTripleInput): string => {
+      const printed = printArchiMermaid(s);
+      if (!printed.ok) throw new Error(printed.diagnostics[0].message);
+      return printed.value;
+    };
+    const parseMmd = (t: string): ArchiSourceTripleInput => {
+      const parsed = parseArchiMermaid(t, { checkCanonical: true, subjectRef: ARCHI_MMD_PATH });
+      if (!parsed.ok) throw new Error(parsed.diagnostics[0].message);
+      return parsed.value;
+    };
+
+    for (const { name, triple: S } of mmdTriples) {
+      expect(checkArchiSourceTriple(S)).toEqual([]);
+      const t = formatMmd(S);
+      // Fixture architecture.mmd matches printArchiMermaid(S) byte-for-byte (§6.1)
+      const fixtureMmd = readText(`${name}/architecture.mmd`);
+      expect(fixtureMmd).toBe(t);
+
+      // formatArchiMermaid(t, { check: true }) returns ok: true with value === t (G-T1)
+      const fmtCheck = formatArchiMermaid(fixtureMmd, { check: true, subjectRef: ARCHI_MMD_PATH });
+      expect(fmtCheck).toEqual({ ok: true, value: t });
+
+      // canonicalBytes(parse_T(format_T(S))) = canonicalBytes(S) and format_T(parse_T(t)) = t (§5.6.6, G-T3)
+      const parsed = parseMmd(t);
+      expect(canonicalBytes(parsed.manifest)).toBe(canonicalBytes(S.manifest));
+      expect(canonicalBytes(parsed.document)).toBe(canonicalBytes(S.document));
+      expect(parsed.views).toHaveLength(S.views.length);
+      for (let i = 0; i < S.views.length; i++) {
+        expect(canonicalBytes(parsed.views[i])).toBe(canonicalBytes(S.views[i]));
+      }
+      expect(canonicalBytes(parsed)).toBe(canonicalBytes(S));
+      expect(formatMmd(parseMmd(t))).toBe(t);
+    }
+  });
+
+  it("checkArchiAcceptanceShape enforces REQUIRED_ACCEPTANCE_KEYS and conditional textDigest on source.manifestPath (§5.4)", () => {
+    expect(ARCHI_MMD_PATH).toBe(".engram/architecture/architecture.mmd");
+    expect(Object.isFrozen(REQUIRED_ACCEPTANCE_KEYS)).toBe(true);
+    expect(REQUIRED_ACCEPTANCE_KEYS).toEqual([
+      "format",
+      "source",
+      "language",
+      "owningRepo",
+      "documentPin",
+      "profilePins",
+      "cardsPin",
+      "viewSchemaPin",
+      "bindings",
+      "files",
+    ]);
+    expect(REQUIRED_ACCEPTANCE_KEYS).not.toContain("textDigest");
+
+    const baseJsonAcc: ArchiAcceptance = {
+      format: "engram.archi-acceptance/1",
+      source: { repository: "repo", commit: COMMIT_1, manifestPath: ARCHI_MANIFEST_PATH },
+      language: "fr",
+      owningRepo: "entity:repo-h2a",
+      documentPin: { id: "document:archi-joint", version: "0", contentDigest: "a".repeat(64) },
+      profilePins: FIX_MANIFEST.profilePins,
+      cardsPin: FIX_MANIFEST.cardsPin!,
+      viewSchemaPin: FIX_MANIFEST.viewSchemaPin,
+      bindings: [{ id: "binding:roles", version: "0", contentDigest: "c".repeat(64) }],
+      files: [{ path: "document.json", contentDigest: "a".repeat(64) }],
+    };
+
+    // 1. JSON fallback: textDigest must be absent
+    expect(checkArchiAcceptanceShape(baseJsonAcc)).toBeNull();
+    expect(checkArchiAcceptanceShape({ ...baseJsonAcc, textDigest: "d".repeat(64) })).toBe("/textDigest");
+    expect(checkArchiAcceptanceShape({ ...baseJsonAcc, textDigest: undefined })).toBe("/textDigest");
+
+    // 2. Every key in REQUIRED_ACCEPTANCE_KEYS is required
+    for (const reqKey of REQUIRED_ACCEPTANCE_KEYS) {
+      const clone = { ...baseJsonAcc } as Record<string, unknown>;
+      delete clone[reqKey];
+      expect(checkArchiAcceptanceShape(clone)).toBe(`/${reqKey}`);
+    }
+
+    // 3. .mmd source: textDigest is required and must match DIGEST_HEX_RE
+    const baseMmdAcc: ArchiAcceptance = {
+      ...baseJsonAcc,
+      source: { repository: "repo", commit: COMMIT_1, manifestPath: ARCHI_MMD_PATH },
+      textDigest: "d".repeat(64),
+    };
+    expect(checkArchiAcceptanceShape(baseMmdAcc)).toBeNull();
+
+    const mmdWithoutDigest = { ...baseMmdAcc } as Record<string, unknown>;
+    delete mmdWithoutDigest["textDigest"];
+    expect(checkArchiAcceptanceShape(mmdWithoutDigest)).toBe("/textDigest");
+    expect(checkArchiAcceptanceShape({ ...baseMmdAcc, textDigest: "short" })).toBe("/textDigest");
+    expect(checkArchiAcceptanceShape({ ...baseMmdAcc, textDigest: "D".repeat(64) })).toBe("/textDigest");
+    expect(checkArchiAcceptanceShape({ ...baseMmdAcc, textDigest: 123 as unknown as string })).toBe("/textDigest");
+
+    // 4. Unknown source.manifestPath refuses at /source/manifestPath
+    expect(
+      checkArchiAcceptanceShape({
+        ...baseJsonAcc,
+        source: { repository: "repo", commit: COMMIT_1, manifestPath: "other.mmd" as any },
+      }),
+    ).toBe("/source/manifestPath");
+  });
+
+  it("checkArchiViewSpecShape allows optional layout and enforces M11–M12 layout invariants (§5.2)", () => {
+    const validSpecWithLayout: ArchiViewSpec = {
+      ...ROLES_SPEC,
+      layout: {
+        stretch: true,
+        cardGapX: 0,
+        cardGapY: 24,
+        zoneGapX: 32,
+        zoneGapY: 48,
+        rankGap: 64,
+        ordering: {
+          "entity:sys-h2a": ["entity:pkg-plugin", "entity:pkg-h2a"],
+          "entity:sys-engram": [],
+        },
+        grouping: [
+          {
+            id: "grp-main",
+            direction: "rows",
+            stretch: false,
+            gapAfter: 16,
+            items: [
+              "entity:sys-h2a",
+              {
+                id: "grp-sub",
+                direction: "columns",
+                stretch: true,
+                gapAfter: 0,
+                items: ["entity:sys-track"],
+              },
+              "entity:sys-engram",
+            ],
+          },
+          {
+            id: "grp-empty",
+            direction: "columns",
+            items: [],
+          },
+        ],
+      },
+    };
+    expect(checkArchiViewSpecShape(validSpecWithLayout, "view:roles")).toEqual([]);
+
+    const expectLayoutInvalid = (layout: unknown, expectedPath: string) => {
+      const diags = checkArchiViewSpecShape({ ...ROLES_SPEC, layout } as unknown as ArchiViewSpec, "view:roles");
+      expect(diags.length).toBeGreaterThan(0);
+      for (const d of diags) {
+        assertValidArchiDiagnosticEnvelope(d);
+        expect(d.code).toBe("archi-input-invalid");
+      }
+      expect(diags.some((d) => d.path === expectedPath)).toBe(true);
+    };
+
+    // M11: non-empty plain object, non-empty ordering, non-empty grouping
+    expectLayoutInvalid(null, "/layout");
+    expectLayoutInvalid([], "/layout");
+    expectLayoutInvalid({}, "/layout");
+    expectLayoutInvalid({ ordering: {} }, "/layout/ordering");
+    expectLayoutInvalid({ ordering: [] }, "/layout/ordering");
+    expectLayoutInvalid({ grouping: [] }, "/layout/grouping");
+    expectLayoutInvalid({ grouping: {} }, "/layout/grouping");
+
+    // Closed keys and primitive types
+    expectLayoutInvalid({ stretch: true, unknownField: 1 }, "/layout/unknownField");
+    expectLayoutInvalid({ stretch: "yes" }, "/layout/stretch");
+    expectLayoutInvalid({ cardGapX: -1 }, "/layout/cardGapX");
+    expectLayoutInvalid({ cardGapY: 1.5 }, "/layout/cardGapY");
+    expectLayoutInvalid({ zoneGapX: "10" }, "/layout/zoneGapX");
+    expectLayoutInvalid({ zoneGapY: Number.MAX_SAFE_INTEGER + 1 }, "/layout/zoneGapY");
+    expectLayoutInvalid({ rankGap: -10 }, "/layout/rankGap");
+
+    // Ordering keys and children (M12)
+    expectLayoutInvalid({ ordering: { "sys-h2a": ["entity:pkg-h2a"] } }, "/layout/ordering/sys-h2a");
+    expectLayoutInvalid({ ordering: { "entity:sys-h2a": "entity:pkg-h2a" } }, "/layout/ordering/entity:sys-h2a");
+    expectLayoutInvalid({ ordering: { "entity:sys-h2a": ["pkg-h2a"] } }, "/layout/ordering/entity:sys-h2a/0");
+    expectLayoutInvalid(
+      { ordering: { "entity:sys-h2a": ["entity:pkg-h2a", "entity:pkg-h2a"] } },
+      "/layout/ordering/entity:sys-h2a/1",
+    );
+
+    // Grouping trees (M11–M12)
+    expectLayoutInvalid({ grouping: ["not-an-object"] }, "/layout/grouping/0");
+    expectLayoutInvalid(
+      { grouping: [{ id: "g1", direction: "rows", items: [], extra: true }] },
+      "/layout/grouping/0/extra",
+    );
+    expectLayoutInvalid(
+      { grouping: [{ id: "Bad_Id", direction: "rows", items: [] }] },
+      "/layout/grouping/0/id",
+    );
+    expectLayoutInvalid(
+      {
+        grouping: [
+          { id: "dup", direction: "rows", items: [] },
+          { id: "dup", direction: "columns", items: [] },
+        ],
+      },
+      "/layout/grouping/1/id",
+    );
+    expectLayoutInvalid(
+      {
+        grouping: [
+          {
+            id: "dup-nested",
+            direction: "rows",
+            items: [{ id: "dup-nested", direction: "columns", items: [] }],
+          },
+        ],
+      },
+      "/layout/grouping/0/items/0/id",
+    );
+    expectLayoutInvalid(
+      { grouping: [{ id: "g1", direction: "diagonal", items: [] }] },
+      "/layout/grouping/0/direction",
+    );
+    expectLayoutInvalid(
+      { grouping: [{ id: "g1", direction: "rows", stretch: "true", items: [] }] },
+      "/layout/grouping/0/stretch",
+    );
+    expectLayoutInvalid(
+      { grouping: [{ id: "g1", direction: "rows", gapAfter: -5, items: [] }] },
+      "/layout/grouping/0/gapAfter",
+    );
+    expectLayoutInvalid(
+      { grouping: [{ id: "g1", direction: "rows", items: "not-an-array" }] },
+      "/layout/grouping/0/items",
+    );
+    expectLayoutInvalid(
+      { grouping: [{ id: "g1", direction: "rows", items: ["sys-h2a"] }] },
+      "/layout/grouping/0/items/0",
+    );
+    expectLayoutInvalid(
+      { grouping: [{ id: "g1", direction: "rows", items: ["entity:sys-h2a", "entity:sys-h2a"] }] },
+      "/layout/grouping/0/items/1",
+    );
   });
 });

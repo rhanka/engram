@@ -52,6 +52,8 @@ export type { NativeSemanticDocument, NativeViewDocument } from "./ontology-guar
 export type { Digest, Pin } from "./ontology-guardian/types.js";
 export {
   ARCHI_MANIFEST_PATH,
+  ARCHI_MMD_PATH,
+  REQUIRED_ACCEPTANCE_KEYS,
   assertValidArchiDiagnosticEnvelope,
   checkArchiAcceptanceShape,
   checkArchiDocumentInvariants,
