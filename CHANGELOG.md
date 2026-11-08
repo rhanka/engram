@@ -4,6 +4,12 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.24.0 (2026-11-07)
+
+- **Extraction toolkit, domain-agnostic (train 0.24.0, four lots).** `@sentropic/engram/profile-bundle`: `bundleProfile`, `checkProfileCompatibility` and `computeRegistryRecordsDigest` for any ontology profile (the consumer profile stays in its own repository); citations at merge (`mergeExtractionsWithCitations`, with conflict reporting); the extraction cache and coverage registry (`getOrExtract`); and the headless extraction batch (`runHeadlessExtractionBatch`, exit codes 0/64/65/75, receipts, a golden guard on `EXTRACTION_SEMANTICS_VERSION`), all on `@sentropic/engram/extraction-batch`.
+- **Architecture cards (archi@1, archi-cards@1).** The DS re-pin to the fold-capable diagram-core, the archi@1 profile with `checkArchi`, and the archi-cards@1 projection with fold summaries and line measurement, published as `@sentropic/engram/archi`.
+- **Strict annotated Mermaid codec.** `engram.archi-mermaid/1` (`parseArchiMermaid`, `printArchiMermaid`, `formatArchiMermaid`), a byte-exact bijection with the canonical archi JSON, on the zero-dependency subpath `@sentropic/engram/archi-mermaid`.
+
 ## 0.23.2 (2026-11-07)
 
 - **hono 4.13.17 and @hono/node-server 2.1.6 (security).** Pinned through overrides, with a single copy of each: GHSA-jpvv-r467-5p4w (a backslash parsed as a path separator bypasses path-based access control), GHSA-7v5p-43qr-wch5 and GHSA-qv5m-9pm6-hqp3 (node-server WebSocket), and GHSA-h7mg-cq63-vhpq with the mount/csrf advisories (hono RegExpRouter skipping wildcard middleware). Both are transitive through the MCP SDK and mcp-platform; no engram code change.
