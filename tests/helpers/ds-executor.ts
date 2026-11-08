@@ -2,10 +2,15 @@
 // diagram-core executor at DS_COMMIT from git objects of the local DS clone
 // (never a working tree), transpiled with the repo's TypeScript.
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { DS_COMMIT } from "../../src/ontology-guardian/diagram-presentation-pins.js";
+import {
+  DS_ADAPTER_PATH,
+  DS_COMMIT,
+  DS_RENDERER_PATH,
+} from "../../src/ontology-guardian/diagram-presentation-pins.js";
 
 const helpersDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -75,7 +80,21 @@ export function loadDsDiagramCore(commit: string = DS_COMMIT): Promise<Record<st
       ],
     });
     const code = res.outputFiles[0]!.text;
-    return import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
+    const mod = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
+    const adapterBuf = execFileSync("git", ["-C", DS_CLONE, "show", `${commit}:${DS_ADAPTER_PATH}`]);
+    const rendererBuf = execFileSync("git", ["-C", DS_CLONE, "show", `${commit}:${DS_RENDERER_PATH}`]);
+    const adapterBytes = new Uint8Array(adapterBuf.buffer, adapterBuf.byteOffset, adapterBuf.byteLength);
+    const rendererBytes = new Uint8Array(rendererBuf.buffer, rendererBuf.byteOffset, rendererBuf.byteLength);
+    const adapterSha256 = createHash("sha256").update(adapterBytes).digest("hex");
+    const rendererSha256 = createHash("sha256").update(rendererBytes).digest("hex");
+    return {
+      ...mod,
+      commit,
+      adapterBytes,
+      rendererBytes,
+      adapterSha256,
+      rendererSha256,
+    };
   })();
   cache.set(commit, promise);
   return promise;
