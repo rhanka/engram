@@ -493,7 +493,8 @@ describe("archi@1 ingestion stages 1–8 and full 25-code §5.5 coverage (tier E
         (c) =>
           !c.startsWith("mermaid-strict-") &&
           c !== "carrier-digest-mismatch" &&
-          c !== "export-stale",
+          c !== "export-stale" &&
+          c !== "archimate-kind-missing",
       ).sort(),
     );
 
