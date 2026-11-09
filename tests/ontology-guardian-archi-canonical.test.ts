@@ -51,10 +51,9 @@ import {
   ingestArchitecture,
   type ArchiIngestDsPort,
 } from "../src/ontology-guardian/archi-ingest.js";
-import {
-  DS_ADAPTER_SHA256, DS_COMMIT, DS_RENDERER_SHA256,
-} from "../src/ontology-guardian/diagram-presentation-pins.js";
+import { DS_ADAPTER_SHA256, DS_COMMIT, DS_RENDERER_SHA256 } from "../src/ontology-guardian/diagram-presentation-pins.js";
 import { CONTRACT_PIN } from "../src/ontology-guardian/diagram-registry.js";
+import { ARCHI_ARCHIMATE_DIAGNOSTIC_CODES } from "../src/ontology-guardian/archi-archimate.js";
 import {
   ARCHI_CARRIER_DIAGNOSTIC_CODES,
   ARCHI_MERMAID_DIAGNOSTIC_CODES,
@@ -214,10 +213,10 @@ describe("m-r2-2: sortDiagnostics accepts ArchiDsDiagnostic and preserves typing
 });
 
 describe("ARCHI_DIAGNOSTIC_CODES inventory (§5.5)", () => {
-  it("exports the exact frozen 37-code inventory (21 archi-*, 10 mermaid-strict-*, 2 carrier/export, 2 DS layout names, 2 G0 names) and leaves DIAGRAM_DIAGNOSTIC_CODES unchanged", () => {
+  it("exports the exact frozen 38-code inventory (21 archi-*, 10 mermaid-strict-*, 2 carrier/export, 1 ArchiMate mapping, 2 DS layout names, 2 G0 names) and leaves DIAGRAM_DIAGNOSTIC_CODES unchanged", () => {
     expect(Object.isFrozen(ARCHI_DIAGNOSTIC_CODES)).toBe(true);
-    expect(ARCHI_DIAGNOSTIC_CODES).toHaveLength(37);
-    expect(new Set(ARCHI_DIAGNOSTIC_CODES).size).toBe(37);
+    expect(ARCHI_DIAGNOSTIC_CODES).toHaveLength(38);
+    expect(new Set(ARCHI_DIAGNOSTIC_CODES).size).toBe(38);
 
     const archiPrefixed = ARCHI_DIAGNOSTIC_CODES.filter((c) => c.startsWith("archi-"));
     const mermaidPrefixed = ARCHI_DIAGNOSTIC_CODES.filter((c) => c.startsWith("mermaid-strict-"));
@@ -229,11 +228,12 @@ describe("ARCHI_DIAGNOSTIC_CODES inventory (§5.5)", () => {
     expect(archiPrefixed).toHaveLength(21);
     expect(mermaidPrefixed).toEqual([...ARCHI_MERMAID_DIAGNOSTIC_CODES]);
     expect(carrierCodes).toEqual([...ARCHI_CARRIER_DIAGNOSTIC_CODES]);
+    expect(ARCHI_DIAGNOSTIC_CODES.filter((c) => c.startsWith("archimate-"))).toEqual([...ARCHI_ARCHIMATE_DIAGNOSTIC_CODES]);
     expect(layoutNames).toEqual(["card-overflow", "zone-overflow"]);
     expect(g0Names).toEqual(["incompatible_version", "digest-mismatch"]);
 
     const revConflictIdx = ARCHI_DIAGNOSTIC_CODES.indexOf("archi-revision-conflict");
-    expect(ARCHI_DIAGNOSTIC_CODES.slice(revConflictIdx + 1)).toEqual([...ARCHI_CARRIER_DIAGNOSTIC_CODES]);
+    expect(ARCHI_DIAGNOSTIC_CODES.slice(revConflictIdx + 1)).toEqual([...ARCHI_CARRIER_DIAGNOSTIC_CODES, ...ARCHI_ARCHIMATE_DIAGNOSTIC_CODES]);
 
     for (const c of ARCHI_DIAGNOSTIC_CODES) {
       const typed: ArchiDiagnosticCode = c;
