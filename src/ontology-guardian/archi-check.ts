@@ -8,7 +8,7 @@ import type { Pin } from "./types.js";
 type NativeEntity = NativeSemanticDocument["entities"][string];
 type NativeRelation = NativeSemanticDocument["relations"][string];
 
-/** proposed: closed 37-code archi diagnostic inventory (§5.5, P-2 r3 §7, §10 A8, P-4). */
+/** proposed: closed 38-code archi diagnostic inventory (§5.5, P-2 r3 §7, §10 A8, P-4, P-6). */
 export const ARCHI_DIAGNOSTIC_CODES = Object.freeze([
   "archi-manifest-missing",
   "archi-manifest-invalid",
@@ -47,9 +47,10 @@ export const ARCHI_DIAGNOSTIC_CODES = Object.freeze([
   "archi-revision-conflict",
   "carrier-digest-mismatch",
   "export-stale",
+  "archimate-kind-missing",
 ] as const);
 
-/** proposed: closed 37-code archi diagnostic inventory (§5.5, P-2 r3 §7, §10 A8, P-4). */
+/** proposed: closed 38-code archi diagnostic inventory (§5.5, P-2 r3 §7, §10 A8, P-4, P-6). */
 export type ArchiDiagnosticCode = (typeof ARCHI_DIAGNOSTIC_CODES)[number];
 
 /** proposed: authored ArchiManifest shape (§5.2, P-2 r3 §3.1). */

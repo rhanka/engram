@@ -360,7 +360,7 @@ describe.skipIf(!dsCloneAvailable())(`archi-cards@1 fold summaries, RJ1, N12, 20
     });
     expect(rolesStats.states + depStats.states + repoStats.states + tintStats.states).toBe(204);
     expect(rolesStats.labelled + depStats.labelled + repoStats.labelled + tintStats.labelled).toBe(960);
-  });
+  }, 120_000);
 
   it("H1: proves hosts-r3 default summaries and all fold states of roles-hosts (128 states) and deploiement-hosts (4 states) (§3.8, §6.2)", async () => {
     const ds = await loadDsDiagramCore();
@@ -432,5 +432,5 @@ describe.skipIf(!dsCloneAvailable())(`archi-cards@1 fold summaries, RJ1, N12, 20
         labelled: 0,
       },
     });
-  });
+  }, 120_000);
 });

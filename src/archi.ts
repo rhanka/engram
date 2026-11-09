@@ -91,5 +91,34 @@ export {
   type ArchiWriterPort,
 } from "./ontology-guardian/archi-ingest.js";
 
+export {
+  ARCHI_ARCHIMATE_DIAGNOSTIC_CODES,
+  ARCHI_ARCHIMATE_ELEMENT_TABLE,
+  ARCHI_ARCHIMATE_PROPERTIES,
+  ARCHI_ARCHIMATE_RELATIONSHIP_TABLE,
+  archiAttributesOfArchimate,
+  archiEntityTypeOfArchimate,
+  archiRefOfArchimateId,
+  archiRelationTypeOfArchimate,
+  archiViewOfArchimateId,
+  archimateElementOf,
+  archimateIdOf,
+  archimatePropertiesOf,
+  archimateRelationshipOf,
+  archimateViewIdOf,
+  type ArchiArchimateDecodedRecord,
+  type ArchiArchimateDiagnostic,
+  type ArchiArchimateDiagnosticCode,
+  type ArchiArchimateElementMapping,
+  type ArchiArchimateElementRow,
+  type ArchiArchimateFailureCode,
+  type ArchiArchimatePropertyDef,
+  type ArchiArchimateRelationReversed,
+  type ArchiArchimateRelationshipMapping,
+  type ArchiArchimateRelationshipRow,
+  type ArchiArchimateResult,
+  type ArchiArchimateViewState,
+} from "./ontology-guardian/archi-archimate.js";
+
 /** Governed diagram-view-schema@2 Pin carried by archi@1 bindings. */
 export const VIEW_SCHEMA_V2_PIN: Pin = DIAGRAM_VIEW_SCHEMA_V2.pin;

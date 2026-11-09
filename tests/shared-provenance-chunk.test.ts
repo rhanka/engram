@@ -105,6 +105,10 @@ describe("shared provenance registry (L4)", () => {
     }
     const archi = (await import("../src/archi.js")) as Record<string, unknown>;
     expect(Object.keys(archi).sort()).toEqual([
+      "ARCHI_ARCHIMATE_DIAGNOSTIC_CODES",
+      "ARCHI_ARCHIMATE_ELEMENT_TABLE",
+      "ARCHI_ARCHIMATE_PROPERTIES",
+      "ARCHI_ARCHIMATE_RELATIONSHIP_TABLE",
       "ARCHI_CARDS_CONTENT",
       "ARCHI_CARDS_PIN",
       "ARCHI_DIAGNOSTIC_CODES",
@@ -116,7 +120,17 @@ describe("shared provenance registry (L4)", () => {
       "GENERIC_V2",
       "REQUIRED_ACCEPTANCE_KEYS",
       "VIEW_SCHEMA_V2_PIN",
+      "archiAttributesOfArchimate",
+      "archiEntityTypeOfArchimate",
+      "archiRefOfArchimateId",
+      "archiRelationTypeOfArchimate",
       "archiSummaries",
+      "archiViewOfArchimateId",
+      "archimateElementOf",
+      "archimateIdOf",
+      "archimatePropertiesOf",
+      "archimateRelationshipOf",
+      "archimateViewIdOf",
       "assertValidArchiDiagnosticEnvelope",
       "buildArchiSourceView",
       "canonicalBytes",

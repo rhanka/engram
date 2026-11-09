@@ -1158,7 +1158,9 @@ describe("engram.archi-carrier/1 (P-4, Lot 6)", () => {
       ARCHI_DIAGNOSTIC_CODES.filter((c) => c === "carrier-digest-mismatch" || c === "export-stale"),
     ).toEqual([...ARCHI_CARRIER_DIAGNOSTIC_CODES]);
     const revIdx = ARCHI_DIAGNOSTIC_CODES.indexOf("archi-revision-conflict");
-    expect(ARCHI_DIAGNOSTIC_CODES.slice(revIdx + 1)).toEqual([...ARCHI_CARRIER_DIAGNOSTIC_CODES]);
+    expect(
+      ARCHI_DIAGNOSTIC_CODES.slice(revIdx + 1, revIdx + 1 + ARCHI_CARRIER_DIAGNOSTIC_CODES.length),
+    ).toEqual([...ARCHI_CARRIER_DIAGNOSTIC_CODES]);
 
     // Type check
     expectTypeOf<ArchiCarrierDiagnosticCode>().toEqualTypeOf<
