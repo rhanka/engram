@@ -1,0 +1,363 @@
+flowchart LR
+%% @dl format engram.archi-mermaid/1
+%% @dl document memory-r15-architecture-current
+%% @dl schema 1.1
+%% @dl revision 0
+%% @dl language en
+%% @dl owning-repo e_repo_engram
+%% @dl profile archi@1
+%% @dl pin profile archi 1.0.0 81ed1a11925f9bb1d644a839cad788555ffeea876c8c09d2d0a34d6981e8b344
+%% @dl pin cards archi-cards 1 7de031e42469eb426cd520fab2f390e33ec62fca374d224b463bbe9d70cb1246
+%% @dl pin view-schema diagram-view-schema 2 50c97fc87a9546facff86f2deab8fdb99073419f43eef09958b96225367037ef
+
+%% @dl entity actor
+%% @dl evidence "h2a:packages/h2a/package.json:18"
+e_act_owner["rhanka"]
+
+%% @dl entity system
+%% @dl shortName "engram 0.26"
+%% @dl role "Memory substrate 0.26.0"
+%% @dl evidence "engram:package.json:3"
+subgraph e_sys_engram["@sentropic/engram 0.26.0"]
+  %% @dl entity package library
+  %% @dl shortName "engram-live"
+  %% @dl role "P1 PR and object sync"
+  %% @dl evidence "engram:engram-live/pr-sync.ts:1-6"
+  %% @dl nest po-pkg-elive
+  %% @dl evidence "engram:engram-live/pr-sync.ts:1-6"
+  subgraph e_pkg_elive["@sentropic/engram-live"]
+    %% @dl entity component
+    %% @dl shortName "pr-sync.ts"
+    %% @dl role "P1 PR and object sync engine"
+    %% @dl evidence "engram:engram-live/pr-sync.ts:1-6"
+    %% @dl nest po-e-live
+    %% @dl evidence "engram:engram-live/pr-sync.ts:1-6"
+    e_cmp_elive["engram-live/pr-sync.ts"]
+  end
+  %% @dl entity package library
+  %% @dl shortName "pkg engram"
+  %% @dl role "engram 0.26.0 library"
+  %% @dl evidence "engram:package.json:1-5"
+  %% @dl nest po-pkg-engram
+  %% @dl evidence "engram:package.json:1-5"
+  subgraph e_pkg_engram["@sentropic/engram"]
+    %% @dl entity component
+    %% @dl shortName "6 tools"
+    %% @dl role "Disabled by default"
+    %% @dl evidence "engram:src/memory-tools/index.ts:1-7"
+    %% @dl nest po-e-core
+    %% @dl evidence "engram:src/memory-tools/index.ts:1-7"
+    e_cmp_ecore["src/memory-tools/ 6 in-process tools"]
+    %% @dl entity component
+    %% @dl shortName "MCP-L4"
+    %% @dl role "Disabled, pending MCP-L5"
+    %% @dl evidence "engram:CHANGELOG.md:44"
+    %% @dl nest po-e-mcp
+    %% @dl evidence "engram:CHANGELOG.md:44"
+    e_cmp_emcp["src/mcp-memory/ MCP-L4 candidate"]
+    %% @dl entity component
+    %% @dl shortName "MemoryPortV2"
+    %% @dl role "In-process memory and store port"
+    %% @dl evidence "engram:src/memory-substrate/index.ts"
+    %% @dl nest po-e-port
+    %% @dl evidence "engram:src/memory-substrate/index.ts"
+    e_cmp_eport["MemoryPortV2 and CanonicalMemoryStorePort"]
+  end
+  %% @dl entity runtime cli
+  %% @dl shortName "engram CLI"
+  %% @dl role "In-process substrate host"
+  %% @dl evidence "engram:package.json:10-20"
+  %% @dl nest po-e-rt
+  %% @dl evidence "engram:package.json:10-20"
+  e_rt_engram["engram runtime"]
+end
+
+%% @dl entity system
+%% @dl shortName "h2a + Track"
+%% @dl role "Host hooks, V2 adapter, Track CLI"
+%% @dl evidence "h2a:packages/h2a/package.json:1-20"
+subgraph e_sys_h2a["@sentropic/h2a and packages/track"]
+  %% @dl entity package library
+  %% @dl shortName "pkg h2a"
+  %% @dl role "Host hooks, V2 adapter, P1 PR transport"
+  %% @dl evidence "h2a:packages/h2a/package.json:1-20"
+  %% @dl nest po-pkg-h2a
+  %% @dl evidence "h2a:packages/h2a/package.json:1-20"
+  subgraph e_pkg_h2a["@sentropic/h2a"]
+    %% @dl entity component
+    %% @dl shortName "v2-adapter"
+    %% @dl role "V1-to-V2 adapter, unmounted"
+    %% @dl evidence "h2a:packages/h2a/src/runtime/memory/port-v2-adapter.ts:1-12"
+    %% @dl nest po-h-adapt
+    %% @dl evidence "h2a:packages/h2a/src/runtime/memory/port-v2-adapter.ts:1-12"
+    e_cmp_hadapt["runtime/memory/port-v2-adapter.ts"]
+    %% @dl entity component
+    %% @dl shortName "live-github.ts"
+    %% @dl role "P1 GitHub PR transport"
+    %% @dl evidence "h2a:packages/h2a-runtime/src/gateway-host/live-github.ts:1-5"
+    %% @dl nest po-h-live
+    %% @dl evidence "h2a:packages/h2a-runtime/src/gateway-host/live-github.ts:1-5"
+    e_cmp_hlive["gateway-host/live-github.ts"]
+    %% @dl entity component
+    %% @dl shortName "plugin.ts"
+    %% @dl role "Hooks; memory not wired"
+    %% @dl evidence "h2a:packages/h2a/src/hosts/plugin.ts:22-46,182-210"
+    %% @dl nest po-h-hooks
+    %% @dl evidence "h2a:packages/h2a/src/hosts/plugin.ts:22-46"
+    e_cmp_hooks["hosts/plugin.ts"]
+    %% @dl entity component
+    %% @dl shortName "vendored-v2"
+    %% @dl role "Vendored V2 types only"
+    %% @dl evidence "h2a:packages/h2a/src/runtime/memory/port-v2-adapter.ts:3-4"
+    %% @dl nest po-h-vend
+    %% @dl evidence "h2a:packages/h2a/src/runtime/memory/port-v2-adapter.ts:3-4"
+    e_cmp_hvend["runtime/memory/graphify-contracts-v2.vendored.ts"]
+  end
+  %% @dl entity package library
+  %% @dl shortName "pkg track"
+  %% @dl role "Local Track package"
+  %% @dl evidence "h2a:packages/track/package.json:1-20"
+  %% @dl nest po-pkg-track
+  %% @dl evidence "h2a:packages/track/package.json:1-20"
+  subgraph e_pkg_track["@sentropic/track"]
+    %% @dl entity component
+    %% @dl shortName "ingest.ts"
+    %% @dl role "Validates and appends events"
+    %% @dl evidence "h2a:packages/track/src/ingest/ingest.ts:275-277"
+    %% @dl nest po-t-ing
+    %% @dl evidence "h2a:packages/track/src/ingest/ingest.ts:275-277"
+    e_cmp_tingest["track/src/ingest/ingest.ts"]
+  end
+  %% @dl entity runtime hook
+  %% @dl shortName "drumbeat"
+  %% @dl role "Stop, pre-action, scope guard"
+  %% @dl evidence "h2a:packages/h2a/src/hosts/plugin.ts:22-46,182-210"
+  %% @dl nest po-h-drum
+  %% @dl evidence "h2a:packages/h2a/src/hosts/plugin.ts:182-210"
+  e_rt_drum["drumbeat and guard hooks"]
+  %% @dl entity runtime cli
+  %% @dl shortName "track CLI"
+  %% @dl role "CLI writing Track events"
+  %% @dl evidence "h2a:packages/track/package.json:33"
+  %% @dl nest po-t-cli
+  %% @dl evidence "h2a:packages/track/package.json:33"
+  e_rt_trackcli["track CLI"]
+  %% @dl entity store jsonl
+  %% @dl shortName "events.jsonl"
+  %% @dl role "Local append-only event log"
+  %% @dl evidence "h2a:packages/track/src/events/store.ts:35-39"
+  %% @dl writerPolicy single-writer
+  %% @dl nest po-t-jsonl
+  %% @dl evidence "h2a:packages/track/src/events/store.ts:35-39"
+  e_st_tjsonl[".track/events.jsonl"]
+end
+
+%% @dl entity system
+%% @dl shortName "cluster-mesh"
+%% @dl role "Neutral handle and MCP registry"
+%% @dl evidence "sentropic:packages/cluster-mesh/package.json:1-20"
+subgraph e_sys_mesh["@sentropic/cluster-mesh"]
+  %% @dl entity package app
+  %% @dl shortName "sentropic api"
+  %% @dl role "Sentropic API service"
+  %% @dl evidence "sentropic:api/src/services/mcp/registry-dispatch.ts:22,34"
+  %% @dl nest po-pkg-api
+  %% @dl evidence "sentropic:api/src/services/mcp/registry-dispatch.ts:22,34"
+  subgraph e_pkg_api["sentropic api"]
+    %% @dl entity component
+    %% @dl shortName "mcp-dispatch"
+    %% @dl role "Wires sentropic.artifacts only"
+    %% @dl evidence "sentropic:api/src/services/mcp/registry-dispatch.ts:22,34"
+    %% @dl nest po-m-reg
+    %% @dl evidence "sentropic:api/src/services/mcp/registry-dispatch.ts:22,34"
+    e_cmp_mreg["api/src/services/mcp/registry-dispatch.ts"]
+  end
+  %% @dl entity package library
+  %% @dl shortName "mcp-platform"
+  %% @dl role "MCP provider registry"
+  %% @dl evidence "sentropic:packages/mcp-platform/src/registry.ts:100-143"
+  %% @dl nest po-pkg-mcpplat
+  %% @dl evidence "sentropic:packages/mcp-platform/src/registry.ts:100-143"
+  subgraph e_pkg_mcpplat["@sentropic/mcp-platform"]
+    %% @dl entity component
+    %% @dl shortName "registry.ts"
+    %% @dl role "MCP provider registry"
+    %% @dl evidence "sentropic:packages/mcp-platform/src/registry.ts:100-143"
+    %% @dl nest po-m-plat
+    %% @dl evidence "sentropic:packages/mcp-platform/src/registry.ts:100-143"
+    e_cmp_mplat["mcp-platform/src/registry.ts"]
+  end
+  %% @dl entity package library
+  %% @dl shortName "pkg mesh"
+  %% @dl role "cluster-mesh neutral handle"
+  %% @dl evidence "sentropic:packages/cluster-mesh/package.json:1-20"
+  %% @dl nest po-pkg-mesh
+  %% @dl evidence "sentropic:packages/cluster-mesh/package.json:1-20"
+  subgraph e_pkg_mesh["@sentropic/cluster-mesh"]
+    %% @dl entity component
+    %% @dl shortName "neutral-handle"
+    %% @dl role "memory-binding-v1 neutral handle"
+    %% @dl evidence "sentropic:packages/cluster-mesh/src/engram-memory/neutral-handle.ts:1-2"
+    %% @dl evidence "sentropic:packages/cluster-mesh/src/engram-memory/binding.ts:1-30"
+    %% @dl nest po-m-bind
+    %% @dl evidence "sentropic:packages/cluster-mesh/src/engram-memory/neutral-handle.ts:1-2"
+    e_cmp_mbind["engram-memory neutral handle"]
+    %% @dl entity component
+    %% @dl shortName "memory.ts"
+    %% @dl role "Remote snapshot gated (W-C seam)"
+    %% @dl evidence "sentropic:packages/cluster-mesh/src/memory.ts:5-16"
+    %% @dl nest po-m-stub
+    %% @dl evidence "sentropic:packages/cluster-mesh/src/memory.ts:5-16"
+    e_cmp_mstub["memory.ts remote snapshot gated"]
+  end
+  %% @dl entity runtime daemon
+  %% @dl shortName "sentropic-api"
+  %% @dl role "Sentropic API entry point"
+  %% @dl evidence "sentropic:api/package.json:19"
+  %% @dl nest po-m-api
+  %% @dl evidence "sentropic:api/package.json:19"
+  e_rt_api["sentropic-api server"]
+  %% @dl entity store database
+  %% @dl shortName "SQL / PG"
+  %% @dl role "Canonical store backends"
+  %% @dl evidence "sentropic:packages/cluster-mesh/src/engram-memory/sqlite.ts:1-20"
+  %% @dl evidence "sentropic:packages/cluster-mesh/src/engram-memory/postgres.ts:1-20"
+  %% @dl evidence "engram:spec/SPEC_EVOL_AGENT_MEMORY_SUBSTRATE.md:57-59"
+  %% @dl writerPolicy multi-writer
+  %% @dl nest po-m-store
+  %% @dl evidence "sentropic:packages/cluster-mesh/src/engram-memory/sqlite.ts:1-20"
+  e_st_mstore["SQLite and Postgres stores"]
+end
+
+%% @dl entity repo
+%% @dl role "engram repository"
+%% @dl evidence "engram:package.json:1-5"
+subgraph e_repo_engram["engram"]
+end
+
+%% @dl entity repo
+%% @dl role "h2a and Track repository"
+%% @dl evidence "h2a:package.json:1-5"
+subgraph e_repo_h2a["h2a"]
+end
+
+%% @dl entity repo
+%% @dl role "sentropic repository"
+%% @dl evidence "sentropic:package.json:1-5"
+subgraph e_repo_sentropic["sentropic"]
+end
+
+%% @dl entity host workstation
+%% @dl role "Local developer workstation"
+%% @dl evidence "h2a:README.md:62"
+subgraph e_host_local["Workstation"]
+end
+
+%% @dl rel mi-engram managedIn e_sys_engram e_repo_engram
+%% @dl evidence "engram:package.json:1-5"
+%% @dl edge da-pkg-engram deployedAs
+%% @dl evidence "engram:package.json:10-20"
+e_pkg_engram -->|"deployed as"| e_rt_engram
+%% @dl rel eb-ecore executedBy e_cmp_ecore e_rt_engram
+%% @dl evidence "engram:src/memory-tools/index.ts:1-7"
+%% @dl rel eb-emcp executedBy e_cmp_emcp e_rt_engram
+%% @dl evidence "engram:package.json:35"
+%% @dl rel eb-eport executedBy e_cmp_eport e_rt_engram
+%% @dl evidence "engram:src/memory-substrate/index.ts"
+%% @dl rel ro-ert runsOn e_rt_engram e_host_local
+%% @dl evidence "engram:package.json:10-20"
+%% @dl rel mi-h2a managedIn e_sys_h2a e_repo_h2a
+%% @dl evidence "h2a:packages/h2a/package.json:1-5"
+%% @dl edge da-pkg-h2a deployedAs
+%% @dl evidence "h2a:packages/h2a/src/hosts/plugin.ts:22-46"
+e_pkg_h2a -->|"deployed as"| e_rt_drum
+%% @dl rel eb-hooks executedBy e_cmp_hooks e_rt_drum
+%% @dl evidence "h2a:packages/h2a/src/hosts/plugin.ts:22-46"
+%% @dl edge da-pkg-track deployedAs
+%% @dl evidence "h2a:packages/track/package.json:33"
+e_pkg_track -->|"deployed as"| e_rt_trackcli
+%% @dl rel eb-tingest executedBy e_cmp_tingest e_rt_trackcli
+%% @dl evidence "h2a:packages/track/src/ingest/ingest.ts:275-277"
+%% @dl rel ac-ting-jsonl accesses e_cmp_tingest e_st_tjsonl
+%% @dl evidence "h2a:packages/track/src/events/store.ts:35-39"
+%% @dl mode append
+%% @dl rel ro-drum runsOn e_rt_drum e_host_local
+%% @dl evidence "h2a:packages/h2a/src/hosts/plugin.ts:182-210"
+%% @dl rel ro-tcli runsOn e_rt_trackcli e_host_local
+%% @dl evidence "h2a:packages/track/package.json:33"
+%% @dl rel ac-tcli-read accesses e_rt_trackcli e_st_tjsonl
+%% @dl evidence "h2a:packages/track/src/events/store.ts:35-39"
+%% @dl mode read
+%% @dl rel mi-mesh managedIn e_sys_mesh e_repo_sentropic
+%% @dl evidence "sentropic:packages/cluster-mesh/package.json:1-5"
+%% @dl edge da-pkg-api deployedAs
+%% @dl evidence "sentropic:api/package.json:19"
+e_pkg_api -->|"deployed as"| e_rt_api
+%% @dl edge do-api-mcpplat dependsOn
+%% @dl evidence "sentropic:api/package.json:63"
+e_pkg_api -->|"depends on"| e_pkg_mcpplat
+%% @dl edge do-api-mesh dependsOn
+%% @dl evidence "sentropic:api/package.json:55"
+e_pkg_api -->|"depends on"| e_pkg_mesh
+%% @dl rel eb-mreg executedBy e_cmp_mreg e_rt_api
+%% @dl evidence "sentropic:api/src/routes/namespaces/mcp.ts:1"
+%% @dl rel eb-mplat executedBy e_cmp_mplat e_rt_api
+%% @dl evidence "sentropic:api/src/services/mcp/registry-dispatch.ts:22"
+%% @dl rel eb-mbind executedBy e_cmp_mbind e_rt_api
+%% @dl evidence "sentropic:api/package.json:55"
+%% @dl rel ac-bind-read accesses e_cmp_mbind e_st_mstore
+%% @dl evidence "sentropic:packages/cluster-mesh/src/engram-memory/sqlite.ts:1-20"
+%% @dl mode read
+%% @dl edge ac-bind-store accesses
+%% @dl evidence "sentropic:packages/cluster-mesh/src/engram-memory/sqlite.ts:1-20"
+%% @dl mode write
+e_cmp_mbind -->|"writes"| e_st_mstore
+%% @dl rel eb-mstub executedBy e_cmp_mstub e_rt_api
+%% @dl evidence "sentropic:api/package.json:55"
+%% @dl rel ro-api runsOn e_rt_api e_host_local
+%% @dl evidence "sentropic:api/package.json:19"
+%% @dl rel ob-repo-engram ownedBy e_repo_engram e_act_owner
+%% @dl evidence "engram:package.json:1-5"
+%% @dl rel ob-repo-h2a ownedBy e_repo_h2a e_act_owner
+%% @dl evidence "h2a:package.json:1-5"
+%% @dl rel ob-repo-sent ownedBy e_repo_sentropic e_act_owner
+%% @dl evidence "sentropic:package.json:1-5"
+%% @dl rel op-host-local operatedBy e_host_local e_act_owner
+%% @dl evidence "h2a:README.md:62"
+
+%% @dl view current archi-composition
+%% @dl draw e_cmp_ecore
+%% @dl draw e_cmp_emcp
+%% @dl draw e_cmp_eport
+%% @dl draw e_cmp_hooks
+%% @dl draw e_cmp_mbind
+%% @dl draw e_cmp_mplat
+%% @dl draw e_cmp_mreg
+%% @dl draw e_cmp_mstub
+%% @dl draw e_cmp_tingest
+%% @dl draw e_pkg_api
+%% @dl draw e_pkg_elive
+%% @dl draw e_pkg_engram
+%% @dl draw e_pkg_h2a
+%% @dl draw e_pkg_mcpplat
+%% @dl draw e_pkg_mesh
+%% @dl draw e_pkg_track
+%% @dl draw e_rt_api
+%% @dl draw e_rt_drum
+%% @dl draw e_rt_engram
+%% @dl draw e_rt_trackcli
+%% @dl draw e_st_mstore
+%% @dl draw e_st_tjsonl
+%% @dl draw e_sys_engram
+%% @dl draw e_sys_h2a
+%% @dl draw e_sys_mesh
+%% @dl expanded e_pkg_api
+%% @dl expanded e_pkg_elive
+%% @dl expanded e_pkg_engram
+%% @dl expanded e_pkg_h2a
+%% @dl expanded e_pkg_mcpplat
+%% @dl expanded e_pkg_mesh
+%% @dl expanded e_pkg_track
+%% @dl expanded e_sys_engram
+%% @dl expanded e_sys_h2a
+%% @dl expanded e_sys_mesh
