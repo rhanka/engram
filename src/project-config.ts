@@ -20,6 +20,26 @@ import type {
   NormalizedStorageMirrorConfig,
   ProjectConfigDiscoveryResult,
 } from "./types.js";
+import type {
+  AppContextDataDialect,
+  AppContextHttpClientWrapperConfig,
+  AppContextProjectConfig,
+  AppContextProjectConfigInput,
+  AppContextRouterKind,
+  AppContextUiRouteConfig,
+  AppContextUrlHelperConfig,
+} from "./app-context/types.js";
+
+export type { AppContextProjectConfig, AppContextProjectConfigInput } from "./app-context/types.js";
+
+declare module "./types.js" {
+  interface GraphifyProjectConfig {
+    app_context?: AppContextProjectConfigInput;
+  }
+  interface NormalizedProjectConfig {
+    app_context: AppContextProjectConfig;
+  }
+}
 
 /**
  * Keys that look like secrets and are forbidden inside the storage: YAML block.
@@ -74,9 +94,7 @@ const VALID_IMAGE_ARTIFACT_SOURCES = new Set(["ocr_crops", "images", "all"]);
 const VALID_INPUT_SCOPE_MODES = new Set(["auto", "committed", "tracked", "all"]);
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
+  return isPlainObject(value) ? value : {};
 }
 
 function asStringArray(value: unknown): string[] {
@@ -328,6 +346,11 @@ export function validateProjectConfig(config: GraphifyProjectConfig): string[] {
     errors.push(...validateStorage(storage));
   }
 
+  // Validate app_context block if present (§3.4)
+  if (config.app_context !== undefined) {
+    errors.push(...validateAppContextConfig(config.app_context));
+  }
+
   return errors;
 }
 
@@ -436,7 +459,436 @@ export function normalizeProjectConfig(
       },
     },
     storage: normalizeStorageConfig(config.storage),
+    app_context: normalizeAppContextConfig(config.app_context),
   };
+}
+
+const VALID_APP_CONTEXT_KEYS = new Set([
+  "enabled",
+  "spec_map",
+  "retention",
+  "specs",
+  "data_model",
+  "call_graph",
+  "ui",
+  "http_client_wrappers",
+  "url_helpers",
+]);
+
+const VALID_APP_CONTEXT_DIALECTS = new Set<AppContextDataDialect>(["postgres", "mysql", "sqlite"]);
+const VALID_APP_CONTEXT_ROUTER_KINDS = new Set<AppContextRouterKind>(["sveltekit", "hash", "pathname"]);
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function isNonEmptyStringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.every((item) => typeof item === "string" && item.trim().length > 0)
+  );
+}
+
+function validateAppContextConfig(raw: unknown): string[] {
+  const errors: string[] = [];
+  if (!isPlainObject(raw)) {
+    errors.push("app_context must be an object");
+    return errors;
+  }
+
+  for (const key of Object.keys(raw)) {
+    if (!VALID_APP_CONTEXT_KEYS.has(key)) {
+      errors.push(`app_context.${key} is not a recognized option`);
+    }
+  }
+
+  if (raw.enabled !== undefined && typeof raw.enabled !== "boolean") {
+    errors.push("app_context.enabled must be a boolean");
+  }
+
+  if (
+    raw.spec_map !== undefined &&
+    (typeof raw.spec_map !== "string" || raw.spec_map.trim().length === 0)
+  ) {
+    errors.push("app_context.spec_map must be a non-empty string");
+  }
+
+  if (raw.retention !== undefined) {
+    if (!isPlainObject(raw.retention)) {
+      errors.push("app_context.retention must be an object");
+    } else {
+      for (const key of Object.keys(raw.retention)) {
+        if (key !== "max_commits_per_repo") {
+          errors.push(`app_context.retention.${key} is not a recognized option`);
+        }
+      }
+      const maxCommits = raw.retention.max_commits_per_repo;
+      if (
+        maxCommits !== undefined &&
+        (typeof maxCommits !== "number" || !Number.isInteger(maxCommits) || maxCommits < 1)
+      ) {
+        errors.push("app_context.retention.max_commits_per_repo must be an integer >= 1");
+      }
+    }
+  }
+
+  if (raw.specs !== undefined) {
+    if (!isPlainObject(raw.specs)) {
+      errors.push("app_context.specs must be an object");
+    } else {
+      for (const key of Object.keys(raw.specs)) {
+        if (key !== "include" && key !== "exclude") {
+          errors.push(`app_context.specs.${key} is not a recognized option`);
+        }
+      }
+      if (raw.specs.include !== undefined && !isNonEmptyStringArray(raw.specs.include)) {
+        errors.push("app_context.specs.include must be a list of non-empty strings");
+      }
+      if (raw.specs.exclude !== undefined && !isNonEmptyStringArray(raw.specs.exclude)) {
+        errors.push("app_context.specs.exclude must be a list of non-empty strings");
+      }
+    }
+  }
+
+  if (raw.data_model !== undefined) {
+    if (!isPlainObject(raw.data_model)) {
+      errors.push("app_context.data_model must be an object");
+    } else {
+      const allowedDataModelKeys = new Set([
+        "default_dialect",
+        "default_schema",
+        "sql_include",
+        "orm_include",
+      ]);
+      for (const key of Object.keys(raw.data_model)) {
+        if (!allowedDataModelKeys.has(key)) {
+          errors.push(`app_context.data_model.${key} is not a recognized option`);
+        }
+      }
+      const dialect = raw.data_model.default_dialect;
+      if (
+        dialect !== undefined &&
+        (typeof dialect !== "string" || !VALID_APP_CONTEXT_DIALECTS.has(dialect as AppContextDataDialect))
+      ) {
+        errors.push("app_context.data_model.default_dialect must be one of postgres, mysql, sqlite");
+      }
+      const schema = raw.data_model.default_schema;
+      if (schema !== undefined && (typeof schema !== "string" || schema.trim().length === 0)) {
+        errors.push("app_context.data_model.default_schema must be a non-empty string");
+      }
+      if (raw.data_model.sql_include !== undefined && !isNonEmptyStringArray(raw.data_model.sql_include)) {
+        errors.push("app_context.data_model.sql_include must be a list of non-empty strings");
+      }
+      if (raw.data_model.orm_include !== undefined && !isNonEmptyStringArray(raw.data_model.orm_include)) {
+        errors.push("app_context.data_model.orm_include must be a list of non-empty strings");
+      }
+    }
+  }
+
+  if (raw.call_graph !== undefined) {
+    if (!isPlainObject(raw.call_graph)) {
+      errors.push("app_context.call_graph must be an object");
+    } else {
+      for (const key of Object.keys(raw.call_graph)) {
+        if (key !== "max_hops") {
+          errors.push(`app_context.call_graph.${key} is not a recognized option`);
+        }
+      }
+      const maxHops = raw.call_graph.max_hops;
+      if (
+        maxHops !== undefined &&
+        (typeof maxHops !== "number" || !Number.isInteger(maxHops) || maxHops < 1 || maxHops > 6)
+      ) {
+        errors.push("app_context.call_graph.max_hops must be an integer between 1 and 6");
+      }
+    }
+  }
+
+  if (raw.ui !== undefined) {
+    if (!isPlainObject(raw.ui)) {
+      errors.push("app_context.ui must be an object");
+    } else {
+      for (const key of Object.keys(raw.ui)) {
+        if (key !== "routes") {
+          errors.push(`app_context.ui.${key} is not a recognized option`);
+        }
+      }
+      if (raw.ui.routes !== undefined) {
+        if (!Array.isArray(raw.ui.routes)) {
+          errors.push("app_context.ui.routes must be a list of route declarations");
+        } else {
+          const allowedRouteKeys = new Set(["pattern", "router_kind", "component", "export_name"]);
+          raw.ui.routes.forEach((entry, index) => {
+            if (!isPlainObject(entry)) {
+              errors.push(`app_context.ui.routes[${index}] must be an object`);
+              return;
+            }
+            for (const key of Object.keys(entry)) {
+              if (!allowedRouteKeys.has(key)) {
+                errors.push(`app_context.ui.routes[${index}].${key} is not a recognized option`);
+              }
+            }
+            if (typeof entry.pattern !== "string" || entry.pattern.trim().length === 0) {
+              errors.push(`app_context.ui.routes[${index}].pattern must be a non-empty string`);
+            }
+            if (
+              typeof entry.router_kind !== "string" ||
+              !VALID_APP_CONTEXT_ROUTER_KINDS.has(entry.router_kind as AppContextRouterKind)
+            ) {
+              errors.push(
+                `app_context.ui.routes[${index}].router_kind must be one of sveltekit, hash, pathname`,
+              );
+            }
+            if (typeof entry.component !== "string" || entry.component.trim().length === 0) {
+              errors.push(`app_context.ui.routes[${index}].component must be a non-empty string`);
+            }
+            if (
+              entry.export_name !== undefined &&
+              (typeof entry.export_name !== "string" || entry.export_name.trim().length === 0)
+            ) {
+              errors.push(`app_context.ui.routes[${index}].export_name must be a non-empty string`);
+            }
+          });
+        }
+      }
+    }
+  }
+
+  if (raw.http_client_wrappers !== undefined) {
+    if (!Array.isArray(raw.http_client_wrappers)) {
+      errors.push("app_context.http_client_wrappers must be a list");
+    } else {
+      const allowedWrapperKeys = new Set([
+        "import_from",
+        "export_name",
+        "url_arg_index",
+        "options_arg_index",
+        "method_option_path",
+      ]);
+      raw.http_client_wrappers.forEach((entry, index) => {
+        if (!isPlainObject(entry)) {
+          errors.push(`app_context.http_client_wrappers[${index}] must be an object`);
+          return;
+        }
+        for (const key of Object.keys(entry)) {
+          if (!allowedWrapperKeys.has(key)) {
+            errors.push(`app_context.http_client_wrappers[${index}].${key} is not a recognized option`);
+          }
+        }
+        if (typeof entry.import_from !== "string" || entry.import_from.trim().length === 0) {
+          errors.push(
+            `app_context.http_client_wrappers[${index}].import_from must be a non-empty string`,
+          );
+        }
+        if (typeof entry.export_name !== "string" || entry.export_name.trim().length === 0) {
+          errors.push(
+            `app_context.http_client_wrappers[${index}].export_name must be a non-empty string`,
+          );
+        }
+        if (
+          typeof entry.url_arg_index !== "number" ||
+          !Number.isInteger(entry.url_arg_index) ||
+          entry.url_arg_index < 0
+        ) {
+          errors.push(
+            `app_context.http_client_wrappers[${index}].url_arg_index must be a non-negative integer`,
+          );
+        }
+        if (
+          entry.options_arg_index !== undefined &&
+          (typeof entry.options_arg_index !== "number" ||
+            !Number.isInteger(entry.options_arg_index) ||
+            entry.options_arg_index < 0)
+        ) {
+          errors.push(
+            `app_context.http_client_wrappers[${index}].options_arg_index must be a non-negative integer`,
+          );
+        }
+        if (entry.method_option_path !== undefined) {
+          if (
+            !Array.isArray(entry.method_option_path) ||
+            entry.method_option_path.length === 0 ||
+            !entry.method_option_path.every(
+              (segment) =>
+                (typeof segment === "string" && segment.trim().length > 0) ||
+                (typeof segment === "number" && Number.isInteger(segment) && segment >= 0),
+            )
+          ) {
+            errors.push(
+              `app_context.http_client_wrappers[${index}].method_option_path must be a non-empty list of strings or non-negative integers`,
+            );
+          }
+        }
+      });
+    }
+  }
+
+  if (raw.url_helpers !== undefined) {
+    if (!Array.isArray(raw.url_helpers)) {
+      errors.push("app_context.url_helpers must be a list");
+    } else {
+      const allowedHelperKeys = new Set([
+        "import_from",
+        "export_name",
+        "file",
+        "local_symbol",
+        "path_arg_index",
+        "prefix",
+      ]);
+      raw.url_helpers.forEach((entry, index) => {
+        if (!isPlainObject(entry)) {
+          errors.push(`app_context.url_helpers[${index}] must be an object`);
+          return;
+        }
+        for (const key of Object.keys(entry)) {
+          if (!allowedHelperKeys.has(key)) {
+            errors.push(`app_context.url_helpers[${index}].${key} is not a recognized option`);
+          }
+        }
+        const hasImportedAny = entry.import_from !== undefined || entry.export_name !== undefined;
+        const hasLocalAny = entry.file !== undefined || entry.local_symbol !== undefined;
+        const validImported =
+          typeof entry.import_from === "string" &&
+          entry.import_from.trim().length > 0 &&
+          typeof entry.export_name === "string" &&
+          entry.export_name.trim().length > 0 &&
+          !hasLocalAny;
+        const validLocal =
+          typeof entry.file === "string" &&
+          entry.file.trim().length > 0 &&
+          typeof entry.local_symbol === "string" &&
+          entry.local_symbol.trim().length > 0 &&
+          !hasImportedAny;
+        if (!validImported && !validLocal) {
+          errors.push(
+            `app_context.url_helpers[${index}] must specify either { import_from, export_name } or { file, local_symbol } (and not both)`,
+          );
+        }
+        if (
+          typeof entry.path_arg_index !== "number" ||
+          !Number.isInteger(entry.path_arg_index) ||
+          entry.path_arg_index < 0
+        ) {
+          errors.push(
+            `app_context.url_helpers[${index}].path_arg_index must be a non-negative integer`,
+          );
+        }
+        if (entry.prefix !== undefined && typeof entry.prefix !== "string") {
+          errors.push(`app_context.url_helpers[${index}].prefix must be a string`);
+        }
+      });
+    }
+  }
+
+  return errors;
+}
+
+function normalizeAppContextConfig(
+  raw: GraphifyProjectConfig["app_context"],
+): AppContextProjectConfig {
+  const rec = asRecord(raw);
+  const retention = asRecord(rec.retention);
+  const specs = asRecord(rec.specs);
+  const dataModel = asRecord(rec.data_model);
+  const callGraph = asRecord(rec.call_graph);
+  const ui = asRecord(rec.ui);
+
+  const routesRaw = Array.isArray(ui.routes) ? ui.routes : [];
+  const routes: AppContextUiRouteConfig[] = routesRaw.map((entry) => {
+    const r = asRecord(entry);
+    return {
+      pattern: String(r.pattern).trim(),
+      router_kind: String(r.router_kind).trim() as AppContextRouterKind,
+      component: String(r.component).trim(),
+      export_name:
+        typeof r.export_name === "string" && r.export_name.trim().length > 0
+          ? r.export_name.trim()
+          : "default",
+    };
+  });
+
+  const wrappersRaw = Array.isArray(rec.http_client_wrappers) ? rec.http_client_wrappers : [];
+  const http_client_wrappers: AppContextHttpClientWrapperConfig[] = wrappersRaw.map((entry) => {
+    const w = asRecord(entry);
+    const normalized: AppContextHttpClientWrapperConfig = {
+      import_from: String(w.import_from).trim(),
+      export_name: String(w.export_name).trim(),
+      url_arg_index: Number(w.url_arg_index),
+    };
+    if (typeof w.options_arg_index === "number") {
+      normalized.options_arg_index = w.options_arg_index;
+    }
+    if (Array.isArray(w.method_option_path)) {
+      normalized.method_option_path = w.method_option_path.map((seg) =>
+        typeof seg === "number" ? seg : String(seg),
+      );
+    }
+    return normalized;
+  });
+
+  const helpersRaw = Array.isArray(rec.url_helpers) ? rec.url_helpers : [];
+  const url_helpers: AppContextUrlHelperConfig[] = helpersRaw.map((entry) => {
+    const h = asRecord(entry);
+    if (typeof h.file === "string") {
+      const localHelper: Extract<AppContextUrlHelperConfig, { file: string }> = {
+        file: h.file.trim(),
+        local_symbol: String(h.local_symbol).trim(),
+        path_arg_index: Number(h.path_arg_index),
+      };
+      if (typeof h.prefix === "string") {
+        localHelper.prefix = h.prefix;
+      }
+      return localHelper;
+    }
+    const importedHelper: Extract<AppContextUrlHelperConfig, { import_from: string }> = {
+      import_from: String(h.import_from).trim(),
+      export_name: String(h.export_name).trim(),
+      path_arg_index: Number(h.path_arg_index),
+    };
+    if (typeof h.prefix === "string") {
+      importedHelper.prefix = h.prefix;
+    }
+    return importedHelper;
+  });
+
+  const normalized: AppContextProjectConfig = {
+    enabled: asBoolean(rec.enabled, false),
+    retention: {
+      max_commits_per_repo:
+        typeof retention.max_commits_per_repo === "number" ? retention.max_commits_per_repo : 10,
+    },
+    specs: {
+      include: Array.isArray(specs.include) ? asStringArray(specs.include) : ["docs/spec/**/*.md"],
+      exclude: Array.isArray(specs.exclude) ? asStringArray(specs.exclude) : [],
+    },
+    data_model: {
+      default_dialect: (asString(dataModel.default_dialect) as AppContextDataDialect | null) ?? "postgres",
+      default_schema: asString(dataModel.default_schema) ?? "public",
+      sql_include: Array.isArray(dataModel.sql_include)
+        ? asStringArray(dataModel.sql_include)
+        : ["**/*.sql"],
+      orm_include: Array.isArray(dataModel.orm_include) ? asStringArray(dataModel.orm_include) : [],
+    },
+    call_graph: {
+      max_hops: typeof callGraph.max_hops === "number" ? callGraph.max_hops : 3,
+    },
+    ui: {
+      routes,
+    },
+    http_client_wrappers,
+    url_helpers,
+  };
+
+  const specMap = asString(rec.spec_map);
+  if (specMap !== null) {
+    normalized.spec_map = specMap.trim();
+  }
+
+  return normalized;
 }
 
 function normalizeStorageConfig(

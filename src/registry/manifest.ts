@@ -12,7 +12,28 @@
  */
 
 import { createRequire } from 'node:module';
-import type { MemoryRegistryPackageV1 } from '../mcp/memory/receipts.js';
+import type {
+  MemoryRegistryEntryV1,
+  MemoryRegistryPackageV1,
+} from '../mcp/memory/receipts.js';
+import type { RegistryEnvelope } from '../ontology-guardian/catalog.js';
+
+export type { MemoryRegistryEntryV1, MemoryRegistryPackageV1 };
+export type OntologyRegistryEntryV1 = Extract<RegistryEnvelope, { readonly kind: 'ontology' }>;
+export type RegistryPackageEntryV1 = MemoryRegistryEntryV1 | OntologyRegistryEntryV1;
+
+export interface RegistryPackageV1 {
+  format: 'sentropic.registry-package/v1';
+  entries: RegistryPackageEntryV1[];
+}
+
+type RequireMcpManifestAsset<T extends { mcp: { manifestAsset: string } }> =
+  T['mcp']['manifestAsset'];
+// @ts-expect-error RegistryPackageEntryV1 requires kind narrowing before accessing .mcp
+type _UnnarrowedMcpAccessRejected = RequireMcpManifestAsset<RegistryPackageEntryV1>;
+type _NarrowedMcpAccessAllowed = RequireMcpManifestAsset<
+  Extract<RegistryPackageEntryV1, { kind: 'mcp' }>
+>;
 
 // Anchor for the runtime data load: the ESM bundle uses `import.meta.url`,
 // the CJS twin (unreachable via the package exports, which expose only
@@ -33,7 +54,7 @@ const require = createRequire(anchor);
 // assembled dynamically so the bundler leaves this as a runtime data load
 // instead of inlining a stale copy at bundle time.
 const entriesPath = ['..', '..', 'registry', 'entries.v1.json'].join('/');
-const loaded = require(entriesPath) as MemoryRegistryPackageV1;
+const loaded = require(entriesPath) as RegistryPackageV1;
 
 if (
   loaded === undefined || loaded === null || typeof loaded !== 'object' ||
@@ -44,5 +65,5 @@ if (
 }
 
 /** The registry-package envelope (`sentropic.registry-package/v1`). */
-export const manifest: MemoryRegistryPackageV1 = loaded;
+export const manifest: RegistryPackageV1 = loaded;
 export default manifest;
