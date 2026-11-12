@@ -538,8 +538,11 @@ assert.equal(manifestMod.manifest.format, 'sentropic.registry-package/v1');
 assert.equal(manifestMod.default.format, 'sentropic.registry-package/v1');
 const entries = JSON.parse(fs.readFileSync(path.join(pkgDir, 'registry/entries.v1.json'), 'utf8'));
 assert.equal(JSON.stringify(manifestMod.manifest), JSON.stringify(entries));
-assert.equal(entries.entries.length, 1);
-const entry = entries.entries[0];
+const memoryEntries = entries.entries.filter((e) => e.id === 'sentropic.engram.memory');
+assert.equal(memoryEntries.length, 1);
+const appContextEntries = entries.entries.filter((e) => e.id === 'sentropic.engram.app-context');
+assert.equal(appContextEntries.length, 1);
+const entry = memoryEntries[0];
 assert.equal(entry.id, 'sentropic.engram.memory');
 
 // Standard adapter identity plus the manifest publication version.
@@ -1142,9 +1145,13 @@ walkState(process.cwd(), 0);
 assert.deepEqual(foundState, []);
 
 const entries = JSON.parse(fs.readFileSync(path.join(pkgDir, 'registry/entries.v1.json'), 'utf8'));
-assert.equal(entries.entries[0].id, 'sentropic.engram.memory');
-assert.equal(entries.entries[0].entryVersion, '1.0.0');
-assert.equal(entries.entries[0].publisher.packageVersion, JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8')).version);
+const memoryEntries = entries.entries.filter((e) => e.id === 'sentropic.engram.memory');
+assert.equal(memoryEntries.length, 1);
+const appContextEntries = entries.entries.filter((e) => e.id === 'sentropic.engram.app-context');
+assert.equal(appContextEntries.length, 1);
+assert.equal(memoryEntries[0].id, 'sentropic.engram.memory');
+assert.equal(memoryEntries[0].entryVersion, '1.0.0');
+assert.equal(memoryEntries[0].publisher.packageVersion, JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8')).version);
 console.log('L4-DISABLED-PROBE-OK');
 
 `;
@@ -1235,6 +1242,28 @@ export function assertNoNativeBuildAttempts(installLog, label, traceRows = [], {
     evidence.slice(0, 10).join('\n') + '\ninstall log excerpt:\n' + installLog.slice(-2000));
 }
 
+export function verifyPackedRegistryEntries(entries, expectedPackageVersion = null) {
+  if (!entries || entries.format !== 'sentropic.registry-package/v1' || !Array.isArray(entries.entries)) {
+    throw new Error('invalid registry-package envelope');
+  }
+  const memoryEntries = entries.entries.filter(entry => entry.id === 'sentropic.engram.memory');
+  if (memoryEntries.length !== 1) {
+    throw new Error(`expected exactly 1 sentropic.engram.memory entry, saw ${memoryEntries.length}`);
+  }
+  const appContextEntries = entries.entries.filter(entry => entry.id === 'sentropic.engram.app-context');
+  if (appContextEntries.length !== 1) {
+    throw new Error(`expected exactly 1 sentropic.engram.app-context entry, saw ${appContextEntries.length}`);
+  }
+  const memoryEntry = memoryEntries[0];
+  if (memoryEntry.entryVersion !== '1.0.0') {
+    throw new Error(`unexpected memory entryVersion: ${memoryEntry.entryVersion}`);
+  }
+  if (expectedPackageVersion !== null && memoryEntry.publisher?.packageVersion !== expectedPackageVersion) {
+    throw new Error(`memory entry packageVersion ${memoryEntry.publisher?.packageVersion} !== ${expectedPackageVersion}`);
+  }
+  return { memoryEntry, appContextEntry: appContextEntries[0] };
+}
+
 /**
  * Candidate-manifest assertion (worktree side): exports come from the PACKED
  * package.json (exact equality), the tarball binding matches the just-packed
@@ -1259,11 +1288,12 @@ async function assertCandidateManifest(packed) {
       throw new Error('candidate-manifest exports differ from the packed package.json (refresh first)');
     }
     const entries = readJson(join(ROOT, 'registry', 'entries.v1.json'));
+    const { memoryEntry } = verifyPackedRegistryEntries(entries, packedPkg.version);
     const packedAssets = new Map();
-    for (const asset of entries.entries[0].assets) {
+    for (const asset of memoryEntry.assets) {
       packedAssets.set(asset.path, new Uint8Array(readFileSync(join(packedRoot, asset.path))));
     }
-    const validatorAsset = entries.entries[0].assets.find(asset => asset.role === 'validator');
+    const validatorAsset = memoryEntry.assets.find(asset => asset.role === 'validator');
     const { validateMemoryPublisherAssetsV1 } = await import(join(packedRoot, validatorAsset.path));
     const receipt = readJson(join(ROOT, 'registry', 'publisher-assets.v1.json'));
     if (receipt.tarballSha256 !== packed.sha256 || receipt.tarballIntegrity !== packed.integrity) {
