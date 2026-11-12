@@ -218,7 +218,8 @@ export type AppContextDiagnosticCode =
   | "schema-conflict"
   | "track-id-unresolved"
   | "dynamic-component"
-  | "endpoint-unresolved";
+  | "endpoint-unresolved"
+  | "unsupported-construct";
 
 export interface AppContextDiagnosticCandidate {
   file: string;
