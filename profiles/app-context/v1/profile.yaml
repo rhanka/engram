@@ -1,0 +1,544 @@
+id: app-context
+version: 1
+default_language: en
+
+node_types:
+  Spec:
+    aliases: [specification, spec document]
+    source_backed: true
+    status_policy: hardenable
+    visual_encoding:
+      shape: diamond
+      fill: solid
+      border: bold
+      color_hex: "#2563EB"
+  SpecSection:
+    aliases: [spec section, heading section]
+    source_backed: true
+    status_policy: hardenable
+    visual_encoding:
+      shape: diamond
+      fill: hollow
+      border: normal
+      color_hex: "#3B82F6"
+  Requirement:
+    aliases: [normative requirement, spec requirement]
+    source_backed: true
+    status_policy: hardenable
+    visual_encoding:
+      shape: star
+      fill: solid
+      border: bold
+      color_hex: "#1D4ED8"
+  TrackWorkpackage:
+    aliases: [workpackage, wp]
+    source_backed: true
+    status_policy: reference
+    visual_encoding:
+      shape: hexagon
+      fill: solid
+      border: bold
+      color_hex: "#7C3AED"
+  TrackItem:
+    aliases: [track item, task, bug, feature, chore]
+    source_backed: true
+    status_policy: reference
+    visual_encoding:
+      shape: hexagon
+      fill: hollow
+      border: normal
+      color_hex: "#8B5CF6"
+  TrackDecision:
+    aliases: [decision, track decision]
+    source_backed: true
+    status_policy: reference
+    visual_encoding:
+      shape: star
+      fill: hollow
+      border: bold
+      color_hex: "#6D28D9"
+  DataEntity:
+    aliases: [table, view, sql table, orm table]
+    source_backed: true
+    status_policy: hardenable
+    visual_encoding:
+      shape: box
+      fill: solid
+      border: bold
+      color_hex: "#059669"
+  DataField:
+    aliases: [column, field, sql column, orm column]
+    source_backed: true
+    status_policy: hardenable
+    visual_encoding:
+      shape: box
+      fill: hollow
+      border: normal
+      color_hex: "#10B981"
+  Route:
+    aliases: [screen, page route, ui route]
+    source_backed: true
+    status_policy: hardenable
+    visual_encoding:
+      shape: triangle
+      fill: solid
+      border: bold
+      color_hex: "#D97706"
+  Component:
+    aliases: [ui component, svelte component]
+    source_backed: true
+    status_policy: hardenable
+    visual_encoding:
+      shape: square
+      fill: solid
+      border: normal
+      color_hex: "#EA580C"
+  ApiEndpoint:
+    aliases: [http endpoint, api route]
+    source_backed: true
+    status_policy: hardenable
+    visual_encoding:
+      shape: triangle
+      fill: hollow
+      border: bold
+      color_hex: "#DC2626"
+  CodeSymbol:
+    aliases: [function, handler, class, symbol]
+    source_backed: true
+    status_policy: hardenable
+    visual_encoding:
+      shape: dot
+      fill: solid
+      border: normal
+      color_hex: "#475569"
+  File:
+    aliases: [source file]
+    source_backed: true
+    status_policy: reference
+    visual_encoding:
+      shape: square
+      fill: hollow
+      border: normal
+      color_hex: "#64748B"
+  Commit:
+    aliases: [git commit, revision]
+    source_backed: true
+    status_policy: reference
+    visual_encoding:
+      shape: dot
+      fill: hollow
+      border: bold
+      color_hex: "#334155"
+  Branch:
+    aliases: [git branch, ref]
+    source_backed: true
+    status_policy: reference
+    visual_encoding:
+      shape: dot
+      fill: hollow
+      border: normal
+      color_hex: "#94A3B8"
+  mcp_config_file:
+    aliases: [mcp config]
+    source_backed: true
+    status_policy: reference
+  mcp_server:
+    aliases: [mcp server]
+    source_backed: true
+    status_policy: reference
+  mcp_command:
+    aliases: [mcp command]
+    source_backed: true
+    status_policy: reference
+  mcp_package:
+    aliases: [mcp package]
+    source_backed: true
+    status_policy: reference
+  env_var:
+    aliases: [environment variable]
+    source_backed: true
+    status_policy: reference
+
+relation_types:
+  contains:
+    source_types: [File, Spec, SpecSection, CodeSymbol, mcp_config_file]
+    target_types: [Spec, SpecSection, DataEntity, Route, Component, ApiEndpoint, CodeSymbol, mcp_server]
+    requires_evidence: false
+    assertion_basis: [explicit_declaration, ast_containment]
+    derivation_methods:
+      - extract_markdown_heading
+      - extract_sql_contains
+      - extract_svelte_contains
+      - extract_code_contains
+      - mcp_config_extract
+      - file_spec_declaration
+      - orm_entity_declaration
+      - route_declaration
+      - svelte_component_file
+      - endpoint_declaration
+      - ast_symbol_declaration
+  specifies:
+    source_types: [Spec, SpecSection]
+    target_types: [Requirement]
+    requires_evidence: true
+    assertion_basis: [explicit_declaration]
+    derivation_methods:
+      - spec_requirement_marker
+      - spec_frontmatter_requirement
+  supersedes:
+    source_types: [Spec]
+    target_types: [Spec]
+    requires_evidence: true
+    assertion_basis: [explicit_declaration]
+    derivation_methods:
+      - spec_frontmatter_supersedes
+      - spec_map_supersedes
+  governs:
+    source_types: [Spec, SpecSection, Requirement]
+    target_types: [Route, Component, ApiEndpoint, DataEntity, DataField, CodeSymbol]
+    requires_evidence: true
+    assertion_basis: [explicit_declaration]
+    derivation_methods:
+      - spec_frontmatter_governs
+      - spec_section_marker_governs
+      - spec_map_governs
+  cites:
+    source_types: [File, Spec, SpecSection, Requirement]
+    target_types: [Spec, SpecSection, Requirement]
+    requires_evidence: false
+    assertion_basis: [explicit_reference]
+    derivation_methods:
+      - extract_doc_ref_cites
+      - markdown_spec_link
+  in_workpackage:
+    source_types: [TrackItem]
+    target_types: [TrackWorkpackage]
+    requires_evidence: true
+    assertion_basis: [track_cli_projection]
+    derivation_methods:
+      - track_query_wp_id
+  tracks:
+    source_types: [TrackItem, TrackWorkpackage]
+    target_types: [Spec, SpecSection, Requirement, Route, Component, ApiEndpoint, DataEntity, DataField, CodeSymbol]
+    requires_evidence: true
+    assertion_basis: [explicit_declaration, track_cli_projection]
+    derivation_methods:
+      - spec_frontmatter_track
+      - spec_section_marker_track
+      - spec_map_track
+      - track_item_summary_spec_path
+  decides:
+    source_types: [TrackDecision]
+    target_types: [Spec, SpecSection, Requirement, TrackWorkpackage, TrackItem, Route, Component, ApiEndpoint, DataEntity]
+    requires_evidence: true
+    assertion_basis: [explicit_declaration, track_cli_projection]
+    derivation_methods:
+      - spec_frontmatter_decisions
+      - spec_section_marker_decisions
+      - spec_map_decisions
+      - track_decision_excerpt_spec_path
+  has_field:
+    source_types: [DataEntity]
+    target_types: [DataField]
+    requires_evidence: true
+    assertion_basis: [schema_declaration]
+    derivation_methods:
+      - sql_ddl_column
+      - drizzle_schema_column
+      - prisma_schema_field
+  references:
+    source_types: [DataField, DataEntity, CodeSymbol, mcp_server]
+    target_types: [DataField, DataEntity, CodeSymbol, mcp_command, mcp_package]
+    requires_evidence: false
+    assertion_basis: [schema_declaration, ast_reference]
+    derivation_methods:
+      - extract_sql_references
+      - sql_ddl_fk
+      - drizzle_schema_fk
+      - prisma_schema_relation
+      - extract_code_references
+      - mcp_config_extract
+  renders:
+    source_types: [Route]
+    target_types: [Component]
+    requires_evidence: true
+    assertion_basis: [route_declaration]
+    derivation_methods:
+      - sveltekit_route_convention
+      - route_config_declaration
+  uses:
+    source_types: [Component, CodeSymbol]
+    target_types: [Component, CodeSymbol]
+    requires_evidence: false
+    assertion_basis: [ast_reference]
+    derivation_methods:
+      - svelte_component_composition
+      - extract_code_uses
+  calls:
+    source_types: [Component, Route, CodeSymbol]
+    target_types: [ApiEndpoint, CodeSymbol]
+    requires_evidence: false
+    assertion_basis: [ast_call, static_http_literal]
+    derivation_methods:
+      - static_http_call
+      - extract_code_calls
+  handles:
+    source_types: [CodeSymbol]
+    target_types: [ApiEndpoint]
+    requires_evidence: true
+    assertion_basis: [ast_registration]
+    derivation_methods:
+      - server_route_registration
+      - sveltekit_server_endpoint
+  reads:
+    source_types: [ApiEndpoint, CodeSymbol]
+    target_types: [DataEntity, DataField]
+    requires_evidence: true
+    assertion_basis: [ast_query]
+    derivation_methods:
+      - drizzle_select_ast
+      - prisma_read_ast
+      - sql_select_ast
+      - handler_call_propagation
+  writes:
+    source_types: [ApiEndpoint, CodeSymbol]
+    target_types: [DataEntity, DataField]
+    requires_evidence: true
+    assertion_basis: [ast_mutation]
+    derivation_methods:
+      - drizzle_mutation_ast
+      - prisma_mutation_ast
+      - sql_mutation_ast
+      - handler_call_propagation
+  MODIFIES:
+    source_types: [Commit]
+    target_types: [File]
+    requires_evidence: false
+    assertion_basis: [git_history]
+    derivation_methods:
+      - git_numstat
+  PARENT_OF:
+    source_types: [Commit]
+    target_types: [Commit]
+    requires_evidence: false
+    assertion_basis: [git_history]
+    derivation_methods:
+      - git_parent
+  ON_BRANCH:
+    source_types: [Commit]
+    target_types: [Branch]
+    requires_evidence: false
+    assertion_basis: [git_history]
+    derivation_methods:
+      - git_ref
+  reads_from:
+    source_types: [CodeSymbol]
+    target_types: [DataEntity]
+    requires_evidence: false
+    assertion_basis: [ast_query]
+    derivation_methods:
+      - extract_sql_reads_from
+  triggers:
+    source_types: [CodeSymbol]
+    target_types: [DataEntity]
+    requires_evidence: false
+    assertion_basis: [schema_declaration]
+    derivation_methods:
+      - extract_sql_triggers
+  imports_from:
+    source_types: [File, Component]
+    target_types: [File, Component, CodeSymbol]
+    requires_evidence: false
+    assertion_basis: [ast_import]
+    derivation_methods:
+      - extract_svelte_imports_from
+      - extract_code_imports_from
+  imports:
+    source_types: [File, CodeSymbol]
+    target_types: [File, CodeSymbol]
+    requires_evidence: false
+    assertion_basis: [ast_import]
+    derivation_methods:
+      - extract_code_imports
+  rationale_for:
+    source_types: [File, Spec, SpecSection, CodeSymbol]
+    target_types: [File, CodeSymbol, Component]
+    requires_evidence: false
+    assertion_basis: [explicit_reference]
+    derivation_methods:
+      - extract_code_rationale_for
+  method:
+    source_types: [CodeSymbol]
+    target_types: [CodeSymbol]
+    requires_evidence: false
+    assertion_basis: [ast_containment]
+    derivation_methods:
+      - extract_code_method
+  inherits:
+    source_types: [CodeSymbol]
+    target_types: [CodeSymbol]
+    requires_evidence: false
+    assertion_basis: [ast_reference]
+    derivation_methods:
+      - extract_code_inherits
+  implements:
+    source_types: [CodeSymbol]
+    target_types: [CodeSymbol]
+    requires_evidence: false
+    assertion_basis: [ast_reference]
+    derivation_methods:
+      - extract_code_implements
+  mixes_in:
+    source_types: [CodeSymbol]
+    target_types: [CodeSymbol]
+    requires_evidence: false
+    assertion_basis: [ast_reference]
+    derivation_methods:
+      - extract_code_mixes_in
+  defines:
+    source_types: [File, CodeSymbol]
+    target_types: [CodeSymbol]
+    requires_evidence: false
+    assertion_basis: [ast_containment]
+    derivation_methods:
+      - extract_code_defines
+  requires_env:
+    source_types: [mcp_server]
+    target_types: [env_var]
+    requires_evidence: false
+    assertion_basis: [explicit_declaration]
+    derivation_methods:
+      - mcp_config_extract
+
+citation_policy:
+  minimum_granularity: file
+  require_source_file: false
+  allow_bbox: false
+
+hardening:
+  statuses: [draft, active, superseded, evol, candidate, validated, reference]
+  default_status: validated
+  promotion_requires:
+    - source_citation
+    - allowed_relation_type
+
+inference_policy:
+  allow_inferred_relations: false
+  allowed_relation_types: []
+  require_evidence_refs: false
+
+evidence_policy:
+  require_evidence_refs: true
+  min_refs: 1
+  node_types:
+    - Spec
+    - SpecSection
+    - Requirement
+    - TrackWorkpackage
+    - TrackItem
+    - TrackDecision
+    - DataEntity
+    - DataField
+    - Route
+    - Component
+    - ApiEndpoint
+    - CodeSymbol
+  relation_types:
+    - specifies
+    - supersedes
+    - governs
+    - in_workpackage
+    - tracks
+    - decides
+    - has_field
+    - renders
+    - handles
+    - reads
+    - writes
+
+class_hierarchies:
+  app_context_planes:
+    relation_type: subclass_of
+    membership_relation_type: has_instance
+    classes:
+      AppArtifact:
+        parent: null
+        label: Application Context Artifact
+      NormativeArtifact:
+        parent: AppArtifact
+        label: Normative Plane
+        member_node_types: [Spec, SpecSection, Requirement]
+      DeliveryArtifact:
+        parent: AppArtifact
+        label: Delivery Plane
+        member_node_types: [TrackWorkpackage, TrackItem, TrackDecision]
+      DataArtifact:
+        parent: AppArtifact
+        label: Data Model Plane
+        member_node_types: [DataEntity, DataField]
+      InterfaceArtifact:
+        parent: AppArtifact
+        label: UI and API Plane
+        member_node_types: [Route, Component, ApiEndpoint, CodeSymbol]
+      RepositoryArtifact:
+        parent: AppArtifact
+        label: Repository Plane
+        member_node_types: [File, Commit, Branch]
+      McpConfigArtifact:
+        parent: AppArtifact
+        label: MCP Configuration Plane
+        member_node_types: [mcp_config_file, mcp_server, mcp_command, mcp_package, env_var]
+
+outputs:
+  ontology:
+    enabled: true
+    artifact_schema: engram_ontology_outputs_v1
+    canonical_node_types:
+      - Spec
+      - SpecSection
+      - Requirement
+      - TrackWorkpackage
+      - TrackItem
+      - TrackDecision
+      - DataEntity
+      - DataField
+      - Route
+      - Component
+      - ApiEndpoint
+      - CodeSymbol
+    source_node_types:
+      - File
+      - Commit
+      - Branch
+    occurrence_node_types: []
+    alias_fields:
+      - aliases
+      - canonical_seed
+    relation_exports:
+      - contains
+      - specifies
+      - supersedes
+      - governs
+      - cites
+      - in_workpackage
+      - tracks
+      - decides
+      - has_field
+      - references
+      - renders
+      - uses
+      - calls
+      - handles
+      - reads
+      - writes
+      - MODIFIES
+    wiki:
+      enabled: false
+      page_node_types:
+        - Spec
+        - DataEntity
+        - Route
+        - Component
+        - ApiEndpoint
+      include_backlinks: true
+      include_source_snippets: true
