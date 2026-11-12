@@ -299,6 +299,126 @@
           "2024-10-07"
         ]
       }
+    },
+    {
+      "format": "sentropic.registry-entry/v1",
+      "contractVersion": "1.1.4",
+      "kind": "ontology",
+      "id": "sentropic.engram.app-context",
+      "name": "Engram Application Context Ontology Profile (v1)",
+      "description": "Multi-plane application context ontology profile (specs, track delivery, data model, UI routes/components, API endpoints, code symbols, git history, and MCP configuration).",
+      "entryVersion": "1.0.0",
+      "publisher": {
+        "packageName": "@sentropic/engram",
+        "packageVersion": "0.26.0"
+      },
+      "compatibility": {
+        "entryContract": "1.1.4",
+        "packages": [],
+        "schemaProfiles": [
+          "app-context/1"
+        ],
+        "requiredHostFeatures": [
+          "ontology-descriptors"
+        ],
+        "optionalHostFeatures": []
+      },
+      "parameters": {
+        "schemaVersion": "1",
+        "schema": {
+          "$ref": "engram:app-context"
+        },
+        "defaults": {}
+      },
+      "bindings": [
+        {
+          "key": "profile",
+          "contract": "engram:engram-profile/1#sha256=f04ea89ae549471fe0dc62460dccd5b3c87204717b98ea7f4235cbf0d835819a",
+          "required": true
+        }
+      ],
+      "assets": [
+        {
+          "role": "profile-data",
+          "path": "profiles/app-context/v1/profile.yaml",
+          "mediaType": "application/yaml",
+          "sha256": "eb59b3165988e1a45b87363fdf34fbf050eb29e872612122cbbd0eb333618aa4"
+        }
+      ],
+      "ontology": {
+        "canonicalRef": "engram:app-context@1",
+        "namespace": "engram",
+        "owner": "engram",
+        "profileShape": "engram-profile",
+        "artifactKind": "profile",
+        "profilePin": {
+          "id": "app-context",
+          "version": "1",
+          "contentDigest": "f04ea89ae549471fe0dc62460dccd5b3c87204717b98ea7f4235cbf0d835819a"
+        },
+        "stack": [
+          {
+            "id": "app-context",
+            "version": "1",
+            "contentDigest": "f04ea89ae549471fe0dc62460dccd5b3c87204717b98ea7f4235cbf0d835819a"
+          }
+        ],
+        "digests": {
+          "contentDigest": "f04ea89ae549471fe0dc62460dccd5b3c87204717b98ea7f4235cbf0d835819a",
+          "pinsDigest": "36b8297f5f5a5f0079e17e822b96bfa8cb1b0dd7146cd5146a01a5eb809be6b9",
+          "resultEvidence": {
+            "evidenceState": "resolved",
+            "digest": "77e4ad3d2ec1379737aae6ddc84f5b6d1a5936a8bbefffd0d2c26ed6e96cdcbd"
+          }
+        },
+        "ruleSheets": [],
+        "lifecycle": "draft",
+        "provenance": {
+          "sourceRef": "profiles/app-context/v1/profile.yaml",
+          "sourceRevision": "eb59b3165988e1a45b87363fdf34fbf050eb29e872612122cbbd0eb333618aa4"
+        },
+        "lineage": {
+          "parents": [],
+          "mappings": [],
+          "migrations": []
+        },
+        "conflictPolicy": "engram:g0-conflicts@1",
+        "completeness": "complete",
+        "corpusRef": {
+          "ref": "engram:app-context-lot-corpus/1",
+          "digest": "115c85ae99cfb1b9b7e301ed455e2cd601a391255a410fb082b5510a83cd7099"
+        },
+        "receipts": [],
+        "migrations": [],
+        "consumers": [],
+        "compatibility": {
+          "renderer": "transitional:engram-app-context-renderer-unqualified",
+          "adapter": "transitional:engram-app-context-adapter-unqualified"
+        },
+        "visibility": "public",
+        "linkedTools": [
+          "engram_context_for_target",
+          "engram_specs_for_target",
+          "engram_targets_for_spec",
+          "engram_read_spec_section",
+          "engram_get_context_item"
+        ],
+        "artifactBinding": {
+          "artifactKind": "profile",
+          "profilePin": {
+            "id": "app-context",
+            "version": "1",
+            "contentDigest": "f04ea89ae549471fe0dc62460dccd5b3c87204717b98ea7f4235cbf0d835819a"
+          },
+          "stack": [
+            {
+              "id": "app-context",
+              "version": "1",
+              "contentDigest": "f04ea89ae549471fe0dc62460dccd5b3c87204717b98ea7f4235cbf0d835819a"
+            }
+          ]
+        }
+      }
     }
   ]
 }
