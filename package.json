@@ -69,7 +69,8 @@
     "dist",
     "src/skills",
     "skills/engram-memory",
-    "registry/entries.v1.json"
+    "registry/entries.v1.json",
+    "profiles/app-context/v1/profile.yaml"
   ],
   "scripts": {
     "prebuild": "npm --prefix engram-memory run build",
