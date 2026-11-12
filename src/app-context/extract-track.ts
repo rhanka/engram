@@ -791,7 +791,7 @@ export function linkSpecPathMentions(
   const seen = new Set<string>();
   const seenDiags = new Set<string>();
   const pushEdge = (edge: TrackGraphEdge): void => {
-    const key = `${edge.source} ${edge.target} ${edge.relation}`;
+    const key = `${edge.source}\u0000${edge.target}\u0000${edge.relation}`;
     if (seen.has(key)) {
       return;
     }
