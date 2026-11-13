@@ -1,0 +1,3800 @@
+[
+  {
+    "file": "src/analyze.ts",
+    "line": 242,
+    "owner": "crossFileSurprises",
+    "kind": "edge-row-constructor",
+    "fingerprint": "100e23ec11277da91085b7d76c33187e27cdc662797799bde3708b2f27a04335",
+    "reason": "Individual read-only DTO, rule, signature or analysis projection; no record write",
+    "count": 1
+  },
+  {
+    "file": "src/analyze.ts",
+    "line": 288,
+    "owner": "crossCommunitySurprises",
+    "kind": "edge-row-constructor",
+    "fingerprint": "8062cc1c634e9a71070c427c3998c77765fca343a2919897e06ecba91dca5ca4",
+    "reason": "Individual read-only DTO, rule, signature or analysis projection; no record write",
+    "count": 1
+  },
+  {
+    "file": "src/analyze.ts",
+    "line": 330,
+    "owner": "edgeBetweennessSurprises",
+    "kind": "edge-row-constructor",
+    "fingerprint": "555ffd2e8de59bcb727962cfb61b476ad761d91c6a73dbfb74b694ee02c1623e",
+    "reason": "Individual read-only DTO, rule, signature or analysis projection; no record write",
+    "count": 1
+  },
+  {
+    "file": "src/analyze.ts",
+    "line": 501,
+    "owner": "graphDiff",
+    "kind": "edge-row-constructor",
+    "fingerprint": "b9337016e92b8a2d2b34a6cd1fc2d63eead6481d92a5566db198c2779ba63d05",
+    "reason": "Individual read-only DTO, rule, signature or analysis projection; no record write",
+    "count": 2
+  },
+  {
+    "file": "src/assembly-hygiene.ts",
+    "line": 784,
+    "owner": "deOrphanByContainer",
+    "kind": "edge-row-constructor",
+    "fingerprint": "185dd425796827c35b089b6ece6f4091c87f607b88b2334bdda05277ac1d9bbb",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/conversations.ts",
+    "line": 407,
+    "owner": "buildConversationsExtraction",
+    "kind": "edge-row-constructor",
+    "fingerprint": "80ec2148acc6f8e87e19ecd507c8e2b7340c2902895f0a0cb79a02576518a01a",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/conversations.ts",
+    "line": 420,
+    "owner": "buildConversationsExtraction",
+    "kind": "edge-row-constructor",
+    "fingerprint": "6008978857775fc6c4e7024e8c83e2fdc5a60c3688396dacd6b07a721ae12694",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/conversations.ts",
+    "line": 433,
+    "owner": "buildConversationsExtraction",
+    "kind": "edge-row-constructor",
+    "fingerprint": "8527f68e9f47fffcda97ee12565ce2f1131fef87161ab4b771854923581767e8",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/export.ts",
+    "line": 281,
+    "owner": "computeTopologySignature",
+    "kind": "edge-row-constructor",
+    "fingerprint": "d36ea69c11698be36914e08b85ab0110587c62b1cb7d0af3104c97b1354bfff5",
+    "reason": "Individual read-only DTO, rule, signature or analysis projection; no record write",
+    "count": 1
+  },
+  {
+    "file": "src/extract-gh.ts",
+    "line": 200,
+    "owner": "extractedEdge",
+    "kind": "edge-row-constructor",
+    "fingerprint": "09cb7e1f419428a09485f651172dc637c835f2a97167366b6fcea19224c0e43d",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract-git.ts",
+    "line": 279,
+    "owner": "readModifiesEdges",
+    "kind": "edge-row-constructor",
+    "fingerprint": "89d7525b073585e729f527b40fb602318c358feaf076a18f857064295af6955b",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract-git.ts",
+    "line": 1251,
+    "owner": "extractGit",
+    "kind": "edge-row-constructor",
+    "fingerprint": "de35e770f443e261c14174f56abef8bf1b309685e6823ba4322ec0bcdf74382d",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract-git.ts",
+    "line": 1265,
+    "owner": "extractGit",
+    "kind": "edge-row-constructor",
+    "fingerprint": "c2491a6d305d9c314809c708338a5ba4c79a1fbfa99087d7191bad4add1b312a",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 1615,
+    "owner": "_importPython",
+    "kind": "edge-row-constructor",
+    "fingerprint": "0a30e51cbdb80375e4dc4ecdb7ff81a161a378160284f13dbc5c0ec0e09b43f0",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 1627,
+    "owner": "_importPython",
+    "kind": "edge-row-constructor",
+    "fingerprint": "c5420b0f40d95f4098d6f62a16a7ec38f78e88e18bbfc1bb8cfebf96727d66eb",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 1676,
+    "owner": "_importJs",
+    "kind": "edge-row-constructor",
+    "fingerprint": "533758e58ca0baeb080c398dd03d1b3f8da9c428afe7bd2274aa2623efca5b11",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 1706,
+    "owner": "pushSymbolEdge",
+    "kind": "edge-row-constructor",
+    "fingerprint": "77f321f88bf97203eb49e9cf01a543dccbffe4518c488e87227afdc287c5448c",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 1785,
+    "owner": "_importJava",
+    "kind": "edge-row-constructor",
+    "fingerprint": "0a30e51cbdb80375e4dc4ecdb7ff81a161a378160284f13dbc5c0ec0e09b43f0",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 1806,
+    "owner": "_importC",
+    "kind": "edge-row-constructor",
+    "fingerprint": "0a30e51cbdb80375e4dc4ecdb7ff81a161a378160284f13dbc5c0ec0e09b43f0",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 1827,
+    "owner": "_importCsharp",
+    "kind": "edge-row-constructor",
+    "fingerprint": "0a30e51cbdb80375e4dc4ecdb7ff81a161a378160284f13dbc5c0ec0e09b43f0",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 1848,
+    "owner": "_importKotlin",
+    "kind": "edge-row-constructor",
+    "fingerprint": "0a30e51cbdb80375e4dc4ecdb7ff81a161a378160284f13dbc5c0ec0e09b43f0",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 2
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 1881,
+    "owner": "_importScala",
+    "kind": "edge-row-constructor",
+    "fingerprint": "0a30e51cbdb80375e4dc4ecdb7ff81a161a378160284f13dbc5c0ec0e09b43f0",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 1902,
+    "owner": "_importPhp",
+    "kind": "edge-row-constructor",
+    "fingerprint": "0a30e51cbdb80375e4dc4ecdb7ff81a161a378160284f13dbc5c0ec0e09b43f0",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 1965,
+    "owner": "_importLua",
+    "kind": "edge-row-constructor",
+    "fingerprint": "2399f4a6fab849b4d252dd20fd9262319a8a3f621f503575f0d39473bc58ba63",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 1982,
+    "owner": "_importSwift",
+    "kind": "edge-row-constructor",
+    "fingerprint": "0a30e51cbdb80375e4dc4ecdb7ff81a161a378160284f13dbc5c0ec0e09b43f0",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 2093,
+    "owner": "_requireImportsJs",
+    "kind": "edge-row-constructor",
+    "fingerprint": "cf269ef45ce9248c31e83f9cdd8301b85d621dd8a73c1bdb7ba84591bbf9e88d",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 2128,
+    "owner": "_requireImportsJs",
+    "kind": "edge-row-constructor",
+    "fingerprint": "c1d4d7119f6f5469122be5ad147d0990cd087e9b9ec000eecb3c9959aacb33a0",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 2804,
+    "owner": "addEdge",
+    "kind": "edge-row-constructor",
+    "fingerprint": "e0c5b4457a85f13957221a7109ff09e355eb3929857d77cc0b0df7432f67684a",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 3636,
+    "owner": "emitCallByName",
+    "kind": "edge-row-constructor",
+    "fingerprint": "0b5a4b2042818f01bde3efd6d75cae9c97cb793d44bf4f6d4a52588fc84a06d8",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 3880,
+    "owner": "addRationale",
+    "kind": "edge-row-constructor",
+    "fingerprint": "c3d25223a494bb7d2297b7c0a5a465c24b4db78392f87f5d12daa709fc39335d",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 4027,
+    "owner": "addRationale",
+    "kind": "edge-row-constructor",
+    "fingerprint": "2b99d484ffde0ab26421797893ca665e48ecb21668ee5154b4dfd9b782abcba8",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 4052,
+    "owner": "addDocRef",
+    "kind": "edge-row-constructor",
+    "fingerprint": "f71712f0cc8abe1be0b3eb5a523620132e7f50678418b80fbbb3b0d8ed5178e1",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 4156,
+    "owner": "addEdge",
+    "kind": "edge-row-constructor",
+    "fingerprint": "06113c5380f333201541df05a029d97274264e5ea1ae8ee3017e57dc70df1ccf",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 7
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 4379,
+    "owner": "addNode",
+    "kind": "edge-row-constructor",
+    "fingerprint": "31fe3b52016857316e2e69f474d5b895e5c034f76f14e27f70a9086fdf87b87a",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 4492,
+    "owner": "addEdge",
+    "kind": "edge-row-constructor",
+    "fingerprint": "40110ee5fd70c2e9065d0c7115c064ead74ce53396dc102ca94f3bffb164d2d5",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 4685,
+    "owner": "addTable",
+    "kind": "edge-row-constructor",
+    "fingerprint": "cd4216ff4b2c398d43d82a5f0b9dc43e73f327c521a881eba6cfae9da654736f",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 4711,
+    "owner": "addSqlObject",
+    "kind": "edge-row-constructor",
+    "fingerprint": "cd4216ff4b2c398d43d82a5f0b9dc43e73f327c521a881eba6cfae9da654736f",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 4726,
+    "owner": "addReference",
+    "kind": "edge-row-constructor",
+    "fingerprint": "ebeed306e04648c292209c6a97f0188ef90a827f4515e8e34005fd603d0609a7",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 4776,
+    "owner": "extractSql",
+    "kind": "edge-row-constructor",
+    "fingerprint": "fbf42551f2bd3d3acbbb61b2206f32d6fbdbc149fe3e866948bf6a0aa6c729b4",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 4807,
+    "owner": "addSqlBodyTableEdges",
+    "kind": "edge-row-constructor",
+    "fingerprint": "a4a2e34d8baa162e77a0314087f84d2a938f03a98bdd3c2bcde9f0864f90e6a6",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 4833,
+    "owner": "extractSql",
+    "kind": "edge-row-constructor",
+    "fingerprint": "23a9820f228cb7b795cd9e371373996e2e5aae5ee5b0c5863eeb60fa8a3c4ed3",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 4888,
+    "owner": "addEdge",
+    "kind": "edge-row-constructor",
+    "fingerprint": "d8ba78c6bbd18e93576a22ed7e89617bcd77797f0bf6fad345dcc7a8ec598853",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 4975,
+    "owner": "extractSvelte",
+    "kind": "edge-row-constructor",
+    "fingerprint": "7a532a2ebd3c7a979985007abaffc2e3923395e5e73f132c734e3642e047be1f",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 5023,
+    "owner": "pushImport",
+    "kind": "edge-row-constructor",
+    "fingerprint": "9e102ea6e7b3e6b18c6cf3df5fba262ee6da2170e6a8f3b05fff4a53c777e829",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 5224,
+    "owner": "walkCalls",
+    "kind": "edge-row-constructor",
+    "fingerprint": "0b5a4b2042818f01bde3efd6d75cae9c97cb793d44bf4f6d4a52588fc84a06d8",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 5506,
+    "owner": "walkCalls",
+    "kind": "edge-row-constructor",
+    "fingerprint": "dc9f53eea95e5129b0f33ad1f0ffc314dab4acca009fd2289ac9df8c840803bb",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 6530,
+    "owner": "walkImports",
+    "kind": "edge-row-constructor",
+    "fingerprint": "60a6ad3d62455e0e7752b47929b3116b4be07ca4a7c3ea2bfb10b1886c87c547",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 6636,
+    "owner": "addNode",
+    "kind": "edge-row-constructor",
+    "fingerprint": "27c1e741e9aabbe44d19c7e95c0b647cc2449e55002a2bb50d95fb63d982e213",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 6730,
+    "owner": "extractSln",
+    "kind": "edge-row-constructor",
+    "fingerprint": "a2e8067e0da984f4d360fd01f73bd44be6e93b023b76d64b5d6ce0f3db63981f",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 6774,
+    "owner": "extractSln",
+    "kind": "edge-row-constructor",
+    "fingerprint": "b5b53a71336a51d3b0b0e55baa6780ad04b1c9cf78c967c6a0c0f2cbf2ab014a",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 6934,
+    "owner": "addEdge",
+    "kind": "edge-row-constructor",
+    "fingerprint": "31e134f931511669b63593a59bbb06d2402691ef9a9a0721651c0e14ca7b2894",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/graph-json-serialization.ts",
+    "line": 14,
+    "owner": "graphJsonLink",
+    "kind": "edge-row-constructor",
+    "fingerprint": "4d37a92a64bc916a3a63f5be978e3d2f6bd725a45f6a45f22e5069a4862e77fd",
+    "reason": "Individual serializer row spread from stored edge attributes; behavioral parity and format tests guard the writer",
+    "count": 1
+  },
+  {
+    "file": "src/graph-memory-projection.ts",
+    "line": 263,
+    "owner": "assembleMemoryGraphProjection",
+    "kind": "edge-row-constructor",
+    "fingerprint": "1ef5a456b3a3d2dc85d286e578ab9f711a0d0181c419cafaa26a6c52f9696fde",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/graph.ts",
+    "line": 78,
+    "owner": "serializeGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "4d37a92a64bc916a3a63f5be978e3d2f6bd725a45f6a45f22e5069a4862e77fd",
+    "reason": "Individual serializer row spread from stored edge attributes; behavioral parity and format tests guard the writer",
+    "count": 1
+  },
+  {
+    "file": "src/ontology-guardian/archi-archimate.ts",
+    "line": 1170,
+    "owner": "archiRelationTypeOfArchimate",
+    "kind": "edge-row-constructor",
+    "fingerprint": "673ccb8d284932cfbd78a10173f68555fe10369980f458e19ee2cba13d25fb5a",
+    "reason": "Individual read-only DTO, rule, signature or analysis projection; no record write",
+    "count": 1
+  },
+  {
+    "file": "src/qa.ts",
+    "line": 489,
+    "owner": "evaluateGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "81738e0de6b1963b2085fa4c6c7219035bd6c283b95a72597d600a0b9aa1310b",
+    "reason": "Individual read-only DTO, rule, signature or analysis projection; no record write",
+    "count": 1
+  },
+  {
+    "file": "src/qa.ts",
+    "line": 677,
+    "owner": "evaluateGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "02d7d90c9f24b3e8cd3e06baa57020dec26281a20d04e1498821423aa70d1433",
+    "reason": "Individual read-only DTO, rule, signature or analysis projection; no record write",
+    "count": 1
+  },
+  {
+    "file": "src/quality-target.ts",
+    "line": 261,
+    "owner": "normalizeForbiddenEdges",
+    "kind": "edge-row-constructor",
+    "fingerprint": "0b2cadf4c317b8d1e7de68f55d422087063b9512cb2fa13688a198a8e7a75aec",
+    "reason": "Individual read-only DTO, rule, signature or analysis projection; no record write",
+    "count": 1
+  },
+  {
+    "file": "src/storage/postgres.ts",
+    "line": 320,
+    "owner": "tombstoneRecordFromRow",
+    "kind": "edge-row-constructor",
+    "fingerprint": "957746aba898eea82c0d8a1f93ddb249323eeb10c2027b2a4109d40b642c47bf",
+    "reason": "Individual read-only DTO, rule, signature or analysis projection; no record write",
+    "count": 1
+  },
+  {
+    "file": "src/storage/postgres.ts",
+    "line": 334,
+    "owner": "temporalEdgeFromRow",
+    "kind": "edge-row-constructor",
+    "fingerprint": "497a5ab6bfb5d328834378f1de11a73fe312b94c68d11e79b05050613c7fe74e",
+    "reason": "Individual read-only DTO, rule, signature or analysis projection; no record write",
+    "count": 1
+  },
+  {
+    "file": "src/storage/postgres.ts",
+    "line": 1321,
+    "owner": "graphWindow",
+    "kind": "edge-row-constructor",
+    "fingerprint": "4fdc971ddba9b583e9e7c3a926035bf2602b7229fb39e6882f8384cdd6f068b1",
+    "reason": "Individual read-only DTO, rule, signature or analysis projection; no record write",
+    "count": 1
+  },
+  {
+    "file": "src/storage/sqlite.ts",
+    "line": 312,
+    "owner": "temporalEdgeFromRow",
+    "kind": "edge-row-constructor",
+    "fingerprint": "4827ab532997e87bce65ebe64f2dff00e5f93f6377169e3fe009799733749cd7",
+    "reason": "Individual read-only DTO, rule, signature or analysis projection; no record write",
+    "count": 1
+  },
+  {
+    "file": "src/storage/sqlite.ts",
+    "line": 348,
+    "owner": "tombstoneRecordFromRow",
+    "kind": "edge-row-constructor",
+    "fingerprint": "957746aba898eea82c0d8a1f93ddb249323eeb10c2027b2a4109d40b642c47bf",
+    "reason": "Individual read-only DTO, rule, signature or analysis projection; no record write",
+    "count": 1
+  },
+  {
+    "file": "src/temporal-recall.ts",
+    "line": 206,
+    "owner": "canonicalTemporalEdge",
+    "kind": "edge-row-constructor",
+    "fingerprint": "0e8e97feb6d270f330880ccfd0bbbb535620bb81f877ba00f46e679430d762a1",
+    "reason": "Individual read-only DTO, rule, signature or analysis projection; no record write",
+    "count": 1
+  },
+  {
+    "file": "studio/src/lib/classNodes.js",
+    "line": 158,
+    "owner": "pushEdge",
+    "kind": "edge-row-constructor",
+    "fingerprint": "f5d27bff8ce9becabec204cd631fbe43d1652240b5e0cddb90b373c8f770ec1c",
+    "reason": "Individual scene/renderer display projection; record evidence is outside this view",
+    "count": 1
+  },
+  {
+    "file": "studio/src/lib/classNodes.js",
+    "line": 458,
+    "owner": "applyGroupCollapse",
+    "kind": "edge-row-constructor",
+    "fingerprint": "2700d1b40e8bc446869e3b4e952bc0dc08bb106bb492318e9bbe2c20bb25c012",
+    "reason": "Individual scene/renderer display projection; record evidence is outside this view",
+    "count": 1
+  },
+  {
+    "file": "studio/src/lib/classNodes.js",
+    "line": 722,
+    "owner": "injectCommunityNodes",
+    "kind": "edge-row-constructor",
+    "fingerprint": "a3b16237021ba6b178acd11c8b0e323e9e91be3539db68f549f7540e05ea834c",
+    "reason": "Individual scene/renderer display projection; record evidence is outside this view",
+    "count": 1
+  },
+  {
+    "file": "studio/src/lib/classNodes.js",
+    "line": 871,
+    "owner": "injectTypeNodes",
+    "kind": "edge-row-constructor",
+    "fingerprint": "bf38b0f09461c613fa5133539c4bbfecbc19bf55ed1c5fa7c679402146cf4714",
+    "reason": "Individual scene/renderer display projection; record evidence is outside this view",
+    "count": 1
+  },
+  {
+    "file": "studio/src/lib/graphAdapter.js",
+    "line": 1214,
+    "owner": "candidateUnionSubgraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "f8c2d0389a3d000b5c1a4700d367a8b5d4da36a8f47dc3852a5c455df5220e90",
+    "reason": "Individual scene/renderer display projection; record evidence is outside this view",
+    "count": 1
+  },
+  {
+    "file": "studio/src/lib/graphAdapter.js",
+    "line": 1240,
+    "owner": "withReconcileEdge",
+    "kind": "edge-row-constructor",
+    "fingerprint": "2396d601b33d4b2dedcd6329e47553711bfef216532d3edb517b5ac6b185f734",
+    "reason": "Individual scene/renderer display projection; record evidence is outside this view",
+    "count": 1
+  },
+  {
+    "file": "studio/src/lib/graphRendererPayload.js",
+    "line": 829,
+    "owner": "buildGraphRendererPayload",
+    "kind": "edge-row-constructor",
+    "fingerprint": "7dd38accb4651f7cc09e481331b0c2fc13da12ed8d3e08e64cd422767066caf7",
+    "reason": "Individual scene/renderer display projection; record evidence is outside this view",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/api.test.js",
+    "line": 243,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "7b8ab31461b701e2f35d9f3cea1dc9dfc25ba922cc184691a144565f60ef354d",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/classNodes.test.js",
+    "line": 27,
+    "owner": "baseGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "c6e569e2de2f8f0d1722fb329b8b6f08cfb4feff43dbb15de2527ad8eca5edc4",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/classNodes.test.js",
+    "line": 28,
+    "owner": "baseGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "bba561b5d28e43d21de0b0dbecdb83badeed69f15a95ecd97bc71453888575ea",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/classNodes.test.js",
+    "line": 29,
+    "owner": "baseGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "28574f6df884f6df6ff336cfc9ae4c4fe0237a329e4b492af912cbf4dc67ecd5",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/classNodes.test.js",
+    "line": 267,
+    "owner": "taxonomyGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "4bee4c3cc75c9d3ff63131ec02a0665ddbaac7d3fb09167563c98157f1f63b1a",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/classNodes.test.js",
+    "line": 268,
+    "owner": "taxonomyGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "23c7d82e4c76e594608f42ac48fa3304c7fdefd8776b23514c526b6ac32fea84",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/classNodes.test.js",
+    "line": 269,
+    "owner": "taxonomyGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "2f814df4aa2973e2261c1e619f7906833511ffddad19dc989647be83902d06ab",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/classNodes.test.js",
+    "line": 270,
+    "owner": "taxonomyGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "99671404b80ea8cb4a371361e26fbd7e16eef214f73e16cf94a573c1665946ce",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/classNodes.test.js",
+    "line": 271,
+    "owner": "taxonomyGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "728166349201ecf490e0448a6ec1d5e1070aa8bf085e34c38dc003069b43d288",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/classNodes.test.js",
+    "line": 587,
+    "owner": "communityGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "4bee4c3cc75c9d3ff63131ec02a0665ddbaac7d3fb09167563c98157f1f63b1a",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/classNodes.test.js",
+    "line": 588,
+    "owner": "communityGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "23c7d82e4c76e594608f42ac48fa3304c7fdefd8776b23514c526b6ac32fea84",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/classNodes.test.js",
+    "line": 589,
+    "owner": "communityGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "2f814df4aa2973e2261c1e619f7906833511ffddad19dc989647be83902d06ab",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/classNodes.test.js",
+    "line": 590,
+    "owner": "communityGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "99671404b80ea8cb4a371361e26fbd7e16eef214f73e16cf94a573c1665946ce",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/classNodes.test.js",
+    "line": 591,
+    "owner": "communityGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "728166349201ecf490e0448a6ec1d5e1070aa8bf085e34c38dc003069b43d288",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/classNodes.test.js",
+    "line": 770,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "7fb6328fa2d8432a363ca06aeacc33605a125c90ad2f6324e71876de07acb671",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/communityGroupingPath.test.js",
+    "line": 49,
+    "owner": "mysteryGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "fb6b808cb9227cb08162ce1388ee63aa400e67d6a328a2846cb09b9d7618c6d6",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/communityGroupingPath.test.js",
+    "line": 50,
+    "owner": "mysteryGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "318df6f997bcb5320d4527b1560795073ba30c92c9d6bf48bb9d440599f61f7b",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/communityGroupingPath.test.js",
+    "line": 51,
+    "owner": "mysteryGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "7cdb8c42fbcd6128e1e827bfee8c953d67119b08b3d34ccea1ae3bd16d216f4b",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/communityGroupingPath.test.js",
+    "line": 52,
+    "owner": "mysteryGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "8567b8f6b65eadc2986e725b3ded33c85f8d651d836fd36a786402f0ec11bcfe",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/communityGroupingPath.test.js",
+    "line": 53,
+    "owner": "mysteryGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "e5661bf90d20190afd73690319009199dd50960355bf7ae4e935b4dd2d4829b0",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/communityGroupingPath.test.js",
+    "line": 55,
+    "owner": "mysteryGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "4527dd806d95a7e8c4b52eca2043c13b55fe1072e51b15b572593229062de13b",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/communityGroupingPath.test.js",
+    "line": 56,
+    "owner": "mysteryGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "d8a1592eae10f6be2caa243270cf6a50d2e345d08f8b7177faa9fa1a87ede2a8",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/communityGroupingPath.test.js",
+    "line": 57,
+    "owner": "mysteryGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "bdaec3efc64606b8409527ef4a113615aa5afdb529bda5b8dc87880539c6aa91",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 48,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "d90c007fd327756a9bfb7d681d82dadbd7597439999db6605db78babc9d6bafe",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 54,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "742e3adfcac9b13d6c0242f9022777916134e447038c695bc8e8054e411887bd",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 60,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "d54abd49ca4ba21d4f09fda876f9e0a2f4d1ee5014731ca4785327d1b3277589",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 344,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "b281b6802e89d5fc3c055cb3f4192a5e8d12d415209af10b78e719a3a6245bf4",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 345,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "7e498a25f8b419d58a9ff62b7113618382aba3e3fcfac1ec656d0c3cce8f8e44",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 346,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "f7c5de4ec07dbb7f4aa06487171e2236b1d6bea0a62ed4cce239800da0dcbaec",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 447,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "70055092d5198bd85693abd99f23c1620a9c856dccacd788df7b9f9ac1a3dc88",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 448,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "44a5326367c97fe90840a479a6233357066e3246274c8b0436c0589eb93feb14",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 449,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "492e2188a5c021069074595fc347ed95474dd907aca39a708600567c7e94fb8f",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 450,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "a6799be15e4ba1a7fcc249660f77233dcfe1bf82ab3e1ca1e69a4832192df60d",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 511,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "11ff8377840ad0218ccb3157fa11f336242ed925a63226ebc35a064e116d827c",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 512,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "603aff0ee243379392d94b75a49ed91acf8d2ac379e144806c673dae54181bb8",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 559,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "f85ef70c848a15093abac6c01d630da300703ff31e5242ed20ecd7a7bad6b377",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 563,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "1865674ed5c0e0d50cacd1ddbb5fa9ac38896d25da5579bfa68e714945e368fa",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 678,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "9e8ecbfdb94dbe4614d86c2200386d898afeb61a9fe22c7227f52d5f5a4c97ba",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 679,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "fceae42967826f785a86b50050423cb6864c614b8b871098780477fa4624c29c",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 740,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "fd22b7aa3efc8c840f66ea7cdadb35e60b9023814353447eb711d3a93e45ed4c",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 741,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "60b48ffd43ebe4337addd035adc2b55906f398f5f4d46bec2c8615cc326b74f7",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 742,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "4f093db4fd101622d7c5cc1804cf23607422881ff74bee42ff6a4ff6ec352994",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 743,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "7cef38aa3cc097a8556c199540b30dca3ee5a9ac155bd3669f3be47b6250cf2d",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 783,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "09b928f3af70aad95959be9eeac2e9778ac38c022d4fc021421893df6d2f0a58",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 2
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 784,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "97e3438c7a43aff4153763cb613e56417beaee914ba49653a6f75953ce566db3",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 2
+  },
+  {
+    "file": "studio/src/tests/graphRendererPayload.test.js",
+    "line": 270,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "414be8e8e13fa65f9a9bf1fcb52c911be04ddb3aa505a0a5c9182b5483feec29",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphRendererPayload.test.js",
+    "line": 350,
+    "owner": "makeScene",
+    "kind": "edge-row-constructor",
+    "fingerprint": "414be8e8e13fa65f9a9bf1fcb52c911be04ddb3aa505a0a5c9182b5483feec29",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphRendererPayload.test.js",
+    "line": 537,
+    "owner": "makeTriangleScene",
+    "kind": "edge-row-constructor",
+    "fingerprint": "04e5532a9b458d5a2bf33406c60b733488bb37bd6f64f9d18129078bfe817c90",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphRendererPayload.test.js",
+    "line": 538,
+    "owner": "makeTriangleScene",
+    "kind": "edge-row-constructor",
+    "fingerprint": "92d3a54f90ea63615780383dec133438301921adef5fded9ae54680bbde3a40b",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphRendererPayload.test.js",
+    "line": 539,
+    "owner": "makeTriangleScene",
+    "kind": "edge-row-constructor",
+    "fingerprint": "3d1740d3d039e39b63ad28bf65c098c5b7209917324bbb10f907b8ed1690ee66",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphRendererPayload.test.js",
+    "line": 555,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "bfa326c3832276a27b0d843fc3d5a4732f933b78dec4111f686670050a569b21",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphRendererPayload.test.js",
+    "line": 556,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "cb9e82941cb92aaa9cf54a75d50008ce9e76001512d221a380ad8164042bf44e",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphRendererPayload.test.js",
+    "line": 618,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "96dbef28178dd70f5c07ba69aa643e94b7c641814ee0250074c3174835e4f932",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphRendererPayload.test.js",
+    "line": 638,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "7dda2ca65986a19a2f9a33ae4dee147057d78abf4dd5c48b716d0cc0a4ae6505",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 2
+  },
+  {
+    "file": "studio/src/tests/graphRendererPayload.test.js",
+    "line": 639,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "d99985e1a317fd230efd00728970b52e7d7bd43326c62afbe72420ce54b27bd3",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphRendererPayload.test.js",
+    "line": 872,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "0e5d250bbc8b6157189d5a0b0fae5364c51be0506cad57e6e936bf023bf3711a",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphRendererPayload.test.js",
+    "line": 903,
+    "owner": "makePayload",
+    "kind": "edge-row-constructor",
+    "fingerprint": "9e4760efd095ab210d7e3904bcd61973f62a1bd28384e8ebef0d88559c9a01a2",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphRendererPayload.test.js",
+    "line": 904,
+    "owner": "makePayload",
+    "kind": "edge-row-constructor",
+    "fingerprint": "878e69b240bdc7f658cc4b02959b80cecfcca9b34ce8b6c661aa7da3ee61e035",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphRendererPayload.test.js",
+    "line": 965,
+    "owner": "makeTypedScene",
+    "kind": "edge-row-constructor",
+    "fingerprint": "09b928f3af70aad95959be9eeac2e9778ac38c022d4fc021421893df6d2f0a58",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphRendererPayload.test.js",
+    "line": 1184,
+    "owner": "makeEdgeScene",
+    "kind": "edge-row-constructor",
+    "fingerprint": "04e5532a9b458d5a2bf33406c60b733488bb37bd6f64f9d18129078bfe817c90",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/groupBy.test.js",
+    "line": 60,
+    "owner": "mysteryGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "4bee4c3cc75c9d3ff63131ec02a0665ddbaac7d3fb09167563c98157f1f63b1a",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/groupBy.test.js",
+    "line": 61,
+    "owner": "mysteryGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "8badf33aa7f4aa499cb7f9799c105b2c5d144b9b66f1b044992360f4da3e72b2",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/groupBy.test.js",
+    "line": 62,
+    "owner": "mysteryGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "8ff62741bcddf52364a478a9316cbc6f1c7ac9b3478b77722fb64da37048fba4",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/groupBy.test.js",
+    "line": 63,
+    "owner": "mysteryGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "388e0f5c06068cce0f129aeab5983c0b9cde0159387a0c5444f3f08703d9ff87",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/groupBy.test.js",
+    "line": 64,
+    "owner": "mysteryGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "881455ad5db466b9671a5846cd2c209f51ff0e0c16f213fc4084c0c4af9a8cd3",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/groupBy.test.js",
+    "line": 65,
+    "owner": "mysteryGraph",
+    "kind": "edge-row-constructor",
+    "fingerprint": "10838a650e8f462932c7686db4b121e2bfaafdec8d7b8792511d970aeace4a33",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/hierarchyOntologyRow.test.js",
+    "line": 224,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "9dd9f8a4f6499b12f7dfa50b89277fb155a3ade7118ee04fb2202abcb2f3beaf",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/hierarchyOntologyRow.test.js",
+    "line": 225,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "f852f7e52aed4020012eaad378c6117e53f52208b0a23850fb5fc4408c0a54cc",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/leftRailRender.test.js",
+    "line": 129,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "0e1d0271e5ea2194f543cb367fd355494626f66fb6f8569c8bd75d278d081374",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/leftRailRender.test.js",
+    "line": 130,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "89400dc741d661019950f65a6ebab51223901477bfb8a4e24f514ac2cc0a7286",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/leftRailRender.test.js",
+    "line": 131,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "22fe4aa82b7e83eac62cccc756c1570cf841e045ea42d96af219b7c800ad9f21",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/leftRailRender.test.js",
+    "line": 132,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "2350b502f71263d28266acbfc21b5f742337fde3409996a47275b42c60bde8b3",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/pickingBackendAgnostic.test.js",
+    "line": 155,
+    "owner": "makeScene",
+    "kind": "edge-row-constructor",
+    "fingerprint": "149eef85a1da76c5b80923cc9e4bb1c20c5bf56e28db7e10d13b4c0c5e2923d5",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/pickingBackendAgnostic.test.js",
+    "line": 156,
+    "owner": "makeScene",
+    "kind": "edge-row-constructor",
+    "fingerprint": "b23deade66c82b4cd046a22faac2379788e4582f926e1f60f7e59076a8d0f259",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/pickingBackendAgnostic.test.js",
+    "line": 157,
+    "owner": "makeScene",
+    "kind": "edge-row-constructor",
+    "fingerprint": "7c50bf406ef57effc8255fc305591b534d2b1d1c0dd50a3f2c973c0fd6fa1029",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/retrieval.test.js",
+    "line": 15,
+    "owner": "makeIndex",
+    "kind": "graph-constructor",
+    "fingerprint": "8cebbe1e1d8067ed2d0924be25b1b6c5698de1e5ee19b59a555d169a4eea4ad0",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/retrieval.test.js",
+    "line": 43,
+    "owner": "makeIndex",
+    "kind": "graph-insertion",
+    "fingerprint": "a4e268f146e7c453796c944e4d33a9e5a41ff75938c67a32032a734dd2ce88b1",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/retrieval.test.js",
+    "line": 44,
+    "owner": "makeIndex",
+    "kind": "graph-insertion",
+    "fingerprint": "aace85269d819b4512c449abbf09a35ecabc3bcfeee5c2a63cb275b62637fe69",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/retrieval.test.js",
+    "line": 45,
+    "owner": "makeIndex",
+    "kind": "graph-insertion",
+    "fingerprint": "26cd37582cefbf2b7fe0144549fca38e23ebf335278e1802a0af9e1b0307c566",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/retrieval.test.js",
+    "line": 46,
+    "owner": "makeIndex",
+    "kind": "graph-insertion",
+    "fingerprint": "250cfa34477fc25508bc5ba9a27dd4e6b2a41b11f8f14b9d9256eac68dd8676c",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/retrieval.test.js",
+    "line": 47,
+    "owner": "makeIndex",
+    "kind": "graph-insertion",
+    "fingerprint": "1ff523d5ca1096a39461b353a1c34ec9daac3150454528eb24e30d39ba918027",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/sceneLoader.test.js",
+    "line": 95,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "b0726cb8c0bacc4024140b6dcc0e0fcc85b2ec637aa1410b419d57c5b4e9c086",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/windowScene.test.js",
+    "line": 23,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "b0726cb8c0bacc4024140b6dcc0e0fcc85b2ec637aa1410b419d57c5b4e9c086",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 2
+  },
+  {
+    "file": "studio/src/tests/windowScene.test.js",
+    "line": 24,
+    "owner": "<module>",
+    "kind": "edge-row-constructor",
+    "fingerprint": "41f3e3f163ded27a79a653a2a5e55eda80bc69845fefe038363d617135d438c3",
+    "reason": "Individual hand-built test fixture; production writers are not exempt",
+    "count": 1
+  },
+  {
+    "file": "src/storage/postgres.ts",
+    "line": 342,
+    "owner": "temporalEdgeFromRow",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "8a075a01ac8d58a399ceef834869ad30d43276ee21149ae670bf6cbf939d6b09",
+    "reason": "Individual read-only reconstruction into a new temporal DTO, never stored evidence",
+    "count": 1
+  },
+  {
+    "file": "src/storage/postgres.ts",
+    "line": 344,
+    "owner": "temporalEdgeFromRow",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "5df95a27e0d0bf874a552e3544f733d352799342e83f96620983eae9c6b128f6",
+    "reason": "Individual read-only reconstruction into a new temporal DTO, never stored evidence",
+    "count": 1
+  },
+  {
+    "file": "src/storage/postgres.ts",
+    "line": 347,
+    "owner": "temporalEdgeFromRow",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "c3580381a5e0f4be5d87f0ba730bf3f9fbfe9a42672f80335c23d43466037ea4",
+    "reason": "Individual read-only reconstruction into a new temporal DTO, never stored evidence",
+    "count": 1
+  },
+  {
+    "file": "src/storage/postgres.ts",
+    "line": 349,
+    "owner": "temporalEdgeFromRow",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "34b7edc6b0b6343b02af0441b77e58f71ccdcc7f09d09a0dd1433f8a2987b7a4",
+    "reason": "Individual read-only reconstruction into a new temporal DTO, never stored evidence",
+    "count": 1
+  },
+  {
+    "file": "src/storage/sqlite.ts",
+    "line": 255,
+    "owner": "nodeRecordFromRow",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "bb81642183ec5c642882fb086869c74463314fbbf232dbd839076e0a1458e76a",
+    "reason": "Individual read-only reconstruction into a new temporal DTO, never stored evidence",
+    "count": 1
+  },
+  {
+    "file": "src/storage/sqlite.ts",
+    "line": 256,
+    "owner": "nodeRecordFromRow",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "d5761a8cb6fae8b6cf42a76cc7ffb686fcc705cf12bd73b1198d3feea757feb2",
+    "reason": "Individual read-only reconstruction into a new temporal DTO, never stored evidence",
+    "count": 1
+  },
+  {
+    "file": "src/storage/sqlite.ts",
+    "line": 269,
+    "owner": "nodeRecordFromRow",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "e5427d582e00cda4b3bd4d0512c077303ac83206ccbbd5e7317162e28fd326d7",
+    "reason": "Individual read-only reconstruction into a new temporal DTO, never stored evidence",
+    "count": 1
+  },
+  {
+    "file": "src/storage/sqlite.ts",
+    "line": 273,
+    "owner": "nodeRecordFromRow",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "3b759449db40ddb00c78f5ae02e228f999a350c23153864956d1b7f16a1fc1c3",
+    "reason": "Individual read-only reconstruction into a new temporal DTO, never stored evidence",
+    "count": 1
+  },
+  {
+    "file": "src/storage/sqlite.ts",
+    "line": 319,
+    "owner": "temporalEdgeFromRow",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "8a075a01ac8d58a399ceef834869ad30d43276ee21149ae670bf6cbf939d6b09",
+    "reason": "Individual read-only reconstruction into a new temporal DTO, never stored evidence",
+    "count": 1
+  },
+  {
+    "file": "src/storage/sqlite.ts",
+    "line": 321,
+    "owner": "temporalEdgeFromRow",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "5df95a27e0d0bf874a552e3544f733d352799342e83f96620983eae9c6b128f6",
+    "reason": "Individual read-only reconstruction into a new temporal DTO, never stored evidence",
+    "count": 1
+  },
+  {
+    "file": "src/storage/sqlite.ts",
+    "line": 324,
+    "owner": "temporalEdgeFromRow",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "0acf1ff66597435a4ae0ecc1130a018e5b547b0e08892209f01ca3c4badb32bc",
+    "reason": "Individual read-only reconstruction into a new temporal DTO, never stored evidence",
+    "count": 1
+  },
+  {
+    "file": "src/storage/sqlite.ts",
+    "line": 326,
+    "owner": "temporalEdgeFromRow",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "34b7edc6b0b6343b02af0441b77e58f71ccdcc7f09d09a0dd1433f8a2987b7a4",
+    "reason": "Individual read-only reconstruction into a new temporal DTO, never stored evidence",
+    "count": 1
+  },
+  {
+    "file": "src/temporal-recall.ts",
+    "line": 214,
+    "owner": "canonicalTemporalEdge",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "8a075a01ac8d58a399ceef834869ad30d43276ee21149ae670bf6cbf939d6b09",
+    "reason": "Individual read-only reconstruction into a new temporal DTO, never stored evidence",
+    "count": 1
+  },
+  {
+    "file": "src/temporal-recall.ts",
+    "line": 215,
+    "owner": "canonicalTemporalEdge",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "34b7edc6b0b6343b02af0441b77e58f71ccdcc7f09d09a0dd1433f8a2987b7a4",
+    "reason": "Individual read-only reconstruction into a new temporal DTO, never stored evidence",
+    "count": 1
+  },
+  {
+    "file": "src/temporal-recall.ts",
+    "line": 217,
+    "owner": "canonicalTemporalEdge",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "c038650360aa990919e82f976a5afa19d832fce3ade6b273ceba115c98d39d85",
+    "reason": "Individual read-only reconstruction into a new temporal DTO, never stored evidence",
+    "count": 1
+  },
+  {
+    "file": "src/temporal-recall.ts",
+    "line": 219,
+    "owner": "canonicalTemporalEdge",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "95e3ae5c1f6d6f7aa533681add91847deb2c60a604352ada9c0e2dbc708fe987",
+    "reason": "Individual read-only reconstruction into a new temporal DTO, never stored evidence",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 894,
+    "owner": "remapFileNodeIds",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "c525c2a136b1e7f5d841ef287482733ab96e25730d5244cff89b668a8fa03542",
+    "reason": "Individual fresh file-id endpoint rewrite upstream of build capture; captured observations snapshot this producer output",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 899,
+    "owner": "remapFileNodeIds",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "4dc896dce76db91abdadc64ea5a3d954322c32840740b0e4cf00c1ed4856dc06",
+    "reason": "Individual fresh file-id endpoint rewrite upstream of build capture; captured observations snapshot this producer output",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 904,
+    "owner": "remapFileNodeIds",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "fa492ecc39ea5123543dbf7f2f915f154451450067a171d5850af2fa73697d23",
+    "reason": "Individual fresh file-id endpoint rewrite upstream of build capture; captured observations snapshot this producer output",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 914,
+    "owner": "remapFileNodeIds",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "39b82330ba25af0603261466b493ea1aa8b1466f2b7402cd50220e59e7b63a09",
+    "reason": "Individual fresh file-id endpoint rewrite upstream of build capture; captured observations snapshot this producer output",
+    "count": 1
+  },
+  {
+    "file": "src/graph-json-serialization.ts",
+    "line": 17,
+    "owner": "graphJsonLink",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "e175c2d3039e960d8cf600786a19a1be9f367f89bf7ae2473283557c1856aa25",
+    "reason": "Individual serializer row fallback on a new row object; stored derived scores are already present after activation, verified by the serializer-vote law",
+    "count": 1
+  },
+  {
+    "file": "src/workspace/rail.ts",
+    "line": 133,
+    "owner": "recordsFromGraph",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "c3a1535a3599b9f83191386443debf3eb6d77affb191755c223936a31af752a2",
+    "reason": "Individual new node-result DTO field, not an edge record",
+    "count": 1
+  },
+  {
+    "file": "src/assembly-hygiene.ts",
+    "line": 132,
+    "owner": "unionNodeInto",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "3fafffd3b4ea0d8687a7538a6b6065088bccb6f5dd85456511b5b487bb8b3b38",
+    "reason": "Node citation union in unionNodeInto; node citation identity remains unchanged (spec 2.7.3)",
+    "count": 1
+  },
+  {
+    "file": "src/build.ts",
+    "line": 336,
+    "owner": "buildFromJson",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "550c4e7d42ccc1b22f495055cd3ac4f534a6a285fea54ae5782de17c9fd53b3f",
+    "reason": "Legacy node source alias becomes a node source_file; node paths remain unchanged",
+    "count": 1
+  },
+  {
+    "file": "src/build.ts",
+    "line": 337,
+    "owner": "buildFromJson",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "c401be3b933ab1c23833395809b37de2a9a3f6e4879137a65ca4b3c120cc749c",
+    "reason": "Remove the legacy source alias from a node, not an edge identity",
+    "count": 1
+  },
+  {
+    "file": "src/build.ts",
+    "line": 359,
+    "owner": "buildFromJson",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "3c723ae75ce1c42c0e5481938d86861c0e6dc08a8f8db1c63a867a084591d6ea",
+    "reason": "Normalize node attributes inside extraction.nodes before mergeNode; not the edge branch",
+    "count": 1
+  },
+  {
+    "file": "src/build.ts",
+    "line": 367,
+    "owner": "buildFromJson",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "c52d8f0e2c3d07b6949a21761ac4b4b829c78337f8a906b5f3189d4335264b04",
+    "reason": "Union node citations before mergeNode; node citation policy is out of scope",
+    "count": 1
+  },
+  {
+    "file": "src/cache.ts",
+    "line": 66,
+    "owner": "flushStatIndex",
+    "kind": "raw-graph-writer",
+    "fingerprint": "e9ed617b93d0cb05d08681b08cf9111a673423b4cb3f565fa0d6750ff7d877df",
+    "reason": "Persist stat-index file size/mtime metadata; no graph rows or edge evidence",
+    "count": 1
+  },
+  {
+    "file": "src/cache.ts",
+    "line": 470,
+    "owner": "relativizeSourceFilesIn",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "dc884179c49ec92df88faa634e72bfe95264fab458e76e3f0c27b8c6b68fa878",
+    "reason": "Relativize a fresh extraction cache copy before reducer/capture intake, not stored graph evidence",
+    "count": 1
+  },
+  {
+    "file": "src/cache.ts",
+    "line": 492,
+    "owner": "absolutizeSourceFilesIn",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "6cd6606786d84bb317317ac284c37e85596b6c7a5c1abed49cbcc5374d3f9379",
+    "reason": "Re-anchor fresh extraction cache paths on intake before reducer/capture preparation",
+    "count": 1
+  },
+  {
+    "file": "src/cache.ts",
+    "line": 723,
+    "owner": "saveCached",
+    "kind": "raw-graph-writer",
+    "fingerprint": "dbfa8ddbbb8d4697206c2f0c280bcc562bd1672a9bc5eb8bcdb0d6957e3f06e9",
+    "reason": "Persist the producer extraction cache, not a serialized graph document",
+    "count": 1
+  },
+  {
+    "file": "src/citations.ts",
+    "line": 290,
+    "owner": "foldCitationsInto",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "105d0c06e18bfb162a1d9981ac6b7001db189020d935946663cc74c0bb964a9f",
+    "reason": "Fold duplicate node citations into a surviving entity; unchanged node citation policy",
+    "count": 1
+  },
+  {
+    "file": "src/citations.ts",
+    "line": 579,
+    "owner": "writeCitationsSidecarWithSignature",
+    "kind": "raw-graph-writer",
+    "fingerprint": "1e285f77047ab882f0e5a521ff44e8924dad13be1b04fdc71f533235a166793f",
+    "reason": "Write the node-keyed citations sidecar; its content model is excluded by spec 2.7.3",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 367,
+    "owner": "writeJson",
+    "kind": "raw-graph-writer",
+    "fingerprint": "49c29c56c7b51f06844634e61b4a0f7035520231a9482708a167f2a5eddaf972",
+    "reason": "Write configuration, detection, fresh extraction, analysis or report JSON at the audited writeJson callers; graph persistence uses persistGraphWithCitations",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 447,
+    "owner": "writeFileAtomic",
+    "kind": "raw-graph-writer",
+    "fingerprint": "c0d960307280697b0c1bb4d900ad0f36b7f4b9fefc28b3b764243caa4458c046",
+    "reason": "Atomic write of installed skill markdown at writeGlobalSkill/writeProjectSkill callers, not graph data",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1388,
+    "owner": "installGeminiMcp",
+    "kind": "raw-graph-writer",
+    "fingerprint": "614d6b584e92fb7719b7bd0211bb0b9aec95f12e419cc925a9b96686694e76b3",
+    "reason": "Register an MCP server in .gemini/settings.json; configuration contains no graph rows",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1413,
+    "owner": "uninstallGeminiMcp",
+    "kind": "raw-graph-writer",
+    "fingerprint": "614d6b584e92fb7719b7bd0211bb0b9aec95f12e419cc925a9b96686694e76b3",
+    "reason": "Remove an MCP server from .gemini/settings.json; configuration contains no graph rows",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1431,
+    "owner": "cursorInstall",
+    "kind": "raw-graph-writer",
+    "fingerprint": "31893d062a81a0c9f900d0d6b42c3009613b994fd6b3936eaf7af93f60255e29",
+    "reason": "Install Cursor rule text in the platform rules directory",
+    "count": 2
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1471,
+    "owner": "_antigravityWriteRulesWorkflows",
+    "kind": "raw-graph-writer",
+    "fingerprint": "926eb270321c9865e04ac1fe27c6dab99e11285a69b6dda5103516012239e5be",
+    "reason": "Install Antigravity rule text, not graph data",
+    "count": 2
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1486,
+    "owner": "_antigravityWriteRulesWorkflows",
+    "kind": "raw-graph-writer",
+    "fingerprint": "a88f9819e9b86bec8d6261e21c934c2d9ba9e7318e512058904361b4efbcf321",
+    "reason": "Install Antigravity workflow markdown, not graph data",
+    "count": 2
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1522,
+    "owner": "kiroInstall",
+    "kind": "raw-graph-writer",
+    "fingerprint": "aceef0c9a1c038541df0c83a0056e9a84cd5d410bf3dbf2daa1eea93dbbe5e39",
+    "reason": "Install Kiro skill markdown, not a graph record",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1523,
+    "owner": "kiroInstall",
+    "kind": "raw-graph-writer",
+    "fingerprint": "1019ea47e003e6f199b7ae00bf2a409555569d7049008028c94c21cf9e855a62",
+    "reason": "Write the installed Kiro skill version marker",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1538,
+    "owner": "kiroInstall",
+    "kind": "raw-graph-writer",
+    "fingerprint": "e362f4ea8a2ab577bfbab4a4d616a2466babcb3e86dbb7c6bc62eed10b241d90",
+    "reason": "Install Kiro steering text, not graph data",
+    "count": 3
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1597,
+    "owner": "vscodeInstall",
+    "kind": "raw-graph-writer",
+    "fingerprint": "ff419db6d51b513d3beba1a43ec28833d789cd39b1611717e0aa74a5ecbe2580",
+    "reason": "Update VS Code instruction markdown",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1606,
+    "owner": "vscodeInstall",
+    "kind": "raw-graph-writer",
+    "fingerprint": "71c0333ee500ebc51b356e92dfdbde93ce9e4c8e93efce0110858fc3970effd0",
+    "reason": "Install VS Code instruction markdown",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1623,
+    "owner": "vscodeUninstall",
+    "kind": "raw-graph-writer",
+    "fingerprint": "58dc1bcbe660b45849ea66afbc0b187af384a10f8779a099358eb84276eeb7b4",
+    "reason": "Remove a section of VS Code instruction markdown",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1640,
+    "owner": "installOpenCodePlugin",
+    "kind": "raw-graph-writer",
+    "fingerprint": "837d5f5f2f6827f6468443f57ee634769adf5f07885a0a15d2a87dc7af77021c",
+    "reason": "Install OpenCode plugin JavaScript source",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1659,
+    "owner": "installOpenCodePlugin",
+    "kind": "raw-graph-writer",
+    "fingerprint": "23b4b34aca66c7f305d3190a20e504c914819530e2df1586c6b790851b812c54",
+    "reason": "Register the OpenCode plugin in platform configuration JSON",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1701,
+    "owner": "uninstallOpenCodePlugin",
+    "kind": "raw-graph-writer",
+    "fingerprint": "23b4b34aca66c7f305d3190a20e504c914819530e2df1586c6b790851b812c54",
+    "reason": "Remove the OpenCode plugin from platform configuration JSON",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1723,
+    "owner": "writeGlobalSkill",
+    "kind": "raw-graph-writer",
+    "fingerprint": "d6c1b10f3dfcc9753611d12a984e8217a383d890b36c342ea707b276c8473ee3",
+    "reason": "Write the globally installed skill version marker",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1741,
+    "owner": "writeGlobalSkill",
+    "kind": "raw-graph-writer",
+    "fingerprint": "ffa9ce5a7dc78c8cc21320404e5962954b7df298c921790fca9d655b00f1bb6a",
+    "reason": "Append global skill registration to assistant instruction markdown",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1746,
+    "owner": "writeGlobalSkill",
+    "kind": "raw-graph-writer",
+    "fingerprint": "2b336c06718c684284502f32e5766c804353c40d63a643a730a0d50875922edd",
+    "reason": "Create global skill registration instruction markdown",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1854,
+    "owner": "writeProjectSkill",
+    "kind": "raw-graph-writer",
+    "fingerprint": "d6c1b10f3dfcc9753611d12a984e8217a383d890b36c342ea707b276c8473ee3",
+    "reason": "Write the project-installed skill version marker",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1894,
+    "owner": "removeProjectClaudeMdRegistration",
+    "kind": "raw-graph-writer",
+    "fingerprint": "da74aa9ed6af24e3931807b82c0848594209d2e518b5e0927f72ec1fedc1722f",
+    "reason": "Remove project skill registration from assistant instruction markdown",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1917,
+    "owner": "writeProjectClaudeSkillRegistration",
+    "kind": "raw-graph-writer",
+    "fingerprint": "f5b298c04d6f0435916ff5ac75569097ac9ec9bc0ef41c836f8343ab7fb31690",
+    "reason": "Append project skill registration to assistant instruction markdown",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 1922,
+    "owner": "writeProjectClaudeSkillRegistration",
+    "kind": "raw-graph-writer",
+    "fingerprint": "98df24fc854ffec2e30cc5cf8dff9b1092a36c3d056e4fe953b0cc58b2bcaac7",
+    "reason": "Create project skill registration instruction markdown",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 2108,
+    "owner": "installClaudeHook",
+    "kind": "raw-graph-writer",
+    "fingerprint": "614d6b584e92fb7719b7bd0211bb0b9aec95f12e419cc925a9b96686694e76b3",
+    "reason": "Register a hook in assistant settings JSON, not graph data",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 2125,
+    "owner": "uninstallClaudeHook",
+    "kind": "raw-graph-writer",
+    "fingerprint": "614d6b584e92fb7719b7bd0211bb0b9aec95f12e419cc925a9b96686694e76b3",
+    "reason": "Remove a hook from assistant settings JSON, not graph data",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 2135,
+    "owner": "claudeInstall",
+    "kind": "raw-graph-writer",
+    "fingerprint": "18dbe0be30b4ce934b25924657cb5ddba98809ff74833b8392a7a9972aad5740",
+    "reason": "Update assistant project instruction markdown",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 2144,
+    "owner": "claudeInstall",
+    "kind": "raw-graph-writer",
+    "fingerprint": "f144a16739158d14891264f6d3e639563a568211b097c5f3a0ede5571756306a",
+    "reason": "Create assistant project instruction markdown",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 2164,
+    "owner": "claudeUninstall",
+    "kind": "raw-graph-writer",
+    "fingerprint": "561dbe8192db695273254bf3497da126b094d51eb5fb3cdec07f5976a0fe29af",
+    "reason": "Remove the installed section from assistant project instruction markdown",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 2190,
+    "owner": "geminiInstall",
+    "kind": "raw-graph-writer",
+    "fingerprint": "18dbe0be30b4ce934b25924657cb5ddba98809ff74833b8392a7a9972aad5740",
+    "reason": "Update Gemini project instruction markdown",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 2199,
+    "owner": "geminiInstall",
+    "kind": "raw-graph-writer",
+    "fingerprint": "ee83f085f18405aa16d35f5b6fda714fa4641a8f0c5218cbc3c0e64a7b6b189c",
+    "reason": "Create Gemini project instruction markdown",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 2222,
+    "owner": "geminiUninstall",
+    "kind": "raw-graph-writer",
+    "fingerprint": "561dbe8192db695273254bf3497da126b094d51eb5fb3cdec07f5976a0fe29af",
+    "reason": "Remove the installed section from Gemini project instruction markdown",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 2268,
+    "owner": "installCodexHook",
+    "kind": "raw-graph-writer",
+    "fingerprint": "226deb9e139b1c0d6f45024fa20b2849b5789e0f37554a77d7759560b2b9f6e1",
+    "reason": "Register a Codex hook in hook configuration JSON",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 2285,
+    "owner": "uninstallCodexHook",
+    "kind": "raw-graph-writer",
+    "fingerprint": "226deb9e139b1c0d6f45024fa20b2849b5789e0f37554a77d7759560b2b9f6e1",
+    "reason": "Remove a Codex hook from hook configuration JSON",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 2296,
+    "owner": "agentsInstall",
+    "kind": "raw-graph-writer",
+    "fingerprint": "18dbe0be30b4ce934b25924657cb5ddba98809ff74833b8392a7a9972aad5740",
+    "reason": "Update agent project instruction markdown",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 2305,
+    "owner": "agentsInstall",
+    "kind": "raw-graph-writer",
+    "fingerprint": "fd1e1c067f565310675f4cd10c20633b266092bc73a85acbf9eb84725a01aa77",
+    "reason": "Create agent project instruction markdown",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 2336,
+    "owner": "agentsUninstall",
+    "kind": "raw-graph-writer",
+    "fingerprint": "561dbe8192db695273254bf3497da126b094d51eb5fb3cdec07f5976a0fe29af",
+    "reason": "Remove the installed section from agent project instruction markdown",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 2993,
+    "owner": "main",
+    "kind": "raw-graph-writer",
+    "fingerprint": "79d598632e2b30171faf5ac148309cc0717a12a3dc1de41f483eafa1d019dd7f",
+    "reason": "Write a profile-discovery prompt for a fresh producer",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 3024,
+    "owner": "main",
+    "kind": "raw-graph-writer",
+    "fingerprint": "a3fb562da78c3212afcfe8b9a95a98238cb58ca11d9bcb5cf13506b4a322b970",
+    "reason": "Write an ontology-discovery diff as markdown",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 3050,
+    "owner": "main",
+    "kind": "raw-graph-writer",
+    "fingerprint": "725300c6b8a47e6cfb191580ec53cdf15361e53609e04887f66ab098063642ab",
+    "reason": "Write generated report markdown, not the graph record",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 3784,
+    "owner": "main",
+    "kind": "raw-graph-writer",
+    "fingerprint": "72b4b3e94481d01cfef2b48c73b7c98f4fdb9c65b32a1be63510cffd05319575",
+    "reason": "Write extraction assistant instructions assembled as text lines",
+    "count": 1
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 3932,
+    "owner": "main",
+    "kind": "raw-graph-writer",
+    "fingerprint": "7c2aab3034b8ba6c26b3636b8d93eaafd5d87f3802493aa13cb3d2baab7fafda",
+    "reason": "Write generated report markdown, not the graph record",
+    "count": 3
+  },
+  {
+    "file": "src/cli.ts",
+    "line": 4247,
+    "owner": "main",
+    "kind": "raw-graph-writer",
+    "fingerprint": "54ac4bab4579f3846fee5935fabbd28947005302330168d4d4361b62186ac99e",
+    "reason": "Write an analysis scratch DTO; graph persistence uses a separate writer",
+    "count": 2
+  },
+  {
+    "file": "src/community-labeling.ts",
+    "line": 83,
+    "owner": "emitLabelInstructions",
+    "kind": "raw-graph-writer",
+    "fingerprint": "42b2cf1b4927e9fef12165c9bf90b22ffd5643bdf657537939f4bc67011d0067",
+    "reason": "Emit community-labeling assistant instructions as markdown",
+    "count": 1
+  },
+  {
+    "file": "src/community-labels.ts",
+    "line": 121,
+    "owner": "persistCommunityLabels",
+    "kind": "raw-graph-writer",
+    "fingerprint": "4438daeef0994d39443ed4f8abe75682422b6ca3286a2c89f3110d7ec029dde2",
+    "reason": "Persist the community-label sidecar, not graph link rows",
+    "count": 1
+  },
+  {
+    "file": "src/configured-dataprep.ts",
+    "line": 377,
+    "owner": "runConfiguredDataprep",
+    "kind": "raw-graph-writer",
+    "fingerprint": "1412d6029ec820fc08e561f1edfeaa8b9717bd3447849b651a3658e849ba297b",
+    "reason": "Write a configured data-preparation report, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/converted-provenance.ts",
+    "line": 157,
+    "owner": "parseConvertedFrontmatter",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "ed34495aa6a0f8329a818d5444ecb13098e3e3914cd6b81b9bc0f4eef1026dcd",
+    "reason": "Parse a document conversion source_file into a provenance DTO",
+    "count": 1
+  },
+  {
+    "file": "src/detect.ts",
+    "line": 993,
+    "owner": "saveManifest",
+    "kind": "raw-graph-writer",
+    "fingerprint": "859100575b0469135f2e5f6b98d19554acfbe9efd7ca0a3a8e3b8b8025a4eb97",
+    "reason": "Persist file detection manifest metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/export.ts",
+    "line": 473,
+    "owner": "toCypher",
+    "kind": "raw-graph-writer",
+    "fingerprint": "83b1625839c6ff0bfe91941f96d58a337c16d4772728b7c923ee64db9a5a8e46",
+    "reason": "Write the explicitly lossy Cypher view (spec 2.6.5); not the lossless graph document",
+    "count": 1
+  },
+  {
+    "file": "src/export.ts",
+    "line": 603,
+    "owner": "toSpanner",
+    "kind": "raw-graph-writer",
+    "fingerprint": "c8f4317a0e006345fc6236b45e096e6a85b5dda52c8dc6207edcd4a3027c4d59",
+    "reason": "Write Spanner SQL schema DDL text, not graph evidence",
+    "count": 1
+  },
+  {
+    "file": "src/export.ts",
+    "line": 656,
+    "owner": "toSpanner",
+    "kind": "raw-graph-writer",
+    "fingerprint": "a7a47dc1e49bf9570dc644ade589c307dc913af54d390da870437a12d5ab3733",
+    "reason": "Write the derived-scalar Spanner SQL mirror view; lossless mirror persistence is excluded by spec 2.7.1",
+    "count": 1
+  },
+  {
+    "file": "src/export.ts",
+    "line": 769,
+    "owner": "toGraphml",
+    "kind": "raw-graph-writer",
+    "fingerprint": "83b1625839c6ff0bfe91941f96d58a337c16d4772728b7c923ee64db9a5a8e46",
+    "reason": "Write the GraphML presentation view with one element per link (spec 2.6.5)",
+    "count": 1
+  },
+  {
+    "file": "src/export.ts",
+    "line": 877,
+    "owner": "toSvg",
+    "kind": "raw-graph-writer",
+    "fingerprint": "63d6411afef28c75be7a0c1bc893adf27fd5b230dfa4ae3215619f12c315e010",
+    "reason": "Write the static SVG presentation view (spec 2.6.5)",
+    "count": 1
+  },
+  {
+    "file": "src/export.ts",
+    "line": 1075,
+    "owner": "toCanvas",
+    "kind": "raw-graph-writer",
+    "fingerprint": "19a4ff1457b71969f0055fddc029fe23877086e069030be1dcfac74938a6f0ad",
+    "reason": "Write the Canvas presentation view; tuple identity is checked separately (spec 2.6.5)",
+    "count": 1
+  },
+  {
+    "file": "src/extraction-batch.ts",
+    "line": 1376,
+    "owner": "validateAndPruneChunkExtraction",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "6af188236b04aad485eb3c39503369225718c28a6708049a006382d86da29753",
+    "reason": "Validate citations on fresh cloned producer nodes; node citation policy is unchanged",
+    "count": 1
+  },
+  {
+    "file": "src/extraction-batch.ts",
+    "line": 1390,
+    "owner": "validateAndPruneChunkExtraction",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "12a742c8a47da206614c093dbcecbf694291b1008c4810da397aadb30efda9fa",
+    "reason": "Normalize fresh producer edge citations before capture; explicitly retained by spec 2.6.1, never applied to stored observations",
+    "count": 1
+  },
+  {
+    "file": "src/google-workspace.ts",
+    "line": 245,
+    "owner": "convertGoogleWorkspaceFile",
+    "kind": "raw-graph-writer",
+    "fingerprint": "ded742a4f6347d375432d54ed4b6f047cb6e31a29dae268a19a9b5c97288c161",
+    "reason": "Write converted source-document markdown before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/hooks.ts",
+    "line": 201,
+    "owner": "installHook",
+    "kind": "raw-graph-writer",
+    "fingerprint": "26a5a5db37f2e36daa206cf01f428d9af00abb2c67b76a84c73fe4bf8f0de2c4",
+    "reason": "Update a Git hook shell script, not graph data",
+    "count": 1
+  },
+  {
+    "file": "src/hooks.ts",
+    "line": 205,
+    "owner": "installHook",
+    "kind": "raw-graph-writer",
+    "fingerprint": "baf6181c1c3d696385d9c58e54fdf5211cdd312feebe83edc5b0ed666f2b9e0d",
+    "reason": "Append a Git hook shell script, not graph data",
+    "count": 1
+  },
+  {
+    "file": "src/hooks.ts",
+    "line": 210,
+    "owner": "installHook",
+    "kind": "raw-graph-writer",
+    "fingerprint": "1ca5f2e44e90a95ac933991a308ef2545754fa8e8fb3efef9f34bc4b68c26345",
+    "reason": "Create a Git hook shell script, not graph data",
+    "count": 1
+  },
+  {
+    "file": "src/hooks.ts",
+    "line": 230,
+    "owner": "uninstallHook",
+    "kind": "raw-graph-writer",
+    "fingerprint": "8d9cb0372834975d3a5609cdc48875a66c1c5977fc09bedf8862ab5df9d65e96",
+    "reason": "Remove an installed section of a Git hook shell script",
+    "count": 1
+  },
+  {
+    "file": "src/hooks.ts",
+    "line": 257,
+    "owner": "installGraphAttributes",
+    "kind": "raw-graph-writer",
+    "fingerprint": "e9e0b95b1c6f9faf1cc11eeb37cf3282182c4a76cd9f6d5701b205be8949353e",
+    "reason": "Write Git attribute configuration lines",
+    "count": 1
+  },
+  {
+    "file": "src/hooks.ts",
+    "line": 275,
+    "owner": "uninstallGraphAttributes",
+    "kind": "raw-graph-writer",
+    "fingerprint": "b737b88bc93cc5d6ffe1da97c333300106e46e652e730a90dfb5af538fa9bd55",
+    "reason": "Remove merge-driver Git attribute configuration lines",
+    "count": 1
+  },
+  {
+    "file": "src/hooks.ts",
+    "line": 629,
+    "owner": "installLiveHook",
+    "kind": "raw-graph-writer",
+    "fingerprint": "c16df1b70f32afa52b388a63a1582ac514f8aa7a36dffb1ac263006645714a13",
+    "reason": "Install a live-session hook script",
+    "count": 4
+  },
+  {
+    "file": "src/hooks.ts",
+    "line": 686,
+    "owner": "uninstallLiveHook",
+    "kind": "raw-graph-writer",
+    "fingerprint": "8d9cb0372834975d3a5609cdc48875a66c1c5977fc09bedf8862ab5df9d65e96",
+    "reason": "Remove an installed live-session hook script section",
+    "count": 1
+  },
+  {
+    "file": "src/image-dataprep-batch.ts",
+    "line": 92,
+    "owner": "exportImageDataprepBatchRequests",
+    "kind": "raw-graph-writer",
+    "fingerprint": "3ee2bf0bbccdfaa48524594ebaee6be422ad62d44fb560d0ae27a0c112a28cb2",
+    "reason": "Export provider batch request JSONL for fresh image data preparation",
+    "count": 1
+  },
+  {
+    "file": "src/image-dataprep-batch.ts",
+    "line": 138,
+    "owner": "importImageDataprepBatchResults",
+    "kind": "raw-graph-writer",
+    "fingerprint": "fc77f5a86b85a6ecd5d2b720b6229793305d22c980234867104f4fb20818ff22",
+    "reason": "Persist a fresh image caption producer result, not a graph record",
+    "count": 1
+  },
+  {
+    "file": "src/image-dataprep-batch.ts",
+    "line": 139,
+    "owner": "importImageDataprepBatchResults",
+    "kind": "raw-graph-writer",
+    "fingerprint": "de9b0e431fe2886a6058c2125ebc7c6f7742cef0ab61714906449fc165596746",
+    "reason": "Persist image routing metadata alongside the caption",
+    "count": 1
+  },
+  {
+    "file": "src/image-dataprep.ts",
+    "line": 147,
+    "owner": "writeAssistantInstructions",
+    "kind": "raw-graph-writer",
+    "fingerprint": "a4dcccd3a4bb950a60059fd327264df711fef8da88f7ce106e8a2af8582c84ed",
+    "reason": "Emit image data-preparation assistant instructions as markdown",
+    "count": 1
+  },
+  {
+    "file": "src/image-dataprep.ts",
+    "line": 185,
+    "owner": "runImageDataprep",
+    "kind": "raw-graph-writer",
+    "fingerprint": "a2a9da75332a9442bbb6ed0cb0137fa6607f168c429b8316c93edfe7fb0dfa53",
+    "reason": "Persist image data-preparation manifest metadata",
+    "count": 1
+  },
+  {
+    "file": "src/image-routing-calibration.ts",
+    "line": 232,
+    "owner": "writeImageRoutingCalibrationSamples",
+    "kind": "raw-graph-writer",
+    "fingerprint": "9061b250362f2d25e40cbc77b1b59e3c2dd6cbd881f211b00f69f73078e50c5b",
+    "reason": "Persist image routing calibration samples, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/ingest.ts",
+    "line": 264,
+    "owner": "downloadBinary",
+    "kind": "raw-graph-writer",
+    "fingerprint": "9d7a97f25680786a2d29c39ab75cd67a0ed35e6f7a4f243c924510223b8aa3e3",
+    "reason": "Write downloaded binary source bytes before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/ingest.ts",
+    "line": 357,
+    "owner": "ingest",
+    "kind": "raw-graph-writer",
+    "fingerprint": "fcf762a675a5c3582a1f8b1ec426ca19804acf58e48608f057bf8bd824a60142",
+    "reason": "Write ingested source content before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/ingest.ts",
+    "line": 449,
+    "owner": "saveQueryResult",
+    "kind": "raw-graph-writer",
+    "fingerprint": "fcf762a675a5c3582a1f8b1ec426ca19804acf58e48608f057bf8bd824a60142",
+    "reason": "Save query-result source content for ingestion, not graph link records",
+    "count": 1
+  },
+  {
+    "file": "src/lifecycle.ts",
+    "line": 69,
+    "owner": "writeJson",
+    "kind": "raw-graph-writer",
+    "fingerprint": "0c32eeb845952fea078175470fe2162cc0bcb0776b3f4e5cce7e725d9aabab06",
+    "reason": "Write branch/worktree lifecycle metadata at the two audited callers",
+    "count": 1
+  },
+  {
+    "file": "src/llm-execution.ts",
+    "line": 224,
+    "owner": "writeInstruction",
+    "kind": "raw-graph-writer",
+    "fingerprint": "3b7fbdd8605cb87be1ec1ff139b068c676b61e5dc650139c570d646dd88aa64e",
+    "reason": "Write LLM assistant instruction text",
+    "count": 1
+  },
+  {
+    "file": "src/llm-execution.ts",
+    "line": 544,
+    "owner": "generateJson",
+    "kind": "raw-graph-writer",
+    "fingerprint": "36c1fc3d17f146916a672c540f9966c33181fa529e1b6e1be661672146e9724f",
+    "reason": "Write a schema-selected fresh producer JSON response, not a persisted graph",
+    "count": 1
+  },
+  {
+    "file": "src/llm-mesh-bridge.ts",
+    "line": 608,
+    "owner": "generateJson",
+    "kind": "raw-graph-writer",
+    "fingerprint": "308a672db605814ffec09f9bd604c105f0612533be495186b04c1a386a876e66",
+    "reason": "Write a fresh text/JSON producer response for extraction or sidecar generation",
+    "count": 1
+  },
+  {
+    "file": "src/merge-driver.ts",
+    "line": 140,
+    "owner": "mergeGraphJsonFiles",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "f636cbba51bceda18e03729a3e8e0f7df9411fccc97789c70c7357a53ce7b5e1",
+    "reason": "Union incoming node citations inside raw.nodes before mergeNode; not link evidence",
+    "count": 1
+  },
+  {
+    "file": "src/node-descriptions.ts",
+    "line": 99,
+    "owner": "emitDescriptionInstructions",
+    "kind": "raw-graph-writer",
+    "fingerprint": "445934063db44cece10a145b594960c1ab738580d267d48129ff28a12d165073",
+    "reason": "Emit node-description assistant instructions as markdown",
+    "count": 1
+  },
+  {
+    "file": "src/ontology-class-hierarchies-emitter.ts",
+    "line": 148,
+    "owner": "emitClassHierarchies",
+    "kind": "raw-graph-writer",
+    "fingerprint": "821d15181869887291536754c6797d46fab51d33b4acae643dfb54a61873d26f",
+    "reason": "Emit the class hierarchy index sidecar, not lossless graph link rows",
+    "count": 1
+  },
+  {
+    "file": "src/ontology-guardian/archi-ingest.ts",
+    "line": 1266,
+    "owner": "createAtomicArchiWriter",
+    "kind": "raw-graph-writer",
+    "fingerprint": "f4bc9b6b3782ba6d22101a0f74b220a8c909e66488bf8482094acc94b653cae0",
+    "reason": "Atomically stage compiled architecture ontology artifacts, not the graph persistence document",
+    "count": 1
+  },
+  {
+    "file": "src/ontology-output.ts",
+    "line": 179,
+    "owner": "writeJson",
+    "kind": "raw-graph-writer",
+    "fingerprint": "0c32eeb845952fea078175470fe2162cc0bcb0776b3f4e5cce7e725d9aabab06",
+    "reason": "Write compiled ontology tables, manifests and indexes at the audited callers; not the lossless graph envelope",
+    "count": 1
+  },
+  {
+    "file": "src/ontology-output.ts",
+    "line": 444,
+    "owner": "writeWiki",
+    "kind": "raw-graph-writer",
+    "fingerprint": "2b05f63e280294908a85cf8ae6c5378bcc2fae1e0bddb3decad18428763b59c4",
+    "reason": "Write ontology entity wiki markdown",
+    "count": 1
+  },
+  {
+    "file": "src/ontology-output.ts",
+    "line": 448,
+    "owner": "writeWiki",
+    "kind": "raw-graph-writer",
+    "fingerprint": "6f1709c73396e2ce82bdccf22d72e6782d04b4f33cc7428af0771ca34f3f48c1",
+    "reason": "Write the ontology wiki markdown index",
+    "count": 1
+  },
+  {
+    "file": "src/ontology-reconciliation.ts",
+    "line": 2278,
+    "owner": "writeOntologyReconciliationCandidates",
+    "kind": "raw-graph-writer",
+    "fingerprint": "d42a18271491bd3e0e5c65be2026bb0b27a1896ff4d175509c5cae6b699f1fe0",
+    "reason": "Write ontology reconciliation candidate queue metadata",
+    "count": 1
+  },
+  {
+    "file": "src/ontology-studio.ts",
+    "line": 183,
+    "owner": "decisionLogOptions",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "512e3b30e4df82083435607e7e0296099afbacf1f72d465a12ee5459ceecfc22",
+    "reason": "Set the decision-log options source identifier, not an edge endpoint",
+    "count": 1
+  },
+  {
+    "file": "src/pdf-ocr.ts",
+    "line": 112,
+    "owner": "writeMetadata",
+    "kind": "raw-graph-writer",
+    "fingerprint": "0ff8b612f1696221efb8f9b7cfdaffff1761b9f2d51f08632a1b3f9bd2e49d2d",
+    "reason": "Write PDF conversion provenance metadata",
+    "count": 1
+  },
+  {
+    "file": "src/pdf-ocr.ts",
+    "line": 162,
+    "owner": "preparePdf",
+    "kind": "raw-graph-writer",
+    "fingerprint": "a30b49b11ef0ac23d6a41aafb93286e5817d49929c604bc658b9e5ece3f642df",
+    "reason": "Write PDF text-layer source markdown before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/pdf-ocr.ts",
+    "line": 225,
+    "owner": "preparePdf",
+    "kind": "raw-graph-writer",
+    "fingerprint": "e89daf9557a77346d17cc700e00272550f5a3692660ea580d5d777e2b699be97",
+    "reason": "Write the OCR page locator sidecar for a source document",
+    "count": 1
+  },
+  {
+    "file": "src/pdf-ocr.ts",
+    "line": 229,
+    "owner": "preparePdf",
+    "kind": "raw-graph-writer",
+    "fingerprint": "47518f5cbc9d71ee6496c3da355c3d7bfb27a4ca987131558d01959b1e280710",
+    "reason": "Write OCR source markdown with conversion frontmatter before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/pipeline.ts",
+    "line": 164,
+    "owner": "buildProject",
+    "kind": "raw-graph-writer",
+    "fingerprint": "903670c13cf7d9cd1094f195130ea3aa04c2cca6039280807dcb005c44af5922",
+    "reason": "Write file detection scratch metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/pipeline.ts",
+    "line": 166,
+    "owner": "buildProject",
+    "kind": "raw-graph-writer",
+    "fingerprint": "91e3baf64ea25f64edc71c65bee18b7c34c3a3445e32334ae14face43b9becfd",
+    "reason": "Write input scope selection metadata",
+    "count": 1
+  },
+  {
+    "file": "src/pipeline.ts",
+    "line": 300,
+    "owner": "buildProject",
+    "kind": "raw-graph-writer",
+    "fingerprint": "3ca14cd19b37bbc871dac21f47f283ccfa89e7c42a419ee37ceadb31b7a8ed47",
+    "reason": "Write the generated graph report as markdown, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/scene-hierarchies-emitter.ts",
+    "line": 161,
+    "owner": "emitSceneHierarchies",
+    "kind": "raw-graph-writer",
+    "fingerprint": "1d6b2d4f939f3b536c6984dcde79cdd4665e0f541a799a7361e86a2df703c071",
+    "reason": "Write the derived scene hierarchy sidecar; no stored graph link is rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/scene-hierarchies.ts",
+    "line": 202,
+    "owner": "overlayArcFrom",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "6a49c2baecd6d1d284ddb3e0239e9c0a91cfb4e678330e1918f70165116721c3",
+    "reason": "Copy hierarchy confidence into a scene overlay DTO; view provenance is outside spec 2.6.6",
+    "count": 1
+  },
+  {
+    "file": "src/scene-hierarchies.ts",
+    "line": 204,
+    "owner": "overlayArcFrom",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "91dfcdc62048dd860637ed797fb14a85b28c87530c7010310bc007cbcf4f1c7f",
+    "reason": "Copy hierarchy evidence references into a scene overlay DTO, not a stored graph link",
+    "count": 1
+  },
+  {
+    "file": "src/scene-hierarchies.ts",
+    "line": 206,
+    "owner": "overlayArcFrom",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "837264b99c825e4647aa02a3e0516e9c49d96ac001c722a1ddd04cd9daa240e0",
+    "reason": "Attach a derivation label to a scene hierarchy overlay DTO",
+    "count": 1
+  },
+  {
+    "file": "src/search-index-emitter.ts",
+    "line": 255,
+    "owner": "emitSearchIndex",
+    "kind": "raw-graph-writer",
+    "fingerprint": "de261d689f41fcd324c45a528fb8dec693510e697f83ead699fd523a567ca80f",
+    "reason": "Write a derived search-index artifact; graph topology counting is tested separately",
+    "count": 1
+  },
+  {
+    "file": "src/skill-runtime.ts",
+    "line": 150,
+    "owner": "writeJson",
+    "kind": "raw-graph-writer",
+    "fingerprint": "49c29c56c7b51f06844634e61b4a0f7035520231a9482708a167f2a5eddaf972",
+    "reason": "Write configuration, producer extraction, cost, detection and analysis JSON at audited callers; persisted graphs use persistGraphWithCitations",
+    "count": 1
+  },
+  {
+    "file": "src/skill-runtime.ts",
+    "line": 374,
+    "owner": "mergeGraphs",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "bd455410fb68e582dd4af39dbdee7fc93189a8f471fd9ca61919c998094e509d",
+    "reason": "Union node citations in forEachNode before mergeNode; the following edge loop is a separate obligation",
+    "count": 1
+  },
+  {
+    "file": "src/skill-runtime.ts",
+    "line": 745,
+    "owner": "main",
+    "kind": "raw-graph-writer",
+    "fingerprint": "60f6f13b90eff7774d8ef95dbce5443ff742243a6a3ee03f6145233f5eef701b",
+    "reason": "Write the profile extraction prompt for fresh producer intake",
+    "count": 1
+  },
+  {
+    "file": "src/skill-runtime.ts",
+    "line": 786,
+    "owner": "main",
+    "kind": "raw-graph-writer",
+    "fingerprint": "79d598632e2b30171faf5ac148309cc0717a12a3dc1de41f483eafa1d019dd7f",
+    "reason": "Write the profile discovery prompt for fresh producer intake",
+    "count": 1
+  },
+  {
+    "file": "src/skill-runtime.ts",
+    "line": 811,
+    "owner": "main",
+    "kind": "raw-graph-writer",
+    "fingerprint": "a3fb562da78c3212afcfe8b9a95a98238cb58ca11d9bcb5cf13506b4a322b970",
+    "reason": "Write an ontology discovery diff as markdown",
+    "count": 1
+  },
+  {
+    "file": "src/skill-runtime.ts",
+    "line": 831,
+    "owner": "main",
+    "kind": "raw-graph-writer",
+    "fingerprint": "725300c6b8a47e6cfb191580ec53cdf15361e53609e04887f66ab098063642ab",
+    "reason": "Write profile discovery report markdown",
+    "count": 1
+  },
+  {
+    "file": "src/skill-runtime.ts",
+    "line": 1178,
+    "owner": "main",
+    "kind": "raw-graph-writer",
+    "fingerprint": "16667b61743d9bfc5dda223d9605b485e7b72d1cb39630b7af09f2fc41b17e50",
+    "reason": "Write an uncached input filename list as text",
+    "count": 1
+  },
+  {
+    "file": "src/skill-runtime.ts",
+    "line": 1353,
+    "owner": "main",
+    "kind": "raw-graph-writer",
+    "fingerprint": "a124cebfe821fd044535e09927dbf350274ab88d5f619c1e17cd0877f7af4208",
+    "reason": "Write the finalized graph report markdown",
+    "count": 4
+  },
+  {
+    "file": "src/skill-runtime.ts",
+    "line": 1548,
+    "owner": "main",
+    "kind": "raw-graph-writer",
+    "fingerprint": "967263641282ac9c7901839063f15ee54f5f49ed83cdb64c2fec3ddf0b1cafd6",
+    "reason": "Write analysis report markdown",
+    "count": 1
+  },
+  {
+    "file": "src/skill-runtime.ts",
+    "line": 1787,
+    "owner": "main",
+    "kind": "raw-graph-writer",
+    "fingerprint": "5e712a6c08c4c384a9b6687b293f987e480a46cdb66055ab166b3b0489521733",
+    "reason": "Write analysis report markdown",
+    "count": 1
+  },
+  {
+    "file": "src/storage/config.ts",
+    "line": 79,
+    "owner": "resolveStoreConfig",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "fa20d2ee64f752721c4b3d8691c3b6304812d615003a6534742465d9c74fd175",
+    "reason": "Resolve a storage connection target URI, not an edge target",
+    "count": 1
+  },
+  {
+    "file": "src/storage/config.ts",
+    "line": 148,
+    "owner": "resolveStoreConfig",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "dc98ac949babfc1db15589471604fc7e1bcd2e5ad5820d11e3c418025d9f03cc",
+    "reason": "Resolve a local storage target path, not an edge target",
+    "count": 2
+  },
+  {
+    "file": "src/storage/config.ts",
+    "line": 154,
+    "owner": "resolveStoreConfig",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "1256d2b89759f4da2f927e58076d87561723bb07d82d96e2aeead1e0a3bcd4d1",
+    "reason": "Resolve a storage target from configuration, not an edge target",
+    "count": 1
+  },
+  {
+    "file": "src/storage/memory-projection.ts",
+    "line": 437,
+    "owner": "writeManifest",
+    "kind": "raw-graph-writer",
+    "fingerprint": "b6ba755d075af4cf2a47063c01fa9683135a2cabf23bfd0da010a336e0d80f4a",
+    "reason": "Atomically persist projection cache manifest state, not graph link rows",
+    "count": 1
+  },
+  {
+    "file": "src/storage/memory-projection.ts",
+    "line": 491,
+    "owner": "write",
+    "kind": "raw-graph-writer",
+    "fingerprint": "cfed6d6158fc58b166937935930349e6c2982a51f4e82220df824ae2a04f207f",
+    "reason": "Write a memory projection lease ticket, not graph link rows",
+    "count": 1
+  },
+  {
+    "file": "src/storage/postgres.ts",
+    "line": 271,
+    "owner": "temporalNodeFromRow",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "fb1b15692c20266cb38fa75b61a39f5201a3ca710889d7964b37ce94a2e7c771",
+    "reason": "Hydrate a temporal node end bound from a store row; node semantics are unchanged",
+    "count": 1
+  },
+  {
+    "file": "src/storage/postgres.ts",
+    "line": 273,
+    "owner": "temporalNodeFromRow",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "7892c3d825f40254a59e869a1f3c4051680268c87cd096d6d7e9b73d48f3fe96",
+    "reason": "Remove an absent temporal node end bound; not an edge aggregate",
+    "count": 1
+  },
+  {
+    "file": "src/storage/sqlite.ts",
+    "line": 302,
+    "owner": "temporalNodeFromRow",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "5e99285e091e46d97b76b6fb612ad9d0e5e319ce4b65026bf43fea370becac4e",
+    "reason": "Hydrate a temporal node end bound from a store row; node semantics are unchanged",
+    "count": 1
+  },
+  {
+    "file": "src/storage/sqlite.ts",
+    "line": 304,
+    "owner": "temporalNodeFromRow",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "7892c3d825f40254a59e869a1f3c4051680268c87cd096d6d7e9b73d48f3fe96",
+    "reason": "Remove an absent temporal node end bound; not an edge aggregate",
+    "count": 1
+  },
+  {
+    "file": "src/studio-assets.ts",
+    "line": 560,
+    "owner": "buildEntitySidecar",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "7097407cba816719c5b24ea22e657b9b2e7a11441bb4206b0c1fbae29d4e6f66",
+    "reason": "Attach node citations to the entity-panel response DTO",
+    "count": 1
+  },
+  {
+    "file": "src/studio-export.ts",
+    "line": 756,
+    "owner": "buildStaticStudio",
+    "kind": "raw-graph-writer",
+    "fingerprint": "744b8734f00300b5eedcb919f1937b5fe3949294ef91b29c9a45a807d35f2401",
+    "reason": "Write the derived Studio scene view; scene provenance is excluded by spec 2.6.6",
+    "count": 1
+  },
+  {
+    "file": "src/studio-export.ts",
+    "line": 778,
+    "owner": "buildStaticStudio",
+    "kind": "raw-graph-writer",
+    "fingerprint": "6b2cf0f155ab44cb48db8806c3fb705878804a74d427d6e86e682ad4c9a9a152",
+    "reason": "Write a reconciliation candidate response sidecar",
+    "count": 1
+  },
+  {
+    "file": "src/studio-export.ts",
+    "line": 785,
+    "owner": "buildStaticStudio",
+    "kind": "raw-graph-writer",
+    "fingerprint": "3554530231b09b7a02cb86dda9b243401260998e6c0ecceed000ad49e8dd6e6d",
+    "reason": "Write node entity-panel response sidecars",
+    "count": 1
+  },
+  {
+    "file": "src/studio-export.ts",
+    "line": 813,
+    "owner": "buildStaticStudio",
+    "kind": "raw-graph-writer",
+    "fingerprint": "d8b6beef133ec493e3781a882c52c444e876d4ef12f51ea7bff5acfc6707968b",
+    "reason": "Copy the node citation sidecar verbatim; its content model is excluded by spec 2.7.3",
+    "count": 1
+  },
+  {
+    "file": "src/studio-export.ts",
+    "line": 858,
+    "owner": "buildStaticStudio",
+    "kind": "raw-graph-writer",
+    "fingerprint": "d0e047355f1a2d4849a0e06271538169848e40f70d33481a7faa30302298ee44",
+    "reason": "Write cited source-document conversion provenance metadata",
+    "count": 1
+  },
+  {
+    "file": "src/studio-export.ts",
+    "line": 927,
+    "owner": "buildStaticStudio",
+    "kind": "raw-graph-writer",
+    "fingerprint": "f36ba06a65d8414b2b80ef5a34ac9a1a91b04508462c9643c28a36595afcfcdd",
+    "reason": "Write the offline Studio HTML presentation bundle",
+    "count": 1
+  },
+  {
+    "file": "src/studio-scene.ts",
+    "line": 740,
+    "owner": "buildStudioScene",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "55ae48f1e1ade3d9c7585b7665982f7af6de5c6336020133d00e0a6eceed3a25",
+    "reason": "Copy relation text into a derived scene edge DTO; not the lossless graph record",
+    "count": 1
+  },
+  {
+    "file": "src/temporal-recall.ts",
+    "line": 185,
+    "owner": "canonicalTemporalNode",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "7892c3d825f40254a59e869a1f3c4051680268c87cd096d6d7e9b73d48f3fe96",
+    "reason": "Clear a temporal node end bound during node canonicalization",
+    "count": 1
+  },
+  {
+    "file": "src/temporal-recall.ts",
+    "line": 192,
+    "owner": "canonicalTemporalNode",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "be26714e32f6e16078d9e57c905a5164c6c806855aa93a91fdf958107510733f",
+    "reason": "Set a temporal node end bound during node canonicalization",
+    "count": 1
+  },
+  {
+    "file": "src/transcribe.ts",
+    "line": 220,
+    "owner": "ensureWhisperArtifacts",
+    "kind": "raw-graph-writer",
+    "fingerprint": "5d3f02a817ae9b7fdd344686a169599e21f5841fd917e3aa0e44a43c8f03d127",
+    "reason": "Install downloaded transcription model bytes, not graph data",
+    "count": 1
+  },
+  {
+    "file": "src/transcribe.ts",
+    "line": 421,
+    "owner": "transcribe",
+    "kind": "raw-graph-writer",
+    "fingerprint": "d9a39a28091e7bcd1d9afbc7335dc570b05d16d9bfaa1dc2a89e82bd33ca49cd",
+    "reason": "Write source transcript text before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/watch.ts",
+    "line": 228,
+    "owner": "rebuildCode",
+    "kind": "raw-graph-writer",
+    "fingerprint": "4297064a6f5850d6d7383e63aa959ca82f99140989933b3e7a65be15b1dc9941",
+    "reason": "Write file detection scratch metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/watch.ts",
+    "line": 230,
+    "owner": "rebuildCode",
+    "kind": "raw-graph-writer",
+    "fingerprint": "9bcbe11b3522820b3e40fceb1492e23123893e0fb81fcb1b221fad6a80f4768a",
+    "reason": "Write input scope selection metadata",
+    "count": 1
+  },
+  {
+    "file": "src/watch.ts",
+    "line": 538,
+    "owner": "rebuildCode",
+    "kind": "raw-graph-writer",
+    "fingerprint": "7c2aab3034b8ba6c26b3636b8d93eaafd5d87f3802493aa13cb3d2baab7fafda",
+    "reason": "Write graph report markdown, not the graph record",
+    "count": 1
+  },
+  {
+    "file": "src/watch.ts",
+    "line": 621,
+    "owner": "rebuildCode",
+    "kind": "raw-graph-writer",
+    "fingerprint": "9849bb5ba6b6dbd40239698232e7a662326b8415f89a1a4d434a6c2097cb7caf",
+    "reason": "Write a pending-description text notice, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/wiki-description-batch.ts",
+    "line": 88,
+    "owner": "exportWikiDescriptionBatchToJsonl",
+    "kind": "raw-graph-writer",
+    "fingerprint": "bfd9b4c33ac7e84a0d7cf42d98a8b15f79655381c876d8da66ff089a02851acb",
+    "reason": "Export fresh wiki-description batch requests as JSONL",
+    "count": 1
+  },
+  {
+    "file": "src/wiki-description-generation.ts",
+    "line": 455,
+    "owner": "writeSidecar",
+    "kind": "raw-graph-writer",
+    "fingerprint": "63574717064af95af32105dc27707b501cb3c43cf0b9acbe25aadba25d68be58",
+    "reason": "Write generated node/community wiki-description sidecar metadata",
+    "count": 1
+  },
+  {
+    "file": "src/wiki-description-generation.ts",
+    "line": 476,
+    "owner": "writeIndex",
+    "kind": "raw-graph-writer",
+    "fingerprint": "9ae81ad7e954c5f471beba2fc2ba387f71487ac5705ebb6c666780aca6d16db0",
+    "reason": "Write the wiki-description sidecar index",
+    "count": 1
+  },
+  {
+    "file": "src/wiki.ts",
+    "line": 485,
+    "owner": "toWiki",
+    "kind": "raw-graph-writer",
+    "fingerprint": "fc31dd492be365d631084f7ffe655014bc321dd906d9e980eb6e5a692c656ff5",
+    "reason": "Write a community wiki article as markdown",
+    "count": 1
+  },
+  {
+    "file": "src/wiki.ts",
+    "line": 495,
+    "owner": "toWiki",
+    "kind": "raw-graph-writer",
+    "fingerprint": "31d3f8aa788b067208cacf0f2a520a316ee8e554df1f479b019abe9e393c999a",
+    "reason": "Write a node wiki article as markdown",
+    "count": 1
+  },
+  {
+    "file": "src/wiki.ts",
+    "line": 503,
+    "owner": "toWiki",
+    "kind": "raw-graph-writer",
+    "fingerprint": "7d957af2ac4dab62a59ebef7e75d82cb952a9ae71b6ed901662822eead391e69",
+    "reason": "Write a flow wiki article as markdown",
+    "count": 1
+  },
+  {
+    "file": "src/wiki.ts",
+    "line": 508,
+    "owner": "toWiki",
+    "kind": "raw-graph-writer",
+    "fingerprint": "b72d2940b8ec390b322871075d7be19d0fb228c88d68632cdfd1b14258a991d6",
+    "reason": "Write the wiki markdown index",
+    "count": 1
+  },
+  {
+    "file": "src/workspace-manifest-emitter.ts",
+    "line": 151,
+    "owner": "emitWorkspaceManifest",
+    "kind": "raw-graph-writer",
+    "fingerprint": "4948c817d6f060b8306d680f6e5115365e0b84604619fa6fde68878512ae9635",
+    "reason": "Write the workspace navigation manifest sidecar, not graph records",
+    "count": 1
+  },
+  {
+    "file": "studio/src/lib/classNodes.js",
+    "line": 472,
+    "owner": "applyGroupCollapse",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "2948f979be2af0a6909f278900f01e01001691d8ced9fe7522cdcd9b04f7fb03",
+    "reason": "Aggregate evidence references on a folded display edge; view provenance is excluded by spec 2.6.6",
+    "count": 1
+  },
+  {
+    "file": "studio/src/lib/classNodes.js",
+    "line": 473,
+    "owner": "applyGroupCollapse",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "635f79d513bc38dae7b804ff7b87be629a300572f0dbdc6e13362da82318c404",
+    "reason": "Remove empty evidence references on a folded display edge, not a graph record",
+    "count": 1
+  },
+  {
+    "file": "studio/src/lib/graphAdapter.js",
+    "line": 525,
+    "owner": "buildScene",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "55ae48f1e1ade3d9c7585b7665982f7af6de5c6336020133d00e0a6eceed3a25",
+    "reason": "Copy relation text into a derived scene edge DTO; not a stored graph record",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill.md#script-0.js",
+    "line": 16,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "2f7030c87f7e8fbc5b5d60dc9e6379f3db90db797f3c4981c58877b5dd409d39",
+    "reason": "Write semantic input detection metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill.md#script-0.js",
+    "line": 17,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "db7060f7a96756a4ebbd9be4ca8ace656af1c0465fb4bcba2156f501ce4795c8",
+    "reason": "Write source transcript path metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill.md#script-0.js",
+    "line": 18,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "204420e5df81f4fa24f8c16de01c7da043dbaa150dc4d091be52a1f576bd860d",
+    "reason": "Write PDF conversion artifact metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill.md#script-1.js",
+    "line": 14,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "fc022a164a12fc0fb2f347d7c29a23788d02e57df6a70d3deebc532b7f5760b8",
+    "reason": "Write fresh cached extraction emissions before reducer/capture intake; not a stored graph document",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill.md#script-1.js",
+    "line": 16,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "809861780e1b2ad15177398a58c3b69ba63b2f7bd1cf7b5cf887bbfb5bbf1ed7",
+    "reason": "Write uncached input filenames as text",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill.md#script-3.js",
+    "line": 31,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "407ddc7fe560961e45bb8fc2fe454f3be27ccb364c3260a728f6b45f14e9d2d5",
+    "reason": "Write fresh semantic producer extraction upstream of graph assembly/capture",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill.md#script-4.js",
+    "line": 20,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "2ac659571d5b190667956c22a14be7a2899bb9b6c2dc6c32b67bf5653c1d2a86",
+    "reason": "Write fresh combined producer extraction upstream of graph assembly/capture",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill.md#script-5.js",
+    "line": 21,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "6762c3499fcfc011f2b63b3523bc9ef32f2f43f7b4ade4d81b6671802f139734",
+    "reason": "Write a graph report markdown view, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill.md#script-5.js",
+    "line": 31,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "01f2f11a7c5ad173e9d9f5a5867d703eef3087cd01882a3bc1d2c5bccbf07618",
+    "reason": "Write an analysis scratch DTO, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill.md#script-6.js",
+    "line": 22,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "6762c3499fcfc011f2b63b3523bc9ef32f2f43f7b4ade4d81b6671802f139734",
+    "reason": "Write a graph report markdown view, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill.md#script-6.js",
+    "line": 23,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "4ef86ae41205646c336519600df32d003d2e3d0c8193b96ddb22c2cf177bf3ed",
+    "reason": "Write community label metadata, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill.md#script-13.js",
+    "line": 22,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "4b0abda8f0f1685aac36de8b5a36407f5f61be31c37580b3b3eb97ccb63bf523",
+    "reason": "Write cost accounting metadata, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill.md#script-14.js",
+    "line": 7,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "48e671fa48dbec379ed7b249df00cfd947fbe51054f790da2875d2a748de2998",
+    "reason": "Write incremental file-change detection metadata",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill.md#script-16.js",
+    "line": 17,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "ed7f61e9f61b75187e7546e730a0e4d53ead2e7112bf13e40d1a6c129bfdd004",
+    "reason": "Write incremental semantic input detection metadata",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill.md#script-16.js",
+    "line": 18,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "db7060f7a96756a4ebbd9be4ca8ace656af1c0465fb4bcba2156f501ce4795c8",
+    "reason": "Write source transcript path metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill.md#script-16.js",
+    "line": 19,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "204420e5df81f4fa24f8c16de01c7da043dbaa150dc4d091be52a1f576bd860d",
+    "reason": "Write PDF conversion artifact metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill.md#script-19.js",
+    "line": 24,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "6762c3499fcfc011f2b63b3523bc9ef32f2f43f7b4ade4d81b6671802f139734",
+    "reason": "Write a graph report markdown view, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill.md#script-19.js",
+    "line": 33,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "01f2f11a7c5ad173e9d9f5a5867d703eef3087cd01882a3bc1d2c5bccbf07618",
+    "reason": "Write an analysis scratch DTO, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill.md#script-21.js",
+    "line": 11,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "c18fd3de040193d39b87659bb1e1d370c4c01f78bc0cca798c0c635f91a3a3a2",
+    "reason": "Write a vocabulary text list, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-claw.md#script-0.js",
+    "line": 22,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "6762c3499fcfc011f2b63b3523bc9ef32f2f43f7b4ade4d81b6671802f139734",
+    "reason": "Write a graph report markdown view, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-claw.md#script-0.js",
+    "line": 23,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "4ef86ae41205646c336519600df32d003d2e3d0c8193b96ddb22c2cf177bf3ed",
+    "reason": "Write community label metadata, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-claw.md#script-7.js",
+    "line": 22,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "4b0abda8f0f1685aac36de8b5a36407f5f61be31c37580b3b3eb97ccb63bf523",
+    "reason": "Write cost accounting metadata, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-claw.md#script-8.js",
+    "line": 7,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "48e671fa48dbec379ed7b249df00cfd947fbe51054f790da2875d2a748de2998",
+    "reason": "Write incremental file-change detection metadata",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-claw.md#script-12.js",
+    "line": 24,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "6762c3499fcfc011f2b63b3523bc9ef32f2f43f7b4ade4d81b6671802f139734",
+    "reason": "Write a graph report markdown view, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-claw.md#script-12.js",
+    "line": 33,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "01f2f11a7c5ad173e9d9f5a5867d703eef3087cd01882a3bc1d2c5bccbf07618",
+    "reason": "Write an analysis scratch DTO, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-claw.md#script-14.js",
+    "line": 11,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "c18fd3de040193d39b87659bb1e1d370c4c01f78bc0cca798c0c635f91a3a3a2",
+    "reason": "Write a vocabulary text list, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-droid.md#script-0.js",
+    "line": 45,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "2f7030c87f7e8fbc5b5d60dc9e6379f3db90db797f3c4981c58877b5dd409d39",
+    "reason": "Write semantic input detection metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-droid.md#script-0.js",
+    "line": 46,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "db7060f7a96756a4ebbd9be4ca8ace656af1c0465fb4bcba2156f501ce4795c8",
+    "reason": "Write source transcript path metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-droid.md#script-0.js",
+    "line": 47,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "204420e5df81f4fa24f8c16de01c7da043dbaa150dc4d091be52a1f576bd860d",
+    "reason": "Write PDF conversion artifact metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-droid.md#script-1.js",
+    "line": 14,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "fc022a164a12fc0fb2f347d7c29a23788d02e57df6a70d3deebc532b7f5760b8",
+    "reason": "Write fresh cached extraction emissions before reducer/capture intake; not a stored graph document",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-droid.md#script-1.js",
+    "line": 16,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "809861780e1b2ad15177398a58c3b69ba63b2f7bd1cf7b5cf887bbfb5bbf1ed7",
+    "reason": "Write uncached input filenames as text",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-droid.md#script-3.js",
+    "line": 31,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "407ddc7fe560961e45bb8fc2fe454f3be27ccb364c3260a728f6b45f14e9d2d5",
+    "reason": "Write fresh semantic producer extraction upstream of graph assembly/capture",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-droid.md#script-4.js",
+    "line": 20,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "2ac659571d5b190667956c22a14be7a2899bb9b6c2dc6c32b67bf5653c1d2a86",
+    "reason": "Write fresh combined producer extraction upstream of graph assembly/capture",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-droid.md#script-5.js",
+    "line": 21,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "6762c3499fcfc011f2b63b3523bc9ef32f2f43f7b4ade4d81b6671802f139734",
+    "reason": "Write a graph report markdown view, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-droid.md#script-5.js",
+    "line": 31,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "01f2f11a7c5ad173e9d9f5a5867d703eef3087cd01882a3bc1d2c5bccbf07618",
+    "reason": "Write an analysis scratch DTO, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-droid.md#script-6.js",
+    "line": 22,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "6762c3499fcfc011f2b63b3523bc9ef32f2f43f7b4ade4d81b6671802f139734",
+    "reason": "Write a graph report markdown view, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-droid.md#script-6.js",
+    "line": 23,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "4ef86ae41205646c336519600df32d003d2e3d0c8193b96ddb22c2cf177bf3ed",
+    "reason": "Write community label metadata, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-droid.md#script-13.js",
+    "line": 22,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "4b0abda8f0f1685aac36de8b5a36407f5f61be31c37580b3b3eb97ccb63bf523",
+    "reason": "Write cost accounting metadata, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-droid.md#script-14.js",
+    "line": 7,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "48e671fa48dbec379ed7b249df00cfd947fbe51054f790da2875d2a748de2998",
+    "reason": "Write incremental file-change detection metadata",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-droid.md#script-16.js",
+    "line": 17,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "ed7f61e9f61b75187e7546e730a0e4d53ead2e7112bf13e40d1a6c129bfdd004",
+    "reason": "Write incremental semantic input detection metadata",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-droid.md#script-16.js",
+    "line": 18,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "db7060f7a96756a4ebbd9be4ca8ace656af1c0465fb4bcba2156f501ce4795c8",
+    "reason": "Write source transcript path metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-droid.md#script-16.js",
+    "line": 19,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "204420e5df81f4fa24f8c16de01c7da043dbaa150dc4d091be52a1f576bd860d",
+    "reason": "Write PDF conversion artifact metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-droid.md#script-19.js",
+    "line": 24,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "6762c3499fcfc011f2b63b3523bc9ef32f2f43f7b4ade4d81b6671802f139734",
+    "reason": "Write a graph report markdown view, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-droid.md#script-19.js",
+    "line": 33,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "01f2f11a7c5ad173e9d9f5a5867d703eef3087cd01882a3bc1d2c5bccbf07618",
+    "reason": "Write an analysis scratch DTO, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-droid.md#script-21.js",
+    "line": 11,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "c18fd3de040193d39b87659bb1e1d370c4c01f78bc0cca798c0c635f91a3a3a2",
+    "reason": "Write a vocabulary text list, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-opencode.md#script-0.js",
+    "line": 45,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "2f7030c87f7e8fbc5b5d60dc9e6379f3db90db797f3c4981c58877b5dd409d39",
+    "reason": "Write semantic input detection metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-opencode.md#script-0.js",
+    "line": 46,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "db7060f7a96756a4ebbd9be4ca8ace656af1c0465fb4bcba2156f501ce4795c8",
+    "reason": "Write source transcript path metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-opencode.md#script-0.js",
+    "line": 47,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "204420e5df81f4fa24f8c16de01c7da043dbaa150dc4d091be52a1f576bd860d",
+    "reason": "Write PDF conversion artifact metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-opencode.md#script-1.js",
+    "line": 14,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "fc022a164a12fc0fb2f347d7c29a23788d02e57df6a70d3deebc532b7f5760b8",
+    "reason": "Write fresh cached extraction emissions before reducer/capture intake; not a stored graph document",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-opencode.md#script-1.js",
+    "line": 16,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "809861780e1b2ad15177398a58c3b69ba63b2f7bd1cf7b5cf887bbfb5bbf1ed7",
+    "reason": "Write uncached input filenames as text",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-opencode.md#script-3.js",
+    "line": 31,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "407ddc7fe560961e45bb8fc2fe454f3be27ccb364c3260a728f6b45f14e9d2d5",
+    "reason": "Write fresh semantic producer extraction upstream of graph assembly/capture",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-opencode.md#script-4.js",
+    "line": 20,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "2ac659571d5b190667956c22a14be7a2899bb9b6c2dc6c32b67bf5653c1d2a86",
+    "reason": "Write fresh combined producer extraction upstream of graph assembly/capture",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-opencode.md#script-5.js",
+    "line": 21,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "6762c3499fcfc011f2b63b3523bc9ef32f2f43f7b4ade4d81b6671802f139734",
+    "reason": "Write a graph report markdown view, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-opencode.md#script-5.js",
+    "line": 31,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "01f2f11a7c5ad173e9d9f5a5867d703eef3087cd01882a3bc1d2c5bccbf07618",
+    "reason": "Write an analysis scratch DTO, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-opencode.md#script-6.js",
+    "line": 22,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "6762c3499fcfc011f2b63b3523bc9ef32f2f43f7b4ade4d81b6671802f139734",
+    "reason": "Write a graph report markdown view, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-opencode.md#script-6.js",
+    "line": 23,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "4ef86ae41205646c336519600df32d003d2e3d0c8193b96ddb22c2cf177bf3ed",
+    "reason": "Write community label metadata, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-opencode.md#script-13.js",
+    "line": 22,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "4b0abda8f0f1685aac36de8b5a36407f5f61be31c37580b3b3eb97ccb63bf523",
+    "reason": "Write cost accounting metadata, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-opencode.md#script-14.js",
+    "line": 7,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "48e671fa48dbec379ed7b249df00cfd947fbe51054f790da2875d2a748de2998",
+    "reason": "Write incremental file-change detection metadata",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-opencode.md#script-16.js",
+    "line": 17,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "ed7f61e9f61b75187e7546e730a0e4d53ead2e7112bf13e40d1a6c129bfdd004",
+    "reason": "Write incremental semantic input detection metadata",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-opencode.md#script-16.js",
+    "line": 18,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "db7060f7a96756a4ebbd9be4ca8ace656af1c0465fb4bcba2156f501ce4795c8",
+    "reason": "Write source transcript path metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-opencode.md#script-16.js",
+    "line": 19,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "204420e5df81f4fa24f8c16de01c7da043dbaa150dc4d091be52a1f576bd860d",
+    "reason": "Write PDF conversion artifact metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-opencode.md#script-19.js",
+    "line": 24,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "6762c3499fcfc011f2b63b3523bc9ef32f2f43f7b4ade4d81b6671802f139734",
+    "reason": "Write a graph report markdown view, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-opencode.md#script-19.js",
+    "line": 33,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "01f2f11a7c5ad173e9d9f5a5867d703eef3087cd01882a3bc1d2c5bccbf07618",
+    "reason": "Write an analysis scratch DTO, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-opencode.md#script-21.js",
+    "line": 11,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "c18fd3de040193d39b87659bb1e1d370c4c01f78bc0cca798c0c635f91a3a3a2",
+    "reason": "Write a vocabulary text list, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-trae.md#script-0.js",
+    "line": 22,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "6762c3499fcfc011f2b63b3523bc9ef32f2f43f7b4ade4d81b6671802f139734",
+    "reason": "Write a graph report markdown view, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-trae.md#script-0.js",
+    "line": 23,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "4ef86ae41205646c336519600df32d003d2e3d0c8193b96ddb22c2cf177bf3ed",
+    "reason": "Write community label metadata, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-trae.md#script-7.js",
+    "line": 22,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "4b0abda8f0f1685aac36de8b5a36407f5f61be31c37580b3b3eb97ccb63bf523",
+    "reason": "Write cost accounting metadata, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-trae.md#script-8.js",
+    "line": 7,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "48e671fa48dbec379ed7b249df00cfd947fbe51054f790da2875d2a748de2998",
+    "reason": "Write incremental file-change detection metadata",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-trae.md#script-12.js",
+    "line": 24,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "6762c3499fcfc011f2b63b3523bc9ef32f2f43f7b4ade4d81b6671802f139734",
+    "reason": "Write a graph report markdown view, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-trae.md#script-12.js",
+    "line": 33,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "01f2f11a7c5ad173e9d9f5a5867d703eef3087cd01882a3bc1d2c5bccbf07618",
+    "reason": "Write an analysis scratch DTO, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-trae.md#script-14.js",
+    "line": 11,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "c18fd3de040193d39b87659bb1e1d370c4c01f78bc0cca798c0c635f91a3a3a2",
+    "reason": "Write a vocabulary text list, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-windows.md#script-0.js",
+    "line": 45,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "2f7030c87f7e8fbc5b5d60dc9e6379f3db90db797f3c4981c58877b5dd409d39",
+    "reason": "Write semantic input detection metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-windows.md#script-0.js",
+    "line": 46,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "db7060f7a96756a4ebbd9be4ca8ace656af1c0465fb4bcba2156f501ce4795c8",
+    "reason": "Write source transcript path metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-windows.md#script-0.js",
+    "line": 47,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "204420e5df81f4fa24f8c16de01c7da043dbaa150dc4d091be52a1f576bd860d",
+    "reason": "Write PDF conversion artifact metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-windows.md#script-1.js",
+    "line": 14,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "fc022a164a12fc0fb2f347d7c29a23788d02e57df6a70d3deebc532b7f5760b8",
+    "reason": "Write fresh cached extraction emissions before reducer/capture intake; not a stored graph document",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-windows.md#script-1.js",
+    "line": 16,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "809861780e1b2ad15177398a58c3b69ba63b2f7bd1cf7b5cf887bbfb5bbf1ed7",
+    "reason": "Write uncached input filenames as text",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-windows.md#script-3.js",
+    "line": 31,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "407ddc7fe560961e45bb8fc2fe454f3be27ccb364c3260a728f6b45f14e9d2d5",
+    "reason": "Write fresh semantic producer extraction upstream of graph assembly/capture",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-windows.md#script-4.js",
+    "line": 20,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "2ac659571d5b190667956c22a14be7a2899bb9b6c2dc6c32b67bf5653c1d2a86",
+    "reason": "Write fresh combined producer extraction upstream of graph assembly/capture",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-windows.md#script-5.js",
+    "line": 21,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "6762c3499fcfc011f2b63b3523bc9ef32f2f43f7b4ade4d81b6671802f139734",
+    "reason": "Write a graph report markdown view, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-windows.md#script-5.js",
+    "line": 31,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "01f2f11a7c5ad173e9d9f5a5867d703eef3087cd01882a3bc1d2c5bccbf07618",
+    "reason": "Write an analysis scratch DTO, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-windows.md#script-6.js",
+    "line": 22,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "6762c3499fcfc011f2b63b3523bc9ef32f2f43f7b4ade4d81b6671802f139734",
+    "reason": "Write a graph report markdown view, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-windows.md#script-6.js",
+    "line": 23,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "4ef86ae41205646c336519600df32d003d2e3d0c8193b96ddb22c2cf177bf3ed",
+    "reason": "Write community label metadata, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-windows.md#script-13.js",
+    "line": 22,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "4b0abda8f0f1685aac36de8b5a36407f5f61be31c37580b3b3eb97ccb63bf523",
+    "reason": "Write cost accounting metadata, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-windows.md#script-14.js",
+    "line": 7,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "48e671fa48dbec379ed7b249df00cfd947fbe51054f790da2875d2a748de2998",
+    "reason": "Write incremental file-change detection metadata",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-windows.md#script-16.js",
+    "line": 17,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "ed7f61e9f61b75187e7546e730a0e4d53ead2e7112bf13e40d1a6c129bfdd004",
+    "reason": "Write incremental semantic input detection metadata",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-windows.md#script-16.js",
+    "line": 18,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "db7060f7a96756a4ebbd9be4ca8ace656af1c0465fb4bcba2156f501ce4795c8",
+    "reason": "Write source transcript path metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-windows.md#script-16.js",
+    "line": 19,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "204420e5df81f4fa24f8c16de01c7da043dbaa150dc4d091be52a1f576bd860d",
+    "reason": "Write PDF conversion artifact metadata before extraction",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-windows.md#script-19.js",
+    "line": 24,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "6762c3499fcfc011f2b63b3523bc9ef32f2f43f7b4ade4d81b6671802f139734",
+    "reason": "Write a graph report markdown view, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-windows.md#script-19.js",
+    "line": 33,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "01f2f11a7c5ad173e9d9f5a5867d703eef3087cd01882a3bc1d2c5bccbf07618",
+    "reason": "Write an analysis scratch DTO, not graph records",
+    "count": 1
+  },
+  {
+    "file": "src/skills/skill-windows.md#script-21.js",
+    "line": 11,
+    "owner": "<module>",
+    "kind": "raw-graph-writer",
+    "fingerprint": "c18fd3de040193d39b87659bb1e1d370c4c01f78bc0cca798c0c635f91a3a3a2",
+    "reason": "Write a vocabulary text list, not graph records",
+    "count": 1
+  }
+]

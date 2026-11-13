@@ -609,3 +609,32 @@ describe("assembly-hygiene pipeline gate", () => {
     expect(applyAssemblyHygiene(ex)).toBe(ex);
   });
 });
+
+describe("L0-R hygiene", () => {
+  it.fails("hygiene-keeps-both-under-unrelated-remap", async () => {
+    const { serializeGraph, loadGraphFromData } = await import("../src/graph.js");
+    const both = extraction(
+      [
+        node({ id: "a", label: "Alpha", source_file: "a.ts" }),
+        node({ id: "b", label: "Beta", source_file: "a.ts" }),
+        node({ id: "org_unused", label: "Unused", source_file: "a.ts" }),
+        node({ id: "organization_unused", label: "Unused", source_file: "a.ts" }),
+      ],
+      [
+        edge({ source: "a", target: "b", relation: "calls", source_file: "a.ts", source_location: "a.ts:L10", evidence_refs: ["ref-L10"] }),
+        edge({ source: "a", target: "b", relation: "calls", source_file: "a.ts", source_location: "a.ts:L44", evidence_refs: ["ref-L44"] }),
+      ],
+    );
+    const out = normalizeSchemaHygiene(both, {});
+    expect(out.edges).toHaveLength(2);
+    const G = buildFromJson(out);
+    expect(G.size).toBe(1);
+    expect(serializeGraph(G).links).toHaveLength(1);
+    const obs = ((serializeGraph(G).links ?? [])[0] as Record<string, unknown>)["evidence_observations"] as Array<Record<string, unknown>> | undefined;
+    expect(obs).toHaveLength(2);
+    expect(obs!.map((o) => o["source_location"]).sort()).toEqual(["a.ts:L10", "a.ts:L44"]);
+    const reloaded = loadGraphFromData(serializeGraph(G));
+    expect(serializeGraph(reloaded).links).toHaveLength(1);
+    expect(((G as unknown) as { multi?: boolean }).multi).toBe(true);
+  });
+});

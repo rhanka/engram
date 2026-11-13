@@ -199,3 +199,61 @@ describe("postgres tombstone — fold-out is wired into EVERY structured read", 
     ).toBe(true);
   });
 });
+
+import { readFileSync as mlRead } from "node:fs";
+import { losslessStoreCases, losslessHarness, postgresHarness } from "./helpers/multi-links-stores.js";
+import { multiGraph as mlGraph, edge as mlEdge } from "./helpers/multi-links.js";
+losslessStoreCases("postgres");
+
+describe("L0 PostgreSQL interleaving fidelity", () => {
+  it("each PostgreSQL harness writes its real push artifact into a distinct temporary base", async () => {
+    const first = await losslessHarness("postgres"), second = await losslessHarness("postgres");
+    try {
+      expect(first.artifactPath).not.toBe(second.artifactPath);
+      for (const [harness, ref] of [[first, "first"], [second, "second"]] as const) {
+        expect(harness.artifactPath!.startsWith(process.cwd() + "/")).toBe(false);
+        await harness.store.pushGraph(mlGraph([mlEdge({ evidence_refs: [ref] })]), new Map(), { mode: "merge" });
+        expect(JSON.parse(mlRead(harness.artifactPath!, "utf8")).links[0].evidence_refs).toEqual([ref]);
+      }
+    } finally { await first.store.close(); await second.store.close(); }
+  });
+  for (const locked of [false, true]) it(locked ? "preserves both contributions only after the caller requests a same-key lock" : "exposes a lost update in an unlocked read/merge/write mutant", async () => {
+    const h = postgresHarness(), pool = new h.driverModule.Pool();
+    h.tables.get("graph_edges")!.push({ city_slug: "multi_links", source_id: "a", target_id: "b", relation: "calls", confidence: "EXTRACTED", props: { evidence_refs: ["r1", "r2"] } });
+    h.interleaveNextEdgeReads();
+    const readSnapshots: string[][] = [];
+    const contribute = async (ref: string) => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const { rows } = await client.query("SELECT * FROM graph_edges WHERE city_slug=$1 AND source_id=$2 AND target_id=$3 AND relation=$4" + (locked ? " FOR UPDATE" : ""), ["multi_links", "a", "b", "calls"]);
+        const previous = rows[0].props.evidence_refs;
+        readSnapshots.push(previous);
+        const props = { evidence_refs: [...previous, ref].sort() };
+        await client.query("INSERT INTO graph_edges (city_slug,source_id,target_id,relation,confidence,props) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (city_slug,source_id,target_id,relation) DO UPDATE SET props=EXCLUDED.props", ["multi_links", "a", "b", "calls", "EXTRACTED", JSON.stringify(props)]);
+        await client.query("COMMIT");
+      } finally { client.release(); }
+    };
+    await Promise.all([contribute("c1"), contribute("c2")]);
+    const refs = h.tables.get("graph_edges")![0].props.evidence_refs;
+    if (locked) expect(refs).toEqual(["c1", "c2", "r1", "r2"]);
+    else {
+      expect(readSnapshots).toEqual([["r1", "r2"], ["r1", "r2"]]);
+      expect(refs.filter((r: string) => r.startsWith("c"))).toHaveLength(1);
+      expect(refs).not.toEqual(["c1", "c2", "r1", "r2"]);
+    }
+    await pool.end();
+  });
+  it("a connection holding no SQL lock does not prevent another transaction from committing", async () => {
+    const h = postgresHarness(), pool = new h.driverModule.Pool();
+    const first = await pool.connect();
+    await first.query("BEGIN");
+    const second = await pool.connect();
+    await second.query("BEGIN");
+    await second.query("INSERT INTO graph_nodes (city_slug,id,props) VALUES ($1,$2,$3) ON CONFLICT (city_slug,id) DO UPDATE SET props=EXCLUDED.props", ["multi_links", "peer", "{}"]);
+    await second.query("COMMIT"); second.release();
+    await first.query("ROLLBACK"); first.release();
+    expect(h.tables.get("graph_nodes")!.map(r => r.id)).toEqual(["peer"]);
+    await pool.end();
+  });
+});

@@ -206,3 +206,26 @@ describe("toSpanner output path", () => {
     expect(existsSync(join(subDir, "spanner.dml.sql"))).toBe(true);
   });
 });
+
+
+import { edge as mlEdge, multiGraph as mlGraph, observation as mlObservation } from "./helpers/multi-links.js";
+describe("L0-S spanner DML",()=>{
+  it("spanner-dml-full-props-preserved",()=>{
+    const citations=[{source_file:"paper.pdf",page:1,quote:"nested payload",region:[0,0,1,1]}];
+    const e=mlEdge({citations,evidence_refs:["r1","r2"],derivation_method:"ast",derivation_methods:["ast","other"],confidence_score:1});
+    const attributes={...e,evidence_observations:[mlObservation(e)],_src:"a",_tgt:"b"};
+    const G=mlGraph([attributes]),dir=tempDir();
+    toSpanner(G,dir);
+    const dml=readFileSync(join(dir,"spanner.dml.sql"),"utf8");
+    const edgeLine=dml.split("\n").find(l=>l.startsWith("INSERT OR UPDATE INTO engram_edges"))!;
+    const match=/JSON '((?:[^'\\]|\\.|'')*)'\);$/.exec(edgeLine)!;
+    expect(match).not.toBeNull();
+    const props=JSON.parse(match[1].replaceAll("''","'").replaceAll("\\\\","\\"));
+    const {source,target,relation,confidence,...expected}=attributes;
+    expect(props).toEqual(expected);
+    expect(props.citations).toEqual(citations);
+    expect(props.evidence_observations).toEqual([mlObservation(e)]);
+    expect(props.evidence_refs).toEqual(["r1","r2"]);
+    expect(props.derivation_methods).toEqual(["ast","other"]);
+  });
+});

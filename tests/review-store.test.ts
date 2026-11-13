@@ -295,3 +295,30 @@ describe("review graph store adapter", () => {
     expect(store.getFilesMatching("./src/auth.ts")).toEqual(["src/auth.ts"]);
   });
 });
+
+
+import { edge as mlEdge, node as mlNode, fromRows as mlBuild, writers as mlWriters, writeGraph as mlWrite } from "./helpers/multi-links.js";
+import { loadGraphFromData as mlLoad } from "../src/graph.js";
+describe("L0-T review id",()=>{
+ const emissions=["imports","imports_from","extends","inherits_from","subclass_of","Calls","calls"].map(relation=>mlEdge({relation})).concat([mlEdge({source:"b",target:"a",relation:"calls"})]);
+ it.fails("review-id-exact-relation-not-kind",()=>{
+  for(const seq of [emissions,[...emissions].reverse()]){
+   const G=new Graph({multi:true,type:"undirected"});G.addNode("a");G.addNode("b");
+   seq.forEach((e,index)=>G.addEdgeWithKey("unstable-"+index,e.source,e.target,{...e,_src:e.source,_tgt:e.target}));
+   const actual=createReviewGraphStore(G).getAllEdges();
+   expect(actual.map(e=>e.id).sort()).toEqual(emissions.map(e=>JSON.stringify([e.source,e.target,e.relation])).sort());
+   for(const e of actual){const relation=e.extra.relation;expect(e.kind).toBe(["imports","imports_from"].includes(relation)?"IMPORTS_FROM":["extends","inherits_from","subclass_of"].includes(relation)?"INHERITS":relation.toUpperCase());}
+  }
+ });
+ it.fails("review exact identities survive build permutation and both reloads",()=>{
+  let canonical:string|undefined;
+  for(const seq of [emissions,[...emissions].reverse()]){
+   const G=mlBuild(seq);expect(G.size).toBe(emissions.length);
+   for(const writer of mlWriters){
+    const loaded=mlLoad(mlWrite(G,writer));
+    const result=createReviewGraphStore(loaded).getAllEdges().map(e=>({id:e.id,kind:e.kind})).sort((a,b)=>a.id<b.id?-1:1);
+    const bytes=JSON.stringify(result);canonical??=bytes;expect(bytes).toBe(canonical);
+   }
+  }
+ });
+});

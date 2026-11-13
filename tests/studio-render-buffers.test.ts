@@ -82,3 +82,49 @@ describe("buildStudioRenderBuffers", () => {
     });
   });
 });
+
+
+import { readFileSync as mlRead } from "node:fs";
+import { buildGraphRendererPayload as mlBrowser } from "../studio/src/lib/graphRendererPayload.js";
+import { withReconcileEdge as mlOverlay } from "../studio/src/lib/graphAdapter.js";
+const mlSceneNodes=[{id:"a",label:"A",x:0,y:0,weight:1,shape:"dot"},{id:"b",label:"B",x:10,y:0,weight:1,shape:"dot"}];
+const mlSeven=[...[0,1,2,3].map(i=>({source:"a",target:"b",relation:"r"+i,confidence:i%2?"INFERRED":"EXTRACTED"})),...[0,1,2].map(i=>({source:"b",target:"a",relation:"r"+i,confidence:i%2?"EXTRACTED":"AMBIGUOUS"}))];
+describe("L0-T studio lanes",()=>{
+ for(const surface of ["node","browser"]) describe(surface,()=>{
+  const build=(edges:any[],off=false)=>surface==="node"?buildStudioRenderBuffers({nodes:mlSceneNodes,edges} as never,{edgeCurvature:off?0:0.15}):mlBrowser({nodes:mlSceneNodes,edges},{curvedLinks:!off});
+  it.fails("studio-lanes-4f3r-distinct-curved-off-zero",()=>{
+   let canonical:string|undefined;
+   for(const edges of [mlSeven,[...mlSeven].reverse(),[...mlSeven.slice(3),...mlSeven.slice(0,3)]]){
+    const payload=build(edges),curves=Array.from(payload.style.edgeCurvatures);
+    expect(curves).toHaveLength(7);
+    const indexed=Array.from(payload.renderGraph.edgeInputIndices,(inputIndex,index)=>({edge:edges[inputIndex],curve:curves[index]}));
+    const geometric=indexed.map(({edge,curve})=>curve*(edge.source==="a"?1:-1));
+    expect(new Set(geometric).size).toBe(7);
+    const mapped=indexed.map(({edge,curve})=>({key:JSON.stringify([edge.source,edge.target,edge.relation]),curve})).sort((a,b)=>a.key<b.key?-1:1);
+    mapped.forEach((entry,i)=>expect(entry.curve).toBeCloseTo(0.15+(i<4?i:i-4)*0.12,6));
+    const bytes=JSON.stringify(mapped);canonical??=bytes;expect(bytes).toBe(canonical);
+   }
+  });
+  it("singleton curvature, OFF option and explicit curvature keep their contracts",()=>{
+   expect(Array.from(build([mlSeven[0]]).style.edgeCurvatures)[0]).toBeCloseTo(0.15,6);
+   expect(Array.from(build(mlSeven,true).style.edgeCurvatures)).toEqual(Array(7).fill(0));
+   const explicit=build([{...mlSeven[0],curvature:0.72}]);
+   expect(Array.from(explicit.style.edgeCurvatures)[0]).toBeCloseTo(0.72,6);
+  });
+ });
+ it("renderer-retention-resolved-version",()=>{
+  const resolved=JSON.parse(mlRead(new URL("../node_modules/@sentropic/graph/package.json",import.meta.url),"utf8"));
+  expect(resolved.name).toBe("@sentropic/graph");
+  expect(resolved.version).toMatch(/^\d+\.\d+\.\d+/);
+  const payload=buildStudioRenderBuffers({nodes:mlSceneNodes,edges:[{source:"a",target:"b",relation:"reads"},{source:"a",target:"b",relation:"writes"},{source:"b",target:"a",relation:"calls"}]} as never);
+  expect(payload.renderGraph.droppedEdges).toBe(0);
+  expect(Array.from(payload.renderGraph.edgeInputIndices)).toEqual([0,1,2]);
+  expect(Array.from(payload.renderGraph.edges)).toEqual([0,1,0,1,1,0]);
+  expect(payload.renderGraph.edges.length).toBe(2*3);
+  const renderer=createGraphRenderer(null);renderer.setGraph(payload.renderGraph);renderer.setStyle(payload.style);expect(renderer.snapshot().edgeCount).toBe(3);
+ });
+ it("reconcile overlay stays suppressed by any real relation in either direction",()=>{
+  for(const e of mlSeven){const scene={nodes:mlSceneNodes,edges:[e]};expect(mlOverlay(scene,"a","b")).toBe(scene);}
+  expect(mlOverlay({nodes:mlSceneNodes,edges:[]},"a","b").edges).toHaveLength(1);
+ });
+});

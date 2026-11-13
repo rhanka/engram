@@ -1,0 +1,44 @@
+id: multi-links-batch
+version: 2
+node_types:
+  Entity:
+    id_prefix: "n:"
+    definition: Test entity
+    properties: {}
+relation_types:
+  calls:
+    source: [Entity]
+    target: [Entity]
+    requires_evidence: false
+    derivation_methods: [extracted]
+    description: Calls
+citation_policy:
+  minimum_granularity: file
+  require_source_file: false
+  allow_bbox: when_available
+evidence_policy:
+  require_evidence_refs: false
+  min_refs: 0
+  node_types: []
+  relation_types: []
+inference_policy:
+  allow_inferred_relations: true
+  allowed_relation_types: [calls]
+  require_evidence_refs: false
+hardening:
+  statuses: [candidate, validated, rejected]
+  default_status: candidate
+  promotion_requires: [citation]
+  status_transitions:
+    - { from: [candidate], to: [validated, rejected] }
+outputs:
+  ontology:
+    enabled: true
+    canonical_node_types: [Entity]
+    source_node_types: []
+    relation_exports: [calls]
+    wiki:
+      enabled: false
+      page_node_types: [Entity]
+      include_backlinks: false
+      include_source_snippets: false

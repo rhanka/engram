@@ -616,3 +616,43 @@ describe("validatePrecomputedQaReportBinding", () => {
     expect(errorIds(checks)).toContain("qa_report.chrome");
   });
 });
+
+
+describe("L0-T QA",()=>{
+ function qaGraph(links:any[],limits:{min?:number;max?:number;method?:string}={}){
+  const root=tempDir(),target=writeTarget(root);
+  target.graph.min_degree_by_type=limits.min===undefined?{}:{Character:limits.min};
+  target.graph.max_degree_by_type=limits.max===undefined?{}:{Character:limits.max};
+  target.graph.max_degree_by_type_and_derivation=limits.method?{Character:{[limits.method]:0}}:{};
+  writeJson(join(root,"graph.json"),{nodes:[{id:"a",node_type:"Character"},{id:"b",node_type:"Other"}],links});
+  return evaluateQualityBundle({target,bundleDir:root});
+ }
+ it.fails("N1-single-loop-edgeCount1-legacyIncidence2",()=>{
+  const report=qaGraph([{source:"a",target:"a",relation:"calls"}],{min:2,max:1});
+  const min=report.checks.find(c=>c.id==="graph.min_degree_by_type.Character")!;
+  const max=report.checks.find(c=>c.id==="graph.max_degree_by_type.Character")!;
+  expect(min.severity).toBe("info");expect(min.actual).toMatchObject({count:0});
+  expect(max.severity).toBe("error");expect(max.actual).toMatchObject({count:1,examples:[{id:"a",degree:2}]});
+  const text=[min.message,max.message].join(" ");
+  expect(text).toMatch(/endpoint incidence/i);expect(text).toMatch(/self.loop counts twice/i);expect(text).not.toContain("edgeCount");
+ });
+ it("QA loop threshold arithmetic still counts both endpoints",()=>{
+  const report=qaGraph([{source:"a",target:"a",relation:"calls"}],{min:2,max:2});
+  expect(report.checks.find(c=>c.id==="graph.max_degree_by_type.Character")!.actual).toMatchObject({count:0});
+  expect(report.checks.find(c=>c.id==="graph.min_degree_by_type.Character")!.actual).toMatchObject({count:0});
+ });
+ const method="deorphan:co-provenance-peer";
+ for(const [name,attrs,matched] of [
+  ["second plural",{derivation_method:"ast",derivation_methods:["ast",method]},true],
+  ["singleton",{derivation_method:method},true],
+  ["plural only",{derivation_methods:["ast",method]},true],
+  ["unrelated",{derivation_method:"ast",derivation_methods:["ast"]},false],
+ ] as const) describe(name,()=>{
+  (name==="second plural"?it.fails:it)("qa-derivation-second-plural-member-matches",()=>{
+   const report=qaGraph([{source:"a",target:"b",relation:"calls",...attrs}],{method});
+   const check=report.checks.find(c=>c.id==="graph.max_degree_by_type_and_derivation.Character."+method)!;
+   expect(check.severity).toBe(matched?"error":"info");
+   expect(check.actual).toMatchObject({count:matched?1:0,...(matched?{examples:[{id:"a",degree:1}]}:{})});
+  });
+ });
+});

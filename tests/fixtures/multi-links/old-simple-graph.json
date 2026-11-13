@@ -1,0 +1,73 @@
+{
+  "directed": false,
+  "multigraph": false,
+  "graph": {
+    "community_labels": {
+      "0": "Alpha"
+    },
+    "provenance": {
+      "source_owner": "fixture",
+      "source_id": "legacy",
+      "observed_at": "2026-11-01T00:00:00Z"
+    }
+  },
+  "nodes": [
+    {
+      "id": "a",
+      "label": "Alpha",
+      "file_type": "code",
+      "source_file": "f.ts",
+      "community": 0,
+      "description": "Stable legacy description"
+    },
+    {
+      "id": "b",
+      "label": "Beta",
+      "file_type": "code",
+      "source_file": "f.ts",
+      "community": 0
+    },
+    {
+      "id": "c",
+      "label": "Gamma",
+      "file_type": "code",
+      "source_file": "f.ts",
+      "community": 0
+    }
+  ],
+  "links": [
+    {
+      "source": "a",
+      "target": "b",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "f.ts",
+      "status": "validated",
+      "custom": {
+        "keep": [
+          "original payload"
+        ]
+      }
+    },
+    {
+      "source": "b",
+      "target": "c",
+      "relation": "contains",
+      "confidence": "INFERRED",
+      "source_file": "f.ts"
+    }
+  ],
+  "hyperedges": [
+    {
+      "id": "h1",
+      "label": "Group",
+      "nodes": [
+        "a",
+        "b"
+      ],
+      "relation": "group",
+      "confidence": "INFERRED",
+      "source_file": "f.ts"
+    }
+  ]
+}

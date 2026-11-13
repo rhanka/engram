@@ -367,3 +367,6 @@ describe("sqlite read-back — loadTombstones", () => {
     expect(allSql(state).some((s) => s.includes("FROM graph_tombstones"))).toBe(true);
   });
 });
+
+import { losslessStoreCases } from "./helpers/multi-links-stores.js";
+losslessStoreCases("sqlite");

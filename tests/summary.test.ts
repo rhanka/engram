@@ -83,3 +83,15 @@ describe("first-hop summary", () => {
     expect(textA).toContain("Next best action:");
   });
 });
+
+
+import { edge as mlEdge, node as mlNode, multiGraph as mlGraph } from "./helpers/multi-links.js";
+describe("L0-T density",()=>{
+ for(const shape of ["directed","undirected-parallel","loop-only","loop-plus-pair"]) describe(shape,()=>{
+  (shape === "directed" ? it : it.fails)("density-directed1-undirected1-loop-excluded",()=>{
+   const links=shape==="directed"?[mlEdge(),mlEdge({source:"b",target:"a"})]:shape==="undirected-parallel"?[mlEdge({relation:"reads"}),mlEdge({relation:"writes"})]:shape==="loop-only"?[mlEdge({source:"a",target:"a"})]:[mlEdge(),mlEdge({source:"a",target:"a"})];
+   const G=mlGraph(links,[mlNode("a"),mlNode("b")],shape==="directed");
+   expect(buildFirstHopSummary(G).graph.density).toBe(shape==="loop-only"?0:1);
+  });
+ });
+});

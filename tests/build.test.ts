@@ -174,3 +174,21 @@ describe("build (merge)", () => {
     expect(G.outboundNeighbors("b")).toEqual([]);
   });
 });
+
+
+import { edge as mlEdge, node as mlNode, fromRows as mlFromRows, rows as mlRows, expectFixedPoint as mlFixed, expectObservations as mlObs, observation as mlObservation } from "./helpers/multi-links.js";
+describe("L0-R build stamp", () => {
+  for (const absentRaw of [false, true]) describe(absentRaw ? "absent raw endpoints" : "reciprocal effective rows", () => {
+    it.fails("B1-build-stamp-preserves-effective-endpoints", () => {
+      const emissions = [mlEdge({ source: absentRaw ? "missing" : "a", target: "b", _src: "a", _tgt: "b", source_location: "L1" }), mlEdge({ source: "a", target: absentRaw ? "missing" : "b", _src: "b", _tgt: "a", source_location: "L2" })];
+      const G = mlFromRows(emissions);
+      expect(mlRows(G)).toHaveLength(2);
+      for (const e of emissions) {
+        const row = mlRows(G).find(r => r.source_location === e.source_location)!;
+        expect([row.source,row.target,row._src,row._tgt]).toEqual([e._src,e._tgt,e._src,e._tgt]);
+        mlObs(row,[mlObservation(e)]);
+      }
+      mlFixed(G,emissions);
+    });
+  });
+});
