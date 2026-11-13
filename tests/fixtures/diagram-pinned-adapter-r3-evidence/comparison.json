@@ -80,8 +80,8 @@
   "nativeAddon": false,
   "note": "Failure message names no native module (no .node/fs-ext/better-sqlite3); per method it is unclassified, never defaulted to native-addon. Both sides fail identically at npm ci --offline ENOTCACHED for the same tarball; only worktree path and log timestamps differ. Replaces the round-2 blanket fs-ext/regression claim.",
   "digests": {
-    "successor": "c430ff66df3b04e6d792dd1a60e40e01dbeaffa47b206da0021a937ca83fa4f9",
-    "predecessor": "a83e2c1d0ea9612d38a0b3ad1a0f0ae4e93e7f7a10fcee49ab57a6a06659da0a",
+    "successor": "7bf799503bc1b867e9e7a110302d9bd354c1b22cae16c429a915486bec14d414",
+    "predecessor": "15e95043276c7ffab93ba0a9cae3874cb18362b1e47b4ced8264fefcc4b3de59",
     "contract": "74dadb9c31fff7653ca31692d8db3cfea782baea8d9268a3c20982ea8ab0aeae",
     "schema": "f13d595793e17e1e4740c9203b19d8381fc55b90e37121d61f5037cb79f0281a",
     "unchanged": true

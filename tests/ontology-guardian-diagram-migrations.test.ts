@@ -1,4 +1,4 @@
-// Diagram @1 → @2 migrations (frozen spec M3-R4 deb64b75, §§3.9.1/3.11.1/3.13).
+// Diagram @1 → @2 migrations (frozen spec M3-R4 d87220cd, §§3.9.1/3.11.1/3.13).
 // Round-trips, atomic refusals, @1 byte-immutability and the §3.9.1/§3.11.1
 // mapping witnesses. Refusals return the exact original state, no candidate.
 import { describe, expect, it } from "vitest";

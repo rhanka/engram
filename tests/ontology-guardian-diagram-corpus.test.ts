@@ -1,10 +1,10 @@
-// Corpus manifest test (frozen spec M3-R4 deb64b75, §8; design note
+// Corpus manifest test (frozen spec M3-R4 d87220cd, §8; design note
 // round 3, section D). The manifest lists every §8 item — A1–A5, HRPN,
 // S2-target, the §8.7 derived oracle and the BPMN items assigned to
 // Engram — each with its immutable source (revision and path) and byte
 // sha256. This test fails if any §8 item is missing or if any carried
 // sha256 drifts. Fixture bytes carried in this repository are verified
-// verbatim; remote-only sources resolve with git show revision:path.
+// as scrubbed local snapshots; origin metadata does not assert remote byte parity.
 import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -54,7 +54,7 @@ describe("corpus manifest completeness (§8)", () => {
     }
   });
 
-  it("keeps the carried fixture bytes verbatim", () => {
+  it("keeps every scrubbed fixture byte bound to its manifest digest", () => {
     expect(CORPUS_MANIFEST).toEqual(sourceIndex.map(({ fixture, ...entry }) => entry));
     for (const entry of CORPUS_MANIFEST) {
       expect(createHash("sha256").update(corpusBytes(entry.id)).digest("hex"), entry.id).toBe(entry.sha256);

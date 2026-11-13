@@ -1,5 +1,5 @@
 // Engram G0 records and catalog envelopes for the diagram lot
-// (frozen spec M3-R4 deb64b75, §7.4). Governed data, S1 draft stage:
+// (frozen spec M3-R4 d87220cd, §7.4). Governed data, S1 draft stage:
 // no receipt exists, so every record is draft/superseded and every
 // admission test expects missing-receipt until U-QUAL resolves (DS + Engram).
 // Production namespace/owner lookups remain U-ID; "diagram"/"engram" below
@@ -33,8 +33,8 @@ import {
 export const DIAGRAM_NAMESPACE = "diagram" as const;
 export const DIAGRAM_OWNER = "engram" as const;
 export const DIAGRAM_PROVENANCE = {
-  sourceRef: "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md",
-  sourceRevision: "deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
+  sourceRef: "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-d87220cd.md",
+  sourceRevision: "d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789",
 } as const;
 
 /** Transitional executor/adapter refs: explicitly unqualified (U-QUAL). */
@@ -63,7 +63,7 @@ export const LOT_CORPUS_FIXTURES: readonly CorpusFixturePin[] = [
   { path: "tests/fixtures/pinned-sources/bpmn-canvas-canonical-ts.bytes", sha256: "287d8cb87beb7384fc89a8d6141681010dcba50ee895aaadc3b31345541191ba" },
   { path: "tests/fixtures/pinned-sources/m3-a3-serialization-specimen.json", sha256: "2f280be912e381881f3c8c68e7fb28189f95a515121927a64d4bbb04e9062c76" },
   { path: "tests/fixtures/generic-v1-minimal-document.json", sha256: "76bbe5b8f1323c85a141830156a6e47cce5aa3b9198988ad5c172b1f23fbbd16" },
-  { path: "tests/fixtures/pinned-sources/m3-r4-derived-oracle.json", sha256: "9860b066d227d298aa67eae8bc47475355e86d22f266d1b0ad261035b33fdf8d" },
+  { path: "tests/fixtures/pinned-sources/m3-r4-derived-oracle.json", sha256: "98fd0dda47973fcd18d04e4d44ab63fd3f27e3b0668168efdc062b586ac4c2af" },
 ];
 
 export const LOT_CORPUS_REF = "engram:diagram-lot-corpus/1" as const;
@@ -395,7 +395,7 @@ export const CONTRACT_QUALIFIED_REVISION: CatalogRevisionLink = {
   predecessor: {
     id: "engram-diagram-presentation-1",
     entryVersion: "1",
-    entryDigest: "a83e2c1d0ea9612d38a0b3ad1a0f0ae4e93e7f7a10fcee49ab57a6a06659da0a",
+    entryDigest: "15e95043276c7ffab93ba0a9cae3874cb18362b1e47b4ced8264fefcc4b3de59",
   },
 };
 
@@ -404,7 +404,7 @@ export const CONTRACT_FOLD_REVISION: CatalogRevisionLink = {
   predecessor: {
     id: "engram-diagram-presentation-2",
     entryVersion: "2",
-    entryDigest: "c430ff66df3b04e6d792dd1a60e40e01dbeaffa47b206da0021a937ca83fa4f9",
+    entryDigest: "7bf799503bc1b867e9e7a110302d9bd354c1b22cae16c429a915486bec14d414",
   },
 };
 
