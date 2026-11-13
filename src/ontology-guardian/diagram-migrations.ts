@@ -1,4 +1,4 @@
-// Engram explicit @1 → @2 migrations (frozen spec M3-R4 deb64b75, §3.13).
+// Engram explicit @1 → @2 migrations (frozen spec M3-R4 d87220cd, §3.13).
 // Method (round-3 design note, section A): every migration starts from a
 // deep copy of the complete pinned input document, applies only explicitly
 // declared patches (path → operation → spec justification), then runs a

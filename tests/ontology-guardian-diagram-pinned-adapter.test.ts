@@ -1,5 +1,5 @@
 // Qualified DS adapter/renderer refs for diagram-presentation@1
-// (frozen spec M3-R4 deb64b75, §3.2.1). Pinned references parse, project to
+// (frozen spec M3-R4 d87220cd, §3.2.1). Pinned references parse, project to
 // the DS executor Pin shape { id, version, contentDigest } and bind to
 // schemaPin f13d5957…; transitional/malformed pins refuse with
 // presentation-pin-mismatch. Entry-byte hashes read the DS clone at the
@@ -48,9 +48,9 @@ import type { Pin } from "../src/ontology-guardian/types.js";
 
 const SCHEMA_DIGEST = "f13d595793e17e1e4740c9203b19d8381fc55b90e37121d61f5037cb79f0281a";
 const CONTRACT_DIGEST = "74dadb9c31fff7653ca31692d8db3cfea782baea8d9268a3c20982ea8ab0aeae";
-const OLD_ENTRY_DIGEST = "a83e2c1d0ea9612d38a0b3ad1a0f0ae4e93e7f7a10fcee49ab57a6a06659da0a";
-const NEW_ENTRY_DIGEST = "c430ff66df3b04e6d792dd1a60e40e01dbeaffa47b206da0021a937ca83fa4f9";
-const FOLD_ENTRY_DIGEST = "a053b97344f02ad9faf1e2f1ee51bca157e62e010eca7f2600a964fca0b62327";
+const OLD_ENTRY_DIGEST = "15e95043276c7ffab93ba0a9cae3874cb18362b1e47b4ced8264fefcc4b3de59";
+const NEW_ENTRY_DIGEST = "7bf799503bc1b867e9e7a110302d9bd354c1b22cae16c429a915486bec14d414";
+const FOLD_ENTRY_DIGEST = "a88a522fc5bdfd8f883fa6f2d40f705d696550bdf745a9afe98eed28291c980a";
 const ENTRY_2_COMMIT = "e3bc10cc9e59d48bb807afc41173ba83f6698940";
 const ENTRY_3_COMMIT = "7c5a8c82bf2abc71bf0963e3fcfc395c48fcf6af";
 const FOLD_PATH = "packages/diagram-core/src/fold.ts";

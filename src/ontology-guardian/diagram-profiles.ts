@@ -1,4 +1,4 @@
-// Engram diagram profile declarations (frozen spec M3-R4 deb64b75, §7.1).
+// Engram diagram profile declarations (frozen spec M3-R4 d87220cd, §7.1).
 // Governed data + pure derivation only. No executor, layout or rendering (G2).
 // Digests are computed through src/ontology-guardian (never re-implemented).
 import { canonicalBytes, sha256Hex } from "./canonical.js";

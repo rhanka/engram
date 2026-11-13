@@ -1144,7 +1144,7 @@ Expanded/folded layout uses DS geometry from the declared inputs, not source geo
 
 ### 8.4 A5 ledger: every authored field has a native destination
 
-Source: semantic `46f64154bb6592d49ccda5633b2c4d4205fb1c6752ef218be31d6757923ecf91`; view `82930614efe070bdb8e5acce3aecea29dfdb2d1ab625b7d376507f97fb6f8b50`; manifest `54ef0dd0ac0e923aa99435625780902d07c3819e9c2c340868c921d1f956fd91`.
+Source: semantic `aea6a7ecc2b71a1a5fd22bc60452e29530601b908ebe33256edf76b0e9fd2988`; view `f01b08e0752269e01b3bcd1225a0d103e3e2d1833dac5484f649595c09c008f0`; manifest `4dc26793522c6441afdfc3f19d6f71b531e847ffc0650b68952072dfdff9223e`.
 
 The resulting semantic document has 56 entities, 82 relations, no standard-slot extension and no standard-slot refinement. Every source id survives. Its ViewDocument stores the standard presentation in presentation.diagram. Default folds are exactly PCICD, MSGZ, VERTEXZ, OBSZ, INGZ, GENSRC, AWSCI, resolved to existing occurrence ids in the produced view; document/view revision remains 1.
 
@@ -1333,25 +1333,25 @@ A source pin is SHA-256 over exact file bytes; it is not a G0 profile contentDig
 | archimatetool/archi `9e6a014f9ef6a782a7dda604ef7b4d03d2c7819a` | `com.archimatetool.model/model/relationships-keys.xml` | `19d86924efc3364d26c162fe4e6643f37fd9493a0effc80ce5e2aa648fb6803e` |
 | archimatetool/archi `9e6a014f9ef6a782a7dda604ef7b4d03d2c7819a` | `com.archimatetool.model/model/archimate.ecore` | `6d95f268182648c4dba6802ceacf05b9b1b323624f30eb8c31282fc7be29b253` |
 | archimatetool/archi `9e6a014f9ef6a782a7dda604ef7b4d03d2c7819a` | `com.archimatetool.model/LICENSE.txt` | `428f4272e912bbc3809052990c5ba1089b06382dab6e6d6a71670789bfc9bcff` |
-| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/ds-fixtures/MANIFEST.md` | `9558092fa2af669af9dcd4df6d9380e24a1cba723dbdd603ad2ebd86c6439a49` |
-| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/ds-fixtures/S2-asbuilt.json` | `7abc427f7beca5b0f87947efc9df4daf6316f24725074f47f1da2b04be76ba2e` |
-| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/ds-fixtures/S2-target.json` | `28a7271dd0bec89fa9ad435174a614ab4a40b346b10724da95736f9c55b574d9` |
-| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/ds-fixtures/S1-conversational.json` | `d9f7f7cb80894b5301e11cc7b7f0fc2775d1933aa15013152001395d716a32c7` |
-| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/ds-fixtures/S3-agentfactory.json` | `e362b9a8da84082e5389127ae463d282fb773ef8950f41017222e0b3ef9002fc` |
-| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/ds-fixtures/tint-legend.json` | `cc47a3e3a2019af8c436ce28a34d0d52d71b8439cf55a44a33f1c0239752a26d` |
-| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/engram/S2-target.semantic.json` | `46f64154bb6592d49ccda5633b2c4d4205fb1c6752ef218be31d6757923ecf91` |
-| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/engram/S2-target.view.json` | `82930614efe070bdb8e5acce3aecea29dfdb2d1ab625b7d376507f97fb6f8b50` |
-| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/engram/MANIFEST.json` | `54ef0dd0ac0e923aa99435625780902d07c3819e9c2c340868c921d1f956fd91` |
-| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/scene-metadata.mjs` | `85de8a950c66312bd1f519ea2cc04aa37dff4bf9f6f0d39e34252fd95e2b6d51` |
-| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/.generated/data.json` | `5a893cd1c69e1bb81bf4095b7472e7494ede1eb709d2c02b732af2163a1d7f2e` |
-| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/SCENES.md` | `224bcaac70e397e771d88273219483eea808c0aa31cdcdc6d61d47f645d94853` |
+| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/ds-fixtures/MANIFEST.md` | `81e96ecc27cf4fb6eaa159d3e255020cd2ea833228551fddacfa78ce98890c55` |
+| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/ds-fixtures/S2-asbuilt.json` | `89f0532b5687703002e5f52a3a2cfe0540a675698e106ee50dbba09aed6298fe` |
+| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/ds-fixtures/S2-target.json` | `7b934c66bd85a9c0d47607f89f9624ae71116c372bdb479900b786ebb1f36087` |
+| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/ds-fixtures/S1-conversational.json` | `5e98a495e502f8913cbb93d6feddc233193f39f72c43a1c151f4ad430978c881` |
+| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/ds-fixtures/S3-agentfactory.json` | `53efdb2f4e41551940e8c61ab4500cfb77d7789690f4577f093e58f32ceb7dbe` |
+| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/ds-fixtures/tint-legend.json` | `54b2c50d1f1d65fd5438354602873792dd8ed9f4b4342d7c36bec59dcbb8d2ed` |
+| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/engram/S2-target.semantic.json` | `aea6a7ecc2b71a1a5fd22bc60452e29530601b908ebe33256edf76b0e9fd2988` |
+| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/engram/S2-target.view.json` | `f01b08e0752269e01b3bcd1225a0d103e3e2d1833dac5484f649595c09c008f0` |
+| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/engram/MANIFEST.json` | `4dc26793522c6441afdfc3f19d6f71b531e847ffc0650b68952072dfdff9223e` |
+| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/scene-metadata.mjs` | `f2b6f4943b31f60d23f4799fbc61f8fe451ea848e9f8b932127715de33fb9028` |
+| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/.generated/data.json` | `1a59107732f48e03f443637c5818f559a0888abe23c41fc2529f0370ee030556` |
+| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/SCENES.md` | `118613f71c1e6be9ec24d67610c45aafd83c6bfac6cbd5357e80a76a4760d0b7` |
 | client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/build-scenes.mjs` | `35f0b1ac5e24f12956ea51104a8a3190cb8849485da867dc4d2990a77342d769` |
-| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/ds-fixtures/build-fixtures.mjs` | `3dee69da67bb5569a385a6dfa15759ac27d3fa749e8d6b2a63f04e0446fec102` |
+| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/ds-fixtures/build-fixtures.mjs` | `fdaf13dedefbc6525eaf9de87abdab885d97754c8031b6995eb075ca00d58c1b` |
 | client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/engram/build-engram.mjs` | `d6d007c97efad0f68f041c6a53a901cb6adaeea851e04c08676f419318b45caa` |
-| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/ard/decision/focus/.generated/governance-scenes.json` | `236320cec2b25466dfe46d9338f3f75c14aba3ee33c6c25d8070ffc242d5b35c` |
-| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/ard/decision/focus/.generated/figures/figures.json` | `83935a169f04ab48df155f324dee6fbf336a502fd2b8cdc260ae03c0a6962719` |
+| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/ard/decision/focus/.generated/governance-scenes.json` | `2ad436b6408e1609ba932cc7e0c447b51823a4e9b722dc89951755a8e8170831` |
+| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/ard/decision/focus/.generated/figures/figures.json` | `eeaa51981ec9fb37b3d839a3290b21014812aea1ff322660829bad9ccdd6bef8` |
 | client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/ard/decision/focus/.generated/figures/S2-target.png` | `5dffb39dd10551ae83b35fd256ccc3c65911d5aa731cdccb253605c3ac5d1c9a` |
-| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/ds-fixtures/reference-renders.json` | `7afee15ef473389452011d38fbaf8547973b5eed572440cc0c31ee8d921e25db` |
+| client-genair-hrpolnav `faf21b6f259f93a485994bbe03b4023763bf2597` | `docs/architecture/hrpn/ds-fixtures/reference-renders.json` | `e5236b7c30e576c8905b2d1c91d24dc1dc96159d935259b317606899cecb0540` |
 
 Additional raw-byte pins, measured directly or retained from the unchanged sealed manifest (the gate verifies each before use):
 
@@ -1414,15 +1414,15 @@ Five MANIFEST source-path pins no longer describe the current producer files. Th
 
 | Producer path | Historical pin printed by frozen fixture manifest | Producer raw-byte pin at HRPN |
 | --- | --- | --- |
-| docs/architecture/hrpn/.generated/data.json | 1459e303d6eac96935c762143538d9f6daac519465fd42a1d8f5cc8765616591 | 5a893cd1c69e1bb81bf4095b7472e7494ede1eb709d2c02b732af2163a1d7f2e |
-| docs/architecture/hrpn/scene-metadata.mjs | 2e67c2c380f50771f4d4520eb1d4110fefca1a51dd173bf10073c6216437ce68 | 85de8a950c66312bd1f519ea2cc04aa37dff4bf9f6f0d39e34252fd95e2b6d51 |
-| docs/architecture/hrpn/SCENES.md | ab3ddb9208b7d3f9c35d94401c29da5bc95477ab99d4caf0fabaa34c41be237f | 224bcaac70e397e771d88273219483eea808c0aa31cdcdc6d61d47f645d94853 |
-| docs/ard/decision/focus/.generated/figures/figures.json | de868091d0bf973aa3c33f82e7a095f3cf88c8ccc5879ea75a13d89c80435c4d | 83935a169f04ab48df155f324dee6fbf336a502fd2b8cdc260ae03c0a6962719 |
+| docs/architecture/hrpn/.generated/data.json | 1459e303d6eac96935c762143538d9f6daac519465fd42a1d8f5cc8765616591 | 1a59107732f48e03f443637c5818f559a0888abe23c41fc2529f0370ee030556 |
+| docs/architecture/hrpn/scene-metadata.mjs | 2e67c2c380f50771f4d4520eb1d4110fefca1a51dd173bf10073c6216437ce68 | f2b6f4943b31f60d23f4799fbc61f8fe451ea848e9f8b932127715de33fb9028 |
+| docs/architecture/hrpn/SCENES.md | ab3ddb9208b7d3f9c35d94401c29da5bc95477ab99d4caf0fabaa34c41be237f | 118613f71c1e6be9ec24d67610c45aafd83c6bfac6cbd5357e80a76a4760d0b7 |
+| docs/ard/decision/focus/.generated/figures/figures.json | de868091d0bf973aa3c33f82e7a095f3cf88c8ccc5879ea75a13d89c80435c4d | eeaa51981ec9fb37b3d839a3290b21014812aea1ff322660829bad9ccdd6bef8 |
 | docs/ard/decision/focus/.generated/figures/S2-target.png | f606ac163c5202c8cddb7caaba97e4d748d767865a2abfb1bb2f57a7bb4ad542 | 5dffb39dd10551ae83b35fd256ccc3c65911d5aa731cdccb253605c3ac5d1c9a |
 
 Frozen ds-fixtures payloads and reference/S2-target.png retain their original hashes. The frozen target sceneHash is b631abb4e4432f43a2978e96f83f346f76fbd7bd6a2d8eea0a3340e7ca1d2d46; current producer target sceneHash is 81183292b8249aa25776768ba505e1b46b95d9a9a6fd2e5610efb247691bcef3. A historical hash in a fixture's embedded source metadata is **provenance of that frozen snapshot**, not an instruction to read the mutable producer path as if it still matched. Recovery of the old producer bytes is unverified U-HISTORY (owner HRPN); no regeneration from today's producer is accepted as the same frozen fixture.
 
-A5's independent source docs/ard/decision/focus/.generated/governance-scenes.json still hashes to 236320cec2b25466dfe46d9338f3f75c14aba3ee33c6c25d8070ffc242d5b35c, matching its manifest. It is separately pinned; it does not overwrite A3.
+A5's independent source docs/ard/decision/focus/.generated/governance-scenes.json still hashes to 2ad436b6408e1609ba932cc7e0c447b51823a4e9b722dc89951755a8e8170831, matching its manifest. It is separately pinned; it does not overwrite A3.
 
 ### 8.7 Populated, digest-bound derived oracle
 
@@ -1440,10 +1440,10 @@ A native executor must recompute counts/ids/diagnostics against this oracle. [] 
 
 | Derived projection | Canonical bytes | SHA-256 |
 | --- | --- | --- |
-| Whole JSON below | 33429 | 08cae540e5535727fc1f4b7bba3aa12d84908790b6c918dc263b65560ab4f2de |
+| Whole JSON below | 33429 | 2059896c05ace5e70ec987068f4304d01b67a5d647a836df7d8038fe43393b48 |
 | categoryTokens only | 432 | a77e2a62ddd6d576f06005969361ee15c241789fe8a571e6195dfb5c2782b3bf |
 | A1 summaries only | 2110 | e363601a0c116197a471a599e92dc94da16147f0e7e78346c1ab7c7df9a49018 |
-| A5 {entities,presentationEntities} | 20532 | 527a0b18c1afee9e71591d6c2e3ef8d68294c89d5f0e593527b31a47b207a2b8 |
+| A5 {entities,presentationEntities} | 20532 | 97b1ed1e2d221936a9bf1980efc81438a62806b22c81d325f24b33e55118e833 |
 
 ~~~json
 {
@@ -1664,7 +1664,7 @@ A native executor must recompute counts/ids/diagnostics against this oracle. [] 
     {
       "id": "A2",
       "scene": "S2-asbuilt",
-      "sourceSha256": "7abc427f7beca5b0f87947efc9df4daf6316f24725074f47f1da2b04be76ba2e",
+      "sourceSha256": "89f0532b5687703002e5f52a3a2cfe0540a675698e106ee50dbba09aed6298fe",
       "counts": {
         "node": 41,
         "container": 17,
@@ -1789,7 +1789,7 @@ A native executor must recompute counts/ids/diagnostics against this oracle. [] 
     {
       "id": "A3",
       "scene": "S2-target",
-      "sourceSha256": "28a7271dd0bec89fa9ad435174a614ab4a40b346b10724da95736f9c55b574d9",
+      "sourceSha256": "7b934c66bd85a9c0d47607f89f9624ae71116c372bdb479900b786ebb1f36087",
       "counts": {
         "node": 51,
         "container": 22,
@@ -1931,7 +1931,7 @@ A native executor must recompute counts/ids/diagnostics against this oracle. [] 
     {
       "id": "A4a",
       "scene": "S1-conversational",
-      "sourceSha256": "d9f7f7cb80894b5301e11cc7b7f0fc2775d1933aa15013152001395d716a32c7",
+      "sourceSha256": "5e98a495e502f8913cbb93d6feddc233193f39f72c43a1c151f4ad430978c881",
       "counts": {
         "node": 23,
         "container": 17,
@@ -2042,7 +2042,7 @@ A native executor must recompute counts/ids/diagnostics against this oracle. [] 
     {
       "id": "A4b",
       "scene": "S3-agentfactory",
-      "sourceSha256": "e362b9a8da84082e5389127ae463d282fb773ef8950f41017222e0b3ef9002fc",
+      "sourceSha256": "53efdb2f4e41551940e8c61ab4500cfb77d7789690f4577f093e58f32ceb7dbe",
       "counts": {
         "node": 37,
         "container": 15,
@@ -2153,7 +2153,7 @@ A native executor must recompute counts/ids/diagnostics against this oracle. [] 
     },
     {
       "id": "A5",
-      "sourceSha256": "46f64154bb6592d49ccda5633b2c4d4205fb1c6752ef218be31d6757923ecf91",
+      "sourceSha256": "aea6a7ecc2b71a1a5fd22bc60452e29530601b908ebe33256edf76b0e9fd2988",
       "counts": {
         "node": 33,
         "container": 18,
@@ -6400,10 +6400,10 @@ The preceding author round recorded the document consistency calculations below:
 | G0 specimen artifact byte hashes | Corpus 3d4c6b6bc655d028bc7467f7278c5dac3c913e8b298f2ad756fbc78c173701d8; six embedded byte strings independently hashed; seven distinct digest values total | consistent |
 | G0 specimen asset byte hashes | Base ffcf89f3c1ab72bbbf6262f421745bd03fc16b4767bdbc5092c2ce8496bf9760; layer fd8b9a9ab48fcf94f955bf65c06164e470a63ddb17fc1a68c919f145ea931417; each hashes full declaration JCS bytes | consistent |
 | G0 specimen external entryDigest | Base 500d7242b900d4559ffd2291ea69498fcfda3415738958b3c8d62e0927a9349d; stack 5544190fd969998f25dc384d910565c2c98b73051f372bce3d39b96521965142; each hashes its own closed envelope | consistent |
-| Derived oracle | 08cae540e5535727fc1f4b7bba3aa12d84908790b6c918dc263b65560ab4f2de | consistent |
+| Derived oracle | 2059896c05ace5e70ec987068f4304d01b67a5d647a836df7d8038fe43393b48 | consistent |
 | Category token map | a77e2a62ddd6d576f06005969361ee15c241789fe8a571e6195dfb5c2782b3bf | consistent |
 | Ten A1 summaries | e363601a0c116197a471a599e92dc94da16147f0e7e78346c1ab7c7df9a49018 | consistent |
-| A5 full field ledger | 527a0b18c1afee9e71591d6c2e3ef8d68294c89d5f0e593527b31a47b207a2b8 | consistent |
+| A5 full field ledger | 97b1ed1e2d221936a9bf1980efc81438a62806b22c81d325f24b33e55118e833 | consistent |
 | Semantic/presentation field separation | 56 semantic entities / 56 occurrence presentations; graph has no icon/token/stroke/order | consistent |
 | A1 counts and initial folds | 28 cards / 10 frames / 50 links; five initial folds | consistent |
 | 600/240 source workload | 240+32+80+4+4+240=600, of which stress=240 | consistent |

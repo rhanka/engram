@@ -1,5 +1,5 @@
 // Qualified DS adapter/renderer pinned references for diagram-presentation@1
-// (frozen spec M3-R4 deb64b75, §3.2.1). Engram catalog side of the
+// (frozen spec M3-R4 d87220cd, §3.2.1). Engram catalog side of the
 // application pin equalities: input.adapterPin MUST equal the contract
 // catalog ontology.compatibility.adapter exact pinned reference, and the
 // adapter's bound schema asset MUST equal artifactBinding.schemaPin.

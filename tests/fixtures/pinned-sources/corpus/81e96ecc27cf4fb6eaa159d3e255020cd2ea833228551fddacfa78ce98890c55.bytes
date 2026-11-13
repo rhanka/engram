@@ -29,17 +29,17 @@ per scene with the scene title.
 
 | file | sha256 | bytes |
 | --- | --- | ---: |
-| `docs/architecture/hrpn/ds-fixtures/S2-asbuilt.json` | `7abc427f7beca5b0f87947efc9df4daf6316f24725074f47f1da2b04be76ba2e` | 32455 |
-| `docs/architecture/hrpn/ds-fixtures/S2-target.json` | `28a7271dd0bec89fa9ad435174a614ab4a40b346b10724da95736f9c55b574d9` | 39878 |
-| `docs/architecture/hrpn/ds-fixtures/S1-conversational.json` | `d9f7f7cb80894b5301e11cc7b7f0fc2775d1933aa15013152001395d716a32c7` | 22904 |
-| `docs/architecture/hrpn/ds-fixtures/S3-agentfactory.json` | `e362b9a8da84082e5389127ae463d282fb773ef8950f41017222e0b3ef9002fc` | 28545 |
-| `docs/architecture/hrpn/ds-fixtures/tint-legend.json` | `cc47a3e3a2019af8c436ce28a34d0d52d71b8439cf55a44a33f1c0239752a26d` | 7430 |
-| `docs/architecture/hrpn/ds-fixtures/reference-renders.json` | `7afee15ef473389452011d38fbaf8547973b5eed572440cc0c31ee8d921e25db` | 5757 |
+| `docs/architecture/hrpn/ds-fixtures/S2-asbuilt.json` | `89f0532b5687703002e5f52a3a2cfe0540a675698e106ee50dbba09aed6298fe` | 32455 |
+| `docs/architecture/hrpn/ds-fixtures/S2-target.json` | `7b934c66bd85a9c0d47607f89f9624ae71116c372bdb479900b786ebb1f36087` | 39878 |
+| `docs/architecture/hrpn/ds-fixtures/S1-conversational.json` | `5e98a495e502f8913cbb93d6feddc233193f39f72c43a1c151f4ad430978c881` | 22904 |
+| `docs/architecture/hrpn/ds-fixtures/S3-agentfactory.json` | `53efdb2f4e41551940e8c61ab4500cfb77d7789690f4577f093e58f32ceb7dbe` | 28545 |
+| `docs/architecture/hrpn/ds-fixtures/tint-legend.json` | `54b2c50d1f1d65fd5438354602873792dd8ed9f4b4342d7c36bec59dcbb8d2ed` | 7430 |
+| `docs/architecture/hrpn/ds-fixtures/reference-renders.json` | `e5236b7c30e576c8905b2d1c91d24dc1dc96159d935259b317606899cecb0540` | 5757 |
 | `docs/architecture/hrpn/ds-fixtures/reference/S2-asbuilt.png` | `3be98d84d15359d704fe7c586f5efaf0de9df4641dd7f723fb93069a2208a1dd` | 500552 |
 | `docs/architecture/hrpn/ds-fixtures/reference/S2-target.png` | `f606ac163c5202c8cddb7caaba97e4d748d767865a2abfb1bb2f57a7bb4ad542` | 612001 |
 | `docs/architecture/hrpn/ds-fixtures/reference/S1-conversational.png` | `762c9bdd90761451b8a2a6755798485df5f77e382b576e27115f712af45884fd` | 333825 |
 | `docs/architecture/hrpn/ds-fixtures/reference/S3-agentfactory.png` | `6058c4a3946bbb59253969d0f2906541035520c64b817bbecc7205c10ab3ec38` | 458675 |
-| `docs/architecture/hrpn/ds-fixtures/build-fixtures.mjs` | `3dee69da67bb5569a385a6dfa15759ac27d3fa749e8d6b2a63f04e0446fec102` | 21844 |
+| `docs/architecture/hrpn/ds-fixtures/build-fixtures.mjs` | `fdaf13dedefbc6525eaf9de87abdab885d97754c8031b6995eb075ca00d58c1b` | 21844 |
 
 Fixture fields: `entities[]` {id, kind `card`|`zone`, label, detail, parent (zone id or null), tint, code, role, name, footer,
 store}; `relations[]` {id, from, to, label, style `solid`|`dashed`}; `zoneHierarchy` {rootCards, zones[] {id, label, cards, zones}};
