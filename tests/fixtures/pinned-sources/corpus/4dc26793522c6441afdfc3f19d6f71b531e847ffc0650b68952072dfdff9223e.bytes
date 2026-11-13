@@ -1,7 +1,7 @@
 {
  "source": {
   "file": "docs/ard/decision/focus/.generated/governance-scenes.json",
-  "sha256": "236320cec2b25466dfe46d9338f3f75c14aba3ee33c6c25d8070ffc242d5b35c",
+  "sha256": "2ad436b6408e1609ba932cc7e0c447b51823a4e9b722dc89951755a8e8170831",
   "scene": "S2-target"
  },
  "frozenFigure": "docs/architecture/hrpn/frozen-20261022/ (owner-validated 2026-10-22)",
@@ -20,8 +20,8 @@
   ]
  },
  "outputs": {
-  "S2-target.semantic.json": "46f64154bb6592d49ccda5633b2c4d4205fb1c6752ef218be31d6757923ecf91",
-  "S2-target.view.json": "82930614efe070bdb8e5acce3aecea29dfdb2d1ab625b7d376507f97fb6f8b50"
+  "S2-target.semantic.json": "aea6a7ecc2b71a1a5fd22bc60452e29530601b908ebe33256edf76b0e9fd2988",
+  "S2-target.view.json": "f01b08e0752269e01b3bcd1225a0d103e3e2d1833dac5484f649595c09c008f0"
  },
  "validation": {
   "status": "valid",

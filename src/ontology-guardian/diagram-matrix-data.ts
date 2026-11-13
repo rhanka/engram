@@ -1,4 +1,4 @@
-// ArchiMate 3.2 catalogue and pairwise matrix cells (spec §A.1, frozen deb64b75).
+// ArchiMate 3.2 catalogue and pairwise matrix cells (spec §A.1, frozen d87220cd).
 // Governed data: compact cell encoding transcribed verbatim from the frozen spec.
 // Tuple expansion follows the spec A.1 expansion recipe exactly.
 // No executor, layout or rendering lives here (G2: Engram governs data only).

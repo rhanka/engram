@@ -1,4 +1,4 @@
-// G0 admission of the diagram lot records (frozen spec M3-R4 deb64b75, §7.4).
+// G0 admission of the diagram lot records (frozen spec M3-R4 d87220cd, §7.4).
 // S1 truth: no receipt exists (U-QUAL), so every governed record refuses with
 // missing-receipt. The gate behavior itself (admit on complete evidence,
 // refuse on any removal) is proven with test-only synthetic evidence on
