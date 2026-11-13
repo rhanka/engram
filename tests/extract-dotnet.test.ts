@@ -22,7 +22,7 @@ import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CODE_EXTENSIONS } from "../src/detect.js";
-import { extractSln, extractCsproj, __testing } from "../src/extract.js";
+import { extractSln, extractSlnx, extractCsproj, __testing } from "../src/extract.js";
 
 const { getExtractor } = __testing;
 
@@ -73,6 +73,77 @@ describe("F-0819-M extractSln", () => {
   it("returns error for a missing file", () => {
     const r = extractSln("/nonexistent/missing.sln");
     expect(r.error).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// .slnx extractor (F-0832 — upstream 29e57cd / #1189)
+// ---------------------------------------------------------------------------
+describe("F-0832 extractSlnx", () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "graphify-slnx-")); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it("returns no error for sample.slnx", () => {
+    const r = extractSlnx(fixture("sample.slnx"));
+    expect(r.error).toBeUndefined();
+  });
+
+  it("extracts a file node for the .slnx itself", () => {
+    const r = extractSlnx(fixture("sample.slnx"));
+    expect(r.nodes.length).toBeGreaterThanOrEqual(1);
+    expect(r.nodes[0]!.label).toBe("sample.slnx");
+  });
+
+  it("extracts project nodes (incl. ones nested in <Folder>): WebApi, Domain, Tests", () => {
+    const r = extractSlnx(fixture("sample.slnx"));
+    const labels = r.nodes.map((n) => n.label);
+    expect(labels).toContain("WebApi");
+    expect(labels).toContain("Domain");
+    expect(labels).toContain("Tests");
+  });
+
+  it("emits contains edges from slnx to each project", () => {
+    const r = extractSlnx(fixture("sample.slnx"));
+    const containsEdges = r.edges.filter((e) => e.relation === "contains");
+    expect(containsEdges.length).toBe(3);
+  });
+
+  it("emits an imports edge for a BuildDependency between known projects", () => {
+    const r = extractSlnx(fixture("sample.slnx"));
+    const importsEdges = r.edges.filter((e) => e.relation === "imports");
+    expect(importsEdges.length).toBe(1);
+    // WebApi -> Domain
+    const webApi = r.nodes.find((n) => n.label === "WebApi");
+    const domain = r.nodes.find((n) => n.label === "Domain");
+    expect(importsEdges[0]!.source).toBe(webApi!.id);
+    expect(importsEdges[0]!.target).toBe(domain!.id);
+  });
+
+  it("returns error for a missing file", () => {
+    const r = extractSlnx("/nonexistent/missing.slnx");
+    expect(r.error).toBeDefined();
+  });
+
+  it("rejects a DOCTYPE/ENTITY billion-laughs payload (XML guard reused)", () => {
+    const payload = [
+      "<?xml version=\"1.0\"?>",
+      "<!DOCTYPE lolz [<!ENTITY lol \"lol\">]>",
+      "<Solution><Project Path=\"a/a.csproj\" /></Solution>",
+    ].join("\n");
+    const p = join(dir, "evil.slnx");
+    writeFileSync(p, payload, "utf-8");
+    const r = extractSlnx(p);
+    expect(r.error).toBeDefined();
+    expect(r.error).toMatch(/DOCTYPE|ENTITY/i);
+  });
+
+  it("rejects input larger than 2 MiB", () => {
+    const p = join(dir, "huge.slnx");
+    writeFileSync(p, Buffer.alloc(2 * 1024 * 1024 + 1, 0x20));
+    const r = extractSlnx(p);
+    expect(r.error).toBeDefined();
+    expect(r.error).toMatch(/too large/i);
   });
 });
 
@@ -208,7 +279,7 @@ describe("F-0819-M XML DoS guard (ad3f3b2)", () => {
 // Dispatch table
 // ---------------------------------------------------------------------------
 describe("F-0819-M dispatch table", () => {
-  it.each([".sln", ".csproj", ".fsproj", ".vbproj", ".props", ".targets"])(
+  it.each([".sln", ".slnx", ".csproj", ".fsproj", ".vbproj", ".props", ".targets"])(
     "routes %s to a .NET extractor",
     (ext) => {
       const fn = getExtractor(`foo${ext}`);
@@ -221,7 +292,7 @@ describe("F-0819-M dispatch table", () => {
 // CODE_EXTENSIONS
 // ---------------------------------------------------------------------------
 describe("F-0819-M CODE_EXTENSIONS", () => {
-  it.each([".sln", ".csproj", ".fsproj", ".vbproj", ".props", ".targets"])(
+  it.each([".sln", ".slnx", ".csproj", ".fsproj", ".vbproj", ".props", ".targets"])(
     "contains %s",
     (ext) => {
       expect(CODE_EXTENSIONS.has(ext)).toBe(true);
