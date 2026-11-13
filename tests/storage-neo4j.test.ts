@@ -675,3 +675,28 @@ describe.skipIf(!process.env.GRAPHIFY_TEST_NEO4J_URI)(
     });
   },
 );
+
+
+import { edge as mlEdge, multiGraph as mlGraph, observation as mlObservation } from "./helpers/multi-links.js";
+describe("L0-S mirror singleton diagnostics",()=>{
+ it.fails("M3-two-singleton-pushes-each-warn",async()=>{
+
+  const state:InMemoryNeo4jState={statements:[],allStatements:[],closed:false,driverClosed:false};
+  const store=await makeNeo4jStore(state);
+
+  try {
+   const results=[];
+   for(const loc of ["L1","L2"]){
+    const e=mlEdge({source_location:loc,confidence_score:1});
+    results.push(await store.pushGraph(mlGraph([{...e,evidence_observations:[mlObservation(e)]}]),new Map(),{mode:"merge"}));
+   }
+
+   const saved=state.allStatements.filter(s=>s.text.includes("SET r += row.props")).flatMap(s=>s.params.rows as any[]).map(r=>r.props);
+
+   expect(saved).toHaveLength(2);
+   expect(saved.map(p=>p.source_location)).toEqual(["L1","L2"]);
+   for(const props of saved){expect(props.confidence_score).toBe(1);expect(props.evidence_observations).toBeUndefined();expect(Object.values(props).every(v=>v===null||typeof v!=="object")).toBe(true);}
+   for(const result of results){expect(result.edges).toBe(1);expect(result.warnings.join(" ")).toMatch(/neo4j.*1.*observations not persisted|neo4j.*observations not persisted.*1/i);}
+  } finally {await store.close();}
+ });
+});

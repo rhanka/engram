@@ -1,0 +1,4 @@
+{
+  "append": { "source": "a", "target": "b", "relation": "RELATES_TO", "source_file": "f.ts" },
+  "tombstone": { "source": "a", "target": "b", "relation": "RELATES_TO" }
+}

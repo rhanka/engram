@@ -1,0 +1,4 @@
+{
+  "nodes": [{ "id": "a" }],
+  "links": [{ "source": "a", "target": "a", "relation": "calls", "source_file": "f.ts" }]
+}

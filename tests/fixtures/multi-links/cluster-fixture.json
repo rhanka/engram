@@ -1,0 +1,15 @@
+{
+  "nodes": [
+    { "id": "a", "label": "A", "file_type": "code", "source_file": "f.ts" },
+    { "id": "b", "label": "B", "file_type": "code", "source_file": "f.ts" },
+    { "id": "c", "label": "C", "file_type": "code", "source_file": "f.ts" },
+    { "id": "d", "label": "D", "file_type": "code", "source_file": "f.ts" }
+  ],
+  "edges": [
+    { "source": "a", "target": "b", "relation": "calls", "confidence": "EXTRACTED", "source_file": "f.ts", "weight": 2 },
+    { "source": "b", "target": "c", "relation": "calls", "confidence": "EXTRACTED", "source_file": "f.ts", "weight": 3 }
+  ],
+  "hyperedges": [],
+  "input_tokens": 0,
+  "output_tokens": 0
+}

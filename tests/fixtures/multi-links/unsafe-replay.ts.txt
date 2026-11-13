@@ -1,0 +1,7 @@
+function replay(target, source, destination, attrs) {
+  upsertRelationEdge(target, source, destination, attrs);
+  // A sanctioned call next door must never exempt this unkeyed insertion.
+  target.mergeEdge(source, destination, attrs);
+  target["addEdge"](source, destination, attrs);
+  target.replaceEdgeAttributes("existing", attrs);
+}

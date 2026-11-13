@@ -1,0 +1,4 @@
+[
+  { "source_file": "f.ts", "confidence": "EXTRACTED", "confidence_score": null },
+  { "source_file": "f.ts", "confidence": "EXTRACTED", "confidence_score": 0.5 }
+]

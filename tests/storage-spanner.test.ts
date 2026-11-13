@@ -687,3 +687,27 @@ describe.skipIf(!process.env.SPANNER_EMULATOR_HOST)(
     });
   },
 );
+
+
+import { edge as mlEdge, multiGraph as mlGraph, observation as mlObservation } from "./helpers/multi-links.js";
+describe("L0-S mirror singleton diagnostics",()=>{
+ it.fails("M3-two-singleton-pushes-each-warn",async()=>{
+
+  const state=freshState(),store=await makeSpannerStore(state);
+
+  try {
+   const results=[];
+   for(const loc of ["L1","L2"]){
+    const e=mlEdge({source_location:loc,confidence_score:1});
+    results.push(await store.pushGraph(mlGraph([{...e,evidence_observations:[mlObservation(e)]}]),new Map(),{mode:"merge"}));
+   }
+
+   const saved=state.upserts.filter(s=>s.table.endsWith("edges")).flatMap(s=>s.rows).map(r=>JSON.parse(r.props as string));
+
+   expect(saved).toHaveLength(2);
+   expect(saved.map(p=>p.source_location)).toEqual(["L1","L2"]);
+   for(const props of saved){expect(props.confidence_score).toBe(1);expect(props.evidence_observations).toBeUndefined();expect(Object.values(props).every(v=>v===null||typeof v!=="object")).toBe(true);}
+   for(const result of results){expect(result.edges).toBe(1);expect(result.warnings.join(" ")).toMatch(/spanner.*1.*observations not persisted|spanner.*observations not persisted.*1/i);}
+  } finally {await store.close();}
+ });
+});
