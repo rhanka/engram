@@ -168,3 +168,24 @@ describe("search-index emitter (T2 / T11 / T12)", () => {
     expect(idx.schema).toBe(SEARCH_INDEX_SCHEMA);
   });
 });
+
+
+import { edge as mlEdge, multiGraph as mlGraph, permutations as mlPermutations, fromRows as mlBuild } from "./helpers/multi-links.js";
+describe("L0-T search",()=>{
+ const records=[mlEdge({relation:"r0",weight:0.1}),mlEdge({relation:"r1",weight:0.2}),mlEdge({relation:"r2",weight:0.3})];
+ it.fails("search-fractional-sum-permutation-stable",()=>{
+  const results=mlPermutations(records).map(seq=>{const G=mlGraph(seq);expect(G.size).toBe(3);return buildSearchIndex(G);});
+  for(const idx of results){
+   expect(idx.adjacency).toEqual(results[0].adjacency);
+   expect(idx.graph_signature).toBe(results[0].graph_signature);
+   expect(serializeSearchIndex(idx)).toBe(serializeSearchIndex(results[0]));
+  }
+  expect(results[0].adjacency).toEqual({node_ptr:[0,1,2],neighbors:[1,0],edge_weights:[0.6000000000000001,0.6000000000000001]});
+ });
+ it.fails("fractional search weights through public build",()=>{
+  for(const seq of mlPermutations(records)){
+   const G=mlBuild(seq);expect(G.size).toBe(3);
+   expect(serializeSearchIndex(buildSearchIndex(G))).toBe(serializeSearchIndex(buildSearchIndex(mlGraph(records))));
+  }
+ });
+});

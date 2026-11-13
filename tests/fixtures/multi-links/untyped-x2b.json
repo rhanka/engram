@@ -1,0 +1,4 @@
+{
+  "nodes": [{ "id": "a" }, { "id": "b" }],
+  "links": [{ "source": "a", "target": "b", "source_file": "f.ts" }]
+}

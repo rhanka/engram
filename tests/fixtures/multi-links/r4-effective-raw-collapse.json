@@ -1,0 +1,4 @@
+[
+  { "source": "a", "target": "b", "_src": "c", "_tgt": "d", "relation": "calls", "source_file": "f.ts", "source_location": "L1" },
+  { "source": "a", "target": "b", "_src": "d", "_tgt": "c", "relation": "calls", "source_file": "f.ts", "source_location": "L2" }
+]

@@ -1,0 +1,122 @@
+{
+  "nodes": [
+    {
+      "id": "a"
+    },
+    {
+      "id": "b"
+    },
+    {
+      "id": "c"
+    },
+    {
+      "id": "d"
+    },
+    {
+      "id": "e"
+    },
+    {
+      "id": "f"
+    }
+  ],
+  "edges": [
+    {
+      "source": "a",
+      "target": "d",
+      "relation": "r0",
+      "weight": 0.1
+    },
+    {
+      "source": "a",
+      "target": "f",
+      "relation": "r0",
+      "weight": 1
+    },
+    {
+      "source": "b",
+      "target": "c",
+      "relation": "r0",
+      "weight": 8
+    },
+    {
+      "source": "b",
+      "target": "c",
+      "relation": "r1",
+      "weight": 4
+    },
+    {
+      "source": "b",
+      "target": "c",
+      "relation": "r2",
+      "weight": 0.1
+    },
+    {
+      "source": "b",
+      "target": "d",
+      "relation": "r0",
+      "weight": 0.1
+    },
+    {
+      "source": "c",
+      "target": "d",
+      "relation": "r0",
+      "weight": 8
+    },
+    {
+      "source": "c",
+      "target": "e",
+      "relation": "r0",
+      "weight": 1
+    },
+    {
+      "source": "c",
+      "target": "f",
+      "relation": "r0",
+      "weight": 2
+    },
+    {
+      "source": "d",
+      "target": "e",
+      "relation": "r0",
+      "weight": 8
+    }
+  ],
+  "max": [
+    [
+      "a",
+      "b",
+      "c",
+      "f"
+    ],
+    [
+      "d",
+      "e"
+    ]
+  ],
+  "sum": [
+    [
+      "a",
+      "f"
+    ],
+    [
+      "b",
+      "c"
+    ],
+    [
+      "d",
+      "e"
+    ]
+  ],
+  "last": [
+    [
+      "b",
+      "c",
+      "d",
+      "e"
+    ],
+    [
+      "a",
+      "f"
+    ]
+  ]
+}

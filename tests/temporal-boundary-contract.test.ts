@@ -18,7 +18,7 @@ import {
   temporalBoundaryGraph,
 } from "./fixtures/temporal-boundary.js";
 import { postgresLaneDecision, startEphemeralPostgres } from "./postgres-ephemeral.js";
-import { loadSqliteTestDriver } from "./fixtures/sqlite-host-driver.js";
+import { sqliteDriver as loadSqliteTestDriver } from "./helpers/multi-links-stores.js";
 
 function ids(items: ReadonlyArray<{ id: string }>): string[] {
   return items.map((item) => item.id);
@@ -209,3 +209,27 @@ if (pgLane.lane === "fail") {
     },
   );
 }
+
+
+import { overlapsClosedTemporalWindow as mlOverlap } from "../src/temporal-interval.js";
+import { edge as mlEdge, fromRows as mlBuild, rows as mlRows, observation as mlObservation, expectObservations as mlObs, expectFixedPoint as mlFixed } from "./helpers/multi-links.js";
+describe("L0-E temporal",()=>{
+ const cases=[
+  {name:"open-first",attrs:[{t:10},{t:20,t_end:30}],start:10,end:undefined,at40:true},
+  {name:"open-last",attrs:[{t:20,t_end:30},{t:10}],start:10,end:undefined,at40:true},
+  {name:"disjoint-finite",attrs:[{t:10,t_end:20},{t:50,t_end:60}],start:10,end:60,at40:true},
+  {name:"untimed",attrs:[{}],start:undefined,end:undefined,at40:false},
+  {name:"malformed-only",attrs:[{t:"bad",t_end:30},{t:20,t_end:10}],start:undefined,end:undefined,at40:false},
+  {name:"malformed-and-valid",attrs:[{t:"bad",t_end:30},{t:10,t_end:15},{t:50,t_end:60}],start:10,end:60,at40:true},
+ ];
+ for(const c of cases) describe(c.name,()=>{
+  it.fails("temporal-open-hull-and-t-end-removal",()=>{
+   const emissions=c.attrs.map(a=>mlEdge(a)),G=mlBuild(emissions),row=mlRows(G)[0];
+   expect(Object.hasOwn(row,"t")).toBe(c.start!==undefined);
+   expect(Object.hasOwn(row,"t_end")).toBe(c.end!==undefined);
+   expect(row.t).toBe(c.start);expect(row.t_end).toBe(c.end);
+   expect(mlOverlap(row,40,40)).toBe(c.at40);
+   mlObs(row,emissions.map(mlObservation));mlFixed(G,emissions);
+  });
+ });
+});

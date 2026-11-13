@@ -290,3 +290,45 @@ describe("portable graphify artifacts", () => {
     );
   });
 });
+
+
+import { loadGraphFromData as mlLoad } from "../src/graph.js";
+import { makeGraphPortable as mlPortable } from "../src/portable-artifacts.js";
+import { buildFromJson as mlBuild } from "../src/build.js";
+import { mergeExtractionsWithCitations as mlBatch } from "../src/extract-git.js";
+import { edge as mlEdge, extraction as mlExtraction, rows as mlRows, expectFixedPoint as mlFixed, expectObservations as mlObs, observation as mlObservation } from "./helpers/multi-links.js";
+describe("L0-C portable",()=>{
+ it.fails("R4-makeExtractionPortable-between-batch-and-build-noop-on-captured",()=>{
+  const fresh=mlExtraction([mlEdge({source_file:"/repo/f.ts",source_location:"L1"})]);
+  const captured=mlBatch([fresh]).extraction;
+  expect(captured.edges[0].evidence_observations).toEqual([mlObservation(fresh.edges[0])]);
+  const before=JSON.stringify(captured.edges);
+  const portable=makeExtractionPortable(captured,"/repo");
+  expect(JSON.stringify(portable.edges)).toBe(before);
+  const G=mlBuild(portable,{root:"/repo"});
+  expect(mlRows(G)[0].source_file).toBe("/repo/f.ts");mlObs(mlRows(G)[0],[mlObservation(fresh.edges[0])]);mlFixed(G,captured.edges);
+ });
+ it("fresh portability agrees with direct build preparation",()=>{
+  const fresh=mlExtraction([mlEdge({source_file:"/repo/f.ts"})]);
+  const portable=makeExtractionPortable(fresh,"/repo");
+  expect(portable.edges[0].source_file).toBe("f.ts");
+  expect(mlRows(mlBuild(portable))[0].source_file).toBe(mlRows(mlBuild(fresh,{root:"/repo"}))[0].source_file);
+  expect(fresh.edges[0].source_file).toBe("/repo/f.ts");
+ });
+ it.fails("M2-portable-reload-fixed-point",()=>{
+  const rec={source_file:"/repo/f.ts",confidence:"EXTRACTED",source_location:"L1"};
+  const G=mlLoad({nodes:[{id:"a"},{id:"b"}],links:[{source:"a",target:"b",relation:"calls",source_file:"/repo/f.ts",evidence_observations:[rec]}]});
+  const projected=mlPortable(G,"/repo");
+  expect(mlRows(projected)[0].source_file).toBe("/repo/f.ts");mlObs(mlRows(projected)[0],[rec]);mlFixed(projected);
+ });
+});
+
+describe("L0-C fresh preparation API",()=>{
+ it.fails("fresh portability equals the production preparation helper",async()=>{
+  const core=await import("../src/graph.js");
+  const prepare=(core as Record<string,any>).prepareFreshExtraction;
+  expect(prepare,"src/graph.ts prepareFreshExtraction export").toBeTypeOf("function");
+  const fresh=mlExtraction([mlEdge({source_file:"/repo/f.ts"})]);
+  expect(makeExtractionPortable(fresh,"/repo").edges).toEqual(prepare(fresh,{root:"/repo"}).edges);
+ });
+});

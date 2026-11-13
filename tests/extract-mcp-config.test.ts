@@ -247,3 +247,27 @@ describe("collectFiles — non-hidden MCP configs picked up; .mcp.json stays hid
     expect(collectFiles(hidden)).toEqual([hidden]);
   });
 });
+
+
+import { observation as mlObservation } from "./helpers/multi-links.js";
+describe("L0-R MCP invariant",()=>{
+ it("INV-mcp-config-seenEdges-identical-evidence-invariant",()=>{
+  const dir=makeTempDir(),file=join(dir,"mcp.json");
+  const spec={command:"node",args:["-y","@example/server"],env:{TOKEN:"unused"}};
+  writeFileSync(file,JSON.stringify({mcpServers:{"server-one":spec}}));
+  const first=extractMcpConfig(file,dir);
+  writeFileSync(file,JSON.stringify({mcpServers:{"server-one":spec,"server one":spec}}));
+  const repeated=extractMcpConfig(file,dir),replayed=extractMcpConfig(file,dir);
+  const key=(e:any)=>JSON.stringify([e.source,e.target,e.relation]);
+  expect(first.edges).toHaveLength(4);
+  expect(repeated.edges.map(key).sort()).toEqual(first.edges.map(key).sort());
+  expect(new Set(repeated.edges.map(key)).size).toBe(4);
+  expect(new Set(repeated.edges.map(e=>e.relation))).toEqual(new Set(["contains","references","requires_env"]));
+  for(const e of repeated.edges){
+   expect(mlObservation(e)).toEqual({source_file:file,source_location:"L1",confidence:"EXTRACTED",confidence_score:1});
+   const same=first.edges.find(f=>key(f)===key(e))!;
+   expect(JSON.stringify(mlObservation(e))).toBe(JSON.stringify(mlObservation(same)));
+  }
+  expect(replayed.edges.map(mlObservation)).toEqual(repeated.edges.map(mlObservation));
+ });
+});

@@ -1,0 +1,5 @@
+{
+  "graph_format": "engram-graph/3",
+  "nodes": [{ "id": "a" }, { "id": "b" }],
+  "links": [{ "source": "a", "target": "b", "relation": "calls", "source_file": "f.ts" }]
+}

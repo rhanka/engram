@@ -232,3 +232,20 @@ describe("Swift cross-file extension dedup (integration via real grammar)", () =
     expect(fooNodes.length).toBe(1);
   });
 });
+
+
+import { join as mlJoin } from "node:path";
+import { edge as mlEdge, extraction as mlExtraction, node as mlNode, rows as mlRows, expectFixedPoint as mlFixed, expectObservations as mlObs, observation as mlObservation, tempDir as mlTempDir } from "./helpers/multi-links.js";
+describe("L0-R swift", () => {
+  it.fails("swift-same-locator-keeps-r1-r2", async () => {
+    const {buildMerge} = await import("../src/build.js");
+    const input = ["r1","r2"].map(ref => mlEdge({source:"extFoo",target:"b",source_location:"L1",evidence_refs:[ref]}));
+    const out = _mergeSwiftExtensions([{nodes:[],edges:[],swift_extensions:[{nid:"extFoo",label:"Foo"}]}] as never,[mlNode("b"),mlNode("extFoo",{label:"Foo"}),mlNode("Foo",{label:"Foo"})],input);
+    const G = buildMerge([mlExtraction(out.edges,out.nodes)],{graphPath:mlJoin(mlTempDir(),"graph.json")});
+    expect(out.edges).toHaveLength(2);
+    expect(mlRows(G)).toHaveLength(1);
+    mlObs(mlRows(G)[0],input.map(mlObservation));
+    expect(mlRows(G)[0].evidence_refs).toEqual(["r1","r2"]);
+    mlFixed(G,out.edges);
+  });
+});

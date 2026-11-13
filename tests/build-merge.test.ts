@@ -263,3 +263,39 @@ describe("buildMerge", () => {
     expect(edge).toBeDefined();
   });
 });
+
+
+import { readFileSync as mlRead, writeFileSync as mlWrite } from "node:fs";
+import { join as mlJoin } from "node:path";
+import { loadGraphFromData as mlLoad } from "../src/graph.js";
+import { canonicalBytes as mlKey } from "../src/ontology-guardian/canonical.js";
+import { edge as mlEdge, node as mlNode, extraction as mlExtraction, rows as mlRows, writers as mlWriters, writeGraph as mlSerialize, fromRows as mlBuild, expectFixedPoint as mlFixed, tempDir as mlTemp } from "./helpers/multi-links.js";
+describe("L0-C legacy parity",()=>{
+ for(const fixture of ["legacy-absent-confidence.json","untyped-x2b.json"]) for(const root of [undefined,"/repo"]) describe(fixture+"/"+root,()=>{
+  it.fails("R4-legacy-load-buildMerge-observation-parity",async()=>{
+   const {buildMerge}=await import("../src/build.js");
+   const raw=JSON.parse(mlRead(new URL("./fixtures/multi-links/"+fixture,import.meta.url),"utf8"));
+   const path=mlJoin(mlTemp(),"graph.json");mlWrite(path,JSON.stringify(raw));
+   const direct=mlLoad(raw),merged=buildMerge([],{graphPath:path,...(root?{root}:{})});
+   for(const writer of mlWriters){
+    const expected=mlRows(direct,writer)[0].evidence_observations;
+    expect(expected).toHaveLength(1);
+    const actual=mlRows(merged,writer)[0].evidence_observations;
+    expect(actual).toHaveLength(1);
+    expect(actual.map(mlKey)).toEqual(expected.map(mlKey));
+    for(const rec of [...actual,...expected]) expect(Object.hasOwn(rec,"confidence")).toBe(false);
+    for(const legacy of [direct,merged]){
+     const data=mlSerialize(legacy,writer),old=data.links[0];
+     const inferred=mlEdge({source:old.source,target:old.target,relation:old.relation??"related_to",confidence:"INFERRED"});
+     const replayPath=mlJoin(mlTemp(),"graph.json");mlWrite(replayPath,JSON.stringify(data));
+     const replay=buildMerge([mlExtraction([inferred],data.nodes.map((n:any)=>mlNode(n.id,n)))],{graphPath:replayPath,...(root?{root}:{})});
+     const row=mlRows(replay,writer)[0];
+     expect(row.confidence).toBe("INFERRED");
+     expect(row.evidence_observations).toHaveLength(2);
+     expect(row.evidence_observations.some((r:any)=>r.confidence==="EXTRACTED")).toBe(false);
+     mlFixed(replay,[inferred]);
+    }
+   }
+  });
+ });
+});

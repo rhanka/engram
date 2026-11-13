@@ -244,3 +244,48 @@ describe("extractGit", () => {
     expect(profile.relation_types.MODIFIES.target_types).toEqual(["File"]);
   });
 });
+
+
+import { vi as mlVi } from "vitest";
+import { extractPullRequests as mlPullRequests } from "../src/extract-gh.js";
+import { observation as mlObservation } from "./helpers/multi-links.js";
+describe("L0-R producer map",()=>{
+ it("git-gh-producer-map-invariant",async()=>{
+  const A="a".repeat(40),B="b".repeat(40),root="/fixture/repo",key="repo:github.com/example/project";
+  const commands:string[]=[];
+  const run=(command:string,args:string[])=>{
+   const actual=args[0]==="-C"?args.slice(2):args;commands.push([command,...actual].join(" "));
+   if(actual.join(" ")==="remote get-url origin")return "https://github.com/example/project.git";
+   if(actual.join(" ")==="rev-parse --is-inside-work-tree")return "true";
+   if(actual.join(" ")==="rev-parse --show-toplevel")return root;
+   if(actual.join(" ")==="rev-parse HEAD")return B;
+   if(actual[0]==="rev-list")return A+"\n"+B;
+   if(actual[0]==="show"&&actual[1]==="-s") {const sha=actual.at(-1);return [sha,sha===A?B:A,"Fixture <fixture@example.test>","2026-11-13T00:00:00Z","fixture","fixture"].join("\0");}
+   if(actual[0]==="show"&&actual[1]==="--numstat")return "1\t0\tf.ts\n1\t0\tf.ts";
+   throw new Error("unexpected fixture command "+[command,...actual].join(" "));
+  };
+  mlVi.resetModules();mlVi.doMock("node:child_process",()=>({execFileSync:run}));
+  try{
+   const {extractGit:produce}=await import("../src/extract-git.js");
+   const first=produce(root,{branches:["main","main"],observedAt:"2026-11-13T00:00:00Z"}),second=produce(root,{branches:["main"],observedAt:"2026-11-13T00:00:00Z"});
+   const tuple=(e:any)=>JSON.stringify([e.source,e.target,e.relation,e.source_file]);
+   const expected=[...[[commitId(key,A),commitId(key,B),"PARENT_OF","git"],[commitId(key,B),commitId(key,A),"PARENT_OF","git"]],...[A,B].map(sha=>[commitId(key,sha),"f","MODIFIES","f.ts"]),...[A,B].map(sha=>[commitId(key,sha),branchId(key,"main"),"ON_BRANCH","git"])].map(JSON.stringify).sort();
+   expect(first.edges.map(tuple).sort()).toEqual(expected);
+   expect(second.edges.map(tuple).sort()).toEqual(expected);
+   expect(first.edges.map(e=>JSON.stringify(mlObservation(e)))).toEqual(second.edges.map(e=>JSON.stringify(mlObservation(e))));
+   expect(commands.some(c=>c.includes("--numstat"))).toBe(true);
+  }finally{mlVi.doUnmock("node:child_process");mlVi.resetModules();}
+  const runner={run(command:string,args:string[]){
+   if(command==="git")return "https://github.com/example/project.git";
+   if(args[1]==="list")return JSON.stringify([{number:1,title:"fixture",headRefName:"main",baseRefName:"main",state:"MERGED",isDraft:false},{number:1,title:"fixture",headRefName:"main",baseRefName:"main",state:"MERGED",isDraft:false}]);
+   return JSON.stringify({number:1,title:"fixture",state:"MERGED",isDraft:false,headRefName:"main",baseRefName:"main",mergeCommit:{oid:A},commits:[{oid:A},{oid:A}],files:[],statusCheckRollup:[]});
+  }};
+  const pr=mlPullRequests(root,{enabled:true,runner,observedAt:"2026-11-13T00:00:00Z"});
+  const expected=["FROM_BRANCH","INTO_BRANCH","CONTAINS_COMMIT","MERGED_AS"];
+  expect(pr.edges.map(e=>e.relation).sort()).toEqual(expected.sort());
+  expect(new Set(pr.edges.map(e=>JSON.stringify([e.source,e.target,e.relation]))).size).toBe(4);
+  const again=mlPullRequests(root,{enabled:true,runner,observedAt:"2026-11-13T00:00:00Z"});
+  expect(again.edges).toEqual(pr.edges);
+  for(const e of pr.edges){expect(mlObservation(e)).toEqual({source_file:"gh",confidence:"EXTRACTED",derivation_method:["FROM_BRANCH","INTO_BRANCH"].includes(e.relation)?"gh_pr_ref":e.relation==="CONTAINS_COMMIT"?"gh_pr_commits":"gh_pr_merge_commit"});}
+ });
+});

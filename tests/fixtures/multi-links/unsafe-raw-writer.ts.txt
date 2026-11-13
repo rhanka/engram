@@ -1,0 +1,4 @@
+function saveSnapshot(raw, destination) {
+  // assertSupportedGraphFormat is a comment, not an executed guard.
+  writeFileSync(destination, JSON.stringify({ nodes: raw.nodes, links: raw.links }));
+}
