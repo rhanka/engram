@@ -60,8 +60,8 @@ const modelFile = "tests/llm-mesh-bridge.test.ts";
 const modelFailures = baseResult.failingIdentities.files.filter(file => file === modelFile);
 const { failingIdentities, ...baseSummary } = baseResult;
 const { failingIdentities: _branchIdentities, ...branchSummary } = branchResult;
-const frozenSpecBytes = fs.readFileSync(path.join(root, "tests/fixtures/pinned-sources/corpus/deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f.bytes"));
-assert.equal(sha256Hex(frozenSpecBytes), "deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f");
+const frozenSpecBytes = fs.readFileSync(path.join(root, "tests/fixtures/pinned-sources/corpus/d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789.bytes"));
+assert.equal(sha256Hex(frozenSpecBytes), "d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789");
 const frozenSpec = frozenSpecBytes.toString("utf8");
 assert.ok(specVectorIds.every(id => frozenSpec.includes(id)));
 const unverifiedRegister = frozenSpec.slice(frozenSpec.indexOf("### 11.2 unverified register"), frozenSpec.indexOf("## Appendix A"))
@@ -73,7 +73,7 @@ assert.equal(unverifiedRegister.length, 10);
 const report = {
   format: "diagram-full-suite-comparison/2", generatedAt: new Date().toISOString(), baseCommit,
   binding: { branch: git("branch", "--show-current"), testedCommit: git("rev-parse", "HEAD"),
-    frozenSpec: "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md", frozenSpecSha256: "deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
+    frozenSpec: "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-d87220cd.md", frozenSpecSha256: "d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789",
     changedFromBase, inputSha256, inputSetSha256: sha256Hex(canonicalBytes(inputSha256)), comparisonToolSha256: sha256Hex(fs.readFileSync(fileURLToPath(import.meta.url))),
     note: "Evidence-only commits may follow; inputSha256 binds the complete changed execution inputs independently of the evidence commit identity." },
   environment: { node: process.version, npm: execFileSync(process.env.SUBSTRATE_NPM_BIN ?? "npm", ["--version"], { encoding: "utf8" }).trim(), platform: process.platform, arch: process.arch, nodeModules: fs.realpathSync(path.join(root, "node_modules")), lockfileSha256: sha256Hex(fs.readFileSync(path.join(root, "package-lock.json"))), env: "test-g2" },
