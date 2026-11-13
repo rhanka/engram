@@ -1,0 +1,486 @@
+flowchart LR
+%% @dl format engram.archi-mermaid/1
+%% @dl document memory-r15-architecture-target
+%% @dl schema 1.1
+%% @dl revision 0
+%% @dl language en
+%% @dl owning-repo e_repo_engram
+%% @dl profile archi@1
+%% @dl pin profile archi 1.0.0 81ed1a11925f9bb1d644a839cad788555ffeea876c8c09d2d0a34d6981e8b344
+%% @dl pin cards archi-cards 1 7de031e42469eb426cd520fab2f390e33ec62fca374d224b463bbe9d70cb1246
+%% @dl pin view-schema diagram-view-schema 2 50c97fc87a9546facff86f2deab8fdb99073419f43eef09958b96225367037ef
+
+%% @dl entity actor
+%% @dl evidence "h2a:packages/h2a/package.json:18"
+e_act_owner["rhanka"]
+
+%% @dl entity system
+%% @dl shortName "engram"
+%% @dl role "First-rank session recorder"
+%% @dl evidence "owner-r15:comments-2026-11-08.md:15"
+subgraph e_sys_engram["@sentropic/engram"]
+  %% @dl entity runtime job
+  %% @dl shortName "dreaming"
+  %% @dl role "Cadences; multi-repo harness audit"
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:3,11,24"
+  %% @dl evidence "owner-r15:answers-2026-11-08.compact.md:5"
+  %% @dl nest po-e-dream
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:3,11,24"
+  e_rt_dream["Dreaming consolidation engine"]
+  %% @dl entity runtime job
+  %% @dl shortName "extraction"
+  %% @dl role "Light/session LLM extractor"
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:19"
+  %% @dl nest po-e-ext
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:19"
+  e_rt_ext["Live extraction tier"]
+  %% @dl entity service
+  %% @dl shortName "engram live"
+  %% @dl role "Records raw turns first"
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:15"
+  %% @dl nest po-e-ingest
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:15"
+  e_svc_ingest["engram live ingestion and event recorder"]
+  %% @dl entity service
+  %% @dl shortName "mem control"
+  %% @dl role "Rules/decision engine, D7"
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:15-16"
+  %% @dl nest po-e-mctrl
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:15-16"
+  e_svc_mctrl["engram / Track memory control"]
+  %% @dl entity service
+  %% @dl shortName "serializer"
+  %% @dl role "PR export, specs, overlays"
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:answers-2026-11-08.compact.md:5"
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:14"
+  %% @dl nest po-e-serial
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:answers-2026-11-08.compact.md:5"
+  e_svc_serial["Deterministic Git serializer"]
+  %% @dl entity api mcp
+  %% @dl shortName "memory MCP"
+  %% @dl role "6 tools + proposed 7th tool"
+  %% @dl lifecycle proposed
+  %% @dl evidence "engram:spec/SPEC_MEMORY_MCP_V2.md:49-58"
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:4"
+  %% @dl access read-write
+  %% @dl nest po-e-tools
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:4"
+  e_api_mtools["engram-memory MCP tools"]
+  %% @dl entity store graph
+  %% @dl shortName "memory graph"
+  %% @dl role "Journal + graph projection"
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:6-9"
+  %% @dl evidence "engram:spec/SPEC_EVOL_AGENT_MEMORY_SUBSTRATE.md:73-77"
+  %% @dl writerPolicy multi-writer
+  %% @dl nest po-e-graph
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:6-9"
+  e_st_graph["engram canonical journal and memory graph projection"]
+end
+
+%% @dl entity system
+%% @dl shortName "Git + PRs"
+%% @dl role "PR export, specs, overlays"
+%% @dl evidence "owner-r15:answers-2026-11-08.compact.md:5"
+%% @dl evidence "owner-r15:comments-2026-11-08.md:14"
+subgraph e_sys_git["Git repositories and PR artifacts"]
+  %% @dl entity store file
+  %% @dl shortName "Git files"
+  %% @dl role "PR export, specs, overlays"
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:answers-2026-11-08.compact.md:5"
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:14"
+  %% @dl writerPolicy single-writer
+  %% @dl nest po-g-git
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:answers-2026-11-08.compact.md:5"
+  e_st_git["Git serialized files"]
+end
+
+%% @dl entity system
+%% @dl shortName "h2a + Track"
+%% @dl role "Harness, Track and HMI swipe"
+%% @dl evidence "h2a:packages/h2a/package.json:1-20"
+subgraph e_sys_h2a["@sentropic/h2a and Track"]
+  %% @dl entity runtime cli
+  %% @dl shortName "mandates"
+  %% @dl role "h2a role/activity writer"
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r8:comments-2026-11-07.md:17-18"
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:2,14"
+  %% @dl nest po-h-harn
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:2"
+  e_rt_harness["h2a mandate and role manager"]
+  %% @dl entity runtime hook
+  %% @dl shortName "ctx builder"
+  %% @dl role "Slices via proposed 7th tool"
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:answers-2026-11-08.compact.md:5"
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:3-4"
+  %% @dl nest po-h-prompt
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:3-4"
+  e_rt_prompt["Dynamic prompt and context builder"]
+  %% @dl entity runtime cli
+  %% @dl shortName "HMI swipe"
+  %% @dl role "Contextualized review (D27)"
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:12"
+  %% @dl evidence "owner-r8:comments-2026-11-07.md:54"
+  %% @dl nest po-h-swipe
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:12"
+  e_rt_swipe["HMI swipe review and arbitration"]
+  %% @dl entity runtime cli
+  %% @dl shortName "Track CLI"
+  %% @dl role "Project stream + PR replay"
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:13,16"
+  %% @dl evidence "owner-r15:answers-2026-11-08.compact.md:5"
+  %% @dl nest po-h-track
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:13"
+  e_rt_track["Track analyst and pre-merge control"]
+  %% @dl entity runtime hook
+  %% @dl shortName "session turn"
+  %% @dl role "Speech turns and tool refs"
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:15"
+  %% @dl nest po-h-turn
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:15"
+  e_rt_turn["Session turn and tool execution"]
+end
+
+%% @dl entity system
+%% @dl shortName "HMI + boards"
+%% @dl role "Signals and read views (D30)"
+%% @dl evidence "owner-r15:comments-2026-11-08.md:13"
+subgraph e_sys_hmi["GitHub and board interface layer (D30)"]
+  %% @dl entity service
+  %% @dl shortName "GH + boards"
+  %% @dl role "Signals and read views (D30)"
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:13"
+  %% @dl nest po-i-gh
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:13"
+  e_svc_gh["GitHub and board interface layer"]
+end
+
+%% @dl entity system
+%% @dl shortName "cluster-mesh"
+%% @dl role "R12 memory hop and DB sync"
+%% @dl evidence "owner-r9:r12-correction-2026-11-07.md:5,9"
+subgraph e_sys_mesh["@sentropic/cluster-mesh"]
+  %% @dl entity service
+  %% @dl shortName "mesh access"
+  %% @dl role "Mandatory R12 memory hop"
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r9:r12-correction-2026-11-07.md:5,9"
+  %% @dl evidence "kit:memory-content-r11.json:287"
+  %% @dl nest po-m-acc
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r9:r12-correction-2026-11-07.md:5,9"
+  e_svc_cmaccess["cluster-mesh memory access (R12)"]
+  %% @dl entity service
+  %% @dl shortName "privacy gate"
+  %% @dl role "Cross-boundary D6/D7/D8/D33"
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:answers-2026-11-08.compact.md:4,5"
+  %% @dl nest po-m-pii
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:answers-2026-11-08.compact.md:4,5"
+  e_svc_pii["Boundary privacy and blacklist gate"]
+  %% @dl entity service
+  %% @dl shortName "DB sync"
+  %% @dl role "Integral SQLite/PG sync"
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:10"
+  %% @dl nest po-m-txsync
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:comments-2026-11-08.md:10"
+  e_svc_txsync["Integral transactional DB cluster sync"]
+  %% @dl entity api mcp
+  %% @dl shortName "MCP registry"
+  %% @dl role "MCP-L4..L8 tool dispatch"
+  %% @dl lifecycle proposed
+  %% @dl evidence "engram:plan/08-BRANCH_MEMORY_FINALIZATION.md:216-220"
+  %% @dl access read-write
+  %% @dl nest po-m-mcpreg
+  %% @dl lifecycle proposed
+  %% @dl evidence "engram:plan/08-BRANCH_MEMORY_FINALIZATION.md:216-220"
+  e_api_mcpreg["MCP provider registry and dispatch"]
+  %% @dl entity api http
+  %% @dl shortName "privacy API"
+  %% @dl role "D6/D7/D8/D33 gate check"
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:answers-2026-11-08.compact.md:4,5"
+  %% @dl access read-only
+  %% @dl nest po-m-piiap
+  %% @dl lifecycle proposed
+  %% @dl evidence "owner-r15:answers-2026-11-08.compact.md:4,5"
+  e_api_pii["Boundary privacy check"]
+end
+
+%% @dl entity repo
+%% @dl role "engram repository"
+%% @dl evidence "engram:package.json:1-5"
+subgraph e_repo_engram["engram"]
+end
+
+%% @dl entity repo
+%% @dl role "h2a and Track repository"
+%% @dl evidence "h2a:package.json:1-5"
+subgraph e_repo_h2a["h2a"]
+end
+
+%% @dl entity repo
+%% @dl role "sentropic repository"
+%% @dl evidence "sentropic:package.json:1-5"
+subgraph e_repo_sentropic["sentropic"]
+end
+
+%% @dl entity host cluster
+%% @dl shortName "Cluster"
+%% @dl role "Cluster-mesh host"
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:10"
+subgraph e_host_cluster["Cluster cluster-mesh"]
+end
+
+%% @dl entity host cloud-project
+%% @dl shortName "GitHub"
+%% @dl role "GitHub cloud host"
+%% @dl evidence "owner-r15:comments-2026-11-08.md:13"
+subgraph e_host_gh["GitHub"]
+end
+
+%% @dl entity host workstation
+%% @dl role "Local workstation"
+%% @dl evidence "h2a:README.md:62"
+subgraph e_host_local["Workstation"]
+end
+
+%% @dl rel mi-engram managedIn e_sys_engram e_repo_engram
+%% @dl evidence "engram:package.json:1-5"
+%% @dl rel ro-dream runsOn e_rt_dream e_host_cluster
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:3,11"
+%% @dl edge ac-dream-graph accesses
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:3,11"
+%% @dl mode write
+e_rt_dream -.->|"writes · consolidates patterns, lessons, decay"| e_st_graph
+%% @dl rel ro-ext runsOn e_rt_ext e_host_cluster
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:19"
+%% @dl rel ac-ext-read accesses e_rt_ext e_st_graph
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:15,19"
+%% @dl mode read
+%% @dl edge ac-ext-write accesses
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:15,19"
+%% @dl mode write
+e_rt_ext -.->|"writes · reads recorded events, writes proposals"| e_st_graph
+%% @dl rel ro-ingest runsOn e_svc_ingest e_host_cluster
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r9:r12-correction-2026-11-07.md:5,9"
+%% @dl rel op-ingest operatedBy e_svc_ingest e_sys_mesh
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r9:r12-correction-2026-11-07.md:5,9"
+%% @dl rel pa-ingest-tools providesApi e_svc_ingest e_api_mtools
+%% @dl lifecycle proposed
+%% @dl evidence "engram:spec/SPEC_MEMORY_MCP_V2.md:49-58"
+%% @dl edge ac-ing-graph accesses
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:15"
+%% @dl mode append
+e_svc_ingest -.->|"appends to · raw session and live-tracking events"| e_st_graph
+%% @dl rel ro-mctrl runsOn e_svc_mctrl e_host_cluster
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:15-16"
+%% @dl rel op-mctrl operatedBy e_svc_mctrl e_sys_mesh
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:15-16"
+%% @dl edge ac-mctrl-graph accesses
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:15-16"
+%% @dl mode write
+e_svc_mctrl -.->|"writes · bounded-list check, D7 blacklist"| e_st_graph
+%% @dl rel ro-serial runsOn e_svc_serial e_host_cluster
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:answers-2026-11-08.compact.md:5"
+%% @dl rel op-serial operatedBy e_svc_serial e_sys_mesh
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:answers-2026-11-08.compact.md:5"
+%% @dl rel ac-ser-git accesses e_svc_serial e_st_git
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:answers-2026-11-08.compact.md:5"
+%% @dl evidence "owner-r15:comments-2026-11-08.md:14"
+%% @dl mode write
+%% @dl rel ob-sys-git ownedBy e_sys_git e_act_owner
+%% @dl evidence "owner-r15:answers-2026-11-08.compact.md:5"
+%% @dl rel mi-h2a managedIn e_sys_h2a e_repo_h2a
+%% @dl evidence "h2a:packages/h2a/package.json:1-5"
+%% @dl rel ro-harn runsOn e_rt_harness e_host_local
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:2"
+%% @dl edge ca-harn-mcpreg consumesApi
+%% @dl lifecycle proposed
+%% @dl evidence "kit:memory-content-r11.json:287"
+%% @dl evidence "owner-r11:mcp-correction-2026-11-07.md:9"
+%% @dl evidence "owner-r15:comments-2026-11-08.md:2,14"
+e_rt_harness -.->|"calls · role ontology, master rules and overlays"| e_api_mcpreg
+%% @dl rel ro-prompt runsOn e_rt_prompt e_host_local
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:3-4"
+%% @dl edge ca-prompt-mcpreg consumesApi
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:3-4"
+%% @dl evidence "owner-r15:answers-2026-11-08.compact.md:5"
+e_rt_prompt -.->|"calls · proposed 7th tool engram_memory_context"| e_api_mcpreg
+%% @dl rel ro-swipe runsOn e_rt_swipe e_host_local
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:12"
+%% @dl edge ca-swipe-mcpreg consumesApi
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r11:mcp-correction-2026-11-07.md:9"
+%% @dl evidence "owner-r15:comments-2026-11-08.md:12"
+e_rt_swipe -.->|"calls · contextualized facts and decisions (D27)"| e_api_mcpreg
+%% @dl rel ro-track runsOn e_rt_track e_host_local
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:13"
+%% @dl edge ca-track-mcpreg consumesApi
+%% @dl lifecycle proposed
+%% @dl evidence "kit:memory-content-r11.json:287"
+%% @dl evidence "owner-r11:mcp-correction-2026-11-07.md:9"
+e_rt_track -.->|"calls · project stream, annotations and control"| e_api_mcpreg
+%% @dl rel ac-track-git accesses e_rt_track e_st_git
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:answers-2026-11-08.compact.md:5"
+%% @dl mode read
+%% @dl rel ro-turn runsOn e_rt_turn e_host_local
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:15"
+%% @dl edge ca-turn-mcpreg consumesApi
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r9:r12-correction-2026-11-07.md:5,9"
+%% @dl evidence "owner-r11:mcp-correction-2026-11-07.md:9"
+%% @dl evidence "owner-r15:comments-2026-11-08.md:15"
+e_rt_turn -.->|"calls · raw turn, tool results (recorded first)"| e_api_mcpreg
+%% @dl rel ob-sys-hmi ownedBy e_sys_hmi e_act_owner
+%% @dl evidence "owner-r15:comments-2026-11-08.md:13"
+%% @dl rel ro-gh runsOn e_svc_gh e_host_gh
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:13"
+%% @dl rel op-gh operatedBy e_svc_gh e_act_owner
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:13"
+%% @dl edge ca-gh-mcpreg consumesApi
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:13"
+e_svc_gh -.->|"calls · input signals and interface read views (D30)"| e_api_mcpreg
+%% @dl rel mi-mesh managedIn e_sys_mesh e_repo_sentropic
+%% @dl evidence "sentropic:packages/cluster-mesh/package.json:1-5"
+%% @dl rel ro-cmacc runsOn e_svc_cmaccess e_host_cluster
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r9:r12-correction-2026-11-07.md:5,9"
+%% @dl rel op-cmacc operatedBy e_svc_cmaccess e_sys_mesh
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r9:r12-correction-2026-11-07.md:5,9"
+%% @dl rel pa-cm-mcpreg providesApi e_svc_cmaccess e_api_mcpreg
+%% @dl lifecycle proposed
+%% @dl evidence "engram:plan/08-BRANCH_MEMORY_FINALIZATION.md:216-220"
+%% @dl edge ca-cm-tools consumesApi
+%% @dl lifecycle proposed
+%% @dl evidence "engram:plan/08-BRANCH_MEMORY_FINALIZATION.md:216-220"
+e_svc_cmaccess -.->|"calls · MCP-L4..L8 provider dispatch"| e_api_mtools
+%% @dl edge ac-cm-graph accesses
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r9:r12-correction-2026-11-07.md:5,9"
+%% @dl mode write
+e_svc_cmaccess -.->|"writes · reads and writes"| e_st_graph
+%% @dl rel ro-pii runsOn e_svc_pii e_host_cluster
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:answers-2026-11-08.compact.md:4,5"
+%% @dl rel op-pii operatedBy e_svc_pii e_sys_mesh
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:answers-2026-11-08.compact.md:4,5"
+%% @dl rel pa-pii providesApi e_svc_pii e_api_pii
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:answers-2026-11-08.compact.md:4,5"
+%% @dl rel ro-txsync runsOn e_svc_txsync e_host_cluster
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:10"
+%% @dl rel op-txsync operatedBy e_svc_txsync e_sys_mesh
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:10"
+%% @dl edge ca-sync-pii consumesApi
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:answers-2026-11-08.compact.md:4,5"
+e_svc_txsync -.->|"calls · cross-workspace/tenant, external model, study"| e_api_pii
+%% @dl edge ac-sync-graph accesses
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:10"
+%% @dl mode write
+e_svc_txsync -.->|"writes · integral local SQLite / remote Postgres sync"| e_st_graph
+%% @dl rel ob-repo-engram ownedBy e_repo_engram e_act_owner
+%% @dl evidence "engram:package.json:1-5"
+%% @dl rel ob-repo-h2a ownedBy e_repo_h2a e_act_owner
+%% @dl evidence "h2a:package.json:1-5"
+%% @dl rel ob-repo-sent ownedBy e_repo_sentropic e_act_owner
+%% @dl evidence "sentropic:package.json:1-5"
+%% @dl rel op-host-cluster operatedBy e_host_cluster e_sys_mesh
+%% @dl lifecycle proposed
+%% @dl evidence "owner-r15:comments-2026-11-08.md:10"
+%% @dl rel op-host-gh operatedBy e_host_gh e_act_owner
+%% @dl evidence "owner-r15:comments-2026-11-08.md:13"
+%% @dl rel op-host-local operatedBy e_host_local e_act_owner
+%% @dl evidence "h2a:README.md:62"
+
+%% @dl view target archi-composition
+%% @dl draw e_api_mcpreg
+%% @dl draw e_api_mtools
+%% @dl draw e_api_pii
+%% @dl draw e_rt_dream
+%% @dl draw e_rt_ext
+%% @dl draw e_rt_harness
+%% @dl draw e_rt_prompt
+%% @dl draw e_rt_swipe
+%% @dl draw e_rt_track
+%% @dl draw e_rt_turn
+%% @dl draw e_st_git
+%% @dl draw e_st_graph
+%% @dl draw e_svc_cmaccess
+%% @dl draw e_svc_gh
+%% @dl draw e_svc_ingest
+%% @dl draw e_svc_mctrl
+%% @dl draw e_svc_pii
+%% @dl draw e_svc_serial
+%% @dl draw e_svc_txsync
+%% @dl draw e_sys_engram
+%% @dl draw e_sys_git
+%% @dl draw e_sys_h2a
+%% @dl draw e_sys_hmi
+%% @dl draw e_sys_mesh
+%% @dl expanded e_sys_engram
+%% @dl expanded e_sys_git
+%% @dl expanded e_sys_h2a
+%% @dl expanded e_sys_hmi
+%% @dl expanded e_sys_mesh
+
+classDef dashed stroke-dasharray: 5 5
+class e_api_mcpreg,e_api_mtools,e_api_pii,e_host_cluster,e_rt_dream,e_rt_ext,e_rt_harness,e_rt_prompt,e_rt_swipe,e_rt_track,e_rt_turn,e_st_git,e_svc_cmaccess,e_svc_gh,e_svc_ingest,e_svc_mctrl,e_svc_pii,e_svc_serial,e_svc_txsync dashed
