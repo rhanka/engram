@@ -301,3 +301,62 @@ describe("sliceGraphByTime — rejected inputs", () => {
     ).toThrow(/no numeric 't' stamps/);
   });
 });
+
+
+import { existsSync as mlExists, mkdirSync as mlMkdir, readFileSync as mlRead, writeFileSync as mlWrite } from "node:fs";
+import { join as mlJoin } from "node:path";
+import { vi as mlVi } from "vitest";
+import { runGraphTimeSlice } from "../src/graph-time-slice.js";
+import * as mlCitations from "../src/citations.js";
+import { tempDir as mlTemp, edge as mlEdge, node as mlNode, type Row as MlRow } from "./helpers/multi-links.js";
+const mlTimed = (format: string) => ({ graph_format:format,multigraph:true,nodes:[mlNode("a",{t:1}),mlNode("b",{t:1})],links:[mlEdge({relation:"reads",t:1}),mlEdge({relation:"writes",t:1}),mlEdge({source:"b",target:"a",t:1})] });
+describe("L0-S time slice", () => {
+  for (const injected of [false,true]) for (const force of [false,true]) describe((injected?"injected":"file") + "/force=" + force, () => {
+    it.fails("R4-time-slice-unknown-format-zero-writes", () => {
+      const sourceDir=mlTemp(), destDir=mlTemp();
+      const source=mlJoin(sourceDir,"graph.json"),out=mlJoin(destDir,"graph.json"),sidecar=mlJoin(destDir,"ontology/citations.json");
+      const raw=mlTimed("engram-graph/3");
+      mlWrite(source,JSON.stringify(raw));
+      mlMkdir(mlJoin(destDir,"ontology"));
+      mlCitations.writeCitationsSidecarWithSignature(sourceDir,{a:{count:1,citations:[{source_file:"f.ts",page:1}]}},"source-signature");
+      mlWrite(sidecar,"sidecar sentinel");
+      if(force) mlWrite(out,"graph sentinel");
+      const graphWriter=mlVi.fn();
+      const sidecarWriter=mlVi.spyOn(mlCitations,"writeCitationsSidecarWithSignature");
+      try {
+        let error: any;
+        try { runGraphTimeSlice({graph:source,out,since:0,until:10,force},{...(injected?{readGraph:()=>raw,writeGraph:graphWriter}:{}),log:()=>{}}); } catch(e) { error=e; }
+        expect(error, "unknown format must be rejected at the synchronous raw writer boundary").toMatchObject({name:"UnsupportedGraphFormatError",code:"unsupported-graph-format"});
+        expect(graphWriter).not.toHaveBeenCalled();
+        expect(sidecarWriter).not.toHaveBeenCalled();
+        expect(force?mlRead(out,"utf8"):mlExists(out)).toBe(force?"graph sentinel":false);
+        expect(mlRead(sidecar,"utf8")).toBe("sidecar sentinel");
+        expect(mlRead(source,"utf8")).toBe(JSON.stringify(raw));
+      } finally {sidecarWriter.mockRestore();}
+    });
+  });
+  it("R4-time-slice-known-v2-parallel-survives", () => {
+    for(const injected of [false,true]) {
+      const raw=mlTimed("engram-graph/2"), source=mlJoin(mlTemp(),"graph.json"),out=mlJoin(mlTemp(),"graph.json");
+      mlWrite(source,JSON.stringify(raw));
+      let written: MlRow | undefined;
+      const run=runGraphTimeSlice({graph:source,out,since:0,until:10},{...(injected?{readGraph:()=>raw,writeGraph:(_path:string,contents:string)=>{written=JSON.parse(contents);}}:{}),log:()=>{}});
+      const output=injected?written:JSON.parse(mlRead(out,"utf8"));
+      expect(run.written).toBe(true);
+      expect(output!.links).toEqual(raw.links);
+      expect(output!.nodes).toEqual(raw.nodes);
+      expect(output!.graph_format).toBe("engram-graph/2");
+    }
+  });
+  it("unknown-format temporal inspection performs no graph or sidecar writes", () => {
+    const graphWriter=mlVi.fn(),sidecarWriter=mlVi.spyOn(mlCitations,"writeCitationsSidecarWithSignature");
+    try {
+      let run, error;
+      try { run=runGraphTimeSlice({graph:mlJoin(mlTemp(),"graph.json"),since:0,until:10},{readGraph:()=>mlTimed("engram-graph/3"),writeGraph:graphWriter,log:()=>{}}); } catch(e) { error=e; }
+      if(error) expect(error).toMatchObject({name:"UnsupportedGraphFormatError",code:"unsupported-graph-format"});
+      else { expect(run!.written).toBe(false); expect(run!.result.graph.links).toHaveLength(3); }
+      expect(graphWriter).not.toHaveBeenCalled();
+      expect(sidecarWriter).not.toHaveBeenCalled();
+    } finally {sidecarWriter.mockRestore();}
+  });
+});

@@ -2042,3 +2042,58 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
     }
   });
 });
+
+
+import { edge as mlEdge, extraction as mlExtraction, rows as mlRows, observation as mlObservation, expectObservations as mlObs, expectFixedPoint as mlFixed } from "./helpers/multi-links.js";
+import { batchFixture as mlBatchFixture, batchIntake as mlBatchIntake, batchSha as mlBatchSha } from "./helpers/multi-links-batch.js";
+describe("L0-R/C batch",()=>{
+ for(const scope of ["cross-document","per-source-file"] as const) describe(scope,()=>{
+  it.fails("batch-distinct-scalar-locators-kept",async()=>{
+   const {buildFromJson}=await import("../src/build.js");
+   const emissions=["L10","L44"].map(loc=>mlEdge({source_location:loc,citations:[{source_file:"f.ts",excerpt:loc}]}));
+   const result=mergeExtractionsWithCitations(emissions.map(e=>mlExtraction([e])),{edgeKeyScope:scope});
+   expect(result.extraction.edges).toHaveLength(1);
+   const G=buildFromJson(result.extraction);mlObs(mlRows(G)[0],emissions.map(mlObservation));mlFixed(G,emissions);
+  });
+  it.fails("B1-reciprocal-effective-batch-separation",async()=>{
+   const {buildFromJson}=await import("../src/build.js");
+   const emissions=[mlEdge({_src:"a",_tgt:"b",source_location:"L1"}),mlEdge({_src:"b",_tgt:"a",source_location:"L2"})];
+   const result=mergeExtractionsWithCitations(emissions.map(e=>mlExtraction([e])),{edgeKeyScope:scope});
+   expect(result.extraction.edges).toHaveLength(2);
+   const G=buildFromJson(result.extraction);expect(G.size).toBe(2);
+   for(const e of emissions){const row=mlRows(G).find(r=>r.source===e._src&&r.target===e._tgt)!;mlObs(row,[mlObservation(e)]);expect([row.source,row.target,row._src,row._tgt]).toEqual([e._src,e._tgt,e._src,e._tgt]);}
+   mlFixed(G,emissions);
+  });
+  it.fails("B1-same-effective-different-raw-order-coalesces",async()=>{
+   const {buildFromJson}=await import("../src/build.js");
+   const emissions=[mlEdge({_src:"a",_tgt:"b",source_location:"L1"}),mlEdge({source:"b",target:"a",_src:"a",_tgt:"b",source_location:"L2"})];
+   const G=buildFromJson(mergeExtractionsWithCitations(emissions.map(e=>mlExtraction([e])),{edgeKeyScope:scope}).extraction);
+   expect(G.size).toBe(1);mlObs(mlRows(G)[0],emissions.map(mlObservation));mlFixed(G,emissions);
+  });
+ });
+ it.fails("batch-citation-normalisation-never-reapplied-to-stored",async()=>{
+  const {buildFromJson}=await import("../src/build.js");
+  const storedRecord={citations:[{docSha:"b".repeat(64),page:1,quote:"legacy",quoteSpan:[0,5],source_file:"legacy.pdf"}],confidence:"EXTRACTED",source_file:"/legacy/paper.pdf",source_location:"STORED"};
+  const input=mlBatchFixture({source_location:"STORED",evidence_observations:[storedRecord],citations:storedRecord.citations});
+  const fresh=mlBatchFixture({source_location:"FRESH",citations:[{source_file:"wrong.pdf",docSha:"c".repeat(64),page:1,quoteSpan:[0,5],quote:"Alpha"}]}).edges[0];
+  input.edges.push(fresh);
+  const before=JSON.stringify(storedRecord);
+  const accepted=await mlBatchIntake(input,"/repo");
+  const G=buildFromJson(accepted,{root:"/repo"}),obs=mlRows(G)[0].evidence_observations;
+  expect(obs).toHaveLength(2);
+  expect(JSON.stringify(obs.find((r:any)=>r.source_location==="STORED"))).toBe(before);
+  const normalized=obs.find((r:any)=>r.source_location==="FRESH");
+  expect(normalized.citations).toEqual([{source_file:"/repo/f.ts",docSha:mlBatchSha,page:1,quoteSpan:[0,5],quote:"Alpha"}]);
+  expect(normalized.source_file).toBe("f.ts");
+  expect(JSON.stringify(storedRecord)).toBe(before);
+  mlFixed(G,accepted.edges);
+ });
+ it.fails("R4-batch-no-root-preserves-absolute-locator",async()=>{
+  const {buildFromJson}=await import("../src/build.js");
+  const e=mlEdge({source_file:"/repo/f.ts",source_location:"L1"});
+  const result=mergeExtractionsWithCitations([mlExtraction([e])]);
+  expect(result.extraction.edges[0].evidence_observations).toEqual([mlObservation(e)]);
+  const G=buildFromJson(result.extraction,{root:"/repo"});
+  expect(mlRows(G)[0].source_file).toBe("/repo/f.ts");mlObs(mlRows(G)[0],[mlObservation(e)]);mlFixed(G,result.extraction.edges);
+ });
+});

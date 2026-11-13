@@ -1,0 +1,8 @@
+{
+  "directed": true,
+  "nodes": [{ "id": "a" }, { "id": "b" }],
+  "links": [
+    { "source": "a", "target": "b", "relation": "calls", "source_file": "f.ts" },
+    { "source": "b", "target": "a", "relation": "calls", "source_file": "f.ts" }
+  ]
+}

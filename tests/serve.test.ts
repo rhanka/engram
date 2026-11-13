@@ -1367,3 +1367,45 @@ cliSmoke("ignores blank MCP stdio lines instead of terminating", async () => {
     ]);
   }
 });
+
+
+import { withMcp as mlMcp } from "./helpers/multi-links-mcp.js";
+import { edge as mlEdge, node as mlNode } from "./helpers/multi-links.js";
+describe("L0-T traversal",()=>{
+ for(const shape of ["reverse-only","reciprocal","directed","as-stored","filter","budget"]) describe(shape,()=>{
+  (shape==="directed"||shape==="as-stored"||shape==="budget"?it:it.fails)("reverse-only-hop-and-incoming-arrows",async()=>{
+   const forward=mlEdge({_src:"a",_tgt:"b",source_location:"L1"});
+   const reciprocal=mlEdge({source:"b",target:"a",_src:"b",_tgt:"a",confidence:"INFERRED",source_location:"L2"});
+   const links=shape==="reciprocal"||shape==="filter"?[forward,reciprocal,mlEdge({relation:"reads",_src:"a",_tgt:"b"})]:[shape==="as-stored"?mlEdge():forward];
+   await mlMcp({directed:shape==="directed",nodes:[mlNode("a",{label:"Caller"}),mlNode("b",{label:"Callee"})],links},async call=>{
+    const neighbors=await call("get_neighbors",{label:"Callee",...(shape==="filter"?{relation_filter:"reads"}:{})});
+    const path=await call("shortest_path",{source:"Callee",target:"Caller"});
+    const query=await call("query_graph",{question:"Callee",token_budget:2000});
+    if(shape==="directed"){
+     expect(neighbors).not.toMatch(/\[calls\]/);expect(path).toContain("No path found");
+    }else if(shape==="reverse-only"){
+     expect(neighbors).toMatch(/<-- Caller \[calls\] \[EXTRACTED\]/);
+     expect(path).toMatch(/<--calls \[EXTRACTED\]--/);
+     expect(query).toMatch(/EDGE.*calls.*EXTRACTED/);
+    }else if(shape==="reciprocal"){
+     expect(neighbors).toMatch(/<-- Caller \[calls\] \[EXTRACTED\]/);
+     expect(neighbors).toMatch(/--> Caller \[calls\] \[INFERRED\]/);
+     expect(neighbors.match(/\[(calls|reads)\]/g)).toHaveLength(3);
+     expect(query.split("\n").filter(l=>l.startsWith("EDGE "))).toHaveLength(3);
+    }else if(shape==="filter"){
+     expect(neighbors).toContain("[reads]");expect(neighbors).not.toContain("[calls]");
+     expect(neighbors).toContain("<-- Caller");
+    }else if(shape==="as-stored"){
+     expect(neighbors).toContain("Caller");expect(neighbors).toContain("[calls]");expect(path).toContain("calls");
+    }else{
+     const raw={nodes:[mlNode("a",{label:"Caller"}),...Array.from({length:20},(_,i)=>mlNode("peer"+i,{label:"Neighbor"+i+"x".repeat(40)}))],links:Array.from({length:20},(_,i)=>mlEdge({target:"peer"+i}))};
+     await mlMcp(raw,async boundedCall=>{
+      const full=await boundedCall("get_neighbors",{label:"Caller",token_budget:2000});
+      const limited=await boundedCall("get_neighbors",{label:"Caller",token_budget:128});
+      expect(limited.length).toBeLessThan(full.length);expect(limited).toMatch(/truncat|budget|omitted/i);
+     });
+    }
+   });
+  });
+ });
+});

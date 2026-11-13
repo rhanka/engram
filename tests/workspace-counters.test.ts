@@ -86,3 +86,55 @@ describe("Track G G6-1 — counters row", () => {
     expect(idxGraphPanel).toBeGreaterThan(idxCounters);
   });
 });
+
+
+import { readFileSync as mlRead } from "node:fs";
+import { computeFocusSubgraph as mlFocus } from "../src/workspace/graph-selection.js";
+import { buildStudioScene as mlTsScene } from "../src/studio-scene.js";
+import { buildScene as mlJsScene, computeDegrees as mlDegrees } from "../studio/src/lib/graphAdapter.js";
+import { buildGraphRendererPayload as mlPayload } from "../studio/src/lib/graphRendererPayload.js";
+const mlFive=JSON.parse(mlRead(new URL("./fixtures/multi-links/m4-five-node-degree.json",import.meta.url),"utf8"));
+const mlNodes=mlFive.nodes.map((n:any,i:number)=>({...n,label:n.id,weight:1,shape:"dot",x:i,y:0}));
+const mlBase=mlFive.links;
+const mlAdded=[...mlBase,...["r2","r3","r4"].map(relation=>({source:"a",target:"b",relation}))];
+describe("L0-T five-node",()=>{
+ for(const surface of ["workspace","TS scene","browser scene","churn fallback","packed label priority"]) describe(surface,()=>{
+  it.fails("M4-five-node-topology-invariant",()=>{
+   if(surface==="workspace"){
+    const before=mlFocus({nodes:mlNodes,edges:mlBase},createDefaultViewerState()).metrics;
+    const after=mlFocus({nodes:mlNodes,edges:mlAdded},createDefaultViewerState()).metrics;
+    expect(before.averageDegree).toBe(1.2);expect(before.topHubId).toBe("c");
+    expect(after.averageDegree).toBe(1.2);expect(after.topHubId).toBe("c");expect(after.density).toBe(before.density);expect([before.edges,after.edges]).toEqual([3,6]);
+   }
+   if(surface==="TS scene"||surface==="browser scene"){
+    const build=surface==="TS scene"?mlTsScene:mlJsScene;
+    const before=build({nodes:mlNodes,edges:mlBase}),after=build({nodes:mlNodes,edges:mlAdded});
+    expect(after.nodes.map((n:any)=>({id:n.id,weight:n.weight,shape:n.shape}))).toEqual(before.nodes.map((n:any)=>({id:n.id,weight:n.weight,shape:n.shape})));
+    if(surface==="browser scene")expect(mlDegrees(mlNodes,mlAdded).get("a")).toBe(1);
+   }
+   if(surface==="churn fallback"){
+    const before=mlPayload({nodes:mlNodes,edges:mlBase},{colorBy:"churn"}),after=mlPayload({nodes:mlNodes,edges:mlAdded},{colorBy:"churn"});
+    expect(Array.from(after.baseStyle.nodeColors)).toEqual(Array.from(before.baseStyle.nodeColors));
+   }
+   if(surface==="packed label priority"){
+    // Extend the five-node fixture by one equally peripheral label so the
+    // public top-5 gate actually has a competing sixth candidate.
+    const ids=["c","d","e","z","b","a"];
+    const nodes=ids.map((id,i)=>({id,label:id,node_type:"Character",shape:"roundedbox",weight:1,x:i,y:0}));
+    const baseline=[...mlBase,{source:"c",target:"z",relation:"r1"}],parallel=[...mlAdded,{source:"c",target:"z",relation:"r1"}];
+    const before=mlPayload({nodes,edges:baseline},{zoom:0}),after=mlPayload({nodes,edges:parallel},{zoom:0});
+    expect(before.baseStyle.nodeLabels.filter(Boolean)).toHaveLength(5);
+    expect(after.baseStyle.nodeLabels).toEqual(before.baseStyle.nodeLabels);
+   }
+  });
+ });
+ it.fails("scene loop topology counts itself once",()=>{
+  expect(mlDegrees([{id:"a"}],[{source:"a",target:"a",relation:"calls"}]).get("a")).toBe(1);
+ });
+ it("browser structural edges do not feed topology sizing",()=>{
+  const extra=[...mlBase,{source:"a",target:"c",structural:true,relation:"membership"}];
+  expect([...mlDegrees(mlNodes,extra)]).toEqual([...mlDegrees(mlNodes,mlBase)]);
+  const base=mlJsScene({nodes:mlNodes,edges:mlBase}),withStructural=mlJsScene({nodes:mlNodes,edges:extra});
+  expect(withStructural.nodes.map((n:any)=>n.weight)).toEqual(base.nodes.map((n:any)=>n.weight));
+ });
+});

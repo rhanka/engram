@@ -254,3 +254,40 @@ describe("scoreAll", () => {
     expect(scores.get(1)).toBe(1.0);
   });
 });
+
+
+import { readFileSync as mlRead } from "node:fs";
+import { loadGraphFromData as mlLoad } from "../src/graph.js";
+import { edge as mlEdge, node as mlNode, multiGraph as mlGraph, fromRows as mlBuild } from "./helpers/multi-links.js";
+// Parse fixtures outside expected-failure bodies: malformed JSON is never a red acceptance success.
+const mlBaseline=JSON.parse(mlRead(new URL("./fixtures/multi-links/cluster-fixture.json",import.meta.url),"utf8"));
+const mlGolden=JSON.parse(mlRead(new URL("./fixtures/multi-links/expected-partition.json",import.meta.url),"utf8"));
+const mlWeighted=JSON.parse(mlRead(new URL("./fixtures/multi-links/cluster-weighted.json",import.meta.url),"utf8"));
+const mlMembership=(partition:Map<number,string[]>)=>[...partition.values()].map(ns=>[...ns].sort()).sort((a,b)=>b.length-a.length||JSON.stringify(a).localeCompare(JSON.stringify(b)));
+function mlProjection(policy:"max"|"sum"){
+ const G=new Graph({type:"undirected"});mlWeighted.nodes.forEach((n:any)=>G.addNode(n.id));
+ for(const e of mlWeighted.edges){const previous=G.hasEdge(e.source,e.target)?G.getEdgeAttribute(e.source,e.target,"weight"):undefined;G.mergeEdge(e.source,e.target,{weight:previous===undefined?e.weight:policy==="max"?Math.max(previous,e.weight):previous+e.weight});}
+ return G;
+}
+describe("L0-T cluster",()=>{
+ it("restricted baseline golden keeps the isolate separate",()=>{expect([...cluster(mlBuild(mlBaseline.edges,{},mlBaseline.nodes)).entries()]).toEqual(mlGolden);});
+ it("weighted fixture proves the sum mutant differs from max",()=>{
+  expect(mlMembership(cluster(mlProjection("max")))).toEqual(mlWeighted.max);
+  expect(mlMembership(cluster(mlProjection("sum")))).toEqual(mlWeighted.sum);
+  expect(mlWeighted.sum).not.toEqual(mlWeighted.max);
+ });
+ it.fails("cluster-golden-max-not-sum",()=>{
+  const G=mlGraph(mlWeighted.edges,mlWeighted.nodes);
+  expect(mlMembership(cluster(G))).toEqual(mlWeighted.max);
+ });
+ it.fails("cohesion ignores parallel links and self loops",()=>{
+  const G=mlGraph([mlEdge(),mlEdge({relation:"references"}),mlEdge({source:"a",target:"c"}),mlEdge({source:"b",target:"c"}),mlEdge({source:"a",target:"a"})],[mlNode("a"),mlNode("b"),mlNode("c")]);
+  expect(cohesionScore(G,["a","b","c"])).toBe(1);
+ });
+ it.fails("hub exclusion is invariant to relation multiplicity",()=>{
+  const nodes=["a","b","c","d","e"].map(id=>mlNode(id));
+  const base=[mlEdge(),mlEdge({source:"c",target:"d"}),mlEdge({source:"c",target:"e"})];
+  const extra=[...base,...["r1","r2","r3"].map(relation=>mlEdge({relation}))];
+  expect(mlMembership(cluster(mlGraph(extra,nodes),{excludeHubsPercentile:75}))).toEqual(mlMembership(cluster(mlGraph(base,nodes),{excludeHubsPercentile:75})));
+ });
+});
