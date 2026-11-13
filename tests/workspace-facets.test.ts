@@ -3,7 +3,7 @@
  *
  * Scans the dataset for filterable string fields and exposes them as
  * generic facet sections. The contract is profile-neutral: no
- * corpus-specific keys (no `framework`, no `abp`, no `aclp`) are
+ * corpus-specific keys (no `framework`, no `abp`, no `process_std`) are
  * hardcoded.
  */
 import { describe, expect, it } from "vitest";
@@ -29,7 +29,7 @@ describe("Track G G6-2 — FACETS auto-discovery", () => {
     expect(keys).toEqual(["operation", "score_bucket", "source_kind", "status"]);
   });
 
-  it("hard-blocks corpus-specific keys (framework / abp / aclp / hasMedia)", () => {
+  it("hard-blocks corpus-specific keys (framework / abp / process_std / hasMedia)", () => {
     const dirty: WorkspaceFacetRecord[] = [
       { id: "1", framework: "abp", hasMedia: true, status: "approved" },
     ];

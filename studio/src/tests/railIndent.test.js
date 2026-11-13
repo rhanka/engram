@@ -23,7 +23,7 @@ describe("railIndent — the step decays with the row's rendered depth", () => {
     }
   });
 
-  it("actually shrinks over the depths the ACLP-shaped tree reaches", () => {
+  it("actually shrinks over the depths the process-std-shaped tree reaches", () => {
     // Not merely "non-increasing": a deep row must cost visibly less than a
     // shallow one, otherwise the rail is eaten before the leaves are reached.
     expect(indentStepRem(5)).toBeLessThan(indentStepRem(0) / 2);

@@ -8,7 +8,7 @@
  * MENTIONS it (the entity-linking seed path). Registries whose rows are mostly
  * unmentioned therefore land in the graph in a famished state:
  *
- *   aclp-processes      2282 rows → 2282 nodes  (every row is cited)
+ *   process-std-processes      2282 rows → 2282 nodes  (every row is cited)
  *   business-objects     771 rows →  769 nodes
  *   abp-processes       2030 rows →  186 nodes  ← famished
  *   organization-units   471 rows →    0 nodes  ← absent

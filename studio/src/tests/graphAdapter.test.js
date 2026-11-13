@@ -128,7 +128,7 @@ describe("graphAdapter mapping", () => {
         {
           id: "AM0104.01",
           label: "Manage identity",
-          type: "ACLPProcess",
+          type: "ProcessStdProcess",
           status: "validated",
           ontology_status: "validated",
           parent_id: "AM0104",
@@ -156,14 +156,14 @@ describe("graphAdapter mapping", () => {
           review_status: "candidate",
           derivation_method: "llm_guess",
           confidence_score: 0.62,
-          evidence_refs: ["registry#aclp"],
+          evidence_refs: ["registry#process_std"],
         },
       ],
     });
 
     expect(scene.nodes[0]).toMatchObject({
       id: "AM0104.01",
-      type: "ACLPProcess",
+      type: "ProcessStdProcess",
       status: "validated",
       ontology_status: "validated",
       parent_id: "AM0104",
@@ -189,7 +189,7 @@ describe("graphAdapter mapping", () => {
       review_status: "candidate",
       derivation_method: "llm_guess",
       confidence_score: 0.62,
-      evidence_refs: ["registry#aclp"],
+      evidence_refs: ["registry#process_std"],
       weak: true,
     });
   });

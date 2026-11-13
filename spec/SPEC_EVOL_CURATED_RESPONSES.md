@@ -93,15 +93,15 @@ Table `answer_cache` (`models.py:1063-1087`):
 
 **Cost: M** (ledger + read-through in `answer` CLI/MCP + serving gate + Studio badge). The curation *authoring* CLI (`graphify curate "<question>"` promoting a live answer-pack result into the ledger) is another **S** on top.
 
-## 3. Adoption target (b) — aclp-am (ontology/hierarchy domain)
+## 3. Adoption target (b) — process-std-am (ontology/hierarchy domain)
 
 Curated answers over **lots / features / orgs** — questions like "why is lot X split from Y", "which org owns feature Z", "what is the validated hierarchy for domain D".
 
-- **What a curated response is here:** a ratified statement about the ontology, citing (i) source documents/chunks and (ii) **hierarchy-sidecar entries**. aclp-am already has the exact lifecycle primitive: the WP4 G2 hierarchy sidecar (`graphify_scene_hierarchies_v1`) is **two-lane — `validé` / `proposé`**. Curated responses generalize the two-lane model from *hierarchy edges* to *answers*: machine writes into the `proposé` lane; a human (or a mandated review agent) promotes to `validé`; only `validé` records serve with the curated badge.
+- **What a curated response is here:** a ratified statement about the ontology, citing (i) source documents/chunks and (ii) **hierarchy-sidecar entries**. process-std-am already has the exact lifecycle primitive: the WP4 G2 hierarchy sidecar (`graphify_scene_hierarchies_v1`) is **two-lane — `validé` / `proposé`**. Curated responses generalize the two-lane model from *hierarchy edges* to *answers*: machine writes into the `proposé` lane; a human (or a mandated review agent) promotes to `validé`; only `validé` records serve with the curated badge.
 - **Where it lives:** a sidecar lane file next to the hierarchy sidecar (same bundle, graphify-side, not engine-side — consistent with the signed WP4 contract that the bundle lives in graphify). NOT graph nodes, for the same overlay reason as §2. A track-like append-only ledger fits the ratification trail (who promoted, when, superseding which record) — repowise's `decision_records` accretion model (`evidence rows accrete rather than overwrite`, `superseded_by`) is the schema to emulate.
 - **Invariants:** promotion to `validé` requires every citation to resolve at promotion time; any later reconciliation run that invalidates a cited hierarchy edge flips the record to `stale` (change-driven decay, repowise §1.5) and it drops out of the serving set until re-ratified.
 
-**Cost: M** once target (a)'s record schema exists (reuse schema + lanes; the promotion workflow is the new part). Requires a contract addendum with the aclp-am peer — **do not start before target (a) stabilizes the record schema.**
+**Cost: M** once target (a)'s record schema exists (reuse schema + lanes; the promotion workflow is the new part). Requires a contract addendum with the process-std-am peer — **do not start before target (a) stabilizes the record schema.**
 
 ## 4. Adoption target (c) — nc-fullstack (retrieval client)
 
@@ -118,7 +118,7 @@ nc-fullstack-style retrieval is "a particular application of graphify" (#192). A
 ## 5. Options & recommendation (summary)
 
 - **Store**: sidecar JSONL ledger (A), optional DB mirror (C), reject graph-node storage (B).
-- **Schema** (one record): `{question, question_hash, answer, citations[], confidence, origin, curator, model?, created_at, graph_stamp, status: proposé|validé|stale|superseded, superseded_by?}` — single-JSON-payload for shape stability (repowise trick), two-lane status for the aclp-am lifecycle.
+- **Schema** (one record): `{question, question_hash, answer, citations[], confidence, origin, curator, model?, created_at, graph_stamp, status: proposé|validé|stale|superseded, superseded_by?}` — single-JSON-payload for shape stability (repowise trick), two-lane status for the process-std-am lifecycle.
 - **Serving gate** at read time (files path) / pack-assembly time (published packs): full-resolve → serve; partial → excerpts; none → suppress.
 - **Sequencing**: (a) first (schema + ledger + gate on the existing #192 seam), then (c) (cheap client consumption), then (b) (needs peer contract).
 - **Adopt separately, any time**: the **counterfactual savings accounting** idea (§1.5) — log what a `graphify query`/`answer` response replaced; independent of curation and cheap to prototype on the MCP serve path.
@@ -128,5 +128,5 @@ nc-fullstack-style retrieval is "a particular application of graphify" (#192). A
 1. **Go/no-go on the sidecar ledger** (`.graphify/curated/answers.jsonl`) as a graphify feature at all — it adds a second knowledge artifact class next to the graph (we said "stockage = TOUTES les options / additif", this fits, but it is a product-surface decision).
 2. **Who may curate**: humans only, or also an LLM curation pass whose records stay in `proposé` until human promotion (repowise is machine-first with human notes; our anti-hallucination posture argues human-promotion-only for `validé`).
 3. **Invalidation policy**: repowise-style brutal (drop all curated records on every graph rebuild — cheap, safe, but destroys human curation work) vs. our proposed citation re-resolution gate (keeps records alive across rebuilds when citations still resolve). **Reco: re-resolution gate** — human curation is too expensive to drop wholesale; but this is the riskiest invariant and deserves an explicit call.
-4. **aclp-am contract**: extend the WP4 G2 sidecar contract with a curated-answers lane, or a separate sidecar? (Peer negotiation either way.)
+4. **process-std-am contract**: extend the WP4 G2 sidecar contract with a curated-answers lane, or a separate sidecar? (Peer negotiation either way.)
 5. **Savings accounting**: adopt the counterfactual `mcp:<tool>` accounting as a separate mini-lot? (Independent, S-size, high demo value.)

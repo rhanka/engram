@@ -1,13 +1,14 @@
 // Engram corpus manifest for the diagram lot (frozen spec M3-R4
-// deb64b75, §8). Every §8 item is listed: A1–A5 instances, HRPN frozen
+// d87220cd, §8). Every §8 item is listed: A1–A5 instances, HRPN frozen
 // fixtures and producer snapshots, S2-target, the §8.7 derived oracle,
 // the sealed identity vectors and the BPMN corpus items assigned to
 // Engram (§6.3). Each entry carries its immutable source (repository
 // revision and path) and its raw-byte sha256. A manifest test fails if
 // any §8 item is missing or if any carried sha256 drifts. Fixture bytes
-// carried in this repository are stored verbatim under tests/fixtures;
-// remote-only sources resolve with git show revision:path and are never
-// re-read from a mutable path.
+// carried in this repository are scrubbed local snapshots under tests/fixtures.
+// Source metadata records their origin using neutral repository aliases;
+// sha256 pins the local bytes, which can differ from the external revision.
+// Cross-repository pins requiring coordination are recorded in .scrub/REPORT.md.
 import type { Digest } from "./types.js";
 
 export interface CorpusSource {
@@ -52,95 +53,95 @@ export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
     "id": "instance:A2",
     "kind": "instance",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/architecture/hrpn/ds-fixtures/S2-asbuilt.json"
     },
-    "sha256": "7abc427f7beca5b0f87947efc9df4daf6316f24725074f47f1da2b04be76ba2e",
+    "sha256": "89f0532b5687703002e5f52a3a2cfe0540a675698e106ee50dbba09aed6298fe",
     "expectation": "41 node / 17 container / 1 legend / 4 legend-key, 58 contains / 44 link, 7 dashed / 37 solid; all-expanded"
   },
   {
     "id": "instance:A3",
     "kind": "instance",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/architecture/hrpn/ds-fixtures/S2-target.json"
     },
-    "sha256": "28a7271dd0bec89fa9ad435174a614ab4a40b346b10724da95736f9c55b574d9",
+    "sha256": "7b934c66bd85a9c0d47607f89f9624ae71116c372bdb479900b786ebb1f36087",
     "expectation": "51 node / 22 container / 1 legend / 4 legend-key, 73 contains / 54 link, 0 dashed / 54 solid; all-expanded"
   },
   {
     "id": "instance:A4a",
     "kind": "instance",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/architecture/hrpn/ds-fixtures/S1-conversational.json"
     },
-    "sha256": "d9f7f7cb80894b5301e11cc7b7f0fc2775d1933aa15013152001395d716a32c7",
+    "sha256": "5e98a495e502f8913cbb93d6feddc233193f39f72c43a1c151f4ad430978c881",
     "expectation": "23 node / 17 container / 1 legend / 5 legend-key, 41 contains / 24 link, 10 dashed / 14 solid; all-expanded"
   },
   {
     "id": "instance:A4b",
     "kind": "instance",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/architecture/hrpn/ds-fixtures/S3-agentfactory.json"
     },
-    "sha256": "e362b9a8da84082e5389127ae463d282fb773ef8950f41017222e0b3ef9002fc",
+    "sha256": "53efdb2f4e41551940e8c61ab4500cfb77d7789690f4577f093e58f32ceb7dbe",
     "expectation": "37 node / 15 container / 1 legend / 5 legend-key, 53 contains / 36 link, 3 dashed / 33 solid; all-expanded"
   },
   {
     "id": "instance:A5-semantic",
     "kind": "instance",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/architecture/hrpn/engram/S2-target.semantic.json"
     },
-    "sha256": "46f64154bb6592d49ccda5633b2c4d4205fb1c6752ef218be31d6757923ecf91",
+    "sha256": "aea6a7ecc2b71a1a5fd22bc60452e29530601b908ebe33256edf76b0e9fd2988",
     "expectation": "56 entities / 82 relations, every id survives; standard-slot conversion per §8.4 ledger"
   },
   {
     "id": "instance:A5-view",
     "kind": "instance",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/architecture/hrpn/engram/S2-target.view.json"
     },
-    "sha256": "82930614efe070bdb8e5acce3aecea29dfdb2d1ab625b7d376507f97fb6f8b50",
+    "sha256": "f01b08e0752269e01b3bcd1225a0d103e3e2d1833dac5484f649595c09c008f0",
     "expectation": "typed presentation in presentation.diagram; 7 default folds; revision 1"
   },
   {
     "id": "instance:A5-manifest",
     "kind": "instance",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/architecture/hrpn/engram/MANIFEST.json"
     },
-    "sha256": "54ef0dd0ac0e923aa99435625780902d07c3819e9c2c340868c921d1f956fd91",
+    "sha256": "4dc26793522c6441afdfc3f19d6f71b531e847ffc0650b68952072dfdff9223e",
     "expectation": "A5 source manifest; provenance of the frozen snapshot, never a producer pin"
   },
   {
     "id": "s2-target:figures",
     "kind": "frozen-fixture",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/ard/decision/focus/.generated/figures/figures.json"
     },
-    "sha256": "83935a169f04ab48df155f324dee6fbf336a502fd2b8cdc260ae03c0a6962719",
+    "sha256": "eeaa51981ec9fb37b3d839a3290b21014812aea1ff322660829bad9ccdd6bef8",
     "expectation": "S2-target figure bytes; frozen target sceneHash b631abb4…"
   },
   {
     "id": "s2-target:png",
     "kind": "frozen-fixture",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/ard/decision/focus/.generated/figures/S2-target.png"
     },
@@ -151,7 +152,7 @@ export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
     "id": "s2-target:reference-png",
     "kind": "frozen-fixture",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/architecture/hrpn/ds-fixtures/reference/S2-target.png"
     },
@@ -162,62 +163,62 @@ export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
     "id": "s2-target:governance-scenes",
     "kind": "frozen-fixture",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/ard/decision/focus/.generated/governance-scenes.json"
     },
-    "sha256": "236320cec2b25466dfe46d9338f3f75c14aba3ee33c6c25d8070ffc242d5b35c",
+    "sha256": "2ad436b6408e1609ba932cc7e0c447b51823a4e9b722dc89951755a8e8170831",
     "expectation": "A5 independent source; does not overwrite A3"
   },
   {
     "id": "hrpn-producer:data.json",
     "kind": "producer-snapshot",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/architecture/hrpn/.generated/data.json"
     },
-    "sha256": "5a893cd1c69e1bb81bf4095b7472e7494ede1eb709d2c02b732af2163a1d7f2e",
+    "sha256": "1a59107732f48e03f443637c5818f559a0888abe23c41fc2529f0370ee030556",
     "expectation": "current producer sceneHash 81183292…; not the frozen fixture"
   },
   {
     "id": "hrpn-producer:scene-metadata.mjs",
     "kind": "producer-snapshot",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/architecture/hrpn/scene-metadata.mjs"
     },
-    "sha256": "85de8a950c66312bd1f519ea2cc04aa37dff4bf9f6f0d39e34252fd95e2b6d51",
+    "sha256": "f2b6f4943b31f60d23f4799fbc61f8fe451ea848e9f8b932127715de33fb9028",
     "expectation": "producer metadata module"
   },
   {
     "id": "hrpn-producer:SCENES.md",
     "kind": "producer-snapshot",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/architecture/hrpn/SCENES.md"
     },
-    "sha256": "224bcaac70e397e771d88273219483eea808c0aa31cdcdc6d61d47f645d94853",
+    "sha256": "118613f71c1e6be9ec24d67610c45aafd83c6bfac6cbd5357e80a76a4760d0b7",
     "expectation": "producer scene documentation"
   },
   {
     "id": "hrpn-producer:figures.json",
     "kind": "producer-snapshot",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/ard/decision/focus/.generated/figures/figures.json"
     },
-    "sha256": "83935a169f04ab48df155f324dee6fbf336a502fd2b8cdc260ae03c0a6962719",
+    "sha256": "eeaa51981ec9fb37b3d839a3290b21014812aea1ff322660829bad9ccdd6bef8",
     "expectation": "producer figure bytes"
   },
   {
     "id": "hrpn-producer:S2-target.png",
     "kind": "producer-snapshot",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/ard/decision/focus/.generated/figures/S2-target.png"
     },
@@ -228,29 +229,29 @@ export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
     "id": "hrpn:fixture-manifest",
     "kind": "frozen-fixture",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/architecture/hrpn/ds-fixtures/MANIFEST.md"
     },
-    "sha256": "9558092fa2af669af9dcd4df6d9380e24a1cba723dbdd603ad2ebd86c6439a49",
+    "sha256": "81e96ecc27cf4fb6eaa159d3e255020cd2ea833228551fddacfa78ce98890c55",
     "expectation": "frozen fixture manifest; historical pins are provenance only"
   },
   {
     "id": "hrpn:reference-renders.json",
     "kind": "frozen-fixture",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/architecture/hrpn/ds-fixtures/reference-renders.json"
     },
-    "sha256": "7afee15ef473389452011d38fbaf8547973b5eed572440cc0c31ee8d921e25db",
+    "sha256": "e5236b7c30e576c8905b2d1c91d24dc1dc96159d935259b317606899cecb0540",
     "expectation": "frozen reference render index"
   },
   {
     "id": "hrpn:build-scenes.mjs",
     "kind": "frozen-fixture",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/architecture/hrpn/build-scenes.mjs"
     },
@@ -261,18 +262,18 @@ export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
     "id": "hrpn:build-fixtures.mjs",
     "kind": "frozen-fixture",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/architecture/hrpn/ds-fixtures/build-fixtures.mjs"
     },
-    "sha256": "3dee69da67bb5569a385a6dfa15759ac27d3fa749e8d6b2a63f04e0446fec102",
+    "sha256": "fdaf13dedefbc6525eaf9de87abdab885d97754c8031b6995eb075ca00d58c1b",
     "expectation": "frozen fixture builder"
   },
   {
     "id": "hrpn:build-engram.mjs",
     "kind": "frozen-fixture",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/architecture/hrpn/engram/build-engram.mjs"
     },
@@ -284,10 +285,10 @@ export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
     "kind": "derived-oracle",
     "source": {
       "repo": "graphify",
-      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
-      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/oracle:derived-json"
+      "revision": "sha256:d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-d87220cd.md#8.7/oracle:derived-json"
     },
-    "sha256": "9860b066d227d298aa67eae8bc47475355e86d22f266d1b0ad261035b33fdf8d",
+    "sha256": "98fd0dda47973fcd18d04e4d44ab63fd3f27e3b0668168efdc062b586ac4c2af",
     "expectation": "oracle schemaVersion m3-r4-oracle/1; instances A1 A2 A3 A4a A4b A5"
   },
   {
@@ -295,10 +296,10 @@ export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
     "kind": "derived-oracle",
     "source": {
       "repo": "graphify",
-      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
-      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/oracle:whole"
+      "revision": "sha256:d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-d87220cd.md#8.7/oracle:whole"
     },
-    "sha256": "08cae540e5535727fc1f4b7bba3aa12d84908790b6c918dc263b65560ab4f2de",
+    "sha256": "2059896c05ace5e70ec987068f4304d01b67a5d647a836df7d8038fe43393b48",
     "expectation": "33429 canonical bytes of the whole derived oracle"
   },
   {
@@ -306,8 +307,8 @@ export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
     "kind": "derived-oracle",
     "source": {
       "repo": "graphify",
-      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
-      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/oracle:categoryTokens"
+      "revision": "sha256:d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-d87220cd.md#8.7/oracle:categoryTokens"
     },
     "sha256": "a77e2a62ddd6d576f06005969361ee15c241789fe8a571e6195dfb5c2782b3bf",
     "expectation": "432 canonical bytes of the token table"
@@ -317,8 +318,8 @@ export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
     "kind": "derived-oracle",
     "source": {
       "repo": "graphify",
-      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
-      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/oracle:a1Summaries"
+      "revision": "sha256:d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-d87220cd.md#8.7/oracle:a1Summaries"
     },
     "sha256": "e363601a0c116197a471a599e92dc94da16147f0e7e78346c1ab7c7df9a49018",
     "expectation": "2110 canonical bytes; ten authored A1 summaries"
@@ -328,10 +329,10 @@ export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
     "kind": "derived-oracle",
     "source": {
       "repo": "graphify",
-      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
-      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/oracle:a5EntitiesPresentation"
+      "revision": "sha256:d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-d87220cd.md#8.7/oracle:a5EntitiesPresentation"
     },
-    "sha256": "527a0b18c1afee9e71591d6c2e3ef8d68294c89d5f0e593527b31a47b207a2b8",
+    "sha256": "97b1ed1e2d221936a9bf1980efc81438a62806b22c81d325f24b33e55118e833",
     "expectation": "20532 canonical bytes; every A5 authored string placed"
   },
   {
@@ -1054,10 +1055,10 @@ export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
     "kind": "evidence",
     "source": {
       "repo": "graphify",
-      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
-      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md"
+      "revision": "sha256:d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-d87220cd.md"
     },
-    "sha256": "deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
+    "sha256": "d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789",
     "expectation": "Frozen binding source; raw bytes and every source pin remain immutable."
   },
   {
@@ -1065,8 +1066,8 @@ export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
     "kind": "derived-oracle",
     "source": {
       "repo": "graphify",
-      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
-      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#C.6"
+      "revision": "sha256:d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-d87220cd.md#C.6"
     },
     "sha256": "a08ed44d699f8dd1a4aa04bd368bf6dd25485486d7344869781a1c0d77a13453",
     "expectation": "Verbatim Appendix C.6 cases; exact diagnostics and source-bound mutations."
@@ -1075,11 +1076,11 @@ export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
     "id": "hrpn:tint-legend.json",
     "kind": "frozen-fixture",
     "source": {
-      "repo": "airbus-genair-hrpolnav",
+      "repo": "client-genair-hrpolnav",
       "revision": "faf21b6f259f93a485994bbe03b4023763bf2597",
       "path": "docs/architecture/hrpn/ds-fixtures/tint-legend.json"
     },
-    "sha256": "cc47a3e3a2019af8c436ce28a34d0d52d71b8439cf55a44a33f1c0239752a26d",
+    "sha256": "54b2c50d1f1d65fd5438354602873792dd8ed9f4b4342d7c36bec59dcbb8d2ed",
     "expectation": "Frozen category colour evidence; target tokens are separately governed."
   },
   {
@@ -4046,8 +4047,8 @@ export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
     "kind": "derived-oracle",
     "source": {
       "repo": "graphify",
-      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
-      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/materialization/A1"
+      "revision": "sha256:d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-d87220cd.md#8.7/materialization/A1"
     },
     "sha256": "5ff8b524a0d44418c8c0671811f29eda12cab0d48f4e89182348b688ec3c7c56",
     "expectation": "Complete semantic/view source and expected target; source strings/ids and explicit legend additions preserved; layout and executor qualification remain owner gates."
@@ -4057,10 +4058,10 @@ export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
     "kind": "derived-oracle",
     "source": {
       "repo": "graphify",
-      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
-      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/materialization/A2"
+      "revision": "sha256:d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-d87220cd.md#8.7/materialization/A2"
     },
-    "sha256": "c9a43ba9be15b2830c2454cb7571ae2e84fc7caf198ba6e6fee1a0d87b16b459",
+    "sha256": "9fe2c648f3afc12cfcf7d74a2012d561d6dee7d26bb0395febdcc29d0d3a1f1d",
     "expectation": "Complete semantic/view source and expected target; source strings/ids and explicit legend additions preserved; layout and executor qualification remain owner gates."
   },
   {
@@ -4068,10 +4069,10 @@ export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
     "kind": "derived-oracle",
     "source": {
       "repo": "graphify",
-      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
-      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/materialization/A3"
+      "revision": "sha256:d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-d87220cd.md#8.7/materialization/A3"
     },
-    "sha256": "d44ba408239f4eac183cdbc42c216be35d145553f1f3a99b92b26eedc1d0595b",
+    "sha256": "5ab5f0d70f8976990ce4d0df9f8a5c05cc5c425733fedb8347b0cda97b56fb0f",
     "expectation": "Complete semantic/view source and expected target; source strings/ids and explicit legend additions preserved; layout and executor qualification remain owner gates."
   },
   {
@@ -4079,10 +4080,10 @@ export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
     "kind": "derived-oracle",
     "source": {
       "repo": "graphify",
-      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
-      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/materialization/A4a"
+      "revision": "sha256:d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-d87220cd.md#8.7/materialization/A4a"
     },
-    "sha256": "b8abf680cafbed59f3b8fe022f8939312f36b8b3299d526d9cd2e3712a48efc9",
+    "sha256": "1f8933b3f4992712969bffdfc508688e6f9b117d78fa028775076834edb52651",
     "expectation": "Complete semantic/view source and expected target; source strings/ids and explicit legend additions preserved; layout and executor qualification remain owner gates."
   },
   {
@@ -4090,10 +4091,10 @@ export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
     "kind": "derived-oracle",
     "source": {
       "repo": "graphify",
-      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
-      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/materialization/A4b"
+      "revision": "sha256:d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-d87220cd.md#8.7/materialization/A4b"
     },
-    "sha256": "923f9388189c8810d05adcb7332b5a993fba67c158a79cc6615e93bcb4cf4fa9",
+    "sha256": "2f3131a57b8f0de5cf123df4a3658d68ce9ad309f3fcd1884888fae6af0b92fc",
     "expectation": "Complete semantic/view source and expected target; source strings/ids and explicit legend additions preserved; layout and executor qualification remain owner gates."
   },
   {
@@ -4101,10 +4102,10 @@ export const CORPUS_MANIFEST: readonly CorpusEntry[] = [
     "kind": "derived-oracle",
     "source": {
       "repo": "graphify",
-      "revision": "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
-      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/materialization/A5"
+      "revision": "sha256:d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789",
+      "path": "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-d87220cd.md#8.7/materialization/A5"
     },
-    "sha256": "dabc7518af6c7dc9caf833e04e4cf449d404860f8d332771ce6efc02fe5997ce",
+    "sha256": "d5451ce4b3729cc4fadae0939d0c700f69af9ac4900b73abb107dd3fc93a589f",
     "expectation": "Complete semantic/view source and expected target; source strings/ids and explicit legend additions preserved; layout and executor qualification remain owner gates."
   }
 ];

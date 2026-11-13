@@ -243,7 +243,7 @@ function copyOwnFields(
   }
 }
 
-// OBJ-2 (ACLP-AM review): `ontology_status` was allowlisted here but is
+// OBJ-2 (process-std-AM review): `ontology_status` was allowlisted here but is
 // NEVER produced by any pipeline code (not emitted by compileHierarchies,
 // profile loading, reconciliation, or any other source). It would be a pure
 // duplicate of `status` (the 5-state lifecycle field: reference / attached /
@@ -263,7 +263,7 @@ const NODE_PROFILE_FIELDS = [
   // scene node keeps its native graphify id (`registry_<reg>_<slug>`), and
   // ADDITIONALLY carries `registry_record_id` = the id_column value VERBATIM
   // (e.g. "AM0104.01", "DE.AI.01", "org:CODE", dashed UUIDs — no `.`/`-`→`_`
-  // transformation), so consumers (aclp-am viewer, scene-hierarchies sidecar)
+  // transformation), so consumers (process-std-am viewer, scene-hierarchies sidecar)
   // can canonicalise/join on the raw registry id without an id_map.
   "registry_id",
   "registry_record_id",

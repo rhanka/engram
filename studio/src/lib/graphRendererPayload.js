@@ -161,7 +161,7 @@ export function densityScale(nodeCount) {
 //
 // This picks the DEFAULT opacity for a scene — it is NOT a multiplier applied on
 // top of the user's choice. It used to be, and that made the Edge-opacity slider
-// a control that did almost nothing: on the 25k-edge ACLP scene the rendered
+// a control that did almost nothing: on the 25k-edge PROCESS_STD scene the rendered
 // base alpha spanned only 13→100 of 255 across the slider's whole 0.1..0.8
 // travel, and the dense fade mode then multiplied hub edges by 0.15 on top,
 // leaving 2→15. The slider also *reported* 0.50 while 0.245 was in effect, so

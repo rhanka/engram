@@ -4,7 +4,7 @@
  * The shipped chain was single-level: a cited markdown resolved to the one local
  * document it was converted from, and stopped. That is the whole story only for
  * a corpus somebody assembled by hand. A downloaded corpus has a rung above it —
- * the address the PDF came from — and the ACLP layout makes the point concrete:
+ * the address the PDF came from — and the PROCESS_STD layout makes the point concrete:
  * its PDFs live under directories named after Google Drive file ids, so the web
  * origin is visibly right there and recorded nowhere.
  *
@@ -105,7 +105,7 @@ describe("writeSourceOriginSidecar / resolveAcquisitionOrigin", () => {
   });
 });
 
-describe("the ACLP chain: web -> pdf -> ocr markdown", () => {
+describe("the PROCESS_STD chain: web -> pdf -> ocr markdown", () => {
   it("records both rungs and prefers the PDF over the web page", () => {
     const root = makeRoot();
     const pdf = join(root, "corpus", "paper.pdf");

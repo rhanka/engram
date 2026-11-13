@@ -205,4 +205,4 @@ on the engines that already exist, before any new layout.
 | **4** | **Curved-links** toggle + **Color-by** Folder/Layer | S | 1 | toggle flips `0↔0.15` live; categorical re-colour instant |
 | **5** | **Color-by Churn** (continuous ramp + legend) | M | 4 · **D2** | degree fallback ramp now; git-churn source later |
 | **6** | **Metro** MVP (grid-snap + orthogonal router) | L | 1,2 · **D1** | nodes on lanes, orthogonal edges; morphs via Lot 1; octilinear deferred |
-| **7** | Perf hardening: worker offload for Force, morph-interrupt polish | M | 1,3 · **D4** | Force slider stays "super rapide" at aclp-am scale; no main-thread stalls |
+| **7** | Perf hardening: worker offload for Force, morph-interrupt polish | M | 1,3 · **D4** | Force slider stays "super rapide" at process-std-am scale; no main-thread stalls |

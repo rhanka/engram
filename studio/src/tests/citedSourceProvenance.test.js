@@ -22,7 +22,7 @@ import { citationsByFileFrom } from "../lib/graphAdapter.js";
  *   1. the viewer opens the ORIGINAL when it is bundled, keeping the markdown
  *      as the intermediate breadcrumb (`via`) rather than the presented artifact;
  *   2. it degrades to the markdown — never silently, never to something else —
- *      when the original is too large to bundle (the ACLP corpus is 28 GB);
+ *      when the original is too large to bundle (the PROCESS_STD corpus is 28 GB);
  *   3. it NEVER renders the studio's own `index.html`, which is what a static
  *      server's SPA fallback hands back for a file that is not in the bundle.
  * ======================================================================== */
@@ -204,7 +204,7 @@ describe("sourceHrefFor — 'Ouvrir ↗' points at the original", () => {
 
 describe("a page locator is a page NUMBER or nothing (no more p.unknown)", () => {
   it("drops the literal 'unknown' the extraction corpus carries", () => {
-    // 43 297 citations in the ACLP graph carry page:"unknown"; rendering
+    // 43 297 citations in the PROCESS_STD graph carry page:"unknown"; rendering
     // "p.unknown" invents a reference to a page that does not exist.
     const [group] = citationsByFileFrom([
       { source_file: "doc.md", page: "unknown" },

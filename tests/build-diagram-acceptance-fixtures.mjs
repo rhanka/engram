@@ -128,7 +128,7 @@ function materializeA5(instance) {
 for (const instance of oracle.instances) {
   const value = instance.id === "A5" ? materializeA5(instance) : materializeCards(instance);
   const bytes = `${canonicalBytes(value)}\n`, sha256 = sha256Hex(bytes), id = `derived:cards-${instance.id}`;
-  const entry = { id, kind: "derived-oracle", source: { repo: "graphify", revision: "sha256:deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f", path: `m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md#8.7/materialization/${instance.id}` },
+  const entry = { id, kind: "derived-oracle", source: { repo: "graphify", revision: "sha256:d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789", path: `m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-d87220cd.md#8.7/materialization/${instance.id}` },
     sha256, expectation: "Complete semantic/view source and expected target; source strings/ids and explicit legend additions preserved; layout and executor qualification remain owner gates.", fixture: `${sha256}.bytes` };
   const existing = index.find(entry => entry.id === id);
   if (existing && existing.sha256 !== sha256) throw new Error(`immutable derived fixture drift: ${id}`);

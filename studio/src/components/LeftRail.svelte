@@ -33,7 +33,7 @@
     graph,
     classHierarchies = null,
     // The scene-hierarchies sidecar (graphify_scene_hierarchies_v1) — the
-    // registry process forests (ABP / ACLP / org unit trees). Spliced INTO the
+    // registry process forests (ABP / PROCESS_STD / org unit trees). Spliced INTO the
     // ontology tree under the class that declares them (never a separate
     // accordion). null on repos without registry hierarchies.
     sceneHierarchies = null,
@@ -168,7 +168,7 @@
   const typeSet = $derived(new Set(selection.types));
 
   // THE ontology tree — ONE tree: the class taxonomy with each registry forest
-  // (ABP / ACLP / org) spliced under the class that declares it, at arbitrary
+  // (ABP / PROCESS_STD / org) spliced under the class that declares it, at arbitrary
   // depth. Null ⇒ no trustworthy taxonomy ⇒ the flat type list below.
   // Built in `lib/ontologyTree.js` so the derivation is unit-testable.
   const typeTree = $derived(buildOntologyTree(typeList, classHierarchies, forestList));
@@ -374,7 +374,7 @@
       <p class="rail-empty">No types.</p>
     {:else if typeTree}
       <!-- THE ontology tree — one tree, rendered recursively. A class that owns
-           a registry hierarchy (ABP / ACLP / org) expands straight into that
+           a registry hierarchy (ABP / PROCESS_STD / org) expands straight into that
            REAL multi-level forest; the trees are no longer a separate accordion
            and no longer node-type dead ends.
            B2 (per-item): every class row keeps its always-visible GROUP-BY

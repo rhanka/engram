@@ -6,14 +6,14 @@
  *     CLASS taxonomy. A class gathers node types (`member_node_types`) and may
  *     DECLARE that it owns a registry hierarchy (`member_hierarchies`).
  *   - `scene-hierarchies.json` (graphify_scene_hierarchies_v1): the registry
- *     FORESTS themselves (ABP / ACLP / org unit trees).
+ *     FORESTS themselves (ABP / PROCESS_STD / org unit trees).
  *
  * The rail used to show these as two sibling accordions, which made a class
  * like `ABP` a node-type dead end while the real multi-level tree sat
  * elsewhere. Here the forest is SPLICED under the class that declares it, so
  * expanding `ABP` walks the actual `DE → DE.AI → DE.AI.01 → …` tree.
  *
- * Generic on purpose: nothing here knows about ABP/ACLP. Which class owns which
+ * Generic on purpose: nothing here knows about ABP/PROCESS_STD. Which class owns which
  * forest is declared by the repo's ontology profile and travels in the compiled
  * artifact. Two forests bound to one class stay TWO root sets — never merged.
  */
@@ -50,7 +50,7 @@ function isForestEntry(h) {
 }
 
 /**
- * Canonical first-level order (mirrors the verified native ACLP viewer
+ * Canonical first-level order (mirrors the verified native PROCESS_STD viewer
  * taxonomy). Roots not named here follow, ordered by label.
  */
 export const CANONICAL_ROOT_ORDER = ["Process", "Tool", "Data", "Org"];

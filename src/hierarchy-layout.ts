@@ -5,7 +5,7 @@
  * WHY: the force (FA2) bake is O(n log n) per iteration but structure-blind. On
  * a 50k-node corpus whose real skeleton is three registry forests it settles
  * into a uniform dense disc: every hierarchy is smeared across the same blob and
- * nothing about ABP-vs-ACLP-vs-org survives. Meanwhile `typed-layer` on a large
+ * nothing about ABP-vs-process-std-vs-org survives. Meanwhile `typed-layer` on a large
  * hierarchical corpus degenerates into a filament (one thin lane per type). This
  * layout uses the hierarchy the profile ALREADY declares instead of rediscovering
  * it, and does so in a single deterministic pass:

@@ -41,7 +41,7 @@ import { splitGroupedKeys } from "./viewerState.js";
  *   target scene id -> its descendant scene ids
  * which `applyGroupCollapse` consumes exactly as it does the class index.
  *
- * Generic: nothing here knows ABP from ACLP — it walks whatever forests the
+ * Generic: nothing here knows ABP from PROCESS_STD — it walks whatever forests the
  * sidecar carries. Forest records that do not join to a graph node are skipped
  * (they can neither be a fold target nor be folded).
  *

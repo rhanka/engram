@@ -81,14 +81,14 @@ describe("Track G G6-2 — TYPES filter", () => {
     expect(html).toMatch(/data-type-id="all"[^>]*aria-pressed="false"/);
   });
 
-  it("does not introduce any corpus-specific type id (framework / abp / aclp / Process / Org / Tool)", () => {
+  it("does not introduce any corpus-specific type id (framework / abp / process_std / Process / Org / Tool)", () => {
     const html = renderWorkspaceShell({
       tokens,
       title: "Workspace",
       state: createDefaultViewerState(),
       graph,
     });
-    expect(html).not.toMatch(/\b(?:framework|abp|aclp|ABPProcess|ACLPProcess|BusinessObject|DigitalApplicationTool)\b/);
+    expect(html).not.toMatch(/\b(?:framework|abp|process_std|ABPProcess|ProcessStdProcess|BusinessObject|DigitalApplicationTool)\b/);
   });
 
   it("SET_ACTIVE_TYPE updates the state via the reducer", () => {

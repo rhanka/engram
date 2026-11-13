@@ -34,7 +34,7 @@ import { DS_CLONE, dsCloneAvailable, dsSkipReason } from "./helpers/ds-executor.
 const DS_COMMIT_0370 = "bbf8b390d1704756cc43b433f31d0a43ea2a4792";
 
 const testsDir = dirname(fileURLToPath(import.meta.url));
-const KIT_ROOT = "/home/antoinefa/src/airbus-genair-hrpolnav/docs/ard/decision/focus/governance-kit";
+const KIT_ROOT = "/home/antoinefa/src/client-genair-hrpolnav/docs/ard/decision/focus/governance-kit";
 const KIT_METRICS_PATH = join(KIT_ROOT, "src/governance-font-metrics.js");
 const kitAvailable = (): boolean => existsSync(KIT_METRICS_PATH);
 const kitSkipReason = (): string => (kitAvailable() ? "" : ` (skipped: KIT clone absent at ${KIT_ROOT})`);

@@ -200,7 +200,7 @@ agents are active, so re-measure before acting).
 
 - **32 branches carry commits not in `main`** — deleting these loses work.
   Largest: `integration/five-wp` (63), `feat/wp4-sources-live` (40),
-  `feat/aclp-ontology-studio` (33, 12 dirty), `feat/gitflow-labels` (17),
+  `feat/process-std-ontology-studio` (33, 12 dirty), `feat/gitflow-labels` (17),
   `pr/c-graphrag-phase-a` (14).
 - **16 are at 0 ahead of `main` and clean** — safe to prune. Includes
   `cyber/nul-byte-hygiene`, a predecessor CONTROL branch that is byte-identical

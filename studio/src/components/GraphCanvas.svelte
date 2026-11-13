@@ -279,7 +279,7 @@
   // graph. Splitting "the user's choice" from "the effective value" is what makes
   // the slider honest: it renders the number it displays, and the displayed
   // number is the one actually in effect at mount. (Density used to MULTIPLY the
-  // slider instead, so on the 25k-edge ACLP scene the control read 0.50, rendered
+  // slider instead, so on the 25k-edge PROCESS_STD scene the control read 0.50, rendered
   // 0.245, and its whole travel moved the base alpha only 13→100 of 255.)
   let edgeOpacityOverride = $state(null);
   const edgeOpacity = $derived(

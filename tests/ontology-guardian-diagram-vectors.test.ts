@@ -1,4 +1,4 @@
-// Spec-anchored vectors/oracles (frozen M3-R4 deb64b75, §§7.3.5/7.4, A.1/A.3/A.4)
+// Spec-anchored vectors/oracles (frozen M3-R4 d87220cd, §§7.3.5/7.4, A.1/A.3/A.4)
 // and separately labelled implementation regression snapshots.
 // Only the four V-* cases in §7.3.5 count as spec vectors; snapshots do not.
 // Spec digests are recomputed through src/ontology-guardian and must match
@@ -525,7 +525,7 @@ describe("§8.7 derived oracle and deterministic case builders", () => {
 
   it("pins the oracle bytes and covers A1–A5", () => {
     expect(createHash("sha256").update(readFileSync(join(fixtures, "m3-r4-derived-oracle.json"))).digest("hex")).toBe(
-      "9860b066d227d298aa67eae8bc47475355e86d22f266d1b0ad261035b33fdf8d",
+      "98fd0dda47973fcd18d04e4d44ab63fd3f27e3b0668168efdc062b586ac4c2af",
     );
     expect(oracle["schemaVersion"]).toBe(ORACLE_SCHEMA_VERSION);
     expect(instances.map((i) => i["id"])).toEqual(["A1", "A2", "A3", "A4a", "A4b", "A5"]);

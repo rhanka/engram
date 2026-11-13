@@ -11,12 +11,12 @@ import {
  * process forests NESTED under their taxonomy class.
  *
  * The regression this locks: `Process → ABP → ABPProcess` was a node-type dead
- * end, the real ABP/ACLP trees lived in a SEPARATE "Hierarchies" accordion, and
+ * end, the real ABP/PROCESS_STD trees lived in a SEPARATE "Hierarchies" accordion, and
  * the generic `Process` entities hung off a "Process Catalog" branch under
- * Methods. Everything below asserts the corrected shape on ACLP-shaped data.
+ * Methods. Everything below asserts the corrected shape on process-std-shaped data.
  */
 
-/** A minimal ACLP-shaped class taxonomy (the ontology-profile's am_class_tree). */
+/** A minimal process-std-shaped class taxonomy (the ontology-profile's am_class_tree). */
 const amClassTree = {
   hierarchies: {
     am_class_tree: {
@@ -31,7 +31,7 @@ const amClassTree = {
         "class:Process": {
           id: "class:Process",
           label: "Process",
-          child_ids: ["class:ABP", "class:ACLP", "class:Unreconciled"],
+          child_ids: ["class:ABP", "class:PROCESS_STD", "class:Unreconciled"],
         },
         "class:ABP": {
           id: "class:ABP",
@@ -39,11 +39,11 @@ const amClassTree = {
           member_node_types: ["ABPProcess"],
           member_hierarchies: ["abp_process_tree"],
         },
-        "class:ACLP": {
-          id: "class:ACLP",
-          label: "ACLP",
-          member_node_types: ["ACLPProcess"],
-          member_hierarchies: ["aclp_process_tree"],
+        "class:PROCESS_STD": {
+          id: "class:PROCESS_STD",
+          label: "PROCESS_STD",
+          member_node_types: ["ProcessStdProcess"],
+          member_hierarchies: ["process_std_process_tree"],
         },
         "class:Unreconciled": {
           id: "class:Unreconciled",
@@ -98,7 +98,7 @@ const sidecar = {
         "DE.AI.01": { parent_id: "DE.AI", child_ids: [], level: 2, label: "Organize" },
       },
     },
-    aclp_process_tree: {
+    process_std_process_tree: {
       root_ids: ["AM01"],
       dangling_arc_count: 0,
       orphan_ids: [],
@@ -111,18 +111,18 @@ const sidecar = {
       root_ids: ["AB"],
       dangling_arc_count: 0,
       orphan_ids: [],
-      nodes_by_id: { AB: { parent_id: null, child_ids: [], level: 0, label: "Airbus" } },
+      nodes_by_id: { AB: { parent_id: null, child_ids: [], level: 0, label: "client-org" } },
     },
   },
 };
 
-/** Live scene type counts, ACLP-shaped. */
+/** Live scene type counts, process-std-shaped. */
 const typeList = [
   { key: "DataObject", count: 11663 },
   { key: "Process", count: 5886 },
   { key: "OrganizationUnit", count: 4280 },
   { key: "Method", count: 3531 },
-  { key: "ACLPProcess", count: 2285 },
+  { key: "ProcessStdProcess", count: 2285 },
   { key: "ABPProcess", count: 2040 },
   { key: "InstructionActivity", count: 1434 },
   { key: "DigitalApplicationTool", count: 78 },
@@ -142,14 +142,14 @@ describe("buildOntologyTree — ONE ontology with the process forests nested", (
     ]);
   });
 
-  it("ABP and ACLP expand into their REAL multi-level tree, not a node-type dead end", () => {
+  it("ABP and PROCESS_STD expand into their REAL multi-level tree, not a node-type dead end", () => {
     const process = byLabel(tree, "Process");
     const abp = byLabel(process.subs, "ABP");
-    const aclp = byLabel(process.subs, "ACLP");
+    const process_std = byLabel(process.subs, "PROCESS_STD");
 
     // Each owns exactly ONE forest — they are NEVER merged into a single tree.
     expect(abp.forests.map((f) => f.key)).toEqual(["abp_process_tree"]);
-    expect(aclp.forests.map((f) => f.key)).toEqual(["aclp_process_tree"]);
+    expect(process_std.forests.map((f) => f.key)).toEqual(["process_std_process_tree"]);
 
     // …and that forest is the real navigable hierarchy (DE → DE.AI → DE.AI.01).
     const abpNodes = abp.forests[0].hierarchy.nodes_by_id;
@@ -158,9 +158,9 @@ describe("buildOntologyTree — ONE ontology with the process forests nested", (
     expect(abpNodes["DE.AI"].child_ids).toEqual(["DE.AI.01"]);
     expect(abpNodes["DE.AI.01"].level).toBe(2);
 
-    const aclpNodes = aclp.forests[0].hierarchy.nodes_by_id;
-    expect(aclp.forests[0].rootIds).toEqual(["AM01"]);
-    expect(aclpNodes["AM01"].child_ids).toEqual(["AM0104"]);
+    const processStdNodes = process_std.forests[0].hierarchy.nodes_by_id;
+    expect(process_std.forests[0].rootIds).toEqual(["AM01"]);
+    expect(processStdNodes["AM01"].child_ids).toEqual(["AM0104"]);
   });
 
   it("puts the generic Process entities under Process/Unreconciled — NEVER under Methods", () => {
@@ -188,7 +188,7 @@ describe("buildOntologyTree — ONE ontology with the process forests nested", (
 
   it("counts a class from its own types plus its descendants", () => {
     const process = byLabel(tree, "Process");
-    // 2040 (ABP) + 2285 (ACLP) + 5886 (Unreconciled). The forest is navigation,
+    // 2040 (ABP) + 2285 (PROCESS_STD) + 5886 (Unreconciled). The forest is navigation,
     // not an extra population — it never double-counts.
     expect(process.count).toBe(2040 + 2285 + 5886);
     expect(byLabel(process.subs, "ABP").count).toBe(2040);
@@ -265,7 +265,7 @@ describe("F6 — artifacts are gated on their declared schema first", () => {
     const declared = { ...sidecar, schema: "graphify_scene_hierarchies_v1" };
     expect(buildForestList(declared).map((f) => f.key)).toEqual([
       "abp_process_tree",
-      "aclp_process_tree",
+      "process_std_process_tree",
       "org_unit_tree",
     ]);
   });

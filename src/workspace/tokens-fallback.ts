@@ -4,7 +4,7 @@
  * Deterministic slate-neutral palette. WCAG AA: `text` (#e6e8ec) on
  * `surface` (#0f111a) measures 14.3:1 (well above AA 4.5:1 for body,
  * above AAA 7:1). `text-muted` (#9fa6b2) on `surface` measures 7.7:1
- * (above AA 4.5:1, above AAA 7:1). No Airbus / no ACLP look-and-feel:
+ * (above AA 4.5:1, above AAA 7:1). No client-org / no PROCESS_STD look-and-feel:
  * the fallback intentionally stays neutral so the workspace identity
  * is Graphify-only until @sentropic/design-system ships its full
  * token contract.

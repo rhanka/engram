@@ -15,7 +15,7 @@ the published SPA bundles the renderer being developed in this repo:
 import { createGraphRenderer } from "@sentropic/graph";
 ```
 
-## Architecture (mirrors the aclp-am viewer)
+## Architecture (mirrors the process-std-am viewer)
 
 - `src/App.svelte` — one client `viewerState` (`selectedIds`, `focusId`,
   `activeView`, `filters`); `$derived` scene rebuilt from the fetched

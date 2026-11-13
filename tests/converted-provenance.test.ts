@@ -106,7 +106,7 @@ describe("resolveConvertedOrigin — carriers", () => {
 
   it("labels an ocr-json hit from the markdown frontmatter when both are present", () => {
     const dir = makeDir();
-    // The real-world aclp-am shape: prep.json absent, ocr.json + frontmatter present.
+    // The real-world process-std-am shape: prep.json absent, ocr.json + frontmatter present.
     const md = makeConverted(dir, "scan", {
       ocr: { source_file: "/corpus/scan.pdf", sha256: "abc", model: "mistral-ocr-latest", pages: [] },
       front: { source: "/corpus/scan.pdf", conversion: "mistral-ocr-batch" },

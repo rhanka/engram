@@ -155,8 +155,8 @@ describe("ontology class rows expose the untruncated label", () => {
             hierarchy: forest,
           },
           {
-            key: "aclp",
-            label: "ACLP",
+            key: "process_std",
+            label: "PROCESS_STD",
             nodeCount: 2282,
             rootIds: ["DE"],
             hierarchy: forest,
@@ -173,6 +173,6 @@ describe("ontology class rows expose the untruncated label", () => {
     ]);
     // Every collapsible trigger is titled with its own text — no bleed.
     for (const [text, attr] of titles) expect(attr).toBe(text);
-    expect(titles.map(([t]) => t)).toEqual(expect.arrayContaining(["Process", "ABP", "ACLP"]));
+    expect(titles.map(([t]) => t)).toEqual(expect.arrayContaining(["Process", "ABP", "PROCESS_STD"]));
   });
 });

@@ -133,7 +133,7 @@ describe("Track G G-studio-lot4 — entity panel (#7)", () => {
         description: "A description.",
       },
     });
-    expect(html).not.toMatch(/\b(?:framework|abp|aclp|ABPProcess|ACLPProcess|BusinessObject|DigitalApplicationTool)\b/);
+    expect(html).not.toMatch(/\b(?:framework|abp|process_std|ABPProcess|ProcessStdProcess|BusinessObject|DigitalApplicationTool)\b/);
   });
 });
 

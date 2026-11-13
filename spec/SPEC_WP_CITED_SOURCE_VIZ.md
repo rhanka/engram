@@ -210,11 +210,11 @@ Symmetric to `describe`/`label`/`update`: reads `graph.json`, walks nodes, groun
 > assistant/api mode it is enforced by the post-hoc verification gate above. This invariant holds in
 > all modes and is the single most important correctness property of `cite`.
 
-### 1.4 Modality handling (incl. OCR-markdown page resolution — the aclp-am unblock)
+### 1.4 Modality handling (incl. OCR-markdown page resolution — the process-std-am unblock)
 
 | Modality | Lib | Locator extraction | Tier |
 |---|---|---|---|
-| MD / OCR-markdown | `markdown-it` (regex markers) | page from `---` / `## Page N` markers; section from `#{1,4}`; paragraph index → `paragraph_id`. **This resolves aclp-am's `page:"unknown"` to real page numbers.** | **v1** |
+| MD / OCR-markdown | `markdown-it` (regex markers) | page from `---` / `## Page N` markers; section from `#{1,4}`; paragraph index → `paragraph_id`. **This resolves process-std-am's `page:"unknown"` to real page numbers.** | **v1** |
 | native PDF (text layer) | `pdf.js` / existing `pdf-ocr.ts` | page from text-layer; `bbox?`/`region?` when available; else verbatim text-match → highlight rects (in viewer). | **v1** |
 | plain text | (none) | section from chapter heading above match; paragraph index → `paragraph_id`; `page = null`. | v1 |
 | DOCX | **`mammoth`** (extract) | text-match over mammoth-extracted text; `section` = nearest heading; `paragraph_id` = paragraph index; **no `page`** (Word reflows). Needs a DOCX→text prep step (mirrors `pdf-ocr.ts`). | **v2** |
@@ -256,7 +256,7 @@ Symmetric to `describe`/`label`/`update`: reads `graph.json`, walks nodes, groun
 - AC1.6 — **small fixture.** A 5-node / 2-source fixture (one ocr-markdown, one plain-text) with known
   matches produces byte-identical output, checked in as the unit golden.
 - AC1.7 — **page resolution.** An ocr-markdown fixture with `## Page N` markers yields real `page`
-  integers (no `"unknown"`), proving the aclp-am unblock path.
+  integers (no `"unknown"`), proving the process-std-am unblock path.
 
 ### 1.7 Sign-off — **graphify unilateral.** Symmetric to `describe`/`label`. No external sign-off.
 
@@ -342,7 +342,7 @@ Modality dispatcher (`citationModality()` → render path), **all reading the sa
 | plain-text | (none) | line-range highlight in `pre`/`code` |
 | CSV | (none) | scroll-to-row, highlight cell |
 
-Common to all: hover-card, link highlight↔card, navigate-by-entity, next/prev citation (aclp-am review
+Common to all: hover-card, link highlight↔card, navigate-by-entity, next/prev citation (process-std-am review
 workflow). **The architect scopes these render libs into the shared lib;** the producer-side extractors
 (mammoth/pptx-text/pdf text-layer, and the M5 detector) are graphify dataprep, mirroring `pdf-ocr.ts`.
 **Image-bbox (M5) is the only modality whose grounding needs a detection step — its render path ships
@@ -453,7 +453,7 @@ UI to the viewer, (3) any auth/layout. No graphify coupling required for the vie
 | **mystery** | bundled `text.txt` (file://) | EntityPanel `<blockquote>` → "open source" | **Lot 2 testbed** — plain-text, no pdf.js |
 | **radar/immo** | `/api/documents/raw` (CORS proxy) | signal card → "view source" | drops bespoke `SignalPdfOverlay` → thin consumer (proves the lib) |
 | **ia-aero** | bundled `converted/pdf/*.md` | concept/person/`[N]`/image node → viewer | OCR-markdown |
-| **aclp-am** | CSV-row + OCR-page resolver | `assertion_basis` badge → CSV row / OCR page | needs `cite` page-resolution first; next/prev review nav; edge-evidence = v2 driver |
+| **process-std-am** | CSV-row + OCR-page resolver | `assertion_basis` badge → CSV row / OCR page | needs `cite` page-resolution first; next/prev review nav; edge-evidence = v2 driver |
 | **nc-fullstack** | bundled tech-doc PDF | source chip → viewer (standalone) | zero graphify coupling; opt-in only |
 
 ---
@@ -466,7 +466,7 @@ UI to the viewer, (3) any auth/layout. No graphify coupling required for the vie
 | **Lot 1** `graphify cite` (text modalities, **no image-bbox**) | graphify | **unilateral** | Lot 0 | ia-aero 876/876 + mystery sidecar |
 | **Lot 2** viewer (mystery plain-text testbed) | architect + graphify | **architect** | Lot 0 (seam); Lot 1 for live data | mystery open-the-book, offline file:// |
 | **Lot 3** viewer (PDF / OCR-md) | architect + graphify | **architect** | Lot 2 | radar drops bespoke → thin consumer |
-| **Lot 4** adapters | each consumer | per-consumer | Lot 2/3 | aclp-am page-resolved evidence review |
+| **Lot 4** adapters | each consumer | per-consumer | Lot 2/3 | process-std-am page-resolved evidence review |
 | **LM-1a/1b** MD + PDF (**v1**) | graphify + architect | as Lots 1–3 | Lot 0/1/3 | ACM-1, ACM-2 |
 | **LM-2a/2b/2c** DOCX + PPTX (**v2**) | graphify + architect | as v1 | LM-1; mammoth + pptx prep | ACM-3, ACM-4 |
 | **LM-3** IMAGE + bbox (**v3 — needs detection**) | graphify + architect | architect | Lot 0 contract; **a detection capability** | ACM-5 (render now; detection-grounding deferred) |
@@ -509,7 +509,7 @@ Formal h2a trace `env:architect-s5-ratification-to-graphify-live-20260704T1147Z`
 The principal qualified the viewer UX **once**, against the immo/radar production viewer
 (SignalPdfOverlay UX). These requirements are **binding for the interim viewer AND for
 `@sentropic/cited-source-viewer`** — the qualification is NOT to be re-run per consumer
-(canevas, immo, graphify studio, aclp-am all inherit it).
+(canevas, immo, graphify studio, process-std-am all inherit it).
 
 1. **Central overlay, NOT a modal.** The viewer takes the place of the CENTRAL view, as an
    overlay over the canvas area only. Side panels (left rail, right selection panel) stay

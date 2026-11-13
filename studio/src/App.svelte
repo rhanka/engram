@@ -6,7 +6,7 @@
    * `$derived` scenes recompute from it + the loaded graph. The key behaviour:
    * clicking a node (onSelect) updates `selectedIds` and `focusId` so the
    * @sentropic/graph canvas highlights and the entity panel opens — WITHOUT
-   * re-fetching or re-laying-out the graph. Mirrors the aclp-am viewer
+   * re-fetching or re-laying-out the graph. Mirrors the process-std-am viewer
    * architecture.
    */
   import { onMount } from "svelte";
@@ -141,7 +141,7 @@
   // reassigned in bulk, never mutated in place.
   let classHierarchies = $state.raw(null);
   // Lot 2: the scene-hierarchies sidecar (graphify_scene_hierarchies_v1) — the
-  // registry process forests (ABP / ACLP / org unit trees) the Hierarchies rail
+  // registry process forests (ABP / PROCESS_STD / org unit trees) the Hierarchies rail
   // navigates. Lazily fetched once (like class-hierarchies); null until loaded /
   // when absent, in which case the rail hides its Hierarchies section.
   let sceneHierarchies = $state.raw(null);
@@ -790,7 +790,7 @@
     // class-display toggle). Cached; a no-op when the artifact is absent.
     await ensureClassHierarchies();
     // Lot 2: fetch the scene-hierarchies sidecar eagerly too, so the Hierarchies
-    // rail (ABP / ACLP process trees) is ready without a separate trigger.
+    // rail (ABP / PROCESS_STD process trees) is ready without a separate trigger.
     await ensureSceneHierarchies();
     // Storage LOT 2: prefer the store's precomputed `node_type` counts for the
     // Types rail when a mirror is configured. Resolves null off the default

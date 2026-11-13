@@ -129,13 +129,13 @@ describe("Track G G6-1 — compact entity description", () => {
       .toBe(true);
   });
 
-  it("does not hardcode any corpus-specific string (Process / framework / abp / aclp / BusinessObject)", () => {
+  it("does not hardcode any corpus-specific string (Process / framework / abp / process_std / BusinessObject)", () => {
     const html = renderWorkspaceShell({
       tokens,
       title: "Workspace",
       state: { ...createDefaultViewerState(), displayRef: "entity:holmes" },
       graph,
     });
-    expect(html).not.toMatch(/\b(?:framework|abp|aclp|ABPProcess|ACLPProcess|BusinessObject|DigitalApplicationTool)\b/);
+    expect(html).not.toMatch(/\b(?:framework|abp|process_std|ABPProcess|ProcessStdProcess|BusinessObject|DigitalApplicationTool)\b/);
   });
 });

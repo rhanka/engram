@@ -49,7 +49,7 @@ describe("registry seed completion", () => {
       record("abp-processes", "DE.AI", "Architect and Integrate"),
       record("abp-processes", "DE.AI.01", "Organize Requirements"),
     ],
-    "org-units": [record("org-units", "AB", "Airbus Canada")],
+    "org-units": [record("org-units", "AB", "client-org Canada")],
   };
 
   it("materializes only the registry rows missing from the graph", () => {
@@ -79,7 +79,7 @@ describe("registry seed completion", () => {
 
     expect(result.nodes[0]).toMatchObject({
       id: "registry_org_units_AB",
-      label: "Airbus Canada",
+      label: "client-org Canada",
       node_type: "OrganizationUnit",
       registry_id: "org-units",
       // D2: the join key is the verbatim id_column value.

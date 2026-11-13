@@ -14,7 +14,7 @@
 
 ## Motivation
 
-The aclp-am graph (47,762 nodes) ships a 33.8 MB `scene.json` and the studio recomputes
+The process-std-am graph (47,762 nodes) ships a 33.8 MB `scene.json` and the studio recomputes
 group-by in the browser on every toggle (`studio/src/lib/groupBy.js`). The merged backends
 (`src/storage/{postgres,spanner,neo4j}.ts`) are real push-mirrors with only a raw-query
 passthrough and one 1-hop neighbor query — they do nothing to make grouping instant. This
@@ -95,7 +95,7 @@ LOT 6 per-layout precompute for display variants.
 
 ## Open decisions (owner)
 
-1. Postgres as default aclp-am backend, Neo4j as the traversal upgrade? (recommended yes)
+1. Postgres as default process-std-am backend, Neo4j as the traversal upgrade? (recommended yes)
 2. Which profile-declared node attribute is the temporal `ts`?
 3. Recursive-CTE-only first vs closure matview now? (recommended: CTE first)
 

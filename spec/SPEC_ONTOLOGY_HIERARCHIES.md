@@ -6,7 +6,7 @@
 - Scope: profile-driven ontology hierarchy generation, sidecar artifacts, studio passthrough
 - Spec state: **Approved — D1=1b, D2=2a confirmed; declarative path implemented**
 - Decisions: Decision 1 = **1b** (declarative, rebuild-only) and Decision 2 = **2a**
-  (registry `id_column`) are both **Approved**. The aclp-am peer signed
+  (registry `id_column`) are both **Approved**. The process-std-am peer signed
   `workspace-bundle-contract-v1` (artifactHash `sha256:5b08e19d…afaf`, stabilized 2/2).
 - State root: `.graphify/`
 - Activation: explicit ontology profile `hierarchies` block only
@@ -169,7 +169,7 @@ existing consumers are unaffected.
 ## Decision 1 — Hierarchy Lifecycle: Declarative vs. Reconciliation Cycle
 
 > **Resolved — Approved: D1 = Option 1b (declarative, rebuild-only).** Confirmed
-> by the product owner; the aclp-am peer signed `workspace-bundle-contract-v1`
+> by the product owner; the process-std-am peer signed `workspace-bundle-contract-v1`
 > (artifactHash `sha256:5b08e19d…afaf`, stabilized 2/2). The declarative path is
 > implemented in `compileOntologyOutputs`. The `source:"extracted"` candidate
 > lane is reserved for v2 (see "v2 bridge").
@@ -288,11 +288,11 @@ key `registry_record_id`, no id_map. (Signed via `workspace-bundle-contract-v1`,
 
 ---
 
-## Bundle relationship — core `hierarchies.json` → aclp-am `scene-hierarchies.json`
+## Bundle relationship — core `hierarchies.json` → process-std-am `scene-hierarchies.json`
 
 The core `hierarchies.json` (schema `graphify_ontology_hierarchies_v1`, a flat
 list of directed arcs) is the **upstream** artifact. The WP4 G2 bundle emitter
-reshapes it into the aclp-am-facing `scene-hierarchies.json` (schema
+reshapes it into the process-std-am-facing `scene-hierarchies.json` (schema
 `graphify_scene_hierarchies_v1`); the bundle is the downstream consumption
 artifact, not a replacement for the core sidecar.
 

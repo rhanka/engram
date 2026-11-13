@@ -195,7 +195,7 @@ function looksLikePdf(locator) {
  * original. When the original is bundled we open THAT, at the citation's page;
  * the markdown stays as the intermediate breadcrumb rather than the presented
  * artifact. When it is not bundled (a PDF corpus can run to tens of GB — the
- * ACLP one is 28 GB across 2230 files) we fall back to the markdown, and the
+ * PROCESS_STD one is 28 GB across 2230 files) we fall back to the markdown, and the
  * caller can still surface the original's path as provenance.
  * ------------------------------------------------------------------------ */
 

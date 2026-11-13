@@ -1,5 +1,5 @@
 // Engram acceptance oracle and deterministic case builders for the diagram
-// lot (frozen spec M3-R4 deb64b75, §§8.4/8.7, A.1/A.2, C.6).
+// lot (frozen spec M3-R4 d87220cd, §§8.4/8.7, A.1/A.2, C.6).
 // Governed data plus pure builders only. Full corpus execution and receipt
 // issuance stay owner-side (U-QUAL); the hashes below are the specified
 // expected values the builders must reproduce from pinned bytes.
@@ -30,16 +30,16 @@ export const SEALED_STABLE_ID_ALLOCATIONS: readonly { readonly owner: string; re
 
 export const ORACLE_SCHEMA_VERSION = "m3-r4-oracle/1" as const;
 export const ORACLE_SOURCE = {
-  sourceRef: "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-deb64b75.md",
-  sourceRevision: "deb64b75e884bfefbdd97de698c899805568271ea1fc521fffe02cbc20288c2f",
+  sourceRef: "m3/SPEC_EVOL_GD_M3_DIAGRAM_MODEL-FROZEN-d87220cd.md",
+  sourceRevision: "d87220cd60e37bd069709caeb6d3a27edfab7176175cbce13ff883ccb2117789",
 } as const;
 
 /** Derived-projection digests (§8.7): the specified expected values. */
 export const ORACLE_PROJECTION_DIGESTS = {
-  whole: "08cae540e5535727fc1f4b7bba3aa12d84908790b6c918dc263b65560ab4f2de",
+  whole: "2059896c05ace5e70ec987068f4304d01b67a5d647a836df7d8038fe43393b48",
   categoryTokens: "a77e2a62ddd6d576f06005969361ee15c241789fe8a571e6195dfb5c2782b3bf",
   a1Summaries: "e363601a0c116197a471a599e92dc94da16147f0e7e78346c1ab7c7df9a49018",
-  a5EntitiesPresentation: "527a0b18c1afee9e71591d6c2e3ef8d68294c89d5f0e593527b31a47b207a2b8",
+  a5EntitiesPresentation: "97b1ed1e2d221936a9bf1980efc81438a62806b22c81d325f24b33e55118e833",
 } as const;
 
 /** Sealed JCS numbers vector (§8.5): the exact expected canonical text. */

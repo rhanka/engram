@@ -52,7 +52,7 @@ function refKey(ref) {
  * subtree (self included). A forest row is an ontology row: hiding/soloing it
  * must govern every entity beneath it, exactly as a class governs its subclasses.
  *
- * Generic — nothing here knows ABP from ACLP; it walks whatever forests the
+ * Generic — nothing here knows ABP from PROCESS_STD; it walks whatever forests the
  * `scene-hierarchies.json` sidecar carries. A ref whose forest or node is absent
  * contributes nothing (a stale key can never mask the scene).
  *

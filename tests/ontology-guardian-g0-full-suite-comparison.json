@@ -494,7 +494,7 @@
   },
   "files": [
     {
-      "file": "tests/aclp-am-wp4-uat.test.ts",
+      "file": "tests/process-std-am-wp4-uat.test.ts",
       "base": {
         "status": "passed",
         "counts": {
@@ -8117,7 +8117,7 @@
       }
     },
     {
-      "file": "tests/ontology-aclp-am.test.ts",
+      "file": "tests/ontology-process-std-am.test.ts",
       "base": {
         "status": "passed",
         "counts": {

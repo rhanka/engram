@@ -128,7 +128,7 @@ describe("windowQuote", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Modality parsing + page resolution (the aclp-am page:"unknown" fix)
+// Modality parsing + page resolution (the process-std-am page:"unknown" fix)
 // ---------------------------------------------------------------------------
 
 describe("parseSource — OCR-markdown", () => {

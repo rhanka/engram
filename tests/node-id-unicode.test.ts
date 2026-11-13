@@ -103,7 +103,7 @@ describe("Unicode-safe node ids (upstream 95e2c5e / #811)", () => {
   it("normalizeIdPart preserves case and is ASCII-stable", () => {
     // Registry seed ids are case-preserving by contract.
     expect(normalizeIdPart("Poirot")).toBe("Poirot");
-    expect(normalizeIdPart("aclp-am")).toBe("aclp_am");
+    expect(normalizeIdPart("process-std-am")).toBe("process_std_am");
     expect(normalizeIdPart("  Hercule Poirot  ")).toBe("Hercule_Poirot");
     // ...and no longer erases non-Latin record ids.
     expect(normalizeIdPart("日本語")).toBe("日本語");

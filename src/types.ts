@@ -477,7 +477,7 @@ export interface ProjectConfigValidationIssue {
 /**
  * Ontology lifecycle status vocabulary.
  *
- * Increment B (ACLP-AM) introduces the 5-state hierarchy-arc lifecycle:
+ * Increment B (process-std-AM) introduces the 5-state hierarchy-arc lifecycle:
  *   reference  — registry-bound authoritative fact (confidence 1.0).
  *                Produced in v1 for every `source:"profile"` arc under D1=1b.
  *   validated  — human-accepted (e.g. a reviewer confirmed an extracted arc).

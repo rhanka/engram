@@ -1,7 +1,7 @@
 /**
  * workspace-bundle-contract-v1 (WP4 / F3) — workspace-manifest builder.
  *
- * The aclp-am peer consumes a *bundle* of graphify outputs (the scene plus its
+ * The process-std-am peer consumes a *bundle* of graphify outputs (the scene plus its
  * ontology / hierarchy sidecars). Until now each artifact was emitted
  * independently and there was no single descriptor letting the consumer
  * discover and validate the bundle as a whole. This module produces that
@@ -38,7 +38,7 @@ export const WORKSPACE_MANIFEST_SCHEMA_VERSION = 1 as const;
 
 /**
  * The bundle contract this manifest stamps. `workspace-bundle-contract-v1` is
- * the negotiated contract with the aclp-am peer — signed by both parties and
+ * the negotiated contract with the process-std-am peer — signed by both parties and
  * stabilized 2026-06-12 (h2a negotiation `workspace-bundle-contract-v1`,
  * artifactHash sha256:5b08e19d…; the `graphify_principal:"pending"` field inside
  * the proposed contract body is a frozen propose-time snapshot, superseded by

@@ -142,7 +142,7 @@ describe("GET /studio/sources/", () => {
   });
 
   it("serves sources from a state dir whose ontology profile was never compiled", async () => {
-    // Found on the real ACLP corpus: the route resolved its state dir through
+    // Found on the real PROCESS_STD corpus: the route resolved its state dir through
     // loadOntologyPatchContext, which also parses ontology-profile.normalized.json
     // and THROWS when the profile compile has not run. In an async handler that
     // throw is an unhandled rejection — it killed the server process on the first

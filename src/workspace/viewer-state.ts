@@ -1,7 +1,7 @@
 /**
  * Track G Lot 1 / G3 — generic workspace viewer state model.
  *
- * Strips aclp-am domain specifics (no `framework`, no
+ * Strips process-std-am domain specifics (no `framework`, no
  * `processes.activeTree="abp"`, no `evidence_modes` hard-coded) and
  * exposes a profile-neutral state. Profile-declared sub-states arrive
  * through a separate adapter (cf SPEC_TRACK_G_WORKSPACE.md > "Resolved
@@ -216,7 +216,7 @@ export function normalizeViewerState(partial: unknown = {}): WorkspaceViewerStat
 
 /**
  * Compact URL query map. Keys are stable; missing values mean "use the
- * default". Inspired by aclp-am viewerStateToQuery but stripped of
+ * default". Inspired by process-std-am viewerStateToQuery but stripped of
  * domain-specific keys (framework/media/docs/tree/expanded/evidence).
  * Profile-declared facet keys are preserved verbatim under a `facet.*`
  * prefix so the round-trip survives without core knowing the schema.

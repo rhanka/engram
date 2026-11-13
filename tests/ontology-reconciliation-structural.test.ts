@@ -19,9 +19,9 @@ import type { NormalizedOntologyProfile } from "../src/types.js";
  * not look alike.
  *
  * The measured reality these tests encode (mystery pack, 1983 nodes / 3553
- * relations, and the ACLP bundle, 38853 nodes / 13921 relations): raw
+ * relations, and the PROCESS_STD bundle, 38853 nodes / 13921 relations): raw
  * shared-neighbour similarity finds SIBLINGS, not duplicates. Unguarded it
- * emitted 18 candidates on mystery and 119 on ACLP, and every one inspected was
+ * emitted 18 candidates on mystery and 119 on PROCESS_STD, and every one inspected was
  * a false positive (Father Brown ↔ Flambeau; Google Sheets ↔ Google Drive).
  * With the guard suite below, both corpora emit 0 — while the positive control
  * proves the tier is not vacuous.
@@ -293,7 +293,7 @@ describe("structural tier — false-positive guards", () => {
 
   it("(S7) rejects SAME-SOURCE siblings: one pass over one document separated them", () => {
     // Google Sheets ↔ Google Drive: same document, same five supported processes.
-    // Measured as the guard that removes all 119 ACLP false positives.
+    // Measured as the guard that removes all 119 PROCESS_STD false positives.
     const fixture = twinFixture({ shared: 6, sourceA: "doc/same.txt", sourceB: "doc/same.txt" });
     const result = match(fixture);
     expect(result.matched).toBe(false);

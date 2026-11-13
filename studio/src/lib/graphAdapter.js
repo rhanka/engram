@@ -1064,7 +1064,7 @@ export function citationsByFileFrom(list, fallbackSourceFile = null) {
       //
       // A page is a PAGE NUMBER or nothing. `OntologyCitation.page` is typed
       // `number | string`, and an LLM-extracted corpus routinely carries the
-      // literal `"unknown"` (43 297 of them in the ACLP graph) — passing that
+      // literal `"unknown"` (43 297 of them in the PROCESS_STD graph) — passing that
       // through rendered the locator "p.unknown", which is worse than no
       // locator: it looks like a real reference to a page called "unknown" and
       // it cannot be navigated to. Non-numeric ⇒ null, and the panel falls back

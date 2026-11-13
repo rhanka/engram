@@ -216,7 +216,7 @@
     {
       "id": "A2",
       "scene": "S2-asbuilt",
-      "sourceSha256": "7abc427f7beca5b0f87947efc9df4daf6316f24725074f47f1da2b04be76ba2e",
+      "sourceSha256": "89f0532b5687703002e5f52a3a2cfe0540a675698e106ee50dbba09aed6298fe",
       "counts": {
         "node": 41,
         "container": 17,
@@ -341,7 +341,7 @@
     {
       "id": "A3",
       "scene": "S2-target",
-      "sourceSha256": "28a7271dd0bec89fa9ad435174a614ab4a40b346b10724da95736f9c55b574d9",
+      "sourceSha256": "7b934c66bd85a9c0d47607f89f9624ae71116c372bdb479900b786ebb1f36087",
       "counts": {
         "node": 51,
         "container": 22,
@@ -483,7 +483,7 @@
     {
       "id": "A4a",
       "scene": "S1-conversational",
-      "sourceSha256": "d9f7f7cb80894b5301e11cc7b7f0fc2775d1933aa15013152001395d716a32c7",
+      "sourceSha256": "5e98a495e502f8913cbb93d6feddc233193f39f72c43a1c151f4ad430978c881",
       "counts": {
         "node": 23,
         "container": 17,
@@ -594,7 +594,7 @@
     {
       "id": "A4b",
       "scene": "S3-agentfactory",
-      "sourceSha256": "e362b9a8da84082e5389127ae463d282fb773ef8950f41017222e0b3ef9002fc",
+      "sourceSha256": "53efdb2f4e41551940e8c61ab4500cfb77d7789690f4577f093e58f32ceb7dbe",
       "counts": {
         "node": 37,
         "container": 15,
@@ -705,7 +705,7 @@
     },
     {
       "id": "A5",
-      "sourceSha256": "46f64154bb6592d49ccda5633b2c4d4205fb1c6752ef218be31d6757923ecf91",
+      "sourceSha256": "aea6a7ecc2b71a1a5fd22bc60452e29530601b908ebe33256edf76b0e9fd2988",
       "counts": {
         "node": 33,
         "container": 18,
@@ -909,7 +909,7 @@
           "attributes": {
             "name": {
               "kind": "text",
-              "value": "Airbus GitHub"
+              "value": "client-org GitHub"
             }
           }
         },
@@ -935,7 +935,7 @@
           "attributes": {
             "name": {
               "kind": "text",
-              "value": "Airbus GitLab"
+              "value": "client-org GitLab"
             }
           }
         },
@@ -1635,7 +1635,7 @@
           "form": "container",
           "text": {
             "kicker": "OUTSIDE GCP",
-            "subtitle": "Airbus GitHub · Airbus GitLab · CI/CD",
+            "subtitle": "client-org GitHub · client-org GitLab · CI/CD",
             "footer": "scope: Outside GCP"
           },
           "icon": "link"
@@ -1644,8 +1644,8 @@
           "form": "container",
           "text": {
             "kicker": "GH",
-            "subtitle": "github.airbus.corp",
-            "footer": "service: Airbus GitHub"
+            "subtitle": "github.client-org.corp",
+            "footer": "service: client-org GitHub"
           },
           "icon": "link"
         },
@@ -1662,18 +1662,18 @@
         "occurrence:GITLABZ": {
           "form": "container",
           "text": {
-            "kicker": "AIRBUS SCM",
+            "kicker": "client-org SCM",
             "subtitle": "SCM",
-            "footer": "service: Airbus SCM"
+            "footer": "service: client-org SCM"
           },
           "icon": "link"
         },
         "occurrence:AWSCI": {
           "form": "container",
           "text": {
-            "kicker": "AIRBUS AWS",
+            "kicker": "client-org AWS",
             "subtitle": "CI Jenkins · Registry JFrog",
-            "footer": "service: Airbus AWS"
+            "footer": "service: client-org AWS"
           },
           "icon": "server"
         },
@@ -1691,7 +1691,7 @@
             "kicker": "USR",
             "body": "HR users and employees",
             "detail": "ask HR policy questions in Chat",
-            "footer": "actor: Airbus employees"
+            "footer": "actor: client-org employees"
           },
           "icon": "people"
         },

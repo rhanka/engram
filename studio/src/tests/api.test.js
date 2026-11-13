@@ -143,7 +143,7 @@ describe("fetchSceneHierarchies (Lot 2)", () => {
   const artifact = {
     schema: "graphify_scene_hierarchies_v1",
     hierarchies: {
-      aclp_process_tree: { root_ids: ["AM01"], nodes_by_id: { AM01: { child_ids: [] } } },
+      process_std_process_tree: { root_ids: ["AM01"], nodes_by_id: { AM01: { child_ids: [] } } },
     },
   };
 

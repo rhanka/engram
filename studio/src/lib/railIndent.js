@@ -22,7 +22,7 @@
  * net for pathological depths rather than a visible cliff.
  *
  * Generic by construction: the scheme is driven by `depth` alone — no repo, no
- * artifact, no ABP/ACLP knowledge. Every consumer (ontology class rows and
+ * artifact, no ABP/PROCESS_STD knowledge. Every consumer (ontology class rows and
  * registry-forest rows alike) shares ONE ladder, so a forest row nested under two
  * class levels continues the same decay instead of restarting it.
  */

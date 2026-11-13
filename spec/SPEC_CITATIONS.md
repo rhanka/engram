@@ -351,7 +351,7 @@ Per node → modality-aware source parse → normalize (with the verbatim gate) 
 type-aware candidate match → window the quote → emit:
 
 1. **Modality parse.** OCR-markdown: leading `---…---` front-matter SKIPPED (so
-   page numbering starts at 1 — the aclp-am `page:"unknown"` fix); bare `---` →
+   page numbering starts at 1 — the process-std-am `page:"unknown"` fix); bare `---` →
    page increment; `#{1,4} ` → section; `![](…)` → image with prev/next prose
    context. Plain text: chapter/story headings → section; paragraphs → units;
    pages meaningless (page 1).

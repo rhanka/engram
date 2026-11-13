@@ -268,10 +268,10 @@ describe("buildClassHierarchies — engram_ontology_class_hierarchies_v1", () =>
           member_node_types: ["ABPProcess"],
           member_hierarchies: ["abp_process_tree", "abp_process_tree"],
         },
-        ACLP: {
+        PROCESS_STD: {
           parent: "Process",
-          member_node_types: ["ACLPProcess"],
-          member_hierarchies: ["aclp_process_tree"],
+          member_node_types: ["ProcessStdProcess"],
+          member_hierarchies: ["process_std_process_tree"],
         },
         Unreconciled: { parent: "Process", member_node_types: ["Process"] },
       }),
@@ -279,7 +279,7 @@ describe("buildClassHierarchies — engram_ontology_class_hierarchies_v1", () =>
     const classes = buildClassHierarchies(block, []).hierarchies["tax"]!.classes_by_id;
     // De-duplicated + sorted, and NEVER merged across the two process trees.
     expect(classes["class:ABP"]!.member_hierarchies).toEqual(["abp_process_tree"]);
-    expect(classes["class:ACLP"]!.member_hierarchies).toEqual(["aclp_process_tree"]);
+    expect(classes["class:PROCESS_STD"]!.member_hierarchies).toEqual(["process_std_process_tree"]);
     // A class with no binding keeps an empty list (not undefined).
     expect(classes["class:Unreconciled"]!.member_hierarchies).toEqual([]);
     expect(classes["class:Process"]!.member_hierarchies).toEqual([]);

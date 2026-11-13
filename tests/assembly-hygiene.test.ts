@@ -350,7 +350,7 @@ describe("deOrphanByContainer (D) — giant-component steering", () => {
     // chapter, which really does contain it — so we use it, and accept that the
     // component stays separate. Wiring the orphan to the unrelated giant's hub
     // (the previous `deorphan:giant-hub-global`) would assert a relationship the
-    // corpus does not contain; at ACLP scale that path emitted 19 542 such
+    // corpus does not contain; at PROCESS_STD scale that path emitted 19 542 such
     // edges onto a single anchor.
     const otherWork = node({ id: "work_other", label: "Other", type: "Work", source_file: "corpus/other/text.txt" });
     const a = node({ id: "character_a", label: "A", type: "Character", source_file: "corpus/other/text.txt" });

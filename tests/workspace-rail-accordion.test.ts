@@ -2,7 +2,7 @@
  * Track G G-studio-lot3 — left column accordion.
  *
  * #5 Left column = accordion, COLLAPSED by default: Type, Facets, Results
- *    (parity with aclp-am LeftWorkbench).
+ *    (parity with process-std-am LeftWorkbench).
  * #6 A COMMUNITIES panel in the left column, ABOVE Facets, collapsed by
  *    default (Graphify-specific; communities come from graph clustering /
  *    community_labels).
@@ -101,6 +101,6 @@ describe("Track G G-studio-lot3 — communities panel (#6)", () => {
 
   it("does not leak corpus-specific strings", () => {
     const html = rail();
-    expect(html).not.toMatch(/\b(?:framework|abp|aclp|ABPProcess|ACLPProcess|BusinessObject|DigitalApplicationTool)\b/);
+    expect(html).not.toMatch(/\b(?:framework|abp|process_std|ABPProcess|ProcessStdProcess|BusinessObject|DigitalApplicationTool)\b/);
   });
 });

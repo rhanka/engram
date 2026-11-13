@@ -3,7 +3,7 @@
  *
  * Writes the bundle descriptor `workspace-manifest.json` (schema
  * `engram_workspace_manifest_v1`) into the bundle root, alongside the scene
- * + its sidecars. The aclp-am peer consumes the manifest first: it discovers
+ * + its sidecars. The process-std-am peer consumes the manifest first: it discovers
  * the bundle's artifacts, validates their schema ids, and verifies integrity
  * via the per-artifact sha256 + size_bytes — without out-of-band knowledge of
  * which files a given build emitted.
@@ -62,7 +62,7 @@ interface BundleArtifactSpec {
 }
 
 /**
- * The canonical bundle layout the aclp-am peer consumes. Order here is
+ * The canonical bundle layout the process-std-am peer consumes. Order here is
  * irrelevant (the builder sorts by name); this is the closed set the emitter
  * always reports on, so a missing artifact surfaces as `present: false`.
  */

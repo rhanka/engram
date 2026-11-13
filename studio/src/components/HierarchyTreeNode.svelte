@@ -1,6 +1,6 @@
 <script>
   /**
-   * One node of a registry FOREST (ABP / ACLP / org unit tree), rendered
+   * One node of a registry FOREST (ABP / PROCESS_STD / org unit tree), rendered
    * recursively — and a FIRST-CLASS ontology row.
    *
    * The forests are spliced into the ontology tree (OntologyClassNode), so a

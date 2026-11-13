@@ -8,12 +8,12 @@
  *   1. GROUNDING — a derived edge exists only where the corpus supports it
  *      (containment, or co-provenance = the same source document). An orphan
  *      with neither ground STAYS ORPHANED and is counted in `unattachable`.
- *      Measured on the ACLP graph (47 762 nodes), the previous global-hub
+ *      Measured on the PROCESS_STD graph (47 762 nodes), the previous global-hub
  *      fallback emitted 19 542 edges with NO provenance relation at all.
  *
  *   2. NO SYNTHETIC STAR — co-provenance attachments are spread over the
  *      top-ranked peers of the document (√-rule), so no node becomes a hub of
- *      derived degree-1 spokes. Measured on ACLP: the previous policy funnelled
+ *      derived degree-1 spokes. Measured on PROCESS_STD: the previous policy funnelled
  *      all 20 389 orphans onto ONE anchor (its degree went 39 → 20 417); the
  *      policy under test spreads 16 516 attachments over 5 624 anchors with a
  *      worst fan-out of 35, leaving the graph's densest node at degree 40.
@@ -88,7 +88,7 @@ function components(nodes: GraphNode[], edges: GraphEdge[]): Set<string>[] {
 
 /**
  * A document ("doc-a") whose extraction produced ONE small connected core plus
- * `orphanCount` degree-0 entities. This is the shape that produced the ACLP
+ * `orphanCount` degree-0 entities. This is the shape that produced the PROCESS_STD
  * star: many same-document orphans, a handful of grounded peers.
  */
 function coProvenanceGraph(orphanCount: number, peerCount = 6): Extraction {

@@ -148,7 +148,7 @@ describe("buildStudioScene — parity with studio buildScene", () => {
         {
           id: "AM0104.01",
           label: "Manage identity",
-          node_type: "ACLPProcess",
+          node_type: "ProcessStdProcess",
           status: "validated",
           parent_id: "AM0104",
           level: 2,
@@ -164,13 +164,13 @@ describe("buildStudioScene — parity with studio buildScene", () => {
           relation_type: "candidate_maps_to",
           assertion_basis: "heuristic_guess",
           review_status: "candidate",
-          evidence_refs: ["registry#aclp"],
+          evidence_refs: ["registry#process_std"],
         },
       ],
     });
 
     expect(scene.nodes[0]).toMatchObject({
-      type: "ACLPProcess",
+      type: "ProcessStdProcess",
       status: "validated",
       parent_id: "AM0104",
       level: 2,
@@ -187,7 +187,7 @@ describe("buildStudioScene — parity with studio buildScene", () => {
       relation_type: "candidate_maps_to",
       assertion_basis: "heuristic_guess",
       review_status: "candidate",
-      evidence_refs: ["registry#aclp"],
+      evidence_refs: ["registry#process_std"],
       weak: true,
     });
   });
@@ -198,10 +198,10 @@ describe("buildStudioScene — parity with studio buildScene", () => {
     const rawIds = ["AM0104.01", "DE.AI.01", "org:CODE", "550e8400-e29b-41d4-a716-446655440000"];
     const withRegistry = {
       nodes: rawIds.map((raw, i) => ({
-        id: `registry_aclp_${raw.replace(/[^A-Za-z0-9]+/g, "_")}`,
+        id: `registry_process_std_${raw.replace(/[^A-Za-z0-9]+/g, "_")}`,
         label: `Record ${i}`,
-        node_type: "ACLPProcess",
-        registry_id: "aclp",
+        node_type: "ProcessStdProcess",
+        registry_id: "process_std",
         registry_record_id: raw,
       })),
       links: [],
@@ -209,7 +209,7 @@ describe("buildStudioScene — parity with studio buildScene", () => {
     const scene = buildStudioScene(withRegistry);
     scene.nodes.forEach((node, i) => {
       expect(node.registry_record_id).toBe(rawIds[i]); // verbatim, lossless
-      expect(node.registry_id).toBe("aclp");
+      expect(node.registry_id).toBe("process_std");
     });
     // SPA adapter stays in lockstep (parity incl. serialized field order).
     expectParity(withRegistry);

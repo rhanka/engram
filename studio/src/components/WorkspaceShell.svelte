@@ -1,8 +1,8 @@
 <script>
   /**
    * Three-column workspace shell: left rail / center graph / right entity panel.
-   * Mirrors the aclp-am WorkspaceShell slot contract (left + graph), extended
-   * with a `right` slot for the entity panel (the ACLP "Track B slot").
+   * Mirrors the process-std-am WorkspaceShell slot contract (left + graph), extended
+   * with a `right` slot for the entity panel (the PROCESS_STD "Track B slot").
    */
   let { children } = $props();
 </script>

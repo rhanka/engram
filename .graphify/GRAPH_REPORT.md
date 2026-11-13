@@ -56,7 +56,7 @@ Nodes (352): b1-p1-golden-expand, b1-p2-edges-impl, b1-phase1-shapes, b1-phase5-
 
 ### Community 2 - "Community 2"
 Cohesion: 0.05
-Nodes (205): feat/track-c-3.5-visual-encoding, feat/track-f-h1-hypergraph, feat/track-f-m2-v08x, feat/track-g-aclp-workspace, feat/track-g-g3-viewer-state, 014aace Address Lot 4 provider review fixes, 0440c1e Merge pull request #25 from rhanka/feat/track-c1-review-precision, 0509dea Add no-Python fallback language coverage (+197 more)
+Nodes (205): feat/track-c-3.5-visual-encoding, feat/track-f-h1-hypergraph, feat/track-f-m2-v08x, feat/track-g-process-std-workspace, feat/track-g-g3-viewer-state, 014aace Address Lot 4 provider review fixes, 0440c1e Merge pull request #25 from rhanka/feat/track-c1-review-precision, 0509dea Add no-Python fallback language coverage (+197 more)
 
 ### Community 3 - "Community 3"
 Cohesion: 0.40
@@ -320,7 +320,7 @@ Nodes (33): 2289b42 fix(graph): premultiplied alpha for the WebGL2 beta (hover-d
 
 ### Community 68 - "Community 68"
 Cohesion: 0.08
-Nodes (27): e6d93f2 feat(ontology): WP4 ACLP-AM hierarchy lifecycle — overlay status + UAT evidence, arcStatus(), buildOneHierarchy(), buildSceneHierarchySidecar(), BuildSceneHierarchySidecarOptions, arcNodeIds(), clearSceneHierarchiesEmitterCache(), emitSceneHierarchies() (+19 more)
+Nodes (27): e6d93f2 feat(ontology): WP4 process-std-AM hierarchy lifecycle — overlay status + UAT evidence, arcStatus(), buildOneHierarchy(), buildSceneHierarchySidecar(), BuildSceneHierarchySidecarOptions, arcNodeIds(), clearSceneHierarchiesEmitterCache(), emitSceneHierarchies() (+19 more)
 
 ### Community 69 - "Community 69"
 Cohesion: 0.10

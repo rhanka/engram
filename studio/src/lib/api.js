@@ -273,7 +273,7 @@ export async function fetchClassHierarchies() {
 
 /**
  * Lot 2: fetch the `scene-hierarchies.json` sidecar (graphify_scene_hierarchies_v1)
- * — the standalone registry process forests (ABP / ACLP / org unit trees) the
+ * — the standalone registry process forests (ABP / PROCESS_STD / org unit trees) the
  * Hierarchies rail navigates. Same resolution ladder as fetchClassHierarchies:
  * inlined offline bundle → same-origin server route → bundle-relative static
  * copy. Resolves `null` when absent (a repo without registry hierarchies) so the

@@ -214,7 +214,7 @@ function compactMetaInline(
   canonicalNode: GraphNodeLike | null,
 ): CompactMetaInline {
   // Prefer the canonical's authoritative facts; fall back to the
-  // candidate's when canonical is missing. This matches the ACLP
+  // candidate's when canonical is missing. This matches the PROCESS_STD
   // workspace's "one line of meta" pattern — a single authoritative
   // pair, not two diverging stacks.
   return {

@@ -502,7 +502,7 @@ function walkProvenanceChain(
 /**
  * Suffixes of documents that can honour a citation's `page`.
  *
- * This is what decides the ACLP question — "highlight the PDF, not the source
+ * This is what decides the PROCESS_STD question — "highlight the PDF, not the source
  * HTML" — and the reason is addressing, not format snobbery. A citation carries
  * a page number; a PDF can scroll to it and mark the passage, while the web page
  * the PDF was published behind has no page 3 to go to. Preferring the paginated
@@ -519,7 +519,7 @@ function isPageAddressable(ref: string): boolean {
  * Choose the link a viewer should PRESENT and highlight.
  *
  * Four steps, each a fallback for the one above:
- *   1. the deepest openable, PAGE-ADDRESSABLE local file. For the ACLP chain
+ *   1. the deepest openable, PAGE-ADDRESSABLE local file. For the PROCESS_STD chain
  *      (web page -> PDF -> OCR markdown) that is the PDF — and it stays the PDF
  *      even when the chain also records the HTML the paper was published behind,
  *      because only the PDF can honour the citation's page;

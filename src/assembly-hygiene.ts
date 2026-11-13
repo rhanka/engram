@@ -547,7 +547,7 @@ function highestDegreeIn(
  * The path this replaces — "attach to the global highest-degree node of the
  * giant" — is available only behind `allowGlobalHubFallback: true`, because on a
  * real corpus it wires every otherwise-unattachable orphan to one node (measured
- * on ACLP: 19 542 invented edges onto a single anchor).
+ * on PROCESS_STD: 19 542 invented edges onto a single anchor).
  *
  * Deterministic (orphans processed in sorted id order, added edges sorted),
  * O(n log n), no LLM, idempotent: re-running on its own output adds nothing.

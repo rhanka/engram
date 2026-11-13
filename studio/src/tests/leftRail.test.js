@@ -208,7 +208,7 @@ describe("LeftRail — ONE ontology: the process forests are NESTED, not a secon
 
   it("splices each forest under the CLASS that declares member_hierarchies", () => {
     // The binding is read off the compiled taxonomy (class-hierarchies.json), so
-    // the mapping stays repo-declared — nothing ACLP-specific in studio core.
+    // the mapping stays repo-declared — nothing process-std-specific in studio core.
     // (The derivation itself is unit-tested in ontologyTree.test.js.)
     expect(railSource).toMatch(
       /buildOntologyTree\(typeList, classHierarchies, forestList\)/,
@@ -328,12 +328,12 @@ describe("the tree ROW carries the same affordances as a class row", () => {
   });
 
   it("stays generic — no repo, forest or process code is hardcoded in studio core", () => {
-    // Prose may name ABP/ACLP as the motivating example; the CODE may not.
+    // Prose may name ABP/PROCESS_STD as the motivating example; the CODE may not.
     for (const source of [treeNodeSource, classNodeSource]) {
       const code = stripComments(source);
       expect(code).not.toMatch(/\bABP\b/);
-      expect(code).not.toMatch(/\bACLP\b/);
-      expect(code).not.toMatch(/abp_process_tree|aclp_process_tree/);
+      expect(code).not.toMatch(/\bPROCESS_STD\b/);
+      expect(code).not.toMatch(/abp_process_tree|process_std_process_tree/);
     }
   });
 });

@@ -13,14 +13,14 @@ Reference upstream: `repowise-dev/repowise` at `6680c2822a64ee2c0bc53c196fe7a321
 
 The 2026-07-06 intake produced a 31-row bucketed table (4 adopt / 8 must-audit / 14 defer / 4 n-a) plus one deep-dive (curated responses). The principal's feedback: the deliverable over-focused on that one feature. This study deep-dives **every opportunity the table only rowed**, so each can be decided on its own merits.
 
-- **Adoption targets** are drawn from: `graphify core` (this repo), `sentropic mesh/gateway` (`@sentropic/llm-mesh`, consumed via `src/llm-mesh-bridge.ts`), `aclp-am` (ontology/hierarchy peer, WP4 G2 signed contract), `nc-fullstack` (offline retrieval client of published packs), `radar` (radar-immo, the consumer that drove the native DB backends #139).
+- **Adoption targets** are drawn from: `graphify core` (this repo), `sentropic mesh/gateway` (`@sentropic/llm-mesh`, consumed via `src/llm-mesh-bridge.ts`), `process-std-am` (ontology/hierarchy peer, WP4 G2 signed contract), `nc-fullstack` (offline retrieval client of published packs), `radar` (radar-immo, the consumer that drove the native DB backends #139).
 - **Cost scale**: S (≤ a few days, one seam), M (a lot, several seams or one new artifact class), L (its own program/spec).
 - **Phases**: Phase 1 = next implementation lot, S-sized, no product-surface controversy. Phase 2 = after the open decisions in §15. Phase 3 = gated on a foundation (git-intelligence axis, WP4 G2 stabilization, python-upstream audit). Phase 4 = product-decision defers (each needs its own spec before any work).
 - **Honesty rule**: where our side is thinner than the intake table implied, this study says so (see §10 skeletons, §12 unwired provider registry).
 
 ## 1. Curated responses — pointer (not duplicated)
 
-The full mechanism analysis (wiki-page corpus, `answer_cache`, confidence gating, `human_notes`, lifecycle) and the three-target adoption design (graphify code corpora / aclp-am / nc-fullstack) live in **`spec/SPEC_EVOL_CURATED_RESPONSES.md`** (DRAFT, 5 open decisions). Join point on our side: the `answer: null` offline seam of `graphify_answer_pack_v1` (`src/retrieval/answer-pack.ts:33`, slot at `:150`, assembler at `:235`; CLI `answer` `src/cli.ts:5601`; MCP `answer_graph` `src/serve.ts:905`). Its open decisions are **not** repeated in §15; the two lists are disjoint by construction (§15.D2 touches the savings-accounting decision that spec already flagged as separable — it is folded here, superseding that spec's open decision 5).
+The full mechanism analysis (wiki-page corpus, `answer_cache`, confidence gating, `human_notes`, lifecycle) and the three-target adoption design (graphify code corpora / process-std-am / nc-fullstack) live in **`spec/SPEC_EVOL_CURATED_RESPONSES.md`** (DRAFT, 5 open decisions). Join point on our side: the `answer: null` offline seam of `graphify_answer_pack_v1` (`src/retrieval/answer-pack.ts:33`, slot at `:150`, assembler at `:235`; CLI `answer` `src/cli.ts:5601`; MCP `answer_graph` `src/serve.ts:905`). Its open decisions are **not** repeated in §15; the two lists are disjoint by construction (§15.D2 touches the savings-accounting decision that spec already flagged as separable — it is folded here, superseding that spec's open decision 5).
 
 ## 2. Counterfactual savings accounting
 
@@ -44,7 +44,7 @@ The full mechanism analysis (wiki-page corpus, `answer_cache`, confidence gating
 
 **Value for us.** Every agent session starts by paying the orientation tax. We already *install* a static rules section — but it contains zero facts about the repo. A deterministic, graph-derived block (top communities with their salient labels, hub/god nodes, entry points, node/edge counts, build stamp) makes the graph's first hop free, before any tool call. No-key by construction — it strengthens the skill-default posture rather than fighting it.
 
-**Adoption target(s).** `graphify core`. Consumers: every repo with the skill installed (including `aclp-am`, `radar`, `nc-fullstack` hosts).
+**Adoption target(s).** `graphify core`. Consumers: every repo with the skill installed (including `process-std-am`, `radar`, `nc-fullstack` hosts).
 
 **Data joins & gaps.** The mechanics half already exists: `CLAUDE_MD_SECTION` (`src/cli.ts:697`) is written marker-managed via `replaceOrAppendSection(content, MD_MARKER, …)` (`src/cli.ts:896`, `:1955`), with per-platform variants (`:1192-1207` for the skill, GEMINI/codex variants nearby). The data half also exists: community labels (`src/community-labels.ts`), god nodes/surprises (`src/analyze.ts:1-4`), first-hop summary (`src/serve.ts:812`, CLI `summary` `src/cli.ts:5041`), GRAPH_REPORT generation (`src/report.ts:139+`). The gap is purely the join: nothing renders graph data *into* the managed section, and `hook-rebuild` (`src/cli.ts:5691`) does not refresh it. Design: a second managed sub-block (its own marker pair, so the static rules and the generated facts diff independently) emitted from the same data `summary` reads.
 
@@ -92,7 +92,7 @@ The full mechanism analysis (wiki-page corpus, `answer_cache`, confidence gating
 
 **Value for us.** Our review risk is purely structural: `computeRiskScore` (`src/detect-changes.ts:185`) weighs flow criticality, caller count, community spread — it knows nothing about *history* (a hot, fix-prone, scattered change scores the same as a cold one). Git-mined features are the orthogonal half of the risk picture, and they feed `review-delta`/`review-analysis` and the PR lane (`src/pr.ts`) directly. The deeper value is repowise's *published honesty*: the calibrated model is nearly indistinguishable from churn-only — which tells us the features matter more than the model.
 
-**Adoption target(s).** `graphify core` (review lane). Not mesh, not aclp-am.
+**Adoption target(s).** `graphify core` (review lane). Not mesh, not process-std-am.
 
 **Data joins & gaps.** We already extract git *topology*: `src/extract-git.ts` builds Commit/Branch/File nodes with PARENT_OF / ON_BRANCH / MODIFIES edges (adapter `graphify-git/1`, `:6`), default window 200 commits (`:8`), powering the git-flow view (#265). What's missing is the *derived features layer*: no per-commit diffstat (lines±), no entropy, no subsystem count, no author-experience accumulation, no is_fix classifier, and no join from those to `review-analysis` (`buildBlastRadius`, `src/review-analysis.ts:159`, counts only structural facts). Joins: (a) extend the extract-git walk with `--numstat`-derived features (one pass, same subprocess posture); (b) store as a derived sidecar or Commit-node attributes (decision §15.D1 — this is the git-intelligence axis, shared with co-change/ownership §13); (c) surface raw features + per-feature explanation in `review-delta` output.
 
@@ -140,7 +140,7 @@ The full mechanism analysis (wiki-page corpus, `answer_cache`, confidence gating
 
 **Value for us.** This is onboarding-as-data: "read the repo in 8 stops, in this order, for these reasons" — deterministic, budget-honest, and exactly the artifact the Studio and the wiki lack. The invariant matches ours verbatim: our hierarchy sidecar is precisely a curation overlay over an untouched base (`src/scene-hierarchies.ts:1-33`).
 
-**Adoption target(s).** `graphify core` (Studio + wiki) **and** `aclp-am` (tours over validated hierarchies: "walk the AM lot structure in ratification order" is the same mechanism on a different corpus). `nc-fullstack` consumes tours shipped in packs.
+**Adoption target(s).** `graphify core` (Studio + wiki) **and** `process-std-am` (tours over validated hierarchies: "walk the AM lot structure in ratification order" is the same mechanism on a different corpus). `nc-fullstack` consumes tours shipped in packs.
 
 **Data joins & gaps.** We have the sidecar substrate (two-lane `graphify_scene_hierarchies_v1`, `src/scene-hierarchies.ts:39`, WP4 G2 signed 2/2 — contract **frozen**, so tours must NOT be jammed into it), Studio group-by/collapse, community labels, and wiki pages (`src/wiki.ts`). We have **no** entry-point ranking (no `is_entry_point` flag in `GraphNode`, `src/types.ts:46-75`), no tour artifact, no per-node curated overlay class. Joins: (a) entry-point scoring from our own signals (package.json `bin`/`main`, filename stems, in/out-degree, PageRank); (b) a standalone `graphify_tour_v1` sidecar (schema mirroring the hierarchy sidecar's id discipline); (c) Studio tour player (walks the scene, highlights per step); (d) optionally a wiki "onboarding" page narrating the ordered stops (one LLM call, respecting no-key: skip narration offline, serve the deterministic order).
 
@@ -207,7 +207,7 @@ These stay `defer` from the intake table; this study only assigns owner/phase an
 | Code Health 25-marker model (#13, `docs/CODE_HEALTH.md`) | graphify core | L | Own spec + own calibration; the §6 honesty lesson (churn baseline is nearly as good) applies doubly here. Phase 4. |
 | Dead-code detection (#14, `analysis/dead_code`) | graphify core | M/L | Needs §4 SCC + §11 entry points first (reachability roots). Phase 4. |
 | Co-change mining + owners/bus-factor (#15/#16, `analysis/coupling`, `git_metadata`) | graphify core | M | The other half of §15.D1's git-intelligence axis; co-change also feeds §6 and reviewer suggestions. Phase 3 if D1 = yes. |
-| ADR/decision mining (#17, `analysis/decisions`) | graphify core (+ aclp-am patterns) | L | Verification-ladder + evidence-accretion patterns already adopted into the curated-responses spec; full mining is Phase 4. |
+| ADR/decision mining (#17, `analysis/decisions`) | graphify core (+ process-std-am patterns) | L | Verification-ladder + evidence-accretion patterns already adopted into the curated-responses spec; full mining is Phase 4. |
 | Distill / omission store (#18, `docs/DISTILL.md`) | host-side (skill), not graphify core | L | Agent-IO middleware conflicts with our no-key skill posture (output shaping belongs to the HOST assistant). Revisit only if the skill contract changes. |
 | Multi-repo workspaces + contracts (#19, `docs/WORKSPACES.md`) | sentropic (org-level), graphify participates | L | Contract extraction is the interesting kernel; webhook intake folds here. Phase 4. |
 | C4 views (#20) | graphify core (Studio) | M/L | Re-evaluate after hierarchy-collapse UX + §11 externals exist (C4 L1 is mostly a rendering of §11). Phase 4. |
@@ -221,20 +221,20 @@ These stay `defer` from the intake table; this study only assigns owner/phase an
 
 ## 14. Prioritized table
 
-Value = leverage for our actual product lines (skill-first code intelligence, aclp-am ontology program, published packs), not upstream shininess.
+Value = leverage for our actual product lines (skill-first code intelligence, process-std-am ontology program, published packs), not upstream shininess.
 
 | # | Opportunity | Value | Cost | Owner repo | Phase |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Counterfactual savings accounting (§2) | **High** | S | graphify core (agent-stats + serve) | **1** |
 | 2 | Deterministic CLAUDE.md context block (§3) | **High** | S | graphify core | **1** |
 | 3 | SCC / import-cycle pass (§4) | **High** | S | graphify core | **1** |
-| 4 | Curated responses (§1 → own spec) | **High** | M + S | graphify core → nc-fullstack → aclp-am | 2 (sequencing in its spec) |
+| 4 | Curated responses (§1 → own spec) | **High** | M + S | graphify core → nc-fullstack → process-std-am | 2 (sequencing in its spec) |
 | 5 | MCP facets `include=` (§10, facet half) | Med/High | S | graphify core | 2 |
 | 6 | Search auto-routing + grep-hint (§5) | Med/High | S/M | graphify core | 2 (merge with serve/query parity lot) |
 | 7 | Agent-provenance fallback lane (§7) | Med | S | graphify core (agent-stats) | 2 |
 | 8 | Per-call LLM cost ledger (§8) | Med | S + S | **sentropic mesh/gateway** (graphify emits events only) | 2 (gated on live mesh bridge) |
 | 9 | Kamei change-risk features, raw-features-first (§6) | Med/High | M | graphify core (review lane) | 3 (gated D1) |
-| 10 | Knowledge-map tours + entry-point ranking (§9) | Med | M | graphify core (Studio) + aclp-am | 3 (gated WP4 G2 stab + Studio perf) |
+| 10 | Knowledge-map tours + entry-point ranking (§9) | Med | M | graphify core (Studio) + process-std-am | 3 (gated WP4 G2 stab + Studio perf) |
 | 11 | External-systems manifests + io_kind (§11) | Med | M | graphify core | 3 (audit-first, D8) |
 | 12 | Skeleton rendering (§10, span half) | Med | M | graphify core | 3 (own mini-spec) |
 | 13 | Provider union (§12) | Low/Med | S each | sentropic mesh | 3 / backlog (D7 settles the dormant registry now) |
@@ -278,7 +278,7 @@ Phase-1 shape: three S-sized, decision-light lots (#1-#3) that are each independ
 *Subject:* §9 — where the guided-tour artifact lives relative to the frozen, signed `graphify_scene_hierarchies_v1` contract.
 *Options:* (a) new standalone `graphify_tour_v1` sidecar (same id discipline, separate file, no peer renegotiation); (b) addendum to the WP4 G2 bundle contract (peer negotiation, one bundle).
 *Reversibility:* (a) high; (b) medium (contract changes are signed).
-*Reco:* (a) — the signed contract stays frozen; aclp-am adopts the tour sidecar later by reference if it proves out on code corpora.
+*Reco:* (a) — the signed contract stays frozen; process-std-am adopts the tour sidecar later by reference if it proves out on code corpora.
 
 **D7 — Fate of the dormant `src/provider-registry.ts`.**
 *Subject:* §12 — `loadCustomProviders` is fully implemented (validation, env keys, pricing field) and called by nothing; leaving it dormant is silent dead surface, and it duplicates the mesh's future adapter-registration role.

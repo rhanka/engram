@@ -34,7 +34,7 @@ import {
 /**
  * A project laid out like a real converted-PDF corpus: an original PDF, the OCR
  * markdown that cites it, and the `.ocr.json` sidecar carrying the chain — the
- * exact shape of the ACLP corpus (which has no `.prep.json`).
+ * exact shape of the PROCESS_STD corpus (which has no `.prep.json`).
  */
 function makeProject(): { root: string; stateDir: string } {
   const root = mkdtempSync(join(tmpdir(), "graphify-live-sources-"));

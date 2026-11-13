@@ -1,4 +1,4 @@
-// Engram JSON schemas for the diagram lot (frozen spec M3-R4 deb64b75, §7.1).
+// Engram JSON schemas for the diagram lot (frozen spec M3-R4 d87220cd, §7.1).
 // Governed data only: semantic/view/presentation schemas + diagnostic code
 // inventory. No executor, no validation runtime (G2: DS executes). Shapes
 // transcribe the native §2.1/§2.2/§3.2.2/§4.4.2 contracts; full behavioral

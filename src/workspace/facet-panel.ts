@@ -8,7 +8,7 @@
  * YAML.
  *
  * Hard constraint: no corpus-specific key is hardcoded here. The
- * DENYLIST below blocks the few aclp-am-specific names that must never
+ * DENYLIST below blocks the few process-std-am-specific names that must never
  * leak into Graphify core, but it is the user's responsibility to keep
  * their own profile YAML clean.
  */
@@ -58,7 +58,7 @@ const DEFAULT_MIN_COVERAGE = 1;
 
 /**
  * Fields we never propose. `id`, `label`, free-form prose, and a handful
- * of aclp-am-specific identifiers that must never leak from a profile
+ * of process-std-am-specific identifiers that must never leak from a profile
  * into Graphify core.
  */
 const DENYLIST = new Set([
@@ -86,7 +86,7 @@ const DENYLIST = new Set([
   "community",
   "community_name",
   "weight",
-  // Aclp-am-specific facets — explicitly blocked.
+  // process-std-am-specific facets — explicitly blocked.
   "framework",
   "hasMedia",
   "has_media",

@@ -310,7 +310,7 @@ describe("Track G G6-4 — compact candidate / canonical layout", () => {
     );
   });
 
-  it("never leaks corpus-specific strings (framework / abp / aclp / ABPProcess / BusinessObject / DigitalApplicationTool)", () => {
+  it("never leaks corpus-specific strings (framework / abp / process_std / ABPProcess / BusinessObject / DigitalApplicationTool)", () => {
     const dir = makeTempDir();
     const fixture = writeOntologyWriteFixture(dir);
     writeCandidateQueue(fixture);
@@ -324,7 +324,7 @@ describe("Track G G6-4 — compact candidate / canonical layout", () => {
 
     const central = reconciliationCentralBody(result.body);
     expect(central).not.toMatch(
-      /\b(?:framework|abp|aclp|ABPProcess|ACLPProcess|BusinessObject|DigitalApplicationTool)\b/,
+      /\b(?:framework|abp|process_std|ABPProcess|ProcessStdProcess|BusinessObject|DigitalApplicationTool)\b/,
     );
   });
 

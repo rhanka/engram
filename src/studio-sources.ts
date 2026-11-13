@@ -170,7 +170,7 @@ export function __resetLiveProvenanceCache(): void {
  * The map is derived from the same two artifacts the exporter reads — the
  * graph's inline citations and the Level-2 `ontology/citations.json` store — so
  * the served chain and an exported one describe the same documents. Both can be
- * large (the ACLP corpus: 127 MB and 65 MB), and the walk is O(citations), so the
+ * large (the PROCESS_STD corpus: 127 MB and 65 MB), and the walk is O(citations), so the
  * result is cached on the identity (mtime + size) of both inputs: only the first
  * fetch after a rebuild pays for it.
  *

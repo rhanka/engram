@@ -1,7 +1,7 @@
 /**
  * Track G G-studio-lot4 (#7) — right-column entity panel.
  *
- * Mirrors aclp-am's EntityPanel + EntityRelationsAccordion: when a node is
+ * Mirrors process-std-am's EntityPanel + EntityRelationsAccordion: when a node is
  * selected, the REAL right column shows the entity's wiki description, its
  * relations, an evidence snippet (a short quote, not the whole source), and
  * occurrence / citation counts (total mentions + per-document appearance
