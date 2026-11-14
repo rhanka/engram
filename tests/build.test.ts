@@ -1,3 +1,4 @@
+import { getPairEdges } from "../src/graph.js";
 import { describe, it, expect } from "vitest";
 import { buildFromJson, build } from "../src/build.js";
 import type { Extraction } from "../src/types.js";
@@ -35,7 +36,7 @@ describe("buildFromJson", () => {
 
   it("preserves edge direction via _src/_tgt", () => {
     const G = buildFromJson(SAMPLE_EXTRACTION);
-    const edge = G.edge("a", "b");
+    const edge = getPairEdges(G, "a", "b")[0]?.key;
     expect(edge).toBeDefined();
     const attrs = G.getEdgeAttributes(edge!);
     expect(attrs._src).toBe("a");
@@ -101,7 +102,7 @@ describe("buildFromJson", () => {
     };
 
     const G = buildFromJson(ext);
-    const edge = G.edge("a", "b");
+    const edge = getPairEdges(G, "a", "b")[0]?.key;
     const hyperedges = G.getAttribute("hyperedges") as Extraction["hyperedges"];
 
     expect(G.getNodeAttribute("a", "source_file")).toBe("src/middleware/auth.ts");
@@ -131,7 +132,7 @@ describe("buildFromJson", () => {
     expect(G.getNodeAttribute("b", "source_file")).toBe("src/b.py");
     // Outside root → keep absolute (relativizing would go outside scope).
     expect(G.getNodeAttribute("c", "source_file")).toBe("/elsewhere/c.py");
-    const edge = G.edge("a", "b");
+    const edge = getPairEdges(G, "a", "b")[0]?.key;
     expect(G.getEdgeAttribute(edge!, "source_file")).toBe("src/a.py");
   });
 });
@@ -179,7 +180,7 @@ describe("build (merge)", () => {
 import { edge as mlEdge, node as mlNode, fromRows as mlFromRows, rows as mlRows, expectFixedPoint as mlFixed, expectObservations as mlObs, observation as mlObservation } from "./helpers/multi-links.js";
 describe("L0-R build stamp", () => {
   for (const absentRaw of [false, true]) describe(absentRaw ? "absent raw endpoints" : "reciprocal effective rows", () => {
-    it.fails("B1-build-stamp-preserves-effective-endpoints", () => {
+    it("B1-build-stamp-preserves-effective-endpoints", () => {
       const emissions = [mlEdge({ source: absentRaw ? "missing" : "a", target: "b", _src: "a", _tgt: "b", source_location: "L1" }), mlEdge({ source: "a", target: absentRaw ? "missing" : "b", _src: "b", _tgt: "a", source_location: "L2" })];
       const G = mlFromRows(emissions);
       expect(mlRows(G)).toHaveLength(2);

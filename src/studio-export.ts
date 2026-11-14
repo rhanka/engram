@@ -1,3 +1,4 @@
+import { assertSupportedGraphFormat } from "./graph.js";
 /**
  * Reusable STATIC Ontology Studio export.
  *
@@ -604,6 +605,7 @@ export function buildStaticStudio(
   const graph = JSON.parse(graphRaw) as StudioSceneGraphLike & {
     nodes?: Array<{ id?: unknown }>;
   };
+  assertSupportedGraphFormat(graph as Record<string, unknown>, graphPath);
   if (!Array.isArray(graph.nodes)) graph.nodes = [];
   // Registry-seed completion (opt-in, additive): a node_type bound to a registry
   // declares EVERY registry row an entity, but extraction only seeds the rows the

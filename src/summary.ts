@@ -195,7 +195,7 @@ export function buildFirstHopSummary(
         label: labels.get(cid) ?? `Community ${cid}`,
         size: nodes.length,
         internal_edges: edgeCount,
-        density: graphDensity(nodes.length, G.multi ? communityPairs.get(cid)?.size ?? 0 : edgeCount, directed),
+        density: graphDensity(nodes.length, communityPairs.get(cid)?.size ?? 0, directed),
         top_nodes: topNodes,
       } satisfies FirstHopCommunity;
     })
@@ -216,7 +216,7 @@ export function buildFirstHopSummary(
       nodes: G.order,
       edges: G.size,
       directed,
-      density: graphDensity(G.order, G.multi ? topologyPairs.size : G.size, directed),
+      density: graphDensity(G.order, topologyPairs.size, directed),
       average_degree: averageDegree,
       communities: memberships.size,
     },

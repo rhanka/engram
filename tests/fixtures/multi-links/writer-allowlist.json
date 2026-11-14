@@ -3796,5 +3796,293 @@
     "fingerprint": "c18fd3de040193d39b87659bb1e1d370c4c01f78bc0cca798c0c635f91a3a3a2",
     "reason": "Write a vocabulary text list, not graph records",
     "count": 1
+  },
+  {
+    "file": "src/analyze.ts",
+    "line": 503,
+    "owner": "graphDiff",
+    "kind": "edge-row-constructor",
+    "fingerprint": "441ced87dd11fba9264af2d566e0e3d64da38eadbce3830a999121193f43f421",
+    "reason": "Read-only graphDiff DTO from effective tuple identity; never replayed as stored evidence",
+    "count": 2
+  },
+  {
+    "file": "src/assembly-hygiene.ts",
+    "line": 158,
+    "owner": "normalizeSchemaHygiene",
+    "kind": "raw-boundary",
+    "fingerprint": "6558425e29185f6cca55da145903d0d7367c841ca59094c1fe669b8279d31e7b",
+    "reason": "Delegates to the shared remapRelationEmissions in relation-remap.ts: original effective identity, collapse-created effective loops only, then stamped emission",
+    "count": 1
+  },
+  {
+    "file": "src/build.ts",
+    "line": 266,
+    "owner": "readExistingGraphExtraction",
+    "kind": "edge-row-constructor",
+    "fingerprint": "29cf7d4ff0d201831afdbcee9812b3dcf83eee0e6526cb485d4c4b342d8f91fe",
+    "reason": "Raw-first legacyObservationFromRawLink runs before this typed shell; captured observations override all shell evidence defaults",
+    "count": 1
+  },
+  {
+    "file": "src/build.ts",
+    "line": 295,
+    "owner": "deduplicateByLabel",
+    "kind": "raw-boundary",
+    "fingerprint": "699c16ab88d9a36e34382b197fe474da1d013e94bc89d7ca65e343967dd86fa8",
+    "reason": "Delegates to shared remapRelationEmissions via deduplicateByLabelBody; no raw-pair admission or first-triple dedup remains",
+    "count": 1
+  },
+  {
+    "file": "src/export.ts",
+    "line": 284,
+    "owner": "computeTopologySignature",
+    "kind": "edge-row-constructor",
+    "fingerprint": "b1d407a50b8289e5f1ad8a0c96172683c0d69eb3f499303b8dfb1a2cbbd87cb4",
+    "reason": "Read-only topo/2 signature projection from assertionIdentityOf; never a record writer",
+    "count": 1
+  },
+  {
+    "file": "src/export.ts",
+    "line": 408,
+    "owner": "toJson",
+    "kind": "raw-graph-writer",
+    "fingerprint": "426a2c55c44a11d084c6d6db1ca69140bec3568ca3bbadb3f650c35c6a7a328b",
+    "reason": "Graph attributes guarded at entry; graphJsonLink uses the P1 evidence core, sorted rows and v2 envelope are serialized before this size-guarded write",
+    "count": 1
+  },
+  {
+    "file": "src/extract-git.ts",
+    "line": 1124,
+    "owner": "mergeExtractionsWithCitationsBody",
+    "kind": "edge-row-constructor",
+    "fingerprint": "0d92d570bc4488222eef6a8eedec91564858618a060c4f49befccfafc00ba7f6",
+    "reason": "Fresh preparation precedes effective identity grouping; group merge delegates to mergeEdgeEvidence, and only its identity is stamped on the result",
+    "count": 1
+  },
+  {
+    "file": "src/extract-git.ts",
+    "line": 1199,
+    "owner": "mergeExtractionsWithCitationsBody",
+    "kind": "edge-row-constructor",
+    "fingerprint": "b4af7add2d78638aa9896fcf9f8708fa23a5c655f13248477e1a606f1049f3ad",
+    "reason": "Fresh preparation precedes effective identity grouping; group merge delegates to mergeEdgeEvidence, and only its identity is stamped on the result",
+    "count": 1
+  },
+  {
+    "file": "src/extract.ts",
+    "line": 7118,
+    "owner": "_mergeSwiftExtensions",
+    "kind": "raw-boundary",
+    "fingerprint": "f73b0208809e0e722d9fa121b3de295f4e778f3624605b2b87caa4f86e293437",
+    "reason": "Delegates to shared remapRelationEmissions through the Swift body; original effective identity controls existence and every surviving emission is retained",
+    "count": 1
+  },
+  {
+    "file": "src/graph-json-serialization.ts",
+    "line": 42,
+    "owner": "graphJsonLink",
+    "kind": "edge-row-constructor",
+    "fingerprint": "1c410f5dc2a541e90308ce6d6eaa2d867c2372b55a846b42b248e94c09418e0b",
+    "reason": "Pure serialization boundary: legacyObservationFromRawLink and mergeEdgeEvidence precede effective identity stamping and deep key sorting",
+    "count": 1
+  },
+  {
+    "file": "src/graph-memory-projection.ts",
+    "line": 467,
+    "owner": "attachMemoryProjectionBody",
+    "kind": "edge-row-constructor",
+    "fingerprint": "8424890c5a58bd26877a06a35269edadf9ba0f2b378a25399c85d5646007d071",
+    "reason": "Prepared, completely preflighted contributions become input rows for upsertRelationEdge; no second edge writer",
+    "count": 1
+  },
+  {
+    "file": "src/graph-time-slice.ts",
+    "line": 415,
+    "owner": "runGraphTimeSlice",
+    "kind": "raw-graph-writer",
+    "fingerprint": "07298589f2f6a060a0c72f72aac1e3af730be450c83b1240c5ff27e927c43d8c",
+    "reason": "Source file or injected document is checked by assertSupportedGraphFormat before any output, sidecar or overwrite; slice retains each eligible row independently",
+    "count": 1
+  },
+  {
+    "file": "src/graph-time-slice.ts",
+    "line": 416,
+    "owner": "runGraphTimeSlice",
+    "kind": "raw-graph-writer",
+    "fingerprint": "93d9d718ce3b9627ad71cb2b5ea9ba4ae110138494a810a01d5d39da3ba83797",
+    "reason": "Source file or injected document is checked by assertSupportedGraphFormat before any output, sidecar or overwrite; slice retains each eligible row independently",
+    "count": 1
+  },
+  {
+    "file": "src/merge-driver.ts",
+    "line": 117,
+    "owner": "mergeGraphJsonFiles",
+    "kind": "raw-graph-writer",
+    "fingerprint": "e35303705612e8d07a37dac59c5d6d6fe84b31ffd350cfb82bf9577597173395",
+    "reason": "Each raw input is typed-format guarded, including ancestor and copy branch; all output passes the shared loader/replay/serializeGraph path",
+    "count": 1
+  },
+  {
+    "file": "src/merge-driver.ts",
+    "line": 186,
+    "owner": "mergeGraphJsonFiles",
+    "kind": "raw-graph-writer",
+    "fingerprint": "3c38ce833f545df30e3f02b72562f22635edda90a94de5a6d512edd2f0ef2463",
+    "reason": "Each raw input is typed-format guarded, including ancestor and copy branch; all output passes the shared loader/replay/serializeGraph path",
+    "count": 1
+  },
+  {
+    "file": "src/merge-graphs.ts",
+    "line": 124,
+    "owner": "mergeGraphsFromFiles",
+    "kind": "raw-graph-writer",
+    "fingerprint": "93d9d718ce3b9627ad71cb2b5ea9ba4ae110138494a810a01d5d39da3ba83797",
+    "reason": "All inputs use loadGraphFromData, replay uses the shared writer, and output is serializeGraph after format refusal before size-guarded destination write",
+    "count": 1
+  },
+  {
+    "file": "src/relation-remap.ts",
+    "line": 20,
+    "owner": "remapRelationEmissions",
+    "kind": "edge-row-constructor",
+    "fingerprint": "b99c89f616a001092951568900933b822c38552aacceaa5730573f2e4ed4ee59",
+    "reason": "One shared reducer remapper: assertionIdentityOf before transitive remap; drops only newly created effective loops and stamps every survivor before build/upsert",
+    "count": 1
+  },
+  {
+    "file": "src/skill-runtime.ts",
+    "line": 385,
+    "owner": "mergeGraphsBody",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "bd455410fb68e582dd4af39dbdee7fc93189a8f471fd9ca61919c998094e509d",
+    "reason": "Node citation union only, before node merge; edges use replayPreparedRelationEdges and the shared upsert",
+    "count": 1
+  },
+  {
+    "file": "src/storage/edge-contribution.ts",
+    "line": 21,
+    "owner": "graphEdgeContribution",
+    "kind": "edge-row-constructor",
+    "fingerprint": "3312046effe651e975c868dcfb1ad3c21dd2bff222e7a5292a9567191e6e0225",
+    "reason": "Sanctioned direct-store capture: effective graph identity and raw-first legacy evidence feed mergeStoreEdgeContribution, which prepares fresh emissions and calls mergeEdgeEvidence",
+    "count": 1
+  },
+  {
+    "file": "src/storage/postgres.ts",
+    "line": 919,
+    "owner": "contributeEdge",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "913c9f64bc9d6a15d97279e15b7b980bde36d814c0baa8aa666d49b380d944cd",
+    "reason": "Folds nullable schema confidence back into raw row props before raw-first legacy capture and the shared merge; no invented confidence vote",
+    "count": 1
+  },
+  {
+    "file": "src/storage/postgres.ts",
+    "line": 920,
+    "owner": "contributeEdge",
+    "kind": "raw-edge-rewrite",
+    "fingerprint": "60110ff82df072b8e23f559b5ce102f903c3c18e5d9af76d8d2c6512c77f8704",
+    "reason": "Folds nullable schema confidence back into raw row props before raw-first legacy capture and the shared merge; no invented confidence vote",
+    "count": 1
+  },
+  {
+    "file": "src/storage/postgres.ts",
+    "line": 1481,
+    "owner": "appendEdge",
+    "kind": "raw-boundary",
+    "fingerprint": "cfcbe4bcaacd9f343c40e02cfd7a39ddf8d92fb929b68e4fa1dfbadf5967bdf3",
+    "reason": "Shared mergeStoreEdgeContribution in edge-contribution.ts reaches P1 mergeEdgeEvidence; same-key transaction/advisory lock and row lock, uniqueness retry; public factory selects union body",
+    "count": 1
+  },
+  {
+    "file": "src/storage/postgres.ts",
+    "line": 1071,
+    "owner": "pushGraph",
+    "kind": "raw-boundary",
+    "fingerprint": "44dc843ab29ef58251ef88602da58b6c53d2b6882117aff095404eff7ede2045",
+    "reason": "Merge-mode graphEdgeContribution calls the shared evidence core before mutation; same-key transaction locking; replace remains full snapshot; factory selects union body",
+    "count": 1
+  },
+  {
+    "file": "src/storage/sqlite.ts",
+    "line": 892,
+    "owner": "appendEdge",
+    "kind": "raw-boundary",
+    "fingerprint": "b774aa58c9199ae972fe57e2fdcc8ca87eb23131067fd2ea50724a5a4a49a2e5",
+    "reason": "Shared mergeStoreEdgeContribution reaches P1 mergeEdgeEvidence; normalizeStoreEdgeIdentity materializes literal key, immediate transaction reserves writer before read; factory selects union body",
+    "count": 1
+  },
+  {
+    "file": "src/storage/sqlite.ts",
+    "line": 757,
+    "owner": "pushGraph",
+    "kind": "raw-boundary",
+    "fingerprint": "3df59629022a8283ae31646d278b7601bee2fd0fcc32b75d6f0752ff80b878b4",
+    "reason": "Merge-mode graphEdgeContribution calls the shared evidence core before schema/data mutation, transaction unions observations; replace remains snapshot; factory selects union body",
+    "count": 1
+  },
+  {
+    "file": "src/studio-export.ts",
+    "line": 697,
+    "owner": "buildStaticStudio",
+    "kind": "raw-graph-writer",
+    "fingerprint": "1abb6cb22b06f01b01a8a1350e6084fdca04e9c7e1358ea99893df45b1d323e5",
+    "reason": "Raw source document is typed-format guarded before any output cleanup/write; preserved link rows are a static display snapshot",
+    "count": 1
+  },
+  {
+    "file": "studio/src/lib/graphRendererPayload.js",
+    "line": 837,
+    "owner": "buildGraphRendererPayload",
+    "kind": "edge-row-constructor",
+    "fingerprint": "fc90d54764712cbeab86f2896874d13f8cbe656607e8822e72350e2e46f1a0fd",
+    "reason": "Display-only renderer input from derived scalar scene edges; no evidence persistence; tuple-ordered lanes share the production lane helper",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 892,
+    "owner": "fixture",
+    "kind": "edge-row-constructor",
+    "fingerprint": "4f0c46f6a14c85df1cd4b504f6c8844361d55e265ac566be8513adb9ff830167",
+    "reason": "Test-only raw topology counter fixture; never a production capture or stored record writer",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 893,
+    "owner": "fixture",
+    "kind": "edge-row-constructor",
+    "fingerprint": "678d69ec440a17133f8f14917e2fac9d36dd0d7d276eb9c59f1ca258ee269098",
+    "reason": "Test-only raw topology counter fixture; never a production capture or stored record writer",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 894,
+    "owner": "fixture",
+    "kind": "edge-row-constructor",
+    "fingerprint": "c48637a132756f5f6726f805142afa9f26c207aa24423a917d5799f26bdd141b",
+    "reason": "Test-only raw topology counter fixture; never a production capture or stored record writer",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 895,
+    "owner": "fixture",
+    "kind": "edge-row-constructor",
+    "fingerprint": "08ddacbb895d5b29ebfe7e3e34bc9e36308e67782eed4aca410bd81787089aa2",
+    "reason": "Test-only raw topology counter fixture; never a production capture or stored record writer",
+    "count": 1
+  },
+  {
+    "file": "studio/src/tests/graphAdapter.test.js",
+    "line": 896,
+    "owner": "fixture",
+    "kind": "edge-row-constructor",
+    "fingerprint": "32698c0f4c364875a6e83ae415c4019d3e3da0d1bd182232fdfde2232f141d73",
+    "reason": "Test-only raw topology counter fixture; never a production capture or stored record writer",
+    "count": 1
   }
 ]

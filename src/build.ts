@@ -219,7 +219,7 @@ function hasConflictingRegistryIdentity(
   return false;
 }
 
-function readExistingGraphExtraction(graphPath: string, captureObservations = false): { extraction: Extraction; nodeCount: number } {
+function readExistingGraphExtraction(graphPath: string, captureObservations = true): { extraction: Extraction; nodeCount: number } {
   assertGraphJsonFileSize(graphPath, "read");
   const raw = asRecord(JSON.parse(readFileSync(graphPath, "utf-8"))) ?? {};
   assertSupportedGraphFormat(raw, graphPath);
@@ -287,21 +287,21 @@ function readExistingGraphExtraction(graphPath: string, captureObservations = fa
   };
 }
 
-/** Raw-first reader body, deliberately not used by buildMerge until activation. */
+/** Raw-first reader alias; buildMerge uses the same shared ingestion body. */
 export function readExistingGraphExtractionPrepared(graphPath: string): { extraction: Extraction; nodeCount: number } {
   return readExistingGraphExtraction(graphPath, true);
 }
 
 export function deduplicateByLabel(extraction: Extraction): Extraction {
-  return deduplicateByLabelBody(extraction, false);
+  return deduplicateByLabelBody(extraction);
 }
 
-/** Unwired label remapper preserving all surviving effective assertions. */
+/** Shared label remapper preserving all surviving effective assertions. */
 export function deduplicateByLabelPrepared(extraction: Extraction): Extraction {
-  return deduplicateByLabelBody(extraction, true);
+  return deduplicateByLabelBody(extraction);
 }
 
-function deduplicateByLabelBody(extraction: Extraction, preserveEmissions: boolean): Extraction {
+function deduplicateByLabelBody(extraction: Extraction): Extraction {
   const remap = new Map<string, string>();
   const nodes = extraction.nodes ?? [];
 
@@ -349,19 +349,13 @@ function deduplicateByLabelBody(extraction: Extraction, preserveEmissions: boole
   applyLabelPass(false);
 
   if (remap.size === 0) {
-    return preserveEmissions ? { ...extraction, edges: remapRelationEmissions(extraction.edges ?? [], id => id) } : extraction;
+    return { ...extraction, edges: remapRelationEmissions(extraction.edges ?? [], id => id) };
   }
 
   console.error(`[engram] Deduplicated ${remap.size} duplicate node(s) by label.`);
 
   const deduplicatedNodes = nodes.filter((node) => resolveRemap(remap, node.id) === node.id);
-  const edges = preserveEmissions ? remapRelationEmissions(extraction.edges ?? [], id => resolveRemap(remap, id)) : (extraction.edges ?? [])
-    .map((edge) => ({
-      ...edge,
-      source: resolveRemap(remap, edge.source),
-      target: resolveRemap(remap, edge.target),
-    }))
-    .filter((edge) => edge.source !== edge.target);
+  const edges = remapRelationEmissions(extraction.edges ?? [], id => resolveRemap(remap, id));
   const hyperedges = (extraction.hyperedges ?? []).map((hyperedge) => ({
     ...hyperedge,
     nodes: hyperedge.nodes.map((nodeId) => resolveRemap(remap, nodeId)),
@@ -375,7 +369,7 @@ function deduplicateByLabelBody(extraction: Extraction, preserveEmissions: boole
   };
 }
 
-/** Edge intake body for activation; caller supplies an explicit multigraph. */
+/** Production edge intake: fresh preparation, complete preflight and keyed replay. */
 export function insertBuildEdgesPrepared(G: Graph, extraction: Extraction, options?: BuildOptions): void {
   const prepared = prepareFreshExtraction(extraction, { root: rootForOptions(options) });
   const edges = prepared.edges.map(edge => ({ edge, identity: assertionIdentityOf(edge.source, edge.target, edge) }));
@@ -442,58 +436,7 @@ export function buildFromJson(extraction: Extraction, options?: BuildOptions): G
     G.mergeNode(id, normalizedAttrs);
   }
 
-  const nodeSet = new Set(G.nodes());
-
-  // F-0819-P2 (#1010): iterate edges in a deterministic order. The graph is
-  // undirected and stores direction in _src/_tgt; when two edges collapse onto
-  // the same node pair the surviving edge depends on iteration order, so an
-  // unstable order (e.g. AST + semantic chunks merged in a different sequence
-  // run-to-run) flips _src/_tgt and makes the serialized graph churn. Sorting
-  // by (source, target, relation) pins the first-seen outcome.
-  const sortedEdges = [...(extraction.edges ?? [])].sort((a, b) => {
-    const as = String(a.source ?? "");
-    const bs = String(b.source ?? "");
-    if (as !== bs) return as < bs ? -1 : 1;
-    const at = String(a.target ?? "");
-    const bt = String(b.target ?? "");
-    if (at !== bt) return at < bt ? -1 : 1;
-    const ar = String(a.relation ?? "");
-    const br = String(b.relation ?? "");
-    if (ar !== br) return ar < br ? -1 : 1;
-    return 0;
-  });
-
-  for (const edge of sortedEdges) {
-    const { source, target, ...attrs } = edge;
-    if (!nodeSet.has(source) || !nodeSet.has(target)) continue;
-    if ("source_file" in attrs) {
-      attrs.source_file = normalizeSourceFilePath(attrs.source_file, root) ?? attrs.source_file;
-    }
-    // Preserve original edge direction
-    attrs._src = source;
-    attrs._tgt = target;
-    // F-0819-P1 (#1061): on an undirected graph a pair emitted in both
-    // directions with the same relation (a calls b AND b calls a) collapses to
-    // one edge; the reverse-direction duplicate would otherwise overwrite the
-    // first edge's _src/_tgt and silently flip caller/callee. First-seen wins:
-    // skip the redundant reverse duplicate.
-    if (!G.type.startsWith("directed") && G.hasEdge(source, target)) {
-      const existing = G.getEdgeAttributes(source, target) as Record<string, unknown>;
-      if (
-        existing.relation === attrs.relation &&
-        existing._src === target &&
-        existing._tgt === source
-      ) {
-        continue;
-      }
-    }
-    // graphology mergeEdge prevents duplicates on same src/tgt pair
-    try {
-      G.mergeEdge(source, target, attrs);
-    } catch {
-      // ignore if edge already exists with different key
-    }
-  }
+  insertBuildEdgesPrepared(G, extraction, options);
 
   const hyperedges = extraction.hyperedges ?? [];
   if (hyperedges.length > 0) {

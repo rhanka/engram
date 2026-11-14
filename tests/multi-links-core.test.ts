@@ -13,8 +13,8 @@ const multi = (directed = false) => {
 };
 
 describe("P1 observation core, before activation", () => {
-  it("keeps the factory simple and separates graph and storage identities", () => {
-    expect(core.createGraph().multi).toBe(false);
+  it("activates the multigraph factory and separates graph and storage identities", () => {
+    expect(core.createGraph().multi).toBe(true);
     expect(api.assertionIdentityOf("a", "b", { _src: "b", _tgt: "a", relation: "" })).toEqual({ src: "b", tgt: "a", relation: "related_to" });
     const normalize = (port as Row).normalizeStoreEdgeIdentity;
     expect(normalize("a", "b", undefined)).toEqual({ source: "a", target: "b", relation: "RELATES_TO" });

@@ -41,7 +41,7 @@ describe("L0-T metrics", () => {
     });
   });
   for (const surface of ["summary", "review", "MCP", "CLI"]) describe(surface, () => {
-    (surface === "summary" || surface === "review" ? it : it.fails)("four-relations-one-neighbour-degree-risk-unchanged", async () => {
+    (surface === "summary" || surface === "review" ? it : it)("four-relations-one-neighbour-degree-risk-unchanged", async () => {
       const G = multiGraph(relations, pairNodes);
       expect(G.size).toBe(5);
       if (surface === "summary") {

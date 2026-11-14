@@ -162,9 +162,9 @@ describe("_mergeSwiftExtensions (upstream #969)", () => {
     expect(merged.edges.filter((e) => e.source === e.target).length).toBe(0);
   });
 
-  it("collapses duplicate edges after remap (same src/tgt/relation key)", () => {
+  it("retains duplicate emissions after remap for union by the graph writer", () => {
     // Two extension nodes that both redirect to the same canonical produce
-    // duplicate edges; the seenKeys dedup must keep only one.
+    // duplicate emissions; both reach the graph writer for exact evidence union.
     const fooClassId = "Foo_Foo";
     const ext1 = "F1_Foo";
     const ext2 = "F2_Foo";
@@ -188,17 +188,17 @@ describe("_mergeSwiftExtensions (upstream #969)", () => {
     const merged = _mergeSwiftExtensions(perFile, allNodes, allEdges);
 
     const usesEdges = merged.edges.filter((e) => e.relation === "uses");
-    expect(usesEdges.length).toBe(1);
+    expect(usesEdges.length).toBe(2);
     expect(usesEdges[0]!.source).toBe(fooClassId);
     expect(usesEdges[0]!.target).toBe(helperId);
   });
 
-  it("returns inputs unchanged when no extensions present", () => {
+  it("retains inputs and normalizes effective identity when no extensions are present", () => {
     const nodes = [mkNode("Foo_Foo", "Foo", "Foo.swift")];
-    const edges: GraphEdge[] = [];
+    const edges: GraphEdge[] = [mkEdge("Foo_Foo", "Foo_Foo", "calls", "Foo.swift")];
     const merged = _mergeSwiftExtensions([{ nodes, edges }], nodes, edges);
     expect(merged.nodes).toBe(nodes);
-    expect(merged.edges).toBe(edges);
+    expect(merged.edges).toEqual(edges.map(edge => ({ ...edge, _src: edge.source, _tgt: edge.target })));
   });
 });
 
@@ -237,7 +237,7 @@ describe("Swift cross-file extension dedup (integration via real grammar)", () =
 import { join as mlJoin } from "node:path";
 import { edge as mlEdge, extraction as mlExtraction, node as mlNode, rows as mlRows, expectFixedPoint as mlFixed, expectObservations as mlObs, observation as mlObservation, tempDir as mlTempDir } from "./helpers/multi-links.js";
 describe("L0-R swift", () => {
-  it.fails("swift-same-locator-keeps-r1-r2", async () => {
+  it("swift-same-locator-keeps-r1-r2", async () => {
     const {buildMerge} = await import("../src/build.js");
     const input = ["r1","r2"].map(ref => mlEdge({source:"extFoo",target:"b",source_location:"L1",evidence_refs:[ref]}));
     const out = _mergeSwiftExtensions([{nodes:[],edges:[],swift_extensions:[{nid:"extFoo",label:"Foo"}]}] as never,[mlNode("b"),mlNode("extFoo",{label:"Foo"}),mlNode("Foo",{label:"Foo"})],input);

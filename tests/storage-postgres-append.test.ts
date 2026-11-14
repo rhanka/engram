@@ -89,7 +89,8 @@ describe("postgres append/tombstone — capability (M4)", () => {
   it("declares a VERSIONED append capability (upsert + strict endpoints + tombstone)", async () => {
     const store = await makeStore(freshState());
     expect(store.capabilities.append).toEqual({
-      version: 1,
+      version: 2,
+      evidenceUnion: true,
       upsert: true,
       requiresExistingEndpoints: true,
       tombstone: true,

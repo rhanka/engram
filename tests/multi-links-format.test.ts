@@ -7,8 +7,8 @@ import { loadGraphFromData, serializeGraph } from "../src/graph.js";
 import { tempDir, extraction, node } from "./helpers/multi-links.js";
 
 describe("P1 format refusal before writer migration", () => {
-  it("keeps the factory-backed loader simple and offers explicit read-only inspection", () => {
-    expect(loadGraphFromData({ nodes: [node("a")] }).multi).toBe(false);
+  it("activates the factory-backed loader and offers explicit read-only inspection", () => {
+    expect(loadGraphFromData({ nodes: [node("a")] }).multi).toBe(true);
     const future = { graph_format: "engram-graph/3", nodes: [node("a")] };
     expect(() => loadGraphFromData(future)).toThrowError(expect.objectContaining({ code: "unsupported-graph-format" }));
     const inspected = loadGraphFromData(future, { allowUnknownFormatReadOnly: true });

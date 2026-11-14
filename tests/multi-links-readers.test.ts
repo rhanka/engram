@@ -19,7 +19,7 @@ describe("P1 dual-compatible readers on explicit multigraphs", () => {
     const ns = [node("a"), node("b"), node("a,b"), node("b,c"), node("c")];
     const before = multiGraph([edge()], ns);
     const after = multiGraph([edge(), edge({ source: "b", target: "a" })], ns);
-    expect(graphDiff(before, after).new_edges).toEqual([expect.objectContaining({ source: "b", target: "a", relation: "calls" })]);
+    expect(graphDiff(before, after).new_edges).toEqual([expect.objectContaining({ source: "b", target: "a", relation: "calls", confidence: "EXTRACTED" })]);
     expect(graphDiff(multiGraph([edge({ source: "a,b", target: "c" })], ns), multiGraph([edge({ source: "a", target: "b,c" })], ns)).new_edges).toHaveLength(1);
   });
 
@@ -67,55 +67,53 @@ describe("P1 dual-compatible readers on explicit multigraphs", () => {
   });
 });
 
-describe("P1 preserves legacy simple reader defaults until activation", () => {
-  it("keeps reverse traversal rendering unchanged on a loaded simple graph", () => {
+describe("Activated readers retain effective orientation and topology semantics on legacy inputs", () => {
+  it("renders incoming legacy assertions with their direction", () => {
     const G = loadGraphFromData({ nodes: [node("a", { label: "Alpha", source_file: "" }), node("b", { label: "Beta", source_file: "" })], links: [edge({ _src: "a", _tgt: "b" })] });
-    expect(G.multi).toBe(false);
+    expect(G.multi).toBe(true);
     const tree = renderTree(G, "b", { depth: 1 });
-    expect(tree).toContain("calls -> Alpha");
-    expect(tree).not.toContain("<--");
-    expect(tree).not.toContain("[EXTRACTED]");
+    expect(tree).toContain("<-- calls [EXTRACTED] Alpha");
   });
 
-  it("keeps the live simple MCP arrows and reported loop degree unchanged", async () => {
+  it("renders incoming MCP arrows and counts a loop as one neighbour", async () => {
     await withMcp({ nodes: [node("a", { label: "Alpha" }), node("b", { label: "Beta" })], links: [edge({ _src: "a", _tgt: "b" }), edge({ target: "a" })] }, async call => {
-      expect(await call("get_neighbors", { label: "Beta" })).toContain("--> Alpha [calls] [EXTRACTED]");
-      expect(await call("shortest_path", { source: "Beta", target: "Alpha" })).toContain("--calls [EXTRACTED]--> Alpha");
-      expect(await call("get_node", { label: "Alpha" })).toContain("Degree: 3");
+      expect(await call("get_neighbors", { label: "Beta" })).toContain("<-- Alpha [calls] [EXTRACTED]");
+      expect(await call("shortest_path", { source: "Beta", target: "Alpha" })).toContain("<--calls [EXTRACTED]-- Alpha");
+      expect(await call("get_node", { label: "Alpha" })).toContain("Degree: 2");
     });
   });
 
-  it("keeps summary loop incidence and graph/community density on simple graphs", () => {
+  it("excludes simple-graph loops from density and counts one neighbour", () => {
     const G = new Graph({ type: "undirected", multi: false });
     G.addNode("a", { community: 0 }); G.addNode("b", { community: 0 });
     G.addEdgeWithKey("legacy-row", "a", "a", { relation: "calls" });
     const summary = buildFirstHopSummary(G);
-    expect(summary.graph).toMatchObject({ density: 1, average_degree: 1, edges: 1 });
-    expect(summary.key_communities[0].density).toBe(1);
-    expect(cohesionScore(G, ["a", "b"])).toBe(1);
-    expect(createReviewGraphStore(G).getAllEdges()[0].id).toBe("legacy-row");
+    expect(summary.graph).toMatchObject({ density: 0, average_degree: 0.5, edges: 1 });
+    expect(summary.key_communities[0].density).toBe(0);
+    expect(cohesionScore(G, ["a", "b"])).toBe(0);
+    expect(createReviewGraphStore(G).getAllEdges()[0].id).toBe(JSON.stringify(["a", "a", "calls"]));
   });
 
-  it("keeps the default workspace denominator and endpoint incidence", () => {
+  it("uses directed density and neighbour degree without requiring a format flag", () => {
     const nodes = [node("a"), node("b")], state = createDefaultViewerState();
-    expect(computeFocusSubgraph({ directed: true, nodes, links: [edge()] }, state).metrics.density).toBe(1);
-    expect(computeFocusSubgraph({ nodes, links: [edge({ target: "a" })] }, state).metrics).toMatchObject({ density: 1, averageDegree: 1 });
+    expect(computeFocusSubgraph({ directed: true, nodes, links: [edge()] }, state).metrics.density).toBe(0.5);
+    expect(computeFocusSubgraph({ nodes, links: [edge({ target: "a" })] }, state).metrics).toMatchObject({ density: 0, averageDegree: 0.5 });
   });
 
-  it("keeps undirected simple graph differences insensitive to row orientation", () => {
+  it("distinguishes reciprocal assertions in graph differences", () => {
     const before = loadGraphFromData({ nodes: [node("a"), node("b")], links: [edge()] });
     const after = loadGraphFromData({ nodes: [node("a"), node("b")], links: [edge({ source: "b", target: "a" })] });
-    expect(graphDiff(before, after).new_edges).toEqual([]);
-    expect(graphDiff(before, after).removed_edges).toEqual([]);
+    expect(graphDiff(before, after).new_edges).toEqual([{ source: "b", target: "a", relation: "calls", confidence: "EXTRACTED" }]);
+    expect(graphDiff(before, after).removed_edges).toEqual([{ source: "a", target: "b", relation: "calls", confidence: "EXTRACTED" }]);
   });
 
-  it("keeps legacy Studio incidence unless the document explicitly opts in", () => {
+  it("uses topology degree in both scene builders with and without a format flag", () => {
     const nodes = [node("a"), node("b"), node("c")];
     const edges = [edge({ target: "a" }), edge({ source: "b", target: "c" })];
-    expect(computeDegrees(nodes, edges).get("a")).toBe(2);
+    expect(computeDegrees(nodes, edges).get("a")).toBe(1);
     for (const build of [buildScene, buildStudioScene]) {
       const legacy = build({ nodes, edges });
-      expect(legacy.nodes[0].weight).toBeGreaterThan(legacy.nodes[1].weight);
+      expect(legacy.nodes[0].weight).toBe(legacy.nodes[1].weight);
       const prepared = build({ multigraph: true, nodes, edges });
       expect(prepared.nodes[0].weight).toBe(prepared.nodes[1].weight);
       expect(prepared.multigraph).toBe(true);

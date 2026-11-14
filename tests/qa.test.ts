@@ -642,13 +642,13 @@ describe("L0-T QA",()=>{
   expect(report.checks.find(c=>c.id==="graph.min_degree_by_type.Character")!.actual).toMatchObject({count:0});
  });
  const method="deorphan:co-provenance-peer";
- it("preserves legacy simple QA messages and singular derivation precedence",()=>{
+ it("names legacy endpoint incidence and reads the full derivation union without a format flag",()=>{
   const report=qaGraph([{source:"a",target:"a",relation:"calls",derivation_method:"ast",derivation_methods:["ast",method]}],{min:2,max:1,method},false);
-  expect(report.checks.find(c=>c.id==="graph.min_degree_by_type.Character")!.message).toBe("node degree by type must meet target");
-  expect(report.checks.find(c=>c.id==="graph.max_degree_by_type.Character")!.message).toBe("node degree by type must not exceed target");
+  expect(report.checks.find(c=>c.id==="graph.min_degree_by_type.Character")!.message).toBe("node endpoint incidence (legacy degree; self-loop counts twice) by type must meet target");
+  expect(report.checks.find(c=>c.id==="graph.max_degree_by_type.Character")!.message).toBe("node endpoint incidence (legacy degree; self-loop counts twice) by type must not exceed target");
   const derived=report.checks.find(c=>c.id==="graph.max_degree_by_type_and_derivation.Character."+method)!;
-  expect(derived.message).toBe("node degree by type and derivation method must not exceed target");
-  expect(derived.actual).toMatchObject({count:0});
+  expect(derived.message).toBe("node endpoint incidence (legacy degree; self-loop counts twice) by type and derivation method must not exceed target");
+  expect(derived.actual).toMatchObject({count:1,examples:[{id:"a",degree:2}]});
  });
  for(const [name,attrs,matched] of [
   ["second plural",{derivation_method:"ast",derivation_methods:["ast",method]},true],

@@ -83,6 +83,18 @@ describe("toJson shrink guard", () => {
 });
 
 describe("toCypher", () => {
+  it("renders a legacy reversed assertion in its effective direction and names the lossy view", () => {
+    const path = join(tempDir(), "cypher.txt");
+    const graph = new Graph();
+    graph.addNode("a"); graph.addNode("b");
+    graph.addEdge("a", "b", { _src: "b", _tgt: "a", relation: "calls", confidence: "INFERRED" });
+    toCypher(graph, path);
+    const text = readFileSync(path, "utf8");
+    expect(text).toContain("MATCH (a {id: 'b'}), (b {id: 'a'})");
+    expect(text).toContain("MERGE (a)-[:CALLS {confidence: 'INFERRED'}]->(b)");
+    expect(text).toContain("Lossy scalar view");
+  });
+
   it("escapes control characters in string literals and allowlists identifiers", () => {
     const dir = tempDir();
     const outputPath = join(dir, "cypher.txt");
@@ -121,7 +133,7 @@ import { edge as mlEdge, extraction as mlExtraction, fromRows as mlBuild, rows a
 import { skillDocuments as mlSkills, readSkill as mlReadSkill, executePushSnippet as mlSkillPush } from "./helpers/multi-links-skills.js";
 describe("L0-E/S export",()=>{
   for(const writer of mlWriters) describe(writer,()=>{
-    it.fails("serializer-vote-law-both-serializers",()=>{
+    it("serializer-vote-law-both-serializers",()=>{
       const a=mlEdge({confidence:"AMBIGUOUS"}),b=mlEdge({confidence:"EXTRACTED"});
       const merged=mlBuild([a,b]);
       const serializedA=mlWrite(mlBuild([a]),writer);
@@ -137,7 +149,7 @@ describe("L0-E/S export",()=>{
       mlFixed(second,[a,b]);
     });
   });
-  it.fails("M3-public-neo4j-wrapper-propagates-warning",async()=>{
+  it("M3-public-neo4j-wrapper-propagates-warning",async()=>{
     const warning="neo4j: observations not persisted for 1 edge";
     const fake={id:"neo4j",capabilities:{push:true},pushGraph:mlVi.fn(async()=>({nodes:2,edges:1,warnings:[warning],durationMs:0})),close:mlVi.fn(async()=>{})};
     const factory=mlVi.spyOn(mlNeo4j,"createNeo4jGraphStore").mockResolvedValue(fake as never);
@@ -158,7 +170,7 @@ describe("L0-E/S export",()=>{
     await mlCliPush({graph:graphPath,store:"neo4j",mode:"merge"},{env:{},resolveStore:async()=>store as never,log});
     expect(log.mock.calls.flat().join("\n")).toContain(warning);
   });
-  for (const boundary of ["warning-bearing wrapper", "real wrapper and adapter"]) it.fails("push-neo4j runtime command emits warnings from its " + boundary, async () => {
+  for (const boundary of ["warning-bearing wrapper", "real wrapper and adapter"]) it("push-neo4j runtime command emits warnings from its " + boundary, async () => {
     const warning = "neo4j: observations not persisted for 1 edge", dir = tempDir();
     const extract = join(dir, "extract.json"), analysis = join(dir, "analysis.json");
     writeFileSync(extract, JSON.stringify(mlExtraction([mlEdge()]))); writeFileSync(analysis, JSON.stringify({ communities: {} }));
@@ -176,7 +188,7 @@ describe("L0-E/S export",()=>{
       expect(output, "the wrapper's actual CLI caller must print its diagnostics").toContain(warning);
     } finally { seam.mockRestore(); log.mockRestore(); warn.mockRestore(); error.mockRestore(); }
   });
-  for (const path of mlSkills) for (const boundary of ["warning-bearing wrapper", "real wrapper and adapter"]) it.fails(path + " shipped push awaits and emits counts/warnings from its " + boundary, async () => {
+  for (const path of mlSkills) for (const boundary of ["warning-bearing wrapper", "real wrapper and adapter"]) it(path + " shipped push awaits and emits counts/warnings from its " + boundary, async () => {
     const warning = "neo4j: observations not persisted for 1 edge";
     const adapter = { id: "neo4j", capabilities: { push: true }, pushGraph: mlVi.fn(async () => ({ nodes: 2, edges: 1, warnings: [warning], durationMs: 0 })), close: mlVi.fn(async () => {}) };
     const seam = boundary === "warning-bearing wrapper"

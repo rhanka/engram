@@ -92,7 +92,7 @@ function computeMetrics(nodes: GraphNodeLike[], edges: GraphEdgeLike[], directed
     incidences.set(edge.target, (incidences.get(edge.target) ?? 0) + 1);
     if (edge.source !== edge.target) pairs.add(JSON.stringify(directed ? [edge.source, edge.target] : [edge.source, edge.target].sort()));
   }
-  const degree = multigraph ? new Map([...neighbors].map(([id, adjacent]) => [id, adjacent.size])) : incidences;
+  const degree = new Map([...neighbors].map(([id, adjacent]) => [id, adjacent.size]));
   let topHubId: string | null = null;
   let topDeg = -1;
   for (const [id, deg] of degree) {
@@ -101,9 +101,9 @@ function computeMetrics(nodes: GraphNodeLike[], edges: GraphEdgeLike[], directed
       topHubId = id;
     }
   }
-  const maxPairs = n > 1 ? n * (n - 1) / (multigraph && directed ? 1 : 2) : 0;
-  const density = maxPairs > 0 ? (multigraph ? pairs.size : m) / maxPairs : 0;
-  const averageDegree = n > 0 ? (multigraph ? [...degree.values()].reduce((sum, value) => sum + value, 0) : 2 * m) / n : 0;
+  const maxPairs = n > 1 ? n * (n - 1) / (directed ? 1 : 2) : 0;
+  const density = maxPairs > 0 ? (pairs.size) / maxPairs : 0;
+  const averageDegree = n > 0 ? ([...degree.values()].reduce((sum, value) => sum + value, 0)) / n : 0;
   return {
     nodes: n,
     edges: m,

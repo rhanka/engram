@@ -250,6 +250,45 @@ describe("MCP-L3 filtered memory projection (M10 l.1368; MCP-L3 l.1675)", () => 
     expect(G.hasEdge("alpha_fn", "beta_fn")).toBe(true);
   });
 
+  it("should retire stale memory_about while preserving calls and its evidence on the same pair (A-D1)", () => {
+    const first = assembleMemoryGraphProjection(assembleInput([candidate({ code_targets: ["alpha_fn"] })]));
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const memoryId = first.value.extraction.nodes[0]!.id;
+    const observations = ["L10", "L44"].map((source_location) => ({
+      confidence: "EXTRACTED" as const,
+      source_file: "src/sample.ts",
+      source_location,
+    }));
+    const code = codeExtraction();
+    const G = buildFromJson({
+      ...code,
+      nodes: [...code.nodes, ...first.value.extraction.nodes],
+      edges: [...code.edges, ...observations.map((attrs) => ({
+        source: memoryId, target: "alpha_fn", relation: "calls", ...attrs,
+      }))],
+    });
+    attachMemoryProjectionToGraph(G, first.value);
+    const memoryKey = JSON.stringify([memoryId, "alpha_fn", MEMORY_GRAPH_PROJECTION_RELATION_V1]);
+    const callsKey = JSON.stringify([memoryId, "alpha_fn", "calls"]);
+    expect(G.hasEdge(memoryKey)).toBe(true);
+    expect(G.hasEdge(callsKey)).toBe(true);
+    const callsBefore = structuredClone(G.getEdgeAttributes(callsKey));
+    expect(callsBefore.evidence_observations).toEqual(observations);
+
+    const next = assembleMemoryGraphProjection(assembleInput([candidate({ code_targets: ["beta_fn"] })]));
+    expect(next.ok).toBe(true);
+    if (!next.ok) return;
+    const receipt = reconcileMemoryProjectionInGraph(G, next.value);
+    expect(receipt.removed).toEqual([]);
+    expect(G.hasNode(memoryId)).toBe(true);
+    expect(G.hasEdge(memoryKey)).toBe(false);
+    expect(G.hasEdge(JSON.stringify([memoryId, "beta_fn", MEMORY_GRAPH_PROJECTION_RELATION_V1]))).toBe(true);
+    expect(G.hasEdge(callsKey)).toBe(true);
+    expect(G.getEdgeAttributes(callsKey)).toEqual(callsBefore);
+    expect(JSON.stringify(G.getEdgeAttributes(callsKey))).toBe(JSON.stringify(callsBefore));
+  });
+
   it("drops dangling code targets without creating nodes (exact-id join, L3-local)", () => {
     // Assembly already drops targets outside the live code set ("ghost_fn"
     // never reaches the extraction); the attach step skips references whose

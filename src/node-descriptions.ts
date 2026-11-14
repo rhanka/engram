@@ -1,3 +1,4 @@
+import { compareCodeUnits } from "./graph-json-serialization.js";
 /**
  * LLM-backed node descriptions for the standalone CLI (WP11).
  *
@@ -597,7 +598,7 @@ function rankNodes(G: Graph, onlyMissing = false): string[] {
   });
   return ids.sort((a, b) => {
     const degreeDelta = readerDegree(G, b) - readerDegree(G, a);
-    return degreeDelta !== 0 ? degreeDelta : a.localeCompare(b);
+    return degreeDelta !== 0 ? degreeDelta : compareCodeUnits(a, b);
   });
 }
 

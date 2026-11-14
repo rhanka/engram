@@ -114,6 +114,11 @@ function overlaps(record: { props: Record<string, unknown> }, fromMs: number, to
 
 function answer(state: InMemoryPgState, text: string, params?: unknown[]) {
   const upper = text.toUpperCase();
+  // Exact-key read performed inside the v2 contribution transaction.
+  if (upper.includes("SELECT") && text.includes("graph_edges") && upper.includes("FOR UPDATE")) {
+    const rows = state.edges.filter(row => row.city_slug === params?.[0] && row.source_id === params?.[1] && row.target_id === params?.[2] && row.relation === params?.[3]);
+    return { rows, rowCount: rows.length };
+  }
 
   if (text.includes("DELETE FROM") && text.includes("graph_nodes")) {
     const namespace = String(params?.[0]);
@@ -131,7 +136,7 @@ function answer(state: InMemoryPgState, text: string, params?: unknown[]) {
   }
   if (text.includes("INSERT INTO") && text.includes("graph_edges")) {
     ingestEdges(state, params);
-    return { rows: [], rowCount: 0 };
+    return upper.includes("RETURNING") ? { rows: [{ source_id: params?.[1] }], rowCount: 1 } : { rows: [], rowCount: 0 };
   }
 
   if (upper.includes("SELECT") && text.includes("FROM") && text.includes("graph_nodes") && text.includes("n.props")) {
