@@ -4,7 +4,7 @@ import { unionExtractionCitations } from "./citations.js";
 import { type JsonValue, toJsonValue } from "./json-value.js";
 import { makeNodeId } from "./node-id.js";
 import { canonicalBytes } from "./ontology-guardian/canonical.js";
-import { prepareFreshExtraction } from "./graph.js";
+import { assertionIdentityOf, mergeEdgeEvidence, prepareFreshExtraction } from "./graph.js";
 import { repoKey, commitId, branchId } from "./repo-key.js";
 import type {
   Extraction,
@@ -322,23 +322,32 @@ function branchNode(repoKeyStr: string, name: string, headSha: string | undefine
   };
 }
 
-function edgeKey(edge: GraphEdge): string {
+function gitProducerEdgeKey(edge: GraphEdge): string {
   return `${edge.source}\0${edge.target}\0${edge.relation}\0${String(edge.source_file ?? "")}`;
 }
 
 export function mergeExtractions(base: Extraction, extra: Extraction): Extraction {
+  return mergeExtractionsBody(base, extra, false);
+}
+
+/** Emission-preserving reducer; production callers switch in lot A. */
+export function mergeExtractionsPrepared(base: Extraction, extra: Extraction): Extraction {
+  return mergeExtractionsBody(base, extra, true);
+}
+
+function mergeExtractionsBody(base: Extraction, extra: Extraction, preserveEmissions: boolean): Extraction {
   const nodes = new Map<string, GraphNode>();
   for (const node of [...(base.nodes ?? []), ...(extra.nodes ?? [])]) {
     nodes.set(node.id, node);
   }
   const edges = new Map<string, GraphEdge>();
-  for (const edge of [...(base.edges ?? []), ...(extra.edges ?? [])]) {
-    edges.set(edgeKey(edge), edge);
+  if (!preserveEmissions) for (const edge of [...(base.edges ?? []), ...(extra.edges ?? [])]) {
+    edges.set(gitProducerEdgeKey(edge), edge);
   }
   return {
     ...(extra.provenance ? { provenance: extra.provenance } : base.provenance ? { provenance: base.provenance } : {}),
     nodes: [...nodes.values()],
-    edges: [...edges.values()],
+    edges: preserveEmissions ? [...(base.edges ?? []), ...(extra.edges ?? [])] : [...edges.values()],
     hyperedges: [...(base.hyperedges ?? []), ...(extra.hyperedges ?? [])],
     input_tokens: (base.input_tokens ?? 0) + (extra.input_tokens ?? 0),
     output_tokens: (base.output_tokens ?? 0) + (extra.output_tokens ?? 0),
@@ -1024,7 +1033,7 @@ export function mergeExtractionsWithCitationsPrepared(
       ? prepareFreshExtraction(ext, { root: options.root })
       : ext)
     : extractions;
-  return mergeExtractionsWithCitations(prepared, options);
+  return mergeExtractionsWithCitationsBody(prepared, options, true);
 }
 
 /**
@@ -1035,6 +1044,10 @@ export function mergeExtractionsWithCitations(
   extractions: readonly Extraction[],
   options: MergeExtractionsOptions = {},
 ): MergeExtractionsResult {
+  return mergeExtractionsWithCitationsBody(extractions, options, false);
+}
+
+function mergeExtractionsWithCitationsBody(extractions: readonly Extraction[], options: MergeExtractionsOptions, useEvidenceCore: boolean): MergeExtractionsResult {
   if (!Array.isArray(extractions) || extractions.length === 0) {
     return {
       extraction: {
@@ -1109,8 +1122,10 @@ export function mergeExtractionsWithCitations(
     if (!ext || typeof ext !== "object" || Array.isArray(ext)) continue;
     const rawEdges = (ext as unknown as Record<string, unknown>).edges;
     if (!Array.isArray(rawEdges)) continue;
-    for (const edge of rawEdges) {
-      if (!isPlainRecord(edge)) continue;
+    for (const rawEdge of rawEdges) {
+      if (!isPlainRecord(rawEdge)) continue;
+      const identity = useEvidenceCore ? assertionIdentityOf(rawEdge.source, rawEdge.target, rawEdge) : undefined;
+      const edge = identity ? { ...rawEdge, source: identity.src, target: identity.tgt, relation: identity.relation, _src: identity.src, _tgt: identity.tgt } : rawEdge;
       const src = getOwnEnumerable(edge, "source");
       const tgt = getOwnEnumerable(edge, "target");
       const rel = getOwnEnumerable(edge, "relation");
@@ -1161,7 +1176,31 @@ export function mergeExtractionsWithCitations(
   });
   const mergedEdges: GraphEdge[] = [];
   for (const group of sortedEdgeGroups) {
-    mergedEdges.push(mergeItemGroup("edge", group.joinedKey, group.copies, conflicts) as unknown as GraphEdge);
+    if (!useEvidenceCore) {
+      mergedEdges.push(mergeItemGroup("edge", group.joinedKey, group.copies, conflicts) as unknown as GraphEdge);
+      continue;
+    }
+    // Diagnose whole-field candidates, using the P1 core's actual winner.
+    // Residual objects are selected intact, never recursively merged.
+    const attrs = mergeEdgeEvidence(null, ...group.copies);
+    const excludedFields = new Set(["source", "target", "relation", "source_file", "source_location", "citations", "confidence", "confidence_score", "derivation_method", "derivation_methods", "evidence_refs", "extractor", "t", "t_end", "evidence_observations", "_src", "_tgt"]);
+    const sourceFiles = collectGroupSourceFiles(group.copies);
+    for (const field of new Set(group.copies.flatMap(Object.keys))) {
+      if (excludedFields.has(field)) continue;
+      const values = new Set<string>();
+      for (const copy of group.copies) {
+        const prop = getOwnEnumerable(copy, field);
+        if (!prop.present) continue;
+        const candidate = toJsonValue(prop.value);
+        if (candidate.ok) values.add(canonicalBytes(candidate.value));
+      }
+      const stored = getOwnEnumerable(attrs, field);
+      if (values.size < 2 || !stored.present) continue;
+      const winner = toJsonValue(stored.value);
+      if (winner.ok) conflicts.push(createFrozenConflict("edge", group.joinedKey, field, [...values].sort(), canonicalBytes(winner.value), sourceFiles));
+    }
+    const { src, tgt, relation } = assertionIdentityOf(group.copies[0]!.source, group.copies[0]!.target, group.copies[0]!);
+    mergedEdges.push({ ...attrs, source: src, target: tgt, _src: src, _tgt: tgt, relation } as GraphEdge);
   }
 
   const hyperedgesMerged = mergeIdKeyedCollection<Hyperedge>(extractions, "hyperedges", "hyperedge", conflicts);
@@ -1289,7 +1328,7 @@ export function extractGit(root: string = ".", options: ExtractGitOptions = {}):
   }
 
   const dedupedEdges = new Map<string, GraphEdge>();
-  for (const edge of edges) dedupedEdges.set(edgeKey(edge), edge);
+  for (const edge of edges) dedupedEdges.set(gitProducerEdgeKey(edge), edge);
 
   // An explicit bound — count or age — is the only way this extraction
   // becomes partial; the default walks the whole reachable history.

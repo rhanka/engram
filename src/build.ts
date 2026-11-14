@@ -13,7 +13,9 @@ import { resolve } from "node:path";
 import Graph from "graphology";
 import type { Extraction, OntologyCitation } from "./types.js";
 import { unionCitations } from "./citations.js";
-import { assertSupportedGraphFormat, createGraph, legacyObservationFromRawLink, normalizeSourceFilePath } from "./graph.js";
+import { assertionIdentityOf, assertSupportedGraphFormat, createGraph, edgeKey, legacyObservationFromRawLink, normalizeSourceFilePath, prepareFreshExtraction } from "./graph.js";
+import { prepareRelationContributions, replayPreparedRelationEdges } from "./relation-replay.js";
+import { remapRelationEmissions } from "./relation-remap.js";
 import { assertGraphJsonFileSize } from "./graph-size-guard.js";
 import { cleanupStaleNodes } from "./semantic-cleanup.js";
 import { validateExtraction } from "./validate.js";
@@ -291,6 +293,15 @@ export function readExistingGraphExtractionPrepared(graphPath: string): { extrac
 }
 
 export function deduplicateByLabel(extraction: Extraction): Extraction {
+  return deduplicateByLabelBody(extraction, false);
+}
+
+/** Unwired label remapper preserving all surviving effective assertions. */
+export function deduplicateByLabelPrepared(extraction: Extraction): Extraction {
+  return deduplicateByLabelBody(extraction, true);
+}
+
+function deduplicateByLabelBody(extraction: Extraction, preserveEmissions: boolean): Extraction {
   const remap = new Map<string, string>();
   const nodes = extraction.nodes ?? [];
 
@@ -338,13 +349,13 @@ export function deduplicateByLabel(extraction: Extraction): Extraction {
   applyLabelPass(false);
 
   if (remap.size === 0) {
-    return extraction;
+    return preserveEmissions ? { ...extraction, edges: remapRelationEmissions(extraction.edges ?? [], id => id) } : extraction;
   }
 
   console.error(`[engram] Deduplicated ${remap.size} duplicate node(s) by label.`);
 
   const deduplicatedNodes = nodes.filter((node) => resolveRemap(remap, node.id) === node.id);
-  const edges = (extraction.edges ?? [])
+  const edges = preserveEmissions ? remapRelationEmissions(extraction.edges ?? [], id => resolveRemap(remap, id)) : (extraction.edges ?? [])
     .map((edge) => ({
       ...edge,
       source: resolveRemap(remap, edge.source),
@@ -362,6 +373,18 @@ export function deduplicateByLabel(extraction: Extraction): Extraction {
     edges,
     hyperedges,
   };
+}
+
+/** Edge intake body for activation; caller supplies an explicit multigraph. */
+export function insertBuildEdgesPrepared(G: Graph, extraction: Extraction, options?: BuildOptions): void {
+  const prepared = prepareFreshExtraction(extraction, { root: rootForOptions(options) });
+  const edges = prepared.edges.map(edge => ({ edge, identity: assertionIdentityOf(edge.source, edge.target, edge) }));
+  edges.sort((a, b) => {
+    const ak = edgeKey(a.identity.src, a.identity.tgt, a.identity.relation);
+    const bk = edgeKey(b.identity.src, b.identity.tgt, b.identity.relation);
+    return ak < bk ? -1 : ak > bk ? 1 : 0;
+  });
+  replayPreparedRelationEdges(G, prepareRelationContributions(G, edges.map(({ edge }) => ({ source: edge.source, target: edge.target, attrs: edge }))));
 }
 
 export function buildFromJson(extraction: Extraction, options?: BuildOptions): Graph {
