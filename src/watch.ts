@@ -55,7 +55,9 @@ import {
   type LabelSource,
 } from "./community-labeling.js";
 import { buildCodeFileNodeIdMap, extractGit, mergeExtractions } from "./extract-git.js";
-import type { Extraction, GraphifyInputScopeMode, InputScopeSource } from "./types.js";
+import { canonicalBytes, sha256Hex } from "./ontology-guardian/canonical.js";
+import { sanitizeMetadata } from "./security.js";
+import type { Extraction, ExtractionProvenance, GraphifyInputScopeMode, InputScopeSource } from "./types.js";
 
 const WATCHED_EXTENSIONS = new Set([
   ...CODE_EXTENSIONS,
@@ -170,6 +172,8 @@ export async function rebuildCode(
     force?: boolean;
     scope?: GraphifyInputScopeMode;
     scopeSource?: InputScopeSource;
+    /** Explicit Git observation time; takes priority over SOURCE_DATE_EPOCH and reuse. */
+    observedAt?: string;
     /**
      * Skip Louvain clustering and report regeneration. graph.json is still
      * written with the merged AST extraction but without community labels.
@@ -210,10 +214,13 @@ export async function rebuildCode(
 ): Promise<boolean> {
   try {
     const paths = resolveGraphifyPaths({ root: watchPath });
+    let previousProvenance: ExtractionProvenance | undefined;
     if (existsSync(paths.graph)) {
       try {
         assertGraphJsonFileSize(paths.graph, "read");
-        assertSupportedGraphFormat(JSON.parse(readFileSync(paths.graph, "utf-8")), paths.graph);
+        const previous = JSON.parse(readFileSync(paths.graph, "utf-8"));
+        assertSupportedGraphFormat(previous, paths.graph);
+        previousProvenance = previous.graph?.provenance;
       } catch (error) {
         if (error instanceof UnsupportedGraphFormatError) throw error;
         // Ordinary unreadable snapshots retain the recover-and-rebuild policy.
@@ -280,12 +287,30 @@ export async function rebuildCode(
         return false;
       }
     }
-    result = mergeExtractions(
-      result,
-      extractGit(root, {
-        fileNodeIds: buildCodeFileNodeIdMap(root, allCodeFiles),
-      }),
-    );
+    const gitExtraction = extractGit(root, {
+      fileNodeIds: buildCodeFileNodeIdMap(root, allCodeFiles),
+      observedAt: options.observedAt,
+    });
+    const provenance = gitExtraction.provenance;
+    if (provenance) {
+      // Bind the first observation to the complete Git extraction, not just
+      // HEAD: refs and file-node mappings can change at the same commit.
+      const { observed_at: _observedAt, ...binding } = provenance;
+      provenance.input_digest = `sha256:${sha256Hex(canonicalBytes({ ...gitExtraction, provenance: binding }))}`;
+      if (
+        options.observedAt === undefined && process.env.SOURCE_DATE_EPOCH === undefined &&
+        previousProvenance?.source_owner === "git" &&
+        previousProvenance.source_id === sanitizeMetadata({ source_id: provenance.source_id }).source_id &&
+        previousProvenance.source_hash === provenance.source_hash &&
+        previousProvenance.adapter_version === provenance.adapter_version &&
+        previousProvenance.input_digest === provenance.input_digest &&
+        typeof previousProvenance.observed_at === "string" &&
+        Number.isFinite(Date.parse(previousProvenance.observed_at))
+      ) {
+        provenance.observed_at = previousProvenance.observed_at;
+      }
+    }
+    result = mergeExtractions(result, gitExtraction);
 
     const relativeResult = makeExtractionPortable(result, root);
     const relativeCodeFiles = allCodeFiles.map((file) => toProjectRelativePath(root, file));

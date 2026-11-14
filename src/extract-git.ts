@@ -116,6 +116,17 @@ function emptyExtraction(): Extraction {
   };
 }
 
+function gitObservedAt(explicit?: string): string {
+  if (explicit !== undefined) return explicit;
+  const epoch = process.env.SOURCE_DATE_EPOCH;
+  if (epoch === undefined) return new Date().toISOString();
+  const seconds = Number(epoch);
+  if (!/^\d+$/.test(epoch) || !Number.isSafeInteger(seconds) || seconds > 8_640_000_000_000) {
+    throw new Error("SOURCE_DATE_EPOCH must be a non-negative integer of seconds within the Date range");
+  }
+  return new Date(seconds * 1000).toISOString();
+}
+
 function isGitRepo(root: string): boolean {
   return tryGit(root, ["rev-parse", "--is-inside-work-tree"]) === "true";
 }
@@ -1333,7 +1344,7 @@ export function extractGit(root: string = ".", options: ExtractGitOptions = {}):
     provenance: {
       source_owner: "git",
       source_id: repoKeyStr,
-      observed_at: options.observedAt ?? new Date().toISOString(),
+      observed_at: gitObservedAt(options.observedAt),
       source_hash: head,
       adapter_version: GIT_EXTRACT_ADAPTER_VERSION,
       ...(boundedByRequest ? { partial: true } : {}),
