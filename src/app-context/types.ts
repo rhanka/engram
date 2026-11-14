@@ -2,6 +2,8 @@
  * Shared TypeScript contracts for the Application Context Graph (Lot L1, §2.2, §3.2, §3.4, §4.3, §5.1–§5.2).
  */
 
+import type { OntologyCitation } from "../types.js";
+
 export type AppContextNodeType =
   | "Spec"
   | "SpecSection"
@@ -48,15 +50,15 @@ export interface TrackProjectionCitation {
 
 export type AppContextCitation = AppContextFileCitation | TrackProjectionCitation;
 
-/** Lossless app-context relation record stored in `graph.app_context.relations` (§3.2). */
+/** Read-only compatibility relation projection; graph links are the authoritative records. */
 export interface AppContextRelationRecord {
   source: string;
   target: string;
   relation: string;
-  confidence: "EXTRACTED";
+  confidence?: string;
   derivation_methods: string[];     // sorted distinct derivation_method values
   evidence_refs: string[];          // sorted union of evidence_refs
-  citations: AppContextCitation[];  // union of citations across all emissions of (source, target, relation)
+  citations: OntologyCitation[];  // union of citations across all emissions of (source, target, relation)
 }
 
 export type AppContextRouterKind = "sveltekit" | "hash" | "pathname";
@@ -216,6 +218,8 @@ export type AppContextDiagnosticCode =
   | "target-unresolved"
   | "target-ambiguous"
   | "schema-conflict"
+  | "unsupported-construct"
+  | "manifest-outside-checkout"
   | "track-id-unresolved"
   | "dynamic-component"
   | "endpoint-unresolved";
