@@ -57,7 +57,7 @@ const packedAcceptanceScriptPath = join(repoRoot, "scripts", "mcp-memory-l4-pack
 const TEST_APP_CONTEXT_FAMILY_CORPUS_RECEIPT: Receipt = Object.freeze({
   receiptKind: "family-corpus",
   libraryId: "@sentropic/engram",
-  libraryVersion: "0.26.0",
+  libraryVersion: "0.27.0",
   issuedAt: "2026-11-11T00:00:00Z",
   validatorRole: "retained-check",
   verdict: "pass",
