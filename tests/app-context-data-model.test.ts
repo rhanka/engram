@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { extractJs, extractSql } from "../src/extract.js";
+import { loadGraphFromData, serializeGraph } from "../src/graph.js";
 import { appContextNodeId } from "../src/app-context/node-id.js";
 import { parseOntologyProfile } from "../src/ontology-profile.js";
 import {
@@ -75,6 +76,46 @@ describe("Lot L4 — Drizzle AST data model (reduced scope)", () => {
 
   beforeAll(async () => {
     await ensureDataModelTsReady();
+  });
+
+  it("keeps one directed link per relation with verbatim observations for repeated AST calls", () => {
+    const file = "api/repeated.ts";
+    const res = extractDataModel([{ path: file, language: "drizzle", content: [
+      'import { pgTable, integer } from "drizzle-orm/pg-core";',
+      'export const items = pgTable("items", { id: integer("id").primaryKey() });',
+      'export function run(db: any) {',
+      '  db.select().from(items);',
+      '  db.select().from(items);',
+      '  db.insert(items).values({});',
+      '  db.update(items).set({});',
+      '  db.delete(items);',
+      '}',
+    ].join("\n") }], { repoKey: REPO, commit: COMMIT });
+    expect(res.diagnostics).toEqual([]);
+    const links = res.edges.filter((edge) => edge.source === symbolId(file, "run"));
+    expect(links.map((edge) => edge.relation)).toEqual(["reads", "writes"]);
+    for (const edge of links) {
+      const lines = edge.relation === "reads" ? [4, 5] : [6, 7, 8];
+      const method = edge.relation === "reads" ? "drizzle_select_ast" : "drizzle_mutation_ast";
+      expect(Object.keys(edge).sort()).toEqual(["citations", "derivation_method", "derivation_methods", "evidence_observations", "evidence_refs", "relation", "source", "target"]);
+      expect(edge.target).toBe(entityId("public", "items"));
+      expect(edge.derivation_methods).toEqual([method]);
+      expect(edge.evidence_observations).toEqual(lines.map((line) => ({
+        source_file: "",
+        derivation_method: method,
+        citations: [{ citation_kind: "file", source_file: file, line_start: line, line_end: line, commit: COMMIT }],
+        evidence_refs: [`${file}#L${line}-L${line}`],
+      })));
+    }
+    const graph = loadGraphFromData({ nodes: res.nodes, links: res.edges });
+    expect(graph.size).toBe(res.edges.length);
+    const snapshot = serializeGraph(graph);
+    expect(serializeGraph(loadGraphFromData(snapshot))).toEqual(snapshot);
+    expect(serializeGraph(loadGraphFromData({ ...snapshot, links: [...snapshot.links, ...res.edges] }))).toEqual(snapshot);
+    for (const edge of links) {
+      expect(snapshot.links.find((link) => link.source === edge.source && link.target === edge.target && link.relation === edge.relation)?.evidence_observations)
+        .toEqual(edge.evidence_observations);
+    }
   });
 
   it("extracts the supported-construct table: pgTable, pgSchema.table, column builders, modifiers, inline FKs, and table callback PK/FK/index", () => {
@@ -739,12 +780,25 @@ describe("Lot L4 — Drizzle AST data model (reduced scope)", () => {
     expect(epEdge.derivation_method).toBe("handler_call_propagation");
     // Must include: direct access (h.ts:4), both diamond branches (h.ts:10, 11, 12, 13), and handles registration (routes.ts:9)
     expect(epEdge.evidence_refs).toEqual([
-      "h.ts#L4-L4",
       "h.ts#L10-L10",
       "h.ts#L11-L11",
       "h.ts#L12-L12",
       "h.ts#L13-L13",
+      "h.ts#L4-L4",
       "routes.ts#L9-L9",
+    ]);
+    const cite = (file: string, line: number) => ({ citation_kind: "file", source_file: file, line_start: line, line_end: line, commit: COMMIT });
+    expect(epEdge.evidence_observations).toEqual([
+      {
+        source_file: "", derivation_method: "handler_call_propagation",
+        citations: [cite("routes.ts", 9), cite("h.ts", 4), cite("h.ts", 10), cite("h.ts", 12)],
+        evidence_refs: ["routes.ts#L9-L9", "h.ts#L4-L4", "h.ts#L10-L10", "h.ts#L12-L12"],
+      },
+      {
+        source_file: "", derivation_method: "handler_call_propagation",
+        citations: [cite("routes.ts", 9), cite("h.ts", 4), cite("h.ts", 11), cite("h.ts", 13)],
+        evidence_refs: ["routes.ts#L9-L9", "h.ts#L4-L4", "h.ts#L11-L11", "h.ts#L13-L13"],
+      },
     ]);
   });
 
