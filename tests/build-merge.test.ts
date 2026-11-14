@@ -1,3 +1,4 @@
+import { getPairEdges } from "../src/graph.js";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -74,7 +75,7 @@ describe("buildMerge", () => {
     );
 
     const graph = buildMerge([], { graphPath });
-    const edge = graph.edge("callee", "caller");
+    const edge = getPairEdges(graph, "callee", "caller")[0]?.key;
     expect(edge).toBeDefined();
     const attrs = graph.getEdgeAttributes(edge!);
     expect(attrs._src).toBe("caller");
@@ -109,7 +110,7 @@ describe("buildMerge", () => {
     );
 
     const graph = buildMerge([], { graphPath });
-    const edge = graph.edge("callee", "caller");
+    const edge = getPairEdges(graph, "callee", "caller")[0]?.key;
     expect(edge).toBeDefined();
     const attrs = graph.getEdgeAttributes(edge!);
     expect(attrs._src).toBe("caller");
@@ -259,7 +260,7 @@ describe("buildMerge", () => {
     expect(graph.hasNode("auth_session")).toBe(true);
     expect(graph.hasNode("auth_session_c1")).toBe(false);
     expect(graph.size).toBe(1);
-    const edge = graph.edge("auth_session", "auth_from_docs");
+    const edge = getPairEdges(graph, "auth_session", "auth_from_docs")[0]?.key;
     expect(edge).toBeDefined();
   });
 });
@@ -272,7 +273,7 @@ import { canonicalBytes as mlKey } from "../src/ontology-guardian/canonical.js";
 import { edge as mlEdge, node as mlNode, extraction as mlExtraction, rows as mlRows, writers as mlWriters, writeGraph as mlSerialize, fromRows as mlBuild, expectFixedPoint as mlFixed, tempDir as mlTemp } from "./helpers/multi-links.js";
 describe("L0-C legacy parity",()=>{
  for(const fixture of ["legacy-absent-confidence.json","untyped-x2b.json"]) for(const root of [undefined,"/repo"]) describe(fixture+"/"+root,()=>{
-  it.fails("R4-legacy-load-buildMerge-observation-parity",async()=>{
+  it("R4-legacy-load-buildMerge-observation-parity",async()=>{
    const {buildMerge}=await import("../src/build.js");
    const raw=JSON.parse(mlRead(new URL("./fixtures/multi-links/"+fixture,import.meta.url),"utf8"));
    const path=mlJoin(mlTemp(),"graph.json");mlWrite(path,JSON.stringify(raw));

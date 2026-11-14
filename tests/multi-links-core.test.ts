@@ -13,8 +13,22 @@ const multi = (directed = false) => {
 };
 
 describe("P1 observation core, before activation", () => {
-  it("keeps the factory simple and separates graph and storage identities", () => {
-    expect(core.createGraph().multi).toBe(false);
+  it("types every evidence wire-domain refusal as a writer invariant and preserves its diagnostic", () => {
+    const cyclic: Row = {}; cyclic.self = cyclic;
+    const invalid = [
+      [Infinity, "non-finite number"], [NaN, "non-finite number"], [-Infinity, "non-finite number"],
+      [1n, "unsupported bigint"], [() => {}, "unsupported function"], [Symbol(), "unsupported symbol"],
+      [cyclic, "cycle"], [new Date(), "non-plain object"], [{ [Symbol()]: 1 }, "symbol key"],
+    ] as const;
+    for (const [value, diagnostic] of invalid) for (const captured of [false, true]) {
+      const observation = { source_file: "f.ts", citations: [{ value }] };
+      const attrs = captured ? { evidence_observations: [observation] } : observation;
+      expect(() => core.mergeEdgeEvidence(null, attrs)).toThrow(core.RelationEdgeInvariantError);
+      expect(() => core.mergeEdgeEvidence(null, attrs)).toThrow("evidence observation: " + diagnostic);
+    }
+  });
+  it("activates the multigraph factory and separates graph and storage identities", () => {
+    expect(core.createGraph().multi).toBe(true);
     expect(api.assertionIdentityOf("a", "b", { _src: "b", _tgt: "a", relation: "" })).toEqual({ src: "b", tgt: "a", relation: "related_to" });
     const normalize = (port as Row).normalizeStoreEdgeIdentity;
     expect(normalize("a", "b", undefined)).toEqual({ source: "a", target: "b", relation: "RELATES_TO" });

@@ -126,6 +126,11 @@ function ingestEdges(state: InMemoryPgState, params: unknown[] | undefined) {
 
 function answer(state: InMemoryPgState, text: string, params?: unknown[]) {
   const upper = text.toUpperCase();
+  // Exact-key read performed inside the v2 contribution transaction.
+  if (upper.includes("SELECT") && text.includes("graph_edges") && upper.includes("FOR UPDATE")) {
+    const rows = state.edges.filter(row => row.city_slug === params?.[0] && row.source_id === params?.[1] && row.target_id === params?.[2] && row.relation === params?.[3]);
+    return { rows, rowCount: rows.length };
+  }
 
   // ---- DELETEs (replace rebuild / clear) ------------------------------------
   if (text.includes("DELETE FROM graph_positions")) {
@@ -155,7 +160,7 @@ function answer(state: InMemoryPgState, text: string, params?: unknown[]) {
   }
   if (text.includes("INSERT INTO graph_edges")) {
     ingestEdges(state, params);
-    return { rows: [], rowCount: 0 };
+    return upper.includes("RETURNING") ? { rows: [{ source_id: params?.[1] }], rowCount: 1 } : { rows: [], rowCount: 0 };
   }
 
   // ---- SELECTs --------------------------------------------------------------

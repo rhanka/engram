@@ -506,7 +506,7 @@ export { DEFAULT_ENGRAM_STATE_DIR, ALL_KNOWN_STATE_DIRS, DEFAULT_GRAPHIFY_STATE_
 export { createGraph, isDirectedGraph, loadGraphFromData, serializeGraph,
   assertionIdentityOf, edgeKey, normalizeSourceFilePath, prepareFreshExtraction,
   observationFromEmission, legacyObservationFromRawLink, observationKey,
-  mergeEdgeEvidence, upsertRelationEdge, getPairEdges, neighborDegree, edgeCount,
+  mergeEdgeEvidence, mergeEdgeEvidenceAll, upsertRelationEdge, getPairEdges, neighborDegree, edgeCount,
   GRAPH_FORMAT_VERSION, assertSupportedGraphFormat, UnsupportedGraphFormatError,
 } from "./graph.js";
 export type { PairEdge } from "./graph.js";

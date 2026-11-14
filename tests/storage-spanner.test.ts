@@ -691,7 +691,7 @@ describe.skipIf(!process.env.SPANNER_EMULATOR_HOST)(
 
 import { edge as mlEdge, multiGraph as mlGraph, observation as mlObservation } from "./helpers/multi-links.js";
 describe("L0-S mirror singleton diagnostics",()=>{
- it.fails("M3-two-singleton-pushes-each-warn",async()=>{
+ it("M3-two-singleton-pushes-each-warn",async()=>{
 
   const state=freshState(),store=await makeSpannerStore(state);
 

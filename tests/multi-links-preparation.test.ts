@@ -7,17 +7,17 @@ import { mergeExtractionsWithCitations } from "../src/extract-git.js";
 import { edge, extraction, node, tempDir, type Row } from "./helpers/multi-links.js";
 
 describe("P1 preparation and legacy reader bodies", () => {
-  it("preserves the HEAD no-options batch rows and scalar confidence", () => {
+  it("activates no-root preparation before batch capture and derives confidence", () => {
     const input = [
       extraction([edge({ source_file: "src\\f.ts", source_location: "L1", confidence: "AMBIGUOUS" })]),
       extraction([edge({ source_file: "src/f.ts", source_location: "L2", confidence: "EXTRACTED" })]),
     ];
     const result = mergeExtractionsWithCitations(input).extraction;
-    expect(result.edges).toHaveLength(2);
-    expect(result.edges.map(row => row.source_file)).toEqual(["src/f.ts", "src\\f.ts"]);
-    expect(result.edges.every(row => !Object.hasOwn(row, "evidence_observations"))).toBe(true);
+    expect(result.edges).toHaveLength(1);
+    expect(result.edges.map(row => row.source_file)).toEqual(["src/f.ts"]);
+    expect(result.edges[0].evidence_observations).toHaveLength(2);
     const G = build.buildFromJson(result);
-    expect(G.getEdgeAttribute(G.edges()[0], "confidence")).toBe("AMBIGUOUS");
+    expect(G.getEdgeAttribute(G.edges()[0], "confidence")).toBe("EXTRACTED");
   });
 
   it("prepares fresh locators before citation merge grouping with an additive root", () => {

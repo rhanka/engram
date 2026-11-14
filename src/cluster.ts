@@ -1,3 +1,4 @@
+import { compareCodeUnits } from "./graph-json-serialization.js";
 /**
  * Community detection on graphology graphs.
  * Uses Louvain (graphology-communities-louvain).
@@ -13,21 +14,6 @@ const MIN_SPLIT_SIZE = 10;
 const COHESION_SPLIT_THRESHOLD = 0.05;
 const COHESION_SPLIT_MIN_SIZE = 50;
 
-function edgeSortKey(
-  source: string,
-  target: string,
-  attrs: Record<string, unknown>,
-): string {
-  return [
-    source,
-    target,
-    String(attrs.relation ?? ""),
-    String(attrs.source_file ?? ""),
-    String(attrs.confidence ?? ""),
-    JSON.stringify(attrs),
-  ].join("\0");
-}
-
 function canonicalizeForPartition(G: Graph): Graph {
   const base = G.type === "directed" ? toUndirectedGraph(G) : G.copy();
   const copy = new Graph({ type: base.type, multi: false });
@@ -38,18 +24,17 @@ function canonicalizeForPartition(G: Graph): Graph {
   for (const nodeId of [...base.nodes()].sort()) {
     copy.mergeNode(nodeId, base.getNodeAttributes(nodeId));
   }
-  const edges: Array<{ source: string; target: string; attrs: Record<string, unknown> }> = [];
+  const pairs = new Map<string, { source: string; target: string; weight: number }>();
   base.forEachEdge((_edge, attrs, source, target) => {
-    const [left, right] = source <= target ? [source, target] : [target, source];
-    edges.push({ source: left, target: right, attrs: attrs as Record<string, unknown> });
+    if (source === target) return;
+    const [left, right] = (source <= target ? [source, target] : [target, source]) as [string, string];
+    const key = JSON.stringify([left, right]);
+    const weight = typeof attrs.weight === "number" && Number.isFinite(attrs.weight) ? attrs.weight : 1;
+    const previous = pairs.get(key);
+    pairs.set(key, { source: left, target: right, weight: Math.max(previous?.weight ?? -Infinity, weight) });
   });
-  edges.sort((a, b) => edgeSortKey(a.source, a.target, a.attrs).localeCompare(edgeSortKey(b.source, b.target, b.attrs)));
-  for (const edge of edges) {
-    try {
-      copy.mergeEdge(edge.source, edge.target, edge.attrs);
-    } catch {
-      /* ignore duplicate merge failures */
-    }
+  for (const [, edge] of [...pairs].sort(([a], [b]) => compareCodeUnits(a, b))) {
+    copy.mergeEdge(edge.source, edge.target, { weight: edge.weight });
   }
   return copy;
 }
@@ -61,6 +46,7 @@ function partition(G: Graph, resolution: number = 1.0): Map<string, number> {
     randomWalk: false,
     rng: () => 0.5,
     resolution,
+    getEdgeWeight: "weight",
   });
   const map = new Map<string, number>();
   for (const [node, cid] of Object.entries(result)) {
@@ -242,9 +228,9 @@ export function cluster(G: Graph, options: ClusterOptions = {}): Map<number, str
   secondPass.sort((a, b) => {
     const bySize = b.length - a.length;
     if (bySize !== 0) return bySize;
-    const aKey = [...a].sort().join("\0");
-    const bKey = [...b].sort().join("\0");
-    return aKey.localeCompare(bKey);
+    const aKey = JSON.stringify([...a].sort());
+    const bKey = JSON.stringify([...b].sort());
+    return compareCodeUnits(aKey, bKey);
   });
   const result = new Map<number, string[]>();
   secondPass.forEach((nodes, i) => {
@@ -323,9 +309,9 @@ export function remapCommunitiesToPrevious(
     .sort((a, b) => {
       const bySize = (communities.get(b) ?? []).length - (communities.get(a) ?? []).length;
       if (bySize !== 0) return bySize;
-      const aKey = [...(communities.get(a) ?? [])].sort().join("\0");
-      const bKey = [...(communities.get(b) ?? [])].sort().join("\0");
-      return aKey.localeCompare(bKey);
+      const aKey = JSON.stringify([...(communities.get(a) ?? [])].sort());
+      const bKey = JSON.stringify([...(communities.get(b) ?? [])].sort());
+      return compareCodeUnits(aKey, bKey);
     });
   let nextId = 0;
   for (const newCid of unmatched) {
@@ -361,7 +347,7 @@ export function cohesionScore(G: Graph, communityNodes: string[]): number {
   // Upstream 2d783e5: do not round here — the 0.05 split threshold needs the
   // raw ratio so a 0.0666 cohesion does not get clamped to 0.07 and miss the
   // split, while a 0.0444 stays strictly below 0.05.
-  return possible > 0 ? (G.multi ? pairs.size : legacyEdges) / possible : 0.0;
+  return possible > 0 ? (pairs.size) / possible : 0.0;
 }
 
 export function scoreAll(

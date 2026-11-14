@@ -1,3 +1,4 @@
+import { compareCodeUnits } from "./graph-json-serialization.js";
 /**
  * Wiki export - Wikipedia-style markdown articles from the knowledge graph.
  * Generates an agent-crawlable wiki: index.md + one article per community + god node articles.
@@ -65,7 +66,7 @@ function normalizeFlows(input?: ReviewFlowArtifact | ReviewFlow[] | null): Revie
 }
 
 function compareFlowCriticality(a: ReviewFlow, b: ReviewFlow): number {
-  return b.criticality - a.criticality || a.name.localeCompare(b.name);
+  return b.criticality - a.criticality || compareCodeUnits(a.name, b.name);
 }
 
 function flowsThroughNodes(flows: ReviewFlow[], nodes: string[]): ReviewFlow[] {

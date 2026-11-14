@@ -1,3 +1,4 @@
+import { assertionIdentityOf, edgeKey } from "../graph.js";
 import { assertSupportedGraphFormat } from "../graph.js";
 import { mirrorObservationWarnings } from "./mirror-diagnostics.js";
 
@@ -166,13 +167,12 @@ function computeTopologySignature(G: Graph): string {
 
   const edges: string[] = [];
   G.forEachEdge((_edgeKey, data, source, target) => {
-    const [src, tgt] = [source, target].sort();
-    const rel = (data as Record<string, unknown>).relation ?? "";
-    edges.push(`${src}\t${tgt}\t${String(rel)}`);
+    const { src, tgt, relation } = assertionIdentityOf(source, target, data);
+    edges.push(edgeKey(src, tgt, relation));
   });
   edges.sort();
 
-  return `n=${nodeIds.length};e=${edges.length};${nodeIds.join(",")}|${edges.join(";")}`;
+  return `topo/2;n=${nodeIds.length};e=${edges.length};${JSON.stringify(nodeIds)}|${edges.join(";")}`;
 }
 
 /** Derive a backend-safe namespace from a project/instance/database triple. */
@@ -367,7 +367,7 @@ export async function createSpannerGraphStore(
   config: SpannerGraphStoreConfig,
   deps?: StoreTestDeps,
 ): Promise<SpannerGraphStore> {
-  return createSpannerGraphStoreBody(config, deps, false);
+  return createSpannerGraphStoreBody(config, deps, true);
 }
 
 /** Diagnostics-enabled mirror body, reserved for lot A activation. */

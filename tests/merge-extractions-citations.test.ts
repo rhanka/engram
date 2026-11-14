@@ -20,6 +20,8 @@ import type {
 
 function canonicalOf(value: unknown): string {
   const projected = toJsonValue(value);
+  // V2 preserves lone-surrogate strings through the core's injective esc codec.
+  if (!projected.ok && projected.reason === "invalid_unicode") return rootApi.observationKey(value as Record<string, unknown>);
   expect(projected.ok).toBe(true);
   if (!projected.ok) {
     throw new Error(`Unprojectable value at ${projected.path}: ${projected.reason}`);
@@ -626,7 +628,7 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
 
     // (vi) Edge weight collision + assertion_basis mixed string/array union
     const mergedEdge = res12.extraction.edges[0]!;
-    expect(mergedEdge.weight).toBe(0.4);
+    expect(mergedEdge.weight).toBe(0.8);
     expect(mergedEdge.assertion_basis).toEqual(["explicit", "inferred"]);
 
     expect(res12.conflicts).toEqual([
@@ -635,7 +637,7 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
         id: "node-a\0node-b\0links_to\0doc-1.pdf",
         field: "weight",
         values: ["0.4", "0.8"],
-        resolved: "0.4",
+        resolved: "0.8",
         sourceFiles: ["doc-1.pdf"],
       },
       {
@@ -888,7 +890,7 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
     });
     expect(crossNull.conflicts).toEqual([]);
     expect(crossNull.extraction.edges).toHaveLength(1);
-    expect(crossNull.extraction.edges[0]!.source_file).toBeNull();
+    expect(crossNull.extraction.edges[0]!.source_file).toBe("");
     // Idempotency and associativity on all-null cross-document edge
     expect(
       canonicalOf(
@@ -920,7 +922,7 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
     const crossNum = mergeExtractionsWithCitations([numSfExt, nullSfExt1], {
       edgeKeyScope: "cross-document",
     });
-    expect(crossNum.extraction.edges[0]!.source_file).toBe(5);
+    expect(crossNum.extraction.edges[0]!.source_file).toBe("");
   });
 
   it("F-EN4-T7: associativity across round-1, round-2, round-3, and round-4 counterexamples", () => {
@@ -1308,7 +1310,7 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
     };
     const m2Res = assertAssociative(nonStrSfEdgeExt, nonStrSfEdgeExt, nonStrSfEdgeExt);
     expect(m2Res.flat.extraction.edges).toHaveLength(1);
-    expect(m2Res.flat.extraction.edges[0]!.source_file).toBe(5);
+    expect(m2Res.flat.extraction.edges[0]!.source_file).toBe("");
     expect(
       canonicalOf(
         mergeExtractionsWithCitations([
@@ -1340,7 +1342,7 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
     };
     const p8Res = assertAssociative(nonStrSfEdgeExt, strSfEdgeExt, emptySfEdgeExt);
     expect(p8Res.flat.extraction.edges).toHaveLength(2);
-    expect(p8Res.flat.extraction.edges.map((e) => e.source_file)).toEqual([5, "5"]);
+    expect(p8Res.flat.extraction.edges.map((e) => e.source_file)).toEqual(["", "5"]);
 
     // 9. M3 (P2): assertion_basis string with a lone surrogate is treated as absent on that copy, keeping associativity & idempotency
     const surrAbA: Extraction = {
@@ -1388,14 +1390,14 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
       output_tokens: 0,
     };
     const singleSurr = mergeExtractionsWithCitations([surrAbA]);
-    expect("assertion_basis" in singleSurr.extraction.edges[0]!).toBe(false);
+    expect(singleSurr.extraction.edges[0]!.assertion_basis).toBe("\ud800");
     expect(canonicalOf(mergeExtractionsWithCitations([singleSurr.extraction]))).toBe(canonicalOf(singleSurr));
     expect(canonicalOf(mergeExtractionsWithCitations([surrAbA, surrAbA]))).toBe(canonicalOf(singleSurr));
     const m3Res = assertAssociative(surrAbA, surrAbC, surrAbB);
-    expect(m3Res.flat.extraction.edges[0]!.assertion_basis).toBe("x");
+    expect(m3Res.flat.extraction.edges[0]!.assertion_basis).toEqual(["x", "\ud800"]);
   });
 
-  it("F-EN4-T8: legacy mergeExtractions(base, extra) characterization golden", () => {
+  it("F-EN4-T8: mergeExtractions retains all emissions and existing node/metadata policies", () => {
     expect(mergeExtractions.length).toBe(2);
 
     const base: Extraction = {
@@ -1541,24 +1543,7 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
           source_file: "b.pdf",
         },
       ],
-      edges: [
-        {
-          source: "node-z",
-          target: "node-a",
-          relation: "links_to",
-          confidence: "INFERRED",
-          source_file: "a.pdf",
-          weight: 9,
-        },
-        {
-          source: "node-z",
-          target: "node-a",
-          relation: "links_to",
-          confidence: "EXTRACTED",
-          source_file: "b.pdf",
-          weight: 2,
-        },
-      ],
+      edges: [base.edges[0]!, base.edges[1]!, extra.edges[0]!],
       hyperedges: [
         {
           id: "he-1",
@@ -1864,7 +1849,9 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
       output_tokens: -0,
     } as unknown as Extraction;
 
-    const totRes = mergeExtractionsWithCitations([malformed, missingArraysExt]);
+    expect(() => mergeExtractionsWithCitations([malformed, missingArraysExt])).toThrow(/evidence observation: non-finite number/);
+    const finiteMalformed = { ...malformed, edges: malformed.edges.map(edge => edge && typeof edge === "object" && Number.isNaN(edge.confidence_score) ? { ...edge, confidence_score: 0.7 } : edge) };
+    const totRes = mergeExtractionsWithCitations([finiteMalformed, missingArraysExt]);
     expect(totRes.extraction.nodes).toHaveLength(1);
     const validNode = totRes.extraction.nodes[0]!;
     expect(validNode.id).toBe("valid-node");
@@ -1872,8 +1859,8 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
     expect("confidence_score" in validNode).toBe(false);
     expect(validNode.citations).toHaveLength(1);
     expect(validNode.citations![0]!.excerpt).toBe("good excerpt");
-    expect(totRes.extraction.edges).toHaveLength(1);
-    expect("confidence_score" in totRes.extraction.edges[0]!).toBe(false);
+    expect(totRes.extraction.edges).toHaveLength(3);
+    expect(totRes.extraction.edges.map(edge => [edge.source, edge.target, edge.confidence_score])).toEqual([["123", "valid-node", 1], ["undefined", "valid-node", 1], ["valid-node", "valid-node", 0.7]]);
     expect("hyperedges" in totRes.extraction).toBe(false);
     expect("canonical_entities" in totRes.extraction).toBe(false);
     expect("mentions" in totRes.extraction).toBe(false);
@@ -2020,13 +2007,17 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
     };
 
     for (const scope of ["per-source-file", "cross-document"] as const) {
-      const m1MergedAB = mergeExtractionsWithCitations([m1ExtA, m1ExtB], { edgeKeyScope: scope });
-      const m1MergedBA = mergeExtractionsWithCitations([m1ExtB, m1ExtA], { edgeKeyScope: scope });
+      const wireA = { ...m1ExtA, edges: JSON.parse(JSON.stringify(m1ExtA.edges)) };
+      const wireB = { ...m1ExtB, edges: JSON.parse(JSON.stringify(m1ExtB.edges)) };
+      expect(canonicalOf(mergeExtractionsWithCitations([m1ExtA, m1ExtB], { edgeKeyScope: scope }))).toBe(canonicalOf(mergeExtractionsWithCitations([wireA, wireB], { edgeKeyScope: scope })));
+      expect(canonicalOf(mergeExtractionsWithCitations([m1ExtB, m1ExtA], { edgeKeyScope: scope }))).toBe(canonicalOf(mergeExtractionsWithCitations([wireA, wireB], { edgeKeyScope: scope })));
+      const m1MergedAB = mergeExtractionsWithCitations([wireA, wireB], { edgeKeyScope: scope });
+      const m1MergedBA = mergeExtractionsWithCitations([wireB, wireA], { edgeKeyScope: scope });
       expect(m1MergedAB.extraction.edges).toHaveLength(1);
       expect(m1MergedAB.extraction.nodes[0]!.citations).toHaveLength(2);
       expect(m1MergedAB.extraction.nodes[0]!.citation_count).toBe(2);
       expect(m1MergedAB.extraction.edges[0]!.citations).toHaveLength(2);
-      expect(m1MergedAB.extraction.edges[0]!.citation_count).toBe(2);
+      expect(m1MergedAB.extraction.edges[0]!.evidence_observations).toHaveLength(2);
       expect(canonicalOf(m1MergedAB)).toBe(canonicalOf(m1MergedBA));
       // Idempotency and associativity
       expect(
@@ -2034,10 +2025,10 @@ describe("F-EN4 citation-preserving mergeExtractions", () => {
       ).toBe(canonicalOf(m1MergedAB));
       expect(
         canonicalOf(
-          mergeExtractionsWithCitations([m1MergedAB.extraction, m1ExtA], { edgeKeyScope: scope }),
+          mergeExtractionsWithCitations([m1MergedAB.extraction, wireA], { edgeKeyScope: scope }),
         ),
       ).toBe(
-        canonicalOf(mergeExtractionsWithCitations([m1ExtA, m1ExtB, m1ExtA], { edgeKeyScope: scope })),
+        canonicalOf(mergeExtractionsWithCitations([wireA, wireB, wireA], { edgeKeyScope: scope })),
       );
     }
   });
@@ -2048,14 +2039,14 @@ import { edge as mlEdge, extraction as mlExtraction, rows as mlRows, observation
 import { batchFixture as mlBatchFixture, batchIntake as mlBatchIntake, batchSha as mlBatchSha } from "./helpers/multi-links-batch.js";
 describe("L0-R/C batch",()=>{
  for(const scope of ["cross-document","per-source-file"] as const) describe(scope,()=>{
-  it.fails("batch-distinct-scalar-locators-kept",async()=>{
+  it("batch-distinct-scalar-locators-kept",async()=>{
    const {buildFromJson}=await import("../src/build.js");
    const emissions=["L10","L44"].map(loc=>mlEdge({source_location:loc,citations:[{source_file:"f.ts",excerpt:loc}]}));
    const result=mergeExtractionsWithCitations(emissions.map(e=>mlExtraction([e])),{edgeKeyScope:scope});
    expect(result.extraction.edges).toHaveLength(1);
    const G=buildFromJson(result.extraction);mlObs(mlRows(G)[0],emissions.map(mlObservation));mlFixed(G,emissions);
   });
-  it.fails("B1-reciprocal-effective-batch-separation",async()=>{
+  it("B1-reciprocal-effective-batch-separation",async()=>{
    const {buildFromJson}=await import("../src/build.js");
    const emissions=[mlEdge({_src:"a",_tgt:"b",source_location:"L1"}),mlEdge({_src:"b",_tgt:"a",source_location:"L2"})];
    const result=mergeExtractionsWithCitations(emissions.map(e=>mlExtraction([e])),{edgeKeyScope:scope});
@@ -2064,14 +2055,14 @@ describe("L0-R/C batch",()=>{
    for(const e of emissions){const row=mlRows(G).find(r=>r.source===e._src&&r.target===e._tgt)!;mlObs(row,[mlObservation(e)]);expect([row.source,row.target,row._src,row._tgt]).toEqual([e._src,e._tgt,e._src,e._tgt]);}
    mlFixed(G,emissions);
   });
-  it.fails("B1-same-effective-different-raw-order-coalesces",async()=>{
+  it("B1-same-effective-different-raw-order-coalesces",async()=>{
    const {buildFromJson}=await import("../src/build.js");
    const emissions=[mlEdge({_src:"a",_tgt:"b",source_location:"L1"}),mlEdge({source:"b",target:"a",_src:"a",_tgt:"b",source_location:"L2"})];
    const G=buildFromJson(mergeExtractionsWithCitations(emissions.map(e=>mlExtraction([e])),{edgeKeyScope:scope}).extraction);
    expect(G.size).toBe(1);mlObs(mlRows(G)[0],emissions.map(mlObservation));mlFixed(G,emissions);
   });
  });
- it.fails("batch-citation-normalisation-never-reapplied-to-stored",async()=>{
+ it("batch-citation-normalisation-never-reapplied-to-stored",async()=>{
   const {buildFromJson}=await import("../src/build.js");
   const storedRecord={citations:[{docSha:"b".repeat(64),page:1,quote:"legacy",quoteSpan:[0,5],source_file:"legacy.pdf"}],confidence:"EXTRACTED",source_file:"/legacy/paper.pdf",source_location:"STORED"};
   const input=mlBatchFixture({source_location:"STORED",evidence_observations:[storedRecord],citations:storedRecord.citations});
@@ -2088,7 +2079,7 @@ describe("L0-R/C batch",()=>{
   expect(JSON.stringify(storedRecord)).toBe(before);
   mlFixed(G,accepted.edges);
  });
- it.fails("R4-batch-no-root-preserves-absolute-locator",async()=>{
+ it("R4-batch-no-root-preserves-absolute-locator",async()=>{
   const {buildFromJson}=await import("../src/build.js");
   const e=mlEdge({source_file:"/repo/f.ts",source_location:"L1"});
   const result=mergeExtractionsWithCitations([mlExtraction([e])]);

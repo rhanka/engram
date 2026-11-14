@@ -1,3 +1,4 @@
+import { assertionIdentityOf, edgeKey } from "../graph.js";
 import { assertSupportedGraphFormat, readerDegree } from "../graph.js";
 import { graphEdgeContribution, mergeStoreEdgeContribution } from "./edge-contribution.js";
 import { normalizeStoreEdgeIdentity } from "./types.js";
@@ -152,13 +153,12 @@ function computeTopologySignature(G: Graph): string {
 
   const edges: string[] = [];
   G.forEachEdge((_edgeKey, data, source, target) => {
-    const [src, tgt] = [source, target].sort();
-    const rel = (data as Record<string, unknown>).relation ?? "";
-    edges.push(`${src}\t${tgt}\t${String(rel)}`);
+    const { src, tgt, relation } = assertionIdentityOf(source, target, data);
+    edges.push(edgeKey(src, tgt, relation));
   });
   edges.sort();
 
-  return `n=${nodeIds.length};e=${edges.length};${nodeIds.join(",")}|${edges.join(";")}`;
+  return `topo/2;n=${nodeIds.length};e=${edges.length};${JSON.stringify(nodeIds)}|${edges.join(";")}`;
 }
 
 /** Derive a backend-safe city_slug from the config (mirrors the spanner namespace model). */
@@ -666,7 +666,7 @@ export async function createPostgresGraphStore(
   config: PostgresGraphStoreConfig,
   deps?: StoreTestDeps,
 ): Promise<PostgresGraphStore> {
-  return createPostgresGraphStoreBody(config, deps, false);
+  return createPostgresGraphStoreBody(config, deps, true);
 }
 
 /** Unwired union transactions; the registered factory retains replacement. */
@@ -933,7 +933,10 @@ async function createPostgresGraphStoreBody(config: PostgresGraphStoreConfig, de
     batchSize: number,
   ): Promise<number> {
     let count = 0;
-    for (const batch of chunk(rows, batchSize)) {
+    // Each row contributes one bind per column. Bound caller-supplied batch
+    // sizes too, keeping every statement below PostgreSQL's 65,535 parameters.
+    const boundedBatchSize = Math.min(batchSize > 0 ? batchSize : DEFAULT_BATCH_SIZE, Math.floor(65_534 / columns.length));
+    for (const batch of chunk(rows, boundedBatchSize)) {
       if (batch.length === 0) continue;
       const { text, params } = buildUpsert(table, columns, conflictCols, batch);
       await runner.query(text, params);
@@ -1052,7 +1055,8 @@ async function createPostgresGraphStoreBody(config: PostgresGraphStoreConfig, de
       // with the three methods (M4): postgres upserts element-by-element and folds
       // tombstones out of every read, so it never no-ops silently.
       append: {
-        version: 1,
+        version: 2,
+        evidenceUnion: true,
         upsert: true,
         requiresExistingEndpoints: true,
         tombstone: true,

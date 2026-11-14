@@ -324,14 +324,7 @@ export async function rebuildCode(
           }
           G.mergeNode(nodeId, attrs);
         });
-        existing.forEachEdge((_edge, attrs, source, target) => {
-          if (!G.hasNode(source) || !G.hasNode(target)) return;
-          try {
-            G.mergeEdge(source, target, attrs);
-          } catch {
-            /* ignore duplicate merge failures */
-          }
-        });
+        replayWatchEdgesPrepared(G, existing);
         const mergedHyperedges = mergeHyperedges(
           (existing.getAttribute("hyperedges") as Array<Record<string, unknown>> | undefined) ?? [],
           (G.getAttribute("hyperedges") as Array<Record<string, unknown>> | undefined) ?? [],

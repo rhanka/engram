@@ -223,7 +223,7 @@ describe("L0-E temporal",()=>{
   {name:"malformed-and-valid",attrs:[{t:"bad",t_end:30},{t:10,t_end:15},{t:50,t_end:60}],start:10,end:60,at40:true},
  ];
  for(const c of cases) describe(c.name,()=>{
-  it.fails("temporal-open-hull-and-t-end-removal",()=>{
+  it("temporal-open-hull-and-t-end-removal",()=>{
    const emissions=c.attrs.map(a=>mlEdge(a)),G=mlBuild(emissions),row=mlRows(G)[0];
    expect(Object.hasOwn(row,"t")).toBe(c.start!==undefined);
    expect(Object.hasOwn(row,"t_end")).toBe(c.end!==undefined);

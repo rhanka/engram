@@ -1,3 +1,5 @@
+import { assertionIdentityOf, edgeKey } from "./graph.js";
+import { compareCodeUnits } from "./graph-json-serialization.js";
 /**
  * `search-index.json` emitter (C3) — sibling of the class-hierarchies emitter,
  * run in the same build pass that writes `graph.json`.
@@ -158,19 +160,24 @@ export function buildSearchIndex(G: Graph, options: BuildSearchIndexOptions = {}
   // For the signature edge projection (undirected, canonical srcId<=dstId).
   const edgeWeightMap = new Map<string, [string, string, number]>();
 
-  U.forEachEdge((_edge, eAttrs, source, target) => {
-    if (source === target) return; // skip self-loops in PPR adjacency
-    const s = docIndex.get(source);
-    const t = docIndex.get(target);
-    if (s === undefined || t === undefined) return;
-    const w = edgeWeight(eAttrs as Record<string, unknown>);
-    neighborWeights[s]!.set(t, (neighborWeights[s]!.get(t) ?? 0) + w);
-    neighborWeights[t]!.set(s, (neighborWeights[t]!.get(s) ?? 0) + w);
-    const [a, b] = source <= target ? [source, target] : [target, source];
-    const key = `${a}\u0000${b}`;
-    const prev = edgeWeightMap.get(key);
-    edgeWeightMap.set(key, [a, b, (prev?.[2] ?? 0) + w]);
+  const pairMembers = new Map<string, { a: string; b: string; members: Array<{ key: string; weight: number }> }>();
+  U.forEachEdge((_edge, attrs, source, target) => {
+    if (source === target || !docIndex.has(source) || !docIndex.has(target)) return;
+    const [a, b] = (source <= target ? [source, target] : [target, source]) as [string, string];
+    const key = JSON.stringify([a, b]);
+    const group = pairMembers.get(key) ?? { a, b, members: [] as Array<{ key: string; weight: number }> };
+    const identity = assertionIdentityOf(source, target, attrs);
+    group.members.push({ key: edgeKey(identity.src, identity.tgt, identity.relation), weight: edgeWeight(attrs) });
+    pairMembers.set(key, group);
   });
+  for (const [key, group] of pairMembers) {
+    group.members.sort((a, b) => compareCodeUnits(a.key, b.key));
+    const weight = group.members.reduce((sum, member) => sum + member.weight, 0);
+    const s = docIndex.get(group.a)!, t = docIndex.get(group.b)!;
+    neighborWeights[s]!.set(t, weight);
+    neighborWeights[t]!.set(s, weight);
+    edgeWeightMap.set(key, [group.a, group.b, weight]);
+  }
 
   const node_ptr: number[] = new Array(N + 1).fill(0);
   const neighbors: number[] = [];

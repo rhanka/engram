@@ -1016,7 +1016,7 @@ describe("live code version", () => {
     writeFileSync(join(dir, ".git/index"), Buffer.from([0, 1, 2, 255]));
     try {
       const before = observedInventory(dir);
-      const child = execFileSync(process.execPath, [join(root, "node_modules/vitest/vitest.mjs"), "run",
+      const child = execFileSync(process.execPath, [join(root, "node_modules/vitest/vitest.mjs"), "run", "--configLoader", "runner",
         "tests/live-code-version.test.ts", "-t", "R4 child worker"], { cwd: root, encoding: "utf8",
         env: { ...process.env, L5_GUARD_ROOT: dir }, maxBuffer: 64 * 1024 * 1024, timeout: 180000 });
       expect(child).toMatch(/1 passed/);

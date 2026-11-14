@@ -159,6 +159,7 @@ console.log('Prepared semantic inputs: ' + transcriptPaths.length + ' transcript
   process.exit(1);
 });
 "
+
 ```
 
 After semantic preparation:
@@ -234,9 +235,10 @@ const [cachedNodes, cachedEdges, cachedHyperedges, uncached] = checkSemanticCach
 if (cachedNodes.length || cachedEdges.length || cachedHyperedges.length) {
     fs.writeFileSync('.engram/.graphify_cached.json', JSON.stringify({nodes: cachedNodes, edges: cachedEdges, hyperedges: cachedHyperedges}));
 }
-fs.writeFileSync('.engram/.graphify_uncached.txt', uncached.join('\n'));
+fs.writeFileSync('.engram/.graphify_uncached.txt', uncached.join('\\n'));
 console.log(\`Cache: \${allFiles.length - uncached.length} files hit, \${uncached.length} files need extraction\`);
 "
+
 ```
 
 Only dispatch subagents for files listed in `.engram/.graphify_uncached.txt`. If all files are cached, skip to Part C directly.
@@ -338,6 +340,7 @@ const clean = sanitizeSemanticFragment(raw);
 const saved = saveSemanticCache(clean.nodes || [], clean.edges || [], clean.hyperedges || []);
 console.log(\`Cached \${saved} files\`);
 "
+
 ```
 
 Merge cached + new results into `.engram/.graphify_semantic.json`. Each chunk is independently validated; invalid chunks are skipped with a warning rather than crashing the merge (mirrors upstream PR #825):
@@ -376,6 +379,7 @@ const merged = {
 fs.writeFileSync('.engram/.graphify_semantic.json', JSON.stringify(merged, null, 2));
 console.log(\`Extraction complete - \${deduped.length} nodes, \${allEdges.length} edges (\${(cached.nodes||[]).length} from cache, \${(raw.nodes||[]).length} new)\`);
 "
+
 ```
 Clean up temp files: `rm -f .engram/.graphify_cached.json .engram/.graphify_uncached.txt .engram/.graphify_semantic_new.json .engram/.graphify_detect_semantic.json .engram/.graphify_transcripts.json .engram/.graphify_pdf_ocr.json`
 
@@ -406,11 +410,12 @@ const merged = {
 fs.writeFileSync('.engram/.graphify_extract.json', JSON.stringify(merged, null, 2));
 console.log(\`Merged: \${mergedNodes.length} nodes, \${mergedEdges.length} edges (\${ast.nodes.length} AST + \${sem.nodes.length} semantic)\`);
 "
+
 ```
 
 ### Step 4 - Build graph, cluster, analyze, generate outputs
 
-**Before starting:** if `--directed` was given, replace each `buildFromJson(...)` call in the build/export steps below with `buildFromJson(..., { directed: true })`, and when manually reconstructing `graph.json`, use `new Graph({type: 'directed'})` instead of `undirected`.
+**Before starting:** if `--directed` was given, replace each `buildFromJson(...)` call in the build/export steps below with `buildFromJson(..., { directed: true })`, and when manually reconstructing `graph.json`, use `new Graph({type: 'directed', multi: true})` instead of `undirected`.
 
 ```bash
 mkdir -p .engram
@@ -453,6 +458,7 @@ if (G.order === 0) {
 }
 console.log(\`Graph: \${G.order} nodes, \${G.size} edges, \${communities.size} communities\`);
 "
+
 ```
 
 If this step prints `ERROR: Graph is empty`, stop and tell the user what happened - do not proceed to labeling or visualization.
@@ -595,6 +601,7 @@ fs.writeFileSync('.engram/GRAPH_REPORT.md', report);
 fs.writeFileSync('.engram/.graphify_labels.json', JSON.stringify(Object.fromEntries(Object.entries(labels).map(([k, v]) => [String(k), v]))));
 console.log('Report updated with community labels');
 "
+
 ```
 
 Replace `LABELS_DICT` with the actual dict you constructed (e.g. `{0: "Attention Mechanism", 1: "Training Pipeline"}`).
@@ -656,6 +663,7 @@ console.log('  Graph view   - nodes colored by community (set automatically)');
 console.log('  graph.canvas - structured layout with communities as groups');
 console.log('  _COMMUNITY_* - overview notes with cohesion scores and dataview queries');
 "
+
 ```
 
 Generate the static Ontology Studio (always). It bundles the prebuilt studio SPA (`index.html` + `assets/`) with the data artifacts the SPA reads next to it — `graph.json`, `scene.json` (with pre-computed force-layout positions), `entities.json`, `reconciliation-candidates.json`, and `class-hierarchies.json` (the latter only when a profile carries a `class_hierarchies` block):
@@ -680,6 +688,7 @@ const G = buildFromJson(JSON.parse(fs.readFileSync('.engram/.graphify_extract.js
 toCypher(G, '.engram/cypher.txt');
 console.log('cypher.txt written - import with: cypher-shell < .engram/cypher.txt');
 "
+
 ```
 
 **If `--neo4j-push <uri>`** - push directly to a running Neo4j instance. Ask the user for credentials if not provided:
@@ -696,12 +705,14 @@ const G = buildFromJson(extraction);
 const communities = Object.fromEntries(Object.entries(analysis.communities).map(([k, v]) => [Number(k), v]));
 
 const result = await pushToNeo4j(G, {uri: 'NEO4J_URI', user: 'NEO4J_USER', password: 'NEO4J_PASSWORD', communities});
+for (const warning of result.warnings) console.warn(warning);
 console.log(\`Pushed to Neo4j: \${result.nodes} nodes, \${result.edges} edges\`);
 })().catch((e) => {
     console.error(\`error: \${e.message}\`);
     process.exit(1);
 });
 "
+
 ```
 
 Replace `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` with actual values. Default URI is `bolt://localhost:7687`, default user is `neo4j`. Uses MERGE - safe to re-run without creating duplicates.
@@ -724,6 +735,7 @@ const labels = Object.fromEntries(Object.entries(labelsRaw).map(([k, v]) => [Num
 toSvg(G, communities, '.engram/graph.svg', {communityLabels: Object.keys(labels).length ? labels : undefined});
 console.log('graph.svg written - embeds in Obsidian, Notion, GitHub READMEs');
 "
+
 ```
 
 ### Step 7c - GraphML export (only if --graphml flag)
@@ -742,6 +754,7 @@ const communities = Object.fromEntries(Object.entries(analysis.communities).map(
 toGraphml(G, communities, '.engram/graph.graphml');
 console.log('graph.graphml written - open in Gephi, yEd, or any GraphML tool');
 "
+
 ```
 
 ### Step 7d - MCP server (only if --mcp flag)
@@ -777,6 +790,7 @@ const detection = JSON.parse(fs.readFileSync('.engram/.graphify_detect.json', 'u
 const result = runBenchmark('.engram/graph.json', {corpusWords: detection.total_words});
 printBenchmark(result);
 "
+
 ```
 
 Print the output directly in chat. If `total_words <= 5000`, skip silently - the graph value is structural clarity, not token compression, for small corpora.
@@ -813,6 +827,7 @@ fs.writeFileSync(costPath, JSON.stringify(cost, null, 2));
 console.log(\`This run: \${inputTok.toLocaleString()} input tokens, \${outputTok.toLocaleString()} output tokens\`);
 console.log(\`All time: \${cost.total_input_tokens.toLocaleString()} input, \${cost.total_output_tokens.toLocaleString()} output (\${cost.runs.length} runs)\`);
 "
+
 rm -f .engram/.graphify_detect.json .engram/.graphify_extract.json .engram/.graphify_ast.json .engram/.graphify_semantic.json .engram/.graphify_analysis.json
 rm -f .engram/needs_update 2>/dev/null || true
 ```
@@ -865,6 +880,7 @@ if (newTotal === 0) {
 }
 console.log(\`\${newTotal} new/changed file(s) to re-extract.\`);
 "
+
 ```
 
 If new files exist, first check whether all changed files are code files:
@@ -881,6 +897,7 @@ const allChanged = Object.values(newFiles).flat();
 const codeOnly = allChanged.every(f => codeExts.has(path.extname(f).toLowerCase()));
 console.log('code_only:', codeOnly);
 "
+
 ```
 
 If `code_only` is True: print `[engram update] Code-only changes detected - skipping semantic extraction (no LLM needed)`, run only Step 3A (AST) on the changed files, skip Step 3B entirely (no subagents), then go straight to merge and Steps 4–8.
@@ -916,6 +933,7 @@ console.log('Prepared semantic inputs: ' + transcriptPaths.length + ' transcript
   process.exit(1);
 });
 "
+
 ```
 
 When re-running Step 3B in update mode, use `.engram/.graphify_incremental_semantic.json` instead of `.engram/.graphify_detect_semantic.json`.
@@ -925,14 +943,12 @@ Then:
 ```bash
 node -e "
 const fs = require('fs');
-const Graph = require('graphology');
+const { loadGraphFromData, upsertRelationEdge, getPairEdges, neighborDegree } = require('@sentropic/engram');
 const { buildFromJson } = require('@sentropic/engram');
 
 // Load existing graph
 const existingData = JSON.parse(fs.readFileSync('.engram/graph.json', 'utf-8'));
-const GExisting = new Graph({type: 'undirected'});
-for (const n of existingData.nodes) { const {id, ...a} = n; GExisting.mergeNode(id, a); }
-for (const l of existingData.links) { const {source, target, ...a} = l; if (GExisting.hasNode(source) && GExisting.hasNode(target)) try { GExisting.mergeEdge(source, target, a); } catch {} }
+const GExisting = loadGraphFromData(existingData);
 
 // Load new extraction
 const newExtraction = JSON.parse(fs.readFileSync('.engram/.graphify_extract.json', 'utf-8'));
@@ -949,9 +965,10 @@ if (deleted.size > 0) {
 
 // Merge: new nodes/edges into existing graph
 GNew.forEachNode((n, a) => GExisting.mergeNode(n, a));
-GNew.forEachEdge((e, a, s, t) => { try { GExisting.mergeEdge(s, t, a); } catch {} });
+GNew.forEachEdge((e, a, s, t) => { upsertRelationEdge(GExisting, s, t, a); });
 console.log(\`Merged: \${GExisting.order} nodes, \${GExisting.size} edges\`);
 "
+
 ```
 
 Then run Steps 4–8 on the merged graph as normal.
@@ -961,7 +978,7 @@ After Step 4, show the graph diff:
 ```bash
 node -e "
 const fs = require('fs');
-const Graph = require('graphology');
+const { loadGraphFromData, upsertRelationEdge, getPairEdges, neighborDegree } = require('@sentropic/engram');
 const { graphDiff, buildFromJson } = require('@sentropic/engram');
 
 const oldData = fs.existsSync('.engram/.graphify_old.json') ? JSON.parse(fs.readFileSync('.engram/.graphify_old.json', 'utf-8')) : null;
@@ -969,9 +986,7 @@ const newExtract = JSON.parse(fs.readFileSync('.engram/.graphify_extract.json', 
 const GNew = buildFromJson(newExtract);
 
 if (oldData) {
-    const GOld = new Graph({type: 'undirected'});
-    for (const n of oldData.nodes) { const {id, ...a} = n; GOld.mergeNode(id, a); }
-    for (const l of oldData.links) { const {source, target, ...a} = l; if (GOld.hasNode(source) && GOld.hasNode(target)) try { GOld.mergeEdge(source, target, a); } catch {} }
+    const GOld = loadGraphFromData(oldData);
     const diff = graphDiff(GOld, GNew);
     console.log(diff.summary);
     if (diff.new_nodes && diff.new_nodes.length) {
@@ -982,6 +997,7 @@ if (oldData) {
     }
 }
 "
+
 ```
 
 Before the merge step, save the old graph: `cp .engram/graph.json .engram/.graphify_old.json`
@@ -996,16 +1012,14 @@ Skip Steps 1–3. Load the existing graph from `.engram/graph.json` and re-run c
 ```bash
 node -e "
 const fs = require('fs');
-const Graph = require('graphology');
+const { loadGraphFromData, upsertRelationEdge, getPairEdges, neighborDegree } = require('@sentropic/engram');
 const { cluster, scoreAll } = require('@sentropic/engram');
 const { godNodes, surprisingConnections } = require('@sentropic/engram');
 const { generateReport } = require('@sentropic/engram');
 const { toJson } = require('@sentropic/engram');
 
 const data = JSON.parse(fs.readFileSync('.engram/graph.json', 'utf-8'));
-const G = new Graph({type: 'undirected'});
-for (const n of data.nodes) { const {id, ...a} = n; G.mergeNode(id, a); }
-for (const l of data.links) { const {source, target, ...a} = l; if (G.hasNode(source) && G.hasNode(target)) try { G.mergeEdge(source, target, a); } catch {} }
+const G = loadGraphFromData(data);
 
 const detection = {total_files: 0, total_words: 99999, needs_graph: true, warning: null,
              files: {code: [], document: [], paper: []}};
@@ -1030,6 +1044,7 @@ const analysis = {
 fs.writeFileSync('.engram/.graphify_analysis.json', JSON.stringify(analysis, null, 2));
 console.log(\`Re-clustered: \${communities.size} communities\`);
 "
+
 ```
 
 Then run Steps 5–9 as normal (label communities, generate viz, benchmark, clean up, report).
@@ -1054,6 +1069,7 @@ if (!fs.existsSync('.engram/graph.json')) {
     process.exit(1);
 }
 "
+
 ```
 If it fails, stop and tell the user to run `/engram <path>` first.
 
@@ -1067,15 +1083,16 @@ const fs = require('fs');
 const g = JSON.parse(fs.readFileSync('.engram/graph.json','utf-8'));
 const vocab = new Set();
 for (const n of (g.nodes || [])) {
-  for (const c of String(n.label || '').match(/[^\W\d_]+/gu) || []) {
+  for (const c of String(n.label || '').match(/[^\\W\\d_]+/gu) || []) {
     for (const p of (c.match(/[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+/g) || [c])) {
       if (p.length > 1) vocab.add(p.toLowerCase());
     }
   }
 }
-fs.writeFileSync('.engram/.vocab.txt', [...vocab].sort().join('\n'));
+fs.writeFileSync('.engram/.vocab.txt', [...vocab].sort().join('\\n'));
 console.log('vocab: ' + vocab.size + ' tokens');
 "
+
 ```
 
 Read `.engram/.vocab.txt`, then pick **up to 12 tokens from that exact list** that match the query intent. Hard constraints:
@@ -1106,16 +1123,14 @@ Load `.engram/graph.json`, then:
 ```bash
 node -e "
 const fs = require('fs');
-const Graph = require('graphology');
+const { loadGraphFromData, upsertRelationEdge, getPairEdges, neighborDegree } = require('@sentropic/engram');
 
 const data = JSON.parse(fs.readFileSync('.engram/graph.json', 'utf-8'));
-const G = new Graph({type: 'undirected'});
-for (const n of data.nodes) { const {id, ...a} = n; G.mergeNode(id, a); }
-for (const l of data.links) { const {source, target, ...a} = l; if (G.hasNode(source) && G.hasNode(target)) try { G.mergeEdge(source, target, a); } catch {} }
+const G = loadGraphFromData(data);
 
 const question = 'QUESTION';
 const mode = 'MODE';  // 'bfs' or 'dfs'
-const terms = question.split(/\s+/).filter(t => t.length > 3).map(t => t.toLowerCase());
+const terms = question.split(/\\s+/).filter(t => t.length > 3).map(t => t.toLowerCase());
 
 // Find best-matching start nodes
 const scored = [];
@@ -1143,7 +1158,7 @@ if (mode === 'dfs') {
         if (visited.has(node) || depth > 6) continue;
         visited.add(node);
         subgraphNodes.add(node);
-        G.forEachNeighbor(node, neighbor => {
+        G[G.type === 'directed' ? 'forEachOutboundNeighbor' : 'forEachNeighbor'](node, neighbor => {
             if (!visited.has(neighbor)) {
                 stack.push([neighbor, depth + 1]);
                 subgraphEdges.push([node, neighbor]);
@@ -1156,7 +1171,7 @@ if (mode === 'dfs') {
     for (let i = 0; i < 3; i++) {
         const nextFrontier = new Set();
         for (const n of frontier) {
-            G.forEachNeighbor(n, neighbor => {
+            G[G.type === 'directed' ? 'forEachOutboundNeighbor' : 'forEachNeighbor'](n, neighbor => {
                 if (!subgraphNodes.has(neighbor)) {
                     nextFrontier.add(neighbor);
                     subgraphEdges.push([n, neighbor]);
@@ -1183,19 +1198,23 @@ for (const nid of rankedNodes) {
     const d = G.getNodeAttributes(nid);
     lines.push(\`  NODE \${d.label || nid} [src=\${d.source_file || ''} loc=\${d.source_location || ''}]\`);
 }
+const emitted = new Set();
 for (const [u, v] of subgraphEdges) {
-    if (subgraphNodes.has(u) && subgraphNodes.has(v)) {
-        const edge = G.hasEdge(u, v) ? G.getEdgeAttributes(G.edge(u, v)) : {};
-        lines.push(\`  EDGE \${G.getNodeAttribute(u, 'label') || u} --\${edge.relation || ''} [\${edge.confidence || ''}]--> \${G.getNodeAttribute(v, 'label') || v}\`);
+    for (const {key, attrs: edge, orientation} of getPairEdges(G, u, v)) {
+        if (emitted.has(key)) continue;
+        emitted.add(key);
+        const arrow = orientation === 'reverse' ? '<--' + (edge.relation || '') + ' [' + (edge.confidence || '') + ']--' : '--' + (edge.relation || '') + ' [' + (edge.confidence || '') + ']-->';
+        lines.push('EDGE ' + (G.getNodeAttribute(u, 'label') || u) + ' ' + arrow + ' ' + (G.getNodeAttribute(v, 'label') || v) + (edge.source_location ? ' at=' + (edge.source_file || '') + ':' + edge.source_location : ''));
     }
 }
 
-let output = lines.join('\n');
+let output = lines.join('\\n');
 if (output.length > charBudget) {
-    output = output.slice(0, charBudget) + \`\n... (truncated at ~\${tokenBudget} token budget - use --budget N for more)\`;
+    output = output.slice(0, charBudget) + \`\\n... (truncated at ~\${tokenBudget} token budget - use --budget N for more)\`;
 }
 console.log(output);
 "
+
 ```
 
 Replace `QUESTION` with the user's actual question, `MODE` with `bfs` or `dfs`, and `BUDGET` with the token budget (default `2000`, or whatever `--budget N` specifies). Then answer based on the subgraph output above.
@@ -1214,6 +1233,7 @@ saveQueryResult({
 });
 console.log('Query result saved to .engram/memory/');
 "
+
 ```
 
 Replace `QUESTION` with the question, `ANSWER` with your full answer text, `SOURCE_NODES` with the list of node labels you cited. This closes the feedback loop: the next `--update` will extract this Q&A as a node in the graph.
@@ -1233,19 +1253,18 @@ if (!fs.existsSync('.engram/graph.json')) {
     process.exit(1);
 }
 "
+
 ```
 If it fails, stop and tell the user to run `/engram <path>` first.
 
 ```bash
 node -e "
 const fs = require('fs');
-const Graph = require('graphology');
+const { loadGraphFromData, upsertRelationEdge, getPairEdges, neighborDegree } = require('@sentropic/engram');
 const { bidirectional } = require('graphology-shortest-path/unweighted');
 
 const data = JSON.parse(fs.readFileSync('.engram/graph.json', 'utf-8'));
-const G = new Graph({type: 'undirected'});
-for (const n of data.nodes) { const {id, ...a} = n; G.mergeNode(id, a); }
-for (const l of data.links) { const {source, target, ...a} = l; if (G.hasNode(source) && G.hasNode(target)) try { G.mergeEdge(source, target, a); } catch {} }
+const G = loadGraphFromData(data);
 
 const aTerm = 'NODE_A';
 const bTerm = 'NODE_B';
@@ -1255,7 +1274,7 @@ function findNode(term) {
     const scored = [];
     G.forEachNode((n, a) => {
         const label = (a.label || '').toLowerCase();
-        const score = term.split(/\s+/).filter(w => label.includes(w)).length;
+        const score = term.split(/\\s+/).filter(w => label.includes(w)).length;
         if (score > 0) scored.push([score, n]);
     });
     scored.sort((a, b) => b[0] - a[0]);
@@ -1274,20 +1293,18 @@ const path = bidirectional(G, src, tgt);
 if (!path) {
     console.log(\`No path found between '\${aTerm}' and '\${bTerm}'\`);
 } else {
-    console.log(\`Shortest path (\${path.length - 1} hops):\`);
-    for (let i = 0; i < path.length; i++) {
-        const nid = path[i];
-        const label = G.getNodeAttribute(nid, 'label') || nid;
-        if (i < path.length - 1) {
-            const edgeKey = G.edge(nid, path[i + 1]);
-            const edge = edgeKey ? G.getEdgeAttributes(edgeKey) : {};
-            console.log(\`  \${label} --\${edge.relation || ''}--> [\${edge.confidence || ''}]\`);
-        } else {
-            console.log(\`  \${label}\`);
-        }
+    const segments = [G.getNodeAttribute(path[0], 'label') || path[0]];
+    for (let i = 0; i < path.length - 1; i++) {
+        const selected = getPairEdges(G, path[i], path[i + 1])[0];
+        const edge = selected?.attrs || {};
+        const conf = edge.confidence ? ' [' + edge.confidence + ']' : '';
+        const arrow = selected?.orientation === 'reverse' ? '<--' + (edge.relation || '') + conf + '--' : '--' + (edge.relation || '') + conf + '-->';
+        segments.push(arrow + ' ' + (G.getNodeAttribute(path[i + 1], 'label') || path[i + 1]));
     }
+    console.log('Shortest path (' + (path.length - 1) + ' hops):\\n  ' + segments.join(' '));
 }
 "
+
 ```
 
 Replace `NODE_A` and `NODE_B` with the actual concept names from the user. Then explain the path in plain language - what each hop means, why it's significant.
@@ -1306,6 +1323,7 @@ saveQueryResult({
 });
 console.log('Path result saved to .engram/memory/');
 "
+
 ```
 
 ---
@@ -1323,18 +1341,17 @@ if (!fs.existsSync('.engram/graph.json')) {
     process.exit(1);
 }
 "
+
 ```
 If it fails, stop and tell the user to run `/engram <path>` first.
 
 ```bash
 node -e "
 const fs = require('fs');
-const Graph = require('graphology');
+const { loadGraphFromData, upsertRelationEdge, getPairEdges, neighborDegree } = require('@sentropic/engram');
 
 const data = JSON.parse(fs.readFileSync('.engram/graph.json', 'utf-8'));
-const G = new Graph({type: 'undirected'});
-for (const n of data.nodes) { const {id, ...a} = n; G.mergeNode(id, a); }
-for (const l of data.links) { const {source, target, ...a} = l; if (G.hasNode(source) && G.hasNode(target)) try { G.mergeEdge(source, target, a); } catch {} }
+const G = loadGraphFromData(data);
 
 const term = 'NODE_NAME';
 const termLower = term.toLowerCase();
@@ -1342,7 +1359,7 @@ const termLower = term.toLowerCase();
 const scored = [];
 G.forEachNode((n, a) => {
     const label = (a.label || '').toLowerCase();
-    const score = termLower.split(/\s+/).filter(w => label.includes(w)).length;
+    const score = termLower.split(/\\s+/).filter(w => label.includes(w)).length;
     if (score > 0) scored.push([score, n]);
 });
 scored.sort((a, b) => b[0] - a[0]);
@@ -1356,16 +1373,17 @@ const dataN = G.getNodeAttributes(nid);
 console.log(\`NODE: \${dataN.label || nid}\`);
 console.log(\`  source: \${dataN.source_file || 'unknown'}\`);
 console.log(\`  type: \${dataN.file_type || 'unknown'}\`);
-console.log(\`  degree: \${G.degree(nid)}\`);
+console.log(\`  degree: \${neighborDegree(G, nid)}\`);
 console.log();
 console.log('CONNECTIONS:');
-G.forEachNeighbor(nid, (neighbor) => {
-    const edgeKey = G.edge(nid, neighbor);
-    const edge = edgeKey ? G.getEdgeAttributes(edgeKey) : {};
-    const nlabel = G.getNodeAttribute(neighbor, 'label') || neighbor;
-    console.log(\`  --\${edge.relation || ''}--> \${nlabel} [\${edge.confidence || ''}] (\${G.getNodeAttribute(neighbor, 'source_file') || ''})\`);
+G[G.type === 'directed' ? 'forEachOutboundNeighbor' : 'forEachNeighbor'](nid, (neighbor) => {
+    const label = G.getNodeAttribute(neighbor, 'label') || neighbor;
+    for (const {attrs: edge, orientation} of getPairEdges(G, nid, neighbor)) {
+        console.log('  ' + (orientation === 'reverse' ? '<--' : '-->') + ' ' + label + ' [' + (edge.relation || '') + '] [' + (edge.confidence || '') + ']' + (edge.source_location ? ' at=' + (edge.source_file || '') + ':' + edge.source_location : ''));
+    }
 });
 "
+
 ```
 
 Replace `NODE_NAME` with the concept the user asked about. Then write a 3-5 sentence explanation of what this node is, what it connects to, and why those connections are significant. Use the source locations as citations.
@@ -1384,6 +1402,7 @@ saveQueryResult({
 });
 console.log('Explanation saved to .engram/memory/');
 "
+
 ```
 
 ---
@@ -1403,6 +1422,7 @@ console.log(\`Saved to \${out}\`);
     process.exit(1);
 });
 "
+
 ```
 
 Replace `URL` with the actual URL, `AUTHOR` with the user's name if provided, `CONTRIBUTOR` likewise. If the command exits with an error, tell the user what went wrong - do not silently continue. After a successful save, automatically run the `--update` pipeline on `./raw` to merge the new file into the existing graph.
@@ -1525,3 +1545,36 @@ Commit recommendation workflow: `engram recommend-commits` is advisory-only. It 
 CRG review workflow: `engram minimal-context` is the first review call. Keep graph review context within `<=5 graph tool calls` and `<=800` graph-context tokens. If `.engram/needs_update` exists or `.engram/branch.json` has `stale=true`, warn and update before trusting semantic review output. Then follow only the compact route: `engram detect-changes` for risk, `engram affected-flows` for flow impact, and `engram review-context` for snippets or radius detail. If `.engram/flows.json` is missing and flows are needed, run `engram flows build` first. Explicit `--files`, `--base`, `--head`, or `--staged` inputs override unrelated dirty worktree noise; mention dirty worktrees as a warning and never mutate git state.
 
 Review analysis workflow: `engram review-analysis` adds blast radius, bridge nodes, test-gap hints, impacted communities, and multimodal/doc safety. `engram review-eval` is the deterministic evaluation harness for token savings, impacted-file recall, review summary precision, and multimodal regression safety.
+
+<!-- multi-links portable begin -->
+```javascript
+// Compatibility: upgrade the runtime, Git merge driver and all installed skills
+// together. Old runtimes collapse v2 parallel/reciprocal links on rewrite.
+// Degree means distinct neighbours; edgeCount counts incident links (loop once).
+// QA min/max_degree_by_type keeps endpoint incidence: self-loop counts twice.
+// Captured provenance stays verbatim; shortening is an inspection projection.
+// Neo4j/Spanner retain derived scalars only and warn: observations not persisted.
+// Shared portable block for the six skill documents (activation embeds it).
+// Bind to the installed core so scripts use the same capture, validation,
+// canonical identity, derivation and writer implementation as the library.
+const {
+  createGraph, loadGraphFromData, serializeGraph,
+  assertionIdentityOf, edgeKey, normalizeSourceFilePath, prepareFreshExtraction,
+  legacyObservationFromRawLink, observationFromEmission, observationKey,
+  mergeEdgeEvidence, upsertRelationEdge, getPairEdges, neighborDegree, edgeCount,
+  GRAPH_FORMAT_VERSION, assertSupportedGraphFormat, UnsupportedGraphFormatError,
+} = require('@sentropic/engram');
+
+if (GRAPH_FORMAT_VERSION !== 'engram-graph/2' || typeof upsertRelationEdge !== 'function') {
+  throw new Error('The multi-links skill requires an upgraded Engram runtime.');
+}
+
+module.exports = {
+  createGraph, loadGraphFromData, serializeGraph,
+  assertionIdentityOf, edgeKey, normalizeSourceFilePath, prepareFreshExtraction,
+  legacyObservationFromRawLink, observationFromEmission, observationKey,
+  mergeEdgeEvidence, upsertRelationEdge, getPairEdges, neighborDegree, edgeCount,
+  GRAPH_FORMAT_VERSION, assertSupportedGraphFormat, UnsupportedGraphFormatError,
+};
+```
+<!-- multi-links portable end -->

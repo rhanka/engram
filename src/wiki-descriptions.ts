@@ -1,3 +1,4 @@
+import { compareCodeUnits } from "./graph-json-serialization.js";
 import { createHash } from "node:crypto";
 import { schemaIdAccepted } from "./schema-ids.js";
 import type { LlmExecutionMode } from "./llm-execution.js";
@@ -171,8 +172,8 @@ export function buildNodeContentHash(input: {
 }): string {
   const sortedNeighbors = [...input.neighbors]
     .sort((a, b) => {
-      const byRelation = a.relation.localeCompare(b.relation);
-      return byRelation !== 0 ? byRelation : a.target_id.localeCompare(b.target_id);
+      const byRelation = compareCodeUnits(a.relation, b.relation);
+      return byRelation !== 0 ? byRelation : compareCodeUnits(a.target_id, b.target_id);
     })
     .map((n) => `${n.relation}:${n.target_id}`);
   const sortedEvidenceRefs = [...input.evidence_refs].sort();

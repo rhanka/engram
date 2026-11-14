@@ -1,3 +1,4 @@
+import { relationEdgeLanes } from "../../../src/studio-edge-lanes.ts";
 import {
   buildRenderGraphBuffers,
   buildStyleBuffers,
@@ -360,14 +361,7 @@ function explicitChurnValue(node) {
 }
 
 function nodeDegreeFallback(sceneNodes, sceneEdges, multigraph = false) {
-  if (!multigraph) {
-    const degree = new Map(sceneNodes.map(node => [node.id, 0]));
-    for (const edge of sceneEdges) {
-      if (degree.has(edge.source)) degree.set(edge.source, degree.get(edge.source) + 1);
-      if (degree.has(edge.target)) degree.set(edge.target, degree.get(edge.target) + 1);
-    }
-    return degree;
-  }
+
   const neighbors = new Map(sceneNodes.map((node) => [node.id, new Set()]));
   for (const edge of sceneEdges) {
     neighbors.get(edge.source)?.add(edge.target);
@@ -639,13 +633,7 @@ export function selectPrincipalHubLabels(
  */
 function computeDegreesByIndex(graph, multigraph = false) {
   const count = graph?.nodeIds?.length ?? 0;
-  if (!multigraph) {
-    const degree = new Uint32Array(count);
-    for (const endpoint of graph?.edges ?? []) {
-      if (Number.isInteger(endpoint) && endpoint >= 0 && endpoint < count) degree[endpoint]++;
-    }
-    return degree;
-  }
+
   const neighbors = Array.from({ length: count }, () => new Set());
   const edges = graph?.edges ?? [];
   for (let i = 0; i + 1 < edges.length; i += 2) {
@@ -802,7 +790,7 @@ export function buildGraphRendererPayload(scene, options = {}) {
   const edgeCountById = new Map(sceneNodes.map(node => [node.id, 0]));
   for (const edge of sceneEdges) {
     if (edgeCountById.has(edge.source)) edgeCountById.set(edge.source, edgeCountById.get(edge.source) + 1);
-    if ((scene?.multigraph !== true || edge.target !== edge.source) && edgeCountById.has(edge.target)) edgeCountById.set(edge.target, edgeCountById.get(edge.target) + 1);
+    if ((edge.target !== edge.source) && edgeCountById.has(edge.target)) edgeCountById.set(edge.target, edgeCountById.get(edge.target) + 1);
   }
   const churnById =
     colorBy === COLOR_BY_CHURN ? normalizedChurnById(sceneNodes, sceneEdges, degreeById) : null;
@@ -844,7 +832,8 @@ export function buildGraphRendererPayload(scene, options = {}) {
     };
   });
 
-  const edges = sceneEdges.map((edge) => {
+  const lanes = relationEdgeLanes(sceneEdges, edgeCurvature);
+  const edges = sceneEdges.map((edge, index) => {
     return {
       source: edge.source,
       target: edge.target,
@@ -860,7 +849,7 @@ export function buildGraphRendererPayload(scene, options = {}) {
       // by the dotted dash.
       color: [...EDGE_COLOR_RGB, edgeBaseAlpha],
       dash: edge.dash ?? (edge.weak ? "dotted" : "solid"),
-      curvature: finite(edge.curvature) ? edge.curvature : edgeCurvature,
+      curvature: lanes[index],
     };
   });
 

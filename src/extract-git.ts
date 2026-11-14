@@ -4,7 +4,7 @@ import { unionExtractionCitations } from "./citations.js";
 import { type JsonValue, toJsonValue } from "./json-value.js";
 import { makeNodeId } from "./node-id.js";
 import { canonicalBytes } from "./ontology-guardian/canonical.js";
-import { assertionIdentityOf, mergeEdgeEvidence, prepareFreshExtraction } from "./graph.js";
+import { assertionIdentityOf, mergeEdgeEvidenceAll, prepareFreshExtraction } from "./graph.js";
 import { repoKey, commitId, branchId } from "./repo-key.js";
 import type {
   Extraction,
@@ -323,31 +323,27 @@ function branchNode(repoKeyStr: string, name: string, headSha: string | undefine
 }
 
 function gitProducerEdgeKey(edge: GraphEdge): string {
-  return `${edge.source}\0${edge.target}\0${edge.relation}\0${String(edge.source_file ?? "")}`;
+  return JSON.stringify([edge.source, edge.target, edge.relation, String(edge.source_file ?? "")]);
 }
 
 export function mergeExtractions(base: Extraction, extra: Extraction): Extraction {
-  return mergeExtractionsBody(base, extra, false);
+  return mergeExtractionsBody(base, extra);
 }
 
-/** Emission-preserving reducer; production callers switch in lot A. */
+/** Emission-preserving reducer shared by production and preparation tests. */
 export function mergeExtractionsPrepared(base: Extraction, extra: Extraction): Extraction {
-  return mergeExtractionsBody(base, extra, true);
+  return mergeExtractionsBody(base, extra);
 }
 
-function mergeExtractionsBody(base: Extraction, extra: Extraction, preserveEmissions: boolean): Extraction {
+function mergeExtractionsBody(base: Extraction, extra: Extraction): Extraction {
   const nodes = new Map<string, GraphNode>();
   for (const node of [...(base.nodes ?? []), ...(extra.nodes ?? [])]) {
     nodes.set(node.id, node);
   }
-  const edges = new Map<string, GraphEdge>();
-  if (!preserveEmissions) for (const edge of [...(base.edges ?? []), ...(extra.edges ?? [])]) {
-    edges.set(gitProducerEdgeKey(edge), edge);
-  }
   return {
     ...(extra.provenance ? { provenance: extra.provenance } : base.provenance ? { provenance: base.provenance } : {}),
     nodes: [...nodes.values()],
-    edges: preserveEmissions ? [...(base.edges ?? []), ...(extra.edges ?? [])] : [...edges.values()],
+    edges: [...(base.edges ?? []), ...(extra.edges ?? [])],
     hyperedges: [...(base.hyperedges ?? []), ...(extra.hyperedges ?? [])],
     input_tokens: (base.input_tokens ?? 0) + (extra.input_tokens ?? 0),
     output_tokens: (base.output_tokens ?? 0) + (extra.output_tokens ?? 0),
@@ -355,7 +351,7 @@ function mergeExtractionsBody(base: Extraction, extra: Extraction, preserveEmiss
 }
 
 export interface MergeExtractionsOptions {
-  /** Fresh locator preparation context; production intake threads it in P2/A. */
+  /** Fresh locator preparation context, threaded by production batch intake. */
   readonly root?: string;
   /**
    * Edge identity scope. Default "per-source-file": (source, target, relation,
@@ -1023,7 +1019,7 @@ function mergeIdKeyedCollection<T>(
   return { present, items };
 }
 
-/** Unwired preparation-first body; production activation belongs to lot A. */
+/** Preparation-first batch body used by the public merger and production intake. */
 export function mergeExtractionsWithCitationsPrepared(
   extractions: readonly Extraction[],
   options: MergeExtractionsOptions = {},
@@ -1044,7 +1040,7 @@ export function mergeExtractionsWithCitations(
   extractions: readonly Extraction[],
   options: MergeExtractionsOptions = {},
 ): MergeExtractionsResult {
-  return mergeExtractionsWithCitationsBody(extractions, options, false);
+  return mergeExtractionsWithCitationsPrepared(extractions, options);
 }
 
 function mergeExtractionsWithCitationsBody(extractions: readonly Extraction[], options: MergeExtractionsOptions, useEvidenceCore: boolean): MergeExtractionsResult {
@@ -1182,8 +1178,8 @@ function mergeExtractionsWithCitationsBody(extractions: readonly Extraction[], o
     }
     // Diagnose whole-field candidates, using the P1 core's actual winner.
     // Residual objects are selected intact, never recursively merged.
-    const attrs = mergeEdgeEvidence(null, ...group.copies);
-    const excludedFields = new Set(["source", "target", "relation", "source_file", "source_location", "citations", "confidence", "confidence_score", "derivation_method", "derivation_methods", "evidence_refs", "extractor", "t", "t_end", "evidence_observations", "_src", "_tgt"]);
+    const attrs = mergeEdgeEvidenceAll(null, group.copies);
+    const excludedFields = new Set(["source", "target", "relation", "source_file", "source_location", "citations", "confidence", "confidence_score", "derivation_method", "derivation_methods", "evidence_refs", "extractor", "t", "t_end", "evidence_observations", "_src", "_tgt", "assertion_basis"]);
     const sourceFiles = collectGroupSourceFiles(group.copies);
     for (const field of new Set(group.copies.flatMap(Object.keys))) {
       if (excludedFields.has(field)) continue;

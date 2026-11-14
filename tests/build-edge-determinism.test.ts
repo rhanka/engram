@@ -1,19 +1,9 @@
+import { serializeGraph } from "../src/graph.js";
 import { describe, expect, it } from "vitest";
 import Graph from "graphology";
 import { buildFromJson } from "../src/build.js";
 
-/**
- * Regression for Track F-0819-P2 (upstream #1010): make graph output
- * deterministic so a no-op rebuild reproduces graph.json byte-for-byte.
- *
- * The undirected build stores edge direction in `_src`/`_tgt`. When edges
- * collapse onto the same node pair, the surviving edge (and its preserved
- * direction) depends on iteration order. If `extraction.edges` arrives in a
- * different order run-to-run — e.g. when AST + semantic subagent chunks are
- * merged in a nondeterministic order — `_src`/`_tgt` flip and the serialized
- * graph churns. Upstream pins this by sorting edges by
- * `(source, target, relation)` before the add loop; the TS port must match.
- */
+/** A no-op rebuild preserves every assertion and reproduces identical bytes. */
 describe("buildFromJson — edge order determinism (F-0819-P2 / #1010)", () => {
   function extraction(edges: Array<{ source: string; target: string; relation: string }>) {
     return {
@@ -29,11 +19,7 @@ describe("buildFromJson — edge order determinism (F-0819-P2 / #1010)", () => {
   }
 
   function dump(G: Graph): string {
-    const rows: string[] = [];
-    G.forEachEdge((_key, data: Record<string, unknown>) => {
-      rows.push(`${data._src}->${data._tgt}:${data.relation}`);
-    });
-    return rows.sort().join(" | ");
+    return JSON.stringify(serializeGraph(G));
   }
 
   it("produces the same _src/_tgt regardless of input edge order", () => {
@@ -47,9 +33,8 @@ describe("buildFromJson — edge order determinism (F-0819-P2 / #1010)", () => {
     expect(reversed).toBe(forward);
   });
 
-  it("keeps a deterministic survivor when two relations collapse onto one undirected pair", () => {
-    // `a calls b` and `b references a` collapse onto the same undirected pair.
-    // The survivor must not depend on which one is seen first.
+  it("keeps both oriented relations with identical bytes under input permutation", () => {
+    // Both tuples survive and their serialization has a deterministic order.
     const order1 = dump(
       buildFromJson(
         extraction([
@@ -66,6 +51,7 @@ describe("buildFromJson — edge order determinism (F-0819-P2 / #1010)", () => {
         ]),
       ),
     );
+    expect(JSON.parse(order1).links).toHaveLength(2);
     expect(order2).toBe(order1);
   });
 });

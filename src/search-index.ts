@@ -1,3 +1,4 @@
+import { compareCodeUnits } from "./graph-json-serialization.js";
 /**
  * `search-index.json` — the offline-first retrieval substrate (work-stream C,
  * Phase A). Self-contained: it carries the BM25F index, the per-doc grounding
@@ -130,7 +131,7 @@ export function computeSearchIndexSignature(input: SearchIndexSignatureInput): s
 
   const edgeProjection = [...input.edges]
     .map(([a, b, w]) => (a <= b ? [a, b, w] : [b, a, w]) as [string, string, number])
-    .sort((x, y) => (x[0] === y[0] ? x[1].localeCompare(y[1]) : x[0].localeCompare(y[0])));
+    .sort((x, y) => (x[0] === y[0] ? compareCodeUnits(x[1], y[1]) : compareCodeUnits(x[0], y[0])));
 
   const communityIds = Object.keys(input.communityMeta).sort();
   const communityProjection = communityIds.map((id) => {

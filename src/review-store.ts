@@ -259,8 +259,8 @@ export function createReviewGraphStore(G: Graph): ReviewGraphStoreLike {
 
   function normalizeEdge(edgeId: string, attrs: Record<string, unknown>, graphSource: string, graphTarget: string): ReviewGraphEdge | null {
     const identity = assertionIdentityOf(graphSource, graphTarget, attrs);
-    let sourceId = G.multi ? identity.src : graphSource;
-    let targetId = G.multi ? identity.tgt : graphTarget;
+    let sourceId = identity.src;
+    let targetId = identity.tgt;
     let direction: ReviewGraphEdge["direction"] = "directed";
     if (G.type !== "directed") {
       const preservedSource = asString(attrs._src);
@@ -277,7 +277,7 @@ export function createReviewGraphStore(G: Graph): ReviewGraphStoreLike {
     const confidenceTier = asString(attrs.confidence) ?? "EXTRACTED";
     const { lineStart } = parseLineRange(attrs);
     return {
-      id: G.multi ? edgeKey(sourceId, targetId, identity.relation) : edgeId,
+      id: edgeKey(sourceId, targetId, identity.relation),
       kind: canonicalRelation(attrs.relation),
       sourceQualified: source.qualifiedName,
       targetQualified: target.qualifiedName,
