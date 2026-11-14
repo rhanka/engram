@@ -41,13 +41,19 @@ import {
   extractionCitationKey,
   unionExtractionCitations,
 } from "./citations.js";
-import { mergeExtractionsWithCitations } from "./extract-git.js";
+import { mergeExtractionsWithCitations, mergeExtractionsWithCitationsPrepared } from "./extract-git.js";
 import type {
   ExtractionMergeConflict,
   ExtractionMergeConflictKind,
   MergeExtractionsOptions,
   MergeExtractionsResult,
 } from "./extract-git.js";
+
+/** Prepared replacement for the accepted-chunk merge at production intake.
+ * Lot A passes the run's build context here when activating that call site. */
+export function mergeAcceptedChunksPrepared(acceptedChunks: readonly Extraction[], context: { root?: string } = {}): MergeExtractionsResult {
+  return mergeExtractionsWithCitationsPrepared(acceptedChunks, { root: context.root });
+}
 import {
   PROFILE_BUNDLE_SCHEMA_V1,
   bundleProfile,

@@ -32,6 +32,8 @@ import {
   type ValidIntervalV1,
 } from "../engram-memory/dist/index.js";
 import type Graph from "graphology";
+import { assertionIdentityOf, assertSupportedGraphFormat, upsertRelationEdge } from "./graph.js";
+import { prepareRelationContributions, type RelationContribution } from "./relation-replay.js";
 import type { Extraction } from "./types.js";
 import { graphJsonLink, graphJsonNode, memoryGraphJsonByteSize } from "./graph-json-serialization.js";
 
@@ -436,6 +438,17 @@ export function attachMemoryProjectionToGraph(
   G: Graph,
   assembled: AssembledMemoryGraphProjectionV1,
 ): MemoryGraphAttachReceiptV1 {
+  return attachMemoryProjectionBody(G, assembled);
+}
+
+/** Prepared memory writer; projection freshness and receipts stay unchanged. */
+export function attachMemoryProjectionToGraphPrepared(G: Graph, assembled: AssembledMemoryGraphProjectionV1): MemoryGraphAttachReceiptV1 {
+  assertSupportedGraphFormat(G.getAttributes(), "memory projection target");
+  const rows = assembled.extraction.edges.map(edge => ({ source: edge.source, target: edge.target, attrs: edge }));
+  return attachMemoryProjectionBody(G, assembled, prepareRelationContributions(G, rows));
+}
+
+function attachMemoryProjectionBody(G: Graph, assembled: AssembledMemoryGraphProjectionV1, preparedEdges?: RelationContribution[]): MemoryGraphAttachReceiptV1 {
   let addedNodes = 0;
   let addedEdges = 0;
   let skippedDanglingEdges = 0;
@@ -451,12 +464,15 @@ export function attachMemoryProjectionToGraph(
     }
     G.mergeNode(id, { ...attrs });
   }
-  for (const edge of assembled.extraction.edges) {
-    if (!G.hasNode(edge.source) || !G.hasNode(edge.target)) {
+  const edges = preparedEdges ? preparedEdges.map(({ source, target, attrs }) => ({ ...attrs, source, target })) : assembled.extraction.edges;
+  for (const edge of edges) {
+    const identity = preparedEdges ? assertionIdentityOf(edge.source, edge.target, edge) : { src: edge.source, tgt: edge.target };
+    if (!G.hasNode(identity.src) || !G.hasNode(identity.tgt)) {
       skippedDanglingEdges += 1;
       continue;
     }
-    G.mergeEdge(edge.source, edge.target, { ...edge });
+    if (preparedEdges) upsertRelationEdge(G, identity.src, identity.tgt, edge);
+    else G.mergeEdge(edge.source, edge.target, { ...edge });
     addedEdges += 1;
   }
   G.setAttribute(MEMORY_PROJECTION_CURSOR_ATTR, assembled.projection_cursor);

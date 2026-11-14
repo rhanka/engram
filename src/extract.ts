@@ -16,6 +16,7 @@ import { loadCached, saveCached, liveExtractionKey, liveExtractionBind, LIVE_EXT
 import { makeNodeId } from "./node-id.js";
 import { sanitizeLabel } from "./security.js";
 import { shebangInterpreter } from "./detect.js";
+import { remapRelationEmissions } from "./relation-remap.js";
 
 // ---------------------------------------------------------------------------
 // web-tree-sitter types  (re-exported from the package)
@@ -7119,6 +7120,15 @@ export function _mergeSwiftExtensions(
   allNodes: GraphNode[],
   allEdges: GraphEdge[],
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  return mergeSwiftExtensionsBody(perFile, allNodes, allEdges, false);
+}
+
+/** Unwired Swift remapper; distinct emissions at one locator all survive. */
+export function _mergeSwiftExtensionsPrepared(perFile: ExtractionResult[], allNodes: GraphNode[], allEdges: GraphEdge[]): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  return mergeSwiftExtensionsBody(perFile, allNodes, allEdges, true);
+}
+
+function mergeSwiftExtensionsBody(perFile: ExtractionResult[], allNodes: GraphNode[], allEdges: GraphEdge[], preserveEmissions: boolean): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const extensionNids = new Set<string>();
   const extensionLabels = new Map<string, string>();
   for (const result of perFile) {
@@ -7129,7 +7139,7 @@ export function _mergeSwiftExtensions(
   }
 
   if (extensionNids.size === 0) {
-    return { nodes: allNodes, edges: allEdges };
+    return { nodes: allNodes, edges: preserveEmissions ? remapRelationEmissions(allEdges, id => id) : allEdges };
   }
 
   const labelToCanonical = new Map<string, string[]>();
@@ -7154,10 +7164,11 @@ export function _mergeSwiftExtensions(
   }
 
   if (remap.size === 0) {
-    return { nodes: allNodes, edges: allEdges };
+    return { nodes: allNodes, edges: preserveEmissions ? remapRelationEmissions(allEdges, id => id) : allEdges };
   }
 
   const remappedNodes = allNodes.filter((n) => !remap.has(n.id));
+  if (preserveEmissions) return { nodes: remappedNodes, edges: remapRelationEmissions(allEdges, id => remap.get(id) ?? id) };
 
   // Each extension file's `contains` edge ends up pointing at the canonical
   // type — multiple files containing the same node is the intended shape:

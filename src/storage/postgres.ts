@@ -1,4 +1,6 @@
 import { assertSupportedGraphFormat, readerDegree } from "../graph.js";
+import { graphEdgeContribution, mergeStoreEdgeContribution } from "./edge-contribution.js";
+import { normalizeStoreEdgeIdentity } from "./types.js";
 import { requireHostDriver } from "./host-driver.js";
 /**
  * Postgres GraphStore adapter (SPEC_STORAGE_BACKENDS.md, "Future Backends").
@@ -664,6 +666,15 @@ export async function createPostgresGraphStore(
   config: PostgresGraphStoreConfig,
   deps?: StoreTestDeps,
 ): Promise<PostgresGraphStore> {
+  return createPostgresGraphStoreBody(config, deps, false);
+}
+
+/** Unwired union transactions; the registered factory retains replacement. */
+export async function createPostgresGraphStorePrepared(config: PostgresGraphStoreConfig, deps?: StoreTestDeps): Promise<PostgresGraphStore> {
+  return createPostgresGraphStoreBody(config, deps, true);
+}
+
+async function createPostgresGraphStoreBody(config: PostgresGraphStoreConfig, deps: StoreTestDeps | undefined, unionEvidence: boolean): Promise<PostgresGraphStore> {
   const connectionString =
     config.connectionString ?? engramEnv("ENGRAM_POSTGRES_URL", "GRAPHIFY_POSTGRES_URL");
   if (!connectionString) {
@@ -862,6 +873,7 @@ export async function createPostgresGraphStore(
     columns: string[],
     conflictCols: string[],
     rows: unknown[][],
+    ignoreConflict = false,
   ): { text: string; params: unknown[] } {
     const params: unknown[] = [];
     const valueTuples = rows.map((row) => {
@@ -877,8 +889,39 @@ export async function createPostgresGraphStore(
       .join(", ");
     const text =
       `INSERT INTO ${table} (${columns.join(", ")}) VALUES ${valueTuples.join(", ")} ` +
-      `ON CONFLICT (${conflictCols.join(", ")}) DO UPDATE SET ${setClause}`;
+      `ON CONFLICT (${conflictCols.join(", ")}) ` + (ignoreConflict ? "DO NOTHING" : `DO UPDATE SET ${setClause}`);
     return { text, params };
+  }
+
+  function contributionRow(slug: string, edge: GraphEdgeInput): unknown[] {
+    return [slug, edge.source, edge.target, edge.relation, edge.confidence ?? null, JSON.stringify(buildPropsBag(edge, EDGE_SCHEMA_COLS))];
+  }
+
+  async function contributeEdge(client: PgClient, slug: string, incoming: GraphEdgeInput): Promise<GraphAppendOutcome> {
+    const identity = normalizeStoreEdgeIdentity(incoming.source, incoming.target, incoming.relation);
+    const key = [slug, identity.source, identity.target, identity.relation];
+    // Row locks alone cannot protect an absent key. The transaction advisory
+    // lock serialises first contributions too, across independent connections.
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [JSON.stringify(key)]);
+    const read = async () => (await client.query(`SELECT * FROM ${q(EDGE_TABLE)} WHERE city_slug = $1 AND source_id = $2 AND target_id = $3 AND relation = $4 FOR UPDATE`, key)).rows[0];
+    let row = await read();
+    if (!row) {
+      const merged = mergeStoreEdgeContribution(null, { ...incoming, ...identity });
+      const insert = buildUpsert(q(EDGE_TABLE), EDGE_COLUMNS, ["city_slug", "source_id", "target_id", "relation"], [contributionRow(slug, merged)], true);
+      const result = await client.query(`${insert.text} RETURNING source_id`, insert.params);
+      if (result.rows.length) return { created: true };
+      // A non-cooperating insert can still win the uniqueness race. Re-read
+      // its committed row under lock and merge, instead of overwriting it.
+      row = await read();
+      if (!row) throw new Error("edge contribution: conflicting row disappeared before retry");
+    }
+    const current = { ...parseProps(row.props) };
+    delete current.confidence;
+    if (row.confidence != null) current.confidence = row.confidence;
+    const merged = mergeStoreEdgeContribution(current, { ...incoming, ...identity });
+    const update = buildUpsert(q(EDGE_TABLE), EDGE_COLUMNS, ["city_slug", "source_id", "target_id", "relation"], [contributionRow(slug, merged)]);
+    await client.query(update.text, update.params);
+    return { created: false };
   }
 
   async function upsertBatched(
@@ -1035,6 +1078,12 @@ export async function createPostgresGraphStore(
       const mode = options.mode ?? "merge";
       const nodeCount = G.order;
       const edgeCount = G.size;
+      const edgeContributions: GraphEdgeInput[] = [];
+      if (unionEvidence) G.forEachEdge((_key, attrs, source, target) => edgeContributions.push(graphEdgeContribution(source, target, attrs)));
+      edgeContributions.sort((a, b) => {
+        const ak = JSON.stringify([a.source, a.target, a.relation]), bk = JSON.stringify([b.source, b.target, b.relation]);
+        return ak < bk ? -1 : ak > bk ? 1 : 0;
+      });
 
       if (options.dryRun) {
         return {
@@ -1052,7 +1101,7 @@ export async function createPostgresGraphStore(
 
       const communityMap = buildNodeCommunityMap(communities);
       const nodeRows = buildNodeRows(G, communityMap);
-      const edgeRows = buildEdgeRows(G);
+      const edgeRows = unionEvidence ? edgeContributions.map(edge => contributionRow(citySlug, edge)) : buildEdgeRows(G);
       const pushedAt = new Date().toISOString();
       // Windowed-loader position rows actually written (storage LOT 3). Stays 0
       // on a merge push (positions are replace-snapshot scoped) and reflects the
@@ -1077,7 +1126,9 @@ export async function createPostgresGraphStore(
           nodeRows,
           batchSize,
         );
-        await upsertBatched(
+        if (unionEvidence && mode === "merge") {
+          for (const incoming of edgeContributions) await contributeEdge(client, citySlug, incoming);
+        } else await upsertBatched(
           client,
           q(EDGE_TABLE),
           EDGE_COLUMNS,
@@ -1430,6 +1481,7 @@ export async function createPostgresGraphStore(
       edge: GraphEdgeInput,
       options: GraphAppendOptions = {},
     ): Promise<GraphAppendOutcome> {
+      const incoming = unionEvidence ? mergeStoreEdgeContribution(null, edge) : undefined;
       await ensureSchema();
       const slug = options.namespace ?? citySlug;
       // Strict referential integrity (requiresExistingEndpoints): both endpoints
@@ -1446,6 +1498,18 @@ export async function createPostgresGraphStore(
           `appendEdge: endpoint node(s) ${missing.join(", ")} do not exist — a dangling ` +
             "edge is refused (requiresExistingEndpoints). Append the node(s) first.",
         );
+      }
+      if (incoming) {
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          const result = await contributeEdge(client, slug, incoming);
+          await client.query("COMMIT");
+          return result;
+        } catch (error) {
+          try { await client.query("ROLLBACK"); } catch { /* preserve the contribution failure */ }
+          throw error;
+        } finally { client.release(); }
       }
       const a = edge as Record<string, unknown>;
       const row = [
@@ -1477,7 +1541,7 @@ export async function createPostgresGraphStore(
       const edgeSource = target.kind === "edge" ? target.source : "";
       const edgeTarget = target.kind === "edge" ? target.target : "";
       const edgeRelation =
-        target.kind === "edge" ? (typeof target.relation === "string" ? target.relation : "RELATES_TO") : "";
+        target.kind === "edge" ? (unionEvidence ? normalizeStoreEdgeIdentity(target.source, target.target, target.relation).relation : typeof target.relation === "string" ? target.relation : "RELATES_TO") : "";
       const t =
         typeof tombstone.t === "number" && Number.isFinite(tombstone.t) ? tombstone.t : null;
       const reason = typeof tombstone.reason === "string" ? tombstone.reason : null;

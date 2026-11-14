@@ -4,31 +4,8 @@ import { createSqliteGraphStore, sqliteDdlStatements } from "../../src/storage/s
 import { createPostgresGraphStore } from "../../src/storage/postgres.js";
 import type { GraphStore } from "../../src/storage/types.js";
 import { edge, node, multiGraph, observation, expectObservations, tempDir, type Row } from "./multi-links.js";
-import { loadSqliteEngine } from "./multi-links-sqlite.js";
-
-// Real SQL engine behind the existing synchronous driver injection seam.
-export async function sqliteDriver(onStatement: (sql: string) => void = () => {}) {
-  const Database = await loadSqliteEngine();
-  return { default: class {
-    db: any;
-    constructor(path: string) { this.db = new Database(path); }
-    pragma(sql: string) { this.db.exec(`PRAGMA ${sql}`); }
-    exec(sql: string) { onStatement(sql); this.db.exec(sql); }
-    prepare(sql: string) {
-      onStatement(sql);
-      const stmt = this.db.prepare(sql);
-      return { run: (...args: any[]) => stmt.run(...args), get: (...args: any[]) => stmt.get(...args), all: (...args: any[]) => stmt.all(...args) };
-    }
-    transaction(fn: (...args: any[]) => any) {
-      return (...args: any[]) => {
-        this.db.exec("BEGIN IMMEDIATE");
-        try { const result = fn(...args); this.db.exec("COMMIT"); return result; }
-        catch (error) { this.db.exec("ROLLBACK"); throw error; }
-      };
-    }
-    close() { this.db.close(); }
-  } };
-}
+import { sqliteDriver } from "./multi-links-sqlite.js";
+export { sqliteDriver } from "./multi-links-sqlite.js";
 
 // Stateful PostgreSQL port double: executes row replacement/DO NOTHING, exact
 // predicates and tombstone fold-out. It never merges evidence on the adapter's

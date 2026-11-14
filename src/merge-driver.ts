@@ -1,8 +1,18 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import type Graph from "graphology";
+import { prepareRelationContributions, replayPreparedRelationEdges } from "./relation-replay.js";
+
+/** Keyed replay body; the production merge driver remains on its legacy path. */
+export function mergeDriverEdgesPrepared(merged: Graph, graphs: readonly SerializedGraphData[]): void {
+  assertSupportedGraphFormat(merged.getAttributes(), "merge-driver target");
+  for (const raw of graphs) assertSupportedGraphFormat(raw as unknown as Record<string, unknown>, "merge-driver input");
+  const rows = graphs.flatMap(raw => (raw.links ?? raw.edges ?? []).map(({ source, target, ...attrs }) => ({ source, target, attrs: { ...attrs, evidence_observations: legacyObservationFromRawLink(attrs) } })));
+  replayPreparedRelationEdges(merged, prepareRelationContributions(merged, rows));
+}
 
 import type { SerializedGraphData } from "./graph.js";
-import { assertSupportedGraphFormat, createGraph, serializeGraph } from "./graph.js";
+import { assertSupportedGraphFormat, createGraph, legacyObservationFromRawLink, serializeGraph } from "./graph.js";
 import { unionCitations } from "./citations.js";
 import { mergeHyperedges, setHyperedges } from "./hyperedges.js";
 import type { Hyperedge } from "./hyperedges.js";

@@ -32,6 +32,7 @@
  */
 import type { Extraction, GraphEdge, GraphNode, OntologyCitation } from "./types.js";
 import { unionCitations } from "./citations.js";
+import { remapRelationEmissions } from "./relation-remap.js";
 
 // ---------------------------------------------------------------------------
 // (A) Schema hygiene — id-prefix + type canonicalization with merge-union
@@ -157,6 +158,15 @@ export function normalizeSchemaHygiene(
   extraction: Extraction,
   config: SchemaHygieneConfig = {},
 ): Extraction {
+  return normalizeSchemaHygieneBody(extraction, config, false);
+}
+
+/** Unwired effective-identity remapper; node and hyperedge policies unchanged. */
+export function normalizeSchemaHygienePrepared(extraction: Extraction, config: SchemaHygieneConfig = {}): Extraction {
+  return normalizeSchemaHygieneBody(extraction, config, true);
+}
+
+function normalizeSchemaHygieneBody(extraction: Extraction, config: SchemaHygieneConfig, preserveEmissions: boolean): Extraction {
   const prefixSynonyms = { ...DEFAULT_ID_PREFIX_SYNONYMS, ...(config.idPrefixSynonyms ?? {}) };
   const typeSynonyms = { ...DEFAULT_TYPE_SYNONYMS, ...(config.typeSynonyms ?? {}) };
 
@@ -195,13 +205,13 @@ export function normalizeSchemaHygiene(
   if (remap.size === 0) {
     // No id remap, but types may still have changed; result already carries
     // normalized types. Edges/hyperedges are untouched by id rewriting.
-    return { ...extraction, nodes: result };
+    return { ...extraction, nodes: result, ...(preserveEmissions ? { edges: remapRelationEmissions(extraction.edges ?? [], id => id) } : {}) };
   }
 
   const resolve = (id: string): string => remap.get(id) ?? id;
   const seenEdge = new Set<string>();
-  const edges: GraphEdge[] = [];
-  for (const edge of extraction.edges ?? []) {
+  const edges: GraphEdge[] = preserveEmissions ? remapRelationEmissions(extraction.edges ?? [], resolve) : [];
+  if (!preserveEmissions) for (const edge of extraction.edges ?? []) {
     const source = resolve(String(edge.source));
     const target = resolve(String(edge.target));
     if (source === target) continue; // self-loop from collapse

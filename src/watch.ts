@@ -31,6 +31,13 @@ import {
   toProjectRelativePath,
 } from "./portable-artifacts.js";
 import { assertSupportedGraphFormat, loadGraphFromData, RelationEdgeInvariantError, UnsupportedGraphFormatError } from "./graph.js";
+import type Graph from "graphology";
+import { replayRelationGraph } from "./relation-replay.js";
+
+/** Snapshot edge replay body; activation replaces the existing replay loop. */
+export function replayWatchEdgesPrepared(target: Graph, snapshot: Graph): void {
+  replayRelationGraph(target, snapshot);
+}
 import type { CitationAggregateMap } from "./citations.js";
 import { assertGraphJsonFileSize } from "./graph-size-guard.js";
 import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";

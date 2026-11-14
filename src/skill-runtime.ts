@@ -37,7 +37,8 @@ import {
 } from "./input-scope.js";
 import { persistGraphWithCitations, toCypher, toGraphml, toJson, toSvg, pushToNeo4j } from "./export.js";
 import { extractWithDiagnostics } from "./extract.js";
-import { readerDegree, forEachTraversalNeighbor,
+import { prepareRelationGraphReplay, replayPreparedRelationEdges, type RelationContribution } from "./relation-replay.js";
+import { assertSupportedGraphFormat, readerDegree, forEachTraversalNeighbor,
   readerPairEdges,
   isDirectedGraph,
   loadGraphFromData,
@@ -360,6 +361,17 @@ function mergeHyperedges(
 }
 
 function mergeGraphs(target: Graph, source: Graph): void {
+  mergeGraphsBody(target, source);
+}
+
+/** Full subgraph merge body with keyed edge replay, reserved for activation. */
+export function mergeGraphsPrepared(target: Graph, source: Graph): void {
+  assertSupportedGraphFormat(source.getAttributes(), "skill merge source");
+  assertSupportedGraphFormat(target.getAttributes(), "skill merge target");
+  mergeGraphsBody(target, source, prepareRelationGraphReplay(target, source));
+}
+
+function mergeGraphsBody(target: Graph, source: Graph, preparedEdges?: RelationContribution[]): void {
   source.forEachNode((nodeId, attrs) => {
     // SPEC_CITATIONS F1: graphology mergeNode is shallow last-write-wins, so the
     // source (fresh re-extraction) node's `citations` would REPLACE the target
@@ -377,7 +389,8 @@ function mergeGraphs(target: Graph, source: Graph): void {
     }
     target.mergeNode(nodeId, incoming);
   });
-  source.forEachEdge((_edge, attrs, sourceId, targetId) => {
+  if (preparedEdges) replayPreparedRelationEdges(target, preparedEdges);
+  else source.forEachEdge((_edge, attrs, sourceId, targetId) => {
     if (!target.hasNode(sourceId) || !target.hasNode(targetId)) return;
     try {
       target.mergeEdge(sourceId, targetId, attrs);
