@@ -3,6 +3,33 @@ import { spawn } from "node:child_process";
 import { readSync, writeSync } from "node:fs";
 import { loadSqliteTestDriver } from "../fixtures/sqlite-host-driver.js";
 
+// Real SQL engine with the production driver's deferred/default API semantics.
+export async function sqliteDriver(onStatement: (sql: string) => void = () => {}) {
+  const Database = await loadSqliteEngine();
+  return { default: class {
+    db: any;
+    constructor(path: string) { this.db = new Database(path); }
+    pragma(sql: string) { this.db.exec(`PRAGMA ${sql}`); }
+    exec(sql: string) { onStatement(sql); this.db.exec(sql); }
+    prepare(sql: string) {
+      onStatement(sql);
+      const stmt = this.db.prepare(sql);
+      return { run: (...args: any[]) => stmt.run(...args), get: (...args: any[]) => stmt.get(...args), all: (...args: any[]) => stmt.all(...args) };
+    }
+    transaction(fn: (...args: any[]) => any) {
+      const run = (begin: string, args: any[]) => {
+        this.exec(begin);
+        try { const result = fn(...args); this.exec("COMMIT"); return result; }
+        catch (error) { this.exec("ROLLBACK"); throw error; }
+      };
+      return Object.assign((...args: any[]) => run("BEGIN", args), {
+        immediate: (...args: any[]) => run("BEGIN IMMEDIATE", args),
+      });
+    }
+    close() { this.db.close(); }
+  } };
+}
+
 // CI installs this test-host driver for each runtime's own ABI. Node 20 must
 // never resolve node:sqlite, including when only the PostgreSQL helper is loaded.
 export async function loadSqliteEngine(): Promise<any> {

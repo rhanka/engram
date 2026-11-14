@@ -3,6 +3,7 @@ import { basename, isAbsolute, relative, resolve } from "node:path";
 import type Graph from "graphology";
 
 import type { DetectionResult, Extraction } from "./types.js";
+import { prepareFreshExtraction } from "./graph.js";
 
 export type PortablePathIssueKind =
   | "absolute_path"
@@ -117,6 +118,11 @@ function normalizeScopePath(root: string, value: string | undefined): string | u
   if (!value) return value;
   const relativePath = toProjectRelativePath(root, value);
   return relativePath.length > 0 ? relativePath : ".";
+}
+
+/** Prepared portability body; captured edge records and scalars pass through. */
+export function makeExtractionPortablePrepared(extraction: Extraction, root: string): Extraction {
+  return { ...makeExtractionPortable(extraction, root), edges: prepareFreshExtraction(extraction, { root }).edges };
 }
 
 export function makeExtractionPortable(extraction: Extraction, root: string): Extraction {
