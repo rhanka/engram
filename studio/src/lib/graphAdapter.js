@@ -1,3 +1,4 @@
+const compareCodeUnits = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 /**
  * GraphLike -> Studio scene adapter.
  *
@@ -348,15 +349,7 @@ export function isStrongEdge(edge) {
  * the degree floor, as intended — their salience comes from the box label.)
  */
 export function computeDegrees(nodes, edges, multigraph = false) {
-  if (!multigraph) {
-    const degree = new Map(nodes.map(node => [node.id, 0]));
-    for (const edge of edges) {
-      if (edge.structural) continue;
-      if (degree.has(edge.source)) degree.set(edge.source, degree.get(edge.source) + 1);
-      if (degree.has(edge.target)) degree.set(edge.target, degree.get(edge.target) + 1);
-    }
-    return degree;
-  }
+
   const neighbors = new Map(nodes.map(node => [node.id, new Set()]));
   for (const edge of edges) {
     if (edge.structural) continue;
@@ -844,7 +837,7 @@ function buildGraphIndex(graph) {
     if (!cb) byCommunity.set(c, (cb = []));
     cb.push({ id: n.id, label: nodeLabel(n) });
   }
-  const byLabel = (a, b) => a.label.localeCompare(b.label);
+  const byLabel = (a, b) => compareCodeUnits(a.label, b.label);
   for (const bucket of byType.values()) bucket.sort(byLabel);
   for (const bucket of byCommunity.values()) bucket.sort(byLabel);
   return { byType, byCommunity, communityStats: null };
@@ -953,7 +946,7 @@ export function groupCounts(graph, keyFn, serverCounts = null) {
   if (serverGroups) {
     return serverGroups
       .map(({ key, count }) => ({ key: String(key), count }))
-      .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+      .sort((a, b) => b.count - a.count || compareCodeUnits(a.key, b.key));
   }
   const counts = new Map();
   for (const node of graphNodes(graph)) {
@@ -963,7 +956,7 @@ export function groupCounts(graph, keyFn, serverCounts = null) {
   }
   return [...counts.entries()]
     .map(([key, count]) => ({ key: String(key), count }))
-    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+    .sort((a, b) => b.count - a.count || compareCodeUnits(a.key, b.key));
 }
 
 /**
@@ -1031,7 +1024,7 @@ function computeCommunityStats(graph) {
       isolatedCount += rec.count;
     }
   }
-  liveList.sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+  liveList.sort((a, b) => b.count - a.count || compareCodeUnits(a.key, b.key));
   return { live: liveList, isolatedCount, liveCount: liveList.length };
 }
 
@@ -1094,7 +1087,7 @@ export function citationsByFileFrom(list, fallbackSourceFile = null) {
   }
   return [...byFile.entries()]
     .map(([file, passages]) => ({ file, count: passages.length, passages }))
-    .sort((a, b) => b.count - a.count || a.file.localeCompare(b.file));
+    .sort((a, b) => b.count - a.count || compareCodeUnits(a.file, b.file));
 }
 
 /**
@@ -1221,7 +1214,7 @@ export function candidateUnionSubgraph(
     const s = rep(e.source), t = rep(e.target);
     if (s === t) continue; // self-loop created by the fold — drop it.
     const rel = e.relation ?? e.relation_type ?? "";
-    const key = `${s}\u0000${t}\u0000${rel}`;
+    const key = JSON.stringify([s, t, rel]);
     if (seen.has(key)) continue;
     seen.add(key);
     links.push({ ...e, source: s, target: t });

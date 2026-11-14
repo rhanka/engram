@@ -1,3 +1,4 @@
+import { compareCodeUnits } from "./graph-json-serialization.js";
 /**
  * Assembly hygiene — deterministic, idempotent, NO-KEY normalization that runs
  * on the assembled extraction (node/edge dicts) BEFORE the graphology build.
@@ -114,7 +115,7 @@ function unionStringArrays(a: unknown, b: unknown): string[] {
   const out = new Set<string>();
   for (const v of Array.isArray(a) ? a : []) if (typeof v === "string" && v) out.add(v);
   for (const v of Array.isArray(b) ? b : []) if (typeof v === "string" && v) out.add(v);
-  return Array.from(out).sort((x, y) => x.localeCompare(y));
+  return Array.from(out).sort((x, y) => compareCodeUnits(x, y));
 }
 
 const UNION_STRING_ARRAY_FIELDS = ["aliases", "normalized_terms", "registry_refs", "evidence_refs"] as const;
@@ -158,22 +159,22 @@ export function normalizeSchemaHygiene(
   extraction: Extraction,
   config: SchemaHygieneConfig = {},
 ): Extraction {
-  return normalizeSchemaHygieneBody(extraction, config, false);
+  return normalizeSchemaHygieneBody(extraction, config);
 }
 
-/** Unwired effective-identity remapper; node and hyperedge policies unchanged. */
+/** Shared effective-identity remapper; node and hyperedge policies unchanged. */
 export function normalizeSchemaHygienePrepared(extraction: Extraction, config: SchemaHygieneConfig = {}): Extraction {
-  return normalizeSchemaHygieneBody(extraction, config, true);
+  return normalizeSchemaHygieneBody(extraction, config);
 }
 
-function normalizeSchemaHygieneBody(extraction: Extraction, config: SchemaHygieneConfig, preserveEmissions: boolean): Extraction {
+function normalizeSchemaHygieneBody(extraction: Extraction, config: SchemaHygieneConfig): Extraction {
   const prefixSynonyms = { ...DEFAULT_ID_PREFIX_SYNONYMS, ...(config.idPrefixSynonyms ?? {}) };
   const typeSynonyms = { ...DEFAULT_TYPE_SYNONYMS, ...(config.typeSynonyms ?? {}) };
 
   const nodes = extraction.nodes ?? [];
   // Process nodes in a stable id order so the first-seen winner of a collapse
   // is deterministic regardless of extraction order.
-  const ordered = [...nodes].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  const ordered = [...nodes].sort((a, b) => compareCodeUnits(String(a.id), String(b.id)));
 
   const remap = new Map<string, string>();
   const canonicalById = new Map<string, GraphNode>();
@@ -200,26 +201,16 @@ function normalizeSchemaHygieneBody(extraction: Extraction, config: SchemaHygien
 
   // Stable output node order by canonical id so re-running is a byte-stable
   // fixed point (a collapse changes push-order vs. a second no-collapse pass).
-  result.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  result.sort((a, b) => compareCodeUnits(String(a.id), String(b.id)));
 
   if (remap.size === 0) {
     // No id remap, but types may still have changed; result already carries
     // normalized types. Edges/hyperedges are untouched by id rewriting.
-    return { ...extraction, nodes: result, ...(preserveEmissions ? { edges: remapRelationEmissions(extraction.edges ?? [], id => id) } : {}) };
+    return { ...extraction, nodes: result, edges: remapRelationEmissions(extraction.edges ?? [], id => id) };
   }
 
   const resolve = (id: string): string => remap.get(id) ?? id;
-  const seenEdge = new Set<string>();
-  const edges: GraphEdge[] = preserveEmissions ? remapRelationEmissions(extraction.edges ?? [], resolve) : [];
-  if (!preserveEmissions) for (const edge of extraction.edges ?? []) {
-    const source = resolve(String(edge.source));
-    const target = resolve(String(edge.target));
-    if (source === target) continue; // self-loop from collapse
-    const key = `${source} ${target} ${edge.relation ?? ""}`;
-    if (seenEdge.has(key)) continue;
-    seenEdge.add(key);
-    edges.push({ ...edge, source, target });
-  }
+  const edges = remapRelationEmissions(extraction.edges ?? [], resolve);
 
   const hyperedges = (extraction.hyperedges ?? []).map((h) => ({
     ...h,
@@ -314,10 +305,10 @@ export function deriveLabelTerms(
     }
   }
 
-  const aliases = Array.from(surfaces).sort((a, b) => a.localeCompare(b));
+  const aliases = Array.from(surfaces).sort((a, b) => compareCodeUnits(a, b));
   const normalizedTerms = Array.from(new Set([base, ...surfaces].map(normalizeTermLocal)))
     .filter((t) => t.length > 0)
-    .sort((a, b) => a.localeCompare(b));
+    .sort((a, b) => compareCodeUnits(a, b));
   return { aliases, normalizedTerms };
 }
 
@@ -484,7 +475,7 @@ interface ComponentIndex {
 function componentIndex(adj: Map<string, Set<string>>): ComponentIndex {
   const of = new Map<string, number>();
   const size: number[] = [];
-  const ids = Array.from(adj.keys()).sort((a, b) => a.localeCompare(b));
+  const ids = Array.from(adj.keys()).sort((a, b) => compareCodeUnits(a, b));
   for (const start of ids) {
     if (of.has(start)) continue;
     const index = size.length;
@@ -594,7 +585,7 @@ export function deOrphanByContainer(
     byRankSource.push(new Map());
     byRankSlug.push(new Map());
   }
-  const orderedNodes = [...nodes].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  const orderedNodes = [...nodes].sort((a, b) => compareCodeUnits(String(a.id), String(b.id)));
   for (const n of orderedNodes) {
     const rank = rankOf.get(String(n.type));
     if (rank === undefined) continue;
@@ -648,7 +639,7 @@ export function deOrphanByContainer(
         if (cs !== 0) return cs;
         const dd = (adjacency.get(b)?.size ?? 0) - (adjacency.get(a)?.size ?? 0);
         if (dd !== 0) return dd;
-        return a.localeCompare(b);
+        return compareCodeUnits(a, b);
       });
     }
   }
@@ -715,7 +706,7 @@ export function deOrphanByContainer(
     let peerSource: string | undefined;
     let peerTop: string | undefined;
     if (usePeers) {
-      for (const sf of [...sources].sort((a, b) => a.localeCompare(b))) {
+      for (const sf of [...sources].sort((a, b) => compareCodeUnits(a, b))) {
         const bucket = peersBySource.get(sf);
         const top = bucket?.[0];
         if (!top || top === orphanId) continue;
@@ -755,7 +746,7 @@ export function deOrphanByContainer(
   }
 
   // --- spread pass: co-provenance attachments fan out over the top peers ------
-  for (const source of [...peerGroups.keys()].sort((a, b) => a.localeCompare(b))) {
+  for (const source of [...peerGroups.keys()].sort((a, b) => compareCodeUnits(a, b))) {
     const group = peerGroups.get(source)!;
     const groupSet = new Set(group);
     const candidates = (peersBySource.get(source) ?? []).filter((id) => !groupSet.has(id));
@@ -781,7 +772,7 @@ export function deOrphanByContainer(
   }
 
   // --- emit, in a stable (orphan, anchor) order ------------------------------
-  decisions.sort((a, b) => a.orphan.localeCompare(b.orphan) || a.anchor.localeCompare(b.anchor));
+  decisions.sort((a, b) => compareCodeUnits(a.orphan, b.orphan) || compareCodeUnits(a.anchor, b.anchor));
   const added: GraphEdge[] = [];
   const byMethod: Record<string, number> = {};
   const fanOut = new Map<string, number>();

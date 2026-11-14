@@ -15,7 +15,7 @@ const old = readFixture("old-simple-graph.json"), clusterFixture = readFixture("
 
 describe("L0 acceptance", () => {
   for (const shape of ["parallel", "reciprocal-undirected", "reciprocal-directed", "union"]) describe(shape, () => {
-    it.fails("owner-parallel-reciprocal-union-acceptance", async () => {
+    it("owner-parallel-reciprocal-union-acceptance", async () => {
       const emissions = shape === "parallel" ? [edge({ relation: "reads", source_location: "L1" }), edge({ relation: "writes", source_location: "L2" })] : shape === "union" ? [edge({ source_location: "L10" }), edge({ source_location: "L44" })] : [edge({ source_location: "L1" }), edge({ source: "b", target: "a", confidence: "INFERRED", source_location: "L2" })];
       const ns = [node("a", { label: "Caller" }), node("b", { label: "Callee" })];
       let canonical: string | undefined;
@@ -54,7 +54,7 @@ describe("L0 acceptance", () => {
     const base = renderTree(multiGraph([emissions[0], emissions[3]], ns), "center", { depth: 1, maxChildren: 1 });
     expect(base.split("\n").filter(l => /[├└]─/.test(l) && !l.includes("...")).length).toBe(children.length);
   });
-  it.fails("memory-about-coexists-with-code-link", () => {
+  it("memory-about-coexists-with-code-link", () => {
     const memory = node("memory:r1", { file_type: "memory", record_id: "r1" }), target = node("a");
     const code = edge({ source: memory.id, target: target.id, relation: "calls" });
     const reference = edge({ source: memory.id, target: target.id, relation: "memory_about", source_file: "memory" });
@@ -68,9 +68,9 @@ describe("L0 acceptance", () => {
     reconcileMemoryProjectionInGraph(G, { ...assembled, extraction: extraction([], [memory]) } as never);
     expect(G.hasEdge(memoryKey)).toBe(false); expect(G.hasEdge(codeKey)).toBe(true);
     expect(rows(G)).toEqual([before]);
-    expectFixedPoint(G);
+    expectFixedPoint(G, [], { memoryHighWaterCursor: assembled.high_water_cursor });
   });
-  it.fails("old-simple-graph-upgrade-enumerated", () => {
+  it("old-simple-graph-upgrade-enumerated", () => {
     const G = loadGraphFromData(old);
     expect(G.size).toBe(old.links.length);
     for (const n of old.nodes) for (const [key, value] of Object.entries(n)) if (key !== "id") expect(G.getNodeAttribute(n.id, key)).toEqual(value);
@@ -166,7 +166,7 @@ describe("L0 writer inventory", () => {
     const violations = inventory("src/skills/skill.md#script-0.js", source).filter(s => !s.reason).map(s => s.kind);
     expect(violations).toEqual(["graph-insertion", "graph-constructor", "graph-pair-reader", "graph-insertion"]);
   });
-  it.fails("inventory-every-writer-through-merger", () => {
+  it("inventory-every-writer-through-merger", () => {
     const scripts = skillDocuments.flatMap(path => {
       const skill = readSkill(path);
       return [...(skill.portable ? inventory(path + "#portable.js", skill.portable) : []), ...skill.scripts.flatMap((source, index) => inventory(path + "#script-" + index + ".js", source.replace(skill.portable ?? "\0", "")))];
@@ -206,7 +206,7 @@ describe("L0 shipped skill execution", () => {
     expect(new Set(skills.map(s => s.path)).size).toBe(6);
     for (const skill of skills) expect(skill.scripts.length).toBeGreaterThan(3);
   });
-  it.fails("skills-shared-portable-block-byte-equality", () => {
+  it("skills-shared-portable-block-byte-equality", () => {
     for (const skill of skills) expect(skill.portable, skill.path + ": missing authored portable implementation between markers").toBeTypeOf("string");
     expect(new Set(skills.map(s => s.portableBytes)).size).toBe(1);
   });
@@ -225,11 +225,11 @@ describe("L0 shipped skill execution", () => {
       expect(String(result.pathError)).toContain("SHIPPED_PATH_EXECUTED");
       expect(String(result.neighborsError)).toContain("SHIPPED_NEIGHBORS_EXECUTED");
     });
-    it.fails("shipped consumers pass the pair-reader, multigraph-constructor and keyed-replay grep gates", () => {
+    it("shipped consumers pass the pair-reader, multigraph-constructor and keyed-replay grep gates", () => {
       const sites = skill.scripts.flatMap((source, i) => inventory(skill.path + "#script-" + i + ".js", source.replace(skill.portable ?? "\0", "")));
       expect(sites.filter(s => !s.reason && ["graph-pair-reader", "graph-constructor", "graph-insertion"].includes(s.kind)).map(s => `${s.line} ${s.kind} ${s.text}`)).toEqual([]);
     });
-    it.fails("portable block API and canonical observation identities match core independently of consumers", () => {
+    it("portable block API and canonical observation identities match core independently of consumers", () => {
       expect(skill.portable, skill.path + ": missing portable API block").toBeTypeOf("string");
       const runtime = executeSnippet(skill.portable!, {}, {});
       for (const name of ["loadGraphFromData", "serializeGraph", "mergeEdgeEvidence", "upsertRelationEdge", "getPairEdges", "observationKey", "assertionIdentityOf", "prepareFreshExtraction", "legacyObservationFromRawLink"]) expect(runtime[name], name).toBeTypeOf("function");
@@ -256,14 +256,14 @@ describe("L0 shipped skill execution", () => {
         expect(result.neighbors ?? result.neighborsError).toBeDefined();
       }
     });
-    (skill.path === "src/skills/skill.md" ? it : it.fails)("skill query block executes without a source syntax error", () => {
+    (skill.path === "src/skills/skill.md" ? it : it)("skill query block executes without a source syntax error", () => {
       const input = skillInput(old), fresh = extraction([], input.nodes as never);
       const result = skillOperations(skill, input, fresh);
       expect(result.queryError, skill.path + ": query code extracted verbatim from the document").toBeUndefined();
       expect(result.query).toBeDefined();
     });
     for (const shape of ["reciprocal", "reverse-only", "directed", "surrogate"]) describe("rendered " + shape, () => {
-      for (const consumer of ["query", "neighbors", "path"] as const) it.fails("actual shipped " + consumer + " output retains assertion orientation and matches core", async () => {
+      for (const consumer of ["query", "neighbors", "path"] as const) it("actual shipped " + consumer + " output retains assertion orientation and matches core", async () => {
         const a = shape === "surrogate" ? "a\ud800" : "a";
         const ns = [node(a, { label: "Caller" }), node("b", { label: "Callee" })];
         const forward = (relation: string) => edge({ source: a, target: "b", _src: a, _tgt: "b", relation, source_file: shape === "surrogate" ? "bad\udfff.ts" : "f.ts" });
@@ -289,7 +289,7 @@ describe("L0 shipped skill execution", () => {
       });
     });
     for (const [name, raw] of corpus) describe(name, () => {
-      it.fails("skills-six-variants-executed-parity", async () => {
+      it("skills-six-variants-executed-parity", async () => {
         const input = skillInput(raw), fresh = extraction([edge({ source: input.nodes[0].id, target: input.nodes[1]?.id ?? input.nodes[0].id, relation: "writes", source_location: "L0-new" })], input.nodes.map((n: Row) => node(n.id, n)));
         const actual = skillOperations(skill, input, fresh), expected = coreHistory(input, fresh);
         expect(actual.loaded.multi, "the document loader must retain relation identity and observations").toBe(true);

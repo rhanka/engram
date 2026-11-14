@@ -310,7 +310,7 @@ describe("L0-T review id",()=>{
    for(const e of actual){const relation=e.extra.relation;expect(e.kind).toBe(["imports","imports_from"].includes(relation)?"IMPORTS_FROM":["extends","inherits_from","subclass_of"].includes(relation)?"INHERITS":relation.toUpperCase());}
   }
  });
- it.fails("review exact identities survive build permutation and both reloads",()=>{
+ it("review exact identities survive build permutation and both reloads",()=>{
   let canonical:string|undefined;
   for(const seq of [emissions,[...emissions].reverse()]){
    const G=mlBuild(seq);expect(G.size).toBe(emissions.length);

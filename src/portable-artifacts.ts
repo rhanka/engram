@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, isAbsolute, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import type Graph from "graphology";
 
 import type { DetectionResult, Extraction } from "./types.js";
@@ -120,9 +120,9 @@ function normalizeScopePath(root: string, value: string | undefined): string | u
   return relativePath.length > 0 ? relativePath : ".";
 }
 
-/** Prepared portability body; captured edge records and scalars pass through. */
+/** Compatibility alias for fresh-only portability; captured edges pass through. */
 export function makeExtractionPortablePrepared(extraction: Extraction, root: string): Extraction {
-  return { ...makeExtractionPortable(extraction, root), edges: prepareFreshExtraction(extraction, { root }).edges };
+  return makeExtractionPortable(extraction, root);
 }
 
 export function makeExtractionPortable(extraction: Extraction, root: string): Extraction {
@@ -132,10 +132,7 @@ export function makeExtractionPortable(extraction: Extraction, root: string): Ex
       ...node,
       source_file: normalizeMaybePath(root, node.source_file) ?? node.source_file,
     })),
-    edges: extraction.edges.map((edge) => ({
-      ...edge,
-      source_file: normalizeMaybePath(root, edge.source_file) ?? edge.source_file,
-    })),
+    edges: prepareFreshExtraction(extraction, { root }).edges,
     hyperedges: (extraction.hyperedges ?? []).map((hyperedge) => ({
       ...hyperedge,
       source_file: normalizeMaybePath(root, hyperedge.source_file) ?? hyperedge.source_file,
@@ -179,11 +176,8 @@ export function makeGraphPortable<T extends Graph>(graph: T, root: string): T {
       graph.setNodeAttribute(nodeId, "source_file", toProjectRelativePath(root, attrs.source_file));
     }
   });
-  graph.forEachEdge((edgeId, attrs) => {
-    if (typeof attrs.source_file === "string") {
-      graph.setEdgeAttribute(edgeId, "source_file", toProjectRelativePath(root, attrs.source_file));
-    }
-  });
+  // Edge locators derive from verbatim observations; only fresh emissions are
+  // prepared. Stored edges remain unchanged across every persisting caller.
   const hyperedges = graph.getAttribute("hyperedges");
   if (Array.isArray(hyperedges)) {
     graph.setAttribute(
@@ -200,6 +194,22 @@ export function makeGraphPortable<T extends Graph>(graph: T, root: string): T {
     );
   }
   return graph;
+}
+
+/** Inspection-only copy. Never persist this projection as the lossless record. */
+export function projectGraphForPortableInspection(raw: Record<string, unknown>, root: string): Record<string, unknown> {
+  const project = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(project);
+    if (!value || typeof value !== "object") return value;
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key,
+      key === "source_file" && typeof item === "string" ? toProjectRelativePath(root, item) : project(item),
+    ]));
+  };
+  const rows = raw.links ?? raw.edges;
+  if (!Array.isArray(rows)) return raw;
+  return { ...raw, [Array.isArray(raw.links) ? "links" : "edges"]: rows.map(row =>
+    row && Array.isArray(row.evidence_observations) && row.evidence_observations.length ? project(row) : row,
+  ) };
 }
 
 function isIgnoredLocalArtifact(relativePath: string): boolean {
@@ -337,7 +347,11 @@ export function scanPortableGraphifyArtifacts(graphifyDir: string = ".graphify")
     checkedFiles.push(relativePath);
     if (relativePath.endsWith(".json")) {
       try {
-        collectJsonIssues(JSON.parse(content), relativePath, "$", issues);
+        const parsed = JSON.parse(content);
+        // V2 retains verbatim edge provenance; inspect a copy of its locators.
+        const inspected = relativePath === "graph.json" && parsed?.graph_format === "engram-graph/2"
+          ? projectGraphForPortableInspection(parsed, dirname(root)) : parsed;
+        collectJsonIssues(inspected, relativePath, "$", issues);
       } catch {
         collectTextIssues(content, relativePath, issues);
       }

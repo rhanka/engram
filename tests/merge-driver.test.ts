@@ -240,7 +240,7 @@ describe("L0-S merge driver", () => {
       expect(result.edgeCount).toBe(1);
       expect(JSON.parse(readFileSync(destination, "utf8"))).toMatchObject(document);
     });
-    it.fails("known legacy copy upgrades through the v2 writer rather than copying raw bytes", () => {
+    it("known legacy copy upgrades through the v2 writer rather than copying raw bytes", () => {
       const dir = tempDir(), ancestor = join(dir, "ancestor.json"), source = join(dir, sourceRole + ".json"), destination = join(dir, "absent.json");
       const legacy = { directed: false, nodes: [mlNode("a"), mlNode("b")], links: [mlEdge({ source_location: "L10" })] };
       writeFileSync(ancestor, JSON.stringify({ nodes: legacy.nodes, links: [] })); writeFileSync(source, JSON.stringify(legacy));
@@ -251,7 +251,7 @@ describe("L0-S merge driver", () => {
       expect(readFileSync(source, "utf8")).toBe(JSON.stringify(legacy));
     });
   });
-  it.fails("merge-driver-reads-writes-commutative-replay",()=>{
+  it("merge-driver-reads-writes-commutative-replay",()=>{
     let canonical:string|undefined;
     const emissions=[mlEdge({relation:"reads",source_location:"L1"}),mlEdge({relation:"writes",source_location:"L2"})];
     for(const order of [emissions,[...emissions].reverse()]){

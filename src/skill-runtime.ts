@@ -361,10 +361,10 @@ function mergeHyperedges(
 }
 
 function mergeGraphs(target: Graph, source: Graph): void {
-  mergeGraphsBody(target, source);
+  mergeGraphsPrepared(target, source);
 }
 
-/** Full subgraph merge body with keyed edge replay, reserved for activation. */
+/** Full production subgraph merge with complete preflight and keyed edge replay. */
 export function mergeGraphsPrepared(target: Graph, source: Graph): void {
   assertSupportedGraphFormat(source.getAttributes(), "skill merge source");
   assertSupportedGraphFormat(target.getAttributes(), "skill merge target");
@@ -389,15 +389,7 @@ function mergeGraphsBody(target: Graph, source: Graph, preparedEdges?: RelationC
     }
     target.mergeNode(nodeId, incoming);
   });
-  if (preparedEdges) replayPreparedRelationEdges(target, preparedEdges);
-  else source.forEachEdge((_edge, attrs, sourceId, targetId) => {
-    if (!target.hasNode(sourceId) || !target.hasNode(targetId)) return;
-    try {
-      target.mergeEdge(sourceId, targetId, attrs);
-    } catch {
-      /* ignore */
-    }
-  });
+  replayPreparedRelationEdges(target, preparedEdges!);
   const mergedHyperedges = mergeHyperedges(
     (target.getAttribute("hyperedges") as Array<Record<string, unknown>> | undefined) ?? [],
     (source.getAttribute("hyperedges") as Array<Record<string, unknown>> | undefined) ?? [],
@@ -1645,6 +1637,7 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         password,
         communities,
       });
+      for (const warning of result.warnings) console.warn(warning);
       console.log(`Pushed to Neo4j: ${result.nodes} nodes, ${result.edges} edges`);
     });
 

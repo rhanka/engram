@@ -1,5 +1,5 @@
 import Graph from "graphology";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as driver from "../src/merge-driver.js";
 import * as graphs from "../src/merge-graphs.js";
 import * as watch from "../src/watch.js";
@@ -21,6 +21,17 @@ const copies: Array<[string, (target: Graph, source: Graph, links: Row[]) => voi
   ["skill-runtime", (target, source) => (runtime as Row).mergeGraphsPrepared(target, source)],
 ];
 for (const [name, copy] of copies) describe(`P2 ${name} writer body`, () => {
+  it("replays repeated contributions to one directed tuple only once", () => {
+    const source = graph(), target = graph();
+    const links = Array.from({ length: 80 }, (_, i) => edge({ source_location: "L" + i }));
+    for (const [i, attrs] of links.entries()) source.addEdgeWithKey(String(i), "a", "b", attrs);
+    upsertRelationEdge(target, "a", "b", edge({ source_location: "stored" }));
+    const replace = vi.spyOn(target, "replaceEdgeAttributes");
+    copy(target, source, links);
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(target.size).toBe(1);
+    expect(target.getEdgeAttribute(JSON.stringify(["a", "b", "calls"]), "evidence_observations")).toHaveLength(81);
+  });
   for (const replacement of [false, true]) for (const invalidExisting of [false, true]) it(`refuses invalid ${invalidExisting ? "existing" : "incoming"} evidence atomically on ${replacement ? "replacement" : "insertion"}`, () => {
     const source = graph(), target = graph();
     source.addNode("new-node");
@@ -71,6 +82,16 @@ for (const [name, copy] of copies) describe(`P2 ${name} writer body`, () => {
 });
 
 describe("P2 memory-projection writer body", () => {
+  it("buckets repeated projection contributions before its keyed replay", () => {
+    const G = graph();
+    upsertRelationEdge(G, "a", "b", edge({ relation: "memory_about", source_location: "stored" }));
+    const replace = vi.spyOn(G, "replaceEdgeAttributes");
+    const assembled = { extraction: extraction(Array.from({ length: 80 }, (_, i) => edge({ relation: "memory_about", source_location: "L" + i })), []), projection_cursor: "10", high_water_cursor: "10" };
+    memory.attachMemoryProjectionToGraphPrepared(G, assembled);
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(G.size).toBe(1);
+    expect(G.getEdgeAttribute(JSON.stringify(["a", "b", "memory_about"]), "evidence_observations")).toHaveLength(81);
+  });
   for (const replacement of [false, true]) for (const invalidExisting of [false, true]) it(`refuses invalid ${invalidExisting ? "existing" : "incoming"} evidence before nodes and cursors on ${replacement ? "replacement" : "insertion"}`, () => {
     const G = graph();
     G.addNode("memory:existing", { file_type: "memory", label: "before" });

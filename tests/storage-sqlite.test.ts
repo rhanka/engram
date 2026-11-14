@@ -120,7 +120,8 @@ function makeFakeSqliteModule(state: FakeState) {
       return undefined;
     }
     transaction<A extends unknown[], R>(fn: (...args: A) => R) {
-      return (...args: A): R => fn(...args);
+      const run = (...args: A): R => fn(...args);
+      return Object.assign(run, { immediate: run });
     }
     close() {}
   }
@@ -187,7 +188,8 @@ describe("sqlite — narrow capability matrix (dossier §1.4)", () => {
   it("declares a VERSIONED append capability (upsert + strict endpoints + tombstone)", async () => {
     const store = await makeStore(freshState());
     expect(store.capabilities.append).toEqual({
-      version: 1,
+      version: 2,
+      evidenceUnion: true,
       upsert: true,
       requiresExistingEndpoints: true,
       tombstone: true,

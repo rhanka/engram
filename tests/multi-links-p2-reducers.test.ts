@@ -18,7 +18,7 @@ describe("P2 reducer bodies, unwired", () => {
     for (const [base, extra] of [inputs, [...inputs].reverse()]) {
       const out = (git as Row).mergeExtractionsPrepared(base, extra);
       expect(out.edges).toEqual([...base.edges, ...extra.edges]);
-      expect(git.mergeExtractions(base, extra).edges).toEqual(extra.edges);
+      expect(git.mergeExtractions(base, extra).edges).toEqual([...base.edges, ...extra.edges]);
     }
   });
   it("resolves effective endpoint remaps transitively", () => {

@@ -4,6 +4,7 @@ import { enforceMemoryFreshnessForSurface } from "./graph-memory-projection.js";
 import { canonicalBytes } from "./ontology-guardian/canonical.js";
 import { closedTemporalBounds } from "./temporal-interval.js";
 import type { EvidenceObservation, Extraction } from "./types.js";
+import { compareLinkRows, deepSortKeys, graphJsonLink, topologySignatureFromRows } from "./graph-json-serialization.js";
 
 export const GRAPH_FORMAT_VERSION = "engram-graph/2";
 
@@ -86,13 +87,13 @@ export function prepareFreshExtraction(extraction: Extraction, options: { root?:
 function cloneObservationValue(value: unknown, active = new Set<object>()): unknown {
   if (value === null || typeof value === "string" || typeof value === "boolean") return value;
   if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new Error("evidence observation: non-finite number");
+    if (!Number.isFinite(value)) throw new RelationEdgeInvariantError("evidence observation: non-finite number");
     return value === 0 ? 0 : value;
   }
-  if (typeof value !== "object") throw new Error(`evidence observation: unsupported ${typeof value}`);
-  if (active.has(value)) throw new Error("evidence observation: cycle");
-  if (!Array.isArray(value) && ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new Error("evidence observation: non-plain object");
-  if (Object.getOwnPropertySymbols(value).length) throw new Error("evidence observation: symbol key");
+  if (typeof value !== "object") throw new RelationEdgeInvariantError(`evidence observation: unsupported ${typeof value}`);
+  if (active.has(value)) throw new RelationEdgeInvariantError("evidence observation: cycle");
+  if (!Array.isArray(value) && ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new RelationEdgeInvariantError("evidence observation: non-plain object");
+  if (Object.getOwnPropertySymbols(value).length) throw new RelationEdgeInvariantError("evidence observation: symbol key");
   active.add(value);
   const result = Array.isArray(value)
     ? Array.from(value, member => member === undefined ? null : cloneObservationValue(member, active))
@@ -171,8 +172,13 @@ function compareValues(a: unknown, b: unknown): number {
   return 0;
 }
 
-/** Pure contribution union. Identity is supplied separately by the writer. */
+/** Compatibility wrapper for small, fixed-arity callers. */
 export function mergeEdgeEvidence(existing: Attributes | null, ...incoming: Attributes[]): Attributes {
+  return mergeEdgeEvidenceAll(existing, incoming);
+}
+
+/** Pure collection union. Validate the full bucket, then derive its final set once. */
+export function mergeEdgeEvidenceAll(existing: Attributes | null, incoming: readonly Attributes[]): Attributes {
   const contributions = [...(existing ? [existing] : []), ...incoming];
   const observations = new Map<string, EvidenceObservation>();
   for (const attrs of contributions) {
@@ -276,20 +282,17 @@ export function getPairEdges(G: Graph, u: string, v: string, opts: { traversable
 export function neighborDegree(G: Graph, node: string): number { return G.neighbors(node).length; }
 export function edgeCount(G: Graph, node: string): number { return G.edges(node).length; }
 
-/** Staged readers preserve simple-graph behavior until factory activation. */
+/** Readers accept both caller-built simple graphs and multigraphs. */
 export function readerDegree(G: Graph, node: string): number {
-  return G.multi ? neighborDegree(G, node) : G.degree(node);
+  return neighborDegree(G, node);
 }
 
 export function readerPairEdges(G: Graph, u: string, v: string): PairEdge[] {
-  if (G.multi) return getPairEdges(G, u, v);
-  const key = G.edge(u, v);
-  if (key === undefined) return [];
-  const [src, tgt] = G.extremities(key);
-  return [{ key, attrs: G.getEdgeAttributes(key), src, tgt, orientation: "as-stored" }];
+  return getPairEdges(G, u, v);
 }
 
 export interface SerializedGraphData {
+  topology_signature?: unknown;
   graph_format?: string;
   directed?: boolean;
   multigraph?: boolean;
@@ -301,7 +304,7 @@ export interface SerializedGraphData {
 }
 
 export function createGraph(directed: boolean = false): Graph {
-  return new Graph({ type: directed ? "directed" : "undirected", multi: false });
+  return new Graph({ type: directed ? "directed" : "undirected", multi: true });
 }
 
 export function isDirectedGraph(G: Graph): boolean {
@@ -324,11 +327,8 @@ export function loadGraphFromData(
   const G = createGraph(raw.directed === true);
 
   for (const [key, value] of Object.entries(raw.graph ?? {})) {
+    if (readOnly && (key === "read_only" || key === "graph_format")) continue;
     G.setAttribute(key, value);
-  }
-  if (readOnly) {
-    G.setAttribute("graph_format", own(raw as Record<string, unknown>, "graph_format") ? raw.graph_format : raw.graph?.graph_format);
-    G.setAttribute("read_only", true);
   }
 
   for (const node of raw.nodes ?? []) {
@@ -338,25 +338,9 @@ export function loadGraphFromData(
 
   for (const link of raw.links ?? raw.edges ?? []) {
     const { source, target, ...attrs } = link;
-    if (!G.hasNode(source) || !G.hasNode(target)) continue;
-    // F-0819-P1 (#1061): same-relation reverse duplicate on an undirected graph
-    // collapses to one edge; don't let it overwrite the first edge's _src/_tgt
-    // (which would flip caller/callee). First-seen direction wins.
-    if (!G.type.startsWith("directed") && G.hasEdge(source, target)) {
-      const existing = G.getEdgeAttributes(source, target) as Record<string, unknown>;
-      if (
-        existing.relation === (attrs as Record<string, unknown>).relation &&
-        existing._src === target &&
-        existing._tgt === source
-      ) {
-        continue;
-      }
-    }
-    try {
-      G.mergeEdge(source, target, attrs);
-    } catch {
-      /* ignore duplicate merge failures */
-    }
+    const { src, tgt } = assertionIdentityOf(source, target, attrs);
+    if (!G.hasNode(src) || !G.hasNode(tgt)) continue;
+    upsertRelationEdge(G, source, target, { ...attrs, evidence_observations: legacyObservationFromRawLink(link) });
   }
 
   if (raw.hyperedges && raw.hyperedges.length > 0) {
@@ -364,6 +348,10 @@ export function loadGraphFromData(
   }
 
   // Persisted cursor pins are not a live authorization/freshness proof.
+  if (readOnly) {
+    G.setAttribute("graph_format", own(raw as Record<string, unknown>, "graph_format") ? raw.graph_format : raw.graph?.graph_format);
+    G.setAttribute("read_only", true);
+  }
   // Every reload uses the same mandatory gate as reports and exports.
   enforceMemoryFreshnessForSurface(G, options?.memoryHighWaterCursor);
   return G;
@@ -378,18 +366,20 @@ export function serializeGraph(G: Graph): SerializedGraphData {
 
   const links: Array<Record<string, unknown> & { source: string; target: string }> = [];
   G.forEachEdge((_edge, attrs, source, target) => {
-    links.push({ source, target, ...attrs });
+    links.push(graphJsonLink(source, target, attrs) as Record<string, unknown> & { source: string; target: string });
   });
 
   const graph = G.getAttributes();
   const hyperedges = G.getAttribute("hyperedges") as Array<Record<string, unknown>> | undefined;
 
   return {
+    graph_format: GRAPH_FORMAT_VERSION,
+    topology_signature: topologySignatureFromRows(nodes, links),
     directed: isDirectedGraph(G),
-    multigraph: false,
+    multigraph: true,
     graph,
-    nodes,
-    links,
+    nodes: nodes.sort((a, b) => compare(a.id, b.id)).map(deepSortKeys),
+    links: links.sort(compareLinkRows),
     ...(hyperedges && hyperedges.length > 0 ? { hyperedges } : {}),
   };
 }
@@ -408,12 +398,9 @@ export function toUndirectedGraph(G: Graph): Graph {
   });
 
   G.forEachEdge((_edge, attrs, source, target) => {
-    if (!copy.hasNode(source) || !copy.hasNode(target)) return;
-    try {
-      copy.mergeEdge(source, target, attrs);
-    } catch {
-      /* ignore duplicate merge failures */
-    }
+    const { src, tgt } = assertionIdentityOf(source, target, attrs);
+    if (!copy.hasNode(src) || !copy.hasNode(tgt)) return;
+    upsertRelationEdge(copy, source, target, attrs);
   });
 
   return copy;

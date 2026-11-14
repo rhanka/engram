@@ -1,3 +1,4 @@
+import { assertionIdentityOf, edgeKey } from "../graph.js";
 import { assertSupportedGraphFormat } from "../graph.js";
 import { mirrorObservationWarnings } from "./mirror-diagnostics.js";
 
@@ -107,13 +108,12 @@ function computeTopologySignature(G: Graph): string {
 
   const edges: string[] = [];
   G.forEachEdge((_edgeKey, data, source, target) => {
-    const [src, tgt] = [source, target].sort();
-    const rel = (data as Record<string, unknown>).relation ?? "";
-    edges.push(`${src}\t${tgt}\t${String(rel)}`);
+    const { src, tgt, relation } = assertionIdentityOf(source, target, data);
+    edges.push(edgeKey(src, tgt, relation));
   });
   edges.sort();
 
-  return `n=${nodeIds.length};e=${edges.length};${nodeIds.join(",")}|${edges.join(";")}`;
+  return `topo/2;n=${nodeIds.length};e=${edges.length};${JSON.stringify(nodeIds)}|${edges.join(";")}`;
 }
 
 /** Derive a namespace from a target URI when the caller provides none. */
@@ -175,7 +175,7 @@ export async function createNeo4jGraphStore(
   config: Neo4jGraphStoreConfig,
   deps?: StoreTestDeps,
 ): Promise<Neo4jGraphStore> {
-  return createNeo4jGraphStoreBody(config, deps, false);
+  return createNeo4jGraphStoreBody(config, deps, true);
 }
 
 /** Diagnostics-enabled mirror body; registered production factory is unchanged. */

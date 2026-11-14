@@ -10,7 +10,7 @@ import { mergeExtractionsWithCitations } from "../src/extract-git.js";
 import { edge, extraction, node, rows, writers, fromRows, permutations, observation, expectObservations, expectFixedPoint, tempDir, type Row } from "./helpers/multi-links.js";
 
 describe("L0-E evidence", () => {
-  it.fails("tuple-key-NUL-collision-two-edges", () => {
+  it("tuple-key-NUL-collision-two-edges", () => {
     const ids = ["A\0B", "C", "A", "B\0C", "a|b", "a,b", "é", "e\u0301", "\ud800"];
     const emissions = [
       edge({ source: ids[0], target: ids[1], source_location: "N1" }),
@@ -84,7 +84,7 @@ describe("L0-E evidence", () => {
     }
   });
 
-  it.fails("merge-associativity-threeway-all-permutations", () => {
+  it("merge-associativity-threeway-all-permutations", () => {
     const emissions = [edge({ confidence: "AMBIGUOUS", custom: "A" }), edge({ confidence: "EXTRACTED", custom: "B" }), edge({ confidence: "AMBIGUOUS", custom: "C" })];
     const expected = [observation(emissions[0]), observation(emissions[1])];
     let canonical: string | undefined;
@@ -118,7 +118,7 @@ describe("L0-E evidence", () => {
     ["bbox-region-distinct-stable-keys", [{ bbox: [0, 0, 1, 1] }, { region: [0, 0, 1, 1] }, { bbox: [0, 0, 1, 1], region: [0, 0, 1, 1] }].map(c => edge({ citations: [{ source_file: "f.ts", ...c }] }))],
   ];
   for (const [name, emissions] of persistenceCases) {
-    it.fails(name, () => {
+    it(name, () => {
       for (const scope of ["cross-document", "per-source-file"] as const) {
         const sequences = name === "bbox-region-distinct-stable-keys" ? permutations(emissions) : [emissions, [...emissions].reverse()];
         for (const seq of sequences) {
@@ -146,7 +146,7 @@ describe("L0-E evidence", () => {
     expect(key({ b: 2, a: 1 })).toBe(key({ a: 1, b: 2 }));
   });
 
-  it.fails("first-insert-fixed-point-and-serializer-parity", () => {
+  it("first-insert-fixed-point-and-serializer-parity", () => {
     const emissions = [edge({ citations: [{ quote: "é", source_file: "f.ts" }] }), edge({ citations: [{ source_file: "f.ts", quote: "e\u0301" }] })];
     for (const e of emissions) {
       const once = fromRows([e]);
@@ -174,7 +174,7 @@ describe("L0-E evidence", () => {
     ["M1-nan-neg-infinity-nested-citation-rejected", [{ confidence_score: NaN }, { confidence_score: -Infinity }, { citations: [{ source_file: "f.ts", confidence_score: Infinity }] }, { citations: [{ source_file: "f.ts", region: [0, NaN, 1, 1] }] }]],
   ] as Array<[string, Row[]]>) {
     invalid.forEach((attrs, index) => describe("wire-domain variant " + name + "/" + index, () => {
-      it.fails(name, () => {
+      it(name, () => {
         const destination = join(tempDir(), "graph.json");
         toJson(fromRows([edge({ source_location: "accepted", confidence_score: null })]), new Map(), destination);
         const before = readFileSync(destination, "utf8");
@@ -188,7 +188,7 @@ describe("L0-E evidence", () => {
     }));
   }
 
-  it.fails("M1-finite-null-legacy-and-lone-surrogate-retained", () => {
+  it("M1-finite-null-legacy-and-lone-surrogate-retained", () => {
     for (const attrs of [{ confidence_score: 0.5 }, { confidence_score: null }, { source_file: "bad\ud800.ts", citations: [{ quote: "\udfff" }] }]) {
       const e = edge(attrs);
       for (const G of [fromRows([e]), core.loadGraphFromData({ nodes: [node("a"), node("b")], links: [e] })]) {

@@ -1,3 +1,4 @@
+import { compareCodeUnits } from "./graph-json-serialization.js";
 /**
  * Generate GRAPH_REPORT.md - the human-readable audit trail.
  */
@@ -45,7 +46,7 @@ export interface GenerateReportOptions {
 }
 
 function compareFlowCriticality(a: ReviewFlow, b: ReviewFlow): number {
-  return b.criticality - a.criticality || a.name.localeCompare(b.name);
+  return b.criticality - a.criticality || compareCodeUnits(a.name, b.name);
 }
 
 function normalizeFlows(input?: ReviewFlowArtifact | ReviewFlow[] | null): ReviewFlow[] {
@@ -243,7 +244,7 @@ export function generate(
   // report stays generic.
   if (edgeKindCounts.size > 0) {
     const breakdown = [...edgeKindCounts.entries()]
-      .sort(([ra, ca], [rb, cb]) => (cb - ca) || ra.localeCompare(rb))
+      .sort(([ra, ca], [rb, cb]) => (cb - ca) || compareCodeUnits(ra, rb))
       .map(([rel, count]) => `${rel}: ${count}`)
       .join(" · ");
     lines.push(`- Edge kinds: ${breakdown}`);

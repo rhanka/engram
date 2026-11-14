@@ -252,10 +252,7 @@ function legacyEndpointIncidences(nodes: Array<Record<string, unknown>>, edges: 
 }
 
 function hasDerivationMethod(edge: Record<string, unknown>, derivationMethod: string, multigraph: boolean): boolean {
-  if (!multigraph) {
-    const value = edge.derivation_method ?? edge.derivation_methods;
-    return typeof value === "string" ? value === derivationMethod : Array.isArray(value) && value.includes(derivationMethod);
-  }
+
   return edge.derivation_method === derivationMethod ||
     Array.isArray(edge.derivation_methods) && edge.derivation_methods.some(value => typeof value === "string" && value === derivationMethod);
 }
@@ -597,7 +594,7 @@ function evaluateGraph(target: NormalizedQualityTarget, graph: unknown | null, c
         checks,
         offenders.length > 0,
         `graph.min_degree_by_type.${type}`,
-        multigraph ? "node endpoint incidence (legacy degree; self-loop counts twice) by type must meet target" : "node degree by type must meet target",
+        "node endpoint incidence (legacy degree; self-loop counts twice) by type must meet target",
         { expected: `>= ${minDegree}`, actual: { count: offenders.length, examples: offenders.slice(0, 20) } },
       );
     }
@@ -617,7 +614,7 @@ function evaluateGraph(target: NormalizedQualityTarget, graph: unknown | null, c
         checks,
         offenders.length > 0,
         `graph.max_degree_by_type.${type}`,
-        multigraph ? "node endpoint incidence (legacy degree; self-loop counts twice) by type must not exceed target" : "node degree by type must not exceed target",
+        "node endpoint incidence (legacy degree; self-loop counts twice) by type must not exceed target",
         { expected: `<= ${maxDegree}`, actual: { count: offenders.length, examples: offenders.slice(0, 20) } },
       );
     }
@@ -638,7 +635,7 @@ function evaluateGraph(target: NormalizedQualityTarget, graph: unknown | null, c
           checks,
           offenders.length > 0,
           `graph.max_degree_by_type_and_derivation.${type}.${derivationMethod}`,
-          multigraph ? "node endpoint incidence (legacy degree; self-loop counts twice) by type and derivation method must not exceed target" : "node degree by type and derivation method must not exceed target",
+          "node endpoint incidence (legacy degree; self-loop counts twice) by type and derivation method must not exceed target",
           { expected: `<= ${maxDegree}`, actual: { count: offenders.length, examples: offenders.slice(0, 20) } },
         );
       }

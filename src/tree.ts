@@ -38,9 +38,7 @@ function sortedNeighbors(G: Graph, nodeId: string): TreeNeighbor[] {
     });
   });
   const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
-  return [...neighbors.values()].sort((a, b) => G.multi
-    ? compare(a.label, b.label) || compare(a.id, b.id)
-    : a.label.localeCompare(b.label) || a.id.localeCompare(b.id));
+  return [...neighbors.values()].sort((a, b) => compare(a.label, b.label) || compare(a.id, b.id));
 }
 
 export function renderTree(G: Graph, rootId: string, options: RenderTreeOptions = {}): string {

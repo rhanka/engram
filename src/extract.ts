@@ -7120,15 +7120,15 @@ export function _mergeSwiftExtensions(
   allNodes: GraphNode[],
   allEdges: GraphEdge[],
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
-  return mergeSwiftExtensionsBody(perFile, allNodes, allEdges, false);
+  return mergeSwiftExtensionsBody(perFile, allNodes, allEdges);
 }
 
-/** Unwired Swift remapper; distinct emissions at one locator all survive. */
+/** Shared Swift remapper; distinct emissions at one locator all survive. */
 export function _mergeSwiftExtensionsPrepared(perFile: ExtractionResult[], allNodes: GraphNode[], allEdges: GraphEdge[]): { nodes: GraphNode[]; edges: GraphEdge[] } {
-  return mergeSwiftExtensionsBody(perFile, allNodes, allEdges, true);
+  return mergeSwiftExtensionsBody(perFile, allNodes, allEdges);
 }
 
-function mergeSwiftExtensionsBody(perFile: ExtractionResult[], allNodes: GraphNode[], allEdges: GraphEdge[], preserveEmissions: boolean): { nodes: GraphNode[]; edges: GraphEdge[] } {
+function mergeSwiftExtensionsBody(perFile: ExtractionResult[], allNodes: GraphNode[], allEdges: GraphEdge[]): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const extensionNids = new Set<string>();
   const extensionLabels = new Map<string, string>();
   for (const result of perFile) {
@@ -7139,7 +7139,7 @@ function mergeSwiftExtensionsBody(perFile: ExtractionResult[], allNodes: GraphNo
   }
 
   if (extensionNids.size === 0) {
-    return { nodes: allNodes, edges: preserveEmissions ? remapRelationEmissions(allEdges, id => id) : allEdges };
+    return { nodes: allNodes, edges: remapRelationEmissions(allEdges, id => id) };
   }
 
   const labelToCanonical = new Map<string, string[]>();
@@ -7164,31 +7164,11 @@ function mergeSwiftExtensionsBody(perFile: ExtractionResult[], allNodes: GraphNo
   }
 
   if (remap.size === 0) {
-    return { nodes: allNodes, edges: preserveEmissions ? remapRelationEmissions(allEdges, id => id) : allEdges };
+    return { nodes: allNodes, edges: remapRelationEmissions(allEdges, id => id) };
   }
 
   const remappedNodes = allNodes.filter((n) => !remap.has(n.id));
-  if (preserveEmissions) return { nodes: remappedNodes, edges: remapRelationEmissions(allEdges, id => remap.get(id) ?? id) };
-
-  // Each extension file's `contains` edge ends up pointing at the canonical
-  // type — multiple files containing the same node is the intended shape:
-  // the type owns the methods, the files own their slice. Self-loops are
-  // dropped (e.g. an in-file extension method whose call already pointed at
-  // the canonical type).
-  const rewritten: GraphEdge[] = [];
-  const seenKeys = new Set<string>();
-  for (const e of allEdges) {
-    const src = remap.get(e.source) ?? e.source;
-    const tgt = remap.get(e.target) ?? e.target;
-    if (src === tgt) continue;
-    const remapped: GraphEdge = { ...e, source: src, target: tgt };
-    const key = `${src}\0${tgt}\0${remapped.relation}\0${remapped.source_file ?? ""}\0${remapped.source_location ?? ""}`;
-    if (seenKeys.has(key)) continue;
-    seenKeys.add(key);
-    rewritten.push(remapped);
-  }
-
-  return { nodes: remappedNodes, edges: rewritten };
+  return { nodes: remappedNodes, edges: remapRelationEmissions(allEdges, id => remap.get(id) ?? id) };
 }
 
 /**

@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import type Graph from "graphology";
 import { replayRelationGraph } from "./relation-replay.js";
 
-/** Keyed graph-copy body for lot A; existing file merge keeps its old path. */
+/** Shared keyed graph-copy body used by the production file merger. */
 export function mergeGraphEdgesPrepared(target: Graph, source: Graph): void {
   replayRelationGraph(target, source);
 }
@@ -109,14 +109,7 @@ export function mergeGraphsFromFiles(options: MergeGraphsOptions): MergeGraphsRe
     graph.forEachNode((nodeId, attrs) => {
       merged.mergeNode(nodeId, attrs);
     });
-    graph.forEachEdge((_edge, attrs, source, target) => {
-      if (!merged.hasNode(source) || !merged.hasNode(target)) return;
-      try {
-        merged.mergeEdge(source, target, attrs);
-      } catch {
-        // Keep the first compatible edge if a duplicate merge collides.
-      }
-    });
+    mergeGraphEdgesPrepared(merged, graph);
   }
 
   const hyperedges = mergeHyperedgesFromGraphs(graphs);

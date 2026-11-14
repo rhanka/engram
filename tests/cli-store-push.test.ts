@@ -35,8 +35,10 @@ function freshState(): FakePgState {
   return { queries: [], metaRows: [], groupRows: [], poolEnded: false };
 }
 
-function answer(state: FakePgState, text: string) {
+function answer(state: FakePgState, text: string, params?: unknown[]) {
   const upper = text.toUpperCase();
+  // The v2 contribution insert uses RETURNING to distinguish creation.
+  if (text.includes("INSERT INTO") && text.includes("graph_edges") && upper.includes("RETURNING")) return { rows: [{ source_id: params?.[1] }], rowCount: 1 };
   if (text.includes("graph_meta") && upper.includes("SELECT")) {
     return { rows: state.metaRows, rowCount: state.metaRows.length };
   }
@@ -51,13 +53,13 @@ function makeFakePgModule(state: FakePgState) {
     constructor(_config?: Record<string, unknown>) {}
     query(text: string, params?: unknown[]) {
       state.queries.push({ text, params });
-      return Promise.resolve(answer(state, text));
+      return Promise.resolve(answer(state, text, params));
     }
     connect() {
       const client = {
         query: (text: string, params?: unknown[]) => {
           state.queries.push({ text, params });
-          return Promise.resolve(answer(state, text));
+          return Promise.resolve(answer(state, text, params));
         },
         release() {
           /* no-op */

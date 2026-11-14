@@ -942,16 +942,16 @@ describe("R2-M1 — topology degree through Studio adapters", () => {
         expect(labelsById(payload(true))).toEqual(baseline);
       });
 
-      it.each([undefined, false])("should retain legacy degree behavior for multigraph=%s", (flag) => {
+      it.each([undefined, false])("should use neighbour degree without an explicit multigraph flag (%s)", (flag) => {
         const graph = { ...fixture(true), ...(flag === undefined ? {} : { multigraph: flag }) };
         const adapted = adapt(graph);
         const scene = makeScene(adapted);
         expect(adapted.multigraph).not.toBe(true);
         if (flag === undefined) expect(adapted).not.toHaveProperty("multigraph");
         expect(scene).not.toHaveProperty("multigraph");
-        expect(weightsById(scene).a).toBeGreaterThan(weightsById(scene).c);
-        expect(weightsById(scene).a).toBe(23.04);
-        expect(weightsById(scene).c).toBe(7.5625);
+        expect(weightsById(scene).a).toBeLessThan(weightsById(scene).c);
+        expect(weightsById(scene).a).toBe(7.5625);
+        expect(weightsById(scene).c).toBe(23.04);
       });
 
       it("should retain opt-in when the input graph is empty", () => {

@@ -276,7 +276,7 @@ describe("L0-T cluster",()=>{
   expect(mlMembership(cluster(mlProjection("sum")))).toEqual(mlWeighted.sum);
   expect(mlWeighted.sum).not.toEqual(mlWeighted.max);
  });
- it.fails("cluster-golden-max-not-sum",()=>{
+ it("cluster-golden-max-not-sum",()=>{
   const G=mlGraph(mlWeighted.edges,mlWeighted.nodes);
   expect(mlMembership(cluster(G))).toEqual(mlWeighted.max);
  });

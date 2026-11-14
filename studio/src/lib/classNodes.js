@@ -144,7 +144,7 @@ export function injectOntologyClassNodes(graph, classHierarchies, { levels = "le
   const nodeIds = new Set(entityIds);
   // Dedup synthetic edges by directional key so parallel injections collapse.
   const edgeKeys = new Set(
-    baseEdges.map((e) => `${e.source} ${e.target} ${e.relation ?? e.relation_type ?? ""}`),
+    baseEdges.map((e) => JSON.stringify([e.source, e.target, e.relation ?? e.relation_type ?? ""])),
   );
 
   const addedNodes = [];
@@ -152,7 +152,7 @@ export function injectOntologyClassNodes(graph, classHierarchies, { levels = "le
   const all = levels === "all";
 
   function pushEdge(source, target, relation, ontologyEdgeKind) {
-    const key = `${source} ${target} ${relation}`;
+    const key = JSON.stringify([source, target, relation]);
     if (edgeKeys.has(key)) return;
     edgeKeys.add(key);
     addedEdges.push({
@@ -426,8 +426,8 @@ export function applyGroupCollapse(
   const orderedEdges = [...baseEdges]
     .map((edge, index) => ({ edge, index }))
     .sort((a, b) => {
-      const ka = `${a.edge.source}|${a.edge.target}|${edgeRelation(a.edge)}`;
-      const kb = `${b.edge.source}|${b.edge.target}|${edgeRelation(b.edge)}`;
+      const ka = JSON.stringify([a.edge.source, a.edge.target, edgeRelation(a.edge)]);
+      const kb = JSON.stringify([b.edge.source, b.edge.target, edgeRelation(b.edge)]);
       return ka < kb ? -1 : ka > kb ? 1 : a.index - b.index;
     });
 
@@ -447,7 +447,7 @@ export function applyGroupCollapse(
 
     const weak = edgeIsWeak(edge);
     const relation = edgeRelation(edge);
-    const key = `${source}|${target}|${relation}|${weak ? 1 : 0}`;
+    const key = JSON.stringify([source, target, relation, weak ? 1 : 0]);
     const existing = aggregated.get(key);
     if (existing) {
       existing.aggregate_count += 1;
@@ -478,8 +478,8 @@ export function applyGroupCollapse(
   });
   // Deterministic edge order for stable test snapshots.
   links.sort((a, b) => {
-    const ka = `${a.source}|${a.target}|${edgeRelation(a)}|${edgeIsWeak(a) ? 1 : 0}`;
-    const kb = `${b.source}|${b.target}|${edgeRelation(b)}|${edgeIsWeak(b) ? 1 : 0}`;
+    const ka = JSON.stringify([a.source, a.target, edgeRelation(a), edgeIsWeak(a) ? 1 : 0]);
+    const kb = JSON.stringify([b.source, b.target, edgeRelation(b), edgeIsWeak(b) ? 1 : 0]);
     return ka < kb ? -1 : ka > kb ? 1 : 0;
   });
 

@@ -293,13 +293,18 @@ function loadConfig(configPath: string | undefined): NormalizedProjectConfig | u
   return configPath ? loadProjectConfig(resolve(configPath)) : undefined;
 }
 
-function readGraphDocument(path: string, deps: GraphTimeSliceDeps): SerializedGraphData {
-  if (deps.readGraph) return deps.readGraph(path);
+function readGraphDocument(path: string, deps: GraphTimeSliceDeps, inspectOnly = false): SerializedGraphData {
+  if (deps.readGraph) {
+    const raw = deps.readGraph(path);
+    if (!inspectOnly) assertSupportedGraphFormat(raw as Record<string, unknown>, path);
+    return raw;
+  }
   assertGraphJsonFileSize(path, "read");
   const parsed: unknown = JSON.parse(readFileSync(path, "utf-8"));
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error(`graph file must contain a JSON object: ${path}`);
   }
+  if (!inspectOnly) assertSupportedGraphFormat(parsed as Record<string, unknown>, path);
   return parsed as SerializedGraphData;
 }
 
@@ -386,7 +391,7 @@ export function runGraphTimeSlice(
     throw new Error(`graph file not found: ${sourcePath}`);
   }
 
-  const source = readGraphDocument(sourcePath, deps);
+  const source = readGraphDocument(sourcePath, deps, !options.out);
   // Unknown formats remain inspectable without --out; every raw write is guarded.
   if (options.out) assertSupportedGraphFormat(source as Record<string, unknown>, sourcePath);
   const result = sliceGraphByTime(source, bounds);

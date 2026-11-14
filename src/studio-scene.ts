@@ -1,3 +1,4 @@
+import { compareCodeUnits } from "./graph-json-serialization.js";
 /**
  * Build-time studio scene preprocessor (ÉTAPE 1 — additive, parity-only).
  *
@@ -486,14 +487,7 @@ function computeDegrees(
   edges: StudioSceneGraphEdge[],
   multigraph: boolean,
 ): Map<string, number> {
-  if (!multigraph) {
-    const degree = new Map(nodes.map(node => [node.id, 0]));
-    for (const edge of edges) {
-      if (degree.has(edge.source)) degree.set(edge.source, degree.get(edge.source)! + 1);
-      if (degree.has(edge.target)) degree.set(edge.target, degree.get(edge.target)! + 1);
-    }
-    return degree;
-  }
+
   const neighbors = new Map<string, Set<string>>();
   for (const node of nodes) neighbors.set(node.id, new Set());
   for (const edge of edges) {
@@ -660,7 +654,7 @@ function communityStats(graph: StudioSceneGraphLike): {
       liveList.push({ key: String(key), count: rec.count, color: colorForGroup(rec.group ?? key) });
     }
   }
-  liveList.sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+  liveList.sort((a, b) => b.count - a.count || compareCodeUnits(a.key, b.key));
   const communityColors: Record<string, string> = {};
   for (const c of liveList) communityColors[c.key] = c.color;
   return { liveCount: liveList.length, communityColors };

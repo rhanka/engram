@@ -480,7 +480,6 @@ export function graphDiff(GOld: Graph, GNew: Graph): GraphDiffResult {
   }));
 
   function assertionKey(u: string, v: string, attrs: Record<string, unknown>): string {
-    if (!GOld.multi && !GNew.multi) return `${[u, v].sort().join(",")}:${(attrs.relation as string) ?? ""}`;
     const { src, tgt, relation } = assertionIdentityOf(u, v, attrs);
     return edgeKey(src, tgt, relation);
   }
@@ -500,9 +499,7 @@ export function graphDiff(GOld: Graph, GNew: Graph): GraphDiffResult {
   const newEdgesList: GraphDiffResult["new_edges"] = [];
   GNew.forEachEdge((edge, data, u, v) => {
     if (addedEdgeKeys.has(assertionKey(u, v, data))) {
-      const { src, tgt, relation } = GOld.multi || GNew.multi
-        ? assertionIdentityOf(u, v, data)
-        : { src: u, tgt: v, relation: (data.relation as string) ?? "" };
+      const { src, tgt, relation } = assertionIdentityOf(u, v, data);
       newEdgesList.push({
         source: src, target: tgt, relation,
         confidence: (data.confidence as string) ?? "",
@@ -513,9 +510,7 @@ export function graphDiff(GOld: Graph, GNew: Graph): GraphDiffResult {
   const removedEdgesList: GraphDiffResult["removed_edges"] = [];
   GOld.forEachEdge((edge, data, u, v) => {
     if (removedEdgeKeys.has(assertionKey(u, v, data))) {
-      const { src, tgt, relation } = GOld.multi || GNew.multi
-        ? assertionIdentityOf(u, v, data)
-        : { src: u, tgt: v, relation: (data.relation as string) ?? "" };
+      const { src, tgt, relation } = assertionIdentityOf(u, v, data);
       removedEdgesList.push({
         source: src, target: tgt, relation,
         confidence: (data.confidence as string) ?? "",

@@ -679,7 +679,7 @@ describe.skipIf(!process.env.GRAPHIFY_TEST_NEO4J_URI)(
 
 import { edge as mlEdge, multiGraph as mlGraph, observation as mlObservation } from "./helpers/multi-links.js";
 describe("L0-S mirror singleton diagnostics",()=>{
- it.fails("M3-two-singleton-pushes-each-warn",async()=>{
+ it("M3-two-singleton-pushes-each-warn",async()=>{
 
   const state:InMemoryNeo4jState={statements:[],allStatements:[],closed:false,driverClosed:false};
   const store=await makeNeo4jStore(state);

@@ -9,6 +9,7 @@ import { loadGraphFromData, serializeGraph } from "../../src/graph.js";
 import type { Extraction, GraphEdge, GraphNode } from "../../src/types.js";
 
 export type Row = Record<string, any>;
+type FreshnessOptions = { memoryHighWaterCursor?: string };
 const directories: string[] = [];
 export function tempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "multi-links-L0-"));
@@ -29,13 +30,13 @@ export function permutations<T>(values: T[]): T[][] {
   return values.length ? values.flatMap((v, i) => permutations(values.filter((_, j) => i !== j)).map(tail => [v, ...tail])) : [[]];
 }
 export const writers = ["serializeGraph", "toJson"] as const;
-export function writeGraph(G: Graph, writer: typeof writers[number]): Row {
+export function writeGraph(G: Graph, writer: typeof writers[number], options?: FreshnessOptions): Row {
   if (writer === "serializeGraph") return JSON.parse(JSON.stringify(serializeGraph(G)));
   const path = join(tempDir(), "graph.json");
-  toJson(G, new Map(), path);
+  toJson(G, new Map(), path, options);
   return JSON.parse(readFileSync(path, "utf8"));
 }
-export function rows(G: Graph, writer: typeof writers[number] = "serializeGraph"): Row[] { return writeGraph(G, writer).links; }
+export function rows(G: Graph, writer: typeof writers[number] = "serializeGraph", options?: FreshnessOptions): Row[] { return writeGraph(G, writer, options).links; }
 export function fromRows(links: Row[], options: Row = {}, nodes = [node("a"), node("b")]): Graph {
   return buildFromJson(extraction(links as GraphEdge[], nodes), options);
 }
@@ -46,14 +47,14 @@ export function multiGraph(links: Row[], nodes = [node("a"), node("b")], directe
   for (const { source, target, ...attrs } of links) G.addEdgeWithKey(JSON.stringify([source, target, attrs.relation]), source, target, { ...attrs, _src: source, _tgt: target });
   return G;
 }
-export function expectFixedPoint(G: Graph, replay: Row[] = []): void {
+export function expectFixedPoint(G: Graph, replay: Row[] = [], options?: FreshnessOptions): void {
   const byWriter = writers.map(writer => {
-    const data = writeGraph(G, writer);
-    const reloaded = loadGraphFromData(data);
-    expect(JSON.stringify(rows(reloaded, writer))).toBe(JSON.stringify(data.links));
+    const data = writeGraph(G, writer, options);
+    const reloaded = loadGraphFromData(data, options);
+    expect(JSON.stringify(rows(reloaded, writer, options))).toBe(JSON.stringify(data.links));
     if (replay.length) {
       const rebuilt = fromRows([...data.links, ...replay], {}, (data.nodes as Row[]).map(n => node(n.id, n)));
-      expect(JSON.stringify(rows(rebuilt, writer))).toBe(JSON.stringify(data.links));
+      expect(JSON.stringify(rows(rebuilt, writer, options))).toBe(JSON.stringify(data.links));
     }
     return data.links;
   });

@@ -298,7 +298,7 @@ import { buildFromJson as mlBuild } from "../src/build.js";
 import { mergeExtractionsWithCitations as mlBatch } from "../src/extract-git.js";
 import { edge as mlEdge, extraction as mlExtraction, rows as mlRows, expectFixedPoint as mlFixed, expectObservations as mlObs, observation as mlObservation } from "./helpers/multi-links.js";
 describe("L0-C portable",()=>{
- it.fails("R4-makeExtractionPortable-between-batch-and-build-noop-on-captured",()=>{
+ it("R4-makeExtractionPortable-between-batch-and-build-noop-on-captured",()=>{
   const fresh=mlExtraction([mlEdge({source_file:"/repo/f.ts",source_location:"L1"})]);
   const captured=mlBatch([fresh]).extraction;
   expect(captured.edges[0].evidence_observations).toEqual([mlObservation(fresh.edges[0])]);
@@ -315,7 +315,7 @@ describe("L0-C portable",()=>{
   expect(mlRows(mlBuild(portable))[0].source_file).toBe(mlRows(mlBuild(fresh,{root:"/repo"}))[0].source_file);
   expect(fresh.edges[0].source_file).toBe("/repo/f.ts");
  });
- it.fails("M2-portable-reload-fixed-point",()=>{
+ it("M2-portable-reload-fixed-point",()=>{
   const rec={source_file:"/repo/f.ts",confidence:"EXTRACTED",source_location:"L1"};
   const G=mlLoad({nodes:[{id:"a"},{id:"b"}],links:[{source:"a",target:"b",relation:"calls",source_file:"/repo/f.ts",evidence_observations:[rec]}]});
   const projected=mlPortable(G,"/repo");

@@ -54,6 +54,49 @@ async function harness(backend: string, insertRace = false) {
 const contribution = (source_location: string, attrs: Row = {}) => edge({ t: 1, source_location, evidence_refs: [source_location], ...attrs });
 const live = async (store: any) => (await store.queryWindow(0, 10)).edges as Row[];
 
+it("chunks public PostgreSQL replace pushes below 65,535 bind parameters even with an oversized batchSize", async () => {
+  const calls: { text: string; params: unknown[] }[] = [];
+  // Driver port for the bind protocol boundary; row/evidence persistence is
+  // exercised by the stateful contribution tests below.
+  class Pool {
+    async query(text: string, params: unknown[] = []) {
+      calls.push({ text, params });
+      return { rows: [], rowCount: 0 };
+    }
+    async connect() { return { query: this.query.bind(this), release() {} }; }
+    async end() {}
+  }
+  const count = 10_923; // Six columns per row: one row beyond the driver limit.
+  const G = multiGraph([]);
+  for (let i = 0; i < count; i++) G.addNode("n" + i);
+  for (let i = 0; i < count; i++) {
+    const attrs = contribution("L" + i, { relation: "r" + i });
+    G.addEdgeWithKey("e" + i, "a", "b", { ...attrs, _src: "a", _tgt: "b" });
+  }
+  const store = await postgres.createPostgresGraphStorePrepared(
+    { citySlug: "p2", target: tempDir(), connectionString: "postgres://fixture/unused" },
+    { driverModule: { Pool } },
+  );
+  try {
+    const result = await store.pushGraph(G, new Map(), { mode: "replace", batchSize: 150_000 });
+    expect(result).toMatchObject({ nodes: count + 2, edges: count });
+    for (const call of calls) expect(call.params.length).toBeLessThanOrEqual(65_535);
+    for (const [table, expected] of [["graph_nodes", count + 2], ["graph_edges", count]] as const) {
+      const batches = calls.filter(call => call.text.startsWith("INSERT INTO " + table + " "));
+      expect(batches).toHaveLength(2);
+      expect(batches.reduce((total, call) => total + call.params.length / 6, 0)).toBe(expected);
+      const ids = batches.flatMap(call => call.params.filter((_, i) => i % 6 === (table === "graph_nodes" ? 1 : 3)));
+      expect(new Set(ids).size).toBe(expected);
+      for (const batch of batches) {
+        expect((batch.text.match(/\$\d+/g) ?? []).length).toBe(batch.params.length);
+        if (table === "graph_edges") for (let i = 5; i < batch.params.length; i += 6) {
+          expect(JSON.parse(batch.params[i] as string).evidence_observations).toHaveLength(1);
+        }
+      }
+    }
+  } finally { await store.close(); }
+});
+
 for (const existing of [false, true]) it(`serializes overlapping SQLite workers on an ${existing ? "existing" : "absent"} key`, async () => {
   const target = join(tempDir(), "overlap.db");
   const driverModule = await sqliteDriver();

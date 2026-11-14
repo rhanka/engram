@@ -55,7 +55,7 @@ describe("P2 batch edge delegation", () => {
     const out = merge(inputs.map(e => extraction([e]))).extraction.edges[0];
     expect(out.evidence_observations?.map(e => e.source_location)).toEqual(["L10", "L44"]);
     expect(merge([extraction([inputs[0]])]).extraction.edges[0].evidence_observations).toHaveLength(1);
-    expect(batch.mergeExtractionsWithCitations([extraction(inputs)]).extraction.edges[0].evidence_observations).toBeUndefined();
+    expect(batch.mergeExtractionsWithCitations([extraction(inputs)]).extraction.edges[0].evidence_observations).toEqual(out.evidence_observations);
   });
   it("retains per-file scope and residual conflict diagnostics without resolving evidence twice", () => {
     const inputs = [edge({ source_file: "a.ts", status: "z", source_location: "L1" }), edge({ source_file: "b.ts", status: "a", source_location: "L2" })];
@@ -127,6 +127,6 @@ describe("P2 batch context and extraction portability", () => {
     const projected = (portability as Row).makeExtractionPortablePrepared(captured, "/repo");
     expect(JSON.stringify(projected.edges)).toBe(before);
     expect((portability as Row).makeExtractionPortablePrepared(extraction([edge({ source_file: "src\\f.ts" })]), "/repo").edges[0].source_file).toBe("src/f.ts");
-    expect(portability.makeExtractionPortable(captured, "/repo").edges[0].source_file).toBe("f.ts");
+    expect(portability.makeExtractionPortable(captured, "/repo").edges[0].source_file).toBe("/repo/f.ts");
   });
 });

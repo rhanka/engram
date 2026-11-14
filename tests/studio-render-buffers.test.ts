@@ -92,7 +92,7 @@ const mlSeven=[...[0,1,2,3].map(i=>({source:"a",target:"b",relation:"r"+i,confid
 describe("L0-T studio lanes",()=>{
  for(const surface of ["node","browser"]) describe(surface,()=>{
   const build=(edges:any[],off=false)=>surface==="node"?buildStudioRenderBuffers({nodes:mlSceneNodes,edges} as never,{edgeCurvature:off?0:0.15}):mlBrowser({nodes:mlSceneNodes,edges},{curvedLinks:!off});
-  it.fails("studio-lanes-4f3r-distinct-curved-off-zero",()=>{
+  it("studio-lanes-4f3r-distinct-curved-off-zero",()=>{
    let canonical:string|undefined;
    for(const edges of [mlSeven,[...mlSeven].reverse(),[...mlSeven.slice(3),...mlSeven.slice(0,3)]]){
     const payload=build(edges),curves=Array.from(payload.style.edgeCurvatures);
