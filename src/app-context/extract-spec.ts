@@ -24,11 +24,12 @@ import { basename, extname, isAbsolute, relative, resolve, sep } from "node:path
 import { isAlias, isMap, isPair, isScalar, isSeq, LineCounter, parseDocument } from "yaml";
 
 import { extractMarkdown } from "../extract.js";
+import { assertionIdentityOf, edgeKey, mergeEdgeEvidenceAll, prepareFreshExtraction } from "../graph.js";
+import { compareLinkRows } from "../graph-json-serialization.js";
 import { canonicalBytes } from "../ontology-guardian/canonical.js";
 import type { Extraction, GraphEdge, GraphNode, OntologyCitation, OntologyEvidenceRecord, OntologyStatus } from "../types.js";
 import { appContextNodeId } from "./node-id.js";
 import type {
-  AppContextCitation,
   AppContextDataDialect,
   AppContextDiagnostic,
   AppContextDiagnosticCandidate,
@@ -1348,36 +1349,35 @@ function resolveSectionInSpec(rawSectionQuery: string, sections: readonly Sectio
   return { status: "ambiguous", candidates: aliasMatches.map(toCand).sort(compareCandidates) };
 }
 
-function citationKey(c: AppContextCitation): string {
-  return c.citation_kind === "track_cli_projection"
-    ? canonicalBytes(["track", c.source_file, c.line_start, c.line_end, c.json_pointer, c.commit])
-    : canonicalBytes(["file", c.source_file, c.line_start, c.line_end, c.commit]);
-}
-
+/** Read-only compatibility projection; only extraction.edges feeds graph intake.
+ * @throws {RelationEdgeInvariantError} when an observation is outside the JSON wire domain. */
 export function buildAppContextRelationRecords(edges: readonly GraphEdge[]): AppContextRelationRecord[] {
-  const byKey = new Map<string, { source: string; target: string; relation: string; derivationMethods: Set<string>; evidenceRefs: Set<string>; citationsByKey: Map<string, AppContextCitation> }>();
-  for (const edge of edges) {
-    const key = canonicalBytes([edge.source, edge.target, edge.relation]);
+  const prepared = prepareFreshExtraction({ nodes: [], edges: [...edges], input_tokens: 0, output_tokens: 0 });
+  const byKey = new Map<string, { identity: ReturnType<typeof assertionIdentityOf>; emissions: GraphEdge[] }>();
+  for (const edge of prepared.edges) {
+    const identity = assertionIdentityOf(edge.source, edge.target, edge);
+    const key = edgeKey(identity.src, identity.tgt, identity.relation);
     let group = byKey.get(key);
     if (!group) {
-      group = { source: edge.source, target: edge.target, relation: edge.relation, derivationMethods: new Set<string>(), evidenceRefs: new Set<string>(), citationsByKey: new Map<string, AppContextCitation>() };
+      group = { identity, emissions: [] };
       byKey.set(key, group);
     }
-    if (typeof edge.derivation_method === "string" && edge.derivation_method.trim()) group.derivationMethods.add(edge.derivation_method.trim());
-    for (const ref of edge.evidence_refs ?? []) if (typeof ref === "string" && ref.trim()) group.evidenceRefs.add(ref.trim());
-    for (const cit of (edge.citations ?? []) as unknown as AppContextCitation[]) if (cit && typeof cit.source_file === "string") group.citationsByKey.set(citationKey(cit), cit);
+    group.emissions.push(edge);
   }
   return [...byKey.values()]
-    .map((g) => ({
-      source: g.source,
-      target: g.target,
-      relation: g.relation,
-      confidence: "EXTRACTED" as const,
-      derivation_methods: [...g.derivationMethods].sort(),
-      evidence_refs: [...g.evidenceRefs].sort(),
-      citations: [...g.citationsByKey.values()],
-    }))
-    .sort((a, b) => (a.source !== b.source ? (a.source < b.source ? -1 : 1) : a.target !== b.target ? (a.target < b.target ? -1 : 1) : a.relation < b.relation ? -1 : a.relation > b.relation ? 1 : 0));
+    .map(({ identity, emissions }) => {
+      const attrs = mergeEdgeEvidenceAll(null, emissions);
+      return {
+        source: identity.src,
+        target: identity.tgt,
+        relation: identity.relation,
+        ...(typeof attrs.confidence === "string" ? { confidence: attrs.confidence } : {}),
+        derivation_methods: (attrs.derivation_methods ?? []) as string[],
+        evidence_refs: (attrs.evidence_refs ?? []) as string[],
+        citations: (attrs.citations ?? []) as OntologyCitation[],
+      };
+    })
+    .sort(compareLinkRows);
 }
 
 export async function extractSpecs(options: ExtractSpecsOptions): Promise<SpecExtractionResult> {
