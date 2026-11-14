@@ -2,7 +2,7 @@
   "schema_version": 1,
   "publisher": {
     "packageName": "@sentropic/engram",
-    "packageVersion": "0.27.0"
+    "packageVersion": "0.28.0"
   },
   "entryVersion": "1.0.0",
   "manifestVersion": "1.0.0",
@@ -147,9 +147,9 @@
       "sha256": "db682617520ebe117128ed2d64587f2a393ccc1e73dd360cbf8bb3a6bb382c3d"
     }
   ],
-  "entryJcsSha256": "d1693378c5a650bcbc813fef286dd32db783bb1326960e0aa81f208f4758bd79",
-  "tarballSha256": "0d4fc2843b172390944f1649c3481a3748eb759da1a32504aa00c7b4986ef4b1",
-  "tarballIntegrity": "sha512-+iIoB5nDMAataPPychwYsLzGwQOeAL7HKuQzhwsmgnCNep1MZ9ALVrOtf0ZmIgbUhKBalz9NU9Vijc6oir9MOw==",
+  "entryJcsSha256": "e76d460bee635c451dbc6adcd6fd662f3199414b1ca1450cc1ab830f74af4e8e",
+  "tarballSha256": "0b4164740e34faeb9ac4cd946aa3351de811bcd30bbc77a6a4cb2e9f398023dc",
+  "tarballIntegrity": "sha512-4zphStbwbkXwZUXTWl1upzowIBf4FzsA30IdN4/5j/o6R8pyKZ9qelXW63lZxqm8ACBW5HhF2z08cQNd176Btg==",
   "baseManifestSha256": "a0c484fecac059254a33f92c966070d85f690a4835e97cac814510c6124d542b",
   "effectiveManifestSha256": "a88ae7f11e96475422674fb28b05966c64ba1e71b950e3cc78327cebc34c1ade",
   "schemas": [
@@ -205,8 +205,8 @@
     "sha256": "555c3d979039b320a434fab3f3f9cfa5cbced7f4593c5beafc0647640d2d567f"
   },
   "executableProvenance": {
-    "sourceHead": "b580e1bb8015aa9265c9a3c879d7fa84dcb8f30c",
-    "codeArchiveSha256": "0d4fc2843b172390944f1649c3481a3748eb759da1a32504aa00c7b4986ef4b1",
-    "dependencyClosureSha256": "e223545e9322fa416d2fe707d64af39018242ef8ba163ba8844599803d57602b"
+    "sourceHead": "b8886a48822814c533bbaac491d6f0ac0d4475ff",
+    "codeArchiveSha256": "0b4164740e34faeb9ac4cd946aa3351de811bcd30bbc77a6a4cb2e9f398023dc",
+    "dependencyClosureSha256": "07ac426f9c8fd7293278cf413f55b0061be8139f9ec967c398e0e03364ffceea"
   }
 }
