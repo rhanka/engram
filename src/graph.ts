@@ -87,13 +87,13 @@ export function prepareFreshExtraction(extraction: Extraction, options: { root?:
 function cloneObservationValue(value: unknown, active = new Set<object>()): unknown {
   if (value === null || typeof value === "string" || typeof value === "boolean") return value;
   if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new Error("evidence observation: non-finite number");
+    if (!Number.isFinite(value)) throw new RelationEdgeInvariantError("evidence observation: non-finite number");
     return value === 0 ? 0 : value;
   }
-  if (typeof value !== "object") throw new Error(`evidence observation: unsupported ${typeof value}`);
-  if (active.has(value)) throw new Error("evidence observation: cycle");
-  if (!Array.isArray(value) && ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new Error("evidence observation: non-plain object");
-  if (Object.getOwnPropertySymbols(value).length) throw new Error("evidence observation: symbol key");
+  if (typeof value !== "object") throw new RelationEdgeInvariantError(`evidence observation: unsupported ${typeof value}`);
+  if (active.has(value)) throw new RelationEdgeInvariantError("evidence observation: cycle");
+  if (!Array.isArray(value) && ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new RelationEdgeInvariantError("evidence observation: non-plain object");
+  if (Object.getOwnPropertySymbols(value).length) throw new RelationEdgeInvariantError("evidence observation: symbol key");
   active.add(value);
   const result = Array.isArray(value)
     ? Array.from(value, member => member === undefined ? null : cloneObservationValue(member, active))
