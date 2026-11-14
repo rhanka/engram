@@ -4,6 +4,20 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.28.0 (2026-11-14)
+
+- **Multi-links: every distinct relation between two elements is kept.** Each directed `(source, target, relation)` assertion has its own link; repeating it unions a verbatim observation set instead of overwriting it. Parallel and reciprocal relations survive build, merge, watcher and serialization (`graph_format: "engram-graph/2"`, `multigraph: true`).
+- **One-way door: upgrade every writer together.** Upgrade the runtime, the Git merge driver and installed skill copies together on every branch that exchanges graph files; an older writer can collapse parallel links when rewriting a v2 file. Keep a backup before the first v2 write. Legacy graphs still load.
+- **`degree`, `edgeCount` and legacy incidence.** `degree` counts distinct neighbours; `edgeCount` counts incident links (a self-loop once); QA degree thresholds keep legacy endpoint incidence.
+- **Rebuild persisted layout degrees** on the next replace-mode PostgreSQL push; append and merge pushes do not rewrite them.
+- **Non-finite evidence is refused before mutation** (`NaN`, `±Infinity`, `1e400`), including watcher replay: a refused batch leaves the graph untouched.
+- **Captured locators persist verbatim**, and direct and batch intake capture the same observation for the same context.
+- **Legacy rows without `confidence` stay without it**; no `EXTRACTED` observation is invented.
+- **Temporal slices refuse unknown graph formats** before any write, `--force` included.
+- **Spanner and Neo4j mirrors keep derived scalars only** and report « observations not persisted » with the affected edge count.
+- **SQLite/PostgreSQL append capability version 2** (`evidenceUnion: true`): same-key appends union observations transactionally.
+- Measured on this repository: links +0.14 % with no missing assertion; at most 18 observations per link (P99 2); graph bytes +28.7 %.
+
 ## 0.27.0 (2026-11-13)
 
 - **Registry records are never merged by label.** `deduplicateByLabel` no longer merges two nodes whose registry identities (`registry_record_id`, `registry_id`, `registry_partition`) are both present and differ, so registry-backed ontologies keep every record.
