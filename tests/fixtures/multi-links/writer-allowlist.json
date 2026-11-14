@@ -4084,5 +4084,59 @@
     "fingerprint": "32698c0f4c364875a6e83ae415c4019d3e3da0d1bd182232fdfde2232f141d73",
     "reason": "Test-only raw topology counter fixture; never a production capture or stored record writer",
     "count": 1
+  },
+  {
+    "file": "src/app-context/extract-track.ts",
+    "line": 491,
+    "owner": "linkTrackInWorkpackages",
+    "kind": "edge-row-constructor",
+    "fingerprint": "7313d2372328f584179992878c6177c0c7214d8e704db7a77215e90a0b993257",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/app-context/extract-track.ts",
+    "line": 627,
+    "owner": "linkExplicitTrackDeclarations",
+    "kind": "edge-row-constructor",
+    "fingerprint": "623f638c7d4a4d51ff1ea71b431afde3501037d3ffb1a61a3d75e8183669fa5d",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/app-context/extract-track.ts",
+    "line": 659,
+    "owner": "linkExplicitTrackDeclarations",
+    "kind": "edge-row-constructor",
+    "fingerprint": "f2ce9b78943b270aa622580998aea7c39d2c95e7baefcd49c6504b37aa845d9f",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/app-context/extract-track.ts",
+    "line": 838,
+    "owner": "linkSpecPathMentions",
+    "kind": "edge-row-constructor",
+    "fingerprint": "ea0e40791d3ad0f67ff082fec9a8c6f0daa275f31ccaf7138bff2cd5b32947df",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/app-context/extract-track.ts",
+    "line": 899,
+    "owner": "linkSpecPathMentions",
+    "kind": "edge-row-constructor",
+    "fingerprint": "e0ac98c6188bd82d759987e513694b483e7fb5a15b668aa9466227f446116d99",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
+    "file": "src/app-context/extract-track.ts",
+    "line": 1027,
+    "owner": "writeFileNoFollow",
+    "kind": "raw-graph-writer",
+    "fingerprint": "a4852fa90550aa51b5b7093d527d9fc9c9fb0d634915e0e01a2ecbce57f4b5a7",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
   }
 ]

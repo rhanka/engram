@@ -33,6 +33,7 @@ import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createGraph, loadGraphFromData, serializeGraph } from "../src/graph.js";
+import { buildFromJson } from "../src/build.js";
 import { parseOntologyProfile } from "../src/ontology-profile.js";
 import { appContextNodeId } from "../src/app-context/node-id.js";
 import type {
@@ -801,6 +802,29 @@ describe("persisted track projections (Lot L3, §4.3)", () => {
     const decisionSpans = indexPrettyArrayElements(decisionsStored);
     expect(decisionSpans).toHaveLength(fixture.decisions.length);
   });
+
+  it.each(["queryText", "decisionsText"] as const)(
+    "should reject a graph document in %s before any projection write",
+    async (field) => {
+      const stateRoot = await mkdtemp(join(tmpdir(), "appctx-l3-"));
+      const projections = { queryText: "[]\n", decisionsText: "[]\n" };
+      const written = await writeTrackProjections({
+        stateRootDir: stateRoot,
+        commit: COMMIT,
+        ...projections,
+      });
+      mutationTargets.length = 0;
+      await expect(writeTrackProjections({
+        stateRootDir: stateRoot,
+        commit: COMMIT,
+        ...projections,
+        [field]: JSON.stringify({ graph_format: "engram-graph/3", nodes: [], links: [] }),
+      })).rejects.toThrow("must return a JSON array");
+      expect(mutationTargets).toEqual([]);
+      expect(await readFile(written.queryAbs, "utf8")).toBe(projections.queryText);
+      expect(await readFile(written.decisionsAbs, "utf8")).toBe(projections.decisionsText);
+    },
+  );
 });
 
 describe("track links and diagnostics (Lot L3, §4.3)", () => {
@@ -824,6 +848,96 @@ describe("track links and diagnostics (Lot L3, §4.3)", () => {
       ...built,
     };
   }
+
+  it("should retain every projection citation when repeated records share a triple", () => {
+    const ctx = buildContext(
+      [ITEM_A, { ...ITEM_A }],
+      [DECISION_STRUCTURED, { ...DECISION_STRUCTURED }],
+    );
+    const specNode = appContextNodeId(REPO_KEY, "Spec", ["docs/spec/alpha.md"]);
+    const mentions = linkSpecPathMentions({
+      ...ctx,
+      specFileToNodeId: new Map([
+        ["docs/spec/alpha.md", specNode],
+        ["docs/spec/decision-log.md", specNode],
+      ]),
+    });
+    expect(mentions.diagnostics).toEqual([]);
+    expect(mentions.edges).toHaveLength(4);
+    expect(mentions.edges.map(edge => edge.citations[0]!.json_pointer)).toEqual([
+      "/0/detail/summary", "/1/detail/summary", "/0/contextExcerpt", "/1/contextExcerpt",
+    ]);
+    const edges = [...linkTrackInWorkpackages(ctx).edges, ...mentions.edges];
+    const graph = buildFromJson({
+      nodes: [...new Set(edges.flatMap(edge => [edge.source, edge.target]))].map(id => ({
+        id, label: id, file_type: "concept", source_file: TRACK_QUERY_REL,
+      })),
+      edges: edges.map(edge => ({ ...edge })),
+      input_tokens: 0,
+      output_tokens: 0,
+    });
+    const document = serializeGraph(graph);
+    expect(document.links).toHaveLength(3);
+    for (const link of document.links) {
+      expect(link.evidence_observations).toHaveLength(2);
+      expect(link.citations).toHaveLength(2);
+    }
+  });
+
+  it("should build one link per directed triple with verbatim observations from all five producers", () => {
+    const ctx = buildContext(
+      [ITEM_A, { ...ITEM_WP_NO_LABEL, detail: undefined }],
+      [DECISION_STRUCTURED],
+    );
+    const specNode = appContextNodeId(REPO_KEY, "Spec", ["docs/spec/alpha.md"]);
+    const declarations = (["frontmatter", "section-marker", "spec-map", "frontmatter"] as const)
+      .map(kind => ({
+        targetId: specNode, kind, track: [ITEM_A.id], decisions: [DECISION_STRUCTURED.id],
+      }));
+    const explicit = linkExplicitTrackDeclarations({ ...ctx, declarations });
+    const mentions = linkSpecPathMentions({
+      ...ctx,
+      specFileToNodeId: new Map([
+        ["docs/spec/alpha.md", specNode],
+        ["docs/spec/decision-log.md", specNode],
+      ]),
+    });
+    expect(explicit.diagnostics).toEqual([]);
+    expect(mentions.diagnostics).toEqual([]);
+    const edges = [...linkTrackInWorkpackages(ctx).edges, ...explicit.edges, ...mentions.edges];
+    const before = JSON.stringify(edges);
+    const nodes = [...new Set(edges.flatMap(edge => [edge.source, edge.target]))].map(id => ({
+      id, label: id, file_type: "concept" as const, source_file: TRACK_QUERY_REL,
+    }));
+    const buildDocument = (ordered: typeof edges) => serializeGraph(buildFromJson({
+      nodes,
+      edges: ordered.map(edge => ({ ...edge })),
+      input_tokens: 0,
+      output_tokens: 0,
+    }));
+    const document = buildDocument([...edges, ...edges]);
+    expect(document.graph_format).toBe("engram-graph/2");
+    expect(document.links).toHaveLength(4);
+    for (const link of document.links) {
+      const emissions = edges.filter(edge =>
+        edge.source === link.source && edge.target === link.target && edge.relation === link.relation);
+      const methods = [...new Set(emissions.flatMap(edge => edge.derivation_methods))].sort();
+      expect(link.derivation_methods).toEqual(methods);
+      const expectedObservations = emissions.map(edge => ({
+        source_file: edge.source_file,
+        confidence: edge.confidence,
+        derivation_method: edge.derivation_methods[0],
+        evidence_refs: edge.evidence_refs,
+        citations: edge.citations,
+      }));
+      const uniqueObservations = [...new Map(expectedObservations.map(obs => [JSON.stringify(obs), obs])).values()];
+      expect(link.evidence_observations).toHaveLength(uniqueObservations.length);
+      expect(link.evidence_observations).toEqual(expect.arrayContaining(uniqueObservations));
+    }
+    expect(buildDocument([...edges].reverse())).toEqual(document);
+    expect(serializeGraph(loadGraphFromData(JSON.parse(JSON.stringify(document))))).toEqual(document);
+    expect(JSON.stringify(edges)).toBe(before);
+  });
 
   it("links items to workpackages via in_workpackage and shares one wp node", () => {
     const ctx = buildContext();
