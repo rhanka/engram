@@ -1,6 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type Graph from "graphology";
+import { replayRelationGraph } from "./relation-replay.js";
+
+/** Keyed graph-copy body for lot A; existing file merge keeps its old path. */
+export function mergeGraphEdgesPrepared(target: Graph, source: Graph): void {
+  replayRelationGraph(target, source);
+}
 import { createGraph, isDirectedGraph, loadGraphFromData, serializeGraph } from "./graph.js";
 import { assertGraphJsonFileSize, assertGraphJsonSize } from "./graph-size-guard.js";
 import { loadHyperedges, mergeHyperedges, setHyperedges } from "./hyperedges.js";

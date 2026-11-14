@@ -672,6 +672,16 @@ export async function pushToNeo4j(
   password?: string,
   communities?: NumericMapLike<string[]>,
 ): Promise<{ nodes: number; edges: number }> {
+  const result = await pushToNeo4jBody(G, false, optionsOrUri, user, password, communities);
+  return { nodes: result.nodes, edges: result.edges };
+}
+
+/** Warning-preserving public wrapper body; CLI callers activate it in lot A. */
+export async function pushToNeo4jPrepared(G: Graph, optionsOrUri: Neo4jPushOptions | string, user?: string, password?: string, communities?: NumericMapLike<string[]>): Promise<{ nodes: number; edges: number; warnings: string[] }> {
+  return pushToNeo4jBody(G, true, optionsOrUri, user, password, communities);
+}
+
+async function pushToNeo4jBody(G: Graph, emitWarnings: boolean, optionsOrUri: Neo4jPushOptions | string, user?: string, password?: string, communities?: NumericMapLike<string[]>): Promise<{ nodes: number; edges: number; warnings: string[] }> {
   const options = typeof optionsOrUri === "string"
     ? {
       uri: optionsOrUri,
@@ -685,7 +695,7 @@ export async function pushToNeo4j(
   // export.ts ← neo4j.ts would be circular since neo4j.ts is imported by
   // registry.ts which could be imported transitively. Dynamic import resolves
   // at call time, after module evaluation is complete.
-  const { createNeo4jGraphStore } = await import("./storage/neo4j.js");
+  const { createNeo4jGraphStore, createNeo4jGraphStorePrepared } = await import("./storage/neo4j.js");
 
   const rawCommunities = options.communities;
   const communityMap = new Map<number, string[]>();
@@ -696,7 +706,8 @@ export async function pushToNeo4j(
     }
   }
 
-  const store = await createNeo4jGraphStore({
+  const createStore = emitWarnings ? createNeo4jGraphStorePrepared : createNeo4jGraphStore;
+  const store = await createStore({
     target: options.uri,
     user: options.user,
     password: options.password,
@@ -705,7 +716,7 @@ export async function pushToNeo4j(
 
   try {
     const result = await store.pushGraph(G, communityMap, { mode: "merge" });
-    return { nodes: result.nodes, edges: result.edges };
+    return { nodes: result.nodes, edges: result.edges, warnings: result.warnings };
   } finally {
     await store.close();
   }

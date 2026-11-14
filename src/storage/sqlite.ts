@@ -1,4 +1,6 @@
 import { assertSupportedGraphFormat } from "../graph.js";
+import { graphEdgeContribution, mergeStoreEdgeContribution } from "./edge-contribution.js";
+import { normalizeStoreEdgeIdentity } from "./types.js";
 import { requireHostDriver } from "./host-driver.js";
 /**
  * SQLite GraphStore adapter (SPEC_STORAGE_BACKENDS.md, "Future Backends";
@@ -485,11 +487,16 @@ interface SqliteStatement {
   all(...params: unknown[]): Array<Record<string, unknown>>;
 }
 
+interface SqliteTransaction<A extends unknown[], R> {
+  (...args: A): R;
+  immediate(...args: A): R;
+}
+
 interface SqliteDatabase {
   prepare(source: string): SqliteStatement;
   exec(source: string): SqliteDatabase;
   pragma(source: string, options?: { simple?: boolean }): unknown;
-  transaction<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R;
+  transaction<A extends unknown[], R>(fn: (...args: A) => R): SqliteTransaction<A, R>;
   close(): void;
 }
 
@@ -510,6 +517,15 @@ export async function createSqliteGraphStore(
   config: SqliteGraphStoreConfig,
   deps?: StoreTestDeps,
 ): Promise<SqliteGraphStore> {
+  return createSqliteGraphStoreBody(config, deps, false);
+}
+
+/** Transactional union bodies, available to tests and activated only in lot A. */
+export async function createSqliteGraphStorePrepared(config: SqliteGraphStoreConfig, deps?: StoreTestDeps): Promise<SqliteGraphStore> {
+  return createSqliteGraphStoreBody(config, deps, true);
+}
+
+async function createSqliteGraphStoreBody(config: SqliteGraphStoreConfig, deps: StoreTestDeps | undefined, unionEvidence: boolean): Promise<SqliteGraphStore> {
   const target = config.target;
   if (!target) {
     throw new Error("sqlite store requires config.target (path of the SQLite database file)");
@@ -588,7 +604,7 @@ export async function createSqliteGraphStore(
       source,
       target,
       typeof a.relation === "string" ? a.relation : "RELATES_TO",
-      typeof a.confidence === "string" ? a.confidence : "EXTRACTED",
+      typeof a.confidence === "string" ? a.confidence : unionEvidence ? null : "EXTRACTED",
       temporalValue(a.t),
       temporalValue(a.t_end),
       JSON.stringify(buildPropsBag(a, EDGE_SCHEMA_COLS)),
@@ -621,6 +637,24 @@ export async function createSqliteGraphStore(
     "relation",
   ]);
   const NODE_EXISTS_SQL = `SELECT 1 AS x FROM ${NODE_TABLE} WHERE city_slug = ? AND id = ? LIMIT 1`;
+
+  // Called only inside the append/push transaction; never filters tombstones
+  // out of the physical row read (erasure remains a read-side fold).
+  function contributeEdge(slug: string, incoming: GraphEdgeInput): GraphAppendOutcome {
+    const identity = normalizeStoreEdgeIdentity(incoming.source, incoming.target, incoming.relation);
+    const row = db.prepare(`SELECT * FROM ${EDGE_TABLE} WHERE city_slug = ? AND source_id = ? AND target_id = ? AND relation = ? LIMIT 1`)
+      .get(slug, identity.source, identity.target, identity.relation);
+    const current = row ? { ...parseProps(row.props) } : null;
+    if (current && row) {
+      for (const field of ["confidence", "t", "t_end"]) {
+        delete current[field];
+        if (row[field] != null) current[field] = row[field];
+      }
+    }
+    const merged = mergeStoreEdgeContribution(current, { ...incoming, ...identity });
+    db.prepare(EDGE_UPSERT_SQL).run(...edgeValues(slug, identity.source, identity.target, merged));
+    return { created: !row };
+  }
 
   // -------------------------------------------------------------------------
   // Tombstone fold-out (dossier §1.3, §3.5) — NOT EXISTS predicates, appended to
@@ -734,7 +768,7 @@ export async function createSqliteGraphStore(
         return { nodes: nodeCount, edges: edgeCount, warnings: [], durationMs: Date.now() - start };
       }
 
-      ensureSchema();
+      if (!unionEvidence) ensureSchema();
 
       const communityMap = buildNodeCommunityMap(communities);
       const nodeRows: unknown[][] = [];
@@ -745,10 +779,16 @@ export async function createSqliteGraphStore(
         nodeRows.push(nodeValues(citySlug, nodeId, a, community));
       });
       const edgeRows: unknown[][] = [];
+      const edgeContributions: GraphEdgeInput[] = [];
       G.forEachEdge((_edgeKey, attrs, source, target) => {
-        edgeRows.push(edgeValues(citySlug, source, target, attrs as Record<string, unknown>));
+        if (unionEvidence) {
+          const incoming = graphEdgeContribution(source, target, attrs);
+          edgeContributions.push(incoming);
+          edgeRows.push(edgeValues(citySlug, incoming.source, incoming.target, incoming));
+        } else edgeRows.push(edgeValues(citySlug, source, target, attrs as Record<string, unknown>));
       });
 
+      if (unionEvidence) ensureSchema();
       const nodeUpsert = db.prepare(NODE_UPSERT_SQL);
       const edgeUpsert = db.prepare(EDGE_UPSERT_SQL);
 
@@ -761,7 +801,8 @@ export async function createSqliteGraphStore(
           deleteCityRows(EDGE_TABLE, citySlug);
         }
         for (const row of nodeRows) nodeUpsert.run(...row);
-        for (const row of edgeRows) edgeUpsert.run(...row);
+        if (unionEvidence && mode === "merge") for (const incoming of edgeContributions) contributeEdge(citySlug, incoming);
+        else for (const row of edgeRows) edgeUpsert.run(...row);
         writeMeta(computeTopologySignature(G), resolveToolVersion(), new Date().toISOString());
       });
       runPush();
@@ -851,6 +892,8 @@ export async function createSqliteGraphStore(
       edge: GraphEdgeInput,
       options: GraphAppendOptions = {},
     ): Promise<GraphAppendOutcome> {
+      // Validate and capture before any database mutation, even schema creation.
+      const incoming = unionEvidence ? mergeStoreEdgeContribution(null, edge) : undefined;
       ensureSchema();
       const slug = options.namespace ?? citySlug;
       // Strict referential integrity (requiresExistingEndpoints): both endpoints
@@ -865,6 +908,9 @@ export async function createSqliteGraphStore(
             "edge is refused (requiresExistingEndpoints). Append the node(s) first.",
         );
       }
+      // Reserve the writer before reading: a deferred WAL snapshot cannot be
+      // upgraded after another connection commits, even with a busy timeout.
+      if (incoming) return db.transaction(() => contributeEdge(slug, incoming)).immediate();
       const a = edge as Record<string, unknown>;
       const relation = typeof edge.relation === "string" ? edge.relation : "RELATES_TO";
       const row = edgeValues(slug, edge.source, edge.target, a);
@@ -893,7 +939,7 @@ export async function createSqliteGraphStore(
       const edgeSource = targetT.kind === "edge" ? targetT.source : "";
       const edgeTarget = targetT.kind === "edge" ? targetT.target : "";
       const edgeRelation =
-        targetT.kind === "edge"
+        unionEvidence && targetT.kind === "edge" ? normalizeStoreEdgeIdentity(targetT.source, targetT.target, targetT.relation).relation : targetT.kind === "edge"
           ? typeof targetT.relation === "string"
             ? targetT.relation
             : "RELATES_TO"

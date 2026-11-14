@@ -1,4 +1,9 @@
 import { assertSupportedGraphFormat } from "../graph.js";
+import { mirrorObservationWarnings } from "./mirror-diagnostics.js";
+
+export function neo4jPushWarningsPrepared(G: Graph): string[] {
+  return mirrorObservationWarnings(G, "neo4j", neo4jRelation);
+}
 import { requireHostDriver } from "./host-driver.js";
 /**
  * Neo4j GraphStore adapter (SPEC_STORAGE_BACKENDS.md, "Neo4j Adapter (v1)").
@@ -170,6 +175,15 @@ export async function createNeo4jGraphStore(
   config: Neo4jGraphStoreConfig,
   deps?: StoreTestDeps,
 ): Promise<Neo4jGraphStore> {
+  return createNeo4jGraphStoreBody(config, deps, false);
+}
+
+/** Diagnostics-enabled mirror body; registered production factory is unchanged. */
+export async function createNeo4jGraphStorePrepared(config: Neo4jGraphStoreConfig, deps?: StoreTestDeps): Promise<Neo4jGraphStore> {
+  return createNeo4jGraphStoreBody(config, deps, true);
+}
+
+async function createNeo4jGraphStoreBody(config: Neo4jGraphStoreConfig, deps: StoreTestDeps | undefined, emitWarnings: boolean): Promise<Neo4jGraphStore> {
   if (!config.target) {
     throw new Error("neo4j store requires config.target (bolt URI)");
   }
@@ -423,7 +437,7 @@ export async function createNeo4jGraphStore(
       return {
         nodes: nodeCount,
         edges: edgeCount,
-        warnings: [],
+        warnings: emitWarnings ? neo4jPushWarningsPrepared(G) : [],
         durationMs: Date.now() - start,
       };
     },

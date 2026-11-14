@@ -1,4 +1,9 @@
 import { assertSupportedGraphFormat } from "../graph.js";
+import { mirrorObservationWarnings } from "./mirror-diagnostics.js";
+
+export function spannerPushWarningsPrepared(G: Graph): string[] {
+  return mirrorObservationWarnings(G, "spanner");
+}
 import { requireHostDriver } from "./host-driver.js";
 /**
  * Spanner GraphStore adapter (SPEC_STORAGE_BACKENDS.md, "Spanner Graph").
@@ -362,6 +367,15 @@ export async function createSpannerGraphStore(
   config: SpannerGraphStoreConfig,
   deps?: StoreTestDeps,
 ): Promise<SpannerGraphStore> {
+  return createSpannerGraphStoreBody(config, deps, false);
+}
+
+/** Diagnostics-enabled mirror body, reserved for lot A activation. */
+export async function createSpannerGraphStorePrepared(config: SpannerGraphStoreConfig, deps?: StoreTestDeps): Promise<SpannerGraphStore> {
+  return createSpannerGraphStoreBody(config, deps, true);
+}
+
+async function createSpannerGraphStoreBody(config: SpannerGraphStoreConfig, deps: StoreTestDeps | undefined, emitWarnings: boolean): Promise<SpannerGraphStore> {
   const instanceId = config.instance ?? engramEnv("ENGRAM_SPANNER_INSTANCE", "GRAPHIFY_SPANNER_INSTANCE");
   const databaseId = config.database ?? engramEnv("ENGRAM_SPANNER_DATABASE", "GRAPHIFY_SPANNER_DATABASE");
   if (!instanceId) {
@@ -611,7 +625,7 @@ export async function createSpannerGraphStore(
       return {
         nodes: nodeCount,
         edges: edgeCount,
-        warnings: [],
+        warnings: emitWarnings ? spannerPushWarningsPrepared(G) : [],
         durationMs: Date.now() - start,
       };
     },
