@@ -187,6 +187,53 @@ function preferNode(current: Extraction["nodes"][number], existing: Extraction["
   );
 }
 
+function nonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function nodeRegistryRecordId(node: Extraction["nodes"][number]): string | undefined {
+  return nonEmptyString(node.registry_record_id) ?? nonEmptyString(node.registryRecordId);
+}
+
+function nodeRegistryId(node: Extraction["nodes"][number]): string | undefined {
+  return (
+    nonEmptyString(node.registry_id) ??
+    nonEmptyString(node.registryId) ??
+    nonEmptyString(node.registry)
+  );
+}
+
+function nodeRegistryPartition(node: Extraction["nodes"][number]): string | undefined {
+  return nonEmptyString(node.registry_partition) ?? nonEmptyString(node.registryPartition);
+}
+
+function hasConflictingRegistryIdentity(
+  left: Extraction["nodes"][number],
+  right: Extraction["nodes"][number],
+): boolean {
+  const leftRecordId = nodeRegistryRecordId(left);
+  const rightRecordId = nodeRegistryRecordId(right);
+  if (leftRecordId !== undefined && rightRecordId !== undefined && leftRecordId !== rightRecordId) {
+    return true;
+  }
+
+  const leftRegistryId = nodeRegistryId(left);
+  const rightRegistryId = nodeRegistryId(right);
+  if (leftRegistryId !== undefined && rightRegistryId !== undefined && leftRegistryId !== rightRegistryId) {
+    return true;
+  }
+
+  const leftPartition = nodeRegistryPartition(left);
+  const rightPartition = nodeRegistryPartition(right);
+  if (leftPartition !== undefined && rightPartition !== undefined && leftPartition !== rightPartition) {
+    return true;
+  }
+
+  return false;
+}
+
 function readExistingGraphExtraction(graphPath: string): { extraction: Extraction; nodeCount: number } {
   assertGraphJsonFileSize(graphPath, "read");
   const raw = asRecord(JSON.parse(readFileSync(graphPath, "utf-8"))) ?? {};
@@ -257,7 +304,7 @@ export function deduplicateByLabel(extraction: Extraction): Extraction {
   const nodes = extraction.nodes ?? [];
 
   const applyLabelPass = (partitionBySource: boolean): void => {
-    const canonicalByLabel = new Map<string, Extraction["nodes"][number]>();
+    const canonicalByLabel = new Map<string, Array<Extraction["nodes"][number]>>();
 
     for (const node of nodes) {
       if (resolveRemap(remap, node.id) !== node.id) continue;
@@ -266,11 +313,20 @@ export function deduplicateByLabel(extraction: Extraction): Extraction {
       if (!label) continue;
 
       const key = partitionBySource ? `${sourceKey(node.source_file)}\0${label}` : label;
-      const existing = canonicalByLabel.get(key);
-      if (!existing) {
-        canonicalByLabel.set(key, node);
+      const candidates = canonicalByLabel.get(key);
+      if (!candidates) {
+        canonicalByLabel.set(key, [node]);
         continue;
       }
+
+      const existingIndex = candidates.findIndex(
+        (candidate) => !hasConflictingRegistryIdentity(candidate, node),
+      );
+      if (existingIndex === -1) {
+        candidates.push(node);
+        continue;
+      }
+      const existing = candidates[existingIndex]!;
 
       const sameSource = sourceKey(existing.source_file) === sourceKey(node.source_file);
       const chunkCandidate = CHUNK_SUFFIX.test(existing.id) || CHUNK_SUFFIX.test(node.id);
@@ -280,7 +336,7 @@ export function deduplicateByLabel(extraction: Extraction): Extraction {
 
       if (preferNode(node, existing)) {
         remap.set(existing.id, node.id);
-        canonicalByLabel.set(key, node);
+        candidates[existingIndex] = node;
       } else {
         remap.set(node.id, existing.id);
       }
