@@ -142,6 +142,8 @@ export interface ExtractionProvenance {
   observed_at: string;
   source_hash: string;
   adapter_version: string;
+  /** Hook Git extraction digest, excluding observed_at, for first-observation reuse. */
+  input_digest?: string;
   /** True when an explicit bound truncated the extraction; absent for full history. */
   partial?: boolean;
   ttl?: string;
