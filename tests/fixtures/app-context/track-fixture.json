@@ -1,0 +1,146 @@
+{
+  "items": [
+    {
+      "id": "01KTQP5FEAD2BQ860ZQK2WF5BQ",
+      "title": "WP B — Vertical profond geo (zone->lot), villes prioritaires opportunites<6mois x lots GeoJSON",
+      "kind": "feature",
+      "workspace": "frontB-geo",
+      "bucket": "AWAITED",
+      "realization": "done",
+      "acceptance": "unknown",
+      "priority": 1.8,
+      "accountable": "rhanka",
+      "wpId": "01KYZPY6MKYQCCXZZ9KBZA4RTW",
+      "wpLabel": "WP4",
+      "detail": {
+        "summary": "Identifier d'abord (dans A.2) les sources GeoJSON par ville (zone+lot). Prioriser villes cumulant opportunites <6 mois x lots en GeoJSON. End-to-end zonage->grille->lots eligibles->carte interactive.…",
+        "acceptanceLabel": "recette non évaluée"
+      }
+    },
+    {
+      "id": "01KTW1NZ55V6FTN3ACJSKQQNQ7",
+      "title": "CS-L2 — Fiche lot complète (Évaluation): cadastre + rôle MAMH + zone + grille PDF + Google Maps + notes",
+      "kind": "feature",
+      "workspace": "reorientation",
+      "bucket": "AWAITED",
+      "realization": "in-progress",
+      "acceptance": "unknown",
+      "wpId": "01KYZPY718ZVH3712VQTBFSFAG",
+      "wpLabel": "WP6",
+      "detail": {
+        "summary": "S-2 (ref docs/spec/SPEC_EVOL_INTEGRATION_CARTE_STEVE.md §2 P0). Panneau de detail au clic lot dans la vue Evaluation reproduisant la fiche de Steve (README carte-steve §B3): no lot, adresse, code pos…",
+        "acceptanceLabel": "recette non évaluée"
+      }
+    },
+    {
+      "id": "01KTW1NZ8FEWYQ1T4CCNR479FK",
+      "title": "CS-L3 — Marquage d'équipe + notes par lot + filtres par marque avec compteurs (Opportunités/Évaluation)",
+      "kind": "feature",
+      "workspace": "reorientation",
+      "bucket": "AWAITED",
+      "realization": "to-do",
+      "acceptance": "unknown",
+      "wpId": "01KYZPY718ZVH3712VQTBFSFAG",
+      "wpLabel": "WP6",
+      "detail": {
+        "summary": "S-3 (ref docs/spec/SPEC_EVOL_INTEGRATION_CARTE_STEVE.md §2 P0). Les 5 marques de Steve (favori/non-retenu/sollicite/lettre/en-vente) deviennent des statuts de pipeline sur Opportunites, alignes sur S…",
+        "acceptanceLabel": "recette non évaluée"
+      }
+    },
+    {
+      "id": "01KVPB0M749HH7BXHQK4PPQKPC",
+      "title": "Header pas l'AppHeader canonique DS — écart structurel/visuel",
+      "kind": "bug",
+      "workspace": "frontA-viz",
+      "bucket": "DONE",
+      "realization": "done",
+      "acceptance": "unknown",
+      "priority": 8.333333333333334,
+      "wpId": "01KYZPY718ZVH3712VQTBFSFAG",
+      "wpLabel": "WP6",
+      "detail": {
+        "summary": "Symptôme : le header rendu ne correspond pas à l'AppHeader du DS (structure DOM, slots, props). Attendu : utiliser le composant AppHeader canonique @sentropic/design-system-svelte. Analyse d'écart en…",
+        "acceptanceLabel": "recette non évaluée"
+      }
+    },
+    {
+      "id": "01KW7HWD831W46RE1RM3NYMR9V",
+      "title": "WP5.2 MCP immo",
+      "kind": "chore",
+      "workspace": "wp5-plateforme",
+      "bucket": "DONE",
+      "realization": "done",
+      "acceptance": "unknown",
+      "wpId": "01KYZPY77BKD6ZXRB0PC96X3GJ",
+      "wpLabel": "WP7",
+      "detail": {
+        "acceptanceLabel": "recette non évaluée"
+      }
+    }
+  ],
+  "decisions": [
+    {
+      "id": "01KW5RX4BYHM31ZW4M0WXBR15S",
+      "title": "Propriétaires de lots: transfert côté geo avec garde-fous Loi 25/auth",
+      "workspace": "frontB-geo",
+      "decisionKind": "orientation",
+      "realization": "to-do",
+      "outcome": "go",
+      "structured": false,
+      "structure": "unstructured",
+      "accountable": "rhanka",
+      "optionCount": 0,
+      "openQuestionCount": 0,
+      "hasRecommendation": false,
+      "contextExcerpt": "Décision utilisateur 2026-06-27: basculer la donnée propriétaire de lot côté geo; protéger le droit d'accès dans les conditions de scraping via avertissement utilisateur; prévoir déclaration Loi 25 e…",
+      "options": []
+    },
+    {
+      "id": "01KW775RC2T3FQD76A3KNNS2FD",
+      "title": "Structure de tracking stable v1",
+      "workspace": "meta-track",
+      "decisionKind": "orientation",
+      "realization": "to-do",
+      "outcome": "go",
+      "structured": false,
+      "structure": "unstructured",
+      "optionCount": 0,
+      "openQuestionCount": 0,
+      "hasRecommendation": false,
+      "contextExcerpt": "docs/spec/decision-tracking-structure-v1.md",
+      "options": []
+    },
+    {
+      "id": "01M6GSB0TCZD5H7WB8GQ0F4J2Q",
+      "title": "Décisions owner plan viewdev r2 (OD-1..OD-5, D-A..D-E)",
+      "workspace": "wp5-mcp-artifacts",
+      "decisionKind": "commitment",
+      "realization": "to-do",
+      "outcome": "go",
+      "structured": true,
+      "structure": "structured",
+      "accountable": "owner",
+      "optionCount": 2,
+      "openQuestionCount": 0,
+      "hasRecommendation": true,
+      "contextExcerpt": "Présenté à l'owner le 03/11/2026 vers 06:00 (MTL) ; recommandations et arguments contraires dans les dossiers convergés.",
+      "options": [
+        {
+          "id": "approve-all",
+          "summary": "Chaque décision suit la recommandation du dossier convergé.",
+          "title": "Toutes les recommandations retenues"
+        },
+        {
+          "id": "amend",
+          "summary": "Certaines décisions s écartent de la recommandation.",
+          "title": "Recommandations amendées"
+        }
+      ],
+      "recommendation": {
+        "optionId": "approve-all",
+        "rationale": "Owner : GO sur tout (question modale, 03/11/2026)."
+      },
+      "selectedOptionId": "approve-all"
+    }
+  ]
+}
