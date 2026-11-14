@@ -32,7 +32,7 @@ describe("L0-C compat", () => {
     expect(() => core.loadGraphFromData(raw)).toThrow(/non.finite/i);
     expect(readFileSync(path, "utf8")).toBe(text);
   });
-  it.fails("M2-direct-vs-singleton-batch-with-root-equal", async () => {
+  it("M2-direct-vs-singleton-batch-with-root-equal", async () => {
     const fresh = batchFixture();
     const direct = buildFromJson(fresh, { root: "/repo" });
     const captured = await batchIntake(fresh, "/repo"); // actual production caller at extraction-batch.ts
@@ -50,7 +50,7 @@ describe("L0-C compat", () => {
       }
     }
   });
-  it.fails("R4-captured-absolute-observation-never-repaired", () => {
+  it("R4-captured-absolute-observation-never-repaired", () => {
     const rec = { source_file: "/repo/f.ts", confidence: "EXTRACTED", source_location: "L1" };
     const captured = extraction([edge({ source_file: "/repo/f.ts", source_location: "L1", evidence_observations: [rec] })]);
     const batch = mergeExtractionsWithCitations([captured], { root: "/repo" } as never).extraction;
@@ -63,7 +63,7 @@ describe("L0-C compat", () => {
       expectFixedPoint(G, input.edges);
     }
   });
-  it.fails("legacy-plural-derivation-recovery-raw-first", () => {
+  it("legacy-plural-derivation-recovery-raw-first", () => {
     const raw = { source: "a", target: "b", relation: "calls", source_file: "f.ts", derivation_methods: ["ast", "deorphan:co-provenance-peer"] };
     const G = core.loadGraphFromData({ nodes: [node("a"), node("b")], links: [raw] });
     expectObservations(rows(G)[0], raw.derivation_methods.map(derivation_method => ({ source_file: "f.ts", derivation_method })));
@@ -71,7 +71,7 @@ describe("L0-C compat", () => {
     expect(rows(G)[0].derivation_methods).toEqual(raw.derivation_methods);
     expectFixedPoint(G);
   });
-  it.fails("legacy-reversed-row-effective-preserved", () => {
+  it("legacy-reversed-row-effective-preserved", () => {
     for (const link of [{ source: "a", target: "b", _src: "b", _tgt: "a", relation: "calls", source_file: "f.ts", custom: { preserve: true } }, { source: "a", target: "b", source_file: "f.ts" }]) {
       const G = core.loadGraphFromData({ nodes: [node("a"), node("b")], links: [link] });
       for (const writer of writers) {
@@ -84,7 +84,7 @@ describe("L0-C compat", () => {
       expectFixedPoint(G);
     }
   });
-  it.fails("x2b-roundtrip-stays-simple", async () => {
+  it("x2b-roundtrip-stays-simple", async () => {
     const dir = tempDir();
     const original = files.createFileGraphStore;
     const scratch: boolean[] = [];

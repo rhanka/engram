@@ -46,8 +46,10 @@ function freshState(): InMemoryPgState {
   };
 }
 
-function answer(state: InMemoryPgState, text: string) {
+function answer(state: InMemoryPgState, text: string, params?: unknown[]) {
   const upper = text.toUpperCase();
+  // The v2 contribution insert uses RETURNING to distinguish creation.
+  if (text.includes("INSERT INTO") && text.includes("graph_edges") && upper.includes("RETURNING")) return { rows: [{ source_id: params?.[1] }], rowCount: 1 };
   if (text.includes("graph_meta") && upper.includes("SELECT")) {
     return { rows: state.metaRows, rowCount: state.metaRows.length };
   }
@@ -68,14 +70,14 @@ function makeFakePgModule(state: InMemoryPgState) {
     constructor(_config?: Record<string, unknown>) {}
     query(text: string, params?: unknown[]) {
       state.queries.push({ via: "pool", text, params });
-      return Promise.resolve(answer(state, text));
+      return Promise.resolve(answer(state, text, params));
     }
     connect() {
       state.connects += 1;
       const client = {
         query(text: string, params?: unknown[]) {
           state.queries.push({ via: "client", text, params });
-          return Promise.resolve(answer(state, text));
+          return Promise.resolve(answer(state, text, params));
         },
         release() {
           /* no-op */
@@ -282,7 +284,7 @@ describe("Postgres adapter: ON CONFLICT upsert (merge)", () => {
     const edgeInsert = findInsert(state, "graph_edges");
     expect(edgeInsert).toBeDefined();
     expect(edgeInsert!.text).toContain(
-      "ON CONFLICT (city_slug, source_id, target_id, relation) DO UPDATE",
+      "ON CONFLICT (city_slug, source_id, target_id, relation) DO NOTHING RETURNING source_id",
     );
   });
 

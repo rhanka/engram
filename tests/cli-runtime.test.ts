@@ -1186,7 +1186,8 @@ describe("public CLI runtime command parity", () => {
 
     writeFileSync(
       join(graphifyDir, "GRAPH_REPORT.md"),
-      `Leaked absolute source: ${join(dir, "src", "alpha.ts")}\n`,
+      // Use a known local absolute prefix independently of TMPDIR.
+      `Leaked absolute source: ${join("/tmp", "portable-check-fixture", "src", "alpha.ts")}\n`,
       "utf-8",
     );
 

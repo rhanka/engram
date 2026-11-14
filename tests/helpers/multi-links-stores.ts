@@ -193,14 +193,14 @@ export function losslessStoreCases(backend: "sqlite" | "postgres") {
   describe(`L0-S ${backend} real writes and readback`, () => {
     beforeAll(async () => {
       if (backend !== "sqlite") return;
-      // Engine availability is a prerequisite outside it.fails. A missing
+      // Engine availability is a prerequisite outside it. A missing
       // engine must fail the suite, never masquerade as a missing L0 feature.
       const driver = await sqliteDriver(), db = new driver.default(join(tempDir(), "engine-probe.db"));
       try { expect(db.prepare("SELECT sqlite_version() AS version").get().version).toMatch(/^3\./); }
       finally { db.close(); }
     });
     for (const mode of ["append", "merge-push", "replay", "concurrent"] as const) describe(mode, () => {
-      it.fails("store-same-key-append-union-readback", async () => {
+      it("store-same-key-append-union-readback", async () => {
         const { store, postgres } = await losslessHarness(backend);
         try {
           await endpoints(store);
@@ -233,14 +233,14 @@ export function losslessStoreCases(backend: "sqlite" | "postgres") {
       });
     });
 
-    it.fails("append capability advertises evidence union version 2", async () => {
+    it("append capability advertises evidence union version 2", async () => {
       const { store } = await losslessHarness(backend);
       try { expect(store.capabilities.append).toMatchObject({ version: 2, evidenceUnion: true }); }
       finally { await store.close(); }
     });
 
     for (const [label, attrs] of [["Infinity", { confidence_score: Infinity }], ["NaN", { confidence_score: NaN }], ["negative Infinity", { confidence_score: -Infinity }], ["nested", { citations: [{ quote: "x", region: [0, Infinity, 1, 1] }] }]] as Array<[string, Row]>) describe(label, () => {
-      it.fails("non-finite store contribution refuses before mutating a populated row", async () => {
+      it("non-finite store contribution refuses before mutating a populated row", async () => {
         const { store } = await losslessHarness(backend);
         try {
           await endpoints(store);
@@ -266,7 +266,7 @@ export function losslessStoreCases(backend: "sqlite" | "postgres") {
       } finally { await store.close(); }
     });
 
-    it.fails("legacy null score derives the confidence fallback while its observation retains null", async () => {
+    it("legacy null score derives the confidence fallback while its observation retains null", async () => {
       const { store } = await losslessHarness(backend);
       try {
         await endpoints(store);

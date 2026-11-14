@@ -1,9 +1,11 @@
+import { assertionIdentityOf, edgeKey } from "./graph.js";
+import { compareCodeUnits } from "./graph-json-serialization.js";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type Graph from "graphology";
 import { prepareRelationContributions, replayPreparedRelationEdges } from "./relation-replay.js";
 
-/** Keyed replay body; the production merge driver remains on its legacy path. */
+/** Shared keyed replay used by the production merge driver. */
 export function mergeDriverEdgesPrepared(merged: Graph, graphs: readonly SerializedGraphData[]): void {
   assertSupportedGraphFormat(merged.getAttributes(), "merge-driver target");
   for (const raw of graphs) assertSupportedGraphFormat(raw as unknown as Record<string, unknown>, "merge-driver input");
@@ -12,7 +14,7 @@ export function mergeDriverEdgesPrepared(merged: Graph, graphs: readonly Seriali
 }
 
 import type { SerializedGraphData } from "./graph.js";
-import { assertSupportedGraphFormat, createGraph, legacyObservationFromRawLink, serializeGraph } from "./graph.js";
+import { assertSupportedGraphFormat, createGraph, legacyObservationFromRawLink, loadGraphFromData, serializeGraph } from "./graph.js";
 import { unionCitations } from "./citations.js";
 import { mergeHyperedges, setHyperedges } from "./hyperedges.js";
 import type { Hyperedge } from "./hyperedges.js";
@@ -44,14 +46,8 @@ function readGraph(path: string): SerializedGraphData | null {
 }
 
 function edgeSortKey(edge: Record<string, unknown> & { source: string; target: string }): string {
-  return [
-    edge.source,
-    edge.target,
-    String(edge.relation ?? ""),
-    String(edge.source_file ?? ""),
-    String(edge.confidence ?? ""),
-    JSON.stringify(edge),
-  ].join("\0");
+  const { src, tgt, relation } = assertionIdentityOf(edge.source, edge.target, edge);
+  return edgeKey(src, tgt, relation);
 }
 
 function hyperedgeSortKey(hyperedge: Record<string, unknown>): string {
@@ -88,7 +84,7 @@ function mergeGraphAttributes(
     if (!Number.isNaN(left) && !Number.isNaN(right) && left !== right) {
       return left - right;
     }
-    return a[0].localeCompare(b[0]);
+    return compareCodeUnits(a[0], b[0]);
   });
   if (sortedCommunityEntries.length > 0) {
     merged.community_labels = Object.fromEntries(sortedCommunityEntries);
@@ -116,7 +112,9 @@ export function mergeGraphJsonFiles(
   }
 
   if (!currentRaw && otherRaw) {
-    writeFileSync(resolve(currentPath), JSON.stringify(otherRaw, null, 2), "utf-8");
+    const upgraded = serializeGraph(loadGraphFromData(otherRaw));
+    assertSupportedGraphFormat(upgraded as Record<string, unknown>, "merge-driver output");
+    writeFileSync(resolve(currentPath), JSON.stringify(upgraded, null, 2), "utf-8");
     return {
       out: resolve(currentPath),
       nodeCount: otherRaw.nodes?.length ?? 0,
@@ -166,17 +164,7 @@ export function mergeGraphJsonFiles(
     throw new Error(`merged graph has ${merged.order} nodes, exceeds ${MERGE_MAX_GRAPH_NODES}-node cap`);
   }
 
-  for (const raw of graphs) {
-    for (const link of raw.links ?? raw.edges ?? []) {
-      const { source, target, ...attrs } = link;
-      if (!merged.hasNode(source) || !merged.hasNode(target)) continue;
-      try {
-        merged.mergeEdge(source, target, attrs as Record<string, unknown>);
-      } catch {
-        // Keep the first compatible edge if a duplicate merge collides.
-      }
-    }
-  }
+  mergeDriverEdgesPrepared(merged, graphs);
 
   const hyperedges = graphs.reduce<Hyperedge[]>(
     (acc, raw) => mergeHyperedges(acc, (raw.hyperedges ?? []) as Hyperedge[]),
@@ -188,10 +176,10 @@ export function mergeGraphJsonFiles(
 
   const serialized = serializeGraph(merged);
   serialized.graph = mergeGraphAttributes(currentRaw, otherRaw);
-  serialized.nodes = [...(serialized.nodes ?? [])].sort((a, b) => a.id.localeCompare(b.id));
-  serialized.links = [...(serialized.links ?? [])].sort((a, b) => edgeSortKey(a).localeCompare(edgeSortKey(b)));
+  serialized.nodes = [...(serialized.nodes ?? [])].sort((a, b) => compareCodeUnits(a.id, b.id));
+  serialized.links = [...(serialized.links ?? [])].sort((a, b) => compareCodeUnits(edgeSortKey(a), edgeSortKey(b)));
   if (serialized.hyperedges) {
-    serialized.hyperedges = [...serialized.hyperedges].sort((a, b) => hyperedgeSortKey(a).localeCompare(hyperedgeSortKey(b)));
+    serialized.hyperedges = [...serialized.hyperedges].sort((a, b) => compareCodeUnits(hyperedgeSortKey(a), hyperedgeSortKey(b)));
   }
 
   const outPath = resolve(currentPath);

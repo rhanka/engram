@@ -5758,7 +5758,7 @@ export async function main(): Promise<void> {
         G = loadGraphFromData(JSON.parse(rf(gp, "utf-8")));
       } else {
         const { default: Graph } = await import("graphology");
-        G = new Graph({ type: "undirected" });
+        G = new Graph({ type: "undirected", multi: true });
       }
       const paths = resolveGraphifyPaths();
       const { readLifecycleMetadata } = await import("./lifecycle.js");

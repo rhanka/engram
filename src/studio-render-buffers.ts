@@ -11,6 +11,7 @@ import type {
 } from "@sentropic/graph";
 
 import type { StudioScene } from "./studio-scene.js";
+import { relationEdgeLanes } from "./studio-edge-lanes.js";
 
 export type StudioRenderEdgeDash = EdgeDashMode;
 
@@ -149,13 +150,14 @@ export function buildStudioRenderBuffers(
     };
   });
 
-  const edges: HighLevelGraphInput["edges"] = scene.edges.map((edge) => ({
+  const lanes = relationEdgeLanes(scene.edges, resolved.edgeCurvature);
+  const edges: HighLevelGraphInput["edges"] = scene.edges.map((edge, index) => ({
     source: edge.source,
     target: edge.target,
     label: edge.relation,
     dash: edgeDash(edge),
     width: edgeWidth(edge, resolved),
-    curvature: finiteNumber(edge.curvature) ? edge.curvature : resolved.edgeCurvature,
+    curvature: lanes[index],
   }));
 
   const highLevelGraph: HighLevelGraphInput = {

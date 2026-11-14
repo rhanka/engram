@@ -203,6 +203,8 @@ export interface HeadlessClock {
 }
 
 export interface HeadlessExtractInput {
+  /** Same fresh-locator preparation context as the downstream build. */
+  readonly root?: string;
   readonly document: HeadlessDocumentInput;
   readonly profileBundle: ProfileBundleV1;
   readonly modelPolicy: ExtractionModelPolicyV1;
@@ -2719,7 +2721,7 @@ async function extractDocumentBatchInternal(
         }
 
         // All chunks accepted -> merge via §4 `mergeExtractionsWithCitations`
-        const merged = mergeExtractionsWithCitations(acceptedChunks);
+        const merged = mergeAcceptedChunksPrepared(acceptedChunks, { root: input.root });
         produceEndedRow = 22;
         produceSuggestedExit = 0;
 

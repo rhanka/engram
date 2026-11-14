@@ -1,3 +1,4 @@
+import { assertionIdentityOf, edgeKey } from "../graph.js";
 import { assertSupportedGraphFormat } from "../graph.js";
 import { graphEdgeContribution, mergeStoreEdgeContribution } from "./edge-contribution.js";
 import { normalizeStoreEdgeIdentity } from "./types.js";
@@ -172,13 +173,12 @@ function computeTopologySignature(G: Graph): string {
 
   const edges: string[] = [];
   G.forEachEdge((_edgeKey, data, source, target) => {
-    const [src, tgt] = [source, target].sort();
-    const rel = (data as Record<string, unknown>).relation ?? "";
-    edges.push(`${src}\t${tgt}\t${String(rel)}`);
+    const { src, tgt, relation } = assertionIdentityOf(source, target, data);
+    edges.push(edgeKey(src, tgt, relation));
   });
   edges.sort();
 
-  return `n=${nodeIds.length};e=${edges.length};${nodeIds.join(",")}|${edges.join(";")}`;
+  return `topo/2;n=${nodeIds.length};e=${edges.length};${JSON.stringify(nodeIds)}|${edges.join(";")}`;
 }
 
 /** Derive a backend-safe city_slug from the config (mirrors postgres/spanner namespace). */
@@ -517,7 +517,7 @@ export async function createSqliteGraphStore(
   config: SqliteGraphStoreConfig,
   deps?: StoreTestDeps,
 ): Promise<SqliteGraphStore> {
-  return createSqliteGraphStoreBody(config, deps, false);
+  return createSqliteGraphStoreBody(config, deps, true);
 }
 
 /** Transactional union bodies, available to tests and activated only in lot A. */
@@ -736,7 +736,8 @@ async function createSqliteGraphStoreBody(config: SqliteGraphStoreConfig, deps: 
       // with the three methods (M4): sqlite upserts element-by-element and folds
       // tombstones out of every read, so it never no-ops silently.
       append: {
-        version: 1,
+        version: 2,
+        evidenceUnion: true,
         upsert: true,
         requiresExistingEndpoints: true,
         tombstone: true,

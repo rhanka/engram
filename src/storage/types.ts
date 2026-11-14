@@ -286,8 +286,10 @@ export interface GraphPushRebuilt {
  */
 export interface GraphStoreAppendCapability {
   /** Schema/behaviour version of the append contract; consumers gate on it. */
-  version: 1;
-  /** v1 append is an upsert by primary key (node=id, edge=(source,target,relation)). */
+  version: 2;
+  /** Same-key edges contribute evidence by exact observation-set union. */
+  evidenceUnion: true;
+  /** Append is an upsert by primary key (node=id, edge=(source,target,relation)). */
   upsert: true;
   /** v1 appendEdge requires BOTH endpoints to already exist (strict referential
    * integrity — a dangling edge fails loud). Tombstones do NOT require existence. */

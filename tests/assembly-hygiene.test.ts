@@ -611,7 +611,7 @@ describe("assembly-hygiene pipeline gate", () => {
 });
 
 describe("L0-R hygiene", () => {
-  it.fails("hygiene-keeps-both-under-unrelated-remap", async () => {
+  it("hygiene-keeps-both-under-unrelated-remap", async () => {
     const { serializeGraph, loadGraphFromData } = await import("../src/graph.js");
     const both = extraction(
       [

@@ -40,6 +40,11 @@ import { graphJsonLink, graphJsonNode, memoryGraphJsonByteSize } from "./graph-j
 /** Relation carried by every memory→code edge assembled here. */
 export const MEMORY_GRAPH_PROJECTION_RELATION_V1 = "memory_about";
 
+/** Relations owned here, sourced from the relation constants used by the assembler. */
+export const MEMORY_GRAPH_PROJECTION_RELATIONS: ReadonlySet<string> = new Set([
+  MEMORY_GRAPH_PROJECTION_RELATION_V1,
+]);
+
 /** Graph attribute pinning the projection cursor of attached memory nodes. */
 export const MEMORY_PROJECTION_CURSOR_ATTR = "memory_projection_cursor";
 /** Graph attribute pinning the high-water cursor the projection was built against. */
@@ -438,7 +443,7 @@ export function attachMemoryProjectionToGraph(
   G: Graph,
   assembled: AssembledMemoryGraphProjectionV1,
 ): MemoryGraphAttachReceiptV1 {
-  return attachMemoryProjectionBody(G, assembled);
+  return attachMemoryProjectionToGraphPrepared(G, assembled);
 }
 
 /** Prepared memory writer; projection freshness and receipts stay unchanged. */
@@ -471,8 +476,7 @@ function attachMemoryProjectionBody(G: Graph, assembled: AssembledMemoryGraphPro
       skippedDanglingEdges += 1;
       continue;
     }
-    if (preparedEdges) upsertRelationEdge(G, identity.src, identity.tgt, edge);
-    else G.mergeEdge(edge.source, edge.target, { ...edge });
+    upsertRelationEdge(G, identity.src, identity.tgt, edge);
     addedEdges += 1;
   }
   G.setAttribute(MEMORY_PROJECTION_CURSOR_ATTR, assembled.projection_cursor);
@@ -524,10 +528,10 @@ export function stripAllMemoryProjectionFromGraph(G: Graph): string[] {
 /**
  * Regeneration/reconciliation (M10 l.1368, l.1370): the next assembly drops
  * memories that left `accepted_current`/eligibility/authorization, retires
- * every previous memory reference edge before attaching the fresh reference
- * set, then attaches the fresh projection. A retargeted authorization (e.g.
+ * every previous reference edge whose relation is owned by this projection
+ * before attaching the fresh projection. A retargeted authorization (e.g.
  * `[alpha]` replaced by `[beta]`) therefore leaves no stale edge behind.
- * Code nodes and code-code edges are never touched.
+ * Code nodes and edges of other relations on surviving nodes are never touched.
  */
 export function reconcileMemoryProjectionInGraph(
   G: Graph,
@@ -536,8 +540,9 @@ export function reconcileMemoryProjectionInGraph(
   const included = new Set(assembled.extraction.nodes.map((node) => node.id));
   const removed = stripNonProjectedMemoryNodes(G, included);
   const staleEdges: string[] = [];
-  G.forEachEdge((edgeKey, _attrs, source, target) => {
-    if (source.startsWith(MEMORY_GRAPH_NODE_PREFIX) || target.startsWith(MEMORY_GRAPH_NODE_PREFIX)) {
+  G.forEachEdge((edgeKey, attrs, source, target) => {
+    if (MEMORY_GRAPH_PROJECTION_RELATIONS.has(attrs.relation) &&
+        (source.startsWith(MEMORY_GRAPH_NODE_PREFIX) || target.startsWith(MEMORY_GRAPH_NODE_PREFIX))) {
       staleEdges.push(edgeKey);
     }
   });

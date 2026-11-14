@@ -35,7 +35,7 @@ function verifyEmissions(out: Extraction, expected: Row[]) {
 
 describe("L0-R reducers", () => {
   for (const form of ["pipeline", "watch"]) describe(form, () => {
-    it.fails("mergeExtractions-keeps-L10-L44-pipeline-watch-shapes", () => {
+    it("mergeExtractions-keeps-L10-L44-pipeline-watch-shapes", () => {
       const contributions = ["L10", "L44"].map(loc => extraction([edge({ source_file: "a.ts", source_location: `a.ts:${loc}`, evidence_refs: [`ref-${loc}`] })]));
       const out = form === "pipeline" ? mergeExtractions(contributions[0], contributions[1]) : mergeExtractions(contributions[1], contributions[0]);
       expect(out.edges).toHaveLength(2);
@@ -47,7 +47,7 @@ describe("L0-R reducers", () => {
     });
   });
   for (const [name, remap] of remappers) describe(name, () => {
-    it.fails("preexisting-raw-loop-survives-unrelated-remap", () => {
+    it("preexisting-raw-loop-survives-unrelated-remap", () => {
       const e = edge({ source: "c", target: "c", _src: "c", _tgt: "c", source_location: "L1", evidence_refs: ["loop"] });
       const out = remap(extraction([e], nodes()));
       assertRemapActive(out);
@@ -60,14 +60,14 @@ describe("L0-R reducers", () => {
       // Passing policy control: no unrelated new helper or evidence requirement.
       expect(buildFromJson(out).size).toBe(0);
     });
-    it.fails("R4-effective-endpoints-govern-remap-loop", () => {
+    it("R4-effective-endpoints-govern-remap-loop", () => {
       const emissions = [edge({ source: a, target: b, _src: "c", _tgt: "d", source_location: "L1", evidence_refs: ["forward"] }), edge({ source: a, target: b, _src: "d", _tgt: "c", source_location: "L2", evidence_refs: ["reverse"] })];
       const out = remap(extraction(emissions, nodes()));
       assertRemapActive(out);
       verifyEmissions(out, emissions);
     });
     for (const control of ["effective-loop", "raw-loop-effective-non-loop"]) describe(control, () => {
-      it.fails("R4-effective-self-loop-preserved-through-remap", () => {
+      it("R4-effective-self-loop-preserved-through-remap", () => {
         const e = control === "effective-loop"
           ? edge({ source: a, target: b, _src: "c", _tgt: "c", source_location: "L1", evidence_refs: ["effective-loop"] })
           : edge({ source: a, target: a, _src: "c", _tgt: "d", source_location: "L2", evidence_refs: ["raw-loop"] });

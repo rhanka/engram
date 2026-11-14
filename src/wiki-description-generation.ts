@@ -1,3 +1,4 @@
+import { compareCodeUnits } from "./graph-json-serialization.js";
 import { readerDegree } from "./graph.js";
 import { existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -128,7 +129,7 @@ function uniqueSorted(values: Iterable<string>): string[] {
 }
 
 function sortByLabelAndId(a: string, b: string): number {
-  return a.localeCompare(b);
+  return compareCodeUnits(a, b);
 }
 
 function safeTargetId(value: string): string {
@@ -175,7 +176,7 @@ function collectNodeNeighbors(graph: Graph, targetId: string, limit: number): Wi
   });
 
   const neighbors: WikiDescriptionNeighbor[] = [];
-  for (const [relation, entries] of [...buckets.entries()].sort((left, right) => left[0].localeCompare(right[0]))) {
+  for (const [relation, entries] of [...buckets.entries()].sort((left, right) => compareCodeUnits(left[0], right[0]))) {
     const sorted = [...entries].sort((left, right) => {
       const byLabel = sortByLabelAndId(left.target_label, right.target_label);
       return byLabel !== 0 ? byLabel : sortByLabelAndId(left.target_id, right.target_id);
@@ -316,7 +317,7 @@ function collectInferredCommunityMap(graph: Graph): Map<number, string[]> {
   });
 
   for (const members of result.values()) {
-    members.sort((left, right) => left.localeCompare(right));
+    members.sort((left, right) => compareCodeUnits(left, right));
   }
   return result;
 }

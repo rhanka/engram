@@ -72,6 +72,10 @@ describe("MCP-L3 persisted memory byte ceiling", () => {
     // Each individual projection fits; their combined persisted view must
     // still be checked by the real writer, including its added attributes.
     for (const candidate of bulkCandidates()) {
+      // V2 adds 87 compact bytes per stored memory edge (captured evidence,
+      // derived score and identity); keep the fixture at the same exact ceiling.
+      const last = candidate.citation_refs!.length - 1;
+      candidate.citation_refs![last] = candidate.citation_refs![last]!.slice(0, -87);
       const result = assembleMemoryGraphProjection(input([candidate]));
       expect(result.ok).toBe(true);
       if (result.ok) attachMemoryProjectionToGraph(G, result.value);
