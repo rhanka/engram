@@ -351,7 +351,7 @@ export function buildAppContextEntry(
     entryVersion: "1.0.0",
     publisher: {
       packageName: "@sentropic/engram",
-      packageVersion: "0.26.0",
+      packageVersion: "0.27.0",
     },
     compatibility: {
       entryContract: "1.1.4",
@@ -438,7 +438,7 @@ export function projectAppContextAdmissionEntry(
     profileShape: payload.profileShape,
     generatedBpmn: false,
     qualificationScope: {
-      libraries: [{ id: "@sentropic/engram", version: "0.26.0" }],
+      libraries: [{ id: "@sentropic/engram", version: "0.27.0" }],
       proofSets: [],
       selections: [{ phase: "build", readinessPolicy: "strict" }],
     },
