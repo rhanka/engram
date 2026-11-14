@@ -7,7 +7,7 @@ import betweennessCentrality from "graphology-metrics/centrality/betweenness.js"
 import type { GodNodeEntry, SurpriseEntry, SuggestedQuestion, GraphDiffResult } from "./types.js";
 import { type NumericMapLike, toNumericMap } from "./collections.js";
 import { cohesionScore } from "./cluster.js";
-import { traversalNeighbors } from "./graph.js";
+import { readerDegree, assertionIdentityOf, edgeKey, traversalNeighbors } from "./graph.js";
 import {
   CODE_EXTENSIONS,
   DOC_EXTENSIONS,
@@ -60,7 +60,7 @@ export function isFileNode(G: Graph, nodeId: string): boolean {
   }
 
   if (label.startsWith(".") && label.endsWith("()")) return true;
-  if (label.endsWith("()") && G.degree(nodeId) <= 1) return true;
+  if (label.endsWith("()") && readerDegree(G, nodeId) <= 1) return true;
   return false;
 }
 
@@ -171,8 +171,8 @@ function surpriseScore(
     reasons.push("semantically similar concepts with no structural link");
   }
 
-  const degU = G.degree(u);
-  const degV = G.degree(v);
+  const degU = readerDegree(G, u);
+  const degV = readerDegree(G, v);
   if (Math.min(degU, degV) <= 2 && Math.max(degU, degV) >= 5) {
     score += 1;
     const peripheral = degU <= 2 ? (G.getNodeAttribute(u, "label") as string) : (G.getNodeAttribute(v, "label") as string);
@@ -185,7 +185,7 @@ function surpriseScore(
 
 export function godNodes(G: Graph, topN: number = 10): GodNodeEntry[] {
   const degree: [string, number][] = [];
-  G.forEachNode((n) => degree.push([n, G.degree(n)]));
+  G.forEachNode((n) => degree.push([n, readerDegree(G, n)]));
   degree.sort((a, b) => b[1] - a[1]);
 
   const result: GodNodeEntry[] = [];
@@ -395,7 +395,7 @@ export function suggestQuestions(
 
   // 3. God nodes with many INFERRED edges
   const degree: [string, number][] = [];
-  G.forEachNode((n) => degree.push([n, G.degree(n)]));
+  G.forEachNode((n) => degree.push([n, readerDegree(G, n)]));
   degree.sort((a, b) => b[1] - a[1]);
   const topNodes = degree.filter(([n]) => !isFileNode(G, n)).slice(0, 5);
 
@@ -422,7 +422,7 @@ export function suggestQuestions(
   // 4. Isolated nodes
   const isolated: string[] = [];
   G.forEachNode((n) => {
-    if (G.degree(n) <= 1 && !isFileNode(G, n) && !isConceptNode(G, n)) {
+    if (readerDegree(G, n) <= 1 && !isFileNode(G, n) && !isConceptNode(G, n)) {
       isolated.push(n);
     }
   });
@@ -479,17 +479,19 @@ export function graphDiff(GOld: Graph, GNew: Graph): GraphDiffResult {
     label: (GOld.getNodeAttribute(n, "label") as string) ?? n,
   }));
 
-  function edgeKey(u: string, v: string, relation: string): string {
-    return `${[u, v].sort().join(",")}:${relation}`;
+  function assertionKey(u: string, v: string, attrs: Record<string, unknown>): string {
+    if (!GOld.multi && !GNew.multi) return `${[u, v].sort().join(",")}:${(attrs.relation as string) ?? ""}`;
+    const { src, tgt, relation } = assertionIdentityOf(u, v, attrs);
+    return edgeKey(src, tgt, relation);
   }
 
   const oldEdgeKeys = new Set<string>();
   GOld.forEachEdge((edge, data, u, v) => {
-    oldEdgeKeys.add(edgeKey(u, v, (data.relation as string) ?? ""));
+    oldEdgeKeys.add(assertionKey(u, v, data));
   });
   const newEdgeKeys = new Set<string>();
   GNew.forEachEdge((edge, data, u, v) => {
-    newEdgeKeys.add(edgeKey(u, v, (data.relation as string) ?? ""));
+    newEdgeKeys.add(assertionKey(u, v, data));
   });
 
   const addedEdgeKeys = new Set([...newEdgeKeys].filter((k) => !oldEdgeKeys.has(k)));
@@ -497,10 +499,12 @@ export function graphDiff(GOld: Graph, GNew: Graph): GraphDiffResult {
 
   const newEdgesList: GraphDiffResult["new_edges"] = [];
   GNew.forEachEdge((edge, data, u, v) => {
-    if (addedEdgeKeys.has(edgeKey(u, v, (data.relation as string) ?? ""))) {
+    if (addedEdgeKeys.has(assertionKey(u, v, data))) {
+      const { src, tgt, relation } = GOld.multi || GNew.multi
+        ? assertionIdentityOf(u, v, data)
+        : { src: u, tgt: v, relation: (data.relation as string) ?? "" };
       newEdgesList.push({
-        source: u, target: v,
-        relation: (data.relation as string) ?? "",
+        source: src, target: tgt, relation,
         confidence: (data.confidence as string) ?? "",
       });
     }
@@ -508,10 +512,12 @@ export function graphDiff(GOld: Graph, GNew: Graph): GraphDiffResult {
 
   const removedEdgesList: GraphDiffResult["removed_edges"] = [];
   GOld.forEachEdge((edge, data, u, v) => {
-    if (removedEdgeKeys.has(edgeKey(u, v, (data.relation as string) ?? ""))) {
+    if (removedEdgeKeys.has(assertionKey(u, v, data))) {
+      const { src, tgt, relation } = GOld.multi || GNew.multi
+        ? assertionIdentityOf(u, v, data)
+        : { src: u, tgt: v, relation: (data.relation as string) ?? "" };
       removedEdgesList.push({
-        source: u, target: v,
-        relation: (data.relation as string) ?? "",
+        source: src, target: tgt, relation,
         confidence: (data.confidence as string) ?? "",
       });
     }

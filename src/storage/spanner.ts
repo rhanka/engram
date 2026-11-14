@@ -1,3 +1,4 @@
+import { assertSupportedGraphFormat } from "../graph.js";
 import { requireHostDriver } from "./host-driver.js";
 /**
  * Spanner GraphStore adapter (SPEC_STORAGE_BACKENDS.md, "Spanner Graph").
@@ -391,15 +392,22 @@ export async function createSpannerGraphStore(
   );
   const database = client.instance(instanceId).database(databaseId);
 
-  // Bind the table set on connect: prefer `engram_*` when present, else bind
+  // Bind on the first table operation, after any graph-format refusal: prefer
+  // `engram_*` when present, else bind
   // to legacy `graphify_*` with a warning, else default to `engram_*` for a
   // fresh database. Best-effort: any probe failure also defaults to new.
-  const tables = await resolveLiveSpannerTables(database);
-  if (tables.legacy) {
-    console.warn(
-      `[engram] using legacy graphify_* tables in Spanner database '${databaseId}'; ` +
-        `new writes stay on the legacy tables — no automatic rename is performed`,
-    );
+  let tables = ENGRAM_SPANNER_TABLES;
+  let tableBinding: Promise<void> | undefined;
+  function ensureTables(): Promise<void> {
+    return tableBinding ??= resolveLiveSpannerTables(database).then(resolved => {
+      tables = resolved;
+      if (tables.legacy) {
+        console.warn(
+          `[engram] using legacy graphify_* tables in Spanner database '${databaseId}'; ` +
+            `new writes stay on the legacy tables — no automatic rename is performed`,
+        );
+      }
+    });
   }
 
   const namespace = deriveNamespace(config);
@@ -416,6 +424,7 @@ export async function createSpannerGraphStore(
   // -------------------------------------------------------------------------
 
   async function ensureSchema(): Promise<void> {
+    await ensureTables();
     if (schemaEnsured) return;
     schemaEnsured = true;
     try {
@@ -529,6 +538,7 @@ export async function createSpannerGraphStore(
   }
 
   async function readMetaFromBackend(): Promise<GraphStoreSnapshotMeta | undefined> {
+    await ensureTables();
     const result = await database.run({
       sql: `SELECT topology_signature, pushed_at, tool_version FROM ${tables.meta} WHERE namespace = @ns LIMIT 1`,
       params: { ns: namespace },
@@ -568,6 +578,7 @@ export async function createSpannerGraphStore(
       communities: Map<number, string[]>,
       options: GraphPushOptions = {},
     ): Promise<GraphPushResult> {
+      assertSupportedGraphFormat(G.getAttributes(), "storage/spanner pushGraph");
       const start = Date.now();
       const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
       const mode = options.mode ?? "merge";
@@ -620,6 +631,7 @@ export async function createSpannerGraphStore(
         );
       }
       const targetNamespace = opts.namespace ?? namespace;
+      await ensureTables();
       await deleteNamespaceRows(tables.node, targetNamespace);
       await deleteNamespaceRows(tables.edge, targetNamespace);
       await deleteNamespaceRows(tables.meta, targetNamespace);

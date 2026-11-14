@@ -105,8 +105,11 @@ export interface QualityTargetGraphConfig {
   forbidden_node_id_patterns: string[];
   forbidden_source_path_patterns: string[];
   allowed_node_types: string[];
+  /** Legacy endpoint incidence for degree thresholds: a self-loop counts twice. */
   min_degree_by_type: Record<string, number>;
+  /** Legacy endpoint incidence for degree thresholds: a self-loop counts twice. */
   max_degree_by_type: Record<string, number>;
+  /** Legacy endpoint incidence per derivation: a self-loop counts twice. */
   max_degree_by_type_and_derivation: Record<string, Record<string, number>>;
   required_neighbor_ids_by_node: Record<string, string[]>;
   forbidden_edges: QualityTargetForbiddenEdgeConfig[];

@@ -1,3 +1,4 @@
+import { readerDegree } from "./graph.js";
 import { existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -203,7 +204,7 @@ function collectNodeTargetContext(
     target_kind: "node",
     label,
     node_type: nodeType,
-    degree: graph.degree(targetId),
+    degree: readerDegree(graph, targetId),
     source_refs: sourceRefs,
     community_id: communityId,
     community_label: communityId === null ? null : (communityLabels.get(communityId) ?? `Community ${communityId}`),
@@ -219,7 +220,7 @@ function collectCommunityTargetContext(
 ): RawCommunity {
   const sortedMembers = [...members].filter(graph.hasNode.bind(graph))
     .sort((a, b) => {
-      const degreeDelta = graph.degree(b) - graph.degree(a);
+      const degreeDelta = readerDegree(graph, b) - readerDegree(graph, a);
       return degreeDelta !== 0 ? degreeDelta : sortByLabelAndId(a, b);
     });
 
@@ -228,7 +229,7 @@ function collectCommunityTargetContext(
     return {
       id: memberId,
       label: safeString(attrs.label) ?? memberId,
-      degree: graph.degree(memberId),
+      degree: readerDegree(graph, memberId),
     };
   });
 

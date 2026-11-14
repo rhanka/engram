@@ -44,7 +44,7 @@ import {
   type CitationCapValue,
   type ResolvedCitationPolicy,
 } from "./citation-policy.js";
-import { forEachTraversalNeighbor, loadGraphFromData } from "./graph.js";
+import { readerDegree, forEachTraversalNeighbor, readerPairEdges, loadGraphFromData } from "./graph.js";
 import { communitiesFromGraph, communityLabelsFromGraph } from "./graph-communities.js";
 import { safeExecGit } from "./git.js";
 import { safeGitRevParse } from "./git.js";
@@ -568,7 +568,7 @@ function findBestMatchingNode(G: Graph, query: string): string | null {
     const label = (data.label as string) ?? nodeId;
     const source = (data.source_file as string) ?? "";
     const score = scoreSearchText(label, source, terms);
-    if (score > 0 && (!bestNodeId || score > bestScore || (score === bestScore && G.degree(nodeId) > G.degree(bestNodeId)))) {
+    if (score > 0 && (!bestNodeId || score > bestScore || (score === bestScore && readerDegree(G, nodeId) > readerDegree(G, bestNodeId)))) {
       bestScore = score;
       bestNodeId = nodeId;
     }
@@ -5227,12 +5227,14 @@ export async function main(): Promise<void> {
         for (let i = 0; i < path.length - 1; i += 1) {
           const nodeId = path[i]!;
           const nextNode = path[i + 1]!;
-          const edgeId = G.edge(nodeId, nextNode);
-          const edge = edgeId ? G.getEdgeAttributes(edgeId) : {};
+          const selected = readerPairEdges(G, nodeId, nextNode)[0];
+          const edge = selected?.attrs ?? {};
           if (i === 0) segments.push((G.getNodeAttribute(nodeId, "label") as string) ?? nodeId);
           const label = (G.getNodeAttribute(nextNode, "label") as string) ?? nextNode;
           const confidence = edge.confidence ? ` [${edge.confidence}]` : "";
-          segments.push(`--${edge.relation ?? ""}${confidence}--> ${label}`);
+          segments.push(selected?.orientation === "reverse"
+            ? `<--${edge.relation ?? ""}${confidence}-- ${label}`
+            : `--${edge.relation ?? ""}${confidence}--> ${label}`);
         }
         console.log(`Shortest path (${path.length - 1} hops):\n  ${segments.join(" ")}`);
       } catch (err) {
@@ -5260,16 +5262,16 @@ export async function main(): Promise<void> {
         console.log(`  Source:    ${(attrs.source_file as string) ?? ""} ${(attrs.source_location as string) ?? ""}`.trimEnd());
         console.log(`  Type:      ${(attrs.file_type as string) ?? ""}`);
         console.log(`  Community: ${attrs.community ?? ""}`);
-        console.log(`  Degree:    ${G.degree(nodeId)}`);
+        console.log(`  Degree:    ${readerDegree(G, nodeId)}`);
         const neighbors: string[] = [];
         forEachTraversalNeighbor(G, nodeId, (neighbor) => neighbors.push(neighbor));
         if (neighbors.length > 0) {
           console.log(`\nConnections (${neighbors.length}):`);
-          for (const neighbor of neighbors.sort((a, b) => G.degree(b) - G.degree(a)).slice(0, 20)) {
-            const edgeId = G.edge(nodeId, neighbor);
-            const edge = edgeId ? G.getEdgeAttributes(edgeId) : {};
+          for (const neighbor of neighbors.sort((a, b) => readerDegree(G, b) - readerDegree(G, a)).slice(0, 20)) {
             const label = (G.getNodeAttribute(neighbor, "label") as string) ?? neighbor;
-            console.log(`  --> ${label} [${edge.relation ?? ""}] [${edge.confidence ?? ""}]`);
+            for (const { attrs: edge, orientation } of readerPairEdges(G, nodeId, neighbor)) {
+              console.log(`  ${orientation === "reverse" ? "<--" : "-->"} ${label} [${edge.relation ?? ""}] [${edge.confidence ?? ""}]`);
+            }
           }
           if (neighbors.length > 20) console.log(`  ... and ${neighbors.length - 20} more`);
         }
@@ -5946,20 +5948,22 @@ export async function main(): Promise<void> {
         const { sanitizeLabel } = await import("./security.js");
         const charBudget = budget * 3;
         const lines: string[] = [];
-        const sortedNodes = [...visited].sort((a, b) => G.degree(b) - G.degree(a));
+        const sortedNodes = [...visited].sort((a, b) => readerDegree(G, b) - readerDegree(G, a));
         for (const nid of sortedNodes) {
           const d = G.getNodeAttributes(nid);
           lines.push(
             `NODE ${sanitizeLabel((d.label as string) ?? nid)} [src=${d.source_file ?? ""} loc=${d.source_location ?? ""} community=${d.community ?? ""}]`,
           );
         }
+        const emittedEdges = new Set<string>();
         for (const [u, v] of edgesSeen) {
           if (visited.has(u) && visited.has(v)) {
-            const edge = G.edge(u, v);
-            if (edge) {
-              const d = G.getEdgeAttributes(edge);
+            for (const { key, attrs: d, orientation } of readerPairEdges(G, u, v)) {
+              if (G.multi && emittedEdges.has(key)) continue;
+              emittedEdges.add(key);
+              const arrow = orientation === "reverse" ? `<--${d.relation ?? ""} [${d.confidence ?? ""}]--` : `--${d.relation ?? ""} [${d.confidence ?? ""}]-->`;
               lines.push(
-                `EDGE ${sanitizeLabel((G.getNodeAttribute(u, "label") as string) ?? u)} --${d.relation ?? ""} [${d.confidence ?? ""}]--> ${sanitizeLabel((G.getNodeAttribute(v, "label") as string) ?? v)}`,
+                `EDGE ${sanitizeLabel((G.getNodeAttribute(u, "label") as string) ?? u)} ${arrow} ${sanitizeLabel((G.getNodeAttribute(v, "label") as string) ?? v)}`,
               );
             }
           }

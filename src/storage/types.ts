@@ -629,3 +629,7 @@ export interface GraphStoreConfig {
 export interface StoreTestDeps {
   driverModule?: unknown;
 }
+/** Storage-port identity preserves the established omitted-relation namespace. */
+export function normalizeStoreEdgeIdentity(source: string, target: string, relation?: unknown): { source: string; target: string; relation: string } {
+  return { source, target, relation: typeof relation === "string" ? relation : "RELATES_TO" };
+}

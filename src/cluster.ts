@@ -6,7 +6,7 @@
 import Graph from "graphology";
 import louvain from "graphology-communities-louvain";
 import { type NumericMapLike, toNumericMap } from "./collections.js";
-import { toUndirectedGraph } from "./graph.js";
+import { readerDegree, toUndirectedGraph } from "./graph.js";
 
 const MAX_COMMUNITY_FRACTION = 0.25;
 const MIN_SPLIT_SIZE = 10;
@@ -126,13 +126,13 @@ export function cluster(G: Graph, options: ClusterOptions = {}): Map<number, str
   const hubNodes = new Set<string>();
   if (excludeHubsPercentile !== null && excludeHubsPercentile !== undefined) {
     const degrees: number[] = [];
-    G.forEachNode((n) => { degrees.push(G.degree(n)); });
+    G.forEachNode((n) => { degrees.push(readerDegree(G, n)); });
     degrees.sort((a, b) => a - b);
     if (degrees.length > 0) {
       const idx = Math.max(0, Math.floor((degrees.length * excludeHubsPercentile) / 100) - 1);
       const threshold = degrees[idx]!;
       G.forEachNode((n) => {
-        if (G.degree(n) > threshold) hubNodes.add(n);
+        if (readerDegree(G, n) > threshold) hubNodes.add(n);
       });
     }
   }
@@ -143,7 +143,7 @@ export function cluster(G: Graph, options: ClusterOptions = {}): Map<number, str
   const connectedNodes: string[] = [];
   G.forEachNode((n) => {
     if (hubNodes.has(n)) return;
-    if (G.degree(n) === 0) {
+    if (readerDegree(G, n) === 0) {
       isolates.push(n);
     } else {
       connectedNodes.push(n);
@@ -344,22 +344,24 @@ export function remapCommunitiesToPrevious(
   return new Map([...remapped.entries()].sort((a, b) => a[0] - b[0]));
 }
 
-/** Ratio of actual intra-community edges to maximum possible. */
+/** Ratio of unique non-self intra-community pairs to maximum possible. */
 export function cohesionScore(G: Graph, communityNodes: string[]): number {
   const n = communityNodes.length;
   if (n <= 1) return 1.0;
   const nodeSet = new Set(communityNodes);
-  let actual = 0;
+  const pairs = new Set<string>();
+  let legacyEdges = 0;
   G.forEachEdge((edge, attrs, source, target) => {
-    if (nodeSet.has(source) && nodeSet.has(target)) {
-      actual++;
+    if (nodeSet.has(source) && nodeSet.has(target)) legacyEdges++;
+    if (source !== target && nodeSet.has(source) && nodeSet.has(target)) {
+      pairs.add(JSON.stringify([source, target].sort()));
     }
   });
   const possible = (n * (n - 1)) / 2;
   // Upstream 2d783e5: do not round here — the 0.05 split threshold needs the
   // raw ratio so a 0.0666 cohesion does not get clamped to 0.07 and miss the
   // split, while a 0.0444 stays strictly below 0.05.
-  return possible > 0 ? actual / possible : 0.0;
+  return possible > 0 ? (G.multi ? pairs.size : legacyEdges) / possible : 0.0;
 }
 
 export function scoreAll(

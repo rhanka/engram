@@ -1,3 +1,4 @@
+import { assertSupportedGraphFormat } from "../graph.js";
 /**
  * FileGraphStore — reference GraphStore implementation
  * (SPEC_STORAGE_BACKENDS.md, "Store Registry And Driver Loading"). It
@@ -78,6 +79,7 @@ export function createFileGraphStore(config: GraphStoreConfig): FileGraphStore {
       communities: Map<number, string[]>,
       options: GraphPushOptions = {},
     ): Promise<GraphPushResult> {
+      assertSupportedGraphFormat(G.getAttributes(), "storage/file pushGraph");
       const start = Date.now();
       // The file backend has a single write primitive: rewriting the target
       // file. A push therefore always has replace semantics; mode "merge" is

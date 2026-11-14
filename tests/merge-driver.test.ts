@@ -201,7 +201,7 @@ describe("merge graph driver", () => {
 import { edge as mlEdge, node as mlNode, expectObservations as mlObs, observation as mlObservation, type Row as MlRow } from "./helpers/multi-links.js";
 describe("L0-S merge driver", () => {
   for(const role of ["ancestor","current","other"]) describe(role+"/merge",()=>{
-    it.fails("merge-driver-unknown-and-copy-branch-zero-writes",()=>{
+    it("merge-driver-unknown-and-copy-branch-zero-writes",()=>{
       const dir=tempDir(), paths={ancestor:join(dir,"ancestor.json"),current:join(dir,"current.json"),other:join(dir,"other.json")};
       const base={nodes:[mlNode("a"),mlNode("b")],links:[]};
       const docs:Record<string,MlRow>={ancestor:base,current:{...base,links:[mlEdge({relation:"reads"})]},other:{...base,links:[mlEdge({relation:"writes"})]}};
@@ -216,7 +216,7 @@ describe("L0-S merge driver", () => {
     });
   });
   for (const sourceRole of ["left", "right"]) describe("missing-destination/copy-" + sourceRole, () => {
-    for (const unknownRole of ["source", "ancestor"]) it.fails("merge-driver-unknown-and-copy-branch-zero-writes", () => {
+    for (const unknownRole of ["source", "ancestor"]) it("merge-driver-unknown-and-copy-branch-zero-writes", () => {
       const dir = tempDir(), ancestor = join(dir, "ancestor.json");
       const source = join(dir, sourceRole + ".json"), destination = join(dir, (sourceRole === "left" ? "right" : "left") + ".json");
       const base = { nodes: [mlNode("a"), mlNode("b")], links: [] };

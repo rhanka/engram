@@ -9,11 +9,11 @@
  *    using an explicit `seen` set keyed on node.id.
  */
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, relative as pathRelative, resolve } from "node:path";
+import { resolve } from "node:path";
 import Graph from "graphology";
 import type { Extraction, OntologyCitation } from "./types.js";
 import { unionCitations } from "./citations.js";
-import { createGraph } from "./graph.js";
+import { assertSupportedGraphFormat, createGraph, legacyObservationFromRawLink, normalizeSourceFilePath } from "./graph.js";
 import { assertGraphJsonFileSize } from "./graph-size-guard.js";
 import { cleanupStaleNodes } from "./semantic-cleanup.js";
 import { validateExtraction } from "./validate.js";
@@ -98,23 +98,6 @@ export function applyAssemblyHygiene(
 
 const CHUNK_SUFFIX = /_c\d+$/;
 const SKU_LIKE_LABEL = /^[A-Z0-9][A-Z0-9._/-]{1,11}$/;
-
-function normalizeSourceFilePath(value: unknown, root?: string): string | undefined {
-  if (typeof value !== "string") return undefined;
-  let normalised = value.replace(/\\/g, "/");
-  if (root && isAbsolute(normalised)) {
-    try {
-      const rel = pathRelative(resolve(root), normalised);
-      // Only strip when the path is actually inside root (no .. prefix).
-      if (rel && !rel.startsWith("..") && !isAbsolute(rel)) {
-        normalised = rel.replace(/\\/g, "/");
-      }
-    } catch {
-      /* ignore — keep original */
-    }
-  }
-  return normalised;
-}
 
 // Unicode word characters (letters + digits across scripts) plus underscore.
 // Ports safishamsi 86109e9 (#937) to TypeScript: Python's
@@ -234,9 +217,10 @@ function hasConflictingRegistryIdentity(
   return false;
 }
 
-function readExistingGraphExtraction(graphPath: string): { extraction: Extraction; nodeCount: number } {
+function readExistingGraphExtraction(graphPath: string, captureObservations = false): { extraction: Extraction; nodeCount: number } {
   assertGraphJsonFileSize(graphPath, "read");
   const raw = asRecord(JSON.parse(readFileSync(graphPath, "utf-8"))) ?? {};
+  assertSupportedGraphFormat(raw, graphPath);
   const rawNodes = Array.isArray(raw.nodes) ? raw.nodes : [];
   const rawEdges = Array.isArray(raw.links) ? raw.links : Array.isArray(raw.edges) ? raw.edges : [];
   const rawGraphAttrs = asRecord(raw.graph) ?? {};
@@ -269,6 +253,7 @@ function readExistingGraphExtraction(graphPath: string): { extraction: Extractio
     const source = asString(edge._src) ?? asString(edge.source);
     const target = asString(edge._tgt) ?? asString(edge.target);
     if (!source || !target) continue;
+    const observations = captureObservations ? legacyObservationFromRawLink(edge) : undefined;
     const {
       source: _source,
       target: _target,
@@ -283,6 +268,7 @@ function readExistingGraphExtraction(graphPath: string): { extraction: Extractio
       confidence: String(attrs.confidence ?? "EXTRACTED") as Extraction["edges"][number]["confidence"],
       source_file: String(attrs.source_file ?? ""),
       ...attrs,
+      ...(observations ? { evidence_observations: observations } : {}),
     });
   }
 
@@ -297,6 +283,11 @@ function readExistingGraphExtraction(graphPath: string): { extraction: Extractio
     },
     nodeCount: nodes.length,
   };
+}
+
+/** Raw-first reader body, deliberately not used by buildMerge until activation. */
+export function readExistingGraphExtractionPrepared(graphPath: string): { extraction: Extraction; nodeCount: number } {
+  return readExistingGraphExtraction(graphPath, true);
 }
 
 export function deduplicateByLabel(extraction: Extraction): Extraction {

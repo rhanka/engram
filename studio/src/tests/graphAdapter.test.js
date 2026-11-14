@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildScene,
+  buildWindowScene,
+  candidateSubgraph,
+  candidateUnionSubgraph,
   communityStats,
   entitiesByCommunity,
   entitiesByType,
@@ -16,7 +19,14 @@ import {
   nodeType,
   relationRowsFor,
 } from "../lib/graphAdapter.js";
-import { colorForGroup } from "../lib/graphRendererPayload.js";
+import { buildGraphRendererPayload, colorForGroup } from "../lib/graphRendererPayload.js";
+import {
+  applyGroupCollapse,
+  applyOntologyCollapse,
+  injectCommunityNodes,
+  injectOntologyClassNodes,
+  injectTypeNodes,
+} from "../lib/classNodes.js";
 
 const FIXTURE = {
   nodes: [
@@ -822,4 +832,133 @@ describe("B2 — T12 numeric-only-community colour parity (A5 × BUG B)", () => 
     expect(byKey.get("People").color).toBe(colorForGroup("People"));
     expect(byKey.get("Places").color).toBe(colorForGroup("Places"));
   });
+});
+
+describe("R2-M1 — topology degree through Studio adapters", () => {
+  const classes = {
+    hierarchies: {
+      fixture: {
+        classes_by_id: {
+          "class:Character": {
+            id: "class:Character",
+            member_node_types: ["Character"],
+            member_ids: ["d"],
+          },
+        },
+      },
+    },
+  };
+  const injectClass = (graph) => injectOntologyClassNodes(graph, classes);
+  const injectCommunity = (graph) => injectCommunityNodes(graph, {
+    communityOf: (node) => node.id === "d" ? "group" : null,
+    liveKeys: ["group"],
+  });
+  const injectType = (graph) => injectTypeNodes(graph, {
+    typeOf: (node) => node.id === "d" ? "Character" : null,
+    typeNames: ["Character"],
+  });
+  const collapse = (graph, target) => applyGroupCollapse(graph, {
+    parentById: new Map([["d", target]]),
+    collapseTargets: [target],
+  });
+  const adapters = [
+    ["candidateSubgraph", (graph) => candidateSubgraph(graph, "a", "c", 1)],
+    ["candidateUnionSubgraph", (graph) => candidateUnionSubgraph(graph, [
+      { canonical_id: "a" }, { canonical_id: "c" },
+    ], 1)],
+    ["buildWindowScene", (graph) => ({ ...graph, edges: graph.links }), buildWindowScene],
+    ["ontology injection", injectClass],
+    ["ontology injection without an artifact", (graph) => injectOntologyClassNodes(graph, null)],
+    ["ontology injection with empty hierarchies", (graph) => injectOntologyClassNodes(graph, { hierarchies: {} })],
+    ["community injection", injectCommunity],
+    ["community injection with no live keys", (graph) => injectCommunityNodes(graph, { liveKeys: [] })],
+    ["type injection", injectType],
+    ["type injection with no type names", (graph) => injectTypeNodes(graph, { typeNames: [] })],
+    ["ontology collapse", (graph) => applyOntologyCollapse(injectClass(graph), classes, {
+      collapsedClassIds: ["class:Character"],
+    })],
+    ["ontology collapse without targets", (graph) => applyOntologyCollapse(graph, classes)],
+    ["community collapse", (graph) => collapse(injectCommunity(graph), "community-node:group")],
+    ["type collapse", (graph) => collapse(injectType(graph), "type-node:Character")],
+    ["group collapse without targets", (graph) => applyGroupCollapse(graph)],
+    ["group collapse without members", (graph) => applyGroupCollapse(graph, { collapseTargets: ["missing"] })],
+  ];
+
+  function fixture(parallel = false, labels = false) {
+    return {
+      nodes: (labels ? ["c", "d", "e", "z", "w", "b", "a"] : ["a", "b", "c", "d", "e"])
+        .map((id, index) => ({ id, label: id, type: "Character", x: index, y: 0 })),
+      links: [
+        { source: "a", target: "b", relation: "r1" },
+        { source: "c", target: "d", relation: "r1" },
+        { source: "c", target: "e", relation: "r1" },
+        ...(parallel ? ["r2", "r3", "r4"].map((relation) => ({ source: "a", target: "b", relation })) : []),
+        ...(labels ? ["z", "w"].map((target) => ({ source: "c", target, relation: "r1" })) : []),
+      ],
+    };
+  }
+
+  const weightsById = (scene) => Object.fromEntries(scene.nodes.map((node) => [node.id, node.weight]));
+  const colorsById = (payload) => Object.fromEntries(payload.renderGraph.nodeIds.map((id, index) => [
+    id, Array.from(payload.baseStyle.nodeColors.slice(index * 4, index * 4 + 4)),
+  ]));
+  const labelsById = (payload) => Object.fromEntries(payload.renderGraph.nodeIds.map((id, index) => [
+    id, payload.baseStyle.nodeLabels[index],
+  ]));
+
+  for (const [name, adapt, makeScene = buildScene] of adapters) {
+    describe(name, () => {
+      it("should preserve weights, churn and opt-in when parallel relations are added", () => {
+        const before = adapt({ ...fixture(), multigraph: true });
+        const after = adapt({ ...fixture(true), multigraph: true });
+        const baseline = makeScene(before);
+        const parallel = makeScene(after);
+        expect(weightsById(parallel)).toEqual(weightsById(baseline));
+        expect(weightsById(parallel).c).toBeGreaterThan(weightsById(parallel).a);
+        expect(colorsById(buildGraphRendererPayload(parallel, { colorBy: "churn" })))
+          .toEqual(colorsById(buildGraphRendererPayload(baseline, { colorBy: "churn" })));
+        expect(before.multigraph).toBe(true);
+        expect(after.multigraph).toBe(true);
+        expect(baseline.multigraph).toBe(true);
+        expect(parallel.multigraph).toBe(true);
+        expect(parallel.edges.length - baseline.edges.length).toBe(3);
+      });
+
+      it("should preserve label priority when parallel relations compete for the label budget", () => {
+        function payload(parallel) {
+          const scene = makeScene(adapt({ ...fixture(parallel, true), multigraph: true }));
+          // Two extra peripheral characters keep the label budget contested
+          // even when a collapse hides one member. Fix packing order per ID.
+          const order = ["c", "d", "e", "z", "w", "b", "a"];
+          const rank = (id) => order.includes(id) ? order.indexOf(id) : order.length;
+          return buildGraphRendererPayload({
+            ...scene,
+            nodes: [...scene.nodes].sort((a, b) => rank(a.id) - rank(b.id)),
+          }, { zoom: 0 });
+        }
+        const baseline = labelsById(payload(false));
+        expect(baseline.a).toBe("");
+        expect(baseline.c).toBe("c");
+        expect(labelsById(payload(true))).toEqual(baseline);
+      });
+
+      it.each([undefined, false])("should retain legacy degree behavior for multigraph=%s", (flag) => {
+        const graph = { ...fixture(true), ...(flag === undefined ? {} : { multigraph: flag }) };
+        const adapted = adapt(graph);
+        const scene = makeScene(adapted);
+        expect(adapted.multigraph).not.toBe(true);
+        if (flag === undefined) expect(adapted).not.toHaveProperty("multigraph");
+        expect(scene).not.toHaveProperty("multigraph");
+        expect(weightsById(scene).a).toBeGreaterThan(weightsById(scene).c);
+        expect(weightsById(scene).a).toBe(23.04);
+        expect(weightsById(scene).c).toBe(7.5625);
+      });
+
+      it("should retain opt-in when the input graph is empty", () => {
+        const adapted = adapt({ nodes: [], links: [], multigraph: true });
+        expect(adapted.multigraph).toBe(true);
+        expect(makeScene(adapted).multigraph).toBe(true);
+      });
+    });
+  }
 });

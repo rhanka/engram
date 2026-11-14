@@ -1,3 +1,4 @@
+import { assertSupportedGraphFormat } from "../graph.js";
 import { requireHostDriver } from "./host-driver.js";
 /**
  * SQLite GraphStore adapter (SPEC_STORAGE_BACKENDS.md, "Future Backends";
@@ -723,6 +724,7 @@ export async function createSqliteGraphStore(
       communities: Map<number, string[]>,
       options: GraphPushOptions = {},
     ): Promise<GraphPushResult> {
+      assertSupportedGraphFormat(G.getAttributes(), "storage/sqlite pushGraph");
       const start = Date.now();
       const mode = options.mode ?? "merge";
       const nodeCount = G.order;

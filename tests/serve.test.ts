@@ -1373,7 +1373,7 @@ import { withMcp as mlMcp } from "./helpers/multi-links-mcp.js";
 import { edge as mlEdge, node as mlNode } from "./helpers/multi-links.js";
 describe("L0-T traversal",()=>{
  for(const shape of ["reverse-only","reciprocal","directed","as-stored","filter","budget"]) describe(shape,()=>{
-  (shape==="directed"||shape==="as-stored"||shape==="budget"?it:it.fails)("reverse-only-hop-and-incoming-arrows",async()=>{
+  (["reverse-only", "reciprocal", "filter"].includes(shape) ? it.fails : it)("reverse-only-hop-and-incoming-arrows",async()=>{
    const forward=mlEdge({_src:"a",_tgt:"b",source_location:"L1"});
    const reciprocal=mlEdge({source:"b",target:"a",_src:"b",_tgt:"a",confidence:"INFERRED",source_location:"L2"});
    const links=shape==="reciprocal"||shape==="filter"?[forward,reciprocal,mlEdge({relation:"reads",_src:"a",_tgt:"b"})]:[shape==="as-stored"?mlEdge():forward];

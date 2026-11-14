@@ -324,7 +324,7 @@ describe("L0-C portable",()=>{
 });
 
 describe("L0-C fresh preparation API",()=>{
- it.fails("fresh portability equals the production preparation helper",async()=>{
+ it("fresh portability equals the production preparation helper",async()=>{
   const core=await import("../src/graph.js");
   const prepare=(core as Record<string,any>).prepareFreshExtraction;
   expect(prepare,"src/graph.ts prepareFreshExtraction export").toBeTypeOf("function");

@@ -1,6 +1,7 @@
 /**
  * Generate GRAPH_REPORT.md - the human-readable audit trail.
  */
+import { readerDegree } from "./graph.js";
 import Graph from "graphology";
 import type { GodNodeEntry, SurpriseEntry, SuggestedQuestion, DetectionResult } from "./types.js";
 import { type NumericMapLike, toNumericMap } from "./collections.js";
@@ -329,7 +330,7 @@ export function generate(
 
   // Gaps section
   const isolated = G.nodes().filter(
-    (n) => G.degree(n) <= 1 && !isFileNode(G, n) && !isConceptNode(G, n),
+    (n) => readerDegree(G, n) <= 1 && !isFileNode(G, n) && !isConceptNode(G, n),
   );
   const thinCommunities = new Map<number, string[]>();
   for (const [cid, nodes] of nonEmptyCommunities) {
