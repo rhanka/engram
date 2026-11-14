@@ -4,6 +4,14 @@ Full release notes with details on each version: [GitHub Releases](https://githu
 
 This fork (`graphifyy@*`) is the TypeScript line. Pre-`0.7.x` entries below refer to the upstream Python Graphify line.
 
+## 0.27.0 (2026-11-13)
+
+- **Registry records are never merged by label.** `deduplicateByLabel` no longer merges two nodes whose registry identities (`registry_record_id`, `registry_id`, `registry_partition`) are both present and differ, so registry-backed ontologies keep every record.
+- **App-context profile (`app-context@1`).** A validated ontology profile linking specs, Track items, data model, screens and components, with injective tuple node ids, a project-config `app_context` block and a G0 registry entry whose pins derive from the profile file.
+- **ArchiMate mapping tables (P-6)** for reversible archi exports.
+- **Multi-links red acceptance tests** pin the target behaviour for keeping every link between the same two elements; no behaviour change.
+- **Neutral names.** Client and program names are removed from the code, fixtures and documentation; content-addressed fixtures are re-pinned.
+
 ## 0.26.0 (2026-11-08)
 
 - **Archi carrier for reversible exports (P-4, `engram.archi-carrier/1`).** `encodeArchiCarrier`, `decodeArchiCarrier` and `checkArchiCarrier` on the zero-dependency `@sentropic/engram/archi-mermaid` subpath: one universal frame carries the canonical strict Mermaid text with its sha256, view and fold state inside a host export (SVG, draw.io, PlantUML); decode re-checks canonical form and survives the specified host re-wraps; check yields `carrier-digest-mismatch` or `export-stale` against the committed text. `ARCHI_DIAGNOSTIC_CODES` now lists 37 codes. Host slots and visible drift stay with the design-system exporters.
