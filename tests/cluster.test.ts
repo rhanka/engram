@@ -280,11 +280,11 @@ describe("L0-T cluster",()=>{
   const G=mlGraph(mlWeighted.edges,mlWeighted.nodes);
   expect(mlMembership(cluster(G))).toEqual(mlWeighted.max);
  });
- it.fails("cohesion ignores parallel links and self loops",()=>{
+ it("cohesion ignores parallel links and self loops",()=>{
   const G=mlGraph([mlEdge(),mlEdge({relation:"references"}),mlEdge({source:"a",target:"c"}),mlEdge({source:"b",target:"c"}),mlEdge({source:"a",target:"a"})],[mlNode("a"),mlNode("b"),mlNode("c")]);
   expect(cohesionScore(G,["a","b","c"])).toBe(1);
  });
- it.fails("hub exclusion is invariant to relation multiplicity",()=>{
+ it("hub exclusion is invariant to relation multiplicity",()=>{
   const nodes=["a","b","c","d","e"].map(id=>mlNode(id));
   const base=[mlEdge(),mlEdge({source:"c",target:"d"}),mlEdge({source:"c",target:"e"})];
   const extra=[...base,...["r1","r2","r3"].map(relation=>mlEdge({relation}))];

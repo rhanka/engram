@@ -93,6 +93,7 @@ export interface StudioSceneGraphEdge {
 }
 
 export interface StudioSceneGraphLike {
+  multigraph?: boolean;
   nodes?: StudioSceneGraphNode[];
   edges?: StudioSceneGraphEdge[];
   links?: StudioSceneGraphEdge[];
@@ -177,6 +178,7 @@ export interface StudioSceneStats {
 }
 
 export interface StudioScene {
+  multigraph?: boolean;
   nodes: StudioSceneNode[];
   edges: StudioSceneEdge[];
   /**
@@ -478,18 +480,27 @@ function isStrongEdge(edge: StudioSceneGraphEdge | undefined): boolean {
   return conf === "EXTRACTED";
 }
 
-/** Undirected degree per node id, used to scale node radius. */
+/** Distinct-neighbour degree per node id, used to scale node radius. */
 function computeDegrees(
   nodes: StudioSceneGraphNode[],
   edges: StudioSceneGraphEdge[],
+  multigraph: boolean,
 ): Map<string, number> {
-  const degree = new Map<string, number>();
-  for (const node of nodes) degree.set(node.id, 0);
-  for (const edge of edges) {
-    if (degree.has(edge.source)) degree.set(edge.source, (degree.get(edge.source) ?? 0) + 1);
-    if (degree.has(edge.target)) degree.set(edge.target, (degree.get(edge.target) ?? 0) + 1);
+  if (!multigraph) {
+    const degree = new Map(nodes.map(node => [node.id, 0]));
+    for (const edge of edges) {
+      if (degree.has(edge.source)) degree.set(edge.source, degree.get(edge.source)! + 1);
+      if (degree.has(edge.target)) degree.set(edge.target, degree.get(edge.target)! + 1);
+    }
+    return degree;
   }
-  return degree;
+  const neighbors = new Map<string, Set<string>>();
+  for (const node of nodes) neighbors.set(node.id, new Set());
+  for (const edge of edges) {
+    neighbors.get(edge.source)?.add(edge.target);
+    neighbors.get(edge.target)?.add(edge.source);
+  }
+  return new Map([...neighbors].map(([id, adjacent]) => [id, adjacent.size]));
 }
 
 /**
@@ -676,7 +687,7 @@ export function buildStudioScene(
   let edges = rawEdges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target));
   if (!showWeakLinks) edges = edges.filter(isStrongEdge);
 
-  const degree = computeDegrees(rawNodes, edges);
+  const degree = computeDegrees(rawNodes, edges, safeGraph.multigraph === true);
   const maxDegree = degree.size > 0 ? Math.max(...degree.values()) : 1;
   // God-class hubs (the most-connected class's central nodes) render as
   // labelled boxes: their glyph is overridden to the box shape so the label
@@ -750,6 +761,7 @@ export function buildStudioScene(
 
   const cstats = communityStats(safeGraph);
   const scene: StudioScene = {
+    ...(safeGraph.multigraph === true ? { multigraph: true } : {}),
     nodes,
     edges: sceneEdges,
     // BUG B: emitted single source of truth community → colour map (see

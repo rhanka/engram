@@ -3,7 +3,7 @@ import Graph from "graphology";
 
 import { isFileNode } from "./analyze.js";
 import { CODE_EXTENSIONS } from "./detect.js";
-import { forEachTraversalNeighbor, isDirectedGraph } from "./graph.js";
+import { readerDegree, forEachTraversalNeighbor, readerPairEdges, isDirectedGraph } from "./graph.js";
 import { sanitizeLabel } from "./security.js";
 
 const IMPORT_RELATIONS = new Set(["imports", "imports_from", "re_exports", "re-exports"]);
@@ -119,7 +119,7 @@ function nodeInfo(G: Graph, nodeId: string): ReviewNode {
   return {
     id: nodeId,
     label: sanitizeLabel((attrs.label as string | undefined) ?? nodeId),
-    degree: G.degree(nodeId),
+    degree: readerDegree(G, nodeId),
     source_file: typeof attrs.source_file === "string" && attrs.source_file.length > 0
       ? normalizePath(attrs.source_file)
       : null,
@@ -289,7 +289,7 @@ function impactedNodeIds(
     }
     frontier = nextFrontier;
   }
-  return [...impacted].sort((a, b) => G.degree(b) - G.degree(a) || compareStrings(a, b));
+  return [...impacted].sort((a, b) => readerDegree(G, b) - readerDegree(G, a) || compareStrings(a, b));
 }
 
 function neighborCommunities(G: Graph, nodeId: string): Set<number> {
@@ -334,8 +334,7 @@ function likelyTestGaps(changedFiles: string[], impactedFiles: string[]): string
 }
 
 function edgeText(G: Graph, source: string, target: string): { relation: string; confidence: string } {
-  const edge = G.edge(source, target);
-  const attrs = edge ? G.getEdgeAttributes(edge) : {};
+  const attrs = readerPairEdges(G, source, target)[0]?.attrs ?? {};
   return {
     relation: sanitizeLabel((attrs.relation as string | undefined) ?? "related_to"),
     confidence: sanitizeLabel((attrs.confidence as string | undefined) ?? "EXTRACTED"),
@@ -345,7 +344,7 @@ function edgeText(G: Graph, source: string, target: string): { relation: string;
 function riskFor(G: Graph, nodeId: string, confidence: string): string | null {
   if (confidence === "AMBIGUOUS") return "ambiguous relationship touches review scope";
   if (confidence === "INFERRED") return "inferred relationship touches review scope";
-  if (G.degree(nodeId) >= 5) return "high-degree dependency touches review scope";
+  if (readerDegree(G, nodeId) >= 5) return "high-degree dependency touches review scope";
   const communities = neighborCommunities(G, nodeId);
   if (communities.size >= 2) return "cross-community bridge touches review scope";
   return null;

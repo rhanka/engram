@@ -38,7 +38,7 @@ describe("L0 acceptance", () => {
       }
     });
   });
-  it.fails("tree-one-row-per-neighbour-oriented-entries", () => {
+  it("tree-one-row-per-neighbour-oriented-entries", () => {
     const ns = [node("center", { label: "Center" }), node("peer", { label: "A peer" }), node("other", { label: "Z competing" })];
     const emissions = [edge({ source: "center", target: "peer", relation: "calls" }), edge({ source: "peer", target: "center", relation: "calls", confidence: "INFERRED" }), edge({ source: "center", target: "peer", relation: "references" }), edge({ source: "center", target: "other" })];
     const G = multiGraph(emissions, ns);

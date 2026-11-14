@@ -7,7 +7,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import Graph from "graphology";
 import { engramEnv } from "./env.js";
 import { sanitizeLabel, sanitizeMetadata } from "./security.js";
-import { isDirectedGraph } from "./graph.js";
+import { readerDegree, assertSupportedGraphFormat, isDirectedGraph } from "./graph.js";
 import { graphJsonLink, graphJsonNode, serializeGraphJson } from "./graph-json-serialization.js";
 import { assertGraphJsonFileSize, assertGraphJsonSize } from "./graph-size-guard.js";
 import { safeGitRevParse } from "./git.js";
@@ -289,6 +289,7 @@ export function toJson(
   outputPath: string,
   communityLabelsOrOptions?: CommunityLabelsInput | JsonOptions,
 ): boolean {
+  assertSupportedGraphFormat(G.getAttributes(), "toJson");
   const nodeComm = nodeCommunityMap(communities);
   const communityLabels = normalizeCommunityLabels(communityLabelsOrOptions);
   const forceWrite = Boolean(
@@ -423,6 +424,7 @@ export function persistGraphWithCitations(
   outputPath: string,
   options?: JsonOptions & { citations?: AggregateCitationsOptions },
 ): boolean {
+  assertSupportedGraphFormat(G.getAttributes(), "persistGraphWithCitations");
   const map = aggregateCitations(G, options?.citations ?? {});
   const jsonOptions: JsonOptions | undefined = options
     ? {
@@ -808,7 +810,7 @@ export function toSvg(
   }
 
   const degree = new Map<string, number>();
-  G.forEachNode((node) => degree.set(node, G.degree(node)));
+  G.forEachNode((node) => degree.set(node, readerDegree(G, node)));
   const maxDeg = Math.max(1, ...degree.values());
 
   const xmlEsc = (s: string): string =>

@@ -37,12 +37,11 @@ import {
 } from "./input-scope.js";
 import { persistGraphWithCitations, toCypher, toGraphml, toJson, toSvg, pushToNeo4j } from "./export.js";
 import { extractWithDiagnostics } from "./extract.js";
-import {
-  forEachTraversalNeighbor,
+import { readerDegree, forEachTraversalNeighbor,
+  readerPairEdges,
   isDirectedGraph,
   loadGraphFromData,
-  type SerializedGraphData,
-} from "./graph.js";
+  type SerializedGraphData, } from "./graph.js";
 import { ingest, saveQueryResult } from "./ingest.js";
 import { generate } from "./report.js";
 import { defaultManifestPath, resolveGraphifyPaths } from "./paths.js";
@@ -644,7 +643,7 @@ function findBestMatchingNode(G: Graph, term: string): string | null {
     const label = (data.label as string) ?? nodeId;
     const source = (data.source_file as string) ?? "";
     const score = scoreSearchText(label, source, words);
-    if (score > 0 && (!bestNodeId || score > bestScore || (score === bestScore && G.degree(nodeId) > G.degree(bestNodeId)))) {
+    if (score > 0 && (!bestNodeId || score > bestScore || (score === bestScore && readerDegree(G, nodeId) > readerDegree(G, bestNodeId)))) {
       bestScore = score;
       bestNodeId = nodeId;
     }
@@ -2079,9 +2078,11 @@ export async function main(argv: string[] = process.argv): Promise<void> {
           break;
         }
         const nextNode = path[i + 1]!;
-        const edgeId = G.edge(nodeId, nextNode);
-        const attrs = edgeId ? G.getEdgeAttributes(edgeId) : {};
-        console.log(`  ${label} --${attrs.relation ?? ""}--> [${attrs.confidence ?? ""}]`);
+        const selected = readerPairEdges(G, nodeId, nextNode)[0];
+        const attrs = selected?.attrs ?? {};
+        console.log(selected?.orientation === "reverse"
+          ? `  ${label} <--${attrs.relation ?? ""}-- [${attrs.confidence ?? ""}]`
+          : `  ${label} --${attrs.relation ?? ""}--> [${attrs.confidence ?? ""}]`);
       }
     });
 
@@ -2100,15 +2101,16 @@ export async function main(argv: string[] = process.argv): Promise<void> {
       console.log(`NODE: ${(attrs.label as string) ?? nodeId}`);
       console.log(`  source: ${(attrs.source_file as string) ?? "unknown"}`);
       console.log(`  type: ${(attrs.file_type as string) ?? "unknown"}`);
-      console.log(`  degree: ${G.degree(nodeId)}`);
+      console.log(`  degree: ${readerDegree(G, nodeId)}`);
       console.log("");
       console.log("CONNECTIONS:");
       forEachTraversalNeighbor(G, nodeId, (neighbor) => {
-        const edgeId = G.edge(nodeId, neighbor);
-        const edge = edgeId ? G.getEdgeAttributes(edgeId) : {};
         const label = (G.getNodeAttribute(neighbor, "label") as string) ?? neighbor;
         const sourceFile = (G.getNodeAttribute(neighbor, "source_file") as string) ?? "";
-        console.log(`  --${edge.relation ?? ""}--> ${label} [${edge.confidence ?? ""}] (${sourceFile})`);
+        for (const { attrs: edge, orientation } of readerPairEdges(G, nodeId, neighbor)) {
+          const arrow = orientation === "reverse" ? `<--${edge.relation ?? ""}--` : `--${edge.relation ?? ""}-->`;
+          console.log(`  ${arrow} ${label} [${edge.confidence ?? ""}] (${sourceFile})`);
+        }
       });
     });
 

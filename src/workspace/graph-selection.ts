@@ -38,6 +38,8 @@ export interface GraphEdgeLike {
 }
 
 export interface GraphLike {
+  directed?: boolean;
+  multigraph?: boolean;
   nodes: GraphNodeLike[];
   /** Graphify's persisted graph.json uses `links`; tests/adapters may pass `edges`. */
   links?: GraphEdgeLike[];
@@ -71,19 +73,26 @@ function isStrongEdge(edge: GraphEdgeLike): boolean {
   return conf === "EXTRACTED";
 }
 
-function computeMetrics(nodes: GraphNodeLike[], edges: GraphEdgeLike[]): FocusSubgraphMetrics {
+function computeMetrics(nodes: GraphNodeLike[], edges: GraphEdgeLike[], directed: boolean, multigraph: boolean): FocusSubgraphMetrics {
   const n = nodes.length;
   const m = edges.length;
   const communities = new Set<number>();
-  const degree = new Map<string, number>();
+  const neighbors = new Map<string, Set<string>>();
+  const incidences = new Map<string, number>();
+  const pairs = new Set<string>();
   for (const node of nodes) {
     if (typeof node.community === "number") communities.add(node.community);
-    degree.set(node.id, 0);
+    neighbors.set(node.id, new Set());
+    incidences.set(node.id, 0);
   }
   for (const edge of edges) {
-    degree.set(edge.source, (degree.get(edge.source) ?? 0) + 1);
-    degree.set(edge.target, (degree.get(edge.target) ?? 0) + 1);
+    neighbors.get(edge.source)?.add(edge.target);
+    neighbors.get(edge.target)?.add(edge.source);
+    incidences.set(edge.source, (incidences.get(edge.source) ?? 0) + 1);
+    incidences.set(edge.target, (incidences.get(edge.target) ?? 0) + 1);
+    if (edge.source !== edge.target) pairs.add(JSON.stringify(directed ? [edge.source, edge.target] : [edge.source, edge.target].sort()));
   }
+  const degree = multigraph ? new Map([...neighbors].map(([id, adjacent]) => [id, adjacent.size])) : incidences;
   let topHubId: string | null = null;
   let topDeg = -1;
   for (const [id, deg] of degree) {
@@ -92,9 +101,9 @@ function computeMetrics(nodes: GraphNodeLike[], edges: GraphEdgeLike[]): FocusSu
       topHubId = id;
     }
   }
-  const maxPairs = n > 1 ? (n * (n - 1)) / 2 : 0;
-  const density = maxPairs > 0 ? m / maxPairs : 0;
-  const averageDegree = n > 0 ? (2 * m) / n : 0;
+  const maxPairs = n > 1 ? n * (n - 1) / (multigraph && directed ? 1 : 2) : 0;
+  const density = maxPairs > 0 ? (multigraph ? pairs.size : m) / maxPairs : 0;
+  const averageDegree = n > 0 ? (multigraph ? [...degree.values()].reduce((sum, value) => sum + value, 0) : 2 * m) / n : 0;
   return {
     nodes: n,
     edges: m,
@@ -197,7 +206,7 @@ export function computeFocusSubgraph(
   return {
     nodes,
     edges,
-    metrics: computeMetrics(nodes, edges),
+    metrics: computeMetrics(nodes, edges, graph.directed === true, graph.multigraph === true),
     appliedMode: mode,
   };
 }

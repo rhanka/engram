@@ -7,7 +7,7 @@ import { join } from "node:path";
 import Graph from "graphology";
 import type { GodNodeEntry } from "./types.js";
 import { type NumericMapLike, toNumericMap } from "./collections.js";
-import { traversalNeighbors } from "./graph.js";
+import { readerDegree, readerPairEdges, traversalNeighbors } from "./graph.js";
 import type { ReviewFlow, ReviewFlowArtifact } from "./flows.js";
 import {
   validateWikiDescriptionSidecar,
@@ -162,7 +162,7 @@ function communityArticle(
   flowLinks: Map<string, string>,
   description?: WikiDescriptionSidecar<"community">,
 ): string {
-  const topNodes = [...nodes].sort((a, b) => G.degree(b) - G.degree(a)).slice(0, 25);
+  const topNodes = [...nodes].sort((a, b) => readerDegree(G, b) - readerDegree(G, a)).slice(0, 25);
   const cross = crossCommunityLinks(G, nodes, cid);
   const communityFlows = flowsThroughNodes(flows, nodes);
 
@@ -190,7 +190,7 @@ function communityArticle(
     const d = G.getNodeAttributes(nid);
     const nodeLabel = (d.label as string) ?? nid;
     const src = (d.source_file as string) ?? "";
-    const degree = G.degree(nid);
+    const degree = readerDegree(G, nid);
     const srcStr = src ? ` — \`${src}\`` : "";
     lines.push(`- **${nodeLabel}** (${degree} connections)${srcStr}`);
   }
@@ -255,7 +255,7 @@ function godNodeArticle(
 
   const lines: string[] = [];
   lines.push(`# ${nodeLabel}`, "");
-  lines.push(`> God node · ${G.degree(nid)} connections · \`${src}\``, "");
+  lines.push(`> God node · ${readerDegree(G, nid)} connections · \`${src}\``, "");
 
   if (communityName) {
     lines.push(`**Community:** ${communityLinks.get(cid!) ?? `[[${communityName}]]`}`, "");
@@ -263,15 +263,16 @@ function godNodeArticle(
   lines.push(...renderDescription(description, nodeDescription));
 
   const byRelation = new Map<string, string[]>();
-  const neighbors = traversalNeighbors(G, nid).sort((a, b) => G.degree(b) - G.degree(a));
+  const neighbors = traversalNeighbors(G, nid).sort((a, b) => readerDegree(G, b) - readerDegree(G, a));
   for (const neighbor of neighbors) {
-    const ed = G.getEdgeAttributes(G.edge(nid, neighbor)!);
-    const rel = (ed.relation as string) ?? "related";
-    const neighborLabel = (G.getNodeAttribute(neighbor, "label") as string) ?? neighbor;
-    const conf = (ed.confidence as string) ?? "";
-    const confStr = conf ? ` \`${conf}\`` : "";
-    if (!byRelation.has(rel)) byRelation.set(rel, []);
-    byRelation.get(rel)!.push(`[[${neighborLabel}]]${confStr}`);
+    for (const { attrs: ed, orientation } of readerPairEdges(G, nid, neighbor)) {
+      const rel = (ed.relation as string) ?? "related";
+      const neighborLabel = (G.getNodeAttribute(neighbor, "label") as string) ?? neighbor;
+      const conf = (ed.confidence as string) ?? "";
+      const confStr = conf ? ` \`${conf}\`` : "";
+      if (!byRelation.has(rel)) byRelation.set(rel, []);
+      byRelation.get(rel)!.push(`${orientation === "reverse" ? "<-- " : ""}[[${neighborLabel}]]${confStr}`);
+    }
   }
 
   lines.push("## Connections by Relation", "");

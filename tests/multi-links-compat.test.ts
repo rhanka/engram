@@ -24,7 +24,7 @@ describe("L0-C compat", () => {
   it("batch intake fixture reaches the accepted chunk merger", async () => {
     expect((await batchIntake(batchFixture(), "/repo")).edges).toHaveLength(1);
   });
-  it.fails("M1-overflow-literal-1e400-refused-on-load", () => {
+  it("M1-overflow-literal-1e400-refused-on-load", () => {
     const text = '{"nodes":[{"id":"a"},{"id":"b"}],"links":[{"source":"a","target":"b","relation":"calls","source_file":"f.ts","confidence_score":1e400}]}';
     const path = join(tempDir(), "graph.json"); writeFileSync(path, text);
     const raw = JSON.parse(readFileSync(path, "utf8"));
@@ -108,7 +108,7 @@ describe("L0-C compat", () => {
     } finally { factory.mockRestore(); }
   });
 
-  it.fails("watcher-v3-rejects-zero-writes", async () => {
+  it("watcher-v3-rejects-zero-writes", async () => {
     const root = tempDir(), state = join(root, ".engram"); mkdirSync(state);
     const destination = join(state, "graph.json"), text = JSON.stringify(future); writeFileSync(destination, text);
     const persist = vi.spyOn(exports, "persistGraphWithCitations");
@@ -130,13 +130,13 @@ describe("L0-C compat", () => {
       expect(JSON.parse(readFileSync(destination, "utf8")).nodes).toEqual([]);
     } finally { persist.mockRestore(); }
   });
-  it.fails("inspection graph carries its unsupported marker and read_only attribute", () => {
+  it("inspection graph carries its unsupported marker and read_only attribute", () => {
     const inspected = core.loadGraphFromData(future, { allowUnknownFormatReadOnly: true } as never);
     expect(inspected.getAttribute("read_only")).toBe(true);
     expect(inspected.getAttribute("graph_format")).toBe("engram-graph/3");
   });
   for (const writer of ["serializeGraph", "toJson", "persistGraphWithCitations", "file", "sqlite", "postgres", "neo4j", "spanner", "merge-driver", "time-slice"]) describe(writer, () => {
-    it.fails("read-only-inspection-refused-by-every-writer", async () => {
+    it("read-only-inspection-refused-by-every-writer", async () => {
       const G = core.loadGraphFromData(future, { allowUnknownFormatReadOnly: true } as never);
       const dir = tempDir(), destination = join(dir, "graph.json"), sidecar = join(dir, "ontology/citations.json");
       mkdirSync(join(dir, "ontology")); writeFileSync(destination, "graph sentinel"); writeFileSync(sidecar, "sidecar sentinel");

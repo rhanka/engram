@@ -8,11 +8,10 @@ import Graph from "graphology";
 import { bidirectional } from "graphology-shortest-path/unweighted.js";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import pkg from "../package.json";
-import {
-  forEachTraversalNeighbor,
+import { readerDegree, forEachTraversalNeighbor,
+  readerPairEdges,
   loadGraphFromData,
-  type SerializedGraphData,
-} from "./graph.js";
+  type SerializedGraphData, } from "./graph.js";
 import { resolveGraphInputPath } from "./paths.js";
 import { validateGraphPath, sanitizeLabel } from "./security.js";
 import { assertGraphJsonFileSize } from "./graph-size-guard.js";
@@ -276,7 +275,7 @@ export function pickSeeds(
     const bestScore = termScored[0]![0];
     const tied = termScored.filter(([score]) => score === bestScore).map(([, nid]) => nid);
     const bestNid = tied.length > 1
-      ? tied.reduce((a, b) => (G.degree(b) > G.degree(a) ? b : a))
+      ? tied.reduce((a, b) => (readerDegree(G, b) > readerDegree(G, a) ? b : a))
       : termScored[0]![1];
     if (!seeds.includes(bestNid)) seeds.push(bestNid);
   }
@@ -403,7 +402,7 @@ function subgraphToText(
     ...seeds.filter((node, index) => nodes.has(node) && seeds.indexOf(node) === index),
     ...[...nodes]
       .filter((node) => !seedSet.has(node))
-      .sort((a, b) => G.degree(b) - G.degree(a) || a.localeCompare(b)),
+      .sort((a, b) => readerDegree(G, b) - readerDegree(G, a) || a.localeCompare(b)),
   ];
   for (const nid of sorted) {
     const d = G.getNodeAttributes(nid);
@@ -411,15 +410,17 @@ function subgraphToText(
       `NODE ${mcpField((d.label as string) ?? nid)} [src=${mcpField(d.source_file)} loc=${mcpField(d.source_location)} community=${mcpField(d.community)}]`,
     );
   }
+  const emittedEdges = new Set<string>();
   for (const [u, v] of edges) {
     if (nodes.has(u) && nodes.has(v)) {
-      const edgeKey = G.edge(u, v);
-      if (!edgeKey) continue;
-      const d = G.getEdgeAttributes(edgeKey);
-      lines.push(
-        `EDGE ${nodeDisplayLabel(G, u)} --${mcpField(d.relation)} [${mcpField(d.confidence)}]--> ` +
-        `${nodeDisplayLabel(G, v)}${edgeSourceSuffix(d)}`,
-      );
+      for (const { key, attrs: d, orientation } of readerPairEdges(G, u, v)) {
+        if (G.multi && emittedEdges.has(key)) continue;
+        emittedEdges.add(key);
+        const arrow = orientation === "reverse"
+          ? `<--${mcpField(d.relation)} [${mcpField(d.confidence)}]--`
+          : `--${mcpField(d.relation)} [${mcpField(d.confidence)}]-->`;
+        lines.push(`EDGE ${nodeDisplayLabel(G, u)} ${arrow} ${nodeDisplayLabel(G, v)}${edgeSourceSuffix(d)}`);
+      }
     }
   }
   return cutLinesToBudget(
@@ -520,7 +521,7 @@ function toolGetNode(G: Graph, args: Record<string, unknown>): string {
         ? `${mcpField(d.community)} (${mcpField(d.community_name)})`
         : (communityName(G, d.community as number | undefined) ?? mcpField(d.community))
     }`,
-    `  Degree: ${G.degree(nid)}`,
+    `  Degree: ${readerDegree(G, nid)}`,
   ].join("\n");
 }
 
@@ -532,15 +533,14 @@ function toolGetNeighbors(G: Graph, args: Record<string, unknown>): string {
   const nid = matches[0]!;
   const lines = [`Neighbors of ${nodeDisplayLabel(G, nid)}:`];
   forEachTraversalNeighbor(G, nid, (neighbor) => {
-    const edgeKey = G.edge(nid, neighbor);
-    if (!edgeKey) return;
-    const d = G.getEdgeAttributes(edgeKey);
-    const rel = (d.relation as string) ?? "";
-    if (relFilter && !rel.toLowerCase().includes(relFilter)) return;
-    lines.push(
-      `  --> ${nodeDisplayLabel(G, neighbor)} [${mcpField(rel)}] ` +
-      `[${mcpField(d.confidence)}]${edgeSourceSuffix(d)}`,
-    );
+    for (const { attrs: d, orientation } of readerPairEdges(G, nid, neighbor)) {
+      const rel = (d.relation as string) ?? "";
+      if (relFilter && !rel.toLowerCase().includes(relFilter)) continue;
+      lines.push(
+        `  ${orientation === "reverse" ? "<--" : "-->"} ${nodeDisplayLabel(G, neighbor)} [${mcpField(rel)}] ` +
+        `[${mcpField(d.confidence)}]${edgeSourceSuffix(d)}`,
+      );
+    }
   });
   return cutLinesToBudget(
     lines,
@@ -874,8 +874,8 @@ function toolShortestPath(G: Graph, args: Record<string, unknown>): string {
   for (let i = 0; i < pathNodes.length - 1; i++) {
     const u = pathNodes[i]!;
     const v = pathNodes[i + 1]!;
-    const edgeKey = G.edge(u, v);
-    const edata = edgeKey ? G.getEdgeAttributes(edgeKey) : {};
+    const selected = readerPairEdges(G, u, v)[0];
+    const edata = selected?.attrs ?? {};
     const rel = (edata.relation as string) ?? "";
     const conf = (edata.confidence as string) ?? "";
     const confStr = conf ? ` [${conf}]` : "";
@@ -883,7 +883,9 @@ function toolShortestPath(G: Graph, args: Record<string, unknown>): string {
       segments.push(nodeDisplayLabel(G, u));
     }
     segments.push(
-      `--${mcpField(rel)}${confStr ? ` [${mcpField(conf)}]` : ""}--> ${nodeDisplayLabel(G, v)}`,
+      selected?.orientation === "reverse"
+        ? `<--${mcpField(rel)}${confStr ? ` [${mcpField(conf)}]` : ""}-- ${nodeDisplayLabel(G, v)}`
+        : `--${mcpField(rel)}${confStr ? ` [${mcpField(conf)}]` : ""}--> ${nodeDisplayLabel(G, v)}`,
     );
   }
   return `Shortest path (${hops} hops):\n  ${segments.join(" ")}`;

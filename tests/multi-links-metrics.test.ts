@@ -16,7 +16,7 @@ describe("L0-T metrics", () => {
     expect(G.degree("a")).toBe(3);
     expect(G.neighbors("a")).toEqual(["b"]);
   });
-  it.fails("neighborDegree-and-edgeCount-public-API", () => {
+  it("neighborDegree-and-edgeCount-public-API", () => {
     const G = multiGraph([edge({ source: "a", target: "a" })], [node("a")]);
     expect((core as Row).neighborDegree, "src/graph.ts neighborDegree export").toBeTypeOf("function");
     expect((core as Row).edgeCount, "src/graph.ts edgeCount export").toBeTypeOf("function");
@@ -25,7 +25,7 @@ describe("L0-T metrics", () => {
     expect(G.degree("a")).toBe(2);
   });
   for (const surface of ["file", "leaf", "periphery"]) describe(surface, () => {
-    it.fails("leaf-file-classification-unchanged-by-parallel", () => {
+    it("leaf-file-classification-unchanged-by-parallel", () => {
       const ns = [node("hub", { label: "Hub", source_file: "src/hub.ts" }), node("leaf", { label: surface === "file" ? "visit()" : "Leaf", source_file: "src/leaf.ts" }), ...Array.from({ length: 6 }, (_, i) => node("peer" + i, { label: "Peer" + i, source_file: "src/peer.ts" }))];
       const base = [edge({ source: "hub", target: "leaf" }), ...ns.slice(2).map(n => edge({ source: "hub", target: n.id }))];
       const G = multiGraph(base, ns), P = multiGraph([...base, ...["r1", "r2", "r3"].map(relation => edge({ source: "hub", target: "leaf", relation }))], ns);
@@ -41,7 +41,7 @@ describe("L0-T metrics", () => {
     });
   });
   for (const surface of ["summary", "review", "MCP", "CLI"]) describe(surface, () => {
-    it.fails("four-relations-one-neighbour-degree-risk-unchanged", async () => {
+    (surface === "summary" || surface === "review" ? it : it.fails)("four-relations-one-neighbour-degree-risk-unchanged", async () => {
       const G = multiGraph(relations, pairNodes);
       expect(G.size).toBe(5);
       if (surface === "summary") {

@@ -1,6 +1,6 @@
 import Graph from "graphology";
 
-import { forEachTraversalNeighbor, isDirectedGraph } from "./graph.js";
+import { forEachTraversalNeighbor, readerPairEdges, type PairEdge } from "./graph.js";
 import { sanitizeLabel } from "./security.js";
 
 export interface RenderTreeOptions {
@@ -11,8 +11,7 @@ export interface RenderTreeOptions {
 interface TreeNeighbor {
   id: string;
   label: string;
-  relation: string;
-  confidence: string | null;
+  entries: Array<{ relation: string; confidence: string | null; orientation: PairEdge["orientation"] }>;
 }
 
 function nodeLabel(G: Graph, nodeId: string): string {
@@ -24,34 +23,24 @@ function nodeLabel(G: Graph, nodeId: string): string {
   return sourceFile ? `${label} [${sourceFile}]` : label;
 }
 
-function neighborRelation(G: Graph, sourceId: string, targetId: string): { relation: string; confidence: string | null } {
-  let relation = "related_to";
-  let confidence: string | null = null;
-
-  G.forEachEdge(sourceId, (_edge, attrs, edgeSource, edgeTarget) => {
-    const forward = edgeSource === sourceId && edgeTarget === targetId;
-    const reverse = !isDirectedGraph(G) && edgeSource === targetId && edgeTarget === sourceId;
-    if (!forward && !reverse) return;
-    relation = typeof attrs.relation === "string" && attrs.relation.length > 0 ? attrs.relation : relation;
-    confidence = typeof attrs.confidence === "string" && attrs.confidence.length > 0 ? attrs.confidence : confidence;
-  });
-
-  return { relation, confidence };
-}
-
 function sortedNeighbors(G: Graph, nodeId: string): TreeNeighbor[] {
   const neighbors = new Map<string, TreeNeighbor>();
   forEachTraversalNeighbor(G, nodeId, (neighborId) => {
     const label = nodeLabel(G, neighborId);
-    const meta = neighborRelation(G, nodeId, neighborId);
     neighbors.set(neighborId, {
       id: neighborId,
       label,
-      relation: meta.relation,
-      confidence: meta.confidence,
+      entries: readerPairEdges(G, nodeId, neighborId).map(({ attrs, orientation }) => ({
+        relation: typeof attrs.relation === "string" && attrs.relation ? attrs.relation : "related_to",
+        confidence: typeof attrs.confidence === "string" && attrs.confidence ? attrs.confidence : null,
+        orientation,
+      })),
     });
   });
-  return [...neighbors.values()].sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id));
+  const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
+  return [...neighbors.values()].sort((a, b) => G.multi
+    ? compare(a.label, b.label) || compare(a.id, b.id)
+    : a.label.localeCompare(b.label) || a.id.localeCompare(b.id));
 }
 
 export function renderTree(G: Graph, rootId: string, options: RenderTreeOptions = {}): string {
@@ -69,8 +58,12 @@ export function renderTree(G: Graph, rootId: string, options: RenderTreeOptions 
       const last = index === visible.length - 1;
       const branch = last ? "└─ " : "├─ ";
       const seen = visited.has(neighbor.id);
+      const first = neighbor.entries[0];
+      const label = neighbor.entries.length === 1 && first?.orientation !== "reverse"
+        ? `${first?.relation ?? "related_to"} -> ${neighbor.label}`
+        : `${neighbor.entries.map(entry => `${entry.orientation === "reverse" ? "<-- " : ""}${entry.relation}${entry.confidence ? ` [${entry.confidence}]` : ""}${entry.orientation === "reverse" ? "" : " -->"}`).join("; ")} ${neighbor.label}`;
       lines.push(
-        `${prefix}${branch}${neighbor.relation} -> ${neighbor.label}${seen ? " (seen)" : ""}`,
+        `${prefix}${branch}${label}${seen ? " (seen)" : ""}`,
       );
       if (!seen) {
         visited.add(neighbor.id);

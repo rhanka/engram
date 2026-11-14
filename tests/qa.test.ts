@@ -619,15 +619,15 @@ describe("validatePrecomputedQaReportBinding", () => {
 
 
 describe("L0-T QA",()=>{
- function qaGraph(links:any[],limits:{min?:number;max?:number;method?:string}={}){
+ function qaGraph(links:any[],limits:{min?:number;max?:number;method?:string}={},multigraph=true){
   const root=tempDir(),target=writeTarget(root);
   target.graph.min_degree_by_type=limits.min===undefined?{}:{Character:limits.min};
   target.graph.max_degree_by_type=limits.max===undefined?{}:{Character:limits.max};
   target.graph.max_degree_by_type_and_derivation=limits.method?{Character:{[limits.method]:0}}:{};
-  writeJson(join(root,"graph.json"),{nodes:[{id:"a",node_type:"Character"},{id:"b",node_type:"Other"}],links});
+  writeJson(join(root,"graph.json"),{...(multigraph?{multigraph:true}:{}),nodes:[{id:"a",node_type:"Character"},{id:"b",node_type:"Other"}],links});
   return evaluateQualityBundle({target,bundleDir:root});
  }
- it.fails("N1-single-loop-edgeCount1-legacyIncidence2",()=>{
+ it("N1-single-loop-edgeCount1-legacyIncidence2",()=>{
   const report=qaGraph([{source:"a",target:"a",relation:"calls"}],{min:2,max:1});
   const min=report.checks.find(c=>c.id==="graph.min_degree_by_type.Character")!;
   const max=report.checks.find(c=>c.id==="graph.max_degree_by_type.Character")!;
@@ -642,13 +642,21 @@ describe("L0-T QA",()=>{
   expect(report.checks.find(c=>c.id==="graph.min_degree_by_type.Character")!.actual).toMatchObject({count:0});
  });
  const method="deorphan:co-provenance-peer";
+ it("preserves legacy simple QA messages and singular derivation precedence",()=>{
+  const report=qaGraph([{source:"a",target:"a",relation:"calls",derivation_method:"ast",derivation_methods:["ast",method]}],{min:2,max:1,method},false);
+  expect(report.checks.find(c=>c.id==="graph.min_degree_by_type.Character")!.message).toBe("node degree by type must meet target");
+  expect(report.checks.find(c=>c.id==="graph.max_degree_by_type.Character")!.message).toBe("node degree by type must not exceed target");
+  const derived=report.checks.find(c=>c.id==="graph.max_degree_by_type_and_derivation.Character."+method)!;
+  expect(derived.message).toBe("node degree by type and derivation method must not exceed target");
+  expect(derived.actual).toMatchObject({count:0});
+ });
  for(const [name,attrs,matched] of [
   ["second plural",{derivation_method:"ast",derivation_methods:["ast",method]},true],
   ["singleton",{derivation_method:method},true],
   ["plural only",{derivation_methods:["ast",method]},true],
   ["unrelated",{derivation_method:"ast",derivation_methods:["ast"]},false],
  ] as const) describe(name,()=>{
-  (name==="second plural"?it.fails:it)("qa-derivation-second-plural-member-matches",()=>{
+  it("qa-derivation-second-plural-member-matches",()=>{
    const report=qaGraph([{source:"a",target:"b",relation:"calls",...attrs}],{method});
    const check=report.checks.find(c=>c.id==="graph.max_degree_by_type_and_derivation.Character."+method)!;
    expect(check.severity).toBe(matched?"error":"info");
