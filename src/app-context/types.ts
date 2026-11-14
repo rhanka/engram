@@ -216,6 +216,8 @@ export type AppContextDiagnosticCode =
   | "target-unresolved"
   | "target-ambiguous"
   | "schema-conflict"
+  | "unsupported-construct"
+  | "manifest-outside-checkout"
   | "track-id-unresolved"
   | "dynamic-component"
   | "endpoint-unresolved";
