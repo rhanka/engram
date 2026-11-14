@@ -83,32 +83,32 @@ node -e "
 const { detect } = require('@sentropic/engram');
 const result = detect('INPUT_PATH');
 console.log(JSON.stringify(result));
-\" > .engram/.graphify_detect.json
-\`\`\`
+" > .engram/.graphify_detect.json
+```
 
 Replace INPUT_PATH with the actual path the user provided. Do NOT cat or print the JSON - read it silently and present a clean summary instead:
 
-\`\`\`
+```
 Corpus: X files · ~Y words
   code:     N files (.py .ts .go ...)
   docs:     N files (.md .txt ...)
   papers:   N files (.pdf ...)
   images:   N files
   video:    N files (.mp4 .mp3 ...)
-\`\`\`
+```
 
 Then act on it:
-- If \`total_files\` is 0: stop with \"No supported files found in [path].\"
-- If \`skipped_sensitive\` is non-empty: mention file count skipped, not the file names.
-- If \`total_words\` > 2,000,000 OR \`total_files\` > 200: show the warning and the top 5 subdirectories by file count, then ask which subfolder to run on. Wait for the user's answer before proceeding.
+- If `total_files` is 0: stop with "No supported files found in [path]."
+- If `skipped_sensitive` is non-empty: mention file count skipped, not the file names.
+- If `total_words` > 2,000,000 OR `total_files` > 200: show the warning and the top 5 subdirectories by file count, then ask which subfolder to run on. Wait for the user's answer before proceeding.
 - Otherwise: proceed to Step 2.5. It is a safe no-op if no video or PDF files need preprocessing.
 
 ### Step 2.5 - Prepare semantic detection, including audio/video transcripts and PDF preflight/OCR when needed
 
-Always run this step. It transcribes audio/video when present, runs local PDF preflight for papers, and converts text-layer PDFs locally. For scanned/low-text PDFs, keep two OCR paths explicit: the assistant vision model may interpret the original PDF or extracted image chunks during semantic extraction, and \`mistral-ocr\` may be used when OCR is explicitly requested or when a configured \`MISTRAL_API_KEY\` is available and preflight detects a scanned/low-text PDF. Do not call Mistral blindly. In \`auto\` mode, if no key/provider is available, leave the source PDF in semantic inputs so the assistant path can still handle it. Generated transcripts, PDF Markdown sidecars, and relevant PDF-extracted images are treated as semantic inputs in Step 3.
+Always run this step. It transcribes audio/video when present, runs local PDF preflight for papers, and converts text-layer PDFs locally. For scanned/low-text PDFs, keep two OCR paths explicit: the assistant vision model may interpret the original PDF or extracted image chunks during semantic extraction, and `mistral-ocr` may be used when OCR is explicitly requested or when a configured `MISTRAL_API_KEY` is available and preflight detects a scanned/low-text PDF. Do not call Mistral blindly. In `auto` mode, if no key/provider is available, leave the source PDF in semantic inputs so the assistant path can still handle it. Generated transcripts, PDF Markdown sidecars, and relevant PDF-extracted images are treated as semantic inputs in Step 3.
 
-\`\`\`bash
-node -e \"
+```bash
+node -e "
 (async () => {
 const fs = require('fs');
 const { prepareSemanticDetection } = require('@sentropic/engram');
@@ -133,7 +133,6 @@ console.log('Prepared semantic inputs: ' + transcriptPaths.length + ' transcript
   process.exit(1);
 });
 "
-
 ```
 
 ### Step 3 - Extract entities and relationships
@@ -208,7 +207,6 @@ if (cachedNodes.length || cachedEdges.length || cachedHyperedges.length) {
 fs.writeFileSync('.engram/.graphify_uncached.txt', uncached.join('\\n'));
 console.log(\`Cache: \${allFiles.length - uncached.length} files hit, \${uncached.length} files need extraction\`);
 "
-
 ```
 
 Only dispatch subagents for files listed in `.engram/.graphify_uncached.txt`. If all files are cached, skip to Part C directly.
@@ -312,7 +310,6 @@ const clean = sanitizeSemanticFragment(raw);
 const saved = saveSemanticCache(clean.nodes || [], clean.edges || [], clean.hyperedges || []);
 console.log(\`Cached \${saved} files\`);
 "
-
 ```
 
 Merge cached + new results into `.engram/.graphify_semantic.json`. Each chunk is independently validated; invalid chunks are skipped with a warning rather than crashing the merge (mirrors upstream PR #825):
@@ -351,7 +348,6 @@ const merged = {
 fs.writeFileSync('.engram/.graphify_semantic.json', JSON.stringify(merged, null, 2));
 console.log(\`Extraction complete - \${deduped.length} nodes, \${allEdges.length} edges (\${(cached.nodes||[]).length} from cache, \${(raw.nodes||[]).length} new)\`);
 "
-
 ```
 Clean up temp files: `rm -f .engram/.graphify_cached.json .engram/.graphify_uncached.txt .engram/.graphify_semantic_new.json .engram/.graphify_detect_semantic.json .engram/.graphify_transcripts.json .engram/.graphify_pdf_ocr.json`
 
@@ -382,7 +378,6 @@ const merged = {
 fs.writeFileSync('.engram/.graphify_extract.json', JSON.stringify(merged, null, 2));
 console.log(\`Merged: \${mergedNodes.length} nodes, \${mergedEdges.length} edges (\${ast.nodes.length} AST + \${sem.nodes.length} semantic)\`);
 "
-
 ```
 
 ### Step 4 - Build graph, cluster, analyze, generate outputs
@@ -428,7 +423,6 @@ if (G.order === 0) {
 }
 console.log(\`Graph: \${G.order} nodes, \${G.size} edges, \${communities.size} communities\`);
 "
-
 ```
 
 If this step prints `ERROR: Graph is empty`, stop and tell the user what happened - do not proceed to labeling or visualization.
@@ -476,7 +470,6 @@ fs.writeFileSync('.engram/GRAPH_REPORT.md', report);
 fs.writeFileSync('.engram/.graphify_labels.json', JSON.stringify(Object.fromEntries(Object.entries(labels).map(([k, v]) => [String(k), v]))));
 console.log('Report updated with community labels');
 "
-
 ```
 
 Replace `LABELS_DICT` with the actual dict you constructed (e.g. `{0: "Attention Mechanism", 1: "Training Pipeline"}`).
@@ -527,7 +520,6 @@ console.log('  Graph view   - nodes colored by community (set automatically)');
 console.log('  graph.canvas - structured layout with communities as groups');
 console.log('  _COMMUNITY_* - overview notes with cohesion scores and dataview queries');
 "
-
 ```
 
 Generate the static Ontology Studio (always). It bundles the prebuilt studio SPA (`index.html` + `assets/`) with the data artifacts the SPA reads next to it — `graph.json`, `scene.json` (with pre-computed force-layout positions), `entities.json`, `reconciliation-candidates.json`, and `class-hierarchies.json` (the latter only when a profile carries a `class_hierarchies` block):
@@ -552,7 +544,6 @@ const G = buildFromJson(JSON.parse(fs.readFileSync('.engram/.graphify_extract.js
 toCypher(G, '.engram/cypher.txt');
 console.log('cypher.txt written - import with: cypher-shell < .engram/cypher.txt');
 "
-
 ```
 
 **If `--neo4j-push <uri>`** - push directly to a running Neo4j instance. Ask the user for credentials if not provided:
@@ -574,7 +565,6 @@ console.log(\`Pushed to Neo4j: \${result.nodes} nodes, \${result.edges} edges\`)
 
 })().catch(error => { console.error(error); process.exit(1); });
 "
-
 ```
 
 Replace `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` with actual values. Default URI is `bolt://localhost:7687`, default user is `neo4j`. Uses MERGE - safe to re-run without creating duplicates.
@@ -597,7 +587,6 @@ const labels = Object.fromEntries(Object.entries(labelsRaw).map(([k, v]) => [Num
 toSvg(G, communities, '.engram/graph.svg', {communityLabels: Object.keys(labels).length ? labels : undefined});
 console.log('graph.svg written - embeds in Obsidian, Notion, GitHub READMEs');
 "
-
 ```
 
 ### Step 7c - GraphML export (only if --graphml flag)
@@ -616,7 +605,6 @@ const communities = Object.fromEntries(Object.entries(analysis.communities).map(
 toGraphml(G, communities, '.engram/graph.graphml');
 console.log('graph.graphml written - open in Gephi, yEd, or any GraphML tool');
 "
-
 ```
 
 ### Step 7d - MCP server (only if --mcp flag)
@@ -652,7 +640,6 @@ const detection = JSON.parse(fs.readFileSync('.engram/.graphify_detect.json', 'u
 const result = runBenchmark('.engram/graph.json', {corpusWords: detection.total_words});
 printBenchmark(result);
 "
-
 ```
 
 Print the output directly in chat. If `total_words <= 5000`, skip silently - the graph value is structural clarity, not token compression, for small corpora.
@@ -689,7 +676,6 @@ fs.writeFileSync(costPath, JSON.stringify(cost, null, 2));
 console.log(\`This run: \${inputTok.toLocaleString()} input tokens, \${outputTok.toLocaleString()} output tokens\`);
 console.log(\`All time: \${cost.total_input_tokens.toLocaleString()} input, \${cost.total_output_tokens.toLocaleString()} output (\${cost.runs.length} runs)\`);
 "
-
 rm -f .engram/.graphify_detect.json .engram/.graphify_extract.json .engram/.graphify_ast.json .engram/.graphify_semantic.json .engram/.graphify_analysis.json
 rm -f .engram/needs_update 2>/dev/null || true
 ```
@@ -742,7 +728,6 @@ if (newTotal === 0) {
 }
 console.log(\`\${newTotal} new/changed file(s) to re-extract.\`);
 "
-
 ```
 
 If new files exist, first check whether all changed files are code files:
@@ -759,7 +744,6 @@ const allChanged = Object.values(newFiles).flat();
 const codeOnly = allChanged.every(f => codeExts.has(path.extname(f).toLowerCase()));
 console.log('code_only:', codeOnly);
 "
-
 ```
 
 If `code_only` is True: print `[engram update] Code-only changes detected - skipping semantic extraction (no LLM needed)`, run only Step 3A (AST) on the changed files, skip Step 3B entirely (no subagents), then go straight to merge and Steps 4–8.
@@ -795,7 +779,6 @@ console.log('Prepared semantic inputs: ' + transcriptPaths.length + ' transcript
   process.exit(1);
 });
 "
-
 ```
 
 When re-running Step 3B in update mode, use `.engram/.graphify_incremental_semantic.json` instead of `.engram/.graphify_detect_semantic.json`.
@@ -821,7 +804,6 @@ GNew.forEachNode((n, a) => GExisting.mergeNode(n, a));
 GNew.forEachEdge((e, a, s, t) => { upsertRelationEdge(GExisting, s, t, a); });
 console.log(\`Merged: \${GExisting.order} nodes, \${GExisting.size} edges\`);
 "
-
 ```
 
 Then run Steps 4–8 on the merged graph as normal.
@@ -850,7 +832,6 @@ if (oldData) {
     }
 }
 "
-
 ```
 
 Before the merge step, save the old graph: `cp .engram/graph.json .engram/.graphify_old.json`
@@ -897,7 +878,6 @@ const analysis = {
 fs.writeFileSync('.engram/.graphify_analysis.json', JSON.stringify(analysis, null, 2));
 console.log(\`Re-clustered: \${communities.size} communities\`);
 "
-
 ```
 
 Then run Steps 5–9 as normal (label communities, generate viz, benchmark, clean up, report).
@@ -922,7 +902,6 @@ if (!fs.existsSync('.engram/graph.json')) {
     process.exit(1);
 }
 "
-
 ```
 If it fails, stop and tell the user to run `/engram <path>` first.
 
@@ -945,7 +924,6 @@ for (const n of (g.nodes || [])) {
 fs.writeFileSync('.engram/.vocab.txt', [...vocab].sort().join('\\n'));
 console.log('vocab: ' + vocab.size + ' tokens');
 "
-
 ```
 
 Read `.engram/.vocab.txt`, then pick **up to 12 tokens from that exact list** that match the query intent. Hard constraints:
@@ -1041,7 +1019,6 @@ if (output.length > charBudget) { output = output.slice(0, charBudget) + \`
 ... (truncated at ~\${tokenBudget} token budget - use --budget N for more)\`; }
 console.log(output);
 "
-
 ```
 
 Replace `QUESTION` with the user's actual question, `MODE` with `bfs` or `dfs`, and `BUDGET` with the token budget (default `2000`, or whatever `--budget N` specifies). Then answer based on the subgraph output above.
@@ -1060,7 +1037,6 @@ saveQueryResult({
 });
 console.log('Query result saved to .engram/memory/');
 "
-
 ```
 
 Replace `QUESTION` with the question, `ANSWER` with your full answer text, `SOURCE_NODES` with the list of node labels you cited. This closes the feedback loop: the next `--update` will extract this Q&A as a node in the graph.
@@ -1080,7 +1056,6 @@ if (!fs.existsSync('.engram/graph.json')) {
     process.exit(1);
 }
 "
-
 ```
 If it fails, stop and tell the user to run `/engram <path>` first.
 
@@ -1131,7 +1106,6 @@ if (!path) {
     console.log('Shortest path (' + (path.length - 1) + ' hops):\\n  ' + segments.join(' '));
 }
 "
-
 ```
 
 Replace `NODE_A` and `NODE_B` with the actual concept names from the user. Then explain the path in plain language - what each hop means, why it's significant.
@@ -1150,7 +1124,6 @@ saveQueryResult({
 });
 console.log('Path result saved to .engram/memory/');
 "
-
 ```
 
 ---
@@ -1168,7 +1141,6 @@ if (!fs.existsSync('.engram/graph.json')) {
     process.exit(1);
 }
 "
-
 ```
 If it fails, stop and tell the user to run `/engram <path>` first.
 
@@ -1203,7 +1175,6 @@ G[G.type === 'directed' ? 'forEachOutboundNeighbor' : 'forEachNeighbor'](nid, (n
     }
 });
 "
-
 ```
 
 Replace `NODE_NAME` with the concept the user asked about. Then write a 3-5 sentence explanation of what this node is, what it connects to, and why those connections are significant. Use the source locations as citations.
@@ -1222,7 +1193,6 @@ saveQueryResult({
 });
 console.log('Explanation saved to .engram/memory/');
 "
-
 ```
 
 ---
@@ -1242,7 +1212,6 @@ try {
     process.exit(1);
 }
 "
-
 ```
 
 Replace `URL` with the actual URL, `AUTHOR` with the user's name if provided, `CONTRIBUTOR` likewise. If the command exits with an error, tell the user what went wrong - do not silently continue. After a successful save, automatically run the `--update` pipeline on `./raw` to merge the new file into the existing graph.

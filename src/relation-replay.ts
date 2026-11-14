@@ -9,14 +9,23 @@ export interface RelationContribution {
 
 /** Validate the whole batch and affected stored evidence before any mutation. */
 export function prepareRelationContributions(G: Graph, rows: readonly RelationContribution[]): RelationContribution[] {
-  const pending = new Map<string, Record<string, unknown>>();
-  return rows.map(({ source, target, attrs }) => {
+  const buckets = new Map<string, { src: string; tgt: string; relation: string; contributions: Record<string, unknown>[] }>();
+  for (const { source, target, attrs } of rows) {
     const { src, tgt, relation } = assertionIdentityOf(source, target, attrs);
     const key = edgeKey(src, tgt, relation);
-    const current = pending.get(key) ?? (G.hasEdge(key) ? G.getEdgeAttributes(key) : null);
-    const validated = { ...mergeEdgeEvidence(current, attrs), _src: src, _tgt: tgt, relation };
-    pending.set(key, validated);
-    return { source: src, target: tgt, attrs: validated };
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { src, tgt, relation, contributions: [] };
+      buckets.set(key, bucket);
+    }
+    bucket.contributions.push(attrs);
+  }
+  // One union per tuple: retaining every growing prefix is quadratic in evidence.
+  // Finish every bucket before returning anything that a caller can replay.
+  return [...buckets].map(([key, { src: source, tgt: target, relation, contributions }]) => {
+    const current = G.hasEdge(key) ? G.getEdgeAttributes(key) : null;
+    const attrs = { ...mergeEdgeEvidence(current, ...contributions), _src: source, _tgt: target, relation };
+    return { source, target, attrs };
   });
 }
 

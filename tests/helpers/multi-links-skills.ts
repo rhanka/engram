@@ -1,6 +1,8 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import ts from "typescript";
 import * as api from "../../src/index.js";
 import { buildFromJson } from "../../src/build.js";
@@ -18,6 +20,40 @@ export function readSkill(path: string): SkillCode {
   const portable = portableBytes?.trim().replace(/^```(?:javascript|js|typescript|ts)\s*\n/, "").replace(/\n```$/, "");
   const scripts = [...text.matchAll(/node\s+-e\s+"\n([\s\S]*?)^\s*"\s*$/gm)].map(m => m[1].replace(/\\([\\$`"])/g, "$1"));
   return { path, text, portable, portableBytes, scripts };
+}
+
+export function fencedShellCommands(skill: Pick<SkillCode, "text">) {
+  return [...skill.text.matchAll(/^```(bash|sh|powershell)\r?\n([\s\S]*?)^```[ \t]*$/gm)]
+    .map(match => ({ shell: match[1], command: match[2] }));
+}
+
+/** Let Bash parse the authored quotes, redirects and pipelines; never execute JS. */
+export function checkFencedBashCommands(skill: Pick<SkillCode, "path" | "text">, select: (command: string) => boolean): number {
+  const dir = mkdtempSync(join(tmpdir(), "multi-links-skill-shell-"));
+  const calls = join(dir, "node-calls");
+  mkdirSync(join(dir, ".engram"));
+  const checkNode = `set -euo pipefail
+node() {
+  if [[ "$#" -ne 2 || "$1" != "-e" ]]; then
+    printf 'expected node -e and exactly one payload\\n' >&2
+    return 1
+  fi
+  printf '%s' "$2" | "$CHECK_NODE_EXECUTABLE" --check || return
+  printf 'checked\\n' >> "$CHECK_NODE_CALLS"
+}
+`;
+  try {
+    for (const { shell, command } of fencedShellCommands(skill)) {
+      if (shell === "powershell" || !select(command)) continue;
+      const result = spawnSync("bash", ["--noprofile", "--norc", "-c", checkNode + command], {
+        cwd: dir, encoding: "utf8",
+        env: { ...process.env, CHECK_NODE_EXECUTABLE: process.execPath, CHECK_NODE_CALLS: calls },
+      });
+      if (result.error) throw result.error;
+      if (result.status !== 0) throw new Error(`${skill.path}: fenced ${shell} command failed syntax check\n${result.stderr}`);
+    }
+    return existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n").length : 0;
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 const localRequire = createRequire(resolve("package.json"));
 export function executeSnippet(source: string, raw: Row, fresh: Row) {
