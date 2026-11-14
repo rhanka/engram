@@ -172,8 +172,13 @@ function compareValues(a: unknown, b: unknown): number {
   return 0;
 }
 
-/** Pure contribution union. Identity is supplied separately by the writer. */
+/** Compatibility wrapper for small, fixed-arity callers. */
 export function mergeEdgeEvidence(existing: Attributes | null, ...incoming: Attributes[]): Attributes {
+  return mergeEdgeEvidenceAll(existing, incoming);
+}
+
+/** Pure collection union. Validate the full bucket, then derive its final set once. */
+export function mergeEdgeEvidenceAll(existing: Attributes | null, incoming: readonly Attributes[]): Attributes {
   const contributions = [...(existing ? [existing] : []), ...incoming];
   const observations = new Map<string, EvidenceObservation>();
   for (const attrs of contributions) {

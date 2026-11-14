@@ -1,5 +1,5 @@
 import type Graph from "graphology";
-import { assertionIdentityOf, assertSupportedGraphFormat, edgeKey, legacyObservationFromRawLink, mergeEdgeEvidence, upsertRelationEdge } from "./graph.js";
+import { assertionIdentityOf, assertSupportedGraphFormat, edgeKey, legacyObservationFromRawLink, mergeEdgeEvidenceAll, upsertRelationEdge } from "./graph.js";
 
 export interface RelationContribution {
   source: string;
@@ -24,7 +24,7 @@ export function prepareRelationContributions(G: Graph, rows: readonly RelationCo
   // Finish every bucket before returning anything that a caller can replay.
   return [...buckets].map(([key, { src: source, tgt: target, relation, contributions }]) => {
     const current = G.hasEdge(key) ? G.getEdgeAttributes(key) : null;
-    const attrs = { ...mergeEdgeEvidence(current, ...contributions), _src: source, _tgt: target, relation };
+    const attrs = { ...mergeEdgeEvidenceAll(current, contributions), _src: source, _tgt: target, relation };
     return { source, target, attrs };
   });
 }

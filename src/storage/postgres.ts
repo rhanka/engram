@@ -933,7 +933,10 @@ async function createPostgresGraphStoreBody(config: PostgresGraphStoreConfig, de
     batchSize: number,
   ): Promise<number> {
     let count = 0;
-    for (const batch of chunk(rows, batchSize)) {
+    // Each row contributes one bind per column. Bound caller-supplied batch
+    // sizes too, keeping every statement below PostgreSQL's 65,535 parameters.
+    const boundedBatchSize = Math.min(batchSize > 0 ? batchSize : DEFAULT_BATCH_SIZE, Math.floor(65_534 / columns.length));
+    for (const batch of chunk(rows, boundedBatchSize)) {
       if (batch.length === 0) continue;
       const { text, params } = buildUpsert(table, columns, conflictCols, batch);
       await runner.query(text, params);

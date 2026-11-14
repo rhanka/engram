@@ -207,8 +207,8 @@ const [cachedNodes, cachedEdges, cachedHyperedges, uncached] = checkSemanticCach
 if (cachedNodes.length || cachedEdges.length || cachedHyperedges.length) {
     fs.writeFileSync('.engram/.graphify_cached.json', JSON.stringify({nodes: cachedNodes, edges: cachedEdges, hyperedges: cachedHyperedges}));
 }
-fs.writeFileSync('.engram/.graphify_uncached.txt', uncached.join('\\n'));
-console.log(\`Cache: \${allFiles.length - uncached.length} files hit, \${uncached.length} files need extraction\`);
+fs.writeFileSync('.engram/.graphify_uncached.txt', uncached.join('\n'));
+console.log(\`Cache: ${allFiles.length - uncached.length} files hit, ${uncached.length} files need extraction\`);
 "
 ```
 
@@ -308,7 +308,7 @@ if (errors.length > 0) {
 }
 const clean = sanitizeSemanticFragment(raw);
 const saved = saveSemanticCache(clean.nodes || [], clean.edges || [], clean.hyperedges || []);
-console.log(\`Cached \${saved} files\`);
+console.log(\`Cached ${saved} files\`);
 "
 ```
 
@@ -346,7 +346,7 @@ const merged = {
     output_tokens: raw.output_tokens || 0,
 };
 fs.writeFileSync('.engram/.graphify_semantic.json', JSON.stringify(merged, null, 2));
-console.log(\`Extraction complete - \${deduped.length} nodes, \${allEdges.length} edges (\${(cached.nodes||[]).length} from cache, \${(raw.nodes||[]).length} new)\`);
+console.log(\`Extraction complete - ${deduped.length} nodes, ${allEdges.length} edges (${(cached.nodes||[]).length} from cache, ${(raw.nodes||[]).length} new)\`);
 "
 ```
 Clean up temp files: `Remove-Item -ErrorAction SilentlyContinue .engram/.graphify_cached.json, .engram/.graphify_uncached.txt, .engram/.graphify_semantic_new.json, .engram/.graphify_detect_semantic.json, .engram/.graphify_transcripts.json, .engram/.graphify_pdf_ocr.json`
@@ -376,7 +376,7 @@ const merged = {
     output_tokens: sem.output_tokens || 0,
 };
 fs.writeFileSync('.engram/.graphify_extract.json', JSON.stringify(merged, null, 2));
-console.log(\`Merged: \${mergedNodes.length} nodes, \${mergedEdges.length} edges (\${ast.nodes.length} AST + \${sem.nodes.length} semantic)\`);
+console.log(\`Merged: ${mergedNodes.length} nodes, ${mergedEdges.length} edges (${ast.nodes.length} AST + ${sem.nodes.length} semantic)\`);
 "
 ```
 
@@ -421,7 +421,7 @@ if (G.order === 0) {
     console.log('Possible causes: all files were skipped, binary-only corpus, or extraction failed.');
     process.exit(1);
 }
-console.log(\`Graph: \${G.order} nodes, \${G.size} edges, \${communities.size} communities\`);
+console.log(\`Graph: ${G.order} nodes, ${G.size} edges, ${communities.size} communities\`);
 "
 ```
 
@@ -514,12 +514,12 @@ const labels = Object.fromEntries(Object.entries(labelsRaw).map(([k, v]) => [Num
 const obsidianDir = 'OBSIDIAN_DIR';  // replace with --obsidian-dir value, or '.engram/obsidian' if not given
 
 const n = toWiki(G, communities, obsidianDir, {communityLabels: Object.keys(labels).length ? labels : undefined, cohesion});
-console.log(\`Obsidian vault: \${n} notes in \${obsidianDir}/\`);
+console.log(\`Obsidian vault: ${n} notes in ${obsidianDir}/\`);
 
-toCanvas(G, communities, \`\${obsidianDir}/graph.canvas\`, {communityLabels: Object.keys(labels).length ? labels : undefined});
-console.log(\`Canvas: \${obsidianDir}/graph.canvas - open in Obsidian for structured community layout\`);
+toCanvas(G, communities, \`${obsidianDir}/graph.canvas\`, {communityLabels: Object.keys(labels).length ? labels : undefined});
+console.log(\`Canvas: ${obsidianDir}/graph.canvas - open in Obsidian for structured community layout\`);
 console.log();
-console.log(\`Open \${obsidianDir}/ as a vault in Obsidian.\`);
+console.log(\`Open ${obsidianDir}/ as a vault in Obsidian.\`);
 console.log('  Graph view   - nodes colored by community (set automatically)');
 console.log('  graph.canvas - structured layout with communities as groups');
 console.log('  _COMMUNITY_* - overview notes with cohesion scores and dataview queries');
@@ -730,7 +730,7 @@ if (newTotal === 0) {
     console.log('No files changed since last run. Nothing to update.');
     process.exit(0);
 }
-console.log(\`\${newTotal} new/changed file(s) to re-extract.\`);
+console.log(\`${newTotal} new/changed file(s) to re-extract.\`);
 "
 ```
 
@@ -919,13 +919,13 @@ const fs = require('fs');
 const g = JSON.parse(fs.readFileSync('.engram/graph.json','utf-8'));
 const vocab = new Set();
 for (const n of (g.nodes || [])) {
-  for (const c of String(n.label || '').match(/[^\\W\\d_]+/gu) || []) {
+  for (const c of String(n.label || '').match(/[^\W\d_]+/gu) || []) {
     for (const p of (c.match(/[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+/g) || [c])) {
       if (p.length > 1) vocab.add(p.toLowerCase());
     }
   }
 }
-fs.writeFileSync('.engram/.vocab.txt', [...vocab].sort().join('\\n'));
+fs.writeFileSync('.engram/.vocab.txt', [...vocab].sort().join('\n'));
 console.log('vocab: ' + vocab.size + ' tokens');
 "
 ```
@@ -1210,9 +1210,9 @@ node -e "
 const { ingest } = require('@sentropic/engram');
 try {
     const out = ingest('URL', './raw', {author: 'AUTHOR', contributor: 'CONTRIBUTOR'});
-    console.log(\`Saved to \${out}\`);
+    console.log(\`Saved to ${out}\`);
 } catch (e) {
-    console.error(\`error: \${e.message}\`);
+    console.error(\`error: ${e.message}\`);
     process.exit(1);
 }
 "

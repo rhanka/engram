@@ -4,7 +4,7 @@ import { unionExtractionCitations } from "./citations.js";
 import { type JsonValue, toJsonValue } from "./json-value.js";
 import { makeNodeId } from "./node-id.js";
 import { canonicalBytes } from "./ontology-guardian/canonical.js";
-import { assertionIdentityOf, mergeEdgeEvidence, prepareFreshExtraction } from "./graph.js";
+import { assertionIdentityOf, mergeEdgeEvidenceAll, prepareFreshExtraction } from "./graph.js";
 import { repoKey, commitId, branchId } from "./repo-key.js";
 import type {
   Extraction,
@@ -1178,7 +1178,7 @@ function mergeExtractionsWithCitationsBody(extractions: readonly Extraction[], o
     }
     // Diagnose whole-field candidates, using the P1 core's actual winner.
     // Residual objects are selected intact, never recursively merged.
-    const attrs = mergeEdgeEvidence(null, ...group.copies);
+    const attrs = mergeEdgeEvidenceAll(null, group.copies);
     const excludedFields = new Set(["source", "target", "relation", "source_file", "source_location", "citations", "confidence", "confidence_score", "derivation_method", "derivation_methods", "evidence_refs", "extractor", "t", "t_end", "evidence_observations", "_src", "_tgt", "assertion_basis"]);
     const sourceFiles = collectGroupSourceFiles(group.copies);
     for (const field of new Set(group.copies.flatMap(Object.keys))) {
