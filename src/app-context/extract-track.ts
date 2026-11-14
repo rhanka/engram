@@ -94,12 +94,15 @@ export interface TrackGraphNode {
   citations: TrackProjectionCitation[];
 }
 
-/** Lossless app-context relation record carried on Track edges (§3.2). */
+/** Fresh relation emission; build's shared evidence core owns capture and union. */
 export interface TrackGraphEdge {
   source: string;
   target: string;
   relation: TrackRelation;
   confidence: "EXTRACTED";
+  /** Per-emission method captured verbatim by the multi-links observation builder. */
+  derivation_method: string;
+  /** Single-method compatibility view for app-context consumers. */
   derivation_methods: string[];
   evidence_refs: string[];
   source_file: typeof TRACK_QUERY_REL | typeof TRACK_DECISIONS_REL;
@@ -490,6 +493,7 @@ export function linkTrackInWorkpackages(ctx: TrackLinkContext): { edges: TrackGr
       target,
       relation: "in_workpackage",
       confidence: "EXTRACTED",
+      derivation_method: "track_query_wp_id",
       derivation_methods: ["track_query_wp_id"],
       evidence_refs: [],
       source_file: TRACK_QUERY_REL,
@@ -551,8 +555,8 @@ export function linkExplicitTrackDeclarations(
     }
   });
 
-  // No dedup here: every emission is returned to the L5 aggregator, which
-  // owns the deterministic union of derivation_methods and citations (§3.2).
+  // Keep every fresh emission. Batch/build intake captures and unions evidence
+  // through mergeEdgeEvidenceAll/upsertRelationEdge, including repeated triples.
   const edges: TrackGraphEdge[] = [];
   const diagnostics: AppContextDiagnostic[] = [];
 
@@ -625,6 +629,7 @@ export function linkExplicitTrackDeclarations(
         target: declaration.targetId,
         relation: "tracks",
         confidence: "EXTRACTED",
+        derivation_method: TRACKS_DERIVATION[declaration.kind],
         derivation_methods: [TRACKS_DERIVATION[declaration.kind]],
         evidence_refs: [],
         source_file: TRACK_QUERY_REL,
@@ -656,6 +661,7 @@ export function linkExplicitTrackDeclarations(
         target: declaration.targetId,
         relation: "decides",
         confidence: "EXTRACTED",
+        derivation_method: DECIDES_DERIVATION[declaration.kind],
         derivation_methods: [DECIDES_DERIVATION[declaration.kind]],
         evidence_refs: [],
         source_file: TRACK_DECISIONS_REL,
@@ -788,14 +794,10 @@ export function linkSpecPathMentions(
   const decisionSpans = indexPrettyArrayElements(ctx.decisionsText);
   const edges: TrackGraphEdge[] = [];
   const diagnostics: AppContextDiagnostic[] = [];
-  const seen = new Set<string>();
   const seenDiags = new Set<string>();
+  // Different projection rows may assert the same triple with distinct citations.
+  // Preserve them all for the shared batch/build evidence merger.
   const pushEdge = (edge: TrackGraphEdge): void => {
-    const key = `${edge.source}\u0000${edge.target}\u0000${edge.relation}`;
-    if (seen.has(key)) {
-      return;
-    }
-    seen.add(key);
     edges.push(edge);
   };
   const pushDiagnostic = (diagnostic: AppContextDiagnostic): void => {
@@ -838,6 +840,7 @@ export function linkSpecPathMentions(
         target,
         relation: "tracks",
         confidence: "EXTRACTED",
+        derivation_method: "track_item_summary_spec_path",
         derivation_methods: ["track_item_summary_spec_path"],
         evidence_refs: [],
         source_file: TRACK_QUERY_REL,
@@ -898,6 +901,7 @@ export function linkSpecPathMentions(
         target,
         relation: "decides",
         confidence: "EXTRACTED",
+        derivation_method: "track_decision_excerpt_spec_path",
         derivation_methods: ["track_decision_excerpt_spec_path"],
         evidence_refs: [],
         source_file: TRACK_DECISIONS_REL,
@@ -1008,7 +1012,8 @@ async function assertFinalTargetOutsideTrack(absPath: string): Promise<void> {
 }
 
 /**
- * Write bytes without following a final symlink (`O_NOFOLLOW`): a link
+ * Write only CLI projection bytes validated by writeTrackProjections, never a
+ * graph document. Without following a final symlink (`O_NOFOLLOW`), a link
  * swapped in between the prevalidation and the write fails here instead of
  * redirecting bytes into `.track/`.
  */
@@ -1046,6 +1051,10 @@ export async function writeTrackProjections(opts: {
       `refusing to persist track projections: commit "${opts.commit}" is not a 40-hex checkout commit`,
     );
   }
+  // These citation-source arrays are fresh CLI data, not a graph snapshot.
+  // Validate both before any filesystem mutation and preserve their exact bytes.
+  parseCliArray(opts.queryText, "query --format json");
+  parseCliArray(opts.decisionsText, "decision ls --format json");
   const dir = join(resolve(opts.stateRootDir), "commits", opts.commit, "track-projections");
   if (pathTouchesTrackDir(dir)) {
     throw new Error(`refusing to persist track projections inside .track: ${dir}`);
