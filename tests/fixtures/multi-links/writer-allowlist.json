@@ -1,5 +1,23 @@
 [
   {
+    "file": "src/app-context/extract-spec.ts",
+    "line": 1370,
+    "owner": "buildAppContextRelationRecords",
+    "kind": "edge-row-constructor",
+    "fingerprint": "4d28e0e74386c26321a39816c0460a5c839d0c0de3225207fdcc6ac95b5513ec",
+    "reason": "Individual read-only DTO, rule, signature or analysis projection; no record write",
+    "count": 1
+  },
+  {
+    "file": "src/app-context/extract-spec.ts",
+    "line": 1677,
+    "owner": "emitEdge",
+    "kind": "edge-row-constructor",
+    "fingerprint": "935d4c15d534ceed372205c32872a3cdbfef750f97bb7217e847688933f74072",
+    "reason": "Individual fresh producer append upstream of batch/build reducers; no stored record rewritten",
+    "count": 1
+  },
+  {
     "file": "src/analyze.ts",
     "line": 242,
     "owner": "crossFileSurprises",
