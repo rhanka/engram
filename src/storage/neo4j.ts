@@ -1,3 +1,4 @@
+import { assertSupportedGraphFormat } from "../graph.js";
 import { requireHostDriver } from "./host-driver.js";
 /**
  * Neo4j GraphStore adapter (SPEC_STORAGE_BACKENDS.md, "Neo4j Adapter (v1)").
@@ -378,6 +379,7 @@ export async function createNeo4jGraphStore(
       communities: Map<number, string[]>,
       options: GraphPushOptions = {},
     ): Promise<GraphPushResult> {
+      assertSupportedGraphFormat(G.getAttributes(), "storage/neo4j pushGraph");
       const start = Date.now();
       const batchSize = options.batchSize ?? 500;
       const mode = options.mode ?? "merge";

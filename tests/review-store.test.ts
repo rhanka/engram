@@ -301,7 +301,7 @@ import { edge as mlEdge, node as mlNode, fromRows as mlBuild, writers as mlWrite
 import { loadGraphFromData as mlLoad } from "../src/graph.js";
 describe("L0-T review id",()=>{
  const emissions=["imports","imports_from","extends","inherits_from","subclass_of","Calls","calls"].map(relation=>mlEdge({relation})).concat([mlEdge({source:"b",target:"a",relation:"calls"})]);
- it.fails("review-id-exact-relation-not-kind",()=>{
+ it("review-id-exact-relation-not-kind",()=>{
   for(const seq of [emissions,[...emissions].reverse()]){
    const G=new Graph({multi:true,type:"undirected"});G.addNode("a");G.addNode("b");
    seq.forEach((e,index)=>G.addEdgeWithKey("unstable-"+index,e.source,e.target,{...e,_src:e.source,_tgt:e.target}));

@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import type { SerializedGraphData } from "./graph.js";
-import { createGraph, serializeGraph } from "./graph.js";
+import { assertSupportedGraphFormat, createGraph, serializeGraph } from "./graph.js";
 import { unionCitations } from "./citations.js";
 import { mergeHyperedges, setHyperedges } from "./hyperedges.js";
 import type { Hyperedge } from "./hyperedges.js";
@@ -25,6 +25,7 @@ function readGraph(path: string): SerializedGraphData | null {
     throw new Error(`graph.json ${resolved} is ${stat.size} bytes, exceeds ${MERGE_MAX_GRAPH_BYTES}-byte cap`);
   }
   const raw = JSON.parse(readFileSync(resolved, "utf-8")) as SerializedGraphData;
+  assertSupportedGraphFormat(raw as Record<string, unknown>, resolved);
   const nodeCount = raw.nodes?.length ?? 0;
   if (nodeCount > MERGE_MAX_GRAPH_NODES) {
     throw new Error(`graph.json ${resolved} has ${nodeCount} nodes, exceeds ${MERGE_MAX_GRAPH_NODES}-node cap`);

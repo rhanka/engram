@@ -1,3 +1,4 @@
+import { assertSupportedGraphFormat, readerDegree } from "../graph.js";
 import { requireHostDriver } from "./host-driver.js";
 /**
  * Postgres GraphStore adapter (SPEC_STORAGE_BACKENDS.md, "Future Backends").
@@ -826,7 +827,7 @@ export async function createPostgresGraphStore(
       const y = a.y;
       if (typeof x !== "number" || !Number.isFinite(x)) return;
       if (typeof y !== "number" || !Number.isFinite(y)) return;
-      rows.push([citySlug, snapshotId, DEFAULT_LAYOUT, nodeId, x, y, G.degree(nodeId)]);
+      rows.push([citySlug, snapshotId, DEFAULT_LAYOUT, nodeId, x, y, readerDegree(G, nodeId)]);
     });
     return rows;
   }
@@ -1028,6 +1029,7 @@ export async function createPostgresGraphStore(
       communities: Map<number, string[]>,
       options: GraphPushOptions = {},
     ): Promise<GraphPushResult> {
+      assertSupportedGraphFormat(G.getAttributes(), "storage/postgres pushGraph");
       const start = Date.now();
       const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
       const mode = options.mode ?? "merge";

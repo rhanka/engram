@@ -359,13 +359,21 @@ function explicitChurnValue(node) {
   return null;
 }
 
-function nodeDegreeFallback(sceneNodes, sceneEdges) {
-  const degree = new Map(sceneNodes.map((node) => [node.id, 0]));
-  for (const edge of sceneEdges) {
-    if (degree.has(edge.source)) degree.set(edge.source, degree.get(edge.source) + 1);
-    if (degree.has(edge.target)) degree.set(edge.target, degree.get(edge.target) + 1);
+function nodeDegreeFallback(sceneNodes, sceneEdges, multigraph = false) {
+  if (!multigraph) {
+    const degree = new Map(sceneNodes.map(node => [node.id, 0]));
+    for (const edge of sceneEdges) {
+      if (degree.has(edge.source)) degree.set(edge.source, degree.get(edge.source) + 1);
+      if (degree.has(edge.target)) degree.set(edge.target, degree.get(edge.target) + 1);
+    }
+    return degree;
   }
-  return degree;
+  const neighbors = new Map(sceneNodes.map((node) => [node.id, new Set()]));
+  for (const edge of sceneEdges) {
+    neighbors.get(edge.source)?.add(edge.target);
+    neighbors.get(edge.target)?.add(edge.source);
+  }
+  return new Map([...neighbors].map(([id, adjacent]) => [id, adjacent.size]));
 }
 
 export function edgeBaseAlphaForDegree(degree) {
@@ -434,15 +442,15 @@ export function edgeAlphaShapeFor(mode, d0, d1) {
 /**
  * Build the per-edge ALPHA SHAPE buffer (3 bytes/edge, parallel to
  * `renderGraph.edges`) for a fade mode. Each edge's endpoints are looked up by
- * node id through `degreeById`, converted to a normalized density, then mapped
+ * node id through `edgeCountById`, converted to a normalized density, then mapped
  * to the [m0, mMid, m1] multipliers by {@link edgeAlphaShapeFor}. Flat mode
  * still emits a buffer (all 255) so the shape is always present + explicit.
  * @param {{ edges: ArrayLike<number>, nodeIds: ArrayLike<string> }} renderGraph
- * @param {Map<string, number>} degreeById  scene node id → undirected degree
+ * @param {Map<string, number>} edgeCountById  incident drawn links (a loop counts once)
  * @param {string} mode  one of EDGE_ALPHA_MODES
  * @returns {Uint8Array} 3·edgeCount bytes
  */
-export function buildEdgeAlphaShape(renderGraph, degreeById, mode) {
+export function buildEdgeAlphaShape(renderGraph, edgeCountById, mode) {
   const edgeCount = (renderGraph?.edges?.length ?? 0) / 2;
   const shape = new Uint8Array(edgeCount * 3);
   for (let e = 0; e < edgeCount; e += 1) {
@@ -450,8 +458,8 @@ export function buildEdgeAlphaShape(renderGraph, degreeById, mode) {
     const tgtIdx = renderGraph.edges[e * 2 + 1];
     const srcId = renderGraph.nodeIds[srcIdx];
     const tgtId = renderGraph.nodeIds[tgtIdx];
-    const d0 = edgeDensityForDegree(degreeById.get(srcId) ?? 0);
-    const d1 = edgeDensityForDegree(degreeById.get(tgtId) ?? 0);
+    const d0 = edgeDensityForDegree(edgeCountById.get(srcId) ?? 0);
+    const d1 = edgeDensityForDegree(edgeCountById.get(tgtId) ?? 0);
     const [m0, mMid, m1] = edgeAlphaShapeFor(mode, d0, d1);
     shape[e * 3] = m0;
     shape[e * 3 + 1] = mMid;
@@ -624,23 +632,29 @@ export function selectPrincipalHubLabels(
 }
 
 /**
- * Undirected degree per node INDEX from a render-graph's flat edge index buffer
- * (`edges` = [src0, tgt0, src1, tgt1, …]). Mirrors @sentropic/graph styles.ts
- * computeNodeDegrees so the LOD ranks hubs by the SAME degree the label gate did.
+ * Distinct-neighbour degree per node INDEX from a render-graph's flat edge buffer
+ * (`edges` = [src0, tgt0, src1, tgt1, …]), for topology-based label priority.
  * @param {{nodeIds?:ArrayLike<unknown>, edges?:ArrayLike<number>}} graph
  * @returns {Uint32Array} degree by node index
  */
-function computeDegreesByIndex(graph) {
+function computeDegreesByIndex(graph, multigraph = false) {
   const count = graph?.nodeIds?.length ?? 0;
-  const degrees = new Uint32Array(count);
-  const edges = graph?.edges ?? [];
-  for (let i = 0; i < edges.length; i += 1) {
-    const endpoint = edges[i];
-    if (Number.isInteger(endpoint) && endpoint >= 0 && endpoint < count) {
-      degrees[endpoint] += 1;
+  if (!multigraph) {
+    const degree = new Uint32Array(count);
+    for (const endpoint of graph?.edges ?? []) {
+      if (Number.isInteger(endpoint) && endpoint >= 0 && endpoint < count) degree[endpoint]++;
     }
+    return degree;
   }
-  return degrees;
+  const neighbors = Array.from({ length: count }, () => new Set());
+  const edges = graph?.edges ?? [];
+  for (let i = 0; i + 1 < edges.length; i += 2) {
+    const source = edges[i], target = edges[i + 1];
+    if (!Number.isInteger(source) || !Number.isInteger(target) || source < 0 || target < 0 || source >= count || target >= count) continue;
+    neighbors[source].add(target);
+    neighbors[target].add(source);
+  }
+  return Uint32Array.from(neighbors, adjacent => adjacent.size);
 }
 
 function cloneStyle(style) {
@@ -783,8 +797,13 @@ export function buildGraphRendererPayload(scene, options = {}) {
     ? clampUnit(options.edgeOpacity)
     : defaultEdgeOpacityFor(sceneEdges.length);
   const edgeBaseAlpha = Math.round(255 * edgeOpacity);
-  // One degree pass serves both churn fallback and density-graded edge alpha.
-  const degreeById = nodeDegreeFallback(sceneNodes, sceneEdges);
+  // Churn uses topology; opacity measures the incident links actually drawn.
+  const degreeById = nodeDegreeFallback(sceneNodes, sceneEdges, scene?.multigraph === true);
+  const edgeCountById = new Map(sceneNodes.map(node => [node.id, 0]));
+  for (const edge of sceneEdges) {
+    if (edgeCountById.has(edge.source)) edgeCountById.set(edge.source, edgeCountById.get(edge.source) + 1);
+    if ((scene?.multigraph !== true || edge.target !== edge.source) && edgeCountById.has(edge.target)) edgeCountById.set(edge.target, edgeCountById.get(edge.target) + 1);
+  }
   const churnById =
     colorBy === COLOR_BY_CHURN ? normalizedChurnById(sceneNodes, sceneEdges, degreeById) : null;
 
@@ -854,7 +873,7 @@ export function buildGraphRendererPayload(scene, options = {}) {
   // Along-edge alpha SHAPE (configurable edge-transparency). Parallel to
   // renderGraph.edges; a separate multiplier of the base alpha the WebGL edge
   // shader applies. Carried through cloneStyle so dim/hover/merge keep it.
-  baseStyle.edgeAlphaShape = buildEdgeAlphaShape(renderGraph, degreeById, edgeAlphaMode);
+  baseStyle.edgeAlphaShape = buildEdgeAlphaShape(renderGraph, edgeCountById, edgeAlphaMode);
   const nodeIndexById = new Map(nodes.map((node, index) => [node.id, index]));
 
   // Recon focal-pair parity: nodes flagged `forceBoxLabel` (the two entities
@@ -896,7 +915,7 @@ export function buildGraphRendererPayload(scene, options = {}) {
   // identical labelled boxes. The hub glyph is untouched; only the in-box name
   // is cleared, and node.label keeps the full name for the hover tooltip.
   if (baseStyle.nodeLabels) {
-    const degreesByIndex = computeDegreesByIndex(renderGraph);
+    const degreesByIndex = computeDegreesByIndex(renderGraph, scene?.multigraph === true);
     const hubs = [];
     for (const node of nodes) {
       if (node.forceBoxLabel === true) continue;

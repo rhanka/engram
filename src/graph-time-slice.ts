@@ -22,6 +22,7 @@
  * and it is not wired into the build pipeline: slicing an emitted graph.json
  * keeps the (non-deterministic, sidecar-co-emitting) build path untouched.
  */
+import { assertSupportedGraphFormat } from "./graph.js";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -385,7 +386,10 @@ export function runGraphTimeSlice(
     throw new Error(`graph file not found: ${sourcePath}`);
   }
 
-  const result = sliceGraphByTime(readGraphDocument(sourcePath, deps), bounds);
+  const source = readGraphDocument(sourcePath, deps);
+  // Unknown formats remain inspectable without --out; every raw write is guarded.
+  if (options.out) assertSupportedGraphFormat(source as Record<string, unknown>, sourcePath);
+  const result = sliceGraphByTime(source, bounds);
 
   const outPath = options.out ? resolve(options.out) : null;
   let written = false;

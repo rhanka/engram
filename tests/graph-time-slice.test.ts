@@ -312,7 +312,7 @@ import { tempDir as mlTemp, edge as mlEdge, node as mlNode, type Row as MlRow } 
 const mlTimed = (format: string) => ({ graph_format:format,multigraph:true,nodes:[mlNode("a",{t:1}),mlNode("b",{t:1})],links:[mlEdge({relation:"reads",t:1}),mlEdge({relation:"writes",t:1}),mlEdge({source:"b",target:"a",t:1})] });
 describe("L0-S time slice", () => {
   for (const injected of [false,true]) for (const force of [false,true]) describe((injected?"injected":"file") + "/force=" + force, () => {
-    it.fails("R4-time-slice-unknown-format-zero-writes", () => {
+    it("R4-time-slice-unknown-format-zero-writes", () => {
       const sourceDir=mlTemp(), destDir=mlTemp();
       const source=mlJoin(sourceDir,"graph.json"),out=mlJoin(destDir,"graph.json"),sidecar=mlJoin(destDir,"ontology/citations.json");
       const raw=mlTimed("engram-graph/3");

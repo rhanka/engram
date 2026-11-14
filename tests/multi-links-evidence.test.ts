@@ -34,7 +34,7 @@ describe("L0-E evidence", () => {
   });
 
   // Explicit new-API contract, kept separate from behavioral build acceptance.
-  it.fails("upsert-requires-multigraph-ordered-invariant", () => {
+  it("upsert-requires-multigraph-ordered-invariant", () => {
     const upsert = (core as Row).upsertRelationEdge;
     expect(upsert, "src/graph.ts must export upsertRelationEdge").toBeTypeOf("function");
     const simple = new Graph({ multi: false, type: "undirected" });
@@ -69,7 +69,7 @@ describe("L0-E evidence", () => {
     expect(() => G.mergeEdgeWithKey("K", "a", "c")).toThrow();
   });
 
-  it.fails("observation builder closed schema, cloning and public exports", () => {
+  it("observation builder closed schema, cloning and public exports", () => {
     const build = (core as Row).observationFromEmission;
     expect(build, "src/graph.ts observationFromEmission export").toBeTypeOf("function");
     const input = edge({ custom: "residual", quote: "not an observation field", citations: [{ quote: "verbatim", nested: { value: 1 } }], evidence_refs: ["r1"], t: 0 });
@@ -133,7 +133,7 @@ describe("L0-E evidence", () => {
     });
   }
 
-  it.fails("observation-key-schema-and-bbox-region-contract", () => {
+  it("observation-key-schema-and-bbox-region-contract", () => {
     const key = (core as Row).observationKey;
     expect(key, "src/graph.ts must export observationKey").toBeTypeOf("function");
     const recs = [{ bbox: [0, 0, 1, 1] }, { region: [0, 0, 1, 1] }, { bbox: [0, 0, 1, 1], region: [0, 0, 1, 1] }];
