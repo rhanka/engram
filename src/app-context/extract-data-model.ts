@@ -21,6 +21,8 @@ import { createRequire } from "node:module";
 import { dirname, posix, resolve, sep } from "node:path";
 import * as TreeSitter from "web-tree-sitter";
 import { extractJs, extractSql, type ExtractionResult } from "../extract.js";
+import { edgeKey, mergeEdgeEvidenceAll } from "../graph.js";
+import type { EvidenceObservation } from "../types.js";
 import { appContextNodeId } from "./node-id.js";
 import type { AppContextCitation, AppContextDataDialect, AppContextDiagnostic, AppContextDiagnosticCandidate, AppContextDiagnosticCode } from "./types.js";
 
@@ -41,7 +43,7 @@ export interface DataModelNode {
   source_file: string; line_start: number; line_end: number; citations: AppContextCitation[]; evidence_refs: string[];
 }
 export type DataModelRelation = "has_field" | "references" | "reads" | "writes";
-export interface DataModelEdge { source: string; target: string; relation: DataModelRelation; derivation_method: string; evidence_refs: string[]; citations: AppContextCitation[]; }
+export interface DataModelEdge { source: string; target: string; relation: DataModelRelation; derivation_method: string; evidence_refs: string[]; citations: AppContextCitation[]; evidence_observations?: EvidenceObservation[]; derivation_methods?: string[]; }
 export type DataModelDiagnosticCode = AppContextDiagnosticCode | "unsupported-construct" | "unsupported-schema-format";
 export interface DataModelDiagnostic extends Omit<AppContextDiagnostic, "code"> { code: DataModelDiagnosticCode; startLine?: number; endLine?: number; }
 export interface ExtractDataModelResult { nodes: DataModelNode[]; edges: DataModelEdge[]; diagnostics: DataModelDiagnostic[]; }
@@ -499,7 +501,7 @@ interface TableRecord { fileCtx: FileAstContext; entityNode: DataModelNode; bind
 export function extractDataModel(sources: DataModelSourceFile[], options: ExtractDataModelOptions): ExtractDataModelResult {
   const { repoKey, commit } = options;
   const dialect: AppContextDataDialect = "postgres", defaultSchema = options.defaultSchema ?? "public";
-  const nodesById = new Map<string, DataModelNode>(), edgesByKey = new Map<string, DataModelEdge>(), diagnosticsById = new Map<string, DataModelDiagnostic>();
+  const nodesById = new Map<string, DataModelNode>(), edgesByKey = new Map<string, Array<DataModelEdge & Record<string, unknown>>>(), diagnosticsById = new Map<string, DataModelDiagnostic>();
 
   function upsertNode(node: DataModelNode): DataModelNode {
     const existing = nodesById.get(node.id);
@@ -516,9 +518,9 @@ export function extractDataModel(sources: DataModelSourceFile[], options: Extrac
     node.evidence_refs = node.citations.map((c) => evidenceKey(c.source_file, c.line_start, c.line_end));
   }
   function addEdge(source: string, target: string, relation: DataModelRelation, derivationMethod: string, cites: AppContextCitation[]): void {
-    const key = `${source}\0${target}\0${relation}\0${derivationMethod}`, existing = edgesByKey.get(key);
-    const merged = sortAndDedupeCitations(existing ? [...existing.citations, ...cites] : cites);
-    edgesByKey.set(key, { source, target, relation, derivation_method: derivationMethod, citations: merged, evidence_refs: merged.map((c) => evidenceKey(c.source_file, c.line_start, c.line_end)) });
+    const key = edgeKey(source, target, relation), emissions = edgesByKey.get(key) ?? [];
+    emissions.push({ source, target, relation, derivation_method: derivationMethod, citations: cites, evidence_refs: cites.map((c) => evidenceKey(c.source_file, c.line_start, c.line_end)) });
+    edgesByKey.set(key, emissions);
   }
   function addDiagnostic(code: DataModelDiagnosticCode, message: string, file: string, startLine: number, endLine = startLine, detail: string | ReadonlyArray<string> = [], candidates?: AppContextDiagnosticCandidate[]): void {
     const parts = typeof detail === "string" ? [detail || message] : detail.length > 0 ? [...detail] : [message];
@@ -965,7 +967,18 @@ export function extractDataModel(sources: DataModelSourceFile[], options: Extrac
 
   return {
     nodes: [...nodesById.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
-    edges: [...edgesByKey.values()].sort((a, b) =>
+    // Capture every fresh AST/path emission once, then derive one final set per directed triple.
+    edges: [...edgesByKey.values()].map((emissions) => {
+      const first = emissions[0]!, merged = mergeEdgeEvidenceAll(null, emissions);
+      return {
+        ...first,
+        citations: (merged.citations as AppContextCitation[] | undefined) ?? first.citations,
+        evidence_refs: (merged.evidence_refs as string[] | undefined) ?? first.evidence_refs,
+        derivation_method: typeof merged.derivation_method === "string" ? merged.derivation_method : first.derivation_method,
+        derivation_methods: merged.derivation_methods as string[] | undefined,
+        evidence_observations: merged.evidence_observations as EvidenceObservation[],
+      };
+    }).sort((a, b) =>
       a.source !== b.source ? (a.source < b.source ? -1 : 1) : a.target !== b.target ? (a.target < b.target ? -1 : 1)
       : a.relation !== b.relation ? (a.relation < b.relation ? -1 : 1) : a.derivation_method < b.derivation_method ? -1 : a.derivation_method > b.derivation_method ? 1 : 0),
     diagnostics: [...diagnosticsById.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
