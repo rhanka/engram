@@ -30,7 +30,7 @@ import {
   projectRootLabel,
   toProjectRelativePath,
 } from "./portable-artifacts.js";
-import { loadGraphFromData } from "./graph.js";
+import { assertSupportedGraphFormat, loadGraphFromData, RelationEdgeInvariantError, UnsupportedGraphFormatError } from "./graph.js";
 import type { CitationAggregateMap } from "./citations.js";
 import { assertGraphJsonFileSize } from "./graph-size-guard.js";
 import { persistCommunityLabels, resolveCommunityLabels } from "./community-labels.js";
@@ -203,6 +203,15 @@ export async function rebuildCode(
 ): Promise<boolean> {
   try {
     const paths = resolveGraphifyPaths({ root: watchPath });
+    if (existsSync(paths.graph)) {
+      try {
+        assertGraphJsonFileSize(paths.graph, "read");
+        assertSupportedGraphFormat(JSON.parse(readFileSync(paths.graph, "utf-8")), paths.graph);
+      } catch (error) {
+        if (error instanceof UnsupportedGraphFormatError) throw error;
+        // Ordinary unreadable snapshots retain the recover-and-rebuild policy.
+      }
+    }
     const outDir = paths.stateDir;
     mkdirSync(outDir, { recursive: true });
     // Dynamic imports - these modules are in the same package
@@ -323,7 +332,8 @@ export async function rebuildCode(
         if (mergedHyperedges.length > 0) {
           G.setAttribute("hyperedges", mergedHyperedges);
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof UnsupportedGraphFormatError || error instanceof RelationEdgeInvariantError) throw error;
         /* ignore unreadable prior graph snapshots */
       }
     }
@@ -645,6 +655,7 @@ export async function rebuildCode(
     );
     return true;
   } catch (err) {
+    if (err instanceof UnsupportedGraphFormatError || err instanceof RelationEdgeInvariantError) throw err;
     console.log(
       `[engram watch] Rebuild failed: ${err instanceof Error ? err.message : err}`,
     );

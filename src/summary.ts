@@ -1,7 +1,7 @@
 import Graph from "graphology";
 
 import { isConceptNode, isFileNode } from "./analyze.js";
-import { isDirectedGraph } from "./graph.js";
+import { readerDegree, isDirectedGraph } from "./graph.js";
 import { sanitizeLabel } from "./security.js";
 
 export interface FirstHopHub {
@@ -95,7 +95,7 @@ function nodeSummary(G: Graph, nodeId: string, labels: Map<number, string>): Fir
   return {
     id: nodeId,
     label: sanitizeLabel((attrs.label as string | undefined) ?? nodeId),
-    degree: G.degree(nodeId),
+    degree: readerDegree(G, nodeId),
     source_file: typeof attrs.source_file === "string" && attrs.source_file.length > 0
       ? attrs.source_file
       : null,
@@ -162,6 +162,17 @@ export function buildFirstHopSummary(
   const labels = communityLabels(G);
   const memberships = communityMembership(G);
   const internalEdges = internalEdgeCounts(G);
+  const topologyPairs = new Set<string>();
+  const communityPairs = new Map<number, Set<string>>();
+  G.forEachEdge((_key, _attrs, source, target) => {
+    if (source === target) return;
+    const pair = JSON.stringify(directed ? [source, target] : [source, target].sort(compareStrings));
+    topologyPairs.add(pair);
+    const cid = maybeCommunity(G.getNodeAttribute(source, "community"));
+    if (cid === null || cid !== maybeCommunity(G.getNodeAttribute(target, "community"))) return;
+    if (!communityPairs.has(cid)) communityPairs.set(cid, new Set());
+    communityPairs.get(cid)!.add(pair);
+  });
 
   const allHubCandidates = G.nodes()
     .map((nodeId) => nodeSummary(G, nodeId, labels))
@@ -184,7 +195,7 @@ export function buildFirstHopSummary(
         label: labels.get(cid) ?? `Community ${cid}`,
         size: nodes.length,
         internal_edges: edgeCount,
-        density: graphDensity(nodes.length, edgeCount, directed),
+        density: graphDensity(nodes.length, G.multi ? communityPairs.get(cid)?.size ?? 0 : edgeCount, directed),
         top_nodes: topNodes,
       } satisfies FirstHopCommunity;
     })
@@ -197,7 +208,7 @@ export function buildFirstHopSummary(
     .slice(0, topCommunitiesLimit);
 
   const averageDegree = G.order > 0
-    ? round(G.nodes().reduce((sum, nodeId) => sum + G.degree(nodeId), 0) / G.order)
+    ? round(G.nodes().reduce((sum, nodeId) => sum + readerDegree(G, nodeId), 0) / G.order)
     : 0;
 
   const summary: FirstHopSummary = {
@@ -205,7 +216,7 @@ export function buildFirstHopSummary(
       nodes: G.order,
       edges: G.size,
       directed,
-      density: graphDensity(G.order, G.size, directed),
+      density: graphDensity(G.order, G.multi ? topologyPairs.size : G.size, directed),
       average_degree: averageDegree,
       communities: memberships.size,
     },

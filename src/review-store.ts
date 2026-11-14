@@ -1,3 +1,4 @@
+import { assertionIdentityOf, edgeKey } from "./graph.js";
 import Graph from "graphology";
 
 export type ReviewGraphNodeKind =
@@ -257,15 +258,18 @@ export function createReviewGraphStore(G: Graph): ReviewGraphStoreLike {
   }
 
   function normalizeEdge(edgeId: string, attrs: Record<string, unknown>, graphSource: string, graphTarget: string): ReviewGraphEdge | null {
-    let sourceId = graphSource;
-    let targetId = graphTarget;
+    const identity = assertionIdentityOf(graphSource, graphTarget, attrs);
+    let sourceId = G.multi ? identity.src : graphSource;
+    let targetId = G.multi ? identity.tgt : graphTarget;
     let direction: ReviewGraphEdge["direction"] = "directed";
     if (G.type !== "directed") {
       const preservedSource = asString(attrs._src);
       const preservedTarget = asString(attrs._tgt);
       direction = preservedSource && preservedTarget ? "preserved" : "undirected";
-      sourceId = preservedSource ?? graphSource;
-      targetId = preservedTarget ?? graphTarget;
+      if (!G.multi) {
+        sourceId = preservedSource ?? graphSource;
+        targetId = preservedTarget ?? graphTarget;
+      }
     }
     const source = nodesById.get(sourceId);
     const target = nodesById.get(targetId);
@@ -273,7 +277,7 @@ export function createReviewGraphStore(G: Graph): ReviewGraphStoreLike {
     const confidenceTier = asString(attrs.confidence) ?? "EXTRACTED";
     const { lineStart } = parseLineRange(attrs);
     return {
-      id: edgeId,
+      id: G.multi ? edgeKey(sourceId, targetId, identity.relation) : edgeId,
       kind: canonicalRelation(attrs.relation),
       sourceQualified: source.qualifiedName,
       targetQualified: target.qualifiedName,

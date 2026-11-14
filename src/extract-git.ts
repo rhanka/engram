@@ -4,6 +4,7 @@ import { unionExtractionCitations } from "./citations.js";
 import { type JsonValue, toJsonValue } from "./json-value.js";
 import { makeNodeId } from "./node-id.js";
 import { canonicalBytes } from "./ontology-guardian/canonical.js";
+import { prepareFreshExtraction } from "./graph.js";
 import { repoKey, commitId, branchId } from "./repo-key.js";
 import type {
   Extraction,
@@ -345,6 +346,8 @@ export function mergeExtractions(base: Extraction, extra: Extraction): Extractio
 }
 
 export interface MergeExtractionsOptions {
+  /** Fresh locator preparation context; production intake threads it in P2/A. */
+  readonly root?: string;
   /**
    * Edge identity scope. Default "per-source-file": (source, target, relation,
    * source_file) — keyed as today (src/extract-git.ts:307). "cross-document"
@@ -1009,6 +1012,19 @@ function mergeIdKeyedCollection<T>(
     items.push(mergeItemGroup(kind, id, copies, conflicts) as unknown as T);
   }
   return { present, items };
+}
+
+/** Unwired preparation-first body; production activation belongs to lot A. */
+export function mergeExtractionsWithCitationsPrepared(
+  extractions: readonly Extraction[],
+  options: MergeExtractionsOptions = {},
+): MergeExtractionsResult {
+  const prepared = Array.isArray(extractions)
+    ? extractions.map(ext => ext && typeof ext === "object" && Array.isArray(ext.edges)
+      ? prepareFreshExtraction(ext, { root: options.root })
+      : ext)
+    : extractions;
+  return mergeExtractionsWithCitations(prepared, options);
 }
 
 /**

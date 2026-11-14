@@ -503,7 +503,14 @@ export type { LoadValidatedResult, SemanticFragment } from "./semantic-fragment-
 export { validateUrl, safeFetch, safeFetchText, validateGraphPath, sanitizeLabel } from "./security.js";
 export { engramEnv, engramEnvNumber, engramEnvBoolean, pushEngramEnv, clearEngramEnvWarningsForTests } from "./env.js";
 export { DEFAULT_ENGRAM_STATE_DIR, ALL_KNOWN_STATE_DIRS, DEFAULT_GRAPHIFY_STATE_DIR, LEGACY_GRAPHIFY_STATE_DIR, NEXT_GRAPHIFY_STATE_DIR, resolveGraphifyPaths, defaultGraphPath, legacyGraphPath, graphifyCompatGraphPath, resolveGraphInputPath, defaultManifestPath, defaultTranscriptsDir, clearPathWarningsForTests } from "./paths.js";
-export { createGraph, isDirectedGraph, loadGraphFromData, serializeGraph } from "./graph.js";
+export { createGraph, isDirectedGraph, loadGraphFromData, serializeGraph,
+  assertionIdentityOf, edgeKey, normalizeSourceFilePath, prepareFreshExtraction,
+  observationFromEmission, legacyObservationFromRawLink, observationKey,
+  mergeEdgeEvidence, upsertRelationEdge, getPairEdges, neighborDegree, edgeCount,
+  GRAPH_FORMAT_VERSION, assertSupportedGraphFormat, UnsupportedGraphFormatError,
+} from "./graph.js";
+export type { PairEdge } from "./graph.js";
+export type { EvidenceObservation } from "./types.js";
 export { resolveGitContext, safeExecGit, safeGitRevParse } from "./git.js";
 export { getPullRequestMerge, listPullRequests, githubRepoFromRemote } from "./pr.js";
 export type { CommandRunner } from "./pr.js";

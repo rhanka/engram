@@ -80,6 +80,21 @@ export interface GraphNode {
   [key: string]: unknown;
 }
 
+/** Verbatim evidence captured before aggregate derivation; legacy confidence may be absent. */
+export interface EvidenceObservation {
+  source_file: string;
+  source_location?: string;
+  confidence?: string;
+  confidence_score?: number;
+  citations?: OntologyCitation[];
+  derivation_method?: string;
+  evidence_refs?: string[];
+  extractor?: unknown;
+  t?: number;
+  t_end?: number;
+  [key: string]: unknown;
+}
+
 /** An edge in the knowledge graph. */
 export interface GraphEdge {
   source: string;
@@ -94,6 +109,8 @@ export interface GraphEdge {
   review_status?: OntologyStatus;
   assertion_basis?: string | string[];
   derivation_method?: string;
+  derivation_methods?: string[];
+  evidence_observations?: EvidenceObservation[];
   evidence_refs?: string[];
   citations?: OntologyCitation[];
   evidence_text?: string;

@@ -3,7 +3,7 @@
  */
 import { readFileSync, existsSync } from "node:fs";
 import Graph from "graphology";
-import { forEachTraversalNeighbor, loadGraphFromData, type SerializedGraphData } from "./graph.js";
+import { forEachTraversalNeighbor, readerPairEdges, loadGraphFromData, type SerializedGraphData } from "./graph.js";
 import { resolveGraphInputPath } from "./paths.js";
 import type { BenchmarkResult } from "./types.js";
 
@@ -50,10 +50,11 @@ function querySubgraphTokens(G: Graph, question: string, depth: number = 3): num
   }
   for (const [u, v] of edgesSeen) {
     if (visited.has(u) && visited.has(v)) {
-      const edge = G.edge(u, v);
+      const edge = readerPairEdges(G, u, v)[0];
       if (edge) {
-        const d = G.getEdgeAttributes(edge);
-        lines.push(`EDGE ${G.getNodeAttribute(u, "label") ?? u} --${d.relation ?? ""}--> ${G.getNodeAttribute(v, "label") ?? v}`);
+        const d = edge.attrs;
+        const arrow = edge.orientation === "reverse" ? `<--${d.relation ?? ""}--` : `--${d.relation ?? ""}-->`;
+        lines.push(`EDGE ${G.getNodeAttribute(u, "label") ?? u} ${arrow} ${G.getNodeAttribute(v, "label") ?? v}`);
       }
     }
   }

@@ -34,6 +34,7 @@
  *   "on by default" safe in CI / no-API-key environments.
  */
 
+import { readerDegree } from "./graph.js";
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -573,7 +574,7 @@ export function collectNodeContext(
     sourceFile: safeString(attrs.source_file),
     sourceLocation: safeString(attrs.source_location),
     nodeType: safeString(attrs.node_type),
-    degree: G.degree(nodeId),
+    degree: readerDegree(G, nodeId),
     neighbors: collectNeighbors(G, nodeId, 6),
     // Citation grounding only matters for entity nodes; skip the work for code.
     citations,
@@ -595,7 +596,7 @@ function rankNodes(G: Graph, onlyMissing = false): string[] {
     ids.push(nodeId);
   });
   return ids.sort((a, b) => {
-    const degreeDelta = G.degree(b) - G.degree(a);
+    const degreeDelta = readerDegree(G, b) - readerDegree(G, a);
     return degreeDelta !== 0 ? degreeDelta : a.localeCompare(b);
   });
 }

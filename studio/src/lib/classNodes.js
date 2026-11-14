@@ -213,6 +213,7 @@ export function injectOntologyClassNodes(graph, classHierarchies, { levels = "le
   if (addedNodes.length === 0 && addedEdges.length === 0) return graph;
 
   return {
+    ...(graph?.multigraph === true ? { multigraph: true } : {}),
     nodes: [...baseNodes, ...addedNodes],
     links: [...baseEdges, ...addedEdges],
   };
@@ -523,7 +524,7 @@ export function applyGroupCollapse(
       };
     });
 
-  const result = { nodes, links };
+  const result = { ...(graph?.multigraph === true ? { multigraph: true } : {}), nodes, links };
   // Additive, side-channel metadata for the collapse/expand animation. Attached
   // NON-ENUMERABLY so it is invisible to `toEqual`, `{...graph}`, `Object.keys`,
   // and every existing caller/test — `readFoldAnchors()` is the single reader.
@@ -690,7 +691,10 @@ export function injectCommunityNodes(
       ? idByKey
       : mintCommunityNodeIds(live, new Set(baseNodes.map((n) => n.id)));
 
-  if (live.size === 0) return { nodes: baseNodes, links: baseEdges, idByKey: ids };
+  if (live.size === 0) return {
+    ...(graph?.multigraph === true ? { multigraph: true } : {}),
+    nodes: baseNodes, links: baseEdges, idByKey: ids,
+  };
 
   const addedNodes = [];
   for (const key of live) {
@@ -732,6 +736,7 @@ export function injectCommunityNodes(
     nodes: [...baseNodes, ...addedNodes],
     links: [...baseEdges, ...addedEdges],
     idByKey: ids,
+    ...(graph?.multigraph === true ? { multigraph: true } : {}),
   };
 }
 
@@ -844,7 +849,10 @@ export function injectTypeNodes(graph, { typeOf, typeNames, idByKey } = {}) {
   const ids =
     idByKey instanceof Map ? idByKey : mintTypeNodeIds(live, new Set(baseNodes.map((n) => n.id)));
 
-  if (live.size === 0) return { nodes: baseNodes, links: baseEdges, idByKey: ids };
+  if (live.size === 0) return {
+    ...(graph?.multigraph === true ? { multigraph: true } : {}),
+    nodes: baseNodes, links: baseEdges, idByKey: ids,
+  };
 
   const addedNodes = [];
   for (const name of live) {
@@ -881,5 +889,6 @@ export function injectTypeNodes(graph, { typeOf, typeNames, idByKey } = {}) {
     nodes: [...baseNodes, ...addedNodes],
     links: [...baseEdges, ...addedEdges],
     idByKey: ids,
+    ...(graph?.multigraph === true ? { multigraph: true } : {}),
   };
 }

@@ -234,7 +234,8 @@ function edgeEndpoint(value: unknown): string | null {
   return typeof id === "string" ? id : null;
 }
 
-function graphDegrees(nodes: Array<Record<string, unknown>>, edges: unknown[]): Map<string, number> {
+/** Legacy endpoint incidence: every row adds both endpoints; a self-loop counts twice. */
+function legacyEndpointIncidences(nodes: Array<Record<string, unknown>>, edges: unknown[]): Map<string, number> {
   const degrees = new Map<string, number>();
   for (const node of nodes) {
     if (typeof node.id === "string") degrees.set(node.id, 0);
@@ -250,20 +251,23 @@ function graphDegrees(nodes: Array<Record<string, unknown>>, edges: unknown[]): 
   return degrees;
 }
 
-function hasDerivationMethod(edge: Record<string, unknown>, derivationMethod: string): boolean {
-  const value = edge.derivation_method ?? edge.derivation_methods;
-  if (typeof value === "string") return value === derivationMethod;
-  return Array.isArray(value) && value.includes(derivationMethod);
+function hasDerivationMethod(edge: Record<string, unknown>, derivationMethod: string, multigraph: boolean): boolean {
+  if (!multigraph) {
+    const value = edge.derivation_method ?? edge.derivation_methods;
+    return typeof value === "string" ? value === derivationMethod : Array.isArray(value) && value.includes(derivationMethod);
+  }
+  return edge.derivation_method === derivationMethod ||
+    Array.isArray(edge.derivation_methods) && edge.derivation_methods.some(value => typeof value === "string" && value === derivationMethod);
 }
 
-function graphDegreesByDerivation(nodes: Array<Record<string, unknown>>, edges: unknown[], derivationMethod: string): Map<string, number> {
+function legacyEndpointIncidencesByDerivation(nodes: Array<Record<string, unknown>>, edges: unknown[], derivationMethod: string, multigraph: boolean): Map<string, number> {
   const degrees = new Map<string, number>();
   for (const node of nodes) {
     if (typeof node.id === "string") degrees.set(node.id, 0);
   }
   for (const edge of edges) {
     const rec = asRecord(edge);
-    if (!hasDerivationMethod(rec, derivationMethod)) continue;
+    if (!hasDerivationMethod(rec, derivationMethod, multigraph)) continue;
     const source = edgeEndpoint(rec.source);
     const target = edgeEndpoint(rec.target);
     if (source === null || target === null || !degrees.has(source) || !degrees.has(target)) continue;
@@ -470,6 +474,7 @@ function evaluateGraph(target: NormalizedQualityTarget, graph: unknown | null, c
   }
   const nodes = graphNodes(graph);
   const edges = graphEdges(graph);
+  const multigraph = asRecord(graph).multigraph === true;
   if (target.graph.min_nodes !== null) {
     add(checks, nodes.length < target.graph.min_nodes, "graph.min_nodes", "graph node count must meet target", {
       expected: `>= ${target.graph.min_nodes}`,
@@ -511,7 +516,7 @@ function evaluateGraph(target: NormalizedQualityTarget, graph: unknown | null, c
     );
   }
   if (target.graph.max_orphan_nodes !== null) {
-    const degrees = graphDegrees(nodes, edges);
+    const degrees = legacyEndpointIncidences(nodes, edges);
     const orphanIds = nodes
       .map((node) => typeof node.id === "string" ? node.id : null)
       .filter((id): id is string => id !== null && (degrees.get(id) ?? 0) === 0);
@@ -578,7 +583,7 @@ function evaluateGraph(target: NormalizedQualityTarget, graph: unknown | null, c
     );
   }
   if (Object.keys(target.graph.min_degree_by_type).length > 0) {
-    const degrees = graphDegrees(nodes, edges);
+    const degrees = legacyEndpointIncidences(nodes, edges);
     for (const [type, minDegree] of Object.entries(target.graph.min_degree_by_type)) {
       const offenders = nodes
         .map((node) => ({
@@ -592,13 +597,13 @@ function evaluateGraph(target: NormalizedQualityTarget, graph: unknown | null, c
         checks,
         offenders.length > 0,
         `graph.min_degree_by_type.${type}`,
-        "node degree by type must meet target",
+        multigraph ? "node endpoint incidence (legacy degree; self-loop counts twice) by type must meet target" : "node degree by type must meet target",
         { expected: `>= ${minDegree}`, actual: { count: offenders.length, examples: offenders.slice(0, 20) } },
       );
     }
   }
   if (Object.keys(target.graph.max_degree_by_type).length > 0) {
-    const degrees = graphDegrees(nodes, edges);
+    const degrees = legacyEndpointIncidences(nodes, edges);
     for (const [type, maxDegree] of Object.entries(target.graph.max_degree_by_type)) {
       const offenders = nodes
         .map((node) => ({
@@ -612,7 +617,7 @@ function evaluateGraph(target: NormalizedQualityTarget, graph: unknown | null, c
         checks,
         offenders.length > 0,
         `graph.max_degree_by_type.${type}`,
-        "node degree by type must not exceed target",
+        multigraph ? "node endpoint incidence (legacy degree; self-loop counts twice) by type must not exceed target" : "node degree by type must not exceed target",
         { expected: `<= ${maxDegree}`, actual: { count: offenders.length, examples: offenders.slice(0, 20) } },
       );
     }
@@ -620,7 +625,7 @@ function evaluateGraph(target: NormalizedQualityTarget, graph: unknown | null, c
   if (Object.keys(target.graph.max_degree_by_type_and_derivation).length > 0) {
     for (const [type, derivationRules] of Object.entries(target.graph.max_degree_by_type_and_derivation)) {
       for (const [derivationMethod, maxDegree] of Object.entries(derivationRules)) {
-        const degrees = graphDegreesByDerivation(nodes, edges, derivationMethod);
+        const degrees = legacyEndpointIncidencesByDerivation(nodes, edges, derivationMethod, multigraph);
         const offenders = nodes
           .map((node) => ({
             id: typeof node.id === "string" ? node.id : null,
@@ -633,7 +638,7 @@ function evaluateGraph(target: NormalizedQualityTarget, graph: unknown | null, c
           checks,
           offenders.length > 0,
           `graph.max_degree_by_type_and_derivation.${type}.${derivationMethod}`,
-          "node degree by type and derivation method must not exceed target",
+          multigraph ? "node endpoint incidence (legacy degree; self-loop counts twice) by type and derivation method must not exceed target" : "node degree by type and derivation method must not exceed target",
           { expected: `<= ${maxDegree}`, actual: { count: offenders.length, examples: offenders.slice(0, 20) } },
         );
       }

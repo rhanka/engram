@@ -347,15 +347,23 @@ export function isStrongEdge(edge) {
  * entity's degree-driven radius. (The class nodes themselves therefore size to
  * the degree floor, as intended — their salience comes from the box label.)
  */
-export function computeDegrees(nodes, edges) {
-  const degree = new Map();
-  for (const node of nodes) degree.set(node.id, 0);
+export function computeDegrees(nodes, edges, multigraph = false) {
+  if (!multigraph) {
+    const degree = new Map(nodes.map(node => [node.id, 0]));
+    for (const edge of edges) {
+      if (edge.structural) continue;
+      if (degree.has(edge.source)) degree.set(edge.source, degree.get(edge.source) + 1);
+      if (degree.has(edge.target)) degree.set(edge.target, degree.get(edge.target) + 1);
+    }
+    return degree;
+  }
+  const neighbors = new Map(nodes.map(node => [node.id, new Set()]));
   for (const edge of edges) {
     if (edge.structural) continue;
-    if (degree.has(edge.source)) degree.set(edge.source, degree.get(edge.source) + 1);
-    if (degree.has(edge.target)) degree.set(edge.target, degree.get(edge.target) + 1);
+    neighbors.get(edge.source)?.add(edge.target);
+    neighbors.get(edge.target)?.add(edge.source);
   }
-  return degree;
+  return new Map([...neighbors].map(([id, adjacent]) => [id, adjacent.size]));
 }
 
 /**
@@ -464,7 +472,7 @@ export function buildScene(graph, options = {}) {
   let edges = rawEdges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target));
   if (!showWeakLinks) edges = edges.filter(isStrongEdge);
 
-  const degree = computeDegrees(rawNodes, edges);
+  const degree = computeDegrees(rawNodes, edges, graph?.multigraph === true);
   // Autosizing is normalised by the graph's max degree (legacy method), so the
   // largest hub is rmax and a leaf is rmin regardless of the absolute degrees.
   const maxDegree = degree.size > 0 ? Math.max(...degree.values()) : 1;
@@ -536,6 +544,7 @@ export function buildScene(graph, options = {}) {
 
   const cstats = communityStats(graph);
   const scene = {
+    ...(graph?.multigraph === true ? { multigraph: true } : {}),
     nodes,
     edges: sceneEdges,
     // BUG B: the SINGLE source of truth community → colour map, emitted in the
@@ -614,7 +623,11 @@ export function communityColorMap(cstats) {
  */
 export function buildWindowScene(windowDoc, options = {}) {
   const scene = buildScene(
-    { nodes: windowDoc?.nodes ?? [], links: windowDoc?.edges ?? [] },
+    {
+      ...(windowDoc?.multigraph === true ? { multigraph: true } : {}),
+      nodes: windowDoc?.nodes ?? [],
+      links: windowDoc?.edges ?? [],
+    },
     options,
   );
   const positioned =
@@ -664,7 +677,7 @@ export function applyWeakFilter(scene, showWeak) {
   const rawNodes = scene.nodes ?? [];
   const edges = (scene.edges ?? []).filter((e) => !e.weak);
 
-  const degree = computeDegrees(rawNodes, edges);
+  const degree = computeDegrees(rawNodes, edges, scene.multigraph === true);
   const maxDegree = degree.size > 0 ? Math.max(...degree.values()) : 1;
   const godClass = computeGodClass(rawNodes, degree, maxDegree);
   const hubDegreeThreshold = LABEL_DEGREE_FRACTION * maxDegree;
@@ -1145,7 +1158,7 @@ export function candidateSubgraph(
   }
   const nodes = [...keep].map((id) => idx.get(id)).filter(Boolean);
   const links = edges.filter((e) => keep.has(e?.source) && keep.has(e?.target));
-  return { nodes, links };
+  return { ...(graph?.multigraph === true ? { multigraph: true } : {}), nodes, links };
 }
 
 /**
@@ -1213,7 +1226,7 @@ export function candidateUnionSubgraph(
     seen.add(key);
     links.push({ ...e, source: s, target: t });
   }
-  return { nodes, links, fold };
+  return { ...(graph?.multigraph === true ? { multigraph: true } : {}), nodes, links, fold };
 }
 
 /**
