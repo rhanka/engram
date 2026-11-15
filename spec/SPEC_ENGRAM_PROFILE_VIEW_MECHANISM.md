@@ -1,16 +1,17 @@
 # Specification: View Mechanism of the Base Ontology Profile
 
 - **Document ID:** `SPEC-ENGRAM-PROFILE-VIEW-MECHANISM`
-- **Status:** `DESIGN` (Gemini Carbon — normative specification, DS & ontology registry reviews folded `2026-11-14`, `proposed` until implementation lots land)
+- **Status:** `DESIGN` (Gemini Carbon — normative specification, DS round-1 & re-check reviews, projection-boundary design note, and ontology registry review & re-check folded `2026-11-14`, `proposed` until implementation lots land)
 - **Date:** `2026-11-14`
 - **Repository / Branch:** `engram` (`docs/memory-r15-sediment`)
 - **Depends On:**
   - `spec/SPEC_ENGRAM_METAMODEL_AND_LINEAGE_REGISTRY.md` (**Spec 0** — `engram.metamodel/v1` constructs, `S-ENGRAMHASH v1`, `CrossLineageCompositionPin`, `MM_*` diagnostics)
   - `spec/SPEC_ONTOLOGY_GUARDIAN_G0_CONTRACTS.md` (**G0** — `Pin`, instance-merge boundary & `G3` cross-ontology identity deferral)
   - `spec/memory/OWNER-DECISIONS-2026-11-14.md` (**T-M-C** ownership rule, Points `1B`–`6A`, `D28` kept)
-  - `spec/SPEC_ONTOLOGY_DIAGRAM_VIEW_SCHEMA_V2.md` (`engram:diagram-view-schema/2`)
+  - `spec/memory/DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md` (**Binding** — view projection boundary between `engram` and the Design System; §2.1.1)
+  - `spec/SPEC_ONTOLOGY_DIAGRAM_VIEW_SCHEMA_V2.md` (`engram:diagram-view-schema/2`, `DIAGRAM_PRESENTATION_CONTRACT_SCHEMA`)
   - `/home/antoinefa/src/graphify/.graphify/scratch/design/archi-card-semantics/SPEC_EVOL_ARCHI_V2_ONTOLOGY.r4.md` (§8, `engram.archi-view/2`, `viewKind`, `environmentScope`, `folds`, rules `V1`–`V6`)
-  - `/home/antoinefa/src/sent-tech-design-system/scratchpad/dc2d/SPEC_EVOL_DC2D_NOTATION_FLOWS.md` (**DC-2d**, `diagram-notation@1`, `DIAGRAM_NOTATION_PIN`, `DS_LAYOUT_VOCABULARY_PIN`, `validateView` / `projectView` / `summaryCandidates` / `resolveNotation`, layout modes)
+  - `/home/antoinefa/src/sent-tech-design-system/scratchpad/dc2d/SPEC_EVOL_DC2D_NOTATION_FLOWS.md` (**DC-2d**, `diagram-notation@1`, `DIAGRAM_NOTATION_PIN`, `DS_LAYOUT_VOCABULARY_PIN`, `DIAGRAM_PRESENTATION_CONTRACT_PIN`, `validateView` / `projectView` / `summaryCandidates` / `analyzeSummaries` / `resolveNotation`, layout modes; `@sentropic/diagram-core` publish lot exporting `DIAGRAM_NOTATION_PIN` and `DS_LAYOUT_VOCABULARY_PIN` is an explicit external gate on Lot V.1)
 
 ---
 
@@ -26,9 +27,9 @@ Approved four-way architectural split:
 
 > « Oui, ce découpage »
 
-1. **The base profile carries ONLY the view mechanism** (the declarative view grammar, schema validation, compatibility classification, and commit-pinned semantic subgraph + retained source view emission, with zero pre-projection).
+1. **The base profile carries ONLY the view mechanism** (the declarative view grammar, schema validation, compatibility classification, and commit-pinned declaration + semantic subgraph emission, with zero precomputed fold or projection state per §2.1.1).
 2. **Domain views** (for example a 2-axis breakdown matrix partitioned by `chapter × zone`) **are declared in the domain ontologies** (`R1`–`R7`, `process-std`, `client-org`, `archi`, `track`, `h2a`, etc.), never in `engram`'s metamodel or base profile.
-3. **The Design System (DS) folds, lays out, and renders**, and `@sentropic/diagram-core` authors, versions, and exports the closed presentation and layout-hint vocabularies (`diagram-notation@1` via `DIAGRAM_NOTATION_PIN`, `ds-layout-hints@1` via `DS_LAYOUT_VOCABULARY_PIN`). `engram` only **references** those pins and never declares or owns the layout vocabulary.
+3. **The Design System (DS) folds, lays out, and renders**, and `@sentropic/diagram-core` authors, versions, and exports the closed presentation and layout-hint vocabularies (`diagram-presentation@1` via `DIAGRAM_PRESENTATION_CONTRACT_PIN`, `diagram-notation@1` via `DIAGRAM_NOTATION_PIN`, `ds-layout-hints@1` via `DS_LAYOUT_VOCABULARY_PIN`). `engram` only **references** those pins, never declares or owns the layout vocabulary, and never serves anything the DS derives from folding, layout, or rendering (§2.1.1).
 4. **Native BPMN extraction is a separate workstream**, strictly outside this specification.
 
 ### 0.2 Owner Decision of 2026-11-14 — The T-M-C Rule
@@ -176,10 +177,11 @@ export interface MetamodelViewDecl {
   /**
    * Opaque reference to a DS-owned layout hint payload validated against
    * `@sentropic/diagram-core`'s `DS_LAYOUT_VOCABULARY_PIN` (`ds-layout-hints@1`).
-   * Required on all canvas views (`topology`, `lane-flow`, `hierarchy`, `entity-model`,
-   * and any `matrix` admitting `arrow` edges once `ds-layout-hints@2` lands);
-   * optional (`undefined`) ONLY on zero-edge `kind === "matrix"` views
-   * (`select.relations.include_types` empty `[]`) rendered by the DS tabular matrix host.
+   * Required on all canvas views (`topology`, `lane-flow`, `hierarchy`, `entity-model`);
+   * MUST be omitted (`undefined`) on `kind === "matrix"` in `@1` (where `matrix` is
+   * strictly tabular with `select.relations.include_types: []` and rendered by the DS
+   * tabular matrix host; any non-tabular `matrix` with relations or with a `layout` block
+   * is refused in `@1` until `ds-layout-hints@2` lands, §2.3).
    */
   readonly layout?: DsLayoutHintRef;
 }
@@ -255,8 +257,8 @@ export interface ViewNodeSelectionDecl {
 
 export interface ViewRelationSelectionDecl {
   /**
-   * Admitted relation types (`[]` for zero-edge tabular matrices), or `"*"` for
-   * all declared relations in selected lineages.
+   * Admitted relation types (`[]` required for `kind === "matrix"` in `@1`), or `"*"` for
+   * all declared relations in selected lineages on non-matrix views.
    */
   readonly include_types: "*" | readonly QualifiedElementRef[];
   /** Explicitly excluded relation types. */
@@ -304,8 +306,9 @@ export interface ViewFoldDecl {
     readonly orientation: "parent_to_child" | "child_to_parent";
   }[];
   /**
-   * Declared initial fold state per view, recorded on `VisualGroup.collapsed`
-   * in the retained source `ViewDocument` and applied by the DS (`DOM-Q4`):
+   * Declared initial fold default per view, recorded on `VisualGroup.collapsed`
+   * in the retained source `ViewDocument` as a pure declaration default and applied
+   * by the DS (`DOM-Q4`; runtime client `collapsedOccurrenceIds` is never served by `engram`, §2.1.1):
    * - `"collapsed"` (paired with `folded_edge_policy: "lift_with_summary"`) for large
    *   entries (e.g. `R1` with 183 apps under 21 capabilities, `R2` with 5083 nodes);
    * - `"expanded"` for small entries (e.g. `R5` / `R6` with <= 25 nodes).
@@ -321,14 +324,18 @@ export interface ViewFoldDecl {
    */
   readonly default_collapsed_depth?: number;
   /**
-   * Policy for `arrow`-encoded relations between two SELECTED nodes when at
-   * least one endpoint sits inside a collapsed container (executed by DS `projectView` / `summaryCandidates`):
-   * - "lift_with_summary" (default): `engram` emits authored `summaryLabels` (`SummaryDefinition`)
-   *   on the retained source `ViewDocument` (strictly exempting DC-2c `flow-step` relations per
-   *   `flows.ts:75-99` and `DC-2d:163`), and DS `projectView` lifts hidden endpoints with
-   *   `RelationOccurrenceEndpoint.{ occurrence, semanticTarget, sourceOccurrence }` (DC-2d OA12).
-   * - "hide": `engram` emits `FoldValidationMask.projectedHiddenRelationOccurrences`
-   *   (`validate.ts:1953-1956, 2279-2295`) without mutating source endpoints.
+   * Declared policy for `arrow`-encoded relations between two SELECTED nodes when at
+   * least one endpoint sits inside a collapsed container (executed exclusively by the DS per §2.1.1):
+   * - "lift_with_summary" (default): `engram` emits static authored `summaryLabels` (`SummaryDefinition`
+   *   declarations derived purely from containment scopes and semantic relations, strictly omitting
+   *   DC-2c `flow-step` occurrences per `flows.ts:75-99` and `DC-2d:163`), and DS `projectView` /
+   *   `summaryCandidates` / `analyzeSummaries` lifts hidden endpoints with
+   *   `RelationOccurrenceEndpoint.{ occurrence, semanticTarget, sourceOccurrence }` and resolves active summaries (DC-2d OA12).
+   * - "hide": `engram` forwards only the declaration `foldPolicy.foldedEdgePolicy: "hide"` (never a
+   *   precomputed hidden-occurrence mask, §2.1.1); at the active `collapsed` set, the DS host dynamically
+   *   identifies all non-internal `relationOccurrences` with at least one endpoint
+   *   `hiddenByFold(sourceView, collapsed, endpoint.occurrence)` (`fold.ts:50-58`) and supplies them via
+   *   `FoldFilterState.hiddenByFilter` (`fold.ts:405, 453-475, 653-659`, `validate.ts:1955`).
    */
   readonly folded_edge_policy?: "lift_with_summary" | "hide";
   /** Whether the DS viewer enables interactive client-side expand/collapse (`layoutFolded`). */
@@ -407,20 +414,28 @@ export interface ViewOverlayDecl {
   readonly source: OverlayValueSource;
   /** Closed DS overlay rendering channel. */
   readonly channel: OverlayChannel;
-  /** Required iff `channel === "text_slot"`: selects the frozen `DiagramCard` text row. */
+  /**
+   * Required iff `channel === "text_slot"`: selects the frozen `DiagramCard` text row.
+   * When >= 2 `text_slot` overlays emit non-empty strings on the same `(occurrenceId, slot)`,
+   * Stage 5 joins them in declared overlay order with `" · "` (never silent last-wins,
+   * `presentation-apply.ts:5`), enforcing `detail <= 400` and `footer <= 120` code points.
+   */
   readonly slot?: "detail" | "footer";
   /** Optional plain-text label prefix for `text_slot` (e.g. `"Managed by"` -> `"Managed by: Core Ops"`). */
   readonly label_prefix?: string;
   /**
-   * Required iff `channel === "provisional_marker"`: scalar match value emitted
-   * into DC-2d `arrow` `provisional: { attribute, equals }` (no `"settled"` token).
+   * Required iff `channel === "provisional_marker"`: scalar match value (`string` of `1..40`
+   * code points, or `boolean` deterministically stringified to `"true"` / `"false"` in Stage 5)
+   * emitted into DC-2d `arrow` `provisional: { attribute, equals: string }` (`DC-2d §3.1 :47, 51`; no `"settled"` token).
    */
   readonly equals?: string | boolean;
   /**
    * Finite lookup (<= 32 keys, matching DC-2d §3.1 slot lookup bound) mapping resolved
    * scalar values to DS tokens or formatted labels:
-   * - Required on `category_tone` (values MUST be `DsSemanticToneToken`) and `stroke_style`
-   *   (values MUST be `"solid" | "dashed"`).
+   * - Required on `category_tone` (values MUST be `DsSemanticToneToken`; domain keys are
+   *   deterministically slugified in Stage 5 to `KEY_PATTERN = /^[a-z][a-z0-9-]*$/`, `1..40` chars,
+   *   preserving raw human display labels in `legend-key.attributes.name` and `entities[keyOccId].text.title`)
+   *   and `stroke_style` (values MUST be `"solid" | "dashed"`).
    * - Optional on `text_slot` (concise plain-text strings, 1..40 chars; raw scalar/target
    *   labels used when omitted, joined by `", "` in canonical order for multi-target relations).
    * Raw CSS properties, hex colors (`#...`), and pixel lengths are FORBIDDEN.
@@ -540,7 +555,7 @@ export interface DsLayoutHintRef {
 **DS-governed `ds-layout-hints@1` scope boundary (referenced from `@sentropic/diagram-core`, never owned by `engram`):**
 - **Implemented and admitted today in `ds-layout-hints@1` (`@sentropic/diagram-core`):** `"auto-pack"` (`layoutMeasured`), `"lane-stack"` (`packLaneStack` in DC-2d §8.3, with optional `direction: "left-to-right" | "top-to-bottom"`), and `"layered-flow"` **solely** on `generic@1` views without `presentation.diagram`; optional `rotate_labels: "auto" | "never"` (DC-2d §6.3 — horizontal chip first, `-90°` channel fallback when `scale >= 0.528`, never sloped `"along-edge"`); plus existing DS `LayoutHints` ordering and group-packing hints (`ordering`, `rootOrder`, `grouping` / `grouping_axis: "rows" | "columns"`, `stretch`, `@sentropic/diagram-canvas/src/layout/hints.ts:12-42`).
 - **Forbidden spacing overrides (`OA1` + `OA9`):** `ds-layout-hints@1` admits **no `density` field** (`"compact" | "regular" | "spacious"` is UI form-control density only; DS diagram scenes enforce one flow-driven channel gap law) and **no pixel/coordinate literals** (`cardGapX`, `zoneGapX`, `rankGap`, `x`, `y`, `width`, `height`).
-- **Unimplemented DS modes — marked future and refused today:** **`"matrix-grid"`**, **`"tree"`**, and **`@2` / `diagram-notation@1` `"layered-flow"`** are **future** (`ds-layout-hints@2` / DC-2e+) and **refused today** (`MM_VIEW_LAYOUT_HINT_INVALID` via DS `validateLayoutHints`). Today, `hierarchy` views use `"auto-pack"` over nested `VisualGroup` containment, and zero-edge `matrix` views (`select.relations.include_types: []`) omit `layout` and render in the DS tabular matrix host (§3.3, §7.1 `DS-Q2`).
+- **Unimplemented DS modes & non-tabular `@1` matrices — marked future and refused today:** **`"matrix-grid"`**, **`"tree"`**, and **`@2` / `diagram-notation@1` `"layered-flow"`** are **future** (`ds-layout-hints@2` / DC-2e+) and **refused today** (`MM_VIEW_LAYOUT_HINT_INVALID` via DS `validateLayoutHints`). Today, `hierarchy` views use `"auto-pack"` over nested `VisualGroup` containment, and `kind === "matrix"` views in `@1` MUST be strictly tabular (`select.relations.include_types: []` and `layout === undefined`), rendering in the DS tabular matrix host; any `kind === "matrix"` with relations or with a `layout` block (even `mode: "auto-pack"` or `"lane-stack"`) is refused today (`MM_VIEW_AXES_KIND_MISMATCH` / `MM_VIEW_LAYOUT_HINT_INVALID`, §2.3, §3.3, §7.1 `DS-Q2`).
 
 ### 1.3 Grounding in `archi@2`, `DC-2d`, and `engram` Code (`file:line` & Delta Matrix)
 
@@ -554,10 +569,10 @@ Every element of `MetamodelViewDecl` is grounded in existing `engram`, `archi@2`
 | **Selection by lineage (`select.lineages`)** | `spec/SPEC_ENGRAM_METAMODEL_AND_LINEAGE_REGISTRY.md:156-158, 545-576` (`composed_lineage_pins`, `importAlias`); `spec/SPEC_ONTOLOGY_GUARDIAN_G0_CONTRACTS.md:596` (`G3` merge gate) | **NEW in views (single-store) + explicit `G3` deferral:** Binds `<importAlias>:<typeId>` within one store to SHA-256-pinned `composed_lineage_pins`, while cross-bundle catalog `view_includes` waits for `G3`. |
 | **Selection by type (`include_types`, `exclude_types`, `include_subclasses`, `include_registries`)** | `src/ontology-guardian/diagram-schemas.ts:212` (`entity-type`, `relation-type`); `SPEC_EVOL_ARCHI_V2_ONTOLOGY.r4.md:314, 563-579` (`V3`, `V6`); `src/ontology-profile.ts:138-251` (`registries`, `class_hierarchies`) | **Generalized:** Promotes instance filter lists and `archi@2`'s hardcoded `V6` type table into declarative type/subclass/registry selectors. |
 | **Selection by attribute predicate (`where`, `parameters`, `endpoint_policy`)** | `src/ontology-guardian/diagram-schemas.ts:213` (`attribute-equals`); `SPEC_EVOL_ARCHI_V2_ONTOLOGY.r4.md:99, 112-116, 594, 649, 723` (`environmentScope`, `plateauFilter`); `src/graph-time-slice.ts:14-17, 73` (`edges: "endpoint-induced"`) | **Generalized + NEW operators:** Extends flat `attribute-equals` into a closed predicate AST (`eq`..`not_exists`) with `on_missing: "exclude" \| "include"` and typed `$param` bindings, preserving `endpoint_policy: "both_selected"`. |
-| **Fold declarations (`folds`)** | `SPEC_EVOL_ARCHI_V2_ONTOLOGY.r4.md:314, 580-593, 620, 726` (`activeHierarchy`, `V2`, `V5`, `folds`); `src/ontology-guardian/diagram-schemas.ts:202-217, 237-249` (`VisualGroup.collapsed`, `diagram-view-schema@2` `summaryLabels`); `SPEC_EVOL_DC2D_NOTATION_FLOWS.md:78, 95, 148, 161-164` (`validateView`, `projectView`, `summaryCandidates`, `flow-step` bundle exemption, OA12) | **Generalized + DS-executed:** Replaces hardcoded `c4Parent` with declarative `containment_relations` and per-view initial `default_state` (`DOM-Q4`), emitting a **retained source `ViewDocument`** (zero pre-stripping, zero pre-lifting) folded by DS `projectView` / `summaryCandidates`. |
-| **Overlays (`overlays`)** | `SPEC_EVOL_ARCHI_V2_ONTOLOGY.r4.md:99, 102-103, 118-119, 596, 755` (`V4` `lifecycle -> dashed`, `category`, `env:`); `src/ontology-guardian/diagram-schemas.ts:48-116` (`EntityPresentation.text.{detail,footer}`, `categoryTokens`, `legends`, `TOKEN_GRAMMAR`); `SPEC_EVOL_DC2D_NOTATION_FLOWS.md:51, 80-81, 88` (`provisional`, frozen `460 × 200` `DiagramCard` OA8/OA10/OA14, auxiliary `generic@2` legends) | **NEW symmetric construct:** Supports both `attribute` and pre-`select` `relation_target` sources (`F6.1`) lowered strictly into existing DS slots (`text_slot`, `category_tone` with synthesized `generic@2` legends and mandatory `legend_label` per WCAG 1.4.1, `stroke_style`, and `arrow` `provisional_marker`). |
-| **Dimension axes (`axes`)** | `src/ontology-guardian/archi-view.ts:103` (`grouping?: "rows" \| "columns"`); `SPEC_EVOL_ARCHI_V2_ONTOLOGY.r4.md:402-409`; `SPEC_EVOL_DC2D_NOTATION_FLOWS.md:73, 99, 239-245` (`role: "lane"`, `packLaneStack`) | **NET-NEW metamodel construct:** Introduces `matrix_2d` and `bands_1d` axes over `attribute`, pre-`select` `relation_target`, or `node_type` (`F6.2`), defaulting to `unassigned_bucket` and `duplicate_occurrence`/`primary_first` (`F5`) with canonical `occurrence:` cell IDs and accessible coordinate labels. |
-| **Layout hint reference (`layout`)** | `SPEC_EVOL_DC2D_NOTATION_FLOWS.md:61-65, 95, 208-212, 239-245` (`DIAGRAM_NOTATION_PIN`, `DS_LAYOUT_VOCABULARY_PIN`, `layoutMeasured`, `packLaneStack`, `rotateLabels`, OA1/OA9) | **NEW pin-reference only:** `@sentropic/diagram-core` authors and exports `ds-layout-hints@1` + `DS_LAYOUT_VOCABULARY_PIN: PresentationPin`; `engram` only references the pin, owns zero vocabulary table, and refuses unimplemented modes (`matrix-grid`, `tree`, `@2` `layered-flow`) today. |
+| **Fold declarations (`folds`)** | `SPEC_EVOL_ARCHI_V2_ONTOLOGY.r4.md:314, 580-593, 620, 726` (`activeHierarchy`, `V2`, `V5`, `folds`); `src/ontology-guardian/diagram-schemas.ts:200-217, 237-249` (`EntityOccurrence.geometry`, `VisualGroup.collapsed`, `diagram-view-schema@2` `summaryLabels`); `SPEC_EVOL_DC2D_NOTATION_FLOWS.md:78, 95, 148, 161-164` (`validateView`, `projectView`, `summaryCandidates`, `flow-step` bundle exemption, OA12) | **Generalized + DS-executed (§2.1.1):** Replaces hardcoded `c4Parent` with declarative `containment_relations` and per-view initial `default_state` (`DOM-Q4`), emitting a **retained source `ViewDocument`** (neutral DS-overwritten `geometry` placeholder, static authored `summaryLabels`, zero precomputed fold or projection state per §2.1.1) folded exclusively by DS `projectView` / `summaryCandidates` / `analyzeSummaries` / `FoldFilterState.hiddenByFilter`. |
+| **Overlays (`overlays`)** | `SPEC_EVOL_ARCHI_V2_ONTOLOGY.r4.md:99, 102-103, 118-119, 596, 755` (`V4` `lifecycle -> dashed`, `category`, `env:`); `src/ontology-guardian/diagram-schemas.ts:37-128` (`KEY_GRAMMAR`, closed `DIAGRAM_PRESENTATION_CONTRACT_SCHEMA`, `EntityPresentation.{form,text}`, `categoryTokens`, `legends`, `TOKEN_GRAMMAR`); `SPEC_EVOL_DC2D_NOTATION_FLOWS.md:47, 51, 80-81, 88` (`provisional`, frozen `460 × 200` `DiagramCard` OA8/OA10/OA14, auxiliary `generic@2` legends) | **NEW symmetric construct:** Supports both `attribute` and pre-`select` `relation_target` sources (`F6.1`) lowered strictly into closed `DiagramPresentation` (`contractPin: DIAGRAM_PRESENTATION_CONTRACT_PIN`, `form`, `text.title`) and `Profile.notation` (`text_slot` with `" · "` collision join, `category_tone` with deterministic `KEY_PATTERN` slugging + synthesized `generic@2` legends + mandatory `legend_label` per WCAG 1.4.1, `stroke_style`, and `arrow` `provisional_marker` with boolean-to-string coercion). |
+| **Dimension axes (`axes`)** | `src/ontology-guardian/archi-view.ts:103` (`grouping?: "rows" \| "columns"`); `SPEC_EVOL_ARCHI_V2_ONTOLOGY.r4.md:402-409`; `SPEC_EVOL_DC2D_NOTATION_FLOWS.md:73, 99, 239-245` (`role: "lane"`, `packLaneStack`) | **NET-NEW metamodel construct:** Introduces `matrix_2d` and `bands_1d` axes over `attribute`, pre-`select` `relation_target`, or `node_type` (`F6.2`), defaulting to `unassigned_bucket` and `duplicate_occurrence`/`primary_first` (`F5`) with canonical `occurrence:` cell IDs and accessible coordinate labels (pure function of declarations + semantic data, §2.1.1). |
+| **Layout hint reference (`layout`)** | `SPEC_EVOL_DC2D_NOTATION_FLOWS.md:61-65, 95, 208-212, 239-245` (`DIAGRAM_NOTATION_PIN`, `DS_LAYOUT_VOCABULARY_PIN`, `layoutMeasured`, `packLaneStack`, `rotateLabels`, OA1/OA9) | **NEW pin-reference only:** `@sentropic/diagram-core` authors and exports `ds-layout-hints@1` + `DS_LAYOUT_VOCABULARY_PIN: PresentationPin` (explicit external gate on Lot V.1); `engram` only references the pin, owns zero vocabulary table, and refuses unimplemented modes (`matrix-grid`, `tree`, `@2` `layered-flow`) and non-tabular `@1` matrices today. |
 | **Lifecycle status (`status`)** | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_CONTRACTS.md:184-201`; `src/ontology-guardian/diagram-registry.ts:93, 129`; `spec/SPEC_ENGRAM_METAMODEL_AND_LINEAGE_REGISTRY.md:522` | **NEW per-view lifecycle:** Formalizes `draft \| experimental \| active \| deprecated \| retired` (separate from catalog readiness `requested \| available \| waiting-engram \| source-gap`). |
 | **Versioning (`version` & digests)** | `spec/SPEC_ENGRAM_METAMODEL_AND_LINEAGE_REGISTRY.md:111-126, 265-266, 533-543` (`S-ENGRAMHASH v1`, `templateDigestSha256` vs `presentationDigest`); `src/profile-bundle.ts:847-1223` (`checkProfileCompatibility`) | **NEW view SemVer & digest split:** Keeps corpus `templateDigestSha256` invariant under view edits, folds `viewsDigestSha256` into `presentationDigest`, and classifies view diffs as `PATCH` / `MINOR` / `MAJOR`. |
 
@@ -573,7 +588,7 @@ To satisfy **Spec 0 §1.3.2 & §2.4** (`templateDigestSha256` must not churn whe
    - Per view `v = views[id]`, `engram` computes two deterministic sub-digests (`Sha256Digest`):
      - `viewSemanticDigestSha256`: hashes `{ id, version, kind, perspective, parameters, select, occurrence_uniqueness, folds, overlays, axes, status }`.
      - `viewPresentationDigestSha256`: hashes `{ label, note, deprecated_reason, replaced_by, layout }`.
-   - Boundary rule against DS `PresentationPin`: `engram`'s `S-ENGRAMHASH v1` fields always carry the `"sha256:"` prefix (`Sha256Digest`), whereas DS `PresentationPin.contentDigest` (`DIAGRAM_VIEW_SCHEMA_V2.pin`, `DIAGRAM_NOTATION_PIN`, `DS_LAYOUT_VOCABULARY_PIN`) carries bare 64 lowercase hex (`^[0-9a-f]{64}$`); conversion at the boundary strips/prepends `"sha256:"` losslessly after regex validation (`Spec 0 §2.4 :535`).
+   - Boundary rule against DS `PresentationPin`: `engram`'s `S-ENGRAMHASH v1` fields always carry the `"sha256:"` prefix (`Sha256Digest`), whereas DS `PresentationPin.contentDigest` (`DIAGRAM_VIEW_SCHEMA_V2.pin`, `DIAGRAM_PRESENTATION_CONTRACT_PIN`, `DIAGRAM_NOTATION_PIN`, `DS_LAYOUT_VOCABULARY_PIN`) carries bare 64 lowercase hex (`^[0-9a-f]{64}$`); conversion at the boundary strips/prepends `"sha256:"` losslessly after regex validation (`Spec 0 §2.4 :535`).
 3. **Compatibility Classification (`checkProfileCompatibility` in `src/profile-bundle.ts`):**
 
 | View Change Between `previous` and `next` Template Bundle | Required Bump (Template & View `version`) | Reason Code |
@@ -800,10 +815,30 @@ views:
 
 | Concern | Owner | Allowed Actions | Strictly Forbidden Actions |
 | :--- | :--- | :--- | :--- |
-| **View Grammar & Source-Slice Kernel (`M`)** | **`engram`** | Parse/validate `MetamodelViewDecl`; reference `DIAGRAM_NOTATION_PIN` and `DS_LAYOUT_VOCABULARY_PIN` (`PresentationPin`); emit `MM_VIEW_*` diagnostics; enforce SemVer diff rules; emit commit-pinned `semanticSubgraph`, retained source `viewDocument` (all occurrences + initial `VisualGroup.collapsed` defaults + un-lifted `relationOccurrences` + candidate `summaryLabels` + synthesized `generic@2` legends), compiled `Profile[]` + `ExecutorProfileBindings`, and `axesProjection`. | **Never** declare domain views in the base profile; **never** own or declare a layout-hint vocabulary table; **never** pre-strip folded descendants or pre-lift relation endpoints; **never** invent, synthesize, or repair a template view; **never** compute pixel coordinates or render SVG/HTML. |
+| **View Grammar & Source-Slice Kernel (`M`)** | **`engram`** | Parse/validate `MetamodelViewDecl`; reference `DIAGRAM_PRESENTATION_CONTRACT_PIN`, `DIAGRAM_NOTATION_PIN`, and `DS_LAYOUT_VOCABULARY_PIN` (`PresentationPin`); emit `MM_VIEW_*` diagnostics; enforce SemVer diff rules; emit commit-pinned `semanticSubgraph`, retained source `viewDocument` (all draw-eligible occurrences with DS-overwritten neutral `geometry` placeholder + initial `VisualGroup.collapsed` defaults + un-lifted `relationOccurrences` + static authored `summaryLabels` + closed `DiagramPresentation` with synthesized `generic@2` legends), compiled `Profile[]` + `ExecutorProfileBindings`, and declaration-derived `axesProjection`. | **Never** declare domain views in the base profile; **never** own or declare a layout-hint vocabulary table; **never** pre-strip folded descendants, pre-lift relation endpoints, or emit precomputed fold/projection state or masks (`§2.1.1`); **never** invent, synthesize, or repair a template view; **never** compute pixel coordinates or render SVG/HTML. |
 | **View Declarations (`T`)** | **Template Author** (upstream producers for producer-owned bundles `R1`–`R3`; registry converters for converted bundles `R4`–`R7`; `Track` → `track`; `h2a` → `h2a`; `engram` → `archi`) | Author and SemVer-version `views.<id>` inside its own `profile.yaml` (starting at `status: "draft"` on migration); pin same-store dependencies in `composed_lineage_pins`; retire or deprecate its own views. | **Never** rewrite a producer-owned bundle from a downstream catalog consumer; **never** inject domain axes into `engram`; **never** embed raw CSS/hex colors, colour-only category encodings without `legend_label`, or pixel layout numbers. |
 | **Domain Governance & Catalog Readiness (`C`)** | **Domain Control Master / Catalog** | Enforce domain publication policies; track catalog-level readiness (`requested \| available \| waiting-engram \| source-gap`) in `entry.yaml` outside `MetamodelViewDecl`. | **Never** redefine `MetamodelViewDecl`, inject catalog readiness tokens into `MetamodelViewDecl.status`, or bypass `MM_VIEW_*` refusal gates. |
-| **Layout Vocabulary, Folding & Rendering (`DS`)** | **Design System** (`@sentropic/diagram-core`, `@sentropic/diagram-canvas`, DS tabular matrix host) | Author, version, and export `diagram-notation@1` (`DIAGRAM_NOTATION_PIN`) and `ds-layout-hints@1` (`DS_LAYOUT_HINTS_SCHEMA`, `DS_LAYOUT_HINTS_RULES`, `validateLayoutHints`, `DS_LAYOUT_VOCABULARY_PIN: PresentationPin`); execute `validateDocument`, `validateView`, `projectView`, `summaryCandidates`, and `resolveNotation`; measure text, fold/lift interactively, lay out, apply light/dark semantic tokens, and render accessible labels. | **Never** mutate `engram` semantic subgraphs or re-parent entities across undeclared containment relations (`DC-2d:95`). |
+| **Layout Vocabulary, Folding & Rendering (`DS`)** | **Design System** (`@sentropic/diagram-core`, `@sentropic/diagram-canvas`, DS tabular matrix host) | Author, version, and export `diagram-presentation@1` (`DIAGRAM_PRESENTATION_CONTRACT_PIN`), `diagram-notation@1` (`DIAGRAM_NOTATION_PIN`), and `ds-layout-hints@1` (`DS_LAYOUT_HINTS_SCHEMA`, `DS_LAYOUT_HINTS_RULES`, `validateLayoutHints`, `DS_LAYOUT_VOCABULARY_PIN: PresentationPin`); execute `validateDocument`, `validateFlows`, `validateView`, `projectView`, `foldedScene`, `summaryCandidates`, `analyzeSummaries`, dynamic `FoldFilterState.hiddenByFilter`, and `resolveNotation`; measure text, fold/lift interactively, lay out, apply light/dark semantic tokens, and render accessible labels. | **Never** mutate `engram` semantic subgraphs or re-parent entities across undeclared containment relations (`DC-2d:95`). |
+
+#### 2.1.1 View Projection Boundary Rule (`engram` vs Design System — Binding)
+
+Per `spec/memory/DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md`, **`engram` never computes or serves anything the Design System derives from folding, projection, layout, or rendering:**
+
+1. **What `engram` serves:**
+   - **Declarations:** the validated view declaration (`select`, `folds`, `overlays`, `axes`, `layout` by DS pin, `status`) and declaration-derived authored source-view bindings (`VisualGroup` initial defaults, static authored `SummaryDefinition` records, closed `DiagramPresentation`, `axesProjection`);
+   - **Semantic data:** the selected subgraph (`entities`, `relations`, `ports`, `resources`, `typeDefinitions`, attributes, evidence references), pinned to an immutable commit OID and SHA-256 digest.
+2. **Rendering and fold state `engram` never serves (neither as data nor as a mask):**
+   - hidden or visible occurrence sets;
+   - lifted relation endpoints (`{ semanticTarget, sourceOccurrence }`);
+   - summary candidates or active folded summaries (`summaryCandidates`, `ActiveSummary`);
+   - runtime or projected fold states (`collapsedOccurrenceIds`);
+   - computed geometry;
+   - layout or notation-resolution caches;
+   - any rendering- or fold-derived count.
+   The Design System computes all of them through `@sentropic/diagram-core` (`validateView`, `projectView`, `foldedScene`, `summaryCandidates`, `analyzeSummaries`, `resolveNotation`) and `@sentropic/diagram-canvas`.
+3. **Pure-function mask rule:** `engram` keeps a mask or filter **only** where it is a pure function of declarations and semantic data (`MetamodelViewDecl` + `sourcePin`), **never** of DS fold, projection, or layout outcomes. A rule that can only be checked or evaluated after folding belongs to the DS validator and host runtime (`FoldFilterState.hiddenByFilter`, `validateView`), never to an `engram` mask.
+4. **Schema-required neutral placeholders:** Where a DS-governed schema requires a field `engram` cannot know prior to layout (such as `EntityOccurrence.geometry` and `ViewDocument.presentation.camera`), `engram` emits a deterministic, neutral, explicitly marked **DS-overwritten** placeholder fixed by the DS schema and referenced by pin (`DIAGRAM_VIEW_SCHEMA_V2.pin`), never a guessed value.
+5. **Validation split:** `engram` validates declaration well-formedness against `engram.metamodel/v1` (`MM_VIEW_*`) and referential integrity of the semantic data; the DS validates projection, fold, presentation, notation, and layout outcomes.
 
 ### 2.2 Pure Acceptor / Refuser Contract ("Never Invents a View")
 
@@ -829,14 +864,14 @@ Extending Spec 0 §3.2 (`MetamodelDiagnostic`, `[FACT: spec/SPEC_ENGRAM_METAMODE
 | `MM_VIEW_FOLD_NOT_CONTAINMENT_TREE` | `error` | A relation in `folds.containment_relations` lacks `tree` hierarchy semantics (`hierarchies` / `hierarchy.shape === "tree"`), or lacks `presentation.encoding === "containment"` when `diagram-notation@1` is active (`DC-2d:78`), or `kind === "hierarchy"` omits `folds`. |
 | `MM_VIEW_FOLD_DEFAULT_CONFLICT` | `error` | The same type appears in both `default_collapsed_types` and `default_expanded_types`, or `default_collapsed_depth < 1`. |
 | `MM_VIEW_OVERLAY_BUDGET_EXCEEDED` | `error` | More than `8` overlays declared on a single view, or `value_map` exceeds `32` entries (`DC-2d:75`), or duplicate `overlay.id`. |
-| `MM_VIEW_OVERLAY_SOURCE_INVALID` | `error` | `overlay.source` (`attribute` or `relation_target`) references an undeclared attribute/relation/target_type, uses `relation_target` on `target: "relation"`, omits `slot: "detail" \| "footer"` on `text_slot`, omits `equals` on `provisional_marker`, or binds `text_slot`/`category_tone` to `"relation"` or `stroke_style`/`provisional_marker` to `"node"`. |
+| `MM_VIEW_OVERLAY_SOURCE_INVALID` | `error` | `overlay.source` (`attribute` or `relation_target`) references an undeclared attribute/relation/target_type, uses `relation_target` on `target: "relation"`, omits `slot: "detail" \| "footer"` on `text_slot`, omits `equals` on `provisional_marker` or sets string `equals` outside `1..40` code points (`DC-2d:47, 51`), or binds `text_slot`/`category_tone` to `"relation"` or `stroke_style`/`provisional_marker` to `"node"`. |
 | `MM_VIEW_OVERLAY_RAW_STYLE_FORBIDDEN` | `error` | `overlay` uses a non-V1 card-anatomy channel (`"badge"`, `"detail_pill"`, `"metric_counter"`), embeds a raw hex color, CSS property/function, or pixel literal, or uses a banned/non-DS token (`"accent"`, `"positive"`, `"critical"`, `"settled"`, or outside `DsSemanticToneToken` / `"solid" \| "dashed"`). |
 | `MM_VIEW_OVERLAY_LEGEND_REQUIRED` | `error` | `overlay.channel === "category_tone"` omits a non-empty `legend_label` (violating WCAG 1.4.1 non-color-only encoding), or `legend_label` is set on a relation overlay channel (`stroke_style`, `provisional_marker`). |
-| `MM_VIEW_AXES_KIND_MISMATCH` | `error` | `kind === "matrix"` without `axes.mode === "matrix_2d"`, or `axes.mode === "matrix_2d"` with `kind !== "matrix"`, or `kind === "lane-flow"` with neither `axes.mode === "bands_1d"` nor a selected `role: "lane"` type. |
+| `MM_VIEW_AXES_KIND_MISMATCH` | `error` | `kind === "matrix"` without `axes.mode === "matrix_2d"`, or `axes.mode === "matrix_2d"` with `kind !== "matrix"`, or in `@1` (`ds-layout-hints@1`) `kind === "matrix"` declares non-empty `select.relations.include_types` (including `"*"`; non-tabular matrices are refused in `@1`), or `kind === "lane-flow"` with neither `axes.mode === "bands_1d"` nor a selected `role: "lane"` type. |
 | `MM_VIEW_AXIS_SOURCE_INVALID` | `error` | `axis.source` references an undeclared attribute/relation, uses `order: "declared_enum"` on a non-enum source, uses `order: "registry_order"` without a registry-backed target, uses `kind: "node_type"` with `order` outside `"explicit" \| "key_asc" \| "key_desc"`, or omits/mis-types `explicit_buckets` when `order === "explicit"`. |
 | `MM_VIEW_OCCURRENCE_UNIQUENESS_CONFLICT` | `error` | An axis sets `multi_value_policy: "duplicate_occurrence"` while `occurrence_uniqueness` is omitted or `"single_per_entity"` (violates `V1`), or `occurrence_uniqueness: "per_axis_cell"` is set when every axis explicitly overrides `multi_value_policy` away from `"duplicate_occurrence"`. |
-| `MM_VIEW_LAYOUT_VOCABULARY_UNKNOWN` | `error` | `layout` is omitted on a non-tabular view (any view other than zero-edge `kind === "matrix"`), or `layout.vocabulary` does not match `@sentropic/diagram-core`'s `DS_LAYOUT_VOCABULARY_PIN` (`"ds-layout-hints@1"`). |
-| `MM_VIEW_LAYOUT_HINT_INVALID` | `error` | `@sentropic/diagram-core` `validateLayoutHints` rejects `layout` — including future/unimplemented DS modes refused today (`"matrix-grid"`, `"tree"`, and `@2` / `diagram-notation@1` `"layered-flow"`), forbidden `density` overrides (`OA1`/`OA9`), sloped `"along-edge"` label orientation, out-of-scope `direction`, or unmodeled/pixel properties (`cardGapX`, `x`, `y`, `width`, `height`). |
+| `MM_VIEW_LAYOUT_VOCABULARY_UNKNOWN` | `error` | `layout` is omitted on a canvas view (`topology`, `lane-flow`, `hierarchy`, `entity-model`), or `layout.vocabulary` does not match `@sentropic/diagram-core`'s `DS_LAYOUT_VOCABULARY_PIN` (`"ds-layout-hints@1"`). |
+| `MM_VIEW_LAYOUT_HINT_INVALID` | `error` | `kind === "matrix"` in `@1` (`ds-layout-hints@1`) supplies any `layout` (`layout !== undefined`, including `mode: "auto-pack"` or `"lane-stack"`, since `@1` matrices are strictly tabular with `select.relations.include_types: []` and `layout === undefined`), or `@sentropic/diagram-core` `validateLayoutHints` rejects `layout` — including future/unimplemented DS modes refused today (`"matrix-grid"`, `"tree"`, and `@2` / `diagram-notation@1` `"layered-flow"`), forbidden `density` overrides (`OA1`/`OA9`), sloped `"along-edge"` label orientation, out-of-scope `direction`, or unmodeled/pixel properties (`cardGapX`, `x`, `y`, `width`, `height`). |
 | `MM_VIEW_NOTATION_UNCOVERED` | `error` | `presentation_vocabulary: "diagram-notation@1"` is set, and a concrete non-auxiliary selected type lacks an inherited or direct `presentation` block (`DC-2d:109` `notation-type-uncovered`). |
 | `MM_VIEW_SEMVER_VIOLATION` | `error` | A breaking or additive view diff violates the §1.4 version bump matrix without a valid `MappingFile`. |
 | `MM_VIEW_BASE_PROFILE_DOMAIN_LEAK` | `error` | Enforced on `lineage === "engram"` (base metamodel / built-in `app-context` profile): rejects any non-empty `views` map on the base profile (§0.1 owner mandate). |
@@ -847,7 +882,7 @@ Extending Spec 0 §3.2 (`MetamodelDiagnostic`, `[FACT: spec/SPEC_ENGRAM_METAMODE
 
 ### 3.1 Query Request & Mandatory Commit Pinning
 
-`engram` serves a declared view through a pure, deterministic query port (`projectDeclaredView`). Every request MUST bind an immutable source commit pin — floating ref names (`"HEAD"`, `"main"`, uncommitted working-tree state) are **refused** (`VIEW_PROJ_UNPINNED_COMMIT_REFUSED`); callers resolve refs to an algorithm-qualified commit OID (`[FACT: spec/SPEC_LIVE_GIT_INDEXING.md:83, 89]`) before invoking `engram`. Interactive container expand/collapse state is **not** sent to `engram`: DS executes `projectView(semanticSubgraph, viewDocument, collapsedOccurrenceIds)` and `layoutFolded` client-side over the retained source `ViewDocument`.
+`engram` serves a declared view through a pure, deterministic query port (`projectDeclaredView`) governed by the **§2.1.1 View Projection Boundary Rule** (declarations + commit-pinned semantic data only; zero precomputed fold, projection, or layout results). Every request MUST bind an immutable source commit pin — floating ref names (`"HEAD"`, `"main"`, uncommitted working-tree state) are **refused** (`VIEW_PROJ_UNPINNED_COMMIT_REFUSED`); callers resolve refs to an algorithm-qualified commit OID (`[FACT: spec/SPEC_LIVE_GIT_INDEXING.md:83, 89]`) before invoking `engram`. Interactive container expand/collapse state (`collapsedOccurrenceIds`) and dynamic `FoldFilterState.hiddenByFilter` masks are **never** sent to or computed by `engram`: DS executes `projectView(semanticSubgraph, viewDocument, collapsedOccurrenceIds)`, `foldedScene`, `summaryCandidates`, `analyzeSummaries`, and `layoutFolded` client-side over the retained source `ViewDocument`.
 
 ```ts
 export type CommittedSourcePin =
@@ -884,42 +919,45 @@ export interface ViewProjectionRequestV1 {
 
 ### 3.2 Six-Stage Deterministic Source-Slice Pipeline (No Pre-Projection)
 
-Given a verified `ViewProjectionRequestV1`, `engram` executes six pure, deterministic stages. **`engram` never strips folded descendants, never pre-lifts relation endpoints, and never computes geometry:**
+Given a verified `ViewProjectionRequestV1`, `engram` executes six pure, deterministic stages governed by the **§2.1.1 View Projection Boundary Rule** (every emitted field or filter is a pure function of declarations and `sourcePin` semantic data, never of DS fold, projection, or layout outcomes):
 
 1. **Pin, Lifecycle & Parameter Gate:**
-   - Verify `commitOid` syntax, verify `templatePin`, `composedPins`, `DIAGRAM_VIEW_SCHEMA_V2.pin`, `DIAGRAM_NOTATION_PIN`, and `DS_LAYOUT_VOCABULARY_PIN` digests, and locate `view = bundle.views[viewId]`.
+   - Verify `commitOid` syntax, verify `templatePin`, `composedPins`, `DIAGRAM_VIEW_SCHEMA_V2.pin`, `DIAGRAM_PRESENTATION_CONTRACT_PIN`, `DIAGRAM_NOTATION_PIN`, and `DS_LAYOUT_VOCABULARY_PIN` digests, and locate `view = bundle.views[viewId]`.
    - If `view.status === "retired"`, refuse with `VIEW_PROJ_RETIRED_VIEW_REFUSED` (returning `replaced_by` and `deprecated_reason`). If `view.status === "deprecated"`, proceed and attach `deprecationNotice` to the response envelope.
    - Validate `parameterBindings` against `view.parameters` and canonicalize bound values.
 2. **Semantic Subgraph Selection (`engram:diagram-semantic-schema/1`):**
    - Filter candidate entities at `sourcePin` by `select.lineages`, `select.nodes.include_types` (expanding `class_hierarchies` when `include_subclasses === true`), `exclude_types`, `include_registries`, and `select.nodes.where` (respecting `on_missing`). Sort surviving entities by canonical lexicographic `id`.
    - Filter candidate relations at `sourcePin` by `select.relations.include_types`, `exclude_types`, and `select.relations.where`.
    - Apply `endpoint_policy: "both_selected"`: drop every relation whose `source` or `target` entity is not in the surviving node set, incrementing `counts.droppedDanglingRelations` (`[FACT: src/graph-time-slice.ts:88]`, `[FACT: SPEC_EVOL_ARCHI_V2_ONTOLOGY.r4.md:594]`).
-   - Auxiliary DC-2c `flow-scenario` entities and `flow-step` relations (`generic@1` / `generic@2`, `@sentropic/diagram-core/src/flows.ts:32-47`) are retained in `semanticSubgraph` whenever selected.
+   - **DC-2c `flow-step` / `flow-scenario` co-retention (`flows.ts:32-56, 77, 110-123`):** Auxiliary `flow-step` endpoints connect drawn entities or ports (`endpoint_policy: "both_selected"` never touches `flow-scenario`), while `flow-step.attributes.scenario` holds an `EntityRef` targeting a `flow-scenario` entity. Whenever one or more `flow-step` relations survive `select.relations`, Stage 2 **automatically co-retains** every non-empty `flow-scenario` entity referenced by `flow-step.attributes.scenario` in `semanticSubgraph.entities` (even if the template author did not list auxiliary `flow-scenario` in `select.nodes.include_types`) and ensures the canonical `flow-step` and `flow-scenario` `typeDefinitions` (`withFlowTypes`, `flows.ts:32-56`) are present on `semanticSubgraph.typeDefinitions` so `validateFlows` (`flows.ts:123` `flow-scenario-unknown`) and `validateDocument` succeed.
 3. **Retained Source `ViewDocument` & Fold Declarations (`engram:diagram-view-schema/2`):**
-   - Mint canonical `OccurrenceRef` IDs in the **`"occurrence:"` namespace** whose local ID strictly matches **`^[A-Za-z0-9][A-Za-z0-9._-]*$`** (`@sentropic/diagram-core/src/refs.ts:18-26, 35, 57`; `"occ:"`, `@`, and embedded `:` are forbidden; non-`[A-Za-z0-9._-]` characters in local entity/bucket keys are hex-escaped deterministically as `_x<XX>_`). Under `"single_per_entity"`, emit `occurrence:<safeEntityLocalId>` for **every** selected draw-eligible entity — **retaining all folded descendants** (`fold.ts:291-308`, `validate.ts:1993-2044`, `scene.ts:23-28`) while **omitting auxiliary DC-2c `flow-scenario` entities** from `viewDocument.entityOccurrences` (`diagram-canvas/src/layout/measured.ts:290` prohibits `flow-scenario` occurrences).
-   - Build the containment forest over selected occurrences using `folds.containment_relations` in declared priority order (`nearest-holder` placement, `V2` `archi-view.ts:441-460`, `DC-2d:111, 148`; synthetic unbacked groups are never created). Attach each contained occurrence via `EntityOccurrence.group` to its container's `VisualGroup` (`{ id: "grp.<len>.<local>", occurrence, collapsed }`), where `collapsed` holds the **declared initial default fold state** computed from `default_state`, `default_collapsed_depth`, `default_collapsed_types`, and `default_expanded_types` (`DOM-Q4`).
-   - Emit **un-lifted** `viewDocument.relationOccurrences` for selected `arrow` relations, targeting their direct selected endpoint occurrences (`{ role, occurrence }`, zero `{ semanticTarget, sourceOccurrence }` pre-lifting).
+   - Mint canonical `OccurrenceRef` IDs in the **`"occurrence:"` namespace** whose local ID strictly matches **`^[A-Za-z0-9][A-Za-z0-9._-]*$`** (`@sentropic/diagram-core/src/refs.ts:18-26, 35, 57`; `"occ:"`, `@`, embedded `:`, and leading `_` are forbidden; non-`[A-Za-z0-9._-]` characters in local entity/bucket keys are hex-escaped deterministically as `_x<XX>_`). Under `"single_per_entity"`, emit `occurrence:e.<safeEntityLocalId>` (guaranteeing a leading `[A-Za-z0-9]` character even when `<safeEntityLocalId>` starts with `_x<XX>_`) for **every** selected draw-eligible entity — **retaining all folded descendants** (`fold.ts:291-308`, `validate.ts:1993-2044`, `scene.ts:23-28`) while **omitting auxiliary DC-2c `flow-scenario` entities** from `viewDocument.entityOccurrences` (`diagram-canvas/src/layout/measured.ts:290` and `flows.ts:112-115` prohibit `flow-scenario` occurrences/endpoints).
+   - **Neutral DS-overwritten `EntityOccurrence.geometry` placeholder (§2.1.1):** Because `DIAGRAM_VIEW_SCHEMA_V2` (`src/ontology-guardian/diagram-schemas.ts:200-201`, `required: ["id", "entity", "geometry"]`), `@sentropic/diagram-core/src/view.ts:29-39`, and `validateView` (`validate.ts:2133-2142`, `value-not-finite`) require finite `{ x, y, width, height }` numbers on every `EntityOccurrence`, Stage 3 stamps the deterministic, explicitly marked **DS-overwritten** neutral placeholder `geometry: { x: 0, y: 0, width: 0, height: 0 }` on every retained source `EntityOccurrence` (and on Stage 5 `legend` / `legend-key` occurrences), plus neutral `viewDocument.presentation.camera: { x: 0, y: 0, zoom: 1 }` (`diagram-schemas.ts:223-225`, `validate.ts:2476-2494`). DS layout overwrites `geometry` unconditionally and never treats placeholder zeros as layout input.
+   - Build the containment forest over selected occurrences using `folds.containment_relations` in declared priority order (`nearest-holder` placement, `V2` `archi-view.ts:441-460`, `DC-2d:111, 148`; synthetic unbacked groups are never created). Attach each contained occurrence via `EntityOccurrence.group` to its container's `VisualGroup` (`{ id: "grp.<len>.<local>", occurrence, collapsed }`), where `collapsed` records only the **declared initial default** computed from `default_state`, `default_collapsed_depth`, `default_collapsed_types`, and `default_expanded_types` (`DOM-Q4`, §2.1.1).
+   - Emit **un-lifted** `viewDocument.relationOccurrences` for selected `arrow` relations, targeting their direct selected endpoint occurrences (`{ role, occurrence }`, zero `{ semanticTarget, sourceOccurrence }` pre-lifting, §2.1.1), and set `viewDocument.filters: []` (no fold-dependent mask; any `ViewDocument` filter is permitted only if it is a pure function of declarations and semantic data, §2.1.1).
    - When `view.folds` is declared:
-     - Under `folded_edge_policy: "lift_with_summary"` (default), emit authored candidate `summaryLabels` (`SummaryDefinition` entries keyed by `id`, carrying `{ id, sourceOccurrence, targetOccurrence, label, relationIds, strokeStyle, relationOccurrences }` per `diagram-schemas.ts:237-249`), **strictly exempting DC-2c numbered `flow-step` relations** (`flows.ts:75-99`, `SPEC_EVOL_DC2D_NOTATION_FLOWS.md:163`).
-     - Under `folded_edge_policy: "hide"`, emit `foldValidationMask` (`FoldValidationMask.projectedHiddenRelationOccurrences`, `validate.ts:1953-1956, 2279-2295`) rather than mutating source endpoints.
-   - DS (`@sentropic/diagram-core`) subsequently runs `validateView`, `projectView(semanticSubgraph, viewDocument, collapsedOccurrenceIds)`, and `summaryCandidates` to fold descendants and lift `RelationOccurrenceEndpoint.{ occurrence, semanticTarget, sourceOccurrence }` losslessly.
-4. **Orthogonal Axis Assignment (`axes`):**
-   - When `view.axes` is declared, evaluate `axis.source` (`attribute`, `relation_target`, or `node_type`) and `order: "registry_order"` against the immutable **`sourcePin` graph and pinned target registry prior to `select` pruning** (so axis bucket entities such as `chapter` or `zone` need not appear in `select.nodes.include_types` as drawn cards).
+     - Under `folded_edge_policy: "lift_with_summary"` (default), emit static authored `summaryLabels` (`SummaryDefinition` declarations keyed by `id`, carrying `{ id, sourceOccurrence, targetOccurrence, label, relationIds, strokeStyle, relationOccurrences }` per `diagram-schemas.ts:237-249` as a pure function of declared containment scopes and semantic relations, §2.1.1), **strictly omitting DC-2c numbered `flow-step` occurrences** (`flows.ts:75-99`, `SPEC_EVOL_DC2D_NOTATION_FLOWS.md:163`).
+       - **`analyzeSummaries` behaviour when `flow-step` is omitted:** On the retained source `ViewDocument`, `analyzeSummaries` (`fold.ts:689-718`) checks that `SummaryDefinition.relationOccurrences` is sorted, distinct, contained in `summaryCandidates`, and complete per listed `relationId`, so omitting `flow-step` passes `validateView` source validation with zero `sourceIssues` (while un-lifted `sourceView` has `aggregate.projected === false` at `fold.ts:787, 811`). After `projectView`, when a lifted `flow-step` crosses the same `(sourceRepresentative, targetRepresentative, strokeStyle)` container pair: (i) in pre-DC-2d `fold.ts:750-817` (where `aggregates` still collects lifted `flow-step` occurrences), `selected.length !== aggregate.members.length` (`fold.ts:813`) leaves that `SummaryDefinition` inactive (`actives.get(key) === undefined`) with **zero** `sourceIssues` or `conflicts` diagnostics; (ii) under the normative DS **DC-2d** rule (`SPEC_EVOL_DC2D_NOTATION_FLOWS.md §5.4 :163`), `@sentropic/diagram-core` (`fold.ts:560, 750`) exempts `flow-step` from both `summaryCandidates` and post-`projectView` `analyzeSummaries` `aggregates` alongside `@sentropic/diagram-canvas` `edgeBundles`, so the `SummaryDefinition` activates over the non-`flow-step` `arrow` occurrences while numbered `flow-step` badges draw individually.
+     - Under `folded_edge_policy: "hide"`, `engram` emits **zero** precomputed hidden-occurrence mask (§2.1.1: a static server-side mask cannot represent interactive client expand/collapse and `validate.ts:2279-2295` `relation-target-hidden` is an M3 §3.9.1 relation-target error check rather than an edge filter). `engram` forwards only the declaration `foldPolicy: { interactiveToggle, foldedEdgePolicy: "hide" }`; at the active `collapsed` set, the **DS host** dynamically computes all non-internal `relationOccurrences` having at least one endpoint `hiddenByFold(sourceView, collapsed, endpoint.occurrence)` (`fold.ts:50-58`) and supplies them via `FoldFilterState.hiddenByFilter` (`fold.ts:405, 453-475, 653-659`, `validate.ts:1955`).
+   - DS (`@sentropic/diagram-core`) subsequently runs `validateView`, `projectView(semanticSubgraph, viewDocument, collapsedOccurrenceIds)`, `foldedScene`, `summaryCandidates`, and `analyzeSummaries` to fold descendants, apply `hiddenByFilter` when `foldedEdgePolicy === "hide"`, and lift `RelationOccurrenceEndpoint.{ occurrence, semanticTarget, sourceOccurrence }` losslessly (§2.1.1).
+4. **Orthogonal Axis Assignment (`axes` — Pure Function of Declarations & Semantic Data, §2.1.1):**
+   - When `view.axes` is declared, evaluate `axis.source` (`attribute`, `relation_target`, or `node_type`) and `order: "registry_order"` against the immutable **`sourcePin` graph and pinned target registry prior to `select` pruning** (so axis bucket entities such as `chapter` or `zone` need not appear in `select.nodes.include_types` as drawn cards). `axesProjection` carries only bucket keys/labels and cell occurrence memberships — zero coordinates, geometry, or fold outcomes (§2.1.1).
    - Order row/column (or band) headers per `order` + `empty_buckets` (`"retain"` preserves empty headers from `values`, target registries, or `explicit_buckets` so sparse coverage gaps remain visible).
    - Apply `unassigned_policy` (default `"unassigned_bucket"`, `"exclude"`, or opt-in `"refuse"` → `VIEW_PROJ_AXIS_UNASSIGNED_NODE`) and `multi_value_policy` (default `"duplicate_occurrence"` when `occurrence_uniqueness === "per_axis_cell"` else `"primary_first"`, or opt-in `"refuse"` → `VIEW_PROJ_AXIS_MULTI_VALUE_NODE`).
    - When `occurrence_uniqueness === "per_axis_cell"` duplicates an entity across cells, mint deterministic length-prefixed `OccurrenceRef` IDs matching `^occurrence:[A-Za-z0-9][A-Za-z0-9._-]*$`:
      - 2D matrix: `occurrence:cell.<entityLocalLen>.<safeEntityLocalId>.<rowKeyLen>.<safeRowKey>.<colKeyLen>.<safeColKey>`
      - 1D bands: `occurrence:band.<entityLocalLen>.<safeEntityLocalId>.<bandKeyLen>.<safeBandKey>`
      and populate each cell entry's disambiguated `accessibleLabel` (`"<entityTitle> (<rowLabel>, <columnLabel>)"` or `"<entityTitle> (<bandLabel>)"`, DS Finding 7 & `DS-Q4`).
-5. **Overlay Lowering into Frozen DS Slots (`overlays`):**
+5. **Overlay Lowering into Closed `DiagramPresentation` & `Profile.notation` (`overlays`):**
    - Evaluate `view.overlays` in declared order (traversing `source.kind === "relation_target"` against the pre-`select` `sourcePin` graph when declared) and lower directly into native `viewDocument` and compiled `Profile.notation` fields (zero lossy sidecar):
-     - `text_slot` (`slot: "detail" | "footer"`): writes formatted plain-text strings into `viewDocument.presentation.diagram.entities[occurrenceId].text.{detail, footer}` within frozen `460 × 200` `DiagramCard` line budgets (`OA8`, `OA14`).
-     - `category_tone`: binds DS semantic/data tokens (`DsSemanticToneToken`, zero `"accent"` per `OA10`) into `EntityPresentation.categoryRef` + `viewDocument.presentation.diagram.categoryTokens` + `legends`, and **synthesizes the required auxiliary `generic@2` `legend` and `legend-key` entities, `generic@2` hierarchy relations, `entityOccurrences`, and `generic@2` profile/family/semanticCategory pins** (`presentation-validate.ts:537-556, 619-692`, `presentation-apply.ts:210-238`) paired with the mandatory `legend_label` (WCAG 1.4.1).
+     - **Closed `DiagramPresentation` envelope & `DIAGRAM_PRESENTATION_CONTRACT_PIN`:** Whenever `viewDocument.presentation.diagram` is emitted (including `text_slot`-only views with zero legends), it MUST carry all four required keys `{ contractPin: DIAGRAM_PRESENTATION_CONTRACT_PIN, entities, legends, categoryTokens }` with zero extra properties (`legends: {}` and `categoryTokens: []` when unused; `diagram-schemas.ts:79-128`, `presentation.ts:112-170, 215-222`, `presentation-validate.ts:203-214, 256-303`), and every `entities[occurrenceId]` entry MUST populate `form` (`"card" | "container" | "legend" | "legend-key"` matching `satisfiesExplicitForm`, `presentation-validate.ts:349-369, 491-494`) and `text.title` (from the canonical entity label, `<= 200` code points or `<= 120` for `"legend-key"`) alongside any lowered `text.{detail, footer}`.
+     - `text_slot` (`slot: "detail" | "footer"`): writes formatted plain-text strings into `viewDocument.presentation.diagram.entities[occurrenceId].text.{detail, footer}` within frozen `460 × 200` `DiagramCard` line budgets (`OA8`, `OA14`). **Collision rule:** when `>= 2` `text_slot` overlays produce non-empty strings for the same `(occurrenceId, slot)`, Stage 5 joins them deterministically in declared `view.overlays` order with `" · "` (never silent last-wins, `presentation-apply.ts:5`), enforcing `[...value].length <= 400` for `detail` and `<= 120` for `footer` (`presentation-validate.ts:499-501`; overflow refuses projection with `VIEW_PROJ_OVERLAY_TEXT_TOO_LONG`).
+     - `category_tone`: binds DS semantic/data tokens (`DsSemanticToneToken`, zero `"accent"` per `OA10`) into `EntityPresentation.categoryRef` + `viewDocument.presentation.diagram.categoryTokens` + `legends`, and **synthesizes the required auxiliary `generic@2` `legend` and `legend-key` entities, `generic@2` `contains` hierarchy relations (`parent` = `legend`, `child` = `legend-key`) whose sorted child `EntityRef`s match `legends[legendOccId].order` (`presentation-validate.ts:623-640, 805-815`), neutral-geometry `entityOccurrences`, and `generic@2` profile/family/semanticCategory pins** (`presentation-validate.ts:537-556, 619-692`, `presentation-apply.ts:210-238`) paired with the mandatory `legend_label` (WCAG 1.4.1). **Deterministic `KEY_PATTERN` slugging:** because `generic2Profile` (`profiles/generic2.ts:20-21, 79`) and `validateDiagramPresentation` (`presentation-validate.ts:22, 559`) enforce `KEY_PATTERN = /^[a-z][a-z0-9-]*$/` (`1..40` chars) on `legend-key.attributes.category` and `categoryTokens[i].category`, Stage 5 deterministically normalizes each domain `value_map` key `rawKey` (NFKD-normalized, combining marks stripped, ASCII-lowercased, non-`[a-z0-9]` runs collapsed to `"-"`, leading/trailing `"-"` trimmed, `"k"` if empty, `"k-"` prepended if starting with `[0-9]`, and if `> 40` chars or colliding within the legend, truncated to `<= 31` chars with trailing `"-"` trimmed plus `"-" + sha256Hex(UTF8(rawKey)).slice(0, 8)`) into a unique `^[a-z][a-z0-9-]{0,39}$` `category` slug while keeping the raw human display label in `legend-key.attributes.name` (`<= 120` chars) and `entities[keyOccId].text.title` (`<= 120` chars).
      - `stroke_style`: sets `viewDocument.relationOccurrences[relOccId].strokeStyle` (`"solid" | "dashed"`).
-     - `provisional_marker`: sets DC-2d `arrow` `provisional: { attribute, equals }` on the compiled relation notation entry (`data-provisional`).
-6. **Compiled DS Profiles, `PresentationPin`s & Source Snapshot Digest (`ProjectedViewEnvelopeV1`):**
+     - `provisional_marker`: sets DC-2d `arrow` `provisional: { attribute, equals }` on the compiled relation notation entry (`data-provisional`, `SPEC_EVOL_DC2D_NOTATION_FLOWS.md:47, 51`). **`equals` stringification:** `string` values (`1..40` code points) are emitted verbatim, and `boolean` values (`true` / `false`) are deterministically stringified to `"true"` / `"false"`.
+6. **Compiled DS Profiles, `PresentationPin`s & Source Snapshot Digest (`ProjectedViewEnvelopeV1`, §2.1.1):**
    - Compile `profiles: readonly Profile[]` (`ProfileId = "${string}@${number}"`, including `entityTypes`, `relationTypes` with DC-2d `RelationRoleDeclaration.entityTypeRefs` and `Profile.requires` for cross-profile joins, `constraints`, and `notation?: NotationBlock`) plus `executorBindings: ExecutorProfileBindings` (`scoped-constraints@1`).
-   - Emit `ProjectedViewEnvelopeV1` and compute `projectionDigestSha256` via RFC 8785 JCS (`src/ontology-guardian/canonical.ts`).
+   - Emit `ProjectedViewEnvelopeV1` and compute `projectionDigestSha256` via RFC 8785 JCS (`src/ontology-guardian/canonical.ts`) strictly over the declaration + semantic source-slice snapshot (§2.1.1).
 
 ### 3.3 Normative Slice Envelope (`ProjectedViewEnvelopeV1`)
 
@@ -936,7 +974,12 @@ export interface ProjectedViewEnvelopeV1 {
     readonly viewPresentationDigestSha256: Sha256Digest;
     /** DS `PresentationPin` (`{ id, version, contentDigest }` with bare 64-hex `contentDigest`). */
     readonly diagramViewSchemaPin: PresentationPin;
-    /** Present when `presentation_vocabulary === "diagram-notation@1"` or `generic@2` legends are synthesized. */
+    /**
+     * `DIAGRAM_PRESENTATION_CONTRACT_PIN` (`{ id: "diagram-presentation", version: "1", contentDigest }`),
+     * present iff `viewDocument.presentation.diagram` is emitted (governing `text_slot` and `generic@2` legends).
+     */
+    readonly diagramPresentationContractPin?: PresentationPin;
+    /** Present iff `presentation_vocabulary === "diagram-notation@1"` (`DIAGRAM_NOTATION_PIN`). */
     readonly diagramNotationPin?: PresentationPin;
     /** Present whenever `view.layout` is declared (exported by `@sentropic/diagram-core`). */
     readonly dsLayoutVocabularyPin?: PresentationPin;
@@ -954,29 +997,33 @@ export interface ProjectedViewEnvelopeV1 {
   };
   /**
    * Selected semantic entities & relations (`$id: "engram:diagram-semantic-schema/1"`,
-   * `src/ontology-guardian/diagram-schemas.ts:192`), including any selected auxiliary
-   * `flow-scenario` / `flow-step` elements and synthesized `generic@2` legend entities.
+   * `src/ontology-guardian/diagram-schemas.ts:192`), including any selected `flow-step` relations,
+   * auto-retained referenced `flow-scenario` entities + `withFlowTypes` `typeDefinitions`,
+   * and synthesized `generic@2` `legend` / `legend-key` entities + `contains` relations.
    */
   readonly semanticSubgraph: NativeSemanticDocument;
   /**
    * Retained source DS `ViewDocument` (`$id: "engram:diagram-view-schema/2"`,
-   * `src/ontology-guardian/diagram-schemas.ts:238`):
+   * `src/ontology-guardian/diagram-schemas.ts:238`, governed by §2.1.1):
    * - ALL draw-eligible selected `entityOccurrences` (`^occurrence:[A-Za-z0-9][A-Za-z0-9._-]*$`,
-   *   folded descendants retained, `flow-scenario` omitted);
+   *   folded descendants retained, `flow-scenario` omitted) with neutral DS-overwritten
+   *   `geometry: { x: 0, y: 0, width: 0, height: 0 }`;
    * - `groups` with declared initial `collapsed` defaults (`DOM-Q4`);
-   * - un-lifted `relationOccurrences` + candidate `summaryLabels` (`flow-step` exempted);
-   * - lowered `presentation.diagram` text slots, `legends`, and `categoryTokens`.
+   * - un-lifted `relationOccurrences` + static authored `summaryLabels` (`flow-step` omitted);
+   * - closed `presentation.diagram` (`contractPin: DIAGRAM_PRESENTATION_CONTRACT_PIN`, `entities`
+   *   with `form` + `text.title`, `legends`, and `KEY_PATTERN`-slugged `categoryTokens`).
    */
   readonly viewDocument: NativeViewDocument;
-  /** Fold interaction and `hide`-mask metadata consumed by DS `validateView` / `projectView`. */
+  /**
+   * Pure declaration-derived fold policy (`§2.1.1` — zero precomputed hidden-occurrence mask;
+   * under `"hide"`, the DS host dynamically computes `FoldFilterState.hiddenByFilter`
+   * via `hiddenByFold` at the active `collapsed` set).
+   */
   readonly foldPolicy: {
     readonly interactiveToggle: boolean;
     readonly foldedEdgePolicy: "lift_with_summary" | "hide";
-    readonly foldValidationMask?: {
-      readonly projectedHiddenRelationOccurrences: readonly string[];
-    };
   } | null;
-  /** Populated for `matrix_2d` and `bands_1d` views; `null` otherwise. */
+  /** Pure function of `view.axes` declarations and pre-`select` `sourcePin` semantic data (`§2.1.1`); `null` when `axes` is omitted. */
   readonly axesProjection:
     | {
         readonly mode: "matrix_2d";
@@ -1001,29 +1048,26 @@ export interface ProjectedViewEnvelopeV1 {
         }[];
       }
     | null;
-  /** Validated DS layout hint forwarded untouched to DS (`undefined` on zero-edge tabular matrices). */
+  /** Validated DS layout hint forwarded untouched to DS (`undefined` on `@1` tabular matrices). */
   readonly layoutHint?: DsLayoutHintRef;
   /** Compiled DS `Profile` descriptors (`entityTypes`, `relationTypes` with `entityTypeRefs`, `requires`, `constraints`, `notation`). */
   readonly profiles: readonly Profile[];
   /** Verified DS `scoped-constraints@1` bindings for `validateDocument` / `validateView`. */
   readonly executorBindings: ExecutorProfileBindings;
+  /** Pure semantic-selection counts (`§2.1.1` — zero fold-, occurrence-, or rendering-derived counts). */
   readonly counts: {
     readonly candidateNodes: number;
     readonly selectedNodes: number;
-    readonly entityOccurrences: number;
-    readonly foldableGroups: number;
-    readonly defaultCollapsedGroups: number;
     readonly candidateRelations: number;
     readonly selectedRelations: number;
     readonly droppedDanglingRelations: number;
-    readonly relationOccurrences: number;
   };
   /**
-   * JCS SHA-256 content cache key for this immutable source slice snapshot.
+   * JCS SHA-256 content cache key for this immutable declaration + semantic source-slice snapshot (`§2.1.1`).
    * Reusable as the `(document + sourceView + profileNotation)` input prefix when client fold
    * state matches `viewDocument.groups`, NOT a standalone cache key for DS `resolveNotation`,
    * `layoutMeasured`, `packLaneStack`, or `SceneFrame` (which additionally depend on client
-   * `collapsedOccurrenceIds`, `expandedTables`, `fitViewport`, `LineMeasurer`, and theme metrics).
+   * `collapsedOccurrenceIds`, `hiddenByFilter`, `expandedTables`, `fitViewport`, `LineMeasurer`, and theme metrics).
    */
   readonly projectionDigestSha256: Sha256Digest;
 }
@@ -1040,11 +1084,11 @@ sequenceDiagram
     Engram->>Engram: 1. Verify commitOid, template/composed digests, PresentationPins & view status
     Engram->>Store: Read immutable graph slice at commitOid
     Store-->>Engram: Entities, relations & registries at commitOid
-    Engram->>Engram: 2. Evaluate select -> semanticSubgraph (engram:diagram-semantic-schema/1)
-    Engram->>Engram: 3. Emit retained source viewDocument (all occurrences, initial VisualGroup.collapsed, un-lifted edges, summaryLabels)
-    Engram->>Engram: 4. Resolve pre-select axes (occurrence:cell... + accessibleLabels) & lower overlays + generic@2 legends + Profile[]
-    Engram-->>Host: ProjectedViewEnvelopeV1 + projectionDigestSha256
-    Host->>DS: validateDocument + validateView + projectView(collapsedIds) + summaryCandidates + resolveNotation + layout + render
+    Engram->>Engram: 2. Evaluate select -> semanticSubgraph (+ auto-retain flow-scenario & withFlowTypes)
+    Engram->>Engram: 3. Emit retained source viewDocument (DS-overwritten 0-geometry, initial VisualGroup.collapsed, un-lifted edges, authored summaryLabels)
+    Engram->>Engram: 4. Resolve pre-select axes (occurrence:cell... + accessibleLabels) & lower closed DiagramPresentation + KEY_PATTERN slugs + Profile[]
+    Engram-->>Host: ProjectedViewEnvelopeV1 + projectionDigestSha256 (zero fold/layout state, §2.1.1)
+    Host->>DS: validateDocument + validateFlows + validateView + projectView(collapsedIds) + hiddenByFilter/analyzeSummaries + resolveNotation + layout + render
 ```
 
 ---
@@ -1214,7 +1258,7 @@ views:
 
 1. **Native BPMN 2.0 extraction and internal choreography modelling:** Parsing `.bpmn` XML files, extracting internal BPMN gateways/events/sequence flows into `engram`, or projecting BPMN collaboration diagrams is a **separate workstream** outside this specification (§0.1). Catalog entries keep `bpmn` views at `readiness: "waiting-engram"`, and external process specifications remain opaque string references (such as `bpmnRef` in `SPEC_EVOL_ARCHI_V2_ONTOLOGY.r4.md:455, 899`).
 2. **Any domain dimension, axis, viewpoint, or layout vocabulary table in `engram`:** `engram`'s base metamodel and built-in profiles carry **zero** domain axes (`chapter`, `zone`, `environment`, `plateau`, organizational unit, business capability) and **zero** domain views (`MM_VIEW_BASE_PROFILE_DOMAIN_LEAK`), and `engram` owns **zero** layout vocabulary table (`@sentropic/diagram-core` owns `ds-layout-hints@1`).
-3. **Pre-projection folding, geometry, text measurement, edge routing, and theme resolution in `engram`:** `engram` never strips folded descendants, never pre-lifts relation endpoints, never measures glyph widths, never assigns layout coordinates, never routes edges, and never resolves light/dark CSS colors. Folding (`projectView` / `summaryCandidates`), layout, and rendering belong exclusively to the Design System.
+3. **Pre-projection folding, fold/projection masks, geometry, text measurement, edge routing, and theme resolution in `engram` (§2.1.1):** Per the §2.1.1 View Projection Boundary Rule (`spec/memory/DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md`), `engram` never computes or serves anything the Design System derives from folding, projection, layout, or rendering (beyond schema-required neutral DS-overwritten placeholders). Folding (`projectView` / `foldedScene` / `summaryCandidates` / `analyzeSummaries` / dynamic `FoldFilterState.hiddenByFilter`), layout, glyph measurement, edge routing, and theme resolution belong exclusively to the Design System.
 4. **Cross-ontology / cross-bundle catalog selection (`view_includes` — deferred to `G3`):** Grounded in `Spec 0` (`spec/SPEC_ENGRAM_METAMODEL_AND_LINEAGE_REGISTRY.md §2.1 :498-506, §2.5 :545-576`, which defines `composed_lineage_pins` strictly for schema-pinned `<importAlias>:<TypeId>` endpoints inside a single `engram` store) and `G0` (`spec/SPEC_ONTOLOGY_GUARDIAN_G0_CONTRACTS.md:596`, which gates cross-ontology instance graph reconciliation on lot `G3`), selecting live target instances across separate file-first catalog bundles (such as `R7` `view_includes` over `R1`/`R4`/`R5`/`R6`) **waits for `G3`** (canonical cross-ontology ID = `G0` ontology identity + local ID). Until `G3` lands, `R7` retains local placeholder target nodes in its single-template bundle.
 5. **Future DS layout modes (`matrix-grid`, `tree`, `@2` `layered-flow`) and `DiagramCard` pill/counter chrome (`badge`, `detail_pill`, `metric_counter`):** Marked future (`ds-layout-hints@2` / DC-2e+ `packMatrixGrid` and any future owner-approved DS `DiagramCard` anatomy v2 evolution under `OA8`) and **refused today** in `@1`.
 
@@ -1225,22 +1269,27 @@ views:
 All implementation work is strictly TypeScript/Node.js verified with `vitest` and `tsc --noEmit`. Each lot writes failing unit/contract tests **before** production code.
 
 ### Lot V.1 — Metamodel Schema, Referenced `DS_LAYOUT_VOCABULARY_PIN`, and `MM_VIEW_*` Validator
+- **External Gate (Blocking Prerequisite):** Depends on the Design System publish lot landing and exporting **`DIAGRAM_NOTATION_PIN`** (`diagram-notation@1`: `DIAGRAM_NOTATION_SCHEMA`, `DIAGRAM_NOTATION_RULES`, `validateNotation`) and the **`ds-layout-hints@1` pin (`DS_LAYOUT_VOCABULARY_PIN: PresentationPin`)** (`DS_LAYOUT_HINTS_SCHEMA`, `DS_LAYOUT_HINTS_RULES`, `validateLayoutHints()`, including lowering of `grouping_axis: "rows" | "columns"` to `LayoutHints.grouping` per `@sentropic/diagram-canvas/src/layout/hints.ts:12-25, 35`) from `@sentropic/diagram-core` (`packages/diagram-core/src/index.ts:1-36` does not yet export either pin at the current DC-2c baseline). This is an **explicit external gate**: Lot V.1 MUST NOT start until `@sentropic/diagram-core` exports both pins and MUST NOT stub, vendor, or duplicate either schema or pin in `engram`.
 - **Tests first (`src/__tests__/metamodel-view-grammar.test.ts`):**
   - Positive vectors: Specimen A (`R3` zero-edge `matrix` with `relation_target` axes, `unassigned_bucket`, `duplicate_occurrence`, `per_axis_cell`), Specimen B (`hierarchy` with `collapsed` + `lift_with_summary`, `relation_target` `text_slot` overlay, WCAG-compliant `category_tone` + `legend_label`, `auto-pack`), Specimen C (`archi@2` `topology`), `R7` `node_type` axis (`order: "explicit"`), `lane-flow` (`lane-stack`), and empty/omitted `views`.
-  - Negative vectors: one dedicated fixture per `MM_VIEW_*` code in §2.3 (`23` codes), explicitly proving refusal today of future DS modes (`"matrix-grid"`, `"tree"`, and `@2` `"layered-flow"`), forbidden `density` and `"along-edge"` keys, removed pill/counter channels (`"badge"`, `"detail_pill"`, `"metric_counter"`), banned tokens (`"accent"`, `"positive"`, `"critical"`, `"settled"`), color-only `category_tone` omitting `legend_label`, catalog readiness strings (`"requested"`, `"waiting-engram"`) inside `MetamodelViewDecl.status`, and `MM_VIEW_BASE_PROFILE_DOMAIN_LEAK`.
-- **Implementation:** `src/metamodel/view-grammar.ts` referencing `@sentropic/diagram-core`'s exported `DS_LAYOUT_VOCABULARY_PIN: PresentationPin` and `validateLayoutHints` (zero `engram`-authored layout vocabulary table).
+  - Negative vectors: one dedicated fixture per `MM_VIEW_*` code in §2.3 (`23` codes), explicitly proving refusal today of non-tabular `@1` `matrix` views (`select.relations.include_types` non-empty or `layout !== undefined`, including `mode: "auto-pack"`), future DS modes (`"matrix-grid"`, `"tree"`, and `@2` `"layered-flow"`), forbidden `density` and `"along-edge"` keys, removed pill/counter channels (`"badge"`, `"detail_pill"`, `"metric_counter"`), banned tokens (`"accent"`, `"positive"`, `"critical"`, `"settled"`), out-of-range `provisional_marker.equals` strings, color-only `category_tone` omitting `legend_label`, catalog readiness strings (`"requested"`, `"waiting-engram"`) inside `MetamodelViewDecl.status`, and `MM_VIEW_BASE_PROFILE_DOMAIN_LEAK`.
+- **Implementation:** `src/metamodel/view-grammar.ts` referencing `@sentropic/diagram-core`'s exported `DIAGRAM_NOTATION_PIN`, `DS_LAYOUT_VOCABULARY_PIN: PresentationPin`, and `validateLayoutHints` (zero `engram`-authored layout vocabulary table).
 
 ### Lot V.2 — Canonical Digests (`S-ENGRAMHASH v1`), `PresentationPin` Boundary & SemVer Compatibility
 - **Tests first (`src/__tests__/profile-bundle-views-compat.test.ts`):**
   - Prove `templateDigestSha256` (`profile_hash`) is bit-for-bit identical before and after adding/editing/removing `views`, while `presentationDigest` and `viewsDigestSha256` change deterministically under RFC 8785 JCS key reordering.
-  - Verify lossless `"sha256:"` <-> bare-64-hex conversion against DS `PresentationPin` (`DIAGRAM_VIEW_SCHEMA_V2.pin`, `DIAGRAM_NOTATION_PIN`, `DS_LAYOUT_VOCABULARY_PIN`).
+  - Verify lossless `"sha256:"` <-> bare-64-hex conversion against DS `PresentationPin` (`DIAGRAM_VIEW_SCHEMA_V2.pin`, `DIAGRAM_PRESENTATION_CONTRACT_PIN`, `DIAGRAM_NOTATION_PIN`, `DS_LAYOUT_VOCABULARY_PIN`).
   - Verify `CONSUMED_KEYS` absorbs `views` and `presentation_vocabulary` (`ProfileBundleV1.extensions` stays `{}`), and test every row of the §1.4 SemVer compatibility matrix (`PATCH`, `MINOR`, `MAJOR`, `draft` allowance, and `MappingFile` `view_renames`).
 - **Implementation:** Update `src/ontology-profile.ts` (`stableForHash`), `src/profile-bundle.ts` (`CONSUMED_KEYS`, `compileProfileBundle`, `checkProfileCompatibility`), and `src/types.ts`.
 
 ### Lot V.3 — Commit-Pinned Source-Slice Engine & `@sentropic/diagram-core` Round-Trip Proof
 - **Tests first (`src/__tests__/view-projection-engine.test.ts`):**
   - Refusal on unpinned refs (`"HEAD"`, `"main"`) and `"retired"` views (`VIEW_PROJ_UNPINNED_COMMIT_REFUSED`, `VIEW_PROJ_RETIRED_VIEW_REFUSED`).
-  - Zero pre-projection & DS contract acceptance: prove emitted `(semanticSubgraph, viewDocument, profiles, executorBindings)` passes `@sentropic/diagram-core` `validateDocument`, `validateNotation`, `validateView`, `validateDiagramPresentation`, `projectView`, and `summaryCandidates` with zero errors — retaining all folded descendants, omitting `flow-scenario` from `entityOccurrences`, exempting `flow-step` from `summaryLabels`, emitting `FoldValidationMask` under `folded_edge_policy: "hide"`, and synthesizing valid `generic@2` `legend` + `legend-key` entities/occurrences for `category_tone`.
+  - §2.1.1 projection-boundary & `@sentropic/diagram-core` round-trip acceptance: prove emitted `ProjectedViewEnvelopeV1` obeys §2.1.1 (pure declarations + semantic data only; zero precomputed fold/projection masks or fold/rendering-derived counts) and passes `@sentropic/diagram-core` `validateDocument`, `validateFlows`, `validateNotation`, `validateView`, `validateDiagramPresentation`, `projectView`, `summaryCandidates`, and `analyzeSummaries` with zero errors — verifying:
+    - neutral DS-overwritten `EntityOccurrence.geometry: { x: 0, y: 0, width: 0, height: 0 }` and `occurrence:e.<safeEntityLocalId>` prefixing on retained folded descendants;
+    - dynamic DS `FoldFilterState.hiddenByFilter` via `hiddenByFold` under `folded_edge_policy: "hide"` across interactive expand/collapse transitions;
+    - Stage 2 auto-retention of referenced `flow-scenario` entities + `withFlowTypes` `typeDefinitions` (with `flow-scenario` omitted from `entityOccurrences`) and `analyzeSummaries` behavior when `flow-step` is omitted from `summaryLabels`;
+    - closed `DiagramPresentation` (`contractPin: DIAGRAM_PRESENTATION_CONTRACT_PIN`, `entities` with `form` + `text.title`, `legends`, `categoryTokens` including on `text_slot`-only views), deterministic `KEY_PATTERN` slugging of uppercase/underscore/digit/colliding `category_tone` `value_map` keys + `generic@2` `contains` legend synthesis, deterministic `" · "` joining (`<= 400` / `<= 120` code points) on colliding `text_slot` overlays, and `boolean -> "true" | "false"` stringification on `provisional_marker.equals`.
   - Pre-`select` axis & overlay evaluation on the `856`-part `R3` fixture (`839/856` chapter-unassigned, `481/856` zone-unassigned, `244` multi-zone parts): verify `occurrence:cell.<len>...` refs match `^occurrence:[A-Za-z0-9][A-Za-z0-9._-]*$` and populate cell-disambiguated `accessibleLabels`.
   - Byte-for-byte determinism of `projectionDigestSha256` across shuffled input entity/relation arrays at the same `commitOid`.
 - **Implementation:** `src/view-projection/project-declared-view.ts`.
@@ -1257,29 +1306,29 @@ All implementation work is strictly TypeScript/Node.js verified with `vitest` an
 
 ## 7. Boundary Questions Resolved by the Design System and Domain Ontology Reviews
 
-None of the resolutions below reopen `D1`–`D34` or `OWNER-DECISIONS-2026-11-14.md` (`T-M-C`, Points `1B`–`6A`, `D28` kept). Every answer is folded with explicit attribution to its review source (`REVIEW-carbon.md` from the Design System, `2026-11-14`; `2026-11-14-view-mechanism-s4-review.md` from the domain ontology registry, `2026-11-14`).
+None of the resolutions below reopen `D1`–`D34` or `OWNER-DECISIONS-2026-11-14.md` (`T-M-C`, Points `1B`–`6A`, `D28` kept). Every answer is folded with explicit attribution to its review source (`REVIEW-carbon.md` and re-check `RECHECK-carbon.md` from the Design System, `2026-11-14`; `spec/memory/DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md`, `2026-11-14`; `2026-11-14-view-mechanism-s4-review.md` and re-check from the domain ontology registry, `2026-11-14`).
 
-### 7.1 Design System Answers (`DS-Q1`–`DS-Q4` — *answered by Design System review `REVIEW-carbon.md`, 2026-11-14*)
+### 7.1 Design System Answers (`DS-Q1`–`DS-Q4` — *answered by Design System reviews `REVIEW-carbon.md` & `RECHECK-carbon.md`, 2026-11-14*)
 
-1. **DS-Q1 — Freezing `DS_LAYOUT_VOCABULARY_PIN` (`ds-layout-hints@1`) — *answered by Design System (`REVIEW-carbon.md`), 2026-11-14*:**
+1. **DS-Q1 — Freezing `DS_LAYOUT_VOCABULARY_PIN` (`ds-layout-hints@1`) — *answered by Design System (`REVIEW-carbon.md` & `RECHECK-carbon.md`), 2026-11-14*:**
    - **Question:** Does `@sentropic/diagram-core` accept owning and exporting the canonical JSON Schema + pin for `ds-layout-hints@1` alongside `DIAGRAM_NOTATION_PIN`?
-   - **Resolution (`REVIEW-carbon.md` Finding 3 & `DS-Q1`):** **Conditional Yes — `@sentropic/diagram-core` owns, versions, and exports `DS_LAYOUT_HINTS_SCHEMA`, `DS_LAYOUT_HINTS_RULES`, `validateLayoutHints()`, and `DS_LAYOUT_VOCABULARY_PIN: PresentationPin` (`{ id: "https://sentropic.dev/schemas/diagram/layout-hints/v1", version: "ds-layout-hints@1", contentDigest: "<64 lowercase hex>" }`), and `engram` only references that pin without declaring a vocabulary table:**
-     - `ds-layout-hints@1` admits only capabilities implemented in `@sentropic/diagram-canvas` or committed in DC-2d: `mode: "auto-pack" | "lane-stack" | "layered-flow"` (`"layered-flow"` valid solely on `generic@1` views in `@1`), `rotate_labels?: "auto" | "never"` (DC-2d §6.3, replacing sloped `"along-edge"`), `direction?: "left-to-right" | "top-to-bottom"` (`flowDirection` on `lane-stack`, DC-2d §8.3), and existing DS `LayoutHints` ordering/group-packing fields (`ordering`, `rootOrder`, `grouping` / `grouping_axis`, `stretch`).
+   - **Resolution (`REVIEW-carbon.md` Finding 3, `DS-Q1` & `RECHECK-carbon.md` `N3.2`):** **Conditional Yes — `@sentropic/diagram-core` owns, versions, and exports `DS_LAYOUT_HINTS_SCHEMA`, `DS_LAYOUT_HINTS_RULES`, `validateLayoutHints()`, and `DS_LAYOUT_VOCABULARY_PIN: PresentationPin` (`{ id: "https://sentropic.dev/schemas/diagram/layout-hints/v1", version: "ds-layout-hints@1", contentDigest: "<64 lowercase hex>" }`) alongside `DIAGRAM_NOTATION_PIN` (an explicit external DS publish-lot gate prior to `engram` Lot V.1, §6), and `engram` only references those pins without declaring a vocabulary table:**
+     - `ds-layout-hints@1` admits only capabilities implemented in `@sentropic/diagram-canvas` or committed in DC-2d: `mode: "auto-pack" | "lane-stack" | "layered-flow"` (`"layered-flow"` valid solely on `generic@1` views in `@1`), `rotate_labels?: "auto" | "never"` (DC-2d §6.3, replacing sloped `"along-edge"`), `direction?: "left-to-right" | "top-to-bottom"` (`flowDirection` on `lane-stack`, DC-2d §8.3), and existing DS `LayoutHints` ordering/group-packing fields (`ordering`, `rootOrder`, `grouping` / `grouping_axis: "rows" | "columns"` lowered to `LayoutHints.grouping`, `stretch`).
      - `density` (`"compact" | "regular" | "spacious"`) is removed unconditionally (`OA1` + `OA9` single flow-driven channel gap law).
      - `"matrix-grid"`, `"tree"`, and `@2` (`diagram-notation@1`) `"layered-flow"` are marked **future** (`ds-layout-hints@2`) and **refused today** (§1.2.6, §2.3).
 
-2. **DS-Q2 — Rendering Host for `matrix-grid` (`axesProjection.mode === "matrix_2d"`) — *answered by Design System (`REVIEW-carbon.md`), 2026-11-14*:**
+2. **DS-Q2 — Rendering Host for `matrix-grid` (`axesProjection.mode === "matrix_2d"`) — *answered by Design System (`REVIEW-carbon.md` & `RECHECK-carbon.md`), 2026-11-14*:**
    - **Question:** Will 2-axis matrix views (`chapter × zone`) render inside `@sentropic/diagram-canvas` or via a dedicated DS matrix/table component when relation occurrences are absent?
-   - **Resolution (`REVIEW-carbon.md` `DS-Q2`):** **Neither `@sentropic/diagram-canvas` nor a `packages/ui-ontology` package implements canvas `matrix-grid` today; V1 splits zero-edge tabular matrices from future cross-cell `arrow` canvas matrices:**
-     - **Zero-edge coverage/breakdown matrices (`select.relations.include_types: []`, e.g. `R3` and `R7`):** Omit `layout` and render via a DS tabular/matrix component (using DS semantic surface/border/text tokens and keyboard grid navigation) consuming `axesProjection` + `semanticSubgraph` + `viewDocument` directly without instantiating an SVG diagram scene.
-     - **Cross-cell `arrow` handoff matrices:** Belong in `@sentropic/diagram-canvas` (orthogonal channel track allocation `OA1` and fold-lifted `summaryLabels` `OA12`), gated on a dedicated DC-2e / `ds-layout-hints@2` specification and implementation lot (`packMatrixGrid` + row/column header tracks + inter-cell routing), and **refused today** in `@1` (§1.2.6, §5.5).
+   - **Resolution (`REVIEW-carbon.md` `DS-Q2` & `RECHECK-carbon.md` `N3.1`):** **Neither `@sentropic/diagram-canvas` nor a `packages/ui-ontology` package implements canvas `matrix-grid` today; V1 restricts `kind === "matrix"` strictly to zero-edge tabular matrices and refuses non-tabular matrices in `@1`:**
+     - **Zero-edge coverage/breakdown matrices (`select.relations.include_types: []` and `layout: undefined`, e.g. `R3` and `R7`):** Render via a DS tabular/matrix component (using DS semantic surface/border/text tokens and keyboard grid navigation) consuming `axesProjection` + `semanticSubgraph` + `viewDocument` directly without instantiating an SVG diagram scene.
+     - **Non-tabular / cross-cell `arrow` matrices:** Any `kind === "matrix"` with non-empty `select.relations.include_types` or with a `layout` block (even `mode: "auto-pack"`) is **refused today** in `@1` (`MM_VIEW_AXES_KIND_MISMATCH` / `MM_VIEW_LAYOUT_HINT_INVALID`), gated on a dedicated DC-2e / `ds-layout-hints@2` specification and implementation lot (`packMatrixGrid` + row/column header tracks + inter-cell routing; §1.2.6, §2.3, §5.5).
 
-3. **DS-Q3 — Card Slot Placement for `ViewOverlayDecl` Channels (`OA8` Card Anatomy) — *answered by Design System (`REVIEW-carbon.md`), 2026-11-14*:**
+3. **DS-Q3 — Card Slot Placement for `ViewOverlayDecl` Channels (`OA8` Card Anatomy) — *answered by Design System (`REVIEW-carbon.md` & `RECHECK-carbon.md`), 2026-11-14*:**
    - **Question:** Which visual sub-regions host node and relation overlays so `measure.ts` closed-form `460 × 200` card sizing stays exact without DOM measurement?
-   - **Resolution (`REVIEW-carbon.md` Finding 4, Finding 7 & `DS-Q3`):** **Sub-region pills and corner counters (`badge`, `detail_pill`, `metric_counter`) are rejected for V1 (`OA8` + `OA14` frozen `460 × 200` `DiagramCard` anatomy); overlays map strictly into existing frozen DS slots:**
-     - **Node text/metric overlays (`text_slot`):** Lower into existing `EntityPresentation.text.detail` (`1` line, monospace, `19px`) or `EntityPresentation.text.footer` (`1` line, `19px`) as formatted plain strings.
-     - **Node tone overlays (`category_tone`):** Lower into `EntityPresentation.categoryRef` + `presentation.diagram.categoryTokens` + `legends` backed by synthesized auxiliary `generic@2` `legend` and `legend-key` entities/occurrences, using DS tokens (`feedback.*`, `status.*`, `data.category1..8`; never `"accent"` per `OA10`) and requiring a non-empty `legend_label` (WCAG 1.4.1).
-     - **Relation overlays (`stroke_style`, `provisional_marker`):** Lower into `RelationOccurrence.strokeStyle` (`"solid" | "dashed"`) and DC-2d `arrow` `provisional: { attribute, equals }` (`data-provisional`); `flow-badge` remains reserved exclusively for DC-2c numbered `FlowStep` sequences (§1.2.4, §3.2 Stage 5).
+   - **Resolution (`REVIEW-carbon.md` Finding 4, Finding 7, `DS-Q3` & `RECHECK-carbon.md` `N1.2`–`N1.4`):** **Sub-region pills and corner counters (`badge`, `detail_pill`, `metric_counter`) are rejected for V1 (`OA8` + `OA14` frozen `460 × 200` `DiagramCard` anatomy); overlays lower strictly into the closed `DiagramPresentation` envelope (`{ contractPin: DIAGRAM_PRESENTATION_CONTRACT_PIN, entities, legends, categoryTokens }`, `form` + `text.title` on every entity entry) and `Profile.notation`:**
+     - **Node text/metric overlays (`text_slot`):** Lower into existing `EntityPresentation.text.detail` (`1` line, monospace, `19px`, `<= 400` code points) or `EntityPresentation.text.footer` (`1` line, `19px`, `<= 120` code points) as formatted plain strings, joining colliding overlays on the same `(occurrenceId, slot)` in declared order with `" · "` (zero silent last-wins).
+     - **Node tone overlays (`category_tone`):** Lower into `EntityPresentation.categoryRef` + `presentation.diagram.categoryTokens` + `legends` backed by synthesized auxiliary `generic@2` `legend` and `legend-key` entities, `generic@2` `contains` relations (`order` matching sorted direct children), neutral-geometry occurrences, and deterministic `KEY_PATTERN` (`^[a-z][a-z0-9-]*$`, `1..40` chars) `category` slugs, using DS tokens (`feedback.*`, `status.*`, `data.category1..8`; never `"accent"` per `OA10`) and requiring a non-empty `legend_label` (WCAG 1.4.1).
+     - **Relation overlays (`stroke_style`, `provisional_marker`):** Lower into `RelationOccurrence.strokeStyle` (`"solid" | "dashed"`) and DC-2d `arrow` `provisional: { attribute, equals: string }` (`data-provisional`, deterministically stringifying `boolean` `equals` to `"true"` / `"false"`); `flow-badge` remains reserved exclusively for DC-2c numbered `FlowStep` sequences (§1.2.4, §3.2 Stage 5).
 
 4. **DS-Q4 — Cell-Scoped Occurrence IDs Under `occurrence_uniqueness: "per_axis_cell"` — *answered by Design System (`REVIEW-carbon.md`), 2026-11-14*:**
    - **Question:** Confirm occurrence ID formatting and DS hover/selection highlighting when a multi-value entity is duplicated across matrix cells.
