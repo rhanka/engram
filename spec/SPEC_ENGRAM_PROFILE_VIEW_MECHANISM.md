@@ -1101,11 +1101,17 @@ Because stopgap `layout` and `overlays` hold **human design intent in prose** (f
    - `entry.yaml views:` is reduced to catalog readiness pointers `{ id, readiness }` (`requested | available | waiting-engram | source-gap`).
    - Every view migrated into `profile.yaml` starts at **`status: "draft"`**, advancing to `"active"` once validated by its template author.
    - `waiting-engram` views (`bpmn` across `R1`, `R2`, `R3`, `R6`) and `source-gap` views (undelivered `R5` `architecture-diagram`) are **not** declared in `profile.yaml` until their capability or source data exists; they remain in `entry.yaml` as catalog readiness entries only.
-3. **Normative Stopgap `kind` Mapping Table (`F3`, checked against `R1`–`R7`):**
+3. **Fold prerequisite: declared tree hierarchies.** `MM_VIEW_FOLD_NOT_CONTAINMENT_TREE` (§2) requires every fold relation to be a declared `tree` hierarchy. Today only the `R1` capability tree and the `R2` process trees are declared under `hierarchies`. Before the migrated views validate, each template author declares the missing tree hierarchies:
+   - `R1` (producer-owned): `part_of_domain`, `supports`;
+   - `R4`: `belongs_to_psl`, `part_of_it_product`;
+   - `R5` / `R6`: `part_of_domain`, `in_group`;
+   - `R7`: `part_of`, `groups`.
+   `R4`–`R7` are emitted by the registry converters; the `R1` producer adds its own.
+4. **Normative Stopgap `kind` Mapping Table (`F3`, checked against `R1`–`R7`):**
 
 | Stopgap `kind` | Entries | Target `kind` | `perspective` | Authored Structure Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `capability-map` | `R1` | `hierarchy` | `capability-map` | `folds`: `part_of_domain` (`child_to_parent`), `subcapability_of`, `supports` (apps as leaves); `default_state: "collapsed"`, `lift_with_summary`; `layout.mode: "auto-pack"` |
+| `capability-map` | `R1` | `hierarchy` | `capability-map` | `folds` in nearest-holder order: `supports` (apps as leaves), `subcapability_of`, then `part_of_domain` (`child_to_parent`). Applications have two holders (capability via `supports`, domain via `part_of_domain`); listing `part_of_domain` first would place applications directly under their domain. Measured on `R1`: 183/183 applications have exactly one `supports` target, so the tree holds. `default_state: "collapsed"`, `lift_with_summary`; `layout.mode: "auto-pack"` |
 | `roadmap-timeline` | `R1` | `lane-flow` | `roadmap` | 1-axis bands (`bands_1d`) on `roadmap_period` (attribute on applications); `layout.mode: "lane-stack"` |
 | `process-hierarchy` | `R2` | `hierarchy` | — | `folds`: `parent_process`, `default_state: "collapsed"`, `lift_with_summary` (`5083` nodes); `layout.mode: "auto-pack"` |
 | `application-landscape` | `R4`, `R5`, `R6` | `hierarchy` | `application-landscape` | `R4`: `belongs_to_psl` + `part_of_it_product` (`managed_by` / `operated_by` via `relation_target` `text_slot` overlays); `R5`/`R6`: `part_of_domain` + `in_group` (`default_state: "expanded"`, `<= 25` nodes); `layout.mode: "auto-pack"` |
@@ -1126,7 +1132,7 @@ title: "Application Portfolio"
 status: "draft"
 engram:
   profile: "bundle/profile.yaml"
-  config: "bundle/config.yaml"
+  config: "engram.yaml"   # registry-owned engram config, next to entry.yaml
   outputs_schema: "engram_ontology_outputs_v1"
 views:
   - id: "application-landscape"
