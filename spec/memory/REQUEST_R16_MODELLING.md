@@ -40,26 +40,41 @@ On `2026-11-11`, remarks on dossier presentation and diagram review (`owner-r15/
 
 *(Note per `owner-r15/owner-rebuild-2026-11-10.md:28`: `[nom retiré à ta demande]` masks a third-party product name removed from the dossier at the owner's request, without altering any other word of the owner's verbatim.)*
 
-## Owner words (verbatim, 2026-11-14 — `unverified — conductor relay, no primary file`; two normalized fragments in `q6-round/BRIEF.md:6-7`)
+## Owner words (verbatim, 2026-11-14 — status: `unverified — conductor relay, no primary file`; `.graphify/scratch/design/memory-finalization/q6-round/BRIEF.md:6-7`, `sha256:ff4b4e346b61065b7be8f7e587831bcb5d1ea4dca5f7e770048170d9c73162ab`, gitignored per `.gitignore:60`, holds two normalized fragments only)
 
 > « Les question sont pas assez detaillees. Pose les ici. On est en train de faire des modif coté track sjr les ontologies de son domaine, il fdoit en rester maitre au moins piur les templates et engram pour leur metamodel et application track pour leur controle. Mene un tour avec h2a rapide en fable 5.2 + carbon et repose les 6 quesfion a l issi »
 
 ## Owner words and dossier decisions (`2026-11-15` — see `OWNER-DECISIONS-2026-11-14.md` § « Owner words and dossier decisions of 2026-11-15 »)
 
-Owner words (`unverified — conductor relay, no primary file`; full `15/11` remarks recorded in [`OWNER-DECISIONS-2026-11-14.md`](OWNER-DECISIONS-2026-11-14.md)):
+Owner words ([`spec/memory/evidence/2026-11-15/EVIDENCE-owner-direction-15-11.md`](evidence/2026-11-15/EVIDENCE-owner-direction-15-11.md)`:3-4`, `sha256:9994918754371fbcf6634d676d9a017544593f44ca84fff16a48f481b7df4302`; status: `unverified — conductor relay`, in-repository evidence file, verbatim; full `15/11` remarks and dossier comment [`spec/memory/evidence/2026-11-15/EVIDENCE-owner-comment-r5.md`](evidence/2026-11-15/EVIDENCE-owner-comment-r5.md)`:3-16` recorded in [`OWNER-DECISIONS-2026-11-14.md`](OWNER-DECISIONS-2026-11-14.md)):
 
 > « Deja engram doit devenir un loguer de session en // des outils. Dans notre outil cli a nous ce deviendra le loggeur principal. La session est loguée en graph. Et donc seul le diff est transmis a chaque fois. »
+>
+> « https://arxiv.org/pdf/2611.05306 inspire toi de ca j aimerais vraiment qu engram devienne le relai de ce type de strategie pour remplacé mecaniquemenr + appui par llm shadow la taille du contexte) dans toutes les cli en ooption + la notre uqi reposera exclusivement sur engeam pour le contexte. Analyse fable5.2 + carbon »
 
-Owner decisions on dossier « journal de session en graphe et outil mémoire » (`2026-11-15`, exported answer kit, verbatim):
+Owner decisions on dossier « journal de session en graphe et outil mémoire » (`2026-11-15`). Exported answer kit, verbatim ([`spec/memory/evidence/2026-11-15/EVIDENCE-owner-answer-kit-r5.yaml`](evidence/2026-11-15/EVIDENCE-owner-answer-kit-r5.yaml)`:2-18`, `sha256:df7cd739e96c7bf90ba11a554b02988dcacbb70efc4118204d9c5e13316e1ba3`; status: `unverified — conductor relay`, in-repository evidence file, pasted by the owner in the `engram` session and relayed verbatim by the conductor):
 
-```text
+```yaml
+schemaVersion: 1
+dossier: "engram-session-graphe"
+revision: "r5"
+title: "Décision mémoire engram — journal de session en graphe et outil mémoire"
+status: "prepared"
+recorded: false
 responseLine: "D1 A · D2 A · D3 A"
-D1 A — Journal + diff : les trois fonctions, données en nœuds et en liens
-D2 A — Journal en parallèle + diff injecté : l'outil garde son fil ; engram note chaque étape et n'injecte que le nouveau
-D3 A — Le journal d'abord, en trois temps : (1) noter dans les outils tiers ; (2) rendre le diff et chercher dans l'historique ; (3) notre CLI, où engram est le journal principal
+choices:
+  - decision: "D1"
+    option: "A"
+    choice: "Journal + diff : les trois fonctions, données en nœuds et en liens"
+  - decision: "D2"
+    option: "A"
+    choice: "Journal en parallèle + diff injecté : l'outil garde son fil ; engram note chaque étape et n'injecte que le nouveau"
+  - decision: "D3"
+    option: "A"
+    choice: "Le journal d'abord, en trois temps : (1) noter dans les outils tiers ; (2) rendre le diff et chercher dans l'historique ; (3) notre CLI, où engram est le journal principal"
 ```
 
-*(A follow-up decision dossier requested by the owner on `2026-11-15` — compaction-takeover hook, optional context-replacement hook, and third-party annotation with automatic `llm-mesh` fallback — is pending; nothing on those points is confirmed, withdrawn, or redesigned until he answers.)*
+*(A follow-up decision dossier requested by the owner on `2026-11-15` (scope: `OWNER-DECISIONS-2026-11-14.md` § « Pending follow-up decision dossier ») is pending; these documents specify no design for its open points until he answers.)*
 
 ## What R16 must model
 
