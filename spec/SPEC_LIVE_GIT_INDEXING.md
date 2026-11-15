@@ -357,9 +357,9 @@ Cross-repository acceptance requires each receiving branch and its evidence. L3a
 
 ## Read side (2026-10-17)
 
-**Accepted owner decisions, 2026-10-17.** The equivalent of Anthropic's Scion is the **read side of continuous Git indexing**, delivered through the existing lots in [plan/09](../plan/09-BRANCH_LIVE_GIT_INDEXING.md). Git remains the version authority. The additions below extend those lots; they create no separate Scion project or agent-execution scope.
+**Accepted owner decisions, 2026-10-17.** engram's Git read side is the **read side of continuous Git indexing**, delivered through the existing lots in [plan/09](../plan/09-BRANCH_LIVE_GIT_INDEXING.md). Git remains the version authority. The additions below extend those lots; they create no separate read-side project or agent-execution scope.
 
-Source analysis: local `scion-graph/GAP-read-side-astra.md`, read in full, sections A–D (SHA-256 `1516a8eaad5e6201ee370e710091286950627dc3bf7dc64283a625f5ea174634`), and `DOSSIER-scion-graph-v2.md` (SHA-256 `a6e3c7d78b42911585854cc45780de49560d5e1578615c6703a0a8617b70a13a`), under `.graphify/scratch/design/` in the source checkout. These ignored artifacts explain the decisions; this section and the plan preserve the portable requirements. The owner's decisions supersede their proposed native/git-ai comparison and separate SG lots. Inspected code, integrated delivery and measured value are separate: the analysis reports the live facade as `unavailable`, `delivered: false`; installed operation and gains remain `unverified`.
+Source analysis: the local read-side gap analysis `GAP-read-side-astra.md`, read in full, sections A–D (SHA-256 `1516a8eaad5e6201ee370e710091286950627dc3bf7dc64283a625f5ea174634`), and the local read-side dossier v2 (SHA-256 `a6e3c7d78b42911585854cc45780de49560d5e1578615c6703a0a8617b70a13a`), under `.graphify/scratch/design/` in the source checkout. These ignored artifacts explain the decisions; this section and the plan preserve the portable requirements. The owner's decisions supersede their proposed native/git-ai comparison and separate SG lots. Inspected code, integrated delivery and measured value are separate: the analysis reports the live facade as `unavailable`, `delivered: false`; installed operation and gains remain `unverified`.
 
 | Decision | Accepted requirement |
 |---|---|
