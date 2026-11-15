@@ -40,7 +40,7 @@ export type Sha256Digest = `sha256:${string}`; // 64 hex lowercase over RFC 8785
 
 // status: proposed — Neutral metamodel template-reference and digest envelope (Spec 0, Point 2B, Point 4B)
 export interface OntologyTemplateEnvelopeRef {
-  lineage: 'archi' | 'h2a' | 'track';
+  lineage: 'archi' | 'h2a' | 'track' | 'engram'; // LineageId (Spec 0 :147, Spec 6A §0.3 / §5.1)
   templateId: string;
   templateVersion: string;
   templateDigestSha256: Sha256Digest;
@@ -63,7 +63,7 @@ export interface EngramSessionIngestFrontPort {
     speechTurn: {                  // "tour de parole"
       actorKind: 'owner' | 'human' | 'agent' | 'system';
       actorPseudoId: string;       // D33 pseudonymized actor ID
-      contentRef: string;          // Stored in queryable text history graph (D23)
+      contentRef: string;          // Stored in queryable text history graph (D23); cites session-db EntryRecord as (session_id, entry_id, ordinal, content_digest) (+ branchEpoch / parentEntryId on forks)
     };
     toolResults: Array<{
       toolName: string;

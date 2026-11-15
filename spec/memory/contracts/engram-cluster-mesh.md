@@ -64,7 +64,7 @@ export interface EngramGraphTransaction {
   } | null;
   metamodelVersion: string;        // Shared engram metamodel grammar version (Spec 0)
   referencedTemplates: Array<{     // Point 6A: the transaction envelope cites every template version carried or instantiated
-    lineage: 'archi' | 'h2a' | 'track';
+    lineage: 'archi' | 'h2a' | 'track' | 'engram'; // LineageId (Spec 0 :147, Spec 6A §0.3 / §5.1)
     templateId: string;
     templateVersion: string;
     templateDigestSha256: Sha256Digest;
@@ -81,7 +81,7 @@ export interface EngramGraphTransaction {
       | 'context_log'              // Local by default unless D10 policy permits
       | 'context_summary';         // Local by default unless D10 policy permits
     templateRef: {                 // Opaque to cluster-mesh; required on typed_node, typed_edge, ontology_template, and project control_verdict
-      lineage: 'archi' | 'h2a' | 'track';
+      lineage: 'archi' | 'h2a' | 'track' | 'engram'; // LineageId (Spec 0 :147, Spec 6A §0.3 / §5.1)
       templateId: string;
       templateVersion: string;
       templateDigestSha256: Sha256Digest;
@@ -137,7 +137,7 @@ export interface ClusterMeshGraphClusterSyncPort {
 // status: proposed — Unified MCP Platform Registration for Engram (6 frozen + 1 proposed 7th tool), h2a, and Track
 export interface ClusterMeshMcpCatalogRegistration {
   registerEngramMemoryProvider(manifest: {
-    providerId: 'engram-memory';
+    providerId: 'sentropic.engram.memory'; // connectorId: 'engram-memory', sourceId: 'mcp:engram-memory' (Spec 6A §0.3, §3.1)
     tools: [
       'engram_memory_search',
       'engram_memory_get',
