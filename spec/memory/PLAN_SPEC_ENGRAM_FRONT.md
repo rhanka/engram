@@ -50,11 +50,11 @@ end
 e_rt_dream -.->|"writes · consolidates patterns, lessons, decay"| e_st_graph
 e_rt_ext -.->|"writes · reads recorded events, writes proposals"| e_st_graph
 e_svc_ingest -.->|"appends to · raw session and live-tracking events"| e_st_graph
-e_svc_mctrl -.->|"writes · bounded-list check, D7 blacklist"| e_st_graph
+e_svc_mctrl -.->|"writes · D7 blacklist, routes project verdicts to Track"| e_st_graph
 e_rt_harness -.->|"calls · role ontology, master rules and overlays"| e_api_mcpreg
 e_rt_prompt -.->|"calls · proposed 7th tool engram_memory_context"| e_api_mcpreg
 e_rt_swipe -.->|"calls · contextualized facts and decisions (D27)"| e_api_mcpreg
-e_rt_track -.->|"calls · project stream, annotations and control"| e_api_mcpreg
+e_rt_track -.->|"calls · owns templates & D1/project control · consumes project slices"| e_api_mcpreg
 e_rt_turn -.->|"calls · raw turn, tool results (recorded first)"| e_api_mcpreg
 e_svc_gh -.->|"calls · input signals and interface read views (D30)"| e_api_mcpreg
 e_svc_cmaccess -.->|"calls · MCP-L4..L8 provider dispatch"| e_api_mtools
@@ -66,7 +66,7 @@ classDef dashed stroke-dasharray: 5 5
 class e_api_mcpreg,e_api_mtools,e_api_pii,e_rt_dream,e_rt_ext,e_rt_harness,e_rt_prompt,e_rt_swipe,e_rt_track,e_rt_turn,e_st_git,e_svc_cmaccess,e_svc_gh,e_svc_ingest,e_svc_mctrl,e_svc_pii,e_svc_serial,e_svc_txsync dashed
 ```
 
-No relation crosses between the engram and h2a systems without cluster-mesh, in any view or fold state (R12; owner-r9 r12-correction:9). Per the 2026-11-14 T-M-C ownership decision ([`spec/memory/OWNER-DECISIONS-2026-11-14.md`](OWNER-DECISIONS-2026-11-14.md)), `Track` is master of its domain ontology templates, `engram` is master of the shared metamodel and lineage registry, and the `Track` application (`e_rt_track`) is master of `Track`-domain control (including the `D1` bounded-list check and `D34` pre-merge acceptance, while `e_svc_mctrl` covers `engram` metamodel well-formedness and the `D7` confidentiality deny-list; the flowchart mirror above stays untouched until `architecture-target.mmd` is regenerated per [`ARCHITECTURE-RULES.md`](ARCHITECTURE-RULES.md) Rule 5).
+No relation crosses between the engram and h2a systems without cluster-mesh, in any view or fold state (R12; owner-r9 r12-correction:9). Per the 2026-11-14 T-M-C ownership decision ([`spec/memory/OWNER-DECISIONS-2026-11-14.md`](OWNER-DECISIONS-2026-11-14.md)), `Track` is master of its domain ontology templates, `engram` is master of the shared metamodel and lineage registry, and the `Track` application (`e_rt_track`) is master of `Track`-domain control (including the `D1` bounded-list check and `D34` pre-merge acceptance, while `e_svc_mctrl` covers `engram` metamodel well-formedness, holds the `D7` confidentiality deny-list, and routes project verdicts to `Track`; synchronized across `architecture-target.mmd` and the flowchart mirror above per [`ARCHITECTURE-RULES.md`](ARCHITECTURE-RULES.md) Rule 5).
 
 ---
 

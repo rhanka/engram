@@ -319,7 +319,7 @@ e_svc_ingest -.->|"appends to · raw session and live-tracking events"| e_st_gra
 %% @dl lifecycle proposed
 %% @dl evidence "owner-r15:comments-2026-11-08.md:15-16"
 %% @dl mode write
-e_svc_mctrl -.->|"writes · bounded-list check, D7 blacklist"| e_st_graph
+e_svc_mctrl -.->|"writes · D7 blacklist, routes project verdicts to Track"| e_st_graph
 %% @dl rel ro-serial runsOn e_svc_serial e_host_cluster
 %% @dl lifecycle proposed
 %% @dl evidence "owner-r15:answers-2026-11-08.compact.md:5"
@@ -367,7 +367,7 @@ e_rt_swipe -.->|"calls · contextualized facts and decisions (D27)"| e_api_mcpre
 %% @dl lifecycle proposed
 %% @dl evidence "kit:memory-content-r11.json:287"
 %% @dl evidence "owner-r11:mcp-correction-2026-11-07.md:9"
-e_rt_track -.->|"calls · project stream, annotations and control"| e_api_mcpreg
+e_rt_track -.->|"calls · owns templates #38; D1/project control · consumes project slices"| e_api_mcpreg
 %% @dl rel ac-track-git accesses e_rt_track e_st_git
 %% @dl lifecycle proposed
 %% @dl evidence "owner-r15:answers-2026-11-08.compact.md:5"

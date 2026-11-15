@@ -38,6 +38,8 @@
 ### 2.3 Proposed Interfaces (`proposed` — to be built under R15 Spec Plan)
 
 ```ts
+export type Sha256Digest = `sha256:${string}`; // 64 hex lowercase over RFC 8785 (JCS) UTF-8 bytes
+
 // status: proposed — Integral Local <-> Remote Transactional Graph Cluster Sync (D24, D17, D10)
 export interface EngramGraphTransaction {
   txId: string;                    // Monotonic HLC / UUIDv7 transaction identifier
@@ -45,10 +47,15 @@ export interface EngramGraphTransaction {
   tenantId: string;
   workspaceId: string;
   derivedWorktreeId: string | null;  // D21 derived Git worktree node ID
-  mandateEnvelope: {               // D4 / D10 formal h2a mandate authorizing the transaction
+  mandateEnvelope: {               // D4 / D10 formal h2a mandate authorizing the transaction (H2AEnvelope<H2AMandate>; null only for unmandated raw ingress)
     mandateId: string;
-    signature: string;
-  };
+    instance: string;
+    role: 'PRINCIPAL' | 'EXECUTIF' | 'CONDUCTOR' | 'AGENTS' | 'CONTROL' | 'MANDATAIRE' | null;
+    scope: string;
+    rights: readonly string[];
+    envelopeDigest: Sha256Digest;
+    signatures: ReadonlyArray<{ by: string; alg: string; value: string }>;
+  } | null;
   repoPolicyRef: string | null;    // D10: per-repository owner policy for context logs and summaries
   crossesBoundary: 'workspace' | 'tenant' | 'external-model' | 'study' | null;
   piiArmorStamp: {                 // Required only when crossesBoundary is set (D7, D8, D33); same-(tenant, workspace) sync is integral and unmasked (D24)
@@ -60,7 +67,7 @@ export interface EngramGraphTransaction {
     lineage: 'archi' | 'h2a' | 'track';
     templateId: string;
     templateVersion: string;
-    templateDigestSha256: string;
+    templateDigestSha256: Sha256Digest;
   }>;
   operations: Array<{
     op: 'upsert_node' | 'upsert_edge' | 'tombstone_node' | 'append_turn_text' | 'register_template_version';
@@ -77,7 +84,7 @@ export interface EngramGraphTransaction {
       lineage: 'archi' | 'h2a' | 'track';
       templateId: string;
       templateVersion: string;
-      templateDigestSha256: string;
+      templateDigestSha256: Sha256Digest;
       entityTypeId: string | null; // Open template-defined type identifier (never enumerated in cluster-mesh)
     } | null;
     trackControlled: boolean;      // True when governed by an authoritative Track verdict; sync never overwrites a Track-controlled record

@@ -34,13 +34,15 @@
 ### 2.2 Proposed Interfaces (`proposed` — to be built under R15 Spec Plan)
 
 ```ts
+export type Sha256Digest = `sha256:${string}`; // 64 hex lowercase over RFC 8785 (JCS) UTF-8 bytes
+
 // status: proposed — Neutral reference to a Track domain template version and digest (Spec 0, T-M-C)
 // Track domain types are referenced by template version and digest, never as a closed list in engram interfaces.
 export interface TrackTemplateRef {
   lineage: 'track';
   templateId: string;
   templateVersion: string;
-  templateDigestSha256: string;
+  templateDigestSha256: Sha256Digest;
 }
 
 // status: proposed — Track Domain Template Lineage Registration Port on Engram Metamodel (Spec 0, T-M-C)
@@ -51,7 +53,7 @@ export interface TrackOntologyTemplateRegistryPort {
     templateId: string;
     templateVersion: string;
     templateDefinition: Record<string, unknown>; // Domain types, attributes, states, D1 bounded list, .track/ file shapes
-    templateDigestSha256: string;
+    templateDigestSha256: Sha256Digest;
   }): Promise<
     | { status: 'accepted'; templateRef: TrackTemplateRef }
     | { status: 'refused-metamodel-invalid'; diagnostics: string[] } // Never authored, repaired, or modified by engram
@@ -116,7 +118,12 @@ export type ControlGateEvaluationInput =
       turnNodeId: string;
       templateRef: TrackTemplateRef; // Template version + digest governing the typed write
       templateTypeId: string;
-      activeMandateId: string;
+      activeMandateId: string | null;
+      actorId: string;
+      provenanceKind: 'human' | 'agent' | 'automation';
+      actKind: 'own-act' | 'mandated-act' | 'unmandated-scoped';
+      candidatePayload: Record<string, unknown>;
+      targetAggregateId?: string;
       activeRulesRef: string;      // Rules authored and executed by the Track application
     }
   | {
@@ -128,7 +135,7 @@ export type ControlGateEvaluationInput =
       engineKind: 'rules-decision-engine' | 'fast-llm' | 'control-agent';
       turnNodeId: string;
       metamodelVersion: string;
-      activeMandateId: string;
+      activeMandateId: string | null;
       activeRulesRef: string;
     };
 
@@ -142,8 +149,23 @@ export interface MemoryAndTrackControlPort {
     rationale: string;
   }>;
 }
+```
 
+#### Bijection `(verdict, proposalDisposition) <-> reviewStatus` (`gateScope: 'project-domain'`, `verdictAuthority: 'track'`)
+
+Every `track_domain_object` emitted on `EngramTrackAnalystPort.subscribeProjectStream` maps bijectively between its latest `Track` control state `(verdict, proposalDisposition)` (`verdict = null` before any `Track` verdict is recorded) and `reviewStatus` (all other `(verdict, proposalDisposition)` combinations are invalid and rejected):
+
+| `verdict` (`verdictAuthority: 'track'`) | `proposalDisposition` | `reviewStatus` (`subscribeProjectStream`) | Domain State Meaning |
+| :--- | :--- | :--- | :--- |
+| `null` *(no `Track` verdict recorded yet)* | `'stays-proposed'` | `'proposed'` | Held as a proposal until `Track` control evaluates it (`Point 5B`); excluded from accepted domain state. |
+| `'allow'` | `'accepted'` | `'recorded-bounded-type'` | `D1` bounded-list write directly authorized by `Track` control without human review; enters accepted domain state. |
+| `'flag-for-borne-review'` | `'stays-proposed'` | `'promotion-draft-awaiting-third-party'` | `D1=borne-review` promotion draft gated by `Track` control and awaiting an authorized third party; excluded from accepted domain state until approved. |
+| `'flag-for-borne-review'` | `'accepted'` | `'approved'` | `D1=borne-review` promotion draft approved by an authorized third party (never its author) and accepted by `Track` control; enters accepted domain state. |
+| `'block'` | `'refused'` | `'rejected'` | Refused by `Track` control (`authorize()` / invariants `I1`–`I15`) or rejected at third-party review; excluded from accepted domain state. |
+
+```ts
 // status: proposed — Per-PR Serialization Producer in Engram (D28=engram, D29=both, D34=engram)
+// Formula: linkFingerprint = sha256(JCS({ templateRef, eventJournalSha256, stateSnapshotSha256, head }))
 export interface EngramPrSerializationProducerPort {
   serializeProjectPrSlice(input: {
     tenantId: string;
@@ -153,17 +175,26 @@ export interface EngramPrSerializationProducerPort {
     baseCommitSha: string;
     headCommitSha: string;
     mandateId: string;             // D4
-    templateRef: TrackTemplateRef; // Repo-declared Track template version + digest applied by engram (Point 1B)
+    templateRef: TrackTemplateRef; // Repo-declared target Track template version + digest applied by engram (Point 1B)
+    baseTemplateRef?: TrackTemplateRef; // Prior Track template version when the PR evolves track.ontology.yaml
+    mappingRef?: string;           // Optional template migration mapping reference for baseTemplateRef -> templateRef
   }): Promise<{
     producer: 'engram';            // D34=engram: engram produces the per-PR projection
     acceptor: 'track-control';     // Point 1B: Track control validates, replays, and alone accepts or refuses
     registryAuthority: 'engram';   // D28=engram kept: engram's live registry stays the reference
     templateRef: TrackTemplateRef; // Cited Track template version + digest governing file shapes and states
+    baseTemplateRef?: TrackTemplateRef;
+    mappingRef?: string;
     contentMode: 'both';           // D29=both (event journal + state snapshot, linked by fingerprint)
     eventJournalPath: string;      // File path/shape declared by templateRef (e.g. .track/pr/<pr-or-branch>/events.jsonl)
+    eventJournalSha256: Sha256Digest;
     stateSnapshotPath: string;     // File path/shape declared by templateRef (e.g. .track/pr/<pr-or-branch>/snapshot.json)
-    linkFingerprint: string;       // D29 fingerprint linking event journal, state snapshot, and templateRef digest
-    contentDigestSha256: string;
+    stateSnapshotSchema: 'track.state-snapshot/v1' | 'track.snapshot/v1';
+    stateSnapshotSha256: Sha256Digest;
+    headPath: string;              // .track/head.json path declared by templateRef for suffix-truncation validation
+    head: { streamLength: number; lastContentHash: Sha256Digest | null };
+    linkFingerprint: Sha256Digest; // sha256(JCS({ templateRef, eventJournalSha256, stateSnapshotSha256, head }))
+    contentDigestSha256: Sha256Digest;
   }>;
 }
 
@@ -171,10 +202,17 @@ export interface EngramPrSerializationProducerPort {
 export interface TrackSerializationReplayPort {
   replayBeforeMerge(input: {
     prBranchName: string;
-    templateRef: TrackTemplateRef; // Declared Track template version + digest in the repository
+    templateRef: TrackTemplateRef; // Declared target Track template version + digest in the repository
+    baseTemplateRef?: TrackTemplateRef; // Prior Track template version when the PR evolves track.ontology.yaml
+    mappingRef?: string;           // Optional migration mapping reference for baseTemplateRef -> templateRef
     eventJournalPath: string;
+    eventJournalSha256: Sha256Digest;
     stateSnapshotPath: string;
-    linkFingerprint: string;
+    stateSnapshotSchema: 'track.state-snapshot/v1' | 'track.snapshot/v1';
+    stateSnapshotSha256: Sha256Digest;
+    headPath: string;
+    head: { streamLength: number; lastContentHash: Sha256Digest | null };
+    linkFingerprint: Sha256Digest; // sha256(JCS({ templateRef, eventJournalSha256, stateSnapshotSha256, head }))
   }): Promise<{
     verdictAuthority: 'track';
     acceptor: 'track-control';
