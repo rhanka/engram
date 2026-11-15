@@ -15,8 +15,8 @@
   - [`spec/memory/OWNER-DECISIONS-2026-11-14.md`](memory/OWNER-DECISIONS-2026-11-14.md) (`:1-29` — `T-M-C` ownership rule, ratified Points `1B`, `2B`, `3C`, `4B`, `5B`, `6A`, and `D28` kept unchanged)
   - [`spec/memory/R15-SEDIMENT.md`](memory/R15-SEDIMENT.md) (`:1-173` — Engram-First Principle and settled decision ledger `D1`–`D34`, never reopened)
   - [`spec/memory/ARCHITECTURE-RULES.md`](memory/ARCHITECTURE-RULES.md) (`:1-13` — `R12` no-bypass invariant, `D30` three-layer separation, `archi@1` invariance)
-  - [`spec/memory/DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md`](memory/DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md) (`:1-35` — `engram` returns semantic graph slices, references, and digests only; never UI/design-system layout, fold, or rendering state)
-  - [`spec/memory/DESIGN-NOTE-CODE-GROUNDING.md`](memory/DESIGN-NOTE-CODE-GROUNDING.md) (`:1-15` — every code claim is verified evidence at a named commit SHA or explicitly marked `new`)
+  - [`spec/SPEC_ENGRAM_PROFILE_VIEW_MECHANISM.md`](SPEC_ENGRAM_PROFILE_VIEW_MECHANISM.md) (`§2.1.1 :822-840` — `engram` returns semantic graph slices, references, and digests only; never UI/design-system layout, fold, or rendering state)
+  - [`spec/memory/Q6-APPLICATION-LOG.md`](memory/Q6-APPLICATION-LOG.md) (`§19.3 :684-697`, Rules 1–5 — every code claim is verified evidence at a named commit SHA or explicitly marked `new`)
   - [`spec/memory/contracts/engram-h2a.md`](memory/contracts/engram-h2a.md) (`:99-155` — `EngramMemoryContextToolInput` / `EngramMemoryContextToolOutput`), [`spec/memory/contracts/engram-cluster-mesh.md`](memory/contracts/engram-cluster-mesh.md) (`:1-181`), [`spec/memory/contracts/engram-track.md`](memory/contracts/engram-track.md) (`:1-247`)
 - **Amends (Listed as Exact `Before → After` Deltas in §6; Target Files Unmodified in This Lot):**
   - [`spec/SPEC_MEMORY_MCP_V2.md`](SPEC_MEMORY_MCP_V2.md) (`M1` lines `47–76`, `M7` lines `536–580`, `590–617`, and `624–695`, and `M10` lines `884–910`)
@@ -94,7 +94,7 @@ This specification designs the durationless contextual prompt loop and the seven
 | Dormant dreaming synthesis cadences & shadow verification (`D25`, `D26`, `Point 3C`) | **Spec 3** (`SPEC_ENGRAM_DORMANT_DREAMING_SYNTHESIS.md`, planned) | Spec 2 defines the recall slot (`dreaming_recalled_facts`) and attention boost through which dreamed permanent facts re-enter active prompts (`D19`, `D23`), plus the `D6` ref-only disclosure rule on dreaming summaries. |
 | `h2a` role/activity/skill ontology authoring & `.h2a/` overlay serialization (`D16`, `D31`, `Point 4B`) | **Spec 4** (`SPEC_ENGRAM_H2A_ROLE_ONTOLOGY_AND_HARNESS_OVERLAYS.md`, planned) | Spec 2 reads registered `h2a`-lineage role/activity/harness graphs for `role_consciousness_slice` and `harness_effective_rules`, and emits advisory `proactive_role_proposal` (`engram` never writes roles, `Point 4B`). |
 | `Track` domain templates, authoritative `Track` control verdict, `.track/` PR projection (`Point 1B`, `Point 5B`) | **Spec 5** (`SPEC_ENGRAM_TRACK_ANALYST_CONTROL_AND_PR_SERIALIZATION.md`, planned) | Spec 2 never treats `proposed` `Track`-domain candidates lacking `verdictAuthority: 'track'` acceptance as ratified project state (`Point 5B`) and never hardcodes `Track` entity kinds (`Point 2B`). |
-| View & design-system rendering state | [`DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md`](memory/DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md) | `engram_memory_context` returns semantic graph data, citations, template references, and digests only—never CLI/UI layout, fold state, CSS tokens, or rendering coordinates (`:18-33`). |
+| View & design-system rendering state | [`SPEC_ENGRAM_PROFILE_VIEW_MECHANISM.md`](SPEC_ENGRAM_PROFILE_VIEW_MECHANISM.md) `§2.1.1` | `engram_memory_context` returns semantic graph data, citations, template references, and digests only—never CLI/UI layout, fold state, CSS tokens, or rendering coordinates (`:829-840`). |
 
 ---
 
