@@ -19,7 +19,7 @@
 6. **Harness Overlay Serialization to Git (`D31`, `D34`, Point 4B):** Deterministic serialization of per-developer, per-workspace, and per-repository harness overlays (`surcouches`, `proposed` `.h2a/` path) into Git-committed files alongside `engram` specs and `Track` slices; a `.h2a/` overlay never modifies a `Track` template or bypasses `Track` control `[FACT: memory-dossier/owner-r15/comments-2026-11-08.md:14; spec/memory/OWNER-DECISIONS-2026-11-14.md:11,24]`.
 
 ### 1.2 `h2a` Provides to `engram`
-1. **Live Session & Turn Stream (`D11`, `D12`, `D13`, `D14`, `D19`, `proposed`):** `proposed` structured turn boundaries (`tour de parole`), significant tool execution results, session lifecycle window signals (`D14=window`), and send-time promotion sweeps (`D12=turn`) across the 8 CLI hosts; today `packages/h2a/src/hosts/plugin.ts` renders workspace-scope guard, stop (`drumbeat record`), drive receive, and drumbeat poll hooks `[FACT: h2a repository: packages/h2a/src/hosts/plugin.ts:22-46,85-152,182-210; memory-dossier/owner-r15/answers-2026-11-08.compact.md:4; memory-dossier/owner-r8/comments-2026-11-07.md:7]`.
+1. **Live Session & Turn Stream (`D11`, `D12`, `D13`, `D14`, `D19`, `proposed`):** `proposed` structured turn boundaries (`tour de parole`), significant tool execution results, session lifecycle window signals (`D14=window`), and send-time promotion sweeps (`D12=turn`) across the 8 CLI hosts—with speech-turn capture (`recordSpeechTurn` / `recordSessionEvent`) fed either by the host's native prompt hook or, as a fallback for hosts without a synchronous user-prompt hook (`agy`, `muse`, `vibe`), by the `h2a` envelope, `post_agent`, or an MCP call; today `packages/h2a/src/hosts/plugin.ts` renders workspace-scope guard, stop (`drumbeat record`), drive receive, and drumbeat poll hooks `[FACT: h2a repository: packages/h2a/src/hosts/plugin.ts:22-46,85-152,182-210; memory-dossier/owner-r15/answers-2026-11-08.compact.md:4; memory-dossier/owner-r8/comments-2026-11-07.md:7]`.
 2. **Formal Signed h2a Mandates (`D3`, `D4`, `D10`, `D22`):** Signed `MANDATE` artifacts, issued only by roles listed in `H2A_AUTHORITY_MATRIX.MANDATE` (`packages/h2a/src/runtime/drive/index.ts:331-337`) `[FACT]`. The envelope fields `D22` uses (actor, role, scope, workspace) are `proposed` `[JUDGMENT]`; used as a primary component of the `D22` session graph fingerprint and required for `D3`/`D4`/`D10` admission, disposition, and federation `[FACT: h2a repository: packages/h2a/src/runtime/drive/index.ts:331-337; memory-dossier/owner-r15/comments-2026-11-08.md:6]`.
 3. **Master Harness & Role/Activity/Skill Ontology Templates (`D16`, `D31`, Point 4B):** As sole author and master of its templates, `h2a` provides the canonical `h2a` master harness templates and the `h2a` profile template of standard roles (agent and human), typical activities (`activité types`), and harness skills (referencing any `Track` domain objects strictly by version-pinned metamodel composition without redefining `Track` types), plus proactive role/rule analysis proposals whenever an active session lacks an assigned role (`« Quand il n y a pas de role, h2a devrait etre proactif en analyse et proposition. »`; `engram` may propose role changes, never write them) `[FACT: memory-dossier/owner-r15/comments-2026-11-08.md:2,14,25; spec/memory/OWNER-DECISIONS-2026-11-14.md:24]`.
 4. **Decision Dossier & Non-Blocking Review Captures (`D27`):** Structured outputs from interactive or asynchronous swipe/dossier review sessions (`decision-only` quality exchanges yielding contextualized facts and associated project or harness decisions) `[FACT: memory-dossier/owner-r15/comments-2026-11-08.md:12; memory-dossier/owner-r8/comments-2026-11-07.md:54]`.
@@ -36,12 +36,14 @@ All communication between `h2a` and `engram` transits through `@sentropic/cluste
 ### 2.2 Proposed Interfaces (`proposed` — to be built under R15 Spec Plan)
 
 ```ts
+export type Sha256Digest = `sha256:${string}`; // 64 hex lowercase over RFC 8785 (JCS) UTF-8 bytes
+
 // status: proposed — Neutral metamodel template-reference and digest envelope (Spec 0, Point 2B, Point 4B)
 export interface OntologyTemplateEnvelopeRef {
   lineage: 'archi' | 'h2a' | 'track';
   templateId: string;
   templateVersion: string;
-  templateDigestSha256: string;
+  templateDigestSha256: Sha256Digest;
 }
 
 // status: proposed — Primary session event recorder & post-recording extraction port (D19, D24, D32)
@@ -99,12 +101,15 @@ export interface EngramMemoryContextToolInput {
   tenantId: string;
   workspaceId: string;
   derivedWorktreeId: string;         // D21
-  mandateEnvelope: {               // D22 primary component of fingerprint query
+  mandateEnvelope: {               // D22 primary component of fingerprint query (H2AEnvelope<H2AMandate>; null when unassigned per D16/D18)
     mandateId: string;
-    roleId: string | null;
-    missionScope: string;
-    signature: string;
-  };
+    instance: string;
+    role: 'PRINCIPAL' | 'EXECUTIF' | 'CONDUCTOR' | 'AGENTS' | 'CONTROL' | 'MANDATAIRE' | null;
+    scope: string;
+    rights: readonly string[];
+    envelopeDigest: Sha256Digest;
+    signatures: ReadonlyArray<{ by: string; alg: string; value: string }>;
+  } | null;
   previousStepResult: {            // D23 reprocessed previous result
     stepId: string;
     reprocessedSummary: string;
@@ -159,7 +164,9 @@ export interface EngramHarnessAndOntologyPort {
     roles: Array<{
       roleId: string;
       actorClass: 'h2a-standard' | 'human-classic';
-      scope: string;
+      scopes: readonly string[];
+      allowedArtifactKinds: readonly string[];
+      mandateRights?: readonly string[];
       typicalActivities: string[];
       harnessSkillGraphIds?: string[];
       multiActorEdges: Array<{ relation: string; targetRoleId: string }>;
@@ -190,7 +197,7 @@ export interface EngramHarnessAndOntologyPort {
 
 ## 3. Architectural Invariants
 
-1. **Engram-First Ordering (`D24`, `D32`):** `h2a` host hooks MUST record raw session turns, tool results, and file references in `engram` first (`recordSessionEvent`), before live extraction (`recordExtraction`), `Track`, or any harness analyst reads or acts on them `[FACT: memory-dossier/owner-r15/comments-2026-11-08.md:15,19]`.
+1. **Engram-First Ordering (`D24`, `D32`):** `h2a` host integrations MUST record raw session turns, tool results, and file references in `engram` first (`recordSessionEvent` / `recordSpeechTurn`, fed either by the host's native prompt hook or, as a fallback on hosts without a synchronous prompt hook—`agy`, `muse`, `vibe`—by the `h2a` envelope, `post_agent`, or an MCP call), before live extraction (`recordExtraction`), `Track`, or any harness analyst reads or acts on them `[FACT: h2a repository: packages/h2a/src/hosts/plugin.ts:108-149; memory-dossier/owner-r15/comments-2026-11-08.md:15,19]`.
 2. **Zero Linear Context Accumulation, Staged Rollout & Envelope-Only 7th Tool (`D19`, `D20`, `D22`, `D23`, Point 2B):** The seventh memory tool (proposed name `engram_memory_context`) is built now disabled by default and goes live only after the `engram` + `sentropic` co-signature and `MCP-L5` production qualification, after which CLI hosts switch one by one to a fixed end date. Once switched, `h2a` MUST NOT accumulate multi-turn raw conversation transcripts in LLM prompts or execute session rollover handoffs: every prompt step is durationless and independent, constructed from `engram_memory_context` (using the signed `h2a` mandate as primary fingerprint component) + the query result + the reprocessed output of the immediately preceding step. The seventh tool contract fixes only the envelope (template reference and digest), never a closed list of `Track` or domain types `[FACT: memory-dossier/owner-r15/comments-2026-11-08.md:6-8; spec/memory/OWNER-DECISIONS-2026-11-14.md:22]`.
 3. **Metamodel vs Template Mastery & Sibling Lineages (`Spec 0`, `D16`, Point 4B):** `engram` is master of the shared ontology metamodel and lineage registry; its « canonical graph memory authority » (`D28=engram`) governs recorded memory facts and the live registry, and is **not** authority over `Track` or `h2a` templates. Two sibling lineages sit under `engram`'s metamodel alongside `archi@1` (whose eleven kinds and fifteen relations stay unchanged): `h2a` is master and sole author of the role, activity, and harness-skill profile templates (`engram` may propose role changes—and when a session has no role, `h2a` runs proactive analysis over `engram` and proposes a role and scope—but `engram` never writes role templates), while `Track` is sole author of the `Track` domain ontology templates. Cross-references go strictly by composition with version pinning, never redefining `Track` types `[FACT: memory-dossier/owner-r15/comments-2026-11-08.md:2; spec/memory/OWNER-DECISIONS-2026-11-14.md:11-12,24]`.
 4. **Master Harness Templates + Git-Serialized Workspace Overlays (`D31`, `D34`, Point 4B):** `h2a` is master of the master harness templates; `engram` records all harness decisions in first rank and serializes each developer/workspace/repository harness overlay (`surcouche`, `proposed` `.h2a/` path) into a Git-committed artifact. A `.h2a/` harness overlay never modifies a `Track` template or bypasses `Track` application control `[FACT: memory-dossier/owner-r15/comments-2026-11-08.md:14; spec/memory/OWNER-DECISIONS-2026-11-14.md:11,24]`.
