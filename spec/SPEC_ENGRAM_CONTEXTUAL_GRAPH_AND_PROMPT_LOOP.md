@@ -2,14 +2,14 @@
 
 - **Spec ID:** `SPEC_ENGRAM_CONTEXTUAL_GRAPH_AND_PROMPT_LOOP` (Spec 2 in [`spec/memory/PLAN_SPEC_ENGRAM_FRONT.md`](memory/PLAN_SPEC_ENGRAM_FRONT.md), §3 `:174-186` and §4 `:241`)
 - **Stage:** `DESIGN` (`Gemini Carbon`)
-- **Status:** `proposed`
-- **Version:** `0.1.0`
+- **Status:** `proposed — post-sentropic review fold (CO-SIGNATURE §2: READY conditions C-1..C-8 folded; h2a review pending)`
+- **Version:** `0.2.0`
 - **Date:** `2026-11-15`
 - **Repository of Record:** `engram` (`@sentropic/engram` `0.28.0`, branch `docs/memory-r15-sediment`, verified commit `d5eb6171200167acf5b81bb5ce2f39d8cc802dd9`, `registry/entries.v1.json:14`, `src/ontology-guardian/app-context-registry.ts:354`) `[FACT: spec/memory/R15-SEDIMENT.md:4; spec/memory/PLAN_SPEC_ENGRAM_FRONT.md:4,176]`
 - **Primary Owner:** `engram` (consumed by the `h2a` durationless prompt assembler across all 8 CLI hosts and registered/dispatched exclusively via `@sentropic/cluster-mesh` and `@sentropic/mcp-platform`, `R12`) `[FACT: spec/memory/PLAN_SPEC_ENGRAM_FRONT.md:176; spec/memory/ARCHITECTURE-RULES.md:5]`
 - **Dependencies:**
   - [`spec/SPEC_ENGRAM_METAMODEL_AND_LINEAGE_REGISTRY.md`](SPEC_ENGRAM_METAMODEL_AND_LINEAGE_REGISTRY.md) (`Spec 0`: `Sha256Digest` `:144`, `LineageId` `:147`, `OntologyTemplateEnvelopeRef` `:149-154`, `H2AMandateEnvelope` `:161-174`)
-  - [`spec/SPEC_ENGRAM_CLUSTER_MESH_MEMORY_ACCESS_AND_MCP_WIRING.md`](SPEC_ENGRAM_CLUSTER_MESH_MEMORY_ACCESS_AND_MCP_WIRING.md) (`Spec 6A` `v0.2.0`: `R12` `/memory/v1/*` & MCP registry dispatch `§2–§3`, seventh tool outer wire envelope `EngramMemoryContextInputEnvelopeV1` / `EngramMemoryContextOutputEnvelopeV1` and `CapabilityTool` gates `§4.2` `:535-603`, 8 freeze guards and three-gate `BridgeLock` / `mcp-central` / `shim-bridge` host-by-host switchover `§4.3` `:604-641`)
+  - [`spec/SPEC_ENGRAM_CLUSTER_MESH_MEMORY_ACCESS_AND_MCP_WIRING.md`](SPEC_ENGRAM_CLUSTER_MESH_MEMORY_ACCESS_AND_MCP_WIRING.md) (`Spec 6A` `v0.2.0`: `R12` `/memory/v1/*` & MCP registry dispatch `§2–§3`, seventh tool outer input envelope `EngramMemoryContextInputEnvelopeV1` and `CapabilityTool` gates `§4.2` `:535-603` — **with `Spec 2 §2.2` superseding `Spec 6A §4.2 :576-591` on the success wire wrapper so `engram_memory_context` returns `MemoryToolSuccessV1<EngramMemoryContextValueV1>` (`{ ok: true, output: { schema_version: 1, value }, auditId, redactionClass: 'high' }`) and caps `max_pack_bytes` at `524_288` B per `sentropic` co-signatory review `F-01`/`F-02`** — plus the 8 freeze guards and three-gate `BridgeLock` / `mcp-central` / `shim-bridge` host-by-host switchover `§4.3` `:604-641`)
   - [`spec/SPEC_ENGRAM_SESSION_FRONT_AND_EXTRACTION.md`](SPEC_ENGRAM_SESSION_FRONT_AND_EXTRACTION.md) (`Spec 1` `v0.2.0`: `EngramSessionIngestFrontPort` raw `session_turn` / `tool_result` / `owner.answer` / `owner.request` ingestion, `ToolResultSignificance` `:214-218`, `SessionDbCitationTuple` `(sessionId, entryId, ordinal, contentDigest, branchEpoch?, parentEntryId?)`, `DerivedWorktree` `D21`, `decision_dossier` `D27`, `ConfidentialityDenyListV1` `D7`, `PiiArmorStamp` `D8`, `D33` HMAC pseudonyms, and `PurgeAnnouncementReceiptV1` `D13`/`D14`)
 - **Binding Authorities:**
   - [`spec/memory/OWNER-DECISIONS-2026-11-14.md`](memory/OWNER-DECISIONS-2026-11-14.md) (`:1-29` — `T-M-C` ownership rule, ratified Points `1B`, `2B`, `3C`, `4B`, `5B`, `6A`, and `D28` kept unchanged)
@@ -18,20 +18,31 @@
   - [`spec/memory/DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md`](memory/DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md) (`:1-35` — `engram` returns semantic graph slices, references, and digests only; never UI/design-system layout, fold, or rendering state)
   - [`spec/memory/contracts/engram-h2a.md`](memory/contracts/engram-h2a.md) (`:99-155` — `EngramMemoryContextToolInput` / `EngramMemoryContextToolOutput`), [`spec/memory/contracts/engram-cluster-mesh.md`](memory/contracts/engram-cluster-mesh.md) (`:1-181`), [`spec/memory/contracts/engram-track.md`](memory/contracts/engram-track.md) (`:1-247`)
 - **Amends (Listed as Exact `Before → After` Deltas in §6; Target Files Unmodified in This Lot):**
-  - [`spec/SPEC_MEMORY_MCP_V2.md`](SPEC_MEMORY_MCP_V2.md) (`M1` lines `47–76`, `M7` lines `536–580` with manifest at `:553` plus per-tool gate tables at `:590–617`, and `M10` lines `884–910`)
-  - [`spec/SPEC_MEMORY_FINALIZATION.md`](SPEC_MEMORY_FINALIZATION.md) (`§0–§2`, lines `1–60`)
-- **Evidence Baseline Verified (Read-Only, Separating Shipped Code from `PROPOSED` Non-Existent Surfaces):**
+  - [`spec/SPEC_MEMORY_MCP_V2.md`](SPEC_MEMORY_MCP_V2.md) (`M1` lines `47–76`, `M7` lines `536–580`, `590–617`, and `624–695`, and `M10` lines `884–910`)
+  - [`spec/SPEC_MEMORY_FINALIZATION.md`](SPEC_MEMORY_FINALIZATION.md) (`§0–§2`, lines `1–60`, applied together with Spec 3 in a single documentary fold lot per `OQ-S2-5`)
+- **Evidence Baseline Verified (Read-Only, Separating Shipped Code from `new` / `PROPOSED` Non-Existent Surfaces):**
   - `engram` (`/home/antoinefa/src/graphify-wt-memfinal`, `@sentropic/engram` `0.28.0` at commit `d5eb6171200167acf5b81bb5ce2f39d8cc802dd9`):
     - *Exists today:*
-      - Six frozen MCP memory tools (`v1` profile): `src/mcp/memory/contracts.ts:143-191` (`ENGRAM_MEMORY_PROVIDER_ID = 'sentropic.engram.memory'` `:143`, `ENGRAM_MEMORY_CONNECTOR_ID = 'engram-memory'` `:144`, `ENGRAM_MEMORY_APP_ID = 'engram'` `:145`, `ENGRAM_MEMORY_TOOL_NAMES` 6-tuple `:149-156`, `DISCLOSABLE_MEMORY_STATES = ['accepted_current']` `:234`, `MEMORY_MCP_LIMITS` `:266-298`, `ToolSuccessV1<T>` / `ToolFailureV1` `:437-458`, `PaginationHandleStateV1` `engram_owns_signing_secret: false` `:585-613`); `src/mcp/memory/gates.ts:141-312` (`ENGRAM_MEMORY_CAPABILITY_GATES`, `ENGRAM_MEMORY_TOOL_DESCRIPTORS` `:283-290`, `ENGRAM_MEMORY_PROVIDER_MANIFEST` `:292-312`); `src/mcp/memory/errors.ts:29-72,84-397,404-410,437-440,565-631` (27 `NEUTRAL_MEMORY_ERROR_CODES` + 4 `ADDITIONAL_PUBLIC_MEMORY_ERROR_CODES` = 31 `PUBLIC_MEMORY_ERROR_CODES`, sanitized constant messages, `-32603` `'Trusted invocation context unavailable'`); `src/mcp/memory/receipts.ts:100,124-126` (`minItems: 6, maxItems: 6`); `src/mcp/memory/schemas.ts:1-120,3170-3340`; `src/mcp/memory/topology.ts:1-120`; `src/mcp/memory/standard/manifest.ts:1-170`; `src/mcp-memory/index.ts:1-92`; `src/mcp-memory/profiles.ts:7-31` (`MEMORY_FROZEN_PROFILE_BINDINGS_V1`); `src/mcp-memory/provider.ts:169-309,391-406,458-465,648-891` (9-step `invokeTool` pipeline; `:458` asserts `ENGRAM_MEMORY_TOOL_DESCRIPTORS.length !== 6`); `src/mcp-memory/server.ts:38-40,155-203,256-302` (`COMBINED_RESULT_CEILING_BYTES = 2_097_152`); `src/memory-tools/reads.ts:28-64,113-183` (`createMemoryReadPageStoreV1`, `page_<48hex>`, `receiptDigest('memory-page-binding', ...)`, double-read `as_of` pin check).
-      - `app-context` 5-tool precedent & retrieval/budget helpers: `src/app-context/types.ts:175-213` (`AppContextErrorCode` including `"cursor-invalid"` `:179` and `"budget-too-small"` `:181`; `AppContextToolName` 5-tuple `:183-189`; out-of-band `AppContextCallerAuditClaim` `:190-198` and `AppContextAuditSinkV1` `:200-213`); `src/app-context/node-id.ts:37-45` (`appContextNodeId` using JCS `canonicalBytes`); `src/ontology-guardian/app-context-registry.ts:327-333,354` (`linkedTools`); `profiles/app-context/v1/profile.yaml:1-544`; `registry/entries.v1.json:8,14`; `src/serve.ts:331-380` (`MIN_RESPONSE_TOKEN_BUDGET = 128`, `responseTokenBudget` default `2000`, `cutLinesToBudget` at `3` UTF-8 bytes/chars per token with truncation metadata counted inside budget); `src/retrieval/answer-pack.ts:149,186,235-399` (`DEFAULT_TOKEN_BUDGET = 2000`, BM25 + RRF `k = 60` + Personalized PageRank `alpha = 0.85` lift-over-background specificity + PathRAG shortest paths); `engram-memory/recall.ts:27-57,105-160` (`BM25F` field weights `primary: 3.0, decision: 2.0, evidence: 1.5, context: 1.0, citations: 0.5`, `HALF_LIFE_MS = 30d`, `RRF_K = 60`, `PPR_ALPHA = 0.85`); `engram-memory/bounded-projection.ts:22-169` (`52_428_800` B raw-byte ceiling).
-    - *Does NOT exist yet at `d5eb6171` (`PROPOSED`):* `engram_memory_context` descriptor/schema/dispatch in `src/mcp/memory/*` and `src/mcp-memory/*`, `MEMORY_PROFILE_BINDINGS_V2` (`sentropic.engram.memory-wire/v2`, `sentropic.engram.memory-tools/2020-12-v2`), `src/memory-tools/context.ts` (`MemoryContextPortV1`, `createMemoryContextPageStoreV1`, `packContextEnvelopeToBudget`), `engram-memory/contextual-graph-query.ts` (mandate-primary role-consciousness fingerprint query `D22`, `D5` same-role pending-body filter, `D6` path+fingerprint gate, `D7` sensitivity-triaged reranker over `@sentropic/llm-mesh`, `D23` attention scorer + on-demand `turn_text` query), and `src/app-context/mcp-tools.ts` (`app-context` Lot L6 runtime handler).
+      - Six frozen MCP memory tools (`v1` profile): `src/mcp/memory/contracts.ts:143-191` (`ENGRAM_MEMORY_PROVIDER_ID = 'sentropic.engram.memory'` `:143`, `ENGRAM_MEMORY_CONNECTOR_ID = 'engram-memory'` `:144`, `ENGRAM_MEMORY_APP_ID = 'engram'` `:145`, `ENGRAM_MEMORY_TOOL_NAMES` 6-tuple `:149-156`, `DISCLOSABLE_MEMORY_STATES = ['accepted_current']` `:234`, `MEMORY_MCP_LIMITS` `:266-298` with `COMBINED_RESULT_CEILING_BYTES: 2_097_152` `:296` and `MAX_INVOCATION_DEADLINE_MS: 30_000` `:297`, `PublicMemoryErrorCode` `:400-430` including `'gate_failed'` `:428`, `ToolSuccessV1<T>` `:437-445`, `ToolFailureV1` `:448-458`, `PaginationHandleStateV1` `engram_owns_signing_secret: false` `:585-615`); `src/mcp/memory/gates.ts:141-312` (`ENGRAM_MEMORY_CAPABILITY_GATES`, `ENGRAM_MEMORY_TOOL_DESCRIPTORS` `:283-290`, `ENGRAM_MEMORY_PROVIDER_MANIFEST` `:292-312`); `src/mcp/memory/errors.ts:29-72,87-396,404-410,437-454` (27 `NEUTRAL_MEMORY_ERROR_CODES` `:29-57` + 4 `ADDITIONAL_PUBLIC_MEMORY_ERROR_CODES` `:62-67` = 31 `PUBLIC_MEMORY_ERROR_CODES` `:69-72`, constant sanitized messages, `-32603` `'Trusted invocation context unavailable'` `:437-454`); `src/mcp/memory/receipts.ts:60,89,100,124-126` (`BOUNDED_PARAMETER_PROFILE_ID = 'sentropic.parameters/2020-12-bounded-v1'` `:60`, `minItems: 6, maxItems: 6` `:100,124`); `src/mcp/memory/schemas.ts:1-120,3285-3346,3597,3640` (`validatePaginationHandleStateV1` `:3285-3346` with field-equality checks `:3308-3330`); `src/mcp/memory/topology.ts:1-60`; `src/mcp-memory/profiles.ts:7-31` (`MEMORY_FROZEN_PROFILE_BINDINGS_V1`); `src/mcp-memory/provider.ts:367-383,391-406,458,648-891` (`readPurposeRef` `:367-383`, `isClosedToolInput` `:391-406`, `:458` asserts `ENGRAM_MEMORY_TOOL_DESCRIPTORS.length !== 6`, `:711-720` `readHost.authenticate` vs `writeHost.authenticate`, `:741-744,784-797` purpose & `'gate_failed'` checks, `:855-862` read dispatch); `src/mcp-memory/server.ts:38-40,155-203,220-226` (`COMBINED_RESULT_CEILING_BYTES = 2_097_152` `:38`, `toMcpCallToolResult` `:155-203` duplicating `structuredContent` + `content[0].text` `:181-190`); `src/memory-tools/reads.ts:28-64,145-183` (`createMemoryReadPageStoreV1`, `page_<48hex>`, `envelopeOverhead` deduction `:145,151`, double-read `as_of` pin `:171-174`, `issued` handle disposal on `!response.ok` `:179-182`); `engram-live/contracts.ts:323-325,1180-1189` & `engram-live/registration.ts:369-410` (`validateWorktreeIdentity`, `"wt:"` prefix).
+      - `app-context` 5-tool precedent & retrieval/budget helpers: `src/app-context/types.ts:175-213` (`AppContextErrorCode` including `"cursor-invalid"` `:179` and `"budget-too-small"` `:181`; `AppContextToolName` 5-tuple `:183-189`; out-of-band `AppContextCallerAuditClaim` `:190-198` and `AppContextAuditSinkV1` `:200-213`); `src/app-context/node-id.ts:37-45` (`appContextNodeId` using JCS `canonicalBytes`); `src/ontology-guardian/app-context-registry.ts:327-333,354`; `src/serve.ts:331-380` (`MIN_RESPONSE_TOKEN_BUDGET = 128` `:331`, default `2000` `:332`, `cutLinesToBudget` at `3` UTF-8 bytes/chars per token `:345-380`); `src/retrieval/answer-pack.ts:149,256-399`; `engram-memory/recall.ts:27-57,105-160`; `engram-memory/bounded-projection.ts:22-169` (`52_428_800` B ceiling); `package.json:145-162` & `src/llm-mesh.ts:12` (currently pins `@sentropic/llm-mesh: "^0.19.0"` and re-exports `src/llm-execution.ts` — severed in `Spec 1` Lot `1-E2`).
+    - *Does NOT exist yet at `d5eb6171` (`new` / `PROPOSED`, each tagged below with the lot that adds it):*
+      - Lot `2-E1`: `src/mcp/memory/context-contracts.ts` (`EngramMemoryContextInputEnvelopeV1`, `EngramMemoryContextQueryV1`, `EngramMemoryContextDomainEnvelopeV1`, `EngramMemoryContextPackV1`, `EngramMemoryContextValueV1`, `CONTEXT_MAX_PACK_BYTES = 524_288`, `MEMORY_CONTEXT_TOOL_NAME = 'engram_memory_context'`, `ENGRAM_MEMORY_TOOL_NAMES_V2`, `MEMORY_PROVIDER_CONTRACT_VERSION_V2 = '2.0.0'`, `getEngramMemoryToolNames`, `CoSignatureReceiptV2`, `validateBoundedContextDomainPayloadV1`), `MEMORY_PROFILE_BINDINGS_V2` (`sentropic.engram.memory-wire/v2`, `sentropic.engram.memory-tools/2020-12-v2`).
+      - Lot `2-E2`: `src/memory-tools/context.ts` (`MemoryContextPortV1`, `createMemoryContextPageStoreV1`, `ContextPageBindingV1`, `packContextEnvelopeToBudget`).
+      - Lot `2-E3`: `engram-memory/contextual-graph-query.ts` (`FingerprintQuerySeedV1`, `ContextualRerankerPortV1` pure L0-neutral port).
+      - Lot `2-E4`: `engram-memory/contextual-access-gates.ts` (`D5` same-role pending-body filter, `D6=refs` full-pack prose scrubber, `D18-A` read-only non-memory projection, `D23` lexical-only `query_text`).
+      - Lot `2-E5`: `src/mcp-memory/provider.ts` read-branch & `binding.purpose_ref` wiring for `engram_memory_context`.
   - `sentropic` (`origin/main` at commit `913e3bcbc9dec9ff5f9db36eb3a1ef5a3dd11b7a`):
-    - *Exists today:* `packages/mcp-platform/src/memory/contracts.ts:40-66` (`MEMORY_TOOL_NAMES` 6-tuple, `MUTATING_MEMORY_TOOL_NAMES`), `packages/mcp-broker/src/memory/compiled-dispatch.ts:156-195`, `packages/cluster-mesh/src/integrations/mcp/{memory-manifest,memory-compose,memory-definition,memory-transport}.ts`, `packages/cluster-mesh/src/sessions/content-policy.ts:89-164` (`ContentPolicyV1`, `computeRetentionDeadline`), `packages/llm-mesh/src/decision/index.ts:1-16`, `packages/llm-mesh/src/routing-contracts.ts:13-75,190-222`.
-    - *Does NOT exist yet at `913e3bcbc` (`PROPOSED` across Spec 6A + Spec 2):* `contextToolsEnabled` / `CoSignatureReceiptV2` verification in `mcp-platform` and `cluster-mesh`, `h2a_context_mandate` claim projection from `SignedH2AMandateWireEnvelope` / recorded `D18` read-only policy, and `D7` reranking route registration on `@sentropic/llm-mesh`.
+    - *Exists today:* `packages/mcp-platform/src/memory/contracts.ts:35-66,163-251` (`MEMORY_PROVIDER_CONTRACT_VERSION = '1.0.0'` `:36`, `MEMORY_TOOL_NAMES` 6-tuple `:40-47`, `MUTATING_MEMORY_TOOL_NAMES` `:49-54`, `COMBINED_RESULT_CEILING_BYTES = 2_097_152` `:163`, `MemoryToolSuccessV1<T>` `:174-182`, `MemoryPublicErrorCode` `:201-233` with `'UNAUTHORIZED'` `:204` and `'gate_failed'` `:227`), `packages/mcp-platform/src/memory/invocation-context.ts:58-74,86-112` (`validateMemoryProjection` hardcoding `claims: ['sub', 'tid']` at `:107`), `packages/mcp-platform/src/memory/context-validation.ts:27-57`, `packages/mcp-platform/src/registry-parameters.ts:12-47,80-95` (`BOUNDED_PROFILE_ID = 'sentropic.parameters/2020-12-bounded-v1'`), `packages/mcp-platform/src/transport/{dispatch.ts:38-56,result-codec.ts:161-169}` (`insufficient_claims` `:52`), `packages/mcp-broker/src/memory/compiled-dispatch.ts:139-231` (`insufficient_claims` `:190-195`), `packages/cluster-mesh/src/integrations/mcp/{memory.ts:21-55,memory-definition.ts:8-19,memory-compose.ts:13-80,memory-manifest.ts:1-21,memory-transport.ts:1-60}`, `packages/cluster-mesh/src/modules/catalog.ts:17-18,114-125`, `packages/cluster-mesh/src/sessions/content-policy.ts:89-174` (17 `FROZEN_POLICY_RECORDS`, retention channels only — **no** external-model content authorization field), `packages/cluster-mesh/src/live-storage/registration.ts:27-31,166-181` (`validateWorktreeIdentity`, `ID_PREFIXES.worktree = 'wt:'`), `packages/cluster-mesh/src/integrations/llm-mesh/decision.ts:1-3`, `packages/llm-mesh/src/decision/{index.ts:1-16,request.ts:40-53,70}` (closed 8-key `DecisionRequest`), `api/src/services/mcp/{client-policy.ts:9-41,registry-dispatch.ts:22-108,cluster-registry.ts:24-40}` (`READ_ONLY_TOOL_ALLOWLIST` `:25-30`, `DEC-116`), `api/src/services/catalog/sources/host-registry-source.ts:22-36`, `tools/memory-mcp-l5/{exports-v1.json,import-graph.mjs,precandidate.mjs,tests/p3-l0-freeze.test.mjs}`, `spec/evidence/memory-mcp-l5/l0-freeze.json`, `packages/cluster-mesh/tests/engram-memory/qualification.mk:1-103`, `Makefile:1261-1289,1351-1375,2033-2153,2460-2464,2887,3010,4067,4959-5043`.
+    - *Does NOT exist yet at `913e3bcbc` (`new` / `PROPOSED`, tagged with owning lot):*
+      - Lot `2-S0a` (with `6A-S0a`): `MEMORY_CONTEXT_TOOL_NAME`, `MEMORY_TOOL_NAMES_V2`, `MEMORY_PROVIDER_CONTRACT_VERSION_V2`, `getMemoryToolNames`, `VerifiedH2AMandateV1` (`StpConnectorContext.h2aMandate`), `CoSignatureReceiptV2` verifier, and `validateMemoryProjection(..., requiredClaims)` in `packages/mcp-platform`.
+      - Lot `2-S0b`: 7th read-tool `getMemoryToolNames` & `h2a_context_mandate` dispatch gate in `packages/mcp-broker`.
+      - Lot `2-S1a`: `contextToolsEnabled` / `CoSignatureReceiptV2` / `l5CandidateManifestSha256` / `MemoryContextPortV1` wiring in `packages/cluster-mesh/src/integrations/mcp/{memory,memory-definition,memory-compose,memory-manifest,memory-transport}.ts` & `modules/catalog.ts`, plus `ModelContentAuthorizationPolicyV1` in `packages/cluster-mesh/src/integrations/mcp/memory-content-auth.ts`.
+      - Lot `2-S1b`: `createLlmMeshContextualRerankerV1` in `packages/cluster-mesh/src/integrations/mcp/memory-d7-reranker.ts`.
+      - Lot `2-S2`: `_meta['sentropic.h2a.mandate']` / `X-Sentropic-H2A-Mandate` propagation, `structuredContent` preservation on JSON-RPC `POST /`, `DEC-116` `READ_ONLY_TOOL_ALLOWLIST` guard, and `HostRegistryCatalogSource` `h2a_context_mandate` filter in `api/`.
+      - Lot `2-S3`: `spec/evidence/memory-mcp-l5/co-signature-v2.json` and coordinated update of the 5 `tools/memory-mcp-l5` + `qualification.mk` freeze artifacts.
   - `h2a` (`origin/main` at commit `1f57127de` + `OPEN` prerequisite PR #455 `fix/registry-bridge-missing-lock` at `844402eeae1161d74304e634790904785cbb602c`):
     - *Exists today:* `packages/h2a/src/runtime/loop/engine/tick.ts:41-75` (tick execution loop), `packages/h2a/src/envelope.ts:109-150` (`H2AEnvelope<H2AMandate>`), `packages/h2a/src/hosts/plugin.ts:63-212`, `packages/h2a/src/registry/{bridge-lock,descriptors,host-bootstrap,sentropic-daemon}.ts` (with PR #455 `rebootstrapMissingPluginLock` at `host-bootstrap.ts:1646-1775` and `installation-doctor.ts:2432-2440`), `packages/h2a/src/runtime/{mcp-central,mcp-central-shim,mcp-central-policy,mcp-central-qualification}.ts`, `packages/h2a/src/runtime/handover/{shim-bridge,catalogue}.js`.
-    - *Does NOT exist yet at `1f57127de` (`PROPOSED`):* durationless per-step prompt assembler (`packages/h2a/src/runtime/context/durationless-prompt-loop.ts`), `D15` independent five-slice injector (`slice-injector.ts`), `D18` recorded non-memory read-only slice guard (`readonly-slice-policy.ts`), `D14` post-audit-window host cache purger (`host-context-purge.ts`), and `ContextToolHostSwitchoverPolicy` per-host `shim-bridge` masking (`6A-H3` / `2-H4`).
+    - *Does NOT exist yet at `1f57127de` (`new` / `PROPOSED`):* durationless per-step prompt assembler + untrusted-recall data-quarantine sanitizer (`packages/h2a/src/runtime/context/durationless-prompt-loop.ts`, Lot `2-H1`), `D15` independent five-slice injector & `D18-B` local non-MCP slice guard (`slice-injector.ts`, `readonly-slice-policy.ts`, Lot `2-H2`), `D14` post-audit-window host cache purger (`host-context-purge.ts`, Lot `2-H3`), and `ContextToolHostSwitchoverPolicy` per-host `shim-bridge` masking (`6A-H3` / Lot `2-H4`).
 
 ---
 
@@ -77,7 +88,7 @@ This specification designs the durationless contextual prompt loop and the seven
 | Concern | Authoritative Spec | Spec 2 Contract Boundary |
 |---|---|---|
 | Shared metamodel grammar, `OntologyTemplateEnvelopeRef`, `Sha256Digest`, `LineageId` | **Spec 0** ([`SPEC_ENGRAM_METAMODEL_AND_LINEAGE_REGISTRY.md`](SPEC_ENGRAM_METAMODEL_AND_LINEAGE_REGISTRY.md)) | Spec 2 consumes `OntologyTemplateEnvelopeRef` and `Sha256Digest` unchanged (`:144-154`). `engram_memory_context` carries domain slices solely as `(template_envelope, entity_type_id, entity_id, payload_digest_sha256, control_verdict_authority, payload)` without enumerating `Track` or `h2a` domain types (`Point 2B`, `T-M-C`). |
-| Outer MCP wire envelope, `R12` `/memory/v1/*` transport, `BridgeLock` / `mcp-central` / `shim-bridge` gating | **Spec 6A** ([`SPEC_ENGRAM_CLUSTER_MESH_MEMORY_ACCESS_AND_MCP_WIRING.md`](SPEC_ENGRAM_CLUSTER_MESH_MEMORY_ACCESS_AND_MCP_WIRING.md) `§4`) | Spec 2 preserves `EngramMemoryContextInputEnvelopeV1` and `EngramMemoryContextOutputEnvelopeV1` (`Spec 6A §4.2` `:545-591`) byte-for-byte and defines the closed internal schemas of `context_query` and `context_pack`, token budget, opaque cursor, error mapping, retrieval scoring, access rules, and prompt-loop execution. |
+| Outer MCP wire envelope, `R12` `/memory/v1/*` transport, `BridgeLock` / `mcp-central` / `shim-bridge` gating | **Spec 6A** ([`SPEC_ENGRAM_CLUSTER_MESH_MEMORY_ACCESS_AND_MCP_WIRING.md`](SPEC_ENGRAM_CLUSTER_MESH_MEMORY_ACCESS_AND_MCP_WIRING.md) `§4`) | Spec 2 aligns the seventh tool's success envelope onto the shipped `MemoryToolSuccessV1<EngramMemoryContextValueV1>` (`{ ok: true, output: { schema_version: 1, value }, auditId, redactionClass: 'high' }`, `src/mcp/memory/contracts.ts:437-445`, `packages/mcp-platform/src/memory/contracts.ts:174-182`) and caps `max_pack_bytes` at `524_288` B (**superseding `Spec 6A §4.2 :576-591`** per `sentropic` co-signatory review `F-01`/`F-02`), while preserving `EngramMemoryContextInputEnvelopeV1` (with `"wt:"` pattern on `derived_worktree_id` and `524_288` B cap) and defining the closed internal schemas of `context_query` and `context_pack`, token/byte budget, opaque cursor, error mapping, retrieval scoring, access rules, and prompt-loop execution. |
 | Raw turn/tool ingestion, `SessionDbCitationTuple`, `DerivedWorktree`, `ConfidentialityDenyListV1`, `PiiArmorStamp` | **Spec 1** ([`SPEC_ENGRAM_SESSION_FRONT_AND_EXTRACTION.md`](SPEC_ENGRAM_SESSION_FRONT_AND_EXTRACTION.md)) | Spec 2 reads canonical/projected records ingested by Spec 1 (`session_turn`, `tool_result`, `project_decision`, `harness_decision`, `decision_dossier`, `derived_worktree`) and applies Spec 1's `D7`/`D8`/`D33` privacy primitives on egress. |
 | Dormant dreaming synthesis cadences & shadow verification (`D25`, `D26`, `Point 3C`) | **Spec 3** (`SPEC_ENGRAM_DORMANT_DREAMING_SYNTHESIS.md`, planned) | Spec 2 defines the recall slot (`dreaming_recalled_facts`) and attention boost through which dreamed permanent facts re-enter active prompts (`D19`, `D23`), plus the `D6` ref-only disclosure rule on dreaming summaries. |
 | `h2a` role/activity/skill ontology authoring & `.h2a/` overlay serialization (`D16`, `D31`, `Point 4B`) | **Spec 4** (`SPEC_ENGRAM_H2A_ROLE_ONTOLOGY_AND_HARNESS_OVERLAYS.md`, planned) | Spec 2 reads registered `h2a`-lineage role/activity/harness graphs for `role_consciousness_slice` and `harness_effective_rules`, and emits advisory `proactive_role_proposal` (`engram` never writes roles, `Point 4B`). |
@@ -96,8 +107,8 @@ Per `D19`, `D22`, and `D23` (`spec/memory/R15-SEDIMENT.md:64,67-68,87-89,108-113
 1. **No Accumulated Conversation Array:** At step $k \ge 1$, the prompt sent to the language model MUST NOT include raw prior assistant turns `[turn_1, ..., turn_{k-1}]`, raw prior tool output transcripts `[tool_1, ..., tool_{k-1}]`, or carryover handoff summaries from an earlier "rolled-over" session.
 2. **Durationless Step Independence (`sans durée`):** Every model invocation at step $k$ is stateless with respect to session elapsed turn count. Whether step $k$ is step `1`, step `500`, or the first turn in a new CLI process three days later under the same mandate and workspace, the prompt construction function has the exact same input signature and bounded token ceiling.
 3. **Exclusive Three-Part Step Payload (`D23`):** At every step $k$, the outbound model context consists of **and only of**:
-   - **(A) The Contextual Graph Query Result (`EngramMemoryContextOutputEnvelopeV1`)** returned by `engram_memory_context` for step $k$, anchored on the verified `H2AEnvelope<H2AMandate>` as a primary graph-query component (`D22`), plus any ready non-memory `D15` context slices (`track`, `git`, `architecture`, `rules`);
-   - **(B) The Reprocessed Result of Step $k - 1$ (`ReprocessedPreviousStepV1`)**, bounded and distilled from the raw turn/tool output already ingested into `engram` through Spec 1 (`POST /memory/v1/session-front/ingest`); and
+   - **(A) The Contextual Graph Query Result (`MemoryToolSuccessV1<EngramMemoryContextValueV1>`)** returned by `engram_memory_context` for step $k$, anchored on the verified `H2AEnvelope<H2AMandate>` as a primary graph-query component (`D22`), plus any ready non-memory `D15` context slices (`track`, `git`, `architecture`, `rules`);
+   - **(B) The Reprocessed Result of Step $k - 1$ (`ReprocessedPreviousStepV1`)**, deterministically distilled and bounded from the raw turn/tool output already ingested into `engram` through Spec 1 (`POST /memory/v1/session-front/ingest`); and
    - **(C) The Immediate Step Trigger (`CurrentStepTriggerV1`)** — the single current user/operator message or immediate tool/hook event initiating step $k$ (itself recorded first in `engram` per the Engram-First Principle, `R15-SEDIMENT.md:11-12`, before step $k$ executes).
 
 ### 1.2 Five-Phase Per-Step Execution Contract
@@ -111,96 +122,141 @@ sequenceDiagram
 
     Note over Host,Engram: Step k-1 finishes: raw turn + tool outputs exist
     Host->>CM: 1. POST /memory/v1/session-front/ingest (Spec 1 raw turn_text + tool_result)
-    CM->>Engram: Persist canonical journal + SessionDbCitationTuple; emit ReprocessedPreviousStepV1
+    CM->>Engram: Persist canonical journal + SessionDbCitationTuple; deterministic ReprocessedPreviousStepV1 (0 LLM calls)
     Engram-->>Host: IngestReceipt + bounded ReprocessedPreviousStepV1 (host discards raw transcript buffer)
 
     Note over Host,Engram: Step k begins (zero linear history retained)
     Host->>CM: 2. MCP tools/call engram_memory_context (context_query + _meta['sentropic.h2a.mandate'])
-    CM->>CM: Verify H2AEnvelope<H2AMandate> (or D18 policy) -> StpConnectorContext.h2aMandate
+    CM->>CM: Verify H2AEnvelope<H2AMandate> (or D18-A policy) -> StpConnectorContext.h2aMandate
     CM->>Engram: 3. Invoke MemoryContextPortV1.assembleContext (D22 mandate-primary graph query)
     Engram->>Engram: Apply D5 same-role filter, D23/D7 weighting, D6/D8/D33 redaction, token/byte budget
-    Engram-->>CM: EngramMemoryContextOutputEnvelopeV1 (template_refs + digests + context_pack)
-    CM-->>Host: Sanitized AppResultEnvelope (<= max_pack_bytes & <= token_budget)
+    Engram-->>CM: MemoryToolSuccessV1<EngramMemoryContextValueV1> (output.value + auditId + redactionClass)
+    CM-->>Host: Sanitized CallToolResult (<= max_pack_bytes <= 512 KiB & <= 2 MiB ceiling)
 
-    Host->>Host: 4. Inject ready D15 slices (non-blocking) + ReprocessedPreviousStepV1 + Step k Trigger
+    Host->>Host: 4. Sanitize untrusted recall + inject ready D15 slices + ReprocessedPreviousStepV1 + Step k Trigger
     Host->>LLM: 5. Durationless prompt (NO old turns, NO rollover summary)
 ```
 
 **Normative Step Invariants:**
-1. **Phase 1 — First-Rank Ingestion & Previous-Step Reprocessing (`Spec 1` → `ReprocessedPreviousStepV1`):**
+1. **Phase 1 — First-Rank Ingestion & Deterministic Previous-Step Reprocessing (`Spec 1` → `ReprocessedPreviousStepV1`):**
    - Before step $k$ calls `engram_memory_context`, the output of step $k-1$ (assistant response and any tool execution outputs) MUST have been submitted to `engram` via `EngramSessionIngestFrontPort.recordSessionEvent` (`POST /memory/v1/session-front/ingest`, `Spec 1` §1.1, `Spec 6A` `:215-217`).
+   - **Strict Phase-1 Determinism (`F-13`):** Production of `ReprocessedPreviousStepV1` at Phase 1 is **100% deterministic (zero language-model call on the inter-step critical path)**—using structured tool exit codes, `ToolResultSignificance` classification, file-path/digest extraction, and deterministic `D8` PII armor truncation. Any future optional model-assisted synthesis MUST execute exclusively through `@sentropic/llm-mesh` (`VerifiedRoutingSubject` + `RouteMeteringSink`), never through direct `@ai-sdk/*` or `src/llm-execution.ts` calls (`R12`, `G-NOSECRET`).
    - Reprocessing converts the potentially large raw output of step $k-1$ into a closed, bounded `ReprocessedPreviousStepV1` structure (`<= 4_096` UTF-8 bytes; see §2.2):
      - `step_id`: exact `step_ref` of step $k - 1$;
      - `reprocessed_digest_sha256`: `Sha256Digest` of the canonical ingested turn/tool batch;
-     - `reprocessed_summary`: PII-armored (`D8`) or `D6` ref-only synthesis of what step $k-1$ accomplished or observed (`<= 2_400` UTF-8 bytes);
+     - `reprocessed_summary`: optional PII-armored (`D8`) deterministic synthesis of what step $k-1$ accomplished or observed (`<= 2_400` UTF-8 bytes) — **omitted completely whenever `D6=refs` withholds content authorization for the target external model endpoint** (§4.2);
      - `significant_tool_refs`: up to `16` canonical node IDs of `tool_result` records from step $k-1$ classified as `significant`, `error`, or `security-gate` (`Spec 1` `:214-218`);
+     - `file_refs`: optional `0..16` `ContextFileDisclosureRefV1` entries (`path_ref` + `content_fingerprint` under `D6=refs`);
      - `unresolved_citation_digests`: optional citation IDs (`SessionDbCitationTuple` digests) if step $k$ needs on-demand text drill-down (`query_text`).
    - On step `1` of a freshly launched CLI process (`k = 1`), `previous_step_result` is omitted (not `null`, matching `M2` closed-schema rules in `SPEC_MEMORY_MCP_V2.md:79`); cross-session continuity comes entirely from the `D22` contextual graph query (`R15-SEDIMENT.md:67-68`).
 2. **Phase 2 — Mandate-Primary Fingerprint Request (`D4`, `D22`):**
-   - `h2a` constructs `EngramMemoryContextInputEnvelopeV1` (`Spec 6A §4.2` `:545-565`) carrying `step_ref`, optional `derived_worktree_id` (`D21`), optional travelling `template_refs`, `max_pack_bytes`, and `context_query` (`EngramMemoryContextQueryV1`, §2.2).
+   - `h2a` constructs `EngramMemoryContextInputEnvelopeV1` (`Spec 6A §4.2` `:545-565`, narrowed in §2.2) carrying `step_ref`, optional `derived_worktree_id` (`D21`, validated against `^wt:[a-z0-9._:-]{1,124}$`), optional travelling `template_refs`, `max_pack_bytes` (`<= 524_288`), and `context_query` (`EngramMemoryContextQueryV1`, §2.2).
    - The signed `H2AEnvelope<H2AMandate>` (`h2a:packages/h2a/src/envelope.ts:109-150`, `Spec 0` `:161-174`) is transmitted **exclusively out-of-band** in JSON-RPC `params._meta['sentropic.h2a.mandate']` and/or HTTP `X-Sentropic-H2A-Mandate` (`Spec 6A` `:501-502,600`), never inside caller-authored `arguments` (`M2` host-controlled boundary, `src/mcp/memory/schemas.ts:1-60`).
 3. **Phase 3 — Role-Consciousness Fingerprint Evaluation (`D22`):**
    - Per `D22` (`« On dojt atteimdre une forme de conscience dans le role. L empreinte etant unenrequet graphe dans le quel le mandat eat un composant primaire. Donc de base je dirais c est pile entee les deux ce qu ej ai en tete »`, `R15-SEDIMENT.md:67`), a session's continuity fingerprint is neither a bare static mandate ID (« Mandat seul ») nor a linear chain of session handoff hashes (« Chaîne d’empreintes »).
    - Formally, `engram` computes `fingerprint_query_id = "fpq_" + sha256_jcs(FingerprintQuerySeedV1)` where `FingerprintQuerySeedV1` binds four primary graph anchors:
-     1. **Primary Component — Verified `h2a` Mandate (`D4`, `D22`):** `(mandateId, instance, role, scope, rights[], envelopeDigest)` verified by `cluster-mesh` (`StpConnectorContext.h2aMandate`), or `'unassigned'` when no mandate is bound (`D16`/`D18`);
+     1. **Primary Component — Verified `h2a` Mandate (`D4`, `D22`):** `(mandateId, instance, role, scope, rights[], envelopeDigest)` verified by `cluster-mesh` (`StpConnectorContext.h2aMandate`), or `'unassigned'` when no mandate is bound (`D16`/`D18-A`);
      2. **Registered `h2a` Role & Activity Subgraph (`D4`, `D16`):** the version-pinned `OntologyTemplateEnvelopeRef` (`lineage: 'h2a'`) for the active role, its `allowedActivities`, `multiActorRelations`, and workspace harness overlay (`D31`);
      3. **Workspace & Derived Git Worktree Anchor (`D21`):** `(tenantId, workspaceId, derivedWorktreeId ?? null, originWorkspaceId, branchHeadCommit?)`;
      4. **Mission Focus Seed (`D23`):** active mission/lot scope anchors extracted from `mandate.scope`, `previous_step_result.significant_tool_refs`, and optional `mission_focus_refs`.
 4. **Phase 4 — Non-Blocking Five-Slice Prompt Assembly (`D15`, `D18`):**
-   - The `h2a` prompt assembler combines each ready `D15` slice (`track`, `git`, `architecture`, `rules`, `memory`) as soon as that slice's readiness criteria pass (§4.3), without blocking turn execution on unready slices, and enforces `D18` read-only memory exclusion whenever the session lacks a memory identity (§4.4).
+   - The `h2a` prompt assembler combines each ready `D15` slice (`track`, `git`, `architecture`, `rules`, `memory`) as soon as that slice's readiness criteria pass (§4.3), without blocking turn execution on unready slices, wraps untrusted recall items in non-executable data-quarantine delimiters (§4.1), and enforces `D18` read-only memory exclusion whenever the session lacks a memory identity (`D18-A` over MCP when host `(sub, tid)` exists; `D18-B` locally in `h2a` with zero MCP call when `(sub, tid)` is absent, §4.4).
 5. **Phase 5 — Proactive Role Proposal When Unassigned (`D16`, `Point 4B`):**
-   - When a session has a valid memory identity (`sub`, `tid`) and `D16` unassigned-role posture (`mandate === null`), `engram_memory_context` inspects live `engram` activity in `(tenantId, workspaceId)` and populates `role_consciousness_slice.proactive_role_proposal` (`{ proposed_role_id, confidence_band, rationale, cited_event_ids }`). Per `Point 4B` (`OWNER-DECISIONS-2026-11-14.md:24`), this field is **strictly a read-only proposal**: `engram` never writes or activates an `h2a` role; only the `h2a` mandate-and-role manager (`D4`) may author or bind one.
+   - When a session has a valid memory identity (`sub`, `tid`) and `D16` unassigned-role posture (`mandate === null`), `engram_memory_context` inspects live `engram` activity in `(tenantId, workspaceId)` and populates `role_consciousness_slice.proactive_role_proposal` (`{ proposed_role_id, confidence_band, rationale?, cited_event_ids }`, omitting `rationale` under `D6=refs`). Per `Point 4B` (`OWNER-DECISIONS-2026-11-14.md:24`), this field is **strictly a read-only proposal**: `engram` never writes or activates an `h2a` role; only the `h2a` mandate-and-role manager (`D4`) may author or bind one.
 
 ---
 
 ## 2. The Seventh Memory Tool: `engram_memory_context` (`D20=seventh`, `Point 2B`)
 
+### 2.0 Co-signature readiness
+
+The checklist below maps each of the eight `sentropic` co-signatory readiness conditions (`C-1`..`C-8` in `engram-s2-carbon.md` §1 `:30-38`) to the normative sections of this specification that satisfy it:
+
+- [x] **`C-1` (`MemoryToolSuccessV1` Wire Wrapper, Full-Value JCS Digest, & Bounded Domain `payload` — `F-01`):** Satisfied in **§2.2** (`EngramMemoryContextValueV1` wrapped inside `ToolSuccessV1<EngramMemoryContextValueV1>` / `MemoryToolSuccessV1<EngramMemoryContextValueV1>`, plus `envelope_digest_sha256` computed over the entire RFC 8785 JCS `EngramMemoryContextValueV1` object excluding the digest field itself, with explicit Spec 6A `§4.2 :576-591` supersession note in Header, **§0.2**, and **§2.2**) and **§2.3** (`validateBoundedContextDomainPayloadV1` enforcing `sentropic.parameters/2020-12-bounded-v1` structural bounds while preserving `Point 2B` open `entity_type_id`).
+- [x] **`C-2` (Full-Envelope Dual Budget & `524_288` B `CallToolResult` Duplication Ceiling — `F-02`):** Satisfied in **§2.2** (`CONTEXT_MAX_PACK_BYTES = 524_288`, `max_pack_bytes` capped at `512 KiB`) and **§2.4** (`used_bytes` and `used_tokens` measured over the complete `MemoryToolSuccessV1<EngramMemoryContextValueV1>`, plus pre-cursor check `Buffer.byteLength(JSON.stringify(callToolResult), 'utf8') <= 2_097_152` before committing `next_page_cursor` and automatic handle disposal on `RESULT_TOO_LARGE`).
+- [x] **`C-3` (`page_<48hex>` Cursor Bound to `D6` Posture, Epochs, & Per-Tenant Scope Quota — `F-03`):** Satisfied in **§2.4** (`ContextPageBindingV1` binding `content_authorization_posture`, `model_endpoint_class`, `policy_epoch`, `trust_revocation_epoch`, `purpose_ref`, `requested_slices`, `include_same_role_pending`, and `template_refs_digest`, plus per-`(tenant_id, workspace_id)` `max_entries_per_scope: 256` with scope-isolated LRU eviction).
+- [x] **`C-4` (Ratified Error Taxonomy & Read-Branch Routing in `provider.ts` — `F-04`, `F-05`):** Satisfied in **§2.5** (strictly existing `PublicMemoryErrorCode` members only; pre-provider missing-claim refusal `insufficient_claims` / `-32003` / `-32603` separated from intra-provider `ToolFailureV1` → `'UNAUTHORIZED'` at `errors.ts:33`; exact `'gate_failed'` wire code grounded at `contracts.ts:428`, `errors.ts:66`, `provider.ts:795`, `mcp-platform/src/memory/contracts.ts:227`) and **§2.6** / **§7.1 `2-E5`** (`provider.ts` read-branch routing via `readHost.authenticate`, `readPurposeRef` from `verified.memory.binding.purpose_ref`, immutable 6-tool `MEMORY_TOOL_NAMES` + `getMemoryToolNames({ contextToolsEnabled })`).
+- [x] **`C-5` (`validateMemoryProjection` Parameterized on `requiredClaims`, `StpConnectorContext.h2aMandate`, & `D18-A`/`D18-B` Split — `F-06`):** Satisfied in **§2.6**, **§4.4**, **§7.2 `2-S0a`**, and **§7.3 `2-H2`** (`validateMemoryProjection` parameterized on `descriptor.requiredClaims`, `StpConnectorContext.h2aMandate?: VerifiedH2AMandateV1` typed outside `MemoryContextProjectionV1`, zero synthetic `sub`/`tid` on MCP, `D18-A` over MCP for authenticated host principals vs `D18-B` local slice assembly in `h2a` without MCP call).
+- [x] **`C-6` (Strict Exclusion from `READ_ONLY_TOOL_ALLOWLIST` (`DEC-116`) & Mandate-Filtered Host Catalog — `F-07`):** Satisfied in **§2.6**, **§6.1.2**, and **§7.2 `2-S2`** (`isToolPermitted('sentropic-mcp', 'engram_memory_context') === false` in `api/src/services/mcp/client-policy.ts:25-30`, and exclusion from `HostRegistryCatalogSource.snapshot()` / `tools/list` whenever `'h2a_context_mandate'` is absent).
+- [x] **`C-7` (`D5`/`D23` Prompt-Injection Quarantine, Complete `D6=refs` Prose Purge, & `ModelContentAuthorizationPolicyV1` — `F-09`):** Satisfied in **§1.2**, **§2.2**, **§2.3**, **§2.5**, **§3.2**, **§4.1**, **§4.2**, **§7.1 `2-E4`**, **§7.2 `2-S1a`**, and **§7.3 `2-H1`/`2-H3`** (`same_role_pending_notes` segregated from `owner_decisions`, `trust_tier` + non-executable delimiter/bidi quarantine in `2-H1`, dedicated `new` `ModelContentAuthorizationPolicyV1` leaving `ContentPolicyV1` unmodified, field-by-field `D6=refs` prose omission across all 11 text surfaces, scope-bounded `omitted_counts_by_reason`, and lexical-only non-regex `query_text`).
+- [x] **`C-8` (Cryptographic `CoSignatureReceiptV2`, Complete `M7 :624-695` Amendment, 5 `MCP-L5` Gates, & Grounded `2-S*` Lots — `F-08`, `F-10`, `F-11`, `F-12`):** Satisfied in **§2.6** (closed JCS `CoSignatureReceiptV2` + dual Ed25519 attestations + exact SHA-256 pin against `pre-candidate-manifest.json.sha256`), **§6.1.2** (`M7` `:536-695` in full), **§6.1.4** (all 5 `tools/memory-mcp-l5` gates), and **§7.2** (single-package lots `2-S0a`, `2-S0b`, `2-S1a`, `2-S1b`, `2-S2`, `2-S3`, verified `Makefile` targets with trailing `ENV=`, `BRS2-EX1`/`BRS2-EX2`, full `6A-S*`/`1-S*`/`chat-mesh`/`2-E*` dependencies, and `D14` kept out of `registry-dispatch.ts`).
+
 ### 2.1 Code Precedents Reconciled (`app-context` + Six Frozen `mcp/memory` Tools + `Spec 6A §4`)
 
-Every design rule of `engram_memory_context` reconciles two existing `engram` precedents on `d5eb6171` with `Spec 6A §4` (`:522-641`) and [`spec/memory/contracts/engram-h2a.md`](memory/contracts/engram-h2a.md) (`:99-155`):
+Every design rule of `engram_memory_context` reconciles two existing `engram` precedents on `d5eb6171` and the `sentropic` `origin/main` (`913e3bcbc`) MCP runtime with `Spec 6A §4` (`:522-641`) and [`spec/memory/contracts/engram-h2a.md`](memory/contracts/engram-h2a.md) (`:99-155`):
 
 1. **Precedent A — The `app-context` Five-Tool Context Envelope, Token Budget, and Stub Progression:**
    - `src/app-context/types.ts:175-213` defines the 5 `AppContextToolName` tools (`engram_context_for_target`, `engram_specs_for_target`, `engram_targets_for_spec`, `engram_read_spec_section`, `engram_get_context_item` `:183-189`), typed error codes including `"cursor-invalid"` (`:179`) and `"budget-too-small"` (`:181`), and out-of-band `AppContextCallerAuditClaim` / `AppContextAuditSinkV1` (`:190-213`), registered in `src/ontology-guardian/app-context-registry.ts:327-333`.
    - `src/serve.ts:331-380` establishes `MIN_RESPONSE_TOKEN_BUDGET = 128` (`:331`), default `2000` (`:332`), and deterministic `3` UTF-8 bytes/chars per token truncation (`cutLinesToBudget` `:345-380`) where truncation metadata is counted inside the caller's token budget; `src/retrieval/answer-pack.ts:149` likewise sets `DEFAULT_TOKEN_BUDGET = 2000`.
-   - `app-context` Lot L6 (`src/app-context/mcp-tools.ts`, `PROPOSED` / non-existent on `d5eb6171`) refines this into the **full-envelope token-budget rule**: `tokens(payload) = Math.ceil(Buffer.byteLength(JSON.stringify(payload), 'utf8') / 3)` evaluated on the **final serialized response envelope after budget and pagination fields are populated** (`used_tokens <= effective_token_budget`), whole-item deterministic packing, Unicode-scalar-safe stub progression (`utf8CutAtCodePointBoundary`, zero `U+FFFD`), and non-advancing refusal reporting `min_required_tokens` when even the minimal envelope cannot fit.
-2. **Precedent B — The Six Frozen MCP Memory Tools (`src/mcp/memory/*` & `src/mcp-memory/*`):**
-   - Closed Draft 2020-12 JSON Schemas with `additionalProperties: false` and optional properties omitted rather than `null` (`SPEC_MEMORY_MCP_V2.md:79`, `src/mcp/memory/schemas.ts:1-120`).
-   - Host-owned opaque pagination handles `page_<48hex>` (`/^page_[0-9a-f]{48}$/`) stored in `createMemoryReadPageStoreV1` (`src/memory-tools/reads.ts:28-64,113-183`) with `engram_owns_signing_secret: false` (`src/mcp/memory/contracts.ts:612`), bound via `receiptDigest('memory-page-binding', ...)` to `(tenant_id, principal_id, tool_name, query_fingerprint, snapshot_pin)`, and checked with a double-read `as_of` pin (`reads.ts:171-174`).
-   - Byte ceilings in `MEMORY_MCP_LIMITS` (`src/mcp/memory/contracts.ts:266-298`) and `src/mcp-memory/server.ts:38-40,191-202`: `max_pack_bytes` in `[4_096, 1_048_576]` defaulting to `65_536` (`:266-268`), `MAX_ARGUMENT_OBJECT_UTF8_BYTES = 1_048_576` (`:295`), `COMBINED_RESULT_CEILING_BYTES = 2_097_152` (`server.ts:38`), and `MAX_INVOCATION_DEADLINE_MS = 30_000` (`contracts.ts:297`).
-   - Sanitized public error taxonomy (`PUBLIC_MEMORY_ERROR_CODES`, 31 codes in `src/mcp/memory/errors.ts:29-72,84-397`) wrapped in `ToolFailureV1` (`contracts.ts:448-458`), never inventing raw `app-context` kebab-case error strings on the `engram-memory` MCP wire.
+   - Lot `2-E2` (`new`: `src/memory-tools/context.ts`) carries forward the **full-envelope token-budget rule**: `tokens(envelope) = Math.ceil(Buffer.byteLength(JSON.stringify(envelope), 'utf8') / 3)` evaluated on the **complete `MemoryToolSuccessV1<EngramMemoryContextValueV1>` after digest, budget, and pagination fields are populated** (`used_tokens <= effective_token_budget`), whole-item deterministic packing, Unicode-scalar-safe stub progression (`utf8CutAtCodePointBoundary`, zero `U+FFFD`), and non-advancing refusal (`PROJECTION_OVERSIZED`) when even the minimal structural floor cannot fit.
+2. **Precedent B — The Six Frozen MCP Memory Tools (`src/mcp/memory/*`, `src/mcp-memory/*`, & `@sentropic/mcp-platform`):**
+   - **Standard Success Wire Envelope (`F-01`):** Every memory tool success in both `engram` (`ToolSuccessV1<T>` in `src/mcp/memory/contracts.ts:437-445`) and `sentropic` (`MemoryToolSuccessV1<T>` in `packages/mcp-platform/src/memory/contracts.ts:174-182`) has the exact shape `{ ok: true, output: { schema_version: 1, value: T }, auditId: string, redactionClass: 'high' }`, which `toMcpCallToolResult` (`src/mcp-memory/server.ts:164-170`) and `encodeMemoryEnvelope` (`packages/mcp-platform/src/transport/result-codec.ts:161-169`) project into both `structuredContent` and `content[0].text`.
+   - **Closed Schemas & Bounded Parameter Profile (`F-01`):** Closed Draft 2020-12 JSON Schemas with `additionalProperties: false`, optional properties omitted rather than `null` (`SPEC_MEMORY_MCP_V2.md:79`, `src/mcp/memory/schemas.ts:1-120`), and bounded JSON subtrees conforming to `BOUNDED_PROFILE_ID = 'sentropic.parameters/2020-12-bounded-v1'` (`packages/mcp-platform/src/registry-parameters.ts:12-47,80-95`; `src/mcp/memory/schemas.ts:3597,3640`; `src/mcp/memory/receipts.ts:60,89`).
+   - **Host-Owned Opaque Pagination Handles (`F-03`):** `page_<48hex>` (`/^page_[0-9a-f]{48}$/`) stored in `createMemoryReadPageStoreV1` (`src/memory-tools/reads.ts:28-64,145-183`) with `engram_owns_signing_secret: false` (`src/mcp/memory/contracts.ts:585-615`), validated against authorization/policy/trust epochs (`validatePaginationHandleStateV1`, `src/mcp/memory/schemas.ts:3285-3346`, `:3308-3330`), checked with a double-read `as_of` pin (`reads.ts:171-174`), and disposed on outer ceiling refusal (`reads.ts:179-182`).
+   - **Byte Ceilings & Dual `CallToolResult` Serialization (`F-02`):** Because `src/mcp-memory/server.ts:181-190` and `packages/mcp-platform/src/transport/result-codec.ts:161-169` serialize the envelope **twice** (`structuredContent` + JSON-escaped `content[0].text`) under `COMBINED_RESULT_CEILING_BYTES = 2_097_152` (`server.ts:38`, `contracts.ts:296`, `mcp-platform/src/memory/contracts.ts:163`), `engram_memory_context` caps `max_pack_bytes` at **`524_288` (`512 KiB`)** (down from `1_048_576` on single-record `M1` tools in `contracts.ts:266-268`), keeping `MAX_ARGUMENT_OBJECT_UTF8_BYTES = 1_048_576` (`contracts.ts:295`) and `MAX_INVOCATION_DEADLINE_MS = 30_000` (`contracts.ts:297`).
+   - **Sanitized Error Taxonomy (`F-04`):** Reuses the exact 31-code `PublicMemoryErrorCode` union (`src/mcp/memory/contracts.ts:400-430`, `src/mcp/memory/errors.ts:29-72,87-396`; `packages/mcp-platform/src/memory/contracts.ts:201-233`) wrapped in `ToolFailureV1` (`contracts.ts:448-458`), while pre-provider claim checks refuse via `authorizeDispatch` (`packages/mcp-platform/src/transport/dispatch.ts:49-54`) and `CompiledMemoryDispatch.select` (`packages/mcp-broker/src/memory/compiled-dispatch.ts:190-195`).
 
 ### 2.2 Closed Input and Output Envelopes (`Draft 2020-12` & TypeScript Contracts)
 
-The outer wire envelopes `EngramMemoryContextInputEnvelopeV1`, `EngramMemoryContextDomainEnvelopeV1`, and `EngramMemoryContextOutputEnvelopeV1` are **identical to `Spec 6A §4.2` (`SPEC_ENGRAM_CLUSTER_MESH_MEMORY_ACCESS_AND_MCP_WIRING.md:545-591`)**. Spec 2 narrows `context_query` and `context_pack` from `Readonly<Record<string, unknown>>` (the domain-blind `cluster-mesh` pass-through view) to the closed Draft 2020-12 schemas `EngramMemoryContextQueryV1` and `EngramMemoryContextPackV1` under profile `sentropic.engram.memory-tools/2020-12-v2`:
+> **Wire Alignment Note (`F-01`, `F-02`, `F-14` — Superseding `Spec 6A §4.2 :576-591`):** In `Spec 6A §4.2` (`:576-591`), `EngramMemoryContextOutputEnvelopeV1` placed `{ ok: true, schema_version: 1, tool: 'engram_memory_context', ... }` at the root without `output.value`, `auditId`, or `redactionClass`, which is incompatible with `ToolSuccessV1<T>` (`src/mcp/memory/contracts.ts:437-445`), `MemoryToolSuccessV1<T>` (`packages/mcp-platform/src/memory/contracts.ts:174-182`), and `toMcpCallToolResult` (`src/mcp-memory/server.ts:164-170` where `result.output` is read). Per `sentropic` co-signatory finding `F-01`, `engram_memory_context` returns **`ToolSuccessV1<EngramMemoryContextValueV1>` / `MemoryToolSuccessV1<EngramMemoryContextValueV1>`** (`{ ok: true, output: { schema_version: 1, value: EngramMemoryContextValueV1 }, auditId, redactionClass: 'high' }`), widens the JCS integrity digest (`envelope_digest_sha256`) to cover all fields of `EngramMemoryContextValueV1`, caps `max_pack_bytes` at `524_288` (`F-02`), and enforces `"wt:"` worktree identity syntax on `derived_worktree_id` (`F-14`).
+
+Every interface and constant below that does not exist today is explicitly marked **`new` (`PROPOSED`)** together with the lot that introduces it (`Lot 2-E1` in `engram`, mirrored in `Lot 2-S0a` in `@sentropic/mcp-platform` where consumed by the broker/host):
 
 ```typescript
-// PROPOSED: src/mcp/memory/context-contracts.ts (re-exported under v2 profile only)
+// new (Lot 2-E1): src/mcp/memory/context-contracts.ts (mirrored in Lot 2-S0a: packages/mcp-platform/src/memory/contracts.ts)
 import type { OntologyTemplateEnvelopeRef, Sha256Digest } from '../../metamodel/contracts.js';
-import type { OpaqueRef } from './contracts.js';
+import type { OpaqueRef, ToolFailureV1, ToolSuccessV1 } from './contracts.js';
+
+export const MEMORY_CONTEXT_TOOL_NAME = 'engram_memory_context' as const; // new (Lot 2-E1 / 2-S0a)
+export const MEMORY_PROVIDER_CONTRACT_VERSION_V2 = '2.0.0' as const;       // new (Lot 2-E1 / 2-S0a)
 
 export const CONTEXT_TOKEN_BUDGET_MIN = 128 as const;     // Precedent: src/serve.ts:331
-export const CONTEXT_TOKEN_BUDGET_DEFAULT = 2_000 as const; // Precedent: src/serve.ts:332, answer-pack.ts:149
-export const CONTEXT_TOKEN_BUDGET_MAX = 32_000 as const;
+export const CONTEXT_TOKEN_BUDGET_DEFAULT = 2_000 as const; // Precedent: src/serve.ts:332, src/retrieval/answer-pack.ts:149
+export const CONTEXT_TOKEN_BUDGET_MAX = 32_000 as const;  // new (Lot 2-E1)
 export const CHARS_OR_UTF8_BYTES_PER_TOKEN = 3 as const;  // Precedent: src/serve.ts:352
+export const CONTEXT_MIN_PACK_BYTES = 4_096 as const;     // Precedent: src/mcp/memory/contracts.ts:266
+export const CONTEXT_DEFAULT_PACK_BYTES = 65_536 as const; // Precedent: src/mcp/memory/contracts.ts:268
+export const CONTEXT_MAX_PACK_BYTES = 524_288 as const;   // new (Lot 2-E1, F-02): 512 KiB ceiling so 2x CallToolResult < 2_097_152 B
 
-export interface ReprocessedPreviousStepV1 {
+/** Bounded JSON value conforming to sentropic.parameters/2020-12-bounded-v1 (new, Lot 2-E1, F-01). */
+export type BoundedContextJsonValueV1 =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly BoundedContextJsonValueV1[]
+  | { readonly [key: string]: BoundedContextJsonValueV1 };
+
+export interface BoundedContextDomainPayloadV1 {
+  readonly [key: string]: BoundedContextJsonValueV1; // Root MUST be plain JSON object (never null/array); maxDepth<=8, maxProperties<=64, maxItems<=64
+}
+
+export type ContextRecallTrustTierV1 =
+  | 'ratified_accepted_current'
+  | 'untrusted_pending_same_role_d5'
+  | 'untrusted_session_turn_excerpt_d23'
+  | 'untrusted_tool_result_observation'; // new (Lot 2-E1, F-09.1)
+
+export interface ReprocessedPreviousStepV1 { // new (Lot 2-E1)
   readonly step_id: string;                      // 1..128 UTF-8 bytes, NFC
   readonly reprocessed_digest_sha256: Sha256Digest;
-  readonly reprocessed_summary: string;          // 1..2400 UTF-8 bytes, NFC (D6/D8 compliant)
+  /** Deterministic PII-armored (D8) synthesis (1..2400 UTF-8 B, NFC); OMITTED under D6=refs (F-09.2, F-13). */
+  readonly reprocessed_summary?: string;
   readonly significant_tool_refs: readonly string[]; // 0..16 canonical tool_result node IDs
+  readonly file_refs?: readonly ContextFileDisclosureRefV1[]; // 0..16 path+fingerprint refs (D6=refs safe)
   readonly unresolved_citation_digests?: readonly Sha256Digest[]; // 0..16 optional drill-down anchors
 }
 
-export type ContextSliceIdV1 = 'track' | 'git' | 'architecture' | 'rules' | 'memory';
+export type ContextSliceIdV1 = 'track' | 'git' | 'architecture' | 'rules' | 'memory'; // new (Lot 2-E1)
 
-export interface EngramMemoryContextQueryV1 {
-  /** Token ceiling for the ENTIRE serialized EngramMemoryContextOutputEnvelopeV1 (128..32000, default 2000). */
+export interface EngramMemoryContextQueryV1 { // new (Lot 2-E1)
+  /** Token ceiling for the ENTIRE serialized MemoryToolSuccessV1<EngramMemoryContextValueV1> (128..32000, default 2000). */
   readonly token_budget?: number;
   /** Host-managed opaque continuation handle (/^page_[0-9a-f]{48}$/); omitted on initial step query. */
   readonly page_cursor?: OpaqueRef;
-  /** Reprocessed output of step k-1 (D23); omitted on step 1 (never null, per M2). */
+  /** Deterministically reprocessed output of step k-1 (D23); omitted on step 1 (never null, per M2). */
   readonly previous_step_result?: ReprocessedPreviousStepV1;
-  /** Optional on-demand raw session text search expression (D23, 1..512 UTF-8 bytes, NFC); omitted when unused. */
+  /** Optional on-demand lexical BM25F raw session text query (D23, 1..512 UTF-8 B, NFC, NEVER regex); omitted when unused. */
   readonly query_text?: string;
   /** Optional explicit mission/artifact node references to sharpen mission focus (0..16 refs). */
   readonly mission_focus_refs?: readonly string[];
@@ -210,27 +266,29 @@ export interface EngramMemoryContextQueryV1 {
   readonly include_same_role_pending?: boolean;
 }
 
-/** Outer input envelope — byte-identical to Spec 6A §4.2 (:545-565). */
+/** Closed input arguments for engram_memory_context (new, Lot 2-E1 / 2-S0a). */
 export interface EngramMemoryContextInputEnvelopeV1 {
   readonly schema_version: 1;
-  readonly step_ref: string; // 1..128 UTF-8 bytes
-  readonly derived_worktree_id?: string; // D21 "wt:..." node ID
+  readonly step_ref: string; // 1..128 UTF-8 bytes, NFC
+  /** Validated by validateWorktreeIdentity pattern ^wt:[a-z0-9._:-]{1,124}$ (minLength 4, maxLength 128; F-14). */
+  readonly derived_worktree_id?: string;
   readonly template_refs?: readonly OntologyTemplateEnvelopeRef[]; // 0..32 travelling template filters
-  readonly max_pack_bytes?: number; // 4096..1048576, default 65536 (MEMORY_MCP_LIMITS.MAX_PACKET_BYTES_*)
+  readonly max_pack_bytes?: number; // 4096..524288, default 65536 (CONTEXT_MAX_PACK_BYTES, F-02)
   readonly context_query: EngramMemoryContextQueryV1;
 }
 
-/** Envelope-only typed carrier — byte-identical to Spec 6A §4.2 (:567-574). */
+/** Envelope-only typed carrier with structurally bounded payload (new, Lot 2-E1 / 2-S0a; Point 2B + F-01 + F-09.2). */
 export interface EngramMemoryContextDomainEnvelopeV1 {
   readonly template_envelope: OntologyTemplateEnvelopeRef;
-  readonly entity_type_id: string; // Open template-defined type ID; NEVER a closed Track/h2a enum (Point 2B)
+  readonly entity_type_id: string; // Pattern ^[a-z][a-z0-9._:-]{0,127}$; NEVER a closed Track/h2a enum (Point 2B)
   readonly entity_id: string;
   readonly payload_digest_sha256: Sha256Digest;
   readonly control_verdict_authority: 'track' | 'engram' | null;
-  readonly payload: Readonly<Record<string, unknown>>;
+  /** Conforms to sentropic.parameters/2020-12-bounded-v1; free-text fields stripped under D6=refs (F-01, F-09.2). */
+  readonly payload: BoundedContextDomainPayloadV1;
 }
 
-export interface ContextFileDisclosureRefV1 {
+export interface ContextFileDisclosureRefV1 { // new (Lot 2-E1)
   /** Real repo-relative path when permitted, or `withheld-path:<sha256>` when path matches secret patterns (D6, D33). */
   readonly path_ref: string;
   readonly content_fingerprint: Sha256Digest;
@@ -240,21 +298,22 @@ export interface ContextFileDisclosureRefV1 {
   readonly pii_armor_stamp_digest?: Sha256Digest;
 }
 
-export interface SliceReadinessReceiptV1 {
+export interface SliceReadinessReceiptV1 { // new (Lot 2-E1)
   readonly slice: ContextSliceIdV1;
   readonly status: 'ready' | 'pending_criteria' | 'withheld_policy_d18' | 'withheld_purpose_d11' | 'degraded_local_d17';
   readonly slice_digest_sha256?: Sha256Digest;
 }
 
-export interface ContextBudgetReceiptV1 {
+export interface ContextBudgetReceiptV1 { // new (Lot 2-E1)
   readonly effective_token_budget: number;
-  /** Exact ceil(utf8ByteLength(JSON.stringify(finalOutputEnvelope)) / 3) <= effective_token_budget. */
+  /** Exact ceil(utf8ByteLength(JSON.stringify(fullMemoryToolSuccessV1)) / 3) <= effective_token_budget (F-02). */
   readonly used_tokens: number;
   readonly effective_byte_budget: number;
-  /** Exact utf8ByteLength(JSON.stringify(finalOutputEnvelope)) <= effective_byte_budget. */
+  /** Exact utf8ByteLength(JSON.stringify(fullMemoryToolSuccessV1)) <= effective_byte_budget <= 524_288 (F-02). */
   readonly used_bytes: number;
   readonly truncated: boolean;
   readonly stubbed_item_id?: string;
+  /** Counts ONLY records already belonging to the caller's authorized (tenantId, workspaceId) scope (zero cross-tenant oracle, F-09.4). */
   readonly omitted_counts_by_reason: Readonly<{
     readonly budget_exceeded: number;
     readonly d6_content_withheld: number;
@@ -263,7 +322,7 @@ export interface ContextBudgetReceiptV1 {
   }>;
 }
 
-export interface EngramMemoryContextPackV1 {
+export interface EngramMemoryContextPackV1 { // new (Lot 2-E1)
   readonly fingerprint_query_id: string; // "fpq_<64hex>" (D22)
   readonly snapshot_as_of_cursor: string; // Monotonic store high-water cursor pinned across page_cursor continuations
   readonly ranking_mode: 'model_triaged_d7_v1' | 'deterministic_attention_v1' | 'readonly_non_memory_d18';
@@ -278,7 +337,10 @@ export interface EngramMemoryContextPackV1 {
     /** Advisory only when active_role_id is absent (D16, Point 4B: engram never writes roles). */
     readonly proactive_role_proposal?: Readonly<{
       readonly proposed_role_id: string;
-      readonly rationale: string;
+      readonly confidence_band: 'low' | 'medium' | 'high';
+      /** Omitted under D6=refs so repo/session prose never leaks to un-authorized external models (F-09.2). */
+      readonly rationale?: string;
+      readonly cited_event_ids: readonly string[];
     }>;
     readonly allowed_activities: readonly string[];
     readonly multi_actor_relations: ReadonlyArray<{
@@ -286,14 +348,17 @@ export interface EngramMemoryContextPackV1 {
       readonly relation: string;
     }>;
   }>;
+  /** Populated ONLY from ratified accepted_current harness templates/overlays — NEVER from pending D5 items (F-09.1). */
   readonly harness_effective_rules?: Readonly<{
     readonly harness_template_envelope: OntologyTemplateEnvelopeRef;
     readonly master_harness_version: string;
     readonly workspace_overlay_ref?: string;
-    readonly active_rules: readonly string[];
+    readonly rules_digest_sha256: Sha256Digest;
+    /** Rule prose omitted under D6=refs when workspace overlay contains repo-authored text (F-09.2). */
+    readonly active_rules?: readonly string[];
   }>;
   readonly git_worktree_slice?: Readonly<{
-    readonly derived_worktree_id: string;
+    readonly derived_worktree_id: string; // Validated "wt:..." ID (never raw host filesystem path, F-14)
     readonly origin_workspace_id: string;
     readonly branch_ref: string;
     readonly head_commit_sha?: string;
@@ -302,23 +367,42 @@ export interface EngramMemoryContextPackV1 {
     readonly template_envelope: OntologyTemplateEnvelopeRef; // archi@1 unchanged (D16, Point 4B)
     readonly card_or_node_id: string;
     readonly summary_digest_sha256: Sha256Digest;
+    /** Omitted under D6=refs (F-09.2). */
     readonly summary?: string;
   }>;
   /** Omitted completely under D18=readonly (zero memory content). */
   readonly mission_focus_context?: Readonly<{
+    /** STRICTLY ratified accepted_current owner decisions — pending D5 items are segregated below (F-09.1). */
     readonly owner_decisions: ReadonlyArray<{
       readonly id: string;
       readonly decision_scope: 'project' | 'harness' | 'dossier';
-      readonly admission_state: 'accepted_current' | 'same_role_pending_d5';
-      readonly statement: string;
+      readonly admission_state: 'accepted_current';
+      readonly trust_tier: 'ratified_accepted_current';
+      /** Omitted under D6=refs (F-09.2). */
+      readonly statement?: string;
+      readonly file_refs: readonly ContextFileDisclosureRefV1[];
       readonly citation_digest_sha256: Sha256Digest;
       readonly attention_score_q16: number; // Integer [0..65535] for deterministic JCS serialization
+    }>;
+    /** Segregated unratified D5 same-role pending notes — rendered only inside non-executable quarantine (new, Lot 2-E1/2-E4, F-09.1). */
+    readonly same_role_pending_notes: ReadonlyArray<{
+      readonly id: string;
+      readonly candidate_kind: 'decision_candidate' | 'session_note';
+      readonly admission_state: 'same_role_pending_d5';
+      readonly trust_tier: 'untrusted_pending_same_role_d5';
+      /** Omitted under D6=refs (F-09.2). */
+      readonly statement?: string;
+      readonly file_refs: readonly ContextFileDisclosureRefV1[];
+      readonly citation_digest_sha256: Sha256Digest;
+      readonly attention_score_q16: number;
     }>;
     readonly significant_tool_results: ReadonlyArray<{
       readonly id: string;
       readonly significance: 'security-gate' | 'error' | 'significant';
       readonly admission_state: 'accepted_current' | 'same_role_pending_d5';
-      readonly summary?: string; // Omitted when D6=refs withholds body
+      readonly trust_tier: 'ratified_accepted_current' | 'untrusted_tool_result_observation';
+      /** Omitted under D6=refs (F-09.2). */
+      readonly summary?: string;
       readonly file_refs: readonly ContextFileDisclosureRefV1[];
       readonly citation_digest_sha256: Sha256Digest;
       readonly attention_score_q16: number;
@@ -326,7 +410,9 @@ export interface EngramMemoryContextPackV1 {
     readonly dreaming_recalled_facts: ReadonlyArray<{
       readonly id: string;
       readonly trigger: 'nightly' | 'weekly' | 'monthly' | 'mid-day' | 'context-saturation';
-      readonly summary?: string; // Subject to D6=refs rule on dreaming summaries!
+      readonly trust_tier: 'ratified_accepted_current';
+      /** Subject to D6=refs rule on dreaming summaries — omitted under D6=refs! */
+      readonly summary?: string;
       readonly file_refs: readonly ContextFileDisclosureRefV1[];
       readonly source_digest_sha256: Sha256Digest;
       readonly attention_score_q16: number;
@@ -339,96 +425,192 @@ export interface EngramMemoryContextPackV1 {
     readonly entry_ordinal: number;
     readonly citation_digest_sha256: Sha256Digest;
     readonly admission_state: 'accepted_current' | 'same_role_pending_d5';
+    readonly trust_tier: 'untrusted_session_turn_excerpt_d23';
     /** Present ONLY under content authorization + D8 PII armor; omitted under D6=refs. */
     readonly bounded_excerpt?: string;
     readonly file_refs: readonly ContextFileDisclosureRefV1[];
   }>;
 }
 
-/** Outer output envelope — byte-identical to Spec 6A §4.2 (:576-591). */
-export interface EngramMemoryContextOutputEnvelopeV1 {
-  readonly ok: true;
-  readonly schema_version: 1;
+/** Inner output.value payload wrapped inside ToolSuccessV1 / MemoryToolSuccessV1 (new, Lot 2-E1 / 2-S0a; F-01). */
+export interface EngramMemoryContextValueV1 {
   readonly tool: 'engram_memory_context';
-  readonly pack_digest_sha256: Sha256Digest; // SHA-256 over UTF-8 RFC 8785 JCS bytes of context_pack
+  /**
+   * SHA-256 over UTF-8 RFC 8785 JCS bytes of the entire EngramMemoryContextValueV1 object
+   * excluding `envelope_digest_sha256` itself — covering `tool`, `resolved_template_refs`,
+   * `domain_typed_envelopes`, `degraded`, `degraded_reason`, and `context_pack` (F-01.2).
+   */
+  readonly envelope_digest_sha256: Sha256Digest;
   readonly resolved_template_refs: readonly OntologyTemplateEnvelopeRef[];
   readonly domain_typed_envelopes: readonly EngramMemoryContextDomainEnvelopeV1[];
   readonly degraded: boolean;
   readonly degraded_reason?: string;
   readonly context_pack: EngramMemoryContextPackV1;
 }
+
+/**
+ * Shipped outer MCP envelope reused unchanged from:
+ * - engram: ToolSuccessV1<T> / ToolFailureV1 in src/mcp/memory/contracts.ts:437-458
+ * - sentropic: MemoryToolSuccessV1<T> / MemoryToolFailureV1 in packages/mcp-platform/src/memory/contracts.ts:174-195
+ * Shape on success: { ok: true, output: { schema_version: 1, value: EngramMemoryContextValueV1 }, auditId, redactionClass: 'high' }
+ */
+export type EngramMemoryContextResultV1 =
+  | ToolSuccessV1<EngramMemoryContextValueV1>
+  | ToolFailureV1; // new type alias (Lot 2-E1 / 2-S0a)
 ```
 
 **1-to-1 Structural Mapping to [`spec/memory/contracts/engram-h2a.md`](memory/contracts/engram-h2a.md) (`:100-155`):**
 - `tenantId`, `workspaceId`, and `mandateEnvelope` (`engram-h2a.md:101-112`) cross **exclusively out-of-band** in `StpConnectorContext` (`principal.tid`, workspace binding, and `h2aMandate?: VerifiedH2AMandateV1` verified from `params._meta['sentropic.h2a.mandate']` / `X-Sentropic-H2A-Mandate`, `Spec 6A` `:501-502,600`), honoring `M2` (`SPEC_MEMORY_MCP_V2.md:77-79`: caller arguments never supply authority or scope).
-- `derivedWorktreeId` (`:103`) maps to `EngramMemoryContextInputEnvelopeV1.derived_worktree_id`.
+- `derivedWorktreeId` (`:103`) maps to `EngramMemoryContextInputEnvelopeV1.derived_worktree_id` (validated against `^wt:[a-z0-9._:-]{1,124}$`).
 - `previousStepResult` (`:113-117`) and `queryText` (`:118`) map to `context_query.previous_step_result` and `context_query.query_text` (with `null` replaced by field omission per `M2`).
-- `fingerprintQueryId`, `roleConsciousnessSlice`, `harnessEffectiveRules`, `missionFocusContext`, and `sessionHistoryQueryMatches` (`:124-155`) map 1-to-1 to snake_case wire fields inside `context_pack`, while `domainTypedEnvelopes` (`:140-146`) sits at `EngramMemoryContextOutputEnvelopeV1.domain_typed_envelopes` so `cluster-mesh` can route travelling `OntologyTemplateEnvelopeRef` descriptors without parsing `context_pack` (`Spec 6A` `:531,582-585`).
+- `fingerprintQueryId`, `roleConsciousnessSlice`, `harnessEffectiveRules`, `missionFocusContext`, and `sessionHistoryQueryMatches` (`:124-155`) map 1-to-1 to snake_case wire fields inside `output.value.context_pack`, while `domainTypedEnvelopes` (`:140-146`) sits at `output.value.domain_typed_envelopes` inside `MemoryToolSuccessV1<EngramMemoryContextValueV1>` so `cluster-mesh` can route travelling `OntologyTemplateEnvelopeRef` descriptors without parsing `context_pack` (`Spec 6A` `:531,582-585`).
 
-### 2.3 Envelope-Only Domain Typing Invariant (`Point 2B`, `T-M-C`, `Point 5B`)
+### 2.3 Envelope-Only Domain Typing Invariant & Structural Bounds (`Point 2B`, `T-M-C`, `Point 5B`, `F-01.3`)
 
-1. **Template References and Digests Only — Zero Closed `Track` or `h2a` Type Lists:**
-   - In both `EngramMemoryContextInputEnvelopeV1` and `EngramMemoryContextOutputEnvelopeV1`, domain-typed items (`Track` project items, `h2a` role/skill extensions) are carried exclusively in `domain_typed_envelopes[]`, where each entry cites `template_envelope: OntologyTemplateEnvelopeRef` (`{ lineage, templateId, templateVersion, templateDigestSha256 }`, `Spec 0` `:149-154`) and `payload_digest_sha256: Sha256Digest`.
+1. **Template References and Digests Only — Zero Closed `Track` or `h2a` Type Lists (`Point 2B`):**
+   - In both `EngramMemoryContextInputEnvelopeV1` and `EngramMemoryContextValueV1`, domain-typed items (`Track` project items, `h2a` role/skill extensions) are carried exclusively in `domain_typed_envelopes[]`, where each entry cites `template_envelope: OntologyTemplateEnvelopeRef` (`{ lineage, templateId, templateVersion, templateDigestSha256 }`, `Spec 0` `:149-154`) and `payload_digest_sha256: Sha256Digest`.
    - `entity_type_id` is a bounded UTF-8 pattern string (`^[a-z][a-z0-9._:-]{0,127}$`), **never** a JSON Schema `enum` or TypeScript union of `Track` entity names in `engram` or `sentropic`. `Track` can add, rename, or retire domain types in a new `Track` template version with **zero code or schema change in `engram_memory_context`** (`OWNER-DECISIONS-2026-11-14.md:12,22`).
-2. **`Point 5B` Ratification Gate on `Track`-Domain Envelopes:**
+2. **Closed Structural Bounds Under `sentropic.parameters/2020-12-bounded-v1` (`F-01.3`, `F-09.2`):**
+   - Semantic openness on `entity_type_id` (`Point 2B`) coexists with strict structural bounds on `domain_typed_envelopes[].payload` matching `BOUNDED_PROFILE_ID = 'sentropic.parameters/2020-12-bounded-v1'` (`packages/mcp-platform/src/registry-parameters.ts:12-47,80-95`, `src/mcp/memory/schemas.ts:3597,3640`, `SPEC_MEMORY_MCP_V2.md:62-99`).
+   - Both the Draft 2020-12 recursive `$defs.BoundedContextDomainPayloadV1` schema and `validateBoundedContextDomainPayloadV1` (`new`, Lot `2-E1`) enforce:
+     - root value is a plain JSON object (`typeof v === 'object' && v !== null && !Array.isArray(v)` — zero `null` root, zero custom prototype);
+     - `maxDepth: 8`, `maxProperties: 64` per object, `maxItems: 64` per array, `maxStringUtf8Bytes: 8_192`, `maxKeyUtf8Bytes: 128`;
+     - every key and string value is well-formed Unicode (`isWellFormed()`) normalized in NFC (`s === s.normalize('NFC')`); every number satisfies `Number.isFinite(n)` (`-0` normalized to `0` for RFC 8785 JCS);
+     - under `D6=refs` (§4.2), all free-text / prose / extract properties inside `payload` are stripped before serialization so only structural identifiers, closed status/lifecycle tokens, template refs, `ContextFileDisclosureRefV1` (`content_disclosure: 'refs_only_d6'`), and `Sha256Digest` values cross the wire (`payload_digest_sha256` continues to record the canonical record digest).
+3. **`Point 5B` Ratification Gate on `Track`-Domain Envelopes:**
    - Per `Point 5B` (`OWNER-DECISIONS-2026-11-14.md:25`), without an authoritative verdict from the `Track` application (`control_verdict_authority === 'track'` with verdict `'accepted'`), a typed write in the `Track` lineage stays `proposed`.
-   - `engram_memory_context` MUST exclude unratified `Track`-lineage `proposed` items from `domain_typed_envelopes` (incrementing `omitted_counts_by_reason.point_5b_unratified_track_proposal`), while the underlying raw session event remains recallable in `significant_tool_results` / `session_history_query_matches` under `D5` / `D23`.
+   - `engram_memory_context` MUST exclude unratified `Track`-lineage `proposed` items from `domain_typed_envelopes` (incrementing `omitted_counts_by_reason.point_5b_unratified_track_proposal`), while the underlying raw session event remains recallable in `same_role_pending_notes` / `significant_tool_results` / `session_history_query_matches` under `D5` / `D23`.
 
-### 2.4 Dual Full-Envelope Budget (`token_budget` + `max_pack_bytes`), Deterministic Packing, and Opaque Cursor
+### 2.4 Dual Full-Envelope Budget (`token_budget` + `max_pack_bytes`), `CallToolResult` Ceiling Guard, and Scoped Opaque Cursor
 
-1. **Dual Ceiling Enforcement on the Final Envelope:**
+1. **Dual Ceiling Enforcement on Complete `MemoryToolSuccessV1<EngramMemoryContextValueV1>` (`F-02`):**
    - `effective_token_budget = clamp(context_query.token_budget ?? 2_000, 128, hostPolicy.max_token_budget ?? 32_000)` (`context_query.token_budget < 128` or `> 32_000` fails closed at Draft 2020-12 schema validation with `INVALID_SCHEMA`).
-   - `effective_byte_budget = clamp(input.max_pack_bytes ?? 65_536, 4_096, Math.min(hostPolicy.max_pack_bytes ?? 1_048_576, 1_048_576))` (`src/mcp/memory/contracts.ts:266-268`).
-   - Token estimation uses the exact `app-context` / `src/serve.ts:352` deterministic formula:
-     $$\mathrm{tokens}(\text{envelope}) = \left\lceil \frac{\mathrm{utf8ByteLength}(\mathrm{JSON.stringify}(\text{envelope}))}{3} \right\rceil$$
-   - **Post-Population Invariant:** Both `used_tokens <= effective_token_budget` and `used_bytes <= effective_byte_budget` (and outer MCP `CallToolResult <= 2_097_152` bytes in `src/mcp-memory/server.ts:38,191-202`) MUST hold on the **complete `EngramMemoryContextOutputEnvelopeV1` after `pack_digest_sha256`, `resolved_template_refs`, `budget_receipt`, and `next_page_cursor` have been populated**. Because `page_<48hex>` is fixed-width (`53` ASCII bytes) and integer counters have bounded decimal digits, `packContextEnvelopeToBudget` reserves a fixed worst-case trailer slack before finalizing `budget_receipt` and `pack_digest_sha256`.
+   - `effective_byte_budget = clamp(input.max_pack_bytes ?? 65_536, 4_096, Math.min(hostPolicy.max_pack_bytes ?? 524_288, 524_288))` (`CONTEXT_MAX_PACK_BYTES = 524_288`, `new` Lot `2-E1`). Values `< 4_096` or `> 524_288` fail closed with `INVALID_SCHEMA`.
+   - Token and byte measurement in `packContextEnvelopeToBudget` (`new`, Lot `2-E2`, modeled on `envelopeOverhead` in `src/memory-tools/reads.ts:145,151` and `SPEC_MEMORY_MCP_V2.md:171`) operates on the **complete `MemoryToolSuccessV1<EngramMemoryContextValueV1>`** (`fullEnvelope = { ok: true, output: { schema_version: 1, value }, auditId, redactionClass: 'high' }`):
+     $$\mathrm{used\_bytes} = \mathrm{utf8ByteLength}(\mathrm{JSON.stringify}(\text{fullEnvelope})), \qquad \mathrm{used\_tokens} = \left\lceil \frac{\mathrm{used\_bytes}}{3} \right\rceil$$
+   - **Post-Population & Dual-Serialization `CallToolResult` Invariant (`F-02`):**
+     - `toMcpCallToolResult` (`src/mcp-memory/server.ts:181-190`) and `encodeMemoryEnvelope` (`packages/mcp-platform/src/transport/result-codec.ts:161-169`) emit `{ content: [{ type: 'text', text: JSON.stringify(fullEnvelope) }], structuredContent: fullEnvelope }`, duplicating the envelope and escaping quotes/newlines in `content[0].text` under `COMBINED_RESULT_CEILING_BYTES = 2_097_152` (`src/mcp-memory/server.ts:38`, `src/mcp/memory/contracts.ts:296`, `packages/mcp-platform/src/memory/contracts.ts:163`).
+     - Capping `effective_byte_budget <= 524_288` (`512 KiB`) keeps `structuredContent` + escaped `content[0].text` safely below `2_097_152` B even under pathological backslash/quote escaping, **AND** `assembleContext` explicitly verifies `Buffer.byteLength(JSON.stringify(candidateCallToolResult), 'utf8') <= 2_097_152` **before** committing or advancing any `next_page_cursor` in `MemoryContextPageStoreV1` (and disposes any provisional handle in `finally` if `!response.ok`, matching `src/memory-tools/reads.ts:179-182`).
+     - Both `used_tokens <= effective_token_budget` and `used_bytes <= effective_byte_budget` MUST hold after `envelope_digest_sha256`, `resolved_template_refs`, `budget_receipt`, `next_page_cursor`, `auditId`, and `redactionClass` are populated.
 2. **Deterministic Priority Packing & Single-Item Unicode-Scalar-Safe Stubbing (`app-context` Precedent):**
    - Structural headers (`slice_readiness`, `role_consciousness_slice`, `harness_effective_rules`, `git_worktree_slice`) are packed first in fixed priority order.
-   - Variable-cardinality items across `owner_decisions`, `domain_typed_envelopes` (paired with their required `resolved_template_refs` entry!), `dreaming_recalled_facts`, `significant_tool_results`, `architecture_slice_refs`, and `session_history_query_matches` are merged into a single deterministic priority queue ordered by `(priority_tier ASC, attention_score_q16 DESC, canonical_id ASC)`.
-   - Items are appended **whole** while the serialized envelope stays within both budgets.
+   - Variable-cardinality items across `owner_decisions`, `domain_typed_envelopes` (paired with their required `resolved_template_refs` entry!), `dreaming_recalled_facts`, `significant_tool_results`, `same_role_pending_notes`, `architecture_slice_refs`, and `session_history_query_matches` are merged into a single deterministic priority queue ordered by `(priority_tier ASC, attention_score_q16 DESC, canonical_id ASC)`.
+   - Items are appended **whole** while the serialized `MemoryToolSuccessV1` stays within both budgets.
    - **Single-Item Stub Progression Guarantee:** If the *first* remaining item at the head of a page cannot fit whole in an otherwise empty variable-item page, `packContextEnvelopeToBudget` emits a **single Unicode-scalar-safe truncated stub** of its text field (`utf8CutAtCodePointBoundary`, never splitting a UTF-8 multi-byte sequence and never emitting `U+FFFD`), sets `budget_receipt.truncated = true` and `budget_receipt.stubbed_item_id = item.id`, and advances the cursor past that item (or records a byte-offset sub-cursor for `session_history_query_matches`), guaranteeing strict forward progress on every paginated call.
-   - **Non-Advancing Refusal When Structural Floor Exceeds Budget:** If `effective_token_budget` or `effective_byte_budget` is schema-valid (`>= 128` tokens and `>= 4_096` bytes) but still smaller than the minimal fixed envelope + mandatory `resolved_template_refs` floor, the tool MUST NOT advance or invalidate `page_cursor`; it returns public error code `PROJECTION_OVERSIZED` (the neutral memory counterpart of `app-context`'s `"budget-too-small"`, `src/app-context/types.ts:181` vs `src/mcp/memory/errors.ts:47`).
-3. **Host-Managed Opaque Cursor (`page_<48hex>`, Zero `engram` Signing Secret):**
-   - `createMemoryContextPageStoreV1` (`PROPOSED: src/memory-tools/context.ts`, modeled directly on `createMemoryReadPageStoreV1` in `src/memory-tools/reads.ts:28-64,113-183`) generates `page_${randomBytes(24).toString('hex')}` (`/^page_[0-9a-f]{48}$/`, `ttl_ms` default `60_000` bounded to `1..300_000`, `max_entries` `1..10_000`, `engram_owns_signing_secret: false` per `src/mcp/memory/contracts.ts:585-613`).
-   - Each stored handle binds `pageBinding = receiptDigest('memory-context-page-binding-v1', { tenant_id, workspace_id, principal_id, mandate_digest_sha256: mandate?.envelopeDigest ?? 'none', fingerprint_query_id, query_text: query.query_text ?? '', snapshot_as_of_cursor, store_epoch })`.
+   - **Non-Advancing Refusal When Structural Floor Exceeds Budget:** If `effective_token_budget` or `effective_byte_budget` is schema-valid (`>= 128` tokens and `>= 4_096` bytes) but still smaller than the minimal fixed `MemoryToolSuccessV1` + mandatory `resolved_template_refs` floor, the tool MUST NOT advance or invalidate `page_cursor`; it returns public error code `PROJECTION_OVERSIZED` (`src/mcp/memory/errors.ts:50,287-296`, neutral counterpart of `app-context`'s `"budget-too-small"` at `src/app-context/types.ts:181`).
+3. **Host-Managed Opaque Cursor Bound to `D6`, Epochs, and Per-Tenant Scope Quota (`F-03`):**
+   - `createMemoryContextPageStoreV1` (`new`: `src/memory-tools/context.ts`, Lot `2-E2`, modeled on `createMemoryReadPageStoreV1` in `src/memory-tools/reads.ts:28-64,145-183` and `validatePaginationHandleStateV1` in `src/mcp/memory/schemas.ts:3285-3346`) generates `page_${randomBytes(24).toString('hex')}` (`/^page_[0-9a-f]{48}$/`, `ttl_ms` default `60_000` bounded to `1..300_000`, global `max_entries` `1..10_000`, `engram_owns_signing_secret: false` per `src/mcp/memory/contracts.ts:585-615`).
+   - **Per-Scope Capacity Isolation (`F-03.2`):** `MemoryContextPageStoreV1` enforces a dedicated per-`(tenant_id, workspace_id)` ceiling `max_entries_per_scope: 256` with **scope-partitioned LRU eviction**, so a noisy pagination loop in Tenant A can never evict active cursors (`STALE_PAGE`) belonging to Tenant B on `external-host` deployments.
+   - **Complete 16-Field `pageBinding` (`F-03.1`):** Each stored handle binds (`ContextPageBindingV1`, `new` Lot `2-E2`):
+     ```ts
+     pageBinding = receiptDigest('memory-context-page-binding-v1', {
+       tenant_id,
+       workspace_id,
+       principal_id,
+       mandate_digest_sha256: mandate?.envelopeDigest ?? 'none',
+       purpose_ref,                       // 'memory.recall.contextual/v1'
+       content_authorization_posture,     // 'authorized_d8' | 'refs_only_d6'
+       model_endpoint_class,              // prevents D8 -> D6 cross-page extract leak
+       requested_slices,                  // canonical sorted slice tuple
+       include_same_role_pending,         // boolean
+       template_refs_digest,              // JCS SHA-256 of input.template_refs ?? []
+       fingerprint_query_id,
+       query_text: query.query_text ?? '',
+       snapshot_as_of_cursor,
+       store_epoch,
+       policy_epoch,                      // aligned with schemas.ts:3317-3320
+       trust_revocation_epoch             // aligned with schemas.ts:3321
+     });
+     ```
    - On continuation (`page_cursor` present):
-     1. Unknown, expired, malformed, principal-mismatched, mandate-changed, or query-changed handles fail closed with `STALE_PAGE` (`src/mcp/memory/errors.ts:43`, neutral counterpart of `app-context`'s `"cursor-invalid"` `:179`).
-     2. Following `src/memory-tools/reads.ts:171-174`, `assembleContext` verifies `snapshot_as_of_cursor` both **before** and **after** reading the pinned snapshot; if a concurrent `forget` (`tombstone`), `withdraw`, `D7` confidentiality blacklist update, or epoch rotation invalidated an item in the pinned view, continuation refuses with `STALE_PAGE` so revoked or forgotten material is never paged out (`SPEC_MEMORY_MCP_V2.md:902`).
+     1. Any unknown, expired, malformed, principal-mismatched, mandate-changed, `D6`-posture-changed, endpoint-changed, slice/filter-changed, template-changed, or epoch-rotated handle fails closed with `STALE_PAGE` (`src/mcp/memory/errors.ts:52,307-316`).
+     2. Following `src/memory-tools/reads.ts:171-174`, `assembleContext` verifies `snapshot_as_of_cursor`, `store_epoch`, `policy_epoch`, and `trust_revocation_epoch` both **before** and **after** reading the pinned snapshot; if a concurrent `forget` (`tombstone`), `withdraw`, `D7` `ConfidentialityDenyListV1` update, `D6` revocation, or trust/policy epoch bump invalidated an item in the pinned view, continuation refuses with `STALE_PAGE` (`SPEC_MEMORY_MCP_V2.md:902`).
 
-### 2.5 Public Error Codes (`PUBLIC_MEMORY_ERROR_CODES` Mapping)
+### 2.5 Public Error Codes & Pre-Provider Dispatch Refusals (`F-04`, `F-09.4`)
 
-`engram_memory_context` reuses the exact 31-code `PublicMemoryErrorCode` union in `src/mcp/memory/errors.ts:29-72` and constant sanitized messages in `errors.ts:84-397` (`ToolFailureV1` at `src/mcp/memory/contracts.ts:448-458`), introducing **zero unratified public wire error strings**:
+`engram_memory_context` introduces **zero new public error codes**. Pre-provider dispatch guards emit the existing `@sentropic/mcp-platform` / `@sentropic/mcp-broker` refusal codes, while intra-provider failures emit only existing members of the 31-code `PublicMemoryErrorCode` union (`src/mcp/memory/contracts.ts:400-430`, `src/mcp/memory/errors.ts:29-72,87-396`; `packages/mcp-platform/src/memory/contracts.ts:201-233`) wrapped in `ToolFailureV1` (`src/mcp/memory/contracts.ts:448-458`):
 
-| Condition in `engram_memory_context` | Wire Surface & Code (`src/mcp/memory/errors.ts`) | Precedent / Notes |
-|---|---|---|
-| Tool disabled (`contextToolsEnabled !== true`) or host masked by `shim-bridge` (`Gate 1` / `Gate 3`) | Broker / shim `unknown_tool` (before provider invocation) | `compiled-dispatch.ts:156-158`; `Spec 6A` `:611,620` |
-| Missing trusted `StpConnectorContext` or missing `auditId` | JSON-RPC protocol error `-32603` (`'Trusted invocation context unavailable'`) | `src/mcp/memory/errors.ts:437-440` |
-| Missing `'sub'`, `'tid'`, or `'h2a_context_mandate'` claim, or unauthorized workspace / revoked `D11` recall grant | `ToolFailureV1` → `UNAUTHORIZED_SCOPE` (`errors.ts:34`) | Constant sanitized message; zero existence leak across tenants/workspaces |
-| Stray `elicitation_ref` supplied on a read-only tool, or unverified Gate 2 / runtime capability posture | `ToolFailureV1` → `gate_failed` / `CAPABILITY_UNAVAILABLE` (`errors.ts:53,71`) | Matches `src/mcp-memory/provider.ts:788-797` |
-| Malformed arguments, extra keys (`additionalProperties: false`), `null` optional field, `token_budget < 128` or `> 32000`, `max_pack_bytes < 4096` or `> 1048576`, non-NFC string | `ToolFailureV1` → `INVALID_SCHEMA` (`errors.ts:31`) | Enforced identically at JSON Schema and runtime validator (`M2`) |
-| Out-of-band `X-Sentropic-H2A-Mandate` vs `params._meta['sentropic.h2a.mandate']` mismatch, or invalid `Sha256Digest` in `template_refs` | `ToolFailureV1` → `INVALID_DIGEST` (`errors.ts:32`) | `Spec 6A §2.3` & `:501` |
-| Unknown, expired, principal/mandate-mismatched, or tombstone-invalidated `page_cursor` | `ToolFailureV1` → `STALE_PAGE` (`errors.ts:43`) | Maps `app-context` `"cursor-invalid"` (`src/app-context/types.ts:179`) onto neutral memory taxonomy |
-| Schema-valid `token_budget` / `max_pack_bytes` too small to fit the minimal fixed envelope + required `resolved_template_refs` (cursor NOT advanced) | `ToolFailureV1` → `PROJECTION_OVERSIZED` (`errors.ts:47`) | Maps `app-context` `"budget-too-small"` (`src/app-context/types.ts:181`) |
-| Serialized MCP `CallToolResult` exceeds `2_097_152` UTF-8 bytes (`COMBINED_RESULT_CEILING_BYTES`) | `ToolFailureV1` → `RESULT_TOO_LARGE` (`errors.ts:68`) | `src/mcp-memory/server.ts:38,191-202` |
-| Both remote store and local fenced SQLite store unavailable or unhealthy | `ToolFailureV1` → `STORE_UNAVAILABLE` (`errors.ts:52`) | When local fenced SQLite is healthy while remote sync is down, returns `ok: true, degraded: true` (`D17`) |
-| Invocation deadline (`<= 30_000 ms`, `contracts.ts:297`) or abort signal exceeded | `ToolFailureV1` → `DEADLINE_EXCEEDED` (`errors.ts:54`) | `src/mcp-memory/provider.ts:680-715` |
-| Per-principal / per-tenant rate limiter tripped | `ToolFailureV1` → `RATE_LIMITED` (`errors.ts:69`) | Host rate-limit mapping |
+| Condition in `engram_memory_context` | Layer | Exact Wire Surface & Code (`file:line` Verified) | Precedent / Notes |
+|---|---|---|---|
+| Tool disabled (`contextToolsEnabled !== true`), excluded from `READ_ONLY_TOOL_ALLOWLIST` (`sentropic-mcp`, `DEC-116`), or masked by `shim-bridge` (`Gate 1` / `Gate 3`) | Pre-provider (`api` / `broker` / `shim`) | HTTP `403` (`client-policy.ts:40-41`) or broker `unknown_tool` (`compiled-dispatch.ts:166-170`) | Never invokes `engram` provider (`Spec 6A` `:611,620`) |
+| Missing required claim `'sub'`, `'tid'`, or `'h2a_context_mandate'` in `principal.claims` | Pre-provider (`mcp-platform` / `mcp-broker`) | `insufficient_claims` (`dispatch.ts:49-54`, `compiled-dispatch.ts:190-195`) → HTTP `403` JSON-RPC `-32003` (`registry-dispatch.ts:58-72`) or `-32603` (`server.ts:220-226`) | Refused **before** provider invocation (`F-04.2`); never enters `ToolFailureV1` |
+| Missing trusted `StpConnectorContext`, missing `auditId`, or `'h2a_context_mandate'` claim without consistent `ctx.h2aMandate` | Pre-provider / boundary | JSON-RPC protocol error `-32603` (`'Trusted invocation context unavailable'`) | `src/mcp/memory/errors.ts:437-454`; `invocation-context.ts:58-74` |
+| Unauthorized workspace binding, `D18` attempted on an `M1` tool, or revoked `D11` `'memory.recall.contextual/v1'` grant inside provider | Intra-provider (`ToolFailureV1`) | `'UNAUTHORIZED'` (`src/mcp/memory/errors.ts:33,117-126`; `mcp-platform/src/memory/contracts.ts:204`) | Constant sanitized message; zero cross-tenant existence leak (`F-04.1`) |
+| Stray `elicitation_ref` supplied on a read-only tool, or unverified runtime gate posture | Intra-provider (`ToolFailureV1`) | `'gate_failed'` (`src/mcp/memory/errors.ts:66,387-396`, `contracts.ts:428`, `provider.ts:795`; `mcp-platform/src/memory/contracts.ts:227`) or `'CAPABILITY_UNAVAILABLE'` (`errors.ts:43,217-226`) | Exact M6 lowercase wire literal `'gate_failed'` (`SPEC_MEMORY_MCP_V2.md:516`; note `errors.ts:53` is `'REGISTRY_VERSION_UNAVAILABLE'`) |
+| Malformed arguments, extra keys (`additionalProperties: false`), `null` optional field, invalid `"wt:"` `derived_worktree_id`, unbounded domain `payload`, `token_budget` outside `128..32000`, `max_pack_bytes` outside `4096..524288`, non-NFC string | Intra-provider (`ToolFailureV1`) | `'INVALID_SCHEMA'` (`src/mcp/memory/errors.ts:30,87-96`) | Enforced identically at Draft 2020-12 JSON Schema and runtime validator (`M2`) |
+| Out-of-band `X-Sentropic-H2A-Mandate` vs `params._meta['sentropic.h2a.mandate']` mismatch, or invalid `Sha256Digest` in `template_refs` | Boundary / Intra-provider (`ToolFailureV1`) | `'INVALID_DIGEST'` (`src/mcp/memory/errors.ts:31,97-106`) | `Spec 6A §2.3` & `:501` |
+| Unknown, expired, principal/mandate/`D6`/epoch-mismatched, or tombstone-invalidated `page_cursor` | Intra-provider (`ToolFailureV1`) | `'STALE_PAGE'` (`src/mcp/memory/errors.ts:52,307-316`) | Maps `app-context` `"cursor-invalid"` (`src/app-context/types.ts:179`) onto neutral memory taxonomy |
+| Schema-valid `token_budget` / `max_pack_bytes` smaller than minimal fixed `MemoryToolSuccessV1` + mandatory `resolved_template_refs` floor (cursor NOT advanced) | Intra-provider (`ToolFailureV1`) | `'PROJECTION_OVERSIZED'` (`src/mcp/memory/errors.ts:50,287-296`) | Maps `app-context` `"budget-too-small"` (`src/app-context/types.ts:181`) |
+| Serialized MCP `CallToolResult` exceeds `2_097_152` UTF-8 bytes (`COMBINED_RESULT_CEILING_BYTES`) | Server / codec (`ToolFailureV1`) | `'RESULT_TOO_LARGE'` (`src/mcp/memory/errors.ts:63,357-366`) | `src/mcp-memory/server.ts:38,187-202`; provisional cursor disposed (`reads.ts:179-182`) |
+| Both remote store and local fenced SQLite store unavailable or unhealthy | Intra-provider (`ToolFailureV1`) | `'STORE_UNAVAILABLE'` (`src/mcp/memory/errors.ts:44,227-236`) | When local fenced SQLite is healthy while remote sync is down, returns `ok: true, output.value.degraded: true` (`D17`) |
+| Invocation deadline (`<= 30_000 ms`, `contracts.ts:297`) or abort signal exceeded | Intra-provider (`ToolFailureV1`) | `'DEADLINE_EXCEEDED'` (`src/mcp/memory/errors.ts:41,197-206`) / `'CANCELLED'` (`errors.ts:42,207-216`) | `src/mcp-memory/provider.ts:680-715` |
+| Per-principal / per-tenant rate limiter tripped | Intra-provider (`ToolFailureV1`) | `'RATE_LIMITED'` (`src/mcp/memory/errors.ts:64,367-376`) | Host rate-limit mapping |
 
-Note on `TARGET_BEARING_MEMORY_TOOLS` (`src/mcp/memory/errors.ts:404-410`): `engram_memory_context` is a scope/graph-query tool rather than a single-record ID target lookup; if a caller supplies `derived_worktree_id` or `mission_focus_refs` belonging to another tenant/workspace or unauthorized scope, `engram` either omits unauthorized nodes silently from graph traversal or returns `UNAUTHORIZED_SCOPE` when the workspace binding itself is unauthorized—never revealing whether a foreign ID exists (`M6` neutral non-disclosure).
+**Non-Disclosure & Zero Cross-Tenant Oracle Invariant (`M6`, `F-04`, `F-09.4`):** On `TARGET_BEARING_MEMORY_TOOLS` (`src/mcp/memory/errors.ts:404-410`), `engram_memory_context` is a scoped graph-query tool rather than a single-record ID lookup. If a caller supplies `derived_worktree_id` or `mission_focus_refs` referencing an object outside the caller's authorized `(tenantId, workspaceId)`, graph traversal restricts candidate resolution strictly to the caller's authorized `(tenantId, workspaceId)` partition (returning `'UNAUTHORIZED'` at `errors.ts:33` when the workspace binding itself is unauthorized), and **`budget_receipt.omitted_counts_by_reason` counts ONLY records already inside that authorized `(tenantId, workspaceId)` scope**—eliminating any cross-tenant existence side-channel.
 
-### 2.6 Default-Disabled Build, Co-Signature & `MCP-L5` Gates, and Per-Host Switchover (`Point 2B`, `Spec 6A §4.3`)
+### 2.6 Default-Disabled Build, Read-Branch Routing, `DEC-116` Exclusion, Cryptographic `CoSignatureReceiptV2`, and Per-Host Switchover (`Point 2B`, `Spec 6A §4.3`)
 
-Per `Point 2B` (`OWNER-DECISIONS-2026-11-14.md:22`) and `Spec 6A §4.3` (`SPEC_ENGRAM_CLUSTER_MESH_MEMORY_ACCESS_AND_MCP_WIRING.md:604-641`):
-1. **Gate 1 — Built Now, Disabled by Default (`contextToolsEnabled: false`):**
-   - `createEngramMemoryProviderV1` (`src/mcp-memory/provider.ts:648`) accepts `options.contextToolsEnabled?: boolean` defaulting to `false`.
-   - When `contextToolsEnabled !== true`, `provider.ts:458` validates the exact 6-tool `v1` descriptor list (`MEMORY_MCP_WIRE_PROFILE_ID_V1 = 'sentropic.engram.memory-wire/v1'`, `MEMORY_MCP_TOOL_SCHEMA_PROFILE_ID_V1 = 'sentropic.engram.memory-tools/2020-12-v1'` in `src/mcp-memory/profiles.ts:7-16`), `MEMORY_PUBLISHER_ASSETS_V1_SCHEMA` (`src/mcp/memory/receipts.ts:100,124-126`) keeps `minItems: 6, maxItems: 6`, and `engram_memory_context` is absent from `manifest.tools`, `tools/list`, and `CompiledMemoryDispatch`.
-2. **Gate 2 — `engram` + `sentropic` Co-Signature & `MCP-L5` Production Qualification (`v2` Profile):**
-   - Enabling `contextToolsEnabled: true` switches the active profile bindings to `MEMORY_MCP_WIRE_PROFILE_ID_V2 = 'sentropic.engram.memory-wire/v2'` and `MEMORY_MCP_TOOL_SCHEMA_PROFILE_ID_V2 = 'sentropic.engram.memory-tools/2020-12-v2'` (`MEMORY_PUBLISHER_ASSETS_V2_SCHEMA` with `minItems: 7, maxItems: 7`).
-   - Startup in `composeEngramMemoryDefinition` (`sentropic:packages/cluster-mesh/src/integrations/mcp/memory-compose.ts:19-24`) refuses atomically unless both:
-     - a valid `CoSignatureReceiptV2` co-signed by `engram` (`engramManifestDigest`) and `sentropic` (`sentropicPlatformVersion`), and
-     - a non-empty `MCP-L5` production qualification receipt (`l5QualificationReceiptRef`, qualifying both the 6 `M1` tools and the 7th read tool against `L5-MEMORY-V1` + re-pinned `pre-candidate-manifest.json.sha256`)
-     are present and digest-verified (`Spec 6A` `:621-622`).
-3. **Gate 3 — Host-by-Host Switchover with Mandatory Fixed End Date via Signed `BridgeLock` (`Spec 6A §4.3` `:623-641`):**
+Per `Point 2B` (`OWNER-DECISIONS-2026-11-14.md:22`), `Spec 6A §4.3` (`SPEC_ENGRAM_CLUSTER_MESH_MEMORY_ACCESS_AND_MCP_WIRING.md:604-641`), and `sentropic` findings `F-05`–`F-08` & `F-14`:
+
+1. **Gate 1 — Built Now, Disabled by Default (`contextToolsEnabled: false`) & Immutable `v1` 6-Tool Constants (`F-05`):**
+   - `ENGRAM_MEMORY_TOOL_NAMES` (`src/mcp/memory/contracts.ts:149-156`), `MEMORY_TOOL_NAMES` (`packages/mcp-platform/src/memory/contracts.ts:40-47`), and `MEMORY_PROVIDER_CONTRACT_VERSION = '1.0.0'` (`mcp-platform/src/memory/contracts.ts:36`) remain **immutable 6-tool `v1` constants** so existing `v1` consumers and all 22 `R2-MEMORY` suites stay 100% unchanged.
+   - Lots `2-E1` and `2-S0a` add `new` exports `MEMORY_CONTEXT_TOOL_NAME = 'engram_memory_context'`, `MEMORY_TOOL_NAMES_V2 = [...MEMORY_TOOL_NAMES, MEMORY_CONTEXT_TOOL_NAME]`, `MEMORY_PROVIDER_CONTRACT_VERSION_V2 = '2.0.0'`, and `getMemoryToolNames({ contextToolsEnabled }): readonly string[]`, consumed in lockstep by `createEngramMemoryBuiltin` (`packages/cluster-mesh/src/integrations/mcp/memory.ts:35`) and `composeEngramMemoryDefinition` (`packages/cluster-mesh/src/integrations/mcp/memory-compose.ts:22-24,57`).
+   - When `contextToolsEnabled !== true` (the default), `provider.ts:458` validates the exact 6-tool `v1` descriptor list (`MEMORY_MCP_WIRE_PROFILE_ID_V1 = 'sentropic.engram.memory-wire/v1'`, `MEMORY_MCP_TOOL_SCHEMA_PROFILE_ID_V1 = 'sentropic.engram.memory-tools/2020-12-v1'` in `src/mcp-memory/profiles.ts:7-16`), `MEMORY_PUBLISHER_ASSETS_V1_SCHEMA` (`src/mcp/memory/receipts.ts:100,124-126`) keeps `minItems: 6, maxItems: 6`, and `engram_memory_context` is absent from `manifest.tools`, `tools/list`, and `CompiledMemoryDispatch`.
+
+2. **Read-Branch Provider Routing, Claim Validation, & `DEC-116` / Catalog Guards (`F-05`, `F-06`, `F-07`):**
+   - **Read-Branch Routing in `src/mcp-memory/provider.ts` (`F-05.1`, Lot `2-E5`):** Today `provider.ts:711-720` routes only `'engram_memory_search'` and `'engram_memory_get'` to `readHost.authenticate(...)` and sends every other tool into `writeHost.authenticate(...)`, while `readPurposeRef` (`provider.ts:367-383`, called at `:741-744,784-786`) inspects `args.purpose_ref`. In Lot `2-E5`, `isReadMemoryTool(tool)` includes `'engram_memory_context'`: `invokeTool` authenticates via `readHost.authenticate(...)` (zero `writeHost` dependency, zero `idempotency_key`), resolves purpose exclusively from `verified.memory?.binding?.purpose_ref === 'memory.recall.contextual/v1'` without expecting `args.purpose_ref`, rejects any stray `elicitation_ref` with `'gate_failed'` (`provider.ts:795`), and dispatches at `:855-862` to `contextPort.assembleContext(...)`.
+   - **Per-Tool `requiredClaims` & `StpConnectorContext.h2aMandate` (`F-06.1`, Lot `2-S0a`):** In `packages/mcp-platform/src/memory/invocation-context.ts:86-112` (currently hardcoded `claims: ['sub', 'tid']` at `:107`) and `context-validation.ts:27-57`, `validateMemoryProjection(projection, requiredClaims = ['sub', 'tid'])` is parameterized on `descriptor.requiredClaims` (`['sub', 'tid', 'h2a_context_mandate']` for `engram_memory_context`). `StpConnectorContext` declares `readonly h2aMandate?: VerifiedH2AMandateV1` (`new`, Lot `6A-S0a` / `2-S0a`) outside closed `MemoryContextProjectionV1` (`invocation-context.ts:88-103`), and boundary validation refuses (`-32603`) if `'h2a_context_mandate'` appears in `principal.claims` while `ctx.h2aMandate` is missing or digest-mismatched.
+   - **Strict Exclusion from `READ_ONLY_TOOL_ALLOWLIST` (`DEC-116`) & Mandate-Filtered Catalog (`F-07`, Lot `2-S2`):**
+     - Even though `engram_memory_context` has `mutability: 'read-only'`, it recalls pre-admission same-role `pending` bodies (`D5`) and raw session history excerpts (`D23`) intended strictly for `h2a`-mandated loops. `engram_memory_context` MUST **NEVER** be added to `READ_ONLY_TOOL_ALLOWLIST` in `api/src/services/mcp/client-policy.ts:25-30` (`SENTROPIC_MCP_CLIENT_ID = 'sentropic-mcp'`, governing the public `claude.ai` OAuth connector under `DEC-116`): `isToolPermitted('sentropic-mcp', 'engram_memory_context')` MUST deterministically evaluate to `false` (HTTP `403`).
+     - `HostRegistryCatalogSource.snapshot()` (`api/src/services/catalog/sources/host-registry-source.ts:22-36`, where chat-agent discovery runs with `claims: []` at `:29`) and MCP `tools/list` MUST filter out `engram_memory_context` whenever the caller context lacks `'h2a_context_mandate'` (`SPEC_MEMORY_MCP_V2.md:678-680`).
+
+3. **Gate 2 — Cryptographically Verifiable `CoSignatureReceiptV2` & Exact `MCP-L5` Manifest SHA-256 Pin (`F-08`):**
+   - Enabling `contextToolsEnabled: true` switches active profile bindings to `MEMORY_MCP_WIRE_PROFILE_ID_V2 = 'sentropic.engram.memory-wire/v2'` and `MEMORY_MCP_TOOL_SCHEMA_PROFILE_ID_V2 = 'sentropic.engram.memory-tools/2020-12-v2'` (`MEMORY_PUBLISHER_ASSETS_V2_SCHEMA` with `minItems: 7, maxItems: 7`).
+   - Lots `2-E1` and `2-S0a` define the closed schema and Ed25519 verifier for `CoSignatureReceiptV2` (`new`, persisted at `spec/evidence/memory-mcp-l5/co-signature-v2.json` in Lot `2-S3`):
+     ```typescript
+     // new (Lot 2-E1 / 2-S0a): closed Draft 2020-12 + RFC 8785 JCS co-signature receipt
+     export interface CoSignatureOwnerAttestationV2 {
+       readonly signerId: 'owner:engram-l4' | 'owner:mcp-platform';
+       readonly algorithm: 'ed25519';
+       readonly publicKeySha256: Sha256Digest;
+       readonly signedAtUtc: string; // ISO-8601 UTC
+       /** Base64 Ed25519 signature over UTF-8 JCS bytes of CoSignaturePayloadV2 (domain-prefixed "sentropic.co-signature.v2\0"). */
+       readonly signatureBase64: string;
+     }
+
+     export interface CoSignaturePayloadV2 {
+       readonly schema_version: 2;
+       readonly wireProfileId: 'sentropic.engram.memory-wire/v2';
+       readonly wireProfileSha256: Sha256Digest;
+       readonly toolSchemaProfileId: 'sentropic.engram.memory-tools/2020-12-v2';
+       readonly toolSchemaProfileSha256: Sha256Digest;
+       readonly parameterProfileId: 'sentropic.parameters/2020-12-bounded-v1';
+       readonly parameterProfileSha256: Sha256Digest;
+       readonly engramPackageVersion: string;
+       readonly engramPublisherAssetsSha256: Sha256Digest;
+       readonly sentropicMcpPlatformVersion: string;
+       readonly sentropicMcpBrokerVersion: string;
+       readonly sentropicClusterMeshVersion: string;
+       /** Exact SHA-256 of tools/memory-mcp-l5/artifacts/pre-candidate-manifest.json (matching .sha256). */
+       readonly l5CandidateManifestSha256: Sha256Digest;
+       /** Exact SHA-256 of spec/evidence/memory-mcp-l5/l0-freeze.json. */
+       readonly l0FreezeSha256: Sha256Digest;
+     }
+
+     export interface CoSignatureReceiptV2 {
+       readonly payload: CoSignaturePayloadV2;
+       readonly payloadJcsSha256: Sha256Digest;
+       readonly engramOwnerAttestation: CoSignatureOwnerAttestationV2 & { readonly signerId: 'owner:engram-l4' };
+       readonly sentropicOwnerAttestation: CoSignatureOwnerAttestationV2 & { readonly signerId: 'owner:mcp-platform' };
+     }
+     ```
+   - Startup in `composeEngramMemoryDefinition` (`packages/cluster-mesh/src/integrations/mcp/memory-compose.ts:19-24`, wired in Lot `2-S1a`) refuses atomically unless:
+     1. `payloadJcsSha256 === sha256Hex(canonicalJcsBytes(receipt.payload))`;
+     2. both `engramOwnerAttestation` (`owner:engram-l4`) and `sentropicOwnerAttestation` (`owner:mcp-platform`) verify cryptographically under Ed25519 against pinned owner public-key digests;
+     3. `wireProfileSha256`, `toolSchemaProfileSha256`, `parameterProfileSha256`, and `engramPublisherAssetsSha256` match the loaded runtime `@sentropic/engram` `v2` assets byte-for-byte; and
+     4. `l5CandidateManifestSha256` equals the exact SHA-256 digest of the qualified `tools/memory-mcp-l5/artifacts/pre-candidate-manifest.json` (`pre-candidate-manifest.json.sha256`, `packages/cluster-mesh/tests/engram-memory/qualification.mk:14-15,49`) — never a mere non-empty string check (`F-08.2`, verified by 1-byte tamper `RED` tests in `2-S0a`/`2-S1a`/`2-S3`).
+
+4. **Gate 3 — Host-by-Host Switchover with Mandatory Fixed End Date via Signed `BridgeLock` (`Spec 6A §4.3` `:623-641`):**
    - All 8 `h2a` CLI hosts (`claude`, `codex`, `gemini`, `agy`, `hermes`, `opencode`, `muse`, `vibe`) read the signed `ContextToolHostSwitchoverPolicy` (`{ enabledHosts, switchoverEndDateUtc, fallbackMode: 'search-plus-get', allHostsQualified }`, `Spec 6A` `:626-636`) from the `sentropic.engram.memory` entry of `BridgeLock` (`h2a:packages/h2a/src/registry/bridge-lock.ts:187-221` on prerequisite PR #455 `844402ee`).
    - `mcp-central` loads the 7-tool `v2` registry once on the shared central generation, while `shim-bridge.js` / `catalogue.js` masks `engram_memory_context` per host for any CLI host not yet in `enabledHosts`—preserving central `bridgeLockDigest` and `contractDigest` parity and keeping PR #455's `rebootstrapMissingPluginLock` (`host-bootstrap.ts:1646-1775`) green.
    - **Pre-Switch vs Post-Switch Host Behavior:**
@@ -444,7 +626,7 @@ Per `Point 2B` (`OWNER-DECISIONS-2026-11-14.md:22`) and `Spec 6A §4.3` (`SPEC_E
 
 Existing `engram` retrieval in `engram-memory/recall.ts:27-57,105-160` combines `BM25F` (`primary: 3.0, decision: 2.0, evidence: 1.5, context: 1.0, citations: 0.5`), 30-day temporal half-life (`HALF_LIFE_MS` `:54`), Reciprocal Rank Fusion (`RRF_K = 60` `:55`), and Personalized PageRank (`PPR_ALPHA = 0.85` `:56`), while `src/retrieval/answer-pack.ts:256-341` computes lift-over-background PPR specificity and PathRAG shortest paths (`:388-391`).
 
-Per `D23` (`« La memoire fonctionne par de l attention […] »`, attention on significant tool results, owner decisions, mission focus, and dreaming recall of forgotten permanent facts), `MemoryContextPortV1` (`PROPOSED: engram-memory/contextual-graph-query.ts`) replaces generic flat recall with a two-stage **Contextual Attention Scorer**:
+Per `D23` (`« La memoire fonctionne par de l attention […] »`, attention on significant tool results, owner decisions, mission focus, and dreaming recall of forgotten permanent facts), `MemoryContextPortV1` (`new`: `engram-memory/contextual-graph-query.ts`, Lot `2-E3`) replaces generic flat recall with a two-stage **Contextual Attention Scorer**:
 
 1. **Stage 1 — Deterministic Multi-Channel Graph Attention (`deterministic_attention_v1`, Always Computed):**
    - **Seed Distribution $\mathbf{s}$ over the Authorized Memory Graph (`D22` + `D23`):**
@@ -452,12 +634,12 @@ Per `D23` (`« La memoire fonctionne par de l attention […] »`, attention on 
      - $0.40$ on the **Mandate & Role Consciousness Subgraph (`D22`)**: active `h2a` role node, allowed activity nodes, `mandate.scope` target nodes, and active workspace `.h2a/` overlay rules (`D31`);
      - $0.30$ on **Mission Focus Anchors (`D23`)**: `derived_worktree_id` (`D21`), `mission_focus_refs`, and Track/spec nodes cited by the active branch/lot;
      - $0.20$ on **Immediate Previous-Step Outcomes (`D23`)**: `previous_step_result.significant_tool_refs` and entities extracted from step $k-1$;
-     - $0.10$ on **Lexical / Citation Seed**: `BM25F` top candidates over `previous_step_result.reprocessed_summary` and (when supplied) `query_text`.
+     - $0.10$ on **Lexical / Citation Seed**: `BM25F` top candidates over `previous_step_result.reprocessed_summary` (when present) and (when supplied) `query_text`.
    - **Class-Specific Attention Multipliers $W_{\text{class}}(v)$ (`D23`, `D19`, `D27`, `Spec 1` `:214-218`):**
      Each candidate node $v$ surviving access/privacy filtering (§4) receives a deterministic structural score before quantization to integer `attention_score_q16` $\in [0, 65535]$:
      $$S_{\text{det}}(v) = \mathrm{RRF}_{k=60}\!\left(\mathrm{rank}_{\text{PPR-lift}}(v),\, \mathrm{rank}_{\text{BM25F}}(v)\right) \times W_{\text{class}}(v) \times D_{\text{recency}}(v)$$
      where:
-     - **Owner Decisions (`project_decision`, `harness_decision`, `decision_dossier` / `contextualized_fact` `D27`, and verified `owner.answer` / `owner.request` `Spec 1`):** $W_{\text{class}} = 2.50$, **zero temporal decay** ($D_{\text{recency}} = 1.00$ while `accepted_current`, so binding owner decisions never fade with age);
+     - **Ratified Owner Decisions (`project_decision`, `harness_decision`, `decision_dossier` / `contextualized_fact` `D27`, and verified `owner.answer` / `owner.request` `Spec 1`):** $W_{\text{class}} = 2.50$, **zero temporal decay** ($D_{\text{recency}} = 1.00$ while `accepted_current`, so binding owner decisions never fade with age);
      - **Dormant Dreaming Recalled Permanent Facts (`D19`, `D23`):** $W_{\text{class}} = 2.10$, $D_{\text{recency}} = 1.00$ — specifically surfacing permanent cross-session invariants and lessons consolidated by local (`nightly`, `mid-day`, `context-saturation`) or synced remote (`weekly`, `monthly`) dreaming passes (`Point 3C`) whose lexical overlap with step $k-1$ alone would be low (`« Le mode dreaming veenant rappelera des choses permanentes oubliees sur le court terme. »`);
      - **Tool Execution Results (`ToolResultSignificance`, `Spec 1` `:214-218`):**
        - `security-gate`: $W_{\text{class}} = 2.25$ (half-life $14\text{d}$);
@@ -466,30 +648,31 @@ Per `D23` (`« La memoire fonctionne par de l attention […] »`, attention on 
        - `routine`: **$W_{\text{class}} = 0.00$ (excluded from `significant_tool_results`**, preventing routine shell/read chatter from polluting attention; reachable only via explicit `query_text` on-demand search);
      - **Ratified Domain-Typed Envelopes (`domain_typed_envelopes`, e.g. `Track`-accepted items with `control_verdict_authority: 'track'`):** $W_{\text{class}} = 1.85$ when graph-connected within $\le 2$ hops of `mandate.scope` or `derived_worktree_id`.
 
-2. **Stage 2 — `D7` Model-Assisted Sensitivity-Triaged Reranking (`model_triaged_d7_v1`):**
+2. **Stage 2 — `D7` Model-Assisted Sensitivity-Triaged Reranking via `@sentropic/llm-mesh/decision` (`model_triaged_d7_v1`, `F-13`, `OQ-S2-3`):**
+   - **Strict L0 Neutrality & `cluster-mesh` Adapter Boundary (`F-13.1`):** `engram-memory/contextual-graph-query.ts` declares only the pure neutral port `ContextualRerankerPortV1` (`new`, Lot `2-E3`, zero `@sentropic/*`, `@ai-sdk/*`, or `src/llm-execution.ts` imports). The concrete `@sentropic/llm-mesh/decision` adapter (`createLlmMeshContextualRerankerV1`, `new`, Lot `2-S1b`) lives in **`packages/cluster-mesh/src/integrations/mcp/memory-d7-reranker.ts`**, consuming the topology-guarded leaf `packages/cluster-mesh/src/integrations/llm-mesh/decision.ts:1-3` (`DecisionClient.decide` in `packages/llm-mesh/src/decision/index.ts:1-16`).
    - Per `D7` (`« de base empreintes + triage de sensibilité pour faciliter stp (possibilité de gérer une black list de confidentialité a prevoir dans la memoire pour un agent de controle de memoire type PII) »`, `R15-SEDIMENT.md:52`), when **all three** conditions hold:
-     1. explicit content authorization is active for the scope (`D6`/`D7`),
-     2. every candidate in the top-$K$ ($K \le 32$) deterministic shortlist has passed `ConfidentialityDenyListV1` screening (`D7`, incrementing `d7_confidentiality_denied` on blocked items) and `PiiArmorStamp` redaction (`D8`), and
-     3. `@sentropic/llm-mesh` (`sentropic:packages/llm-mesh/src/decision/index.ts:1-16`, `VerifiedRoutingSubject` + `RouteMeteringSink` per `Spec 1` `1-E2`, zero direct `@ai-sdk/*` calls in `engram`) is reachable within the invocation deadline budget,
-     `engram` invokes the `llm-mesh/decision` fast reranker over **graph fingerprints + sensitivity-triaged bounded digests** and blends the model score via RRF with $S_{\text{det}}(v)$ (`ranking_mode: 'model_triaged_d7_v1'`).
-   - When content authorization is absent (`D6=refs`), or `@sentropic/llm-mesh` is offline/degraded (`D17=degraded`), or latency budget is tight, Stage 1 `deterministic_attention_v1` serves directly without failing the prompt loop.
+     1. explicit model-content authorization holds for the target `(tenantId, workspaceId, modelEndpointClass)` (`ModelContentAuthorizationPolicyV1`, §4.2),
+     2. every candidate in the top-$K$ ($K \le 32$) deterministic shortlist has passed `ConfidentialityDenyListV1` screening (`D7`, incrementing `d7_confidentiality_denied` on blocked items) and `PiiArmorStamp` redaction (`D8`), producing a signed host-side screening receipt (`confidentialityScreened === true`), and
+     3. `createLlmMeshContextualRerankerV1` in `cluster-mesh` verifies `screeningReceipt.confidentialityScreened === true` **before** building the closed 8-key `DecisionRequest` (`packages/llm-mesh/src/decision/request.ts:40-53,70` — `hasOnlyKeys(value, ['schemaVersion', 'evaluator', 'inputs', 'criterion', 'decision', 'policy', 'raw', 'correlationId'])`, **never** injecting foreign keys into `DecisionRequest`), sets `policy: { timeoutMs: 250, explanation: 'none' }` (`OQ-S2-3`) + `AbortSignal`, and records `RouteMeteringSink` telemetry under `VerifiedRoutingSubject`,
+     `engram` blends the `llm-mesh/decision` rank via RRF with $S_{\text{det}}(v)$ (`ranking_mode: 'model_triaged_d7_v1'`).
+   - When content authorization is absent (`D6=refs`), `@sentropic/llm-mesh` is offline/degraded (`D17=degraded`), or the `250 ms` soft timeout expires, Stage 1 `deterministic_attention_v1` serves immediately without failing the prompt loop.
    - **Deterministic Tie-Breaking:** Ties on `attention_score_q16` break strictly by `(admission_state_rank ASC ['accepted_current' < 'same_role_pending_d5'], canonical_id ASC)`.
 
 ### 3.2 Raw Session Text History Queryable on Demand (`D23` Without Violating `EVOL D3` / `M10`)
 
 Per `D23` (`« L historique de sessions serait juste acceasible via la memoire comme gestionnaire de session et memoire (on garde l historique de texte en query via le graph memoire) »`, `R15-SEDIMENT.md:68`) and `PLAN_SPEC_ENGRAM_FRONT.md:170,185`:
 1. **Default Prompt Pack Excludes Raw Turn Transcripts:** When `context_query.query_text` is omitted, `session_history_query_matches` is **omitted** from `context_pack`. Old turn prose is never pushed into prompts unsolicited.
-2. **On-Demand Graph-Anchored Text Query (`query_text` Present):**
-   - When the model or `h2a` step supplies `context_query.query_text` (`1..512` UTF-8 bytes), `engram` executes a scoped `BM25F` + graph-neighborhood query over canonical `session_turn` records (`<= 64 KiB` bounded `turn_text` and `SessionDbCitationTuple` `(sessionId, entryId, ordinal, contentDigest, branchEpoch?, parentEntryId?)` ingested by Spec 1) within the authorized `(tenantId, workspaceId)` (and `D5` same-role filter for non-admitted turns).
-   - Results populate `session_history_query_matches[]` with `turn_node_id`, `D33` `session_pseudonym`, `entry_ordinal`, `citation_digest_sha256`, and—**if and only if** content authorization (`D6`) and `D8` PII armor pass—a bounded excerpt (`<= 1_200` UTF-8 bytes, Unicode-scalar-safe). When content authorization is absent (`D6=refs`), `bounded_excerpt` is omitted and only `file_refs` (`path_ref` + `content_fingerprint`) and citation digests are returned.
+2. **On-Demand Graph-Anchored Lexical Text Query (`query_text` Present, Zero Regex / Zero `ReDoS`, `F-09.4`):**
+   - When the model or `h2a` step supplies `context_query.query_text` (`1..512` UTF-8 bytes, NFC), `engram` tokenizes `query_text` strictly as plain lexical `BM25F` search terms (**never** compiling `query_text` as a regular expression or `LIKE`/`SIMILAR TO` wildcard pattern—eliminating any `ReDoS` vector) within the invocation `AbortSignal` deadline over canonical `session_turn` records (`<= 64 KiB` bounded `turn_text` and `SessionDbCitationTuple` `(sessionId, entryId, ordinal, contentDigest, branchEpoch?, parentEntryId?)` ingested by Spec 1) inside the caller's authorized `(tenantId, workspaceId)` (and `D5` same-role filter for non-admitted turns).
+   - Results populate `session_history_query_matches[]` with `turn_node_id`, `D33` `session_pseudonym`, `entry_ordinal`, `citation_digest_sha256`, `trust_tier: 'untrusted_session_turn_excerpt_d23'`, and—**if and only if** `ModelContentAuthorizationPolicyV1` (`D6`) and `D8` PII armor pass—a bounded excerpt (`<= 1_200` UTF-8 bytes, Unicode-scalar-safe). When content authorization is absent (`D6=refs`), `bounded_excerpt` is omitted and only `file_refs` (`path_ref` + `content_fingerprint`) and citation digests are returned.
 3. **Zero Contamination of `.graphify/graph.json` (`EVOL D3` & `M10` Preserved):**
    - Raw `turn_text`, `tool_result` bodies, pending session records, and `session_history_query_matches` live **exclusively** in the canonical `engram-memory` / `session-db` journal and FTS/graph index. They are **never** copied into `.graphify/graph.json`, whose `52_428_800`-byte ceiling and `accepted_current` + `projection_eligible === true` envelope-only rule (`SPEC_MEMORY_MCP_V2.md:888-906`, `engram-memory/bounded-projection.ts:22-86`) remain strictly unchanged (§6.1.3).
 
 ---
 
-## 4. Access Control, Privacy, Non-Blocking Slices, and Identity-Less Sessions
+## 4. Access Control, Prompt-Injection Quarantine, `D6=refs` Exfiltration Seal, Non-Blocking Slices, and Identity-Less Sessions
 
-### 4.1 `D5` (`same-agent`): Pre-Admission Body Recall Scoped to Same `h2a` Role + Same Space
+### 4.1 `D5` (`same-agent`) & Prompt-Injection Defense on Untrusted Recall (`F-09.1`)
 
 Settled `D5` (`spec/memory/R15-SEDIMENT.md:50`): *« Cross-session recall before admission is scoped to the same `h2a` role within the same `(tenantId, workspaceId)` space. Successive sessions of the same h2a role, in the same space, read the non-admitted bodies (`« meme role h2a meme espace. »`) »*.
 
@@ -504,62 +687,95 @@ Let $r$ be a record in `engram` with lifecycle state `state(r)` (`engram-memory/
   5. `r` is not `withdrawn`, `rejected`, `tombstoned`, `expired`, or blocked by `ConfidentialityDenyListV1` (`D7`);
   6. **Strict Boundary Isolation:**
      - The six `M1` tools (`engram_memory_search`, `engram_memory_get`, etc.) keep `DISCLOSABLE_MEMORY_STATES = ['accepted_current']` (`src/mcp/memory/contracts.ts:234`) unchanged;
-     - `D5` **never** elevates a `Track`-domain `proposed` entity into `domain_typed_envelopes` without `Track`'s control verdict (`Point 5B`). Every `D5` item in `mission_focus_context` or `session_history_query_matches` is explicitly stamped `admission_state: 'same_role_pending_d5'`.
+     - `D5` **never** elevates a `Track`-domain `proposed` entity into `domain_typed_envelopes` without `Track`'s control verdict (`Point 5B`).
 
-### 4.2 `D6` (`refs`): Path and Fingerprint Only Without Content Authorization
+**Mandatory Indirect Prompt-Injection Quarantine (`F-09.1` — Testable in Lots `2-E4` & `2-H1`):**
+Because `engram_memory_context` recalls unreviewed `pending` bodies (`D5`), raw tool observations, and historical `session_turn` excerpts (`D23`) into every durationless step prompt (§1.1), the following four structural defenses are **normative and mechanically tested**:
+1. **Structural Array Segregation (`owner_decisions` vs `same_role_pending_notes`):** `mission_focus_context.owner_decisions` carries **only** `admission_state: 'accepted_current'` items (`trust_tier: 'ratified_accepted_current'`). Unadmitted `D5` notes are isolated in `mission_focus_context.same_role_pending_notes` (`admission_state: 'same_role_pending_d5'`, `trust_tier: 'untrusted_pending_same_role_d5'`) so a poisoned pending tool/PR observation can never masquerade as a ratified owner decision.
+2. **Zero Pending Contamination of `harness_effective_rules`:** No `pending` record (`same_role_pending_d5`) or unratified proposal may **ever** populate `context_pack.harness_effective_rules` (`D31` requires ratified harness artifacts).
+3. **Explicit `trust_tier` Labelling Across All Recall Slots:** Every item in `same_role_pending_notes` (`'untrusted_pending_same_role_d5'`), `session_history_query_matches` (`'untrusted_session_turn_excerpt_d23'`), and unratified `significant_tool_results` (`'untrusted_tool_result_observation'`) carries its immutable `ContextRecallTrustTierV1` tag inside the JCS-digested envelope.
+4. **Non-Executable Data-Quarantine Framing & Sanitization in `h2a` (`Lot 2-H1`):** When `durationless-prompt-loop.ts` formats `same_role_pending_notes`, `session_history_query_matches`, `significant_tool_results`, and `domain_typed_envelopes[].payload` into the outbound prompt, it MUST:
+   - strip all Unicode bidirectional override/isolate control characters (`U+202A..U+202E`, `U+2066..U+2069`) and ASCII control bytes (`0x00..0x08`, `0x0B`, `0x0C`, `0x0E..0x1F`, `0x7F`);
+   - escape any literal closing-fence / XML-tag / role-header breakout sequences (`</untrusted_recalled_data`, `<system`, `</system`, `SYSTEM:`, `DEVELOPER:`); and
+   - wrap the serialized JSON payload inside a dedicated non-instructional data block (`<untrusted_recalled_data trust_tier="..." sha256="...">...</untrusted_recalled_data>`) accompanied by the fixed system rule that text inside `untrusted_recalled_data` is passive evidence and **never** overrides `harness_effective_rules`, `H2AMandate`, or `owner_decisions`.
+
+### 4.2 `D6` (`refs`): Explicit Exfiltration Rule & `ModelContentAuthorizationPolicyV1` (`F-09.2`, `F-09.3`)
 
 Settled `D6` (`spec/memory/R15-SEDIMENT.md:51`): *« Without content authorization, only a path and its fingerprint may be sent to the external model. The model can cite files, without content or extract. Dreaming summaries, caches and logs follow the same rule »*.
 
-**Uniform `D6` Enforcement Gate Across All Four Surfaces:**
-Whenever `contentPolicy.externalModelContentAuthorized === false` (`sentropic:packages/cluster-mesh/src/sessions/content-policy.ts:89-164`) for the target `(tenantId, workspaceId, modelEndpoint)`:
-1. **`engram_memory_context` Output Pack (`context_pack` & `domain_typed_envelopes`):**
-   - File-bearing items emit `ContextFileDisclosureRefV1` with `content_disclosure: 'refs_only_d6'`, `path_ref` (or `withheld-path:<sha256>` when the path itself matches secret/credential path patterns per `D33` and `Spec 1`), and `content_fingerprint: Sha256Digest`.
-   - `bounded_extract`, `bounded_excerpt`, `significant_tool_results[].summary`, and file-derived prose inside `domain_typed_envelopes` are **omitted**; `omitted_counts_by_reason.d6_content_withheld` is incremented.
-2. **Dreaming Summaries (`dreaming_recalled_facts`):**
-   - Dreaming summaries recalled into `engram_memory_context` (and dreaming storage artifacts produced in Spec 3) obey the identical `D6` gate: without content authorization, `dreaming_recalled_facts[].summary` is omitted and only `(id, trigger, file_refs[{ path_ref, content_fingerprint }], source_digest_sha256)` reaches the external model.
-3. **Host Context Pack Caches & Pagination Handle Store:**
-   - Any cached projection or `MemoryContextPageStoreV1` entry is keyed by `(content_authorization_posture, model_endpoint_class)` so an extract-bearing authorized response is **never** served to an unauthorized external model call from cache.
-4. **Host & `cluster-mesh` Audit / Context Logs:**
-   - Diagnostic logs, `ReprocessedPreviousStepV1` when targeting an external un-authorized model, and degraded-mode banners record only `(path_ref, content_fingerprint)`—never file contents or code/document extracts.
+> **Code-Grounded Contract Note (`F-09.3`):** On `sentropic` `origin/main`, `packages/cluster-mesh/src/sessions/content-policy.ts:89-174` governs the 4 RC2 retention channels (`17` `FROZEN_POLICY_RECORDS`) and has **no** external-model content authorization field. Those 17 frozen records remain **unmodified**. Instead, Lot `2-S1a` adds the dedicated additive contract `ModelContentAuthorizationPolicyV1` (`new`: `packages/cluster-mesh/src/integrations/mcp/memory-content-auth.ts`, projected onto `MemoryInvocationContext` as `(contentAuthorizationPosture: 'authorized_d8' | 'refs_only_d6', modelEndpointClass: string)`):
+> ```typescript
+> // new (Lot 2-S1a): packages/cluster-mesh/src/integrations/mcp/memory-content-auth.ts
+> export interface ModelContentAuthorizationPolicyV1 {
+>   readonly schemaVersion: 1;
+>   readonly tenantId: string;
+>   readonly workspaceId: string;
+>   readonly modelEndpointClass: string; // e.g. 'sentropic-hosted-mesh' | 'external-third-party:<provider>'
+>   /** Defaults fail-closed to false ('refs_only_d6') whenever absent, expired, or unverified. */
+>   readonly contentAuthorized: boolean;
+>   readonly policyEpoch: number;
+>   readonly policyDigestSha256: Sha256Digest;
+> }
+> ```
 
-When content authorization **is** granted, extracts still pass `ConfidentialityDenyListV1` (`D7`), `PiiArmorStamp` (`D8` bounded extract redaction), and `D33` author/session HMAC pseudonymization before serialization (`redactionClass: 'high'`, `src/mcp/memory/gates.ts:292-312`).
+**Explicit & Testable `D6=refs` Field-Level Redaction Matrix (`contentAuthorized !== true`, `F-09.2`):**
+Whenever `contentAuthorized !== true` (`contentAuthorizationPosture === 'refs_only_d6'`) for `(tenantId, workspaceId, modelEndpointClass)`, **every** prose, summary, rationale, rule-text, or extract field derived from repository files or session transcripts MUST be **omitted or stripped** across all four egress surfaces (`engram_memory_context`, `ReprocessedPreviousStepV1`, caches/pagination handles, and host/`cluster-mesh` logs):
+
+| Surface / Field | Under `authorized_d8` (`contentAuthorized === true` + `D7`/`D8` pass) | Under `refs_only_d6` (`contentAuthorized !== true` — Mandatory Test Assertion) |
+|---|---|---|
+| `ContextFileDisclosureRefV1` | `content_disclosure: 'bounded_extract_d8'`, `path_ref`, `content_fingerprint`, `bounded_extract` (`D8` PII-armored), `pii_armor_stamp_digest` | `content_disclosure: 'refs_only_d6'`, `path_ref` (or `withheld-path:<sha256>` on secret path patterns per `D33`), `content_fingerprint`; **`bounded_extract` OMITTED** |
+| `ReprocessedPreviousStepV1.reprocessed_summary` | Deterministic `<= 2_400` B `D8`-armored summary | **`reprocessed_summary` OMITTED**; only `step_id`, `reprocessed_digest_sha256`, `significant_tool_refs`, `file_refs` (`refs_only_d6`), and `unresolved_citation_digests` remain |
+| `mission_focus_context.owner_decisions[].statement` | Present (`D8`-checked) | **`statement` OMITTED**; only `(id, decision_scope, admission_state, trust_tier, file_refs, citation_digest_sha256, attention_score_q16)` remain |
+| `mission_focus_context.same_role_pending_notes[].statement` | Present (`D8`-checked, quarantined) | **`statement` OMITTED**; only `(id, candidate_kind, admission_state, trust_tier, file_refs, citation_digest_sha256, attention_score_q16)` remain |
+| `mission_focus_context.significant_tool_results[].summary` | Present (`D8`-checked, quarantined) | **`summary` OMITTED**; only `(id, significance, admission_state, trust_tier, file_refs, citation_digest_sha256, attention_score_q16)` remain |
+| `mission_focus_context.dreaming_recalled_facts[].summary` | Present (`D8`-checked) | **`summary` OMITTED** (`D6` explicitly covers dreaming summaries); only `(id, trigger, trust_tier, file_refs, source_digest_sha256, attention_score_q16)` remain |
+| `session_history_query_matches[].bounded_excerpt` | Bounded `<= 1_200` B `D8`-armored excerpt | **`bounded_excerpt` OMITTED**; only `(turn_node_id, session_pseudonym, entry_ordinal, citation_digest_sha256, admission_state, trust_tier, file_refs)` remain |
+| `architecture_slice_refs[].summary` | Present | **`summary` OMITTED**; only `(template_envelope, card_or_node_id, summary_digest_sha256)` remain |
+| `role_consciousness_slice.proactive_role_proposal.rationale` | Present | **`rationale` OMITTED**; only `(proposed_role_id, confidence_band, cited_event_ids)` remain |
+| `harness_effective_rules.active_rules` | Present | **`active_rules` OMITTED** when workspace `.h2a/` overlay contains repo-authored prose; `(harness_template_envelope, master_harness_version, workspace_overlay_ref, rules_digest_sha256)` remain |
+| `domain_typed_envelopes[].payload` | Bounded JSON object (`§2.3`) | Free-text / prose / extract properties **stripped** before serialization; only structural IDs, enum/status tokens, template refs, `ContextFileDisclosureRefV1` (`refs_only_d6`), and `Sha256Digest` values remain |
+| Caches, `MemoryContextPageStoreV1`, & Logs | Keyed by `('authorized_d8', modelEndpointClass, policyEpoch)` | Keyed by `('refs_only_d6', modelEndpointClass, policyEpoch)`; continuation across `D8 → D6` transition fails closed with `STALE_PAGE` (`§2.4`); logs emit `(path_ref, content_fingerprint)` only |
+
+Every item whose prose/extract field is stripped under `refs_only_d6` increments `budget_receipt.omitted_counts_by_reason.d6_content_withheld` (scoped strictly to the caller's authorized `(tenantId, workspaceId)`, §2.5), and `Stage 2` `D7` model reranking is skipped in favor of `deterministic_attention_v1` (§3.1).
 
 ### 4.3 `D15` (`slices`): Non-Blocking Per-Slice Injection Criteria
 
 Settled `D15` (`spec/memory/R15-SEDIMENT.md:60`): *« Hook activation does not wait for the whole model. Each context slice (Track, Git, architecture, rules, memory) is injected as soon as its criteria pass »*.
 
-The `h2a` prompt loop and `engram_memory_context` partition step context into **five independent slices** (`ContextSliceIdV1`), each governed by its own readiness predicate and never blocking on slower or unavailable sibling slices:
+The `h2a` prompt loop and `engram_memory_context` partition step context into **five independent slices** (`ContextSliceIdV1`), each governed by its own readiness predicate (`150 ms` soft readiness budget on `embedded-local`, `400 ms` on `external-host`, within the hard `30_000 ms` `MAX_INVOCATION_DEADLINE_MS` per `OQ-S2-2`) and never blocking on slower or unavailable sibling slices:
 
 | Slice ID | Readiness Criteria (`status: 'ready'`) | Carrier in `engram_memory_context` / `h2a` | Behavior When Criteria Not Yet Met |
 |---|---|---|---|
 | `rules` | Master `h2a` harness template + local/synced `.h2a/` workspace overlay (`D31`) loaded and digest-verified | `context_pack.harness_effective_rules` | Injects master harness baseline immediately; overlay marked `pending_criteria` until verified |
-| `git` | Workspace identity + `D21` `derived_worktree_id` (`validateWorktreeIdentity`, `engram-live/contracts.ts:1180-1205`) resolved | `context_pack.git_worktree_slice` | Marked `pending_criteria`; does not block `rules` or `memory` |
+| `git` | Workspace identity + `D21` `derived_worktree_id` (`validateWorktreeIdentity`, `engram-live/contracts.ts:1180-1189`) resolved | `context_pack.git_worktree_slice` | Marked `pending_criteria`; does not block `rules` or `memory` |
 | `architecture` | Registered `archi@1` (`Spec 0` / `SPEC_EVOL_ARCHI_CARDS.md`) card/graph digests available for workspace | `context_pack.architecture_slice_refs` | Marked `pending_criteria`; never blocks turn start |
 | `track` | Registered `Track` template envelope (`lineage: 'track'`) present AND ratified `verdictAuthority: 'track'` state loaded (`Point 1B`, `Point 5B`) | `domain_typed_envelopes` (`lineage: 'track'`) | Marked `pending_criteria` while `Track` control or template sync is pending; raw events still flow to `engram` (`Point 5B`) |
 | `memory` | Caller has memory identity (`sub`, `tid`), `D11` recall purpose (`memory.recall.contextual/v1`) is active, and local or remote `engram-memory` store responds (including `D17` local SQLite degraded mode) | `role_consciousness_slice` + `mission_focus_context` (+ `session_history_query_matches`) | Marked `withheld_policy_d18` (no memory identity), `withheld_purpose_d11` (recall revoked), or `degraded_local_d17` |
 
 Per `D15`, hook activation in `h2a` (`packages/h2a/src/hosts/plugin.ts`) injects whichever subset of `{ rules, git, architecture, track, memory }` reports `'ready'` (or `'degraded_local_d17'`) within the per-slice readiness budget, recording exact per-slice status in `context_pack.slice_readiness[]` without stalling the prompt loop for whole-model convergence.
 
-### 4.4 `D18` (`readonly`): Sessions Without a Memory Identity
+### 4.4 `D18` (`readonly`): Two-Branch Architecture Without Synthetic `sub`/`tid` (`F-06.2`, `OQ-S2-4`)
 
 Settled `D18` (`spec/memory/R15-SEDIMENT.md:63`): *« A session without a memory identity receives only the non-memory slices (Track, Git, architecture, rules), read-only, under a recorded policy that lists the allowed slices. It receives no memory content »*.
 
-**Normative `D18` Enforcement (Defense in Depth Across `h2a`, `cluster-mesh`, and `engram`):**
-1. **Recorded Policy Requirement (`RecordedNonMemorySlicePolicyV1`):**
-   - An anonymous, ephemeral, or unauthenticated-memory session (`hasMemoryIdentity === false`) MAY receive non-memory context **if and only if** a signed/recorded workspace policy (`policy_id`, `policy_digest_sha256`, `allowed_slices ⊆ ['track', 'git', 'architecture', 'rules']`, `mutability: 'read-only'`) is on file. Notice that `'memory'` is structurally forbidden in `allowed_slices` (`INVALID_SCHEMA` at validation if present). If no recorded policy exists, **zero slices** are injected (fail-closed).
-2. **Zero Memory Content Guarantee:**
-   - When `hasMemoryIdentity === false`:
-     - All 6 `M1` tools (`engram_memory_search`, `engram_memory_get`, `engram_memory_capture`, `engram_memory_request_admission`, `engram_memory_withdraw`, `engram_memory_forget`) are **refused** (`UNAUTHORIZED_SCOPE` / masked at `shim-bridge`), so the session can neither read nor mutate canonical memory;
-     - If `engram_memory_context` is invoked under a `D18` recorded policy claim, `MemoryContextPortV1` executes in `ranking_mode: 'readonly_non_memory_d18'`:
-       - `mission_focus_context` is **omitted** (zero `owner_decisions` from memory journal, zero `significant_tool_results`, zero `dreaming_recalled_facts`, zero `D5` pending bodies);
-       - `session_history_query_matches` is **omitted** (even if `query_text` was passed);
-       - `slice_readiness` marks `memory` as `'withheld_policy_d18'` and returns only the read-only Git/file/registry-backed slices explicitly listed in `RecordedNonMemorySlicePolicyV1.allowed_slices` (`track`, `git`, `architecture`, `rules`).
+At the same time, `SPEC_MEMORY_MCP_V2.md:402,668`, `requireTrustedInvocationContext` (`packages/mcp-platform/src/memory/invocation-context.ts:58-74`), and `validateBinding` (`context-validation.ts:27-57`) **forbid any synthetic, anonymous, or global service-principal `(sub, tid)` on the MCP memory transport**. Spec 2 reconciles both invariants cleanly via two explicit runtime branches:
+
+1. **Recorded Policy Contract & Dual-Source Intersection (`RecordedNonMemorySlicePolicyV1`, `OQ-S2-4`):**
+   - Non-memory slices may be served under `D18` **if and only if** a signed `RecordedNonMemorySlicePolicyV1` (`new`, Lots `2-S1a` & `2-H2`: `{ policy_id, policy_digest_sha256, allowed_slices ⊆ ['track', 'git', 'architecture', 'rules'], mutability: 'read-only' }`, where `'memory'` in `allowed_slices` fails schema validation with `'INVALID_SCHEMA'`) is verified on file.
+   - When **both** the Git-committed `.h2a/` workspace overlay (`D31`) and the host `BridgeLock` (`Spec 6A`) declare a `RecordedNonMemorySlicePolicyV1`, the effective policy is their **strict intersection** (`effective_allowed_slices = overlay.allowed_slices ∩ bridgeLock.allowed_slices`), failing closed (`zero slices`) if either source revokes `D18` or fails cryptographic signature verification (`OQ-S2-4`). If no valid policy is on file, **zero slices** are injected.
+2. **Branch `D18-A` — Authenticated Host Principal `(sub, tid)` Without `engram-memory` Identity / Recall Grant (MCP Path Allowed):**
+   - The caller possesses a genuine host-verified `(sub, tid)` and `tenant_membership_receipt`, so `requireTrustedInvocationContext` passes without any synthetic principal, **but** the session has no `engram-memory` store identity / `D11` memory grant.
+   - All 6 `M1` tools (`engram_memory_search`, `engram_memory_get`, `engram_memory_capture`, `engram_memory_request_admission`, `engram_memory_withdraw`, `engram_memory_forget`) are **refused** (`ToolFailureV1` → `'UNAUTHORIZED'` at `src/mcp/memory/errors.ts:33`, or masked at `shim-bridge`), so the session can neither read nor mutate canonical memory.
+   - `cluster-mesh` verifies `RecordedNonMemorySlicePolicyV1` and mints `h2a_context_mandate` with `ctx.h2aMandate.mode = 'readonly_non_memory_d18'`. `MemoryContextPortV1` executes in `ranking_mode: 'readonly_non_memory_d18'` with **zero `engram-memory` store reads**: `mission_focus_context` and `session_history_query_matches` are **omitted**, `slice_readiness` marks `memory` as `'withheld_policy_d18'`, and only the read-only non-memory slices in `effective_allowed_slices` are returned.
+3. **Branch `D18-B` — Local CLI Session Without Any Authenticated Host Principal `(sub, tid)` (Zero MCP Call):**
+   - **Zero synthetic `sub` or `tid` is ever fabricated.** Any direct MCP call lacking `(sub, tid)` fails closed before provider invocation (`insufficient_claims` / `-32603`, §2.5).
+   - Instead, `h2a` (`new`: `packages/h2a/src/runtime/context/readonly-slice-policy.ts`, Lot `2-H2`) does **not** invoke MCP `engram_memory_context` and assembles only the allowed read-only local workspace slices (`effective_allowed_slices ⊆ ['track', 'git', 'architecture', 'rules']`) directly from verified local workspace artifacts (`.h2a/`, Git worktree metadata, `archi@1` cards, ratified `.track/` projections), with zero memory content.
 
 ### 4.5 `D19`, `D11` (`dedicated`), and `D17` (`degraded`) Runtime Guarantees
 
 - **`D19` Unified Architecture Across All 8 CLI Hosts:** Per `D19` (`R15-SEDIMENT.md:64,111-113`), CLIs without native mid-turn hook callbacks are **not** relegated to a shallow launch-only fallback (`hook-fallback=hybrid` was explicitly rejected). Every switched CLI host consumes the live `engram` contextual graph fed at every turn (Spec 1) via `engram_memory_context` (Spec 2) and enriched by dormant dreaming resynthesis (Spec 3).
-- **`D11` (`dedicated`) Recall Independence (`R15-SEDIMENT.md:56`):** Automatic session capture runs under `purpose_ref: 'memory.capture.session/v1'` (Spec 1), whereas `engram_memory_context` executes under dedicated purpose `'memory.recall.contextual/v1'`. Revoking capture consent immediately halts Spec 1 automatic capture without cutting `engram_memory_context` recall over already-authorized records.
-- **`D17` (`degraded`) Fenced Local Continuation (`R15-SEDIMENT.md:62`, `Spec 6A §2.4` `:399-416`):** When remote `cluster-mesh` sync is unreachable, `engram_memory_context` serves from the local fenced SQLite `engram-memory` store (`degraded: true`, `degraded_reason: 'remote_cluster_mesh_unreachable'`), and all 8 CLI hosts display the mandatory degraded-mode banner and structured audit log.
+- **`D11` (`dedicated`) Recall Independence (`R15-SEDIMENT.md:56`):** Automatic session capture runs under `purpose_ref: 'memory.capture.session/v1'` (Spec 1), whereas `engram_memory_context` executes under dedicated purpose `'memory.recall.contextual/v1'` resolved from `verified.memory.binding.purpose_ref` (§2.6). Revoking capture consent immediately halts Spec 1 automatic capture without cutting `engram_memory_context` recall over already-authorized records.
+- **`D17` (`degraded`) Fenced Local Continuation (`R15-SEDIMENT.md:62`, `Spec 6A §2.4` `:399-416`):** When remote `cluster-mesh` sync is unreachable, `engram_memory_context` serves from the local fenced SQLite `engram-memory` store (`output.value.degraded: true`, `output.value.degraded_reason: 'remote_cluster_mesh_unreachable'`), and all 8 CLI hosts display the mandatory degraded-mode banner and structured audit log.
 
 ---
 
@@ -574,7 +790,7 @@ Settled `D18` (`spec/memory/R15-SEDIMENT.md:63`): *« A session without a memory
 `D14` and `D23` govern **two distinct storage tiers** (`PLAN_SPEC_ENGRAM_FRONT.md:183`):
 1. **`D14` Purges Host-Side Local Copies, Context Logs, Caches, and Post-Close Audit Presentation Views:**
    - Once a session closes and its raw turns/extractions have been processed into `engram` (`Spec 1`), the CLI host / `h2a` local runtime keeps processed context logs and audit presentation items visible **only** for the single declared `D13` host audit duration (`declaredHostAuditDurationMs`).
-   - When `closedAt + declaredHostAuditDurationMs` elapses, host presentation stops immediately, `engram` / `cluster-mesh` emits `PurgeAnnouncementReceiptV1` (`Spec 1` §5.3), and the host **cryptographically/deterministically deletes** its local linear session transcript files, step prompt/context assembly logs, cached `EngramMemoryContextOutputEnvelopeV1` packs, `ReprocessedPreviousStepV1` scratch buffers, and expired `MemoryContextPageStoreV1` handles.
+   - When `closedAt + declaredHostAuditDurationMs` elapses, host presentation stops immediately, `engram` / `cluster-mesh` (`packages/cluster-mesh/src/compose/memory.ts` under `/memory/v1/*` per `6A-S1d` / `1-S1b`) emits `PurgeAnnouncementReceiptV1` (`Spec 1` §5.3), and the host **cryptographically/deterministically deletes** its local linear session transcript files, step prompt/context assembly logs, cached `MemoryToolSuccessV1<EngramMemoryContextValueV1>` packs, `ReprocessedPreviousStepV1` scratch buffers, and expired `MemoryContextPageStoreV1` handles.
 2. **`D23` Retains Canonical Session Text History Queryable on Demand Inside `engram`:**
    - `engram` is the session and memory manager (`« comme gestionnaire de session et memoire »`). The `D14` host purge **does NOT delete** canonical `session_turn` records (`turn_text` bounded to `<= 64 KiB` + `SessionDbCitationTuple` `(sessionId, entryId, ordinal, contentDigest, branchEpoch?, parentEntryId?)`), `tool_result` metadata, admitted `MemoryRecordV2` items, or `D27` `decision_dossier` records inside `engram`.
    - Those canonical `engram` records remain queryable on demand via `engram_memory_context` (`context_query.query_text` → `session_history_query_matches`, gated by `D5`, `D6`, `D7`, `D8`, `D11`, `D18`, `D33`), and are bounded solely by:
@@ -669,7 +885,7 @@ The following operations remain outside the agent MCP surface:
 | `validate`, `cancelCapture` | Adapter internals. Cancellation may address only the caller’s corresponding capture. |
 ```
 
-#### 6.1.2 Section `M7` (`spec/SPEC_MEMORY_MCP_V2.md`, lines `536–580` and `590–617`)
+#### 6.1.2 Section `M7` (`spec/SPEC_MEMORY_MCP_V2.md`, lines `536–580`, `590–617`, and `624–695`)
 
 **Before (`spec/SPEC_MEMORY_MCP_V2.md:536-580`, non-blank content `:536-579` + blank separator `:580`):**
 ````markdown
@@ -833,6 +1049,160 @@ All six `v1` tools require `sub` and `tid`, use redaction class `high`, and requ
 D11 admission policy may require its own ceremony. That domain policy is distinct from setting `requiresPrincipalGate` on every admission request.
 ```
 
+**Before (`spec/SPEC_MEMORY_MCP_V2.md:624-695`, non-blank content `:624-694` + blank separator `:695` — catalog, tenant opt-in, and version boundaries in `M7`, `F-10.1`):**
+````markdown
+### Sentropic capability catalog
+
+Sentropic MUST re-expose the provider through its existing `McpCatalogSource` and `registerMcpSource` pattern. A concrete search entry is:
+
+```ts
+{
+  kind: "tool",
+  sourceId: "mcp:engram-memory",
+  metadata: {
+    name: "engram_memory_search",
+    description:
+      "Search authorized current memory and return cited, ranked results.",
+    version: "1.0.0",
+    category: "mcp",
+    authzRequirements: {
+      permissions: ["engram_memory_search"]
+    }
+  },
+  rawName: "engram_memory_search",
+  tool: {
+    name: "engram_memory_search",
+    description:
+      "Search authorized current memory and return cited, ranked results.",
+    inputSchema: SearchInputV1Schema,
+    outputSchema: SearchResultV1Schema,
+    sideEffect: false,
+    requiresApproval: false
+  }
+}
+```
+
+`SearchInputV1Schema` is the closed schema from M2. `SearchResultV1Schema` is the closed success/failure envelope for `SearchPageV1`.
+
+For each other tool, the catalog permission slug is its exact tool name. Effective permissions MUST come from the host’s policy projection. A model cannot grant itself a permission by supplying that string.
+
+Catalog behavior MUST preserve:
+
+- Out-of-band `tools/list` refresh.
+- Synchronous, I/O-free `snapshot()`.
+- Registration of executable handlers together with discovery.
+- Exact output schemas, version, side effects, and approval requirements.
+- Binding between public name, raw name, source identity, connector instance, and manifest version.
+- Credentials, endpoints, and private invocation bindings outside catalog entries.
+
+Execution MUST select the handler belonging to the selected entry’s `sourceId`, with verified per-call context. A global service-principal closure is prohibited.
+
+The six public names MUST NOT be silently renamed, shadowed, or redirected on collision. Memory activation fails on a collision; unrelated catalog precedence remains unchanged.
+
+### Explicit Sentropic tenant opt-in
+
+`registerMcpSource` for memory MUST require a persisted, explicit tenant choice and selected agent/tool permissions. It defaults to disabled.
+
+The current global registration function and `requiresPolicy` metadata alone do not establish this behavior. MCP-L5 and MCP-L6 MUST implement tenant-aware registration, discovery filtering, cache isolation, and execution binding.
+
+For disabled tenants or unauthorized agents, memory tools MUST be absent from discovery, including catalog search. Forged direct calls MUST also fail.
+
+Installation, registry publication, workspace attachment, or a shared MCP connection MUST NOT activate memory for Sentropic chat agents.
+
+### Version boundaries
+
+| Boundary | Version |
+|---|---|
+| Product | `@sentropic/engram@0.20.0` |
+| MCP provider contract | `1.0.0` |
+| Structured MCP payload | `schema_version: 1` |
+| Existing neutral memory port | `MemoryPortV2`, unchanged |
+| New redacted recall facet and packets | V3 |
+| New exact-read facet | V1 |
+| Scoped store extension | Explicitly versioned under MCP-L1 |
+
+Incompatible tool semantics or schemas require a new major provider contract and explicit migration. Package and schema digests belong in release evidence.
+````
+
+**After (`spec/SPEC_MEMORY_MCP_V2.md:624-695` amended per `F-07` & `F-10` to cover the conditional 7th tool `engram_memory_context`, `DEC-116` exclusion, mandate-filtered `HostRegistryCatalogSource`, and `1.0.0` vs `2.0.0` version boundaries):**
+````markdown
+### Sentropic capability catalog
+
+Sentropic MUST re-expose the provider through its existing `McpCatalogSource` and `registerMcpSource` pattern. A concrete search entry is:
+
+```ts
+{
+  kind: "tool",
+  sourceId: "mcp:engram-memory",
+  metadata: {
+    name: "engram_memory_search",
+    description:
+      "Search authorized current memory and return cited, ranked results.",
+    version: contextToolsEnabled ? "2.0.0" : "1.0.0",
+    category: "mcp",
+    authzRequirements: {
+      permissions: ["engram_memory_search"]
+    }
+  },
+  rawName: "engram_memory_search",
+  tool: {
+    name: "engram_memory_search",
+    description:
+      "Search authorized current memory and return cited, ranked results.",
+    inputSchema: SearchInputV1Schema,
+    outputSchema: SearchResultV1Schema,
+    sideEffect: false,
+    requiresApproval: false
+  }
+}
+```
+
+`SearchInputV1Schema` is the closed schema from M2. `SearchResultV1Schema` is the closed success/failure envelope for `SearchPageV1`. When `contextToolsEnabled === true` (`v2`, gated on cryptographic `CoSignatureReceiptV2` + `MCP-L5` manifest SHA-256 verification per `Spec 2` §2.6), the seventh read-only entry `engram_memory_context` binds `ContextInputV1Schema` (`EngramMemoryContextInputEnvelopeV1`) and `ContextResultV1Schema` (`MemoryToolSuccessV1<EngramMemoryContextValueV1> | ToolFailureV1`) with `authzRequirements: { permissions: ["engram_memory_context"], requiredClaims: ["sub", "tid", "h2a_context_mandate"] }`.
+
+For each tool, the catalog permission slug is its exact tool name. Effective permissions MUST come from the host’s policy projection. A model cannot grant itself a permission or `h2a_context_mandate` claim by supplying that string.
+
+**Strict `DEC-116` & Chat Catalog Exclusions (`Spec 2` §2.6, `F-07`):**
+- `engram_memory_context` MUST **NEVER** be added to `READ_ONLY_TOOL_ALLOWLIST` in `api/src/services/mcp/client-policy.ts:25-30` (`SENTROPIC_MCP_CLIENT_ID = 'sentropic-mcp'` / public `claude.ai` OAuth connector; `isToolPermitted('sentropic-mcp', 'engram_memory_context') === false` → HTTP `403`).
+- `HostRegistryCatalogSource.snapshot()` (`api/src/services/catalog/sources/host-registry-source.ts:22-36`) and MCP `tools/list` MUST exclude `engram_memory_context` whenever `'h2a_context_mandate'` is absent from the caller’s verified claims.
+
+Catalog behavior MUST preserve:
+
+- Out-of-band `tools/list` refresh.
+- Synchronous, I/O-free `snapshot()`.
+- Registration of executable handlers together with discovery.
+- Exact output schemas, version, side effects, and approval requirements.
+- Binding between public name, raw name, source identity, connector instance, and manifest version.
+- Credentials, endpoints, and private invocation bindings outside catalog entries.
+
+Execution MUST select the handler belonging to the selected entry’s `sourceId`, with verified per-call context. A global service-principal closure or synthetic `(sub, tid)` is prohibited (`Spec 2` §4.4).
+
+The six `v1` public names (`MEMORY_TOOL_NAMES`), plus `engram_memory_context` (`MEMORY_CONTEXT_TOOL_NAME`) when `contextToolsEnabled === true` (`MEMORY_TOOL_NAMES_V2`), MUST NOT be silently renamed, shadowed, or redirected on collision. Memory activation fails on a collision; unrelated catalog precedence remains unchanged.
+
+### Explicit Sentropic tenant opt-in
+
+`registerMcpSource` for memory MUST require a persisted, explicit tenant choice and selected agent/tool permissions. It defaults to disabled (`contextToolsEnabled: false` by default even on memory-enabled tenants until `v2` opt-in).
+
+The current global registration function and `requiresPolicy` metadata alone do not establish this behavior. MCP-L5 and MCP-L6 MUST implement tenant-aware registration, discovery filtering (including `'h2a_context_mandate'` claim filtering for `engram_memory_context`), cache isolation, and execution binding.
+
+For disabled tenants, unauthorized agents, or callers lacking `'h2a_context_mandate'`, the disallowed memory tools MUST be absent from discovery, including catalog search. Forged direct calls MUST also fail (`insufficient_claims` / `403` pre-provider or `'UNAUTHORIZED'` intra-provider).
+
+Installation, registry publication, workspace attachment, or a shared MCP connection MUST NOT activate memory for Sentropic chat agents.
+
+### Version boundaries
+
+| Boundary | `v1` Default (`contextToolsEnabled !== true`) | `v2` Co-Signed Opt-In (`contextToolsEnabled === true`) |
+|---|---|---|
+| Product baseline | `@sentropic/engram@0.20.0+` (`0.22.0+` in `R2-MEMORY`) | `@sentropic/engram` release from `Spec 2` `2-E1..2-E5` |
+| MCP provider contract | `1.0.0` (`MEMORY_PROVIDER_CONTRACT_VERSION`, 6 tools) | `2.0.0` (`MEMORY_PROVIDER_CONTRACT_VERSION_V2`, 7 tools) |
+| Wire & tool schema profiles | `sentropic.engram.memory-wire/v1`, `sentropic.engram.memory-tools/2020-12-v1` | `sentropic.engram.memory-wire/v2`, `sentropic.engram.memory-tools/2020-12-v2` (`CoSignatureReceiptV2`) |
+| Structured MCP payload | `schema_version: 1` (`MemoryToolSuccessV1<T>`) | `schema_version: 1` (`MemoryToolSuccessV1<EngramMemoryContextValueV1>`) |
+| Existing neutral memory port | `MemoryPortV2`, unchanged | `MemoryPortV2`, unchanged (all 22 `R2-MEMORY` suites preserved) |
+| Redacted recall & exact-read facets | `MemoryRecallPortV3` / `MemoryReadPortV1` | Unchanged + additive `MemoryContextPortV1` (`Spec 2` §2) |
+| Scoped store extension | Explicitly versioned under MCP-L1 | Unchanged |
+
+Incompatible tool semantics or schemas require a new major provider contract and explicit migration. Package, schema, L0 freeze, and L5 candidate manifest digests belong in release evidence (`CoSignatureReceiptV2`).
+````
+
 #### 6.1.3 Section `M10` (`spec/SPEC_MEMORY_MCP_V2.md`, lines `884–910`)
 
 **Before (`spec/SPEC_MEMORY_MCP_V2.md:884-910`):**
@@ -898,6 +1268,21 @@ Code symbols and documentation describing the memory implementation remain legit
 
 Restoration note: M10 restores the validated baseline at `7bc9baec` (initial D3/D10) and clarifies its strict separation from the `D23` `engram_memory_context` query path.
 ```
+
+#### 6.1.4 Coordinated `MCP-L5` Freeze Artifacts Impacted in `sentropic` (`tools/memory-mcp-l5` 5-Gate Inventory, `F-10.3`)
+
+Applying the `v2` contract additions across `@sentropic/mcp-platform/memory`, `@sentropic/mcp-broker/memory`, and `spec/SPEC_MEMORY_MCP_V2.md` touches **five mechanical `MCP-L5` governance locks** on `sentropic` `origin/main` (`913e3bcbc`), all updated atomically in Lot `2-S3` under scope exception `BRS2-EX2` (§7.2):
+
+1. **Export Surface & Static Import-Graph Gate (`tools/memory-mcp-l5/exports-v1.json:40-100` & `tools/memory-mcp-l5/import-graph.mjs:18,34-50`):**
+   - `import-graph.mjs` fails `make memory-l5-lint ENV=test-mcp` (`Makefile:4986`) on any uncatalogued runtime/type export added to `@sentropic/mcp-platform/memory` or `@sentropic/mcp-broker/memory`. Lot `2-S3` updates `exports-v1.json` (or adds `exports-v2.json` alongside unchanged `v1` 6-tool symbols) for `MEMORY_CONTEXT_TOOL_NAME`, `MEMORY_TOOL_NAMES_V2`, `MEMORY_PROVIDER_CONTRACT_VERSION_V2`, `getMemoryToolNames`, `VerifiedH2AMandateV1`, and `CoSignatureReceiptV2`.
+2. **API Extractor Public Reports (`packages/mcp-platform/etc/{mcp-platform,mcp-platform-memory}.api.md`):**
+   - Verified by `make api-extract-mcp-platform ENV=test-mcp` (`Makefile:2153`), which is a hard prerequisite of `make memory-l5-pack` (`Makefile:5023`) and `tools/memory-mcp-l5/precandidate.mjs:20`. Regenerated explicitly in Lot `2-S0a` (`API_EXTRACT_LOCAL=1 make api-extract-mcp-platform ENV=test-mcp`) and verified strictly in CI.
+3. **L0 Specification SHA-256 Freeze (`spec/evidence/memory-mcp-l5/l0-freeze.json:1-45` & `tools/memory-mcp-l5/tests/p3-l0-freeze.test.mjs:23-41`):**
+   - `l0-freeze.json` pins `specSha256` of `SPEC_MEMORY_MCP_V2.md` and the frozen profile/schema digests checked by `precandidate.mjs:47-48` and `p3-l0-freeze.test.mjs`. Re-pinned in Lot `2-S3` once the §6.1 delta lands on `SPEC_MEMORY_MCP_V2.md`, and bound into `CoSignaturePayloadV2.l0FreezeSha256` (§2.6).
+4. **L0 Schema Fixtures & Proof Catalog (`tools/memory-mcp-l5/fixtures/l0/{tool-schemas.json,schema-assets.sha256}` & `tools/memory-mcp-l5/proof-catalog-v1.json`):**
+   - Checked by `tools/memory-mcp-l5/precandidate.mjs:14-18` and `make memory-l5-tooling ENV=test-mcp` (`Makefile:4991`). Extended in Lot `2-S3` to retain the 6 `v1` schemas unchanged while recording the `v2` 7th-tool schema (`EngramMemoryContextInputEnvelopeV1` / `MemoryToolSuccessV1<EngramMemoryContextValueV1>`) and `Gate 1`–`Gate 3` proof entries.
+5. **Pre-Candidate Manifest, `.sha256` Companion, Packed Archives, & Stage-B / E10 Pins (`tools/memory-mcp-l5/artifacts/pre-candidate-manifest.json`, `.sha256`, `archives/*.tgz`, & `packages/cluster-mesh/tests/engram-memory/qualification.mk:14-15,48-49`):**
+   - Produced and validated by `make memory-l5-pack STAGE=pre-candidate ARTIFACT_MANIFEST=tools/memory-mcp-l5/artifacts/pre-candidate-manifest.json ENV=test-mcp` (`Makefile:5023`) and `make memory-l5-verify` (`Makefile:5038`), and SHA-256-checked both at `qualification.mk:14-15,48-49` (`memory-stage-b` & `installed-memory`) and at runtime startup via `CoSignaturePayloadV2.l5CandidateManifestSha256` (§2.6).
 
 ---
 
@@ -1033,49 +1418,72 @@ In the RED lists, a case marked "RED at baseline" fails on `c96fc01e` for the st
 
 ## 7. Small Test-First Implementation Lots per Repository
 
-Every lot follows strict `RED → GREEN → REFACTOR` discipline, stays atomic (`<= ~150–250 LOC` per PR/commit), and respects each repository's verification kernel.
+Every lot follows strict `RED → GREEN → REFACTOR` discipline, stays atomic (`<= ~150 LOC` in `sentropic` per `enforce-package-bump` / `rules/MASTER.md`, `<= ~150–250 LOC` in `engram` / `h2a`), and respects each repository's verification kernel.
 
 ### 7.1 `engram` Repository Lots (`vitest` + `tsc --noEmit`)
 
-| Lot | Scope & Target Files (`PROPOSED` where new) | First Failing (`RED`) Tests Written Before Implementation | Verification Command |
+> **Publication Gate Before `sentropic` Lots `2-S1a` / `2-S3` (`F-12.2`):** Because `sentropic`'s cold-workspace and E10 installed-consumer gates forbid local cross-repo symlinks (`qualification.mk:48,71`), `@sentropic/engram` built from Lots `2-E1..2-E5` MUST be published / tarball-pinned before `2-S1a` and `2-S3` execute.
+
+| Lot | Scope & Target Files (`new` / `PROPOSED` explicitly marked) | First Failing (`RED`) Tests Written Before Implementation | Verification Command |
 |---|---|---|---|
-| **`2-E1`** | **Closed `v2` Schemas, Envelope-Only Domain Carrier, and Default-Disabled Profile Guard:** `src/mcp/memory/context-contracts.ts`, `src/mcp/memory/schemas.ts`, `src/mcp/memory/gates.ts`, `src/mcp/memory/receipts.ts`, `src/mcp-memory/profiles.ts`, `src/mcp-memory/provider.ts:458,648` | 1. Default `createEngramMemoryProviderV1()` emits exact 6-tool `v1` manifest digest and rejects `engram_memory_context` as `unknown_tool`.<br>2. Draft 2020-12 schema rejects `null` optional fields, extra keys, `token_budget < 128`, `max_pack_bytes < 4096`, and inline mandate fields.<br>3. `domain_typed_envelopes` accepts arbitrary new `Track` `entity_type_id` values with valid `(OntologyTemplateEnvelopeRef, Sha256Digest)` (`Point 2B`). | `npx vitest run tests/mcp-memory-context-schema.test.ts && npx tsc --noEmit` |
-| **`2-E2`** | **Full-Envelope Dual Budget Packer & Opaque `page_<48hex>` Cursor Store:** `src/memory-tools/context.ts` (`packContextEnvelopeToBudget`, `createMemoryContextPageStoreV1`) | 1. `ceil(utf8Bytes(JSON.stringify(finalEnvelope)) / 3) <= effective_token_budget` and `utf8Bytes <= max_pack_bytes` **after** `budget_receipt` & `next_page_cursor` population.<br>2. Oversized single multi-byte UTF-8 item emits one scalar-safe stub (zero `U+FFFD`) and advances cursor.<br>3. Minimal-floor budget overflow returns `PROJECTION_OVERSIZED` without advancing cursor.<br>4. Concurrent `forget` tombstone or mandate change invalidates `page_cursor` with `STALE_PAGE` (`engram_owns_signing_secret: false`). | `npx vitest run tests/memory-context-budget-cursor.test.ts && npx tsc --noEmit` |
-| **`2-E3`** | **Mandate-Primary Graph Fingerprint (`D22`), Attention Scorer (`D23`), & Neutral `D7` Reranker Port:** `engram-memory/contextual-graph-query.ts`, `src/memory-tools/d7-llm-mesh-reranker.ts` (via `@sentropic/llm-mesh/decision`, zero `@ai-sdk/*` imports; `engram-memory` keeps L0 neutrality) | 1. `fingerprint_query_id` changes deterministically on mandate digest/role/worktree change (`D22`).<br>2. Owner decisions (`D27` included), `security-gate`/`error`/`significant` tool results, and `dreaming_recalled_facts` (`D19`) outrank routine items (`routine` excluded from `significant_tool_results`).<br>3. `D7` reranker screens `ConfidentialityDenyListV1` before model call and falls back cleanly to `deterministic_attention_v1` under `D17=degraded`.<br>4. `tests/memory-neutrality.test.ts` confirms zero `@sentropic/*` or `@ai-sdk/*` runtime imports inside `engram-memory/**`. | `npx vitest run tests/contextual-graph-attention.test.ts tests/memory-neutrality.test.ts && npx tsc --noEmit` |
-| **`2-E4`** | **Access & Disclosure Enforcement (`D5`, `D6`, `D8`, `D11`, `D15`, `D18`, `Point 5B`) & On-Demand `query_text` (`D23`, `M10`):** `engram-memory/contextual-access-gates.ts` | 1. `D5`: same `h2a` role + same `(tenantId, workspaceId)` reads `pending` body (`same_role_pending_d5`); different role or different workspace gets zero leak; `engram_memory_search`/`get` still refuse `pending`; unratified `Track` `proposed` items excluded from `domain_typed_envelopes` (`Point 5B`).<br>2. `D6`: without content auth, `context_pack`, `dreaming_recalled_facts`, `session_history_query_matches`, caches, and logs emit `(path_ref, content_fingerprint)` only (`withheld-path:<sha256>` on secret paths).<br>3. `D18`: `hasMemoryIdentity === false` with recorded policy returns allowed non-memory slices read-only and zero memory content.<br>4. `query_text` returns bounded `D8`/`D33` `session_history_query_matches` while `.graphify/graph.json` projection (`M10`) contains zero `turn_text`. | `npx vitest run tests/contextual-access-and-d23-history.test.ts && npx tsc --noEmit` |
-| **`2-E5`** | **End-to-End `engram-memory` MCP Provider `v2` Integration & Spec Amendments Fold Lot:** `src/mcp-memory/provider.ts`, `src/mcp-memory/server.ts` (applying §6 amendments to `SPEC_MEMORY_MCP_V2.md` and `SPEC_MEMORY_FINALIZATION.md` only when authorized by conductor) | 1. Full 9-step `provider.invokeTool('engram_memory_context', ...)` test covering all §2.5 `PUBLIC_MEMORY_ERROR_CODES`, `-32603` untrusted context refusal, `2_097_152` B `RESULT_TOO_LARGE` guard, and `D17` `degraded: true` local SQLite execution. | `npx vitest run tests/mcp-memory-provider-context.test.ts && npx tsc --noEmit` |
+| **`2-E1`** | **Closed `v2` Contracts, `MemoryToolSuccessV1<EngramMemoryContextValueV1>`, `524_288` B Ceiling, `"wt:"` Pattern, Bounded Domain `payload`, & `CoSignatureReceiptV2`:** `new` `src/mcp/memory/context-contracts.ts`, `src/mcp/memory/schemas.ts`, `src/mcp/memory/gates.ts`, `src/mcp/memory/receipts.ts`, `src/mcp-memory/profiles.ts`, `src/mcp-memory/provider.ts:458,648` | 1. Default `createEngramMemoryProviderV1()` keeps immutable 6-tool `ENGRAM_MEMORY_TOOL_NAMES`, `1.0.0` manifest digest, and rejects `engram_memory_context` as `unknown_tool`.<br>2. Draft 2020-12 schema & runtime validator enforce `ToolSuccessV1<EngramMemoryContextValueV1>`, JCS `envelope_digest_sha256` over all fields of `EngramMemoryContextValueV1`, `max_pack_bytes` in `4096..524288`, `derived_worktree_id` matching `^wt:[a-z0-9._:-]{1,124}$`, `null`-free optional fields, and `validateBoundedContextDomainPayloadV1` (`maxDepth: 8`, `maxProperties: 64`, `maxItems: 64`, NFC, finite numbers).<br>3. `domain_typed_envelopes` accepts arbitrary new `Track` `entity_type_id` values with valid `(OntologyTemplateEnvelopeRef, Sha256Digest)` (`Point 2B`). | `npx vitest run tests/mcp-memory-context-schema.test.ts && npx tsc --noEmit` |
+| **`2-E2`** | **Full-`MemoryToolSuccessV1` Dual Budget Packer, `2 MiB` Pre-Cursor `CallToolResult` Guard, & Scope-Isolated `page_<48hex>` Cursor Store:** `new` `src/memory-tools/context.ts` (`packContextEnvelopeToBudget`, `createMemoryContextPageStoreV1`, `ContextPageBindingV1`) | 1. `used_bytes` and `used_tokens` are measured on the complete `ToolSuccessV1<EngramMemoryContextValueV1>` (`auditId` + `redactionClass` included), and `Buffer.byteLength(JSON.stringify(callToolResult), 'utf8') <= 2_097_152` is verified **before** committing `next_page_cursor` (disposing any provisional handle on `RESULT_TOO_LARGE`).<br>2. Oversized single multi-byte UTF-8 item emits one scalar-safe stub (zero `U+FFFD`) and advances cursor; structural-floor overflow returns `PROJECTION_OVERSIZED` without advancing cursor.<br>3. 16-field `pageBinding` rejects continuation with `STALE_PAGE` on `D6` posture/endpoint change, policy/trust epoch bump, or `forget` tombstone; per-`(tenant_id, workspace_id)` `max_entries_per_scope: 256` prevents Tenant A from evicting Tenant B's cursors. | `npx vitest run tests/memory-context-budget-cursor.test.ts && npx tsc --noEmit` |
+| **`2-E3`** | **Mandate-Primary Graph Fingerprint (`D22`), Attention Scorer (`D23`), & Pure L0-Neutral `ContextualRerankerPortV1` (`D7`)** *(Depends on `Spec 1` `1-E2`)*: `new` `engram-memory/contextual-graph-query.ts`, `tests/memory-neutrality.test.ts` *(zero `d7-llm-mesh-reranker.ts` in `engram`; concrete `llm-mesh/decision` adapter lives in `cluster-mesh` `2-S1b`)* | 1. `fingerprint_query_id` changes deterministically on mandate digest/role/worktree change (`D22`); Phase-1 `ReprocessedPreviousStepV1` synthesis executes with **zero LLM calls** (`F-13.2`).<br>2. Ratified `owner_decisions` (`D27` included), `security-gate`/`error`/`significant` tool results, and `dreaming_recalled_facts` (`D19`) outrank routine items (`routine` excluded from `significant_tool_results`).<br>3. `ContextualRerankerPortV1` screens `ConfidentialityDenyListV1` before invoking injected port and falls back to `deterministic_attention_v1` under `D17=degraded` or `250 ms` timeout.<br>4. AST & packed-import test confirms **zero** `src/llm-execution.ts`, `@ai-sdk/*`, or `@sentropic/*` imports inside `engram-memory/**`. | `npx vitest run tests/contextual-graph-attention.test.ts tests/memory-neutrality.test.ts && npx tsc --noEmit` |
+| **`2-E4`** | **Prompt-Injection Segregation (`D5`), Complete `D6=refs` Prose Scrubber, `D18-A` Read-Only Projection, & Lexical-Only `query_text` (`D23`, `M10`):** `new` `engram-memory/contextual-access-gates.ts` | 1. `D5` & `F-09.1`: same `h2a` role + same `(tenantId, workspaceId)` populates segregated `same_role_pending_notes` (`trust_tier: 'untrusted_pending_same_role_d5'`), never mixing with `owner_decisions` or `harness_effective_rules`; different role/workspace gets zero leak; `engram_memory_search`/`get` still refuse `pending`; unratified `Track` `proposed` items excluded from `domain_typed_envelopes` (`Point 5B`).<br>2. `D6=refs` (`F-09.2`): when `contentAuthorized !== true`, all 11 prose/extract fields (`reprocessed_summary`, `owner_decisions[].statement`, `same_role_pending_notes[].statement`, `significant_tool_results[].summary`, `dreaming_recalled_facts[].summary`, `bounded_excerpt`, `bounded_extract`, `architecture_slice_refs[].summary`, `proactive_role_proposal.rationale`, `active_rules`, and free-text properties in `domain_typed_envelopes[].payload`) are omitted/stripped.<br>3. `D18-A`: authenticated host `(sub, tid)` with `mode: 'readonly_non_memory_d18'` returns allowed non-memory slices and zero `engram-memory` reads.<br>4. `query_text` uses lexical `BM25F` only (regex metacharacters treated literally, zero `ReDoS`), `omitted_counts_by_reason` counts only caller-authorized `(tenantId, workspaceId)` items, and `.graphify/graph.json` (`M10`) contains zero `turn_text`. | `npx vitest run tests/contextual-access-and-d23-history.test.ts && npx tsc --noEmit` |
+| **`2-E5`** | **Read-Branch `provider.ts` Routing & End-to-End `engram-memory` `v2` Provider Integration:** `src/mcp-memory/provider.ts:367-383,711-720,741-744,784-797,855-862`, `src/mcp-memory/server.ts` *(§6 deltas to `SPEC_MEMORY_MCP_V2.md` and `SPEC_MEMORY_FINALIZATION.md` applied in coordinated documentary fold after Spec 3 review per `OQ-S2-5`)* | 1. `provider.invokeTool('engram_memory_context', ...)` routes through `readHost.authenticate` (zero `writeHost`, zero `idempotency_key`) and resolves `'memory.recall.contextual/v1'` exclusively from `verified.memory.binding.purpose_ref` without `args.purpose_ref` (`F-05.1`).<br>2. End-to-end verification of `'UNAUTHORIZED'` (`errors.ts:33`), `'gate_failed'` (`errors.ts:66`, `provider.ts:795`), `-32603` untrusted context refusal (`errors.ts:437-454`), `2_097_152` B `RESULT_TOO_LARGE` cursor rollback, and `D17` `output.value.degraded: true` local SQLite execution. | `npx vitest run tests/mcp-memory-provider-context.test.ts && npx tsc --noEmit` |
 
-### 7.2 `sentropic` Repository Lots (`Make-Only` Kernel + `make scope-check`, Atomic `<= ~150 LOC`, `packages/*` Separated from `api/*`)
+### 7.2 `sentropic` Repository Lots (`Make-Only` Kernel + Trailing `ENV=`, Single-Package Atomic `<= ~150 LOC`, `packages/*` Isolated from `api/`)
 
-| Lot | Scope & Target Files (Depends on `Spec 6A` `6A-S0a`..`6A-S2`) | First Failing (`RED`) Tests Written Before Implementation | Verification Command |
+**Upstream Dependencies & Reconciliation with `Spec 6A` / `Spec 1` / `chat-mesh` (`F-12.2`):**
+- **Spec 6A (`6A-S0a..6A-S4`):** `2-S0a` extends the `VerifiedH2AMandateV1` / `CoSignatureReceiptV2` contract foundation from `6A-S0a`; `2-S1a` builds on `6A-S1a..6A-S1d`; `2-S2` builds on `6A-S2`; and **`2-S3` supersedes/completes the `v2` `MCP-L5` & Stage-B/E10 qualification gate prepared in `6A-S4`** (`Spec 6A :737`, `v2-context-co-signature.spec.ts` + `pre-candidate-manifest.json` re-pin) once `@sentropic/engram` from `2-E1..2-E5` is published.
+- **Spec 1 (`1-S1a`, `1-S1b`, `1-S2`):** Required before `2-S1a`/`2-S1b` for bounded `<= 64 KiB` `turn_text` recall (`D23`), `ConfidentialityDenyListV1` (`D7`), `PiiArmorStamp` (`D8`), and `/memory/v1/*` `D14` purge receipts (note: `D14` HTTP routes live in `packages/cluster-mesh/src/compose/memory.ts` via `6A-S1d`/`1-S1b`, **never** in `api/src/services/mcp/registry-dispatch.ts`, `F-12.3`).
+- **`chat-mesh` (`B1`, `B2`, `C2a`):** `B1`/`B2` (`SessionDb`) precede `2-S1a`; `C2a` (`RouteMeteringSink` outside `llm-gateway`) precedes `2-S1b`.
+- **`engram` (`2-E1..2-E5` published tarball):** Mandatory before `2-S1a` and `2-S3`.
+
+**Named Scope Exceptions Required Under `sentropic/rules/MASTER.md:32-33` (`F-12.1`):**
+- **`BRS2-EX1` (`@sentropic/engram` Peer & Consumer Lock Re-Pin):**
+  - *Touched protected files:* `Makefile:1282` (`CLUSTER_MESH_PEER_TOOLS`), `scripts/ci/tool-locks.json`, `scripts/ci/consumer-locks.json`, and `.github/workflows/ci.yml` (synchronized with `packages/cluster-mesh/package.json` and `ENGRAM_MEMORY_RANGE` in `packages/cluster-mesh/src/modules/catalog.ts:18`).
+  - *Justification & bounded impact:* Cold-workspace builds (`Makefile:1283-1325`) install exact peer versions from `CLUSTER_MESH_PEER_TOOLS` and lockfiles; bumping `@sentropic/engram` to the `2-E1..2-E5` release is impossible without updating these pins in lockstep. Zero unrelated targets modified.
+  - *Rollback:* `git checkout -- Makefile scripts/ci/tool-locks.json scripts/ci/consumer-locks.json .github/workflows/ci.yml packages/cluster-mesh/package.json packages/cluster-mesh/src/modules/catalog.ts`.
+- **`BRS2-EX2` (`MCP-L5` 5-Gate Freeze Artifacts & Stage-B / E10 Qualification Pins):**
+  - *Touched protected files:* `tools/memory-mcp-l5/exports-v1.json` (or `exports-v2.json`), `spec/evidence/memory-mcp-l5/{l0-freeze.json,co-signature-v2.json}`, `tools/memory-mcp-l5/fixtures/l0/{tool-schemas.json,schema-assets.sha256}`, `tools/memory-mcp-l5/proof-catalog-v1.json`, `tools/memory-mcp-l5/artifacts/{pre-candidate-manifest.json,pre-candidate-manifest.json.sha256,archives/*.tgz}`, and `packages/cluster-mesh/tests/engram-memory/qualification.mk:14-15,48-49`.
+  - *Justification & bounded impact:* Required in Lot `2-S3` (§6.1.4) so `memory-l5-pack`, `memory-l5-verify`, `memory-l5-gate`, `memory-stage-b`, and `installed-memory` verify the co-signed `v2` artifact digests cryptographically while keeping all 6 `v1` tools and 22 `R2-MEMORY` suites intact.
+  - *Rollback:* Atomic revert of Lot `2-S3` restoring the prior `pre-candidate-manifest.json` + `.sha256`, `l0-freeze.json`, and `qualification.mk` SHA-256 literals.
+
+| Lot | Single-Package Scope, Dependencies, & Target Files (`new` marked) | First Failing (`RED`) Tests Written Before Implementation | Verification Command (`ENV=` Mandatory Last Arg) |
 |---|---|---|---|
-| **`2-S0a`** | **`mcp-platform` & `mcp-broker` Conditional `v2` 7-Tool & `CoSignatureReceiptV2` Gate:** `packages/mcp-platform/src/memory/contracts.ts`, `packages/mcp-broker/src/memory/compiled-dispatch.ts` | 1. Default `contextToolsEnabled: false` keeps 6-tool `MEMORY_TOOL_NAMES` and `unknown_tool` on `engram_memory_context`.<br>2. Enabling `v2` without valid `CoSignatureReceiptV2` + `l5QualificationReceiptRef` fails closed at startup.<br>3. `engram_memory_context` is excluded from `MUTATING_MEMORY_TOOL_NAMES` and requires `['sub', 'tid', 'h2a_context_mandate']`. | `make mcp-platform-test ENV=test-mcp && make scope-check` |
-| **`2-S1a`** | **`cluster-mesh` Mandate / `D18` Claim Projection & `D6` Cache Key Isolation:** `packages/cluster-mesh/src/integrations/mcp/{memory-manifest,memory-compose,memory-transport}.ts` | 1. Verified `SignedH2AMandateWireEnvelope` (`memory:context:assemble`) or recorded `D18` read-only slice policy mints `h2a_context_mandate`; plain human OAuth token without either is refused (`UNAUTHORIZED_SCOPE`).<br>2. `D6` content-policy transition prevents serving extract-bearing cached packs to `refs_only_d6` endpoints. | `make cluster-mesh-test ENV=test-cm && make scope-check` |
-| **`2-S1b`** | **`@sentropic/llm-mesh` `D7` Sensitivity-Triaged Reranker Route & Metering:** `packages/llm-mesh/src/decision/*` (after `chat-mesh C2a`) | 1. Rejects any `D7` rerank call lacking `confidentialityScreened: true` receipt.<br>2. Emits `RouteMeteringSink` record for `VerifiedRoutingSubject`. | `make llm-mesh-test ENV=test-llm && make scope-check` |
-| **`2-S2`** | **`api/` Registry Dispatch & `D14` Purge Announcement Route Integration (Isolated from `packages/*`):** `api/src/services/mcp/registry-dispatch.ts`, `api/tests/api/*` | 1. JSON-RPC `POST /` and REST `POST /invoke` propagate `_meta['sentropic.h2a.mandate']` / `X-Sentropic-H2A-Mandate` (refusing mismatch with `INVALID_DIGEST`) and preserve `{ error: 'memory_request_refused' }` (`403`) catch parity. | `make api-test ENV=test-api && make scope-check` |
+| **`2-S0a`** | **`packages/mcp-platform` Only (+ `package.json` bump; depends on `6A-S0a`):** `packages/mcp-platform/src/memory/{contracts.ts,invocation-context.ts,context-validation.ts}`, `packages/mcp-platform/etc/{mcp-platform,mcp-platform-memory}.api.md` (`new`: `MEMORY_CONTEXT_TOOL_NAME`, `MEMORY_TOOL_NAMES_V2`, `MEMORY_PROVIDER_CONTRACT_VERSION_V2`, `getMemoryToolNames`, `VerifiedH2AMandateV1` on `StpConnectorContext.h2aMandate`, Ed25519 `CoSignatureReceiptV2` verifier, `validateMemoryProjection` parameterized on `descriptor.requiredClaims`) | 1. `MEMORY_TOOL_NAMES` stays the exact 6-tuple (`v1`); `getMemoryToolNames({ contextToolsEnabled: false })` returns 6 tools.<br>2. `validateMemoryProjection` enforces `['sub', 'tid', 'h2a_context_mandate']` for `engram_memory_context` and refuses `-32603` when `'h2a_context_mandate'` is in `principal.claims` without digest-consistent `ctx.h2aMandate` (`F-06.1`).<br>3. 1-byte tamper in `CoSignatureReceiptV2` or `l5CandidateManifestSha256` fails verification closed (`F-08`). | `make typecheck-mcp-platform ENV=test-mcp && make test-mcp-platform ENV=test-mcp && make api-extract-mcp-platform ENV=test-mcp && make scope-check ENV=test-mcp` |
+| **`2-S0b`** | **`packages/mcp-broker` Only (+ `package.json` bump; depends on `2-S0a`):** `packages/mcp-broker/src/memory/compiled-dispatch.ts` | 1. Default `contextToolsEnabled: false` rejects `engram_memory_context` with `unknown_tool` (`compiled-dispatch.ts:166-170`).<br>2. With `v2` enabled, `engram_memory_context` is excluded from `MUTATING_MEMORY_TOOL_NAMES` and throws `MemoryDispatchRefusal('insufficient_claims')` (`:190-195`) when `'h2a_context_mandate'` is missing (`F-04.2`). | `make typecheck-mcp-broker ENV=test-mcp && make test-mcp-broker ENV=test-mcp && make scope-check ENV=test-mcp` |
+| **`2-S1a`** | **`packages/cluster-mesh` MCP & Context Wiring (+ `package.json` bump + `BRS2-EX1`; depends on `2-S0b`, `6A-S1a..d`, `1-S1a`, `1-S1b`, `chat-mesh B1/B2`, published `2-E1..2-E5`):** `packages/cluster-mesh/src/integrations/mcp/{memory.ts,memory-definition.ts,memory-compose.ts,memory-manifest.ts,memory-transport.ts}` + `new` `memory-content-auth.ts` (`ModelContentAuthorizationPolicyV1`, `RecordedNonMemorySlicePolicyV1` — `sessions/content-policy.ts` untouched!) + `packages/cluster-mesh/src/modules/catalog.ts` | 1. `composeEngramMemoryDefinition` verifies Ed25519 `CoSignatureReceiptV2` + exact `l5CandidateManifestSha256` and wires `MemoryContextPortV1` via `getMemoryToolNames({ contextToolsEnabled })` (`F-05.2`, `F-08`, `F-14.1`).<br>2. Verified `SignedH2AMandateWireEnvelope` (`memory:context:assemble`) or `D18-A` policy (`.h2a/` $\cap$ `BridgeLock` intersection) mints `h2a_context_mandate` **only** when genuine host `(sub, tid)` is present (zero synthetic `sub`/`tid`, `F-06.2`); intra-provider unauthorized workspace returns `'UNAUTHORIZED'` (`F-04.1`).<br>3. `ModelContentAuthorizationPolicyV1` defaults fail-closed to `'refs_only_d6'` and isolates cache/cursor keys across `D8 → D6` transitions (`F-09.2/3`). | `make lint-cluster-mesh ENV=test-cm && make typecheck-cluster-mesh ENV=test-cm && make test-cluster-mesh SCOPE="tests/engram-memory" ENV=test-cm && make scope-check ENV=test-cm` |
+| **`2-S1b`** | **`packages/cluster-mesh` `D7` `@sentropic/llm-mesh/decision` Reranker Adapter (+ `package.json` bump; depends on `2-S1a`, `1-S2`, `chat-mesh C2a`):** `new` `packages/cluster-mesh/src/integrations/mcp/memory-d7-reranker.ts` consuming `packages/cluster-mesh/src/integrations/llm-mesh/decision.ts:1-3` *(keeps `packages/llm-mesh/src/decision/request.ts:40-53,70` closed 8-key schema untouched, `F-13.1`)* | 1. Adapter rejects any `D7` rerank call lacking verified `confidentialityScreened === true` receipt *before* calling `DecisionClient.decide`, and constructs a valid closed 8-key `DecisionRequest` with `policy: { timeoutMs: 250, explanation: 'none' }` (`OQ-S2-3`).<br>2. Emits `RouteMeteringSink` telemetry under `VerifiedRoutingSubject` and falls back cleanly on timeout/offline (`D17`). | `make lint-cluster-mesh ENV=test-cm-d7 && make typecheck-cluster-mesh ENV=test-cm-d7 && make test-cluster-mesh SCOPE="tests/engram-memory" ENV=test-cm-d7 && make typecheck-llm-mesh ENV=test-llm && make test-llm-mesh ENV=test-llm && make scope-check ENV=test-cm-d7` |
+| **`2-S2`** | **`api/` MCP Registry Dispatch, `DEC-116` Guard, & Host Catalog Filter (Isolated from `packages/*`; depends on `2-S1a`, `6A-S2`, `6A-S3`; zero `D14` route here, `F-07`, `F-12.3`):** `api/src/services/mcp/{registry-dispatch.ts,client-policy.ts,cluster-registry.ts}`, `api/src/services/catalog/sources/host-registry-source.ts`, `api/tests/api/*` | 1. `isToolPermitted('sentropic-mcp', 'engram_memory_context') === false` (`READ_ONLY_TOOL_ALLOWLIST` unchanged, `DEC-116` HTTP `403`, `F-07.1`).<br>2. `HostRegistryCatalogSource.snapshot()` (`claims: []`) and `tools/list` exclude `engram_memory_context` whenever `'h2a_context_mandate'` is absent (`F-07.2`).<br>3. JSON-RPC `POST /` preserves `structuredContent` (`registry-dispatch.ts:94-96`), propagates `_meta['sentropic.h2a.mandate']` / `X-Sentropic-H2A-Mandate` (mismatch → `INVALID_DIGEST`), and preserves `{ error: 'memory_request_refused' }` (`403`) catch parity (`F-12.3`). | `make typecheck-api ENV=test-api && make test-api-unit SCOPE="tests/api" ENV=test-api && make scope-check ENV=test-api` |
+| **`2-S3`** | **`MCP-L5` 5-Gate Freeze & Stage-B / E10 Qualification (`BRS2-EX2`; depends on `2-S1b`, `2-S2`, `6A-S4`, published `2-E1..2-E5`):** all 5 §6.1.4 artifacts (`exports-v1.json`/`v2`, `l0-freeze.json`, `new` `co-signature-v2.json`, `fixtures/l0/*`, `proof-catalog-v1.json`, `pre-candidate-manifest.json` + `.sha256`, `qualification.mk:14-15,48-49`, `packages/cluster-mesh/tests/engram-memory/v2-context-co-signature.spec.ts`) | 1. 1-byte mutation of `pre-candidate-manifest.json`, `l0-freeze.json`, or `co-signature-v2.json` fails both `memory-l5-verify` and runtime `composeEngramMemoryDefinition` startup.<br>2. All 22 `R2-MEMORY` `v1` suites plus the `v2` 7th-tool Stage-B durable Postgres & E10 clean installed-consumer campaigns pass with zero regression. | `make memory-l5-pack STAGE=pre-candidate ARTIFACT_MANIFEST=tools/memory-mcp-l5/artifacts/pre-candidate-manifest.json ENV=test-mcp && make memory-l5-verify ARTIFACT_MANIFEST=tools/memory-mcp-l5/artifacts/pre-candidate-manifest.json ENV=test-mcp && make memory-l5-gate ENV=test-mcp && make -f Makefile -f packages/cluster-mesh/tests/engram-memory/qualification.mk memory-stage-b ENV=test-mem-batch1 && make -f Makefile -f packages/cluster-mesh/tests/engram-memory/qualification.mk installed-memory ENV=test-mem-e10 && make scope-check ENV=test-mcp` |
 
-### 7.3 `h2a` Repository Lots (`node --test`, Gated on Prerequisite PR #455 `844402ee`)
+### 7.3 `h2a` Repository Lots (`node --test`, Gated on Prerequisite PR #455 `844402ee`; `h2a` Review Pending)
 
 | Lot | Scope & Target Files (Depends on PR #455 + `6A-H1`..`6A-H3`) | First Failing (`RED`) Tests Written Before Implementation | Verification Command |
 |---|---|---|---|
-| **`2-H1`** | **Durationless Prompt Loop Assembler & Rollover Elimination (`D23`, `D22`):** `packages/h2a/src/runtime/context/durationless-prompt-loop.ts`, `packages/h2a/src/runtime/loop/engine/tick.ts` | 1. Step $k > 1$ outbound LLM request contains **only** `(EngramMemoryContextOutputEnvelopeV1 + ReprocessedPreviousStepV1 + Step k Trigger)` — zero `[turn_1..turn_{k-1}]` messages and zero rollover handoff payload.<br>2. Step $k$ refuses to assemble before step $k-1$ raw output is ingested or locally outboxed (`D17`). | `node --test packages/h2a/test/durationless-prompt-loop.test.js` |
-| **`2-H2`** | **Non-Blocking Five-Slice Hook Injector (`D15`) & `D18` Read-Only Policy Guard:** `packages/h2a/src/runtime/context/{slice-injector,readonly-slice-policy}.ts`, `packages/h2a/src/hosts/plugin.ts` | 1. `D15`: slow/pending `track` or `architecture` slice never delays injection of ready `rules`, `git`, and `memory` slices.<br>2. `D18`: session with `hasMemoryIdentity === false` injects only recorded `allowed_slices ⊆ ['track','git','architecture','rules']` read-only and blocks all memory content/tools; missing policy injects zero slices. | `node --test packages/h2a/test/context-slices-d15-d18.test.js` |
-| **`2-H3`** | **`D14` Post-`D13` Window Host Context Purge & `D6` Host Log Redaction:** `packages/h2a/src/runtime/context/host-context-purge.ts` | 1. Processed context logs and audit views stay readable for exact declared `D13` host duration after session close, then stop presenting, record `PurgeAnnouncementReceiptV1`, and delete host transcript/pack caches while `engram` `query_text` remains queryable (`D23`).<br>2. Under `D6=refs`, host logs write only `(path_ref, content_fingerprint)`. | `node --test packages/h2a/test/host-context-purge-d14.test.js` |
+| **`2-H1`** | **Durationless Prompt Loop Assembler, Rollover Elimination, & Untrusted-Recall Quarantine (`D23`, `D22`, `F-09.1`):** `new` `packages/h2a/src/runtime/context/durationless-prompt-loop.ts`, `packages/h2a/src/runtime/loop/engine/tick.ts` | 1. Step $k > 1$ outbound LLM request contains **only** `(MemoryToolSuccessV1<EngramMemoryContextValueV1> + ReprocessedPreviousStepV1 + Step k Trigger)` — zero `[turn_1..turn_{k-1}]` messages and zero rollover handoff payload.<br>2. Step $k$ refuses to assemble before step $k-1$ raw output is ingested or locally outboxed (`D17`).<br>3. Adversarial `same_role_pending_notes`, `session_history_query_matches`, `significant_tool_results`, and `domain_typed_envelopes[].payload` containing `</untrusted_recalled_data>`, `<system>`, or Unicode bidi overrides (`U+202E`, `U+2066`) are sanitized and confined inside `<untrusted_recalled_data>` (`F-09.1`). | `node --test packages/h2a/test/durationless-prompt-loop.test.js` |
+| **`2-H2`** | **Non-Blocking Five-Slice Hook Injector (`D15`) & `D18-B` Local Non-MCP Policy Guard (`F-06.2`, `OQ-S2-4`):** `new` `packages/h2a/src/runtime/context/{slice-injector,readonly-slice-policy}.ts`, `packages/h2a/src/hosts/plugin.ts` | 1. `D15`: slow/pending `track` or `architecture` slice (`> 150 ms` local / `> 400 ms` remote) never delays injection of ready `rules`, `git`, and `memory` slices.<br>2. `D18-B`: local CLI session without host `(sub, tid)` makes **zero MCP call** (zero synthetic `sub`/`tid`), computes strict `.h2a/` $\cap$ `BridgeLock` `allowed_slices` intersection (`OQ-S2-4`), fails closed on invalid signature/revocation or missing policy, and injects zero memory content. | `node --test packages/h2a/test/context-slices-d15-d18.test.js` |
+| **`2-H3`** | **`D14` Post-`D13` Window Host Context Purge & `D6` Host Log Redaction:** `new` `packages/h2a/src/runtime/context/host-context-purge.ts` | 1. Processed context logs and audit views stay readable for exact declared `D13` host duration after session close, then stop presenting, record `PurgeAnnouncementReceiptV1`, and delete host transcript/pack caches while `engram` `query_text` remains queryable (`D23`).<br>2. Under `D6=refs`, host logs and `ReprocessedPreviousStepV1` omit `reprocessed_summary` and write only `(path_ref, content_fingerprint)` (`F-09.2`). | `node --test packages/h2a/test/host-context-purge-d14.test.js` |
 | **`2-H4`** | **8-Host Signed `BridgeLock` Switchover & Deadline Enforcement (`Point 2B`, `Spec 6A §4.3`):** `packages/h2a/src/registry/{bridge-lock,descriptors,host-bootstrap}.ts`, `packages/h2a/src/runtime/handover/{shim-bridge,catalogue}.js` | 1. Each of the 8 hosts (`claude`, `codex`, `gemini`, `agy`, `hermes`, `opencode`, `muse`, `vibe`) switches independently via `enabledHosts` over one shared 7-tool `mcp-central` generation without `409 integrity_mismatch` or regressing PR #455 `rebootstrapMissingPluginLock`.<br>2. Expired `switchoverEndDateUtc` with unswitched active host fails `h2a doctor` closed. | `node --test packages/h2a/test/context-tool-host-switchover.test.js` |
 
 ---
 
 ## 8. Open Questions
 
-None of the items below reopen `D1`–`D34` (`spec/memory/R15-SEDIMENT.md`) or `Points 1B–6A` (`spec/memory/OWNER-DECISIONS-2026-11-14.md`). They capture operational calibration parameters to pin before Gate 2 (`CoSignatureReceiptV2`) sign-off:
+None of the items below reopen `D1`–`D34` (`spec/memory/R15-SEDIMENT.md`) or `Points 1B–6A` (`spec/memory/OWNER-DECISIONS-2026-11-14.md`). `sentropic` (`OWNER @sentropic/cluster-mesh` / MCP registry & `Point 2B` co-signatory) recorded its positions in `engram-s2-carbon.md:156-161` (`2026-11-15`); `h2a` has **not** reviewed Spec 2 yet, so `h2a`-co-owned items remain open pending `h2a` review:
 
-1. **`OQ-S2-1` — Initial `switchoverEndDateUtc` Calendar Value & Host Ordering in `BridgeLock` (`Point 2B`, `Spec 6A OQ-H2A-1`):**
-   `Point 2B` mandates a fixed switchover end date carried in the signed `BridgeLock` configuration (`ContextToolHostSwitchoverPolicy.switchoverEndDateUtc`). What exact UTC deadline and staged order across the 8 CLI hosts (`claude`, `codex`, `gemini`, `agy`, `hermes`, `opencode`, `muse`, `vibe`) do the `h2a` and `engram` conductors pin for the first `v2` rollout lock?
-2. **`OQ-S2-2` — Per-Slice Non-Blocking Readiness Deadline (`D15`):**
-   Under `D15=slices`, each ready slice injects immediately without waiting for the whole model. Should the per-step `h2a` hook readiness budget before marking an uncached slice `'pending_criteria'` default to `150 ms` locally (`embedded-local`) and `400 ms` over `external-host`, within the hard `30_000 ms` `MAX_INVOCATION_DEADLINE_MS` (`src/mcp/memory/contracts.ts:297`)?
-3. **`OQ-S2-3` — `D7` Fast Reranker Latency Budget Inside `assembleContext`:**
-   When `D7` model-assisted sensitivity-triaged reranking (`@sentropic/llm-mesh/decision`) is authorized, what soft timeout (recommended: `250 ms` out of the step budget, falling back non-fatally to Stage 1 `deterministic_attention_v1`) should `MemoryContextPortV1` enforce so durationless prompt assembly remains sub-second on interactive CLI turns?
-4. **`OQ-S2-4` — Canonical Signed File Path for `RecordedNonMemorySlicePolicyV1` (`D18`):**
-   Should the recorded read-only slice policy for sessions without a memory identity (`D18=readonly`) live inside the Git-committed `.h2a/` workspace harness overlay (`Spec 4`, `D31`) or inside `BridgeLock` host configuration (`Spec 6A`), or require agreement of both when both are present?
-5. **`OQ-S2-5` — Coordinated Application Order for `SPEC_MEMORY_FINALIZATION.md` `§0–§2` (`Spec 2` + `Spec 3`):**
-   Both Spec 2 (`PLAN_SPEC_ENGRAM_FRONT.md:186`) and Spec 3 (`:198`) register additive deltas to `spec/SPEC_MEMORY_FINALIZATION.md` `§0–§2`. Should those two deltas be applied together in a single mechanical documentation fold lot after Spec 3 completes adversarial review (`D2=review`)?
+1. **`OQ-S2-1` — Initial `switchoverEndDateUtc` Calendar Value & Host Ordering in `BridgeLock` (`Point 2B`, `Spec 6A OQ-H2A-1`) — `answered by sentropic, 2026-11-15; open pending h2a review`:**
+   - *Question:* What exact UTC deadline and staged order across the 8 CLI hosts (`claude`, `codex`, `gemini`, `agy`, `hermes`, `opencode`, `muse`, `vibe`) do the `h2a`, `sentropic`, and `engram` conductors pin for the first `v2` rollout lock?
+   - *`sentropic` position:* Mandatory fixed `switchoverEndDateUtc` in `BridgeLock` (recommended: 14-day switchover window starting from Lot `2-S3` qualification) with staged host rollout order `claude` → `codex` → `gemini` → `agy` → `opencode` → `hermes` → `muse` → `vibe`. Confirmation of exact calendar timestamp and host sequence awaits `h2a` review.
+2. **`OQ-S2-2` — Per-Slice Non-Blocking Readiness Deadline (`D15`) — `answered by sentropic, 2026-11-15; open pending h2a review`:**
+   - *Question:* Should the per-step `h2a` hook readiness budget before marking an uncached slice `'pending_criteria'` default to `150 ms` locally (`embedded-local`) and `400 ms` over `external-host`, within the hard `30_000 ms` `MAX_INVOCATION_DEADLINE_MS` (`src/mcp/memory/contracts.ts:297`)?
+   - *`sentropic` position:* Validated (`150 ms` on `embedded-local` and `400 ms` on `external-host` under the `30_000 ms` hard ceiling; folded as defaults in §4.3). `h2a` hook-side confirmation pending `h2a` review.
+3. **`OQ-S2-3` — `D7` Fast Reranker Latency Budget Inside `assembleContext` — `answered by sentropic, 2026-11-15 (closed)`:**
+   - *Resolution:* Validated at **`250 ms`** soft timeout, passed explicitly via `DecisionRequest.policy.timeoutMs = 250` (`packages/llm-mesh/src/decision/request.ts:48`) + `AbortSignal` in `createLlmMeshContextualRerankerV1` (`Lot 2-S1b`), with immediate non-fatal fallback to Stage 1 `deterministic_attention_v1` (§3.1).
+4. **`OQ-S2-4` — Canonical Signed File Path for `RecordedNonMemorySlicePolicyV1` (`D18`) — `answered by sentropic, 2026-11-15; open pending h2a review`:**
+   - *Question:* Should the recorded read-only slice policy for sessions without a memory identity (`D18=readonly`) live inside the Git-committed `.h2a/` workspace harness overlay (`Spec 4`, `D31`) or inside `BridgeLock` host configuration (`Spec 6A`), or require agreement of both when both are present?
+   - *`sentropic` position:* Require **strict intersection** (`allowed_slices = overlay.allowed_slices ∩ bridgeLock.allowed_slices`) whenever both `.h2a/` (`D31`) and `BridgeLock` are present, failing closed (`zero slices`) if either revokes `D18` or carries an invalid signature (folded in §4.4). `h2a` overlay/lock file-path confirmation pending `h2a` review.
+5. **`OQ-S2-5` — Coordinated Application Order for `SPEC_MEMORY_FINALIZATION.md` `§0–§2` (`Spec 2` + `Spec 3`) — `answered by sentropic, 2026-11-15 (closed)`:**
+   - *Resolution:* Validated — apply the `Spec 2` + `Spec 3` additive deltas to `spec/SPEC_MEMORY_FINALIZATION.md` `§0–§2` together in a single mechanical documentation fold lot after Spec 3 completes adversarial review (`D2=review`).
