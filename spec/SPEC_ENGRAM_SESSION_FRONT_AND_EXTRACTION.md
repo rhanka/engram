@@ -3,25 +3,31 @@
 - **Spec ID:** `SPEC_ENGRAM_SESSION_FRONT_AND_EXTRACTION` (Spec 1 in [`spec/memory/PLAN_SPEC_ENGRAM_FRONT.md`](memory/PLAN_SPEC_ENGRAM_FRONT.md), §3 `:157-173`)
 - **Stage:** `DESIGN` (`Gemini Carbon`)
 - **Status:** `proposed`
+- **Version:** `0.2.0` (`post-sentropic review fold; h2a review pending`)
 - **Date:** `2026-11-14`
-- **Repository of Record:** `engram` (`@sentropic/engram` `0.28.0`, branch `docs/memory-r15-sediment`, `package.json:2-3`) `[FACT: spec/memory/R15-SEDIMENT.md:4; spec/memory/PLAN_SPEC_ENGRAM_FRONT.md:4,159]`
+- **Repository of Record:** `engram` (`@sentropic/engram` `0.28.0`, branch `docs/memory-r15-sediment`, commit `0b3f66c9a9679207cb1ff0f1dd2630458622768c`, `package.json:2-3`) `[FACT: spec/memory/R15-SEDIMENT.md:4; spec/memory/PLAN_SPEC_ENGRAM_FRONT.md:4,159]`
 - **Primary Owner:** `engram` (consumed by `h2a` CLI host plugins, `Track` analyst/control, and `sentropic` external HMI ingress exclusively via `@sentropic/cluster-mesh`, `R12`) `[FACT: spec/memory/PLAN_SPEC_ENGRAM_FRONT.md:159; spec/memory/ARCHITECTURE-RULES.md:5]`
 - **Dependencies:**
   - [`spec/SPEC_ENGRAM_METAMODEL_AND_LINEAGE_REGISTRY.md`](SPEC_ENGRAM_METAMODEL_AND_LINEAGE_REGISTRY.md) (`Spec 0`: `Sha256Digest` `:144`, `LineageId` `:147`, `OntologyTemplateEnvelopeRef` `:149-154`, `H2AMandateEnvelope` `:161-174`, `track.ontology.yaml` `:930-933`, `.h2a/overlays/*` `:977-982`)
-  - [`spec/SPEC_ENGRAM_CLUSTER_MESH_MEMORY_ACCESS_AND_MCP_WIRING.md`](SPEC_ENGRAM_CLUSTER_MESH_MEMORY_ACCESS_AND_MCP_WIRING.md) (`Spec 6A`: `POST /memory/v1/session-front/ingest` `:215-217,224`, `POST /memory/v1/hmi/input` `:228`, `POST /memory/v1/track/verdicts` `:227`, verified `H2AEnvelope<H2AMandate>` `:311-398`, `D17=degraded` durability `:399-416`, neutral `session-db` citation tuple + L3a `scope-outbox-v1` + `@sentropic/llm-mesh` routing `:417-429`)
+  - [`spec/SPEC_ENGRAM_CLUSTER_MESH_MEMORY_ACCESS_AND_MCP_WIRING.md`](SPEC_ENGRAM_CLUSTER_MESH_MEMORY_ACCESS_AND_MCP_WIRING.md) (`Spec 6A` `v0.2.0`: `POST /memory/v1/session-front/ingest` `:215-217,224`, guarded `POST /memory/v1/session-front/extractions` addendum in §1.2 below, `POST /memory/v1/hmi/input` `:228`, `POST /memory/v1/control/verdicts` `:227,777`, `GET /memory/v1/health` `:230`, verified `H2AEnvelope<H2AMandate>` `:311-398`, `D17=degraded` durability `:399-416`, neutral `session-db` citation tuple + L3a `scope-outbox-v1` + `@sentropic/llm-mesh` routing `:417-429`, upstream lots `6A-S0a`, `6A-S0b`, `6A-S1a`–`6A-S1d`, `6A-S2` `:729-735`)
+  - **Upstream `sentropic` `chat-mesh` Proposal (`sentropic:spec/SPEC_EVOL_CHAT_MESH_PROPOSAL.md`, r2):** Lots `B1`/`B2` (`:622-624`, delivering `SessionDb` and `EntryRecord.ordinal` in `./session-db/{postgres,sqlite}`), Lot `C2a` (`:629`, `RouteMeteringSink` & `WP16 D0` enforcement inside `@sentropic/llm-mesh` outside `llm-gateway`), `G-FENCE` (`:89,360-369`), and `G-NOSECRET` (`:97`)
 - **Binding Authorities:**
   - [`spec/memory/OWNER-DECISIONS-2026-11-14.md`](memory/OWNER-DECISIONS-2026-11-14.md) (`:1-29` — `T-M-C` ownership rule, ratified Points `1B`, `2B`, `3C`, `4B`, `5B`, `6A`, and `D28` kept unchanged)
   - [`spec/memory/R15-SEDIMENT.md`](memory/R15-SEDIMENT.md) (`:1-146` — Engram-First Principle and settled decision ledger `D1`–`D34`, never reopened)
   - [`spec/memory/ARCHITECTURE-RULES.md`](memory/ARCHITECTURE-RULES.md) (`:1-13` — `R12` no-bypass invariant, `D30` three-layer separation, `archi@1` relation rules)
   - [`spec/memory/DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md`](memory/DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md) (`:1-35` — `engram` serves declarations and semantic data only, never design-system fold/layout/rendering state)
-  - [`spec/memory/contracts/engram-h2a.md`](memory/contracts/engram-h2a.md) (`:1-214`), [`spec/memory/contracts/engram-track.md`](memory/contracts/engram-track.md) (`:1-247`), [`spec/memory/contracts/engram-cluster-mesh.md`](memory/contracts/engram-cluster-mesh.md) (`:1-181`)
+  - [`spec/memory/contracts/engram-h2a.md`](memory/contracts/engram-h2a.md) (`:1-214`), [`spec/memory/contracts/engram-track.md`](memory/contracts/engram-track.md) (`:1-247`), [`spec/memory/contracts/engram-cluster-mesh.md`](memory/contracts/engram-cluster-mesh.md) (`:1-181`; Spec 1 §1.2 records the `POST /memory/v1/session-front/extractions` addendum while keeping `contracts/engram-cluster-mesh.md` untouched on disk in this lot)
 - **Amends (Listed as Exact `Before → After` Deltas in §7; Target Files Unmodified in This Lot):**
   - [`spec/SPEC_AGENT_MEMORY_SUBSTRATE.md`](SPEC_AGENT_MEMORY_SUBSTRATE.md) (`§0`–`§5` write path, lines `53–244`, and `§9.4`, lines `343–370`)
   - [`spec/SPEC_EVOL_AGENT_MEMORY_SUBSTRATE.md`](SPEC_EVOL_AGENT_MEMORY_SUBSTRATE.md) (`§4`, lines `145–252`, and `§5.1`, lines `253–290`; preserving EVOL `D3` at `:73-77` and [`spec/SPEC_MEMORY_MCP_V2.md`](SPEC_MEMORY_MCP_V2.md) `M10` at `:884-910`)
   - [`spec/SPEC_LIVE_GIT_INDEXING.md`](SPEC_LIVE_GIT_INDEXING.md) (`§2`, lines `42–71`, and `§5`, lines `118–129`)
-- **Evidence Baseline Verified (Read-Only):**
-  - `engram`: `/home/antoinefa/src/graphify-wt-memfinal` (`@sentropic/engram` `0.28.0` on `docs/memory-r15-sediment`, `CHANGELOG.md:39-44`, `src/extraction-batch.ts:1-3140`, `src/profile-bundle.ts:1-1223`, `engram-memory/*`, `engram-live/*`)
-  - `sentropic`: `origin/main` commit `913e3bcbc` (`packages/cluster-mesh/src/storage/contracts.ts:29-54`, `packages/cluster-mesh/src/engram-memory/binding.ts:17-43`, `packages/mcp-platform/src/registry.ts:100-145`, `packages/llm-mesh/src/mesh.ts:49-54`, `packages/llm-mesh/src/routing-contracts.ts:13-17,190-222`, `packages/llm-mesh/src/decision/index.ts:1-16`, `api/src/routes/session-content/route-table.ts:60-100`)
+- **Evidence Baseline Verified (Read-Only, Including Actual Commit State vs Non-Existent Target Surfaces):**
+  - `engram` (`/home/antoinefa/src/graphify-wt-memfinal`, `@sentropic/engram` `0.28.0` at commit `0b3f66c9a9679207cb1ff0f1dd2630458622768c`):
+    - *Exists today:* `CHANGELOG.md:39-44` (`0.24.0` extraction toolkit), `src/extraction-batch.ts:1-3140` (`:74-78` currently imports `parseJsonFromLlmText` and `TextJsonGenerationClient` from `./llm-execution.js`), `src/profile-bundle.ts:1-1223`, `src/llm-mesh.ts:1-12` (`:12` currently re-exports `textClientToCallLlm` from `./llm-execution.js`), `src/llm-execution.ts:1-580` (`:246-266` reads `*_API_KEY`, `:278-280` mutates `process.env.GOOGLE_GENERATIVE_AI_API_KEY`, `:340-365,508` dynamically imports `@ai-sdk/*` and `ai`), `src/node-descriptions.ts:848-866`, `src/community-labeling.ts:407-425`, `src/pdf-ocr.ts:91,187`, `package.json:12-63,145-165` (currently bundles `@ai-sdk/anthropic` `:146`, `@ai-sdk/cohere` `:147`, `@ai-sdk/google` `:148`, `@ai-sdk/mistral` `:149`, `@ai-sdk/openai` `:150`, `ai` `:153`, `mistral-ocr` `:161` in `dependencies`, and pins `@sentropic/llm-mesh` to `"^0.19.0"` `:152`), `tsup.config.ts:56,79,88`, `engram-memory/package.json:4,11-13` (`"private": true`, types-only `./contracts`), `engram-memory/contracts/index.ts:1-1361`, `engram-memory/module-storage-neutral.ts:35-230`, `engram-memory/bounded-projection.ts:22-86`, `engram-live/contracts.ts:674,699,1180-1205` (`validateWorktreeIdentity`), `engram-live/registration.ts:312-445`, `engram-live/pr-sync.ts:1-450` (PR-only `PullRequestFactDto` + `PrSyncPersistencePort` `:79-87`).
+    - *Does NOT exist yet at `0b3f66c9`:* `"./session-front-contracts"` export in `package.json:12-63`, `src/session-front-contracts.ts`, `src/llm-json-port.ts`, `src/session-extraction-adapter.ts`, `engram-memory/contracts/session-front.ts`, `engram-memory/session-front-engine.ts`, `engram-memory/privacy/*`, `engram-memory/decision-dossier.ts`, `engram-memory/live-tracking.ts`, `engram-memory/live-tracking-reconciler.ts`, `engram-live/derived-worktree-graph.ts`, and any `github-issue` / `github-review` / `project-board` contract in `engram-live/`.
+  - `sentropic` (`origin/main` commit `913e3bcbc9dec9ff5f9db36eb3a1ef5a3dd11b7a`):
+    - *Exists today:* `packages/cluster-mesh/src/storage/contracts.ts:29,179,195` (`STORAGE_MODULE_IDS = ['comments', 'engram-live', 'engram-memory']`; `DEFAULT_PAGE_LIMITS.maxRecords = 100`), `packages/cluster-mesh/src/storage/sqlite/engine.ts:38-40` & `tests/storage/sqlite-lanes.spec.ts:109-122` (one module per SQLite file), `packages/cluster-mesh/src/storage/sqlite/index.ts:52-63` (`LOT1_DURABLE_PROFILES`), `packages/cluster-mesh/src/engram-memory/sqlite.ts:137-145` (currently throws `StorageUnavailableError`), `packages/cluster-mesh/src/engram-memory/limits.ts:12-30` (`MEMORY_SINGLE_EVENT_LIMITS`), `packages/cluster-mesh/src/modules/catalog.ts:18,108-119,142` (`ENGRAM_MEMORY_RANGE = '>=0.22.0 <0.23.0'`), `packages/cluster-mesh/src/sessions/content-policy.ts:89-164` (`ContentPolicyV1`, `computeRetentionDeadline`), `packages/cluster-mesh/src/live-storage/registration.ts:27-31,170-171,509-515` (`validateWorktreeIdentity`, `LiveDeclarationStorePort`), `packages/cluster-mesh/src/forge/{contracts,custody,lifecycle,github-api}.ts` (`GIT_APP_PERMISSIONS` `:40,50-54`, `installationEvent` `:101-103`), `packages/mcp-platform/src/memory/contracts.ts:107-118` (`isValidOpaqueRef` `1..512` B vs `isValidIdempotencyKey` `16..256` B), `packages/llm-mesh/package.json:3,38-45` (`0.38.0` with `./decision`), `packages/llm-mesh/src/mesh.ts:49-54`, `packages/llm-mesh/src/routing-contracts.ts:13-75,190-222`, `packages/llm-mesh/src/decision/index.ts:1-16`, `api/src/app.ts:150-160`, `api/src/routes/namespaces/memory.ts:1-75`, `api/src/routes/session-content/route-table.ts:60-100`, `api/src/services/cluster-mesh/github-app-host.ts:34-47,152-246`, `api/src/services/artifacts/live/forge-github.ts:16-62`, `Makefile:1280-1290,2456-2467,4067`.
+    - *Does NOT exist yet at `913e3bcbc`:* `'session-db'` in `STORAGE_MODULE_IDS` (`6A-S0b`), `SessionDb` (`chat-mesh B1/B2`), restart-durable `scope-outbox-v1` / `fenced-writers-v1` in `LOT1_DURABLE_PROFILES` (`6A-S0b`), durable SQLite `engram-memory` (`6A-S1a`), `packages/cluster-mesh/src/compose/memory.ts` (`6A-S1c`), `RouteMeteringSink` outside `llm-gateway` (`chat-mesh C2a`), and `PrSyncPersistencePort` implementation (`1-S0a`).
   - `h2a`: `origin/main` commit `1f57127de` (`packages/h2a/src/hosts/plugin.ts:63-212`, `packages/h2a/src/envelope.ts:109-150`, `packages/h2a/src/runtime/identity/workspace-id.ts:41-48`, `packages/h2a-runtime/src/delegate.ts:765-810`, `packages/h2a-runtime/src/gateway-host/live-github.ts:1-45`, `packages/track/src/events/store.ts:40-80`, `packages/track/src/ingest/ingest.ts:239-276`, `packages/track/src/model/decision.ts:14-114`)
 
 ---
@@ -77,7 +83,7 @@ This specification executes the settled R15/R16 architecture without reopening a
 | Spec | Ownership Boundary Relative to Spec 1 |
 | :--- | :--- |
 | **Spec 0** (`SPEC_ENGRAM_METAMODEL_AND_LINEAGE_REGISTRY.md`) | Owns `Sha256Digest` (`:144`), `LineageId` (`:147`), `OntologyTemplateEnvelopeRef` (`:149-154`), `H2AMandateEnvelope` (`:161-174`), `track.ontology.yaml` (`:930-933`), and `.h2a/overlays/*` path conventions (`:977-982`). Spec 1 imports these contracts unchanged. |
-| **Spec 6A** (`SPEC_ENGRAM_CLUSTER_MESH_MEMORY_ACCESS_AND_MCP_WIRING.md`) | Owns the mandatory `R12` transport endpoints (`POST /memory/v1/session-front/ingest`, `POST /memory/v1/hmi/input`, `POST /memory/v1/track/verdicts` at `:215-228`), verified `H2AEnvelope<H2AMandate>` check (`:311-398`), `D17=degraded` outbox durability (`:399-416`), neutral `session-db` citation tuple (`:421-423`), and `@sentropic/llm-mesh` model routing (`:424-426`). Spec 1 defines the `engram` domain ingestion, extraction, worktree, dossier, privacy, and live-tracking semantics invoked behind those `cluster-mesh` endpoints. |
+| **Spec 6A** (`SPEC_ENGRAM_CLUSTER_MESH_MEMORY_ACCESS_AND_MCP_WIRING.md`) | Owns the mandatory `R12` transport endpoints (`POST /memory/v1/session-front/ingest`, `POST /memory/v1/hmi/input`, `POST /memory/v1/control/verdicts`, and `GET /memory/v1/health` at `:215-230`, plus the guarded `POST /memory/v1/session-front/extractions` addendum specified in §1.2 below), verified `H2AEnvelope<H2AMandate>` check (`:311-398`), `D17=degraded` outbox durability (`:399-416`), neutral `session-db` citation tuple (`:421-423`), and `@sentropic/llm-mesh` model routing (`:424-426`). Spec 1 defines the `engram` domain ingestion, extraction, worktree, dossier, privacy, and live-tracking semantics invoked behind those `cluster-mesh` endpoints. |
 | **Spec 1** *(this document)* | Owns `EngramSessionIngestFrontPort` (`recordSessionEvent`, `recordExtraction`), the pluggable post-recording extraction pipeline over the `0.24.0` extraction toolkit (`CHANGELOG.md:39-44`), `D21` `derived_worktree` graph entities bound to `@sentropic/engram-live`, `D27=decision-only` decision-dossier exchanges, `D33`/`D7`/`D8`/`D9`/`D11`/`D13`/`D14` privacy & retention rules, and typed live-tracking events (`pr.merged`, `owner.answer`, `owner.request`) with reconciliation and gap reporting. |
 | **Spec 2** (`SPEC_ENGRAM_CONTEXTUAL_GRAPH_AND_PROMPT_LOOP.md`) | Consumes the canonical records and authorized graph projections written by Spec 1 to assemble durationless prompts via `engram_memory_context` (`D20`, `D22`, `D23`). |
 | **Spec 3 / Spec 4 / Spec 5 / Spec 6B** | Spec 3 owns dormant dreaming passes (`D19`, `D25`, `D26`, `Point 3C`); Spec 4 owns `h2a` role/skill ontology & `.h2a/` overlay Git serialization (`D16`, `D31`, `Point 4B`); Spec 5 owns `Track` template control & per-PR `.track/` projection/replay (`D1`, `D29`, `D34`, `Points 1B/5B`); Spec 6B owns multi-node ACID graph sync (`D24`, `Point 6A`). |
@@ -94,43 +100,61 @@ Wherever Spec 1 graph entities (`derived_worktree`, `decision_dossier`, `project
 
 ### 1.1 Verified Code-Fact Baseline and Current Gaps
 
-| Surface | Verified Current Code (`[FACT: repo:file:line]`) | R15 Gap Closed by Spec 1 |
+| Surface | Verified Current Code at Commit Baseline (`[FACT: repo:file:line]`) | What Does Not Exist Yet & R15 Gap Closed by Spec 1 |
 | :--- | :--- | :--- |
-| **8 CLI Host Plugins (`h2a`)** | `H2A_HOST_PLUGIN_TARGETS` (`h2a:packages/h2a/src/hosts/plugin.ts:85-150`) defines 8 CLI hosts (`H2A_HOST_PLUGIN_HOSTS` at `:152`): 6 push-capable (`claude` `:86-92`, `codex` `:93-99`, `gemini` `:100-106`, `hermes` `:114-120`, `opencode` `:121-127`, `vibe` `:143-150` via `~/.vibe/hooks.toml` `post_agent` with no prompt-level receive hook at `:135-142` and `receive: 'N-A'` at `:207`) and 2 poll-path hosts (`agy` `:107-113`, `muse` `:128-134`). `renderStopHook` (`:182-212`) emits `h2a drumbeat record` (`:190-196`), `h2a drive receive` (`:197-199`), and `h2a drumbeat scan` (`:210`) only. | Turns, tool executions, file refs, and mandate bindings are not recorded raw in `engram` first via `cluster-mesh` (`R12`). |
-| **`Track` Write Front (`h2a`)** | `EventStore.appendCommand` (`h2a:packages/track/src/events/store.ts:40-80`) appends directly to `.track/events.jsonl`, and `authorize` (`h2a:packages/track/src/ingest/ingest.ts:239-276`) checks channel capabilities and `ctx.prov.auth` without `engram` first-rank recording or `cluster-mesh` mediation. | Retires `.track/events.jsonl` as an unmediated live session front (`R15-SEDIMENT.md:90-92`); raw events enter `engram` first via `cluster-mesh`, and `Track` acts downstream as template/control authority (`Point 5B`). |
-| **Canonical Memory Substrate (`engram`)** | `MemoryPortV2` (`engram-memory/contracts/index.ts:1342-1361`) exposes `capture` (`:1346`) and `ingestActivity` (`:1348`, `D-8 A` host pull of `ActivityEvidencePageV1` `:293-358` into `pending` `CandidatePayloadV2` `:56-68`), backed by `CanonicalMemoryStorePort` (`:761-857`) and `MEMORY_MODULE_ID = "engram-memory"` (`engram-memory/module-storage-neutral.ts:35-118`). | Lacks `EngramSessionIngestFrontPort` (`recordSessionEvent`, `recordExtraction`), the 6 first-rank raw event envelopes, `SessionDbCitationTuple` (`scheme: "session-db"`), and `Point 5B` `proposed` hold semantics. |
-| **`cluster-mesh` Storage & Routes (`sentropic`)** | `STORAGE_MODULE_IDS` (`sentropic:packages/cluster-mesh/src/storage/contracts.ts:29`) registers `['comments', 'engram-live', 'engram-memory']`; `MEMORY_HANDLE_OPERATIONS` (`sentropic:packages/cluster-mesh/src/engram-memory/binding.ts:18`) restricts `engram`'s handle to `['read', 'write']`; `RECEIVER_ROUTE_TABLE` (`sentropic:api/src/routes/session-content/route-table.ts:60-100`) freezes 38 RC2 routes. | Spec 6A (`:215-228, 417-423`) adds `/memory/v1/session-front/ingest` and `/memory/v1/hmi/input` on `@sentropic/cluster-mesh/compose/memory` plus `'session-db'` in pre-lot `6A-S0b`; Spec 1 defines the exact `engram` port and canonical record folding behind them. |
+| **8 CLI Host Plugins (`h2a` `1f57127de`)** | `H2A_HOST_PLUGIN_TARGETS` (`h2a:packages/h2a/src/hosts/plugin.ts:85-150`) defines 8 CLI hosts (`H2A_HOST_PLUGIN_HOSTS` at `:152`): 6 push-capable (`claude` `:86-92`, `codex` `:93-99`, `gemini` `:100-106`, `hermes` `:114-120`, `opencode` `:121-127`, `vibe` `:143-150` via `~/.vibe/hooks.toml` `post_agent` with no prompt-level receive hook at `:135-142` and `receive: 'N-A'` at `:207`) and 2 poll-path hosts (`agy` `:107-113`, `muse` `:128-134`). `renderStopHook` (`:182-212`) emits `h2a drumbeat record` (`:190-196`), `h2a drive receive` (`:197-199`), and `h2a drumbeat scan` (`:210`) only. | *Does not exist yet:* `/memory/v1/session-front/ingest` client, Mode B ordinal replay marker for `mandate_binding`/`context_saturation`, and 8-host `D17` banner helper. Turns, tool executions, file refs, and mandate bindings are not recorded raw in `engram` first via `cluster-mesh` (`R12`). |
+| **`Track` Write Front (`h2a` `1f57127de`)** | `EventStore.appendCommand` (`h2a:packages/track/src/events/store.ts:40-80`) appends directly to `.track/events.jsonl`, and `authorize` (`h2a:packages/track/src/ingest/ingest.ts:239-276`) checks channel capabilities and `ctx.prov.auth` without `engram` first-rank recording or `cluster-mesh` mediation. | Retires `.track/events.jsonl` as an unmediated live session front (`R15-SEDIMENT.md:90-92`); raw events enter `engram` first via `cluster-mesh`, and `Track` acts downstream as template/control authority via `POST /memory/v1/control/verdicts` (`Point 5B`). |
+| **Canonical Memory Substrate & Package Exports (`engram` `0b3f66c9`)** | `MemoryPortV2` (`engram-memory/contracts/index.ts:1342-1361`) exposes `capture` (`:1346`) and `ingestActivity` (`:1348`), backed by `CanonicalMemoryStorePort` (`:761-857`) and `MEMORY_MODULE_ID = "engram-memory"` (`engram-memory/module-storage-neutral.ts:35-118`). `engram-memory/package.json:4,11-13` is `"private": true` with types-only `./contracts`; `package.json:12-63` lacks `"./session-front-contracts"`, while `package.json:146-161` still bundles `@ai-sdk/*`, `ai`, `mistral-ocr`, and `@sentropic/llm-mesh: "^0.19.0"`. | *Does not exist yet:* `"./session-front-contracts"` export (`src/session-front-contracts.ts`), `EngramSessionIngestFrontPort`, `RawEventExtractionDisposition`, bounded `turn_text` projection, `engram-memory/privacy/*`, SDK-isolated `src/llm-json-port.ts`, and `SessionExtractionStrategyPort`. |
+| **`cluster-mesh` Storage, SQLite Lanes & Routes (`sentropic` `913e3bcbc`)** | `STORAGE_MODULE_IDS` (`sentropic:packages/cluster-mesh/src/storage/contracts.ts:29`) registers `['comments', 'engram-live', 'engram-memory']` only; `SqliteOpenOptions.moduleId` (`storage/sqlite/engine.ts:38-40`, `tests/storage/sqlite-lanes.spec.ts:109-122`) enforces one module per SQLite file; `createMemorySqliteStorage` (`engram-memory/sqlite.ts:137-145`) still throws `StorageUnavailableError` and `LOT1_DURABLE_PROFILES` (`storage/sqlite/index.ts:52-63`) persists neither `scope-outbox-v1` nor `fenced-writers-v1` across restart; `api/src/routes/namespaces/memory.ts:10,27-75` (`api/src/app.ts:150-160`) exposes legacy `productMemoryModule`; `RECEIVER_ROUTE_TABLE` (`api/src/routes/session-content/route-table.ts:60-100`) freezes 38 RC2 routes. | *Does not exist yet on `origin/main`:* `'session-db'` in `STORAGE_MODULE_IDS` + durable `SqliteKernel` profiles (`6A-S0b`), `SessionDb` / `EntryRecord.ordinal` (`chat-mesh` Lots `B1`/`B2`), durable SQLite `engram-memory` (`6A-S1a`), `compose/memory.ts` (`6A-S1c`), and `namespaces/memory.ts` migration (`6A-S1d`). Spec 1 layers two-kernel sequential ingestion, guarded `/session-front/extractions`, and `/hmi/input` on top of those `6A-S*` and `chat-mesh` prerequisites. |
 
-### 1.2 Architecture and `R12` Mediation Flow
+### 1.2 Architecture, Spec 6A HTTP Contracts, Two-Kernel Sequential Commit, and `R12` Mediation Flow
 
 ```mermaid
 flowchart LR
-    CLI["h2a 8 CLI Host Plugins (claude, codex, gemini, agy, hermes, opencode, muse, vibe)"] -->|"calls · POST /memory/v1/session-front/ingest (R12)"| CM["cluster-mesh Memory Access (@sentropic/cluster-mesh/compose/memory)"]
-    HMI["GitHub PR Sync & Board HMI (D30)"] -->|"calls · POST /memory/v1/hmi/input (R12)"| CM
-    CM -->|"binds citation tuple"| SDB[("cluster-mesh Neutral session-db")]
-    CM -->|"1. recordSessionEvent (raw first)"| ING["EngramSessionIngestFrontPort (engram)"]
-    ING -->|"commits raw_event + turn_text ref"| MEM[("engram Canonical Memory Store & L3a scope-outbox-v1")]
-    MEM -->|"reads committed raw_event"| EXT["Session Extraction Engine (0.24.0 extraction-batch)"]
-    EXT -->|"model inference"| LLMM["@sentropic/llm-mesh + llm-mesh/decision"]
-    EXT -->|"2. recordExtraction (proposals)"| ING
+    CLI["h2a 8 CLI Host Plugins (claude, codex, gemini, agy, hermes, opencode, muse, vibe)"] -->|"POST /memory/v1/session-front/ingest (R12)"| CM["cluster-mesh Memory Access (@sentropic/cluster-mesh/compose/memory)"]
+    HMI["GitHub PR Sync & Webhook Ingress (cluster-mesh/forge, D30)"] -->|"POST /memory/v1/hmi/input (R12)"| CM
+    CM -->|"1. appendEntry (ordinal)"| SDB[("cluster-mesh Neutral session-db (SqliteKernel #1 / PG)")]
+    CM -->|"2. recordSessionEvent + lastIngestedOrdinal"| ING["EngramSessionIngestFrontPort (engram)"]
+    ING -->|"commits raw_event + bounded turn_text + scope-outbox-v1"| MEM[("engram-memory Store (SqliteKernel #2 / PG)")]
+    MEM -->|"bounded async queue"| EXT["Session Extraction Host (1-S2 · extraction-batch)"]
+    EXT -->|"sole model path"| LLMM["@sentropic/llm-mesh + llm-mesh/decision"]
+    EXT -->|"3. in-process recordExtraction (MemoryNeutralGrant)"| ING
     MEM -->|"project slices (proposed)"| CM
-    CM -->|"delivers proposals & accepts verdicts"| TRK["Track Application Control (verdictAuthority: track)"]
+    CM -->|"delivers proposals & accepts POST /memory/v1/control/verdicts"| TRK["Track Application Control (verdictAuthority: track)"]
 ```
 
-**Mandatory `R12` Invariant (`spec/memory/ARCHITECTURE-RULES.md:5`; `Spec 6A §2.1 :158-213`):**
-`h2a`, `Track`, and external GitHub/board HMI adapters **never** import or invoke `EngramSessionIngestFrontPort` directly in-process across package boundaries. `engram` exports pure L0 data contracts/validators (`@sentropic/engram/session-front-contracts`) and the neutral engine factory consumed solely by `@sentropic/cluster-mesh/compose/memory`. Every caller reaches `recordSessionEvent` and `recordExtraction` exclusively through `cluster-mesh` (`POST /memory/v1/session-front/ingest`, `POST /memory/v1/hmi/input`, and `POST /memory/v1/session-front/extractions` / in-process `ClusterMeshMemoryAccessPort`), keeping the frozen 38-route `RECEIVER_ROUTE_TABLE` (`sentropic:api/src/routes/session-content/route-table.ts:60-100`) untouched.
+**Mandatory `R12` Invariant & Single Mount Path (`spec/memory/ARCHITECTURE-RULES.md:5`; `Spec 6A §2.1–§2.2 :158-230`):**
+1. `h2a`, `Track`, `@sentropic/chat-server` (`G-FENCE`), and external GitHub HMI adapters **never** import or invoke `EngramSessionIngestFrontPort` directly in-process across package boundaries. `engram` exports pure L0 data contracts and runtime validators at **`@sentropic/engram/session-front-contracts`** (`src/session-front-contracts.ts`, §1.4) and the neutral engine factory consumed solely by `packages/cluster-mesh/src/compose/memory.ts`.
+2. **Single `compose/memory` Route Host (`F-01`):** Every `/v1/session-front/*` and `/v1/hmi/input` handler is defined inside `packages/cluster-mesh/src/compose/memory.ts` (`namespace: '/memory'`) and exposed on `sentropic/api` **solely** through `api/src/routes/namespaces/memory.ts` (`MEMORY_PATHS`, migrated in `6A-S1d`, resolving to `/memory/v1/*` on direct `cluster-mesh` mounts and `/api/v1/memory/v1/*` under `api/src/app.ts:150-160`). Creating a parallel `api/src/routes/memory/session-front.ts` file is **forbidden**, and the frozen 38-route `RECEIVER_ROUTE_TABLE` (`sentropic:api/src/routes/session-content/route-table.ts:60-100`) remains untouched.
 
-### 1.3 Neutral `session-db` Citation Tuple and EVOL `D3` / `M10` Preservation
+| Mesh-Relative Endpoint (`/api/v1/memory/v1/*` on `api`) | Method & Body Ceiling | Required Authority & Scope Verification | Spec Owner & Role |
+| :--- | :--- | :--- | :--- |
+| `/memory/v1/session-front/ingest` | `POST` (`maxRequestBytes <= 1_048_576`, `engram-memory/limits.ts:12-16`) | Enrolled host attachment proof (`mandateEnvelope` optional on raw ingress per `Spec 6A :224`); rejects unauthenticated callers (`D18=readonly`, `401`/`403`). | `Spec 6A :224` + **Spec 1 §1.4**: sequential `session-db` → `engram-memory` raw event recording before `Track` (`Point 1B`). |
+| `/memory/v1/session-front/extractions` *(Spec 1 addendum to `Spec 6A §2.2` & `contracts/engram-cluster-mesh.md`)* | `POST` (`maxRequestBytes <= 1_048_576`, `engram-memory/limits.ts:12-16`) | **Mandatory** verified `H2AEnvelope<H2AMandate>` (`memory:capture` right, `Spec 6A §2.3 :311-398`) **plus** mandatory check that every ID in `batch.sourceEventRecordIds` and `candidates[].sourceEventRecordIds` belongs to the authenticated `(tenantId, workspaceId)` / `scopeRef` (`403` on cross-scope mismatch; `404`/`NOT_FOUND` if uncommitted). *(Note: internal `cluster-mesh` extractor `1-S2` calls `recordExtraction` in-process under `MemoryNeutralGrant` without traversing public HTTP.)* | **Spec 1 §1.4 & §2**: external/mandated proposal batch submission (`Point 5B`). |
+| `/memory/v1/hmi/input` | `POST` (`maxRequestBytes = 65_536`, rate-limited per `(installationRef, repository)`, §6.4) | Enrolled service/user auth + verified `cluster-mesh/forge` or local `gh` source attestation (`Spec 6A :228`); verified numeric GitHub `sender.id` → Sentropic `owner` binding required before any `owner.answer` / `owner.request` classification (§6.1). | `Spec 6A :228` + **Spec 1 §6**: `D30` external HMI input ingestion (`pr.merged` in Spec 1). |
+| `/memory/v1/control/verdicts` | `POST` (`Spec 6A :227, 777`) | Verified `H2AEnvelope<H2AMandate>` with `track:control` (`sentropic.track`) or `h2a:control` (`sentropic.h2a`). | `Spec 6A :227` + **Spec 5** (consumed in **Spec 1 §2.3 & §6.3**): authoritative `TrackControlVerdict` / `h2a` verdict (`Point 5B`, `D32`). |
+| `/memory/v1/health` | `GET` (`Spec 6A :230`) | Read-only host/authenticated diagnostic check. | `Spec 6A :230` + **Spec 1 §6.4**: `D17` state, outbox depth, `live_tracking_gap_count`, `live_tracking_pending_verdict_count`, and `live_tracking_sync_staleness_ms`. |
 
-Per the owner's `2026-11-14` `chat-mesh` rulings relayed in `Spec 6A §2.2` (`:216, 224`) and `§2.5` (`:417-423`):
-1. **Zero Duplicate Raw Transcript Blobs:** Operational session entries reside in `cluster-mesh`'s neutral `session-db` module (`STORAGE_MODULE_IDS` `'session-db'`, shared pre-lot `6A-S0b`). `engram` creates **no** memory-specific session table and **no** memory-specific outbox table.
+**Two-Kernel Sequential Commit Protocol (`F-02`):**
+Because `SqliteOpenOptions.moduleId` (`sentropic:packages/cluster-mesh/src/storage/sqlite/engine.ts:38-40`, enforced by `tests/storage/sqlite-lanes.spec.ts:109-122`) isolates one `StorageModuleId` per SQLite file, `'session-db'` and `'engram-memory'` **cannot** share a single multi-module SQLite transaction. For every `speech_turn` / `tool_result` / `session-db`-backed ingestion, `compose/memory` executes a deterministic two-step commit:
+1. **Step 1 (`session-db` kernel):** `session-db.appendEntry(...)` (`chat-mesh` Lots `B1`/`B2`) commits the operational entry first and returns its immutable `(entryId, ordinal, contentDigest)` (plus `branchEpoch` / `parentEntryId` on forks).
+2. **Step 2 (`engram-memory` kernel):** `engram-memory` commits in one fenced `SqliteKernel.commit(...)` (or Postgres) transaction the `raw_event` record, the bounded `turn_text` projection (§1.3), the neutral L3a `scope-outbox-v1` entry (`memory-projection-outbox`), **and** an atomic update to the durable per-`(sessionId, branchEpoch)` cursor **`lastIngestedOrdinal = Math.max(prev, ordinal)`**.
+3. **Deterministic Crash & Mode-B Repair:** If the process crashes between Step 1 and Step 2 (or while `engram-memory` is in Mode B, §1.6), `maxCommittedOrdinal > lastIngestedOrdinal` immediately exposes the exact ordinal gap (`F-07`), and replaying `session-db` entries with `ordinal > lastIngestedOrdinal` converges idempotently (`duplicate_exact` on any already-committed entry).
+
+### 1.3 Neutral `session-db` Citation Tuple, Bounded `turn_text` Projection, and EVOL `D3` / `M10` Preservation
+
+Per the owner's `2026-11-14` `chat-mesh` rulings relayed in `Spec 6A §2.2` (`:216, 224`) and `§2.5` (`:417-423`) and `sentropic` review `F-02`:
+1. **Primary `session-db` Entry + Bounded `turn_text` Canonical Projection (`<= 64 KiB`):**
+   - Full operational session entries, streams, and raw attachments reside in `cluster-mesh`'s neutral `session-db` module (`STORAGE_MODULE_IDS` `'session-db'`, registered in `6A-S0b` and implemented by `chat-mesh` Lots `B1`/`B2`). `engram` creates **no** parallel operational session table and **no** memory-specific outbox table.
+   - Inside `engram-memory`, each `turn_text` envelope stores `SessionDbCitationTuple` **together with a bounded canonical UTF-8 text projection (`<= 65_536` bytes / `64 KiB`)** — matching `MEMORY_CAPTURE_COMPLETION_LIMITS.maxResponseBytes = 65_536` and fitting well within `MEMORY_SINGLE_EVENT_LIMITS.maxEncodedBytes = 1_048_576` (`sentropic:packages/cluster-mesh/src/engram-memory/limits.ts:12-23`; turns exceeding `64 KiB` store a UTF-8 codepoint-boundary-safe `64 KiB` canonical excerpt with `truncatedInProjection: true`, while `contentDigest` pins the full immutable `session-db` entry). This satisfies `D23` lexical/FTS search and queryable text recall in `engram` without duplicating unbounded operational transcripts.
+   - **Subordination to `ContentPolicyV1` and Workspace Sync Policy (`D24`, `Point 6A`):** Local CLI operational transcripts are governed by the owner's signed `ContentPolicyV1` (`sentropic:packages/cluster-mesh/src/sessions/content-policy.ts:89-139`). When a workspace is opted into `D24` remote sync (`Point 6A`) **and** the owner's signed `ContentPolicyV1` authorizes remote session-content capture for that channel, `raw_event` and bounded `turn_text` replicate integrally and unmasked across the same `(tenantId, workspaceId)` DB cluster (`D24`, §5.2). When `ContentPolicyV1` withholds remote operational transcript upload (local-only CLI transcript), raw `turn_text` bytes remain `syncState: 'local-only'` on the workstation rather than bypassing `ContentPolicyV1`.
 2. **Canonical Citation Tuple (`SessionDbCitationTuple`):** Every turn-derived `raw_event` and `turn_text` record committed in `engram` references its immutable `session-db` source via the 4-tuple `(sessionId, entryId, ordinal, contentDigest)` plus optional fork coordinates `(branchEpoch, parentEntryId)` when a session branches:
    ```ts
    // status: proposed — Neutral session-db citation tuple (Spec 6A §2.2 :224, §2.5 :422)
    export interface SessionDbCitationTuple {
      readonly sessionId: string;               // Neutral session-db session identifier (pseudonymized as sessionPseudoId in projections per D33)
      readonly entryId: string;                 // Immutable entry primary key in neutral session-db
-     readonly ordinal: number;                 // Safe non-negative integer sequence within (sessionId, branchEpoch)
+     readonly ordinal: number;                 // Safe non-negative integer EntryRecord.ordinal within (sessionId, branchEpoch)
      readonly contentDigest: Sha256Digest;     // sha256:<64 lowercase hex> over UTF-8 RFC 8785 JCS bytes of the raw entry
      readonly branchEpoch?: number;            // Present when the session forks from an earlier ordinal
      readonly parentEntryId?: string;          // Parent entry anchor across a session branch
@@ -138,14 +162,17 @@ Per the owner's `2026-11-14` `chat-mesh` rulings relayed in `Spec 6A §2.2` (`:2
    ```
    When mapped into `CitationV1` (`engram-memory/contracts/index.ts:18-24`), `locator` is `{ scheme: "session-db", value: "${sessionPseudoId}/${entryId}#ord=${ordinal}${branchEpoch !== undefined ? `&epoch=${branchEpoch}` : ""}" }` and `content_digest` equals `contentDigest`.
 3. **Preservation of EVOL `D3` (`SPEC_EVOL_AGENT_MEMORY_SUBSTRATE.md:73-77`) and `SPEC_MEMORY_MCP_V2` `M10` (`:884-910`):**
-   - `raw_event` records, `turn_text` envelopes, immutable `MemoryRecordV2` blobs, and `LifecycleEventV2` chains in `CanonicalMemoryStorePort` (`engram-memory/contracts/index.ts:761-857`) are the **sole canonical memory authority**.
+   - `raw_event` records, bounded `turn_text` envelopes, immutable `MemoryRecordV2` blobs, and `LifecycleEventV2` chains in `CanonicalMemoryStorePort` (`engram-memory/contracts/index.ts:761-857`) are the **sole canonical memory authority**.
    - The contextual memory graph queried by `engram_memory_context` (`Spec 2`) is an **authorized derived projection**; no graph projection method (`GraphStore.pushGraph` or `FileGraphStore`) may capture, admit, mutate, or resurrect a canonical record.
-   - Under `D23`, `engram_memory_context` resolves and returns authorized, `D8`-bounded text history on demand via `SessionDbCitationTuple` / canonical `turn_text` envelopes; **raw turn text and session event logs are never copied into `graph.json`**, preserving `MEMORY_PROJECTION_RAW_BYTE_CEILING = 52_428_800` (`engram-memory/bounded-projection.ts:22`) and `accepted_current`-only projection eligibility (`SPEC_MEMORY_MCP_V2.md:898`).
+   - Under `D23`, `engram_memory_context` resolves and returns authorized, `D8`-bounded text history on demand via `SessionDbCitationTuple` / canonical `turn_text` envelopes; **turn text and session event logs are never copied into `graph.json`**, preserving `MEMORY_PROJECTION_RAW_BYTE_CEILING = 52_428_800` (`engram-memory/bounded-projection.ts:22`) and `accepted_current`-only projection eligibility (`SPEC_MEMORY_MCP_V2.md:898`).
 
-### 1.4 Normative `EngramSessionIngestFrontPort` Contract
+### 1.4 Normative `EngramSessionIngestFrontPort` Contract and Subpath Packaging (`F-03`, `F-05`, `F-07`, `F-14`, `F-15`)
+
+**Subpath Packaging & `cluster-mesh` Provider Catalog Registration (`F-14`):**
+Because `engram-memory/package.json:4,11-13` is `"private": true` and exports types only, `@sentropic/engram/package.json` `exports` (`:12-63`) and `tsup.config.ts` (`:56,88`) MUST expose **`"./session-front-contracts"`** (`src/session-front-contracts.ts` re-exporting `engram-memory/contracts/session-front.ts` plus pure runtime validators, compiled to ESM `.js` + `.d.ts` with zero native, DB, or LLM-SDK imports). On the `sentropic` side (`Lot 1-S1a`), `packages/cluster-mesh/src/modules/catalog.ts` (`:108-119`) registers the corresponding `PROVIDER_CATALOG` entry (`requiredMembers` + topology-guarded loader in `src/loaders/memory.ts`).
 
 ```ts
-// status: proposed — @sentropic/engram/session-front-contracts (consumed via cluster-mesh R12)
+// status: proposed — @sentropic/engram/session-front-contracts (src/session-front-contracts.ts, consumed via cluster-mesh R12)
 import type {
   H2AMandateEnvelope,
   LineageId,
@@ -173,6 +200,16 @@ export type RawSessionEventKind =
   | 'mandate_binding'
   | 'external_hmi_input'
   | 'context_saturation';
+
+/**
+ * F-07 terminal vs non-terminal extraction disposition persisted on every raw_event
+ * so legitimate D7 rejections or empty-candidate turns never trigger perpetual gap alerts or re-extraction loops.
+ */
+export type RawEventExtractionDisposition =
+  | 'pending_extraction'
+  | 'proposed'
+  | 'empty_verified'
+  | 'withheld_d7';
 
 export type ToolResultSignificance =
   | 'routine'
@@ -202,6 +239,9 @@ export type RawSessionEventPayload =
       readonly hostId: CliHostId;
       readonly deliveryPath: 'push-hook' | 'post-agent-hook' | 'poll-scan' | 'in-process';
       readonly sessionCitation: SessionDbCitationTuple;
+      /** Bounded canonical UTF-8 text projection (`<= 65_536` bytes, F-02); omitted when ContentPolicyV1 withholds capture. */
+      readonly boundedTurnText?: string;
+      readonly truncatedInProjection?: boolean;
       readonly triggerTurnSweep: boolean; // True on outbound send per D12=turn
     }
   | {
@@ -231,9 +271,9 @@ export type RawSessionEventPayload =
       readonly unboundRoleAnalysisRequested: boolean; // Must be true when mandate === null (D16)
     }
   | {
-      readonly kind: 'external_hmi_input'; // D30 separate HMI/GitHub/board input layer
-      readonly hmiSource: 'github-pr-sync' | 'github-webhook' | 'github-issue' | 'github-review' | 'project-board';
-      readonly externalSourceId: string; // Source-owned stable id; equals idempotencyKey for live-tracking (§6)
+      readonly kind: 'external_hmi_input'; // D30 separate HMI/GitHub input layer (Spec 1 Phase 1: PR flow only per F-05 / OQ-S1-5)
+      readonly hmiSource: 'github-pr-sync' | 'github-webhook'; // github-issue, github-review, and project-board deferred to follow-up D30 spec (§6.1)
+      readonly externalSourceId: OpaqueRef; // 1..512 UTF-8 bytes; revision-qualified for mutable entities (§6.2, F-03, F-06)
       readonly liveTrackingKind?: 'pr.merged' | 'owner.answer' | 'owner.request';
       readonly payloadDigest: Sha256Digest;
       readonly structuredAttributes: Readonly<Record<string, unknown>>;
@@ -246,12 +286,27 @@ export type RawSessionEventPayload =
       readonly throughOrdinal: number;
     };
 
+/**
+ * F-03 deterministic idempotency key derivation:
+ * Maps any (sourceKind, sourceId) where sourceId is OpaqueRef (1..512 UTF-8 bytes, mcp-platform/src/memory/contracts.ts:107-111)
+ * to a fixed 72-byte ASCII key `"idem:v1:" + sha256Hex(canonicalJcs({ sourceKind, sourceId }))` satisfying isValidIdempotencyKey (16..256 B, :114-118).
+ */
+export declare function deriveSessionFrontIdempotencyKey(input: {
+  readonly sourceKind: string;
+  readonly sourceId: OpaqueRef;
+}): string;
+
 export interface RawSessionEventEnvelope {
   readonly schemaVersion: 'engram.session-event/v1';
-  readonly idempotencyKey: string;            // 16..256 UTF-8 bytes; for live-tracking events MUST equal sourceId (§6)
+  /** 16..256 UTF-8 bytes; MUST equal `deriveSessionFrontIdempotencyKey({ sourceKind, sourceId })` (`72` ASCII bytes, F-03). */
+  readonly idempotencyKey: string;
   readonly tenantId: string;
   readonly workspaceId: string;
-  /** Canonical derived worktree entity id (`wt:<sha256>`, §3); never a flat path alias (D21). */
+  /**
+   * Canonical derived worktree entity id (`wt:<64 lowercase hex>`, §3, F-15):
+   * MUST pass `validateWorktreeIdentity` (`engram-live/contracts.ts:699,1180-1205`; `live-storage/registration.ts:27-31,170-171`);
+   * raw filesystem paths or non-`wt:` strings are rejected (`INVALID_SCHEMA`) so zero host paths leak into D24 sync.
+   */
   readonly derivedWorktreeId: string;
   readonly cloneId: string;
   /** D33 deterministic pseudonym (`sess_pseudo:<hex>`) derived from neutral sessionId under scope key (§5.1). */
@@ -265,7 +320,7 @@ export interface RawSessionEventEnvelope {
    * `'memory.capture.session/v1'` for CLI session capture, `'memory.capture.hmi/v1'` for D30 external HMI input.
    */
   readonly purposeRef: 'memory.capture.session/v1' | 'memory.capture.hmi/v1';
-  /** Host audit retention bound (`D13=host`, §5.3). */
+  /** Host audit retention bound (`D13=host`, bounded by `computeRetentionDeadline` when `ContentPolicyV1` is finite, §5.3, F-15). */
   readonly retention: RetentionV1;
   readonly occurredAt: Instant;
   readonly payload: RawSessionEventPayload;
@@ -278,6 +333,7 @@ export interface RawSessionEventReceipt {
   readonly eventRecordId: string;             // Canonical raw_event identifier (`raw_<base32(recordDigest)>`)
   readonly recordDigest: Sha256Digest;
   readonly cursor: Cursor;
+  readonly extractionDisposition: RawEventExtractionDisposition; // Initial 'pending_extraction' on 'recorded' (F-07)
   readonly syncState: 'synced' | 'queued-degraded' | 'local-only';
   /** Present and non-null whenever D17=degraded mode is active; surfaced across all 8 CLI hosts. */
   readonly degradedBanner?: string;
@@ -319,24 +375,25 @@ export interface ExtractedCandidateItem {
   /** Live-tracking classification when extracted or reconciled from a live-tracking signal (§6). */
   readonly liveTrackingBinding?: {
     readonly eventKind: 'pr.merged' | 'owner.answer' | 'owner.request';
-    readonly sourceId: string;
+    readonly sourceId: OpaqueRef;             // Full 1..512 B sourceId preserved alongside derived 72 B idempotencyKey (F-03)
   };
 }
 
 export interface SessionExtractionProposalBatch {
   readonly schemaVersion: 'engram.session-extraction/v1';
-  readonly idempotencyKey: string;
+  readonly idempotencyKey: string;            // 16..256 UTF-8 bytes (`idem:v1:<64hex>`)
   readonly tenantId: string;
   readonly workspaceId: string;
+  /** Canonical `wt:<64 lowercase hex>` validated via `validateWorktreeIdentity` (F-15). */
   readonly derivedWorktreeId: string;
   readonly sessionPseudoId: string;
-  /** Every referenced raw_event MUST already exist in engram; unrecorded sources fail closed (NOT_FOUND). */
+  /** Every referenced raw_event MUST already exist in engram and belong to `(tenantId, workspaceId)` (F-01, NOT_FOUND / 403). */
   readonly sourceEventRecordIds: readonly string[];
   readonly extractor: {
     readonly kind: ExtractionBackendKind;
     readonly modelOrAdapterId: string;        // Resolved via @sentropic/llm-mesh
     readonly extractionSemanticsVersion: string; // Pinned to EXTRACTION_SEMANTICS_VERSION (src/extraction-batch.ts)
-    readonly llmMeshAttemptRef?: string;      // PreparedRouteAttempt.attemptRef (routing-contracts.ts:198)
+    readonly llmMeshAttemptRef: string;       // Verifiable PreparedRouteAttempt.attemptRef (routing-contracts.ts:198, F-13)
   };
   readonly purposeRef: 'memory.capture.session/v1' | 'memory.capture.hmi/v1';
   readonly retention: RetentionV1;
@@ -366,6 +423,8 @@ export interface SessionExtractionReceipt {
   readonly batchCursor: Cursor;
   readonly outcomes: readonly RecordedExtractionOutcome[];
   readonly d7BlockedKeys: readonly string[];  // Candidates withheld by engram's D7 confidentiality deny-list
+  /** Updated extractionDisposition per sourceEventRecordId (`proposed` | `empty_verified` | `withheld_d7`, F-07). */
+  readonly sourceDispositions: Readonly<Record<string, Exclude<RawEventExtractionDisposition, 'pending_extraction'>>>;
   readonly transactionReceiptDigest: Sha256Digest;
 }
 
@@ -378,29 +437,30 @@ export interface EngramSessionIngestFrontPort {
 
 ### 1.5 Normative First-Rank Execution Rules (`D12`, `D15`, `D16`, `D18`, `D30`)
 
-1. **Strict Write-Before-Analysis Ordering (`D24`, `D32`, `F6`):**
-   - No extraction model, `Track` analyst, `h2a` role/rule analyst, or dormant dreaming pass may consume an unrecorded session turn, tool result, or GitHub/board input.
-   - `recordExtraction` validates inside the storage transaction that every entry in `sourceEventRecordIds` resolves to an already-committed `raw_event` in the same `(tenantId, workspaceId)` scope; any missing `eventRecordId` fails closed with `NOT_FOUND` and writes nothing.
+1. **Strict Write-Before-Analysis Ordering & Scope Ownership (`D24`, `D32`, `F-01`):**
+   - No extraction model, `Track` analyst, `h2a` role/rule analyst, or dormant dreaming pass may consume an unrecorded session turn, tool result, or GitHub input.
+   - `recordExtraction` validates inside the storage transaction that every entry in `batch.sourceEventRecordIds` and `candidates[].sourceEventRecordIds` resolves to an already-committed `raw_event` in the **same `(tenantId, workspaceId)` / `scopeRef`**; cross-scope references fail closed with `UNAUTHORIZED` (HTTP `403` on `/memory/v1/session-front/extractions`), missing `eventRecordId` entries fail closed with `NOT_FOUND`, and every verified source `raw_event` transitions atomically from `'pending_extraction'` to `'proposed'`, `'empty_verified'`, or `'withheld_d7'` (`F-07`).
 2. **8-Host CLI Parity (`packages/h2a/src/hosts/plugin.ts:85-152`):**
    - Push-hook hosts (`claude`, `codex`, `gemini`, `hermes`, `opencode`) invoke `/memory/v1/session-front/ingest` synchronously at prompt send (`triggerTurnSweep: true`, `D12=turn`) and stop/tool boundaries.
    - `vibe` (`packages/h2a/src/hosts/plugin.ts:135-150`, TOML `post_agent` / `pre_tool` / `post_tool` hooks, no prompt-level receive hook) records tool outputs on `post_tool` and full turn pairs + `D12=turn` sweep on `post_agent`.
-   - Poll-path hosts (`agy` `:107-113`, `muse` `:128-134`) record `SessionStart` / `PreToolUse` scope hooks where supported and flush newly appended neutral `session-db` / host transcript entries through `/memory/v1/session-front/ingest` on the `h2a` poll loop with identical `(sessionId, entryId, ordinal)` idempotency.
-3. **Send-Time Promotion Sweep (`D12=turn`):**
-   - Whenever `speech_turn.triggerTurnSweep === true` (every outbound send, superseding `per-mode`, `R15-SEDIMENT.md:57`), `engram` commits the `raw_event` immediately, returns `extractionSweepScheduled: true`, and triggers the §2 extraction + `D4` mandate-gated admission sweep over all unextracted `raw_event` records through that cursor so summaries and proposals stay current on every turn.
+   - Poll-path hosts (`agy` `:107-113`, `muse` `:128-134`) record `SessionStart` / `PreToolUse` scope hooks where supported and flush newly appended neutral `session-db` / host transcript entries through `/memory/v1/session-front/ingest` on the `h2a` poll loop with identical `deriveSessionFrontIdempotencyKey` (`(sessionId, entryId, ordinal)`) idempotency.
+3. **Send-Time Promotion Sweep (`D12=turn`) and `session_summary` Thresholds (`OQ-S1-1`, *answered by sentropic, 2026-11-14*):**
+   - Whenever `speech_turn.triggerTurnSweep === true` (every outbound send, superseding `per-mode`, `R15-SEDIMENT.md:57`), `engram` commits the `raw_event` immediately, returns `extractionSweepScheduled: true`, and enqueues the §2 extraction + `D4` mandate-gated admission sweep on `cluster-mesh`'s bounded async extraction queue (`F-08`) over all `'pending_extraction'` `raw_event` records through that cursor.
+   - Rolling `session_summary` (`context_summary`) compaction triggers whenever uncompacted turns reach **`turnCountThreshold = 24` turns** or **`byteBudgetThreshold = 65_536` UTF-8 bytes** (matching the `64 KiB` frame ceiling), as well as immediately on `context_saturation` and at session close, with both thresholds configurable per `policyProfile`.
 4. **Non-Blocking Slice Injection (`D15=slices`) and Pass-Through Read-Only Mode (`D18=readonly`):**
    - Hook activation never blocks waiting for full-model convergence or asynchronous extraction (`D15=slices`, `R15-SEDIMENT.md:60`); `readySlices` reports whichever of `track`, `git`, `architecture`, `rules`, and `memory` satisfy their freshness/authorization gates right now.
    - A session without a verified memory identity (`D18=readonly`, `R15-SEDIMENT.md:63`) is refused on `recordSessionEvent` / `recordExtraction` (`UNAUTHORIZED`) and receives only the allowed non-memory slices (`track`, `git`, `architecture`, `rules`) read-only under a recorded policy, with zero memory content disclosed.
 5. **Unassigned-Role Proactive `h2a` Trigger (`D16`):**
    - When `mandateRef === null`, `recordSessionEvent` records the raw event under the verified workspace principal (if authorized for capture) and sets `h2aProactiveRoleAnalysisQueued: true`, emitting a workspace-scoped signal on `cluster-mesh` so `h2a` proactively analyzes recorded activity and proposes a standard role and overlay rules (`comments-2026-11-08.md:2`; `Point 4B`: `engram` never writes roles itself).
 
-### 1.6 Degraded Mode (`D17=degraded`, `Spec 6A §2.4 :399-416`)
+### 1.6 Degraded Mode (`D17=degraded`, `Spec 6A §2.4 :399-416`, `F-02`)
 
-`D17=degraded` (`R15-SEDIMENT.md:62`: *"A session may start when the context service does not answer. Work continues in signalled degraded mode, with a banner and a log"*) governs two distinct fault modes without ever introducing a shadow JSONL queue in `~/.h2a/` or `.track/`:
+`D17=degraded` (`R15-SEDIMENT.md:62`: *"A session may start when the context service does not answer. Work continues in signalled degraded mode, with a banner and a log"*) governs two distinct fault modes without ever introducing a shadow memory JSONL queue in `~/.h2a/` or `.track/`:
 
 | Fault Mode | Normative Behaviour | Banner & Audit Requirement |
 | :--- | :--- | :--- |
-| **Mode A — Remote Sentropic / context service unreachable; local `embedded-local` `cluster-mesh` SQLite healthy** | `recordSessionEvent` commits atomically in **one** fenced `SqliteKernel.commit(...)` transaction (`engram-memory/module-storage-neutral.ts:42,103,224-230`) to local `engram-memory` (`memory-binding-v2` keys: `raw_event`, `turn_text`, `context_log`) **and** `cluster-mesh`'s neutral L3a `scope-outbox-v1` (`memory-projection-outbox`). Returns `status: 'recorded'`, `syncState: 'queued-degraded'`. Drained transactionally via `Spec 6B` once remote connectivity returns (`D24`, `Point 6A`). | Sets non-null `degradedBanner` (`ClusterMeshMemoryHealthStatus.userVisibleBanner`, `engram-cluster-mesh.md:107-115`), writes daemon health marker read on-demand across all 8 CLI hosts (`Spec 6A :410`), and emits structured log `memory.access.degraded_entered`. |
-| **Mode B — Local `embedded-local` `SqliteKernel` unavailable or writer fence lost (`FENCE_LOST` / `STORE_UNAVAILABLE`)** | `/memory/v1/session-front/ingest` returns HTTP `503` (`ClusterMeshMemoryDegradedError`, `Spec 6A :412`). `h2a` fails the memory call closed immediately, creates **zero** secondary local JSONL buffer in `~/.h2a/` or `.track/` (`Spec 6A :412, 777`), and lets the CLI session proceed in signalled degraded mode (`D18`-equivalent non-memory slices where available). Upon kernel recovery, catch-up replays deterministically from the existing neutral `session-db` / host transcript using `(sessionId, entryId, ordinal)` idempotency (`duplicate_exact` on already-committed turns). | Displays mandatory user-visible degraded banner on all 8 CLI hosts (`claude`, `codex`, `gemini`, `agy`, `hermes`, `opencode`, `muse`, `vibe`) and logs `memory.access.degraded_entered` + `memory.access.degraded_ingest_refused`. |
+| **Mode A — Remote Sentropic / context service unreachable; local `embedded-local` `cluster-mesh` SQLite healthy** | `compose/memory` executes the §1.2 two-kernel sequential commit locally: **(1)** `session-db.appendEntry` (`ordinal`) on the `'session-db'` `SqliteKernel`, then **(2)** one fenced `SqliteKernel.commit(...)` transaction (`engram-memory/module-storage-neutral.ts:42,103,224-230`) on `'engram-memory'` writing `raw_event`, bounded `turn_text`, `lastIngestedOrdinal`, **and** `cluster-mesh`'s neutral L3a `scope-outbox-v1` (`memory-projection-outbox`). Returns `status: 'recorded'`, `syncState: 'queued-degraded'`. Drained transactionally via `Spec 6B` once remote connectivity returns (`D24`, `Point 6A`, subject to `ContentPolicyV1`). | Sets non-null `degradedBanner` (`ClusterMeshMemoryHealthStatus.userVisibleBanner`, `engram-cluster-mesh.md:107-115`), writes daemon health marker read on-demand across all 8 CLI hosts (`Spec 6A :410`), and emits structured log `memory.access.degraded_entered`. |
+| **Mode B — Local `embedded-local` `SqliteKernel` unavailable or writer fence lost (`FENCE_LOST` / `STORE_UNAVAILABLE`), or hosted store unavailable** | `/memory/v1/session-front/ingest` and `/memory/v1/hmi/input` return HTTP `503` (`ClusterMeshMemoryDegradedError`, `Spec 6A :412`). **(a) CLI sessions (`h2a`):** `h2a` fails the memory call closed immediately, creates **zero** secondary memory JSONL store in `~/.h2a/` or `.track/` (`Spec 6A :412, 777`), records a lightweight non-memory **ordinal replay marker** alongside its native drumbeat/session state carrying `(sessionId, branchEpoch, pendingFromOrdinal)` plus `mandate_binding` digest/ref and `context_saturation` `{ observedTokenRatio, throughOrdinal }` metadata (`F-02`), and lets the CLI session proceed in signalled degraded mode. Upon kernel recovery, catch-up replays `ordinal > lastIngestedOrdinal` plus any pending `mandate_binding` / `context_saturation` markers under `deriveSessionFrontIdempotencyKey` (`duplicate_exact` on already-committed events). **(b) Hosted GitHub ingress (`forge`):** the webhook receiver returns HTTP `503` so GitHub schedules webhook redelivery, backed up by `pr-sync` REST polling (`PullRequestFactDto`, §6.1). | Displays mandatory user-visible degraded banner on all 8 CLI hosts (`claude`, `codex`, `gemini`, `agy`, `hermes`, `opencode`, `muse`, `vibe`) and logs `memory.access.degraded_entered` + `memory.access.degraded_ingest_refused`. |
 
 ---
 
@@ -408,7 +468,7 @@ export interface EngramSessionIngestFrontPort {
 
 ### 2.1 Pluggable Extraction Strategy Over `@sentropic/llm-mesh`
 
-Per `comments-2026-11-08.md:19` (`« Il faut oeut etre en permanence un deuxiemme llm light d extraction ou reposer sur le llm de session pour les decisions a terme pkoi pas des modeles deeplearninf specialises. »`) and `Spec 6A §2.5` (`:424-426`), `engram` defines a neutral, model-agnostic `SessionExtractionStrategyPort` whose runtime inference adapter routes **exclusively** through `@sentropic/llm-mesh` (`LlmMesh.generate` in `sentropic:packages/llm-mesh/src/mesh.ts:49-54` with `VerifiedRoutingSubject` in `routing-contracts.ts:13-17` and `PreparedRouteAttempt` usage metering in `:190-222`, or `DecisionClient` from `@sentropic/llm-mesh/decision` in `sentropic:packages/llm-mesh/src/decision/index.ts:6-9`):
+Per `comments-2026-11-08.md:19` (`« Il faut oeut etre en permanence un deuxiemme llm light d extraction ou reposer sur le llm de session pour les decisions a terme pkoi pas des modeles deeplearninf specialises. »`) and `Spec 6A §2.5` (`:424-426`), `engram` defines a neutral, model-agnostic `SessionExtractionStrategyPort` (*does not exist yet at `0b3f66c9`*; added in `src/session-extraction-adapter.ts` in Lot `1-E3`) whose runtime inference adapter on the `cluster-mesh` host (`Lot 1-S2`) routes **exclusively** through `@sentropic/llm-mesh` (`>=0.38.0 <0.39.0`: `LlmMesh.generate` in `sentropic:packages/llm-mesh/src/mesh.ts:49-54` with `VerifiedRoutingSubject` in `routing-contracts.ts:13-17` and `PreparedRouteAttempt` usage metering in `:190-222`, or `DecisionClient` from `@sentropic/llm-mesh/decision` in `sentropic:packages/llm-mesh/src/decision/index.ts:6-9`):
 
 ```ts
 // status: proposed — Neutral extraction strategy port (@sentropic/engram/extraction-batch)
@@ -434,11 +494,11 @@ export interface SessionExtractionStrategyPort {
 }
 ```
 
-| `backendKind` | Execution Path & Horizon | How It Connects to `0.24.0` Toolkit & `@sentropic/llm-mesh` |
+| `backendKind` | Execution Path & Horizon | How It Connects to `0.24.0` Toolkit & `@sentropic/llm-mesh` (`F-12`, `F-13`, `OQ-S1-1`) |
 | :--- | :--- | :--- |
-| `'light-permanent-llm'` | **Now (default asynchronous/turn worker):** dedicated low-latency model running alongside the session at each `D12=turn` sweep. | Wraps `LlmMesh.generate` (`intent: 'fast'`, `routing-contracts.ts:59`) via `adaptTextJsonClient` (`src/extraction-batch.ts:751-828`) and executes `extractDocumentBatch` (`:2956`). |
-| `'session-llm'` | **Now (co-turn mode):** uses the active session LLM route under the same `VerifiedRoutingSubject` (`routing-contracts.ts:13-17`) to emit structured `EXTRACTION_SCHEMA_V1` (`"engram_extraction_v1"`, `src/extraction-batch.ts:251`) JSON over the committed turn slice. | Feeds the structured JSON through `validateAndPruneChunkExtraction` (`src/extraction-batch.ts:1338-1608`), `processCitationsForItem` (`:1279-1336`), and `mergeExtractionsWithCitationsPrepared` (`:2724`). |
-| `'specialized-model'` | **Later (evolution slot):** domain-tuned sequence/graph deep-learning extractors or `DecisionClient` (`@sentropic/llm-mesh/decision`) evaluators. | Implements `SessionExtractionStrategyPort` and emits the exact same `EXTRACTION_SCHEMA_V1` + `CitationV1` bundle into `mergeExtractionsWithCitations` without altering `recordExtraction`, storage, or `Track`/`h2a` contracts. |
+| `'light-permanent-llm'` | **Now (default asynchronous/turn worker):** dedicated low-latency model running alongside the session at each `D12=turn` sweep (`policyProfile: 'mesh-fast'`, `intent: 'fast'`). | Wraps `LlmMesh.generate` (`policyProfile: 'mesh-fast'`, `intent: 'fast'`, `routing-contracts.ts:59,70`) via pure `adaptTextJsonClient` (`src/extraction-batch.ts:751-828` over `src/llm-json-port.ts`) and executes `extractDocumentBatch` (`:2956`), stamping `PreparedRouteAttempt.attemptRef` (`:198`). |
+| `'session-llm'` | **Now (`RoutePlanInput` model/affinity policy inside `cluster-mesh`, `F-13`):** reuses `requestedModel` and `affinityKey` in `RoutePlanInput` (`routing-contracts.ts:54-75`) under `VerifiedRoutingSubject` **solely inside `@sentropic/llm-mesh` on `cluster-mesh`** — never passing a host SDK client to `engram` and never importing `engram` in `chat-server` (`G-FENCE`). | Executes inside `cluster-mesh` (`1-S2`), emits a verifiable `PreparedRouteAttempt.attemptRef` (`routing-contracts.ts:197-206`), and feeds structured `EXTRACTION_SCHEMA_V1` (`"engram_extraction_v1"`, `src/extraction-batch.ts:251`) JSON through `validateAndPruneChunkExtraction` (`:1338-1608`), `processCitationsForItem` (`:1279-1336`), and `mergeExtractionsWithCitationsPrepared` (`:2724`). |
+| `'specialized-model'` | **Later (evolution slot):** domain-tuned sequence/graph deep-learning extractors or `DecisionClient` (`@sentropic/llm-mesh/decision`) evaluators. | Implements `SessionExtractionStrategyPort` via `@sentropic/llm-mesh` / `@sentropic/llm-mesh/decision` and emits the exact same `EXTRACTION_SCHEMA_V1` + `CitationV1` bundle into `mergeExtractionsWithCitations` without altering `recordExtraction`, storage, or `Track`/`h2a` contracts. |
 
 ### 2.2 Reuse of the `0.24.0` Extraction Toolkit (`CHANGELOG.md:39-44`)
 
@@ -465,10 +525,24 @@ When `EngramSessionIngestFrontPort.recordExtraction` receives a `SessionExtracti
      - `verdictAuthority: 'track'`,
      - `engram` substrate state `pending` (`PendingControlV1` in `engram-memory/contracts/index.ts:509-521`).
    - While in `reviewStatus: 'proposed'`, the candidate is **invisible** to `accepted_current` recall, `BoundedCurrentProjectionV1` / `graph.json` (`engram-memory/bounded-projection.ts:24-27, 74-86`), and per-PR `.track/` serialization (`Point 1B`), whereas the underlying `raw_event` is already durable in `engram`.
-   - Only when the `Track` application evaluates its own rules (`D1=borne-review` bounded-list check vs third-party promotion review, `D4` mandate scope, template state transitions via `« api type jev/decison »`, fast LLM, or control agent per `D32`) and submits an authoritative `TrackControlVerdict` (`verdictAuthority: 'track'`) via `POST /memory/v1/track/verdicts` (`Spec 6A :227`) does `engram` record the verdict and transition the item according to the `engram-track.md:154-165` bijection (`accepted-bounded` / `accepted-promoted` → `accepted_current`; `rejected` → `rejected`; `superseded` → `historical`). `engram` records `Track`'s verdict verbatim and never overrides it; `cluster-mesh` sync never overwrites a `Track`-controlled record (`Point 6A`).
+   - Only when the `Track` application evaluates its own rules (`D1=borne-review` bounded-list check vs third-party promotion review, `D4` mandate scope, template state transitions via `« api type jev/decison »`, fast LLM, or control agent per `D32`) and submits an authoritative `TrackControlVerdict` (`verdictAuthority: 'track'`) via **`POST /memory/v1/control/verdicts`** (`Spec 6A :227, 777`) does `engram` record the verdict and transition the item according to the `engram-track.md:154-165` bijection (`accepted-bounded` / `accepted-promoted` → `accepted_current`; `rejected` → `rejected`; `superseded` → `historical`). `engram` records `Track`'s verdict verbatim and never overrides it; `cluster-mesh` sync never overwrites a `Track`-controlled record (`Point 6A`).
 3. **Harness-Domain Proposals (`D3=mandated`, `D4=mandate`, `D31`, `Point 4B`):**
    - Every candidate with `domain: 'harness'` (`templateRef.lineage === 'h2a'`) is routed outside `Track` serialization (`D3`).
    - Master-harness or role-definition proposals remain `reviewStatus: 'proposed'` (`verdictAuthority: 'h2a'`, `Point 4B`: *"engram may propose role changes, never write them"*). Developer/workspace/worktree overlay rules explicitly authorized by a verified `H2AMandateEnvelope` (`D3=mandated`, `D4=mandate`) and tighten-only overlay rules (`Spec 0 §4.4`) transition to `accepted-harness-local` for `.h2a/overlays/*` Git serialization (`D31`, `D34`).
+
+#### 2.3.1 Actual `engram` (`0b3f66c9`) Provider-SDK State, Subpath Isolation, Peer Range, and `'session-llm'` Under `G-FENCE` (`F-12`, `F-13`)
+
+1. **Verified `engram` Code State at Commit `0b3f66c9` (`[FACT: engram:file:line]`):**
+   - `package.json:145-165` currently declares direct runtime `dependencies` on `@ai-sdk/anthropic` (`:146`), `@ai-sdk/cohere` (`:147`), `@ai-sdk/google` (`:148`), `@ai-sdk/mistral` (`:149`), `@ai-sdk/openai` (`:150`), `ai` (`:153`), and `mistral-ocr` (`:161`), and pins `@sentropic/llm-mesh` to `"^0.19.0"` (`:152`) — predating `@sentropic/llm-mesh/decision` (`0.38.0` in `sentropic:packages/llm-mesh/package.json:3,38-45`).
+   - `@sentropic/engram/llm-mesh` (`src/llm-mesh.ts:12`) currently re-exports `textClientToCallLlm` from `src/llm-execution.ts:142`, and `@sentropic/engram/extraction-batch` (`src/extraction-batch.ts:74-78`) imports `parseJsonFromLlmText` and `TextJsonGenerationClient` from `src/llm-execution.ts`.
+   - `src/llm-execution.ts` reads `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `MISTRAL_API_KEY`, and `COHERE_API_KEY` (`:246-266`), mutates `process.env.GOOGLE_GENERATIVE_AI_API_KEY` (`:278-280`), and dynamically imports `@ai-sdk/*` (`:340-365`) and `"ai"` (`:508`); standalone corpus helpers `src/node-descriptions.ts:848-866`, `src/community-labeling.ts:407-425`, and `src/pdf-ocr.ts:91,187` likewise import `@ai-sdk/*` / `mistral-ocr` and read `*_API_KEY`.
+2. **Normative Subpath Isolation & Optional Peer Pin (`F-12`, Lots `1-E2` / `1-E3`):**
+   - Pure JSON/port helpers (`parseJsonFromLlmText`, `TextJsonGenerationClient`, `textClientToCallLlm`) are extracted into a zero-dependency, zero-`process.env` module **`src/llm-json-port.ts`** (*does not exist yet at `0b3f66c9`*).
+   - **Every** subpath consumed by `cluster-mesh` (`./session-front-contracts`, `./extraction-batch`, `./profile-bundle`, `./llm-mesh`, `./memory-substrate`, `./mcp-memory`, `./metamodel`) — including any shared `dist/` chunk emitted under `tsup.config.ts:79` (`splitting: true`) — MUST have **zero direct or transitive imports** to `src/llm-execution.ts`, `src/node-descriptions.ts`, `src/community-labeling.ts`, `src/pdf-ocr.ts`, `@ai-sdk/*`, `ai`, `mistral-ocr`, or any `process.env.*_API_KEY` read/mutation, verified mechanically by an import-graph + compiled-chunk AST test in `1-E2`/`1-E3`.
+   - `@sentropic/llm-mesh` moves out of `dependencies` (`package.json:152`) into optional `peerDependencies` **`">=0.38.0 <0.39.0"`** (`peerDependenciesMeta: { "@sentropic/llm-mesh": { "optional": true } }`, externalized in `tsup.config.ts`) so `@sentropic/llm-mesh/decision` (`DecisionClient`) resolves against the single host `llm-mesh` instance without duplication.
+3. **`'session-llm'` Locked Inside `@sentropic/llm-mesh` Under `G-FENCE` (`F-13`, `OQ-S1-1` / `sentropic` `OQ-S1-2`):**
+   - Default extraction routing (`'light-permanent-llm'`) uses `policyProfile: 'mesh-fast'` (`intent: 'fast'`).
+   - `'session-llm'` is authorized **exclusively** as a `RoutePlanInput` model/affinity policy (`requestedModel` + `affinityKey` under `VerifiedRoutingSubject` + `RouteUsageCeiling` in `sentropic:packages/llm-mesh/src/routing-contracts.ts:13-17,54-91`) executed **inside `@sentropic/llm-mesh` on the `cluster-mesh` side** (`Lot 1-S2`), producing a verifiable `PreparedRouteAttempt.attemptRef` (`:197-206`) and `RouteMeteringSink` settlement (`chat-mesh` Lot `C2a`). Passing a raw host provider SDK client into `engram` or importing `engram` / `cluster-mesh` inside `@sentropic/chat-server` (`G-FENCE`, `SPEC_EVOL_CHAT_MESH_PROPOSAL.md:89,360-369`) is **strictly forbidden**.
 
 ---
 
@@ -481,7 +555,7 @@ Owner principle `D21` (`spec/memory/R15-SEDIMENT.md:66, 102-104`) permanently re
 Spec 1 binds `derived_worktree` directly to `@sentropic/engram-live` without violating any `SPEC_LIVE_GIT_INDEXING` safety or activation invariant:
 - **Shared Canonical Identity Derivation (`engram-live/registration.ts:312-411`):**
   - `deriveCloneIdentity` (`:312-360`) hashes `(hostScope, normalizedCommonDirRealpath, commonDirProjectFingerprint)` into `cloneId` (`clone:<sha256>`). Linked worktrees sharing one Git `commondir` (`engram-live/worktree.ts:247-253, 336`) resolve to the **same** `cloneId`, whereas two separate clones with equal `ws:` root-commit hashes (`h2a:packages/h2a/src/runtime/identity/workspace-id.ts:41-48`) remain distinct (`SPEC_LIVE_GIT_INDEXING.md:230`).
-  - `deriveWorktreeIdentity` (`engram-live/registration.ts:369-411`) hashes `(hostScope, gitDir)` under `cloneId` into `worktreeId` (`wt:<sha256>`). Spec 1 uses this exact `worktreeId` as `derivedWorktreeId`.
+  - `deriveWorktreeIdentity` (`engram-live/registration.ts:369-411`) hashes `(hostScope, gitDir)` under `cloneId` into `worktreeId` (`wt:<64 lowercase hex>`). Spec 1 uses this exact `worktreeId` as `derivedWorktreeId` and enforces `validateWorktreeIdentity` (`engram-live/contracts.ts:699,1180-1205`; `sentropic:packages/cluster-mesh/src/live-storage/registration.ts:27-31,170-171`) on every `derivedWorktreeId` and `parentWorktreeId` at runtime admission (`F-15`), guaranteeing that raw host filesystem paths never enter `D24` replication. *(Note: `engram-live/derived-worktree-graph.ts` does not exist yet at `0b3f66c9` and is introduced in Lot `1-E4`.)*
 - **Preservation of Explicit Live Activation (`SPEC_LIVE_GIT_INDEXING` `A01` `:315`, `classifyLifecycleEvent` in `engram-live/registration.ts:468-475`):**
   - Opening an `h2a` session and recording a turn via `recordSessionEvent` computes `(cloneId, derivedWorktreeId)` purely and deterministically (`liveIndexingState: 'unactivated'`) and creates/updates the `derived_worktree` node in `engram` **without** implicitly starting background `engram-live` filesystem watchers or `Reconciler` loops (`engram-live/reconcile.ts:95-145`).
   - When explicit live indexing is activated (`WorkspaceDeclarationDto` with `liveCapability: "live"` in `engram-live/contracts.ts:243-258`, `createLiveDeclaration` in `engram-live/registration.ts:155-185`), `engram-live` attaches `declarationId` (`decl:<sha256>`, `:421-445`), `StableCapture` index/worktree digests (`engram-live/worktree.ts:104-117, 302-352`), ref observations, and `publishedGenerationId` (`gen:<10 digits>`, `engram-live/contracts.ts:371-375`) to the **exact same `derivedWorktreeId`**.
@@ -497,14 +571,14 @@ export type WorktreeOriginKind =
   | 'detached-checkout';
 
 export interface DerivedWorktreeParentOriginV1 {
-  readonly parentCloneId: string;             // Canonical clone:<sha256> from deriveCloneIdentity
-  /** Present when spawned from a parent worktree (e.g., h2a delegate job worktree from a dev checkout). */
-  readonly parentWorktreeId?: string;         // Canonical wt:<sha256>
+  readonly parentCloneId: string;             // Canonical clone:<64 lowercase hex> from deriveCloneIdentity
+  /** Present when spawned from a parent worktree; MUST pass `validateWorktreeIdentity` (`wt:<64 lowercase hex>`, F-15). */
+  readonly parentWorktreeId?: string;
   readonly originKind: WorktreeOriginKind;
   readonly baseRefName?: string;              // e.g. 'refs/heads/main' or parent feature branch at creation
   readonly baseCommitOid?: { readonly algorithm: 'sha1' | 'sha256'; readonly oid: string };
   readonly durableWorkspaceFingerprint?: string; // Preserved h2a `ws:<sha256>` (workspace-id.ts:41-48)
-  readonly identityUncertainty: readonly ('missing_history' | 'shallow_clone' | 'detached_archive')[];
+  readonly identityUncertainty: readonly ('missing_history' | 'shallow_history' | 'detached_archive')[]; // Aligned with IDENTITY_UNCERTAINTY_STATES (engram-live/contracts.ts:674)
 }
 
 export interface DerivedWorktreeGitStateV1 {
@@ -719,15 +793,16 @@ Per `D33=pseudonymize` (`spec/memory/R15-SEDIMENT.md:78`: *"Authors and session 
 
 | Transfer / Read Path | `crossesBoundary` | Normative Privacy & Federation Treatment |
 | :--- | :--- | :--- |
-| **Same `(tenantId, workspaceId)` local ↔ remote DB-cluster sync (`D24`)** — `raw_event`, `turn_text`, `typed_node`, `typed_edge`, `ontology_template`, `control_verdict` | `false` | **Integral and unmasked** transactional replication (`engram-cluster-mesh.md:53-57`), preserving `D6` protected-path withholding and local-only `Q2 B` uncommitted Git hunks (`SPEC_LIVE_GIT_INDEXING.md:114, 330`). |
+| **Same `(tenantId, workspaceId)` local ↔ remote DB-cluster sync (`D24`)** — `raw_event`, bounded `turn_text` (`<= 64 KiB`), `typed_node`, `typed_edge`, `ontology_template`, `control_verdict` | `false` | **Integral and unmasked** transactional replication (`engram-cluster-mesh.md:53-57`) when workspace sync is enabled (`Point 6A`) and, for session-derived `turn_text` / CLI transcript bytes, subordinated to the owner's signed `ContentPolicyV1` (`sentropic:packages/cluster-mesh/src/sessions/content-policy.ts:89-139`; unconsented local CLI transcripts stay `syncState: 'local-only'`, `F-02`), preserving `D6` protected-path withholding and local-only `Q2 B` uncommitted Git hunks (`SPEC_LIVE_GIT_INDEXING.md:114, 330`). |
 | **Same `(tenantId, workspaceId)` `context_log` and `context_summary` (`D10=mandate`)** | `local-by-default` | **Stays local by default** (`R15-SEDIMENT.md:55`). Replicated to another machine **only** when both `H2AMandateEnvelope.federationPolicy.allowContextTransfer === true` and the owner's per-repository policy explicitly allow it (`Spec 6A :324-328, 394`). |
 | **Cross-workspace / cross-tenant capitalisation (`proposeCapitalisation`), cross-session study access (`D8`, `D9`), or external-model disclosure without raw grant** | `true` | **Mandatory `PiiArmorStamp` (`D8=bounded`):** deterministic metadata + byte-bounded extracts (`RedactionDirectiveV1.max_packet_bytes`, `engram-memory/contracts/index.ts:170-175`) scrubbed through `D7` deny-list + PII armor + `D33` pseudonyms. Missing or invalid `piiArmorStamp` fails closed (`UNAUTHORIZED` / `POLICY_UNAVAILABLE`). |
 
 ### 5.3 Host Audit Retention (`D13=host`) and Post-Close Window + Announced Purge (`D14=window` vs `D23`)
 
 Per `D13=host` (`R15-SEDIMENT.md:58`) and `D14=window` (`:59`):
-1. **Single Declared Host Audit Policy (`D13=host`):**
+1. **Single Declared Host Audit Policy (`D13=host`) Bounded by `ContentPolicyV1` (`F-15`):**
    - Each host deployment declares a single `HostAuditRetentionPolicyV1` (`policyId`, `auditWindowMs`, `derivativeRule: 'retain' | 'make-ineligible'`). Once declared, that single policy governs all `context_log` records and processed session items on the host; per-caller or per-CLI ad-hoc TTL overrides are rejected (`INVALID_SCHEMA`).
+   - Whenever the session's signed `ContentPolicyV1` channel retention (`sentropic:packages/cluster-mesh/src/sessions/content-policy.ts:89-164`) is finite (`kind: 'finite'`), `computeRetentionDeadline(channelRetention, firstAdmissionAt)` (`:148-164`) propagates into `RetentionV1.expires_at` (`expires_at = Math.min(hostAuditExpiresAt, computeRetentionDeadline(channelRetention, firstAdmissionAt))` when both are finite, or `computeRetentionDeadline(channelRetention, firstAdmissionAt)` otherwise), so session-derived retention never outlives the owner's signed `ContentPolicyV1` deadline.
 2. **Post-Close Audit Presentation Window and Announced Purge (`D14=window`):**
    - When a session closes at `closedAt`, its processed items enter `AuditWindowState = 'presented-for-audit'` with `auditWindowEndsAt = closedAt + auditWindowMs` (`RetentionV1.expires_at` on audit-scoped records, `engram-memory/contracts/index.ts:47-50`).
    - During `[closedAt, auditWindowEndsAt)`, processed items remain presented on the host audit surface.
@@ -767,11 +842,27 @@ Per `D11=dedicated` (`R15-SEDIMENT.md:56`: *"Automatic capture of session facts 
 
 ---
 
-## 6. Typed Live-Tracking Events, Source-ID Idempotency, Reconciliation Job, and Gap Counter
+## 6. GitHub Principal & Secret Custody (`cluster-mesh/forge`), Typed Live-Tracking Events, Bounded Reconciliation, and Rate Limits
 
-### 6.1 Typed Live-Tracking Events (`pr.merged`, `owner.answer`, `owner.request`)
+### 6.1 GitHub Trust Boundary, Secret Custody (`G-NOSECRET`), `forge` Prerequisites, and Spec 1 Scope (`F-04`, `F-05`, `OQ-S1-5`)
 
-Per `owner-r10/suivi-direct-2026-11-07.md:5-6` (`« trakc avec engram devra vraiment assurer un suivi live »`) and `PLAN_SPEC_ENGRAM_FRONT.md:167`, `engram` defines three closed live-tracking event schemas so deliveries, owner answers, and new owner requests are recorded live one-by-one rather than relying on manual conductor bookkeeping:
+1. **GitHub Credential Custody and Ingress Hosting (`F-04`, `G-NOSECRET`):**
+   - **Hosted product mode (`external-host`):** GitHub ingress resides in **`packages/cluster-mesh/src/forge/*`** + `packages/cluster-mesh/src/compose/memory.ts`, composed by `api/src/services/cluster-mesh/github-app-host.ts` (`github-app-envelope-store.ts:1-105`). GitHub App private keys (PEM) and webhook secrets (`current`/`previous` overlap rotation) remain **exclusively** encrypted (`AES-256-GCM` with HKDF `'github-app-custody-v1'` under `SECRET_ENCRYPTION_KEY`, `sentropic:packages/cluster-mesh/src/forge/custody.ts:18-59`) inside `control.github_app_enrollments`. Inbound webhooks verify `X-Hub-Signature-256` HMAC-SHA256 in constant time over raw `Uint8Array` body bytes via `GitWebhookVerificationPort.verify` (`forge/contracts.ts:12-21`, `forge/lifecycle.ts:43-54,91-95`), and REST backfill calls acquire short-lived installation tokens via `GitInstallationLeasePort.acquire` (`forge/contracts.ts:29-33`, `api/src/services/artifacts/live/forge-github.ts:28-62`).
+   - **Local workstation mode (`h2a` CLI):** Only the host `gh` transport (`engram-live/pr-sync.ts:60-68`) holds user GitHub credentials, strictly outside `engram` and outside any Wasm guest (`G-NOSECRET`, `sentropic:spec/SPEC_EVOL_CHAT_MESH_PROPOSAL.md:97`). **Zero secrets, PEM keys, or installation tokens ever enter `engram`, logs, or database rows.**
+2. **Mandatory Verified GitHub → Sentropic Principal Binding (`F-04`):**
+   - A valid GitHub webhook signature attests only that GitHub transmitted the payload — **never** that the GitHub actor is the Sentropic workspace `owner`.
+   - Qualifying any GitHub-originated event as `owner.answer` or `owner.request` is **strictly forbidden** unless GitHub's immutable numeric `sender.id` (**never** mutable `sender.login`) resolves against a verified enrollment binding `(tenantId, workspaceId, githubUserId) -> sentropicOwnerPrincipal` for the target `scopeRef`. Unbound or non-owner GitHub actors MUST be rejected with HTTP `403` on owner-restricted paths or recorded strictly as non-owner external observations without `ComprehensionEvidence` / `ComprehensionAttestationRefV1` and without auto-promotion.
+3. **Verified `sentropic` `origin/main` (`913e3bcbc`) `forge` Blockers and Spec 1 Phase-1 Scope (`F-05`, `OQ-S1-5`, *answered by sentropic, 2026-11-14*):**
+   - On `sentropic` `origin/main` (`913e3bcbc`) and `engram` (`0b3f66c9`), four verified baseline constraints exist today:
+     1. `GIT_APP_PERMISSIONS` (`sentropic:packages/cluster-mesh/src/forge/contracts.ts:7,40,50-54`) requires exact `{ contents: 'write', metadata: 'read' }`; granting `pull_requests: 'read'` or `issues: 'read'` throws `GitAppAccessLostError` and revokes enrollment (`forge/lifecycle.ts:66,75,86`);
+     2. `installationEvent` (`sentropic:packages/cluster-mesh/src/forge/lifecycle.ts:101-103`) rejects with HTTP `400` any `x-github-event` other than `'installation'` and `'installation_repositories'`;
+     3. `GIT_APP_TARGET_REGISTRY` (`sentropic:api/src/services/cluster-mesh/github-app-host.ts:46`) hardcodes a static two-repository allowlist instead of resolving enrolled targets dynamically; and
+     4. `engram-live/pr-sync.ts:1-88` models only PRs (`PullRequestFactDto` — no `github-issue`, `github-review`, or `project-board` contracts exist yet), and `PrSyncPersistencePort` (`engram-live/pr-sync.ts:79-87`) has **no implementation yet** in `packages/cluster-mesh`.
+   - **Normative Phase-1 Scope:** Spec 1 (`§6` and `1-S3a`/`1-S3b`) restricts `D30` external GitHub ingestion **strictly to the PR flow (`PullRequestFactDto` / `pr-sync` + `x-github-event: pull_request` → `pr.merged`) combined with authenticated `session-db` entries (`owner.answer`, `owner.request`)**. Prerequisite lots `1-S0a` and `1-S0b` (§8.2) extend `GIT_APP_PERMISSIONS` to a declarative profile admitting `pull_requests: 'read'` without `GitAppAccessLostError`, enable `x-github-event: pull_request` verification/routing in `forge/lifecycle.ts:101-103`, replace the hardcoded `GIT_APP_TARGET_REGISTRY` (`github-app-host.ts:46`) with dynamic resolution against `LiveDeclarationStorePort` (`packages/cluster-mesh/src/live-storage/registration.ts:509-515`), and implement `PrSyncPersistencePort` on `cluster-mesh`'s `engram-live` storage module. GitHub issues (`github-issue`), PR review comments (`github-review`), and `ProjectsV2` boards (`project-board`) are deferred to a follow-up `D30` HMI specification with dedicated `engram-live` contracts and verified GitHub↔Sentropic identity bindings.
+
+### 6.2 Typed Live-Tracking Events (`pr.merged`, `owner.answer`, `owner.request`), Revision-Qualified `sourceId`, and `idem:v1:` Idempotency (`F-01`, `F-03`, `F-06`)
+
+Per `owner-r10/suivi-direct-2026-11-07.md:5-6` (`« trakc avec engram devra vraiment assurer un suivi live »`) and `PLAN_SPEC_ENGRAM_FRONT.md:167`, `engram` defines three closed live-tracking event schemas (*`engram-memory/live-tracking.ts` does not exist yet at `0b3f66c9`*; added in Lot `1-E6`):
 
 ```ts
 // status: proposed — Typed live-tracking events (owner-r10/suivi-direct-2026-11-07.md:5-6)
@@ -780,8 +871,11 @@ export type LiveTrackingEventKind = 'pr.merged' | 'owner.answer' | 'owner.reques
 export type LiveTrackingEventPayloadV1 =
   | {
       readonly eventKind: 'pr.merged';
-      /** Canonical sourceId: `gh:pr-merged:${owner}/${repo}#${prNumber}@${mergeOid.algorithm}:${mergeOid.oid}` */
-      readonly sourceId: string;
+      /**
+       * Canonical immutable sourceId (OpaqueRef, 1..512 UTF-8 bytes):
+       * `gh:pr-merged:${owner}/${repo}#${prNumber}@${mergeOid.algorithm}:${mergeOid.oid}`
+       */
+      readonly sourceId: OpaqueRef;
       readonly repositoryOwner: string;
       readonly repositoryRepo: string;
       readonly prNumber: number;
@@ -793,8 +887,11 @@ export type LiveTrackingEventPayloadV1 =
     }
   | {
       readonly eventKind: 'owner.answer';
-      /** Canonical sourceId: upstream immutable id, e.g. `session-db:${sessionId}:${entryId}:owner.answer` or `gh:comment:${owner}/${repo}#${id}:owner.answer` */
-      readonly sourceId: string;
+      /**
+       * Spec 1 Phase 1: authenticated session-db entry `session-db:${sessionId}:${entryId}@ord=${ordinal}:owner.answer`.
+       * (Phase-2 mutable GitHub HMI entities MUST embed `@rev=${canonicalUpdatedAt}:${bodySha256Prefix16}` per F-06.)
+       */
+      readonly sourceId: OpaqueRef;
       readonly dossierId?: string;            // Present when answering a D27 decision_dossier option or QAEntry
       readonly selectedOptionId?: string;
       readonly questionId?: string;
@@ -804,8 +901,11 @@ export type LiveTrackingEventPayloadV1 =
     }
   | {
       readonly eventKind: 'owner.request';
-      /** Canonical sourceId: upstream immutable id, e.g. `session-db:${sessionId}:${entryId}:owner.request` or `gh:issue:${owner}/${repo}#${num}:owner.request` */
-      readonly sourceId: string;
+      /**
+       * Spec 1 Phase 1: authenticated session-db entry `session-db:${sessionId}:${entryId}@ord=${ordinal}:owner.request`.
+       * (Phase-2 mutable GitHub HMI entities MUST embed `@rev=${canonicalUpdatedAt}:${bodySha256Prefix16}` per F-06.)
+       */
+      readonly sourceId: OpaqueRef;
       readonly requestSummary: string;
       readonly verbatimDigest: Sha256Digest;
       readonly requestedAt: Instant;
@@ -813,27 +913,37 @@ export type LiveTrackingEventPayloadV1 =
     };
 ```
 
-### 6.2 Source-ID Idempotency (`idempotencyKey === sourceId`) and `Point 5B` Write Path
-
-1. **Exact Source-ID Idempotency (`idempotencyKey === sourceId`):**
-   - Every live-tracking ingestion sets `RawSessionEventEnvelope.idempotencyKey = payload.sourceId` and binds `ExtractedCandidateItem.liveTrackingBinding = { eventKind, sourceId }`.
-   - In `engram-memory`'s lifecycle-independent X1 capture-idempotency registry (`CaptureIdempotencyRecordV1` in `engram-memory/contracts/index.ts:549-555`, `PersistedCaptureIdempotencyV1` at `:730-736`), `candidate_id` is derived deterministically from `(tenantId, workspaceId, sourceId)`.
-   - Re-delivering the same `sourceId` with identical canonical JCS `payloadDigest` (for example, `PR_SYNC_OVERLAP_MS = 5 * 60 * 1000` overlap pagination in `engram-live/pr-sync.ts:33, 345-347` or webhook + poll overlap) returns `duplicate_exact` with zero writes; re-delivering the same `sourceId` with a different `payloadDigest` fails closed with `DIGEST_CONFLICT` (`SPEC_EVOL_AGENT_MEMORY_SUBSTRATE.md:534-536`).
-2. **End-to-End Live-Tracking Execution Under `R12` + `Point 5B`:**
-   - **Step 1 (Raw First in `engram`):** `pr.merged` (from `engram-live/pr-sync.ts:332-450` / `h2a:packages/h2a-runtime/src/gateway-host/live-github.ts:1-45` via `/memory/v1/hmi/input`), `owner.answer`, and `owner.request` (from `/memory/v1/session-front/ingest` or `/memory/v1/hmi/input`) commit first as `raw_event` records in `engram` via `cluster-mesh`.
+1. **Deterministic `72`-Byte `idempotencyKey` Derivation & Mutable-Entity Revision Rule (`F-03`, `F-06`):**
+   - Because `sourceId: OpaqueRef` allows `1..512` UTF-8 bytes (`sentropic:packages/mcp-platform/src/memory/contracts.ts:107-111`) whereas `isValidIdempotencyKey` enforces `16..256` UTF-8 bytes (`:114-118`), `idempotencyKey` MUST NEVER set raw `idempotencyKey === sourceId`. Instead, every ingestion computes:
+     $$\text{idempotencyKey} = \text{"idem:v1:"} \mathbin{\|} \operatorname{sha256Hex}(\operatorname{canonicalJcs}(\{\text{sourceKind},\ \text{sourceId}\}))$$
+     (`72` ASCII bytes, always valid under `16..256` B), while preserving the full `sourceId` (`1..512` B) in `RawSessionEventEnvelope`, `ExtractedCandidateItem.liveTrackingBinding`, and `CitationV1`.
+   - **Mutable-Entity Revision Rule (`F-06`):** Every `sourceId` referencing a mutable upstream GitHub/HMI entity MUST embed an immutable observed-content revision qualifier (for `pr.merged`, `@${mergeOid.algorithm}:${mergeOid.oid}`; for future Phase-2 GitHub comments/issues, `@rev=${canonicalUpdatedAt}:${bodySha256Prefix16}`). Consequently, a redelivered webhook (`X-GitHub-Delivery`) or overlapping `pr-sync` pass (`PR_SYNC_OVERLAP_MS = 300_000`, `engram-live/pr-sync.ts:33,345-347`) observing the **same** revision is idempotent (`duplicate_exact` / `alreadyExisted: true`), whereas a legitimate upstream edit mints a distinct `sourceId` reconciled via `supersedes` (`engram-memory/contracts/index.ts:788-797`) rather than wedging permanently on `DIGEST_CONFLICT` (`:549-555`). `DIGEST_CONFLICT` remains reserved for corrupted/conflicting payloads claiming the **exact same** `(sourceKind, sourceId)` revision.
+2. **End-to-End Live-Tracking Execution Under `R12` + `Point 5B` (`F-01`):**
+   - **Step 1 (Raw First in `engram`):** `pr.merged` (from `engram-live/pr-sync.ts:332-450` / `cluster-mesh/forge` via `/memory/v1/hmi/input`), `owner.answer`, and `owner.request` (from authenticated `session-db` via `/memory/v1/session-front/ingest`) commit first as `raw_event` records in `engram` via `cluster-mesh`.
    - **Step 2 (Typed Project Proposal):** `recordExtraction` writes the corresponding `Track`-template-referenced candidate (`domain: 'project'`, `templateRef` pinned to `track.ontology.yaml`, `reviewStatus: 'proposed'`).
-   - **Step 3 (`Track` Control Verdict):** `Track` control (`verdictAuthority: 'track'`) validates each candidate one-by-one via `cluster-mesh` (`D1=borne-review`, template conformance, item/decision linkage) and records its `TrackControlVerdict` in `engram` (`POST /memory/v1/track/verdicts`, `Spec 6A :227`).
+   - **Step 3 (`Track` Control Verdict):** `Track` control (`verdictAuthority: 'track'`) validates each candidate one-by-one via `cluster-mesh` (`D1=borne-review`, template conformance, item/decision linkage) and records its `TrackControlVerdict` in `engram` via **`POST /memory/v1/control/verdicts`** (`Spec 6A :227, 777`).
 
-### 6.3 Live-Tracking Reconciliation Job and Gap Counter (`LiveTrackingReconcilerPort`)
+### 6.3 Bounded Paginated Reconciliation Job and Gap / Staleness Counters (`LiveTrackingReconcilerPort`, `F-07`, `OQ-S1-3`)
 
-To guarantee zero silent loss when an extraction worker lags, a host restarts, or an HMI delivery drops (`owner-r10/suivi-direct-2026-11-07.md:6`), `engram` specifies a deterministic reconciliation job:
+To guarantee zero silent loss without risking `OOM` or `DEADLINE_EXCEEDED` on large histories (`F-07`), `engram` specifies a strictly bounded, cursor-paginated reconciliation job (*`engram-memory/live-tracking-reconciler.ts` does not exist yet at `0b3f66c9`*; added in Lot `1-E6`):
 
 ```ts
-// status: proposed — Live-tracking reconciliation job & gap counter
+// status: proposed — Bounded paginated live-tracking reconciliation job & gap/staleness counters (F-07)
+export type ReconciliationSourceClass = 'github-pr-sync' | 'session-db' | 'engram-pending-extraction';
+
 export interface LiveTrackingGapBreakdown {
   readonly eventKind: LiveTrackingEventKind;
-  readonly unrecordedRawCount: number;        // Present in upstream source cursor, absent from engram raw_event
-  readonly unproposedCount: number;           // Present in engram raw_event, no Extraction candidate proposed yet
+  /**
+   * Present upstream, absent from engram raw_event:
+   * - For `session-db`: deterministic O(1) ordinal difference `maxCommittedOrdinal - lastIngestedOrdinal` (zero LLM calls).
+   * - For `github-pr-sync`: merged PullRequestFactDto observations within the bounded page absent from engram.
+   */
+  readonly unrecordedRawCount: number;
+  /**
+   * Present in engram raw_event with `extractionDisposition === 'pending_extraction'` ONLY (F-07):
+   * terminal dispositions `'proposed'`, `'empty_verified'`, and `'withheld_d7'` are strictly excluded.
+   */
+  readonly unproposedCount: number;
   readonly awaitingTrackVerdictCount: number; // Proposed in engram (`reviewStatus: 'proposed'`), awaiting Track verdict
 }
 
@@ -842,7 +952,13 @@ export interface LiveTrackingGapReportV1 {
   readonly tenantId: string;
   readonly workspaceId: string;
   readonly checkedAt: Instant;
+  readonly pageLimit: number;                 // Mandatory 1..100 (DEFAULT_PAGE_LIMITS.maxRecords = 100, storage/contracts.ts:179,195)
+  /** Updated durable per-(scopeRef, sourceClass) continuation cursors persisted across sweeps. */
+  readonly nextReconciliationCursors: Readonly<Record<ReconciliationSourceClass, Cursor | null>>;
+  readonly hasMorePages: boolean;
   readonly prSyncUpdatedAtCursor: number | null; // From PrSyncCursorDto.updatedAtCursor (engram-live/pr-sync.ts:367)
+  /** Upstream PR sync freshness gauge `now - PrSyncCursorDto.lastSuccessAt` (:368), exported as `live_tracking_sync_staleness_ms`. */
+  readonly liveTrackingSyncStalenessMs: number | null;
   readonly sessionDbThroughCursor: Cursor;
   readonly engramJournalThroughCursor: Cursor;
   readonly byKind: readonly LiveTrackingGapBreakdown[];
@@ -858,15 +974,35 @@ export interface LiveTrackingReconcilerPort {
   runReconciliationSweep(input: {
     readonly tenantId: string;
     readonly workspaceId: string;
+    /** Mandatory bounded page size `1..100` (rejects `< 1` or `> 100` with `INVALID_SCHEMA`, F-07). */
+    readonly pageLimit: number;
+    /** Durable resume cursor per `(scopeRef, sourceClass)` from the previous sweep. */
+    readonly reconciliationCursors?: Partial<Readonly<Record<ReconciliationSourceClass, Cursor>>>;
     readonly authorization: AuthorizationContextV1;
     readonly deadlineAt: Instant;
   }): Promise<Result<LiveTrackingGapReportV1>>;
 }
 ```
 
-**Reconciliation Invariants:**
-1. **Proposal-Only — Never Direct Accepted Writes (`suivi-direct-2026-11-07.md:6`, `Point 5B`):** When the reconciler finds a merged `PullRequestFactDto` in `PrSyncPersistencePort.listObservations` (`engram-live/pr-sync.ts:83`) or an owner-authored turn/HMI item in `session-db` lacking a corresponding `engram` proposal, it records the missing `raw_event` (if absent) and submits a **proposal** via `recordExtraction` (`reviewStatus: 'proposed'`, `idempotencyKey = sourceId`). It **never** mutates `.track/events.jsonl` directly and **never** mints a `TrackControlVerdict`.
-2. **Observable Gap Counter:** Every sweep persists `LiveTrackingGapReportV1` and publishes `live_tracking_gap_count` and `live_tracking_pending_verdict_count` through `cluster-mesh` diagnostics (`GET /memory/v1/health` / telemetry sink).
+**Reconciliation & Alerting Invariants (`F-07`, `OQ-S1-3`, *answered by sentropic, 2026-11-14*):**
+1. **Bounded Paginated Reads Only:** `runReconciliationSweep` enforces `1 <= pageLimit <= 100` (`DEFAULT_PAGE_LIMITS.maxRecords = 100`, `sentropic:packages/cluster-mesh/src/storage/contracts.ts:179,195`) and persists `reconciliationCursor` per `(scopeRef, sourceClass)`. On the PR-sync store (`1-S0a`), `cluster-mesh` exposes a bounded paginated reader (`listObservationsPage({ repository, cursor, limit })`, `limit <= 100`) alongside `PrSyncPersistencePort` rather than loading full repository history via unbounded `listObservations` (`engram-live/pr-sync.ts:83`).
+2. **Zero Perpetual False Positives on `D7` or Empty Turns:** `unproposedCount` counts **only** `raw_event` records with `extractionDisposition === 'pending_extraction'`; items transitioned to `'withheld_d7'` or `'empty_verified'` by `recordExtraction` are excluded and are never re-queued.
+3. **Proposal-Only — Never Direct Accepted Writes (`suivi-direct-2026-11-07.md:6`, `Point 5B`):** Missing merged `PullRequestFactDto` or `session-db` entries (`ordinal > lastIngestedOrdinal`) are ingested first as `raw_event` records (`deriveSessionFrontIdempotencyKey`) and queued as `proposed` candidates via `recordExtraction` — **never** mutating `.track/events.jsonl` directly and **never** minting a `TrackControlVerdict`.
+4. **Exported Gauges & Alert Thresholds (`OQ-S1-3`):** Every sweep publishes `live_tracking_gap_count`, `live_tracking_pending_verdict_count`, and `live_tracking_sync_staleness_ms` (`now - PrSyncCursorDto.lastSuccessAt`, `engram-live/pr-sync.ts:368`) on `GET /memory/v1/health` and the `cluster-mesh` telemetry sink. Operators alert when:
+   - `unrecordedRawCount > 0` persists for **`> 5 min` (`300_000 ms`**, exceeding `PR_SYNC_OVERLAP_MS = 300_000` in `engram-live/pr-sync.ts:33`), **or**
+   - `unproposedCount > 0` (excluding `'withheld_d7'` and `'empty_verified'`) persists for **`> 10 min` (`600_000 ms`)**, **or**
+   - `live_tracking_sync_staleness_ms > 900_000` (`15 min`) on any active PR-synced repository.
+
+### 6.4 HTTP Body Limits, Ingress Rate Limiting, Bounded Extraction Queue, and GitHub ETag / `Retry-After` (`F-08`)
+
+1. **Strict HTTP Byte Ceilings:**
+   - Raw GitHub webhook ingress (`cluster-mesh/forge`): **`maxRequestBytes = 262_144` (`256 KiB`)**, verified over raw bytes prior to JSON parsing (`413 Payload Too Large` on overflow).
+   - `POST /memory/v1/hmi/input` (`compose/memory`): **`maxRequestBytes = 65_536` (`64 KiB`)**.
+2. **Ingress Rate Limiter & Bounded `@sentropic/llm-mesh` Queue:**
+   - Inbound HMI/webhook requests are rate-limited per `(installationRef, repository)` (`429 Too Many Requests` with `Retry-After` when exceeded).
+   - `raw_event` ingestion commits are decoupled from `@sentropic/llm-mesh` inference by a **bounded asynchronous extraction work queue** per workspace: bursts of PR merges or turns commit durably as `'pending_extraction'` `raw_event` records without unbounded concurrent `LlmMesh.generate` calls, and any overflow drains cleanly through `LiveTrackingReconcilerPort` (§6.3).
+3. **GitHub Conditional Requests (`ETag` / `304`) and `Retry-After` Propagation (`F-08`, Lots `1-S0a` / `1-S0b`):**
+   - The hosted `GithubPrTransportPort` adapter (`sentropic:packages/cluster-mesh/src/forge/github-api.ts:28-38` and `api/src/services/artifacts/live/forge-github.ts:16-19`) forwards `If-None-Match` from `PrPageRequest.etag` (`engram-live/pr-sync.ts:48-59`), handles HTTP `304 Not Modified` without spending secondary processing budget, and parses `Retry-After` and `x-ratelimit-reset` headers into `PrTransportResult.retryAfterMs` (`engram-live/pr-sync.ts:58,403-408`).
 
 ---
 
@@ -1095,7 +1231,7 @@ neither `h2a` nor `Track` calls `engram` in-process (`R12`). All producer traffi
   template-pinned proposals (`OntologyTemplateEnvelopeRef`, `Spec 0`). `domain: "project"` candidates
   check only metamodel well-formedness + `D7` deny-list in `engram` and stay in `reviewStatus: "proposed"`
   until an authoritative `TrackControlVerdict` (`verdictAuthority: "track"`, `Point 5B`, `D1=borne-review`)
-  arrives via `POST /memory/v1/track/verdicts`.
+  arrives via `POST /memory/v1/control/verdicts` (`Spec 6A` §2.2).
 - **`engram_memory_capture` / `engram_memory_request_admission` / `engram_memory_withdraw` / `engram_memory_forget`:**
   MCP write tools routed through `mcp-platform` (`Spec 6A` §3). Erasure (`forget` / `tombstone`)
   enforces signed principal/mandate authority and folds tombstones out of every read, edge, and aggregate surface (§3.5).
@@ -1382,7 +1518,7 @@ Q3 A already authorizes the required GitHub PR synchronization. It does not auth
 4. Advance metadata using an `updatedAt` cursor with overlap and identity deduplication, plus periodic complete sweeps. Persist continuation/retry state and deduplicate pages that move during enumeration. A successful metadata page does not complete a failed object job.
 5. Keep PR attribution separate from ancestry. Pin historically observed head/base bounds and merge-base evidence; distinguish merge, squash and rebase. Do not label every ancestor as PR-specific, subtract today's base to erase a merged PR's commits, or infer missing historical bounds. Unknown attribution stays partial while acquired ancestry remains available.
 6. Apply independent request/concurrency budgets, supported ETags, timeouts, primary/secondary rate-limit handling and bounded backoff with durable retry. Tokens never enter facts, logs or database rows. Do not trust a repository-selected credential helper or executable; use host-controlled credentials and transport configuration.
-7. **`D30` External HMI Input & Live Tracking (`2026-11-14` Spec 1 amendment, `proposed` extension for issues/reviews/boards):** P1 GitHub PR synchronization is the first concrete `D30` external HMI input path into `engram` (via `cluster-mesh` `POST /memory/v1/hmi/input`, `R12`). Newly observed merged PR facts (`state === "merged"` with `mergeOid`) emit typed `pr.merged` live-tracking events (`idempotencyKey = "gh:pr-merged:<owner>/<repo>#<number>@<alg>:<mergeOid>"`, `SPEC_ENGRAM_SESSION_FRONT_AND_EXTRACTION.md` §6), feeding `engram` first and `Track` control proposals downstream (`Point 5B`). GitHub issue, review-comment, and project-board inputs (`owner.answer`, `owner.request`, board transitions) extend this same `D30` HMI ingress bridge (`proposed`) without introducing collector model calls (`A07`) or conflating GitHub/boards with `Track` or `engram`.
+7. **`D30` External HMI Input & Live Tracking (`2026-11-14` Spec 1 amendment; Phase-1 PR flow active, issues/reviews/boards deferred):** P1 GitHub PR synchronization (under `cluster-mesh/forge` secret custody in hosted mode and host `gh` in CLI mode, `G-NOSECRET`) is the first concrete `D30` external HMI input path into `engram` (via `cluster-mesh` `POST /memory/v1/hmi/input`, `R12`). Newly observed merged PR facts (`state === "merged"` with `mergeOid`) emit typed `pr.merged` live-tracking events (`sourceId = "gh:pr-merged:<owner>/<repo>#<number>@<alg>:<mergeOid>"`, `idempotencyKey = "idem:v1:" + sha256Hex(canonicalJcs({ sourceKind, sourceId }))`, `SPEC_ENGRAM_SESSION_FRONT_AND_EXTRACTION.md` §6), feeding `engram` first and `Track` control proposals downstream (`Point 5B`). GitHub issue, review-comment, and project-board inputs are deferred to a follow-up `D30` HMI specification once dedicated `engram-live` contracts, `cluster-mesh/forge` permissions/webhook events, and verified numeric `sender.id` → Sentropic principal bindings land, without introducing collector model calls (`A07`) or conflating GitHub/boards with `Track` or `engram`.
 
 No authentication, revoked access, network outage or unavailable PR ref produces an explicit `auth_required`, `stale` or `unavailable` state and last successful observation. Local collection continues. Retained observations do not disappear when credentials change, but access remains subject to host authorization. Resume automatically when the condition clears.
 
@@ -1393,45 +1529,61 @@ Q3 A already authorizes the required GitHub PR synchronization. It does not auth
 
 ## 8. Small Test-First Implementation Lots per Repository (`engram` / `sentropic` / `h2a`)
 
-All lots execute in TypeScript/Node only (zero scripting runtimes outside Node), follow `RED → GREEN → GUARD` discipline, keep ≤12 files per lot, and respect `Spec 0` + `Spec 6A` prerequisites.
+All lots execute in TypeScript/Node only (zero scripting runtimes outside Node), follow `RED → GREEN → GUARD` discipline, respect `Spec 0` + `Spec 6A` + `chat-mesh` prerequisites, and enforce each repository's native build/test governance:
+- **`engram` (`@sentropic/engram`):** `npm` + `vitest` (`npx vitest run ...`, `npm run lint`, `npm run build`), ≤12 files per lot.
+- **`sentropic` (`packages/cluster-mesh`, `api`):** strict **`Make-Only` / `Docker-First` / `ENV=test-*` as final argument**, atomic **`<= ~150 LOC`** commits (`sentropic:rules/MASTER.md:11-29,36,51`), and **strict separation between publishable `packages/cluster-mesh` lots (each including its `packages/cluster-mesh/package.json` semver bump for `enforce-package-bump`, `rules/workflow.md:116-120`) and `api/` lots** (`F-09`).
 
 ### 8.1 `engram` Lots (`@sentropic/engram`)
 
 | Lot | Depends On | Scope (≤12 Files) | RED → GREEN → GUARD Test Cases (`tests/*.test.ts`) |
 | :--- | :--- | :--- | :--- |
 | **`1-E0` *(doc)* ** | Spec 1 review (`D2=review`) | `spec/SPEC_AGENT_MEMORY_SUBSTRATE.md`, `spec/SPEC_EVOL_AGENT_MEMORY_SUBSTRATE.md`, `spec/SPEC_LIVE_GIT_INDEXING.md`, `CHANGELOG.md` | Documentary gate verifying exact application of §7.1–§7.3 hunks while keeping EVOL `D3` (`:73-77`) and `SPEC_MEMORY_MCP_V2.md` `M10` (`:884-910`) intact. |
-| **`1-E1`** | `Spec 0` Lot `0.1`, `6A-E1` | `engram-memory/contracts/session-front.ts`, `engram-memory/session-front-engine.ts`, `engram-memory/validation.ts`, `engram-memory/index.ts`, `tests/session-front-ingest.test.ts` | **RED:** Rejects unknown keys, missing `derivedWorktreeId`, `recordExtraction` citing uncommitted `sourceEventRecordIds` (`NOT_FOUND`), and `D18` unauthenticated writes (`UNAUTHORIZED`). **GREEN:** `recordSessionEvent` commits all 6 raw event kinds with `SessionDbCitationTuple` (`scheme: "session-db"`), `D12=turn` sweep flag, `D15=slices` readiness, and `D16` `null`-mandate signal. **GUARD:** `BoundedCurrentProjectionV1` (`engram-memory/bounded-projection.ts:74`) never includes raw `speech_turn` text (`M10`). |
-| **`1-E2`** | `1-E1` | `engram-memory/privacy/pseudonym.ts`, `engram-memory/privacy/deny-list.ts`, `engram-memory/privacy/pii-armor.ts`, `engram-memory/privacy/retention-window.ts`, `engram-memory/privacy/study-window.ts`, `tests/session-front-privacy.test.ts` | **RED:** Cross-boundary egress without `PiiArmorStamp` fails closed; revoking `memory.capture.session/v1` blocks capture (`AUTHORIZATION_REVOKED`); `D7` term/secret hits are withheld pre-seal; ad-hoc per-CLI TTLs fail `D13=host`. **GREEN:** `D33` HMAC pseudonyms are deterministic per scope; `D11` recall (`memory.recall.*`) stays green after capture revocation; `D14` stops presentation at `closedAt + D13` and emits `PurgeAnnouncementReceiptV1` before purge; `D9` (`30` projects, `6` months) filters `memory.recall.study/v1` while leaving canonical project/Git records untouched. |
-| **`1-E3`** | `1-E1`, `1-E2`, `Spec 0` Lot `0.2` | `src/session-extraction-adapter.ts`, `src/extraction-batch.ts` (additive re-export), `tests/session-extraction-pipeline.test.ts` | **RED:** Project-domain candidate with unknown `OntologyTemplateEnvelopeRef` fails `REGISTRY_VERSION_UNAVAILABLE`; `domain: 'project'` candidate never enters `accepted_current` without a `TrackControlVerdict`. **GREEN:** `'light-permanent-llm'`, `'session-llm'`, and `'specialized-model'` fakes run through `revalidateFullBundleAndRederiveProfile` (`src/extraction-batch.ts:431`), `mergeExtractionsWithCitations`, and `recordExtraction`, holding `domain: 'project'` in `reviewStatus: 'proposed'` (`Point 5B`) and enforcing `D6=refs` when `d6ContentAuthorized === false`. |
-| **`1-E4`** | `1-E1` | `engram-live/derived-worktree-graph.ts`, `engram-live/contracts.ts` (additive DTO), `engram-live/index.ts`, `tests/derived-worktree-d21.test.ts` | **RED:** Rejects raw absolute host realpaths in remote DTOs; rejects cross-clone merging of distinct checkouts. **GREEN:** `DerivedWorktreeNodeV1` binds `deriveCloneIdentity` + `deriveWorktreeIdentity` (`engram-live/registration.ts:312-411`), parent origin (`branched_from_worktree`), `StableCapture` digests (`engram-live/worktree.ts:104-117`), `R1` `removed-retained` state, session logs, and `.h2a/overlays/worktrees/{id}.json`. **GUARD:** Passive turn recording keeps `liveIndexingState: 'unactivated'` (`A01`). |
+| **`1-E1`** | `Spec 0` Lot `0.1`, `6A-E1` | `package.json` (`exports["./session-front-contracts"]`), `tsup.config.ts`, `src/session-front-contracts.ts`, `engram-memory/contracts/session-front.ts`, `engram-memory/session-front-engine.ts`, `engram-memory/validation.ts`, `engram-memory/index.ts`, `tests/session-front-ingest.test.ts` | **RED:** Rejects unknown keys, `derivedWorktreeId` failing `validateWorktreeIdentity` (`"wt:"` prefix, `F-15`), `idempotencyKey` outside `16..256` B (`F-03`), `recordExtraction` citing uncommitted or cross-scope `sourceEventRecordIds` (`NOT_FOUND` / `UNAUTHORIZED`), and `D18` unauthenticated writes. **GREEN:** Exposes compiled JS + `.d.ts` at `@sentropic/engram/session-front-contracts` (`F-14`); `recordSessionEvent` commits all 6 raw event kinds with `SessionDbCitationTuple`, bounded `<= 64 KiB` `turn_text` (`F-02`), `RawEventExtractionDisposition` (`F-07`), `D12=turn` + `24`-turn/`64 KiB` `session_summary` flags (`OQ-S1-1`), `D15=slices`, and `D16` `null`-mandate signal. **GUARD:** `BoundedCurrentProjectionV1` (`engram-memory/bounded-projection.ts:74`) never includes `speech_turn` text (`M10`). |
+| **`1-E2`** | `1-E1` | `package.json` (move `@sentropic/llm-mesh` to optional `peerDependencies` `">=0.38.0 <0.39.0"`), `src/llm-json-port.ts`, `src/llm-mesh.ts`, `engram-memory/privacy/{pseudonym,deny-list,pii-armor,retention-window,study-window}.ts`, `tests/session-front-privacy.test.ts` | **RED:** Cross-boundary egress without `PiiArmorStamp` fails closed; revoking `memory.capture.session/v1` blocks capture (`AUTHORIZATION_REVOKED`); `D7` hits are withheld (`'withheld_d7'`); ad-hoc per-CLI TTLs fail `D13=host`; `RetentionV1.expires_at` exceeding finite `ContentPolicyV1` `computeRetentionDeadline` fails (`F-15`); any import of `src/llm-execution.ts` from `src/llm-mesh.ts` fails (`F-12`). **GREEN:** `D33` HMAC pseudonyms are deterministic per scope; `D11` recall stays green after capture revocation; `D14` emits `PurgeAnnouncementReceiptV1` before purge; `D9` (`30` projects, `6` months) filters `memory.recall.study/v1` only. |
+| **`1-E3`** | `1-E1`, `1-E2`, `Spec 0` Lot `0.2` | `src/session-extraction-adapter.ts`, `src/extraction-batch.ts` (repoint `:74-78` onto `./llm-json-port.js`), `tsup.config.ts`, `tests/session-extraction-pipeline.test.ts` | **RED:** Project-domain candidate with unknown `OntologyTemplateEnvelopeRef` fails `REGISTRY_VERSION_UNAVAILABLE`; `domain: 'project'` never enters `accepted_current` without a `TrackControlVerdict`; **mechanical import-graph + packed `dist/` chunk AST test fails if any subpath consumed by `cluster-mesh` (`./session-front-contracts`, `./extraction-batch`, `./profile-bundle`, `./llm-mesh`, `./memory-substrate`, `./mcp-memory`, `./metamodel`) directly or transitively imports `llm-execution.ts`, `@ai-sdk/*`, `ai`, `mistral-ocr`, or reads/writes `process.env.*_API_KEY` (`F-12`)**. **GREEN:** `'light-permanent-llm'`, `'session-llm'`, and `'specialized-model'` run via `revalidateFullBundleAndRederiveProfile`, `mergeExtractionsWithCitations`, and `recordExtraction`, stamping `llmMeshAttemptRef` (`F-13`) and transitioning source dispositions (`'proposed' | 'empty_verified' | 'withheld_d7'`, `F-07`). |
+| **`1-E4`** | `1-E1` | `engram-live/derived-worktree-graph.ts`, `engram-live/contracts.ts` (additive DTO), `engram-live/index.ts`, `tests/derived-worktree-d21.test.ts` | **RED:** Rejects raw absolute host realpaths or non-`"wt:"` worktree IDs (`validateWorktreeIdentity`, `F-15`); rejects cross-clone merging of distinct checkouts. **GREEN:** `DerivedWorktreeNodeV1` binds `deriveCloneIdentity` + `deriveWorktreeIdentity` (`engram-live/registration.ts:312-411`), parent origin (`branched_from_worktree`, `IDENTITY_UNCERTAINTY_STATES`), `StableCapture` digests (`engram-live/worktree.ts:104-117`), `R1` `removed-retained` state, session logs, and `.h2a/overlays/worktrees/{id}.json`. **GUARD:** Passive turn recording keeps `liveIndexingState: 'unactivated'` (`A01`). |
 | **`1-E5`** | `1-E3`, `1-E4` | `engram-memory/decision-dossier.ts`, `tests/decision-dossier-d27.test.ts` | **RED:** Rejects unanchored persona/trait learning notes and settled decisions without `ContextualizedFactNodeV1` citations. **GREEN:** Models `decision_dossier` (`D27=decision-only`), `ComprehensionAttestationRefV1`, `project_decision` (`reviewStatus: 'proposed'`, `.track/` target), and `harness_decision` (`D3=mandated`, `.h2a/overlays/*` target per `D31`). |
-| **`1-E6`** | `1-E3`, `1-E5` | `engram-memory/live-tracking.ts`, `engram-memory/live-tracking-reconciler.ts`, `tests/live-tracking-reconcile.test.ts` | **RED:** Duplicate `sourceId` with mutated payload fails `DIGEST_CONFLICT`; reconciler attempting direct accepted `Track` state write is structurally impossible. **GREEN:** `pr.merged`, `owner.answer`, and `owner.request` deduplicate idempotently on `idempotencyKey === sourceId`; reconciler proposes missing items (`reviewStatus: 'proposed'`) and emits deterministic `LiveTrackingGapReportV1` (`live_tracking_gap_count`). |
+| **`1-E6`** | `1-E3`, `1-E5` | `engram-memory/live-tracking.ts`, `engram-memory/live-tracking-reconciler.ts`, `tests/live-tracking-reconcile.test.ts` | **RED:** Rejects `pageLimit < 1` or `pageLimit > 100` (`F-07`); same revision `sourceId` with mutated payload fails `DIGEST_CONFLICT` while new revision `sourceId` links via `supersedes` (`F-06`); reconciler attempting direct accepted `Track` write is impossible. **GREEN:** `pr.merged` (`pr-sync`), `owner.answer`, and `owner.request` (`session-db`) deduplicate via `deriveSessionFrontIdempotencyKey` (`72` B `idem:v1:<hex>`, `F-03` over `1..512` B `sourceId`); bounded paginated reconciler excludes `'empty_verified'` and `'withheld_d7'` from `unproposedCount`, computes O(1) `session-db` ordinal gap, and emits `live_tracking_gap_count` + `live_tracking_sync_staleness_ms` (`F-07`). |
 
-### 8.2 `sentropic` Lots (`@sentropic/cluster-mesh`, `@sentropic/llm-mesh`, `sentropic/api`)
+### 8.2 `sentropic` Lots (`@sentropic/cluster-mesh` vs `sentropic/api` Strictly Separated, `<= ~150 LOC`, `Make-Only`)
 
-| Lot | Depends On | Scope (≤12 Files) | RED → GREEN → GUARD Test Cases (`tests/*.spec.ts`, `api/tests/api/*.test.ts`) |
+**Named Scope Exception `BRS1-EX1` (`sentropic:rules/MASTER.md:32-34`, `F-11`):**
+- **Target:** `Makefile:1282` (`CLUSTER_MESH_PEER_TOOLS` in the cold `cluster-mesh-workspace` runner, paired in Lot `1-S1a` with `packages/cluster-mesh/package.json:269,294` and `ENGRAM_MEMORY_RANGE` in `packages/cluster-mesh/src/modules/catalog.ts:18`, plus CI wiring pin checks if present).
+- **Justification:** `Makefile:1282` currently pins `@sentropic/engram@0.22.0` (`ENGRAM_MEMORY_RANGE = '>=0.22.0 <0.23.0'`). Cold container verification (`make test-cluster-mesh`, `make typecheck-cluster-mesh`) cannot resolve `@sentropic/engram/session-front-contracts` or the SDK-purged `0.28.x` subpaths unless `CLUSTER_MESH_PEER_TOOLS` is updated in lockstep with `package.json` and `catalog.ts`.
+- **Bounded Impact:** Modifies only the `@sentropic/engram` version literal on `Makefile:1282`; zero Make target recipes, Dockerfiles, or harness rules change.
+- **Rollback Procedure:** Atomic `git revert` of Lot `1-S1a` restoring `Makefile:1282`, `packages/cluster-mesh/package.json:269,294`, and `packages/cluster-mesh/src/modules/catalog.ts:18` together, verified by `make scope-check ENV=test-cluster-mesh && make test-cluster-mesh ENV=test-cluster-mesh && make typecheck-cluster-mesh ENV=test-cluster-mesh`.
+
+| Lot | Depends On (`F-10`) | Atomic Scope (`<= ~150 LOC`; `cluster-mesh` vs `api/` Separated) | TDD `RED → GREEN` & Mandatory `Make-Only` Gate (`ENV=test-*` Last, `F-09`) |
 | :--- | :--- | :--- | :--- |
-| **`1-S1`** | `6A-S0b`, `6A-S1a`, `6A-S1b`, `1-E1`, `1-E2` | `packages/cluster-mesh/src/compose/memory/session-front.ts`, `packages/cluster-mesh/src/compose/memory/hmi-input.ts`, `api/src/routes/memory/session-front.ts`, `packages/cluster-mesh/tests/session-front-r12.spec.ts`, `api/tests/api/memory-session-front.test.ts` | **RED:** Unverified `H2AEnvelope<H2AMandate>` or mismatched `(tenantId, workspaceId)` fails `403`; local `SqliteKernel` fault returns `503 ClusterMeshMemoryDegradedError`. **GREEN:** `POST /memory/v1/session-front/ingest`, `/extractions`, and `/hmi/input` bind neutral `session-db` citations (`6A-S0b`), commit atomically with L3a `scope-outbox-v1` under `D17=degraded`, and surface `degradedBanner`. **GUARD:** Zero diff on 38-route `RECEIVER_ROUTE_TABLE` (`api/src/routes/session-content/route-table.ts:60-100`). |
-| **`1-S2`** | `1-S1`, `1-E3`, `6A-S2` | `packages/cluster-mesh/src/compose/memory/llm-extraction-bridge.ts`, `packages/cluster-mesh/tests/memory-llm-mesh-extraction.spec.ts` | **RED:** Direct provider HTTP call or missing `VerifiedRoutingSubject` (`packages/llm-mesh/src/routing-contracts.ts:13-17`) is refused. **GREEN:** Routes `'light-permanent-llm'`, `'session-llm'`, `'specialized-model'`, and `D7` sensitivity triage through `@sentropic/llm-mesh` / `@sentropic/llm-mesh/decision` with `PreparedRouteAttempt` metering (`:197-206`). |
-| **`1-S3`** | `1-S1`, `1-E6` | `api/src/services/github-hmi/memory-bridge.ts`, `api/src/services/memory/live-tracking-metrics.ts`, `api/tests/api/hmi-live-tracking.test.ts` | **RED:** Unauthenticated webhook or foreign-repo PR event is rejected (`401`/`403`). **GREEN:** Forwards GitHub PR merge, issue, review, and board HMI events (`D30`) to `/memory/v1/hmi/input` with `idempotencyKey = sourceId`, runs `LiveTrackingReconcilerPort`, and exports `live_tracking_gap_count` + `D17` health gauges. |
+| **`1-S0a`** *(`cluster-mesh`)* | `6A-S0b`, `1-E4` | `packages/cluster-mesh/package.json` (semver bump), `packages/cluster-mesh/src/forge/{contracts,lifecycle,github-api}.ts` (`:40,50-54`, `:101-103`, `:28-38`), `packages/cluster-mesh/src/live-storage/pr-sync-store.ts`, `packages/cluster-mesh/tests/forge/pr-sync-permissions-and-store.spec.ts` | **RED:** `pull_requests: 'read'` currently throws `GitAppAccessLostError` (`forge/contracts.ts:50-54`), `x-github-event: pull_request` returns `400` (`lifecycle.ts:101-103`), `github-api.ts` drops `ETag`/`Retry-After`, and `PrSyncPersistencePort` is unimplemented (`F-05`, `F-08`). **GREEN:** Declarative `GIT_APP_PERMISSIONS` profile admits `pull_requests: 'read'`, `lifecycle.ts` verifies/routes `pull_request` webhooks over raw bytes, `github-api.ts` supports `If-None-Match`/`304` + `Retry-After`/`x-ratelimit-reset`, and `pr-sync-store.ts` implements `PrSyncPersistencePort` + bounded `listObservationsPage` (`limit <= 100`, `F-07`).<br/>**Gate:** `make scope-check ENV=test-cluster-mesh && make test-cluster-mesh SCOPE="pr-sync-permissions-and-store" ENV=test-cluster-mesh && make typecheck-cluster-mesh ENV=test-cluster-mesh` |
+| **`1-S0b`** *(`api/`)* | `1-S0a` | `api/src/services/cluster-mesh/github-app-host.ts` (`:46`), `api/src/services/artifacts/live/forge-github.ts` (`:16-19`), `api/tests/api/github-app-live-declarations.test.ts` | **RED:** Enrolled repo absent from static `GIT_APP_TARGET_REGISTRY` (`github-app-host.ts:46`) is rejected; `304`/`Retry-After` is not propagated to `PrTransportResult.retryAfterMs`. **GREEN:** Resolves targets dynamically via `LiveDeclarationStorePort` (`live-storage/registration.ts:509-515`) while keeping PEM/webhook secrets exclusively in `control.github_app_enrollments` under `SECRET_ENCRYPTION_KEY` (`F-04`, `F-05`), and wires `ETag`/`Retry-After` in `forge-github.ts` (`F-08`).<br/>**Gate:** `make scope-check ENV=test-api && make test-api-unit SCOPE="github-app-live-declarations" ENV=test-api && make typecheck-api ENV=test-api` |
+| **`1-S1a`** *(`cluster-mesh` + `BRS1-EX1`)* | `6A-S0a`, `6A-S0b`, `6A-S1a`, `6A-S1b`, `6A-S1c`, `6A-S1d`, `chat-mesh B1`, `chat-mesh B2`, `1-E1`, `1-E2`, `1-E4` | `packages/cluster-mesh/package.json` (`:269,294` + semver bump), `Makefile` (`:1282` under `BRS1-EX1`), `packages/cluster-mesh/src/modules/catalog.ts` (`:18,108-119`), `packages/cluster-mesh/src/loaders/memory.ts`, `packages/cluster-mesh/src/compose/memory.ts`, `packages/cluster-mesh/tests/session-front-r12.spec.ts`, `packages/cluster-mesh/tests/packaging/types-and-bundlers.spec.ts` | **RED:** Missing/unverified `H2AEnvelope<H2AMandate>` or cross-scope `sourceEventRecordIds` on `POST /v1/session-front/extractions` fails `403` (`F-01`); `/v1/hmi/input` `> 65_536` B fails `413` (`F-08`); `SqliteKernel` fault returns `503 ClusterMeshMemoryDegradedError`. **GREEN:** Registers `@sentropic/engram/session-front-contracts` in `PROVIDER_CATALOG` (`F-14`); implements `/v1/session-front/ingest`, `/v1/session-front/extractions`, and `/v1/hmi/input` inside `compose/memory.ts` with sequential two-kernel commit (`1. session-db.appendEntry` → `2. engram-memory` + `lastIngestedOrdinal` + `scope-outbox-v1`, `F-02`) and `ContentPolicyV1` sync/retention checks (`F-02`, `F-15`).<br/>**Gate:** `make scope-check ENV=test-cluster-mesh && make test-cluster-mesh SCOPE="session-front-r12|types-and-bundlers" ENV=test-cluster-mesh && make typecheck-cluster-mesh ENV=test-cluster-mesh` |
+| **`1-S1b`** *(`api/`)* | `1-S1a`, `6A-S1d` | `api/src/routes/namespaces/memory.ts` (`MEMORY_PATHS` wiring only — zero `api/src/routes/memory/session-front.ts` file, `F-01`), `api/tests/api/memory-session-front.test.ts` | **RED:** Unauthenticated caller fails `401`/`403`; Mode B store fault returns `503`; static check fails if `api/src/routes/memory/session-front.ts` exists (`F-01`). **GREEN:** Exposes `/api/v1/memory/v1/session-front/{ingest,extractions}` and `/api/v1/memory/v1/hmi/input` through `api/src/routes/namespaces/memory.ts` with zero diff on 38-route `RECEIVER_ROUTE_TABLE` (`session-content/route-table.ts:60-100`).<br/>**Gate:** `make scope-check ENV=test-api && make test-api-unit SCOPE="memory-session-front" ENV=test-api && make typecheck-api ENV=test-api` |
+| **`1-S2`** *(`cluster-mesh`)* | `1-S1a`, `1-E3`, `6A-S0a`, `6A-S1b`, `6A-S2`, `chat-mesh C2a` | `packages/cluster-mesh/package.json` (semver bump), `packages/cluster-mesh/src/compose/memory/llm-extraction-bridge.ts`, `packages/cluster-mesh/tests/memory-llm-mesh-extraction.spec.ts` | **RED:** Direct provider HTTP call, missing `VerifiedRoutingSubject` (`routing-contracts.ts:13-17`), missing `RouteMeteringSink` (`chat-mesh C2a`), or host SDK client injection fails; `chat-server` `G-FENCE` import check fails on any `engram` import (`F-12`, `F-13`). **GREEN:** Bounded async queue (`F-08`) routes `'light-permanent-llm'` (`'mesh-fast'`), `'session-llm'` (`RoutePlanInput` `requestedModel` + `affinityKey`), `'specialized-model'`, and `D7` triage solely via `@sentropic/llm-mesh` (`>=0.38.0 <0.39.0`) / `./decision`, recording `PreparedRouteAttempt.attemptRef` and invoking `recordExtraction` in-process under `MemoryNeutralGrant` (`F-01`).<br/>**Gate:** `make scope-check ENV=test-cluster-mesh && make test-cluster-mesh SCOPE="memory-llm-mesh-extraction" ENV=test-cluster-mesh && make typecheck-cluster-mesh ENV=test-cluster-mesh` |
+| **`1-S3a`** *(`api/`)* | `1-S0b`, `1-S1b`, `1-E6` | `api/src/services/github-hmi/memory-bridge.ts`, `api/tests/api/hmi-live-tracking.test.ts` | **RED:** Invalid `X-Hub-Signature-256`, body `> 262_144` B (`413`), rate-limit breach (`429`), foreign repo (`403`), or unbound numeric `sender.id` claiming `owner.*` (`403`, `F-04`) is rejected; Mode B returns `503` so GitHub redelivers (`F-02`). **GREEN:** Bridges verified `forge` `pull_request` webhooks and `GitInstallationLeasePort.acquire` `pr-sync` `PullRequestFactDto` merges (`F-04`, `F-05`) into `/memory/v1/hmi/input` (`pr.merged`, `idem:v1:<hex>` key, `F-03`).<br/>**Gate:** `make scope-check ENV=test-api && make test-api-unit SCOPE="hmi-live-tracking" ENV=test-api && make typecheck-api ENV=test-api` |
+| **`1-S3b`** *(`cluster-mesh`)* | `1-S0a`, `1-S1a`, `1-S2`, `1-E6` | `packages/cluster-mesh/package.json` (semver bump), `packages/cluster-mesh/src/compose/memory/live-tracking-reconciler-host.ts`, `packages/cluster-mesh/tests/memory-live-tracking-reconciler.spec.ts` | **RED:** `pageLimit > 100` fails `INVALID_SCHEMA`; `'withheld_d7'` or `'empty_verified'` events never increment `unproposedCount` (`F-07`). **GREEN:** Runs cursor-paginated `LiveTrackingReconcilerPort` over `listObservationsPage` (`<= 100`) and O(1) `session-db` `maxCommittedOrdinal - lastIngestedOrdinal`, and publishes `live_tracking_gap_count`, `live_tracking_pending_verdict_count`, `live_tracking_sync_staleness_ms`, and `D17` health gauges on `GET /memory/v1/health` (`F-07`, `OQ-S1-3`).<br/>**Gate:** `make scope-check ENV=test-cluster-mesh && make test-cluster-mesh SCOPE="memory-live-tracking-reconciler" ENV=test-cluster-mesh && make typecheck-cluster-mesh ENV=test-cluster-mesh` |
 
 ### 8.3 `h2a` Lots (`@sentropic/h2a`, `@sentropic/h2a-runtime`, `@sentropic/track`)
 
 | Lot | Depends On | Scope (≤12 Files) | RED → GREEN → GUARD Test Cases (`packages/**/src/**/*.test.ts`) |
 | :--- | :--- | :--- | :--- |
-| **`1-H1`** | `6A-H1`, `6A-H2`, `1-S1` | `packages/h2a/src/hosts/plugin.ts`, `packages/h2a/src/runtime/memory/session-front-client.ts`, `packages/h2a/src/runtime/memory/degraded-banner.ts`, `packages/h2a/src/hosts/plugin-session-front.test.ts` | **RED:** Static AST guard fails on any direct `@sentropic/engram` runtime import (`R12`); `503 ClusterMeshMemoryDegradedError` writes **zero** fallback JSONL in `~/.h2a/` or `.track/`. **GREEN:** All 8 CLI hosts (`claude`, `codex`, `gemini`, `agy`, `hermes`, `opencode`, `muse`, `vibe` including `vibe` `post_agent` and `agy`/`muse` poll catch-up) record turns/tool results/mandates via `/memory/v1/session-front/ingest`, trigger `D12=turn`, render `D15` slices, and display the 8-host `D17` banner; post-recovery catch-up replays idempotently from neutral `session-db` / host transcript. |
-| **`1-H2`** | `1-H1`, `1-E4` | `packages/h2a-runtime/src/delegate.ts`, `packages/h2a-runtime/src/gateway-host/live-github.ts`, `packages/h2a-runtime/src/retention/d14-host-purge.ts`, `packages/h2a-runtime/src/derived-worktree-lifecycle.test.ts` | **RED:** Removing `.h2a/jobs/<jobId>/wt` (`delegate.ts:765-810`) without `R1` retention receipt reports explicit `retention_gap`; session start never flips `liveCapability: "live"` (`A01`). **GREEN:** Binds job/linked worktrees to `D21` `derivedWorktreeId`, forwards P1 merged PR observations (`live-github.ts:1-45`) as `D30` `pr.merged` inputs, and executes `D13`/`D14` post-window host purge after `PurgeAnnouncementReceiptV1`. |
+| **`1-H1`** | `6A-H1`, `6A-H2`, `1-S1a`, `1-S1b` | `packages/h2a/src/hosts/plugin.ts`, `packages/h2a/src/runtime/memory/session-front-client.ts`, `packages/h2a/src/runtime/memory/degraded-banner.ts`, `packages/h2a/src/hosts/plugin-session-front.test.ts` | **RED:** Static AST guard fails on any direct `@sentropic/engram` runtime import (`R12`); `503 ClusterMeshMemoryDegradedError` writes **zero** fallback memory JSONL in `~/.h2a/` or `.track/`. **GREEN:** All 8 CLI hosts (`claude`, `codex`, `gemini`, `agy`, `hermes`, `opencode`, `muse`, `vibe` including `vibe` `post_agent` and `agy`/`muse` poll catch-up) record turns/tool results/mandates via `/memory/v1/session-front/ingest`, trigger `D12=turn`, render `D15` slices, display the 8-host `D17` banner, and persist the lightweight Mode B ordinal replay marker (`mandate_binding` + `context_saturation`, `F-02`) for deterministic post-recovery catch-up. |
+| **`1-H2`** | `1-H1`, `1-E4` | `packages/h2a-runtime/src/delegate.ts`, `packages/h2a-runtime/src/gateway-host/live-github.ts`, `packages/h2a-runtime/src/retention/d14-host-purge.ts`, `packages/h2a-runtime/src/derived-worktree-lifecycle.test.ts` | **RED:** Removing `.h2a/jobs/<jobId>/wt` (`delegate.ts:765-810`) without `R1` retention receipt reports explicit `retention_gap`; session start never flips `liveCapability: "live"` (`A01`). **GREEN:** Binds job/linked worktrees to `"wt:"`-validated `D21` `derivedWorktreeId` (`F-15`), forwards local `gh` P1 merged PR observations (`live-github.ts:1-45`, `G-NOSECRET`) as `D30` `pr.merged` inputs, and executes `D13`/`D14` post-window host purge after `PurgeAnnouncementReceiptV1`. |
 | **`1-H3`** | `1-H1`, `1-E5` | `packages/focus-interactive/src/decision-dossier-bridge.ts`, `packages/h2a/src/negotiation/dossier-ingest.ts`, `packages/h2a/src/negotiation/dossier-ingest.test.ts` | **RED:** Rejects comprehension attestation where `subject === relayingChannelPrincipal` when impersonated, or settled dossier without factual context citations. **GREEN:** Routes interactive/async `D27` swipe and dossier exchanges (`ComprehensionEvidence`, `owner.answer`) through `cluster-mesh` into `decision_dossier` + `project_decision` / `harness_decision`. |
-| **`1-H4`** | `1-S1`, `1-E6`, `Spec 0` Lot `0.3` | `packages/track/src/control/engram-proposal-evaluator.ts`, `packages/track/src/ingest/engram-live-tracking.ts`, `packages/track/src/control/engram-proposal-evaluator.test.ts` | **RED:** Any unratified `proposed` project write or third-party promotion by its own author (`D1=borne-review`) is refused by `Track` control; live session turn bypassing `engram` into `.track/events.jsonl` fails guard. **GREEN:** `Track` subscribes to `proposed` `project_decision` and `pr.merged` / `owner.answer` / `owner.request` items via `cluster-mesh`, applies `Track` template + `D1` rules, and posts authoritative `TrackControlVerdict` (`verdictAuthority: 'track'`, `Point 5B`). |
+| **`1-H4`** | `1-S1a`, `1-S1b`, `1-E6`, `Spec 0` Lot `0.3` | `packages/track/src/control/engram-proposal-evaluator.ts`, `packages/track/src/ingest/engram-live-tracking.ts`, `packages/track/src/control/engram-proposal-evaluator.test.ts` | **RED:** Any unratified `proposed` project write or third-party promotion by its own author (`D1=borne-review`) is refused by `Track` control; live session turn bypassing `engram` into `.track/events.jsonl` fails guard. **GREEN:** `Track` subscribes to `proposed` `project_decision` and `pr.merged` / `owner.answer` / `owner.request` items via `cluster-mesh`, applies `Track` template + `D1` rules, and posts authoritative `TrackControlVerdict` via `POST /memory/v1/control/verdicts` (`verdictAuthority: 'track'`, `Point 5B`, `F-01`). |
 
 ---
 
 ## 9. Open Questions (Non-Reopening Implementation & Operational Parameters)
 
-None of the items below reopen `D1`–`D34` or `OWNER-DECISIONS-2026-11-14.md` (`T-M-C`, `1B`–`6A`, `D28` kept):
+None of the items below reopen `D1`–`D34` or `OWNER-DECISIONS-2026-11-14.md` (`T-M-C`, `1B`–`6A`, `D28` kept). Answers from the `sentropic` design review (`engram-s1-carbon.md` §4) are folded below; `h2a` has not reviewed Spec 1 yet and its open items remain pending `h2a` review:
 
-1. **`OQ-S1-1` (`engram` + `sentropic` — Default `D12=turn` Extraction Route Profile):** In `@sentropic/llm-mesh`, which default `policyProfile` and `RouteUsageCeiling` (`packages/llm-mesh/src/routing-contracts.ts:70, 80-91`) should back `'light-permanent-llm'` vs `'session-llm'` at `D12=turn` launch so per-turn latency stays sub-second without starving interactive generation?
-2. **`OQ-S1-2` (`sentropic` + `h2a` — `D33` Scope Pseudonymization Key Sync):** When `D24` integral workspace sync connects multiple local `h2a` workstations of the same `(tenantId, workspaceId)` to Sentropic, should `K_pseudo` (§5.1) be provisioned inside the workspace enrollment key-ring (`Spec 6A`) so `actorPseudoId` and `sessionPseudoId` match byte-for-byte across workstations without ever persisting `K_pseudo` inside `engram` tables?
-3. **`OQ-S1-3` (`engram` + `Track` — Live-Tracking Reconciliation Cadence & Alert Threshold, `owner-r10/suivi-direct-2026-11-07.md:6`):** What default periodic sweep interval (e.g., `5 min` aligned with GitHub PR sync in `SPEC_LIVE_GIT_INDEXING.md:252`, plus pre-PR-serialization trigger) and non-zero `live_tracking_gap_count` alert threshold should be configured for `LiveTrackingReconcilerPort`?
-4. **`OQ-S1-4` (`h2a` — Poll Cadence on `agy` and `muse` CLI Hosts):** On the two poll-only CLI hosts (`agy` and `muse`, `packages/h2a/src/hosts/plugin.ts:107-113, 128-134`), what bounded poll interval balances `D12=turn` send-time catch-up and `D17` degraded-banner freshness against idle CPU (`<1%` core target)?
-5. **`OQ-S1-5` (`sentropic` + `Track` — Phase-2 GitHub Board HMI Event Subset for `D30`):** Beyond P1 PR sync (`pr.merged`), issues (`owner.request`), and issue/PR review comments (`owner.answer`), which exact GitHub `ProjectsV2Item` webhook/poll mutations should map into `/memory/v1/hmi/input` in Lot `1-S3`?
+1. **`OQ-S1-1` (`engram` + `sentropic` — Default `D12=turn` Extraction Route Profile, `'session-llm'`, and `session_summary` Thresholds) — *answered by sentropic, 2026-11-14*:**
+   - **Default route & `'session-llm'` policy:** Default extraction uses `policyProfile: 'mesh-fast'` (`intent: 'fast'` in `@sentropic/llm-mesh`). `'session-llm'` is authorized solely as a `RoutePlanInput` model/affinity selector (`requestedModel` + `affinityKey` under `VerifiedRoutingSubject`) executed inside `@sentropic/llm-mesh` on the `cluster-mesh` side (`PreparedRouteAttempt.attemptRef`), never injecting a host SDK client into `engram` and never importing `engram` in `chat-server` (`G-FENCE`; folded into §2.1 & §2.3.1, `F-13`).
+   - **`session_summary` trigger thresholds:** Rolling `session_summary` (`context_summary`) compaction defaults to **`turnCountThreshold = 24` turns** or **`byteBudgetThreshold = 65_536` UTF-8 bytes** (aligned with the `64 KiB` frame ceiling), plus immediate trigger on `context_saturation` and session close, configurable by `policyProfile` (folded into §1.5 rule 3).
+2. **`OQ-S1-2` (`sentropic` + `h2a` — `D33` Scope Pseudonymization Key Sync) — *open (`h2a` review pending)*:** When `D24` integral workspace sync connects multiple local `h2a` workstations of the same `(tenantId, workspaceId)` to Sentropic, should `K_pseudo` (§5.1) be provisioned inside the workspace enrollment key-ring (`Spec 6A`, strictly outside `engram` tables under `G-NOSECRET`) so `actorPseudoId` and `sessionPseudoId` match byte-for-byte across workstations?
+3. **`OQ-S1-3` (`engram` + `sentropic` + `Track` — Live-Tracking Reconciliation Cadence & Alert Threshold, `owner-r10/suivi-direct-2026-11-07.md:6`) — *`sentropic` alert thresholds answered by sentropic, 2026-11-14; `Track` pre-PR cadence pending `h2a`/`Track` review*:**
+   - **`sentropic` alert thresholds (*answered by sentropic, 2026-11-14*):** Alert when `unrecordedRawCount > 0` persists for **`> 5 min` (`300_000 ms`**, exceeding `PR_SYNC_OVERLAP_MS = 300_000` in `engram-live/pr-sync.ts:33`) or when `unproposedCount > 0` (excluding terminal dispositions `'withheld_d7'` and `'empty_verified'`, `F-07`) persists for **`> 10 min` (`600_000 ms`)**, coupled with **`live_tracking_sync_staleness_ms > 900_000` (`15 min`)** (folded into §6.3). `Track`-side pre-PR serialization sweep hooks remain open pending `h2a`/`Track` review.
+4. **`OQ-S1-4` (`h2a` — Poll Cadence on `agy` and `muse` CLI Hosts) — *open (`h2a` review pending)*:** On the two poll-only CLI hosts (`agy` and `muse`, `packages/h2a/src/hosts/plugin.ts:107-113, 128-134`), what bounded poll interval balances `D12=turn` send-time catch-up and `D17` degraded-banner freshness against idle CPU (`<1%` core target)?
+5. **`OQ-S1-5` (`sentropic` + `Track` — Phase-2 GitHub Issues / Reviews / Boards Subset for `D30`) — *answered by sentropic, 2026-11-14*:**
+   - Restrict Spec 1 (`§1.4`, `§6.1`, and `§8.2` `1-S3a`/`1-S3b`) strictly to the **GitHub PR flow (`engram-live/pr-sync.ts` `PullRequestFactDto` + `forge` `pull_request` webhook → `pr.merged`) plus authenticated `session-db` (`owner.answer`, `owner.request`)**, unlocked by `1-S0a`/`1-S0b`. Defer GitHub issues (`github-issue`), PR review comments (`github-review`), and `ProjectsV2` boards (`project-board`) to a follow-up `D30` HMI specification after extending `cluster-mesh/forge` permissions/webhook events, dedicated `engram-live` contracts, and verified numeric `sender.id` → Sentropic principal identity binding (`F-04`, `F-05`; folded into §1.4 & §6.1).
