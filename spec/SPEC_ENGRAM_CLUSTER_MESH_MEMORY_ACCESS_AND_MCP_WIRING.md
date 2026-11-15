@@ -525,7 +525,7 @@ Spec 6A (`MCP-L7`) replaces those three hardcodings with `McpHostTransportDispat
 
 Per `D20=seventh` (`spec/memory/R15-SEDIMENT.md:65`), `Point 2B` (`spec/memory/OWNER-DECISIONS-2026-11-14.md:22`), and `spec/memory/PLAN_SPEC_ENGRAM_FRONT.md:155,174-186`:
 - **Spec 6A defines ONLY:**
-  1. The exact public tool name (`engram_memory_context`), `CapabilityTool` / `CapabilityGates` descriptor, and closed outer JSON Schema Draft 2020-12 input/output wire envelopes (`EngramMemoryContextInputEnvelopeV1`, `EngramMemoryContextOutputEnvelopeV1`);
+  1. The exact public tool name (`engram_memory_context`), `CapabilityTool` / `CapabilityGates` descriptor, and closed outer JSON Schema Draft 2020-12 input/output wire envelopes (`EngramMemoryContextInputEnvelopeV1`, `MemoryToolSuccessV1<EngramMemoryContextValueV1>` / `EngramMemoryContextResultV1`);
   2. How template references (`OntologyTemplateEnvelopeRef` + `Sha256Digest`) and mandate bindings cross the wire without any closed list of `Track` or `h2a` domain types (`engram-h2a.md:121-146`);
   3. The build-time default-disabled flag, the `engram` + `sentropic` co-signature gate (`v2` tool/wire profile), `MCP-L5` production qualification requirement, and the host-by-host switchover mechanism with a fixed end date.
 - **Spec 6A intentionally DOES NOT define** how `engram` scores, ranks, traverses, budgets tokens, projects role consciousness (`D22`), constructs durationless prompts (`D23`), or triggers host text purge (`D14`). Those internal semantics (including the internal `EngramMemoryContextToolInput` / `EngramMemoryContextToolOutput` query and projection fields sketched in `engram-h2a.md:100-155`) belong exclusively to **Spec 2** (`spec/SPEC_ENGRAM_CONTEXTUAL_GRAPH_AND_PROMPT_LOOP.md`). Inside `engram_memory_context`, the Spec 2 query/assembly payload is carried in `context_query` / `context_pack` bounded by closed byte limits, while any typed domain slices cross strictly through `domain_typed_envelopes` keyed by `OntologyTemplateEnvelopeRef` + `Sha256Digest`.
@@ -533,20 +533,23 @@ Per `D20=seventh` (`spec/memory/R15-SEDIMENT.md:65`), `Point 2B` (`spec/memory/O
 ### 4.2 Closed Wire Envelope and `CapabilityTool` Descriptor
 
 ```typescript
-// Outer MCP wire envelope for `engram_memory_context` (Spec 6A §4.2)
-// Internal semantics of `context_query` and `context_pack` are owned by Spec 2.
+// Outer MCP wire envelope for `engram_memory_context` (Spec 6A §4.2, aligned in lockstep with Spec 2 §2.2)
+// Internal semantics of `context_query`, `BoundedContextDomainPayloadV1`, and `context_pack` are owned by Spec 2.
 import type { Sha256Digest, OntologyTemplateEnvelopeRef } from '@sentropic/engram/metamodel';
+import type { MemoryToolFailureV1, MemoryToolSuccessV1 } from '@sentropic/mcp-platform/memory';
+import type { BoundedContextDomainPayloadV1, EngramMemoryContextPackV1, EngramMemoryContextQueryV1, JsonPointer } from '@sentropic/engram/mcp-memory';
 
 export const ENGRAM_MEMORY_CONTEXT_TOOL_NAME = 'engram_memory_context' as const;
 export const MEMORY_MCP_WIRE_PROFILE_ID_V2 = 'sentropic.engram.memory-wire/v2' as const;
 export const MEMORY_MCP_TOOL_SCHEMA_PROFILE_ID_V2 =
   'sentropic.engram.memory-tools/2020-12-v2' as const;
+export const CONTEXT_MAX_PACK_BYTES = 524_288 as const;
 
 export interface EngramMemoryContextInputEnvelopeV1 {
   readonly schema_version: 1;
   /** Logical turn / step identifier in the caller's durationless prompt loop (D23). */
   readonly step_ref: string;
-  /** Optional derived Git worktree node ID (D21, engram-h2a.md:103). */
+  /** Optional derived Git worktree node ID matching ^wt:[a-z0-9._:-]{1,124}$ (D21, engram-h2a.md:103). */
   readonly derived_worktree_id?: string;
   /**
    * Optional travelling ontology template filters (Point 2B, Point 6A, Spec 0 §1.4).
@@ -554,31 +557,40 @@ export interface EngramMemoryContextInputEnvelopeV1 {
    * cluster-mesh never validates against a closed Track or h2a domain enum.
    */
   readonly template_refs?: readonly OntologyTemplateEnvelopeRef[];
-  /** Hard UTF-8 byte ceiling requested for the returned context_pack (4096..1048576, default 65536; matches mcp-platform/src/memory/contracts.ts:149-158). */
+  /**
+   * Hard UTF-8 byte ceiling for the complete MemoryToolSuccessV1<EngramMemoryContextValueV1>
+   * (4096..524288, default 65536; narrows single-record 1048576 in mcp-platform/src/memory/contracts.ts:149-151
+   * so dual CallToolResult serialization stays below MEMORY_COMBINED_RESULT_CEILING_BYTES = 2097152 at :158).
+   */
   readonly max_pack_bytes?: number;
   /**
-   * Closed Spec 2 query selector envelope (e.g. previousStepResult, queryText;
-   * validated by Spec 2's schema under v2 profile; opaque to cluster-mesh transport).
+   * Closed Spec 2 query selector envelope (EngramMemoryContextQueryV1, Spec 2 §2.2;
+   * validated under sentropic.engram.memory-tools/2020-12-v2; opaque to cluster-mesh routing).
    * Mandate envelopes are NEVER accepted inside inputSchema / context_query.
    */
-  readonly context_query: Readonly<Record<string, unknown>>;
+  readonly context_query: EngramMemoryContextQueryV1;
 }
 
 export interface EngramMemoryContextDomainEnvelopeV1 {
   readonly template_envelope: OntologyTemplateEnvelopeRef;
   readonly entity_type_id: string; // Open template-defined type identifier; never a closed list (Point 2B)
   readonly entity_id: string;
+  /** Canonical pre-redaction RFC 8785 JCS SHA-256 of the stored domain record payload. */
   readonly payload_digest_sha256: Sha256Digest;
+  /** RFC 8785 JCS SHA-256 of the exact `payload` object transmitted on the wire after D6/D7/D8 redaction. */
+  readonly wire_payload_digest_sha256: Sha256Digest;
+  /** Sorted RFC 6901 JSON Pointers of fields stripped from `payload` under D6=refs / D7 / D8 ([] when unredacted). */
+  readonly redacted_fields: readonly JsonPointer[];
   readonly control_verdict_authority: 'track' | 'engram' | null;
-  readonly payload: Readonly<Record<string, unknown>>;
+  /** Finite-depth 0..8 unrolled closed JSON Schema (zero $defs/$ref, zero open objects; Spec 2 §2.2–§2.3). */
+  readonly payload: BoundedContextDomainPayloadV1;
 }
 
-export interface EngramMemoryContextOutputEnvelopeV1 {
-  readonly ok: true;
-  readonly schema_version: 1;
+/** Inner output.value wrapped inside MemoryToolSuccessV1<EngramMemoryContextValueV1> (mcp-platform/src/memory/contracts.ts:169-177). */
+export interface EngramMemoryContextValueV1 {
   readonly tool: 'engram_memory_context';
-  /** Deterministic SHA-256 digest over UTF-8 JCS bytes of `context_pack`. */
-  readonly pack_digest_sha256: Sha256Digest;
+  /** Deterministic SHA-256 over UTF-8 JCS bytes of the entire EngramMemoryContextValueV1 excluding `envelope_digest_sha256`. */
+  readonly envelope_digest_sha256: Sha256Digest;
   /** Travelling template references required to interpret typed items in `domain_typed_envelopes`. */
   readonly resolved_template_refs: readonly OntologyTemplateEnvelopeRef[];
   /** Envelope-only carrier for Track or h2a typed slices (Point 2B, engram-h2a.md:140-146). */
@@ -586,9 +598,13 @@ export interface EngramMemoryContextOutputEnvelopeV1 {
   /** True when served from local fenced SQLite while remote sync is degraded (D17). */
   readonly degraded: boolean;
   readonly degraded_reason?: string;
-  /** Spec 2 assembled context slices (Spec 2 owns internal fields). */
-  readonly context_pack: Readonly<Record<string, unknown>>;
+  /** Spec 2 assembled context slices (Spec 2 §2.2 owns internal fields). */
+  readonly context_pack: EngramMemoryContextPackV1;
 }
+
+export type EngramMemoryContextResultV1 =
+  | MemoryToolSuccessV1<EngramMemoryContextValueV1>
+  | MemoryToolFailureV1;
 ```
 
 **`CapabilityTool`, `CapabilityGates`, and Transport Context Classification** (aligned with `engram:src/mcp/memory/gates.ts:95-145,292-334`, `sentropic:packages/mcp-platform/src/memory/contracts.ts:368-401`, and `src/transport/{bridge-kernel,bridge}.ts`):
@@ -619,7 +635,7 @@ To honor `Point 2B` (`OWNER-DECISIONS-2026-11-14.md:22`) **without breaking `MCP
    - `createEngramMemoryProviderV1` (`engram:src/mcp-memory/provider.ts:648`), `createEngramMemoryWireManifest` (`sentropic:packages/cluster-mesh/src/integrations/mcp/memory-manifest.ts:4-55`), and `EngramMemoryDefinitionOptions.activation` (`memory-definition.ts:9`) add `contextToolsEnabled?: boolean` / `enableContextTool?: boolean` **defaulting to `false`**.
    - When `contextToolsEnabled !== true`, `engram_memory_context` is **excluded from `manifest.tools`, `BridgeKernel` `tools/list` (`bridge-kernel.ts:296`), and `CompiledMemoryDispatch`**, emitting the exact 6-tool `v1` manifest (`MEMORY_MCP_WIRE_PROFILE_ID_V1`, `MEMORY_MCP_TOOL_SCHEMA_PROFILE_ID_V1`) byte-for-byte and refusing any call to `engram_memory_context` with `unknown_tool` before provider contact.
 2. **Gate 2 — `engram` + `sentropic` Co-Signature & `MCP-L5` Qualification (`v2` Profile):**
-   - Setting `contextToolsEnabled: true` requires a co-signed `CoSignatureReceiptV2` (`{ profileId: 'sentropic.engram.memory-tools/2020-12-v2', engramManifestDigest: Sha256Digest, sentropicPlatformVersion: string, l5QualificationReceiptRef: string }`) verified at `composeEngramMemoryDefinition` startup (`memory-compose.ts:19-24`) alongside the re-pinned L5/P3 `pre-candidate-manifest.json` `.sha256` receipt (`qualification.mk:14-15,49`). Without both digests and `l5QualificationReceiptRef`, startup refuses atomically.
+   - Setting `contextToolsEnabled: true` requires a cryptographically verified `CoSignatureReceiptV2` (`{ payload: CoSignaturePayloadV2, payloadJcsSha256, engramOwnerAttestation, sentropicOwnerAttestation }`, canonicalized via RFC 8785 JCS and signed under Ed25519 by `'owner:engram-l4'` and `'owner:mcp-platform'` (`spec/evidence/memory-mcp-l5/l0-freeze.json:25,30`), verified against the pinned SPKI + `publicKeySha256` registry `CO_SIGNATURE_TRUSTED_OWNER_KEYS_V2` in `@sentropic/mcp-platform/memory` and `l0-freeze.json`; full contract in `Spec 2 §2.6`) checked at `composeEngramMemoryDefinition` startup (`memory-compose.ts:13-80`) against the compiled `EXPECTED_L5_CANDIDATE_MANIFEST_SHA256_V2` constant matching `tools/memory-mcp-l5/artifacts/pre-candidate-manifest.json.sha256` (`qualification.mk:14-15,49`) and `EXPECTED_L0_FREEZE_SHA256_V2`. Without valid dual Ed25519 signatures and exact SHA-256 matches, startup refuses atomically.
 3. **Gate 3 — Staged Per-CLI-Host Switchover Routed Through `BridgeLock`, `mcp-central`, and `shim-bridge` (Hardened in Unmerged `h2a` PR #455, `fix/registry-bridge-missing-lock` @ `844402eeae1161d74304e634790904785cbb602c`):**
    - **`BridgeLock` & `descriptors.ts` Policy Carrier (`OQ-H2A-1`):** `validateBridgeLock` (`h2a:packages/h2a/src/registry/bridge-lock.ts:187-221`) and `normalizeConfiguration` (`src/registry/descriptors.ts:463-471`) admit both `sentropic.engram.memory-wire/v1` (6 tools) and `sentropic.engram.memory-wire/v2` (7 tools) and carry the signed `contextToolSwitchover` policy in the `sentropic.engram.memory` lock entry (never a hardcoded source-code calendar constant, while keeping `switchoverEndDateUtc` mandatory whenever `v2` is enabled per `Point 2B`):
      ```typescript
@@ -719,7 +735,7 @@ All lots follow strict `RED → GREEN → REFACTOR` discipline in **TypeScript /
 | Lot | Scope & Target Files | Test-First Suite (`RED` First) | Acceptance Gate (`GREEN`) |
 | --- | --- | --- | --- |
 | **`6A-E1`** | **Mandate Verification Hook & Domain-Blind `Track` Envelope Guards in MCP Provider**<br/>Deps: Spec 0 types.<br/>Targets: `src/mcp-memory/provider.ts` (`:55-96,698-727`), `src/mcp/memory/contracts.ts`, `src/mcp/memory/errors.ts`. | `tests/mcp-memory/mandate-and-track-guard.spec.ts`:<br/>1. Mutating tool call (`capture`, `request_admission`, `withdraw`, `forget`) without verified real `H2AEnvelope<H2AMandate>` (`D4`) fails at Step 2 (`authenticate`) with sanitized M6 `'unauthorized'` and zero store writes.<br/>2. Session without memory identity (`hasMemoryIdentity === false`, `D18=readonly`) receives zero memory content on `engram_memory_search` / `engram_memory_get` / `engram_memory_context`, while authenticated same-role workspace caller (`D5`) succeeds locally and fails on cross-scope read.<br/>3. Write colliding with `trackControlled: true` record preserves incumbent bytes and stages a `proposed` conflict candidate (`Point 6A`). | `npx vitest run tests/mcp-memory/mandate-and-track-guard.spec.ts` and `npm run lint` pass; existing 6-tool `v1` manifest digest is unchanged; CI guard verifies `package.json` and `h2a:packages/track/package.json:1-45` carry zero `@sentropic/engram` or `@sentropic/cluster-mesh` memory-store dependencies (`T-M-C`). |
-| **`6A-E2`** | **Seventh Tool (`engram_memory_context`) Outer Envelope & Default-Disabled `Point 2B` Gate**<br/>Deps: `6A-E1`, `6A-S0a` (pure L0 `mcp-platform/memory` + `mcp-broker/memory` contract co-freeze, `cold-workspace.sh:49`).<br/>Targets: `src/mcp/memory/contracts.ts` (`:149-156`), `src/mcp/memory/schemas.ts`, `src/mcp/memory/gates.ts`, `src/mcp/memory/receipts.ts` (`:100-126`), `src/mcp-memory/provider.ts` (`:197-229,391-465`), `src/registry/definitions.ts`. | `tests/mcp-memory/context-tool-envelope-gating.spec.ts`:<br/>1. With default options (`enableContextTool` omitted/`false`), `adapter.manifest.tools` has length `6`, `validateMemoryPublisherAssetsV1` passes `v1` 6-tool schema, and invoking `engram_memory_context` refuses with `unknown_tool`.<br/>2. Enabling `enableContextTool: true` without a valid `CoSignatureReceiptV2` + `l5QualificationReceiptRef` throws at provider preflight.<br/>3. With valid `v2` co-signature fixture + stubbed Spec 2 `ContextQueryPort`, `engram_memory_context` validates closed `EngramMemoryContextInputEnvelopeV1` (`max_pack_bytes` `4096..1048576` default `65536`, open `OntologyTemplateEnvelopeRef` + `Sha256Digest`), rejects mandate fields inside `inputSchema`, refuses `elicitation_ref`, and wraps output in `AppResultEnvelope` with `redactionClass: 'high'`. | `npx vitest run tests/mcp-memory/context-tool-envelope-gating.spec.ts` passes; root export `.` (`package.json:13-17`) still imports zero MCP peers and zero LLM provider SDKs. |
+| **`6A-E2`** | **Seventh Tool (`engram_memory_context`) Outer Envelope & Default-Disabled `Point 2B` Gate**<br/>Deps: `6A-E1`, `6A-S0a` (pure L0 `mcp-platform/memory` + `mcp-broker/memory` contract co-freeze, `cold-workspace.sh:49`).<br/>Targets: `src/mcp/memory/contracts.ts` (`:149-156`), `src/mcp/memory/schemas.ts`, `src/mcp/memory/gates.ts`, `src/mcp/memory/receipts.ts` (`:100-126`), `src/mcp-memory/provider.ts` (`:197-229,391-465`), `src/registry/definitions.ts`. | `tests/mcp-memory/context-tool-envelope-gating.spec.ts`:<br/>1. With default options (`enableContextTool` omitted/`false`), `adapter.manifest.tools` has length `6`, `validateMemoryPublisherAssetsV1` passes `v1` 6-tool schema, and invoking `engram_memory_context` refuses with `unknown_tool`.<br/>2. Enabling `enableContextTool: true` without a valid dual-Ed25519 `CoSignatureReceiptV2` (`owner:engram-l4` + `owner:mcp-platform` pinned SPKI + `l5CandidateManifestSha256`, `Spec 2 §2.6`) throws at provider preflight.<br/>3. With valid `v2` co-signature fixture + stubbed Spec 2 `ContextQueryPort`, `engram_memory_context` validates closed `EngramMemoryContextInputEnvelopeV1` (`max_pack_bytes` `4096..524288` default `65536`, open `OntologyTemplateEnvelopeRef` + `Sha256Digest`), rejects mandate fields inside `inputSchema`, refuses `elicitation_ref`, and wraps `EngramMemoryContextValueV1` in `ToolSuccessV1<EngramMemoryContextValueV1>` / `MemoryToolSuccessV1<EngramMemoryContextValueV1>` with `redactionClass: 'high'`. | `npx vitest run tests/mcp-memory/context-tool-envelope-gating.spec.ts` passes; root export `.` (`package.json:13-17`) still imports zero MCP peers and zero LLM provider SDKs. |
 | **`6A-E3`** | **`MCP-L4` Exit Alignment (`PROVENANCE.json`, Peer Range, `lot2-manifest.json` Verifier)**<br/>Deps: `6A-E2` + `6A-S1a` (`MCP-L5` checkpoint).<br/>Targets: `package.json` (`:185-186`), `src/mcp/memory/standard/PROVENANCE.json` (`:1-9`), `scripts/gen-mcp-memory-assets.mjs`. | `tests/mcp-memory/l4-qualification-receipt.spec.ts`:<br/>1. Verifies `@sentropic/mcp-platform` peer range admits `0.4.x` (`>=0.4.0 <0.5.0`) and published `@sentropic/mcp-broker` resolves cleanly.<br/>2. Verifies `PROVENANCE.json` SHA-256 digests match `manifest.ts` and `experimental/manifest-elicitation.ts` and bind to the `L5-MEMORY-V1` `lot2-manifest.json` receipt.<br/>3. Verifies `mcp.createMemoryPortV2 === substrate.createMemoryPortV2` across packed `dist/` bundles. | `npm run build && npx vitest run tests/mcp-memory/` passes 100%; `validateMemoryPublisherAssetsV1` exits `0`. |
 
 ### 6.2 Repository 2: `sentropic` (`mcp-platform`, `mcp-broker`, `cluster-mesh`, `api`)
