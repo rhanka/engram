@@ -13,10 +13,10 @@
   - **Upstream `sentropic` `chat-mesh` Proposal (`sentropic:spec/SPEC_EVOL_CHAT_MESH_PROPOSAL.md`, r2):** Lots `B1`/`B2` (`:622-624`, delivering `SessionDb` and `session-db.entries.append` / `EntryRecord.ordinal` at `:276-279` in `./session-db/{postgres,sqlite}`), Lot `C2a` (`:629`, `RouteMeteringSink` & `WP16 D0` enforcement inside `@sentropic/llm-mesh` outside `llm-gateway`), `G-FENCE` (`:89,360-369`), and `G-NOSECRET` (`:97`)
 - **Binding Authorities:**
   - [`spec/memory/OWNER-DECISIONS-2026-11-14.md`](memory/OWNER-DECISIONS-2026-11-14.md) (`:1-29` — `T-M-C` ownership rule, ratified Points `1B`, `2B`, `3C`, `4B`, `5B`, `6A`, and `D28` kept unchanged)
-  - [`spec/memory/DESIGN-NOTE-CODE-GROUNDING.md`](memory/DESIGN-NOTE-CODE-GROUNDING.md) (`:1-15` — every claim about existing code verified against real repository state at a named commit SHA; every unshipped file, symbol, endpoint, or CLI flag marked `new` with its owning lot)
+  - [`spec/memory/Q6-APPLICATION-LOG.md`](memory/Q6-APPLICATION-LOG.md) (`§19.3 :684-697`, Rules 1–5 — every claim about existing code verified against real repository state at a named commit SHA; every unshipped file, symbol, endpoint, or CLI flag marked `new` with its owning lot)
   - [`spec/memory/R15-SEDIMENT.md`](memory/R15-SEDIMENT.md) (`:1-146` — Engram-First Principle and settled decision ledger `D1`–`D34`, never reopened)
   - [`spec/memory/ARCHITECTURE-RULES.md`](memory/ARCHITECTURE-RULES.md) (`:1-13` — `R12` no-bypass invariant, `D30` three-layer separation, `archi@1` relation rules)
-  - [`spec/memory/DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md`](memory/DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md) (`:1-35` — `engram` serves declarations and semantic data only, never design-system fold/layout/rendering state)
+  - [`spec/SPEC_ENGRAM_PROFILE_VIEW_MECHANISM.md`](SPEC_ENGRAM_PROFILE_VIEW_MECHANISM.md) (`§2.1.1 :822-840` — `engram` serves declarations and semantic data only, never design-system fold/layout/rendering state)
   - [`spec/memory/contracts/engram-h2a.md`](memory/contracts/engram-h2a.md) (`:1-214`), [`spec/memory/contracts/engram-track.md`](memory/contracts/engram-track.md) (`:1-247`), [`spec/memory/contracts/engram-cluster-mesh.md`](memory/contracts/engram-cluster-mesh.md) (`:1-181`; Spec 1 §1.2 & §6.3 record the `POST /memory/v1/session-front/extractions` and `GET /memory/v1/control/proposals` addenda while keeping `contracts/engram-cluster-mesh.md` and `Spec 6A §2.2` untouched on disk in this lot, and Lot `1-E0` in §8.1 mirrors them into both documents)
 - **Amends (Listed as Exact `Before → After` Deltas in §7; Target Files Unmodified in This Lot):**
   - [`spec/SPEC_AGENT_MEMORY_SUBSTRATE.md`](SPEC_AGENT_MEMORY_SUBSTRATE.md) (`§0`–`§5` write path, lines `53–244`, and `§9.4`, lines `343–370`)
@@ -91,11 +91,11 @@ This specification executes the settled R15/R16 architecture without reopening a
 | **Spec 2** (`SPEC_ENGRAM_CONTEXTUAL_GRAPH_AND_PROMPT_LOOP.md`) | Consumes the canonical records and authorized graph projections written by Spec 1 to assemble durationless prompts via `engram_memory_context` (`D20`, `D22`, `D23`). |
 | **Spec 3 / Spec 4 / Spec 5 / Spec 6B** | Spec 3 owns dormant dreaming passes (`D19`, `D25`, `D26`, `Point 3C`); Spec 4 owns `h2a` role/skill ontology & `.h2a/` overlay Git serialization (`D16`, `D31`, `Point 4B`); Spec 5 owns `Track` template control & per-PR `.track/` projection/replay (`D1`, `D29`, `D34`, `Points 1B/5B`); Spec 6B owns multi-node ACID graph sync (`D24`, `Point 6A`). |
 
-### 0.3 Design-System View Projection Boundary (`spec/memory/DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md:8-35`)
+### 0.3 Design-System View Projection Boundary ([`spec/SPEC_ENGRAM_PROFILE_VIEW_MECHANISM.md`](SPEC_ENGRAM_PROFILE_VIEW_MECHANISM.md) `§2.1.1 :824-840`)
 
 Wherever Spec 1 graph entities (`derived_worktree`, `decision_dossier`, `project_decision`, `harness_decision`, live-tracking trails) are served to diagram or UI views, **`engram` never computes or serves any state that the design system derives from folding, layout, or rendering**:
 1. `engram` serves **declarations** (validated against `engram.metamodel/v1`) and **semantic data** (selected nodes, relations, attributes, and `CitationV1` / `SessionDbCitationTuple` evidence pinned to commit/cursor and `Sha256Digest`).
-2. `engram` never emits hidden/visible occurrence sets, lifted endpoints, summary candidates, fold states, geometry, layout caches, or rendering-derived counts (`spec/memory/DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md:13-23`).
+2. `engram` never emits hidden/visible occurrence sets, lifted endpoints, summary candidates, fold states, geometry, layout caches, or rendering-derived counts ([`spec/SPEC_ENGRAM_PROFILE_VIEW_MECHANISM.md`](SPEC_ENGRAM_PROFILE_VIEW_MECHANISM.md) `§2.1.1 :829-837`).
 
 ---
 
