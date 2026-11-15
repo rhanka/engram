@@ -1,17 +1,16 @@
 # Specification: View Mechanism of the Base Ontology Profile
 
 - **Document ID:** `SPEC-ENGRAM-PROFILE-VIEW-MECHANISM`
-- **Status:** `DESIGN` (Gemini Carbon — normative specification, DS round-1 & re-check reviews, projection-boundary design note, and ontology registry review & re-check folded `2026-11-14`, `proposed` until implementation lots land)
+- **Status:** `DESIGN` (Gemini Carbon — normative specification, DS round-1 & re-check reviews, and ontology registry review & re-check folded `2026-11-14`, `proposed` until implementation lots land)
 - **Date:** `2026-11-14`
 - **Repository / Branch:** `engram` (`docs/memory-r15-sediment`)
 - **Depends On:**
   - `spec/SPEC_ENGRAM_METAMODEL_AND_LINEAGE_REGISTRY.md` (**Spec 0** — `engram.metamodel/v1` constructs, `S-ENGRAMHASH v1`, `CrossLineageCompositionPin`, `MM_*` diagnostics)
   - `spec/SPEC_ONTOLOGY_GUARDIAN_G0_CONTRACTS.md` (**G0** — `Pin`, instance-merge boundary & `G3` cross-ontology identity deferral)
   - `spec/memory/OWNER-DECISIONS-2026-11-14.md` (**T-M-C** ownership rule, Points `1B`–`6A`, `D28` kept)
-  - `spec/memory/DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md` (**Binding** — view projection boundary between `engram` and the Design System; §2.1.1)
-  - `spec/SPEC_ONTOLOGY_DIAGRAM_VIEW_SCHEMA_V2.md` (`engram:diagram-view-schema/2`, `DIAGRAM_PRESENTATION_CONTRACT_SCHEMA`)
-  - `/home/antoinefa/src/graphify/.graphify/scratch/design/archi-card-semantics/SPEC_EVOL_ARCHI_V2_ONTOLOGY.r4.md` (§8, `engram.archi-view/2`, `viewKind`, `environmentScope`, `folds`, rules `V1`–`V6`)
-  - `/home/antoinefa/src/sent-tech-design-system/scratchpad/dc2d/SPEC_EVOL_DC2D_NOTATION_FLOWS.md` (**DC-2d**, `diagram-notation@1`, `DIAGRAM_NOTATION_PIN`, `DS_LAYOUT_VOCABULARY_PIN`, `DIAGRAM_PRESENTATION_CONTRACT_PIN`, `validateView` / `projectView` / `summaryCandidates` / `analyzeSummaries` / `resolveNotation`, layout modes; `@sentropic/diagram-core` publish lot exporting `DIAGRAM_NOTATION_PIN` and `DS_LAYOUT_VOCABULARY_PIN` is an explicit external gate on Lot V.1)
+  - `spec/SPEC_ONTOLOGY_DIAGRAM_VIEW_SCHEMA_V2.md` (`engram:diagram-view-schema/2`, `DIAGRAM_PRESENTATION_CONTRACT_SCHEMA` in `src/ontology-guardian/diagram-schemas.ts:117`, View Projection Boundary Rule in §2.1.1 below)
+  - `spec/SPEC_EVOL_ARCHI_CARDS.md` and `src/ontology-guardian/archi-view.ts:108` (`engram.archi-view/1`, `archi@1` / `archi-cards@1` baseline; `proposed` `archi@2` view extensions `engram.archi-view/2`, `viewKind`, `environmentScope`, `folds`, rules `V1`–`V6`, §6 Lot V.5)
+  - `@sentropic/diagram-core` and `@sentropic/diagram-canvas` package contracts (`DIAGRAM_PRESENTATION_CONTRACT_PIN`, `validateView` / `projectView` / `summaryCandidates` / `analyzeSummaries` / `resolveNotation`, layout modes, and external Design System **DC-2d** publish-lot gate exporting `DIAGRAM_NOTATION_PIN` for `diagram-notation@1` and `DS_LAYOUT_VOCABULARY_PIN` for `ds-layout-hints@1` on `@sentropic/diagram-core`, §6 Lot V.1)
 
 ---
 
@@ -34,7 +33,7 @@ Approved four-way architectural split:
 
 ### 0.2 Owner Decision of 2026-11-14 — The T-M-C Rule
 
-Per `spec/memory/OWNER-DECISIONS-2026-11-14.md:9-15`:
+Per `spec/memory/OWNER-DECISIONS-2026-11-14.md:10-15`:
 
 - **T (Template):** An ontology template's content belongs to its **author lineage**, sole author (`Track` → `track`, `h2a` → `h2a`, `archi` → `engram`, domain lineages → their owning producer lineages or registry converters). `engram` contains **zero** foreign template content.
 - **M (Metamodel):** The grammar, structural invariants, canonical hashing, compatibility rules, and diagnostic codes belong to **`engram`** (`engram.metamodel/v1`).
@@ -822,7 +821,7 @@ views:
 
 #### 2.1.1 View Projection Boundary Rule (`engram` vs Design System — Binding)
 
-Per `spec/memory/DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md`, **`engram` never computes or serves anything the Design System derives from folding, projection, layout, or rendering:**
+**`engram` never computes or serves anything the Design System derives from folding, projection, layout, or rendering:**
 
 1. **What `engram` serves:**
    - **Declarations:** the validated view declaration (`select`, `folds`, `overlays`, `axes`, `layout` by DS pin, `status`) and declaration-derived authored source-view bindings (`VisualGroup` initial defaults, static authored `SummaryDefinition` records, closed `DiagramPresentation`, `axesProjection`);
@@ -1129,7 +1128,7 @@ interface LegacyCatalogEntryStopgapView {
 }
 ```
 
-**Consequences under `T-M-C` (`OWNER-DECISIONS-2026-11-14.md:9-15`):**
+**Consequences under `T-M-C` (`OWNER-DECISIONS-2026-11-14.md:10-15`):**
 1. **1:1 move, zero hoist (`F1`, `DOM-Q3`):** Because `entry.yaml` holds a single `views:` list per ontology and zero CSV rows carry view tags or per-row curation, migration is a **1:1 move** from `entry.yaml views[i]` to `profile.yaml views.<id>`. There is **no** N-to-1 deduplicating hoist, and the `CONFLICTING_FIELD` and `DIVERGENT_NOTES` cases do not exist and are removed. Whole node types or registries are selected directly via `select.nodes.include_types`.
 2. **Migration is performed exclusively by the template author (`F2`):**
    - **Producer-owned bundles (`R1`, `R2`, `R3`):** The upstream producer lineage authors `views.<id>` in its `profile.yaml`. The ontology catalog stores producer bundles verbatim and fingerprinted, and **never** edits or rewrites a producer template.
@@ -1144,58 +1143,54 @@ Because stopgap `layout` and `overlays` hold **human design intent in prose** (f
    - Stopgap `status` values (`requested | available | waiting-engram | source-gap`) describe catalog rendering readiness, **not** declaration lifecycle, and stay outside `MetamodelViewDecl`.
    - `entry.yaml views:` is reduced to catalog readiness pointers `{ id, readiness }` (`requested | available | waiting-engram | source-gap`).
    - Every view migrated into `profile.yaml` starts at **`status: "draft"`**, advancing to `"active"` once validated by its template author.
-   - `waiting-engram` views (`bpmn` across `R1`, `R2`, `R3`, `R6`) and `source-gap` views (undelivered `R5` `architecture-diagram`) are **not** declared in `profile.yaml` until their capability or source data exists; they remain in `entry.yaml` as catalog readiness entries only.
-3. **Fold prerequisite: declared tree hierarchies.** `MM_VIEW_FOLD_NOT_CONTAINMENT_TREE` (§2) requires every fold relation to be a declared `tree` hierarchy. Today only the `R1` capability tree and the `R2` process trees are declared under `hierarchies`. Before the migrated views validate, each template author declares the missing tree hierarchies:
-   - `R1` (producer-owned): `part_of_domain`, `supports`;
-   - `R4`: `belongs_to_psl`, `part_of_it_product`;
-   - `R5` / `R6`: `part_of_domain`, `in_group`;
-   - `R7`: `part_of`, `groups`.
-   `R4`–`R7` are emitted by the registry converters; the `R1` producer adds its own.
-4. **Normative Stopgap `kind` Mapping Table (`F3`, checked against `R1`–`R7`):**
+   - `waiting-engram` views (`bpmn`) and `source-gap` views (undelivered `architecture-diagram` entries) are **not** declared in `profile.yaml` until their capability or source data exists; they remain in `entry.yaml` as catalog readiness entries only.
+3. **Fold prerequisite: declared tree hierarchies (`MM_VIEW_FOLD_NOT_CONTAINMENT_TREE`).** Every relation referenced in `views.<id>.folds.containment_relations` MUST be declared under `hierarchies` with `kind: "tree"` in the owning template's `profile.yaml` before migrated views validate (`MM_VIEW_FOLD_NOT_CONTAINMENT_TREE` in §2.3). Under `T-M-C` (§0.2), declaring any missing tree hierarchy belongs exclusively to each template's owning author in its own repository (the upstream producer for producer-owned bundles, or the external ontology-registry converter in the ontology-registry repository for converter-emitted bundles) — never to `engram`. When a leaf entity participates in multiple declared containment trees, `containment_relations` is ordered in **nearest-holder priority** (§3.2 Stage 3): for example, in a synthetic two-holder model where an `application` holds both a `capability` (`supports`) and a `domain` (`part_of_domain`), listing `supports`, `subcapability_of`, then `part_of_domain` places each application under its `capability` rather than directly under its `domain`.
+4. **Normative Stopgap `kind` Mapping Table (`F3`, neutral to external consumer catalog layouts):**
 
-| Stopgap `kind` | Entries | Target `kind` | `perspective` | Authored Structure Notes |
-| :--- | :--- | :--- | :--- | :--- |
-| `capability-map` | `R1` | `hierarchy` | `capability-map` | `folds` in nearest-holder order: `supports` (apps as leaves), `subcapability_of`, then `part_of_domain` (`child_to_parent`). Applications have two holders (capability via `supports`, domain via `part_of_domain`); listing `part_of_domain` first would place applications directly under their domain. Measured on `R1`: 183/183 applications have exactly one `supports` target, so the tree holds. `default_state: "collapsed"`, `lift_with_summary`; `layout.mode: "auto-pack"` |
-| `roadmap-timeline` | `R1` | `lane-flow` | `roadmap` | 1-axis bands (`bands_1d`) on `roadmap_period` (attribute on applications); `layout.mode: "lane-stack"` |
-| `process-hierarchy` | `R2` | `hierarchy` | — | `folds`: `parent_process`, `default_state: "collapsed"`, `lift_with_summary` (`5083` nodes); `layout.mode: "auto-pack"` |
-| `application-landscape` | `R4`, `R5`, `R6` | `hierarchy` | `application-landscape` | `R4`: `belongs_to_psl` + `part_of_it_product` (`managed_by` / `operated_by` via `relation_target` `text_slot` overlays); `R5`/`R6`: `part_of_domain` + `in_group` (`default_state: "expanded"`, `<= 25` nodes); `layout.mode: "auto-pack"` |
-| `dependency-graph` | `R4` | `topology` | — | application → component (`uses_component`); `layout.mode: "auto-pack"` |
-| `breakdown-matrix` | `R3` | `matrix` | — | 2D `relation_target` axes (`classified_under` → `chapter`, `located_in` → `zone`), `unassigned_bucket` + `duplicate_occurrence` + `per_axis_cell`, zero edges (`layout` omitted; see §1.5 Specimen A) |
-| `traceability-matrix` | `R7` | `matrix` | `traceability` | `columns`: `relation_target` `verifies`; `rows`: `AxisValueSource` `kind: "node_type"` (`order: "explicit"`) over the 5 verification item types; single-template placeholder targets until `G3` |
-| `hierarchy` | `R7` | `hierarchy` | — | `folds`: `part_of` / `groups`; `layout.mode: "auto-pack"` |
-| `architecture-diagram` | `R5` | `topology` | — | source content not delivered yet — omitted from `profile.yaml`, kept in catalog `entry.yaml` as `readiness: "source-gap"` |
-| `bpmn` | `R1`, `R2`, `R3`, `R6` | *(none)* | — | out of scope (§5.1) — omitted from `profile.yaml`, kept in catalog `entry.yaml` as `readiness: "waiting-engram"` |
+| Stopgap `kind` | Target `kind` | `perspective` | Authored Structure Notes (Synthetic Domain Illustrations) |
+| :--- | :--- | :--- | :--- |
+| `capability-map` | `hierarchy` | `capability-map` | `folds` in nearest-holder order on a synthetic two-holder model (`supports` with applications as leaves, `subcapability_of`, then `part_of_domain`, `child_to_parent`, placing multi-holder applications under their capability rather than directly under domain); `default_state: "collapsed"`, `lift_with_summary`; `layout.mode: "auto-pack"` |
+| `roadmap-timeline` | `lane-flow` | `roadmap` | 1-axis bands (`bands_1d`) on a `roadmap_period` attribute; `layout.mode: "lane-stack"` |
+| `process-hierarchy` | `hierarchy` | — | `folds`: `parent_process`, `default_state: "collapsed"`, `lift_with_summary`; `layout.mode: "auto-pack"` |
+| `application-landscape` | `hierarchy` | `application-landscape` | `folds` over declared portfolio/grouping tree relations (for example synthetic `belongs_to_line` + `part_of_product`, or `part_of_domain` + `in_group`, with optional `relation_target` `text_slot` overlays and per-view `default_state: "collapsed" \| "expanded"`); `layout.mode: "auto-pack"` |
+| `dependency-graph` | `topology` | — | application → component (`uses_component`); `layout.mode: "auto-pack"` |
+| `breakdown-matrix` | `matrix` | — | 2D `relation_target` axes (`classified_under` → `chapter`, `located_in` → `zone`), `unassigned_bucket` + `duplicate_occurrence` + `per_axis_cell`, zero edges (`layout` omitted; see §1.5 Specimen A) |
+| `traceability-matrix` | `matrix` | `traceability` | `columns`: `relation_target` `verifies`; `rows`: `AxisValueSource` `kind: "node_type"` (`order: "explicit"`) over declared verification item types; single-template placeholder targets until `G3` |
+| `hierarchy` | `hierarchy` | — | `folds` over declared `tree` containment relations; `layout.mode: "auto-pack"` |
+| `architecture-diagram` | `topology` | — | when source content is not yet delivered, omitted from `profile.yaml` and kept in catalog `entry.yaml` as `readiness: "source-gap"` |
+| `bpmn` | *(none)* | — | out of scope (§5.1) — omitted from `profile.yaml`, kept in catalog `entry.yaml` as `readiness: "waiting-engram"` |
 
-### 4.3 Before / After Specimen (Neutral Catalog Entry `R4` `app-portfolio`)
+### 4.3 Synthetic Before / After Specimen (Application Portfolio Entry)
 
-**Before (stopgap `views:` on catalog `ontologies/R4-app-portfolio/entry.yaml`):**
+**Before (stopgap `views:` on synthetic catalog entry `ontologies/example-app-portfolio/entry.yaml`):**
 
 ```yaml
-id: "O-R4-APP-PORTFOLIO"
-title: "Application Portfolio"
+id: "O-EXAMPLE-APP-PORTFOLIO"
+title: "Application Portfolio (Synthetic Example)"
 status: "draft"
 engram:
   profile: "bundle/profile.yaml"
-  config: "engram.yaml"   # registry-owned engram config, next to entry.yaml
+  config: "bundle/config.yaml"
   outputs_schema: "engram_ontology_outputs_v1"
 views:
   - id: "application-landscape"
     kind: "application-landscape"
     status: "requested"
-    layout: "product line containers > IT product > application cards (belongs_to_psl, part_of_it_product)"
+    layout: "product line containers > IT product > application cards (belongs_to_line, part_of_product)"
     overlays: ["managed_by org unit", "operated_by org unit"]
     note: "Portfolio grouping view."
 ```
 
-**After (catalog `entry.yaml` keeps readiness only; converter-authored `bundle/profile.yaml` owns `views.<id>` starting at `draft`):**
+**After (catalog `entry.yaml` keeps readiness only; template-authored `bundle/profile.yaml` owns `views.<id>` starting at `draft`):**
 
 ```yaml
-# 1. Catalog entry (`ontologies/R4-app-portfolio/entry.yaml`) — readiness pointer only:
+# 1. Catalog entry (`ontologies/example-app-portfolio/entry.yaml`) — readiness pointer only:
 views:
   - id: "application-landscape"
     readiness: "available"
 
-# 2. Template (`ontologies/R4-app-portfolio/bundle/profile.yaml`) — authored 1:1 declaration:
+# 2. Template (`ontologies/example-app-portfolio/bundle/profile.yaml`) — authored 1:1 declaration
+#    (with `belongs_to_line` and `part_of_product` declared under `hierarchies` with `kind: "tree"`):
 presentation_vocabulary: "diagram-notation@1"
 
 views:
@@ -1206,19 +1201,19 @@ views:
     kind: "hierarchy"
     perspective: "application-landscape"
     status: "draft"
-    note: "Portfolio grouping view. Design intent: product line containers > IT product > application cards (belongs_to_psl, part_of_it_product); overlays: managed_by and operated_by org units."
+    note: "Portfolio grouping view. Design intent: product line containers > IT product > application cards (belongs_to_line, part_of_product); overlays: managed_by and operated_by org units."
     select:
       lineages: ["self"]
       nodes:
         include_types: ["product_line", "it_product", "application"]
       relations:
-        include_types: ["belongs_to_psl", "part_of_it_product"]
+        include_types: ["belongs_to_line", "part_of_product"]
         endpoint_policy: "both_selected"
     folds:
       containment_relations:
-        - relation: "belongs_to_psl"
+        - relation: "part_of_product"
           orientation: "child_to_parent"
-        - relation: "part_of_it_product"
+        - relation: "belongs_to_line"
           orientation: "child_to_parent"
       default_state: "collapsed"
       default_expanded_types: ["product_line"]
@@ -1258,7 +1253,7 @@ views:
 
 1. **Native BPMN 2.0 extraction and internal choreography modelling:** Parsing `.bpmn` XML files, extracting internal BPMN gateways/events/sequence flows into `engram`, or projecting BPMN collaboration diagrams is a **separate workstream** outside this specification (§0.1). Catalog entries keep `bpmn` views at `readiness: "waiting-engram"`, and external process specifications remain opaque string references (such as `bpmnRef` in `SPEC_EVOL_ARCHI_V2_ONTOLOGY.r4.md:455, 899`).
 2. **Any domain dimension, axis, viewpoint, or layout vocabulary table in `engram`:** `engram`'s base metamodel and built-in profiles carry **zero** domain axes (`chapter`, `zone`, `environment`, `plateau`, organizational unit, business capability) and **zero** domain views (`MM_VIEW_BASE_PROFILE_DOMAIN_LEAK`), and `engram` owns **zero** layout vocabulary table (`@sentropic/diagram-core` owns `ds-layout-hints@1`).
-3. **Pre-projection folding, fold/projection masks, geometry, text measurement, edge routing, and theme resolution in `engram` (§2.1.1):** Per the §2.1.1 View Projection Boundary Rule (`spec/memory/DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md`), `engram` never computes or serves anything the Design System derives from folding, projection, layout, or rendering (beyond schema-required neutral DS-overwritten placeholders). Folding (`projectView` / `foldedScene` / `summaryCandidates` / `analyzeSummaries` / dynamic `FoldFilterState.hiddenByFilter`), layout, glyph measurement, edge routing, and theme resolution belong exclusively to the Design System.
+3. **Pre-projection folding, fold/projection masks, geometry, text measurement, edge routing, and theme resolution in `engram` (§2.1.1):** Per the §2.1.1 View Projection Boundary Rule, `engram` never computes or serves anything the Design System derives from folding, projection, layout, or rendering (beyond schema-required neutral DS-overwritten placeholders). Folding (`projectView` / `foldedScene` / `summaryCandidates` / `analyzeSummaries` / dynamic `FoldFilterState.hiddenByFilter`), layout, glyph measurement, edge routing, and theme resolution belong exclusively to the Design System.
 4. **Cross-ontology / cross-bundle catalog selection (`view_includes` — deferred to `G3`):** Grounded in `Spec 0` (`spec/SPEC_ENGRAM_METAMODEL_AND_LINEAGE_REGISTRY.md §2.1 :498-506, §2.5 :545-576`, which defines `composed_lineage_pins` strictly for schema-pinned `<importAlias>:<TypeId>` endpoints inside a single `engram` store) and `G0` (`spec/SPEC_ONTOLOGY_GUARDIAN_G0_CONTRACTS.md:596`, which gates cross-ontology instance graph reconciliation on lot `G3`), selecting live target instances across separate file-first catalog bundles (such as `R7` `view_includes` over `R1`/`R4`/`R5`/`R6`) **waits for `G3`** (canonical cross-ontology ID = `G0` ontology identity + local ID). Until `G3` lands, `R7` retains local placeholder target nodes in its single-template bundle.
 5. **Future DS layout modes (`matrix-grid`, `tree`, `@2` `layered-flow`) and `DiagramCard` pill/counter chrome (`badge`, `detail_pill`, `metric_counter`):** Marked future (`ds-layout-hints@2` / DC-2e+ `packMatrixGrid` and any future owner-approved DS `DiagramCard` anatomy v2 evolution under `OA8`) and **refused today** in `@1`.
 
@@ -1306,7 +1301,7 @@ All implementation work is strictly TypeScript/Node.js verified with `vitest` an
 
 ## 7. Boundary Questions Resolved by the Design System and Domain Ontology Reviews
 
-None of the resolutions below reopen `D1`–`D34` or `OWNER-DECISIONS-2026-11-14.md` (`T-M-C`, Points `1B`–`6A`, `D28` kept). Every answer is folded with explicit attribution to its review source (`REVIEW-carbon.md` and re-check `RECHECK-carbon.md` from the Design System, `2026-11-14`; `spec/memory/DESIGN-NOTE-VIEW-PROJECTION-BOUNDARY.md`, `2026-11-14`; `2026-11-14-view-mechanism-s4-review.md` and re-check from the domain ontology registry, `2026-11-14`).
+None of the resolutions below reopen `D1`–`D34` or `OWNER-DECISIONS-2026-11-14.md` (`T-M-C`, Points `1B`–`6A`, `D28` kept). Every answer is folded with explicit attribution to its review source (`REVIEW-carbon.md` and re-check `RECHECK-carbon.md` from the Design System, `2026-11-14`; §2.1.1 View Projection Boundary Rule; `2026-11-14-view-mechanism-s4-review.md` and re-check from the domain ontology registry, `2026-11-14`).
 
 ### 7.1 Design System Answers (`DS-Q1`–`DS-Q4` — *answered by Design System reviews `REVIEW-carbon.md` & `RECHECK-carbon.md`, 2026-11-14*)
 
