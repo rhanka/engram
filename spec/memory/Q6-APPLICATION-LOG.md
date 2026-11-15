@@ -696,7 +696,7 @@ Process:
 - The fold runs the checks of rules 1–5 and appends a « Grounding ledger » to the fold log. Each row records: claim → command → result → anchor or « new ».
 - Any claim that cannot be grounded is removed or rewritten as « new ».
 
-#### Owner working rules for specifications, decision dossiers, and reviews (`2026-11-15`, relayed by the conductor; `unverified — conductor relay, no primary file`, `.graphify/scratch/design/memory-finalization/dossier-7e-outil/DOSSIER-CONTENU-r5.fr.md:126`)
+#### Owner working rules for specifications, decision dossiers, and reviews (`2026-11-15`, relayed by the conductor; status: `unverified — conductor relay, no primary file`, gitignored `.graphify/scratch/design/memory-finalization/dossier-7e-outil/DOSSIER-CONTENU-r5.fr.md:126,128`, `sha256:6d2a330904f917271ea5d5dbadc16b3c42c7b163bb40b8cd98177949ee3d68d5`, per `.gitignore:60`; `15/11` directions, dossier comment, and answer kit recorded in-repository under `spec/memory/evidence/2026-11-15/`, see [`spec/memory/OWNER-DECISIONS-2026-11-14.md`](OWNER-DECISIONS-2026-11-14.md) § « Owner words and dossier decisions of 2026-11-15 »)
 
 - « Pas a toi de reecrire connard. Soir carbon soit fable 5.2 »
 - « Toi tu es conductor et tu donnes mon verbatim »
@@ -828,3 +828,102 @@ Executed against `engram` (`/home/antoinefa/src/graphify-wt-memfinal`, branch `d
 | **`F-07` code checks: `h2a` `types.ts` mandate/envelope lines, `EventStore`, zero `I10`–`I15`, zero `track.ontology.yaml`, & zero `session-front` in `sentropic`** | `git -C /home/antoinefa/src/h2a show origin/main:packages/h2a/src/types.ts \| nl -ba \| sed -n '73,84p;239,249p' && git -C /home/antoinefa/src/h2a show origin/main:packages/track/src/events/store.ts \| nl -ba \| sed -n '34,42p' && git -C /home/antoinefa/src/h2a grep -E '\bI1[0-5]\b' origin/main -- packages/track \| wc -l && git -C /home/antoinefa/src/h2a ls-tree -r --name-only origin/main \| grep -c 'track\.ontology\.yaml' ; git -C /home/antoinefa/src/sentropic grep 'session-front' origin/main -- api packages \| wc -l` | `73: export interface H2ASignature` · `79: export interface H2AEnvelope<TBody = unknown>` · `239: export interface H2AMandate` · `34: /** 35: * Append-only single-writer event store over .track/events.jsonl ... 42: export class EventStore {` · `I10-15 hits: 0` · `track.ontology.yaml hits: 0` · `session-front hits: 0` | `h2a@1f57127de:{packages/h2a/src/types.ts:73-77,79-102,239-249,packages/track/src/events/store.ts:34-42}`; `track.ontology.yaml` **`new`** (`Spec 0`); `/memory/v1/session-front/ingest` **`new`** (`Spec 6A`) |
 | **`F-06`, `F-08g,h`, `F-09`, & `F-13` exact source lines (`h2a-position.md:14-15`, `EVIDENCE-q6-*`, `plan/08:217`, `architecture-current.mmd:21`)** | `nl -ba .../q6-round/h2a-position.md \| sed -n '14,15p' && nl -ba .../EVIDENCE-q6-message-shown-to-owner.md \| sed -n '13p;26p;33p;38p;42p;64p' && nl -ba .../EVIDENCE-q6-owner-question-and-answer.json \| sed -n '12p' && nl -ba plan/08-BRANCH_MEMORY_FINALIZATION.md \| sed -n '217p' && nl -ba spec/memory/architecture-current.mmd \| sed -n '21p'` | `14: Wording: « The per-PR .track/ serialization ... » 15: 2. **COMPATIBLE** as written. Keep the gates: no rollover stop before MCP-L5; a fallback until then.` · `13: Conséquence proposée : écrire **en premier** un court chapitre « métamodèle et registre de lignées », en parallèle de l'accès mémoire ...` · `26: - **Débloque :** l'accès mémoire via cluster-mesh, puis le front de session.` · `38: ... toute proposition qui touche le domaine Track passe par le contrôle Track. L'agent dormant n'écrit jamais lui-même dans Track.` · `42: - **C (recommandée)** — **la nuit en local** ...` · `64: - selon h2a, la synchronisation n'écrase jamais un enregistrement contrôlé par Track.` · `12: "description": "... Je réécris les 3 contrats et je lance le chapitre métamodèle puis l'accès mémoire ..."` · `217: - **MCP-L5 — Production Sentropic mutation and execution path ...` · `21: subgraph e_sys_engram["@sentropic/engram 0.26.0"]` | Grounded in `OWNER-DECISIONS-2026-11-14.md:17,22-24,27`, `PLAN_SPEC_ENGRAM_FRONT.md:83,244-246`, `engram-track.md:256`, `engram-h2a.md:20-21,308,313`, `engram-cluster-mesh.md:6,21` |
 | **`F-04`, `F-10`, `F-14`, & `F-15` owner verbatims (`DOSSIER-CONTENU-r5.fr.md:124-128`, `comments-2026-11-08.md:9,24`, `owner-rebuild-2026-11-10.md:8,10,24,32-33`, `r12-correction:5`, `mcp-correction:5`)** | `nl -ba .../DOSSIER-CONTENU-r5.fr.md \| sed -n '124,128p' && nl -ba <memory-dossier>/owner-r15/comments-2026-11-08.md \| sed -n '9p;24p' && nl -ba <memory-dossier>/owner-r15/owner-rebuild-2026-11-10.md \| sed -n '8p;10p;24p;32,33p' && nl -ba <memory-dossier>/owner-r9/r12-correction-2026-11-07.md \| sed -n '5p' && nl -ba <memory-dossier>/owner-r11/mcp-correction-2026-11-07.md \| sed -n '5p'` | `124-126:` 5 dossier/7th-tool remarks, `Deja engram doit devenir un loguer de session...`, and 7 working rules (`128: aucun fichier ne permet de les recouper`) · `9: « Attention track c juste pour les decision et gestion d evenement projet. Engram doit etre la premiere etape in fine. Cette assertion me smeble tres mauvaiss »` · `24: « typiquement le harnais h2a devrait être revue a l'oree d'une audition multi repo (dreaming agent) ... »` · `8: ... celui que j'ai vraiment commenté, R15 (artifact S8tzgFPqn8xXNfFpdLNqUq )` · `10: « le r13 !!!! » ... « non c bon le r15 ouvert est ok merci »` · `24, 32-33:` 3 form/diagram remarks · `5: « R12 requis. Le h2a doit reposer sur cluster mesh pour la memoire. Ca se voit pas dans le diag d archi »` · `5: « je veux juste être sûr que le mcp h2a passe bien par cluster mesh » + « repose bien sur le mcp registry de cluster mesh »` | Grounded in `OWNER-DECISIONS-2026-11-14.md:31-42`, `Q6-APPLICATION-LOG.md:699-707`, `REQUEST_R16_MODELLING.md:3,27-40`, `R15-SEDIMENT.md:3,34`, `engram-track.md:17,255` |
+
+---
+
+## 22. Conductor documents final fix
+
+Applied the three `MAJOR` findings (`R3-01`, `R3-02`, `R3-03`) of the independent round-3 review by `Fable 5.2` (`.graphify/scratch/design/memory-finalization/opus-review/REVIEW-rework-fable-r3.md`, `sha256:36fa98e3726ef3a992bbdf00c6754e10c3777aeb8d3f09e57b6843b3419cbbd6`, `VERDICT: CHANGES`) on branch `docs/memory-r15-sediment` from commit `a510845eaecba373317ef968b2ec0c8ca90568fa`, and copied the five owner evidence files unchanged into `spec/memory/evidence/2026-11-14/` and `spec/memory/evidence/2026-11-15/`. Governed by `§19.3` above (`:684-697`, Rules 1–5 verbatim from `97504c0d:spec/memory/DESIGN-NOTE-CODE-GROUNDING.md:5-15`; lines `1–697` of this log kept unchanged so the eight inbound specification citations to `§19.3 :684-697` do not drift). Per the brief and `REVIEW-rework-fable-r3.md:320`, `MINOR` items `R3-04`–`R3-06` travel with the next pass on the specifications; only the seven review-named documents, `spec/memory/evidence/`, and this log were modified.
+
+### 22.1 In-Repository Evidence Files Added (`spec/memory/evidence/`)
+
+| In-Repository Path | Source Path (`cmp -s` Verified Unchanged) | Lines | SHA-256 Digest | Recorded Status |
+| :--- | :--- | :--- | :--- | :--- |
+| `spec/memory/evidence/2026-11-14/EVIDENCE-q6-message-shown-to-owner.md` | `<engram>/.graphify/scratch/design/memory-finalization/opus-review/EVIDENCE-q6-message-shown-to-owner.md` | `1-70` | `sha256:3d35c615c7da23e7838e47d86d560dba876a1c7a9f42e0fde0d55cda3d431444` | In-repository evidence file, conductor chat message shown to the owner (`2026-11-14T21:41:43.079Z`) |
+| `spec/memory/evidence/2026-11-14/EVIDENCE-q6-owner-question-and-answer.json` | `<engram>/.graphify/scratch/design/memory-finalization/opus-review/EVIDENCE-q6-owner-question-and-answer.json` | `1-27` (`:3-26`) | `sha256:7d9e423c61b5ee85de91769dbfb8bff0d2e2db49b7ce742b65064186f1c3f5ea` | In-repository evidence file, structured question-tool capture and owner answer (`2026-11-14T21:41:51.388Z`) |
+| `spec/memory/evidence/2026-11-15/EVIDENCE-owner-answer-kit-r5.yaml` | `<engram>/.graphify/scratch/design/memory-finalization/opus-review/owner-15-11/EVIDENCE-owner-answer-kit-r5.yaml` | `1-18` (`:2-18`) | `sha256:df7cd739e96c7bf90ba11a554b02988dcacbb70efc4118204d9c5e13316e1ba3` | `unverified — conductor relay`, in-repository evidence file, pasted by the owner in the `engram` session and relayed verbatim by the conductor |
+| `spec/memory/evidence/2026-11-15/EVIDENCE-owner-comment-r5.md` | `<engram>/.graphify/scratch/design/memory-finalization/opus-review/owner-15-11/EVIDENCE-owner-comment-r5.md` | `1-16` (`:3-16`) | `sha256:a9f9863dc36ad1120a4a7b058f0338fec9ae29c7e02715f5b4b3c933a7ef43fa` | `unverified — conductor relay`, in-repository evidence file, read verbatim by the conductor through the artifact comment API (`2026-11-15T16:09Z`) |
+| `spec/memory/evidence/2026-11-15/EVIDENCE-owner-direction-15-11.md` | `<engram>/.graphify/scratch/design/memory-finalization/opus-review/owner-15-11/EVIDENCE-owner-direction-15-11.md` | `1-4` (`:3-4`) | `sha256:9994918754371fbcf6634d676d9a017544593f44ca84fff16a48f481b7df4302` | `unverified — conductor relay`, in-repository evidence file, verbatim chat messages in the `engram` session relayed by the conductor |
+
+### 22.2 Dispositions Applied (`R3-01`, `R3-02`, `R3-03`) & Verified Post-Edit Anchors
+
+| Finding | Severity | Target File(s) & Post-Edit Anchors (Re-Read After Edit) | Grounded Resolution Applied |
+| :--- | :--- | :--- | :--- |
+| **`R3-01`** | `MAJOR` | `OWNER-DECISIONS-2026-11-14.md:3,23,41-57,61-87`; `R15-SEDIMENT.md:7`; `REQUEST_R16_MODELLING.md:49-53,77`; `PLAN_SPEC_ENGRAM_FRONT.md:10,161,179,244,245`; `contracts/engram-track.md:9`; `contracts/engram-h2a.md:9`; `contracts/engram-cluster-mesh.md:9` | (1) Under `### Owner words of 2026-11-15` in `OWNER-DECISIONS-2026-11-14.md`, added the owner's full seven-paragraph comment on dossier `r5` anchored on `D2 A` (`:41-55`, character-exact against `EVIDENCE-owner-comment-r5.md:3-16` and `BRIEF-dossier-r6.md:19-31`) and his later direction of the same day (`:56-57`, character-exact against `EVIDENCE-owner-direction-15-11.md:4` and `BRIEF-dossier-r7.md:11`), and added that second verbatim to `REQUEST_R16_MODELLING.md:53`. (2) Replaced the `D1 A` / `D2 A` / `D3 A` / `Kept` bullets at `OWNER-DECISIONS-2026-11-14.md:81-84` with the exact dossier options, limits, validated gaps (`r5:43,68,77,94,103`), open input (`r5:104`, `source-gap`), remark on `D2 A`, and kept annex items (`r5:149-161`, without adding `D28` to the annex list), alongside the full YAML of `EVIDENCE-owner-answer-kit-r5.yaml:2-18` (`:62-80`, and `REQUEST_R16_MODELLING.md:57-75`). (3) Replaced `### Pending follow-up decision dossier` (`:86-87`) with the full non-pre-emption scope covering all six open items. (4) Updated `Point 2` (`:23`: added `(`r5:77`)`, `, so that « built now, disabled » applies to the journal (`r5:103`)`, `unchanged per the dossier he answered (`r5:160-161`):`, and dropped `on hooks and third-party annotation`) and `:3` (`asked for the dossier to be redone in full with his remarks`). (5) Replaced the narrow three-topic parenthesis and non-pre-emption clause in the top notes across `R15-SEDIMENT.md:7`, `REQUEST_R16_MODELLING.md:77`, `PLAN_SPEC_ENGRAM_FRONT.md:10,245`, `engram-track.md:9`, `engram-h2a.md:9`, and `engram-cluster-mesh.md:9`, and dropped `on hooks and third-party annotation` at `PLAN_SPEC_ENGRAM_FRONT.md:161,179,244`. |
+| **`R3-02`** | `MAJOR` | `contracts/engram-h2a.md:6,25,307`; `contracts/engram-cluster-mesh.md:18,24,187` | Replaced all six markers that attached an `amended` qualifier directly to settled principles (`D11`–`D14`, `D19`, `D20`, `D22`, `D23`, `D24`, `D32`, `R12`, and `Point 5B`) with the exact wording moving each qualifier onto `Point 2B`, the seventh tool, `proposed` stream, or `14/11` hook realization while marking the settled principles `unchanged`. |
+| **`R3-03`** | `MAJOR` | `spec/memory/evidence/2026-11-14/*`; `spec/memory/evidence/2026-11-15/*`; `OWNER-DECISIONS-2026-11-14.md:3,7-8,32,39,41,56,61,90-91`; `REQUEST_R16_MODELLING.md:49,55`; `Q6-APPLICATION-LOG.md:699` | Copied all five evidence files into `spec/memory/evidence/2026-11-14/` and `spec/memory/evidence/2026-11-15/` byte-for-byte unchanged; replaced the scratch `EVIDENCE-q6-*` paths with the in-repository paths, full SHA-256 digests, and verification statuses; cited `spec/memory/evidence/2026-11-15/EVIDENCE-owner-answer-kit-r5.yaml:2-18` (`sha256:df7cd739e96c7bf90ba11a554b02988dcacbb70efc4118204d9c5e13316e1ba3`, `status: unverified — conductor relay, in-repository evidence file`) at both answer-kit sites (`OWNER-DECISIONS-2026-11-14.md:61`, `REQUEST_R16_MODELLING.md:55`); wrote the full SHA-256 digest of `DOSSIER-CONTENU-r5.fr.md` (`sha256:6d2a330904f917271ea5d5dbadc16b3c42c7b163bb40b8cd98177949ee3d68d5`) at `:32` and `:61`; and dropped the `until committed` clauses. |
+
+Refreshed post-fix line counts of the seven documents (lines `1–28` of `OWNER-DECISIONS-2026-11-14.md` are unchanged): `OWNER-DECISIONS-2026-11-14.md` `1–92` (`15/11` words `:31-58`, `15/11` decisions `:60-84`, pending follow-up dossier `:86-87`, inputs `:89-92`), `R15-SEDIMENT.md` `1–121`, `REQUEST_R16_MODELLING.md` `1–106` (`15/11` section `:47-77`, `§ What R16 must model` `:79-95`, illustrations `:96-102`, sequencing `:104-106`), `PLAN_SPEC_ENGRAM_FRONT.md` `1–249`, `contracts/engram-track.md` `1–270`, `contracts/engram-h2a.md` `1–322`, and `contracts/engram-cluster-mesh.md` `1–198`.
+
+### 22.3 Section 7 Closing Checks (Commands and Outputs)
+
+Executed from the root of the `<engram>` worktree (`docs/memory-r15-sediment`, `HEAD = a510845eaecba373317ef968b2ec0c8ca90568fa`):
+
+```sh
+$ git grep -n -F -e '— *amended' -- spec/memory
+# (no output; exit code 1)
+
+$ F=spec/memory/OWNER-DECISIONS-2026-11-14.md
+$ git grep -c -F 'ok poue cet option mais j ai demandé un hook pour prendre la main sur le compactage' -- $F
+spec/memory/OWNER-DECISIONS-2026-11-14.md:2
+
+$ git grep -c -F 'faut deja prevoir de base l annotation tierce' -- $F
+spec/memory/OWNER-DECISIONS-2026-11-14.md:1
+
+$ git grep -c -F 'la notre uqi reposera exclusivement sur engeam pour le contexte' -- $F
+spec/memory/OWNER-DECISIONS-2026-11-14.md:2
+
+$ git grep -c -F "s'applique au journal" -- $F
+spec/memory/OWNER-DECISIONS-2026-11-14.md:1
+
+$ git grep -n -F 'compaction-takeover hook, optional context-replacement hook' -- spec/memory ':!spec/memory/Q6-APPLICATION-LOG.md'
+# (no output; exit code 1)
+
+$ git ls-files spec/memory/evidence
+# (no output prior to git add: parent .git/worktrees/ index is mounted read-only in this non-committing sandbox;
+#  with -co --exclude-standard to include non-ignored worktree files prior to conductor staging:)
+$ git ls-files -co --exclude-standard spec/memory/evidence
+spec/memory/evidence/2026-11-14/EVIDENCE-q6-message-shown-to-owner.md
+spec/memory/evidence/2026-11-14/EVIDENCE-q6-owner-question-and-answer.json
+spec/memory/evidence/2026-11-15/EVIDENCE-owner-answer-kit-r5.yaml
+spec/memory/evidence/2026-11-15/EVIDENCE-owner-comment-r5.md
+spec/memory/evidence/2026-11-15/EVIDENCE-owner-direction-15-11.md
+
+$ git grep -n -F 'opus-review/EVIDENCE-q6' -- spec/memory ':!spec/memory/Q6-APPLICATION-LOG.md'
+# (no output; exit code 1)
+
+$ git grep -n -F 'Exported answer kit, verbatim' -- spec/memory
+spec/memory/OWNER-DECISIONS-2026-11-14.md:61:Decided by the owner on `2026-11-15` on decision dossier « journal de session en graphe et outil mémoire » (`r5` = `DOSSIER-CONTENU-r5.fr.md`, `sha256:6d2a330904f917271ea5d5dbadc16b3c42c7b163bb40b8cd98177949ee3d68d5`, artifact `XzQWUCFtmtBmNFPAufGivR`). Exported answer kit, verbatim ([`spec/memory/evidence/2026-11-15/EVIDENCE-owner-answer-kit-r5.yaml`](evidence/2026-11-15/EVIDENCE-owner-answer-kit-r5.yaml)`:2-18`, `sha256:df7cd739e96c7bf90ba11a554b02988dcacbb70efc4118204d9c5e13316e1ba3`; status: `unverified — conductor relay`, in-repository evidence file, pasted by the owner in the `engram` session and relayed verbatim by the conductor):
+spec/memory/REQUEST_R16_MODELLING.md:55:Owner decisions on dossier « journal de session en graphe et outil mémoire » (`2026-11-15`). Exported answer kit, verbatim ([`spec/memory/evidence/2026-11-15/EVIDENCE-owner-answer-kit-r5.yaml`](evidence/2026-11-15/EVIDENCE-owner-answer-kit-r5.yaml)`:2-18`, `sha256:df7cd739e96c7bf90ba11a554b02988dcacbb70efc4118204d9c5e13316e1ba3`; status: `unverified — conductor relay`, in-repository evidence file, pasted by the owner in the `engram` session and relayed verbatim by the conductor):
+```
+
+Character-by-character verbatim comparisons, evidence byte-identity check, and forbidden-word scan (`REVIEW-rework-fable-r3.md:318`):
+
+```sh
+$ diff -u <(sed -n '19,31p' <engram>/.graphify/scratch/design/memory-finalization/dossier-7e-outil/BRIEF-dossier-r6.md) <(sed -n '43,55{s/^  //;p;}' spec/memory/OWNER-DECISIONS-2026-11-14.md)
+# (no output; exit code 0 — character-for-character match)
+
+$ diff -u <(sed -n '3,16{/./p;}' spec/memory/evidence/2026-11-15/EVIDENCE-owner-comment-r5.md) <(sed -n '43,55{s/^  //;s/^« //;s/ »$//;/./p;}' spec/memory/OWNER-DECISIONS-2026-11-14.md)
+# (no output; exit code 0 — character-for-character match)
+
+$ diff -u <(sed -n '11p' <engram>/.graphify/scratch/design/memory-finalization/dossier-7e-outil/BRIEF-dossier-r7.md) <(sed -n '57{s/^  - //;p;}' spec/memory/OWNER-DECISIONS-2026-11-14.md) && \
+  diff -u <(sed -n '4{s/^- //;p;}' spec/memory/evidence/2026-11-15/EVIDENCE-owner-direction-15-11.md) <(sed -n '57{s/^  - //;p;}' spec/memory/OWNER-DECISIONS-2026-11-14.md) && \
+  diff -u <(sed -n '3,4{s/^- //;p;}' spec/memory/evidence/2026-11-15/EVIDENCE-owner-direction-15-11.md) <(sed -n '51p;53p' spec/memory/REQUEST_R16_MODELLING.md | sed 's/^> //')
+# (no output; exit code 0 — character-for-character match)
+
+$ diff -u <(sed -n '2,18p' spec/memory/evidence/2026-11-15/EVIDENCE-owner-answer-kit-r5.yaml) <(sed -n '63,79p' spec/memory/OWNER-DECISIONS-2026-11-14.md) && \
+  diff -u <(sed -n '2,18p' spec/memory/evidence/2026-11-15/EVIDENCE-owner-answer-kit-r5.yaml) <(sed -n '58,74p' spec/memory/REQUEST_R16_MODELLING.md)
+# (no output; exit code 0 — character-for-character match)
+
+$ sha256sum spec/memory/evidence/2026-11-14/* spec/memory/evidence/2026-11-15/*
+3d35c615c7da23e7838e47d86d560dba876a1c7a9f42e0fde0d55cda3d431444  spec/memory/evidence/2026-11-14/EVIDENCE-q6-message-shown-to-owner.md
+7d9e423c61b5ee85de91769dbfb8bff0d2e2db49b7ce742b65064186f1c3f5ea  spec/memory/evidence/2026-11-14/EVIDENCE-q6-owner-question-and-answer.json
+df7cd739e96c7bf90ba11a554b02988dcacbb70efc4118204d9c5e13316e1ba3  spec/memory/evidence/2026-11-15/EVIDENCE-owner-answer-kit-r5.yaml
+a9f9863dc36ad1120a4a7b058f0338fec9ae29c7e02715f5b4b3c933a7ef43fa  spec/memory/evidence/2026-11-15/EVIDENCE-owner-comment-r5.md
+9994918754371fbcf6634d676d9a017544593f44ca84fff16a48f481b7df4302  spec/memory/evidence/2026-11-15/EVIDENCE-owner-direction-15-11.md
+
+# Forbidden-word scan (pattern omitted here per brief rule) across all 8 modified files and 5 evidence files:
+# 0 matches (exit code 1).
+```
+
+*(Note: After appending `§22.3` above to `Q6-APPLICATION-LOG.md`, re-running the two `git grep` commands that omit `':!spec/memory/Q6-APPLICATION-LOG.md'` matches only their own pasted transcript lines inside `§22.3`; with `':!spec/memory/Q6-APPLICATION-LOG.md'` they continue to return `0` hits and the same `2` hits at `OWNER-DECISIONS-2026-11-14.md:61` and `REQUEST_R16_MODELLING.md:55`, respectively.)*
