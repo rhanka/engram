@@ -191,7 +191,7 @@ import type {
   OpaqueRef,
   Result,
   RetentionV1,
-} from '../engram-memory/contracts/index.js'; // engram-memory/contracts/index.ts:1-68,122-125,148-151
+} from 'engram-memory/contracts'; // engram-memory/contracts/index.ts:1-68,122-125,148-151
 
 export type CliHostId =
   | 'claude' | 'codex' | 'gemini' | 'agy'
