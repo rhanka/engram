@@ -586,7 +586,7 @@ Every candidate produced by dreaming beyond recall-boost indexing of already-rat
 ```typescript
 // new (Lot 3-E3): src/dreaming/promotion-contracts.ts
 // (Placed in src/dreaming/ rather than engram-memory/ so engram-memory/** preserves strict one-way L0 import closure!)
-import type { IdempotencyKey, Instant } from '../../engram-memory/contracts/index.js';
+import type { IdempotencyKey, Instant } from 'engram-memory/contracts';
 import type { OntologyTemplateEnvelopeRef, Sha256Digest } from '../metamodel/contracts.js'; // Spec 0 (Lot 0-E1)
 
 export type TemplateEvolutionChangeKindV1 =
@@ -674,7 +674,7 @@ Grounded directly in `comments-2026-11-08.md:24` (`« typiquement le harnais h2a
 ```typescript
 // new (Lots 3-E3 / 3-E4): src/dreaming/promotion-contracts.ts
 // Closed Draft 2020-12 / runtime unknown-key-refusing DTOs (additionalProperties: false)
-import type { IdempotencyKey, Instant } from '../../engram-memory/contracts/index.js';
+import type { IdempotencyKey, Instant } from 'engram-memory/contracts';
 import type { OntologyTemplateEnvelopeRef, Sha256Digest } from '../metamodel/contracts.js';
 
 export type CanonicalRepoOverlayPathV1 =
