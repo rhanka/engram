@@ -1,0 +1,7 @@
+# Owner validation of the continuous Git indexing dossier (2026-11-16)
+# Dossier published at https://claude.ai/artifact/6gk6G8CztL2YqDzKxagCHL (version 6, redesigned diagrams).
+# The owner chose option 1 of the validation kit ("Validation directe (recommandée)") in his own words: « pour le dossier git option 1 ok ».
+answer: "Option 1 — Validation directe (recommandée)"
+validatedOn: "2026-11-16"
+scope: "decisions 11/10, 12/10, 17-18/10, 15/11; state lot by lot; comparison; five diagrams"
+note: "The benchmark restoration (Scion as a named column, worktrees) is a complement requested on 16/11; it adds rows and does not reopen any decision."
