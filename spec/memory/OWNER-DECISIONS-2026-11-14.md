@@ -90,3 +90,172 @@ With his comment above, the owner asked for the dossier to be redone in full wit
 - `spec/memory/evidence/2026-11-14/` (in-repository evidence files; SHA-256 digests and statuses recorded in lines `7–8` above): [`EVIDENCE-q6-message-shown-to-owner.md`](evidence/2026-11-14/EVIDENCE-q6-message-shown-to-owner.md) (`sha256:3d35c615c7da23e7838e47d86d560dba876a1c7a9f42e0fde0d55cda3d431444`; conductor message shown to the owner) and [`EVIDENCE-q6-owner-question-and-answer.json`](evidence/2026-11-14/EVIDENCE-q6-owner-question-and-answer.json) (`sha256:7d9e423c61b5ee85de91769dbfb8bff0d2e2db49b7ce742b65064186f1c3f5ea`; structured question-tool capture and owner answer on `2026-11-14`).
 - `spec/memory/evidence/2026-11-15/` (in-repository evidence files; status `unverified — conductor relay`, verbatim, recorded in § « Owner words and dossier decisions of 2026-11-15 » above): [`EVIDENCE-owner-direction-15-11.md`](evidence/2026-11-15/EVIDENCE-owner-direction-15-11.md) (`sha256:9994918754371fbcf6634d676d9a017544593f44ca84fff16a48f481b7df4302`), [`EVIDENCE-owner-comment-r5.md`](evidence/2026-11-15/EVIDENCE-owner-comment-r5.md) (`sha256:a9f9863dc36ad1120a4a7b058f0338fec9ae29c7e02715f5b4b3c933a7ef43fa`), and [`EVIDENCE-owner-answer-kit-r5.yaml`](evidence/2026-11-15/EVIDENCE-owner-answer-kit-r5.yaml) (`sha256:df7cd739e96c7bf90ba11a554b02988dcacbb70efc4118204d9c5e13316e1ba3`).
 - `.graphify/scratch/design/memory-finalization/q6-round/` (gitignored per `.gitignore:60`; seat drafts and round inputs, not owner evidence): `BRIEF.md` (two normalized fragments only), `q6-fable.fr.md` (Fable 5.2 draft), `q6-carbon.fr.md` (Carbon draft), `h2a-position.md` (`h2a` position), and `Q6-CONSOLIDE.fr.md` (`18`-line internal note listing bare option letters only; it overstated seat convergence across Points 2, 3, 4, and 6 and is superseded by `spec/memory/evidence/2026-11-14/EVIDENCE-q6-*` above).
+
+## 2026-11-15 decisions
+
+Decided by the owner on `2026-11-15` (local; `capturedAt: "2026-11-16T01:58:53.390Z"` in `focus decision kit`) on the revised follow-up decision dossier `engram-contexte-court` (`revision: "r7"`, artifact `https://claude.ai/artifact/XzQWUCFtmtBmNFPAufGivR`, version 3), resolving the « Pending follow-up decision dossier » recorded in lines `86–87` above and governing the rewrite of `Spec 2` ([`spec/SPEC_ENGRAM_CONTEXTUAL_GRAPH_AND_PROMPT_LOOP.md`](../SPEC_ENGRAM_CONTEXTUAL_GRAPH_AND_PROMPT_LOOP.md)).
+
+### Evidence files (in-repository)
+- Decision dossier `r7`: [`spec/memory/dossiers/2026-11-15-contexte-court/DOSSIER-r7.fr.md`](dossiers/2026-11-15-contexte-court/DOSSIER-r7.fr.md)`:1-643` (`sha256:38b4179345608d5a3fdea5c0e742e013ce1b5a53ae602d1b29cc46ed52d06f4a`; in-repository dossier file, committed as requested by the owner).
+- Owner answers and comments (`r7`): [`spec/memory/dossiers/2026-11-15-contexte-court/ANSWERS-r7.owner.yaml`](dossiers/2026-11-15-contexte-court/ANSWERS-r7.owner.yaml)`:1-113` (`sha256:e6874f033cb25319d9b731d9b448e9fe8728e70896b9bfbc4c0cfb51ae7767b5`; in-repository owner answer kit exported from `focus decision kit` and pasted verbatim by the owner in the `engram` session on `2026-11-15` local).
+- Owner message accompanying the pasted answer kit (`ANSWERS-r7.owner.yaml:3`, verbatim): « ce dossier était top faut vraiment le committer avec les réponse. »
+
+### Exported answer kit (`ANSWERS-r7.owner.yaml:4-113`, verbatim)
+```yaml
+schemaVersion: 2
+dossier: "engram-contexte-court"
+revision: "r7"
+title: "Décision mémoire engram — engram relais d'un contexte court, dans toutes les CLI en option et dans la nôtre"
+status: "prepared"
+recorded: false
+capturedAt: "2026-11-16T01:58:53.390Z"
+capturedFrom: "focus decision kit"
+responseLine: "D1 A · D2 A · D3 A · D4 C · D5 A · D6 B · D7 A · D8 A · D9 C"
+validated:
+  on: "15/11"
+  responseLine: "D1 A · D2 A · D3 A"
+  decisions:
+    - decision: "D1"
+      option: "A"
+      label: "D1 A — Journal + diff : les trois fonctions, données en nœuds et en liens"
+    - decision: "D2"
+      option: "A"
+      label: "D2 A — Journal en parallèle + diff injecté : l'outil garde son fil ; engram note chaque étape et n'injecte que le nouveau"
+    - decision: "D3"
+      option: "A"
+      label: "D3 A — Le journal d'abord, en trois temps : (1) noter dans les outils tiers ; (2) rendre le diff et chercher dans l'historique ; (3) notre CLI, où engram est le journal principal"
+choices:
+  - decision: "D4"
+    question: "Dans les outils tiers, jusqu'où va l'option ?"
+    option: "C"
+    label: "D4 C — Contexte court partout, avec relance : B, plus une session neuve ouverte par h2a sur la vue d'engram là où les crochets plafonnent"
+    recommended: "C"
+    followsRecommendation: true
+  - decision: "D5"
+    question: "Notre CLI : quel programme ?"
+    option: "A"
+    label: "D5 A — Notre propre boucle : un programme à nous, sur les briques existantes, lancé par h2a"
+    recommended: "A"
+    followsRecommendation: true
+  - decision: "D6"
+    question: "À quel rythme le contexte est-il reconstruit ?"
+    option: "B"
+    label: "D6 B — Paliers courts : les derniers résultats s'ajoutent derrière un état stable, refait tous les 18 000 jetons environ"
+    recommended: "B"
+    followsRecommendation: true
+  - decision: "D7"
+    question: "L'état : qui l'écrit ?"
+    option: "A"
+    label: "D7 A — Trois auteurs : le code copie ; le shadow écrit le passé ; le modèle principal écrit son plan"
+    recommended: "A"
+    followsRecommendation: true
+  - decision: "D8"
+    question: "Quels modèles servent de shadow, et comment se fait la bascule ?"
+    option: "A"
+    label: "D8 A — Ta liste ordonnée, avec qualification : bascule au suivant en cas de panne ; aucun modèle non éprouvé dans le contexte ; sans modèle si tous tombent"
+    recommended: "A"
+    followsRecommendation: true
+  - decision: "D9"
+    question: "Que faut-il prouver avant qu'engram remplace un contexte ?"
+    option: "C"
+    label: "D9 C — Rejeu pour l'option, preuve complète pour notre CLI"
+    recommended: "C"
+    followsRecommendation: true
+ownerComments:
+  - anchor: "schema-1"
+    kind: "diagram"
+    label: "Schéma n° 1 — Avant / après"
+    when: "2026-11-16T01:36:29.937Z"
+    text: "L'état devrait aussi être une requête formelle au graphe\n- contexte de sélection (droits, extraits spécifiques pertinents) + ontolgies applicables (track, archi, specs, harnais, ontologies spécifiques...)\nLe shadow devrait :\n- amender cette requête\n- update relatif aux ontologies pertinentes (faits, décisions / track, harnais, architecture, statut - étapes track, scope track des demaindes/epic/feature/user stories/plans). \n\nPoint d'attention: l'étape doit bien stocker le prompt, les étapes de réflexion, les appels outils et leur contexte complex. On pourra ainsi aussi faire un rtk par engram (résumé des appels outils, quitte a proxifier les appels outils).\n\nLa notion de scope track doit aussi être rattachée a l'objective loop. \n\nLe schema devrait donc être complété : prompts/outils + ontologies et requête graphe."
+  - anchor: "schema-4"
+    kind: "diagram"
+    label: "Schéma n° 4 — L'état et ses auteurs"
+    when: "2026-11-16T01:28:10.155Z"
+    text: "Les notions sont un peu décorrélées des ontologies principales track / engram, ca me semblerait bien d'avoir un avis"
+  - anchor: "D4C"
+    kind: "option"
+    label: "D4 C — Contexte court partout, avec relance"
+    when: "2026-11-16T01:32:25.790Z"
+    text: "Si on arrive a garder la session mais juste \"clear\" le contexte et le nourrir, ca me va, mais a voir si l'expérience utilisateur peut être maintenue (ne l'utilisateur lui doit pouvoir remonter. Sinon fallback possible B ou même A."
+  - anchor: "schema-6"
+    kind: "diagram"
+    label: "Schéma n° 6 — Le curseur, outil par outil"
+    when: "2026-11-16T01:34:54.054Z"
+    text: "Vraiment, ce ne doit pas être une session \"neuve\" juste avec un contexte \"vidé\" (et complété par engram). si pas possible, l'UX sera affreuse, et le suivi des session meme en sécurité (trop de split pour suivre des pb)."
+  - anchor: "D5A"
+    kind: "option"
+    label: "D5 A — Notre propre boucle"
+    when: "2026-11-16T01:36:03.206Z"
+    text: "stp ne doit être qu'un pretexte, pas un vrai binaire. stp = h2a run stp par exemple\nAttention rejoint le dossier de boucle agentique - on souhaite se rapprocher d'une boucle davantage a la claude (stop-reason) qui serait probablemnt branchée sur l'objective loop."
+  - anchor: "schema-7"
+    kind: "diagram"
+    label: "Schéma n° 7 — Notre CLI : la boucle d'une étape et ses briques"
+    when: "2026-11-16T01:38:41.517Z"
+    text: "stp attention je pensais que c,était abandonné\nchat-core attention ca migre sur le design system, mais y aura certainemetn une nouvelle lib pour la boucle agentique"
+  - anchor: "D6B"
+    kind: "option"
+    label: "D6 B — Paliers courts"
+    when: "2026-11-16T01:39:05.101Z"
+    text: "réglable !"
+  - anchor: "D7A"
+    kind: "option"
+    label: "D7 A — Trois auteurs"
+    when: "2026-11-16T01:55:02.680Z"
+    text: "Réglable:\nshadow désactivable le cas échéant avec une heuristique le cas échéant ou un model finetuned/Gliner 2.5, ou  avec un  mécanisme d'apprentissage / RL"
+  - anchor: "D8A"
+    kind: "option"
+    label: "D8 A — Ta liste ordonnée, avec qualification"
+    when: "2026-11-16T01:55:58.601Z"
+    text: "B en fall back quand l'utilisateur h2a (ou sentropic) n'a qu'un compte disponible."
+  - anchor: "schema-10"
+    kind: "diagram"
+    label: "Schéma n° 10 — Direct et dreaming, un seul service"
+    when: "2026-11-16T01:58:53.390Z"
+    text: "oui ok ! la différence pour le dreaming, c'est qu'on utilisera potentiellement un modele plus frontière, peut être toujours non raisonnant"
+```
+
+### Binding decisions and owner-comment amendments (`DOSSIER-r7.fr.md` & `ANSWERS-r7.owner.yaml`)
+- **Decisions (`ANSWERS-r7.owner.yaml:12-62`, `DOSSIER-r7.fr.md:232-559`):** « D1 A · D2 A · D3 A · D4 C · D5 A · D6 B · D7 A · D8 A · D9 C » (`D1 A · D2 A · D3 A` carried forward from `r5` at `DOSSIER-r7.fr.md:232-243`; `D4 C` `:266-312`; `D5 A` `:348-385`; `D6 B` `:402-436`; `D7 A` `:453-487`; `D8 A` `:496-527`; `D9 C` `:534-559`). The nested `0..8` container is retired (`D1 A`: data are graph nodes and links).
+- **Binding amendments from the ten `ownerComments` (`ANSWERS-r7.owner.yaml:63-113`):** Every comment in `ownerComments` above is binding and **amends** the chosen option where they overlap:
+  1. **`schema-1` (`ANSWERS-r7.owner.yaml:64-68`, on `DOSSIER-r7.fr.md:45-64`):**
+     > « L'état devrait aussi être une requête formelle au graphe
+     > - contexte de sélection (droits, extraits spécifiques pertinents) + ontolgies applicables (track, archi, specs, harnais, ontologies spécifiques...)
+     > Le shadow devrait :
+     > - amender cette requête
+     > - update relatif aux ontologies pertinentes (faits, décisions / track, harnais, architecture, statut - étapes track, scope track des demaindes/epic/feature/user stories/plans). 
+     >
+     > Point d'attention: l'étape doit bien stocker le prompt, les étapes de réflexion, les appels outils et leur contexte complex. On pourra ainsi aussi faire un rtk par engram (résumé des appels outils, quitte a proxifier les appels outils).
+     >
+     > La notion de scope track doit aussi être rattachée a l'objective loop. 
+     >
+     > Le schema devrait donc être complété : prompts/outils + ontologies et requête graphe. »
+  2. **`schema-4` (`ANSWERS-r7.owner.yaml:69-73`, on `DOSSIER-r7.fr.md:107-134` — opinion requested, not decided by the owner):**
+     > « Les notions sont un peu décorrélées des ontologies principales track / engram, ca me semblerait bien d'avoir un avis »
+     *(Addressed as an explicit position with options in [`spec/SPEC_ENGRAM_CONTEXTUAL_GRAPH_AND_PROMPT_LOOP.md`](../SPEC_ENGRAM_CONTEXTUAL_GRAPH_AND_PROMPT_LOOP.md) `§11.1` (`:818-856`), without pre-deciding it.)*
+  3. **`D4C` (`ANSWERS-r7.owner.yaml:74-78`, amending `D4 C` at `DOSSIER-r7.fr.md:278-281`) and `schema-6` (`ANSWERS-r7.owner.yaml:79-83`, on `DOSSIER-r7.fr.md:166-195`):**
+     - `D4C`:
+       > « Si on arrive a garder la session mais juste "clear" le contexte et le nourrir, ca me va, mais a voir si l'expérience utilisateur peut être maintenue (ne l'utilisateur lui doit pouvoir remonter. Sinon fallback possible B ou même A. »
+     - `schema-6`:
+       > « Vraiment, ce ne doit pas être une session "neuve" juste avec un contexte "vidé" (et complété par engram). si pas possible, l'UX sera affreuse, et le suivi des session meme en sécurité (trop de split pour suivre des pb). »
+     *(Amends `D4 C`: the `r7` clause « une session neuve ouverte par h2a sur la vue d'engram là où les crochets plafonnent » is **replaced** by keeping the **same** session with in-session context clear-and-refeed while preserving user scrollback; wherever that is impossible or `unverified`, the host falls back to `B` or `A` — **never** a « new » session.)*
+  4. **`D5A` (`ANSWERS-r7.owner.yaml:84-88`, amending `D5 A` at `DOSSIER-r7.fr.md:354-361`) and `schema-7` (`ANSWERS-r7.owner.yaml:89-93`, on `DOSSIER-r7.fr.md:197-225`):**
+     - `D5A`:
+       > « stp ne doit être qu'un pretexte, pas un vrai binaire. stp = h2a run stp par exemple
+       > Attention rejoint le dossier de boucle agentique - on souhaite se rapprocher d'une boucle davantage a la claude (stop-reason) qui serait probablemnt branchée sur l'objective loop. »
+     - `schema-7`:
+       > « stp attention je pensais que c,était abandonné
+       > chat-core attention ca migre sur le design system, mais y aura certainemetn une nouvelle lib pour la boucle agentique »
+     *(Amends `D5 A`: `stp` is only a pretext such as `stp = h2a run stp`, not a standalone binary; do **not** build on `@sentropic/chat-core` as is because it is migrating to the design system; build on the expected dedicated agentic-loop library using a Claude-like `stop-reason` loop wired to `h2a`'s objective loop and `Track` scope.)*
+  5. **`D6B` (`ANSWERS-r7.owner.yaml:94-98`, amending `D6 B` at `DOSSIER-r7.fr.md:413-416`):**
+     > « réglable ! »
+     *(The reconstruction rhythm / palier threshold is configurable.)*
+  6. **`D7A` (`ANSWERS-r7.owner.yaml:99-103`, amending `D7 A` at `DOSSIER-r7.fr.md:459-462`):**
+     > « Réglable:
+     > shadow désactivable le cas échéant avec une heuristique le cas échéant ou un model finetuned/Gliner 2.5, ou  avec un  mécanisme d'apprentissage / RL »
+     *(Author participation is configurable: the shadow can be disabled, replaced by a heuristic, by a fine-tuned model such as `GLiNER 2.5`, or by a learning / RL mechanism.)*
+  7. **`D8A` (`ANSWERS-r7.owner.yaml:104-108`, amending `D8 A` at `DOSSIER-r7.fr.md:502-505`):**
+     > « B en fall back quand l'utilisateur h2a (ou sentropic) n'a qu'un compte disponible. »
+     *(`D8 B` — same provider as the active session tool first — is the automatic fallback when the `h2a` or `sentropic` user has only one account available.)*
+  8. **`schema-10` (`ANSWERS-r7.owner.yaml:109-113`, on `DOSSIER-r7.fr.md:575-597`):**
+     > « oui ok ! la différence pour le dreaming, c'est qu'on utilisera potentiellement un modele plus frontière, peut être toujours non raisonnant »
+     *(Confirms a single annotation service shared by `direct` and `dreaming`, with `dreaming` allowed to select a more frontier model, potentially still non-reasoning.)*
