@@ -51,7 +51,7 @@ async function extractWithDiagnostics(paths: string[], ports?: Omit<LiveExtracti
     cacheStore: ports.cacheStore == null ? ports.cacheStore : { authorize() {}, ...ports.cacheStore }, read: ports.read ?? { ...fixtureFs,
     context: { kind: "tree", treeOid: "a".repeat(40) } } });
 }
-import { liveExtractionBind, liveExtractionKey } from "../src/cache.js";
+import { liveExtractionBind, liveExtractionKey, loadCached, saveCached } from "../src/cache.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const grammarManifest = JSON.parse(
@@ -1682,6 +1682,222 @@ describe("owner closure classes", () => {
       expect(out.publishable).toBe(false);
       expect(out.preservedExternalCallers).toHaveLength(1);
     });
+  it("reused read failures identify every requesting unit instead of the first file", async () => {
+    const wasm = await wasmTypescript();
+    const dir = mkdtempSync(join(tmpdir(), "l5-p0-read-attr-"));
+    try {
+      // 1. Second-file direct source read failure must identify the second file only.
+      const firstFile = join(dir, "a/first.ts");
+      const secondFile = join(dir, "b/second.ts");
+      const thirdFile = join(dir, "c/third.ts");
+      const depFile = join(dir, "b/dep.ts");
+      const directFiles = new Map<string, string>([
+        [firstFile, "export function first() { return 1; }\n"],
+      ]);
+      const directEntries = new Map<string, string>();
+      const directStore = {
+        authorize() {},
+        load: (key: string) => directEntries.get(key) ?? null,
+        store: (key: string, value: string) => { directEntries.set(key, value); },
+      };
+      const directOut = await reusedExtract([firstFile, secondFile], {
+        scope,
+        grammarWasm: { bytesFor: () => wasm },
+        read: virtualRead(directFiles),
+        cacheStore: directStore,
+      });
+      expect(directOut.diagnostics.length).toBeGreaterThan(0);
+      expect(directOut.diagnostics.every(d => d.filePath === secondFile)).toBe(true);
+      expect(directEntries.size, "healthy first file still caches while failed second file does not").toBe(1);
+
+      // 2. Second-file dependency read failure in [first, second, third] must not taint first or third,
+      // and must stay fail-closed even if a pre-existing cache entry exists.
+      const batchFiles = new Map<string, string>([
+        [firstFile, "export function first() { return 1; }\n"],
+        [secondFile, 'import { dep } from "./dep";\nexport function second() { return dep(); }\n'],
+        [depFile, "export function dep() { return 2; }\n"],
+        [thirdFile, "export function third() { return 3; }\n"],
+      ]);
+      const batchEntries = new Map<string, string>();
+      const batchStore = {
+        authorize() {},
+        load: (key: string) => batchEntries.get(key) ?? null,
+        store: (key: string, value: string) => { batchEntries.set(key, value); },
+      };
+      const warmBatch = await reusedExtract([firstFile, secondFile, thirdFile], {
+        scope,
+        grammarWasm: { bytesFor: () => wasm },
+        read: virtualRead(batchFiles),
+        cacheStore: batchStore,
+      });
+      expect(warmBatch.diagnostics).toEqual([]);
+      expect(batchEntries.size).toBe(3);
+
+      const basePort = virtualRead(batchFiles);
+      const failingDepPort: NonNullable<LiveExtractionPorts["read"]> = {
+        ...basePort,
+        readFileSync: ((path: string, options?: BufferEncoding) => {
+          if (String(path) === depFile) throw new Error("EIO: dep unreadable");
+          return basePort.readFileSync(path, options as BufferEncoding);
+        }) as typeof fixtureFs.readFileSync,
+      };
+      // Force cache load to return a valid cached payload even if a lookup occurs,
+      // proving fail-closed behavior refuses cache reuse when unit read errors exist.
+      // Fresh batch with failing dep on secondFile: first and third cache, second does not.
+      const freshFailEntries = new Map<string, string>();
+      const freshFailOut = await reusedExtract([firstFile, secondFile, thirdFile], {
+        scope,
+        grammarWasm: { bytesFor: () => wasm },
+        read: failingDepPort,
+        cacheStore: {
+          authorize() {},
+          load: (key: string) => freshFailEntries.get(key) ?? null,
+          store: (key: string, value: string) => { freshFailEntries.set(key, value); },
+        },
+      });
+      expect(freshFailOut.diagnostics.length).toBeGreaterThan(0);
+      expect(freshFailOut.diagnostics.every(d => d.filePath === secondFile)).toBe(true);
+      expect(freshFailOut.diagnostics.some(d => d.filePath === secondFile && d.error.startsWith("configuration-unavailable:"))).toBe(true);
+      expect(freshFailEntries.size, "first and third cache while failed second does not").toBe(2);
+      expect([...freshFailEntries.values()].some(raw => raw.includes("second"))).toBe(false);
+
+      // Even if store.load returns a matching cached envelope when unit read errors exist,
+      // fail-closed behavior skips/refuses cache reuse and writes nothing for secondFile.
+      const cachedSecondRaw = [...batchEntries.values()].find(raw => raw.includes("second"))!;
+      expect(cachedSecondRaw).toBeDefined();
+      const staleSecond = JSON.parse(cachedSecondRaw) as {
+        schemaVersion: string; kind: string; bind: Record<string, unknown>; payload: { nodes: { label?: string }[] }; payloadDigest: string;
+      };
+      staleSecond.payload.nodes[0]!.label = "STALE_CACHED_SECOND";
+      staleSecond.payloadDigest = sha256Hex(JSON.stringify(staleSecond.payload));
+      const staleSecondRaw = JSON.stringify(staleSecond);
+      const failClosedLoads: string[] = [];
+      const failClosedWrites: string[] = [];
+      const depFailOut = await reusedExtract([firstFile, secondFile, thirdFile], {
+        scope,
+        grammarWasm: { bytesFor: () => wasm },
+        read: failingDepPort,
+        cacheStore: {
+          authorize() {},
+          load: (key: string) => { failClosedLoads.push(key); return batchEntries.get(key) ?? staleSecondRaw; },
+          store: (key: string) => { failClosedWrites.push(key); },
+        },
+      });
+      expect(depFailOut.diagnostics.length).toBeGreaterThan(0);
+      expect(depFailOut.diagnostics.every(d => d.filePath === secondFile)).toBe(true);
+      expect(JSON.stringify(depFailOut.extraction.nodes)).not.toContain("STALE_CACHED_SECOND");
+      expect(failClosedLoads.length, "only healthy first and third query cache").toBe(2);
+      expect(failClosedWrites.length, "no stale or failed cache write").toBe(0);
+
+      // 3. Shared configuration and shared-import failures identify EVERY requesting unit.
+      const sharedVariants = [
+        "invalid-json",
+        "missing-extends",
+        "invalid-extends",
+        "cycle",
+        "shared-base-extends",
+        "unreadable-config",
+        "probe-failure",
+        "shared-import-read-failure",
+      ] as const;
+      for (const variant of sharedVariants) {
+        const subDir = join(dir, `shared-${variant}`);
+        const sharedA = join(subDir, "a.ts");
+        const sharedB = join(subDir, "b.ts");
+        const nestedC = join(subDir, "nested/c.ts");
+        const tsconfigPath = join(subDir, "tsconfig.json");
+        const nestedTsconfigPath = join(subDir, "nested/tsconfig.json");
+        const basePath = join(subDir, "base.json");
+        const sharedDep = join(subDir, "shared-dep.ts");
+        const sharedFiles = new Map<string, string>([
+          [sharedA, 'import { s } from "./shared-dep";\nexport function fa() { return s(); }\n'],
+          [sharedB, 'import { s } from "./shared-dep";\nexport function fb() { return s(); }\n'],
+          [nestedC, 'import { s } from "../shared-dep";\nexport function fc() { return s(); }\n'],
+          [sharedDep, "export function s() { return 1; }\n"],
+        ]);
+        if (variant === "invalid-json") sharedFiles.set(tsconfigPath, "{broken");
+        else if (variant === "missing-extends") sharedFiles.set(tsconfigPath, JSON.stringify({ extends: "./missing.json" }));
+        else if (variant === "invalid-extends") sharedFiles.set(tsconfigPath, '{"extends":[false]}');
+        else if (variant === "cycle") {
+          sharedFiles.set(tsconfigPath, JSON.stringify({ extends: "./base.json" }));
+          sharedFiles.set(basePath, JSON.stringify({ extends: "./tsconfig.json" }));
+        } else if (variant === "shared-base-extends") {
+          sharedFiles.set(tsconfigPath, JSON.stringify({ extends: "./base.json" }));
+          sharedFiles.set(nestedTsconfigPath, JSON.stringify({ extends: "../base.json" }));
+          sharedFiles.set(basePath, "{broken");
+        } else if (variant !== "shared-import-read-failure") {
+          sharedFiles.set(tsconfigPath, JSON.stringify({ compilerOptions: { baseUrl: "." } }));
+        }
+        const vPort = virtualRead(sharedFiles);
+        const port: NonNullable<LiveExtractionPorts["read"]> = {
+          ...vPort,
+          existsSync: ((path: string) => {
+            if (variant === "probe-failure" && String(path) === tsconfigPath) throw new Error("EIO: tsconfig probe");
+            return vPort.existsSync(path);
+          }) as typeof fixtureFs.existsSync,
+          readFileSync: ((path: string, options?: BufferEncoding) => {
+            if (variant === "unreadable-config" && String(path) === tsconfigPath) throw new Error("EACCES: tsconfig read");
+            if (variant === "shared-import-read-failure" && String(path) === sharedDep) throw new Error("EIO: shared dep read");
+            return vPort.readFileSync(path, options as BufferEncoding);
+          }) as typeof fixtureFs.readFileSync,
+        };
+        const sharedEntries = new Map<string, string>();
+        const sharedOut = await reusedExtract([sharedA, sharedB, nestedC], {
+          scope,
+          grammarWasm: { bytesFor: () => wasm },
+          read: port,
+          cacheStore: {
+            authorize() {},
+            load: (key: string) => sharedEntries.get(key) ?? null,
+            store: (key: string, value: string) => { sharedEntries.set(key, value); },
+          },
+        });
+        for (const unit of [sharedA, sharedB, nestedC]) {
+          expect(
+            sharedOut.diagnostics.some(d => d.filePath === unit && d.error.startsWith("configuration-unavailable:")),
+            `${variant}: requesting unit ${unit} must be attributed`,
+          ).toBe(true);
+        }
+        expect(
+          sharedOut.diagnostics.every(d => [sharedA, sharedB, nestedC].includes(d.filePath)),
+          `${variant}: no foreign attribution`,
+        ).toBe(true);
+        expect(sharedEntries.size, `${variant}: fail-closed cache writes zero entries`).toBe(0);
+      }
+
+      // 4. Direct cache helper preserves fail-closed storage for error/zero-node payloads.
+      const cacheOnlyEntries = new Map<string, string>();
+      const cacheOnlyStore = {
+        authorize() {},
+        load: (key: string) => cacheOnlyEntries.get(key) ?? null,
+        store: (key: string, value: string) => { cacheOnlyEntries.set(key, value); },
+      };
+      const keyInput = {
+        configDigest: "c".repeat(64),
+        contentBytes: new TextEncoder().encode("export function x() {}\n"),
+        dialect: "typescript:ts",
+        dialectVersion: "live-dialect/1",
+        filePath: firstFile,
+        grammarAbi: "web-tree-sitter-abi/1",
+        grammarDigest: "g".repeat(64),
+        language: "typescript",
+        root: dir,
+        scope,
+      };
+      const liveKey = liveExtractionKey(keyInput);
+      const liveBind = liveExtractionBind(keyInput);
+      saveCached(firstFile, { nodes: [{ id: "n1" }], edges: [], error: "read failure" }, dir, {
+        store: cacheOnlyStore, liveKey, liveBind,
+      });
+      saveCached(firstFile, { nodes: [], edges: [] }, dir, {
+        store: cacheOnlyStore, liveKey, liveBind,
+      });
+      expect(cacheOnlyEntries.size, "saveCached never persists error or empty live payloads").toBe(0);
+      expect(loadCached(firstFile, dir, { store: cacheOnlyStore, liveKey, liveBind })).toBeNull();
+    } finally {
+      fixtureFs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 function virtualRead(files: Map<string, string>): NonNullable<LiveExtractionPorts["read"]> {
