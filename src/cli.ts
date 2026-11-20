@@ -2711,6 +2711,32 @@ export async function main(): Promise<void> {
       }
     });
 
+  // engram.archi-mermaid/1 gate: strict by default.
+  const archiExit = (err: { exitCode: number }) => { process.exit(err.exitCode === 0 ? 0 : 2); };
+  const archi = program.command("archi").description("Validate and format engram.archi-mermaid/1 files").exitOverride(archiExit);
+  archi
+    .command("check")
+    .description("Parse a .mmd file, reject @dl gap unless --allow-gap, run checkArchi")
+    .argument("<file>", "Path to the .mmd file")
+    .option("--json", "Print JSON output")
+    .option("--allow-gap", "Accept @dl gap layout hints")
+    .exitOverride(archiExit)
+    .action(async (file: string, opts) => {
+      const { runArchiCheck } = await import("./archi-cli.js");
+      await runArchiCheck(file, opts);
+    });
+  archi
+    .command("fmt")
+    .description("Print the canonical form of a .mmd file")
+    .argument("<file>", "Path to the .mmd file")
+    .option("--write", "Rewrite the file in place")
+    .option("--check", "Exit 1 when the file is not already canonical")
+    .exitOverride(archiExit)
+    .action(async (file: string, opts) => {
+      const { runArchiFmt } = await import("./archi-cli.js");
+      await runArchiFmt(file, opts);
+    });
+
   // Hook management
   const hook = program.command("hook").description("Git hook management");
   hook.command("install").description("Install post-commit/post-checkout/post-merge/post-rewrite git hooks").action(async () => {
