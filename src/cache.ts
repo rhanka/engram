@@ -661,6 +661,10 @@ export function saveCached(
     if (options.liveBind === undefined || options.liveBind === null) return;
     requireLiveScope(options.liveBind.scope);
     injected.authorize(options.liveBind.scope);
+    // Zero-node/error payloads are never persisted in the live cache (fail-closed).
+    if (typeof result.error === "string" && result.error.length > 0) return;
+    const nodes = (result as { nodes?: unknown }).nodes;
+    if (!Array.isArray(nodes) || nodes.length === 0) return;
     const hasBuckets = CACHE_BUCKETS.some((b) => Array.isArray(result[b]) && (result[b] as unknown[]).length > 0);
     const payload: Record<string, unknown> = hasBuckets
       ? JSON.parse(JSON.stringify(result)) as Record<string, unknown>
