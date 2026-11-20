@@ -181,7 +181,7 @@ if (cliArgs.length > 0) {
 
 const stageGrammarsRoot = join(stageRoot, "grammars");
 const emittedFiles = [
-  ...["symbol-history", "code-analysis", "analysis-cache", "comparisons"].flatMap(name =>
+  ...["facts", "batch-codec", "symbol-history", "code-analysis", "analysis-cache", "comparisons"].flatMap(name =>
     [`${name}.js`, `${name}.d.ts`, `${name}.d.ts.map`]),
   "line-attribution.d.ts",
   "line-attribution.d.ts.map",

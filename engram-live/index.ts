@@ -9,6 +9,8 @@
 
 export * from "./contracts.js";
 export * from "./integration.js";
+export * from "./facts.js";
+export * from "./batch-codec.js";
 export * from "./line-attribution.js";
 export * from "./symbol-history.js";
 export { analyzeCode } from "./code-analysis.js";

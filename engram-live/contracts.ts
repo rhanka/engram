@@ -265,7 +265,7 @@ export interface FactBatchDto {
   readonly generationId: string;
   readonly batchId: string;
   readonly batchDigest: string;
-  readonly facts: readonly unknown[];
+  readonly facts: readonly LiveFactDto[];
 }
 
 // — Grammar coverage: the packaged WASM matrix is explicit; an absent
@@ -304,7 +304,11 @@ export interface ValidationResult {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  if (typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Uint8Array) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -486,25 +490,9 @@ const FACT_BATCH_KEYS: readonly string[] = [
 
 function validateBatchFact(fact: unknown, index: number): ValidationResult {
   const path = `batch.facts[${index}]`;
-  if (!isRecord(fact)) return { ok: false, errors: [`${path} must be an object`] };
-  // Sink-bound fact control: every L4b-shaped fact is re-validated at the
-  // batch boundary, so a diff carrying transient clair can never ride into
-  // a sink inside an otherwise valid envelope. Facts of unknown shape
-  // belong to other lots and pass through structurally.
-  if ("files" in fact) {
-    const checked = validateLocalDiffShape(fact, true);
-    if (!checked.ok) return { ok: false, errors: checked.errors.map((error) => `${path}: ${error}`) };
-    return { ok: true, errors: [] };
-  }
-  if ("snapshotId" in fact) {
-    const checked = validateLocalSnapshot(fact);
-    if (!checked.ok) return { ok: false, errors: checked.errors.map((error) => `${path}: ${error}`) };
-    return { ok: true, errors: [] };
-  }
-  if ("axis" in fact && "state" in fact && "reason" in fact) {
-    const checked = validateLocalCoverage(fact);
-    if (!checked.ok) return { ok: false, errors: checked.errors.map((error) => `${path}: ${error}`) };
-    return { ok: true, errors: [] };
+  const checked = validateLiveFact(fact);
+  if (!checked.ok) {
+    return { ok: false, errors: checked.errors.map((error) => `${path}: ${error}`) };
   }
   return { ok: true, errors: [] };
 }
@@ -519,8 +507,8 @@ export function validateFactBatch(batch: unknown): ValidationResult {
   if (batch.contractVersion !== CONTRACT_VERSION) {
     errors.push(`batch.contractVersion must be ${CONTRACT_VERSION}`);
   }
-  if (batch.policyVersion !== CONTENT_POLICY_VERSION) {
-    errors.push(`batch.policyVersion must be "${CONTENT_POLICY_VERSION}"`);
+  if (!isBatchPolicyVersion(batch.policyVersion)) {
+    errors.push(`batch.policyVersion must be one of ${BATCH_POLICY_VERSIONS.join(", ")}`);
   }
   if (!isStrictGenerationId(batch.generationId)) errors.push(`batch.generationId must be a fixed-width generation id ("gen:" plus ${GENERATION_ID_WIDTH} zero-padded digits)`);
   if (!isStrictBatchId(batch.batchId, "batch:")) errors.push("batch.batchId must be a strict opaque batch id");
@@ -530,12 +518,78 @@ export function validateFactBatch(batch: unknown): ValidationResult {
   if (!Array.isArray(batch.facts)) {
     errors.push("batch.facts must be an array");
   } else {
+    const batchScope = scope.ok ? (batch.scope as LiveScope) : null;
+    let l4bWorktreeId: string | null = null;
+    const localCoverageIndices: number[] = [];
+
     batch.facts.forEach((fact: unknown, index: number) => {
       const checked = validateBatchFact(fact, index);
-      if (!checked.ok) errors.push(...checked.errors);
+      if (!checked.ok) {
+        errors.push(...checked.errors);
+        return;
+      }
+      if (batchScope === null) return;
+      const path = `batch.facts[${index}]`;
+      const kind = classifyLiveFactKind(fact);
+      const record = fact as Record<string, unknown>;
+
+      if (typeof record.cloneId === "string" && record.cloneId !== batchScope.clone) {
+        errors.push(`${path}: fact.cloneId does not match batch.scope.clone`);
+      }
+
+      if (isRecord(record.scope)) {
+        const factScope = record.scope as unknown as LiveScope;
+        if (factScope.tenant !== batchScope.tenant) {
+          errors.push(`${path}: fact.scope.tenant does not match batch.scope.tenant`);
+        }
+        if (factScope.clone !== batchScope.clone) {
+          errors.push(`${path}: fact.scope.clone does not match batch.scope.clone`);
+        }
+        if (
+          (kind === "local-diff" || kind === "local-snapshot") &&
+          (factScope.worktree ?? undefined) !== (batchScope.worktree ?? undefined)
+        ) {
+          errors.push(`${path}: fact.scope.worktree does not match batch.scope.worktree`);
+        }
+      }
+
+      if (typeof record.worktreeId === "string") {
+        if (batchScope.worktree !== undefined && record.worktreeId !== batchScope.worktree) {
+          errors.push(`${path}: fact.worktreeId does not match batch.scope.worktree`);
+        }
+        if (kind === "local-diff" || kind === "local-snapshot") {
+          if (l4bWorktreeId === null) {
+            l4bWorktreeId = record.worktreeId;
+          } else if (l4bWorktreeId !== record.worktreeId) {
+            errors.push(`${path}: L4b structural facts in one batch must bind a single worktreeId`);
+          }
+        }
+      }
+
+      if (kind === "local-coverage") {
+        localCoverageIndices.push(index);
+      }
     });
+
+    if (batchScope !== null && localCoverageIndices.length > 0 && batchScope.worktree === undefined && l4bWorktreeId === null) {
+      for (const index of localCoverageIndices) {
+        errors.push(`batch.facts[${index}]: local-coverage fact requires batch.scope.worktree or a worktree-bound L4b fact in the same batch`);
+      }
+    }
   }
   return { ok: errors.length === 0, errors };
+}
+
+export function isFactBatchDto(batch: unknown): batch is FactBatchDto {
+  return validateFactBatch(batch).ok;
+}
+
+export function parseFactBatch(
+  batch: unknown,
+): { readonly ok: true; readonly value: FactBatchDto } | { readonly ok: false; readonly errors: readonly string[] } {
+  const checked = validateFactBatch(batch);
+  if (!checked.ok) return { ok: false, errors: checked.errors };
+  return { ok: true, value: batch as FactBatchDto };
 }
 
 // Same identity, same bytes is idempotent; same identity, different bytes is
@@ -865,9 +919,12 @@ export function isValidQualifiedOid(value: QualifiedOid): boolean {
   );
 }
 
+const QUALIFIED_OID_KEYS: readonly string[] = ["algorithm", "oid"];
+
 export function validateQualifiedOid(value: unknown): ValidationResult {
   if (!isRecord(value)) return { ok: false, errors: ["qualifiedOid must be an object"] };
   const errors: string[] = [];
+  rejectUnknownKeys(value, QUALIFIED_OID_KEYS, "qualifiedOid", errors);
   if (value.algorithm !== "sha1" && value.algorithm !== "sha256") {
     errors.push('qualifiedOid.algorithm must be "sha1" or "sha256"');
   }
@@ -1829,6 +1886,7 @@ export function validatePrSyncCursor(value: unknown): ValidationResult {
     if (!isRecord(value.pendingRetry)) {
       errors.push("PR cursor.pendingRetry, when present, must be an object or null");
     } else {
+      rejectUnknownKeys(value.pendingRetry, ["kind", "attempts", "nextAfter"], "PR cursor.pendingRetry", errors);
       if (!isPrSyncErrorKind(value.pendingRetry.kind)) {
         errors.push(`PR cursor.pendingRetry.kind must be one of ${PR_SYNC_ERROR_KINDS.join(", ")}`);
       }
@@ -2657,4 +2715,1832 @@ export function validateLocalSnapshot(snapshot: unknown): ValidationResult {
     errors.push(`local snapshot.policyVersion must be "${CONTENT_POLICY_VERSION}"`);
   }
   return { ok: errors.length === 0, errors };
+}
+
+
+// — L3a-E1: versioned typed facts, closed union and exact-key validators
+// (spec/SPEC_LIVE_GIT_INDEXING.md §§3, 6, 13; spec/SPEC_L3A_GENERIC_MODULE_STORAGE_PORT.md
+// §§12.3, 17.4; plan/09 L3a-E1).
+//
+// Data-pure definitions only: zero imports, zero Node builtins, zero host or
+// database types. The three L4b shapes already emitted by ./snapshots.js
+// (LocalDiffDto, LocalSnapshotDto, LocalCoverageReportDto) keep their exact
+// bytes and gain no kind key; validateLiveFact discriminates them structurally
+// and refuses any shape that matches no member of LiveFactDto.
+
+/** Version of the typed fact schema stamped on every tagged LiveFactDto. */
+export const FACT_SCHEMA_VERSION = 1 as const;
+
+/** Fixed maximum canonical wire size of one emitted batch (4 MiB; LIVE §13, SPEC_L3A §12.3). */
+export const MAX_FACT_BATCH_BYTES = 4 * 1024 * 1024;
+
+/** Version of the canonical wire codec and digest domain separation. */
+export const BATCH_CODEC_VERSION = "engram-live-batch-codec/1" as const;
+
+/** Closed set of policy versions accepted on FactBatchDto envelopes. */
+export const BATCH_POLICY_VERSIONS = [POLICY_VERSION, CONTENT_POLICY_VERSION] as const;
+
+export type BatchPolicyVersion = (typeof BATCH_POLICY_VERSIONS)[number];
+
+export function isBatchPolicyVersion(value: unknown): value is BatchPolicyVersion {
+  return (
+    typeof value === "string" &&
+    (BATCH_POLICY_VERSIONS as readonly string[]).includes(value)
+  );
+}
+
+/** Tagged fact kinds carrying `kind` and `schemaVersion: FACT_SCHEMA_VERSION`. */
+export const TAGGED_FACT_KINDS = [
+  "ref-observation",
+  "ref-state",
+  "commit",
+  "changed-file",
+  "pr-observation",
+  "pr-attribution",
+  "retention-receipt",
+  "branch-comparison",
+  "code-analysis",
+  "code-relation",
+  "line-attribution",
+  "symbol-correspondence",
+  "coverage",
+  "progress",
+] as const;
+
+export type TaggedFactKind = (typeof TAGGED_FACT_KINDS)[number];
+
+/** Structural L4b fact kinds emitted directly without adding a kind wrapper. */
+export const STRUCTURAL_L4B_FACT_KINDS = [
+  "local-diff",
+  "local-snapshot",
+  "local-coverage",
+] as const;
+
+export type StructuralL4bFactKind = (typeof STRUCTURAL_L4B_FACT_KINDS)[number];
+
+/** Complete closed set of live fact kinds admitted in FactBatchDto.facts. */
+export const LIVE_FACT_KINDS = [
+  ...TAGGED_FACT_KINDS,
+  ...STRUCTURAL_L4B_FACT_KINDS,
+] as const;
+
+export type LiveFactKind = (typeof LIVE_FACT_KINDS)[number];
+
+export const REF_KINDS = ["local-branch", "remote-branch", "pr-head", "tag", "other"] as const;
+export const ACTIVITY_SIGNAL_KINDS = ["bootstrap-committer-time", "observed-target-change"] as const;
+export const GIT_FILE_CHANGE_STATUSES = ["A", "C", "D", "M", "R", "T", "U", "X", "B"] as const;
+export type GitFileChangeStatus = (typeof GIT_FILE_CHANGE_STATUSES)[number];
+
+export const COMPARISON_KINDS = ["contribution", "current-diff", "merge-parent"] as const;
+export type BranchComparisonKind = (typeof COMPARISON_KINDS)[number];
+export const COMPARISON_STATES = ["complete", "partial", "unknown", "unrelated"] as const;
+export type BranchComparisonState = (typeof COMPARISON_STATES)[number];
+export const COMPARISON_BASE_SOURCES = ["pr-base", "default-base", "override"] as const;
+export type BranchComparisonBaseSource = (typeof COMPARISON_BASE_SOURCES)[number];
+export const DIFF_CHANGE_KINDS = ["added", "deleted", "modified", "renamed", "typechange"] as const;
+export type BranchDiffChangeKind = (typeof DIFF_CHANGE_KINDS)[number];
+export const BRANCH_DIFF_ALGORITHMS = ["histogram", "minimal", "myers", "patience"] as const;
+export type BranchDiffAlgorithm = (typeof BRANCH_DIFF_ALGORITHMS)[number];
+
+export const CODE_ANALYSIS_STATES = ["complete", "partial", "unavailable"] as const;
+export type CodeAnalysisFactState = (typeof CODE_ANALYSIS_STATES)[number];
+export const CODE_RELATION_ROLES = ["calls", "inherits"] as const;
+export type CodeRelationRole = (typeof CODE_RELATION_ROLES)[number];
+export const CODE_UNRESOLVED_KINDS = ["unresolved-call", "unresolved-type"] as const;
+export type CodeUnresolvedKind = (typeof CODE_UNRESOLVED_KINDS)[number];
+
+export const LINE_ATTRIBUTION_GAP_CAUSES = [
+  "missing-retention",
+  "missing-object",
+  "missing-path",
+  "shallow",
+  "excluded",
+  "unauthorized",
+  "invalid-range",
+  "invalid-evidence",
+  "git-unavailable",
+] as const;
+
+export const SYMBOL_HISTORY_GAP_CAUSES = [
+  "unauthorized",
+  "excluded",
+  "missing-retention",
+  "missing-object",
+  "invalid-evidence",
+  "inventory-unavailable",
+  "path-unavailable",
+  "unsupported-entry",
+  "bounds-exceeded",
+] as const;
+
+export const SYMBOL_CORRESPONDENCE_RELATIONS = [
+  "unchanged",
+  "renamed",
+  "moved",
+  "renamed-and-moved",
+  "ambiguous",
+] as const;
+
+export const SYMBOL_CORRESPONDENCE_REASONS = [
+  "unique-exact-body",
+  "split-or-copy",
+  "merge",
+  "duplicate",
+  "missing",
+] as const;
+
+export const COVERAGE_FACT_AXES = [
+  "refs",
+  "dag",
+  "pr-metadata",
+  "object-availability",
+  "pr-attribution",
+  "ast",
+  "index",
+  "working-tree",
+  "remote-publication",
+  "line-attribution",
+  "symbol-correspondence",
+] as const;
+export type CoverageFactAxis = (typeof COVERAGE_FACT_AXES)[number];
+
+export const COVERAGE_FACT_STATES = [
+  "unknown",
+  "pending",
+  "backfill",
+  "current",
+  "stale",
+  "partial",
+  "unstable",
+  "degraded",
+  "auth_required",
+  "unavailable",
+] as const;
+export type CoverageFactState = (typeof COVERAGE_FACT_STATES)[number];
+
+export const PROGRESS_FACT_KINDS = [
+  "history-checkpoint",
+  "retained-root",
+  "pr-cursor",
+  "pr-object-job",
+  "reconcile-checkpoint",
+] as const;
+export type ProgressFactKind = (typeof PROGRESS_FACT_KINDS)[number];
+
+/** One ref observation fact carrying its explicit ref-observation identity (SPEC_L3A §12.3). */
+export interface RefObservationFactDto {
+  readonly kind: "ref-observation";
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly observationId: string;
+  readonly cloneId: string;
+  readonly refName: string;
+  readonly refKind: RefKind;
+  readonly algorithm: OidAlgorithm;
+  readonly target: QualifiedOid | null;
+  readonly observedAt: number;
+  readonly absent: boolean;
+  readonly generation: number;
+  readonly tipCommitterUnixSeconds?: number;
+}
+
+/** Tracked ref state folded over its ref observations (creation/deletion/recreation distinct). */
+export interface TrackedRefFactDto {
+  readonly kind: "ref-state";
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly cloneId: string;
+  readonly refName: string;
+  readonly refKind: RefKind;
+  readonly target: QualifiedOid | null;
+  readonly generation: number;
+  readonly activity: RefActivityDto | null;
+  readonly deletedAt: number | null;
+  readonly lastObservedAt: number;
+}
+
+/** Immutable commit fact with algorithm-qualified OIDs and ordered parents. */
+export interface CommitFactDto {
+  readonly kind: "commit";
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly cloneId: string;
+  readonly commit: QualifiedOid;
+  readonly tree: QualifiedOid;
+  readonly parents: readonly QualifiedOid[];
+  readonly author: HistoryIdentityDto;
+  readonly committer: HistoryIdentityDto;
+  readonly subject: string;
+  readonly message: Uint8Array;
+  readonly extractorVersion: string;
+  readonly policyVersion: string;
+}
+
+/** One changed file of a commit against one ordered parent (-1 for a root commit). */
+export interface ChangedFileFactDto {
+  readonly kind: "changed-file";
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly cloneId: string;
+  readonly commit: QualifiedOid;
+  readonly parentIndex: number;
+  readonly parentCommit: QualifiedOid | null;
+  readonly path: Uint8Array;
+  readonly previousPath: Uint8Array | null;
+  readonly status: GitFileChangeStatus;
+  readonly statusScore: number | null;
+  readonly oldMode: string;
+  readonly newMode: string;
+  readonly oldBlob: QualifiedOid | null;
+  readonly newBlob: QualifiedOid | null;
+  readonly added: number | null;
+  readonly deleted: number | null;
+  readonly extractorVersion: string;
+  readonly policyVersion: string;
+}
+
+/** One all-state GitHub PR observation fact (no tokens/credentials). */
+export interface PullRequestObservationFactDto {
+  readonly kind: "pr-observation";
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly observationId: string;
+  readonly cloneId: string;
+  readonly repositoryOwner: string;
+  readonly repositoryRepo: string;
+  readonly number: number;
+  readonly state: PullRequestState;
+  readonly isDraft: boolean;
+  readonly updatedAt: number;
+  readonly headOid: QualifiedOid;
+  readonly headRef: string;
+  readonly baseOid: QualifiedOid;
+  readonly baseRef: string;
+  readonly mergeOid?: QualifiedOid | null;
+  readonly mergeStrategy?: PullRequestMergeStrategy;
+}
+
+/** Pinned historical PR attribution fact, separate from raw ancestry. */
+export interface PrAttributionFactDto {
+  readonly kind: "pr-attribution";
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly cloneId: string;
+  readonly repositoryOwner: string;
+  readonly repositoryRepo: string;
+  readonly prNumber: number;
+  readonly baseOid: QualifiedOid | null;
+  readonly headOid: QualifiedOid;
+  readonly mergeBaseOids: readonly QualifiedOid[];
+  readonly mergeOid?: QualifiedOid | null;
+  readonly mergeStrategy: PullRequestMergeStrategy;
+  readonly status: "complete" | "partial";
+  readonly reason: string;
+}
+
+/** Scoped durable retention receipt fact (clone-scoped, algorithm-qualified target). */
+export interface RetentionReceiptFactDto {
+  readonly kind: "retention-receipt";
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly scope: LiveScope;
+  readonly target: QualifiedOid;
+  readonly receivedAt: number;
+  readonly backupRef: string;
+}
+
+export interface BranchComparisonDiffChangeFactDto {
+  readonly beforePath: Uint8Array | null;
+  readonly afterPath: Uint8Array | null;
+  readonly beforeMode: string | null;
+  readonly afterMode: string | null;
+  readonly changeKind: BranchDiffChangeKind;
+  readonly renameEvidence: string | null;
+  readonly binary: boolean;
+  readonly insertions: number;
+  readonly deletions: number;
+}
+
+export interface BranchComparisonDiffOptionsFactDto {
+  readonly algorithm: BranchDiffAlgorithm;
+  readonly binaryDetection: boolean;
+  readonly renameLimit: number;
+  readonly renameThreshold: number;
+}
+
+export interface BranchComparisonDiffFactDto {
+  readonly beforeTree: QualifiedOid;
+  readonly afterTree: QualifiedOid;
+  readonly parentIndex: number | null;
+  readonly comparatorVersion: string;
+  readonly gitVersion: string;
+  readonly objectFormat: OidAlgorithm;
+  readonly options: BranchComparisonDiffOptionsFactDto;
+  readonly changes: readonly BranchComparisonDiffChangeFactDto[];
+}
+
+export interface BranchComparisonParentFactDto {
+  readonly parentIndex: number;
+  readonly parent: QualifiedOid;
+  readonly target: QualifiedOid | null;
+  readonly state: "complete" | "unknown";
+  readonly reason: string;
+  readonly diff: BranchComparisonDiffFactDto | null;
+}
+
+/** Pinned branch/PR/parent comparison fact with verified merge-bases and derived diffs. */
+export interface BranchComparisonFactDto {
+  readonly kind: "branch-comparison";
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly cloneId: string;
+  readonly comparisonKind: BranchComparisonKind;
+  readonly state: BranchComparisonState;
+  readonly baseTip: QualifiedOid;
+  readonly branchTip: QualifiedOid;
+  readonly mergeBases: readonly QualifiedOid[];
+  readonly baseSource: BranchComparisonBaseSource | null;
+  readonly comparatorVersion: string;
+  readonly gitVersion: string | null;
+  readonly policyVersion: string;
+  readonly perParent: readonly BranchComparisonParentFactDto[];
+  readonly diffs: readonly BranchComparisonDiffFactDto[];
+}
+
+/** Complete endpoint of a versioned code relationship (SPEC_L3A §12.3, LIVE §3). */
+export interface CodeRelationEndpointDto {
+  readonly symbolId: string;
+  readonly slot: string;
+  readonly path: Uint8Array;
+  readonly tree: QualifiedOid | null;
+  readonly commit?: QualifiedOid | null;
+}
+
+export interface CodeSymbolFactDto {
+  readonly symbolId: string;
+  readonly slot: string;
+  readonly name: string;
+  readonly kind: string;
+  readonly bodyHash: string;
+  readonly contentHash: string;
+  readonly path: Uint8Array;
+  readonly tree: QualifiedOid | null;
+}
+
+export interface CodeRelationItemDto {
+  readonly relationId: string;
+  readonly role: CodeRelationRole;
+  readonly source: CodeRelationEndpointDto;
+  readonly target: CodeRelationEndpointDto;
+  readonly external: boolean;
+  readonly extractorVersion: string;
+  readonly resolverVersion: string;
+}
+
+export interface CodeUnresolvedFactDto {
+  readonly unresolvedKind: CodeUnresolvedKind;
+  readonly name: string;
+  readonly fromSymbolId: string;
+  readonly reason: string;
+}
+
+/** Context-bound versioned code analysis fact (L5). */
+export interface CodeAnalysisFactDto {
+  readonly kind: "code-analysis";
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly cloneId: string;
+  readonly worktreeId: string | null;
+  readonly snapshotId: string | null;
+  readonly tree: QualifiedOid | null;
+  readonly blob: QualifiedOid | null;
+  readonly path: Uint8Array;
+  readonly language: string;
+  readonly dialect: string;
+  readonly state: CodeAnalysisFactState;
+  readonly topologyHash: string;
+  readonly contentHash: string;
+  readonly configHash: string;
+  readonly dependencyHash: string;
+  readonly grammarVersion: string | null;
+  readonly grammarDigest?: string | null;
+  readonly grammarId?: string | null;
+  readonly extractorVersion: string;
+  readonly resolverVersion: string;
+  readonly policyVersion: string;
+  readonly symbols: readonly CodeSymbolFactDto[];
+  readonly relations: readonly CodeRelationItemDto[];
+  readonly unresolved: readonly CodeUnresolvedFactDto[];
+}
+
+/** Standalone versioned code relationship with complete endpoints, role and versions. */
+export interface CodeRelationFactDto {
+  readonly kind: "code-relation";
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly cloneId: string;
+  readonly relationId: string;
+  readonly role: CodeRelationRole;
+  readonly source: CodeRelationEndpointDto;
+  readonly target: CodeRelationEndpointDto;
+  readonly external: boolean;
+  readonly extractorVersion: string;
+  readonly resolverVersion: string;
+  readonly policyVersion: string;
+}
+
+/** G1 line attribution fact bound to pinned target OID, ranges, options and parent evidence. */
+export interface LineAttributionFactDto {
+  readonly kind: "line-attribution";
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly cloneId: string;
+  readonly target: QualifiedOid;
+  readonly path: Uint8Array;
+  readonly ranges: readonly LineRangeDto[];
+  readonly policyVersion: string;
+  readonly options: LineAttributionOptionsDto;
+  readonly calculationVersion: string;
+  readonly gitVersion: string | null;
+  readonly retainedRoot: QualifiedOid | null;
+  readonly state: "complete" | "partial";
+  readonly origins: readonly LineOriginDto[];
+  readonly parentEvidence: readonly LineParentEvidenceDto[];
+  readonly gaps: readonly LineAttributionGapDto[];
+}
+
+export interface SymbolHistoryGapDto {
+  readonly cause: SymbolHistoryGapCause;
+  readonly reason: string;
+}
+
+/** G2 cross-version symbol correspondence fact bound to pinned before/after endpoints. */
+export interface SymbolCorrespondenceFactDto {
+  readonly kind: "symbol-correspondence";
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly cloneId: string;
+  readonly before: QualifiedOid;
+  readonly after: QualifiedOid;
+  readonly policyVersion: string;
+  readonly options: SymbolHistoryOptionsDto;
+  readonly calculationVersion: string;
+  readonly extractorVersion: string;
+  readonly state: "complete" | "partial";
+  readonly correspondences: readonly SymbolCorrespondenceDto[];
+  readonly parentEvidence: readonly LineParentEvidenceDto[];
+  readonly gaps: readonly SymbolHistoryGapDto[];
+}
+
+/** Explicit coverage fact for any live axis. */
+export interface CoverageFactDto {
+  readonly kind: "coverage";
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly axis: CoverageFactAxis;
+  readonly state: CoverageFactState;
+  readonly reason: string;
+  readonly checkedAt: number;
+  readonly language?: string;
+  readonly cause?: string;
+  readonly pendingCount?: number;
+  readonly pendingFrontier?: string | null;
+  readonly boundary?: readonly QualifiedOid[];
+  readonly missing?: readonly QualifiedOid[];
+  readonly lastSuccessAt?: number | null;
+}
+
+export interface HistoryCheckpointProgressFactDto {
+  readonly kind: "progress";
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly progressKind: "history-checkpoint";
+  readonly cloneId: string;
+  readonly commit: QualifiedOid;
+  readonly tree: QualifiedOid;
+  readonly parents: readonly QualifiedOid[];
+  readonly extractorVersion: string;
+  readonly policyVersion: string;
+}
+
+export interface RetainedRootProgressFactDto {
+  readonly kind: "progress";
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly progressKind: "retained-root";
+  readonly cloneId: string;
+  readonly root: QualifiedOid;
+  readonly firstSeenAt: number;
+  readonly firstSignal: RootSelectionSignal;
+  readonly refName: string | null;
+}
+
+export interface PrCursorProgressFactDto {
+  readonly kind: "progress";
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly progressKind: "pr-cursor";
+  readonly cloneId: string;
+  readonly cursor: PrSyncCursorDto;
+}
+
+export interface PrObjectJobProgressFactDto {
+  readonly kind: "progress";
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly progressKind: "pr-object-job";
+  readonly cloneId: string;
+  readonly job: PrObjectJobDto;
+}
+
+export interface ReconcileCheckpointProgressFactDto {
+  readonly kind: "progress";
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly progressKind: "reconcile-checkpoint";
+  readonly cloneId: string;
+  readonly worktreeId: string | null;
+  readonly checkpointId: string;
+  readonly pendingCount: number;
+  readonly frontier: string | null;
+  readonly complete: boolean;
+  readonly recordedAt: number;
+}
+
+/** Durable progress and checkpoint facts (discriminated per progressKind with exact keys). */
+export type ProgressFactDto =
+  | HistoryCheckpointProgressFactDto
+  | RetainedRootProgressFactDto
+  | PrCursorProgressFactDto
+  | PrObjectJobProgressFactDto
+  | ReconcileCheckpointProgressFactDto;
+
+/**
+ * Closed typed union of every fact admitted inside FactBatchDto.facts.
+ * Includes the 14 tagged fact kinds and the 3 structural L4b fact shapes
+ * emitted directly by snapshots.ts without altering their bytes.
+ */
+export type LiveFactDto =
+  | RefObservationFactDto
+  | TrackedRefFactDto
+  | CommitFactDto
+  | ChangedFileFactDto
+  | PullRequestObservationFactDto
+  | PrAttributionFactDto
+  | RetentionReceiptFactDto
+  | BranchComparisonFactDto
+  | CodeAnalysisFactDto
+  | CodeRelationFactDto
+  | LineAttributionFactDto
+  | SymbolCorrespondenceFactDto
+  | CoverageFactDto
+  | ProgressFactDto
+  | LocalDiffDto
+  | LocalSnapshotDto
+  | LocalCoverageReportDto;
+
+// — Exact-key pure validators for every typed fact and nested structure.
+
+function hasNulByte(bytes: Uint8Array): boolean {
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] === 0) return true;
+  }
+  return false;
+}
+
+function isNonEmptySafePathBytes(value: unknown): value is Uint8Array {
+  return value instanceof Uint8Array && value.length > 0 && !hasNulByte(value);
+}
+
+function isHex64String(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+}
+
+function isOctalMode6(value: unknown): value is string {
+  return typeof value === "string" && /^[0-7]{6}$/.test(value);
+}
+
+function isTreeOctalMode(value: unknown): value is string {
+  return typeof value === "string" && /^[0-7]{5,6}$/.test(value);
+}
+
+function isNonNegativeSafeInt(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isSafeInt(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value);
+}
+
+function isSafeText(value: unknown): value is string {
+  return typeof value === "string" && !hasNul(value);
+}
+
+function isNonEmptySafeText(value: unknown): value is string {
+  return isNonEmptyString(value) && !hasNul(value);
+}
+
+function isVersionString(value: unknown): value is string {
+  return isNonEmptySafeText(value) && value.length <= 256;
+}
+
+function isInList<T extends string>(value: unknown, list: readonly T[]): value is T {
+  return typeof value === "string" && (list as readonly string[]).includes(value);
+}
+
+const HISTORY_IDENTITY_KEYS: readonly string[] = ["name", "email", "unixSeconds", "offsetMinutes"];
+const LINE_AUTHOR_IDENTITY_KEYS: readonly string[] = [
+  "name", "email", "unixSeconds", "offsetMinutes", "nameBytes", "emailBytes",
+];
+const REF_ACTIVITY_KEYS: readonly string[] = ["activityAt", "signal"];
+const LINE_RANGE_KEYS: readonly string[] = ["start", "end"];
+const LINE_ATTRIBUTION_OPTIONS_KEYS: readonly string[] = [
+  "version", "algorithm", "moveMinCharacters", "copyMinCharacters", "copySearch",
+];
+const LINE_ORIGIN_KEYS: readonly string[] = ["commit", "author", "path", "originalRange", "finalRange"];
+const LINE_PARENT_EVIDENCE_KEYS: readonly string[] = ["commit", "parents"];
+const LINE_ATTRIBUTION_GAP_KEYS: readonly string[] = ["cause", "reason"];
+const SYMBOL_HISTORY_OPTIONS_KEYS: readonly string[] = [
+  "version", "renameThreshold", "moveThreshold", "copyThreshold",
+];
+const SYMBOL_HISTORY_ANCHOR_KEYS: readonly string[] = [
+  "commit", "tree", "blob", "path", "symbolId", "slot", "name", "kind", "language", "bodyHash", "range",
+];
+const SYMBOL_CORRESPONDENCE_ITEM_KEYS: readonly string[] = [
+  "before", "after", "relation", "reason", "similarity",
+];
+const SYMBOL_HISTORY_GAP_KEYS: readonly string[] = ["cause", "reason"];
+
+const REF_OBSERVATION_FACT_KEYS: readonly string[] = [
+  "kind", "schemaVersion", "observationId", "cloneId", "refName", "refKind",
+  "algorithm", "target", "observedAt", "absent", "generation", "tipCommitterUnixSeconds",
+];
+const TRACKED_REF_FACT_KEYS: readonly string[] = [
+  "kind", "schemaVersion", "cloneId", "refName", "refKind",
+  "target", "generation", "activity", "deletedAt", "lastObservedAt",
+];
+const COMMIT_FACT_KEYS: readonly string[] = [
+  "kind", "schemaVersion", "cloneId", "commit", "tree", "parents",
+  "author", "committer", "subject", "message", "extractorVersion", "policyVersion",
+];
+const CHANGED_FILE_FACT_KEYS: readonly string[] = [
+  "kind", "schemaVersion", "cloneId", "commit", "parentIndex", "parentCommit",
+  "path", "previousPath", "status", "statusScore", "oldMode", "newMode",
+  "oldBlob", "newBlob", "added", "deleted", "extractorVersion", "policyVersion",
+];
+const PR_OBSERVATION_FACT_KEYS: readonly string[] = [
+  "kind", "schemaVersion", "observationId", "cloneId", "repositoryOwner", "repositoryRepo",
+  "number", "state", "isDraft", "updatedAt", "headOid", "headRef", "baseOid", "baseRef",
+  "mergeOid", "mergeStrategy",
+];
+const PR_ATTRIBUTION_FACT_KEYS: readonly string[] = [
+  "kind", "schemaVersion", "cloneId", "repositoryOwner", "repositoryRepo",
+  "prNumber", "baseOid", "headOid", "mergeBaseOids", "mergeOid",
+  "mergeStrategy", "status", "reason",
+];
+const RETENTION_RECEIPT_FACT_KEYS: readonly string[] = [
+  "kind", "schemaVersion", "scope", "target", "receivedAt", "backupRef",
+];
+const BRANCH_COMPARISON_DIFF_CHANGE_KEYS: readonly string[] = [
+  "beforePath", "afterPath", "beforeMode", "afterMode", "changeKind",
+  "renameEvidence", "binary", "insertions", "deletions",
+];
+const BRANCH_COMPARISON_DIFF_OPTIONS_KEYS: readonly string[] = [
+  "algorithm", "binaryDetection", "renameLimit", "renameThreshold",
+];
+const BRANCH_COMPARISON_DIFF_KEYS: readonly string[] = [
+  "beforeTree", "afterTree", "parentIndex", "comparatorVersion",
+  "gitVersion", "objectFormat", "options", "changes",
+];
+const BRANCH_COMPARISON_PARENT_KEYS: readonly string[] = [
+  "parentIndex", "parent", "target", "state", "reason", "diff",
+];
+const BRANCH_COMPARISON_FACT_KEYS: readonly string[] = [
+  "kind", "schemaVersion", "cloneId", "comparisonKind", "state", "baseTip", "branchTip",
+  "mergeBases", "baseSource", "comparatorVersion", "gitVersion", "policyVersion",
+  "perParent", "diffs",
+];
+const CODE_RELATION_ENDPOINT_KEYS: readonly string[] = [
+  "symbolId", "slot", "path", "tree", "commit",
+];
+const CODE_SYMBOL_FACT_KEYS: readonly string[] = [
+  "symbolId", "slot", "name", "kind", "bodyHash", "contentHash", "path", "tree",
+];
+const CODE_RELATION_ITEM_KEYS: readonly string[] = [
+  "relationId", "role", "source", "target", "external", "extractorVersion", "resolverVersion",
+];
+const CODE_UNRESOLVED_FACT_KEYS: readonly string[] = [
+  "unresolvedKind", "name", "fromSymbolId", "reason",
+];
+const CODE_ANALYSIS_FACT_KEYS: readonly string[] = [
+  "kind", "schemaVersion", "cloneId", "worktreeId", "snapshotId", "tree", "blob",
+  "path", "language", "dialect", "state", "topologyHash", "contentHash",
+  "configHash", "dependencyHash", "grammarVersion", "grammarDigest", "grammarId",
+  "extractorVersion", "resolverVersion", "policyVersion",
+  "symbols", "relations", "unresolved",
+];
+const CODE_RELATION_FACT_KEYS: readonly string[] = [
+  "kind", "schemaVersion", "cloneId", "relationId", "role", "source", "target",
+  "external", "extractorVersion", "resolverVersion", "policyVersion",
+];
+const LINE_ATTRIBUTION_FACT_KEYS: readonly string[] = [
+  "kind", "schemaVersion", "cloneId", "target", "path", "ranges", "policyVersion",
+  "options", "calculationVersion", "gitVersion", "retainedRoot", "state",
+  "origins", "parentEvidence", "gaps",
+];
+const SYMBOL_CORRESPONDENCE_FACT_KEYS: readonly string[] = [
+  "kind", "schemaVersion", "cloneId", "before", "after", "policyVersion", "options",
+  "calculationVersion", "extractorVersion", "state", "correspondences",
+  "parentEvidence", "gaps",
+];
+const COVERAGE_FACT_KEYS: readonly string[] = [
+  "kind", "schemaVersion", "axis", "state", "reason", "checkedAt",
+  "language", "cause", "pendingCount", "pendingFrontier", "boundary", "missing", "lastSuccessAt",
+];
+const PROGRESS_HISTORY_CHECKPOINT_KEYS: readonly string[] = [
+  "kind", "schemaVersion", "progressKind", "cloneId", "commit", "tree", "parents",
+  "extractorVersion", "policyVersion",
+];
+const PROGRESS_RETAINED_ROOT_KEYS: readonly string[] = [
+  "kind", "schemaVersion", "progressKind", "cloneId", "root", "firstSeenAt", "firstSignal", "refName",
+];
+const PROGRESS_PR_CURSOR_KEYS: readonly string[] = [
+  "kind", "schemaVersion", "progressKind", "cloneId", "cursor",
+];
+const PROGRESS_PR_OBJECT_JOB_KEYS: readonly string[] = [
+  "kind", "schemaVersion", "progressKind", "cloneId", "job",
+];
+const PROGRESS_RECONCILE_CHECKPOINT_KEYS: readonly string[] = [
+  "kind", "schemaVersion", "progressKind", "cloneId", "worktreeId",
+  "checkpointId", "pendingCount", "frontier", "complete", "recordedAt",
+];
+
+function validateHistoryIdentity(value: unknown, path: string, allowRawBytes: boolean): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: [`${path} must be an object`] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, allowRawBytes ? LINE_AUTHOR_IDENTITY_KEYS : HISTORY_IDENTITY_KEYS, path, errors);
+  if (!isSafeText(value.name)) errors.push(`${path}.name must be a string without NUL`);
+  if (!isSafeText(value.email)) errors.push(`${path}.email must be a string without NUL`);
+  if (!isSafeInt(value.unixSeconds)) errors.push(`${path}.unixSeconds must be a safe integer`);
+  if (!isSafeInt(value.offsetMinutes) || value.offsetMinutes < -1439 || value.offsetMinutes > 1439) {
+    errors.push(`${path}.offsetMinutes must be a safe integer in [-1439, 1439]`);
+  }
+  if (allowRawBytes) {
+    if (value.nameBytes !== undefined && (!(value.nameBytes instanceof Uint8Array) || value.nameBytes.length === 0)) {
+      errors.push(`${path}.nameBytes, when present, must be a non-empty Uint8Array`);
+    }
+    if (value.emailBytes !== undefined && (!(value.emailBytes instanceof Uint8Array) || value.emailBytes.length === 0)) {
+      errors.push(`${path}.emailBytes, when present, must be a non-empty Uint8Array`);
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+function validateLineRange(value: unknown, path: string): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: [`${path} must be an object`] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, LINE_RANGE_KEYS, path, errors);
+  if (!isPositiveInteger(value.start)) errors.push(`${path}.start must be a positive safe integer`);
+  if (!isPositiveInteger(value.end)) errors.push(`${path}.end must be a positive safe integer`);
+  if (isPositiveInteger(value.start) && isPositiveInteger(value.end) && value.end < value.start) {
+    errors.push(`${path}.end must be >= ${path}.start`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+function validateLineParentEvidence(value: unknown, path: string, expectedAlgorithm?: OidAlgorithm): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: [`${path} must be an object`] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, LINE_PARENT_EVIDENCE_KEYS, path, errors);
+  const commit = validateQualifiedOid(value.commit);
+  if (!commit.ok) errors.push(...commit.errors.map((e) => `${path}.commit: ${e}`));
+  const alg = commit.ok ? (value.commit as QualifiedOid).algorithm : expectedAlgorithm;
+  if (commit.ok && expectedAlgorithm !== undefined && (value.commit as QualifiedOid).algorithm !== expectedAlgorithm) {
+    errors.push(`${path}.commit.algorithm must match ${expectedAlgorithm}`);
+  }
+  if (!Array.isArray(value.parents)) {
+    errors.push(`${path}.parents must be an array`);
+  } else {
+    value.parents.forEach((parent: unknown, idx: number) => {
+      const checked = validateQualifiedOid(parent);
+      if (!checked.ok) errors.push(...checked.errors.map((e) => `${path}.parents[${idx}]: ${e}`));
+      else if (alg !== undefined && (parent as QualifiedOid).algorithm !== alg) {
+        errors.push(`${path}.parents[${idx}].algorithm must match ${alg}`);
+      }
+    });
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+function validateCodeRelationEndpoint(value: unknown, path: string): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: [`${path} must be an object`] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, CODE_RELATION_ENDPOINT_KEYS, path, errors);
+  if (!isNonEmptySafeText(value.symbolId)) errors.push(`${path}.symbolId must be a non-empty string without NUL`);
+  if (!isNonEmptySafeText(value.slot)) errors.push(`${path}.slot must be a non-empty string without NUL`);
+  if (!isNonEmptySafePathBytes(value.path)) errors.push(`${path}.path must be non-empty NUL-free raw path bytes`);
+  if (value.tree !== null) {
+    const tree = validateQualifiedOid(value.tree);
+    if (!tree.ok) errors.push(...tree.errors.map((e) => `${path}.tree: ${e}`));
+  }
+  if (value.commit !== undefined && value.commit !== null) {
+    const commit = validateQualifiedOid(value.commit);
+    if (!commit.ok) errors.push(...commit.errors.map((e) => `${path}.commit: ${e}`));
+    if (commit.ok && value.tree !== null && validateQualifiedOid(value.tree).ok &&
+      (value.commit as QualifiedOid).algorithm !== (value.tree as QualifiedOid).algorithm) {
+      errors.push(`${path}.commit.algorithm must match ${path}.tree.algorithm`);
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateRefObservationFact(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["ref-observation fact must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, REF_OBSERVATION_FACT_KEYS, "ref-observation fact", errors);
+  if (value.kind !== "ref-observation") errors.push('ref-observation fact.kind must be "ref-observation"');
+  if (value.schemaVersion !== FACT_SCHEMA_VERSION) errors.push(`ref-observation fact.schemaVersion must be ${FACT_SCHEMA_VERSION}`);
+  if (!isStrictScopeId(value.observationId)) errors.push("ref-observation fact.observationId must be a strict opaque identifier");
+  if (!isStrictScopeId(value.cloneId)) errors.push("ref-observation fact.cloneId must be a strict opaque identifier");
+  if (!isNonEmptySafeText(value.refName) || !value.refName.startsWith("refs/")) {
+    errors.push('ref-observation fact.refName must be a non-empty full ref name starting with "refs/" without NUL');
+  }
+  if (!isInList(value.refKind, REF_KINDS)) errors.push(`ref-observation fact.refKind must be one of ${REF_KINDS.join(", ")}`);
+  if (value.algorithm !== "sha1" && value.algorithm !== "sha256") {
+    errors.push('ref-observation fact.algorithm must be "sha1" or "sha256"');
+  }
+  if (typeof value.absent !== "boolean") {
+    errors.push("ref-observation fact.absent must be a boolean");
+  } else if (value.absent) {
+    if (value.target !== null) errors.push("ref-observation fact.target must be null when absent is true");
+  } else {
+    const target = validateQualifiedOid(value.target);
+    if (!target.ok) errors.push(...target.errors.map((e) => `ref-observation fact.target: ${e}`));
+    else if ((value.algorithm === "sha1" || value.algorithm === "sha256") &&
+      (value.target as QualifiedOid).algorithm !== value.algorithm) {
+      errors.push(`ref-observation fact.target.algorithm must match ${value.algorithm}`);
+    }
+  }
+  if (!isPositiveInteger(value.observedAt)) errors.push("ref-observation fact.observedAt must be a positive safe integer");
+  if (value.absent === true) {
+    if (!isNonNegativeSafeInt(value.generation)) {
+      errors.push("ref-observation fact.generation must be a non-negative safe integer when absent is true");
+    }
+  } else if (!isPositiveInteger(value.generation)) {
+    errors.push("ref-observation fact.generation must be a positive safe integer");
+  }
+  if (value.tipCommitterUnixSeconds !== undefined && !isSafeInt(value.tipCommitterUnixSeconds)) {
+    errors.push("ref-observation fact.tipCommitterUnixSeconds, when present, must be a safe integer");
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateTrackedRefFact(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["ref-state fact must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, TRACKED_REF_FACT_KEYS, "ref-state fact", errors);
+  if (value.kind !== "ref-state") errors.push('ref-state fact.kind must be "ref-state"');
+  if (value.schemaVersion !== FACT_SCHEMA_VERSION) errors.push(`ref-state fact.schemaVersion must be ${FACT_SCHEMA_VERSION}`);
+  if (!isStrictScopeId(value.cloneId)) errors.push("ref-state fact.cloneId must be a strict opaque identifier");
+  if (!isNonEmptySafeText(value.refName) || !value.refName.startsWith("refs/")) {
+    errors.push('ref-state fact.refName must be a non-empty full ref name starting with "refs/" without NUL');
+  }
+  if (!isInList(value.refKind, REF_KINDS)) errors.push(`ref-state fact.refKind must be one of ${REF_KINDS.join(", ")}`);
+  if (value.target !== null) {
+    const target = validateQualifiedOid(value.target);
+    if (!target.ok) errors.push(...target.errors.map((e) => `ref-state fact.target: ${e}`));
+  }
+  if (!isNonNegativeSafeInt(value.generation)) errors.push("ref-state fact.generation must be a non-negative safe integer");
+  if (value.activity !== null) {
+    if (!isRecord(value.activity)) {
+      errors.push("ref-state fact.activity must be an object or null");
+    } else {
+      rejectUnknownKeys(value.activity, REF_ACTIVITY_KEYS, "ref-state fact.activity", errors);
+      if (!isSafeInt(value.activity.activityAt)) errors.push("ref-state fact.activity.activityAt must be a safe integer");
+      if (!isInList(value.activity.signal, ACTIVITY_SIGNAL_KINDS)) {
+        errors.push(`ref-state fact.activity.signal must be one of ${ACTIVITY_SIGNAL_KINDS.join(", ")}`);
+      }
+    }
+  }
+  if (value.deletedAt !== null && !isPositiveInteger(value.deletedAt)) {
+    errors.push("ref-state fact.deletedAt must be null or a positive safe integer");
+  }
+  if (value.deletedAt !== null && value.target !== null) {
+    errors.push("ref-state fact.target must be null when deletedAt is non-null");
+  }
+  if (!isNonNegativeSafeInt(value.lastObservedAt)) {
+    errors.push("ref-state fact.lastObservedAt must be a non-negative safe integer");
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateCommitFact(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["commit fact must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, COMMIT_FACT_KEYS, "commit fact", errors);
+  if (value.kind !== "commit") errors.push('commit fact.kind must be "commit"');
+  if (value.schemaVersion !== FACT_SCHEMA_VERSION) errors.push(`commit fact.schemaVersion must be ${FACT_SCHEMA_VERSION}`);
+  if (!isStrictScopeId(value.cloneId)) errors.push("commit fact.cloneId must be a strict opaque identifier");
+  const commit = validateQualifiedOid(value.commit);
+  if (!commit.ok) errors.push(...commit.errors.map((e) => `commit fact.commit: ${e}`));
+  const alg = commit.ok ? (value.commit as QualifiedOid).algorithm : undefined;
+  const tree = validateQualifiedOid(value.tree);
+  if (!tree.ok) errors.push(...tree.errors.map((e) => `commit fact.tree: ${e}`));
+  else if (alg !== undefined && (value.tree as QualifiedOid).algorithm !== alg) {
+    errors.push(`commit fact.tree.algorithm must match ${alg}`);
+  }
+  if (!Array.isArray(value.parents)) {
+    errors.push("commit fact.parents must be an array");
+  } else {
+    value.parents.forEach((parent: unknown, idx: number) => {
+      const checked = validateQualifiedOid(parent);
+      if (!checked.ok) errors.push(...checked.errors.map((e) => `commit fact.parents[${idx}]: ${e}`));
+      else if (alg !== undefined && (parent as QualifiedOid).algorithm !== alg) {
+        errors.push(`commit fact.parents[${idx}].algorithm must match ${alg}`);
+      }
+    });
+  }
+  const author = validateHistoryIdentity(value.author, "commit fact.author", false);
+  if (!author.ok) errors.push(...author.errors);
+  const committer = validateHistoryIdentity(value.committer, "commit fact.committer", false);
+  if (!committer.ok) errors.push(...committer.errors);
+  if (!isSafeText(value.subject)) errors.push("commit fact.subject must be a string without NUL");
+  if (!(value.message instanceof Uint8Array)) errors.push("commit fact.message must be a Uint8Array");
+  if (!isVersionString(value.extractorVersion)) errors.push("commit fact.extractorVersion must be a non-empty version string");
+  if (value.policyVersion !== POLICY_VERSION) errors.push(`commit fact.policyVersion must be "${POLICY_VERSION}"`);
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateChangedFileFact(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["changed-file fact must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, CHANGED_FILE_FACT_KEYS, "changed-file fact", errors);
+  if (value.kind !== "changed-file") errors.push('changed-file fact.kind must be "changed-file"');
+  if (value.schemaVersion !== FACT_SCHEMA_VERSION) errors.push(`changed-file fact.schemaVersion must be ${FACT_SCHEMA_VERSION}`);
+  if (!isStrictScopeId(value.cloneId)) errors.push("changed-file fact.cloneId must be a strict opaque identifier");
+  const commit = validateQualifiedOid(value.commit);
+  if (!commit.ok) errors.push(...commit.errors.map((e) => `changed-file fact.commit: ${e}`));
+  const alg = commit.ok ? (value.commit as QualifiedOid).algorithm : undefined;
+  if (!isSafeInt(value.parentIndex) || value.parentIndex < -1) {
+    errors.push("changed-file fact.parentIndex must be a safe integer >= -1");
+  } else if (value.parentIndex === -1) {
+    if (value.parentCommit !== null) errors.push("changed-file fact.parentCommit must be null when parentIndex is -1");
+  } else {
+    const parent = validateQualifiedOid(value.parentCommit);
+    if (!parent.ok) errors.push(...parent.errors.map((e) => `changed-file fact.parentCommit: ${e}`));
+    else if (alg !== undefined && (value.parentCommit as QualifiedOid).algorithm !== alg) {
+      errors.push(`changed-file fact.parentCommit.algorithm must match ${alg}`);
+    }
+  }
+  if (!isNonEmptySafePathBytes(value.path)) errors.push("changed-file fact.path must be non-empty NUL-free raw path bytes");
+  if (value.previousPath !== null && !isNonEmptySafePathBytes(value.previousPath)) {
+    errors.push("changed-file fact.previousPath must be null or non-empty NUL-free raw path bytes");
+  }
+  if (!isInList(value.status, GIT_FILE_CHANGE_STATUSES)) {
+    errors.push(`changed-file fact.status must be one of ${GIT_FILE_CHANGE_STATUSES.join(", ")}`);
+  }
+  if (value.statusScore !== null && (!isSafeInt(value.statusScore) || value.statusScore < 0 || value.statusScore > 100)) {
+    errors.push("changed-file fact.statusScore must be null or an integer in [0, 100]");
+  }
+  if (!isOctalMode6(value.oldMode)) errors.push("changed-file fact.oldMode must be a six-digit octal file mode");
+  if (!isOctalMode6(value.newMode)) errors.push("changed-file fact.newMode must be a six-digit octal file mode");
+  for (const field of ["oldBlob", "newBlob"] as const) {
+    const blob = value[field];
+    if (blob !== null) {
+      const checked = validateQualifiedOid(blob);
+      if (!checked.ok) errors.push(...checked.errors.map((e) => `changed-file fact.${field}: ${e}`));
+      else if (alg !== undefined && (blob as QualifiedOid).algorithm !== alg) {
+        errors.push(`changed-file fact.${field}.algorithm must match ${alg}`);
+      }
+    }
+  }
+  if (value.added !== null && !isNonNegativeSafeInt(value.added)) {
+    errors.push("changed-file fact.added must be null or a non-negative safe integer");
+  }
+  if (value.deleted !== null && !isNonNegativeSafeInt(value.deleted)) {
+    errors.push("changed-file fact.deleted must be null or a non-negative safe integer");
+  }
+  if (!isVersionString(value.extractorVersion)) errors.push("changed-file fact.extractorVersion must be a non-empty version string");
+  if (value.policyVersion !== POLICY_VERSION) errors.push(`changed-file fact.policyVersion must be "${POLICY_VERSION}"`);
+  return { ok: errors.length === 0, errors };
+}
+
+export function validatePullRequestObservationFact(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["pr-observation fact must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, PR_OBSERVATION_FACT_KEYS, "pr-observation fact", errors);
+  for (const forbidden of PR_FACT_FORBIDDEN_KEYS) {
+    if (forbidden in value) errors.push("pr-observation fact must never carry credential keys");
+  }
+  if (value.kind !== "pr-observation") errors.push('pr-observation fact.kind must be "pr-observation"');
+  if (value.schemaVersion !== FACT_SCHEMA_VERSION) errors.push(`pr-observation fact.schemaVersion must be ${FACT_SCHEMA_VERSION}`);
+  if (!isStrictScopeId(value.observationId)) errors.push("pr-observation fact.observationId must be a strict opaque identifier");
+  if (!isStrictScopeId(value.cloneId)) errors.push("pr-observation fact.cloneId must be a strict opaque identifier");
+  if (!isNonEmptySafeText(value.repositoryOwner)) errors.push("pr-observation fact.repositoryOwner must be a non-empty string without NUL");
+  if (!isNonEmptySafeText(value.repositoryRepo)) errors.push("pr-observation fact.repositoryRepo must be a non-empty string without NUL");
+  if (!isPositiveInteger(value.number)) errors.push("pr-observation fact.number must be a positive safe integer");
+  if (!isPullRequestState(value.state)) errors.push(`pr-observation fact.state must be one of ${PULL_REQUEST_STATES.join(", ")}`);
+  if (typeof value.isDraft !== "boolean") errors.push("pr-observation fact.isDraft must be a boolean");
+  if (!isPositiveInteger(value.updatedAt)) errors.push("pr-observation fact.updatedAt must be a positive safe integer");
+  const head = validateQualifiedOid(value.headOid);
+  if (!head.ok) errors.push(...head.errors.map((e) => `pr-observation fact.headOid: ${e}`));
+  if (!isNonEmptySafeText(value.headRef)) errors.push("pr-observation fact.headRef must be a non-empty string without NUL");
+  const base = validateQualifiedOid(value.baseOid);
+  if (!base.ok) errors.push(...base.errors.map((e) => `pr-observation fact.baseOid: ${e}`));
+  if (!isNonEmptySafeText(value.baseRef)) errors.push("pr-observation fact.baseRef must be a non-empty string without NUL");
+  if (value.mergeOid !== undefined && value.mergeOid !== null) {
+    const merge = validateQualifiedOid(value.mergeOid);
+    if (!merge.ok) errors.push(...merge.errors.map((e) => `pr-observation fact.mergeOid: ${e}`));
+  }
+  if (value.mergeStrategy !== undefined && !isPullRequestMergeStrategy(value.mergeStrategy)) {
+    errors.push(`pr-observation fact.mergeStrategy, when present, must be one of ${PULL_REQUEST_MERGE_STRATEGIES.join(", ")}`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validatePrAttributionFact(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["pr-attribution fact must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, PR_ATTRIBUTION_FACT_KEYS, "pr-attribution fact", errors);
+  if (value.kind !== "pr-attribution") errors.push('pr-attribution fact.kind must be "pr-attribution"');
+  if (value.schemaVersion !== FACT_SCHEMA_VERSION) errors.push(`pr-attribution fact.schemaVersion must be ${FACT_SCHEMA_VERSION}`);
+  if (!isStrictScopeId(value.cloneId)) errors.push("pr-attribution fact.cloneId must be a strict opaque identifier");
+  if (!isNonEmptySafeText(value.repositoryOwner)) errors.push("pr-attribution fact.repositoryOwner must be a non-empty string without NUL");
+  if (!isNonEmptySafeText(value.repositoryRepo)) errors.push("pr-attribution fact.repositoryRepo must be a non-empty string without NUL");
+  if (!isPositiveInteger(value.prNumber)) errors.push("pr-attribution fact.prNumber must be a positive safe integer");
+  if (value.baseOid === null) {
+    if (value.status === "complete") {
+      errors.push('pr-attribution fact with baseOid null must stay "partial"');
+    }
+  } else {
+    const base = validateQualifiedOid(value.baseOid);
+    if (!base.ok) errors.push(...base.errors.map((e) => `pr-attribution fact.baseOid: ${e}`));
+  }
+  const head = validateQualifiedOid(value.headOid);
+  if (!head.ok) errors.push(...head.errors.map((e) => `pr-attribution fact.headOid: ${e}`));
+  if (!Array.isArray(value.mergeBaseOids)) {
+    errors.push("pr-attribution fact.mergeBaseOids must be an array");
+  } else {
+    value.mergeBaseOids.forEach((oid: unknown, idx: number) => {
+      const checked = validateQualifiedOid(oid);
+      if (!checked.ok) errors.push(...checked.errors.map((e) => `pr-attribution fact.mergeBaseOids[${idx}]: ${e}`));
+    });
+    if (value.status === "complete" && value.mergeBaseOids.length === 0) {
+      errors.push('pr-attribution fact with status "complete" requires at least one mergeBaseOid');
+    }
+  }
+  if (value.mergeOid !== undefined && value.mergeOid !== null) {
+    const merge = validateQualifiedOid(value.mergeOid);
+    if (!merge.ok) errors.push(...merge.errors.map((e) => `pr-attribution fact.mergeOid: ${e}`));
+  }
+  if (!isPullRequestMergeStrategy(value.mergeStrategy)) {
+    errors.push(`pr-attribution fact.mergeStrategy must be one of ${PULL_REQUEST_MERGE_STRATEGIES.join(", ")}`);
+  }
+  if (value.status !== "complete" && value.status !== "partial") {
+    errors.push('pr-attribution fact.status must be "complete" or "partial"');
+  }
+  if (!isNonEmptySafeText(value.reason)) errors.push("pr-attribution fact.reason must be a non-empty string without NUL");
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateRetentionReceiptFact(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["retention-receipt fact must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, RETENTION_RECEIPT_FACT_KEYS, "retention-receipt fact", errors);
+  if (value.kind !== "retention-receipt") errors.push('retention-receipt fact.kind must be "retention-receipt"');
+  if (value.schemaVersion !== FACT_SCHEMA_VERSION) errors.push(`retention-receipt fact.schemaVersion must be ${FACT_SCHEMA_VERSION}`);
+  const scope = validateLiveScope(value.scope);
+  if (!scope.ok) errors.push(...scope.errors.map((e) => `retention-receipt fact.scope: ${e}`));
+  else if ((value.scope as LiveScope).worktree !== undefined) {
+    errors.push("retention-receipt fact.scope must be clone-scoped: worktree must be absent");
+  }
+  const target = validateQualifiedOid(value.target);
+  if (!target.ok) errors.push(...target.errors.map((e) => `retention-receipt fact.target: ${e}`));
+  if (!isPositiveInteger(value.receivedAt)) errors.push("retention-receipt fact.receivedAt must be a positive safe integer");
+  if (!isNonEmptySafeText(value.backupRef)) errors.push("retention-receipt fact.backupRef must be a non-empty string without NUL");
+  return { ok: errors.length === 0, errors };
+}
+
+function validateBranchComparisonDiffChange(value: unknown, path: string): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: [`${path} must be an object`] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, BRANCH_COMPARISON_DIFF_CHANGE_KEYS, path, errors);
+  if (value.beforePath !== null && !isNonEmptySafePathBytes(value.beforePath)) {
+    errors.push(`${path}.beforePath must be null or non-empty NUL-free raw path bytes`);
+  }
+  if (value.afterPath !== null && !isNonEmptySafePathBytes(value.afterPath)) {
+    errors.push(`${path}.afterPath must be null or non-empty NUL-free raw path bytes`);
+  }
+  if (value.beforePath === null && value.afterPath === null) {
+    errors.push(`${path} must carry at least one of beforePath or afterPath`);
+  }
+  if (value.beforeMode !== null && !isTreeOctalMode(value.beforeMode)) {
+    errors.push(`${path}.beforeMode must be null or an octal file mode`);
+  }
+  if (value.afterMode !== null && !isTreeOctalMode(value.afterMode)) {
+    errors.push(`${path}.afterMode must be null or an octal file mode`);
+  }
+  if (!isInList(value.changeKind, DIFF_CHANGE_KINDS)) {
+    errors.push(`${path}.changeKind must be one of ${DIFF_CHANGE_KINDS.join(", ")}`);
+  }
+  if (value.renameEvidence !== null && !isNonEmptySafeText(value.renameEvidence)) {
+    errors.push(`${path}.renameEvidence must be null or a non-empty string without NUL`);
+  }
+  if (typeof value.binary !== "boolean") errors.push(`${path}.binary must be a boolean`);
+  if (!isNonNegativeSafeInt(value.insertions)) errors.push(`${path}.insertions must be a non-negative safe integer`);
+  if (!isNonNegativeSafeInt(value.deletions)) errors.push(`${path}.deletions must be a non-negative safe integer`);
+  return { ok: errors.length === 0, errors };
+}
+
+function validateBranchComparisonDiff(value: unknown, path: string, expectedAlg?: OidAlgorithm): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: [`${path} must be an object`] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, BRANCH_COMPARISON_DIFF_KEYS, path, errors);
+  const before = validateQualifiedOid(value.beforeTree);
+  if (!before.ok) errors.push(...before.errors.map((e) => `${path}.beforeTree: ${e}`));
+  const after = validateQualifiedOid(value.afterTree);
+  if (!after.ok) errors.push(...after.errors.map((e) => `${path}.afterTree: ${e}`));
+  if (value.objectFormat !== "sha1" && value.objectFormat !== "sha256") {
+    errors.push(`${path}.objectFormat must be "sha1" or "sha256"`);
+  }
+  const alg = expectedAlg ?? (value.objectFormat === "sha1" || value.objectFormat === "sha256" ? value.objectFormat : undefined);
+  if (alg !== undefined) {
+    if (before.ok && (value.beforeTree as QualifiedOid).algorithm !== alg) errors.push(`${path}.beforeTree.algorithm must match ${alg}`);
+    if (after.ok && (value.afterTree as QualifiedOid).algorithm !== alg) errors.push(`${path}.afterTree.algorithm must match ${alg}`);
+    if ((value.objectFormat === "sha1" || value.objectFormat === "sha256") && value.objectFormat !== alg) {
+      errors.push(`${path}.objectFormat must match ${alg}`);
+    }
+  }
+  if (value.parentIndex !== null && (!isSafeInt(value.parentIndex) || value.parentIndex < -1)) {
+    errors.push(`${path}.parentIndex must be null or a safe integer >= -1`);
+  }
+  if (!isVersionString(value.comparatorVersion)) errors.push(`${path}.comparatorVersion must be a non-empty version string`);
+  if (!isVersionString(value.gitVersion)) errors.push(`${path}.gitVersion must be a non-empty version string`);
+  if (!isRecord(value.options)) {
+    errors.push(`${path}.options must be an object`);
+  } else {
+    rejectUnknownKeys(value.options, BRANCH_COMPARISON_DIFF_OPTIONS_KEYS, `${path}.options`, errors);
+    if (!isInList(value.options.algorithm, BRANCH_DIFF_ALGORITHMS)) {
+      errors.push(`${path}.options.algorithm must be one of ${BRANCH_DIFF_ALGORITHMS.join(", ")}`);
+    }
+    if (typeof value.options.binaryDetection !== "boolean") {
+      errors.push(`${path}.options.binaryDetection must be a boolean`);
+    }
+    if (!isNonNegativeSafeInt(value.options.renameLimit)) {
+      errors.push(`${path}.options.renameLimit must be a non-negative safe integer`);
+    }
+    if (!isNonNegativeSafeInt(value.options.renameThreshold) || value.options.renameThreshold > 100) {
+      errors.push(`${path}.options.renameThreshold must be a safe integer in [0, 100]`);
+    }
+  }
+  if (!Array.isArray(value.changes)) {
+    errors.push(`${path}.changes must be an array`);
+  } else {
+    value.changes.forEach((change: unknown, idx: number) => {
+      const checked = validateBranchComparisonDiffChange(change, `${path}.changes[${idx}]`);
+      if (!checked.ok) errors.push(...checked.errors);
+    });
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateBranchComparisonFact(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["branch-comparison fact must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, BRANCH_COMPARISON_FACT_KEYS, "branch-comparison fact", errors);
+  if (value.kind !== "branch-comparison") errors.push('branch-comparison fact.kind must be "branch-comparison"');
+  if (value.schemaVersion !== FACT_SCHEMA_VERSION) errors.push(`branch-comparison fact.schemaVersion must be ${FACT_SCHEMA_VERSION}`);
+  if (!isStrictScopeId(value.cloneId)) errors.push("branch-comparison fact.cloneId must be a strict opaque identifier");
+  if (!isInList(value.comparisonKind, COMPARISON_KINDS)) {
+    errors.push(`branch-comparison fact.comparisonKind must be one of ${COMPARISON_KINDS.join(", ")}`);
+  }
+  if (!isInList(value.state, COMPARISON_STATES)) {
+    errors.push(`branch-comparison fact.state must be one of ${COMPARISON_STATES.join(", ")}`);
+  }
+  const baseTip = validateQualifiedOid(value.baseTip);
+  if (!baseTip.ok) errors.push(...baseTip.errors.map((e) => `branch-comparison fact.baseTip: ${e}`));
+  const alg = baseTip.ok ? (value.baseTip as QualifiedOid).algorithm : undefined;
+  const branchTip = validateQualifiedOid(value.branchTip);
+  if (!branchTip.ok) errors.push(...branchTip.errors.map((e) => `branch-comparison fact.branchTip: ${e}`));
+  else if (alg !== undefined && (value.branchTip as QualifiedOid).algorithm !== alg) {
+    errors.push(`branch-comparison fact.branchTip.algorithm must match ${alg}`);
+  }
+  if (!Array.isArray(value.mergeBases)) {
+    errors.push("branch-comparison fact.mergeBases must be an array");
+  } else {
+    value.mergeBases.forEach((mb: unknown, idx: number) => {
+      const checked = validateQualifiedOid(mb);
+      if (!checked.ok) errors.push(...checked.errors.map((e) => `branch-comparison fact.mergeBases[${idx}]: ${e}`));
+      else if (alg !== undefined && (mb as QualifiedOid).algorithm !== alg) {
+        errors.push(`branch-comparison fact.mergeBases[${idx}].algorithm must match ${alg}`);
+      }
+    });
+  }
+  if (value.baseSource !== null && !isInList(value.baseSource, COMPARISON_BASE_SOURCES)) {
+    errors.push(`branch-comparison fact.baseSource must be null or one of ${COMPARISON_BASE_SOURCES.join(", ")}`);
+  }
+  if (!isVersionString(value.comparatorVersion)) errors.push("branch-comparison fact.comparatorVersion must be a non-empty version string");
+  if (value.gitVersion !== null && !isVersionString(value.gitVersion)) {
+    errors.push("branch-comparison fact.gitVersion must be null or a non-empty version string");
+  }
+  if (value.policyVersion !== POLICY_VERSION) errors.push(`branch-comparison fact.policyVersion must be "${POLICY_VERSION}"`);
+  if (!Array.isArray(value.perParent)) {
+    errors.push("branch-comparison fact.perParent must be an array");
+  } else {
+    value.perParent.forEach((entry: unknown, idx: number) => {
+      const path = `branch-comparison fact.perParent[${idx}]`;
+      if (!isRecord(entry)) {
+        errors.push(`${path} must be an object`);
+        return;
+      }
+      rejectUnknownKeys(entry, BRANCH_COMPARISON_PARENT_KEYS, path, errors);
+      if (!isNonNegativeSafeInt(entry.parentIndex)) errors.push(`${path}.parentIndex must be a non-negative safe integer`);
+      const parent = validateQualifiedOid(entry.parent);
+      if (!parent.ok) errors.push(...parent.errors.map((e) => `${path}.parent: ${e}`));
+      else if (alg !== undefined && (entry.parent as QualifiedOid).algorithm !== alg) {
+        errors.push(`${path}.parent.algorithm must match ${alg}`);
+      }
+      if (entry.target !== null) {
+        const target = validateQualifiedOid(entry.target);
+        if (!target.ok) errors.push(...target.errors.map((e) => `${path}.target: ${e}`));
+        else if (alg !== undefined && (entry.target as QualifiedOid).algorithm !== alg) {
+          errors.push(`${path}.target.algorithm must match ${alg}`);
+        }
+      }
+      if (entry.state !== "complete" && entry.state !== "unknown") errors.push(`${path}.state must be "complete" or "unknown"`);
+      if (!isNonEmptySafeText(entry.reason)) errors.push(`${path}.reason must be a non-empty string without NUL`);
+      if (entry.diff !== null) {
+        const diff = validateBranchComparisonDiff(entry.diff, `${path}.diff`, alg);
+        if (!diff.ok) errors.push(...diff.errors);
+      }
+    });
+  }
+  if (!Array.isArray(value.diffs)) {
+    errors.push("branch-comparison fact.diffs must be an array");
+  } else {
+    value.diffs.forEach((entry: unknown, idx: number) => {
+      const diff = validateBranchComparisonDiff(entry, `branch-comparison fact.diffs[${idx}]`, alg);
+      if (!diff.ok) errors.push(...diff.errors);
+    });
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateCodeRelationFact(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["code-relation fact must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, CODE_RELATION_FACT_KEYS, "code-relation fact", errors);
+  if (value.kind !== "code-relation") errors.push('code-relation fact.kind must be "code-relation"');
+  if (value.schemaVersion !== FACT_SCHEMA_VERSION) errors.push(`code-relation fact.schemaVersion must be ${FACT_SCHEMA_VERSION}`);
+  if (!isStrictScopeId(value.cloneId)) errors.push("code-relation fact.cloneId must be a strict opaque identifier");
+  if (!isNonEmptySafeText(value.relationId)) errors.push("code-relation fact.relationId must be a non-empty string without NUL");
+  if (!isInList(value.role, CODE_RELATION_ROLES)) {
+    errors.push(`code-relation fact.role must be one of ${CODE_RELATION_ROLES.join(", ")}`);
+  }
+  const source = validateCodeRelationEndpoint(value.source, "code-relation fact.source");
+  if (!source.ok) errors.push(...source.errors);
+  const target = validateCodeRelationEndpoint(value.target, "code-relation fact.target");
+  if (!target.ok) errors.push(...target.errors);
+  if (typeof value.external !== "boolean") errors.push("code-relation fact.external must be a boolean");
+  if (!isVersionString(value.extractorVersion)) errors.push("code-relation fact.extractorVersion must be a non-empty version string");
+  if (!isVersionString(value.resolverVersion)) errors.push("code-relation fact.resolverVersion must be a non-empty version string");
+  if (!isBatchPolicyVersion(value.policyVersion)) {
+    errors.push(`code-relation fact.policyVersion must be one of ${BATCH_POLICY_VERSIONS.join(", ")}`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateCodeAnalysisFact(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["code-analysis fact must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, CODE_ANALYSIS_FACT_KEYS, "code-analysis fact", errors);
+  if (value.kind !== "code-analysis") errors.push('code-analysis fact.kind must be "code-analysis"');
+  if (value.schemaVersion !== FACT_SCHEMA_VERSION) errors.push(`code-analysis fact.schemaVersion must be ${FACT_SCHEMA_VERSION}`);
+  if (!isStrictScopeId(value.cloneId)) errors.push("code-analysis fact.cloneId must be a strict opaque identifier");
+  if (value.worktreeId !== null && !isStrictScopeId(value.worktreeId)) {
+    errors.push("code-analysis fact.worktreeId must be null or a strict opaque identifier");
+  }
+  if (value.snapshotId !== null && !isStrictSnapshotId(value.snapshotId)) {
+    errors.push("code-analysis fact.snapshotId must be null or a strict lsnap hex snapshot id");
+  }
+  let alg: OidAlgorithm | undefined;
+  if (value.tree !== null) {
+    const tree = validateQualifiedOid(value.tree);
+    if (!tree.ok) errors.push(...tree.errors.map((e) => `code-analysis fact.tree: ${e}`));
+    else alg = (value.tree as QualifiedOid).algorithm;
+  }
+  if (value.blob !== null) {
+    const blob = validateQualifiedOid(value.blob);
+    if (!blob.ok) errors.push(...blob.errors.map((e) => `code-analysis fact.blob: ${e}`));
+    else if (alg !== undefined && (value.blob as QualifiedOid).algorithm !== alg) {
+      errors.push(`code-analysis fact.blob.algorithm must match ${alg}`);
+    }
+  }
+  if (!isNonEmptySafePathBytes(value.path)) errors.push("code-analysis fact.path must be non-empty NUL-free raw path bytes");
+  if (!isNonEmptySafeText(value.language)) errors.push("code-analysis fact.language must be a non-empty string without NUL");
+  if (!isNonEmptySafeText(value.dialect)) errors.push("code-analysis fact.dialect must be a non-empty string without NUL");
+  if (!isInList(value.state, CODE_ANALYSIS_STATES)) {
+    errors.push(`code-analysis fact.state must be one of ${CODE_ANALYSIS_STATES.join(", ")}`);
+  }
+  if (value.state !== "unavailable" && value.tree === null && value.snapshotId === null) {
+    errors.push('code-analysis fact requires tree or snapshotId when state is not "unavailable"');
+  }
+  if (value.state === "unavailable") {
+    if (value.topologyHash !== "" && !isHex64String(value.topologyHash)) {
+      errors.push("code-analysis fact.topologyHash must be empty or a 64 character lowercase hex digest when unavailable");
+    }
+  } else if (!isHex64String(value.topologyHash)) {
+    errors.push("code-analysis fact.topologyHash must be a 64 character lowercase hex digest");
+  }
+  for (const field of ["contentHash", "configHash", "dependencyHash"] as const) {
+    if (!isHex64String(value[field])) errors.push(`code-analysis fact.${field} must be a 64 character lowercase hex digest`);
+  }
+  if (value.state === "unavailable") {
+    if (value.grammarVersion !== null && !isVersionString(value.grammarVersion)) {
+      errors.push("code-analysis fact.grammarVersion must be null or a non-empty version string when unavailable");
+    }
+  } else if (!isVersionString(value.grammarVersion)) {
+    errors.push("code-analysis fact.grammarVersion must be a non-empty version string");
+  }
+  if (value.grammarDigest !== undefined && value.grammarDigest !== null && !isHex64String(value.grammarDigest)) {
+    errors.push("code-analysis fact.grammarDigest, when present, must be null or a 64 character lowercase hex digest");
+  }
+  if (value.grammarId !== undefined && value.grammarId !== null && !isVersionString(value.grammarId)) {
+    errors.push("code-analysis fact.grammarId, when present, must be null or a non-empty version string");
+  }
+  if (!isVersionString(value.extractorVersion)) errors.push("code-analysis fact.extractorVersion must be a non-empty version string");
+  if (!isVersionString(value.resolverVersion)) errors.push("code-analysis fact.resolverVersion must be a non-empty version string");
+  if (!isBatchPolicyVersion(value.policyVersion)) {
+    errors.push(`code-analysis fact.policyVersion must be one of ${BATCH_POLICY_VERSIONS.join(", ")}`);
+  }
+  if (!Array.isArray(value.symbols)) {
+    errors.push("code-analysis fact.symbols must be an array");
+  } else {
+    value.symbols.forEach((sym: unknown, idx: number) => {
+      const path = `code-analysis fact.symbols[${idx}]`;
+      if (!isRecord(sym)) {
+        errors.push(`${path} must be an object`);
+        return;
+      }
+      rejectUnknownKeys(sym, CODE_SYMBOL_FACT_KEYS, path, errors);
+      if (!isNonEmptySafeText(sym.symbolId)) errors.push(`${path}.symbolId must be a non-empty string without NUL`);
+      if (!isNonEmptySafeText(sym.slot)) errors.push(`${path}.slot must be a non-empty string without NUL`);
+      if (!isNonEmptySafeText(sym.name)) errors.push(`${path}.name must be a non-empty string without NUL`);
+      if (!isNonEmptySafeText(sym.kind)) errors.push(`${path}.kind must be a non-empty string without NUL`);
+      if (!isHex64String(sym.bodyHash)) errors.push(`${path}.bodyHash must be a 64 character lowercase hex digest`);
+      if (!isHex64String(sym.contentHash)) errors.push(`${path}.contentHash must be a 64 character lowercase hex digest`);
+      if (!isNonEmptySafePathBytes(sym.path)) errors.push(`${path}.path must be non-empty NUL-free raw path bytes`);
+      if (sym.tree !== null) {
+        const tree = validateQualifiedOid(sym.tree);
+        if (!tree.ok) errors.push(...tree.errors.map((e) => `${path}.tree: ${e}`));
+      }
+    });
+  }
+  if (!Array.isArray(value.relations)) {
+    errors.push("code-analysis fact.relations must be an array");
+  } else {
+    value.relations.forEach((rel: unknown, idx: number) => {
+      const path = `code-analysis fact.relations[${idx}]`;
+      if (!isRecord(rel)) {
+        errors.push(`${path} must be an object`);
+        return;
+      }
+      rejectUnknownKeys(rel, CODE_RELATION_ITEM_KEYS, path, errors);
+      if (!isNonEmptySafeText(rel.relationId)) errors.push(`${path}.relationId must be a non-empty string without NUL`);
+      if (!isInList(rel.role, CODE_RELATION_ROLES)) errors.push(`${path}.role must be one of ${CODE_RELATION_ROLES.join(", ")}`);
+      const src = validateCodeRelationEndpoint(rel.source, `${path}.source`);
+      if (!src.ok) errors.push(...src.errors);
+      const dst = validateCodeRelationEndpoint(rel.target, `${path}.target`);
+      if (!dst.ok) errors.push(...dst.errors);
+      if (typeof rel.external !== "boolean") errors.push(`${path}.external must be a boolean`);
+      if (!isVersionString(rel.extractorVersion)) errors.push(`${path}.extractorVersion must be a non-empty version string`);
+      if (!isVersionString(rel.resolverVersion)) errors.push(`${path}.resolverVersion must be a non-empty version string`);
+    });
+  }
+  if (!Array.isArray(value.unresolved)) {
+    errors.push("code-analysis fact.unresolved must be an array");
+  } else {
+    value.unresolved.forEach((item: unknown, idx: number) => {
+      const path = `code-analysis fact.unresolved[${idx}]`;
+      if (!isRecord(item)) {
+        errors.push(`${path} must be an object`);
+        return;
+      }
+      rejectUnknownKeys(item, CODE_UNRESOLVED_FACT_KEYS, path, errors);
+      if (!isInList(item.unresolvedKind, CODE_UNRESOLVED_KINDS)) {
+        errors.push(`${path}.unresolvedKind must be one of ${CODE_UNRESOLVED_KINDS.join(", ")}`);
+      }
+      if (!isNonEmptySafeText(item.name)) errors.push(`${path}.name must be a non-empty string without NUL`);
+      if (!isNonEmptySafeText(item.fromSymbolId)) errors.push(`${path}.fromSymbolId must be a non-empty string without NUL`);
+      if (!isNonEmptySafeText(item.reason)) errors.push(`${path}.reason must be a non-empty string without NUL`);
+    });
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateLineAttributionFact(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["line-attribution fact must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, LINE_ATTRIBUTION_FACT_KEYS, "line-attribution fact", errors);
+  if (value.kind !== "line-attribution") errors.push('line-attribution fact.kind must be "line-attribution"');
+  if (value.schemaVersion !== FACT_SCHEMA_VERSION) errors.push(`line-attribution fact.schemaVersion must be ${FACT_SCHEMA_VERSION}`);
+  if (!isStrictScopeId(value.cloneId)) errors.push("line-attribution fact.cloneId must be a strict opaque identifier");
+  const target = validateQualifiedOid(value.target);
+  if (!target.ok) errors.push(...target.errors.map((e) => `line-attribution fact.target: ${e}`));
+  const alg = target.ok ? (value.target as QualifiedOid).algorithm : undefined;
+  if (!isNonEmptySafePathBytes(value.path)) errors.push("line-attribution fact.path must be non-empty NUL-free raw path bytes");
+  if (!Array.isArray(value.ranges) || value.ranges.length === 0) {
+    errors.push("line-attribution fact.ranges must be a non-empty array");
+  } else {
+    let prevEnd = 0;
+    value.ranges.forEach((range: unknown, idx: number) => {
+      const checked = validateLineRange(range, `line-attribution fact.ranges[${idx}]`);
+      if (!checked.ok) errors.push(...checked.errors);
+      else {
+        const r = range as LineRangeDto;
+        if (r.start <= prevEnd) errors.push(`line-attribution fact.ranges[${idx}] must be strictly ordered and disjoint`);
+        prevEnd = r.end;
+      }
+    });
+  }
+  if (value.policyVersion !== POLICY_VERSION) errors.push(`line-attribution fact.policyVersion must be "${POLICY_VERSION}"`);
+  if (!isRecord(value.options)) {
+    errors.push("line-attribution fact.options must be an object");
+  } else {
+    rejectUnknownKeys(value.options, LINE_ATTRIBUTION_OPTIONS_KEYS, "line-attribution fact.options", errors);
+    const o = value.options;
+    if (o.version !== "native-blame-options/1") errors.push('line-attribution fact.options.version must be "native-blame-options/1"');
+    if (o.algorithm !== "myers") errors.push('line-attribution fact.options.algorithm must be "myers"');
+    const scoreOk = (v: unknown): boolean => v === null || (isSafeInt(v) && v >= 1 && v <= 999999);
+    if (!scoreOk(o.moveMinCharacters)) errors.push("line-attribution fact.options.moveMinCharacters must be null or integer in [1, 999999]");
+    if (!scoreOk(o.copyMinCharacters)) errors.push("line-attribution fact.options.copyMinCharacters must be null or integer in [1, 999999]");
+    if (o.copySearch !== "modified" && o.copySearch !== "created" && o.copySearch !== "all") {
+      errors.push('line-attribution fact.options.copySearch must be "modified", "created" or "all"');
+    }
+    if (o.copyMinCharacters !== null && o.moveMinCharacters === null) {
+      errors.push("line-attribution fact.options.copyMinCharacters requires a non-null moveMinCharacters");
+    }
+    if (o.copyMinCharacters === null && o.copySearch !== "all") {
+      errors.push('line-attribution fact.options.copySearch must be "all" when copyMinCharacters is null');
+    }
+  }
+  if (!isVersionString(value.calculationVersion)) errors.push("line-attribution fact.calculationVersion must be a non-empty version string");
+  if (value.gitVersion !== null && !isVersionString(value.gitVersion)) {
+    errors.push("line-attribution fact.gitVersion must be null or a non-empty version string");
+  }
+  if (value.state !== "complete" && value.state !== "partial") {
+    errors.push('line-attribution fact.state must be "complete" or "partial"');
+  }
+  if (value.retainedRoot !== null) {
+    const root = validateQualifiedOid(value.retainedRoot);
+    if (!root.ok) errors.push(...root.errors.map((e) => `line-attribution fact.retainedRoot: ${e}`));
+    else if (alg !== undefined && (value.retainedRoot as QualifiedOid).algorithm !== alg) {
+      errors.push(`line-attribution fact.retainedRoot.algorithm must match ${alg}`);
+    }
+    if (value.state === "partial") errors.push("line-attribution fact.retainedRoot must be null when state is partial");
+  }
+  if (!Array.isArray(value.origins)) {
+    errors.push("line-attribution fact.origins must be an array");
+  } else {
+    value.origins.forEach((origin: unknown, idx: number) => {
+      const path = `line-attribution fact.origins[${idx}]`;
+      if (!isRecord(origin)) {
+        errors.push(`${path} must be an object`);
+        return;
+      }
+      rejectUnknownKeys(origin, LINE_ORIGIN_KEYS, path, errors);
+      const commit = validateQualifiedOid(origin.commit);
+      if (!commit.ok) errors.push(...commit.errors.map((e) => `${path}.commit: ${e}`));
+      else if (alg !== undefined && (origin.commit as QualifiedOid).algorithm !== alg) {
+        errors.push(`${path}.commit.algorithm must match ${alg}`);
+      }
+      const author = validateHistoryIdentity(origin.author, `${path}.author`, true);
+      if (!author.ok) errors.push(...author.errors);
+      if (!isNonEmptySafePathBytes(origin.path)) errors.push(`${path}.path must be non-empty NUL-free raw path bytes`);
+      const origRange = validateLineRange(origin.originalRange, `${path}.originalRange`);
+      if (!origRange.ok) errors.push(...origRange.errors);
+      const finalRange = validateLineRange(origin.finalRange, `${path}.finalRange`);
+      if (!finalRange.ok) errors.push(...finalRange.errors);
+    });
+  }
+  if (!Array.isArray(value.parentEvidence)) {
+    errors.push("line-attribution fact.parentEvidence must be an array");
+  } else {
+    value.parentEvidence.forEach((pe: unknown, idx: number) => {
+      const checked = validateLineParentEvidence(pe, `line-attribution fact.parentEvidence[${idx}]`, alg);
+      if (!checked.ok) errors.push(...checked.errors);
+    });
+  }
+  if (!Array.isArray(value.gaps)) {
+    errors.push("line-attribution fact.gaps must be an array");
+  } else {
+    value.gaps.forEach((gap: unknown, idx: number) => {
+      const path = `line-attribution fact.gaps[${idx}]`;
+      if (!isRecord(gap)) {
+        errors.push(`${path} must be an object`);
+        return;
+      }
+      rejectUnknownKeys(gap, LINE_ATTRIBUTION_GAP_KEYS, path, errors);
+      if (!isInList(gap.cause, LINE_ATTRIBUTION_GAP_CAUSES)) {
+        errors.push(`${path}.cause must be one of ${LINE_ATTRIBUTION_GAP_CAUSES.join(", ")}`);
+      }
+      if (!isNonEmptySafeText(gap.reason)) errors.push(`${path}.reason must be a non-empty string without NUL`);
+    });
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+function validateSymbolHistoryAnchor(value: unknown, path: string, expectedAlg?: OidAlgorithm): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: [`${path} must be an object`] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, SYMBOL_HISTORY_ANCHOR_KEYS, path, errors);
+  for (const field of ["commit", "tree", "blob"] as const) {
+    const checked = validateQualifiedOid(value[field]);
+    if (!checked.ok) errors.push(...checked.errors.map((e) => `${path}.${field}: ${e}`));
+    else if (expectedAlg !== undefined && (value[field] as QualifiedOid).algorithm !== expectedAlg) {
+      errors.push(`${path}.${field}.algorithm must match ${expectedAlg}`);
+    }
+  }
+  if (!isNonEmptySafePathBytes(value.path)) errors.push(`${path}.path must be non-empty NUL-free raw path bytes`);
+  if (!isNonEmptySafeText(value.symbolId)) errors.push(`${path}.symbolId must be a non-empty string without NUL`);
+  if (!isNonEmptySafeText(value.slot)) errors.push(`${path}.slot must be a non-empty string without NUL`);
+  if (!isNonEmptySafeText(value.name)) errors.push(`${path}.name must be a non-empty string without NUL`);
+  if (!isNonEmptySafeText(value.kind)) errors.push(`${path}.kind must be a non-empty string without NUL`);
+  if (!isNonEmptySafeText(value.language)) errors.push(`${path}.language must be a non-empty string without NUL`);
+  if (!isHex64String(value.bodyHash)) errors.push(`${path}.bodyHash must be a 64 character lowercase hex digest`);
+  if (value.range !== null) {
+    const range = validateLineRange(value.range, `${path}.range`);
+    if (!range.ok) errors.push(...range.errors);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateSymbolCorrespondenceFact(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["symbol-correspondence fact must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, SYMBOL_CORRESPONDENCE_FACT_KEYS, "symbol-correspondence fact", errors);
+  if (value.kind !== "symbol-correspondence") errors.push('symbol-correspondence fact.kind must be "symbol-correspondence"');
+  if (value.schemaVersion !== FACT_SCHEMA_VERSION) errors.push(`symbol-correspondence fact.schemaVersion must be ${FACT_SCHEMA_VERSION}`);
+  if (!isStrictScopeId(value.cloneId)) errors.push("symbol-correspondence fact.cloneId must be a strict opaque identifier");
+  const before = validateQualifiedOid(value.before);
+  if (!before.ok) errors.push(...before.errors.map((e) => `symbol-correspondence fact.before: ${e}`));
+  const alg = before.ok ? (value.before as QualifiedOid).algorithm : undefined;
+  const after = validateQualifiedOid(value.after);
+  if (!after.ok) errors.push(...after.errors.map((e) => `symbol-correspondence fact.after: ${e}`));
+  else if (alg !== undefined && (value.after as QualifiedOid).algorithm !== alg) {
+    errors.push(`symbol-correspondence fact.after.algorithm must match ${alg}`);
+  }
+  if (value.policyVersion !== POLICY_VERSION) errors.push(`symbol-correspondence fact.policyVersion must be "${POLICY_VERSION}"`);
+  if (!isRecord(value.options)) {
+    errors.push("symbol-correspondence fact.options must be an object");
+  } else {
+    rejectUnknownKeys(value.options, SYMBOL_HISTORY_OPTIONS_KEYS, "symbol-correspondence fact.options", errors);
+    if (value.options.version !== "exact-l5-body/1") errors.push('symbol-correspondence fact.options.version must be "exact-l5-body/1"');
+    if (value.options.renameThreshold !== 100) errors.push("symbol-correspondence fact.options.renameThreshold must be 100");
+    if (value.options.moveThreshold !== 100) errors.push("symbol-correspondence fact.options.moveThreshold must be 100");
+    if (value.options.copyThreshold !== 100) errors.push("symbol-correspondence fact.options.copyThreshold must be 100");
+  }
+  if (!isVersionString(value.calculationVersion)) errors.push("symbol-correspondence fact.calculationVersion must be a non-empty version string");
+  if (!isVersionString(value.extractorVersion)) errors.push("symbol-correspondence fact.extractorVersion must be a non-empty version string");
+  if (value.state !== "complete" && value.state !== "partial") {
+    errors.push('symbol-correspondence fact.state must be "complete" or "partial"');
+  }
+  if (!Array.isArray(value.correspondences)) {
+    errors.push("symbol-correspondence fact.correspondences must be an array");
+  } else {
+    value.correspondences.forEach((item: unknown, idx: number) => {
+      const path = `symbol-correspondence fact.correspondences[${idx}]`;
+      if (!isRecord(item)) {
+        errors.push(`${path} must be an object`);
+        return;
+      }
+      rejectUnknownKeys(item, SYMBOL_CORRESPONDENCE_ITEM_KEYS, path, errors);
+      for (const side of ["before", "after"] as const) {
+        if (!Array.isArray(item[side])) {
+          errors.push(`${path}.${side} must be an array`);
+        } else {
+          (item[side] as unknown[]).forEach((anchor, aIdx) => {
+            const checked = validateSymbolHistoryAnchor(anchor, `${path}.${side}[${aIdx}]`, alg);
+            if (!checked.ok) errors.push(...checked.errors);
+          });
+        }
+      }
+      if (!isInList(item.relation, SYMBOL_CORRESPONDENCE_RELATIONS)) {
+        errors.push(`${path}.relation must be one of ${SYMBOL_CORRESPONDENCE_RELATIONS.join(", ")}`);
+      }
+      if (!isInList(item.reason, SYMBOL_CORRESPONDENCE_REASONS)) {
+        errors.push(`${path}.reason must be one of ${SYMBOL_CORRESPONDENCE_REASONS.join(", ")}`);
+      }
+      if (item.similarity !== 100 && item.similarity !== null) {
+        errors.push(`${path}.similarity must be 100 or null`);
+      }
+    });
+  }
+  if (!Array.isArray(value.parentEvidence)) {
+    errors.push("symbol-correspondence fact.parentEvidence must be an array");
+  } else {
+    value.parentEvidence.forEach((pe: unknown, idx: number) => {
+      const checked = validateLineParentEvidence(pe, `symbol-correspondence fact.parentEvidence[${idx}]`, alg);
+      if (!checked.ok) errors.push(...checked.errors);
+    });
+  }
+  if (!Array.isArray(value.gaps)) {
+    errors.push("symbol-correspondence fact.gaps must be an array");
+  } else {
+    value.gaps.forEach((gap: unknown, idx: number) => {
+      const path = `symbol-correspondence fact.gaps[${idx}]`;
+      if (!isRecord(gap)) {
+        errors.push(`${path} must be an object`);
+        return;
+      }
+      rejectUnknownKeys(gap, SYMBOL_HISTORY_GAP_KEYS, path, errors);
+      if (!isInList(gap.cause, SYMBOL_HISTORY_GAP_CAUSES)) {
+        errors.push(`${path}.cause must be one of ${SYMBOL_HISTORY_GAP_CAUSES.join(", ")}`);
+      }
+      if (!isNonEmptySafeText(gap.reason)) errors.push(`${path}.reason must be a non-empty string without NUL`);
+    });
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateCoverageFact(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["coverage fact must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, COVERAGE_FACT_KEYS, "coverage fact", errors);
+  if (value.kind !== "coverage") errors.push('coverage fact.kind must be "coverage"');
+  if (value.schemaVersion !== FACT_SCHEMA_VERSION) errors.push(`coverage fact.schemaVersion must be ${FACT_SCHEMA_VERSION}`);
+  if (!isInList(value.axis, COVERAGE_FACT_AXES)) {
+    errors.push(`coverage fact.axis must be one of ${COVERAGE_FACT_AXES.join(", ")}`);
+  }
+  if (!isInList(value.state, COVERAGE_FACT_STATES)) {
+    errors.push(`coverage fact.state must be one of ${COVERAGE_FACT_STATES.join(", ")}`);
+  }
+  if (!isNonEmptySafeText(value.reason)) errors.push("coverage fact.reason must be a non-empty string without NUL");
+  if (!isNonNegativeSafeInt(value.checkedAt)) errors.push("coverage fact.checkedAt must be a non-negative safe integer");
+  if (value.language !== undefined && !isNonEmptySafeText(value.language)) {
+    errors.push("coverage fact.language, when present, must be a non-empty string without NUL");
+  }
+  if (value.cause !== undefined && !isNonEmptySafeText(value.cause)) {
+    errors.push("coverage fact.cause, when present, must be a non-empty string without NUL");
+  }
+  if (value.pendingCount !== undefined && !isNonNegativeSafeInt(value.pendingCount)) {
+    errors.push("coverage fact.pendingCount, when present, must be a non-negative safe integer");
+  }
+  if (value.pendingFrontier !== undefined && value.pendingFrontier !== null && !isNonEmptySafeText(value.pendingFrontier)) {
+    errors.push("coverage fact.pendingFrontier, when present, must be null or a non-empty string without NUL");
+  }
+  for (const field of ["boundary", "missing"] as const) {
+    const list = value[field];
+    if (list !== undefined) {
+      if (!Array.isArray(list)) {
+        errors.push(`coverage fact.${field}, when present, must be an array`);
+      } else {
+        list.forEach((oid: unknown, idx: number) => {
+          const checked = validateQualifiedOid(oid);
+          if (!checked.ok) errors.push(...checked.errors.map((e) => `coverage fact.${field}[${idx}]: ${e}`));
+        });
+      }
+    }
+  }
+  if (value.lastSuccessAt !== undefined && value.lastSuccessAt !== null && !isPositiveInteger(value.lastSuccessAt)) {
+    errors.push("coverage fact.lastSuccessAt, when present, must be null or a positive safe integer");
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateProgressFact(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["progress fact must be an object"] };
+  const errors: string[] = [];
+  if (value.kind !== "progress") errors.push('progress fact.kind must be "progress"');
+  if (value.schemaVersion !== FACT_SCHEMA_VERSION) errors.push(`progress fact.schemaVersion must be ${FACT_SCHEMA_VERSION}`);
+  if (!isStrictScopeId(value.cloneId)) errors.push("progress fact.cloneId must be a strict opaque identifier");
+
+  switch (value.progressKind) {
+    case "history-checkpoint": {
+      rejectUnknownKeys(value, PROGRESS_HISTORY_CHECKPOINT_KEYS, "progress(history-checkpoint) fact", errors);
+      const commit = validateQualifiedOid(value.commit);
+      if (!commit.ok) errors.push(...commit.errors.map((e) => `progress fact.commit: ${e}`));
+      const alg = commit.ok ? (value.commit as QualifiedOid).algorithm : undefined;
+      const tree = validateQualifiedOid(value.tree);
+      if (!tree.ok) errors.push(...tree.errors.map((e) => `progress fact.tree: ${e}`));
+      else if (alg !== undefined && (value.tree as QualifiedOid).algorithm !== alg) {
+        errors.push(`progress fact.tree.algorithm must match ${alg}`);
+      }
+      if (!Array.isArray(value.parents)) {
+        errors.push("progress fact.parents must be an array");
+      } else {
+        value.parents.forEach((parent: unknown, idx: number) => {
+          const checked = validateQualifiedOid(parent);
+          if (!checked.ok) errors.push(...checked.errors.map((e) => `progress fact.parents[${idx}]: ${e}`));
+          else if (alg !== undefined && (parent as QualifiedOid).algorithm !== alg) {
+            errors.push(`progress fact.parents[${idx}].algorithm must match ${alg}`);
+          }
+        });
+      }
+      if (!isVersionString(value.extractorVersion)) errors.push("progress fact.extractorVersion must be a non-empty version string");
+      if (value.policyVersion !== POLICY_VERSION) errors.push(`progress fact.policyVersion must be "${POLICY_VERSION}"`);
+      break;
+    }
+    case "retained-root": {
+      rejectUnknownKeys(value, PROGRESS_RETAINED_ROOT_KEYS, "progress(retained-root) fact", errors);
+      const root = validateQualifiedOid(value.root);
+      if (!root.ok) errors.push(...root.errors.map((e) => `progress fact.root: ${e}`));
+      if (!isPositiveInteger(value.firstSeenAt)) errors.push("progress fact.firstSeenAt must be a positive safe integer");
+      if (typeof value.firstSignal !== "string" || !RETENTION_SIGNALS.includes(value.firstSignal)) {
+        errors.push(`progress fact.firstSignal must be one of ${RETENTION_SIGNALS.join(", ")}`);
+      }
+      if (value.refName !== null && (!isNonEmptySafeText(value.refName) || !value.refName.startsWith("refs/"))) {
+        errors.push('progress fact.refName must be null or a non-empty full ref name starting with "refs/" without NUL');
+      }
+      break;
+    }
+    case "pr-cursor": {
+      rejectUnknownKeys(value, PROGRESS_PR_CURSOR_KEYS, "progress(pr-cursor) fact", errors);
+      const cursor = validatePrSyncCursor(value.cursor);
+      if (!cursor.ok) errors.push(...cursor.errors.map((e) => `progress fact.cursor: ${e}`));
+      break;
+    }
+    case "pr-object-job": {
+      rejectUnknownKeys(value, PROGRESS_PR_OBJECT_JOB_KEYS, "progress(pr-object-job) fact", errors);
+      const job = validatePrObjectJob(value.job);
+      if (!job.ok) errors.push(...job.errors.map((e) => `progress fact.job: ${e}`));
+      break;
+    }
+    case "reconcile-checkpoint": {
+      rejectUnknownKeys(value, PROGRESS_RECONCILE_CHECKPOINT_KEYS, "progress(reconcile-checkpoint) fact", errors);
+      if (value.worktreeId !== null && !isStrictScopeId(value.worktreeId)) {
+        errors.push("progress fact.worktreeId must be null or a strict opaque identifier");
+      }
+      if (!isStrictScopeId(value.checkpointId)) errors.push("progress fact.checkpointId must be a strict opaque identifier");
+      if (!isNonNegativeSafeInt(value.pendingCount)) errors.push("progress fact.pendingCount must be a non-negative safe integer");
+      if (value.frontier !== null && !isNonEmptySafeText(value.frontier)) {
+        errors.push("progress fact.frontier must be null or a non-empty string without NUL");
+      }
+      if (typeof value.complete !== "boolean") errors.push("progress fact.complete must be a boolean");
+      if (!isPositiveInteger(value.recordedAt)) errors.push("progress fact.recordedAt must be a positive safe integer");
+      break;
+    }
+    default:
+      errors.push(`progress fact.progressKind must be one of ${PROGRESS_FACT_KINDS.join(", ")}`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+/**
+ * Classify a candidate fact into its closed LiveFactKind without mutating it.
+ * Tagged facts resolve by their exact `kind`; the three L4b shapes emitted
+ * directly by snapshots.ts keep their bytes and resolve structurally; any
+ * unknown or unrecognized shape returns null and is refused by validateLiveFact.
+ */
+export function classifyLiveFactKind(fact: unknown): LiveFactKind | null {
+  if (!isRecord(fact)) return null;
+  if (Object.prototype.hasOwnProperty.call(fact, "kind")) {
+    const kind = fact.kind;
+    if (typeof kind !== "string") return null;
+    if ((TAGGED_FACT_KINDS as readonly string[]).includes(kind)) {
+      return kind as TaggedFactKind;
+    }
+    if (isLocalDiffKind(kind)) return "local-diff";
+    if (kind === "index" || kind === "working-tree") return "local-snapshot";
+    return null;
+  }
+  if ("axis" in fact && "state" in fact && "reason" in fact) {
+    return "local-coverage";
+  }
+  return null;
+}
+
+/**
+ * Exact-key pure validator over the closed LiveFactDto union.
+ * Sink-bound: L4b diffs validate through validateSealedLocalDiff (transient
+ * "open-lines" is refused), and every unknown kind or extra key is refused.
+ */
+export function validateLiveFact(fact: unknown): ValidationResult {
+  if (!isRecord(fact)) return { ok: false, errors: ["fact must be an object"] };
+  const kind = classifyLiveFactKind(fact);
+  if (kind === null) {
+    return { ok: false, errors: ["unknown or unrecognized fact kind: refused"] };
+  }
+  switch (kind) {
+    case "ref-observation":
+      return validateRefObservationFact(fact);
+    case "ref-state":
+      return validateTrackedRefFact(fact);
+    case "commit":
+      return validateCommitFact(fact);
+    case "changed-file":
+      return validateChangedFileFact(fact);
+    case "pr-observation":
+      return validatePullRequestObservationFact(fact);
+    case "pr-attribution":
+      return validatePrAttributionFact(fact);
+    case "retention-receipt":
+      return validateRetentionReceiptFact(fact);
+    case "branch-comparison":
+      return validateBranchComparisonFact(fact);
+    case "code-analysis":
+      return validateCodeAnalysisFact(fact);
+    case "code-relation":
+      return validateCodeRelationFact(fact);
+    case "line-attribution":
+      return validateLineAttributionFact(fact);
+    case "symbol-correspondence":
+      return validateSymbolCorrespondenceFact(fact);
+    case "coverage":
+      return validateCoverageFact(fact);
+    case "progress":
+      return validateProgressFact(fact);
+    case "local-diff":
+      return validateSealedLocalDiff(fact);
+    case "local-snapshot":
+      return validateLocalSnapshot(fact);
+    case "local-coverage":
+      return validateLocalCoverage(fact);
+  }
+}
+
+export function isLiveFactDto(fact: unknown): fact is LiveFactDto {
+  return validateLiveFact(fact).ok;
 }
