@@ -480,7 +480,7 @@ function runLivePackageCheck() {
 
   // 0. Preconditions: a build must exist (no silent skip).
   for (const emitted of ["index.js", "contracts.js", "registration.js", "integration.js", "index.d.ts", "contracts.d.ts", "registration.d.ts", "integration.d.ts", "line-attribution.js", "line-attribution.d.ts", "line-attribution.d.ts.map", "git-executor.js", "git-executor.d.ts", "git-executor.d.ts.map",
-    ...["symbol-history", "code-analysis", "analysis-cache", "comparisons"].flatMap(name => [`${name}.js`, `${name}.d.ts`, `${name}.d.ts.map`])]) {
+    ...["facts", "batch-codec", "symbol-history", "code-analysis", "analysis-cache", "comparisons"].flatMap(name => [`${name}.js`, `${name}.d.ts`, `${name}.d.ts.map`])]) {
     if (!existsSync(join(liveRoot, "dist", emitted))) {
       note(`build missing: engram-live/dist/${emitted} (run node scripts/build-live.mjs first; no skip)`);
     }
@@ -501,7 +501,7 @@ function runLivePackageCheck() {
   // The enumerated built dist files + one WASM per pinned language.
   function expectedPackedPaths(manifestLanguages) {
     return [
-      ...["symbol-history", "code-analysis", "analysis-cache", "comparisons"].flatMap(name =>
+      ...["facts", "batch-codec", "symbol-history", "code-analysis", "analysis-cache", "comparisons"].flatMap(name =>
         [`dist/${name}.js`, `dist/${name}.d.ts`, `dist/${name}.d.ts.map`]),
       "package.json",
       "grammar-manifest.json",
