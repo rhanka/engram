@@ -25,6 +25,8 @@ function liveBuildIsFresh(): boolean {
   if (!existsSync(marker)) return false;
   const inputs = [
     "contracts.ts",
+    "facts.ts",
+    "batch-codec.ts",
     "registration.ts",
     "integration.ts",
     "line-attribution.ts",
@@ -44,7 +46,7 @@ function liveBuildIsFresh(): boolean {
   };
   if (!manifest.languages || typeof manifest.languages !== "object") return false;
   const requiredOutputs = [
-    ...["symbol-history", "code-analysis", "analysis-cache", "comparisons"].flatMap(name =>
+    ...["facts", "batch-codec", "symbol-history", "code-analysis", "analysis-cache", "comparisons"].flatMap(name =>
       [`${name}.js`, `${name}.d.ts`, `${name}.d.ts.map`]),
     "index.js",
     "index.d.ts",
@@ -828,7 +830,7 @@ const EXPECTED_OS = ["linux"];
 
 function expectedPackedPaths(manifestLanguages: Record<string, { file: string }>): string[] {
   return [
-    ...["symbol-history", "code-analysis", "analysis-cache", "comparisons"].flatMap(name =>
+    ...["facts", "batch-codec", "symbol-history", "code-analysis", "analysis-cache", "comparisons"].flatMap(name =>
       [`dist/${name}.js`, `dist/${name}.d.ts`, `dist/${name}.d.ts.map`]),
     "package.json",
     "grammar-manifest.json",
@@ -939,6 +941,7 @@ function checkPackageClosure(input: PackageClosureInput): ClosureViolation[] {
 const NEUTRAL_TEST_FILES = new Set([
   "tests/live-neutrality.test.ts",
   "tests/live-package.test.ts",
+  "tests/live-fact-contract.test.ts",
   "tests/live-line-attribution.test.ts",
   "tests/live-symbol-history.test.ts",
   "tests/live-helper.ts",
@@ -1149,9 +1152,11 @@ describe("live neutrality", () => {
       return { generated: generatedSnapshot, packedPaths: packedPathsSnapshot, grammarDigests: digests };
     });
     const source = sourceFiles();
+    expect(source.map((file) => file.path)).toContain("engram-live/facts.ts");
+    expect(source.map((file) => file.path)).toContain("engram-live/batch-codec.ts");
     expect(source.map((file) => file.path)).toContain("engram-live/line-attribution.ts");
     expect(source.map((file) => file.path)).toContain("engram-live/symbol-history.ts");
-    for (const name of ["line-attribution", "git-executor", "symbol-history", "code-analysis", "analysis-cache", "comparisons"]) {
+    for (const name of ["facts", "batch-codec", "line-attribution", "git-executor", "symbol-history", "code-analysis", "analysis-cache", "comparisons"]) {
       for (const extension of ["js", "d.ts", "d.ts.map"]) {
         expect(packedPaths).toContain(`dist/${name}.${extension}`);
       }
@@ -1193,6 +1198,7 @@ describe("live neutrality", () => {
     const closurePaths = neutralTests.map((file) => file.path);
     expect(closurePaths).toContain("tests/live-neutrality.test.ts");
     expect(closurePaths).toContain("tests/live-package.test.ts");
+    expect(closurePaths).toContain("tests/live-fact-contract.test.ts");
     expect(closurePaths).toContain("tests/live-line-attribution.test.ts");
     expect(closurePaths).toContain("tests/live-symbol-history.test.ts");
     expect(closurePaths).toContain("tests/helpers/live-git-fixtures.ts");
@@ -1373,7 +1379,7 @@ describe("live neutrality", () => {
     singleMutationRejected((w) => ({ ...w, packedPaths: [...w.packedPaths, "dist/fetch-grammars.py"] }), /Python/);
     singleMutationRejected((w) => ({ ...w, packedPaths: [...w.packedPaths, "node_modules/web-tree-sitter/index.js"] }), /node_modules/);
     singleMutationRejected((w) => ({ ...w, packedPaths: w.packedPaths.filter((path) => path !== "dist/integration.js") }), /missing from the packed closure/);
-    for (const name of ["line-attribution", "git-executor", "symbol-history", "code-analysis", "analysis-cache", "comparisons"]) {
+    for (const name of ["facts", "batch-codec", "line-attribution", "git-executor", "symbol-history", "code-analysis", "analysis-cache", "comparisons"]) {
       for (const extension of ["js", "d.ts", "d.ts.map"]) {
         const missing = `dist/${name}.${extension}`;
         singleMutationRejected((w) => ({ ...w, packedPaths: w.packedPaths.filter((path) => path !== missing) }), /missing from the packed closure/);
@@ -1446,5 +1452,67 @@ describe("live neutrality", () => {
     // The scanner also reports every loader-factory reference so the
     // delivered-tree policy can forbid them outright.
     expect(scannerEdges.loaderFactoryReferences).toBeGreaterThan(0);
+  });
+
+  it("facts and batch-codec are in the exact packed surface and each missing entry is rejected", () => {
+    const manifestLanguages = JSON.parse(readFileSync(join(liveRoot, "grammar-manifest.json"), "utf8")).languages as Record<string, { file: string }>;
+    const { generated, packedPaths } = withLiveBuildLock(() => {
+      if (!liveBuildIsFresh()) {
+        execFileSync(process.execPath, [buildScript], { cwd: root, stdio: "inherit" });
+      }
+      return { generated: generatedFiles(), packedPaths: packedLivePaths() };
+    });
+
+    const source = sourceFiles();
+    expect(source.map((file) => file.path)).toContain("engram-live/facts.ts");
+    expect(source.map((file) => file.path)).toContain("engram-live/batch-codec.ts");
+    for (const rel of ["engram-live/facts.ts", "engram-live/batch-codec.ts"]) {
+      const scanned = source.find((file) => file.path === rel);
+      expect(scanned, `${rel} must exist in the neutral source set`).toBeDefined();
+      expect(checkSourceFile(scanned!)).toEqual([]);
+    }
+
+    const expected = expectedPackedPaths(manifestLanguages);
+    const l3aEntries = ["facts", "batch-codec"].flatMap((name) => [
+      `dist/${name}.js`,
+      `dist/${name}.d.ts`,
+      `dist/${name}.d.ts.map`,
+    ]);
+    for (const entry of l3aEntries) {
+      expect(expected, `${entry} must be pinned in expectedPackedPaths`).toContain(entry);
+      expect(packedPaths, `${entry} must be present in the packed tarball`).toContain(entry);
+      if (entry.endsWith(".js") || entry.endsWith(".d.ts")) {
+        const emitted = generated.find((file) => file.path === `engram-live/${entry}`);
+        expect(emitted, `engram-live/${entry} must exist in dist`).toBeDefined();
+        expect(checkGeneratedFile(emitted!)).toEqual([]);
+      }
+    }
+
+    // Witness package passes, and removing EACH ONE of the six facts/batch-codec
+    // entries individually is rejected as missing from the exact packed surface.
+    const witness: PackageClosureInput = {
+      packedPaths: expected,
+      packageJson: JSON.parse(readFileSync(join(liveRoot, "package.json"), "utf8")) as Record<string, unknown>,
+      lockJson: JSON.parse(readFileSync(join(liveRoot, "package-lock.json"), "utf8")),
+      manifestLanguages,
+    };
+    expect(checkImportClosure([], "package", witness)).toEqual([]);
+    for (const missing of l3aEntries) {
+      const violations = checkImportClosure([], "package", {
+        ...witness,
+        packedPaths: witness.packedPaths.filter((path) => path !== missing),
+      });
+      expect(
+        violations.some((violation) => /missing from the packed closure/.test(violation.reason) && violation.path === missing),
+        `removing ${missing} must be rejected as missing from the packed closure (got ${JSON.stringify(violations)})`,
+      ).toBe(true);
+    }
+
+    // contracts.ts must still reject even a type-only import from ./facts.js.
+    const contractsTypeImport = checkImportClosure([{
+      path: "engram-live/contracts.ts",
+      content: 'import type { LiveFactDto } from "./facts.js"; export type X = LiveFactDto;',
+    }], "source");
+    expect(contractsTypeImport.some((violation) => violation.reason.includes("data-pure"))).toBe(true);
   });
 });
