@@ -1,0 +1,18 @@
+# Points propriétaire issus des relectures tours 1 et 2 de Spec 2 (`v0.4.2`)
+
+Un seul point nouveau relève d'un choix propriétaire réel (`OQ-S2-6` dans `spec/SPEC_ENGRAM_CONTEXTUAL_GRAPH_AND_PROMPT_LOOP.md:1998`). Les quatre points de `Spec 4` (`M11`, `spec/SPEC_ENGRAM_H2A_ROLE_ONTOLOGY_AND_HARNESS_OVERLAYS.md:31-35`) sont purement techniques et tranchés dans `Spec 2 §8.2.3` (`:1807-1830`) ; les deux jalons de mise en service (`m5`, `DOSSIER-r7.fr.md:273,490,496,589`) sont déjà décidés dans leur principe et rappelés avec leur posture fermée par défaut dans `Spec 2 §11.3` (`:2002-2009`), et la question de la bibliothèque dédiée de boucle agentique face à l'esquisse `chat-core` de `sentropic/.tmp/agent-loop-v2/design.md:967` est tranchée par ta consigne plus récente dans `ANSWERS-r7.owner.yaml:93` et rattachée à la coordination technique `OQ-S2-4` (`Spec 2:344,1997`).
+
+---
+
+## `OQ-S2-6` — Garder ou retirer Gemini CLI (`gemini`) de la grille d'outils supportés
+
+- **Source :** `spec/memory/dossiers/2026-11-15-contexte-court/DOSSIER-r7.fr.md:157` ; la prémisse de `DOSSIER-r7.fr.md:524,529` selon laquelle Google aurait remplacé Gemini CLI par Antigravity CLI (`agy`) est marquée **`unverified`**, tout comme l'exécution réelle de bout en bout de `gemini` (`h2a:docs/host-integration-matrix.md:18`).
+- **Contexte en une phrase :** `gemini` et `agy` sont tous deux installés sur le poste et figurent aujourd'hui dans la grille à huit outils de `h2a` (`h2a:packages/h2a/src/hosts/plugin.ts:100-113`), tandis que l'ouverture éventuelle des crans `'P3'`/`'P4'` (vidage et renourrissage en session sans perte du défilement utilisateur) relève déjà mécaniquement de la sonde de terminal et du rejeu de `Spec 2 §5.2` (`:303-306`), sans constituer une troisième option de gouvernance.
+
+### Options (2)
+1. **Option A (par défaut) — Garder `gemini` dans la grille à huit outils (socle passif `D2 A` `'P0-diff'` / `D4 B` `'P2'`) :** `gemini` reste pris en charge au socle passif (journalisation de session, injection du seul diff du graphe et résumés d'appels outils), sans régression par rapport à la grille à huit outils de `Spec 6A` (`spec/SPEC_ENGRAM_CLUSTER_MESH_MEMORY_ACCESS_AND_MCP_WIRING.md:644,761`). Les crans `'P3'`/`'P4'` sur `gemini` restent fermés tant que la sonde automatique de défilement (`HostScrollbackProbeReceiptV1`, `Spec 2:303-306,783-802`) et le rejeu `D9 C` de `Spec 2 §5.2` n'ont pas été passés avec succès. **Gain :** continuité complète avec `Spec 6A` et possibilité d'utiliser `gemini` sans perte de journal ni rupture d'outillage. **Coût / retour arrière :** maintien de l'adaptateur passif d'un huitième outil ; retrait possible plus tard sans migration de données.
+2. **Option B — Retirer `gemini` de la grille d'outils supportés (passer à 7 outils tiers) :** sortir `gemini` du périmètre supporté pour ne conserver que les sept autres outils tiers (`claude`, `codex`, `agy`, `hermes`, `opencode`, `muse`, `vibe`). **Gain :** un outil tiers de moins à maintenir et à tester. **Coût / retour arrière :** écart explicite avec la grille à huit outils de `Spec 6A` (`:644,761`) et absence de journalisation `engram` si `gemini` est lancé ponctuellement.
+
+### Recommandation et objection principale
+- **Recommandation :** **Option A** (retenue comme posture par défaut non préemptive dans `Spec 2:317,1938,1998` tant que tu n'as pas tranché).
+- **Objection la plus forte contre l'Option A :** si tu n'utilises plus du tout `gemini` au profit d'`agy`, garder un huitième adaptateur dans la grille maintient une cible supplémentaire dans les vérifications multi-hôtes sans usage quotidien réel.
