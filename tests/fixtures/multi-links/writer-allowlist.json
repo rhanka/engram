@@ -1593,6 +1593,15 @@
     "count": 1
   },
   {
+    "file": "src/archi-cli.ts",
+    "line": 91,
+    "owner": "runArchiFmt",
+    "kind": "raw-graph-writer",
+    "fingerprint": "e91a19c490c9c46335f508b340b01a98bbd5ad5134b985c054830eddb7379d62",
+    "reason": "Writes the canonical engram.archi-mermaid/1 source text (.mmd) to the path the user names with --write; not a graph, node or link record",
+    "count": 1
+  },
+  {
     "file": "src/assembly-hygiene.ts",
     "line": 132,
     "owner": "unionNodeInto",
