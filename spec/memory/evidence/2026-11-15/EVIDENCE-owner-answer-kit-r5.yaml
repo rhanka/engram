@@ -1,0 +1,18 @@
+# Owner answer kit exported from the decision dossier r5 (https://claude.ai/artifact/XzQWUCFtmtBmNFPAufGivR), pasted by the owner in the engram session on 2026-11-15 (relayed verbatim by the conductor).
+schemaVersion: 1
+dossier: "engram-session-graphe"
+revision: "r5"
+title: "Décision mémoire engram — journal de session en graphe et outil mémoire"
+status: "prepared"
+recorded: false
+responseLine: "D1 A · D2 A · D3 A"
+choices:
+  - decision: "D1"
+    option: "A"
+    choice: "Journal + diff : les trois fonctions, données en nœuds et en liens"
+  - decision: "D2"
+    option: "A"
+    choice: "Journal en parallèle + diff injecté : l'outil garde son fil ; engram note chaque étape et n'injecte que le nouveau"
+  - decision: "D3"
+    option: "A"
+    choice: "Le journal d'abord, en trois temps : (1) noter dans les outils tiers ; (2) rendre le diff et chercher dans l'historique ; (3) notre CLI, où engram est le journal principal"

@@ -1,0 +1,27 @@
+[
+  {
+    "asked_at": "2026-11-14T21:41:51.388Z",
+    "questions": [
+      {
+        "question": "Mémoire engram, après le tour rapide Fable + Carbon + h2a. Règle lue ainsi : templates = Track, métamodèle = engram, contrôle = application Track, avec un chapitre « métamodèle et registre de lignées » écrit en premier. Recommandations, détaillées dans mon message :\n1 B : engram génère `.track/` selon le template Track, et le contrôle Track rejoue et bloque.\n2 B : 7e outil construit maintenant, mis en service après signature, chaque hôte bascule à son tour.\n3 C : rêverie de nuit en local, semaine et mois côté distant.\n4 B : lignées sœurs h2a et Track sous le métamodèle engram.\n5 B : verdict de l'application Track pour son domaine.\n6 A : synchronisation dans les deux sens, espace par espace.\nDivergence : h2a voudrait que `.track/events.jsonl` reste le journal Track faisant foi, ce qui rouvre D28. On garde D28 ?",
+        "header": "6 questions",
+        "multiSelect": false,
+        "options": [
+          {
+            "label": "Tout comme recommandé (Recommandé)",
+            "description": "Lecture de la règle confirmée ; 1B, 2B, 3C, 4B, 5B, 6A ; D28 gardé (registre engram de référence, verdict au contrôle Track). Je réécris les 3 contrats et je lance le chapitre métamodèle puis l'accès mémoire, avec Carbon pour la conception."
+          },
+          {
+            "label": "Comme recommandé, version h2a pour `.track/`",
+            "description": "Mêmes choix, mais `.track/events.jsonl` reste le journal Track faisant foi, écrit par le contrôle Track ; engram l'ingère et produit la copie par PR. Cela rouvre D28."
+          },
+          {
+            "label": "Je réponds point par point",
+            "description": "Donne tes lettres dans « Autre », par exemple « règle oui ; 1B 2A 3C 4B 5B 6A », avec tes remarques."
+          }
+        ]
+      }
+    ],
+    "answer": "Your questions have been answered: \"Mémoire engram, après le tour rapide Fable + Carbon + h2a. Règle lue ainsi : templates = Track, métamodèle = engram, contrôle = application Track, avec un chapitre « métamodèle et registre de lignées » écrit en premier. Recommandations, détaillées dans mon message :\n1 B : engram génère `.track/` selon le template Track, et le contrôle Track rejoue et bloque.\n2 B : 7e outil construit maintenant, mis en service après signature, chaque hôte bascule à son tour.\n3 C : rêverie de nuit en local, semaine et mois côté distant.\n4 B : lignées sœurs h2a et Track sous le métamodèle engram.\n5 B : verdict de l'application Track pour son domaine.\n6 A : synchronisation dans les deux sens, espace par espace.\nDivergence : h2a voudrait que `.track/events.jsonl` reste le journal Track faisant foi, ce qui rouvre D28. On garde D28 ?\"=\"Tout comme recommandé (Recommandé)\". You can now continue with these answers in mind."
+  }
+]
