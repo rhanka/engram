@@ -12,10 +12,11 @@
 // .gitignore n'est jamais une garantie de secret. Secrets SYNTHÉTIQUES
 // uniquement (tests/fixtures/live-private-content.json).
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { encodeFactBatch } from "../engram-live/batch-codec.js";
 import {
   CONTENT_POLICY_VERSION,
   CONTENT_UNAVAILABLE,
@@ -29,9 +30,12 @@ import {
   validateSealedLocalDiff,
   type DeclarationRevocationDto,
   type FactBatchDto,
+  type FactSinkPort,
+  type FactSinkReceipt,
   type LiveScope,
   type LocalDiffDto,
   type LocalSnapshotDto,
+  type ScopeFencingTokenDto,
 } from "../engram-live/contracts.js";
 import {
   SECRET_PATTERNS,
@@ -51,8 +55,6 @@ import {
   runUnregisterPurge,
   stageLocalSnapshot,
   type ContentProtectionPort,
-  type FactSinkPort,
-  type FactSinkReceipt,
   type LatestSnapshotPort,
   type LatestSnapshotQuery,
   type LatestSnapshotScope,
@@ -63,6 +65,16 @@ import {
 
 const SCOPE: LiveScope = { tenant: "local:test-owner", clone: "clone:l4b-policy" };
 const WORKTREE_ID = "wt:l4b-policy-main";
+const FENCING_TOKEN: ScopeFencingTokenDto = {
+  tokenId: "token:l4b-policy",
+  scope: { ...SCOPE, worktree: WORKTREE_ID },
+  epoch: 1,
+  epochId: "epoch:l4b-policy",
+  declarationRevision: 1,
+  projectionIncarnation: "projection:l4b-policy",
+  issuedAt: 1_700_000_000_000,
+  expiresAt: 1_700_100_000_000,
+};
 
 const enc = (text: string): Uint8Array => new TextEncoder().encode(text);
 
@@ -218,7 +230,317 @@ function collectStrings(value: unknown): string[] {
   return out;
 }
 
+function snapshotReviewInput(scope: LiveScope = { ...SCOPE, worktree: WORKTREE_ID }) {
+  return {
+    scope,
+    worktreeId: WORKTREE_ID,
+    kind: "working-tree" as const,
+    capturedAt: FENCING_TOKEN.issuedAt,
+    diff: deriveLocalDiff({
+      scope,
+      worktreeId: WORKTREE_ID,
+      kind: "unstaged",
+      base: { label: "index", oid: "b".repeat(40) },
+      tip: { label: "worktree", oid: null },
+      baseEntries: [],
+      tipEntries: [entryLike("src/app.ts", "d".repeat(40))],
+    }),
+    plaintextPayload: enc("snapshot content for review"),
+    protection: new FakeProtectionPort(),
+    store: new FakeLatestStore(),
+    sink: new FakeSink(),
+    fencingToken: FENCING_TOKEN,
+    batchId: "batch:l5p-m8-review",
+    generationId: "gen:0000000001",
+  };
+}
+
+function unstableReviewInput(input: ReturnType<typeof snapshotReviewInput>) {
+  return {
+    ...input,
+    diff: deriveLocalDiff({
+      scope: input.scope,
+      worktreeId: input.worktreeId,
+      kind: "unstaged",
+      base: input.diff.base,
+      tip: input.diff.tip,
+      baseEntries: [],
+      tipEntries: [],
+      stable: false,
+      unstableReason: "index changed during capture",
+    }),
+    batchId: "batch:l5p-m8-review-unstable",
+    generationId: "gen:0000000002",
+  };
+}
+
+describe("L5-P-m8 review", () => {
+  it("snapshot worktree fencing accepts a worktree token when the caller scope omits worktree", async () => {
+    const input = snapshotReviewInput(SCOPE);
+    const deliver = vi.spyOn(input.sink, "deliver");
+    const outcome = await stageLocalSnapshot(input);
+    expect(deliver).toHaveBeenCalledExactlyOnceWith(outcome.batch, input.fencingToken);
+  });
+
+  it.each([
+    ["a clone-scoped token with a legacy caller scope", SCOPE, "invalid-fencing-token"],
+    ["a conflicting caller and diff scope", { ...SCOPE, worktree: "wt:other" }, "foreign-worktree-scope"],
+  ] as const)("snapshot worktree fencing refuses %s before any host call", async (_, scope, code) => {
+    const input = snapshotReviewInput(scope);
+    const loadLatest = vi.spyOn(input.store, "loadLatest");
+    const protect = vi.spyOn(input.protection, "protect");
+    const replaceLatest = vi.spyOn(input.store, "replaceLatest");
+    const deliver = vi.spyOn(input.sink, "deliver");
+    await expect(stageLocalSnapshot({
+      ...input,
+      fencingToken: { ...input.fencingToken, scope },
+    })).rejects.toMatchObject({ code });
+    expect(loadLatest).not.toHaveBeenCalled();
+    expect(protect).not.toHaveBeenCalled();
+    expect(replaceLatest).not.toHaveBeenCalled();
+    expect(deliver).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["foreign tenant", { scope: { ...SCOPE, tenant: "local:other", worktree: WORKTREE_ID } }],
+    ["foreign clone", { scope: { ...SCOPE, clone: "clone:other", worktree: WORKTREE_ID } }],
+    ["foreign worktree", { scope: { ...SCOPE, worktree: "wt:other" } }],
+    ["missing expected worktree", { scope: SCOPE }],
+    ["invalid epoch", { epoch: 0 }],
+    ["inverted lease bounds", { expiresAt: FENCING_TOKEN.issuedAt - 1 }],
+  ] as const)("rejects a fencing token with %s before touching the held snapshot", async (_, fields) => {
+    const input = snapshotReviewInput();
+    const held = await stageLocalSnapshot(input);
+    const loadLatest = vi.spyOn(input.store, "loadLatest");
+    const replaceLatest = vi.spyOn(input.store, "replaceLatest");
+    const protect = vi.spyOn(input.protection, "protect");
+    const deliver = vi.spyOn(input.sink, "deliver");
+    await expect(stageLocalSnapshot({
+      ...input,
+      capturedAt: input.capturedAt + 1,
+      batchId: "batch:l5p-m8-review-foreign",
+      generationId: "gen:0000000002",
+      fencingToken: { ...input.fencingToken, ...fields },
+    })).rejects.toMatchObject({ code: "invalid-fencing-token" });
+    expect(loadLatest).not.toHaveBeenCalled();
+    expect(replaceLatest).not.toHaveBeenCalled();
+    expect(protect).not.toHaveBeenCalled();
+    expect(deliver).not.toHaveBeenCalled();
+    expect(input.store.stored).toEqual([held.snapshot]);
+    expect(input.store.deleted).toEqual([]);
+  });
+
+  it.each([
+    ["a secret identity", { tokenId: "ghp_abcdefghijklmnopqrstuvwxyz0123456789" }, "sink-admission-secret-signal"],
+    ["an unknown key", { extra: "unknown" }, "invalid-fencing-token"],
+    ["a prototype key", { ["__proto__"]: { extra: true } }, "invalid-fencing-token"],
+  ] as const)("screens fencing tokens with %s before any host call", async (_, fields, code) => {
+    const input = snapshotReviewInput();
+    const loadLatest = vi.spyOn(input.store, "loadLatest");
+    const deliver = vi.spyOn(input.sink, "deliver");
+    await expect(stageLocalSnapshot({
+      ...input,
+      fencingToken: { ...input.fencingToken, ...fields },
+    })).rejects.toMatchObject({ code });
+    expect(loadLatest).not.toHaveBeenCalled();
+    expect(input.protection.protectCalls).toEqual([]);
+    expect(input.store.stored).toEqual([]);
+    expect(deliver).not.toHaveBeenCalled();
+  });
+
+  it("delivers a deeply frozen copy of the fencing token admitted before suspension", async () => {
+    const input = snapshotReviewInput();
+    const token = { ...input.fencingToken, scope: { ...input.fencingToken.scope } };
+    const deliver = vi.fn(async (batch: FactBatchDto, _token: ScopeFencingTokenDto) => input.sink.deliver(batch));
+    const stage = stageLocalSnapshot({ ...input, fencingToken: token, sink: { deliver } });
+    token.tokenId = "token:mutated";
+    token.scope.worktree = "wt:mutated";
+    await stage;
+    expect(deliver).toHaveBeenCalledOnce();
+    const deliveredToken = deliver.mock.calls[0]![1];
+    expect(deliveredToken).toEqual(input.fencingToken);
+    expect(deliveredToken).not.toBe(token);
+    expect(deliveredToken.scope).not.toBe(token.scope);
+    expect(Object.isFrozen(deliveredToken)).toBe(true);
+    expect(Object.isFrozen(deliveredToken.scope)).toBe(true);
+  });
+
+  it.each([
+    ["a missing token", () => undefined],
+    ["a missing scope", (token: ScopeFencingTokenDto) => ({ ...token, scope: undefined })],
+    ["a throwing getter", (token: ScopeFencingTokenDto) => ({
+      ...token,
+      get tokenId(): string { throw new Error("private caller diagnostic"); },
+    })],
+  ] as const)("maps %s to a constant snapshot error", async (_, malformed) => {
+    const input = snapshotReviewInput();
+    const loadLatest = vi.spyOn(input.store, "loadLatest");
+    const error = await stageLocalSnapshot({
+      ...input,
+      fencingToken: malformed(input.fencingToken) as ScopeFencingTokenDto,
+    }).catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SnapshotError);
+    expect(error).toMatchObject({ code: "invalid-fencing-token", message: "invalid-fencing-token" });
+    expect(loadLatest).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["false", false],
+    ["missing", undefined],
+    ["truthy but non-boolean", 1],
+  ] as const)("rejects a sink receipt with a %s acknowledgement", async (_, received) => {
+    const input = snapshotReviewInput();
+    const deliver = vi.fn(async (batch: FactBatchDto) => ({
+      ...await input.sink.deliver(batch),
+      received,
+    }) as unknown as FactSinkReceipt);
+    await expect(stageLocalSnapshot({ ...input, sink: { deliver } })).rejects.toMatchObject({
+      code: "sink-receipt-incomplete",
+    });
+    expect(deliver).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a sink receipt carried by an array", async () => {
+    const input = snapshotReviewInput();
+    const deliver = vi.fn(async (batch: FactBatchDto) =>
+      Object.assign([], await input.sink.deliver(batch)) as unknown as FactSinkReceipt);
+    await expect(stageLocalSnapshot({ ...input, sink: { deliver } })).rejects.toMatchObject({
+      code: "sink-receipt-incomplete",
+    });
+    expect(deliver).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["both attestations", {}],
+    ["retirement", { revokedDecryptability: true }],
+    ["decryptability revocation", { retiredSuperseded: true }],
+  ])("rejects an unstable sink receipt missing %s and preserves the held snapshot", async (_, attestations) => {
+    const input = snapshotReviewInput();
+    const held = await stageLocalSnapshot(input);
+    const replaceLatest = vi.spyOn(input.store, "replaceLatest");
+    const deliver = vi.fn(async (batch: FactBatchDto): Promise<FactSinkReceipt> => ({
+      received: true,
+      batchId: batch.batchId,
+      ...attestations,
+    }));
+    await expect(stageLocalSnapshot({ ...unstableReviewInput(input), sink: { deliver } })).rejects.toMatchObject({
+      code: "sink-receipt-incomplete",
+    });
+    expect(deliver).toHaveBeenCalledOnce();
+    expect(replaceLatest).not.toHaveBeenCalled();
+    expect(input.store.stored).toEqual([held.snapshot]);
+  });
+
+  it.each(["a stable capture", "an unstable capture after a stable one"] as const)(
+    "emits a canonical batch digest for %s", async (capture) => {
+      const input = snapshotReviewInput();
+      const stable = await stageLocalSnapshot(input);
+      const outcome = capture === "a stable capture" ? stable : await stageLocalSnapshot(unstableReviewInput(input));
+      const delivered = input.sink.batches.at(-1)!;
+      expect(encodeFactBatch(delivered).bytes).toEqual(encodeFactBatch(outcome.batch).bytes);
+    },
+  );
+
+  it("re-exports the fact sink receipt from the integration entry", () => {
+    const integration = readFileSync(new URL("../engram-live/integration.ts", import.meta.url), "utf8");
+    expect(integration).toMatch(/export\s+type\s*\{[^}]*\bFactSinkReceipt\b[^}]*\}\s*from "\.\/contracts\.js"/);
+  });
+});
+
 describe("live content policy", () => {
+  it("a snapshot delivery carries the scope fencing token to the sink and a revoked token delivers nothing", async () => {
+    const scope: LiveScope = { ...SCOPE, worktree: WORKTREE_ID };
+    const capturedAt = 1_700_000_000_000;
+    const fencingToken: ScopeFencingTokenDto = {
+      ...FENCING_TOKEN,
+      tokenId: "token:l5p-m8",
+      scope,
+      issuedAt: capturedAt - 1,
+      expiresAt: capturedAt + 60_000,
+    };
+    const accepted = new FakeSink();
+    const revoked = new Set<string>();
+    const deliver = vi.fn(async (batch: FactBatchDto, token: ScopeFencingTokenDto) => {
+      if (token?.tokenId !== fencingToken.tokenId || revoked.has(token.tokenId)) {
+        throw new Error("writer lease unavailable");
+      }
+      return accepted.deliver(batch);
+    });
+    const diff = deriveLocalDiff({
+      scope,
+      worktreeId: WORKTREE_ID,
+      kind: "unstaged",
+      base: { label: "index", oid: "b".repeat(40) },
+      tip: { label: "worktree", oid: null },
+      baseEntries: [],
+      tipEntries: [entryLike("src/app.ts", "d".repeat(40))],
+    });
+    const input = {
+      scope,
+      worktreeId: WORKTREE_ID,
+      kind: "working-tree" as const,
+      capturedAt,
+      diff,
+      plaintextPayload: null,
+      protection: null,
+      store: new FakeLatestStore(),
+      sink: { deliver },
+      fencingToken,
+      batchId: "batch:l5p-m8-accepted",
+      generationId: "gen:0000000001",
+    };
+    const staged = await stageLocalSnapshot(input);
+    expect(deliver).toHaveBeenNthCalledWith(1, staged.batch, fencingToken);
+
+    revoked.add(fencingToken.tokenId);
+    const refused = { ...input, batchId: "batch:l5p-m8-revoked", generationId: "gen:0000000002" };
+    await expect(stageLocalSnapshot(refused)).rejects.toMatchObject({ code: "sink-delivery-refused" });
+    expect(deliver).toHaveBeenNthCalledWith(2, expect.objectContaining({ batchId: refused.batchId }), fencingToken);
+
+    const unstable = {
+      ...refused,
+      diff: deriveLocalDiff({
+        scope,
+        worktreeId: WORKTREE_ID,
+        kind: "unstaged",
+        base: diff.base,
+        tip: diff.tip,
+        baseEntries: [],
+        tipEntries: [],
+        stable: false,
+        unstableReason: "index changed during capture",
+      }),
+      batchId: "batch:l5p-m8-unstable",
+      generationId: "gen:0000000003",
+    };
+    await expect(stageLocalSnapshot(unstable)).rejects.toMatchObject({ code: "sink-delivery-refused" });
+    expect(deliver).toHaveBeenNthCalledWith(3, expect.objectContaining({ batchId: unstable.batchId }), fencingToken);
+    expect(accepted.batches.map((batch) => batch.batchId)).toEqual([input.batchId]);
+  });
+
+  it("the fact sink port has one definition and both producers deliver through it", () => {
+    const sourceDir = new URL("../engram-live/", import.meta.url);
+    const sources = new Map(
+      readdirSync(sourceDir, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
+        .map(({ name }) => [name, readFileSync(new URL(name, sourceDir), "utf8")]),
+    );
+    const integration = sources.get("integration.ts")!;
+    const snapshots = sources.get("snapshots.ts")!;
+
+    for (const name of ["FactSinkPort", "FactSinkReceipt", "ScopeFencingTokenDto"]) {
+      const declaration = new RegExp(`^\\s*(?:export\\s+)?(?:interface|type)\\s+${name}\\b(?=\\s*[<{=])`, "gm");
+      for (const [file, source] of sources) {
+        expect(source.match(declaration) ?? [], `${file}: ${name}`).toHaveLength(file === "contracts.ts" ? 1 : 0);
+      }
+    }
+    expect(integration).toMatch(/readonly factSink: FactSinkPort;/);
+    expect(snapshots).toMatch(/readonly sink: FactSinkPort;/);
+    for (const producer of [integration, snapshots]) {
+      expect(producer).toMatch(/import\s*\{[^}]*\btype FactSinkPort\b[^}]*\}\s*from "\.\/contracts\.js"/);
+    }
+  });
+
   it("emitted batches fake sink calls and producer diagnostics contain no forbidden plaintext or derivatives", async () => {
     const { texts, paths, gitignoreDecoy } = loadFixture();
     expect(gitignoreDecoy).toContain("!.env");
@@ -279,6 +601,7 @@ describe("live content policy", () => {
     const store = new FakeLatestStore();
     const sink = new FakeSink();
     const staged = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "working-tree",
@@ -303,6 +626,7 @@ describe("live content policy", () => {
     // Q2 B : le remplacement ne garde que le dernier état autorisé —
     // le précédent est désigné remplacé puis supprimé, sans historique.
     const second = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "working-tree",
@@ -365,6 +689,7 @@ describe("live content policy", () => {
     const store = new FakeLatestStore();
     const sink = new FakeSink();
     const staged = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "index",
@@ -446,6 +771,7 @@ describe("live content policy", () => {
     const store = new FakeLatestStore();
     const sink = new FakeSink();
     const staged = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "index",
@@ -494,6 +820,7 @@ describe("live content policy", () => {
     const store = new FakeLatestStore();
     const sink = new FakeSink();
     const attempt = stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "working-tree",
@@ -547,6 +874,7 @@ describe("live content policy", () => {
     const sink = new FakeSink();
     const protection = new FakeProtectionPort();
     await expect(stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "working-tree",
@@ -569,6 +897,7 @@ describe("live content policy", () => {
       tipEntries: [entryLike("src/app.ts", "d".repeat(40))],
     });
     await expect(stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "working-tree",
@@ -746,6 +1075,7 @@ describe("live content policy", () => {
     const store = new RefusingStore();
     const sink = new FakeSink();
     const first = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "working-tree",
@@ -760,6 +1090,7 @@ describe("live content policy", () => {
     });
     expect(first.snapshot.snapshotId).toMatch(/^lsnap:/);
     await expect(stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "working-tree",
@@ -820,6 +1151,7 @@ describe("live content policy", () => {
     const store = new FakeLatestStore();
     const sink = new FakeSink();
     const first = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "index",
@@ -850,6 +1182,7 @@ describe("live content policy", () => {
       unstableReason: "capture loop raced an index rewrite",
     });
     const second = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "index",
@@ -894,6 +1227,7 @@ describe("live content policy", () => {
     const storeA = new FakeLatestStore();
     const sinkA = new FakeSink();
     const failedProtect = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "index",
       capturedAt: 1_700_000_100_000, diff, plaintextPayload: enc("public"),
       protection: leakingProtect, store: storeA, sink: sinkA,
@@ -924,6 +1258,7 @@ describe("live content policy", () => {
       tipEntries: [entryLike("src/app.ts", "d".repeat(40))],
     });
     const failedReplace = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "index",
       capturedAt: 1_700_000_101_000, diff: plainDiff, plaintextPayload: null,
       protection: new FakeProtectionPort(), store: new NamingStore(), sink: new FakeSink(),
@@ -973,6 +1308,7 @@ describe("live content policy", () => {
     const store = new FakeLatestStore();
     const sink = new GenerationSink();
     const attemptA = stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
       capturedAt: 1_700_000_110_000, diff, plaintextPayload: enc("public A"),
       protection, store, sink,
@@ -980,6 +1316,7 @@ describe("live content policy", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
     const stagedB = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
       capturedAt: 1_700_000_111_000, diff, plaintextPayload: enc("public B"),
       protection, store, sink,
@@ -1034,6 +1371,7 @@ describe("live content policy", () => {
     const store = new FakeLatestStore();
     const sink = new FakeSink();
     const staged = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "index",
       capturedAt: 1_700_000_120_000, diff: three, plaintextPayload: enc("public"),
       protection, store, sink,
@@ -1068,6 +1406,7 @@ describe("live content policy", () => {
     const store = new FakeLatestStore();
     const sink = new FakeSink();
     const attempt = stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "index",
       capturedAt: 1_700_000_130_000, diff, plaintextPayload: enc("public"),
       protection: suspendedHunkProtection, store, sink,
@@ -1107,6 +1446,7 @@ describe("live content policy", () => {
     const store = new FakeLatestStore();
     const sink = new FakeSink();
     await expect(stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: { tenant: SCOPE.tenant, clone: SCOPE.clone, worktree: "wt:two" },
       worktreeId: WORKTREE_ID,
       kind: "working-tree",
@@ -1186,6 +1526,7 @@ async function sol4SealedExemplar(): Promise<LocalDiffDto> {
     ],
   });
   const outcome = await stageLocalSnapshot({
+    fencingToken: FENCING_TOKEN,
     scope: SCOPE,
     worktreeId: WORKTREE_ID,
     kind: "working-tree",
@@ -1251,6 +1592,7 @@ async function sol4Attempt(
 ): Promise<unknown> {
   sol4AttemptSeq += 1;
   return stageLocalSnapshot({
+    fencingToken: FENCING_TOKEN,
     scope: sol4Clone(mutated.scope),
     worktreeId: mutated.worktreeId,
     kind: "working-tree",
@@ -1329,6 +1671,7 @@ describe("L4b-sol4 A: la porte ne sur-bloque pas les constats explicites", () =>
     const store = new FakeLatestStore();
     const sink = new FakeSink();
     const outcome = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "working-tree",
@@ -1473,6 +1816,7 @@ describe("L4b-sol4 C: le remplacement suit la génération acceptée par le sink
       generationId: string,
     ): Promise<LocalSnapshotDto> =>
       stageLocalSnapshot({
+        fencingToken: FENCING_TOKEN,
         scope: SCOPE,
         worktreeId: WORKTREE_ID,
         kind: "working-tree",
@@ -1514,6 +1858,7 @@ describe("L4b-sol4 C: le remplacement suit la génération acceptée par le sink
       if (roll >= 0.8 && acceptedGenerations.length > 0) {
         await expect(
           stageLocalSnapshot({
+            fencingToken: FENCING_TOKEN,
             scope: SCOPE,
             worktreeId: WORKTREE_ID,
             kind: "working-tree",
@@ -1531,6 +1876,7 @@ describe("L4b-sol4 C: le remplacement suit la génération acceptée par le sink
       }
       if (roll >= 0.6) sink.failNext = true;
       const error = await stageLocalSnapshot({
+        fencingToken: FENCING_TOKEN,
         scope: SCOPE,
         worktreeId: WORKTREE_ID,
         kind: "working-tree",
@@ -1576,6 +1922,7 @@ const M1_PRIVATE_CODE = "function calculInterneConfidentiel() { return 48151623;
 
 async function m1ValidBatch(): Promise<FactBatchDto> {
   const outcome = await stageLocalSnapshot({
+    fencingToken: FENCING_TOKEN,
     scope: SCOPE,
     worktreeId: WORKTREE_ID,
     kind: "working-tree",
@@ -1669,6 +2016,7 @@ describe("L4b-M1: aucun texte libre dans le DTO émis", () => {
         const store = new FakeLatestStore();
         const sink = new FakeSink();
         const error = await stageLocalSnapshot({
+          fencingToken: FENCING_TOKEN,
           scope: SCOPE,
           worktreeId: WORKTREE_ID,
           kind: "working-tree",
@@ -1710,6 +2058,7 @@ describe("L4b-mineur: les refus SnapshotError sont des constantes structurées",
     };
     const attempts: Promise<unknown>[] = [
       stageLocalSnapshot({
+        fencingToken: FENCING_TOKEN,
         scope: { tenant: "tenant with spaces", clone: "clone:l4b-mineur" },
         worktreeId: WORKTREE_ID,
         kind: "working-tree",
@@ -1723,6 +2072,7 @@ describe("L4b-mineur: les refus SnapshotError sont des constantes structurées",
         generationId: "gen:0000000017",
       }).then(() => null, (error: unknown) => error),
       stageLocalSnapshot({
+        fencingToken: FENCING_TOKEN,
         scope: SCOPE,
         worktreeId: WORKTREE_ID,
         kind: "working-tree",
@@ -1736,6 +2086,7 @@ describe("L4b-mineur: les refus SnapshotError sont des constantes structurées",
         generationId: "gen:0000000018",
       }).then(() => null, (error: unknown) => error),
       stageLocalSnapshot({
+        fencingToken: FENCING_TOKEN,
         scope: SCOPE,
         worktreeId: WORKTREE_ID,
         kind: "working-tree",
@@ -1749,6 +2100,7 @@ describe("L4b-mineur: les refus SnapshotError sont des constantes structurées",
         generationId: "gen:0000000019",
       }).then(() => null, (error: unknown) => error),
       stageLocalSnapshot({
+        fencingToken: FENCING_TOKEN,
         scope: SCOPE,
         worktreeId: WORKTREE_ID,
         kind: "working-tree",
@@ -1813,6 +2165,7 @@ describe("L4b-M2: le sink remplace par cible et génération", () => {
       const sink = new Sol4AckSink();
       const stage = (capturedAt: number, batchId: string, generationId: string) =>
         stageLocalSnapshot({
+          fencingToken: FENCING_TOKEN,
           scope: SCOPE,
           worktreeId: WORKTREE_ID,
           kind: "working-tree",
@@ -1891,6 +2244,7 @@ describe("L4b-M2: le sink remplace par cible et génération", () => {
     for (let step = 0; step < STEPS; step += 1) {
       attempts.push(
         stageLocalSnapshot({
+          fencingToken: FENCING_TOKEN,
           scope: SCOPE,
           worktreeId: WORKTREE_ID,
           kind: "working-tree",
@@ -2010,6 +2364,7 @@ describe("L4b-sol5 Majeur 1 : aucun sealed fourni par l'appelant n'atteint le si
       const store = new FakeLatestStore();
       const sink = new FakeSink();
       const error = await stageLocalSnapshot({
+        fencingToken: FENCING_TOKEN,
         scope: SCOPE,
         worktreeId: WORKTREE_ID,
         kind: "working-tree",
@@ -2067,6 +2422,7 @@ describe("L4b-sol5 Majeur 2 : le lot est copié et gelé à l'admission", () => 
     const sink = new Sol5GateSink();
     sink.suspend("batch:l4b-sol5-frozen");
     const attempt = stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "index",
@@ -2108,6 +2464,7 @@ describe("L4b-sol5 Majeur 2 : le lot est copié et gelé à l'admission", () => 
       },
     };
     const attempt = stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "working-tree",
@@ -2143,6 +2500,7 @@ describe("L4b-sol5 mineur : le faux sink vise la même cible sans snapshot", () 
     const store = new FakeLatestStore();
     const sink = new Sol4AckSink();
     await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "working-tree",
@@ -2167,6 +2525,7 @@ describe("L4b-sol5 mineur : le faux sink vise la même cible sans snapshot", () 
       unstableReason: "capture loop raced an index rewrite",
     });
     await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "working-tree",
@@ -2285,6 +2644,7 @@ describe("L4b-sol6 variante 1 : les tampons rendus par protect sont isolés", ()
       store.suspend(generationId);
       sink.suspend(batchId);
       const attempt = stageLocalSnapshot({
+        fencingToken: FENCING_TOKEN,
         scope: SCOPE,
         worktreeId: WORKTREE_ID,
         kind: "working-tree",
@@ -2333,6 +2693,7 @@ describe("L4b-sol6 variante 1 : les tampons rendus par protect sont isolés", ()
     };
     const sink = new FakeSink();
     const outcome = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "working-tree",
@@ -2373,6 +2734,7 @@ describe("L4b-sol6 variante 2 : clé propre __proto__/constructor/prototype refu
         const store = new FakeLatestStore();
         const sink = new FakeSink();
         const error = await stageLocalSnapshot({
+          fencingToken: FENCING_TOKEN,
           scope: SCOPE,
           worktreeId: WORKTREE_ID,
           kind: "working-tree",
@@ -2418,6 +2780,7 @@ describe("L4b-sol6 variante 2 : clé propre __proto__/constructor/prototype refu
       const store = new FakeLatestStore();
       const sink = new FakeSink();
       const error = await stageLocalSnapshot({
+        fencingToken: FENCING_TOKEN,
         scope: SCOPE,
         worktreeId: WORKTREE_ID,
         kind: "working-tree",
@@ -2496,6 +2859,7 @@ describe("L4b-2 secret exclusion", () => {
     const store = new FakeLatestStore();
     const sink = new FakeSink();
     const staged = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "working-tree",
@@ -2589,6 +2953,7 @@ describe("L4b-2 secret exclusion on every surface", () => {
     const store = new FakeLatestStore();
     const sink = new FakeSink();
     const staged = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "working-tree",
@@ -2616,6 +2981,7 @@ describe("L4b-2 secret exclusion on every surface", () => {
     const store = new FakeLatestStore();
     const sink = new FakeSink();
     const staged = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "working-tree",
@@ -2645,6 +3011,7 @@ describe("L4b-2 secret exclusion on every surface", () => {
     const direct = cleanUnstagedDiff(false);
     (direct.files[0] as unknown as { path: Uint8Array }).path = enc(`src/${SECRET}.ts`);
     const staged = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "working-tree",
@@ -2773,6 +3140,7 @@ describe("L4b-2 secret matrix on every surface", () => {
         mutable.files[0]!.previousPath = enc(`src/${token}.ts`);
       }
       const staged = await stageLocalSnapshot({
+        fencingToken: FENCING_TOKEN,
         scope: SCOPE,
         worktreeId: WORKTREE_ID,
         kind: "working-tree",
@@ -2825,6 +3193,7 @@ describe("L4b-2 secret matrix on every surface", () => {
       if (position === "current" || position === "both") file.path = enc(".env.production");
       if (position === "previous" || position === "both") file.previousPath = enc(".env.staging");
       const staged = await stageLocalSnapshot({
+        fencingToken: FENCING_TOKEN,
         scope: SCOPE,
         worktreeId: WORKTREE_ID,
         kind: "working-tree",
@@ -2879,6 +3248,7 @@ describe("L4b-2 m9 fixed-width generation order", () => {
     const store = new FakeLatestStore();
     const sink = new FakeSink();
     const error = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "working-tree",
@@ -2940,6 +3310,7 @@ describe("L4b-2 m9 fixed-width generation order", () => {
     const sink = new RejectingSink();
     for (const [step, generationId] of [["09", "gen:0000000009"], ["10", "gen:0000000010"]] as const) {
       await stageLocalSnapshot({
+        fencingToken: FENCING_TOKEN,
         scope: SCOPE,
         worktreeId: WORKTREE_ID,
         kind: "working-tree",
@@ -3011,6 +3382,7 @@ describe("L4b-2 m1 throwing port accessors map to constant codes", () => {
     const store = new FakeLatestStore();
     const sink = new FakeSink();
     const hunkError = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
       capturedAt: 1_700_003_030_000, diff: openDiff(), plaintextPayload: null,
       protection: hunkProtection, store, sink,
@@ -3042,6 +3414,7 @@ describe("L4b-2 m1 throwing port accessors map to constant codes", () => {
     const storeB = new FakeLatestStore();
     const sinkB = new FakeSink();
     const snapshotError = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
       capturedAt: 1_700_003_031_000, diff: cleanDiff, plaintextPayload: enc("public"),
       protection: snapshotProtection, store: storeB, sink: sinkB,
@@ -3073,6 +3446,7 @@ describe("L4b-2 m1 throwing port accessors map to constant codes", () => {
       }
     }
     const sinkError = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
       capturedAt: 1_700_003_032_000, diff: cleanDiff, plaintextPayload: null,
       protection: null, store: new FakeLatestStore(), sink: new ThrowingSink(),
@@ -3094,12 +3468,14 @@ describe("L4b-2 m1 throwing port accessors map to constant codes", () => {
     // once so the second delivery exercises the throwing read.
     const throwingStore = new ThrowingStore();
     await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
       capturedAt: 1_700_003_033_000, diff: cleanDiff, plaintextPayload: null,
       protection: null, store: throwingStore, sink: new FakeSink(),
       batchId: "batch:l4b2-m1-store-pre", generationId: "gen:0000000053",
     });
     const storeError = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
       capturedAt: 1_700_003_034_000, diff: cleanDiff, plaintextPayload: null,
       protection: null, store: throwingStore, sink: new FakeSink(),
@@ -3114,6 +3490,7 @@ describe("L4b-2 m1 throwing port accessors map to constant codes", () => {
   it("throwing previous accessor refuses with store-load-refused", async () => {
     const store = new FakeLatestStore();
     await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
       capturedAt: 1_700_003_035_000, diff: openDiff(), plaintextPayload: null,
       protection: null, store, sink: new FakeSink(),
@@ -3121,6 +3498,7 @@ describe("L4b-2 m1 throwing port accessors map to constant codes", () => {
     });
     throwing(store.stored[0]!, "snapshotId");
     const error = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
       capturedAt: 1_700_003_036_000, diff: openDiff(), plaintextPayload: null,
       protection: null, store, sink: new FakeSink(),
@@ -3147,6 +3525,7 @@ describe("L4b-2 m2 entry fields frozen before suspension", () => {
       protection: ContentProtectionPort | null;
       store: LatestSnapshotPort;
       sink: FactSinkPort;
+      fencingToken: ScopeFencingTokenDto;
       batchId: string;
       generationId: string;
     } = {
@@ -3164,6 +3543,7 @@ describe("L4b-2 m2 entry fields frozen before suspension", () => {
       protection: new FakeProtectionPort(),
       store: new FakeLatestStore(),
       sink: new FakeSink(),
+      fencingToken: FENCING_TOKEN,
       batchId: "batch:l4b2-m2-frozen",
       generationId: "gen:0000000060",
     };
@@ -3283,6 +3663,7 @@ describe("L4b-2 m4 previous state validated and copied", () => {
     const store = new LyingStore();
     const sink = new FakeSink();
     const error = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
       capturedAt: 1_700_003_050_000, diff: cleanDiff(), plaintextPayload: null,
       protection: null, store, sink,
@@ -3299,6 +3680,7 @@ describe("L4b-2 m4 previous state validated and copied", () => {
     const store = new FakeLatestStore();
     const sink = new FakeSink();
     await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
       capturedAt: 1_700_003_051_000, diff: cleanDiff(), plaintextPayload: null,
       protection: null, store, sink,
@@ -3316,6 +3698,7 @@ describe("L4b-2 m4 previous state validated and copied", () => {
       unstableReason: "capture loop raced an index rewrite",
     });
     const preserved = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
       capturedAt: 1_700_003_052_000, diff: unstable, plaintextPayload: null,
       protection: null, store, sink,
@@ -3356,6 +3739,7 @@ describe("L4b-2 m5 admitted ciphertext never false-positives", () => {
     const store = new FakeLatestStore();
     const sink = new FakeSink();
     const staged = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE, worktreeId: WORKTREE_ID, kind: "working-tree",
       capturedAt: 1_700_003_060_000, diff, plaintextPayload: enc("public"),
       protection, store, sink,

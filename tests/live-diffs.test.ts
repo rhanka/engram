@@ -20,9 +20,14 @@ import {
   CONTENT_POLICY_VERSION,
   LOCAL_DIFF_NORMALIZER_VERSION,
   validateLocalDiff,
+  type FactBatchDto,
+  type FactSinkPort,
+  type FactSinkReceipt,
   type LiveScope,
   type LocalDiffDto,
   type LocalDiffEndpointDto,
+  type LocalSnapshotDto,
+  type ScopeFencingTokenDto,
 } from "../engram-live/contracts.js";
 import {
   deriveLocalDiff,
@@ -32,18 +37,25 @@ import {
 import {
   SnapshotError,
   stageLocalSnapshot,
-  type FactSinkPort,
-  type FactSinkReceipt,
   type LatestSnapshotPort,
   type LatestSnapshotQuery,
   type LatestSnapshotScope,
   type PurgePrivateReceipt,
   type ReplaceLatestReceipt,
 } from "../engram-live/snapshots.js";
-import type { FactBatchDto, LocalSnapshotDto } from "../engram-live/contracts.js";
 
 const SCOPE: LiveScope = { tenant: "local:test-owner", clone: "clone:l4b-diffs" };
 const WORKTREE_ID = "wt:l4b-diffs-main";
+const FENCING_TOKEN: ScopeFencingTokenDto = {
+  tokenId: "token:l4b-diffs",
+  scope: { ...SCOPE, worktree: WORKTREE_ID },
+  epoch: 1,
+  epochId: "epoch:l4b-diffs",
+  declarationRevision: 1,
+  projectionIncarnation: "projection:l4b-diffs",
+  issuedAt: 1_700_000_000_000,
+  expiresAt: 1_700_100_000_000,
+};
 
 const enc = (text: string): Uint8Array => new TextEncoder().encode(text);
 const hex = (bytes: Uint8Array): string =>
@@ -551,6 +563,7 @@ describe("L4b-sol4 D: les conflits correspondent par chemin, étape et OID", () 
     expect(diff.coverage?.state).not.toBe("current");
 
     const staged = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "index",
@@ -604,6 +617,7 @@ describe("L4b-sol4 D: les conflits correspondent par chemin, étape et OID", () 
     expect(diff.coverage?.state).not.toBe("current");
 
     const staged = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "index",
@@ -659,6 +673,7 @@ describe("L4b-sol4 D: les conflits correspondent par chemin, étape et OID", () 
     expect(diff.coverage?.state).not.toBe("current");
 
     const staged = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "index",
@@ -714,6 +729,7 @@ describe("L4b-sol4 D: les conflits correspondent par chemin, étape et OID", () 
     expect(diff.coverage?.state).not.toBe("current");
 
     const staged = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "index",
@@ -948,6 +964,7 @@ describe("L4b-2 explicit staged state", () => {
     const store = new AcceptStore();
     const sink = new TargetSink();
     await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "index",
@@ -961,6 +978,7 @@ describe("L4b-2 explicit staged state", () => {
       generationId: "gen:0000000001",
     });
     await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "index",
@@ -1024,6 +1042,7 @@ describe("L4b-2 explicit staged state", () => {
         const generationId = `gen:${String(step).padStart(10, "0")}`;
         const diff = kind === "staged" ? stagedDiff() : kind === "unstaged" ? unstagedDiff() : conflictDiff();
         await stageLocalSnapshot({
+          fencingToken: FENCING_TOKEN,
           scope: SCOPE, worktreeId: WORKTREE_ID,
           kind: snapshotKindOf(kind),
           capturedAt: 1_700_005_000_000 + step,
@@ -1087,6 +1106,7 @@ describe("L4b-2 explicit staged state", () => {
     const firstStore = new AcceptStore();
     const firstSink = new TargetSink();
     const first = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "index",
@@ -1124,6 +1144,7 @@ describe("L4b-2 explicit staged state", () => {
     });
     const sink = new TargetSink();
     const error = await stageLocalSnapshot({
+      fencingToken: FENCING_TOKEN,
       scope: SCOPE,
       worktreeId: WORKTREE_ID,
       kind: "index",
@@ -1166,6 +1187,7 @@ describe("L4b-2 explicit staged state", () => {
       const store = new AcceptStore();
       const sink = new TargetSink();
       const error = await stageLocalSnapshot({
+        fencingToken: FENCING_TOKEN,
         scope: SCOPE,
         worktreeId: WORKTREE_ID,
         kind: "index",

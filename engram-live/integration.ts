@@ -24,14 +24,18 @@ import {
   type CapabilityId,
   type CapabilityStatus,
   type CoverageReport,
-  type FactBatchDto,
+  type FactSinkPort,
   type GrammarCoverageDto,
   type LiveScope,
+  type ScopeFencingTokenDto,
   type ValidationResult,
   type WorkspaceDeclarationDto,
   validateFactBatch,
   validateWorkspaceDeclaration,
 } from "./contracts.js";
+
+export { validateScopeFencingToken } from "./contracts.js";
+export type { FactSinkPort, FactSinkReceipt, ScopeFencingTokenDto } from "./contracts.js";
 
 // — Injected ports. Git, content and cache seams are recorded but unused in
 // L1b: their bounded operations are defined by L2a/L2b, L4a/L4b and L5. The
@@ -56,29 +60,6 @@ export interface ClockPort {
 export interface ContentPort {
   /** Content classification seam; policies arrive with L4b/L5. Unused in L1b. */
   readonly liveContentSeam: "host-content";
-}
-
-export interface FactSinkPort {
-  /** Durable receipt of a fact batch; separate from publication (spec §3). */
-  deliver(
-    batch: FactBatchDto,
-    fencingToken: ScopeFencingTokenDto,
-  ): Promise<{ received: true; batchId: string; receiptId?: string }>;
-}
-
-/**
- * Mandatory scope fencing token threaded from E (L6b) across every write,
- * cursor, and publication port to S (L3a/L3b-S) (Opus Amendment 2).
- */
-export interface ScopeFencingTokenDto {
-  readonly tokenId: string;
-  readonly scope: LiveScope;
-  readonly epoch: number;
-  readonly epochId: string;
-  readonly declarationRevision: number;
-  readonly projectionIncarnation: string;
-  readonly issuedAt: number;
-  readonly expiresAt: number;
 }
 
 /**
@@ -106,140 +87,6 @@ export const REQUIRED_STORAGE_FENCING_CONTRACT = {
   requireSourceAndProjectionEqualityOnGenerationPublish: true,
   requireSynchronousLeaseRevocationOnShutdown: true,
 } as const;
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Uint8Array) {
-    return false;
-  }
-  const proto = Object.getPrototypeOf(value);
-  return proto === Object.prototype || proto === null;
-}
-
-const SCOPE_FENCING_TOKEN_KEYS: readonly string[] = [
-  "tokenId",
-  "scope",
-  "epoch",
-  "epochId",
-  "declarationRevision",
-  "projectionIncarnation",
-  "issuedAt",
-  "expiresAt",
-];
-
-const FENCING_SCOPE_KEYS: readonly string[] = ["tenant", "clone", "worktree"];
-
-export function validateScopeFencingToken(
-  candidate: unknown,
-  expectedScope?: LiveScope,
-  expectedIncarnation?: string,
-  nowMs?: number,
-): ValidationResult {
-  const errors: string[] = [];
-  if (!isPlainObject(candidate)) {
-    return { ok: false, errors: ["fencing token must be a non-null plain object"] };
-  }
-  for (const key of Object.keys(candidate)) {
-    if (!SCOPE_FENCING_TOKEN_KEYS.includes(key)) {
-      errors.push("fencing token carries an unknown key: refused");
-      break;
-    }
-  }
-  const t = candidate as Partial<ScopeFencingTokenDto>;
-  const scopeObj = isPlainObject(t.scope) ? (t.scope as Record<string, unknown>) : undefined;
-  if (!scopeObj || typeof scopeObj.tenant !== "string" || typeof scopeObj.clone !== "string") {
-    errors.push("fencing token requires a complete scope");
-  } else {
-    for (const key of Object.keys(scopeObj)) {
-      if (!FENCING_SCOPE_KEYS.includes(key)) {
-        errors.push("fencing token scope carries an unknown key: refused");
-        break;
-      }
-    }
-    if (scopeObj.worktree !== undefined && typeof scopeObj.worktree !== "string") {
-      errors.push("fencing token worktree, when present, must be a string");
-    }
-  }
-  if (!Number.isSafeInteger(t.declarationRevision) || (t.declarationRevision ?? 0) < 1) {
-    errors.push("fencing token requires declaration revision");
-  }
-  if (typeof t.epochId !== "string" || !t.epochId) {
-    errors.push("fencing token requires epoch identity");
-  }
-  const boundedValues: unknown[] = [
-    t.tokenId,
-    t.epochId,
-    t.projectionIncarnation,
-    scopeObj?.tenant,
-    scopeObj?.clone,
-  ];
-  if (scopeObj?.worktree !== undefined) {
-    boundedValues.push(scopeObj.worktree);
-  }
-  for (const value of boundedValues) {
-    if (
-      typeof value !== "string" ||
-      value.trim().length < 1 ||
-      value.length > 1024 ||
-      value.includes("\0")
-    ) {
-      errors.push("fencing identity must be bounded");
-    }
-  }
-  if (typeof t.tokenId !== "string" || t.tokenId.length === 0) {
-    errors.push("fencing token requires a non-empty tokenId");
-  }
-  if (typeof t.epoch !== "number" || !Number.isSafeInteger(t.epoch) || t.epoch < 1) {
-    errors.push("fencing token requires a positive integer epoch");
-  }
-  if (typeof t.projectionIncarnation !== "string" || t.projectionIncarnation.length === 0) {
-    errors.push("fencing token requires a non-empty projectionIncarnation");
-  }
-  if (
-    typeof t.issuedAt !== "number" ||
-    typeof t.expiresAt !== "number" ||
-    !Number.isFinite(t.issuedAt) ||
-    !Number.isFinite(t.expiresAt) ||
-    t.expiresAt <= t.issuedAt
-  ) {
-    errors.push("fencing token requires finite issuedAt < expiresAt");
-  }
-  if (expectedScope !== undefined) {
-    if (!isPlainObject(expectedScope)) {
-      errors.push("fencing token expectedScope must be a plain object");
-    } else if (scopeObj !== undefined) {
-      if (
-        scopeObj.tenant !== expectedScope.tenant ||
-        scopeObj.clone !== expectedScope.clone ||
-        scopeObj.worktree !== expectedScope.worktree
-      ) {
-        errors.push("fencing token scope does not match target scope");
-      }
-    }
-  }
-  if (expectedIncarnation !== undefined) {
-    if (typeof expectedIncarnation !== "string" || expectedIncarnation.length === 0) {
-      errors.push("expected storage incarnation P must be a non-empty string");
-    } else if (
-      t.projectionIncarnation !== undefined &&
-      t.projectionIncarnation !== expectedIncarnation
-    ) {
-      errors.push("fencing token projectionIncarnation does not match active storage incarnation P");
-    }
-  }
-  if (nowMs !== undefined) {
-    if (typeof nowMs !== "number" || !Number.isFinite(nowMs)) {
-      errors.push("fencing token validation timestamp must be finite");
-    } else {
-      if (typeof t.expiresAt === "number" && nowMs >= t.expiresAt) {
-        errors.push("fencing token is expired");
-      }
-      if (typeof t.issuedAt === "number" && t.issuedAt > nowMs) {
-        errors.push("fencing token is not yet valid");
-      }
-    }
-  }
-  return { ok: errors.length === 0, errors };
-}
 
 export interface CachePort {
   /** Bounded, versioned cache seam; wired by L2b/L5. Unused in L1b. */
