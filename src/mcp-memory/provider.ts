@@ -46,11 +46,15 @@ import type {
 import type {
   AuthorizationContextV1,
 } from '../../engram-memory/dist/contracts/index.js';
+import type { MemoryFirstEffectGuardV1 } from '../../engram-memory/dist/engine.js';
 import { canonicalizeJcs } from '../../engram-memory/dist/canonical-json.js';
+import type { H2AMandateEnvelope } from '../metamodel-contracts.js';
 import {
   ENGRAM_MEMORY_CONNECTOR_ID,
   ENGRAM_MEMORY_PROVIDER_ID,
   ENGRAM_MEMORY_TOOL_NAMES,
+  type MemoryAccessAuthenticationV1,
+  type MemoryTrackWriteV1,
   type ToolFailureV1,
   type ToolResultV1,
 } from '../mcp/memory/contracts.js';
@@ -63,6 +67,8 @@ import {
   ENGRAM_MEMORY_WIRE_PROFILE_V1,
   MEMORY_MCP_TOOL_SCHEMA_PROFILE_ID_V1,
   MEMORY_MCP_WIRE_PROFILE_ID_V1,
+  isValidOpaqueRef,
+  isValidSha256Digest,
   validateCaptureInputV1,
   validateForgetInputV1,
   validateGetInputV1,
@@ -90,6 +96,7 @@ import {
   type MemoryWriteFacetsV1,
   type MemoryWriteHostV1,
   type MemoryWriteInvocationV1,
+  type WriteTool,
 } from '../memory-tools/writes.js';
 
 // Standard-contract derivations: every public shape comes from the P2
@@ -312,12 +319,31 @@ export type { MemoryToolName, PublicMemoryErrorCode, ToolResultV1 };
 export type { MemoryHostBindingSetV1 };
 export type { MemoryReadHostV1, MemoryReadInvocationV1, MemoryReadPageStoreV1 };
 export type { MemoryWriteFacetsV1, MemoryWriteHostV1, MemoryWriteInvocationV1 };
+export type { MemoryAccessAuthenticationV1, MemoryTrackWriteV1 };
+
+export interface MemoryAccessBoundaryV1 {
+  /** Uses the trusted host context, including its out-of-band mandate carrier. */
+  authenticate(
+    context: Readonly<StpConnectorContext>,
+    tool: MemoryToolName,
+  ): Promise<MemoryAccessAuthenticationV1>;
+
+  /**
+   * Atomically classify the scoped incumbent and, on a Track-controlled
+   * collision, stage a linked proposed candidate without editing the incumbent.
+   * Use the scoped mutation idempotency key to deduplicate retries. The backing
+   * store must also enforce Track protection at commit to fence concurrent writes.
+   */
+  checkTrackWrite(write: MemoryTrackWriteV1): Promise<'clear' | 'conflict_staged'>;
+}
 
 export interface McpMemoryProviderOptions {
   readonly readFacets: MemoryReadFacetsV1;
   readonly writeFacets: MemoryWriteFacetsV1;
   readonly readHost: MemoryReadHostV1;
   readonly writeHost: MemoryWriteHostV1;
+  /** Required to invoke any memory tool. */
+  readonly accessBoundary?: MemoryAccessBoundaryV1;
   readonly policyId: string;
   /** L0 host-binding contract: ports, frozen profiles/digests, versions. */
   readonly hostBindings: MemoryHostBindingSetV1;
@@ -342,12 +368,38 @@ export class McpMemoryPreflightError extends Error {
 
 const PROTOCOL_CODE = -32603;
 
+const MANDATE_RIGHT_BY_WRITE_TOOL = {
+  engram_memory_capture: 'memory:capture',
+  engram_memory_request_admission: 'memory:admit',
+  engram_memory_withdraw: 'memory:lifecycle',
+  engram_memory_forget: 'memory:lifecycle',
+} as const satisfies Record<WriteTool, string>;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
+}
+
+function mandateCoversBinding(
+  mandate: H2AMandateEnvelope,
+  binding: NonNullable<StpConnectorContext['memory']>['binding'],
+  clock: MemoryWriteHostV1['clock'],
+): boolean {
+  if (!isRecord(mandate) || !isNonEmptyString(mandate.mandateId) || !isValidOpaqueRef(mandate.instance) ||
+      (mandate.instance !== binding.agent_id && mandate.instance !== binding.connector_instance_ref) ||
+      !isValidOpaqueRef(mandate.scope) || mandate.scope !== binding.scope_ref ||
+      !Array.isArray(mandate.rights) || !Array.from(mandate.rights).every(isNonEmptyString) ||
+      !isValidSha256Digest(mandate.envelopeDigest) ||
+      !Array.isArray(mandate.signatures) || mandate.signatures.length === 0 ||
+      !Array.from(mandate.signatures).every((signature) => isRecord(signature) &&
+        isNonEmptyString(signature.by) && isNonEmptyString(signature.alg) && isNonEmptyString(signature.value))) {
+    return false;
+  }
+  return mandate.expiresAt === undefined ||
+    (isNonEmptyString(mandate.expiresAt) && Date.parse(mandate.expiresAt) > Date.parse(clock.now()));
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -412,7 +464,14 @@ function preflight(options: McpMemoryProviderOptions): void {
   if (options === undefined || options === null || typeof options !== 'object') {
     return fail('explicit injected host ports and policyId are required.');
   }
-  const { readFacets, writeFacets, readHost, writeHost, policyId } = options;
+  const { readFacets, writeFacets, readHost, writeHost, policyId, accessBoundary } = options;
+  if (accessBoundary !== undefined && (
+    accessBoundary === null ||
+    typeof accessBoundary.authenticate !== 'function' ||
+    typeof accessBoundary.checkTrackWrite !== 'function'
+  )) {
+    return fail('memory access boundary requires authentication and a Track write guard.');
+  }
   if (typeof policyId !== 'string' || policyId.length === 0) {
     return fail('explicit injected host ports and policyId are required.');
   }
@@ -636,6 +695,63 @@ function buildAuthInvocation(
   };
 }
 
+/** Check Track on the confirmed intent before advancing the durable reservation. */
+function withTrackWriteGuard(
+  facets: MemoryWriteFacetsV1,
+  host: MemoryWriteHostV1,
+  signal: AbortSignal | undefined,
+  checkTrackWrite: (mutation: MemoryTrackWriteV1['mutation']) => Promise<PublicMemoryErrorCode | undefined>,
+): { facets: MemoryWriteFacetsV1; host: MemoryWriteHostV1 } {
+  const { engine } = facets;
+  const { reservation } = host;
+  let checkTrack: (() => Promise<PublicMemoryErrorCode | undefined>) | undefined;
+  function wrap(
+    guard: MemoryFirstEffectGuardV1 | undefined,
+    mutation: MemoryTrackWriteV1['mutation'],
+  ): MemoryFirstEffectGuardV1 {
+    let decision: Promise<PublicMemoryErrorCode | undefined> | undefined;
+    const decide = () => decision ??= checkTrackWrite(mutation);
+    checkTrack = decide;
+    return Object.assign(async () => {
+      if (guard === undefined || await guard() !== true || isAborted(guard.signal)) return false;
+      // Recovery can reach a first effect without requesting a new claim.
+      return await decide() === undefined;
+    }, { signal: guard?.signal, enterCommitPhase: guard?.enterCommitPhase });
+  }
+
+  return {
+    facets: {
+      ...facets,
+      engine: {
+        ...engine,
+        version: engine.version,
+        capture: (request, guard) => engine.capture(request, wrap(guard, { operation: 'capture', request })),
+        requestAdmission: (request, guard) => engine.requestAdmission(request, wrap(guard, { operation: 'request_admission', request })),
+        transition: (request, guard) => engine.transition(request, wrap(guard, { operation: 'lifecycle', request })),
+      },
+    },
+    host: {
+      clock: host.clock, audit: host.audit, policy: host.policy, keyCustody: host.keyCustody, coverage: host.coverage,
+      authenticate: (...args) => host.authenticate(...args),
+      authorize: (...args) => host.authorize(...args),
+      confirm: (...args) => host.confirm(...args),
+      reservation: {
+        reserveOrLoad: (...args) => reservation.reserveOrLoad(...args),
+        attachConfirmation: (...args) => reservation.attachConfirmation(...args),
+        reconcileCanonicalOutcome: (...args) => reservation.reconcileCanonicalOutcome(...args),
+        recordCompletion: (...args) => reservation.recordCompletion(...args),
+        async claimFencedExecution(...args) {
+          if (isAborted(signal)) return { ok: false, error_code: 'CANCELLED', message: 'Memory write cancelled.' };
+          const failure = checkTrack === undefined ? 'STORE_UNAVAILABLE' : await checkTrack();
+          if (failure !== undefined) return { ok: false, error_code: failure, message: 'Track write refused.' };
+          if (isAborted(signal)) return { ok: false, error_code: 'CANCELLED', message: 'Memory write cancelled.' };
+          return reservation.claimFencedExecution(...args);
+        },
+      },
+    },
+  };
+}
+
 /**
  * Create the standard memory provider adapter. Activation consumes the L0
  * host-binding contract, the host's immutable compiled plan, the bound
@@ -649,9 +765,8 @@ export function createEngramMemoryProviderV1(
   options: McpMemoryProviderOptions,
 ): AppConnectorProviderAdapter {
   preflight(options);
-  const { readFacets, writeFacets, readHost, writeHost, policyId, plan, sourceId, generation } = options;
+  const { readFacets, writeFacets, readHost, writeHost, policyId, plan, sourceId, generation, accessBoundary } = options;
   const readers = createMemoryReadToolsV1({ facets: readFacets, host: readHost });
-  const writers = createMemoryWriteToolsV1({ facets: writeFacets, host: writeHost });
 
   // The compiled dispatch is bound ONCE at activation from the host's
   // immutable plan. It is never rebuilt per request; per-request work is the
@@ -690,16 +805,14 @@ export function createEngramMemoryProviderV1(
       throw new MemoryTrustedContextError();
     }
     const tool: MemoryToolName = toolName;
+    const read = tool === 'engram_memory_search' || tool === 'engram_memory_get';
     const signal = (req as { signal?: AbortSignal }).signal;
     // Updated only at the engine canonical commit boundary.
     const execution = { signal, commitPhaseEntered: false };
 
     try {
-      // STEP 2 — authentication with the injected port. Nothing
-      // domain-shaped exists before this step: no envelope, no audit id, no
-      // `INVALID_SCHEMA`. A refusal (or a throwing authenticator) is the
-      // protocol error, never a domain envelope — so a rejecting
-      // authenticator records zero domain envelopes.
+      // STEP 2 — authenticate the host binding before emitting a domain
+      // envelope. Once authenticated, a memory access denial is an M6 refusal.
       try {
         const authInvocation = buildAuthInvocation(verified, policyId);
         const { connector_instance_ref, transport_attachment_ref: _attachment, ...common } = authInvocation;
@@ -709,14 +822,14 @@ export function createEngramMemoryProviderV1(
           authorization_epoch: verified.memory!.binding.policy_epoch,
         };
         const authenticated =
-          tool === 'engram_memory_search' || tool === 'engram_memory_get'
+          read
             ? await readHost.authenticate(
               structuredClone(readAuthInvocation),
               tool,
             )
             : await writeHost.authenticate(
               structuredClone(authInvocation),
-              tool as 'engram_memory_capture' | 'engram_memory_request_admission' | 'engram_memory_withdraw' | 'engram_memory_forget',
+              tool,
             );
         if (authenticated !== true) {
           throw new MemoryTrustedContextError();
@@ -724,6 +837,29 @@ export function createEngramMemoryProviderV1(
       } catch (error) {
         if (error instanceof MemoryTrustedContextError) throw error;
         throw new MemoryTrustedContextError();
+      }
+      if (accessBoundary === undefined || !isValidOpaqueRef(boundIds.scope_ref) ||
+          !isValidOpaqueRef(boundIds.agent_id) || !isValidOpaqueRef(boundIds.connector_instance_ref)) {
+        return failureResult(tool, verified.auditId, 'UNAUTHORIZED');
+      }
+      let mandate: H2AMandateEnvelope | undefined;
+      try {
+        const access = await accessBoundary.authenticate(verified, tool);
+        if (access?.hasMemoryIdentity !== true || !isValidOpaqueRef(access.workspaceScopeRef)) {
+          return failureResult(tool, verified.auditId, 'UNAUTHORIZED');
+        }
+        mandate = access.verifiedMandate;
+        if (mandate !== undefined && !mandateCoversBinding(mandate, boundIds, read ? readHost.clock : writeHost.clock)) {
+          return failureResult(tool, verified.auditId, 'UNAUTHORIZED');
+        }
+        const allowed = read
+          ? access.workspaceScopeRef === boundIds.scope_ref || mandate?.rights.includes('memory:read') === true
+          : mandate?.rights.includes(MANDATE_RIGHT_BY_WRITE_TOOL[tool]) === true;
+        if (!allowed) {
+          return failureResult(tool, verified.auditId, 'UNAUTHORIZED');
+        }
+      } catch {
+        return failureResult(tool, verified.auditId, 'UNAUTHORIZED');
       }
       if (isAborted(signal)) {
         return failureResult(tool, verified.auditId, 'CANCELLED');
@@ -792,7 +928,7 @@ export function createEngramMemoryProviderV1(
       // digest); the invocation below carries the verified selection gate plus
       // the injected elicitation and session bindings unchanged. A refusal is
       // returned before any effect.
-      if (confirmationRequired && (tool === 'engram_memory_search' || tool === 'engram_memory_get')) {
+      if (confirmationRequired && read) {
         return failureResult(tool, auditId, 'gate_failed');
       }
 
@@ -851,14 +987,45 @@ export function createEngramMemoryProviderV1(
       };
 
       // STEP 7 — await the cancellable facade, preserving observed commit state.
+      if (tool === 'engram_memory_search') {
+        return successResult(await readers.search(req.input, readInvocation, execution));
+      }
+      if (tool === 'engram_memory_get') {
+        return successResult(await readers.get(req.input, readInvocation, execution));
+      }
+
+      // Give the host the effective canonical intent after reservation and
+      // confirmation, including the adopted source order on capture retries.
+      let trackFailure: PublicMemoryErrorCode | undefined;
+      const guardedWriters = withTrackWriteGuard(writeFacets, writeHost, signal, async (mutation) => {
+        const write = structuredClone({
+          scopeRef: writeInvocation.scope_ref,
+          storeId: writeInvocation.store_id,
+          tenantId: writeInvocation.tenant_id,
+          idempotencyKey: inputKey!,
+          verifiedMandate: mandate!,
+          mutation,
+        });
+        try {
+          const decision = await accessBoundary.checkTrackWrite(write);
+          if (decision === 'clear') return undefined;
+          trackFailure = decision === 'conflict_staged' ? 'DIGEST_CONFLICT' : 'STORE_UNAVAILABLE';
+        } catch {
+          // The host may have staged the candidate before losing its response.
+          trackFailure = 'MUTATION_OUTCOME_UNKNOWN';
+        }
+        return trackFailure;
+      });
+      const writers = createMemoryWriteToolsV1(guardedWriters);
       let outcome: ToolResultV1<unknown>;
       switch (tool) {
-        case 'engram_memory_search': outcome = await readers.search(req.input, readInvocation, execution); break;
-        case 'engram_memory_get': outcome = await readers.get(req.input, readInvocation, execution); break;
         case 'engram_memory_capture': outcome = await writers.capture(req.input, writeInvocation, execution); break;
         case 'engram_memory_request_admission': outcome = await writers.requestAdmission(req.input, writeInvocation, execution); break;
         case 'engram_memory_withdraw': outcome = await writers.withdraw(req.input, writeInvocation, execution); break;
         case 'engram_memory_forget': outcome = await writers.forget(req.input, writeInvocation, execution); break;
+      }
+      if (trackFailure !== undefined) {
+        return failureResult(tool, auditId, trackFailure);
       }
 
       // STEP 8 — outcome classification. A settled facade envelope already

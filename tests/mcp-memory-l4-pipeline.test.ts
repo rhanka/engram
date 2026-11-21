@@ -36,6 +36,7 @@ import {
 import {
   createEngramMemoryProviderV1,
   McpMemoryPreflightError,
+  type MemoryAccessBoundaryV1,
   type McpMemoryProviderOptions,
 } from '../src/mcp-memory/provider.js';
 import { createMemoryReadPageStoreV1 } from '../src/memory-tools/reads.js';
@@ -45,6 +46,20 @@ const DEADLINE = '2026-08-16T12:35:16.789Z';
 const D = 'sha256:' + '0'.repeat(64);
 const ELICITATION_REF = 'elicit:pipeline';
 const KEY = (c: string) => c.repeat(32);
+
+// The fixture host has already verified this mandate for its test caller.
+const accessBoundary: MemoryAccessBoundaryV1 = {
+  authenticate: async () => ({
+    hasMemoryIdentity: true,
+    workspaceScopeRef: 'scope:one',
+    verifiedMandate: {
+      mandateId: 'mandate:pipeline', instance: 'agent:one', role: 'AGENTS',
+      scope: 'scope:one', rights: ['memory:capture', 'memory:admit', 'memory:lifecycle'],
+      envelopeDigest: D, signatures: [{ by: 'issuer:one', alg: 'ed25519', value: 'verified-by-host-fixture' }],
+    },
+  }),
+  checkTrackWrite: async () => 'clear',
+};
 
 function binding(overrides: Record<string, unknown> = {}) {
   return {
@@ -431,6 +446,7 @@ async function buildHarness(overrides: {
     writeFacets: facets as unknown as McpMemoryProviderOptions['writeFacets'],
     readHost: readHost as unknown as McpMemoryProviderOptions['readHost'],
     writeHost: writeHost as unknown as McpMemoryProviderOptions['writeHost'],
+    accessBoundary,
     policyId: 'policy:one',
     hostBindings: hostBindings() as unknown as McpMemoryProviderOptions['hostBindings'],
     plan: plan() as unknown as McpMemoryProviderOptions['plan'],
@@ -446,6 +462,7 @@ describe('activation preflight consumes the L0 host-binding contract', () => {
     const good = {
       readFacets: parts.facets as never, writeFacets: parts.facets as never,
       readHost: parts.readHost as never, writeHost: parts.writeHost as never,
+      accessBoundary,
       policyId: 'policy:one', hostBindings: hostBindings(), plan: plan(),
       sourceId: 'mcp:engram-memory', generation: '1',
     };

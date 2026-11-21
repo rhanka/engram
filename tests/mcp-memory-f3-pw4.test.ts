@@ -475,6 +475,10 @@ async function buildManifestPlanHarness() {
     writeFacets: facets as unknown as McpMemoryProviderOptions['writeFacets'],
     readHost: readHost as unknown as McpMemoryProviderOptions['readHost'],
     writeHost: writeHost as unknown as McpMemoryProviderOptions['writeHost'],
+    accessBoundary: {
+      authenticate: async () => ({ hasMemoryIdentity: true, workspaceScopeRef: 'scope:one' }),
+      checkTrackWrite: async () => { throw new Error('unused in the PW4 suite'); },
+    },
     policyId: 'policy:one',
     hostBindings: hostBindings() as unknown as McpMemoryProviderOptions['hostBindings'],
     plan: plan as unknown as McpMemoryProviderOptions['plan'],
