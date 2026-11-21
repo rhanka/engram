@@ -1,11 +1,14 @@
 import { createHash } from "node:crypto";
+import type { Sha256Digest } from "./metamodel-contracts.js";
 import { canonicalBytes, digestOfPreimage, sha256Hex } from "./ontology-guardian/canonical.js";
-import { stableForHash } from "./ontology-guardian/digests.js";
+import { stableForHash, toInternalDigest } from "./ontology-guardian/digests.js";
 import { isDigest, type Digest } from "./ontology-guardian/types.js";
-import { normalizeOntologyProfile, parseOntologyProfile, validateOntologyProfile } from "./ontology-profile.js";
+import { deepFreeze, getAuthoredOntologyProfile, normalizeOntologyProfile, parseOntologyProfile, validateOntologyProfile } from "./ontology-profile.js";
+import { INVALID_RELATION_CARDINALITY, isRecord as isPlainObj } from "./profile-validate.js";
 import type {
   NormalizedOntologyProfile,
   NormalizedOntologyRegistrySpec,
+  OntologyCardinalityBound,
   OntologyProfile,
   RegistryRecord,
 } from "./types.js";
@@ -33,6 +36,7 @@ export interface ProfileBundleV1 {
   readonly profileId: string;
   readonly profileVersion: string;
   readonly profileHash: string;
+  readonly presentationHash?: Digest;
   readonly profile: NormalizedOntologyProfile;
   readonly documentProjection: JsonValue;
   readonly extensions: Readonly<Record<string, unknown>>;
@@ -116,13 +120,8 @@ const MODELED_REL_KEYS = new Set([
   "source", "target", "source_types", "target_types", "requires_evidence",
   "assertion_basis", "derivation_method", "derivation_methods", "description",
 ]);
+const UNBOUNDED_CARDINALITY: OntologyCardinalityBound = { min: 0, max: "many" };
 const GRAN_RANK: Record<string, number> = { file: 0, page: 1, section: 2, paragraph: 3 };
-
-function isPlainObj(v: unknown): v is Record<string, unknown> {
-  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
-  const proto = Object.getPrototypeOf(v);
-  return proto === Object.prototype || proto === null;
-}
 
 function asRec(v: unknown): Record<string, unknown> {
   return isPlainObj(v) ? v : {};
@@ -135,17 +134,6 @@ function asStrArr(v: unknown): string[] {
 
 function setProp<T extends object>(obj: T, key: string, value: unknown): void {
   Object.defineProperty(obj, key, { value, enumerable: true, configurable: true, writable: true });
-}
-
-function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
-  if (typeof value !== "object" || value === null) return value;
-  if (seen.has(value)) return value;
-  seen.add(value);
-  for (const key of Object.getOwnPropertyNames(value)) {
-    const desc = Object.getOwnPropertyDescriptor(value, key);
-    if (desc && "value" in desc) deepFreeze(desc.value, seen);
-  }
-  return Object.freeze(value);
 }
 
 function findProtoPaths(value: JsonValue, path = ""): string[] {
@@ -259,7 +247,24 @@ function bundleProfileInternal(
       };
     }
   } else {
-    parsed = profileInput;
+    try {
+      parsed = getAuthoredOntologyProfile(profileInput);
+    } catch (err) {
+      return {
+        result: deepFreeze({
+          ok: false,
+          status: "refused",
+          refusalCode: "invalid_profile_schema",
+          errors: [{
+            severity: "error",
+            code: "invalid_profile_schema",
+            path: "profile",
+            message: err instanceof Error ? err.message : String(err),
+          }],
+          warnings: [],
+        }),
+      };
+    }
   }
 
   const proj = toJsonValue(parsed);
@@ -295,7 +300,10 @@ function bundleProfileInternal(
     };
   }
 
-  const docProj = toJsonValue(stableForHash(parsed));
+  const parsedDoc = proj.value as Record<string, JsonValue>;
+  const v1 = parsedDoc.metamodel_version === "engram.metamodel/v1";
+  const { presentation_hash: _presentationHash, ...withoutPresentationHash } = parsedDoc;
+  const docProj = toJsonValue(stableForHash(v1 ? withoutPresentationHash : parsedDoc));
   if (!docProj.ok || !isPlainObj(docProj.value)) {
     const p = docProj.ok ? "profile" : docProj.path || "profile";
     const reason = docProj.ok ? "non_plain_object" : docProj.reason;
@@ -310,7 +318,6 @@ function bundleProfileInternal(
     };
   }
 
-  const parsedDoc = proj.value as Record<string, JsonValue>;
   const nodeTypesProj = asRec(parsedDoc.node_types);
   const fnIssues: ProfileBundleIssue[] = [];
   for (const id of Object.keys(nodeTypesProj).sort()) {
@@ -370,11 +377,11 @@ function bundleProfileInternal(
         status: "refused",
         refusalCode: "invalid_profile_schema",
         errors: valErrors.map((msg) => {
-          const sp = msg.indexOf(" ");
+          const cardinalityMarker = msg.lastIndexOf(` ${INVALID_RELATION_CARDINALITY}:`);
           return {
             severity: "error",
-            code: "invalid_profile_schema",
-            path: sp === -1 ? msg : msg.slice(0, sp),
+            code: cardinalityMarker >= 0 ? INVALID_RELATION_CARDINALITY : "invalid_profile_schema",
+            path: cardinalityMarker >= 0 ? msg.slice(0, cardinalityMarker) : msg.split(" ", 1)[0]!,
             message: msg,
           };
         }),
@@ -385,7 +392,7 @@ function bundleProfileInternal(
 
   let rawNormalized: NormalizedOntologyProfile;
   try {
-    rawNormalized = normalizeOntologyProfile(parsedDoc as unknown as OntologyProfile);
+    rawNormalized = normalizeOntologyProfile((v1 ? docProj.value : parsedDoc) as unknown as OntologyProfile);
   } catch (err) {
     const rawMsg = err instanceof Error ? err.message : String(err);
     return {
@@ -425,7 +432,8 @@ function bundleProfileInternal(
       }),
     };
   }
-  const normalized = normProj.value as unknown as NormalizedOntologyProfile;
+  // Keep v1 provenance and its frozen runtime snapshot together.
+  const normalized = v1 ? rawNormalized : normProj.value as unknown as NormalizedOntologyProfile;
 
   const registriesMode = registriesInput === undefined ? "bindings-only" : "full";
   const declaredIds = Object.keys(normalized.registries).sort();
@@ -522,6 +530,7 @@ function bundleProfileInternal(
 
   const extensions: Record<string, unknown> = {};
   for (const k of Object.keys(parsedDoc)) {
+    if (v1 && (k === "metamodel_version" || k === "presentation" || k === "presentation_hash")) continue;
     if (!CONSUMED_KEYS.has(k)) setProp(extensions, k, parsedDoc[k]);
   }
 
@@ -543,7 +552,10 @@ function bundleProfileInternal(
     digest,
     profileId: normalized.id,
     profileVersion: normalized.version,
-    profileHash: normalized.profile_hash,
+    profileHash: normalized.presentation_hash === undefined
+      ? normalized.profile_hash
+      : toInternalDigest(normalized.profile_hash as Sha256Digest),
+    ...(normalized.presentation_hash === undefined ? {} : { presentationHash: toInternalDigest(normalized.presentation_hash) }),
     profile: normalized,
     documentProjection: docProj.value,
     extensions,
@@ -758,6 +770,8 @@ function resolveComparableSide(input: ProfileComparableInput): {
             b.profileId === rb.profileId &&
             b.profileVersion === rb.profileVersion &&
             b.profileHash === rb.profileHash &&
+            b.presentationHash === rb.presentationHash &&
+            b.profile.profile_hash === rb.profile.profile_hash &&
             bProfProj.ok &&
             rbProfProj.ok &&
             canonicalBytes(bProfProj.value) === canonicalBytes(rbProfProj.value) &&
@@ -771,6 +785,7 @@ function resolveComparableSide(input: ProfileComparableInput): {
               profileId: rb.profileId,
               profileVersion: rb.profileVersion,
               profileHash: rb.profileHash,
+              ...(rb.presentationHash === undefined ? {} : { presentationHash: rb.presentationHash }),
               profile: rb.profile,
               documentProjection: docProj.value,
               extensions: rb.extensions,
@@ -879,6 +894,7 @@ export function checkProfileCompatibility(
 
   const oldB = oldSide.bundle, newB = newSide.bundle;
   const oldP = oldB.profile, newP = newB.profile;
+  const v1 = oldP.metamodel_version === "engram.metamodel/v1" && newP.metamodel_version === "engram.metamodel/v1";
   const oldDoc = asRec(oldB.documentProjection), newDoc = asRec(newB.documentProjection);
   const breaking: ProfileBreakingChange[] = [];
   const nonBreaking: ProfileNonBreakingChange[] = [];
@@ -916,6 +932,11 @@ export function checkProfileCompatibility(
   if (oldP.id !== newP.id) pushB("changed_profile_id", "id", "id", canonicalBytes(oldP.id), canonicalBytes(newP.id));
   if (oldP.default_language !== newP.default_language) pushB("changed_default_language", "default_language", "default_language", canonicalBytes(oldP.default_language), canonicalBytes(newP.default_language));
   if (oldP.version !== newP.version) pushNB("bumped_profile_version", "version", "version", canonicalBytes(oldP.version), canonicalBytes(newP.version));
+  checkResidual("metamodel_version", "metamodel_version", oldP.metamodel_version, newP.metamodel_version);
+  if (v1) {
+    const before = renderCanon(oldP.presentation), after = renderCanon(newP.presentation);
+    if (before !== after) pushNB("changed_presentation", "presentation", "presentation", before, after);
+  }
 
   // Node types
   const oldDocNodes = asRec(oldDoc.node_types), newDocNodes = asRec(newDoc.node_types);
@@ -974,7 +995,13 @@ export function checkProfileCompatibility(
     else if (oSB && !nSB) pushNB("relaxed_node_source_backed", `node_types.${t}.source_backed`, t, "true", renderCanon(nNT.source_backed ?? false));
 
     checkResidual(`node_types.${t}.linking`, t, oNT.linking, nNT.linking);
-    checkResidual(`node_types.${t}.visual_encoding`, t, oNT.visual_encoding, nNT.visual_encoding);
+    const visualPath = `node_types.${t}.visual_encoding`;
+    if (v1) {
+      const before = renderCanon(oNT.visual_encoding), after = renderCanon(nNT.visual_encoding);
+      if (before !== after) pushNB("changed_node_visual_encoding", visualPath, t, before, after);
+    } else {
+      checkResidual(visualPath, t, oNT.visual_encoding, nNT.visual_encoding);
+    }
 
     const oRem: Record<string, unknown> = {}, nRem: Record<string, unknown> = {};
     for (const k of Object.keys(oRaw)) if (!MODELED_NODE_KEYS.has(k)) setProp(oRem, k, oRaw[k]);
@@ -1015,9 +1042,24 @@ export function checkProfileCompatibility(
     cmpEndpoint("assertion_basis" as "source_types", "changed_relation_assertion_basis", "widened_relation_assertion_basis");
     cmpEndpoint("derivation_methods" as "source_types", "changed_relation_derivation_methods", "widened_relation_derivation_methods");
 
+    if (v1) {
+      for (const direction of ["in", "out"] as const) {
+        const before = oRel.cardinality?.[direction] ?? UNBOUNDED_CARDINALITY;
+        const after = nRel.cardinality?.[direction] ?? UNBOUNDED_CARDINALITY;
+        const oldMax = before.max === "many" ? Infinity : before.max;
+        const newMax = after.max === "many" ? Infinity : after.max;
+        const path = `relation_types.${r}.cardinality.${direction}`;
+        if (after.min > before.min || newMax < oldMax) {
+          pushB("narrowed_relation_cardinality", path, r, renderCanon(before), renderCanon(after));
+        } else if (after.min < before.min || newMax > oldMax) {
+          pushNB("widened_relation_cardinality", path, r, renderCanon(before), renderCanon(after));
+        }
+      }
+    }
+
     const oRem: Record<string, unknown> = {}, nRem: Record<string, unknown> = {};
-    for (const k of Object.keys(oRaw)) if (!MODELED_REL_KEYS.has(k)) setProp(oRem, k, oRaw[k]);
-    for (const k of Object.keys(nRaw)) if (!MODELED_REL_KEYS.has(k)) setProp(nRem, k, nRaw[k]);
+    for (const k of Object.keys(oRaw)) if (!MODELED_REL_KEYS.has(k) && !(v1 && k === "cardinality")) setProp(oRem, k, oRaw[k]);
+    for (const k of Object.keys(nRaw)) if (!MODELED_REL_KEYS.has(k) && !(v1 && k === "cardinality")) setProp(nRem, k, nRaw[k]);
     if (renderCanon(oRem) !== renderCanon(nRem)) {
       pushB("changed_unmodeled_block", `relation_types.${r}`, r, renderTrunc(renderCanon(oRem)), renderTrunc(renderCanon(nRem)));
     } else if (renderCanon(oRaw.description) !== renderCanon(nRaw.description)) {

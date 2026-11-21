@@ -1,3 +1,5 @@
+import type { MetamodelVersion, Sha256Digest } from "./metamodel-contracts.js";
+
 /** File type classification for corpus files. */
 export enum FileType {
   CODE = "code",
@@ -872,11 +874,22 @@ export interface NormalizedOntologyNodeType extends Omit<OntologyNodeType, "link
   linking?: NormalizedOntologyNodeTypeLinking;
 }
 
+export interface OntologyCardinalityBound {
+  readonly min: number;
+  readonly max: number | "many";
+}
+
+export interface OntologyRelationCardinality {
+  readonly out?: OntologyCardinalityBound;
+  readonly in?: OntologyCardinalityBound;
+}
+
 export interface OntologyRelationType {
   source?: string | string[];
   target?: string | string[];
   source_types?: string[];
   target_types?: string[];
+  cardinality?: OntologyRelationCardinality;
   requires_evidence?: boolean;
   assertion_basis?: string | string[];
   derivation_method?: string | string[];
@@ -1189,6 +1202,9 @@ export interface OntologyProfile {
   default_language?: string;
   sourcePath?: string;
   profile_hash?: string;
+  metamodel_version?: MetamodelVersion;
+  presentation?: Readonly<Record<string, unknown>>;
+  presentation_hash?: Sha256Digest;
   node_types?: Record<string, OntologyNodeType>;
   relation_types?: Record<string, OntologyRelationType>;
   registries?: Record<string, OntologyRegistrySpec>;
@@ -1205,6 +1221,7 @@ export interface OntologyProfile {
 export interface NormalizedOntologyRelationType {
   source_types: string[];
   target_types: string[];
+  cardinality?: OntologyRelationCardinality;
   requires_evidence: boolean;
   assertion_basis: string[];
   derivation_methods: string[];
@@ -1247,6 +1264,9 @@ export interface NormalizedOntologyProfile {
   default_language: string;
   sourcePath?: string;
   profile_hash: string;
+  metamodel_version?: MetamodelVersion;
+  presentation?: Readonly<Record<string, unknown>>;
+  presentation_hash?: Sha256Digest;
   node_types: Record<string, NormalizedOntologyNodeType>;
   relation_types: Record<string, NormalizedOntologyRelationType>;
   registries: Record<string, NormalizedOntologyRegistrySpec>;
