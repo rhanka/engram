@@ -1,6 +1,33 @@
 import { validateExtraction } from "./validate.js";
 import type { Extraction, GraphEdge, GraphNode, NormalizedOntologyProfile } from "./types.js";
 
+export const INVALID_RELATION_CARDINALITY = "MM_REL_INVALID_CARDINALITY";
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+export function validateRelationCardinality(cardinality: unknown, path: string): string[] {
+  if (cardinality === undefined) return [];
+  if (!isRecord(cardinality) || Object.keys(cardinality).some((key) => key !== "in" && key !== "out")) {
+    return [`${path} ${INVALID_RELATION_CARDINALITY}: expected an object with optional in and out bounds`];
+  }
+
+  const errors: string[] = [];
+  for (const direction of ["in", "out"] as const) {
+    const bound = cardinality[direction];
+    if (bound === undefined) continue;
+    if (!isRecord(bound) || Object.keys(bound).some((key) => key !== "min" && key !== "max") ||
+      typeof bound.min !== "number" || !Number.isInteger(bound.min) || bound.min < 0 ||
+      (bound.max !== "many" && (typeof bound.max !== "number" || !Number.isInteger(bound.max) || bound.max < bound.min))) {
+      errors.push(`${path}.${direction} ${INVALID_RELATION_CARDINALITY}: expected integer min >= 0 and integer max >= min or "many"`);
+    }
+  }
+  return errors;
+}
+
 export type ProfileValidationSeverity = "error" | "warning" | "info";
 
 export interface ProfileValidationIssue {
