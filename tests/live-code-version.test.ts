@@ -32,13 +32,18 @@ import {
 } from "../engram-live/analysis-cache.js";
 import {
   analyzeCode,
+  CodeAnalysisError,
   repairAffectedCalls,
+  toReasonAnchorFact,
   type CodeAnalysisPorts,
   type DeterministicParsePort,
   type GrammarStatusPort,
   type ParsedUnit,
   type RetainedObjectsPort,
 } from "../engram-live/code-analysis.js";
+import { FACT_SCHEMA_VERSION, POLICY_VERSION, validateReasonAnchorFact } from "../engram-live/contracts.js";
+import { toPullRequestObservationFact } from "../engram-live/facts.js";
+import { LINE_ATTRIBUTION_VERSION } from "../engram-live/line-attribution.js";
 import * as fixtureFs from "node:fs";
 import { extractWithDiagnostics as reusedExtract, type LiveExtractionPorts } from "../src/extract.js";
 // Fixtures are host capabilities, read inside the checkout-local test area.
@@ -266,6 +271,7 @@ function portsFor(
 }
 
 const scope = { tenant: "local:owner", clone: "clone:probe" };
+const reasonCommitPin = { anchorKind: "commit", commit: { algorithm: "sha1", oid: "a".repeat(40) } } as const;
 
 function observedInventory(dir: string): unknown[] {
   const walk = (folder: Buffer, prefix: Buffer): unknown[] => fixtureFs.readdirSync(folder, { encoding: "buffer" })
@@ -281,6 +287,123 @@ function observedInventory(dir: string): unknown[] {
 }
 
 describe("live code version", () => {
+  it("reason anchors bind code commit and PR identities to pinned versions and carry no memory or session content", () => {
+    const commit = { algorithm: "sha256", oid: "a".repeat(64) } as const;
+    const base = { algorithm: "sha256", oid: "b".repeat(64) } as const;
+    const blob = { algorithm: "sha256", oid: "c".repeat(64) } as const;
+    const path = Uint8Array.of(0x73, 0x2f, 0xff);
+    const range = { start: 3, end: 5 };
+    const codePin = { anchorKind: "code", commit, blob, path, range } as const;
+    const common = { kind: "reason-anchor", schemaVersion: FACT_SCHEMA_VERSION, policyVersion: POLICY_VERSION, scope };
+
+    const code = toReasonAnchorFact(scope, codePin);
+    expect(code).toStrictEqual({ ...common, ...codePin });
+    const originPin = { ...codePin, calculationVersion: LINE_ATTRIBUTION_VERSION };
+    expect(toReasonAnchorFact(scope, originPin)).toStrictEqual({ ...common, ...originPin });
+    path[2] = 0xfe;
+    range.start = 4;
+    expect(code).toMatchObject({ path: Uint8Array.of(0x73, 0x2f, 0xff), range: { start: 3, end: 5 } });
+    expect(toReasonAnchorFact(scope, { ...codePin, commit: base })).toMatchObject({ commit: base });
+
+    const commitPin = { anchorKind: "commit", commit } as const;
+    expect(toReasonAnchorFact(scope, commitPin)).toStrictEqual({ ...common, ...commitPin });
+
+    const observation = {
+      repositoryOwner: "rhanka", repositoryRepo: "engram", number: 459, state: "open",
+      isDraft: false, updatedAt: 1_700_000_000_000, headOid: commit, headRef: "topic",
+      baseOid: base, baseRef: "main",
+    } as const;
+    const previous = toPullRequestObservationFact(scope.clone, observation);
+    const current = toPullRequestObservationFact(scope.clone, { ...observation, baseOid: blob });
+    const prPin = {
+      anchorKind: "pr",
+      repository: { owner: observation.repositoryOwner, repo: observation.repositoryRepo },
+      prNumber: observation.number,
+      headObservationId: current.observationId,
+      baseObservationId: previous.observationId,
+    } as const;
+    expect(current.observationId).not.toBe(previous.observationId);
+    expect(toReasonAnchorFact(scope, prPin)).toStrictEqual({ ...common, ...prPin });
+
+    for (const key of ["memoryId", "citationText", "reason", "sessionContent"] as const) {
+      const contaminated = { ...commitPin, [key]: "private content" };
+      expect(() => toReasonAnchorFact(scope, contaminated)).toThrow(/unknown key/);
+    }
+  });
+
+  it("reason anchor producer drops explicitly undefined worktree and calculation version", () => {
+    const codePin = {
+      anchorKind: "code",
+      commit: reasonCommitPin.commit,
+      blob: { algorithm: "sha1", oid: "b".repeat(40) },
+      path: Uint8Array.of(0x61),
+      range: { start: 1, end: 1 },
+    } as const;
+    const optionalScope = { ...scope, worktree: undefined };
+    const fact = toReasonAnchorFact(optionalScope, { ...codePin, calculationVersion: undefined });
+    expect(fact).toStrictEqual(toReasonAnchorFact(scope, codePin));
+    expect(Object.hasOwn(fact.scope, "worktree")).toBe(false);
+    expect(Object.hasOwn(fact, "calculationVersion")).toBe(false);
+  });
+
+  it.each([
+    ["kind", "memory-citation"],
+    ["schemaVersion", 999],
+    ["policyVersion", "foreign-policy"],
+    ["scope", { tenant: "local:foreign", clone: "clone:foreign", sessionContent: "private content" }],
+  ] as const)("reason anchor producer refuses an envelope %s on the pin", (key, value) => {
+    const contaminated = { ...reasonCommitPin, [key]: value };
+    expect(() => toReasonAnchorFact(scope, contaminated)).toThrow(CodeAnalysisError);
+  });
+
+  it("reason anchor producer requires plain records and accepts null prototypes", () => {
+    class ForeignScope {
+      readonly tenant = scope.tenant;
+      readonly clone = scope.clone;
+    }
+    class ForeignPin {
+      readonly anchorKind = reasonCommitPin.anchorKind;
+      readonly commit = reasonCommitPin.commit;
+    }
+    expect(() => toReasonAnchorFact(new ForeignScope(), reasonCommitPin)).toThrow(CodeAnalysisError);
+    expect(() => toReasonAnchorFact(scope, new ForeignPin())).toThrow(CodeAnalysisError);
+
+    const nullScope = Object.setPrototypeOf({ ...scope }, null);
+    const nullPin = Object.setPrototypeOf({ ...reasonCommitPin }, null);
+    expect(toReasonAnchorFact(nullScope, nullPin)).toStrictEqual(toReasonAnchorFact(scope, reasonCommitPin));
+  });
+
+  it("reason anchor producer reads a commit OID once before validating the returned snapshot", () => {
+    let oidReads = 0;
+    const pin = {
+      ...reasonCommitPin,
+      commit: {
+        algorithm: reasonCommitPin.commit.algorithm,
+        get oid() {
+          return ++oidReads <= 3 ? reasonCommitPin.commit.oid : "private session text";
+        },
+      },
+    };
+    const fact = toReasonAnchorFact(scope, pin);
+    expect(validateReasonAnchorFact(fact)).toEqual({ ok: true, errors: [] });
+    expect(fact).toStrictEqual(toReasonAnchorFact(scope, reasonCommitPin));
+    expect(oidReads).toBe(1);
+  });
+
+  it("reason anchor producer reads scope once before validating the returned snapshot", () => {
+    let tenantReads = 0;
+    const changingScope = {
+      ...scope,
+      get tenant() {
+        return ++tenantReads === 1 ? scope.tenant : "private session text";
+      },
+    };
+    const fact = toReasonAnchorFact(changingScope, reasonCommitPin);
+    expect(validateReasonAnchorFact(fact)).toEqual({ ok: true, errors: [] });
+    expect(fact.scope).toStrictEqual(scope);
+    expect(tenantReads).toBe(1);
+  });
+
   it("identical blobs resolve separately by tree path configuration and project dependencies", async () => {
     // Breaker class: ANY context dimension varied while blob bytes are
     // identical must miss the resolution cache and scope its facts to the

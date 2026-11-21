@@ -2918,6 +2918,7 @@ export const TAGGED_FACT_KINDS = [
   "code-relation",
   "line-attribution",
   "symbol-correspondence",
+  "reason-anchor",
   "coverage",
   "progress",
 ] as const;
@@ -3335,6 +3336,38 @@ export interface SymbolCorrespondenceFactDto {
   readonly gaps: readonly SymbolHistoryGapDto[];
 }
 
+/** Pinned Git identities for the G3 reader to resolve against its own evidence. */
+export type ReasonAnchorPinDto =
+  | {
+      readonly anchorKind: "code";
+      readonly commit: QualifiedOid;
+      readonly path: Uint8Array;
+      readonly blob: QualifiedOid;
+      readonly range: LineRangeDto;
+      /** Calculation version from G1 when pinning a line origin. */
+      readonly calculationVersion?: string;
+    }
+  | {
+      readonly anchorKind: "commit";
+      readonly commit: QualifiedOid;
+    }
+  | {
+      readonly anchorKind: "pr";
+      readonly repository: GithubRepositoryDto;
+      readonly prNumber: number;
+      /** P1 observation whose head supplies the pinned head. */
+      readonly headObservationId: PullRequestObservationFactDto["observationId"];
+      /** P1 observation whose base supplies the pinned base. */
+      readonly baseObservationId: PullRequestObservationFactDto["observationId"];
+    };
+
+export type ReasonAnchorFactDto = ReasonAnchorPinDto & {
+  readonly kind: "reason-anchor";
+  readonly scope: Readonly<Pick<LiveScope, "tenant" | "clone">>;
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly policyVersion: typeof POLICY_VERSION;
+};
+
 /** Explicit coverage fact for any live axis. */
 export interface CoverageFactDto {
   readonly kind: "coverage";
@@ -3430,6 +3463,7 @@ export type LiveFactDto =
   | CodeRelationFactDto
   | LineAttributionFactDto
   | SymbolCorrespondenceFactDto
+  | ReasonAnchorFactDto
   | CoverageFactDto
   | ProgressFactDto
   | LocalDiffDto
@@ -3491,6 +3525,12 @@ const LINE_AUTHOR_IDENTITY_KEYS: readonly string[] = [
 ];
 const REF_ACTIVITY_KEYS: readonly string[] = ["activityAt", "signal"];
 const LINE_RANGE_KEYS: readonly string[] = ["start", "end"];
+const REASON_ANCHOR_COMMON_KEYS = ["kind", "anchorKind", "scope", "schemaVersion", "policyVersion"] as const;
+const REASON_ANCHOR_PIN_KEYS = {
+  code: ["commit", "path", "blob", "range", "calculationVersion"],
+  commit: ["commit"],
+  pr: ["repository", "prNumber", "headObservationId", "baseObservationId"],
+} as const satisfies Readonly<Record<ReasonAnchorPinDto["anchorKind"], readonly string[]>>;
 const LINE_ATTRIBUTION_OPTIONS_KEYS: readonly string[] = [
   "version", "algorithm", "moveMinCharacters", "copyMinCharacters", "copySearch",
 ];
@@ -3641,6 +3681,53 @@ function validateLineRange(value: unknown, path: string): ValidationResult {
   if (!isPositiveInteger(value.end)) errors.push(`${path}.end must be a positive safe integer`);
   if (isPositiveInteger(value.start) && isPositiveInteger(value.end) && value.end < value.start) {
     errors.push(`${path}.end must be >= ${path}.start`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateReasonAnchorFact(value: unknown): ValidationResult {
+  const label = "reason-anchor fact";
+  if (!isRecord(value)) return { ok: false, errors: [`${label} must be an object`] };
+  const { anchorKind } = value;
+  if (anchorKind !== "code" && anchorKind !== "commit" && anchorKind !== "pr") {
+    return { ok: false, errors: [`${label}.anchorKind must be "code", "commit" or "pr"`] };
+  }
+  const errors: string[] = [];
+  rejectUnknownKeys(value, [...REASON_ANCHOR_COMMON_KEYS, ...REASON_ANCHOR_PIN_KEYS[anchorKind]], label, errors);
+  if (value.kind !== "reason-anchor") errors.push(`${label}.kind must be "reason-anchor"`);
+  if (value.schemaVersion !== FACT_SCHEMA_VERSION) errors.push(`${label}.schemaVersion must be ${FACT_SCHEMA_VERSION}`);
+  if (value.policyVersion !== POLICY_VERSION) errors.push(`${label}.policyVersion must be "${POLICY_VERSION}"`);
+  const scope = validateLiveScope(value.scope);
+  errors.push(...scope.errors.map((error) => `${label}.${error}`));
+  if (isRecord(value.scope) && value.scope.worktree !== undefined) {
+    errors.push(`${label}.scope must contain only tenant and clone`);
+  }
+
+  if (anchorKind === "pr") {
+    const repository = validateGithubRepository(value.repository);
+    errors.push(...repository.errors.map((error) => `${label}.repository: ${error}`));
+    if (!isPositiveInteger(value.prNumber)) errors.push(`${label}.prNumber must be a positive safe integer`);
+    for (const field of ["headObservationId", "baseObservationId"] as const) {
+      const id = value[field];
+      if (!isStrictBatchId(id, "probs:") || !isHex64String(id.slice("probs:".length))) {
+        errors.push(`${label}.${field} must be a canonical P1 observation ID`);
+      }
+    }
+  } else {
+    const commit = validateQualifiedOid(value.commit);
+    errors.push(...commit.errors.map((error) => `${label}.commit: ${error}`));
+    if (anchorKind === "code") {
+      const blob = validateQualifiedOid(value.blob);
+      errors.push(...blob.errors.map((error) => `${label}.blob: ${error}`));
+      if (commit.ok && blob.ok && (value.commit as QualifiedOid).algorithm !== (value.blob as QualifiedOid).algorithm) {
+        errors.push(`${label}.blob and commit must use the same OID algorithm`);
+      }
+      if (!isNonEmptySafePathBytes(value.path)) errors.push(`${label}.path must be non-empty NUL-free raw path bytes`);
+      errors.push(...validateLineRange(value.range, `${label}.range`).errors);
+      if (value.calculationVersion !== undefined && !isVersionString(value.calculationVersion)) {
+        errors.push(`${label}.calculationVersion must be a version string`);
+      }
+    }
   }
   return { ok: errors.length === 0, errors };
 }
@@ -4683,6 +4770,8 @@ export function validateLiveFact(fact: unknown): ValidationResult {
       return validateLineAttributionFact(fact);
     case "symbol-correspondence":
       return validateSymbolCorrespondenceFact(fact);
+    case "reason-anchor":
+      return validateReasonAnchorFact(fact);
     case "coverage":
       return validateCoverageFact(fact);
     case "progress":
