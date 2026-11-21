@@ -4544,3 +4544,1073 @@ export function validateLiveFact(fact: unknown): ValidationResult {
 export function isLiveFactDto(fact: unknown): fact is LiveFactDto {
   return validateLiveFact(fact).ok;
 }
+
+// — L3a-E2: generation correlation and completion control messages
+// (spec/SPEC_LIVE_GIT_INDEXING.md §§3, 6, 9, 12;
+// spec/SPEC_L3A_GENERIC_MODULE_STORAGE_PORT.md §§2.3, 5.1, 12.1–12.3, 17.4;
+// plan/09 L3a-E2).
+//
+// Data-pure definitions only: zero imports, zero Node builtins, zero host or
+// database types. Generation correlation and completion are control messages,
+// NOT batch facts — LIVE_FACT_KINDS and LiveFactDto stay unchanged. Producer
+// generation IDs remain correlation identities mapped durably to kernel-issued
+// generations; a producer-supplied string is never a storage capability, and a
+// final batch receipt never implies publication.
+
+/** Version of the neutral generation correlation and completion control protocol. */
+export const GENERATION_CONTROL_VERSION = "engram-live-generation-control/1" as const;
+
+/** Fixed role stamped on producer correlation/completion messages (never a storage capability). */
+export const GENERATION_CORRELATION_ROLE = "producer-correlation" as const;
+
+/** Fixed authority stamped on storage-returned correlation records and completion outcomes. */
+export const STORAGE_KERNEL_AUTHORITY = "storage-kernel" as const;
+
+/** Live view kinds (SPEC_L3A §12.1): committed per canonical clone; private per clone/worktree. */
+export const LIVE_VIEW_KINDS = ["committed", "private"] as const;
+
+export type LiveViewKind = (typeof LIVE_VIEW_KINDS)[number];
+
+export function isLiveViewKind(value: unknown): value is LiveViewKind {
+  return isInList(value, LIVE_VIEW_KINDS);
+}
+
+/** Private source-boundary fingerprint policy (SPEC_L3A §§5.1, 12.2): never unkeyed. */
+export const PRIVATE_FINGERPRINT_MODES = ["none", "disposable-keyed"] as const;
+
+export type PrivateFingerprintMode = (typeof PRIVATE_FINGERPRINT_MODES)[number];
+
+export function isPrivateFingerprintMode(value: unknown): value is PrivateFingerprintMode {
+  return isInList(value, PRIVATE_FINGERPRINT_MODES);
+}
+
+/** Neutral producer completion states (LIVE §9; SPEC_L3A §12.3). */
+export const GENERATION_COMPLETION_STATES = ["complete", "partial", "aborted"] as const;
+
+export type GenerationCompletionState = (typeof GENERATION_COMPLETION_STATES)[number];
+
+export function isGenerationCompletionState(value: unknown): value is GenerationCompletionState {
+  return isInList(value, GENERATION_COMPLETION_STATES);
+}
+
+/** Storage-returned completion outcome statuses (SPEC_L3A §§12.2–12.3). */
+export const GENERATION_COMPLETION_OUTCOME_STATUSES = [
+  "published",
+  "staged",
+  "aborted",
+  "rejected",
+] as const;
+
+export type GenerationCompletionOutcomeStatus =
+  (typeof GENERATION_COMPLETION_OUTCOME_STATUSES)[number];
+
+/** Closed storage rejection codes for a completion outcome. */
+export const GENERATION_REJECTION_CODES = [
+  "stale-base",
+  "fenced",
+  "missing-batch",
+  "digest-mismatch",
+  "unauthorized",
+  "incomplete-coverage",
+  "invalid-completion",
+  "incarnation-mismatch",
+] as const;
+
+export type GenerationRejectionCode = (typeof GENERATION_REJECTION_CODES)[number];
+
+function isHex64Digest(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+}
+
+function isBoundedOpaqueId(value: unknown, maxLength = 1024): value is string {
+  return isNonEmptySafeText(value) && value.length <= maxLength;
+}
+
+function isTrimmedBoundedId(value: unknown, maxLength = 1024): value is string {
+  return isBoundedOpaqueId(value, maxLength) && value.trim() === value;
+}
+
+/**
+ * Recognizes a kernel-issued storage generation identity: a bounded, non-empty,
+ * NUL-free, whitespace-trimmed opaque string that is strictly outside the
+ * producer correlation ID namespace (`gen:*`). No producer-namespaced `gen:*`
+ * identifier ever satisfies this predicate or can be substituted as a storage
+ * capability.
+ */
+export function isStorageIssuedGenerationId(value: unknown): value is string {
+  return isTrimmedBoundedId(value, 1024) && !value.startsWith("gen:");
+}
+
+/**
+ * Exact L6a authorizing declaration reference accompanying every generation
+ * correlation and completion message (SPEC_L3A §12.1: an authorizing
+ * declaration accompanies committed work; sharing a clone does not make
+ * worktree declarations interchangeable).
+ */
+export interface AuthorizingDeclarationRefDto {
+  readonly declarationId: string;
+  readonly cloneId: string;
+  readonly worktreeId: string;
+  readonly declarationRevision: number;
+}
+
+/** Source boundary of a committed (clone-scoped) capture pass. */
+export interface CommittedSourceBoundaryDto {
+  readonly view: "committed";
+  readonly oidAlgorithm: OidAlgorithm;
+  readonly observedAt: number;
+  readonly refsFingerprint: string;
+  readonly headCommit: QualifiedOid | null;
+  readonly rootOids: readonly QualifiedOid[];
+  readonly configAttributesFingerprint: string;
+  readonly completeHistoryFrontier: boolean;
+}
+
+/**
+ * Source boundary of a private (worktree-scoped) capture pass.
+ * Enforces SPEC_L3A §§5.1, 12.2 disposable-fingerprint policy: private content
+ * never carries an unkeyed confirmation digest.
+ */
+export interface PrivateSourceBoundaryDto {
+  readonly view: "private";
+  readonly oidAlgorithm: OidAlgorithm;
+  readonly observedAt: number;
+  readonly worktreeId: string;
+  readonly headCommit: QualifiedOid | null;
+  readonly captureStable: boolean;
+  readonly snapshotIds: readonly string[];
+  readonly configAttributesFingerprint: string;
+  readonly contentFingerprintMode: PrivateFingerprintMode;
+  readonly disposableContentFingerprint?: string;
+  readonly disposableKeyRef?: string;
+}
+
+export type GenerationSourceBoundaryDto =
+  | CommittedSourceBoundaryDto
+  | PrivateSourceBoundaryDto;
+
+/**
+ * Producer-side generation correlation envelope (SPEC_L3A §12.3).
+ * Carries ONLY a producer correlation identity (`role: "producer-correlation"`),
+ * never a storage-issued generation id, incarnation, pointer version or seal.
+ */
+export interface ProducerGenerationCorrelationDto {
+  readonly controlVersion: typeof GENERATION_CONTROL_VERSION;
+  readonly kind: "generation-correlation";
+  readonly role: typeof GENERATION_CORRELATION_ROLE;
+  readonly producerGenerationId: string;
+  readonly producerName: typeof PRODUCER_NAME;
+  readonly contractVersion: typeof CONTRACT_VERSION;
+  readonly policyVersion: BatchPolicyVersion;
+  readonly view: LiveViewKind;
+  readonly scope: LiveScope;
+  readonly authorizingDeclaration: AuthorizingDeclarationRefDto;
+  readonly sourceBoundary: GenerationSourceBoundaryDto;
+}
+
+/**
+ * Storage-kernel-owned durable mapping between a producer correlation identity
+ * and its distinct kernel-issued storage generation identity (SPEC_L3A §12.3).
+ * Never minted by the neutral producer.
+ */
+export interface StorageGenerationCorrelationRecordDto {
+  readonly controlVersion: typeof GENERATION_CONTROL_VERSION;
+  readonly kind: "storage-generation-correlation";
+  readonly authority: typeof STORAGE_KERNEL_AUTHORITY;
+  readonly producerGenerationId: string;
+  readonly storageGenerationId: string;
+  readonly storeIncarnation: string;
+  readonly view: LiveViewKind;
+  readonly scope: LiveScope;
+  readonly mappedAt: number;
+}
+
+/**
+ * Durable acknowledgement of one complete delivered fact batch (SPEC_L3A §12.3).
+ * `published` is ALWAYS `false`, even when `finalBatch` is `true`: a final
+ * batch receipt never implies publication, and a prefix is never acknowledged.
+ */
+export interface BatchDeliveryReceiptDto {
+  readonly controlVersion: typeof GENERATION_CONTROL_VERSION;
+  readonly kind: "batch-receipt";
+  readonly received: true;
+  readonly published: false;
+  readonly completeBatch: true;
+  readonly producerGenerationId: string;
+  readonly batchId: string;
+  readonly batchDigest: string;
+  readonly receiptId: string;
+  readonly byteLength: number;
+  readonly finalBatch?: boolean;
+  readonly receivedAt: number;
+}
+
+/** Manifest entry for one durably receipted batch inside a completion message. */
+export interface BatchManifestEntryDto {
+  readonly batchId: string;
+  readonly batchDigest: string;
+  readonly receiptId: string;
+  readonly byteLength: number;
+}
+
+/** Per-axis coverage summary carried by a generation completion control message. */
+export interface GenerationCoverageSummaryDto {
+  readonly axis: CoverageFactAxis;
+  readonly state: CoverageFactState;
+  readonly reason: string;
+  readonly pendingCount: number;
+  readonly complete: boolean;
+}
+
+/**
+ * Separate neutral completion control message emitted after batch delivery
+ * (SPEC_L3A §12.3; LIVE §§3, 9). Carries an order-independent
+ * `logicalBatchSetRoot`, truthful coverage/exclusions/errors/remainingWork,
+ * and a canonical `messageDigest`. Never carries a storage-issued capability.
+ */
+export interface GenerationCompletionMessageDto {
+  readonly controlVersion: typeof GENERATION_CONTROL_VERSION;
+  readonly kind: "generation-completion";
+  readonly role: typeof GENERATION_CORRELATION_ROLE;
+  readonly producerGenerationId: string;
+  readonly producerName: typeof PRODUCER_NAME;
+  readonly contractVersion: typeof CONTRACT_VERSION;
+  readonly policyVersion: BatchPolicyVersion;
+  readonly view: LiveViewKind;
+  readonly scope: LiveScope;
+  readonly authorizingDeclaration: AuthorizingDeclarationRefDto;
+  readonly sourceBoundary: GenerationSourceBoundaryDto;
+  readonly completionState: GenerationCompletionState;
+  readonly expectedBatchCount: number;
+  readonly batches: readonly BatchManifestEntryDto[];
+  readonly logicalBatchSetRoot: string;
+  readonly coverage: readonly GenerationCoverageSummaryDto[];
+  readonly exclusions: readonly string[];
+  readonly errors: readonly string[];
+  readonly remainingWork: number;
+  readonly abortReason?: string;
+  readonly completedAt: number;
+  readonly messageDigest: string;
+}
+
+export interface PublishedGenerationOutcomeDto {
+  readonly controlVersion: typeof GENERATION_CONTROL_VERSION;
+  readonly kind: "generation-completion-outcome";
+  readonly authority: typeof STORAGE_KERNEL_AUTHORITY;
+  readonly status: "published";
+  readonly published: true;
+  readonly producerGenerationId: string;
+  readonly completionMessageDigest: string;
+  readonly view: LiveViewKind;
+  readonly scope: LiveScope;
+  readonly storageGenerationId: string;
+  readonly storeIncarnation: string;
+  readonly pointerVersion: number;
+  readonly publicationReceiptId: string;
+  readonly publishedAt: number;
+}
+
+export interface StagedGenerationOutcomeDto {
+  readonly controlVersion: typeof GENERATION_CONTROL_VERSION;
+  readonly kind: "generation-completion-outcome";
+  readonly authority: typeof STORAGE_KERNEL_AUTHORITY;
+  readonly status: "staged";
+  readonly published: false;
+  readonly producerGenerationId: string;
+  readonly completionMessageDigest: string;
+  readonly view: LiveViewKind;
+  readonly scope: LiveScope;
+  readonly storageGenerationId: string;
+  readonly storeIncarnation: string;
+  readonly stagedAt: number;
+}
+
+export interface AbortedGenerationOutcomeDto {
+  readonly controlVersion: typeof GENERATION_CONTROL_VERSION;
+  readonly kind: "generation-completion-outcome";
+  readonly authority: typeof STORAGE_KERNEL_AUTHORITY;
+  readonly status: "aborted";
+  readonly published: false;
+  readonly producerGenerationId: string;
+  readonly completionMessageDigest: string;
+  readonly view: LiveViewKind;
+  readonly scope: LiveScope;
+  readonly reason: string;
+  readonly abortedAt: number;
+  readonly storageGenerationId?: string;
+  readonly storeIncarnation?: string;
+}
+
+export interface RejectedGenerationOutcomeDto {
+  readonly controlVersion: typeof GENERATION_CONTROL_VERSION;
+  readonly kind: "generation-completion-outcome";
+  readonly authority: typeof STORAGE_KERNEL_AUTHORITY;
+  readonly status: "rejected";
+  readonly published: false;
+  readonly producerGenerationId: string;
+  readonly completionMessageDigest: string;
+  readonly view: LiveViewKind;
+  readonly scope: LiveScope;
+  readonly rejectionCode: GenerationRejectionCode;
+  readonly reason: string;
+  readonly rejectedAt: number;
+}
+
+/** Storage-returned outcome for a neutral completion control message. */
+export type GenerationCompletionOutcomeDto =
+  | PublishedGenerationOutcomeDto
+  | StagedGenerationOutcomeDto
+  | AbortedGenerationOutcomeDto
+  | RejectedGenerationOutcomeDto;
+
+const AUTHORIZING_DECLARATION_REF_KEYS: readonly string[] = [
+  "declarationId",
+  "cloneId",
+  "worktreeId",
+  "declarationRevision",
+];
+
+const COMMITTED_SOURCE_BOUNDARY_KEYS: readonly string[] = [
+  "view",
+  "oidAlgorithm",
+  "observedAt",
+  "refsFingerprint",
+  "headCommit",
+  "rootOids",
+  "configAttributesFingerprint",
+  "completeHistoryFrontier",
+];
+
+const PRIVATE_SOURCE_BOUNDARY_KEYS: readonly string[] = [
+  "view",
+  "oidAlgorithm",
+  "observedAt",
+  "worktreeId",
+  "headCommit",
+  "captureStable",
+  "snapshotIds",
+  "configAttributesFingerprint",
+  "contentFingerprintMode",
+  "disposableContentFingerprint",
+  "disposableKeyRef",
+];
+
+const PRODUCER_GENERATION_CORRELATION_KEYS: readonly string[] = [
+  "controlVersion",
+  "kind",
+  "role",
+  "producerGenerationId",
+  "producerName",
+  "contractVersion",
+  "policyVersion",
+  "view",
+  "scope",
+  "authorizingDeclaration",
+  "sourceBoundary",
+];
+
+const STORAGE_GENERATION_CORRELATION_KEYS: readonly string[] = [
+  "controlVersion",
+  "kind",
+  "authority",
+  "producerGenerationId",
+  "storageGenerationId",
+  "storeIncarnation",
+  "view",
+  "scope",
+  "mappedAt",
+];
+
+const BATCH_DELIVERY_RECEIPT_KEYS: readonly string[] = [
+  "controlVersion",
+  "kind",
+  "received",
+  "published",
+  "completeBatch",
+  "producerGenerationId",
+  "batchId",
+  "batchDigest",
+  "receiptId",
+  "byteLength",
+  "finalBatch",
+  "receivedAt",
+];
+
+const BATCH_MANIFEST_ENTRY_KEYS: readonly string[] = [
+  "batchId",
+  "batchDigest",
+  "receiptId",
+  "byteLength",
+];
+
+const GENERATION_COVERAGE_SUMMARY_KEYS: readonly string[] = [
+  "axis",
+  "state",
+  "reason",
+  "pendingCount",
+  "complete",
+];
+
+const GENERATION_COMPLETION_MESSAGE_KEYS: readonly string[] = [
+  "controlVersion",
+  "kind",
+  "role",
+  "producerGenerationId",
+  "producerName",
+  "contractVersion",
+  "policyVersion",
+  "view",
+  "scope",
+  "authorizingDeclaration",
+  "sourceBoundary",
+  "completionState",
+  "expectedBatchCount",
+  "batches",
+  "logicalBatchSetRoot",
+  "coverage",
+  "exclusions",
+  "errors",
+  "remainingWork",
+  "abortReason",
+  "completedAt",
+  "messageDigest",
+];
+
+const PUBLISHED_GENERATION_OUTCOME_KEYS: readonly string[] = [
+  "controlVersion",
+  "kind",
+  "authority",
+  "status",
+  "published",
+  "producerGenerationId",
+  "completionMessageDigest",
+  "view",
+  "scope",
+  "storageGenerationId",
+  "storeIncarnation",
+  "pointerVersion",
+  "publicationReceiptId",
+  "publishedAt",
+];
+
+const STAGED_GENERATION_OUTCOME_KEYS: readonly string[] = [
+  "controlVersion",
+  "kind",
+  "authority",
+  "status",
+  "published",
+  "producerGenerationId",
+  "completionMessageDigest",
+  "view",
+  "scope",
+  "storageGenerationId",
+  "storeIncarnation",
+  "stagedAt",
+];
+
+const ABORTED_GENERATION_OUTCOME_KEYS: readonly string[] = [
+  "controlVersion",
+  "kind",
+  "authority",
+  "status",
+  "published",
+  "producerGenerationId",
+  "completionMessageDigest",
+  "view",
+  "scope",
+  "reason",
+  "abortedAt",
+  "storageGenerationId",
+  "storeIncarnation",
+];
+
+const REJECTED_GENERATION_OUTCOME_KEYS: readonly string[] = [
+  "controlVersion",
+  "kind",
+  "authority",
+  "status",
+  "published",
+  "producerGenerationId",
+  "completionMessageDigest",
+  "view",
+  "scope",
+  "rejectionCode",
+  "reason",
+  "rejectedAt",
+];
+
+function validateViewScopedLiveScope(
+  scope: unknown,
+  view: unknown,
+  path: string,
+  errors: string[],
+): LiveScope | null {
+  const checked = validateLiveScope(scope);
+  if (!checked.ok) {
+    errors.push(...checked.errors.map((e) => `${path}: ${e}`));
+    return null;
+  }
+  const typed = scope as LiveScope;
+  if (view === "committed" && typed.worktree !== undefined) {
+    errors.push(`${path}.worktree must be absent for a committed view`);
+  }
+  if (view === "private" && typed.worktree === undefined) {
+    errors.push(`${path}.worktree is required for a private view`);
+  }
+  return typed;
+}
+
+export function validateAuthorizingDeclarationRef(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["authorizingDeclaration must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, AUTHORIZING_DECLARATION_REF_KEYS, "authorizingDeclaration", errors);
+  if (!isStrictBatchId(value.declarationId, ID_PREFIXES.declaration)) {
+    errors.push(`authorizingDeclaration.declarationId must be a strict opaque id starting with "${ID_PREFIXES.declaration}"`);
+  }
+  if (!isStrictBatchId(value.cloneId, ID_PREFIXES.clone)) {
+    errors.push(`authorizingDeclaration.cloneId must be a strict opaque id starting with "${ID_PREFIXES.clone}"`);
+  }
+  if (!isStrictBatchId(value.worktreeId, ID_PREFIXES.worktree)) {
+    errors.push(`authorizingDeclaration.worktreeId must be a strict opaque id starting with "${ID_PREFIXES.worktree}"`);
+  }
+  if (!isPositiveInteger(value.declarationRevision) || value.declarationRevision < INITIAL_DECLARATION_REVISION) {
+    errors.push(`authorizingDeclaration.declarationRevision must be an integer >= ${INITIAL_DECLARATION_REVISION}`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateGenerationSourceBoundary(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["sourceBoundary must be an object"] };
+  const errors: string[] = [];
+  if (value.view === "committed") {
+    rejectUnknownKeys(value, COMMITTED_SOURCE_BOUNDARY_KEYS, "sourceBoundary(committed)", errors);
+    if (value.oidAlgorithm !== "sha1" && value.oidAlgorithm !== "sha256") {
+      errors.push('sourceBoundary.oidAlgorithm must be "sha1" or "sha256"');
+    }
+    const alg = value.oidAlgorithm === "sha1" || value.oidAlgorithm === "sha256" ? value.oidAlgorithm : undefined;
+    if (!isPositiveInteger(value.observedAt)) {
+      errors.push("sourceBoundary.observedAt must be a positive safe integer");
+    }
+    if (!isHex64Digest(value.refsFingerprint)) {
+      errors.push("sourceBoundary.refsFingerprint must be a 64 character lowercase hex digest");
+    }
+    if (value.headCommit !== null) {
+      const head = validateQualifiedOid(value.headCommit);
+      if (!head.ok) errors.push(...head.errors.map((e) => `sourceBoundary.headCommit: ${e}`));
+      else if (alg !== undefined && (value.headCommit as QualifiedOid).algorithm !== alg) {
+        errors.push(`sourceBoundary.headCommit.algorithm must match ${alg}`);
+      }
+    }
+    if (!Array.isArray(value.rootOids)) {
+      errors.push("sourceBoundary.rootOids must be an array");
+    } else {
+      value.rootOids.forEach((oid: unknown, idx: number) => {
+        const checked = validateQualifiedOid(oid);
+        if (!checked.ok) errors.push(...checked.errors.map((e) => `sourceBoundary.rootOids[${idx}]: ${e}`));
+        else if (alg !== undefined && (oid as QualifiedOid).algorithm !== alg) {
+          errors.push(`sourceBoundary.rootOids[${idx}].algorithm must match ${alg}`);
+        }
+      });
+    }
+    if (!isHex64Digest(value.configAttributesFingerprint)) {
+      errors.push("sourceBoundary.configAttributesFingerprint must be a 64 character lowercase hex digest");
+    }
+    if (typeof value.completeHistoryFrontier !== "boolean") {
+      errors.push("sourceBoundary.completeHistoryFrontier must be a boolean");
+    }
+  } else if (value.view === "private") {
+    rejectUnknownKeys(value, PRIVATE_SOURCE_BOUNDARY_KEYS, "sourceBoundary(private)", errors);
+    if (value.oidAlgorithm !== "sha1" && value.oidAlgorithm !== "sha256") {
+      errors.push('sourceBoundary.oidAlgorithm must be "sha1" or "sha256"');
+    }
+    const alg = value.oidAlgorithm === "sha1" || value.oidAlgorithm === "sha256" ? value.oidAlgorithm : undefined;
+    if (!isPositiveInteger(value.observedAt)) {
+      errors.push("sourceBoundary.observedAt must be a positive safe integer");
+    }
+    if (!isStrictBatchId(value.worktreeId, ID_PREFIXES.worktree)) {
+      errors.push(`sourceBoundary.worktreeId must be a strict opaque id starting with "${ID_PREFIXES.worktree}"`);
+    }
+    if (value.headCommit !== null) {
+      const head = validateQualifiedOid(value.headCommit);
+      if (!head.ok) errors.push(...head.errors.map((e) => `sourceBoundary.headCommit: ${e}`));
+      else if (alg !== undefined && (value.headCommit as QualifiedOid).algorithm !== alg) {
+        errors.push(`sourceBoundary.headCommit.algorithm must match ${alg}`);
+      }
+    }
+    if (typeof value.captureStable !== "boolean") {
+      errors.push("sourceBoundary.captureStable must be a boolean");
+    }
+    if (!Array.isArray(value.snapshotIds)) {
+      errors.push("sourceBoundary.snapshotIds must be an array");
+    } else {
+      const seenSnapshots = new Set<string>();
+      value.snapshotIds.forEach((id: unknown, idx: number) => {
+        if (!isStrictSnapshotId(id)) {
+          errors.push(`sourceBoundary.snapshotIds[${idx}] must be a strict lsnap hex snapshot id`);
+        } else if (seenSnapshots.has(id)) {
+          errors.push(`sourceBoundary.snapshotIds[${idx}] duplicates snapshot id`);
+        } else {
+          seenSnapshots.add(id);
+        }
+      });
+    }
+    if (!isHex64Digest(value.configAttributesFingerprint)) {
+      errors.push("sourceBoundary.configAttributesFingerprint must be a 64 character lowercase hex digest");
+    }
+    if (!isPrivateFingerprintMode(value.contentFingerprintMode)) {
+      errors.push(`sourceBoundary.contentFingerprintMode must be one of ${PRIVATE_FINGERPRINT_MODES.join(", ")}`);
+    } else if (value.contentFingerprintMode === "disposable-keyed") {
+      if (!isHex64Digest(value.disposableContentFingerprint)) {
+        errors.push("sourceBoundary.disposableContentFingerprint must be a 64 character lowercase hex digest when contentFingerprintMode is disposable-keyed");
+      }
+      if (!isStrictKeyRef(value.disposableKeyRef)) {
+        errors.push("sourceBoundary.disposableKeyRef must be a strict opaque key reference when contentFingerprintMode is disposable-keyed");
+      }
+    } else {
+      if (value.disposableContentFingerprint !== undefined) {
+        errors.push("sourceBoundary.disposableContentFingerprint must be absent when contentFingerprintMode is none");
+      }
+      if (value.disposableKeyRef !== undefined) {
+        errors.push("sourceBoundary.disposableKeyRef must be absent when contentFingerprintMode is none");
+      }
+    }
+  } else {
+    errors.push(`sourceBoundary.view must be one of ${LIVE_VIEW_KINDS.join(", ")}`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+function validateGenerationEnvelopeCommon(
+  value: Record<string, unknown>,
+  label: string,
+  errors: string[],
+): {
+  readonly view: LiveViewKind | null;
+  readonly scope: LiveScope | null;
+  readonly boundary: GenerationSourceBoundaryDto | null;
+} {
+  if (value.controlVersion !== GENERATION_CONTROL_VERSION) {
+    errors.push(`${label}.controlVersion must be "${GENERATION_CONTROL_VERSION}"`);
+  }
+  if (value.role !== GENERATION_CORRELATION_ROLE) {
+    errors.push(`${label}.role must be "${GENERATION_CORRELATION_ROLE}"`);
+  }
+  if (!isStrictGenerationId(value.producerGenerationId)) {
+    errors.push(`${label}.producerGenerationId must be a fixed-width correlation id ("gen:" plus ${GENERATION_ID_WIDTH} zero-padded digits)`);
+  }
+  if (value.producerName !== PRODUCER_NAME) {
+    errors.push(`${label}.producerName must be "${PRODUCER_NAME}"`);
+  }
+  if (value.contractVersion !== CONTRACT_VERSION) {
+    errors.push(`${label}.contractVersion must be ${CONTRACT_VERSION}`);
+  }
+  const view = isLiveViewKind(value.view) ? value.view : null;
+  if (view === null) {
+    errors.push(`${label}.view must be one of ${LIVE_VIEW_KINDS.join(", ")}`);
+  }
+  if (view === "committed") {
+    if (value.policyVersion !== POLICY_VERSION) {
+      errors.push(`${label}.policyVersion must be "${POLICY_VERSION}" for a committed view`);
+    }
+  } else if (!isBatchPolicyVersion(value.policyVersion)) {
+    errors.push(`${label}.policyVersion must be one of ${BATCH_POLICY_VERSIONS.join(", ")}`);
+  }
+  const scope = validateViewScopedLiveScope(value.scope, view, `${label}.scope`, errors);
+  const declChecked = validateAuthorizingDeclarationRef(value.authorizingDeclaration);
+  if (!declChecked.ok) {
+    errors.push(...declChecked.errors.map((e) => `${label}.${e}`));
+  }
+  const boundaryChecked = validateGenerationSourceBoundary(value.sourceBoundary);
+  if (!boundaryChecked.ok) {
+    errors.push(...boundaryChecked.errors.map((e) => `${label}.${e}`));
+  }
+  const boundary = boundaryChecked.ok ? (value.sourceBoundary as GenerationSourceBoundaryDto) : null;
+  if (declChecked.ok && scope !== null) {
+    const decl = value.authorizingDeclaration as AuthorizingDeclarationRefDto;
+    if (decl.cloneId !== scope.clone) {
+      errors.push(`${label}.authorizingDeclaration.cloneId must match ${label}.scope.clone`);
+    }
+    if (view === "private" && scope.worktree !== undefined && decl.worktreeId !== scope.worktree) {
+      errors.push(`${label}.authorizingDeclaration.worktreeId must match ${label}.scope.worktree`);
+    }
+  }
+  if (boundary !== null && view !== null) {
+    if (boundary.view !== view) {
+      errors.push(`${label}.sourceBoundary.view must match ${label}.view`);
+    }
+    if (boundary.view === "private" && scope !== null && scope.worktree !== undefined && boundary.worktreeId !== scope.worktree) {
+      errors.push(`${label}.sourceBoundary.worktreeId must match ${label}.scope.worktree`);
+    }
+  }
+  return { view, scope, boundary };
+}
+
+export function validateProducerGenerationCorrelation(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["generation correlation must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, PRODUCER_GENERATION_CORRELATION_KEYS, "generation correlation", errors);
+  if (value.kind !== "generation-correlation") {
+    errors.push('generation correlation.kind must be "generation-correlation"');
+  }
+  validateGenerationEnvelopeCommon(value, "generation correlation", errors);
+  return { ok: errors.length === 0, errors };
+}
+
+export function isProducerGenerationCorrelationDto(value: unknown): value is ProducerGenerationCorrelationDto {
+  return validateProducerGenerationCorrelation(value).ok;
+}
+
+export function validateStorageGenerationCorrelationRecord(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["storage generation correlation record must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, STORAGE_GENERATION_CORRELATION_KEYS, "storage generation correlation record", errors);
+  if (value.controlVersion !== GENERATION_CONTROL_VERSION) {
+    errors.push(`storage generation correlation record.controlVersion must be "${GENERATION_CONTROL_VERSION}"`);
+  }
+  if (value.kind !== "storage-generation-correlation") {
+    errors.push('storage generation correlation record.kind must be "storage-generation-correlation"');
+  }
+  if (value.authority !== STORAGE_KERNEL_AUTHORITY) {
+    errors.push(`storage generation correlation record.authority must be "${STORAGE_KERNEL_AUTHORITY}"`);
+  }
+  if (!isStrictGenerationId(value.producerGenerationId)) {
+    errors.push(`storage generation correlation record.producerGenerationId must be a fixed-width correlation id ("gen:" plus ${GENERATION_ID_WIDTH} zero-padded digits)`);
+  }
+  if (!isStorageIssuedGenerationId(value.storageGenerationId)) {
+    errors.push("storage generation correlation record.storageGenerationId must be a kernel-issued identity distinct from producer correlation ids");
+  } else if (value.storageGenerationId === value.producerGenerationId) {
+    errors.push("storage generation correlation record.storageGenerationId must not equal producerGenerationId");
+  }
+  if (!isBoundedOpaqueId(value.storeIncarnation, 1024)) {
+    errors.push("storage generation correlation record.storeIncarnation must be a bounded non-empty string without NUL");
+  }
+  const view = isLiveViewKind(value.view) ? value.view : null;
+  if (view === null) {
+    errors.push(`storage generation correlation record.view must be one of ${LIVE_VIEW_KINDS.join(", ")}`);
+  }
+  validateViewScopedLiveScope(value.scope, view, "storage generation correlation record.scope", errors);
+  if (!isPositiveInteger(value.mappedAt)) {
+    errors.push("storage generation correlation record.mappedAt must be a positive safe integer");
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateBatchDeliveryReceipt(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["batch delivery receipt must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, BATCH_DELIVERY_RECEIPT_KEYS, "batch delivery receipt", errors);
+  if (value.controlVersion !== GENERATION_CONTROL_VERSION) {
+    errors.push(`batch delivery receipt.controlVersion must be "${GENERATION_CONTROL_VERSION}"`);
+  }
+  if (value.kind !== "batch-receipt") {
+    errors.push('batch delivery receipt.kind must be "batch-receipt"');
+  }
+  if (value.received !== true) {
+    errors.push("batch delivery receipt.received must be true");
+  }
+  if (value.published !== false) {
+    errors.push("batch delivery receipt.published must be false (a batch receipt never implies publication)");
+  }
+  if (value.completeBatch !== true) {
+    errors.push("batch delivery receipt.completeBatch must be true (a prefix is never acknowledged)");
+  }
+  if (!isStrictGenerationId(value.producerGenerationId)) {
+    errors.push(`batch delivery receipt.producerGenerationId must be a fixed-width correlation id ("gen:" plus ${GENERATION_ID_WIDTH} zero-padded digits)`);
+  }
+  if (!isStrictBatchId(value.batchId, "batch:")) {
+    errors.push("batch delivery receipt.batchId must be a strict opaque batch id");
+  }
+  if (!isHex64Digest(value.batchDigest)) {
+    errors.push("batch delivery receipt.batchDigest must be a 64 character lowercase hex digest");
+  }
+  if (!isBoundedOpaqueId(value.receiptId, 256)) {
+    errors.push("batch delivery receipt.receiptId must be a bounded non-empty string without NUL");
+  }
+  if (!isPositiveInteger(value.byteLength) || value.byteLength > MAX_FACT_BATCH_BYTES) {
+    errors.push(`batch delivery receipt.byteLength must be a positive safe integer <= ${MAX_FACT_BATCH_BYTES}`);
+  }
+  if (value.finalBatch !== undefined && typeof value.finalBatch !== "boolean") {
+    errors.push("batch delivery receipt.finalBatch, when present, must be a boolean");
+  }
+  if (!isPositiveInteger(value.receivedAt)) {
+    errors.push("batch delivery receipt.receivedAt must be a positive safe integer");
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function isBatchDeliveryReceiptDto(value: unknown): value is BatchDeliveryReceiptDto {
+  return validateBatchDeliveryReceipt(value).ok;
+}
+
+export function validateGenerationCompletionMessage(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["generation completion message must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, GENERATION_COMPLETION_MESSAGE_KEYS, "generation completion message", errors);
+  if (value.kind !== "generation-completion") {
+    errors.push('generation completion message.kind must be "generation-completion"');
+  }
+  const { boundary } = validateGenerationEnvelopeCommon(value, "generation completion message", errors);
+
+  const state = isGenerationCompletionState(value.completionState) ? value.completionState : null;
+  if (state === null) {
+    errors.push(`generation completion message.completionState must be one of ${GENERATION_COMPLETION_STATES.join(", ")}`);
+  }
+  if (!isNonNegativeSafeInt(value.expectedBatchCount)) {
+    errors.push("generation completion message.expectedBatchCount must be a non-negative safe integer");
+  }
+  if (!Array.isArray(value.batches)) {
+    errors.push("generation completion message.batches must be an array");
+  } else {
+    const seenBatchIds = new Set<string>();
+    value.batches.forEach((entry: unknown, idx: number) => {
+      const path = `generation completion message.batches[${idx}]`;
+      if (!isRecord(entry)) {
+        errors.push(`${path} must be an object`);
+        return;
+      }
+      rejectUnknownKeys(entry, BATCH_MANIFEST_ENTRY_KEYS, path, errors);
+      if (!isStrictBatchId(entry.batchId, "batch:")) {
+        errors.push(`${path}.batchId must be a strict opaque batch id`);
+      } else if (seenBatchIds.has(entry.batchId)) {
+        errors.push(`${path}.batchId duplicates an earlier batch entry`);
+      } else {
+        seenBatchIds.add(entry.batchId);
+      }
+      if (!isHex64Digest(entry.batchDigest)) {
+        errors.push(`${path}.batchDigest must be a 64 character lowercase hex digest`);
+      }
+      if (!isBoundedOpaqueId(entry.receiptId, 256)) {
+        errors.push(`${path}.receiptId must be a bounded non-empty string without NUL`);
+      }
+      if (!isPositiveInteger(entry.byteLength) || entry.byteLength > MAX_FACT_BATCH_BYTES) {
+        errors.push(`${path}.byteLength must be a positive safe integer <= ${MAX_FACT_BATCH_BYTES}`);
+      }
+    });
+    if (isNonNegativeSafeInt(value.expectedBatchCount)) {
+      if (state === "aborted") {
+        if (value.batches.length > value.expectedBatchCount) {
+          errors.push("generation completion message.batches length cannot exceed expectedBatchCount");
+        }
+      } else if (value.batches.length !== value.expectedBatchCount) {
+        errors.push("generation completion message.batches length must equal expectedBatchCount");
+      }
+    }
+  }
+  if (!isHex64Digest(value.logicalBatchSetRoot)) {
+    errors.push("generation completion message.logicalBatchSetRoot must be a 64 character lowercase hex digest");
+  }
+
+  let hasIncompleteAxis = false;
+  if (!Array.isArray(value.coverage)) {
+    errors.push("generation completion message.coverage must be an array");
+  } else {
+    const seenAxes = new Set<string>();
+    value.coverage.forEach((item: unknown, idx: number) => {
+      const path = `generation completion message.coverage[${idx}]`;
+      if (!isRecord(item)) {
+        errors.push(`${path} must be an object`);
+        return;
+      }
+      rejectUnknownKeys(item, GENERATION_COVERAGE_SUMMARY_KEYS, path, errors);
+      if (!isInList(item.axis, COVERAGE_FACT_AXES)) {
+        errors.push(`${path}.axis must be one of ${COVERAGE_FACT_AXES.join(", ")}`);
+      } else if (seenAxes.has(item.axis)) {
+        errors.push(`${path}.axis duplicates an earlier coverage entry`);
+      } else {
+        seenAxes.add(item.axis);
+      }
+      if (!isInList(item.state, COVERAGE_FACT_STATES)) {
+        errors.push(`${path}.state must be one of ${COVERAGE_FACT_STATES.join(", ")}`);
+      }
+      if (!isBoundedOpaqueId(item.reason, 1024)) {
+        errors.push(`${path}.reason must be a bounded non-empty string without NUL`);
+      }
+      if (!isNonNegativeSafeInt(item.pendingCount)) {
+        errors.push(`${path}.pendingCount must be a non-negative safe integer`);
+      }
+      if (typeof item.complete !== "boolean") {
+        errors.push(`${path}.complete must be a boolean`);
+      }
+      if (item.complete === true && (item.state !== "current" || item.pendingCount !== 0)) {
+        errors.push(`${path}: complete coverage entry must have state "current" and pendingCount 0`);
+      }
+      if (item.complete !== true || item.state !== "current" || item.pendingCount !== 0) {
+        hasIncompleteAxis = true;
+      }
+    });
+  }
+
+  if (!Array.isArray(value.exclusions)) {
+    errors.push("generation completion message.exclusions must be an array");
+  } else {
+    value.exclusions.forEach((item: unknown, idx: number) => {
+      if (!isBoundedOpaqueId(item, 512)) {
+        errors.push(`generation completion message.exclusions[${idx}] must be a bounded non-empty string without NUL`);
+      }
+    });
+  }
+  if (!Array.isArray(value.errors)) {
+    errors.push("generation completion message.errors must be an array");
+  } else {
+    value.errors.forEach((item: unknown, idx: number) => {
+      if (!isBoundedOpaqueId(item, 512)) {
+        errors.push(`generation completion message.errors[${idx}] must be a bounded non-empty string without NUL`);
+      }
+    });
+  }
+  if (!isNonNegativeSafeInt(value.remainingWork)) {
+    errors.push("generation completion message.remainingWork must be a non-negative safe integer");
+  }
+  if (state === "aborted") {
+    if (!isBoundedOpaqueId(value.abortReason, 512)) {
+      errors.push("generation completion message.abortReason is required and must be bounded without NUL when completionState is aborted");
+    }
+  } else if (value.abortReason !== undefined) {
+    errors.push("generation completion message.abortReason is permitted only when completionState is aborted");
+  }
+
+  if (state === "complete") {
+    if (isNonNegativeSafeInt(value.remainingWork) && value.remainingWork !== 0) {
+      errors.push("generation completion message cannot declare complete with non-zero remainingWork");
+    }
+    if (Array.isArray(value.errors) && value.errors.length > 0) {
+      errors.push("generation completion message cannot declare complete with errors");
+    }
+    if (!Array.isArray(value.coverage) || value.coverage.length === 0) {
+      errors.push("generation completion message declaring complete must include at least one coverage summary");
+    } else if (hasIncompleteAxis) {
+      errors.push("generation completion message declaring complete cannot include incomplete or non-current coverage axes");
+    }
+    if (boundary !== null) {
+      if (boundary.view === "committed" && !boundary.completeHistoryFrontier) {
+        errors.push("generation completion message cannot declare complete with an incomplete history frontier");
+      }
+      if (boundary.view === "private" && !boundary.captureStable) {
+        errors.push("generation completion message cannot declare complete with an unstable private capture");
+      }
+    }
+  }
+
+  if (!isPositiveInteger(value.completedAt)) {
+    errors.push("generation completion message.completedAt must be a positive safe integer");
+  }
+  if (!isHex64Digest(value.messageDigest)) {
+    errors.push("generation completion message.messageDigest must be a 64 character lowercase hex digest");
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function isGenerationCompletionMessageDto(value: unknown): value is GenerationCompletionMessageDto {
+  return validateGenerationCompletionMessage(value).ok;
+}
+
+export function validateGenerationCompletionOutcome(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["generation completion outcome must be an object"] };
+  const errors: string[] = [];
+  if (value.controlVersion !== GENERATION_CONTROL_VERSION) {
+    errors.push(`generation completion outcome.controlVersion must be "${GENERATION_CONTROL_VERSION}"`);
+  }
+  if (value.kind !== "generation-completion-outcome") {
+    errors.push('generation completion outcome.kind must be "generation-completion-outcome"');
+  }
+  if (value.authority !== STORAGE_KERNEL_AUTHORITY) {
+    errors.push(`generation completion outcome.authority must be "${STORAGE_KERNEL_AUTHORITY}"`);
+  }
+  if (!isStrictGenerationId(value.producerGenerationId)) {
+    errors.push(`generation completion outcome.producerGenerationId must be a fixed-width correlation id ("gen:" plus ${GENERATION_ID_WIDTH} zero-padded digits)`);
+  }
+  if (!isHex64Digest(value.completionMessageDigest)) {
+    errors.push("generation completion outcome.completionMessageDigest must be a 64 character lowercase hex digest");
+  }
+  const view = isLiveViewKind(value.view) ? value.view : null;
+  if (view === null) {
+    errors.push(`generation completion outcome.view must be one of ${LIVE_VIEW_KINDS.join(", ")}`);
+  }
+  validateViewScopedLiveScope(value.scope, view, "generation completion outcome.scope", errors);
+
+  switch (value.status) {
+    case "published": {
+      rejectUnknownKeys(value, PUBLISHED_GENERATION_OUTCOME_KEYS, "generation completion outcome(published)", errors);
+      if (value.published !== true) errors.push("published outcome must set published: true");
+      if (!isStorageIssuedGenerationId(value.storageGenerationId)) {
+        errors.push("published outcome.storageGenerationId must be a kernel-issued identity distinct from producer correlation ids");
+      } else if (value.storageGenerationId === value.producerGenerationId) {
+        errors.push("published outcome.storageGenerationId must not equal producerGenerationId");
+      }
+      if (!isBoundedOpaqueId(value.storeIncarnation, 1024)) {
+        errors.push("published outcome.storeIncarnation must be a bounded non-empty string without NUL");
+      }
+      if (!isPositiveInteger(value.pointerVersion)) {
+        errors.push("published outcome.pointerVersion must be a positive safe integer");
+      }
+      if (!isBoundedOpaqueId(value.publicationReceiptId, 256)) {
+        errors.push("published outcome.publicationReceiptId must be a bounded non-empty string without NUL");
+      }
+      if (!isPositiveInteger(value.publishedAt)) {
+        errors.push("published outcome.publishedAt must be a positive safe integer");
+      }
+      break;
+    }
+    case "staged": {
+      rejectUnknownKeys(value, STAGED_GENERATION_OUTCOME_KEYS, "generation completion outcome(staged)", errors);
+      if (value.published !== false) errors.push("staged outcome must set published: false");
+      if (!isStorageIssuedGenerationId(value.storageGenerationId)) {
+        errors.push("staged outcome.storageGenerationId must be a kernel-issued identity distinct from producer correlation ids");
+      } else if (value.storageGenerationId === value.producerGenerationId) {
+        errors.push("staged outcome.storageGenerationId must not equal producerGenerationId");
+      }
+      if (!isBoundedOpaqueId(value.storeIncarnation, 1024)) {
+        errors.push("staged outcome.storeIncarnation must be a bounded non-empty string without NUL");
+      }
+      if (!isPositiveInteger(value.stagedAt)) {
+        errors.push("staged outcome.stagedAt must be a positive safe integer");
+      }
+      break;
+    }
+    case "aborted": {
+      rejectUnknownKeys(value, ABORTED_GENERATION_OUTCOME_KEYS, "generation completion outcome(aborted)", errors);
+      if (value.published !== false) errors.push("aborted outcome must set published: false");
+      if (!isBoundedOpaqueId(value.reason, 1024)) {
+        errors.push("aborted outcome.reason must be a bounded non-empty string without NUL");
+      }
+      if (!isPositiveInteger(value.abortedAt)) {
+        errors.push("aborted outcome.abortedAt must be a positive safe integer");
+      }
+      if (value.storageGenerationId !== undefined) {
+        if (!isStorageIssuedGenerationId(value.storageGenerationId) || value.storageGenerationId === value.producerGenerationId) {
+          errors.push("aborted outcome.storageGenerationId, when present, must be a kernel-issued identity distinct from producer correlation ids");
+        }
+      }
+      if (value.storeIncarnation !== undefined && !isBoundedOpaqueId(value.storeIncarnation, 1024)) {
+        errors.push("aborted outcome.storeIncarnation, when present, must be a bounded non-empty string without NUL");
+      }
+      break;
+    }
+    case "rejected": {
+      rejectUnknownKeys(value, REJECTED_GENERATION_OUTCOME_KEYS, "generation completion outcome(rejected)", errors);
+      if (value.published !== false) errors.push("rejected outcome must set published: false");
+      if (!isInList(value.rejectionCode, GENERATION_REJECTION_CODES)) {
+        errors.push(`rejected outcome.rejectionCode must be one of ${GENERATION_REJECTION_CODES.join(", ")}`);
+      }
+      if (!isBoundedOpaqueId(value.reason, 1024)) {
+        errors.push("rejected outcome.reason must be a bounded non-empty string without NUL");
+      }
+      if (!isPositiveInteger(value.rejectedAt)) {
+        errors.push("rejected outcome.rejectedAt must be a positive safe integer");
+      }
+      break;
+    }
+    default:
+      errors.push(`generation completion outcome.status must be one of ${GENERATION_COMPLETION_OUTCOME_STATUSES.join(", ")}`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function isGenerationCompletionOutcomeDto(value: unknown): value is GenerationCompletionOutcomeDto {
+  return validateGenerationCompletionOutcome(value).ok;
+}
+
+export function isPublishedGenerationOutcome(value: unknown): value is PublishedGenerationOutcomeDto {
+  return validateGenerationCompletionOutcome(value).ok &&
+    (value as GenerationCompletionOutcomeDto).status === "published";
+}
