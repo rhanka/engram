@@ -28,11 +28,18 @@
 // results preserve prior callers, confirmed deletion yields scoped
 // unresolved facts, partial repair is withheld from publication.
 //
-// Neutrality: imports ./analysis-cache.js, ./comparisons.js and node:crypto. No h2a,
-// cluster-mesh, sentropic, driver, network, filesystem, loader, LLM.
+// Neutrality: imports only neutral package modules and node:crypto.
 
 import { createHash } from "node:crypto";
 import { verifyCommitGraph, verifyGitObject, type PinnedOidDto, type ComparisonObjectsPort } from "./comparisons.js";
+import {
+  FACT_SCHEMA_VERSION,
+  POLICY_VERSION,
+  validateReasonAnchorFact,
+  type LiveScope,
+  type ReasonAnchorFactDto,
+  type ReasonAnchorPinDto,
+} from "./contracts.js";
 import {
   ANALYSIS_EXTRACTOR_VERSION,
   L5_DIALECT_VERSION,
@@ -260,6 +267,65 @@ export const L5_REASONS = [
 
 function sha256Hex(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function snapshotReasonAnchorRecord<T extends object>(
+  value: T,
+  reservedKeys: readonly string[] = [],
+): { -readonly [K in keyof T]: T[K] } {
+  if (typeof value !== "object" || value === null || Array.isArray(value) || ArrayBuffer.isView(value)) {
+    throw new CodeAnalysisError("reason-anchor input must use plain records");
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new CodeAnalysisError("reason-anchor input must use plain records");
+  }
+  const keys = Reflect.ownKeys(value);
+  if (keys.some((key) => typeof key === "symbol" || reservedKeys.includes(key))) {
+    throw new CodeAnalysisError("reason-anchor input carries an unknown key: refused");
+  }
+  return Object.fromEntries(keys.map((key) => [key, Reflect.get(value, key)])) as { -readonly [K in keyof T]: T[K] };
+}
+
+/** Snapshot a reference from pinned Git, G1 or P1 evidence supplied by the caller. */
+export function toReasonAnchorFact(
+  scope: ReasonAnchorFactDto["scope"],
+  pin: ReasonAnchorPinDto,
+): ReasonAnchorFactDto {
+  const pinSnapshot = snapshotReasonAnchorRecord(pin, ["kind", "schemaVersion", "policyVersion", "scope"]);
+  const scopeSnapshot = snapshotReasonAnchorRecord<LiveScope>(scope);
+  if (scopeSnapshot.worktree === undefined) delete scopeSnapshot.worktree;
+
+  const fact = {
+    ...pinSnapshot,
+    kind: "reason-anchor",
+    schemaVersion: FACT_SCHEMA_VERSION,
+    policyVersion: POLICY_VERSION,
+    scope: scopeSnapshot,
+  } satisfies ReasonAnchorFactDto;
+
+  switch (fact.anchorKind) {
+    case "code":
+      fact.commit = snapshotReasonAnchorRecord(fact.commit);
+      fact.blob = snapshotReasonAnchorRecord(fact.blob);
+      if (!(fact.path instanceof Uint8Array) || !ArrayBuffer.isView(fact.path)) {
+        throw new CodeAnalysisError("reason-anchor fact.path must be raw path bytes");
+      }
+      fact.path = new Uint8Array(fact.path);
+      fact.range = snapshotReasonAnchorRecord(fact.range);
+      if (fact.calculationVersion === undefined) delete fact.calculationVersion;
+      break;
+    case "commit":
+      fact.commit = snapshotReasonAnchorRecord(fact.commit);
+      break;
+    case "pr":
+      fact.repository = snapshotReasonAnchorRecord(fact.repository);
+      break;
+  }
+
+  const checked = validateReasonAnchorFact(fact);
+  if (!checked.ok) throw new CodeAnalysisError(checked.errors.join(", "));
+  return fact;
 }
 
 function canonical(value: unknown): string {
