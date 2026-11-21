@@ -1,6 +1,6 @@
 # G0 amendment — Engram as the native authority for database models
 
-**v0.1.3 · Proposed specification · 21 November 2026.** GPT-6.2 Astra max is the assigned author. Gemini Carbon High requested changes to v0.1.1. In round 2 Carbon closed F1–F9 and returned `APPROVE-WITH-MINORS` on v0.1.2. Both rounds’ dispositions follow §9. Owner acceptance and implementation are pending. (Brief:1–3,42. Review 1:1. Review 2:1–13,19–29.)
+**v0.2.1 · Proposed specification · 21 November 2026.** GPT-6.2 Astra max is the assigned author. Gemini Carbon High requested changes to v0.1.1, closed F1–F9 on v0.1.2 and returned `APPROVE-WITH-MINORS` on v0.1.2 and v0.2.0. The v0.2.0 amendment incorporated sentbase’s three requests on v0.1.3. This revision applies the conductor’s ruling to accept M1 and M2. Dispositions follow §9. Owner acceptance and implementation are pending. (Brief:1–3,42. Review 1:1. Review 2:1–13,19–29. Amendment:3–7. Carbon v0.2:1–19.)
 
 ## 1. What the owner decided
 
@@ -10,19 +10,19 @@
 |---|---|
 | **Engram** | Defines the logical model in tier N and the governed metadata in tier G. Publishes exact versions and digests, validates bindings and classifies changes. N enters the profile digest. G binds to that profile and has its own digest. (R3:398–400,729–731,754–757.) |
 | **cluster-mesh** | Supplies all access rights, their typed representation, the translator to RLS predicates and the independent oracle for access decisions. sentbase reads access rules only from cluster-mesh. (R3:401–403,732,758,763. Consumer:30.) |
-| **sentbase** | Compiles the pinned model into CNPG and S3 tables, APIs, RLS policies assembled from cluster-mesh predicates, and graph views. The tenant applies migrations to its data. (R3:404–421,733–735.) |
+| **sentbase** | Compiles the pinned model into CNPG and S3 tables, APIs, RLS policies assembled from cluster-mesh predicates, and graph views. The tenant selects its storage region in sentbase deployment configuration and applies migrations to its data. (R3:404–421,733–735,814. Amendment:6.) |
 
-D4-A settles authority. The r3 dossier is **Incomplete**, pending Astra’s final validation. The consumer’s field spellings, candidate storage hints, first Task slice, relation-policy coverage and lot gates are working inputs. Section 9 traces each compiler field to its declaration. The formats below are proposed Engram decisions, subject to owner acceptance at lot 3.1 and the sentbase interface review. (Decision:12–16. R3:85,432,446,754–764,876–881. Consumer:1–3,7–28.)
+D4-A settles authority. The r3 dossier is **Incomplete**, pending Astra’s final validation. Its candidate storage hints, first Task slice, relation-policy coverage and lot gates are working inputs. Section 9 records sentbase’s field review and traces each compiler input to its declaration. The formats below are proposed Engram decisions for owner acceptance at lot 3.1. (Decision:12–16. R3:85,432,446,754–764,876–881. Consumer:1–3,7–28. Amendment:3–6.)
 
 ### Evidence
 
-Engram contract, source and test anchors were re-read at `origin/main@15eab662f5dbcc6dd80cd0cd1fe65b24fed8b262`. Those tracked files are byte-identical to their counterparts at the immutable P1-7 replay baseline `b2e3fb8d1627e8c8c1ae8fbed9ce78ef76e3f502`. Short citations expand below. [JUDGMENT] identifies a proposed contract, fixture choice or recommendation. `unverified` identifies missing evidence.
+The v0.1.3 replay compared `15eab662f5dbcc6dd80cd0cd1fe65b24fed8b262` with the immutable P1-7 baseline `b2e3fb8d1627e8c8c1ae8fbed9ce78ef76e3f502`. The cited Engram contracts, sources and tests were re-read at the v0.2.0 base `7d8e9fd325350abd215a0e7266d54e9d4cd2af55` and match those replay revisions byte for byte. Short citations expand below. [JUDGMENT] identifies a proposed contract, fixture choice or recommendation. `unverified` identifies missing evidence.
 
 | Key | File |
 |---|---|
-| Brief, Fold | `graphify/.graphify/scratch/design/g0-data-models/BRIEF-spec-g0-n-g-layers.md` and `graphify/.graphify/scratch/design/g0-data-models/BRIEF-fold-g0-sentbase-input.md` respectively |
-| Review 1, Review 2 | `graphify/.graphify/scratch/design/g0-data-models/REVIEW-g0-amendment-r1.md` and `graphify/.graphify/scratch/design/g0-data-models/REVIEW-g0-amendment-r2.md` respectively |
-| Decision, R3 | `sentbase/tmp/dossiers/lakehouse/OWNER-ANSWER-r3.yaml` and `sentbase/tmp/dossiers/lakehouse/dossier-r3.fr.md` respectively |
+| Brief, Fold, Amendment | Under `graphify/.graphify/scratch/design/g0-data-models/`, `BRIEF-spec-g0-n-g-layers.md`, `BRIEF-fold-g0-sentbase-input.md` and `BRIEF-spec-g0-v02.md`, respectively |
+| Review 1, Review 2, Carbon v0.2 | Under `graphify/.graphify/scratch/design/g0-data-models/`, `REVIEW-g0-amendment-r1.md`, `REVIEW-g0-amendment-r2.md` and `REVIEW-g0-v02-r1.md`, respectively |
+| Decision, R3, Muse | Under `sentbase/tmp/dossiers/lakehouse/`, `OWNER-ANSWER-r3.yaml`, `dossier-r3.fr.md` and `review-muse.fr.md` (P1-3 on r2), respectively |
 | Consumer | `graphify/.graphify/scratch/design/g0-data-models/INPUT-sentbase-compiler-v0.md`, v0 |
 | Mesh snapshot | `sentbase/tmp/dossiers/lakehouse/src/sentropic/packages/cluster-mesh/package.json` at the r3 snapshot `70638ed6`. (R3:1058–1059.) |
 | G0, OpenERP | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_CONTRACTS.md` and `spec/SPEC_ONTOLOGY_OPENERP_FROZEN.md` respectively |
@@ -239,9 +239,10 @@ type ModelEdge = OntologyRelationType & { cardinality: Cardinality } & (
 ~~~ts
 type QualifiedPin = { namespace: string, pin: Pin }
 type TenantScope = { kind: "global" } | { kind: "tenant", tenant: string, workspace?: string }
-type ColumnGovernance =
-  | { pii: { category: "none" } }
-  | { pii: { category: "identifier" | "contact" | "authentication" | "personal" }, retention: string, erasure: "delete" | "anonymize" }
+type ColumnGovernance = (
+  | { pii: { category: "none" }, retention?: never, erasure?: never }
+  | { pii: { category: "identifier" | "contact" | "authentication" | "personal" | "sensitive" }, retention: string, erasure: "delete" | "anonymize" }
+) & { protect?: { encrypt: true } }
 type Retention = { from: string, days: number }
 type ChangeCapture = { include: boolean }
 type StorageNeeds = {
@@ -262,11 +263,27 @@ type ModelGovernance = {
 [JUDGMENT] Engram checks the declaration against the **verified N body**. sentbase checks target capabilities and tenant-owned inputs at compilation (§6).
 
 - **Scope and coverage.** `entities` covers every model node exactly once. `relations` covers exactly the independently stored edges (§3) and may be absent when that set is empty. Each table has a `tenantScope` and one `columns[A].pii.category` for every N attribute, including endpoint columns. Extra column entries refuse. Tenant and optional workspace operands name distinct non-null fields on that row of kind `uuid`, `string`, `text`, `int` or `bigint`. A scope operand may repeat across rows. Validate its type and nullability wherever it participates in an N key or reference. Reject a missing field, any other kind, or an incompatible FK tuple. `kind: "global"` has neither operand. cluster-mesh supplies equality predicates and access decisions. (Consumer:23–24,30. R3:730,732,758. SQL:31–33.)
-- **Retention and erasure.** Each personal attribute in the Loi 25 / RGPD inventory selects a local `retention` rule and an `erasure` action of `delete` or `anonymize`. Category `none` contains only its classification. A rule's `from` names a non-null `timestamptz` on the row and `days` is a positive safe integer. The action is due that many 24-hour days after the field's timestamp. All `delete` actions on one table must have the same `(from, days)` because they remove the whole row. Engram checks these declarations and N constraints. sentbase resolves tenant-approved anonymization during compilation. The tenant measures erasure across archives, snapshots and backups. (Consumer:24. R3:72,734,795–803.)
+- **Retention and erasure.** Every PII category other than `none` requires a local `retention` rule and an `erasure` action of `delete` or `anonymize`. Category `none` forbids both fields. Use `sensitive` on the same arm as `personal` for information the inventory classifies as sensitive under Québec law or as a special category under the GDPR. A rule's `from` names a non-null `timestamptz` on the row and `days` is a positive safe integer. The action is due that many 24-hour days after the field's timestamp. All `delete` actions on one table must have the same `(from, days)` because they remove the whole row. sentbase resolves tenant-approved anonymization during compilation. The tenant measures erasure across archives, snapshots and backups. (Consumer:24. R3:72,734,795–803. Amendment:4.) [Québec private-sector Act, art. 12, as amended by Loi 25](https://www.legisquebec.gouv.qc.ca/en/document/cs/P-39.1#se:12) · [GDPR, art. 9](https://eur-lex.europa.eu/eli/reg/2016/679/oj/eng#art_9)
+- **Column protection.** On either PII arm, `columns[A].protect` may declare exactly `{"encrypt":true}`. For each entity or stored relation row, refuse protection on any member of its N primary `key` or any `unique` tuple, on either side of a foreign key, or on its G `tenantScope.tenant` or `tenantScope.workspace`. For FKs, check local `fields` and referenced `targetFields` on their respective rows, including both `endpoints.source` and `endpoints.target` of a stored edge. Compare logical names before SQL overrides. The declaration states the column needs encryption. sentbase and the tenant choose the mechanism and manage its keys. (Amendment:5. Muse:152–163. R3:805–812.)
+- **Deployment boundary.** Tenant residency and storage region belong to sentbase tenant deployment configuration, outside N and G. Region selection contributes no bytes to either digest, so deployments in different regions can use the same verified pair. Strict decoding rejects deployment settings embedded in either model document. (Amendment:6. R3:72,814. Consumer:35.)
 - **SQL names.** `physical.schema` and `physical.table` specify SQL identifiers. `physical.columns[A]` overrides the name of a declared column. Engram rejects expressions, unknown logical names and name collisions determined by `(N, G)`. For omitted overrides, sentbase uses the logical table/column names and the schema in its pinned target configuration. It checks all effective names for collisions under the target's identifier rules before emission. The OpenERP round-trip checks overrides against the 773 real source columns. (Consumer:25. OpenERP:2035. R3:743,880.)
 - **Indexes and DuckLake.** `indexes[].fields` is an ordered list of logical attributes and `indexes[].kind` is `btree`, `unique` or `gin`. A `unique` index must realize a tuple N already declares unique. For the S3 plan, `partitionBy[]` lists logical fields in partition order and `sortBy[]` lists fields and their `asc` or `desc` direction in sort order. Resolve every field against N and refuse repetitions within a list. (Consumer:26–27. R3:412,734.)
 - **CDC.** Every entity and every stored relation requires its own boolean `cdc.include`. `true` includes the table in the mapping and `false` excludes it. Refuse a missing flag even on a payload-free relation table. An FK-backed edge uses its source entity's row event. (Consumer:16,28. R3:732–734.)
-- **Pin and visibility.** Serialize the complete closed `ModelGovernance` with `canonicalBytes` and hash its UTF-8 bytes using `sha256Hex`. The detached G pin’s `id` and `version` must equal the body’s, in its namespace. The digest covers the whole N pin in `profile`, including `profile.pin.contentDigest`. G carries no self-digest. A G-only edit needs a new G version. For `private:<tenant>` G, its body, including physical hints and policy details, stays with that tenant. The tenant verifies the pair using N’s existing public pin if N is `public`. If N is private, both bodies stay with the same tenant. For private content the guardian retains only opaque pins, digests and receipt references. (`src/ontology-guardian/canonical.ts:24–55,59–72`, `src/ontology-guardian/types.ts:5–24`. G0:146,207,211,727,758. R3:730,757. Consumer:34.)
+- **G preimage.** Serialize the complete closed `ModelGovernance` with `canonicalBytes` and hash its UTF-8 bytes using `sha256Hex`. The preimage includes the literal `pii.category`, the whole `protect` object when declared, and the full N pin in `profile`, including `profile.pin.contentDigest`. Omission contributes no `protect` member on any category, including `sensitive`. Historical G documents serialize as authored under the same `engram.data-governance/1` format. A reader implementing v0.1.3 alone refuses either addition during strict decoding. Both declarations are outside the §5 N preimage. (`src/ontology-guardian/canonical.ts:24–55,59–72`. G0:207. Consumer:22,34–35. Amendment:4–7.)
+- **Pin and visibility.** The detached G pin’s `id` and `version` must equal the body’s, in its namespace. G carries no self-digest. A G-only edit needs a new G version. For `private:<tenant>` G, its body, including physical hints and policy details, stays with that tenant. The tenant verifies the pair using N’s existing public pin if N is `public`. If N is private, both bodies stay with the same tenant. For private content the guardian retains only opaque pins, digests and receipt references. (`src/ontology-guardian/types.ts:5–24`. G0:146,207,211,727,758. R3:730,757. Consumer:34.)
+
+**Validation fixtures.** Each RED case changes one declaration in an otherwise valid pair. Report the offending path, including the owning row for a column error. (Amendment:4–7. Consumer:35.)
+
+| Fixture | Mutations that must refuse, tested separately |
+|---|---|
+| A `sensitive` column with a local rule and `erasure: "delete"` | Omit `retention`, name a missing rule, omit `erasure`, or supply an unknown erasure action. |
+| An eligible payload column | Set `protect` to `null`, `{}`, `{"encrypt":false}`, or `{"encrypt":true,"keyId":"k"}`. |
+| Keys in the §3 example | Protect `users.id` (primary key), or `users.email` (one component of a composite unique tuple). |
+| An FK column outside the local key and scope | Protect a component of a node reference's local tuple. On a stored edge with a separate row key, protect a local source endpoint field, then a local target endpoint field. Protecting a referenced candidate-key field on its node also refuses. |
+| A table with distinct tenant and workspace operands outside keys and FKs | Protect just the tenant operand, then just the workspace operand. |
+| The tagged §3 profile and its §4 companion | Insert `data_model.storageRegion` in N or `entities.users.physical.residency` in G. Both are unknown fields. |
+
+For passing controls, validate an eligible `sensitive` column with either erasure action and with `protect` present or absent. An eligible `none` payload on a stored edge may request encryption with both retention and erasure absent. (Amendment:4–5.)
 
 ### Worked governance document
 
@@ -312,6 +329,14 @@ type ModelGovernance = {
 
 [JUDGMENT] The example N preimage is **2531 UTF-8 bytes** and hashes to the `profile.pin.contentDigest` above. G's preimage is **1768 UTF-8 bytes**. For this example the exact §2 extension value is `{"namespace":"example","pin":{"id":"users-governance","version":"2","contentDigest":"649b23132c5400ad11f5a92596057830daa2e5fdfee9258a3a54dc516d0da8d0"}}`. That G digest also verifies the canonical public asset. The figures use §5's proposed N projection and `digestOfPreimage` for G. (`src/ontology-profile.ts:69–83,505–511,519–552`, `src/ontology-guardian/canonical.ts:59–72`. G0:687–692.)
 
+**Revision 3 over the same N pin.** [JUDGMENT] In a synthetic dialysis patient register, a patient's name discloses that they receive treatment. Starting with the complete revision `2` document above, set the G `version` to `"3"` and replace only `entities.users.columns.display_name` with this object. The field is a registry label and the existing `account` rule resolves to 365 days from `updated_at`. (Amendment:4–5. SQL:31–44.)
+
+~~~json
+{"pii":{"category":"sensitive"},"retention":"account","erasure":"delete","protect":{"encrypt":true}}
+~~~
+
+The canonical G body for `example/users-governance@3` is **1794 UTF-8 bytes**, SHA-256 `3fb9d4dc071b20b1e5e53fb6038604e977efa3dc2f01bfc5b2ea152cd62c2f58`. Its §2 companion carries this new G pin. Revisions `2` and `3` verify against the same `example/openerp-users-example@2` N pin. (`src/ontology-guardian/canonical.ts:59–72`. Consumer:33–35.)
+
 ## 5. Why existing digests survive · P1-7
 
 **Current bytes.** `normalizeOntologyProfile` validates the authored input, builds an explicit top-level object, normalizes nodes, relations and registries, compiles linking normalizers, then assigns `profile_hash = hashOntologyProfile(normalized)`. `hashOntologyProfile` feeds the UTF-8 bytes of `JSON.stringify(stableForHash(normalized))` to SHA-256 and returns lowercase hex. `stableForHash` recursively sorts object keys, retains array order, skips `sourcePath`, `profile_hash` and `bound_source_path` at every depth, and skips `fn` only inside `linking.normalize`. When present, `linking.normalizer` enters the hash. A file-backed profile can fingerprint a local module there. §6 defines the narrower bundle contract. Legacy policy defaults and empty arrays are real preimage bytes. (`src/ontology-profile.ts:69–83,114–143,160–172,505–553`. `src/entity-normalizer.ts:140–161`. G0:961–981. R3:742,754,981.)
@@ -322,7 +347,7 @@ type ModelGovernance = {
 
 **Exact typed preimage.** [JUDGMENT] After validation build the current normalized object, including its legacy policies. Copy `data_model` and each node's `attributes`, `key`, and supplied `unique` and `references`. Add `cardinality` to each normalized relation. For a stored relation also copy `attributes`, `key`, `endpoints` and any `unique`. Preserve declared array order. An omitted optional declaration such as `enums` or `unique` contributes no property. An accepted explicit empty collection stays present. An FK-backed relation has no storage members. Hash this object once with `hashOntologyProfile`. G's body, companion pin and catalog metadata are outside N's preimage. (`src/ontology-profile.ts:92–132,505–553`. R3:398–399,754. Consumer:18–22.)
 
-**Proof obligation.** [JUDGMENT] For every historical untagged v1 pin with the same linking resources, compare the actual legacy and candidate hash inputs and loader outcomes. Independent Node processes at the two commits in §1 reproduced identical input buffers and digests for all six rows below. Both Engram rows also reproduced through `bundleProfile`. Replay against a future implementation and the full release inventory is `unverified`. (`src/ontology-profile.ts:556–587`, `src/profile-bundle.ts:171–192,541–565`, `tests/ontology-guardian-openerp-vectors.test.ts:227–232`, `tests/ontology-guardian-app-context.test.ts:96–109`.)
+**Proof obligation.** [JUDGMENT] For every historical untagged v1 pin with the same linking resources, compare the actual legacy and candidate hash inputs and loader outcomes. Independent Node processes at the P1-7 baseline and the v0.2.0 base (§1) reproduced identical SHA-256 input buffers for all eleven v0.1.3 digest vectors, including the six historical pins below. Both Engram rows also reproduced through `bundleProfile`. Replay against a future implementation and the full release inventory is `unverified`. (`src/ontology-profile.ts:556–587`, `src/profile-bundle.ts:171–192,541–565`, `tests/ontology-guardian-openerp-vectors.test.ts:227–232`, `tests/ontology-guardian-app-context.test.ts:96–109`.)
 
 | Existing vector | `profile_hash` / `contentDigest` from the baseline |
 |---|---|
@@ -340,6 +365,7 @@ type ModelGovernance = {
 3. **Replay.** Run the baseline and candidate in independent Node processes on identical pinned inputs. Capture actual bytes passed to SHA-256, compare the buffers byte for byte and verify both digests against the recorded pin, including draft pins. For Engram compare public loader and bundle outcomes, including the §6 `unsupported_linking_fn` refusal. On success check `bundle.profileHash` and `bundle.profile.profile_hash`. For diagrams use the native content procedure. Private owners run both readers locally and return only the pin and equality receipt. Fail on a missing input, unequal loader outcome, empty required census or stale evidence. Additional controls cover present/absent linking, bound registries, policy defaults, numeric/string versions, empty collections and historical opaque node fields. Injecting `attributes: []` on every untyped node must trip the byte comparison. (`src/ontology-profile.ts:69–83,114–143,519–552,556–587`, `src/profile-bundle.ts:316–337,541–551`, `src/ontology-guardian/archi-profile.ts:113–125`. G0:211,920.)
 4. **Opt-in counterexample.** Append only `"archived"` to the example's `user_status.values` at version `"2"`. The baseline drops `data_model` and `cardinality` and hashes both to `ad473f861ceac840a5b22afc150d50fc8d431ff536e2483dab192816acf1c1d4`. Under §5's projection the original is 2,531 bytes / `21684a38e6c3979937f53a286b275971f3ccda431c299078c0e8715a9240e50e` and the append is 2,542 bytes / `8ea14fc66bbbe2ba3dc4fd9c82904618ecfab9e992c346a5fd948d6afb46babb`. Fix the reader and retain the original golden pins. (`src/ontology-profile.ts:92–99,519–543,550–553`. Consumer:15,18–20.)
 5. Mutate stored edge attributes, endpoint tuples, registry columns and tuple order separately with identity fixed in memory. Object-key reorder preserves the hash. Changing G retention or sort repins G and the companion entry's P-ENTRY while N's bytes stay fixed. Binding G to another N changes G and invalidates the old pair. (`src/ontology-profile.ts:69–83,102–112`, `src/ontology-guardian/canonical.ts:49–53,64–72`. G0:206–207,918–923.)
+6. Hold the §4 revision `3` identity fixed in memory. In one copy change only `display_name.pii.category` from `sensitive` to `personal`. In another omit only `display_name.protect`. Each copy must produce different G bytes and a different G digest from revision `3`, with identical N bytes. Replay the unmodified revision `2` against its original 1,768 bytes and digest to catch an injected protection default. (`src/ontology-guardian/canonical.ts:49–53,64–72`. Amendment:4–7.)
 
 ## 6. Interface to the sentbase compiler
 
@@ -351,8 +377,8 @@ type ModelGovernance = {
 | Decode | Consume normalized JSON in `bundle.profile` exactly as Engram emits it and the closed G document. The publisher checks preservation of authored fields and array order under §5. The compiler strictly decodes both wire shapes, including types, ordering and cross-references, and refuses duplicate or unknown fields before projection. An embedded access rule or RLS predicate refuses in either tier. Require the §5 tagged major-2 header in N and an empty `bundle.extensions`. The catalog's G extension belongs to the §2 envelope. [JUDGMENT] (Consumer:30,35. `src/profile-bundle.ts:30–41,105–114,523–551`.) |
 | Verify | Recompute N with `hashOntologyProfile` (§5). Require equality with `bundle.profileHash`, `bundle.profile.profile_hash` and N’s `pin.contentDigest`. Recompute G with `digestOfPreimage` (§4) and compare with G’s detached `pin.contentDigest`. Any mismatch refuses the pair. `ProfileBundleV1.digest` covers the document projection and registry snapshot mode. Record it separately if used. [JUDGMENT] (Consumer:33–35. G0:920,981. `src/profile-bundle.ts:171–192,541–551`, `src/ontology-guardian/canonical.ts:59–72`.) |
 | Evolve N | `checkProfileCompatibility(old, new)` validates both inputs and applies the matrix below. A classified non-breaking change takes a new immutable version and a generated additive migration. A breaking change requires a higher model major and a `migrationRef` string identifying an immutable migration revision in publication metadata. A non-null addition on an existing row always takes this path. Its backfill belongs to that migration. The v0 compiler refuses a new major until its reader is qualified. [JUDGMENT] (Consumer:36. G0:174,177,186–198,206–207. R3:755–756. `src/profile-bundle.ts:80–88,847–877`.) |
-| Evolve G | Classify G separately. An index or sort change can repin G alone. A scope or per-attribute erasure change requires reviewed transition evidence before deployment. Refuse any unclassified G change. [JUDGMENT] (Consumer:22–28,34. R3:730,755–757.) |
-| Compile and apply | sentbase compiles N, G and cluster-mesh's typed rights offline. For each `anonymize` field it must resolve a pinned, tenant-approved transformation compatible with the field's type, nullability, keys and references. Refuse an unavailable or incompatible transformation, unsupported target semantics or untranslatable rights before emission. The compiler receipt records both qualified pins and their input digests, rights revision, applicable transformation pins, compiler and target versions, options and output hashes. Replaying these inputs must reproduce the output bytes. The tenant executes the generated migrations. Memory joins stay read-only projections. [JUDGMENT] (Consumer:24,30,36–37. G0:74,77. R3:404–421,729–735,756–763,795–803.) |
+| Evolve G | For every valid §4 edit to the governance of a pinned N model, publish a new G `version` and companion `entryVersion` under §2. Reuse the exact N pin. Apply the tier G deployment rules below to the changes in that revision. [JUDGMENT] (Consumer:22–28,34. R3:730,755–757. Amendment:4–5. Carbon v0.2:13–19.) |
+| Compile and apply | sentbase compiles N, G and cluster-mesh's typed rights offline. For each `anonymize` field it must resolve a pinned, tenant-approved transformation compatible with the field's type, nullability, keys and references. For each `protect` declaration, sentbase checks that the tenant's target configuration can enforce column encryption. Refuse an unmet encryption need, an unavailable or incompatible transformation, unsupported target semantics or untranslatable rights before emission. The compiler receipt records both qualified pins and their input digests, rights revision, applicable transformation pins, compiler and target versions, options and output hashes. Replaying these inputs must reproduce the output bytes. The tenant executes the generated migrations. Memory joins stay read-only projections. [JUDGMENT] (Consumer:24,30,36–37. G0:74,77. R3:404–421,729–735,756–763,795–805. Amendment:5.) |
 
 [JUDGMENT] Use the same valid `(N, G)` pair with an `anonymize` field in two tenant compile fixtures. Engram accepts both declarations. With no suitable transformation sentbase must refuse before generating DDL. With the approved transformation it must reproduce the output and identify the transformation in the receipt. (Consumer:24,37. R3:734,762,803.)
 
@@ -379,6 +405,17 @@ type ModelGovernance = {
 
 [JUDGMENT] For classified valid pairs return `ok: true`, `compatible: breaking.length === 0`, both bundle digests, sorted change lists and `validationIssues: []`. On any unclassified typed or inherited residual delta return `ok: false`, `compatible: false`, `oldDigest: oldBundle.digest`, `newDigest: newBundle.digest`, `breaking: []`, `nonBreaking: []` and a `validationIssues` entry `{severity: "error", code: "unclassified_data_model_delta", path, message}` for each unhandled path. A compound change with a known nullable addition and an unhandled delta must return that refusal. Unknown wire fields fail strict validation first using `invalid_profile_schema`. (`src/profile-bundle.ts:16–21,80–101,858–877,979–983,1018–1024,1188–1205`. Consumer:35–36.)
 
+### Tier G deployment rules
+
+[JUDGMENT] Compare two verified revisions of the same G document over the same N pin. A different `profile` pin selects a new pair under §5 item 5. Check each entity and stored relation. Where a column declares `retention`, resolve its local rule to `(from, days)`. A compound edit requires reviewed evidence if any of its changes does. Refuse an unclassified change. (Consumer:22–28,34. R3:730,755–757. Carbon v0.2:13–19.)
+
+| Deployment gate | Changes to a valid G declaration |
+|---|---|
+| Metadata or layout repin. Proceed to the ordinary compile checks. | Changes to `indexes`, `sortBy`, `partitionBy` or `cdc.include`. Extending a retention window on the same clock. Reclassifying `pii.category` between any two non-`none` categories, including `sensitive`, with unchanged `erasure`. Edits that preserve effective settings, such as renaming a retention rule and updating all uses. |
+| Data or boundary transition. Require reviewed transition evidence before deployment. | Changing `tenantScope` or a column’s `erasure`, including the addition or removal of erasure when moving between `none` and any PII category. Adding or removing `protect` on an existing table. Shortening a retention window or changing its `from` clock. Renaming an effective SQL identifier through `physical.schema`, `physical.table` or `physical.columns[A]`. |
+
+Reclassifying `users.display_name` from `identifier` to `sensitive` with its existing retention and erasure is a metadata repin. The §4 revision `2` → `3` also adds `protect`. On an existing table, adding or removing protection requires reviewed evidence covering CNPG values and DuckLake snapshots. On a new table, sentbase checks the initial protection setting against the tenant’s encryption capability before emission. (Amendment:5. Muse:152–163. Carbon v0.2:16–19.)
+
 ### sentbase L0 acceptance
 
 - **Minimal export.** DS7 must first decouple the required production manifest of the delivered `@sentropic/engram` unit from `ai`, provider SDKs and any transitive path that installs them. The snapshot's root `dependencies` include `ai`, five `@ai-sdk/*` packages, `@sentropic/llm-mesh` and `graphology`. Selecting a subpath still installs required root dependencies. DS7 exit supplies the packed minimal unit and its qualified closure as a prerequisite of 3.1. (Consumer:39–41. R3:759,764,869,876. `package.json:47–50,145–165`.)
@@ -400,7 +437,9 @@ type ModelGovernance = {
 | 4b. Stored edges | 140 | The `memberships` vector accepts an absent endpoint column or row key, or an endpoint/payload mutation leaves N unchanged. | Validate and project explicit stored rows, both endpoint tuples and cardinality. |
 | 5. Registries and input closure | 135 | A nonunique ID, wrong node, dangling partition, reserved map key or duplicate input member is accepted. | Extend strict decoding and registry binding using the shared profile types. |
 | 6. G ownership and retention | 145 | A nullable, `json` or missing scope operand, duplicate tenant/workspace operand, incompatible N key/FK, missing personal-data erasure or conflicting row deletes passes. | Check column coverage, allowed scope kinds, retention clocks and erasure declarations from `(N, G)` alone. A valid `anonymize` passes here without a tenant transformation lookup. |
-| 7. G storage and bytes | 140 | A G entry on an FK, missing stored-edge scope or CDC, SQL collision, undeclared unique index or wrong G preimage passes. | Validate each emitted table's physical names, indexes, DuckLake layout and CDC. Seal the G body with its full N pin. |
+| 7. G storage and bytes | 140 | A G entry on an FK, missing stored-edge scope or CDC, a SQL collision or an undeclared unique index passes, or the `users-governance@2` preimage misses its §4 byte count or digest. | Complete the closed schema for stored `relations` and each table’s `physical`, `indexes`, `partitionBy`, `sortBy` and `cdc`. Add the worked `users-governance@2` fixture and seal the complete G body with its full N pin. Run both §4 region-injection cases. |
+| 7a. Sensitive data and protection syntax | 135 | Validation rejects a valid `sensitive` column or eligible protected payload, accepts missing retention or erasure or a malformed `protect` flag, or a §5 item 6 mutation preserves the G digest. | Extend the PII arm and decode the closed `protect` flag. Run the §4 sensitivity and flag-shape cases with both erasure controls. With protection absent, changing only `personal` to `sensitive` must change G’s digest. Derive `users-governance@3` from Lot 7’s fixture. Replay both worked G vectors and both §5 item 6 mutations with N’s bytes fixed. |
+| 7b. Column protection on keys, FKs and scope | 145 | A protected primary or unique key member, FK component, tenant operand or workspace operand is accepted. | Check logical names before SQL overrides on entities and stored edges. Exercise the §4 role cases, including local and referenced fields on node FKs and both stored-edge endpoints. Keep eligible protected payloads passing on both PII arms, including `none` on a stored edge. |
 | 8a. Companion publication | 125 | A private G over public N is refused, or a public or other-tenant companion for private N is admitted. | Test all three permitted §2 pairs. Refuse a missing required extension, missing or substituted public G asset, private G asset or stale P-ENTRY digest. Check tenant receipts, cross-tenant deny-as-missing and the digest change on a G-only revision. |
 | 8b. Pair verification through the public export | 145 | A swapped namespace, stale pin, unknown format, altered normalized body, bundle digest substituted for N or injected `module_sha256` passes. | Export the pure verifier and types. Check both input documents, pins and content digests. Exercise the §6 built-in and `unsupported_linking_fn` cases. Reuse the same public N pin with public and tenant-private G. Verify both private G cases at the owning tenant. |
 | 9a. Row and domain compatibility | 140 | A nullable addition, non-null addition, enum append/reorder or equal-precision decimal scale shift receives the wrong §6 result. | Classify node and edge row attributes, named domains, keys and unique tuples with table-driven cases for both directions. |
@@ -420,6 +459,8 @@ type ModelGovernance = {
 ## 9. Coverage of the sentbase compiler input
 
 `covered` identifies a v0 read or check. `open` identifies a proposal v0 refuses. `rejected` records a disagreement and its deciding source. `A` is a logical attribute, `D` an enum domain and `r` a relation. Locations identify the normalized wire contract or the compiler gate. (Consumer:1–41. Fold:5–10.)
+
+sentbase accepted all 66 rows of v0.1.3 as conformant or better, including the native `boolean` spelling, v0 refusal of authored defaults, geometry and arrays (§8 option A first), and preservation of legacy defaults. The three additional rows record its follow-up requests on sensitive data, column protection and tenant residency. (Amendment:3–7.)
 
 | Compiler field or condition | Tier | Status | Place in this spec (path:line) | Source |
 |---|---|---|---|---|
@@ -451,44 +492,47 @@ type ModelGovernance = {
 | Registry label → `label_column` | N | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:179` | Consumer:17 |
 | Registry aliases → `alias_columns[]` | N | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:179` | Consumer:17 |
 | Registry partition → `partition_column` | N | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:179` | Consumer:17 |
-| Absent optional model field (the `linking` rule) | N | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:323` | Consumer:19. R3:742,754 |
+| Absent optional model field (the `linking` rule) | N | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:348` | Consumer:19. R3:742,754 |
 | Value `default` on an attribute (refused in v0) | N | open | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:165` | Consumer:20 |
-| Retroactive removal of legacy defaults (disagreement) | N | rejected | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:319` | Consumer:19 (legacy interpretation). G0:207,920,981. R3:742,754 |
+| Retroactive removal of legacy defaults (disagreement) | N | rejected | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:344` | Consumer:19 (legacy interpretation). G0:207,920,981. R3:742,754 |
 | `tenantScope` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:241` | Consumer:23 |
-| Tenant equality field → `tenantScope.tenant` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:264` | Consumer:23 |
-| Workspace equality field → `tenantScope.workspace` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:264` | Consumer:23 |
-| Attribute `pii.category` → `columns[A].pii.category` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:264` | Consumer:24 |
-| Attribute `retention` → `columns[A].retention` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:265` | Consumer:24 |
-| Attribute `erasure` → `columns[A].erasure` (`delete` or `anonymize`) | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:265` | Consumer:24 |
-| SQL name overrides → `physical` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:266` | Consumer:25 |
-| Schema override → `physical.schema` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:266` | Consumer:25 |
-| Table override → `physical.table` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:266` | Consumer:25 |
-| Column overrides → `physical.columns[A]` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:266` | Consumer:25 |
-| Index declarations → `indexes[]` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:251` | Consumer:26 |
-| Index attributes → `indexes[].fields[]` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:267` | Consumer:26 |
-| Index kind → `indexes[].kind` (`btree`, `unique`, `gin`) | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:267` | Consumer:26 |
-| DuckLake partition fields → `partitionBy[]` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:267` | Consumer:27 |
-| DuckLake sort order → `sortBy[]` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:267` | Consumer:27 |
-| Entity `cdc.include` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:268` | Consumer:28 |
-| Profile pin `namespace` (publication lookup) | N | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:350` | Consumer:33. G0:206 |
-| Profile pin `id` | N | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:350` | Consumer:33. G0:144 |
-| Profile pin `version` | N | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:350` | Consumer:33. G0:83,144 |
-| Profile SHA-256 → N `pin.contentDigest` | N | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:352` | Consumer:7,33,35. G0:920 |
-| Detached G SHA-256 → G `pin.contentDigest` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:352` | Consumer:22,34–35 |
-| Decorated profile digest → G `profile.pin.contentDigest` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:269` | Consumer:34 |
-| Exact pins, refusal of `latest` and ranges | N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:350` | Consumer:33–34. G0:83,144 |
-| Public `./profile-bundle` from a published package, no private import | N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:346` | Consumer:33 |
+| Tenant equality field → `tenantScope.tenant` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:265` | Consumer:23 |
+| Workspace equality field → `tenantScope.workspace` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:265` | Consumer:23 |
+| Attribute `pii.category` → `columns[A].pii.category` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:265` | Consumer:24 |
+| Sensitive data → `columns[A].pii.category = "sensitive"` with required retention and erasure | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:266` | Amendment:4. Consumer:24 |
+| Column protection → optional `columns[A].protect` with literal `encrypt: true` and key, FK and scope exclusions | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:267` | Amendment:5. Muse:152–163 |
+| Attribute `retention` → `columns[A].retention` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:266` | Consumer:24 |
+| Attribute `erasure` → `columns[A].erasure` (`delete` or `anonymize`) | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:266` | Consumer:24 |
+| SQL name overrides → `physical` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:269` | Consumer:25 |
+| Schema override → `physical.schema` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:269` | Consumer:25 |
+| Table override → `physical.table` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:269` | Consumer:25 |
+| Column overrides → `physical.columns[A]` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:269` | Consumer:25 |
+| Index declarations → `indexes[]` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:252` | Consumer:26 |
+| Index attributes → `indexes[].fields[]` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:270` | Consumer:26 |
+| Index kind → `indexes[].kind` (`btree`, `unique`, `gin`) | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:270` | Consumer:26 |
+| DuckLake partition fields → `partitionBy[]` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:270` | Consumer:27 |
+| DuckLake sort order → `sortBy[]` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:270` | Consumer:27 |
+| Entity `cdc.include` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:271` | Consumer:28 |
+| Profile pin `namespace` (publication lookup) | N | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:376` | Consumer:33. G0:206 |
+| Profile pin `id` | N | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:376` | Consumer:33. G0:144 |
+| Profile pin `version` | N | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:376` | Consumer:33. G0:83,144 |
+| Profile SHA-256 → N `pin.contentDigest` | N | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:378` | Consumer:7,33,35. G0:920 |
+| Detached G SHA-256 → G `pin.contentDigest` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:378` | Consumer:22,34–35 |
+| Decorated profile digest → G `profile.pin.contentDigest` | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:272` | Consumer:34 |
+| Exact pins, refusal of `latest` and ranges | N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:376` | Consumer:33–34. G0:83,144 |
+| Public `./profile-bundle` from a published package, no private import | N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:372` | Consumer:33 |
 | G document identity `(namespace, id, version)` and companion catalog pin | G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:123` | Consumer:34. G0:689–692 |
-| Tenant-side verification of private G with public or same-tenant private N | N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:269` | Consumer:34. G0:211,727 |
-| Normalized JSON and strict unknown-field refusal | N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:351` | Consumer:35 |
-| Recompute both content digests and refuse mismatches | N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:352` | Consumer:35 |
-| `checkProfileCompatibility(old, new)`, non-breaking/additive and breaking/major with referenced migration | N | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:353` | Consumer:36 |
-| Unclassified or compound unclassified change refuses | N | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:380` | Consumer:36 |
-| Same inputs give identical output bytes | N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:355` | Consumer:37 |
-| Compiler receipt includes the input digests | N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:355` | Consumer:37 |
-| L0 minimal export, zero AI SDK and MIT, Apache-2.0 or CC0 transitive licence closure | N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:385` | Consumer:39–40. R3:759,869 |
-| L0 cluster-mesh peer `>=0.22.0 <0.23.0` versus Engram `0.28.0`, exact load receipt | N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:386` | Consumer:41. Mesh snapshot:269,294 |
-| Access rules supplied by cluster-mesh, embedded rights refused | Outside N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:351` | Consumer:30. R3:732–733 |
+| Tenant-side verification of private G with public or same-tenant private N | N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:273` | Consumer:34. G0:211,727 |
+| Normalized JSON and strict unknown-field refusal | N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:377` | Consumer:35 |
+| Recompute both content digests and refuse mismatches | N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:378` | Consumer:35 |
+| `checkProfileCompatibility(old, new)`, non-breaking/additive and breaking/major with referenced migration | N | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:379` | Consumer:36 |
+| Unclassified or compound unclassified change refuses | N | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:406` | Consumer:36 |
+| Same inputs give identical output bytes | N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:381` | Consumer:37 |
+| Compiler receipt includes the input digests | N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:381` | Consumer:37 |
+| L0 minimal export, zero AI SDK and MIT, Apache-2.0 or CC0 transitive licence closure | N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:422` | Consumer:39–40. R3:759,869 |
+| L0 cluster-mesh peer `>=0.22.0 <0.23.0` versus Engram `0.28.0`, exact load receipt | N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:423` | Consumer:41. Mesh snapshot:269,294 |
+| Access rules supplied by cluster-mesh, embedded rights refused | Outside N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:377` | Consumer:30. R3:732–733 |
+| Tenant residency or storage region → sentbase tenant deployment configuration | Outside N and G | covered | `spec/SPEC_ONTOLOGY_GUARDIAN_G0_AMENDMENT_DATA_MODELS.md:268` | Amendment:6. R3:72,814 |
 
 ## Review round 1 — dispositions
 
@@ -507,11 +551,14 @@ type ModelGovernance = {
 - **N1 · Accepted.** §6 admits built-in linking descriptors and presets in v0 bundles. A module reference yields `unsupported_linking_fn`, and a supplied module fingerprint fails re-derivation. (Review 2:19–23. `src/profile-bundle.ts:316–337,749–767`, `tests/profile-bundle.test.ts:275–276`.)
 - **N2 · Accepted.** §§2, 4 and 6 permit private G on public N and require the same tenant for private N and G. Only public G ships a `data-governance` asset. Lots 8a and 8b cover publication and tenant-side verification. (Review 2:25–29. Consumer:33–35. G0:146,168,211,687,727,758.)
 
+## v0.2.0 review round 1 — dispositions
+
+- **M1 · Accepted.** Lot 7 owns the closed storage schema, the `users-governance@2` fixture and G preimage sealing. Lot 7a reuses them for the revision `3` and §5 digest checks. Lot 7b owns the protected-column role checks. (Carbon v0.2:5–11.)
+- **M2 · Accepted.** §6 gives every valid governance edit a G and companion repin over the same N and specifies which edits require reviewed transition evidence, including adding or removing protection on an existing table. (Carbon v0.2:13–19.)
+
 ## Summary
 
-- Tier N uses the shared `boolean` and `date` kinds and pins the keys, endpoint tuples and attributes of each stored row.
-- Tier G pins scope, erasure, physical layout and CDC. Public N may have a private G companion. Private N requires a companion private to the same tenant.
-- The `data_model` header selects strict major-2 validation. All six historical pins reproduced byte-identical SHA-256 inputs at the P1-7 baseline and `origin/main`.
-- The compatibility matrix covers additive and breaking changes. An unclassified delta refuses with a path and code.
-- v0 bundles accept built-in linking and refuse `linking.normalize.fn`. sentbase verifies both pins, resolves tenant transformations and records input and output digests.
-- DS7 supplies the minimally packaged export and aligned cluster-mesh load. Lot 10 checks installed licences and package, import and digest evidence.
+- sentbase accepted all 66 v0.1.3 coverage rows. Tier G adds `sensitive` with mandatory retention and erasure and permits `protect` on columns outside keys, FKs and scope operands.
+- sentbase and the tenant choose the encryption mechanism. The tenant selects residency and storage region in sentbase deployment configuration.
+- Each governance edit versions G and its companion over the same N pin. Data or boundary transitions require reviewed evidence before deployment.
+- GPT-6.2 Sol xhigh seals revision `2` in Lot 7, replays both G vectors in Lot 7a (135 lines) and checks column roles in Lot 7b (145 lines). The §5 replay covers all six historical v1 pins.
