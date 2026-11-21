@@ -101,6 +101,20 @@ const KEY = (c) => c.repeat(32);
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const PKG = path.join(HERE, 'node_modules/@sentropic/engram');
 
+// Both capture probes use the same mandate verified by the fixture host.
+const accessBoundary = {
+  authenticate: async () => ({
+    hasMemoryIdentity: true,
+    workspaceScopeRef: 'scope:one',
+    verifiedMandate: {
+      mandateId: 'mandate:shared-provenance', instance: 'agent:one', role: 'AGENTS',
+      scope: 'scope:one', rights: ['memory:capture'],
+      envelopeDigest: D, signatures: [{ by: 'issuer:one', alg: 'ed25519', value: 'verified-by-host-fixture' }],
+    },
+  }),
+  checkTrackWrite: async () => 'clear',
+};
+
 function binding(overrides = {}) {
   return {
     issuer: 'issuer:one', sub: 'alice', tid: 'tenant:one', claims: ['sub', 'tid'],
@@ -372,7 +386,7 @@ const plan = {
 };
 
 const provider = mcp.createEngramMemoryProviderV1({
-  readFacets: facets, writeFacets: facets, readHost, writeHost, policyId: 'policy:one',
+  readFacets: facets, writeFacets: facets, readHost, writeHost, accessBoundary, policyId: 'policy:one',
   hostBindings, plan, sourceId: 'mcp:engram-memory', generation: '1',
 });
 const server = await mcp.createEngramMemoryMcpServerV1(provider);
@@ -606,7 +620,7 @@ const plan = {
 };
 
 const provider = mcp.createEngramMemoryProviderV1({
-  readFacets: facets, writeFacets: facets, readHost, writeHost, policyId: 'policy:one',
+  readFacets: facets, writeFacets: facets, readHost, writeHost, accessBoundary, policyId: 'policy:one',
   hostBindings, plan, sourceId: 'mcp:engram-memory', generation: '1',
 });
 const server = await mcp.createEngramMemoryMcpServerV1(provider);
