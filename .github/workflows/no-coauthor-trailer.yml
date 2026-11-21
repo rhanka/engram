@@ -1,0 +1,163 @@
+name: no co-author trailer
+
+on:
+  workflow_call:
+    inputs:
+      check-pr-body:
+        description: "Also scan the PR title and body (squash-merge message)"
+        type: boolean
+        required: false
+        default: true
+      node-version:
+        description: "Node.js version for the pure-Node scanner"
+        type: string
+        required: false
+        default: "22"
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  push:
+    branches: [main]
+
+jobs:
+  scan-commits:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version || '22' }}
+      - name: Scan commit messages and PR metadata (Node only)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+          CHECK_PR_BODY: ${{ inputs.check-pr-body != false }}
+        run: |
+          node - <<'EOF'
+          const { execFileSync } = require('node:child_process');
+
+          const SCISSORS_RE = /^# -{3,} >8 -{3,}$/;
+          const RULES = [
+            { id: 'co-authored-by', pattern: /^\s*co-authored-by\s*:/i },
+            { id: 'claude-session', pattern: /^\s*claude-session\s*:/i },
+            {
+              id: 'generated-by-ai',
+              pattern: /^\s*generated-by\s*:.*\b(?:claude|anthropic|codex|openai|gemini|antigravity|agy|mistral|vibe|muse|copilot|cursor|ai)\b/i,
+            },
+            {
+              id: 'generated-with-ai',
+              pattern: /generated\s+(?:with|by)\s+\[?(?:claude(?:\s+code)?|codex|gemini|antigravity|mistral\s+vibe|vibe|muse|copilot|cursor)\b/i,
+            },
+            { id: 'claude-code-url', pattern: /claude\.com\/claude-code/i },
+            { id: 'claude-session-url', pattern: /claude\.ai\/code\/session_[a-z0-9_-]+/i },
+            { id: 'robot-marker', pattern: /🤖/u },
+          ];
+
+          function scan(text, { ignoreComments, respectScissors }) {
+            const rawLines = String(text ?? '').replace(/\r\n/g, '\n').split('\n');
+            const cut = respectScissors ? rawLines.findIndex((l) => SCISSORS_RE.test(l)) : -1;
+            const lines = cut === -1 ? rawLines : rawLines.slice(0, cut);
+            const hits = [];
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i];
+              if (ignoreComments && line.startsWith('#')) continue;
+              for (const rule of RULES) {
+                if (rule.pattern.test(line)) {
+                  hits.push({ line: i + 1, rule: rule.id, text: line.trim() });
+                  break;
+                }
+              }
+            }
+            return hits;
+          }
+
+          function readCommits(revArgs) {
+            const REC = '\x1e';
+            const FLD = '\x1f';
+            const out = execFileSync(
+              'git',
+              ['log', ...revArgs, `--format=${REC}%H${FLD}%s${FLD}%B`],
+              { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+            );
+            return out
+              .split(REC)
+              .filter(Boolean)
+              .map((rec) => {
+                const i1 = rec.indexOf(FLD);
+                const i2 = rec.indexOf(FLD, i1 + 1);
+                return {
+                  sha: rec.slice(0, i1).trim(),
+                  subject: rec.slice(i1 + 1, i2),
+                  body: rec.slice(i2 + 1),
+                };
+              });
+          }
+
+          const eventName = process.env.EVENT_NAME || '';
+          let revArgs = [];
+          if (process.env.PR_BASE_SHA && process.env.PR_HEAD_SHA) {
+            revArgs = [`${process.env.PR_BASE_SHA}..${process.env.PR_HEAD_SHA}`];
+          } else if (eventName === 'push' && process.env.PUSH_AFTER) {
+            if (/^0+$/.test(process.env.PUSH_BEFORE || '')) {
+              revArgs = ['-n', '50', process.env.PUSH_AFTER];
+            } else {
+              revArgs = [`${process.env.PUSH_BEFORE}..${process.env.PUSH_AFTER}`];
+            }
+          }
+
+          let fail = 0;
+          const commits = revArgs.length ? readCommits(revArgs) : [];
+          for (const c of commits) {
+            const hits = scan(c.body, { ignoreComments: true, respectScissors: true });
+            if (hits.length > 0) {
+              const rules = [...new Set(hits.map((h) => h.rule))].join(', ');
+              console.error(`::error::commit ${c.sha.slice(0, 10)} (${c.subject}) carries a forbidden AI attribution trailer [${rules}]`);
+              fail++;
+            }
+          }
+
+          const checkPrBody = process.env.CHECK_PR_BODY !== 'false';
+          if (checkPrBody && process.env.PR_BASE_SHA) {
+            const titleHits = scan(process.env.PR_TITLE || '', { ignoreComments: false, respectScissors: false });
+            if (titleHits.length > 0) {
+              const rules = [...new Set(titleHits.map((h) => h.rule))].join(', ');
+              console.error(`::error::PR title carries a forbidden AI attribution trailer [${rules}]`);
+              fail++;
+            }
+            const bodyHits = scan(process.env.PR_BODY || '', { ignoreComments: false, respectScissors: false });
+            if (bodyHits.length > 0) {
+              const rules = [...new Set(bodyHits.map((h) => h.rule))].join(', ');
+              console.error(`::error::PR body / squash message carries a forbidden AI attribution trailer [${rules}]`);
+              fail++;
+            }
+          }
+
+          if (fail > 0) {
+            console.error(`FAIL — ${fail} attribution-trailer violation(s) found. Make scan-commits a required status check to block merges.`);
+            process.exit(1);
+          }
+          console.log(`OK — ${commits.length} commit(s) and PR metadata clean.`);
+          EOF
+
+  hook-selftest:
+    if: ${{ github.event_name != 'workflow_call' && github.repository == 'rhanka/h2a' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify the commit-msg hook and Node guard suite
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          bash .githooks/test.sh
+          node --test packages/h2a/test/trailer-guard.test.js
