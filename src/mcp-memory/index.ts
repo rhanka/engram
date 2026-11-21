@@ -33,6 +33,9 @@ export type {
   McpMemoryStandardResult,
   McpMemoryTenantContext,
   McpMemoryTenantResolutionInput,
+  MemoryAccessAuthenticationV1,
+  MemoryAccessBoundaryV1,
+  MemoryTrackWriteV1,
 } from './provider.js';
 
 export {

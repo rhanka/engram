@@ -9,6 +9,8 @@
  * - Host-managed random pagination handle state and bindings (M3)
  */
 
+import type { H2AMandateEnvelope } from '../../metamodel-contracts.js';
+
 import type {
   AdmissionDecision,
   AdmissionDecisionEnvelopeV1,
@@ -352,6 +354,32 @@ export type ForgetInputV1 = {
   record_id: string;
   idempotency_key: IdempotencyKey;
   reason_ref: OpaqueRef;
+};
+
+/**
+ * Host verification result for this caller, tool and resolved scope. The host
+ * checks same-role eligibility for the workspace and only supplies a mandate
+ * after verifying its signed wire envelope, freshness and scope coverage.
+ */
+export type MemoryAccessAuthenticationV1 =
+  | { readonly hasMemoryIdentity: false }
+  | {
+    readonly hasMemoryIdentity: true;
+    readonly workspaceScopeRef: string;
+    readonly verifiedMandate?: H2AMandateEnvelope;
+  };
+
+/** Provider-to-host write intent after the existing first-effect checks. */
+export type MemoryTrackWriteV1 = {
+  readonly scopeRef: string;
+  readonly storeId: string;
+  readonly tenantId: string;
+  readonly verifiedMandate: H2AMandateEnvelope;
+  readonly idempotencyKey: IdempotencyKey;
+  readonly mutation:
+    | { readonly operation: 'capture'; readonly request: CaptureRequestV2 }
+    | { readonly operation: 'request_admission'; readonly request: Parameters<MemoryPortV2['requestAdmission']>[0] }
+    | { readonly operation: 'lifecycle'; readonly request: LifecycleCommandV1 };
 };
 
 /**
