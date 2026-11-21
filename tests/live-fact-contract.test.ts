@@ -26,6 +26,7 @@ import {
   parseFactBatch,
   validateFactBatch,
   validateLiveFact,
+  validateReasonAnchorFact,
   type BranchComparisonFactDto,
   type ChangedFileFactDto,
   type CodeAnalysisFactDto,
@@ -45,6 +46,7 @@ import {
   type PrObjectJobProgressFactDto,
   type ProgressFactDto,
   type PullRequestObservationFactDto,
+  type ReasonAnchorFactDto,
   type ReconcileCheckpointProgressFactDto,
   type RefObservationFactDto,
   type RetainedRootProgressFactDto,
@@ -677,12 +679,28 @@ function allExemplarFactsByKind(): Record<LiveFactKind, LiveFactDto> {
     "code-relation": sampleCodeRelationFact(),
     "line-attribution": sampleLineAttributionFact(),
     "symbol-correspondence": sampleSymbolCorrespondenceFact(),
+    "reason-anchor": sampleReasonCodeAnchor(),
     "coverage": sampleCoverageFact(),
     "progress": sampleProgressFacts()[0]!,
     "local-diff": sampleLocalDiffFact(),
     "local-snapshot": sampleLocalSnapshotFact(),
     "local-coverage": sampleLocalCoverageFact(),
   };
+}
+
+function sampleReasonCodeAnchor() {
+  return {
+    kind: "reason-anchor",
+    schemaVersion: FACT_SCHEMA_VERSION,
+    policyVersion: POLICY_VERSION,
+    scope: CLONE_SCOPE,
+    anchorKind: "code",
+    commit: { algorithm: "sha1", oid: SHA1_A },
+    blob: { algorithm: "sha1", oid: SHA1_B },
+    path: Uint8Array.of(0x73, 0x2f, 0xff),
+    range: { start: 1, end: 3 },
+    calculationVersion: "live-line-attribution/1",
+  } as const satisfies ReasonAnchorFactDto;
 }
 
 function makeBatchInput(
@@ -720,6 +738,84 @@ function scrambleObjectKeys(value: unknown): unknown {
 }
 
 describe("L3a-E1 typed facts and canonical batch codec", () => {
+  it.each([
+    ["worktree", { scope: { ...CLONE_SCOPE, worktree: undefined } }],
+    ["calculation version", { calculationVersion: undefined }],
+  ] as const)("reason anchor validation accepts an explicitly undefined %s", (_field, overrides) => {
+    const code = sampleReasonCodeAnchor();
+    expect(validateReasonAnchorFact({ ...code, ...overrides })).toEqual({ ok: true, errors: [] });
+  });
+
+  it("reason anchor variants round-trip through the batch codec and refuse malformed or private keys", () => {
+    const code = sampleReasonCodeAnchor();
+    const { kind, schemaVersion, policyVersion, scope, commit } = code;
+    const common = { kind, schemaVersion, policyVersion, scope };
+    const commitAnchor = { ...common, anchorKind: "commit", commit } as const satisfies ReasonAnchorFactDto;
+    const pr = {
+      ...common,
+      anchorKind: "pr",
+      repository: { owner: "rhanka", repo: "engram" },
+      prNumber: 459,
+      headObservationId: `probs:${HEX64_1}`,
+      baseObservationId: `probs:${HEX64_2}`,
+    } as const satisfies ReasonAnchorFactDto;
+    const anchors = [code, commitAnchor, pr];
+    const input = makeBatchInput(anchors);
+    const built = buildFactBatch(input);
+    expect(decodeFactBatch(built.encoded.bytes).facts).toStrictEqual(anchors);
+    const scrambled = buildFactBatch(scrambleObjectKeys(input) as FactBatchPayloadInput);
+    expect(scrambled.encoded.bytes).toEqual(built.encoded.bytes);
+    expect(scrambled.batch.batchDigest).toBe(built.batch.batchDigest);
+
+    const mutations: readonly [field: string, index: number, anchor: ReasonAnchorFactDto][] = [
+      ["code commit", 0, { ...code, commit: { ...commit, oid: SHA1_C } }],
+      ["code blob", 0, { ...code, blob: { ...code.blob, oid: SHA1_C } }],
+      ["code path", 0, { ...code, path: Uint8Array.of(0x73, 0x2f, 0xfe) }],
+      ["code range", 0, { ...code, range: { ...code.range, end: 4 } }],
+      ["code calculation version", 0, { ...code, calculationVersion: "live-line-attribution/2" }],
+      ["commit OID", 1, { ...commitAnchor, commit: { ...commit, oid: SHA1_C } }],
+      ["PR repository", 2, { ...pr, repository: { ...pr.repository, repo: "other" } }],
+      ["PR number", 2, { ...pr, prNumber: 460 }],
+      ["PR head observation", 2, { ...pr, headObservationId: `probs:${HEX64_2}` }],
+      ["PR base observation", 2, { ...pr, baseObservationId: `probs:${HEX64_1}` }],
+    ];
+    for (const [field, index, replacement] of mutations) {
+      const facts = anchors.map((anchor, position) => position === index ? replacement : anchor);
+      expect(buildFactBatch(makeBatchInput(facts)).batch.batchDigest, field).not.toBe(built.batch.batchDigest);
+    }
+    expect(describeFact(code)).toMatchObject({ scopeLevel: "clone", privacy: "committed" });
+    for (const anchor of anchors) {
+      expect(validateFactWithRegistry(anchor)).toEqual({ ok: true, errors: [] });
+      expect(validateLiveFact({ ...anchor, memoryId: "memory:secret" }).ok).toBe(false);
+    }
+    const malformed = [
+      { ...code, anchorKind: "unknown" },
+      { ...code, scope: { ...scope, worktree: WORKTREE_ID } },
+      { ...code, scope: { ...scope, session: "private" } },
+      { ...code, policyVersion: CONTENT_POLICY_VERSION },
+      { ...code, commit: { ...commit, message: "private" } },
+      { ...code, blob: { algorithm: "sha256", oid: SHA256_B } },
+      { ...code, path: "s/decoded.ts" },
+      { ...code, path: Uint8Array.of(0) },
+      { ...code, range: { start: 0, end: 3 } },
+      { ...code, range: { start: 3, end: 2 } },
+      { ...code, range: { start: 1, end: 3, citationText: "private" } },
+      { ...code, calculationVersion: "" },
+      { ...commitAnchor, range: code.range },
+      { ...pr, repository: { ...pr.repository, owner: "" } },
+      { ...pr, repository: { ...pr.repository, sessionContent: "private" } },
+      { ...pr, prNumber: 0 },
+      { ...pr, headObservationId: "refs/pull/459/head" },
+      { ...pr, baseObservationId: undefined },
+    ];
+    for (const anchor of malformed) {
+      expect(validateLiveFact(anchor).ok, JSON.stringify(anchor)).toBe(false);
+    }
+    for (const scope of [{ ...CLONE_SCOPE, tenant: "local:other" }, { ...CLONE_SCOPE, clone: "clone:other" }]) {
+      expect(validateFactBatch({ ...built.batch, scope }).ok).toBe(false);
+    }
+  });
+
   it("every fact kind has an exact-key typed DTO and an unknown kind or an extra key is refused", () => {
     const exemplars = allExemplarFactsByKind();
     const expectedKinds = Object.keys(exemplars).sort();
@@ -974,6 +1070,7 @@ describe("L3a-E1 typed facts and canonical batch codec", () => {
       sampleCodeRelationFact(),
       sampleLineAttributionFact(),
       sampleSymbolCorrespondenceFact(),
+      sampleReasonCodeAnchor(),
       sampleCoverageFact(),
       ...sampleProgressFacts(),
     ];
