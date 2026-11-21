@@ -110,6 +110,18 @@ export interface LiveScope {
   readonly worktree?: string;
 }
 
+/** Writer lease and storage incarnation carried across write and publication ports. */
+export interface ScopeFencingTokenDto {
+  readonly tokenId: string;
+  readonly scope: LiveScope;
+  readonly epoch: number;
+  readonly epochId: string;
+  readonly declarationRevision: number;
+  readonly projectionIncarnation: string;
+  readonly issuedAt: number;
+  readonly expiresAt: number;
+}
+
 // G1: inclusive, one-based ranges over exact committed blob bytes. These
 // facts are mapped/persisted by L3a; no producer-side cache grants authority.
 export interface LineRangeDto { readonly start: number; readonly end: number }
@@ -268,6 +280,25 @@ export interface FactBatchDto {
   readonly facts: readonly LiveFactDto[];
 }
 
+export interface FactSinkReceipt {
+  readonly received: true;
+  readonly batchId: string;
+  readonly receiptId?: string;
+  /** For latest-only local deliveries, all superseded sink surfaces were withdrawn. */
+  readonly retiredSuperseded?: boolean;
+  /** For latest-only local deliveries, superseded payloads can no longer be decrypted. */
+  readonly revokedDecryptability?: boolean;
+}
+
+export interface FactSinkPort {
+  /**
+   * Acknowledge durable receipt of a batch, separate from publication (spec §3).
+   * The sink must check the fencing token against its active lease in the
+   * same transaction as the write and refuse revoked tokens without mutation.
+   */
+  deliver(batch: FactBatchDto, fencingToken: ScopeFencingTokenDto): Promise<FactSinkReceipt>;
+}
+
 // — Grammar coverage: the packaged WASM matrix is explicit; an absent
 // grammar reports unavailable coverage and is never silently skipped.
 
@@ -309,6 +340,130 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   }
   const proto = Object.getPrototypeOf(value);
   return proto === Object.prototype || proto === null;
+}
+
+const SCOPE_FENCING_TOKEN_KEYS: readonly string[] = [
+  "tokenId",
+  "scope",
+  "epoch",
+  "epochId",
+  "declarationRevision",
+  "projectionIncarnation",
+  "issuedAt",
+  "expiresAt",
+];
+
+export function validateScopeFencingToken(
+  candidate: unknown,
+  expectedScope?: LiveScope,
+  expectedIncarnation?: string,
+  nowMs?: number,
+): ValidationResult {
+  const errors: string[] = [];
+  if (!isRecord(candidate)) {
+    return { ok: false, errors: ["fencing token must be a non-null plain object"] };
+  }
+  for (const key of Object.keys(candidate)) {
+    if (!SCOPE_FENCING_TOKEN_KEYS.includes(key)) {
+      errors.push("fencing token carries an unknown key: refused");
+      break;
+    }
+  }
+  const t = candidate as Partial<ScopeFencingTokenDto>;
+  const scopeObj = isRecord(t.scope) ? t.scope : undefined;
+  if (!scopeObj || typeof scopeObj.tenant !== "string" || typeof scopeObj.clone !== "string") {
+    errors.push("fencing token requires a complete scope");
+  } else {
+    for (const key of Object.keys(scopeObj)) {
+      if (!LIVE_SCOPE_KEYS.includes(key)) {
+        errors.push("fencing token scope carries an unknown key: refused");
+        break;
+      }
+    }
+    if (scopeObj.worktree !== undefined && typeof scopeObj.worktree !== "string") {
+      errors.push("fencing token worktree, when present, must be a string");
+    }
+  }
+  if (!Number.isSafeInteger(t.declarationRevision) || (t.declarationRevision ?? 0) < 1) {
+    errors.push("fencing token requires declaration revision");
+  }
+  if (typeof t.epochId !== "string" || !t.epochId) {
+    errors.push("fencing token requires epoch identity");
+  }
+  const boundedValues: unknown[] = [
+    t.tokenId,
+    t.epochId,
+    t.projectionIncarnation,
+    scopeObj?.tenant,
+    scopeObj?.clone,
+  ];
+  if (scopeObj?.worktree !== undefined) {
+    boundedValues.push(scopeObj.worktree);
+  }
+  for (const value of boundedValues) {
+    if (
+      typeof value !== "string" ||
+      value.trim().length < 1 ||
+      value.length > 1024 ||
+      value.includes("\0")
+    ) {
+      errors.push("fencing identity must be bounded");
+    }
+  }
+  if (typeof t.tokenId !== "string" || t.tokenId.length === 0) {
+    errors.push("fencing token requires a non-empty tokenId");
+  }
+  if (typeof t.epoch !== "number" || !Number.isSafeInteger(t.epoch) || t.epoch < 1) {
+    errors.push("fencing token requires a positive integer epoch");
+  }
+  if (typeof t.projectionIncarnation !== "string" || t.projectionIncarnation.length === 0) {
+    errors.push("fencing token requires a non-empty projectionIncarnation");
+  }
+  if (
+    typeof t.issuedAt !== "number" ||
+    typeof t.expiresAt !== "number" ||
+    !Number.isFinite(t.issuedAt) ||
+    !Number.isFinite(t.expiresAt) ||
+    t.expiresAt <= t.issuedAt
+  ) {
+    errors.push("fencing token requires finite issuedAt < expiresAt");
+  }
+  if (expectedScope !== undefined) {
+    if (!isRecord(expectedScope)) {
+      errors.push("fencing token expectedScope must be a plain object");
+    } else if (scopeObj !== undefined) {
+      if (
+        scopeObj.tenant !== expectedScope.tenant ||
+        scopeObj.clone !== expectedScope.clone ||
+        scopeObj.worktree !== expectedScope.worktree
+      ) {
+        errors.push("fencing token scope does not match target scope");
+      }
+    }
+  }
+  if (expectedIncarnation !== undefined) {
+    if (typeof expectedIncarnation !== "string" || expectedIncarnation.length === 0) {
+      errors.push("expected storage incarnation P must be a non-empty string");
+    } else if (
+      t.projectionIncarnation !== undefined &&
+      t.projectionIncarnation !== expectedIncarnation
+    ) {
+      errors.push("fencing token projectionIncarnation does not match active storage incarnation P");
+    }
+  }
+  if (nowMs !== undefined) {
+    if (typeof nowMs !== "number" || !Number.isFinite(nowMs)) {
+      errors.push("fencing token validation timestamp must be finite");
+    } else {
+      if (typeof t.expiresAt === "number" && nowMs >= t.expiresAt) {
+        errors.push("fencing token is expired");
+      }
+      if (typeof t.issuedAt === "number" && t.issuedAt > nowMs) {
+        errors.push("fencing token is not yet valid");
+      }
+    }
+  }
+  return { ok: errors.length === 0, errors };
 }
 
 function isNonEmptyString(value: unknown): value is string {
