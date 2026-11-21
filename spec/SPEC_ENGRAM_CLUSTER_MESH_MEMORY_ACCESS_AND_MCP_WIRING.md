@@ -797,3 +797,7 @@ None of the resolutions below reopen `D1`–`D34`, `T-M-C`, Points `1B`–`6A`, 
 4. **`OQ-H2A-4` — Supporting `authorityKind: 'quorum'` Alongside `'instance'` in `H2AAuthority` From `6A-H1`:**
    - **Resolution (*answered by h2a, 2026-11-14*):**
      - **Support both `'instance'` AND `'quorum'` from Lot `6A-H1` (and `6A-S1b`)**, using the exact lowercase `'quorum'` literal from `H2A_AUTHORITY_KINDS` (`packages/h2a/src/types.ts:34,251-258`, never `'QUORUM'`). `packages/h2a/src/envelope.ts:86-97` (`hasValidSignatures`) and `packages/h2a/src/authority.ts:74-102` (`verifyMandateAuthority`) already implement threshold validation (`threshold`), signer deduplication (`seenSigners`), and `MANDATE` role checks end to end (§2.3).
+
+## Pointer (2026-11-20)
+
+**2026-11-20 pointer.** `spec/SPEC_ENGRAM_SESSION_JOURNAL_AND_CONTEXT_QUERY.md` (`v0.1.2`, owner GO of 2026-11-20) supersedes `spec/SPEC_ENGRAM_CONTEXTUAL_GRAPH_AND_PROMPT_LOOP.md`. Its §8 lists, row by row, the lines of this specification that change, each with a Before and an After. Until the author of this specification folds those rows into the text, a line named in §8 is read with its After. `plan/10-BRANCH_MEMORY_SESSION_JOURNAL.md` builds the lots of this specification with those rows applied. Nothing else in this specification changes.
