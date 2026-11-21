@@ -12,8 +12,8 @@
 // requests the private purge while preserving authorized committed history
 // (no committed-history deletion exists on any port here, by construction).
 //
-// Neutrality: this module imports ONLY ./contracts.js (data-pure DTOs,
-// constants and validators) plus node:crypto for digests and snapshot ids.
+// Neutrality: this module uses the in-package contracts, content policy and
+// batch codec, plus node:crypto for local digests and snapshot ids.
 // No h2a, no cluster-mesh, no sentropic, no storage driver, no network, no
 // filesystem, no clock read — the capture time is injected.
 //
@@ -25,6 +25,7 @@
 // implement the durable and cryptographic sides.
 
 import { createHash } from "node:crypto";
+import { computeFactBatchDigest, type FactBatchPayloadInput } from "./batch-codec.js";
 import { classifyPath, containsSecretText, matchSecretRule, protectedPathRef } from "./content-policy.js";
 import {
   CONTENT_POLICY_VERSION,
@@ -40,15 +41,20 @@ import {
   validateLocalCoverage,
   validateLocalDiff,
   validateLocalSnapshot,
+  validateScopeFencingToken,
   validateSealedLocalDiff,
   withheldReasonForSecretRule,
   type DeclarationRevocationDto,
   type FactBatchDto,
+  type FactSinkPort,
+  type FactSinkReceipt,
   type LiveScope,
   type LocalCoverageReportDto,
   type LocalDiffDto,
   type LocalDiffKind,
+  type LocalSealAlgorithm,
   type LocalSnapshotDto,
+  type ScopeFencingTokenDto,
 } from "./contracts.js";
 
 /**
@@ -71,6 +77,7 @@ export const SNAPSHOT_ERROR_CODES = [
   "stale-policy",
   "invalid-batch-id",
   "invalid-generation-id",
+  "invalid-fencing-token",
   "foreign-tenant-clone",
   "foreign-worktree-scope",
   "foreign-worktree",
@@ -127,7 +134,7 @@ export interface ContentProtectionPort {
 /** The sealed envelope the host protection returns (ciphertext only). */
 export interface SealedSnapshotPayload {
   readonly state: "sealed";
-  readonly algorithm: string;
+  readonly algorithm: LocalSealAlgorithm;
   readonly keyRef: string;
   readonly ciphertext: Uint8Array;
 }
@@ -200,44 +207,6 @@ export interface PurgePrivateReceipt {
   readonly revokedDecryptability: boolean;
 }
 
-/**
- * THE injected fact-sink port: durable receipt of one batch, separate from
- * publication (spec §3). Replacement is indexed by target and generation
- * (L4b M2), never by a predecessor pointer: the target is (scope tenant,
- * scope clone, scope worktree, worktreeId, snapshot kind, snapshot
- * diffKind — staged, unstaged and conflict each hold their own target,
- * L4b-2; sans snapshot : kind = coverage.axis, diffKind = diff.kind)
- * and every delivery carries its batch.generationId, which producers
- * mint fixed-width zero-padded numeric and monotone per target (L4b-2 m9:
- * lexicographic order is numeric order). The host MUST keep only the
- * highest accepted generation per target: it durably rejects (throws,
- * persists nothing) any delivery whose generationId is less than or equal
- * to the held generation for that target, and accepting a generation G
- * withdraws every older generation for that target from every sink surface
- * (payload bytes, derived indexes, decryptability) in the same operation.
- * A suspended B followed by a delivered C then an arriving B is therefore
- * rejected, keeping the single state C whichever order B and C arrive in.
- *
- * Unstable captures (L4b-2 m8): the store and the sink deliberately
- * diverge. The store keeps the previous valid state untouched (an unstable
- * capture never replaces the last valid state) while the sink accepts the
- * unstable lot for its target — retiring the previous holding — so the
- * instability itself is durably visible with explicit unavailable coverage.
- * Both sides stay explicit: nothing is silently lost on either.
- */
-export interface FactSinkPort {
-  deliver(batch: FactBatchDto): Promise<FactSinkReceipt>;
-}
-
-export interface FactSinkReceipt {
-  readonly received: true;
-  readonly batchId: string;
-  /** Every older generation for this target is withdrawn from sink surfaces (vacuously true on a first delivery). */
-  readonly retiredSuperseded: boolean;
-  /** Withdrawn payloads can no longer be decrypted. */
-  readonly revokedDecryptability: boolean;
-}
-
 export interface StageLocalSnapshotInput {
   readonly scope: LiveScope;
   readonly worktreeId: string;
@@ -250,7 +219,33 @@ export interface StageLocalSnapshotInput {
   /** Null drives the metadata-only downgrade: no protect call, no plaintext anywhere downstream. */
   readonly protection: ContentProtectionPort | null;
   readonly store: LatestSnapshotPort;
+  /**
+   * THE injected fact-sink port: durable receipt of one batch, separate from
+   * publication (spec §3). Replacement is indexed by target and generation
+   * (L4b M2), never by a predecessor pointer: the target is (scope tenant,
+   * scope clone, scope worktree, worktreeId, snapshot kind, snapshot
+   * diffKind — staged, unstaged and conflict each hold their own target,
+   * L4b-2; sans snapshot : kind = coverage.axis, diffKind = diff.kind)
+   * and every delivery carries its batch.generationId, which producers
+   * mint fixed-width zero-padded numeric and monotone per target (L4b-2 m9:
+   * lexicographic order is numeric order). The host MUST keep only the
+   * highest accepted generation per target: it durably rejects (throws,
+   * persists nothing) any delivery whose generationId is less than or equal
+   * to the held generation for that target, and accepting a generation G
+   * withdraws every older generation for that target from every sink surface
+   * (payload bytes, derived indexes, decryptability) in the same operation.
+   * A suspended B followed by a delivered C then an arriving B is therefore
+   * rejected, keeping the single state C whichever order B and C arrive in.
+   *
+   * Unstable captures (L4b-2 m8): the store and the sink deliberately
+   * diverge. The store keeps the previous valid state untouched (an unstable
+   * capture never replaces the last valid state) while the sink accepts the
+   * unstable lot for its target — retiring the previous holding — so the
+   * instability itself is durably visible with explicit unavailable coverage.
+   * Both sides stay explicit: nothing is silently lost on either.
+   */
   readonly sink: FactSinkPort;
+  readonly fencingToken: ScopeFencingTokenDto;
   readonly batchId: string;
   readonly generationId: string;
 }
@@ -486,31 +481,56 @@ function assertSinkAdmissible(value: unknown): void {
   visit(value, null);
 }
 
-async function admitToSink(batch: FactBatchDto, sink: FactSinkPort): Promise<FactSinkReceipt> {
+async function admitToSink(
+  batch: FactBatchDto,
+  sink: FactSinkPort,
+  fencingToken: ScopeFencingTokenDto,
+): Promise<void> {
   // Livraison depuis une copie privée jamais exposée : le sink ne détient
   // aucune référence partagée avec l'appelant, le port, le magasin, ni les
   // objets retournés (un tampon ne pouvant pas être gelé, seule la copie
   // protège). L'enregistrement des scellés suit la copie.
   const privateBatch = deepCopyForDelivery(batch) as FactBatchDto;
+  const privateToken = deepCopyForDelivery(fencingToken) as ScopeFencingTokenDto;
+  deepFreezeAdmitted(privateToken);
   const batchChecked = validateFactBatch(privateBatch);
   if (!batchChecked.ok) {
     throw new SnapshotError("sink-admission-shape");
   }
   assertSealedProvenance(privateBatch);
-  assertSinkAdmissible(privateBatch);
+  assertSinkAdmissible([privateBatch, privateToken]);
   // m1: receipt fields are port-owned data and may throw through accessors;
   // every read stays inside the try and maps to a constant code.
   let receipt: FactSinkReceipt;
   try {
-    receipt = await sink.deliver(privateBatch);
-    if (receipt.batchId !== privateBatch.batchId) {
+    receipt = await sink.deliver(privateBatch, privateToken);
+    const proto = receipt !== null && typeof receipt === "object" && !Array.isArray(receipt)
+      ? Object.getPrototypeOf(receipt)
+      : undefined;
+    if ((proto !== Object.prototype && proto !== null) || receipt.received !== true) {
+      throw new SnapshotError("sink-receipt-incomplete");
+    }
+    if (receipt.batchId !== batch.batchId) {
       throw new SnapshotError("sink-receipt-mismatch");
     }
   } catch (error) {
     if (error instanceof SnapshotError) throw error;
     throw new SnapshotError("sink-delivery-refused");
   }
-  return receipt;
+  try {
+    if (receipt.retiredSuperseded === true && receipt.revokedDecryptability === true) return;
+  } catch {
+    throw new SnapshotError("sink-receipt-incomplete");
+  }
+  throw new SnapshotError("sink-receipt-incomplete");
+}
+
+function buildSnapshotBatch(payload: FactBatchPayloadInput): FactBatchDto {
+  try {
+    return { ...payload, batchDigest: computeFactBatchDigest(payload) };
+  } catch {
+    throw new SnapshotError("sink-admission-shape");
+  }
 }
 
 function checkScope(scope: LiveScope): LiveScope {
@@ -650,6 +670,9 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
   if (admittedDiff.scope.tenant !== scope.tenant || admittedDiff.scope.clone !== scope.clone) {
     throw new SnapshotError("foreign-tenant-clone");
   }
+  if (scope.worktree !== undefined && scope.worktree !== worktreeId) {
+    throw new SnapshotError("foreign-worktree-scope");
+  }
   if ((admittedDiff.scope.worktree ?? null) !== (scope.worktree ?? null)) {
     throw new SnapshotError("foreign-worktree-scope");
   }
@@ -664,6 +687,18 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
     throw new SnapshotError("foreign-kind");
   }
   const diffKind: LocalDiffKind = admittedDiff.kind;
+  // Refuse malformed, foreign, or secret-bearing tokens before any host call.
+  let fencingToken: ScopeFencingTokenDto;
+  try {
+    fencingToken = deepCloneAdmitted(input.fencingToken) as ScopeFencingTokenDto;
+    if (!validateScopeFencingToken(fencingToken, { ...scope, worktree: worktreeId }).ok) {
+      throw new SnapshotError("invalid-fencing-token");
+    }
+    deepFreezeAdmitted(fencingToken);
+  } catch {
+    throw new SnapshotError("invalid-fencing-token");
+  }
+  assertSinkAdmissible(fencingToken);
 
   // Generation binding BEFORE any suspendable host call: the capture
   // generation is registered through loadLatest before hunk encryption, so
@@ -739,7 +774,7 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
         }
         // m1: the envelope fields are port-owned data; every read stays
         // inside the try and maps to a constant code.
-        let hunkSeal: { readonly state: "sealed"; readonly algorithm: string; readonly keyRef: string; readonly ciphertext: Uint8Array };
+        let hunkSeal: SealedSnapshotPayload;
         try {
           const sealed = await protection.protect(
             new TextEncoder().encode(JSON.stringify({ lines: [...hunk.payload.lines] })),
@@ -791,6 +826,14 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
     diffDigest,
   ])))}`;
   const excluded = sealedDiff.files.filter((file) => file.exclusion !== undefined).length;
+  const batchEnvelope = {
+    scope,
+    producerName: PRODUCER_NAME,
+    contractVersion: CONTRACT_VERSION,
+    policyVersion: CONTENT_POLICY_VERSION,
+    generationId,
+    batchId,
+  };
 
   // An unstable capture never replaces the last valid state: the previous
   // snapshot (when any) is preserved untouched, nothing is stored, and the
@@ -808,17 +851,8 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
       `local ${snapshotKind} capture unstable: preserved ${previous.snapshotId}, ` +
       `${sealedDiff.files.length} file fact(s) withheld (${CONTENT_POLICY_VERSION})`,
     ];
-    const batch: FactBatchDto = {
-      scope,
-      producerName: PRODUCER_NAME,
-      contractVersion: CONTRACT_VERSION,
-      policyVersion: CONTENT_POLICY_VERSION,
-      generationId,
-      batchId,
-      batchDigest: sha256Hex(toJsonBytes([generationId, batchId, sealedDiff, coverage])),
-      facts: [sealedDiff, coverage],
-    };
-    await admitToSink(batch, sink);
+    const batch = buildSnapshotBatch({ ...batchEnvelope, facts: [sealedDiff, coverage] });
+    await admitToSink(batch, sink, fencingToken);
     return { snapshot: previous, coverage, diagnostics, batch };
   }
 
@@ -934,6 +968,8 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
     throw new SnapshotError("invalid-coverage");
   }
   assertSinkAdmissible([sealedDiff, snapshot, coverage]);
+  // The sealed diff, snapshot and coverage reconstruct the latest holding.
+  const batch = buildSnapshotBatch({ ...batchEnvelope, facts: [sealedDiff, snapshot, coverage] });
 
   // Latest-only atomic replacement: one latest state per target, never a
   // history. A receipt that leaves the predecessor behind refuses success:
@@ -963,29 +999,7 @@ export async function stageLocalSnapshot(input: StageLocalSnapshotInput): Promis
     `local ${snapshotKind} snapshot ${snapshotId}: ${sealedDiff.files.length} file(s), ${excluded} excluded, ` +
     `${sealedHunks} sealed hunk(s), ${withheldHunks} withheld, coverage ${coverage.state} (${CONTENT_POLICY_VERSION})`,
   ];
-  // The lot is reconstructible: the sealed diff (authorized facts, bounds,
-  // exclusions, sealed hunks), the snapshot and the propagated coverage.
-  const batch: FactBatchDto = {
-    scope,
-    producerName: PRODUCER_NAME,
-    contractVersion: CONTRACT_VERSION,
-    policyVersion: CONTENT_POLICY_VERSION,
-    generationId,
-    batchId,
-    batchDigest: sha256Hex(toJsonBytes([generationId, batchId, sealedDiff, snapshot, coverage])),
-    facts: [sealedDiff, snapshot, coverage],
-  };
-  const receipt = await admitToSink(batch, sink);
-  // m1: the sink receipt fields are port-owned data; the read stays inside
-  // a try and maps to a constant code.
-  try {
-    if (!receipt.retiredSuperseded || !receipt.revokedDecryptability) {
-      throw new SnapshotError("sink-receipt-incomplete");
-    }
-  } catch (error) {
-    if (error instanceof SnapshotError) throw error;
-    throw new SnapshotError("sink-receipt-incomplete");
-  }
+  await admitToSink(batch, sink, fencingToken);
   return { snapshot, coverage, diagnostics, batch };
 }
 
