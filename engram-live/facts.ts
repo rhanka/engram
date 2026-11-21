@@ -75,6 +75,7 @@ import {
   validatePrAttributionFact,
   validateProgressFact,
   validatePullRequestObservationFact,
+  validateReasonAnchorFact,
   validateRefObservationFact,
   validateRetentionReceiptFact,
   validateSealedLocalDiff,
@@ -130,6 +131,8 @@ import {
   type PullRequestObservationFactDto,
   type QualifiedOid,
   type RawRefObservationDto,
+  type ReasonAnchorFactDto,
+  type ReasonAnchorPinDto,
   type ReconcileCheckpointProgressFactDto,
   type RefKind,
   type RefObservationFactDto,
@@ -192,6 +195,7 @@ export {
   validatePrAttributionFact,
   validateProgressFact,
   validatePullRequestObservationFact,
+  validateReasonAnchorFact,
   validateRefObservationFact,
   validateRetentionReceiptFact,
   validateSealedLocalDiff,
@@ -237,6 +241,8 @@ export {
   type ProgressFactDto,
   type ProgressFactKind,
   type PullRequestObservationFactDto,
+  type ReasonAnchorFactDto,
+  type ReasonAnchorPinDto,
   type ReconcileCheckpointProgressFactDto,
   type RefObservationFactDto,
   type RetainedRootProgressFactDto,
@@ -248,6 +254,8 @@ export {
   type TrackedRefFactDto,
   type ValidationResult,
 };
+
+export { toReasonAnchorFact } from "./code-analysis.js";
 
 export type FactPrivacyClass = "committed" | "private" | "metadata";
 export type FactScopeLevel = "clone" | "worktree" | "either";
@@ -375,6 +383,15 @@ export const LIVE_FACT_REGISTRY: Readonly<Record<LiveFactKind, FactKindDescripto
     scopeLevel: "clone",
     producerLots: ["G2"],
     validate: validateSymbolCorrespondenceFact,
+  }),
+  "reason-anchor": Object.freeze({
+    kind: "reason-anchor",
+    schemaVersion: FACT_SCHEMA_VERSION,
+    structural: false,
+    privacy: "committed",
+    scopeLevel: "clone",
+    producerLots: ["G3"],
+    validate: validateReasonAnchorFact,
   }),
   "coverage": Object.freeze({
     kind: "coverage",
