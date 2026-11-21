@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { extname, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { toJsonValue } from "./json-value.js";
+import type { Sha256Digest } from "./metamodel-contracts.js";
+import { canonicalBytes, digestOfPreimage } from "./ontology-guardian/canonical.js";
+import { fromInternalDigest, semanticProfileDigest, stableForHash } from "./ontology-guardian/digests.js";
+import { isRecord, validateRelationCardinality } from "./profile-validate.js";
 
 import type {
   ClassHierarchyClass,
@@ -34,6 +39,24 @@ import { compileNormalizerByNodeType, normalizeNodeTypeLinking } from "./entity-
 
 const DEFAULT_STATUSES = ["candidate", "attached", "needs_review", "validated", "rejected", "superseded"];
 const VALID_CITATION_MINIMUMS = new Set(["file", "page", "section", "paragraph"]);
+// The authored document preserves omitted defaults and extensions across copies.
+const AUTHORED_DOCUMENT = "engram_authored_document";
+interface AuthoredProfile {
+  readonly document: OntologyProfile;
+  readonly digest: Sha256Digest;
+}
+const authoredProfiles = new WeakMap<object, AuthoredProfile>();
+
+export function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
+  if (typeof value !== "object" || value === null) return value;
+  if (seen.has(value)) return value;
+  seen.add(value);
+  for (const key of Object.getOwnPropertyNames(value)) {
+    const desc = Object.getOwnPropertyDescriptor(value, key);
+    if (desc && "value" in desc) deepFreeze(desc.value, seen);
+  }
+  return Object.freeze(value);
+}
 
 // Track C-3.5: node shapes accepted in OntologyNodeType.visual_encoding.shape.
 // Keep aligned with OntologyVisualEncodingShape (consumed by the Studio scene).
@@ -64,22 +87,6 @@ function normalizeStringMap<T>(value: unknown): Record<string, T> {
   return Object.fromEntries(
     Object.entries(record).filter(([key, item]) => key.trim().length > 0 && asRecord(item)),
   ) as Record<string, T>;
-}
-
-function stableForHash(value: unknown, path: string[] = []): unknown {
-  if (Array.isArray(value)) return value.map((item, index) => stableForHash(item, [...path, String(index)]));
-  if (typeof value === "object" && value !== null) {
-    const result: Record<string, unknown> = {};
-    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
-      if (key === "sourcePath" || key === "profile_hash" || key === "bound_source_path") continue;
-      // The local module path is runtime-only. Its portable descriptor (export
-      // name + file-content hash) is hashed instead under linking.normalizer.
-      if (key === "fn" && path.at(-1) === "normalize" && path.at(-2) === "linking") continue;
-      result[key] = stableForHash((value as Record<string, unknown>)[key], [...path, key]);
-    }
-    return result;
-  }
-  return value;
 }
 
 function relationEndpoints(relation: OntologyRelationType, field: "source" | "target"): string[] {
@@ -164,7 +171,7 @@ function normalizeHardeningPolicy(
 } {
   const statuses = asStringArray(policy?.statuses);
   return {
-    statuses: statuses.length > 0 ? statuses : DEFAULT_STATUSES,
+    statuses: statuses.length > 0 ? statuses : [...DEFAULT_STATUSES],
     default_status: String(policy?.default_status ?? "candidate"),
     promotion_requires: asStringArray(policy?.promotion_requires),
     status_transitions: normalizeStatusTransitions(policy?.status_transitions),
@@ -292,11 +299,24 @@ export function parseOntologyProfile(raw: string | Record<string, unknown>, sour
   const parsed = extname(sourcePath ?? "").toLowerCase() === ".json" || trimmed.startsWith("{")
     ? JSON.parse(trimmed || "{}")
     : parseYaml(trimmed || "{}");
-  return asRecord(parsed) as OntologyProfile;
+  const document = asRecord(parsed);
+  if (Object.hasOwn(document, AUTHORED_DOCUMENT)) {
+    throw new Error(`${AUTHORED_DOCUMENT} is reserved for verified runtime profiles`);
+  }
+  return document as OntologyProfile;
 }
 
 export function validateOntologyProfile(profile: OntologyProfile): string[] {
   const errors: string[] = [];
+  if (Object.hasOwn(profile, AUTHORED_DOCUMENT)) {
+    let verified = false;
+    try {
+      verified = resolveAuthoredProfile(profile) !== undefined;
+    } catch {
+      // Invalid detached provenance is reported as a validation error.
+    }
+    if (!verified) errors.push(`${AUTHORED_DOCUMENT} is reserved for verified runtime profiles`);
+  }
   const nodeTypes = normalizeStringMap<OntologyNodeType>(profile.node_types);
   const relationTypes = normalizeStringMap<OntologyRelationType>(profile.relation_types);
   const registries = normalizeStringMap<OntologyRegistrySpec>(profile.registries);
@@ -318,6 +338,10 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
   }
   if (knownNodeTypes.size === 0) {
     errors.push("node_types must contain at least one node type");
+  }
+  if (profile.metamodel_version === "engram.metamodel/v1" && profile.presentation !== undefined &&
+    !isRecord(profile.presentation)) {
+    errors.push("presentation must be an object");
   }
   if (!knownStatuses.has(hardening.default_status)) {
     errors.push(`hardening.default_status references unknown status ${hardening.default_status}`);
@@ -377,6 +401,9 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
   }
 
   for (const [relationId, relation] of Object.entries(relationTypes)) {
+    if (profile.metamodel_version === "engram.metamodel/v1") {
+      errors.push(...validateRelationCardinality(relation.cardinality, `relation_types.${relationId}.cardinality`));
+    }
     const sourceTypes = relationEndpoints(relation, "source");
     const targetTypes = relationEndpoints(relation, "target");
     if (sourceTypes.length === 0) {
@@ -502,34 +529,99 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
   return errors;
 }
 
+function resolveAuthoredProfile(profile: Pick<OntologyProfile, "metamodel_version">): AuthoredProfile | undefined {
+  if (profile?.metamodel_version !== "engram.metamodel/v1") return undefined;
+  const cached = authoredProfiles.get(profile);
+  if (cached !== undefined) return cached;
+  if (!Object.hasOwn(profile, AUTHORED_DOCUMENT)) return undefined;
+
+  const projected = toJsonValue(profile);
+  if (!projected.ok || !isRecord(projected.value)) {
+    throw new Error("Invalid metamodel v1 runtime profile or authored document");
+  }
+  const { [AUTHORED_DOCUMENT]: document, ...runtime } = projected.value;
+  if (!isRecord(document) || document.metamodel_version !== "engram.metamodel/v1" ||
+      Object.hasOwn(document, AUTHORED_DOCUMENT)) {
+    throw new Error("Invalid metamodel v1 authored document");
+  }
+  const authored = document as OntologyProfile;
+  const digest = semanticProfileDigest(authored);
+  const sourcePath = typeof runtime.sourcePath === "string" ? runtime.sourcePath : undefined;
+  const expected = toJsonValue(buildRuntimeProfile(authored, sourcePath, digest));
+  if (!expected.ok ||
+      (runtime.profile_hash !== undefined && runtime.profile_hash !== digest) ||
+      canonicalBytes(stableForHash(runtime)) !== canonicalBytes(stableForHash(expected.value))) {
+    throw new Error("Metamodel v1 runtime profile does not match its authored document");
+  }
+  return { document: authored, digest };
+}
+
+function freezeAuthoredProfile(profile: NormalizedOntologyProfile, authored: AuthoredProfile): NormalizedOntologyProfile {
+  const normalized = deepFreeze({
+    ...profile,
+    profile_hash: authored.digest,
+    [AUTHORED_DOCUMENT]: authored.document,
+  });
+  authoredProfiles.set(normalized, authored);
+  return normalized;
+}
+
 export function hashOntologyProfile(
   profile: OntologyProfile | NormalizedOntologyProfile | Omit<NormalizedOntologyProfile, "profile_hash">,
 ): string {
+  if (profile.metamodel_version === "engram.metamodel/v1") {
+    return resolveAuthoredProfile(profile)?.digest ?? semanticProfileDigest(profile);
+  }
   const h = createHash("sha256");
   h.update(JSON.stringify(stableForHash(profile)));
   return h.digest("hex");
 }
 
-export function normalizeOntologyProfile(profile: OntologyProfile, sourcePath?: string): NormalizedOntologyProfile {
+export function getAuthoredOntologyProfile(profile: OntologyProfile): OntologyProfile {
+  const authored = resolveAuthoredProfile(profile);
+  return authored === undefined ? profile : structuredClone(authored.document);
+}
+
+export function hashOntologyPresentation(profile: NormalizedOntologyProfile): Sha256Digest {
+  const nodeVisualEncoding = Object.fromEntries(
+    Object.entries(profile.node_types).map(([id, node]) => [id, node.visual_encoding ?? null]),
+  );
+  const projection = toJsonValue({
+    node_visual_encoding: nodeVisualEncoding,
+    presentation: profile.presentation ?? null,
+  });
+  if (!projection.ok) throw new Error(`Invalid presentation JSON at ${projection.path}: ${projection.reason}`);
+  return fromInternalDigest(digestOfPreimage(projection.value));
+}
+
+function buildRuntimeProfile(profile: OntologyProfile, sourcePath?: string, authoredDigest?: Sha256Digest): NormalizedOntologyProfile {
   const errors = validateOntologyProfile(profile);
   if (errors.length > 0) {
     throw new Error(`Invalid ontology profile:\n${errors.map((item) => `  - ${item}`).join("\n")}`);
   }
 
+  const v1 = profile.metamodel_version === "engram.metamodel/v1";
   const nodeTypes = normalizeStringMap<OntologyNodeType>(profile.node_types);
   const relationTypes = normalizeStringMap<OntologyRelationType>(profile.relation_types);
   const registries = normalizeStringMap<OntologyRegistrySpec>(profile.registries);
   const hardening = normalizeHardeningPolicy(profile.hardening);
-  const normalized: Omit<NormalizedOntologyProfile, "profile_hash"> = {
+  const runtime: Omit<NormalizedOntologyProfile, "profile_hash"> = {
     id: profile.id!,
     version: String(profile.version),
+    ...(v1 ? {
+      metamodel_version: profile.metamodel_version,
+      ...(profile.presentation === undefined ? {} : { presentation: profile.presentation }),
+    } : {}),
     default_language: profile.default_language ?? "en",
     ...(sourcePath ? { sourcePath: resolve(sourcePath) } : profile.sourcePath ? { sourcePath: profile.sourcePath } : {}),
     node_types: Object.fromEntries(
       Object.entries(nodeTypes).map(([id, nodeType]) => [id, normalizeNodeType(nodeType, sourcePath ?? profile.sourcePath, id)]),
     ),
     relation_types: Object.fromEntries(
-      Object.entries(relationTypes).map(([id, relation]) => [id, normalizeRelation(relation)]),
+      Object.entries(relationTypes).map(([id, relation]) => [id, {
+        ...normalizeRelation(relation),
+        ...(v1 && relation.cardinality !== undefined ? { cardinality: relation.cardinality } : {}),
+      }]),
     ),
     registries: Object.fromEntries(
       Object.entries(registries).map(([id, registry]) => [id, normalizeRegistry(registry)]),
@@ -543,20 +635,30 @@ export function normalizeOntologyProfile(profile: OntologyProfile, sourcePath?: 
     outputs: normalizeOutputs(profile.outputs),
   };
 
+  const normalized = { ...runtime, profile_hash: authoredDigest ?? hashOntologyProfile(runtime) };
+  if (v1) normalized.presentation_hash = hashOntologyPresentation(normalized);
+  return normalized;
+}
+
+export function normalizeOntologyProfile(profile: OntologyProfile, sourcePath?: string): NormalizedOntologyProfile {
+  const v1 = profile.metamodel_version === "engram.metamodel/v1";
+  const authored = v1
+    ? resolveAuthoredProfile(profile) ?? { digest: semanticProfileDigest(profile), document: structuredClone(profile) }
+    : undefined;
+  const runtime = buildRuntimeProfile(v1 ? structuredClone(profile) : profile, sourcePath, authored?.digest);
   // Resolve module exports while the profile is loaded. Registry-key-specific
   // checks happen later in loadProfileRegistries, before corpus scanning.
-  compileNormalizerByNodeType(normalized as NormalizedOntologyProfile);
-
-  return {
-    ...normalized,
-    profile_hash: hashOntologyProfile(normalized),
-  };
+  compileNormalizerByNodeType(runtime);
+  return authored === undefined ? runtime : freezeAuthoredProfile(runtime, authored);
 }
 
 export function bindOntologyProfile(
   profile: NormalizedOntologyProfile,
   projectConfig: NormalizedProjectConfig,
 ): NormalizedOntologyProfile {
+  const v1 = profile.metamodel_version === "engram.metamodel/v1";
+  const authored = resolveAuthoredProfile(profile);
+  if (v1 && authored === undefined) throw new Error("Metamodel v1 runtime profile requires its authored document");
   const registries: Record<string, NormalizedOntologyRegistrySpec> = {};
   for (const [registryId, registry] of Object.entries(profile.registries)) {
     const bound = projectConfig.inputs.registrySources[registry.source];
@@ -570,11 +672,11 @@ export function bindOntologyProfile(
       bound_source_path: bound,
     };
   }
+  if (authored !== undefined) return freezeAuthoredProfile(structuredClone({ ...profile, registries }), authored);
+
   const boundProfile = { ...profile, registries };
-  return {
-    ...boundProfile,
-    profile_hash: hashOntologyProfile(boundProfile),
-  };
+  boundProfile.profile_hash = hashOntologyProfile(boundProfile);
+  return boundProfile;
 }
 
 export function loadOntologyProfile(

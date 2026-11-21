@@ -2,8 +2,22 @@
 // preimage, then RFC 8785 canonical bytes, then SHA-256. No digest derives
 // from another; equal values are never used as a check.
 import { createHash } from "node:crypto";
-import { canonicalBytes, sha256Hex } from "./canonical.js";
+import { toJsonValue } from "../json-value.js";
+import type { Sha256Digest } from "../metamodel-contracts.js";
+import { canonicalBytes, digestOfPreimage, sha256Hex } from "./canonical.js";
+import { isDigest } from "./types.js";
 import type { Digest, MappingEntry, Pin } from "./types.js";
+
+export function toInternalDigest(digest: Sha256Digest): Digest {
+  const hex = digest.slice("sha256:".length);
+  if (!digest.startsWith("sha256:") || !isDigest(hex)) throw new Error("Invalid Sha256Digest");
+  return hex;
+}
+
+export function fromInternalDigest(digest: Digest): Sha256Digest {
+  if (!isDigest(digest)) throw new Error("Invalid SHA-256 digest");
+  return `sha256:${digest}`;
+}
 
 // --- P-CONTENT-DIAGRAM (§7.2): projection of a diagram profile's declarations ---
 
@@ -84,19 +98,41 @@ export function pinsDigestOf(input: PinsPreimageInput): Digest {
 
 // --- P-DELTA (§7.2): single-value declaration digests, never whole profiles ---
 
-/** stableForHash replica of S-ENGRAMHASH ([ENG] src/ontology-profile.ts:69–83). */
-export function stableForHash(value: unknown, path: string[] = []): unknown {
-  if (Array.isArray(value)) return value.map((item, index) => stableForHash(item, [...path, String(index)]));
+function projectForHash(value: unknown, path: string[], mode: "legacy" | "portable-v1" | "semantic-v1"): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item, index) => projectForHash(item, [...path, String(index)], mode));
+  }
   if (typeof value === "object" && value !== null) {
-    const result: Record<string, unknown> = {};
-    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
-      if (key === "sourcePath" || key === "profile_hash" || key === "bound_source_path") continue;
-      if (key === "fn" && path.at(-1) === "normalize" && path.at(-2) === "linking") continue;
-      result[key] = stableForHash((value as Record<string, unknown>)[key], [...path, key]);
+    const entries: [string, unknown][] = [];
+    const legacy = mode === "legacy";
+    for (const key of Object.keys(value).sort()) {
+      // V1 removes runtime metadata only where the profile schema defines it.
+      if ((legacy || path.length === 0) && (key === "sourcePath" || key === "profile_hash")) continue;
+      if (key === "bound_source_path" && (legacy || (path.length === 2 && path[0] === "registries"))) continue;
+      if (key === "fn" && path.at(-1) === "normalize" && path.at(-2) === "linking" &&
+          (legacy || (path.length === 4 && path[0] === "node_types"))) continue;
+      if (mode === "semantic-v1" && (
+        (path.length === 0 && (key === "presentation" || key === "presentation_hash")) ||
+        (path.length === 2 && path[0] === "node_types" && key === "visual_encoding")
+      )) continue;
+      entries.push([key, projectForHash((value as Record<string, unknown>)[key], [...path, key], mode)]);
     }
-    return result;
+    return Object.fromEntries(entries);
   }
   return value;
+}
+
+/** Portable declaration projection for legacy hashes and complete bundle documents. */
+export function stableForHash(value: unknown, path: string[] = []): unknown {
+  const v1 = path.length === 0 && typeof value === "object" && value !== null &&
+    Object.getOwnPropertyDescriptor(value, "metamodel_version")?.value === "engram.metamodel/v1";
+  return projectForHash(value, path, v1 ? "portable-v1" : "legacy");
+}
+
+export function semanticProfileDigest(profile: unknown): Sha256Digest {
+  const authored = toJsonValue(profile);
+  if (!authored.ok) throw new Error(`Invalid profile JSON at ${authored.path || "profile"}: ${authored.reason}`);
+  return fromInternalDigest(digestOfPreimage(projectForHash(authored.value, [], "semantic-v1")));
 }
 
 /** Single declaration value via diagram canonical bytes (RFC 8785). */
