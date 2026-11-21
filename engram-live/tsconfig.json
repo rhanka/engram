@@ -17,6 +17,7 @@
     "contracts.ts",
     "facts.ts",
     "batch-codec.ts",
+    "generation.ts",
     "registration.ts",
     "line-attribution.ts",
     "symbol-history.ts",

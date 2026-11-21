@@ -107,6 +107,27 @@ export const REQUIRED_STORAGE_FENCING_CONTRACT = {
   requireSynchronousLeaseRevocationOnShutdown: true,
 } as const;
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Uint8Array) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+const SCOPE_FENCING_TOKEN_KEYS: readonly string[] = [
+  "tokenId",
+  "scope",
+  "epoch",
+  "epochId",
+  "declarationRevision",
+  "projectionIncarnation",
+  "issuedAt",
+  "expiresAt",
+];
+
+const FENCING_SCOPE_KEYS: readonly string[] = ["tenant", "clone", "worktree"];
+
 export function validateScopeFencingToken(
   candidate: unknown,
   expectedScope?: LiveScope,
@@ -114,14 +135,56 @@ export function validateScopeFencingToken(
   nowMs?: number,
 ): ValidationResult {
   const errors: string[] = [];
-  if (typeof candidate !== "object" || candidate === null) {
-    return { ok: false, errors: ["fencing token must be a non-null object"] };
+  if (!isPlainObject(candidate)) {
+    return { ok: false, errors: ["fencing token must be a non-null plain object"] };
+  }
+  for (const key of Object.keys(candidate)) {
+    if (!SCOPE_FENCING_TOKEN_KEYS.includes(key)) {
+      errors.push("fencing token carries an unknown key: refused");
+      break;
+    }
   }
   const t = candidate as Partial<ScopeFencingTokenDto>;
-  if (!t.scope || typeof t.scope.tenant !== "string" || typeof t.scope.clone !== "string" || typeof t.scope.worktree !== "string") errors.push("fencing token requires a complete scope");
-  if (!Number.isSafeInteger(t.declarationRevision) || (t.declarationRevision ?? 0) < 1) errors.push("fencing token requires declaration revision");
-  if (typeof t.epochId !== "string" || !t.epochId) errors.push("fencing token requires epoch identity");
-  for(const value of [t.tokenId,t.epochId,t.projectionIncarnation,t.scope?.tenant,t.scope?.clone,t.scope?.worktree])if(typeof value!=="string" || value.length<1 || value.length>1024)errors.push("fencing identity must be bounded");
+  const scopeObj = isPlainObject(t.scope) ? (t.scope as Record<string, unknown>) : undefined;
+  if (!scopeObj || typeof scopeObj.tenant !== "string" || typeof scopeObj.clone !== "string") {
+    errors.push("fencing token requires a complete scope");
+  } else {
+    for (const key of Object.keys(scopeObj)) {
+      if (!FENCING_SCOPE_KEYS.includes(key)) {
+        errors.push("fencing token scope carries an unknown key: refused");
+        break;
+      }
+    }
+    if (scopeObj.worktree !== undefined && typeof scopeObj.worktree !== "string") {
+      errors.push("fencing token worktree, when present, must be a string");
+    }
+  }
+  if (!Number.isSafeInteger(t.declarationRevision) || (t.declarationRevision ?? 0) < 1) {
+    errors.push("fencing token requires declaration revision");
+  }
+  if (typeof t.epochId !== "string" || !t.epochId) {
+    errors.push("fencing token requires epoch identity");
+  }
+  const boundedValues: unknown[] = [
+    t.tokenId,
+    t.epochId,
+    t.projectionIncarnation,
+    scopeObj?.tenant,
+    scopeObj?.clone,
+  ];
+  if (scopeObj?.worktree !== undefined) {
+    boundedValues.push(scopeObj.worktree);
+  }
+  for (const value of boundedValues) {
+    if (
+      typeof value !== "string" ||
+      value.trim().length < 1 ||
+      value.length > 1024 ||
+      value.includes("\0")
+    ) {
+      errors.push("fencing identity must be bounded");
+    }
+  }
   if (typeof t.tokenId !== "string" || t.tokenId.length === 0) {
     errors.push("fencing token requires a non-empty tokenId");
   }
@@ -140,26 +203,41 @@ export function validateScopeFencingToken(
   ) {
     errors.push("fencing token requires finite issuedAt < expiresAt");
   }
-  if (expectedScope !== undefined && t.scope !== undefined) {
-    if (
-      t.scope.tenant !== expectedScope.tenant ||
-      t.scope.clone !== expectedScope.clone ||
-      t.scope.worktree !== expectedScope.worktree
-    ) {
-      errors.push("fencing token scope does not match target scope");
+  if (expectedScope !== undefined) {
+    if (!isPlainObject(expectedScope)) {
+      errors.push("fencing token expectedScope must be a plain object");
+    } else if (scopeObj !== undefined) {
+      if (
+        scopeObj.tenant !== expectedScope.tenant ||
+        scopeObj.clone !== expectedScope.clone ||
+        scopeObj.worktree !== expectedScope.worktree
+      ) {
+        errors.push("fencing token scope does not match target scope");
+      }
     }
   }
-  if (
-    expectedIncarnation !== undefined &&
-    t.projectionIncarnation !== undefined &&
-    t.projectionIncarnation !== expectedIncarnation
-  ) {
-    errors.push("fencing token projectionIncarnation does not match active storage incarnation P");
+  if (expectedIncarnation !== undefined) {
+    if (typeof expectedIncarnation !== "string" || expectedIncarnation.length === 0) {
+      errors.push("expected storage incarnation P must be a non-empty string");
+    } else if (
+      t.projectionIncarnation !== undefined &&
+      t.projectionIncarnation !== expectedIncarnation
+    ) {
+      errors.push("fencing token projectionIncarnation does not match active storage incarnation P");
+    }
   }
-  if (nowMs !== undefined && typeof t.expiresAt === "number" && nowMs >= t.expiresAt) {
-    errors.push("fencing token is expired");
+  if (nowMs !== undefined) {
+    if (typeof nowMs !== "number" || !Number.isFinite(nowMs)) {
+      errors.push("fencing token validation timestamp must be finite");
+    } else {
+      if (typeof t.expiresAt === "number" && nowMs >= t.expiresAt) {
+        errors.push("fencing token is expired");
+      }
+      if (typeof t.issuedAt === "number" && t.issuedAt > nowMs) {
+        errors.push("fencing token is not yet valid");
+      }
+    }
   }
-  if (nowMs !== undefined && typeof t.issuedAt === "number" && t.issuedAt > nowMs) errors.push("fencing token is not yet valid");
   return { ok: errors.length === 0, errors };
 }
 
