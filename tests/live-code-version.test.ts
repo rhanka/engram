@@ -42,7 +42,7 @@ import {
   type RetainedObjectsPort,
 } from "../engram-live/code-analysis.js";
 import { FACT_SCHEMA_VERSION, POLICY_VERSION, validateReasonAnchorFact } from "../engram-live/contracts.js";
-import { toPullRequestObservationFact } from "../engram-live/facts.js";
+import { toCodeAnalysisFact, toPullRequestObservationFact } from "../engram-live/facts.js";
 import { LINE_ATTRIBUTION_VERSION } from "../engram-live/line-attribution.js";
 import * as fixtureFs from "node:fs";
 import { extractWithDiagnostics as reusedExtract, type LiveExtractionPorts } from "../src/extract.js";
@@ -1432,7 +1432,144 @@ function committedCode(content: string, path = "f.ts", parents: string[] = []) {
   return { input, objects, stored };
 }
 
+async function sourceProductionAdapter() {
+  const { createProductionParseAdapter } = await import("../engram-live/index.js");
+  const { Parser, Language } = await import("web-tree-sitter");
+  return createProductionParseAdapter({
+    init: () => Parser.init(),
+    loadLanguage: (bytes) => Language.load(bytes),
+    createParser(grammar) {
+      const parser = new Parser();
+      parser.setLanguage(grammar as InstanceType<typeof Language>);
+      return parser;
+    },
+  });
+}
+
+describe("L5-P1 review production syntax", () => {
+  it.each([
+    { language: "cpp", ext: "cpp",
+      content: "class Child : public virtual Base, protected ns::Other, private Tmpl<int>, ns::Nested<int> {};",
+      parents: ["Base", "ns::Other", "Tmpl", "ns::Nested"] },
+    ...["typescript", "tsx"].map(language => ({ language, ext: language === "typescript" ? "ts" : "tsx",
+      content: "class Child extends Base<string> implements IFoo<number>, ns.IBar {}\ninterface Sub extends IBase<string> {}",
+      parents: ["Base", "IFoo", "ns.IBar", "IBase"] })),
+    { language: "java", ext: "java", content: "class Child extends Base<String> implements IFoo<Integer>, pkg.IBar {}",
+      parents: ["Base", "IFoo", "pkg.IBar"] },
+    { language: "php", ext: "php", content: String.raw`<?php class Child extends \Ns\Base implements Foo\IBar {}`,
+      parents: ["Ns::Base", "Foo::IBar"] },
+  ])("retains only real inheritance targets in $language", async ({ language, ext, content, parents }) => {
+    const source = committedCode(content, `child.${ext}`);
+    const input = { ...source.input, language };
+    const grammar = makeGrammar({ [language]: "available" });
+    const extractor = await sourceProductionAdapter();
+    const result = await analyzeCode(input, { extractor, grammar, objects: source.objects });
+    expect(result.state).toBe("complete");
+    expect(result.declarationInventory?.kind).toBe("verified-declaration-inventory");
+    expect(result.inheritances.map(edge => edge.parent)).toEqual(parents.map(name => `external:${name}`));
+    expect(result.unresolved.filter(item => item.kind === "unresolved-type").map(item => item.name)).toEqual(parents);
+    const fact = toCodeAnalysisFact(input, result, await grammar.status(language));
+    expect(fact.relations.filter(item => item.role === "inherits").map(item => item.target.symbolId))
+      .toEqual(parents.map(name => `external:${name}`));
+  });
+
+  it.each([
+    { call: String.raw`\Ns\baz()`, name: "Ns::baz" },
+    { call: "Foo::bar()", name: "Foo.bar" },
+  ])("retains the qualifier of PHP call $call", async ({ call, name }) => {
+    const source = committedCode(`<?php function probe() { ${call}; }`, "probe.php");
+    const result = await analyzeCode({ ...source.input, language: "php" }, {
+      extractor: await sourceProductionAdapter(), grammar: makeGrammar({ php: "available" }), objects: source.objects,
+    });
+    expect(result.state).toBe("complete");
+    expect(result.calls.map(item => item.targetSlot)).toEqual([name]);
+    expect(result.unresolved).toEqual([expect.objectContaining({ name, kind: "unresolved-call" })]);
+  });
+
+  it("keeps Rust impl method slots stable across reordering and scopes trait impls", async () => {
+    const extractor = await sourceProductionAdapter();
+    const grammar = makeGrammar({ rust: "available" });
+    const types = "struct A; struct B;\n";
+    const impls = [
+      "impl A { const VALUE: i32 = helper(); fn probe(&self) -> i32 { 1 } }",
+      "impl B { fn probe(&self) -> i32 { 2 } }",
+      "impl Read for A { fn probe(&self) -> i32 { 3 } }",
+      "impl Write for A { fn probe(&self) -> i32 { 4 } }",
+    ];
+    async function analyze(blocks: readonly string[]) {
+      const source = committedCode(types + blocks.join("\n"), "probe.rs");
+      return analyzeCode({ ...source.input, language: "rust" }, { extractor, grammar, objects: source.objects });
+    }
+    const before = await analyze(impls);
+    const after = await analyze([...impls].reverse());
+    expect(before.state).toBe("complete");
+    expect(after.state).toBe("complete");
+    expect(before.symbols.filter(symbol => symbol.kind === "type").map(symbol => symbol.name)).toEqual(["A", "B"]);
+    expect(before.calls).toEqual([expect.objectContaining({
+      from: before.symbols.find(symbol => symbol.name === "<module>")?.id,
+      targetSlot: "helper",
+    })]);
+    const methodSlots = (result: typeof before) => new Map(result.symbols.filter(symbol => symbol.name === "probe")
+      .map(symbol => [symbol.bodyHash, symbol.slot]));
+    const slots = methodSlots(before);
+    expect(new Set(slots.values()).size).toBe(4);
+    expect(methodSlots(after)).toEqual(slots);
+  });
+});
+
 describe("owner closure classes", () => {
+  it("production parse adapter exposes syntax errors unresolved references and receipt-checked repairs", async () => {
+    const extractor = await sourceProductionAdapter();
+    const grammar = makeGrammar({ typescript: "available" });
+    const cache = makeMemoryCache();
+    async function analyze(content: string) {
+      const { input, objects } = committedCode(content);
+      let unit!: ParsedUnit;
+      const result = await analyzeCode(input, portsFor(cache, grammar, {
+        async parse(request) {
+          unit = await extractor.parse(request);
+          return unit;
+        },
+      }, { objects }));
+      return { result, unit };
+    }
+
+    const content = "  \nexport class Child extends Outside {}\nexport function run() { class Outside {} outside(); return 'café 🐱'; }\n";
+    const before = await analyze(content);
+    const after = await analyze(content.replace("café 🐱", "thé 🐶"));
+    expect(before.result.state).toBe("complete");
+    expect(before.result.unresolved).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "unresolved-call", name: "outside" }),
+      expect.objectContaining({ kind: "unresolved-type", name: "Outside" }),
+    ]));
+    const status = await grammar.status("typescript");
+    const grammarHandle = (await grammar.load!({ language: "typescript", abi: status.abi!, bytes: status.bytes! }))!;
+    await expect(extractor.parse({ content, bytes: Buffer.from("different"), language: "typescript",
+      grammarHandle, dialect: "typescript", syntaxOptions: {} })).rejects.toThrow("content does not match the supplied bytes");
+    expect(after.unit.topologyHash).toBe(before.unit.topologyHash);
+    expect(after.unit.symbols.find(({ name }) => name === "run")?.bodyHash)
+      .not.toBe(before.unit.symbols.find(({ name }) => name === "run")?.bodyHash);
+    const repair = {
+      before: before.unit, after: after.unit, externalCallers: [],
+      deletionEvidence: { before: before.result.declarationInventory!, after: after.result.declarationInventory! },
+    };
+    expect(repairAffectedCalls(repair).publishable).toBe(true);
+    expect(repairAffectedCalls({ ...repair, deletionEvidence: structuredClone(repair.deletionEvidence) }).publishable).toBe(false);
+
+    const stores = cache.stores.length;
+    const broken = await analyze(content + "export function broken( {\n");
+    expect(broken.unit.syntax.hasError).toBe(true);
+    const missing = await analyze("let value = (1 + 2;\n");
+    expect(missing.unit.syntax.hasMissing).toBe(true);
+    for (const { result } of [broken, missing]) {
+      expect(result.state).toBe("partial");
+      expect(result.coverage.reason).toContain("syntax-incomplete");
+      expect(result.declarationInventory).toBeUndefined();
+    }
+    expect(cache.stores).toHaveLength(stores);
+    expect(repairAffectedCalls({ ...repair, after: broken.unit }).publishable).toBe(false);
+  });
+
   async function wasmTypescript(): Promise<Uint8Array> {
     return verifiedSourceGrammar("typescript");
   }

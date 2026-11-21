@@ -7,10 +7,7 @@
 // a model module or a storage-driver handle — those stay outside the neutral
 // closure by construction and by tests/live-neutrality.test.ts.
 //
-// L1b supplies the package/factory seams and grammar loading. Every other
-// capability is explicitly unavailable until its lot lands; the factory
-// never fabricates facts, writes through the fact sink or silently
-// degrades an unavailable capability into an empty success.
+// The first delivered capability is code analysis using the host's parser.
 
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
@@ -18,9 +15,8 @@ import { fileURLToPath } from "node:url";
 import {
   ADVERTISED_LANGUAGES,
   CAPABILITY_IDS,
-  CAPABILITY_PLANNED_LOTS,
   GRAMMAR_UNAVAILABLE_REASON,
-  NOT_IMPLEMENTED_REASON,
+  describeCapabilities,
   type CapabilityId,
   type CapabilityStatus,
   type CoverageReport,
@@ -33,6 +29,14 @@ import {
   validateFactBatch,
   validateWorkspaceDeclaration,
 } from "./contracts.js";
+import {
+  analyzeCode,
+  type AnalyzeCodeInput,
+  type AnalyzeCodeOutcome,
+  type CodeAnalysisPorts,
+  type GrammarStatusPort,
+} from "./code-analysis.js";
+import { createProductionParseAdapter, supportsProductionParse } from "./parse-adapter.js";
 
 export { validateScopeFencingToken } from "./contracts.js";
 export type { FactSinkPort, FactSinkReceipt, ScopeFencingTokenDto } from "./contracts.js";
@@ -93,9 +97,47 @@ export interface CachePort {
   readonly liveCacheSeam: "host-cache";
 }
 
+export interface GrammarSyntaxPoint {
+  readonly row: number;
+  readonly column: number;
+}
+
+/** Structural tree-sitter node interface for a parser taking a JS string. */
+export interface GrammarSyntaxNode {
+  readonly type: string;
+  readonly text: string;
+  /** Indices are UTF-16 offsets into the exact string supplied to parse. */
+  readonly startIndex: number;
+  readonly endIndex: number;
+  readonly startPosition: GrammarSyntaxPoint;
+  readonly endPosition: GrammarSyntaxPoint;
+  readonly isNamed: boolean;
+  readonly hasError: boolean;
+  readonly isMissing: boolean;
+  readonly children: readonly GrammarSyntaxNode[];
+  readonly namedChildren: readonly GrammarSyntaxNode[];
+  readonly parent: GrammarSyntaxNode | null;
+  readonly nextNamedSibling: GrammarSyntaxNode | null;
+  childForFieldName(name: string): GrammarSyntaxNode | null;
+  descendantsOfType(types: string | string[], start?: GrammarSyntaxPoint, end?: GrammarSyntaxPoint): GrammarSyntaxNode[];
+}
+
+export interface GrammarSyntaxTree {
+  readonly rootNode: GrammarSyntaxNode;
+  delete(): void;
+}
+
+export interface GrammarParser {
+  parse(content: string): GrammarSyntaxTree | null;
+  delete(): void;
+}
+
 export interface GrammarRuntimePort {
-  /** Loads a tree-sitter WASM grammar from bytes (e.g. web-tree-sitter). */
-  loadLanguage(wasm: Uint8Array): Promise<unknown>;
+  init(): void | Promise<void>;
+  /** Loads the exact WASM bytes after the package has verified their digest. */
+  loadLanguage(wasm: Uint8Array): Promise<object>;
+  /** Returns a fresh parser already bound to this runtime's grammar handle. */
+  createParser(grammar: object): GrammarParser;
 }
 
 export interface LiveFactoryPorts {
@@ -113,25 +155,32 @@ export interface CreateLiveFactoryOptions {
   readonly declaration: WorkspaceDeclarationDto;
 }
 
-export interface CapabilityResult {
-  readonly capability: CapabilityId;
-  readonly state: "unavailable";
-  readonly reason: string;
-  readonly plannedLot: string;
-  readonly delivered: false;
+export interface CodeAnalysisRequest {
+  readonly input: AnalyzeCodeInput;
+  readonly objects: CodeAnalysisPorts["objects"];
+  readonly cache?: CodeAnalysisPorts["cache"];
 }
 
-export interface GrammarLoadResult {
-  readonly language: string;
-  readonly state: "available" | "unavailable";
-  readonly bytesSha256?: string;
-  readonly grammar?: unknown;
-  readonly reason?: string;
-}
+export type CapabilityResult = CapabilityStatus & (
+  | { readonly state: "unavailable"; readonly delivered: false }
+  | {
+    readonly capability: "code-analysis";
+    readonly state: "available";
+    readonly delivered: true;
+    readonly languages: readonly GrammarCoverageDto[];
+    /** Present when a code-analysis request was supplied. */
+    readonly analysis?: AnalyzeCodeOutcome;
+  }
+);
+
+export type GrammarLoadResult = { readonly language: string } & (
+  | { readonly state: "available"; readonly bytesSha256: string; readonly grammar: object }
+  | { readonly state: "unavailable"; readonly reason: string }
+);
 
 export interface LiveFactory {
   describeCapabilities(): readonly CapabilityStatus[];
-  runCapability(capability: CapabilityId): Promise<CapabilityResult>;
+  runCapability(capability: CapabilityId, request?: CodeAnalysisRequest): Promise<CapabilityResult>;
   grammarCoverage(language: string): GrammarCoverageDto;
   grammarCoverageReport(language: string): CoverageReport;
   loadGrammar(language: string): Promise<GrammarLoadResult>;
@@ -140,9 +189,7 @@ export interface LiveFactory {
 
 interface GrammarManifestEntry {
   readonly file: string;
-  readonly sourcePackage: string;
   readonly sourceVersion: string;
-  readonly sourcePath: string;
   readonly sha256: string;
   readonly bytes: number;
 }
@@ -164,9 +211,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-// The pinned manifest is validated before any grammar is trusted: a
-// manifestVersion number and a languages record whose entries pin a
-// non-empty file and sha256 are required.
+// Refuse malformed pins and paths outside the packaged grammar directory.
 function isGrammarManifest(value: unknown): value is GrammarManifest {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as { manifestVersion?: unknown; languages?: unknown };
@@ -174,18 +219,27 @@ function isGrammarManifest(value: unknown): value is GrammarManifest {
   if (typeof candidate.languages !== "object" || candidate.languages === null || Array.isArray(candidate.languages)) {
     return false;
   }
-  return Object.values(candidate.languages).every((entry) => {
+  return Object.entries(candidate.languages).every(([language, entry]) => {
     if (typeof entry !== "object" || entry === null) return false;
-    const record = entry as { file?: unknown; sha256?: unknown };
-    return typeof record.file === "string" && record.file.length > 0
-      && typeof record.sha256 === "string" && record.sha256.length > 0;
+    const pinned = entry as Record<string, unknown>;
+    return /^[a-z]+$/.test(language) && pinned.file === "tree-sitter-" + language + ".wasm"
+      && typeof pinned.sha256 === "string" && /^[0-9a-f]{64}$/.test(pinned.sha256)
+      && typeof pinned.sourceVersion === "string" && pinned.sourceVersion.length > 0
+      && typeof pinned.bytes === "number" && Number.isSafeInteger(pinned.bytes) && pinned.bytes > 0;
   });
 }
 
-interface ManifestOutcome {
-  readonly ok: boolean;
-  readonly manifest?: GrammarManifest;
-  readonly reason?: string;
+type ManifestOutcome = { readonly ok: true; readonly manifest: GrammarManifest }
+  | { readonly ok: false; readonly reason: string };
+
+type GrammarProbe = Extract<GrammarLoadResult, { state: "unavailable" }>
+  | (Extract<GrammarLoadResult, { state: "available" }> & { readonly bytes: Uint8Array; readonly version: string });
+
+function grammarCoverageFor(result: GrammarLoadResult): GrammarCoverageDto {
+  const { language } = result;
+  return result.state === "available"
+    ? { axis: "ast", language, state: "current", reason: `packaged grammar verified (sha256 ${result.bytesSha256})` }
+    : { axis: "ast", language, state: "unavailable", reason: result.reason };
 }
 
 export function createLiveFactory(options: CreateLiveFactoryOptions): LiveFactory {
@@ -198,9 +252,11 @@ export function createLiveFactory(options: CreateLiveFactoryOptions): LiveFactor
   const manifestPath = join(distDir, "..", "grammar-manifest.json");
   const grammarDir = join(distDir, "grammars");
 
-  let manifestCache: GrammarManifest | undefined;
+  const scope = { tenant: options.declaration.tenant, clone: options.declaration.cloneId };
+  const declaredWorktreeId = options.declaration.worktreeId;
+  const runtime = ports.grammarRuntime;
+  let runtimeInit: Promise<void> | undefined;
   const loadManifest = async (): Promise<ManifestOutcome> => {
-    if (manifestCache) return { ok: true, manifest: manifestCache };
     let decoded: unknown;
     try {
       decoded = decodeJson(await ports.filesystem.readFileBytes(manifestPath));
@@ -216,45 +272,127 @@ export function createLiveFactory(options: CreateLiveFactoryOptions): LiveFactor
         reason: "the pinned grammar manifest is invalid: a manifestVersion number and a languages record pinning file/sha256 entries are required",
       };
     }
-    manifestCache = decoded;
     return { ok: true, manifest: decoded };
   };
 
-  const grammarLoadCache = new Map<string, GrammarLoadResult>();
+  const latestGrammarCoverage = new Map<string, GrammarCoverageDto>();
+  const grammarHandles = new Map<string, { digest: string; handle: Promise<object> }>();
+  const extractor = createProductionParseAdapter(runtime);
+
+  function loadHandle(language: string, bytes: Uint8Array, digest: string): Promise<object> {
+    const cached = grammarHandles.get(language);
+    if (cached?.digest === digest) return cached.handle;
+    runtimeInit ??= Promise.resolve().then(() => runtime.init?.()).catch((error: unknown) => {
+      runtimeInit = undefined;
+      throw error;
+    });
+    const handle = runtimeInit.then(async () => {
+      const grammar = await runtime.loadLanguage(Uint8Array.from(bytes));
+      if (!grammar || typeof grammar !== "object") throw new Error("no grammar handle");
+      return grammar;
+    }).catch((error: unknown) => {
+      if (grammarHandles.get(language)?.handle === handle) grammarHandles.delete(language);
+      throw error;
+    });
+    grammarHandles.set(language, { digest, handle });
+    return handle;
+  }
+
+  async function probeGrammar(language: string, manifestOutcome: ManifestOutcome, forAnalysis: boolean): Promise<GrammarProbe> {
+    const unavailable = (reason: string): GrammarProbe => ({ language, state: "unavailable", reason });
+    if (forAnalysis && !supportsProductionParse(language)) {
+      return unavailable(`no production parse adapter is available for "${language}"`);
+    }
+    if (!manifestOutcome.ok) {
+      return unavailable(`${GRAMMAR_UNAVAILABLE_REASON}: ${manifestOutcome.reason}`);
+    }
+    if (!Object.hasOwn(manifestOutcome.manifest.languages, language)) {
+      return unavailable(`${GRAMMAR_UNAVAILABLE_REASON}: "${language}" is absent from the pinned grammar manifest`);
+    }
+    const entry = manifestOutcome.manifest.languages[language];
+    let bytes: Uint8Array;
+    try {
+      bytes = Uint8Array.from(await ports.filesystem.readFileBytes(join(grammarDir, entry.file)));
+    } catch (error) {
+      return unavailable(
+        `${GRAMMAR_UNAVAILABLE_REASON}: the packaged WASM for "${language}" cannot be read through the filesystem port (${errorMessage(error)})`,
+      );
+    }
+    const digest = sha256(bytes);
+    if (digest !== entry.sha256 || bytes.byteLength !== entry.bytes) {
+      return unavailable(`packaged grammar digest or size mismatch for "${language}": pinned ${entry.sha256}, read ${digest}`);
+    }
+    try {
+      const grammar = await loadHandle(language, bytes, digest);
+      if (forAnalysis) runtime.createParser(grammar).delete();
+      return { language, state: "available", bytesSha256: digest, grammar, bytes, version: entry.sourceVersion };
+    } catch (error) {
+      return unavailable(`grammar runtime rejected the packaged WASM for "${language}": ${errorMessage(error)}`);
+    }
+  }
+
+  // The analysis engine independently validates the same operation-pinned
+  // bytes before receiving the runtime handle.
+  function grammarFor(probe: GrammarProbe): GrammarStatusPort {
+    if (probe.state === "unavailable") {
+      return { status: () => ({ state: "unavailable", version: "unavailable", reason: probe.reason }) };
+    }
+    const abi = "tree-sitter-wasm/1";
+    return {
+      status: () => ({ state: "available", version: probe.version, abi,
+        bytes: probe.bytes, digest: probe.bytesSha256, grammarId: `tree-sitter-${probe.language}` }),
+      load: ({ bytes, language }) => language === probe.language && sha256(bytes) === probe.bytesSha256 ? probe.grammar : null,
+    };
+  }
 
   return {
-    describeCapabilities(): readonly CapabilityStatus[] {
-      return CAPABILITY_IDS.map((capability) => ({
-        capability,
-        state: "unavailable" as const,
-        reason: NOT_IMPLEMENTED_REASON,
-        plannedLot: CAPABILITY_PLANNED_LOTS[capability],
-      }));
-    },
+    describeCapabilities,
 
-    async runCapability(capability: CapabilityId): Promise<CapabilityResult> {
-      if (!CAPABILITY_IDS.includes(capability)) {
+    async runCapability(capability, request): Promise<CapabilityResult> {
+      const status = describeCapabilities().find((entry) => entry.capability === capability);
+      if (!status) {
         throw new Error(`unknown capability "${String(capability)}"; known capabilities: ${CAPABILITY_IDS.join(", ")}`);
       }
-      // Explicit unavailability: no port call, no fabricated facts, no
-      // empty-success degradation.
-      return {
-        capability,
-        state: "unavailable",
-        reason: NOT_IMPLEMENTED_REASON,
-        plannedLot: CAPABILITY_PLANNED_LOTS[capability],
-        delivered: false,
-      };
+      if (capability !== "code-analysis" || status.state === "unavailable") {
+        return { ...status, state: "unavailable", delivered: false };
+      }
+      let operation: CodeAnalysisRequest | undefined;
+      if (request !== undefined) {
+        const input = request?.input;
+        const prototype = input && typeof input === "object" ? Object.getPrototypeOf(input) : undefined;
+        if (prototype !== Object.prototype && prototype !== null) {
+          throw new Error("code-analysis input must be a plain object");
+        }
+        const pinned = structuredClone(input);
+        const worktreeId = pinned.treeOid === null ? declaredWorktreeId : null;
+        const requestedScope: LiveScope = pinned.scope;
+        const scopeWorktree = requestedScope?.worktree;
+        if (requestedScope?.tenant !== scope.tenant || requestedScope.clone !== scope.clone
+          || (scopeWorktree != null && scopeWorktree !== worktreeId)
+          || (pinned.worktreeId != null && pinned.worktreeId !== worktreeId)) {
+          throw new Error("code-analysis scope does not match the workspace declaration");
+        }
+        const analysisScope: LiveScope = worktreeId === null ? scope : { ...scope, worktree: worktreeId };
+        operation = { ...request, input: { ...pinned, worktreeId, scope: analysisScope } };
+      }
+
+      const manifest = await loadManifest();
+      const probes = await Promise.all(ADVERTISED_LANGUAGES.map((language) => probeGrammar(language, manifest, true)));
+      const languages = probes.map(grammarCoverageFor);
+      for (const coverage of languages) latestGrammarCoverage.set(coverage.language, coverage);
+      const available = { ...status, capability, state: "available", delivered: true, languages } as const;
+      if (!operation) return available;
+
+      const { input, objects, cache } = operation;
+      const probe = probes.find(({ language }) => language === input.language)
+        ?? await probeGrammar(input.language, manifest, true);
+      latestGrammarCoverage.set(input.language, grammarCoverageFor(probe));
+      const analysis = await analyzeCode(input, { extractor, grammar: grammarFor(probe), objects, cache });
+      return { ...available, analysis };
     },
 
     grammarCoverage(language: string): GrammarCoverageDto {
-      // Synchronous coverage uses the pinned manifest; loadGrammar caches the
-      // executed result per language so coverage reflects verified assets.
-      const loaded = grammarLoadCache.get(language);
-      if (loaded?.state === "available") {
-        return { axis: "ast", language, state: "current", reason: `packaged grammar verified (sha256 ${loaded.bytesSha256})` };
-      }
-      return {
+      return latestGrammarCoverage.get(language) ?? {
         axis: "ast",
         language,
         state: "unavailable",
@@ -274,51 +412,10 @@ export function createLiveFactory(options: CreateLiveFactoryOptions): LiveFactor
     },
 
     async loadGrammar(language: string): Promise<GrammarLoadResult> {
-      const cached = grammarLoadCache.get(language);
-      if (cached) return cached;
-      const unavailable = (reason: string): GrammarLoadResult => {
-        const result: GrammarLoadResult = { language, state: "unavailable", reason };
-        grammarLoadCache.set(language, result);
-        return result;
-      };
-      // Reading and validating the manifest is part of the load: an absent,
-      // unreadable or invalid manifest yields an explicit unavailable result,
-      // never a thrown error and never a silent empty success.
-      const manifestOutcome = await loadManifest();
-      if (!manifestOutcome.ok || manifestOutcome.manifest === undefined) {
-        return unavailable(`${GRAMMAR_UNAVAILABLE_REASON}: ${manifestOutcome.reason ?? "the pinned grammar manifest is unavailable"}`);
-      }
-      // Clean own-property lookup: inherited names such as "constructor" or
-      // "toString" never reach a manifest entry.
-      if (!Object.hasOwn(manifestOutcome.manifest.languages, language)) {
-        return unavailable(`${GRAMMAR_UNAVAILABLE_REASON}: "${language}" is absent from the pinned grammar manifest`);
-      }
-      const entry = manifestOutcome.manifest.languages[language];
-      let bytes: Uint8Array;
-      try {
-        bytes = await ports.filesystem.readFileBytes(join(grammarDir, entry.file));
-      } catch (error) {
-        return unavailable(
-          `${GRAMMAR_UNAVAILABLE_REASON}: the packaged WASM for "${language}" cannot be read through the filesystem port (${errorMessage(error)})`,
-        );
-      }
-      const digest = sha256(bytes);
-      if (digest !== entry.sha256) {
-        return unavailable(`packaged grammar digest mismatch for "${language}": pinned ${entry.sha256}, read ${digest}`);
-      }
-      try {
-        const grammar = await ports.grammarRuntime.loadLanguage(bytes);
-        const result: GrammarLoadResult = {
-          language,
-          state: "available",
-          bytesSha256: digest,
-          grammar,
-        };
-        grammarLoadCache.set(language, result);
-        return result;
-      } catch (error) {
-        return unavailable(`grammar runtime rejected the packaged WASM for "${language}": ${errorMessage(error)}`);
-      }
+      const probe = await probeGrammar(language, await loadManifest(), false);
+      latestGrammarCoverage.set(language, grammarCoverageFor(probe));
+      if (probe.state === "unavailable") return probe;
+      return { language, state: "available", grammar: probe.grammar, bytesSha256: probe.bytesSha256 };
     },
 
     validateBatch(batch: unknown): ValidationResult {
