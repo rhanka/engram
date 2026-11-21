@@ -1,0 +1,46 @@
+{
+  "id": "openerp-users-example",
+  "version": "2",
+  "data_model": {
+    "format": "engram.data-model/1",
+    "enums": {
+      "locale": {"kind": "enum", "values": ["en", "fr"]},
+      "user_status": {"kind": "enum", "values": ["invited", "active", "deactivated"]}
+    }
+  },
+  "node_types": {
+    "organizations": {
+      "attributes": [{"name": "id", "type": {"kind": "uuid"}, "nullable": false}],
+      "key": ["id"]
+    },
+    "users": {
+      "registry": "users",
+      "attributes": [
+        {"name": "id",               "type": {"kind": "uuid"},          "nullable": false},
+        {"name": "organization_id",  "type": {"kind": "uuid"},          "nullable": false},
+        {"name": "email",            "type": {"kind": "text"},          "nullable": false},
+        {"name": "display_name",     "type": {"kind": "text"},          "nullable": false},
+        {"name": "preferred_locale", "type": {"enumRef": "locale"},     "nullable": false},
+        {"name": "status",           "type": {"enumRef": "user_status"},"nullable": false},
+        {"name": "password_hash",    "type": {"kind": "text"},          "nullable": true},
+        {"name": "mfa_state",        "type": {"kind": "text"},          "nullable": false},
+        {"name": "last_login_at",    "type": {"kind": "timestamptz"},   "nullable": true},
+        {"name": "created_at",       "type": {"kind": "timestamptz"},   "nullable": false},
+        {"name": "updated_at",       "type": {"kind": "timestamptz"},   "nullable": false}
+      ],
+      "key": ["id"],
+      "unique": [["organization_id", "email"]],
+      "references": [{"fields": ["organization_id"], "relation": "users.organization_id", "targetFields": ["id"]}]
+    }
+  },
+  "relation_types": {
+    "users.organization_id": {
+      "source": "users", "target": "organizations",
+      "cardinality": {"out": {"min": 1, "max": 1}, "in": {"min": 0, "max": "many"}}
+    }
+  },
+  "registries": {
+    "users": {"source": "users", "node_type": "users", "id_column": "id",
+              "label_column": "display_name", "alias_columns": ["email"], "partition_column": "organization_id"}
+  }
+}

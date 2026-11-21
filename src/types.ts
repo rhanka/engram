@@ -1,4 +1,5 @@
 import type { MetamodelVersion, Sha256Digest } from "./metamodel-contracts.js";
+import type { ModelHeader } from "./model-schemas.js";
 
 /** File type classification for corpus files. */
 export enum FileType {
@@ -1199,6 +1200,7 @@ export interface OntologyProfileOutputs {
 export interface OntologyProfile {
   id?: string;
   version?: string | number;
+  data_model?: ModelHeader;
   default_language?: string;
   sourcePath?: string;
   profile_hash?: string;
@@ -1261,6 +1263,7 @@ export interface NormalizedOntologyProfileOutputs {
 export interface NormalizedOntologyProfile {
   id: string;
   version: string;
+  data_model?: ModelHeader;
   default_language: string;
   sourcePath?: string;
   profile_hash: string;

@@ -107,7 +107,7 @@ export interface ProfileCompatibilityOptions {
 export type ProfileComparableInput = string | OntologyProfile | ProfileBundleV1;
 
 const CONSUMED_KEYS = new Set([
-  "id", "version", "default_language", "sourcePath", "profile_hash",
+  "id", "version", "data_model", "default_language", "sourcePath", "profile_hash",
   "node_types", "relation_types", "registries", "citation_policy",
   "hardening", "inference_policy", "evidence_policy", "hierarchies",
   "class_hierarchies", "outputs",
@@ -248,7 +248,7 @@ function bundleProfileInternal(
     }
   } else {
     try {
-      parsed = getAuthoredOntologyProfile(profileInput);
+      parsed = profileInput?.data_model === undefined ? getAuthoredOntologyProfile(profileInput) : profileInput;
     } catch (err) {
       return {
         result: deepFreeze({
@@ -301,7 +301,7 @@ function bundleProfileInternal(
   }
 
   const parsedDoc = proj.value as Record<string, JsonValue>;
-  const v1 = parsedDoc.metamodel_version === "engram.metamodel/v1";
+  const v1 = parsedDoc.data_model === undefined && parsedDoc.metamodel_version === "engram.metamodel/v1";
   const { presentation_hash: _presentationHash, ...withoutPresentationHash } = parsedDoc;
   const docProj = toJsonValue(stableForHash(v1 ? withoutPresentationHash : parsedDoc));
   if (!docProj.ok || !isPlainObj(docProj.value)) {
@@ -933,6 +933,7 @@ export function checkProfileCompatibility(
   if (oldP.default_language !== newP.default_language) pushB("changed_default_language", "default_language", "default_language", canonicalBytes(oldP.default_language), canonicalBytes(newP.default_language));
   if (oldP.version !== newP.version) pushNB("bumped_profile_version", "version", "version", canonicalBytes(oldP.version), canonicalBytes(newP.version));
   checkResidual("metamodel_version", "metamodel_version", oldP.metamodel_version, newP.metamodel_version);
+  checkResidual("data_model", "data_model", oldP.data_model, newP.data_model);
   if (v1) {
     const before = renderCanon(oldP.presentation), after = renderCanon(newP.presentation);
     if (before !== after) pushNB("changed_presentation", "presentation", "presentation", before, after);
