@@ -173,8 +173,7 @@ const compilerMutations = [
 ];
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "g0-type-proof-"));
 try {
-  fs.mkdirSync(path.join(scratch, 'src'), { recursive: true });
-  fs.cpSync(source, path.join(scratch, 'src/ontology-guardian'), { recursive: true });
+  fs.cpSync(path.join(root, 'src'), path.join(scratch, 'src'), { recursive: true });
   fs.mkdirSync(path.join(scratch, 'tests'));
   fs.copyFileSync(path.join(root, 'tests/ontology-guardian-g0-typeproof.test.ts'), path.join(scratch, 'tests/ontology-guardian-g0-typeproof.test.ts'));
   for (const file of ['tsconfig.json', 'tsconfig.g0-types.json']) fs.copyFileSync(path.join(root, file), path.join(scratch, file));
