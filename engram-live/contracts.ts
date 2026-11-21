@@ -12,10 +12,8 @@ export const CONTRACT_VERSION = 1;
 export const PRODUCER_NAME = "engram-live";
 export const POLICY_VERSION = "live-git-indexing/1";
 
-// The L1b package supplies package/factory seams and grammar loading only.
-// Extraction reuse lands in L5 with its cache/grammar injection and a
-// closure recheck; every capability below stays explicitly unavailable
-// until its lot implements and verifies it.
+// Capability availability describes the delivered package. Operation
+// coverage separately records the availability of inputs and host ports.
 export type CapabilityId =
   | "refs"
   | "history-dag"
@@ -56,7 +54,7 @@ export const CAPABILITY_PLANNED_LOTS: Readonly<Record<CapabilityId, string>> = {
 };
 
 export const NOT_IMPLEMENTED_REASON =
-  "engram-live L1b supplies the package/factory seams and grammar loading only; this capability is explicitly unavailable until its lot lands";
+  "this capability is explicitly unavailable until its implementation lot lands";
 
 export type CapabilityState = "available" | "unavailable";
 
@@ -70,8 +68,10 @@ export interface CapabilityStatus {
 export function describeCapabilities(): readonly CapabilityStatus[] {
   return CAPABILITY_IDS.map((capability) => ({
     capability,
-    state: "unavailable" as const,
-    reason: NOT_IMPLEMENTED_REASON,
+    state: capability === "code-analysis" ? "available" : "unavailable",
+    reason: capability === "code-analysis"
+      ? "production syntax analysis through the host parser runtime and pinned packaged grammars"
+      : NOT_IMPLEMENTED_REASON,
     plannedLot: CAPABILITY_PLANNED_LOTS[capability],
   }));
 }
@@ -310,7 +310,7 @@ export interface GrammarCoverageDto {
 }
 
 /** Languages with a pinned, packaged tree-sitter WASM grammar (L1b matrix). */
-export const ADVERTISED_LANGUAGES: readonly string[] = [
+export const ADVERTISED_LANGUAGES = [
   "c",
   "cpp",
   "go",
@@ -322,7 +322,7 @@ export const ADVERTISED_LANGUAGES: readonly string[] = [
   "rust",
   "typescript",
   "tsx",
-];
+] as const;
 
 export const GRAMMAR_UNAVAILABLE_REASON = "no packaged grammar is pinned for this language; AST coverage is explicitly unavailable";
 
