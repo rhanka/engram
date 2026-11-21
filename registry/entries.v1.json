@@ -145,19 +145,19 @@
           "role": "definitions",
           "path": "dist/registry/definitions.js",
           "mediaType": "application/javascript",
-          "sha256": "ee797f048be6b8c5bca148e0f3722fb1f5e3274b2860037267117fd663f1152e"
+          "sha256": "44ae0d0d40bab26bf0653fb2e1a25c83810e862a15266f3e792e4606c4d5449d"
         },
         {
           "role": "provider",
           "path": "dist/mcp-memory.js",
           "mediaType": "application/javascript",
-          "sha256": "69884e849d32062af4224d4e79d120a2b7eb08d7a03290355e348a8bbb56b235"
+          "sha256": "b642873bf23acd9070beebd38c0d94816508c9655cec57648a6962e40f872107"
         },
         {
           "role": "validator",
           "path": "dist/registry/validator.js",
           "mediaType": "application/javascript",
-          "sha256": "555c3d979039b320a434fab3f3f9cfa5cbced7f4593c5beafc0647640d2d567f"
+          "sha256": "6485a666381dc2d30f019b142557826713c9a207daed3dfecee6bf72c8af3bfc"
         },
         {
           "role": "wire-profile",

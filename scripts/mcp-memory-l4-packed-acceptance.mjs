@@ -132,6 +132,20 @@ export const KEY = (c) => c.repeat(32);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.join(HERE, 'node_modules/@sentropic/engram');
 
+// The fixture host has already verified this mandate for its test caller.
+const accessBoundary = {
+  authenticate: async () => ({
+    hasMemoryIdentity: true,
+    workspaceScopeRef: 'scope:one',
+    verifiedMandate: {
+      mandateId: 'mandate:packed-l4', instance: 'agent:one', role: 'AGENTS',
+      scope: 'scope:one', rights: ['memory:capture', 'memory:admit', 'memory:lifecycle'],
+      envelopeDigest: D, signatures: [{ by: 'issuer:one', alg: 'ed25519', value: 'verified-by-host-fixture' }],
+    },
+  }),
+  checkTrackWrite: async () => 'clear',
+};
+
 export function binding(overrides = {}) {
   return {
     issuer: 'issuer:one', sub: 'alice', tid: 'tenant:one', claims: ['sub', 'tid'],
@@ -493,7 +507,7 @@ export async function buildRealHost(overrides = {}) {
     },
   };
   const options = {
-    readFacets: facets, writeFacets: facets, readHost, writeHost, policyId: 'policy:one',
+    readFacets: facets, writeFacets: facets, readHost, writeHost, accessBoundary, policyId: 'policy:one',
     hostBindings, plan, sourceId: 'mcp:engram-memory', generation: '1',
   };
   const raw = providerMod.createEngramMemoryProviderV1(options);
