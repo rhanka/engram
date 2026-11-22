@@ -22,6 +22,8 @@ export type LogicalType =
   | { enumRef: string };
 export interface ModelAttribute { name: string; type: LogicalType; nullable: boolean }
 export type Names = readonly [string, ...string[]];
+export interface FieldPair { fields: Names; targetFields: Names }
+export interface Reference extends FieldPair { relation: string }
 export interface ModelRow { attributes: readonly ModelAttribute[]; key: Names; unique?: readonly Names[] }
 type Fragment = Record<string, unknown>;
 export const NATIVE_TEXT_SCHEMA: Fragment = { type: "object", properties: { kind: { const: "text" }, minLength: { type: "number" }, maxLength: { type: "number" }, pattern: { type: "string" }, patternName: { type: "string" } }, required: ["kind"], additionalProperties: false };
@@ -114,6 +116,48 @@ export function validateModelKeys(row: { readonly attributes: readonly ModelAttr
       if (seen.has(unique.id)) errors.push(`${path}.unique[${i}] duplicates an earlier key declaration`);
       else seen.add(unique.id);
     }
+  }
+  return errors;
+}
+const matchBound = (b: unknown, min: number, max: number | "many"): boolean => isRecord(b) && extraKey(b, "min", "max") === undefined && b.min === min && b.max === max;
+function sameType(a: LogicalType, b: LogicalType): boolean {
+  if ("enumRef" in a || "enumRef" in b) return "enumRef" in a && "enumRef" in b && a.enumRef === b.enumRef;
+  return a.kind === b.kind && (a.kind === "decimal" && b.kind === "decimal" ? a.precision === b.precision && a.scale === b.scale : TEXT_KINDS.has(a.kind) && TEXT_KINDS.has(b.kind) ? (a as TextDomain).minLength === (b as TextDomain).minLength && (a as TextDomain).maxLength === (b as TextDomain).maxLength : true);
+}
+export function validateFieldPair(pair: Record<string, unknown>, local: ModelRow, target: ModelRow, path: string): string[] {
+  const lMap = new Map(local.attributes.map((a) => [a.name, a])), tMap = new Map(target.attributes.map((a) => [a.name, a]));
+  const l = validateTuple(pair.fields, new Map(local.attributes.map((a) => [a.name, a.nullable])), false, `${path}.fields`), t = validateTuple(pair.targetFields, new Map(target.attributes.map((a) => [a.name, a.nullable])), false, `${path}.targetFields`);
+  if (l.errors.length + t.errors.length > 0) return [...l.errors, ...t.errors];
+  const lf = pair.fields as Names, tf = pair.targetFields as Names, keys = new Set([JSON.stringify(target.key), ...(target.unique ?? []).filter((u) => u.every((c) => !tMap.get(c)!.nullable)).map((u) => JSON.stringify(u))]);
+  if (lf.length !== tf.length || !keys.has(t.id!)) return [`${path}.targetFields ${lf.length !== tf.length ? "must match fields arity" : "must reference a primary key or non-nullable unique tuple"}`];
+  return lf.flatMap((f, i) => sameType(lMap.get(f)!.type, tMap.get(tf[i]!)!.type) ? [] : [`${path}.fields[${i}] type does not match targetFields[${i}]`]);
+}
+export function validateModelFkEdges<R extends object>(nodes: Record<string, { readonly attributes?: readonly ModelAttribute[]; readonly key?: Names; readonly unique?: readonly Names[]; readonly references?: unknown }>, relations: Record<string, R>, endpoints: (relation: R, field: "source" | "target") => string[]): string[] {
+  const errors: string[] = [], nodeMap = new Map(Object.entries(nodes)), relMap = new Map<string, { rel: Record<string, unknown>; src: string[]; dst: string[] }>(), bound = new Set<string>();
+  for (const [id, raw] of Object.entries(relations)) {
+    const src = endpoints(raw, "source"), dst = endpoints(raw, "target");
+    for (const [f, list] of [["source", src], ["target", dst]] as const) if (list.length > 1) errors.push(`relation_types.${id}.${f} must name exactly one node type`);
+    relMap.set(id, { rel: raw as Record<string, unknown>, src, dst });
+  }
+  for (const [nodeId, node] of nodeMap) {
+    if (node.references === undefined) continue;
+    if (!Array.isArray(node.references)) { errors.push(`node_types.${nodeId}.references must be a list`); continue; }
+    node.references.forEach((ref, i) => {
+      const p = `node_types.${nodeId}.references[${i}]`; if (!isRecord(ref)) return void errors.push(`${p} must be an object`);
+      const extra = extraKey(ref, "relation", "fields", "targetFields"), info = typeof ref.relation === "string" ? relMap.get(ref.relation) : undefined;
+      if (extra !== undefined) errors.push(`${p}.${extra} is not allowed`);
+      if (!info) return void errors.push(`${p}.relation references unknown relation ${String(ref.relation)}`);
+      const relId = ref.relation as string, relPath = `relation_types.${relId}`;
+      if (info.src.length !== 1 || info.dst.length !== 1 || !nodeMap.has(info.src[0]!) || !nodeMap.has(info.dst[0]!)) return;
+      if (info.src[0] !== nodeId || bound.has(relId)) return void errors.push(`${p}.relation ${info.src[0] !== nodeId ? `source ${info.src[0]} does not match ${nodeId}` : `duplicates FK binding for relation ${relId}`}`);
+      bound.add(relId); for (const f of ["attributes", "key", "unique", "endpoints"]) if (info.rel[f] !== undefined) errors.push(`${relPath}.${f} is not allowed on an FK-backed relation`);
+      const pairErrors = validateFieldPair(ref, node as ModelRow, nodeMap.get(info.dst[0]!)! as ModelRow, p);
+      if (pairErrors.length > 0) return void errors.push(...pairErrors);
+      const card = info.rel.cardinality, lf = ref.fields as Names, lSet = new Set(lf), nullable = lf.some((c) => node.attributes!.find((a) => a.name === c)!.nullable), unique = [node.key!, ...(node.unique ?? [])].some((u) => u.every((c) => lSet.has(c)));
+      if (!isRecord(card) || extraKey(card, "in", "out") !== undefined) return void errors.push(`${relPath}.cardinality must declare in and out bounds`);
+      if (!matchBound(card.out, nullable ? 0 : 1, 1)) errors.push(`${relPath}.cardinality.out must be {min:${nullable ? 0 : 1},max:1}`);
+      if (!matchBound(card.in, 0, unique ? 1 : "many")) errors.push(`${relPath}.cardinality.in must be {min:0,max:${unique ? 1 : "many"}}`);
+    });
   }
   return errors;
 }

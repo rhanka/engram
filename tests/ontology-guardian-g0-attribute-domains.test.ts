@@ -39,7 +39,7 @@ it("accepts all 11 closed domains, boundary bounds, and preserves each kind", ()
     [0, { kind: "int" }], [1, { kind: "bigint" }], [2, { kind: "string", minLength: 1, maxLength: 64 }], [3, { kind: "decimal", precision: 10, scale: 2 }],
     [4, { kind: "decimal", precision: 1, scale: 0 }], [6, { kind: "boolean" }], [7, { kind: "json" }], [8, { kind: "date" }], [9, { kind: "decimal", precision: 38, scale: 38 }],
   ];
-  const p = clone();
+  const p = clone(); delete p.node_types.users.references; p.relation_types = {};
   for (const [i, type] of swaps) p.node_types.users.attributes[i].type = type;
   p.node_types.users.attributes.push({ name: "empty_text", type: { kind: "text", minLength: 0, maxLength: 0 }, nullable: false });
   expect(validateOntologyProfile(parseOntologyProfile(p))).toEqual([]);

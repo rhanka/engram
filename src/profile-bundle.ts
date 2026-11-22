@@ -13,7 +13,7 @@ import type {
   RegistryRecord,
 } from "./types.js";
 import { toJsonValue, type JsonValue } from "./json-value.js";
-export type { EnumDomain, LogicalType, ModelAttribute, ModelHeader, ModelRow, Names, TextDomain } from "./model-schemas.js";
+export type { EnumDomain, FieldPair, LogicalType, ModelAttribute, ModelHeader, ModelRow, Names, Reference, TextDomain } from "./model-schemas.js";
 
 export const PROFILE_BUNDLE_SCHEMA_V1 = "engram.profile-bundle/v1" as const;
 
