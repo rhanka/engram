@@ -2916,6 +2916,7 @@ export const TAGGED_FACT_KINDS = [
   "branch-comparison",
   "code-analysis",
   "code-relation",
+  "code-file-deletion",
   "line-attribution",
   "symbol-correspondence",
   "reason-anchor",
@@ -3295,6 +3296,27 @@ export interface CodeRelationFactDto {
   readonly policyVersion: string;
 }
 
+/** Verified whole-file code deletion publication fact (L5-D). */
+export interface CodeFileDeletionFactDto {
+  readonly kind: "code-file-deletion";
+  readonly schemaVersion: typeof FACT_SCHEMA_VERSION;
+  readonly cloneId: string;
+  readonly worktreeId: string | null;
+  readonly snapshotId: string | null;
+  readonly beforeTree: QualifiedOid | null;
+  readonly afterTree: QualifiedOid | null;
+  readonly path: Uint8Array;
+  readonly language: string;
+  readonly beforeContentHash: string;
+  readonly beforeTopologyHash: string;
+  readonly invalidatedSymbolIds: readonly string[];
+  readonly invalidatedSlots: readonly string[];
+  readonly unresolved: readonly CodeUnresolvedFactDto[];
+  readonly extractorVersion: string;
+  readonly resolverVersion: string;
+  readonly policyVersion: BatchPolicyVersion;
+}
+
 /** G1 line attribution fact bound to pinned target OID, ranges, options and parent evidence. */
 export interface LineAttributionFactDto {
   readonly kind: "line-attribution";
@@ -3447,7 +3469,7 @@ export type ProgressFactDto =
 
 /**
  * Closed typed union of every fact admitted inside FactBatchDto.facts.
- * Includes the 14 tagged fact kinds and the 3 structural L4b fact shapes
+ * Includes the 16 tagged fact kinds and the 3 structural L4b fact shapes
  * emitted directly by snapshots.ts without altering their bytes.
  */
 export type LiveFactDto =
@@ -3461,6 +3483,7 @@ export type LiveFactDto =
   | BranchComparisonFactDto
   | CodeAnalysisFactDto
   | CodeRelationFactDto
+  | CodeFileDeletionFactDto
   | LineAttributionFactDto
   | SymbolCorrespondenceFactDto
   | ReasonAnchorFactDto
@@ -3481,6 +3504,22 @@ function hasNulByte(bytes: Uint8Array): boolean {
 
 function isNonEmptySafePathBytes(value: unknown): value is Uint8Array {
   return value instanceof Uint8Array && value.length > 0 && !hasNulByte(value);
+}
+
+function isCanonicalRelativePathBytes(value: unknown): value is Uint8Array {
+  if (!isNonEmptySafePathBytes(value)) return false;
+  if (value[0] === 0x2f || value[value.length - 1] === 0x2f) return false;
+  let segStart = 0;
+  for (let i = 0; i <= value.length; i++) {
+    if (i === value.length || value[i] === 0x2f) {
+      const len = i - segStart;
+      if (len === 0) return false;
+      if (len === 1 && value[segStart] === 0x2e) return false;
+      if (len === 2 && value[segStart] === 0x2e && value[segStart + 1] === 0x2e) return false;
+      segStart = i + 1;
+    }
+  }
+  return true;
 }
 
 function isHex64String(value: unknown): value is string {
@@ -3619,6 +3658,13 @@ const CODE_ANALYSIS_FACT_KEYS: readonly string[] = [
 const CODE_RELATION_FACT_KEYS: readonly string[] = [
   "kind", "schemaVersion", "cloneId", "relationId", "role", "source", "target",
   "external", "extractorVersion", "resolverVersion", "policyVersion",
+];
+const CODE_FILE_DELETION_FACT_KEYS: readonly string[] = [
+  "kind", "schemaVersion", "cloneId", "worktreeId", "snapshotId",
+  "beforeTree", "afterTree", "path", "language",
+  "beforeContentHash", "beforeTopologyHash",
+  "invalidatedSymbolIds", "invalidatedSlots", "unresolved",
+  "extractorVersion", "resolverVersion", "policyVersion",
 ];
 const LINE_ATTRIBUTION_FACT_KEYS: readonly string[] = [
   "kind", "schemaVersion", "cloneId", "target", "path", "ranges", "policyVersion",
@@ -4234,6 +4280,108 @@ export function validateCodeRelationFact(value: unknown): ValidationResult {
   return { ok: errors.length === 0, errors };
 }
 
+function validateCodeUnresolvedList(value: unknown, prefix: string, errors: string[]): void {
+  if (!Array.isArray(value)) {
+    errors.push(`${prefix}.unresolved must be an array`);
+    return;
+  }
+  value.forEach((item: unknown, idx: number) => {
+    const path = `${prefix}.unresolved[${idx}]`;
+    if (!isRecord(item)) {
+      errors.push(`${path} must be an object`);
+      return;
+    }
+    rejectUnknownKeys(item, CODE_UNRESOLVED_FACT_KEYS, path, errors);
+    if (!isInList(item.unresolvedKind, CODE_UNRESOLVED_KINDS)) {
+      errors.push(`${path}.unresolvedKind must be one of ${CODE_UNRESOLVED_KINDS.join(", ")}`);
+    }
+    if (!isNonEmptySafeText(item.name)) errors.push(`${path}.name must be a non-empty string without NUL`);
+    if (!isNonEmptySafeText(item.fromSymbolId)) errors.push(`${path}.fromSymbolId must be a non-empty string without NUL`);
+    if (!isNonEmptySafeText(item.reason)) errors.push(`${path}.reason must be a non-empty string without NUL`);
+  });
+}
+
+export function validateCodeFileDeletionFact(value: unknown): ValidationResult {
+  if (!isRecord(value)) return { ok: false, errors: ["code-file-deletion fact must be an object"] };
+  const errors: string[] = [];
+  rejectUnknownKeys(value, CODE_FILE_DELETION_FACT_KEYS, "code-file-deletion fact", errors);
+  if (value.kind !== "code-file-deletion") errors.push('code-file-deletion fact.kind must be "code-file-deletion"');
+  if (value.schemaVersion !== FACT_SCHEMA_VERSION) errors.push(`code-file-deletion fact.schemaVersion must be ${FACT_SCHEMA_VERSION}`);
+  if (!isStrictScopeId(value.cloneId)) errors.push("code-file-deletion fact.cloneId must be a strict opaque identifier");
+  if (value.worktreeId !== null && !isStrictScopeId(value.worktreeId)) {
+    errors.push("code-file-deletion fact.worktreeId must be null or a strict opaque identifier");
+  }
+  if (value.snapshotId !== null && !isStrictSnapshotId(value.snapshotId)) {
+    errors.push("code-file-deletion fact.snapshotId must be null or a strict lsnap hex snapshot id");
+  }
+  let beforeOid: QualifiedOid | null = null;
+  if (value.beforeTree !== null) {
+    const checked = validateQualifiedOid(value.beforeTree);
+    if (!checked.ok) errors.push(...checked.errors.map((e) => `code-file-deletion fact.beforeTree: ${e}`));
+    else beforeOid = value.beforeTree as QualifiedOid;
+  }
+  let afterOid: QualifiedOid | null = null;
+  if (value.afterTree !== null) {
+    const checked = validateQualifiedOid(value.afterTree);
+    if (!checked.ok) errors.push(...checked.errors.map((e) => `code-file-deletion fact.afterTree: ${e}`));
+    else afterOid = value.afterTree as QualifiedOid;
+  }
+  if (beforeOid !== null && afterOid !== null) {
+    if (beforeOid.algorithm !== afterOid.algorithm) {
+      errors.push(`code-file-deletion fact.afterTree.algorithm must match ${beforeOid.algorithm}`);
+    } else if (beforeOid.oid === afterOid.oid) {
+      errors.push("code-file-deletion fact.afterTree must differ from beforeTree");
+    }
+  }
+  if (value.afterTree === null && value.snapshotId === null) {
+    errors.push("code-file-deletion fact requires afterTree or snapshotId");
+  }
+  if (value.beforeTree === null && value.snapshotId === null) {
+    errors.push("code-file-deletion fact requires beforeTree or snapshotId");
+  }
+  if (!isCanonicalRelativePathBytes(value.path)) {
+    errors.push("code-file-deletion fact.path must be non-empty NUL-free canonical relative raw path bytes");
+  }
+  if (!isNonEmptySafeText(value.language)) errors.push("code-file-deletion fact.language must be a non-empty string without NUL");
+  if (!isHex64String(value.beforeContentHash)) {
+    errors.push("code-file-deletion fact.beforeContentHash must be a 64 character lowercase hex digest");
+  }
+  if (!isHex64String(value.beforeTopologyHash)) {
+    errors.push("code-file-deletion fact.beforeTopologyHash must be a 64 character lowercase hex digest");
+  }
+  for (const field of ["invalidatedSymbolIds", "invalidatedSlots"] as const) {
+    const list = value[field];
+    if (!Array.isArray(list)) {
+      errors.push(`code-file-deletion fact.${field} must be an array`);
+    } else {
+      const seen = new Set<string>();
+      list.forEach((entry: unknown, idx: number) => {
+        if (!isNonEmptySafeText(entry)) {
+          errors.push(`code-file-deletion fact.${field}[${idx}] must be a non-empty string without NUL`);
+        } else if (seen.has(entry)) {
+          errors.push(`code-file-deletion fact.${field}[${idx}] must be unique`);
+        } else {
+          seen.add(entry);
+        }
+      });
+    }
+  }
+  if (
+    Array.isArray(value.invalidatedSymbolIds) &&
+    Array.isArray(value.invalidatedSlots) &&
+    value.invalidatedSymbolIds.length !== value.invalidatedSlots.length
+  ) {
+    errors.push("code-file-deletion fact.invalidatedSymbolIds and invalidatedSlots must have equal length");
+  }
+  validateCodeUnresolvedList(value.unresolved, "code-file-deletion fact", errors);
+  if (!isVersionString(value.extractorVersion)) errors.push("code-file-deletion fact.extractorVersion must be a non-empty version string");
+  if (!isVersionString(value.resolverVersion)) errors.push("code-file-deletion fact.resolverVersion must be a non-empty version string");
+  if (!isBatchPolicyVersion(value.policyVersion)) {
+    errors.push(`code-file-deletion fact.policyVersion must be one of ${BATCH_POLICY_VERSIONS.join(", ")}`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
 export function validateCodeAnalysisFact(value: unknown): ValidationResult {
   if (!isRecord(value)) return { ok: false, errors: ["code-analysis fact must be an object"] };
   const errors: string[] = [];
@@ -4341,24 +4489,7 @@ export function validateCodeAnalysisFact(value: unknown): ValidationResult {
       if (!isVersionString(rel.resolverVersion)) errors.push(`${path}.resolverVersion must be a non-empty version string`);
     });
   }
-  if (!Array.isArray(value.unresolved)) {
-    errors.push("code-analysis fact.unresolved must be an array");
-  } else {
-    value.unresolved.forEach((item: unknown, idx: number) => {
-      const path = `code-analysis fact.unresolved[${idx}]`;
-      if (!isRecord(item)) {
-        errors.push(`${path} must be an object`);
-        return;
-      }
-      rejectUnknownKeys(item, CODE_UNRESOLVED_FACT_KEYS, path, errors);
-      if (!isInList(item.unresolvedKind, CODE_UNRESOLVED_KINDS)) {
-        errors.push(`${path}.unresolvedKind must be one of ${CODE_UNRESOLVED_KINDS.join(", ")}`);
-      }
-      if (!isNonEmptySafeText(item.name)) errors.push(`${path}.name must be a non-empty string without NUL`);
-      if (!isNonEmptySafeText(item.fromSymbolId)) errors.push(`${path}.fromSymbolId must be a non-empty string without NUL`);
-      if (!isNonEmptySafeText(item.reason)) errors.push(`${path}.reason must be a non-empty string without NUL`);
-    });
-  }
+  validateCodeUnresolvedList(value.unresolved, "code-analysis fact", errors);
   return { ok: errors.length === 0, errors };
 }
 
@@ -4766,6 +4897,8 @@ export function validateLiveFact(fact: unknown): ValidationResult {
       return validateCodeAnalysisFact(fact);
     case "code-relation":
       return validateCodeRelationFact(fact);
+    case "code-file-deletion":
+      return validateCodeFileDeletionFact(fact);
     case "line-attribution":
       return validateLineAttributionFact(fact);
     case "symbol-correspondence":
