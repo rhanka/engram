@@ -38,10 +38,22 @@ interface EventBody extends SessionFrontWrite {
   readonly citation?: SessionFrontCitationV1;
 }
 
+export interface SessionFrontWatermarkNeutralV1 {
+  readonly queryId: string;
+  readonly queryVersion: number;
+  readonly cursor: Cursor;
+}
+
+export interface SessionFrontContextRecordV1 {
+  readonly request: Readonly<Record<string, unknown>>;
+  readonly answeredWatermark: SessionFrontWatermarkNeutralV1;
+}
+
 export interface SessionFrontEventInputV1 extends EventBody {
   readonly text?: string;
   readonly truncatedInProjection?: boolean;
   readonly queueExtraction: boolean;
+  readonly contextRequest?: Readonly<Record<string, unknown>>;
 }
 
 export type SessionFrontDeliveryV1 =
@@ -57,6 +69,7 @@ export interface SessionFrontEventReceiptV1 {
   readonly delivery: SessionFrontDeliveryV1;
   readonly roleAnalysisQueued: boolean;
   readonly extractionSweepScheduled: boolean;
+  readonly contextRecord?: SessionFrontContextRecordV1;
   readonly transactionReceiptDigest: Digest;
 }
 
@@ -83,6 +96,7 @@ export interface SessionFrontExtractionReceiptV1 {
   }[];
   readonly d7BlockedKeys: readonly string[];
   readonly sourceDispositions: Readonly<Record<string, TerminalDisposition>>;
+  readonly annotatedThroughOrdinal?: number;
   readonly transactionReceiptDigest: Digest;
 }
 
@@ -102,6 +116,7 @@ type EventCommit = CommitIdentity & {
   };
   /** Advance the scope's session/branch high-water mark using max in the same commit. */
   readonly ordinal?: { readonly sessionId: string; readonly branchEpoch: number; readonly throughOrdinal: number };
+  readonly contextRecord?: SessionFrontContextRecordV1;
   readonly receipt: SessionFrontEventReceiptV1;
 };
 
@@ -123,6 +138,9 @@ export interface SessionFrontTransactionV1 {
   readEvent(eventRecordId: string): Promise<{
     readonly scope: SessionFrontScopeV1;
     readonly disposition: SessionFrontDispositionV1;
+    readonly ordinal?: number;
+    readonly sessionRef?: string;
+    readonly contextRecord?: SessionFrontContextRecordV1;
   } | undefined>;
   /**
    * Stage a canonical commit. The same write includes the replay receipt, source disposition updates,
@@ -205,9 +223,54 @@ function checkCursor(tx: SessionFrontTransactionV1): Result<never> | undefined {
   return undefined;
 }
 
+function isPlainRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  return Object.getOwnPropertySymbols(value).length === 0;
+}
+
+function parseContextQuery(
+  value: unknown,
+): { readonly queryId: string; readonly queryVersion: number } | undefined {
+  try {
+    if (!isPlainRecord(value)) return undefined;
+    let queryId: unknown;
+    let queryVersion: unknown;
+    let hasQueryId = false;
+    let hasQueryVersion = false;
+    for (const key of Object.getOwnPropertyNames(value)) {
+      if (key === "__proto__") return undefined;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) return undefined;
+      if (key === "queryId") {
+        queryId = descriptor.value;
+        hasQueryId = true;
+      } else if (key === "queryVersion") {
+        queryVersion = descriptor.value;
+        hasQueryVersion = true;
+      } else {
+        return undefined;
+      }
+    }
+    if (!hasQueryId || !hasQueryVersion) return undefined;
+    if (typeof queryId !== "string" || queryId.length === 0) return undefined;
+    if (typeof queryVersion !== "number" || !Number.isSafeInteger(queryVersion) || queryVersion < 1) {
+      return undefined;
+    }
+    return { queryId, queryVersion };
+  } catch {
+    return undefined;
+  }
+}
+
 export function createSessionFrontEngineV1(store: SessionFrontStoreV1) {
   return {
-    async recordEvent(input: SessionFrontEventInputV1, delivery: SessionFrontDeliveryV1): Promise<Result<SessionFrontEventReceiptV1>> {
+    async recordEvent(
+      input: SessionFrontEventInputV1,
+      delivery: SessionFrontDeliveryV1,
+      contextQuery?: { readonly queryId: string; readonly queryVersion: number },
+    ): Promise<Result<SessionFrontEventReceiptV1>> {
       let cleaned: SessionFrontEventInputV1;
       let inputDigest: Digest;
       try {
@@ -224,7 +287,18 @@ export function createSessionFrontEngineV1(store: SessionFrontStoreV1) {
         }
         throw error;
       }
-      const { text, truncatedInProjection, queueExtraction, ...event } = cleaned;
+      const { text, truncatedInProjection, queueExtraction, contextRequest, ...event } = cleaned;
+      if (contextRequest !== undefined && !isPlainRecord(contextRequest)) {
+        return refuse("INVALID_SCHEMA", "A context request must be a plain object.");
+      }
+      const validatedQuery =
+        contextQuery === undefined ? undefined : parseContextQuery(contextQuery);
+      if (contextQuery !== undefined && validatedQuery === undefined) {
+        return refuse("INVALID_SCHEMA", "A context query reference is invalid.");
+      }
+      if (contextRequest !== undefined && validatedQuery === undefined) {
+        return refuse("INVALID_SCHEMA", "A context request requires a query reference.");
+      }
       const committedText = event.citation && text !== undefined ? {
         ...boundedText(text), citation: event.citation,
       } : undefined;
@@ -262,7 +336,22 @@ export function createSessionFrontEngineV1(store: SessionFrontStoreV1) {
           }
           return { ok: true, value: { ...previous.receipt, status: "duplicate_exact" } };
         }
-        const recordDigest = receiptDigest("raw-event", { event: { ...event, payload: digestPayload }, ...(turnText && { turnText }) });
+        const contextRecord =
+          contextRequest !== undefined && validatedQuery !== undefined
+            ? {
+                request: contextRequest,
+                answeredWatermark: {
+                  queryId: validatedQuery.queryId,
+                  queryVersion: validatedQuery.queryVersion,
+                  cursor: tx.cursor,
+                },
+              }
+            : undefined;
+        const recordDigest = receiptDigest("raw-event", {
+          event: { ...event, payload: digestPayload },
+          ...(turnText && { turnText }),
+          ...(contextRequest !== undefined && { contextRequest }),
+        });
         const body = {
           status: "recorded" as const,
           eventRecordId: recordIdentity("raw_", recordDigest),
@@ -272,12 +361,19 @@ export function createSessionFrontEngineV1(store: SessionFrontStoreV1) {
           delivery,
           roleAnalysisQueued: event.assignmentDigest === null,
           extractionSweepScheduled: queueExtraction,
+          ...(contextRecord && { contextRecord }),
         };
         const receipt = { ...body, transactionReceiptDigest: receiptDigest("session-event-commit", body) };
         await tx.write({
-          kind: "event", scope, idempotencyKey, inputDigest,
-          event: { ...event, payload: commitPayload }, receipt,
-          ...(turnText && { turnText }), ...(ordinal && { ordinal }),
+          kind: "event",
+          scope,
+          idempotencyKey,
+          inputDigest,
+          event: { ...event, payload: commitPayload },
+          receipt,
+          ...(turnText && { turnText }),
+          ...(ordinal && { ordinal }),
+          ...(contextRecord && { contextRecord }),
         });
         return { ok: true, value: receipt };
       });
@@ -312,11 +408,20 @@ export function createSessionFrontEngineV1(store: SessionFrontStoreV1) {
         }
         const ids = new Set([...cleaned.sourceEventRecordIds, ...candidates.flatMap((candidate) => candidate.sourceEventRecordIds)]);
         const sources = new Map<string, TerminalDisposition>();
+        let maxOrdinal: number | undefined;
         for (const id of ids) {
           const record = await tx.readEvent(id);
           if (!record) return refuse("NOT_FOUND", "An extraction source is not committed.");
           if (record.scope.tenantId !== scope.tenantId || record.scope.workspaceId !== scope.workspaceId) {
             return refuse("UNAUTHORIZED", "An extraction source is outside the authorized scope.");
+          }
+          if (
+            (record.sessionRef === undefined || record.sessionRef === extraction.sessionRef) &&
+            typeof record.ordinal === "number" &&
+            Number.isSafeInteger(record.ordinal) &&
+            record.ordinal >= 0
+          ) {
+            maxOrdinal = maxOrdinal === undefined ? record.ordinal : Math.max(maxOrdinal, record.ordinal);
           }
           sources.set(id, record.disposition === "pending_extraction" ? "empty_verified" : record.disposition);
         }
@@ -353,6 +458,7 @@ export function createSessionFrontEngineV1(store: SessionFrontStoreV1) {
           outcomes,
           d7BlockedKeys,
           sourceDispositions: Object.fromEntries(sources),
+          ...(maxOrdinal !== undefined && { annotatedThroughOrdinal: maxOrdinal }),
         };
         const receipt = { ...body, transactionReceiptDigest: receiptDigest("session-extraction-commit", body) };
         await tx.write({ kind: "extraction", scope, idempotencyKey, inputDigest, extraction, candidates: allowed, receipt });
