@@ -165,7 +165,7 @@ describe("scrap mesh host", () => {
   it("rejects a catalog alias whose provider has no seat executor in this host", async () => {
     const seen = { plans: 0 };
     const { createScrapMeshClient } = await import("../src/scrap/mesh-host.js");
-    await expect(createScrapMeshClient("claude-sonnet-5", {
+    await expect(createScrapMeshClient("command-a-03-2025", {
       facade: fakeFacade("ok", seen),
       adapterClients: { gemini: stubClient() } as any,
       ownerScopes: ["owner:test"],
@@ -255,7 +255,7 @@ describe("scrap mesh host", () => {
     const bare = mkdtempSync(join(tmpdir(), "scmesh-bare-"));
     writeFileSync(join(bare, "mission.json"), JSON.stringify({ fields: ["f"], instruction: "Extract." }));
     await expect(runExtract({ out: bare, mission: join(bare, "mission.json"), model: "mesh:luna-9" })).rejects.toThrow(/unknown mesh alias/);
-    await expect(runExtract({ out: bare, mission: join(bare, "mission.json"), model: "mesh:claude-sonnet-5" })).rejects.toThrow(/no seat executor/);
+    await expect(runExtract({ out: bare, mission: join(bare, "mission.json"), model: "mesh:command-a-03-2025" })).rejects.toThrow(/no seat executor/);
     expect(isExtractUsageError(new Error("scrap extract: no seat executor for X"))).toBe(true);
     expect(seen.plans).toBeGreaterThan(0);
   });
@@ -334,7 +334,7 @@ describe("scrap mesh host", () => {
     }
     const { d } = twoOut();
     expect(await cli(["scrap", "extract", "--out", d, "--mission", join(d, "mission.json"), "--model", "mesh:luna-9"], d)).toBe(2);
-    expect(await cli(["scrap", "extract", "--out", d, "--mission", join(d, "mission.json"), "--model", "mesh:claude-sonnet-5"], d)).toBe(2);
+    expect(await cli(["scrap", "extract", "--out", d, "--mission", join(d, "mission.json"), "--model", "mesh:command-a-03-2025"], d)).toBe(2);
   });
 
   it("leaves the direct path unchanged (no mesh receipt, injected client used)", async () => {

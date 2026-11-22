@@ -21,7 +21,7 @@ export interface MeshClientDeps {
 // Usage errors the CLI maps to exit 2 (bad invocation, unknown model, no
 // credentials, no mesh seat): raised before any provider request is made.
 export function isExtractUsageError(e: unknown): boolean {
-  return /cannot infer provider|missing credentials|unknown mesh alias|no usable mesh seat|no seat executor|invalid mission/.test(String(e));
+  return /cannot infer provider|missing credentials|unknown mesh alias|no usable mesh seat|no seat executor|cross-family alias routing|claude CLI probe|invalid mission/.test(String(e));
 }
 type FieldSpec = { name: string; kind: "scalar" | "record"; maxValues: number; subFields?: RecordSubField[] };
 type TokenCounts = { input: number; output: number; reasoning: number; total: number };
@@ -103,7 +103,7 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
   const specs = specsOf(mission), names = specs.map((f) => f.name);
   const meshAlias = oc.model.startsWith("mesh:") ? oc.model.slice("mesh:".length) : null;
   const pm = meshAlias === null ? providerOf(oc.model) : null;
-  if (meshAlias !== null && !client && !deps?.createMeshClient) await import("./mesh-host.js").then((m) => m.resolveMeshAlias(meshAlias));
+  if (meshAlias !== null && !client && !deps?.createMeshClient) await import("./mesh-host.js").then((m) => m.preflightMeshAlias(meshAlias));
   // char budget (UTF-16 code units, not tokens): slice keeps prompts bounded without a tokenizer.
   const cap = oc.tokenCap ?? mission.tokenCap ?? 24000;
   const latest = new Map<string, { status: string; pages?: { sha256: string }[]; id: string; url: string }>();
@@ -128,17 +128,23 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
   const winMin = rawWin !== undefined && Math.floor(rawWin) >= 1 ? Math.floor(rawWin) : 60;
   const winMs = winMin * 60_000, clock = deps?.now ?? Date.now;
   const windows = new Map<number, WindowBucket>(), callsByModel: Record<string, number> = {};
-  let totApi = 0, apiKnown = pt !== null, okCount = 0, failCount = 0, callsTotal = 0;
+  let totApi = 0, apiKnown = pt !== null, okCount = 0, failCount = 0, callsTotal = 0, routedMismatchCount = 0;
   let lastSeatQuota: Record<string, unknown> | undefined, summarized = false;
   let defaultProv = pm?.provider ?? "mesh", defaultMod = pm?.name ?? meshAlias!;
-  const recordCall = (src?: unknown, attemptsOnly = false): number => {
+  let resolvedMesh: { provider: string; model: string } | undefined;
+  let curMismatch: { resolved: { provider: string; model: string }; routed: { provider: string; model: string } } | undefined;
+  const recordCall = (src?: unknown, mode: "ok" | "err" | "attempts" = "err"): number => {
     const a = isObj(src) ? (isObj(src.audit) ? src.audit : src) : undefined;
     const attempts = getMeshErrorAttempts(src) ?? (Array.isArray(a?.attempts) ? a.attempts : undefined);
-    const items = attempts ?? (attemptsOnly || isRoutePlanError(src) ? [] : [a]);
+    const items = attempts && (attempts.length > 0 || mode !== "ok") ? attempts : (mode === "attempts" || isRoutePlanError(src) ? [] : [a]);
     let n = 0;
     for (const it of items) {
-      if (attempts && !isObj(it)) continue;
-      const o = isObj(it) ? it : undefined, key = `${str(o?.providerId) ?? str(o?.provider) ?? defaultProv}/${str(o?.modelId) ?? str(o?.model) ?? defaultMod}`;
+      if (items === attempts && !isObj(it)) continue;
+      const o = isObj(it) ? it : undefined, p = str(o?.providerId) ?? str(o?.provider) ?? defaultProv, m = str(o?.modelId) ?? str(o?.model) ?? defaultMod, key = `${p}/${m}`;
+      if (resolvedMesh && (p !== resolvedMesh.provider || m !== resolvedMesh.model)) {
+        routedMismatchCount++;
+        curMismatch = { resolved: resolvedMesh, routed: { provider: p, model: m } };
+      }
       const startMs = Math.floor(clock() / winMs) * winMs;
       let b = windows.get(startMs);
       if (!b) { b = { startMs, endMs: startMs + winMs, calls: 0, byModel: {} }; windows.set(startMs, b); }
@@ -153,11 +159,11 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
       window_start: isoZ(b.startMs), window_end: isoZ(b.endMs), calls: b.calls, by_model: sortRec(b.byModel),
     }));
     const winStr = calls_by_window.map((w) => `${w.window_start}=${w.calls}(${Object.entries(w.by_model).map(([k, v]) => `${k}:${v}`).join(";")})`).join(",");
-    console.log(`scrap extract summary: ok=${okCount} failed=${failCount} tokens=in:${tot.input},out:${tot.output},reasoning:${tot.reasoning},total:${tot.total} api_equivalent=${apiKnown ? totApi.toFixed(6) : "unknown"} calls=${callsTotal}${winStr ? ` windows=${winStr}` : ""}`);
+    console.log(`scrap extract summary: ok=${okCount} failed=${failCount} tokens=in:${tot.input},out:${tot.output},reasoning:${tot.reasoning},total:${tot.total} api_equivalent=${apiKnown ? totApi.toFixed(6) : "unknown"} calls=${callsTotal}${winStr ? ` windows=${winStr}` : ""}${routedMismatchCount > 0 ? ` routed_mismatches=${routedMismatchCount}` : ""}`);
     if (callsTotal > 0) {
       const sum = {
         type: "summary", mission_digest: createHash("sha256").update(missionRaw).digest("hex"), ok: okCount, failed: failCount, calls_total: callsTotal, calls_window_minutes: winMin,
-        calls_by_window, calls_by_model: sortRec(callsByModel), tokens: { ...tot },
+        calls_by_window, calls_by_model: sortRec(callsByModel), routed_mismatches: routedMismatchCount, tokens: { ...tot },
         cost: { api_equivalent: apiKnown ? Number(totApi.toFixed(9)) : "unknown", seat_quota: lastSeatQuota ?? "unknown" },
       };
       try { appendFileSync(resPath, `${JSON.stringify(sum)}\n`, "utf-8"); }
@@ -176,6 +182,7 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
     cli = meshRes.client; effort = meshRes.effort;
     if (str(meshRes.provider)) defaultProv = meshRes.provider!;
     if (str(meshRes.model)) defaultMod = meshRes.model!;
+    if (str(meshRes.provider) && str(meshRes.model)) resolvedMesh = { provider: meshRes.provider!, model: meshRes.model! };
   } else {
     const envs = directProviderCredentialEnv(pm!.provider);
     if (!envs.some((e) => process.env[e]?.trim())) throw new Error(`scrap extract: missing credentials for ${pm!.provider} (missing_credentials); set one of ${envs.join(", ")} before any request`);
@@ -195,10 +202,12 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
   const fail = (s: { id: string; url: string }, code: ExtractErrorCode, msg: string): void => {
     failCount++;
     console.error(`scrap extract: ${s.id} ${code}: ${msg}`);
-    try { appendFileSync(resPath, `${JSON.stringify({ id: s.id, url: s.url, error: code, error_detail: msg, fields: null })}\n`, "utf-8"); }
+    const mm = curMismatch ? { routed_mismatch: true, resolved: curMismatch.resolved, routed: curMismatch.routed } : {};
+    try { appendFileSync(resPath, `${JSON.stringify({ id: s.id, url: s.url, error: code, error_detail: msg, fields: null, ...mm })}\n`, "utf-8"); }
     catch (e) { console.error(`scrap extract: ${s.id} write_error: cannot append row: ${e instanceof Error ? e.message : String(e)}`); }
   };
   for (const s of todo) {
+    curMismatch = undefined;
     let texts: { sha: string; text: string }[];
     try {
       texts = ((s as { pages?: { sha256: string }[] }).pages ?? []).map((p) => ({ sha: p.sha256, text: textOf(readFileSync(join(oc.out, "snapshots", `${p.sha256}.html`), "utf-8")) }));
@@ -214,7 +223,7 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
         res = await cli.generateJson({ schema: "scrap-extract", prompt: curPrompt, maxOutputTokens, validateResponse: (t) => { rawText = t; } });
       } catch (e) {
         const ea = isObj(e) && isObj(e.audit) ? e.audit : undefined;
-        if (isSeatAcquisitionError(e)) { if (recordCall(e, true) > 0) lastSeatQuota = isObj(ea?.quota) ? ea.quota : undefined; if (callsTotal > 0) finish(); throw e; }
+        if (isSeatAcquisitionError(e)) { if (recordCall(e, "attempts") > 0) lastSeatQuota = isObj(ea?.quota) ? ea.quota : undefined; if (callsTotal > 0) finish(); throw e; }
         const eu = ea ? ea.usage : (isObj(e) ? e.usage : undefined);
         if (eu !== undefined) { recordUsage(eu); mergedUsage = mergeUsage(mergedUsage, eu); }
         const m = e instanceof Error ? e.message : String(e);
@@ -224,7 +233,7 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
         if (/not valid JSON/i.test(m) && attempt === 0) { parseErr = m; prevRaw = rawText; continue; }
         fail(s, /not valid JSON/i.test(m) ? "parse_error" : "llm_error", m); failed = true; break;
       }
-      recordCall(res);
+      recordCall(res, "ok");
       const audit = isObj(res.audit) ? res.audit : undefined, q = isObj(audit?.quota) ? audit.quota : undefined;
       recordUsage(audit?.usage); seatQuota = q; lastSeatQuota = q;
       if (audit) { lastAudit = audit; if (audit.usage !== undefined) mergedUsage = mergeUsage(mergedUsage, audit.usage); }
@@ -294,7 +303,11 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
     extra.cost = { api_equivalent: apiEq, seat_quota: seatQuota ?? "unknown" };
     if (lastAudit?.mesh === true && typeof lastAudit.providerId === "string" && typeof lastAudit.modelId === "string") {
       extra.mesh = { provider: lastAudit.providerId, model: lastAudit.modelId };
+      if (resolvedMesh && (lastAudit.providerId !== resolvedMesh.provider || lastAudit.modelId !== resolvedMesh.model)) {
+        if (!curMismatch) { routedMismatchCount++; curMismatch = { resolved: resolvedMesh, routed: { provider: lastAudit.providerId, model: lastAudit.modelId } }; }
+      }
     }
+    if (curMismatch) { extra.routed_mismatch = true; extra.resolved = curMismatch.resolved; extra.routed = curMismatch.routed; }
     try { appendFileSync(resPath, `${JSON.stringify({ id: s.id, url: s.url, fields, ...extra })}\n`, "utf-8"); okCount++; }
     catch (e) { failCount++; console.error(`scrap extract: ${s.id} write_error: cannot append row: ${e instanceof Error ? e.message : String(e)}`); }
   }
