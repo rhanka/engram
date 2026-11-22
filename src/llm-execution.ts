@@ -537,8 +537,11 @@ export function createDirectTextJsonClient(options: DirectTextJsonClientOptions)
           input.prompt,
         ].join("\n"),
       });
-      const parsed = parseJsonFromLlmText(result.text);
       if (input.validateResponse) await input.validateResponse(result.text);
+      const uEntries = result.usage && typeof result.usage === "object" ? Object.entries(result.usage as Record<string, unknown>).filter(([, v]) => typeof v === "number" && Number.isFinite(v)) : [];
+      const usage = uEntries.length > 0 ? Object.fromEntries(uEntries) : undefined;
+      let parsed: unknown;
+      try { parsed = parseJsonFromLlmText(result.text); } catch (err) { throw err instanceof Error && usage ? Object.assign(err, { usage }) : err; }
       if (input.outputPath) {
         mkdirSync(dirname(input.outputPath), { recursive: true });
         writeFileSync(input.outputPath, JSON.stringify(parsed, null, 2), "utf-8");
@@ -549,14 +552,7 @@ export function createDirectTextJsonClient(options: DirectTextJsonClientOptions)
         mode: "direct",
         model,
         outputPath: input.outputPath,
-        audit: redactSecrets({
-          provider,
-          mode: "direct",
-          model,
-          schema: input.schema,
-          finishReason: result.finishReason,
-          usage: result.usage,
-        }),
+        audit: { ...redactSecrets({ provider, mode: "direct", model, schema: input.schema, finishReason: result.finishReason }), ...(usage ? { usage } : {}) },
       };
     },
   };

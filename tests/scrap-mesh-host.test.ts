@@ -210,7 +210,7 @@ describe("scrap mesh host", () => {
     expect(ok.filter((r: any) => r.id === "a1").length).toBe(1);
   });
 
-  it("records error_detail on failed rows and retries them on resume", async () => {
+  it("records error_detail on failed rows, skips them on plain resume, and retries them with --retry-failed", async () => {
     const { d } = twoOut();
     const boom = {
       createMeshClient: async () => ({
@@ -229,6 +229,9 @@ describe("scrap mesh host", () => {
     expect(rows[1]).toMatchObject({ id: "a2", error: "llm_error", error_detail: expect.stringContaining("provider exploded") });
     const seen = { plans: 0 };
     await runExtract({ out: d, mission: join(d, "mission.json"), model: "mesh:gemini-4-hydrogen-high" }, undefined, meshDeps("ok", seen));
+    expect(seen.plans).toBe(0);
+    expect(lines(d).length).toBe(2);
+    await runExtract({ out: d, mission: join(d, "mission.json"), model: "mesh:gemini-4-hydrogen-high", retryFailed: true }, undefined, meshDeps("ok", seen));
     expect(lines(d).filter((r: any) => !r.error).map((r: any) => r.id).sort()).toEqual(["a1", "a2"]);
   });
 

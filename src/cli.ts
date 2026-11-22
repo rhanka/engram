@@ -6152,10 +6152,10 @@ export async function main(): Promise<void> {
     const { runCapture } = await import("./scrap/capture.js");
     await runCapture({ input: o.input, out: o.out, robots: o.robots, concurrency: n, retryFailed: o.retryFailed === true });
   });
-  scrap.command("extract").option("--out <dir>").option("--mission <file>").option("--model <id>", "model id or provider:model (e.g. openai:gpt-5-mini)").action(async (o) => {
-    if (!o.out || !o.mission || !o.model) { console.error("usage: engram scrap extract --out DIR --mission FILE --model ID"); process.exit(2); }
+  scrap.command("extract").option("--out <dir>").option("--mission <file>").option("--model <id>", "model id or provider:model (e.g. openai:gpt-5-mini)").option("--retry-failed").action(async (o) => {
+    if (!o.out || !o.mission || !o.model) { console.error("usage: engram scrap extract --out DIR --mission FILE --model ID [--retry-failed]"); process.exit(2); }
     const { runExtract, isExtractUsageError } = await import("./scrap/extract.js");
-    try { await runExtract({ out: o.out, mission: o.mission, model: o.model }); }
+    try { await runExtract({ out: o.out, mission: o.mission, model: o.model, retryFailed: o.retryFailed === true }); }
     catch (e) { if (isExtractUsageError(e)) { console.error(String(e)); process.exit(2); } throw e; }
   });
 
