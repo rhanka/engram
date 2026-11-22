@@ -4,7 +4,7 @@ import { extname, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { toJsonValue } from "./json-value.js";
 import type { Sha256Digest } from "./metamodel-contracts.js";
-import { DATA_MODEL_FORMAT } from "./model-schemas.js";
+import { DATA_MODEL_FORMAT, type ModelAttribute, validateModelAttributes, validateModelEnums } from "./model-schemas.js";
 import { canonicalBytes, digestOfPreimage } from "./ontology-guardian/canonical.js";
 import { fromInternalDigest, semanticProfileDigest, stableForHash } from "./ontology-guardian/digests.js";
 import { isRecord, validateRelationCardinality } from "./profile-validate.js";
@@ -123,7 +123,17 @@ function normalizeNodeType(
   nodeType: OntologyNodeType,
   sourcePath: string | undefined,
   nodeTypeId: string,
+  hasDataModel: boolean,
 ): NormalizedOntologyNodeType {
+  if (hasDataModel && Array.isArray(nodeType.attributes)) {
+    nodeType = {
+      ...nodeType,
+      attributes: nodeType.attributes.map((attribute) => ({
+        ...attribute,
+        type: Object.fromEntries(Object.entries(attribute.type).filter(([, value]) => value !== undefined)) as ModelAttribute["type"],
+      })),
+    };
+  }
   if (nodeType.linking === undefined) {
     const { linking: _linking, ...withoutLinking } = nodeType;
     return withoutLinking;
@@ -343,6 +353,13 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
   const knownRelationTypes = new Set(Object.keys(relationTypes));
   const knownRegistries = new Set(Object.keys(registries));
   const knownStatuses = new Set(hardening.statuses);
+  const model = profile.data_model;
+  if (model !== undefined && model.format === DATA_MODEL_FORMAT) {
+    errors.push(...validateModelEnums(model.enums, "data_model.enums"));
+    for (const [nodeTypeId, nodeType] of Object.entries(nodeTypes)) {
+      errors.push(...validateModelAttributes(nodeType.attributes, Object.assign(Object.create(null), model.enums), `node_types.${nodeTypeId}.attributes`));
+    }
+  }
 
   if (typeof profile.id !== "string" || profile.id.trim().length === 0) {
     errors.push("id is required");
@@ -633,7 +650,7 @@ function buildRuntimeProfile(profile: OntologyProfile, sourcePath?: string, auth
     default_language: profile.default_language ?? "en",
     ...(sourcePath ? { sourcePath: resolve(sourcePath) } : profile.sourcePath ? { sourcePath: profile.sourcePath } : {}),
     node_types: Object.fromEntries(
-      Object.entries(nodeTypes).map(([id, nodeType]) => [id, normalizeNodeType(nodeType, sourcePath ?? profile.sourcePath, id)]),
+      Object.entries(nodeTypes).map(([id, nodeType]) => [id, normalizeNodeType(nodeType, sourcePath ?? profile.sourcePath, id, data_model !== undefined)]),
     ),
     relation_types: Object.fromEntries(
       Object.entries(relationTypes).map(([id, relation]) => [id, {
