@@ -702,3 +702,8 @@ export interface SessionContextRequestV1 { readonly held?: SessionContextWaterma
 export interface SessionContextItemRefV1 { readonly ref: string; readonly digest: Sha256Digest; readonly slice: RawSessionEventReceipt["readySlices"][number]; readonly change: "added" | "withdrawn"; readonly disclosure: "text" | "reference"; readonly authoredBy: "code" | "shadow" | "main_model" | "dreaming"; readonly authorModelRef?: string; readonly sourceEventRecordIds: readonly string[]; }
 export interface SessionContextDeliveryV1 { readonly mode: "diff" | "full"; readonly watermark: SessionContextWatermarkV1; readonly queryDigest: Sha256Digest; readonly byteLength: number; readonly items: readonly SessionContextItemRefV1[]; readonly annotatedThroughOrdinal?: number; readonly overflow?: "pinned_request_over_ceiling"; }
 export interface SessionContextPolicyV1 { readonly journalEnabled: boolean; readonly maxSelectors: number; readonly viewMaxTokens: number; readonly rebuildAtTokens: number; }
+
+// ── Block A (SJ-6a): amendment author, amendment, gate verdict.
+export interface SessionContextAmendmentAuthorV1 { readonly by: "agent" | "shadow"; readonly authorModelRef?: string; readonly sourceEventRecordIds: readonly string[]; readonly basedOnVersion: number; }
+export type SessionContextAmendmentV1 = (SessionContextAmendmentAuthorV1 & { readonly op: "keep"; readonly match: Exclude<SessionContextSelectorMatchV1, { readonly kind: "withheld" }>; }) | (SessionContextAmendmentAuthorV1 & { readonly op: "drop"; readonly selectorId: string; });
+export interface SessionContextGateVerdictV1 { readonly selectorId: string; readonly verdict: "accepted" | "no_change" | "refused"; readonly reason?: string; }
