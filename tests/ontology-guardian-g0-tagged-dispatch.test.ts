@@ -40,16 +40,18 @@ it.each([
   if (projection) expect(projection).not.toHaveBeenCalledWith(expect.not.objectContaining({ presentation_hash: "mixed" }));
 });
 
+const enumFree: any = structuredClone(example);
+for (const node of Object.values(enumFree.node_types) as any[]) node.attributes = node.attributes.filter((attribute: any) => !("enumRef" in attribute.type));
 it.each([{}, { enums: undefined }])("accepts an exact major-2 triple and omits undefined enums (%#)", (enums) => {
   const data_model = { format: example.data_model.format, ...enums };
-  const normalized = normalizeOntologyProfile(parseOntologyProfile({ ...example, version: "2.0.0", data_model }));
+  const normalized = normalizeOntologyProfile(parseOntologyProfile({ ...enumFree, version: "2.0.0", data_model }));
   expect(normalized.data_model).toStrictEqual({ format: data_model.format });
   expect(normalized.data_model).not.toBe(data_model);
 });
 
 const untagged = { ...example, data_model: undefined };
 it.each([
-  [example, { ...example, data_model: { ...example.data_model, enums: { locale: example.data_model.enums.locale } } }],
+  [example, { ...example, data_model: { ...example.data_model, enums: { ...example.data_model.enums, extra: example.data_model.enums.locale } } }],
   [example, untagged],
   [untagged, example],
 ])("fails closed on data_model change %#", (before, after) => {

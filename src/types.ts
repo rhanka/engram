@@ -1,5 +1,5 @@
 import type { MetamodelVersion, Sha256Digest } from "./metamodel-contracts.js";
-import type { ModelHeader } from "./model-schemas.js";
+import type { ModelAttribute, ModelHeader } from "./model-schemas.js";
 
 /** File type classification for corpus files. */
 export enum FileType {
@@ -862,6 +862,7 @@ export interface OntologyNodeType {
   source_backed?: boolean;
   status_policy?: string;
   linking?: OntologyNodeTypeLinking;
+  attributes?: readonly ModelAttribute[];
   /**
    * Per-node-type visual encoding override consumed by the static studio scene
    * builder (`studio-scene.ts`): `shape` / `fill` / `border` drive the glyph.
@@ -873,6 +874,7 @@ export interface OntologyNodeType {
 /** Node-type configuration after the L3 linking contract has been compiled. */
 export interface NormalizedOntologyNodeType extends Omit<OntologyNodeType, "linking"> {
   linking?: NormalizedOntologyNodeTypeLinking;
+  attributes?: readonly ModelAttribute[];
 }
 
 export interface OntologyCardinalityBound {

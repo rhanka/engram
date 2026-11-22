@@ -5,6 +5,7 @@
 // validation stays DS execution (U-QUAL).
 import { sha256Hex } from "./canonical.js";
 import { canonicalBytes } from "./canonical.js";
+import { NATIVE_BOOLEAN_SCHEMA, NATIVE_DATE_SCHEMA, NATIVE_TEXT_SCHEMA } from "../model-schemas.js";
 import type { Digest, Pin } from "./types.js";
 import type { MigrationRefusalReason } from "./diagram-migrations.js";
 
@@ -156,9 +157,9 @@ const valueDefinitions = {
   ] },
 };
 const scalarSchemas: Shape[] = [
-  object({ kind: { const: "text" }, minLength: number, maxLength: number, pattern: string, patternName: string }, ["kind"]),
-  object({ kind: { const: "boolean" } }, ["kind"]),
-  object({ kind: { const: "date" } }, ["kind"]),
+  NATIVE_TEXT_SCHEMA,
+  NATIVE_BOOLEAN_SCHEMA,
+  NATIVE_DATE_SCHEMA,
   object({ kind: { const: "quantity" }, units: strings, integer: boolean, min: number, max: number }, ["kind", "units"]),
   object({ kind: { const: "enum" }, values: strings }, ["kind", "values"]),
   object({ kind: { const: "reference" }, refKind: choice("document", "entity", "relation", "port", "resource", "view", "occurrence"), targetTypes: strings }, ["kind", "refKind"]),
