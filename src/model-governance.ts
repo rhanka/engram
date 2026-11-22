@@ -5,13 +5,13 @@ import type { NormalizedOntologyProfile, OntologyProfile, OntologyRegistrySpec }
 export const DATA_GOVERNANCE_FORMAT = "engram.data-governance/1";
 export interface QualifiedPin { namespace: string; pin: Pin }
 export type TenantScope = { kind: "global" } | { kind: "tenant"; tenant: string; workspace?: string };
-export type PiiCategory = "identifier" | "contact" | "authentication" | "personal";
-export type ColumnGovernance = { pii: { category: "none" }; retention?: never; erasure?: never } | { pii: { category: PiiCategory }; retention: string; erasure: "delete" | "anonymize" };
+export type PiiCategory = "identifier" | "contact" | "authentication" | "personal" | "sensitive";
+export type ColumnGovernance = ({ pii: { category: "none" }; retention?: never; erasure?: never } | { pii: { category: PiiCategory }; retention: string; erasure: "delete" | "anonymize" }) & { protect?: { encrypt: true } };
 export interface Retention { from: string; days: number }
 export interface ChangeCapture { include: boolean } export interface SealedModelGovernance { readonly bytes: string; readonly byteLength: number; readonly digest: Digest; readonly pin: QualifiedPin }
 export interface StorageNeeds { tenantScope: TenantScope; columns: Record<string, ColumnGovernance>; cdc: ChangeCapture; retention?: Record<string, Retention>; physical?: { schema?: string; table?: string; columns?: Record<string, string> }; indexes?: readonly { kind: "btree" | "unique" | "gin"; fields: Names }[]; partitionBy?: Names; sortBy?: readonly { field: string; direction: "asc" | "desc" }[] }
 export interface ModelGovernance { format: typeof DATA_GOVERNANCE_FORMAT; namespace: string; id: string; version: string; profile: QualifiedPin; entities: Record<string, StorageNeeds>; relations?: Record<string, StorageNeeds> }
-const SCOPE_KINDS = new Set(["uuid", "string", "text", "int", "bigint"]), PII_CATS = new Set(["identifier", "contact", "authentication", "personal"]);
+const SCOPE_KINDS = new Set(["uuid", "string", "text", "int", "bigint"]), PII_CATS = new Set(["identifier", "contact", "authentication", "personal", "sensitive"]);
 const ERASURE = new Set(["delete", "anonymize"]), TABLE_KEYS = ["tenantScope", "columns", "retention", "cdc", "physical", "indexes", "partitionBy", "sortBy"], V2_RE = /^2(?:\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))?$/, NORM_SUF = ".linking.normalizer is not allowed";
 const SQL_ID_RE = /^[A-Za-z_][A-Za-z0-9_]*$/, INDEX_KINDS = new Set(["btree", "unique", "gin"]);
 const relEnds = (r: Record<string, unknown>, f: "source" | "target"): string[] => { const raw = r[`${f}_types`] ?? r[f]; return Array.isArray(raw) ? raw as string[] : typeof raw === "string" ? [raw] : []; };
@@ -94,13 +94,17 @@ function checkTable(row: ModelRow, t: unknown, p: string, id: string, tables: Ta
   for (const [k, c] of Object.entries(t.columns)) {
     const bk = badKey(k, `${p}.columns`), cp = `${p}.columns.${k}`; if (bk || !cols.has(k) || !isRecord(c) || !isRecord(c.pii)) { errors.push(bk ?? (!cols.has(k) ? `${cp} references unknown attribute ${k}` : !isRecord(c) ? `${cp} must be an object` : `${cp}.pii must be an object`)); continue; }
     const pEx = extraKey(c.pii, "category"), cat = c.pii.category; if (pEx !== undefined) errors.push(`${cp}.pii.${pEx} is not allowed`);
-    if (cat === "none") { for (const fk of Object.keys(c)) if (fk !== "pii") errors.push(`${cp}.${fk} is not allowed on pii category none`); }
+    if (cat === "none") { for (const fk of Object.keys(c)) if (fk !== "pii" && fk !== "protect") errors.push(`${cp}.${fk} is not allowed on pii category none`); }
     else if (typeof cat === "string" && PII_CATS.has(cat)) {
-      const cEx = extraKey(c, "pii", "retention", "erasure"); if (cEx !== undefined) errors.push(`${cp}.${cEx} is not allowed`);
+      const cEx = extraKey(c, "pii", "retention", "erasure", "protect"); if (cEx !== undefined) errors.push(`${cp}.${cEx} is not allowed`);
       if (typeof c.retention !== "string" || (retOk && !rules.has(c.retention))) errors.push(`${cp}.retention ${c.retention === undefined ? "is required" : `references unknown retention rule ${String(c.retention)}`}`);
       if (typeof c.erasure !== "string" || !ERASURE.has(c.erasure)) errors.push(`${cp}.erasure must be "delete" or "anonymize"`);
       else if (c.erasure === "delete" && typeof c.retention === "string") { const r = rules.get(c.retention); if (r) { if (!del) del = r; else if (del.from !== r.from || del.days !== r.days) errors.push(`${cp}.retention conflicts with another delete schedule on this table`); } }
-    } else errors.push(`${cp}.pii.category must be one of none, identifier, contact, authentication, personal`);
+    } else errors.push(`${cp}.pii.category must be one of none, identifier, contact, authentication, personal, sensitive`);
+    if (c.protect !== undefined) {
+      if (!isRecord(c.protect)) errors.push(`${cp}.protect must be an object`);
+      else { const ex = extraKey(c.protect, "encrypt"); if (ex !== undefined) errors.push(`${cp}.protect.${ex} is not allowed`); if (c.protect.encrypt !== true) errors.push(`${cp}.protect.encrypt must be true`); }
+    }
   }
 }
 export function validateModelGovernance(profile: OntologyProfile | NormalizedOntologyProfile, governance: unknown): string[] {
