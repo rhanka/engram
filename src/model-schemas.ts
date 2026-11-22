@@ -21,6 +21,8 @@ export type LogicalType =
   | { kind: "decimal"; precision: number; scale: number }
   | { enumRef: string };
 export interface ModelAttribute { name: string; type: LogicalType; nullable: boolean }
+export type Names = readonly [string, ...string[]];
+export interface ModelRow { attributes: readonly ModelAttribute[]; key: Names; unique?: readonly Names[] }
 type Fragment = Record<string, unknown>;
 export const NATIVE_TEXT_SCHEMA: Fragment = { type: "object", properties: { kind: { const: "text" }, minLength: { type: "number" }, maxLength: { type: "number" }, pattern: { type: "string" }, patternName: { type: "string" } }, required: ["kind"], additionalProperties: false };
 export const NATIVE_BOOLEAN_SCHEMA: Fragment = { type: "object", properties: { kind: { const: "boolean" } }, required: ["kind"], additionalProperties: false };
@@ -83,6 +85,35 @@ export function validateModelEnums(enums: unknown, path: string): string[] {
     if (values === undefined) errors.push(`${path}.${name} must be an enum domain`);
     else if (!Array.isArray(values) || values.length === 0 || values.some((value) => typeof value !== "string" || value.length === 0)) errors.push(`${path}.${name}.values must be a nonempty list of nonempty strings`);
     else if (new Set(values).size !== values.length) errors.push(`${path}.${name}.values must be distinct`);
+  }
+  return errors;
+}
+function validateTuple(tuple: unknown, cols: Map<string, boolean>, nonNull: boolean, path: string): { errors: string[]; id?: string } {
+  if (!Array.isArray(tuple) || tuple.length === 0) return { errors: [`${path} must be a nonempty tuple`] };
+  const errors: string[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < tuple.length; i++) {
+    const col = tuple[i], item = `${path}[${i}]`;
+    if (typeof col !== "string" || !cols.has(col)) errors.push(`${item} references unknown attribute ${String(col)}`);
+    else if (seen.has(col)) errors.push(`${item} duplicates attribute ${col}`);
+    else { seen.add(col); if (nonNull && cols.get(col)) errors.push(`${item} must not reference nullable attribute ${col}`); }
+  }
+  return errors.length === 0 ? { errors, id: JSON.stringify(tuple) } : { errors };
+}
+export function validateModelKeys(row: { readonly attributes: readonly ModelAttribute[]; readonly key?: unknown; readonly unique?: unknown }, path: string): string[] {
+  const cols = new Map(row.attributes.map((a) => [a.name, a.nullable]));
+  const key = validateTuple(row.key, cols, true, `${path}.key`);
+  const errors = [...key.errors];
+  const seen = new Set<string>(key.id === undefined ? [] : [key.id]);
+  if (row.unique === undefined) return errors;
+  if (!Array.isArray(row.unique)) return [...errors, `${path}.unique must be a list`];
+  for (let i = 0; i < row.unique.length; i++) {
+    const unique = validateTuple(row.unique[i], cols, false, `${path}.unique[${i}]`);
+    errors.push(...unique.errors);
+    if (unique.id !== undefined) {
+      if (seen.has(unique.id)) errors.push(`${path}.unique[${i}] duplicates an earlier key declaration`);
+      else seen.add(unique.id);
+    }
   }
   return errors;
 }

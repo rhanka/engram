@@ -1,5 +1,5 @@
 import type { MetamodelVersion, Sha256Digest } from "./metamodel-contracts.js";
-import type { ModelAttribute, ModelHeader } from "./model-schemas.js";
+import type { ModelAttribute, ModelHeader, Names } from "./model-schemas.js";
 
 /** File type classification for corpus files. */
 export enum FileType {
@@ -863,6 +863,8 @@ export interface OntologyNodeType {
   status_policy?: string;
   linking?: OntologyNodeTypeLinking;
   attributes?: readonly ModelAttribute[];
+  key?: Names;
+  unique?: readonly Names[];
   /**
    * Per-node-type visual encoding override consumed by the static studio scene
    * builder (`studio-scene.ts`): `shape` / `fill` / `border` drive the glyph.

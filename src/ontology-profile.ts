@@ -4,7 +4,7 @@ import { extname, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { toJsonValue } from "./json-value.js";
 import type { Sha256Digest } from "./metamodel-contracts.js";
-import { DATA_MODEL_FORMAT, type ModelAttribute, validateModelAttributes, validateModelEnums } from "./model-schemas.js";
+import { DATA_MODEL_FORMAT, type ModelAttribute, type Names, validateModelAttributes, validateModelEnums, validateModelKeys } from "./model-schemas.js";
 import { canonicalBytes, digestOfPreimage } from "./ontology-guardian/canonical.js";
 import { fromInternalDigest, semanticProfileDigest, stableForHash } from "./ontology-guardian/digests.js";
 import { isRecord, validateRelationCardinality } from "./profile-validate.js";
@@ -126,12 +126,15 @@ function normalizeNodeType(
   hasDataModel: boolean,
 ): NormalizedOntologyNodeType {
   if (hasDataModel && Array.isArray(nodeType.attributes)) {
+    const { unique, ...rest } = nodeType;
     nodeType = {
-      ...nodeType,
+      ...rest,
       attributes: nodeType.attributes.map((attribute) => ({
         ...attribute,
         type: Object.fromEntries(Object.entries(attribute.type).filter(([, value]) => value !== undefined)) as ModelAttribute["type"],
       })),
+      key: [...nodeType.key!] as Names,
+      ...(unique === undefined ? {} : { unique: unique.map((tuple) => [...tuple] as Names) }),
     };
   }
   if (nodeType.linking === undefined) {
@@ -355,9 +358,11 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
   const knownStatuses = new Set(hardening.statuses);
   const model = profile.data_model;
   if (model !== undefined && model.format === DATA_MODEL_FORMAT) {
+    const enums = Object.assign(Object.create(null), model.enums);
     errors.push(...validateModelEnums(model.enums, "data_model.enums"));
     for (const [nodeTypeId, nodeType] of Object.entries(nodeTypes)) {
-      errors.push(...validateModelAttributes(nodeType.attributes, Object.assign(Object.create(null), model.enums), `node_types.${nodeTypeId}.attributes`));
+      const attrErrors = validateModelAttributes(nodeType.attributes, enums, `node_types.${nodeTypeId}.attributes`);
+      errors.push(...attrErrors, ...(attrErrors.length === 0 ? validateModelKeys({ attributes: nodeType.attributes!, key: nodeType.key, unique: nodeType.unique }, `node_types.${nodeTypeId}`) : []));
     }
   }
 
