@@ -11,20 +11,25 @@ const sha256 = (s: string): string => createHash("sha256").update(s).digest("hex
 function writeFixture(
   missionObj: Record<string, unknown>,
   runs: Record<string, Record<string, unknown>[]>,
+  opts?: { omitSummary?: boolean | string[] },
 ): { root: string; missionPath: string; missionDigest: string; runDirs: string[]; outDir: string } {
   const root = mkdtempSync(join(tmpdir(), "scc-"));
   const missionText = JSON.stringify(missionObj);
   const missionPath = join(root, "mission.json");
+  const missionDigest = sha256(missionText);
   writeFileSync(missionPath, missionText);
   const runDirs: string[] = [];
   for (const [name, rows] of Object.entries(runs)) {
     const dir = join(root, name);
     mkdirSync(dir, { recursive: true });
+    const skip = opts?.omitSummary === true || (Array.isArray(opts?.omitSummary) && opts.omitSummary.includes(name));
+    const hasSum = rows.some((r) => r.type === "summary");
+    const full = !skip && !hasSum ? [...rows, { type: "summary", mission_digest: missionDigest }] : rows;
     // Intentionally NO snapshots/ and NO state.jsonl: converge must never read snapshots.
-    writeFileSync(join(dir, "results.ndjson"), `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`);
+    writeFileSync(join(dir, "results.ndjson"), `${full.map((r) => JSON.stringify(r)).join("\n")}\n`);
     runDirs.push(dir);
   }
-  return { root, missionPath, missionDigest: sha256(missionText), runDirs, outDir: join(root, "out") };
+  return { root, missionPath, missionDigest, runDirs, outDir: join(root, "out") };
 }
 
 const readConverge = (outDir: string): { rows: any[]; summary: any } => {
@@ -143,6 +148,8 @@ describe("scrap converge", () => {
     expect(rows[0].fields.city).toEqual({
       verdict: "unanimous",
       value: "Montréal",
+      n_answered: 3,
+      n_runs: 3,
       runs: {
         runA: { value: "Montréal", quote: "Office in Montréal" },
         runB: { value: "  MONTRÉAL  ", quote: "MONTRÉAL, QC" },
@@ -152,6 +159,8 @@ describe("scrap converge", () => {
     expect(rows[0].fields.postal_code).toEqual({
       verdict: "unanimous",
       value: "h2y1s1",
+      n_answered: 3,
+      n_runs: 3,
       runs: {
         runA: { value: "h2y1s1", quote: "QC h2y1s1" },
         runB: { value: "H2Y 1S1", quote: "H2Y 1S1" },
@@ -160,6 +169,8 @@ describe("scrap converge", () => {
     });
     expect(rows[0].fields.phone.verdict).toBe("absent");
     expect(rows[0].fields.phone.value).toBeNull();
+    expect(rows[0].fields.phone.n_answered).toBe(3);
+    expect(rows[0].fields.phone.n_runs).toBe(3);
 
     // u2: 2/3 majority (value vs other value on city; value vs null on postal_code & phone)
     expect(rows[1].fields.city.verdict).toBe("majority");
@@ -178,21 +189,29 @@ describe("scrap converge", () => {
     expect(rows[2].fields.phone.value).toBeNull();
 
     // u4: all-null across all fields
-    expect(rows[3].fields.city).toMatchObject({ verdict: "absent", value: null });
-    expect(rows[3].fields.postal_code).toMatchObject({ verdict: "absent", value: null });
-    expect(rows[3].fields.phone).toMatchObject({ verdict: "absent", value: null });
+    expect(rows[3].fields.city).toMatchObject({ verdict: "absent", value: null, n_answered: 3, n_runs: 3 });
+    expect(rows[3].fields.postal_code).toMatchObject({ verdict: "absent", value: null, n_answered: 3, n_runs: 3 });
+    expect(rows[3].fields.phone).toMatchObject({ verdict: "absent", value: null, n_answered: 3, n_runs: 3 });
 
     // Summary counts & pairwise percent agreement
     expect(summary.type).toBe("summary");
     expect(summary.ids).toBe(4);
     expect(summary.runs).toEqual(["runA", "runB", "runC"]);
-    expect(summary.fields.city.counts).toEqual({ unanimous: 1, majority: 1, split: 1, absent: 1 });
-    expect(summary.fields.postal_code.counts).toEqual({ unanimous: 1, majority: 1, split: 1, absent: 1 });
-    expect(summary.fields.phone.counts).toEqual({ unanimous: 0, majority: 2, split: 0, absent: 2 });
+    expect(summary.allow_missing_digest).toBe(false);
+    expect(summary.missing_digest_runs).toEqual([]);
+    expect(summary.run_stats).toEqual({
+      runA: { answered: 4, failed: 0, failed_by_code: {}, missing: 0 },
+      runB: { answered: 4, failed: 0, failed_by_code: {}, missing: 0 },
+      runC: { answered: 4, failed: 0, failed_by_code: {}, missing: 0 },
+    });
+    expect(summary.fields.city.counts).toEqual({ unanimous: 1, majority: 1, split: 1, absent: 1, insufficient: 0 });
+    expect(summary.fields.postal_code.counts).toEqual({ unanimous: 1, majority: 1, split: 1, absent: 1, insufficient: 0 });
+    expect(summary.fields.phone.counts).toEqual({ unanimous: 0, majority: 2, split: 0, absent: 2, insufficient: 0 });
     // city pairwise: A|B agree on u1,u2,u4 (3/4=75%); A|C on u1,u4 (2/4=50%); B|C on u1,u4 (2/4=50%)
     expect(summary.fields.city.pairwise_agreement).toEqual({ "runA|runB": 75, "runA|runC": 50, "runB|runC": 50 });
-    // phone: only u2 has 2 non-null values and both are identical ("416-555-0100"), so De === 0 -> alpha null
-    expect(summary.fields.phone.krippendorff_alpha).toBeNull();
+    // phone: true null stays a category -> n=12, margins N=9 P1=2 P2=1, Do_num=4, De_num=58 -> 1 - 44/58 = 7/29
+    expect(summary.fields.phone.krippendorff_alpha).toBe(Number((7 / 29).toFixed(6)));
+    expect(summary.fields.phone.alpha_excluded_units).toBe(0);
   });
 
   it("aligns record fields by postal_code else street+city, votes per sub-field, and reports unmatched records with their run", async () => {
@@ -323,13 +342,14 @@ describe("scrap converge", () => {
     ]);
 
     // co2: all runs had [] -> absent
-    expect(rows[1].fields.offices).toEqual({ verdict: "absent", aligned: [], unmatched: [] });
+    expect(rows[1].fields.offices).toEqual({ verdict: "absent", n_answered: 3, n_runs: 3, aligned: [], unmatched: [] });
 
     // Summary stats for record field and its subfields
     expect(summary.fields.offices.unmatched).toBe(2);
     expect(summary.fields.offices.counts.absent).toBe(1);
-    expect(summary.fields.offices.subfields.city.counts).toEqual({ unanimous: 1, majority: 1, split: 0, absent: 0 });
-    expect(summary.fields.offices.subfields.city.krippendorff_alpha).toBe(1);
+    expect(summary.fields.offices.subfields.city.counts).toEqual({ unanimous: 1, majority: 1, split: 0, absent: 0, insufficient: 0 });
+    // Cluster 0: [Toronto, Toronto, Toronto]; Cluster 1: [Montréal, Montréal, NULL(runC missed)] -> n=6, Do_num=2, De_num=22 -> 1 - 10/22 = 6/11
+    expect(summary.fields.offices.subfields.city.krippendorff_alpha).toBe(Number((6 / 11).toFixed(6)));
   });
 
   it("computes Krippendorff's alpha (nominal) matching independent textbook calculation on known tables", async () => {
@@ -373,9 +393,11 @@ describe("scrap converge", () => {
     const fx = writeFixture({ fields: ["province"], instruction: "Extract province." }, runs);
     await runConverge({ runs: fx.runDirs, mission: fx.missionPath, out: fx.outDir });
     const { summary } = readConverge(fx.outDir);
-    const expectedSmall = independentAlphaNominal(table.map((row) => row.map((v) => normalizeValue(v))));
+    // All 3 runs answered on all 6 ids: true null stays a nominal category (not missing data).
+    const expectedSmall = independentAlphaNominal(table.map((row) => row.map((v) => (v === null ? "__NULL__" : normalizeValue(v)!))));
     expect(expectedSmall).not.toBeNull();
     expect(summary.fields.province.krippendorff_alpha).toBe(expectedSmall);
+    expect(summary.fields.province.alpha_excluded_units).toBe(0);
 
     // 3. All-null field -> alpha is null.
     expect(krippendorffAlphaNominal([[null, null], [null, null]])).toBeNull();
@@ -672,8 +694,9 @@ describe("scrap converge", () => {
     // Distinct directories sharing a basename are still accepted
     const d1 = join(fx.root, "a", "same"), d2 = join(fx.root, "b", "same");
     mkdirSync(d1, { recursive: true }); mkdirSync(d2, { recursive: true });
-    writeFileSync(join(d1, "results.ndjson"), `${JSON.stringify({ id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } })}\n`);
-    writeFileSync(join(d2, "results.ndjson"), `${JSON.stringify({ id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } })}\n`);
+    const sumLine = JSON.stringify({ type: "summary", mission_digest: fx.missionDigest });
+    writeFileSync(join(d1, "results.ndjson"), `${JSON.stringify({ id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } })}\n${sumLine}\n`);
+    writeFileSync(join(d2, "results.ndjson"), `${JSON.stringify({ id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } })}\n${sumLine}\n`);
     const distinctSameBase = await runCli(["scrap", "converge", "--runs", d1, d2, "--mission", fx.missionPath, "--out", join(fx.root, "out-same-base")], fx.root);
     expect(distinctSameBase.code).toBe(0);
     expect(readConverge(join(fx.root, "out-same-base")).summary.runs).toEqual([d1, d2]);
@@ -731,7 +754,7 @@ describe("scrap converge", () => {
     // Aligned unanimous + 2/3 or 3/3 runs with extra unmatched -> not majority -> "split"
     expect(byId.r5_aligned_plus_two_extra).toBe("split");
     expect(byId.r6_aligned_plus_three_extra).toBe("split");
-    expect(sum3.fields.offices.counts).toEqual({ unanimous: 0, majority: 3, split: 3, absent: 0 });
+    expect(sum3.fields.offices.counts).toEqual({ unanimous: 0, majority: 3, split: 3, absent: 0, insufficient: 0 });
 
     // 2-run boundary: 1/2 present or 1/2 extra unmatched is a 50/50 split (no strict majority)
     const fx2 = writeFixture(OFFICES_MISSION, {
@@ -742,5 +765,394 @@ describe("scrap converge", () => {
     const { rows: rows2 } = readConverge(fx2.outDir);
     expect(rows2[0].fields.offices.verdict).toBe("split");
     expect(rows2[1].fields.offices.verdict).toBe("split");
+  });
+
+  // --- Abstention, failure, missing-id, alpha, record-presence & missing-digest tests ---
+
+  it("excludes a failed run in 3 so 2 answering runs vote 2-of-2 with n_answered=2 and failed provenance (kills mutants: failed-as-null, n_answered-equals-n_runs)", async () => {
+    const mission = { fields: ["city"], instruction: "Extract city." };
+    const fx = writeFixture(mission, {
+      runA: [
+        { id: "u1", url: "http://x/1", fields: { city: fVal("Montréal") } },
+        { id: "u2", url: "http://x/2", fields: { city: fVal("Toronto") } },
+        { id: "u3", url: "http://x/3", fields: { city: fVal(null) } },
+        { id: "u4", url: "http://x/4", fields: { city: fVal("Ottawa") } },
+      ],
+      runB: [
+        { id: "u1", url: "http://x/1", fields: { city: fVal("Montréal") } },
+        { id: "u2", url: "http://x/2", fields: { city: fVal(null) } },
+        { id: "u3", url: "http://x/3", fields: { city: fVal(null) } },
+        { id: "u4", url: "http://x/4", fields: { city: fVal("Ottawa") } },
+      ],
+      runC: [
+        { id: "u1", url: "http://x/1", error: "llm_error", error_detail: "503", fields: null },
+        { id: "u2", url: "http://x/2", error: "parse_error", error_detail: "bad json", fields: null },
+        { id: "u3", url: "http://x/3", error: "empty_response", error_detail: "empty", fields: null },
+        { id: "u4", url: "http://x/4", fields: { city: fVal("Ottawa") } },
+      ],
+    });
+    await runConverge({ runs: fx.runDirs, mission: fx.missionPath, out: fx.outDir });
+    const { rows, summary } = readConverge(fx.outDir);
+
+    // u1: 2 of 2 answered "Montréal" (never shown as 3 of 3; runC has status/error and NO value/quote)
+    expect(rows[0].fields.city).toEqual({
+      verdict: "unanimous",
+      value: "Montréal",
+      n_answered: 2,
+      n_runs: 3,
+      runs: {
+        runA: { value: "Montréal", quote: "Montréal" },
+        runB: { value: "Montréal", quote: "Montréal" },
+        runC: { status: "failed", error: "llm_error" },
+      },
+    });
+    expect("value" in rows[0].fields.city.runs.runC).toBe(false);
+    expect("quote" in rows[0].fields.city.runs.runC).toBe(false);
+
+    // u2: A="Toronto", B=null, C=failed -> 1 vs 1 split (NOT 2/3 null-majority!)
+    expect(rows[1].fields.city).toMatchObject({ verdict: "split", value: null, n_answered: 2, n_runs: 3 });
+    expect(rows[1].fields.city.runs.runC).toEqual({ status: "failed", error: "parse_error" });
+
+    // u3: A=null, B=null, C=failed -> absent over 2 of 2 answered (n_answered=2, n_runs=3)
+    expect(rows[2].fields.city).toMatchObject({ verdict: "absent", value: null, n_answered: 2, n_runs: 3 });
+    expect(rows[2].fields.city.runs.runC).toEqual({ status: "failed", error: "empty_response" });
+
+    // u4: all 3 answered
+    expect(rows[3].fields.city).toMatchObject({ verdict: "unanimous", value: "Ottawa", n_answered: 3, n_runs: 3 });
+
+    expect(summary.fields.city.counts).toEqual({ unanimous: 2, majority: 0, split: 1, absent: 1, insufficient: 0 });
+    expect(summary.run_stats).toEqual({
+      runA: { answered: 4, failed: 0, failed_by_code: {}, missing: 0 },
+      runB: { answered: 4, failed: 0, failed_by_code: {}, missing: 0 },
+      runC: { answered: 1, failed: 3, failed_by_code: { empty_response: 1, llm_error: 1, parse_error: 1 }, missing: 0 },
+    });
+  });
+
+  it("marks <2 answering runs in 2 runs as insufficient with value null (kills mutants: min-answering-threshold-1, failed-equals-failed-pairwise)", async () => {
+    const mission = { fields: ["city"], instruction: "Extract city." };
+    const fx = writeFixture(mission, {
+      runA: [
+        { id: "u1", url: "http://x/1", fields: { city: fVal("Quebec City") } },
+        { id: "u2", url: "http://x/2", fields: { city: fVal(null) } },
+        { id: "u3", url: "http://x/3", error: "llm_error", error_detail: "timeout", fields: null },
+      ],
+      runB: [
+        { id: "u1", url: "http://x/1", error: "missing_credentials", error_detail: "no key", fields: null },
+        { id: "u2", url: "http://x/2", error: "write_error", error_detail: "enoent", fields: null },
+        { id: "u3", url: "http://x/3", error: "parse_error", error_detail: "bad", fields: null },
+      ],
+    });
+    await runConverge({ runs: fx.runDirs, mission: fx.missionPath, out: fx.outDir });
+    const { rows, summary } = readConverge(fx.outDir);
+
+    expect(rows[0].fields.city).toEqual({
+      verdict: "insufficient",
+      value: null,
+      n_answered: 1,
+      n_runs: 2,
+      runs: {
+        runA: { value: "Quebec City", quote: "Quebec City" },
+        runB: { status: "failed", error: "missing_credentials" },
+      },
+    });
+    expect(rows[1].fields.city).toMatchObject({ verdict: "insufficient", value: null, n_answered: 1, n_runs: 2 });
+    expect(rows[2].fields.city).toMatchObject({ verdict: "insufficient", value: null, n_answered: 0, n_runs: 2 });
+    expect(summary.fields.city.counts).toEqual({ unanimous: 0, majority: 0, split: 0, absent: 0, insufficient: 3 });
+    expect(summary.fields.city.alpha_excluded_units).toBe(3);
+    expect(summary.fields.city.krippendorff_alpha).toBeNull();
+    expect(summary.fields.city.pairwise_agreement).toEqual({ "runA|runB": null });
+  });
+
+  it("classifies an id absent from a run as missing with no fake null and counts run_stats.missing (kills mutants: missing-id-as-null, missing-classified-as-failed)", async () => {
+    const mission = { fields: ["city"], instruction: "Extract city." };
+    const fx = writeFixture(mission, {
+      runA: [
+        { id: "u1", url: "http://x/1", fields: { city: fVal("Halifax") } },
+        { id: "u2", url: "http://x/2", fields: { city: fVal("Victoria") } },
+      ],
+      runB: [
+        { id: "u1", url: "http://x/1", fields: { city: fVal("Halifax") } },
+      ],
+      runC: [],
+    });
+    await runConverge({ runs: fx.runDirs, mission: fx.missionPath, out: fx.outDir });
+    const { rows, summary } = readConverge(fx.outDir);
+
+    expect(rows[0].fields.city).toEqual({
+      verdict: "unanimous",
+      value: "Halifax",
+      n_answered: 2,
+      n_runs: 3,
+      runs: {
+        runA: { value: "Halifax", quote: "Halifax" },
+        runB: { value: "Halifax", quote: "Halifax" },
+        runC: { status: "missing" },
+      },
+    });
+    expect("value" in rows[0].fields.city.runs.runC).toBe(false);
+    expect("error" in rows[0].fields.city.runs.runC).toBe(false);
+    expect(rows[1].fields.city).toMatchObject({ verdict: "insufficient", value: null, n_answered: 1, n_runs: 3 });
+    expect(rows[1].fields.city.runs.runB).toEqual({ status: "missing" });
+    expect(rows[1].fields.city.runs.runC).toEqual({ status: "missing" });
+    expect(summary.run_stats).toEqual({
+      runA: { answered: 2, failed: 0, failed_by_code: {}, missing: 0 },
+      runB: { answered: 1, failed: 0, failed_by_code: {}, missing: 1 },
+      runC: { answered: 0, failed: 0, failed_by_code: {}, missing: 2 },
+    });
+  });
+
+  it("follows extract.ts:118-124 last-row-wins semantics: error->ok is answered, ok->error is failed (kills mutants: first-row-wins, sticky-ok-row)", async () => {
+    // src/scrap/extract.ts:118-124 scans results.ndjson sequentially and overwrites
+    // lastErr.set(r.id, r.error == null ? null : String(r.error)), so the last row per id
+    // defines the authoritative state (both for --retry-failed recovery and for a trailing error).
+    const mission = { fields: ["city"], instruction: "Extract city." };
+    const fx = writeFixture(mission, {
+      runA: [
+        { id: "u_retry_ok", url: "http://x/1", error: "llm_error", error_detail: "500", fields: null },
+        { id: "u_retry_ok", url: "http://x/1", fields: { city: fVal("Ottawa") } },
+        { id: "u_ok_then_err", url: "http://x/2", fields: { city: fVal("Toronto") } },
+        { id: "u_ok_then_err", url: "http://x/2", error: "parse_error", error_detail: "truncated", fields: null },
+      ],
+      runB: [
+        { id: "u_retry_ok", url: "http://x/1", fields: { city: fVal("Ottawa") } },
+        { id: "u_ok_then_err", url: "http://x/2", fields: { city: fVal("Toronto") } },
+      ],
+    });
+    await runConverge({ runs: fx.runDirs, mission: fx.missionPath, out: fx.outDir });
+    const { rows, summary } = readConverge(fx.outDir);
+
+    expect(rows[0].fields.city).toMatchObject({ verdict: "unanimous", value: "Ottawa", n_answered: 2, n_runs: 2 });
+    expect(rows[0].fields.city.runs.runA).toEqual({ value: "Ottawa", quote: "Ottawa" });
+    expect(rows[1].fields.city).toMatchObject({ verdict: "insufficient", value: null, n_answered: 1, n_runs: 2 });
+    expect(rows[1].fields.city.runs.runA).toEqual({ status: "failed", error: "parse_error" });
+    expect(summary.run_stats).toEqual({
+      runA: { answered: 1, failed: 1, failed_by_code: { parse_error: 1 }, missing: 0 },
+      runB: { answered: 2, failed: 0, failed_by_code: {}, missing: 0 },
+    });
+  });
+
+  it("keeps true null 3/3 as absent and as a nominal category in alpha (kills mutant: true-null-as-missing)", async () => {
+    const mission = { fields: ["city"], instruction: "Extract city." };
+    const fx = writeFixture(mission, {
+      runA: [
+        { id: "u1", url: "http://x/1", fields: { city: fVal(null) } },
+        { id: "u2", url: "http://x/2", fields: { city: fVal("Montréal") } },
+        { id: "u3", url: "http://x/3", fields: { city: fVal(null) } },
+      ],
+      runB: [
+        { id: "u1", url: "http://x/1", fields: { city: fVal(null) } },
+        { id: "u2", url: "http://x/2", fields: { city: fVal("Montréal") } },
+        { id: "u3", url: "http://x/3", fields: { city: fVal(null) } },
+      ],
+      runC: [
+        { id: "u1", url: "http://x/1", fields: { city: fVal(null) } },
+        { id: "u2", url: "http://x/2", fields: { city: fVal("Montréal") } },
+        { id: "u3", url: "http://x/3", fields: { city: fVal(null) } },
+      ],
+    });
+    await runConverge({ runs: fx.runDirs, mission: fx.missionPath, out: fx.outDir });
+    const { rows, summary } = readConverge(fx.outDir);
+
+    expect(rows[0].fields.city).toEqual({
+      verdict: "absent",
+      value: null,
+      n_answered: 3,
+      n_runs: 3,
+      runs: {
+        runA: { value: null, quote: null },
+        runB: { value: null, quote: null },
+        runC: { value: null, quote: null },
+      },
+    });
+    expect(summary.fields.city.counts).toEqual({ unanimous: 1, majority: 0, split: 0, absent: 2, insufficient: 0 });
+    expect(summary.fields.city.alpha_excluded_units).toBe(0);
+    // Perfect agreement across two non-degenerate categories (NULL and "montréal") -> alpha = 1
+    expect(summary.fields.city.krippendorff_alpha).toBe(1);
+    expect(summary.fields.city.pairwise_agreement).toEqual({ "runA|runB": 100, "runA|runC": 100, "runB|runC": 100 });
+  });
+
+  it("computes Krippendorff's alpha and pairwise agreement by hand with missing data, true null category, and <2-answer exclusion (kills mutants: missing-as-null-category-in-alpha, true-null-dropped-in-alpha, singleton-in-alpha-margins, pairwise-denominator-includes-abstentions)", async () => {
+    // Hand-computed 3-run x 5-id table:
+    //   u1: [ON,   ON,   failed]  -> m=2, Do_num += 0
+    //   u2: [QC,   QC,   QC    ]  -> m=3, Do_num += 0
+    //   u3: [NULL, NULL, NULL  ]  -> m=3, Do_num += 0  (true null is a category!)
+    //   u4: [ON,   NULL, missing] -> m=2, Do_num += 2
+    //   u5: [ON,   failed, missing] -> m=1 < 2 -> EXCLUDED (alpha_excluded_units = 1)
+    // Included n = 2+3+3+2 = 10; margins: ON=3, QC=3, NULL=4.
+    // Do_num = 2; De_num = 10^2 - (3^2 + 3^2 + 4^2) = 100 - 34 = 66.
+    // alpha = 1 - (2 * 9) / 66 = 1 - 18/66 = 8/11 = 0.727273.
+    // Pairwise: r1|r2 = 3/4 (75%), r1|r3 = 2/2 (100%), r2|r3 = 2/2 (100%).
+    const mission = { fields: ["province"], instruction: "Extract province." };
+    const fx = writeFixture(mission, {
+      r1: [
+        { id: "u1", url: "http://x/1", fields: { province: fVal("ON") } },
+        { id: "u2", url: "http://x/2", fields: { province: fVal("QC") } },
+        { id: "u3", url: "http://x/3", fields: { province: fVal(null) } },
+        { id: "u4", url: "http://x/4", fields: { province: fVal("ON") } },
+        { id: "u5", url: "http://x/5", fields: { province: fVal("ON") } },
+      ],
+      r2: [
+        { id: "u1", url: "http://x/1", fields: { province: fVal("ON") } },
+        { id: "u2", url: "http://x/2", fields: { province: fVal("QC") } },
+        { id: "u3", url: "http://x/3", fields: { province: fVal(null) } },
+        { id: "u4", url: "http://x/4", fields: { province: fVal(null) } },
+        { id: "u5", url: "http://x/5", error: "parse_error", error_detail: "bad", fields: null },
+      ],
+      r3: [
+        { id: "u1", url: "http://x/1", error: "llm_error", error_detail: "500", fields: null },
+        { id: "u2", url: "http://x/2", fields: { province: fVal("QC") } },
+        { id: "u3", url: "http://x/3", fields: { province: fVal(null) } },
+        // u4 and u5 missing from r3
+      ],
+    });
+    await runConverge({ runs: fx.runDirs, mission: fx.missionPath, out: fx.outDir });
+    const { summary } = readConverge(fx.outDir);
+
+    const handAlpha = Number((8 / 11).toFixed(6));
+    expect(independentAlphaNominal([
+      ["on", "on", null],
+      ["qc", "qc", "qc"],
+      ["__NULL__", "__NULL__", "__NULL__"],
+      ["on", "__NULL__", null],
+      ["on", null, null],
+    ])).toBe(handAlpha);
+    expect(summary.fields.province.krippendorff_alpha).toBe(handAlpha);
+    expect(summary.fields.province.alpha_excluded_units).toBe(1);
+    expect(summary.fields.province.pairwise_agreement).toEqual({ "r1|r2": 75, "r1|r3": 100, "r2|r3": 100 });
+  });
+
+  it("excludes failed/missing runs from record alignment, unmatched counts, and presence verdicts (kills mutants: record-denominator-uses-n_runs, record-insufficient-emits-unmatched, failed-row-fields-leak-into-records)", async () => {
+    const office = (street: string | null, city: string | null, province: string | null, postal_code: string | null) => ({
+      street: fVal(street), city: fVal(city), province: fVal(province), postal_code: fVal(postal_code),
+    });
+    const okRow = (id: string, values: Record<string, unknown>[]) => ({
+      id, url: `http://x/${id}`,
+      fields: { company: fVal("Co"), postal_code: fVal(null), offices: { values } },
+    });
+    const toronto = office("100 King St", "Toronto", "ON", "M5X 1A9");
+    const halifax = office("1801 Hollis St", "Halifax", "NS", "B3J 3N4");
+
+    const fx3 = writeFixture(OFFICES_MISSION, {
+      runA: [
+        okRow("rec_2of2_unanimous", [toronto]),
+        okRow("rec_1_vs_empty_plus_failed", [halifax]),
+        okRow("rec_2of2_empty_plus_missing", []),
+        okRow("rec_1of3_insufficient", [toronto]),
+        okRow("rec_failed_with_stale_fields", [toronto]),
+      ],
+      runB: [
+        okRow("rec_2of2_unanimous", [toronto]),
+        okRow("rec_1_vs_empty_plus_failed", []),
+        okRow("rec_2of2_empty_plus_missing", []),
+        { id: "rec_1of3_insufficient", url: "http://x/rec_1of3_insufficient", error: "llm_error", error_detail: "502", fields: null },
+        okRow("rec_failed_with_stale_fields", [toronto]),
+      ],
+      runC: [
+        { id: "rec_2of2_unanimous", url: "http://x/rec_2of2_unanimous", error: "llm_error", error_detail: "503", fields: null },
+        { id: "rec_1_vs_empty_plus_failed", url: "http://x/rec_1_vs_empty_plus_failed", error: "parse_error", error_detail: "bad", fields: null },
+        // rec_2of2_empty_plus_missing and rec_1of3_insufficient missing from runC
+        // Malformed failed row that still carries a fields object must NEVER leak into alignment/unmatched
+        { id: "rec_failed_with_stale_fields", url: "http://x/rec_failed_with_stale_fields", error: "llm_error", fields: { company: fVal("Co"), postal_code: fVal(null), offices: { values: [halifax] } } },
+      ],
+    });
+    await runConverge({ runs: fx3.runDirs, mission: fx3.missionPath, out: fx3.outDir });
+    const { rows: rows3, summary: sum3 } = readConverge(fx3.outDir);
+    const byId = Object.fromEntries(rows3.map((r) => [r.id, r.fields.offices]));
+
+    // 2 answering runs agree on Toronto, 3rd failed -> unanimous over 2 of 2 answered
+    expect(byId.rec_2of2_unanimous).toMatchObject({ verdict: "unanimous", n_answered: 2, n_runs: 3, unmatched: [] });
+    expect(byId.rec_2of2_unanimous.aligned).toHaveLength(1);
+    expect(byId.rec_2of2_unanimous.aligned[0].fields.city).toEqual({
+      verdict: "unanimous",
+      value: "Toronto",
+      n_answered: 2,
+      n_runs: 3,
+      runs: {
+        runA: { value: "Toronto", quote: "Toronto" },
+        runB: { value: "Toronto", quote: "Toronto" },
+        runC: { status: "failed", error: "llm_error" },
+      },
+    });
+    // 1 present vs 1 empty among 2 answering runs (3rd failed) -> 50/50 split (NOT 2/3 empty-majority!)
+    expect(byId.rec_1_vs_empty_plus_failed).toMatchObject({ verdict: "split", n_answered: 2, n_runs: 3, aligned: [] });
+    expect(byId.rec_1_vs_empty_plus_failed.unmatched).toHaveLength(1);
+    // 2 answering runs empty, 3rd missing -> absent with n_answered=2
+    expect(byId.rec_2of2_empty_plus_missing).toEqual({ verdict: "absent", n_answered: 2, n_runs: 3, aligned: [], unmatched: [] });
+    // Only 1 answering run (2 abstained) -> insufficient and zero unmatched
+    expect(byId.rec_1of3_insufficient).toEqual({ verdict: "insufficient", n_answered: 1, n_runs: 3, aligned: [], unmatched: [] });
+    // Failed row carrying stale fields does not leak Halifax into unmatched
+    expect(byId.rec_failed_with_stale_fields).toMatchObject({ verdict: "unanimous", n_answered: 2, n_runs: 3, unmatched: [] });
+    expect(sum3.fields.offices.unmatched).toBe(1);
+    expect(sum3.fields.offices.counts).toEqual({ unanimous: 2, majority: 0, split: 1, absent: 1, insufficient: 1 });
+
+    // 2-run case: 1 answered [Toronto], 1 failed -> insufficient, never unmatched
+    const fx2 = writeFixture(OFFICES_MISSION, {
+      runA: [okRow("two_fail", [toronto])],
+      runB: [{ id: "two_fail", url: "http://x/two_fail", error: "llm_error", error_detail: "err", fields: null }],
+    });
+    await runConverge({ runs: fx2.runDirs, mission: fx2.missionPath, out: fx2.outDir });
+    const { rows: rows2, summary: sum2 } = readConverge(fx2.outDir);
+    expect(rows2[0].fields.offices).toEqual({ verdict: "insufficient", n_answered: 1, n_runs: 2, aligned: [], unmatched: [] });
+    expect(sum2.fields.offices.unmatched).toBe(0);
+  });
+
+  it("refuses runs with missing summary or null/missing mission digest (exit 2) unless --allow-missing-digest is passed and still refuses mismatched digest (kills mutants: null-digest-passes-silently, allow-missing-digest-bypasses-mismatch)", async () => {
+    const mission = { fields: ["city"], instruction: "Extract city." };
+    const goodDigest = sha256(JSON.stringify(mission));
+    const badDigest = sha256(JSON.stringify({ fields: ["city"], instruction: "Other." }));
+
+    // 1. Run missing a summary row entirely -> exit 2
+    const fxNoSum = writeFixture(mission, {
+      runA: [{ id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } }],
+      runB: [{ id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } }],
+    }, { omitSummary: ["runB"] });
+    let errNoSum: unknown;
+    try { await runConverge({ runs: fxNoSum.runDirs, mission: fxNoSum.missionPath, out: fxNoSum.outDir }); } catch (e) { errNoSum = e; }
+    expect(String(errNoSum)).toMatch(/missing summary|mission digest/i);
+    expect(isConvergeUsageError(errNoSum)).toBe(true);
+    const cliNoSum = await runCli(["scrap", "converge", "--runs", ...fxNoSum.runDirs, "--mission", fxNoSum.missionPath, "--out", fxNoSum.outDir], fxNoSum.root);
+    expect(cliNoSum.code).toBe(2);
+    expect(cliNoSum.err).toMatch(/missing summary|mission digest/i);
+
+    // 2. Run with summary row whose mission_digest is null -> exit 2
+    const fxNullDig = writeFixture(mission, {
+      runA: [
+        { id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } },
+        { type: "summary", ok: 1, failed: 0, mission_digest: goodDigest },
+      ],
+      runB: [
+        { id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } },
+        { type: "summary", ok: 1, failed: 0, mission_digest: null },
+      ],
+    });
+    const cliNullDig = await runCli(["scrap", "converge", "--runs", ...fxNullDig.runDirs, "--mission", fxNullDig.missionPath, "--out", fxNullDig.outDir], fxNullDig.root);
+    expect(cliNullDig.code).toBe(2);
+    expect(cliNullDig.err).toMatch(/missing mission digest/i);
+
+    // 3. --allow-missing-digest allows both missing-summary and null-digest runs and records it in summary
+    const cliAllowed = await runCli(["scrap", "converge", "--runs", ...fxNoSum.runDirs, "--mission", fxNoSum.missionPath, "--out", join(fxNoSum.root, "out-ok"), "--allow-missing-digest"], fxNoSum.root);
+    expect(cliAllowed.code).toBe(0);
+    const allowedSum = readConverge(join(fxNoSum.root, "out-ok")).summary;
+    expect(allowedSum.allow_missing_digest).toBe(true);
+    expect(allowedSum.missing_digest_runs).toEqual(["runB"]);
+
+    const apiAllowed = await runConverge({ runs: fxNullDig.runDirs, mission: fxNullDig.missionPath, out: join(fxNullDig.root, "out-ok"), allowMissingDigest: true });
+    expect(apiAllowed.summary.allow_missing_digest).toBe(true);
+    expect(apiAllowed.summary.missing_digest_runs).toEqual(["runB"]);
+
+    // 4. Even with --allow-missing-digest, a mismatched digest is STILL refused (exit 2)
+    const fxBadDig = writeFixture(mission, {
+      runA: [
+        { id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } },
+        { type: "summary", ok: 1, failed: 0, mission_digest: goodDigest },
+      ],
+      runB: [
+        { id: "u1", url: "http://x/1", fields: { city: fVal("Ottawa") } },
+        { type: "summary", ok: 1, failed: 0, mission_digest: badDigest },
+      ],
+    });
+    const cliBadEvenAllowed = await runCli(["scrap", "converge", "--runs", ...fxBadDig.runDirs, "--mission", fxBadDig.missionPath, "--out", fxBadDig.outDir, "--allow-missing-digest"], fxBadDig.root);
+    expect(cliBadEvenAllowed.code).toBe(2);
+    expect(cliBadEvenAllowed.err).toMatch(/mission digest mismatch/);
   });
 });
