@@ -239,7 +239,7 @@ describe("scrap capture URL normalization, explicit states and invariant", () =>
       },
     };
     await captureLogs(() => runExtract({ out, mission: join(d, "mission.json"), model: "openai:gpt-5-mini" }, stubClient));
-    const resIds = readFileSync(join(out, "results.ndjson"), "utf-8").trim().split("\n").map((l) => JSON.parse(l).id);
+    const resIds = readFileSync(join(out, "results.ndjson"), "utf-8").trim().split("\n").map((l) => JSON.parse(l)).filter((r) => r.type !== "summary").map((r) => r.id);
     expect(resIds.sort()).toEqual(["ok1", "ok2", "ok3"]);
 
     srv.s.close();
