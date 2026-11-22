@@ -6158,10 +6158,10 @@ export async function main(): Promise<void> {
     try { await runExtract({ out: o.out, mission: o.mission, model: o.model, retryFailed: o.retryFailed === true }); }
     catch (e) { if (isExtractUsageError(e)) { console.error(String(e)); process.exit(2); } throw e; }
   });
-  scrap.command("converge").option("--runs <dirs...>", "run directories").option("--mission <file>").option("--out <dir>").action(async (o) => {
-    if (!Array.isArray(o.runs) || o.runs.length < 2 || !o.mission || !o.out) { console.error("usage: engram scrap converge --runs DIR_A DIR_B [DIR_C...] --mission FILE --out DIR"); process.exit(2); }
+  scrap.command("converge").option("--runs <dirs...>", "run directories").option("--mission <file>").option("--out <dir>").option("--allow-missing-digest", "allow runs lacking a summary or mission digest").action(async (o) => {
+    if (!Array.isArray(o.runs) || o.runs.length < 2 || !o.mission || !o.out) { console.error("usage: engram scrap converge --runs DIR_A DIR_B [DIR_C...] --mission FILE --out DIR [--allow-missing-digest]"); process.exit(2); }
     const { runConverge, isConvergeUsageError } = await import("./scrap/converge.js");
-    try { await runConverge({ runs: o.runs, mission: o.mission, out: o.out }); }
+    try { await runConverge({ runs: o.runs, mission: o.mission, out: o.out, allowMissingDigest: o.allowMissingDigest === true }); }
     catch (e) { if (isConvergeUsageError(e)) { console.error(String(e)); process.exit(2); } throw e; }
   });
 
