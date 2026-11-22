@@ -4093,5 +4093,14 @@
     "fingerprint": "32698c0f4c364875a6e83ae415c4019d3e3da0d1bd182232fdfde2232f141d73",
     "reason": "Test-only raw topology counter fixture; never a production capture or stored record writer",
     "count": 1
+  },
+  {
+    "file": "src/scrap/capture.ts",
+    "line": 110,
+    "owner": "snap",
+    "kind": "raw-graph-writer",
+    "fingerprint": "eb27441b8f704dbb222e6dae202a773f851c152043a4d6cf8a89585ea7ff7df1",
+    "reason": "snapshots/state/results of a scrap run in the user-named output directory, not graph records",
+    "count": 1
   }
 ]

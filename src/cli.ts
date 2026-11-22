@@ -6145,6 +6145,20 @@ export async function main(): Promise<void> {
       markLifecycleStale(".", reason ?? "hook");
     });
 
+  const scrap = program.command("scrap").description("Tier-0 capture + extract");
+  scrap.command("capture").option("--input <file>").option("--out <dir>").option("--robots <mode>", "robots mode", "respect").option("--concurrency <n>", "concurrency", "4").option("--retry-failed").action(async (o) => {
+    const n = Number(o.concurrency ?? 4);
+    if (!o.input || !o.out || (o.robots !== "respect" && o.robots !== "ignore") || !Number.isInteger(n) || n < 1) { console.error("usage: engram scrap capture --input FILE --out DIR [--robots respect|ignore] [--concurrency N] [--retry-failed]"); process.exit(2); }
+    const { runCapture } = await import("./scrap/capture.js");
+    await runCapture({ input: o.input, out: o.out, robots: o.robots, concurrency: n, retryFailed: o.retryFailed === true });
+  });
+  scrap.command("extract").option("--out <dir>").option("--mission <file>").option("--model <id>", "model id or provider:model (e.g. openai:gpt-5-mini)").action(async (o) => {
+    if (!o.out || !o.mission || !o.model) { console.error("usage: engram scrap extract --out DIR --mission FILE --model ID"); process.exit(2); }
+    const { runExtract } = await import("./scrap/extract.js");
+    try { await runExtract({ out: o.out, mission: o.mission, model: o.model }); }
+    catch (e) { if (/cannot infer provider|missing credentials/.test(String(e))) { console.error(String(e)); process.exit(2); } throw e; }
+  });
+
   program
     .command("merge-driver <ancestor> <current> <other>", { hidden: true })
     .description("Internal: merge graph.json files for Git merge-driver support")
