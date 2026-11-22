@@ -34,7 +34,7 @@ it.each(badKeys)("refuses %s", (_label, mutate, path) => {
 });
 it("validates composite/nullable/delimiter tuples, preserves order in digest, and detaches arrays", () => {
   expect(sha256(canonicalBytes(specPreimage(example.node_types)))).toBe(GOLDEN); // kills: drift between independent spec preimage and golden vector
-  const p = clone(), key: Names = ["organization_id", "id"], unique: Names[] = [["organization_id", "email"], ["email", "organization_id"], ["organization_id", "password_hash"]];
+  const p = clone(), key: Names = ["organization_id", "id"], unique: Names[] = [["organization_id", "email"], ["email", "organization_id"], ["organization_id", "password_hash"], ["id"]];
   p.node_types.organizations.unique = []; p.node_types.users.key = [...key]; p.node_types.users.unique = unique.map((t) => [...t]);
   const expectedDigest = sha256(canonicalBytes(specPreimage(p.node_types))), parsed = parseOntologyProfile(p);
   expect(validateOntologyProfile(parsed)).toStrictEqual([]); // kills: rejecting nullable/reversed unique or explicit unique:[]

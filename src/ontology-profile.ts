@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { extname, resolve } from "node:path";
-import { parse as parseYaml } from "yaml";
+import { isMap, isScalar, isSeq, parseDocument } from "yaml";
 import { toJsonValue } from "./json-value.js";
 import type { Sha256Digest } from "./metamodel-contracts.js";
-import { DATA_MODEL_FORMAT, type FieldPair, type ModelAttribute, type Names, validateModelAttributes, validateModelEnums, validateModelFkEdges, validateModelKeys } from "./model-schemas.js";
+import { DATA_MODEL_FORMAT, type FieldPair, type ModelAttribute, type ModelNode, type Names, validateModelAttributes, validateModelClosure, validateModelEnums, validateModelFkEdges, validateModelKeys, validateModelRegistries } from "./model-schemas.js";
 import { canonicalBytes, digestOfPreimage } from "./ontology-guardian/canonical.js";
 import { fromInternalDigest, semanticProfileDigest, stableForHash } from "./ontology-guardian/digests.js";
 import { isRecord, validateRelationCardinality } from "./profile-validate.js";
@@ -305,12 +305,19 @@ function normalizeOutputs(outputs: unknown): NormalizedOntologyProfileOutputs {
   };
 }
 
+function findDuplicateKey(node: unknown, path = ""): string | undefined {
+  if (isMap(node)) { const seen = new Set<string>(); for (const { key, value } of node.items) { const name = isScalar(key) ? String(key.value) : String(key), next = path ? `${path}.${name}` : name; if (seen.has(name)) return next || "profile"; seen.add(name); const nested = findDuplicateKey(value, next); if (nested !== undefined) return nested; } }
+  else if (isSeq(node)) for (let i = 0; i < node.items.length; i++) { const nested = findDuplicateKey(node.items[i], `${path}[${i}]`); if (nested !== undefined) return nested; }
+  return undefined;
+}
 export function parseOntologyProfile(raw: string | Record<string, unknown>, sourcePath?: string): OntologyProfile {
   if (typeof raw !== "string") return asRecord(raw) as OntologyProfile;
   const trimmed = raw.trim();
-  const parsed = extname(sourcePath ?? "").toLowerCase() === ".json" || trimmed.startsWith("{")
-    ? JSON.parse(trimmed || "{}")
-    : parseYaml(trimmed || "{}");
+  const isJson = extname(sourcePath ?? "").toLowerCase() === ".json" || trimmed.startsWith("{"), source = trimmed || "{}";
+  const rawParsed = isJson ? JSON.parse(source) : undefined, doc = parseDocument(source, { uniqueKeys: false, ...(isJson ? { schema: "json" } : {}) });
+  if (!isJson && doc.errors.length > 0) throw doc.errors[0];
+  const dup = findDuplicateKey(doc.contents); if (dup !== undefined) throw Object.assign(new Error(`${dup} duplicates an earlier key`), { path: dup });
+  const parsed = isJson ? rawParsed : doc.toJS();
   const document = asRecord(parsed);
   if (Object.hasOwn(document, AUTHORED_DOCUMENT)) {
     throw new Error(`${AUTHORED_DOCUMENT} is reserved for verified runtime profiles`);
@@ -321,6 +328,7 @@ export function parseOntologyProfile(raw: string | Record<string, unknown>, sour
 export function validateOntologyProfile(profile: OntologyProfile): string[] {
   const header = profile.data_model;
   if (header !== undefined) {
+    if (!isRecord(profile)) return ["profile must be an object"];
     if (!isRecord(header)) return ["data_model must be an object"];
     if (header.format !== DATA_MODEL_FORMAT) return [`data_model.format must be ${DATA_MODEL_FORMAT}`];
     const unknownKey = Object.keys(header).find((key) => key !== "format" && key !== "enums");
@@ -330,6 +338,7 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
     if (typeof profile.version !== "string" || !/^2(?:\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))?$/.test(profile.version)) {
       return ["version must be an exact major-2 version string for data_model"];
     }
+    const closureErrors = validateModelClosure(profile as Record<string, unknown>); if (closureErrors.length > 0) return closureErrors;
   }
 
   const errors: string[] = [];
@@ -363,7 +372,7 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
       const attrErrors = validateModelAttributes(nodeType.attributes, enums, `node_types.${nodeTypeId}.attributes`);
       errors.push(...attrErrors, ...(attrErrors.length === 0 ? validateModelKeys({ attributes: nodeType.attributes!, key: nodeType.key, unique: nodeType.unique }, `node_types.${nodeTypeId}`) : []));
     }
-    if (errors.length === start) errors.push(...validateModelFkEdges(nodeTypes, relationTypes, relationEndpoints, enums));
+    if (errors.length === start) errors.push(...validateModelFkEdges(nodeTypes, relationTypes, relationEndpoints, enums), ...validateModelRegistries(nodeTypes as Record<string, ModelNode>, registries));
   }
 
   if (typeof profile.id !== "string" || profile.id.trim().length === 0) {
@@ -387,8 +396,8 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
   // additive fill / border variant dimensions) per node type.
   for (const [nodeTypeId, nodeType] of Object.entries(nodeTypes)) {
     if (nodeType.registry !== undefined) {
-      const registryId = typeof nodeType.registry === "string" ? nodeType.registry.trim() : "";
-      const registry = registryId ? registries[registryId] : undefined;
+      const registryId = typeof nodeType.registry === "string" ? (model ? nodeType.registry : nodeType.registry.trim()) : "";
+      const registry = registryId && Object.hasOwn(registries, registryId) ? registries[registryId] : undefined;
       if (!registry) {
         errors.push(`node_types.${nodeTypeId}.registry references unknown registry ${String(nodeType.registry)}`);
       } else if (registry.node_type !== nodeTypeId) {

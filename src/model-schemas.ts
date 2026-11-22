@@ -1,4 +1,4 @@
-import type { OntologyRelationCardinality, OntologyRelationType } from "./types.js";
+import type { OntologyNodeType, OntologyRegistrySpec, OntologyRelationCardinality, OntologyRelationType } from "./types.js";
 export type NativeRefKind = "entity" | "relation" | "occurrence" | "port" | "view" | "resource" | "document";
 export type NativeScalarSchema =
   | { readonly kind: "text"; readonly minLength?: number; readonly maxLength?: number; readonly pattern?: string; readonly patternName?: string }
@@ -28,6 +28,7 @@ export interface Reference extends FieldPair { relation: string }
 export interface ModelRow { attributes: readonly ModelAttribute[]; key: Names; unique?: readonly Names[] }
 export type Cardinality = Required<OntologyRelationCardinality>;
 export interface ModelEndpoints { source: FieldPair; target: FieldPair }
+export type ModelNode = OntologyNodeType & ModelRow & { references?: readonly Reference[] };
 export type ModelEdge = OntologyRelationType & { cardinality: Cardinality } & ({ attributes?: never; key?: never; unique?: never; endpoints?: never } | (ModelRow & { endpoints: ModelEndpoints }));
 type Fragment = Record<string, unknown>;
 export const NATIVE_TEXT_SCHEMA: Fragment = { type: "object", properties: { kind: { const: "text" }, minLength: { type: "number" }, maxLength: { type: "number" }, pattern: { type: "string" }, patternName: { type: "string" } }, required: ["kind"], additionalProperties: false };
@@ -41,6 +42,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 const SIMPLE_KINDS = new Set(["int", "bigint", "timestamptz", "uuid", "json"]);
 const TEXT_KINDS = new Set(["string", "text"]);
 const isNonNegInt = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value) && value >= 0;
+const RESERVED_KEYS = new Set(["__proto__", "prototype", "constructor", "sourcePath", "profile_hash", "bound_source_path"]);
 const extraKey = (value: Record<string, unknown>, ...allowed: string[]): string | undefined => Object.keys(value).find((key) => !allowed.includes(key));
 export function validateLogicalType(type: unknown, enums: Record<string, unknown>, path: string): string[] {
   if (!isRecord(type)) return [`${path} must be an object`];
@@ -86,7 +88,7 @@ export function validateModelEnums(enums: unknown, path: string): string[] {
   if (!isRecord(enums)) return [`${path} must be an object`];
   const errors: string[] = [];
   for (const [name, domain] of Object.entries(enums)) {
-    if (name.length === 0) { errors.push(`${path} must not contain an empty domain name`); continue; }
+    if (name.trim().length === 0 || RESERVED_KEYS.has(name)) { errors.push(name.trim().length === 0 ? `${path} must not contain an empty domain name` : `${path}.${name} is a reserved key`); continue; }
     const values = isRecord(domain) && domain.kind === "enum" && extraKey(domain, "kind", "values") === undefined ? domain.values : undefined;
     if (values === undefined) errors.push(`${path}.${name} must be an enum domain`);
     else if (!Array.isArray(values) || values.length === 0 || values.some((value) => typeof value !== "string" || value.length === 0)) errors.push(`${path}.${name}.values must be a nonempty list of nonempty strings`);
@@ -191,6 +193,68 @@ export function validateModelFkEdges<R extends object>(nodes: Record<string, { r
       if (!isBound(b)) errors.push(`${p}.cardinality.${dir} must declare integer min >= 0 and max >= min or "many"`);
       else if (b.max === 1 && keyOk && epOk[side] && !isUnique(rel as unknown as ModelRow, ((ep as Record<string, FieldPair>)[side]!).fields)) errors.push(`${p}.cardinality.${dir} max 1 requires a unique endpoints.${side}.fields tuple`);
     }
+  }
+  return errors;
+}
+type FieldCheck = (v: unknown, path: string, errors: string[]) => void;
+const isNonEmptyStr = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0, isTrimmedStr = (v: unknown): v is string => isNonEmptyStr(v) && v.trim() === v;
+const isStrList = (v: unknown): v is string[] => Array.isArray(v) && v.every(isNonEmptyStr);
+const rule = (ok: (v: unknown) => boolean, msg: string): FieldCheck => (v, p, e) => { if (!ok(v)) e.push(`${p} ${msg}`); };
+const all = (keys: readonly string[], fn: FieldCheck): Record<string, FieldCheck> => Object.fromEntries(keys.map((k) => [k, fn]));
+const cAny: FieldCheck = () => {}, cBool = rule((v) => typeof v === "boolean", "must be a boolean"), cStr = rule(isNonEmptyStr, "must be a nonempty string"), cTrimStr = rule(isTrimmedStr, "must be a trimmed nonempty string"), cNullTrimStr = rule((v) => v === null || isTrimmedStr(v), "must be a trimmed nonempty string or null");
+const cStrList = rule(isStrList, "must be a list of nonempty strings"), cNonEmptyStrList = rule((v) => isStrList(v) && v.length > 0, "must be a nonempty list of nonempty strings"), cStrOrList = rule((v) => isNonEmptyStr(v) || isStrList(v), "must be a nonempty string or list of nonempty strings"), cNonEmptyStrOrList = rule((v) => isNonEmptyStr(v) || (isStrList(v) && v.length > 0), "must be a nonempty string or nonempty list of nonempty strings");
+const cNonNegInt = rule(isNonNegInt, "must be a nonnegative integer"), cNonNegNum = rule((v) => typeof v === "number" && Number.isFinite(v) && v >= 0, "must be a nonnegative number"), cSet = (s: Set<string>): FieldCheck => rule((v) => typeof v === "string" && s.has(v), `must be one of ${[...s].join(", ")}`);
+function checkObj(raw: unknown, path: string, fields: Record<string, FieldCheck>, errors: string[]): void {
+  if (!isRecord(raw)) { errors.push(`${path} must be an object`); return; }
+  for (const [k, v] of Object.entries(raw)) { const kp = path ? `${path}.${k}` : k, fn = Object.hasOwn(fields, k) ? fields[k] : undefined; if (!fn) errors.push(`${kp} is not allowed`); else if (v !== undefined) fn(v, kp, errors); }
+}
+function checkMap(raw: unknown, path: string, schema: Record<string, FieldCheck>, errors: string[]): void {
+  if (!isRecord(raw)) { errors.push(`${path} must be an object`); return; }
+  for (const [k, v] of Object.entries(raw)) if (!isNonEmptyStr(k) || RESERVED_KEYS.has(k)) errors.push(!isNonEmptyStr(k) ? `${path} must not contain an empty key` : `${path}.${k} is a reserved key`); else checkObj(v, `${path}.${k}`, schema, errors);
+}
+const checkObjSchema = (schema: Record<string, FieldCheck>): FieldCheck => (v, p, e) => checkObj(v, p, schema, e);
+const checkMapSchema = (schema: Record<string, FieldCheck>): FieldCheck => (v, p, e) => checkMap(v, p, schema, e);
+const CIT_SCHEMA: Record<string, FieldCheck> = { minimum_granularity: cSet(new Set(["file", "page", "section", "paragraph"])), require_source_file: cBool, allow_bbox: rule((v) => typeof v === "boolean" || v === "when_available", 'must be a boolean or "when_available"') };
+const TRANS_SCHEMA: Record<string, FieldCheck> = { from: cNonEmptyStrOrList, to: cNonEmptyStrOrList, from_statuses: cNonEmptyStrList, to_statuses: cNonEmptyStrList, requires: cStrList };
+const HARD_SCHEMA: Record<string, FieldCheck> = { statuses: cNonEmptyStrList, default_status: cStr, promotion_requires: cStrList, status_transitions: (v, p, e) => { if (!Array.isArray(v)) { e.push(`${p} must be a list`); return; } v.forEach((t, i) => { const tp = `${p}[${i}]`; checkObj(t, tp, TRANS_SCHEMA, e); if (!isRecord(t)) return; for (const [a, b] of [["from", "from_statuses"], ["to", "to_statuses"]] as const) if (t[a] !== undefined && t[b] !== undefined) e.push(`${tp}.${b} cannot be combined with ${a}`); else if (t[a] === undefined && t[b] === undefined) e.push(`${tp}.${a} is required`); }); } };
+const INF_SCHEMA: Record<string, FieldCheck> = { allow_inferred_relations: cBool, allowed_relation_types: cStrList, require_evidence_refs: cBool };
+const EV_SCHEMA: Record<string, FieldCheck> = { require_evidence_refs: cBool, min_refs: cNonNegInt, node_types: cStrList, relation_types: cStrList };
+const WIKI_SCHEMA: Record<string, FieldCheck> = { ...all(["enabled", "include_backlinks", "include_source_snippets"], cBool), page_node_types: cStrList };
+const OUT_SCHEMA: Record<string, FieldCheck> = { ontology: checkObjSchema({ enabled: cBool, artifact_schema: cStr, ...all(["canonical_node_types", "source_node_types", "occurrence_node_types", "alias_fields"], cStrList), relation_exports: (v, p, e) => { if (!Array.isArray(v)) { e.push(`${p} must be a list`); return; } v.forEach((item, i) => { const ip = `${p}[${i}]`; if (isNonEmptyStr(item)) return; if (!isRecord(item)) { e.push(`${ip} must be a nonempty string or object`); return; } checkObj(item, ip, { relation_type: cStr }, e); if (item.relation_type === undefined) e.push(`${ip}.relation_type is required`); }); }, wiki: checkObjSchema(WIKI_SCHEMA) }) };
+const LINK_BUILTINS = new Set(["case_fold", "dash_fold", "collapse_ws"]), LINK_MODES = new Set(["exact", "none"]), LINK_DETECTORS = new Set(["lexicon", "pattern", "llm"]);
+const checkPattern: FieldCheck = (v, p, e) => { checkObj(v, p, { form: cStr, flags: cStr, membership: rule((x) => x === "required", 'must be "required"'), expand: (x, ep, er) => { checkObj(x, ep, { ranges: cStr }, er); if (isRecord(x) && x.ranges === undefined) er.push(`${ep}.ranges is required`); } }, e); if (isRecord(v)) { if (v.form === undefined) e.push(`${p}.form is required`); else if (isNonEmptyStr(v.form) && (v.flags === undefined || isNonEmptyStr(v.flags))) { try { new RegExp(v.form, v.flags as string | undefined); } catch { e.push(`${p}.form must be a valid regex`); } } } };
+const LLM_SCHEMA: Record<string, FieldCheck> = { trigger: cSet(new Set(["zero_candidates", "unresolved_candidates", "below_min_candidates"])), budget_usd: cNonNegNum, dry_run: cBool, min_candidates: cNonNegInt };
+const LINK_SCHEMA: Record<string, FieldCheck> = {
+  preset: cSet(new Set(["gazetteer-exact", "open-extraction", "hybrid-recall"])),
+  normalize: checkObjSchema({ builtin: rule((x) => Array.isArray(x) && x.every((b) => typeof b === "string" && LINK_BUILTINS.has(b)), "must be a list of built-in normalizers"), fn: cTrimStr }),
+  partition_from: (v, p, e) => { checkObj(v, p, { source_frontmatter: cTrimStr, else: (x, ep, er) => { checkObj(x, ep, { path_segment: cNonNegInt }, er); if (isRecord(x) && x.path_segment === undefined) er.push(`${ep}.path_segment is required`); } }, e); if (isRecord(v) && v.source_frontmatter === undefined) e.push(`${p}.source_frontmatter is required`); },
+  detect: (v, p, e) => { if (!Array.isArray(v)) { e.push(`${p} must be a list`); return; } v.forEach((d, i) => { const dp = `${p}[${i}]`; if (typeof d === "string" && LINK_DETECTORS.has(d)) return; if (!isRecord(d)) { e.push(`${dp} must be lexicon, pattern, llm, or a detector object`); return; } const ks = Object.keys(d); if (ks.length === 1 && ks[0] === "pattern") checkPattern(d.pattern, `${dp}.pattern`, e); else if (ks.length === 1 && ks[0] === "llm") checkObj(d.llm, `${dp}.llm`, LLM_SCHEMA, e); else e.push(`${dp} must declare only pattern or llm`); }); },
+  patterns: (v, p, e) => { if (!Array.isArray(v)) e.push(`${p} must be a list`); else v.forEach((d, i) => checkPattern(d, `${p}[${i}]`, e)); },
+  resolve: (v, p, e) => { if (typeof v === "string" && LINK_MODES.has(v)) return; checkObj(v, p, { mode: cSet(LINK_MODES) }, e); if (isRecord(v) && v.mode === undefined) e.push(`${p}.mode is required`); },
+  evidence: checkObjSchema({ verbatim: rule((x) => x === "required", 'must be "required"'), context_window: cNonNegNum }),
+};
+const NODE_SCHEMA: Record<string, FieldCheck> = { aliases: cStrList, registry: cAny, source_backed: cBool, status_policy: cStr, linking: checkObjSchema(LINK_SCHEMA), visual_encoding: checkObjSchema(all(["shape", "color_hex", "fill", "border"], cStr)), ...all(["attributes", "key", "unique", "references"], cAny) };
+const REL_SCHEMA: Record<string, FieldCheck> = { source: cStrOrList, target: cStrOrList, source_types: cStrList, target_types: cStrList, ...all(["cardinality", "attributes", "key", "unique", "endpoints"], cAny), requires_evidence: cBool, assertion_basis: cStrOrList, derivation_method: cStrOrList, derivation_methods: cStrList };
+const REG_SCHEMA: Record<string, FieldCheck> = { ...all(["source", "id_column", "label_column", "alias_columns", "node_type", "partition_column"], cAny), bound_source_path: cStr };
+const HIER_SCHEMA: Record<string, FieldCheck> = all(["registry", "parent_column", "child_column", "relation_type", "parent_node_type", "child_node_type"], cStr);
+const CLASS_HIER_SCHEMA: Record<string, FieldCheck> = { relation_type: cTrimStr, membership_relation_type: cTrimStr, classes: checkMapSchema({ parent: cNullTrimStr, label: cNullTrimStr, member_node_types: cStrList, member_hierarchies: cStrList }) };
+const PROFILE_SCHEMA: Record<string, FieldCheck> = { ...all(["id", "version", "data_model"], cAny), ...all(["default_language", "sourcePath", "profile_hash"], cStr), node_types: checkMapSchema(NODE_SCHEMA), relation_types: checkMapSchema(REL_SCHEMA), registries: checkMapSchema(REG_SCHEMA), citation_policy: checkObjSchema(CIT_SCHEMA), hardening: checkObjSchema(HARD_SCHEMA), inference_policy: checkObjSchema(INF_SCHEMA), evidence_policy: checkObjSchema(EV_SCHEMA), hierarchies: checkMapSchema(HIER_SCHEMA), class_hierarchies: checkMapSchema(CLASS_HIER_SCHEMA), outputs: checkObjSchema(OUT_SCHEMA) };
+export function validateModelClosure(profile: Record<string, unknown>): string[] {
+  const errors: string[] = [];
+  checkObj(profile, "", PROFILE_SCHEMA, errors);
+  if (profile.node_types === undefined) errors.push("node_types must be an object");
+  if (isRecord(profile.relation_types)) for (const [id, r] of Object.entries(profile.relation_types)) if (isNonEmptyStr(id) && !RESERVED_KEYS.has(id) && isRecord(r)) for (const [a, b] of [["source", "source_types"], ["target", "target_types"], ["derivation_method", "derivation_methods"]] as const) if (r[a] !== undefined && r[b] !== undefined) errors.push(`relation_types.${id}.${b} cannot be combined with ${a}`);
+  return errors;
+}
+export function validateModelRegistries(nodes: Record<string, Pick<ModelNode, "attributes" | "key" | "unique">>, registries: Record<string, OntologyRegistrySpec>): string[] {
+  const errors: string[] = [], nodeMap = new Map(Object.entries(nodes));
+  for (const [id, reg] of Object.entries(registries)) {
+    const p = `registries.${id}`, node = typeof reg.node_type === "string" ? nodeMap.get(reg.node_type) : undefined; if (!node) continue;
+    const cols = new Map(node.attributes.map((a) => [a.name, a])), singleKeys = new Set([node.key, ...(node.unique ?? [])].filter((u) => u.length === 1 && !cols.get(u[0]!)!.nullable).map((u) => u[0]!));
+    if (isNonEmptyStr(reg.id_column) && !singleKeys.has(reg.id_column)) errors.push(`${p}.id_column must reference a non-null single-field candidate key`);
+    if (isNonEmptyStr(reg.label_column)) { const lbl = cols.get(reg.label_column); if (!lbl || lbl.nullable || !("kind" in lbl.type) || !TEXT_KINDS.has(lbl.type.kind)) errors.push(`${p}.label_column must reference a non-null string or text attribute`); }
+    if (reg.alias_columns !== undefined && !Array.isArray(reg.alias_columns)) errors.push(`${p}.alias_columns must be a list`); else if (Array.isArray(reg.alias_columns)) { const seen = new Set<string>(); reg.alias_columns.forEach((c, i) => { if (typeof c !== "string" || !cols.has(c)) errors.push(`${p}.alias_columns[${i}] references unknown attribute ${String(c)}`); else if (seen.has(c)) errors.push(`${p}.alias_columns[${i}] duplicates attribute ${c}`); else seen.add(c); }); }
+    if (reg.partition_column !== undefined && (typeof reg.partition_column !== "string" || !cols.has(reg.partition_column))) errors.push(`${p}.partition_column references unknown attribute ${String(reg.partition_column)}`);
   }
   return errors;
 }
