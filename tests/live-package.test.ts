@@ -259,11 +259,23 @@ let packed: PackedInstall;
 type ProductionProbeMode = "repair" | "factory" | "matrix" | "malformed" | "worktree" | "coverage" | "references";
 
 // Builds the Node permission-model spawn for the production probe. Node
-// 22.13/23.5 stabilised the flag as `--permission`; Node 24 rejects the
-// legacy `--experimental-permission` spelling (`bad option`).
-function buildProductionProbeArgs(mode: ProductionProbeMode, tmpRoot: string, installDir: string, rootDir: string): string[] {
+// 22.13/23.5 stabilised the flag as `--permission`; Node 20 only accepts
+// the legacy `--experimental-permission` spelling, while Node 24 rejects
+// it (`bad option`). Node 22.13+ accepts both spellings.
+function resolveProductionProbePermissionFlag(nodeVersion: string = process.versions.node): "--permission" | "--experimental-permission" {
+  const [majorRaw, minorRaw] = nodeVersion.split(".");
+  const major = Number.parseInt(majorRaw ?? "", 10);
+  const minor = Number.parseInt((minorRaw ?? "").replace(/[^0-9].*$/, ""), 10);
+  if (Number.isNaN(major) || Number.isNaN(minor)) return "--experimental-permission";
+  if (major > 23) return "--permission";
+  if (major === 23) return minor >= 5 ? "--permission" : "--experimental-permission";
+  if (major === 22) return minor >= 13 ? "--permission" : "--experimental-permission";
+  return "--experimental-permission";
+}
+
+function buildProductionProbeArgs(mode: ProductionProbeMode, tmpRoot: string, installDir: string, rootDir: string, nodeVersion: string = process.versions.node): string[] {
   return [
-    "--permission",
+    resolveProductionProbePermissionFlag(nodeVersion),
     "--allow-fs-read=" + tmpRoot,
     ...(mode === "factory"
       ? ["--allow-fs-write=" + join(installDir, "node_modules", "@sentropic", "engram-live", "dist", "grammars")]
@@ -275,19 +287,28 @@ function buildProductionProbeArgs(mode: ProductionProbeMode, tmpRoot: string, in
 }
 
 describe("production probe permission flag", () => {
-  it("never emits --experimental-permission", () => {
+  it("maps the Node version to the supported permission flag", () => {
+    expect(resolveProductionProbePermissionFlag("20.19.0")).toBe("--experimental-permission");
+    expect(resolveProductionProbePermissionFlag("22.12.0")).toBe("--experimental-permission");
+    expect(resolveProductionProbePermissionFlag("22.13.0")).toBe("--permission");
+    expect(resolveProductionProbePermissionFlag("24.0.0")).toBe("--permission");
     const modes: ProductionProbeMode[] = ["repair", "factory", "matrix", "malformed", "worktree", "coverage", "references"];
     for (const mode of modes) {
-      const args = buildProductionProbeArgs(mode, "/tmp/probe-tmp", "/tmp/probe-tmp/install", "/repo");
-      expect(args[0]).toBe("--permission");
-      expect(args.some((arg) => arg === "--experimental-permission" || arg.startsWith("--experimental-permission="))).toBe(false);
-      expect(args).toContain("--allow-fs-read=/tmp/probe-tmp");
+      const legacy = buildProductionProbeArgs(mode, "/tmp/probe-tmp", "/tmp/probe-tmp/install", "/repo", "20.19.0");
+      expect(legacy[0]).toBe("--experimental-permission");
+      expect(legacy).toContain("--allow-fs-read=/tmp/probe-tmp");
+      const stable = buildProductionProbeArgs(mode, "/tmp/probe-tmp", "/tmp/probe-tmp/install", "/repo", "24.0.0");
+      expect(stable[0]).toBe("--permission");
+      expect(stable).toContain("--allow-fs-read=/tmp/probe-tmp");
     }
-    expect(buildProductionProbeArgs("factory", "/tmp/probe-tmp", "/tmp/probe-tmp/install", "/repo")).toContain(
+    expect(buildProductionProbeArgs("factory", "/tmp/probe-tmp", "/tmp/probe-tmp/install", "/repo", "20.19.0")).toContain(
+      "--allow-fs-write=/tmp/probe-tmp/install/node_modules/@sentropic/engram-live/dist/grammars",
+    );
+    expect(buildProductionProbeArgs("factory", "/tmp/probe-tmp", "/tmp/probe-tmp/install", "/repo", "24.0.0")).toContain(
       "--allow-fs-write=/tmp/probe-tmp/install/node_modules/@sentropic/engram-live/dist/grammars",
     );
     expect(
-      buildProductionProbeArgs("repair", "/tmp/probe-tmp", "/tmp/probe-tmp/install", "/repo").some((arg) =>
+      buildProductionProbeArgs("repair", "/tmp/probe-tmp", "/tmp/probe-tmp/install", "/repo", "24.0.0").some((arg) =>
         arg.startsWith("--allow-fs-write="),
       ),
     ).toBe(false);
