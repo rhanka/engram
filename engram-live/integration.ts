@@ -22,6 +22,7 @@ import {
   type CoverageReport,
   type FactSinkPort,
   type GrammarCoverageDto,
+  type HistoryPersistencePort,
   type LiveScope,
   type ScopeFencingTokenDto,
   type ValidationResult,
@@ -36,20 +37,57 @@ import {
   type CodeAnalysisPorts,
   type GrammarStatusPort,
 } from "./code-analysis.js";
+import {
+  composeFactoryGitExecutor,
+  runGithubPrCapability,
+  runHistoryDagCapability,
+  runRefsCapability,
+  runRetentionRequestsCapability,
+  validateHostHooksIsolationDir,
+  type CommittedBatchContext,
+  type CommittedHistoryCapabilityResult,
+  type ComposeGitExecutorOutcome,
+  type DeliveredBatchSummary,
+  type GitPort,
+  type GithubPrCapabilityRequest,
+  type GithubPrCapabilityResult,
+  type HistoryDagCapabilityRequest,
+  type HistoryDagCapabilityResult,
+  type RefsCapabilityRequest,
+  type RefsCapabilityResult,
+  type RetentionRequestsCapabilityRequest,
+  type RetentionRequestsCapabilityResult,
+  type UnavailableCapabilityResult,
+  type ValidateHooksIsolationOptions,
+} from "./factory-history.js";
 import { createProductionParseAdapter, supportsProductionParse } from "./parse-adapter.js";
+import type { GithubPrTransportPort, PrSyncPersistencePort } from "./pr-sync.js";
+import type { RetentionPort } from "./retention.js";
 
 export { validateScopeFencingToken } from "./contracts.js";
 export type { FactSinkPort, FactSinkReceipt, ScopeFencingTokenDto } from "./contracts.js";
+export { composeFactoryGitExecutor, validateHostHooksIsolationDir } from "./factory-history.js";
+export type {
+  CommittedBatchContext,
+  CommittedHistoryCapabilityResult,
+  ComposeGitExecutorOutcome,
+  DeliveredBatchSummary,
+  GitPort,
+  GithubPrCapabilityRequest,
+  GithubPrCapabilityResult,
+  HistoryDagCapabilityRequest,
+  HistoryDagCapabilityResult,
+  RefsCapabilityRequest,
+  RefsCapabilityResult,
+  RetentionRequestsCapabilityRequest,
+  RetentionRequestsCapabilityResult,
+  UnavailableCapabilityResult,
+  ValidateHooksIsolationOptions,
+} from "./factory-history.js";
 
-// — Injected ports. Git, content and cache seams are recorded but unused in
-// L1b: their bounded operations are defined by L2a/L2b, L4a/L4b and L5. The
-// factory accepts them now so later lots extend the seams without moving
-// the composition boundary.
-
-export interface GitPort {
-  /** Bounded Git read seam; operations arrive with L2a/L2b. Unused in L1b. */
-  readonly liveGitSeam: "host-git";
-}
+// — Injected ports. Git, GitHub PR, history persistence and retention are
+// typed against the engines they serve (E-ASM2). Content and cache remain
+// placeholder seams until E-ASM3 replaces them with L4b/L5 ports.
 
 export interface FilesystemPort {
   /** Reads a file's bytes through the injected host filesystem. */
@@ -141,13 +179,23 @@ export interface GrammarRuntimePort {
 }
 
 export interface LiveFactoryPorts {
-  readonly git: GitPort;
+  /** Host-injected Git capability (SafeGitExecutor options/instance + GitProcessPort). */
+  readonly git?: GitPort;
   readonly filesystem: FilesystemPort;
   readonly clock: ClockPort;
   readonly content: ContentPort;
-  readonly factSink: FactSinkPort;
+  /** Single L5-P-m8 fenced fact-batch sink port. */
+  readonly factSink?: FactSinkPort;
   readonly cache: CachePort;
   readonly grammarRuntime: GrammarRuntimePort;
+  /** Host-injected durable completion and retained-root state port (L2b). */
+  readonly historyPersistence?: HistoryPersistencePort;
+  /** Host-injected GitHub PR pagination transport (P1; no network in engram). */
+  readonly githubPr?: GithubPrTransportPort;
+  /** Host-injected durable PR cursor/observation/object-job state port (P1). */
+  readonly prPersistence?: PrSyncPersistencePort;
+  /** Host-injected private root retention port (R1). */
+  readonly retention?: RetentionPort;
 }
 
 export interface CreateLiveFactoryOptions {
@@ -161,17 +209,29 @@ export interface CodeAnalysisRequest {
   readonly cache?: CodeAnalysisPorts["cache"];
 }
 
-export type CapabilityResult = CapabilityStatus & (
-  | { readonly state: "unavailable"; readonly delivered: false }
-  | {
-    readonly capability: "code-analysis";
-    readonly state: "available";
-    readonly delivered: true;
-    readonly languages: readonly GrammarCoverageDto[];
-    /** Present when a code-analysis request was supplied. */
-    readonly analysis?: AnalyzeCodeOutcome;
-  }
-);
+export type CapabilityRequest =
+  | CodeAnalysisRequest
+  | RefsCapabilityRequest
+  | HistoryDagCapabilityRequest
+  | GithubPrCapabilityRequest
+  | RetentionRequestsCapabilityRequest;
+
+export interface CodeAnalysisCapabilityResult extends CapabilityStatus {
+  readonly capability: "code-analysis";
+  readonly state: "available";
+  readonly delivered: true;
+  readonly languages: readonly GrammarCoverageDto[];
+  /** Present when a code-analysis request was supplied. */
+  readonly analysis?: AnalyzeCodeOutcome;
+}
+
+export type CapabilityResult =
+  | UnavailableCapabilityResult
+  | CodeAnalysisCapabilityResult
+  | RefsCapabilityResult
+  | HistoryDagCapabilityResult
+  | GithubPrCapabilityResult
+  | RetentionRequestsCapabilityResult;
 
 export type GrammarLoadResult = { readonly language: string } & (
   | { readonly state: "available"; readonly bytesSha256: string; readonly grammar: object }
@@ -180,7 +240,12 @@ export type GrammarLoadResult = { readonly language: string } & (
 
 export interface LiveFactory {
   describeCapabilities(): readonly CapabilityStatus[];
-  runCapability(capability: CapabilityId, request?: CodeAnalysisRequest): Promise<CapabilityResult>;
+  runCapability(capability: "code-analysis", request?: CodeAnalysisRequest): Promise<CodeAnalysisCapabilityResult | UnavailableCapabilityResult>;
+  runCapability(capability: "refs", request?: RefsCapabilityRequest): Promise<RefsCapabilityResult | UnavailableCapabilityResult>;
+  runCapability(capability: "history-dag", request?: HistoryDagCapabilityRequest): Promise<HistoryDagCapabilityResult | UnavailableCapabilityResult>;
+  runCapability(capability: "github-pr", request?: GithubPrCapabilityRequest): Promise<GithubPrCapabilityResult | UnavailableCapabilityResult>;
+  runCapability(capability: "retention-requests", request?: RetentionRequestsCapabilityRequest): Promise<RetentionRequestsCapabilityResult | UnavailableCapabilityResult>;
+  runCapability(capability: CapabilityId, request?: CapabilityRequest): Promise<CapabilityResult>;
   grammarCoverage(language: string): GrammarCoverageDto;
   grammarCoverageReport(language: string): CoverageReport;
   loadGrammar(language: string): Promise<GrammarLoadResult>;
@@ -247,13 +312,14 @@ export function createLiveFactory(options: CreateLiveFactoryOptions): LiveFactor
   if (!declarationCheck.ok) {
     throw new Error(`invalid live workspace declaration: ${declarationCheck.errors.join("; ")}`);
   }
+  const declaration = structuredClone(options.declaration);
   const ports = options.ports;
   const distDir = dirname(fileURLToPath(import.meta.url));
   const manifestPath = join(distDir, "..", "grammar-manifest.json");
   const grammarDir = join(distDir, "grammars");
 
-  const scope = { tenant: options.declaration.tenant, clone: options.declaration.cloneId };
-  const declaredWorktreeId = options.declaration.worktreeId;
+  const scope = { tenant: declaration.tenant, clone: declaration.cloneId };
+  const declaredWorktreeId = declaration.worktreeId;
   const runtime = ports.grammarRuntime;
   let runtimeInit: Promise<void> | undefined;
   const loadManifest = async (): Promise<ManifestOutcome> => {
@@ -345,51 +411,79 @@ export function createLiveFactory(options: CreateLiveFactoryOptions): LiveFactor
     };
   }
 
+  const historyContext = {
+    declaration,
+    clock: ports.clock,
+    git: ports.git,
+    factSink: ports.factSink,
+    historyPersistence: ports.historyPersistence,
+    githubPr: ports.githubPr,
+    prPersistence: ports.prPersistence,
+    retention: ports.retention,
+  };
+
+  async function runCapabilityImpl(capability: CapabilityId, request?: CapabilityRequest): Promise<CapabilityResult> {
+    const status = describeCapabilities().find((entry) => entry.capability === capability);
+    if (!status) {
+      throw new Error(`unknown capability "${String(capability)}"; known capabilities: ${CAPABILITY_IDS.join(", ")}`);
+    }
+    if (status.state === "unavailable") {
+      return { ...status, state: "unavailable", delivered: false };
+    }
+    if (capability === "refs") {
+      return runRefsCapability(status, historyContext, request);
+    }
+    if (capability === "history-dag") {
+      return runHistoryDagCapability(status, historyContext, request);
+    }
+    if (capability === "github-pr") {
+      return runGithubPrCapability(status, historyContext, request);
+    }
+    if (capability === "retention-requests") {
+      return runRetentionRequestsCapability(status, historyContext, request);
+    }
+    if (capability !== "code-analysis") {
+      return { ...status, state: "unavailable", delivered: false };
+    }
+    let operation: CodeAnalysisRequest | undefined;
+    if (request !== undefined) {
+      const codeRequest = request as CodeAnalysisRequest;
+      const input = codeRequest?.input;
+      const prototype = input && typeof input === "object" ? Object.getPrototypeOf(input) : undefined;
+      if (prototype !== Object.prototype && prototype !== null) {
+        throw new Error("code-analysis input must be a plain object");
+      }
+      const pinned = structuredClone(input);
+      const worktreeId = pinned.treeOid === null ? declaredWorktreeId : null;
+      const requestedScope: LiveScope = pinned.scope;
+      const scopeWorktree = requestedScope?.worktree;
+      if (requestedScope?.tenant !== scope.tenant || requestedScope.clone !== scope.clone
+        || (scopeWorktree != null && scopeWorktree !== worktreeId)
+        || (pinned.worktreeId != null && pinned.worktreeId !== worktreeId)) {
+        throw new Error("code-analysis scope does not match the workspace declaration");
+      }
+      const analysisScope: LiveScope = worktreeId === null ? scope : { ...scope, worktree: worktreeId };
+      operation = { ...codeRequest, input: { ...pinned, worktreeId, scope: analysisScope } };
+    }
+
+    const manifest = await loadManifest();
+    const probes = await Promise.all(ADVERTISED_LANGUAGES.map((language) => probeGrammar(language, manifest, true)));
+    const languages = probes.map(grammarCoverageFor);
+    for (const coverage of languages) latestGrammarCoverage.set(coverage.language, coverage);
+    const available: CodeAnalysisCapabilityResult = { ...status, capability: "code-analysis", state: "available", delivered: true, languages };
+    if (!operation) return available;
+
+    const { input, objects, cache } = operation;
+    const probe = probes.find(({ language }) => language === input.language)
+      ?? await probeGrammar(input.language, manifest, true);
+    latestGrammarCoverage.set(input.language, grammarCoverageFor(probe));
+    const analysis = await analyzeCode(input, { extractor, grammar: grammarFor(probe), objects, cache });
+    return { ...available, analysis };
+  }
+
   return {
     describeCapabilities,
-
-    async runCapability(capability, request): Promise<CapabilityResult> {
-      const status = describeCapabilities().find((entry) => entry.capability === capability);
-      if (!status) {
-        throw new Error(`unknown capability "${String(capability)}"; known capabilities: ${CAPABILITY_IDS.join(", ")}`);
-      }
-      if (capability !== "code-analysis" || status.state === "unavailable") {
-        return { ...status, state: "unavailable", delivered: false };
-      }
-      let operation: CodeAnalysisRequest | undefined;
-      if (request !== undefined) {
-        const input = request?.input;
-        const prototype = input && typeof input === "object" ? Object.getPrototypeOf(input) : undefined;
-        if (prototype !== Object.prototype && prototype !== null) {
-          throw new Error("code-analysis input must be a plain object");
-        }
-        const pinned = structuredClone(input);
-        const worktreeId = pinned.treeOid === null ? declaredWorktreeId : null;
-        const requestedScope: LiveScope = pinned.scope;
-        const scopeWorktree = requestedScope?.worktree;
-        if (requestedScope?.tenant !== scope.tenant || requestedScope.clone !== scope.clone
-          || (scopeWorktree != null && scopeWorktree !== worktreeId)
-          || (pinned.worktreeId != null && pinned.worktreeId !== worktreeId)) {
-          throw new Error("code-analysis scope does not match the workspace declaration");
-        }
-        const analysisScope: LiveScope = worktreeId === null ? scope : { ...scope, worktree: worktreeId };
-        operation = { ...request, input: { ...pinned, worktreeId, scope: analysisScope } };
-      }
-
-      const manifest = await loadManifest();
-      const probes = await Promise.all(ADVERTISED_LANGUAGES.map((language) => probeGrammar(language, manifest, true)));
-      const languages = probes.map(grammarCoverageFor);
-      for (const coverage of languages) latestGrammarCoverage.set(coverage.language, coverage);
-      const available = { ...status, capability, state: "available", delivered: true, languages } as const;
-      if (!operation) return available;
-
-      const { input, objects, cache } = operation;
-      const probe = probes.find(({ language }) => language === input.language)
-        ?? await probeGrammar(input.language, manifest, true);
-      latestGrammarCoverage.set(input.language, grammarCoverageFor(probe));
-      const analysis = await analyzeCode(input, { extractor, grammar: grammarFor(probe), objects, cache });
-      return { ...available, analysis };
-    },
+    runCapability: runCapabilityImpl as LiveFactory["runCapability"],
 
     grammarCoverage(language: string): GrammarCoverageDto {
       return latestGrammarCoverage.get(language) ?? {

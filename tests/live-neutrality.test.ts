@@ -50,6 +50,7 @@ function liveBuildIsFresh(): boolean {
     "batch-codec.ts",
     "generation.ts",
     "registration.ts",
+    "factory-history.ts",
     "integration.ts",
     "line-attribution.ts",
     "symbol-history.ts",
@@ -76,7 +77,7 @@ function liveBuildIsFresh(): boolean {
   };
   if (!manifest.languages || typeof manifest.languages !== "object") return false;
   const requiredOutputs = [
-    ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", ...ENGINE_AND_SCHEDULER_MODULES].flatMap(name =>
+    ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", "factory-history", ...ENGINE_AND_SCHEDULER_MODULES].flatMap(name =>
       [`${name}.js`, `${name}.d.ts`, `${name}.d.ts.map`]),
     "index.js",
     "index.d.ts",
@@ -867,7 +868,7 @@ const EXPECTED_OS = ["linux"];
 
 function expectedPackedPaths(manifestLanguages: Record<string, { file: string }>): string[] {
   return [
-    ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", ...ENGINE_AND_SCHEDULER_MODULES].flatMap(name =>
+    ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", "factory-history", ...ENGINE_AND_SCHEDULER_MODULES].flatMap(name =>
       [`dist/${name}.js`, `dist/${name}.d.ts`, `dist/${name}.d.ts.map`]),
     "package.json",
     "grammar-manifest.json",
@@ -985,6 +986,7 @@ function checkPackageClosure(input: PackageClosureInput): ClosureViolation[] {
 const NEUTRAL_TEST_FILES = new Set([
   "tests/live-neutrality.test.ts",
   "tests/live-package.test.ts",
+  "tests/live-factory.test.ts",
   "tests/live-fact-contract.test.ts",
   "tests/live-generation-contract.test.ts",
   "tests/live-line-attribution.test.ts",
@@ -1202,7 +1204,8 @@ describe("live neutrality", () => {
     expect(source.map((file) => file.path)).toContain("engram-live/generation.ts");
     expect(source.map((file) => file.path)).toContain("engram-live/line-attribution.ts");
     expect(source.map((file) => file.path)).toContain("engram-live/symbol-history.ts");
-    for (const name of ["facts", "batch-codec", "generation", "line-attribution", "git-executor", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", ...ENGINE_AND_SCHEDULER_MODULES]) {
+    expect(source.map((file) => file.path)).toContain("engram-live/factory-history.ts");
+    for (const name of ["facts", "batch-codec", "generation", "line-attribution", "git-executor", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", "factory-history", ...ENGINE_AND_SCHEDULER_MODULES]) {
       for (const extension of ["js", "d.ts", "d.ts.map"]) {
         expect(packedPaths).toContain(`dist/${name}.${extension}`);
       }
@@ -1244,6 +1247,7 @@ describe("live neutrality", () => {
     const closurePaths = neutralTests.map((file) => file.path);
     expect(closurePaths).toContain("tests/live-neutrality.test.ts");
     expect(closurePaths).toContain("tests/live-package.test.ts");
+    expect(closurePaths).toContain("tests/live-factory.test.ts");
     expect(closurePaths).toContain("tests/live-fact-contract.test.ts");
     expect(closurePaths).toContain("tests/live-generation-contract.test.ts");
     expect(closurePaths).toContain("tests/live-line-attribution.test.ts");
@@ -1426,7 +1430,7 @@ describe("live neutrality", () => {
     singleMutationRejected((w) => ({ ...w, packedPaths: [...w.packedPaths, "dist/fetch-grammars.py"] }), /Python/);
     singleMutationRejected((w) => ({ ...w, packedPaths: [...w.packedPaths, "node_modules/web-tree-sitter/index.js"] }), /node_modules/);
     singleMutationRejected((w) => ({ ...w, packedPaths: w.packedPaths.filter((path) => path !== "dist/integration.js") }), /missing from the packed closure/);
-    for (const name of ["facts", "batch-codec", "generation", "line-attribution", "git-executor", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", ...ENGINE_AND_SCHEDULER_MODULES]) {
+    for (const name of ["facts", "batch-codec", "generation", "line-attribution", "git-executor", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", "factory-history", ...ENGINE_AND_SCHEDULER_MODULES]) {
       for (const extension of ["js", "d.ts", "d.ts.map"]) {
         const missing = `dist/${name}.${extension}`;
         singleMutationRejected((w) => ({ ...w, packedPaths: w.packedPaths.filter((path) => path !== missing) }), /missing from the packed closure/);

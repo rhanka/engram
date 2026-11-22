@@ -9,6 +9,13 @@
 
 export * from "./contracts.js";
 export * from "./integration.js";
+export {
+  runRefsCapability,
+  runHistoryDagCapability,
+  runGithubPrCapability,
+  runRetentionRequestsCapability,
+} from "./factory-history.js";
+export type { CommittedHistoryRuntimeContext } from "./factory-history.js";
 export * from "./facts.js";
 export * from "./batch-codec.js";
 export * from "./generation.js";

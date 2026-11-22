@@ -65,15 +65,24 @@ export interface CapabilityStatus {
   readonly plannedLot: string;
 }
 
+const DELIVERED_CAPABILITY_REASONS: Partial<Readonly<Record<CapabilityId, string>>> = {
+  "refs": "ref observation, tracking and history-root selection over the host-injected Git executor",
+  "history-dag": "uncapped streaming commit DAG and changed-file extraction over the host-injected Git port",
+  "github-pr": "all-state GitHub pull-request pagination and attribution over the host-injected GitHub transport",
+  "code-analysis": "production syntax analysis through the host parser runtime and pinned packaged grammars",
+  "retention-requests": "scoped private retention request derivation and receipt verification over the host-injected retention port",
+};
+
 export function describeCapabilities(): readonly CapabilityStatus[] {
-  return CAPABILITY_IDS.map((capability) => ({
-    capability,
-    state: capability === "code-analysis" ? "available" : "unavailable",
-    reason: capability === "code-analysis"
-      ? "production syntax analysis through the host parser runtime and pinned packaged grammars"
-      : NOT_IMPLEMENTED_REASON,
-    plannedLot: CAPABILITY_PLANNED_LOTS[capability],
-  }));
+  return CAPABILITY_IDS.map((capability) => {
+    const deliveredReason = DELIVERED_CAPABILITY_REASONS[capability];
+    return {
+      capability,
+      state: deliveredReason !== undefined ? "available" : "unavailable",
+      reason: deliveredReason ?? NOT_IMPLEMENTED_REASON,
+      plannedLot: CAPABILITY_PLANNED_LOTS[capability],
+    };
+  });
 }
 
 // — Coverage (spec §12): every axis distinguishes current work from explicit
