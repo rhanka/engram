@@ -6146,11 +6146,11 @@ export async function main(): Promise<void> {
     });
 
   const scrap = program.command("scrap").description("Tier-0 capture + extract");
-  scrap.command("capture").option("--input <file>").option("--out <dir>").option("--robots <mode>", "robots mode", "respect").option("--concurrency <n>", "concurrency", "4").option("--retry-failed").action(async (o) => {
+  scrap.command("capture").option("--input <file>").option("--out <dir>").option("--robots <mode>", "robots mode", "respect").option("--concurrency <n>", "concurrency", "4").option("--retry-failed").option("--scheme-fallback <mode>", "scheme fallback mode (none|http)", "none").action(async (o) => {
     const n = Number(o.concurrency ?? 4);
-    if (!o.input || !o.out || (o.robots !== "respect" && o.robots !== "ignore") || !Number.isInteger(n) || n < 1) { console.error("usage: engram scrap capture --input FILE --out DIR [--robots respect|ignore] [--concurrency N] [--retry-failed]"); process.exit(2); }
+    if (!o.input || !o.out || (o.robots !== "respect" && o.robots !== "ignore") || (o.schemeFallback !== "none" && o.schemeFallback !== "http") || !Number.isInteger(n) || n < 1) { console.error("usage: engram scrap capture --input FILE --out DIR [--robots respect|ignore] [--concurrency N] [--retry-failed] [--scheme-fallback none|http]"); process.exit(2); }
     const { runCapture } = await import("./scrap/capture.js");
-    await runCapture({ input: o.input, out: o.out, robots: o.robots, concurrency: n, retryFailed: o.retryFailed === true });
+    await runCapture({ input: o.input, out: o.out, robots: o.robots, concurrency: n, retryFailed: o.retryFailed === true, schemeFallback: o.schemeFallback });
   });
   scrap.command("extract").option("--out <dir>").option("--mission <file>").option("--model <id>", "model id or provider:model (e.g. openai:gpt-5-mini)").option("--retry-failed").action(async (o) => {
     if (!o.out || !o.mission || !o.model) { console.error("usage: engram scrap extract --out DIR --mission FILE --model ID [--retry-failed]"); process.exit(2); }
