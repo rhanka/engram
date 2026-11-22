@@ -20,6 +20,7 @@ export interface ScrapMeshClient {
   provider: ProviderId;
   model: string;
   ownerScope: string;
+  effort?: ReasoningEffort;
 }
 // Runner-less seat executors only; claude-code needs a qualified CLI runner.
 const SEAT_WIRED: ReadonlySet<ProviderId> = new Set(["gemini", "openai", "muse", "mistral"]);
@@ -96,5 +97,5 @@ export async function createScrapMeshClient(rawAlias: string, deps: ScrapMeshDep
     createRoutePlanner: (runtime) => facade.createRoutePlanner(runtime),
     adapters,
   });
-  return { client: meshTextJsonClient(mesh, { provider, model, ...(effort ? { effort } : {}) }), provider, model, ownerScope };
+  return { client: meshTextJsonClient(mesh, { provider, model, ...(effort ? { effort } : {}) }), provider, model, ownerScope, ...(effort ? { effort } : {}) };
 }

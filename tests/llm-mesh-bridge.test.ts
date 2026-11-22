@@ -527,6 +527,34 @@ describe("graphify llm-mesh bridge", () => {
       messages: [{ role: "user", content: "hello" }],
     })).rejects.toThrow("Graphify mesh: no authResolver configured for provider 'openai'");
   });
+
+  it("forwards quota only when it is a plain object (rejecting arrays and non-plain objects)", async () => {
+    const runWith = async (
+      respExtras: Record<string, unknown>,
+      completeResult?: unknown,
+    ) => {
+      const attempt = routeAttempt(async () => ({ ...generateResponse, ...respExtras } as GenerateResponse));
+      attempt.complete = vi.fn(async () => completeResult as unknown as void);
+      const mesh = createGraphifyMesh({ routingSubject, createRoutePlanner: () => routePlanner([attempt]) });
+      const client = meshTextJsonClient(mesh, { provider: "openai", model: "gpt-5.5" });
+      return client.generateJson({ schema: "s", prompt: "p" });
+    };
+
+    const arrComplete = await runWith({}, { quota: ["not", "plain"] });
+    expect(arrComplete.audit.quota).toBeUndefined();
+
+    const arrResp = await runWith({ quota: [1, 2, 3] });
+    expect(arrResp.audit.quota).toBeUndefined();
+
+    const dateResp = await runWith({ quota: new Date("2026-11-22T00:00:00Z") });
+    expect(dateResp.audit.quota).toBeUndefined();
+
+    const arrFallbackToMeta = await runWith({ quota: [1, 2], providerMetadata: { quota: { remaining: 7 } } });
+    expect(arrFallbackToMeta.audit.quota).toEqual({ remaining: 7 });
+
+    const plainComplete = await runWith({}, { quota: { remaining: 42, window: "5h" } });
+    expect(plainComplete.audit.quota).toEqual({ remaining: 42, window: "5h" });
+  });
 });
 
 describe("classifyRouteFailure", () => {
