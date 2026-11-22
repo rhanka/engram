@@ -266,7 +266,7 @@ export interface CommittedHistoryRuntimeContext {
   readonly declaration: WorkspaceDeclarationDto;
   readonly clock: { now(): number } | undefined;
   readonly git: GitPort | undefined;
-  readonly factSink: FactSinkPort | undefined;
+  readonly factSink: FactSinkPort;
   readonly historyPersistence: HistoryPersistencePort | undefined;
   readonly githubPr: GithubPrTransportPort | undefined;
   readonly prPersistence: PrSyncPersistencePort | undefined;
@@ -528,7 +528,7 @@ function readClockMs(clock: { now(): number } | undefined): { ok: true; nowMs: n
   return { ok: true, nowMs: value };
 }
 
-function validateFactSinkPort(sink: FactSinkPort | undefined): { ok: true; sink: FactSinkPort } | { ok: false; reason: string } {
+function validateFactSinkPort(sink: FactSinkPort): { ok: true; sink: FactSinkPort } | { ok: false; reason: string } {
   if (!sink || typeof sink.deliver !== "function") {
     return { ok: false, reason: "missing host fact sink port (ports.factSink.deliver)" };
   }

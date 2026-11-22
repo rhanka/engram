@@ -888,16 +888,21 @@ describe("E-ASM2 committed-history capabilities behind the factory", () => {
       expect(sink.deliveries).toHaveLength(0);
     }
     {
-      const noSink = createLiveFactory({ declaration, ports: { ...makeBasePorts(new FakeFencedSink()), factSink: undefined } });
-      for (const [cap, req] of [
-        ["refs", refsReq],
-        ["history-dag", historyReq],
-        ["github-pr", prReq],
-        ["retention-requests", retReq],
-      ] as const) {
-        const r = await noSink.runCapability(cap, req as never);
-        expect(r).toMatchObject({ capability: cap, state: "unavailable", delivered: false });
-        expect(r.reason).toMatch(/sink/i);
+      for (const malformedSink of [undefined, {}] as unknown as FactSinkPort[]) {
+        const noSink = createLiveFactory({
+          declaration,
+          ports: { ...makeBasePorts(new FakeFencedSink()), factSink: malformedSink },
+        });
+        for (const [cap, req] of [
+          ["refs", refsReq],
+          ["history-dag", historyReq],
+          ["github-pr", prReq],
+          ["retention-requests", retReq],
+        ] as const) {
+          const r = await noSink.runCapability(cap, req as never);
+          expect(r).toMatchObject({ capability: cap, state: "unavailable", delivered: false });
+          expect(r.reason).toMatch(/missing host fact sink port/i);
+        }
       }
     }
 

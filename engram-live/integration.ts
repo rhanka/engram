@@ -185,7 +185,7 @@ export interface LiveFactoryPorts {
   readonly clock: ClockPort;
   readonly content: ContentPort;
   /** Single L5-P-m8 fenced fact-batch sink port. */
-  readonly factSink?: FactSinkPort;
+  readonly factSink: FactSinkPort;
   readonly cache: CachePort;
   readonly grammarRuntime: GrammarRuntimePort;
   /** Host-injected durable completion and retained-root state port (L2b). */
