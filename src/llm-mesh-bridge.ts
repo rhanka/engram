@@ -15,6 +15,7 @@ import {
   StaticProviderRegistry,
   type AuthResolver,
   type GenerateRequest,
+  type ReasoningEffort,
   type GenerateResponse,
   type LlmMesh,
   type LlmMeshHooks,
@@ -296,6 +297,11 @@ function requestProviderId(
   return "local";
 }
 
+export function isSeatAcquisitionError(error: unknown): boolean {
+  const code = error && typeof error === "object" ? (error as { code?: unknown }).code : undefined;
+  return code === "no_account" || code === "no_active_account" || code === "access-unavailable" || /AccountTransportAcquireError|RefreshDeferredError|Token refresh (deferred|failed)|reauthentication required/i.test(error instanceof Error ? error.message : String(error));
+}
+
 function isNormalizedProviderError(error: unknown): error is NormalizedProviderError {
   const record = asRecord(error);
   return Boolean(
@@ -399,13 +405,13 @@ export function createGraphifyMesh(options: CreateGraphifyMeshOptions): Graphify
     const requestId = request.metadata?.correlationId?.trim() || randomUUID();
 
     for (const [attemptIndex, candidateRef] of plan.candidateRefs.entries()) {
-      const attempt = await planner.prepareAttempt(
-        options.routingSubject,
-        plan.planRef,
-        candidateRef,
-        requestId,
-        attemptIndex,
-      );
+      let attempt: Awaited<ReturnType<RoutePlanner["prepareAttempt"]>>;
+      try {
+        attempt = await planner.prepareAttempt(options.routingSubject, plan.planRef, candidateRef, requestId, attemptIndex);
+      } catch (error) {
+        if (isSeatAcquisitionError(error) && attemptIndex + 1 < plan.candidateRefs.length) continue;
+        throw error;
+      }
 
       if (request.signal?.aborted) {
         await attempt.releaseCancelled();
@@ -508,6 +514,8 @@ export interface MeshTextJsonClientOptions {
    * empty modelId is a silent lie about which model actually ran.
    */
   model: string;
+  /** Reasoning effort from the alias suffix (e.g. gemini-4-hydrogen-high), forwarded as-is. */
+  effort?: ReasoningEffort;
 }
 
 function hasValidatedGenerate(mesh: LlmMesh): mesh is GraphifyMesh {
@@ -576,6 +584,7 @@ export function meshTextJsonClient(
           },
         ],
         responseFormat: { type: "json-object" },
+        ...(options.effort ? { reasoning: { effort: options.effort } } : {}),
         ...(input.maxOutputTokens !== undefined
           ? { maxOutputTokens: input.maxOutputTokens }
           : {}),
@@ -615,8 +624,12 @@ export function meshTextJsonClient(
         ...(input.outputPath ? { outputPath: input.outputPath } : {}),
         audit: {
           mesh: true,
-          providerId: provider,
-          modelId: model,
+          // Routed actuals: the plan may resolve an effort-suffixed request
+          // to its base model, so the response (not the request) says what
+          // ran. Usage rides along so per-id rows can record it as tokens.
+          providerId: response.providerId ?? provider,
+          modelId: response.modelId ?? model,
+          ...(response.usage ? { usage: response.usage } : {}),
         },
       };
     },

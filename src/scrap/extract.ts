@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createDirectTextJsonClient, directProviderCredentialEnv, parseJsonFromLlmText, type DirectLlmProvider } from "../llm-execution.js";
+import { isSeatAcquisitionError } from "../llm-mesh-bridge.js";
 export interface ExtractOptions { out: string; mission: string; model: string; tokenCap?: number }
 export interface Mission { fields: (string | { name: string })[]; instruction: string; tokenCap?: number }
 export type ExtractErrorCode = "missing_credentials" | "llm_error" | "parse_error" | "write_error";
@@ -8,6 +9,14 @@ export type ExtractErrorCode = "missing_credentials" | "llm_error" | "parse_erro
 // stubs mimic the real client by answering through validateResponse in memory.
 export interface ExtractClient {
   generateJson(input: { schema: string; prompt: string; maxOutputTokens?: number; validateResponse?: (text: string) => void | Promise<void> }): Promise<{ audit?: unknown; text?: unknown }>;
+}
+export interface MeshClientDeps {
+  createMeshClient?: (alias: string) => Promise<{ client: ExtractClient }>;
+}
+// Usage errors the CLI maps to exit 2 (bad invocation, unknown model, no
+// credentials, no mesh seat): raised before any provider request is made.
+export function isExtractUsageError(e: unknown): boolean {
+  return /cannot infer provider|missing credentials|unknown mesh alias|no usable mesh seat|no seat executor/.test(String(e));
 }
 const textOf = (h: string): string => h.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 const KNOWN: string[] = ["anthropic", "openai", "gemini", "mistral", "cohere"];
@@ -22,10 +31,12 @@ export function providerOf(model: string): { provider: DirectLlmProvider; name: 
 export function buildPrompt(m: Mission, names: string[], text: string): string {
   return `${m.instruction}\nFields: ${names.join(", ")}\nReturn a JSON object with one entry per field: {"value": string|null, "quote": string|null} where quote is copied verbatim from the page text below.\n\n${text}`;
 }
-export async function runExtract(oc: ExtractOptions, client?: ExtractClient): Promise<void> {
+export async function runExtract(oc: ExtractOptions, client?: ExtractClient, deps?: MeshClientDeps): Promise<void> {
   const mission = JSON.parse(readFileSync(oc.mission, "utf-8")) as Mission;
   const names = mission.fields.map((f) => typeof f === "string" ? f : f.name);
-  const pm = providerOf(oc.model);
+  const meshAlias = oc.model.startsWith("mesh:") ? oc.model.slice("mesh:".length) : null;
+  const pm = meshAlias === null ? providerOf(oc.model) : null;
+  if (meshAlias !== null && !client && !deps?.createMeshClient) await import("./mesh-host.js").then((m) => m.resolveMeshAlias(meshAlias));
   // char budget (UTF-16 code units, not tokens): slice keeps prompts bounded without a tokenizer.
   const cap = oc.tokenCap ?? mission.tokenCap ?? 24000;
   const latest = new Map<string, { status: string; pages?: { sha256: string }[]; id: string; url: string }>();
@@ -40,21 +51,27 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient): Pr
   const done = new Set<string>();
   if (existsSync(resPath)) for (const line of readFileSync(resPath, "utf-8").split("\n")) {
     if (!line.trim()) continue;
-    try { const r = JSON.parse(line); if (typeof r.id === "string") done.add(r.id); } catch { /* keep prior */ }
+    try { const r = JSON.parse(line); if (typeof r.id === "string" && r.error === undefined) done.add(r.id); } catch { /* keep prior */ }
   }
   mkdirSync(oc.out, { recursive: true });
   const todo = [...latest.values()].filter((s) => s.status === "ok" && !done.has(s.id));
   if (todo.length === 0) return;
   // Fail fast with exit 2 (via CLI) before any paid request: without this,
   // the real client would throw inside generateJson per id and poison rows.
-  if (!client) {
-    const envs = directProviderCredentialEnv(pm.provider);
-    if (!envs.some((e) => process.env[e]?.trim())) throw new Error(`scrap extract: missing credentials for ${pm.provider} (missing_credentials); set one of ${envs.join(", ")} before any request`);
+  // Mesh seats need no API key; the host resolves them from local seats.
+  let cli: ExtractClient;
+  if (client) cli = client;
+  else if (meshAlias !== null) {
+    const factory = deps?.createMeshClient ?? (async (alias: string) => (await import("./mesh-host.js")).createScrapMeshClient(alias));
+    cli = (await factory(meshAlias)).client;
+  } else {
+    const envs = directProviderCredentialEnv(pm!.provider);
+    if (!envs.some((e) => process.env[e]?.trim())) throw new Error(`scrap extract: missing credentials for ${pm!.provider} (missing_credentials); set one of ${envs.join(", ")} before any request`);
+    cli = createDirectTextJsonClient({ provider: pm!.provider, model: pm!.name });
   }
-  const cli: ExtractClient = client ?? createDirectTextJsonClient({ provider: pm.provider, model: pm.name });
   const fail = (s: { id: string; url: string }, code: ExtractErrorCode, msg: string): void => {
     console.error(`scrap extract: ${s.id} ${code}: ${msg}`);
-    try { appendFileSync(resPath, `${JSON.stringify({ id: s.id, url: s.url, error: code, fields: null })}\n`, "utf-8"); }
+    try { appendFileSync(resPath, `${JSON.stringify({ id: s.id, url: s.url, error: code, error_detail: msg, fields: null })}\n`, "utf-8"); }
     catch (e) { console.error(`scrap extract: ${s.id} write_error: cannot append row: ${e instanceof Error ? e.message : String(e)}`); }
   };
   for (const s of todo) {
@@ -69,6 +86,7 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient): Pr
       // memory (the contract every generating client must honor).
       res = await cli.generateJson({ schema: "scrap-extract", prompt, maxOutputTokens: 2000, validateResponse: (t) => { rawText = t; } });
     } catch (e) {
+      if (isSeatAcquisitionError(e)) throw e;
       const m = e instanceof Error ? e.message : String(e);
       fail(s, /missing.*cred|missing_credentials/i.test(m) ? "missing_credentials" : /(not valid JSON|empty or filtered response)/i.test(m) ? "parse_error" : "llm_error", m);
       continue;
@@ -86,9 +104,12 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient): Pr
       else if (!q || !hit) fields[f] = { value: null, quote: null, sha256: null, reason: "unverified_quote" };
       else fields[f] = { value: (e as { value?: unknown }).value, quote: q, sha256: hit.sha };
     }
-    const audit = (res as { audit?: unknown }).audit as { usage?: unknown; cost?: unknown } | undefined, extra: Record<string, unknown> = {};
+    const audit = (res as { audit?: unknown }).audit as { usage?: unknown; cost?: unknown; mesh?: unknown; providerId?: unknown; modelId?: unknown } | undefined, extra: Record<string, unknown> = {};
     if (audit?.usage !== undefined) extra.tokens = audit.usage;
     if (audit?.cost !== undefined) extra.cost = audit.cost;
+    if (audit?.mesh === true && typeof audit.providerId === "string" && typeof audit.modelId === "string") {
+      extra.mesh = { provider: audit.providerId, model: audit.modelId };
+    }
     try { appendFileSync(resPath, `${JSON.stringify({ id: s.id, url: s.url, fields, ...extra })}\n`, "utf-8"); }
     catch (e) { console.error(`scrap extract: ${s.id} write_error: cannot append row: ${e instanceof Error ? e.message : String(e)}`); }
   }
