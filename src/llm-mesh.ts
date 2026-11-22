@@ -9,4 +9,4 @@ export type {
   GraphifyMeshResponseValidator,
   MeshTextJsonClientOptions,
 } from "./llm-mesh-bridge.js";
-export { textClientToCallLlm } from "./llm-execution.js";
+export { textClientToCallLlm } from "./llm-json-port.js";

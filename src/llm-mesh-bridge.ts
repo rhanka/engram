@@ -35,7 +35,7 @@ import type {
   TextJsonGenerationClient,
   TextJsonGenerationInput,
   TextJsonGenerationResult,
-} from "./llm-execution.js";
+} from "./llm-json-port.js";
 
 export interface CreateGraphifyMeshOptions {
   /** The non-secret authorization identity this mesh instance is bound to. */
