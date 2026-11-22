@@ -1,6 +1,6 @@
 import { canonicalBytes, sha256Hex } from "./ontology-guardian/canonical.js"; import { isDigest, type Digest, type Pin } from "./ontology-guardian/types.js";
 import { hashOntologyProfile, normalizeOntologyProfile } from "./ontology-profile.js";
-import { DATA_MODEL_FORMAT, RESERVED_KEYS, extraKey, isNonEmptyStr, isRecord, isTrimmedStr, validateModelAttributes, validateModelClosure, validateModelEnums, validateModelFkEdges, validateModelKeys, validateModelRegistries, type ModelAttribute, type ModelNode, type ModelRow, type Names } from "./model-schemas.js";
+import { DATA_MODEL_FORMAT, RESERVED_KEYS, extraKey, isNonEmptyStr, isRecord, isTrimmedStr, validateModelAttributes, validateModelClosure, validateModelEnums, validateModelFkEdges, validateModelKeys, validateModelRegistries, type ModelAttribute, type ModelEndpoints, type ModelNode, type ModelRow, type Names } from "./model-schemas.js";
 import type { NormalizedOntologyProfile, OntologyProfile, OntologyRegistrySpec } from "./types.js";
 export const DATA_GOVERNANCE_FORMAT = "engram.data-governance/1";
 export interface QualifiedPin { namespace: string; pin: Pin }
@@ -68,9 +68,10 @@ function checkStorage(row: ModelRow, t: Record<string, unknown>, cols: Map<strin
     const seen = new Set<string>(); t.sortBy.forEach((s, i) => { const sp = `${p}.sortBy[${i}]`; if (!isRecord(s)) return void errors.push(`${sp} must be an object`); const ex = extraKey(s, "field", "direction"); if (ex !== undefined) errors.push(`${sp}.${ex} is not allowed`); if (typeof s.field !== "string" || !cols.has(s.field)) errors.push(`${sp}.field references unknown attribute ${String(s.field)}`); else if (seen.has(s.field)) errors.push(`${sp}.field duplicates attribute ${s.field}`); else seen.add(s.field); if (s.direction !== "asc" && s.direction !== "desc") errors.push(`${sp}.direction must be "asc" or "desc"`); });
   }
 }
-function checkTable(row: ModelRow, t: unknown, p: string, id: string, tables: TableRef[], errors: string[]): void {
+function checkTable(row: ModelRow, t: unknown, p: string, id: string, fk: ReadonlySet<string> | undefined, tables: TableRef[], errors: string[]): void {
   if (!isRecord(t)) { errors.push(`${p} must be an object`); return; }
   const tEx = extraKey(t, ...TABLE_KEYS), cols = new Map(row.attributes.map((a) => [a.name, a])), sc = t.tenantScope, rules = new Map<string, Retention | null>(), retOk = t.retention === undefined || isRecord(t.retention);
+  const pk = new Set(row.key), uq = new Set((row.unique ?? []).flat()), scT = isRecord(sc) && sc.kind === "tenant" ? sc.tenant : undefined, scW = isRecord(sc) && sc.kind === "tenant" ? sc.workspace : undefined;
   if (tEx !== undefined) errors.push(`${p}.${tEx} is not allowed`);
   if (!isRecord(sc)) errors.push(`${p}.tenantScope must be an object`);
   else if (sc.kind === "global") { const ex = extraKey(sc, "kind"); if (ex !== undefined) errors.push(`${p}.tenantScope.${ex} is not allowed`); }
@@ -103,7 +104,7 @@ function checkTable(row: ModelRow, t: unknown, p: string, id: string, tables: Ta
     } else errors.push(`${cp}.pii.category must be one of none, identifier, contact, authentication, personal, sensitive`);
     if (c.protect !== undefined) {
       if (!isRecord(c.protect)) errors.push(`${cp}.protect must be an object`);
-      else { const ex = extraKey(c.protect, "encrypt"); if (ex !== undefined) errors.push(`${cp}.protect.${ex} is not allowed`); if (c.protect.encrypt !== true) errors.push(`${cp}.protect.encrypt must be true`); }
+      else { const ex = extraKey(c.protect, "encrypt"); if (ex !== undefined) errors.push(`${cp}.protect.${ex} is not allowed`); if (c.protect.encrypt !== true) errors.push(`${cp}.protect.encrypt must be true`); else { const roles = [pk.has(k) && "primary key", uq.has(k) && "unique key", fk?.has(k) && "foreign key", scT === k && "tenantScope.tenant", scW === k && "tenantScope.workspace"].filter(Boolean); if (roles.length > 0) errors.push(`${cp}.protect is not allowed on ${roles.join(", ")} column ${k}`); } }
     }
   }
 }
@@ -114,12 +115,15 @@ export function validateModelGovernance(profile: OntologyProfile | NormalizedOnt
   for (const k of ["namespace", "id", "version"] as const) if (!isTrimmedStr(governance[k])) errors.push(`${k} is required`);
   if (!isRecord(gp)) errors.push("profile must be an object");
   else { const pEx = extraKey(gp, "namespace", "pin"), pin = gp.pin; if (pEx !== undefined) errors.push(`profile.${pEx} is not allowed`); if (!isTrimmedStr(gp.namespace)) errors.push("profile.namespace is required"); if (!isRecord(pin)) errors.push("profile.pin must be an object"); else { const ex = extraKey(pin, "id", "version", "contentDigest"); if (ex !== undefined) errors.push(`profile.pin.${ex} is not allowed`); for (const k of ["id", "version"] as const) if (!isTrimmedStr(pin[k])) errors.push(`profile.pin.${k} is required`); if (!isDigest(pin.contentDigest)) errors.push("profile.pin.contentDigest must be a 64-hex sha256 digest"); } }
-  const tables: TableRef[] = [], stored = Object.keys(rels).filter((id) => Array.isArray(rels[id]!.attributes));
+  const tables: TableRef[] = [], stored = Object.keys(rels).filter((id) => Array.isArray(rels[id]!.attributes)), entFk = new Map<string, Set<string>>(), relFk = new Map<string, Set<string>>();
+  const addFk = (map: Map<string, Set<string>>, owner: string, fields: readonly string[]) => { let s = map.get(owner); if (!s) map.set(owner, s = new Set()); for (const f of fields) s.add(f); };
+  for (const [id, node] of Object.entries(nodes)) for (const ref of node.references ?? []) { addFk(entFk, id, ref.fields); addFk(entFk, relEnds(rels[ref.relation]!, "target")[0]!, ref.targetFields); }
+  for (const id of stored) { const r = rels[id]!, ep = r.endpoints as ModelEndpoints; for (const side of ["source", "target"] as const) { addFk(relFk, id, ep[side].fields); addFk(entFk, relEnds(r, side)[0]!, ep[side].targetFields); } }
   if (!isRecord(entities)) errors.push("entities must be an object");
-  else { for (const id of Object.keys(nodes)) if (!Object.hasOwn(entities, id)) errors.push(`entities.${id} is required`); for (const [id, t] of Object.entries(entities)) { const bk = badKey(id, "entities"); if (bk) errors.push(bk); else if (!Object.hasOwn(nodes, id)) errors.push(`entities.${id} references unknown entity ${id}`); else checkTable(nodes[id]!, t, `entities.${id}`, id, tables, errors); } }
+  else { for (const id of Object.keys(nodes)) if (!Object.hasOwn(entities, id)) errors.push(`entities.${id} is required`); for (const [id, t] of Object.entries(entities)) { const bk = badKey(id, "entities"); if (bk) errors.push(bk); else if (!Object.hasOwn(nodes, id)) errors.push(`entities.${id} references unknown entity ${id}`); else checkTable(nodes[id]!, t, `entities.${id}`, id, entFk.get(id), tables, errors); } }
   if (governance.relations === undefined) { if (stored.length > 0) errors.push("relations is required"); }
   else if (!isRecord(governance.relations)) errors.push("relations must be an object");
-  else { for (const id of stored) if (!Object.hasOwn(governance.relations, id)) errors.push(`relations.${id} is required`); for (const [id, t] of Object.entries(governance.relations)) { const bk = badKey(id, "relations"); if (bk) errors.push(bk); else if (!Object.hasOwn(rels, id)) errors.push(`relations.${id} references unknown relation ${id}`); else if (!Array.isArray(rels[id]!.attributes)) errors.push(`relations.${id} is not allowed on an FK-backed relation`); else checkTable(rels[id] as unknown as ModelRow, t, `relations.${id}`, id, tables, errors); } }
+  else { for (const id of stored) if (!Object.hasOwn(governance.relations, id)) errors.push(`relations.${id} is required`); for (const [id, t] of Object.entries(governance.relations)) { const bk = badKey(id, "relations"); if (bk) errors.push(bk); else if (!Object.hasOwn(rels, id)) errors.push(`relations.${id} references unknown relation ${id}`); else if (!Array.isArray(rels[id]!.attributes)) errors.push(`relations.${id} is not allowed on an FK-backed relation`); else checkTable(rels[id] as unknown as ModelRow, t, `relations.${id}`, id, relFk.get(id), tables, errors); } }
   const usedTables = new Set<string>(); for (const pass of [false, true]) for (const tb of tables) if (tb.hasTable === pass) { const k = JSON.stringify([tb.schema, tb.table]); if (usedTables.has(k)) errors.push(`${tb.hasTable ? `${tb.p}.physical.table` : tb.p} collides with SQL table ${tb.table}`); else usedTables.add(k); }
   return errors;
 }
