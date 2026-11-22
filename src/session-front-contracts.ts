@@ -209,7 +209,7 @@ export function isValidWorktreeId(id: unknown): id is string {
   return typeof id === "string" && id.length === 67 && /^wt:[0-9a-f]{64}$/.test(id);
 }
 
-export interface RawSessionEventEnvelope {
+export interface RawSessionEventEnvelope extends SessionJournalEnvelopeFieldsV1 {
   readonly schemaVersion: 'engram.session-event/v1';
   /** 16..256 UTF-8 bytes; MUST equal `deriveSessionFrontIdempotencyKey({ sourceKind, sourceId })` (`72` ASCII bytes, F-03). */
   readonly idempotencyKey: string;
@@ -241,7 +241,7 @@ export interface RawSessionEventEnvelope {
   readonly deadlineAt: Instant;
 }
 
-export interface RawSessionEventReceipt {
+export interface RawSessionEventReceipt extends SessionJournalReceiptFieldsV1 {
   readonly status: 'recorded' | 'duplicate_exact';
   readonly eventRecordId: string;             // Canonical raw_event identifier (`raw_<base32(recordDigest)>`)
   readonly recordDigest: Sha256Digest;
@@ -631,9 +631,110 @@ function checkCandidate(value: unknown): asserts value is ExtractedCandidateItem
   }
 }
 
+function decodeStrictJson(v: unknown, seen = new WeakSet<object>()): unknown {
+  if (v === null || typeof v === "boolean") return v;
+  if (typeof v === "string") {
+    assertNoUnpairedSurrogates(v, "input");
+    return v.normalize("NFC");
+  }
+  if (typeof v === "number") {
+    if (!Number.isFinite(v) || Object.is(v, -0) || (Number.isInteger(v) && !Number.isSafeInteger(v))) {
+      throw new SchemaFailure("non-canonical number");
+    }
+    return v;
+  }
+  if (typeof v !== "object" || seen.has(v) || Object.getOwnPropertySymbols(v).length > 0) {
+    throw new SchemaFailure("non-canonical JSON value");
+  }
+  seen.add(v);
+  try {
+    if (Array.isArray(v)) {
+      if (Object.getPrototypeOf(v) !== Array.prototype || Object.getOwnPropertyNames(v).length !== v.length + 1) {
+        throw new SchemaFailure("array must be dense");
+      }
+      return Array.from({ length: v.length }, (_, i) => {
+        const descriptor = Object.getOwnPropertyDescriptor(v, String(i));
+        if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) {
+          throw new SchemaFailure("array element must be enumerable data");
+        }
+        return decodeStrictJson(descriptor.value, seen);
+      });
+    }
+    const proto = Object.getPrototypeOf(v);
+    if (proto !== Object.prototype && proto !== null) {
+      throw new SchemaFailure("value is not a plain object");
+    }
+    const out: Record<string, unknown> = {};
+    for (const rawKey of Object.getOwnPropertyNames(v)) {
+      assertNoUnpairedSurrogates(rawKey, "key");
+      const key = rawKey.normalize("NFC");
+      const descriptor = Object.getOwnPropertyDescriptor(v, rawKey);
+      if (
+        rawKey === "__proto__" ||
+        key === "__proto__" ||
+        Object.hasOwn(out, key) ||
+        !descriptor ||
+        !descriptor.enumerable ||
+        !("value" in descriptor)
+      ) {
+        throw new SchemaFailure("invalid or duplicate property");
+      }
+      Object.defineProperty(out, key, {
+        value: decodeStrictJson(descriptor.value, seen),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
+    return out;
+  } finally {
+    seen.delete(v);
+  }
+}
+
+function checkContextRequest(v: unknown): void {
+  shape(v, "contextRequest", [], ["held", "reset", "hostSignal", "loop"]);
+  const hasHeld = Object.hasOwn(v, "held");
+  const hasReset = Object.hasOwn(v, "reset");
+  requireValue(hasHeld !== hasReset, "contextRequest");
+  if (hasHeld) {
+    shape(v.held, "contextRequest.held", ["queryId", "queryVersion", "cursor"]);
+    assertString(v.held.queryId, "contextRequest.held.queryId", 0, 512);
+    requireValue(typeof v.held.queryVersion === "number", "contextRequest.held.queryVersion");
+    assertString(v.held.cursor, "contextRequest.held.cursor", 0, 512);
+  }
+  if (hasReset) {
+    choice(v.reset, "contextRequest.reset", ["compaction", "clear", "restart"]);
+  }
+  if (Object.hasOwn(v, "hostSignal")) {
+    assertString(v.hostSignal, "contextRequest.hostSignal", 1, 64);
+  }
+  if (!Object.hasOwn(v, "loop")) return;
+  shape(v.loop, "contextRequest.loop", ["objectiveLoopId", "trackScope"]);
+  assertOpaque(v.loop.objectiveLoopId, "contextRequest.loop.objectiveLoopId");
+  list(v.loop.trackScope, "contextRequest.loop.trackScope");
+  requireValue(v.loop.trackScope.length <= 256, "contextRequest.loop.trackScope");
+  for (const ref of v.loop.trackScope) {
+    shape(
+      ref,
+      "contextRequest.loop.trackScope",
+      ["repoKey", "workspace", "aggregateId", "role", "aggregateKind"],
+      ["baselineCommit", "decisionGateId", "decisionGateDigest"],
+    );
+    for (const k of ["repoKey", "workspace", "aggregateId", "role", "aggregateKind"] as const) {
+      assertOpaque(ref[k], `trackScope.${k}`);
+    }
+    for (const k of ["baselineCommit", "decisionGateId"] as const) {
+      if (Object.hasOwn(ref, k)) assertOpaque(ref[k], `trackScope.${k}`);
+    }
+    if (Object.hasOwn(ref, "decisionGateDigest")) {
+      assertDigest(ref.decisionGateDigest, "trackScope.decisionGateDigest");
+    }
+  }
+}
 function validated<T>(input: unknown, check: (snapshot: unknown) => void): Result<T> {
   try {
-    const normalized = normalizeCanonicalJson(input);
+    const normalized = decodeStrictJson(input);
     check(normalized);
     return { ok: true, value: normalized as T };
   } catch (error) {
@@ -645,7 +746,7 @@ function validated<T>(input: unknown, check: (snapshot: unknown) => void): Resul
 /** Strict, side-effect-free validation of the wire envelope. */
 export function validateRawSessionEventEnvelope(input: unknown): Result<RawSessionEventEnvelope> {
   return validated(input, (value) => {
-    shape(value, "envelope", [...commonFields, "cloneId", "actorPseudoId", "mandateRef", "occurredAt", "payload"]);
+    shape(value, "envelope", [...commonFields, "cloneId", "actorPseudoId", "mandateRef", "occurredAt", "payload"], ["contextRequest"]);
     choice(value.schemaVersion, "schemaVersion", ["engram.session-event/v1"]);
     checkCommon(value);
     assertOpaque(value.cloneId, "cloneId");
@@ -653,6 +754,7 @@ export function validateRawSessionEventEnvelope(input: unknown): Result<RawSessi
     checkMandate(value.mandateRef);
     assertInstant(value.occurredAt, "occurredAt");
     checkPayload(value.payload);
+    if (Object.hasOwn(value, "contextRequest")) checkContextRequest(value.contextRequest);
     assertObject(value.payload, "payload");
     requireValue((value.payload.kind === "external_hmi_input") === (value.purposeRef === "memory.capture.hmi/v1"), "purposeRef");
     if (value.payload.kind === "mandate_binding") {
@@ -707,3 +809,11 @@ export interface SessionContextPolicyV1 { readonly journalEnabled: boolean; read
 export interface SessionContextAmendmentAuthorV1 { readonly by: "agent" | "shadow"; readonly authorModelRef?: string; readonly sourceEventRecordIds: readonly string[]; readonly basedOnVersion: number; }
 export type SessionContextAmendmentV1 = (SessionContextAmendmentAuthorV1 & { readonly op: "keep"; readonly match: Exclude<SessionContextSelectorMatchV1, { readonly kind: "withheld" }>; }) | (SessionContextAmendmentAuthorV1 & { readonly op: "drop"; readonly selectorId: string; });
 export interface SessionContextGateVerdictV1 { readonly selectorId: string; readonly verdict: "accepted" | "no_change" | "refused"; readonly reason?: string; }
+// ── Block A (SJ-2a): journal envelope and receipt members (S1-d, S1-e).
+export interface SessionJournalEnvelopeFieldsV1 {
+  readonly contextRequest?: SessionContextRequestV1;
+}
+
+export interface SessionJournalReceiptFieldsV1 {
+  readonly contextDelivery?: SessionContextDeliveryV1;
+}

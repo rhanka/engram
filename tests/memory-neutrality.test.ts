@@ -372,6 +372,10 @@ const TEST_ALLOWED_HOST_EDGES = new Set([
   "tests/session-front-ingest.test.ts -> src/session-front-contracts",
   "tests/session-context-engine.test.ts -> src/session-front-contracts",
   "tests/session-context-engine.test.ts -> src/session-context/engine",
+  "tests/session-context-ingest.test.ts -> src/session-front-contracts",
+  "tests/session-context-ingest.test.ts -> src/session-context/engine",
+  "tests/session-context-ingest.test.ts -> src/graph-memory-projection",
+  "tests/session-context-ingest.test.ts -> src/graph",
 ]);
 
 function hostEdgeKey(path: string, resolved: string): string {

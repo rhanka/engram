@@ -4,15 +4,18 @@ import {
   type ExtractedCandidateItem,
   type RawSessionEventEnvelope,
   type RawSessionEventReceipt,
+  type SessionContextPolicyV1,
   type SessionExtractionProposalBatch,
   type SessionExtractionReceipt,
 } from "../session-front-contracts.js";
+import type { SessionContextEngineKeyV1, SessionContextEngineV1 } from "../session-context/engine.js";
 import {
   createSessionFrontEngineV1,
   type SessionFrontCandidateV1,
   type SessionFrontDeliveryV1,
   type SessionFrontEventInputV1,
   type SessionFrontExtractionInputV1,
+  type SessionFrontScopeV1,
   type SessionFrontStoreV1,
 } from "../../engram-memory/dist/session-front-engine.js";
 import { receiptDigest } from "../../engram-memory/dist/digests.js";
@@ -35,6 +38,10 @@ export interface EngramSessionIngestFrontOptionsV1 {
     readonly candidate: ExtractedCandidateItem;
   }) => Promise<Result<"allow" | "withheld">> | Result<"allow" | "withheld">;
   readonly clock?: { now(): number };
+  readonly journalPolicy?:
+    | Partial<SessionContextPolicyV1>
+    | ((scope: SessionFrontScopeV1) => Promise<Partial<SessionContextPolicyV1> | undefined> | Partial<SessionContextPolicyV1> | undefined);
+  readonly contextEngine?: SessionContextEngineV1;
 }
 
 const KNOWN_SLICES = ["track", "git", "architecture", "rules", "memory"] as const;
@@ -140,6 +147,48 @@ function payloadCitation(payload: RawSessionEventEnvelope["payload"]): SessionFr
   }
 }
 
+function envelopeKey(body: RawSessionEventEnvelope): SessionContextEngineKeyV1 {
+  return {
+    tenantId: body.tenantId,
+    workspaceId: body.workspaceId,
+    derivedWorktreeId: body.derivedWorktreeId,
+    ...(body.mandateRef !== null && typeof body.mandateRef.role === "string"
+      ? { roleRef: body.mandateRef.role }
+      : {}),
+    sessionId: body.sessionPseudoId,
+  };
+}
+
+async function checkJournalEnabled(
+  options: EngramSessionIngestFrontOptionsV1,
+  scope: SessionFrontScopeV1,
+  hasRequest: boolean,
+): Promise<Result<never> | undefined> {
+  const unavailable = (): Result<never> =>
+    fail("CAPABILITY_UNAVAILABLE", "Session journal is not enabled for this workspace.");
+  if (options.journalPolicy === undefined) {
+    return options.contextEngine !== undefined || hasRequest ? unavailable() : undefined;
+  }
+  try {
+    const policy =
+      typeof options.journalPolicy === "function"
+        ? await options.journalPolicy({ ...scope })
+        : options.journalPolicy;
+    if (
+      policy !== null &&
+      typeof policy === "object" &&
+      !Array.isArray(policy) &&
+      policy.journalEnabled === true &&
+      (!hasRequest || options.contextEngine !== undefined)
+    ) {
+      return undefined;
+    }
+    return unavailable();
+  } catch {
+    return unavailable();
+  }
+}
+
 /**
  * Product adapter implementing `EngramSessionIngestFrontPort` over the neutral
  * L0 engine. The store travels through the injected port; this module keeps no
@@ -156,9 +205,23 @@ export function createEngramSessionIngestFront(options: EngramSessionIngestFront
         if (late) return late;
         const identity = await checkIdentity(options.authorize, valid.value);
         if (identity) return identity;
+        const body = valid.value;
+        const disabled = await checkJournalEnabled(
+          options,
+          { tenantId: body.tenantId, workspaceId: body.workspaceId },
+          body.contextRequest !== undefined,
+        );
+        if (disabled) return disabled;
         const slices = await resolveDelivery(options.getReadySlices);
         if (!slices.ok) return slices;
-        const body = valid.value;
+        const key = options.contextEngine ? envelopeKey(body) : undefined;
+        const preparedQuery =
+          body.contextRequest !== undefined && options.contextEngine && key
+            ? await options.contextEngine.prepareQuery(key)
+            : undefined;
+        const contextQuery = preparedQuery
+          ? { queryId: preparedQuery.queryId, queryVersion: preparedQuery.version }
+          : undefined;
         const citation = payloadCitation(body.payload);
         const input: SessionFrontEventInputV1 = {
           scope: { tenantId: body.tenantId, workspaceId: body.workspaceId },
@@ -179,13 +242,37 @@ export function createEngramSessionIngestFront(options: EngramSessionIngestFront
           ...(body.payload.kind === "speech_turn" && body.payload.truncatedInProjection !== undefined && {
             truncatedInProjection: body.payload.truncatedInProjection,
           }),
+          ...(body.contextRequest !== undefined && {
+            contextRequest: body.contextRequest as unknown as Readonly<Record<string, unknown>>,
+          }),
           queueExtraction: body.payload.kind === "speech_turn"
             ? body.payload.triggerTurnSweep
             : body.payload.kind === "context_saturation",
         };
-        const recorded = await engine.recordEvent(input, slices.value.delivery);
+        const recorded = await engine.recordEvent(input, slices.value.delivery, contextQuery);
         if (!recorded.ok) return recorded;
         const receipt = recorded.value;
+        if (options.contextEngine && key) {
+          await options.contextEngine.noteSessionEvent(key);
+        }
+        const delivered =
+          body.contextRequest !== undefined && options.contextEngine
+            ? await options.contextEngine.recomputeDelivery({
+                scope: input.scope,
+                eventRecordId: receipt.eventRecordId,
+              })
+            : undefined;
+        if (delivered && !delivered.ok) return delivered;
+        const readySlices = delivered
+          ? delivered.value.readySlices
+          : options.contextEngine
+            ? []
+            : slices.value.readySlices;
+        const readySlicePayloads = delivered
+          ? delivered.value.readySlicePayloads
+          : options.contextEngine
+            ? undefined
+            : slices.value.readySlicePayloads;
         return {
           ok: true,
           value: {
@@ -198,8 +285,9 @@ export function createEngramSessionIngestFront(options: EngramSessionIngestFront
             ...(slices.value.delivery.syncState === "queued-degraded" && {
               degradedBanner: slices.value.delivery.degradedBanner,
             }),
-            readySlices: [...slices.value.readySlices],
-            ...(slices.value.readySlicePayloads && { readySlicePayloads: { ...slices.value.readySlicePayloads } }),
+            readySlices: [...readySlices],
+            ...(readySlicePayloads && { readySlicePayloads: { ...readySlicePayloads } }),
+            ...(delivered && { contextDelivery: delivered.value.contextDelivery }),
             h2aProactiveRoleAnalysisQueued: receipt.roleAnalysisQueued,
             extractionSweepScheduled: receipt.extractionSweepScheduled,
             transactionReceiptDigest: receipt.transactionReceiptDigest,
@@ -219,6 +307,8 @@ export function createEngramSessionIngestFront(options: EngramSessionIngestFront
         const identity = await checkIdentity(options.authorize, valid.value);
         if (identity) return identity;
         const body = valid.value;
+        const disabled = await checkJournalEnabled(options, { tenantId: body.tenantId, workspaceId: body.workspaceId }, false);
+        if (disabled) return disabled;
         const input: SessionFrontExtractionInputV1<SessionFrontCandidateV1> = {
           scope: { tenantId: body.tenantId, workspaceId: body.workspaceId },
           idempotencyKey: body.idempotencyKey,
@@ -250,6 +340,18 @@ export function createEngramSessionIngestFront(options: EngramSessionIngestFront
         }));
         if (!committed.ok) return committed;
         const receipt = committed.value;
+        if (options.contextEngine && receipt.annotatedThroughOrdinal !== undefined) {
+          options.contextEngine.noteShadowAnnotated(
+            {
+              tenantId: body.tenantId,
+              workspaceId: body.workspaceId,
+              derivedWorktreeId: body.derivedWorktreeId,
+              sessionId: body.sessionPseudoId,
+            },
+            receipt.annotatedThroughOrdinal,
+            receipt.batchCursor,
+          );
+        }
         return {
           ok: true,
           value: {
