@@ -36,6 +36,10 @@
       "types": "./dist/mcp-memory.d.ts",
       "import": "./dist/mcp-memory.js"
     },
+    "./session-front-contracts": {
+      "types": "./dist/session-front-contracts.d.ts",
+      "import": "./dist/session-front-contracts.js"
+    },
     "./registry/manifest": {
       "types": "./dist/registry/manifest.d.ts",
       "import": "./dist/registry/manifest.js"

@@ -22,6 +22,7 @@
     "dual-as-of.ts",
     "memory-store.ts",
     "engine.ts",
+    "session-front-engine.ts",
     "recall.ts",
     "reads.ts",
     "migration.ts",

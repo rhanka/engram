@@ -126,3 +126,16 @@ export {
   type RetainedNeutralRecordV1,
 } from "./migration.js";
 export type * from "./contracts/index.js";
+export {
+  createSessionFrontEngineV1,
+  type SessionFrontCandidateV1,
+  type SessionFrontCommitV1,
+  type SessionFrontDeliveryV1,
+  type SessionFrontEventInputV1,
+  type SessionFrontEventReceiptV1,
+  type SessionFrontExtractionInputV1,
+  type SessionFrontExtractionReceiptV1,
+  type SessionFrontScopeV1,
+  type SessionFrontStoreV1,
+  type SessionFrontTransactionV1,
+} from "./session-front-engine.js";

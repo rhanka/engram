@@ -42,7 +42,7 @@ const recordRequired = [
   "authorization_receipt_digest", "trust",
 ];
 
-class SchemaFailure extends Error {
+export class SchemaFailure extends Error {
   constructor(message: string) {
     super(message);
     this.name = "SchemaFailure";
@@ -69,13 +69,13 @@ function refusal<T>(operation: MemoryOperation, code: MemoryErrorCode, message: 
   return { ok: false, error: { code, operation, message, retryable: false } };
 }
 
-function assertObject(value: unknown, name: string): asserts value is Record<string, CanonicalJsonValue> {
+export function assertObject(value: unknown, name: string): asserts value is Record<string, CanonicalJsonValue> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new SchemaFailure(`${name} must be an object`);
   }
 }
 
-function assertExactKeys(value: unknown, name: string, allowed: readonly string[], required: readonly string[]): asserts value is Record<string, CanonicalJsonValue> {
+export function assertExactKeys(value: unknown, name: string, allowed: readonly string[], required: readonly string[]): asserts value is Record<string, CanonicalJsonValue> {
   assertObject(value, name);
   const keys = Object.keys(value);
   if (keys.some((key) => !allowed.includes(key)) || required.some((key) => !Object.hasOwn(value, key))) {
@@ -83,21 +83,21 @@ function assertExactKeys(value: unknown, name: string, allowed: readonly string[
   }
 }
 
-function assertString(value: unknown, name: string, minimumBytes = 1, maximumBytes = 512): asserts value is string {
+export function assertString(value: unknown, name: string, minimumBytes = 1, maximumBytes = 512): asserts value is string {
   if (typeof value !== "string") throw new SchemaFailure(`${name} must be a string`);
   const bytes = new TextEncoder().encode(value).byteLength;
   if (bytes < minimumBytes || bytes > maximumBytes) throw new SchemaFailure(`${name} has invalid length`);
 }
 
-function assertOpaque(value: unknown, name: string): asserts value is string {
+export function assertOpaque(value: unknown, name: string): asserts value is string {
   assertString(value, name);
 }
 
-function assertDigest(value: unknown, name: string): asserts value is Digest {
+export function assertDigest(value: unknown, name: string): asserts value is Digest {
   if (typeof value !== "string" || !DIGEST_PATTERN.test(value)) throw new SchemaFailure(`${name} must be a digest`);
 }
 
-function assertInstant(value: unknown, name: string): asserts value is string {
+export function assertInstant(value: unknown, name: string): asserts value is string {
   if (typeof value !== "string" || !INSTANT_PATTERN.test(value) || new Date(value).toISOString() !== value) {
     throw new SchemaFailure(`${name} must be an RFC 3339 UTC millisecond instant`);
   }
@@ -116,7 +116,7 @@ function assertCursor(value: unknown, name: string): asserts value is Cursor {
   if (!isCanonicalCursor(value)) throw new SchemaFailure(`${name} must be a canonical unsigned u64 cursor`);
 }
 
-function assertSafeEpoch(value: unknown, name: string): asserts value is number {
+export function assertSafeEpoch(value: unknown, name: string): asserts value is number {
   if (typeof value !== "number" || !Number.isSafeInteger(value)) throw new SchemaFailure(`${name} must be a safe integer epoch`);
 }
 
@@ -130,7 +130,7 @@ function assertSortedUnique(values: unknown, name: string, minimum: number, maxi
   });
 }
 
-function assertValidTime(value: unknown): void {
+export function assertValidTime(value: unknown): void {
   assertExactKeys(value, "valid_time", ["t", "t_end"], ["t"]);
   assertSafeEpoch(value.t, "valid_time.t");
   if (Object.hasOwn(value, "t_end")) {
