@@ -23,6 +23,7 @@
     "parse-adapter.ts",
     "symbol-history.ts",
     "git-executor.ts",
-    "integration.ts"
+    "integration.ts",
+    "reused-extraction.ts"
   ]
 }

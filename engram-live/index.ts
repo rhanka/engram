@@ -17,5 +17,19 @@ export * from "./symbol-history.js";
 export { analyzeCode, repairAffectedCalls } from "./code-analysis.js";
 export type { DeterministicParsePort, ParsedUnit, RepairAffectedInput, RepairAffectedOutcome, SyntaxEvidence } from "./code-analysis.js";
 export { createProductionParseAdapter } from "./parse-adapter.js";
+export {
+  bindReusedExtractionRuntime,
+  extractReused,
+  extractReusedWithDiagnostics,
+  resolveReusedLiveLanguage,
+  REUSED_EXTRACTION_VERSION,
+  LIVE_DIALECT_VERSION as REUSED_LIVE_DIALECT_VERSION,
+  LIVE_GRAMMAR_ABI as REUSED_LIVE_GRAMMAR_ABI,
+} from "./reused-extraction.js";
+export type {
+  ExtractionResult as ReusedExtractionResult,
+  ExtractWithDiagnosticsResult as ReusedExtractWithDiagnosticsResult,
+  LiveExtractionPorts as ReusedLiveExtractionPorts,
+} from "./reused-extraction.js";
 export { createSafeGitExecutor } from "./git-executor.js";
 export type { SafeGitExecutor, SafeGitOptions, GitSpawnFn, GitSpawnOptions, GitSpawnResult } from "./git-executor.js";

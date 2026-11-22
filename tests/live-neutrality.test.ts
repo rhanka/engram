@@ -38,9 +38,15 @@ function liveBuildIsFresh(): boolean {
     "code-analysis.ts",
     "parse-adapter.ts",
     "comparisons.ts",
+    "reused-extraction.ts",
+    "reused/extract-core.d.ts",
     "tsconfig.json",
     "package.json",
     "grammar-manifest.json",
+    join("..", "src", "extract-core.ts"),
+    join("..", "src", "live-cache-keys.ts"),
+    join("..", "src", "node-id.ts"),
+    join("..", "src", "relation-remap.ts"),
   ].map((name) => join(liveRoot, name));
   if (inputs.some((input) => !existsSync(input))) return false;
   const manifest = JSON.parse(readFileSync(join(liveRoot, "grammar-manifest.json"), "utf8")) as {
@@ -62,6 +68,13 @@ function liveBuildIsFresh(): boolean {
     "integration.js",
     "integration.d.ts",
     "integration.d.ts.map",
+    "reused-extraction.js",
+    "reused-extraction.d.ts",
+    "reused-extraction.d.ts.map",
+    "reused/extract-core.js",
+    "reused/live-cache-keys.js",
+    "reused/node-id.js",
+    "reused/relation-remap.js",
     "line-attribution.js",
     "line-attribution.d.ts",
     "line-attribution.d.ts.map",
@@ -848,6 +861,13 @@ function expectedPackedPaths(manifestLanguages: Record<string, { file: string }>
     "dist/integration.js",
     "dist/integration.d.ts",
     "dist/integration.d.ts.map",
+    "dist/reused-extraction.js",
+    "dist/reused-extraction.d.ts",
+    "dist/reused-extraction.d.ts.map",
+    "dist/reused/extract-core.js",
+    "dist/reused/live-cache-keys.js",
+    "dist/reused/node-id.js",
+    "dist/reused/relation-remap.js",
     "dist/line-attribution.js",
     "dist/line-attribution.d.ts",
     "dist/line-attribution.d.ts.map",
@@ -1524,5 +1544,101 @@ describe("live neutrality", () => {
       }], "source");
       expect(contractsTypeImport.some((violation) => violation.reason.includes("data-pure"))).toBe(true);
     }
+  });
+
+  it("the reused extraction files are in the exact packed surface and each missing entry is rejected", () => {
+    // L5-P2b GUARD (plan/09 L5-P): the packaged reused extraction registers
+    // its entry and its closed-set members in the exact packed surface.
+    const manifestLanguages = JSON.parse(readFileSync(join(liveRoot, "grammar-manifest.json"), "utf8")).languages as Record<string, { file: string }>;
+    const { generated, packedPaths } = withLiveBuildLock(() => {
+      if (!liveBuildIsFresh()) {
+        execFileSync(process.execPath, [buildScript], { cwd: root, stdio: "inherit" });
+      }
+      return { generated: generatedFiles(), packedPaths: packedLivePaths() };
+    });
+
+    const source = sourceFiles();
+    expect(source.map((file) => file.path)).toContain("engram-live/reused-extraction.ts");
+    const scanned = source.find((file) => file.path === "engram-live/reused-extraction.ts");
+    expect(scanned, "engram-live/reused-extraction.ts must exist in the neutral source set").toBeDefined();
+    expect(checkSourceFile(scanned!)).toEqual([]);
+
+    const expected = expectedPackedPaths(manifestLanguages);
+    const reusedEntries = [
+      "dist/reused-extraction.js",
+      "dist/reused-extraction.d.ts",
+      "dist/reused-extraction.d.ts.map",
+      "dist/reused/extract-core.js",
+      "dist/reused/live-cache-keys.js",
+      "dist/reused/node-id.js",
+      "dist/reused/relation-remap.js",
+    ];
+    for (const entry of reusedEntries) {
+      expect(expected, `${entry} must be pinned in expectedPackedPaths`).toContain(entry);
+      expect(packedPaths, `${entry} must be present in the packed tarball`).toContain(entry);
+      if (entry.endsWith(".js") || entry.endsWith(".d.ts")) {
+        const emitted = generated.find((file) => file.path === `engram-live/${entry}`);
+        expect(emitted, `engram-live/${entry} must exist in dist`).toBeDefined();
+        expect(checkGeneratedFile(emitted!)).toEqual([]);
+      }
+    }
+    const reusedDts = generated.find((file) => file.path === "engram-live/dist/reused-extraction.d.ts");
+    expect(reusedDts, "engram-live/dist/reused-extraction.d.ts must exist in dist").toBeDefined();
+    expect(
+      reusedDts!.content,
+      "emitted dist/reused-extraction.d.ts must not reference unshipped internal ./reused/extract-core declarations",
+    ).not.toContain("./reused/extract-core");
+
+    const witness: PackageClosureInput = {
+      packedPaths: expected,
+      packageJson: JSON.parse(readFileSync(join(liveRoot, "package.json"), "utf8")) as Record<string, unknown>,
+      lockJson: JSON.parse(readFileSync(join(liveRoot, "package-lock.json"), "utf8")),
+      manifestLanguages,
+    };
+    expect(checkImportClosure([], "package", witness)).toEqual([]);
+    for (const missing of reusedEntries) {
+      const violations = checkImportClosure([], "package", {
+        ...witness,
+        packedPaths: witness.packedPaths.filter((path) => path !== missing),
+      });
+      expect(
+        violations.some((violation) => /missing from the packed closure/.test(violation.reason) && violation.path === missing),
+        `removing ${missing} must be rejected as missing from the packed closure (got ${JSON.stringify(violations)})`,
+      ).toBe(true);
+    }
+  });
+
+  it("importing engram-live/index.ts from source succeeds without dist/reused/extract-core.js and validates runtime bindings eagerly", async () => {
+    // L5-P2b F-01 / F-06 RED: source-tree Vitest suites import
+    // ../engram-live/index.js directly without a generated
+    // engram-live/reused/extract-core.js file; module load must succeed,
+    // pure constants/language resolution must work, bindReusedExtractionRuntime
+    // must reject malformed runtimes eagerly, and missing live ports must
+    // reject before touching the core.
+    const live = await import("../engram-live/index.js");
+    expect(typeof live.bindReusedExtractionRuntime).toBe("function");
+    expect(typeof live.extractReused).toBe("function");
+    expect(typeof live.extractReusedWithDiagnostics).toBe("function");
+    expect(typeof live.resolveReusedLiveLanguage).toBe("function");
+    expect(live.REUSED_EXTRACTION_VERSION).toBe("live-reused-extraction/1");
+    expect(live.REUSED_LIVE_DIALECT_VERSION).toBe("live-dialect/1");
+    expect(live.REUSED_LIVE_GRAMMAR_ABI).toBe("web-tree-sitter-abi/1");
+    expect(live.resolveReusedLiveLanguage("/probe/app.ts")).toEqual({ language: "typescript", dialect: "typescript:ts" });
+    expect(live.resolveReusedLiveLanguage("/probe/app.mts")).toEqual({ language: "typescript", dialect: "typescript:mts-module" });
+    expect(live.resolveReusedLiveLanguage("/probe/app.tsx")).toEqual({ language: "tsx", dialect: "tsx:tsx" });
+    expect(live.resolveReusedLiveLanguage("/probe/view.blade.php")).toBeNull();
+    expect(live.resolveReusedLiveLanguage("/probe/Makefile")).toBeNull();
+    for (const malformed of [
+      undefined,
+      null,
+      {},
+      { loadLanguage: () => Promise.resolve({}) },
+      { createParser: () => ({ parse: () => null, delete: () => {} }) },
+      { init: "not-a-fn", loadLanguage: () => Promise.resolve({}), createParser: () => ({ parse: () => null, delete: () => {} }) },
+    ]) {
+      expect(() => live.bindReusedExtractionRuntime(malformed as never)).toThrow(TypeError);
+    }
+    await expect(live.extractReused(["/probe/app.ts"], undefined as never)).rejects.toThrow(/explicit live operation/);
+    await expect(live.extractReusedWithDiagnostics(["/probe/app.ts"], null as never)).rejects.toThrow(/explicit live operation/);
   });
 });

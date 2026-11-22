@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -186,6 +186,210 @@ const PRODUCTION_PARSE_PROBE = String.raw`
   }
 `;
 
+const REUSED_EXTRACTION_PROBE = String.raw`
+  import assert from 'node:assert/strict';
+  import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+  import { resolve, join } from 'node:path';
+  import runtime from './host-runtime/web-tree-sitter.cjs';
+  import * as live from '@sentropic/engram-live';
+
+  const mode = process.argv[2];
+  assert.throws(() => readFileSync(resolve(process.argv[3], 'package.json')), { code: 'ERR_ACCESS_DENIED' });
+  assert.equal(process.permission.has('fs.read', resolve(process.argv[3], 'node_modules')), false);
+  assert.equal(typeof live.bindReusedExtractionRuntime, 'function', 'the packed entry must export the runtime binder');
+  assert.equal(typeof live.extractReused, 'function', 'the packed entry must export extractReused');
+  assert.equal(typeof live.extractReusedWithDiagnostics, 'function', 'the packed entry must export live extraction');
+  assert.equal(typeof live.resolveReusedLiveLanguage, 'function', 'the packed entry must export language resolution');
+  assert.equal(live.REUSED_LIVE_DIALECT_VERSION, 'live-dialect/1');
+  assert.equal(live.REUSED_LIVE_GRAMMAR_ABI, 'web-tree-sitter-abi/1');
+  for (const malformed of [undefined, null, {}, { loadLanguage: () => Promise.resolve({}) }, { createParser: () => ({}) }]) {
+    assert.throws(() => live.bindReusedExtractionRuntime(malformed), TypeError, 'malformed runtime must be rejected eagerly');
+  }
+  const installed = resolve('node_modules/@sentropic/engram-live');
+  const grammarFile = (lang) => join(installed, 'dist', 'grammars', 'tree-sitter-' + lang + '.wasm');
+  const liveGrammarWasm = {
+    bytesFor(language) {
+      const file = grammarFile(language);
+      return existsSync(file) ? new Uint8Array(readFileSync(file)) : null;
+    },
+  };
+  const grammarRuntime = {
+    init: () => runtime.Parser.init(),
+    loadLanguage: (bytes) => runtime.Language.load(bytes),
+    createParser(grammar) {
+      const parser = new runtime.Parser();
+      parser.setLanguage(grammar);
+      return parser;
+    },
+  };
+  live.bindReusedExtractionRuntime(grammarRuntime);
+  globalThis.fetch = () => assert.fail('reused extraction requested network access');
+  const resolved = live.resolveReusedLiveLanguage('/reused/probe/app.ts');
+  assert.ok(resolved && resolved.language === 'typescript', 'context language resolves to typescript, got ' + JSON.stringify(resolved));
+  function virtualRead(files) {
+    const present = (p) => files.has(p) || [...files.keys()].some((name) => name.startsWith(p + '/'));
+    return {
+      context: { kind: 'tree', treeOid: 'a'.repeat(40) },
+      existsSync: (p) => present(String(p)),
+      readFileSync: (p, options) => {
+        const value = files.get(String(p));
+        if (value === undefined) throw new Error('not in pinned tree: ' + p);
+        return options ? value : Buffer.from(value);
+      },
+      lstatSync: (p) => {
+        if (!present(String(p))) throw new Error('not in pinned tree: ' + p);
+        const file = files.has(String(p));
+        return { mode: file ? 33188 : 16877, isFile: () => file, isDirectory: () => !file, isSymbolicLink: () => false };
+      },
+      realpathSync: (p) => String(p),
+      readdirSync: () => [],
+    };
+  }
+  function memoryStore(counters) {
+    const entries = new Map();
+    return {
+      entries,
+      authorize() {},
+      load(key) { counters.loads.push(key); return entries.get(key) || null; },
+      store(key, value) { counters.stores.push(key); entries.set(key, value); },
+    };
+  }
+  if (mode === 'extract') {
+    const files = new Map([
+      ['/reused/probe/app.ts', 'import { dep } from "@dep";\nexport function probe() { return dep(); }\n'],
+      ['/reused/probe/lib/dep.ts', 'export function dep() { return 1; }\n'],
+      ['/reused/probe/tsconfig.json', JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '@dep': ['lib/dep'] } } })],
+    ]);
+    const counters = { loads: [], stores: [] };
+    const cacheStore = memoryStore(counters);
+    const ports = {
+      cacheStore,
+      grammarWasm: liveGrammarWasm,
+      scope: { tenant: 'packed-owner', clone: 'clone:packed' },
+      read: virtualRead(files),
+    };
+    const first = await live.extractReusedWithDiagnostics(['/reused/probe/app.ts', '/reused/probe/lib/dep.ts'], ports);
+    assert.ok(first.extraction.nodes.length > 0, 'packaged reused extraction yields nodes, got ' + first.extraction.nodes.length);
+    assert.ok(first.extraction.edges.length > 0, 'packaged reused extraction yields edges, got ' + first.extraction.edges.length);
+    assert.deepEqual(first.diagnostics, [], 'no diagnostics on valid pinned tree, got ' + JSON.stringify(first.diagnostics));
+    const resolvedImportEdge = first.extraction.edges.some(
+      (e) => e.source === 'app' && e.target === 'lib_dep' && e.relation === 'imports_from',
+    );
+    const unresolvedImportEdge = first.extraction.edges.some(
+      (e) => e.relation === 'imports_from' && e.target === 'ref_dep',
+    );
+    assert.equal(resolvedImportEdge, true, 'tsconfig alias must resolve app -> lib_dep imports_from edge, edges=' + JSON.stringify(first.extraction.edges));
+    assert.equal(unresolvedImportEdge, false, 'tsconfig alias must not leave an unresolved ref_dep imports_from edge, edges=' + JSON.stringify(first.extraction.edges));
+    // Negative control: without tsconfig.json, the alias must stay unresolved
+    // (ref_dep) and must not produce app -> lib_dep imports_from.
+    const filesWithoutTsconfig = new Map([
+      ['/reused/probe/app.ts', files.get('/reused/probe/app.ts')],
+      ['/reused/probe/lib/dep.ts', files.get('/reused/probe/lib/dep.ts')],
+    ]);
+    const withoutTsconfig = await live.extractReusedWithDiagnostics(['/reused/probe/app.ts', '/reused/probe/lib/dep.ts'], {
+      cacheStore: memoryStore({ loads: [], stores: [] }),
+      grammarWasm: liveGrammarWasm,
+      scope: { tenant: 'packed-owner', clone: 'clone:packed-no-tsconfig' },
+      read: virtualRead(filesWithoutTsconfig),
+    });
+    assert.equal(
+      withoutTsconfig.extraction.edges.some((e) => e.source === 'app' && e.target === 'lib_dep' && e.relation === 'imports_from'),
+      false,
+      'without tsconfig.json, @dep must not resolve to lib_dep',
+    );
+    assert.equal(
+      withoutTsconfig.extraction.edges.some((e) => e.source === 'app' && e.target === 'ref_dep' && e.relation === 'imports_from'),
+      true,
+      'without tsconfig.json, @dep must emit unresolved ref_dep imports_from edge',
+    );
+    const second = await live.extractReused(['/reused/probe/app.ts'], ports);
+    assert.ok(second.nodes.length > 0, 'packaged single-file extraction yields nodes');
+    console.log(JSON.stringify({
+      nodes: first.extraction.nodes.length,
+      edges: first.extraction.edges.length,
+      resolvedImportEdge,
+      unresolvedWithoutTsconfig: true,
+      single: second.nodes.length,
+    }));
+  } else if (mode === 'warm') {
+    const files = new Map([['/reused/warm/app.ts', 'export function probe(): string {\n  return "probe";\n}\n']]);
+    const counters = { loads: [], stores: [] };
+    const cacheStore = memoryStore(counters);
+    const ports = {
+      cacheStore,
+      grammarWasm: liveGrammarWasm,
+      scope: { tenant: 'packed-owner', clone: 'clone:warm' },
+      read: virtualRead(files),
+    };
+    const first = await live.extractReusedWithDiagnostics(['/reused/warm/app.ts'], ports);
+    assert.ok(first.extraction.nodes.length > 0, 'warm probe cold run yields nodes');
+    // Cold run for 1 file: loadFromLiveStore misses (1 load), then saveToLiveStore
+    // checks for existing envelope (1 load) and persists the new envelope (1 store).
+    assert.equal(counters.loads.length, 2, 'cold run must perform exactly 2 store loads (lookup + pre-write check), got ' + counters.loads.length);
+    assert.equal(counters.stores.length, 1, 'cold run must store exactly 1 envelope, got ' + counters.stores.length);
+    assert.equal(cacheStore.entries.size, 1, 'warm cache store holds the persisted entry');
+    const coldLoads = counters.loads.length;
+    const coldStores = counters.stores.length;
+
+    const second = await live.extractReusedWithDiagnostics(['/reused/warm/app.ts'], ports);
+    assert.deepEqual(second.extraction.nodes, first.extraction.nodes, 'second run is a warm hit with identical nodes');
+    // Warm hit: loadFromLiveStore returns the cached entry (+1 load) and
+    // skips saveToLiveStore completely (+0 loads, +0 stores). A missed or
+    // bypassed warm load would perform +2 loads (lookup miss + save check).
+    assert.equal(counters.loads.length, coldLoads + 1, 'warm hit must perform exactly 1 additional store load (total 3), got ' + counters.loads.length);
+    assert.equal(counters.stores.length, coldStores, 'warm hit stores nothing more');
+    const warmLoads = counters.loads.length;
+    const warmStores = counters.stores.length;
+
+    // Remove the packaged grammar while keeping the ALREADY-POPULATED warm
+    // cacheStore and the live grammarWasm port reading grammarFile('typescript').
+    const grammarPath = grammarFile('typescript');
+    const bytes = readFileSync(grammarPath);
+    unlinkSync(grammarPath);
+    let missing;
+    try {
+      missing = await live.extractReusedWithDiagnostics(['/reused/warm/app.ts'], ports);
+    } finally {
+      writeFileSync(grammarPath, bytes);
+    }
+    assert.equal(cacheStore.entries.size, 1, 'populated warm entry remained in cacheStore during grammar removal');
+    assert.equal(missing.extraction.nodes.length, 0, 'missing grammar refuses warm entry and yields no nodes, got ' + missing.extraction.nodes.length);
+    assert.ok(missing.diagnostics.some((d) => String(d.error).includes('grammar-unavailable')), 'missing grammar is explicit, got ' + JSON.stringify(missing.diagnostics));
+    assert.equal(counters.loads.length, warmLoads, 'missing grammar fails closed before loading from warm cacheStore');
+    assert.equal(counters.stores.length, warmStores, 'missing grammar stores nothing');
+    const missingLoads = counters.loads.length;
+
+    // Restoring the grammar resumes warm hits from the preserved cacheStore.
+    const recovered = await live.extractReusedWithDiagnostics(['/reused/warm/app.ts'], ports);
+    assert.deepEqual(recovered.extraction.nodes, first.extraction.nodes, 'restoring grammar resumes warm hit');
+    assert.equal(counters.loads.length, warmLoads + 1, 'post-restore warm hit adds 1 load');
+    assert.equal(counters.stores.length, warmStores, 'post-restore warm hit stores nothing');
+
+    // Refuse root/legacy fallback when live ports are omitted (both entry points, undefined and null).
+    let fallbackRejected = 0;
+    for (const omitted of [undefined, null]) {
+      await assert.rejects(() => live.extractReused(['/reused/warm/app.ts'], omitted), /explicit live operation/);
+      fallbackRejected++;
+      await assert.rejects(() => live.extractReusedWithDiagnostics(['/reused/warm/app.ts'], omitted), /explicit live operation/);
+      fallbackRejected++;
+    }
+    console.log(JSON.stringify({
+      cold: first.extraction.nodes.length,
+      coldLoads,
+      coldStores,
+      warmLoads,
+      warmStores,
+      missingNodes: missing.extraction.nodes.length,
+      missingLoads,
+      missingDiagnostics: missing.diagnostics.length,
+      recoveredLoads: counters.loads.length,
+      fallbackRejected,
+    }));
+  } else {
+    assert.fail('unknown reused probe mode: ' + mode);
+  }
+`;
+
 // No-Python proof, phase by phase: build, packing, installation, imports and
 // exercises each run in an ISOLATED child process whose PATH starts with
 // python/python2/python3/python2.7/py tripwires that record any invocation
@@ -258,6 +462,8 @@ let packed: PackedInstall;
 
 type ProductionProbeMode = "repair" | "factory" | "matrix" | "malformed" | "worktree" | "coverage" | "references";
 
+type ReusedProbeMode = "extract" | "warm";
+
 // Builds the Node permission-model spawn for the production probe. Node
 // 22.13/23.5 stabilised the flag as `--permission`; Node 20 only accepts
 // the legacy `--experimental-permission` spelling, while Node 24 rejects
@@ -281,6 +487,19 @@ function buildProductionProbeArgs(mode: ProductionProbeMode, tmpRoot: string, in
       ? ["--allow-fs-write=" + join(installDir, "node_modules", "@sentropic", "engram-live", "dist", "grammars")]
       : []),
     "production-parse-probe.mjs",
+    mode,
+    rootDir,
+  ];
+}
+
+function buildReusedProbeArgs(mode: ReusedProbeMode, tmpRoot: string, installDir: string, rootDir: string, nodeVersion: string = process.versions.node): string[] {
+  return [
+    resolveProductionProbePermissionFlag(nodeVersion),
+    "--allow-fs-read=" + tmpRoot,
+    ...(mode === "warm"
+      ? ["--allow-fs-write=" + join(installDir, "node_modules", "@sentropic", "engram-live", "dist", "grammars")]
+      : []),
+    "reused-extraction-probe.mjs",
     mode,
     rootDir,
   ];
@@ -660,6 +879,7 @@ function packAndInstall(
   writeFileShim(join(installDir, "exercise-probe.mjs"), EXERCISE_PROBE);
   writeFileShim(join(installDir, "grammar-probe.mjs"), GRAMMAR_PROBE);
   writeFileShim(join(installDir, "derivation-probe.mjs"), DERIVATION_PROBE);
+  writeFileShim(join(installDir, "reused-extraction-probe.mjs"), REUSED_EXTRACTION_PROBE);
 
   return { tmpRoot, installDir, tripwireBin, pythonMarker, tarball, packedPaths, phaseTrace };
 }
@@ -760,6 +980,7 @@ describe("live package", () => {
       copyFileSync(join(root, "node_modules", "web-tree-sitter", file), join(runtimeDir, file));
     }
     writeFileSync(join(packed.installDir, "production-parse-probe.mjs"), PRODUCTION_PARSE_PROBE);
+    writeFileSync(join(packed.installDir, "reused-extraction-probe.mjs"), REUSED_EXTRACTION_PROBE);
   }, 120000);
 
   afterAll(() => {
@@ -771,6 +992,15 @@ describe("live package", () => {
       buildProductionProbeArgs(mode, packed.tmpRoot, packed.installDir, root),
       { cwd: packed.installDir, env: { ...tripwireEnv(packed.tripwireBin), NODE_PATH: "" } });
     recordPhaseMarker(packed.phaseTrace, "production-parse-" + mode, packed.pythonMarker);
+    expectNoPython(packed.phaseTrace);
+    return JSON.parse(output);
+  }
+
+  function reusedProbe(mode: ReusedProbeMode) {
+    const output = runProtectedPhase(process.execPath,
+      buildReusedProbeArgs(mode, packed.tmpRoot, packed.installDir, root),
+      { cwd: packed.installDir, env: { ...tripwireEnv(packed.tripwireBin), NODE_PATH: "" } });
+    recordPhaseMarker(packed.phaseTrace, "reused-extraction-" + mode, packed.pythonMarker);
     expectNoPython(packed.phaseTrace);
     return JSON.parse(output);
   }
@@ -1035,7 +1265,200 @@ describe("live package", () => {
     expect(report.distinctWorktrees).toBe(true);
   });
 
-  it("L5 source audit and packaged grammar inventory; reused-extraction delivery remains unverified (A6)", () => {
+  it("packaged reused extraction and context resolution execute without the root install closure", () => {
+    // L5-P2b RED (plan/09 L5-P): from the offline packed installation alone,
+    // with the root installation inaccessible, execute nonempty reused
+    // extraction and context-dependent resolution. The probe denies every
+    // filesystem read outside the install tree, binds only the parser
+    // runtime, and extracts through the injected read/cache/grammar ports.
+    const report = reusedProbe("extract") as {
+      nodes: number;
+      edges: number;
+      resolvedImportEdge: boolean;
+      unresolvedWithoutTsconfig: boolean;
+      single: number;
+    };
+    expect(report.nodes, "packaged reused extraction yields nonempty nodes").toBeGreaterThan(0);
+    expect(report.edges, "packaged reused extraction yields nonempty edges").toBeGreaterThan(0);
+    expect(report.resolvedImportEdge, "tsconfig alias resolves app -> lib_dep imports_from edge").toBe(true);
+    expect(report.unresolvedWithoutTsconfig, "removing tsconfig leaves alias unresolved as ref_dep").toBe(true);
+    expect(report.single, "packaged single-file extraction yields nonempty nodes").toBeGreaterThan(0);
+    const integrity = createHash("sha512").update(readFileSync(packed.tarball)).digest("base64");
+    const runtimePackage = JSON.parse(readFileSync(join(root, "node_modules", "web-tree-sitter", "package.json"), "utf8"));
+    console.info("L5-P2b tarball", packed.tarball.split("/").at(-1), "sha512-" + integrity, "node", process.versions.node, "host web-tree-sitter", runtimePackage.version);
+    console.info("L5-P2b packaged reused extraction", `nodes=${report.nodes} edges=${report.edges} single=${report.single}`);
+  });
+
+  it("a warm packaged extraction refuses missing grammar and root fallback", () => {
+    // L5-P2b RED (plan/09 L5-P): a warm packaged extraction is served from
+    // the injected store (pinned exact cold/warm load+store counts), then a
+    // removed grammar after the warm hit refuses the warm store with explicit
+    // unavailability and both entry points refuse missing live ports.
+    const report = reusedProbe("warm") as {
+      cold: number;
+      coldLoads: number;
+      coldStores: number;
+      warmLoads: number;
+      warmStores: number;
+      missingNodes: number;
+      missingLoads: number;
+      missingDiagnostics: number;
+      recoveredLoads: number;
+      fallbackRejected: number;
+    };
+    expect(report.cold, "warm probe cold run yields nonempty nodes").toBeGreaterThan(0);
+    expect(report.coldLoads, "cold run performs 2 store loads (lookup + pre-write check)").toBe(2);
+    expect(report.coldStores, "cold run stores 1 envelope").toBe(1);
+    expect(report.warmLoads, "warm hit performs exactly 1 additional store load").toBe(3);
+    expect(report.warmStores, "warm hit stores nothing more").toBe(1);
+    expect(report.missingNodes, "missing grammar returns zero nodes even with warm cache populated").toBe(0);
+    expect(report.missingLoads, "missing grammar fails closed before loading warm cache").toBe(3);
+    expect(report.missingDiagnostics, "missing grammar reports explicit diagnostics").toBeGreaterThan(0);
+    expect(report.recoveredLoads, "restoring grammar resumes warm hit (+1 load)").toBe(4);
+    expect(report.fallbackRejected, "extractReused and extractReusedWithDiagnostics reject undefined/null live ports").toBe(4);
+    console.info(
+      "L5-P2b warm packaged extraction",
+      `cold=${report.cold} loads=${report.coldLoads}->${report.warmLoads}->${report.missingLoads}->${report.recoveredLoads} stores=${report.coldStores}->${report.warmStores} missingDiagnostics=${report.missingDiagnostics} fallbackRejected=${report.fallbackRejected}`,
+    );
+  });
+
+  it("installed declarations typecheck strictly for external consumers without leaking internal reused modules or collapsing to any", () => {
+    // L5-P2b F-02 / F-06 RED: compiling an external strict consumer against
+    // the extracted tarball must succeed with skipLibCheck: false (no TS7016
+    // on unshipped ./reused/extract-core.js) and preserve exact public types
+    // under skipLibCheck: true (no silent collapse to any; no spurious error
+    // property on ReusedExtractionResult).
+    const tscBin = join(root, "node_modules", "typescript", "bin", "tsc");
+    const typeRoots = join(root, "node_modules", "@types");
+    const consumerDir = mkdtempSync(join(packed.installDir, ".tsc-consumer-"));
+    const runTsc = (filePath: string, skipLibCheck: boolean) => spawnSync(
+      process.execPath,
+      [
+        tscBin,
+        "--ignoreConfig",
+        "--noEmit",
+        "--strict",
+        "--target", "ES2022",
+        "--module", "NodeNext",
+        "--moduleResolution", "NodeNext",
+        "--skipLibCheck", skipLibCheck ? "true" : "false",
+        "--typeRoots", typeRoots,
+        "--types", "node",
+        filePath,
+      ],
+      { cwd: packed.installDir, env: tripwireEnv(packed.tripwireBin), encoding: "utf8" },
+    );
+    try {
+      const validFile = join(consumerDir, "valid.mts");
+      writeFileSync(
+        validFile,
+        [
+          'import {',
+          '  bindReusedExtractionRuntime,',
+          '  extractReused,',
+          '  extractReusedWithDiagnostics,',
+          '  resolveReusedLiveLanguage,',
+          '  REUSED_EXTRACTION_VERSION,',
+          '  REUSED_LIVE_DIALECT_VERSION,',
+          '  REUSED_LIVE_GRAMMAR_ABI,',
+          '  type ReusedExtractionResult,',
+          '  type ReusedExtractWithDiagnosticsResult,',
+          '  type ReusedLiveExtractionPorts,',
+          '} from "@sentropic/engram-live";',
+          'const lang = resolveReusedLiveLanguage("/repo/app.ts");',
+          'const version: string = REUSED_EXTRACTION_VERSION + REUSED_LIVE_DIALECT_VERSION + REUSED_LIVE_GRAMMAR_ABI;',
+          'const ports: ReusedLiveExtractionPorts = { scope: { tenant: "t", clone: "c" } };',
+          'export async function run(): Promise<[ReusedExtractionResult, ReusedExtractWithDiagnosticsResult, string]> {',
+          '  bindReusedExtractionRuntime({ init: () => {}, loadLanguage: async () => ({}), createParser: () => ({ parse: () => null, delete: () => {} }) });',
+          '  const a = await extractReused(["/repo/app.ts"], ports);',
+          '  const b = await extractReusedWithDiagnostics(["/repo/app.ts"], ports);',
+          '  return [a, b, lang ? lang.dialect : version];',
+          '}',
+          "",
+        ].join("\n"),
+      );
+      const valid = runTsc(validFile, false);
+      expect(valid.status, `strict consumer with skipLibCheck:false failed:\n${valid.stdout}\n${valid.stderr}`).toBe(0);
+
+      const badPortsFile = join(consumerDir, "bad-ports.mts");
+      writeFileSync(
+        badPortsFile,
+        'import type { ReusedLiveExtractionPorts } from "@sentropic/engram-live";\nexport const badPorts: ReusedLiveExtractionPorts = 12345;\n',
+      );
+      const badPorts = runTsc(badPortsFile, true);
+      expect(badPorts.status, "ReusedLiveExtractionPorts must not collapse to any under skipLibCheck:true").not.toBe(0);
+      expect(badPorts.stdout + badPorts.stderr).toContain("TS2559");
+
+      const badLangFile = join(consumerDir, "bad-lang.mts");
+      writeFileSync(
+        badLangFile,
+        'import { resolveReusedLiveLanguage } from "@sentropic/engram-live";\nexport const badLang: number = resolveReusedLiveLanguage("a.ts");\n',
+      );
+      const badLang = runTsc(badLangFile, true);
+      expect(badLang.status, "resolveReusedLiveLanguage return type must not collapse to any").not.toBe(0);
+      expect(badLang.stdout + badLang.stderr).toContain("TS2322");
+
+      const badResultFile = join(consumerDir, "bad-result.mts");
+      writeFileSync(
+        badResultFile,
+        'import type { ReusedExtractionResult } from "@sentropic/engram-live";\nexport const badResult: ReusedExtractionResult = { nodes: [], edges: [], input_tokens: 0, output_tokens: 0, error: "spurious" };\n',
+      );
+      const badResult = runTsc(badResultFile, true);
+      expect(badResult.status, "ReusedExtractionResult must not declare a spurious error property (F-06)").not.toBe(0);
+      expect(badResult.stdout + badResult.stderr).toContain("TS2353");
+    } finally {
+      rmSync(consumerDir, { recursive: true, force: true });
+    }
+    recordPhaseMarker(packed.phaseTrace, "consumer-tsc", packed.pythonMarker);
+    expectNoPython(packed.phaseTrace);
+  });
+
+  it("installed L5 closure has no model Python database host or root-package dependency", () => {
+    // L5-P2b GUARD R13 (plan/09 L5-P): the installed closure carries no
+    // model, Python, database, host or root-package edge. Static scan of
+    // every installed executable plus packed-surface and metadata checks.
+    const installedRoot = join(packed.installDir, "node_modules", "@sentropic", "engram-live");
+    const installedFiles = listFilesRecursively(installedRoot).sort();
+    expect(installedFiles.some((file) => /\.(py|pyc|pyo|node|gyp|tar|gz)$/i.test(file))).toBe(false);
+    expect(installedFiles).toEqual(packed.packedPaths.slice().sort());
+    for (const name of ["reused-extraction", "reused/extract-core", "reused/live-cache-keys", "reused/node-id", "reused/relation-remap"] as const) {
+      const js = `dist/${name}.js`;
+      expect(packed.packedPaths, `packed surface contains ${js}`).toContain(js);
+    }
+    const importFromRe = /^\s*import\s[^;]*?from\s*["']([^"']+)["']/gm;
+    const exportFromRe = /^\s*export\s[^;]*?from\s*["']([^"']+)["']/gm;
+    const forbiddenBare = new Set([
+      "openai", "@ai-sdk/openai", "@ai-sdk/anthropic", "@ai-sdk/mistral", "@mistralai/sdk",
+      "mistral-ocr", "ollama", "ollama-ai-provider", "cohere-ai", "langchain",
+      "@google/generative-ai", "ai",
+      "better-sqlite3", "sqlite3", "pg", "pg-pool", "libsql", "@libsql/client",
+      "node:sqlite", "node:module",
+    ]);
+    for (const file of installedFiles.filter((f) => /\.(js|mjs|cjs)$/.test(f))) {
+      const content = readFileSync(join(installedRoot, file), "utf8");
+      expect(content, `${file} builds no loader`).not.toContain("createRequire");
+      expect(content, `${file} builds no loader`).not.toContain("getBuiltinModule");
+      const specs = [
+        ...content.matchAll(importFromRe),
+        ...content.matchAll(exportFromRe),
+      ].map((m) => m[1] as string);
+      for (const spec of specs) {
+        expect(forbiddenBare.has(spec), `${file} imports forbidden bare module "${spec}"`).toBe(false);
+        expect(spec === "@sentropic/engram" || spec.startsWith("@sentropic/engram/"), `${file} reaches the root package via "${spec}"`).toBe(false);
+        expect(spec === "../src/cli.js" || spec.includes("../src/"), `${file} escapes to the root sources via "${spec}"`).toBe(false);
+        expect(/^h2a(-|\/|$)/.test(spec) || spec.startsWith("@sentropic/h2a"), `${file} reaches the h2a host via "${spec}"`).toBe(false);
+        if (!(spec.startsWith("./") || spec.startsWith("../") || spec.startsWith("node:"))) {
+          expect(`installed executable ${file} imports bare "${spec}"`).toBe("in-package relative or node: builtin");
+        }
+      }
+    }
+    const installedPackageJson = JSON.parse(readFileSync(join(installedRoot, "package.json"), "utf8")) as Record<string, unknown>;
+    for (const field of ["dependencies", "optionalDependencies", "peerDependencies"]) {
+      expect(installedPackageJson[field], `installed package declares no ${field}`).toBeUndefined();
+    }
+  });
+
+  it("L5 source audit and packaged grammar inventory", () => {
     // L5 GUARD (plan/09 L5): the reused root extraction exposes the injected
     // host seam instead of a source-root default, and the isolated build
     // audits it. No src/* import here: this file stays inside the neutral
