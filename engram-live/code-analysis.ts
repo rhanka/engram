@@ -35,8 +35,12 @@ import { verifyCommitGraph, verifyGitObject, type PinnedOidDto, type ComparisonO
 import {
   FACT_SCHEMA_VERSION,
   POLICY_VERSION,
+  validateCodeFileDeletionFact,
   validateReasonAnchorFact,
+  type BatchPolicyVersion,
+  type CodeFileDeletionFactDto,
   type LiveScope,
+  type QualifiedOid,
   type ReasonAnchorFactDto,
   type ReasonAnchorPinDto,
 } from "./contracts.js";
@@ -229,11 +233,177 @@ export interface AnalyzeCodeOutcome {
 /** Content-verified declaration AND relation inventory, held by the operation.
  * Serialized or caller-built copies cannot verify; repair never accepts a completion label as proof. */
 export interface DeclarationInventoryReceipt { readonly kind: "verified-declaration-inventory"; }
-const inventories = new WeakMap<DeclarationInventoryReceipt, { input: AnalyzeCodeInput; parsed: ParsedUnit; symbols: readonly ResolvedSymbolDto[] }>();
+interface StoredInventory {
+  readonly input: AnalyzeCodeInput;
+  readonly parsed: ParsedUnit;
+  readonly symbols: readonly ResolvedSymbolDto[];
+}
+const inventories = new WeakMap<DeclarationInventoryReceipt, StoredInventory>();
 function inventoryReceipt(input: AnalyzeCodeInput, parsed: ParsedUnit, symbols: readonly ResolvedSymbolDto[]): DeclarationInventoryReceipt {
   const receipt: DeclarationInventoryReceipt = Object.freeze({ kind: "verified-declaration-inventory" });
   inventories.set(receipt, { input: structuredClone(input), parsed: structuredClone(parsed), symbols: structuredClone(symbols) });
   return receipt;
+}
+
+/** Input for verifying whole-file deletion against retained Git trees (L5-D). */
+export interface VerifyFileDeletionInput {
+  readonly scope: LiveScopeDto;
+  readonly language: string;
+  readonly path: string;
+  readonly treeOid: string | null;
+  readonly snapshotId?: string | null;
+  readonly policyVersion?: string | null;
+  readonly contentPolicyVersion?: string | null;
+  readonly worktreeId?: string | null;
+  readonly snapshotKind?: string | null;
+  readonly historicalBounds: HistoricalBoundsDto | null;
+}
+
+/** Ports required to verify whole-file absence without a grammar or parse pass. */
+export interface FileDeletionPorts {
+  readonly objects: RetainedObjectsPort;
+  readonly cache?: Pick<AnalysisCachePort, "authorize"> | null;
+  readonly authorize?: (scope: LiveScopeDto) => void | Promise<void>;
+}
+
+/** Operation-held receipt proving that a path is absent in a verified Git tree (L5-D).
+ * Serialized or caller-built copies cannot verify; legacy hints never substitute for it. */
+export interface FileDeletionReceipt { readonly kind: "verified-file-deletion"; }
+interface StoredFileDeletion {
+  readonly input: VerifyFileDeletionInput;
+  readonly algorithm: "sha1" | "sha256";
+}
+const fileDeletions = new WeakMap<FileDeletionReceipt, StoredFileDeletion>();
+function fileDeletionReceipt(input: VerifyFileDeletionInput, algorithm: "sha1" | "sha256"): FileDeletionReceipt {
+  const receipt: FileDeletionReceipt = Object.freeze({ kind: "verified-file-deletion" });
+  fileDeletions.set(receipt, { input: structuredClone(input), algorithm });
+  return receipt;
+}
+
+export interface VerifyFileDeletionOutcome {
+  readonly state: "complete" | "partial";
+  readonly deleted: boolean;
+  readonly path: string;
+  readonly treeOid: string | null;
+  readonly coverage: CodeCoverageDto;
+  readonly deletionReceipt?: FileDeletionReceipt;
+  readonly reasons: readonly (typeof L5_REASONS)[number][];
+}
+
+/** Read-only view of an operation-held whole-file deletion receipt (returns fresh copies). */
+export function readFileDeletionReceipt(receipt: FileDeletionReceipt): {
+  readonly scope: LiveScopeDto;
+  readonly treeOid: string | null;
+  readonly path: string;
+  readonly language: string;
+  readonly snapshotId: string | null;
+  readonly worktreeId: string | null;
+} | null {
+  const deletion = fileDeletions.get(receipt);
+  if (!deletion) return null;
+  return {
+    scope: { tenant: deletion.input.scope.tenant, clone: deletion.input.scope.clone },
+    treeOid: deletion.input.treeOid,
+    path: deletion.input.path,
+    language: deletion.input.language,
+    snapshotId: deletion.input.snapshotId ?? null,
+    worktreeId: deletion.input.worktreeId ?? null,
+  };
+}
+
+/** Operation-held receipt authorizing emission of a typed CodeFileDeletionFactDto (L5-D). */
+export interface FileDeletionPublicationReceipt { readonly kind: "verified-file-deletion-publication"; }
+interface StoredFileDeletionPublication {
+  readonly scope: LiveScopeDto;
+  readonly worktreeId: string | null;
+  readonly snapshotId: string | null;
+  readonly beforeTree: QualifiedOid;
+  readonly afterTree: QualifiedOid;
+  readonly path: string;
+  readonly language: string;
+  readonly beforeContentHash: string;
+  readonly beforeTopologyHash: string;
+  readonly invalidatedSymbolIds: readonly string[];
+  readonly invalidatedSlots: readonly string[];
+  readonly unresolved: readonly UnresolvedFactDto[];
+  readonly policyVersion: string;
+}
+const fileDeletionPublications = new WeakMap<FileDeletionPublicationReceipt, StoredFileDeletionPublication>();
+function fileDeletionPublicationReceipt(record: StoredFileDeletionPublication): FileDeletionPublicationReceipt {
+  const receipt: FileDeletionPublicationReceipt = Object.freeze({ kind: "verified-file-deletion-publication" });
+  fileDeletionPublications.set(receipt, structuredClone(record));
+  return receipt;
+}
+
+export interface CodeFileDeletionFactOptions {
+  readonly pathBytes?: Uint8Array;
+  readonly extractorVersion?: string;
+  readonly resolverVersion?: string;
+}
+
+const CODE_FILE_DELETION_OPTION_KEYS: readonly string[] = [
+  "pathBytes",
+  "extractorVersion",
+  "resolverVersion",
+];
+
+/** Emit a typed, validated CodeFileDeletionFactDto strictly from an operation-issued publication receipt. */
+export function toCodeFileDeletionFact(
+  publication: FileDeletionPublicationReceipt,
+  options?: CodeFileDeletionFactOptions,
+): CodeFileDeletionFactDto {
+  const record = fileDeletionPublications.get(publication);
+  if (!record) {
+    throw new CodeAnalysisError("whole-file deletion publication requires an operation-issued publication receipt");
+  }
+  let opts: Partial<CodeFileDeletionFactOptions> = {};
+  if (options !== undefined) {
+    opts = snapshotPlainRecord(options, "whole-file deletion options", {
+      allowedKeys: CODE_FILE_DELETION_OPTION_KEYS,
+      unknownKeyVerb: "carry",
+    });
+  }
+  const canonicalUtf8 = Buffer.from(record.path, "utf8");
+  let pathBytes: Uint8Array;
+  if (opts.pathBytes !== undefined) {
+    if (!(opts.pathBytes instanceof Uint8Array) || !ArrayBuffer.isView(opts.pathBytes)) {
+      throw new CodeAnalysisError("whole-file deletion pathBytes must be a Uint8Array");
+    }
+    const copy = Uint8Array.from(opts.pathBytes);
+    if (!Buffer.from(copy).equals(canonicalUtf8)) {
+      throw new CodeAnalysisError("whole-file deletion pathBytes must match the verified deleted path");
+    }
+    pathBytes = copy;
+  } else {
+    pathBytes = new Uint8Array(canonicalUtf8.buffer, canonicalUtf8.byteOffset, canonicalUtf8.byteLength).slice();
+  }
+  const fact: CodeFileDeletionFactDto = {
+    kind: "code-file-deletion",
+    schemaVersion: FACT_SCHEMA_VERSION,
+    cloneId: record.scope.clone,
+    worktreeId: record.worktreeId,
+    snapshotId: record.snapshotId,
+    beforeTree: { algorithm: record.beforeTree.algorithm, oid: record.beforeTree.oid },
+    afterTree: { algorithm: record.afterTree.algorithm, oid: record.afterTree.oid },
+    path: pathBytes,
+    language: record.language,
+    beforeContentHash: record.beforeContentHash,
+    beforeTopologyHash: record.beforeTopologyHash,
+    invalidatedSymbolIds: [...record.invalidatedSymbolIds],
+    invalidatedSlots: [...record.invalidatedSlots],
+    unresolved: record.unresolved.map((item) => ({
+      unresolvedKind: item.kind,
+      name: item.name,
+      fromSymbolId: item.fromId,
+      reason: item.reason,
+    })),
+    extractorVersion: opts.extractorVersion ?? ANALYSIS_EXTRACTOR_VERSION,
+    resolverVersion: opts.resolverVersion ?? L5_RESOLVER_VERSION,
+    policyVersion: record.policyVersion as BatchPolicyVersion,
+  };
+  const checked = validateCodeFileDeletionFact(fact);
+  if (!checked.ok) throw new CodeAnalysisError(checked.errors.join(", "));
+  return fact;
 }
 
 /** G2 consumes the same operation-held complete L5 inventory as repair.
@@ -274,22 +444,45 @@ function sha256Hex(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value) || ArrayBuffer.isView(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function snapshotPlainRecord<T extends object>(
+  value: T,
+  label: string,
+  options: {
+    readonly reservedKeys?: readonly string[];
+    readonly allowedKeys?: readonly string[];
+    readonly unknownKeyVerb?: "carries" | "carry";
+  } = {},
+): { -readonly [K in keyof T]: T[K] } {
+  if (!isPlainRecord(value)) {
+    throw new CodeAnalysisError(`${label} must use plain records`);
+  }
+  const keys = Reflect.ownKeys(value);
+  const reservedKeys = options.reservedKeys ?? [];
+  const allowedKeys = options.allowedKeys;
+  const unknownKeyVerb = options.unknownKeyVerb ?? "carries";
+  if (
+    keys.some(
+      (key) => typeof key === "symbol" || reservedKeys.includes(key) || (allowedKeys !== undefined && !allowedKeys.includes(key)),
+    )
+  ) {
+    throw new CodeAnalysisError(`${label} ${unknownKeyVerb} an unknown key: refused`);
+  }
+  return Object.fromEntries(keys.map((key) => [key, Reflect.get(value, key)])) as { -readonly [K in keyof T]: T[K] };
+}
+
 function snapshotReasonAnchorRecord<T extends object>(
   value: T,
   reservedKeys: readonly string[] = [],
 ): { -readonly [K in keyof T]: T[K] } {
-  if (typeof value !== "object" || value === null || Array.isArray(value) || ArrayBuffer.isView(value)) {
-    throw new CodeAnalysisError("reason-anchor input must use plain records");
-  }
-  const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) {
-    throw new CodeAnalysisError("reason-anchor input must use plain records");
-  }
-  const keys = Reflect.ownKeys(value);
-  if (keys.some((key) => typeof key === "symbol" || reservedKeys.includes(key))) {
-    throw new CodeAnalysisError("reason-anchor input carries an unknown key: refused");
-  }
-  return Object.fromEntries(keys.map((key) => [key, Reflect.get(value, key)])) as { -readonly [K in keyof T]: T[K] };
+  return snapshotPlainRecord(value, "reason-anchor input", { reservedKeys });
 }
 
 /** Snapshot a reference from pinned Git, G1 or P1 evidence supplied by the caller. */
@@ -944,6 +1137,191 @@ async function analyzeCodePinned(input: AnalyzeCodeInput, ports: CodeAnalysisPor
   };
 }
 
+function checkCanonicalPath(path: string, label: string): void {
+  if (typeof path !== "string" || path.length === 0 || path.includes("\0")) {
+    throw new CodeAnalysisError(`${label} must be a non-empty string without NUL`);
+  }
+  if (path.startsWith("/") || path.endsWith("/")) {
+    throw new CodeAnalysisError(`${label} must be a canonical relative Git path`);
+  }
+  const parts = path.split("/");
+  if (parts.some((part) => part.length === 0 || part === "." || part === "..")) {
+    throw new CodeAnalysisError(`${label} must be a canonical relative Git path`);
+  }
+}
+
+function checkDeletionInput(input: VerifyFileDeletionInput): void {
+  checkScope(input.scope);
+  if (typeof input.language !== "string" || input.language.length === 0 || input.language.includes("\0")) {
+    throw new CodeAnalysisError("deletion language must be a non-empty string without NUL");
+  }
+  checkCanonicalPath(input.path, "deletion path");
+  if (input.treeOid !== null && (typeof input.treeOid !== "string" || !HEX_OID.test(input.treeOid))) {
+    throw new CodeAnalysisError("deletion treeOid must be null or a 40/64 character hex OID");
+  }
+  if (input.treeOid === null && (typeof input.snapshotId !== "string" || input.snapshotId.length === 0)) {
+    throw new CodeAnalysisError("deletion snapshotId is required when treeOid is null (snapshot-bound deletion)");
+  }
+}
+
+function checkDeletionPorts(ports: FileDeletionPorts): void {
+  if (ports === null || typeof ports !== "object") {
+    throw new CodeAnalysisError("deletion verification requires injected retained-object ports");
+  }
+  if (!ports.objects || typeof ports.objects.loadBlob !== "function") {
+    throw new CodeAnalysisError("deletion verification requires an injected retained-object port (lazy R1 reads)");
+  }
+  if (ports.cache != null && typeof ports.cache.authorize !== "function") {
+    throw new CodeAnalysisError("deletion verification cache port must expose authorize");
+  }
+  if (ports.authorize != null && typeof ports.authorize !== "function") {
+    throw new CodeAnalysisError("deletion verification authorize port must be a function");
+  }
+}
+
+async function verifyDeletionBounds(
+  input: VerifyFileDeletionInput,
+  objects: RetainedObjectsPort,
+): Promise<
+  | { readonly ok: true; readonly algorithm: "sha1" | "sha256" }
+  | {
+      readonly ok: false;
+      readonly reasonCode: "unstable-capture" | "bounds-unknown" | "shallow-history" | "object-missing" | "object-invalid" | "result-missing";
+      readonly detail: string;
+    }
+> {
+  if (input.treeOid === null) {
+    return {
+      ok: false,
+      reasonCode: "unstable-capture",
+      detail: `unstable-capture: local capture verification is unavailable for unit path "${input.path}": whole-file deletion is partial, never complete`,
+    };
+  }
+  const bounds = input.historicalBounds;
+  if (!bounds?.known || bounds.missing?.length || !bounds.heads?.length) {
+    const missing = bounds?.missing;
+    const suffix = Array.isArray(missing) && missing.length > 0 ? ` (missing bounds: ${missing.slice(0, 3).join(", ")})` : "";
+    return {
+      ok: false,
+      reasonCode: "bounds-unknown",
+      detail: `bounds-unknown: historical bounds are incomplete${suffix} for unit path "${input.path}": whole-file deletion is partial, never complete`,
+    };
+  }
+  try {
+    const graph = await verifyCommitGraph(bounds.heads, objects);
+    const algorithm = input.treeOid.length === 40 ? ("sha1" as const) : ("sha256" as const);
+    if (![...graph.entries()].some(([commitKey, commit]) => commitKey.startsWith(`${algorithm}:`) && commit.tree === input.treeOid)) {
+      return {
+        ok: false,
+        reasonCode: "bounds-unknown",
+        detail: `bounds-unknown: tree ${input.treeOid} is not bound to verified historical heads for unit path "${input.path}"`,
+      };
+    }
+    let tree: PinnedOidDto = { algorithm, oid: input.treeOid };
+    const components = Buffer.from(input.path, "utf8").toString("latin1").split("/");
+    for (const [index, component] of components.entries()) {
+      const entries = (await verifyGitObject(tree, objects, "tree")).entries!;
+      const entry = entries.find((item) => item.name === component);
+      if (!entry) {
+        return { ok: true, algorithm };
+      }
+      if (index === components.length - 1) {
+        return {
+          ok: false,
+          reasonCode: "result-missing",
+          detail: `result-missing: unit path "${input.path}" is still present in tree ${input.treeOid} (mode ${entry.mode}): whole-file deletion withheld`,
+        };
+      }
+      if (entry.mode !== "40000") {
+        // Ancestor path is a non-directory entry (file/symlink/gitlink), so the nested path cannot exist.
+        return { ok: true, algorithm };
+      }
+      tree = entry.oid;
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    const reasonCode = message.startsWith("shallow-history:")
+      ? "shallow-history"
+      : message.startsWith("object-missing:")
+        ? "object-missing"
+        : message.startsWith("object-invalid:")
+          ? "object-invalid"
+          : "bounds-unknown";
+    return {
+      ok: false,
+      reasonCode,
+      detail: `${reasonCode}: could not verify tree absence for unit path "${input.path}": whole-file deletion is partial, never complete`,
+    };
+  }
+  return {
+    ok: false,
+    reasonCode: "bounds-unknown",
+    detail: `bounds-unknown: tree absence could not be established for unit path "${input.path}"`,
+  };
+}
+
+/**
+ * Verify whole-file absence against retained Git objects and issue an opaque
+ * operation-held FileDeletionReceipt (L5-D). Fails closed on present paths,
+ * typechanges, missing/corrupt trees, shallow/unknown bounds and unverified
+ * local captures (`treeOid === null`).
+ */
+export async function verifyFileDeletion(
+  input: VerifyFileDeletionInput,
+  ports: FileDeletionPorts,
+): Promise<VerifyFileDeletionOutcome> {
+  if (typeof input !== "object" || input === null || Array.isArray(input) || ArrayBuffer.isView(input)) {
+    throw new CodeAnalysisError("deletion input must be a plain object");
+  }
+  const proto = Object.getPrototypeOf(input);
+  if (proto !== Object.prototype && proto !== null) {
+    throw new CodeAnalysisError("deletion input must be a plain object");
+  }
+  let pinned: VerifyFileDeletionInput;
+  try {
+    pinned = structuredClone(input);
+  } catch {
+    throw new CodeAnalysisError("deletion input must be data-pure and cloneable");
+  }
+  checkDeletionInput(pinned);
+  checkDeletionPorts(ports);
+
+  if (ports.authorize) await ports.authorize({ tenant: pinned.scope.tenant, clone: pinned.scope.clone });
+  if (ports.cache) await ports.cache.authorize({ tenant: pinned.scope.tenant, clone: pinned.scope.clone });
+
+  const verified = await verifyDeletionBounds(pinned, ports.objects);
+  if (!verified.ok) {
+    return {
+      state: "partial",
+      deleted: false,
+      path: pinned.path,
+      treeOid: pinned.treeOid,
+      coverage: {
+        axis: "ast",
+        language: pinned.language,
+        state: "partial",
+        reason: verified.detail,
+      },
+      reasons: [verified.reasonCode],
+    };
+  }
+
+  return {
+    state: "complete",
+    deleted: true,
+    path: pinned.path,
+    treeOid: pinned.treeOid,
+    coverage: {
+      axis: "ast",
+      language: pinned.language,
+      state: "current",
+      reason: `verified-file-deletion: path "${pinned.path}" is absent in verified tree ${pinned.treeOid}`,
+    },
+    deletionReceipt: fileDeletionReceipt(pinned, verified.algorithm),
+    reasons: [],
+  };
+}
+
 export interface RepairExternalCaller {
   readonly id: string;
   readonly from: string;
@@ -954,21 +1332,23 @@ export interface RepairExternalCaller {
 
 export interface RepairAffectedInput {
   readonly before: ParsedUnit | { symbols: readonly (LocalSymbol | LegacySymbol)[]; calls: readonly unknown[]; inheritances: readonly unknown[]; topologyHash: string };
-  readonly after: ParsedUnit | { symbols: readonly (LocalSymbol | LegacySymbol)[]; calls: readonly unknown[]; inheritances: readonly unknown[]; topologyHash: string };
+  /** Parsed unit for the updated file, or null when repairing a whole-file deletion (L5-D). */
+  readonly after: ParsedUnit | { symbols: readonly (LocalSymbol | LegacySymbol)[]; calls: readonly unknown[]; inheritances: readonly unknown[]; topologyHash: string } | null;
   /** Calls from OTHER files into this file's symbols (cross-file edges). */
   readonly externalCallers: readonly RepairExternalCaller[];
   /** Optional downgrade only. Completeness is computed from operation-issued inventories. */
   readonly afterCompleteness?: "complete" | "partial";
   /**
-   * R9 deletion evidence: only operation-issued before/after receipts can
-   * authorize publication. The legacy deletedSlots/completeInventory forms
-   * are inert downgrade-only inputs: they never prove deletion or completeness.
-   * Whole-file deletion has no verified receipt path and cannot be published.
-   * Without verified inventories, prior callers are preserved as pending.
+   * R9 deletion evidence: only operation-issued before/after inventories or a
+   * before inventory paired with an operation-issued whole-file deletion receipt
+   * (L5-D) can authorize publication. The legacy deletedSlots/completeInventory
+   * forms remain inert downgrade-only inputs: they never prove deletion or
+   * completeness. Without verified receipts, prior callers are preserved as pending.
    */
   readonly deletionEvidence?: { readonly deletedSlots: readonly string[] }
     | { readonly completeInventory: true } | { readonly completeInventory: false }
-    | { readonly before: DeclarationInventoryReceipt; readonly after: DeclarationInventoryReceipt };
+    | { readonly before: DeclarationInventoryReceipt; readonly after: DeclarationInventoryReceipt }
+    | { readonly before: DeclarationInventoryReceipt; readonly deletedFile: FileDeletionReceipt };
 }
 
 export interface RepairAffectedOutcome {
@@ -984,6 +1364,8 @@ export interface RepairAffectedOutcome {
   readonly coverageState: "current" | "partial";
   readonly coverageReasons: readonly (typeof L5_REASONS)[number][];
   readonly coverageReason: string;
+  /** Present only when a verified whole-file deletion is publishable (L5-D). */
+  readonly deletionPublication?: FileDeletionPublicationReceipt;
 }
 
 function slotOfSymbol(symbol: LocalSymbol | LegacySymbol): string {
@@ -1036,11 +1418,13 @@ export function repairAffectedCalls(input: RepairAffectedInput): RepairAffectedO
   if (input === null || typeof input !== "object") {
     throw new CodeAnalysisError("repair requires before/after parsed units and external callers");
   }
-  for (const field of ["before", "after"] as const) {
-    const unit = (input as unknown as Record<string, unknown>)[field] as Record<string, unknown> | undefined;
-    if (!unit || typeof unit !== "object" || !Array.isArray(unit.symbols)) {
-      throw new CodeAnalysisError(`repair.${field} must be a parsed unit`);
-    }
+  const beforeUnit = (input as unknown as Record<string, unknown>).before as Record<string, unknown> | undefined;
+  if (!beforeUnit || typeof beforeUnit !== "object" || !Array.isArray(beforeUnit.symbols)) {
+    throw new CodeAnalysisError("repair.before must be a parsed unit");
+  }
+  const afterUnit = (input as unknown as Record<string, unknown>).after as Record<string, unknown> | null | undefined;
+  if (afterUnit !== null && (!afterUnit || typeof afterUnit !== "object" || !Array.isArray(afterUnit.symbols))) {
+    throw new CodeAnalysisError("repair.after must be a parsed unit or null");
   }
   if (!Array.isArray(input.externalCallers)) {
     throw new CodeAnalysisError("repair.externalCallers must be an array");
@@ -1048,23 +1432,25 @@ export function repairAffectedCalls(input: RepairAffectedInput): RepairAffectedO
   if (input.afterCompleteness !== undefined && input.afterCompleteness !== "complete" && input.afterCompleteness !== "partial") {
     throw new CodeAnalysisError('repair.afterCompleteness must be "complete" or "partial"');
   }
-  // The expected declarations AND relations come from the content-verified parse,
-  // held privately in the receipts. A label (even with no missing declarations)
-  // cannot establish a denominator or authorize dropping a relation.
-  const verified = verifiedInventories(input);
+  // The expected declarations AND relations come from the content-verified parse
+  // or tree-absence receipt, held privately in operation WeakMaps. A label (even
+  // with no missing declarations) cannot establish a denominator or authorize
+  // dropping a relation.
+  const receiptPair = readReceiptPair(input);
+  const verified = verifyRepairEvidence(input, receiptPair);
   const completeness = verified && input.afterCompleteness !== "partial" ? "complete" : "partial";
   const reasons = new Set<(typeof L5_REASONS)[number]>();
   if (!verified) reasons.add("result-missing");
-  if (!input.deletionEvidence || !("before" in input.deletionEvidence)) reasons.add("missing-key");
-  const syntax = (input.after as ParsedUnit).syntax;
+  if (!receiptPair) reasons.add("missing-key");
+  const syntax = input.after === null ? undefined : (input.after as ParsedUnit).syntax;
   if (syntax && (!syntax.rootSpansBytes || syntax.hasError || syntax.hasMissing || !syntax.walkComplete)) reasons.add("syntax-incomplete");
   if (input.afterCompleteness === "partial") reasons.add("backfill-incomplete");
   const beforeSymbols = (input.before.symbols ?? []) as (LocalSymbol | LegacySymbol)[];
-  const afterSymbols = (input.after.symbols ?? []) as (LocalSymbol | LegacySymbol)[];
+  const afterSymbols = (input.after === null ? [] : (input.after.symbols ?? [])) as (LocalSymbol | LegacySymbol)[];
   const beforeBySlot = new Map(beforeSymbols.map((s) => [slotOfSymbol(s), s]));
   const afterBySlot = new Map(afterSymbols.map((s) => [slotOfSymbol(s), s]));
   const missingSlots = [...beforeBySlot.keys()].filter(slot => !afterBySlot.has(slot));
-  const pending = new Set(missingSlots.filter(slot => !deletionConfirmed(slot, input)));
+  const pending = new Set(missingSlots.filter(slot => !deletionConfirmed(slot, verified)));
 
   const invalidated: string[] = [];
   for (const [slot, beforeSymbol] of beforeBySlot) {
@@ -1073,7 +1459,7 @@ export function repairAffectedCalls(input: RepairAffectedInput): RepairAffectedO
       // R9: omission alone never proves deletion — only a COMPLETE result
       // with deletion evidence invalidates the missing slot here. Partial
       // omission stays unknown (preserved below, unpublished).
-      if (completeness === "complete" && deletionConfirmed(slot, input)) {
+      if (completeness === "complete" && deletionConfirmed(slot, verified)) {
         invalidated.push(slot);
       }
     } else if (bodyOfSymbol(afterSymbol) !== bodyOfSymbol(beforeSymbol)) {
@@ -1091,8 +1477,8 @@ export function repairAffectedCalls(input: RepairAffectedInput): RepairAffectedO
       preserved.push(caller);
       continue;
     }
-    // Target missing after the edit.
-    if (completeness === "partial" || !deletionConfirmed(targetSlot, input)) {
+    // Target missing after the edit or whole-file deletion.
+    if (completeness === "partial" || !deletionConfirmed(targetSlot, verified)) {
       // R9: unknown in a partial result — preserve the prior caller edge,
       // report pending coverage, withhold from publication.
       preserved.push(caller);
@@ -1103,13 +1489,18 @@ export function repairAffectedCalls(input: RepairAffectedInput): RepairAffectedO
       fromId: caller.from,
       kind: "unresolved-call",
       name: caller.target,
-      reason: `unresolved-call: caller target slot "${targetSlot}" has confirmed deletion after the edit: `
-        + `kept as an unresolved fact, never deleted by a partial repair`,
+      reason: verified?.mode === "whole-file-deletion"
+        ? `unresolved-call: caller target slot "${targetSlot}" has confirmed whole-file deletion: `
+          + `kept as an unresolved fact, never deleted by a partial repair`
+        : `unresolved-call: caller target slot "${targetSlot}" has confirmed deletion after the edit: `
+          + `kept as an unresolved fact, never deleted by a partial repair`,
     });
   }
 
   const beforeEdges = ((input.before as { inheritances?: readonly unknown[] }).inheritances ?? []) as (LocalInheritance | LegacyInheritance)[];
-  const afterEdges = [...(((input.after as { inheritances?: readonly unknown[] }).inheritances ?? []) as (LocalInheritance | LegacyInheritance)[])];
+  const afterEdges = input.after === null
+    ? []
+    : [...(((input.after as { inheritances?: readonly unknown[] }).inheritances ?? []) as (LocalInheritance | LegacyInheritance)[])];
   if (completeness === "partial" || pending.size) {
     const slotOf = (edge: LocalInheritance | LegacyInheritance): string => "slot" in edge ? edge.slot : edge.id;
     for (const edge of beforeEdges) {
@@ -1141,7 +1532,7 @@ export function repairAffectedCalls(input: RepairAffectedInput): RepairAffectedO
         reason: `unresolved-type: parent "${parentSlot}" is outside the analyzed unit` });
       continue;
     }
-    if (completeness === "partial" || !deletionConfirmed(parentSlot, input)) {
+    if (completeness === "partial" || !deletionConfirmed(parentSlot, verified)) {
       // Ambiguous parent (rename/move/overload/nesting) stays pending until
       // resolved — the edge is preserved as-is, publication withheld.
       inheritances.push(
@@ -1164,21 +1555,54 @@ export function repairAffectedCalls(input: RepairAffectedInput): RepairAffectedO
 
   // Body-only edits preserve valid callers through declaration
   // correspondence (slot, NOT versioned IDs and NOT names alone — R3).
-  const expectedRelationsPresent = verified !== null && canonical(inheritances) === canonical(verified.after.parsed.inheritances);
+  const expectedRelationsPresent = verified !== null && (
+    verified.mode === "whole-file-deletion"
+      ? inheritances.length === 0
+      : canonical(inheritances) === canonical(verified.after.parsed.inheritances)
+  );
   if (!expectedRelationsPresent) reasons.add("result-missing");
   const publishable = completeness === "complete" && expectedRelationsPresent && pending.size === 0
     && beforeBySlot.size === beforeSymbols.length && afterBySlot.size === afterSymbols.length;
   if (pending.size || beforeBySlot.size !== beforeSymbols.length || afterBySlot.size !== afterSymbols.length) reasons.add("result-missing");
   const coverageReason = publishable
-    ? "repair complete: content-derived declaration and relation inventories verified; publishable"
+    ? verified?.mode === "whole-file-deletion"
+      ? "whole-file deletion repair complete: content-derived before inventory and tree absence receipt verified; publishable"
+      : "repair complete: content-derived declaration and relation inventories verified; publishable"
     : `${[...reasons].join(", ")}: repair partial; prior relations preserved, replacement withheld from publication`;
-  const calls = [...input.after.calls] as (LocalCall | LegacyCall)[];
+  const calls = input.after === null ? [] : [...input.after.calls] as (LocalCall | LegacyCall)[];
   if (!publishable) {
-    for (const call of input.before.calls as (LocalCall | LegacyCall)[]) {
+    for (const call of (input.before.calls ?? []) as (LocalCall | LegacyCall)[]) {
       const slot = "slot" in call ? call.slot : call.id;
       const index = calls.findIndex(after => ("slot" in after ? after.slot : after.id) === slot);
       if (index < 0) calls.push(call); else calls[index] = call;
     }
+  }
+
+  let deletionPublication: FileDeletionPublicationReceipt | undefined;
+  if (publishable && verified !== null && verified.mode === "whole-file-deletion") {
+    const beforeTreeOid = verified.before.input.treeOid!;
+    const afterTreeOid = verified.deletion.input.treeOid!;
+    const alg = verified.deletion.algorithm;
+    deletionPublication = fileDeletionPublicationReceipt({
+      scope: { tenant: verified.before.input.scope.tenant, clone: verified.before.input.scope.clone },
+      worktreeId: verified.deletion.input.worktreeId ?? null,
+      snapshotId: verified.deletion.input.snapshotId ?? null,
+      beforeTree: { algorithm: alg, oid: beforeTreeOid },
+      afterTree: { algorithm: alg, oid: afterTreeOid },
+      path: verified.before.input.path,
+      language: verified.before.input.language,
+      beforeContentHash: sha256Hex(verified.before.input.content),
+      beforeTopologyHash: verified.before.parsed.topologyHash,
+      invalidatedSymbolIds: verified.before.symbols.map((s) => s.id),
+      invalidatedSlots: verified.before.symbols.map((s) => s.slot),
+      unresolved,
+      policyVersion:
+        verified.deletion.input.policyVersion
+        ?? verified.deletion.input.contentPolicyVersion
+        ?? verified.before.input.policyVersion
+        ?? verified.before.input.contentPolicyVersion
+        ?? POLICY_VERSION,
+    });
   }
 
   return {
@@ -1186,6 +1610,7 @@ export function repairAffectedCalls(input: RepairAffectedInput): RepairAffectedO
     coverageState: publishable ? "current" : "partial",
     coverageReasons: [...reasons],
     coverageReason,
+    ...(deletionPublication !== undefined ? { deletionPublication } : {}),
     inheritances,
     invalidatedSymbolIds: invalidated,
     preservedExternalCallers: preserved,
@@ -1200,24 +1625,80 @@ export function repairAffectedCalls(input: RepairAffectedInput): RepairAffectedO
   };
 }
 
-function verifiedInventories(input: RepairAffectedInput) {
-  const evidence = input.deletionEvidence;
-  if (!evidence || typeof evidence !== "object") return null;
-  if (!("before" in evidence) || !("after" in evidence)) return null;
-  const before = inventories.get(evidence.before);
-  const after = inventories.get(evidence.after);
+type ReceiptPair =
+  | { readonly mode: "edit"; readonly before: DeclarationInventoryReceipt; readonly after: DeclarationInventoryReceipt }
+  | { readonly mode: "whole-file-deletion"; readonly before: DeclarationInventoryReceipt; readonly deletedFile: FileDeletionReceipt };
+
+type VerifiedRepair =
+  | { readonly mode: "edit"; readonly before: StoredInventory; readonly after: StoredInventory }
+  | { readonly mode: "whole-file-deletion"; readonly before: StoredInventory; readonly deletion: StoredFileDeletion };
+
+function readReceiptPair(input: RepairAffectedInput): ReceiptPair | null {
+  const evidence: unknown = input.deletionEvidence;
+  if (!isPlainRecord(evidence)) return null;
+  const keys = Reflect.ownKeys(evidence);
+  const secondKey = input.after === null ? "deletedFile" : "after";
+  if (keys.length !== 2 || !keys.includes("before") || !keys.includes(secondKey)) return null;
+  const before = evidence.before;
+  const second = evidence[secondKey];
+  if (!isPlainRecord(before) || !isPlainRecord(second)) return null;
+  return secondKey === "deletedFile"
+    ? {
+        mode: "whole-file-deletion",
+        before: before as unknown as DeclarationInventoryReceipt,
+        deletedFile: second as unknown as FileDeletionReceipt,
+      }
+    : {
+        mode: "edit",
+        before: before as unknown as DeclarationInventoryReceipt,
+        after: second as unknown as DeclarationInventoryReceipt,
+      };
+}
+
+function verifyRepairEvidence(input: RepairAffectedInput, pair: ReceiptPair | null): VerifiedRepair | null {
+  if (!pair) return null;
+  if (pair.mode === "whole-file-deletion") {
+    if (input.after !== null) return null;
+    const before = inventories.get(pair.before);
+    const deletion = fileDeletions.get(pair.deletedFile);
+    if (!before || !deletion) return null;
+    const beforePolicy = before.input.policyVersion ?? before.input.contentPolicyVersion ?? POLICY_VERSION;
+    const deletionPolicy = deletion.input.policyVersion ?? deletion.input.contentPolicyVersion ?? POLICY_VERSION;
+    if (
+      canonical(before.input.scope) !== canonical(deletion.input.scope)
+      || before.input.path !== deletion.input.path
+      || before.input.language !== deletion.input.language
+      || (before.input.worktreeId ?? null) !== (deletion.input.worktreeId ?? null)
+      || (before.input.snapshotId ?? null) !== (deletion.input.snapshotId ?? null)
+      || before.input.treeOid === null
+      || deletion.input.treeOid === null
+      || before.input.treeOid === deletion.input.treeOid
+      || before.input.treeOid.length !== deletion.input.treeOid.length
+      || beforePolicy !== deletionPolicy
+      || canonical(before.parsed) !== canonical(input.before)
+    ) {
+      return null;
+    }
+    return { mode: "whole-file-deletion", before, deletion };
+  }
+  if (input.after === null) return null;
+  const before = inventories.get(pair.before);
+  const after = inventories.get(pair.after);
   if (!before || !after || canonical(before.input.scope) !== canonical(after.input.scope)
     || before.input.path !== after.input.path || before.input.language !== after.input.language
     || canonical(before.parsed) !== canonical(input.before) || canonical(after.parsed) !== canonical(input.after)) return null;
-  return { before, after };
+  return { mode: "edit", before, after };
 }
 
-function deletionConfirmed(slot: string, input: RepairAffectedInput): boolean {
-  const verified = verifiedInventories(input);
+function deletionConfirmed(slot: string, verified: VerifiedRepair | null): boolean {
   if (!verified) return false;
-  const { before, after } = verified;
+  const { before } = verified;
   const old = before.parsed.symbols.filter(s => s.slot === slot);
-  return old.length === 1 && new Set(before.parsed.symbols.map(s => s.slot)).size === before.parsed.symbols.length
-    && new Set(after.parsed.symbols.map(s => s.slot)).size === after.parsed.symbols.length
+  if (old.length !== 1 || new Set(before.parsed.symbols.map(s => s.slot)).size !== before.parsed.symbols.length) {
+    return false;
+  }
+  if (verified.mode === "whole-file-deletion") return true;
+  const { after } = verified;
+  return new Set(after.parsed.symbols.map(s => s.slot)).size === after.parsed.symbols.length
     && !after.parsed.symbols.some(s => s.slot === slot || (s.name === old[0]!.name && s.kind === old[0]!.kind));
 }

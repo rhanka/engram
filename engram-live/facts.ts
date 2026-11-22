@@ -64,6 +64,7 @@ import {
   validateBranchComparisonFact,
   validateChangedFileFact,
   validateCodeAnalysisFact,
+  validateCodeFileDeletionFact,
   validateCodeRelationFact,
   validateCommitFact,
   validateCoverageFact,
@@ -95,6 +96,7 @@ import {
   type ChangedFileFactDto,
   type CodeAnalysisFactDto,
   type CodeAnalysisFactState,
+  type CodeFileDeletionFactDto,
   type CodeRelationEndpointDto,
   type CodeRelationFactDto,
   type CodeRelationItemDto,
@@ -184,6 +186,7 @@ export {
   validateBranchComparisonFact,
   validateChangedFileFact,
   validateCodeAnalysisFact,
+  validateCodeFileDeletionFact,
   validateCodeRelationFact,
   validateCommitFact,
   validateCoverageFact,
@@ -215,6 +218,7 @@ export {
   type ChangedFileFactDto,
   type CodeAnalysisFactDto,
   type CodeAnalysisFactState,
+  type CodeFileDeletionFactDto,
   type CodeRelationEndpointDto,
   type CodeRelationFactDto,
   type CodeRelationItemDto,
@@ -255,7 +259,18 @@ export {
   type ValidationResult,
 };
 
-export { toReasonAnchorFact } from "./code-analysis.js";
+export {
+  readFileDeletionReceipt,
+  toCodeFileDeletionFact,
+  toReasonAnchorFact,
+  verifyFileDeletion,
+  type CodeFileDeletionFactOptions,
+  type FileDeletionPorts,
+  type FileDeletionPublicationReceipt,
+  type FileDeletionReceipt,
+  type VerifyFileDeletionInput,
+  type VerifyFileDeletionOutcome,
+} from "./code-analysis.js";
 
 export type FactPrivacyClass = "committed" | "private" | "metadata";
 export type FactScopeLevel = "clone" | "worktree" | "either";
@@ -366,6 +381,15 @@ export const LIVE_FACT_REGISTRY: Readonly<Record<LiveFactKind, FactKindDescripto
     producerLots: ["L5", "L5-P"],
     validate: validateCodeRelationFact,
   }),
+  "code-file-deletion": Object.freeze({
+    kind: "code-file-deletion",
+    schemaVersion: FACT_SCHEMA_VERSION,
+    structural: false,
+    privacy: "committed",
+    scopeLevel: "either",
+    producerLots: ["L5-D"],
+    validate: validateCodeFileDeletionFact,
+  }),
   "line-attribution": Object.freeze({
     kind: "line-attribution",
     schemaVersion: FACT_SCHEMA_VERSION,
@@ -450,6 +474,11 @@ const PRIVATE_CODE_RELATION_DESCRIPTOR: FactKindDescriptor = Object.freeze({
   privacy: "private",
 });
 
+const PRIVATE_CODE_FILE_DELETION_DESCRIPTOR: FactKindDescriptor = Object.freeze({
+  ...LIVE_FACT_REGISTRY["code-file-deletion"],
+  privacy: "private",
+});
+
 function isPrivateCodeAnalysisFact(fact: CodeAnalysisFactDto): boolean {
   return (
     fact.snapshotId != null ||
@@ -482,6 +511,17 @@ function isPrivateCodeRelationFact(fact: CodeRelationFactDto): boolean {
   );
 }
 
+function isPrivateCodeFileDeletionFact(fact: CodeFileDeletionFactDto): boolean {
+  return (
+    fact.snapshotId != null ||
+    fact.worktreeId != null ||
+    fact.beforeTree == null ||
+    fact.afterTree == null ||
+    fact.policyVersion === CONTENT_POLICY_VERSION ||
+    fact.policyVersion !== POLICY_VERSION
+  );
+}
+
 /** Own-property lookup into the closed fact-kind registry (refuses prototype names). */
 export function getFactKindDescriptor(kind: string): FactKindDescriptor | undefined {
   if (!Object.prototype.hasOwnProperty.call(LIVE_FACT_REGISTRY, kind)) return undefined;
@@ -494,10 +534,10 @@ export function listFactKindDescriptors(): readonly FactKindDescriptor[] {
 
 /**
  * Compute instance-level privacy classification for a LiveFactDto.
- * Dual-scope ("either") code-analysis and code-relation facts report "private"
- * when bound to a snapshot or worktree, tree-less, or carrying the local
- * content policy (LIVE §§8, 10; SPEC_L3A §12.4), and "committed" when bound to
- * a committed tree under the committed policy.
+ * Dual-scope ("either") code-analysis, code-relation and code-file-deletion
+ * facts report "private" when bound to a snapshot or worktree, tree-less, or
+ * carrying the local content policy (LIVE §§8, 10; SPEC_L3A §12.4), and
+ * "committed" when bound to committed tree(s) under the committed policy.
  */
 export function classifyFactPrivacy(fact: LiveFactDto): FactPrivacyClass {
   const kind = classifyLiveFactKind(fact);
@@ -509,6 +549,9 @@ export function classifyFactPrivacy(fact: LiveFactDto): FactPrivacyClass {
   }
   if (kind === "code-relation") {
     return isPrivateCodeRelationFact(fact as CodeRelationFactDto) ? "private" : "committed";
+  }
+  if (kind === "code-file-deletion") {
+    return isPrivateCodeFileDeletionFact(fact as CodeFileDeletionFactDto) ? "private" : "committed";
   }
   return LIVE_FACT_REGISTRY[kind].privacy;
 }
@@ -523,6 +566,9 @@ export function describeFact(fact: LiveFactDto): FactKindDescriptor {
   }
   if (kind === "code-relation" && isPrivateCodeRelationFact(fact as CodeRelationFactDto)) {
     return PRIVATE_CODE_RELATION_DESCRIPTOR;
+  }
+  if (kind === "code-file-deletion" && isPrivateCodeFileDeletionFact(fact as CodeFileDeletionFactDto)) {
+    return PRIVATE_CODE_FILE_DELETION_DESCRIPTOR;
   }
   return LIVE_FACT_REGISTRY[kind];
 }

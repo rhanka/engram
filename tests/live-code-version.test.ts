@@ -33,16 +33,30 @@ import {
 import {
   analyzeCode,
   CodeAnalysisError,
+  readFileDeletionReceipt,
   repairAffectedCalls,
+  toCodeFileDeletionFact,
   toReasonAnchorFact,
+  verifyFileDeletion,
   type CodeAnalysisPorts,
   type DeterministicParsePort,
+  type FileDeletionReceipt,
   type GrammarStatusPort,
   type ParsedUnit,
   type RetainedObjectsPort,
 } from "../engram-live/code-analysis.js";
-import { FACT_SCHEMA_VERSION, POLICY_VERSION, validateReasonAnchorFact } from "../engram-live/contracts.js";
-import { toCodeAnalysisFact, toPullRequestObservationFact } from "../engram-live/facts.js";
+import {
+  CONTENT_POLICY_VERSION,
+  CONTRACT_VERSION,
+  FACT_SCHEMA_VERSION,
+  POLICY_VERSION,
+  PRODUCER_NAME,
+  validateCodeFileDeletionFact,
+  validateLiveFact,
+  validateReasonAnchorFact,
+} from "../engram-live/contracts.js";
+import { buildFactBatch, decodeFactBatch } from "../engram-live/batch-codec.js";
+import { classifyFactPrivacy, toCodeAnalysisFact, toPullRequestObservationFact } from "../engram-live/facts.js";
 import { LINE_ATTRIBUTION_VERSION } from "../engram-live/line-attribution.js";
 import * as fixtureFs from "node:fs";
 import { extractWithDiagnostics as reusedExtract, type LiveExtractionPorts } from "../src/extract.js";
@@ -2412,5 +2426,1219 @@ describe("L5-P2a closed core of the reused extraction", () => {
       core.bindExtractCoreHost(previous);
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+function committedTree(
+  files: Readonly<Record<string, { readonly mode?: string; readonly content?: string; readonly oid?: string }>>,
+  options?: { readonly algorithm?: "sha1" | "sha256"; readonly parents?: readonly string[] },
+) {
+  const algorithm = options?.algorithm ?? "sha1";
+  const stored = new Map<string, { type: string; body: Uint8Array }>();
+  function put(type: string, data: string | Uint8Array): string {
+    const body = Buffer.from(data);
+    const oid = createHash(algorithm).update(`${type} ${body.length}\0`).update(body).digest("hex");
+    stored.set(oid, { type, body });
+    return oid;
+  }
+  interface DirNode {
+    readonly dirs: Map<string, DirNode>;
+    readonly entries: Map<string, { readonly mode: string; readonly oid: string }>;
+  }
+  const rootDir: DirNode = { dirs: new Map(), entries: new Map() };
+  for (const [path, spec] of Object.entries(files)) {
+    const parts = path.split("/");
+    let current = rootDir;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i]!;
+      let next = current.dirs.get(part);
+      if (!next) {
+        next = { dirs: new Map(), entries: new Map() };
+        current.dirs.set(part, next);
+      }
+      current = next;
+    }
+    const mode = spec.mode ?? "100644";
+    const oid = spec.oid ?? put("blob", spec.content ?? "");
+    current.entries.set(parts[parts.length - 1]!, { mode, oid });
+  }
+  function buildTree(dir: DirNode): string {
+    const items: { readonly nameBytes: Buffer; readonly mode: string; readonly oid: string }[] = [];
+    for (const [name, child] of dir.dirs) {
+      items.push({ nameBytes: Buffer.from(name, "utf8"), mode: "40000", oid: buildTree(child) });
+    }
+    for (const [name, entry] of dir.entries) {
+      items.push({ nameBytes: Buffer.from(name, "utf8"), mode: entry.mode, oid: entry.oid });
+    }
+    items.sort((a, b) =>
+      Buffer.compare(
+        Buffer.concat([a.nameBytes, Buffer.from(a.mode === "40000" ? "/" : "\0")]),
+        Buffer.concat([b.nameBytes, Buffer.from(b.mode === "40000" ? "/" : "\0")]),
+      ),
+    );
+    const chunks = items.map((item) =>
+      Buffer.concat([Buffer.from(`${item.mode} `), item.nameBytes, Buffer.from([0]), Buffer.from(item.oid, "hex")]),
+    );
+    return put("tree", Buffer.concat(chunks));
+  }
+  const treeOid = buildTree(rootDir);
+  const parents = options?.parents ?? [];
+  const headOid = put(
+    "commit",
+    [
+      `tree ${treeOid}`,
+      ...parents.map((parent) => `parent ${parent}`),
+      "author L5 <l5@example.test> 0 +0000",
+      "committer L5 <l5@example.test> 0 +0000",
+      "",
+      "L5-D commit",
+      "",
+    ].join("\n"),
+  );
+  const objects: RetainedObjectsPort = {
+    async loadBlob(oid) {
+      return stored.get(oid)?.body ?? null;
+    },
+    async loadObject(oid) {
+      return stored.get(oid) ?? null;
+    },
+  };
+  return {
+    algorithm,
+    treeOid,
+    headOid,
+    historicalBounds: { known: true as const, heads: [{ algorithm, oid: headOid }] },
+    objects,
+    stored,
+  };
+}
+
+describe("L5-D whole-file deletion publication", () => {
+  it("a whole-file deletion publishes through an operation-issued deletion receipt and an unverified deletion withholds publication", async () => {
+    const extractor = await sourceProductionAdapter();
+    const grammar = makeGrammar({ typescript: "available" });
+    const cache = makeMemoryCache();
+    const filePath = "src/service.ts";
+    const beforeContent = [
+      "export class Base {}",
+      "export class Child extends Base {}",
+      "export function helper(): number { return 1; }",
+      "export function run(): number { return helper(); }",
+      "",
+    ].join("\n");
+
+    const beforeTree = committedTree({
+      [filePath]: { content: beforeContent },
+      "src/keep.ts": { content: "export function keep(): number { return 2; }\n" },
+    });
+    const beforeInput = {
+      scope,
+      language: "typescript",
+      path: filePath,
+      content: beforeContent,
+      treeOid: beforeTree.treeOid,
+      configHash: "b".repeat(64),
+      dependencyHash: "c".repeat(64),
+      historicalBounds: beforeTree.historicalBounds,
+    };
+    let beforeUnit!: ParsedUnit;
+    const beforeAnalyzed = await analyzeCode(
+      beforeInput,
+      portsFor(
+        cache,
+        grammar,
+        {
+          async parse(req) {
+            beforeUnit = await extractor.parse(req);
+            return beforeUnit;
+          },
+        },
+        { objects: beforeTree.objects },
+      ),
+    );
+    expect(beforeAnalyzed.state).toBe("complete");
+    expect(beforeAnalyzed.declarationInventory?.kind).toBe("verified-declaration-inventory");
+    expect(beforeUnit.symbols.length).toBeGreaterThanOrEqual(4);
+    expect(beforeUnit.calls.length).toBeGreaterThan(0);
+    expect(beforeUnit.inheritances.length).toBeGreaterThan(0);
+
+    // Whole-file deletion: src/service.ts removed from the committed tree; src/keep.ts remains.
+    const afterTree = committedTree(
+      { "src/keep.ts": { content: "export function keep(): number { return 2; }\n" } },
+      { parents: [beforeTree.headOid] },
+    );
+    for (const [oid, obj] of beforeTree.stored) afterTree.stored.set(oid, obj);
+
+    const deletion = await verifyFileDeletion(
+      {
+        scope,
+        language: "typescript",
+        path: filePath,
+        treeOid: afterTree.treeOid,
+        historicalBounds: afterTree.historicalBounds,
+      },
+      { objects: afterTree.objects },
+    );
+    expect(deletion.state).toBe("complete");
+    expect(deletion.deleted).toBe(true);
+    expect(deletion.coverage.state).toBe("current");
+    expect(deletion.reasons).toEqual([]);
+    expect(deletion.deletionReceipt?.kind).toBe("verified-file-deletion");
+    expect(readFileDeletionReceipt(deletion.deletionReceipt!)).toEqual({
+      scope,
+      treeOid: afterTree.treeOid,
+      path: filePath,
+      language: "typescript",
+      snapshotId: null,
+      worktreeId: null,
+    });
+    expect(readFileDeletionReceipt(structuredClone(deletion.deletionReceipt!))).toBeNull();
+
+    const runSlot = beforeUnit.symbols.find((s) => s.name === "run")!.slot;
+    const helperSlot = beforeUnit.symbols.find((s) => s.name === "helper")!.slot;
+    const externalCallers = [
+      { id: "ext:main->run", from: "other#function:main", target: runSlot, targetSlot: runSlot, external: true },
+      { id: "ext:main->helper", from: "other#function:main", target: helperSlot, targetSlot: helperSlot, external: true },
+    ];
+
+    // 1. Positive path: verified whole-file deletion publishes through operation-issued receipts.
+    const published = repairAffectedCalls({
+      before: beforeUnit,
+      after: null,
+      externalCallers,
+      deletionEvidence: {
+        before: beforeAnalyzed.declarationInventory!,
+        deletedFile: deletion.deletionReceipt!,
+      },
+    });
+    expect(published.publishable).toBe(true);
+    expect(published.coverageState).toBe("current");
+    expect(published.coverageReasons).toEqual([]);
+    expect(published.symbols).toEqual([]);
+    expect(published.calls).toEqual([]);
+    expect(published.inheritances).toEqual([]);
+    expect(published.preservedExternalCallers).toEqual([]);
+    expect(published.invalidatedSymbolIds).toEqual(beforeUnit.symbols.map((s) => s.slot));
+    expect(published.unresolved).toHaveLength(2);
+    expect(published.unresolved.map((item) => ({ kind: item.kind, fromId: item.fromId, name: item.name }))).toEqual([
+      { kind: "unresolved-call", fromId: "other#function:main", name: runSlot },
+      { kind: "unresolved-call", fromId: "other#function:main", name: helperSlot },
+    ]);
+    expect(published.deletionPublication?.kind).toBe("verified-file-deletion-publication");
+
+    // Emits a valid, canonical-batch-encodable CodeFileDeletionFactDto bound to the verified receipt.
+    const fact = toCodeFileDeletionFact(published.deletionPublication!);
+    expect(fact.kind).toBe("code-file-deletion");
+    expect(fact.schemaVersion).toBe(FACT_SCHEMA_VERSION);
+    expect(fact.cloneId).toBe(scope.clone);
+    expect(fact.worktreeId).toBeNull();
+    expect(fact.snapshotId).toBeNull();
+    expect(fact.beforeTree).toEqual({ algorithm: "sha1", oid: beforeTree.treeOid });
+    expect(fact.afterTree).toEqual({ algorithm: "sha1", oid: afterTree.treeOid });
+    expect(Buffer.from(fact.path).toString("utf8")).toBe(filePath);
+    expect(fact.language).toBe("typescript");
+    expect(fact.beforeContentHash).toBe(sha256Hex(beforeContent));
+    expect(fact.beforeTopologyHash).toBe(beforeUnit.topologyHash);
+    expect(fact.invalidatedSymbolIds).toEqual(beforeAnalyzed.symbols.map((s) => s.id));
+    expect(fact.invalidatedSlots).toEqual(beforeAnalyzed.symbols.map((s) => s.slot));
+    expect(fact.unresolved).toHaveLength(2);
+    expect(fact.policyVersion).toBe(POLICY_VERSION);
+    expect(validateCodeFileDeletionFact(fact)).toEqual({ ok: true, errors: [] });
+    expect(validateLiveFact(fact)).toEqual({ ok: true, errors: [] });
+    expect(classifyFactPrivacy(fact)).toBe("committed");
+
+    const builtBatch = buildFactBatch({
+      scope,
+      producerName: PRODUCER_NAME,
+      contractVersion: CONTRACT_VERSION,
+      policyVersion: POLICY_VERSION,
+      generationId: "gen:0000000001",
+      batchId: "batch:l5-d-whole-file-delete",
+      facts: [fact],
+    });
+    expect(decodeFactBatch(builtBatch.encoded.bytes).facts).toStrictEqual([fact]);
+
+    // Mutating returned fact or readFileDeletionReceipt output must not affect subsequent calls.
+    (fact.invalidatedSlots as string[]).push("tampered");
+    expect(toCodeFileDeletionFact(published.deletionPublication!).invalidatedSlots).toEqual(
+      beforeAnalyzed.symbols.map((s) => s.slot),
+    );
+    const inspected = readFileDeletionReceipt(deletion.deletionReceipt!)!;
+    (inspected.scope as { clone: string }).clone = "clone:mutated-copy";
+    expect(readFileDeletionReceipt(deletion.deletionReceipt!)?.scope.clone).toBe(scope.clone);
+
+    // Verified-empty file whole-file deletion also publishes cleanly when externalCallers is empty.
+    const emptyBeforeTree = committedTree({ "src/empty.ts": { content: "" } });
+    let emptyBeforeUnit!: ParsedUnit;
+    const emptyBeforeAnalyzed = await analyzeCode(
+      {
+        scope,
+        language: "typescript",
+        path: "src/empty.ts",
+        content: "",
+        treeOid: emptyBeforeTree.treeOid,
+        configHash: "b".repeat(64),
+        dependencyHash: "c".repeat(64),
+        historicalBounds: emptyBeforeTree.historicalBounds,
+      },
+      portsFor(
+        cache,
+        grammar,
+        {
+          async parse(req) {
+            emptyBeforeUnit = await extractor.parse(req);
+            return emptyBeforeUnit;
+          },
+        },
+        { objects: emptyBeforeTree.objects },
+      ),
+    );
+    expect(emptyBeforeAnalyzed.state).toBe("complete");
+    const emptyAfterTree = committedTree({}, { parents: [emptyBeforeTree.headOid] });
+    for (const [oid, obj] of emptyBeforeTree.stored) emptyAfterTree.stored.set(oid, obj);
+    const emptyDeletion = await verifyFileDeletion(
+      {
+        scope,
+        language: "typescript",
+        path: "src/empty.ts",
+        treeOid: emptyAfterTree.treeOid,
+        historicalBounds: emptyAfterTree.historicalBounds,
+      },
+      { objects: emptyAfterTree.objects },
+    );
+    expect(emptyDeletion.deletionReceipt).toBeDefined();
+    const emptyPublished = repairAffectedCalls({
+      before: emptyBeforeUnit,
+      after: null,
+      externalCallers: [],
+      deletionEvidence: {
+        before: emptyBeforeAnalyzed.declarationInventory!,
+        deletedFile: emptyDeletion.deletionReceipt!,
+      },
+    });
+    expect(emptyPublished.publishable).toBe(true);
+    expect(emptyPublished.invalidatedSymbolIds).toEqual([]);
+    const emptyFact = toCodeFileDeletionFact(emptyPublished.deletionPublication!);
+    expect(validateLiveFact(emptyFact)).toEqual({ ok: true, errors: [] });
+    expect(emptyFact.invalidatedSymbolIds).toEqual([]);
+    expect(emptyFact.invalidatedSlots).toEqual([]);
+
+    // Forged/cloned publication receipt, mismatched pathBytes, or unknown options must be refused.
+    expect(() => toCodeFileDeletionFact(structuredClone(published.deletionPublication!))).toThrow(CodeAnalysisError);
+    expect(() =>
+      toCodeFileDeletionFact({ kind: "verified-file-deletion-publication" }),
+    ).toThrow(CodeAnalysisError);
+    expect(() =>
+      toCodeFileDeletionFact(published.deletionPublication!, { pathBytes: Buffer.from("src/other.ts") }),
+    ).toThrow(CodeAnalysisError);
+    expect(() =>
+      toCodeFileDeletionFact(published.deletionPublication!, {
+        policyVersion: CONTENT_POLICY_VERSION,
+      } as unknown as Parameters<typeof toCodeFileDeletionFact>[1]),
+    ).toThrow(CodeAnalysisError);
+
+    // 2. Unverified deletion matrix: every legacy hint, missing/cloned/mismatched receipt,
+    //    explicit partial downgrade, contradictory non-null after, or unknown caller withholds publication.
+    const foreignScopeDeletion = await verifyFileDeletion(
+      {
+        scope: { tenant: scope.tenant, clone: "clone:other" },
+        language: "typescript",
+        path: filePath,
+        treeOid: afterTree.treeOid,
+        historicalBounds: afterTree.historicalBounds,
+      },
+      { objects: afterTree.objects },
+    );
+    const foreignPathDeletion = await verifyFileDeletion(
+      {
+        scope,
+        language: "typescript",
+        path: "src/different.ts",
+        treeOid: afterTree.treeOid,
+        historicalBounds: afterTree.historicalBounds,
+      },
+      { objects: afterTree.objects },
+    );
+    const foreignLanguageDeletion = await verifyFileDeletion(
+      {
+        scope,
+        language: "javascript",
+        path: filePath,
+        treeOid: afterTree.treeOid,
+        historicalBounds: afterTree.historicalBounds,
+      },
+      { objects: afterTree.objects },
+    );
+    const foreignPolicyDeletion = await verifyFileDeletion(
+      {
+        scope,
+        language: "typescript",
+        path: filePath,
+        treeOid: afterTree.treeOid,
+        policyVersion: CONTENT_POLICY_VERSION,
+        historicalBounds: afterTree.historicalBounds,
+      },
+      { objects: afterTree.objects },
+    );
+    const foreignWorktreeDeletion = await verifyFileDeletion(
+      {
+        scope,
+        language: "typescript",
+        path: filePath,
+        treeOid: afterTree.treeOid,
+        worktreeId: `wt:${"a".repeat(64)}`,
+        historicalBounds: afterTree.historicalBounds,
+      },
+      { objects: afterTree.objects },
+    );
+    const sha256AfterTree = committedTree(
+      { "src/keep.ts": { content: "export function keep(): number { return 2; }\n" } },
+      { algorithm: "sha256" },
+    );
+    const sha256Deletion = await verifyFileDeletion(
+      {
+        scope,
+        language: "typescript",
+        path: filePath,
+        treeOid: sha256AfterTree.treeOid,
+        historicalBounds: sha256AfterTree.historicalBounds,
+      },
+      { objects: sha256AfterTree.objects },
+    );
+    expect(foreignScopeDeletion.deletionReceipt).toBeDefined();
+    expect(foreignPathDeletion.deletionReceipt).toBeDefined();
+    expect(foreignLanguageDeletion.deletionReceipt).toBeDefined();
+    expect(sha256Deletion.deletionReceipt).toBeDefined();
+
+    const emptyAfterUnit: ParsedUnit = {
+      symbols: [],
+      calls: [],
+      inheritances: [],
+      topologyHash: sha256Hex(""),
+      syntax: { rootSpansBytes: true, hasError: false, hasMissing: false, walkComplete: true },
+    };
+
+    const unverifiedCases: {
+      readonly label: string;
+      readonly input: Parameters<typeof repairAffectedCalls>[0];
+      readonly expectAllCallersPreserved: boolean;
+    }[] = [
+      {
+        label: "omitted deletionEvidence",
+        input: { before: beforeUnit, after: null, externalCallers, afterCompleteness: "complete" },
+        expectAllCallersPreserved: true,
+      },
+      {
+        label: "legacy completeInventory: true stays inert",
+        input: {
+          before: beforeUnit,
+          after: null,
+          externalCallers,
+          afterCompleteness: "complete",
+          deletionEvidence: { completeInventory: true },
+        },
+        expectAllCallersPreserved: true,
+      },
+      {
+        label: "legacy completeInventory: false stays inert",
+        input: {
+          before: beforeUnit,
+          after: null,
+          externalCallers,
+          afterCompleteness: "complete",
+          deletionEvidence: { completeInventory: false },
+        },
+        expectAllCallersPreserved: true,
+      },
+      {
+        label: "legacy deletedSlots stays inert",
+        input: {
+          before: beforeUnit,
+          after: null,
+          externalCallers,
+          afterCompleteness: "complete",
+          deletionEvidence: { deletedSlots: beforeUnit.symbols.map((s) => s.slot) },
+        },
+        expectAllCallersPreserved: true,
+      },
+      {
+        label: "cloned FileDeletionReceipt",
+        input: {
+          before: beforeUnit,
+          after: null,
+          externalCallers,
+          deletionEvidence: {
+            before: beforeAnalyzed.declarationInventory!,
+            deletedFile: structuredClone(deletion.deletionReceipt!),
+          },
+        },
+        expectAllCallersPreserved: true,
+      },
+      {
+        label: "cloned DeclarationInventoryReceipt",
+        input: {
+          before: beforeUnit,
+          after: null,
+          externalCallers,
+          deletionEvidence: {
+            before: structuredClone(beforeAnalyzed.declarationInventory!),
+            deletedFile: deletion.deletionReceipt!,
+          },
+        },
+        expectAllCallersPreserved: true,
+      },
+      {
+        label: "edit receipt pair passed for after: null",
+        input: {
+          before: beforeUnit,
+          after: null,
+          externalCallers,
+          deletionEvidence: {
+            before: beforeAnalyzed.declarationInventory!,
+            after: beforeAnalyzed.declarationInventory!,
+          },
+        },
+        expectAllCallersPreserved: true,
+      },
+      {
+        label: "DeclarationInventoryReceipt smuggled as deletedFile",
+        input: {
+          before: beforeUnit,
+          after: null,
+          externalCallers,
+          deletionEvidence: {
+            before: beforeAnalyzed.declarationInventory!,
+            deletedFile: beforeAnalyzed.declarationInventory as unknown as FileDeletionReceipt,
+          },
+        },
+        expectAllCallersPreserved: true,
+      },
+      {
+        label: "foreign scope deletion receipt",
+        input: {
+          before: beforeUnit,
+          after: null,
+          externalCallers,
+          deletionEvidence: {
+            before: beforeAnalyzed.declarationInventory!,
+            deletedFile: foreignScopeDeletion.deletionReceipt!,
+          },
+        },
+        expectAllCallersPreserved: true,
+      },
+      {
+        label: "foreign path deletion receipt",
+        input: {
+          before: beforeUnit,
+          after: null,
+          externalCallers,
+          deletionEvidence: {
+            before: beforeAnalyzed.declarationInventory!,
+            deletedFile: foreignPathDeletion.deletionReceipt!,
+          },
+        },
+        expectAllCallersPreserved: true,
+      },
+      {
+        label: "foreign language deletion receipt",
+        input: {
+          before: beforeUnit,
+          after: null,
+          externalCallers,
+          deletionEvidence: {
+            before: beforeAnalyzed.declarationInventory!,
+            deletedFile: foreignLanguageDeletion.deletionReceipt!,
+          },
+        },
+        expectAllCallersPreserved: true,
+      },
+      {
+        label: "mismatched policyVersion deletion receipt",
+        input: {
+          before: beforeUnit,
+          after: null,
+          externalCallers,
+          deletionEvidence: {
+            before: beforeAnalyzed.declarationInventory!,
+            deletedFile: foreignPolicyDeletion.deletionReceipt!,
+          },
+        },
+        expectAllCallersPreserved: true,
+      },
+      {
+        label: "mismatched worktreeId deletion receipt",
+        input: {
+          before: beforeUnit,
+          after: null,
+          externalCallers,
+          deletionEvidence: {
+            before: beforeAnalyzed.declarationInventory!,
+            deletedFile: foreignWorktreeDeletion.deletionReceipt!,
+          },
+        },
+        expectAllCallersPreserved: true,
+      },
+      {
+        label: "mismatched OID algorithm (sha1 before vs sha256 deletion)",
+        input: {
+          before: beforeUnit,
+          after: null,
+          externalCallers,
+          deletionEvidence: {
+            before: beforeAnalyzed.declarationInventory!,
+            deletedFile: sha256Deletion.deletionReceipt!,
+          },
+        },
+        expectAllCallersPreserved: true,
+      },
+      {
+        label: "tampered before unit",
+        input: {
+          before: { ...beforeUnit, topologyHash: "0".repeat(64) },
+          after: null,
+          externalCallers,
+          deletionEvidence: {
+            before: beforeAnalyzed.declarationInventory!,
+            deletedFile: deletion.deletionReceipt!,
+          },
+        },
+        expectAllCallersPreserved: true,
+      },
+      {
+        label: "explicit afterCompleteness: partial downgrade",
+        input: {
+          before: beforeUnit,
+          after: null,
+          externalCallers,
+          afterCompleteness: "partial",
+          deletionEvidence: {
+            before: beforeAnalyzed.declarationInventory!,
+            deletedFile: deletion.deletionReceipt!,
+          },
+        },
+        expectAllCallersPreserved: true,
+      },
+      {
+        label: "non-null empty after unit contradicts deletedFile receipt",
+        input: {
+          before: beforeUnit,
+          after: emptyAfterUnit,
+          externalCallers,
+          deletionEvidence: {
+            before: beforeAnalyzed.declarationInventory!,
+            deletedFile: deletion.deletionReceipt!,
+          },
+        },
+        expectAllCallersPreserved: true,
+      },
+      {
+        label: "ambiguous mixed after + deletedFile receipt object",
+        input: {
+          before: beforeUnit,
+          after: null,
+          externalCallers,
+          deletionEvidence: {
+            before: beforeAnalyzed.declarationInventory!,
+            after: beforeAnalyzed.declarationInventory!,
+            deletedFile: deletion.deletionReceipt!,
+          } as unknown as Parameters<typeof repairAffectedCalls>[0]["deletionEvidence"],
+        },
+        expectAllCallersPreserved: true,
+      },
+      {
+        label: "unknown external caller target withholds publication",
+        input: {
+          before: beforeUnit,
+          after: null,
+          externalCallers: [
+            ...externalCallers,
+            { id: "ext:ghost", from: "other#function:ghost", target: "function:neverExisted", targetSlot: "function:neverExisted", external: true },
+          ],
+          deletionEvidence: {
+            before: beforeAnalyzed.declarationInventory!,
+            deletedFile: deletion.deletionReceipt!,
+          },
+        },
+        expectAllCallersPreserved: false,
+      },
+    ];
+
+    for (const testCase of unverifiedCases) {
+      const withheld = repairAffectedCalls(testCase.input);
+      expect(withheld.publishable, testCase.label).toBe(false);
+      expect(withheld.coverageState, testCase.label).toBe("partial");
+      expect(withheld.coverageReasons.length, testCase.label).toBeGreaterThan(0);
+      expect(withheld.deletionPublication, testCase.label).toBeUndefined();
+      expect(withheld.calls, `${testCase.label}: preserves prior calls`).toEqual(beforeUnit.calls);
+      expect(withheld.inheritances, `${testCase.label}: preserves prior inheritances`).toEqual(beforeUnit.inheritances);
+      if (testCase.expectAllCallersPreserved) {
+        expect(withheld.preservedExternalCallers, `${testCase.label}: preserves external callers`).toEqual(externalCallers);
+        expect(withheld.invalidatedSymbolIds, `${testCase.label}: invalidates nothing`).toEqual([]);
+        expect(
+          withheld.unresolved.filter((item) => item.kind === "unresolved-call"),
+          `${testCase.label}: emits no deletion unresolved-call facts`,
+        ).toEqual([]);
+        expect(
+          withheld.unresolved.every((item) => !item.reason.includes("deletion")),
+          `${testCase.label}: emits no deletion-attributed unresolved facts`,
+        ).toBe(true);
+      } else {
+        expect(withheld.preservedExternalCallers.map((c) => c.id), testCase.label).toContain("ext:ghost");
+      }
+    }
+  });
+
+  it("verifyFileDeletion fails closed on present files, typechanges, missing/corrupt trees, shallow/unknown bounds, local captures, bad paths and unauthorized scopes", async () => {
+    const stillPresentTree = committedTree({
+      "src/service.ts": { content: "export function stillHere() {}\n" },
+      "src/exec.ts": { mode: "100755", content: "export function exec() {}\n" },
+      "src/link.ts": { mode: "120000", content: "target.ts" },
+      "src/submod": { mode: "160000", oid: "d".repeat(40) },
+      "src/dir/nested.ts": { content: "export function n() {}\n" },
+    });
+
+    // Present regular file, executable, symlink, gitlink, and directory at the exact path must all withhold.
+    for (const path of ["src/service.ts", "src/exec.ts", "src/link.ts", "src/submod", "src/dir"]) {
+      const res = await verifyFileDeletion(
+        { scope, language: "typescript", path, treeOid: stillPresentTree.treeOid, historicalBounds: stillPresentTree.historicalBounds },
+        { objects: stillPresentTree.objects },
+      );
+      expect(res.state, path).toBe("partial");
+      expect(res.deleted, path).toBe(false);
+      expect(res.deletionReceipt, path).toBeUndefined();
+      expect(res.reasons, path).toContain("result-missing");
+    }
+
+    // Missing subdirectory tree object must fail closed with object-missing.
+    const missingSubtreeStore = new Map(stillPresentTree.stored);
+    // Delete the "src" tree object (keep root tree and commit).
+    const rootTreeObj = stillPresentTree.stored.get(stillPresentTree.treeOid)!;
+    expect(rootTreeObj.type).toBe("tree");
+    for (const [oid, obj] of [...missingSubtreeStore]) {
+      if (obj.type === "tree" && oid !== stillPresentTree.treeOid) missingSubtreeStore.delete(oid);
+    }
+    const missingTreeRes = await verifyFileDeletion(
+      { scope, language: "typescript", path: "src/absent.ts", treeOid: stillPresentTree.treeOid, historicalBounds: stillPresentTree.historicalBounds },
+      {
+        objects: {
+          async loadBlob(oid) { return missingSubtreeStore.get(oid)?.body ?? null; },
+          async loadObject(oid) { return missingSubtreeStore.get(oid) ?? null; },
+        },
+      },
+    );
+    expect(missingTreeRes.state).toBe("partial");
+    expect(missingTreeRes.deleted).toBe(false);
+    expect(missingTreeRes.deletionReceipt).toBeUndefined();
+    expect(missingTreeRes.reasons).toContain("object-missing");
+
+    // Corrupt tree bytes must fail closed with object-invalid.
+    const corruptStore = new Map(stillPresentTree.stored);
+    for (const [oid, obj] of [...corruptStore]) {
+      if (obj.type === "tree" && oid !== stillPresentTree.treeOid) {
+        corruptStore.set(oid, { type: "tree", body: Buffer.from("corrupt") });
+      }
+    }
+    const corruptRes = await verifyFileDeletion(
+      { scope, language: "typescript", path: "src/absent.ts", treeOid: stillPresentTree.treeOid, historicalBounds: stillPresentTree.historicalBounds },
+      {
+        objects: {
+          async loadBlob(oid) { return corruptStore.get(oid)?.body ?? null; },
+          async loadObject(oid) { return corruptStore.get(oid) ?? null; },
+        },
+      },
+    );
+    expect(corruptRes.state).toBe("partial");
+    expect(corruptRes.deleted).toBe(false);
+    expect(corruptRes.deletionReceipt).toBeUndefined();
+    expect(corruptRes.reasons).toContain("object-invalid");
+
+    // Shallow boundary must fail closed with shallow-history.
+    const childTree = committedTree(
+      { "src/keep.ts": { content: "export const ok = 1;\n" } },
+      { parents: [stillPresentTree.headOid] },
+    );
+    for (const [oid, obj] of stillPresentTree.stored) childTree.stored.set(oid, obj);
+    const shallowRes = await verifyFileDeletion(
+      { scope, language: "typescript", path: "src/service.ts", treeOid: childTree.treeOid, historicalBounds: childTree.historicalBounds },
+      { objects: { ...childTree.objects, async isShallowBoundary() { return true; } } },
+    );
+    expect(shallowRes.state).toBe("partial");
+    expect(shallowRes.deleted).toBe(false);
+    expect(shallowRes.deletionReceipt).toBeUndefined();
+    expect(shallowRes.reasons).toContain("shallow-history");
+
+    // Unknown / missing / unbound historical bounds must fail closed with bounds-unknown.
+    for (const historicalBounds of [
+      null,
+      { known: false },
+      { known: true, heads: [] },
+      { known: true, heads: childTree.historicalBounds.heads, missing: ["missing-parent"] },
+      { known: true, heads: stillPresentTree.historicalBounds.heads }, // head does not match childTree.treeOid
+    ]) {
+      const boundsRes = await verifyFileDeletion(
+        { scope, language: "typescript", path: "src/service.ts", treeOid: childTree.treeOid, historicalBounds },
+        { objects: childTree.objects },
+      );
+      expect(boundsRes.state).toBe("partial");
+      expect(boundsRes.deleted).toBe(false);
+      expect(boundsRes.deletionReceipt).toBeUndefined();
+      expect(boundsRes.reasons).toContain("bounds-unknown");
+    }
+
+    // Local snapshot deletion without capture verification stays unstable-capture (same rule as analyzeCode).
+    const localRes = await verifyFileDeletion(
+      {
+        scope,
+        language: "typescript",
+        path: "src/service.ts",
+        treeOid: null,
+        snapshotId: `lsnap:${"a".repeat(64)}`,
+        worktreeId: `wt:${"b".repeat(64)}`,
+        historicalBounds: null,
+      },
+      { objects: childTree.objects },
+    );
+    expect(localRes.state).toBe("partial");
+    expect(localRes.deleted).toBe(false);
+    expect(localRes.deletionReceipt).toBeUndefined();
+    expect(localRes.reasons).toContain("unstable-capture");
+
+    // Non-canonical paths must be rejected BEFORE touching objects (never falsely treated as absent).
+    let objectReads = 0;
+    const countingObjects: RetainedObjectsPort = {
+      async loadBlob() { objectReads += 1; return null; },
+      async loadObject() { objectReads += 1; return null; },
+    };
+    for (const badPath of ["", "/src/service.ts", "src/service.ts/", "./src/service.ts", "src//service.ts", "src/../service.ts", "src/\0.ts"]) {
+      await expect(
+        verifyFileDeletion(
+          { scope, language: "typescript", path: badPath, treeOid: stillPresentTree.treeOid, historicalBounds: stillPresentTree.historicalBounds },
+          { objects: countingObjects },
+        ),
+      ).rejects.toThrow(CodeAnalysisError);
+    }
+    expect(objectReads).toBe(0);
+
+    // Denied authorization rejects before any object lookup.
+    await expect(
+      verifyFileDeletion(
+        { scope, language: "typescript", path: "src/service.ts", treeOid: childTree.treeOid, historicalBounds: childTree.historicalBounds },
+        { objects: countingObjects, authorize() { throw new Error("denied scope"); } },
+      ),
+    ).rejects.toThrow("denied scope");
+    await expect(
+      verifyFileDeletion(
+        { scope, language: "typescript", path: "src/service.ts", treeOid: childTree.treeOid, historicalBounds: childTree.historicalBounds },
+        { objects: countingObjects, cache: { authorize() { throw new Error("denied cache scope"); } } },
+      ),
+    ).rejects.toThrow("denied cache scope");
+    expect(objectReads).toBe(0);
+
+    // Positive tree-absence topologies: ancestor directory removed, ancestor replaced by regular file,
+    // empty root tree, SHA-256 repository, non-ASCII UTF-8 path, and mid-flight input mutation isolation.
+    const ancestorRemoved = committedTree({ "src/keep.ts": { content: "export const k = 1;\n" } });
+    const ancestorReplacedByFile = committedTree({ "src/sub": { content: "now a regular file\n" } });
+    const emptyRepoTree = committedTree({});
+    const sha256EmptyTree = committedTree({}, { algorithm: "sha256" });
+    const nonAsciiTree = committedTree({ "src/café/other.ts": { content: "export const c = 1;\n" } });
+
+    const positiveTopologies = [
+      { label: "ancestor directory removed", path: "src/sub/deep.ts", tree: ancestorRemoved },
+      { label: "ancestor replaced by regular file", path: "src/sub/deep.ts", tree: ancestorReplacedByFile },
+      { label: "empty root tree", path: "src/service.ts", tree: emptyRepoTree },
+      { label: "sha256 repository", path: "src/service.ts", tree: sha256EmptyTree },
+      { label: "non-ASCII UTF-8 path", path: "src/café/modèle.ts", tree: nonAsciiTree },
+    ];
+    for (const topo of positiveTopologies) {
+      const res = await verifyFileDeletion(
+        { scope, language: "typescript", path: topo.path, treeOid: topo.tree.treeOid, historicalBounds: topo.tree.historicalBounds },
+        { objects: topo.tree.objects },
+      );
+      expect(res.state, topo.label).toBe("complete");
+      expect(res.deleted, topo.label).toBe(true);
+      expect(res.deletionReceipt?.kind, topo.label).toBe("verified-file-deletion");
+      expect(readFileDeletionReceipt(res.deletionReceipt!)?.path, topo.label).toBe(topo.path);
+    }
+
+    // Mutating the caller's input object mid-flight must not alter the pinned receipt.
+    const mutableScope = { tenant: scope.tenant, clone: scope.clone };
+    const mutableInput = {
+      scope: mutableScope,
+      language: "typescript",
+      path: "src/service.ts",
+      treeOid: emptyRepoTree.treeOid,
+      historicalBounds: emptyRepoTree.historicalBounds,
+    };
+    const pinnedRes = await verifyFileDeletion(mutableInput, {
+      objects: {
+        loadBlob: emptyRepoTree.objects.loadBlob,
+        async loadObject(oid) {
+          mutableScope.clone = "clone:mutated-midflight";
+          mutableInput.path = "src/other.ts";
+          return emptyRepoTree.objects.loadObject!(oid);
+        },
+      },
+    });
+    expect(pinnedRes.state).toBe("complete");
+    expect(readFileDeletionReceipt(pinnedRes.deletionReceipt!)).toMatchObject({
+      scope: { tenant: scope.tenant, clone: scope.clone },
+      path: "src/service.ts",
+    });
+  });
+
+  it("toCodeFileDeletionFact reports whole-file deletion options diagnostics without leaking reason-anchor wording", async () => {
+    const extractor = await sourceProductionAdapter();
+    const grammar = makeGrammar({ typescript: "available" });
+    const cache = makeMemoryCache();
+    const filePath = "src/service.ts";
+    const beforeContent = "export function run(): number { return 1; }\n";
+    const beforeTree = committedTree({
+      [filePath]: { content: beforeContent },
+      "src/keep.ts": { content: "export function keep(): number { return 2; }\n" },
+    });
+    let beforeUnit!: ParsedUnit;
+    const beforeAnalyzed = await analyzeCode(
+      {
+        scope,
+        language: "typescript",
+        path: filePath,
+        content: beforeContent,
+        treeOid: beforeTree.treeOid,
+        configHash: "b".repeat(64),
+        dependencyHash: "c".repeat(64),
+        historicalBounds: beforeTree.historicalBounds,
+      },
+      portsFor(
+        cache,
+        grammar,
+        {
+          async parse(req) {
+            beforeUnit = await extractor.parse(req);
+            return beforeUnit;
+          },
+        },
+        { objects: beforeTree.objects },
+      ),
+    );
+    const afterTree = committedTree(
+      { "src/keep.ts": { content: "export function keep(): number { return 2; }\n" } },
+      { parents: [beforeTree.headOid] },
+    );
+    for (const [oid, obj] of beforeTree.stored) afterTree.stored.set(oid, obj);
+    const deletion = await verifyFileDeletion(
+      {
+        scope,
+        language: "typescript",
+        path: filePath,
+        treeOid: afterTree.treeOid,
+        historicalBounds: afterTree.historicalBounds,
+      },
+      { objects: afterTree.objects },
+    );
+    const published = repairAffectedCalls({
+      before: beforeUnit,
+      after: null,
+      externalCallers: [],
+      deletionEvidence: {
+        before: beforeAnalyzed.declarationInventory!,
+        deletedFile: deletion.deletionReceipt!,
+      },
+    });
+    const publication = published.deletionPublication!;
+
+    class CustomOptions {
+      readonly extractorVersion = "custom@1";
+    }
+    const nonPlainOptions: readonly { readonly label: string; readonly value: unknown }[] = [
+      { label: "null", value: null },
+      { label: "array", value: [] },
+      { label: "typed array", value: new Uint8Array([1]) },
+      { label: "class instance", value: new CustomOptions() },
+      { label: "string primitive", value: "plain" },
+      { label: "number primitive", value: 42 },
+    ];
+    for (const item of nonPlainOptions) {
+      let caught: unknown;
+      try {
+        toCodeFileDeletionFact(publication, item.value as unknown as Parameters<typeof toCodeFileDeletionFact>[1]);
+      } catch (error) {
+        caught = error;
+      }
+      // Mutant: accepting non-plain options or throwing a generic Error instead of CodeAnalysisError.
+      expect(caught, item.label).toBeInstanceOf(CodeAnalysisError);
+      // Mutant: calling snapshotReasonAnchorRecord directly and leaking "reason-anchor input must use plain records".
+      expect((caught as Error).message, item.label).toBe("whole-file deletion options must use plain records");
+    }
+
+    const unknownKeyOptions: readonly { readonly label: string; readonly value: unknown }[] = [
+      { label: "symbol key", value: { [Symbol("extra")]: 1 } },
+      {
+        label: "non-enumerable key",
+        value: Object.defineProperty({}, "hidden", { value: 1, enumerable: false }),
+      },
+      { label: "unknown enumerable key", value: { policyVersion: CONTENT_POLICY_VERSION } },
+    ];
+    for (const item of unknownKeyOptions) {
+      let caught: unknown;
+      try {
+        toCodeFileDeletionFact(publication, item.value as unknown as Parameters<typeof toCodeFileDeletionFact>[1]);
+      } catch (error) {
+        caught = error;
+      }
+      // Mutant: ignoring symbol/non-enumerable/unknown keys by using Object.keys or skipping allowlist enforcement.
+      expect(caught, item.label).toBeInstanceOf(CodeAnalysisError);
+      // Mutant: leaking "reason-anchor input carries an unknown key: refused" on symbol-keyed deletion options.
+      expect((caught as Error).message, item.label).toBe("whole-file deletion options carry an unknown key: refused");
+    }
+
+    const nullProtoOptions = Object.assign(Object.create(null) as Record<string, unknown>, {
+      extractorVersion: "custom-ext@1",
+      resolverVersion: "custom-res@1",
+    });
+    const factWithNullProto = toCodeFileDeletionFact(
+      publication,
+      nullProtoOptions as unknown as Parameters<typeof toCodeFileDeletionFact>[1],
+    );
+    // Mutant: rejecting null-prototype plain records in isPlainRecord.
+    expect(factWithNullProto.extractorVersion).toBe("custom-ext@1");
+    expect(factWithNullProto.resolverVersion).toBe("custom-res@1");
+    expect(Buffer.from(factWithNullProto.path).toString("utf8")).toBe("src/service.ts");
+
+    let reasonNonPlainErr: unknown;
+    try {
+      toReasonAnchorFact(scope, [] as unknown as Parameters<typeof toReasonAnchorFact>[1]);
+    } catch (error) {
+      reasonNonPlainErr = error;
+    }
+    // Mutant: overwriting the "reason-anchor input" label when parameterizing snapshotReasonAnchorRecord.
+    expect(reasonNonPlainErr).toBeInstanceOf(CodeAnalysisError);
+    expect((reasonNonPlainErr as Error).message).toBe("reason-anchor input must use plain records");
+
+    let reasonSymbolErr: unknown;
+    try {
+      toReasonAnchorFact(scope, {
+        anchorKind: "commit",
+        commit: { algorithm: "sha1", oid: "a".repeat(40) },
+        [Symbol("k")]: 1,
+      } as unknown as Parameters<typeof toReasonAnchorFact>[1]);
+    } catch (error) {
+      reasonSymbolErr = error;
+    }
+    // Mutant: changing the unknown-key diagnostic of toReasonAnchorFact during helper extraction.
+    expect(reasonSymbolErr).toBeInstanceOf(CodeAnalysisError);
+    expect((reasonSymbolErr as Error).message).toBe("reason-anchor input carries an unknown key: refused");
+  });
+
+  it("repairAffectedCalls enforces exact 2-key plain-object receipt pairs and reports missing-key symmetrically across deletion and edit branches", async () => {
+    const extractor = await sourceProductionAdapter();
+    const grammar = makeGrammar({ typescript: "available" });
+    const cache = makeMemoryCache();
+    const filePath = "src/service.ts";
+    const beforeContent = [
+      "export function helper(): number { return 1; }",
+      "export function run(): number { return 2; }",
+      "",
+    ].join("\n");
+    const editedContent = "export function run(): number { return 2; }\n";
+
+    // Independently computed slot identifiers (parse-adapter rule: kind:encodeURIComponent(name:sha256(signature)):0).
+    const helperSlot = `function:${encodeURIComponent(`helper:${sha256Hex("function helper(): number")}`)}:0`;
+    const runSlot = `function:${encodeURIComponent(`run:${sha256Hex("function run(): number")}`)}:0`;
+    const runCaller = { id: "ext:main->run", from: "other#function:main", target: runSlot, targetSlot: runSlot, external: true };
+    const helperCaller = { id: "ext:main->helper", from: "other#function:main", target: helperSlot, targetSlot: helperSlot, external: true };
+    const externalCallers = [runCaller, helperCaller];
+
+    const beforeTree = committedTree({
+      [filePath]: { content: beforeContent },
+      "src/keep.ts": { content: "export function keep(): number { return 3; }\n" },
+    });
+    let beforeUnit!: ParsedUnit;
+    const beforeAnalyzed = await analyzeCode(
+      {
+        scope,
+        language: "typescript",
+        path: filePath,
+        content: beforeContent,
+        treeOid: beforeTree.treeOid,
+        configHash: "b".repeat(64),
+        dependencyHash: "c".repeat(64),
+        historicalBounds: beforeTree.historicalBounds,
+      },
+      portsFor(
+        cache,
+        grammar,
+        {
+          async parse(req) {
+            beforeUnit = await extractor.parse(req);
+            return beforeUnit;
+          },
+        },
+        { objects: beforeTree.objects },
+      ),
+    );
+
+    const editedTree = committedTree(
+      {
+        [filePath]: { content: editedContent },
+        "src/keep.ts": { content: "export function keep(): number { return 3; }\n" },
+      },
+      { parents: [beforeTree.headOid] },
+    );
+    for (const [oid, obj] of beforeTree.stored) editedTree.stored.set(oid, obj);
+    let editedUnit!: ParsedUnit;
+    const editedAnalyzed = await analyzeCode(
+      {
+        scope,
+        language: "typescript",
+        path: filePath,
+        content: editedContent,
+        treeOid: editedTree.treeOid,
+        configHash: "b".repeat(64),
+        dependencyHash: "c".repeat(64),
+        historicalBounds: editedTree.historicalBounds,
+      },
+      portsFor(
+        cache,
+        grammar,
+        {
+          async parse(req) {
+            editedUnit = await extractor.parse(req);
+            return editedUnit;
+          },
+        },
+        { objects: editedTree.objects },
+      ),
+    );
+
+    const deletedTree = committedTree(
+      { "src/keep.ts": { content: "export function keep(): number { return 3; }\n" } },
+      { parents: [beforeTree.headOid] },
+    );
+    for (const [oid, obj] of beforeTree.stored) deletedTree.stored.set(oid, obj);
+    const deletion = await verifyFileDeletion(
+      {
+        scope,
+        language: "typescript",
+        path: filePath,
+        treeOid: deletedTree.treeOid,
+        historicalBounds: deletedTree.historicalBounds,
+      },
+      { objects: deletedTree.objects },
+    );
+
+    const beforeReceipt = beforeAnalyzed.declarationInventory!;
+    const editedReceipt = editedAnalyzed.declarationInventory!;
+    const deletionReceipt = deletion.deletionReceipt!;
+
+    // Positive control: exact 2-key edit receipt pair remains publishable.
+    const validEdit = repairAffectedCalls({
+      before: beforeUnit,
+      after: editedUnit,
+      externalCallers,
+      deletionEvidence: { before: beforeReceipt, after: editedReceipt },
+    });
+    // Mutant: rejecting valid 2-key edit receipt pairs in readReceiptPair / verifyRepairEvidence.
+    expect(validEdit.publishable).toBe(true);
+    expect(validEdit.coverageState).toBe("current");
+    expect(validEdit.coverageReasons).toEqual([]);
+    expect(validEdit.invalidatedSymbolIds).toEqual([helperSlot]);
+    expect(validEdit.preservedExternalCallers).toEqual([runCaller]);
+    expect(validEdit.unresolved.map((u) => ({ kind: u.kind, fromId: u.fromId, name: u.name }))).toEqual([
+      { kind: "unresolved-call", fromId: "other#function:main", name: helperSlot },
+    ]);
+
+    const malformedDeletionEvidences: readonly { readonly label: string; readonly evidence: unknown }[] = [
+      { label: "deletion: deletedFile undefined", evidence: { before: beforeReceipt, deletedFile: undefined } },
+      { label: "deletion: before undefined", evidence: { before: undefined, deletedFile: deletionReceipt } },
+      { label: "deletion: deletedFile null", evidence: { before: beforeReceipt, deletedFile: null } },
+      { label: "deletion: extra enumerable key", evidence: { before: beforeReceipt, deletedFile: deletionReceipt, extra: 1 } },
+      { label: "deletion: extra symbol key", evidence: { before: beforeReceipt, deletedFile: deletionReceipt, [Symbol("extra")]: 1 } },
+      {
+        label: "deletion: extra non-enumerable key",
+        evidence: Object.defineProperty({ before: beforeReceipt, deletedFile: deletionReceipt }, "hidden", {
+          value: 1,
+          enumerable: false,
+        }),
+      },
+      {
+        label: "deletion: prototype-inherited keys",
+        evidence: Object.create({ before: beforeReceipt, deletedFile: deletionReceipt }),
+      },
+    ];
+    for (const item of malformedDeletionEvidences) {
+      const out = repairAffectedCalls({
+        before: beforeUnit,
+        after: null,
+        externalCallers,
+        deletionEvidence: item.evidence as unknown as Parameters<typeof repairAffectedCalls>[0]["deletionEvidence"],
+      });
+      // Mutant: accepting malformed deletion evidence as publishable.
+      expect(out.publishable, item.label).toBe(false);
+      expect(out.coverageState, item.label).toBe("partial");
+      expect(out.deletionPublication, item.label).toBeUndefined();
+      // Mutant: hasReceiptPair checking only `"deletedFile" in evidence` without plain-object value & exact 2-key checks (omits "missing-key").
+      expect(out.coverageReasons, item.label).toEqual(["result-missing", "missing-key"]);
+      // Mutant: dropping callers or invalidating slots on malformed deletion evidence.
+      expect(out.preservedExternalCallers, item.label).toEqual(externalCallers);
+      expect(out.invalidatedSymbolIds, item.label).toEqual([]);
+      expect(out.unresolved, item.label).toEqual([]);
+    }
+
+    const malformedEditEvidences: readonly { readonly label: string; readonly evidence: unknown }[] = [
+      { label: "edit: extra enumerable key", evidence: { before: beforeReceipt, after: editedReceipt, extra: 1 } },
+      { label: "edit: extra symbol key", evidence: { before: beforeReceipt, after: editedReceipt, [Symbol("extra")]: 1 } },
+      {
+        label: "edit: extra non-enumerable key",
+        evidence: Object.defineProperty({ before: beforeReceipt, after: editedReceipt }, "hidden", {
+          value: 1,
+          enumerable: false,
+        }),
+      },
+      { label: "edit: after undefined", evidence: { before: beforeReceipt, after: undefined } },
+      { label: "edit: before undefined", evidence: { before: undefined, after: editedReceipt } },
+      { label: "edit: after null", evidence: { before: beforeReceipt, after: null } },
+      {
+        label: "edit: prototype-inherited keys",
+        evidence: Object.create({ before: beforeReceipt, after: editedReceipt }),
+      },
+    ];
+    for (const item of malformedEditEvidences) {
+      const out = repairAffectedCalls({
+        before: beforeUnit,
+        after: editedUnit,
+        externalCallers,
+        deletionEvidence: item.evidence as unknown as Parameters<typeof repairAffectedCalls>[0]["deletionEvidence"],
+      });
+      // Mutant: edit branch of verifyRepairEvidence omitting exact 2-key arity (would publish `{ before, after, extra: 1 }`).
+      expect(out.publishable, item.label).toBe(false);
+      expect(out.coverageState, item.label).toBe("partial");
+      // Mutant: hasReceiptPair omitting "missing-key" on malformed edit receipt pairs.
+      expect(out.coverageReasons, item.label).toEqual(["result-missing", "missing-key"]);
+      // Mutant: invalidating helper or dropping helperCaller without an exact 2-key edit receipt pair.
+      expect(out.preservedExternalCallers, item.label).toEqual(externalCallers);
+      expect(out.invalidatedSymbolIds, item.label).toEqual([]);
+      expect(out.unresolved, item.label).toEqual([]);
+    }
+
+    // Contrast: well-formed 2-key plain-object pair carrying a cloned receipt fails WeakMap verification only (no "missing-key").
+    const clonedDeletion = repairAffectedCalls({
+      before: beforeUnit,
+      after: null,
+      externalCallers,
+      deletionEvidence: { before: structuredClone(beforeReceipt), deletedFile: deletionReceipt },
+    });
+    // Mutant: adding "missing-key" whenever `!verified` instead of only when the 2-key receipt pair shape is malformed.
+    expect(clonedDeletion.publishable).toBe(false);
+    expect(clonedDeletion.coverageReasons).toEqual(["result-missing"]);
+
+    const clonedEdit = repairAffectedCalls({
+      before: beforeUnit,
+      after: editedUnit,
+      externalCallers,
+      deletionEvidence: { before: beforeReceipt, after: structuredClone(editedReceipt) },
+    });
+    // Mutant: adding "missing-key" on edit branch when pair shape is valid but WeakMap lookup fails.
+    expect(clonedEdit.publishable).toBe(false);
+    expect(clonedEdit.coverageReasons).toEqual(["result-missing"]);
   });
 });

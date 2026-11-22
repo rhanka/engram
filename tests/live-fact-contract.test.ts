@@ -24,12 +24,14 @@ import {
   isFactBatchDto,
   isLiveFactDto,
   parseFactBatch,
+  validateCodeFileDeletionFact,
   validateFactBatch,
   validateLiveFact,
   validateReasonAnchorFact,
   type BranchComparisonFactDto,
   type ChangedFileFactDto,
   type CodeAnalysisFactDto,
+  type CodeFileDeletionFactDto,
   type CodeRelationFactDto,
   type CommitFactDto,
   type CoverageFactDto,
@@ -62,6 +64,7 @@ import {
   listFactKindDescriptors,
   toBranchComparisonFact,
   toCodeAnalysisFact,
+  toCodeFileDeletionFact,
   toCommitAndChangedFileFacts,
   toPrAttributionFact,
   toPullRequestObservationFact,
@@ -69,6 +72,7 @@ import {
   toRetentionReceiptFact,
   toTrackedRefFact,
   validateFactWithRegistry,
+  verifyFileDeletion,
 } from "../engram-live/facts.js";
 import {
   BatchCodecError,
@@ -413,6 +417,35 @@ function sampleCodeRelationFact(): CodeRelationFactDto {
   };
 }
 
+function sampleCodeFileDeletionFact(): CodeFileDeletionFactDto {
+  return {
+    kind: "code-file-deletion",
+    schemaVersion: FACT_SCHEMA_VERSION,
+    cloneId: CLONE_ID,
+    worktreeId: null,
+    snapshotId: null,
+    beforeTree: { algorithm: "sha1", oid: SHA1_B },
+    afterTree: { algorithm: "sha1", oid: SHA1_E },
+    path: enc("src/service.ts"),
+    language: "typescript",
+    beforeContentHash: HEX64_2,
+    beforeTopologyHash: HEX64_1,
+    invalidatedSymbolIds: [`sym:${HEX64_1}`],
+    invalidatedSlots: ["fn:run"],
+    unresolved: [
+      {
+        unresolvedKind: "unresolved-call",
+        name: "fn:run",
+        fromSymbolId: `sym:${SHA256_A}`,
+        reason: 'unresolved-call: caller target slot "fn:run" has confirmed whole-file deletion',
+      },
+    ],
+    extractorVersion: "live-extractor/1",
+    resolverVersion: "live-resolver/1",
+    policyVersion: POLICY_VERSION,
+  };
+}
+
 function sampleLineAttributionFact(): LineAttributionFactDto {
   return {
     kind: "line-attribution",
@@ -677,6 +710,7 @@ function allExemplarFactsByKind(): Record<LiveFactKind, LiveFactDto> {
     "branch-comparison": sampleBranchComparisonFact(),
     "code-analysis": sampleCodeAnalysisFact(),
     "code-relation": sampleCodeRelationFact(),
+    "code-file-deletion": sampleCodeFileDeletionFact(),
     "line-attribution": sampleLineAttributionFact(),
     "symbol-correspondence": sampleSymbolCorrespondenceFact(),
     "reason-anchor": sampleReasonCodeAnchor(),
@@ -1068,6 +1102,7 @@ describe("L3a-E1 typed facts and canonical batch codec", () => {
       sampleChangedFileFact(),
       sampleCodeAnalysisFact(),
       sampleCodeRelationFact(),
+      sampleCodeFileDeletionFact(),
       sampleLineAttributionFact(),
       sampleSymbolCorrespondenceFact(),
       sampleReasonCodeAnchor(),
@@ -2106,5 +2141,134 @@ describe("L3a-E1 typed facts and canonical batch codec", () => {
     expect(caughtCyclicDeliver).not.toBeInstanceOf(RangeError);
     expect((caughtCyclicDeliver as BatchCodecError).code).toBe("invalid-encoding");
     expect(sinkCalls).toBe(0);
+  });
+
+  it("L5-D: code-file-deletion validates exact keys, invariants, privacy and canonical batch encoding", () => {
+    const committed = sampleCodeFileDeletionFact();
+    expect(validateCodeFileDeletionFact(committed)).toEqual({ ok: true, errors: [] });
+    expect(validateLiveFact(committed)).toEqual({ ok: true, errors: [] });
+    expect(validateFactWithRegistry(committed)).toEqual({ ok: true, errors: [] });
+    expect(describeFact(committed)).toMatchObject({
+      kind: "code-file-deletion",
+      privacy: "committed",
+      scopeLevel: "either",
+    });
+    expect(classifyFactPrivacy(committed)).toBe("committed");
+    expect(Object.isFrozen(describeFact(committed))).toBe(true);
+    expect(typeof verifyFileDeletion).toBe("function");
+    expect(typeof toCodeFileDeletionFact).toBe("function");
+
+    // Round-trip canonical encoding, key-order invariance, and digest sensitivity on every field.
+    const built = buildFactBatch(makeBatchInput([committed], { batchId: "batch:l5-d-contract" }));
+    expect(decodeFactBatch(built.encoded.bytes).facts).toStrictEqual([committed]);
+    const scrambled = buildFactBatch(scrambleObjectKeys(makeBatchInput([committed], { batchId: "batch:l5-d-contract" })) as FactBatchPayloadInput);
+    expect(scrambled.encoded.bytes).toEqual(built.encoded.bytes);
+    expect(scrambled.batch.batchDigest).toBe(built.batch.batchDigest);
+
+    const digestMutations: readonly [string, CodeFileDeletionFactDto][] = [
+      ["beforeTree", { ...committed, beforeTree: { algorithm: "sha1", oid: SHA1_C } }],
+      ["afterTree", { ...committed, afterTree: { algorithm: "sha1", oid: SHA1_D } }],
+      ["path", { ...committed, path: new Uint8Array([0x73, 0x72, 0x63, 0x2f, 0xff, 0x2e, 0x74, 0x73]) }],
+      ["language", { ...committed, language: "javascript" }],
+      ["beforeContentHash", { ...committed, beforeContentHash: SHA256_A }],
+      ["beforeTopologyHash", { ...committed, beforeTopologyHash: SHA256_B }],
+      ["invalidatedSymbolIds", { ...committed, invalidatedSymbolIds: [`sym:${SHA256_B}`] }],
+      ["invalidatedSlots", { ...committed, invalidatedSlots: ["fn:other"] }],
+      ["unresolved", { ...committed, unresolved: [] }],
+      ["extractorVersion", { ...committed, extractorVersion: "live-extractor/2" }],
+      ["resolverVersion", { ...committed, resolverVersion: "live-resolver/2" }],
+      ["policyVersion", { ...committed, policyVersion: CONTENT_POLICY_VERSION }],
+    ];
+    for (const [label, mutated] of digestMutations) {
+      expect(validateLiveFact(mutated), `valid mutation ${label}`).toEqual({ ok: true, errors: [] });
+      const mutatedBatch = buildFactBatch(makeBatchInput([mutated], { batchId: "batch:l5-d-contract" }));
+      expect(mutatedBatch.batch.batchDigest, label).not.toBe(built.batch.batchDigest);
+    }
+
+    // Verified-empty file deletion (zero invalidated symbols and zero unresolved) is valid.
+    const emptyFileDeletion: CodeFileDeletionFactDto = {
+      ...committed,
+      invalidatedSymbolIds: [],
+      invalidatedSlots: [],
+      unresolved: [],
+    };
+    expect(validateLiveFact(emptyFileDeletion)).toEqual({ ok: true, errors: [] });
+
+    // Private classification triggers (same dual-scope rule as code-analysis).
+    const privateCases: readonly [string, CodeFileDeletionFactDto][] = [
+      [
+        "snapshot-bound deletion",
+        {
+          ...committed,
+          worktreeId: WORKTREE_ID,
+          snapshotId: `lsnap:${HEX64_1}`,
+          afterTree: null,
+          policyVersion: CONTENT_POLICY_VERSION,
+        },
+      ],
+      ["worktree-bound only", { ...committed, worktreeId: WORKTREE_ID }],
+      ["snapshotId only", { ...committed, snapshotId: `lsnap:${HEX64_2}` }],
+      ["content policy only", { ...committed, policyVersion: CONTENT_POLICY_VERSION }],
+      ["beforeTree null with snapshot", { ...committed, beforeTree: null, afterTree: null, snapshotId: `lsnap:${HEX64_1}` }],
+    ];
+    for (const [label, fact] of privateCases) {
+      expect(validateLiveFact(fact), label).toEqual({ ok: true, errors: [] });
+      expect(classifyFactPrivacy(fact), label).toBe("private");
+      expect(describeFact(fact).privacy, label).toBe("private");
+      expect(Object.isFrozen(describeFact(fact)), label).toBe(true);
+    }
+    expect(LIVE_FACT_REGISTRY["code-file-deletion"].privacy).toBe("committed");
+
+    // Envelope scope binding rejects foreign cloneId and foreign worktreeId.
+    const foreignClone = `clone:${"f".repeat(64)}`;
+    const foreignWorktree = `wt:${"9".repeat(64)}`;
+    expect(
+      validateFactBatch({
+        ...built.batch,
+        facts: [{ ...committed, cloneId: foreignClone }],
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateFactBatch({
+        ...built.batch,
+        scope: WORKTREE_SCOPE,
+        facts: [{ ...committed, worktreeId: foreignWorktree }],
+      }).ok,
+    ).toBe(false);
+
+    // Malformed / invariant-violating shapes must be refused.
+    const malformed: readonly [string, unknown][] = [
+      ["unknown extra key", { ...committed, receiptToken: "secret" }],
+      ["wrong kind", { ...committed, kind: "code-analysis" }],
+      ["wrong schemaVersion", { ...committed, schemaVersion: 2 }],
+      ["same beforeTree and afterTree", { ...committed, afterTree: committed.beforeTree }],
+      ["mismatched OID algorithms", { ...committed, afterTree: { algorithm: "sha256", oid: SHA256_A } }],
+      ["afterTree null without snapshotId", { ...committed, afterTree: null, snapshotId: null }],
+      ["beforeTree null without snapshotId", { ...committed, beforeTree: null, snapshotId: null }],
+      ["leading slash path", { ...committed, path: enc("/src/service.ts") }],
+      ["trailing slash path", { ...committed, path: enc("src/service.ts/") }],
+      ["dot segment path", { ...committed, path: enc("./src/service.ts") }],
+      ["parent segment path", { ...committed, path: enc("src/../service.ts") }],
+      ["empty segment path", { ...committed, path: enc("src//service.ts") }],
+      ["NUL byte in path", { ...committed, path: Uint8Array.of(0x61, 0x00, 0x62) }],
+      ["empty path", { ...committed, path: new Uint8Array(0) }],
+      ["string path instead of Uint8Array", { ...committed, path: "src/service.ts" }],
+      ["empty language", { ...committed, language: "" }],
+      ["bad beforeContentHash", { ...committed, beforeContentHash: "not-hex" }],
+      ["bad beforeTopologyHash", { ...committed, beforeTopologyHash: "not-hex" }],
+      ["duplicate invalidatedSymbolIds", { ...committed, invalidatedSymbolIds: ["a", "a"], invalidatedSlots: ["s1", "s2"] }],
+      ["duplicate invalidatedSlots", { ...committed, invalidatedSymbolIds: ["a", "b"], invalidatedSlots: ["s1", "s1"] }],
+      ["mismatched invalidated lengths", { ...committed, invalidatedSymbolIds: ["a", "b"], invalidatedSlots: ["s1"] }],
+      ["empty invalidatedSymbolId", { ...committed, invalidatedSymbolIds: [""], invalidatedSlots: ["s1"] }],
+      ["empty invalidatedSlot", { ...committed, invalidatedSymbolIds: ["a"], invalidatedSlots: [""] }],
+      ["unknown key inside unresolved item", { ...committed, unresolved: [{ ...committed.unresolved[0]!, extra: 1 }] }],
+      ["invalid policyVersion", { ...committed, policyVersion: "policy/other" }],
+      ["invalid snapshotId", { ...committed, snapshotId: "not-lsnap" }],
+      ["invalid worktreeId", { ...committed, worktreeId: "bad worktree id" }],
+    ];
+    for (const [label, candidate] of malformed) {
+      expect(validateCodeFileDeletionFact(candidate).ok, label).toBe(false);
+      expect(validateLiveFact(candidate).ok, label).toBe(false);
+    }
   });
 });
