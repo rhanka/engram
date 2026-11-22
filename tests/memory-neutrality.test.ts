@@ -595,7 +595,8 @@ function extractFencedBlocks(markdown: string): string[] {
 // installed trees, version control, build outputs and coverage reports.
 // Everything else — root files, _extracted, docs, spec, plan, studio — is
 // covered, so the fallback is a superset of the tracked Markdown set.
-const FALLBACK_EXCLUDED_DIRS = new Set(["node_modules", ".git", "dist", "build", "coverage", ".nyc_output"]);
+// ".tmp" holds other tests' transient scratch directories, created and removed concurrently.
+const FALLBACK_EXCLUDED_DIRS = new Set(["node_modules", ".git", "dist", "build", "coverage", ".nyc_output", ".tmp"]);
 
 function fallbackKeepsPath(relPath: string): boolean {
   if (!relPath.endsWith(".md")) return false;
@@ -606,7 +607,15 @@ function fallbackMarkdownPaths(): string[] {
   const out: string[] = [];
   const walk = (relDir: string): void => {
     const absolute = join(root, ...relDir.split("/").filter((part) => part.length > 0));
-    for (const entry of readdirSync(absolute, { withFileTypes: true })) {
+    let entries;
+    try {
+      entries = readdirSync(absolute, { withFileTypes: true });
+    } catch (error) {
+      // A directory removed between listing its parent and reading it is not a finding.
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+    for (const entry of entries) {
       const rel = relDir.length > 0 ? `${relDir}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
         if (!FALLBACK_EXCLUDED_DIRS.has(entry.name)) walk(rel);
@@ -926,6 +935,7 @@ describe("memory neutrality", () => {
     expect(fallbackKeepsPath(".git/notes.md")).toBe(false);
     expect(fallbackKeepsPath("engram-memory/dist/notes.md")).toBe(false);
     expect(fallbackKeepsPath("coverage/report.md")).toBe(false);
+    expect(fallbackKeepsPath(".tmp/x2b-adapters-abc/notes.md")).toBe(false);
     const fallbackPaths = fallbackMarkdownPaths();
     expect(fallbackPaths.length).toBeGreaterThan(0);
     // Root files stay covered; the relocated staging README is gone.
