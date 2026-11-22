@@ -62,7 +62,7 @@ function sha256(bytes) {
 // that the context-bound analysis seam exists and the neutral closure is
 // intact:
 //
-//   1. engram-live/analysis-cache.ts, code-analysis.ts and comparisons.ts
+//   1. engram-live/analysis-cache.ts, code-analysis.ts, comparisons.ts and parse-adapter.ts
 //      exist, export their entry symbols, and carry no forbidden edge
 //      (source-root import, storage driver, module loader, model module,
 //      dynamic import, filesystem writes, exit-hook registration, LLM SDK);
@@ -89,6 +89,7 @@ function runL5Audit() {
   const neutralModules = {
     "engram-live/analysis-cache.ts": ["deriveAnalysisCacheKey", "AnalysisCache"],
     "engram-live/code-analysis.ts": ["analyzeCode", "repairAffectedCalls"],
+    "engram-live/parse-adapter.ts": ["createProductionParseAdapter"],
     "engram-live/comparisons.ts": ["compareBranches"],
     "engram-live/symbol-history.ts": ["correspondSymbols"],
   };
@@ -167,7 +168,7 @@ function runL5Audit() {
     for (const failure of failures) console.error(`build-live: L5_AUDIT_FAILED: ${failure}`);
     return false;
   }
-  console.log("build-live: L5 seam audit ok — analysis-cache/code-analysis/comparisons neutral, reused extraction seam present");
+  console.log("build-live: L5 seam audit ok — analysis-cache/code-analysis/comparisons/parse-adapter neutral, reused extraction seam present");
   return true;
 }
 
@@ -181,7 +182,7 @@ if (cliArgs.length > 0) {
 
 const stageGrammarsRoot = join(stageRoot, "grammars");
 const emittedFiles = [
-  ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons"].flatMap(name =>
+  ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter"].flatMap(name =>
     [`${name}.js`, `${name}.d.ts`, `${name}.d.ts.map`]),
   "line-attribution.d.ts",
   "line-attribution.d.ts.map",
