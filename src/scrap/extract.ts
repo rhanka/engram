@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createDirectTextJsonClient, directProviderCredentialEnv, parseJsonFromLlmText, type DirectLlmProvider } from "../llm-execution.js";
@@ -41,7 +42,7 @@ export function providerOf(model: string): { provider: DirectLlmProvider; name: 
   if (g) return { provider: g, name: model };
   throw new Error(`scrap extract: cannot infer provider from model ${JSON.stringify(model)} (use provider:model)`);
 }
-const specsOf = (m: Mission): FieldSpec[] => {
+export const specsOf = (m: Mission): FieldSpec[] => {
   if (!Array.isArray(m?.fields)) throw new Error("scrap extract: invalid mission (requires fields array)");
   return m.fields.map((f) => {
     const name = typeof f === "string" ? str(f) : (isObj(f) ? str(f.name) : undefined);
@@ -98,7 +99,7 @@ function apiEquivalent(pt: PriceTable | null, u: TokenCounts | null): number | "
   return Number(((u.input * pt.per_million.input + u.output * pt.per_million.output + u.reasoning * (pt.per_million.reasoning ?? 0)) / 1_000_000).toFixed(9));
 }
 export async function runExtract(oc: ExtractOptions, client?: ExtractClient, deps?: MeshClientDeps): Promise<void> {
-  const mission = JSON.parse(readFileSync(oc.mission, "utf-8")) as Mission;
+  const missionRaw = readFileSync(oc.mission), mission = JSON.parse(missionRaw.toString("utf-8")) as Mission;
   const specs = specsOf(mission), names = specs.map((f) => f.name);
   const meshAlias = oc.model.startsWith("mesh:") ? oc.model.slice("mesh:".length) : null;
   const pm = meshAlias === null ? providerOf(oc.model) : null;
@@ -155,7 +156,7 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
     console.log(`scrap extract summary: ok=${okCount} failed=${failCount} tokens=in:${tot.input},out:${tot.output},reasoning:${tot.reasoning},total:${tot.total} api_equivalent=${apiKnown ? totApi.toFixed(6) : "unknown"} calls=${callsTotal}${winStr ? ` windows=${winStr}` : ""}`);
     if (callsTotal > 0) {
       const sum = {
-        type: "summary", ok: okCount, failed: failCount, calls_total: callsTotal, calls_window_minutes: winMin,
+        type: "summary", mission_digest: createHash("sha256").update(missionRaw).digest("hex"), ok: okCount, failed: failCount, calls_total: callsTotal, calls_window_minutes: winMin,
         calls_by_window, calls_by_model: sortRec(callsByModel), tokens: { ...tot },
         cost: { api_equivalent: apiKnown ? Number(totApi.toFixed(9)) : "unknown", seat_quota: lastSeatQuota ?? "unknown" },
       };
