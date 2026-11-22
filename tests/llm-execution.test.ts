@@ -360,6 +360,42 @@ describe("LLM execution ports", () => {
     })).rejects.toThrow("Direct LLM response was not valid JSON");
   });
 
+  it("invokes validateResponse before JSON parsing and carries numeric usage on error and success", async () => {
+    generateTextMock.mockReset();
+    const truncated = '{"company": {"value": "Acme';
+    generateTextMock.mockResolvedValueOnce({
+      text: truncated,
+      finishReason: "length",
+      usage: { inputTokens: 100, outputTokens: 20, totalTokens: 120 },
+    });
+    generateTextMock.mockResolvedValueOnce({
+      text: '{"company": {"value": "Acme"}}',
+      finishReason: "stop",
+      usage: { inputTokens: 140, outputTokens: 30, totalTokens: 170 },
+    });
+    process.env.OPENAI_API_KEY = "test-key";
+    const client = createDirectTextJsonClient({ provider: "openai", model: "gpt-5-mini" });
+
+    let captured: string | null = null;
+    let caught: unknown;
+    try {
+      await client.generateJson({
+        schema: "scrap-extract",
+        prompt: "Extract.",
+        validateResponse: (t) => { captured = t; },
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(captured).toBe(truncated);
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toMatch(/not valid JSON/i);
+    expect((caught as { usage?: unknown }).usage).toEqual({ inputTokens: 100, outputTokens: 20, totalTokens: 120 });
+
+    const ok = await client.generateJson({ schema: "scrap-extract", prompt: "Repair." });
+    expect(ok.audit.usage).toEqual({ inputTokens: 140, outputTokens: 30, totalTokens: 170 });
+  });
+
   it("rejects oversized direct JSON responses before parsing", async () => {
     generateTextMock.mockResolvedValue({
       text: `{"nodes":[],"edges":[],"padding":"${"x".repeat(10 * 1024 * 1024)}"}`,

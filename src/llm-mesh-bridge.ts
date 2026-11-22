@@ -101,10 +101,11 @@ const routeIntents = new Set<RoutePlanInput["intent"]>([
 ]);
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object"
+  return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined;
 }
+const asPlainRecord = (v: unknown): Record<string, unknown> | undefined => { const r = asRecord(v), p = r ? Object.getPrototypeOf(r) : null; return r && (p === Object.prototype || p === null) ? r : undefined; };
 
 function hasAbortShape(value: unknown, seen = new Set<unknown>()): boolean {
   if (!value || (typeof value !== "object" && typeof value !== "function")) return false;
@@ -439,8 +440,9 @@ export function createGraphifyMesh(options: CreateGraphifyMeshOptions): Graphify
           throw new MeshRequestCancellation(abortReason(request.signal));
         }
         completionStarted = true;
-        await attempt.complete(usage);
-        return response;
+        const completed = await attempt.complete(usage) as { quota?: unknown } | void;
+        const completeQuota = asPlainRecord(completed?.quota);
+        return completeQuota ? { ...response, providerMetadata: { ...response.providerMetadata, quota: completeQuota } } : response;
       } catch (error) {
         if (completionStarted) throw error;
         if (error instanceof MeshRequestCancellation) {
@@ -616,6 +618,7 @@ export function meshTextJsonClient(
         mkdirSync(dirname(input.outputPath), { recursive: true });
         writeFileSync(input.outputPath, text, "utf-8");
       }
+      const quota = asPlainRecord((response as { quota?: unknown }).quota) ?? asPlainRecord(response.providerMetadata?.quota);
       return {
         status: "completed",
         provider,
@@ -630,6 +633,7 @@ export function meshTextJsonClient(
           providerId: response.providerId ?? provider,
           modelId: response.modelId ?? model,
           ...(response.usage ? { usage: response.usage } : {}),
+          ...(quota ? { quota } : {}),
         },
       };
     },
