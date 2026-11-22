@@ -355,6 +355,62 @@ function auditClosedCore(read) {
   return { failures, modules: [...seen], edges };
 }
 
+// Packaged reused extraction (plan/09 L5-P2b): value names the committed
+// declaration requires from the generated core. Types and interfaces are
+// erased at emit and are not checked as values.
+function declaredCoreValueNames(dtsSource) {
+  const ts = typeScript();
+  const file = ts.createSourceFile("extract-core.d.ts", dtsSource, ts.ScriptTarget.ESNext, true);
+  const names = [];
+  const isExported = (node) => (ts.canHaveModifiers(node) ? ts.getModifiers(node) : []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+  const isDeclare = (node) => (ts.canHaveModifiers(node) ? ts.getModifiers(node) : []).some((m) => m.kind === ts.SyntaxKind.DeclareKeyword);
+  for (const statement of file.statements) {
+    if (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement) || ts.isEnumDeclaration(statement)) {
+      if (statement.name && (isExported(statement) || isDeclare(statement))) names.push(statement.name.text);
+    } else if (ts.isVariableStatement(statement)) {
+      if (isExported(statement) || isDeclare(statement)) {
+        for (const decl of statement.declarationList.declarations) {
+          if (ts.isIdentifier(decl.name)) names.push(decl.name.text);
+        }
+      }
+    } else if (ts.isExportDeclaration(statement)) {
+      const clause = statement.exportClause;
+      if (clause && ts.isNamedExports(clause)) {
+        for (const element of clause.elements) names.push(element.name.text);
+      }
+    }
+  }
+  return [...new Set(names)];
+}
+
+// Value names the emitted core JavaScript exports.
+function emittedCoreValueNames(jsSource) {
+  const ts = typeScript();
+  const file = ts.createSourceFile("extract-core.js", jsSource, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS);
+  const names = [];
+  for (const statement of file.statements) {
+    if (
+      (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) &&
+      statement.name &&
+      (statement.modifiers ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
+    ) {
+      names.push(statement.name.text);
+    } else if (ts.isVariableStatement(statement)) {
+      if ((statement.modifiers ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) {
+        for (const decl of statement.declarationList.declarations) {
+          if (ts.isIdentifier(decl.name)) names.push(decl.name.text);
+        }
+      }
+    } else if (ts.isExportDeclaration(statement)) {
+      const clause = statement.exportClause;
+      if (clause && ts.isNamedExports(clause)) {
+        for (const element of clause.elements) names.push(element.name.text);
+      }
+    }
+  }
+  return [...new Set(names)];
+}
+
 const cliArgs = process.argv.slice(2);
 if (cliArgs.length > 0) {
   if (cliArgs.length === 1 && cliArgs[0] === "--audit-only") {
@@ -396,9 +452,16 @@ const emittedFiles = [
   "integration.d.ts",
   "integration.d.ts.map",
   "integration.js",
+  "reused-extraction.js",
+  "reused-extraction.d.ts",
+  "reused-extraction.d.ts.map",
   "index.d.ts",
   "index.d.ts.map",
   "index.js",
+  "reused/extract-core.js",
+  "reused/live-cache-keys.js",
+  "reused/node-id.js",
+  "reused/relation-remap.js",
 ];
 
 rmSync(stageRoot, { recursive: true, force: true });
@@ -414,6 +477,63 @@ try {
   if (compiled.status !== 0) {
     fail("COMPILE_FAILED", `tsc -p engram-live/tsconfig.json exited with ${compiled.status}`);
   }
+
+  // 1b. Second compiler pass over the closed extraction set (plan/09 L5-P2b):
+  // the repository TypeScript alone emits the closed core JavaScript under
+  // dist/reused/, with no declaration file for those modules.
+  const stageReusedRoot = join(stageRoot, "reused");
+  mkdirSync(stageReusedRoot, { recursive: true });
+  const closedPass = spawnSync(
+    process.execPath,
+    [
+      tsc,
+      "--ignoreConfig",
+      ...CLOSED_EXTRACTION_SET,
+      "--target", "ES2022",
+      "--module", "NodeNext",
+      "--moduleResolution", "NodeNext",
+      "--strict",
+      "--skipLibCheck",
+      "--types", "node",
+      "--outDir", stageReusedRoot,
+      "--rootDir", join(root, "src"),
+      "--declaration", "false",
+      "--declarationMap", "false",
+      "--sourceMap", "false",
+    ],
+    { cwd: root, stdio: "inherit" },
+  );
+  if (closedPass.status !== 0) {
+    fail("COMPILE_FAILED", `second tsc pass over the closed extraction set exited with ${closedPass.status}`);
+  }
+  for (const member of CLOSED_EXTRACTION_SET) {
+    const base = member.slice("src/".length).replace(/\.ts$/, ".js");
+    if (!existsSync(join(stageReusedRoot, base))) {
+      fail("OUTPUT_INVALID", `second pass did not emit closed core member dist/reused/${base}`);
+    }
+  }
+  // The committed declaration types the in-package import at compile time;
+  // the build fails when the emitted core lacks a declared value.
+  try {
+    const dts = readFileSync(join(liveRoot, "reused", "extract-core.d.ts"), "utf8");
+    const emittedCore = readFileSync(join(stageReusedRoot, "extract-core.js"), "utf8");
+    const declared = declaredCoreValueNames(dts);
+    const emitted = new Set(emittedCoreValueNames(emittedCore));
+    for (const name of declared) {
+      if (!emitted.has(name)) {
+        fail("OUTPUT_INVALID", `emitted closed core dist/reused/extract-core.js does not export declared name "${name}"`);
+      }
+    }
+    const reusedEntryDts = readFileSync(join(stageRoot, "reused-extraction.d.ts"), "utf8");
+    if (reusedEntryDts.includes("./reused/")) {
+      fail("OUTPUT_INVALID", "emitted dist/reused-extraction.d.ts must not reference unshipped ./reused/ internal declarations");
+    }
+    console.log(`build-live: closed core second pass ok — ${CLOSED_EXTRACTION_SET.length} modules, ${declared.length} declared values verified in dist/reused/extract-core.js`);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("build-live:")) throw error;
+    fail("OUTPUT_INVALID", `closed core declaration check failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
   for (const emitted of emittedFiles) {
     if (!existsSync(join(stageRoot, emitted))) {
       fail("OUTPUT_INVALID", `expected emitted file engram-live/dist/${emitted} is missing`);
@@ -492,6 +612,7 @@ try {
   // renaming index.js last so the freshness marker is updated only after
   // every packaged file is in place.
   mkdirSync(grammarsRoot, { recursive: true });
+  mkdirSync(join(distRoot, "reused"), { recursive: true });
   for (const [, entry] of languages) {
     renameSync(join(stageGrammarsRoot, entry.file), join(grammarsRoot, entry.file));
   }
