@@ -1,0 +1,17 @@
+{
+  "format": "engram.data-governance/1", "namespace": "example", "id": "users-governance", "version": "2",
+  "profile": {"namespace": "example", "pin": {"id": "openerp-users-example", "version": "2", "contentDigest": "21684a38e6c3979937f53a286b275971f3ccda431c299078c0e8715a9240e50e"}},
+  "entities": {
+    "organizations": {"tenantScope": {"kind": "tenant", "tenant": "id"}, "columns": {"id": {"pii": {"category": "none"}}}, "cdc": {"include": false}},
+    "users": {
+      "tenantScope": {"kind": "tenant", "tenant": "organization_id"},
+      "columns": {
+        "id": {"pii": {"category": "identifier"}, "retention": "account", "erasure": "delete"}, "organization_id": {"pii": {"category": "none"}}, "email": {"pii": {"category": "contact"}, "retention": "account", "erasure": "delete"}, "display_name": {"pii": {"category": "identifier"}, "retention": "account", "erasure": "delete"},
+        "preferred_locale": {"pii": {"category": "personal"}, "retention": "account", "erasure": "delete"}, "status": {"pii": {"category": "personal"}, "retention": "account", "erasure": "delete"}, "password_hash": {"pii": {"category": "authentication"}, "retention": "account", "erasure": "delete"}, "mfa_state": {"pii": {"category": "authentication"}, "retention": "account", "erasure": "delete"},
+        "last_login_at": {"pii": {"category": "personal"}, "retention": "account", "erasure": "delete"}, "created_at": {"pii": {"category": "personal"}, "retention": "account", "erasure": "delete"}, "updated_at": {"pii": {"category": "personal"}, "retention": "account", "erasure": "delete"}
+      },
+      "retention": {"account": {"from": "updated_at", "days": 365}}, "physical": {"schema": "identity_data", "table": "accounts", "columns": {"display_name": "label"}},
+      "indexes": [{"kind": "btree", "fields": ["organization_id", "status"]}], "partitionBy": ["organization_id"], "sortBy": [{"field": "created_at", "direction": "desc"}, {"field": "id", "direction": "asc"}], "cdc": {"include": true}
+    }
+  }
+}

@@ -14,7 +14,7 @@ import type {
 } from "./types.js";
 import { toJsonValue, type JsonValue } from "./json-value.js";
 export type { Cardinality, EnumDomain, FieldPair, LogicalType, ModelAttribute, ModelEdge, ModelEndpoints, ModelHeader, ModelNode, ModelRow, Names, Reference, TextDomain } from "./model-schemas.js";
-export type { ColumnGovernance, ModelGovernance, PiiCategory, QualifiedPin, Retention, StorageNeeds, TenantScope } from "./model-governance.js";
+export type { ChangeCapture, ColumnGovernance, ModelGovernance, PiiCategory, QualifiedPin, Retention, SealedModelGovernance, StorageNeeds, TenantScope } from "./model-governance.js";
 
 export const PROFILE_BUNDLE_SCHEMA_V1 = "engram.profile-bundle/v1" as const;
 
