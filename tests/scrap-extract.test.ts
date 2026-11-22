@@ -106,7 +106,7 @@ describe("scrap extract", () => {
     writeFileSync(join(d, "mission.json"), JSON.stringify({ fields: ["f"], instruction: "Extract." }));
     const boom = { generateJson: async () => { throw new Error("must not be called"); } };
     await runExtract({ out: d, mission: join(d, "mission.json"), model: "openai:gpt-5-mini" }, boom as any);
-    expect(lines(d)).toEqual([{ id: "gone", url: "http://x/", error: "write_error", fields: null }]);
+    expect(lines(d)).toEqual([{ id: "gone", url: "http://x/", error: "write_error", error_detail: expect.any(String), fields: null }]);
   });
   it("resumes by skipping ids already in results.ndjson", async () => {
     const t = fakeOut({ street: { value: "v", quote: "12 rue des Fleurs" }, city: { value: "Paris", quote: "Paris 75002" } });
