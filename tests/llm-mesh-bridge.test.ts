@@ -479,6 +479,35 @@ describe("graphify llm-mesh bridge", () => {
     expect(second.generate).not.toHaveBeenCalled();
   });
 
+  it("fails over to the next candidate when prepareAttempt rejects with a seat-acquisition error", async () => {
+    const { isSeatAcquisitionError } = await import("../src/llm-mesh-bridge.js");
+    expect(isSeatAcquisitionError(Object.assign(new Error("Token refresh deferred; retry later"), { code: "no_active_account" }))).toBe(true);
+    expect(isSeatAcquisitionError(Object.assign(new Error("Account x token refresh failed; reauthentication required"), { code: "no_active_account" }))).toBe(true);
+    expect(isSeatAcquisitionError(new Error("provider boom"))).toBe(false);
+    const deferred = () => Object.assign(new Error("Token refresh deferred; retry later"), { code: "no_active_account", name: "RefreshDeferredError" });
+    const events: string[] = [];
+    const second = routeAttempt(async () => generateResponse, events, "second");
+    const planner = {
+      plan: vi.fn(async () => routePlan(["candidate-0", "candidate-1"])),
+      prepareAttempt: vi.fn(async (_s: unknown, _p: unknown, _c: unknown, _r: unknown, i: number) => {
+        events.push(`prepareAttempt.${i}`);
+        if (i === 0) throw deferred();
+        return second;
+      }),
+      describeAffinity: vi.fn(),
+      promoteAffinity: vi.fn(),
+      rebindAffinity: vi.fn(),
+      resetAffinity: vi.fn(),
+    } as unknown as RoutePlanner;
+    const mesh = createGraphifyMesh({ routingSubject, createRoutePlanner: () => planner });
+    const res = await mesh.generate({ providerId: "openai", modelId: "gpt-5.5", messages: [{ role: "user", content: "hi" }] });
+    expect(res.text).toBe("{\"ok\":true}");
+    expect(events).toEqual(["prepareAttempt.0", "prepareAttempt.1", "second.generate", "second.complete"]);
+    const solo = { ...planner, plan: vi.fn(async () => routePlan(["candidate-0"])) } as unknown as RoutePlanner;
+    const soloMesh = createGraphifyMesh({ routingSubject, createRoutePlanner: () => solo });
+    await expect(soloMesh.generate({ providerId: "openai", modelId: "gpt-5.5", messages: [{ role: "user", content: "hi" }] })).rejects.toThrow(/Token refresh deferred/);
+  });
+
   it("uses the fail-closed requireAuthResolver when no authResolver is supplied", async () => {
     let runtime: Pick<LlmMesh, "generate" | "stream">;
     const planner = routePlanner([]);
