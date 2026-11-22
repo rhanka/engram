@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"; import { join } from "node:path"; import { fil
 import { buildSync } from "esbuild";
 import { beforeAll, expect, it } from "vitest";
 import type { ReplayReport } from "./fixtures/p1-7-replay.js";
-const baselineCommit = "b2e3fb8d1627e8c8c1ae8fbed9ce78ef76e3f502";
+const baselineCommit = "453b95b55d3d1f8d89cf181a3ea53ed16d8e7260";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const runner = "tests/fixtures/p1-7-replay.ts";
 let baseline: ReplayReport, candidate: ReplayReport;

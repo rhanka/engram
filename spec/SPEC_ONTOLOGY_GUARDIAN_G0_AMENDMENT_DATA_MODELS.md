@@ -16,7 +16,7 @@ D4-A settles authority. The r3 dossier is **Incomplete**, pending Astra’s fina
 
 ### Evidence
 
-The v0.1.3 replay compared `15eab662f5dbcc6dd80cd0cd1fe65b24fed8b262` with the immutable P1-7 baseline `b2e3fb8d1627e8c8c1ae8fbed9ce78ef76e3f502`. The cited Engram contracts, sources and tests were re-read at the v0.2.0 base `7d8e9fd325350abd215a0e7266d54e9d4cd2af55` and match those replay revisions byte for byte. Short citations expand below. [JUDGMENT] identifies a proposed contract, fixture choice or recommendation. `unverified` identifies missing evidence.
+The v0.1.3 replay compared `15eab662f5dbcc6dd80cd0cd1fe65b24fed8b262` with the immutable P1-7 baseline `b2e3fb8d1627e8c8c1ae8fbed9ce78ef76e3f502` (after the 2026-11-22 history rewrite, the tree-identical commit is `453b95b55d3d1f8d89cf181a3ea53ed16d8e7260`; the replay tests pin that SHA). The cited Engram contracts, sources and tests were re-read at the v0.2.0 base `7d8e9fd325350abd215a0e7266d54e9d4cd2af55` and match those replay revisions byte for byte. Short citations expand below. [JUDGMENT] identifies a proposed contract, fixture choice or recommendation. `unverified` identifies missing evidence.
 
 | Key | File |
 |---|---|
