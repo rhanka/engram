@@ -1,0 +1,639 @@
+name: Release @sentropic/engram-live
+
+# Manual-only release workflow for the neutral @sentropic/engram-live package
+# (plan/09-BRANCH_LIVE_GIT_INDEXING.md E-REL; spec/SPEC_LIVE_GIT_INDEXING.md §11).
+#
+# Invariants:
+#   - Triggered ONLY by workflow_dispatch (no push, tag, schedule or release).
+#   - Defaults to dry_run: true; publishing requires explicit conductor intent.
+#   - Applies inputs.version at pack time to engram-live/package.json and to
+#     nothing else, supporting checkpoint R-E promotion by re-pack of the
+#     R-E-pre commit.
+#   - Never publishes a prerelease version under the `latest` dist-tag.
+#   - Never skips scripts/build-live.mjs or scripts/check-live-package.mjs.
+#   - Reads the registry credential (secrets.NPM_TOKEN) ONLY in the single
+#     publish step of the publish job; earlier jobs and steps run with zero
+#     registry credentials.
+#   - Every GitHub Action (`uses:`) is pinned to an immutable 40-hex commit SHA
+#     with its `# v4` major-version tag comment.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Explicit SemVer 2.0.0 version to stamp into engram-live/package.json at pack time (e.g. 0.2.0-pre.1 for R-E-pre, 0.2.0 for R-E)"
+        type: string
+        required: true
+      dist_tag:
+        description: "Explicit npm dist-tag (e.g. next or prerelease for prereleases; latest is forbidden for prereleases)"
+        type: string
+        required: true
+        default: "next"
+      dry_run:
+        description: "When true, build, verify, pack and upload evidence without publishing to npm"
+        type: boolean
+        required: true
+        default: true
+      source_commit:
+        description: "Optional 40-hex commit SHA to check out and pack (use the R-E-pre commit SHA for checkpoint R-E re-pack)"
+        type: string
+        required: false
+        default: ""
+
+permissions: {}
+
+concurrency:
+  group: live-package-release
+  cancel-in-progress: false
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      target_commit: ${{ steps.validate.outputs.target_commit }}
+      is_prerelease: ${{ steps.validate.outputs.is_prerelease }}
+      artifact_name: ${{ steps.pack.outputs.artifact_name }}
+      tarball_filename: ${{ steps.pack.outputs.tarball_filename }}
+      integrity: ${{ steps.pack.outputs.integrity }}
+      tarball_sha256: ${{ steps.pack.outputs.tarball_sha256 }}
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+
+      - name: Validate release inputs, dist-tag rules, and source commit
+        id: validate
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_DIST_TAG: ${{ inputs.dist_tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          node - <<'EOF'
+          const { execFileSync } = require("node:child_process");
+          const { appendFileSync } = require("node:fs");
+
+          const SEMVER_RE = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?$/;
+          const DIST_TAG_RE = /^[a-z][a-z0-9._-]*$/;
+          const VERSION_LOOKALIKE_TAG_RE = /^v?\d+(\.\d+)*(-.+)?$/i;
+          const SHA_RE = /^[0-9a-f]{40}$/;
+
+          const fail = (message) => {
+            console.error(`::error::${message}`);
+            process.exit(1);
+          };
+
+          const version = process.env.RELEASE_VERSION ?? "";
+          const distTag = process.env.RELEASE_DIST_TAG ?? "";
+          const dryRunRaw = process.env.DRY_RUN ?? "";
+          const sourceCommit = process.env.SOURCE_COMMIT ?? "";
+          const defaultBranch = (process.env.DEFAULT_BRANCH || "").trim();
+
+          if (version !== version.trim() || !SEMVER_RE.test(version)) {
+            fail(`Invalid SemVer 2.0.0 release version (whitespace and build metadata disallowed): "${version}"`);
+          }
+          if (distTag !== distTag.trim() || !DIST_TAG_RE.test(distTag) || VERSION_LOOKALIKE_TAG_RE.test(distTag)) {
+            fail(`Invalid npm dist-tag: "${distTag}"`);
+          }
+          if (dryRunRaw !== "true" && dryRunRaw !== "false") {
+            fail(`Invalid dry_run boolean input: "${dryRunRaw}"`);
+          }
+          const dryRun = dryRunRaw === "true";
+          const isPrerelease = version.includes("-");
+
+          if (isPrerelease && distTag === "latest") {
+            fail(`Refusing to release prerelease version "${version}" under the "latest" dist-tag.`);
+          }
+
+          if (sourceCommit.length > 0) {
+            if (sourceCommit !== sourceCommit.trim() || !SHA_RE.test(sourceCommit)) {
+              fail(`source_commit must be a 40-character lowercase hex SHA, got "${sourceCommit}"`);
+            }
+            let objectType = "";
+            try {
+              objectType = execFileSync("git", ["cat-file", "-t", sourceCommit], { encoding: "utf8" }).trim();
+            } catch {
+              fail(`source_commit "${sourceCommit}" was not found in the fetched repository history.`);
+            }
+            if (objectType !== "commit") {
+              fail(`source_commit "${sourceCommit}" is a git ${objectType}, expected commit.`);
+            }
+            execFileSync("git", ["checkout", "--detach", sourceCommit], { stdio: "inherit" });
+          }
+
+          const targetCommit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+          if (!SHA_RE.test(targetCommit)) {
+            fail(`Unexpected HEAD commit SHA: "${targetCommit}"`);
+          }
+
+          if (!dryRun) {
+            if (!defaultBranch) {
+              fail("Default branch name is missing; refusing to publish without merge ancestry check.");
+            }
+            const defaultRef = `refs/remotes/origin/${defaultBranch}`;
+            try {
+              execFileSync("git", ["rev-parse", "--verify", defaultRef], { stdio: "pipe" });
+            } catch {
+              fail(`Default branch ref "${defaultRef}" is missing; dispatch a publish run from the default branch "${defaultBranch}".`);
+            }
+            try {
+              execFileSync("git", ["merge-base", "--is-ancestor", targetCommit, defaultRef], { stdio: "pipe" });
+            } catch {
+              fail(`Refusing to publish ${version} from ${targetCommit}: commit is not merged into origin/${defaultBranch}.`);
+            }
+          }
+
+          const out = process.env.GITHUB_OUTPUT;
+          if (out) {
+            appendFileSync(out, `target_commit=${targetCommit}\n`);
+            appendFileSync(out, `is_prerelease=${isPrerelease}\n`);
+          }
+          console.log(`Validated release inputs: version=${version} dist_tag=${distTag} prerelease=${isPrerelease} dry_run=${dryRun} commit=${targetCommit}`);
+          EOF
+
+      - name: Install root build and verification devDependencies (no scripts, no Python)
+        run: npm ci --legacy-peer-deps --ignore-scripts
+
+      - name: Verify zero Python on tracked tree
+        run: node scripts/check-no-python.mjs
+
+      - name: Stamp release version into engram-live/package.json only (pack-time)
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          node - <<'EOF'
+          const { execFileSync } = require("node:child_process");
+          const { readFileSync, writeFileSync } = require("node:fs");
+
+          const version = (process.env.RELEASE_VERSION || "").trim();
+          const pkgPath = "engram-live/package.json";
+          const beforeRaw = readFileSync(pkgPath, "utf8");
+          const beforeObj = JSON.parse(beforeRaw);
+
+          const sortVal = (val) => {
+            if (Array.isArray(val)) return val.map(sortVal);
+            if (val && typeof val === "object") {
+              const sorted = {};
+              for (const key of Object.keys(val).sort()) sorted[key] = sortVal(val[key]);
+              return sorted;
+            }
+            return val;
+          };
+          const stripVersion = (obj) => {
+            const copy = { ...obj };
+            delete copy.version;
+            return JSON.stringify(sortVal(copy));
+          };
+
+          const beforeWithoutVersion = stripVersion(beforeObj);
+          const updated = { ...beforeObj, version };
+          writeFileSync(pkgPath, `${JSON.stringify(updated, null, 2)}\n`, "utf8");
+
+          const afterObj = JSON.parse(readFileSync(pkgPath, "utf8"));
+          if (afterObj.version !== version) {
+            throw new Error(`Expected engram-live/package.json version "${version}", got "${afterObj.version}"`);
+          }
+          if (stripVersion(afterObj) !== beforeWithoutVersion) {
+            throw new Error("Pack-time version stamp altered fields other than version in engram-live/package.json");
+          }
+
+          const status = execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { encoding: "utf8" })
+            .split("\n")
+            .filter(Boolean);
+          for (const line of status) {
+            if (line.slice(3) !== pkgPath) {
+              throw new Error(`Pack-time version stamp modified an unexpected tracked file: ${line}`);
+            }
+          }
+          console.log(`Pack-time stamp applied cleanly: ${pkgPath} version=${version} (no other file modified)`);
+          EOF
+
+      - name: Build and verify the neutral live package (mandatory)
+        run: |
+          node scripts/build-live.mjs
+          node scripts/check-live-package.mjs
+
+      - name: Run live neutrality and packed-tarball acceptance suites
+        run: npx --no-install vitest run tests/live-neutrality.test.ts tests/live-package.test.ts
+
+      - name: Pack deliverable tarball and generate release evidence
+        id: pack
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_DIST_TAG: ${{ inputs.dist_tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          TARGET_COMMIT: ${{ steps.validate.outputs.target_commit }}
+          ARTIFACT_DIR: ${{ runner.temp }}/release-artifact
+        run: |
+          node - <<'EOF'
+          const { execFileSync } = require("node:child_process");
+          const { createHash } = require("node:crypto");
+          const { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } = require("node:fs");
+          const { tmpdir } = require("node:os");
+          const { join, resolve } = require("node:path");
+
+          const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+          const sriSha512 = (bytes) => `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
+
+          const version = (process.env.RELEASE_VERSION || "").trim();
+          const distTag = (process.env.RELEASE_DIST_TAG || "").trim();
+          const dryRun = (process.env.DRY_RUN || "").trim() === "true";
+          const targetCommit = (process.env.TARGET_COMMIT || "").trim();
+          const artifactDir = resolve(process.env.ARTIFACT_DIR);
+          const liveRoot = resolve("engram-live");
+
+          rmSync(artifactDir, { recursive: true, force: true });
+          mkdirSync(artifactDir, { recursive: true });
+
+          const workTmp = mkdtempSync(join(tmpdir(), "engram-live-release-pack-"));
+          try {
+            const packEnv = {
+              ...process.env,
+              npm_config_cache: join(workTmp, "npm-cache"),
+              npm_config_update_notifier: "false",
+            };
+
+            const dryRunStdout = execFileSync("npm", ["pack", "--dry-run", "--json"], {
+              cwd: liveRoot,
+              env: packEnv,
+              encoding: "utf8",
+            });
+            const dryRunMeta = JSON.parse(dryRunStdout)[0];
+
+            const packStdout = execFileSync("npm", ["pack", "--json", "--pack-destination", artifactDir], {
+              cwd: liveRoot,
+              env: packEnv,
+              encoding: "utf8",
+            });
+            const packedMeta = JSON.parse(packStdout)[0];
+
+            for (const field of ["id", "name", "version", "filename", "size", "unpackedSize", "shasum", "integrity", "entryCount"]) {
+              if (dryRunMeta[field] !== packedMeta[field]) {
+                throw new Error(`Dry-run vs packed mismatch on "${field}": dry=${dryRunMeta[field]} vs packed=${packedMeta[field]}`);
+              }
+            }
+            if (packedMeta.name !== "@sentropic/engram-live") {
+              throw new Error(`Unexpected package name: ${packedMeta.name}`);
+            }
+            if (packedMeta.version !== version) {
+              throw new Error(`Packed version "${packedMeta.version}" does not match requested "${version}"`);
+            }
+
+            const tarballPath = join(artifactDir, packedMeta.filename);
+            const tarballBytes = readFileSync(tarballPath);
+            const tarballSha256 = sha256(tarballBytes);
+            const computedIntegrity = sriSha512(tarballBytes);
+            if (computedIntegrity !== packedMeta.integrity) {
+              throw new Error(`Tarball SHA-512 integrity mismatch: computed=${computedIntegrity} vs npm=${packedMeta.integrity}`);
+            }
+
+            const extractDir = join(workTmp, "extract");
+            mkdirSync(extractDir, { recursive: true });
+            execFileSync("tar", ["-xf", tarballPath, "-C", extractDir], { stdio: "inherit" });
+            const pkgDir = join(extractDir, "package");
+
+            const listFiles = (dir, prefix = "") => {
+              const out = [];
+              for (const entry of readdirSync(dir, { withFileTypes: true })) {
+                const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+                if (entry.isDirectory()) out.push(...listFiles(join(dir, entry.name), rel));
+                else out.push(rel);
+              }
+              return out;
+            };
+
+            const extractedPaths = listFiles(pkgDir).sort();
+            if (extractedPaths.length !== packedMeta.entryCount) {
+              throw new Error(`Extracted file count ${extractedPaths.length} !== packed entryCount ${packedMeta.entryCount}`);
+            }
+
+            const filesSha256 = {};
+            for (const rel of extractedPaths) {
+              filesSha256[rel] = sha256(readFileSync(join(pkgDir, rel)));
+            }
+
+            const sortVal = (val) => {
+              if (Array.isArray(val)) return val.map(sortVal);
+              if (val && typeof val === "object") {
+                const sorted = {};
+                for (const key of Object.keys(val).sort()) sorted[key] = sortVal(val[key]);
+                return sorted;
+              }
+              return val;
+            };
+            const packedPkg = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8"));
+            const withoutVersion = { ...packedPkg };
+            delete withoutVersion.version;
+            const packageJsonWithoutVersionSha256 = sha256(Buffer.from(JSON.stringify(sortVal(withoutVersion)), "utf8"));
+            const nonManifestTreeLines = extractedPaths
+              .filter((rel) => rel !== "package.json")
+              .map((rel) => `${filesSha256[rel]}  ${rel}\n`)
+              .join("");
+            const nonManifestFilesTreeSha256 = sha256(Buffer.from(nonManifestTreeLines, "utf8"));
+            const fixtureSha256 = sha256(readFileSync(resolve("tests/fixtures/live-code-context.json")));
+
+            const evidence = {
+              packageName: packedMeta.name,
+              version: packedMeta.version,
+              distTag,
+              dryRun,
+              commit: targetCommit,
+              filename: packedMeta.filename,
+              size: packedMeta.size,
+              unpackedSize: packedMeta.unpackedSize,
+              entryCount: packedMeta.entryCount,
+              shasum: packedMeta.shasum,
+              integrity: packedMeta.integrity,
+              tarballSha256,
+              packageJsonWithoutVersionSha256,
+              nonManifestFilesTreeSha256,
+              fixtureSha256,
+              contractsJsSha256: filesSha256["dist/contracts.js"],
+              contractsDtsSha256: filesSha256["dist/contracts.d.ts"],
+              grammarManifestSha256: filesSha256["grammar-manifest.json"],
+              nodeVersion: process.version,
+              filesSha256,
+            };
+
+            writeFileSync(join(artifactDir, "release-evidence.json"), `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
+
+            const artifactName = `engram-live-${version}-${targetCommit.slice(0, 12)}`;
+            const ghOutput = process.env.GITHUB_OUTPUT;
+            if (ghOutput) {
+              appendFileSync(ghOutput, `artifact_name=${artifactName}\n`);
+              appendFileSync(ghOutput, `tarball_filename=${packedMeta.filename}\n`);
+              appendFileSync(ghOutput, `integrity=${packedMeta.integrity}\n`);
+              appendFileSync(ghOutput, `tarball_sha256=${tarballSha256}\n`);
+            }
+
+            const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+            if (summaryPath) {
+              appendFileSync(
+                summaryPath,
+                [
+                  `## @sentropic/engram-live release verification (${dryRun ? "DRY RUN" : "PUBLISH"})`,
+                  "",
+                  "| Field | Value |",
+                  "|---|---|",
+                  `| Package | \`${packedMeta.name}@${packedMeta.version}\` |`,
+                  `| Dist-tag | \`${distTag}\` |`,
+                  `| Commit | \`${targetCommit}\` |`,
+                  `| Tarball | \`${packedMeta.filename}\` (${packedMeta.size} B packed / ${packedMeta.unpackedSize} B unpacked, ${packedMeta.entryCount} files) |`,
+                  `| Integrity | \`${packedMeta.integrity}\` |`,
+                  `| Shasum | \`${packedMeta.shasum}\` |`,
+                  `| Tarball SHA-256 | \`${tarballSha256}\` |`,
+                  `| \`package.json\` (without \`version\`) SHA-256 | \`${packageJsonWithoutVersionSha256}\` |`,
+                  `| Non-manifest files tree SHA-256 | \`${nonManifestFilesTreeSha256}\` |`,
+                  `| \`tests/fixtures/live-code-context.json\` SHA-256 | \`${fixtureSha256}\` |`,
+                  `| \`dist/contracts.js\` SHA-256 | \`${evidence.contractsJsSha256}\` |`,
+                  `| \`dist/contracts.d.ts\` SHA-256 | \`${evidence.contractsDtsSha256}\` |`,
+                  `| \`grammar-manifest.json\` SHA-256 | \`${evidence.grammarManifestSha256}\` |`,
+                  "",
+                ].join("\n"),
+              );
+            }
+            console.log(`Packed ${packedMeta.filename}: integrity=${packedMeta.integrity} sha256=${tarballSha256} entries=${packedMeta.entryCount}`);
+          } finally {
+            rmSync(workTmp, { recursive: true, force: true });
+          }
+          EOF
+
+      - name: Restore working tree engram-live/package.json
+        if: ${{ always() && steps.validate.outcome == 'success' }}
+        run: git checkout -- engram-live/package.json
+
+      - name: Upload verified tarball and release evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ steps.pack.outputs.artifact_name }}
+          path: ${{ runner.temp }}/release-artifact
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    needs: [build-and-verify]
+    if: ${{ inputs.dry_run == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Set up Node.js 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+
+      - name: Download verified release artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.build-and-verify.outputs.artifact_name }}
+          path: ${{ runner.temp }}/release-artifact
+
+      - name: Re-verify tarball integrity, manifest, and dist-tag rules
+        id: verify-artifact
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_DIST_TAG: ${{ inputs.dist_tag }}
+          EXPECTED_COMMIT: ${{ needs.build-and-verify.outputs.target_commit }}
+          EXPECTED_FILENAME: ${{ needs.build-and-verify.outputs.tarball_filename }}
+          EXPECTED_INTEGRITY: ${{ needs.build-and-verify.outputs.integrity }}
+          EXPECTED_SHA256: ${{ needs.build-and-verify.outputs.tarball_sha256 }}
+          ARTIFACT_DIR: ${{ runner.temp }}/release-artifact
+        run: |
+          node - <<'EOF'
+          const { execFileSync } = require("node:child_process");
+          const { createHash } = require("node:crypto");
+          const { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } = require("node:fs");
+          const { tmpdir } = require("node:os");
+          const { basename, join, resolve } = require("node:path");
+
+          const SEMVER_RE = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?$/;
+          const DIST_TAG_RE = /^[a-z][a-z0-9._-]*$/;
+          const VERSION_LOOKALIKE_TAG_RE = /^v?\d+(\.\d+)*(-.+)?$/i;
+          const FORBIDDEN_SCRIPTS = [
+            "preinstall",
+            "install",
+            "postinstall",
+            "prepare",
+            "prepack",
+            "postpack",
+            "prepublish",
+            "prepublishOnly",
+            "publish",
+            "postpublish",
+          ];
+
+          const fail = (message) => {
+            console.error(`::error::${message}`);
+            process.exit(1);
+          };
+
+          const version = process.env.RELEASE_VERSION ?? "";
+          const distTag = process.env.RELEASE_DIST_TAG ?? "";
+          const expectedCommit = (process.env.EXPECTED_COMMIT || "").trim();
+          const expectedFilename = (process.env.EXPECTED_FILENAME || "").trim();
+          const expectedIntegrity = (process.env.EXPECTED_INTEGRITY || "").trim();
+          const expectedSha256 = (process.env.EXPECTED_SHA256 || "").trim();
+          const artifactDir = resolve(process.env.ARTIFACT_DIR);
+
+          if (version !== version.trim() || !SEMVER_RE.test(version)) {
+            fail(`Invalid SemVer 2.0.0 release version (whitespace and build metadata disallowed): "${version}"`);
+          }
+          if (distTag !== distTag.trim() || !DIST_TAG_RE.test(distTag) || VERSION_LOOKALIKE_TAG_RE.test(distTag)) {
+            fail(`Invalid npm dist-tag: "${distTag}"`);
+          }
+          if (version.includes("-") && distTag === "latest") {
+            fail(`Refusing to publish prerelease "${version}" under the "latest" dist-tag.`);
+          }
+          if (!expectedFilename || basename(expectedFilename) !== expectedFilename || !expectedFilename.endsWith(".tgz")) {
+            fail(`Invalid tarball filename: "${expectedFilename}"`);
+          }
+
+          const evidence = JSON.parse(readFileSync(join(artifactDir, "release-evidence.json"), "utf8"));
+          if (evidence.dryRun !== false) fail("Refusing to publish an artifact produced in dry_run mode.");
+          if (evidence.packageName !== "@sentropic/engram-live") fail(`Unexpected evidence packageName: ${evidence.packageName}`);
+          if (evidence.version !== version) fail(`Evidence version "${evidence.version}" !== "${version}"`);
+          if (evidence.distTag !== distTag) fail(`Evidence distTag "${evidence.distTag}" !== "${distTag}"`);
+          if (evidence.commit !== expectedCommit) fail(`Evidence commit "${evidence.commit}" !== "${expectedCommit}"`);
+          if (evidence.filename !== expectedFilename) fail(`Evidence filename "${evidence.filename}" !== "${expectedFilename}"`);
+          if (evidence.integrity !== expectedIntegrity) fail(`Evidence integrity "${evidence.integrity}" !== "${expectedIntegrity}"`);
+          if (evidence.tarballSha256 !== expectedSha256) fail(`Evidence sha256 "${evidence.tarballSha256}" !== "${expectedSha256}"`);
+
+          const tarballPath = join(artifactDir, expectedFilename);
+          const bytes = readFileSync(tarballPath);
+          const actualSha256 = createHash("sha256").update(bytes).digest("hex");
+          const actualIntegrity = `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
+          if (actualSha256 !== expectedSha256) fail(`Tarball sha256 mismatch: ${actualSha256} !== ${expectedSha256}`);
+          if (actualIntegrity !== expectedIntegrity) fail(`Tarball integrity mismatch: ${actualIntegrity} !== ${expectedIntegrity}`);
+
+          const tmp = mkdtempSync(join(tmpdir(), "engram-live-publish-check-"));
+          try {
+            execFileSync("tar", ["-xf", tarballPath, "-C", tmp, "package/package.json"], { stdio: "inherit" });
+            const pkg = JSON.parse(readFileSync(join(tmp, "package", "package.json"), "utf8"));
+            if (pkg.name !== "@sentropic/engram-live") fail(`Tarball package.json name mismatch: ${pkg.name}`);
+            if (pkg.version !== version) fail(`Tarball package.json version mismatch: ${pkg.version} !== ${version}`);
+            if (pkg.publishConfig?.access !== "public") fail("Tarball package.json must declare publishConfig.access=public");
+            for (const field of ["dependencies", "optionalDependencies", "peerDependencies", "bin"]) {
+              if (pkg[field] !== undefined) fail(`Tarball package.json must not declare "${field}"`);
+            }
+            const scripts = pkg.scripts || {};
+            for (const lifecycle of FORBIDDEN_SCRIPTS) {
+              if (scripts[lifecycle] !== undefined) fail(`Tarball package.json must not declare lifecycle script "${lifecycle}"`);
+            }
+          } finally {
+            rmSync(tmp, { recursive: true, force: true });
+          }
+
+          if (process.env.GITHUB_OUTPUT) {
+            appendFileSync(process.env.GITHUB_OUTPUT, `tarball_path=${tarballPath}\n`);
+          }
+          console.log(`Verified artifact ready for publish: ${expectedFilename} (${actualIntegrity})`);
+          EOF
+
+      - name: Upgrade npm for Trusted Publishing
+        run: |
+          npm install -g npm@11.6.2
+          node --version
+          npm --version
+
+      - name: Publish verified tarball to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          RELEASE_DIST_TAG: ${{ inputs.dist_tag }}
+          TARBALL_PATH: ${{ steps.verify-artifact.outputs.tarball_path }}
+        run: |
+          set -euo pipefail
+          USERCONFIG="$(mktemp "${RUNNER_TEMP}/npmrc.XXXXXX")"
+          trap 'rm -f "$USERCONFIG"' EXIT
+          chmod 600 "$USERCONFIG"
+          {
+            echo "registry=https://registry.npmjs.org/"
+            if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
+              echo '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}'
+            fi
+          } > "$USERCONFIG"
+          export NPM_CONFIG_USERCONFIG="$USERCONFIG"
+          export npm_config_update_notifier=false
+          npm publish "$TARBALL_PATH" --tag="$RELEASE_DIST_TAG" --access=public
+
+      - name: Post-publish registry integrity and dist-tag verification
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_DIST_TAG: ${{ inputs.dist_tag }}
+          EXPECTED_INTEGRITY: ${{ needs.build-and-verify.outputs.integrity }}
+        run: |
+          node - <<'EOF'
+          const { execFileSync } = require("node:child_process");
+          const { mkdtempSync, rmSync } = require("node:fs");
+          const { tmpdir } = require("node:os");
+          const { join } = require("node:path");
+
+          const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+          const version = process.env.RELEASE_VERSION ?? "";
+          const distTag = process.env.RELEASE_DIST_TAG ?? "";
+          const expectedIntegrity = (process.env.EXPECTED_INTEGRITY || "").trim();
+          const isPrerelease = version.includes("-");
+
+          const tmp = mkdtempSync(join(tmpdir(), "engram-live-post-publish-"));
+          try {
+            const viewEnv = {
+              ...process.env,
+              npm_config_cache: join(tmp, "npm-cache"),
+              npm_config_update_notifier: "false",
+            };
+            let view = null;
+            let distTags = null;
+            for (let attempt = 1; attempt <= 20; attempt++) {
+              try {
+                const raw = execFileSync(
+                  "npm",
+                  ["view", `@sentropic/engram-live@${version}`, "--registry=https://registry.npmjs.org/", "--json"],
+                  { env: viewEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+                );
+                const parsedView = JSON.parse(raw);
+                const tagsRaw = execFileSync(
+                  "npm",
+                  ["view", "@sentropic/engram-live", "dist-tags", "--registry=https://registry.npmjs.org/", "--json"],
+                  { env: viewEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+                );
+                const parsedTags = JSON.parse(tagsRaw);
+                if (parsedView && parsedView.version === version && parsedTags && parsedTags[distTag] === version) {
+                  view = parsedView;
+                  distTags = parsedTags;
+                  break;
+                }
+              } catch {
+                // Registry propagation retry
+              }
+              console.log(`Waiting for @sentropic/engram-live@${version} on tag "${distTag}" (attempt ${attempt}/20)`);
+              if (attempt < 20) sleep(15_000);
+            }
+            if (!view || view.version !== version) {
+              throw new Error(`Published package @sentropic/engram-live@${version} did not appear on npm registry.`);
+            }
+            if (view.dist?.integrity !== expectedIntegrity) {
+              throw new Error(`Registry integrity "${view.dist?.integrity}" !== expected "${expectedIntegrity}"`);
+            }
+            if (!distTags || distTags[distTag] !== version) {
+              throw new Error(`Registry dist-tag "${distTag}" points to "${distTags?.[distTag]}", expected "${version}"`);
+            }
+            if (isPrerelease && distTags.latest === version) {
+              throw new Error(`Prerelease version "${version}" unexpectedly occupies the "latest" dist-tag.`);
+            }
+            console.log(`Post-publish verification passed: @sentropic/engram-live@${version} (${expectedIntegrity}) on tag "${distTag}"`);
+          } finally {
+            rmSync(tmp, { recursive: true, force: true });
+          }
+          EOF

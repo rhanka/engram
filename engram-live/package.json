@@ -1,8 +1,21 @@
 {
   "name": "@sentropic/engram-live",
-  "version": "0.1.0",
+  "version": "0.2.0-pre.1",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "description": "Engram neutral live collector package — logical code/Git facts with injected capabilities (no host, driver, CLI or model dependency). Qualified runtimes: Node 20, 22 and 24 on Linux only (engines/os are bounded and enforced by scripts/check-live-package.mjs).",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rhanka/engram.git",
+    "directory": "engram-live"
+  },
+  "homepage": "https://github.com/rhanka/engram",
+  "bugs": {
+    "url": "https://github.com/rhanka/engram/issues"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
