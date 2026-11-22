@@ -123,7 +123,7 @@ export function inventory(file: string, source: string): Site[] {
     ["src/merge-driver.ts", "readGraph", "assertSupportedGraphFormat"],
     ["src/build.ts", "deduplicateByLabel", "assertionIdentityOf"],
     ["src/assembly-hygiene.ts", "normalizeSchemaHygiene", "assertionIdentityOf"],
-    ["src/extract.ts", "_mergeSwiftExtensions", "assertionIdentityOf"],
+    ["src/extract-core.ts", "_mergeSwiftExtensions", "assertionIdentityOf"],
     ["src/storage/sqlite.ts", "appendEdge", "mergeEdgeEvidence"],
     ["src/storage/sqlite.ts", "pushGraph", "mergeEdgeEvidence"],
     ["src/storage/postgres.ts", "appendEdge", "mergeEdgeEvidence"],
