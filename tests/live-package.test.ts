@@ -1,11 +1,11 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync, statSync } from "node:fs";
+import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildLineAttributionFixture, inventoryDigest, LiveGitSandbox, nativeLineOracle } from "./helpers/live-git-fixtures.js";
+import { buildCorpus, buildLineAttributionFixture, detectGitCapabilities, inventoryDigest, LiveGitSandbox, nativeLineOracle } from "./helpers/live-git-fixtures.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const liveRoot = join(root, "engram-live");
@@ -1287,8 +1287,8 @@ describe("live package", () => {
   it("the installed factory runs code-analysis on packaged grammars with a host-injected runtime and reports it available", () => {
     const { described, factory, initial, warm, missing, recovered, unsupported } = productionProbe("factory");
     expect(factory).toEqual(described);
-    expect(factory.filter((entry: { state: string }) => entry.state === "available"))
-      .toEqual([expect.objectContaining({ capability: "code-analysis" })]);
+    expect(factory.filter((entry: { state: string }) => entry.state === "available").map((entry: { capability: string }) => entry.capability))
+      .toEqual(["refs", "history-dag", "github-pr", "code-analysis", "retention-requests"]);
     expect(initial.analysis).toMatchObject({ state: "complete", cacheHit: false });
     expect(initial.analysis.symbols).toHaveLength(2);
     expect(warm.analysis).toMatchObject({ state: "complete", cacheHit: true });
@@ -1431,7 +1431,7 @@ describe("live package", () => {
     expectNoPython(packed.phaseTrace);
     const exercise = JSON.parse(exerciseOutput) as ExerciseReport;
     expect(exercise.capabilityCount).toBeGreaterThan(0);
-    expect(exercise.available).toEqual(["code-analysis"]);
+    expect(exercise.available).toEqual(["refs", "history-dag", "github-pr", "code-analysis", "retention-requests"]);
     expect(exercise.reasoned).toBe(true);
     expect(exercise.plannedLots).toBe(true);
     expect(exercise.refs.state).toBe("unavailable");
@@ -1941,7 +1941,8 @@ describe("live package", () => {
       .filter((entry) => entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts"))
       .map((entry) => entry.name.slice(0, -3))
       .sort();
-    expect(neutralSourceModules).toHaveLength(33);
+    expect(neutralSourceModules).toHaveLength(34);
+    expect(neutralSourceModules).toContain("factory-history");
     for (const name of EASM1_NEWLY_PACKED_MODULES) {
       expect(neutralSourceModules, `source directory contains ${name}.ts`).toContain(name);
     }
@@ -2041,6 +2042,14 @@ describe("live package", () => {
           '  StageLocalSnapshotOutcome, PathClassification, SchedulerBudgets, WatchHub,',
           '  ReconcilerPorts, CoverageMap,',
           '];',
+          'import {',
+          '  createLiveFactory, composeFactoryGitExecutor, validateHostHooksIsolationDir,',
+          '  type GitPort, type RefsCapabilityRequest, type HistoryDagCapabilityRequest,',
+          '  type GithubPrCapabilityRequest, type RetentionRequestsCapabilityRequest,',
+          '  type DeliveredBatchSummary, type CapabilityResult,',
+          '} from "@sentropic/engram-live/integration";',
+          'export const easm2Integration = [createLiveFactory, composeFactoryGitExecutor, validateHostHooksIsolationDir];',
+          'export type Easm2Types = [GitPort, RefsCapabilityRequest, HistoryDagCapabilityRequest, GithubPrCapabilityRequest, RetentionRequestsCapabilityRequest, DeliveredBatchSummary, CapabilityResult];',
           "",
         ].join("\n"),
       );
@@ -2068,6 +2077,417 @@ describe("live package", () => {
     recordPhaseMarker(packed.phaseTrace, "all-modules-tsc", packed.pythonMarker);
     expectNoPython(packed.phaseTrace);
     console.info("E-ASM1 packed surface", `files=${packed.packedPaths.length} neutralModules=${neutralSourceModules.length} newlyPacked=${EASM1_NEWLY_PACKED_MODULES.length}`);
+  });
+
+  it("the installed tarball executes refs history-dag github-pr and retention-requests offline with the root installation inaccessible", () => {
+    // E-ASM2 RED (plan/09 E-ASM2): from the offline packed installation alone,
+    // with the root checkout and root node_modules denied via Node's permission
+    // model, execute refs, history-dag, github-pr and retention-requests
+    // through createLiveFactory(...).runCapability(...) on L0 + P1 fixtures and
+    // verify typed canonical fenced batches delivered to a fake sink, zero
+    // network/Python/OS-tmpdir writes, and whole-worktree immutability.
+    const box = new LiveGitSandbox();
+    try {
+      const capabilities = detectGitCapabilities(box);
+      const format = capabilities.objectFormats.includes("sha1") ? ("sha1" as const) : capabilities.objectFormats[0]!;
+      const corpus = buildCorpus(box, format, "files");
+      const digestBefore = inventoryDigest(corpus);
+      const commonDir = realpathSync(join(corpus.repo, ".git"));
+      const mainGitDir = box.git(corpus.repo, ["rev-parse", "--absolute-git-dir"], undefined, "oracle").toString().trim();
+      const detachedGitDir = box.git(corpus.detached, ["rev-parse", "--absolute-git-dir"], undefined, "oracle").toString().trim();
+
+      const isolatedTmp = join(box.root, "isolated-os-tmp");
+      mkdirSync(isolatedTmp);
+      const fixtureCopy = join(box.root, "live-github-pages.json");
+      copyFileSync(join(root, "tests", "fixtures", "live-github-pages.json"), fixtureCopy);
+
+      const probe = String.raw`
+        import assert from "node:assert/strict";
+        import { spawn } from "node:child_process";
+        import { createHash } from "node:crypto";
+        import { readdirSync, readFileSync } from "node:fs";
+        import { tmpdir } from "node:os";
+        import { delimiter, dirname, resolve } from "node:path";
+        import * as live from "@sentropic/engram-live";
+        import * as contracts from "@sentropic/engram-live/contracts";
+        import * as integration from "@sentropic/engram-live/integration";
+
+        const [rootDir, dataPath] = process.argv.slice(2);
+        assert.throws(() => readFileSync(resolve(rootDir, "package.json")), { code: "ERR_ACCESS_DENIED" });
+        assert.equal(process.permission.has("fs.read", resolve(rootDir, "node_modules")), false);
+        globalThis.fetch = () => assert.fail("offline tarball factory execution requested network access");
+
+        const data = JSON.parse(readFileSync(dataPath, "utf8"));
+        assert.equal(tmpdir(), data.isolatedTmp, "TMPDIR must point to isolated probe dir");
+
+        const repository = live.observeRepository({
+          hostScope: "host:packed-easm2",
+          commonDirRealpath: data.commonDir,
+          commonDirProjectFingerprint: "ws:packed-easm2",
+          oidAlgorithm: data.format,
+          worktrees: [
+            { worktreePath: data.repo, gitDir: data.mainGitDir, worktreeFingerprint: "wtfp:main", head: { kind: "branch", refName: "refs/heads/main" } },
+            { worktreePath: data.detached, gitDir: data.detachedGitDir, worktreeFingerprint: "wtfp:detached", head: { kind: "detached", oid: data.mergeOid } },
+          ],
+        });
+        const mainWt = repository.worktrees[0].identity;
+        const declId = integration.deriveDeclarationIdentity({
+          hostScope: "host:packed-easm2",
+          clone: repository.clone,
+          worktree: mainWt,
+        });
+        const declaration = {
+          tenant: "local:packed-easm2",
+          principal: "local:packed-principal",
+          hostFingerprint: "hostfp:packed",
+          identityUncertainty: [],
+          declarationId: declId.declarationId,
+          cloneId: repository.clone.cloneId,
+          worktreeId: mainWt.worktreeId,
+          authorizedRoots: [data.corpusRoot],
+          liveCapability: "live",
+          policyVersion: contracts.POLICY_VERSION,
+          declarationRevision: 1,
+        };
+        const cloneScope = { tenant: declaration.tenant, clone: declaration.cloneId };
+        const fencingToken = {
+          tokenId: "tok:packed-easm2-001",
+          scope: cloneScope,
+          epoch: 1,
+          epochId: "epoch:packed-001",
+          declarationRevision: declaration.declarationRevision,
+          projectionIncarnation: "inc:packed-001",
+          issuedAt: data.now - 10_000,
+          expiresAt: data.now + 60_000,
+        };
+
+        const gitProcessPort = {
+          async start(launch) {
+            const child = spawn(data.gitPath, launch.args, {
+              cwd: launch.cwd,
+              env: {
+                PATH: [dirname(data.gitPath), "/usr/bin", "/bin"].join(delimiter),
+                HOME: data.hooksDir,
+                XDG_CONFIG_HOME: data.hooksDir,
+                TMPDIR: data.isolatedTmp,
+                LANG: "C",
+                LC_ALL: "C",
+                TZ: "UTC",
+                GIT_CONFIG_NOSYSTEM: "1",
+                GIT_CONFIG_GLOBAL: "/dev/null",
+                GIT_ATTR_NOSYSTEM: "1",
+                GIT_OPTIONAL_LOCKS: "0",
+                GIT_NO_LAZY_FETCH: "1",
+                GIT_NO_REPLACE_OBJECTS: "1",
+                GIT_TERMINAL_PROMPT: "0",
+              },
+              shell: false,
+              stdio: ["pipe", "pipe", "pipe"],
+            });
+            const stderr = [];
+            child.stderr.on("data", (chunk) => stderr.push(chunk));
+            const exit = new Promise((res, rej) => {
+              child.once("error", rej);
+              child.once("close", (code) => res({ code: code ?? -1, stderr: Buffer.concat(stderr) }));
+            });
+            child.stdin.on("error", () => undefined);
+            const chunks = [];
+            let ended = false;
+            const wakeups = [];
+            child.stdout.pause();
+            child.stdout.on("data", (chunk) => {
+              chunks.push(chunk);
+              child.stdout.pause();
+              for (const wake of wakeups.splice(0)) wake();
+            });
+            const finish = () => { ended = true; for (const wake of wakeups.splice(0)) wake(); };
+            child.stdout.once("end", finish);
+            child.stdout.once("close", finish);
+            child.stdout.once("error", finish);
+            const stdout = (async function* () {
+              for (;;) {
+                while (chunks.length === 0 && !ended) {
+                  child.stdout.resume();
+                  await new Promise((res) => wakeups.push(res));
+                }
+                if (chunks.length === 0) return;
+                yield chunks.shift();
+              }
+            })();
+            return {
+              stdout,
+              stdin: {
+                async write(chunk) {
+                  await new Promise((res, rej) => {
+                    const onErr = (err) => rej(err);
+                    child.stdin.once("error", onErr);
+                    const done = () => { child.stdin.removeListener("error", onErr); res(); };
+                    if (child.stdin.write(chunk)) done();
+                    else child.stdin.once("drain", done);
+                  });
+                },
+                async close() { await new Promise((res) => child.stdin.end(res)); },
+              },
+              exit,
+              async abort() { child.kill("SIGKILL"); await exit.catch(() => undefined); },
+            };
+          },
+        };
+
+        const rawPrFixture = JSON.parse(readFileSync(data.prFixturePath, "utf8"));
+        const ghRepo = { owner: rawPrFixture.repository.owner, repo: rawPrFixture.repository.repo };
+        const prPages = rawPrFixture.pages.map((page) => ({
+          items: page.items.map((item) => ({
+            repositoryOwner: ghRepo.owner,
+            repositoryRepo: ghRepo.repo,
+            number: item.number,
+            state: item.state,
+            isDraft: item.isDraft,
+            updatedAt: item.updatedAt,
+            headOid: { algorithm: "sha1", oid: item.headOid },
+            headRef: item.headRef,
+            baseOid: { algorithm: "sha1", oid: item.baseOid },
+            baseRef: item.baseRef,
+          })),
+          nextCursor: page.nextCursor,
+          hasMore: page.hasMore,
+          ...(page.endProof !== undefined ? { endProof: page.endProof } : {}),
+        }));
+        let pageIdx = 0;
+        const githubPr = {
+          async fetchPage() {
+            const page = prPages[pageIdx++];
+            if (!page) return { ok: false, kind: "unavailable", message: "no more fixture pages" };
+            return { ok: true, page: { ...page, items: [...page.items] } };
+          },
+        };
+
+        const histFacts = new Map();
+        const histCheckpoints = new Map();
+        const histRoots = new Map();
+        const historyPersistence = {
+          async loadCompletion(q) {
+            const cps = [...histCheckpoints.values()].filter((c) => c.cloneId === q.cloneId && c.algorithm === q.algorithm);
+            return {
+              knownComplete: cps.map((c) => c.oid),
+              checkpoints: cps,
+              retainedRoots: [...histRoots.values()].filter((r) => r.cloneId === q.cloneId && r.algorithm === q.algorithm),
+            };
+          },
+          async persistCommitFact(f) { histFacts.set(f.oid, f); return { received: true }; },
+          async recordCompletion(c) { histCheckpoints.set(c.oid, c); return { received: true }; },
+          async recordRetainedRoot(r) { histRoots.set(r.oid, r); return { received: true }; },
+        };
+
+        let prCursor = null;
+        const prObs = new Map();
+        const prJobs = new Map();
+        const prPersistence = {
+          async loadCursor() { return prCursor; },
+          async saveCursor(c) { prCursor = c; },
+          async saveObservation(f) { const k = live.observationIdentityKey(f); if (!prObs.has(k)) prObs.set(k, f); },
+          async listObservations() { return [...prObs.values()].sort((a, b) => a.number - b.number || a.updatedAt - b.updatedAt); },
+          async recordObjectJob(j) { prJobs.set(live.objectJobIdentityKey(j), j); },
+          async updateObjectJob(j) { prJobs.set(live.objectJobIdentityKey(j), j); },
+          async listObjectJobs() { return [...prJobs.values()]; },
+        };
+
+        const retReqs = new Map();
+        const retRcpts = new Map();
+        const retention = {
+          async recordRequest(req) {
+            retReqs.set(req.oid, req);
+            // Host acquires object and records durable receipt immediately in this offline probe.
+            retRcpts.set(req.oid, {
+              scope: req.scope,
+              algorithm: req.algorithm,
+              oid: req.oid,
+              receivedAt: data.now + 50,
+              backupRef: "backup:" + createHash("sha256").update(req.oid).digest("hex").slice(0, 16),
+            });
+            return { received: true };
+          },
+          async recordReceipt(r) { retRcpts.set(r.oid, r); return { received: true }; },
+          async loadReceipts(q) {
+            return {
+              receipts: [...retRcpts.values()].filter((r) =>
+                r.scope.tenant === q.scope.tenant && r.scope.clone === q.scope.clone && r.algorithm === q.algorithm),
+            };
+          },
+        };
+
+        const deliveries = [];
+        const factSink = {
+          async deliver(batch, token) {
+            assert.deepEqual(token, fencingToken, "every sink delivery must carry the clone-scoped fencing token");
+            assert.deepEqual(contracts.validateFactBatch(batch), { ok: true, errors: [] });
+            const encoded = live.encodeFactBatch(batch);
+            const decoded = live.decodeFactBatch(encoded.bytes);
+            assert.equal(decoded.batchDigest, batch.batchDigest);
+            deliveries.push({ batchId: batch.batchId, generationId: batch.generationId, factKinds: batch.facts.map((f) => live.classifyLiveFactKind(f)) });
+            return { received: true, batchId: batch.batchId, receiptId: "rcpt:" + deliveries.length };
+          },
+        };
+
+        const factory = integration.createLiveFactory({
+          declaration,
+          ports: {
+            git: { gitPath: data.gitPath, disabledHooksDir: data.hooksDir, process: gitProcessPort },
+            filesystem: { async readFileBytes() { throw new Error("unused"); } },
+            clock: { now: () => data.now },
+            content: { liveContentSeam: "host-content" },
+            factSink,
+            cache: { liveCacheSeam: "host-cache" },
+            grammarRuntime: { init() {}, async loadLanguage() { throw new Error("unused"); }, createParser() { throw new Error("unused"); } },
+            historyPersistence,
+            githubPr,
+            prPersistence,
+            retention,
+          },
+        });
+
+        const refsRes = await factory.runCapability("refs", {
+          cwd: data.repo,
+          defaultBranch: "refs/heads/main",
+          generationId: live.formatProducerGenerationId(1),
+          fencingToken,
+        });
+        assert.equal(refsRes.state, "available", JSON.stringify(refsRes));
+        assert.equal(refsRes.delivered, true);
+
+        const histRes = await factory.runCapability("history-dag", {
+          cwd: data.repo,
+          repository,
+          defaultBranch: "refs/heads/main",
+          generationId: live.formatProducerGenerationId(2),
+          fencingToken,
+        });
+        assert.equal(histRes.state, "available", JSON.stringify(histRes));
+        assert.equal(histRes.delivered, true);
+        assert.equal(histRes.outcome.state, "complete");
+
+        const prRes = await factory.runCapability("github-pr", {
+          repository: ghRepo,
+          sweepKind: "full",
+          generationId: live.formatProducerGenerationId(3),
+          fencingToken,
+        });
+        assert.equal(prRes.state, "available", JSON.stringify(prRes));
+        assert.equal(prRes.delivered, true);
+        assert.equal(prRes.outcome.state, "complete");
+
+        const retRes = await factory.runCapability("retention-requests", {
+          roots: histRes.outcome.roots,
+          generationId: live.formatProducerGenerationId(4),
+          fencingToken,
+        });
+        assert.equal(retRes.state, "available", JSON.stringify(retRes));
+        assert.equal(retRes.delivered, true);
+        assert.equal(retRes.outcome.state, "complete");
+
+        assert.deepEqual(readdirSync(tmpdir()), [], "offline tarball execution must create nothing under OS tmpdir");
+        console.log(JSON.stringify({
+          availableCapabilities: factory.describeCapabilities().filter((c) => c.state === "available").map((c) => c.capability),
+          refsTracked: refsRes.trackedRefs.length,
+          refsRoots: refsRes.roots.length,
+          commitsExtracted: histRes.outcome.stats.commitsExtracted,
+          prObservations: prRes.outcome.observations.length,
+          retentionReceipts: retRes.receipts.length,
+          deliveriesCount: deliveries.length,
+          factKinds: [...new Set(deliveries.flatMap((d) => d.factKinds))].sort(),
+          tmpEntries: readdirSync(tmpdir()),
+        }));
+      `;
+
+      const probePath = join(packed.installDir, "factory-history-probe.mjs");
+      const dataPath = join(box.root, "factory-history-input.json");
+      writeFileShim(probePath, probe);
+      writeFileSync(
+        dataPath,
+        JSON.stringify({
+          format,
+          corpusRoot: corpus.root,
+          repo: corpus.repo,
+          detached: corpus.detached,
+          commonDir,
+          mainGitDir,
+          detachedGitDir,
+          mergeOid: corpus.commits.merge,
+          gitPath: box.trace.executable,
+          hooksDir: join(box.root, "disabled-hooks"),
+          isolatedTmp,
+          prFixturePath: fixtureCopy,
+          now: 1_700_000_000_000 + 5 * 86_400_000,
+        }),
+      );
+
+      const output = runProtectedPhase(
+        process.execPath,
+        [
+          resolveProductionProbePermissionFlag(),
+          "--allow-fs-read=" + packed.tmpRoot,
+          "--allow-fs-read=" + box.root,
+          "--allow-child-process",
+          "factory-history-probe.mjs",
+          root,
+          dataPath,
+        ],
+        {
+          cwd: packed.installDir,
+          env: {
+            ...tripwireEnv(packed.tripwireBin),
+            NODE_PATH: "",
+            TMPDIR: isolatedTmp,
+            TMP: isolatedTmp,
+            TEMP: isolatedTmp,
+          },
+        },
+      );
+      recordPhaseMarker(packed.phaseTrace, "factory-history", packed.pythonMarker);
+      expectNoPython(packed.phaseTrace);
+
+      const report = JSON.parse(output) as {
+        availableCapabilities: string[];
+        refsTracked: number;
+        refsRoots: number;
+        commitsExtracted: number;
+        prObservations: number;
+        retentionReceipts: number;
+        deliveriesCount: number;
+        factKinds: string[];
+        tmpEntries: string[];
+      };
+      expect(report.availableCapabilities).toEqual([
+        "refs",
+        "history-dag",
+        "github-pr",
+        "code-analysis",
+        "retention-requests",
+      ]);
+      expect(report.refsTracked).toBeGreaterThanOrEqual(4);
+      expect(report.refsRoots).toBeGreaterThanOrEqual(2);
+      expect(report.commitsExtracted).toBeGreaterThanOrEqual(6);
+      expect(report.prObservations).toBe(36);
+      expect(report.retentionReceipts).toBeGreaterThanOrEqual(2);
+      expect(report.deliveriesCount).toBeGreaterThanOrEqual(4);
+      expect(report.factKinds).toEqual(
+        expect.arrayContaining([
+          "ref-observation",
+          "ref-state",
+          "commit",
+          "changed-file",
+          "pr-observation",
+          "retention-receipt",
+          "progress",
+          "coverage",
+        ]),
+      );
+      expect(report.tmpEntries).toEqual([]);
+      expect(readdirSync(isolatedTmp)).toEqual([]);
+      expect(inventoryDigest(corpus)).toBe(digestBefore);
+    } finally {
+      box.dispose();
+    }
   });
 });
 

@@ -455,7 +455,7 @@ const ENGINE_AND_SCHEDULER_MODULES = [
   "coverage",
 ];
 const emittedFiles = [
-  ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", ...ENGINE_AND_SCHEDULER_MODULES].flatMap(name =>
+  ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", "factory-history", ...ENGINE_AND_SCHEDULER_MODULES].flatMap(name =>
     [`${name}.js`, `${name}.d.ts`, `${name}.d.ts.map`]),
   "line-attribution.d.ts",
   "line-attribution.d.ts.map",
