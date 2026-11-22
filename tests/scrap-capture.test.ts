@@ -21,11 +21,14 @@ function setup(routes: Record<string, R>, body: string, hits: Record<string, num
   writeFileSync(f, body.replaceAll("$U", base(s))); return { s, d, f };
 }
 describe("scrap capture", () => {
-  it("fetches home plus contact, collapses blanks and duplicates", async () => {
-    const t = setup({ "/": '<html><body><p>Acme 12 rue des Fleurs Paris</p><a href="/contact">Contact</a><a href="/jobs">Jobs</a></body></html>', "/contact": "<html><body><p>Acme 12 rue des Fleurs Paris</p></body></html>" }, "$U/\n\n$U/\n");
+  it("fetches home plus contact, skips blanks and records duplicate as invalid_input", async () => {
+    const hits: Record<string, number> = {};
+    const t = setup({ "/": '<html><body><p>Acme 12 rue des Fleurs Paris</p><a href="/contact">Contact</a><a href="/jobs">Jobs</a></body></html>', "/contact": "<html><body><p>Acme 12 rue des Fleurs Paris</p></body></html>" }, "$U/\n\n$U/\n", hits);
     const rows = await cap(t.f, join(t.d, "o"));
-    expect(rows.map((r) => r.status)).toEqual(["ok"]);
-    expect(rows[0].pages.length).toBe(2); expect(rows[0].pages[1].url).toMatch(/\/contact$/); t.s.close();
+    expect(rows.map((r) => r.status).sort()).toEqual(["invalid_input", "ok"]);
+    const okRow = rows.find((r) => r.status === "ok");
+    expect(okRow.pages.length).toBe(2); expect(okRow.pages[1].url).toMatch(/\/contact$/);
+    expect(hits["/"]).toBe(1); t.s.close();
   });
   it("respects robots, overrides with the flag, denies a disallowed home", async () => {
     const a = setup({ "/robots.txt": "User-agent: *\nDisallow: /contact\n", "/": '<html><body><p>hello world home page</p><a href="/contact">Contact</a></body></html>', "/contact": "<html><body><p>secret desk</p></body></html>" }, "$U/\n");

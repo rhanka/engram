@@ -110,7 +110,7 @@ export async function runExtract(oc: ExtractOptions, client?: ExtractClient, dep
     if (!line.trim()) continue;
     let s: { id?: string; status?: string } & Record<string, unknown>;
     try { s = JSON.parse(line); } catch { continue; }
-    if (typeof s.id !== "string") continue;
+    if (typeof s.id !== "string" || s.status === "invalid_input") continue;
     latest.set(s.id, s as { status: string; id: string; url: string });
   }
   const resPath = join(oc.out, "results.ndjson");
