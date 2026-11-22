@@ -61,6 +61,9 @@ export class CodeAnalysisError extends Error {
   }
 }
 
+/** The production parser could not start or finish a syntax walk. */
+export class ParseUnavailableError extends CodeAnalysisError {}
+
 export interface LiveScopeDto {
   readonly tenant: string;
   readonly clone: string;
@@ -104,6 +107,8 @@ export interface LocalInheritance {
   readonly slot: string;
   readonly childSlot: string;
   readonly parentSlotOrName: string;
+  /** True when syntax alone cannot bind the parent in this unit. */
+  readonly external?: boolean;
 }
 
 export interface SyntaxEvidence {
@@ -437,7 +442,8 @@ function isParsedUnit(value: unknown): value is ParsedUnit {
   const nonEmpty = (v: unknown): boolean => typeof v === "string" && v.length > 0 && !v.includes("\0");
   if (!unit.symbols.every(s => s && nonEmpty(s.slot) && nonEmpty(s.name) && nonEmpty(s.kind) && nonEmpty(s.bodyHash))
     || !unit.calls.every(c => c && nonEmpty(c.slot) && nonEmpty(c.fromSlot) && nonEmpty(c.targetSlotOrName) && typeof c.external === "boolean")
-    || !unit.inheritances.every(e => e && nonEmpty(e.slot) && nonEmpty(e.childSlot) && nonEmpty(e.parentSlotOrName))) return false;
+    || !unit.inheritances.every(e => e && nonEmpty(e.slot) && nonEmpty(e.childSlot) && nonEmpty(e.parentSlotOrName)
+      && (e.external === undefined || typeof e.external === "boolean"))) return false;
   if (typeof unit.topologyHash !== "string") return false;
   const syntax = unit.syntax as Record<string, unknown> | undefined;
   if (!syntax || typeof syntax !== "object") return false;
@@ -614,8 +620,14 @@ async function analyzeCodePinned(input: AnalyzeCodeInput, ports: CodeAnalysisPor
 
   // An unsigned cache cannot authenticate its own expected syntax inventory.
   // Shadow derivation uses the pinned input and usable grammar handle on every hit.
-  const fresh = structuredClone(await ports.extractor.parse({ bytes: Buffer.from(input.content, "utf8"), content: input.content,
-    dialect, language: input.language, grammarHandle, syntaxOptions: {} }));
+  let fresh: ParsedUnit;
+  try {
+    fresh = structuredClone(await ports.extractor.parse({ bytes: Buffer.from(input.content, "utf8"), content: input.content,
+      dialect, language: input.language, grammarHandle, syntaxOptions: {} }));
+  } catch (error) {
+    if (!(error instanceof ParseUnavailableError)) throw error;
+    return emptyOutcome(input.language, "unavailable", "unavailable", `parser-unavailable: ${error.message} (unit path "${input.path}")`);
+  }
   if (!isParsedUnit(fresh)) throw new CodeAnalysisError("deterministic extractor returned invalid syntax evidence");
   assertSyntaxLocal(fresh);
   const parsed: ParsedUnit = fresh;
@@ -714,7 +726,7 @@ async function analyzeCodePinned(input: AnalyzeCodeInput, ports: CodeAnalysisPor
     });
     const boundInheritances: ResolvedInheritanceDto[] = parsedUnit.inheritances.map((edge, index) => {
       const child = slotToId.get(edge.childSlot) ?? factId(semanticDigestValue, edge.childSlot, "class", "decl-ref", index);
-      const parent = slotToId.get(edge.parentSlotOrName) ?? `external:${edge.parentSlotOrName}`;
+      const parent = (edge.external ? undefined : slotToId.get(edge.parentSlotOrName)) ?? `external:${edge.parentSlotOrName}`;
       return {
         child,
         id: factId(semanticDigestValue, edge.slot, "inherits", "edge", index),
@@ -738,8 +750,8 @@ async function analyzeCodePinned(input: AnalyzeCodeInput, ports: CodeAnalysisPor
       }
     }
     for (const edge of parsedUnit.inheritances) {
-      if (!knownSlots.has(edge.parentSlotOrName)
-        && !parsedUnit.symbols.some((s) => s.name === edge.parentSlotOrName)) {
+      if (edge.external || (!knownSlots.has(edge.parentSlotOrName)
+        && !parsedUnit.symbols.some((s) => s.name === edge.parentSlotOrName))) {
         const from = slotToId.get(edge.childSlot) ?? edge.childSlot;
         scoped.push({
           fromId: from,
@@ -831,6 +843,7 @@ async function analyzeCodePinned(input: AnalyzeCodeInput, ports: CodeAnalysisPor
     && resolutionMatchesParse(parsed, symbols, calls, inheritances, unresolved, semanticDigestFor(input, dialect, grammarDigest, grammarAbi, grammarId));
 
   if (!syntaxComplete) {
+    diagnostics.push(syntaxDetail);
     return {
       cacheHit,
       calls,
@@ -1110,7 +1123,8 @@ export function repairAffectedCalls(input: RepairAffectedInput): RepairAffectedO
     const childSlot = edgeChildSlot(edge);
     const parentSlot = edgeParentSlot(edge);
     if (!survivingSlots.has(childSlot)) pending.add(childSlot);
-    if (survivingSlots.has(parentSlot) || survivingNames.has(parentSlot)) {
+    const external = "external" in edge && edge.external;
+    if (!external && (survivingSlots.has(parentSlot) || survivingNames.has(parentSlot))) {
       inheritances.push(
         typeof (edge as LocalInheritance).childSlot === "string"
           ? (edge as LocalInheritance)
@@ -1118,7 +1132,7 @@ export function repairAffectedCalls(input: RepairAffectedInput): RepairAffectedO
       );
       continue;
     }
-    if (!beforeBySlot.has(parentSlot) && !beforeSymbols.some(s => nameOfSymbol(s) === parentSlot)) {
+    if (external || (!beforeBySlot.has(parentSlot) && !beforeSymbols.some(s => nameOfSymbol(s) === parentSlot))) {
       // A parent outside this unit was never a declaration to repair/delete.
       // Keep the relation and emit the explicit cross-file unresolved fact.
       inheritances.push(typeof (edge as LocalInheritance).childSlot === "string" ? edge as LocalInheritance

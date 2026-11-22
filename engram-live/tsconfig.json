@@ -20,6 +20,7 @@
     "generation.ts",
     "registration.ts",
     "line-attribution.ts",
+    "parse-adapter.ts",
     "symbol-history.ts",
     "git-executor.ts",
     "integration.ts"
