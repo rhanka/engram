@@ -434,8 +434,28 @@ if (cliArgs.length > 0) {
 }
 
 const stageGrammarsRoot = join(stageRoot, "grammars");
+const ENGINE_AND_SCHEDULER_MODULES = [
+  "git-stream",
+  "git-protocol",
+  "history",
+  "refs",
+  "repository",
+  "retention",
+  "pr-sync",
+  "pr-attribution",
+  "worktree",
+  "attributes",
+  "filesystem",
+  "diffs",
+  "snapshots",
+  "content-policy",
+  "scheduler",
+  "watch",
+  "reconcile",
+  "coverage",
+];
 const emittedFiles = [
-  ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter"].flatMap(name =>
+  ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", ...ENGINE_AND_SCHEDULER_MODULES].flatMap(name =>
     [`${name}.js`, `${name}.d.ts`, `${name}.d.ts.map`]),
   "line-attribution.d.ts",
   "line-attribution.d.ts.map",
@@ -455,13 +475,13 @@ const emittedFiles = [
   "reused-extraction.js",
   "reused-extraction.d.ts",
   "reused-extraction.d.ts.map",
-  "index.d.ts",
-  "index.d.ts.map",
-  "index.js",
   "reused/extract-core.js",
   "reused/live-cache-keys.js",
   "reused/node-id.js",
   "reused/relation-remap.js",
+  "index.d.ts",
+  "index.d.ts.map",
+  "index.js",
 ];
 
 rmSync(stageRoot, { recursive: true, force: true });

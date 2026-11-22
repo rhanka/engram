@@ -20,6 +20,27 @@ const sleep = (ms: number): void => {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 };
 
+const ENGINE_AND_SCHEDULER_MODULES = [
+  "git-stream",
+  "git-protocol",
+  "history",
+  "refs",
+  "repository",
+  "retention",
+  "pr-sync",
+  "pr-attribution",
+  "worktree",
+  "attributes",
+  "filesystem",
+  "diffs",
+  "snapshots",
+  "content-policy",
+  "scheduler",
+  "watch",
+  "reconcile",
+  "coverage",
+] as const;
+
 function liveBuildIsFresh(): boolean {
   const marker = join(liveRoot, "dist", "index.js");
   if (!existsSync(marker)) return false;
@@ -39,6 +60,7 @@ function liveBuildIsFresh(): boolean {
     "parse-adapter.ts",
     "comparisons.ts",
     "reused-extraction.ts",
+    ...ENGINE_AND_SCHEDULER_MODULES.map((name) => `${name}.ts`),
     "reused/extract-core.d.ts",
     "tsconfig.json",
     "package.json",
@@ -54,7 +76,7 @@ function liveBuildIsFresh(): boolean {
   };
   if (!manifest.languages || typeof manifest.languages !== "object") return false;
   const requiredOutputs = [
-    ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter"].flatMap(name =>
+    ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", ...ENGINE_AND_SCHEDULER_MODULES].flatMap(name =>
       [`${name}.js`, `${name}.d.ts`, `${name}.d.ts.map`]),
     "index.js",
     "index.d.ts",
@@ -845,7 +867,7 @@ const EXPECTED_OS = ["linux"];
 
 function expectedPackedPaths(manifestLanguages: Record<string, { file: string }>): string[] {
   return [
-    ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter"].flatMap(name =>
+    ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", ...ENGINE_AND_SCHEDULER_MODULES].flatMap(name =>
       [`dist/${name}.js`, `dist/${name}.d.ts`, `dist/${name}.d.ts.map`]),
     "package.json",
     "grammar-manifest.json",
@@ -1180,7 +1202,7 @@ describe("live neutrality", () => {
     expect(source.map((file) => file.path)).toContain("engram-live/generation.ts");
     expect(source.map((file) => file.path)).toContain("engram-live/line-attribution.ts");
     expect(source.map((file) => file.path)).toContain("engram-live/symbol-history.ts");
-    for (const name of ["facts", "batch-codec", "generation", "line-attribution", "git-executor", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter"]) {
+    for (const name of ["facts", "batch-codec", "generation", "line-attribution", "git-executor", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", ...ENGINE_AND_SCHEDULER_MODULES]) {
       for (const extension of ["js", "d.ts", "d.ts.map"]) {
         expect(packedPaths).toContain(`dist/${name}.${extension}`);
       }
@@ -1404,7 +1426,7 @@ describe("live neutrality", () => {
     singleMutationRejected((w) => ({ ...w, packedPaths: [...w.packedPaths, "dist/fetch-grammars.py"] }), /Python/);
     singleMutationRejected((w) => ({ ...w, packedPaths: [...w.packedPaths, "node_modules/web-tree-sitter/index.js"] }), /node_modules/);
     singleMutationRejected((w) => ({ ...w, packedPaths: w.packedPaths.filter((path) => path !== "dist/integration.js") }), /missing from the packed closure/);
-    for (const name of ["facts", "batch-codec", "generation", "line-attribution", "git-executor", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter"]) {
+    for (const name of ["facts", "batch-codec", "generation", "line-attribution", "git-executor", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", ...ENGINE_AND_SCHEDULER_MODULES]) {
       for (const extension of ["js", "d.ts", "d.ts.map"]) {
         const missing = `dist/${name}.${extension}`;
         singleMutationRejected((w) => ({ ...w, packedPaths: w.packedPaths.filter((path) => path !== missing) }), /missing from the packed closure/);
@@ -1640,5 +1662,123 @@ describe("live neutrality", () => {
     }
     await expect(live.extractReused(["/probe/app.ts"], undefined as never)).rejects.toThrow(/explicit live operation/);
     await expect(live.extractReusedWithDiagnostics(["/probe/app.ts"], null as never)).rejects.toThrow(/explicit live operation/);
+  });
+
+  it("each newly packed engine and scheduler module is rejected when missing and adds no forbidden edge", async () => {
+    // E-ASM1 GUARD (plan/09 E-ASM): the 14 engines and 4 L6b modules enter
+    // the compile set, the emitted list and both exact packed-surface guards;
+    // removing any single entry is rejected and no module adds a forbidden edge.
+    const newlyPackedModules = ENGINE_AND_SCHEDULER_MODULES;
+    const manifestLanguages = JSON.parse(readFileSync(join(liveRoot, "grammar-manifest.json"), "utf8")).languages as Record<string, { file: string }>;
+    const { generated, packedPaths } = withLiveBuildLock(() => {
+      if (!liveBuildIsFresh()) {
+        execFileSync(process.execPath, [buildScript], { cwd: root, stdio: "inherit" });
+      }
+      return { generated: generatedFiles(), packedPaths: packedLivePaths() };
+    });
+
+    const source = sourceFiles();
+    for (const name of newlyPackedModules) {
+      const rel = `engram-live/${name}.ts`;
+      const scanned = source.find((file) => file.path === rel);
+      expect(scanned, `${rel} must exist in the neutral source set`).toBeDefined();
+      expect(checkSourceFile(scanned!), `${rel} must add no forbidden source edge`).toEqual([]);
+    }
+
+    const expected = expectedPackedPaths(manifestLanguages);
+    const checkScript = await import(pathToFileURL(join(root, "scripts", "check-live-package.mjs")).href) as {
+      expectedPackedPaths?: (languages: Record<string, { file: string }>) => string[];
+      extractLoadEdges: (content: string, scriptKind: number) => {
+        specifiers: string[];
+        loaderTargets: string[];
+        unresolved: number;
+        loaderFactoryReferences: number;
+      };
+    };
+    expect(typeof checkScript.expectedPackedPaths, "scripts/check-live-package.mjs must export expectedPackedPaths").toBe("function");
+    const scriptExpected = checkScript.expectedPackedPaths!(manifestLanguages);
+    expect(scriptExpected, "both packed-surface guards must agree on the exact packed surface").toEqual(expected);
+
+    const newEntries = newlyPackedModules.flatMap((name) => [
+      `dist/${name}.js`,
+      `dist/${name}.d.ts`,
+      `dist/${name}.d.ts.map`,
+    ]);
+    for (const entry of newEntries) {
+      expect(expected, `${entry} must be pinned in expectedPackedPaths`).toContain(entry);
+      expect(scriptExpected, `${entry} must be pinned in scripts/check-live-package.mjs`).toContain(entry);
+      expect(packedPaths, `${entry} must be present in the packed tarball`).toContain(entry);
+      if (entry.endsWith(".js") || entry.endsWith(".d.ts")) {
+        const emitted = generated.find((file) => file.path === `engram-live/${entry}`);
+        expect(emitted, `engram-live/${entry} must exist in dist`).toBeDefined();
+        expect(checkGeneratedFile(emitted!), `engram-live/${entry} must add no forbidden emitted edge`).toEqual([]);
+        const scriptKind = entry.endsWith(".d.ts") ? ts.ScriptKind.TS : ts.ScriptKind.JS;
+        const loadEdges = checkScript.extractLoadEdges(emitted!.content, scriptKind);
+        expect(loadEdges.unresolved, `engram-live/${entry} must have no unresolved dynamic import/loader`).toBe(0);
+        expect(loadEdges.loaderFactoryReferences, `engram-live/${entry} must build no loader`).toBe(0);
+      }
+    }
+
+    // Transitive static closure from dist/index.js must reach all 18 newly
+    // packed modules cleanly without escaping dist/ or adding forbidden edges.
+    const generatedByPath = new Map(generated.map((file) => [file.path, file]));
+    const visited = new Set<string>(["engram-live/dist/index.js"]);
+    const queue = [generatedByPath.get("engram-live/dist/index.js")];
+    expect(queue[0], "engram-live/dist/index.js must exist in dist").toBeDefined();
+    while (queue.length > 0) {
+      const current = queue.pop()!;
+      const edges = extractEdges(current.content);
+      expect(checkGeneratedFile(current), `${current.path} in index transitive closure must be clean`).toEqual([]);
+      for (const { specifier } of scanTargets(edges)) {
+        if (!isRelativeSpecifier(specifier)) continue;
+        const resolved = resolveRepoRelative(current.path, specifier);
+        expect(generatedByPath.has(resolved), `${current.path} relative edge "${specifier}" must target an emitted file in dist (resolved ${resolved})`).toBe(true);
+        if (!visited.has(resolved)) {
+          visited.add(resolved);
+          queue.push(generatedByPath.get(resolved)!);
+        }
+      }
+    }
+    for (const name of newlyPackedModules) {
+      expect(visited.has(`engram-live/dist/${name}.js`), `dist/index.js transitive closure must reach dist/${name}.js`).toBe(true);
+    }
+
+    // Missing-entry mutation: start from the complete passing witness package
+    // and remove EACH ONE of the 54 newly packed entries individually.
+    const witness: PackageClosureInput = {
+      packedPaths: expected,
+      packageJson: JSON.parse(readFileSync(join(liveRoot, "package.json"), "utf8")) as Record<string, unknown>,
+      lockJson: JSON.parse(readFileSync(join(liveRoot, "package-lock.json"), "utf8")),
+      manifestLanguages,
+    };
+    expect(checkImportClosure([], "package", witness)).toEqual([]);
+    for (const missing of newEntries) {
+      const violations = checkImportClosure([], "package", {
+        ...witness,
+        packedPaths: witness.packedPaths.filter((path) => path !== missing),
+      });
+      expect(
+        violations.some((violation) => /missing from the packed closure/.test(violation.reason) && violation.path === missing),
+        `removing ${missing} must be rejected as missing from the packed closure (got ${JSON.stringify(violations)})`,
+      ).toBe(true);
+    }
+
+    // Neutrality rules stay strict on every newly packed module (source and emitted).
+    for (const name of newlyPackedModules) {
+      for (const injected of [
+        'import { db } from "node:sqlite";',
+        'import { x } from "../src/cli.js";',
+        'const load = createRequire(import.meta.url); load("node:crypto");',
+      ]) {
+        expect(
+          checkImportClosure([{ path: `engram-live/${name}.ts`, content: injected }], "source"),
+          `source scan must reject forbidden edge in engram-live/${name}.ts`,
+        ).not.toEqual([]);
+        expect(
+          checkImportClosure([{ path: `engram-live/dist/${name}.js`, content: injected }], "generated"),
+          `generated scan must reject forbidden edge in engram-live/dist/${name}.js`,
+        ).not.toEqual([]);
+      }
+    }
   });
 });

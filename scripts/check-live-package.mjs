@@ -472,17 +472,77 @@ function scanExtractedExecutable(pkgDir, packedSet, path) {
   return violations;
 }
 
+// The 14 engine modules and 4 L6b scheduler/watch/reconcile/coverage modules
+// promoted into the exact delivered surface by E-ASM1 (plan/09 E-ASM).
+export const ENGINE_AND_SCHEDULER_MODULES = [
+  "git-stream",
+  "git-protocol",
+  "history",
+  "refs",
+  "repository",
+  "retention",
+  "pr-sync",
+  "pr-attribution",
+  "worktree",
+  "attributes",
+  "filesystem",
+  "diffs",
+  "snapshots",
+  "content-policy",
+  "scheduler",
+  "watch",
+  "reconcile",
+  "coverage",
+];
+
+// The EXACT delivered surface: package.json + the pinned grammar manifest +
+// the enumerated built dist files + one WASM per pinned language.
+export function expectedPackedPaths(manifestLanguages) {
+  return [
+    ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", ...ENGINE_AND_SCHEDULER_MODULES].flatMap(name =>
+      [`dist/${name}.js`, `dist/${name}.d.ts`, `dist/${name}.d.ts.map`]),
+    "package.json",
+    "grammar-manifest.json",
+    "dist/index.js",
+    "dist/index.d.ts",
+    "dist/index.d.ts.map",
+    "dist/contracts.js",
+    "dist/contracts.d.ts",
+    "dist/contracts.d.ts.map",
+    "dist/registration.js",
+    "dist/registration.d.ts",
+    "dist/registration.d.ts.map",
+    "dist/integration.js",
+    "dist/integration.d.ts",
+    "dist/integration.d.ts.map",
+    "dist/reused-extraction.js",
+    "dist/reused-extraction.d.ts",
+    "dist/reused-extraction.d.ts.map",
+    "dist/reused/extract-core.js",
+    "dist/reused/live-cache-keys.js",
+    "dist/reused/node-id.js",
+    "dist/reused/relation-remap.js",
+    "dist/line-attribution.js",
+    "dist/line-attribution.d.ts",
+    "dist/line-attribution.d.ts.map",
+    "dist/git-executor.js",
+    "dist/git-executor.d.ts",
+    "dist/git-executor.d.ts.map",
+    ...Object.values(manifestLanguages).map((entry) => `dist/grammars/${entry.file}`),
+  ].sort();
+}
+
 // The pack/extract/scan flow runs only when the script is executed directly
 // (node scripts/check-live-package.mjs). Importing the module instead exposes
-// the AST scanner for the neutrality suite's in-memory tarball mutations,
-// with no filesystem side effect.
+// the AST scanner and exact surface helper for the neutrality suite's
+// in-memory tarball mutations, with no filesystem side effect.
 function runLivePackageCheck() {
 
   // 0. Preconditions: a build must exist (no silent skip).
   for (const emitted of ["index.js", "contracts.js", "registration.js", "integration.js", "index.d.ts", "contracts.d.ts", "registration.d.ts", "integration.d.ts", "line-attribution.js", "line-attribution.d.ts", "line-attribution.d.ts.map", "git-executor.js", "git-executor.d.ts", "git-executor.d.ts.map",
     "reused-extraction.js", "reused-extraction.d.ts", "reused-extraction.d.ts.map",
     "reused/extract-core.js", "reused/live-cache-keys.js", "reused/node-id.js", "reused/relation-remap.js",
-    ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter"].flatMap(name => [`${name}.js`, `${name}.d.ts`, `${name}.d.ts.map`])]) {
+    ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter", ...ENGINE_AND_SCHEDULER_MODULES].flatMap(name => [`${name}.js`, `${name}.d.ts`, `${name}.d.ts.map`])]) {
     if (!existsSync(join(liveRoot, "dist", emitted))) {
       note(`build missing: engram-live/dist/${emitted} (run node scripts/build-live.mjs first; no skip)`);
     }
@@ -498,43 +558,6 @@ function runLivePackageCheck() {
   const manifest = JSON.parse(readFileSync(join(liveRoot, "grammar-manifest.json"), "utf8"));
   const packageJson = JSON.parse(readFileSync(join(liveRoot, "package.json"), "utf8"));
   const lockJson = JSON.parse(readFileSync(join(liveRoot, "package-lock.json"), "utf8"));
-
-  // The EXACT delivered surface: package.json + the pinned grammar manifest +
-  // The enumerated built dist files + one WASM per pinned language.
-  function expectedPackedPaths(manifestLanguages) {
-    return [
-      ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter"].flatMap(name =>
-        [`dist/${name}.js`, `dist/${name}.d.ts`, `dist/${name}.d.ts.map`]),
-      "package.json",
-      "grammar-manifest.json",
-      "dist/index.js",
-      "dist/index.d.ts",
-      "dist/index.d.ts.map",
-      "dist/contracts.js",
-      "dist/contracts.d.ts",
-      "dist/contracts.d.ts.map",
-      "dist/registration.js",
-      "dist/registration.d.ts",
-      "dist/registration.d.ts.map",
-      "dist/integration.js",
-      "dist/integration.d.ts",
-      "dist/integration.d.ts.map",
-      "dist/reused-extraction.js",
-      "dist/reused-extraction.d.ts",
-      "dist/reused-extraction.d.ts.map",
-      "dist/reused/extract-core.js",
-      "dist/reused/live-cache-keys.js",
-      "dist/reused/node-id.js",
-      "dist/reused/relation-remap.js",
-      "dist/line-attribution.js",
-      "dist/line-attribution.d.ts",
-      "dist/line-attribution.d.ts.map",
-      "dist/git-executor.js",
-      "dist/git-executor.d.ts",
-      "dist/git-executor.d.ts.map",
-      ...Object.values(manifestLanguages).map((entry) => `dist/grammars/${entry.file}`),
-    ].sort();
-  }
 
 
   // 1. Pack exactly as delivered.
