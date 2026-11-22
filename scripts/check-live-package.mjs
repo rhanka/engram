@@ -480,6 +480,8 @@ function runLivePackageCheck() {
 
   // 0. Preconditions: a build must exist (no silent skip).
   for (const emitted of ["index.js", "contracts.js", "registration.js", "integration.js", "index.d.ts", "contracts.d.ts", "registration.d.ts", "integration.d.ts", "line-attribution.js", "line-attribution.d.ts", "line-attribution.d.ts.map", "git-executor.js", "git-executor.d.ts", "git-executor.d.ts.map",
+    "reused-extraction.js", "reused-extraction.d.ts", "reused-extraction.d.ts.map",
+    "reused/extract-core.js", "reused/live-cache-keys.js", "reused/node-id.js", "reused/relation-remap.js",
     ...["facts", "batch-codec", "generation", "symbol-history", "code-analysis", "analysis-cache", "comparisons", "parse-adapter"].flatMap(name => [`${name}.js`, `${name}.d.ts`, `${name}.d.ts.map`])]) {
     if (!existsSync(join(liveRoot, "dist", emitted))) {
       note(`build missing: engram-live/dist/${emitted} (run node scripts/build-live.mjs first; no skip)`);
@@ -517,6 +519,13 @@ function runLivePackageCheck() {
       "dist/integration.js",
       "dist/integration.d.ts",
       "dist/integration.d.ts.map",
+      "dist/reused-extraction.js",
+      "dist/reused-extraction.d.ts",
+      "dist/reused-extraction.d.ts.map",
+      "dist/reused/extract-core.js",
+      "dist/reused/live-cache-keys.js",
+      "dist/reused/node-id.js",
+      "dist/reused/relation-remap.js",
       "dist/line-attribution.js",
       "dist/line-attribution.d.ts",
       "dist/line-attribution.d.ts.map",
