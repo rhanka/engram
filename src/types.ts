@@ -1,5 +1,5 @@
 import type { MetamodelVersion, Sha256Digest } from "./metamodel-contracts.js";
-import type { ModelAttribute, ModelHeader, Names, Reference } from "./model-schemas.js";
+import type { ModelAttribute, ModelEndpoints, ModelHeader, Names, Reference } from "./model-schemas.js";
 
 /** File type classification for corpus files. */
 export enum FileType {
@@ -896,6 +896,10 @@ export interface OntologyRelationType {
   source_types?: string[];
   target_types?: string[];
   cardinality?: OntologyRelationCardinality;
+  attributes?: readonly ModelAttribute[];
+  key?: Names;
+  unique?: readonly Names[];
+  endpoints?: ModelEndpoints;
   requires_evidence?: boolean;
   assertion_basis?: string | string[];
   derivation_method?: string | string[];
@@ -1229,6 +1233,10 @@ export interface NormalizedOntologyRelationType {
   source_types: string[];
   target_types: string[];
   cardinality?: OntologyRelationCardinality;
+  attributes?: readonly ModelAttribute[];
+  key?: Names;
+  unique?: readonly Names[];
+  endpoints?: ModelEndpoints;
   requires_evidence: boolean;
   assertion_basis: string[];
   derivation_methods: string[];

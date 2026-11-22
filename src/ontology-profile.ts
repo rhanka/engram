@@ -4,7 +4,7 @@ import { extname, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { toJsonValue } from "./json-value.js";
 import type { Sha256Digest } from "./metamodel-contracts.js";
-import { DATA_MODEL_FORMAT, type ModelAttribute, type Names, validateModelAttributes, validateModelEnums, validateModelFkEdges, validateModelKeys } from "./model-schemas.js";
+import { DATA_MODEL_FORMAT, type FieldPair, type ModelAttribute, type Names, validateModelAttributes, validateModelEnums, validateModelFkEdges, validateModelKeys } from "./model-schemas.js";
 import { canonicalBytes, digestOfPreimage } from "./ontology-guardian/canonical.js";
 import { fromInternalDigest, semanticProfileDigest, stableForHash } from "./ontology-guardian/digests.js";
 import { isRecord, validateRelationCardinality } from "./profile-validate.js";
@@ -119,6 +119,8 @@ function normalizeRegistry(registry: OntologyRegistrySpec): NormalizedOntologyRe
   };
 }
 
+const copyPair = (p: FieldPair): FieldPair => ({ fields: [...p.fields] as Names, targetFields: [...p.targetFields] as Names });
+const normalizeRow = (attrs: readonly ModelAttribute[], key: Names, unique?: readonly Names[]) => ({ attributes: attrs.map((a) => ({ ...a, type: Object.fromEntries(Object.entries(a.type).filter(([, v]) => v !== undefined)) as ModelAttribute["type"] })), key: [...key] as Names, ...(unique === undefined ? {} : { unique: unique.map((t) => [...t] as Names) }) });
 function normalizeNodeType(
   nodeType: OntologyNodeType,
   sourcePath: string | undefined,
@@ -129,12 +131,7 @@ function normalizeNodeType(
     const { unique, references, ...rest } = nodeType;
     nodeType = {
       ...rest,
-      attributes: nodeType.attributes.map((attribute) => ({
-        ...attribute,
-        type: Object.fromEntries(Object.entries(attribute.type).filter(([, value]) => value !== undefined)) as ModelAttribute["type"],
-      })),
-      key: [...nodeType.key!] as Names,
-      ...(unique === undefined ? {} : { unique: unique.map((tuple) => [...tuple] as Names) }),
+      ...normalizeRow(nodeType.attributes, nodeType.key!, unique),
       ...(references === undefined ? {} : { references: references.map((r) => ({ fields: [...r.fields] as Names, relation: r.relation, targetFields: [...r.targetFields] as Names })) }),
     };
   }
@@ -366,7 +363,7 @@ export function validateOntologyProfile(profile: OntologyProfile): string[] {
       const attrErrors = validateModelAttributes(nodeType.attributes, enums, `node_types.${nodeTypeId}.attributes`);
       errors.push(...attrErrors, ...(attrErrors.length === 0 ? validateModelKeys({ attributes: nodeType.attributes!, key: nodeType.key, unique: nodeType.unique }, `node_types.${nodeTypeId}`) : []));
     }
-    if (errors.length === start) errors.push(...validateModelFkEdges(nodeTypes, relationTypes, relationEndpoints));
+    if (errors.length === start) errors.push(...validateModelFkEdges(nodeTypes, relationTypes, relationEndpoints, enums));
   }
 
   if (typeof profile.id !== "string" || profile.id.trim().length === 0) {
@@ -664,6 +661,7 @@ function buildRuntimeProfile(profile: OntologyProfile, sourcePath?: string, auth
       Object.entries(relationTypes).map(([id, relation]) => [id, {
         ...normalizeRelation(relation),
         ...((v1 || data_model !== undefined) && relation.cardinality !== undefined ? { cardinality: structuredClone(relation.cardinality) } : {}),
+        ...(data_model !== undefined && Array.isArray(relation.attributes) ? { ...normalizeRow(relation.attributes, relation.key!, relation.unique), endpoints: { source: copyPair(relation.endpoints!.source), target: copyPair(relation.endpoints!.target) } } : {}),
       }]),
     ),
     registries: Object.fromEntries(

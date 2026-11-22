@@ -1,3 +1,4 @@
+import type { OntologyRelationCardinality, OntologyRelationType } from "./types.js";
 export type NativeRefKind = "entity" | "relation" | "occurrence" | "port" | "view" | "resource" | "document";
 export type NativeScalarSchema =
   | { readonly kind: "text"; readonly minLength?: number; readonly maxLength?: number; readonly pattern?: string; readonly patternName?: string }
@@ -25,6 +26,9 @@ export type Names = readonly [string, ...string[]];
 export interface FieldPair { fields: Names; targetFields: Names }
 export interface Reference extends FieldPair { relation: string }
 export interface ModelRow { attributes: readonly ModelAttribute[]; key: Names; unique?: readonly Names[] }
+export type Cardinality = Required<OntologyRelationCardinality>;
+export interface ModelEndpoints { source: FieldPair; target: FieldPair }
+export type ModelEdge = OntologyRelationType & { cardinality: Cardinality } & ({ attributes?: never; key?: never; unique?: never; endpoints?: never } | (ModelRow & { endpoints: ModelEndpoints }));
 type Fragment = Record<string, unknown>;
 export const NATIVE_TEXT_SCHEMA: Fragment = { type: "object", properties: { kind: { const: "text" }, minLength: { type: "number" }, maxLength: { type: "number" }, pattern: { type: "string" }, patternName: { type: "string" } }, required: ["kind"], additionalProperties: false };
 export const NATIVE_BOOLEAN_SCHEMA: Fragment = { type: "object", properties: { kind: { const: "boolean" } }, required: ["kind"], additionalProperties: false };
@@ -124,15 +128,17 @@ function sameType(a: LogicalType, b: LogicalType): boolean {
   if ("enumRef" in a || "enumRef" in b) return "enumRef" in a && "enumRef" in b && a.enumRef === b.enumRef;
   return a.kind === b.kind && (a.kind === "decimal" && b.kind === "decimal" ? a.precision === b.precision && a.scale === b.scale : TEXT_KINDS.has(a.kind) && TEXT_KINDS.has(b.kind) ? (a as TextDomain).minLength === (b as TextDomain).minLength && (a as TextDomain).maxLength === (b as TextDomain).maxLength : true);
 }
-export function validateFieldPair(pair: Record<string, unknown>, local: ModelRow, target: ModelRow, path: string): string[] {
+export function validateFieldPair(pair: Record<string, unknown>, local: Pick<ModelRow, "attributes">, target: ModelRow, path: string, nonNull = false): string[] {
   const lMap = new Map(local.attributes.map((a) => [a.name, a])), tMap = new Map(target.attributes.map((a) => [a.name, a]));
-  const l = validateTuple(pair.fields, new Map(local.attributes.map((a) => [a.name, a.nullable])), false, `${path}.fields`), t = validateTuple(pair.targetFields, new Map(target.attributes.map((a) => [a.name, a.nullable])), false, `${path}.targetFields`);
+  const l = validateTuple(pair.fields, new Map(local.attributes.map((a) => [a.name, a.nullable])), nonNull, `${path}.fields`), t = validateTuple(pair.targetFields, new Map(target.attributes.map((a) => [a.name, a.nullable])), false, `${path}.targetFields`);
   if (l.errors.length + t.errors.length > 0) return [...l.errors, ...t.errors];
   const lf = pair.fields as Names, tf = pair.targetFields as Names, keys = new Set([JSON.stringify(target.key), ...(target.unique ?? []).filter((u) => u.every((c) => !tMap.get(c)!.nullable)).map((u) => JSON.stringify(u))]);
   if (lf.length !== tf.length || !keys.has(t.id!)) return [`${path}.targetFields ${lf.length !== tf.length ? "must match fields arity" : "must reference a primary key or non-nullable unique tuple"}`];
   return lf.flatMap((f, i) => sameType(lMap.get(f)!.type, tMap.get(tf[i]!)!.type) ? [] : [`${path}.fields[${i}] type does not match targetFields[${i}]`]);
 }
-export function validateModelFkEdges<R extends object>(nodes: Record<string, { readonly attributes?: readonly ModelAttribute[]; readonly key?: Names; readonly unique?: readonly Names[]; readonly references?: unknown }>, relations: Record<string, R>, endpoints: (relation: R, field: "source" | "target") => string[]): string[] {
+const isBound = (b: unknown): b is { min: number; max: number | "many" } => isRecord(b) && extraKey(b, "min", "max") === undefined && isNonNegInt(b.min) && (b.max === "many" || (isNonNegInt(b.max) && b.max >= b.min));
+const isUnique = (row: Pick<ModelRow, "key" | "unique">, fields: Names): boolean => { const s = new Set(fields); return [row.key, ...(row.unique ?? [])].some((u) => u.every((c) => s.has(c))); };
+export function validateModelFkEdges<R extends object>(nodes: Record<string, { readonly attributes?: readonly ModelAttribute[]; readonly key?: Names; readonly unique?: readonly Names[]; readonly references?: unknown }>, relations: Record<string, R>, endpoints: (relation: R, field: "source" | "target") => string[], enums?: Record<string, unknown>): string[] {
   const errors: string[] = [], nodeMap = new Map(Object.entries(nodes)), relMap = new Map<string, { rel: Record<string, unknown>; src: string[]; dst: string[] }>(), bound = new Set<string>();
   for (const [id, raw] of Object.entries(relations)) {
     const src = endpoints(raw, "source"), dst = endpoints(raw, "target");
@@ -158,6 +164,33 @@ export function validateModelFkEdges<R extends object>(nodes: Record<string, { r
       if (!matchBound(card.out, nullable ? 0 : 1, 1)) errors.push(`${relPath}.cardinality.out must be {min:${nullable ? 0 : 1},max:1}`);
       if (!matchBound(card.in, 0, unique ? 1 : "many")) errors.push(`${relPath}.cardinality.in must be {min:0,max:${unique ? 1 : "many"}}`);
     });
+  }
+  if (enums === undefined || errors.length > 0) return errors;
+  for (const [id, info] of relMap) {
+    if (bound.has(id) || info.src.length !== 1 || info.dst.length !== 1 || !nodeMap.has(info.src[0]!) || !nodeMap.has(info.dst[0]!)) continue;
+    const rel = info.rel, p = `relation_types.${id}`, ep = rel.endpoints, attrErrs = validateModelAttributes(rel.attributes, enums, `${p}.attributes`), epOk = { source: false, target: false };
+    let keyOk = false; errors.push(...attrErrs);
+    if (attrErrs.length === 0) {
+      const row = { attributes: rel.attributes as readonly ModelAttribute[], key: rel.key as Names, unique: rel.unique as readonly Names[] | undefined }, keyErrs = validateModelKeys(row, p);
+      errors.push(...keyErrs); keyOk = keyErrs.length === 0;
+      if (!isRecord(ep)) errors.push(`${p}.endpoints must be an object`);
+      else {
+        const extra = extraKey(ep, "source", "target"); if (extra !== undefined) errors.push(`${p}.endpoints.${extra} is not allowed`);
+        for (const [side, nodeId] of [["source", info.src[0]!], ["target", info.dst[0]!]] as const) {
+          const pair = ep[side], epPath = `${p}.endpoints.${side}`; if (!isRecord(pair)) { errors.push(`${epPath} must be an object`); continue; }
+          const pExtra = extraKey(pair, "fields", "targetFields"), pErrs = validateFieldPair(pair, row, nodeMap.get(nodeId)! as ModelRow, epPath, true);
+          if (pExtra !== undefined) errors.push(`${epPath}.${pExtra} is not allowed`);
+          errors.push(...pErrs); if (pExtra === undefined && pErrs.length === 0) epOk[side] = true;
+        }
+      }
+    }
+    const card = rel.cardinality;
+    if (!isRecord(card) || extraKey(card, "in", "out") !== undefined) errors.push(`${p}.cardinality must declare in and out bounds`);
+    else for (const [dir, side] of [["out", "source"], ["in", "target"]] as const) {
+      const b = card[dir];
+      if (!isBound(b)) errors.push(`${p}.cardinality.${dir} must declare integer min >= 0 and max >= min or "many"`);
+      else if (b.max === 1 && keyOk && epOk[side] && !isUnique(rel as unknown as ModelRow, ((ep as Record<string, FieldPair>)[side]!).fields)) errors.push(`${p}.cardinality.${dir} max 1 requires a unique endpoints.${side}.fields tuple`);
+    }
   }
   return errors;
 }
