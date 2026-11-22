@@ -1040,15 +1040,25 @@ describe("live package", () => {
     // host seam instead of a source-root default, and the isolated build
     // audits it. No src/* import here: this file stays inside the neutral
     // test closure; the runtime seam behavior is covered by
-    // tests/live-code-version.test.ts.
-    const extractSource = readFileSync(join(root, "src", "extract.ts"), "utf8");
+    // tests/live-code-version.test.ts. Since L5-P2a the seam lives in the
+    // closed core (src/extract-core.ts, src/live-cache-keys.ts) and the root
+    // host module (src/extract.ts) binds it.
+    const coreSource = readFileSync(join(root, "src", "extract-core.ts"), "utf8");
     // Boundary-precise markers: a bare "cacheStore" substring would also
     // match a renamed field, so the guard requires the exact declarations.
     for (const symbol of ["LiveExtractionPorts", "readonly cacheStore?:", "readonly grammarWasm?:", "liveOperationScope"]) {
-      expect(extractSource, `reused extraction exposes the injected seam "${symbol}"`).toContain(symbol);
+      expect(coreSource, `closed core exposes the injected seam "${symbol}"`).toContain(symbol);
+    }
+    const extractSource = readFileSync(join(root, "src", "extract.ts"), "utf8");
+    for (const symbol of ["bindExtractCoreHost", "./extract-core.js"]) {
+      expect(extractSource, `root host module binds the closed core "${symbol}"`).toContain(symbol);
+    }
+    const liveCacheKeysSource = readFileSync(join(root, "src", "live-cache-keys.ts"), "utf8");
+    for (const symbol of ["InjectedCacheStore", "liveExtractionKey"]) {
+      expect(liveCacheKeysSource, `closed cache leaf exposes the injected seam "${symbol}"`).toContain(symbol);
     }
     const cacheSource = readFileSync(join(root, "src", "cache.ts"), "utf8");
-    for (const symbol of ["InjectedCacheStore", "liveContentKey"]) {
+    for (const symbol of ["liveContentKey"]) {
       expect(cacheSource, `reused cache exposes the injected seam "${symbol}"`).toContain(symbol);
     }
     // Isolated-build audit, fast mode (no compile): exit 0 and names the
@@ -1233,5 +1243,82 @@ describe("live package", () => {
       expect(networkCalls).toBe(0);
       expect(inventoryDigest({ root: repo })).toBe(digestBefore);
     } finally { box.dispose(); }
+  });
+});
+
+describe("L5-P2a closed core of the reused extraction", () => {
+  it("the closed core of the reused extraction imports only node builtins and modules of its enumerated set and builds no loader", () => {
+    // L5-P2a RED (plan/09 L5-P): the closure audit of the build walks the
+    // static value-import closure from src/extract-core.ts and refuses any
+    // edge outside the enumerated set. It fails on the receiving base: no
+    // closed core exists there.
+    let output: string;
+    try {
+      output = execFileSync(process.execPath, [buildScript, "--audit-only"], { cwd: root, encoding: "utf8" });
+    } catch (error) {
+      const detail = error instanceof Error ? (error as { stderr?: unknown }).stderr ?? error.message : String(error);
+      throw new Error(`closed-core closure audit failed: ${String(detail)}`);
+    }
+    expect(output, "closure audit names the closed core").toContain("closed core");
+  });
+
+  it("the closure audit rejects an injected bare module a loader reference and an edge that leaves the enumerated set", () => {
+    // L5-P2a GUARD (plan/09 L5-P): three mutations on an isolated copy of
+    // the core, each rejected by the audit. The copy is read from an
+    // isolated tree (never from the repository), so a rejected mutation
+    // cannot touch the delivered sources.
+    const closedSet = ["extract-core.ts", "live-cache-keys.ts", "node-id.ts", "relation-remap.ts"];
+    const neutralModules = ["analysis-cache.ts", "code-analysis.ts", "comparisons.ts", "parse-adapter.ts", "symbol-history.ts"];
+    const readCore = (): string => readFileSync(join(root, "src", "extract-core.ts"), "utf8");
+    const trees: string[] = [];
+    const isolatedTree = (mutatedCore: string | null): string => {
+      const tree = mkdtempSync(join(tmpdir(), "live-closed-core-"));
+      trees.push(tree);
+      mkdirSync(join(tree, "src"), { recursive: true });
+      mkdirSync(join(tree, "engram-live"), { recursive: true });
+      for (const name of [...closedSet, "extract.ts", "cache.ts"]) {
+        copyFileSync(join(root, "src", name), join(tree, "src", name));
+      }
+      for (const name of neutralModules) {
+        copyFileSync(join(liveRoot, name), join(tree, "engram-live", name));
+      }
+      if (mutatedCore !== null) writeFileSync(join(tree, "src", "extract-core.ts"), mutatedCore);
+      return tree;
+    };
+    const auditTree = (tree: string): { status: number; output: string } => {
+      try {
+        const out = execFileSync(process.execPath, [buildScript, "--audit-only"], {
+          cwd: root,
+          encoding: "utf8",
+          env: { ...process.env, ENGRAM_BUILD_LIVE_ROOT: tree },
+        });
+        return { status: 0, output: out };
+      } catch (error) {
+        const detail = error instanceof Error ? (error as { stderr?: unknown }).stderr ?? error.message : String(error);
+        return { status: 1, output: String(detail) };
+      }
+    };
+    try {
+      const valid = auditTree(isolatedTree(null));
+      expect(valid.status, `valid closed core passes the audit: ${valid.output}`).toBe(0);
+      const base = readCore();
+      const mutations: Array<[string, string]> = [
+        ["bare module", `${base}\nimport graphologyDefault from "graphology";\nexport const leakedGraphology = graphologyDefault;\n`],
+        ["loader reference", `${base}\nimport { createRequire } from "node:module";\nexport const leakedRequire = createRequire;\n`],
+        ["edge outside the enumerated set", `${base}\nimport { sanitizeLabel as movedSanitize } from "./security.js";\nexport const movedLabel = movedSanitize;\n`],
+        ["default bare-module import", `${base}\nimport pkg from "evil-pkg";\nexport const leakedPkg = pkg;\n`],
+        ["default import starting with t", `${base}\nimport ts from "typescript";\nexport const leakedTs = ts;\n`],
+        ["default relative import", `${base}\nimport parse from "./security.js";\nexport const leakedParse = parse;\n`],
+        ["mixed default and named import", `${base}\nimport def, { sanitizeLabel as namedSanitize } from "./security.js";\nexport const leakedMixed = [def, namedSanitize];\n`],
+        ["export-star re-export", `${base}\nexport * from "./security.js";\n`],
+        ["named re-export", `${base}\nexport { sanitizeLabel } from "./security.js";\n`],
+      ];
+      for (const [label, mutated] of mutations) {
+        const result = auditTree(isolatedTree(mutated));
+        expect(result.status, `closure audit rejects an injected ${label}: ${result.output}`).not.toBe(0);
+      }
+    } finally {
+      for (const tree of trees) rmSync(tree, { recursive: true, force: true });
+    }
   });
 });

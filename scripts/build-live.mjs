@@ -21,8 +21,9 @@
 // DIGEST_MISMATCH, OUTPUT_INVALID, L5_AUDIT_FAILED, USAGE.
 //
 // Modes: no argument runs the full build (compile + L5 seam audit +
-// grammar verification); `--audit-only` runs the L5 seam audit alone and
-// exits 0/1 without compiling. Any other argument is refused (USAGE).
+// grammar verification); `--audit-only` runs the L5 seam audit and the
+// closed-core closure audit (plan/09 L5-P2a) and exits 0/1 without compiling.
+// Any other argument is refused (USAGE).
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -41,6 +42,13 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// Test-only tree override (plan/09 L5-P2a GUARD): the closure-audit test runs
+// `--audit-only` against isolated copies of the closed set that never touch
+// the repository. Only the audit path reads through it; the build below
+// always uses the repository root.
+const auditRoot = process.env.ENGRAM_BUILD_LIVE_ROOT
+  ? resolve(process.env.ENGRAM_BUILD_LIVE_ROOT)
+  : root;
 const liveRoot = join(root, "engram-live");
 const distRoot = join(liveRoot, "dist");
 const grammarsRoot = join(distRoot, "grammars");
@@ -76,11 +84,11 @@ function sha256(bytes) {
 // The audit emits no file: the exact packed surface stays pinned by
 // tests/live-neutrality.test.ts (G2 also delivers the reused L5 modules as
 // internal package files). Returns true when every check passes.
-function runL5Audit() {
+function runL5Audit(base) {
   const failures = [];
   const read = (rel) => {
     try {
-      return readFileSync(join(root, rel), "utf8");
+      return readFileSync(join(base, rel), "utf8");
     } catch {
       failures.push(`${rel} is missing`);
       return null;
@@ -139,13 +147,30 @@ function runL5Audit() {
       }
     }
   }
-  const extract = read("src/extract.ts");
-  if (extract !== null) {
+  // L5-P2a: the extraction seam lives in the closed core; the root host
+  // module binds it (see ExtractCoreHost in src/extract-core.ts).
+  const core = read("src/extract-core.ts");
+  if (core !== null) {
     // Boundary-precise markers: a bare "cacheStore" substring would also
     // match a renamed field, so the audit requires the exact declarations.
     for (const symbol of ["LiveExtractionPorts", "readonly cacheStore?:", "readonly grammarWasm?:", "live !== undefined", "liveNoCache", "liveExtractionKey", "liveOperationScope", "resolveLiveLanguage"]) {
+      if (!core.includes(symbol)) {
+        failures.push(`src/extract-core.ts must expose the injected L5 seam "${symbol}"`);
+      }
+    }
+    // R13: deterministic resolution/comparison/repair — no model SDK in the
+    // reused live closure either.
+    for (const edge of ["mistral", "openai", "anthropic", "-bedrock", "cohere"]) {
+      if (core.toLowerCase().includes(edge)) {
+        failures.push(`src/extract-core.ts carries a forbidden model edge "${edge}" (R13)`);
+      }
+    }
+  }
+  const extract = read("src/extract.ts");
+  if (extract !== null) {
+    for (const symbol of ["bindExtractCoreHost", "./extract-core.js"]) {
       if (!extract.includes(symbol)) {
-        failures.push(`src/extract.ts must expose the injected L5 seam "${symbol}"`);
+        failures.push(`src/extract.ts must bind the closed core "${symbol}"`);
       }
     }
     // R13: deterministic resolution/comparison/repair — no model SDK in the
@@ -158,9 +183,17 @@ function runL5Audit() {
   }
   const cache = read("src/cache.ts");
   if (cache !== null) {
-    for (const symbol of ["InjectedCacheStore", "liveContentKey", "liveExtractionKey", "LIVE_CACHE_SCHEMA_VERSION", "assertValidLiveStore", "liveNoCache"]) {
+    for (const symbol of ["liveContentKey", "liveNoCache", "live-cache-keys.js"]) {
       if (!cache.includes(symbol)) {
         failures.push(`src/cache.ts must expose the injected L5 seam "${symbol}"`);
+      }
+    }
+  }
+  const liveCacheKeys = read("src/live-cache-keys.ts");
+  if (liveCacheKeys !== null) {
+    for (const symbol of ["InjectedCacheStore", "liveExtractionKey", "LIVE_CACHE_SCHEMA_VERSION", "assertValidLiveStore"]) {
+      if (!liveCacheKeys.includes(symbol)) {
+        failures.push(`src/live-cache-keys.ts must expose the injected L5 seam "${symbol}"`);
       }
     }
   }
@@ -172,10 +205,174 @@ function runL5Audit() {
   return true;
 }
 
+// Closed extraction core (plan/09 L5-P2a): the single enumeration of the
+// closed set, also reused by the packaged delivery of L5-P2b. The static
+// value-import closure from src/extract-core.ts holds only node: builtins
+// other than node:module and these modules; type-only imports are erased at
+// emit and do not count.
+const CLOSED_EXTRACTION_SET = [
+  "src/extract-core.ts",
+  "src/live-cache-keys.ts",
+  "src/node-id.ts",
+  "src/relation-remap.ts",
+];
+
+function stripComments(source) {
+  let out = "";
+  let i = 0;
+  const n = source.length;
+  while (i < n) {
+    const two = source.slice(i, i + 2);
+    if (two === "//") {
+      const end = source.indexOf("\n", i + 2);
+      out += end === -1 ? "" : "\n";
+      i = end === -1 ? n : end + 1;
+    } else if (two === "/*") {
+      const end = source.indexOf("*/", i + 2);
+      i = end === -1 ? n : end + 2;
+    } else {
+      out += source[i];
+      i++;
+    }
+  }
+  return out;
+}
+
+function stripCommentsAndStrings(source) {
+  return stripComments(source)
+    .replace(/'(?:[^'\\\n]|\\.)*'?/g, '""')
+    .replace(/"(?:[^"\\\n]|\\.)*"?/g, '""')
+    .replace(/`(?:[^`\\]|\\.)*`?/gs, '""');
+}
+
+// Static value-import specifiers of one module: [specifier, typeOnly].
+// Parsed with the repository's dev TypeScript (as in
+// scripts/check-live-package.mjs): every non-type-only ImportDeclaration
+// and ExportDeclaration with a module specifier is a value edge.
+// `import type ...` and all-`type` named imports are erased at emit and
+// never count.
+let cachedTypeScript = null;
+function typeScript() {
+  if (cachedTypeScript === null) cachedTypeScript = require("typescript");
+  return cachedTypeScript;
+}
+
+function staticImportSpecifiers(source) {
+  const ts = typeScript();
+  const file = ts.createSourceFile("scan.ts", source, ts.ScriptTarget.ESNext, true);
+  const specs = [];
+  const seen = new Set();
+  const record = (specifier) => {
+    if (!seen.has(specifier)) {
+      seen.add(specifier);
+      specs.push([specifier, false]);
+    }
+  };
+  for (const statement of file.statements) {
+    if (ts.isImportDeclaration(statement)) {
+      const specifier = statement.moduleSpecifier;
+      if (!ts.isStringLiteralLike(specifier)) continue;
+      if (statement.importClause?.isTypeOnly === true) continue;
+      const clause = statement.importClause;
+      // A side-effect import has no clause and always evaluates its module.
+      if (clause === undefined) {
+        record(specifier.text);
+        continue;
+      }
+      const named = clause.namedBindings;
+      const allNamedType = named !== undefined && ts.isNamedImports(named)
+        && named.elements.length > 0 && named.elements.every((element) => element.isTypeOnly);
+      const hasValueBinding = clause.name !== undefined
+        || (named !== undefined && ts.isNamespaceImport(named));
+      if (allNamedType && !hasValueBinding) continue;
+      record(specifier.text);
+    } else if (ts.isExportDeclaration(statement)) {
+      const specifier = statement.moduleSpecifier;
+      if (specifier === undefined || !ts.isStringLiteralLike(specifier)) continue;
+      if (statement.isTypeOnly === true) continue;
+      record(specifier.text);
+    }
+  }
+  return specs;
+}
+
+// Walk the static value-import closure from src/extract-core.ts and refuse
+// any edge outside the enumerated set. `read` maps a repository-relative path
+// to its content, or null when it is missing. Returns the failure list.
+function auditClosedCore(read) {
+  const failures = [];
+  const seen = new Set();
+  const queue = ["src/extract-core.ts"];
+  let edges = 0;
+  while (queue.length > 0) {
+    const rel = queue.shift();
+    if (seen.has(rel)) continue;
+    seen.add(rel);
+    const content = read(rel);
+    if (content === null) {
+      failures.push(`closed core member "${rel}" is missing`);
+      continue;
+    }
+    for (const [specifier] of staticImportSpecifiers(content)) {
+      edges++;
+      if (specifier === "node:module") {
+        failures.push(`"${rel}" imports the module-loader builtin "node:module": the closed core builds no loader`);
+        continue;
+      }
+      if (specifier.startsWith("node:")) continue;
+      if (specifier.startsWith("./") || specifier.startsWith("../")) {
+        const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : ".";
+        let resolved = `${dir}/${specifier}`.replace(/\/\.\//g, "/");
+        // Resolve ".." segments textually (no filesystem access).
+        const parts = [];
+        for (const part of resolved.split("/")) {
+          if (part === "..") parts.pop();
+          else if (part !== ".") parts.push(part);
+        }
+        resolved = parts.join("/").replace(/\.js$/, ".ts");
+        if (!CLOSED_EXTRACTION_SET.includes(resolved)) {
+          failures.push(`"${rel}" leaves the enumerated set: "${specifier}" resolves to "${resolved}"`);
+          continue;
+        }
+        queue.push(resolved);
+        continue;
+      }
+      failures.push(`"${rel}" imports "${specifier}": the closed core imports only node builtins and modules of its enumerated set`);
+    }
+    const scrubbed = stripCommentsAndStrings(content);
+    for (const token of ["createRequire", "getBuiltinModule"]) {
+      if (new RegExp(`\\b${token}\\b`).test(scrubbed)) {
+        failures.push(`"${rel}" references loader factory "${token}": the closed core builds no loader`);
+      }
+    }
+    if (/(^|[^.\w$])require\s*\(/.test(scrubbed)) {
+      failures.push(`"${rel}" calls require(): the closed core builds no loader`);
+    }
+    if (/(^|[^.\w$])import\s*\(/.test(scrubbed)) {
+      failures.push(`"${rel}" uses a dynamic import(): the closed core builds no loader`);
+    }
+  }
+  return { failures, modules: [...seen], edges };
+}
+
 const cliArgs = process.argv.slice(2);
 if (cliArgs.length > 0) {
   if (cliArgs.length === 1 && cliArgs[0] === "--audit-only") {
-    process.exit(runL5Audit() ? 0 : 1);
+    const auditRead = (rel) => {
+      try {
+        return readFileSync(join(auditRoot, rel), "utf8");
+      } catch {
+        return null;
+      }
+    };
+    const seamOk = runL5Audit(auditRoot);
+    const closed = auditClosedCore(auditRead);
+    if (closed.failures.length > 0) {
+      for (const failure of closed.failures) console.error(`build-live: CLOSED_CORE_AUDIT_FAILED: ${failure}`);
+    } else {
+      console.log(`build-live: closed core audit ok — ${closed.modules.length} modules, ${closed.edges} value edges in the enumerated set`);
+    }
+    process.exit(seamOk && closed.failures.length === 0 ? 0 : 1);
   }
   fail("USAGE", `unknown arguments ${JSON.stringify(cliArgs)} (expected no argument or --audit-only)`);
 }
@@ -225,7 +422,7 @@ try {
 
   // L5 seam audit on every build: the context-bound analysis seam must exist
   // and stay neutral before any grammar asset is trusted.
-  if (!runL5Audit()) {
+  if (!runL5Audit(root)) {
     fail("L5_AUDIT_FAILED", "context-bound analysis seam is missing or escapes the neutral closure");
   }
 
