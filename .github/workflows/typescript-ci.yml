@@ -273,8 +273,21 @@ jobs:
           npm ci --legacy-peer-deps
           npm run build
 
+      - name: Compute publish dist-tag
+        id: release-dist-tag
+        run: |
+          set -euo pipefail
+          tag="$(node scripts/release-dist-tag.mjs)"
+          test -n "$tag"
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+
       - name: Publish to npm
-        run: npm publish
+        env:
+          RELEASE_DIST_TAG: ${{ steps.release-dist-tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          test -n "$RELEASE_DIST_TAG"
+          npm publish --tag="$RELEASE_DIST_TAG"
 
   # Post-publish validation: install from npm and verify
   post-publish-check:
