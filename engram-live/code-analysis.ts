@@ -150,6 +150,24 @@ export interface HistoricalBoundsDto {
   readonly heads?: readonly PinnedOidDto[];
 }
 
+/**
+ * Data-pure verified L4a capture evidence for local (treeOid === null) analysis
+ * (plan/09 E-ASM3 / Carbon R3-01). Produced from a verified StableCapture; a
+ * bare flag or completion label never lifts `unstable-capture`.
+ */
+export interface VerifiedCaptureEvidenceDto {
+  readonly stable: true;
+  readonly scope: LiveScopeDto;
+  readonly worktreeId: string;
+  readonly snapshotId: string;
+  readonly path: string;
+  readonly contentFingerprint: string;
+  readonly indexDigest: string;
+  readonly attrFingerprint: string;
+  readonly attempts: number;
+  readonly snapshotKind?: "index" | "working-tree";
+}
+
 export interface AnalyzeCodeInput {
   readonly scope: LiveScopeDto;
   readonly language: string;
@@ -166,6 +184,8 @@ export interface AnalyzeCodeInput {
   readonly worktreeId?: string | null;
   readonly snapshotKind?: string | null;
   readonly historicalBounds: HistoricalBoundsDto | null;
+  /** Optional data-pure evidence from a stable L4a capture; absent or mismatched stays `unstable-capture`. */
+  readonly verifiedCapture?: VerifiedCaptureEvidenceDto | null;
 }
 
 export type CodeAnalysisState = "complete" | "partial" | "unavailable";
@@ -602,8 +622,55 @@ function checkPorts(ports: CodeAnalysisPorts): void {
   }
 }
 
+const VERIFIED_CAPTURE_KEYS: readonly string[] = [
+  "stable",
+  "scope",
+  "worktreeId",
+  "snapshotId",
+  "path",
+  "contentFingerprint",
+  "indexDigest",
+  "attrFingerprint",
+  "attempts",
+  "snapshotKind",
+];
+
+const VERIFIED_CAPTURE_SCOPE_KEYS: readonly string[] = ["tenant", "clone", "worktree"];
+
+function hasMatchingVerifiedCapture(input: AnalyzeCodeInput): boolean {
+  const ev = input.verifiedCapture;
+  if (ev === undefined || ev === null || !isPlainRecord(ev)) return false;
+  const keys = Reflect.ownKeys(ev);
+  if (keys.some((key) => typeof key === "symbol" || !VERIFIED_CAPTURE_KEYS.includes(key))) return false;
+  if (ev.stable !== true) return false;
+  if (!isPlainRecord(ev.scope)) return false;
+  const scopeKeys = Reflect.ownKeys(ev.scope);
+  if (scopeKeys.some((key) => typeof key === "symbol" || !VERIFIED_CAPTURE_SCOPE_KEYS.includes(key))) return false;
+  const evScope = ev.scope as { tenant?: unknown; clone?: unknown; worktree?: unknown };
+  if (evScope.tenant !== input.scope.tenant || evScope.clone !== input.scope.clone) return false;
+  if (typeof ev.worktreeId !== "string" || ev.worktreeId.length === 0 || ev.worktreeId.includes("\0")) return false;
+  if (typeof input.worktreeId !== "string" || input.worktreeId !== ev.worktreeId) return false;
+  const inputScopeWorktree = (input.scope as { readonly worktree?: unknown }).worktree;
+  if (inputScopeWorktree !== undefined && inputScopeWorktree !== ev.worktreeId) return false;
+  if (evScope.worktree !== undefined && evScope.worktree !== ev.worktreeId) return false;
+  if (typeof ev.snapshotId !== "string" || ev.snapshotId.length === 0 || ev.snapshotId.includes("\0")) return false;
+  if (typeof input.snapshotId !== "string" || input.snapshotId !== ev.snapshotId) return false;
+  if (typeof ev.path !== "string" || ev.path.length === 0 || ev.path.includes("\0")) return false;
+  if (ev.path !== input.path) return false;
+  if (typeof ev.contentFingerprint !== "string" || !HEX64.test(ev.contentFingerprint)) return false;
+  if (ev.contentFingerprint !== sha256Hex(input.content)) return false;
+  if (typeof ev.indexDigest !== "string" || !HEX64.test(ev.indexDigest)) return false;
+  if (typeof ev.attrFingerprint !== "string" || !HEX64.test(ev.attrFingerprint)) return false;
+  if (typeof ev.attempts !== "number" || !Number.isSafeInteger(ev.attempts) || ev.attempts < 1) return false;
+  if (ev.snapshotKind !== undefined && ev.snapshotKind !== "index" && ev.snapshotKind !== "working-tree") return false;
+  if (input.snapshotKind != null && ev.snapshotKind !== input.snapshotKind) return false;
+  return true;
+}
+
 async function verifyAnalysisBounds(input: AnalyzeCodeInput, objects: RetainedObjectsPort): Promise<"bounds-unknown" | "shallow-history" | "unstable-capture" | null> {
-  if (input.treeOid === null) return "unstable-capture";
+  if (input.treeOid === null) {
+    return hasMatchingVerifiedCapture(input) ? null : "unstable-capture";
+  }
   const bounds = input.historicalBounds;
   if (!bounds?.known || bounds.missing?.length || !bounds.heads?.length) return "bounds-unknown";
   try {

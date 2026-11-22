@@ -24,6 +24,7 @@
     "symbol-history.ts",
     "git-executor.ts",
     "factory-history.ts",
+    "factory-local.ts",
     "integration.ts",
     "reused-extraction.ts",
     "git-stream.ts",

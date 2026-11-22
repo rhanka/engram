@@ -16,6 +16,13 @@ export {
   runRetentionRequestsCapability,
 } from "./factory-history.js";
 export type { CommittedHistoryRuntimeContext } from "./factory-history.js";
+export {
+  runIndexSnapshotCapability,
+  runWorkingTreeCapability,
+  runDiffsCapability,
+  runReconciliationCapability,
+  runPublicationCapability,
+} from "./factory-local.js";
 export * from "./facts.js";
 export * from "./batch-codec.js";
 export * from "./generation.js";

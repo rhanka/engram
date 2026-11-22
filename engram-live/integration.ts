@@ -36,6 +36,7 @@ import {
   type AnalyzeCodeOutcome,
   type CodeAnalysisPorts,
   type GrammarStatusPort,
+  type VerifiedCaptureEvidenceDto,
 } from "./code-analysis.js";
 import {
   composeFactoryGitExecutor,
@@ -60,12 +61,50 @@ import {
   type UnavailableCapabilityResult,
   type ValidateHooksIsolationOptions,
 } from "./factory-history.js";
+import {
+  DEFAULT_FACTORY_RECONCILE_BUDGETS,
+  DEFAULT_FACTORY_SCHEDULER_BUDGETS,
+  DEFAULT_FACTORY_WATCH_BUDGETS,
+  buildVerifiedCaptureEvidence,
+  captureForLocalCodeAnalysis,
+  createLocalSchedulingController,
+  runDiffsCapability,
+  runIndexSnapshotCapability,
+  runPublicationCapability,
+  runReconciliationCapability,
+  runWorkingTreeCapability,
+  type CachePort,
+  type ContentPort,
+  type DiffsCapabilityRequest,
+  type DiffsCapabilityResult,
+  type IndexSnapshotCapabilityRequest,
+  type IndexSnapshotCapabilityResult,
+  type LocalCapabilityResult,
+  type LocalCaptureAnalysisOptions,
+  type LocalPrivateBatchContext,
+  type LocalRuntimeContext,
+  type LocalSchedulingController,
+  type PublicationCapabilityRequest,
+  type PublicationCapabilityResult,
+  type PublicationCompletionInput,
+  type ReconciliationAction,
+  type ReconciliationCapabilityRequest,
+  type ReconciliationCapabilityResult,
+  type SchedulerDurabilityPort,
+  type SchedulingPort,
+  type WorkingTreeCapabilityRequest,
+  type WorkingTreeCapabilityResult,
+} from "./factory-local.js";
+import type { GenerationCompletionPort } from "./generation.js";
 import { createProductionParseAdapter, supportsProductionParse } from "./parse-adapter.js";
 import type { GithubPrTransportPort, PrSyncPersistencePort } from "./pr-sync.js";
 import type { RetentionPort } from "./retention.js";
+import type { WatchPort } from "./watch.js";
+import type { CaptureResult } from "./worktree.js";
 
 export { validateScopeFencingToken } from "./contracts.js";
 export type { FactSinkPort, FactSinkReceipt, ScopeFencingTokenDto } from "./contracts.js";
+export type { VerifiedCaptureEvidenceDto } from "./code-analysis.js";
 export { composeFactoryGitExecutor, validateHostHooksIsolationDir } from "./factory-history.js";
 export type {
   CommittedBatchContext,
@@ -84,10 +123,42 @@ export type {
   UnavailableCapabilityResult,
   ValidateHooksIsolationOptions,
 } from "./factory-history.js";
+export {
+  DEFAULT_FACTORY_RECONCILE_BUDGETS,
+  DEFAULT_FACTORY_SCHEDULER_BUDGETS,
+  DEFAULT_FACTORY_WATCH_BUDGETS,
+  buildVerifiedCaptureEvidence,
+  captureForLocalCodeAnalysis,
+  createLocalSchedulingController,
+} from "./factory-local.js";
+export type {
+  CachePort,
+  ContentPort,
+  DiffsCapabilityRequest,
+  DiffsCapabilityResult,
+  IndexSnapshotCapabilityRequest,
+  IndexSnapshotCapabilityResult,
+  LocalCapabilityResult,
+  LocalCaptureAnalysisOptions,
+  LocalPrivateBatchContext,
+  LocalRuntimeContext,
+  LocalSchedulingController,
+  PublicationCapabilityRequest,
+  PublicationCapabilityResult,
+  PublicationCompletionInput,
+  ReconciliationAction,
+  ReconciliationCapabilityRequest,
+  ReconciliationCapabilityResult,
+  SchedulerDurabilityPort,
+  SchedulingPort,
+  WorkingTreeCapabilityRequest,
+  WorkingTreeCapabilityResult,
+} from "./factory-local.js";
 
-// — Injected ports. Git, GitHub PR, history persistence and retention are
-// typed against the engines they serve (E-ASM2). Content and cache remain
-// placeholder seams until E-ASM3 replaces them with L4b/L5 ports.
+// — Injected ports. All ten neutral capabilities consume typed host ports
+// (Git, GitHub PR, history persistence, retention, L4b content protection &
+// latest-only snapshots, L5 analysis cache, L6b watch & scheduler, and
+// L3a-E2 generation completion).
 
 export interface FilesystemPort {
   /** Reads a file's bytes through the injected host filesystem. */
@@ -97,11 +168,8 @@ export interface FilesystemPort {
 export interface ClockPort {
   /** Milliseconds since the Unix epoch, host-supplied and test-fakeable. */
   now(): number;
-}
-
-export interface ContentPort {
-  /** Content classification seam; policies arrive with L4b/L5. Unused in L1b. */
-  readonly liveContentSeam: "host-content";
+  /** Optional host-injected deadline/polling timer used by L6b scheduling and publication. */
+  schedule?(ms: number, callback: () => void): () => void;
 }
 
 /**
@@ -129,11 +197,6 @@ export const REQUIRED_STORAGE_FENCING_CONTRACT = {
   requireSourceAndProjectionEqualityOnGenerationPublish: true,
   requireSynchronousLeaseRevocationOnShutdown: true,
 } as const;
-
-export interface CachePort {
-  /** Bounded, versioned cache seam; wired by L2b/L5. Unused in L1b. */
-  readonly liveCacheSeam: "host-cache";
-}
 
 export interface GrammarSyntaxPoint {
   readonly row: number;
@@ -183,10 +246,12 @@ export interface LiveFactoryPorts {
   readonly git?: GitPort;
   readonly filesystem: FilesystemPort;
   readonly clock: ClockPort;
-  readonly content: ContentPort;
+  /** Host-injected L4b content protection, key provider and latest-only snapshot store. */
+  readonly content?: ContentPort;
   /** Single L5-P-m8 fenced fact-batch sink port. */
   readonly factSink: FactSinkPort;
-  readonly cache: CachePort;
+  /** Host-injected L5 analysis cache port (authorize/load/store). */
+  readonly cache?: CachePort;
   readonly grammarRuntime: GrammarRuntimePort;
   /** Host-injected durable completion and retained-root state port (L2b). */
   readonly historyPersistence?: HistoryPersistencePort;
@@ -196,6 +261,12 @@ export interface LiveFactoryPorts {
   readonly prPersistence?: PrSyncPersistencePort;
   /** Host-injected private root retention port (R1). */
   readonly retention?: RetentionPort;
+  /** Host-injected native watch port (L6b). */
+  readonly watch?: WatchPort;
+  /** Host-injected L6b scheduler, writer authority, marker store and reconcile scan ports. */
+  readonly scheduling?: SchedulingPort;
+  /** Host-injected L3a-E2 generation completion port for fenced publication. */
+  readonly generationCompletion?: GenerationCompletionPort;
 }
 
 export interface CreateLiveFactoryOptions {
@@ -207,6 +278,8 @@ export interface CodeAnalysisRequest {
   readonly input: AnalyzeCodeInput;
   readonly objects: CodeAnalysisPorts["objects"];
   readonly cache?: CodeAnalysisPorts["cache"];
+  /** Optional live L4a worktree capture to supply verified capture evidence for local (treeOid === null) analysis. */
+  readonly capture?: LocalCaptureAnalysisOptions;
 }
 
 export type CapabilityRequest =
@@ -214,7 +287,12 @@ export type CapabilityRequest =
   | RefsCapabilityRequest
   | HistoryDagCapabilityRequest
   | GithubPrCapabilityRequest
-  | RetentionRequestsCapabilityRequest;
+  | RetentionRequestsCapabilityRequest
+  | IndexSnapshotCapabilityRequest
+  | WorkingTreeCapabilityRequest
+  | DiffsCapabilityRequest
+  | ReconciliationCapabilityRequest
+  | PublicationCapabilityRequest;
 
 export interface CodeAnalysisCapabilityResult extends CapabilityStatus {
   readonly capability: "code-analysis";
@@ -223,6 +301,8 @@ export interface CodeAnalysisCapabilityResult extends CapabilityStatus {
   readonly languages: readonly GrammarCoverageDto[];
   /** Present when a code-analysis request was supplied. */
   readonly analysis?: AnalyzeCodeOutcome;
+  /** Present when a live L4a capture was executed to verify local analysis bounds. */
+  readonly capture?: CaptureResult;
 }
 
 export type CapabilityResult =
@@ -231,7 +311,12 @@ export type CapabilityResult =
   | RefsCapabilityResult
   | HistoryDagCapabilityResult
   | GithubPrCapabilityResult
-  | RetentionRequestsCapabilityResult;
+  | RetentionRequestsCapabilityResult
+  | IndexSnapshotCapabilityResult
+  | WorkingTreeCapabilityResult
+  | DiffsCapabilityResult
+  | ReconciliationCapabilityResult
+  | PublicationCapabilityResult;
 
 export type GrammarLoadResult = { readonly language: string } & (
   | { readonly state: "available"; readonly bytesSha256: string; readonly grammar: object }
@@ -245,6 +330,11 @@ export interface LiveFactory {
   runCapability(capability: "history-dag", request?: HistoryDagCapabilityRequest): Promise<HistoryDagCapabilityResult | UnavailableCapabilityResult>;
   runCapability(capability: "github-pr", request?: GithubPrCapabilityRequest): Promise<GithubPrCapabilityResult | UnavailableCapabilityResult>;
   runCapability(capability: "retention-requests", request?: RetentionRequestsCapabilityRequest): Promise<RetentionRequestsCapabilityResult | UnavailableCapabilityResult>;
+  runCapability(capability: "index-snapshot", request?: IndexSnapshotCapabilityRequest): Promise<IndexSnapshotCapabilityResult | UnavailableCapabilityResult>;
+  runCapability(capability: "working-tree", request?: WorkingTreeCapabilityRequest): Promise<WorkingTreeCapabilityResult | UnavailableCapabilityResult>;
+  runCapability(capability: "diffs", request?: DiffsCapabilityRequest): Promise<DiffsCapabilityResult | UnavailableCapabilityResult>;
+  runCapability(capability: "reconciliation", request?: ReconciliationCapabilityRequest): Promise<ReconciliationCapabilityResult | UnavailableCapabilityResult>;
+  runCapability(capability: "publication", request?: PublicationCapabilityRequest): Promise<PublicationCapabilityResult | UnavailableCapabilityResult>;
   runCapability(capability: CapabilityId, request?: CapabilityRequest): Promise<CapabilityResult>;
   grammarCoverage(language: string): GrammarCoverageDto;
   grammarCoverageReport(language: string): CoverageReport;
@@ -422,6 +512,18 @@ export function createLiveFactory(options: CreateLiveFactoryOptions): LiveFactor
     retention: ports.retention,
   };
 
+  const localContext: LocalRuntimeContext = {
+    declaration,
+    clock: ports.clock,
+    git: ports.git,
+    content: ports.content,
+    factSink: ports.factSink,
+    watch: ports.watch,
+    scheduling: ports.scheduling,
+    generationCompletion: ports.generationCompletion,
+  };
+  const schedulingController = createLocalSchedulingController(localContext);
+
   async function runCapabilityImpl(capability: CapabilityId, request?: CapabilityRequest): Promise<CapabilityResult> {
     const status = describeCapabilities().find((entry) => entry.capability === capability);
     if (!status) {
@@ -441,6 +543,21 @@ export function createLiveFactory(options: CreateLiveFactoryOptions): LiveFactor
     }
     if (capability === "retention-requests") {
       return runRetentionRequestsCapability(status, historyContext, request);
+    }
+    if (capability === "index-snapshot") {
+      return runIndexSnapshotCapability(status, localContext, request);
+    }
+    if (capability === "working-tree") {
+      return runWorkingTreeCapability(status, localContext, request);
+    }
+    if (capability === "diffs") {
+      return runDiffsCapability(status, localContext, request);
+    }
+    if (capability === "reconciliation") {
+      return runReconciliationCapability(status, localContext, request, schedulingController);
+    }
+    if (capability === "publication") {
+      return runPublicationCapability(status, localContext, request, schedulingController);
     }
     if (capability !== "code-analysis") {
       return { ...status, state: "unavailable", delivered: false };
@@ -466,6 +583,22 @@ export function createLiveFactory(options: CreateLiveFactoryOptions): LiveFactor
       operation = { ...codeRequest, input: { ...pinned, worktreeId, scope: analysisScope } };
     }
 
+    let liveCapture: CaptureResult | undefined;
+    if (operation?.capture !== undefined) {
+      const captured = captureForLocalCodeAnalysis(localContext, operation.input, operation.capture);
+      if (!captured.ok) {
+        return { ...status, capability: "code-analysis", state: "unavailable", delivered: false, reason: captured.reason };
+      }
+      liveCapture = captured.capture;
+      operation = {
+        ...operation,
+        input: {
+          ...operation.input,
+          verifiedCapture: captured.verifiedCapture ?? null,
+        },
+      };
+    }
+
     const manifest = await loadManifest();
     const probes = await Promise.all(ADVERTISED_LANGUAGES.map((language) => probeGrammar(language, manifest, true)));
     const languages = probes.map(grammarCoverageFor);
@@ -473,12 +606,25 @@ export function createLiveFactory(options: CreateLiveFactoryOptions): LiveFactor
     const available: CodeAnalysisCapabilityResult = { ...status, capability: "code-analysis", state: "available", delivered: true, languages };
     if (!operation) return available;
 
-    const { input, objects, cache } = operation;
+    const { input, objects } = operation;
+    const effectiveCache =
+      operation.cache !== undefined
+        ? operation.cache
+        : ports.cache !== undefined &&
+            typeof ports.cache.load === "function" &&
+            typeof ports.cache.store === "function" &&
+            typeof ports.cache.authorize === "function"
+          ? ports.cache
+          : undefined;
     const probe = probes.find(({ language }) => language === input.language)
       ?? await probeGrammar(input.language, manifest, true);
     latestGrammarCoverage.set(input.language, grammarCoverageFor(probe));
-    const analysis = await analyzeCode(input, { extractor, grammar: grammarFor(probe), objects, cache });
-    return { ...available, analysis };
+    const analysis = await analyzeCode(input, { extractor, grammar: grammarFor(probe), objects, cache: effectiveCache });
+    return {
+      ...available,
+      analysis,
+      ...(liveCapture !== undefined ? { capture: liveCapture } : {}),
+    };
   }
 
   return {
