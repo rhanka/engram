@@ -689,3 +689,16 @@ export function validateSessionExtractionProposalBatch(input: unknown): Result<S
     }
   });
 }
+
+// ── Block A (SJ-1a): selector, Track scope reference, query, watermark,
+// request, item reference, delivery, policy. One definition per symbol;
+// amendments, the wire codec and history matches belong to later lots.
+export type SessionContextSelectorMatchV1 = { readonly kind: "text"; readonly text: string } | { readonly kind: "ref"; readonly ref: string } | { readonly kind: "withheld"; readonly textDigest: Sha256Digest };
+export interface SessionContextSelectorV1 { readonly selectorId: string; readonly match: SessionContextSelectorMatchV1; readonly by: "agent" | "shadow"; readonly authorModelRef?: string; readonly sourceEventRecordIds: readonly string[]; }
+export interface SessionTrackScopeRefV1 { readonly repoKey: string; readonly workspace: string; readonly aggregateId: string; readonly role: string; readonly aggregateKind: string; readonly baselineCommit?: string; readonly decisionGateId?: string; readonly decisionGateDigest?: Sha256Digest; }
+export interface SessionContextQueryV1 { readonly schemaVersion: "engram.session-context-query/v1"; readonly queryId: string; readonly version: number; readonly digest: Sha256Digest; readonly tenantId: string; readonly workspaceId: string; readonly derivedWorktreeId: string; readonly roleRef?: string; readonly mandateDigest?: Sha256Digest; readonly objectiveLoopId?: string; readonly trackScope: readonly SessionTrackScopeRefV1[]; readonly ontologies: readonly OntologyTemplateEnvelopeRef[]; readonly pinnedEventRecordIds: readonly string[]; readonly selectors: readonly SessionContextSelectorV1[]; }
+export interface SessionContextWatermarkV1 { readonly queryId: string; readonly queryVersion: number; readonly cursor: Cursor; }
+export interface SessionContextRequestV1 { readonly held?: SessionContextWatermarkV1; readonly reset?: "compaction" | "clear" | "restart"; readonly hostSignal?: string; readonly loop?: { readonly objectiveLoopId: string; readonly trackScope: readonly SessionTrackScopeRefV1[] }; }
+export interface SessionContextItemRefV1 { readonly ref: string; readonly digest: Sha256Digest; readonly slice: RawSessionEventReceipt["readySlices"][number]; readonly change: "added" | "withdrawn"; readonly disclosure: "text" | "reference"; readonly authoredBy: "code" | "shadow" | "main_model" | "dreaming"; readonly authorModelRef?: string; readonly sourceEventRecordIds: readonly string[]; }
+export interface SessionContextDeliveryV1 { readonly mode: "diff" | "full"; readonly watermark: SessionContextWatermarkV1; readonly queryDigest: Sha256Digest; readonly byteLength: number; readonly items: readonly SessionContextItemRefV1[]; readonly annotatedThroughOrdinal?: number; readonly overflow?: "pinned_request_over_ceiling"; }
+export interface SessionContextPolicyV1 { readonly journalEnabled: boolean; readonly maxSelectors: number; readonly viewMaxTokens: number; readonly rebuildAtTokens: number; }
