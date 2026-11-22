@@ -117,8 +117,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 1615,
+    "file": "src/extract-core.ts",
+    "line": 1766,
     "owner": "_importPython",
     "kind": "edge-row-constructor",
     "fingerprint": "0a30e51cbdb80375e4dc4ecdb7ff81a161a378160284f13dbc5c0ec0e09b43f0",
@@ -126,8 +126,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 1627,
+    "file": "src/extract-core.ts",
+    "line": 1778,
     "owner": "_importPython",
     "kind": "edge-row-constructor",
     "fingerprint": "c5420b0f40d95f4098d6f62a16a7ec38f78e88e18bbfc1bb8cfebf96727d66eb",
@@ -135,8 +135,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 1676,
+    "file": "src/extract-core.ts",
+    "line": 1827,
     "owner": "_importJs",
     "kind": "edge-row-constructor",
     "fingerprint": "533758e58ca0baeb080c398dd03d1b3f8da9c428afe7bd2274aa2623efca5b11",
@@ -144,8 +144,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 1706,
+    "file": "src/extract-core.ts",
+    "line": 1857,
     "owner": "pushSymbolEdge",
     "kind": "edge-row-constructor",
     "fingerprint": "77f321f88bf97203eb49e9cf01a543dccbffe4518c488e87227afdc287c5448c",
@@ -153,8 +153,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 1785,
+    "file": "src/extract-core.ts",
+    "line": 1936,
     "owner": "_importJava",
     "kind": "edge-row-constructor",
     "fingerprint": "0a30e51cbdb80375e4dc4ecdb7ff81a161a378160284f13dbc5c0ec0e09b43f0",
@@ -162,8 +162,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 1806,
+    "file": "src/extract-core.ts",
+    "line": 1957,
     "owner": "_importC",
     "kind": "edge-row-constructor",
     "fingerprint": "0a30e51cbdb80375e4dc4ecdb7ff81a161a378160284f13dbc5c0ec0e09b43f0",
@@ -171,8 +171,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 1827,
+    "file": "src/extract-core.ts",
+    "line": 1978,
     "owner": "_importCsharp",
     "kind": "edge-row-constructor",
     "fingerprint": "0a30e51cbdb80375e4dc4ecdb7ff81a161a378160284f13dbc5c0ec0e09b43f0",
@@ -180,8 +180,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 1848,
+    "file": "src/extract-core.ts",
+    "line": 1999,
     "owner": "_importKotlin",
     "kind": "edge-row-constructor",
     "fingerprint": "0a30e51cbdb80375e4dc4ecdb7ff81a161a378160284f13dbc5c0ec0e09b43f0",
@@ -189,8 +189,8 @@
     "count": 2
   },
   {
-    "file": "src/extract.ts",
-    "line": 1881,
+    "file": "src/extract-core.ts",
+    "line": 2032,
     "owner": "_importScala",
     "kind": "edge-row-constructor",
     "fingerprint": "0a30e51cbdb80375e4dc4ecdb7ff81a161a378160284f13dbc5c0ec0e09b43f0",
@@ -198,8 +198,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 1902,
+    "file": "src/extract-core.ts",
+    "line": 2053,
     "owner": "_importPhp",
     "kind": "edge-row-constructor",
     "fingerprint": "0a30e51cbdb80375e4dc4ecdb7ff81a161a378160284f13dbc5c0ec0e09b43f0",
@@ -207,8 +207,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 1965,
+    "file": "src/extract-core.ts",
+    "line": 2120,
     "owner": "_importLua",
     "kind": "edge-row-constructor",
     "fingerprint": "2399f4a6fab849b4d252dd20fd9262319a8a3f621f503575f0d39473bc58ba63",
@@ -216,8 +216,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 1982,
+    "file": "src/extract-core.ts",
+    "line": 2137,
     "owner": "_importSwift",
     "kind": "edge-row-constructor",
     "fingerprint": "0a30e51cbdb80375e4dc4ecdb7ff81a161a378160284f13dbc5c0ec0e09b43f0",
@@ -225,8 +225,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 2093,
+    "file": "src/extract-core.ts",
+    "line": 2248,
     "owner": "_requireImportsJs",
     "kind": "edge-row-constructor",
     "fingerprint": "cf269ef45ce9248c31e83f9cdd8301b85d621dd8a73c1bdb7ba84591bbf9e88d",
@@ -234,8 +234,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 2128,
+    "file": "src/extract-core.ts",
+    "line": 2283,
     "owner": "_requireImportsJs",
     "kind": "edge-row-constructor",
     "fingerprint": "c1d4d7119f6f5469122be5ad147d0990cd087e9b9ec000eecb3c9959aacb33a0",
@@ -243,8 +243,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 2804,
+    "file": "src/extract-core.ts",
+    "line": 2958,
     "owner": "addEdge",
     "kind": "edge-row-constructor",
     "fingerprint": "e0c5b4457a85f13957221a7109ff09e355eb3929857d77cc0b0df7432f67684a",
@@ -252,8 +252,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 3636,
+    "file": "src/extract-core.ts",
+    "line": 3790,
     "owner": "emitCallByName",
     "kind": "edge-row-constructor",
     "fingerprint": "0b5a4b2042818f01bde3efd6d75cae9c97cb793d44bf4f6d4a52588fc84a06d8",
@@ -261,8 +261,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 3880,
+    "file": "src/extract-core.ts",
+    "line": 4033,
     "owner": "addRationale",
     "kind": "edge-row-constructor",
     "fingerprint": "c3d25223a494bb7d2297b7c0a5a465c24b4db78392f87f5d12daa709fc39335d",
@@ -270,8 +270,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 4027,
+    "file": "src/extract-core.ts",
+    "line": 4180,
     "owner": "addRationale",
     "kind": "edge-row-constructor",
     "fingerprint": "2b99d484ffde0ab26421797893ca665e48ecb21668ee5154b4dfd9b782abcba8",
@@ -279,8 +279,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 4052,
+    "file": "src/extract-core.ts",
+    "line": 4205,
     "owner": "addDocRef",
     "kind": "edge-row-constructor",
     "fingerprint": "f71712f0cc8abe1be0b3eb5a523620132e7f50678418b80fbbb3b0d8ed5178e1",
@@ -288,8 +288,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 4156,
+    "file": "src/extract-core.ts",
+    "line": 4308,
     "owner": "addEdge",
     "kind": "edge-row-constructor",
     "fingerprint": "06113c5380f333201541df05a029d97274264e5ea1ae8ee3017e57dc70df1ccf",
@@ -297,8 +297,8 @@
     "count": 7
   },
   {
-    "file": "src/extract.ts",
-    "line": 4379,
+    "file": "src/extract-core.ts",
+    "line": 4531,
     "owner": "addNode",
     "kind": "edge-row-constructor",
     "fingerprint": "31fe3b52016857316e2e69f474d5b895e5c034f76f14e27f70a9086fdf87b87a",
@@ -306,8 +306,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 4492,
+    "file": "src/extract-core.ts",
+    "line": 4644,
     "owner": "addEdge",
     "kind": "edge-row-constructor",
     "fingerprint": "40110ee5fd70c2e9065d0c7115c064ead74ce53396dc102ca94f3bffb164d2d5",
@@ -315,8 +315,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 4685,
+    "file": "src/extract-core.ts",
+    "line": 4837,
     "owner": "addTable",
     "kind": "edge-row-constructor",
     "fingerprint": "cd4216ff4b2c398d43d82a5f0b9dc43e73f327c521a881eba6cfae9da654736f",
@@ -324,8 +324,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 4711,
+    "file": "src/extract-core.ts",
+    "line": 4863,
     "owner": "addSqlObject",
     "kind": "edge-row-constructor",
     "fingerprint": "cd4216ff4b2c398d43d82a5f0b9dc43e73f327c521a881eba6cfae9da654736f",
@@ -333,8 +333,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 4726,
+    "file": "src/extract-core.ts",
+    "line": 4878,
     "owner": "addReference",
     "kind": "edge-row-constructor",
     "fingerprint": "ebeed306e04648c292209c6a97f0188ef90a827f4515e8e34005fd603d0609a7",
@@ -342,8 +342,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 4776,
+    "file": "src/extract-core.ts",
+    "line": 4928,
     "owner": "extractSql",
     "kind": "edge-row-constructor",
     "fingerprint": "fbf42551f2bd3d3acbbb61b2206f32d6fbdbc149fe3e866948bf6a0aa6c729b4",
@@ -351,8 +351,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 4807,
+    "file": "src/extract-core.ts",
+    "line": 4959,
     "owner": "addSqlBodyTableEdges",
     "kind": "edge-row-constructor",
     "fingerprint": "a4a2e34d8baa162e77a0314087f84d2a938f03a98bdd3c2bcde9f0864f90e6a6",
@@ -360,8 +360,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 4833,
+    "file": "src/extract-core.ts",
+    "line": 4985,
     "owner": "extractSql",
     "kind": "edge-row-constructor",
     "fingerprint": "23a9820f228cb7b795cd9e371373996e2e5aae5ee5b0c5863eeb60fa8a3c4ed3",
@@ -369,8 +369,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 4888,
+    "file": "src/extract-core.ts",
+    "line": 5040,
     "owner": "addEdge",
     "kind": "edge-row-constructor",
     "fingerprint": "d8ba78c6bbd18e93576a22ed7e89617bcd77797f0bf6fad345dcc7a8ec598853",
@@ -378,8 +378,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 4975,
+    "file": "src/extract-core.ts",
+    "line": 5127,
     "owner": "extractSvelte",
     "kind": "edge-row-constructor",
     "fingerprint": "7a532a2ebd3c7a979985007abaffc2e3923395e5e73f132c734e3642e047be1f",
@@ -387,8 +387,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 5023,
+    "file": "src/extract-core.ts",
+    "line": 5175,
     "owner": "pushImport",
     "kind": "edge-row-constructor",
     "fingerprint": "9e102ea6e7b3e6b18c6cf3df5fba262ee6da2170e6a8f3b05fff4a53c777e829",
@@ -396,8 +396,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 5224,
+    "file": "src/extract-core.ts",
+    "line": 5375,
     "owner": "walkCalls",
     "kind": "edge-row-constructor",
     "fingerprint": "0b5a4b2042818f01bde3efd6d75cae9c97cb793d44bf4f6d4a52588fc84a06d8",
@@ -405,8 +405,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 5506,
+    "file": "src/extract-core.ts",
+    "line": 5656,
     "owner": "walkCalls",
     "kind": "edge-row-constructor",
     "fingerprint": "dc9f53eea95e5129b0f33ad1f0ffc314dab4acca009fd2289ac9df8c840803bb",
@@ -414,8 +414,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 6530,
+    "file": "src/extract-core.ts",
+    "line": 6677,
     "owner": "walkImports",
     "kind": "edge-row-constructor",
     "fingerprint": "60a6ad3d62455e0e7752b47929b3116b4be07ca4a7c3ea2bfb10b1886c87c547",
@@ -423,8 +423,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 6636,
+    "file": "src/extract-core.ts",
+    "line": 6783,
     "owner": "addNode",
     "kind": "edge-row-constructor",
     "fingerprint": "27c1e741e9aabbe44d19c7e95c0b647cc2449e55002a2bb50d95fb63d982e213",
@@ -432,8 +432,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 6730,
+    "file": "src/extract-core.ts",
+    "line": 6877,
     "owner": "extractSln",
     "kind": "edge-row-constructor",
     "fingerprint": "a2e8067e0da984f4d360fd01f73bd44be6e93b023b76d64b5d6ce0f3db63981f",
@@ -441,8 +441,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 6774,
+    "file": "src/extract-core.ts",
+    "line": 6921,
     "owner": "extractSln",
     "kind": "edge-row-constructor",
     "fingerprint": "b5b53a71336a51d3b0b0e55baa6780ad04b1c9cf78c967c6a0c0f2cbf2ab014a",
@@ -450,8 +450,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 6934,
+    "file": "src/extract-core.ts",
+    "line": 7081,
     "owner": "addEdge",
     "kind": "edge-row-constructor",
     "fingerprint": "31e134f931511669b63593a59bbb06d2402691ef9a9a0721651c0e14ca7b2894",
@@ -1539,8 +1539,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 894,
+    "file": "src/extract-core.ts",
+    "line": 1045,
     "owner": "remapFileNodeIds",
     "kind": "raw-edge-rewrite",
     "fingerprint": "c525c2a136b1e7f5d841ef287482733ab96e25730d5244cff89b668a8fa03542",
@@ -1548,8 +1548,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 899,
+    "file": "src/extract-core.ts",
+    "line": 1050,
     "owner": "remapFileNodeIds",
     "kind": "raw-edge-rewrite",
     "fingerprint": "4dc896dce76db91abdadc64ea5a3d954322c32840740b0e4cf00c1ed4856dc06",
@@ -1557,8 +1557,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 904,
+    "file": "src/extract-core.ts",
+    "line": 1055,
     "owner": "remapFileNodeIds",
     "kind": "raw-edge-rewrite",
     "fingerprint": "fa492ecc39ea5123543dbf7f2f915f154451450067a171d5850af2fa73697d23",
@@ -1566,8 +1566,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 914,
+    "file": "src/extract-core.ts",
+    "line": 1065,
     "owner": "remapFileNodeIds",
     "kind": "raw-edge-rewrite",
     "fingerprint": "39b82330ba25af0603261466b493ea1aa8b1466f2b7402cd50220e59e7b63a09",
@@ -1656,8 +1656,8 @@
     "count": 1
   },
   {
-    "file": "src/cache.ts",
-    "line": 470,
+    "file": "src/live-cache-keys.ts",
+    "line": 211,
     "owner": "relativizeSourceFilesIn",
     "kind": "raw-edge-rewrite",
     "fingerprint": "dc884179c49ec92df88faa634e72bfe95264fab458e76e3f0c27b8c6b68fa878",
@@ -1665,8 +1665,8 @@
     "count": 1
   },
   {
-    "file": "src/cache.ts",
-    "line": 492,
+    "file": "src/live-cache-keys.ts",
+    "line": 232,
     "owner": "absolutizeSourceFilesIn",
     "kind": "raw-edge-rewrite",
     "fingerprint": "6cd6606786d84bb317317ac284c37e85596b6c7a5c1abed49cbcc5374d3f9379",
@@ -3879,8 +3879,8 @@
     "count": 1
   },
   {
-    "file": "src/extract.ts",
-    "line": 7118,
+    "file": "src/extract-core.ts",
+    "line": 7264,
     "owner": "_mergeSwiftExtensions",
     "kind": "raw-boundary",
     "fingerprint": "f73b0208809e0e722d9fa121b3de295f4e778f3624605b2b87caa4f86e293437",
